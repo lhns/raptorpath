@@ -34604,3 +34604,97 @@ one session** so C9-L2's ratio has a denominator.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or modifies the pre-registration it is scored against.**
+
+---
+
+## MEASUREMENT TRUTH item 4 — THE SPAN FIELD (local half)
+
+**Branch `feat/span-and-sigma` from main@`7f2b009`. LOCAL ONLY: no VM contact,
+no lock, nothing launched. No default flips, no gate is added, no law changes.**
+
+### The defect this closes
+
+The c9 scored section above records the battery's headline finding as a
+**SPECIFICATION FAILURE**, and it is one of gauges rather than of predictions:
+
+> **C9-L3 — UNSCOREABLE (cite: no span instrument). THIS IS THE HEADLINE.**
+
+`ccap_report_line` (`raptorpath/src/net/mod.rs`) emitted `eng/cap/mem/floor/
+floor_val/brake/brake_frac` — seven numbers, none of them the span — while
+`three_term_store_cap` computed TERM 3 at **every dyn-cap refresh** and threw
+it away. The format pins all passed, because the pinned string was correct for
+the fields it had. C9-L1 (*"the `[CCAP]` span field reads 0"*) and C9-L3 (the
+2.000 ratio that separates the two span forms) were therefore unscoreable at a
+geometry the same battery had just proved comes up clean.
+
+### The field set is DECIDED BY THE CRITERION
+
+The contract was read before the format string was written. C9-L1 needs one
+number; **C9-L3 needs four**, because it is scored on a RATIO and disposed of
+against ANCHORS:
+
+| field | what clause needs it | why it cannot be dropped |
+|---|---|---|
+| `span=` | **C9-L1** | the shipped `rate_fast·(RTprop_max − RTprop_min)`. C9-L1 IS this field reading 0 at a symmetric cell |
+| `span_sigma=` | **C9-L3** | the crosscheck's `Σ bwᵢ(RTT_max − RTTᵢ)`, so the discriminating ratio is **measured** and not assumed. **Adopt nothing:** no engine path reads it |
+| `span_ratio=` | **C9-L3** | the SCORED quantity, `Σ span_sigma / Σ span` — exactly the ratio of the two reported means, since both share the `eng=` denominator. Predicted **exactly 2.000** at c9h, anchor-free |
+| `rate_fast=`, `spread_us=` | **C9-L3** | the ±5 % and ±0.4 % anchors of the `[265, 315]` absolute band. Without them the contract's own disposal rule — *"a reading outside both bands falsifies the ANCHORS rather than either formula, and is reported that way"* — is not executable from a log |
+
+`span_ratio` renders **0.000** when `Σ span` is 0, which is every symmetric
+cell, where the ratio is genuinely undefined. A parser reads `span=` first;
+the block never renders a NaN, on the same rule the bind fractions already
+follow.
+
+### NO TIE PREDICATE — and this is the load-bearing design choice
+
+The two forms diverge "by the COUNT of min-RTprop legs". The obvious gauge
+counts legs whose `rtprop_s` equals the minimum — and **on the wire no two
+measured RTprops are ever exactly equal**, so that count would read 1 at every
+geometry and the gauge would silently report the answer it was built to test.
+`span_sigma` is a plain sum over ALL legs with **no equality test anywhere**:
+at c9h's two near-tied fast legs it lands near `2 · span` because the
+arithmetic takes it there, and the RATIO measures the effective count instead
+of asserting it. Pinned by a test that nudges one "fast" leg by a microsecond
+and requires the ratio to stay 2.000 to three decimals — a leg-counting gauge
+collapses to 1.000 there. This is CLAUDE.md's no-mode-switch invariant applied
+to an INSTRUMENT: no threshold, no branch, one formula.
+
+### ONE COMPUTATION, not two
+
+`span_forms()` is now the single site that computes the span geometry;
+`three_term_store_cap` consumes its `shipped` member and nothing else. The law
+and its gauge cannot drift, which is asserted
+(`the_span_gauge_is_the_laws_own_term_3`) rather than described, and a
+`debug_assert!` at the refresh site catches a divergence in a debug build too.
+
+### Reachability, and it FAILS ON THE OLD ENGINE
+
+A format pin could not have caught the original defect. `tests/gauge_reachability.rs`
+— the binary written for the *previous* instance of this exact failure shape —
+now asserts, over a log the shipped `perf` harness actually produces:
+
+* all five span keys are present (**this loop fails on the shipped-before
+  engine, on the first key**);
+* `span`, `span_sigma` and `spread_us` are all exactly **0** on the one-path
+  loopback — C9-L1's own prediction evaluated where it is cheap, and a
+  non-zero reading there would mean a topology branch had entered the law;
+* `rate_fast > 0` whenever `eng > 0`, so the block cannot be a rendered empty
+  struct;
+* the `[GATES]` echo carries `RWM_COMPOSED_CAP=1` **and not** `=0` — the
+  two-sided property, whose OFF side stays pinned in `gates.rs`. The c9
+  battery's cited reason for `[CCAP]` never appearing was that **no arm set
+  this gate**, which is precisely what a two-sided echo lets a driver catch
+  before it spends invocations.
+
+### Gates
+
+`cargo test -p raptorpath --lib` green; `--test gauge_reachability` green
+(2 passed, 1 ignored child fixture). No default flipped, no gate added;
+`RWM_COMPOSED_CAP` still ships OFF.
+
+### WHAT REMAINS FOR THE VM HALF
+
+**One mixed-quad (c9h) re-run with `RWM_COMPOSED_CAP=1` actually set**, which
+the c9 battery did not do. With that field and one c9h invocation, C9-L1 and
+C9-L3 both become readable and C9-L3's 2.000 ratio is decided. Nothing about
+that run is prepared, scheduled or launched here.

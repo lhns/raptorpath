@@ -3675,6 +3675,106 @@ pub fn three_term_terms(
 /// uses), NOT part of the law: the per-path 2048 knee the pooled laws clamp
 /// to is an empirical fit, and the whole point of this law is to DERIVE what
 /// that knee was approximating.
+/// TERM 3's GEOMETRY, computed ONCE and reported — the discriminator the c9
+/// contract's **C9-L3** is scored on (goal-gate, "c9 — THE ONE GEOMETRY THAT
+/// SEPARATES THE TWO SPAN FORMS").
+///
+/// **Why this type exists at all.** The c9 battery was scored with C9-L1 and
+/// C9-L3 both UNSCOREABLE for one reason: `[CCAP]` emitted seven fields and
+/// none of them was the span. The engine COMPUTED the span at every refresh
+/// and threw it away, so the one geometry in the whole tree that can tell the
+/// shipped span form from the crosscheck's un-adopted Σ form produced no
+/// reading. That is a SPECIFICATION FAILURE against the gauge, recorded as
+/// such, and this is its repair.
+///
+/// **The field set is decided by the CRITERION, not by convenience.** C9-L1
+/// reads *"the `[CCAP]` span field reads 0"* at a symmetric cell. C9-L3 is
+/// scored on the **RATIO** of the two candidate forms — anchor-free, predicted
+/// at exactly **2.000** at c9h — with an absolute band `[265, 315]` sym whose
+/// own spread comes from the `rate_fast` anchor (±5 %) and the RTprop spread
+/// (±0.4 %). So the criterion needs FOUR quantities and not one:
+///
+/// * [`shipped`](Self::shipped) — `rate_fast · (RTprop_max − RTprop_min)`, the
+///   law the engine actually runs. C9-L1 is this field reading 0.
+/// * [`sigma`](Self::sigma) — `Σ_i rate_i · (RTprop_max − RTprop_i)`, the
+///   crosscheck's form. It is NOT a candidate law here and nothing reads it:
+///   it exists so the ratio is MEASURED rather than assumed. The crosscheck's
+///   instruction stands verbatim — ***"Adopt nothing"*** — and a divergence is
+///   a defect finding against the engine, never a licence to switch formulas.
+/// * [`rate_fast`](Self::rate_fast) and [`spread_s`](Self::spread_s) — the two
+///   anchors of the absolute band. Without them a reading outside BOTH bands
+///   is uninterpretable; with them the contract's own disposal rule ("a
+///   reading outside both bands falsifies the ANCHORS rather than either
+///   formula, and is reported that way") is executable from the log alone.
+///
+/// **No tie predicate, deliberately.** The two forms diverge "by the COUNT of
+/// min-RTprop legs", and the obvious way to gauge that is to count legs whose
+/// `rtprop_s` equals the minimum. On the wire no two measured RTprops are ever
+/// exactly equal, so such a count would read 1 at every geometry and the gauge
+/// would silently report the answer it was built to test. `sigma` is a plain
+/// sum over ALL legs with no equality test anywhere, so it degrades smoothly:
+/// at c9h's two near-tied fast legs it lands near `2 · shipped` because the
+/// arithmetic takes it there, and the RATIO measures the effective count
+/// instead of asserting it. This is also the CLAUDE.md no-mode-switch rule
+/// applied to an instrument: no threshold, no branch, one formula.
+///
+/// **Observation only.** Nothing in the engine reads `sigma`, `rate_fast` or
+/// `spread_s`; [`three_term_store_cap`] reads `shipped` and only `shipped`,
+/// which is why the two cannot drift — there is exactly one site that computes
+/// the span geometry and this is it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpanForms {
+    /// THE SHIPPED LAW: `2 · rate_fast · skew` = `rate_fast · spread`.
+    pub shipped: f64,
+    /// The crosscheck's UN-ADOPTED form, `Σ_i rate_i · (RTprop_max − RTprop_i)`.
+    /// Reported, never consumed.
+    pub sigma: f64,
+    /// Rate of the single least-RTprop path (sym/s) — C9-L3's ±5 % anchor.
+    pub rate_fast: f64,
+    /// `RTprop_max − RTprop_min` in seconds — C9-L3's ±0.4 % anchor.
+    pub spread_s: f64,
+}
+
+/// Compute [`SpanForms`] over a WARM term set. `None` on an empty set or any
+/// cold term, exactly as [`three_term_store_cap`] returns `None`, so the gauge
+/// is fed on precisely the ticks the law engaged and `[CCAP]`'s `eng=` stays
+/// the one liveness denominator.
+pub fn span_forms(terms: &[Option<ThreeTermTerm>]) -> Option<SpanForms> {
+    if terms.is_empty() || terms.iter().any(|t| t.is_none()) {
+        return None;
+    }
+    let warm: Vec<ThreeTermTerm> = terms.iter().flatten().copied().collect();
+
+    // `rate_fast` is the rate of the path that ARRIVES FIRST (least RTprop) —
+    // the path whose symbols overtake the straggler. Over a one-element set
+    // `rtp_max == rtp_min`, so `spread_s == 0` and BOTH forms are identically
+    // zero by arithmetic: there is no path-count predicate here either.
+    let mut rtp_min = f64::INFINITY;
+    let mut rtp_max = 0.0f64;
+    let mut rate_fast = 0.0f64;
+    for t in &warm {
+        if t.rtprop_s < rtp_min {
+            rtp_min = t.rtprop_s;
+            rate_fast = t.rate;
+        }
+        rtp_max = rtp_max.max(t.rtprop_s);
+    }
+    let spread_s = rtp_max - rtp_min;
+    // The skew is ONE-WAY and the store bounds a ROUND TRIP of it, hence the
+    // 2 — a DEFINITION BOUNDARY, kept visible rather than pre-multiplied away
+    // (see `three_term_store_cap`'s TERM 3).
+    let skew_s = spread_s / 2.0;
+    let shipped = 2.0 * rate_fast * skew_s;
+    let sigma = warm.iter().map(|t| t.rate * (rtp_max - t.rtprop_s)).sum();
+
+    Some(SpanForms {
+        shipped,
+        sigma,
+        rate_fast,
+        spread_s,
+    })
+}
+
 pub fn three_term_store_cap(
     on: bool,
     terms: &[Option<ThreeTermTerm>],
@@ -3697,21 +3797,10 @@ pub fn three_term_store_cap(
     }
 
     // TERM 3 — always computed too, and identically 0 over a one-element
-    // set because `rtp_max == rtp_min` there. `rate_fast` is the rate of
-    // the path that ARRIVES FIRST (least RTprop) — the path whose symbols
-    // overtake the straggler.
-    let mut rtp_min = f64::INFINITY;
-    let mut rtp_max = 0.0f64;
-    let mut rate_fast = 0.0f64;
-    for t in &warm {
-        if t.rtprop_s < rtp_min {
-            rtp_min = t.rtprop_s;
-            rate_fast = t.rate;
-        }
-        rtp_max = rtp_max.max(t.rtprop_s);
-    }
-    let skew_s = (rtp_max - rtp_min) / 2.0;
-    let span = 2.0 * rate_fast * skew_s;
+    // set because `rtp_max == rtp_min` there. Delegated to `span_forms` so
+    // the law and the `[CCAP]` span gauge read from ONE computation of the
+    // geometry and cannot drift; only `shipped` is consumed here.
+    let span = span_forms(terms)?.shipped;
 
     let total = window + slack + span;
     let limit = (total.ceil() as usize).clamp(floor.min(WIN_STORE_MAX), WIN_STORE_MAX);
@@ -3741,6 +3830,31 @@ pub fn three_term_store_cap(
 ///   bit-identical to control must read as a NULL RESULT, not a null effect,
 ///   and `brake=0/N` is the difference between "the brake never bound" and
 ///   "the brake was never armed".
+///
+/// ## The SPAN block (`span=` … `spread_us=`) — added 2026-08-19
+///
+/// The c9 battery scored **C9-L1 and C9-L3 UNSCOREABLE for want of a field**:
+/// the engine computed TERM 3 at every refresh and reported seven numbers,
+/// none of them the span. Both clauses are read off this block, and the block
+/// is exactly [`SpanForms`] averaged over the ENGAGED refreshes — see that
+/// type for why each member is required BY THE CRITERION:
+///
+/// * `span=` — the shipped `rate_fast·spread`, mean over engaged refreshes.
+///   **C9-L1 is this field reading 0** at a symmetric cell.
+/// * `span_sigma=` — the crosscheck's un-adopted `Σ bwᵢ(RTT_max − RTTᵢ)`, same
+///   mean. Reported so the discriminating ratio is MEASURED, not assumed.
+///   *Adopt nothing:* no engine path reads it.
+/// * `span_ratio=` — `Σ span_sigma / Σ span`, which is exactly
+///   `span_sigma / span` above because both means share the `engaged`
+///   denominator. **C9-L3 is scored on this number**, predicted at exactly
+///   **2.000** at c9h and anchor-free. `0.000` when `Σ span` is 0 — i.e. at
+///   every symmetric cell, where the ratio is genuinely undefined and `span=0`
+///   is the field that says so. A parser must read `span=` first.
+/// * `rate_fast=` (sym/s) and `spread_us=` (µs) — C9-L3's two absolute
+///   anchors, ±5 % and ±0.4 % respectively. They make the contract's own
+///   disposal rule executable from the log: a span outside BOTH the 281 and
+///   562 bands falsifies the ANCHORS rather than either formula, and only
+///   these two fields can show that.
 pub fn ccap_report_line(
     refreshes: u64,
     engaged: u64,
@@ -3750,11 +3864,20 @@ pub fn ccap_report_line(
     brake_ticks: u64,
     brake_closed: u64,
     floor: usize,
+    span_sum: f64,
+    span_sigma_sum: f64,
+    rate_fast_sum: f64,
+    spread_s_sum: f64,
 ) -> String {
     let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    // Means over ENGAGED refreshes — the ticks on which the law produced a
+    // span at all. `eng=0/N` therefore renders a well-defined 0.0 block and
+    // never a NaN, the same rule the bind fractions already follow.
+    let mean = |s: f64| if engaged == 0 { 0.0 } else { s / engaged as f64 };
     format!(
         "[CCAP] eng={}/{} cap={:.1} mem={:.4} floor={:.4} floor_val={} brake={}/{} \
-         brake_frac={:.4}",
+         brake_frac={:.4} span={:.1} span_sigma={:.1} span_ratio={:.3} \
+         rate_fast={:.1} spread_us={:.1}",
         engaged,
         refreshes,
         if refreshes == 0 { 0.0 } else { cap_sum / refreshes as f64 },
@@ -3764,6 +3887,15 @@ pub fn ccap_report_line(
         brake_closed,
         brake_ticks,
         frac(brake_closed, brake_ticks),
+        mean(span_sum),
+        mean(span_sigma_sum),
+        if span_sum > 0.0 {
+            span_sigma_sum / span_sum
+        } else {
+            0.0
+        },
+        mean(rate_fast_sum),
+        mean(spread_s_sum) * 1e6,
     )
 }
 
@@ -4304,6 +4436,17 @@ pub(crate) struct SenderTeardownGauges {
     pub(crate) brake_ticks: u64,
     /// Late-stage cwnd brake: ticks closed.
     pub(crate) brake_closed: u64,
+    /// Σ over ENGAGED refreshes of [`SpanForms::shipped`] — C9-L1's field.
+    pub(crate) span_sum: f64,
+    /// Σ over engaged refreshes of [`SpanForms::sigma`] — the crosscheck form,
+    /// reported so C9-L3's ratio is measured. Read by nothing.
+    pub(crate) span_sigma_sum: f64,
+    /// Σ over engaged refreshes of [`SpanForms::rate_fast`] — C9-L3's ±5 %
+    /// anchor.
+    pub(crate) rate_fast_sum: f64,
+    /// Σ over engaged refreshes of [`SpanForms::spread_s`] — C9-L3's ±0.4 %
+    /// anchor. Rendered as µs.
+    pub(crate) spread_s_sum: f64,
     /// `RWM_COMPOSED_CAP` — whether the `[CCAP]` line is emitted at all.
     composed_cap: bool,
     /// `store_cap_floor`, rendered as `floor_val=` (provenance, ADR-0070/5).
@@ -4320,9 +4463,23 @@ impl SenderTeardownGauges {
             cap_sum: 0.0,
             brake_ticks: 0,
             brake_closed: 0,
+            span_sum: 0.0,
+            span_sigma_sum: 0.0,
+            rate_fast_sum: 0.0,
+            spread_s_sum: 0.0,
             composed_cap,
             floor,
         }
+    }
+
+    /// Fold ONE engaged refresh's span geometry into the tally. Called at the
+    /// same refresh that fed `engaged`, so every span mean's denominator IS
+    /// `eng=`'s numerator and a parser needs no second liveness field.
+    pub(crate) fn record_span(&mut self, s: SpanForms) {
+        self.span_sum += s.shipped;
+        self.span_sigma_sum += s.sigma;
+        self.rate_fast_sum += s.rate_fast;
+        self.spread_s_sum += s.spread_s;
     }
 
     /// The `[CCAP]` line this carrier would emit right now. Split out so the
@@ -4338,6 +4495,10 @@ impl SenderTeardownGauges {
             self.brake_ticks,
             self.brake_closed,
             self.floor,
+            self.span_sum,
+            self.span_sigma_sum,
+            self.rate_fast_sum,
+            self.spread_s_sum,
         )
     }
 }
@@ -6305,6 +6466,21 @@ async fn run_window_sender(
                         ccap.cap_sum += dyn_store_cap as f64;
                         if let Some((w, sl, sp)) = tt_terms_diag {
                             ccap.engaged += 1;
+                            // TERM 3's geometry, folded in at the SAME refresh
+                            // that counted the engagement — the c9 contract's
+                            // C9-L1/C9-L3 field set (§16.56; goal-gate "c9 —
+                            // THE ONE GEOMETRY THAT SEPARATES THE TWO SPAN
+                            // FORMS"). `span_forms` returns `Some` on exactly
+                            // the ticks `three_term_store_cap` did, so the
+                            // means and `eng=` share one denominator.
+                            if let Some(sf) = span_forms(&tt_terms) {
+                                debug_assert!(
+                                    (sf.shipped - sp).abs() <= 1e-9 * sp.abs().max(1.0),
+                                    "the [CCAP] span gauge and the law's TERM 3 \
+                                     disagree — two computations of one geometry"
+                                );
+                                ccap.record_span(sf);
+                            }
                             let unclamped = (w + sl + sp).ceil();
                             if unclamped >= WIN_STORE_MAX as f64 {
                                 ccap.at_mem += 1;
@@ -11469,28 +11645,226 @@ mod tests {
     fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
         // Engaged everywhere, nothing bound, brake closed a quarter of the
         // time: the reading the composed arm is PREDICTED to produce.
-        let line = ccap_report_line(200, 200, 0, 0, 200.0 * 3020.0, 1_000, 250, 64);
+        // A SYMMETRIC cell: span 0 at every refresh, so C9-L1's field reads
+        // exactly 0 and the ratio is the well-defined 0.000 that says
+        // "undefined — read `span=` first", never a NaN.
+        let line = ccap_report_line(
+            200,
+            200,
+            0,
+            0,
+            200.0 * 3020.0,
+            1_000,
+            250,
+            64,
+            0.0,
+            0.0,
+            200.0 * 9_400.0,
+            0.0,
+        );
         assert_eq!(
             line,
             "[CCAP] eng=200/200 cap=3020.0 mem=0.0000 floor=0.0000 floor_val=64 \
-             brake=250/1000 brake_frac=0.2500"
+             brake=250/1000 brake_frac=0.2500 span=0.0 span_sigma=0.0 \
+             span_ratio=0.000 rate_fast=9400.0 spread_us=0.0"
         );
 
         // CONFIGURED BUT NEVER ENGAGED — a warm-up failure, and it must be
         // distinguishable from a null result. `eng=0/200` is that signature;
         // the bind fractions are 0/0 = 0.0 rather than NaN, so a parser reads
         // "undefined" from `eng` and never from a poisoned float.
-        let cold = ccap_report_line(200, 0, 0, 0, 200.0 * 128.0, 1_000, 0, 64);
+        let cold = ccap_report_line(200, 0, 0, 0, 200.0 * 128.0, 1_000, 0, 64, 0.0, 0.0, 0.0, 0.0);
         assert!(cold.contains("eng=0/200"), "{cold}");
         assert!(cold.contains("mem=0.0000") && cold.contains("floor=0.0000"), "{cold}");
+        // The span block on a never-engaged run: zeros, not NaNs.
+        assert!(
+            cold.contains("span=0.0 span_sigma=0.0 span_ratio=0.000")
+                && cold.contains("rate_fast=0.0 spread_us=0.0"),
+            "{cold}"
+        );
 
         // THE STOP CONDITION of §16.56: the memory bound has become the law.
-        let pinned = ccap_report_line(100, 100, 100, 0, 100.0 * 4096.0, 500, 500, 64);
+        let pinned = ccap_report_line(
+            100,
+            100,
+            100,
+            0,
+            100.0 * 4096.0,
+            500,
+            500,
+            64,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        );
         assert!(pinned.contains("mem=1.0000"), "{pinned}");
         assert!(pinned.contains("cap=4096.0"), "{pinned}");
 
         // Zero refreshes must not divide by zero.
-        assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64).contains("cap=0.0"));
+        assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64, 0.0, 0.0, 0.0, 0.0).contains("cap=0.0"));
+    }
+
+    /// **THE c9h READING, RENDERED** — the shape C9-L3 is scored on, pinned as
+    /// a STRING so the L1 parser and the clause agree before a single VM
+    /// invocation is spent. The numbers are the contract's own anchors
+    /// (`rate_fast` 9 400 sym/s, spread 29.88 ms ⇒ shipped ≈ 281 sym), and the
+    /// Σ form at c9h's TWO min-RTprop legs is twice that.
+    ///
+    /// This test is the reason the field set is four numbers and not one: it
+    /// shows that from this line alone a reader can (a) score C9-L3's
+    /// anchor-free 2.000, (b) check the 281 against the `[265, 315]` band, and
+    /// (c) if it lands outside BOTH bands, attribute that to the ANCHORS,
+    /// because `rate_fast=` and `spread_us=` are right there.
+    #[test]
+    fn the_ccap_span_block_renders_the_c9h_discriminator() {
+        let n = 40u64;
+        let (rate_fast, spread_s) = (9_400.0, 0.029_88);
+        let shipped = rate_fast * spread_s; // ~= 280.9 sym
+        let line = ccap_report_line(
+            n,
+            n,
+            0,
+            0,
+            n as f64 * 3020.0,
+            100,
+            0,
+            64,
+            n as f64 * shipped,
+            n as f64 * 2.0 * shipped,
+            n as f64 * rate_fast,
+            n as f64 * spread_s,
+        );
+        assert!(line.contains("span=280.9"), "{line}");
+        assert!(line.contains("span_sigma=561.7"), "{line}");
+        // THE SCORED QUANTITY — anchor-free, predicted exactly 2.000.
+        assert!(line.contains("span_ratio=2.000"), "{line}");
+        // THE ANCHORS, so a both-bands miss is attributable.
+        assert!(line.contains("rate_fast=9400.0"), "{line}");
+        assert!(line.contains("spread_us=29880.0"), "{line}");
+        // And the contract's absolute band is readable off `span=` directly.
+        let span: f64 = line
+            .split_whitespace()
+            .find_map(|t| t.strip_prefix("span="))
+            .and_then(|v| v.parse().ok())
+            .expect("span= must parse as f64");
+        assert!(
+            (265.0..=315.0).contains(&span),
+            "the anchors no longer land in C9-L3's own band: {line}"
+        );
+    }
+
+    /// The two span forms, computed by ONE function, over the three geometries
+    /// the c9 contract distinguishes. This is the arithmetic half of C9-L1 and
+    /// C9-L3; the gauge half is the rendered line above and the reachability
+    /// half is `tests/gauge_reachability.rs`.
+    #[test]
+    fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says() {
+        let tt = |rate: f64, rtprop_ms: f64| {
+            Some(ThreeTermTerm {
+                rate,
+                rtprop_s: rtprop_ms / 1000.0,
+                k: 1.0,
+            })
+        };
+
+        // 1. ONE PATH — both forms identically 0 by arithmetic, no predicate.
+        let one = span_forms(&[tt(9_400.0, 8.45)]).expect("warm");
+        assert_eq!(one.shipped, 0.0);
+        assert_eq!(one.sigma, 0.0);
+        assert_eq!(one.spread_s, 0.0);
+        assert_eq!(one.rate_fast, 9_400.0);
+
+        // 2. SYMMETRIC N = 4 (the c9 cell) — C9-L1's prediction, exactly 0.
+        let sym = span_forms(&[
+            tt(9_400.0, 8.45),
+            tt(9_400.0, 8.45),
+            tt(9_400.0, 8.45),
+            tt(9_400.0, 8.45),
+        ])
+        .expect("warm");
+        assert_eq!(sym.shipped, 0.0, "C9-L1: span must be 0 at a symmetric cell");
+        assert_eq!(sym.sigma, 0.0);
+
+        // 3. THE DUAL (N = 2, one fast leg) — the two forms AGREE, which is
+        //    precisely why no geometry before c9h could tell them apart.
+        let dual = span_forms(&[tt(9_400.0, 8.45), tt(9_400.0, 38.33)]).expect("warm");
+        assert!((dual.sigma / dual.shipped - 1.0).abs() < 1e-9, "{dual:?}");
+
+        // 4. c9h — TWO fast legs, TWO slow. The ratio is the COUNT of
+        //    min-RTprop legs: exactly 2.000, and anchor-free.
+        let c9h = span_forms(&[
+            tt(9_400.0, 8.45),
+            tt(9_400.0, 8.45),
+            tt(1_880.0, 38.33),
+            tt(1_880.0, 38.33),
+        ])
+        .expect("warm");
+        assert!(
+            (c9h.sigma / c9h.shipped - 2.000).abs() < 1e-9,
+            "C9-L3's anchor-free ratio: {c9h:?}"
+        );
+        // The absolute anchor, in the contract's own band.
+        assert!(
+            (265.0..=315.0).contains(&c9h.shipped),
+            "C9-L3's absolute band [265, 315]: {c9h:?}"
+        );
+        assert_eq!(c9h.rate_fast, 9_400.0);
+        assert!((c9h.spread_s - 0.029_88).abs() < 1e-9, "{c9h:?}");
+
+        // 5. NO TIE PREDICATE: nudge one "fast" leg by a microsecond — the
+        //    kind of inexactness every wire measurement has — and the ratio
+        //    still reads 2.000 to three decimals. A leg-counting gauge would
+        //    have collapsed to 1.000 here.
+        let jittered = span_forms(&[
+            tt(9_400.0, 8.450),
+            tt(9_400.0, 8.451),
+            tt(1_880.0, 38.33),
+            tt(1_880.0, 38.33),
+        ])
+        .expect("warm");
+        assert!(
+            (jittered.sigma / jittered.shipped - 2.000).abs() < 5e-4,
+            "a near-tie must not collapse the discriminator: {jittered:?}"
+        );
+
+        // 6. Cold / empty sets return None on exactly the ticks the law does.
+        assert_eq!(span_forms(&[]), None);
+        assert_eq!(span_forms(&[tt(9_400.0, 8.45), None]), None);
+    }
+
+    /// THE LAW AND ITS GAUGE ARE ONE COMPUTATION. `three_term_store_cap`'s
+    /// TERM 3 and `span_forms().shipped` are the same number at every geometry
+    /// — asserted rather than described, because the previous shape (the span
+    /// computed inline and thrown away) is exactly what left C9-L1/C9-L3
+    /// unscoreable.
+    #[test]
+    fn the_span_gauge_is_the_laws_own_term_3() {
+        let tt = |rate: f64, rtprop_ms: f64| {
+            Some(ThreeTermTerm {
+                rate,
+                rtprop_s: rtprop_ms / 1000.0,
+                k: 1.2,
+            })
+        };
+        for terms in [
+            vec![tt(9_400.0, 8.45)],
+            vec![tt(9_400.0, 8.45), tt(9_400.0, 38.33)],
+            vec![
+                tt(9_400.0, 8.45),
+                tt(9_400.0, 8.45),
+                tt(1_880.0, 38.33),
+                tt(1_880.0, 38.33),
+            ],
+        ] {
+            let (_, _, _, span) =
+                three_term_store_cap(true, &terms, 1.0, 0.5, 64).expect("warm");
+            let forms = span_forms(&terms).expect("warm");
+            assert_eq!(
+                span, forms.shipped,
+                "the law's TERM 3 and the [CCAP] span gauge diverged"
+            );
+        }
     }
 
     /// THE CARRIER AND THE RENDERER CANNOT DRIFT APART.
@@ -11515,10 +11889,37 @@ mod tests {
         g.cap_sum = 200.0 * 3020.0;
         g.brake_ticks = 1_000;
         g.brake_closed = 250;
+        // The span block travels through the carrier too — and it is fed here
+        // by `record_span`, the same call the refresh site makes, so a drift
+        // between the accumulator and the renderer is visible.
+        g.record_span(SpanForms {
+            shipped: 190.0 * 280.9,
+            sigma: 190.0 * 561.8,
+            rate_fast: 190.0 * 9_400.0,
+            spread_s: 190.0 * 0.029_88,
+        });
         assert_eq!(
             g.ccap_line(),
-            ccap_report_line(200, 190, 3, 7, 200.0 * 3020.0, 1_000, 250, 64),
+            ccap_report_line(
+                200,
+                190,
+                3,
+                7,
+                200.0 * 3020.0,
+                1_000,
+                250,
+                64,
+                190.0 * 280.9,
+                190.0 * 561.8,
+                190.0 * 9_400.0,
+                190.0 * 0.029_88,
+            ),
             "the carrier and the renderer disagree — a positional-argument drift"
+        );
+        assert!(
+            g.ccap_line().contains("span_ratio=2.000"),
+            "the carrier must render the scored ratio: {}",
+            g.ccap_line()
         );
         // And the fresh carrier is the well-defined zero, not a NaN: a sender
         // that ended before its first refresh must still print a readable line.
