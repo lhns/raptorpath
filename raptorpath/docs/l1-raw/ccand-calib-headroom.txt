@@ -1,0 +1,155 @@
+================================================================================================
+CANDIDATES BATTERY — CALIBRATION PASS (n = 1; NOTHING HERE IS A RESULT)
+contract: goal-gate "Candidates Battery — PRE-REGISTRATION" (6bd5299), era main@0055c5d
+scored arms: A = shipped default (RWM_SUM_CAP IS DEFAULT ON — A is the LADDER'S ARM N)
+             D = RWM_DELTA_CAP | R = RACK mult=17 | DR = D+R
+aux arms:    R1 = RACK mult=1 | L = RWM_LOSS_SENT_TRUTH — SCORED ON THEIR OWN ECHO ALONE,
+             excluded from G-REG and from every contrast, by the contract, before the run
+================================================================================================
+
+### INVOCATION ACCOUNTING (abort != DNF != INSTRUMENT-FAIL)
+### ARMCOUNT in the driver is NOT this table's n — it counts aborts too.
+
+cell-arm     rows  ABORT   live   DNF  noDCAP  noRACK   noFA  noWALL   noPL  noCPU  noPING
+c1-A            1      0      1     0       0       0      0       0      0      0       0
+c1-D            1      0      1     0       0       0      0       0      0      0       0
+c1-R            1      0      1     0       0       0      0       0      0      0       0
+c1-DR           1      0      1     0       0       0      0       0      0      0       0
+c7-A            1      0      1     0       0       0      0       0      0      0       0
+c7-D            1      0      1     0       0       0      0       0      0      0       0
+c7-R            1      0      1     0       0       0      0       0      0      0       0
+c7-DR           1      0      1     0       0       0      0       0      0      0       0
+c7-L            1      0      1     0       0       0      0       0      0      0       0
+c8-A            1      0      1     0       0       0      0       0      0      0       0
+c8-D            1      0      1     0       0       0      0       0      0      0       0
+c8-R            1      0      1     0       0       0      0       0      0      0       0
+c8-DR           1      0      1     0       0       0      0       0      0      0       0
+c8-R1           1      0      1     0       0       0      0       0      0      0       0
+c8-L            1      0      1     0       0       0      0       0      0      0       0
+c8L-A           1      0      1     0       0       0      0       0      0      0       0
+c8L-D           1      0      1     0       0       0      0       0      0      0       0
+c8L-R           1      0      1     0       0       0      0       0      0      0       0
+c8L-DR          1      0      1     0       0       0      0       0      0      0       0
+sc2-A           1      0      1     0       0       0      0       0      0      0       0
+sc2-D           1      0      1     0       0       0      0       0      0      0       0
+sc2-R           1      0      1     0       0       0      0       0      0      0       0
+sc2-DR          1      0      1     0       0       0      0       0      0      0       0
+sc2-R1          1      0      1     0       0       0      0       0      0      0       0
+sc2-L           1      0      1     0       0       0      0       0      0      0       0
+
+### LIVENESS, TWO-SIDED, RECOMPUTED FROM THE COLUMNS (discipline 15c)
+### An arm that cannot show its control was a control has measured one condition twice.
+
+cell-arm    delta_cap  rack_cloc  loss_sent    sum_cap  quantile_  derived_s  composed_  three_ter  store_cap  late_brak  charge_re  release_1     mult   instr   DCAP   RACK    LCW  SUMCAP
+c1-A           1/1(0)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c1-D           1/1(1)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c1-R           1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c1-DR          1/1(1)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c7-A           1/1(0)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c7-D           1/1(1)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c7-R           1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c7-DR          1/1(1)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c7-L           1/1(0)     1/1(0)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8-A           1/1(0)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8-D           1/1(1)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8-R           1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c8-DR          1/1(1)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c8-R1          1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8-L           1/1(0)     1/1(0)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8L-A          1/1(0)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8L-D          1/1(1)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+c8L-R          1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+c8L-DR         1/1(1)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+sc2-A          1/1(0)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+sc2-D          1/1(1)     1/1(0)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+sc2-R          1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+sc2-DR         1/1(1)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)  1/1(17)     1/1    1/1    1/1    1/1     1/1
+sc2-R1         1/1(0)     1/1(1)     1/1(0)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+sc2-L          1/1(0)     1/1(0)     1/1(1)     1/1(1)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)     1/1(0)   1/1(1)     1/1    1/1    1/1    1/1     1/1
+
+  `DCAP` counts reps whose [DCAP] PRESENCE matches the arm (emitted only
+  on D/DR, fed the counterfactual on both). `RACK` counts reps carrying a
+  CLIENT-side [RACK] line — it rides EVERY arm, and on A/D/L it is
+  §16.68.1's fa= meter and nothing else. `LCW` counts reps whose [LCW]
+  presence matches THE SPECIFICATION FINDING: only arm L can record it,
+  and absence elsewhere is CORRECT, not a null result. `SUMCAP` counts
+  reps carrying the gauge at all — its rule INVERTS from the Ladder
+  Battery because RWM_SUM_CAP became the DEFAULT on 2026-08-19.
+
+### NEW-GAUGE ECHO AUDIT (the smoke) — and MEASUREMENT DISCIPLINE 1
+### The dial must ROUTE, not merely be read. The harness runs the `bulk`
+### hint, so b(Bulk) = 2 and q = (b+1)/30 = 0.100000 EXACTLY.
+
+cell-arm             DCAP q/b       eng   chg_f     pin       cap       ask  RACKevals    ceil  legpin         fa  LCW rect
+c1-A                        —         —       -       -         -         -          0  0.0000  0.0000    112/718         -
+c1-D          0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0          0  0.0000  0.0000    110/754         -
+c1-R                        —         —       -       -         -         -     229144  0.6670  0.9108   399/1536         -
+c1-DR         0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0     205756  0.5720  0.8949   480/1279         -
+c7-A                        —         —       -       -         -         -          0  0.0000  0.0000  1043/5070         -
+c7-D          0.100000/2.0000 1707/1707  1.0000  0.0000    1875.6    1875.0          0  0.0000  0.0000   993/4937         -
+c7-R                        —         —       -       -         -         -     169388  0.0189  0.9560  1052/5703         -
+c7-DR         0.100000/2.0000 1708/1708  1.0000  0.0000    1977.8    1977.2     169563  0.0156  0.9682  1017/4918         -
+c7-L                        —         —       -       -         -         -          0  0.0000  0.0000  1335/6113    1.0264
+c8-A                        —         —       -       -         -         -          0  0.0000  0.0000   519/1105         -
+c8-D          0.100000/2.0000   391/391  1.0000  0.0000     370.4     369.5          0  0.0000  0.0000     20/485         -
+c8-R                        —         —       -       -         -         -      21534  0.0896  0.9727   477/1132         -
+c8-DR         0.100000/2.0000   421/421  1.0000  0.0000     642.6     642.0      22516  0.0131  0.9867    204/755         -
+c8-R1                       —         —       -       -         -         -      22244  0.0000  0.9884   432/1016         -
+c8-L                        —         —       -       -         -         -          0  0.0000  0.0000  1238/1838    1.1175
+c8L-A                       —         —       -       -         -         -          0  0.0000  0.0000 2559/11507         -
+c8L-D         0.100000/2.0000 3175/3175  0.7978  0.2022    1940.7    3123.4          0  0.0000  0.0000 1540/15046         -
+c8L-R                       —         —       -       -         -         -     173984  0.0085  0.9958 1197/14856         -
+c8L-DR        0.100000/2.0000 2882/2882  0.8956  0.1044    1362.9    1384.6     177902  0.0091  0.7321   684/6633         -
+sc2-A                       —         —       -       -         -         -          0  0.0000  0.0000  2515/3200         -
+sc2-D         0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0          0  0.0000  0.0000  2517/3288         -
+sc2-R                       —         —       -       -         -         -      85280  0.0059  0.9947  2485/3172         -
+sc2-DR        0.100000/2.0000       0/0  0.0000  0.0000       0.0       0.0      86383  0.0060  0.9941  2372/2799         -
+sc2-R1                      —         —       -       -         -         -      84569  0.0000  0.9853  2714/3429         -
+sc2-L                       —         —       -       -         -         -          0  0.0000  0.0000  2804/3463    1.0425
+
+  READ THE THREE INSTRUMENT FACTS BEFORE THIS TABLE, or it will be misread:
+  * `[DCAP] eng=0/0` at c1/sc2 is CORRECT — the pooled seat short-circuits
+    at n_live < 2, so D is BIT-IDENTICAL to A at every single-path cell.
+  * On arm A `RACKevals = 0` BY CONSTRUCTION, so its `ceil` and `legpin`
+    are DENOMINATORS OF ZERO. §16.68's ceil=0.0000 DEFECT FINDING may be
+    read ONLY where RACKevals > 0 — i.e. on R / DR / R1, never on A. The
+    only field carrying a datum on A is `fa`.
+  * `[LCW]` is blank on every arm but L, and that is THE SPECIFICATION
+    FINDING, not a null: the witness sits behind loss_sent_truth_active().
+
+  D-ROUTE: PASS — [DCAP] echoes q=0.100000 b=2.0000 at every engaged dual (6 groups).
+
+### HEADROOM (discipline 16b) — tc, arm A, THIS session, EVERY cell
+
+  DENOMINATOR = THE TRANSFER WALL (`seconds`), NOT `INVOCATION_S`.
+  `INVOCATION_S` is the whole script's wall — namespace bring-up, netem/tbf
+  setup, the verification pings and teardown — and it runs 1.12x the
+  transfer at c1/c8L up to 2.11x at c8. Dividing shaped-device BYTES by it
+  read c7 at 77.6% when the cell is at 96.9%, which would have LICENSED the
+  unsatisfiable c7 throughput target discipline 16 exists to forbid. It is
+  printed beside the corrected figure so the correction is auditable.
+
+cell       shaped  xfer_s  INVOC_S  util s42   util s7  headroom   claims permitted
+c1        1000 Mb   14.50     17.0      24.2         -      75.8   throughput targets permitted
+c7         200 Mb    9.43     12.0      94.5         -       5.5   throughput targets permitted
+c8         120 Mb    2.21      5.0      87.0         -      13.0   throughput targets permitted
+c8L        120 Mb   20.04     22.0      77.0         -      23.0   throughput targets permitted
+sc2        100 Mb    9.21     12.0      97.3         -       2.7   PARITY / LATENCY / CAP-SHAPE ONLY — headroom < 5% (discipline 16c)
+
+  THE CONTRACT WRITES NO THROUGHPUT TARGET AT ANY CELL. Every scored clause
+  is a dial echo, a bind fraction, a cap magnitude, a false-alarm fraction,
+  a queue-latency sign, a paired sign test or a no-regression guard.
+  Goodput appears in exactly three places — D-LAT's PARITY CONDITION (a
+  two-sided CONDITION on a latency claim, never a target), D-LAT's ADR-0071
+  refutation falsifier, and G-REG — and the latter two are one-sided
+  DOWNWARD and so remain satisfiable at any utilisation. The parity
+  condition is scoped to the DUALS and never to sc2, which is the cell the
+  δ-cap cannot engage at anyway.
+
+================================================================================================
+CALIBRATION PASS ENDS HERE. n = 1: no sigma, no seed-7 evidence, and
+nothing above is a result. Commit this table as the contract's
+COMPLETION — in its own commit — BEFORE launching ccand_all.sh, and
+read the ledger's LIVENESS / ARM-LIVENESS-FAIL / ARM-CONTAMINATION /
+DIAL-ROUTE-FAIL lines first: this is also the smoke.
+================================================================================================

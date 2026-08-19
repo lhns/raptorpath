@@ -1,0 +1,3 @@
+CCAND-CALIB start 2026-08-19T03:03:08Z load=1.84 0.91 0.91 1/333 187834
+CCAND-CALIB one rep per arm per cell, seed 42 — the discipline-16 headroom pass AND the smoke
+CCAND-CALIB end 2026-08-19T03:09:28Z load=1.18 1.71 1.36 1/331 196985
