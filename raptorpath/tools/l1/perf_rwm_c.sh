@@ -20,7 +20,13 @@ source ./lib.sh
 # pre-transfer steps instrumented here, and why the "topo-ping" attribution the
 # class has carried for three batteries is not supported by this harness.
 source ./abort_witness.sh
-BIN="/home/vibe/raptorpath/target/release/raptorpath"
+# THE BINARY, OVERRIDABLE — goal-gate "Era Battery — PRE-REGISTRATION", THE
+# TWO-BINARY PROTOCOL. Every battery before this one scored arms of ONE binary
+# and could hard-code the path; the era battery runs a SECOND, older era's
+# binary as its baseline arm. The DEFAULT IS UNCHANGED, so every existing driver
+# is byte-identical in behaviour, and `$BIN` is echoed into the witness so the
+# ledger can prove WHICH binary an invocation ran.
+BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
 SCENA="${1:?scenA}"; SCENB="${2:?scenB}"; HINT="${3:-bulk}"
 BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
 
@@ -94,6 +100,7 @@ trap cleanup EXIT
 # itself, whose `pkill` is the opening move of the SIGTERM race the `BUSY`
 # pre-check below loses.
 aw_begin "perf_rwm_c $SCENA/$SCENB/$MODE $BYTES"
+aw_kv bin "$BIN"
 cleanup
 # THE TEARDOWN RACE, MEASURED ON EVERY INVOCATION (not only on aborts, or the
 # column would have no control to be read against). `cleanup` has just sent
