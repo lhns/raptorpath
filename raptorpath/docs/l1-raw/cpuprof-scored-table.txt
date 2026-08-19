@@ -1,0 +1,122 @@
+==============================================================================
+INSTRUMENT AND ABORT TABLE — READ THIS BEFORE ANY NUMBER BELOW
+==============================================================================
+  TEXT-EQUAL NO — *** the release-prof build is NOT the same code as the release build. P describes a DIFFERENT sender from B's ceiling and every attribution below is qualified by this line. ***
+  TEXT-EQUAL NO — *** the release-prof build is NOT the same code as the release build. P describes a DIFFERENT sender from B's ceiling and every attribution below is qualified by this line. ***
+  TEXT-EQUAL NO — *** the release-prof build is NOT the same code as the release build. P describes a DIFFERENT sender from B's ceiling and every attribution below is qualified by this line. ***
+
+==============================================================================
+THE CEILING — ms/MB, cores, and the predicted-vs-measured goodput
+==============================================================================
+cell-arm   ms/MB                    cores                  pred Mbit/s            meas Mbit/s           
+--------------------------------------------------------------------------------------------------------
+c1-B       45.78 (2s 3.71, n=12)    1.139 (2s 0.124, n=12) 199.0 (2s 11.6, n=12)  199.0 (2s 11.6, n=12) 
+c1-P       59.05 (2s 3.77, n=12)    1.407 (2s 0.088, n=12) 190.7 (2s 5.3, n=12)   190.7 (2s 5.3, n=12)  
+c1-S       45.78 (2s 2.01, n=12)    1.122 (2s 0.059, n=12) 196.1 (2s 6.2, n=12)   196.1 (2s 6.2, n=12)  
+c9-B       69.01 (2s 2.31, n=12)    1.482 (2s 0.048, n=12) 171.8 (2s 6.2, n=12)   171.8 (2s 6.2, n=12)  
+c9-P       87.06 (2s 4.17, n=12)    1.703 (2s 0.089, n=12) 156.6 (2s 9.9, n=12)   156.6 (2s 9.9, n=12)  
+c9-S       69.04 (2s 2.56, n=12)    1.483 (2s 0.038, n=12) 171.9 (2s 6.9, n=12)   171.9 (2s 6.9, n=12)  
+c9h-B      70.53 (2s 9.12, n=3)     1.455 (2s 0.051, n=3)  165.6 (2s 26.1, n=3)   165.6 (2s 26.1, n=3)  
+c9h-P      85.69 (2s 9.24, n=3)     1.634 (2s 0.088, n=3)  153.0 (2s 24.5, n=3)   153.0 (2s 24.5, n=3)  
+c9h-S      68.49 (2s 5.49, n=3)     1.428 (2s 0.056, n=3)  167.0 (2s 17.7, n=3)   167.0 (2s 17.7, n=3)  
+
+  ms/MB = CPUCLI_s * 1000 / (bytes/1e6);  cores = CPUCLI_s / TRANSFER seconds
+  pred  = cores / ms_per_MB * 8000   <- the c9 ceiling arithmetic, verbatim
+  THE CEILING IS ARM B's. S and P carry their instrument's own cost.
+
+==============================================================================
+INSTRUMENT COST — each arm against its own cell's B, paired by cell
+==============================================================================
+cell-arm   d ms/MB      d ms/MB %    d goodput %   
+--------------------------------------------------
+c1-P       +13.28       +29.0        -4.2          
+c1-S       +0.00        +0.0         -1.5          
+c9-P       +18.05       +26.2        -8.9          
+c9-S       +0.03        +0.0         +0.0          
+c9h-P      +15.15       +21.5        -7.6          
+c9h-S      -2.05        -2.9         +0.9          
+
+==============================================================================
+THE DECOMPOSITION — [CPUPROF] seam shares of PROCESS CPU (arm S)
+==============================================================================
+
+  c1-S  (n=12 lines)
+    run_ms 16323.9 (2s 521.4, n=12)   cpu_ms 18306.6 (2s 804.4, n=12)   cores 1.122 (2s 0.059, n=12)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=12) 0.0 (2s 0.0, n=12)   0 (2s 0, n=12)   -         
+    src      0.0000 (2s 0.0000, n=12) 0.0 (2s 0.0, n=12)   0 (2s 0, n=12)   -         
+    frm      0.0137 (2s 0.0008, n=12) 251.1 (2s 22.9, n=12) 338411 (2s 0, n=12) 0.74      
+    ser      0.0097 (2s 0.0005, n=12) 177.3 (2s 11.2, n=12) 339340 (2s 526, n=12) 0.52      
+    hand     0.0289 (2s 0.0036, n=12) 528.6 (2s 72.8, n=12) 339340 (2s 526, n=12) 1.56      
+    --------------------------------------------------------------------------
+    attr     0.0523 (2s 0.0035, n=12)
+    unattr   0.9477 (2s 0.0035, n=12)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+  c9-S  (n=12 lines)
+    run_ms 18637.8 (2s 736.7, n=12)   cpu_ms 27594.2 (2s 1022.2, n=12)   cores 1.481 (2s 0.037, n=12)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=12) 0.0 (2s 0.0, n=12)   0 (2s 0, n=12)   -         
+    src      0.0000 (2s 0.0000, n=12) 0.0 (2s 0.0, n=12)   0 (2s 0, n=12)   -         
+    frm      0.0118 (2s 0.0005, n=12) 325.3 (2s 16.9, n=12) 338411 (2s 0, n=12) 0.96      
+    ser      0.0091 (2s 0.0011, n=12) 251.2 (2s 29.8, n=12) 355475 (2s 2593, n=12) 0.71      
+    hand     0.1136 (2s 0.0101, n=12) 3134.1 (2s 312.7, n=12) 355475 (2s 2593, n=12) 8.82      
+    --------------------------------------------------------------------------
+    attr     0.1345 (2s 0.0105, n=12)
+    unattr   0.8655 (2s 0.0105, n=12)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+  c9h-S  (n=3 lines)
+    run_ms 7235.2 (2s 782.7, n=3)   cpu_ms 10258.4 (2s 827.3, n=3)   cores 1.418 (2s 0.056, n=3)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=3) 0.0 (2s 0.0, n=3)    0 (2s 0, n=3)    -         
+    src      0.0000 (2s 0.0000, n=3) 0.0 (2s 0.0, n=3)    0 (2s 0, n=3)    -         
+    frm      0.0113 (2s 0.0011, n=3) 115.9 (2s 7.1, n=3)  126905 (2s 0, n=3) 0.91      
+    ser      0.0118 (2s 0.0017, n=3) 121.3 (2s 8.4, n=3)  133547 (2s 702, n=3) 0.91      
+    hand     0.1114 (2s 0.0150, n=3) 1141.7 (2s 133.5, n=3) 133547 (2s 702, n=3) 8.55      
+    --------------------------------------------------------------------------
+    attr     0.1345 (2s 0.0171, n=3)
+    unattr   0.8655 (2s 0.0171, n=3)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+==============================================================================
+PERF CAPTURE — attach gap and symbolization
+==============================================================================
+  c1-P rep=1 attach_ms=1714 symbol_rows=1094 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r1.data
+  c1-P rep=2 attach_ms=1706 symbol_rows=1086 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r2.data
+  c1-P rep=3 attach_ms=1698 symbol_rows=1076 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r3.data
+  c1-P rep=4 attach_ms=1689 symbol_rows=1122 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r4.data
+  c1-P rep=5 attach_ms=1719 symbol_rows=1116 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r5.data
+  c1-P rep=6 attach_ms=1721 symbol_rows=1093 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r6.data
+  c1-P rep=1 attach_ms=1720 symbol_rows=1088 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r1.data
+  c1-P rep=2 attach_ms=1696 symbol_rows=1086 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r2.data
+  c1-P rep=3 attach_ms=1736 symbol_rows=1056 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r3.data
+  c1-P rep=4 attach_ms=1700 symbol_rows=1089 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r4.data
+  c1-P rep=5 attach_ms=1731 symbol_rows=1097 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r5.data
+  c1-P rep=6 attach_ms=1721 symbol_rows=1102 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s7-r6.data
+  c9-P rep=1 attach_ms=1944 symbol_rows=1227 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r1.data
+  c9-P rep=2 attach_ms=2466 symbol_rows=1233 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r2.data
+  c9-P rep=3 attach_ms=1974 symbol_rows=1225 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r3.data
+  c9-P rep=4 attach_ms=2200 symbol_rows=1225 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r4.data
+  c9-P rep=5 attach_ms=1952 symbol_rows=1247 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r5.data
+  c9-P rep=6 attach_ms=1963 symbol_rows=1211 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r6.data
+  c9-P rep=1 attach_ms=1956 symbol_rows=1223 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r1.data
+  c9-P rep=2 attach_ms=2234 symbol_rows=1218 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r2.data
+  c9-P rep=3 attach_ms=3116 symbol_rows=1210 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r3.data
+  c9-P rep=4 attach_ms=1936 symbol_rows=1213 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r4.data
+  c9-P rep=5 attach_ms=1945 symbol_rows=1230 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r5.data
+  c9-P rep=6 attach_ms=1931 symbol_rows=1257 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s7-r6.data
+  c9h-P rep=1 attach_ms=2199 symbol_rows=1028 graph=0 data=/home/vibe/cpuprof/perf/c9h-P-s42-r1.data
+  c9h-P rep=2 attach_ms=2176 symbol_rows=1003 graph=0 data=/home/vibe/cpuprof/perf/c9h-P-s42-r2.data
+  c9h-P rep=3 attach_ms=2180 symbol_rows=975 graph=0 data=/home/vibe/cpuprof/perf/c9h-P-s42-r3.data
+
+  The attach gap is the head of the run perf MISSED. P is read as a
+  SHAPE (which symbols dominate), never as a total; the total is B's.
+  Leaf profiles are beside the .data files as *.report.txt.
+
