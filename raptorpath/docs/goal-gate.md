@@ -35804,6 +35804,164 @@ Kernel-reported load average read 4.9–5.1 with CPUs 80–86 % idle: the box's 
 
 ---
 
+## The Missing Half at the Fast Single Path — PHASE 1, THE SCORED RESULT (2026-08-19, `feat/gap-score` from main@`ba8ce23`) — **the 2×2 selects `D1`, and `G1`'s third state fires its own hold**
+
+72/72 invocations, `n = 12` per arm per seed, three arms interleaved and adjacent within each rep on a freshly built topology, all on the pre-flip binary `sha256 fbd6b279…` verified in **both** ledger headers. **Every contrast below is paired within rep and within one session. No cross-era pooling anywhere.**
+
+### `G-ABORT` — THE ABORT-CAUSE TABLE, READ BEFORE ANY NUMBER
+
+| | `c1-Op` | `c1-Oa` | `c1-Oe` |
+|---|---|---|---|
+| rows, s42 | **12/12** | **12/12** | **12/12** |
+| rows, s7 | **12/12** | **12/12** | **12/12** |
+| aborts | **0** | **0** | **0** |
+
+**Zero aborts, zero `INSTRUMENT-FAIL`, zero `ARM-CONTAMINATION`, zero `ARM-LIVENESS-FAIL`, zero `G-ERA-VIOLATION`, zero `LIVENESS-FAIL`, zero `ERA-SURPRISE`, zero `QCAP-MISSING`, zero `ARM-VANISHED`** across the whole battery. `gap_parse.py`'s instrument table prints `(none)`. **`G5` (aborts < 2 %) PASSES at 0 %**, and the per-arm abort rate differs between arms by 0 points, so no contrast is reported with a survivors' selection.
+
+**`aw_ping` ATTEMPTS — FIELD DATA, AND THE COLUMN THAT WAS NOT KEPT.** The topo-ping repair retries up to `AW_PING_ATTEMPTS = 26` and records `ping_<leg>_attempts`, `1` being the healthy single draw. At `c1` (`p = 0.05`, `q = 50`, `pi_bad = 9.99e-4`) the witness's own arithmetic predicts **≈ 0.14 legs of the battery's 144 pinged legs** needing a second draw. Observed: **0 aborts in 72 invocations**, and the one witness record that survives on disk — the final invocation, `c1-Oe` rep 12 — reads `ping_pathA_attempts=1`, `ping_pathB_attempts=1` of `max_attempts=26`, both `rc=0`.
+
+**The full distribution is NOT recoverable from these artifacts, and that is an instrument note worth recording.** `/tmp/rwm-abort.txt` is rewritten every invocation and the driver copies it out **only on abort**. So the repair's own auditable column is retained exactly when it does not matter and discarded on the success path — which was 100 % of this battery. **The repair is confirmed to hold (0/72) but its retry histogram is unmeasured**, and a driver that wanted it would have to copy the witness on every invocation, not only on the failing ones.
+
+### THE PER-ARM TABLE
+
+| seed | arm | Mbit/s (n=12) | ms/MB | cores | cpu headroom | `[CTLD]` tx/rx |
+|---|---|---|---|---|---|---|
+| 42 | `Op` | **180.30** (s 4.86) | 48.24 (s 2.29) | 1.087 | 81.9 % | **1.960** (s 0.008) |
+| 42 | `Oa` | **198.09** (s 9.31) | 45.83 (s 2.25) | 1.133 | 81.1 % | **1.000** (s 0.001) |
+| 42 | `Oe` | **180.96** (s 6.05) | 48.30 (s 2.16) | 1.093 | 81.8 % | 1.956 (s 0.010) |
+| 7 | `Op` | **179.35** (s 5.42) | 48.69 (s 3.20) | 1.090 | 81.8 % | **1.960** (s 0.006) |
+| 7 | `Oa` | **200.64** (s 7.12) | 44.86 (s 1.49) | 1.125 | 81.3 % | **0.999** (s 0.001) |
+| 7 | `Oe` | **172.36** (s 15.75) | 49.47 (s 3.99) | 1.059 | 82.3 % | 1.956 (s 0.008) |
+
+### `G3` — THE MECHANISM REPRODUCES, AND IT IS CHECKED FIRST
+
+`Op` required in `[1.80, 2.10]`: **1.960 at both seeds**, `s = 0.008` and `0.006` over 12 reps. `Oa` required in `[0.90, 1.20]`: **1.000 and 0.999**, `s = 0.001`. **`G3` PASSES.** The pre-flip `[CTLD]` density is reproduced to three digits — the same three digits the flip battery and the era battery each published — and ack-merge still collapses it to exactly 1.0. **Every goodput number below is therefore scoreable, and the mechanism is definitively NOT the variable.**
+
+*(Note: `gap_parse.py` printed no `[CTLD]` section at all. Its extractor looks for a single `a/b` token, but the driver emits `tx=… rx=…` as separate tokens, so `vals` is always empty. The densities above are computed directly from the `CTLDLINE` records in the ledgers. A parser defect, not a data one — recorded rather than silently worked around.)*
+
+### READING 1 — THE LEVEL: **DRIFTED**, at both seeds, with both dispersions carried
+
+| seed | `Op` today | vs flip week 2026-08-08 | vs era battery 2026-08-19 (earlier the same day) |
+|---|---|---|---|
+| 42 | 180.30 (s 4.86, n=12) | 203.10 (s 8.50, n=8) → **−22.80 (−11.2 %)**, `2σ_comb` 6.63 → **RESOLVED-OUTSIDE** | 175.25 (s 41.37, n=8) → +5.05 (+2.9 %), `2σ_comb` 29.39 → AT LEVEL |
+| 7 | 179.35 (s 5.42, n=12) | 201.80 (s 5.60, n=8) → **−22.45 (−11.1 %)**, `2σ_comb` 5.05 → **RESOLVED-OUTSIDE** | 192.06 (s 5.44, n=8) → **−12.71 (−6.6 %)**, `2σ_comb` 4.96 → **RESOLVED-OUTSIDE** |
+
+**`L = DRIFTED`** against flip week at both seeds, at 3.4× and 4.4× the resolution. The drift the pre-registration flagged from committed data is confirmed as a measurement.
+
+**AND `G1` FAILS, WHICH IS A LARGER FINDING THAN THE DRIFT.** `G1` pre-committed that `Op` lands within `2σ_comb` of **at least one** published level. At **s7 it lands outside BOTH**, resolved against each. At s42 it is "at level" with the era week **only because that reference carries `σ = 41.37`** — the pathology the pre-registration itself declared *"has no resolving power at all, so s7 is the seed that speaks."* **A pass against a reference with no power is not a pass.** Against every reference that *has* power, `Op` today is outside.
+
+**THREE READINGS OF ONE EXECUTABLE AT ONE CELL:**
+
+| | s42 | s7 |
+|---|---|---|
+| flip week, 2026-08-08 | 203.1 | 201.8 |
+| era battery, 2026-08-19 (earlier) | 175.25 | 192.06 |
+| **this battery, 2026-08-19 (later)** | **180.30** | **179.35** |
+
+At s7 that is a monotone decline **201.8 → 192.06 → 179.35 in which the last two steps happened on the same day.** **`c1`'s absolute level is not stable on a sub-day timescale**, so a third state exists and **neither prior session is a control for today**. Per `G1`'s own pre-registered consequence, that is reported as the finding and **phase 2 is held**.
+
+### READING 2 — THE RATIO: **REPRODUCES**, with the s42 knife-edge recorded
+
+**PAIRED, per-rep — the contract's PRIMARY reading:**
+
+| seed | `R` paired | `2σ` | interval | vs published | verdict |
+|---|---|---|---|---|---|
+| 42 | **+9.88 %** | 2.74 | [+7.15, **+12.62**] | +12.7 | **LOW by 0.08 pp** |
+| 7 | **+11.95 %** | 2.76 | [+9.18, +14.71] | +13.0 | **REPRODUCES** |
+
+**UNPAIRED `2σ_pooled` — the era battery's own convention, carried as the conservative secondary:**
+
+| seed | `R` unpaired | `2σ` | interval | verdict |
+|---|---|---|---|---|
+| 42 | +9.87 % | 3.36 pp | [+6.50, +13.23] | **REPRODUCES** |
+| 7 | +11.87 % | 2.88 pp | [+8.99, +14.75] | **REPRODUCES** |
+
+**`R = REPRODUCES`, and the s42 margin is stated rather than smoothed.** The primary reading's s42 interval misses the published `+12.7 %` by **0.08 percentage points** — 3 % of its own half-width. That is a rounding, not an exclusion, and it is reported as such rather than promoted to a `LOW` verdict that one more rep would erase. The secondary reading reproduces at both seeds. **`G2` (`R ∈ [+5, +20] %`) PASSES** at both.
+
+**AND THE DISCRIMINATION AGAINST THE ERA BATTERY'S NUMBER, WHICH THE CONTRACT DID NOT ASK FOR AND WHICH MATTERS.** At **s42 the paired interval [+7.15, +12.62] EXCLUDES the era battery's `+6.84 %`.** At s7 the interval [+9.18, +14.71] contains both `+13.0` and `+9.62` and **excludes neither**. So today's OLD-binary ratio sits much closer to the published band than to the era battery's cross-binary reading, and positively excludes it at one seed.
+
+**A SPECIFICATION GAP, RECORDED: the contract gives no combining rule for the two seeds disagreeing on `R`.** The 2×2 is written as if `R` had one value. Here the primary reading splits (LOW / REPRODUCES) on a 0.08 pp margin. The rule applied — **the split is resolved to `REPRODUCES` because the s42 exclusion is smaller than the reporting precision, and the secondary reading reproduces at both** — is stated here so a reader can disagree with it explicitly rather than discover it implicitly.
+
+### READING 3 / `G4` / `E1` — THE THIRD CANDIDATE IS KILLED
+
+| seed | `Oe − Op` paired | `2σ` | as % of `Op` | resolved? | `G4` (≤ 5 %) |
+|---|---|---|---|---|---|
+| 42 | **+0.66** Mbit/s | 3.63 | +0.37 % | **NOT RESOLVED** | **HOLDS** |
+| 7 | **−6.99** Mbit/s | 9.64 | −3.90 % | **NOT RESOLVED** | **HOLDS** |
+
+**`G4` HOLDS at both seeds, and neither difference is resolved against its own `2σ`.** By the contract's own gate — *"`|Oe − Op| ≤ 5 %`. **Above that**, `E1`'s branch is live and is evaluated"* — **`E1`'s branch is NOT LIVE and is not the finding.**
+
+Evaluated anyway for completeness, because the arm exists to close a confound rather than to confirm one: `(Op − Oe)` accounts for **−2.4 %** of the flip-to-era gap at s42 (wrong sign — `Oe` ran *faster*) and **+71.8 %** at s7. The s7 figure grazes `E1`'s 70 % trigger, but it rests on a difference that is **inside its own noise** (−6.99 against a `2σ` of 9.64) on the battery's most dispersed arm (`Oe` s7, `s = 15.75`, three times every other arm's). **Two seeds that disagree in sign, on an unresolved difference, are not an explanation.**
+
+**`RWM_LATPROBE` DOES NOT EXPLAIN THE ERA BATTERY'S LEVELS.** The third candidate the pre-registration invented — the one neither the era battery nor the dispatch had named — is measured and dismissed. **That is exactly what it was built to do, and a null here is worth what a hit would have been.**
+
+### THE `ms/MB` POINTER — the calibration's `+20 %` at `n = 1`, now SCORED AT `n = 12` AND RESOLVED EVERYWHERE
+
+| seed | arm | ms/MB today | flip week | Δ | `2σ_comb` | |
+|---|---|---|---|---|---|---|
+| 42 | `Op` | 48.24 (s 2.29) | 40.88 (s 1.03) | **+7.36 (+18.0 %)** | 1.51 | **RESOLVED** |
+| 42 | `Oa` | 45.83 (s 2.25) | 37.33 (s 0.72) | **+8.50 (+22.8 %)** | 1.40 | **RESOLVED** |
+| 7 | `Op` | 48.69 (s 3.20) | 41.80 (s 1.12) | **+6.89 (+16.5 %)** | 2.01 | **RESOLVED** |
+| 7 | `Oa` | 44.86 (s 1.49) | 38.05 (s 0.65) | **+6.81 (+17.9 %)** | 0.98 | **RESOLVED** |
+
+**The same executable burns 16.5–22.8 % more sender CPU per megabyte today than it did on 8 August, resolved at every arm and every seed, by 3–7× the combined dispersion.** Because the cell moves a fixed 400 MB, `ms_per_MB` is `CPUCLI × 2.5` and nothing else: this is a direct OS-measured statement that **the sender spent ~18 % more CPU-seconds to move the same bytes.** It is the drift's mechanism, and it is the column the pre-registration asked for.
+
+**WHAT MUST NOT BE SAID ABOUT IT.** It is tempting to observe that `cores/ms_per_MB × 8000` tracks the goodput drop and call that a confirmation. **It is not one.** As this contract's completion recorded, that expression is identically `8·MB/secs` — the goodput itself — so the agreement is arithmetic and carries no evidence. The independent facts are only two: **`CPUCLI` rose ~18 %** and **the transfer wall rose ~12.6 %**. Both are measured; their ratio is not a prediction.
+
+**AND A POINTER `G6`'s VOIDING LEAVES OPEN.** `cores` reads **1.087–1.133** — the sender consumes about **one core's worth**, on a 6-core box with 82 % machine-wide headroom. A workload concentrated in roughly one thread is not bounded by `NPROC`, and the machine-level `cpu_headroom` this contract substituted for `G6` **cannot see a single-core ceiling.** So the honest reading stands as recorded — `c1` is neither link-bound (~19–21 % utilisation) nor sender-CPU-bound *machine-wide* — but **the per-core question is open, and neither `G6` as written nor its substitute can answer it.** Named here for MEASUREMENT TRUTH item 2's CPU profile, which has the per-thread instrument this battery does not.
+
+**AND THE SESSION'S OWN STEAL, WHICH IS A LIVE CANDIDATE FOR THE DRIFT.** Across the s42 battery window `/proc/stat` moved by `user +101 566, sys +45 669, idle +231 537, steal +16 829` ticks: **host CPU steal ran 4.25 % of wall time and 10.3 % of non-idle time.** A hypervisor taking one CPU-tick in ten from a workload concentrated in one thread is the right order of magnitude to matter, and **a session with this much steal is not a control for one without.** No prior ledger published a steal figure, so this cannot be differenced against flip week — **it is recorded as the first steal measurement at `c1`, and as the reason the next battery must publish one.**
+
+### THE PRE-REGISTERED PREDICTIONS, SCORED
+
+| | prediction | verdict |
+|---|---|---|
+| **`G1`** | `Op` within `2σ_comb` of at least one published level | **FAILS** — outside both at s7; the s42 "pass" is against a reference with no resolving power. **A THIRD STATE EXISTS.** |
+| **`G2`** | `R ∈ [+5, +20] %` | **PASSES** (+9.88 / +11.95) |
+| **`G3`** | `[CTLD]` `Op ∈ [1.80, 2.10]`, `Oa ∈ [0.90, 1.20]` | **PASSES** (1.960 / 1.000 and 1.960 / 0.999) |
+| **`G4`** | `|Oe − Op| ≤ 5 %` | **PASSES** (0.37 % / 3.90 %), neither resolved |
+| **`G5`** | aborts < 2 % at every arm-seed | **PASSES** (0/72) |
+| **`G6`** | `c1` is or is not sender-bound | **VOID AS WRITTEN** — recorded in this contract's completion; `pred ≡ meas` on all 72 rows, as it was on all 32 recovered flip-week rows |
+| **`G7`** | `Ns`/`Nc` parity | **phase 2, not reached** |
+
+### THE BRANCH, APPLIED LITERALLY
+
+**`L = DRIFTED` × `R = REPRODUCES` ⇒ `D1`.**
+
+`D1`, verbatim: *"drift is a pure level shift and the ratio is intact. `P1`'s prediction is a **ratio**, so a level shift does not explain its shortfall. The gap is then an **interaction among the later flips**, and **phase 2 launches** with the ladder as its discriminator."*
+
+**Phase 2's arms are therefore `Nd`, `Nm`, `Nh`, `Ns`, `Nc`** — 5 × 12 × 2 = **120 invocations, ~100 min unattended** — with **`Nd − Nm` the discriminating contrast** (ack-merge's marginal effect in today's composed stack, one binary, one session, paired within rep) and `Ns`/`Nc` carrying `G7`'s pre-registered inertness null.
+
+**AND TWO PRE-REGISTERED CLAUSES NOW GIVE OPPOSITE DISPATCH INSTRUCTIONS.** `D1` says phase 2 **launches**. `G1`'s failure says phase 2 is **held**. The contract did not anticipate that its 2×2 and its `G1` guard could fire together, and it supplies no precedence rule. **The conservative clause governs: a stop beats a go, so PHASE 2 IS HELD** pending an explicit decision, and it is **not launched by this dispatch** in any case — the pre-registration requires phase 2 to be a separate dispatch, *"a driver that ran both phases would make the branch a formality."*
+
+**What the hold is actually about is worth stating precisely, because it is narrower than it sounds.** `G1`'s third state invalidates **absolute cross-session comparisons** at `c1`. It does **not** touch phase 2's ladder, every contrast of which is **within one session, one binary, paired within rep** — exactly the design that carried `R` through a drift that broke `L`. **So phase 2 is answerable even though `G1` failed**, provided its verdicts are read as ratios and never as levels, and provided it publishes a steal figure. That is the recommendation this section makes; the decision is the parent's.
+
+**Per `D1`, the era battery's section is NOT edited** — *"on the `D1` and `D3` branches the era section is not edited at all until phase 2 is scored, because a drift finding without an interaction finding does not change `P1`'s verdict — it changes what `P1` is evidence about."* Nothing in "Era Battery — THE SCORED RESULT" is touched by this commit.
+
+### IN PLAIN LANGUAGE — what explains the missing half
+
+Ack-merge is a change that stopped the receiver sending back so many tiny bookkeeping packets. When it shipped in August it made this particular network test about **13 %** faster. A later test, run on the current software, found only **6.8–9.6 %**, and nobody could tell whether the change had stopped working or the test machine had simply got slower — the earlier test's numbers had been taken eleven days before, and nothing in between had been checked.
+
+So we did the one experiment that separates those: we took **the original program file, byte for byte unchanged**, and ran it again today, with the change switched off and then on, alternating, on the same freshly built network for every repetition.
+
+Two things came out, and they point in different directions.
+
+**The machine really has got slower.** The same unchanged program that moved data at **203** megabits per second on 8 August moves it at **180** today. More striking, an earlier run *on the same day* measured **175–192**. So this machine's speed is not stable even within a single day, and the sender is now burning about **18 % more processor time to move the same amount of data** than it did in August. Whatever is causing that — and roughly one CPU tick in ten is currently being taken away by the machine hosting this virtual one — it is a property of the test bench, not of the software being tested.
+
+**But the change itself still works.** Switching ack-merge on still buys about **10–12 %**, essentially what it bought originally, and the internal counter that measures what the change actually does reproduces its old value to three decimal places. And here is the point: the original claim was a **percentage**, not a speed. A slower machine drags both the "off" and the "on" measurement down together and leaves the percentage between them alone. **So the machine getting slower cannot be the explanation for the missing half.**
+
+That leaves the third possibility, and it is now the leading one: **something among the changes shipped *after* ack-merge is eating part of its gain.** The next experiment is built to say which — one program, one sitting, each later change switched off in turn — and it can still give a clean answer despite the drifting machine, because like this one it compares things measured minutes apart rather than days apart.
+
+### WHAT IS NOT CLAIMED
+
+* **No verdict on `P1`.** `D1` says what `P1` is evidence *about*; it does not re-score it. The era section is untouched.
+* **No claim that the drift's cause is identified.** `CPUCLI` up ~18 % and steal at 10 % of non-idle are two measurements, not a mechanism.
+* **No cross-era pooling.** Every contrast here is within one session, paired within rep; the published means are compared as levels with both dispersions carried.
+* **No per-core ceiling claim.** `cores ≈ 1.09` is a pointer for item 2's profile, not a verdict.
+* **Phase 2 is not launched, and no default flips, no gate is added, no engine crate is edited.**
+
+---
+
 ## THE SPAN RUN â€” PRE-REGISTRATION (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM HALF, plus item 5's FIRST FIELD Ïƒ.** Written and committed BEFORE the VM is run, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### WHAT THIS RUN IS, IN ONE PARAGRAPH
