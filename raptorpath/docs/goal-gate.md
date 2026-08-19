@@ -35570,6 +35570,206 @@ The gap ledger recorded `c1` at **48.95 ms/MB** today against **40.88** on flip 
 
 ---
 
+## The Sender CPU Ceiling — PHASE 1, THE SCORED RESULT (2026-08-19, `feat/cpuprof-score` from main@`5abe00c`) — **THE CEILING IS DIFFUSE, AND THE BIGGEST THING IN IT IS NOT ON THE WIRE PATH**
+
+**81/81 invocations, zero aborts, zero instrument failures, zero contamination.** Scored against the pre-registration above, honouring the three clauses already recorded void before any number was read (`G-SEAM`, `X2`, `A7`).
+
+### THE ABORT-CAUSE TABLE — FIRST, AS IN EVERY BATTERY SINCE THE WITNESS LANDED
+
+| | |
+|---|---|
+| `ABORT` rows | **0** |
+| `INSTRUMENT-FAIL-*` rows | **0** |
+| `ARM-CONTAMINATION` rows | **0** |
+| `ARM-LIVENESS-FAIL` rows | **0** |
+| `QCAP-MISSING` / `ARM-VANISHED` / `MISSING-BINARY` | **0** |
+| `ARMCOUNT` | **15/15 arms at full rows** — `6/6` ×12, `3/3` ×3 |
+| **INSTRUMENT AND ABORT TABLE** | **only `TEXT-EQUAL NO`** (×3, one per ledger header) |
+
+`anchor_cc` = 4 on every quad invocation and 1 on every `c1` invocation. `G-CONTROL`: `RWM_CPUPROF=0` two-sided with **zero** `[CPUPROF]` lines on all **54** control invocations. `G-ARM`: `=1` two-sided with **exactly one** line on all **27** `S` invocations. Both held 27/27 and 54/54 — not sampled, asserted per invocation.
+
+**`PINGROW` IS NOT AVAILABLE, AND THAT IS A DRIVER GAP WORTH NAMING.** `cpuprof_battery.sh` emits **no** `PINGROW` row and copies **no** per-invocation witness — it keeps `/tmp/rwm-abort.txt` only on the abort path, and the battery ran 81/81 clean, so **80 of 81 witnesses were overwritten.** This is precisely the defect the gap battery diagnosed and repaired for itself (*"the topo-ping repair's own auditable column was retained exactly when it did not matter and discarded on the success path, which was 100 % of the battery"*) — **the repair did not propagate to this driver.** The single surviving witness (the last invocation, `c9h-P` s42 r3) shows all four paths answering on **attempt 1 of a 26 maximum**. One sample is not a histogram; it is recorded as the only evidence this battery retained.
+
+### THE CEILING — ARM `B`, AND OFF NOTHING ELSE
+
+| cell-arm | ms/MB (2σ, n) | cores | meas Mbit/s |
+|---|---|---|---|
+| **`c9-B`** | **69.01** (2σ 2.31, n=12) | 1.482 | 171.8 (2σ 6.2) |
+| `c9-S` | 69.04 (2σ 2.56, n=12) | 1.483 | 171.9 |
+| `c9-P` | 87.06 (2σ 4.17, n=12) | 1.703 | 156.6 |
+| **`c9h-B`** | **70.53** (2σ 9.12, n=3) | 1.455 | 165.6 |
+| `c9h-S` | 68.49 (2σ 5.49, n=3) | 1.428 | 167.0 |
+| `c9h-P` | 85.69 (2σ 9.24, n=3) | 1.634 | 153.0 |
+| **`c1-B`** | **45.78** (2σ 3.71, n=12) | 1.139 | 199.0 (2σ 11.6) |
+| `c1-S` | 45.78 (2σ 2.01, n=12) | 1.122 | 196.1 |
+| `c1-P` | 59.05 (2σ 3.77, n=12) | 1.407 | 190.7 |
+
+### THE INSTRUMENT-COST TABLE — QUOTED BESIDE EVERY `P` NUMBER, AS `A2` REQUIRES
+
+| cell | `S − B` ms/MB | `S − B` % | `P − B` ms/MB | **`P − B` %** | `P` attach gap |
+|---|---|---|---|---|---|
+| `c9` | +0.03 | **+0.0 %** | +18.05 | **+26.2 %** | 1931–3116 ms (mean 2050) |
+| `c9h` | −2.05 | **−2.9 %** | +15.15 | **+21.5 %** | 2176–2199 ms (mean 2185) |
+| `c1` | +0.00 | **+0.0 %** | +13.28 | **+29.0 %** | 1689–1736 ms (mean 1713) |
+
+**`perf` COSTS THE SENDER A FIFTH TO A THIRD OF ITS CPU PER BYTE.** Every `P` share below is a share of *the instrumented run's* CPU. **No correction is invented**, per `A2`. The self-timer, by contrast, is free to the printed digit at two cells out of three — so **`S`'s shares transfer to `B`'s ceiling without adjustment**, and the absolute ms/MB column below is legitimate.
+
+### THE DECOMPOSITION — WHERE THE 69 ms/MB GOES
+
+Shares are arm `S`, `n = 12/3/12`; the ms/MB column is that share × the same cell's arm-`B` ceiling.
+
+| seam | `c9` share | `c9` ms/MB | `c9h` share | `c9h` ms/MB | `c1` share | `c1` ms/MB |
+|---|---|---|---|---|---|---|
+| `enc` | 0.00 % | 0.00 | 0.00 % | 0.00 | 0.00 % | 0.00 |
+| `src` | 0.00 % | 0.00 | 0.00 % | 0.00 | 0.00 % | 0.00 |
+| `frm` | 1.18 % | 0.81 | 1.13 % | 0.80 | 1.37 % | 0.63 |
+| `ser` | 0.91 % | 0.63 | 1.18 % | 0.83 | 0.97 % | 0.44 |
+| **`hand`** | **11.36 %** | **7.84** | **11.14 %** | **7.86** | **2.89 %** | **1.32** |
+| `attr` | 13.45 % | 9.28 | 13.45 % | 9.49 | 5.23 % | 2.39 |
+| **`unattr`** | **86.55 %** | **59.73** | **86.55 %** | **61.04** | **94.77 %** | **43.39** |
+
+`enc` and `src` are **structurally zero** — `G-SEAM` is void, recorded before the run.
+
+**AND `perf` EXPLAINS THE 86.55 %. THIS TABLE IS THE DURABLE RESULT** — the percentages, not the ms/MB, because the same executable's CPU-per-byte has already been shown to drift ~18–20 % with the substrate. Arm `P`, full-coverage symbol pass, `n = 3` per cell:
+
+| family | `c9` % | `c9h` % | `c1` % |
+|---|---|---|---|
+| **kernel** | **31.17** | **30.94** | **29.06** |
+| raptorpath DATA PLANE (`net`/`transport`/`fec`) | 11.97 | 12.23 | 6.44 |
+| `alloc`/`core`/`std`/misc | 11.22 | 14.52 | 5.81 |
+| `libc` (malloc / memmove / …) | 10.57 | 10.21 | 11.78 |
+| `libm` (`exp`/`log` — the control math kernel) | 10.13 | 10.08 | 13.20 |
+| **raptorpath CONTROL PLANE (`raptorpath::control::*`)** | **9.36** | **7.37** | **18.18** |
+| `tokio`/`mio`/`parking_lot` | 5.65 | 5.44 | 5.95 |
+| `quinn`/`quinn_proto` | 5.39 | 5.31 | 4.52 |
+| **`ring`/`rustls` (AEAD + TLS)** | **2.69** | **2.61** | **2.96** |
+| raptorpath other | 1.64 | 1.60 | 1.76 |
+| | | | |
+| **CONTROL PLANE + its `libm`** | **19.5** | **17.5** | **31.4** |
+
+**TWO OF THESE ROWS OVERTURN A STANDING ASSUMPTION.**
+
+* **THE ENCRYPTION IS NOT THE COST.** `ring`/`rustls` AEAD packet protection is **2.7 %** at `c9` and **3.0 %** at `c1`. The instrument commit named it as one of the three things living in `unattr` that the self-timer could not reach; it is now measured, and it is the *smallest* named family in the table. **No optimization of this sender should ever have started there, and now nobody has to guess.**
+* **A FIFTH TO A THIRD OF THE SENDER'S CPU IS SPENT DECIDING WHAT TO SEND.** `raptorpath::control::*` plus the `libm` `exp`/`log` it calls is **19.5 %** at `c9` and **31.4 %** at `c1`. At `c1` the four largest single symbols in the whole profile are `FecRateController::compute_repair_rate` (6.55 %), `__ieee754_exp_fma` (5.66 %), `LossEstimator::predictive_loss_upper` (5.38 %) and `BayesianChangepoint::update` (5.28 %). **The control plane is the largest in-tree block at every cell.**
+
+### THE SYMBOL PROFILE — TOP 10 SELF %, PER CELL (arm `P`; `P` costs +21–29 % — see the table above)
+
+**`c9`** — 5.94 `net::run_window_sender::{{closure}}` · 5.90 `BTreeMap::insert` · 4.19 `changepoint::BayesianChangepoint::update` · 4.07 `__ieee754_exp_fma` · 4.01 `__ieee754_log_fma` · 2.84 `estimator::LossEstimator::predictive_loss_upper` · 2.45 `emit_source::emit_source` · 2.23 `[k] __pv_queued_spin_lock_slowpath` · 2.03 `_int_malloc` · 1.77 `[k] entry_SYSRETQ_unsafe_stack`
+
+**`c9h`** — 9.21 `BTreeMap::insert` · 6.47 `run_window_sender::{{closure}}` · 4.26 `BayesianChangepoint::update` · 4.11 `__ieee754_exp_fma` · 3.90 `__ieee754_log_fma` · 2.16 `emit_source` · 2.12 `predictive_loss_upper` · 2.08 `[k] __pv_queued_spin_lock_slowpath` · 1.92 `_int_malloc` · 1.75 `__memmove_avx_unaligned_erms`
+
+**`c1`** — 6.55 `fec_rate::FecRateController::compute_repair_rate` · 5.66 `__ieee754_exp_fma` · 5.38 `predictive_loss_upper` · 5.28 `BayesianChangepoint::update` · 4.87 `__ieee754_log_fma` · 2.46 `emit_source` · 2.25 `__memmove_avx_unaligned_erms` · 2.19 `_int_malloc` · 2.05 `[k] __pv_queued_spin_lock_slowpath` · 1.82 `exp@@GLIBC_2.29`
+
+**NO SINGLE SYMBOL REACHES 10 % AT ANY CELL.** The kernel is the largest family at 31 % and its own largest symbol is **2.23 %**. That is what "diffuse" means, measured.
+
+### THE PER-THREAD OCCUPANCY — NOTHING IS SATURATED, AT FULL `n`
+
+| cell | n | busiest thread | **busiest as cores** | flattest thread | main thread |
+|---|---|---|---|---|---|
+| `c9` | 12 | 17.19 % (2σ 1.32) | **0.293 core** | 14.02 % | 5.79 % |
+| `c9h` | 3 | 18.63 % (2σ 0.69) | **0.304 core** | 12.98 % | 5.03 % |
+| `c1` | 12 | 18.19 % (2σ 2.17) | **0.256 core** | 12.40 % | 7.83 % |
+
+Six tokio workers at every cell, load flat across all six, **busiest worker under 0.31 of one core**. **The calibration's pointer is confirmed at full `n` and the single-core-ceiling hypothesis is dead.** Not the machine (75–80 % headroom), not the link (see below), not any thread: **nothing this battery can measure is saturated, and the CPU-per-byte is invariant anyway.** That combination is the phase-1 result's real shape.
+
+### THE QUAD'S LEGS — THE CALIBRATION'S `n = 1` READING WAS HALF WRONG, AND THE SCORED RUN SAYS SO
+
+The completion commit recorded, from one invocation per arm, *"two legs carry the transfer and two are dark."* **At `n = 45` that is false for `c9` and exactly true for `c9h`.** A leg is LIVE if it carries ≥ 5 % of the payload.
+
+| | `c9` (n=36) | `c9h` (n=9) |
+|---|---|---|
+| 2 live legs | 8/36 | **9/9** |
+| 3 live legs | 17/36 | 0/9 |
+| 4 live legs | 11/36 | 0/9 |
+| mean live legs | **3.08** | **2.00** |
+| leg 0 / 1 / 2 / 3 live | 29 / 28 / 26 / 28 of 36 | 9 / 9 / **0** / **0** of 9 |
+| most common pattern | all four, 11/36 | legs {0,1}, **9/9** |
+
+* **`c9` IS NOT A TWO-LEG CELL — IT IS AN UNSTABLE FOUR-LEG CELL.** Every leg is live on roughly three invocations in four, but *which* subset starves is redrawn every run: eleven distinct live-sets appear across 36 invocations. The calibration drew an unrepresentative sample and said so was `n = 1`; this is what killing a pointer looks like.
+* **`c9h` IS DETERMINISTIC, AND THE DARK LEGS ARE THE `c3` LEGS.** Legs 2 and 3 (the 20 Mbit `c3` legs) carried traffic on **zero of nine** invocations. `c9h`'s live capacity is 200 Mbit, not 240, and it ran at **90.0 % of it (min 77.8, max 97.5)** — **10 % headroom.** The completion's "throughput magnitude at `c9h` is not permitted" stands, now at `n = 9`.
+* **`c9`'s LINK PRESSURE IS NOT THE 50 % THE HEADROOM COLUMN AVERAGES TO.** Live-leg utilisation runs min 42.9 %, median 62.2 %, max 94.7 %, with **8/36 invocations at ≥ 80 % of live capacity.** A `c9` result is sometimes taken on a near-link-bound cell and sometimes not, and nothing in the ledger's headline columns says which.
+* **BUT THE CEILING DOES NOT MOVE WITH IT.** On arm `B` alone (n=12, 3 or 4 live legs, never 2): **69.30 ms/MB at 3 legs against 68.61 at 4** — 1 % apart, inside a 2σ of 2.2–2.5. **Leg placement does not set the CPU per byte.** (The pooled all-arms trend of 80.2 / 74.5 / 72.1 ms/MB by leg count is **confounded by arm** — the 2-leg cases are mostly `P`, which costs +26 % — and is not read as causal.)
+* **`c1` IS BORING, AND THAT IS INFORMATION.** 36/36 invocations at 20.4–23.2 % utilisation, **76.8–79.6 % link headroom**, both seeds. No instability at all.
+
+**THIS MATTERS BEYOND ITEM 2.** Every quad result this tree has published — the c9 battery, the era battery's quad cells, the ack-merge and Copa arms — was taken on a cell whose leg occupancy is redrawn per invocation and whose live-leg utilisation ranges from 43 % to 95 %. That is an unnamed variance source in the ledger, and it is named here.
+
+### THE VERDICTS
+
+| clause | verdict | the number |
+|---|---|---|
+| **`A1` — the ceiling reproduces** | **PASS** | `c9-B` **69.01 ms/MB** (2σ 2.31, n=12), band [60, 80]. **Against the c9 ledger's 68.5 — +0.7 %.** |
+| **`A2` — the instruments are cheap** | **`S` PASS / `P` FAIL** | `S` +0.0 / −2.9 / +0.0 %. `P` **+26.2 / +21.5 / +29.0 %**, three to six times the 5 % band. |
+| **`A3` — not degenerate** | **PASS at `c9`,`c9h` / FAIL at `c1`** | `attr` 0.1345 / 0.1345 / **0.0523**. |
+| **`A4` — the two instruments agree** | **UNSCOREABLE** | `X2` void (recorded pre-run). `X1` **void as written** — see below. |
+| **`A5` — perf attaches and symbolizes** | **PASS** | **975–1257** symbol rows on **27/27** `P` invocations (≥ 20 required); `attach_ms` on every one. |
+| **`A6` — the invariance holds** | **PASS** | `c9h-B` 70.53 vs `c9-B` 69.01 — **2.20 % apart**, band 5 %. |
+| **`A7` — is `c1` sender-bound** | **VOID** (recorded pre-run) | identity reproduced on **81/81** rows. |
+
+**`A1` PASSES ON ITS REAL CLAUSE, AND ITS SECOND CLAUSE IS THE IDENTITY AGAIN.** `A1`'s band on `ms_per_MB` is a genuine test and it passes with room. Its second half — `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %` — is **the same degenerate expression as `G6` and `A7`**, and reads 0 % on all 81 rows for the same algebraic reason. **This is the fourth clause in this contract family found to contain it**, and it is recorded rather than quietly scored.
+
+**AND `A1`'s PASS CARRIES A SECOND READING THAT WAS PRE-COMMITTED.** The contract expected `B` to land **at or below** 68.5 because this battery removed four sender-side instruments (`RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG`, `RWM_LATPROBE`) the c9 battery carried, *"and the amount is a reading rather than an error."* **It landed at 69.01 — above, by 0.7 %.** So those four instruments cost the c9 battery **nothing measurable**, and the 68.5 ms/MB ceiling was never an artefact of the gauges that observed it.
+
+**`X1` IS VOID AS WRITTEN — THE THIRD SPECIFICATION DEFECT IN THIS CONTRACT, AND IT IS THE SUBTLEST.** `X1` compares `S`'s `unattr` against *"`P`'s share of samples outside the sender-path symbols — i.e. in `ring`/`rustls`, `quinn`/`quinn_proto`, `tokio`, `libc`, and kernel (`[k]`) symbols"*, band 20 pp. **The definition and its own `i.e.` enumeration are different sets, and they straddle the band:**
+
+```text
+   S's unattr at c9                                    86.55 %
+   P by the LITERAL enumeration (kernel+ring+quinn+tokio+libc)   54.6 %  -> 31.9 pp   FAIL
+   P by "everything not sender-path" (+ libm + alloc/core/std)   76.8 %  ->  9.8 pp   PASS
+```
+
+**A clause that returns opposite verdicts under two readings of its own sentence does not determine a verdict, and picking the reading that passes would be choosing the answer.** The underlying defect is structural and measurable: `unattr` is computed as `1 − Σ seam shares`, so it contains **all of the sender task's own non-seam work** — `run_window_sender`'s body, `emit_source`, the whole control plane — whereas the enumeration counts only *off-task* families. At `c9` the raptorpath-symbol share is **22.97 %** against an `attr` of **13.45 %**, so **at least 9.5 pp of the sender's own code sits inside `unattr` while not being "non-sender-task work" at all.** The two columns were never the same quantity.
+
+**WHAT THE INSTRUMENTS DO AGREE ON, WHICH IS THE PART THAT MATTERED.** Under *either* reading, both instruments say the same thing: **the five instrumented seams are a small minority of the sender's CPU** — 13.45 % by the self-timer, and by `perf` a data plane of 12 % against a kernel of 31 %. They do not contradict; the clause that was supposed to score their agreement simply cannot.
+
+### THE DELIVERABLE — THE TOP TWO COSTS, OPERATIONALLY DEFINED
+
+The pre-registration's definition: a term is a **TOP-TWO COST** iff it is one of the two largest by share of client process CPU — **on the `S` arm for seams and on the `P` arm for symbols** — **and** its share is **≥ 10 %**.
+
+| ranking | #1 | share | #2 | share | clears the 10 % bar |
+|---|---|---|---|---|---|
+| **seams** (arm `S`, `c9`) | **`hand`** — the quinn datagram handoff | **11.36 %** (2σ 1.01) = **7.84 ms/MB** | `frm` — TUN packet framing | 1.18 % = 0.81 ms/MB | **#1 only** |
+| **symbols** (arm `P`, `c9`) | `net::run_window_sender::{{closure}}` | 5.94 % (2σ 0.75) | `alloc::…::BTreeMap::insert` | 5.90 % (2σ 2.44) | **neither** |
+
+### **THEREFORE: THE CEILING IS DIFFUSE. PHASE 2 DOES NOT RUN.**
+
+**Exactly one term clears the bar on the seam ranking and zero on the symbol ranking. Fewer than two.** The pre-registration fixed this branch in advance precisely so it could not be renegotiated into "the best of a bad set":
+
+> **IF FEWER THAN TWO TERMS CLEAR THE BAR, THAT IS THE PHASE-1 RESULT AND PHASE 2 DOES NOT RUN.** […] the recorded consequence is that c9's confound is **not removable by one optimization** — which is a more useful answer to the c9 successor list than a trial that was always going to fail.
+
+**That consequence is now recorded as measured fact.** The c9 successor list's item #2 — *"re-run c9 on a sender that can fill four legs"* — cannot be discharged by one optimization, because there is no single cost to remove: the largest family is the kernel at 31 % with no symbol above 2.3 %, and the largest in-tree block is a control plane spread across six symbols.
+
+**AND THE ONE TERM THAT DID CLEAR THE BAR IS THE ONE MOST LIKELY TO FAIL A TRIAL, WHICH IS WORTH SAYING BEFORE ANYONE TRIES.** `hand` is **8.82 µs/call at the quad against 1.56 µs/call at the single path — 5.7×, for the same call count** (355 475 vs 339 340), and it is **flat in the number of live legs** (8.86 / 8.88 / 8.70 µs at 2 / 3 / 4 legs), so it is a property of multipath operation and not of leg count. **But `hand` is monotonic WALL against a CPU denominator — the instrument's own first honesty clause** — and `perf` puts the *entire* `quinn`/`quinn_proto` family at **5.39 %** of CPU with its busiest lock symbol (`__pv_queued_spin_lock_slowpath`) at **2.23 %**. **The two instruments therefore BOUND `hand` between roughly 5 % and 11.4 %, and the gap is time the sender task spends inside `send_datagram` without running.** With `RWM_DIAG` off, `send_datagram_shaped` *is* `conn.send_datagram(data.into())` — a lock acquire and a queue push. **8.8 µs is not the cost of that code; it is the cost of waiting for it.** A trial that removed `hand`'s CPU would move `ms/MB` and very likely leave goodput alone — the contract's own pre-written failure branch.
+
+### WHAT A LATER CONTRACT WOULD HAVE TO ATTACK — NAMED, WITH NO TARGET
+
+**This is not a phase-2 trial**; the contract forbids one, and a target may only be written in its own pre-registration after a *new* contract is opened. Naming the candidate is not the same as targeting it.
+
+**The candidate is the CONTROL PLANE: `raptorpath::control::*` plus the `libm` `exp`/`log` it calls — 19.5 % of sender CPU at `c9` and 31.4 % at `c1`.** It is named because it is the only block that is simultaneously (a) the largest in-tree family at every cell, (b) entirely inside this repository — unlike the kernel's 31 %, which is not, (c) real CPU rather than wall, unlike `hand`, and (d) *transcendental-function-bound*: `__ieee754_exp_fma` and `__ieee754_log_fma` together are **8.1 % at `c9` and 10.5 % at `c1`**, called from the changepoint detector, the loss estimator and the FEC rate controller. **A per-symbol bar written for one hot function does not see it**, which is why it is named here in prose rather than promoted into a table it does not qualify for.
+
+**AND THE BAR SHOULD PROBABLY CHANGE BEFORE IT IS RE-ASKED.** The 10 % bar was derived from what a `f = 0.5` trial could resolve at these cells. It is sound arithmetic, but this profile shows a sender with **no term above 11.4 % and only one above 6 %** — a shape in which the bar admits almost nothing. **That is a finding about the bar as much as about the sender, and re-deriving it belongs in a new pre-registration, not here.**
+
+### WHERE THE SENDER'S CPU ACTUALLY GOES — IN PLAIN LANGUAGE
+
+The sender burns about **69 milliseconds of CPU for every megabyte** it delivers on the four-path cell, and that number has been stable and mysterious for weeks. It is now taken apart, and the answer is that **there is no single culprit** — which is itself the useful result, because it retires a whole class of proposed fixes.
+
+Roughly **a third of the time goes into the operating system** — system calls, the network stack, scheduling — spread so thinly that the single busiest kernel function accounts for only about **one part in forty-five** of the total. Another **fifth to a third goes into the engine's control plane**: the code that decides *how much repair data to send, whether the loss rate just changed, and what the loss is likely to be next* — arithmetic-heavy work full of `exp` and `log` calls, and on the single-path cell it is the **largest** thing the sender does. The actual wire work — framing packets, serializing them, handing them to the QUIC library — comes to about **13 %**. And the encryption, which is the first thing most people would guess, is **under 3 %**.
+
+Two negative findings are worth as much as the positive ones. **Nothing is saturated**: the machine has three-quarters of its cores idle, no single thread is above about **30 % of one core**, and the link has headroom too — yet the CPU-per-byte refuses to move. And **the erasure-coding kernel, which this project exists to build, costs nothing here at all**, because the control arm runs with generation coding off, so the profile is of the plain window path.
+
+So the honest summary is: **the sender is not slow because of one expensive thing. It is slow because it does a great many small things, most of them in the kernel and in the arithmetic of deciding what to send rather than in sending it.** Making it faster is a design question, not a hot-spot question.
+
+### **CLOSING VERDICT — MEASUREMENT TRUTH ITEM 2, PHASE 1**
+
+> **THE CEILING IS DIFFUSE.** At `c9`, 69.01 ms/MB reproduces the c9 ledger's 68.5 to within 0.7 % and is invariant to 2.2 % across a second cell. Exactly one term clears the pre-registered 10 % bar (`hand`, 11.36 %, and the two instruments bound it as substantially wall rather than CPU); no symbol clears it at any cell. **Fewer than two terms clear, so PHASE 2 DOES NOT RUN and c9's confound is recorded as NOT REMOVABLE BY ONE OPTIMIZATION.** The largest families are the kernel (31 %) and the engine's own control plane with its `libm` (19.5 % at `c9`, 31.4 % at `c1`); AEAD is under 3 %. Nothing is saturated at any level the battery can measure. **Three of the contract's clauses were void before scoring (`G-SEAM`, `X2`, `A7`) and a fourth (`X1`) is void as written; `A1`, `A5` and `A6` pass, `A2` fails for `perf` and `A3` fails at `c1`.** Named candidate for a future contract: **the control plane's transcendental math**. **No optimization is proposed and no target is written.**
+
+### THE LEDGERS
+
+Committed: `raptorpath/docs/l1-raw/cpuprof-s42.log`, `cpuprof-s7.log`, `cpuprof-c9h-s42.log`, `cpuprof-scored-table.txt`, `cpuprof-analysis.txt`. On the VM: `/home/vibe/cpuprof/` in full (`diag/`, `perf/*.data` + `*.report.txt`, `analysis/`), archived to `.scratch/cpuprof-artifacts.tgz` (10.7 MB).
+
+**VM RELEASED.** `kernel.perf_event_paranoid` **restored 1 → 2** (its pre-session value); `kptr_restrict` never touched; 0 `raptorpath` processes, 0 `perf` processes, 0 `rp-*` namespaces; `/tmp/rwm-vm.lock` released.
+
+---
+
 ## The Missing Half at the Fast Single Path — PRE-REGISTRATION (2026-08-19, `feat/cpu-and-gap-prep` from main@`636e40f`) — MEASUREMENT DISCIPLINE 1 + 11 + 13 + 15 + 16 + 17: written and committed BEFORE any VM contact, in its OWN commit, immediately after the driver it is written against and before a single number is read. **This is MEASUREMENT TRUTH item 3.** **Nothing in this session flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### THE QUESTION

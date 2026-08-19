@@ -1,0 +1,286 @@
+=== QUAD LEG OCCUPANCY, ALL QUAD INVOCATIONS (c9 n=36, c9h n=9) ===
+A leg is LIVE if it carries >= 5 % of the payload; DARK otherwise.
+
+cell arm seed  rep    leg0 MB   leg1 MB   leg2 MB   leg3 MB  live legs  util% live
+----------------------------------------------------------------------------------
+c9   B   s42   1         85.7     104.9     135.1     122.5  [0, 1, 2, 3]       49.1
+c9   B   s42   2        146.7     197.5     103.6       1.7  [0, 1, 2]        65.2
+c9   B   s42   3         85.9     161.0     130.1      72.2  [0, 1, 2, 3]       48.4
+c9   B   s42   4         60.9      19.7     186.8     181.5  [0, 2, 3]        61.4
+c9   B   s42   5        148.8     105.5      74.9     120.7  [0, 1, 2, 3]       49.8
+c9   B   s42   6        142.1     124.7      27.7     154.6  [0, 1, 2, 3]       48.8
+c9   B   s7    1        161.7      86.3      30.2     171.9  [0, 1, 2, 3]       48.4
+c9   B   s7    2        104.5     198.3     145.0       0.9  [0, 1, 2]        63.8
+c9   B   s7    3        197.2      32.7       2.0     218.1  [0, 1, 3]        63.3
+c9   B   s7    4         77.8       8.8     177.3     187.0  [0, 2, 3]        62.4
+c9   B   s7    5         71.9     197.8       1.7     178.0  [0, 1, 3]        63.1
+c9   B   s7    6        185.4     189.6      73.0       1.1  [0, 1, 2]        62.0
+c9   P   s42   1          6.6     108.7     153.5     179.6  [1, 2, 3]        59.8
+c9   P   s42   2          2.3       5.7     222.2     219.8  [2, 3]           85.6
+c9   P   s42   3         71.0     213.5      35.1     131.9  [0, 1, 2, 3]       42.9
+c9   P   s42   4          1.2      39.8     199.3     207.3  [1, 2, 3]        59.5
+c9   P   s42   5        219.9       1.6       4.3     222.2  [0, 3]           85.0
+c9   P   s42   6        223.7     224.6       1.8       0.7  [0, 1]           86.9
+c9   P   s7    1         82.0     159.3     209.2       1.3  [0, 1, 2]        60.3
+c9   P   s7    2        228.4       1.0     219.5       0.9  [0, 2]           82.6
+c9   P   s7    3         44.5     213.8       3.2     189.8  [0, 1, 3]        56.4
+c9   P   s7    4        219.0       1.3      12.9     216.5  [0, 3]           87.5
+c9   P   s7    5        180.7      30.8      84.3     152.8  [0, 1, 2, 3]       45.7
+c9   P   s7    6          0.7     216.6     169.0      63.3  [1, 2, 3]        59.0
+c9   S   s42   1          1.1     220.5     223.0       4.5  [1, 2]           94.7
+c9   S   s42   2          1.6     223.8       1.0     221.6  [1, 3]           92.8
+c9   S   s42   3         98.5     194.3      71.0      86.5  [0, 1, 2, 3]       49.3
+c9   S   s42   4          1.4     209.6      16.3     220.3  [1, 3]           93.6
+c9   S   s42   5        119.4     187.9     130.3      12.6  [0, 1, 2]        63.7
+c9   S   s42   6        178.3       2.3     175.4      92.0  [0, 2, 3]        62.4
+c9   S   s7    1         61.1     201.2       2.4     185.8  [0, 1, 3]        64.1
+c9   S   s7    2         24.2     202.5       3.4     219.4  [0, 1, 3]        63.0
+c9   S   s7    3        138.8      91.0      77.1     143.4  [0, 1, 2, 3]       50.3
+c9   S   s7    4         74.7      33.2     158.6     182.7  [0, 1, 2, 3]       48.6
+c9   S   s7    5        195.1       1.0     156.7      96.3  [0, 2, 3]        63.3
+c9   S   s7    6         84.3     123.5     103.5     139.3  [0, 1, 2, 3]       47.9
+c9h  B   s42   1         79.8      84.2       3.2       1.5  [0, 1]           82.4
+c9h  B   s42   2         83.6      84.3       0.2       1.1  [0, 1]           97.5
+c9h  B   s42   3         82.7      84.0       0.9       0.9  [0, 1]           95.6
+c9h  P   s42   1         84.7      78.7       4.4       1.3  [0, 1]           77.8
+c9h  P   s42   2         85.4      83.3       0.1       0.0  [0, 1]           93.7
+c9h  P   s42   3         81.7      85.3       2.0       0.1  [0, 1]           83.3
+c9h  S   s42   1         83.4      85.0       0.1       0.1  [0, 1]           96.6
+c9h  S   s42   2         83.1      82.8       1.5       1.4  [0, 1]           86.7
+c9h  S   s42   3         83.1      85.4       0.0       0.1  [0, 1]           96.7
+
+=== HOW OFTEN IS EACH LEG LIVE ===
+  c9 (n=36 invocations):  leg0=29/36  leg1=28/36  leg2=26/36  leg3=28/36
+  c9h (n=9 invocations):  leg0=9/9  leg1=9/9  leg2=0/9  leg3=0/9
+
+=== NUMBER OF LIVE LEGS (the headline) ===
+  c9: 2 live legs on 8/36 invocations
+  c9: 3 live legs on 17/36 invocations
+  c9: 4 live legs on 11/36 invocations
+  c9h: 2 live legs on 9/9 invocations
+
+=== WHICH PAIR, AND HOW OFTEN ===
+  c9: legs [0, 1, 2, 3] on 11/36
+  c9: legs [0, 1, 2] on 5/36
+  c9: legs [0, 1, 3] on 5/36
+  c9: legs [0, 2, 3] on 4/36
+  c9: legs [1, 2, 3] on 3/36
+  c9: legs [0, 3] on 2/36
+  c9: legs [1, 3] on 2/36
+  c9: legs [2, 3] on 1/36
+  c9: legs [0, 1] on 1/36
+  c9: legs [0, 2] on 1/36
+  c9: legs [1, 2] on 1/36
+  c9h: legs [0, 1] on 9/9
+
+=== c1 (single path) link utilisation ===
+  c1-B s42 r1:    438.2 MB  util  21.1 %  headroom  78.9 %
+  c1-B s42 r2:    438.0 MB  util  21.6 %  headroom  78.4 %
+  c1-B s42 r3:    438.0 MB  util  21.4 %  headroom  78.6 %
+  c1-B s42 r4:    437.9 MB  util  21.0 %  headroom  79.0 %
+  c1-B s42 r5:    438.9 MB  util  21.8 %  headroom  78.2 %
+  c1-B s42 r6:    437.9 MB  util  21.7 %  headroom  78.3 %
+  c1-B s7 r1:    437.7 MB  util  22.0 %  headroom  78.0 %
+  c1-B s7 r2:    437.7 MB  util  21.2 %  headroom  78.8 %
+  c1-B s7 r3:    437.5 MB  util  23.2 %  headroom  76.8 %
+  c1-B s7 r4:    438.2 MB  util  21.9 %  headroom  78.1 %
+  c1-B s7 r5:    437.9 MB  util  22.6 %  headroom  77.4 %
+  c1-B s7 r6:    437.8 MB  util  21.9 %  headroom  78.1 %
+  c1-P s42 r1:    437.7 MB  util  21.0 %  headroom  79.0 %
+  c1-P s42 r2:    437.9 MB  util  20.9 %  headroom  79.1 %
+  c1-P s42 r3:    437.8 MB  util  20.4 %  headroom  79.6 %
+  c1-P s42 r4:    437.7 MB  util  20.7 %  headroom  79.3 %
+  c1-P s42 r5:    437.7 MB  util  21.3 %  headroom  78.7 %
+  c1-P s42 r6:    437.9 MB  util  20.7 %  headroom  79.3 %
+  c1-P s7 r1:    438.1 MB  util  20.8 %  headroom  79.2 %
+  c1-P s7 r2:    437.9 MB  util  21.0 %  headroom  79.0 %
+  c1-P s7 r3:    437.4 MB  util  21.4 %  headroom  78.6 %
+  c1-P s7 r4:    438.5 MB  util  21.0 %  headroom  79.0 %
+  c1-P s7 r5:    438.1 MB  util  20.7 %  headroom  79.3 %
+  c1-P s7 r6:    437.7 MB  util  20.6 %  headroom  79.4 %
+  c1-S s42 r1:    437.6 MB  util  21.1 %  headroom  78.9 %
+  c1-S s42 r2:    437.8 MB  util  20.9 %  headroom  79.1 %
+  c1-S s42 r3:    437.8 MB  util  21.6 %  headroom  78.4 %
+  c1-S s42 r4:    438.4 MB  util  21.8 %  headroom  78.2 %
+  c1-S s42 r5:    437.7 MB  util  21.7 %  headroom  78.3 %
+  c1-S s42 r6:    437.8 MB  util  21.5 %  headroom  78.5 %
+  c1-S s7 r1:    438.6 MB  util  21.0 %  headroom  79.0 %
+  c1-S s7 r2:    437.9 MB  util  21.8 %  headroom  78.2 %
+  c1-S s7 r3:    438.1 MB  util  21.7 %  headroom  78.3 %
+  c1-S s7 r4:    437.9 MB  util  21.7 %  headroom  78.3 %
+  c1-S s7 r5:    438.5 MB  util  21.8 %  headroom  78.2 %
+  c1-S s7 r6:    438.4 MB  util  21.2 %  headroom  78.8 %
+=== DOES LEG COUNT MOVE THE CEILING? c9 arm B (n=12) ===
+  3 live legs (n=7): ms/MB  69.30 (2s 2.17)  cores 1.474  goodput  170.2 Mbit/s (2s 5.4)  live-leg util  63.0 %
+  4 live legs (n=5): ms/MB  68.61 (2s 2.50)  cores 1.493  goodput  174.2 Mbit/s (2s 4.1)  live-leg util  48.9 %
+
+=== SAME, ALL c9 ARMS POOLED (n=36) ===
+  2 live legs (n=8): ms/MB  80.15 (2s 18.98)  goodput  160.5 (2s 18.6)  live-leg util  88.6 %
+  3 live legs (n=17): ms/MB  74.53 (2s 16.63)  goodput  166.9 (2s 12.9)  live-leg util  61.9 %
+  4 live legs (n=11): ms/MB  72.09 (2s 15.97)  goodput  171.2 (2s 15.1)  live-leg util  48.1 %
+
+=== c9 LIVE-LEG UTILISATION DISTRIBUTION (n=36) ===
+  min 42.9 %  p25 49.8 %  median 62.2 %  p75 65.2 %  max 94.7 %
+  invocations at >= 80 % of live capacity: 8/36
+
+=== c9h LIVE-LEG UTILISATION (n=9) ===
+  mean 90.0 %  min 77.8 %  max 97.5 %   -> headroom 10.0 %
+=== THE  SEAM: per-call cost, quad vs single (arm S) ===
+cell  n    us/call              calls        share of proc CPU    % of SENDER-TASK wall
+--------------------------------------------------------------------------------------------
+c9    12     8.82 (2s 0.89)       355475     11.36 (2s 1.01)        16.8 (2s  1.3)
+c9h   3      8.55 (2s 1.01)       133547     11.14 (2s 1.50)        15.8 (2s  2.8)
+c1    12     1.56 (2s 0.21)       339340      2.89 (2s 0.36)         3.2 (2s  0.5)
+
+=== DOES THE HANDOFF COST TRACK THE NUMBER OF LIVE LEGS? (c9-S, n=12) ===
+  2 live legs (n=3): hand  8.86 us/call (2s 1.40)
+  3 live legs (n=5): hand  8.88 us/call (2s 0.81)
+  4 live legs (n=4): hand  8.70 us/call (2s 0.80)
+
+=== THE FULL ms/MB DECOMPOSITION, ABSOLUTE — arm S shares x arm B ms/MB ===
+
+  c9   ceiling 69.01 ms/MB (arm B, n=12)
+    enc        0.00 %     0.00 ms/MB
+    src        0.00 %     0.00 ms/MB
+    frm        1.18 %     0.81 ms/MB
+    ser        0.91 %     0.63 ms/MB
+    hand      11.36 %     7.84 ms/MB
+    attr      13.45 %     9.28 ms/MB
+    unattr    86.55 %    59.73 ms/MB
+
+  c9h   ceiling 70.53 ms/MB (arm B, n=3)
+    enc        0.00 %     0.00 ms/MB
+    src        0.00 %     0.00 ms/MB
+    frm        1.13 %     0.80 ms/MB
+    ser        1.18 %     0.83 ms/MB
+    hand      11.14 %     7.86 ms/MB
+    attr      13.45 %     9.49 ms/MB
+    unattr    86.55 %    61.04 ms/MB
+
+  c1   ceiling 45.78 ms/MB (arm B, n=12)
+    enc        0.00 %     0.00 ms/MB
+    src        0.00 %     0.00 ms/MB
+    frm        1.37 %     0.63 ms/MB
+    ser        0.97 %     0.44 ms/MB
+    hand       2.89 %     1.32 ms/MB
+    attr       5.23 %     2.39 ms/MB
+    unattr    94.77 %    43.39 ms/MB
+==============================================================================
+PER-THREAD OCCUPANCY — arm P, every invocation (n=12/3/12)
+==============================================================================
+cell  n    busiest %    busiest core   flattest %   main-thread %  workers
+------------------------------------------------------------------------------
+c9    12   17.19 (2s 1.32)    0.293 core  14.02 (2s 1.52)   5.79        6.0
+c9h   3    18.63 (2s 0.69)    0.304 core  12.98 (2s 1.67)   5.03        6.0
+c1    12   18.19 (2s 2.17)    0.256 core  12.40 (2s 1.66)   7.83        6.0
+
+  busiest core = busiest thread share x that cell P-arm mean cores.
+  NO THREAD IS SATURATED AT ANY CELL. The load is flat across six tokio workers.
+
+==============================================================================
+perf SYMBOL-LEVEL PROFILE — arm P, TOP 10 self%, per cell
+==============================================================================
+
+  c9  (n=3 profiled invocations, full coverage ~100 %; P costs +21-29 % ms/MB — these are shares of the INSTRUMENTED run)
+    self %               dso                symbol
+    --------------------------------------------------------------------------------------------
+     5.94 (2s 0.75)      raptorpath         raptorpath::net::run_window_sender::{{closure}}
+     5.90 (2s 2.44)      raptorpath         alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     4.19 (2s 0.18)      raptorpath         raptorpath::control::changepoint::BayesianChangepoint::update
+     4.07 (2s 0.26)      libm.so.6          __ieee754_exp_fma
+     4.01 (2s 0.26)      libm.so.6          __ieee754_log_fma
+     2.84 (2s 1.85)      raptorpath         raptorpath::control::estimator::LossEstimator::predictive_loss_upper
+     2.45 (2s 0.29)      raptorpath         raptorpath::net::emit_source::emit_source
+     2.23 (2s 0.26)      [kernel.kallsyms]  __pv_queued_spin_lock_slowpath
+     2.03 (2s 0.02)      libc.so.6          _int_malloc
+     1.77 (2s 0.15)      [kernel.kallsyms]  entry_SYSRETQ_unsafe_stack
+
+  c9h  (n=3 profiled invocations, full coverage ~100 %; P costs +21-29 % ms/MB — these are shares of the INSTRUMENTED run)
+    self %               dso                symbol
+    --------------------------------------------------------------------------------------------
+     9.21 (2s 7.91)      raptorpath         alloc::collections::btree::map::BTreeMap<K,V,A>::insert
+     6.47 (2s 2.90)      raptorpath         raptorpath::net::run_window_sender::{{closure}}
+     4.26 (2s 0.42)      raptorpath         raptorpath::control::changepoint::BayesianChangepoint::update
+     4.11 (2s 0.77)      libm.so.6          __ieee754_exp_fma
+     3.90 (2s 0.64)      libm.so.6          __ieee754_log_fma
+     2.16 (2s 0.34)      raptorpath         raptorpath::net::emit_source::emit_source
+     2.12 (2s 2.84)      raptorpath         raptorpath::control::estimator::LossEstimator::predictive_loss_upper
+     2.08 (2s 0.49)      [kernel.kallsyms]  __pv_queued_spin_lock_slowpath
+     1.92 (2s 0.69)      libc.so.6          _int_malloc
+     1.75 (2s 0.26)      libc.so.6          __memmove_avx_unaligned_erms
+
+  c1  (n=3 profiled invocations, full coverage ~100 %; P costs +21-29 % ms/MB — these are shares of the INSTRUMENTED run)
+    self %               dso                symbol
+    --------------------------------------------------------------------------------------------
+     6.55 (2s 1.03)      raptorpath         raptorpath::control::fec_rate::FecRateController::compute_repair_rate
+     5.66 (2s 0.18)      libm.so.6          __ieee754_exp_fma
+     5.38 (2s 0.37)      raptorpath         raptorpath::control::estimator::LossEstimator::predictive_loss_upper
+     5.28 (2s 0.38)      raptorpath         raptorpath::control::changepoint::BayesianChangepoint::update
+     4.87 (2s 0.46)      libm.so.6          __ieee754_log_fma
+     2.46 (2s 0.10)      raptorpath         raptorpath::net::emit_source::emit_source
+     2.25 (2s 0.04)      libc.so.6          __memmove_avx_unaligned_erms
+     2.19 (2s 0.10)      libc.so.6          _int_malloc
+     2.05 (2s 0.16)      [kernel.kallsyms]  __pv_queued_spin_lock_slowpath
+     1.82 (2s 0.24)      libm.so.6          exp@@GLIBC_2.29
+
+==============================================================================
+perf FAMILY SHARES — the X1 cross-check against [CPUPROF] unattr
+==============================================================================
+
+  c9 (n=3)
+     31.17 %   kernel
+     22.97 %   raptorpath (sender path)
+     12.10 %   other (alloc/core/std/misc)
+     10.57 %   libc
+     10.13 %   libm
+      5.39 %   quinn
+      4.77 %   tokio/mio
+      2.69 %   ring/rustls (AEAD+TLS)
+    ------ 
+    X1 OUTSIDE (kernel+ring/rustls+quinn+tokio+libc, the contract enumeration) = 54.6 %
+    + libm + other (not enumerated, but also outside the five seams)          = 76.8 %
+
+  c9h (n=3)
+     30.94 %   kernel
+     21.20 %   raptorpath (sender path)
+     15.37 %   other (alloc/core/std/misc)
+     10.21 %   libc
+     10.08 %   libm
+      5.31 %   quinn
+      4.59 %   tokio/mio
+      2.61 %   ring/rustls (AEAD+TLS)
+    ------ 
+    X1 OUTSIDE (kernel+ring/rustls+quinn+tokio+libc, the contract enumeration) = 53.7 %
+    + libm + other (not enumerated, but also outside the five seams)          = 79.1 %
+
+  c1 (n=3)
+     29.06 %   kernel
+     26.38 %   raptorpath (sender path)
+     13.20 %   libm
+     11.78 %   libc
+      6.76 %   other (alloc/core/std/misc)
+      5.00 %   tokio/mio
+      4.52 %   quinn
+      2.96 %   ring/rustls (AEAD+TLS)
+    ------ 
+    X1 OUTSIDE (kernel+ring/rustls+quinn+tokio+libc, the contract enumeration) = 53.3 %
+    + libm + other (not enumerated, but also outside the five seams)          = 73.3 %
+========================================================================================
+perf FAMILY BREAKDOWN — the DURABLE PERCENTAGE RESULT (arm P, n=3 per cell)
+========================================================================================
+family                                            c9 %    c9h %     c1 %
+----------------------------------------------------------------------------------------
+kernel                                           31.17    30.94    29.06
+raptorpath DATA PLANE (net/transport/fec)        11.97    12.23     6.44
+alloc/core/std/misc                              11.22    14.52     5.81
+libc (malloc/memmove/...)                        10.57    10.21    11.78
+libm (exp/log/pow - the control math kernel)     10.13    10.08    13.20
+CONTROL PLANE (raptorpath::control::*)            9.36     7.37    18.18
+tokio/mio/parking_lot                             5.65     5.44     5.95
+quinn/quinn_proto                                 5.39     5.31     4.52
+ring/rustls (AEAD + TLS)                          2.69     2.61     2.96
+raptorpath other                                  1.64     1.60     1.76
+----------------------------------------------------------------------------------------
+  c9: CONTROL PLANE + its libm = 19.5 %   |   ring/rustls AEAD = 2.7 %
+  c9h: CONTROL PLANE + its libm = 17.5 %   |   ring/rustls AEAD = 2.6 %
+  c1: CONTROL PLANE + its libm = 31.4 %   |   ring/rustls AEAD = 3.0 %
