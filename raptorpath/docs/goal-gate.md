@@ -31955,3 +31955,356 @@ unpaired, at any n. Nothing is attributed to any single gate inside the T rung. 
 latency movement is not claimed. No throughput target was written at any cell and none
 was scored. Every c8 cap number carries the warm-up caveat the contract attached to it in
 advance, and this battery does not settle it.
+
+## Tier-1 Re-Scores (2026-08-19, `analysis/tier1-rescores` from main@`fe9f1a9`) — **the CoDel setpoint's NEIGHBOURHOOD is SUPPORTED at three of five cells and reached at NONE of them; the ε̂ denominator hypothesis is REFUTED on the code before any arithmetic, and the 20× is localized to a layer the cross-check did not name.** LITERATURE-BACKED SUCCESSORS item 2, executing `docs/research/literature-crosscheck.md` Tier 1.1 and 1.2. **STRICTLY LOCAL: no VM, no new arm, no new binary, no engine line, no gate, no default.** Scripts `tools/l1/codel_rung.py` and `tools/l1/eps_recompute.py`; both read only ledgers already committed under `docs/l1-raw/`.
+
+### WHAT A RE-SCORE IS ALLOWED TO CONCLUDE
+
+Every arm read below was run for a different question. **No arm in this tree was
+ever run AT the CoDel setpoint, and none was ever run to test a denominator.** So
+2a is scored as SUPPORT / CONTRADICT / INSUFFICIENT for the setpoint's
+**NEIGHBOURHOOD**, per cell, with each contrast's confounds printed beside it;
+and 2b is scored on what the captured counters can and cannot separate, which
+turns out to decide it before any number is read. **Nothing here flips a
+default, adjudicates ADR-0071, or adds a gate.**
+
+---
+
+## 2a — THE CoDel RUNG
+
+### THE ARITHMETIC, once
+
+RFC 8289 §3.2 derives the standing-queue setpoint at **5–10 % of the RTT** from
+Kleinrock power maximisation; folklore correction 8 of the cross-check records
+that the derived quantity is the **ratio 0.05**, not the shipped 5 ms. A
+sender-side ceiling that permits exactly that standing queue is
+
+```text
+  Q*(f)   = f · RTT · rate                       (CoDel's target, f ∈ {0.05, 0.10})
+  cap*(f) = BDP + Q*  =  rate·RTT + f·rate·RTT  =  BDP · (1 + f)
+```
+
+so the rung needs ONE measured input per cell. **Two anchor sources exist and
+they disagree; both are carried through every verdict rather than one being
+chosen.**
+
+| cell | BDP (composed era) | 5 % rung | 10 % rung | BDP (ladder era) | 5 % rung | 10 % rung | headroom |
+|---|---|---|---|---|---|---|---|
+| c1 | 174.8 | **184** | 192 | — (N = 1) | — | — | 77.6 % |
+| sc2 | 328.1 | **345** | 361 | — (N = 1) | — | — | 1.7 % |
+| c7 | 1 106.1 | **1 161** | 1 217 | 1 570.9 | 1 649 | 1 728 | 5.6 % |
+| c8 | 1 604.8 | **1 685** | 1 765 | 1 154.1 | 1 212 | 1 269 | 18.5 % |
+| c8L | 4 976.1 | **5 225** | 5 474 | 2 815.3 | 2 956 | 3 097 | 36.0 % |
+
+*BDP (composed era)* is ADR-0071's inputs table `BDP = W/K`, from the composed
+battery's 833 `[3T]` evaluations — the source the cross-check's own c1 ≈ 184 …
+c8L ≈ 5 225 numbers came from, reproduced here to the digit. *BDP (ladder era)*
+is backed out of the ladder's OWN `[SUMCAP] ask=` on arm N, where
+`ask = gain · Σ` with `gain = 2` and the multiplier deleted
+(`net::pooled_store_cap_unclamped`); the pooled law returns `None` at
+`n_live < 2`, so the singles have no such anchor. **The two eras differ by up to
+1.8× (c8L) and the ladder's own RESULTS block already records why at c8** (Σ =
+1 154.3, 23.5–28.1 % below both published anchors). That disagreement is itself
+a finding about the anchor, and it is the reason no verdict below rests on one
+rung.
+
+### THE CAP POINTS THE EXISTING DATA ACTUALLY WALKED
+
+`cap` = `occcap_p50` median — the occupancy ceiling in force, the only cap
+measurand reported on every arm of all three ledgers. `×5 %` = cap / the 5 %
+rung on the composed anchor.
+
+| cell | ledger | arm | n | cap | ×5 % | Mbit/s (2σ) | ping p50 | q p50 | q p99 | retx | `[WALL]` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c1 | ladder | A | 16 | 520 | 2.83 | 204.84 (11.67) | 2.1 | 8 | 26 | 792 | 7 |
+| c1 | ladder | N | 16 | 524 | 2.85 | 205.87 (14.90) | 2.1 | 8 | 22 | 718 | 6 |
+| c1 | latlever | A | 16 | 539 | 2.94 | 226.34 (7.40) | 2.1 | 7 | 22 | 778 | — |
+| c1 | latlever | **B** | 16 | **400** | **2.18** | 147.69 (3.53) | 2.1 | 9 | 18 | 1 009 | — |
+| c1 | latlever | D | 16 | 1 024 | 5.58 | 145.69 (4.42) | 2.1 | 10 | 22 | 672 | — |
+| c1 | ccap | C | 16 | 960 | 5.23 | 207.25 (16.37) | 2.1 | 7 | 24 | 560 | 7 |
+| sc2 | ladder | A | 18 | 1 024 | 2.97 | 87.63 (1.70) | 97.7 | 90 | 100 | 3 333 | 110 |
+| sc2 | ladder | T / NT | 22 / 21 | **128** | **0.37** | 81.70 / 81.48 | 48.0 / 56.3 | 34 / 53 | 56 / 80 | 7 766 / 8 859 | 29 / 40 |
+| sc2 | latlever | A | 18 | 1 024 | 2.97 | 88.09 (1.90) | 101.0 | 91 | 98 | 3 140 | — |
+| sc2 | latlever | **B** | 17 | **481** | **1.40** | 87.57 (2.47) | **45.8** | **35** | **43** | 3 309 | — |
+| sc2 | latlever | D | 16 | 1 024 | 2.97 | 87.26 (1.40) | 101.0 | 92 | 102 | 3 623 | — |
+| sc2 | ccap | C | 17 | 2 291 | 6.65 | 87.62 (2.20) | **127.0** | **218** | **320** | 3 156 | 0 |
+| c7 | ladder | A | 19 | 4 096 | 3.53 | 168.42 (6.50) | 49.3 | 52 | 134 | 5 326 | 97 |
+| c7 | ladder | N | 23 | 3 224 | 2.78 | 166.01 (16.31) | 47.0 | 49 | 129 | 5 384 | 59 |
+| c7 | ladder | T | 20 | 3 662 | 3.15 | 148.96 (11.28) | 66.8 | 118 | 279 | 24 269 | 217 |
+| c7 | ladder | NT | 19 | 2 117 | 1.82 | 148.55 (8.80) | 65.0 | 104 | 271 | 24 070 | 0 |
+| c7 | latlever | A | 19 | 4 096 | 3.53 | 172.90 (3.78) | 72.2 | 76 | 203 | 5 133 | — |
+| c7 | latlever | **B** | 18 | **1 134** | **0.98** | 146.44 (28.66) | **20.9** | **16** | **50** | 7 362 | — |
+| c7 | latlever | D | 19 | 4 096 | 3.53 | 151.03 (6.74) | 21.9 | 16 | 45 | 7 385 | — |
+| c8 | ladder | A | 21 | 4 096 | 2.43 | 77.98 (22.74) | 57.8 | 298 | 629 | 1 494 | 401 |
+| c8 | ladder | N | 24 | 2 884 | 1.71 | 83.45 (21.36) | 72.9 | 220 | 569 | 1 204 | 364 |
+| c8 | ladder | T | 29 | 2 068 | 1.23 | 81.13 (13.13) | 51.0 | 194 | 299 | 3 569 | 183 |
+| c8 | ladder | **NT** | 20 | **1 060** | **0.63** | 79.73 (12.09) | 51.6 | **144** | **259** | 3 779 | 183 |
+| c8 | ladder | FULL | 27 | 2 199 | 1.31 | 82.89 (8.00) | 75.2 | 178 | 220 | 3 574 | 230 |
+| c8L | ladder | A | 25 | 4 096 | 0.78 | 64.40 (35.40) | 42.0 | 407 | 1 059 | 12 508 | 438 |
+| c8L | ladder | NT | 27 | 2 393 | 0.46 | 76.21 (31.54) | 109.0 | 259 | 1 050 | 24 125 | 395 |
+
+**The headline of that table is negative and must be said first: the closest any
+arm in this tree ever came to the derived setpoint is `latlever` arm B at c7 —
+cap 1 134 against a 5 % rung of 1 161, i.e. 0.98×.** It is the only cell where
+an arm effectively landed on the rung, and it landed there by accident, as the
+composed three-term law's own output. Everywhere else the nearest cap-moving arm
+is 1.4×–2.2× the rung (sc2, c1), 0.63× (c8), or unreachable by construction (c8L).
+
+### THE MATCHED CONTRASTS — every one names its control, and every one is oriented LOW-cap vs HIGH-cap
+
+`d_*` = (low-cap arm) − (high-cap arm), so a negative `d_mbps` outside
+2σ_pooled is a **real goodput cost of capping lower** and a negative
+`d_ping` / `d_q50` is a delivered-latency **gain**. A pair whose two caps agree
+within 10 % is `flat` — not a cap contrast at all — and is excluded from every
+verdict. That exclusion is what stops an arm that moved the LAW without moving
+the CAP from being read as if it had.
+
+| cell | ledger | low vs high | cap lo | cap hi | ×5 % lo | ratio | d_mbps | 2σ_p | real? | d_ping | d_q50 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c1 | latlever | B vs D | 400 | 1 024 | 2.18 | 0.39 | **+1.99** | 1.41 | GAIN | 0.0 | −1 |
+| c1 | ccap | A vs C | 541 | 960 | 2.95 | 0.56 | **+11.00** | 4.76 | GAIN | −0.0 | +1 |
+| sc2 | latlever | **B vs D** | **481** | 1 024 | **1.40** | 0.47 | **+0.31** | 0.69 | **within** | **−55.2** | **−57** |
+| sc2 | ccap | A vs C | 1 024 | 2 291 | 2.97 | 0.45 | +0.15 | 0.67 | within | **−26.0** | **−127** |
+| sc2 | ladder | NT vs FULL | 128 | 1 024 | 0.37 | 0.12 | **−4.26** | 0.86 | **LOSS** | +12.1 | +16 |
+| c7 | ladder | N vs A | 3 224 | 4 096 | 2.78 | 0.79 | −2.41 | 3.71 | within | −2.3 | −3 |
+| c7 | ladder | NT vs T | 2 117 | 3 662 | 1.82 | 0.58 | −0.41 | 3.23 | within | −1.8 | −14 |
+| c7 | latlever | **B vs D** | **1 134** | 4 096 | **0.98** | 0.28 | **−4.59** | 6.93 | **within** | −1.0 | 0 |
+| c8 | ladder | N vs A | 2 884 | 4 096 | 1.71 | 0.70 | **+5.47** | 6.61 | within | +15.1 | **−78** |
+| c8 | ladder | **NT vs T** | **1 060** | 2 068 | **0.63** | 0.51 | **−1.41** | 3.64 | **within** | +0.6 | **−50** |
+| c8 | ladder | NT vs FULL | 1 060 | 2 199 | 0.63 | 0.48 | −3.16 | 3.11 | LOSS | −23.6 | −34 |
+| c8L | ladder | NT vs T | 2 393 | 3 250 | 0.46 | 0.74 | −5.75 | 7.01 | within | +7.3 | −48 |
+
+**The confounds, per pair, stated rather than waved at.**
+
+| pair | confound |
+|---|---|
+| `ladder` N vs A | **clean**: `RWM_SUM_CAP` is the only gate that differs. |
+| `ladder` NT vs T | **clean for the cap**: both arms carry the whole T trio; NT adds `RWM_SUM_CAP` alone. |
+| `latlever` B vs D | **clean for the cap**: both arms carry `RWM_PLAIN_RS`; B adds `RWM_THREE_TERM` alone. This is the one control in the tree that separates the CAP from the ANCHOR. |
+| `ladder` NT vs FULL | **NOT clean**: FULL adds `RWM_STORE_CAP_UNIFIED` + `RWM_LATE_BRAKE` beside the cap. |
+| `ccap` C vs A | **NOT clean**: `RWM_COMPOSED_CAP` changes the law's SHAPE, not only its magnitude. |
+| every sc2/c1 T-carrying arm | the cap move is a CONSEQUENCE of the ε̂ move (§16.63 rung T), not a controlled cap setting. |
+
+**THE ANCHOR/CAP SEPARATION, which is the single most important thing this
+re-score recovered and which no unmatched reading of the table would show.** At
+c7, `latlever` arm B reads 146.44 Mbit/s against the shipped arm A's 172.90 —
+a −15 % loss that an unmatched reading would charge to the CoDel-class cap. It
+is not the cap's. Arm D holds A's cap of **4 096** and changes only the anchor,
+and reads **151.03** — the Latency Lever battery's own scoring records this
+exactly: *"At c7 the goodput cost is the ANCHOR'S, exactly: B/A = D/A = 0.880 on
+seed 7, to three digits."* **Against the matched-anchor control, the step from
+cap 4 096 to cap 1 134 — a 3.6× cut that lands on the derived setpoint — costs
+−4.59 Mbit/s against a 2σ_pooled of 6.93, i.e. nothing measurable.** The same
+holds for the latency: D has already collapsed the queue (q p50 76 → 16), so
+the cap adds nothing there either. **At c7 the CoDel-class cap is free and it is
+also not the lever.**
+
+### THE VERDICT, PER CELL
+
+The rule is written once and applied to all five: the candidate is the matched
+contrast that actually MOVED the cap (ratio ≤ 0.90) and whose low cap is closest
+in log distance to the 5 % rung, ties broken toward the clean contrasts. SUPPORT
+if it lands inside [0.5, 2.0]× the rung with no real goodput loss; CONTRADICT if
+with one; INSUFFICIENT otherwise.
+
+| cell | verdict | the one line |
+|---|---|---|
+| **c1** | **INSUFFICIENT-DATA** | The nearest cap-moving contrast is `latlever` B vs D at **2.18×** the rung — outside the window. c1 has no queue to remove (probe p50 2.07 ms on a 2 ms propagation, flat on every arm of every ledger), so it is the cell where CoDel predicts nothing and the data has nothing to say. Reported, scored on nothing. |
+| **sc2** | **SUPPORT** | `latlever` B vs D, cap **481 = 1.40×** the rung and 0.47× the control's, n = 17/16: goodput **+0.31 (2σ_p 0.69) — parity**, delivered probe latency **−55.2 ms (0.45×)**, `q_p50` −57 ms. This is the cleanest datum in the re-score: a matched-anchor control, the most saturated cell in the tree (1.7 % headroom, where a goodput cost could not hide), pre-registered in advance and reproduced in an independent seed-7 session. **And the other side agrees**: `ccap` arm C at cap 2 291 (6.65× the rung) buys **zero** goodput (+0.15, 2σ 0.67) for **+26 ms** of delivered latency and **+127 ms** of queue. |
+| **c7** | **SUPPORT** | `latlever` B vs D, cap **1 134 = 0.98×** the rung — **the only arm in this tree that landed on the derived setpoint** — n = 18/19: goodput **−4.59 (2σ_p 6.93), within**. The −15 % against the *shipped* arm is the ANCHOR's, measured by arm D at the same 4 096 cap. Corroborated at coarser rungs by `ladder` NT vs T (cap 2 117 = 1.82×, −0.41 ± 3.23) and N vs A (cap 3 224, −2.41 ± 3.71). |
+| **c8** | **SUPPORT** | `ladder` NT vs T, cap **1 060 = 0.63×** the composed rung and **0.87×** the ladder-era rung (1 212), n = 20/29: goodput **−1.41 (2σ_p 3.64), within**, `q_p50` **−50 ms**, `[WALL]` dur unchanged at 183 ms. Corroborated by N vs A one rung up (cap 2 884 = 1.71×, goodput **+5.47** ± 6.61, `q_p50` −78 ms). **c8 is the cell where the ladder already walked BELOW the setpoint and lost nothing.** |
+| **c8L** | **INSUFFICIENT-VOID** | Voided on arithmetic before its numbers are read, not on outcome: the memory bound `N·knee = 4 096` is **below** c8L's own BDP anchor of 4 976, so the 5 % rung of 5 225 is unreachable **by construction** and no arm could have visited it. ADR-0071 finding 1 and the Ladder Battery's own pre-declared void say the same thing about the same cell. |
+
+### WHAT 2a DOES AND DOES NOT SETTLE
+
+**Does.** Nothing in the data we already own contradicts a cap at the CoDel
+setpoint's neighbourhood at sc2, c7 or c8, and the sc2 pair is a positive
+result rather than a null: cap 481 buys **0.45× the delivered latency at
+goodput parity on a 98 %-utilised link.** The opposite direction is confirmed
+twice over — `ccap` C at sc2 (cap 6.65× the rung: +26 ms for nothing) and
+`latlever` B at c2r100 (cap 3 015: probe p50 103 → 305 ms, §16.57's own
+result). **The derived setpoint's neighbourhood is where the existing data
+says the cap belongs.**
+
+**Does not.** (i) **No arm was at the setpoint** except by accident at c7, and
+that one arm carries a 28.66 2σ — the widest in the table. (ii) The one place a
+cap sits well BELOW the rung and a real loss appears is sc2 at **cap 128 =
+0.37×** (−4.26 ± 0.86), which bounds the neighbourhood from below but is
+confounded three ways (it is the T trio's side effect, not a set cap). (iii) The
+two anchor eras disagree by up to 1.8×, so "the rung" is a band, not a number,
+until the within-run Σ series the Ladder Battery already owes is measured.
+(iv) **`[WALL]` resolves nothing**, exactly as B-WALL pre-declared: c8's dead
+wall shortens monotonically with the cap (401 → 364 → 183 ms) and c8L's does
+not order at all (438 → 913 → 395 → 557). Direction only, claimed by nothing.
+
+**No verdict here is a verdict on the unbuilt δ-cap.** ADR-0071's Status is
+unchanged and family 2 is not preferred, ranked or recommended.
+
+---
+
+## 2b — THE ε̂ SEMANTICS
+
+### THE HYPOTHESIS, AND WHY IT DIES BEFORE THE ARITHMETIC
+
+The cross-check's verdict row 7 proposed that `ε̂ = 1 − Δrecv/Δsent` reads high
+because `Δsent` carries retransmits and repairs while the numerator does not —
+RFC 6675's *"retransmitted … counted twice"* note plus Allman/Eddy/Ostermann
+2003's measured >100 % mis-estimate. The prescribed test was
+`Δfirst_sent = Δsent − Δretx − Δrepair`.
+
+**STEP 1 was to read what each captured counter actually counts, and it settles
+it.**
+
+| cursor | quantity | emitted at | counts retransmits? |
+|---|---|---|---|
+| `sent` | `PathStats::symbols_sent` | `src/monitor/stats.rs:103` | **YES** — one increment per WIRE HANDOFF, source/repair/retransmit alike. All ten increment sites: `src/net/emit_source.rs:489, 581, 933` and `src/net/mod.rs:6093, 6150, 6264, 7209, 7287, 7677, 8117`. Sites 7209 and 7287 are inside the NACK-retransmit dispatch, three lines from `dg.diag_retx += 1` (`src/net/mod.rs:7231`), and **none of the ten distinguishes the class it is counting**. |
+| `crecv` | `PathBatchTracker::total_received` | `src/net/mod.rs:7955` | **YES** — `self.total_received += received` at `src/net/mod.rs:7987`, inside `record_batch(batch_seq, received)` (`:7971`), whose only caller passes the arriving batch's `symbol_count` (`src/net/receiver.rs:1135`) and never reads `symbol.is_repair`. |
+| `cexp` | `PathBatchTracker::total_expected` | `src/net/mod.rs:7957` | N/A — not a count at all: `(gap as u32) * received` over a **global** `batch_seq` (`:7975`). The contaminated operand. |
+| `srcack` | the cumulative WindowAck frontier | `src/net/ackdiag.rs:196-203` | **NO** — delivered SOURCE symbols only, and connection-wide, not per-path. |
+| `retx` | `[DIAG] diag_retx` | `src/net/mod.rs:7231` | a whole-run scalar; not per-path, not contemporaneous with any cursor. |
+
+> **BOTH OPERANDS OF THE SHIPPED SENDER-TRUTH PAIR COUNT RETRANSMITS.** A
+> retransmitted symbol is in the denominator (it was handed to the wire) and,
+> when it arrives, in the numerator too. RFC 6675's double-count bias requires
+> the numerator to count NEWLY-DELIVERED data while the denominator counts
+> retransmits; ours is a **matched pair**, so that bias is not present in this
+> estimator by construction — and the prescribed correction is therefore
+> **wrong-signed**: shrinking the denominator alone would drive ε̂ **UP**.
+
+**And the columns could not have done it anyway.** `PathStats` has exactly two
+symbol counters — `symbols_sent` and `symbols_received`
+(`src/monitor/stats.rs:96-110`) — and **no per-path retransmit or repair
+sub-counter anywhere.** `Δfirst_sent` is not computable from any captured
+column, in any ledger, at any cell in this tree. The missing instrument is named
+at the bottom of this section.
+
+### THE RECOMPUTE ANYWAY — raw vs corrected vs realized
+
+The raw per-path cursors exist in exactly one place: the ackdiag battery's
+`[ACKDIAG] recon[sent= crecv= cexp= srcack=]` lines
+(`docs/l1-raw/ackdiag-ackdiag-s42.log`, 60 lines; the ladder's own ledger
+carries the recon RATIOS and a run-scalar `retx`, **not** the cursors). Realized
+loss is netem's own `dropped/(pkt+dropped)` from the same invocations' `QDISC`
+lines — an instrument outside the code under test.
+
+| cell | rep | path | Δsent | Δcrecv | Δcexp | **ε̂_sent** | ε̂_legacy | realized | sent/real | legacy/real |
+|---|---|---|---|---|---|---|---|---|---|---|
+| c2r100 (**N = 1**) | 1 | 0 | 55 549 | 56 155 | 57 892 | **−0.0109** | 0.0300 | 0.0080 | −1.4× | 3.7× |
+| c2r100 | 2 | 0 | 55 332 | 56 005 | 57 638 | **−0.0122** | 0.0283 | 0.0081 | −1.5× | 3.5× |
+| c2r100 | 3 | 0 | 55 305 | 55 980 | 57 616 | **−0.0122** | 0.0284 | 0.0079 | −1.5× | 3.6× |
+| c7 | 1 | 0 | 56 633 | 56 740 | 116 126 | **−0.0019** | 0.5114 | 0.0054 | −0.4× | **94.8×** |
+| c7 | 1 | 1 | 54 660 | 56 328 | 116 939 | **−0.0305** | 0.5183 | 0.0055 | −5.6× | **94.4×** |
+| c7 | 2 | 0 | 54 487 | 56 260 | 115 951 | −0.0325 | 0.5148 | 0.0056 | −5.8× | 92.5× |
+| c7 | 2 | 1 | 53 856 | 56 017 | 114 584 | −0.0401 | 0.5111 | 0.0056 | −7.2× | 91.9× |
+| c7 | 3 | 0 | 55 587 | 57 021 | 118 750 | −0.0258 | 0.5198 | 0.0055 | −4.7× | 94.5× |
+| c7 | 3 | 1 | 55 904 | 57 448 | 116 748 | −0.0276 | 0.5079 | 0.0061 | −4.6× | 83.7× |
+| c8 | 1 | 0 (fast) | 31 326 | 32 368 | 41 342 | **−0.0333** | 0.2171 | 0.0046 | −7.3× | 47.6× |
+| c8 | 1 | 1 (slow) | 6 588 | 7 172 | 35 437 | **−0.0886** | 0.7976 | 0.0199 | −4.4× | **40.0×** |
+| c8 | 2 | 0 | 36 365 | 39 384 | 47 979 | −0.0830 | 0.1791 | 0.0043 | −19.3× | 41.6× |
+| c8 | 2 | 1 | 5 937 | 7 699 | 50 147 | −0.2968 | 0.8465 | 0.0199 | −14.9× | 42.5× |
+| c8 | 3 | 0 | 36 091 | 40 609 | 49 457 | −0.1252 | 0.1789 | 0.0044 | −28.7× | 41.1× |
+| c8 | 3 | 1 | 6 211 | 7 829 | 57 351 | −0.2605 | 0.8635 | 0.0192 | −13.6× | 45.0× |
+
+Rolled up, beside the estimator OUTPUT the ladder actually measured
+(`estimator.loss_rate()`, `src/net/diag.rs:601`, which is a **different layer**
+from the raw pair — and that gap is the finding):
+
+| cell | `pl=` arm A | `pl=` arm T | T/A | ε̂_legacy (cursors) | **ε̂_sent (cursors)** | realized | in the 0.5–2 % class? |
+|---|---|---|---|---|---|---|---|
+| c2r100 (N = 1) | — | — | — | 0.0289 | **−0.0118** | 0.0080 | **YES** (in magnitude) |
+| c7 | 0.0288 | 0.5799 | 20.1× | 0.5139 | **−0.0264** | 0.0056 | **YES** |
+| c8 | 0.1951 | 0.7454 | 3.8× | 0.5138 | **−0.1479** | 0.0120 | **NO** — 12× the class, and NEGATIVE |
+
+**The clamped form the engine actually feeds is exactly zero at every cell and
+every path**, because `sender_truth_loss_delta` returns
+`d_received.min(d_expected)` and every aggregate Δcrecv here exceeds its Δsent.
+
+### THE FIVE FINDINGS
+
+**1. THE HYPOTHESIS IS REFUTED, TWICE OVER — on the code and on the data.** On
+the code, the pair is matched (above). On the data, **ε̂_sent is NEGATIVE at
+every cell and every path**: the receiver counts more arrivals than the sender
+counted handoffs. There is no 20× to collapse at the cursor layer, because the
+cursor layer never read 20×. The cross-check's own falsifier fires in the
+direction it did not enumerate: not *"the 20× survives"*, but *"the 20× was
+never there to begin with."*
+
+**2. WHAT DID READ 40–95× IS THE LEGACY GAP PAIR, AND THAT IS CONFIRMED
+OUTRIGHT.** ε̂_legacy = 0.51 at c7 and 0.18 (fast) / 0.85 (slow) at c8 against
+realized 0.0054–0.0061 and 0.0043 / 0.0199 — **83.7–94.8× at c7 and 40.0–47.6×
+at c8**, reproducing §16.58's own 37–93× on independent arithmetic. **§16.58's
+diagnosis of the shipped estimator, and cross-check section 8's tomography
+verdict, are untouched by this re-score.** Only the RFC 6675 mechanism proposed
+for the T rung's MOVE is dead.
+
+**3. THE N = 1 ANOMALY IS NEITHER EXPLAINED NOR EXPLAINED AWAY — and it is now
+LOCALIZED.** `c2r100` is a single-path cell in this very ledger, and its cursor
+pair reads ε̂_sent = **−0.012** against realized 0.008: **the pair is clean at
+N = 1.** Yet the ladder measured arm T's `pl=` at **0.3614** (c1) and **0.5821**
+(sc2), both single-path. The two facts together say the inflation is **not in
+the pair** — it is **downstream of it**, between `sender_truth_loss_delta`
+(`src/scheduler/mod.rs:2477`) and `estimator.loss_rate()`. That is a narrower
+target than §16.63 could name, and it is a new statement.
+
+**4. THE ORDERING THE CROSS-CHECK ASKED ABOUT DOES NOT HOLD.** It asked whether
+c7's 20.1× > c8's 3.8× tracks recovery volume. It does not, and the reason is a
+denominator: those ratios are driven by **arm A's** reading (c7 0.0288 vs c8
+0.1951), while arm T's own absolute value is **c8 0.7454 > c7 0.5799** — the
+**opposite** order to the retransmit volume (c7 24 269 > c8 3 569). A hypothesis
+that predicts *"more recovery traffic ⇒ more inflation"* is falsified by T's own
+absolute readings, independently of everything above.
+
+**5. THE MECHANISM CANDIDATE THIS RE-SCORE PUTS IN ITS PLACE, labelled a
+hypothesis.** `sender_truth_loss_delta` reports
+`(d_expected, d_received.min(d_expected))` — **a one-sided clamp on a TWO-CLOCK
+pair.** `d_expected` comes from a local counter that advances continuously with
+the wire; `d_received` comes from a remote counter that advances at the ack
+cadence. A sample where the received side runs ahead is reported as **zero**
+loss; a sample where it lags is reported as **loss**. Zero-mean jitter between
+two clocks therefore **rectifies into a strictly positive loss bias**, which the
+aggregate ratio above cannot see and which is a property of windows and ack
+cadence — **present at N = 1**, exactly where the effect was measured. The
+legacy pair does not have this shape: both of its operands come from the SAME
+ack message's counter diff.
+
+The only evidence this tree can currently offer for it is coarse and is labelled
+as such: at ~2 s report granularity the received delta already runs ahead of the
+sent delta in **9/9 (c2r100), 12/18 (c7) and 11/18 (c8)** windows. **That is an
+indication that the two cursors cross often, not a measurement of the clamp rate
+and not a bound on it** — the clamp fires per ACK, and the per-ack
+`(d_expected, d_received)` joint distribution is captured nowhere.
+
+### VERDICT AND THE NAMED INSTRUMENT
+
+**§16.58's re-read, closed: the fix's mechanism story is CORRECTED IN ITS
+DIAGNOSIS AND REFUTED IN ITS REPAIR.** Sender-truth's *diagnosis* of the legacy
+pair is right and is re-confirmed here at 40–95×. Its *repair* does not fail for
+the denominator-semantics reason the cross-check proposed — the denominator is
+already the right one — and the ladder's measured harm is not visible in the
+operands at all. The cross-check's verdict row 7 (*"three published bias
+sources, all inflating ε̂"*) is **withdrawn for source (b), retransmits in the
+denominator**: it does not apply to this estimator. Sources (a) in-flight
+boundary and (c) ACK aggregation are untouched, and (a) is now the more
+interesting one, because the rectifying clamp is what would turn a boundary lag
+into a one-sided bias.
+
+**2b closes NEEDS-MORE, and the instrument is named rather than described.**
+Not a denominator change — a **per-ack witness on `sender_truth_loss_delta`**
+reporting three counters: (a) samples where `d_received > d_expected` (the clamp
+firing), (b) their summed magnitude, and (c) the rectified loss mass the
+estimator consequently sees. It is a counter triple on one existing function,
+needs no wire change, no new gate on the data path and no VM, and it is the only
+thing that can decide whether the one-sided clamp is the 20×'s mechanism. **The
+build item 3c was going to be — "the corrected-ε̂ denominator" — is MOOT and
+should not be built**; this witness replaces it.
+
+### WHAT IS NOT CLAIMED
+
+Nothing here flips a default; `RWM_LOSS_SENT_TRUTH` stays default OFF on the
+Ladder Battery's verdict, unchanged. No dead-wall claim is made. No verdict is
+taken on the unbuilt δ-cap or on any ADR-0071 candidate. The rectifying-clamp
+mechanism is a **hypothesis with a named falsifier**, exactly as the
+cross-check's own hypothesis was, and it is not a finding. The 2a verdicts are
+statements about the setpoint's NEIGHBOURHOOD from arms run for other questions,
+each with its confounds on the record; **no arm was at the setpoint** and the
+sole near-miss (c7, 0.98×) carries the widest σ in the table.
