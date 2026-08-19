@@ -6,9 +6,16 @@
 #   [rp-cli] cli0 10.77.0.1 ─ pathA ─ 10.77.0.2 srv0 [rp-srv]
 #            cli1 10.78.0.1 ─ pathB ─ 10.78.0.2 srv1
 #
-# Usage: sudo bash topo_dual.sh up <scenarioA> <scenarioB> [--seed N]
+# Usage: sudo bash topo_dual.sh up <scenarioA> <scenarioB> [--seed A[,B]]
 #        sudo bash topo_dual.sh down
 #   C7 = up c2 c2      C8 = up c2 c3
+#
+# SEEDS ARE PER LEG (2026-08-19). `--seed 42` gives leg A seed 42 and leg B
+# seed 1042 — INDEPENDENT netem realizations. `--seed 42,42` reproduces the
+# pre-2026-08-19 behaviour exactly (one seed on both legs = the SAME loss
+# realization = rho_loss +1 by construction at a symmetric cell). See the
+# HARNESS ERA note in lib.sh for the era-comparability consequence; it is
+# load-bearing for any comparison that spans the date.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -62,9 +69,18 @@ up() {
     for l in cli0 cli1 lo; do ip -n "$NS_CLI" link set "$l" up; done
     for l in srv0 srv1 lo; do ip -n "$NS_SRV" link set "$l" up; done
 
-    # Path A: loss on data direction only (matching topo.sh), delay both ways
-    shape "$NS_CLI" cli0 "$scen_a" "$seed"
-    shape "$NS_CLI" cli1 "$scen_b" "$seed"
+    # Path A: loss on data direction only (matching topo.sh), delay both ways.
+    #
+    # PER-LEG SEEDS. These two lines used to pass the SAME `$seed` to both
+    # legs. netem seeds its prng per qdisc, so at a symmetric cell that made
+    # the two paths' Gilbert-Elliott chains and jitter draws the SAME
+    # realization indexed by packet — rho_loss = +1 BY CONSTRUCTION, at
+    # exactly the cells where pooling wins, for the whole previous harness era
+    # (goal-gate "Eppen's Condition at c8" §2, THE SEED AUDIT; NEEDS-MORE 2).
+    # `leg_seed` derives one seed per leg from the base, and an explicit
+    # comma list still pins them equal for the rho = +1 arm.
+    shape "$NS_CLI" cli0 "$scen_a" "$(leg_seed "$seed" 0)"
+    shape "$NS_CLI" cli1 "$scen_b" "$(leg_seed "$seed" 1)"
     # Reverse (ACK) direction: delay/rate only — build a lossless variant by
     # reusing shape with loss stripped via the 'clean-<scenario>' trick:
     read -r rate_a ow_a jit_a _ _ <<< "$(scenario_params "$scen_a")"
@@ -84,7 +100,11 @@ up() {
     ip netns exec "$NS_CLI" ip mptcp endpoint add 10.78.0.1 dev cli1 subflow
     ip netns exec "$NS_SRV" ip mptcp endpoint add 10.78.0.2 dev srv1 signal
 
-    echo "dual topology up: pathA=$scen_a pathB=$scen_b"
+    # The ACTIVE per-leg seeds, echoed: the derivation must be readable from
+    # the run's own output and not only from this file (the `-q.txt` capture
+    # carries them too, which is what the seed audit reads).
+    echo "dual topology up: pathA=$scen_a pathB=$scen_b" \
+         "seeds=[$(leg_seed "$seed" 0),$(leg_seed "$seed" 1)] (spec='${seed:-unset}')"
     # THE "TOPO-PING". Same two pings, same exit semantics (`aw_ping` re-returns
     # the ping's status, so `set -e` still aborts here exactly as before) — but
     # the rc and the output are now RECORDED. Note what the position of these
@@ -99,5 +119,5 @@ up() {
 case "${1:-}" in
     up) shift; up "$@" ;;
     down) down ;;
-    *) echo "usage: $0 up <scenA> <scenB> [--seed N] | down" >&2; exit 1 ;;
+    *) echo "usage: $0 up <scenA> <scenB> [--seed A[,B]] | down" >&2; exit 1 ;;
 esac

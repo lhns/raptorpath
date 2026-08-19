@@ -50,7 +50,8 @@ guard_ns() {
 # test parses THIS array and fails if any `RWM_*` the engine reads is missing.
 # Adding a gate to the engine without adding it here fails the suite.
 RWM_FORWARD=(
-    RWM_ACKDIAG RWM_ACK_MERGE RWM_ANCHOR_HYGIENE RWM_ASTAR_ANCHOR RWM_CC_PACE
+    RWM_ACKDIAG RWM_ACKDIAG_WINDOW_US
+    RWM_ACK_MERGE RWM_ANCHOR_HYGIENE RWM_ASTAR_ANCHOR RWM_CC_PACE
     RWM_CC_PACE_HR RWM_CHARGE_RECOVERY RWM_CLOCK_GAP RWM_CODED_SRC RWM_COLD_PLACE RWM_COPA_COMPETE
     RWM_COMPOSED_CAP RWM_COPA_DELTA RWM_COPA_FEED RWM_COPA_WIRE
     RWM_DERIVED_SWEEP RWM_DIAG
@@ -87,6 +88,88 @@ rwm_forward_env() {
             printf '%s=%s ' "$v" "${!v}"
         fi
     done
+}
+
+# ── HARNESS ERA: PER-LEG NETEM SEEDS (2026-08-19) ────────────────────────
+#
+# THE DEFECT THIS CLOSES, and the ERA BOUNDARY IT CREATES. Read the boundary
+# first: it is the part that can silently corrupt a cross-era comparison.
+#
+# UNTIL 2026-08-19, `topo_dual.sh` took ONE `--seed` and handed the SAME value
+# to both legs' `netem` qdiscs. netem's prng is seeded per qdisc, so at a
+# SYMMETRIC cell (identical scenario on both legs — c7 = c2/c2, and every
+# symmetric cell in this tree) the two paths' Gilbert-Elliott loss chains and
+# delay-jitter draws were THE SAME REALIZATION INDEXED BY PACKET. The
+# cross-path loss correlation was therefore rho = +1 BY CONSTRUCTION, not by
+# measurement, at exactly the cells where pooling wins. This was read straight
+# off the committed `-q.txt` qdisc captures (goal-gate "Eppen's Condition at
+# c8" §2, THE SEED AUDIT: c7 3/3 captures same seed AND same params) and is
+# recorded as a defect against the harness, not worked around.
+#
+# **THE ERA-COMPARABILITY CONSEQUENCE, stated so no reading mixes the two.**
+#   * Ledgers captured BEFORE this change at a SYMMETRIC cell carry the
+#     rho_loss = +1 coupling. Any statistic whose value depends on the
+#     cross-path loss process — cross-path correlation, pooling benefit,
+#     repair sharing, the variance of any per-path series — is conditioned on
+#     it.
+#   * Ledgers captured AFTER carry INDEPENDENT loss realizations at the same
+#     cell, because `leg_seed` gives each leg its own stride.
+#   * ASYMMETRIC cells (c8 = c2/c3) are NOT affected in the same way: the legs
+#     already ran different GE parameters, so the chains differed even from a
+#     shared seed. Their rho_loss was unconstrained and UNMEASURED in both
+#     eras, and it still is.
+#   * So: **a symmetric-cell number from before this date and one from after
+#     are NOT the same measurement, and neither is a control for the other.**
+#     A comparison that spans the boundary must either re-run the old arm with
+#     an EXPLICIT equal-seed list (below — the old behaviour is still exactly
+#     reachable) or state the boundary in its own verdict.
+#
+# THE DIAL, which is the point. `--seed` accepts a comma list, one value per
+# leg; a single value derives the rest. So rho_loss is now a HARNESS DIAL with
+# both ends reachable and neither of them accidental:
+#   --seed 42        -> 42, 1042, 2042, 3042   INDEPENDENT legs   (the default)
+#   --seed 42,42     -> 42, 42                 the rho = +1 arm we ran
+#                                              unknowingly for the whole
+#                                              previous era, now DELIBERATE
+# The stride is 1000 and the derivation is `base + 1000*leg_index`: plain
+# arithmetic, deterministic, reproducible from the base seed alone, and
+# recorded in the `-q.txt` capture per leg so the audit that found the defect
+# re-runs unchanged against the new era and reads `same_seed: False`.
+LEG_SEED_STRIDE=1000
+
+# `leg_seed <seed_spec> <leg_index>` -> the netem seed for that leg, or the
+# empty string when no seed was requested (netem then draws its own, which is
+# what the reverse/ACK direction has always done).
+#
+# `seed_spec` is a comma-separated list, and there are exactly TWO legal
+# shapes — no third, partially-derived one:
+#
+#   ONE element   the BASE. Every leg is derived: `base + LEG_SEED_STRIDE*i`.
+#   N elements    all N legs pinned explicitly, element `i` used verbatim.
+#
+# A spec with more than one element but FEWER than the topology's legs is a
+# HARD ERROR, deliberately. The tempting rule — "use the listed ones, derive
+# the rest" — would make `--seed 42,42` at a QUAD mean legs (42, 42, 2042,
+# 3042): half the cell coupled at rho = +1 and half independent, which is
+# neither arm and would be discovered only by reading the qdisc capture. That
+# is the same class of silent mixed attribution the era note above exists to
+# prevent, so it aborts instead.
+leg_seed() {
+    local spec="${1:-}" idx="${2:-0}"
+    [[ -z "$spec" ]] && { echo ""; return 0; }
+    local -a parts
+    IFS=',' read -r -a parts <<< "$spec"
+    if [[ "${#parts[@]}" -eq 1 ]]; then
+        echo $(( ${parts[0]} + LEG_SEED_STRIDE * idx ))
+    elif [[ "$idx" -lt "${#parts[@]}" ]]; then
+        echo "${parts[$idx]}"
+    else
+        echo "REFUSED: --seed '$spec' lists ${#parts[@]} seeds but leg $idx \
+was requested. Give ONE seed (all legs derived, stride $LEG_SEED_STRIDE) or \
+one per leg (all pinned). A short list would silently mix coupled and \
+independent legs in the same cell." >&2
+        exit 1
+    fi
 }
 
 # Scenario table — identical parameterization to ADR-0051 / paper 2.4.

@@ -984,7 +984,8 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
-             RWM_DIAG={} RWM_ACKDIAG={} RWM_WALLDIAG={} RWM_RDIAG={} \
+             RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
+             RWM_WALLDIAG={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
@@ -1012,7 +1013,15 @@ impl RuntimeGates {
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
             b(self.derived_sweep), b(self.rack_clocks), self.rack_reo_mult, b(self.quantile_clocks),
-            b(self.diag), b(self.ackdiag), b(self.walldiag), b(self.rdiag),
+            // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
+            // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
+            // measured in, so a ledger whose windows are 250 ms and one whose
+            // windows are 2 s are different measurements and the difference has
+            // to be readable from the run's own output. A mistyped override
+            // resolves back to the default and this prints 2000000, so "my arm
+            // did not take" is visible rather than inferred.
+            b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
+            b(self.walldiag), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
     }

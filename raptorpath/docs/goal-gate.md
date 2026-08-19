@@ -33330,3 +33330,461 @@ Its output fills this contract's headroom table and is committed as **THE CONTRA
 5. **Score with `era_report.py` against THIS block**, which is not modified after the VM is touched.
 
 **Nothing in this session flips a default.**
+
+---
+
+## HARNESS ERA BOUNDARY — per-leg netem seeds, and the `[ACKDIAG]` window override (2026-08-19, `feat/c9-quad-cell` from main@`b98d537`) — **the two instruments "Eppen's Condition at c8" named as NEEDS-MORE, built. No verdict is scored here and no default moves.**
+
+ERA LEDGER item 5's build half. The section above closed with two named
+instruments and neither was optional: one is a DEFECT against the harness that
+silently pinned a correlation at `+1`, the other is a BLOCKING DEPENDENCY of
+the c9 pre-registration. Both are built here, both are local, and the c9 cell
+that consumes them (next section) inherits them from day one.
+
+### 1 — THE SHARED-SEED DEFECT, and the era boundary its repair creates
+
+**The defect, restated from the audit that found it.** `topo_dual.sh` took ONE
+`--seed` and passed it to BOTH legs' `netem` qdiscs. netem seeds its prng per
+qdisc, so at a **symmetric** cell — identical scenario on both legs, i.e. c7
+(`c2/c2`) and every symmetric cell in this tree — the two paths'
+Gilbert-Elliott loss chains and delay-jitter draws were **the same realization
+indexed by packet**. Cross-path loss correlation `ρ_loss = +1` **by
+construction**, at exactly the cell where pooling demonstrably wins.
+
+**The repair.** `lib.sh::leg_seed` derives one seed per leg,
+`base + 1000·leg_index`, and `--seed` accepts a comma list that pins them
+explicitly. So `ρ_loss` is now a **harness dial with both ends reachable and
+neither of them accidental**:
+
+| `--seed` | legs get | arm |
+|---|---|---|
+| `42` | 42, 1042, 2042, 3042 | **INDEPENDENT** — the default from this date, and the arm never run before it |
+| `42,42` | 42, 42 | the `ρ_loss = +1` arm run UNKNOWINGLY for the whole previous era, now DELIBERATE and reproducible |
+| `42,42,42,42` | 42, 42, 42, 42 | the same at the quad |
+
+A list that is longer than one but SHORTER than the topology's legs is a hard
+error. The tempting "use the listed ones, derive the rest" rule would make
+`--seed 42,42` at a quad mean `(42, 42, 2042, 3042)` — half the cell coupled
+and half independent, which is neither arm and would be discoverable only by
+reading the qdisc capture. That is the same silent-mixed-attribution class this
+note exists to prevent, so it aborts instead.
+
+> ### THE ERA-COMPARABILITY CONSEQUENCE — the part that can corrupt a reading silently
+>
+> * Ledgers captured **BEFORE 2026-08-19 at a SYMMETRIC cell** carry the
+>   `ρ_loss = +1` coupling. Every statistic whose value depends on the
+>   cross-path loss process — cross-path correlation, pooling benefit, repair
+>   sharing, the variance of any per-path series — is **conditioned on it**.
+> * Ledgers captured **AFTER** carry INDEPENDENT loss realizations at the same
+>   cell.
+> * **ASYMMETRIC cells (c8 = `c2/c3`) are NOT affected the same way**: the legs
+>   already ran different GE parameters, so the chains differed even from a
+>   shared seed. c8's `ρ_loss` was unconstrained and UNMEASURED in both eras,
+>   and it still is. The seed audit's own table says exactly this.
+> * Therefore **a symmetric-cell number from before this date and one from
+>   after are not the same measurement, and neither is a control for the
+>   other.** A comparison that spans the boundary must either re-run the old
+>   arm with an explicit equal-seed list — the old behaviour is still exactly
+>   reachable, which is why the dial has two ends — or state the boundary in
+>   its own verdict.
+>
+> **Nothing already committed is invalidated by this.** The c7/c8 correlation
+> ledger stands as captured; what changes is that its symmetric cell's
+> `ρ_loss = +1` is now a NAMED ARM rather than an unrecorded property of the
+> tooling.
+
+The audit that found the defect re-runs unchanged against the new era and reads
+`same_seed: False` — the derived seeds land in the `-q.txt` capture per leg, so
+the era of any future ledger is readable off the ledger itself rather than off
+its date.
+
+### 2 — `RWM_ACKDIAG_WINDOW_US`, and why the default does not move
+
+**The limit, restated.** `ACKDIAG_WINDOW_US = 2 s` against a 9–11 s invocation
+gives four window pairs per rep, twelve pooled. That supports an ORDERING test
+between two cells and nothing finer, and it cannot see the loss process at all
+(the cells' GE bursts live at millisecond scale and are averaged flat). The c9
+pre-registration needs **six pairwise correlations at a quad**, which four
+windows per rep cannot carry.
+
+**The instrument.** `src/net/ackdiag.rs`: the constant becomes the DEFAULT and
+`window_us()` resolves `RWM_ACKDIAG_WINDOW_US` once, clamped to
+`[50 ms, 60 s]`. Observation-only, unchanged: the window governs when a line is
+PRINTED and nothing else.
+
+**THE DEFAULT IS UNCHANGED AND THAT IS THE POINT.** Every committed `[ACKDIAG]`
+ledger was captured at 2 s and **the window is the unit of every series read
+off them** — the c7/c8 estimates are correlations OF 2 s WINDOWS. Moving the
+default would silently re-unit the whole era's record. So the c9 arms set
+`RWM_ACKDIAG_WINDOW_US=250000` **explicitly**, and a 2 s ledger and a 250 ms
+ledger are never pooled.
+
+**The echo is the RESOLVED value, not a flag.** `[GATES]` now carries
+`RWM_ACKDIAG_WINDOW_US=<µs>`. A ledger's window is therefore readable from the
+run's own output, and — because garbage (empty, unparseable, `0`, `250_000`,
+`2e5`) resolves back to the default rather than to zero or a panic — a driver
+that mistyped its override reads `2000000` there and knows its arm did not
+take. That is the `sp=1`/`sp=0` discipline applied to a NUMERIC knob: the
+failure to apply an override is as checkable as its application.
+
+**Gates.** `resolve_window_us` is pinned to absolute values at every path
+(default, the 250 ms arm, six garbage forms, both clamp edges on both sides),
+and `report_due_gates_on_the_active_window` pins the WIRING — that the resolved
+window is what the report gate actually reads, not merely what a resolver
+returns (MEASUREMENT DISCIPLINE rule 1). Forwarding and echo coverage are
+enforced as usual by `gate_forwarding_list_covers_the_engine_surface` and
+`every_forwarded_gate_has_a_liveness_echo`.
+
+**Nothing in this section flips a default, adds a behavior, or scores a
+criterion.**
+
+---
+
+## c9 VALIDATION BATTERY — PRE-REGISTRATION SKELETON (2026-08-19, `feat/c9-quad-cell`) — **WRITTEN BEFORE ANY QUAD LEDGER EXISTS. Nothing here is scored; every number is a prediction and every blank is marked.**
+
+ERA LEDGER item 5's contract half. The cell (`topo_quad.sh`, `c9_battery.sh`,
+`eppen_quad.py`) is built and locally validated in the commit before this one;
+the wire measurement is the launch step. This section fixes what will be
+scored so it cannot be tuned to the answer afterwards.
+
+**IT IS A SKELETON AND SAYS SO.** Three inputs can only come from the launch
+step, and each is marked `[LAUNCH]` where it belongs: the headroom
+calibration, the abort-witness columns, and every measured value. A skeleton
+whose blanks are invisible is worse than no pre-registration, because it reads
+as complete.
+
+### 0 — THE TWO CELLS, and the bench twin
+
+| cell | geometry | legs | bench twin |
+|---|---|---|---|
+| **c9** | SYMMETRIC quad | 4 × c2 (100 Mbit, RTT 10 ms, GE 1.3/50) | **`store_cap_sf_bench.rs::c7x4`** = `vec![C2, C2, C2, C2]`, `C2 = (10 400 sym/s, RTprop 8 ms, GE 0.013/0.50)`, `MAX_PATHS = 4`. c9 is the WIRE twin of that SIMULATED geometry. |
+| **c9h** | HETEROGENEOUS quad | 2 × c2 + 2 × c3 (c3 = 20 Mbit, RTT 40 ms, GE 2/40) | **NONE.** C9-3's geometry is not simulated anywhere in the tree. |
+
+**The twin is a PREDICTION SOURCE, never a substitute.** The bench has no
+kernel, no QUIC and no real scheduler; its numbers and c9's are never pooled.
+What it buys is that c9's per-leg parameters were chosen to make the bench's
+measured quantities the prediction the wire is read against — the bench
+delivered **157 125 symbols at c7x4 split 39 687 / 39 801 / 38 673 / 38 964
+(2.9 % spread), all four legs warm on 795/795 refresh ticks, 2.15× c7's
+73 196**. A wire divergence from that is informative precisely because the two
+share a parameterization.
+
+> **NAME COLLISION, recorded so no one reads across it.** `tests/gate_suite.rs`
+> already contains **`gate_c9_outage_recovery`** — a DUAL-path outage gate from
+> the C1…C9 *gate-criterion* series, which has nothing to do with this
+> *cell*. The two `c9`s are unrelated namespaces (gate criteria vs L1 cells)
+> and neither is renamed here: the C9-1…C9-4 clause names are already
+> committed in the pre-registration above, and renaming the cell now would
+> break the very thing this contract exists to hold fixed.
+
+### 1 — THE FOUR EPPEN CLAUSES, VERBATIM from §4 of "Eppen's Condition at c8"
+
+Reproduced without alteration. The arithmetic they rest on, also verbatim:
+`B(N, rho_bar) = 1 - sqrt( (1 + (N-1)*rho_bar) / N )`, and the adding-up
+constraint's floor `rho_bar = -1/(N-1)` — **−1.000 at N = 2, −0.333 at N = 4**;
+c7 measured −0.814, **81.4 % of the way to its own floor**, and carrying that
+fraction to N = 4 is the point prediction in C9-1.
+
+| # | applies to | PREDICTION | FALSIFIED IF |
+|---|---|---|---|
+| **C9-1** | symmetric quad (4 × c2) | mean pairwise two-way-centered drain ρ̄ is **NEGATIVE**, point **−0.27**, band **[−0.34, −0.15]** | ρ̄ > 0, or ρ̄ < −0.34 (below the algebraic floor — the series are not exchangeable and this model is wrong, not the measurement) |
+| **C9-2** | symmetric quad | pooling's ratio advantage GROWS with N: `B(4, −0.27) = 0.782` vs c7's measured `B(2, −0.814) = 0.695`, so the **percap-minus-pooled goodput gap at c9 EXCEEDS the gap at c7**, same battery, same seeds | percap ≥ pooled at a symmetric quad, or the c9 gap ≤ the c7 gap |
+| **C9-3** | heterogeneous quad (e.g. 2 × c2 + 2 × c3) | the shared-frontier coupling DOMINATES the adding-up anti-correlation: ρ̄ **≥ +0.3**, and the **fast–slow pairwise ρ exceeds the fast–fast pairwise ρ**. Then `B(4, +0.3) = 0.311` — the heterogeneous quad's pooling benefit is **BELOW the symmetric quad's and nowhere near the √4 law's 0.500** | ρ̄ ≤ 0 at the heterogeneous quad, or fast–slow ρ ≤ fast–fast ρ |
+| **C9-4** | **either quad — THE DECIDING ONE** | ρ̄ is measured on the pooled arm AND on `RWM_STORE_PERCAP=1` at the SAME geometry. **If Eppen applies as written, ρ̄ is a property of the cell and the two arms agree: `\|ρ̄_pooled − ρ̄_percap\| ≤ 0.15`.** | `ρ̄_pooled − ρ̄_percap ≥ +0.30` ⇒ the correlation is the POOL'S OWN, Eppen's theorem is being applied to a quantity his model treats as given, and the c8 residual's true name is the shared frontier — not risk pooling. **This outcome would retire CD-5's reading, not confirm it.** |
+
+**C9-4's percap arm is carried in the harness from day one**: `c9_battery.sh`
+takes `pooled|percap` and sets `RWM_STORE_PERCAP` explicitly on BOTH arms
+(never "the default with nothing set"), because the `[GATES]` echo is
+two-sided and an arm that sets nothing cannot be told from an arm whose knob
+failed to forward.
+
+### 2 — SPECIFICATION FAILURE, found while building the scorer: **C9-1's second falsifier is UNSATISFIABLE**
+
+Recorded as its own finding, in the register the "Latency Lever" work opened
+for exactly this class (*two of the three-term battery's criteria were
+unsatisfiable when they were written*).
+
+C9-1 is falsified if `ρ̄ > 0` **or `ρ̄ < −0.34`**. The second clause **cannot
+be satisfied by any measurement whatsoever**, and the reason is algebra, not
+our scheduler:
+
+```text
+  any sample correlation matrix R is positive semi-definite
+    =>  1' R 1  >=  0
+    =>  N + 2 * sum_{i<j} rho_ij  >=  0
+    =>  rho_bar  =  (sum_{i<j} rho_ij) / C(N,2)  >=  -N / (2*C(N,2))  =  -1/(N-1)
+```
+
+At N = 4 that is `ρ̄ ≥ −0.3333…` for **any** four series — exchangeable or not,
+equal-variance or not, adding up to a binding total or not. Since
+`−0.34 < −0.3333`, no four-path capture can produce it.
+
+**§4 introduced `−1/(N−1)` as *the adding-up constraint's* floor** — a
+consequence of one flow split by a work-conserving scheduler against a binding
+total. That reading is correct but too weak: the bound is a property of the
+**estimator**, and it holds whether or not our scheduler is work-conserving.
+So the clause that was meant to catch "the exchangeability model is wrong" is
+instead catching nothing at all.
+
+Verified rather than argued, in `tools/l1/test_eppen_quad.py`: 4 000
+adversarial random quads never breach it (minimum observed **−0.3065**); the
+intuitive "three legs locked together against one" construction lands at
+**0.000**, not below the floor; and an exchangeable, sums-to-constant quad
+**sits at** it (**−0.3332** vs −0.33333), approaching from above.
+
+> **THE REPAIR, and it is deliberately NOT a re-tuning of the band.** C9-1 is
+> scored on its FIRST clause only (`ρ̄ > 0` falsifies), and the band
+> `[−0.34, −0.15]` is retained as the PREDICTION INTERVAL it always was.
+> The sub-floor clause is **struck as unsatisfiable**, not replaced with a
+> tighter number — inventing a new threshold after seeing the algebra would be
+> the tuning this contract exists to prevent. The exchangeability question it
+> was reaching for is a real one and gets its own **[LAUNCH]** diagnostic:
+> report the SPREAD of the six pairwise ρ beside their mean, since a ρ̄ of
+> −0.27 built from six ≈−0.27s and one built from +0.9 and −0.9 are different
+> cells that `B(N, ρ̄)` cannot tell apart. `eppen_quad.py` prints all six.
+
+### 3 — THE LAW-SHAPE PREDICTION AT N = 4, and a correction to this branch's own brief
+
+This branch was dispatched to validate *"the span closed form … at N ≥ 3 —
+cap linear in N on the wire, span = Σ bwᵢ·(RTT_max − RTTᵢ)"*. **Read against
+the sources, that brief is wrong in three places, and recording that is worth
+more than executing it.**
+
+| the brief said | what the record says |
+|---|---|
+| the span closed form `span = Σ bwᵢ(RTT_max − RTTᵢ)` is ours to validate | `docs/research/literature-crosscheck.md:195-211`: that subtracted-sum form is **the published literature's cap minus ours**, it is **our own algebra**, and *"no published source writes the subtracted form as a named resequencing term … it must be presented as our derivation, never as a quotation."* **It is not the shipped span.** |
+| `literature-crosscheck.md` validates it at N ≥ 3 / at c9 | The file contains **no c9 span validation and no N ≥ 3 span claim**. Its only two `c9` mentions are both about the Eppen exogeneity bar. All span validation on record is at **N = 2 or N = 1**. |
+| the cap is **linear in N** on the wire | CD-2 records the **opposite as its sharpest published counter-result**: Eyerman et al. (TOCS 27(2), 2009) — *"ROB size scales superlinearly … at least quadratically with D"*, `W ∝ D²`. The file's own summary row reads **"CONTRADICTS the linear form"**, and its standing instruction is *"Adopt nothing."* |
+
+**What the shipped law actually is** (`net/mod.rs::three_term_store_cap`):
+
+```text
+  cap    = window + slack + span
+  window = SUM_i  rate_i * sRTT_i                      sRTT_i = k_i * RTprop_i
+  slack  = SUM_i  rate_i * contract_stall(rho, b, RTprop_i, sRTT_i)
+  span   = 2 * rate_fast * skew ,   skew = (RTprop_max - RTprop_min) / 2
+         = rate_fast * (RTprop_max - RTprop_min)
+```
+
+`rate_fast` is the rate of the **single** least-RTprop path. So the shape is:
+**two terms that are Σ over paths, and one term that is not a sum at all and
+does not depend on N.**
+
+**THE LINEARITY IS ALREADY PROVEN — IN THE MODEL — SO c9 TESTS SOMETHING
+ELSE.** `net::mod`'s own test already asserts `limit == N · per_path_term` for
+`N = 1…8` at a symmetric set, with `span == 0` at every N. Σ-linearity is
+therefore true **by construction**, not empirically, and re-measuring it would
+score a tautology. What c9 can actually test is whether the law's **INPUTS**
+are N-invariant on real hardware — whether four legs each still deliver a
+leg's worth of `rate` and `RTprop` when the sender must fill four of them.
+
+| # | applies to | PREDICTION | FALSIFIED IF |
+|---|---|---|---|
+| **C9-L1** | c9 vs c7, symmetric | **`span = 0` exactly at both**, on the wire, at every window: `RTprop_max = RTprop_min` over a symmetric set, and the law has no path-count predicate. The `[CCAP]` span field reads 0. | any non-zero span term at a symmetric cell ⇒ either the legs are not symmetric on the wire (an RTprop spread the cell did not intend) or a path-count branch has entered the law |
+| **C9-L2** | c9 vs c7, symmetric | **INPUT N-INVARIANCE**: per-leg `rate_lr` and `rtprop` at c9 are within **±10 %** of c7's, so the composed cap ratio `cap(c9)/cap(c7)` lands in **[1.8, 2.2]** against the exactly-2.000 the Σ-linear law predicts from N alone | the ratio falls outside that band ⇒ the law is Σ-linear but its inputs are NOT N-invariant, and "cap linear in N" is false on the wire *for a reason that is not the law's shape*. The bench twin predicts the high side (**2.15×**), so a reading near 1.0 is the interesting failure |
+| **C9-L3** | **c9h — THE ONE GEOMETRY THAT SEPARATES THE TWO SPAN FORMS** | The shipped `rate_fast·(RTT_max − RTT_min)` and the crosscheck's un-adopted `Σ bwᵢ(RTT_max − RTTᵢ)` **agree at N = 2 up to the documented factor of 2, and DIVERGE at c9h by exactly the COUNT of min-RTprop legs — 2 here, 1 at every dual.** The discriminating quantity is therefore the **RATIO, which is anchor-free and predicted at exactly 2.000**. Its absolute value is anchored below and carries the anchors' own spread. | the measured span lands at the Σ form rather than the shipped one ⇒ the engine is not computing the law its doc comment states. **Note what this does NOT do: it does not adopt the Σ form.** The crosscheck's instruction stands — *"Adopt nothing"* — and a divergence is a defect finding against the engine, not a licence to switch formulas |
+
+**C9-L3's absolute anchors, with their provenance and their spread** — stated
+this way because the point value is the weak half of the clause and pretending
+otherwise would be false precision:
+
+| input | value | source |
+|---|---|---|
+| RTprop spread `RTT_max − RTT_min` | **30.0 ms** nominal / **29.88 ms** measured | nominal: c2 one_way 5 ms, c3 one_way 20 ms (`lib.sh`, RTT = 2 × one_way ⇒ 10 / 40 ms). Measured: the c8 ledger's own `rtprop` fields, **8.45 ms** (c2-class) and **38.33 ms** (c3-class). The two agree to 0.4 %, which is why this input is not the uncertainty. |
+| `rate_fast` (c2-class, uncontended) | **9 370 – 10 400 sym/s** | measured 9 370 / 9 416 sym/s at c7 (both legs, `[ACKDIAG]`); 10 400 sym/s in the SF bench's `C2` spec. **This is where the uncertainty lives — ±5 %.** |
+
+```text
+  shipped:  span = rate_fast * spread        = 9 400 * 0.0299  ~=  281 sym
+  Sigma:    span = 2 * rate_fast * spread    = 2 * 281         ~=  562 sym
+  ratio:    Sigma / shipped = (count of min-RTprop legs) = 2.000   [ANCHOR-FREE]
+```
+
+**Predicted `[CCAP]` span field at c9h: 281 sym, band [265, 315]** (the
+anchor spread above, not a fitted tolerance). **The clause is scored on the
+RATIO** — a reading near 562 with the same anchors falsifies the shipped form;
+a reading near 281 confirms it. A reading outside both bands falsifies the
+ANCHORS rather than either formula, and is reported that way.
+
+**c9h is the first geometry in the tree that can tell the two span forms
+apart**, because at N = 2 there is only ever one min-RTprop leg and the "count
+of fast legs" factor is invisible. That, and not a linearity re-measurement,
+is the span contribution c9 makes.
+
+`[LAUNCH]` — every measured value in this subsection.
+
+### 4 — HEADROOM BY CALIBRATION (discipline 16c) — `[LAUNCH]`, and it gates the CLAIM CLASS
+
+Same protocol as the Candidates and Ladder contracts, unmodified: a
+**same-session, same-binary** calibration pass with `tc -s qdisc show` on
+**every cell and every invocation**, the denominator being the **TRANSFER
+wall, never `INVOCATION_S`**, committed as this contract's completion in its
+own commit **BEFORE** the scored battery runs.
+
+| cell | shaped aggregate | headroom | claims permitted |
+|---|---|---|---|
+| c9 | 4 × 100 Mbit = **400 Mbit** | `[LAUNCH]` | ≥ 5 % → throughput targets permitted; < 5 % → **parity / latency / cap-shape only** |
+| c9h | 2 × 100 + 2 × 20 Mbit = **240 Mbit** | `[LAUNCH]` | as above |
+
+**THE ARITHMETIC THIS FORCES, and it is why the blanks do not block the
+design.** Of the seven clauses here, **only C9-2 is a goodput comparison.**
+C9-1, C9-3 and C9-4 are correlation statements; C9-L1 and C9-L3 are cap-shape
+readings; C9-L2 is a cap-magnitude ratio. So a low-headroom reading disables
+**one** clause and leaves six scoreable — and C9-2 is additionally a
+*difference between two arms at the same cell*, which is the form least
+distorted by a shared utilisation ceiling. **No absolute throughput target is
+written at any cell in this contract.**
+
+There is a specific hazard at c9 worth naming in advance: **400 Mbit of shaped
+aggregate against a sender that has never been asked to fill four legs.** If
+c9 turns out to be sender-bound rather than link-bound, its headroom will read
+high while the cell is nonetheless saturated *at the wrong bottleneck*, and
+C9-L2 would then fail for a reason that has nothing to do with the cap law.
+The calibration must therefore report **CPU alongside utilisation**
+(`CPUCLI`/`CPUSRV` are already printed by `perf_rwm_c.sh`), and a c9 whose
+client CPU is pinned is reported as **sender-bound** rather than scored.
+
+### 5 — SEEDS, ARMS AND PAIRING
+
+**BOTH SEEDS**, as every battery in this tree: **42 and 7**. Each is a BASE
+seed and the legs derive from it (`base + 1000·i`), so seed 42 shapes
+42/1042/2042/3042 and seed 7 shapes 7/1007/2007/3007 — **eight distinct netem
+realizations across the two sessions, none of them shared between legs.**
+
+> **THE ERA BOUNDARY IS LOAD-BEARING HERE ABOVE ALL OTHER CELLS.** c9 is a
+> SYMMETRIC cell, which is exactly the shape where the pre-2026-08-19
+> shared-seed defect pinned `ρ_loss = +1` by construction. Under the old
+> harness **C9-1 would have been unscoreable in principle**: four legs running
+> one loss realization cannot exhibit a negative loss-side correlation
+> whatever the scheduler does. c9 has no legacy era — it inherits per-leg
+> seeds from its first invocation. **A c9 ledger whose `-q.txt` reads
+> `distinct_seeds = 1` is VOID, not a result**, and `eppen_quad.py`'s seed
+> audit prints that column for exactly this reason.
+
+**THE ARM MATRIX**, 2 cells × 2 arms × 2 seeds × 3 reps = **24 invocations**:
+
+| | pooled (`RWM_STORE_PERCAP=0`) | percap (`RWM_STORE_PERCAP=1`) |
+|---|---|---|
+| **c9** | C9-1, C9-2, C9-L1, C9-L2 | C9-2, **C9-4** |
+| **c9h** | C9-3, C9-L1, C9-L3 | **C9-4** |
+
+**PAIRED DESIGNS WHERE BISTABLE.** The c8-class arms in this tree are bistable
+— the same arm at the same cell lands in two regimes across reps — and an
+unpaired mean over a bimodal population is a number with no cell behind it.
+So:
+
+* **C9-2 and C9-4 are scored as PAIRED differences within `(seed, rep)`**, not
+  as a difference of pooled means. The two arms of a pair run back to back at
+  the same cell on the same binary, and the statistic is the **sign test over
+  pairs** with the paired difference reported beside it.
+* **C9-1 and C9-3 are within-arm correlations** and have no pair; they are
+  reported per seed and required to **agree in SIGN across both seeds**. A
+  sign disagreement between seeds is reported as such and the clause scores
+  NEEDS-MORE — never averaged into a single ρ̄.
+* Bistability is DETECTED rather than assumed: the per-rep `rate_lr` means are
+  printed, and a cell whose reps straddle a 2× gap is declared bimodal and its
+  goodput clause degraded to the paired sign test alone.
+
+### 6 — ABORT-WITNESS COLUMNS — **THE DEPENDENCY LANDED IN `main` WHILE THIS BRANCH WAS BEING BUILT (corrected 2026-08-19)**
+
+The abort class is **arm-correlated** (20 % control vs 75 % RACK at c8/seed 7),
+which makes abort-exclusion a **selection on the treatment**: every statistic
+computed over the survivors is conditioned on an arm-dependent event. A
+24-invocation battery with two arms cannot be read without it.
+
+> **CORRECTION, recorded rather than silently rewritten.** This section was
+> first written against this branch's base, `main@b98d537`, where the witness
+> lived only on the unmerged `feat/era-battery-prep` and the columns were a
+> hard blocker. **`main` advanced to `280b5fd` during this branch's work**
+> and the witness is now IN `main` (merged at `22d2407`). The blocker is
+> discharged; what replaces it is a REBASE requirement and one behaviour
+> warning, both below. The original blocker text is superseded, not deleted
+> from the record — a launch step reading only the corrected version would
+> not know the columns were ever absent, and the merge order below is the
+> reason they now exist.
+
+| column | meaning |
+|---|---|
+| `abort_cause` | the FIRST failing instrumented step, first-write-wins: `busy_precheck`, `topo_up`, `topo_step`, `srv_bind`, `cli_exec`, `guard_cod0`, or the residual `no_gates_unknown` |
+| `abort_missing` | TRUE when the record file is ABSENT — **not** the same as `abort_cause=None`; it means the witness never ran |
+| `drain_pids_t0` | THE ARM-CORRELATION COLUMN: survivors of the previous invocation's teardown at the `BUSY` pre-check, measured on EVERY invocation so it has a control |
+
+**THE LAUNCH STEP'S ORDER OF OPERATIONS, now that the dependency exists:**
+
+1. **Rebase this branch onto `main ≥ 280b5fd`.** It is cut from `b98d537` and
+   does not contain the witness; `c9_battery.sh` therefore does not source
+   `abort_witness.sh` and emits none of the three columns yet.
+2. **Expect one conflict, in `topo_dual.sh`, and it is a genuine
+   both-sides-needed conflict rather than a formatting one.** `main` adds
+   `set -E` + `source ./abort_witness.sh` + an `ERR` trap at the top and
+   replaces the two sanity pings with `aw_ping`; this branch changes the two
+   `shape` calls to per-leg seeds and rewrites the `dual topology up:` echo
+   **on the line immediately above those pings**. Both edits must survive.
+   The seed changes and the witness changes are independent in meaning, so
+   the resolution is a union, not a choice.
+3. **Give `topo_quad.sh` the same treatment** — `set -E`, `source
+   ./abort_witness.sh`, the `ERR` trap, and `aw_ping` for its four sanity
+   pings. It was written without them because they did not exist on this
+   base, and a quad topology that cannot name its own failing line is the
+   one place a four-legged setup is hardest to debug.
+4. **Add the three columns to `c9_battery.sh`**, copying `/tmp/rwm-abort.txt`
+   per rep the way it already copies `/tmp/rwm-q.txt`, and read them with
+   `abort_witness.py` rather than a re-implemented block.
+
+> **AND A WARNING THAT IS WORTH MORE THAN THE COLUMNS.** The witness shipped
+> with a defect that **MANUFACTURED the abort class it was built to explain**:
+> `aw_drain_probe` opened with a bare `pgrep -x raptorpath | wc -l`, and
+> `pgrep` exits 1 when nothing matches — the NORMAL, HEALTHY case, since the
+> caller has just `pkill`ed — which `pipefail` carried past `wc` and `set -e`
+> turned into a dead invocation. The era battery's smoke came back **6/6
+> ABORT in under a second each**, every one with `abort_cause=none`. Fixed at
+> `d6c6cba` with `test_abort_witness.sh` as its gate.
+>
+> **The c9 consequence is a standing check, not a historical note.** Before
+> the c9 battery is trusted, its FIRST rep must be confirmed to have actually
+> launched an engine — `[GATES]` present on both endpoints and a non-zero
+> `[ACKDIAG]` line count — because an instrument that aborts what it measures
+> produces a *clean-looking* ledger of nothing. `c9_battery.sh` already
+> asserts both (`LIVENESS` and `LIVENESS-EMIT`), and after the rebase those
+> assertions are what stand between this battery and the same failure.
+
+**The scoring rule is unchanged by the correction.** A c9 battery run without
+usable witness columns is scoreable only if its abort count is **zero**; any
+non-zero abort count without `abort_cause` makes C9-2 and C9-4 — the two
+arm-comparison clauses — **unscoreable**, because those are exactly the
+clauses arm-correlated attrition biases.
+
+### 7 — WHAT ONLY THE LAUNCH STEP CAN FILL
+
+| `[LAUNCH]` | why it cannot be filled here |
+|---|---|
+| every measured ρ̄, pairwise ρ, and B | c9/c9h have never been run; that is the point of pre-registering |
+| the headroom table (§4) | needs a same-session, same-binary `tc` calibration on the VM |
+| the sender-bound determination at c9 | needs `CPUCLI` against a real 400 Mbit aggregate |
+| the abort-witness columns (§6) | the witness is now in `main@280b5fd`; needs this branch REBASED onto it, the `topo_dual.sh` conflict resolved as a union, and the columns wired into `c9_battery.sh` |
+| the c9h span reading against C9-L3's 333 | needs `[CCAP]` off a real heterogeneous quad |
+| whether the engine's 4-path scheduler splits evenly under LOSS | the local 4-path loopback is lossless; it proves all four legs carry, not how they share under GE bursts |
+
+### 8 — WHAT IS ALREADY VALIDATED, LOCALLY, WITHOUT THE VM
+
+So the launch step knows what it does *not* need to re-establish:
+
+* **The engine carries four paths end to end** — `tests/quad_path_loopback.rs`,
+  a real window-reliable transfer over four loopback paths. Before it, no
+  four-path measurement of any kind existed in the tree; the only N = 4
+  coverage was the SIMULATED `c7x4`.
+* **The gauge names all four** (`known_paths().len() == 4`) and all four legs
+  carry — the `pid < 2` gate on the wire.
+* **The 250 ms window override is live on a real ack stream**, echoed as
+  `RWM_ACKDIAG_WINDOW_US=250000` in `[GATES]`.
+* **The quad topology touches nothing outside `rp-*`** —
+  `test_topo_quad.sh` runs the script against stub `ip`/`tc` and asserts on
+  the command stream: no `ens18`, no host NIC, every netns operation on
+  `rp-cli`/`rp-srv`, every qdisc on a `cli[0-3]`/`srv[0-3]` veth.
+* **Per-leg seeds land as 42/1042/2042/3042**, the ACK direction still takes
+  none (the audit's own control), and a short seed list at a quad is refused.
+* **The N-path scorer reproduces the published N = 2 result** to ±0.001 on the
+  committed c7/c8 ledger, and recovers ρ̄ on a synthetic four-path ledger to
+  1e-9 against an independent re-implementation.
+
+**Nothing in this section flips a default, adds a gate, or scores a
+criterion.**

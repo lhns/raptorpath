@@ -3,13 +3,27 @@
 # RELIABLE sliding-window pipeline, single OR dual path, with an optional
 # OUT-OF-ORDER object delivery toggle (paper §16.2 H->inf corner).
 #
-#   sudo bash perf_rwm_c.sh <scenA> <scenB> <hint> <bytes> <runs> <dual|single> [T]
+#   sudo bash perf_rwm_c.sh <scenA> <scenB> <hint> <bytes> <runs> <dual|single|quad> [T]
 #
 #   env RWM_OOO=1     -> add --window-out-of-order (H->inf, decode-on-total)
 #   env RWM_EXTRA=".." -> extra CLI args appended to server+client (raise-r arm)
 #   env RWM_PLACE_T=.. -> placement-temperature override (via 7th arg too)
 #
 #   C7 = c2 c2   C8 = c2 c3
+#
+# QUAD MODE (feat/c9-quad-cell). `quad` runs FOUR veth legs via topo_quad.sh,
+# and the two scenario arguments are the two LEG CLASSES — each is used for
+# TWO legs, in order: `<scenA> <scenA> <scenB> <scenB>`. So
+#
+#   C9  = c2 c2 ... quad   ->  c2 c2 c2 c2   the SYMMETRIC quad
+#   C9H = c2 c3 ... quad   ->  c2 c2 c3 c3   the HETEROGENEOUS quad (C9-3)
+#
+# STATED RATHER THAN IMPLIED: this parameterization expresses 2 + 2 geometries
+# ONLY. A quad of four distinct classes, or a 3 + 1 split, is NOT reachable
+# through this script and must not be faked by a caller — it would need a
+# fourth positional argument, and the two registered c9 geometries do not.
+# `topo_quad.sh` itself takes four independent scenarios, so the restriction
+# is this driver's signature, not the topology's.
 set -uo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
@@ -91,9 +105,32 @@ if [[ -n "$GEN_FLAG" && -z "${RWM_PFRAC:-}" ]]; then
     TENV="$TENV RWM_PFRAC=1"
 fi
 
+# The DEVICE LISTS this invocation's topology owns. Set with the mode, read by
+# the qdisc captures at the bottom — ONE definition, so a capture cannot go on
+# reading two legs after the topology grew to four. That is the `pid < 2`
+# defect the SF bench taught (`MAX_PATHS` widened 2 -> 4 while three per-path
+# gauge guards kept their hard-coded `< 2`, so two legs read 0 no matter what
+# placement did and the assertion built on them could not fail); the fix there
+# was to derive the bound from the path count, and this is the same fix in the
+# harness.
+case "$MODE" in
+    quad)   CLI_LEGS=(cli0 cli1 cli2 cli3); SRV_LEGS=(srv0 srv1 srv2 srv3) ;;
+    dual)   CLI_LEGS=(cli0 cli1);           SRV_LEGS=(srv0 srv1) ;;
+    single) CLI_LEGS=(cli0);                SRV_LEGS=(srv0) ;;
+    *) echo "unknown mode '$MODE' (want single|dual|quad)" >&2; exit 2 ;;
+esac
+TOPO=./topo_dual.sh
+[[ "$MODE" == "quad" ]] && TOPO=./topo_quad.sh
+
 cleanup() {
     pkill -x raptorpath 2>/dev/null || true
+    # BOTH topologies are torn down regardless of this invocation's mode: they
+    # share the rp-cli/rp-srv namespaces, so a quad left behind by a crashed
+    # run would otherwise be inherited by the next dual run as a four-legged
+    # cell wearing a two-legged cell's name. `down` is idempotent and deletes
+    # the namespaces, so the second call is a no-op.
     bash ./topo_dual.sh down >/dev/null 2>&1 || true
+    bash ./topo_quad.sh down >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 # ARM THE WITNESS BEFORE THE FIRST THING THAT CAN FAIL — which is `cleanup`
@@ -135,18 +172,28 @@ fi
 # the CONTROL FLOW IS UNCHANGED (`aw_step` re-returns the code and nothing here
 # reads it), because changing it now would move the abort class instead of
 # explaining it.
-aw_step topo_up bash ./topo_dual.sh up "$SCENA" "$SCENB" --seed "${SEED:-42}"
+#
+# SEED is a per-leg SPEC now, not one value (lib.sh's HARNESS ERA note): a
+# bare `42` derives 42/1042/2042/3042 and gives every leg its own netem
+# realization. It is passed through verbatim so a caller can still pin the
+# legs equal (`SEED=42,42`) for the rho_loss = +1 arm.
+if [[ "$MODE" == "quad" ]]; then
+    aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENA" "$SCENB" "$SCENB" \
+        --seed "${SEED:-42}"
+else
+    aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENB" --seed "${SEED:-42}"
+fi
 aw_state post_topo
 
-if [[ "$MODE" == "dual" ]]; then
-    SRV_BIND="10.77.0.2:7000,10.78.0.2:7000"
-    PEERS="10.77.0.2:7000,10.78.0.2:7000"
-    CLI_BIND="10.77.0.1:0,10.78.0.1:0"
-else
-    SRV_BIND="10.77.0.2:7000"
-    PEERS="10.77.0.2:7000"
-    CLI_BIND="10.77.0.1:0"
-fi
+# Bind/peer lists are BUILT FROM THE LEG LIST, not written out per mode: the
+# addressing stride is 10.(77+i).0.x, so the address set and the device set
+# cannot drift apart when a leg is added.
+SRV_BIND=""; PEERS=""; CLI_BIND=""
+for ((li = 0; li < ${#CLI_LEGS[@]}; li++)); do
+    SRV_BIND="${SRV_BIND}${SRV_BIND:+,}10.$((77 + li)).0.2:7000"
+    CLI_BIND="${CLI_BIND}${CLI_BIND:+,}10.$((77 + li)).0.1:0"
+done
+PEERS="$SRV_BIND"
 
 # LOG SOURCES (feat/gen-on-rebaseline; the §16.14 wrong-log trap): the --server is
 # the perf RECEIVER of the bulk transfer (its reverse sender loop places ~no source,
@@ -262,11 +309,11 @@ echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
 # counters BEFORE teardown — bytes/pkts that passed netem per direction plus
 # its GE drops (the loss realization). Read-only; whole-invocation totals
 # (warm-up object is 64 B — negligible). cli*=data direction, srv*=acks.
-for DEV in cli0 cli1; do
+for DEV in "${CLI_LEGS[@]}"; do
     ST=$(ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
 done
-for DEV in srv0 srv1; do
+for DEV in "${SRV_LEGS[@]}"; do
     ST=$(ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
 done
@@ -290,13 +337,22 @@ done
 # Banner names match `adv_cells.sh counters` so `bind_analyze.py`'s parser
 # reads both without a second dialect. CLI1/SRV1 are NEW — dual cells (c7,
 # c8) shape two veth pairs and only the first was ever nameable.
+#
+# CLI2/CLI3/SRV2/SRV3 arrive with the quad. The banner is `== CLI<n>` and the
+# readers' device pattern is `(CLI\d|SRV\d)` (eppen_corr.py's `_QDEV`), which
+# already admits a single digit 0-9 — so the quad's captures are read by the
+# EXISTING seed audit with no parser change, and its per-leg seeds show up
+# there as four distinct values instead of one repeated one. Checked, not
+# assumed: the audit is what found the shared-seed defect, and a widened
+# capture that its regex silently dropped would have retired the instrument
+# at exactly the cell it was built for.
 {
-    for DEV in cli0 cli1; do
+    for DEV in "${CLI_LEGS[@]}"; do
         ip netns exec "$NS_CLI" ip link show "$DEV" >/dev/null 2>&1 || continue
         echo "== ${DEV^^} (data-dir egress: netem or tbf+netem bottleneck)"
         ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null || true
     done
-    for DEV in srv0 srv1; do
+    for DEV in "${SRV_LEGS[@]}"; do
         ip netns exec "$NS_SRV" ip link show "$DEV" >/dev/null 2>&1 || continue
         echo "== ${DEV^^} (ack-dir egress)"
         ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null || true
