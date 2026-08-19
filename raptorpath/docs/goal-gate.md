@@ -33154,3 +33154,111 @@ recorded here as a blocking dependency**, not as a nice-to-have.
 
 **Nothing in this section flips a default, adds a gate, or touches an engine
 line.**
+
+---
+
+## HARNESS ERA BOUNDARY — per-leg netem seeds, and the `[ACKDIAG]` window override (2026-08-19, `feat/c9-quad-cell` from main@`b98d537`) — **the two instruments "Eppen's Condition at c8" named as NEEDS-MORE, built. No verdict is scored here and no default moves.**
+
+ERA LEDGER item 5's build half. The section above closed with two named
+instruments and neither was optional: one is a DEFECT against the harness that
+silently pinned a correlation at `+1`, the other is a BLOCKING DEPENDENCY of
+the c9 pre-registration. Both are built here, both are local, and the c9 cell
+that consumes them (next section) inherits them from day one.
+
+### 1 — THE SHARED-SEED DEFECT, and the era boundary its repair creates
+
+**The defect, restated from the audit that found it.** `topo_dual.sh` took ONE
+`--seed` and passed it to BOTH legs' `netem` qdiscs. netem seeds its prng per
+qdisc, so at a **symmetric** cell — identical scenario on both legs, i.e. c7
+(`c2/c2`) and every symmetric cell in this tree — the two paths'
+Gilbert-Elliott loss chains and delay-jitter draws were **the same realization
+indexed by packet**. Cross-path loss correlation `ρ_loss = +1` **by
+construction**, at exactly the cell where pooling demonstrably wins.
+
+**The repair.** `lib.sh::leg_seed` derives one seed per leg,
+`base + 1000·leg_index`, and `--seed` accepts a comma list that pins them
+explicitly. So `ρ_loss` is now a **harness dial with both ends reachable and
+neither of them accidental**:
+
+| `--seed` | legs get | arm |
+|---|---|---|
+| `42` | 42, 1042, 2042, 3042 | **INDEPENDENT** — the default from this date, and the arm never run before it |
+| `42,42` | 42, 42 | the `ρ_loss = +1` arm run UNKNOWINGLY for the whole previous era, now DELIBERATE and reproducible |
+| `42,42,42,42` | 42, 42, 42, 42 | the same at the quad |
+
+A list that is longer than one but SHORTER than the topology's legs is a hard
+error. The tempting "use the listed ones, derive the rest" rule would make
+`--seed 42,42` at a quad mean `(42, 42, 2042, 3042)` — half the cell coupled
+and half independent, which is neither arm and would be discoverable only by
+reading the qdisc capture. That is the same silent-mixed-attribution class this
+note exists to prevent, so it aborts instead.
+
+> ### THE ERA-COMPARABILITY CONSEQUENCE — the part that can corrupt a reading silently
+>
+> * Ledgers captured **BEFORE 2026-08-19 at a SYMMETRIC cell** carry the
+>   `ρ_loss = +1` coupling. Every statistic whose value depends on the
+>   cross-path loss process — cross-path correlation, pooling benefit, repair
+>   sharing, the variance of any per-path series — is **conditioned on it**.
+> * Ledgers captured **AFTER** carry INDEPENDENT loss realizations at the same
+>   cell.
+> * **ASYMMETRIC cells (c8 = `c2/c3`) are NOT affected the same way**: the legs
+>   already ran different GE parameters, so the chains differed even from a
+>   shared seed. c8's `ρ_loss` was unconstrained and UNMEASURED in both eras,
+>   and it still is. The seed audit's own table says exactly this.
+> * Therefore **a symmetric-cell number from before this date and one from
+>   after are not the same measurement, and neither is a control for the
+>   other.** A comparison that spans the boundary must either re-run the old
+>   arm with an explicit equal-seed list — the old behaviour is still exactly
+>   reachable, which is why the dial has two ends — or state the boundary in
+>   its own verdict.
+>
+> **Nothing already committed is invalidated by this.** The c7/c8 correlation
+> ledger stands as captured; what changes is that its symmetric cell's
+> `ρ_loss = +1` is now a NAMED ARM rather than an unrecorded property of the
+> tooling.
+
+The audit that found the defect re-runs unchanged against the new era and reads
+`same_seed: False` — the derived seeds land in the `-q.txt` capture per leg, so
+the era of any future ledger is readable off the ledger itself rather than off
+its date.
+
+### 2 — `RWM_ACKDIAG_WINDOW_US`, and why the default does not move
+
+**The limit, restated.** `ACKDIAG_WINDOW_US = 2 s` against a 9–11 s invocation
+gives four window pairs per rep, twelve pooled. That supports an ORDERING test
+between two cells and nothing finer, and it cannot see the loss process at all
+(the cells' GE bursts live at millisecond scale and are averaged flat). The c9
+pre-registration needs **six pairwise correlations at a quad**, which four
+windows per rep cannot carry.
+
+**The instrument.** `src/net/ackdiag.rs`: the constant becomes the DEFAULT and
+`window_us()` resolves `RWM_ACKDIAG_WINDOW_US` once, clamped to
+`[50 ms, 60 s]`. Observation-only, unchanged: the window governs when a line is
+PRINTED and nothing else.
+
+**THE DEFAULT IS UNCHANGED AND THAT IS THE POINT.** Every committed `[ACKDIAG]`
+ledger was captured at 2 s and **the window is the unit of every series read
+off them** — the c7/c8 estimates are correlations OF 2 s WINDOWS. Moving the
+default would silently re-unit the whole era's record. So the c9 arms set
+`RWM_ACKDIAG_WINDOW_US=250000` **explicitly**, and a 2 s ledger and a 250 ms
+ledger are never pooled.
+
+**The echo is the RESOLVED value, not a flag.** `[GATES]` now carries
+`RWM_ACKDIAG_WINDOW_US=<µs>`. A ledger's window is therefore readable from the
+run's own output, and — because garbage (empty, unparseable, `0`, `250_000`,
+`2e5`) resolves back to the default rather than to zero or a panic — a driver
+that mistyped its override reads `2000000` there and knows its arm did not
+take. That is the `sp=1`/`sp=0` discipline applied to a NUMERIC knob: the
+failure to apply an override is as checkable as its application.
+
+**Gates.** `resolve_window_us` is pinned to absolute values at every path
+(default, the 250 ms arm, six garbage forms, both clamp edges on both sides),
+and `report_due_gates_on_the_active_window` pins the WIRING — that the resolved
+window is what the report gate actually reads, not merely what a resolver
+returns (MEASUREMENT DISCIPLINE rule 1). Forwarding and echo coverage are
+enforced as usual by `gate_forwarding_list_covers_the_engine_surface` and
+`every_forwarded_gate_has_a_liveness_echo`.
+
+**Nothing in this section flips a default, adds a behavior, or scores a
+criterion.**
+

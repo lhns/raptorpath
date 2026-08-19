@@ -82,11 +82,69 @@ use std::time::Instant;
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 
-/// Print cadence — the ~2 s the dispatch specified, ~8× the `[DIAG]` line's
-/// 250 ms. Longer windows are deliberate here: these readouts are
+/// Print cadence, DEFAULT — the ~2 s the dispatch specified, ~8× the `[DIAG]`
+/// line's 250 ms. Longer windows are deliberate here: these readouts are
 /// DISTRIBUTIONS, and a p99 over a 250 ms window of a few hundred acks is
 /// noise.
+///
+/// **THE DEFAULT IS UNCHANGED AND THAT IS LOAD-BEARING.** Every committed
+/// `[ACKDIAG]` ledger in `docs/l1-raw/` was captured at 2 s, and the window is
+/// the unit of every series read off them (the c7/c8 correlation estimates are
+/// correlations OF 2 s WINDOWS). A driver that changes it is changing the
+/// measurand, so it must say so explicitly — hence an override rather than a
+/// new default. See [`window_us`].
 pub const ACKDIAG_WINDOW_US: u64 = 2_000_000;
+
+/// `RWM_ACKDIAG_WINDOW_US` clamp, low end. 50 ms. Below this the window
+/// stops being a distribution and becomes a sample: at the loopback ceiling a
+/// 50 ms window holds ~500 acks, which is already thin for a p99, and the
+/// per-window fixed cost (a sort of three series plus a format) starts to be
+/// a measurable share of the sender loop.
+pub const ACKDIAG_WINDOW_US_MIN: u64 = 50_000;
+
+/// `RWM_ACKDIAG_WINDOW_US` clamp, high end. 60 s — longer than any invocation
+/// this harness runs, so a value above it can only be a typo, and a typo that
+/// silently produced ZERO reports would look exactly like a dead gauge.
+pub const ACKDIAG_WINDOW_US_MAX: u64 = 60_000_000;
+
+/// Resolve the window from a raw env string. Pure, so the clamp and the
+/// rejection rules are testable without touching the process environment
+/// (`window_us` caches, and a cached `OnceLock` cannot be re-resolved by a
+/// second test in the same binary).
+///
+/// Returns the DEFAULT for: unset, empty, unparseable, or zero. A garbage
+/// value must not be able to silently disable the instrument — the caller
+/// echoes the RESOLVED number, so a driver that mistyped the override reads
+/// `2000000` in the `[GATES]` line and knows its arm did not take.
+pub fn resolve_window_us(raw: Option<&str>) -> u64 {
+    match raw.map(str::trim) {
+        None | Some("") => ACKDIAG_WINDOW_US,
+        Some(s) => match s.parse::<u64>() {
+            Ok(0) | Err(_) => ACKDIAG_WINDOW_US,
+            Ok(v) => v.clamp(ACKDIAG_WINDOW_US_MIN, ACKDIAG_WINDOW_US_MAX),
+        },
+    }
+}
+
+/// The ACTIVE print cadence, µs — [`ACKDIAG_WINDOW_US`] unless
+/// `RWM_ACKDIAG_WINDOW_US` overrides it.
+///
+/// WHY THE OVERRIDE EXISTS. goal-gate "Eppen's Condition at c8" NEEDS-MORE 1:
+/// the 2 s window against a 9–11 s invocation yields FOUR window pairs per
+/// rep, which supports an ordering test between two cells and nothing finer.
+/// The c9 pre-registration (C9-1 … C9-4) needs SIX pairwise correlations at a
+/// quad, and four windows per rep cannot carry them — the 250 ms window is
+/// recorded there as a BLOCKING DEPENDENCY, not a nice-to-have. This is that
+/// dependency, and it is one env read.
+///
+/// Resolved ONCE (the gauge's own `OnceLock` discipline) so the cadence cannot
+/// change mid-run and split a ledger's windows into two populations.
+/// Observation-only, exactly like the rest of this module: the window governs
+/// when a line is PRINTED and nothing else.
+pub fn window_us() -> u64 {
+    static W: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *W.get_or_init(|| resolve_window_us(std::env::var("RWM_ACKDIAG_WINDOW_US").ok().as_deref()))
+}
 
 /// Per-window sample cap, per path, per series. At the loopback ceiling
 /// (~11–12 k sym/s, one ack per data message) a 2 s window can produce ~20 k
@@ -328,7 +386,7 @@ impl AckCadenceGauge {
             self.last_report_us.store(now_us.max(1), Ordering::Relaxed);
             return false;
         }
-        if now_us.saturating_sub(last) < ACKDIAG_WINDOW_US {
+        if now_us.saturating_sub(last) < window_us() {
             return false;
         }
         self.last_report_us.store(now_us.max(1), Ordering::Relaxed);
@@ -844,6 +902,67 @@ mod tests {
             "the snapshot must read paths through the IMMUTABLE `Scheduler::path` \
              accessor — `path_mut` is on the forbidden list above"
         );
+    }
+
+    /// **THE WINDOW OVERRIDE, ABSOLUTE.** The default is the SHIPPED 2 s and
+    /// every path into it is pinned to a number — an ordinal "smaller than
+    /// the default" test would pass on a resolver that returned garbage.
+    ///
+    /// The default arm is the load-bearing one: every committed `[ACKDIAG]`
+    /// ledger was captured at 2 s and the window is the unit of every series
+    /// read off them, so an override that shifted the DEFAULT would silently
+    /// re-unit the whole era's record.
+    #[test]
+    fn the_window_override_resolves_to_absolute_values_and_defaults_unchanged() {
+        // ERA COMPARABILITY: unset is 2 s, exactly as before the override.
+        assert_eq!(resolve_window_us(None), 2_000_000);
+        assert_eq!(resolve_window_us(None), ACKDIAG_WINDOW_US);
+        // The c9 arm's value, which is the `[DIAG]` line's own cadence and
+        // the blocking dependency C9-1..4 are written against.
+        assert_eq!(resolve_window_us(Some("250000")), 250_000);
+        // Whitespace is trimmed (an `env` prefix can carry it).
+        assert_eq!(resolve_window_us(Some("  250000 ")), 250_000);
+        // GARBAGE FALLS BACK TO THE DEFAULT, never to 0 and never to a panic.
+        // A 0 window would fire a report on every sender-loop iteration; an
+        // unparseable one is a driver typo, and both must be VISIBLE in the
+        // echo as "your override did not take" rather than as a dead or
+        // screaming gauge.
+        for bad in ["", "0", "abc", "-1", "250_000", "2e5", "250000ms"] {
+            assert_eq!(
+                resolve_window_us(Some(bad)),
+                ACKDIAG_WINDOW_US,
+                "{bad:?} must fall back to the shipped default"
+            );
+        }
+        // THE CLAMP, at both ends and on both sides of each edge.
+        assert_eq!(resolve_window_us(Some("1")), ACKDIAG_WINDOW_US_MIN);
+        assert_eq!(resolve_window_us(Some("49999")), ACKDIAG_WINDOW_US_MIN);
+        assert_eq!(resolve_window_us(Some("50000")), ACKDIAG_WINDOW_US_MIN);
+        assert_eq!(resolve_window_us(Some("60000000")), ACKDIAG_WINDOW_US_MAX);
+        assert_eq!(
+            resolve_window_us(Some("999999999")),
+            ACKDIAG_WINDOW_US_MAX
+        );
+        // And the clamp does not touch anything inside its own range.
+        assert_eq!(resolve_window_us(Some("2000000")), 2_000_000);
+    }
+
+    /// The window is what `report_due` actually gates on — the wiring, not
+    /// just the resolver (MEASUREMENT DISCIPLINE rule 1: prove the mechanism
+    /// under test executes). A resolver that no caller reads is a constant.
+    #[test]
+    fn report_due_gates_on_the_active_window() {
+        let g = AckCadenceGauge::new();
+        let w = window_us();
+        // First call only stamps the epoch — it never reports.
+        assert!(!g.report_due(1_000));
+        // One µs short of the window: still closed.
+        assert!(!g.report_due(1_000 + w - 1));
+        // Exactly one window: open.
+        assert!(g.report_due(1_000 + w));
+        // And the window re-arms from the new stamp, not from the old one.
+        assert!(!g.report_due(1_000 + w + 1));
+        assert!(g.report_due(1_000 + 2 * w));
     }
 
     /// The gate ships OFF, so the gauge is absent and every feed site is a
