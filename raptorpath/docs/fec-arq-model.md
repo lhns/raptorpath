@@ -13608,6 +13608,109 @@ FULL reps; B-WALL closed on power). ADR-0070's finding 2 keeps its
 PROVENANCE verdict in full and gains a disposition line: the deletion it
 called for is now executed, and the practical weight of the span is
 retired **at these cells**.
+### 16.65 The formulas cross-checked against the published literature: six of ten have exact counterparts, the standing-queue setpoint was DERIVED in an RFC in 2018 and predicts §16.57's measurement, and three claims in this tree are stronger than their sources support (2026-08-19, `docs/literature-crosscheck`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default, no test; `docs/research/literature-crosscheck.md` is the full review, this section is the paper's pointer)
+
+Appendix B established that almost every *finding* of the FEC/ARQ arc was
+already known. This cross-check asks the same question of the *expressions* —
+the shipped laws, the refuted ones and ADR-0071's candidates — against the
+published transport literature and against seven other fields. It adjudicates
+nothing and picks no candidate; every quotation was taken from a primary source
+by direct text extraction, and everything unverified is marked as such.
+
+**The headline is a derived setpoint we did not know existed.** RFC 8289 §3.2
+derives the permitted standing queue from Kleinrock power maximisation and
+states it as *"the ideal range for the permitted standing queue, or the target
+setpoint, is between 5% and 10% of the TCP connection's RTT"*, together with
+*"a very small standing queue gives close to 100% utilization of the bottleneck
+link"* — a result the RFC says rests only on properties holding for any
+TCP-friendly transport. **Every point of our δ dial sits 10–40× above that**
+(Realtime ½·RTprop = 50 %, Bulk 2·RTprop = 200 %), and the composed law's
+3.125 multiplier means ≈2.1 BDP of standing queue, ≈42× the derived setpoint.
+CoDel's derivation therefore *predicts* §16.57 in advance: raising the cap above
+a few percent of the BDP buys no goodput and costs pure delay, which is exactly
+the measured goodput parity (0.993/1.003) at 2.4× the queue and 43–48 % worse
+delivered latency. **The question §16.57 left open and §16.59 sharpened — how
+much standing queue may δ permit — has a published, derived answer, and the
+cheapest validation is a rung the ladder can already read.**
+
+**Six of the ten transport formulas have exact published counterparts.** The
+shipped pool law is one substitution from RFC 6182 §5.3, which recommends
+`2*sum(BW_i)*RTT_max` for the **send** buffer with *"the sender must locally
+store the segments sent but unacknowledged by the connection level ACK"* as its
+rationale — `sent_store`'s job description — reproduced independently by Raiciu
+et al. (NSDI 2012) and Barré et al. (2011). `gain = 2.0` is BBR's `cwnd_gain`
+and RFC 6182's `×2`, so ADR-0070's FOSSIL verdict becomes **right value, wrong
+citation**; BBR's published range for that coefficient is [0.5, 2.25] and it
+pairs the 2 with Drain and ProbeRTT, which we lack. Our `2·SRTT` recovery clock
+is RFC 8985 §7.2's TLP PTO verbatim, with the derivation we did not have; only
+the `[25, 100] ms` clamp has no counterpart, every published bound in that
+family being RTT-relative. And the autotuning literature has **no knee at all** —
+a law plus a separate administrative memory bound, which is ADR-0071 family 2's
+proposed architecture, shipped in Linux for two decades.
+
+**Where we diverge, three sources size the reordering term on `RTT_max` while
+ours uses `RTT_max − RTT_min` — half — and the wire says even that is too
+much.** The subtracted form appears in no publication and must be presented as
+ours. Yet BLEST reports the same over-estimate from the other side, shipping an
+adaptive correction factor that *"is corrected to lower values than its initial
+setting of 1.0"*, and the processor-architecture literature drops the formally
+identical reorder-buffer term as negligible (*"we assume this term is zero"*).
+Three independent literatures and §16.63's own 45 %-under-funded-and-goodput-up
+result all point the same way. Meanwhile Raiciu's *"for equal delay paths,
+MPTCP's receiver memory consumption is also close to zero"* is the published
+form of the span term's measured identity at c7.
+
+**Three claims in this tree are stronger than their sources support, and the
+corrections are free.** RFC 9002 presents `kTimeThreshold = 9/8` as an
+empirical recommendation — *"Experience with QUIC shows that 9/8 works well"* —
+notes that RACK uses 5/4 for the same purpose, and explicitly invites
+implementations to experiment; so "cited, not fitted" overstates it, and
+§16.43's `17/8` inherits a tuned constant. `gain = 2.0`'s recovery-runway
+rationale appears in **no** primary BBR source (BBR's are ACK-aggregation
+absorption and the minimum rate-doubling gain). And the span decomposition must
+not be cited to the MPTCP literature. None of this changes a measurement; all
+of it changes what the paper may claim.
+
+**One refuted result acquires a candidate mechanism.** RFC 6675's `SetPipe`
+carries the note *"octets retransmitted without being considered lost are
+counted twice by the above mechanism"*, and Allman, Eddy & Ostermann (2003)
+measured that bias at a 33 % median and **over 100 % in 16 % of transfers**.
+Our ε̂ counts retransmits in its denominator, so it reads high by the
+retransmit fraction and closes a positive feedback loop — and that loop is
+path-count-independent, which is precisely why §16.63's refutation **survives at
+N = 1** where the attribution error it was built to repair cannot exist. Stated
+as a hypothesis with a falsifier needing no VM. Independently, the IETF's
+multipath-QUIC drafts reached all three of §16.58's positions: with one shared
+sequence space the sender must remember which packet went on which path, packet
+thresholds cannot be computed from the shared numbers, and draft-14 abandons the
+shared space for per-path ones.
+
+**The cross-domain half was worth its cost.** The slack term is a newsvendor
+problem whose critical fractile at zero underage cost gives an optimal reserve
+of **exactly zero** — our measured payout-zero case — and base-stock theory says
+the reserve has the wrong *shape* regardless of size, since safety stock is
+`z·σ·√L`, driven by dispersion and sub-linear in lead time, where ours is linear
+in the mean. (Our own `r*` already has the OR-correct form; the slack does not.)
+ADR-0058's pooled-vs-per-path chain rediscovered Eppen's 1979 √N risk-pooling
+theorem, whose untested condition — demand correlation — predicts the c7/c8
+split we observed. The c8 dead wall is a textbook metastable failure, with a
+quantified stable region `Cstable = Cnorm/(w*L·w*C)`, a published mitigation
+list on which *"reduce internal queue sizes"* appears, and RFC 896's 1984
+verdict on the opposite direction: *"This condition is stable… Adding additional
+memory to the gateways will not solve the problem."* And ADR-0070's FORMULA-FIRST
+rule is dimensional analysis, whose 1915 statement by Rayleigh — *"results in
+the form of 'laws' are put forward as novelties on the basis of elaborate
+experiments, which might have been predicted a priori after a few minutes'
+consideration"* — is that postmortem in one sentence.
+
+**Two places the literature does not have our answer**, and they are the honest
+novelty claims of this pass: **no published stability analysis exists for a
+delay-based congestion controller nested inside a delay-budgeted outer window**
+(the ADR-0068 × ADR-0071-family-2 composition), and **no published application
+of sequential change detection to transport timeouts** — though Lorden's and
+Moustakides's optimality results answer "how long to wait before declaring the
+ack failed" in closed form, and RACK's own *"less than 7%"* spurious budget is
+already a false-alarm rate chosen by hand.
 
 ## 17. The Measured Regime Map (2026-07-19)
 
@@ -14249,6 +14352,39 @@ levers (§17.6 additions), not mysteries.
 ```
 
 ## Appendix B: Related Work
+
+> **Scope note, and where the rest of the related work lives.** This appendix
+> anchors the *model's* related work (coding, channel models, queueing).
+> Two companion documents extend it and are not duplicated here:
+>
+> - **`docs/research/literature-map.md`** — the arc's empirical **findings**
+>   mapped onto the literature, with the KNOWN/NOVEL classification. Headline:
+>   RFC 9265 §3 states the presence⊥throughput identity outright, and FMTCP
+>   (Cui et al., ToN 2015) is the principal missed solution.
+> - **`docs/research/literature-crosscheck.md`** (2026-08-19, §16.64) — the
+>   engine's load-bearing **formulas** cross-checked term by term against their
+>   published counterparts, quoted verbatim: the MPTCP receive/send-buffer
+>   lineage (RFC 6182 §5.3, RFC 8684 §3.3.4, Raiciu NSDI'12, Barré 2011), the
+>   MPTCP scheduler arithmetic (BLEST, ECF, DAPS), BBR's gains, RACK-TLP and
+>   QUIC loss recovery, Copa's δ, CoDel's derived 5–10 %-of-RTT setpoint,
+>   RFC 6675's pipe algorithm and the sender-side loss-accounting literature,
+>   network-tomography identifiability, and the AQM control-theory line
+>   (Hollot, Vinnicombe, Low/Paganini/Doyle). It also carries eight
+>   **cross-domain** mappings — inventory theory (newsvendor, base stock,
+>   Eppen's risk pooling), processor reorder-buffer sizing, metastable failures,
+>   cascade control, sequential change detection, dimensional analysis and data
+>   association — plus a verification-gap ledger naming every source that could
+>   not be obtained.
+>
+> Three corrections from that cross-check bear directly on claims made
+> elsewhere in this paper and are recorded here so they are not read past:
+> **(i)** RFC 9002's `9/8` is an empirical RECOMMENDATION, not a derivation
+> (*"Experience with QUIC shows that 9/8 works well"*; RACK uses 5/4), so
+> §16.43's `17/8` inherits a tuned constant and "zero fitted constants"
+> overstates it; **(ii)** the `gain = 2.0` recovery-runway rationale appears in
+> no primary BBR source; **(iii)** the span decomposition
+> `Σ bwᵢ·(RTT_max − RTTᵢ)` appears in **no** publication and must be presented
+> as ours, never cited to the MPTCP literature.
 
 ### ACK-Based vs NACK-Based Recovery
 
