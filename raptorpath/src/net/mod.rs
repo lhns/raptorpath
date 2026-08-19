@@ -631,6 +631,249 @@ pub fn derived_recovery_round_us(srtt_us: u64, jitter_us: u64) -> u64 {
     srtt_us.saturating_mul(2).max(patience_floor_us(jitter_us, srtt_us))
 }
 
+// ── The RACK-SHAPED recovery round (`RWM_RACK_CLOCKS`, default OFF) ───────
+//
+// Paper §16.67. RFC 8985 §6.2 Step 4, transplanted VERBATIM, with its own
+// constants and no others:
+//
+//     RACK.reo_wnd = min(RACK.reo_wnd_mult * RACK.min_RTT / 4, SRTT)
+//     "The RACK reordering window MUST be bounded, and this bound SHOULD be
+//      SRTT."
+//     reo_wnd_mult = N+1 after N DSACK-detected spurious recoveries, persisted
+//      for up to 16 loss recoveries — "to bound such spurious recoveries to
+//      approximately once every 16 recoveries (less than 7%)."
+//
+// THE SPECIFICATION FAILURE THIS LAW EXISTS TO RECORD. Our two clocks are
+// RE-PROBE cadences: the tail sweep synthesizes a gap report for an
+// already-known cumulative blocker, and the hole refresh re-advertises an
+// already-known hole. Neither decides that a symbol is lost. Their RFC 8985
+// counterpart is therefore §7.2's TLP PTO — `2*SRTT`, bounded ONLY by
+// `TCP_RTO_expiration()`, whose RFC 6298 definition carries a 1-SECOND
+// minimum. **RFC 8985 publishes NO RTT-relative ceiling for a re-probe
+// cadence.** The one relatively-bounded expression it does publish (above) is
+// bounded by SRTT precisely because its base is `min_RTT/4`, a much smaller
+// quantity; grafting that ceiling onto a `2*SRTT` base is arithmetically
+// vacuous, since `min(2*srtt, srtt) == srtt` identically.
+//
+// So `2*SRTT` with no ceiling IS RFC 8985's answer for these two sites — and
+// that law already exists as `RWM_DERIVED_SWEEP` above, built 2026-08-12 and
+// measured INERT as a lever (§16.53, −23 %/−28 % goodput across two sessions).
+// The cross-check's Tier-2 item 2.1 asked for a construction its own cited
+// source does not contain. §16.67 records that as a backlog specification
+// error rather than closing it, and this function is the faithful transplant
+// that makes the finding MEASURABLE instead of asserted.
+//
+// THE ADAPTIVE HALF IS STRUCTURALLY INERT ON THIS STACK, and that is a DEFECT
+// FINDING under CLAUDE.md's clamp rule, not a footnote. `reo_wnd_mult`
+// advances on DSACK-detected spurious recoveries; this transport has no DSACK
+// and no spurious-recovery detector. At `mult = 1` the SRTT ceiling CANNOT
+// bind, because `min_rtt <= srtt` implies `min_rtt/4 < srtt` identically —
+// and a bound that provably never binds turns its law into
+// `max(min_rtt/4, G)` and hides the law's shape from every measurement taken
+// through it. `RWM_RACK_REO_MULT` therefore exposes RACK's own multiplier
+// over RACK's own range [1, 17] so the ceiling is REACHABLE by a battery;
+// exposing a cited parameter over its cited range invents nothing, leaving a
+// bound unreachable would.
+//
+// This is an ENV GATE (an A/B attribution arm), never a dial on the
+// (δ, ρ, r) triangle: nothing here keys on δ, on ρ, or on a hint.
+
+/// RFC 8985 §6.2 Step 4's initial `RACK.reo_wnd_mult`.
+pub const RACK_REO_WND_MULT_INIT: u64 = 1;
+/// RFC 8985 §6.2 Step 4's maximum `RACK.reo_wnd_mult` — `N+1` at the RFC's own
+/// persistence bound of `N = 16` loss recoveries (*"less than 7%"* spurious).
+pub const RACK_REO_WND_MULT_MAX: u64 = 17;
+/// RFC 8985 §6.2 Step 4's divisor on `RACK.min_RTT`. CITED, and cited as NOT
+/// derived: the RFC's own note says Linux TCP used the same factor and
+/// *"experience showed this worked reasonably well"* — inherited practice.
+pub const RACK_MIN_RTT_DIVISOR: u64 = 4;
+
+/// The RACK-shaped recovery round (µs) — RFC 8985 §6.2 Step 4 verbatim,
+/// floored at the timer granularity RFC 9002 §6.1.2 puts in the same position
+/// (`max(kTimeThreshold * max(smoothed_rtt, latest_rtt), kGranularity)`).
+///
+/// ```text
+///   round_RACK(srtt, min_rtt, mult)
+///       = max( min( mult · min_rtt / 4,  srtt ),  TIMER_GRANULARITY_US )
+/// ```
+///
+/// **Zero invented constants**: `4`, the `SRTT` ceiling and `mult`'s range are
+/// all RFC 8985 §6.2 Step 4's; `TIMER_GRANULARITY_US` is the tree's own,
+/// already declared as RFC 9002's kGranularity analogue at
+/// [`patience_floor_us`].
+///
+/// With NO min-RTT sample yet there is nothing to derive from and the caller
+/// keeps its legacy fallback verbatim — an information-availability fallback,
+/// not a mode.
+///
+/// Shape and bind-reachability pinned by
+/// `tests/recovery_bench.rs::the_rack_round_transplants_rfc8985_and_its_ceiling_is_unreachable_at_the_measured_cells`.
+pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
+    let mult = mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
+    let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
+    // "MUST be bounded, and this bound SHOULD be SRTT" — RFC 8985 §6.2 Step 4.
+    base.min(srtt_us).max(TIMER_GRANULARITY_US)
+}
+
+// ── The DERIVED QUANTILE recovery round (`RWM_QUANTILE_CLOCKS`, OFF) ──────
+//
+// Paper §16.68, and §16.65's named novelty gap: *no published application of
+// sequential change detection to transport timeouts.* A recovery clock's whole
+// job is to wait long enough that an ack which was going to arrive HAS
+// arrived, so the clock IS a quantile of the ack-arrival distribution, and the
+// fraction every published law puts in front of SRTT is standing in for it.
+// RFC 8985 §7.2 says so in its own prose: *"delay variance can cause an ACK to
+// be delayed beyond the SRTT. Hence, the PTO is conservatively chosen to be
+// the next integral multiple of SRTT."*
+//
+//     W(α) = srtt + k(α)·σ_rtt ,   k(α) = √((1 − α)/α)    ← CANTELLI (1929),
+//                                    the one-sided Chebyshev inequality:
+//                                    P(X − μ ≥ k·σ) ≤ 1/(1 + k²)
+//
+// Distribution-free, closed form, ZERO fitted coefficients — and REFUTED THREE
+// WAYS on this stack at the contract's own α (§16.68), which is why the gate
+// exists to make the refutation reproducible rather than asserted:
+//
+//   1. LOOSE. `α = target_tail_loss × ζ(hint)` is 1e-5 at Auto, so k = 316 and
+//      the clock is 3.24 s at c8 against a 100 ms clamp. Tightening it means
+//      assuming a distribution, whose coefficient is a fitted constant.
+//   2. UNESTIMABLE. The empirical route needs ~1e5 samples for a 1−1e-5
+//      quantile, and the Copa RTT store is a MIN-DEQUE that discards the upper
+//      tail by construction. Both routes fail on the same number.
+//   3. A CATEGORY ERROR, and this is the one that matters. `target_tail_loss`
+//      is P(symbol never delivered); α is P(retransmit wasted). Pricing the
+//      rate of the second from the tolerated rate of the first asserts they
+//      cost the same. The honest mapping needs the RATIO of those two costs —
+//      which exists nowhere in this repository and has no published value.
+//
+// ENV GATE, never a dial: α is read from the CONTRACT (the r leg's declared
+// failure probability, continuous in the hint through ζ), and nothing here
+// keys on a threshold in the (δ, ρ, r) triangle.
+
+/// The contract's base tail-loss target, mirroring `config.rs`'s own
+/// `unwrap_or(1e-5)`. Read here rather than plumbed because the config does
+/// not reach this seat; §16.68 records that as a stated limitation of the
+/// refuted arm rather than a design choice.
+pub const CONTRACT_TAIL_LOSS_BASE: f64 = 1e-5;
+
+/// The contract-declared false-alarm rate α on the r leg — paper §16.68.
+/// `target_tail_loss × ζ(hint)`, where ζ is the hint's ONE declared price
+/// ratio (`ProtocolHint::tail_loss_scale`). Continuous in the dial: no
+/// threshold, no mode bit, and the same ζ the Copa δ mapping already consumes.
+pub fn contract_alpha(hint: ProtocolHint) -> f64 {
+    (CONTRACT_TAIL_LOSS_BASE * hint.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0)
+}
+
+/// Cantelli's one-sided Chebyshev multiplier — `k(α) = √((1 − α)/α)`.
+///
+/// DERIVED, distribution-free, no fitted coefficient: for ANY distribution
+/// with mean μ and standard deviation σ, `P(X − μ ≥ k·σ) ≤ 1/(1 + k²)`, so
+/// setting `1/(1 + k²) = α` gives this closed form. At the contract's own α it
+/// reads 3 162 / 316 / 31.6 at Realtime / Auto / Bulk — which is §16.68's
+/// refutation reason 1, computed rather than argued.
+pub fn cantelli_k(alpha: f64) -> f64 {
+    let a = alpha.clamp(f64::MIN_POSITIVE, 1.0);
+    ((1.0 - a) / a).max(0.0).sqrt()
+}
+
+/// The DERIVED quantile recovery round (µs) — paper §16.68.
+/// `W(α) = srtt + k(α)·σ`, floored at the timer granularity for the same
+/// information-availability reason the RACK law is.
+pub fn quantile_recovery_round_us(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
+    let w = srtt_us as f64 + cantelli_k(alpha) * sigma_us as f64;
+    (w.max(0.0) as u64).max(TIMER_GRANULARITY_US)
+}
+
+/// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
+/// clamped law, the derived round under `RWM_DERIVED_SWEEP`, or the RACK
+/// round under `RWM_RACK_CLOCKS`. All three are ENV GATES (A/B arms), never
+/// dials.
+///
+/// **`RWM_RACK_CLOCKS` REPLACES `RWM_DERIVED_SWEEP` when both are set** — the
+/// two are RIVAL LAWS FOR ONE QUANTITY, not composable axes, and the
+/// precedence is made explicit here rather than left to evaluation order.
+/// With no min-RTT sample the RACK arm falls back to whichever of the other
+/// two laws is armed, verbatim.
+pub fn sweep_timeout_us_rack(
+    rack: bool,
+    derived: bool,
+    srtt_us: u64,
+    jitter_us: u64,
+    min_rtt_us: Option<u64>,
+    reo_mult: u64,
+) -> u64 {
+    match (rack, min_rtt_us) {
+        (true, Some(m)) if m > 0 => rack_recovery_round_us(srtt_us, m, reo_mult),
+        _ => sweep_timeout_us(derived, srtt_us, jitter_us),
+    }
+}
+
+/// The tail-sweep timeout under ALL FOUR laws, with the precedence made
+/// explicit — paper §16.67/§16.68. `RWM_QUANTILE_CLOCKS` outranks
+/// `RWM_RACK_CLOCKS` outranks `RWM_DERIVED_SWEEP`: the four are RIVAL LAWS FOR
+/// ONE QUANTITY, not composable axes, and leaving the precedence to evaluation
+/// order is how an arm ends up measuring a law nobody named. Each falls back
+/// to the next when its own input is unavailable — information availability,
+/// never a mode.
+#[allow(clippy::too_many_arguments)]
+pub fn sweep_timeout_us_all(
+    quantile: bool,
+    rack: bool,
+    derived: bool,
+    srtt_us: u64,
+    jitter_us: u64,
+    min_rtt_us: Option<u64>,
+    sigma_us: Option<u64>,
+    reo_mult: u64,
+    alpha: f64,
+) -> u64 {
+    match (quantile, sigma_us) {
+        (true, Some(sg)) if sg > 0 => quantile_recovery_round_us(srtt_us, sg, alpha),
+        _ => sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult),
+    }
+}
+
+/// The hole-refresh cadence under ALL FOUR laws. Same precedence and same
+/// fallback chain as [`sweep_timeout_us_all`].
+#[allow(clippy::too_many_arguments)]
+pub fn hole_refresh_all(
+    quantile: bool,
+    rack: bool,
+    derived: bool,
+    srtt: Option<Duration>,
+    jitter_us: u64,
+    min_rtt: Option<Duration>,
+    sigma_us: Option<u64>,
+    reo_mult: u64,
+    alpha: f64,
+) -> Duration {
+    match (quantile, srtt, sigma_us) {
+        (true, Some(sv), Some(sg)) if sg > 0 => {
+            Duration::from_micros(quantile_recovery_round_us(sv.as_micros() as u64, sg, alpha))
+        }
+        _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+    }
+}
+
+/// The hole-refresh cadence ACTUALLY supplied to the reliable window receiver
+/// under all three laws. Same precedence and same fallback as
+/// [`sweep_timeout_us_rack`].
+pub fn hole_refresh_rack(
+    rack: bool,
+    derived: bool,
+    srtt: Option<Duration>,
+    jitter_us: u64,
+    min_rtt: Option<Duration>,
+    reo_mult: u64,
+) -> Duration {
+    match (rack, srtt, min_rtt) {
+        (true, Some(s), Some(m)) if m.as_micros() > 0 => Duration::from_micros(
+            rack_recovery_round_us(s.as_micros() as u64, m.as_micros() as u64, reo_mult),
+        ),
+        _ => hole_refresh(derived, srtt, jitter_us),
+    }
+}
+
 /// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
 /// clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
 /// `derived` is an ENV GATE (an A/B arm), never a dial.
@@ -2519,7 +2762,7 @@ pub fn path_scaled_store_cap(
     floor: usize,
     pool: usize,
 ) -> Option<usize> {
-    pooled_store_cap(on, false, n_live, pipe_sum, gain, floor, pool)
+    pooled_store_cap(on, false, false, 1.0, n_live, pipe_sum, gain, floor, pool)
 }
 
 /// **THE POOLED OUTSTANDING CAP, BOTH FORMS, ONE EXPRESSION** — paper
@@ -2582,6 +2825,8 @@ pub fn path_scaled_store_cap(
 pub fn pooled_store_cap(
     on: bool,
     sum_cap: bool,
+    delta_cap: bool,
+    b_hint: f64,
     n_live: usize,
     pipe_sum: f64,
     gain: f64,
@@ -2591,13 +2836,99 @@ pub fn pooled_store_cap(
     if !on || n_live < 2 || pipe_sum <= 0.0 {
         return None;
     }
-    // The count multiplier, and the ONLY thing the gate changes. Written as a
-    // named factor rather than as two branches of an `if` so that the two arms
-    // are one formula with one value substituted — the shape CLAUDE.md's
-    // no-mode-switch rule asks for wherever two behaviours must both exist.
-    let count_multiplier = if sum_cap { 1.0 } else { n_live as f64 };
     let ceiling = n_live.saturating_mul(pool).max(floor);
-    Some(((gain * count_multiplier * pipe_sum).ceil() as usize).clamp(floor, ceiling))
+    Some(
+        ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+            as usize)
+            .clamp(floor, ceiling)),
+    )
+}
+
+/// **THE CoDel SETPOINT MAP `q(δ)`** — paper §16.66, gate `RWM_DELTA_CAP`.
+///
+/// ```text
+///   q(δ) = q_lo + (q_hi − q_lo) · ( clamp(b(δ), b_lo, b_hi) − b_lo ) / (b_hi − b_lo)
+///
+///     q_lo = 0.05   ← RFC 8289 (CoDel) §3.2, the conservative end of the band
+///     q_hi = 0.10   ← RFC 8289 §3.2, the Kleinrock peak-power end
+///     b_lo = b(Realtime) = ½ , b_hi = b(Bulk) = 2   ← [`delta_budget_b`]
+/// ```
+///
+/// RFC 8289 §3.2 derives the permitted standing queue from Kleinrock power
+/// maximisation — *"power is proportional to (1 + 2f − 1/3 f^2) / (1 + f)^2"* —
+/// and states the result as *"the ideal range for the permitted standing
+/// queue, or the target setpoint, is between 5% and 10% of the TCP
+/// connection's RTT"*, with `0.05r` named as the conservative choice and
+/// `0.1r` as the point that *"runs the risk of pushing shorter RTT connections
+/// over the knee"*.
+///
+/// **The derived quantity is the RATIO, never a millisecond.** CoDel's shipped
+/// `TARGET = 5 ms` is 5 % of its 100 ms `INTERVAL`; porting the millisecond
+/// ports nothing (§16.65's FOLKLORE CORRECTION).
+///
+/// **AFFINE IN THE DIAL, WITH NO FREE PARAMETER.** Both band endpoints are
+/// cited and both dial endpoints are READ from [`delta_budget_b`] rather than
+/// restated, so linear interpolation between them has zero degrees of freedom
+/// and invents no constant. The `clamp` is the DIAL'S OWN RANGE — the shipped
+/// `D(δ) = min(b·RTprop, 2·RTprop)` already saturates at `b = 2`, so this
+/// inherits exactly the saturation the span law has always had. There is no
+/// `if hint ==`, no threshold, and `q` is continuous and strictly monotone in
+/// `b` on the whole interval (CLAUDE.md's no-mode-switch invariant, read off
+/// the formula itself).
+///
+/// At the shipped endpoints this collapses to `q(b) = (b + 1)/30`, an
+/// algebraic consequence of the four anchors rather than a fifth constant:
+/// Realtime 0.0500, Auto 0.0667, Bulk 0.1000.
+///
+/// Shape pinned by `net::tests::law_shape::codel_setpoint_spans_the_derived_band_continuously`.
+pub fn codel_setpoint_q(b_hint: f64) -> f64 {
+    let b_lo = delta_budget_b(ProtocolHint::Realtime);
+    let b_hi = delta_budget_b(ProtocolHint::Bulk);
+    let t = (b_hint.clamp(b_lo, b_hi) - b_lo) / (b_hi - b_lo);
+    CODEL_TARGET_LO + (CODEL_TARGET_HI - CODEL_TARGET_LO) * t
+}
+
+/// RFC 8289 (CoDel) §3.2 — the conservative end of the derived setpoint band.
+/// *"a more conservative target of 0.05r offers a good utilization vs. delay
+/// trade-off while giving enough headroom to work well with a large variation
+/// in real RTT."* CITED AND DERIVED (Kleinrock power), not fitted.
+pub const CODEL_TARGET_LO: f64 = 0.05;
+/// RFC 8289 (CoDel) §3.2 — the peak-power end of the derived setpoint band.
+/// *"the ideal range … is between 5% and 10% of the TCP connection's RTT"*;
+/// `0.1r` is the point that *"runs the risk of pushing shorter RTT connections
+/// over the knee"*, i.e. the Kleinrock optimum itself.
+pub const CODEL_TARGET_HI: f64 = 0.10;
+
+/// **THE δ-PRICED POOL MULTIPLIER** — paper §16.66, gate `RWM_DELTA_CAP`
+/// (default OFF).
+///
+/// ```text
+///   m(δ) = 1 + q(δ)      when delta_cap = true   — DERIVED (RFC 8289 §3.2)
+///        = gain          when delta_cap = false  — the shipped FOSSIL (2.0)
+/// ```
+///
+/// This is the whole of what `RWM_DELTA_CAP` changes: **one factor, in the
+/// same position, in the same expression**. ADR-0070 finding 3 records the
+/// pool `gain = 2.0` as a FOSSIL (one BDP of pipe plus one BDP of recovery
+/// runway, argued in prose at `ac3bc9d`, swept once at one cell under a
+/// different CC family), and §16.65 downgraded even its BBR citation to
+/// *"right value, wrong citation"*. `1 + q(δ)` is its derived successor.
+///
+/// Written as a named factor rather than as two law functions, for the reason
+/// [`pooled_store_cap`] gives: a second implementation of a law under review
+/// is how a paper and its code diverge inside one commit.
+///
+/// **The reduction that matters.** As `q → 0` the pool becomes
+/// `Σᵢ bwᵢ·RTpropᵢ` — exactly one BDP per path, ZERO standing queue — which is
+/// ADR-0071 candidate **(d) ZERO**, the same answer §16.65's newsvendor
+/// cross-domain analysis reached independently. The derived band is therefore
+/// (d) PLUS the power-point allowance, not a rival to it.
+pub fn pool_value_multiplier(delta_cap: bool, b_hint: f64, gain: f64) -> f64 {
+    if delta_cap {
+        1.0 + codel_setpoint_q(b_hint)
+    } else {
+        gain
+    }
 }
 
 /// The UNCLAMPED pooled cap — the law's own value, before either bound.
@@ -2608,9 +2939,23 @@ pub fn pooled_store_cap(
 /// ASKED for, not against the number that survived its bounds. Exposed so the
 /// `[SUMCAP]` gauge and the law-shape tests read the same expression the
 /// engine does instead of re-deriving it.
-pub fn pooled_store_cap_unclamped(sum_cap: bool, n_live: usize, pipe_sum: f64, gain: f64) -> f64 {
+pub fn pooled_store_cap_unclamped(
+    sum_cap: bool,
+    delta_cap: bool,
+    b_hint: f64,
+    n_live: usize,
+    pipe_sum: f64,
+    gain: f64,
+) -> f64 {
+    // The count multiplier (`RWM_SUM_CAP`) and the VALUE multiplier
+    // (`RWM_DELTA_CAP`) are two INDEPENDENT axes of one expression: the first
+    // picks how many times the already-summed Σ is counted, the second picks
+    // what each unit of Σ is worth. Both are named factors rather than
+    // branches of an `if` over the law — the shape CLAUDE.md's no-mode-switch
+    // rule asks for wherever two behaviours must both exist.
     let count_multiplier = if sum_cap { 1.0 } else { n_live as f64 };
-    gain * count_multiplier * pipe_sum
+    let value_multiplier = pool_value_multiplier(delta_cap, b_hint, gain);
+    value_multiplier * count_multiplier * pipe_sum
 }
 
 /// Capacity-weighted SHARED outstanding pool (env `RWM_STORE_CAPW`) — the
@@ -3453,10 +3798,22 @@ pub(crate) struct SumCapGauge {
     /// multiplier at all — it is the confound this whole section is about.
     floor: usize,
     pool: usize,
+    /// The VALUE-multiplier axis this run is on (`RWM_DELTA_CAP`) and the dial
+    /// point it reads. Held so the count-multiplier counterfactual is computed
+    /// under the SAME value multiplier — the two axes must be varied one at a
+    /// time or neither counterfactual means anything.
+    delta_cap: bool,
+    b_hint: f64,
 }
 
 impl SumCapGauge {
-    pub(crate) fn new(on: bool, floor: usize, pool: usize) -> Self {
+    pub(crate) fn new(
+        on: bool,
+        floor: usize,
+        pool: usize,
+        delta_cap: bool,
+        b_hint: f64,
+    ) -> Self {
         Self {
             refreshes: 0,
             engaged: 0,
@@ -3468,6 +3825,8 @@ impl SumCapGauge {
             on,
             floor,
             pool,
+            delta_cap,
+            b_hint,
         }
     }
 
@@ -3478,11 +3837,23 @@ impl SumCapGauge {
         self.refreshes += 1;
         self.engaged += 1;
         self.cap_sum += realized as f64;
-        self.ask_sum += pooled_store_cap_unclamped(on, n_live, pipe_sum, gain);
-        // The counterfactual: the SAME expression with the multiplier flipped,
-        // under the SAME bounds. It goes through `pooled_store_cap`, so it
-        // cannot drift from what the engine actually evaluates.
-        let other = pooled_store_cap(true, !on, n_live, pipe_sum, gain, self.floor, self.pool);
+        self.ask_sum +=
+            pooled_store_cap_unclamped(on, self.delta_cap, self.b_hint, n_live, pipe_sum, gain);
+        // The counterfactual: the SAME expression with the COUNT multiplier
+        // flipped, under the SAME bounds AND the same value multiplier. It goes
+        // through `pooled_store_cap`, so it cannot drift from what the engine
+        // actually evaluates.
+        let other = pooled_store_cap(
+            true,
+            !on,
+            self.delta_cap,
+            self.b_hint,
+            n_live,
+            pipe_sum,
+            gain,
+            self.floor,
+            self.pool,
+        );
         if other != Some(realized) {
             self.differed += 1;
         }
@@ -3519,6 +3890,322 @@ impl Drop for SumCapGauge {
         // 121/126 pinned-rep finding was measured with.
         if self.on {
             eprintln!("{}", self.sumcap_line());
+        }
+        // The one-sided-clamp witness, once per sender teardown and on EVERY
+        // arm — the hypothesis it scores (§16.63's successor) is about the
+        // SHIPPED estimator, not about any gate here. Silent when the
+        // estimator was never fed.
+        if crate::scheduler::LCW_LOSS_MASS.load(std::sync::atomic::Ordering::Relaxed) > 0
+            || crate::scheduler::LCW_OVER_N.load(std::sync::atomic::Ordering::Relaxed) > 0
+        {
+            eprintln!("{}", crate::scheduler::lcw_report_line());
+        }
+    }
+}
+
+/// The `[DCAP]` engagement echo for the δ-priced pool multiplier — paper
+/// §16.66, gate `RWM_DELTA_CAP`.
+///
+/// Same convention as [`sumcap_report_line`], with the counterfactual keyed to
+/// the OTHER axis: at every engaged refresh it recomputes what the SHIPPED
+/// `gain` would have produced from the same Σ under the same bounds and the
+/// same count multiplier, so *"did the derived multiplier change anything"* is
+/// answerable from ONE run.
+///
+/// `q=` carries the resolved CoDel setpoint at this tunnel's dial point, and
+/// `b=` the dial number it was mapped from — together they let a battery
+/// verify that the dial routed (MEASUREMENT DISCIPLINE 1) rather than only
+/// that the env var was read.
+///
+/// **How a null must read.** `eng=0/0` is NEVER ARMED (the pooled seat was not
+/// reached — at N = 1 this is the expected and correct reading, since the law
+/// short-circuits before any multiplier); `eng=N/N` with `chg_frac=0.0000`
+/// would be armed-and-inert, which cannot happen while `gain != 1+q` and is
+/// therefore an instrument failure rather than a result. A high `pin=` means
+/// the arm measured the `N·knee` ceiling and not the law, and MEASUREMENT
+/// DISCIPLINE 18 requires it be reported as such.
+pub fn dcap_report_line(
+    refreshes: u64,
+    engaged: u64,
+    differed: u64,
+    at_pin: u64,
+    at_floor: u64,
+    cap_sum: f64,
+    ask_sum: f64,
+    q: f64,
+    b_hint: f64,
+    on: bool,
+) -> String {
+    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    let mean = |s: f64, d: u64| if d == 0 { 0.0 } else { s / d as f64 };
+    format!(
+        "[DCAP] on={} eng={}/{} chg={}/{} chg_frac={:.4} pin={:.4} floor={:.4} \
+         cap={:.1} ask={:.1} q={:.6} b={:.4}",
+        on as u8,
+        engaged,
+        refreshes,
+        differed,
+        engaged,
+        frac(differed, engaged),
+        frac(at_pin, engaged),
+        frac(at_floor, engaged),
+        mean(cap_sum, engaged),
+        mean(ask_sum, engaged),
+        q,
+        b_hint,
+    )
+}
+
+/// The `[DCAP]` tally, fed at every pooled-law refresh on BOTH arms.
+pub(crate) struct DeltaCapGauge {
+    refreshes: u64,
+    engaged: u64,
+    differed: u64,
+    at_pin: u64,
+    at_floor: u64,
+    cap_sum: f64,
+    ask_sum: f64,
+    /// `RWM_DELTA_CAP` — which arm this run is, and whether the line is emitted.
+    on: bool,
+    /// The bounds and the count-multiplier axis, held so the counterfactual is
+    /// evaluated IDENTICALLY except for the one factor under test.
+    floor: usize,
+    pool: usize,
+    sum_cap: bool,
+    b_hint: f64,
+}
+
+impl DeltaCapGauge {
+    pub(crate) fn new(
+        on: bool,
+        floor: usize,
+        pool: usize,
+        sum_cap: bool,
+        b_hint: f64,
+    ) -> Self {
+        Self {
+            refreshes: 0,
+            engaged: 0,
+            differed: 0,
+            at_pin: 0,
+            at_floor: 0,
+            cap_sum: 0.0,
+            ask_sum: 0.0,
+            on,
+            floor,
+            pool,
+            sum_cap,
+            b_hint,
+        }
+    }
+
+    /// Record one pooled-law refresh. Observation only.
+    fn record(&mut self, n_live: usize, pipe_sum: f64, gain: f64, realized: usize) {
+        self.refreshes += 1;
+        self.engaged += 1;
+        self.cap_sum += realized as f64;
+        self.ask_sum += pooled_store_cap_unclamped(
+            self.sum_cap,
+            self.on,
+            self.b_hint,
+            n_live,
+            pipe_sum,
+            gain,
+        );
+        // The counterfactual: the SAME expression with the VALUE multiplier
+        // flipped, under the SAME bounds and the SAME count multiplier.
+        let other = pooled_store_cap(
+            true,
+            self.sum_cap,
+            !self.on,
+            self.b_hint,
+            n_live,
+            pipe_sum,
+            gain,
+            self.floor,
+            self.pool,
+        );
+        if other != Some(realized) {
+            self.differed += 1;
+        }
+        let ceiling = n_live.saturating_mul(self.pool).max(self.floor);
+        if realized >= ceiling {
+            self.at_pin += 1;
+        }
+        if realized <= self.floor {
+            self.at_floor += 1;
+        }
+    }
+
+    /// The `[DCAP]` line this gauge would emit right now.
+    pub(crate) fn dcap_line(&self) -> String {
+        dcap_report_line(
+            self.refreshes,
+            self.engaged,
+            self.differed,
+            self.at_pin,
+            self.at_floor,
+            self.cap_sum,
+            self.ask_sum,
+            codel_setpoint_q(self.b_hint),
+            self.b_hint,
+            self.on,
+        )
+    }
+}
+
+impl Drop for DeltaCapGauge {
+    fn drop(&mut self) {
+        if self.on {
+            eprintln!("{}", self.dcap_line());
+        }
+    }
+}
+
+/// The `[RACK]` bind-fraction echo for the RACK-shaped recovery round — paper
+/// §16.67, gate `RWM_RACK_CLOCKS`.
+///
+/// CLAUDE.md FORMULA-FIRST: *every clamp gets a bind-fraction gauge,
+/// reported.* Neither shipped recovery clock has ever had one — the
+/// `[25, 100] ms` clamp's bind fraction is unmeasured to this day — so this
+/// gauge is the instrument the RACK law owes AND the instrument its
+/// predecessor never had.
+///
+/// * `ceil=` — the fraction of evaluations where RFC 8985 §6.2 Step 4's `SRTT`
+///   ceiling bound. **§16.67 predicts 0.0000 at every measured cell at the
+///   shipped `mult = 1`**, because `min_rtt ≤ srtt` makes `min_rtt/4 < srtt`
+///   identically. A zero here is the DEFECT FINDING, not a clean bill.
+/// * `gran=` — the fraction where the `TIMER_GRANULARITY_US` floor bound.
+/// * `legacy_pin=` — the fraction where the law it REPLACES would have been at
+///   one of its two absolute literals, so the counterfactual's own clamp
+///   behaviour is on the record beside this one.
+/// * `round=` / `legacy=` — the two cadences' means, in µs.
+#[allow(clippy::too_many_arguments)]
+pub fn rack_report_line(
+    evals: u64,
+    at_ceiling: u64,
+    at_gran: u64,
+    legacy_pinned: u64,
+    round_sum: f64,
+    legacy_sum: f64,
+    mult: u64,
+    fired: u64,
+    spurious: u64,
+    on: bool,
+) -> String {
+    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    let mean = |s: f64, d: u64| if d == 0 { 0.0 } else { s / d as f64 };
+    format!(
+        "[RACK] on={} evals={} ceil={:.4} gran={:.4} legacy_pin={:.4} \
+         round={:.1} legacy={:.1} mult={} fa={}/{} fa_frac={:.4} \
+         fa_class={:.4}",
+        on as u8,
+        evals,
+        frac(at_ceiling, evals),
+        frac(at_gran, evals),
+        frac(legacy_pinned, evals),
+        mean(round_sum, evals),
+        mean(legacy_sum, evals),
+        mult,
+        spurious,
+        fired,
+        frac(spurious, fired),
+        RACK_SPURIOUS_BUDGET,
+    )
+}
+
+/// RFC 8985 §6.2 Step 4's own published spurious budget — *"approximately once
+/// every 16 recoveries (less than 7%)"*. The CLASS BAR every arm of the
+/// recovery-clock family is scored against (§16.67.1), printed beside the
+/// measurement so a parser never has to know it.
+pub const RACK_SPURIOUS_BUDGET: f64 = 1.0 / 16.0;
+
+/// The `[RACK]` tally, fed at every recovery-clock evaluation on the ON arm.
+#[derive(Default)]
+pub(crate) struct RackClockGauge {
+    evals: u64,
+    at_ceiling: u64,
+    at_gran: u64,
+    legacy_pinned: u64,
+    round_sum: f64,
+    legacy_sum: f64,
+    on: bool,
+    mult: u64,
+    /// §16.67.1's FALSE-ALARM VALIDATION, and it runs on EVERY arm including
+    /// the shipped control — the `[25, 100] ms` clamp's own false-alarm rate
+    /// has never been measured in this tree, and a cited empirical fraction
+    /// that has not been validated against the thing it is empirical ABOUT
+    /// does not clear this repository's bar.
+    ///
+    /// `fired` — recovery rounds that fired. `spurious` — those whose target's
+    /// live flight was YOUNGER than its own per-path law threshold, i.e. the
+    /// data was going to arrive anyway (the existing spurious-by-law class,
+    /// read here ungated by `RWM_DIAG` so it is available to every arm).
+    /// Scored against RFC 8985 §6.2 Step 4's own published budget,
+    /// [`RACK_SPURIOUS_BUDGET`] = 1/16 = 6.25 %.
+    fired: u64,
+    spurious: u64,
+}
+
+impl RackClockGauge {
+    pub(crate) fn new(on: bool, mult: u64) -> Self {
+        Self { on, mult, ..Default::default() }
+    }
+
+    /// Record one evaluation. `round_us` is the realized RACK cadence and
+    /// `legacy_us` the clamped law it replaces, both computed by the caller
+    /// through the same functions the engine uses.
+    pub(crate) fn record(&mut self, srtt_us: u64, min_rtt_us: u64, round_us: u64, legacy_us: u64) {
+        self.evals += 1;
+        self.round_sum += round_us as f64;
+        self.legacy_sum += legacy_us as f64;
+        let mult = self.mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
+        let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
+        if base >= srtt_us && srtt_us > TIMER_GRANULARITY_US {
+            self.at_ceiling += 1;
+        }
+        if round_us == TIMER_GRANULARITY_US && base.min(srtt_us) <= TIMER_GRANULARITY_US {
+            self.at_gran += 1;
+        }
+        if legacy_us == TAIL_SWEEP_MIN_US || legacy_us == TAIL_SWEEP_MAX_US {
+            self.legacy_pinned += 1;
+        }
+    }
+
+    /// Record one recovery-round FIRE and whether it was a false alarm —
+    /// §16.67.1. Fed on every arm; observation only.
+    pub(crate) fn record_fire(&mut self, spurious: bool) {
+        self.fired += 1;
+        if spurious {
+            self.spurious += 1;
+        }
+    }
+
+    /// The `[RACK]` line this gauge would emit right now.
+    pub(crate) fn rack_line(&self) -> String {
+        rack_report_line(
+            self.evals,
+            self.at_ceiling,
+            self.at_gran,
+            self.legacy_pinned,
+            self.round_sum,
+            self.legacy_sum,
+            self.mult,
+            self.fired,
+            self.spurious,
+            self.on,
+        )
+    }
+}
+
+impl Drop for RackClockGauge {
+    fn drop(&mut self) {
+        // Emitted on EVERY arm that fired a recovery round, not only the ON
+        // arm — §16.67.1's validation is about the CONTROL as much as the
+        // successors, and the shipped clamp's false-alarm rate is the number
+        // this tree has never had. A run that fired nothing stays silent.
+        if self.on || self.fired > 0 {
+            eprintln!("{}", self.rack_line());
         }
     }
 }
@@ -4608,6 +5295,10 @@ async fn run_window_sender(
     /// goal-gate "The Derived Recovery Clamp": the sender site's one-shot
     /// mechanism-liveness echo (ACTIVE + DIVERGED). Observation only.
     let mut derived_round_echo = DerivedRoundEcho::default();
+    // `[RACK]` (paper §16.67): the bind-fraction gauge the shipped
+    // `[25, 100] ms` clamp has never had, and the one CLAUDE.md's
+    // FORMULA-FIRST clamp rule owes any law that adds two new bounds.
+    let mut rack_echo = RackClockGauge::new(pol.rack_clocks, pol.rack_reo_mult);
 
 
 
@@ -4766,7 +5457,25 @@ async fn run_window_sender(
     // BOTH arms at every pooled-law refresh — including the COUNTERFACTUAL, so
     // "did the gate change anything" is answerable from one run — and emitted
     // only on the ON arm, so the shipped default's output is unchanged.
-    let mut sumcap = SumCapGauge::new(pol.sum_cap, pol.store_cap_floor, pol.store_path_pool);
+    let mut sumcap = SumCapGauge::new(
+        pol.sum_cap,
+        pol.store_cap_floor,
+        pol.store_path_pool,
+        pol.delta_cap,
+        pol.delta_b,
+    );
+    // `[DCAP]` (paper §16.66): the δ-priced VALUE multiplier's engagement echo.
+    // Fed on BOTH arms at every pooled-law refresh — including the
+    // COUNTERFACTUAL against the shipped `gain`, so "did the derived
+    // multiplier change anything" is answerable from one run — and emitted
+    // only on the ON arm, so the shipped default's output is unchanged.
+    let mut dcap = DeltaCapGauge::new(
+        pol.delta_cap,
+        pol.store_cap_floor,
+        pol.store_path_pool,
+        pol.sum_cap,
+        pol.delta_b,
+    );
     // The periodic DIAG report clock (net seam pass 3 → net/diag.rs): both
     // stamps stay sampled here, at their original points.
     let diag_start_us = now_us();
@@ -5193,6 +5902,8 @@ async fn run_window_sender(
                     } else if let Some(cap) = pooled_store_cap(
                         pol.store_paths_on,
                         pol.sum_cap,
+                        pol.delta_cap,
+                        pol.delta_b,
                         n_live,
                         cwnd_sum,
                         pol.store_bdp_gain,
@@ -5208,6 +5919,7 @@ async fn run_window_sender(
                         // depend on the CC family, which is the kind of split
                         // ADR-0064 exists to refuse.
                         sumcap.record(pol.sum_cap, n_live, cwnd_sum, pol.store_bdp_gain, cap);
+                        dcap.record(n_live, cwnd_sum, pol.store_bdp_gain, cap);
                         cap
                     } else if cwnd_sum > 0.0 {
                         ((pol.store_bdp_gain * cwnd_sum).ceil() as usize)
@@ -5515,6 +6227,8 @@ async fn run_window_sender(
                     } else if let Some(cap) = pooled_store_cap(
                         pol.store_paths_on,
                         pol.sum_cap,
+                        pol.delta_cap,
+                        pol.delta_b,
                         n_live,
                         bdp,
                         pol.store_bdp_gain,
@@ -5527,6 +6241,7 @@ async fn run_window_sender(
                         // VALUE inside one expression rather than a second law
                         // — see `pooled_store_cap`.
                         sumcap.record(pol.sum_cap, n_live, bdp, pol.store_bdp_gain, cap);
+                        dcap.record(n_live, bdp, pol.store_bdp_gain, cap);
                         cap
                     } else if bdp > 0.0 {
                         ((pol.store_bdp_gain * bdp).ceil() as usize).clamp(pol.store_cap_floor, pol.store_max)
@@ -6388,7 +7103,7 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let (srtt_us, jitter_us) = {
+                let (srtt_us, jitter_us, min_rtt_us, sigma_us) = {
                     let sched = scheduler.lock();
                     let paths: Vec<_> = sched
                         .active_paths()
@@ -6401,10 +7116,43 @@ async fn run_window_sender(
                     // way the clock is (max over the same path set), so floor
                     // and clock can never come from different paths.
                     let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
-                    (pooled_recovery_srtt_us(&pooled), jit)
+                    // RFC 8985 §6.2 Step 4's `RACK.min_RTT`, read off the SAME
+                    // path set as the clock and the jitter so no two terms of
+                    // one law can come from different paths. The MIN over the
+                    // set is the queue-free floor the RACK law is built on.
+                    let mrtt = paths
+                        .iter()
+                        .filter_map(|p| p.min_rtt())
+                        .map(|d| d.as_micros() as u64)
+                        .min();
+                    // §16.68's second moment, MAX over the same set: the
+                    // quantile law's margin must cover the widest dispersion
+                    // any live path presents, not the narrowest.
+                    let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
+                    (pooled_recovery_srtt_us(&pooled), jit, mrtt, sg)
                 };
-                let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
-                if pol.derived_sweep {
+                let timeout_us = sweep_timeout_us_all(
+                    pol.quantile_clocks,
+                    pol.rack_clocks,
+                    pol.derived_sweep,
+                    srtt_us,
+                    jitter_us,
+                    min_rtt_us,
+                    sigma_us,
+                    pol.rack_reo_mult,
+                    pol.contract_alpha,
+                );
+                if pol.rack_clocks {
+                    if let Some(m) = min_rtt_us.filter(|m| *m > 0) {
+                        rack_echo.record(
+                            srtt_us,
+                            m,
+                            timeout_us,
+                            tail_sweep_timeout_us(srtt_us),
+                        );
+                    }
+                }
+                if pol.derived_sweep && !pol.rack_clocks {
                     derived_round_echo.observe(
                         "sender-tail-sweep",
                         srtt_us,
@@ -7154,6 +7902,17 @@ async fn run_window_sender(
                     // (young = the law would have suppressed it = the
                     // spurious-by-law class), per-flight-path and per-retx-
                     // path emission counts.
+                    // 16.67.1's FALSE-ALARM VALIDATION, fed on EVERY arm
+                    // (ungated by RWM_DIAG, unlike the DIAG attribution just
+                    // below): a fire whose target flight is YOUNGER than its
+                    // own per-path law threshold is data that was going to
+                    // arrive anyway - the spurious-by-law class, which is the
+                    // measurable stand-in for RACK's DSACK-detected spurious
+                    // recovery. Scored against RFC 8985 6.2.4's own budget.
+                    if let Some((t, p)) = mp_flight {
+                        let age = now_repair_us.saturating_sub(t);
+                        rack_echo.record_fire(age < mp_thr_of(&mp_clocks, p));
+                    }
                     if pol.diag_on {
                         if let Some((t, p)) = mp_flight {
                             let age = now_repair_us.saturating_sub(t);
@@ -9914,6 +10673,8 @@ mod tests {
         let corrected = pooled_store_cap(
             arm.store_paths_on,
             arm.sum_cap,
+            arm.delta_cap,
+            arm.delta_b,
             2,
             SIGMA_C8,
             arm.store_bdp_gain,
@@ -9924,6 +10685,8 @@ mod tests {
         let shipped = pooled_store_cap(
             ctl.store_paths_on,
             ctl.sum_cap,
+            ctl.delta_cap,
+            ctl.delta_b,
             2,
             SIGMA_C8,
             ctl.store_bdp_gain,
@@ -9952,6 +10715,150 @@ mod tests {
             "the trio and the brake must coexist — the brake reads the ledger \
              the trio fixes, so a composition that drops either is not the arm"
         );
+    }
+
+    /// **THE ROUTING GATE for the derived-setpoint laws** — paper §16.66 /
+    /// §16.67 / §16.68, gates `RWM_DELTA_CAP`, `RWM_RACK_CLOCKS`,
+    /// `RWM_RACK_REO_MULT`, `RWM_QUANTILE_CLOCKS`.
+    ///
+    /// MEASUREMENT DISCIPLINE 1: a gate that RESOLVES is not a gate that
+    /// ROUTES, and every one of the three no-mode-switch defects CLAUDE.md
+    /// records was a routing bug that every value pin passed through. This
+    /// asserts, on the policy the engine actually runs, that each law reaches
+    /// its seat, that its siblings stay where they were, and — the clause
+    /// ADR-0070's postmortem asks for — that **no new constant reached any
+    /// mechanism**: gain, knee, floor and boot are all at their shipped values
+    /// on every arm, so an arm differs from its control in exactly the one
+    /// factor the paper says it does.
+    ///
+    /// Set by FIELD rather than through the environment: an env-mutating test
+    /// is process-global state in a parallel runner, which is the shape of the
+    /// eight HashMap-order flakes already on this record.
+    #[test]
+    fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
+        use crate::gates::RuntimeGates;
+        use crate::net::sender_policy::SenderPolicy;
+        use crate::net::{
+            codel_setpoint_q, contract_alpha, pooled_store_cap, RACK_REO_WND_MULT_INIT,
+            RACK_REO_WND_MULT_MAX,
+        };
+
+        let base = || {
+            let mut g = RuntimeGates::resolve();
+            // Neutralise whatever the ambient environment carries, so this
+            // asserts the LAW's routing and not the machine it runs on.
+            g.delta_cap = false;
+            g.rack_clocks = false;
+            g.quantile_clocks = false;
+            g.derived_sweep = false;
+            g.store_env_set = false;
+            g.store_override = None;
+            g.rack_reo_mult = RACK_REO_WND_MULT_INIT;
+            g
+        };
+        let resolve = |g: &RuntimeGates, h: ProtocolHint| {
+            SenderPolicy::resolve(g, 1200, h, true, false, false, false)
+        };
+
+        // ── §16.66: the δ-cap reaches the pooled seat at every dial point ──
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let ctl = resolve(&base(), hint);
+            let mut on = base();
+            on.delta_cap = true;
+            let arm = resolve(&on, hint);
+
+            assert!(!ctl.delta_cap, "{hint:?}: the control resolved the gate ON");
+            assert!(arm.delta_cap, "{hint:?}: RWM_DELTA_CAP did not reach the seat");
+
+            // The siblings are untouched: this gate picks the VALUE multiplier
+            // and nothing else. The COUNT multiplier (`RWM_SUM_CAP`), the Σ's
+            // SET (`RWM_STORE_CAP_UNIFIED`) and the brake are independent axes.
+            assert_eq!(arm.sum_cap, ctl.sum_cap, "{hint:?}: the count multiplier moved");
+            assert_eq!(
+                arm.store_cap_unified, ctl.store_cap_unified,
+                "{hint:?}: the Σ's path set moved"
+            );
+            assert_eq!(arm.late_brake, ctl.late_brake, "{hint:?}: the brake armed itself");
+            assert_eq!(arm.three_term_on, ctl.three_term_on, "{hint:?}: the pool law changed");
+
+            // NO NEW CONSTANT REACHED THE MECHANISM.
+            assert!((arm.store_bdp_gain - 2.0).abs() < 1e-12, "{hint:?}: the gain moved");
+            assert_eq!(arm.store_path_pool, 2048, "{hint:?}: the knee moved");
+            assert_eq!(arm.store_cap_floor, ctl.store_cap_floor, "{hint:?}: the floor moved");
+            assert_eq!(arm.store_boot_cap, ctl.store_boot_cap, "{hint:?}: the boot cap moved");
+
+            // The dial reached the law, and the seat computes (1+q)·Σ.
+            let q = codel_setpoint_q(arm.delta_b);
+            assert!((0.05..=0.10).contains(&q), "{hint:?}: q left the derived band");
+            let sigma = 1_200.0f64;
+            let a = pooled_store_cap(
+                true, true, arm.delta_cap, arm.delta_b, 2, sigma, arm.store_bdp_gain,
+                arm.store_cap_floor, arm.store_path_pool,
+            )
+            .expect("engaged at a warm dual");
+            let c = pooled_store_cap(
+                true, true, ctl.delta_cap, ctl.delta_b, 2, sigma, ctl.store_bdp_gain,
+                ctl.store_cap_floor, ctl.store_path_pool,
+            )
+            .expect("engaged");
+            assert_eq!(a, ((1.0 + q) * sigma).ceil() as usize, "{hint:?}: not (1+q)·Σ");
+            assert!(a < c, "{hint:?}: the derived multiplier did not shrink the pool");
+        }
+
+        // BIT-IDENTICAL AT N = 1, by construction rather than by measurement.
+        assert_eq!(
+            pooled_store_cap(true, true, true, 1.0, 1, 1_200.0, 2.0, 10, 2048),
+            None,
+            "the pooled law engaged at N = 1"
+        );
+
+        // ── §16.67 / §16.68: the recovery gates route ──────────────────
+        let ctl = resolve(&base(), ProtocolHint::Auto);
+        assert!(!ctl.rack_clocks && !ctl.quantile_clocks && !ctl.derived_sweep);
+        assert_eq!(ctl.rack_reo_mult, RACK_REO_WND_MULT_INIT);
+
+        let mut r = base();
+        r.rack_clocks = true;
+        let rack = resolve(&r, ProtocolHint::Auto);
+        assert!(rack.rack_clocks && !rack.quantile_clocks, "the RACK gate did not route");
+        let mut q = base();
+        q.quantile_clocks = true;
+        let quant = resolve(&q, ProtocolHint::Auto);
+        assert!(quant.quantile_clocks && !quant.rack_clocks, "the quantile gate did not route");
+
+        // The recovery laws are CLOCKS, not cap laws, so they must arm on a
+        // coded seat too — unlike the δ-cap, which is scoped to `plain_dyn_cap`.
+        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, true, true, false, false);
+        assert!(coded.rack_clocks, "the RACK gate is wrongly scoped to the plain seat");
+        let mut d = base();
+        d.delta_cap = true;
+        let coded_cap =
+            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, true, true, false, false);
+        assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
+
+        // RACK's own bound on RACK's own parameter, at both ends.
+        let mut m = base();
+        m.rack_clocks = true;
+        m.rack_reo_mult = RACK_REO_WND_MULT_MAX;
+        assert_eq!(
+            resolve(&m, ProtocolHint::Auto).rack_reo_mult,
+            RACK_REO_WND_MULT_MAX,
+            "RACK's maximum multiplier did not reach the policy"
+        );
+
+        // §16.68's α rides the contract's own ζ, resolved onto the policy and
+        // strictly monotone across the dial's named points — a NUMBER on the
+        // contract, never a branch.
+        let mut last = 0.0f64;
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let p = resolve(&q, hint);
+            assert!(
+                (p.contract_alpha - contract_alpha(hint)).abs() < f64::EPSILON,
+                "{hint:?}: α did not reach the policy from the contract"
+            );
+            assert!(p.contract_alpha > last, "{hint:?}: α is not monotone across the dial");
+            last = p.contract_alpha;
+        }
     }
 
     mod law_shape {
@@ -10055,7 +10962,7 @@ mod tests {
         fn sum_store_cap_value_is_linear_in_n_the_template_applied() {
             use crate::net::pooled_store_cap;
             let cap = |n: usize| {
-                pooled_store_cap(true, true, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
+                pooled_store_cap(true, true, false, 1.0, n, n as f64 * A, GAIN, FLOOR_INERT, POOL_INERT)
                     .expect("the law is engaged at N >= 2 with a positive base")
             };
 
@@ -10110,7 +11017,7 @@ mod tests {
             // construction claim is exactly the kind that rots silently.
             for on in [false, true] {
                 assert_eq!(
-                    pooled_store_cap(true, on, 1, A, GAIN, FLOOR_INERT, POOL_INERT),
+                    pooled_store_cap(true, on, false, 1.0, 1, A, GAIN, FLOOR_INERT, POOL_INERT),
                     None,
                     "sum_cap={on}: the N = 1 guard must fire before the multiplier"
                 );
@@ -10154,7 +11061,7 @@ mod tests {
 
             let f = |sum_cap: bool, unified: bool| {
                 let sigma = if unified { SIGMA_LIVE } else { SIGMA_ACTIVE };
-                pooled_store_cap(true, sum_cap, N_LIVE, sigma, GAIN, FLOOR_INERT, POOL_INERT)
+                pooled_store_cap(true, sum_cap, false, 1.0, N_LIVE, sigma, GAIN, FLOOR_INERT, POOL_INERT)
                     .expect("engaged")
             };
 
@@ -10273,8 +11180,8 @@ mod tests {
                     (corrected_pin - 1024.0 * n as f64).abs() < 1e-9,
                     "N={n}: the corrected threshold is not per-path"
                 );
-                let below = pooled_store_cap(true, true, n, corrected_pin - 1.0, GAIN, FLOOR, KNEE);
-                let at = pooled_store_cap(true, true, n, corrected_pin, GAIN, FLOOR, KNEE);
+                let below = pooled_store_cap(true, true, false, 1.0, n, corrected_pin - 1.0, GAIN, FLOOR, KNEE);
+                let at = pooled_store_cap(true, true, false, 1.0, n, corrected_pin, GAIN, FLOOR, KNEE);
                 assert!(below.unwrap() < ceiling, "N={n}: corrected not interior below");
                 assert_eq!(at, Some(ceiling), "N={n}: corrected not pinned at N·knee/gain");
 
@@ -10287,7 +11194,7 @@ mod tests {
                     Some(ceiling)
                 );
                 assert!(
-                    pooled_store_cap(true, true, n, shipped_pin, GAIN, FLOOR, KNEE).unwrap()
+                    pooled_store_cap(true, true, false, 1.0, n, shipped_pin, GAIN, FLOOR, KNEE).unwrap()
                         < ceiling,
                     "N={n}: the correction does not free the law at the shipped pin threshold"
                 );

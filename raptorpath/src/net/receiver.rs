@@ -69,7 +69,7 @@ use super::{
     BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
-    hole_nack_refresh, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
+    hole_nack_refresh, hole_refresh_all, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::control::FecRateController;
@@ -190,9 +190,23 @@ pub(crate) async fn run_receiver(
     // goal-gate "The Derived Recovery Clamp" (`RWM_DERIVED_SWEEP`, default
     // OFF): the stalled-hole refresh cadence on the derived round.
     let recv_derived_sweep = recv_gates.derived_sweep;
+    let recv_rack_clocks = recv_gates.rack_clocks;
+    let recv_rack_reo_mult = recv_gates.rack_reo_mult;
+    let recv_quantile_clocks = recv_gates.quantile_clocks;
+    // The contract's alpha at the RECEIVER. The protocol hint is not plumbed
+    // to this task, so the quantile arm reads the Auto point of the dial here
+    // while the sender reads the tunnel's own. Recorded as a stated limitation
+    // of the REFUTED arm (paper 16.68) rather than papered over: it means the
+    // two sites can disagree on alpha at Realtime and Bulk, which is a reason
+    // this arm may not be scored across hints without plumbing the hint first.
+    let recv_contract_alpha =
+        crate::net::contract_alpha(crate::control::fec_rate::ProtocolHint::Auto);
     // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
     // DIVERGED). Observation only; emitted on the armed arm alone.
     let mut recv_derived_echo = DerivedRoundEcho::default();
+    // `[RACK]` bind-fraction gauge at the receiver site (paper §16.67).
+    let mut recv_rack_echo =
+        crate::net::RackClockGauge::new(recv_rack_clocks, recv_rack_reo_mult);
     let mut recv_shed_diag_at = Instant::now();
     // RWM Phase C unordered delivery: next in-order seq NOT yet received
     // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -717,18 +731,21 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if pending {
-                let (srtt, srtt_jitter_us) = {
+                let (srtt, srtt_jitter_us, min_rtt, sigma_us) = {
                     let sched = recv_scheduler.lock();
                     let live: Vec<_> = sched
                         .live_paths()
                         .into_iter()
                         .filter_map(|pid| sched.path(pid))
                         .collect();
-                    // Same path set for both, so the DERIVED floor and its
-                    // clock can never come from different paths.
+                    // Same path set for all three, so the DERIVED floor, the
+                    // RACK law's `min_RTT` and their clock can never come from
+                    // different paths.
                     (
                         live.iter().map(|p| p.srtt()).max(),
                         live.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0),
+                        live.iter().filter_map(|p| p.min_rtt()).min(),
+                        live.iter().filter_map(|p| p.rtt_sigma_us()).max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
@@ -738,8 +755,30 @@ pub(crate) async fn run_receiver(
                     // goal-gate "The Derived Recovery Clamp": under
                     // `RWM_DERIVED_SWEEP` the cadence is the DERIVED round
                     // (no ceiling); OFF ⇒ `hole_nack_refresh` verbatim.
-                    let refresh = hole_refresh(recv_derived_sweep, srtt, srtt_jitter_us);
-                    if recv_derived_sweep {
+                    // Paper §16.67: `RWM_RACK_CLOCKS` REPLACES
+                    // `RWM_DERIVED_SWEEP` here — rival laws for one quantity.
+                    let refresh = hole_refresh_all(
+                        recv_quantile_clocks,
+                        recv_rack_clocks,
+                        recv_derived_sweep,
+                        srtt,
+                        srtt_jitter_us,
+                        min_rtt,
+                        sigma_us,
+                        recv_rack_reo_mult,
+                        recv_contract_alpha,
+                    );
+                    if recv_rack_clocks {
+                        if let (Some(sv), Some(mv)) = (srtt, min_rtt) {
+                            recv_rack_echo.record(
+                                sv.as_micros() as u64,
+                                mv.as_micros() as u64,
+                                refresh.as_micros() as u64,
+                                hole_nack_refresh(srtt).as_micros() as u64,
+                            );
+                        }
+                    }
+                    if recv_derived_sweep && !recv_rack_clocks {
                         if let Some(s) = srtt {
                             recv_derived_echo.observe(
                                 "receiver-hole-refresh",

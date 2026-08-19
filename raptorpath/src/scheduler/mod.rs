@@ -1131,6 +1131,21 @@ pub struct CopaState {
     /// consecutive differences at jitter scale, so this measures jitter,
     /// never queue. Widens the backoff threshold (JITTER_HEADROOM).
     jitter_est: f64,
+    /// EWMA of the SQUARED deviation from the smoothed RTT (seconds²) —
+    /// `var = (1−β)·var + β·(rtt − srtt)²` at RFC 6298 §2's own smoothing
+    /// gain `β = 1/4`, the gain that RFC uses for exactly this job on the
+    /// FIRST absolute moment (`RTTVAR = (1−β)·RTTVAR + β·|SRTT − R'|`).
+    ///
+    /// Exists for paper §16.68's DERIVED recovery clock, which needs a genuine
+    /// SECOND moment: Cantelli's distribution-free bound is stated in σ, and
+    /// the tree's two existing dispersion signals are both mean-ABSOLUTE
+    /// statistics (`jitter_est` on consecutive differences, the estimator's
+    /// RFC 3550 interarrival jitter). Converting either to σ requires assuming
+    /// a distribution, which would turn the derived clock's one
+    /// distribution-free guarantee into a fitted coefficient — §16.68.
+    ///
+    /// Observation only: nothing outside `RWM_QUANTILE_CLOCKS` reads it.
+    rtt_var_sq: f64,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1290,6 +1305,7 @@ impl CopaState {
             bw_samples: VecDeque::new(),
             bw_mono: VecDeque::new(),
             bw_o1: honest_anchor_active(),
+            rtt_var_sq: 0.0,
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -1635,6 +1651,13 @@ impl CopaState {
         // front is therefore always the current windowed min, and time-based
         // expiry still pops from the (oldest-timestamp) front. Exact same
         // `min_rtt` value as the rescan, just maintained incrementally.
+        // §16.68's second moment, fed against the SMOOTHED mean the same way
+        // RFC 6298 §2 feeds RTTVAR and at the same β = 1/4. Fed
+        // unconditionally; read by nothing on the default arm.
+        if let Some(sr) = self.srtt {
+            let dev = rtt.as_secs_f64() - sr.as_secs_f64();
+            self.rtt_var_sq = 0.75 * self.rtt_var_sq + 0.25 * dev * dev;
+        }
         while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
             self.rtt_samples.pop_back();
         }
@@ -2344,6 +2367,13 @@ pub struct PathState {
     /// path's own `PathStats::symbols_sent`. See
     /// [`Self::sender_truth_loss_delta`].
     loss_sent_cursor: u64,
+    /// THE ONE-SIDED-CLAMP WITNESS (paper §16.63's successor hypothesis,
+    /// observation only). Counts of samples where the receiver's cumulative
+    /// cursor LED the sender's own symbol counter, their summed magnitude, and
+    /// the positive loss mass actually fed — see [`Self::loss_clamp_witness`].
+    loss_clamp_over_n: u64,
+    loss_clamp_over_mass: u64,
+    loss_clamp_loss_mass: u64,
     /// `RWM_LOSS_SENT_TRUTH`: the paired cursor over the receiver's clean
     /// per-path `total_received`. Separate from [`Self::ack_cum_received`]
     /// because the two arms advance independently (the legacy cursor pair
@@ -2415,6 +2445,9 @@ impl PathState {
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
+            loss_clamp_over_n: 0,
+            loss_clamp_over_mass: 0,
+            loss_clamp_loss_mass: 0,
             loss_recv_cursor: 0,
             release_sent_cursor: 0,
             release_recv_cursor: 0,
@@ -2489,11 +2522,55 @@ impl PathState {
         }
         self.loss_sent_cursor = self.loss_sent_cursor.max(symbols_sent);
         self.loss_recv_cursor = self.loss_recv_cursor.max(cum_received);
+        // ── THE ONE-SIDED-CLAMP WITNESS (observation only) ───────────────
+        // Goal-gate item 3c, REDIRECTED: the RFC 6675 denominator hypothesis
+        // was refuted on the code (both operands count retransmits — a matched
+        // pair). The labelled successor hypothesis for the T rung's 20 %
+        // over-read, and for why it SURVIVES at N = 1 where the attribution
+        // error it was built to repair cannot exist, is THIS `min`: two clocks
+        // (the sender's own symbol counter and the receiver's cumulative echo)
+        // jitter against each other, so `d_received > d_expected` whenever the
+        // receiver's cursor momentarily leads. The clamp RECTIFIES every such
+        // sample to zero loss rather than to negative loss — and rectifying a
+        // zero-mean jitter is a POSITIVE BIAS at any path count, which is
+        // exactly the shape of the surviving-at-N=1 result.
+        //
+        // Three counters, exactly what scoring the hypothesis needs:
+        //   (a) how often the receiver led, (b) by how much summed,
+        //   (c) the positive loss mass fed, for the ratio.
+        // No behaviour change and no wire change: the clamp is untouched and
+        // nothing here is read by a decision.
+        if d_received > d_expected {
+            LCW_OVER_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            LCW_OVER_MASS.fetch_add(d_received - d_expected, std::sync::atomic::Ordering::Relaxed);
+            self.loss_clamp_over_n = self.loss_clamp_over_n.saturating_add(1);
+            self.loss_clamp_over_mass =
+                self.loss_clamp_over_mass.saturating_add(d_received - d_expected);
+        }
+        LCW_LOSS_MASS.fetch_add(
+            d_expected.saturating_sub(d_received.min(d_expected)),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        self.loss_clamp_loss_mass = self
+            .loss_clamp_loss_mass
+            .saturating_add(d_expected.saturating_sub(d_received.min(d_expected)));
         let cap = u32::MAX as u64;
         (
             d_expected.min(cap) as u32,
             d_received.min(d_expected).min(cap) as u32,
         )
+    }
+
+    /// The one-sided-clamp witness, whole — `(samples where the receiver's
+    /// cursor LED, their summed magnitude, the positive loss mass fed)`.
+    ///
+    /// The scoreable statistic is `over_mass / loss_mass`: if two-clock jitter
+    /// rectification is the mechanism behind §16.63's 20×-and-survives-at-N=1
+    /// result, the rectified mass is a large fraction of the loss the
+    /// estimator was fed, at EVERY path count including N = 1. Surfaced on the
+    /// DIAG/ACKDIAG line as `lcw=<n>/<over_mass>/<loss_mass>`.
+    pub fn loss_clamp_witness(&self) -> (u64, u64, u64) {
+        (self.loss_clamp_over_n, self.loss_clamp_over_mass, self.loss_clamp_loss_mass)
     }
 
     /// [`Self::sender_truth_loss_delta`] for the LEGACY per-batch `Ack` arm,
@@ -2948,6 +3025,17 @@ impl PathState {
     /// estimator's RFC 3550 §A.8 interarrival jitter stands in.
     ///
     /// Measured, never configured: there is no env knob on this path.
+    /// The RTT distribution's standard-deviation estimate (µs) — paper
+    /// §16.68. `√(EWMA[(rtt − srtt)²])`, the SECOND moment Cantelli's
+    /// distribution-free bound is stated in. `None` before any sample, so the
+    /// derived clock gets an information-availability fallback, not a mode.
+    pub fn rtt_sigma_us(&self) -> Option<u64> {
+        if self.copa.rtt_var_sq <= 0.0 {
+            return None;
+        }
+        Some((self.copa.rtt_var_sq.sqrt() * 1e6) as u64)
+    }
+
     pub fn rtt_jitter_us(&self) -> u64 {
         let copa_j = self.copa.jitter_est.max(self.copa.win_jitter_est);
         if copa_j > 0.0 {
@@ -7154,4 +7242,53 @@ mod tests {
         assert_eq!(r, 10, "received is clamped to expected, never above it");
         assert!(e >= r);
     }
+}
+
+// ── THE ONE-SIDED-CLAMP WITNESS, process-wide (`[LCW]`) ───────────────
+//
+// Goal-gate item 3c REDIRECTED. `PathState::loss_clamp_witness` carries the
+// per-path counters; these mirror them process-wide so a battery reads ONE
+// number per run off a teardown line instead of plumbing `PathState` into the
+// diag renderer. Observation only — nothing here is read by a decision, and
+// the clamp itself (`d_received.min(d_expected)`) is untouched.
+//
+// THE HYPOTHESIS THEY SCORE. §16.63 measured the sender-truth loss estimator
+// reading 20× in the wrong direction, INCLUDING at N = 1 where the
+// cross-path attribution error it was built to repair cannot exist. The RFC
+// 6675 denominator explanation was refuted on the code (both operands count
+// retransmits — a matched pair). The successor hypothesis is this `min`: the
+// sender's own symbol counter and the receiver's cumulative echo are two
+// clocks, so `d_received > d_expected` whenever the receiver's cursor
+// momentarily leads, and the clamp RECTIFIES every such sample to zero loss
+// instead of to negative loss. Rectifying a zero-mean jitter is a POSITIVE
+// BIAS at ANY path count — which is exactly the shape of a result that
+// survives at N = 1.
+//
+// The scoreable statistic is `over_mass / loss_mass`: if rectification is the
+// mechanism, the rectified mass is a large fraction of the loss mass the
+// estimator was actually fed, at every cell and every path count.
+pub static LCW_OVER_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static LCW_OVER_MASS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static LCW_LOSS_MASS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The process-wide one-sided-clamp witness line —
+/// `[LCW] over_n=<n> over_mass=<m> loss_mass=<l> rect_frac=<m/l>`.
+pub fn lcw_report_line() -> String {
+    use std::sync::atomic::Ordering::Relaxed;
+    let (n, m, l) = (
+        LCW_OVER_N.load(Relaxed),
+        LCW_OVER_MASS.load(Relaxed),
+        LCW_LOSS_MASS.load(Relaxed),
+    );
+    let frac = if l == 0 { 0.0 } else { m as f64 / l as f64 };
+    format!("[LCW] over_n={n} over_mass={m} loss_mass={l} rect_frac={frac:.4}")
+}
+
+/// Reset the process-wide witness — tests only, so one test's samples cannot
+/// leak into another's assertion.
+pub fn lcw_reset() {
+    use std::sync::atomic::Ordering::Relaxed;
+    LCW_OVER_N.store(0, Relaxed);
+    LCW_OVER_MASS.store(0, Relaxed);
+    LCW_LOSS_MASS.store(0, Relaxed);
 }

@@ -611,6 +611,96 @@ pub struct RuntimeGates {
     /// referents (the EVICT reorder hold; an inner-TCP RTO) exists on the
     /// measured stack.
     pub derived_sweep: bool,
+    /// `RWM_DELTA_CAP` (default OFF — the A/B arm; paper §16.66, ADR-0071
+    /// family 2): the pooled outstanding cap's VALUE multiplier becomes the
+    /// δ-priced, CoDel-DERIVED standing-queue setpoint instead of the shipped
+    /// `gain = 2.0` fossil.
+    ///
+    /// ```text
+    ///   cap  = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
+    ///   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)   ==  (b+1)/30
+    /// ```
+    ///
+    /// RFC 8289 (CoDel) §3.2 DERIVES the permitted standing queue from
+    /// Kleinrock power maximisation and states it as *"between 5% and 10% of
+    /// the TCP connection's RTT"*. This gate maps the δ dial CONTINUOUSLY onto
+    /// that band — Realtime 5.00 %, Auto 6.67 %, Bulk 10.00 % — with both band
+    /// endpoints cited and both dial endpoints READ from `net::delta_budget_b`,
+    /// so the map has no free parameter. No threshold, no hint test, no second
+    /// code path: it substitutes ONE FACTOR in one expression
+    /// (`net::pool_value_multiplier`), exactly as [`Self::sum_cap`] substitutes
+    /// the count multiplier, and the two are INDEPENDENT AXES of one law.
+    ///
+    /// **The design decision it embodies**: the δ dial's own points permit
+    /// 50/100/200 % of an RTprop, 10–40× the derived band, so the derived law
+    /// COMPRESSES the dial's authority 20× at Bulk. §16.66 states the
+    /// justification (CoDel's power function falls monotonically past
+    /// `f ≈ 0.1`; §16.57 measured 43–48 % worse latency at goodput parity for
+    /// 2.4× the queue) and states that the user may reject it.
+    ///
+    /// As `q → 0` the law reduces to `Σᵢ bwᵢ·RTpropᵢ`, which IS ADR-0071
+    /// candidate (d) ZERO. Bit-identical at N = 1 BY CONSTRUCTION (the pooled
+    /// seat returns `None` at `n_live < 2` before any multiplier is read).
+    /// `=0`/unset is the shipped default, bit-exactly. Engagement, both clamp
+    /// bind fractions and the counterfactual against `gain` are reported by the
+    /// `[DCAP]` echo.
+    pub delta_cap: bool,
+    /// `RWM_RACK_CLOCKS` (default OFF — the A/B arm; paper §16.67): both
+    /// recovery clocks read RFC 8985 §6.2 Step 4's reordering window,
+    /// transplanted VERBATIM, instead of `2·SRTT` clamped to [25 ms, 100 ms].
+    ///
+    /// ```text
+    ///   round = max( min( mult · min_rtt / 4,  srtt ),  TIMER_GRANULARITY_US )
+    /// ```
+    ///
+    /// **Every constant is RACK's own** (`/4`; the `SRTT` ceiling's *"MUST be
+    /// bounded … SHOULD be SRTT"*; `mult ∈ [1, 17]`), and the floor is the
+    /// tree's existing kGranularity analogue. **REPLACES**
+    /// [`Self::derived_sweep`] when both are set — the two are rival laws for
+    /// one quantity, not composable axes. With no min-RTT sample the armed
+    /// fallback runs verbatim (information availability, not a mode).
+    ///
+    /// §16.67 records what writing this down established: RFC 8985 publishes
+    /// **no RTT-relative ceiling for a re-probe cadence** (§7.2's PTO is
+    /// bounded only by `TCP_RTO_expiration()`, a 1-second-minimum absolute),
+    /// so the cross-check's Tier-2 item 2.1 asked for a construction its own
+    /// source does not contain. Component-verified at recovery_bench: at the
+    /// shipped `mult = 1` this law is 8–46× TIGHTER than the clamp it replaces
+    /// and its `SRTT` ceiling is UNREACHABLE within RACK's own `mult ≤ 17` at
+    /// four of five cells. `=0`/unset is byte-identical at both sites.
+    pub rack_clocks: bool,
+    /// `RWM_RACK_REO_MULT` (default **1** — RFC 8985 §6.2 Step 4's own initial
+    /// `RACK.reo_wnd_mult`; clamped to RACK's own `[1, 17]`).
+    ///
+    /// RACK advances this on **DSACK-detected spurious recoveries**, and this
+    /// transport has no DSACK and no spurious-recovery detector — so the
+    /// adaptive half of RFC 8985 §6.2 Step 4 is STRUCTURALLY INERT here and the
+    /// law's `SRTT` ceiling can never bind at `mult = 1`
+    /// (`min_rtt ≤ srtt ⇒ min_rtt/4 < srtt` identically). A bound that provably
+    /// never binds turns its law into a constant and hides its shape from every
+    /// measurement taken through it, which is the defect CLAUDE.md's
+    /// bind-fraction rule exists to catch. This knob therefore exists so a
+    /// battery can drive the cited parameter over its CITED RANGE and make the
+    /// bound REACHABLE (gauge reachability); exposing a published parameter is
+    /// not inventing a constant, and leaving the ceiling unreachable would be
+    /// the defect. Read only when [`Self::rack_clocks`] is on.
+    pub rack_reo_mult: u64,
+    /// `RWM_QUANTILE_CLOCKS` (default OFF — the A/B arm; paper §16.68): both
+    /// recovery clocks read the DERIVED quantile round
+    /// `W(α) = srtt + √((1−α)/α)·σ` — Cantelli's distribution-free
+    /// one-sided bound at the false-alarm rate α the CONTRACT declares on the
+    /// r leg (`target_tail_loss × ζ(hint)`, continuous in the dial).
+    ///
+    /// **Zero fitted coefficients, and REFUTED-WITH-RECORD.** §16.68 records
+    /// three independent reasons it does not close on this stack — the bound
+    /// needs k = 316 at the contract's own `α = 1e-5`; the empirical route
+    /// needs ~1e5 samples the Copa min-deque discards by construction; and
+    /// pricing α off `target_tail_loss` equates P(symbol never delivered)
+    /// with P(retransmit wasted), whose repair needs a cost ratio that exists
+    /// nowhere in this repository. Shipped OFF so the refutation is
+    /// REPRODUCIBLE rather than asserted. OUTRANKS [`Self::rack_clocks`] and
+    /// [`Self::derived_sweep`] when set — rival laws for one quantity.
+    pub quantile_clocks: bool,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -762,6 +852,13 @@ impl RuntimeGates {
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
+            delta_cap: env_flag("RWM_DELTA_CAP", false),
+            rack_clocks: env_flag("RWM_RACK_CLOCKS", false),
+            quantile_clocks: env_flag("RWM_QUANTILE_CLOCKS", false),
+            // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
+            rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
+                .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
+                .clamp(crate::net::RACK_REO_WND_MULT_INIT, crate::net::RACK_REO_WND_MULT_MAX),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             walldiag: env_flag("RWM_WALLDIAG", false),
@@ -805,7 +902,7 @@ impl RuntimeGates {
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
-             RWM_SUM_CAP={} RWM_LATE_BRAKE={} \
+             RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
              RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
@@ -822,7 +919,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} \
+             RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_WALLDIAG={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
@@ -831,7 +928,7 @@ impl RuntimeGates {
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
-            b(self.sum_cap), b(self.late_brake),
+            b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
@@ -850,7 +947,7 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
-            b(self.derived_sweep),
+            b(self.derived_sweep), b(self.rack_clocks), self.rack_reo_mult, b(self.quantile_clocks),
             b(self.diag), b(self.ackdiag), b(self.walldiag), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
@@ -1050,6 +1147,38 @@ mod tests {
             "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
              \"The Derived Recovery Clamp\")"
         );
+        // The three laws added 2026-08-19 (paper 16.66 / 16.67 / 16.68). All
+        // default OFF; RWM_RACK_REO_MULT defaults to RFC 8985 6.2 Step 4's own
+        // initial reo_wnd_mult of 1, so an unset run is RACK's own starting
+        // point and not an operator-chosen number.
+        assert!(
+            !g.delta_cap,
+            "RWM_DELTA_CAP ships default OFF (A/B arm - paper 16.66, the              CoDel-derived setpoint band)"
+        );
+        assert!(
+            !g.rack_clocks,
+            "RWM_RACK_CLOCKS ships default OFF (A/B arm - paper 16.67)"
+        );
+        assert!(
+            !g.quantile_clocks,
+            "RWM_QUANTILE_CLOCKS ships default OFF (A/B arm - paper 16.68,              REFUTED-WITH-RECORD and shipped only so the refutation is              reproducible)"
+        );
+        assert_eq!(
+            g.rack_reo_mult,
+            crate::net::RACK_REO_WND_MULT_INIT,
+            "RWM_RACK_REO_MULT must default to RACK's OWN initial value"
+        );
+        // The gates echo is what a battery parses; assert the three new names
+        // are on it with their resolved values, two-sided.
+        let line = g.echo_line();
+        for tok in [
+            "RWM_DELTA_CAP=0",
+            "RWM_RACK_CLOCKS=0",
+            "RWM_QUANTILE_CLOCKS=0",
+            "RWM_RACK_REO_MULT=1",
+        ] {
+            assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
+        }
         assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
         // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
         // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:

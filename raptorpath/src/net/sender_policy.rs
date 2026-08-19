@@ -332,6 +332,15 @@ pub(crate) struct SenderPolicy {
     /// four distinct formulas. **DEFAULT ON since 2026-08-19** (ladder battery
     /// rung N DELIVERED); `RWM_SUM_CAP=0` re-runs the displaced quadratic.
     pub sum_cap: bool,
+    /// `RWM_DELTA_CAP` (paper §16.66, ADR-0071 family 2): the pooled cap's
+    /// VALUE multiplier becomes `1 + q(δ)` — the CoDel-DERIVED standing-queue
+    /// setpoint (RFC 8289 §3.2, 5–10 % of RTT from Kleinrock power
+    /// maximisation) mapped continuously onto the δ dial — instead of the
+    /// shipped `gain = 2.0` fossil. INDEPENDENT of [`Self::sum_cap`], which
+    /// picks the COUNT multiplier: the two are separate factors of one
+    /// expression and the four combinations are four distinct formulas.
+    /// Scoped to the plain dynamic cap like its siblings. Default OFF.
+    pub delta_cap: bool,
     /// `RWM_LATE_BRAKE` (paper §16.60.1, ADR-0070 finding 7): the late-stage
     /// per-path cwnd brake, armed WITHOUT the composed pool law. Exactly
     /// [`Self::composed_cap`]'s point 3 with its points 1 and 2 removed — same
@@ -403,6 +412,22 @@ pub(crate) struct SenderPolicy {
     /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
     /// undocumented [25, 100] ms. OFF ⇒ byte-identical to the shipped law.
     pub derived_sweep: bool,
+    /// `RWM_RACK_CLOCKS` (paper §16.67): both recovery clocks read RFC 8985
+    /// §6.2 Step 4's reordering window verbatim. REPLACES
+    /// [`Self::derived_sweep`] when both are set — rival laws for one
+    /// quantity, not composable axes. Default OFF.
+    pub rack_clocks: bool,
+    /// `RWM_RACK_REO_MULT` — RACK's own `reo_wnd_mult`, default 1, range
+    /// [1, 17]. Exposed so the law's `SRTT` ceiling is REACHABLE by a
+    /// battery; see the gate's decl for why it is otherwise inert.
+    pub rack_reo_mult: u64,
+    /// `RWM_QUANTILE_CLOCKS` (paper §16.68): the DERIVED quantile recovery
+    /// round. OUTRANKS `rack_clocks` and `derived_sweep`. Default OFF.
+    pub quantile_clocks: bool,
+    /// The contract-declared false-alarm rate α on the r leg —
+    /// `net::contract_alpha(hint)`, resolved ONCE. Read only by the quantile
+    /// law; a NUMBER on the contract, never a branch.
+    pub contract_alpha: f64,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -901,6 +926,24 @@ impl SenderPolicy {
         // — under-funded by 45.4 % and goodput rose. `RWM_SUM_CAP=0` re-runs
         // the displaced quadratic, unchanged and with no deprecation warning.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
+        // ── THE δ-PRICED VALUE MULTIPLIER (env RWM_DELTA_CAP) ─────
+        // Paper §16.66, ADR-0071 family 2. The pooled law's VALUE multiplier
+        // moves off the `gain = 2.0` fossil (ADR-0070 finding 3) onto the
+        // CoDel-DERIVED setpoint band:
+        //
+        //   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ), floor, N·knee )
+        //   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)  ==  (b+1)/30
+        //
+        // RFC 8289 §3.2 derives 5–10 % of RTT from Kleinrock power
+        // maximisation; every point of our δ dial sits 10–40× above it, and
+        // §16.57 measured on our own wire exactly what the derivation
+        // predicts (2.4× the queue, goodput parity, 43–48 % worse latency).
+        // ONE factor changes: the Σ, its path set, the estimator, the
+        // ceiling and the floor are identical on both arms and cancel out of
+        // the A/B. INDEPENDENT of `sum_cap` (the COUNT multiplier) and of
+        // `store_cap_unified` (the Σ's SET) — three axes of one law.
+        // Bit-identical at N = 1 by construction. Default OFF.
+        let delta_cap = gates.delta_cap && plain_dyn_cap;
         // ── THE EXTRACTED LATE-STAGE BRAKE (env RWM_LATE_BRAKE) ───────────
         // Paper §16.60.1, ADR-0070 finding 7 ("the correct architecture,
         // DISABLED WITHOUT A DECISION"). The predicate, whole:
@@ -1338,6 +1381,7 @@ impl SenderPolicy {
             three_term_on,
             composed_cap,
             sum_cap,
+            delta_cap,
             late_brake,
             delta_b,
             contract_rho,
@@ -1360,6 +1404,10 @@ impl SenderPolicy {
             recov_mp_live,
             patience_derived,
             derived_sweep: gates.derived_sweep,
+            rack_clocks: gates.rack_clocks,
+            rack_reo_mult: gates.rack_reo_mult,
+            quantile_clocks: gates.quantile_clocks,
+            contract_alpha: crate::net::contract_alpha(protocol_hint),
             sidle_derived,
             emit_batch_on,
             emit_burst,
