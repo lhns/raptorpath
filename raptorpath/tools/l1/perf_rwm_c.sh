@@ -235,7 +235,8 @@ echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} e
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
 # teardown.  Reported as CPUCLI/CPUSRV seconds so utilization = cpu/elapsed.
 rm -f /tmp/rwm-cli-time
-# goal-gate "Latency Lever" — THE LOADED DELIVERED-LATENCY PROBE (RWM_LATPROBE=1).
+# goal-gate "Latency Lever" — THE LOADED DELIVERED-LATENCY PROBE (RWM_LATPROBE=1),
+# REPAIRED PER LEG for goal-gate "Latency Truth — PRE-REGISTRATION".
 #
 # The score for a latency control is what a *different* flow experiences while
 # the bulk transfer is running. The engine's own `rtt=`/`rtp` gauges cannot
@@ -245,23 +246,76 @@ rm -f /tmp/rwm-cli-time
 # round-trip time, measured by the kernel, identical in both arms, and it is
 # exactly the standing queue a latency control is claimed to remove.
 #
+# WHAT THE TWO GAUGES MEASURE, WRITTEN DOWN HERE BECAUSE AN ADJUDICATION TURNS
+# ON IT (era battery §4's unresolved sign disagreement):
+#
+#   `q_p50`  median(max(0, rtt - rtp)) computed BY THE CODE UNDER TEST from the
+#            sender's OWN estimate of its OWN path. The engine's self-reported
+#            standing queue. NOT delivered latency, and never was.
+#   `ping_*` delivered RTT for an unrelated flow, measured by the KERNEL,
+#            through the WHOLE shaped path — netem's fixed delay, its jitter,
+#            its rate serialization, ITS queue, and our own bytes queued ahead
+#            of the probe.
+#
+# DIFFERENT QUANTITIES. They may legitimately move in OPPOSITE directions (the
+# engine drains its own queue while pushing more bytes into the shaped one).
+# Neither is promoted here; both are recorded, never averaged, and the question
+# of which one a latency CLAIM is entitled to is the battery's, not this file's.
+#
+# ── THREE DEFECTS THIS BLOCK CARRIED THROUGH THE ERA BATTERY ─────────────
+#   1. ONE LEG OF TWO. It pinged `10.77.0.2` — path A — on EVERY topology,
+#      including the ASYMMETRIC duals (`c8` = c2/c3). The arms load the legs
+#      DIFFERENTLY, so a scheduler that shifts work to leg B empties the queue
+#      the probe watched and fills the one it did not. Now: ONE PROBE PER LEG,
+#      count derived from `CLI_LEGS` (so a quad gets four), addresses from the
+#      SAME 10.(77+i).0.2 stride the bind lists use — one definition, so the
+#      probe set cannot drift from the topology.
+#   2. SIGTERM ATE THE LOSS ACCOUNTING. The reaper sent plain `kill`. `iputils`
+#      `ping` installs `sigexit` on SIGINT and SIGALRM ONLY, so SIGTERM took the
+#      default action and the process died WITHOUT the
+#      `N packets transmitted, M received` summary that `era_parse.py` reads for
+#      `ping_tx`/`ping_rx`/`ping_loss`. Those three columns were therefore None
+#      on all 204 era invocations. Now: `kill -INT`, then a bounded wait for the
+#      summary to land before the file is read.
+#   3. LOSS CENSORS THE TAIL, IN THE FLATTERING DIRECTION. A lost probe never
+#      produces a `time=` line. `topo_dual.sh` shapes the DATA direction with
+#      `netem loss gemodel`, so at `c8` leg A drops 1.3/51.3 = 2.53 % and leg B
+#      2/42 = 4.76 % of probes IN BURSTS, plus the loaded qdisc's tail drops.
+#      Every censored sample is drawn from exactly the worst states, so a
+#      percentile over the survivors is biased LOW. `latt_probe.py` computes the
+#      censoring fraction and prints it BESIDE EVERY PERCENTILE.
+#
 # It must run HERE because the namespaces exist only for this script's
-# lifetime. 20 probes/s over the data path, backgrounded before the transfer
-# starts and reaped after it ends; raw RTTs land in /tmp/rwm-ping.txt for the
-# caller to percentile. Default OFF, so every existing driver is unchanged.
+# lifetime. 20 probes/s per leg, backgrounded before the transfer starts and
+# reaped after it ends; raw RTTs land in /tmp/rwm-ping-<i>.txt. Default OFF, so
+# every existing driver is unchanged.
+#
+# BACKWARD COMPATIBILITY, STATED: /tmp/rwm-ping.txt is still written, as leg 0's
+# file, because every existing caller passes that path to its parser. Its
+# CONTENT is byte-identical to what this block always produced (same interval,
+# same wait, same `-D`, same peer) — so a legacy column keeps its definition and
+# the NEW per-leg columns are additive rather than a redefinition.
 #
 # Cost accounting, stated rather than assumed: 20 pkt/s of 84 B is 13 kbit/s,
 # 1.3e-4 of a 100 Mbit cell — below the resolution of every goodput number
-# here, and it is present in EVERY arm, so it cannot favour one.
-PING_PID=""
+# here, and it is present in EVERY arm and now on EVERY leg, so it cannot
+# favour one.
+PING_PIDS=()
+PING_FILES=()
 if [[ "${RWM_LATPROBE:-0}" != "0" ]]; then
     rm -f /tmp/rwm-ping.txt
-    # NOT -q: the per-packet `time=<ms>` lines ARE the measurement; the
-    # summary line only carries min/avg/max/mdev, and a tail percentile is
-    # the whole point of a bufferbloat probe.
-    ip netns exec "$NS_CLI" ping -i 0.05 -W 2 -D 10.77.0.2 > /tmp/rwm-ping.txt 2>&1 &
-    PING_PID=$!
-    disown "$PING_PID" 2>/dev/null || true
+    for ((li = 0; li < ${#CLI_LEGS[@]}; li++)); do
+        PF="/tmp/rwm-ping-$li.txt"
+        rm -f "$PF"
+        # NOT -q: the per-packet `time=<ms>` lines ARE the measurement; the
+        # summary line only carries min/avg/max/mdev, and a tail percentile is
+        # the whole point of a bufferbloat probe.
+        ip netns exec "$NS_CLI" ping -i 0.05 -W 2 -D "10.$((77 + li)).0.2" > "$PF" 2>&1 &
+        PP=$!
+        PING_PIDS+=("$PP")
+        PING_FILES+=("$PF")
+        disown "$PP" 2>/dev/null || true
+    done
 fi
 timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
@@ -285,13 +339,63 @@ for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
 # abort field.
 aw_kv cli_rc "$CLI_RC"
 aw_kv cli_pipe "${CLI_PIPE[*]}"
-# Reap the loaded-latency probe BEFORE the qdisc counters below, so its own
-# packets are inside the tc totals every arm is measured on.
-if [[ -n "$PING_PID" ]]; then
-    kill "$PING_PID" 2>/dev/null || true
-    pkill -f "ping -i 0.05 -W 2 -D 10.77.0.2" 2>/dev/null || true
-    wait "$PING_PID" 2>/dev/null || true
-    echo "    LATPROBE: /tmp/rwm-ping.txt $(grep -c 'time=' /tmp/rwm-ping.txt 2>/dev/null || echo 0) replies"
+# Reap the loaded-latency probes BEFORE the qdisc counters below, so their own
+# packets are inside the tc totals every arm is measured on. ALL legs are reaped
+# before ANY counter is read, for the same reason.
+#
+# `-INT`, NOT the default SIGTERM: `iputils` `ping` installs its `sigexit`
+# statistics handler on SIGINT and SIGALRM only, so a SIGTERM'd probe dies
+# WITHOUT the `N packets transmitted, M received` line — which is the ONLY
+# count that includes probes lost after the last reply, i.e. exactly the
+# consecutive-drop tail a bufferbloat probe exists to catch. Losing it is how
+# the era battery's loss columns came out None on all 204 invocations.
+if [[ "${#PING_PIDS[@]}" -gt 0 ]]; then
+    # SIGINT to every leg FIRST, so all the probes stop at the same moment and
+    # none of them keeps sending while another leg's summary is being waited on
+    # — their packets would land in the tc counters unevenly across legs.
+    for _pp in "${PING_PIDS[@]}"; do
+        kill -INT "$_pp" 2>/dev/null || true
+    done
+    # The summary is written BY THE HANDLER, so the file is not complete the
+    # instant the signal is delivered: poll for it, with a hard bound.
+    #
+    # AND A FALLBACK, because the SIGINT path has one way to fail that is worth
+    # defending against. A shell sets SIGINT to SIG_IGN for jobs started with
+    # `&` when job control is off, and a program that installs its handler with
+    # the `if (signal(...) != SIG_IGN)` idiom would then never install one.
+    # `iputils` `ping` uses `sigaction` unconditionally so it DOES catch it —
+    # but `sigexit` is installed on SIGALRM as well, and SIGALRM is not subject
+    # to that rule at all. So: INT, then ALRM if no summary appeared, then TERM
+    # to guarantee the process is gone. Worst case ~2 s per leg AFTER the
+    # transfer has ended; zero in the healthy case, where the first poll hits.
+    _pi=0
+    for _pf in "${PING_FILES[@]}"; do
+        for _w in 1 2 3 4 5 6 7 8 9 10; do
+            grep -q "packets transmitted" "$_pf" 2>/dev/null && break
+            sleep 0.1
+        done
+        if ! grep -q "packets transmitted" "$_pf" 2>/dev/null; then
+            kill -ALRM "${PING_PIDS[$_pi]}" 2>/dev/null || true
+            for _w in 1 2 3 4 5 6 7 8 9 10; do
+                grep -q "packets transmitted" "$_pf" 2>/dev/null && break
+                sleep 0.1
+            done
+        fi
+        kill -TERM "${PING_PIDS[$_pi]}" 2>/dev/null || true
+        _pi=$((_pi + 1))
+    done
+    # Belt-and-braces for a probe whose pid was lost. The pattern is now the
+    # LEG-GENERAL one: the old hard-coded `-D 10.77.0.2` would have left legs
+    # 1..3 alive, still sending into the tc counters the NEXT arm is measured on.
+    pkill -f "ping -i 0.05 -W 2 -D 10\.[0-9]*\.0\.2" 2>/dev/null || true
+    # THE READOUT, WITH ITS CENSORING. One line per leg, every percentile
+    # carrying its censoring fraction and its scoreability — a percentile
+    # printed without one is the defect this repair closes.
+    python3 ./latt_probe.py "${PING_FILES[@]}" 2>/dev/null | sed 's/^/    /' || true
+    echo "    LATPROBE: ${#PING_FILES[@]} leg(s) $(for _pf in "${PING_FILES[@]}"; do printf '%s=%s ' "$_pf" "$(grep -c 'time=' "$_pf" 2>/dev/null || echo 0)"; done)replies"
+    # Legacy path, written LAST and only as a copy: every existing caller passes
+    # /tmp/rwm-ping.txt to its parser and must keep reading exactly leg A.
+    cp "${PING_FILES[0]}" /tmp/rwm-ping.txt 2>/dev/null || true
 fi
 SRV_TICKS=0
 for P in $(pgrep -x raptorpath); do
