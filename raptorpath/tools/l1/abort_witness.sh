@@ -174,11 +174,33 @@ aw_step() { # label cmd...
 #                    act on.
 : "${AW_DRAIN_SAMPLES:=50}"
 
+# `set -e` SAFETY, AND IT IS THE SAME TRAP `aw_step` DOCUMENTS — this function
+# fell into it anyway, and the era battery's smoke is what found it.
+# `perf_rwm_c.sh` sources `lib.sh`, which runs `set -euo pipefail`, so BY THE
+# TIME THIS FUNCTION IS CALLED THE CALLER IS UNDER `set -e` WITH `pipefail`.
+# `pgrep` EXITS 1 WHEN NOTHING MATCHES — which is the NORMAL, HEALTHY case here,
+# because the caller has just `pkill`ed and is about to check that the box is
+# idle. A bare `n=$(pgrep … | wc -l | …)` is a simple command whose status is
+# the pipeline's, `pipefail` propagates `pgrep`'s 1 past `wc`'s 0, and `set -e`
+# then kills the caller. The witness measured 6/6 invocations dying at this line
+# with `abort_cause=none` and a record that stopped at `bin=`: A RECORDER THAT
+# ABORTS THE INVOCATION IT IS RECORDING, which is the exact failure this file's
+# own header promises cannot happen ("NOTHING HERE CHANGES HARNESS BEHAVIOUR").
+# The status is therefore taken through an `|| …` list, which `set -e` exempts
+# by definition.
+#
+# The early return became an `if` in the same edit, and that half is HYGIENE,
+# NOT A SECOND BUG: a false `[ … ]` at the head of an `&&` list is exempt from
+# `set -e` because it is not the list's last command, and the gate confirms it —
+# `test_abort_witness.sh` case 2 passes against the pre-fix file. It is written
+# as an `if` because the exemption is a property of where the test SITS in the
+# line rather than of what it does, and this function has now cost one battery
+# on exactly that distinction.
 aw_drain_probe() {
     local n
-    n=$(pgrep -x raptorpath 2>/dev/null | wc -l | tr -d ' ')
+    n=$(pgrep -x raptorpath 2>/dev/null | wc -l | tr -d ' ') || n=0
     aw_kv drain_pids_t0 "${n:-0}"
-    [ "${n:-0}" -eq 0 ] && return 0
+    if [ "${n:-0}" -eq 0 ]; then return 0; fi
     aw_kv drain_cmdlines_t0 "$(for p in $(pgrep -x raptorpath 2>/dev/null); do
             tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null; echo -n ' ;; '
         done)"
