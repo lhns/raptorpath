@@ -93,17 +93,43 @@ mkdir -p "$DDIR"
 #
 # The multiplier is taken from the WORST ARM of each cell, since both arms must
 # share one byte count: c9 needs 30/16 = 1.9x -> 2x; c9h needs 30/11 = 2.7x
-# -> 3x. Predicted complete windows/rep after: c9 32/70, c9h 42/33 — all above
-# the contract's own >= 30 and well above the scorer's 18.
+# -> 3x.
 #
 # THIS CHANGES THE SAMPLE SIZE TO MEET A PRE-REGISTERED TARGET. It moves no
 # threshold, no band, no prediction and no falsifier; C9-1..4 and C9-L1..L3 are
 # untouched. Sizing an experiment to reach the power its own contract demands
 # is the opposite of tuning it to an answer — and the number it is sized
 # against was measured BEFORE any correlation was read off any ledger.
+#
+# ── AND THE RE-SMOKE FALSIFIED HALF OF THAT PREDICTION. c9h IS NOT FIXABLE ──
+# ── BY LENGTH, SO ITS BYTE COUNT IS PUT BACK. ───────────────────────────────
+#
+# Predicted above: c9 32/70 complete windows/rep, c9h 42/33. MEASURED at the
+# re-sized counts:
+#
+#   c9/pooled   16 -> 45 complete   (x2 bytes)   CLEARS the 18 bar and the 30 target
+#   c9h/percap  11 -> 10 complete   (x3 bytes)   NO CHANGE — completion FELL 32% -> 12%
+#
+# THE MECHANISM, measured on the same capture. At c9h the two c3-class legs run
+# `rate_lr` 682 and 836 sym/s against the c2-class legs' 8 860 and 9 167 — a
+# 12:1 split — with CVs of 115% and 88%, i.e. THE SLOW LEGS ARE SILENT MOST
+# WINDOWS. Lengthening the transfer adds raw windows in which they are still
+# silent, so the COMPLETION RATE FALLS rather than the complete count rising.
+#
+# Why they are silent is the calibration's sender-bound finding (goal-gate
+# section 4, FILLED): the sender tops out near 176 Mbit/s, the two c2 legs alone
+# carry 200 Mbit/s, so the scheduler is never under enough pressure to use the
+# c3 legs at all. c9h's completeness is bounded by THAT, not by transfer length,
+# and no byte count reaches the bar.
+#
+# So c9h goes back to its PRE-REGISTERED 50 MB: the 3x cost bought nothing, and
+# changing a pre-registered quantity for no measured benefit is exactly the
+# unjustified edit this file's own header exists to prevent. c9h's correlation
+# clause (C9-3) is reported UNDERPOWERED rather than silently rescued; its
+# cap-shape clause (C9-L3) reads off `[CCAP]` and is unaffected by window count.
 case "$CELL" in
   c9)   CA=c2; CB=c2; BYTES=800000000; RUNS=1 ;;
-  c9h)  CA=c2; CB=c3; BYTES=150000000; RUNS=3 ;;
+  c9h)  CA=c2; CB=c3; BYTES=50000000;  RUNS=3 ;;
   *) echo "unknown cell $CELL (want c9|c9h)" >&2; exit 2 ;;
 esac
 

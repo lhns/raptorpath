@@ -34257,3 +34257,51 @@ floating-point noise on that — which is exactly why the PSD guard voided them.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or modifies the pre-registration it will be scored against.**
+
+### FINDING 1, CORRECTED BY THE RE-SMOKE — **c9 was fixable by length; c9h IS NOT, and its byte count is put back**
+
+The repair above predicted **c9 32/70 and c9h 42/33** complete windows per rep.
+The re-smoke at the new byte counts measured:
+
+| cell/arm | before | after | change | verdict |
+|---|---|---|---|---|
+| c9/pooled | 16 | **45** | ×2 bytes | **CLEARS** the 18 bar and the 30 target |
+| c9h/percap | 11 | **10** | ×3 bytes | **NO CHANGE** — completion fell 32 % → 12 % |
+
+**THE PREDICTION FOR c9h WAS WRONG AND THE MECHANISM IS NOW MEASURED.** At
+c9h the two c3-class legs run `rate_lr` **682 and 836 sym/s** against the
+c2-class legs' **8 860 and 9 167** — a **12:1 split** — with CVs of 115 % and
+88 %: the slow legs are *silent in most windows*. Lengthening the transfer adds
+raw windows in which they are still silent, so the completion **rate falls**
+rather than the complete **count** rising.
+
+**Why they are silent is this session's other finding, and the two join up.**
+The calibration measured the sender bound at ~176 Mbit/s; the two c2 legs alone
+carry 200 Mbit/s; so at c9h the scheduler is never under enough pressure to use
+the c3 legs at all. **c9h's window completeness is bounded by the sender
+ceiling, not by transfer length, and no byte count reaches the bar.**
+
+**c9h therefore goes back to its PRE-REGISTERED 50 MB.** The 3× cost bought
+nothing, and changing a pre-registered quantity for no measured benefit is the
+unjustified edit this discipline exists to prevent. **c9 keeps the ×2** on the
+measured 16 → 45.
+
+**THE SCOREABILITY CONSEQUENCE, stated before the battery rather than after:**
+
+| clause | cell | status going in |
+|---|---|---|
+| C9-1, C9-2, C9-L1, C9-L2 | c9 | **SCOREABLE** — 45 complete windows/rep at the worst arm, `n_eff_2way ≈ 2·44+1 = 89` at 3 reps |
+| C9-4 (c9 half) | c9 | **SCOREABLE** |
+| **C9-3** | c9h | **UNDERPOWERED, and expected to stay so** — ~10 complete windows/rep against the scorer's 18 bar. Reported as underpowered, never rescued by pooling reps or widening the window after the fact |
+| C9-L3 | c9h | **SCOREABLE** — the span reads off `[CCAP]`, not off window correlations |
+| C9-4 (c9h half) | c9h | **UNDERPOWERED**, same reason as C9-3 |
+| **C9-L2** | c9 | scoreable but **FLAGGED AT RISK** by the sender-bound finding, for exactly the reason it pre-registered |
+
+**A c9h that starves its own slow legs is itself a result about the
+heterogeneous quad** — C9-3 predicted a shared-frontier coupling that
+*presupposes the frontier is shared* — but it is a result this battery is not
+powered to score, and it is recorded here as the launch step's finding rather
+than smuggled into the verdict.
+
+**Nothing here flips a default, adds a gate, edits an engine crate, or modifies
+any prediction, band or falsifier.**
