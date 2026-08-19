@@ -1,0 +1,1567 @@
+=== MISSING-HALF BATTERY seed=7 reps=12 cells='c1' arms='Op Oa Oe' 2026-08-19T18:18:07Z
+=== CONTRACT goal-gate "The Missing Half at the Fast Single Path — PRE-REGISTRATION"
+=== THE QUESTION: is the era battery's P1 shortfall (+6.84/+9.62 % against a pre-registered [+12.7, +13.0] %) SUBSTRATE DRIFT or an INTERACTION among the later flips?
+=== PHASE 1 arms are ALL on the PRE-FLIP binary. Op = the flip-era 'prior' arm byte-exact; Oa = the flip-era 'am' arm byte-exact; Oe = Op + the ERA session's env (instrument-load control).
+=== THE FLIP-ERA BINARY AND THE ERA-OLD BINARY ARE THE SAME FILE: c2bfab7 and 4171b58 differ only by 34 deleted lines of goal-gate.md, and both ledgers name sha256 fbd6b279...  So Op reproduces a measurement, it does not approximate one.
+=== THE PUBLISHED LEVELS Op IS SCORED AGAINST: flip week (2026-08-08) c1-prior 203.1 +/- 8.5 (n=8, s42) and 201.8 +/- 5.6 (n=8, s7); era week (2026-08-19) c1 OLD 175.25 (s42) and 192.06 (s7).
+=== THE PUBLISHED RATIO Oa/Op IS SCORED AGAINST: +12.7 % (s42) and +13.0 % (s7).
+=== c1 IS SINGLE-PATH, so the 2026-08-19 per-leg netem seed boundary does NOT apply here: leg 0's seed is the base seed in both harness eras. Stated so the era boundary is not silently inherited.
+=== LIVENESS ON OLD (no [GATES] echo exists at 4171b58): era-invariant anchors + 'ack-merge ACTIVE' two-sided (the gate) + [CTLD] on the receiver (the mechanism).
+=== G-ERA (anti-mix): [GATES] absent two-sided IS the OLD binary, present two-sided IS today's. A violation VOIDS the rep.
+=== EVERY ROW CARRIES CPUCLI, ms_per_MB AND cores. MEASUREMENT TRUTH item 2's A7 asks whether c1 is sender-CPU-bound; if it is, this battery's headline column is a CPU column and ms_per_MB is the mechanism behind any drift found.
+=== OLD binary /home/vibe/era-old/target/release/raptorpath sha256 fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d
+=== OLD source 4171b5843d22140d54b2d05fc153451d0d03c545 — the pre-arc default, PARENT of bdab7de (RWM_ACK_MERGE flip). Extracted via git archive (the VM tree is not a git repo, so git worktree add is unavailable); tree is byte-identical to the commit.
+=== kernel 7.0.14-101.fc43.x86_64
+=== uptime/load  20:18:07 up 23:00,  6 users,  load average: 3.27, 3.44, 3.49
+=== co-tenant 0
+0 kwin_x11 / 1 sddm (desktop session — a DRIFT CANDIDATE, recorded on every session)
+=== steal user=3755470 sys=1215164 idle=42256753 steal=256269 (host CPU steal — THE drift candidate if c1 is sender-bound)
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+aes avx2 pclmulqdq 
+=== rep=1 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:18:07
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.355,"mean_mbps":174.339,"mean_s":18.355,"median_s":18.355,"min_s":18.355,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.30s CPUCLI=20.73s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d35: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437822549 bytes 343856 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d37: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9217740128395510527  Sent 51738717 bytes 80759 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=1 20s
+GAPROW c1-Op rep=1 era=old seed=7 cell=c1 mbit=174.339 seconds=18.355039 bytes=400000000 cpucli=20.73 cpusrv=18.30 ms_per_MB=51.83 cores=1.129 pred_mbit=174.3
+LIVENESS c1-Op rep=1 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=18 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=15697 rx=30946
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=34694 rx=67316
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=55321 rx=108519
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=72753 rx=142445
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=89080 rx=175025
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=105646 rx=207716
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=122663 rx=241250
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=139851 rx=275789
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=159065 rx=313860
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=178948 rx=353609
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=198419 rx=392393
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=216807 rx=428279
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=236606 rx=466540
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=255727 rx=503801
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=276223 rx=543706
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=296537 rx=583473
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=317699 rx=624071
+CTLDLINE c1-Op rep=1 site=cli [CTLD] p0 tx=337186 rx=662080
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=30330 rx=15313
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=67312 rx=34438
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=108005 rx=54758
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=142446 rx=72684
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=174610 rx=88606
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=206492 rx=105057
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=240036 rx=121755
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=273322 rx=138659
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=311780 rx=157810
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=350340 rx=177168
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=388927 rx=196430
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=424797 rx=215070
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=462220 rx=234077
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=498281 rx=252950
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=539004 rx=273340
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=576453 rx=293105
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=617416 rx=313815
+CTLDLINE c1-Op rep=1 site=srv [CTLD] p0 tx=653237 rx=332524
+=== rep=1 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:18:27
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.3344,"mean_mbps":195.906,"mean_s":16.3344,"median_s":16.3344,"min_s":16.3344,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.94s CPUCLI=18.26s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d39: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437976268 bytes 343749 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d3b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 523193323726149158  Sent 30496867 bytes 67896 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=1 18s
+GAPROW c1-Oa rep=1 era=old seed=7 cell=c1 mbit=195.906 seconds=16.334368 bytes=400000000 cpucli=18.26 cpusrv=16.94 ms_per_MB=45.65 cores=1.118 pred_mbit=195.9
+LIVENESS c1-Oa rep=1 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=16 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=17576 rx=17377
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=42643 rx=42125
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=67316 rx=66949
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=90540 rx=90256
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=111565 rx=111298
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=133282 rx=132835
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=154308 rx=153915
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=174009 rx=173546
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=195733 rx=195143
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=215531 rx=215051
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=235060 rx=234520
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=254402 rx=253641
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=274966 rx=274254
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=294358 rx=293677
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=314625 rx=313826
+CTLDLINE c1-Oa rep=1 site=cli [CTLD] p0 tx=336522 rx=335597
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=17120 rx=17289
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=42047 rx=42123
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=66890 rx=66980
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=89855 rx=89996
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=110471 rx=110616
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=131708 rx=131985
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=152646 rx=152796
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=172110 rx=172261
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=193498 rx=193536
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=213103 rx=213482
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=232208 rx=232226
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=251927 rx=252061
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=271853 rx=271863
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=291479 rx=291905
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=311305 rx=311315
+CTLDLINE c1-Oa rep=1 site=srv [CTLD] p0 tx=332241 rx=332519
+=== rep=1 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:18:46
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":19.977,"mean_mbps":160.184,"mean_s":19.977,"median_s":19.977,"min_s":19.977,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=21.58s CPUCLI=22.08s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d3d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438490993 bytes 341547 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d3f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 10641243866679997879  Sent 54094870 bytes 121916 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=1 22s
+GAPROW c1-Oe rep=1 era=old seed=7 cell=c1 mbit=160.184 seconds=19.977041 bytes=400000000 cpucli=22.08 cpusrv=21.58 ms_per_MB=55.20 cores=1.105 pred_mbit=160.2
+LIVENESS c1-Oe rep=1 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=19 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=12988 rx=25309
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=26902 rx=52519
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=43265 rx=84664
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=59027 rx=116128
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=75468 rx=148392
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=91439 rx=179623
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=104867 rx=205365
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=120888 rx=237575
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=138766 rx=273050
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=153329 rx=301726
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=172063 rx=338788
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=191415 rx=375059
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=210167 rx=412490
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=229180 rx=449723
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=248659 rx=487803
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=268993 rx=527690
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=290380 rx=567692
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=311063 rx=609071
+CTLDLINE c1-Oe rep=1 site=cli [CTLD] p0 tx=331833 rx=649016
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=24650 rx=12603
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=50998 rx=26186
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=81512 rx=41596
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=111748 rx=56918
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=142520 rx=72481
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=171116 rx=87328
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=198207 rx=100920
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=227852 rx=115967
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=262036 rx=132872
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=295134 rx=149572
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=321874 rx=163328
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=360402 rx=182844
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=395669 rx=201396
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=431669 rx=219508
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=467633 rx=238040
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=506840 rx=258598
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=546692 rx=278692
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=585655 rx=299285
+CTLDLINE c1-Oe rep=1 site=srv [CTLD] p0 tx=625919 rx=319462
+=== rep=2 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:19:08
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.165,"mean_mbps":176.163,"mean_s":18.165,"median_s":18.165,"min_s":18.165,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.63s CPUCLI=18.93s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d41: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438854468 bytes 350989 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d43: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 3516680069108141204  Sent 52612967 bytes 94498 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=2 20s
+GAPROW c1-Op rep=2 era=old seed=7 cell=c1 mbit=176.163 seconds=18.165045 bytes=400000000 cpucli=18.93 cpusrv=18.63 ms_per_MB=47.33 cores=1.042 pred_mbit=176.2
+LIVENESS c1-Op rep=2 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=18 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=15293 rx=29405
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=34951 rx=68364
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=54591 rx=107386
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=74844 rx=147474
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=94263 rx=185053
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=113309 rx=223006
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=133517 rx=263780
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=152796 rx=302030
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=173132 rx=342206
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=192143 rx=378993
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=211900 rx=415841
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=231217 rx=451990
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=250611 rx=490496
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=269624 rx=526402
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=287636 rx=562522
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=305708 rx=597523
+CTLDLINE c1-Op rep=2 site=cli [CTLD] p0 tx=325112 rx=634570
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=29065 rx=14885
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=67369 rx=34361
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=105561 rx=53744
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=145853 rx=73897
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=182176 rx=92499
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=219852 rx=111533
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=258482 rx=130896
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=296315 rx=149983
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=336380 rx=169964
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=372942 rx=188976
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=411591 rx=208291
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=444626 rx=226788
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=482936 rx=246192
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=518434 rx=264953
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=554730 rx=283001
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=588555 rx=300415
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=624985 rx=319483
+CTLDLINE c1-Op rep=2 site=srv [CTLD] p0 tx=660082 rx=337328
+=== rep=2 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:19:28
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.3178,"mean_mbps":196.105,"mean_s":16.3178,"median_s":16.3178,"min_s":16.3178,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.26s CPUCLI=18.26s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d45: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437976508 bytes 344054 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d47: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 17530357598669104443  Sent 30753544 bytes 71531 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=2 19s
+GAPROW c1-Oa rep=2 era=old seed=7 cell=c1 mbit=196.105 seconds=16.317762 bytes=400000000 cpucli=18.26 cpusrv=17.26 ms_per_MB=45.65 cores=1.119 pred_mbit=196.1
+LIVENESS c1-Oa rep=2 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=16 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=19435 rx=19178
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=41179 rx=40862
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=63706 rx=63347
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=84941 rx=84708
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=106585 rx=106320
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=126995 rx=126729
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=146552 rx=146004
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=167551 rx=166984
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=189176 rx=188555
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=209859 rx=209414
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=231973 rx=231458
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=252966 rx=252251
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=274798 rx=274320
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=295056 rx=294413
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=316341 rx=315638
+CTLDLINE c1-Oa rep=2 site=cli [CTLD] p0 tx=339802 rx=338935
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=18392 rx=18538
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=40251 rx=40407
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=61862 rx=61912
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=83264 rx=83406
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=104631 rx=104793
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=124340 rx=124475
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=143532 rx=143817
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=164163 rx=164644
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=185314 rx=185429
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=205759 rx=206215
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=227609 rx=227685
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=248098 rx=248557
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=269558 rx=269661
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=289589 rx=289950
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=311003 rx=311011
+CTLDLINE c1-Oa rep=2 site=srv [CTLD] p0 tx=331591 rx=332235
+=== rep=2 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:19:47
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.7359,"mean_mbps":170.795,"mean_s":18.7359,"median_s":18.7359,"min_s":18.7359,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.52s CPUCLI=21.36s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d49: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438288716 bytes 345903 pkt (dropped 55, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d4b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2644780744954884870  Sent 51883216 bytes 85526 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=2 21s
+GAPROW c1-Oe rep=2 era=old seed=7 cell=c1 mbit=170.795 seconds=18.735895 bytes=400000000 cpucli=21.36 cpusrv=18.52 ms_per_MB=53.40 cores=1.140 pred_mbit=170.8
+LIVENESS c1-Oe rep=2 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=18 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=15017 rx=28609
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=35395 rx=68257
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=56414 rx=111013
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=76770 rx=149722
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=95749 rx=187308
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=113845 rx=222175
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=135119 rx=265044
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=153662 rx=300083
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=172689 rx=338207
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=190845 rx=374402
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=209361 rx=409589
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=226650 rx=444042
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=243213 rx=476288
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=259686 rx=507522
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=276986 rx=541438
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=295896 rx=577664
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=314213 rx=614033
+CTLDLINE c1-Oe rep=2 site=cli [CTLD] p0 tx=332338 rx=650136
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=28207 rx=14603
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=67993 rx=35053
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=110395 rx=56346
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=148825 rx=76440
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=186158 rx=95090
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=220084 rx=112480
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=262990 rx=133904
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=296912 rx=151804
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=333870 rx=170206
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=370474 rx=188566
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=406240 rx=207021
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=437672 rx=223116
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=470644 rx=239971
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=501592 rx=256175
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=533928 rx=272644
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=569239 rx=291127
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=604849 rx=309004
+CTLDLINE c1-Oe rep=2 site=srv [CTLD] p0 tx=640627 rx=327637
+=== rep=3 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:20:08
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.9033,"mean_mbps":178.738,"mean_s":17.9033,"median_s":17.9033,"min_s":17.9033,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.32s CPUCLI=22.10s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d4d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437664297 bytes 341775 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d4f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 15946254231380596372  Sent 51404683 bytes 79487 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=3 20s
+GAPROW c1-Op rep=3 era=old seed=7 cell=c1 mbit=178.738 seconds=17.90327 bytes=400000000 cpucli=22.10 cpusrv=18.32 ms_per_MB=55.25 cores=1.234 pred_mbit=178.7
+LIVENESS c1-Op rep=3 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=17725 rx=33342
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=40397 rx=76786
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=62733 rx=121710
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=84714 rx=164520
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=103034 rx=199456
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=122031 rx=237379
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=141464 rx=276174
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=160992 rx=314770
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=179472 rx=351408
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=199288 rx=390584
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=217055 rx=426095
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=235415 rx=461925
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=253669 rx=497556
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=270954 rx=531056
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=288231 rx=564436
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=306652 rx=600420
+CTLDLINE c1-Op rep=3 site=cli [CTLD] p0 tx=327269 rx=640648
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=32988 rx=17360
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=76528 rx=39955
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=121036 rx=62187
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=163240 rx=84262
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=197254 rx=101619
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=234420 rx=120619
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=273864 rx=139933
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=312037 rx=159437
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=348366 rx=177480
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=387249 rx=197586
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=422766 rx=215213
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=456586 rx=232796
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=492335 rx=250624
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=525076 rx=267742
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=558652 rx=284970
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=592014 rx=301888
+CTLDLINE c1-Op rep=3 site=srv [CTLD] p0 tx=631986 rx=322000
+=== rep=3 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:20:28
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.279,"mean_mbps":185.196,"mean_s":17.279,"median_s":17.279,"min_s":17.279,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.84s CPUCLI=18.44s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d51: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437976738 bytes 343720 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d53: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 104281003856611116  Sent 30305102 bytes 64197 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=3 19s
+GAPROW c1-Oa rep=3 era=old seed=7 cell=c1 mbit=185.196 seconds=17.279021 bytes=400000000 cpucli=18.44 cpusrv=16.84 ms_per_MB=46.10 cores=1.067 pred_mbit=185.2
+LIVENESS c1-Oa rep=3 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=19153 rx=18913
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=43899 rx=43291
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=68812 rx=68395
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=87962 rx=87418
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=105559 rx=104989
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=125820 rx=125500
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=146103 rx=145504
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=165761 rx=165431
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=184353 rx=183746
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=204723 rx=204249
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=226052 rx=225509
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=247285 rx=246650
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=266642 rx=265979
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=283881 rx=283214
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=304088 rx=303390
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=322515 rx=321811
+CTLDLINE c1-Oa rep=3 site=cli [CTLD] p0 tx=340719 rx=339912
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=18872 rx=18978
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=43287 rx=43515
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=67675 rx=67713
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=87357 rx=87367
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=104256 rx=104266
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=124306 rx=124449
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=143841 rx=144072
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=163737 rx=163756
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=182188 rx=182206
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=202342 rx=202441
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=222797 rx=222890
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=243680 rx=243777
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=263233 rx=263347
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=280198 rx=280485
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=299356 rx=299402
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=318352 rx=318820
+CTLDLINE c1-Oa rep=3 site=srv [CTLD] p0 tx=335102 rx=335253
+=== rep=3 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:20:47
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.5191,"mean_mbps":172.795,"mean_s":18.5191,"median_s":18.5191,"min_s":18.5191,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.19s CPUCLI=19.94s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d55: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438236803 bytes 345985 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d57: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 10276236160186828456  Sent 51692087 bytes 82491 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=3 21s
+GAPROW c1-Oe rep=3 era=old seed=7 cell=c1 mbit=172.795 seconds=18.519088 bytes=400000000 cpucli=19.94 cpusrv=18.19 ms_per_MB=49.85 cores=1.077 pred_mbit=172.8
+LIVENESS c1-Oe rep=3 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=18 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=12889 rx=25223
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=31845 rx=61926
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=54193 rx=103870
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=73444 rx=142723
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=90410 rx=176498
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=108948 rx=212702
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=128208 rx=251153
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=147841 rx=290391
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=166962 rx=327680
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=185279 rx=362956
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=204186 rx=399641
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=222510 rx=434400
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=241681 rx=472321
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=258769 rx=505406
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=278150 rx=543207
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=296326 rx=578050
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=315069 rx=614688
+CTLDLINE c1-Oe rep=3 site=cli [CTLD] p0 tx=334074 rx=652369
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=24428 rx=12305
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=61662 rx=31617
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=103298 rx=53497
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=141133 rx=72475
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=174802 rx=89500
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=210854 rx=107694
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=249598 rx=126998
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=287822 rx=146583
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=323950 rx=164988
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=359083 rx=183173
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=396609 rx=202149
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=430827 rx=220527
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=468998 rx=239492
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=501184 rx=255685
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=538109 rx=274785
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=573990 rx=293455
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=608786 rx=311381
+CTLDLINE c1-Oe rep=3 site=srv [CTLD] p0 tx=645080 rx=329853
+=== rep=4 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:21:08
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.9066,"mean_mbps":178.705,"mean_s":17.9066,"median_s":17.9066,"min_s":17.9066,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.53s CPUCLI=20.99s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d59: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438260998 bytes 344317 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d5b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 1824707717640391953  Sent 51649798 bytes 84705 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=4 21s
+GAPROW c1-Op rep=4 era=old seed=7 cell=c1 mbit=178.705 seconds=17.906627 bytes=400000000 cpucli=20.99 cpusrv=18.53 ms_per_MB=52.48 cores=1.172 pred_mbit=178.7
+LIVENESS c1-Op rep=4 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=14614 rx=28917
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=35200 rx=68760
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=56089 rx=110180
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=76517 rx=149668
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=95810 rx=186037
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=114644 rx=223573
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=134384 rx=262696
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=153495 rx=300602
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=172722 rx=338820
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=192902 rx=378816
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=212827 rx=418311
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=232651 rx=456665
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=251626 rx=491886
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=272405 rx=532159
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=291518 rx=569658
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=309871 rx=603583
+CTLDLINE c1-Op rep=4 site=cli [CTLD] p0 tx=328560 rx=640274
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=28620 rx=14438
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=68502 rx=34715
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=109711 rx=55666
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=148645 rx=75820
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=184848 rx=94861
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=220960 rx=113266
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=259202 rx=132311
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=296025 rx=151323
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=335402 rx=170671
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=374469 rx=190312
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=412761 rx=209490
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=450658 rx=229477
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=486482 rx=248225
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=523697 rx=268051
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=561108 rx=286587
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=595526 rx=305615
+CTLDLINE c1-Op rep=4 site=srv [CTLD] p0 tx=631827 rx=323590
+=== rep=4 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:21:29
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.6424,"mean_mbps":192.28,"mean_s":16.6424,"median_s":16.6424,"min_s":16.6424,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.19s CPUCLI=17.74s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d5d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438083547 bytes 345371 pkt (dropped 55, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d5f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9390157566547074062  Sent 30702967 bytes 70162 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=4 18s
+GAPROW c1-Oa rep=4 era=old seed=7 cell=c1 mbit=192.28 seconds=16.642357 bytes=400000000 cpucli=17.74 cpusrv=17.19 ms_per_MB=44.35 cores=1.066 pred_mbit=192.3
+LIVENESS c1-Oa rep=4 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=16 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=18009 rx=17718
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=38280 rx=37966
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=60978 rx=60575
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=81858 rx=81595
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=103571 rx=103158
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=123607 rx=123449
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=144074 rx=143708
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=165066 rx=164726
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=186283 rx=185787
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=205903 rx=205668
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=227805 rx=227497
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=248293 rx=247867
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=270255 rx=269700
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=289775 rx=289184
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=310691 rx=309853
+CTLDLINE c1-Oa rep=4 site=cli [CTLD] p0 tx=332378 rx=331785
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=17332 rx=17482
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=37835 rx=38240
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=60358 rx=60398
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=81208 rx=81592
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=102424 rx=102498
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=122057 rx=122440
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=142389 rx=142524
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=162701 rx=163173
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=183570 rx=183643
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=203183 rx=203328
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=224024 rx=224032
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=243947 rx=244220
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=265688 rx=265708
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=284383 rx=284785
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=305189 rx=305263
+CTLDLINE c1-Oa rep=4 site=srv [CTLD] p0 tx=325481 rx=325863
+=== rep=4 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:21:48
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":24.7788,"mean_mbps":129.143,"mean_s":24.7788,"median_s":24.7788,"min_s":24.7788,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=23.95s CPUCLI=23.10s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d61: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438741284 bytes 340178 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d63: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 432223905038104702  Sent 54093954 bytes 137826 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=4 26s
+GAPROW c1-Oe rep=4 era=old seed=7 cell=c1 mbit=129.143 seconds=24.778828 bytes=400000000 cpucli=23.10 cpusrv=23.95 ms_per_MB=57.75 cores=0.932 pred_mbit=129.1
+LIVENESS c1-Oe rep=4 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=24 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=19536 rx=35660
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=41300 rx=78283
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=56651 rx=109056
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=69294 rx=133416
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=85053 rx=164070
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=97350 rx=187623
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=110685 rx=214289
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=126431 rx=245823
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=131400 rx=255792
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=138155 rx=269196
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=149424 rx=291778
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=162992 rx=317781
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=178602 rx=347959
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=189714 rx=370017
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=205985 rx=402532
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=220406 rx=429561
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=235812 rx=457775
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=251549 rx=489041
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=265318 rx=515760
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=278042 rx=538352
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=292915 rx=566562
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=306675 rx=594140
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=319766 rx=618499
+CTLDLINE c1-Oe rep=4 site=cli [CTLD] p0 tx=336117 rx=649818
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=35146 rx=19160
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=78110 rx=40826
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=107568 rx=55733
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=130578 rx=67422
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=159305 rx=82409
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=182908 rx=94464
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=207448 rx=107023
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=238119 rx=122764
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=253215 rx=129872
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=264891 rx=135841
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=283372 rx=145040
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=306023 rx=157005
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=337341 rx=172497
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=359203 rx=184034
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=390665 rx=199724
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=418801 rx=214132
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=446661 rx=228760
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=475584 rx=244217
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=505760 rx=259927
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=529127 rx=273344
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=552741 rx=285533
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=583567 rx=300994
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=602783 rx=311490
+CTLDLINE c1-Oe rep=4 site=srv [CTLD] p0 tx=633390 rx=327827
+=== rep=5 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:22:15
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.3675,"mean_mbps":184.252,"mean_s":17.3675,"median_s":17.3675,"min_s":17.3675,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.13s CPUCLI=19.44s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d65: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438575598 bytes 347450 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d67: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 6321665926712077883  Sent 52203708 bytes 91474 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=5 19s
+GAPROW c1-Op rep=5 era=old seed=7 cell=c1 mbit=184.252 seconds=17.367528 bytes=400000000 cpucli=19.44 cpusrv=18.13 ms_per_MB=48.60 cores=1.119 pred_mbit=184.3
+LIVENESS c1-Op rep=5 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=16133 rx=29099
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=37013 rx=68980
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=59126 rx=112818
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=79091 rx=151748
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=98831 rx=191413
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=118680 rx=230583
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=138079 rx=269247
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=158032 rx=308102
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=177729 rx=346517
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=196766 rx=382708
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=217216 rx=422904
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=236701 rx=461236
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=257340 rx=501112
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=278344 rx=542341
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=297647 rx=579001
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=318564 rx=620891
+CTLDLINE c1-Op rep=5 site=cli [CTLD] p0 tx=338436 rx=658785
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=27962 rx=15453
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=68842 rx=36484
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=110978 rx=57823
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=150763 rx=78208
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=188534 rx=97157
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=227957 rx=116793
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=266027 rx=136249
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=304673 rx=155563
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=342295 rx=175094
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=378407 rx=194392
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=417606 rx=213940
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=455282 rx=233267
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=494332 rx=253437
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=536147 rx=274567
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=572629 rx=293460
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=612752 rx=313958
+CTLDLINE c1-Op rep=5 site=srv [CTLD] p0 tx=650027 rx=332901
+=== rep=5 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:22:34
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.8344,"mean_mbps":202.091,"mean_s":15.8344,"median_s":15.8344,"min_s":15.8344,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.35s CPUCLI=18.40s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d69: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437743953 bytes 342922 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d6b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 11318333733855097567  Sent 30546143 bytes 69462 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=5 18s
+GAPROW c1-Oa rep=5 era=old seed=7 cell=c1 mbit=202.091 seconds=15.834444 bytes=400000000 cpucli=18.40 cpusrv=17.35 ms_per_MB=46.00 cores=1.162 pred_mbit=202.1
+LIVENESS c1-Oa rep=5 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=18788 rx=18645
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=42347 rx=41752
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=66620 rx=66247
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=89218 rx=88880
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=110862 rx=110469
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=133015 rx=132622
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=155703 rx=155226
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=178105 rx=177770
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=200348 rx=199927
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=221887 rx=221477
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=243592 rx=243151
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=265899 rx=265146
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=286800 rx=286138
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=306891 rx=306356
+CTLDLINE c1-Oa rep=5 site=cli [CTLD] p0 tx=327463 rx=326797
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=18212 rx=18387
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=41719 rx=41769
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=65828 rx=65886
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=88146 rx=88653
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=109741 rx=109761
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=131214 rx=131362
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=153298 rx=153448
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=174941 rx=175228
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=196639 rx=196788
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=218282 rx=218510
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=239656 rx=239832
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=261051 rx=261134
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=282621 rx=282627
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=302360 rx=302360
+CTLDLINE c1-Oa rep=5 site=srv [CTLD] p0 tx=322407 rx=322447
+=== rep=5 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:22:52
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":19.3355,"mean_mbps":165.499,"mean_s":19.3355,"median_s":19.3355,"min_s":19.3355,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.67s CPUCLI=19.97s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d6d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438288538 bytes 347730 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d6f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2835421586074064372  Sent 51811165 bytes 80285 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=5 22s
+GAPROW c1-Oe rep=5 era=old seed=7 cell=c1 mbit=165.499 seconds=19.33546 bytes=400000000 cpucli=19.97 cpusrv=18.67 ms_per_MB=49.92 cores=1.033 pred_mbit=165.5
+LIVENESS c1-Oe rep=5 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=19 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=15913 rx=30595
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=36083 rx=70081
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=57076 rx=111553
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=76041 rx=149439
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=95369 rx=187297
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=113466 rx=221337
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=132105 rx=258292
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=149857 rx=293695
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=168232 rx=330278
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=186618 rx=366744
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=204281 rx=401364
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=221207 rx=434040
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=238542 rx=468677
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=256055 rx=502145
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=272675 rx=535070
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=288394 rx=565049
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=304778 rx=597640
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=321760 rx=629778
+CTLDLINE c1-Oe rep=5 site=cli [CTLD] p0 tx=340646 rx=667458
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=30049 rx=15464
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=68524 rx=35121
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=109257 rx=55662
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=147131 rx=74894
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=183647 rx=93420
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=217372 rx=111227
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=253447 rx=129480
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=289038 rx=147340
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=324304 rx=165108
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=361378 rx=184033
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=394348 rx=200484
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=427032 rx=217350
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=461253 rx=234513
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=494574 rx=251665
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=526728 rx=267907
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=557530 rx=283836
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=587844 rx=299297
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=620468 rx=316404
+CTLDLINE c1-Oe rep=5 site=srv [CTLD] p0 tx=655673 rx=334262
+=== rep=6 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:23:14
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":19.3068,"mean_mbps":165.745,"mean_s":19.3068,"median_s":19.3068,"min_s":19.3068,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.71s CPUCLI=20.50s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d71: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438144265 bytes 345889 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d73: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 6027614960260490502  Sent 51957842 bytes 82051 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=6 21s
+GAPROW c1-Op rep=6 era=old seed=7 cell=c1 mbit=165.745 seconds=19.306774 bytes=400000000 cpucli=20.50 cpusrv=18.71 ms_per_MB=51.25 cores=1.062 pred_mbit=165.7
+LIVENESS c1-Op rep=6 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=19 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=14525 rx=28317
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=33374 rx=64955
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=52867 rx=104274
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=70571 rx=139391
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=84890 rx=167101
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=100376 rx=197633
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=117229 rx=231677
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=132578 rx=261414
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=148481 rx=292931
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=165243 rx=326470
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=184657 rx=364864
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=202997 rx=401536
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=223507 rx=442056
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=242685 rx=479752
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=261702 rx=516628
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=281745 rx=555630
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=301148 rx=593076
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=319808 rx=627818
+CTLDLINE c1-Op rep=6 site=cli [CTLD] p0 tx=339729 rx=666382
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=27773 rx=14260
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=64696 rx=32971
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=103842 rx=52442
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=138371 rx=70133
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=166445 rx=84284
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=195436 rx=99138
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=228817 rx=115683
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=258839 rx=131319
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=290338 rx=146862
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=323691 rx=163783
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=361571 rx=182672
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=398291 rx=201296
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=436593 rx=220624
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=475661 rx=240326
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=510854 rx=258451
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=547971 rx=277463
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=584562 rx=296479
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=621453 rx=315841
+CTLDLINE c1-Op rep=6 site=srv [CTLD] p0 tx=657758 rx=334792
+=== rep=6 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:23:36
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.6939,"mean_mbps":203.9,"mean_s":15.6939,"median_s":15.6939,"min_s":15.6939,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.12s CPUCLI=18.11s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d75: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438032754 bytes 344404 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d77: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 18089221385616106061  Sent 31045439 bytes 76402 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=6 17s
+GAPROW c1-Oa rep=6 era=old seed=7 cell=c1 mbit=203.9 seconds=15.693944 bytes=400000000 cpucli=18.11 cpusrv=17.12 ms_per_MB=45.27 cores=1.154 pred_mbit=203.9
+LIVENESS c1-Oa rep=6 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=18321 rx=18166
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=41216 rx=40705
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=64030 rx=63644
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=87052 rx=86670
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=109387 rx=108940
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=131326 rx=130923
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=153272 rx=152826
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=175289 rx=174704
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=197147 rx=196663
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=219902 rx=219341
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=242363 rx=241813
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=263913 rx=263167
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=286275 rx=285551
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=308120 rx=307408
+CTLDLINE c1-Oa rep=6 site=cli [CTLD] p0 tx=329572 rx=328626
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=18015 rx=18164
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=40642 rx=40701
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=62832 rx=63058
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=85670 rx=86089
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=107521 rx=107546
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=129152 rx=129241
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=151024 rx=151264
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=172143 rx=172423
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=194088 rx=194181
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=215783 rx=215925
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=237971 rx=238235
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=259833 rx=260463
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=281743 rx=281751
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=303454 rx=303536
+CTLDLINE c1-Oa rep=6 site=srv [CTLD] p0 tx=324151 rx=324279
+=== rep=6 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:23:54
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.9873,"mean_mbps":188.376,"mean_s":16.9873,"median_s":16.9873,"min_s":16.9873,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.78s CPUCLI=18.76s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d79: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438446261 bytes 348356 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d7b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 7325112901103133683  Sent 52402208 bytes 93171 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=6 19s
+GAPROW c1-Oe rep=6 era=old seed=7 cell=c1 mbit=188.376 seconds=16.987274 bytes=400000000 cpucli=18.76 cpusrv=17.78 ms_per_MB=46.90 cores=1.104 pred_mbit=188.4
+LIVENESS c1-Oe rep=6 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=16 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=16032 rx=31794
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=37615 rx=73221
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=60212 rx=116900
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=81718 rx=159373
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=102219 rx=199689
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=121292 rx=236664
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=141614 rx=276384
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=160493 rx=313721
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=180951 rx=354454
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=201315 rx=394329
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=222882 rx=436265
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=243809 rx=476758
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=264354 rx=517017
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=285543 rx=557954
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=306096 rx=598582
+CTLDLINE c1-Oe rep=6 site=cli [CTLD] p0 tx=326439 rx=636822
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=30770 rx=15820
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=73136 rx=37298
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=115494 rx=59191
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=157981 rx=80919
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=196706 rx=100412
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=233510 rx=119730
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=273088 rx=139544
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=309857 rx=158294
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=349534 rx=178132
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=388686 rx=198382
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=430314 rx=219337
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=470070 rx=240021
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=510528 rx=260390
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=550242 rx=281259
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=590272 rx=301287
+CTLDLINE c1-Oe rep=6 site=srv [CTLD] p0 tx=628914 rx=321636
+=== rep=7 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:24:13
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6117,"mean_mbps":181.697,"mean_s":17.6117,"median_s":17.6117,"min_s":17.6117,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.25s CPUCLI=18.55s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d7d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438989900 bytes 351283 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d7f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9649804005592810110  Sent 52539166 bytes 95848 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=7 19s
+GAPROW c1-Op rep=7 era=old seed=7 cell=c1 mbit=181.697 seconds=17.611705 bytes=400000000 cpucli=18.55 cpusrv=18.25 ms_per_MB=46.38 cores=1.053 pred_mbit=181.7
+LIVENESS c1-Op rep=7 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=16690 rx=32310
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=36917 rx=71929
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=58939 rx=114154
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=78668 rx=152112
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=98344 rx=191824
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=117853 rx=230473
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=137250 rx=268847
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=156498 rx=305089
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=175420 rx=342977
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=193860 rx=377619
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=212852 rx=415484
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=232624 rx=453597
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=251832 rx=489052
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=272432 rx=529092
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=293711 rx=570981
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=313731 rx=609442
+CTLDLINE c1-Op rep=7 site=cli [CTLD] p0 tx=334413 rx=650265
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=30927 rx=16017
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=70898 rx=36408
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=112458 rx=57586
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=150549 rx=77442
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=188454 rx=96558
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=226989 rx=115828
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=264835 rx=134947
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=300369 rx=153690
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=337035 rx=171989
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=371277 rx=190256
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=408530 rx=208889
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=446460 rx=228756
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=481803 rx=247361
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=519794 rx=267419
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=561840 rx=288197
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=600184 rx=308447
+CTLDLINE c1-Op rep=7 site=srv [CTLD] p0 tx=640949 rx=328515
+=== rep=7 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:24:33
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.0454,"mean_mbps":199.434,"mean_s":16.0454,"median_s":16.0454,"min_s":16.0454,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.96s CPUCLI=17.44s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d81: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438452438 bytes 345410 pkt (dropped 53, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d83: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 3603798776807978018  Sent 30762913 bytes 71468 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=7 18s
+GAPROW c1-Oa rep=7 era=old seed=7 cell=c1 mbit=199.434 seconds=16.045433 bytes=400000000 cpucli=17.44 cpusrv=16.96 ms_per_MB=43.60 cores=1.087 pred_mbit=199.4
+LIVENESS c1-Oa rep=7 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=16 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=21295 rx=21030
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=43778 rx=43263
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=65494 rx=64814
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=86848 rx=86333
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=107019 rx=106606
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=127692 rx=127259
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=149403 rx=148960
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=170980 rx=170522
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=193443 rx=192892
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=214278 rx=213587
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=236425 rx=235735
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=256741 rx=255833
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=279597 rx=278796
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=301664 rx=300715
+CTLDLINE c1-Oa rep=7 site=cli [CTLD] p0 tx=322089 rx=321059
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=20503 rx=20865
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=43129 rx=43309
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=64780 rx=65007
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=85695 rx=86073
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=105476 rx=105484
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=125713 rx=126204
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=146965 rx=146983
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=168350 rx=168765
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=190318 rx=190363
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=211091 rx=211604
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=233021 rx=233076
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=252857 rx=253135
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=275607 rx=275681
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=297169 rx=297629
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=317721 rx=317752
+CTLDLINE c1-Oa rep=7 site=srv [CTLD] p0 tx=339567 rx=339808
+=== rep=7 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:24:51
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.7452,"mean_mbps":180.331,"mean_s":17.7452,"median_s":17.7452,"min_s":17.7452,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.04s CPUCLI=18.72s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d85: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438642344 bytes 350814 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d87: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 5654815101611806505  Sent 52491134 bytes 92897 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=7 20s
+GAPROW c1-Oe rep=7 era=old seed=7 cell=c1 mbit=180.331 seconds=17.745183 bytes=400000000 cpucli=18.72 cpusrv=18.04 ms_per_MB=46.80 cores=1.055 pred_mbit=180.3
+LIVENESS c1-Oe rep=7 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=19099 rx=37521
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=38124 rx=75191
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=59625 rx=117006
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=79503 rx=156413
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=100134 rx=196801
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=119268 rx=235092
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=138653 rx=272968
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=158249 rx=311754
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=177441 rx=349996
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=196464 rx=386954
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=215690 rx=423286
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=235447 rx=461342
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=255244 rx=500552
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=274452 rx=537337
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=294339 rx=577199
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=312889 rx=611109
+CTLDLINE c1-Oe rep=7 site=cli [CTLD] p0 tx=332350 rx=649074
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=36939 rx=18851
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=74166 rx=38065
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=115098 rx=58528
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=153760 rx=78348
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=193440 rx=98155
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=230824 rx=117367
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=268396 rx=136162
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=305783 rx=155322
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=344606 rx=174483
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=380671 rx=192872
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=416559 rx=211692
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=453461 rx=231019
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=491314 rx=250116
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=528604 rx=269228
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=566729 rx=288734
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=602456 rx=307252
+CTLDLINE c1-Oe rep=7 site=srv [CTLD] p0 tx=638335 rx=326168
+=== rep=8 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:25:11
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.4825,"mean_mbps":183.04,"mean_s":17.4825,"median_s":17.4825,"min_s":17.4825,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.18s CPUCLI=18.75s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d89: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438363472 bytes 348983 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d8b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9975373730839642249  Sent 52460679 bytes 92428 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=8 20s
+GAPROW c1-Op rep=8 era=old seed=7 cell=c1 mbit=183.04 seconds=17.482514 bytes=400000000 cpucli=18.75 cpusrv=18.18 ms_per_MB=46.88 cores=1.073 pred_mbit=183.0
+LIVENESS c1-Op rep=8 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=15308 rx=30090
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=35463 rx=69361
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=56622 rx=111994
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=77351 rx=151539
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=96933 rx=190258
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=116170 rx=228866
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=136695 rx=269556
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=154964 rx=305597
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=174609 rx=342851
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=193903 rx=380802
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=212724 rx=417398
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=232345 rx=455433
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=252572 rx=494019
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=273143 rx=534582
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=293403 rx=574161
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=313456 rx=613417
+CTLDLINE c1-Op rep=8 site=cli [CTLD] p0 tx=335296 rx=656263
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=29975 rx=15053
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=69095 rx=35166
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=110598 rx=56099
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=150303 rx=76411
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=188654 rx=96079
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=225456 rx=114412
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=266882 rx=135115
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=301453 rx=152833
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=339137 rx=172451
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=376646 rx=191434
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=412755 rx=210067
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=450235 rx=229273
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=487545 rx=248620
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=527768 rx=269029
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=564887 rx=288407
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=604541 rx=308523
+CTLDLINE c1-Op rep=8 site=srv [CTLD] p0 tx=646364 rx=329674
+=== rep=8 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:25:31
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.653,"mean_mbps":204.433,"mean_s":15.653,"median_s":15.653,"min_s":15.653,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.03s CPUCLI=17.58s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d8d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438261373 bytes 345072 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d8f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2675436101482225012  Sent 31148362 bytes 77656 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=8 18s
+GAPROW c1-Oa rep=8 era=old seed=7 cell=c1 mbit=204.433 seconds=15.653014 bytes=400000000 cpucli=17.58 cpusrv=17.03 ms_per_MB=43.95 cores=1.123 pred_mbit=204.4
+LIVENESS c1-Oa rep=8 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=19593 rx=19237
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=42897 rx=42435
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=66406 rx=66194
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=89483 rx=89187
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=112213 rx=111950
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=134135 rx=133869
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=157277 rx=156801
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=178803 rx=178328
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=201049 rx=200647
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=223003 rx=222575
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=245283 rx=244793
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=267497 rx=266915
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=290390 rx=289806
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=312292 rx=311563
+CTLDLINE c1-Oa rep=8 site=cli [CTLD] p0 tx=335998 rx=335096
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=18976 rx=19101
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=42362 rx=42432
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=65472 rx=65545
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=88624 rx=88722
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=110789 rx=110817
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=132190 rx=132266
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=155358 rx=155456
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=176379 rx=176526
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=198021 rx=198174
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=219621 rx=220146
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=242073 rx=242139
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=263460 rx=263872
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=285924 rx=286054
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=307701 rx=307877
+CTLDLINE c1-Oa rep=8 site=srv [CTLD] p0 tx=330363 rx=330467
+=== rep=8 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:25:49
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.7156,"mean_mbps":180.632,"mean_s":17.7156,"median_s":17.7156,"min_s":17.7156,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.34s CPUCLI=18.71s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d91: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438375027 bytes 349328 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d93: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4526716267639128243  Sent 52429874 bytes 91596 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=8 20s
+GAPROW c1-Oe rep=8 era=old seed=7 cell=c1 mbit=180.632 seconds=17.715566 bytes=400000000 cpucli=18.71 cpusrv=18.34 ms_per_MB=46.77 cores=1.056 pred_mbit=180.6
+LIVENESS c1-Oe rep=8 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=14618 rx=28932
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=33894 rx=66886
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=53936 rx=107070
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=73341 rx=145443
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=92875 rx=180956
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=112482 rx=220291
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=132294 rx=259114
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=150919 rx=296690
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=170628 rx=335759
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=189642 rx=373715
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=209634 rx=412615
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=230615 rx=453619
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=250681 rx=491597
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=269577 rx=528911
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=289227 rx=567855
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=309710 rx=607672
+CTLDLINE c1-Oe rep=8 site=cli [CTLD] p0 tx=330835 rx=648748
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=28932 rx=14504
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=66825 rx=33480
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=106600 rx=53368
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=144312 rx=72805
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=179616 rx=91857
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=217709 rx=111207
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=256217 rx=130415
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=293868 rx=149230
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=333190 rx=168984
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=370164 rx=187655
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=408611 rx=207235
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=447970 rx=227415
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=486271 rx=247509
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=523400 rx=266136
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=560525 rx=285001
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=600005 rx=304967
+CTLDLINE c1-Oe rep=8 site=srv [CTLD] p0 tx=640680 rx=326164
+=== rep=9 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:26:09
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6938,"mean_mbps":180.854,"mean_s":17.6938,"median_s":17.6938,"min_s":17.6938,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.03s CPUCLI=18.46s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d95: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438299908 bytes 349492 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d97: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4012424612106368134  Sent 52470565 bytes 91688 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=9 20s
+GAPROW c1-Op rep=9 era=old seed=7 cell=c1 mbit=180.854 seconds=17.693806 bytes=400000000 cpucli=18.46 cpusrv=18.03 ms_per_MB=46.15 cores=1.043 pred_mbit=180.9
+LIVENESS c1-Op rep=9 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=18891 rx=36861
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=38884 rx=75410
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=59295 rx=115747
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=79954 rx=156813
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=100345 rx=196864
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=119461 rx=234729
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=138880 rx=272989
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=157856 rx=310112
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=177435 rx=349114
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=196300 rx=386516
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=216622 rx=425737
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=235308 rx=461571
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=254063 rx=497875
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=273975 rx=536150
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=292637 rx=572524
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=312027 rx=610906
+CTLDLINE c1-Op rep=9 site=cli [CTLD] p0 tx=332212 rx=649963
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=36165 rx=18486
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=74467 rx=38182
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=114271 rx=58159
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=154841 rx=78880
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=193429 rx=98431
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=231228 rx=117729
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=269372 rx=136830
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=305594 rx=155620
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=343380 rx=174505
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=379941 rx=192999
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=418639 rx=212567
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=453621 rx=230580
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=490630 rx=249985
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=528820 rx=269417
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=563779 rx=287999
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=600993 rx=306601
+CTLDLINE c1-Op rep=9 site=srv [CTLD] p0 tx=638354 rx=325642
+=== rep=9 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:26:29
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.3075,"mean_mbps":209.048,"mean_s":15.3075,"median_s":15.3075,"min_s":15.3075,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.13s CPUCLI=19.02s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d99: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438101386 bytes 342530 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d9b: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 16163581749237962119  Sent 30964218 bytes 76005 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=9 17s
+GAPROW c1-Oa rep=9 era=old seed=7 cell=c1 mbit=209.048 seconds=15.307512 bytes=400000000 cpucli=19.02 cpusrv=17.13 ms_per_MB=47.55 cores=1.243 pred_mbit=209.0
+LIVENESS c1-Oa rep=9 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=19897 rx=19638
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=45169 rx=44454
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=71406 rx=70885
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=96287 rx=95897
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=117492 rx=116936
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=139656 rx=139060
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=162407 rx=161925
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=183291 rx=182662
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=205457 rx=204752
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=228157 rx=227429
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=249774 rx=249054
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=271931 rx=271021
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=293511 rx=292547
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=315824 rx=314933
+CTLDLINE c1-Oa rep=9 site=cli [CTLD] p0 tx=337965 rx=336705
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=19112 rx=19500
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=44323 rx=44489
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=69761 rx=69834
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=95094 rx=95281
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=115811 rx=115850
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=137593 rx=137662
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=159975 rx=160077
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=181081 rx=181201
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=202793 rx=202833
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=225162 rx=225435
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=245976 rx=246020
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=267597 rx=267697
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=288621 rx=288715
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=311084 rx=311159
+CTLDLINE c1-Oa rep=9 site=srv [CTLD] p0 tx=332395 rx=332476
+=== rep=9 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:26:46
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6807,"mean_mbps":180.988,"mean_s":17.6807,"median_s":17.6807,"min_s":17.6807,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.70s CPUCLI=19.66s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9d9d: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438198262 bytes 348972 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9d9f: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 14970156357433881824  Sent 52728771 bytes 95358 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=9 20s
+GAPROW c1-Oe rep=9 era=old seed=7 cell=c1 mbit=180.988 seconds=17.680703 bytes=400000000 cpucli=19.66 cpusrv=18.70 ms_per_MB=49.15 cores=1.112 pred_mbit=181.0
+LIVENESS c1-Oe rep=9 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=15668 rx=29833
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=34758 rx=67178
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=54715 rx=107303
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=73586 rx=144224
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=93416 rx=183450
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=112269 rx=219843
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=131121 rx=257490
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=150052 rx=295473
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=169183 rx=333480
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=187914 rx=370236
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=208120 rx=409791
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=228560 rx=449138
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=248973 rx=488805
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=268654 rx=526722
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=288689 rx=565915
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=309126 rx=605661
+CTLDLINE c1-Oe rep=9 site=cli [CTLD] p0 tx=330409 rx=647298
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=28675 rx=14879
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=65901 rx=33883
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=105799 rx=53889
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=142747 rx=72962
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=181006 rx=92061
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=216510 rx=110294
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=254355 rx=129299
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=291608 rx=148151
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=329415 rx=166744
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=366029 rx=185568
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=404897 rx=205240
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=442372 rx=224869
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=482061 rx=245135
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=519148 rx=264671
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=558115 rx=284245
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=598363 rx=304980
+CTLDLINE c1-Oe rep=9 site=srv [CTLD] p0 tx=638126 rx=325285
+=== rep=10 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:27:06
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6691,"mean_mbps":181.107,"mean_s":17.6691,"median_s":17.6691,"min_s":17.6691,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.30s CPUCLI=18.24s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9da1: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438282379 bytes 350726 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9da3: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 18405736215853719844  Sent 52773116 bytes 93334 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=10 20s
+GAPROW c1-Op rep=10 era=old seed=7 cell=c1 mbit=181.107 seconds=17.669093 bytes=400000000 cpucli=18.24 cpusrv=18.30 ms_per_MB=45.60 cores=1.032 pred_mbit=181.1
+LIVENESS c1-Op rep=10 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=15641 rx=29648
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=35947 rx=69206
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=56737 rx=110390
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=76463 rx=149625
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=96562 rx=189234
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=115507 rx=226903
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=135577 rx=266894
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=154444 rx=303746
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=174224 rx=343599
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=192901 rx=379767
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=212500 rx=418076
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=232439 rx=457019
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=252943 rx=498027
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=272698 rx=535430
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=293095 rx=576363
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=312149 rx=613414
+CTLDLINE c1-Op rep=10 site=cli [CTLD] p0 tx=332169 rx=653172
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=29642 rx=15366
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=68138 rx=35613
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=109400 rx=56125
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=148668 rx=76103
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=186834 rx=95248
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=224423 rx=114234
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=263998 rx=133924
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=300225 rx=152693
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=338605 rx=171651
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=376002 rx=191057
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=412392 rx=209203
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=449434 rx=228335
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=490654 rx=248875
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=528758 rx=268677
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=568442 rx=288674
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=605498 rx=307908
+CTLDLINE c1-Op rep=10 site=srv [CTLD] p0 tx=645848 rx=327811
+=== rep=10 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:27:26
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.3646,"mean_mbps":208.271,"mean_s":15.3646,"median_s":15.3646,"min_s":15.3646,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.77s CPUCLI=17.16s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9da5: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438087613 bytes 345215 pkt (dropped 53, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9da7: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4445369895216397977  Sent 31010999 bytes 77395 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=10 17s
+GAPROW c1-Oa rep=10 era=old seed=7 cell=c1 mbit=208.271 seconds=15.36461 bytes=400000000 cpucli=17.16 cpusrv=16.77 ms_per_MB=42.90 cores=1.117 pred_mbit=208.3
+LIVENESS c1-Oa rep=10 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=19242 rx=19116
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=41747 rx=41345
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=66409 rx=66184
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=89488 rx=89149
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=112028 rx=111693
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=133759 rx=133515
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=156829 rx=156468
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=179373 rx=178935
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=203314 rx=202991
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=225632 rx=225212
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=247876 rx=247526
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=270443 rx=269981
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=292880 rx=292461
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=313810 rx=312933
+CTLDLINE c1-Oa rep=10 site=cli [CTLD] p0 tx=337410 rx=336513
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=18568 rx=18665
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=41215 rx=41472
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=66080 rx=66146
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=88831 rx=89354
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=111179 rx=111197
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=132604 rx=132674
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=155201 rx=155324
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=177518 rx=177608
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=201113 rx=201383
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=222541 rx=222629
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=244413 rx=244431
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=267050 rx=267080
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=288537 rx=288633
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=308973 rx=309001
+CTLDLINE c1-Oa rep=10 site=srv [CTLD] p0 tx=331318 rx=331506
+=== rep=10 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:27:43
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.5253,"mean_mbps":182.593,"mean_s":17.5253,"median_s":17.5253,"min_s":17.5253,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.92s CPUCLI=18.23s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9da9: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438717206 bytes 351416 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9dab: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 12561291405646226788  Sent 52659401 bytes 94328 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=10 20s
+GAPROW c1-Oe rep=10 era=old seed=7 cell=c1 mbit=182.593 seconds=17.525304 bytes=400000000 cpucli=18.23 cpusrv=17.92 ms_per_MB=45.58 cores=1.040 pred_mbit=182.6
+LIVENESS c1-Oe rep=10 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=16579 rx=32125
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=36592 rx=71944
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=57873 rx=114430
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=77875 rx=153227
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=97273 rx=190007
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=116765 rx=229119
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=137169 rx=269273
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=156421 rx=307984
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=175917 rx=346878
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=195684 rx=384535
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=217270 rx=426546
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=237328 rx=465564
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=257098 rx=503453
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=277104 rx=543256
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=297195 rx=582228
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=316434 rx=619750
+CTLDLINE c1-Oe rep=10 site=cli [CTLD] p0 tx=336459 rx=658375
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=31156 rx=16012
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=70522 rx=35861
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=112018 rx=56823
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=150883 rx=76675
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=186829 rx=95394
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=225482 rx=114739
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=264425 rx=134274
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=303117 rx=153797
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=341585 rx=173109
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=378350 rx=192240
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=419218 rx=213214
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=458461 rx=233497
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=496547 rx=252585
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=533646 rx=272131
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=572780 rx=291994
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=608972 rx=310382
+CTLDLINE c1-Oe rep=10 site=srv [CTLD] p0 tx=647115 rx=329968
+=== rep=11 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:28:03
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6677,"mean_mbps":181.121,"mean_s":17.6677,"median_s":17.6677,"min_s":17.6677,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.96s CPUCLI=18.72s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9dad: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438382173 bytes 348808 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9daf: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 17111927292645620222  Sent 52350236 bytes 91264 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=11 20s
+GAPROW c1-Op rep=11 era=old seed=7 cell=c1 mbit=181.121 seconds=17.667703 bytes=400000000 cpucli=18.72 cpusrv=17.96 ms_per_MB=46.80 cores=1.060 pred_mbit=181.1
+LIVENESS c1-Op rep=11 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=15895 rx=30847
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=35548 rx=68461
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=56126 rx=109079
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=76134 rx=147342
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=94942 rx=184548
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=113832 rx=222249
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=133786 rx=261384
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=153157 rx=300098
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=173616 rx=340342
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=193038 rx=379001
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=213208 rx=418053
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=232949 rx=456695
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=253165 rx=495898
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=273670 rx=536175
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=292787 rx=571445
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=312003 rx=609326
+CTLDLINE c1-Op rep=11 site=cli [CTLD] p0 tx=332055 rx=648557
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=29781 rx=15494
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=67257 rx=34943
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=106468 rx=54395
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=144897 rx=74702
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=182828 rx=93850
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=219557 rx=112268
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=258629 rx=131749
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=296742 rx=151307
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=336255 rx=171066
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=374465 rx=190510
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=412983 rx=210238
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=451002 rx=229801
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=490305 rx=249650
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=529736 rx=269729
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=562859 rx=287831
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=600327 rx=306856
+CTLDLINE c1-Op rep=11 site=srv [CTLD] p0 tx=638262 rx=326311
+=== rep=11 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:28:23
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.5209,"mean_mbps":206.174,"mean_s":15.5209,"median_s":15.5209,"min_s":15.5209,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.86s CPUCLI=17.98s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9db1: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 437688986 bytes 343013 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9db3: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 13240526025234319853  Sent 30951698 bytes 75705 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=11 18s
+GAPROW c1-Oa rep=11 era=old seed=7 cell=c1 mbit=206.174 seconds=15.520897 bytes=400000000 cpucli=17.98 cpusrv=16.86 ms_per_MB=44.95 cores=1.158 pred_mbit=206.2
+LIVENESS c1-Oa rep=11 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=20065 rx=19727
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=42624 rx=42271
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=67059 rx=66678
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=91081 rx=90913
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=113788 rx=113462
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=136024 rx=135578
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=159387 rx=158906
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=181778 rx=181302
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=205579 rx=205119
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=226368 rx=226066
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=247997 rx=247585
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=270253 rx=269753
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=292297 rx=291596
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=312643 rx=312035
+CTLDLINE c1-Oa rep=11 site=cli [CTLD] p0 tx=333987 rx=333329
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=19311 rx=19468
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=42137 rx=42288
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=66411 rx=66431
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=89909 rx=90005
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=112009 rx=112104
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=133783 rx=134127
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=156918 rx=156976
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=179027 rx=179097
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=202186 rx=202236
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=223800 rx=223988
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=243675 rx=243695
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=265940 rx=266111
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=287475 rx=287522
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=307853 rx=308260
+CTLDLINE c1-Oa rep=11 site=srv [CTLD] p0 tx=328960 rx=329010
+=== rep=11 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:28:41
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.2587,"mean_mbps":175.259,"mean_s":18.2587,"median_s":18.2587,"min_s":18.2587,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=20.35s CPUCLI=18.46s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9db5: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438591356 bytes 342018 pkt (dropped 52, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9db7: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8470091908360657844  Sent 53413612 bytes 115271 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=11 20s
+GAPROW c1-Oe rep=11 era=old seed=7 cell=c1 mbit=175.259 seconds=18.258659 bytes=400000000 cpucli=18.46 cpusrv=20.35 ms_per_MB=46.15 cores=1.011 pred_mbit=175.3
+LIVENESS c1-Oe rep=11 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=18 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=15238 rx=30124
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=34096 rx=66368
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=53412 rx=105232
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=72616 rx=143270
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=91216 rx=179687
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=109721 rx=216357
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=128278 rx=253392
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=146458 rx=289563
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=166671 rx=329470
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=183172 rx=362193
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=202163 rx=399583
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=223031 rx=440617
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=243363 rx=479752
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=263918 rx=519638
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=284016 rx=557278
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=304560 rx=596152
+CTLDLINE c1-Oe rep=11 site=cli [CTLD] p0 tx=324872 rx=635017
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=29973 rx=15074
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=66302 rx=34056
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=104462 rx=52936
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=141631 rx=71930
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=178133 rx=90236
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=213888 rx=108346
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=250092 rx=126572
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=285553 rx=144402
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=324801 rx=164125
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=361184 rx=182648
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=393779 rx=198864
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=433508 rx=218775
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=471194 rx=238870
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=509368 rx=258562
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=545576 rx=277743
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=582157 rx=297688
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=621624 rx=316771
+CTLDLINE c1-Oe rep=11 site=srv [CTLD] p0 tx=656196 rx=335658
+=== rep=12 arm=c1-Op era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1" cell=c1/c1/single bytes=400000000 18:29:01
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.1644,"mean_mbps":186.432,"mean_s":17.1644,"median_s":17.1644,"min_s":17.1644,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.83s CPUCLI=18.28s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9db9: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438142884 bytes 349255 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9dbb: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 258803282452642795  Sent 52565382 bytes 92885 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Op rep=12 19s
+GAPROW c1-Op rep=12 era=old seed=7 cell=c1 mbit=186.432 seconds=17.164434 bytes=400000000 cpucli=18.28 cpusrv=17.83 ms_per_MB=45.70 cores=1.065 pred_mbit=186.4
+LIVENESS c1-Op rep=12 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=15164 rx=29489
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=35796 rx=69560
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=56270 rx=110293
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=76953 rx=150737
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=96991 rx=190864
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=116619 rx=229988
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=136104 rx=268816
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=155242 rx=305933
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=175756 rx=346677
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=195484 rx=385289
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=216004 rx=425145
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=236722 rx=465494
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=257336 rx=505541
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=278422 rx=545406
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=300260 rx=589138
+CTLDLINE c1-Op rep=12 site=cli [CTLD] p0 tx=321555 rx=629946
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=29131 rx=14896
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=69011 rx=35352
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=108615 rx=55112
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=148570 rx=76082
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=188712 rx=95834
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=226728 rx=115234
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=265030 rx=134215
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=301428 rx=152980
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=341827 rx=173052
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=379202 rx=192375
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=419497 rx=212522
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=457210 rx=232043
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=496161 rx=252065
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=537262 rx=273350
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=577766 rx=293942
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=617976 rx=314961
+CTLDLINE c1-Op rep=12 site=srv [CTLD] p0 tx=661378 rx=336566
+=== rep=12 arm=c1-Oa era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 18:29:21
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.6195,"mean_mbps":204.873,"mean_s":15.6195,"median_s":15.6195,"min_s":15.6195,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.85s CPUCLI=16.93s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9dbd: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438031425 bytes 345436 pkt (dropped 53, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9dbf: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 1426337758541920395  Sent 30950811 bytes 74694 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oa rep=12 17s
+GAPROW c1-Oa rep=12 era=old seed=7 cell=c1 mbit=204.873 seconds=15.619454 bytes=400000000 cpucli=16.93 cpusrv=16.85 ms_per_MB=42.33 cores=1.084 pred_mbit=204.9
+LIVENESS c1-Oa rep=12 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=1/1 ctld=15 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=18197 rx=18106
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=40570 rx=40252
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=64736 rx=64282
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=87320 rx=87068
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=110153 rx=109845
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=131298 rx=130926
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=154122 rx=153768
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=175918 rx=175333
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=198016 rx=197509
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=220184 rx=219686
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=242365 rx=241836
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=265202 rx=264575
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=287300 rx=286813
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=309130 rx=308471
+CTLDLINE c1-Oa rep=12 site=cli [CTLD] p0 tx=331992 rx=331359
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=17502 rx=17639
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=39836 rx=39940
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=63090 rx=63176
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=86100 rx=86328
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=107796 rx=107877
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=128869 rx=129273
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=151502 rx=151577
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=172757 rx=173219
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=194381 rx=194446
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=216348 rx=216490
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=238233 rx=238377
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=260526 rx=260676
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=282561 rx=282622
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=303529 rx=303802
+CTLDLINE c1-Oa rep=12 site=srv [CTLD] p0 tx=325920 rx=326068
+=== rep=12 arm=c1-Oe era=old seed=7 bin=/home/vibe/era-old/target/release/raptorpath env="RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1" cell=c1/c1/single bytes=400000000 18:29:38
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.6125,"mean_mbps":181.689,"mean_s":17.6125,"median_s":17.6125,"min_s":17.6125,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.01s CPUCLI=18.47s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem 9dc1: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438904674 bytes 351277 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem 9dc3: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8914811961837170490  Sent 52455361 bytes 93304 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1-Oe rep=12 20s
+GAPROW c1-Oe rep=12 era=old seed=7 cell=c1 mbit=181.689 seconds=17.612476 bytes=400000000 cpucli=18.47 cpusrv=18.01 ms_per_MB=46.17 cores=1.049 pred_mbit=181.7
+LIVENESS c1-Oe rep=12 era=old anchor_cc=1/1 anchor_mtu=1/1 gates=0/0 ackmerge=0/0 ctld=17 -- ACKDIAG=0/0 WALL=0/0 SUMCAP=0/0 DCAP=0/0 RACK=0/0 LCW=0/0 CCAP=0/0 SF=0/0
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=16096 rx=30685
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=39246 rx=73866
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=59703 rx=114892
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=80171 rx=155323
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=99852 rx=194431
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=118860 rx=232402
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=139762 rx=273496
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=158363 rx=310800
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=177143 rx=348114
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=195902 rx=382000
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=215699 rx=420949
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=235307 rx=458731
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=254548 rx=495579
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=273865 rx=533110
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=293952 rx=573210
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=313960 rx=611851
+CTLDLINE c1-Oe rep=12 site=cli [CTLD] p0 tx=333772 rx=650570
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=30001 rx=15605
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=73718 rx=38685
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=114028 rx=58781
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=154322 rx=79833
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=193320 rx=98882
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=230665 rx=117719
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=271024 rx=138135
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=307837 rx=156565
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=345139 rx=175443
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=377851 rx=193128
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=415793 rx=212548
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=452937 rx=231659
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=490466 rx=251434
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=527375 rx=270062
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=565570 rx=289419
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=603449 rx=308953
+CTLDLINE c1-Oe rep=12 site=srv [CTLD] p0 tx=642890 rx=328814
+=== ARMCOUNTS (rows, NOT live n — aborts emit no GAPROW) 2026-08-19T18:29:58Z
+ARMCOUNT c1-Op rows=12/12
+ARMCOUNT c1-Oa rows=12/12
+ARMCOUNT c1-Oe rows=12/12
+GAP-BATTERY-DONE seed=7 2026-08-19T18:29:58Z
