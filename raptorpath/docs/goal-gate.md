@@ -34305,3 +34305,302 @@ than smuggled into the verdict.
 
 **Nothing here flips a default, adds a gate, edits an engine crate, or modifies
 any prediction, band or falsifier.**
+
+---
+
+## c9 VALIDATION BATTERY — THE SCORED RESULT (2026-08-19, `feat/c9-score` from main@`f1edc59`) — **ERA LEDGER item 5 is CLOSED.** 24 invocations, two cells, two arms, two seeds, three reps, scored against the PRE-REGISTRATION as amended and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+**THE VERDICT IN ONE LINE.** The battery is **mechanically the cleanest in this
+tree's history — 24/24 invocations, ZERO aborts, every witness column present**
+— and its scientific result is **largely negative**: at the symmetric quad the
+four legs' drains are **statistically indistinguishable from UNCORRELATED**
+(ρ̄ ≈ −0.04, not the predicted −0.27), and **pooling does not beat per-path
+accounts there** — C9-2's falsifier fires. **C9-1 survives its surviving
+falsifier but misses its prediction interval by ~7×. C9-2 DISAGREES. C9-3 and
+C9-4(c9h) are UNDERPOWERED exactly as pre-declared. C9-4 AGREES at c9.
+C9-L1, C9-L2 and C9-L3 are all UNSCOREABLE** — and the reason for two of them
+is **a third specification failure: the `[CCAP]` span field the contract scores
+them on HAS NEVER EXISTED IN THE ENGINE.**
+
+Binary sha256 `a23e45f57ab1ac9b2bbb414577c844573cd2060fef239f2f3c232a54c14a13c3`
+(= main@`97bd690` + the topo-ping repair `7c67ad0`), verified identical in all
+24 ledger headers. VM 10.1.5.16, kernel 7.0.14-101.fc43, Xeon E5-2650 v3.
+Launched 12:04:36Z, ended 12:14:37Z.
+
+### 1 — THE ABORT-CAUSE TABLE, READ BEFORE ANY CONTRAST — **and it is empty**
+
+| column | reading |
+|---|---|
+| invocations | **24 / 24** attempted and completed |
+| **aborts** | **0** |
+| `abort_cause` | `none` × 24 |
+| `abort_missing` | `FALSE` × 24 — the witness ran on every invocation |
+| `drain_pids_t0` | `0` × 24 — the SIGTERM race did not occur once |
+| `[GATES]` two-sided | `gates_cli=1 gates_srv=1` × 24 |
+| liveness `FAIL` / `VOID` lines | **0 of any kind** |
+| seed audit | **4 legs, 4 distinct seeds, `per-leg? True` on all 24** — no ledger is VOID |
+
+**The contract's scoring rule is satisfied twice over.** §6 says a c9 battery is
+scoreable only with usable witness columns *or* a zero abort count; this run has
+**both**. C9-2 and C9-4 — the two arm-comparison clauses that arm-correlated
+attrition would bias — carry **no selection whatsoever**.
+
+### 2 — THE TOPO-PING REPAIR'S FIRST FIELD DATA
+
+The repair's whole claim was that a Gilbert-Elliott loss draw must not abort an
+invocation. **96 leg-pings** (24 invocations × 4 legs):
+
+| attempts | legs | share |
+|---|---|---|
+| **1** | **92** | 95.8 % |
+| **2** | **4** | 4.2 % |
+| 3+ | **0** | 0 % |
+| final rc | **0 on all 96** | — |
+
+**THE 4 RETRIES ARE THE MECHANISM, VISIBLE.** Four legs drew a lost first
+packet and cleared on the second. The observed first-packet loss rate **4/96 =
+4.2 %** is within noise of what the GE model the sizing rests on predicts —
+48 c2 legs at `pi_bad` 2.53 % + 24 c2 + 24 c3 legs at 2.53 %/4.76 % = **2.97
+expected**, observed 4. **The loss process the repair was sized against is the
+one that actually ran.**
+
+> **WHAT THIS DOES AND DOES NOT PROVE, stated honestly because n = 24 is small.**
+> Under the old 2-packet no-retry check an abort needed **two** consecutive
+> losses, so those same 4 draws would have aborted with probability `1-q`
+> (0.5 at c2, 0.6 at c3) — **≈ 2.1 expected aborts**, and a whole-battery
+> expectation of **≈ 1.6 of 24 (6.6 %)**. Observed: **0**. That is consistent
+> with the repair and is *not*, at this n, a demonstration of the 1e-4 bound —
+> which is a claim about the tail and would need thousands of invocations. The
+> strong evidence here is the **attempt distribution**, which measures the
+> mechanism directly rather than its rare consequence. **No leg came close to
+> the bound: the worst leg in the battery used 2 of 26 draws.**
+
+### 3 — C9-1 … C9-4, SCORED
+
+**C9-1 — SYMMETRIC QUAD, ρ̄ SIGN.** Measurand: mean pairwise **two-way-centered**
+delivered-rate ρ̄ on the pooled arm. Scored on its **first clause only** (`ρ̄ > 0`
+falsifies); the sub-floor clause was **struck as unsatisfiable** in §2.
+
+| seed | windows/rep | ρ̄ (two-way) | 95 % CI | falsifier `ρ̄ > 0` |
+|---|---|---|---|---|
+| 42 | 36 | **−0.031** | [−0.213, +0.153] | does not fire |
+| 7 | 50 | **−0.046** | [−0.210, +0.120] | does not fire |
+
+**VERDICT: AGREES on the scored falsifier — NEGATIVE on both seeds, signs
+agree as §5 requires. PREDICTION INTERVAL MISSED, badly.** Point prediction
+**−0.27**, band **[−0.34, −0.15]**; measured **≈ −0.04**, *above* the band on
+both seeds, and **both CIs contain zero**.
+
+> **THE SUBSTANTIVE RESULT: THE c7 → c9 EXTRAPOLATION FAILS.** The −0.27 came
+> from carrying c7's measured **−0.814 = 81.4 % of its −1.000 floor** to N = 4's
+> −0.333 floor. The quad sits at **−0.0385 = 11.5 % of its floor**. Whatever
+> produced c7's strong anti-correlation **does not survive the widening to four
+> legs**, and `B(4, −0.04) = 0.507` is the plain √N law with essentially no
+> anti-correlation bonus.
+
+**THE SIX PAIRWISE ρ — §2's owed `[LAUNCH]` DIAGNOSTIC, and it earns its place.**
+§2 warned that "a ρ̄ of −0.27 built from six ≈−0.27s and one built from +0.9 and
+−0.9 are different cells that `B(N, ρ̄)` cannot tell apart":
+
+| seed | p0-p1 | p0-p2 | p0-p3 | p1-p2 | p1-p3 | p2-p3 | range |
+|---|---|---|---|---|---|---|---|
+| 42 | −0.095 | +0.083 | **−0.313** | −0.017 | −0.100 | **+0.253** | 0.566 |
+| 7 | −0.201 | +0.200 | −0.260 | −0.150 | +0.060 | +0.074 | 0.460 |
+
+**The six pairs span roughly half a correlation unit around a mean near zero.
+This cell is NOT exchangeable**, and the diagnostic §2 added instead of a
+re-tuned threshold is what shows it.
+
+**C9-2 — POOLING'S ADVANTAGE GROWS WITH N. Falsified.** Scored as the
+pre-registered **paired sign test within (seed, rep)**. Neither cell is bimodal
+(reps span 1.10× at c9 and 1.48× at c9h, under §5's 2× bar), so the paired
+means are usable beside the sign test.
+
+| seed | rep | pooled | percap | pooled − percap |
+|---|---|---|---|---|
+| 42 | 1 | 177.868 | 178.911 | −1.043 |
+| 42 | 2 | 181.826 | 179.247 | **+2.579** |
+| 42 | 3 | 183.205 | 184.252 | −1.047 |
+| 7 | 1 | 175.638 | 178.783 | −3.145 |
+| 7 | 2 | 172.952 | 178.370 | −5.418 |
+| 7 | 3 | 167.320 | 177.573 | −10.253 |
+
+**Sign test: pooled > percap in 1 of 6 pairs. Mean paired difference −3.06
+Mbit/s, in PERCAP's favour.** The clause's first falsifier is *"percap ≥ pooled
+at a symmetric quad"* and it **FIRES on 5 of 6 pairs**.
+
+**VERDICT: DISAGREES.** Its second falsifier (c9 gap ≤ c7 gap) is separately
+**unscoreable** — no c7 arm was run this session — but the first fires on its
+own and is sufficient.
+
+> **THE CONFOUND, NAMED RATHER THAN BURIED.** c9 is **sender-bound** (§4, and
+> every rep here sits in a 167–184 Mbit/s band around the 176 Mbit/s CPU
+> ceiling). A shared *sender* ceiling is precisely what would mask a
+> *link-level* pooling benefit, so this result establishes that **pooling did
+> not win at this cell**, and **cannot** establish that pooling would not win at
+> a link-bound quad. The falsifier was pre-registered without that caveat and
+> it fired; the caveat bounds what the null means, and does not rescue it.
+>
+> **AND THE CONTRAST THAT MAKES IT COHERENT:** at **c9h**, where the legs are
+> heterogeneous, **pooled beats percap in 5 of 6 pairs, mean +17.6 Mbit/s.**
+> Pooling wins where the legs differ and there is something to borrow; it wins
+> nothing where they are symmetric and ρ̄ ≈ 0. That is the same story C9-1 tells,
+> read off goodput instead of correlation.
+
+**C9-3 — HETEROGENEOUS QUAD. UNDERPOWERED, exactly as pre-declared.**
+
+| seed | arm | windows/rep | vs the 18 bar |
+|---|---|---|---|
+| 42 | pooled / percap | **7** / **10** | both FAIL |
+| 7 | pooled / percap | **4** / **14** | both FAIL |
+
+**VERDICT: UNDERPOWERED-AS-PRE-DECLARED.** The launch step declared this before
+the battery ran, with the mechanism measured: the c3-class legs are starved by
+the sender ceiling (`rate_lr` down to **22 sym/s** at c9h-pooled/s42) and are
+silent in most windows, so completeness is bounded by the sender bound rather
+than by transfer length. **Reported, not rescued** — no pooling of reps across
+seeds, no post-hoc window widening.
+
+*Indicative only, scored on nothing:* ρ̄ reads +0.017 / +0.362 / −0.037 / +0.165
+across the four cell-arm-seeds — **sign-inconsistent**, which under §5 would be
+NEEDS-MORE even at full power. The `fast_slow > fast_fast` half runs **against**
+the prediction in **3 of 4** (fast_slow −0.235, −0.103, +0.275 against fast_fast
++0.226, +0.843, +0.382).
+
+**C9-4 — THE DECIDING ONE: is ρ̄ the CELL'S or the POOL'S? AGREES at c9.**
+
+| seed | ρ̄ pooled | ρ̄ percap | ρ̄_pooled − ρ̄_percap | \|Δ\| ≤ 0.15? | falsifier ≥ +0.30? |
+|---|---|---|---|---|---|
+| 42 | −0.031 | +0.002 | **−0.033** | **yes** | no |
+| 7 | −0.046 | −0.018 | **−0.028** | **yes** | no |
+
+**VERDICT: AGREES.** The two arms agree to **0.033 and 0.028**, far inside the
+0.15 bar, and the falsifier (`ρ̄_pooled − ρ̄_percap ≥ +0.30`, which would have
+made the correlation *the pool's own output* and retired CD-5's reading) does
+not fire — the difference is **negative** on both seeds. **On this evidence
+Eppen's exogeneity assumption HOLDS at the symmetric quad: ρ̄ is a property of
+the cell, which is what his model requires.**
+
+> **THE POWER CAVEAT THIS VERDICT MUST CARRY.** Both arms sit **near zero**, and
+> two numbers near zero agree cheaply. This test discriminates strongly only
+> when at least one arm has a ρ̄ of real magnitude — which is exactly what C9-1
+> failed to find. **C9-4 is therefore a genuine PASS of a WEAK test**, and it
+> should not be quoted as strong confirmation of exogeneity. The c9h half is
+> UNDERPOWERED (see C9-3) and is not scored.
+
+### 4 — C9-L1, C9-L2, C9-L3 — **ALL UNSCOREABLE, and two of them for a reason that is a SPECIFICATION FAILURE**
+
+> ### **THE THIRD SPECIFICATION FAILURE: `[CCAP]` HAS NO SPAN FIELD, AND NEVER HAS.**
+>
+> C9-L1 is scored on *"the `[CCAP]` span field reads 0"*. C9-L3 predicts
+> *"`[CCAP]` span field at c9h: 281 sym, band [265, 315]"*. **That field does
+> not exist.** `net::mod::ccap_report_line` emits exactly:
+>
+> ```text
+>   [CCAP] eng=/ cap= mem= floor= floor_val= brake= brake_frac=
+> ```
+>
+> — **no `span=`, no `window=`, no `slack=`.** `three_term_store_cap` *computes*
+> `(limit, window, slack, span)` and returns all four, but **the only occurrence
+> of the word `span` in any format string in the engine is the `[GATES]` help
+> text for `RWM_THREE_TERM`.** No gauge in the tree prints the span term.
+>
+> Separately and independently, **`[CCAP]` was not emitted at all in this
+> battery**: it is gated behind `RWM_COMPOSED_CAP`, which the c9 arm table never
+> sets (the ledgers carry `[SUMCAP]`, `[DCAP]` and `[RACK]` only). **So even a
+> battery that had set the gate would have read no span.** This is not a
+> launch-step omission that a re-run fixes; it is a clause written against an
+> instrument that was never built.
+>
+> This is the **third** specification failure in this contract, after §2's
+> unsatisfiable falsifier and the launch step's `BYTES`-sized-against-raw-windows
+> finding, and it is recorded in the same register the Latency Lever work opened.
+
+**C9-L1 — UNSCOREABLE (cite: no span instrument).** `span = 0` at a symmetric
+cell cannot be read. *Indirect and NOT a substitute:* at c9 the four legs'
+`rtprop` means agree to **7.69 / 7.74 / 8.25 / 7.92 ms** (spread 0.56 ms, 7 %),
+so `RTprop_max − RTprop_min` is small but **not** the exact zero the shipped
+`span = rate_fast·(RTprop_max − RTprop_min)` needs to vanish. Whether the law
+computed zero is unobservable.
+
+**C9-L2 — UNSCOREABLE (cite: no same-session c7 arm).** The clause is the ratio
+`cap(c9)/cap(c7) ∈ [1.8, 2.2]`; **no c7 arm was run in this session**, and
+pooling a c7 cap from another session and binary is exactly the cross-era mixing
+this document's own boundaries forbid. For the record only, `[SUMCAP] cap`
+reads **3339.7 at c9** and **1599.0 at c9h** — both N = 4, so neither is an
+N = 2 reference.
+
+> **AND ITS PRE-REGISTERED RISK FLAG WAS CORRECT.** The launch step flagged
+> C9-L2 AT RISK because c9 is sender-bound, warning that a low reading would be
+> the clause's *own* named failure mode — "the inputs are NOT N-invariant, for a
+> reason that is not the law's shape". The battery confirms the premise of that
+> flag (**every c9 rep pinned in a 167–184 Mbit/s band at a 400 Mbit cell**)
+> while leaving the clause itself unmeasurable. **The flag stands; the clause is
+> not scored either way.**
+
+**C9-L3 — UNSCOREABLE (cite: no span instrument). THIS IS THE HEADLINE
+QUESTION, AND THE ANSWER IS THAT THE MEASUREMENT CANNOT PICK EITHER FORM.**
+
+c9h was built as *"the first geometry in the tree that can tell the two span
+forms apart"* — shipped `rate_fast·(RTT_max − RTT_min)` ≈ 281 sym against the
+crosscheck's un-adopted `Σ bwᵢ(RTT_max − RTTᵢ)` ≈ 562 sym, **discriminated by an
+anchor-free RATIO predicted at exactly 2.000** (the count of min-RTprop legs,
+2 at c9h and 1 at every dual).
+
+**The geometry was delivered and the instrument was not.** The heterogeneous
+quad came up exactly as specified — `rtprop` **9.99 / 9.98 / 37.37 / 36.66 ms**,
+i.e. **two** min-RTprop legs and a measured spread of **27.0 ms** against the
+29.88 ms anchor — so the discriminating configuration existed on the wire for
+the first time. **But nothing printed the span term, so the ratio has no
+numerator and no denominator.** Neither form is confirmed, neither is
+falsified, and **the anchors are not falsified either**.
+
+> **WHAT IS OWED, and it is small.** `ccap_report_line` already receives the
+> composed cap; `three_term_store_cap` already returns `span`. **Adding
+> `span=`/`window=`/`slack=` to the `[CCAP]` line is a gauge-only change to one
+> format string and its always-on string pin** — no law, no default, no
+> behaviour. With that field and one c9h invocation, C9-L1 and C9-L3 both become
+> readable, and C9-L3's 2.000 ratio is decided. **This is the single
+> highest-value follow-up this battery names**, because the geometry that
+> separates the two forms now exists and has been shown to come up clean.
+
+### 5 — SCOREBOARD
+
+| # | cell | verdict | the number |
+|---|---|---|---|
+| **C9-1** | c9 | **AGREES** (falsifier) / **PREDICTION INTERVAL MISSED** | ρ̄ = −0.031 / −0.046, predicted −0.27, band [−0.34, −0.15] |
+| **C9-2** | c9 | **DISAGREES** | pooled > percap in **1 of 6** pairs; mean −3.06 Mbit/s |
+| **C9-3** | c9h | **UNDERPOWERED-AS-PRE-DECLARED** | 4–14 windows/rep against the 18 bar |
+| **C9-4** | c9 | **AGREES** (weak test — both arms near zero) | \|Δρ̄\| = 0.033 / 0.028 ≤ 0.15 |
+| **C9-4** | c9h | **UNDERPOWERED-AS-PRE-DECLARED** | as C9-3 |
+| **C9-L1** | c9 | **UNSCOREABLE** | no span field in any gauge |
+| **C9-L2** | c9 | **UNSCOREABLE** (risk flag stands) | no same-session c7 arm |
+| **C9-L3** | c9h | **UNSCOREABLE** | no span field in any gauge |
+
+### 6 — WHAT IS NOT CLAIMED
+
+* **No absolute throughput magnitude at c9.** The cell is sender-bound; every
+  rep sits within ±5 % of a CPU ceiling and the number describes the sender.
+* **No span-form adoption.** The crosscheck's *"Adopt nothing"* stands
+  untouched, and nothing here licenses switching formulas — the discriminating
+  measurement was not made.
+* **No claim that pooling is refuted in general.** C9-2 fired at a
+  sender-bound symmetric quad; c9h shows pooling winning by +17.6 Mbit/s in the
+  same battery.
+* **No cross-session or cross-era pooling.** No c7 arm ran here and none is
+  borrowed.
+* **The 1e-4 false-abort bound is NOT demonstrated** — only that 0 of 24
+  invocations aborted where ≈1.6 were expected pre-repair, and that no leg used
+  more than 2 of its 26 draws.
+
+**Named successors, in the order the evidence names them:** (1) **print `span=`
+in `[CCAP]`** — a one-format-string gauge change that decides C9-L3's 2.000
+ratio at a geometry now proven to come up clean, and unblocks C9-L1;
+(2) **re-run c9 on a sender that can fill four legs**, since every negative
+result here is confounded by a 176 Mbit/s CPU ceiling at a 400 Mbit cell;
+(3) **widen the c9h window or lengthen its slow legs' share** so C9-3 has power,
+noting that bytes alone provably do not fix it; (4) **run a c7 arm beside c9 in
+one session** so C9-L2's ratio has a denominator.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it is scored against.**

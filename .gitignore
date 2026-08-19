@@ -7,3 +7,6 @@ msvc_include.txt
 getenv.bat
 .claude/
 __pycache__/
+
+# Battery artifacts pulled from the VM for scoring — evidence, never source.
+.scratch/
