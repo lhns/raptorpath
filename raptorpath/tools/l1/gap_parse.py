@@ -19,6 +19,7 @@ picked the branch would be picking the verdict.
 """
 import argparse
 import math
+import re
 import statistics
 import sys
 from collections import defaultdict
@@ -44,8 +45,16 @@ ERA = {
 def parse(paths):
     rows = defaultdict(list)   # (cell, arm, seed) -> [dict]
     ctld = defaultdict(list)   # (cell, arm, seed) -> [float]
+    ctld_last = {}             # (cell, arm, seed, rep) -> float  (last wins)
+    pings = defaultdict(list)  # (cell, arm, seed) -> [int attempts]
+    steals = defaultdict(list) # (cell, arm, seed) -> [pct_nonidle per invocation]
     problems = []
     for p in paths:
+        # `CTLDLINE`/`PINGROW` carry no `seed=`, but the driver emits them AFTER
+        # the `GAPROW` of the same invocation, so the last GAPROW's seed is this
+        # invocation's seed. Tracked rather than dropped, because phase 2's
+        # readings are per-seed and a seed-pooled density hides a split.
+        cur_seed = None
         for line in open(p, "r", errors="replace"):
             line = line.rstrip("\n")
             if line.startswith("GAPROW "):
@@ -54,6 +63,7 @@ def parse(paths):
                 kv = dict(t.split("=", 1) for t in toks[2:] if "=" in t)
                 cell, _, arm = cell_arm.rpartition("-")
                 seed = int(kv.get("seed", 0))
+                cur_seed = seed
                 out = {}
                 for k, v in kv.items():
                     try:
@@ -64,7 +74,26 @@ def parse(paths):
             elif line.startswith("CTLDLINE ") and " site=srv " in line:
                 toks = line.split()
                 cell, _, arm = toks[1].rpartition("-")
-                # `[CTLD] p<id> tx/rx ...` — take the last float-looking ratio.
+                # THE DENSITY IS `tx/rx`, AND THE DRIVER EMITS THEM AS TWO
+                # SEPARATE `tx=<n> rx=<n>` TOKENS — never as one `a/b` token.
+                # The original single-token scan therefore matched NOTHING on
+                # every ledger this battery has ever produced and printed no
+                # mechanism table at all, silently. Phase 1's densities had to
+                # be computed outside the parser; this is that fix.
+                # `[CTLD]` counters are CUMULATIVE and re-emitted many times per
+                # invocation, so only the LAST line of each rep is the rep's
+                # density. Keyed by rep and overwritten, never averaged over the
+                # intermediate snapshots.
+                rep = None
+                for t in toks:
+                    if t.startswith("rep="):
+                        rep = t[4:]
+                m = re.search(r"\btx=(\d+)\s+rx=(\d+)", line)
+                if m and int(m.group(2)) > 0:
+                    ctld_last[(cell, arm, cur_seed, rep)] = (
+                        int(m.group(1)) / int(m.group(2)))
+                    continue
+                # Fallback for any era that DID emit a single `a/b` token.
                 vals = []
                 for t in toks:
                     if "/" in t and t.count("/") == 1:
@@ -76,13 +105,38 @@ def parse(paths):
                         except ValueError:
                             pass
                 if vals:
-                    ctld[(cell, arm, None)].append(vals[-1])
+                    ctld_last[(cell, arm, cur_seed, rep)] = vals[-1]
+            elif line.startswith("STEALROW "):
+                toks = line.split()
+                cell, _, arm = toks[1].rpartition("-")
+                kv = dict(t.split("=", 1) for t in toks[2:] if "=" in t)
+                try:
+                    steals[(cell, arm, int(kv.get("seed", cur_seed or 0)))].append(
+                        float(kv["pct_nonidle"]))
+                except (KeyError, ValueError):
+                    pass
+            elif line.startswith("PINGROW "):
+                # The topo-ping repair's retry histogram, now kept on EVERY
+                # invocation rather than only on the aborts (see the amendment).
+                toks = line.split()
+                cell, _, arm = toks[1].rpartition("-")
+                kv = dict(t.split("=", 1) for t in toks[2:] if "=" in t)
+                for leg in ("pathA_attempts", "pathB_attempts"):
+                    v = kv.get(leg)
+                    if v not in (None, "NA"):
+                        try:
+                            pings[(cell, arm, int(kv.get("seed", cur_seed or 0)))
+                                  ].append(int(v))
+                        except ValueError:
+                            pass
             elif line.startswith(("ABORT ", "INSTRUMENT-FAIL", "ARM-CONTAMINATION",
                                   "ARM-LIVENESS-FAIL", "G-ERA-VIOLATION",
                                   "LIVENESS-FAIL", "ERA-SURPRISE", "ARM-VANISHED",
                                   "QCAP-MISSING", "MISSING BINARY", "G-SHA")):
                 problems.append(line)
-    return rows, ctld, problems
+    for (cell, arm, seed, _rep), v in ctld_last.items():
+        ctld[(cell, arm, seed)].append(v)
+    return rows, ctld, pings, steals, problems
 
 
 def stat(vals):
@@ -103,7 +157,7 @@ def main():
                     help="the goodput difference the design is sized to resolve")
     a = ap.parse_args()
 
-    rows, ctld, problems = parse(a.logs)
+    rows, ctld, pings, steals, problems = parse(a.logs)
     if not rows:
         print("NO GAPROW ROWS — the battery produced no parseable invocation", file=sys.stderr)
         return 1
@@ -231,12 +285,54 @@ def main():
         print("=" * 78)
         print("THE MECHANISM GAUGE — receiver `[CTLD]` density (1.96 pre-flip)")
         print("=" * 78)
-        for key in sorted(ctld, key=lambda k: (k[0], k[1])):
+        for key in sorted(ctld, key=lambda k: (k[0], k[1], k[2] or 0)):
             m, s, n = stat(ctld[key])
-            print(f"  {key[0]}-{key[1]}: {m:.3f} (s {s:.3f}, n={n})" if m else f"  {key[0]}-{key[1]}: -")
+            label = f"  {key[0]}-{key[1]} s{key[2]}"
+            print(f"{label}: {m:.3f} (s {s:.3f}, n={n})" if m else f"{label}: -")
         print()
         print("  [CTLD] is era-invariant and RWM_DIAG-only. Op reproducing ~1.96 says")
         print("  the MECHANISM side of the comparison is intact before goodput is read.")
+        print()
+
+    if steals:
+        print("=" * 78)
+        print("HOST CPU STEAL, PER ARM — the drift candidate, published beside its arm")
+        print("=" * 78)
+        print("  % of NON-IDLE ticks taken by the hypervisor during each invocation.")
+        print("  Phase 1 could only publish one figure for a whole session; a burst")
+        print("  that lands on one arm and not its neighbour is a confound, so the")
+        print("  counter is now read either side of EVERY invocation.")
+        print()
+        for key in sorted(steals, key=lambda k: (k[0], k[1], k[2])):
+            m, s, n = stat(steals[key])
+            mx = max(steals[key])
+            print(f"  {key[0]}-{key[1]} s{key[2]}: {m:.2f} % (s {s:.2f}, n={n}) max {mx:.2f} %")
+        print()
+
+    if pings:
+        print("=" * 78)
+        print("THE TOPO-PING RETRY HISTOGRAM — field data, kept on EVERY invocation")
+        print("=" * 78)
+        print("  `1` is the healthy single draw. Anything above it is a loss draw")
+        print("  that USED to be an abort and is now a recorded retry, so this table")
+        print("  is the repair's own evidence rather than an argument about it.")
+        print()
+        allv = []
+        for key in sorted(pings, key=lambda k: (k[0], k[1], k[2])):
+            v = pings[key]
+            allv += v
+            hist = {}
+            for x in v:
+                hist[x] = hist.get(x, 0) + 1
+            worst = max(v) if v else 0
+            print(f"  {key[0]}-{key[1]} s{key[2]}: legs={len(v)} max={worst} "
+                  f"histogram={dict(sorted(hist.items()))}")
+        if allv:
+            retried = sum(1 for x in allv if x > 1)
+            print()
+            print(f"  ACROSS THE BATTERY: {len(allv)} legs pinged, {retried} needed "
+                  f"more than one draw ({100.0 * retried / len(allv):.2f} %), "
+                  f"worst {max(allv)} of the 26 allowed.")
         print()
 
     if a.calib:
