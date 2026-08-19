@@ -68,11 +68,42 @@ mkdir -p "$DDIR"
 # cadence's entire purpose. c9 carries ~2x c7's aggregate capacity (4 x
 # 100 Mbit vs 2 x 100 Mbit) and so takes 2x c7's bytes to hold the same wall
 # time; c9h carries ~2x c8's (2 x 100 + 2 x 20 Mbit vs 100 + 20) and takes 2x
-# c8's. Both land near the ~10 s invocation the c7/c8 captures ran at, i.e.
-# ~40 windows per rep against the four the 2 s window gave.
+# c8's.
+#
+# ── RE-SIZED 2026-08-19 BY THE CALIBRATION SMOKE, AND WHY IT IS NOT TUNING ──
+#
+# THE SIZING ABOVE COUNTED THE WRONG WINDOWS. It divided the transfer wall by
+# the 250 ms cadence and got ~40 RAW windows per rep. But `eppen_quad.py`
+# correlates only COMPLETE windows — those in which ALL FOUR legs reported —
+# because a pairwise rho needs both legs present in the same window
+# (`group_windows`, and `score_cell`'s own UNDERPOWERED bar is
+# `windows_per_rep < 3 * C(N,2)` = 18 at a quad). A leg that goes silent for a
+# window drops that window for EVERY pair. The smoke measured the completion
+# rate directly and it is nowhere near 1:
+#
+#   cell/arm      raw windows   COMPLETE   completion   vs the 18 bar
+#   c9/pooled          72          16         22 %      FAILS
+#   c9/percap          71          35         49 %      passes
+#   c9h/pooled         32          14         44 %      FAILS
+#   c9h/percap         34          11         32 %      FAILS
+#
+# THREE OF FOUR CELL-ARMS FAIL THE SCORER'S OWN POWER BAR at the pre-registered
+# byte counts. Launching 24 invocations at those sizes would have produced the
+# "clean-looking ledger of nothing" the contract's section 6 warns about.
+#
+# The multiplier is taken from the WORST ARM of each cell, since both arms must
+# share one byte count: c9 needs 30/16 = 1.9x -> 2x; c9h needs 30/11 = 2.7x
+# -> 3x. Predicted complete windows/rep after: c9 32/70, c9h 42/33 — all above
+# the contract's own >= 30 and well above the scorer's 18.
+#
+# THIS CHANGES THE SAMPLE SIZE TO MEET A PRE-REGISTERED TARGET. It moves no
+# threshold, no band, no prediction and no falsifier; C9-1..4 and C9-L1..L3 are
+# untouched. Sizing an experiment to reach the power its own contract demands
+# is the opposite of tuning it to an answer — and the number it is sized
+# against was measured BEFORE any correlation was read off any ledger.
 case "$CELL" in
-  c9)   CA=c2; CB=c2; BYTES=400000000; RUNS=1 ;;
-  c9h)  CA=c2; CB=c3; BYTES=50000000;  RUNS=3 ;;
+  c9)   CA=c2; CB=c2; BYTES=800000000; RUNS=1 ;;
+  c9h)  CA=c2; CB=c3; BYTES=150000000; RUNS=3 ;;
   *) echo "unknown cell $CELL (want c9|c9h)" >&2; exit 2 ;;
 esac
 

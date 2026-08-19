@@ -34171,3 +34171,89 @@ bound re-opens the class through a failing gate rather than through a battery.
 > topology failure rather than as weather.
 
 **Nothing here flips a default, adds an engine gate, or edits an engine crate.**
+
+---
+
+## c9 VALIDATION BATTERY — THE SMOKE, DISCLOSED IN FULL (2026-08-19, `feat/c9-run` from main@`97bd690`) — **the smoke found TWO instrument problems before the battery ran. One is a harness sizing defect and is repaired here; the other is a PROPERTY OF THE CALIBRATION ITSELF and means the smoke CANNOT clear C9-1's primary measurand.** Nothing is scored and no prediction moves.
+
+The calibration pass doubles as the smoke, as it does in every battery in this
+tree. Four invocations (2 cells × 2 arms, seed 42, rep 0), binary sha256
+`a23e45f5…`. **What passed, first, because it is most of it:**
+
+| check | result |
+|---|---|
+| quad topology up/down on the real kernel | **CLEAN**, `rp-cli`/`rp-srv` only, `ens18` untouched, 0 namespaces left behind |
+| per-leg netem seeds echoed distinct | **42 / 1042 / 2042 / 3042**, read off the live qdiscs; ACK direction carries none (the audit's control) |
+| `[GATES]` `RWM_ACKDIAG_WINDOW_US` | **`250000` two-sided on all four invocations** — the RESOLVED value, not the shipped 2 s |
+| `[GATES]` arm knob | `RWM_STORE_PERCAP=0/1` correct per arm, two-sided, all four |
+| aborts | **0 of 4.** `abort_cause=none`, `abort_missing=FALSE`, `drain_pids_t0=0` everywhere |
+| topo-ping retries | **every leg cleared on attempt 1** (`ping_path0..3_attempts=1`, max 26) — the repaired check, on the wire |
+| `LIVENESS-EMIT` | 173 / 194 / 92 / 96 `[ACKDIAG]` lines — the gauge reported on every invocation |
+| `LIVENESS-PATHS` (the `pid < 2` gate) | **`distinct_ackdiag_paths=4` on all four** — the truncation defect the SF bench taught does not reproduce on the wire |
+| `eppen_quad.py` parses all four legs | **yes, `N=4 paths [0, 1, 2, 3]` at every cell** |
+
+### FINDING 1 — **`BYTES` was sized against RAW windows; the scorer correlates COMPLETE ones. Three of four cell-arms failed the scorer's own power bar.** (repaired)
+
+`c9_battery.sh`'s byte counts were sized as "transfer wall ÷ 250 ms ≈ 40
+windows per rep". But `eppen_quad.py::group_windows` keeps only windows in
+which **ALL FOUR legs reported** — a pairwise ρ needs both legs present in the
+same window, so one silent leg drops that window for all six pairs — and
+`score_cell`'s bar is `windows_per_rep < 3·C(N,2)` = **18** at a quad. The
+smoke measured the completion rate directly:
+
+| cell/arm | raw windows | **complete** | completion | vs the 18 bar |
+|---|---|---|---|---|
+| c9/pooled | 72 | **16** | 22 % | **FAILS** |
+| c9/percap | 71 | **35** | 49 % | passes |
+| c9h/pooled | 32 | **14** | 44 % | **FAILS** |
+| c9h/percap | 34 | **11** | 32 % | **FAILS** |
+
+The legs go silent because per-leg delivery is bursty — the smoke's own
+`rate_lr` CVs run **13.9 % to 187 %**, and at c9h the two c3-class legs sit at
+**728 and 280 sym/s** against the c2 legs' 8 618 and 8 110.
+
+**REPAIR: `BYTES` ×2 at c9 (400 → 800 MB) and ×3 at c9h (50 → 150 MB/run).**
+The multiplier comes from the WORST ARM of each cell, since both arms must
+share one byte count (c9 needs 30/16 = 1.9×; c9h needs 30/11 = 2.7×).
+Predicted complete windows/rep after: **c9 32/70, c9h 42/33** — above the
+contract's own ≥ 30 and well above the scorer's 18.
+
+> **THIS IS A SAMPLE SIZE MOVED TO MEET A PRE-REGISTERED TARGET, NOT A TUNING.**
+> No threshold, band, prediction or falsifier changes; C9-1…4 and C9-L1…L3 are
+> untouched. The completion rate it is sized against was measured **before any
+> correlation was read off any ledger**. Sizing an experiment to reach the
+> power its own contract demands is the opposite of tuning it to an answer.
+
+### FINDING 2 — **the two-way estimator is MATHEMATICALLY DEGENERATE at one rep, so the calibration cannot exercise C9-1's primary measurand at all.** (not a defect; a limit of the smoke, and it is disclosed rather than papered over)
+
+The smoke's scorer output shows all six pairwise delivered-rate ρ as `n/a`, and
+on two lines it printed a two-way ρ̄ of **−0.417 and −0.645 — below the
+−0.333 positive-semi-definiteness floor** — which its own guard caught and
+voided as "a BUG IN THIS SCORER". **It is not a bug.** `center_two_way`
+computes `v − rep_mean − window_mean + grand_mean`. At **R = 1**:
+
+```text
+  rep_mean    = grand_mean                    (one rep)
+  window_mean = v                             (each window index occurs ONCE)
+  residual    = v - grand - v + grand = 0     IDENTICALLY, for every point
+  n_eff       = (R-1)*(W-1) + 1 = 1           ZERO degrees of freedom
+```
+
+Verified, not argued: **`n_eff_2way = 1` on all 16 series** (4 cells × 4
+series) in the calibration's own JSON. The residuals are all zero, Pearson of
+two zero-variance series is `0/0`, and the two values that did print are
+floating-point noise on that — which is exactly why the PSD guard voided them.
+**The guard behaved correctly and is the reason this was caught.**
+
+> **THE CONSEQUENCE, stated because it is the one thing a launch step could
+> wrongly claim.** C9-1's measurand is the *mean pairwise **two-way-centered**
+> drain ρ̄*. **A one-rep calibration cannot produce it, so this smoke does NOT
+> clear C9-1, C9-3 or C9-4's estimator** — it clears the topology, the gates,
+> the seeds, the four-path gauge, the abort path and the parser, and nothing
+> about the correlation statistic. The estimator becomes well-defined only at
+> the battery's **3 reps** (`n_eff = 2·(W−1)+1`, ≈ 63 at the re-sized c9). The
+> `rho_ctr` column IS defined at one rep and is reported above for the record,
+> but it is not C9-1's measurand and no clause is scored on it.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it will be scored against.**
