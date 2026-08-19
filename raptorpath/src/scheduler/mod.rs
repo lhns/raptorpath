@@ -1146,6 +1146,28 @@ pub struct CopaState {
     ///
     /// Observation only: nothing outside `RWM_QUANTILE_CLOCKS` reads it.
     rtt_var_sq: f64,
+    /// How many samples have been folded into `rtt_var_sq` — the EWMA's own
+    /// warm-up denominator, and the honest half of the `sig_us=` gauge.
+    ///
+    /// **This exists because "is σ valid yet?" has a different answer here
+    /// than everywhere else in the engine.** `ANCHOR_MIN_SAMPLES` = 8 gates
+    /// the DELIVERED-RATE anchor (`bw_samples`); it has nothing to do with
+    /// this statistic, which is fed from the RTT sample stream and is
+    /// available from the first sample that has an `srtt` to deviate from. But
+    /// it is not TRUSTWORTHY from the first sample: the EWMA is seeded at 0
+    /// and runs at RFC 6298's β = 1/4, so it carries ≈ (1−β)^n = 0.75^n of its
+    /// seed after n samples — 24 % at n = 5, 10 % at n = 8, 1 % at n = 16.
+    /// A σ read at n = 2 is biased LOW by roughly half, and a gauge that
+    /// reported it as a bare number would hand an L1 parser a warm-up artefact
+    /// wearing a measurement's clothes.
+    ///
+    /// So the count is reported ALONGSIDE σ rather than used to gate it (`n`
+    /// in `sig_us=<µs>/n<count>`). Emitting only-when-valid would require a
+    /// threshold on n, and a threshold that selects whether a gauge exists is
+    /// the same defect as a threshold that selects a law: the reader could not
+    /// tell "σ suppressed" from "path never sampled". The parser gets the
+    /// number and the evidence about it, and decides.
+    rtt_var_n: u64,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1306,6 +1328,7 @@ impl CopaState {
             bw_mono: VecDeque::new(),
             bw_o1: honest_anchor_active(),
             rtt_var_sq: 0.0,
+            rtt_var_n: 0,
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -1657,6 +1680,10 @@ impl CopaState {
         if let Some(sr) = self.srtt {
             let dev = rtt.as_secs_f64() - sr.as_secs_f64();
             self.rtt_var_sq = 0.75 * self.rtt_var_sq + 0.25 * dev * dev;
+            // Counted at the SAME site that feeds the EWMA, so the `[DIAG]`
+            // `sig_us=<µs>/n<count>` gauge's denominator can never describe a
+            // different sample set than its numerator.
+            self.rtt_var_n += 1;
         }
         while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
             self.rtt_samples.pop_back();
@@ -3034,6 +3061,20 @@ impl PathState {
             return None;
         }
         Some((self.copa.rtt_var_sq.sqrt() * 1e6) as u64)
+    }
+
+    /// How many RTT samples have been folded into [`rtt_sigma_us`]'s EWMA —
+    /// the σ gauge's WARM-UP EVIDENCE, reported beside it as
+    /// `sig_us=<µs>/n<count>` in the `[DIAG]` line.
+    ///
+    /// It is NOT gated on `ANCHOR_MIN_SAMPLES`: that constant gates the
+    /// delivered-rate anchor and has nothing to say about this statistic. See
+    /// `CopaState::rtt_var_n` for what the count means and why it is reported
+    /// rather than used as a threshold.
+    ///
+    /// [`rtt_sigma_us`]: Self::rtt_sigma_us
+    pub fn rtt_sigma_samples(&self) -> u64 {
+        self.copa.rtt_var_n
     }
 
     pub fn rtt_jitter_us(&self) -> u64 {

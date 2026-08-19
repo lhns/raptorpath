@@ -166,6 +166,20 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
         log.contains("RWM_COMPOSED_CAP=1"),
         "{what}: the [GATES] echo does not carry RWM_COMPOSED_CAP=1:\n{log}"
     );
+    // TWO-SIDED (MEASUREMENT DISCIPLINE 15). The default echo naming the gate
+    // with its 0 value is pinned in `gates.rs`
+    // (`gate_defaults_are_the_shipped_values`); this is the ON side, and it
+    // asserts the ABSENCE of the OFF string as well. A gate that echoed both
+    // values, or whose ON echo were a substring of some other key's, would
+    // make every battery arm's control/treatment split unreadable — and the
+    // c9 battery's own headline finding was that `[CCAP]` never appeared
+    // because NO ARM SET THIS GATE, which is precisely the failure a
+    // two-sided echo lets a driver catch before it spends invocations.
+    assert!(
+        !log.contains("RWM_COMPOSED_CAP=0"),
+        "{what}: the [GATES] echo carries BOTH sides of RWM_COMPOSED_CAP — an \
+         arm's gate state is then unreadable from its log:\n{log}"
+    );
     assert!(
         log.contains("RWM_WALLDIAG=1"),
         "{what}: the [GATES] echo does not carry RWM_WALLDIAG=1:\n{log}"
@@ -212,6 +226,65 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
         assert!(
             ccap.contains(key),
             "{what}: [CCAP] is missing the scrapeable field `{key}`: {ccap}"
+        );
+    }
+
+    // ── THE SPAN BLOCK — the c9 battery's SPECIFICATION FAILURE, repaired ──
+    //
+    // c9 was scored with C9-L1 and C9-L3 both UNSCOREABLE, and the cited
+    // reason was not a bad reading but an ABSENT FIELD: the engine computed
+    // TERM 3 at every dyn-cap refresh and `[CCAP]` reported seven numbers,
+    // none of them the span. A format pin cannot catch that — the pinned
+    // string was correct for the fields it had. Only a REACHABILITY assertion
+    // over a log the harness actually produces can, which is this binary's
+    // whole thesis applied to the field set rather than to the line.
+    //
+    // ON THE SHIPPED-BEFORE ENGINE THIS LOOP FAILS on the first key. That is
+    // the point: it is written to fail on the engine that produced the
+    // unscoreable battery, and the four keys are the ones C9-L1 and C9-L3 are
+    // scored on (see `net::SpanForms`) — the shipped span, the crosscheck's
+    // Σ form, and the two anchors that make an out-of-band reading
+    // attributable to the anchors instead of to either formula.
+    for key in ["span=", "span_sigma=", "span_ratio=", "rate_fast=", "spread_us="] {
+        assert!(
+            ccap.contains(key),
+            "{what}: [CCAP] is missing the c9-contract span field `{key}` — \
+             C9-L1 and C9-L3 are UNSCOREABLE without it: {ccap}"
+        );
+    }
+    let span = field(ccap, "span=")
+        .unwrap_or_else(|| panic!("{what}: [CCAP] span= must parse as f64 — {ccap}"));
+    let span_sigma = field(ccap, "span_sigma=").expect("span_sigma= parses");
+    let spread_us = field(ccap, "spread_us=").expect("spread_us= parses");
+    let rate_fast = field(ccap, "rate_fast=").expect("rate_fast= parses");
+    // LOOPBACK IS A SYMMETRIC ONE-PATH CELL, so this is C9-L1's own prediction
+    // evaluated where it is cheap: `RTprop_max == RTprop_min` ⇒ span 0 by
+    // arithmetic, under BOTH forms, with no path-count predicate anywhere.
+    // A non-zero reading here would mean a topology branch had entered the
+    // law — the exact defect C9-L1 exists to detect.
+    assert_eq!(
+        span, 0.0,
+        "{what}: [CCAP] reports a non-zero resequencing span on a ONE-PATH \
+         loopback, where both span forms are 0 by arithmetic: {ccap}"
+    );
+    assert_eq!(
+        span_sigma, 0.0,
+        "{what}: the Σ span form must vanish on one path too: {ccap}"
+    );
+    assert_eq!(
+        spread_us, 0.0,
+        "{what}: one path cannot have an RTprop spread: {ccap}"
+    );
+    // …and the anchor that is NOT structurally zero must be fed, whenever the
+    // law engaged at all. `rate_fast` is a delivered-rate anchor: zero here
+    // with `eng > 0` would mean the span block is a rendered empty struct
+    // rather than a measurement, which is the failure mode this whole binary
+    // was written for.
+    if engaged > 0 {
+        assert!(
+            rate_fast > 0.0,
+            "{what}: [CCAP] engaged {engaged} times but reports rate_fast=0 — \
+             the span block was never fed: {ccap}"
         );
     }
 

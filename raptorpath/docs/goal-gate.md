@@ -34604,3 +34604,361 @@ one session** so C9-L2's ratio has a denominator.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or modifies the pre-registration it is scored against.**
+
+---
+
+## MEASUREMENT TRUTH item 4 — THE SPAN FIELD (local half)
+
+**Branch `feat/span-and-sigma` from main@`7f2b009`. LOCAL ONLY: no VM contact,
+no lock, nothing launched. No default flips, no gate is added, no law changes.**
+
+### The defect this closes
+
+The c9 scored section above records the battery's headline finding as a
+**SPECIFICATION FAILURE**, and it is one of gauges rather than of predictions:
+
+> **C9-L3 — UNSCOREABLE (cite: no span instrument). THIS IS THE HEADLINE.**
+
+`ccap_report_line` (`raptorpath/src/net/mod.rs`) emitted `eng/cap/mem/floor/
+floor_val/brake/brake_frac` — seven numbers, none of them the span — while
+`three_term_store_cap` computed TERM 3 at **every dyn-cap refresh** and threw
+it away. The format pins all passed, because the pinned string was correct for
+the fields it had. C9-L1 (*"the `[CCAP]` span field reads 0"*) and C9-L3 (the
+2.000 ratio that separates the two span forms) were therefore unscoreable at a
+geometry the same battery had just proved comes up clean.
+
+### The field set is DECIDED BY THE CRITERION
+
+The contract was read before the format string was written. C9-L1 needs one
+number; **C9-L3 needs four**, because it is scored on a RATIO and disposed of
+against ANCHORS:
+
+| field | what clause needs it | why it cannot be dropped |
+|---|---|---|
+| `span=` | **C9-L1** | the shipped `rate_fast·(RTprop_max − RTprop_min)`. C9-L1 IS this field reading 0 at a symmetric cell |
+| `span_sigma=` | **C9-L3** | the crosscheck's `Σ bwᵢ(RTT_max − RTTᵢ)`, so the discriminating ratio is **measured** and not assumed. **Adopt nothing:** no engine path reads it |
+| `span_ratio=` | **C9-L3** | the SCORED quantity, `Σ span_sigma / Σ span` — exactly the ratio of the two reported means, since both share the `eng=` denominator. Predicted **exactly 2.000** at c9h, anchor-free |
+| `rate_fast=`, `spread_us=` | **C9-L3** | the ±5 % and ±0.4 % anchors of the `[265, 315]` absolute band. Without them the contract's own disposal rule — *"a reading outside both bands falsifies the ANCHORS rather than either formula, and is reported that way"* — is not executable from a log |
+
+`span_ratio` renders **0.000** when `Σ span` is 0, which is every symmetric
+cell, where the ratio is genuinely undefined. A parser reads `span=` first;
+the block never renders a NaN, on the same rule the bind fractions already
+follow.
+
+### NO TIE PREDICATE — and this is the load-bearing design choice
+
+The two forms diverge "by the COUNT of min-RTprop legs". The obvious gauge
+counts legs whose `rtprop_s` equals the minimum — and **on the wire no two
+measured RTprops are ever exactly equal**, so that count would read 1 at every
+geometry and the gauge would silently report the answer it was built to test.
+`span_sigma` is a plain sum over ALL legs with **no equality test anywhere**:
+at c9h's two near-tied fast legs it lands near `2 · span` because the
+arithmetic takes it there, and the RATIO measures the effective count instead
+of asserting it. Pinned by a test that nudges one "fast" leg by a microsecond
+and requires the ratio to stay 2.000 to three decimals — a leg-counting gauge
+collapses to 1.000 there. This is CLAUDE.md's no-mode-switch invariant applied
+to an INSTRUMENT: no threshold, no branch, one formula.
+
+### ONE COMPUTATION, not two
+
+`span_forms()` is now the single site that computes the span geometry;
+`three_term_store_cap` consumes its `shipped` member and nothing else. The law
+and its gauge cannot drift, which is asserted
+(`the_span_gauge_is_the_laws_own_term_3`) rather than described, and a
+`debug_assert!` at the refresh site catches a divergence in a debug build too.
+
+### Reachability, and it FAILS ON THE OLD ENGINE
+
+A format pin could not have caught the original defect. `tests/gauge_reachability.rs`
+— the binary written for the *previous* instance of this exact failure shape —
+now asserts, over a log the shipped `perf` harness actually produces:
+
+* all five span keys are present (**this loop fails on the shipped-before
+  engine, on the first key**);
+* `span`, `span_sigma` and `spread_us` are all exactly **0** on the one-path
+  loopback — C9-L1's own prediction evaluated where it is cheap, and a
+  non-zero reading there would mean a topology branch had entered the law;
+* `rate_fast > 0` whenever `eng > 0`, so the block cannot be a rendered empty
+  struct;
+* the `[GATES]` echo carries `RWM_COMPOSED_CAP=1` **and not** `=0` — the
+  two-sided property, whose OFF side stays pinned in `gates.rs`. The c9
+  battery's cited reason for `[CCAP]` never appearing was that **no arm set
+  this gate**, which is precisely what a two-sided echo lets a driver catch
+  before it spends invocations.
+
+### Gates
+
+`cargo test -p raptorpath --lib` green; `--test gauge_reachability` green
+(2 passed, 1 ignored child fixture). No default flipped, no gate added;
+`RWM_COMPOSED_CAP` still ships OFF.
+
+### WHAT REMAINS FOR THE VM HALF
+
+**One mixed-quad (c9h) re-run with `RWM_COMPOSED_CAP=1` actually set**, which
+the c9 battery did not do. With that field and one c9h invocation, C9-L1 and
+C9-L3 both become readable and C9-L3's 2.000 ratio is decided. Nothing about
+that run is prepared, scheduled or launched here.
+
+---
+
+## MEASUREMENT TRUTH item 5 — THE CLOCK PREREQUISITES (local half)
+
+**Branch `feat/span-and-sigma` from main@`7f2b009`. LOCAL ONLY: no VM contact,
+no lock, nothing launched. No default flips, no gate is added, no law
+changes. `RWM_QUANTILE_CLOCKS` stays OFF and REFUTED-STANDING.**
+
+Three instruments and one re-derivation. All of them are prerequisites of a
+decision, none of them is the decision.
+
+### 5.1 — σ IS REPORTED AT LAST: `sig_us=<µs>/n<count>` in `[DIAG]`
+
+`Path::rtt_sigma_us()` — §16.69's second moment, `√(EWMA[(rtt − srtt)²])` at
+RFC 6298's own β = 1/4 — has been computed on every arm since it was written,
+and the engine's own comment next to the feed site said what became of it:
+*"Fed unconditionally; read by nothing on the default arm."* Its only
+consumers sit behind `RWM_QUANTILE_CLOCKS`.
+
+The cost of that is on the record. §16.69 derived `W(α) = srtt + k(α)·σ`
+against a **working value σ ≈ 10 ms** at c8 because no measured σ existed;
+`cost-ratio-memo.md` §2.3 then had to invert Cantelli across two different
+clocks to estimate ≈ 18.1 ms, **1.8× the assumed figure**, and said in the same
+paragraph that the real number *"is one print line away"*. This is that line:
+per path, on the sender's `[DIAG]` surface, beside `rtt`/`wrtt`/`rtp`.
+
+**IS σ VALID BEFORE `ANCHOR_MIN_SAMPLES`? The question does not apply, and
+that is the honest answer rather than a dodge.** `ANCHOR_MIN_SAMPLES` = 8
+gates the DELIVERED-RATE anchor (`bw_samples`) and has nothing to say about
+this statistic, which is fed from the RTT sample stream at `record_rtt` and
+exists from the first sample that has an `srtt` to deviate from. What it is
+NOT is trustworthy from the first sample: the EWMA is seeded at 0 and retains
+`0.75ⁿ` of that seed — 24 % at n = 5, 10 % at n = 8, 1 % at n = 16 — so a σ
+read at n = 2 is biased LOW by roughly half.
+
+**So the count is REPORTED, not used as a gate.** `sig_us=<µs>/n<count>`,
+with `-` for σ before the first (rtt, srtt) pair, exactly the existing `kraw`
+convention. Emitting only-when-valid would need a threshold on n, and a
+threshold that decides whether a gauge EXISTS is the same defect as a
+threshold that decides which law runs: the reader could not tell "σ
+suppressed" from "path never sampled". The parser gets the number and the
+evidence about it, and discards small n itself.
+
+**Reachability** — `tests/sigma_diag_reachability.rs`, a spawned run of the
+shipped binary because `[DIAG]` is an `eprintln!` no unit test can see. It
+asserts the two-sided `RWM_DIAG` echo; that `[DIAG]` fires; that **every**
+per-path block carries the field (a gauge present on some paths and not
+others is worse than absent — a parser would average a biased subset without
+knowing); that σ is parsed, positive and fed by n > 8; and that σ is bounded
+by the RTT it is a dispersion of, which catches the µs/s unit error at the
+instrument instead of in a results table. Observed on loopback:
+**σ = 1 873 µs at n = 6 737**. No claim about any cell's σ is made from that;
+loopback's dispersion is the host scheduler's.
+
+### 5.2 — ν IS MEASURED, AND IT NEEDS NO VM RUN
+
+`cost-ratio-memo.md` option (d) closes `α^{3/2}(1−α)^{1/2} = δ·p·σ/(2·ν·d)`
+with no fitted constant, and lists ν as the one symbol *"DERIVABLE, NOT
+CURRENTLY REPORTED — fires per delivered symbol."*
+
+**BOTH COUNTERS ARE ALREADY IN COMMITTED LEDGERS.** `fired` is the
+denominator of the `[RACK]` line's `fa=<spurious>/<fired>`, fed on EVERY arm
+including the shipped control (§16.68.1); the symbol count is `dgq_hand`, the
+datagram handoff counter summed over paths. Both are already extracted into
+every `CCANDRESULT` record. `tools/l1/nu_measure.py` is the ratio, over the
+Candidates Battery's five committed ledgers — **477 usable records, five
+cells, two seeds, no invocation, no lock, no VM.**
+
+| cell | n | fired | symbols | **ν** | loss | implied sym B |
+|---|---|---|---|---|---|---|
+| c1 | 68 | 75 075 | 22 855 521 | **0.0032** | 0.0000 | 1 188 |
+| c7 | 81 | 417 397 | 14 247 521 | **0.0291** | 0.0221 | 1 137 |
+| **c8** | 143 | 147 574 | 3 224 861 | **0.0438** | 0.0000 | 1 109 |
+| c8L | 102 | 933 088 | 18 877 371 | **0.0486** | 0.0000 | 1 083 |
+| sc2 | 83 | 266 232 | 7 297 206 | **0.0370** | 0.0000 | 1 140 |
+
+The **implied symbol size** column is a CHECK, not an input: it is the run's
+own goodput divided by its own handoff count, and it lands at MTU-class
+payload on every cell, which is what says the two counters are counting what
+this reading assumes. A row where it did not would be suspect.
+
+**THE RESULT THE MEMO ASKED FOR.** The memo's chief technical residue was:
+*"If a measurement of ν at c8 lands near 0.01, then (b) and (d) are the same
+option and there is materially less to decide … If ν lands an order of
+magnitude away, they diverge and the choice between them is real."*
+
+**ν(c8) = 0.0438 — 4.5× the 0.0097 the agreement was computed at. (b) and (d)
+DIVERGE, and the choice between them is real.** This is the prediction the
+memo wrote down being scored against data that was already on disk.
+
+Two caveats stated rather than buried: `fired` is a SENDER-site count and the
+loss `p` used to convert sent→delivered is the sender's own per-path
+estimate, so unlike the memo's §2.3 this ratio does **not** cross sites; and
+`dgq_hand` counts sent symbols, which at a lossless cell is the delivered
+count exactly.
+
+### 5.3 — THE PAPER SKELETON'S `δ = 0.4838` IS NOW SUPERSEDED-PENDING-MEASUREMENT
+
+`position-paper-skeleton.md` §7 item 1 ranked `δ = 0.4838` vs `δ_auto = 0.5`
+as *"the number to check first"* — the paper's most quotable result — while
+flagging that it rests on a σ estimated ~1.8× off. It has been rewritten as
+a DERIVATION PARAMETERIZED BY σ rather than a number:
+
+```text
+             2 · ν · d · α_b^{3/2} · (1 − α_b)^{1/2}
+   δ(σ, ν) = ───────────────────────────────────────  =  0.484 · (18.1 ms / σ) · (ν / 0.01)
+                           p · σ
+```
+
+δ is **inversely proportional to σ and linear in ν**. The expression
+reproduces the memo's 0.4838 to 0.3 % at the memo's own inputs, which is the
+check that it is the same number re-derived and not a new one. **No σ is
+invented.** With ν now measured, `δ(σ = 18.1 ms, ν = 0.0438) = 2.12` against
+`δ_auto = 0.5`; and the σ that would RESTORE the agreement at the measured ν
+is **≈ 77 ms ≈ d itself** — a dispersion equal to the mean it disperses
+around, which is not a plausible reading. **That is a falsifiable prediction
+written before the measurement:** the honest expectation is that measuring σ
+kills the agreement rather than confirming it. Until σ is read at c8, **no
+paper may quote 0.4838 and none may quote 2.12** — both are `δ(σ, ν)` at a σ
+nobody has measured.
+
+### Gates
+
+`cargo test -p raptorpath --lib` green; `--test sigma_diag_reachability`
+green (1 test); `--test gauge_reachability` green. `nu_measure.py` runs on
+committed ledgers only. No default flipped, no gate added, no engine law
+touched — σ is a print statement and ν is a parser.
+
+### WHAT REMAINS FOR THE VM HALF
+
+* **σ**: one L1 run with `RWM_DIAG=1` (which every battery arm already sets)
+  reads `sig_us=` at all five cells, and §5.3's prediction is scored. Not
+  prepared here.
+* **ν**: **nothing.** It is measured above from committed data.
+* **`fa` and σ at the SAME SITE**: the receiver's `[RACK]` gauge never calls
+  `record_fire`, which is why the memo's §2.3 had to cross clocks. Untouched
+  here; it is the one instrument change with real surface area.
+
+---
+
+## THE COST-RATIO DECISION — ONE PAGE
+
+**Status: DECISION REQUESTED. No recommendation is made here, and nothing
+below flips a default, adds a gate, or touches a law.** This is
+`docs/research/cost-ratio-memo.md` (609 lines) condensed to the decision, with
+the two measurements taken since it was written folded in.
+
+### THE QUESTION
+
+> **Does the price the contract already pays for latency in the congestion
+> controller also govern the recovery clock?**
+
+That is the whole decision. It is **not** "invent a cost ratio". §16.69
+concluded that the ratio of the two failure costs — *how many wasted symbols
+is one unrecovered symbol worth?* — *"exists nowhere in this repository and
+has no published value"*, and the memo's FINDING A showed that too strong: it
+does not exist on the **r** leg, where §16.69 looked, but the contract
+declares it **twice** on the **δ** leg. Copa's utility is
+`U = log(throughput) − δ·log(delay)` and the seat's own doc comment says
+*"δ IS the marginal latency price"*; the δ leg separately declares a latency
+BUDGET `D(δ) = min(b(δ)·RTprop, 2·RTprop)`. So the question is a **transfer
+claim** about a price that already exists, not a request for a new number.
+
+### WHAT **YES** BUYS
+
+* **Option (d) — the marginal-cost-equality construction**, which closes with
+  **no fitted coefficient anywhere**:
+  `α^{3/2}(1−α)^{1/2} = δ·p·σ / (2·ν·d)`. Every symbol is contract-declared
+  (δ) or measured (p, σ, d, ν).
+* **Continuity in the dials by construction** — α moves with δ, no branch, no
+  threshold, no hint predicate. CLAUDE.md's no-mode-switch invariant is
+  structural rather than observed.
+* **A revival path for the quantile clock.** `RWM_QUANTILE_CLOCKS` is
+  REFUTED-STANDING, but the refutation was of *what feeds α* — the
+  `target_tail_loss × ζ` category error — and never of the Cantelli
+  construction `W = srtt + k(α)·σ`. A priced α re-arms the gate against the
+  Candidates Battery's own scoring design, the only paired-contrast design in
+  this tree that has ever resolved.
+* **Options (a), (b) and (c) stop being alternatives** and become three
+  points on (d)'s curve; picking any of them is picking a cost ratio
+  implicitly, and (d) says which one.
+
+### WHAT **NO** BUYS
+
+**NO means: the recovery plane gets its OWN latency price, different from the
+congestion controller's.** Named plainly, that buys:
+
+* **The freedom to price detection delay independently of queueing delay** —
+  a defensible position, since one is head-of-line blocking behind a hole and
+  the other is standing queue, and nothing proves a millisecond costs the same
+  in both.
+* **At the price of owning a second number with no provenance.** The burden
+  inverts: instead of justifying the transfer, one must justify why the two
+  prices DIFFER, and supply the second. That is exactly the invented constant
+  §16.69 forbade, now merely relocated.
+* **And, until that number exists, the do-nothing path — which is not
+  neutral.** `round = (2·srtt).clamp(25, 100) ms` stays: measured binding
+  **92.4–99.7 %** of the time at every cell (a shipped clamp whose law is a
+  constant), violating RACK's own published spurious budget at **all five
+  cells by 1.7× to 12.0×**, and at sc2 sitting **below the mean of the
+  quantity it waits on**. The recovery-clock family keeps a convicted default
+  and no successor.
+
+### THE EVIDENCE, EACH WAY
+
+**FOR YES.** The price exists and is already continuous in the dial, twice
+over. Options (b) and (d) — derived from the tree's two *independent*
+declarations of the latency price — move the clock in the same direction the
+contract declares (Realtime fast and wasteful, Bulk slow and thrifty), where
+(c) is flat and (a) degenerates at Bulk. And (b) and (d) appeared to agree at
+c8/Auto to 3 % (`δ = 0.4838` vs `δ_auto = 0.5`), which the memo called *"the
+most interesting number in this document"*.
+
+**AGAINST YES — and this changed on 2026-08-19.** That 3 % agreement was
+never a measurement: it is an inversion, `δ(σ, ν) = 0.484·(18.1 ms/σ)·(ν/0.01)`,
+and the memo evaluated it at a σ it had estimated by inverting Cantelli across
+two clocks and at a ν it had **chosen because it reproduced the agreement**.
+**ν is now measured** off 477 committed L1 records — `tools/l1/nu_measure.py`,
+no VM run — at **ν(c8) = 0.0438, 4.5× the assumed 0.0097**. At the measured ν
+the same inversion gives `δ = 2.12` against `δ_auto = 0.5`, and the σ that
+would restore the agreement is ≈ 77 ms ≈ `srtt` itself, which is not a
+plausible dispersion. **The memo's own disposal rule applies verbatim:** *"If
+ν lands an order of magnitude away, they diverge and the choice between them
+is real."* **It landed away. The choice is real.**
+
+**NEITHER WAY.** Two facts are true under every option and should not be
+counted as evidence for any: `W ≥ srtt` is structural, so **sc2 improves under
+all four options at any α** — its 12× violation is not a cost-ratio question
+at all; and **no option rescues the SENDER site at c8/c8L**, where `srtt_app`
+alone (376 / 464 ms) exceeds every candidate `W`, because the quantity the
+sender's clock waits on is its own store dwell. That is the δ-cap's territory,
+not the clock's.
+
+### WHAT IS STILL MISSING, AND WHAT IS NOT
+
+| input | status |
+|---|---|
+| δ | **contract-declared**, `COPA_DELTA/ζ(hint)` |
+| p | **measured**, realized per-path loss |
+| d | **measured**, `srtt` |
+| **ν** | **MEASURED 2026-08-19** — 0.0438 at c8, off committed ledgers, no VM |
+| **σ** | **instrument now exists** (`[DIAG] sig_us=<µs>/n<count>`); **one L1 run reads it.** Every number above that depends on σ scales as 1/σ |
+| `fa` and σ at the SAME SITE | **still missing.** The receiver's `[RACK]` gauge never calls `record_fire`, which is why the σ estimate crosses clocks. The one instrument change with real surface area |
+
+### WHAT THE USER IS BEING ASKED TO DECIDE
+
+**One thing only: YES or NO to the question above** — does the congestion
+controller's declared latency price govern the recovery plane?
+
+* **YES** ⇒ option (d) is specified formula-first in the paper, with `b(δ)`
+  routed through `bulkness_of_delta(δ)` rather than the three-arm hint match;
+  σ is read at L1; `RWM_QUANTILE_CLOCKS` is re-armed **default OFF** with α
+  fed from the priced mapping; pre-registration lands in its own commit before
+  any VM contact; a flip, if any, comes later and cites results.
+* **NO** ⇒ that is recorded as a decision, the second price becomes an open
+  problem with a named owner, and `round = (2·srtt).clamp(25,100) ms` stays
+  with its measured conviction on the record.
+* **NEITHER YET** is also a valid answer, and the cheapest one: **read σ at
+  L1 first.** ν is already in; σ is one run; and §5.3's prediction (that the
+  measurement kills the (b)/(d) agreement rather than confirming it) is
+  written down before the run, so the run scores something either way.
+
+**STOP HERE. No further work on this line proceeds without that decision.**
