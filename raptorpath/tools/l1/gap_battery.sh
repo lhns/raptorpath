@@ -207,6 +207,22 @@ check_and_parse() { # name cell arm
   amk_s=$(grep -c "ack-merge ACTIVE" /tmp/gap-s.txt 2>/dev/null || true); amk_s="${amk_s:-0}"
   ctld_n=$(grep -c "\[CTLD\]" /tmp/gap-s.txt 2>/dev/null || true); ctld_n="${ctld_n:-0}"
 
+  # ── THE WITNESS IS KEPT ON EVERY INVOCATION, NOT ONLY ON THE ABORTS.
+  #    Phase 1 ran 72/72 clean and could not report a single retry count,
+  #    because `/tmp/rwm-abort.txt` is rewritten per invocation and was copied
+  #    out only on the abort path — so the topo-ping repair's own auditable
+  #    column was retained exactly when it did not matter and discarded on the
+  #    success path, which was 100 % of the battery. The copy is two files and
+  #    a few kB per invocation; the histogram it buys is the only field
+  #    evidence the repair has. `PINGROW` puts the counts in the LEDGER as
+  #    well, so the distribution survives without the diag tree.
+  cp /tmp/rwm-abort.txt "$DDIR/${name}-s${SEED_ARG}-r${REP}-witness.txt" 2>/dev/null || true
+  local pa pb pmax
+  pa=$(grep -oP '^ping_pathA_attempts=\K[0-9]+' /tmp/rwm-abort.txt 2>/dev/null | tail -1)
+  pb=$(grep -oP '^ping_pathB_attempts=\K[0-9]+' /tmp/rwm-abort.txt 2>/dev/null | tail -1)
+  pmax=$(grep -oP '^ping_pathA_max_attempts=\K[0-9]+' /tmp/rwm-abort.txt 2>/dev/null | tail -1)
+  echo "PINGROW $name rep=$REP seed=$SEED_ARG pathA_attempts=${pa:-NA} pathB_attempts=${pb:-NA} max_attempts=${pmax:-NA}" >> "$OUT"
+
   # ── THE ABORT VERDICT FIRST, so an aborted invocation never produces a wall
   #    of liveness failures. Same definition as the era battery's.
   if [ "$((ac_c + ac_s + am_c + am_s))" -eq 0 ]; then
@@ -322,6 +338,15 @@ run_topo() { # cell arm
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
 
   local t0; t0=$(date +%s)
+  # ── STEAL, PER INVOCATION, BESIDE ITS OWN ARM (phase-2 amendment (b)).
+  #    Phase 1 published one steal figure for a whole seed's session and could
+  #    only say "4.25 % of wall, 10.3 % of non-idle" for 36 invocations at once.
+  #    A hypervisor does not take its ticks uniformly, and an arm that happened
+  #    to run through a steal burst is not comparable to one that did not — so
+  #    the counter is read either side of EVERY invocation and the delta is
+  #    published on the row, where a reader can difference it against the arm
+  #    beside it in the same rep.
+  local st0; st0=$(awk '/^cpu /{print $2, $4, $5, $9}' /proc/stat 2>/dev/null)
   echo "=== rep=$REP arm=$name era=$era seed=$SEED_ARG bin=$bin env=\"$envs\" cell=$ca/$cb/$mode bytes=$bytes $(date -u +%T)" >> "$OUT"
   # Stale-echo hygiene: an aborted invocation must never read the PREVIOUS
   # arm's log and pass its liveness gate.
@@ -337,6 +362,15 @@ run_topo() { # cell arm
     | tee /tmp/rwm-perf-out.txt \
     | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|BUSY" >> "$OUT" || true
   echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
+
+  local st1; st1=$(awk '/^cpu /{print $2, $4, $5, $9}' /proc/stat 2>/dev/null)
+  awk -v a="$st0" -v b="$st1" -v nm="$name" -v r="$REP" -v sd="$SEED_ARG" \
+    'BEGIN{ split(a,x," "); split(b,y," ");
+            du=y[1]-x[1]; ds=y[2]-x[2]; di=y[3]-x[3]; dst=y[4]-x[4];
+            tot=du+ds+di+dst; non=du+ds+dst;
+            printf "STEALROW %s rep=%s seed=%s user=%d sys=%d idle=%d steal=%d pct_wall=%.2f pct_nonidle=%.2f\n",
+                   nm, r, sd, du, ds, di, dst,
+                   (tot>0? 100*dst/tot : 0), (non>0? 100*dst/non : 0) }' >> "$OUT"
 
   check_and_parse "$name" "$cell" "$arm"
 }
