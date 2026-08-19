@@ -34836,3 +34836,129 @@ touched — σ is a print statement and ν is a parser.
 * **`fa` and σ at the SAME SITE**: the receiver's `[RACK]` gauge never calls
   `record_fire`, which is why the memo's §2.3 had to cross clocks. Untouched
   here; it is the one instrument change with real surface area.
+
+---
+
+## THE COST-RATIO DECISION — ONE PAGE
+
+**Status: DECISION REQUESTED. No recommendation is made here, and nothing
+below flips a default, adds a gate, or touches a law.** This is
+`docs/research/cost-ratio-memo.md` (609 lines) condensed to the decision, with
+the two measurements taken since it was written folded in.
+
+### THE QUESTION
+
+> **Does the price the contract already pays for latency in the congestion
+> controller also govern the recovery clock?**
+
+That is the whole decision. It is **not** "invent a cost ratio". §16.69
+concluded that the ratio of the two failure costs — *how many wasted symbols
+is one unrecovered symbol worth?* — *"exists nowhere in this repository and
+has no published value"*, and the memo's FINDING A showed that too strong: it
+does not exist on the **r** leg, where §16.69 looked, but the contract
+declares it **twice** on the **δ** leg. Copa's utility is
+`U = log(throughput) − δ·log(delay)` and the seat's own doc comment says
+*"δ IS the marginal latency price"*; the δ leg separately declares a latency
+BUDGET `D(δ) = min(b(δ)·RTprop, 2·RTprop)`. So the question is a **transfer
+claim** about a price that already exists, not a request for a new number.
+
+### WHAT **YES** BUYS
+
+* **Option (d) — the marginal-cost-equality construction**, which closes with
+  **no fitted coefficient anywhere**:
+  `α^{3/2}(1−α)^{1/2} = δ·p·σ / (2·ν·d)`. Every symbol is contract-declared
+  (δ) or measured (p, σ, d, ν).
+* **Continuity in the dials by construction** — α moves with δ, no branch, no
+  threshold, no hint predicate. CLAUDE.md's no-mode-switch invariant is
+  structural rather than observed.
+* **A revival path for the quantile clock.** `RWM_QUANTILE_CLOCKS` is
+  REFUTED-STANDING, but the refutation was of *what feeds α* — the
+  `target_tail_loss × ζ` category error — and never of the Cantelli
+  construction `W = srtt + k(α)·σ`. A priced α re-arms the gate against the
+  Candidates Battery's own scoring design, the only paired-contrast design in
+  this tree that has ever resolved.
+* **Options (a), (b) and (c) stop being alternatives** and become three
+  points on (d)'s curve; picking any of them is picking a cost ratio
+  implicitly, and (d) says which one.
+
+### WHAT **NO** BUYS
+
+**NO means: the recovery plane gets its OWN latency price, different from the
+congestion controller's.** Named plainly, that buys:
+
+* **The freedom to price detection delay independently of queueing delay** —
+  a defensible position, since one is head-of-line blocking behind a hole and
+  the other is standing queue, and nothing proves a millisecond costs the same
+  in both.
+* **At the price of owning a second number with no provenance.** The burden
+  inverts: instead of justifying the transfer, one must justify why the two
+  prices DIFFER, and supply the second. That is exactly the invented constant
+  §16.69 forbade, now merely relocated.
+* **And, until that number exists, the do-nothing path — which is not
+  neutral.** `round = (2·srtt).clamp(25, 100) ms` stays: measured binding
+  **92.4–99.7 %** of the time at every cell (a shipped clamp whose law is a
+  constant), violating RACK's own published spurious budget at **all five
+  cells by 1.7× to 12.0×**, and at sc2 sitting **below the mean of the
+  quantity it waits on**. The recovery-clock family keeps a convicted default
+  and no successor.
+
+### THE EVIDENCE, EACH WAY
+
+**FOR YES.** The price exists and is already continuous in the dial, twice
+over. Options (b) and (d) — derived from the tree's two *independent*
+declarations of the latency price — move the clock in the same direction the
+contract declares (Realtime fast and wasteful, Bulk slow and thrifty), where
+(c) is flat and (a) degenerates at Bulk. And (b) and (d) appeared to agree at
+c8/Auto to 3 % (`δ = 0.4838` vs `δ_auto = 0.5`), which the memo called *"the
+most interesting number in this document"*.
+
+**AGAINST YES — and this changed on 2026-08-19.** That 3 % agreement was
+never a measurement: it is an inversion, `δ(σ, ν) = 0.484·(18.1 ms/σ)·(ν/0.01)`,
+and the memo evaluated it at a σ it had estimated by inverting Cantelli across
+two clocks and at a ν it had **chosen because it reproduced the agreement**.
+**ν is now measured** off 477 committed L1 records — `tools/l1/nu_measure.py`,
+no VM run — at **ν(c8) = 0.0438, 4.5× the assumed 0.0097**. At the measured ν
+the same inversion gives `δ = 2.12` against `δ_auto = 0.5`, and the σ that
+would restore the agreement is ≈ 77 ms ≈ `srtt` itself, which is not a
+plausible dispersion. **The memo's own disposal rule applies verbatim:** *"If
+ν lands an order of magnitude away, they diverge and the choice between them
+is real."* **It landed away. The choice is real.**
+
+**NEITHER WAY.** Two facts are true under every option and should not be
+counted as evidence for any: `W ≥ srtt` is structural, so **sc2 improves under
+all four options at any α** — its 12× violation is not a cost-ratio question
+at all; and **no option rescues the SENDER site at c8/c8L**, where `srtt_app`
+alone (376 / 464 ms) exceeds every candidate `W`, because the quantity the
+sender's clock waits on is its own store dwell. That is the δ-cap's territory,
+not the clock's.
+
+### WHAT IS STILL MISSING, AND WHAT IS NOT
+
+| input | status |
+|---|---|
+| δ | **contract-declared**, `COPA_DELTA/ζ(hint)` |
+| p | **measured**, realized per-path loss |
+| d | **measured**, `srtt` |
+| **ν** | **MEASURED 2026-08-19** — 0.0438 at c8, off committed ledgers, no VM |
+| **σ** | **instrument now exists** (`[DIAG] sig_us=<µs>/n<count>`); **one L1 run reads it.** Every number above that depends on σ scales as 1/σ |
+| `fa` and σ at the SAME SITE | **still missing.** The receiver's `[RACK]` gauge never calls `record_fire`, which is why the σ estimate crosses clocks. The one instrument change with real surface area |
+
+### WHAT THE USER IS BEING ASKED TO DECIDE
+
+**One thing only: YES or NO to the question above** — does the congestion
+controller's declared latency price govern the recovery plane?
+
+* **YES** ⇒ option (d) is specified formula-first in the paper, with `b(δ)`
+  routed through `bulkness_of_delta(δ)` rather than the three-arm hint match;
+  σ is read at L1; `RWM_QUANTILE_CLOCKS` is re-armed **default OFF** with α
+  fed from the priced mapping; pre-registration lands in its own commit before
+  any VM contact; a flip, if any, comes later and cites results.
+* **NO** ⇒ that is recorded as a decision, the second price becomes an open
+  problem with a named owner, and `round = (2·srtt).clamp(25,100) ms` stays
+  with its measured conviction on the record.
+* **NEITHER YET** is also a valid answer, and the cheapest one: **read σ at
+  L1 first.** ν is already in; σ is one run; and §5.3's prediction (that the
+  measurement kills the (b)/(d) agreement rather than confirming it) is
+  written down before the run, so the run scores something either way.
+
+**STOP HERE. No further work on this line proceeds without that decision.**
