@@ -15,6 +15,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+# THE ABORT-CAUSE WITNESS — see topo_dual.sh for why `set -E` is required (the
+# ERR trap is not inherited into `up()` without it) and why it is otherwise
+# inert.
+set -E
+source ./abort_witness.sh
+trap 'aw_err_trap "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 down() {
     for ns in "$NS_CLI" "$NS_SRV"; do
@@ -78,8 +84,10 @@ up() {
         delay "${one_way}ms" $jit rate "$rate" $rloss $seed
 
     echo "topology up: $scenario (rate=$rate, one_way=${one_way}ms, jitter=${jitter}ms, GE p=${ge_p}% q=${ge_q}%, symmetric=$symmetric)"
-    # Sanity ping (also warms ARP)
-    ip netns exec "$NS_CLI" ping -c 2 -i 0.2 -W 2 10.77.0.2 | tail -1
+    # Sanity ping (also warms ARP). RECORDED, with the same exit semantics —
+    # and, as in topo_dual.sh, it is the LAST statement of `up()`, so its
+    # failure cannot leave an incomplete topology behind.
+    aw_ping "$NS_CLI" 10.77.0.2 single
 }
 
 case "${1:-}" in

@@ -13,6 +13,13 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
+# THE ABORT-CAUSE WITNESS (goal-gate "Candidates Battery — RESULTS", THE ABORT
+# CLASS row's named instrument). Recorders only: every capture below preserves
+# the exit code it observed and changes no control flow. See abort_witness.sh
+# for why "no [GATES] on either endpoint" narrows the cause to the four
+# pre-transfer steps instrumented here, and why the "topo-ping" attribution the
+# class has carried for three batteries is not supported by this harness.
+source ./abort_witness.sh
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 SCENA="${1:?scenA}"; SCENB="${2:?scenB}"; HINT="${3:-bulk}"
 BYTES="${4:-1800000}"; RUNS="${5:-10}"; MODE="${6:-dual}"; PLACE_T="${7:-}"
@@ -83,7 +90,19 @@ cleanup() {
     bash ./topo_dual.sh down >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+# ARM THE WITNESS BEFORE THE FIRST THING THAT CAN FAIL — which is `cleanup`
+# itself, whose `pkill` is the opening move of the SIGTERM race the `BUSY`
+# pre-check below loses.
+aw_begin "perf_rwm_c $SCENA/$SCENB/$MODE $BYTES"
 cleanup
+# THE TEARDOWN RACE, MEASURED ON EVERY INVOCATION (not only on aborts, or the
+# column would have no control to be read against). `cleanup` has just sent
+# SIGTERM; the `pgrep` below aborts the invocation if anything is still alive.
+# SIGTERM is not synchronous and shutdown duration is an ARM PROPERTY, so this
+# is the leading candidate for the c8/seed-7 arm correlation (20 % control vs
+# 75 % RACK). THE PROBE IS INSTANTANEOUS BY CONSTRUCTION — a witness that slept
+# here would lower the abort rate and destroy the class it exists to explain.
+aw_drain_probe
 # The tc capture below writes a FIXED path, so a run that aborts before
 # reaching it would leave the PREVIOUS invocation's counters there for the
 # caller to copy under this cell's name. Silently attributing one cell's
@@ -93,10 +112,24 @@ rm -f /tmp/rwm-q.txt
 
 if pgrep -x raptorpath >/dev/null 2>&1; then
     echo "BUSY: raptorpath already running -- aborting" >&2
+    # THE FIRST OF THE FOUR PRE-TRANSFER ABORT CAUSES, and the only one that
+    # produces NO log file at all on either endpoint. The decision has already
+    # been taken above; everything here is recorded after it.
+    aw_cause busy_precheck "pgrep hit after cleanup's SIGTERM"
+    aw_state busy
+    aw_drain_watch
     exit 3
 fi
 
-bash ./topo_dual.sh up "$SCENA" "$SCENB" --seed "${SEED:-42}" >/dev/null 2>&1
+# `topo*.sh up`'s exit code was DISCARDED here (`>/dev/null 2>&1`, unchecked)
+# through every battery this tree has run — so a namespace that failed to come
+# up was indistinguishable from one that did, and the invocation carried on to
+# `ip netns exec` against nothing. The witness records the code and the stderr;
+# the CONTROL FLOW IS UNCHANGED (`aw_step` re-returns the code and nothing here
+# reads it), because changing it now would move the abort class instead of
+# explaining it.
+aw_step topo_up bash ./topo_dual.sh up "$SCENA" "$SCENB" --seed "${SEED:-42}"
+aw_state post_topo
 
 if [[ "$MODE" == "dual" ]]; then
     SRV_BIND="10.77.0.2:7000,10.78.0.2:7000"
@@ -116,11 +149,30 @@ fi
 # dbud, cod, eff_pace, ANCHOR ...) MUST be scraped from /tmp/rwm-c.log.
 ip netns exec "$NS_SRV" env $TENV "$BIN" perf --server --bind "$SRV_BIND" \
     --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" >/tmp/rwm-s.log 2>&1 &
+SRV_PID=$!
+aw_kv srv_pid "$SRV_PID"
 
+SRV_WAITS=0
+SRV_BOUND=0
 for _ in $(seq 1 20); do
-    ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -q ':7000' && break
+    if ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -q ':7000'; then SRV_BOUND=1; break; fi
+    SRV_WAITS=$((SRV_WAITS + 1))
     sleep 0.3
 done
+# THE SECOND PRE-TRANSFER CAUSE. The loop above has always been allowed to fall
+# through silently after 6 s — a server that never bound produced exactly the
+# same trace as one that bound instantly. `srv_bound=0` with an empty server log
+# is "the process never started" (`ip netns exec` failed, or the binary died
+# before `net::run_impl`'s `[GATES]` echo); `srv_bound=0` with a populated log
+# is a bind failure the log itself explains.
+aw_kv srv_bound "$SRV_BOUND"
+aw_kv srv_waits "$SRV_WAITS"
+kill -0 "$SRV_PID" 2>/dev/null && aw_kv srv_alive 1 || aw_kv srv_alive 0
+if [ "$SRV_BOUND" -eq 0 ]; then
+    aw_cause srv_bind "no :7000 in $SRV_WAITS x 0.3 s"
+    aw_logs srv_bind
+    aw_state srv_bind
+fi
 sleep 1
 
 echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
@@ -161,8 +213,24 @@ timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $T
     --peer "$PEERS" --bind "$CLI_BIND" \
     --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
-    | grep -E "summary|warmup|dnf|PFRAC" | tail -8 \
-    || echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+    | grep -E "summary|warmup|dnf|PFRAC" | tail -8
+# THE THIRD PRE-TRANSFER CAUSE, and the `|| echo` it replaces is REPRODUCED
+# EXACTLY below rather than removed. `PIPESTATUS[0]` is the CLIENT's own status
+# (127 = `ip netns exec` could not exec at all, 124 = the 700 s `timeout` fired,
+# anything else = the binary's exit) and it was previously unreadable: with
+# `pipefail` on, a `grep` that matched nothing produced the same failed pipeline
+# as a binary that never ran, and the `||` arm printed the same `dnf` marker for
+# both. The array must be copied on the FIRST line after the pipeline — any
+# other command in between overwrites it.
+CLI_PIPE=("${PIPESTATUS[@]}")
+CLI_RC="${CLI_PIPE[0]}"
+CLI_ST=0
+for _s in "${CLI_PIPE[@]}"; do [ "$_s" -ne 0 ] && CLI_ST="$_s"; done
+[ "$CLI_ST" -ne 0 ] && echo "{\"dnf\":true,\"mode\":\"$MODE\"}"
+# Recorded on EVERY invocation, so it is a column with a control and not only an
+# abort field.
+aw_kv cli_rc "$CLI_RC"
+aw_kv cli_pipe "${CLI_PIPE[*]}"
 # Reap the loaded-latency probe BEFORE the qdisc counters below, so its own
 # packets are inside the tc totals every arm is measured on.
 if [[ -n "$PING_PID" ]]; then
@@ -234,6 +302,32 @@ done
 } > /tmp/rwm-q.txt 2>/dev/null || true
 echo "    QCAP: /tmp/rwm-q.txt $(wc -l < /tmp/rwm-q.txt 2>/dev/null || echo 0) lines"
 
+# ── THE WITNESS'S CLOSING READ, and it MUST happen here ──────────────────
+# `trap cleanup EXIT` destroys both namespaces the instant this process returns,
+# so a caller that discovers the missing `[GATES]` from the log files has no
+# way left to ask what the netns/interface/socket state was when it happened.
+# This is the same reason the tc capture above lives in this script.
+#
+# The residual cause `no_gates_unknown` is deliberately NOT a synonym for the
+# abort: it is the record that all four instrumented steps reported success and
+# the engine still never echoed. If the class turns out to be concentrated
+# there, this witness has FALSIFIED its own four hypotheses and the next
+# instrument is named rather than guessed.
+aw_logs final
+# `grep -c` PRINTS `0` and EXITS 1 on no match, so the idiom must be `|| true`
+# and never `|| echo 0` — the latter yields the two-word string `0 0` and turns
+# the test below into a shell error, which is precisely how a witness stops
+# witnessing.
+GC=$(grep -c '\[GATES\]' /tmp/rwm-c.log 2>/dev/null || true); GC="${GC:-0}"
+GS=$(grep -c '\[GATES\]' /tmp/rwm-s.log 2>/dev/null || true); GS="${GS:-0}"
+aw_kv gates_cli "$GC"
+aw_kv gates_srv "$GS"
+if [ "$GC" -eq 0 ] && [ "$GS" -eq 0 ]; then
+    aw_cause no_gates_unknown "all instrumented steps reported OK; cli_rc=$CLI_RC srv_bound=$SRV_BOUND"
+    aw_state no_gates
+fi
+aw_kv aw_finished "$(date -u +%FT%TZ)"
+
 # --- HARD SANITY GUARD (feat/gen-on-rebaseline) -----------------------------------
 # A measurement where the mechanism under test did not run must FAIL LOUDLY, not
 # silently report a number.  When generation is requested (GEN_FLAG set, i.e.
@@ -245,6 +339,7 @@ if [[ -n "$GEN_FLAG" ]]; then
         | grep -oE 'total_coded=[0-9]+' | grep -oE '[0-9]+' | sort -n | tail -1)
     CODED="${CODED:-0}"
     if [[ "$CODED" -le 0 ]]; then
+        aw_cause guard_cod0 "generation requested, total_coded=0 on the sender"
         echo "FATAL: generation requested but cod=0 (mechanism inert) -- NO coded symbols flowed on the sender (/tmp/rwm-c.log). The measured binary ran the coded path DEAD; the numbers above are INVALID. Check that --window-generation-coding is on the wire and RWM_GEN!=0." >&2
         exit 7
     fi
