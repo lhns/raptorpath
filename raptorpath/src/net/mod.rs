@@ -2781,6 +2781,22 @@ pub fn path_scaled_store_cap(
 ///                                      the re-runnable A/B arm)
 /// ```
 ///
+/// **THE SHIPPED FORMULA AFTER BOTH 2026-08-19 FLIPS.** `gain` above is
+/// [`pool_value_multiplier`], which since the second flip (`RWM_DELTA_CAP` ON,
+/// paper §16.71) is the CoDel-derived `1 + q(δ)` rather than the `gain = 2.0`
+/// fossil. Composing the two gates — they are INDEPENDENT axes and both now
+/// resolve ON — the pooled law this function computes on an unset engine is
+///
+/// ```text
+///   cap = clamp( (1 + q(δ)) · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+/// ```
+///
+/// with the `N·knee` ceiling **measured INERT at both scoreable duals**
+/// (`pin` = 0.0000 at c7 and c8, goal-gate "Candidates Battery — RESULTS")
+/// rather than assumed inert, and with `gain` absent from the shipped VALUE
+/// altogether. Either gate set to `=0` re-runs its own displaced arm, and the
+/// four combinations remain four distinct formulas taking one code path.
+///
 /// **What the correction is, and what it is not.** The birth commit's own
 /// diagnosis names the quantity the pool must fund: *"Σ per-path (BDP + one
 /// recovery round of runway)"*, i.e. `Σᵢ(gain·anchorᵢ) = gain·Σ`. That is
@@ -2903,12 +2919,14 @@ pub const CODEL_TARGET_LO: f64 = 0.05;
 /// over the knee"*, i.e. the Kleinrock optimum itself.
 pub const CODEL_TARGET_HI: f64 = 0.10;
 
-/// **THE δ-PRICED POOL MULTIPLIER** — paper §16.67, gate `RWM_DELTA_CAP`
-/// (default OFF).
+/// **THE δ-PRICED POOL MULTIPLIER** — paper §16.67/§16.70/§16.71, gate
+/// `RWM_DELTA_CAP` (**DEFAULT ON since 2026-08-19**).
 ///
 /// ```text
-///   m(δ) = 1 + q(δ)      when delta_cap = true   — DERIVED (RFC 8289 §3.2)
-///        = gain          when delta_cap = false  — the shipped FOSSIL (2.0)
+///   m(δ) = 1 + q(δ)      when delta_cap = true   — the SHIPPED law (default,
+///                                                  DERIVED, RFC 8289 §3.2)
+///        = gain          when delta_cap = false  — the DISPLACED FOSSIL (2.0,
+///                                                  the re-runnable A/B arm)
 /// ```
 ///
 /// This is the whole of what `RWM_DELTA_CAP` changes: **one factor, in the
@@ -2927,6 +2945,16 @@ pub const CODEL_TARGET_HI: f64 = 0.10;
 /// ADR-0071 candidate **(d) ZERO**, the same answer §16.65's newsvendor
 /// cross-domain analysis reached independently. The derived band is therefore
 /// (d) PLUS the power-point allowance, not a rival to it.
+///
+/// **Measured on the wire before it shipped** (goal-gate "Candidates Battery —
+/// RESULTS", 2026-08-19, rung D): D-LAT six of six — goodput PARITY at every
+/// dual on both seeds with `q_p50` down 10–200 ms at every one — interior with
+/// the ceiling provably inert at c7 and c8 (`pin` = 0.0000), `eng = 0/0` at the
+/// singles, and c8's paired dead wall shortened (p ≈ 0.011). The honest bounds
+/// are carried at the gate's decl in `gates.rs`: parity is not a win, c8L is a
+/// PARTIAL delivery at `pin` = 0.23, the probe disagrees in sign on one of six
+/// rows, and the c8/seed-7 abort class is arm-correlated. `RWM_DELTA_CAP=0`
+/// re-runs the displaced fossil with no deprecation warning (ADR-0066 row).
 pub fn pool_value_multiplier(delta_cap: bool, b_hint: f64, gain: f64) -> f64 {
     if delta_cap {
         1.0 + codel_setpoint_q(b_hint)
@@ -10591,6 +10619,13 @@ mod tests {
     ///   default — still resolves to the quadratic chain and its 4096 pin,
     ///   which is what makes the pair an A/B rather than two experiments and
     ///   is what keeps the displaced arm re-runnable.
+    ///
+    /// **`RWM_DELTA_CAP` is a FIXED CONTROL here, on BOTH arms** (its own
+    /// 2026-08-19 flip, §16.71): this pair's two published c8 values are the
+    /// `gain = 2.0` pool's, and the value multiplier is not the factor under
+    /// test. It is set OFF explicitly rather than left to a default that now
+    /// resolves ON, and the shipped default is ASSERTED first so the flip
+    /// cannot drift back behind this test's back.
     #[test]
     fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
         use crate::control::fec_rate::ProtocolHint;
@@ -10616,8 +10651,23 @@ mod tests {
             "the shipped default must carry the ×N deletion since 2026-08-19 — \
              if this fails the flip drifted back (gates.rs pins it too)"
         );
+        assert!(
+            base.delta_cap,
+            "the shipped default must carry the δ-cap since 2026-08-19 (§16.71) \
+             — if this fails the flip drifted back (gates.rs pins it too)"
+        );
         base.sum_cap = false; // the DISPLACED quadratic, still re-runnable
+        // THE VALUE MULTIPLIER IS FIXED OFF ON BOTH ARMS OF THIS PAIR. This
+        // test is the LADDER's A/B — the COUNT multiplier — pre-registered
+        // against the `gain = 2.0` pool, and its two published c8 values
+        // (4096 and 3020) are that law's. The δ-cap flipped ON after it was
+        // written, so the value multiplier is now pinned to the `=0` fossil
+        // EXPLICITLY on both arms: it cancels out of the contrast rather than
+        // moving one side of it, which is what keeps the pair an A/B in one
+        // factor instead of a comparison against a moving default.
+        base.delta_cap = false;
         let ctl = resolve(&base);
+        assert!(!ctl.delta_cap, "control: the δ-cap must be fixed OFF for this pair");
         assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
         assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
         assert!(!ctl.store_cap_unified, "control: the live set must be OFF");
@@ -10630,12 +10680,21 @@ mod tests {
         // is the shape of eight HashMap-order flakes already on this record.
         let mut full = RuntimeGates::resolve();
         full.sum_cap = true; // the ×N deletion            (§16.62)
+        full.delta_cap = false; // the value multiplier, FIXED OFF — see the
+                                // control arm's note: this pair varies the
+                                // COUNT multiplier and nothing else.
         full.store_cap_unified = true; // the LIVE SET     (ADR-0070 finding 1)
         full.late_brake = true; // the LATE-STAGE BRAKE    (§16.60.1)
         full.loss_sent_truth = true; // ── the ledger/loss trio ──
         full.release_1to1 = true;
         full.charge_recovery = true;
         let arm = resolve(&full);
+        assert!(
+            !arm.delta_cap,
+            "FULL: the δ-cap must be fixed OFF on this arm too — the pair \
+             varies the COUNT multiplier, and a value multiplier that moved \
+             with it would make the two published c8 values a different law's"
+        );
 
         // 1. EVERY BIT SURVIVES RESOLUTION. This is the assertion the capw
         //    no-op needed: a gate that resolves OFF because of a scope it does
@@ -10761,10 +10820,22 @@ mod tests {
             RACK_REO_WND_MULT_MAX,
         };
 
+        // THE ANTI-DRIFT PIN, read before anything is neutralised: since
+        // 2026-08-19 (§16.71) `RWM_DELTA_CAP` resolves ON by default, and this
+        // test's arms are EXPLICIT on both sides precisely so the flip cannot
+        // silently turn its control into its arm. Asserting the default here
+        // as well means a drift back to OFF fails at the routing gate too, not
+        // only in `gates.rs`.
+        assert!(
+            RuntimeGates::resolve().delta_cap,
+            "RWM_DELTA_CAP must resolve ON by default since 2026-08-19 \
+             (candidates battery rung D) — the flip drifted back"
+        );
         let base = || {
             let mut g = RuntimeGates::resolve();
             // Neutralise whatever the ambient environment carries, so this
-            // asserts the LAW's routing and not the machine it runs on.
+            // asserts the LAW's routing and not the machine it runs on. The
+            // control is the `=0` arm EXPLICITLY, not the default.
             g.delta_cap = false;
             g.rack_clocks = false;
             g.quantile_clocks = false;

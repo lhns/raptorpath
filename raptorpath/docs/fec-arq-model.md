@@ -14450,6 +14450,157 @@ Three of this section's open items are named rather than described, per §16.55'
 
 **What is NOT claimed.** No default is flipped by this section. `RWM_DELTA_CAP` is **recommended** for flip with its bound quoted — parity in goodput at every dual with no reading outside 2σ in either direction, a large and consistent delivered-queue gain, bit-identical at N = 1, one CPU guard breach at 1.070× that occurs at the cell where the law provably does not engage — and a flip belongs in its own trivial commit citing the results block. **The δ-cap's support does not extend to single-path cells at all**: `RWM_DELTA_CAP` returns before any multiplier is read at `n_live < 2`, so Tier-1 2a's cleanest datum — sc2, 98 % utilised, cap 481 for −55.2 ms at parity — is **unreachable by this law**, and the successor that would reach it is a δ-priced setpoint in the `path_scaled_store_cap` seat. That is named here and not delivered.
 
+### 16.71 The flip executed: `RWM_DELTA_CAP` DEFAULT ON — the CoDel-derived setpoint replaces the pool's `gain = 2.0` fossil, and the shipped pooled law now carries NO un-derived multiplier at all (2026-08-19, `flip/delta-cap`, the separate flip commit §16.70's own closing paragraph requires)
+
+§16.70 recommended exactly one flip and executed none, saying so in its own
+last line: *"a flip belongs in its own trivial commit citing the results
+block."* This section is the record of that commit, in the shape §16.51
+established and §16.64 repeated. `RWM_DELTA_CAP` now resolves **default ON**,
+and — composed with `RWM_SUM_CAP`, flipped ON five sections earlier — the
+pooled outstanding cap the engine computes with nothing set is
+
+```text
+  cap = clamp( (1 + q(δ)) · Σᵢ(max_bwᵢ · min_rttᵢ),  floor,  N · knee )
+
+  q(δ) = 0.05 + 0.05·( clamp(b(δ), ½, 2) − ½ ) / (2 − ½)   ==   (b + 1)/30
+```
+
+**That formula is stated whole, here and at every decl site the flip touches,
+because the two flips are only readable together.** §16.64 deleted the COUNT
+multiplier from the VALUE; this one replaces the VALUE multiplier itself. What
+survives is one factor per axis: `Σ` is the summed per-path anchor, `1 + q(δ)`
+is one BDP plus RFC 8289 §3.2's derived standing-queue allowance, and the
+`gain = 2.0` that ADR-0070 finding 3 recorded as a **FOSSIL** no longer appears
+in the shipped pooled value at all. The `N·knee` ceiling is still there and is
+still MEASURED-BUT-STALE — but at the two scoreable duals it was measured
+**INERT** (`pin` = 0.0000), so for the first time this law's shipped value at
+those cells is the law and not the clamp.
+
+**The evidence cited is §16.70's rung D, in full.** The pre-registered bar was
+*goodput within 2σ_pooled of same-session A (a PARITY CONDITION, not a target)
+AND `q_p50` strictly below same-session A, at the duals, on BOTH seeds*, and it
+reads **six of six**:
+
+| cell | seed | Δ goodput (2σ_pooled) | Δ `q_p50` |
+|---|---|---|---|
+| c7 | 42 / 7 | −0.15 (5.71) / −1.28 (4.28) | **−16.0 / −10.0 ms** |
+| c8 | 42 / 7 | +7.83 (11.13) / +1.25 (14.09) | **−113.5 / −117.0 ms** |
+| c8L | 42 / 7 | −2.64 (38.09) / −0.78 (36.72) | **−200.0 / −130.0 ms** |
+
+Beside it: **INTERIOR with the ceiling provably inert at c7 and c8** — `pin`
+med 0.0000, `eng` = `chg` = 1.00, cap inside its pre-registered ±20 % band at
+both, `CAPBIND` agreeing independently (`c7/D interior`, `c8/D interior`)
+against a same-session control pinned at 4096 in 31.6 % of c7 reps and 44.0 %
+of c8L reps. **`eng = 0/0` at c1 and sc2** on every rep, so the N = 1 identity
+is confirmed on the wire and not only at L0. And **B-WALL RESOLVES** — 18 of 23
+non-zero paired `sign(dur_ms(D) − dur_ms(A))` differences at c8 favour the arm,
+≥ 8 at each seed, agreeing across both seeds and all three pools, two-sided
+sign test **p ≈ 0.011**. No predecessor's dead-wall contrast resolved at all;
+this one did, on a paired design chosen in advance for exactly that reason.
+
+**THE HONEST BOUNDS, QUOTED RATHER THAN DROPPED**, in the order §16.70's
+recommendation states them:
+
+* **Goodput is PARITY, not a win, and the honest claim is *"free"* rather than
+  *"faster"*.** Worst readings: −2.64 Mbit/s against 2σ_pooled 38.09 (c8L s42),
+  −1.28 against 4.28 (c7 s7), −0.15 against 5.71 (c7 s42). Best: +7.83 against
+  11.13 (c8 s42). No reading is outside 2σ **in either direction** at any dual
+  on either seed.
+* **c8L is a PARTIAL delivery and no verdict is claimed there.** `pin` = 0.2312
+  (median) falls in the gap **between** the contract's two pre-declared
+  branches — `≤ 0.10` ⇒ primary anchor era delivered, `> 0.50` ⇒ secondary era
+  plus discipline 18(d) — and this section does not pick the favourable branch
+  after the fact. §16.67's claim of *"interior EVERYWHERE incl. c8L"* is
+  therefore **NOT DELIVERED**; it is delivered at c7 and c8 and UNRESOLVED at
+  c8L. The mean `ask` there agrees with the prediction to 1.3 %, but it is a
+  mean over a wide within-run distribution a quarter of whose refreshes clamp,
+  and reading that agreement as confirmation would be the error §16.67 warned
+  about. **The named instrument is the WITHIN-RUN Σ SERIES**, already owed by
+  §16.67, by ADR-0071 and by the Ladder Battery. It needs no VM arm. The flip
+  is taken on c7 and c8, with c8L carried as open.
+* **The probe is not unanimous.** `ping_p50` agrees in sign with `q_p50` on
+  five of six rows and **disagrees on one** (c8 seed 42, +20.5 ms against
+  `q_p50` −113.5 ms). The delivered-latency claim rests on `q_p50`, the
+  sender-side measurand this cap law actually governs; the probe is reported
+  beside it and is not carried as agreement.
+* **THE ABORT CLASS AT c8 SEED 7 IS ARM-CORRELATED**, and it is recorded here
+  rather than left in the results block. Excluding aborts from denominators
+  there is a selection **correlated with the treatment** (20 % on the control
+  against 50/65/75 % on D/DR/R), so the surviving c8 seed-7 reps on the armed
+  arms are a biased sample of unknown direction, and the second top-up enlarged
+  that sample without removing the bias. **Scope**: seed 42 recorded zero
+  aborts at every cell and every arm, and D's clauses are scored at c7, c8 and
+  c8L on both seeds — no verdict this flip rests on comes from c8 seed 7 alone.
+  The owed instrument is an **abort-cause witness**, one line per aborted
+  invocation; no mechanism is claimed and a single manual reproduction of the
+  same env succeeded cleanly, so it is not a deterministic crash of the arm.
+* **The one guard breach on D is CPU at c1 seed 7 (1.070× against a 1.05 bar)
+  — at the cell where the law provably does not engage** (`eng = 0/0`,
+  bit-identical to the control by construction). A 7 % difference between two
+  byte-identical machines is that cell's noise floor, which is what bounds it;
+  no CPU claim is made against the δ-cap.
+* **No single-path support, in either direction.** `RWM_DELTA_CAP` returns
+  before any multiplier is read at `n_live < 2`, so c1 and sc2 are bit-identical
+  by construction: the flip cannot regress a single-path deployment and cannot
+  help one either. Tier-1 2a's cleanest datum — sc2, 98 % utilised, cap 481 for
+  `ping_p50` −55.2 ms at parity — remains **unreachable by this law**, and the
+  successor that would reach it is a δ-priced setpoint in the
+  `path_scaled_store_cap` seat: named, and still not delivered.
+* **What would refute it, restated so it stays falsifiable after the flip**:
+  ADR-0071 family 2's own condition — a cell where the δ-priced bound binds
+  below the shipped cap and costs > 2σ goodput at a cell with permitted
+  headroom. Not observed at any of the five cells here.
+
+**The composition question, answered on the wire and not by assertion.** D and
+`RWM_SUM_CAP` are independent factors of one expression — the count multiplier
+and the value multiplier — and after both flips the engine multiplies neither
+by anything un-derived. The battery also measured the OTHER composition it
+could reach: DR's cap is D's to **0.1 % at c7 and 4.5 % at c8**, and at c8L
+both arms fail the band identically (their `ask` medians 1.9 % apart), so that
+cell's failure is a property of the cell rather than of the composition. **The
+two gates factorise where either can be read.**
+
+**AND A SECOND-ORDER EFFECT WORTH RECORDING, because it is another section's
+diagnosis arriving as a measurement.** §16.68 argued *"the clamp is not the
+disease; the dwell-inclusive clock is — which the δ-cap attacks from the other
+end by shrinking the pool that creates the dwell."* Arming the δ-cap and
+touching no clock reduced the SHIPPED recovery clock's false-alarm rate by
+**24 % at c8 and 50 % at c8L**, and by nothing at sc2 where it does not engage.
+That is a corroborating observation and not a bar — no clause pre-registered it
+— but it means this flip also moves a defect the same battery convicted the
+default of: the shipped `round = (2·srtt).clamp(25 ms, 100 ms)` binds 92.4–99.7 %
+of the time at every cell and violates RACK's own spurious budget by 1.7–12.0×.
+**Nothing about that clock is repaired here**, and the only successor written
+for it is the one refuted below.
+
+**The displaced fossil is not deleted.** `RWM_DELTA_CAP=0` re-runs
+`gain = 2.0` verbatim, with **no deprecation warning**: it is the A/B control
+arm, its `=0` echo value stays asserted (on an explicit arm now that the
+default is ON), and the substitution's shape stays pinned two-sidedly by
+`formula_agreement::the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d`,
+which asserts `m(OFF) ≡ gain` and `m(ON) ≡ 1 + q(δ)` at every dial point and
+that the two axes factorise over all four combinations. Register row in
+ADR-0066. The two always-explicit gate-set tests that carry the ladder's own
+A/B were converted to FIXED CONTROLS on this axis — `delta_cap` set OFF on both
+arms, with the shipped default ASSERTED first as an anti-drift pin — so the
+ladder's published c8 values (4096 and 3020) keep describing the law they were
+measured on.
+
+**The companions scored in the SAME program keep their defaults**, for the
+reasons §16.70 records: `RWM_RACK_CLOCKS` **REFUTED-WITH-RECORD** (no arm
+clears RACK's own `α_class` = 6.25 % at any cell, 0.17–0.78 measured; and at
+`mult = 1` its `SRTT` ceiling bound **0 times in 108 847 evaluations**),
+`RWM_RACK_REO_MULT` **RECORD-STANDING** (it exists so that bound is reachable,
+and it was reached), `RWM_QUANTILE_CLOCKS` **REFUTED-STANDING** (§16.69's
+three-way refutation unmodified, confirmed `0` two-sided on all 452 live
+invocations). `RWM_SUM_CAP` was already ON, by §16.64. ADR-0070's `gain = 2.0`
+row keeps its FOSSIL verdict in full and gains a disposition line — the fossil
+is not re-derived by this flip, it is **replaced** by a setpoint with a
+citation and a derivation — and ADR-0071's family 2 gains one recording that
+its δ-priced candidate is adopted **through the derived band**, in the pool's
+value multiplier, and not as the ceiling replacement the family's own formula
+proposes.
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

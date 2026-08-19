@@ -707,6 +707,68 @@ this section is what should be corrected first.
 
 ---
 
+## FAMILY 2's DISPOSITION, annotated 2026-08-19 — the candidate is ADOPTED VIA THE DERIVED BAND, in the pool's VALUE MULTIPLIER, and NOT as the ceiling replacement this family's own formula proposes
+
+**This annotation records what happened to family 2 downstream. It re-opens no
+verdict above, prefers no candidate retroactively, and the Status line stays
+`PROPOSED` — the adjudication was the user's and it was taken elsewhere.**
+
+The path was: paper §16.67 restated family 2's δ pricing as a formula with its
+provenance table before any code; the pre-registered candidates battery scored
+it on the wire (goal-gate "Candidates Battery — RESULTS"; paper §16.70); and
+the flip was executed in its own separate commit (paper §16.71).
+
+- **WHAT WAS ADOPTED IS THE DERIVED BAND, NOT THIS SECTION'S CEILING.** What
+  ships is `RWM_DELTA_CAP` ON: the POOLED law's VALUE multiplier becomes
+  `1 + q(δ)` with `q(δ) = (b+1)/30` over RFC 8289 §3.2's cited 5–10 % band —
+
+  ```text
+  cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ · RTpropᵢ),  floor,  N · knee )
+  ```
+
+  — which is family 2's **idea** (δ prices the standing queue, as a time, read
+  off the shipped dial with no new constant) landing in a different SEAT than
+  family 2's formula puts it. **The `N·knee` ceiling and `WIN_STORE_MAX` are
+  BOTH still in the law.** This section's *"NO knee. NO N·2048. NO swept pool"*
+  is **not what shipped**, and no part of it is claimed as delivered.
+- **THE CONFLATION THIS SECTION REFUSED TO DECIDE IS STILL UNDECIDED.** The
+  *"one substantive provenance question"* above — reusing `D(δ)`, the shed
+  deadline, as the queue budget — is **not what the shipped law does**: the
+  shipped setpoint reads `b(δ)` and maps it onto CoDel's derived band, so the
+  δ dial supplies the *dial position* and RFC 8289 supplies the *allowance*.
+  That is a third answer to the question this section posed, and the section's
+  own recorded worry is neither resolved nor inherited by what shipped.
+- **THE DIAL-CONTINUITY REQUIREMENT (falsification plan item 4) IS MET AND
+  ASSERTED**, without a VM: `codel_setpoint_q` is continuous and strictly
+  monotone in `b` across Realtime/Auto/Bulk with ±2 % nudges through each,
+  never leaves the band, and is pinned by
+  `formula_agreement::published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band`.
+  On the wire the dial ROUTED: `[DCAP]` echoed `q=0.100000 b=2.0000` on every
+  engaged rep at every dual, one formula evaluated at one named point.
+- **THE REFUTATION CLAUSE (item 5) DID NOT FIRE, and stays live after the
+  flip.** No cell was found where the δ-priced bound binds below the shipped
+  cap and costs > 2σ goodput at a cell with permitted headroom — measured at
+  all five cells, with goodput PARITY at every dual on both seeds and no
+  reading outside 2σ_pooled in either direction. Restated so it remains
+  falsifiable now that the law ships by default.
+- **WHAT IS NOT SETTLED.** Family 2's own P-INTERIOR clause (item 1) is
+  **partially** answered: interior with the ceiling **provably inert** at c7
+  and c8 (`pin` = 0.0000), and **UNRESOLVED at c8L**, where `pin` = 0.23 falls
+  in the gap between the two branches the battery's contract pre-declared and
+  neither is claimed after the fact. The named instrument is the **within-run
+  Σ series**, which this ADR already owed and which needs no VM arm. Family 2's
+  conversion clause (item 2) was **not** scored — the shipped law is not the
+  ceiling replacement it is written against — and the `q_p50`-vs-probe
+  prerequisite (item 3) is **still open**: the two disagreed in sign on one of
+  the six scored rows, and the flip's latency claim rests on `q_p50` with the
+  probe reported beside it.
+- **FAMILY 1 IS UNTOUCHED.** Nothing here adopts, prefers or refutes (a), (b),
+  (c) or (d), and the `17/8` question is not re-opened. The one connection
+  worth recording is the reduction already stated in the paper: as `q → 0` the
+  shipped multiplier becomes exactly one BDP per path, which **is** candidate
+  (d) ZERO — so what ships is (d) plus the power-point allowance rather than a
+  rival to it.
+
 ## What this document deliberately does NOT conclude
 
 - **No candidate is preferred, ranked, or recommended.** The review is the
