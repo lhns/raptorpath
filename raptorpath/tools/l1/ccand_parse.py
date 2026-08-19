@@ -444,33 +444,50 @@ rack_re = re.compile(
     r"legacy_pin=([0-9.]+) round=([0-9.]+) legacy=([0-9.]+) mult=(\d+) "
     r"fa=(\d+)/(\d+) fa_frac=([0-9.]+) fa_class=([0-9.]+)"
 )
+# TWO GAUGES EMIT INTO THE CLIENT LOG, and the calibration smoke is what found
+# it. On a RACK-armed arm the client process carries BOTH its SENDER gauge
+# (`net/mod.rs:5319`, the tail sweep — `evals` in the tens of thousands and
+# `fa` non-zero) AND its own idle RECEIVER-role gauge (`net/receiver.rs:209` —
+# armed, so `Drop` emits, but `evals=0 fa=0/0` because this endpoint receives no
+# stalled hole). Taking "the last line that matched" would make the columns
+# depend on teardown ORDER, which is exactly the silent-instrument failure this
+# battery exists to avoid.
+#
+# SELECTION IS THEREFORE BY DATUM, PER FIELD GROUP, AND IT IS WELL-DEFINED:
+#   * the CLOCK-LAW fields (evals/ceil/gran/legacy_pin/round/legacy) come from
+#     the line with the MAXIMUM `evals` — a gauge at `evals=0` evaluated the law
+#     zero times and carries no bind-fraction datum at all;
+#   * the FALSE-ALARM fields come from the line with the MAXIMUM `fa`
+#     DENOMINATOR — a gauge at `fa=0/0` fired no recovery round and carries no
+#     false-alarm datum, and must never be read as `fa_frac = 0`.
+# Ties and single-line cases collapse to the same answer, and `rack_lines_*`
+# keeps the count so the duplication itself stays visible.
 rack = {}
 for site, lines in (("cli", cli), ("srv", srv)):
-    r = {f"rack_lines_{site}": 0, f"rack_on_{site}": None,
+    hits = [m for ln in lines for m in [rack_re.search(ln)] if m]
+    r = {f"rack_lines_{site}": len(hits), f"rack_on_{site}": None,
          f"rack_evals_{site}": None, f"rack_ceil_{site}": None,
          f"rack_gran_{site}": None, f"rack_legacy_pin_{site}": None,
          f"rack_round_{site}": None, f"rack_legacy_{site}": None,
          f"rack_mult_{site}": None,
          f"rack_fa_n_{site}": None, f"rack_fa_d_{site}": None,
          f"rack_fa_frac_{site}": None, f"rack_fa_class_{site}": None}
-    for ln in lines:
-        m = rack_re.search(ln)
-        if not m:
-            continue
-        r[f"rack_lines_{site}"] += 1
+    if hits:
+        c = max(hits, key=lambda m: int(m.group(2)))    # the CLOCK-LAW gauge
+        f = max(hits, key=lambda m: int(m.group(10)))   # the FALSE-ALARM gauge
         r.update({
-            f"rack_on_{site}": int(m.group(1)),
-            f"rack_evals_{site}": int(m.group(2)),
-            f"rack_ceil_{site}": float(m.group(3)),
-            f"rack_gran_{site}": float(m.group(4)),
-            f"rack_legacy_pin_{site}": float(m.group(5)),
-            f"rack_round_{site}": float(m.group(6)),
-            f"rack_legacy_{site}": float(m.group(7)),
-            f"rack_mult_{site}": int(m.group(8)),
-            f"rack_fa_n_{site}": int(m.group(9)),
-            f"rack_fa_d_{site}": int(m.group(10)),
-            f"rack_fa_frac_{site}": float(m.group(11)),
-            f"rack_fa_class_{site}": float(m.group(12)),
+            f"rack_on_{site}": int(c.group(1)),
+            f"rack_evals_{site}": int(c.group(2)),
+            f"rack_ceil_{site}": float(c.group(3)),
+            f"rack_gran_{site}": float(c.group(4)),
+            f"rack_legacy_pin_{site}": float(c.group(5)),
+            f"rack_round_{site}": float(c.group(6)),
+            f"rack_legacy_{site}": float(c.group(7)),
+            f"rack_mult_{site}": int(c.group(8)),
+            f"rack_fa_n_{site}": int(f.group(9)),
+            f"rack_fa_d_{site}": int(f.group(10)),
+            f"rack_fa_frac_{site}": float(f.group(11)),
+            f"rack_fa_class_{site}": float(f.group(12)),
         })
     rack.update(r)
 

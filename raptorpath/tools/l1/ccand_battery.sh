@@ -109,9 +109,25 @@
 #     armed law. The FIRST EVER measurement of the shipped clamp's own bind
 #     fraction is therefore read off R / DR / R1, NEVER off A.
 #  5. The RECEIVER's [RACK] gauge never calls record_fire (net/receiver.rs:209,
-#     771-780 record evaluations only), so a server-side [RACK] line always reads
-#     fa=0/0 and on arm A the receiver emits NO line at all. fa= is a SENDER-SITE
-#     statistic here and the reporter takes it from the CLIENT log alone.
+#     771-780 record evaluations only), so a receiver-role [RACK] line always
+#     reads fa=0/0. fa= is a SENDER-SITE statistic here and the reporter takes it
+#     from the CLIENT log alone.
+#
+#     AMENDED BY THE CALIBRATION SMOKE (2026-08-19), and both halves matter:
+#     (a) TWO gauges emit into the CLIENT log on a RACK-armed arm — the SENDER
+#         gauge (evals >> 0, fa > 0) and the client's OWN idle RECEIVER-role
+#         gauge (armed, so Drop emits, but evals=0 fa=0/0 because this endpoint
+#         receives no stalled hole). The parser therefore selects BY DATUM, per
+#         field group: clock-law fields from the line with MAX evals, fa fields
+#         from the line with MAX fa denominator. Taking "the last line" would
+#         make the columns depend on teardown ORDER.
+#     (b) THE SERVER LOG CARRIES NO [RACK] LINE AT ALL in this harness, on any
+#         arm. The `_srv` columns are therefore EMPTY BY CONSTRUCTION, and
+#         16.68's RECEIVER-SIDE predictions — including its one row that behaves
+#         as advertised, the c8/c8-AU receiver ceiling at 77/82 ms with zero
+#         spurious rounds — ARE NOT MEASURABLE BY THIS BATTERY. That is a
+#         narrowing of what the R rung can conclude and it is recorded in the
+#         contract's completion commit, not worked around.
 #
 # ABORT != DNF != INSTRUMENT-FAIL, as encoded in ccand_parse.py (no [GATES] on
 # EITHER endpoint = ABORT: no datum, no liveness verdict, not in any
@@ -348,8 +364,15 @@ check_and_parse() {
   # for the rep, never `fa_frac = 0`.
   [ "$rk_c" -eq 0 ] && echo "INSTRUMENT-FAIL-RACK $name rep=$REP (no [RACK] on the client — no recovery round fired, so this rep carries NO fa datum; it is NOT fa_frac=0)" >> "$OUT"
   if [ "$(gate_expect "$arm" RWM_RACK_CLOCKS)" = "1" ]; then
-    (grep -h "\[RACK\] on=1 evals=0 " /tmp/rwm-c.log /tmp/rwm-s.log >/dev/null 2>&1) \
-      && echo "RACK-WARMUP-FAIL $name rep=$REP (evals=0 with RWM_RACK_CLOCKS=1 — the clock law never evaluated, no bind-fraction datum)" >> "$OUT"
+    # TWO GAUGES EMIT INTO THE CLIENT LOG (found by the calibration smoke, and
+    # this check was WRONG before it): the client's SENDER gauge (evals >> 0)
+    # and the client's own idle RECEIVER-role gauge, which is armed — so Drop
+    # emits — but reads `evals=0 fa=0/0` because this endpoint receives no
+    # stalled hole. A per-line `evals=0` test therefore fires on EVERY armed
+    # rep and means nothing. The warm-up failure is the absence of ANY line
+    # with a non-zero evals.
+    (grep -hE "\[RACK\] on=1 evals=[1-9]" /tmp/rwm-c.log /tmp/rwm-s.log >/dev/null 2>&1) \
+      || echo "RACK-WARMUP-FAIL $name rep=$REP (no [RACK] line with evals>0 and RWM_RACK_CLOCKS=1 — the clock law never evaluated, no bind-fraction datum)" >> "$OUT"
   else
     (grep -h "\[RACK\] on=1" /tmp/rwm-c.log /tmp/rwm-s.log >/dev/null 2>&1) \
       && echo "ARM-CONTAMINATION-RACK $name rep=$REP (on=1 with RWM_RACK_CLOCKS=0)" >> "$OUT"
