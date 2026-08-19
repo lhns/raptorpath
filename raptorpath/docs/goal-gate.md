@@ -32325,3 +32325,257 @@ cross-check's own hypothesis was, and it is not a finding. The 2a verdicts are
 statements about the setpoint's NEIGHBOURHOOD from arms run for other questions,
 each with its confounds on the record; **no arm was at the setpoint** and the
 sole near-miss (c7, 0.98×) carries the widest σ in the table.
+
+## Candidates Battery — PRE-REGISTRATION (2026-08-19, `feat/candidates-run` from main@`0055c5d`) — MEASUREMENT DISCIPLINE 1 + 11 + 15 + 16 + 17 + 18, and CLAUDE.md **FORMULA-FIRST LAWS**: written and committed BEFORE any VM contact, in its OWN commit, before the drivers exist and before a single number is read. **This is LITERATURE-BACKED SUCCESSORS item 4.** It scores the two gates §16.67 and §16.68 shipped default-OFF — `RWM_DELTA_CAP` (the CoDel-derived standing-queue setpoint) and `RWM_RACK_CLOCKS` (RFC 8985 §6.2 Step 4, transplanted verbatim) — plus the `fa=` false-alarm validation §16.68.1 attaches to the SHIPPED control and has never been measured. **Nothing in this session flips a default.**
+
+### THE ERA, and it is one line
+
+Source **main@`0055c5d`** ("merge: the derived-setpoint laws"). **ONE binary for every arm, every cell and both seeds**, built fresh (stale `rm`'d, CRLF-normalized — the documented `git archive` trap), sha256 recorded in every ledger header and re-recorded by the top-up. An arm built from a different tree is not an arm of this battery.
+
+**`RWM_SUM_CAP` IS DEFAULT ON since 2026-08-19** (`gates.rs:851`, on the Ladder Battery's rung-N verdict). Arm A here is therefore the LADDER'S ARM N, not the ladder's arm A, and every Σ and every cap anchor below is read from that arm. Said once, loudly, because a reader who assumes the pre-ladder default will mis-scale every prediction in this block by 2×.
+
+### THE QUESTION, one sentence
+
+§16.67 published the δ-priced pool multiplier as a formula with no free parameter and stated outright that *"no wire measurement of a 5–10 %-of-BDP pool exists in this tree in either direction"*; §16.68 published the RACK-shaped recovery clock and REFUTED it by its own arithmetic before it ran, leaving one number un-measured that its refutation itself depends on — the false-alarm rate of the **shipped** `[25, 100] ms` clamp; and Tier-1 Re-Scores found the CoDel setpoint's neighbourhood SUPPORTED at three of five cells from arms run for other questions, with the note that **no arm in this tree was ever run AT the setpoint**. This battery runs one.
+
+### THE ARMS, and their EXACT env
+
+| arm | env, verbatim | the rung |
+|---|---|---|
+| **A** | (the shipped default; every gate below set explicitly at its default, `RWM_SUM_CAP=1`) | **the control**, re-measured in the same session. It is the ladder's arm N. It also carries §16.68.1's `fa=` meter, which is the point of running it |
+| **D** | `RWM_DELTA_CAP=1` | **the δ-cap** (§16.67) — `clamp((1+q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`. **Exactly one factor changes**: the Σ, its path set, the estimator, the count multiplier, the ceiling and the floor are IDENTICAL on both arms and cancel out of the A/B |
+| **R** | `RWM_RACK_CLOCKS=1 RWM_RACK_REO_MULT=17` | **the RACK clock at its cited maximum** — `max(min(mult·min_rtt/4, srtt), G)`. `mult = 17` is RFC 8985 §6.2 Step 4's own upper bound and is the ONLY value at which the `SRTT` ceiling is reachable at any of our cells |
+| **DR** | `RWM_DELTA_CAP=1 RWM_RACK_CLOCKS=1 RWM_RACK_REO_MULT=17` | **the composition** — the cap axis and the recovery-clock axis are disjoint seats (`pool_value_multiplier` vs the two round sites), so DR is the factorisation test, not a third law |
+
+Two AUXILIARY arms run beside them. **Each is scored on its OWN echo line and on NOTHING else** — not on goodput, not on latency, not in any guard denominator, not against A. They exist because a prediction nobody can read is not a prediction:
+
+| arm | env, verbatim | why it exists, and what it may conclude |
+|---|---|---|
+| **R1** | `RWM_RACK_CLOCKS=1 RWM_RACK_REO_MULT=1` | **the CONFIRMATION arm for §16.68's own defect finding.** RACK's initial `reo_wnd_mult` is 1, and at `mult = 1` §16.68 proves the `SRTT` ceiling *cannot bind at all* (`min_rtt ≤ srtt ⇒ min_rtt/4 < srtt` identically). This arm exists to READ `ceil=0.0000` off the wire instead of asserting it. **Scored on `[RACK] ceil= gran= fa_frac=` alone.** A goodput regression here is the PREDICTED CONFIRMATION of the bench's 8–46 spurious rounds, not a G-REG breach, and R1 is excluded from G-REG's denominator by this sentence, written before the run |
+| **L** | `RWM_LOSS_SENT_TRUTH=1` | **the ONLY arm on which `[LCW]` can record anything** — see THE SPECIFICATION FINDING below. **Scored on `[LCW] over_n= over_mass= loss_mass= rect_frac=` and per-path `pl=` alone.** The ladder REFUTED this gate and it stays default OFF; this arm takes no verdict on it and re-opens nothing |
+
+**Justification for excluding `mult = 1` from the SCORED set, with the bench numbers as the reason (§16.68's sender table, transcribed).** At `mult = 1` the law reads **1 / 2.75 / 3.25 / 9.5 / 10 ms** at c1 / c7 / sc2 / c8 / c8-AU against the shipped **25 / 100 / 100 / 100 / 100 ms**, and manufactures **8 / 31 / 31 / 39 / 46** spurious rounds per ack round trip against the shipped **0 / 0 / 1 / 3 / 4**. A scored arm at `mult = 1` would measure a re-probe storm, and `mult = 1` is additionally the value at which the law's own `SRTT` ceiling is provably inert — so the arm would be scoring `max(min_rtt/4, G)`, a law nobody proposed. `mult = 17` is the least-absurd variant and is the scored one. `mult = 1` is kept at **n = 2/seed at two cells** as the confirmation arm above, because §16.68's `ceil = 0.0000` claim is a DEFECT FINDING under CLAUDE.md's bind-fraction rule and a defect finding this tree can measure should be measured.
+
+Every arm also carries `RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_DIAG=1` (the instruments, identical on all six — their absence is an INSTRUMENT-FAIL, never a datum), `RWM_LATPROBE=1` (the harness-side delivered-latency probe, and it is LOAD-BEARING here — see D-LAT) and `RWM_GEN=0`.
+
+### THE TWO-SIDED ECHO EXPECTATIONS — asserted PER REP, on BOTH endpoints, BEFORE any number is read (discipline 15c)
+
+An arm that cannot show its control was a control has measured one condition twice. Every cell of this table is checked by `ccand_battery.sh` on the `[GATES]` line of the CLIENT and the SERVER log, and re-checked from the parser's columns by `ccand_report.py`. `[GATES]` values are scoped to the `[GATES]` line: the prose `... ACTIVE` echoes contain literal `RWM_*=0` strings (the flip battery's amendment-1 lesson).
+
+| echo | A | D | R | DR | R1 | L | absence/mismatch is |
+|---|---|---|---|---|---|---|---|
+| `[GATES] RWM_DELTA_CAP=` | 0 | **1** | 0 | **1** | 0 | 0 | ARM-LIVENESS-FAIL |
+| `[GATES] RWM_RACK_CLOCKS=` | 0 | 0 | **1** | **1** | **1** | 0 | ARM-LIVENESS-FAIL |
+| `[GATES] RWM_RACK_REO_MULT=` | 1 | 1 | **17** | **17** | **1** | 1 | ARM-LIVENESS-FAIL (an integer, not a flag — matched as `=[0-9]+`) |
+| `[GATES] RWM_LOSS_SENT_TRUTH=` | 0 | 0 | 0 | 0 | 0 | **1** | ARM-LIVENESS-FAIL |
+| `[GATES] RWM_SUM_CAP=` | **1** | **1** | **1** | **1** | **1** | **1** | ARM-LIVENESS-FAIL — the DEFAULT, asserted rather than assumed |
+| `[GATES] RWM_QUANTILE_CLOCKS=` | 0 | 0 | 0 | 0 | 0 | 0 | **ARM-CONTAMINATION** — it OUTRANKS `rack_clocks` and would silently replace the law under test |
+| `[GATES] RWM_DERIVED_SWEEP=` | 0 | 0 | 0 | 0 | 0 | 0 | **ARM-CONTAMINATION** — a rival law for the same quantity; `rack_clocks` REPLACES it and the precedence must never be exercised here |
+| `[GATES] RWM_COMPOSED_CAP=` / `RWM_THREE_TERM=` | 0 | 0 | 0 | 0 | 0 | 0 | ARM-CONTAMINATION — a different pool seat |
+| `[GATES] RWM_STORE_CAP_UNIFIED=` / `RWM_LATE_BRAKE=` | 0 | 0 | 0 | 0 | 0 | 0 | ARM-CONTAMINATION — §16.67's OTHER two axes, held fixed so the value axis is alone |
+| `[GATES] RWM_CHARGE_RECOVERY=` / `RWM_RELEASE_1TO1=` | 0 | 0 | 0 | 0 | 0 | 0 | ARM-CONTAMINATION |
+| `[GATES] RWM_DIAG=` / `RWM_ACKDIAG=` / `RWM_WALLDIAG=` | 1 | 1 | 1 | 1 | 1 | 1 | INSTRUMENT-FAIL |
+| `[GATES] RWM_RECOV_MP=` | 1 | 1 | 1 | 1 | 1 | 1 | WITNESS-UNEXPECTED (recorded, not void) — a change to the recovery plane's clocks is only safe with the RFC 9002 hole law armed |
+| `[DCAP]` line present | — | **yes** | — | **yes** | — | — | ARM-LIVENESS-FAIL where expected; ARM-CONTAMINATION on A/R/R1/L |
+| `[RACK]` line present | **yes** | **yes** | **yes** | **yes** | **yes** | **yes** | INSTRUMENT-FAIL — it rides EVERY arm, and on A/D/L it is the `fa=` meter |
+| `[SUMCAP]` line present | **yes** | **yes** | **yes** | **yes** | **yes** | **yes** | INSTRUMENT-FAIL — `RWM_SUM_CAP` is now DEFAULT ON, so the gauge is on the CONTROL too |
+| `[LCW]` line present | no | no | no | no | no | **yes** | see THE SPECIFICATION FINDING. Presence on A/D/R/DR/R1 is an INSTRUMENT SURPRISE and is recorded, not scored |
+| `[WALL]` / `[ACKDIAG]` line present | yes | yes | yes | yes | yes | yes | INSTRUMENT-FAIL |
+| `three-term outstanding limit ACTIVE` / `unified store-cap path set ACTIVE` | — | — | — | — | — | — | ARM-CONTAMINATION on ANY arm |
+
+### THE SPECIFICATION FINDING, RECORDED BEFORE THE RUN AND BEFORE ANY VM CONTACT
+
+**The coordinator's directive asks for the `[LCW]` rectifier columns "on every arm, ungated". They are not ungated, and on the arm set this battery would otherwise have run they are structurally SILENT. This block records that rather than discovering it in a results section.**
+
+The witness is fed inside `PathState::sender_truth_loss_delta` (`scheduler/mod.rs:2543-2556`), and that function has exactly one production caller pair (`net/control_msg.rs:345`, `:739`), both behind `if crate::scheduler::loss_sent_truth_active()`. On the shipped default the estimator is fed the LEGACY pair `(d_expected, d_received)` and never enters the function. So:
+
+* `LCW_OVER_N` and `LCW_LOSS_MASS` stay 0 on any arm with `RWM_LOSS_SENT_TRUTH=0`;
+* `SumCapGauge::drop` (`net/mod.rs:3916`) emits `[LCW]` only when one of them is non-zero;
+* **therefore `[LCW]` would never have been emitted on A, D, R, DR or R1, and a battery that pre-registered "the rectifier columns on every arm" would have recorded five columns of structural silence and been free to read them as a null.**
+
+**And the code's own comment is wrong about which estimator it is measuring.** `net/mod.rs:3912-3915` says the witness runs *"on EVERY arm — the hypothesis it scores is about the SHIPPED estimator, not about any gate here."* The hypothesis (Tier-1 Re-Scores 2b finding 5) is about the SENDER-TRUTH estimator: *"The legacy pair does not have this shape: both of its operands come from the SAME ack message's counter diff."* The gating is CORRECT for the hypothesis; the comment is wrong about the scope, and this contract records the comment as a **DOCUMENTATION DEFECT against `feat/derived-setpoint-laws`** — no code is changed by this session, and the defect is logged rather than silently worked around.
+
+**The repair chosen, and the two it is chosen over.** Arm **L** (`RWM_LOSS_SENT_TRUTH=1`, n = 2/seed, three cells including a single-path one) is the only construction that can read the witness at all. It is preferred over (a) dropping the columns and recording only the reason, because Tier-1 2b named this exact witness as *"the only thing that can decide whether the one-sided clamp is the 20×'s mechanism"*; and over (b) adding `RWM_LOSS_SENT_TRUTH=1` to the scored arms, which would confound every δ-cap and RACK contrast with a gate the Ladder Battery REFUTED. **Arm L takes no verdict on `RWM_LOSS_SENT_TRUTH` and re-opens nothing the ladder closed.**
+
+### FIVE INSTRUMENT FACTS, WRITTEN DOWN BEFORE THE RUN SO THEY CANNOT BE MISREAD AS RESULTS
+
+Each was read out of the shipped code while writing this block, and each would otherwise have produced a false flag on its first ledger.
+
+1. **`[DCAP]` is emitted only on the ON arm** (`DeltaCapGauge::drop`, `net/mod.rs:4077`), but it is FED on both arms at every pooled-law refresh, including the COUNTERFACTUAL — the same expression with the VALUE multiplier flipped under the SAME bounds and the SAME count multiplier. So `chg=` answers *"did the derived multiplier change anything"* from ONE run. A's own pin fraction is carried by `occcap_p50` / `CAPBIND`.
+2. **`[DCAP] eng=0/0` at c1 and sc2 is EXPECTED and is NOT a warm-up failure.** The pooled seat returns `None` at `n_live < 2` *before any multiplier is read*, so **D is BIT-IDENTICAL to A at every single-path cell BY CONSTRUCTION** (§16.67, and `gates.rs:642`). `eng=0/N` at a DUAL with `RWM_DELTA_CAP=1` IS a warm-up failure and voids that rep. The parser encodes the difference by cell geometry, not by guesswork.
+3. **On arm A the `[RACK]` line reads `on=0 evals=0 ceil=0.0000 gran=0.0000 legacy_pin=0.0000 round=0.0 legacy=0.0` BY CONSTRUCTION, and the ONLY field carrying a datum is `fa=`.** `RackClockGauge::record` is guarded by `pol.rack_clocks` (`net/mod.rs:7163`) while `record_fire` is fed unconditionally (`net/mod.rs:7932`), and `Drop` emits whenever `self.on || self.fired > 0` (`net/mod.rs:4225`). This is the ladder's `[CCAP]`-on-FULL fact in a new place: **A's `ceil=0.0000` is a denominator of zero, NOT the §16.68 defect finding, and reading it as one would be the error this paragraph exists to prevent.** R1's `ceil=0.0000` at `evals ≫ 0` IS the defect finding.
+4. **`legacy=` and `legacy_pin=` are fed on the ON arm only** — they are the counterfactual against the shipped `[25, 100] ms` clamp, computed inside the armed law. **So the FIRST EVER measurement of the shipped clamp's own bind fraction is read off R / DR / R1, never off A.** Any clause about the shipped clamp's bind fraction is routed there by this sentence.
+5. **The receiver's `[RACK]` gauge never calls `record_fire`** (`net/receiver.rs:209`, `:771-780` records evaluations only), so a receiver-site `[RACK]` line reads `fa=0/0 fa_frac=0.0000` always, and on arm A the receiver emits no line at all (`on=false`, `fired=0`). **`fa=` is a SENDER-SITE statistic in this battery and the reporter takes it from the client log alone.** The `ceil=` / `gran=` / `round=` fractions pool BOTH sites on the ON arms, which is what the §16.68 bench's two tables predict jointly.
+
+### CELLS, n, AND THE INTERLEAVE
+
+| cell | topology | bytes | shaped | n/seed (A/D/R/DR) | what it is here for |
+|---|---|---|---|---|---|
+| `c1` | c1/c1 single | 400 MB | 1 Gbit | 8 | the N=1 IDENTITY check for D (bit-identical by construction) + the one cell with real headroom + the RACK receiver-ceiling cell (`mult ≥ 4`) |
+| `c7` | c2/c2 dual | 200 MB | 200 Mbit | 8 | **the CLEAN δ-cap rung** — symmetric, interior on BOTH anchor eras, and the one cell where an arm in this tree has ever landed on the derived setpoint (Tier-1 2a, 0.98×) |
+| `c8` @ 25 MB | c2/c3 dual | 25 MB | 120 Mbit | 12 | **the LOAD-BEARING δ-cap rung**, the dead-wall cell, and the cell where the ladder already walked BELOW the setpoint and lost nothing |
+| `c8L` @ 200 MB | c2/c3 dual | 200 MB | 120 Mbit | 12 | the length axis, and **the anchor-dependent cell**: interior on the primary era, PINNED on the secondary. Both are pre-declared below |
+| `sc2` | c2/c2 single | 100 MB | 100 Mbit | 8 | the crown-class latency guard, the `fa=` cell §16.68.1 predicts at 50 %, and **the cell whose Tier-1 datum D CANNOT reach** (below) |
+
+Auxiliary arms: **R1** at `c8` and `sc2`, **n = 2/seed**. **L** at `sc2`, `c7` and `c8`, **n = 2/seed** — `sc2` is load-bearing there because the rectifier hypothesis's distinguishing claim is that the effect is *"present at N = 1"*.
+
+Seeds **42 AND 7**. Arms interleaved **round-robin per rep**, fresh topology per invocation, one run per invocation, the per-cell `n` applied INSIDE the interleaved loop and never as a separate pass — so every rep sits in the same round-robin on the same topologies as the reps it is compared against. Scored pool: 4 arms × 48 reps × 2 seeds = **384** invocations; auxiliaries **20**; **404** total. **`ARMCOUNT` in the driver is NOT an `n`** — it counts parsed rows and an aborted invocation still emits a row; the scored `n` is `ccand_report.py`'s LIVE n, recomputed from the gates columns.
+
+### THE DIAL ROUTES, OR NOTHING BELOW IS SCORED (MEASUREMENT DISCIPLINE 1)
+
+The harness runs every cell at the **`bulk`** protocol hint. So `b(δ) = b(Bulk) = 2`, and `q(b) = (b+1)/30 = **0.100000**` exactly — the Kleinrock peak-power end of RFC 8289 §3.2's band, and the point at which §16.67's compression of the dial's authority is largest (20×).
+
+* **D-ROUTE.** `[DCAP]` reads **`q=0.100000 b=2.0000`** on every engaged rep of D and DR, at every dual, both seeds. *Falsified if* either field reads anything else: the env var was read but the dial did not reach the law, which is the routing bug ordinal tests do not catch and which CLAUDE.md's testing-discipline note names directly. **Nothing else in this battery is scored until D-ROUTE passes.**
+
+This is the whole of the no-mode-switch invariant that a wire battery can check: one formula, continuous in the dial, evaluated at one named point, echoing the dial number it was evaluated at.
+
+### RUNG D — THE δ-CAP, AND ITS PREDICTIONS FROM BOTH ANCHOR ERAS
+
+Instruments: `[DCAP] on= eng=/ chg=/ chg_frac= pin= floor= cap= ask= q= b=` on D/DR; `CAPBIND` over `occcap_p50` on EVERY arm (`capbind_check.py`, imported, not re-implemented).
+
+**The law's value at `q = 0.10`, from both published anchor sources (§16.67's tables (A) and (B), transcribed to the digit, neither chosen for the reader).**
+
+| cell | Σ, PRIMARY (ladder era) | D cap predicted `1.10·Σ` | A cap predicted `2·Σ` | D/A | `BDP`, SECONDARY (composed era) | D cap on (B) | interior on (B)? |
+|---|---|---|---|---|---|---|---|
+| c7 | 1 571.2 | **1 729** | 3 142.4 | **0.550** | 1 106.1 | 1 217 | yes |
+| c8 | 1 154.3 | **1 270** | 2 308.7 | **0.550** | 1 604.8 | 1 766 | yes |
+| c8L | 2 815.4 | **3 097** | ask 5 630.8, realized 3 306.6 (`pin` 0.432) | **0.937** | 4 976.1 | 5 474 | **NO — PINS at 4 096** |
+| c1 / sc2 | N = 1 | not engaged | not engaged | **1.000** | — | not engaged | bit-identical |
+
+**Wherever both laws are interior the ratio is exactly `(1+q)/gain = 0.550`, and it has no free parameter in it.** At c8L it is not 0.550 because **A is itself 43.2 % ceiling-governed there** — A's ask is 5 630.8 against a 4 096 ceiling — which is exactly why c8L is the cell where D's arithmetic bites hardest and why its pin contrast is the sharpest datum in the rung.
+
+* **D-IDENT (c1, sc2).** `[DCAP] eng=0/0`; goodput, `ping_p50`, `q_p50`, CPU/byte and the `occcap_p50` distribution all within 2σ_pooled of same-session A, both seeds. *Falsified if* anything at c1 or sc2 moves more than 2σ. The N=1 short-circuit is asserted at L0; a wire difference is a BUILD or INSTRUMENT alarm before it is a result, and **nothing else in this battery is scored until it is explained.**
+* **D-INTERIOR (c7, c8, c8L) — the primary mechanism claim, and §16.67's headline.** On a MAJORITY of D reps: `pin ≤ 0.10`, `eng ≥ 0.90`, `chg_frac ≥ 0.90`, and `CAPBIND` reads `ceiling=none … name=interior`. **`[DCAP] cap` lands in c7 [1 383, 2 075], c8 [1 016, 1 524], c8L [2 478, 3 716]** — the published 1 729 / 1 270 / 3 097 with a **±20 %** anchor tolerance, stated as a band because the two anchor eras disagree by up to 1.8× and a tighter band would be scoring the session's draw. **All three bands are strictly below 4 096, which is what makes them falsifiable rather than decorative.**
+  * *Falsified (the law)* if `cap` lands outside its band on a majority — the law is not computing what its formula says at wire inputs, a mechanism finding before a performance one.
+  * *Falsified (the ceiling)* if `pin > 0.50` on a majority — the arm measured the CLAMP, it is a DISCIPLINE 18 finding about the ceiling, and **no multiplier verdict may be recorded from that cell** however its goodput reads.
+* **D-C8L — THE ANCHOR-DEPENDENT CELL, WITH BOTH OUTCOMES PRE-DECLARED AND NEITHER PREFERRED.** §16.67 claims the δ-cap is *"interior EVERYWHERE incl. c8L — the first time any cap law has been interior at c8L"*, and that claim holds **only on the primary anchors**. On the secondary anchors `1.10 × 4 976.1 = 5 474 > 4 096` and the law PINS, exactly as ADR-0071 finding 1 predicted from `W(c8L) = 7 489 = 1.83× WIN_STORE_MAX`. **The status is read from `[DCAP] pin=` IN THE RUN and from nothing else.**
+  * `pin ≤ 0.10` at c8L ⇒ the PRIMARY era holds, the interior-everywhere claim is DELIVERED, and ADR-0071 family 2's *"NO knee"* is delivered **by measurement rather than by deletion**, which is the stronger form of the claim.
+  * `pin > 0.50` at c8L ⇒ the SECONDARY era holds, discipline 18(d) applies, **no multiplier verdict is taken at c8L**, and the finding is about Σ rather than about the law — the same divergence the ladder recorded when the wire presented Σ = 1 154.3 at c8 against published anchors of 1 509.7 and 1 604.8.
+  * **Neither outcome refutes §16.67**, and this bullet says so in advance so that neither can be reported as if it did.
+* **D-PIN-CONTRAST (c8L, and it needs no new instrument).** Same-session A at c8L is measured 43.2 % pinned. Predicted: `CAPBIND` / `occcap_p50` show A pinned at 4 096 on a substantial minority of reps while D is interior on a majority. *This is the only cell in the battery where the δ-cap is predicted to RELIEVE an existing clamp rather than merely lower an interior value*, and it is the cleanest available test of §16.67's *"the knee becomes provably inert"*.
+* **THE THREE-WAY NULL, separated in advance** (this is what `[DCAP]` exists for): `eng=0/N` at a dual = WARM-UP FAILURE, INSTRUMENT-FAIL, the rep carries no datum · `chg=0/M` with `pin` low = **an INSTRUMENT FAILURE, not a result** — unlike `[SUMCAP]`, `chg_frac = 0` cannot happen here while `gain ≠ 1+q`, and `gates.rs`/`net/mod.rs:3938-3944` say so · `chg` any value with `pin` high = a DEFECT FINDING about the CEILING, verdict required, no multiplier verdict taken.
+
+### THE PRE-REGISTERED BAR — **D on DELIVERED LATENCY at GOODPUT PARITY, and it is the CoDel-derived prediction stated as the bar**
+
+This is what the arm is for. RFC 8289 §3.2 derives the setpoint from Kleinrock power maximisation; Tier-1 Re-Scores 2a scored its NEIGHBOURHOOD against every arm this tree already owned and returned **SUPPORT at sc2, c7 and c8** — cap cuts of 0.47×–0.51× bought **goodput parity** and **−55.2 ms delivered probe latency (sc2, 0.45×) / −50 ms `q_p50` (c8)**. D cuts the cap by **0.550×** at c7 and c8 by construction. So:
+
+* **D-LAT (c7, c8, c8L) — THE LOAD-BEARING CLAUSE.** On BOTH seeds: goodput within **2σ_pooled** of same-session A (**PARITY** — this is the condition, not a target), AND `q_p50` **strictly below** same-session A, AND `ping_p50` not worse than A by more than 2σ.
+  * *The magnitude is stated as a CLASS, not a point, and the reason is on the record.* The two matched c8 contrasts this tree owns do **not** order monotonically in the cap ratio — `ladder` N vs A moved the cap 0.70× for `q_p50` **−78 ms**, and NT vs T moved it 0.51× for **−50 ms**. A cut of 0.550× therefore has no licensed point prediction, and inventing one by interpolation would be fitting a curve to two non-ordering points. **The class is `q_p50(D) − q_p50(A) ∈ [−80, −30] ms at c8**, reported against the bar and not as the bar.
+  * *Falsified* if goodput at any dual is more than 2σ_pooled BELOW A on both seeds — **that is ADR-0071's own named refutation, verbatim: "a cell where the δ-priced ceiling binds below the shipped cap and costs > 2σ goodput at a cell with permitted headroom — which would refute δ-as-queue-budget at the level of the idea."**
+  * *Falsified in the other direction* if `q_p50` does not fall at any dual: the pool halved and the standing queue did not, which would say the sender's store is not what the delivered queue is made of and would move the whole δ-as-queue-budget argument to a different mechanism.
+  * *Null RESULT, and it is publishable*: parity in goodput and `q_p50` moving ≪σ. Then the derived multiplier is FREE — half the pool for nothing lost — which is the modal outcome §16.63's `×N` datum points at (that deletion under-funded c8's own span by 45.4 % and goodput went UP on both seeds).
+
+* **THE CELL THIS BAR CANNOT REACH, PRE-DECLARED SO IT IS NEVER CLAIMED.** **Tier-1 2a's cleanest datum — sc2, the 98 %-utilised cell, cap 481 = 1.40× the rung, goodput +0.31 (2σ_p 0.69) at `ping_p50` −55.2 ms — is at a SINGLE-PATH cell, and `RWM_DELTA_CAP` DOES NOT ENGAGE AT N = 1.** D is bit-identical to A at sc2 by construction. **The single strongest piece of evidence for the CoDel rung in this tree is therefore UNREACHABLE by the law this battery is scoring, and no sc2 number in this session may be read as support for the δ-cap.** What sc2 contributes here is G-SC2-LAT (survival) and the `fa=` measurement. Delivering the CoDel rung at a single-path cell needs a law in the `path_scaled_store_cap` seat, not this one, and that is a NAMED SUCCESSOR and not a deliverable of this contract.
+
+* **THE RUNG ARITHMETIC PER CELL, both eras carried (Tier-1 2a's own windows, applied to D's own value).** SUPPORT in 2a's rule is landing inside `[0.5, 2.0]×` the 5 % rung with no real goodput loss:
+
+| cell | D cap | primary-era 5 % / 10 % rung | D vs primary 5 % | composed-era 5 % rung | D vs composed 5 % | inside 2a's window on BOTH eras? |
+|---|---|---|---|---|---|---|
+| c7 | 1 729 | 1 649 / 1 728 | 1.05× | 1 161 | 1.49× | **yes** |
+| c8 | 1 270 | 1 212 / 1 269 | 1.05× | 1 685 | 0.75× | **yes** |
+| c8L | 3 097 | 2 956 / 3 097 | 1.05× | 5 225 | 0.59× | **yes** (2a voided c8L on the composed anchors' own arithmetic; carried anyway) |
+
+**D lands on the primary era's 10 % rung TO THE DIGIT at all three duals, because at Bulk it IS that rung** — that identity is the check that the law is the rung and not a paraphrase of it, and it is asserted at L0 rather than measured. What the wire decides is whether landing there costs anything.
+
+### RUNG R — THE RACK CLOCK, AND THE FIRST BIND-FRACTION THE SHIPPED CLAMP HAS EVER HAD
+
+Instruments: `[RACK] on= evals= ceil= gran= legacy_pin= round= legacy= mult= fa=/ fa_frac= fa_class=` on the client and the server.
+
+**§16.68's bench, transcribed. The ceiling binds only when `mult ≥ 4·srtt/min_rtt`:**
+
+| site | c1 | c7 | sc2 | c8 | c8-AU |
+|---|---|---|---|---|---|
+| sender (app-echo clock), `mult` needed | 18 | 32 | 32 | 40 | 47 |
+| receiver (wire clock), `mult` needed | 4 | 27 | 32 | 9 | 9 |
+| `RACK` cadence at `mult=17`, sender | 8.5 ms | 46.75 ms | 55.25 ms | 161.5 ms | 170 ms |
+| `RACK` cadence at `mult=17`, receiver | 2 ms | 46.75 ms | 55.25 ms | **77 ms (ceiling)** | **82 ms (ceiling)** |
+| shipped `[25,100] ms` cadence | 25 ms | 100 ms | 100 ms | 100 ms | 100 ms |
+
+* **R-CEIL (R, DR, at `mult = 17`).** `[RACK] ceil=` is **strictly positive at c1, c8 and c8L** (the three cells whose receiver-side requirement — 4, 9, 9 — is inside RACK's own maximum) and **≈ 0 at c7 and sc2** (requirement 27 and 32, outside it). *Falsified* if `ceil=` is positive at c7 or sc2, or zero at c8 — then the bench's geometries are not this session's and the whole §16.68 arithmetic is rebased on the measurement. **c8L is carried on the bench's `c8-AU` row, and that row is a different ARM class, not the length axis** — so c8L's R-CEIL is a CLASS expectation and is labelled as one.
+* **R-CEIL-ZERO (R1, at `mult = 1`) — §16.68's DEFECT FINDING, measured.** `[RACK] ceil=0.0000` at `evals ≫ 0`, at **every** cell and **both** sites. This is the CLAUDE.md bind-fraction rule's own case: a bound that provably never binds turns its law into `max(min_rtt/4, G)` and hides the law's shape from every measurement taken through it. *Falsified* if `ceil > 0` anywhere at `mult = 1` — then `min_rtt ≤ srtt` does not hold on this stack's own estimators, which is a finding about the estimators and outranks everything else in this rung.
+* **R-GRAN (R1, c1).** `gran=` strictly positive at c1, where the bench puts the sender cadence at the 1 ms `TIMER_GRANULARITY_US` floor — a **25× tightening** of the shipped 25 ms.
+* **R-LEGACY — THE FIRST MEASUREMENT OF THE SHIPPED CLAMP'S OWN BIND FRACTION, and it is a DEFECT FINDING about the DEFAULT.** Read off R / DR / R1's `legacy_pin=` (instrument fact 4). The bench says the shipped cadence sits at one of its two literals — 25 ms at c1, 100 ms at c7/sc2/c8/c8-AU — at **all five cells**. **PREDICTED `legacy_pin ≈ 1.0000` everywhere.** If it holds, the shipped `round = (2·srtt).clamp(25 ms, 100 ms)` is **a constant at every cell this tree measures**, its `2·srtt` term is inert, and CLAUDE.md's *"a clamp that always binds turns its law into a constant"* applies to a SHIPPED law by measurement rather than by argument. **That is a finding about the default and it stands whether or not either successor ships.** *Falsified* if `legacy_pin < 0.5` at any cell — then the shipped law is live somewhere and §16.68's premise needs re-reading.
+
+### §16.68.1's `fa=` PRE-REGISTRATION, VERBATIM, AND IT IS SCORED ON THE CONTROL
+
+*"A recovery round fires against a cumulative blocker; a FALSE ALARM is a fired round whose target was already in flight and arrived without needing the retransmit it triggered."* The class bar is RFC 8985 §6.2 Step 4's own: *"to bound such spurious recoveries to approximately once every 16 recoveries (less than 7%)"*, so **`α_class = 1/16 = 6.25 %`**, printed beside every measurement as `fa_class=0.0625`.
+
+**Pre-registered expectation, from §16.68's component arithmetic, transcribed without alteration** (`spurious_rounds(srtt, cadence) = ⌈srtt/cadence⌉ − 1`, predicted fraction `spurious/(spurious+1)`):
+
+| arm | c1 | c7 | sc2 | c8 | c8-AU | clears `α_class` = 6.25 %? |
+|---|---|---|---|---|---|---|
+| shipped `[25,100] ms` (**arm A / D / L here**) | 0 % | 0 % | **50 %** | **75 %** | **80 %** | **NO at sc2, c8, c8-AU** |
+| `RWM_RACK_CLOCKS`, mult=1 (**arm R1**) | **89 %** | **97 %** | **97 %** | **97 %** | **98 %** | **NO, everywhere** |
+| `RWM_RACK_CLOCKS`, mult=17 (**arms R / DR**) | 50 % | 50 % | 50 % | 67 % | 67 % | **NO, everywhere** |
+
+* **FA-CONTROL — the strongest statement available about the shipped clamp, and it is about the CONTROL rather than the successors.** On arm A, `fa_frac` at **sc2 ≥ 0.50, c8 ≥ 0.75, c8L ≥ 0.80** (the `c8-AU` class), i.e. **8–13× RACK's own published spurious budget at three of five cells**, and `fa_frac ≈ 0` at c1 and c7. **That is a defect finding about the default, pre-registered here, and it stands whether or not either successor ships.**
+* **THE FALSIFIER, verbatim, and it is keyed to the INSTRUMENT because the instrument is new.** *"If the wire-measured `fa_frac` on the shipped control lands below `α_class` at sc2, c8 and c8-AU, this component model is wrong about the mechanism and the whole R axis is rebased on the measurement rather than on `⌈srtt/cadence⌉`."*
+* **FA-SUCCESSORS.** R / DR read `fa_frac` in the 0.50–0.67 class; R1 in the 0.89–0.98 class. **No arm of the R axis is predicted to clear `α_class`**, which is §16.68.1's own conclusion and is pre-registered as such: **this battery cannot produce a recommendation to flip `RWM_RACK_CLOCKS`, and it is not run to produce one.** It is run because the CONTROL's number has never existed.
+* **THE MEASUREMENT IS UNCONDITIONAL** — it runs on every arm, ungated by `RWM_DIAG`, *"because it is the validation the shipped default has never had."*
+* **A denominator of zero is an INSTRUMENT-FAIL, not a pass.** `fa=0/0` means no recovery round fired; the rep carries no `fa` datum and is excluded from that statistic with the exclusion counted. It must never be read as `fa_frac = 0`.
+
+### THE `[LCW]` RECTIFIER COLUMNS — hypothesis-scoring, NO BAR (arm L only)
+
+Tier-1 Re-Scores 2b finding 5 proposed the one-sided clamp on `sender_truth_loss_delta`'s two-clock pair as the mechanism behind the sender-truth estimator's 20 % over-read — the one that **survives at N = 1**, where the cross-path attribution error it was built to repair cannot exist. The scoreable statistic is `rect_frac = over_mass / loss_mass`.
+
+* **RECORDED, SCORED ON NOTHING.** `over_n`, `over_mass`, `loss_mass`, `rect_frac` per cell, per seed, beside per-path `pl=`, at sc2 (N=1), c7 and c8. **No bar, no verdict, no flip.** This is the first reading of an instrument built two commits ago and never run.
+* **The ONE falsifier this contract does write, because it costs nothing and makes the record falsifiable in principle:** `rect_frac = 0` at **every** cell including sc2 would mean the clamp never fires, which would refute the hypothesis's own premise outright. Anything above zero is DATA and takes no verdict.
+* **The coarse prior, labelled coarse.** At ~2 s report granularity Tier-1 already saw the received delta running ahead of the sent delta in **9/9 (c2r100), 12/18 (c7), 11/18 (c8)** windows — *"an indication that the two cursors cross often, not a measurement of the clamp rate and not a bound on it."* `over_n` is the per-ack measurement that prior could not be.
+
+### THE PAIRED c8 WALL DESIGN — `[WALL]` ONSET/DURATION, PAIRED WITHIN REP
+
+Two independent measurands have inverted between pools collected minutes apart on a byte-identical binary. The Mode-Hunt RESULTS' closing recommendation is binding: *"the next attempt must change the DESIGN — a paired within-rep contrast, or a cell whose statistic is not bistable — not the statistic."*
+
+* **B-WALL.** The statistic is the **within-rep-index PAIRED sign** of `dur_ms(D) − dur_ms(A)` at `c8`@25 MB — one sign per (seed, rep index) where BOTH arms produced a live `[WALL]` — scored as a **sign test over paired reps**, never as a difference of medians over pools. The claim is that the paired sign is consistent across BOTH seeds AND between the main pool and every top-up pool.
+* **THE PRE-DECLARED CLOSE.** Fewer than **8** paired reps carrying a non-zero difference at either seed, or a sign that disagrees between seeds or between pools ⇒ the clause closes **NEEDS-MORE and names its instrument**: what is owed is a c8 statistic that is not bistable, **not a fourth measurand**. **No dead-wall claim of any kind is made from an unpaired contrast in this battery, at any n.**
+* c8L's `[WALL]` is REPORTED, direction only, scored on nothing — it did not order at all in the ladder (438 → 913 → 395 → 557).
+
+### RUNG DR — THE COMPOSITION
+
+* **DR-FACTOR.** The δ-cap sits in `pool_value_multiplier`; the RACK clock sits at the tail-sweep and hole-refresh round sites. They share no operand. On the wire: **DR's `[DCAP] cap` at c7, c8 and c8L must land inside the SAME band D's does, and DR's `[RACK] ceil=`/`round=` must match R's within the cells' own spread.** *Falsified if* either moves outside its band — then the two seats are coupled through something neither section names, and every rung's composition reading is re-scoped.
+* **DR-GUARD.** DR carries every guard below. A composition that is individually clean and jointly harmful is a TRADE and is reported as one.
+
+### GUARDS — a win bought by breakage is a TRADE and is reported as one (every SCORED arm, every cell)
+
+* **G-REG.** No cell more than 2σ_pooled below same-session A on either seed, on any of **A / D / R / DR**. **R1 and L are excluded by construction** (stated in THE ARMS, before the run): R1's regression is its own prediction and L carries a gate the ladder refuted.
+* **G-SC2-LAT — the crown-class latency must SURVIVE.** At sc2, every scored arm's `ping_p50` is not more than 2σ WORSE than same-session A, at goodput within 2σ of same-session A, both seeds. For D this is a two-sided IDENTITY check (bit-identical at N = 1); for R and DR it is a real guard, and it is the guard most likely to fire, because the RACK clock at `mult = 17` reads 55 ms against the shipped 100 ms at sc2 and a tighter re-probe cadence at a 98 %-utilised cell is exactly where a spurious-round storm would show. **This battery makes no claim to reproduce §16.50 F6's halved delivered latency; the guard is SURVIVAL and it is keyed to LATENCY.**
+* **G-DNF.** `dnf = 0` in every completed run, every arm, both seeds. **ABORT ≠ DNF ≠ INSTRUMENT-FAIL**, encoded in the parser: no `[GATES]` on EITHER endpoint = ABORT, no datum, no liveness verdict, and **not in any denominator**.
+* **G-CPU.** Sender CPU/byte ≤ **1.05×** A as a POINT band at every cell, both seeds, every scored arm. The δ-cap changes one multiplier and adds no work; the RACK clock changes a timer and adds none. A breach is a finding about where the cost actually is.
+* **G-CAPBIND.** Any arm CLAIMING an interior landing shows `CAPBIND … name=interior` for its (cell, arm) group AND `[DCAP] pin ≤ 0.10`. A claiming arm carrying a `CAPBIND WARN` line has measured the clamp; discipline 18(d) forbids the claim.
+* **G-LIVENESS.** The two-sided echo table above, per rep, both endpoints, before any number is read.
+* **G-TOPUP (the seed-7 symmetric convention).** If aborts drive any SCORED arm below `n = 8` at either seed, the top-up runs the **SAME rep count for EVERY SCORED ARM of that cell at that seed** — same session, same binary, own ledger, own sentinel. **Never asymmetric.** The auxiliaries R1 and L are NOT topped up: they have no contrast to make cross-pool, and topping them up would repair nothing. The top-up is also the SECOND POOL B-WALL's cross-pool stability clause is scored across, so its ledger keeps the `topup` tag in its basename.
+
+### HEADROOM — THE METHOD AND THE PROTOCOL ARE HERE; THE NUMBERS ARE OWED (discipline 16)
+
+**This section is deliberately incomplete, and the launch step may not skip it.** The protocol, which is the ladder / latency-lever pattern applied verbatim:
+
+1. **BEFORE the scored run, in the SAME session, on the SAME binary**: ONE rep per arm per cell, seed 42, `RWM_CCAND_TAG=ccand-calib`, with `tc -s qdisc show` captured on **EVERY** cell and **EVERY** invocation — not a subset.
+2. `util = tc_bytes × 8 ÷ (TRANSFER seconds × shaped capacity)`. **The denominator is the transfer wall (`seconds`), NEVER `INVOCATION_S`** — the latter is the whole script's wall, runs 1.12–2.11× the transfer, and read c7 at 77.6 % when the cell was at 96.9 %, which would have LICENSED exactly the unsatisfiable target discipline 16 forbids.
+3. The result is committed as **THIS CONTRACT'S COMPLETION, in its own commit, BEFORE the scored battery runs**: headroom ≥ 5 % → throughput targets permitted; **headroom < 5 % → parity / latency / cap-shape only.**
+4. Where the same-session calibration CONTRADICTS a permission, the affected clause is **VOID for that cell and reported as void**, never re-scoped after the fact.
+
+| cell | shaped | prior arm-A util class (Ladder Battery calibration, 2026-08-18) | **headroom, tc-measured this session** | claims permitted |
+|---|---|---|---|---|
+| c1 | 1 Gbit | 76.2 % headroom (util 23.8 %) | *(owed to the calibration commit)* | *(owed)* |
+| c7 | 200 Mbit | 7.2 % headroom (util 92.8 %) | *(owed)* | *(owed)* |
+| c8 | 120 Mbit | 17.3 % headroom (util 82.7 %) | *(owed)* | *(owed)* |
+| c8L | 120 Mbit | 19.2 % headroom (util 80.8 %) | *(owed)* | *(owed)* |
+| sc2 | 100 Mbit | 3.1 % headroom (util 96.9 %) | *(owed)* | *(owed)* |
+
+**AND THE ARITHMETIC THIS FORCES, WHICH IS WHY THE MISSING NUMBERS DO NOT BLOCK THE DESIGN: NO THROUGHPUT TARGET IS WRITTEN AT ANY CELL IN THIS CONTRACT.** Every scored clause above is a dial echo, a bind fraction, a cap magnitude, a false-alarm fraction, a queue-latency sign, a paired sign test, or a no-regression guard. Goodput appears in exactly three places — D-LAT's **PARITY CONDITION** (two-sided, and a *condition* on a latency claim rather than a target), D-LAT's ADR-0071 refutation falsifier, and G-REG — and the latter two are **one-sided DOWNWARD**, hence satisfiable at any utilisation. The parity condition is the one clause a low-headroom cell could distort, and it is scoped to the DUALS (c7 at 7.2 %, c8 at 17.3 %, c8L at 19.2 % in the prior class), never to sc2 at 3.1 %, which is the cell D cannot engage at anyway.
+
+### WHAT THIS CONTRACT CANNOT FIX IN ADVANCE — stated so nothing below is discovered in a results section
+
+1. **The headroom numbers.** Owed to the calibration commit, above. The launch step runs the calibration, commits it as this contract's completion, and only then runs the scored battery.
+2. **Which anchor era the wire will present at c8L.** The two disagree by 1.77× and the disagreement is not even in a consistent direction across cells (c8L 1.77×, c8 1.39×, c7 0.70×). Both are carried in every prediction pin; the ±20 % band is written wide enough to contain the primary era alone, which costs discrimination, and that trade is chosen here rather than discovered later.
+3. **The δ-cap at N = 1.** It does not engage, by construction. **The tree's single strongest CoDel datum (sc2) is therefore out of this law's reach**, and the successor that would reach it — a δ-priced setpoint in the `path_scaled_store_cap` seat — is NAMED and NOT delivered here.
+4. **Whether c8's `[WALL]` statistic resolves under pairing at n = 12/seed.** The DESIGN is fixed in advance; the POWER is not knowable in advance. The NEEDS-MORE close is pre-written for exactly that outcome.
+5. **Whether c8 is a WARM-UP cell.** ADR-0071 finding 2 measures c8 and c8L as the same geometry with term 1 differing by 4.5× at flat delivered rate. `[DCAP]` reports MEANS over engaged refreshes, not a time series, so **this battery cannot settle it**, and every c8 cap number here inherits the caveat. The cheap named test is a WITHIN-run window series at c8L and it needs no VM arm.
+6. **Attribution of any RACK effect between the two SITES.** One expression serves the sender's tail sweep and the receiver's hole refresh, and `[RACK]`'s pooled fractions do not separate them beyond what the client/server log split gives. The bench predicts the two sites diverge sharply (the ceiling is reachable at the receiver at c8 and nowhere at the sender), so a per-site split is OWED and is not delivered by this design.
+7. **`mult` between 1 and 17.** Two points on RACK's own range, not a sweep. The four cells whose sender-side ceiling needs 18–47 are unreachable at any RACK-legal `mult` and no sweep would change that.
+8. **N ≥ 3.** No cell here has more than two paths.
+9. **Nothing here flips a default.** Every deliverable is a RECOMMENDATION with its noise bounds, written so a separate trivial flip commit can cite it — and §16.68.1 pre-registers that **no** RACK arm can earn one.
+
+### THE DRIVERS (committed separately from this block, on the same branch)
+
+`tools/l1/ccand_battery.sh` (per-seed driver + the two-sided liveness gate above), `ccand_all.sh` (both seeds, one detached session, `DONE-ALL` sentinel), `ccand_topup.sh` (the SYMMETRIC top-up over the scored arms), `ccand_calib.sh` (the discipline-16 calibration pass, one rep per arm per cell), `ccand_parse.py` (per-invocation parser) and `ccand_report.py` (the scoring pass, which transcribes the bars above and decides nothing this block did not already fix). **`ccand_parse.py` keeps every column it shares with `ladder_parse.py` BYTE-IDENTICAL** — goodput, the abort rule, the wait histogram, retx, occupancy, `[SF]`, capboot, the ping probe, tc utilisation, the `[WALL]` block, `[SUMCAP]`, `[CCAP]`, `[ACKDIAG]` recon and `pl=` — so numbers pool across sessions without a second dialect, and what is NEW is only `[DCAP]`, `[RACK]` and `[LCW]`. `capbind_check.py` is IMPORTED, not re-implemented. Sentinels only: **never `pgrep -f` a watcher whose own command line contains the driver's name**, and never poll a running battery (measured: 121 RUN-RETRY over 171 polled invocations against 0 over 80 unpolled).
