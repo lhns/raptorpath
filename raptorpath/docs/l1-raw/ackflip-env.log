@@ -1,0 +1,6 @@
+# ackflip ALL 2026-08-08T14:13:59Z
+# binary: fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d  /home/vibe/raptorpath/target/release/raptorpath
+# source: c2bfab7397118cd9bc3dba8a08a6f0ef71e06a14
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+aes avx2 pclmulqdq 
+7.0.14-101.fc43.x86_64

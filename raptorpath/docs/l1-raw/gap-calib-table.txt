@@ -1,0 +1,52 @@
+==============================================================================
+INSTRUMENT AND ABORT TABLE — READ THIS BEFORE ANY NUMBER BELOW
+==============================================================================
+  (none)
+
+==============================================================================
+PER-ARM READINGS — goodput, and the CPU columns item 2's A7 needs
+==============================================================================
+cell-arm   seed  Mbit/s                 ms/MB                cores            pred Mbit/s   
+--------------------------------------------------------------------------------------------
+c1-Oa      42    188.32 (s 0.00, n=1)   47.08 (s 0.00, n=1)  1.108 (s 0.000, n=1) 188.3         
+c1-Oe      42    178.41 (s 0.00, n=1)   50.92 (s 0.00, n=1)  1.136 (s 0.000, n=1) 178.4         
+c1-Op      42    170.33 (s 0.00, n=1)   48.95 (s 0.00, n=1)  1.042 (s 0.000, n=1) 170.3         
+
+==============================================================================
+READING 1 — THE LEVEL: today's `Op` against the two published means
+==============================================================================
+  Op is the flip-era `prior` arm, BYTE-EXACT env, on the SAME binary
+  (sha256 fbd6b279...). A level shift here IS substrate drift.
+
+  s42  Op=170.33 (s 0.00, n=1)  vs flip week 2026-08-08 203.10   d=-32.77 (-16.1 %)  2s_comb=6.01  RESOLVED
+  s42  Op=170.33 (s 0.00, n=1)  vs era week 2026-08-19 175.25   d=-4.92 (-2.8 %)  2s_comb=0.00  RESOLVED  [ref sigma unpublished; today's substituted]
+
+==============================================================================
+READING 2 — THE RATIO: today's `Oa/Op` against the published +12.7/+13.0 %
+==============================================================================
+  A ratio is invariant to a pure level shift, so READING 1 and READING 2
+  are INDEPENDENT and the contract's branch is their 2x2.
+
+  s42  Op=170.33  Oa=188.32  ratio=+10.56 %   2s_pooled(diff)=0.00 Mbit/s (0.00 %)   published=+12.7 %
+        design bar: resolves 5 % (= 8.52 Mbit/s) iff sigma_pooled <= 3.01; realized sigma_pooled = 0.00 -> RESOLVING
+
+==============================================================================
+READING 3 — INSTRUMENT LOAD: `Oe` (the era session's env) against `Op`
+==============================================================================
+  RWM_ACKDIAG and RWM_WALLDIAG name gauges that DO NOT EXIST at 4171b58,
+  so Oe - Op isolates the HARNESS-SIDE RWM_LATPROBE cost.
+
+  s42  Op=170.33  Oe=178.41   d=+8.08 (+4.7 %)   era week's OLD (same env) = 175.25, Oe-vs-era d=+3.16
+
+==============================================================================
+CALIBRATION — n = 1. NOTHING ABOVE OR BELOW IS A RESULT.
+==============================================================================
+  c1-Oa s42: cores=1.108 of 6 -> CPU headroom 81.5 %   ms/MB=47.08   pred=188.3 meas=188.319
+  c1-Oe s42: cores=1.136 of 6 -> CPU headroom 81.1 %   ms/MB=50.92   pred=178.4 meas=178.409
+  c1-Op s42: cores=1.042 of 6 -> CPU headroom 82.6 %   ms/MB=48.95   pred=170.3 meas=170.332
+
+  LINK headroom comes from the -q.txt qdisc captures (discipline 16,
+  TRANSFER wall denominator) and is filled by hand into the contract's
+  table. AT c1 THE LINK PERMISSION HAS NEVER BEEN THE BINDING ONE:
+  ~21 % utilisation of a 1 Gbit pipe. If pred ~= meas above, the cell is
+  SENDER-BOUND and every goodput number in this battery is a CPU number.

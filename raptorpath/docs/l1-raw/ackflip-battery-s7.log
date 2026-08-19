@@ -1,0 +1,1194 @@
+# ackflip BATTERY 2026-08-08T14:32:58Z seed=7 reps=8 scope=all
+# binary: fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d  /home/vibe/raptorpath/target/release/raptorpath
+# source: c2bfab7397118cd9bc3dba8a08a6f0ef71e06a14
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+aes avx2 pclmulqdq 7.0.14-101.fc43.x86_64
+=== rep=1 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:32:58
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":14.2685,"mean_mbps":224.27,"mean_s":14.2685,"median_s":14.2685,"min_s":14.2685,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.43s CPUCLI=14.97s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f58e: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438100671 bytes 346874 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f58f: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f590: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 16418488816995683177  Sent 31177645 bytes 79791 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f591: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 849341254606449861  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=308855 rx=308901 [CTLD] p0 tx=332632 rx=332642 
+MECH win=479/128 paused=1% sidle=5009ms/674/mx19ms cwnd=0 rtt=0.0ms sweeps=16 retx=683 gapdrop=87 mpr[rep=175 seqs=1853 fired=683 y=72 r=611 fast=0 coal=394 supp=1170/0/0 stale=0 plost=0 age=19ms pf=199/279/10000 fp/on p0:683/683] relgap=0ms/mx16ms srel=0/9838 
+MECHMID win=298/550 paused=1% sidle=477ms/63/mx14ms cwnd=246 sweeps=8 gapdrop=9 btlbw=117313 cwnd=539109 
+=== rep=1 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:33:14
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.2748,"mean_mbps":196.623,"mean_s":16.2748,"median_s":16.2748,"min_s":16.2748,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.29s CPUCLI=17.02s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f592: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 439533661 bytes 354347 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f593: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f594: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 3493303218895763075  Sent 53030831 bytes 106757 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f595: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 10168479133247197176  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=610119 rx=314234 [CTLD] p0 tx=650825 rx=334863 
+MECH win=223/499 paused=1% sidle=6644ms/768/mx22ms cwnd=244 rtt=31.3ms sweeps=14 retx=1213 gapdrop=156 mpr[rep=268 seqs=3200 fired=1213 y=125 r=1088 fast=0 coal=746 supp=1987/0/0 stale=0 plost=0 age=42ms pf=218/798/10000 fp/on p0:1213/1213] relgap=1ms/mx20ms srel=0/16398 btlbw=111215 cwnd=848998 
+MECHMID win=187/128 paused=1% sidle=626ms/67/mx18ms cwnd=255 sweeps=0 gapdrop=12 btlbw=115890 cwnd=433441 
+=== rep=2 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:33:33
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":14.2927,"mean_mbps":223.89,"mean_s":14.2927,"median_s":14.2927,"min_s":14.2927,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.89s CPUCLI=15.44s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f596: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438123804 bytes 346982 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f597: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f598: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 11360289730879659174  Sent 31434630 bytes 83383 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f599: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 3738268364408404209  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=309567 rx=309810 [CTLD] p0 tx=332911 rx=333179 
+MECH win=253/537 paused=1% sidle=4942ms/667/mx19ms cwnd=291 rtt=9.7ms sweeps=8 retx=676 gapdrop=90 mpr[rep=172 seqs=1768 fired=676 y=73 r=603 fast=0 coal=448 supp=1092/0/0 stale=0 plost=0 age=20ms pf=228/286/10000 fp/on p0:676/676] relgap=2ms/mx4ms srel=0/11351 btlbw=117730 cwnd=475409 
+MECHMID win=343/128 paused=1% sidle=554ms/71/mx14ms cwnd=0 sweeps=0 gapdrop=15 
+=== rep=2 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:33:49
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.6835,"mean_mbps":204.036,"mean_s":15.6835,"median_s":15.6835,"min_s":15.6835,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.22s CPUCLI=17.60s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f59a: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438471154 bytes 350420 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f59b: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f59c: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9512586279460389152  Sent 53347396 bytes 106800 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f59d: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 18007055625274151199  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=586030 rx=299689 [CTLD] p0 tx=634006 rx=323472 
+MECH win=325/1001 paused=0% sidle=5034ms/579/mx23ms cwnd=509 rtt=12.7ms sweeps=12 retx=715 gapdrop=79 mpr[rep=209 seqs=2108 fired=715 y=152 r=563 fast=0 coal=398 supp=1393/0/0 stale=0 plost=0 age=19ms pf=197/343/10000 fp/on p0:715/715] relgap=0ms/mx3ms srel=0/10721 btlbw=113119 cwnd=508290 
+MECHMID win=278/128 paused=1% sidle=673ms/73/mx19ms cwnd=0 sweeps=3 gapdrop=1 
+=== rep=3 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:34:07
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":13.7853,"mean_mbps":232.132,"mean_s":13.7853,"median_s":13.7853,"min_s":13.7853,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.40s CPUCLI=15.27s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f59e: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438385208 bytes 346570 pkt (dropped 56, overlimits 0 requeues 0)   backlog 100b 1p requeues 0 
+    QDISC cli1: qdisc netem f59f: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 756 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5a0: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8024181330352270056  Sent 31437071 bytes 83692 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5a1: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8141143178666927346  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=295206 rx=295634 [CTLD] p0 tx=321337 rx=321430 
+MECH win=239/547 paused=0% sidle=4180ms/588/mx19ms cwnd=264 rtt=13.1ms sweeps=7 retx=853 gapdrop=111 mpr[rep=188 seqs=2294 fired=853 y=146 r=707 fast=0 coal=521 supp=1441/0/0 stale=0 plost=0 age=23ms pf=234/438/10000 fp/on p0:853/853] relgap=0ms/mx6ms srel=1668/11843 btlbw=117231 cwnd=477746 
+MECHMID win=237/559 paused=1% sidle=522ms/68/mx19ms cwnd=266 sweeps=1 gapdrop=25 btlbw=117353 cwnd=451743 
+=== rep=3 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:34:23
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.1937,"mean_mbps":197.608,"mean_s":16.1937,"median_s":16.1937,"min_s":16.1937,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.02s CPUCLI=16.59s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5a2: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438785003 bytes 354061 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5a3: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5a4: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 17203293505656761776  Sent 53253842 bytes 104048 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5a5: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 5260037156662382393  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=615872 rx=314035 [CTLD] p0 tx=658914 rx=335597 
+MECH win=198/571 paused=1% sidle=7182ms/825/mx19ms cwnd=276 rtt=9.3ms sweeps=8 retx=623 gapdrop=101 mpr[rep=173 seqs=1751 fired=623 y=26 r=597 fast=0 coal=368 supp=1128/0/0 stale=0 plost=0 age=22ms pf=249/165/10000 fp/on p0:623/623] relgap=0ms/mx16ms srel=0/9922 btlbw=112375 cwnd=644086 
+MECHMID win=229/128 paused=1% sidle=685ms/74/mx19ms cwnd=265 sweeps=0 gapdrop=10 btlbw=108954 cwnd=497944 
+=== rep=4 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:34:41
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":13.9859,"mean_mbps":228.801,"mean_s":13.9859,"median_s":13.9859,"min_s":13.9859,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.43s CPUCLI=15.24s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5a6: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438156521 bytes 346208 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5a7: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5a8: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4403497800273629754  Sent 31253128 bytes 81232 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5a9: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8391339724596948094  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=292005 rx=292026 [CTLD] p0 tx=315207 rx=315422 
+MECH win=203/578 paused=1% sidle=4517ms/637/mx27ms cwnd=299 rtt=16.2ms sweeps=6 retx=675 gapdrop=72 mpr[rep=159 seqs=1845 fired=675 y=43 r=632 fast=0 coal=472 supp=1170/0/0 stale=0 plost=0 age=21ms pf=193/300/10000 fp/on p0:675/675] relgap=0ms/mx4ms srel=0/10520 btlbw=117752 cwnd=459695 
+MECHMID win=277/128 paused=1% sidle=399ms/53/mx14ms cwnd=290 sweeps=0 gapdrop=9 btlbw=116846 cwnd=480786 
+=== rep=4 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:34:57
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.1119,"mean_mbps":211.753,"mean_s":15.1119,"median_s":15.1119,"min_s":15.1119,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.30s CPUCLI=16.58s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5aa: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438627773 bytes 350637 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5ab: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5ac: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 10068196718331753711  Sent 52987659 bytes 103158 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5ad: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 12283218440678407359  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=611519 rx=313096 [CTLD] p0 tx=660884 rx=337420 
+MECH win=455/128 paused=0% sidle=5432ms/668/mx22ms cwnd=340 rtt=12.3ms sweeps=8 retx=816 gapdrop=105 mpr[rep=189 seqs=2127 fired=816 y=60 r=756 fast=0 coal=524 supp=1311/0/0 stale=0 plost=0 age=22ms pf=282/320/10000 fp/on p0:816/816] relgap=0ms/mx2ms srel=0/11826 btlbw=113332 cwnd=654996 
+MECHMID win=374/502 paused=1% sidle=646ms/69/mx19ms cwnd=0 sweeps=0 gapdrop=18 
+=== rep=5 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:35:14
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":14.0472,"mean_mbps":227.803,"mean_s":14.0472,"median_s":14.0472,"min_s":14.0472,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.03s CPUCLI=14.74s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5ae: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438462571 bytes 347341 pkt (dropped 57, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5af: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5b0: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4686715775123500010  Sent 31151022 bytes 79553 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5b1: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 11078271583590562788  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=314899 rx=314927 [CTLD] p0 tx=338982 rx=339494 
+MECH win=391/128 paused=1% sidle=5057ms/690/mx22ms cwnd=0 rtt=0.0ms sweeps=17 retx=891 gapdrop=131 mpr[rep=230 seqs=2414 fired=891 y=112 r=779 fast=0 coal=543 supp=1523/0/0 stale=0 plost=0 age=27ms pf=282/345/10000 fp/on p0:891/891] relgap=0ms/mx18ms srel=0/13390 
+MECHMID win=490/550 paused=1% sidle=496ms/66/mx18ms cwnd=0 sweeps=9 gapdrop=13 
+=== rep=5 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:35:31
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.0027,"mean_mbps":199.966,"mean_s":16.0027,"median_s":16.0027,"min_s":16.0027,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.79s CPUCLI=16.56s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5b2: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438821860 bytes 353123 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5b3: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 756 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5b4: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 17858705834882418231  Sent 53085031 bytes 103840 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5b5: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 10216964730503381158  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=580004 rx=296613 [CTLD] p0 tx=625385 rx=319293 
+MECH win=265/128 paused=1% sidle=6658ms/787/mx22ms cwnd=0 rtt=0.0ms sweeps=20 retx=785 gapdrop=93 mpr[rep=177 seqs=1865 fired=785 y=83 r=702 fast=0 coal=482 supp=1080/0/0 stale=0 plost=0 age=28ms pf=203/374/10000 fp/on p0:785/785] relgap=0ms/mx6ms srel=0/11631 
+MECHMID win=145/528 paused=1% sidle=629ms/72/mx17ms cwnd=256 sweeps=9 gapdrop=11 btlbw=112928 cwnd=509048 
+=== rep=6 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:35:49
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":13.7999,"mean_mbps":231.885,"mean_s":13.7999,"median_s":13.7999,"min_s":13.7999,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.37s CPUCLI=15.42s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5b6: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438497710 bytes 346262 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5b7: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5b8: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 1437635639316625187  Sent 31388582 bytes 83171 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5b9: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2845114311198590274  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=297130 rx=297455 [CTLD] p0 tx=320078 rx=320086 
+MECH win=265/531 paused=1% sidle=4091ms/578/mx19ms cwnd=298 rtt=10.0ms sweeps=8 retx=1040 gapdrop=153 mpr[rep=198 seqs=2479 fired=1040 y=85 r=955 fast=0 coal=685 supp=1439/0/0 stale=0 plost=0 age=37ms pf=301/460/10000 fp/on p0:1040/1040] relgap=0ms/mx8ms srel=80/15052 btlbw=117946 cwnd=492859 
+MECHMID win=255/590 paused=1% sidle=562ms/69/mx18ms cwnd=280 sweeps=2 gapdrop=16 btlbw=118475 cwnd=493347 
+=== rep=6 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:36:05
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.6234,"mean_mbps":204.821,"mean_s":15.6234,"median_s":15.6234,"min_s":15.6234,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.40s CPUCLI=16.17s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5ba: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438855830 bytes 353629 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5bb: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5bc: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4293881424683918884  Sent 53034934 bytes 103832 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5bd: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 7642129948745860435  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=597305 rx=305719 [CTLD] p0 tx=640740 rx=327035 
+MECH win=427/128 paused=1% sidle=6487ms/782/mx19ms cwnd=0 rtt=0.0ms sweeps=10 retx=789 gapdrop=134 mpr[rep=178 seqs=1767 fired=789 y=92 r=697 fast=0 coal=484 supp=978/0/0 stale=0 plost=0 age=21ms pf=281/349/10000 fp/on p0:789/789] relgap=0ms/mx6ms srel=0/12381 
+MECHMID win=349/128 paused=1% sidle=533ms/65/mx18ms cwnd=0 sweeps=1 gapdrop=11 
+=== rep=7 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:36:22
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":13.9326,"mean_mbps":229.678,"mean_s":13.9326,"median_s":13.9326,"min_s":13.9326,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.57s CPUCLI=15.52s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5be: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438211864 bytes 346486 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5bf: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5c0: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 508078741543052559  Sent 31383744 bytes 83599 pkt (dropped 0, overlimits 0 requeues 0)   backlog 175b 1p requeues 0 
+    QDISC srv1: qdisc netem f5c1: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 11774230117259137012  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=289482 rx=290080 [CTLD] p0 tx=315890 rx=315985 
+MECH win=193/607 paused=0% sidle=4094ms/590/mx16ms cwnd=273 rtt=15.4ms sweeps=8 retx=767 gapdrop=89 mpr[rep=195 seqs=1966 fired=767 y=57 r=710 fast=0 coal=468 supp=1199/0/0 stale=0 plost=0 age=21ms pf=258/372/10000 fp/on p0:767/767] relgap=0ms/mx5ms srel=0/11500 btlbw=117674 cwnd=497959 
+MECHMID win=244/532 paused=1% sidle=582ms/73/mx14ms cwnd=266 sweeps=0 gapdrop=0 btlbw=115194 cwnd=436125 
+=== rep=7 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:36:38
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.4144,"mean_mbps":194.951,"mean_s":16.4144,"median_s":16.4144,"min_s":16.4144,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.97s CPUCLI=16.33s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5c2: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438742573 bytes 353442 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5c3: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5c4: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 6570781173979783986  Sent 53466733 bytes 105734 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5c5: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 16641213304472424887  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=610060 rx=310453 [CTLD] p0 tx=649766 rx=330630 
+MECH win=277/128 paused=1% sidle=7592ms/839/mx23ms cwnd=278 rtt=12.9ms sweeps=24 retx=667 gapdrop=86 mpr[rep=154 seqs=1456 fired=667 y=92 r=575 fast=0 coal=404 supp=789/0/0 stale=0 plost=0 age=21ms pf=177/264/10000 fp/on p0:667/667] relgap=0ms/mx5ms srel=0/8848 btlbw=108270 cwnd=180788 
+MECHMID win=213/484 paused=1% sidle=581ms/73/mx17ms cwnd=256 sweeps=8 gapdrop=16 btlbw=105574 cwnd=456100 
+=== rep=8 arm=c1-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=400000000 14:36:57
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":14.1362,"mean_mbps":226.368,"mean_s":14.1362,"median_s":14.1362,"min_s":14.1362,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.38s CPUCLI=15.17s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5c6: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438180520 bytes 346827 pkt (dropped 56, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5c7: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5c8: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 1404173464540142933  Sent 31226124 bytes 80394 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5c9: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 541660156087801060  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=313390 rx=313681 [CTLD] p0 tx=336580 rx=336737 
+MECH win=182/532 paused=1% sidle=4960ms/685/mx20ms cwnd=277 rtt=28.5ms sweeps=7 retx=780 gapdrop=94 mpr[rep=170 seqs=1910 fired=780 y=94 r=686 fast=0 coal=503 supp=1130/0/0 stale=0 plost=0 age=18ms pf=241/339/10000 fp/on p0:780/780] relgap=0ms/mx20ms srel=0/11572 btlbw=116400 cwnd=964043 
+MECHMID win=277/128 paused=1% sidle=556ms/69/mx20ms cwnd=293 sweeps=0 gapdrop=28 btlbw=117474 cwnd=560781 
+=== rep=8 arm=c1-prior attempt=1 seed=7 env="" cell=c1/c1/single bytes=400000000 14:37:13
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.6268,"mean_mbps":204.776,"mean_s":15.6268,"median_s":15.6268,"min_s":15.6268,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.74s CPUCLI=16.90s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5ca: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 438515950 bytes 351114 pkt (dropped 58, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5cb: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 846 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5cc: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9425371467289086303  Sent 53091116 bytes 103609 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5cd: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 1635030711114933702  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=589875 rx=301525 [CTLD] p0 tx=635454 rx=324278 
+MECH win=310/823 paused=0% sidle=5638ms/702/mx20ms cwnd=408 rtt=7.4ms sweeps=18 retx=705 gapdrop=64 mpr[rep=197 seqs=1934 fired=705 y=101 r=604 fast=0 coal=441 supp=1229/0/0 stale=0 plost=0 age=20ms pf=203/308/10000 fp/on p0:705/705] relgap=0ms/mx2ms srel=0/10990 btlbw=113736 cwnd=559596 
+MECHMID win=199/505 paused=1% sidle=542ms/71/mx19ms cwnd=245 sweeps=8 gapdrop=9 btlbw=107436 cwnd=651724 
+=== rep=1 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:37:31
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.2183,"mean_mbps":173.568,"mean_s":9.2183,"median_s":9.2183,"min_s":9.2183,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.55s CPUCLI=13.83s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5ce: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111043872 bytes 88749 pkt (dropped 491, overlimits 0 requeues 0)   backlog 590b 1p requeues 0 
+    QDISC cli1: qdisc netem f5cf: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111341783 bytes 89157 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5d0: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2975821527185673798  Sent 11801254 bytes 56279 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5d1: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 3999135949801790256  Sent 11583054 bytes 56228 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=74422 rx=74688 p1 tx=74566 rx=74829 [CTLD] p0 tx=84046 rx=84050 p1 tx=84063 rx=84073 
+MECH win=1257/4096 paused=0% sidle=808ms/138/mx40ms cwnd=1723 rtt=114.5ms sweeps=2 retx=5007 gapdrop=328 mpr[rep=4321 seqs=651010 fired=5007 y=1078 r=3929 fast=728 coal=3919 supp=153698/0/490432 stale=1873 plost=0 age=157ms pf=0/499997/10000 fp/on p0:2608/2459 p1:2399/2548] relgap=0ms/mx4ms srel=4241/165016 btlbw=110250 cwnd=557559 btlbw=101265 cwnd=1991558 
+MECHMID win=2447/4096 paused=0% sidle=93ms/19/mx14ms cwnd=1398 sweeps=1 gapdrop=65 btlbw=81565 cwnd=1687470 btlbw=83319 cwnd=1210777 
+=== rep=1 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:37:43
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=c7-prior attempt=1 (no summary)
+=== rep=1 arm=c7-prior attempt=2 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:37:46
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.3187,"mean_mbps":171.698,"mean_s":9.3187,"median_s":9.3187,"min_s":9.3187,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.46s CPUCLI=13.73s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5d6: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110288142 bytes 88147 pkt (dropped 470, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5d7: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112697852 bytes 90102 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5d8: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2420525161163545945  Sent 10630355 bytes 54913 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5d9: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12840287047628753771  Sent 11342678 bytes 56596 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=79915 rx=75826 p0 tx=77101 rx=74128 [CTLD] p1 tx=90089 rx=85475 p0 tx=87280 rx=83764 
+MECH win=0/4096 paused=0% sidle=1112ms/139/mx89ms cwnd=1965 rtt=19.2ms sweeps=6 retx=5546 gapdrop=556 mpr[rep=4019 seqs=763140 fired=5546 y=1376 r=4170 fast=867 coal=2804 supp=172450/0/584948 stale=196 plost=0 age=157ms pf=0/594736/10000 fp/on p0:2639/2958 p1:2907/2588] relgap=134ms/mx134ms srel=447/167047 btlbw=100292 cwnd=1812968 btlbw=106167 cwnd=12485 
+MECHMID win=1160/4096 paused=0% sidle=138ms/23/mx16ms cwnd=1455 sweeps=1 gapdrop=104 btlbw=70388 cwnd=1143916 btlbw=96525 cwnd=552776 
+=== rep=1 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:37:58
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.8292,"mean_mbps":70.692,"mean_s":2.8292,"median_s":2.8292,"min_s":2.8292,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.13s CPUCLI=2.36s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5da: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24384860 bytes 19176 pkt (dropped 91, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5db: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 5045002 bytes 4382 pkt (dropped 81, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5dc: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17695520363517215069  Sent 2754942 bytes 15096 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5dd: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 17630415833719584038  Sent 683595 bytes 3914 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=8369 rx=8375 p1 tx=1510 rx=1508 [CTLD] p0 tx=18021 rx=18029 p1 tx=3425 rx=3425 
+MECH win=0/4096 paused=0% sidle=1840ms/144/mx196ms cwnd=1783 rtt=297.5ms sweeps=18 retx=1680 gapdrop=218 mpr[rep=774 seqs=52793 fired=1680 y=852 r=828 fast=13 coal=372 supp=37469/0/12942 stale=702 plost=0 age=546ms pf=0/14833/10000 fp/on p0:624/1407 p1:1056/273] relgap=792ms/mx792ms srel=4530/20960 btlbw=17895 cwnd=1141386 btlbw=100500 cwnd=1168463 
+MECHMID win=4077/4096 paused=2% sidle=563ms/77/mx32ms cwnd=1698 sweeps=8 gapdrop=162 btlbw=17895 cwnd=915561 btlbw=100500 cwnd=1563985 
+=== rep=1 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:38:03
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=c8-prior attempt=1 (no summary)
+=== rep=1 arm=c8-prior attempt=2 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:38:06
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.3348,"mean_mbps":85.659,"mean_s":2.3348,"median_s":2.3348,"min_s":2.3348,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.08s CPUCLI=2.06s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5e2: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 25867006 bytes 20380 pkt (dropped 103, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5e3: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 3566849 bytes 3206 pkt (dropped 77, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5e4: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17835508675226359608  Sent 2846483 bytes 16587 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5e5: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 4041201699291174965  Sent 448859 bytes 2923 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=10474 rx=9168 p1 tx=1307 rx=1234 [CTLD] p0 tx=20421 rx=18846 p1 tx=2870 rx=2728 
+MECH win=0/4096 paused=0% sidle=1389ms/138/mx196ms cwnd=1180 rtt=250.9ms sweeps=17 retx=1433 gapdrop=245 mpr[rep=684 seqs=39537 fired=1433 y=793 r=640 fast=9 coal=295 supp=35552/22/2360 stale=170 plost=0 age=357ms pf=0/3670/10000 fp/on p0:616/1160 p1:817/273] relgap=147ms/mx147ms srel=9203/20074 btlbw=15437 cwnd=1961299 btlbw=56327 cwnd=1958531 
+MECHMID win=4053/4096 paused=2% sidle=644ms/86/mx28ms cwnd=959 sweeps=8 gapdrop=212 btlbw=15437 cwnd=1665331 btlbw=42677 cwnd=1950968 
+=== rep=2 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:38:11
+LIVENESS arm=c7-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c7-am rep=2 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=2 arm=c7-am attempt=1 (no summary)
+=== rep=2 arm=c7-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:38:14
+LIVENESS arm=c7-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c7-am rep=2 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=2 arm=c7-am attempt=2 (no summary)
+=== rep=2 arm=c7-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:38:17
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.2124,"mean_mbps":173.679,"mean_s":9.2124,"median_s":9.2124,"min_s":9.2124,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.32s CPUCLI=13.67s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5ee: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110340840 bytes 88500 pkt (dropped 494, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5ef: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112434337 bytes 89672 pkt (dropped 489, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5f0: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4293364438797303962  Sent 11221975 bytes 56636 pkt (dropped 0, overlimits 0 requeues 0)   backlog 2584b 2p requeues 0 
+    QDISC srv1: qdisc netem f5f1: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 10738757333181936013  Sent 11682310 bytes 57719 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=75302 rx=75588 p1 tx=76094 rx=76378 [CTLD] p0 tx=85112 rx=85114 p1 tx=86005 rx=86019 
+MECH win=143/4096 paused=0% sidle=598ms/97/mx26ms cwnd=1636 rtt=132.6ms sweeps=9 retx=5113 gapdrop=367 mpr[rep=3990 seqs=592407 fired=5113 y=1849 r=3264 fast=1023 coal=2183 supp=168202/0/418348 stale=744 plost=0 age=166ms pf=0/427553/10000 fp/on p0:1925/3048 p1:3188/2065] relgap=0ms/mx4ms srel=1700/167609 btlbw=87148 cwnd=3448240 btlbw=103361 cwnd=2255393 
+MECHMID win=2030/4096 paused=0% sidle=77ms/14/mx13ms cwnd=1301 sweeps=0 gapdrop=76 btlbw=68878 cwnd=2048833 btlbw=84482 cwnd=1209269 
+=== rep=2 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:38:29
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1859,"mean_mbps":174.181,"mean_s":9.1859,"median_s":9.1859,"min_s":9.1859,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.55s CPUCLI=13.86s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5f2: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111378157 bytes 89414 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5f3: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111091392 bytes 88856 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5f4: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 7740411917351386416  Sent 11852556 bytes 56394 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5f5: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4191660226138838163  Sent 11299442 bytes 55401 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=79601 rx=74914 p0 tx=80716 rx=74973 [CTLD] p1 tx=89648 rx=84302 p0 tx=90680 rx=84339 
+MECH win=1338/4096 paused=0% sidle=693ms/128/mx21ms cwnd=1843 rtt=89.8ms sweeps=4 retx=5099 gapdrop=408 mpr[rep=4641 seqs=946658 fired=5099 y=1037 r=4062 fast=778 coal=4789 supp=160039/0/780996 stale=524 plost=0 age=142ms pf=0/790484/10000 fp/on p0:2518/2466 p1:2581/2633] relgap=2ms/mx5ms srel=2532/162180 btlbw=104883 cwnd=1178331 btlbw=93793 cwnd=542304 
+MECHMID win=152/4096 paused=0% sidle=106ms/19/mx12ms cwnd=1710 sweeps=0 gapdrop=89 btlbw=97456 cwnd=1497806 btlbw=84342 cwnd=1458001 
+=== rep=2 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:38:41
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.4007,"mean_mbps":83.308,"mean_s":2.4007,"median_s":2.4007,"min_s":2.4007,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.15s CPUCLI=2.13s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5f6: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 23780943 bytes 18630 pkt (dropped 87, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5f7: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 5588718 bytes 4789 pkt (dropped 89, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5f8: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17772248714501484696  Sent 2652925 bytes 14742 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5f9: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 17607891870148117240  Sent 733044 bytes 4377 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p1 tx=1593 rx=1593 p0 tx=8312 rx=8315 [CTLD] p1 tx=3522 rx=3520 p0 tx=17962 rx=17964 
+MECH win=0/4096 paused=0% sidle=1344ms/107/mx271ms cwnd=1418 rtt=678.5ms sweeps=17 retx=1657 gapdrop=282 mpr[rep=710 seqs=64761 fired=1657 y=1068 r=589 fast=10 coal=428 supp=55079/0/7440 stale=585 plost=0 age=374ms pf=0/8885/10000 fp/on p0:627/1244 p1:1030/413] relgap=266ms/mx266ms srel=11934/20380 btlbw=12503 cwnd=1065166 btlbw=93933 cwnd=1523632 
+MECHMID win=3731/3731 paused=3% sidle=576ms/83/mx29ms cwnd=902 sweeps=9 gapdrop=275 btlbw=12503 cwnd=874562 btlbw=38211 cwnd=1486149 
+=== rep=2 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:38:46
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.8702,"mean_mbps":69.681,"mean_s":2.8702,"median_s":2.8702,"min_s":2.8702,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.07s CPUCLI=2.41s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5fa: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 25227299 bytes 19777 pkt (dropped 99, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5fb: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4254481 bytes 3628 pkt (dropped 71, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f5fc: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2166585063178681791  Sent 2756862 bytes 15934 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f5fd: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 5320281751313258919  Sent 581845 bytes 3427 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=1844 rx=1703 p0 tx=8792 rx=8295 [CTLD] p1 tx=3550 rx=3278 p0 tx=18737 rx=17965 
+MECH win=0/4096 paused=0% sidle=1603ms/161/mx175ms cwnd=1303 rtt=298.6ms sweeps=21 retx=1699 gapdrop=236 mpr[rep=667 seqs=45477 fired=1699 y=930 r=769 fast=23 coal=287 supp=39388/0/3901 stale=489 plost=0 age=584ms pf=0/5735/10000 fp/on p0:612/1409 p1:1087/290] relgap=569ms/mx569ms srel=3931/20907 btlbw=14501 cwnd=1378228 btlbw=61812 cwnd=1030636 
+MECHMID win=4065/4096 paused=3% sidle=502ms/89/mx30ms cwnd=1156 sweeps=12 gapdrop=156 btlbw=14045 cwnd=1116044 btlbw=51513 cwnd=1294795 
+=== rep=3 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:38:52
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1067,"mean_mbps":175.695,"mean_s":9.1067,"median_s":9.1067,"min_s":9.1067,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.32s CPUCLI=13.56s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f5fe: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111067064 bytes 88124 pkt (dropped 474, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f5ff: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111111415 bytes 88612 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f600: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 18402405973499028777  Sent 11653672 bytes 55953 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f601: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 6414477263226960434  Sent 11389880 bytes 56444 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=75986 rx=76280 p1 tx=75978 rx=76281 [CTLD] p0 tx=85690 rx=85688 p1 tx=85646 rx=85647 
+MECH win=10/4096 paused=0% sidle=715ms/103/mx40ms cwnd=1897 rtt=136.5ms sweeps=5 retx=5032 gapdrop=337 mpr[rep=4055 seqs=640273 fired=5032 y=1463 r=3569 fast=1081 coal=2395 supp=174455/0/459845 stale=941 plost=0 age=141ms pf=0/469445/10000 fp/on p0:2398/2625 p1:2634/2407] relgap=0ms/mx3ms srel=2654/168425 btlbw=92815 cwnd=1600979 btlbw=111397 cwnd=1380554 
+MECHMID win=2212/4096 paused=0% sidle=71ms/12/mx17ms cwnd=1461 sweeps=1 gapdrop=87 btlbw=84262 cwnd=1700576 btlbw=90207 cwnd=1305161 
+=== rep=3 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:39:04
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=3 arm=c7-prior attempt=1 (no summary)
+=== rep=3 arm=c7-prior attempt=2 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:39:07
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=3 arm=c7-prior attempt=2 (no summary)
+=== rep=3 arm=c7-prior attempt=3 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:39:09
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.2464,"mean_mbps":173.04,"mean_s":9.2464,"median_s":9.2464,"min_s":9.2464,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.50s CPUCLI=13.79s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f60a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 113923108 bytes 91845 pkt (dropped 526, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f60b: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 109495918 bytes 87052 pkt (dropped 453, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f60c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12230398309548636818  Sent 11871522 bytes 60613 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f60d: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 11245888101027079538  Sent 11197713 bytes 57768 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=80512 rx=75888 p1 tx=77760 rx=73228 [CTLD] p0 tx=90390 rx=85524 p1 tx=87528 rx=82712 
+MECH win=0/4096 paused=0% sidle=807ms/129/mx91ms cwnd=1440 rtt=104.1ms sweeps=5 retx=5656 gapdrop=455 mpr[rep=4323 seqs=655551 fired=5656 y=1774 r=3882 fast=868 coal=3748 supp=175042/0/474636 stale=217 plost=0 age=157ms pf=0/484045/10000 fp/on p0:2851/2764 p1:2805/2892] relgap=15ms/mx15ms srel=457/166584 btlbw=103994 cwnd=2311876 btlbw=89271 cwnd=1325004 
+MECHMID win=1691/4096 paused=0% sidle=127ms/24/mx11ms cwnd=1131 sweeps=4 gapdrop=86 btlbw=81681 cwnd=2307135 btlbw=59244 cwnd=1144729 
+=== rep=3 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:39:23
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.8402,"mean_mbps":70.417,"mean_s":2.8402,"median_s":2.8402,"min_s":2.8402,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.04s CPUCLI=2.07s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f60e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 23163618 bytes 18118 pkt (dropped 85, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f60f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 5696651 bytes 4883 pkt (dropped 95, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f610: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2403707492973662422  Sent 2583896 bytes 14218 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f611: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 16712346056172693061  Sent 803403 bytes 4389 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=8972 rx=8982 p1 tx=1150 rx=1144 [CTLD] p0 tx=17810 rx=17810 p1 tx=3073 rx=3080 
+MECH win=0/4096 paused=0% sidle=2025ms/126/mx255ms cwnd=1747 rtt=1060.1ms sweeps=25 retx=1322 gapdrop=225 mpr[rep=887 seqs=98126 fired=1322 y=450 r=872 fast=98 coal=630 supp=72672/0/23028 stale=1104 plost=0 age=374ms pf=0/24339/10000 fp/on p0:658/910 p1:664/412] relgap=947ms/mx947ms srel=374/20277 btlbw=28385 cwnd=1161538 btlbw=84652 cwnd=1329874 
+MECHMID win=3329/4096 paused=1% sidle=645ms/94/mx24ms cwnd=1225 sweeps=10 gapdrop=208 btlbw=14480 cwnd=1080059 btlbw=84652 cwnd=1130262 
+=== rep=3 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:39:30
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.6132,"mean_mbps":76.534,"mean_s":2.6132,"median_s":2.6132,"min_s":2.6132,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.08s CPUCLI=2.13s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f612: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24236942 bytes 18978 pkt (dropped 91, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f613: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4490426 bytes 4147 pkt (dropped 95, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f614: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12013049419734898365  Sent 2549420 bytes 15304 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f615: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 14341202967963295962  Sent 582871 bytes 3649 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=1799 rx=1650 p0 tx=8421 rx=8070 [CTLD] p1 tx=3422 rx=3211 p0 tx=18350 rx=17731 
+MECH win=0/4096 paused=0% sidle=1598ms/140/mx108ms cwnd=1086 rtt=367.1ms sweeps=21 retx=1252 gapdrop=106 mpr[rep=711 seqs=60668 fired=1252 y=529 r=723 fast=44 coal=98 supp=51546/0/7649 stale=221 plost=0 age=457ms pf=0/9292/10000 fp/on p0:569/724 p1:683/528] relgap=473ms/mx473ms srel=8691/21089 btlbw=13858 cwnd=1706128 btlbw=74637 cwnd=1783065 
+MECHMID win=3936/4096 paused=3% sidle=523ms/78/mx48ms cwnd=1006 sweeps=10 gapdrop=88 btlbw=13858 cwnd=1702804 btlbw=74637 cwnd=1397932 
+=== rep=4 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:39:37
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1563,"mean_mbps":174.743,"mean_s":9.1563,"median_s":9.1563,"min_s":9.1563,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.36s CPUCLI=13.53s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f616: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110355415 bytes 88312 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f617: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112552193 bytes 90985 pkt (dropped 503, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f618: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17685809507137563442  Sent 11703855 bytes 57340 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f619: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17198566117366579842  Sent 12004941 bytes 59111 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p1 tx=75666 rx=75898 p0 tx=74840 rx=74976 [CTLD] p1 tx=85537 rx=85539 p0 tx=84359 rx=84365 
+MECH win=1136/4096 paused=0% sidle=894ms/137/mx51ms cwnd=1601 rtt=176.1ms sweeps=7 retx=5029 gapdrop=637 mpr[rep=4202 seqs=757052 fired=5029 y=1373 r=3656 fast=718 coal=3647 supp=140127/0/610441 stale=1455 plost=0 age=157ms pf=0/618705/10000 fp/on p0:2331/2742 p1:2698/2287] relgap=0ms/mx4ms srel=4910/164809 btlbw=108171 cwnd=1868504 btlbw=98667 cwnd=2615717 
+MECHMID win=1662/4096 paused=0% sidle=199ms/26/mx51ms cwnd=1716 sweeps=1 gapdrop=81 btlbw=73422 cwnd=587948 btlbw=96525 cwnd=1646601 
+=== rep=4 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:39:48
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=4 arm=c7-prior attempt=1 (no summary)
+=== rep=4 arm=c7-prior attempt=2 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:39:51
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.3068,"mean_mbps":171.918,"mean_s":9.3068,"median_s":9.3068,"min_s":9.3068,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.62s CPUCLI=13.91s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f61e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 109364878 bytes 88139 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f61f: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112814642 bytes 90168 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f620: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4829641594304552158  Sent 11518676 bytes 55085 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f621: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12105290153594932216  Sent 12080388 bytes 57128 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=79048 rx=73575 p1 tx=81230 rx=74674 [CTLD] p0 tx=88363 rx=82539 p1 tx=91239 rx=84193 
+MECH win=0/4096 paused=0% sidle=875ms/120/mx45ms cwnd=1491 rtt=157.7ms sweeps=5 retx=4723 gapdrop=317 mpr[rep=4800 seqs=958681 fired=4723 y=1015 r=3708 fast=711 coal=5654 supp=146031/0/807314 stale=613 plost=0 age=135ms pf=0/815993/10000 fp/on p0:2170/2420 p1:2553/2303] relgap=98ms/mx98ms srel=1869/164706 btlbw=106389 cwnd=1861405 btlbw=91383 cwnd=1668131 
+MECHMID win=2044/4096 paused=0% sidle=89ms/18/mx11ms cwnd=1245 sweeps=1 gapdrop=70 btlbw=71910 cwnd=952517 btlbw=61324 cwnd=1911266 
+=== rep=4 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:40:03
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.5733,"mean_mbps":77.721,"mean_s":2.5733,"median_s":2.5733,"min_s":2.5733,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.13s CPUCLI=1.81s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f622: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 26770673 bytes 21117 pkt (dropped 121, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f623: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 3711886 bytes 3241 pkt (dropped 66, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f624: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 14317740409450644843  Sent 2854494 bytes 16334 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f625: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 6808270101558439438  Sent 458742 bytes 2844 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=8943 rx=8951 p1 tx=49 rx=49 [CTLD] p0 tx=18581 rx=18640 p1 tx=1872 rx=1877 
+MECH win=0/4096 paused=0% sidle=1867ms/170/mx202ms cwnd=1489 rtt=467.7ms sweeps=18 retx=2090 gapdrop=477 mpr[rep=680 seqs=45053 fired=2090 y=913 r=1177 fast=43 coal=682 supp=26801/0/16051 stale=111 plost=0 age=285ms pf=0/17416/10000 fp/on p0:1224/1787 p1:866/303] relgap=373ms/mx373ms srel=4963/18942 btlbw=13704 cwnd=2498302 btlbw=60021 cwnd=2067252 
+MECHMID win=2819/2819 paused=3% sidle=824ms/92/mx28ms cwnd=599 sweeps=5 gapdrop=341 btlbw=56186 cwnd=2100789 
+=== rep=4 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:40:08
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=4 arm=c8-prior attempt=1 (no summary)
+=== rep=4 arm=c8-prior attempt=2 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:40:11
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.7677,"mean_mbps":72.263,"mean_s":2.7677,"median_s":2.7677,"min_s":2.7677,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.08s CPUCLI=2.22s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f62a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24044711 bytes 18880 pkt (dropped 87, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f62b: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4845815 bytes 4312 pkt (dropped 85, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f62c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1436123563162906966  Sent 2594097 bytes 14996 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f62d: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 533293738627937104  Sent 612990 bytes 3856 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=9636 rx=8990 p1 tx=1783 rx=1661 [CTLD] p0 tx=19147 rx=18146 p1 tx=3803 rx=3604 
+MECH win=0/4096 paused=0% sidle=1611ms/127/mx119ms cwnd=1908 rtt=463.5ms sweeps=22 retx=1169 gapdrop=156 mpr[rep=810 seqs=59973 fired=1169 y=602 r=567 fast=31 coal=271 supp=52421/0/6021 stale=362 plost=0 age=532ms pf=0/7577/10000 fp/on p0:459/997 p1:710/172] relgap=666ms/mx666ms srel=7047/20773 btlbw=113887 cwnd=910013 btlbw=15755 cwnd=4043916 
+MECHMID win=4096/4096 paused=3% sidle=373ms/73/mx15ms cwnd=1240 sweeps=11 gapdrop=123 btlbw=67228 cwnd=1789243 btlbw=15755 cwnd=2086356 
+=== rep=5 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:40:16
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.3818,"mean_mbps":170.544,"mean_s":9.3818,"median_s":9.3818,"min_s":9.3818,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.57s CPUCLI=13.99s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f62e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112341895 bytes 89899 pkt (dropped 474, overlimits 0 requeues 0)   backlog 200b 2p requeues 0 
+    QDISC cli1: qdisc netem f62f: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111313954 bytes 88956 pkt (dropped 468, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f630: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2906207911939544805  Sent 12284833 bytes 57920 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f631: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4034113728003051022  Sent 11704476 bytes 57265 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=74451 rx=74731 p1 tx=73738 rx=74038 [CTLD] p0 tx=84288 rx=84298 p1 tx=83355 rx=83365 
+MECH win=0/4096 paused=0% sidle=1014ms/136/mx76ms cwnd=1977 rtt=169.1ms sweeps=6 retx=5591 gapdrop=416 mpr[rep=4341 seqs=733319 fired=5591 y=1506 r=4085 fast=679 coal=4051 supp=145682/0/579024 stale=3022 plost=0 age=173ms pf=0/588395/10000 fp/on p0:2826/2764 p1:2765/2827] relgap=14ms/mx14ms srel=7488/166457 btlbw=96122 cwnd=2467032 btlbw=101922 cwnd=2191729 
+MECHMID win=1351/4096 paused=0% sidle=109ms/18/mx13ms cwnd=1782 sweeps=2 gapdrop=79 btlbw=84545 cwnd=1188236 btlbw=96029 cwnd=992287 
+=== rep=5 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:40:30
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.0933,"mean_mbps":175.953,"mean_s":9.0933,"median_s":9.0933,"min_s":9.0933,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.46s CPUCLI=13.74s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f632: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112733231 bytes 90752 pkt (dropped 522, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f633: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110284454 bytes 87923 pkt (dropped 484, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f634: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12134537106940998698  Sent 11197986 bytes 57690 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f635: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4261916897427757166  Sent 11144423 bytes 56568 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=80063 rx=76400 p1 tx=78130 rx=74612 [CTLD] p0 tx=90072 rx=85957 p1 tx=88403 rx=84256 
+MECH win=814/4096 paused=0% sidle=662ms/116/mx37ms cwnd=1451 rtt=131.8ms sweeps=5 retx=5470 gapdrop=296 mpr[rep=4366 seqs=673408 fired=5470 y=1505 r=3965 fast=1134 coal=2990 supp=192910/0/474626 stale=402 plost=0 age=150ms pf=0/484413/10000 fp/on p0:2802/2663 p1:2668/2807] relgap=0ms/mx3ms srel=2792/166880 btlbw=101771 cwnd=2108069 btlbw=98928 cwnd=582213 
+MECHMID win=2534/4096 paused=0% sidle=81ms/14/mx11ms cwnd=937 sweeps=2 gapdrop=62 btlbw=59768 cwnd=1294342 btlbw=78950 cwnd=1453939 
+=== rep=5 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:40:42
+LIVENESS arm=c8-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c8-am rep=5 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=5 arm=c8-am attempt=1 (no summary)
+=== rep=5 arm=c8-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:40:45
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.3614,"mean_mbps":84.697,"mean_s":2.3614,"median_s":2.3614,"min_s":2.3614,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.06s CPUCLI=2.07s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f63a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24680537 bytes 19353 pkt (dropped 87, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f63b: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4162510 bytes 3691 pkt (dropped 80, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f63c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1031694939462703423  Sent 2708399 bytes 15128 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f63d: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 6253843121864632394  Sent 527181 bytes 3289 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p1 tx=1648 rx=1648 p0 tx=8885 rx=8893 [CTLD] p1 tx=3187 rx=3186 p0 tx=18534 rx=18538 
+MECH win=0/4096 paused=0% sidle=1216ms/130/mx118ms cwnd=1364 rtt=229.2ms sweeps=18 retx=1080 gapdrop=125 mpr[rep=746 seqs=55093 fired=1080 y=546 r=534 fast=99 coal=147 supp=50512/0/3336 stale=165 plost=0 age=352ms pf=0/4768/10000 fp/on p0:431/900 p1:649/180] relgap=250ms/mx250ms srel=7512/20837 btlbw=16613 cwnd=1575615 btlbw=70555 cwnd=1746886 
+MECHMID win=4076/4096 paused=3% sidle=470ms/86/mx21ms cwnd=1169 sweeps=9 gapdrop=106 btlbw=15168 cwnd=1702046 btlbw=62943 cwnd=1788809 
+=== rep=5 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:40:51
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.4136,"mean_mbps":82.865,"mean_s":2.4136,"median_s":2.4136,"min_s":2.4136,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.02s CPUCLI=2.22s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f63e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24420613 bytes 19195 pkt (dropped 91, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f63f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4199337 bytes 3622 pkt (dropped 77, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f640: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1211866680229048162  Sent 2652714 bytes 15148 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f641: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 13223637428229695378  Sent 545639 bytes 3379 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=1753 rx=1635 p0 tx=9611 rx=9032 [CTLD] p1 tx=3425 rx=3216 p0 tx=19390 rx=18484 
+MECH win=0/4096 paused=0% sidle=1291ms/128/mx106ms cwnd=1302 rtt=51.9ms sweeps=18 retx=1075 gapdrop=76 mpr[rep=758 seqs=56512 fired=1075 y=478 r=597 fast=10 coal=270 supp=47489/0/7589 stale=359 plost=0 age=456ms pf=0/8972/10000 fp/on p0:514/821 p1:561/254] relgap=292ms/mx292ms srel=4509/20728 btlbw=15369 cwnd=1239212 btlbw=83604 cwnd=1391752 
+MECHMID win=4096/4096 paused=3% sidle=444ms/72/mx23ms cwnd=1212 sweeps=11 gapdrop=31 btlbw=15369 cwnd=1183523 btlbw=83604 cwnd=1453308 
+=== rep=6 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:40:58
+LIVENESS arm=c7-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c7-am rep=6 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=6 arm=c7-am attempt=1 (no summary)
+=== rep=6 arm=c7-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:41:01
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.4205,"mean_mbps":169.841,"mean_s":9.4205,"median_s":9.4205,"min_s":9.4205,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.66s CPUCLI=14.07s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f646: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112398838 bytes 90571 pkt (dropped 492, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f647: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110167647 bytes 87055 pkt (dropped 416, overlimits 0 requeues 0)   backlog 590b 1p requeues 0 
+    QDISC srv0: qdisc netem f648: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1540877660404906383  Sent 12096119 bytes 57735 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f649: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 13870740496819606241  Sent 11831789 bytes 55994 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=72954 rx=73216 p1 tx=71997 rx=72247 [CTLD] p0 tx=82844 rx=82854 p1 tx=81638 rx=81640 
+MECH win=1157/4096 paused=0% sidle=891ms/135/mx34ms cwnd=1708 rtt=158.0ms sweeps=5 retx=5007 gapdrop=359 mpr[rep=4575 seqs=851390 fired=5007 y=1014 r=3993 fast=488 coal=4952 supp=132988/0/711095 stale=2300 plost=0 age=189ms pf=0/720106/10000 fp/on p0:2462/2591 p1:2545/2416] relgap=2ms/mx7ms srel=2902/162990 btlbw=97137 cwnd=1238715 btlbw=101119 cwnd=876406 
+MECHMID win=3369/4096 paused=0% sidle=115ms/17/mx17ms cwnd=960 sweeps=2 gapdrop=94 btlbw=97137 cwnd=1720794 
+=== rep=6 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:41:12
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=6 arm=c7-prior attempt=1 (no summary)
+=== rep=6 arm=c7-prior attempt=2 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:41:15
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1579,"mean_mbps":174.713,"mean_s":9.1579,"median_s":9.1579,"min_s":9.1579,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.48s CPUCLI=13.71s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f64e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111183529 bytes 88799 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f64f: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110788124 bytes 88538 pkt (dropped 481, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f650: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 16518948512292604768  Sent 11033997 bytes 56489 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f651: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2844143530969813169  Sent 11001821 bytes 56348 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=78169 rx=74347 p0 tx=78400 rx=74773 [CTLD] p1 tx=88065 rx=83951 p0 tx=88086 rx=84195 
+MECH win=1690/4096 paused=0% sidle=808ms/123/mx42ms cwnd=1916 rtt=149.5ms sweeps=2 retx=4681 gapdrop=331 mpr[rep=4137 seqs=680776 fired=4681 y=929 r=3752 fast=820 coal=2774 supp=166642/0/509198 stale=255 plost=0 age=168ms pf=0/518212/10000 fp/on p0:2444/2197 p1:2237/2484] relgap=0ms/mx4ms srel=4197/166092 btlbw=96291 cwnd=1882897 btlbw=98673 cwnd=1987363 
+MECHMID win=3631/4096 paused=0% sidle=123ms/23/mx15ms cwnd=1799 sweeps=1 gapdrop=65 btlbw=83976 cwnd=1410005 btlbw=92267 cwnd=1656877 
+=== rep=6 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:41:29
+LIVENESS arm=c8-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c8-am rep=6 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=6 arm=c8-am attempt=1 (no summary)
+=== rep=6 arm=c8-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:41:32
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.8333,"mean_mbps":70.589,"mean_s":2.8333,"median_s":2.8333,"min_s":2.8333,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.03s CPUCLI=2.24s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f656: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24423883 bytes 19042 pkt (dropped 86, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f657: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4516337 bytes 3951 pkt (dropped 80, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f658: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 11054359340550441466  Sent 2664260 bytes 14816 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f659: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 12425240230823310598  Sent 616021 bytes 3663 pkt (dropped 0, overlimits 0 requeues 0)   backlog 2584b 2p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=8792 rx=8795 p1 tx=1679 rx=1680 [CTLD] p0 tx=18433 rx=18437 p1 tx=3138 rx=3136 
+MECH win=0/4096 paused=0% sidle=1793ms/130/mx131ms cwnd=1247 rtt=353.8ms sweeps=21 retx=1346 gapdrop=104 mpr[rep=758 seqs=52459 fired=1346 y=717 r=629 fast=12 coal=177 supp=40689/4/10140 stale=280 plost=0 age=575ms pf=0/11708/10000 fp/on p0:632/823 p1:714/523] relgap=792ms/mx792ms srel=1337/21120 btlbw=66419 cwnd=1351277 btlbw=15352 cwnd=1228335 
+MECHMID win=3940/4096 paused=4% sidle=416ms/63/mx49ms cwnd=1010 sweeps=9 gapdrop=61 btlbw=62630 cwnd=1343137 btlbw=12056 cwnd=1354672 
+=== rep=6 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:41:37
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=6 arm=c8-prior attempt=1 (no summary)
+=== rep=6 arm=c8-prior attempt=2 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:41:40
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=6 arm=c8-prior attempt=2 (no summary)
+=== rep=6 arm=c8-prior attempt=3 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:41:43
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.1672,"mean_mbps":92.283,"mean_s":2.1672,"median_s":2.1672,"min_s":2.1672,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.06s CPUCLI=2.17s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f662: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 25115507 bytes 19652 pkt (dropped 91, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f663: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4527358 bytes 4018 pkt (dropped 80, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f664: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 3535577212536823214  Sent 2726002 bytes 15625 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f665: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 12216121613042480164  Sent 557947 bytes 3553 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=1656 rx=1582 p0 tx=9558 rx=8946 [CTLD] p1 tx=3652 rx=3463 p0 tx=19574 rx=18591 
+MECH win=322/4096 paused=0% sidle=1013ms/128/mx76ms cwnd=1206 rtt=402.5ms sweeps=17 retx=1666 gapdrop=159 mpr[rep=750 seqs=87668 fired=1666 y=1054 r=612 fast=21 coal=219 supp=63263/0/22454 stale=285 plost=0 age=377ms pf=0/24006/10000 fp/on p0:541/1332 p1:1125/334] relgap=0ms/mx21ms srel=7980/20424 btlbw=14989 cwnd=2192220 btlbw=44520 cwnd=1559341 
+MECHMID win=4088/4096 paused=3% sidle=496ms/82/mx22ms cwnd=1334 sweeps=10 gapdrop=148 btlbw=13752 cwnd=1630441 btlbw=44520 cwnd=1556231 
+=== rep=7 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:41:48
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.2609,"mean_mbps":172.769,"mean_s":9.2609,"median_s":9.2609,"min_s":9.2609,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.67s CPUCLI=13.84s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f666: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112557380 bytes 90961 pkt (dropped 492, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f667: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111788115 bytes 90963 pkt (dropped 508, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f668: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17999391576621299224  Sent 11816005 bytes 56028 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f669: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 8946496612790435698  Sent 11912077 bytes 55597 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p1 tx=74405 rx=74547 p0 tx=75781 rx=76063 [CTLD] p1 tx=84131 rx=84139 p0 tx=85117 rx=85117 
+MECH win=1736/4096 paused=0% sidle=746ms/123/mx28ms cwnd=1845 rtt=136.7ms sweeps=6 retx=6357 gapdrop=627 mpr[rep=4148 seqs=692565 fired=6357 y=1913 r=4444 fast=912 coal=4215 supp=155020/0/528968 stale=2220 plost=0 age=150ms pf=0/538901/10000 fp/on p0:3305/2973 p1:3052/3384] relgap=0ms/mx6ms srel=2940/163961 btlbw=106364 cwnd=1816389 btlbw=96799 cwnd=2265667 
+MECHMID win=2347/4096 paused=0% sidle=60ms/11/mx13ms cwnd=1529 sweeps=1 gapdrop=58 btlbw=90546 cwnd=6092209 btlbw=93534 cwnd=11710323 
+=== rep=7 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:42:00
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.3666,"mean_mbps":170.819,"mean_s":9.3666,"median_s":9.3666,"min_s":9.3666,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.66s CPUCLI=13.88s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f66a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112904919 bytes 91584 pkt (dropped 544, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f66b: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110805375 bytes 89174 pkt (dropped 513, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f66c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12066170804824565765  Sent 11769875 bytes 57804 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f66d: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2503581631274406110  Sent 11663127 bytes 56814 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=80779 rx=76374 p1 tx=79389 rx=75409 [CTLD] p0 tx=91376 rx=85624 p1 tx=89959 rx=84520 
+MECH win=0/4096 paused=0% sidle=816ms/105/mx101ms cwnd=1545 rtt=82.1ms sweeps=8 retx=5710 gapdrop=654 mpr[rep=4519 seqs=784459 fired=5710 y=1763 r=3947 fast=1034 coal=4392 supp=172343/4/606299 stale=103 plost=0 age=129ms pf=0/616017/10000 fp/on p0:3206/2475 p1:2504/3235] relgap=181ms/mx181ms srel=257/164712 btlbw=83987 cwnd=3021282 btlbw=89336 cwnd=1905742 
+MECHMID win=871/4096 paused=0% sidle=74ms/15/mx15ms cwnd=1286 sweeps=1 gapdrop=94 btlbw=79388 cwnd=11641885 btlbw=62372 cwnd=1579379 
+=== rep=7 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:42:12
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.4503,"mean_mbps":81.621,"mean_s":2.4503,"median_s":2.4503,"min_s":2.4503,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.05s CPUCLI=2.14s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f66e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 24921077 bytes 19506 pkt (dropped 87, overlimits 0 requeues 0)   backlog 590b 1p requeues 0 
+    QDISC cli1: qdisc netem f66f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 4337326 bytes 3818 pkt (dropped 80, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f670: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12516829388967603828  Sent 2764425 bytes 15268 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f671: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7699745489179117260  Sent 544333 bytes 3429 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=8952 rx=8959 p1 tx=1557 rx=1555 [CTLD] p0 tx=18593 rx=18601 p1 tx=3317 rx=3317 
+MECH win=0/4096 paused=0% sidle=1363ms/148/mx261ms cwnd=1227 rtt=117.9ms sweeps=17 retx=1468 gapdrop=159 mpr[rep=724 seqs=47287 fired=1468 y=869 r=599 fast=9 coal=220 supp=40908/0/4772 stale=139 plost=0 age=429ms pf=0/6283/10000 fp/on p0:580/1255 p1:888/213] relgap=256ms/mx256ms srel=6204/20490 btlbw=18006 cwnd=1469252 btlbw=50496 cwnd=5808 
+MECHMID win=4087/4096 paused=4% sidle=480ms/87/mx25ms cwnd=1144 sweeps=8 gapdrop=120 btlbw=18006 cwnd=1469252 btlbw=50496 cwnd=1649022 
+=== rep=7 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:42:18
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.7577,"mean_mbps":72.523,"mean_s":2.7577,"median_s":2.7577,"min_s":2.7577,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.19s CPUCLI=2.38s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f672: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 22755392 bytes 17826 pkt (dropped 82, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f673: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 6239207 bytes 5419 pkt (dropped 85, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f674: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1865374975076608272  Sent 2401596 bytes 14255 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f675: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 17367518712555389276  Sent 896151 bytes 4710 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p1 tx=2244 rx=1706 p0 tx=8697 rx=8344 [CTLD] p1 tx=4152 rx=3532 p0 tx=17881 rx=17223 
+MECH win=0/4096 paused=0% sidle=1607ms/128/mx130ms cwnd=1666 rtt=1196.0ms sweeps=20 retx=1294 gapdrop=238 mpr[rep=678 seqs=43679 fired=1294 y=591 r=703 fast=27 coal=322 supp=28812/0/12035 stale=1538 plost=0 age=429ms pf=0/13301/10000 fp/on p0:660/956 p1:634/338] relgap=683ms/mx683ms srel=17500/20957 btlbw=99737 cwnd=1509332 btlbw=15893 cwnd=1488699 
+MECHMID win=3457/4096 paused=5% sidle=597ms/75/mx23ms cwnd=1487 sweeps=8 gapdrop=207 btlbw=99737 cwnd=1212188 btlbw=15893 cwnd=1052100 
+=== rep=8 arm=c7-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/dual bytes=200000000 14:42:24
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1558,"mean_mbps":174.752,"mean_s":9.1558,"median_s":9.1558,"min_s":9.1558,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.69s CPUCLI=13.82s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f676: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111008010 bytes 90041 pkt (dropped 495, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f677: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111006546 bytes 89550 pkt (dropped 492, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f678: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2626926499605183148  Sent 12109652 bytes 53873 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f679: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17468552655372795540  Sent 11628456 bytes 53764 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c7-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p1 tx=74564 rx=74818 p0 tx=74977 rx=75270 [CTLD] p1 tx=84221 rx=84223 p0 tx=84661 rx=84660 
+MECH win=1648/4096 paused=0% sidle=565ms/98/mx25ms cwnd=1961 rtt=110.5ms sweeps=3 retx=4594 gapdrop=290 mpr[rep=4669 seqs=866199 fired=4594 y=838 r=3756 fast=698 coal=5205 supp=127282/0/731562 stale=2761 plost=0 age=111ms pf=0/740372/10000 fp/on p0:2464/2240 p1:2130/2354] relgap=0ms/mx4ms srel=2289/163061 btlbw=108247 cwnd=1397493 btlbw=106546 cwnd=3632391 
+MECHMID win=1732/4096 paused=0% sidle=89ms/14/mx14ms cwnd=1314 sweeps=1 gapdrop=85 btlbw=90923 cwnd=1291189 btlbw=58943 cwnd=2045243 
+=== rep=8 arm=c7-prior attempt=1 seed=7 env="" cell=c2/c2/dual bytes=200000000 14:42:35
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":9.1124,"mean_mbps":175.586,"mean_s":9.1124,"median_s":9.1124,"min_s":9.1124,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=12.53s CPUCLI=13.73s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f67a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 110349791 bytes 88465 pkt (dropped 494, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f67b: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112677165 bytes 89148 pkt (dropped 474, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f67c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 490786220801388176  Sent 11032185 bytes 56012 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f67d: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 16425438427911538428  Sent 11857263 bytes 57578 pkt (dropped 0, overlimits 0 requeues 0)   backlog 1315b 1p requeues 0 
+LIVENESS arm=c7-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=79071 rx=75504 p1 tx=81975 rx=76528 [CTLD] p0 tx=89204 rx=85139 p1 tx=91966 rx=86101 
+MECH win=692/4096 paused=0% sidle=552ms/92/mx23ms cwnd=1630 rtt=158.5ms sweeps=8 retx=5413 gapdrop=375 mpr[rep=4696 seqs=694603 fired=5413 y=1828 r=3585 fast=967 coal=3995 supp=166743/0/522227 stale=220 plost=0 age=133ms pf=0/531530/10000 fp/on p0:2286/3090 p1:3127/2323] relgap=0ms/mx4ms srel=4051/166649 btlbw=81946 cwnd=2318072 btlbw=97332 cwnd=1746996 
+MECHMID win=946/4096 paused=0% sidle=102ms/19/mx15ms cwnd=1291 sweeps=1 gapdrop=105 btlbw=72932 cwnd=923071 btlbw=71928 cwnd=880600 
+=== rep=8 arm=c8-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:42:48
+LIVENESS arm=c8-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c8-am rep=8 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=8 arm=c8-am attempt=1 (no summary)
+=== rep=8 arm=c8-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:42:51
+LIVENESS arm=c8-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c8-am rep=8 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=8 arm=c8-am attempt=2 (no summary)
+=== rep=8 arm=c8-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c3/dual bytes=25000000 14:42:54
+LIVENESS arm=c8-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=c8-am rep=8 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=8 arm=c8-am attempt=3 (no summary)
+RUN-LOST rep=8 arm=c8-am after 3 attempts
+=== rep=8 arm=c8-prior attempt=1 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:42:57
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=8 arm=c8-prior attempt=1 (no summary)
+=== rep=8 arm=c8-prior attempt=2 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:43:00
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=8 arm=c8-prior attempt=2 (no summary)
+=== rep=8 arm=c8-prior attempt=3 seed=7 env="" cell=c2/c3/dual bytes=25000000 14:43:03
+LIVENESS arm=c8-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=8 arm=c8-prior attempt=3 (no summary)
+RUN-LOST rep=8 arm=c8-prior after 3 attempts
+=== rep=1 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:43:06
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=1 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=1 arm=sc2-am attempt=1 (no summary)
+=== rep=1 arm=sc2-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:43:09
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0592,"mean_mbps":88.308,"mean_s":9.0592,"median_s":9.0592,"min_s":9.0592,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.74s CPUCLI=5.76s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f69a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111790184 bytes 92991 pkt (dropped 525, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f69b: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f69c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 9080179524729624727  Sent 11103087 bytes 63499 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f69d: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 3240146746598331843  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=75783 rx=75871 [CTLD] p0 tx=85486 rx=85494 
+MECH win=469/1024 paused=6% sidle=1509ms/366/mx28ms cwnd=521 rtt=104.2ms sweeps=54 retx=3018 gapdrop=332 mpr[rep=3539 seqs=89341 fired=3018 y=2352 r=666 fast=0 coal=906 supp=86323/0/0 stale=0 plost=0 age=89ms pf=0/2669/10000 fp/on p0:3018/3018] relgap=0ms/mx5ms srel=950/67572 btlbw=64851 cwnd=1220943 
+MECHMID win=598/611 paused=6% sidle=444ms/78/mx26ms cwnd=260 sweeps=7 gapdrop=73 btlbw=32301 cwnd=729995 
+=== rep=1 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:43:21
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=sc2-prior attempt=1 (no summary)
+=== rep=1 arm=sc2-prior attempt=2 seed=7 env="" cell=c2/c2/single bytes=100000000 14:43:23
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0567,"mean_mbps":88.332,"mean_s":9.0567,"median_s":9.0567,"min_s":9.0567,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.08s CPUCLI=5.88s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6a2: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111938111 bytes 93273 pkt (dropped 508, overlimits 0 requeues 0)   backlog 200b 2p requeues 0 
+    QDISC cli1: qdisc netem f6a3: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6a4: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 7887547248238742998  Sent 11803558 bytes 66143 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6a5: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1602328595449533306  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=91641 rx=75966 [CTLD] p0 tx=103524 rx=85575 
+MECH win=502/1024 paused=5% sidle=1564ms/367/mx29ms cwnd=864 rtt=105.8ms sweeps=53 retx=3003 gapdrop=366 mpr[rep=3657 seqs=89461 fired=3003 y=2386 r=617 fast=0 coal=814 supp=86458/0/0 stale=0 plost=0 age=91ms pf=0/2652/10000 fp/on p0:3003/3003] relgap=0ms/mx2ms srel=218/68992 btlbw=86750 cwnd=898003 
+MECHMID win=962/982 paused=5% sidle=495ms/84/mx27ms cwnd=417 sweeps=8 gapdrop=86 btlbw=41892 cwnd=1752236 
+=== rep=1 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:43:35
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=1 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=1 arm=sc3-am attempt=1 (no summary)
+=== rep=1 arm=sc3-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:43:37
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=1 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=1 arm=sc3-am attempt=2 (no summary)
+=== rep=1 arm=sc3-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:43:40
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.0522,"mean_mbps":16.594,"mean_s":12.0522,"median_s":12.0522,"min_s":12.0522,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.34s CPUCLI=2.56s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6ae: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29964457 bytes 27329 pkt (dropped 449, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6af: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6b0: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7606820792275055773  Sent 3423122 bytes 19035 pkt (dropped 0, overlimits 0 requeues 0)   backlog 156b 2p requeues 0 
+    QDISC srv1: qdisc netem f6b1: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 2913616332129656707  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=20871 rx=20875 [CTLD] p0 tx=22793 rx=22790 
+MECH win=89/1024 paused=0% sidle=10084ms/1607/mx107ms cwnd=7151 rtt=528.7ms sweeps=118 retx=2623 gapdrop=175 mpr[rep=3045 seqs=138422 fired=2623 y=1440 r=1183 fast=0 coal=199 supp=135799/0/0 stale=0 plost=0 age=319ms pf=0/1452/10000 fp/on p0:2623/2623] relgap=0ms/mx4ms srel=772/20038 btlbw=15924 cwnd=2441738 
+MECHMID win=1024/1024 paused=27% sidle=1147ms/129/mx51ms cwnd=544 sweeps=14 gapdrop=74 btlbw=12872 cwnd=1114900 
+=== rep=1 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:43:55
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=sc3-prior attempt=1 (no summary)
+=== rep=1 arm=sc3-prior attempt=2 seed=7 env="" cell=c3/c3/single bytes=25000000 14:43:58
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=sc3-prior attempt=2 (no summary)
+=== rep=1 arm=sc3-prior attempt=3 seed=7 env="" cell=c3/c3/single bytes=25000000 14:44:00
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=1 arm=sc3-prior attempt=3 (no summary)
+RUN-LOST rep=1 arm=sc3-prior after 3 attempts
+=== rep=2 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:44:03
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.9956,"mean_mbps":88.933,"mean_s":8.9956,"median_s":8.9956,"min_s":8.9956,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.89s CPUCLI=5.65s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6be: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112020997 bytes 86454 pkt (dropped 342, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6bf: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6c0: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 79725556029884447  Sent 11095529 bytes 64086 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6c1: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 9927832213415629690  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=67067 rx=67072 [CTLD] p0 tx=76600 rx=76683 
+MECH win=1002/1024 paused=6% sidle=1403ms/331/mx26ms cwnd=1086 rtt=103.5ms sweeps=65 retx=3406 gapdrop=441 mpr[rep=3325 seqs=104030 fired=3406 y=2363 r=1043 fast=0 coal=1027 supp=100624/0/0 stale=0 plost=0 age=95ms pf=0/2853/10000 fp/on p0:3406/3406] relgap=0ms/mx4ms srel=158/63100 btlbw=91358 cwnd=1114012 
+MECHMID win=1004/1024 paused=7% sidle=505ms/88/mx26ms cwnd=496 sweeps=10 gapdrop=142 btlbw=41699 cwnd=1150790 
+=== rep=2 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:44:15
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.2936,"mean_mbps":86.081,"mean_s":9.2936,"median_s":9.2936,"min_s":9.2936,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.12s CPUCLI=5.73s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6c2: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112190878 bytes 86564 pkt (dropped 337, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6c3: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6c4: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 13084366888033009622  Sent 12200047 bytes 68871 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6c5: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 13001017103945737614  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=92984 rx=74524 [CTLD] p0 tx=106230 rx=84147 
+MECH win=27/1024 paused=6% sidle=1777ms/365/mx82ms cwnd=955 rtt=15.3ms sweeps=77 retx=3537 gapdrop=457 mpr[rep=3540 seqs=109717 fired=3537 y=2500 r=1037 fast=0 coal=887 supp=106180/0/0 stale=0 plost=0 age=93ms pf=0/2934/10000 fp/on p0:3537/3537] relgap=36ms/mx36ms srel=81/65089 btlbw=86818 cwnd=16226 
+MECHMID win=1016/1024 paused=6% sidle=731ms/109/mx25ms cwnd=498 sweeps=16 gapdrop=108 btlbw=48750 cwnd=668130 
+=== rep=2 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:44:31
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.0433,"mean_mbps":16.607,"mean_s":12.0433,"median_s":12.0433,"min_s":12.0433,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.50s CPUCLI=2.66s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6c6: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29677226 bytes 26881 pkt (dropped 461, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6c7: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 658 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6c8: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 12252986240679325333  Sent 3511902 bytes 19869 pkt (dropped 0, overlimits 0 requeues 0)   backlog 2584b 2p requeues 0 
+    QDISC srv1: qdisc netem f6c9: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 9982260443128254540  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=20919 rx=20917 [CTLD] p0 tx=22743 rx=22739 
+MECH win=9/1024 paused=0% sidle=9957ms/1608/mx148ms cwnd=7004 rtt=66.0ms sweeps=118 retx=2503 gapdrop=169 mpr[rep=3141 seqs=154826 fired=2503 y=1520 r=983 fast=0 coal=191 supp=152323/0/0 stale=0 plost=0 age=345ms pf=0/1538/10000 fp/on p0:2503/2503] relgap=113ms/mx113ms srel=698/20190 btlbw=15769 cwnd=2192687 
+MECHMID win=1024/1024 paused=27% sidle=1154ms/129/mx50ms cwnd=546 sweeps=17 gapdrop=69 btlbw=12925 cwnd=964753 
+=== rep=2 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:44:46
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=2 arm=sc3-prior attempt=1 (no summary)
+=== rep=2 arm=sc3-prior attempt=2 seed=7 env="" cell=c3/c3/single bytes=25000000 14:44:49
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.0388,"mean_mbps":16.613,"mean_s":12.0388,"median_s":12.0388,"min_s":12.0388,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.39s CPUCLI=2.58s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6ce: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29684878 bytes 27312 pkt (dropped 460, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6cf: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 658 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6d0: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7758835742721146917  Sent 3557609 bytes 20066 pkt (dropped 0, overlimits 0 requeues 0)   backlog 156b 2p requeues 0 
+    QDISC srv1: qdisc netem f6d1: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 6080113418337579270  Sent 838 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=24282 rx=20684 [CTLD] p0 tx=26517 rx=22599 
+MECH win=63/1024 paused=0% sidle=9942ms/1577/mx91ms cwnd=9519 rtt=481.2ms sweeps=122 retx=2411 gapdrop=143 mpr[rep=3106 seqs=144128 fired=2411 y=1428 r=983 fast=0 coal=132 supp=141717/0/0 stale=0 plost=0 age=331ms pf=0/1428/10000 fp/on p0:2411/2411] relgap=2ms/mx7ms srel=813/19724 btlbw=21690 cwnd=2656917 
+MECHMID win=1014/1024 paused=40% sidle=1168ms/117/mx49ms cwnd=549 sweeps=19 gapdrop=57 btlbw=13540 cwnd=1997468 
+=== rep=3 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:45:05
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.2496,"mean_mbps":86.49,"mean_s":9.2496,"median_s":9.2496,"min_s":9.2496,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.78s CPUCLI=5.78s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6d2: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111884490 bytes 86401 pkt (dropped 352, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6d3: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 600 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6d4: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 3178079583648625255  Sent 11039008 bytes 63332 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6d5: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2018768960523701425  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=74420 rx=74458 [CTLD] p0 tx=84078 rx=84084 
+MECH win=996/1024 paused=7% sidle=1768ms/387/mx25ms cwnd=1066 rtt=102.6ms sweeps=77 retx=3306 gapdrop=366 mpr[rep=3462 seqs=105716 fired=3306 y=2439 r=867 fast=0 coal=1045 supp=102410/0/0 stale=0 plost=0 age=96ms pf=0/2826/10000 fp/on p0:3306/3306] relgap=0ms/mx4ms srel=379/64920 btlbw=86938 cwnd=1183887 
+MECHMID win=1024/1024 paused=7% sidle=692ms/104/mx25ms cwnd=606 sweeps=19 gapdrop=96 btlbw=54474 cwnd=1175600 
+=== rep=3 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:45:17
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=3 arm=sc2-prior attempt=1 (no summary)
+=== rep=3 arm=sc2-prior attempt=2 seed=7 env="" cell=c2/c2/single bytes=100000000 14:45:20
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0336,"mean_mbps":88.558,"mean_s":9.0336,"median_s":9.0336,"min_s":9.0336,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.07s CPUCLI=5.92s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6da: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112319038 bytes 94321 pkt (dropped 522, overlimits 0 requeues 0)   backlog 200b 2p requeues 0 
+    QDISC cli1: qdisc netem f6db: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6dc: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 8154470229793320370  Sent 11664428 bytes 66886 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6dd: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 3621342704728372464  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=89301 rx=76368 [CTLD] p0 tx=101545 rx=85975 
+MECH win=85/1024 paused=5% sidle=1615ms/376/mx35ms cwnd=1118 rtt=106.3ms sweeps=68 retx=3318 gapdrop=392 mpr[rep=3772 seqs=96850 fired=3318 y=2562 r=756 fast=0 coal=872 supp=93532/0/0 stale=0 plost=0 age=92ms pf=0/2742/10000 fp/on p0:3318/3318] relgap=0ms/mx6ms srel=18/71706 btlbw=84785 cwnd=756010 
+MECHMID win=1003/1024 paused=6% sidle=503ms/96/mx18ms cwnd=437 sweeps=11 gapdrop=117 btlbw=38966 cwnd=1230924 
+=== rep=3 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:45:32
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=3 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=3 arm=sc3-am attempt=1 (no summary)
+=== rep=3 arm=sc3-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:45:35
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=3 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=3 arm=sc3-am attempt=2 (no summary)
+=== rep=3 arm=sc3-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:45:38
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=3 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=3 arm=sc3-am attempt=3 (no summary)
+RUN-LOST rep=3 arm=sc3-am after 3 attempts
+=== rep=3 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:45:41
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=3 arm=sc3-prior attempt=1 (no summary)
+=== rep=3 arm=sc3-prior attempt=2 seed=7 env="" cell=c3/c3/single bytes=25000000 14:45:44
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=3 arm=sc3-prior attempt=2 (no summary)
+=== rep=3 arm=sc3-prior attempt=3 seed=7 env="" cell=c3/c3/single bytes=25000000 14:45:47
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.9756,"mean_mbps":16.701,"mean_s":11.9756,"median_s":11.9756,"min_s":11.9756,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.37s CPUCLI=2.59s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6f2: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29722698 bytes 26932 pkt (dropped 442, overlimits 0 requeues 0)   backlog 111b 1p requeues 0 
+    QDISC cli1: qdisc netem f6f3: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f6f4: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 604313018773570621  Sent 3499438 bytes 19813 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f6f5: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 1845370964907618322  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=24240 rx=20851 [CTLD] p0 tx=26418 rx=22765 
+MECH win=377/1024 paused=0% sidle=9632ms/1586/mx92ms cwnd=8281 rtt=516.7ms sweeps=114 retx=2532 gapdrop=199 mpr[rep=3082 seqs=145059 fired=2532 y=1470 r=1062 fast=0 coal=159 supp=142527/0/0 stale=0 plost=0 age=335ms pf=0/1498/10000 fp/on p0:2532/2532] relgap=0ms/mx1ms srel=1821/19735 btlbw=18825 cwnd=1744967 
+MECHMID win=1024/1024 paused=28% sidle=1142ms/127/mx47ms cwnd=557 sweeps=15 gapdrop=85 btlbw=13900 cwnd=1054582 
+=== rep=4 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:46:01
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=4 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=4 arm=sc2-am attempt=1 (no summary)
+=== rep=4 arm=sc2-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:46:04
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=4 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=4 arm=sc2-am attempt=2 (no summary)
+=== rep=4 arm=sc2-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:46:07
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0392,"mean_mbps":88.504,"mean_s":9.0392,"median_s":9.0392,"min_s":9.0392,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.66s CPUCLI=5.73s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f6fe: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111916610 bytes 91589 pkt (dropped 529, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f6ff: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f700: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 7984972559733692338  Sent 11246543 bytes 65016 pkt (dropped 0, overlimits 0 requeues 0)   backlog 1299b 1p requeues 0 
+    QDISC srv1: qdisc netem f701: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 127112820291207566  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=76095 rx=76153 [CTLD] p0 tx=85772 rx=85782 
+MECH win=259/1024 paused=7% sidle=1562ms/377/mx48ms cwnd=798 rtt=103.8ms sweeps=68 retx=3056 gapdrop=366 mpr[rep=3783 seqs=95036 fired=3056 y=2425 r=631 fast=0 coal=871 supp=91980/0/0 stale=0 plost=0 age=93ms pf=0/2604/10000 fp/on p0:3056/3056] relgap=0ms/mx3ms srel=893/71848 btlbw=70903 cwnd=1249317 
+MECHMID win=999/1024 paused=7% sidle=490ms/88/mx17ms cwnd=719 sweeps=12 gapdrop=120 btlbw=63815 cwnd=1168554 
+=== rep=4 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:46:19
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0303,"mean_mbps":88.591,"mean_s":9.0303,"median_s":9.0303,"min_s":9.0303,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.89s CPUCLI=5.65s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f702: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112257843 bytes 91422 pkt (dropped 470, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f703: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f704: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17309601399064811573  Sent 12128091 bytes 67195 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f705: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17016396646296247314  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=96685 rx=76631 [CTLD] p0 tx=107377 rx=86243 
+MECH win=79/1024 paused=6% sidle=1653ms/378/mx65ms cwnd=858 rtt=104.9ms sweeps=47 retx=3587 gapdrop=495 mpr[rep=3456 seqs=102337 fired=3587 y=2622 r=965 fast=0 coal=925 supp=98750/0/0 stale=0 plost=0 age=89ms pf=0/3014/10000 fp/on p0:3587/3587] relgap=0ms/mx4ms srel=1014/66042 btlbw=87497 cwnd=2363851 
+MECHMID win=928/928 paused=7% sidle=572ms/98/mx22ms cwnd=394 sweeps=8 gapdrop=150 btlbw=40187 cwnd=1107076 
+=== rep=4 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:46:31
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.8388,"mean_mbps":16.894,"mean_s":11.8388,"median_s":11.8388,"min_s":11.8388,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.23s CPUCLI=2.46s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f706: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29502046 bytes 26413 pkt (dropped 434, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f707: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 662 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f708: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 17739625168160823010  Sent 3376694 bytes 18797 pkt (dropped 0, overlimits 0 requeues 0)   backlog 84b 1p requeues 0 
+    QDISC srv1: qdisc netem f709: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 468879484935659946  Sent 838 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=19045 rx=19044 [CTLD] p0 tx=20963 rx=20959 
+MECH win=149/1024 paused=0% sidle=9895ms/1624/mx137ms cwnd=6607 rtt=511.9ms sweeps=115 retx=2310 gapdrop=153 mpr[rep=3097 seqs=140933 fired=2310 y=1450 r=860 fast=0 coal=204 supp=138623/0/0 stale=0 plost=0 age=348ms pf=0/1450/10000 fp/on p0:2310/2310] relgap=0ms/mx8ms srel=802/20052 btlbw=14832 cwnd=1859353 
+MECHMID win=1015/1024 paused=26% sidle=1164ms/132/mx46ms cwnd=577 sweeps=13 gapdrop=58 btlbw=14694 cwnd=1104057 
+=== rep=4 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:46:48
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.9,"mean_mbps":16.807,"mean_s":11.9,"median_s":11.9,"min_s":11.9,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.28s CPUCLI=2.53s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f70a: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29531487 bytes 27745 pkt (dropped 471, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f70b: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f70c: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 3312472654852341183  Sent 3513972 bytes 19558 pkt (dropped 0, overlimits 0 requeues 0)   backlog 86b 1p requeues 0 
+    QDISC srv1: qdisc netem f70d: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7077223359698690406  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=21890 rx=18901 [CTLD] p0 tx=24156 rx=20814 
+MECH win=254/1024 paused=0% sidle=9796ms/1607/mx142ms cwnd=6397 rtt=540.6ms sweeps=118 retx=2233 gapdrop=183 mpr[rep=3130 seqs=146293 fired=2233 y=1508 r=725 fast=0 coal=129 supp=144060/0/0 stale=0 plost=0 age=376ms pf=0/1536/10000 fp/on p0:2233/2233] relgap=0ms/mx2ms srel=1488/19846 btlbw=14809 cwnd=3636379 
+MECHMID win=1024/1024 paused=29% sidle=1125ms/131/mx62ms cwnd=653 sweeps=16 gapdrop=62 btlbw=16714 cwnd=1391379 
+=== rep=5 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:47:02
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.9923,"mean_mbps":88.965,"mean_s":8.9923,"median_s":8.9923,"min_s":8.9923,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.80s CPUCLI=5.60s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f70e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111960878 bytes 87453 pkt (dropped 376, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f70f: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f710: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 6371116885076747480  Sent 11187018 bytes 65390 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f711: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 10591487491702698844  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=67075 rx=67070 [CTLD] p0 tx=76602 rx=76704 
+MECH win=1003/1024 paused=7% sidle=1383ms/331/mx16ms cwnd=1069 rtt=104.3ms sweeps=58 retx=3232 gapdrop=374 mpr[rep=3391 seqs=98069 fired=3232 y=2297 r=935 fast=0 coal=948 supp=94837/0/0 stale=0 plost=0 age=90ms pf=0/2578/10000 fp/on p0:3232/3232] relgap=0ms/mx3ms srel=933/65180 btlbw=92855 cwnd=1256388 
+MECHMID win=1024/1024 paused=7% sidle=492ms/88/mx16ms cwnd=462 sweeps=7 gapdrop=122 btlbw=45537 cwnd=990726 
+=== rep=5 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:47:14
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0364,"mean_mbps":88.531,"mean_s":9.0364,"median_s":9.0364,"min_s":9.0364,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.10s CPUCLI=6.05s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f712: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112016379 bytes 92942 pkt (dropped 527, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f713: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f714: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12216099399202905426  Sent 11502054 bytes 66275 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f715: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 16464032555491100453  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=86628 rx=76216 [CTLD] p0 tx=99250 rx=85830 
+MECH win=227/1024 paused=6% sidle=1562ms/362/mx42ms cwnd=598 rtt=106.2ms sweeps=68 retx=3315 gapdrop=393 mpr[rep=3844 seqs=101672 fired=3315 y=2534 r=781 fast=0 coal=841 supp=98357/0/0 stale=0 plost=0 age=94ms pf=0/2773/10000 fp/on p0:3315/3315] relgap=0ms/mx3ms srel=373/74047 btlbw=83540 cwnd=1443170 
+MECHMID win=1008/1024 paused=7% sidle=509ms/90/mx23ms cwnd=513 sweeps=13 gapdrop=133 btlbw=71683 cwnd=1252807 
+=== rep=5 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:47:27
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=5 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=5 arm=sc3-am attempt=1 (no summary)
+=== rep=5 arm=sc3-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:47:30
+LIVENESS arm=sc3-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc3-am rep=5 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=5 arm=sc3-am attempt=2 (no summary)
+=== rep=5 arm=sc3-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:47:33
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.7582,"mean_mbps":17.009,"mean_s":11.7582,"median_s":11.7582,"min_s":11.7582,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.16s CPUCLI=2.40s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f71e: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 28761376 bytes 26380 pkt (dropped 422, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f71f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f720: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 12039615510403207025  Sent 3240483 bytes 17851 pkt (dropped 0, overlimits 0 requeues 0)   backlog 144b 2p requeues 0 
+    QDISC srv1: qdisc netem f721: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 4209083971374528854  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=18999 rx=18998 [CTLD] p0 tx=20914 rx=20916 
+MECH win=6/1024 paused=0% sidle=9796ms/1597/mx120ms cwnd=8020 rtt=68.3ms sweeps=118 retx=1720 gapdrop=113 mpr[rep=3172 seqs=142554 fired=1720 y=1515 r=205 fast=0 coal=218 supp=140834/0/0 stale=0 plost=0 age=469ms pf=0/1553/10000 fp/on p0:1720/1720] relgap=276ms/mx276ms srel=352/20039 btlbw=17866 cwnd=12500 
+MECHMID win=1021/1024 paused=25% sidle=1046ms/143/mx49ms cwnd=899 sweeps=16 gapdrop=10 btlbw=16994 cwnd=1181846 
+=== rep=5 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:47:47
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.1536,"mean_mbps":16.456,"mean_s":12.1536,"median_s":12.1536,"min_s":12.1536,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.40s CPUCLI=2.52s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f722: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29772854 bytes 26835 pkt (dropped 426, overlimits 0 requeues 0)   backlog 1292b 3p requeues 0 
+    QDISC cli1: qdisc netem f723: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 662 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f724: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 11115137168155020468  Sent 3517248 bytes 20202 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f725: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 2341031325275655924  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=23911 rx=20572 [CTLD] p0 tx=26120 rx=22478 
+MECH win=248/1024 paused=0% sidle=9965ms/1594/mx88ms cwnd=6591 rtt=538.9ms sweeps=121 retx=2488 gapdrop=170 mpr[rep=3140 seqs=131590 fired=2488 y=1334 r=1154 fast=0 coal=141 supp=129102/0/0 stale=0 plost=0 age=308ms pf=0/1347/10000 fp/on p0:2488/2488] relgap=0ms/mx3ms srel=471/19836 btlbw=15534 cwnd=4784782 
+MECHMID win=915/128 paused=23% sidle=1178ms/121/mx47ms cwnd=0 sweeps=17 gapdrop=40 
+=== rep=6 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:48:01
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.9774,"mean_mbps":89.113,"mean_s":8.9774,"median_s":8.9774,"min_s":8.9774,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.70s CPUCLI=5.70s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f726: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111737182 bytes 93506 pkt (dropped 513, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f727: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f728: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 10616856311840231536  Sent 10948196 bytes 61928 pkt (dropped 0, overlimits 0 requeues 0)   backlog 2584b 2p requeues 0 
+    QDISC srv1: qdisc netem f729: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 4560204849628039604  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=66865 rx=66873 [CTLD] p0 tx=76477 rx=76485 
+MECH win=1009/1024 paused=6% sidle=1503ms/384/mx15ms cwnd=824 rtt=105.1ms sweeps=62 retx=2808 gapdrop=324 mpr[rep=3607 seqs=88050 fired=2808 y=2283 r=525 fast=0 coal=717 supp=85242/0/0 stale=0 plost=0 age=96ms pf=0/2503/10000 fp/on p0:2808/2808] relgap=0ms/mx6ms srel=965/70704 btlbw=70894 cwnd=1251236 
+MECHMID win=1024/1024 paused=6% sidle=403ms/82/mx15ms cwnd=703 sweeps=10 gapdrop=93 btlbw=70894 cwnd=1234730 
+=== rep=6 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:48:13
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=6 arm=sc2-prior attempt=1 (no summary)
+=== rep=6 arm=sc2-prior attempt=2 seed=7 env="" cell=c2/c2/single bytes=100000000 14:48:16
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.1114,"mean_mbps":87.802,"mean_s":9.1114,"median_s":9.1114,"min_s":9.1114,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.19s CPUCLI=6.13s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f72e: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112125612 bytes 92933 pkt (dropped 627, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f72f: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f730: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 9078228615159102277  Sent 11623483 bytes 68060 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f731: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 9254883209590285739  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=86920 rx=75650 [CTLD] p0 tx=97323 rx=85274 
+MECH win=873/1024 paused=6% sidle=1541ms/366/mx16ms cwnd=1085 rtt=105.3ms sweeps=67 retx=3442 gapdrop=391 mpr[rep=3929 seqs=104179 fired=3442 y=2755 r=687 fast=0 coal=830 supp=100737/0/0 stale=0 plost=0 age=94ms pf=0/2951/10000 fp/on p0:3442/3442] relgap=0ms/mx3ms srel=538/74770 btlbw=112327 cwnd=1311291 
+MECHMID win=1000/1024 paused=6% sidle=517ms/92/mx16ms cwnd=1085 sweeps=10 gapdrop=105 btlbw=112327 cwnd=1247613 
+=== rep=6 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:48:29
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.8881,"mean_mbps":16.823,"mean_s":11.8881,"median_s":11.8881,"min_s":11.8881,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.29s CPUCLI=2.56s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f732: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29616828 bytes 26966 pkt (dropped 442, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f733: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f734: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 15603067562519923001  Sent 3378053 bytes 18719 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f735: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 1614457544250476781  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=19024 rx=19024 [CTLD] p0 tx=20944 rx=20950 
+MECH win=241/1024 paused=0% sidle=9877ms/1583/mx116ms cwnd=8065 rtt=480.8ms sweeps=116 retx=2358 gapdrop=146 mpr[rep=3015 seqs=129186 fired=2358 y=1309 r=1049 fast=0 coal=215 supp=126828/0/0 stale=0 plost=0 age=321ms pf=0/1339/10000 fp/on p0:2358/2358] relgap=5ms/mx6ms srel=1485/19920 btlbw=18078 cwnd=1998727 
+MECHMID win=1024/1024 paused=31% sidle=1136ms/125/mx82ms cwnd=597 sweeps=12 gapdrop=80 btlbw=14405 cwnd=1290698 
+=== rep=6 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:48:44
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=6 arm=sc3-prior attempt=1 (no summary)
+=== rep=6 arm=sc3-prior attempt=2 seed=7 env="" cell=c3/c3/single bytes=25000000 14:48:47
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.8878,"mean_mbps":16.824,"mean_s":11.8878,"median_s":11.8878,"min_s":11.8878,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.39s CPUCLI=2.49s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f73a: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29572224 bytes 26812 pkt (dropped 460, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f73b: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 658 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f73c: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 11341194978629779369  Sent 3559721 bytes 20323 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f73d: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 8592926779690451931  Sent 838 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=22354 rx=18984 [CTLD] p0 tx=24558 rx=20906 
+MECH win=214/1024 paused=0% sidle=9702ms/1618/mx116ms cwnd=7525 rtt=522.2ms sweeps=117 retx=2257 gapdrop=176 mpr[rep=3138 seqs=124324 fired=2257 y=1280 r=977 fast=0 coal=134 supp=122067/0/0 stale=0 plost=0 age=316ms pf=0/1283/10000 fp/on p0:2257/2257] relgap=0ms/mx9ms srel=857/19638 btlbw=16770 cwnd=2346800 
+MECHMID win=1024/1024 paused=42% sidle=1113ms/122/mx47ms cwnd=447 sweeps=16 gapdrop=96 btlbw=10998 cwnd=1366837 
+=== rep=7 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:49:03
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=7 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=7 arm=sc2-am attempt=1 (no summary)
+=== rep=7 arm=sc2-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:49:06
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=7 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=7 arm=sc2-am attempt=2 (no summary)
+=== rep=7 arm=sc2-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:49:09
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.2288,"mean_mbps":86.685,"mean_s":9.2288,"median_s":9.2288,"min_s":9.2288,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.69s CPUCLI=5.66s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f746: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111881171 bytes 88346 pkt (dropped 389, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f747: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f748: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1761260826952422025  Sent 11078968 bytes 63875 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f749: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2469829141297854002  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=74210 rx=74316 [CTLD] p0 tx=83922 rx=83925 
+MECH win=1022/1024 paused=7% sidle=1628ms/374/mx18ms cwnd=1140 rtt=107.0ms sweeps=73 retx=3272 gapdrop=387 mpr[rep=3503 seqs=101471 fired=3272 y=2234 r=1038 fast=0 coal=949 supp=98199/0/0 stale=0 plost=0 age=94ms pf=0/2684/10000 fp/on p0:3272/3272] relgap=0ms/mx3ms srel=902/67193 btlbw=87619 cwnd=1274086 
+MECHMID win=1002/1024 paused=6% sidle=691ms/115/mx18ms cwnd=510 sweeps=17 gapdrop=102 btlbw=39191 cwnd=859625 
+=== rep=7 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:49:22
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.1259,"mean_mbps":87.663,"mean_s":9.1259,"median_s":9.1259,"min_s":9.1259,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.89s CPUCLI=5.74s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f74a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112112348 bytes 86440 pkt (dropped 342, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f74b: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f74c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 16677725712407246670  Sent 11979019 bytes 67324 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f74d: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 1867537251007027593  Sent 866 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=92826 rx=75550 [CTLD] p0 tx=105463 rx=85178 
+MECH win=1023/1024 paused=6% sidle=1440ms/328/mx25ms cwnd=1096 rtt=106.0ms sweeps=68 retx=3438 gapdrop=424 mpr[rep=3597 seqs=109618 fired=3438 y=2662 r=776 fast=0 coal=860 supp=106180/0/0 stale=0 plost=0 age=97ms pf=0/3016/10000 fp/on p0:3438/3438] relgap=2ms/mx4ms srel=87/65966 btlbw=83352 cwnd=1095772 
+MECHMID win=1004/1024 paused=7% sidle=535ms/80/mx25ms cwnd=657 sweeps=12 gapdrop=98 btlbw=57921 cwnd=1031697 
+=== rep=7 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:49:37
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.0721,"mean_mbps":16.567,"mean_s":12.0721,"median_s":12.0721,"min_s":12.0721,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.28s CPUCLI=2.55s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f74e: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29690196 bytes 26597 pkt (dropped 435, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f74f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 658 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f750: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 2393755996849221841  Sent 3403975 bytes 18769 pkt (dropped 0, overlimits 0 requeues 0)   backlog 72b 1p requeues 0 
+    QDISC srv1: qdisc netem f751: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7546618486119940389  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=20892 rx=20904 [CTLD] p0 tx=22774 rx=22774 
+MECH win=44/1024 paused=0% sidle=10069ms/1622/mx128ms cwnd=7932 rtt=100.5ms sweeps=119 retx=2447 gapdrop=208 mpr[rep=3167 seqs=139201 fired=2447 y=1429 r=1018 fast=0 coal=238 supp=136754/0/0 stale=0 plost=0 age=339ms pf=0/1470/10000 fp/on p0:2447/2447] relgap=96ms/mx96ms srel=514/19957 btlbw=17871 cwnd=2724852 
+MECHMID win=1024/1024 paused=28% sidle=1173ms/132/mx44ms cwnd=560 sweeps=15 gapdrop=62 btlbw=14904 cwnd=1010718 
+=== rep=7 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:49:52
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+
+
+
+RUN-RETRY rep=7 arm=sc3-prior attempt=1 (no summary)
+=== rep=7 arm=sc3-prior attempt=2 seed=7 env="" cell=c3/c3/single bytes=25000000 14:49:55
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.9079,"mean_mbps":16.796,"mean_s":11.9079,"median_s":11.9079,"min_s":11.9079,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.28s CPUCLI=2.51s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f756: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29602797 bytes 27760 pkt (dropped 464, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f757: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 662 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f758: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 7592881320607161180  Sent 3480513 bytes 19724 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f759: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 462973182501564390  Sent 838 bytes 11 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=22024 rx=18952 [CTLD] p0 tx=24239 rx=20859 
+MECH win=262/1024 paused=0% sidle=9748ms/1598/mx155ms cwnd=7837 rtt=535.2ms sweeps=116 retx=2193 gapdrop=109 mpr[rep=3182 seqs=131991 fired=2193 y=1362 r=831 fast=0 coal=174 supp=129798/0/0 stale=0 plost=0 age=343ms pf=0/1366/10000 fp/on p0:2193/2193] relgap=0ms/mx6ms srel=2151/19887 btlbw=17821 cwnd=3572346 
+MECHMID win=1024/1024 paused=25% sidle=1160ms/117/mx48ms cwnd=500 sweeps=14 gapdrop=37 btlbw=12277 cwnd=1169256 
+=== rep=8 arm=sc2-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:50:10
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=8 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=8 arm=sc2-am attempt=1 (no summary)
+=== rep=8 arm=sc2-am attempt=2 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:50:13
+LIVENESS arm=sc2-am am_c=0 am_s=0 (want 1)
+ARM-LIVENESS-FAIL arm=sc2-am rep=8 (ack-merge echo c=0 s=0)
+
+
+
+RUN-RETRY rep=8 arm=sc2-am attempt=2 (no summary)
+=== rep=8 arm=sc2-am attempt=3 seed=7 env="RWM_ACK_MERGE=1" cell=c2/c2/single bytes=100000000 14:50:16
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.1039,"mean_mbps":87.874,"mean_s":9.1039,"median_s":9.1039,"min_s":9.1039,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.67s CPUCLI=5.55s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f762: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 111709565 bytes 86168 pkt (dropped 342, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f763: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f764: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 6471399107340475783  Sent 11037586 bytes 63659 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f765: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 12499705005449531451  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=75394 rx=75452 [CTLD] p0 tx=85073 rx=85075 
+MECH win=917/1024 paused=6% sidle=1381ms/325/mx17ms cwnd=740 rtt=103.5ms sweeps=61 retx=3245 gapdrop=387 mpr[rep=3439 seqs=105587 fired=3245 y=2261 r=984 fast=0 coal=992 supp=102342/0/0 stale=0 plost=0 age=94ms pf=0/2848/10000 fp/on p0:3245/3245] relgap=0ms/mx4ms srel=1555/64337 btlbw=63533 cwnd=1099824 
+MECHMID win=847/847 paused=6% sidle=481ms/81/mx17ms cwnd=360 sweeps=8 gapdrop=107 btlbw=30882 cwnd=728954 
+=== rep=8 arm=sc2-prior attempt=1 seed=7 env="" cell=c2/c2/single bytes=100000000 14:50:27
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0866,"mean_mbps":88.041,"mean_s":9.0866,"median_s":9.0866,"min_s":9.0866,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=6.70s CPUCLI=5.60s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f766: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 112073316 bytes 87863 pkt (dropped 374, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f767: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 7  Sent 588 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f768: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 15628462494682444179  Sent 11846724 bytes 66102 pkt (dropped 0, overlimits 0 requeues 0)   backlog 1300b 1p requeues 0 
+    QDISC srv1: qdisc netem f769: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 2667067128778941403  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc2-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=93037 rx=75912 [CTLD] p0 tx=104864 rx=85535 
+MECH win=701/1024 paused=6% sidle=1526ms/370/mx17ms cwnd=767 rtt=102.7ms sweeps=53 retx=3380 gapdrop=412 mpr[rep=3623 seqs=102580 fired=3380 y=2550 r=830 fast=0 coal=910 supp=99200/0/0 stale=0 plost=0 age=91ms pf=0/2910/10000 fp/on p0:3380/3380] relgap=0ms/mx5ms srel=574/67443 btlbw=99584 cwnd=1189122 
+MECHMID win=756/778 paused=6% sidle=508ms/91/mx17ms cwnd=331 sweeps=4 gapdrop=113 btlbw=42902 cwnd=907357 
+=== rep=8 arm=sc3-am attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c3/c3/single bytes=25000000 14:50:39
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.86,"mean_mbps":16.863,"mean_s":11.86,"median_s":11.86,"min_s":11.86,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.26s CPUCLI=2.47s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f76a: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29407412 bytes 26828 pkt (dropped 449, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f76b: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 592 bytes 8 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f76c: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 15796587389139561666  Sent 3377074 bytes 18703 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f76d: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 1577892368525616349  Sent 768 bytes 10 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-am am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=18998 rx=19002 [CTLD] p0 tx=20920 rx=20930 
+MECH win=59/1024 paused=0% sidle=9532ms/1635/mx86ms cwnd=7274 rtt=510.4ms sweeps=116 retx=2176 gapdrop=142 mpr[rep=3191 seqs=137249 fired=2176 y=1470 r=706 fast=0 coal=243 supp=135073/0/0 stale=0 plost=0 age=370ms pf=0/1470/10000 fp/on p0:2176/2176] relgap=0ms/mx11ms srel=876/19753 btlbw=15916 cwnd=1456579 
+MECHMID win=1024/1024 paused=34% sidle=1076ms/153/mx48ms cwnd=897 sweeps=13 gapdrop=38 btlbw=18409 cwnd=1623649 
+=== rep=8 arm=sc3-prior attempt=1 seed=7 env="" cell=c3/c3/single bytes=25000000 14:50:53
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":11.9695,"mean_mbps":16.709,"mean_s":11.9695,"median_s":11.9695,"min_s":11.9695,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.44s CPUCLI=2.65s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f76e: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 29789559 bytes 27142 pkt (dropped 468, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f76f: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 7  Sent 686 bytes 9 pkt (dropped 2, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f770: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 6093320038984998912  Sent 3604388 bytes 20379 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f771: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 300354397261883087  Sent 936 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=sc3-prior am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=24373 rx=20907 [CTLD] p0 tx=26607 rx=22808 
+MECH win=366/1024 paused=0% sidle=9592ms/1604/mx116ms cwnd=7795 rtt=538.0ms sweeps=115 retx=2422 gapdrop=139 mpr[rep=3336 seqs=144708 fired=2422 y=1347 r=1075 fast=0 coal=137 supp=142286/0/0 stale=0 plost=0 age=322ms pf=0/1368/10000 fp/on p0:2422/2422] relgap=0ms/mx7ms srel=419/19791 btlbw=17533 cwnd=2586395 
+MECHMID win=1024/1024 paused=30% sidle=1104ms/129/mx48ms cwnd=678 sweeps=13 gapdrop=68 btlbw=16674 cwnd=937152 
+=== rep=1 arm=c1-am-1200M attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=1200000000 14:51:10
+{"bytes":1200000000,"dnf":0,"hint":"bulk","max_s":42.5442,"mean_mbps":225.648,"mean_s":42.5442,"median_s":42.5442,"min_s":42.5442,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=47.87s CPUCLI=48.85s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f772: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 1314539126 bytes 1036133 pkt (dropped 127, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f773: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 916 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f774: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2173756054892431948  Sent 94116332 bytes 247462 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f775: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 17567103800102574501  Sent 1006 bytes 13 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am-1200M am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=982859 rx=982933 [CTLD] p0 tx=1006607 rx=1006703 
+MECH win=295/661 paused=0% sidle=11143ms/1602/mx23ms cwnd=333 rtt=10.2ms sweeps=24 retx=1922 gapdrop=207 mpr[rep=469 seqs=5226 fired=1922 y=197 r=1725 fast=0 coal=1170 supp=3304/0/0 stale=0 plost=0 age=32ms pf=402/1141/10000 fp/on p0:1922/1922] relgap=0ms/mx4ms srel=0/27131 btlbw=122560 cwnd=631759 
+MECHMID win=405/128 paused=1% sidle=465ms/64/mx21ms cwnd=0 sweeps=1 gapdrop=5 
+=== rep=1 arm=c1-prior-1200M attempt=1 seed=7 env="" cell=c1/c1/single bytes=1200000000 14:51:54
+{"bytes":1200000000,"dnf":0,"hint":"bulk","max_s":47.5653,"mean_mbps":201.828,"mean_s":47.5653,"median_s":47.5653,"min_s":47.5653,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=51.06s CPUCLI=52.26s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f776: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 1315756227 bytes 1053053 pkt (dropped 145, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f777: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 916 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f778: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 4966133644758559368  Sent 159786907 bytes 311332 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f779: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 14833280582810147401  Sent 1006 bytes 13 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior-1200M am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=1937664 rx=986199 [CTLD] p0 tx=1980400 rx=1007485 
+MECH win=302/128 paused=1% sidle=17127ms/2162/mx21ms cwnd=0 rtt=0.0ms sweeps=30 retx=1876 gapdrop=231 mpr[rep=455 seqs=4911 fired=1876 y=219 r=1657 fast=0 coal=1218 supp=3035/0/0 stale=0 plost=0 age=26ms pf=594/887/10000 fp/on p0:1876/1876] relgap=0ms/mx6ms srel=0/29260 
+MECHMID win=191/496 paused=1% sidle=646ms/73/mx18ms cwnd=268 sweeps=0 gapdrop=13 btlbw=106147 cwnd=490911 
+=== rep=2 arm=c1-am-1200M attempt=1 seed=7 env="RWM_ACK_MERGE=1" cell=c1/c1/single bytes=1200000000 14:52:44
+{"bytes":1200000000,"dnf":0,"hint":"bulk","max_s":42.2959,"mean_mbps":226.972,"mean_s":42.2959,"median_s":42.2959,"min_s":42.2959,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=49.13s CPUCLI=51.58s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f77a: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 1313845730 bytes 1028851 pkt (dropped 117, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f77b: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 916 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f77c: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 8885851421350879017  Sent 95613739 bytes 274524 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f77d: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 16906308969659645530  Sent 1006 bytes 13 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-am-1200M am_c=1 am_s=1 (want 1)
+CTLD [CTLD] p0 tx=987769 rx=987847 [CTLD] p0 tx=1011453 rx=1011707 
+MECH win=202/1024 paused=0% sidle=8157ms/1147/mx29ms cwnd=669 rtt=8.0ms sweeps=107 retx=1883 gapdrop=191 mpr[rep=700 seqs=6238 fired=1883 y=221 r=1662 fast=0 coal=1107 supp=4355/0/0 stale=0 plost=0 age=23ms pf=315/1251/10000 fp/on p0:1883/1883] relgap=0ms/mx17ms srel=0/33580 btlbw=116170 cwnd=351874 
+MECHMID win=243/558 paused=1% sidle=442ms/64/mx13ms cwnd=273 sweeps=0 gapdrop=11 btlbw=117822 cwnd=366697 
+=== rep=2 arm=c1-prior-1200M attempt=1 seed=7 env="" cell=c1/c1/single bytes=1200000000 14:53:28
+{"bytes":1200000000,"dnf":0,"hint":"bulk","max_s":47.5644,"mean_mbps":201.832,"mean_s":47.5644,"median_s":47.5644,"min_s":47.5644,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=51.30s CPUCLI=52.80s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem f77e: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 1316042811 bytes 1052973 pkt (dropped 145, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem f77f: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 7  Sent 916 bytes 12 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem f780: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 15632382457538333209  Sent 159878181 bytes 313875 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem f781: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 2103670080647313662  Sent 1006 bytes 13 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+LIVENESS arm=c1-prior-1200M am_c=0 am_s=0 (want 0)
+CTLD [CTLD] p0 tx=1935748 rx=985842 [CTLD] p0 tx=1978064 rx=1007086 
+MECH win=147/573 paused=1% sidle=16410ms/2117/mx19ms cwnd=289 rtt=9.4ms sweeps=34 retx=2195 gapdrop=237 mpr[rep=522 seqs=5746 fired=2195 y=287 r=1908 fast=0 coal=1334 supp=3551/0/0 stale=0 plost=0 age=28ms pf=483/1410/10000 fp/on p0:2195/2195] relgap=0ms/mx7ms srel=0/29878 btlbw=109496 cwnd=476708 
+MECHMID win=116/484 paused=1% sidle=543ms/67/mx14ms cwnd=229 sweeps=8 gapdrop=6 btlbw=102748 cwnd=474368 
+# done 2026-08-08T14:54:18Z
+ARMCOUNT c1-am invocations=8
+ARMCOUNT c1-prior invocations=8
+ARMCOUNT c7-am invocations=11
+ARMCOUNT c7-prior invocations=13
+ARMCOUNT c8-am invocations=12
+ARMCOUNT c8-prior invocations=14
+ARMCOUNT sc2-am invocations=15
+ARMCOUNT sc2-prior invocations=11
+ARMCOUNT sc3-am invocations=14
+ARMCOUNT sc3-prior invocations=15
+ARMCOUNT c1-am-1200M invocations=2
+ARMCOUNT c1-prior-1200M invocations=2
