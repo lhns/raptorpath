@@ -1,0 +1,114 @@
+==============================================================================
+INSTRUMENT AND ABORT TABLE — READ THIS BEFORE ANY NUMBER BELOW
+==============================================================================
+  TEXT-EQUAL NO — *** the release-prof build is NOT the same code as the release build. P describes a DIFFERENT sender from B's ceiling and every attribution below is qualified by this line. ***
+
+==============================================================================
+THE CEILING — ms/MB, cores, and the predicted-vs-measured goodput
+==============================================================================
+cell-arm   ms/MB                    cores                  pred Mbit/s            meas Mbit/s           
+--------------------------------------------------------------------------------------------------------
+c1-B       47.67 (2s 0.00, n=1)     1.198 (2s 0.000, n=1)  201.1 (2s 0.0, n=1)    201.1 (2s 0.0, n=1)   
+c1-P       61.05 (2s 0.00, n=1)     1.457 (2s 0.000, n=1)  190.9 (2s 0.0, n=1)    190.9 (2s 0.0, n=1)   
+c1-S       47.12 (2s 0.00, n=1)     1.137 (2s 0.000, n=1)  193.1 (2s 0.0, n=1)    193.1 (2s 0.0, n=1)   
+c9-B       70.90 (2s 0.00, n=1)     1.473 (2s 0.000, n=1)  166.2 (2s 0.0, n=1)    166.2 (2s 0.0, n=1)   
+c9-P       84.78 (2s 0.00, n=1)     1.699 (2s 0.000, n=1)  160.4 (2s 0.0, n=1)    160.4 (2s 0.0, n=1)   
+c9-S       68.30 (2s 0.00, n=1)     1.429 (2s 0.000, n=1)  167.3 (2s 0.0, n=1)    167.3 (2s 0.0, n=1)   
+c9h-B      69.00 (2s 0.00, n=1)     1.481 (2s 0.000, n=1)  171.7 (2s 0.0, n=1)    171.7 (2s 0.0, n=1)   
+c9h-P      81.67 (2s 0.00, n=1)     1.701 (2s 0.000, n=1)  166.6 (2s 0.0, n=1)    166.6 (2s 0.0, n=1)   
+c9h-S      67.60 (2s 0.00, n=1)     1.450 (2s 0.000, n=1)  171.6 (2s 0.0, n=1)    171.6 (2s 0.0, n=1)   
+
+  ms/MB = CPUCLI_s * 1000 / (bytes/1e6);  cores = CPUCLI_s / TRANSFER seconds
+  pred  = cores / ms_per_MB * 8000   <- the c9 ceiling arithmetic, verbatim
+  THE CEILING IS ARM B's. S and P carry their instrument's own cost.
+
+==============================================================================
+INSTRUMENT COST — each arm against its own cell's B, paired by cell
+==============================================================================
+cell-arm   d ms/MB      d ms/MB %    d goodput %   
+--------------------------------------------------
+c1-P       +13.38       +28.1        -5.1          
+c1-S       -0.55        -1.2         -4.0          
+c9-P       +13.88       +19.6        -3.5          
+c9-S       -2.60        -3.7         +0.7          
+c9h-P      +12.67       +18.4        -3.0          
+c9h-S      -1.40        -2.0         -0.1          
+
+==============================================================================
+THE DECOMPOSITION — [CPUPROF] seam shares of PROCESS CPU (arm S)
+==============================================================================
+
+  c1-S  (n=1 lines)
+    run_ms 16576.6 (2s 0.0, n=1)   cpu_ms 18836.8 (2s 0.0, n=1)   cores 1.136 (2s 0.000, n=1)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    src      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    frm      0.0139 (2s 0.0000, n=1) 261.8 (2s 0.0, n=1)  338411 (2s 0, n=1) 0.77      
+    ser      0.0097 (2s 0.0000, n=1) 182.2 (2s 0.0, n=1)  339125 (2s 0, n=1) 0.54      
+    hand     0.0282 (2s 0.0000, n=1) 531.8 (2s 0.0, n=1)  339125 (2s 0, n=1) 1.57      
+    --------------------------------------------------------------------------
+    attr     0.0518 (2s 0.0000, n=1)
+    unattr   0.9482 (2s 0.0000, n=1)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+  c9-S  (n=1 lines)
+    run_ms 19137.3 (2s 0.0, n=1)   cpu_ms 27300.9 (2s 0.0, n=1)   cores 1.427 (2s 0.000, n=1)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    src      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    frm      0.0119 (2s 0.0000, n=1) 323.9 (2s 0.0, n=1)  338411 (2s 0, n=1) 0.96      
+    ser      0.0095 (2s 0.0000, n=1) 260.2 (2s 0.0, n=1)  353341 (2s 0, n=1) 0.74      
+    hand     0.1197 (2s 0.0000, n=1) 3268.4 (2s 0.0, n=1) 353341 (2s 0, n=1) 9.25      
+    --------------------------------------------------------------------------
+    attr     0.1411 (2s 0.0000, n=1)
+    unattr   0.8589 (2s 0.0000, n=1)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+  c9h-S  (n=1 lines)
+    run_ms 7021.1 (2s 0.0, n=1)   cpu_ms 10123.0 (2s 0.0, n=1)   cores 1.442 (2s 0.000, n=1)
+    seam     share of CPU           ms                   entries          us/call   
+    --------------------------------------------------------------------------
+    enc      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    src      0.0000 (2s 0.0000, n=1) 0.0 (2s 0.0, n=1)    0 (2s 0, n=1)    -         
+    frm      0.0119 (2s 0.0000, n=1) 120.8 (2s 0.0, n=1)  126905 (2s 0, n=1) 0.95      
+    ser      0.0117 (2s 0.0000, n=1) 118.8 (2s 0.0, n=1)  132937 (2s 0, n=1) 0.89      
+    hand     0.1104 (2s 0.0000, n=1) 1117.8 (2s 0.0, n=1) 132937 (2s 0, n=1) 8.41      
+    --------------------------------------------------------------------------
+    attr     0.1341 (2s 0.0000, n=1)
+    unattr   0.8659 (2s 0.0000, n=1)   <- NOT an error term. quinn's driver,
+             its sendmsg, and rustls/ring AEAD all live here, and NONE
+             of them is reachable from the sender task. perf must explain it.
+
+==============================================================================
+PERF CAPTURE — attach gap and symbolization
+==============================================================================
+  c1-P rep=1 attach_ms=1732 symbol_rows=1115 graph=0 data=/home/vibe/cpuprof/perf/c1-P-s42-r1.data
+  c9-P rep=1 attach_ms=2018 symbol_rows=1210 graph=0 data=/home/vibe/cpuprof/perf/c9-P-s42-r1.data
+  c9h-P rep=1 attach_ms=2194 symbol_rows=995 graph=0 data=/home/vibe/cpuprof/perf/c9h-P-s42-r1.data
+
+  The attach gap is the head of the run perf MISSED. P is read as a
+  SHAPE (which symbols dominate), never as a total; the total is B's.
+  Leaf profiles are beside the .data files as *.report.txt.
+
+==============================================================================
+CALIBRATION — n = 1. NOTHING ABOVE OR BELOW IS A RESULT.
+==============================================================================
+  c1-B: cores=1.198 of 6 -> CPU headroom 80.0 %
+  c1-P: cores=1.457 of 6 -> CPU headroom 75.7 %
+  c1-S: cores=1.137 of 6 -> CPU headroom 81.0 %
+  c9-B: cores=1.473 of 6 -> CPU headroom 75.4 %
+  c9-P: cores=1.699 of 6 -> CPU headroom 71.7 %
+  c9-S: cores=1.429 of 6 -> CPU headroom 76.2 %
+  c9h-B: cores=1.481 of 6 -> CPU headroom 75.3 %
+  c9h-P: cores=1.701 of 6 -> CPU headroom 71.6 %
+  c9h-S: cores=1.45 of 6 -> CPU headroom 75.8 %
+
+  LINK headroom comes from the -q.txt qdisc captures (discipline 16,
+  TRANSFER wall denominator) and is filled in by hand into the
+  contract's table, exactly as every other calibration in this tree.
+  AT A SENDER-BOUND CELL THE BINDING PERMISSION IS THE CPU COLUMN,
+  and c9 is the cell where the two disagree by construction.

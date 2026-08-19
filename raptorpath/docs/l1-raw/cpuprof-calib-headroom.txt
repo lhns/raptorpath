@@ -1,0 +1,41 @@
+# CPU-CEILING CALIBRATION — HEADROOM, BOTH COLUMNS (n=1, seed 42, 2026-08-19)
+# link_headroom = 1 - tc_bytes*8/(TRANSFER wall * shaped capacity), CLI* egress, TRANSFER wall never INVOCATION_S
+# cpu_headroom  = 1 - cores/6
+# per-leg MB shows the quad running on TWO of four legs.
+
+cell-arm legs   cap Mbit   tc bytes       secs      util %    link headroom  per-leg MB
+c1-B     1      1000       439241596      15.916    22.1      77.9           439.2
+c1-P     1      1000       438004076      16.761    20.9      79.1           438.0
+c1-S     1      1000       437713946      16.574    21.1      78.9           437.7
+c9-B     4      400        448161389      19.257    46.5      53.5           221.8 1.0 224.5 0.8
+c9-P     4      400        448954531      19.956    45.0      55.0           135.0 91.3 172.2 50.5
+c9-S     4      400        447145085      19.125    46.8      53.2           48.4 78.5 152.5 167.7
+c9h-B    4      240        168682759      6.987     80.5      19.5           83.7 83.4 0.1 1.5
+c9h-P    4      240        168754112      7.203     78.1      21.9           85.6 81.9 0.5 0.7
+c9h-S    4      240        168174162      6.994     80.1      19.9           83.5 84.6 0.0 0.1
+
+# PER-THREAD (P arm, perf --sort pid): share of samples per tokio worker
+## c9-P
+    16.20%   763661:tokio-rt-worker
+    16.09%   763660:tokio-rt-worker
+    15.86%   763664:tokio-rt-worker
+    15.76%   763663:tokio-rt-worker
+    15.50%   763659:tokio-rt-worker
+    15.17%   763662:tokio-rt-worker
+     5.42%   763658:raptorpath     
+## c9h-P
+    17.42%   765589:tokio-rt-worker
+    17.12%   765591:tokio-rt-worker
+    16.53%   765586:tokio-rt-worker
+    16.10%   765587:tokio-rt-worker
+    14.43%   765588:tokio-rt-worker
+    13.20%   765590:tokio-rt-worker
+     5.21%   765585:raptorpath     
+## c1-P
+    20.68%   767220:tokio-rt-worker
+    16.24%   767219:tokio-rt-worker
+    15.14%   767221:tokio-rt-worker
+    14.73%   767223:tokio-rt-worker
+    14.10%   767218:tokio-rt-worker
+    11.25%   767222:tokio-rt-worker
+     7.86%   767217:raptorpath     
