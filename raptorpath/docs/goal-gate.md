@@ -36032,6 +36032,134 @@ Phase 1's primary reading split across seeds — `R` scored **LOW at s42 and REP
 
 ---
 
+## The Missing Half at the Fast Single Path — PHASE 2, THE SCORED RESULT (2026-08-19, `feat/gap-phase2-score` from main@`c2e20be`) — **THERE IS NO INTERACTION TO NAME**
+
+120/120 invocations, `n = 12` per arm per seed, five arms interleaved and adjacent within each rep on a freshly built topology, all on today's `main` binary `sha256 330ebfcc…` verified in **both** ledger headers. **Every contrast below is a within-session paired ratio, per the amendment's clause (a). No absolute level in this section is compared to any other session's number.**
+
+### `G-ABORT` — THE ABORT-CAUSE TABLE, READ BEFORE ANY NUMBER
+
+| | `Nd` | `Nm` | `Nh` | `Ns` | `Nc` |
+|---|---|---|---|---|---|
+| rows, s42 | **12/12** | **12/12** | **12/12** | **12/12** | **12/12** |
+| rows, s7 | **12/12** | **12/12** | **12/12** | **12/12** | **12/12** |
+
+**Zero aborts, zero `INSTRUMENT-FAIL`, zero `ARM-CONTAMINATION`, zero `ARM-LIVENESS-FAIL`, zero `G-ERA-VIOLATION`, zero `LIVENESS-FAIL`, zero `ARM-VANISHED`, zero `QCAP-MISSING`.** The parser's instrument table prints `(none)`. **`G5` PASSES at 0 %.** `PINGROW` and `STEALROW` are present on **120 of 120** invocations, so the amendment's two new instruments have complete coverage.
+
+### THE TOPO-PING RETRY HISTOGRAM — **the repair's first complete field dataset**
+
+| arm | s42 | s7 |
+|---|---|---|
+| `Nd` / `Nm` / `Nh` / `Ns` / `Nc` | `{1: 24}` each | `{1: 24}` each |
+
+**240 legs pinged. 0 needed more than one draw. Worst observed: 1 of the 26 allowed.** The witness's own arithmetic predicts ≈ 0.14 of 240 legs requiring a second draw at `c1` (`pi_bad = 9.99e-4`), so **zero is the expected reading and it is now a MEASUREMENT rather than an absence** — which was the entire point of the fix, since an absence cannot falsify anything. Phase 1 ran 72/72 clean and could not produce this table at all.
+
+### HOST CPU STEAL, PER ARM — amendment clause (b)
+
+| seed | `Nd` | `Nm` | `Nh` | `Ns` | `Nc` | spread |
+|---|---|---|---|---|---|---|
+| 42 | 9.00 % | 11.98 % | 11.56 % | 10.09 % | 9.05 % | **2.98 pts** |
+| 7 | 10.56 % | 9.58 % | 8.38 % | 10.04 % | 9.79 % | **2.18 pts** |
+
+Mean % of **non-idle** ticks taken by the hypervisor, per invocation, `n = 12`. **Every pairwise arm difference is under the pre-committed 5-point threshold at both seeds, so NO contrast in this section is reported with the steal table beside it.** The instrument was armed to catch a confound and it reports the confound absent — recorded because a null from a pre-committed guard is a result.
+
+### THE MECHANISM GAUGE — `[CTLD]`, AND IT INVERTS EXACTLY WHERE IT SHOULD
+
+| arm | s42 | s7 |
+|---|---|---|
+| `Nd` | 0.999 (s 0.000) | 0.999 (s 0.001) |
+| **`Nm`** | **1.958 (s 0.010)** | **1.958 (s 0.007)** |
+| `Nh` | 0.999 (s 0.001) | 0.999 (s 0.001) |
+| `Ns` | 0.999 (s 0.001) | 0.999 (s 0.001) |
+| `Nc` | 0.999 (s 0.001) | 0.999 (s 0.001) |
+
+**`Nm` — and only `Nm` — restores the pre-flip control-datagram density.** 1.958 against the 1.960 phase 1 measured on the pre-flip binary itself and the 1.96 both prior ledgers published; every ack-merge-on arm sits at 0.999. **The discriminating arm is mechanically proved to be doing the thing it is named for, on the receiver, at three digits, in 24 invocations** — and the four other arms are proved not to be touching it. This is the assertion `G3` makes for phase 1, and it is stronger here because it is an inversion rather than a reproduction.
+
+*(This table exists because the amendment's parser fix landed first. Before it, `gap_parse.py` printed no mechanism section at all.)*
+
+### THE LADDER — every contrast a within-session paired ratio, `n = 12`
+
+**`Nd − Nm` — ACK-MERGE'S MARGINAL EFFECT IN TODAY'S COMPOSED STACK.** The measurement the era battery could not make: one binary, one session, one gate, paired within rep.
+
+| seed | paired | `2σ` | interval | vs published | verdict |
+|---|---|---|---|---|---|
+| 42 | **+11.60 %** | 1.54 | [+10.05, +13.14] | +12.7 % | **REPRODUCES** |
+| 7 | **+9.36 %** | 1.84 | [+7.52, +11.20] | +13.0 % | **LOW** |
+
+**COMBINED: `SPLIT`**, by the amendment's rule 4 — s42's margin is 0.44 pp against `0.25 × 2σ = 0.385`, s7's is 1.80 pp against 0.46, and **both exceed their thresholds, so neither is a rounding.** `SPLIT` is reported as `SPLIT` and is **not** resolved by averaging, by pooling the seeds, or by preferring the tighter one — the rule was fixed before this run precisely so that this outcome could not be argued away afterwards.
+
+**AND THE SAME INTERVALS AGAINST THE ERA BATTERY'S OWN NUMBER** (a ratio-to-ratio comparison, which clause (a) permits):
+
+| seed | phase 2 interval | era battery | |
+|---|---|---|---|
+| 42 | [+10.05, +13.14] | +6.84 % | **EXCLUDES** |
+| 7 | [+7.52, +11.20] | +9.62 % | **CONTAINS — consistent** |
+
+**`Nd − Nh` — HONEST ANCHOR:** s42 **+0.45 %** [−0.74, +1.63]; s7 **−1.13 %** [−2.49, +0.23]. **Both PARITY. COMBINED: PARITY.**
+
+**`G7a` — `Nd` vs `Ns` (`RWM_SUM_CAP`), pre-registered INERT:** s42 **−1.06 %** [−2.60, +0.47] **PARITY**; s7 **UNRESOLVED** (`2σ = 18.16`, over the 5 % design bar). **COMBINED: PARITY**, by rule 5 — the unresolved seed does not vote.
+
+**`G7b` — `Nd` vs `Nc` (`RWM_DELTA_CAP`), pre-registered INERT:** s42 **−1.12 %** [−2.45, +0.21]; s7 **−1.26 %** [−3.50, +0.97]. **Both PARITY. COMBINED: PARITY.**
+
+**`G7` PASSES. The era pre-registration's inertness claim — that `RWM_SUM_CAP` and `RWM_DELTA_CAP` "contribute NOTHING at `c1` by construction" — is CONFIRMED, not falsified.** It had never been measured; it now has been, at a resolution of 1.3–1.5 pp at s42. The three point estimates are consistently mildly negative (−1.06, −1.12, −1.26), which is a sub-resolution hint that the caps may cost about a percent, and **it is recorded as a hint and not as a finding**, because not one of them clears its own `2σ`.
+
+**THE ONE OUTLIER, REPORTED RATHER THAN REMOVED.** `Ns` at s7 rep 2 delivered **91.1 Mbit/s** against 193.9–201.2 for its other eleven reps, taking 38 s of wall against 19 s. It alone drove that arm's `σ` from 2.82 to 30.67 and is the entire reason `G7a`'s s7 seed is unresolved. **The new per-invocation steal instrument rules out the obvious culprit:** during that invocation the CPU was **69 % idle** and steal ran **13.39 % of non-idle — LOWER than `Nd`'s 15.60 % in the same rep.** It was a transfer stall, not CPU contention. **The rep is NOT dropped** — there is no pre-registered outlier rule and inventing one here is exactly what the amendment exists to prevent. Rule 5 handles it, as designed, by declaring the seed unresolved.
+
+### THE CPU COLUMN CROSS-CHECKS THE MECHANISM
+
+`Nd` vs `Nm`, `ms_per_MB`, paired: **−7.48 %** (s42, `2σ` 1.68) and **−4.72 %** (s7, `2σ` 1.66), **both RESOLVED**. Ack-merge **cuts sender CPU per megabyte** — reproducing, in today's composed stack, the −8.7 % / −9.0 % that step 0 recovered from flip week's ledgers for the same gate on the pre-flip binary. **The goodput gain and the CPU-cost reduction move together, on two binaries eleven days apart**, which is the mechanism story `[CTLD]` predicts: fewer control datagrams is less work as well as less traffic.
+
+### THE VERDICT THE GOAL OWES
+
+**WHICH FLIP'S INTERACTION EXPLAINS THE MISSING HALF? — NONE. `INTERACTION NOT FOUND`, and the class is `NEEDS-MORE`.**
+
+`D1` sent this dispatch to look for *"an interaction among the later flips"*. **The ladder looked, and there is nothing there.** All three later flips read **PARITY** at `c1`, at a resolution of 1.2–1.5 pp at the seed that resolves. Ack-merge's marginal effect **survives composition**: +11.60 % / +9.36 %, against a published +12.7 % / +13.0 % measured before any of those flips existed. **A gain that is eaten by a later flip does not look like this.**
+
+**AND HALF OF THE "MISSING HALF" WAS NEVER A MEASUREMENT.** The era battery's `c1` s42 point carried `2σ_pooled = 82.74`, and its own §P1 conceded the point *"has no resolving power at all, so s7 is the seed that speaks."* Phase 2's s42 interval **excludes** that +6.84 % outright. **At the seed that speaks, the era battery and phase 2 AGREE**: +9.62 % against +9.36 %, one cross-binary and one within-session, and phase 2's interval contains it.
+
+So what remains, stated exactly:
+
+* At **s7** there is a **real, reproducible, modest shortfall**: ack-merge delivers ≈ +9.4 % where +13.0 % was published, and **no arm in this ladder accounts for the ~3.6 pp difference.**
+* At **s42** there is **no shortfall at all** — +11.60 % reproduces the published band.
+* The residual is **the same size as this ratio's own between-session variability at this cell.** Four measurements of ack-merge's gain at `c1` now exist: **+12.7/+13.0** (flip week), **+6.84/+9.62** (era, s42 unresolvable), **+9.88/+11.95** (phase 1, pre-flip binary, today), **+11.60/+9.36** (phase 2, today's binary). **A 6-point spread on a quantity whose within-session `2σ` is 1.5–2.8 pp.**
+
+**THAT IS THE FINDING, AND IT IS A MEASUREMENT FINDING RATHER THAN A MECHANISM ONE.** Phase 1 established that `c1`'s absolute level is not stable across sessions (`G1`'s third state). Phase 2 establishes that **the RATIO is stable within a session and drifts between them too** — less violently than the level, but by more than the residual anyone is trying to explain. **More ladder arms cannot fix that. A cell whose ratio reproduces across sessions is what would.**
+
+### THE PRE-REGISTERED PREDICTIONS, SCORED
+
+| | prediction | verdict |
+|---|---|---|
+| **`G5`** | aborts < 2 % at every arm-seed | **PASSES** (0/120) |
+| **`G7`** | `Ns`/`Nc` read parity at `c1` | **PASSES** — the era contract's inertness claim is CONFIRMED |
+| amendment (b) | steal spread rule | **no contrast triggers it** (2.98 / 2.18 pts) |
+| amendment (c) | seeds-disagree rule | **applied literally**: `SPLIT` on `Nd − Nm`, rule 5 on `G7a` |
+| amendment (d) | both instruments | **complete coverage, 120/120** |
+
+### IN PLAIN LANGUAGE — what actually explains the era battery's half-sized gain
+
+Ack-merge is a change that stopped the receiver sending back so many tiny bookkeeping packets. When it shipped it made this network test about **13 %** faster. Months later, with a dozen other changes shipped on top, a test measured only **6.8 %** and **9.6 %** — apparently half the gain. The obvious suspicion was that one of those later changes had quietly eaten it.
+
+This experiment switched each later change off, one at a time, in a single sitting, alternating between them so that anything drifting in the background hit every version equally. **None of them made any difference.** Turning off the two "cap" mechanisms changed the speed by about one per cent — less than the measurement's own noise — and turning off the anchor mechanism did nothing either. Meanwhile ack-merge itself, switched off and on in the current software, still bought **11.6 %** and **9.4 %**. An internal counter confirmed it was genuinely doing its job: with ack-merge off, the bookkeeping traffic doubled back to exactly its old level, and with it on, it halved again — every time, in every repetition.
+
+**So nothing ate the gain. It was mostly never missing.**
+
+The "half-sized" result turns out to have been two different things wearing one label. **One of its two numbers was never a real measurement at all** — that run's own spread was so wide that it could not have told 7 % from 20 %, and the people who ran it said so at the time. **The other number was real, and this experiment reproduces it almost exactly** (9.6 % then, 9.4 % now). What is left is a genuine but modest shortfall on one of the two test configurations: about 9 % where 13 % was originally published.
+
+And the honest answer to *why* that last few per cent moves is that **this test bench cannot currently hold still enough to say.** The same measurement, repeated four times over eleven days, has come back at 12.7, 6.8, 9.9 and 11.6 per cent. Within any single sitting it is tight and repeatable; between sittings it wanders by more than the gap anyone is trying to explain. Adding more switches to flip would not fix that — it needs a test configuration whose *ratios* reproduce from one day to the next.
+
+### **MEASUREMENT TRUTH ITEM 3 — CLOSING VERDICT**
+
+> **`INTERACTION NOT FOUND` / `NEEDS-MORE`. The `P1` shortfall at `c1` is NOT an interaction among the later flips — all three read PARITY, and ack-merge's gain survives composition at +11.60 % / +9.36 %. It is NOT substrate drift either, which phase 1 confirmed as a −11 % LEVEL shift that a ratio is immune to. Half the shortfall (s42, +6.84 %) was an unresolvable point the era battery had already disclaimed and phase 2 now excludes; the other half (s7) is reproduced, at +9.36 % against the era's +9.62 %, and stands as a genuine ~3.6 pp gap against the published +13.0 % that no arm explains. THAT RESIDUE IS SMALLER THAN THIS RATIO'S OWN BETWEEN-SESSION SPREAD (four readings: 6.84–13.0 %), so it is bounded by the instrument rather than by the mechanism. `P1` is re-read as evidence about the harness's cross-session reproducibility at `c1`, not about ack-merge losing its gain. CLOSING ITEM 3 FURTHER REQUIRES A CELL WHOSE RATIO REPRODUCES ACROSS SESSIONS — NOT MORE ARMS.**
+
+### WHAT IS NOT CLAIMED
+
+* **No absolute level here is compared to another session's**, per amendment (a). Every cross-session comparison above is ratio-to-ratio.
+* **No outlier was removed.** The `Ns` s7 rep-2 collapse is reported, its steal ruled out, and the pre-registered rule left to handle it.
+* **No claim that the caps are free.** Three consistent ~1 % negatives are a sub-resolution hint, explicitly not a finding.
+* **The era battery's section is now eligible for the revision spec**, which is a separate decision and is **not applied in this commit** — `D1` released it only on phase 2 being scored, and the appropriate annotation follows from this verdict rather than being assumed by it.
+* **No default flips, no gate is added, no engine crate is edited.**
+
+---
+
 ## THE SPAN RUN â€” PRE-REGISTRATION (2026-08-19, `feat/span-run` from main@`cb28863`) â€” **MEASUREMENT TRUTH item 4's VM HALF, plus item 5's FIRST FIELD Ïƒ.** Written and committed BEFORE the VM is run, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### WHAT THIS RUN IS, IN ONE PARAGRAPH
