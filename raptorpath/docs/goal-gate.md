@@ -35111,3 +35111,180 @@ Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION
 **WHAT THE SMOKE ALREADY SHOWS ABOUT THE DEFECT — DISCLOSED AS AN OBSERVATION AT `n = 1`, EXPLICITLY NOT A RESULT AND NOT SCORED.** The two legs of a dual are **not interchangeable**, which is precisely what the single-leg probe assumed. At `c8` OLD the two legs read `p50` **101.0 ms (leg A)** and **244.0 ms (leg B)**; at `c8L` OLD `p95` reads **141.0 ms (leg A)** against **633.0 ms (leg B)**. **A probe that samples leg A alone is not measuring a degraded version of the delivered latency — it is measuring a different quantity from the one it is quoted as.** The scored battery is what decides the direction and the magnitude; this row of the smoke only establishes that the question was worth re-opening.
 
 **LAUNCH GATE SATISFIED.** All six pre-launch conditions of `latt_calib.sh` are met, the headroom table above is filled and committed, and the scored battery may launch. **This commit contains the owed edit and nothing else: no prediction, band, cell, arm, `n`, reading rule or guard above is altered.**
+
+---
+
+## The Sender CPU Ceiling — PRE-REGISTRATION, PHASE 1 (2026-08-19, `feat/cpu-and-gap-prep` from main@`636e40f`) — MEASUREMENT DISCIPLINE 1 + 11 + 14 + 16 + 17, and CLAUDE.md **FORMULA-FIRST LAWS**: written and committed BEFORE any VM contact, in its OWN commit, immediately after the instruments it is written against and before a single number is read. **This is MEASUREMENT TRUTH item 2.** **Nothing in this session flips a default. No number below is a result.**
+
+### THE QUESTION
+
+**Where does the sender's 68.5 ms/MB go?**
+
+The c9 scored battery established a sender ceiling three independent ways and then could not take it apart:
+
+> * **CPU-per-payload-byte is INVARIANT across two very different cells**: c9 `CPUCLI` 27.38 s / 400 MB = **68.5 ms/MB**; c9h 10.38 s / 150 MB = **69.2 ms/MB**.
+> * **The sender's CPU budget predicts its goodput to within 1 %**: 1.51 cores ÷ 68.5 ms/MB = 22.0 MB/s = **176.3 Mbit/s**, against the **176.4 Mbit/s measured**.
+> * **1.67× the capacity bought 1.19× the wire rate.**
+
+That section's §6 then disclaims every throughput magnitude at the cell, and its named successor #2 is *"re-run c9 on a sender that can fill four legs, since every negative result here is confounded by a 176 Mbit/s CPU ceiling at a 400 Mbit cell."* **Nobody can build that sender without knowing which term to attack.** This contract measures the terms.
+
+**AND IT IS NOT ONLY c9's PROBLEM.** `c1` is single-path at a 1 Gbit pipe and reads 175–228 Mbit/s in every battery this tree has run, at 20–22 % link utilisation. The era battery's `P1` — MEASUREMENT TRUTH item 3, pre-registered separately in this same branch — is a `c1` goodput question, and if `c1` is sender-CPU-bound too then its "goodput" column is a CPU column wearing a network name. **This contract's `B` arm at `c1` is what decides that, and the two items are deliberately cross-linked here so neither is read without the other.**
+
+### THE TWO-PHASE STRUCTURE, STATED EXPLICITLY BECAUSE IT IS THE POINT
+
+**This contract pre-registers PHASE 1 ONLY.**
+
+* **PHASE 1 — THE PROFILE.** Measure the decomposition. Name the top two costs against the operational definition below. **NO OPTIMIZATION IS ATTEMPTED AND NO ms/MB TARGET IS PRE-REGISTERED HERE**, because a target chosen before the profile is a target chosen against a guess, and a target chosen after the profile but written into *this* block would be a postdiction wearing a pre-registration's clothes.
+* **PHASE 2 — THE TRIAL.** ONE optimization, targeting the **#1** cost phase 1 names, with its ms/MB target and its implied ceiling pre-registered **in its own separate commit**, written after phase 1's results are committed and before the trial is built. The trial-selection rule and the ceiling-validation criterion are pre-registered **here**, in phase 1, so the only thing phase 2 supplies is the number — and the number is constrained by a rule this block already fixed.
+
+**THE HONEST REASON FOR THE SPLIT.** A single-phase contract would have to predict which seam wins in order to state a target. This tree has been wrong about exactly that kind of guess before — ADR-0070's `×N` had no provenance in the repository, and the composed cap's magnitude was refuted at every cell where its shape was confirmed. **Phase 1 makes no prediction about seam ranking at all**, which is also why the loopback smoke disclosed in the instrument commit (all five seams fed, `enc` largest) cannot contaminate a scored clause here: nothing here is scored on ranking.
+
+### THE INSTRUMENT PAIR — AND NEITHER SUBSUMES THE OTHER
+
+| | `[CPUPROF]` (`RWM_CPUPROF=1`) | `perf record -p <client>` |
+|---|---|---|
+| what it times | five named seams of the **sender task** | **every instruction the client process executes** |
+| how | monotonic wall around a closure, `fetch_add` into an `AtomicU64` | 999 Hz sampling of the instruction pointer |
+| denominator | `CLOCK_PROCESS_CPUTIME_ID` delta — **the same quantity `CPUCLI` measures** | its own sample total |
+| attribution | **exact**, and disjoint by construction | **statistical**, into symbols whole-program LTO has inlined together |
+| **blind to** | quinn's endpoint driver, the `sendmsg`, rustls/ring AEAD, tokio, the kernel | nothing, but it cannot separate two inlined callers |
+| cost | one vDSO clock read per seam entry | ~1500 samples/s |
+
+**`S`'s `unattr` COLUMN AND `P`'s NON-SENDER-TASK SAMPLES ARE THE SAME QUANTITY MEASURED TWO WAYS.** That is the cross-check, it is scored (X1 below), and if the two disagree **NEITHER IS PROMOTED** — the same rule "Latency Truth" applies to `q_p50` and `ping_p50`, for the same reason.
+
+**AND `hand` IS NOT THE SEND SYSCALL.** `send_datagram` hands a `Bytes` to quinn's queue and returns; the socket write happens on the endpoint driver task. A decomposition that called `hand` "the syscall cost" would be wrong, and it is written down here so no results table can quietly do it.
+
+### THE ARMS — three, and the third is what makes the other two readable
+
+| arm | binary | env | what it is for |
+|---|---|---|---|
+| **B** | `target/release/raptorpath` | **none** | **THE CEILING'S OWN ARM.** Every ms/MB quoted as *the ceiling* comes from here. |
+| **S** | the SAME `release` binary | `RWM_CPUPROF=1` | the exact decomposition |
+| **P** | `target/release-prof/raptorpath` | none; `perf record -p` attached | the whole-process shape |
+
+**WHY `B` EXISTS AT ALL.** The cell is **sender-CPU-bound**. An instrument that costs CPU there moves the number it reports — this is not a general caution, it is the specific failure mode of measuring a CPU ceiling with a CPU-consuming gauge. `S − B` and `P − B` **are the instrument-cost measurement**, they are printed as their own table by `cpuprof_parse.py`, and no decomposition is reported without them.
+
+**THE ENV DELTA, DECLARED BEFORE THE RUN.** No arm here sets `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG` or `RWM_LATPROBE`. Every one of them is a sender-side cost inside the quantity under decomposition. **This differs deliberately from the era, latency and c9 batteries' env**, and the consequence is stated rather than discovered: **`B`'s ms/MB is NOT required to equal the c9 ledger's 68.5 exactly**, and the difference — if any — is itself a reading about what those instruments cost the arms that carry them.
+
+**THE PROFILED BINARY IS THE SAME CODE, AND IT IS CHECKED.** `[profile.release-prof]` inherits `release` and adds only `debug = 1`; it does not force frame pointers, which would cost a register and change codegen. The driver hashes both binaries' `.text` sections into the session header. **`TEXT-EQUAL NO` does not abort the battery — it QUALIFIES every attribution in it**, and that qualification is printed at the top of the parser's output, not buried.
+
+### THE CELL
+
+| cell | scenarios | mode | bytes | n/seed/arm | seeds | why it is here |
+|---|---|---|---|---|---|---|
+| `c9` | c2 c2 c2 c2 | quad | 400 MB | **6** | 42, 7 | **THE CEILING'S OWN CELL.** 68.5 ms/MB, 1.51 cores, 176.4 Mbit/s at a 400 Mbit pipe. |
+| `c9h` | c2 c2 c3 c3 | quad | 150 MB | **3** | 42 | **THE INVARIANCE CHECK.** 69.2 ms/MB. The 1 % agreement across a 400 and a 240 Mbit cell is *what made the ceiling credible*; it is re-measured, not inherited. |
+| `c1` | c1 c1 | single | 400 MB | **6** | 42, 7 | **THE CROSS-LINK TO ITEM 3.** Is the era battery's `P1` goodput column a CPU column? |
+
+`3 arms × (6 + 6) at c9 + 3 × 3 at c9h + 3 arms × (6 + 6) at c1 = 36 + 9 + 36 = **81 invocations**.`
+
+### WHAT "TOP TWO COSTS" MEANS OPERATIONALLY — DERIVED, NOT CHOSEN
+
+A term is a **TOP-TWO COST** iff **both**:
+
+1. it is one of the **two largest** by share of client process CPU, on the `S` arm for seams and on the `P` arm for symbols; **and**
+2. its share is **≥ 10 % of client process CPU**.
+
+**THE 10 % BAR IS DERIVED FROM WHAT PHASE 2 CAN RESOLVE, and here is the derivation.** At fixed `cores`, the ceiling arithmetic is
+
+```text
+   goodput_Mbit = cores / ms_per_MB × 8000
+```
+
+so goodput is inversely proportional to `ms_per_MB` and a trial that removes a fraction `f` of a term of share `s` moves goodput by
+
+```text
+   Δgoodput ≈ s·f / (1 − s·f)   ≈  s·f   for small s·f
+```
+
+A trial that **halves** its target (`f = 0.5`) and clears the bar therefore buys **≥ 5 %**. And 5 % is the floor of what this harness resolves at these cells: the era battery's `c1` carried a **2σ of 82.7 Mbit/s on one seed** and could not resolve **6.8 %**, while the seed that spoke resolved 9.6 %. **A term below 10 % cannot produce a resolvable win even if the trial removes half of it**, so promoting it would be pre-registering an unfalsifiable trial.
+
+**IF FEWER THAN TWO TERMS CLEAR THE BAR, THAT IS THE PHASE-1 RESULT AND PHASE 2 DOES NOT RUN.** The verdict is then **THE CEILING IS DIFFUSE**, reported as a finding with the full share table beside it, and the recorded consequence is that c9's confound is **not removable by one optimization** — which is a more useful answer to the c9 successor list than a trial that was always going to fail. **This branch is pre-committed here so it cannot be renegotiated into "the best of a bad set" afterwards.**
+
+### THE TRIAL-SELECTION RULE — PHASE 2's ONLY DEGREE OF FREEDOM IS THE NUMBER
+
+* **The trial targets the #1 cost.** Not the second, not the most convenient, not the one with the tidiest patch. If the #1 cost is in a dependency (rustls/ring AEAD, quinn's driver) and no in-tree change can move it, **that is recorded as the finding and the trial targets nothing** — a "we attacked #2 because #1 was hard" trial is exactly the shape of result this document exists to prevent.
+* **ONE trial.** Not a sweep, not a stack.
+* **Its ms/MB target and its implied ceiling are pre-registered in phase 2's OWN commit**, before the change is built, in the form: *target `ms_per_MB` after = X, therefore predicted goodput = `cores`/X × 8000 = Y Mbit/s, band [Y−b, Y+b]*, with `cores` taken from phase 1's `B` arm at the same cell and `b` stated.
+* **The trial ships DEFAULT OFF behind its own gate**, like every other candidate in this tree, and nothing in phase 2 flips a default.
+
+### THE CEILING-VALIDATION CRITERION — PRE-REGISTERED NOW, SCORED IN PHASE 2
+
+The ceiling is not just a number to beat; **it is a MODEL, and phase 2 is its test.** The model says goodput is set by CPU per byte at fixed core occupancy. So:
+
+```text
+   Δpred_%  =  (ms_before / ms_after − 1) × 100        at matched `cores`
+   Δmeas_%  =  (mbit_after / mbit_before − 1) × 100
+```
+
+**C-CEIL passes iff `sign(Δmeas) = sign(Δpred)` AND `|Δmeas − Δpred| ≤ 3 percentage points`.**
+
+**The 3 pp band, derived:** the c9 ledger's own instance of this arithmetic landed at **176.3 predicted against 176.4 measured — 0.06 %**. 3 pp is fifty times that residual and covers the run-to-run variation in `cores` that a matched-`cores` comparison cannot fully remove. A tighter band would be scoring the harness; a looser one would not be a test.
+
+**AND THE FAILURE BRANCH IS THE INTERESTING ONE, SO IT IS WRITTEN DOWN FIRST.** If `ms_per_MB` falls and **goodput does not follow** (`Δmeas ≈ 0` while `Δpred > 3`), **the ceiling model is REFUTED at the new operating point**: the sender stopped being the binding constraint and something else now binds. That is a **result, not a failed trial**, it retires the "sender-bound" attribution at that cell, and it is reported as the primary finding with the trial's own success relegated to a footnote. **No re-scoping, no second trial in the same contract.**
+
+### THE PRE-REGISTERED PREDICTIONS — phase 1, each falsifiable, NONE requiring a seam ranking
+
+* **A1 — THE CEILING REPRODUCES.** `B` at `c9`: `ms_per_MB` in **[60, 80]**, and `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %`. The band is wide **on purpose and with a stated reason**: the env delta above removes four instruments the c9 battery carried, so `B` is expected to read **at or below** 68.5, and the amount is a reading rather than an error. **If A1 fails, PHASE 2 IS NOT LAUNCHED** and the non-reproduction is the finding — the same rule "Latency Truth" applies to its `E-LAT-ENGINE` reproduction check, for the same reason: a decomposition of a ceiling that is not there decomposes nothing.
+* **A2 — THE INSTRUMENTS ARE CHEAP.** `|Δms_per_MB|` for `S` vs `B` and for `P` vs `B` each **≤ 5 %**. Above that, the decomposition is reported **with the cost printed beside it** and its shares are read as shares of *the instrumented run's* CPU — **which is what they are.** No correction is invented, ever: a "corrected" share would be a modelled number in a table of measured ones.
+* **A3 — THE DECOMPOSITION IS NOT DEGENERATE.** `attr ∈ [0.10, 0.90]`. Below 0.10 the five seams are the wrong five and the instrument needs redesign before any trial is worth building; above 0.90 would mean quinn, rustls and the kernel together cost under a tenth of the sender's CPU at 176 Mbit/s, which would be **surprising** and is flagged as such rather than accepted quietly.
+* **A4 — THE TWO INSTRUMENTS AGREE, and this is the one with real teeth.**
+  * **X1 — THE RESIDUAL.** `S`'s `unattr` against `P`'s share of samples outside the sender-path symbols — i.e. in `ring`/`rustls`, `quinn`/`quinn_proto`, `tokio`, `libc`, and kernel (`[k]`) symbols. **Agreement within 20 percentage points.**
+  * **X2 — THE CODING TERM.** `S`'s `enc` share against `P`'s share in `gf256::mul_acc_slice` + `generate_window_coefficients` + `code_generation*`. **Agreement within 10 percentage points** — tighter than X1 because the GF kernel is a named function with a clean symbol map, where X1's set is a family match.
+  * **IF EITHER FAILS, NEITHER INSTRUMENT IS PROMOTED.** The phase-1 verdict is then **UNRECONCILED**, both tables are published side by side, the disagreement's size is the finding, and **phase 2 does not launch on a decomposition two instruments cannot agree on.**
+* **A5 — `perf` ATTACHES AND SYMBOLIZES.** `symbol_rows ≥ 20` on every `P` invocation, `attach_ms` recorded on every one. A `P` arm with no symbolized rows is an **INSTRUMENT-FAIL**, not an empty profile, and the driver already emits it as one.
+* **A6 — THE INVARIANCE HOLDS.** `B`'s `ms_per_MB` at `c9h` within **5 %** of `c9`'s. The c9 ledger read 68.5 vs 69.2 — **1 % apart** — and that agreement is the single strongest piece of evidence that the ceiling is a property of the sender rather than of a cell. **It is re-measured here and not inherited.** A failure means the "ceiling" is cell-dependent and the whole framing needs revisiting before a trial.
+* **A7 — `c1` IS OR IS NOT SENDER-BOUND, AND EITHER ANSWER IS A RESULT.** No band is asserted, because no `ms_per_MB` has ever been published for `c1` and pre-committing one would be inventing a prior. **What IS pre-committed is the reading rule:** if `c1`'s `B` arm reads `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %` at a link utilisation of ~21 %, then **`c1` is sender-bound**, and MEASUREMENT TRUTH item 3's `P1` contrast — and the ack-merge flip's original `+12.7/+13.0 %` — are contrasts **between two CPU costs**, not between two network behaviours. That re-reading is owed to item 3's section by pointer, and the pointer is promised here before either number exists.
+
+### THE GUARDS
+
+* **G-CONTROL — THE CONTROL MUST BE CLEAN.** `B` and `P` must carry `RWM_CPUPROF=0` in `[GATES]` and **zero** `[CPUPROF]` lines. `ARM-CONTAMINATION` is emitted per invocation. At a CPU-bound cell a contaminated control is invisible in every other column, which is why it is asserted mechanically rather than trusted.
+* **G-ARM — THE GATE MUST TAKE.** `S` must carry `RWM_CPUPROF=1` two-sided and **exactly one** `[CPUPROF]` line per sender. Zero lines is an unreached emission site; two is a gauge that is not one-shot. Both are `INSTRUMENT-FAIL`, distinctly named.
+* **G-SEAM — EVERY SEAM MUST BE FED AT THE QUAD.** `n > 0` on all five seams on every `S` invocation. The loopback gate proves this at one path; **four legs is a different placement regime and a seam could be dark there**, and a dark seam reports a clean `0.0000` share that a results table would print as *"this cost nothing"*.
+* **G-DISJOINT — `attr ≤ 1`.** The decomposition rests on the seams being disjoint. An `attr` above 1 falsifies that and voids every share in the run. Pinned in the reachability test and re-asserted per invocation by the parser's own arithmetic.
+* **G-HEAD (discipline 16), WITH THE CLAUSE THIS CELL FORCES.** `util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`; the denominator is the **TRANSFER wall, NEVER `INVOCATION_S`**. **AND AT THIS CELL THE LINK PERMISSION IS NOT THE BINDING ONE.** c9 reads ~50 % link headroom while being saturated at the sender; `c1` reads ~79 %. So the calibration reports **BOTH** columns and the contract pre-commits to quoting neither without the other:
+  ```text
+     link_headroom = 1 − tc_bytes·8 / (TRANSFER seconds × shaped capacity)
+     cpu_headroom  = 1 − cores / NPROC              [cores = CPUCLI / TRANSFER seconds]
+  ```
+  **This is the first calibration in this tree to measure the second one**, and it exists because the c9 battery's headroom table said "throughput targets PERMITTED" at a cell that could not deliver them.
+* **G-GEN.** `RWM_GEN=0` on every arm — the plain-window control, so the rows pool with the c9 and era ledgers.
+* **G-TEXT.** Both binaries' `.text` sha in the session header. `TEXT-EQUAL NO` qualifies every `P` attribution and the qualification is printed first.
+* **G-STEAL.** `/proc/stat`'s steal column and the desktop co-tenant count in every session header. **This is a CPU measurement on a VM**; a session with a co-tenant is not a control for one without, and item 3's drift question turns on exactly this.
+* **G-ABORT.** The abort-cause table is printed **before** the first number, as in every battery since the witness landed.
+
+### THE CALIBRATION, AND IT IS NOT OPTIONAL
+
+`cpuprof_calib.sh`: ONE rep per arm per cell, seed 42, SAME session, the SAME two binaries, `tc -s qdisc show` on every cell and every invocation. **It is `n = 1`: no σ, no seed-7 evidence, and nothing in it is a result.** It is also **THE SMOKE**, and what it is smoking is the instrument pair: the gate reaching the binary through `perf_rwm_c.sh`'s forwarding; `[CPUPROF]` firing exactly once; **all five seams fed at a QUAD**; `perf` attaching at all under this kernel's `perf_event_paranoid`; symbolized rows existing; the control arm clean; `.text` equality; and the instrument cost at `n = 1`.
+
+Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION**, in its own commit, BEFORE the scored battery is launched. **The table is left EMPTY here on purpose.**
+
+| cell | shaped capacity | B ms/MB | cores | link headroom | **cpu headroom** | permission |
+|---|---|---|---|---|---|---|
+| `c9` | 400 Mbit | | | | | |
+| `c9h` | 240 Mbit | | | | | |
+| `c1` | 1 Gbit | | | | | |
+
+**Where the calibration CONTRADICTS a permission, the affected clause is VOID for that cell and is reported as void, never re-scoped after the fact.**
+
+### THE VM STEP PLAN — for the parent to dispatch later. NOTHING HERE HAS BEEN RUN.
+
+| # | step | duration |
+|---|---|---|
+| 0 | Take `/tmp/rwm-vm.lock`. Sync the tree (cleared, CRLF-converted `git archive`). Write `COMMIT`. | 5 min |
+| 1 | `rm -f target/release/raptorpath`; `cargo build --release`. **Then** `cargo build --profile release-prof`. Record both `sha256` and both `.text` shas. | 10 min |
+| 2 | `command -v perf` — install `linux-perf` if absent. Read `/proc/sys/kernel/perf_event_paranoid`; if `> 1`, `sysctl -w kernel.perf_event_paranoid=1` **and record that the value was changed**, since it is part of the session's provenance. | 5 min |
+| 3 | `sudo bash cpuprof_calib.sh` → `calib-cpuprof-table.txt`. **Commit THE CONTRACT'S COMPLETION.** | 5 min |
+| 4 | `sudo setsid bash cpuprof_battery.sh 42 6` then `... 7 6`, detached, `RWM_CP_CELLS="c9 c1"`. 72 invocations. | **70 min** |
+| 5 | `RWM_CP_CELLS=c9h sudo setsid bash cpuprof_battery.sh 42 3`. 9 invocations. | 10 min |
+| 6 | Collect; `python3 cpuprof_parse.py <ledgers>`; commit **PHASE 1 — THE SCORED RESULT** with the ranking and the A1–A7 verdicts. | 15 min |
+| 7 | **STOP.** Phase 2's pre-registration is a separate dispatch and may not be written before step 6 is committed. | — |
+
+**Total VM time ≈ 2 h**, of which 80 min is unattended. Launched **detached and not polled** (item 13); watch the sentinel, never the process table.
+
+### WHAT IS NOT CLAIMED, AND WILL NOT BE
+
+* **No optimization is proposed here**, and none may be proposed before phase 1 is scored.
+* **No seam is predicted to win.** The loopback smoke in the instrument commit is disclosed and is not a prior.
+* **No throughput magnitude at c9.** The cell is sender-bound; that is the premise of this contract, not a conclusion of it.
+* **No claim that the five seams are the right five.** A3 is the clause that can falsify it, and the honest outcome of a low `attr` is a redesigned instrument, not a reweighted table.
