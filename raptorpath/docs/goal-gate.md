@@ -36854,3 +36854,108 @@ post-hoc diagnostic `/home/vibe/span/cli-diag.log`; loopback smoke
 `/home/vibe/span/span-report.txt`; tarball `/home/vibe/span-artifacts.tar.gz`.
 Binary sha256 **`37c1ed3fd4194b0029a2be0a8f4b77b79b036adabd9148552e14a1e078e2bcec`**
 = main@`cb28863`; kernel 7.0.14-101.fc43.x86_64; Xeon E5-2650 v3, 6 cores.
+
+---
+
+## THE MEASURED σ AT c8 — PRE-REGISTRATION (2026-08-19, `feat/sigma-c8` from main@`4e52a31`) — **MEASUREMENT TRUTH item 5's MEASUREMENT CLAUSE.** Written and committed BEFORE the VM is touched, in its own commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
+
+### 1 — THE QUESTION, IN ONE SENTENCE
+
+`position-paper-skeleton.md` §7 row 1 carries the paper's most quotable number,
+`δ = 0.4838`, marked **SUPERSEDED-PENDING-MEASUREMENT**, and the thing it is
+pending is **one field: σ at c8**. This pass reads that field and rewrites the
+row from a measurement instead of an inversion.
+
+### 2 — WHAT IS ALREADY ON THE RECORD (no number here is new)
+
+The skeleton's repair wrote the inversion out in closed form:
+
+```text
+    δ(σ, ν)  =  0.484 · (18.1 ms / σ) · (ν / 0.01)
+```
+
+with `α_b = 0.1843`, `p = 0.0126`, `d = 77 ms` all committed, and δ **inversely
+proportional to σ**. `ν` is no longer a free choice: `tools/l1/nu_measure.py`
+over the Candidates Battery's 477 usable records reads **ν(c8) = 0.0438**, off
+committed ledgers with no VM run. Substituting ν and collecting constants, the
+whole of this pass's arithmetic is one division:
+
+```text
+    δ(σ)  =  0.484 · (18.1 / σ_ms) · 4.38  =  38.4 / σ_ms          [ν = 0.0438]
+```
+
+### 3 — THE PRE-EXISTING PREDICTION THIS SCORES
+
+The skeleton wrote it before the field existed, and it is quoted verbatim
+rather than restated:
+
+> `σ_required = 18.1 ms · (0.484 / 0.5) · 4.38 ≈ 77 ms ≈ d`. **A σ equal to the
+> srtt it is the dispersion of is not a plausible reading** — so the honest
+> expectation is that the measurement kills the agreement rather than
+> confirming it.
+
+The span run (§"THE SPAN RUN — THE SCORED RESULT", section 8) then read the
+first field σ ever taken at a wire cell — **c9h, fast legs, median ~1.27 ms**,
+7× below §16.69's working 10 ms and 13× below the memo's 18.1 ms — and reported
+it as pointing the opposite way from the memo's correction. **c9h is not c8 and
+that reading scores nothing.** This pass is the c8 reading it named as its
+successor.
+
+### 4 — THE PROTOCOL, FIXED HERE
+
+* **Cell** c8 = `c2 c3`, **dual** mode, **25 MB**, **seed 42**, hint `bulk`,
+  shipped defaults otherwise (no `RWM_GEN` override, no arm gate) — the machine
+  as it ships, because it is the shipped machine the paper's δ describes.
+* **n = 3 reps**, three separate invocations of `perf_rwm_c.sh` at `runs=1`, so
+  each rep is an independent topology bring-up and its own log.
+* **`RWM_DIAG=1`** (forwarded by `rwm_forward_env`); σ is read from the SENDER
+  log `/tmp/rwm-c.log`, as `sig_us=<µs>/n<count>` in the per-path `[DIAG]`
+  line.
+* **THE READING RULE, PRE-COMMITTED:** take the **LAST `[DIAG]` line per path**
+  in each rep. σ is an **EWMA**, so the latest emission is the most converged
+  one; any earlier line is the same estimator less warmed up. `n` is reported
+  beside every σ without exception, because it is the only thing that lets a
+  reader separate a seed-biased reading from a sampling-noisy one.
+* **Which path's σ goes into δ:** the **DATA path** — the leg carrying the
+  bulk of the transfer, identified by its `[DIAG]` sample count `n` (the
+  well-sampled leg), exactly as the span run classed legs by count rather than
+  by index, because the index order is not fixed across reps.
+* **Aggregate across reps:** the **median** of the three data-path σ readings
+  is the σ plugged into δ. All three are printed.
+* **0 aborts expected**; the abort-cause witness is armed by the harness and
+  any abort is reported rather than retried away.
+
+### 5 — THE SCORED CLAUSE, WITH ITS BAND PRE-COMMITTED
+
+* **S1 — DOES THE `δ ≈ δ_auto` AGREEMENT SURVIVE MEASUREMENT?**
+  **The agreement survives if and only if `δ(σ_meas, ν = 0.0438) ∈ [0.4, 0.6]`.**
+
+  *Why this band and not another.* The claim being tested is the memo's own —
+  a **3 % agreement** with `δ_auto = 0.5`. A band of ±20 % around 0.5 is
+  therefore already **seven times more generous than the claim it is scoring**,
+  and it is chosen deliberately loose so that a PASS cannot be dismissed as a
+  narrow window and a FAIL cannot be dismissed as a harsh one. In σ terms the
+  band is `σ ∈ [64 ms, 96 ms]` — the neighbourhood of `d = 77 ms` the skeleton
+  already named as the implausible requirement.
+
+* **S1 is a two-sided result.** A FAIL retires `0.4838` from every paper and
+  replaces it with a measured number; a PASS would be the more surprising
+  outcome and would restore the row. **Neither outcome flips a default**, and
+  neither is a decision — S1 feeds the cost-ratio memo's YES-option and the
+  USER DECISION, it does not make it.
+
+* **NOT SCORED, reported only:** the slow-leg σ, the per-rep spread, and the
+  comparison against §16.69's working 10 ms and the memo's 18.1 ms. Three reps
+  at one cell and one seed do not support a dispersion claim, and none is made.
+
+### 6 — WHAT WOULD MAKE THIS PASS UNREADABLE, STATED IN ADVANCE
+
+If the data-path `n` comes back small (order 100s rather than order 10 000s),
+the σ is sampling-noisy in the sense section 8 of the span run named, and S1 is
+reported **with that caveat attached to the number**, not quietly. If the two
+paths cannot be separated by count — if both legs read comparable `n` — the
+"DATA path" selector in section 4 is ambiguous, and the pass reports **both**
+δ values and scores S1 only if both fall on the same side of the band.
+
+**Nothing in this section flips a default, adds a gate, or edits an engine
+crate.**
