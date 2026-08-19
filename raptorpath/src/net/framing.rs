@@ -56,6 +56,15 @@ pub fn extract_packets(data: &[u8]) -> Vec<Vec<u8>> {
 /// Frame a single packet as a window-mode source symbol.
 /// Returns a padded buffer of `symbol_size` bytes with a 2-byte length prefix.
 pub fn frame_window_packet(data: &[u8], symbol_size: u16) -> Vec<u8> {
+    // `frm` seam (`RWM_CPUPROF`, default OFF): the per-source-symbol copy out
+    // of the TUN read buffer into a `symbol_size` padded frame. One of the
+    // named copies the sender CPU decomposition exists to size.
+    crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Frm, || {
+        frame_window_packet_inner(data, symbol_size)
+    })
+}
+
+fn frame_window_packet_inner(data: &[u8], symbol_size: u16) -> Vec<u8> {
     let size = symbol_size as usize;
     let mut buf = vec![0u8; size];
     let max_payload = size.saturating_sub(2);

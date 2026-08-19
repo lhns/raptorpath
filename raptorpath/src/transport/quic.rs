@@ -1131,15 +1131,25 @@ impl QuicTransport {
             .get(&path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
+        // The two `RWM_CPUPROF` seams of the send path, and they are ADJACENT
+        // rather than nested so their shares add rather than over-count:
+        //   `ser`  the wire serialization (compact v5, or the bincode legacy)
+        //   `hand` the datagram HANDOFF to quinn — NOT the send syscall, which
+        //          happens on quinn's endpoint driver task and is invisible
+        //          here by construction (see `net::cpuprof` module docs).
+        use crate::net::cpuprof::{timed, Seam};
         if crate::transport::protocol::wire_compact_active() {
-            if let Some(buf) = crate::transport::protocol::serialize_data_compact(&batch) {
-                return self.send_datagram_shaped(path_id, &conn, buf);
+            let compact = timed(Seam::Ser, || {
+                crate::transport::protocol::serialize_data_compact(&batch)
+            });
+            if let Some(buf) = compact {
+                return timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf));
             }
         }
         let msg = WireMessage::Data(batch);
-        let data = msg.serialize()?;
+        let data = timed(Seam::Ser, || msg.serialize())?;
 
-        self.send_datagram_shaped(path_id, &conn, data)
+        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, data))
     }
 
     /// Send a control message as a datagram (best-effort, low latency).

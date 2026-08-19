@@ -6,5 +6,38 @@ resolver = "2"
 lto = true
 codegen-units = 1
 
+# THE PROFILING PROFILE — goal-gate "MEASUREMENT TRUTH item 2, THE SENDER CPU
+# CEILING". `perf` needs symbols and line tables that `[profile.release]` does
+# not emit (`debug` defaults to `false`), and the c9 ceiling was measured on a
+# binary built with THAT profile.
+#
+# THE ONE RULE THIS BLOCK OBEYS: it must not change the code being measured.
+# So it inherits `release` and adds `debug = 1` (line tables) and NOTHING
+# ELSE. In particular it does NOT set `force-frame-pointers`:
+#
+#   * frame pointers cost a general-purpose register on x86-64 and change
+#     codegen, which would make the profiled binary a DIFFERENT sender from
+#     the one whose 68.5 ms/MB ceiling is under decomposition;
+#   * they are not needed, because rustc emits DWARF CFI (`.eh_frame`) into
+#     release builds already — `panic = "unwind"` is the default and nothing
+#     here overrides it — so `perf record --call-graph dwarf` can unwind
+#     without them.
+#
+# `debug = 1` adds DWARF alongside the code; it does not alter instruction
+# selection, so `--profile release-prof` and `--profile release` are expected
+# to produce the same `.text`. The battery driver VERIFIES that rather than
+# assuming it (`tools/l1/cpuprof_battery.sh` compares the two builds' `.text`
+# section hashes and refuses to attribute a profile to the ceiling if they
+# differ).
+#
+# `[profile.release]` ABOVE IS UNTOUCHED. Every existing battery, and every
+# `cargo build --release` in this tree, is byte-identical to before this block
+# existed. Building with this profile is opt-in:
+#
+#   cargo build --profile release-prof   ->  target/release-prof/raptorpath
+[profile.release-prof]
+inherits = "release"
+debug = 1
+
 [profile.test]
 opt-level = 2
