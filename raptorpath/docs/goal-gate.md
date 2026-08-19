@@ -35297,3 +35297,409 @@ The pre-registration listed a three-site pointer edit in advance and made it con
 **NOTHING ELSE IN THAT SECTION IS TOUCHED**, exactly as pre-committed: `P2`'s scored verdicts, the abort table, `E-GOOD`, `E-CPU` and every number stand as recorded. **The era battery is annotated, not rewritten.**
 
 **AND THE ERA BATTERY'S OWN INSTINCT IS VINDICATED, WHICH IS WORTH SAYING.** It could have averaged the two gauges, or promoted the one that flattered the arc, or filed the disagreement as a caveat. It did none of those: it reported the conflict, named a candidate without adopting it, and named the successor instrument. **That is why the defect was findable at all.** The instrument was wrong; the discipline that surfaced it was not.
+---
+
+## The Sender CPU Ceiling — PRE-REGISTRATION, PHASE 1 (2026-08-19, `feat/cpu-and-gap-prep` from main@`636e40f`) — MEASUREMENT DISCIPLINE 1 + 11 + 14 + 16 + 17, and CLAUDE.md **FORMULA-FIRST LAWS**: written and committed BEFORE any VM contact, in its OWN commit, immediately after the instruments it is written against and before a single number is read. **This is MEASUREMENT TRUTH item 2.** **Nothing in this session flips a default. No number below is a result.**
+
+### THE QUESTION
+
+**Where does the sender's 68.5 ms/MB go?**
+
+The c9 scored battery established a sender ceiling three independent ways and then could not take it apart:
+
+> * **CPU-per-payload-byte is INVARIANT across two very different cells**: c9 `CPUCLI` 27.38 s / 400 MB = **68.5 ms/MB**; c9h 10.38 s / 150 MB = **69.2 ms/MB**.
+> * **The sender's CPU budget predicts its goodput to within 1 %**: 1.51 cores ÷ 68.5 ms/MB = 22.0 MB/s = **176.3 Mbit/s**, against the **176.4 Mbit/s measured**.
+> * **1.67× the capacity bought 1.19× the wire rate.**
+
+That section's §6 then disclaims every throughput magnitude at the cell, and its named successor #2 is *"re-run c9 on a sender that can fill four legs, since every negative result here is confounded by a 176 Mbit/s CPU ceiling at a 400 Mbit cell."* **Nobody can build that sender without knowing which term to attack.** This contract measures the terms.
+
+**AND IT IS NOT ONLY c9's PROBLEM.** `c1` is single-path at a 1 Gbit pipe and reads 175–228 Mbit/s in every battery this tree has run, at 20–22 % link utilisation. The era battery's `P1` — MEASUREMENT TRUTH item 3, pre-registered separately in this same branch — is a `c1` goodput question, and if `c1` is sender-CPU-bound too then its "goodput" column is a CPU column wearing a network name. **This contract's `B` arm at `c1` is what decides that, and the two items are deliberately cross-linked here so neither is read without the other.**
+
+### THE TWO-PHASE STRUCTURE, STATED EXPLICITLY BECAUSE IT IS THE POINT
+
+**This contract pre-registers PHASE 1 ONLY.**
+
+* **PHASE 1 — THE PROFILE.** Measure the decomposition. Name the top two costs against the operational definition below. **NO OPTIMIZATION IS ATTEMPTED AND NO ms/MB TARGET IS PRE-REGISTERED HERE**, because a target chosen before the profile is a target chosen against a guess, and a target chosen after the profile but written into *this* block would be a postdiction wearing a pre-registration's clothes.
+* **PHASE 2 — THE TRIAL.** ONE optimization, targeting the **#1** cost phase 1 names, with its ms/MB target and its implied ceiling pre-registered **in its own separate commit**, written after phase 1's results are committed and before the trial is built. The trial-selection rule and the ceiling-validation criterion are pre-registered **here**, in phase 1, so the only thing phase 2 supplies is the number — and the number is constrained by a rule this block already fixed.
+
+**THE HONEST REASON FOR THE SPLIT.** A single-phase contract would have to predict which seam wins in order to state a target. This tree has been wrong about exactly that kind of guess before — ADR-0070's `×N` had no provenance in the repository, and the composed cap's magnitude was refuted at every cell where its shape was confirmed. **Phase 1 makes no prediction about seam ranking at all**, which is also why the loopback smoke disclosed in the instrument commit (all five seams fed, `enc` largest) cannot contaminate a scored clause here: nothing here is scored on ranking.
+
+### THE INSTRUMENT PAIR — AND NEITHER SUBSUMES THE OTHER
+
+| | `[CPUPROF]` (`RWM_CPUPROF=1`) | `perf record -p <client>` |
+|---|---|---|
+| what it times | five named seams of the **sender task** | **every instruction the client process executes** |
+| how | monotonic wall around a closure, `fetch_add` into an `AtomicU64` | 999 Hz sampling of the instruction pointer |
+| denominator | `CLOCK_PROCESS_CPUTIME_ID` delta — **the same quantity `CPUCLI` measures** | its own sample total |
+| attribution | **exact**, and disjoint by construction | **statistical**, into symbols whole-program LTO has inlined together |
+| **blind to** | quinn's endpoint driver, the `sendmsg`, rustls/ring AEAD, tokio, the kernel | nothing, but it cannot separate two inlined callers |
+| cost | one vDSO clock read per seam entry | ~1500 samples/s |
+
+**`S`'s `unattr` COLUMN AND `P`'s NON-SENDER-TASK SAMPLES ARE THE SAME QUANTITY MEASURED TWO WAYS.** That is the cross-check, it is scored (X1 below), and if the two disagree **NEITHER IS PROMOTED** — the same rule "Latency Truth" applies to `q_p50` and `ping_p50`, for the same reason.
+
+**AND `hand` IS NOT THE SEND SYSCALL.** `send_datagram` hands a `Bytes` to quinn's queue and returns; the socket write happens on the endpoint driver task. A decomposition that called `hand` "the syscall cost" would be wrong, and it is written down here so no results table can quietly do it.
+
+### THE ARMS — three, and the third is what makes the other two readable
+
+| arm | binary | env | what it is for |
+|---|---|---|---|
+| **B** | `target/release/raptorpath` | **none** | **THE CEILING'S OWN ARM.** Every ms/MB quoted as *the ceiling* comes from here. |
+| **S** | the SAME `release` binary | `RWM_CPUPROF=1` | the exact decomposition |
+| **P** | `target/release-prof/raptorpath` | none; `perf record -p` attached | the whole-process shape |
+
+**WHY `B` EXISTS AT ALL.** The cell is **sender-CPU-bound**. An instrument that costs CPU there moves the number it reports — this is not a general caution, it is the specific failure mode of measuring a CPU ceiling with a CPU-consuming gauge. `S − B` and `P − B` **are the instrument-cost measurement**, they are printed as their own table by `cpuprof_parse.py`, and no decomposition is reported without them.
+
+**THE ENV DELTA, DECLARED BEFORE THE RUN.** No arm here sets `RWM_DIAG`, `RWM_ACKDIAG`, `RWM_WALLDIAG` or `RWM_LATPROBE`. Every one of them is a sender-side cost inside the quantity under decomposition. **This differs deliberately from the era, latency and c9 batteries' env**, and the consequence is stated rather than discovered: **`B`'s ms/MB is NOT required to equal the c9 ledger's 68.5 exactly**, and the difference — if any — is itself a reading about what those instruments cost the arms that carry them.
+
+**THE PROFILED BINARY IS THE SAME CODE, AND IT IS CHECKED.** `[profile.release-prof]` inherits `release` and adds only `debug = 1`; it does not force frame pointers, which would cost a register and change codegen. The driver hashes both binaries' `.text` sections into the session header. **`TEXT-EQUAL NO` does not abort the battery — it QUALIFIES every attribution in it**, and that qualification is printed at the top of the parser's output, not buried.
+
+### THE CELL
+
+| cell | scenarios | mode | bytes | n/seed/arm | seeds | why it is here |
+|---|---|---|---|---|---|---|
+| `c9` | c2 c2 c2 c2 | quad | 400 MB | **6** | 42, 7 | **THE CEILING'S OWN CELL.** 68.5 ms/MB, 1.51 cores, 176.4 Mbit/s at a 400 Mbit pipe. |
+| `c9h` | c2 c2 c3 c3 | quad | 150 MB | **3** | 42 | **THE INVARIANCE CHECK.** 69.2 ms/MB. The 1 % agreement across a 400 and a 240 Mbit cell is *what made the ceiling credible*; it is re-measured, not inherited. |
+| `c1` | c1 c1 | single | 400 MB | **6** | 42, 7 | **THE CROSS-LINK TO ITEM 3.** Is the era battery's `P1` goodput column a CPU column? |
+
+`3 arms × (6 + 6) at c9 + 3 × 3 at c9h + 3 arms × (6 + 6) at c1 = 36 + 9 + 36 = **81 invocations**.`
+
+### WHAT "TOP TWO COSTS" MEANS OPERATIONALLY — DERIVED, NOT CHOSEN
+
+A term is a **TOP-TWO COST** iff **both**:
+
+1. it is one of the **two largest** by share of client process CPU, on the `S` arm for seams and on the `P` arm for symbols; **and**
+2. its share is **≥ 10 % of client process CPU**.
+
+**THE 10 % BAR IS DERIVED FROM WHAT PHASE 2 CAN RESOLVE, and here is the derivation.** At fixed `cores`, the ceiling arithmetic is
+
+```text
+   goodput_Mbit = cores / ms_per_MB × 8000
+```
+
+so goodput is inversely proportional to `ms_per_MB` and a trial that removes a fraction `f` of a term of share `s` moves goodput by
+
+```text
+   Δgoodput ≈ s·f / (1 − s·f)   ≈  s·f   for small s·f
+```
+
+A trial that **halves** its target (`f = 0.5`) and clears the bar therefore buys **≥ 5 %**. And 5 % is the floor of what this harness resolves at these cells: the era battery's `c1` carried a **2σ of 82.7 Mbit/s on one seed** and could not resolve **6.8 %**, while the seed that spoke resolved 9.6 %. **A term below 10 % cannot produce a resolvable win even if the trial removes half of it**, so promoting it would be pre-registering an unfalsifiable trial.
+
+**IF FEWER THAN TWO TERMS CLEAR THE BAR, THAT IS THE PHASE-1 RESULT AND PHASE 2 DOES NOT RUN.** The verdict is then **THE CEILING IS DIFFUSE**, reported as a finding with the full share table beside it, and the recorded consequence is that c9's confound is **not removable by one optimization** — which is a more useful answer to the c9 successor list than a trial that was always going to fail. **This branch is pre-committed here so it cannot be renegotiated into "the best of a bad set" afterwards.**
+
+### THE TRIAL-SELECTION RULE — PHASE 2's ONLY DEGREE OF FREEDOM IS THE NUMBER
+
+* **The trial targets the #1 cost.** Not the second, not the most convenient, not the one with the tidiest patch. If the #1 cost is in a dependency (rustls/ring AEAD, quinn's driver) and no in-tree change can move it, **that is recorded as the finding and the trial targets nothing** — a "we attacked #2 because #1 was hard" trial is exactly the shape of result this document exists to prevent.
+* **ONE trial.** Not a sweep, not a stack.
+* **Its ms/MB target and its implied ceiling are pre-registered in phase 2's OWN commit**, before the change is built, in the form: *target `ms_per_MB` after = X, therefore predicted goodput = `cores`/X × 8000 = Y Mbit/s, band [Y−b, Y+b]*, with `cores` taken from phase 1's `B` arm at the same cell and `b` stated.
+* **The trial ships DEFAULT OFF behind its own gate**, like every other candidate in this tree, and nothing in phase 2 flips a default.
+
+### THE CEILING-VALIDATION CRITERION — PRE-REGISTERED NOW, SCORED IN PHASE 2
+
+The ceiling is not just a number to beat; **it is a MODEL, and phase 2 is its test.** The model says goodput is set by CPU per byte at fixed core occupancy. So:
+
+```text
+   Δpred_%  =  (ms_before / ms_after − 1) × 100        at matched `cores`
+   Δmeas_%  =  (mbit_after / mbit_before − 1) × 100
+```
+
+**C-CEIL passes iff `sign(Δmeas) = sign(Δpred)` AND `|Δmeas − Δpred| ≤ 3 percentage points`.**
+
+**The 3 pp band, derived:** the c9 ledger's own instance of this arithmetic landed at **176.3 predicted against 176.4 measured — 0.06 %**. 3 pp is fifty times that residual and covers the run-to-run variation in `cores` that a matched-`cores` comparison cannot fully remove. A tighter band would be scoring the harness; a looser one would not be a test.
+
+**AND THE FAILURE BRANCH IS THE INTERESTING ONE, SO IT IS WRITTEN DOWN FIRST.** If `ms_per_MB` falls and **goodput does not follow** (`Δmeas ≈ 0` while `Δpred > 3`), **the ceiling model is REFUTED at the new operating point**: the sender stopped being the binding constraint and something else now binds. That is a **result, not a failed trial**, it retires the "sender-bound" attribution at that cell, and it is reported as the primary finding with the trial's own success relegated to a footnote. **No re-scoping, no second trial in the same contract.**
+
+### THE PRE-REGISTERED PREDICTIONS — phase 1, each falsifiable, NONE requiring a seam ranking
+
+* **A1 — THE CEILING REPRODUCES.** `B` at `c9`: `ms_per_MB` in **[60, 80]**, and `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %`. The band is wide **on purpose and with a stated reason**: the env delta above removes four instruments the c9 battery carried, so `B` is expected to read **at or below** 68.5, and the amount is a reading rather than an error. **If A1 fails, PHASE 2 IS NOT LAUNCHED** and the non-reproduction is the finding — the same rule "Latency Truth" applies to its `E-LAT-ENGINE` reproduction check, for the same reason: a decomposition of a ceiling that is not there decomposes nothing.
+* **A2 — THE INSTRUMENTS ARE CHEAP.** `|Δms_per_MB|` for `S` vs `B` and for `P` vs `B` each **≤ 5 %**. Above that, the decomposition is reported **with the cost printed beside it** and its shares are read as shares of *the instrumented run's* CPU — **which is what they are.** No correction is invented, ever: a "corrected" share would be a modelled number in a table of measured ones.
+* **A3 — THE DECOMPOSITION IS NOT DEGENERATE.** `attr ∈ [0.10, 0.90]`. Below 0.10 the five seams are the wrong five and the instrument needs redesign before any trial is worth building; above 0.90 would mean quinn, rustls and the kernel together cost under a tenth of the sender's CPU at 176 Mbit/s, which would be **surprising** and is flagged as such rather than accepted quietly.
+* **A4 — THE TWO INSTRUMENTS AGREE, and this is the one with real teeth.**
+  * **X1 — THE RESIDUAL.** `S`'s `unattr` against `P`'s share of samples outside the sender-path symbols — i.e. in `ring`/`rustls`, `quinn`/`quinn_proto`, `tokio`, `libc`, and kernel (`[k]`) symbols. **Agreement within 20 percentage points.**
+  * **X2 — THE CODING TERM.** `S`'s `enc` share against `P`'s share in `gf256::mul_acc_slice` + `generate_window_coefficients` + `code_generation*`. **Agreement within 10 percentage points** — tighter than X1 because the GF kernel is a named function with a clean symbol map, where X1's set is a family match.
+  * **IF EITHER FAILS, NEITHER INSTRUMENT IS PROMOTED.** The phase-1 verdict is then **UNRECONCILED**, both tables are published side by side, the disagreement's size is the finding, and **phase 2 does not launch on a decomposition two instruments cannot agree on.**
+* **A5 — `perf` ATTACHES AND SYMBOLIZES.** `symbol_rows ≥ 20` on every `P` invocation, `attach_ms` recorded on every one. A `P` arm with no symbolized rows is an **INSTRUMENT-FAIL**, not an empty profile, and the driver already emits it as one.
+* **A6 — THE INVARIANCE HOLDS.** `B`'s `ms_per_MB` at `c9h` within **5 %** of `c9`'s. The c9 ledger read 68.5 vs 69.2 — **1 % apart** — and that agreement is the single strongest piece of evidence that the ceiling is a property of the sender rather than of a cell. **It is re-measured here and not inherited.** A failure means the "ceiling" is cell-dependent and the whole framing needs revisiting before a trial.
+* **A7 — `c1` IS OR IS NOT SENDER-BOUND, AND EITHER ANSWER IS A RESULT.** No band is asserted, because no `ms_per_MB` has ever been published for `c1` and pre-committing one would be inventing a prior. **What IS pre-committed is the reading rule:** if `c1`'s `B` arm reads `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %` at a link utilisation of ~21 %, then **`c1` is sender-bound**, and MEASUREMENT TRUTH item 3's `P1` contrast — and the ack-merge flip's original `+12.7/+13.0 %` — are contrasts **between two CPU costs**, not between two network behaviours. That re-reading is owed to item 3's section by pointer, and the pointer is promised here before either number exists.
+
+### THE GUARDS
+
+* **G-CONTROL — THE CONTROL MUST BE CLEAN.** `B` and `P` must carry `RWM_CPUPROF=0` in `[GATES]` and **zero** `[CPUPROF]` lines. `ARM-CONTAMINATION` is emitted per invocation. At a CPU-bound cell a contaminated control is invisible in every other column, which is why it is asserted mechanically rather than trusted.
+* **G-ARM — THE GATE MUST TAKE.** `S` must carry `RWM_CPUPROF=1` two-sided and **exactly one** `[CPUPROF]` line per sender. Zero lines is an unreached emission site; two is a gauge that is not one-shot. Both are `INSTRUMENT-FAIL`, distinctly named.
+* **G-SEAM — EVERY SEAM MUST BE FED AT THE QUAD.** `n > 0` on all five seams on every `S` invocation. The loopback gate proves this at one path; **four legs is a different placement regime and a seam could be dark there**, and a dark seam reports a clean `0.0000` share that a results table would print as *"this cost nothing"*.
+* **G-DISJOINT — `attr ≤ 1`.** The decomposition rests on the seams being disjoint. An `attr` above 1 falsifies that and voids every share in the run. Pinned in the reachability test and re-asserted per invocation by the parser's own arithmetic.
+* **G-HEAD (discipline 16), WITH THE CLAUSE THIS CELL FORCES.** `util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`; the denominator is the **TRANSFER wall, NEVER `INVOCATION_S`**. **AND AT THIS CELL THE LINK PERMISSION IS NOT THE BINDING ONE.** c9 reads ~50 % link headroom while being saturated at the sender; `c1` reads ~79 %. So the calibration reports **BOTH** columns and the contract pre-commits to quoting neither without the other:
+  ```text
+     link_headroom = 1 − tc_bytes·8 / (TRANSFER seconds × shaped capacity)
+     cpu_headroom  = 1 − cores / NPROC              [cores = CPUCLI / TRANSFER seconds]
+  ```
+  **This is the first calibration in this tree to measure the second one**, and it exists because the c9 battery's headroom table said "throughput targets PERMITTED" at a cell that could not deliver them.
+* **G-GEN.** `RWM_GEN=0` on every arm — the plain-window control, so the rows pool with the c9 and era ledgers.
+* **G-TEXT.** Both binaries' `.text` sha in the session header. `TEXT-EQUAL NO` qualifies every `P` attribution and the qualification is printed first.
+* **G-STEAL.** `/proc/stat`'s steal column and the desktop co-tenant count in every session header. **This is a CPU measurement on a VM**; a session with a co-tenant is not a control for one without, and item 3's drift question turns on exactly this.
+* **G-ABORT.** The abort-cause table is printed **before** the first number, as in every battery since the witness landed.
+
+### THE CALIBRATION, AND IT IS NOT OPTIONAL
+
+`cpuprof_calib.sh`: ONE rep per arm per cell, seed 42, SAME session, the SAME two binaries, `tc -s qdisc show` on every cell and every invocation. **It is `n = 1`: no σ, no seed-7 evidence, and nothing in it is a result.** It is also **THE SMOKE**, and what it is smoking is the instrument pair: the gate reaching the binary through `perf_rwm_c.sh`'s forwarding; `[CPUPROF]` firing exactly once; **all five seams fed at a QUAD**; `perf` attaching at all under this kernel's `perf_event_paranoid`; symbolized rows existing; the control arm clean; `.text` equality; and the instrument cost at `n = 1`.
+
+Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION**, in its own commit, BEFORE the scored battery is launched. **The table is left EMPTY here on purpose.**
+
+| cell | shaped capacity | B ms/MB | cores | link headroom | **cpu headroom** | permission |
+|---|---|---|---|---|---|---|
+| `c9` | 400 Mbit | | | | | |
+| `c9h` | 240 Mbit | | | | | |
+| `c1` | 1 Gbit | | | | | |
+
+**Where the calibration CONTRADICTS a permission, the affected clause is VOID for that cell and is reported as void, never re-scoped after the fact.**
+
+### THE VM STEP PLAN — for the parent to dispatch later. NOTHING HERE HAS BEEN RUN.
+
+| # | step | duration |
+|---|---|---|
+| 0 | Take `/tmp/rwm-vm.lock`. Sync the tree (cleared, CRLF-converted `git archive`). Write `COMMIT`. | 5 min |
+| 1 | `rm -f target/release/raptorpath`; `cargo build --release`. **Then** `cargo build --profile release-prof`. Record both `sha256` and both `.text` shas. | 10 min |
+| 2 | `command -v perf` — install `linux-perf` if absent. Read `/proc/sys/kernel/perf_event_paranoid`; if `> 1`, `sysctl -w kernel.perf_event_paranoid=1` **and record that the value was changed**, since it is part of the session's provenance. | 5 min |
+| 3 | `sudo bash cpuprof_calib.sh` → `calib-cpuprof-table.txt`. **Commit THE CONTRACT'S COMPLETION.** | 5 min |
+| 4 | `sudo setsid bash cpuprof_battery.sh 42 6` then `... 7 6`, detached, `RWM_CP_CELLS="c9 c1"`. 72 invocations. | **70 min** |
+| 5 | `RWM_CP_CELLS=c9h sudo setsid bash cpuprof_battery.sh 42 3`. 9 invocations. | 10 min |
+| 6 | Collect; `python3 cpuprof_parse.py <ledgers>`; commit **PHASE 1 — THE SCORED RESULT** with the ranking and the A1–A7 verdicts. | 15 min |
+| 7 | **STOP.** Phase 2's pre-registration is a separate dispatch and may not be written before step 6 is committed. | — |
+
+**Total VM time ≈ 2 h**, of which 80 min is unattended. Launched **detached and not polled** (item 13); watch the sentinel, never the process table.
+
+### WHAT IS NOT CLAIMED, AND WILL NOT BE
+
+* **No optimization is proposed here**, and none may be proposed before phase 1 is scored.
+* **No seam is predicted to win.** The loopback smoke in the instrument commit is disclosed and is not a prior.
+* **No throughput magnitude at c9.** The cell is sender-bound; that is the premise of this contract, not a conclusion of it.
+* **No claim that the five seams are the right five.** A3 is the clause that can falsify it, and the honest outcome of a low `attr` is a redesigned instrument, not a reweighted table.
+
+---
+
+## The Missing Half at the Fast Single Path — PRE-REGISTRATION (2026-08-19, `feat/cpu-and-gap-prep` from main@`636e40f`) — MEASUREMENT DISCIPLINE 1 + 11 + 13 + 15 + 16 + 17: written and committed BEFORE any VM contact, in its OWN commit, immediately after the driver it is written against and before a single number is read. **This is MEASUREMENT TRUTH item 3.** **Nothing in this session flips a default, adds a gate, or edits an engine crate. No number below is a result.**
+
+### THE QUESTION
+
+**Why did ack-merge's `+12.7/+13.0 %` come back as `+6.8/+9.6 %`, with the mechanism fully engaged?**
+
+"Era Battery — THE SCORED RESULT" §P1 scored **DISAGREES-LOW at both seeds** and named two live explanations without separating them:
+
+> **the cell itself is not the cell the prediction was published on** — ack-merge's own battery read OLD at 203.1/201.8 and NEW at 228.9/228.1 Mbit/s, and this battery reads **both arms lower** (OLD 175/192, NEW 187/211). Whatever moved `c1` moved it under both binaries. **Sub-additivity and substrate drift are both live explanations and this battery does not separate them.**
+
+And the mechanism was NOT the problem: `[CTLD]` reproduced **1.96** to three digits, so ack-merge's control-datagram suppression was doing exactly what it did on flip week. **A mechanism that engages identically and delivers half the goodput is either measuring a different substrate or being eaten by something downstream of it.**
+
+### THE FACT THAT MAKES THE DRIFT CONTROL FREE, AND IT WAS CHECKED LOCALLY BEFORE THIS BLOCK WAS WRITTEN
+
+The ack-merge flip battery scored **ONE binary with an env gate** — `prior` = env unset, `am` = `RWM_ACK_MERGE=1` — built from commit **`c2bfab7`**, `sha256 fbd6b279…`. The era battery's **OLD** arm ran commit **`4171b58`**, `sha256 fbd6b279…`.
+
+```text
+   git diff --stat 4171b58 c2bfab7
+     raptorpath/docs/goal-gate.md | 34 ----------------------------------
+     1 file changed, 34 deletions(-)
+```
+
+**THE TWO COMMITS ARE ENGINE-IDENTICAL. The only difference between them is thirty-four deleted lines of this document, and the two published `sha256`s are the same string.**
+
+So the flip-era `prior` arm and the era battery's `OLD` arm are **THE SAME BINARY, IN THE SAME CONFIGURATION, AT THE SAME CELL** (`c1/c1 single 400 MB`, `RWM_GEN=0`, `n = 8`, seeds 42 and 7) — measured eleven days apart:
+
+| | s42 | s7 |
+|---|---|---|
+| flip week, 2026-08-08 (`c1-prior`) | **203.1 ± 8.5** | **201.8 ± 5.6** |
+| era week, 2026-08-19 (`c1` OLD) | **175.25** | **192.06** |
+| **shift on an identical executable** | **−13.7 %** | **−4.8 %** |
+
+**THAT IS ALREADY A DRIFT SIGNAL, FROM DATA COMMITTED IN THIS DOCUMENT, WITH NO VM RUN** — and no section of this file has read it, because the two ledgers were never laid beside each other on the axis of "same binary, same arm". It is not yet a *verdict*: two sessions differ in more than their date, and this contract's whole job is to close those differences one at a time. **But it does mean the drift hypothesis has a positive prior rather than being the polite alternative to sub-additivity.**
+
+**AND THE BINARY IS STILL ON THE VM.** `/home/vibe/era-old/target/release/raptorpath`, sha re-verified as `fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d` on 2026-08-19 by "Latency Truth — THE CONTRACT'S COMPLETION", **without a rebuild**. So the drift control is a re-run of a binary nobody in this session compiled, and `G-SHA` **refuses** rather than warns: a different sha makes every level comparison below a comparison against a different executable's number, which is not a caveat but a different experiment.
+
+### THE THIRD CANDIDATE, WHICH NEITHER THE ERA BATTERY NOR THIS ITEM'S BRIEF NAMED
+
+The two sessions did not run the same **env**.
+
+| | flip week (`ackflip_battery.sh`) | era week (`era_battery.sh`) |
+|---|---|---|
+| env | `SEED=… RWM_GEN=0 <arm> RWM_DIAG=1` | `SEED=… RWM_GEN=0 <arm> RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1` |
+
+`RWM_ACKDIAG` and `RWM_WALLDIAG` name gauges that **do not exist at `4171b58`** — the era battery's own header asserts `[ACKDIAG]` and `[WALL]` absent at OLD — so on this binary they are **inert**. But **`RWM_LATPROBE` is HARNESS-SIDE**: it starts a 20 pkt/s `ping` inside the client namespace, and it was present in the era session and absent from the flip session.
+
+**It applies to BOTH era arms equally, which is exactly the shape of the observation the era battery reported** (*"this battery reads both arms lower"*). Its own cost accounting calls it 1.3e-4 of a 100 Mbit cell on the wire — but `c1` may be **sender-bound** rather than link-bound (MEASUREMENT TRUTH item 2's `A7`, pre-registered in this same branch), and a wire-cost argument says nothing about a CPU-bound sender. **So it gets an arm rather than an argument.**
+
+### THE ARMS
+
+**PHASE 1 — THE DRIFT CONTROL. All three on the pre-flip binary; none touches today's main.**
+
+| arm | binary | env | what it reads |
+|---|---|---|---|
+| **`Op`** | `era-old` `fbd6b279…` | `RWM_DIAG=1` | **THE FLIP-ERA `prior` ARM, BYTE-EXACT.** Its LEVEL against 203.1/201.8 **is** the drift measurement. |
+| **`Oa`** | same | `RWM_DIAG=1 RWM_ACK_MERGE=1` | **THE FLIP-ERA `am` ARM, BYTE-EXACT.** `Oa/Op` re-measures the `+12.7/+13.0 %` ratio on its own binary, today. |
+| **`Oe`** | same | `RWM_DIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1` | **THE INSTRUMENT-LOAD CONTROL.** `Oe−Op` isolates the `RWM_LATPROBE` cost; `Oe` against the era's own 175/192 closes the loop. |
+
+**PHASE 2 — THE LADDER. Today's main, ONE binary, env gates. Launched only on the branch the reading rules select, and as a SEPARATE dispatch — a driver that ran both phases would make the branch a formality.**
+
+| arm | env | what it reads |
+|---|---|---|
+| **`Nd`** | shipped defaults | today's stack |
+| **`Nm`** | `RWM_ACK_MERGE=0` | **THE DISCRIMINATING ARM.** `Nd−Nm` is ack-merge's **marginal effect in today's composed stack**, one binary, one session, paired within rep. |
+| **`Nh`** | `RWM_HONEST_ANCHOR=0` | flip 2 |
+| **`Ns`** | `RWM_SUM_CAP=0` | flip 3 — **predicted INERT at c1** |
+| **`Nc`** | `RWM_DELTA_CAP=0` | flip 4 — **predicted INERT at c1** |
+
+**WHY `Nm` IS THE MEASUREMENT THE ERA BATTERY COULD NOT MAKE.** `P1` asks whether ack-merge's gain survives composition. The era battery answered it with a **cross-era, two-binary** contrast, which confounds ack-merge with every later flip **and** with drift **and** with the harness era. `Nd − Nm` asks it **directly**: same binary, same session, same rep, one gate. If it reads ≈ `+12.7 %`, ack-merge did not lose its gain and `P1`'s shortfall lives in the reference or the substrate; if it reads ≈ `+7 %`, something in today's stack eats it and `Nh`/`Ns`/`Nc` say what.
+
+**AND `Ns`/`Nc` ARE A PRE-REGISTERED NULL WITH REAL POWER.** The era pre-registration's own words: *"c1 is single-path, so `RWM_SUM_CAP` and `RWM_DELTA_CAP` contribute NOTHING there by construction (the pooled seat short-circuits at `n_live < 2`)."* **That claim has never been measured.** If either arm moves `c1`, the era contract's inertness assumption is false, and since that assumption is load-bearing for `P1`'s attribution ("the prediction is ack-merge's alone plus the residue"), falsifying it is a **defect finding against that contract**, reported as one.
+
+### THE CELL — one, and the obvious second is dropped before the run with the reason
+
+| cell | scenarios | mode | bytes | n/seed/arm | seeds |
+|---|---|---|---|---|---|
+| `c1` | c1/c1 (1 Gbit, 1 ms, GE 0.05/50) | single | 400 MB | **12** | 42, 7 |
+
+Transcribed from `ackflip_battery.sh`'s own row (`run_one c1-prior "" c1 c1 400000000 single 0`) and from `era_battery.sh`'s `cell_spec`, **which agree** — and that agreement is *why* the two ledgers are comparable at all.
+
+**`sc2` IS DROPPED, BEFORE THE RUN, WITH THE REASON.** It is the other single-path cell, and it is pre-registered PARITY/LATENCY-ONLY at **98 % link utilisation**. A cell whose goodput cannot move cannot report a goodput drift, so it can neither confirm nor refute anything here. Including it would produce a flat row that a reader could mistake for a control.
+
+**AND THE HARNESS ERA BOUNDARY DOES NOT APPLY.** `lib.sh`'s 2026-08-19 per-leg netem seed change makes symmetric *dual* cells non-comparable across the boundary. **`c1` is SINGLE-PATH**: `leg_seed` derives leg 0 as the base seed in both harness eras, so leg 0's netem realization is unchanged. **Stated here so the boundary is not silently inherited by a cell it does not touch** — and so that, if anyone later extends this battery to a dual, they meet the boundary rather than trip over it.
+
+### `n = 12`, AND THE ARITHMETIC, BECAUSE THIS CONTRACT IS SIZED AGAINST A KNOWN-BAD VARIANCE
+
+The design must resolve a **5 % goodput difference** at a cell whose level is 175–205 Mbit/s. Taking 190 Mbit/s as the working level, that is **Δ = 9.5 Mbit/s**.
+
+**THE DIFFERENCE READING** (`Oa − Op`), unpaired, at the era battery's own `2σ_pooled` convention, resolves iff
+
+```text
+   2·σ_pooled·√(2/n)  ≤  Δ        ⟺        n  ≥  8·σ² / Δ²
+```
+
+| `n` | resolves 5 % iff `σ_pooled ≤` |
+|---|---|
+| 8 | 9.5 |
+| **12** | **11.6** |
+| 16 | 13.4 |
+
+**The priors, all from this document:** flip week `c1-prior` **8.5** (s42) and **5.6** (s7), `c1-am` **4.2** and **3.1**; era week `c1` `σ_pooled` = **5.44** (s7). `n = 12` clears every one of them with margin. **`n = 8` — the n both prior batteries used — does not clear the flip-era `prior` arm's own 8.5, which is the arm this battery must resolve.** That is the reason for 12 rather than 8, and it is stated rather than assumed.
+
+**AND THE ONE PRIOR IT CANNOT CLEAR, NAMED IN ADVANCE.** The era battery's `c1` s42 carried `2σ_pooled` = **82.74 Mbit/s** — `σ_pooled` ≈ **41.4** — and its own §P1 said the point *"has no resolving power at all, so s7 is the seed that speaks."* At `σ = 41.4`, resolving 5 % would need **`n ≥ 144`**, which this contract does not buy and will not pretend to. **If s42's dispersion reproduces, the s42 DIFFERENCE reading is reported UNRESOLVED and s7 speaks alone — pre-committed here, exactly as the era battery had to conclude it after the fact.**
+
+**BUT THE DRIFT QUESTION IS A LEVEL, NOT A DIFFERENCE, AND LEVELS ARE CHEAPER.** `Op` against a published mean needs `σ/√n`, not `σ·√(2/n)`, and the gap to detect is **27.9 Mbit/s** (203.1 → 175.25), not 9.5:
+
+```text
+   2σ_comb = 2·√( σ_today²/12  +  σ_flip²/8 )
+```
+
+| `σ_today` | `2σ_comb` (with `σ_flip` = 8.5) | vs the 27.9 gap |
+|---|---|---|
+| 8.5 | **7.8** | resolves, 3.6× over |
+| 20 | 13.0 | resolves |
+| **41.4** (the s42 pathology) | **24.6** | **still resolves, by 3.3** |
+
+**So the drift control is well-powered even where the ratio contrast is not** — which is the single most important sizing fact in this contract, and it is why phase 1 can be dispatched before anyone knows what s42's variance will do.
+
+`3 arms × 12 reps × 2 seeds = **72 invocations** (phase 1)`; `5 × 12 × 2 = **120** (phase 2)`.
+
+Arms **INTERLEAVED and adjacent** within one rep of one cell on the same freshly built topology, so every contrast is **PAIRED WITHIN REP** — the only defence against exactly the same-session drift this battery is about. Both the **paired** (per-rep difference) and the **unpaired `2σ_pooled`** readings are reported; **paired is primary**, unpaired is the era battery's own convention and is carried as the conservative secondary.
+
+### THE READING RULES — the 2×2, PRE-COMMITTED BEFORE THE VM IS TOUCHED
+
+Two readings, and they are **independent**: a ratio is invariant to a pure level shift.
+
+* **READING 1 — THE LEVEL.** `L = Op_today` against flip week's 203.1 (s42) / 201.8 (s7).
+  * **DRIFTED**: `L < flip_prior` by more than `2σ_comb`.
+  * **AT LEVEL**: `|L − flip_prior| ≤ 2σ_comb`.
+  * **FASTER**: `L > flip_prior` by more than `2σ_comb` — named so it cannot be quietly folded into "at level".
+* **READING 2 — THE RATIO.** `R = 100·(Oa − Op)/Op` against the published `[+12.7, +13.0] %`.
+  * **REPRODUCES**: `R`'s own `2σ` interval overlaps the band.
+  * **LOW**: `R + 2σ_R < +12.7`. **HIGH**: `R − 2σ_R > +13.0`.
+  * **UNRESOLVED**: `2σ_R` exceeds the 5 % design bar. Reported as unresolved, **never as a point**.
+
+| | **R REPRODUCES** | **R LOW** |
+|---|---|---|
+| **L DRIFTED** | **D1** | **D2** |
+| **L AT LEVEL** | **D3** | **D4** |
+
+**D1 — DRIFT IS A PURE LEVEL SHIFT AND THE RATIO IS INTACT.** `P1`'s prediction is a **ratio**, so a level shift does not explain its shortfall. The gap is then an **interaction among the later flips**, and **PHASE 2 LAUNCHES** with the ladder as its discriminator. The drift is still reported, quantified, and attached by pointer to every absolute cross-session comparison in this document.
+
+**D2 — THE FLIP-ERA RATIO DOES NOT REPRODUCE ON ITS OWN BINARY.** Then `P1`'s band was measured on a substrate that no longer exists and **is REFUTED AS A REFERENCE**. `P1`'s DISAGREES-LOW is **re-scored against the re-measured band `R_today`**, which becomes the honest reference. **Phase 2 launches only if a residual gap remains** — i.e. only if the era's `+6.84/+9.62 %` still sits below `R_today`'s `2σ` interval. If it does not, **`P1` is re-scored to AGREES** and the era section is annotated per the revision spec below.
+
+**D3 — NO DRIFT, AND THE ERA WEEK'S OWN 175/192 IS THE ANOMALY.** Suspicion moves to the era **session** rather than to the substrate, and `Oe` is the arm that says whether its env explains it. **PHASE 2 LAUNCHES**, and the era session's conditions become a named finding in their own right.
+
+**D4 — THE RATIO IS NOT REPRODUCIBLE EVEN AT LEVEL**, on the same binary, same cell, same env, same n. That is a **harness or measurement finding, not a mechanism one**, and **PHASE 2 IS HELD** until it is explained. Running a five-arm ladder on a harness that cannot reproduce its own reference would produce five numbers with no denominator, and that failure mode is pre-committed against here rather than rationalised later.
+
+**AND THE THIRD AXIS, WHICH CUTS ACROSS ALL FOUR.**
+
+* **E1 — THE ENV EXPLAINS IT.** If `(Op − Oe)` accounts for **≥ 70 %** of `(flip_prior − era_OLD)` — 27.9 Mbit/s at s42, 9.7 at s7 — then **the era battery's absolute levels are explained by its own instrumentation**, the *"both arms read lower"* observation is retired as a substrate claim, and **every era-vs-flip absolute comparison in this document is re-read with that pointer.** This is decidable in **phase 1 alone**, and it is the cheapest large finding available here.
+
+### THE PRE-REGISTERED PREDICTIONS — each falsifiable, each with its band
+
+* **G1 — `Op` REPRODUCES ONE OF THE TWO PUBLISHED LEVELS.** No band is asserted on **which** — either is a result, and that is the whole design. What IS pre-committed: `Op` lands within `2σ_comb` of **at least one** of `{203.1 / 201.8}` or `{175.25 / 192.06}`. **Landing outside BOTH means a third state exists and neither prior session is a control for today**, which would make every level comparison in this document conditional on its date; that outcome is reported as the finding and phase 2 is held.
+* **G2 — `R ∈ [+5, +20] %`.** Deliberately wide, because the point of the arm is to *measure* the ratio rather than to confirm it. Outside the band means ack-merge's effect **on its own binary at its own cell** is not what either ledger says, which is an instrument finding and not a mechanism one.
+* **G3 — THE MECHANISM REPRODUCES, AND IT IS INDEPENDENT OF GOODPUT.** Receiver `[CTLD]` density: **`Op` in `[1.80, 2.10]`** (the published pre-flip **1.96**, reproduced by the era battery to three digits) and **`Oa` in `[0.90, 1.20]`** (the ≈ 1.0 the flip battery measured). **If `[CTLD]` does not reproduce, the binary is not doing what it did, and EVERY goodput reading in this battery is UNSCOREABLE** — checked first, before any Mbit/s is read, exactly as the abort table is.
+* **G4 — INSTRUMENT LOAD IS SMALL: `|Oe − Op| ≤ 5 %`.** Above that, `E1`'s branch is live and is evaluated. Stated as a prediction rather than an assumption precisely because a wire-cost argument (1.3e-4 of the link) does not bound a CPU cost at a possibly sender-bound cell.
+* **G5 — ABORTS < 2 % at every arm-seed.** The topo-ping repair landed 2026-08-19 and the Latency Truth smoke ran 0 of 6. A rate above 5 % anywhere means the repair did not hold here, and every contrast is then reported **with the abort table beside it** and the survivors' selection stated in the verdict.
+* **G6 — `c1` IS OR IS NOT SENDER-BOUND, AND EITHER ANSWER IS A RESULT.** `|pred_mbit − meas_mbit| / meas_mbit ≤ 5 %` ⇒ **sender-bound**, where `pred = cores / ms_per_MB × 8000` is the c9 ceiling arithmetic verbatim. No band is asserted on the answer because no `ms_per_MB` has ever been published for `c1`. **This is the same clause as MEASUREMENT TRUTH item 2's `A7`, measured by two different batteries in the same branch, and they must agree**; a disagreement between them is itself a finding about one of the two harnesses.
+* **G7 — `Ns` AND `Nc` READ PARITY (phase 2, pre-registered here so phase 2 cannot invent it).** `|Nd − Ns|` and `|Nd − Nc|` each within their own `2σ`. **A non-parity reading FALSIFIES the era pre-registration's own inertness claim** and is reported as a **defect finding against that contract**, not as a footnote — MEASUREMENT DISCIPLINE 17's rule applied to an assumption rather than to a law.
+
+### THE REVISION SPEC — named in advance so it cannot be re-scoped later
+
+On the **D2** branch (and on **D2 with no residual gap** in particular), the edits to "Era Battery — THE SCORED RESULT" are **exactly** these and nothing else:
+
+* `P1`'s row in the verdict table gains an inline pointer to this section and the qualifier **"against a reference re-measured at `X %` on this substrate"**, with `X` named.
+* The `§P1` paragraph's sentence *"Sub-additivity and substrate drift are both live explanations and this battery does not separate them"* gains a closing sentence naming this section and its verdict.
+* **NOTHING ELSE IN THAT SECTION IS TOUCHED.** `P2`–`P5`, the abort table, `E-GOOD`, `E-CPU`, `E-LAT` and every number stand as recorded. **The era battery is not rewritten; it is annotated.**
+
+On the **D1** and **D3** branches the era section is **not edited at all** until phase 2 is scored, because a drift finding without an interaction finding does not change `P1`'s verdict — it changes what `P1` is evidence *about*.
+
+### THE GUARDS
+
+* **G-SHA — THE HARD ONE.** `Op`/`Oa`/`Oe` must run `sha256 fbd6b279d0d69a8f4d14f177fc5fead34c0ec9c04f3322a74b17528ca4cbaf4d`. The driver **refuses to start** on a mismatch. Both prior ledgers were read off that file; a different one makes every level comparison here a comparison against another executable's number.
+* **G-ERA (anti-mix, mechanical, every invocation).** `[GATES]` absent two-sided **is** the OLD binary; present two-sided **is** today's. A violation **VOIDS the rep**.
+* **G-ARM, TWO-SIDED AND TWO-LEVEL, ON A BINARY WITH NO GATE ECHO.** `[GATES]` postdates the pre-flip baseline by one day, so the usual assertion does not exist on the OLD arms. Two era-invariant signals carry it: **`ack-merge ACTIVE` two-sided** (the gate took — the same check `ackflip_battery.sh` used against this very binary) and **`[CTLD]` on the receiver** (the mechanism ran). Present on `Oa`, **absent on `Op` and `Oe`**; contamination is emitted per invocation.
+* **G-ABORT — THE ABORT-CAUSE TABLE IS PRINTED AND READ BEFORE ANY CONTRAST**, per `(cell, arm, seed)`, with `abort_cause`. An abort with `abort_cause=no_record` is an INSTRUMENT-FAIL of the witness. **If the per-arm abort rate differs between arms by more than 10 percentage points, every contrast is reported WITH the abort table beside it and the survivors' selection is stated in the verdict.**
+* **G-HEAD (discipline 16), AND THE SECOND COLUMN c1 FORCES.** `util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`; the denominator is the **TRANSFER wall, NEVER `INVOCATION_S`**. `c1` reads ~21 % of a 1 Gbit pipe, so the **link** permission grants throughput targets with room to spare — **and that permission has never been the binding one here.** The c9 battery measured a sender saturating at 68.5 ms/MB while its link read 50 % headroom and its own table still said *"throughput targets PERMITTED"*. So the calibration reports **`cpu_headroom = 1 − cores/NPROC` beside `link_headroom`**, and **neither may be quoted without the other.** If `G6` says `c1` is sender-bound, every goodput number in this battery is a CPU number and the verdict says so in those words.
+* **G-GEN.** `RWM_GEN=0` on every arm — the plain-window control, and what **both** prior ledgers ran, so these rows pool with both.
+* **G-STEAL.** `/proc/stat`'s steal column, the load average and the desktop co-tenant count in every session header. **This is the drift hypothesis's own mechanism if `c1` is sender-bound**, and a session with a co-tenant is not a control for one without.
+
+### THE CALIBRATION, AND IT IS NOT OPTIONAL
+
+`gap_calib.sh`: ONE rep per phase-1 arm at `c1`, seed 42, SAME session, the SAME binary. **It is `n = 1`: no σ, no seed-7 evidence, and nothing in it is a result.** It is also **THE SMOKE**, and what it is smoking is a claim this contract rests on and nobody has exercised: **that the pre-flip binary still runs, still handshakes against itself, and still arms its ack-merge gate.** Nobody has launched it with `RWM_ACK_MERGE=1` since 2026-08-08.
+
+Its output fills the table below and is committed as **THE CONTRACT'S COMPLETION**, in its own commit, BEFORE the scored battery launches. **The table is left EMPTY here on purpose.**
+
+| arm | Mbit/s (n=1) | `[CTLD]` | `ack-merge ACTIVE` c/s | `[GATES]` c/s | ms/MB | cores | link headroom | **cpu headroom** |
+|---|---|---|---|---|---|---|---|---|
+| `Op` | | | expect 0/0 | expect 0/0 | | | | |
+| `Oa` | | | expect ≥1/≥1 | expect 0/0 | | | | |
+| `Oe` | | | expect 0/0 | expect 0/0 | | | | |
+
+**Where the calibration CONTRADICTS a permission, the affected clause is VOID for that cell and is reported as void, never re-scoped after the fact.**
+
+### THE VM STEP PLAN — for the parent to dispatch later. NOTHING HERE HAS BEEN RUN.
+
+**PHASE 1 — always.**
+
+| # | step | duration |
+|---|---|---|
+| 0 | Take `/tmp/rwm-vm.lock`. **`ls -l /home/vibe/ackflip/` FIRST** — if `battery-s42.log` and `battery-s7.log` survive, they carry `CPUCLI` for the flip-era `c1` arms (`ackflip_battery.sh` greps `CPU:`, which prints both roles), and **the flip week's `ms_per_MB` is then recoverable from disk with no run at all.** That is the cheapest datum in this contract and it is step 0 for that reason. Copy them out and commit them under `docs/l1-raw/` either way. | 5 min |
+| 1 | `sha256sum /home/vibe/era-old/target/release/raptorpath` — **must be `fbd6b279…`**. If it is not, STOP: the drift control is not available and this contract's design is void until the binary is rebuilt from `4171b58` and re-verified. | 2 min |
+| 2 | Sync today's tree (cleared, CRLF-converted `git archive`), write `COMMIT`. **No rebuild of `era-old`.** Today's `main` build is needed only for phase 2. | 5 min |
+| 3 | `sudo bash gap_calib.sh` → `calib-gap-table.txt`. **Commit THE CONTRACT'S COMPLETION.** | 5 min |
+| 4 | `sudo setsid bash gap_battery.sh 42 12` then `... 7 12`, detached. 72 invocations. | **60 min** |
+| 5 | Collect; `python3 gap_parse.py <ledgers>`; **select the branch against the 2×2**; commit **PHASE 1 — THE SCORED RESULT** with the `G1`–`G6` verdicts and the `E1` evaluation. | 20 min |
+
+**PHASE 2 — only on branches D1, D2-with-residual, or D3. A separate dispatch.**
+
+| # | step | duration |
+|---|---|---|
+| 6 | `rm -f target/release/raptorpath`; `cargo build --release` from today's main. Record `sha256`. | 10 min |
+| 7 | `RWM_GAP_ARMS="Nd Nm Nh Ns Nc" sudo setsid bash gap_battery.sh 42 12` then `... 7 12`, detached. 120 invocations. | **100 min** |
+| 8 | Collect; score the ladder; `G7` verdict; commit **PHASE 2 — THE SCORED RESULT** and apply the revision spec if its branch fired. | 20 min |
+
+**Phase 1 ≈ 1 h 40 m (60 min unattended). Phase 2 ≈ 2 h 10 m (100 min unattended).** Launched **detached and not polled** (item 13); watch the sentinel, never the process table.
+
+**AND THE TWO ITEMS SHARE A CELL, SO THEY SHARE A DISPATCH WINDOW.** MEASUREMENT TRUTH item 2's battery also runs `c1`, and its `A7` and this contract's `G6` are the same clause measured by two harnesses. **Run item 2's `c1` arm and this contract's phase 1 in the same session if the lock allows**, so that a sender-bound verdict at `c1` is not itself conditioned on which day it was taken.
+
+### WHAT IS NOT CLAIMED
+
+* **No verdict on `P1`.** This contract selects a branch; the branch selects what `P1` is evidence about.
+* **No claim that the −13.7 % / −4.8 % table above IS drift.** It is two ledgers laid on one axis for the first time. Two sessions differ in more than their date, and closing those differences is what the three phase-1 arms are for.
+* **No cross-era pooling.** Every contrast here is within one session, on one binary, paired within rep. The published means are compared **as levels, with both dispersions carried**, and never merged into a pooled n.
+* **No default flips, no gate is added, no engine crate is edited.** `[CTLD]`, `ack-merge ACTIVE`, and every gate this battery drives already exist and already ship.

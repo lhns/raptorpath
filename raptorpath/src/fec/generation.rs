@@ -210,6 +210,15 @@ impl GenerationEncoder {
     /// by the round-robin proactive path (`generate_repair`) and the deficit-
     /// driven recovery path (`generate_repair_for`).
     fn code_generation(&mut self, g: u64) -> WireSymbol {
+        // `enc` seam (`RWM_CPUPROF`, default OFF): the GF coding extent. The
+        // wrapper is here rather than at the callers so no call site can be
+        // added later that bypasses the instrument.
+        crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Enc, || {
+            self.code_generation_inner(g)
+        })
+    }
+
+    fn code_generation_inner(&mut self, g: u64) -> WireSymbol {
         let symbol_size = self.symbol_size as usize;
         let coded_index = self.coded_index;
         self.coded_index += 1;
@@ -339,6 +348,16 @@ impl GenerationEncoder {
     /// makes filling-generation repair present-at-stall WITHOUT the cross-grid
     /// stranding that refuted the separate-block inline repair.
     fn code_generation_full(&mut self, g: u64) -> WireSymbol {
+        // `enc` seam — the filling variant. Same seam as `code_generation`:
+        // both are the same GF work on the same symbol budget, and splitting
+        // them would give the decomposition a column whose meaning depends on
+        // which emission path the arm happened to take.
+        crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Enc, || {
+            self.code_generation_full_inner(g)
+        })
+    }
+
+    fn code_generation_full_inner(&mut self, g: u64) -> WireSymbol {
         let symbol_size = self.symbol_size as usize;
         let coded_index = self.coded_index;
         self.coded_index += 1;
@@ -403,24 +422,13 @@ impl GenerationEncoder {
 
 impl WindowEncoder for GenerationEncoder {
     fn add_source(&mut self, data: &[u8]) -> WireSymbol {
-        let seq = self.next_seq;
-        self.next_seq += 1;
-
-        let mut padded = vec![0u8; self.symbol_size as usize];
-        let copy_len = data.len().min(self.symbol_size as usize);
-        padded[..copy_len].copy_from_slice(&data[..copy_len]);
-        self.sources.insert(seq, padded.clone());
-
-        // The systematic form is returned for retention/bookkeeping; in
-        // generation mode the sender puts a coded combination on the wire
-        // (never this raw symbol), so no fixed in-order position exists.
-        WireSymbol {
-            block_id: seq,
-            payload_id: 0,
-            is_repair: false,
-            data: padded,
-            backend: FecBackend::Rlc,
-        }
+        // `src` seam: the pad allocation, the payload copy, and the
+        // retention-store `insert` — which is a SECOND full copy of every
+        // source symbol, and one of the named suspects the decomposition
+        // exists to size.
+        crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Src, || {
+            self.add_source_inner(data)
+        })
     }
 
     fn generate_repair(&mut self) -> WireSymbol {
@@ -499,38 +507,11 @@ impl WindowEncoder for GenerationEncoder {
     /// retained — a missing source would make the coded equation inconsistent with
     /// the receiver's regenerated coefficients.
     fn generate_repair_range(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
-        if count == 0 {
-            return None;
-        }
-        let width = count as u64;
-        for seq in start..start + width {
-            if !self.sources.contains_key(&seq) {
-                return None;
-            }
-        }
-        let symbol_size = self.symbol_size as usize;
-        let coded_index = self.coded_index;
-        self.coded_index += 1;
-
-        let coeffs = generate_window_coefficients(start, count, coded_index);
-        let mut coded = vec![0u8; symbol_size];
-        for i in 0..width {
-            let src = self.sources.get(&(start + i)).expect("range checked present");
-            gf256::mul_acc_slice(coeffs[i as usize], src, &mut coded);
-        }
-
-        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
-        wire_data.extend_from_slice(&start.to_le_bytes());
-        wire_data.extend_from_slice(&count.to_le_bytes());
-        wire_data.extend_from_slice(&coded_index.to_le_bytes());
-        wire_data.extend_from_slice(&coded);
-
-        Some(WireSymbol {
-            block_id: start + width - 1,
-            payload_id: coded_index,
-            is_repair: true,
-            data: wire_data,
-            backend: FecBackend::Rlc,
+        // `enc` seam. The retention scan below is INSIDE the extent on
+        // purpose: it is a per-symbol walk of the range and it is real coding
+        // cost, charged to the seam that pays it.
+        crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Enc, || {
+            self.generate_repair_range_inner(start, count)
         })
     }
 
@@ -609,6 +590,70 @@ impl WindowEncoder for GenerationEncoder {
             return false;
         }
         (floor..hi).any(|g| self.codeable(g))
+    }
+}
+
+/// The `RWM_CPUPROF` seam bodies for the two [`WindowEncoder`] entry points
+/// above. They live in an INHERENT block because a trait impl may only
+/// contain the trait's own items — the split is a language requirement, not
+/// a design choice, and the timed wrappers stay on the trait methods so no
+/// caller can reach the work without passing the instrument.
+impl GenerationEncoder {
+    fn add_source_inner(&mut self, data: &[u8]) -> WireSymbol {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+
+        let mut padded = vec![0u8; self.symbol_size as usize];
+        let copy_len = data.len().min(self.symbol_size as usize);
+        padded[..copy_len].copy_from_slice(&data[..copy_len]);
+        self.sources.insert(seq, padded.clone());
+
+        // The systematic form is returned for retention/bookkeeping; in
+        // generation mode the sender puts a coded combination on the wire
+        // (never this raw symbol), so no fixed in-order position exists.
+        WireSymbol {
+            block_id: seq,
+            payload_id: 0,
+            is_repair: false,
+            data: padded,
+            backend: FecBackend::Rlc,
+        }
+    }
+
+    fn generate_repair_range_inner(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
+        if count == 0 {
+            return None;
+        }
+        let width = count as u64;
+        for seq in start..start + width {
+            if !self.sources.contains_key(&seq) {
+                return None;
+            }
+        }
+        let symbol_size = self.symbol_size as usize;
+        let coded_index = self.coded_index;
+        self.coded_index += 1;
+
+        let coeffs = generate_window_coefficients(start, count, coded_index);
+        let mut coded = vec![0u8; symbol_size];
+        for i in 0..width {
+            let src = self.sources.get(&(start + i)).expect("range checked present");
+            gf256::mul_acc_slice(coeffs[i as usize], src, &mut coded);
+        }
+
+        let mut wire_data = Vec::with_capacity(REPAIR_HEADER_SIZE + symbol_size);
+        wire_data.extend_from_slice(&start.to_le_bytes());
+        wire_data.extend_from_slice(&count.to_le_bytes());
+        wire_data.extend_from_slice(&coded_index.to_le_bytes());
+        wire_data.extend_from_slice(&coded);
+
+        Some(WireSymbol {
+            block_id: start + width - 1,
+            payload_id: coded_index,
+            is_repair: true,
+            data: wire_data,
+            backend: FecBackend::Rlc,
+        })
     }
 }
 

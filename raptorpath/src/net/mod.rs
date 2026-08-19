@@ -13,6 +13,7 @@ pub mod ackdiag;
 pub mod block_arq;
 pub mod block_sender;
 pub mod control_msg;
+pub mod cpuprof;
 pub mod diag;
 pub mod emit_source;
 pub mod framing;
@@ -4510,6 +4511,12 @@ impl Drop for SenderTeardownGauges {
         // arms used, so an L1 parser written against the smoke's logs is
         // unaffected.
         walldiag::report_at_teardown(now_us());
+        // The run's ONE `[CPUPROF]` line (`RWM_CPUPROF`) — the sender CPU
+        // decomposition. Same site and same reason as `[WALL]`: `perf::client`
+        // takes NEITHER teardown `select!` arm, so a destructor is the only
+        // place on every exit path. Emitted unconditionally by the gauge's own
+        // null check, so the shipped default prints nothing.
+        cpuprof::report_at_teardown();
         if self.composed_cap {
             eprintln!("{}", self.ccap_line());
         }

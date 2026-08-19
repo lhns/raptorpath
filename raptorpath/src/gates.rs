@@ -806,6 +806,34 @@ pub struct RuntimeGates {
     /// the c8 arms whose statistic this stabilises are the arms that cannot
     /// afford the 250 ms `[DIAG]` report.
     pub walldiag: bool,
+    /// `RWM_CPUPROF` (default OFF): the SENDER CPU DECOMPOSITION — the
+    /// instrument the c9 scored battery's sender ceiling has no successor
+    /// without. That battery measured the client saturating at 68.5 ms/MB of
+    /// CPU and predicted its own goodput from it to within 1 % (1.51 cores /
+    /// 68.5 ms/MB = 176.3 Mbit/s against 176.4 measured), and then could not
+    /// say where the 68.5 ms/MB GOES. This gate attributes it to five named
+    /// seams — GF coding, source admission, framing, wire serialization, and
+    /// the datagram handoff — and reports the UNATTRIBUTED remainder as a
+    /// first-class column rather than as an error term, because the remainder
+    /// is where quinn's driver, its `sendmsg`, and rustls/ring's AEAD packet
+    /// protection all live and none of them is reachable from the sender task.
+    ///
+    /// One `[CPUPROF]` line per run, at sender teardown. See
+    /// `net/cpuprof.rs` for the measurand, stated before the code, and for
+    /// the three honesty clauses (wall seams against a CPU denominator; the
+    /// gauge's span is not the process's; the denominator is PROCESS CPU
+    /// because tokio may migrate the sender task).
+    ///
+    /// Observation only: the gauge owns all its state and its whole input is
+    /// a seam index and a duration
+    /// (`net::cpuprof::tests::cpuprof_is_observation_only`). Zero cost off —
+    /// the process-global is a `OnceLock<Option<…>>` that resolves to `None`,
+    /// so every seam is a null check around a direct call. Independent of
+    /// `RWM_DIAG` on purpose, exactly as `RWM_WALLDIAG` and `RWM_ACKDIAG`
+    /// are: the cell whose ceiling this takes apart is sender-CPU-bound, and
+    /// adding the 250 ms `[DIAG]` report to the arm under measurement would
+    /// change the quantity being measured.
+    pub cpuprof: bool,
     /// `RWM_RDIAG` (default OFF): engine-receiver saturation probe.
     pub rdiag: bool,
     /// `RWM_FDIAG` (default OFF): proactive-frontier diagnosis instrument
@@ -926,6 +954,7 @@ impl RuntimeGates {
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             walldiag: env_flag("RWM_WALLDIAG", false),
+            cpuprof: env_flag("RWM_CPUPROF", false),
             rdiag: env_flag("RWM_RDIAG", false),
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
@@ -985,7 +1014,7 @@ impl RuntimeGates {
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
-             RWM_WALLDIAG={} RWM_RDIAG={} \
+             RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
@@ -1021,7 +1050,7 @@ impl RuntimeGates {
             // resolves back to the default and this prints 2000000, so "my arm
             // did not take" is visible rather than inferred.
             b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
-            b(self.walldiag), b(self.rdiag),
+            b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
     }
@@ -1494,6 +1523,22 @@ mod tests {
         assert!(
             g.echo_line().contains("RWM_WALLDIAG=0"),
             "the default echo must NAME the dead-wall gauge with its 0 value: {}",
+            g.echo_line()
+        );
+        // The sender CPU decomposition (goal-gate "MEASUREMENT TRUTH item 2 —
+        // THE SENDER CPU CEILING", 2026-08-19) is the same class and ships the
+        // same way. The two-sided property matters more here than for its
+        // siblings: the cell this instrument is built for is sender-CPU-bound,
+        // so an arm that silently carried the gauge would be paying for it in
+        // exactly the quantity under measurement, and "the gate did not take"
+        // must be readable from the run's own output rather than inferred.
+        assert!(
+            !g.cpuprof,
+            "RWM_CPUPROF ships default OFF (DIAG-surface instrument)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_CPUPROF=0"),
+            "the default echo must NAME the CPU-decomposition gauge with its 0 value: {}",
             g.echo_line()
         );
         // Numeric defaults
