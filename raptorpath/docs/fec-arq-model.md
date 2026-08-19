@@ -14386,6 +14386,49 @@ and the literature has no counterpart** (§16.65's negative search: no published
 application of sequential change detection to transport timeouts), **but this
 tree cannot instantiate it until the contract prices its own false alarm.**
 
+**POINTER, added 2026-08-19 (`docs/cost-ratio-memo`). This section's verdicts
+are NOT re-opened; this records where the decision it asks for is now laid
+out.** The price ratio named above is presented for decision in
+`docs/research/cost-ratio-memo.md` — four constructions, each with its
+`α(r, δ)` mapping, its `W` at the battery's five measured cells, and its cost,
+with **no recommendation**. Two of its findings bear on this section's own
+wording and are recorded here rather than left in the memo alone.
+
+**(1) The claim that the ratio *"exists nowhere in this repository"* is too
+strong, and the correction narrows the decision rather than voiding the
+refutation.** It does not exist on the **r** leg, where this section looked.
+It exists on the **δ** leg, twice, and both declarations are continuous in the
+dial: Copa's own `U = log(throughput) − δ·log(delay)`, whose seat comment reads
+*"δ IS the marginal latency price"* (`scheduler/mod.rs:111-132`, δ = 50 / 0.5 /
+0.005), and the shed law's declared latency budget `D(δ) = min(b(δ)·RTprop,
+2·RTprop)` with `b` = ½ / 1 / 2 (`net/mod.rs:1013-1015`, `:3420-3426`). The
+memo's option (d) closes the marginal-cost equation on them with no fitted
+coefficient — `α^{3/2}(1−α)^{1/2} = δ·p·σ/(2·ν·d)` — leaving one **transfer
+claim** (that the congestion controller's latency price also governs the
+recovery plane) and one **unreported measurement** (`ν`, fires per delivered
+symbol, a ratio of two counters that already exist). **The category error
+§16.69 identified is real; its conclusion that no price exists anywhere is
+not.** What remains for the user is a transfer decision, not an invention.
+
+**(2) σ was assumed here and did not have to be.** This section's `σ ≈ 10 ms`
+at c8 is a working value. `PathState`'s estimator already maintains
+`rtt_var_sq = 0.75·rtt_var_sq + 0.25·dev²` at RFC 6298's own `β = 1/4`
+(`scheduler/mod.rs:1148,1657-1660`) and `rtt_sigma_us()` reads it
+(`:3032-3037`); its only consumers sit behind `RWM_QUANTILE_CLOCKS`, so on the
+default arm it is — in the engine's own comment — *"Fed unconditionally; read
+by nothing."* **σ is computed on every arm and reported on none, and printing
+it needs no new law.** Inverting Cantelli on §16.70.1's measured `fa_frac` at
+the measured cadence puts it near **18 ms at c8**, ~1.8× this section's
+assumption; the memo labels that an estimate across two clocks and not a
+measurement, and says every number it computes should be recomputed against a
+reported σ before anything is built.
+
+**Reasons 1 and 2 of the refutation above are untouched by either finding** —
+they are consequences of `α = 1e-5`, and every α the memo evaluates lies
+between 0.008 and 0.99, where `k` is between 11 and 1. **`RWM_QUANTILE_CLOCKS`
+stays default OFF and REFUTED-STANDING** until a ratio is decided and a battery
+scores it.
+
 ### 16.70 The δ-cap MEASURED: a setpoint derived in an RFC in 2018 transfers to a multipath FEC sender's pool multiplier — half the standing queue for goodput parity and 10–200 ms of delivered queue at every dual, with no fitted constant — while the RACK-shaped recovery clock is refuted on its own published false-alarm budget at every arm and the SHIPPED clamp is measured, for the first time, binding 92–99.7 % of the time (2026-08-19, `feat/candidates-run`, gates `RWM_DELTA_CAP` / `RWM_RACK_CLOCKS` still default OFF)
 
 §16.67 wrote the δ-priced pool multiplier as a formula before it was code and stated plainly that *"no wire measurement of a 5–10 %-of-BDP pool exists in this tree in either direction"*. §16.68 wrote the RACK-shaped recovery clock and refuted it by its own arithmetic before it ran — leaving un-measured the one number that refutation depends on, the false-alarm rate of the **shipped** clamp. §16.66's Tier-1 re-score found the CoDel setpoint's neighbourhood supported at three of five cells from arms run for other questions, with the standing caveat that *"no arm in this tree was ever run AT the setpoint"*. This section is the battery that ran one. The full scoring is goal-gate "Candidates Battery — RESULTS"; this section states positions and mechanisms.
