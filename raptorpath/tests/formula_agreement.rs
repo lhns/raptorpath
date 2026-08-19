@@ -64,6 +64,11 @@ use raptorpath::net::{
     shed_deadline_us, three_term_store_cap, ThreeTermTerm, WIN_STORE_MAX,
 };
 use raptorpath::control::fec_rate::ProtocolHint;
+use raptorpath::net::{
+    cantelli_k, codel_setpoint_q, contract_alpha, pool_value_multiplier,
+    quantile_recovery_round_us, rack_recovery_round_us, CODEL_TARGET_HI, CODEL_TARGET_LO,
+    RACK_MIN_RTT_DIVISOR, RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX, TIMER_GRANULARITY_US,
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. TRANSCRIPTIONS — the paper, and nothing but the paper
@@ -423,14 +428,14 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
             let paper = published_pooled_cap_unclamped(anchors, POOL_GAIN, sum_cap);
 
             // (i) The UNCLAMPED law, exactly — no quantization on this side.
-            let engine_raw = pooled_store_cap_unclamped(sum_cap, n, sigma, POOL_GAIN);
+            let engine_raw = pooled_store_cap_unclamped(sum_cap, false, 1.0, n, sigma, POOL_GAIN);
             assert!(
                 (engine_raw - paper).abs() < 1e-9,
                 "N={n} sum_cap={sum_cap}: unclamped engine {engine_raw} vs paper {paper}"
             );
 
             // (ii) The realized value: the paper's expression, ceil'd.
-            let engine = pooled_store_cap(true, sum_cap, n, sigma, POOL_GAIN, POOL_FLOOR, POOL_INERT)
+            let engine = pooled_store_cap(true, sum_cap, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, POOL_INERT)
                 .expect("engaged at N >= 2 with a positive base");
             let err = engine as f64 - paper;
             assert!(
@@ -462,7 +467,7 @@ fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
         // ceiling, which is what makes this an assertion about the bound.
         for sum_cap in [false, true] {
             let engine =
-                pooled_store_cap(true, sum_cap, n, 1.0e12, POOL_GAIN, POOL_FLOOR, KNEE).expect("on");
+                pooled_store_cap(true, sum_cap, false, 1.0, n, 1.0e12, POOL_GAIN, POOL_FLOOR, KNEE).expect("on");
             assert_eq!(
                 engine,
                 published_pooled_ceiling(n, KNEE, POOL_FLOOR),
@@ -473,7 +478,7 @@ fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
         // below the floor. No shipped cell reaches this, which is precisely why
         // the shorthand lost it and why it is pinned here.
         assert_eq!(
-            pooled_store_cap(true, true, n, 1.0e12, POOL_GAIN, POOL_FLOOR, 1),
+            pooled_store_cap(true, true, false, 1.0, n, 1.0e12, POOL_GAIN, POOL_FLOOR, 1),
             Some(POOL_FLOOR),
             "N={n}: the ceiling dropped its floor clause"
         );
@@ -498,13 +503,13 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
 
         // The SHIPPED arm: pinned at the ceiling, 2·knee at a dual. This is the
         // 121/126-reps observation, as arithmetic.
-        let shipped = pooled_store_cap(true, false, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
+        let shipped = pooled_store_cap(true, false, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
             .expect("on");
         assert_eq!(shipped, 2 * KNEE, "{cell}: the shipped arm is not pinned at 2·knee");
         assert_eq!(shipped, 4_096);
 
         // The CORRECTED arm: interior, and exactly the published integer.
-        let corrected = pooled_store_cap(true, true, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
+        let corrected = pooled_store_cap(true, true, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
             .expect("on");
         assert_eq!(
             corrected, expect_corrected,
@@ -522,4 +527,312 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
             "{cell}: the cap ratio {ratio:.4} left the published band"
         );
     }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// JOINED 2026-08-19 — the δ-cap (§16.66), the RACK round (§16.67) and the
+// derived quantile round (§16.68). Same four-part template: TRANSCRIBE from
+// the paper, DRIVE BOTH on one grid, ASSERT EQUALITY with every deliberate
+// divergence BOUNDED, and PROVE THE CLAMP IS NOT ANSWERING.
+// ════════════════════════════════════════════════════════════════════════
+
+/// **PUBLISHED**: paper §16.66 —
+/// `q(δ) = q_lo + (q_hi − q_lo)·(clamp(b, b_lo, b_hi) − b_lo)/(b_hi − b_lo)`.
+/// Transcribed 2026-08-19, in the paper's own symbols and order. The band
+/// endpoints are RFC 8289 §3.2's; the dial endpoints are the dial's.
+fn published_codel_q(b: f64) -> f64 {
+    let (q_lo, q_hi) = (0.05, 0.10);
+    let (b_lo, b_hi) = (0.5, 2.0);
+    q_lo + (q_hi - q_lo) * ((b.clamp(b_lo, b_hi) - b_lo) / (b_hi - b_lo))
+}
+
+/// **PUBLISHED**: paper §16.67 — RFC 8985 §6.2 Step 4 with RFC 9002 §6.1.2's
+/// granularity floor: `max(min(mult·min_rtt/4, srtt), G)`. Transcribed
+/// 2026-08-19.
+fn published_rack_round(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
+    let m = mult.clamp(1, 17);
+    ((m * min_rtt_us) / 4).min(srtt_us).max(TIMER_GRANULARITY_US)
+}
+
+/// **PUBLISHED**: paper §16.68 — `W(α) = srtt + √((1−α)/α)·σ`, Cantelli.
+/// Transcribed 2026-08-19.
+fn published_quantile_round(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
+    let k = ((1.0 - alpha) / alpha).sqrt();
+    ((srtt_us as f64 + k * sigma_us as f64) as u64).max(TIMER_GRANULARITY_US)
+}
+
+/// **LAW: `q(δ)`, paper §16.66.** The engine against the published map, over
+/// the whole dial including BETWEEN the named points — they are points on a
+/// dial, not modes, so the law must agree off them too.
+#[test]
+fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
+    // 1. The named points, ABSOLUTELY. These are the numbers §16.66 publishes.
+    let rt = delta_budget_b(ProtocolHint::Realtime);
+    let au = delta_budget_b(ProtocolHint::Auto);
+    let bu = delta_budget_b(ProtocolHint::Bulk);
+    assert!((codel_setpoint_q(rt) - CODEL_TARGET_LO).abs() < 1e-12, "Realtime is not CoDel's 0.05");
+    assert!((codel_setpoint_q(bu) - CODEL_TARGET_HI).abs() < 1e-12, "Bulk is not CoDel's 0.10");
+    assert!(
+        (codel_setpoint_q(au) - 1.0 / 15.0).abs() < 1e-12,
+        "Auto is not the band's affine midpoint (1/15 = 6.667 %)"
+    );
+
+    // 2. The closed form §16.66 states as an algebraic consequence, not a
+    //    fifth constant: q(b) = (b+1)/30 on the dial's own interval.
+    for i in 0..=150 {
+        let b = 0.5 + 1.5 * (i as f64 / 150.0);
+        assert!(
+            (codel_setpoint_q(b) - (b + 1.0) / 30.0).abs() < 1e-12,
+            "b={b}: the engine is not (b+1)/30"
+        );
+        // 3. AGREEMENT with the paper's transcription, everywhere.
+        assert!(
+            (codel_setpoint_q(b) - published_codel_q(b)).abs() < 1e-12,
+            "b={b}: engine {} vs paper {}",
+            codel_setpoint_q(b),
+            published_codel_q(b)
+        );
+    }
+
+    // 4. THE NO-MODE-SWITCH PROPERTY, asserted rather than described:
+    //    continuous and strictly monotone through every named point, with
+    //    ±2 % nudges either side. A behaviour STEP across a preset is a defect
+    //    even if each side is individually correct (CLAUDE.md).
+    for &b in &[rt, au, bu] {
+        let (lo, hi) = (b * 0.98, b * 1.02);
+        let (qlo, q0, qhi) = (codel_setpoint_q(lo), codel_setpoint_q(b), codel_setpoint_q(hi));
+        // Bulk saturates at the dial's own b_hi = 2 (the shipped D(δ)'s own
+        // `min`), so above it the map is FLAT — continuous, never a step.
+        assert!(qlo <= q0 && q0 <= qhi, "b={b}: not monotone through the preset");
+        assert!((q0 - qlo).abs() < 0.01 && (qhi - q0).abs() < 0.01, "b={b}: a STEP at the preset");
+    }
+
+    // 5. THE BAND IS NEVER LEFT — the design decision §16.66 records, asserted.
+    for i in 0..=400 {
+        let b = -1.0 + 5.0 * (i as f64 / 400.0);
+        let q = codel_setpoint_q(b);
+        assert!(
+            (CODEL_TARGET_LO..=CODEL_TARGET_HI).contains(&q),
+            "b={b}: q={q} left RFC 8289 §3.2's derived band"
+        );
+    }
+}
+
+/// **LAW: the δ-cap's value multiplier, paper §16.66.** The substitution is
+/// ONE FACTOR, and the reduction to ADR-0071 candidate (d) is asserted as a
+/// limit rather than described in prose.
+#[test]
+fn the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d() {
+    const GAIN: f64 = 2.0;
+    // OFF is the shipped fossil, exactly.
+    for &b in &b_grid() {
+        assert!((pool_value_multiplier(false, b, GAIN) - GAIN).abs() < 1e-12);
+        // ON is 1 + q, at every dial point, and it is strictly BELOW the
+        // fossil everywhere — the δ-cap can only ever shrink the pool.
+        let m = pool_value_multiplier(true, b, GAIN);
+        assert!((m - (1.0 + codel_setpoint_q(b))).abs() < 1e-12);
+        assert!(m < GAIN, "b={b}: the derived multiplier is not below the fossil");
+        assert!((1.05..=1.10).contains(&m), "b={b}: multiplier {m} left the derived band");
+    }
+    // THE REDUCTION: q → 0 is exactly one BDP per path, which IS candidate
+    // (d) ZERO. Asserted at the limit, through the same expression.
+    let sigma = 1_234.5f64;
+    let zero_slack = sigma; // Σᵢ bwᵢ·RTpropᵢ, no standing queue at all
+    let realtime = pool_value_multiplier(true, 0.5, GAIN) * sigma;
+    assert!(
+        realtime > zero_slack && realtime <= 1.05 * zero_slack + 1e-9,
+        "the derived band is not (d) PLUS the power-point allowance"
+    );
+
+    // The two axes FACTORISE — the count multiplier and the value multiplier
+    // are independent, which is what makes the four combinations four laws.
+    for &sum_cap in &[false, true] {
+        for &delta in &[false, true] {
+            for n in 2..=6usize {
+                let got = pooled_store_cap_unclamped(sum_cap, delta, 1.0, n, n as f64 * 100.0, GAIN);
+                let cnt = if sum_cap { 1.0 } else { n as f64 };
+                let val = pool_value_multiplier(delta, 1.0, GAIN);
+                assert!(
+                    (got - val * cnt * (n as f64 * 100.0)).abs() < 1e-9,
+                    "the axes do not factorise at sum_cap={sum_cap} delta={delta} N={n}"
+                );
+            }
+        }
+    }
+}
+
+/// **THE PUBLISHED PREDICTIONS ARE WHAT THE LAW COMPUTES**, at BOTH anchor
+/// eras §16.66 carries, driven through the engine's own function.
+#[test]
+fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
+    const GAIN: f64 = 2.0;
+    const FLOOR: usize = 10;
+    const KNEE: usize = 2048;
+    let cap = |sigma: f64, b: f64| {
+        pooled_store_cap(true, true, true, b, 2, sigma, GAIN, FLOOR, KNEE).expect("engaged")
+    };
+    let (rt, au, bu) = (0.5, 1.0, 2.0);
+
+    // (A) PRIMARY — the ladder battery's own measured Σ (Σ = cap/gain).
+    for &(name, sigma, e_rt, e_au, e_bu) in &[
+        ("c7", 1_571.2f64, 1650usize, 1676usize, 1729usize),
+        ("c8", 1_154.3, 1213, 1232, 1270),
+        ("c8L", 2_815.35, 2957, 3004, 3097),
+    ] {
+        assert_eq!(cap(sigma, rt), e_rt, "{name} Realtime");
+        assert_eq!(cap(sigma, au), e_au, "{name} Auto");
+        assert_eq!(cap(sigma, bu), e_bu, "{name} Bulk");
+        // INTERIOR at every dial point on these anchors — the clamp is
+        // provably not answering, which is template part 4.
+        assert!(cap(sigma, bu) < 2 * KNEE, "{name}: the ceiling bound on the primary anchors");
+        assert!(cap(sigma, rt) > FLOOR, "{name}: the floor bound");
+    }
+
+    // (B) SECONDARY — ADR-0071's BDP = W/K, the cross-check's CoDel rung.
+    // §16.65 published these as "c1 ≈ 184, sc2 ≈ 344, c7 ≈ 1161, c8 ≈ 1685,
+    // c8L ≈ 5225"; the engine ceils to whole symbols, so the pins are the
+    // ceilings of those reals and the divergence is BOUNDED at < 1 symbol.
+    for &(name, bdp, rung) in &[
+        ("c1", 174.8f64, 184usize),
+        ("sc2", 328.1, 345),
+        ("c7", 1_106.1, 1162),
+        ("c8", 1_604.8, 1686),
+        ("c8L", 4_976.1, 5225),
+    ] {
+        let real = 1.05 * bdp;
+        assert!(
+            (real.ceil() as usize).abs_diff(rung) <= 1,
+            "{name}: the published CoDel rung {rung} is not ceil(1.05·{bdp}) = {}",
+            real.ceil()
+        );
+    }
+
+    // c8L IS PRE-DECLARED UNREACHABLE ON THE SECONDARY ANCHORS, BY
+    // CONSTRUCTION: N·knee < BDP, so the ceiling sits below one network
+    // window before any setpoint is added and NO value of q can be interior.
+    assert!(2 * KNEE < 4_976, "c8L's exclusion arithmetic no longer holds");
+    assert_eq!(cap(4_976.1, rt), 2 * KNEE, "c8L must PIN on the secondary anchors");
+    assert_eq!(cap(4_976.1, bu), 2 * KNEE, "c8L must PIN at every dial point");
+}
+
+/// **LAW: the RACK round, paper §16.67**, and the two findings that refute the
+/// backlog item, asserted as arithmetic rather than described.
+#[test]
+fn published_rack_round_equals_the_engine_and_its_ceiling_is_unreachable() {
+    // 1. AGREEMENT with the paper, over the measured geometries and both ends
+    //    of RACK's own multiplier range.
+    for &(srtt, mrtt) in &[
+        (9_000u64, 2_000u64),
+        (87_000, 11_000),
+        (104_000, 13_000),
+        (376_000, 38_000),
+        (464_000, 40_000),
+        (150, 100), // loopback
+    ] {
+        for mult in [1u64, 2, 9, 17, 100] {
+            assert_eq!(
+                rack_recovery_round_us(srtt, mrtt, mult),
+                published_rack_round(srtt, mrtt, mult),
+                "srtt={srtt} min_rtt={mrtt} mult={mult}"
+            );
+        }
+        // 2. RACK's `mult` is clamped to RACK's OWN range, both ends.
+        assert_eq!(
+            rack_recovery_round_us(srtt, mrtt, 0),
+            rack_recovery_round_us(srtt, mrtt, RACK_REO_WND_MULT_INIT)
+        );
+        assert_eq!(
+            rack_recovery_round_us(srtt, mrtt, 10_000),
+            rack_recovery_round_us(srtt, mrtt, RACK_REO_WND_MULT_MAX)
+        );
+    }
+
+    // 3. THE DEFECT FINDING, PINNED: at RACK's own initial mult the SRTT
+    //    ceiling CANNOT bind, because min_rtt ≤ srtt implies min_rtt/4 < srtt
+    //    identically. A bound that provably never binds turns its law into a
+    //    constant — CLAUDE.md's bind-fraction rule, asserted here in advance
+    //    of any measurement.
+    for &(srtt, mrtt) in &[(9_000u64, 2_000u64), (87_000, 11_000), (376_000, 38_000)] {
+        let base = RACK_REO_WND_MULT_INIT * mrtt / RACK_MIN_RTT_DIVISOR;
+        assert!(base < srtt, "the ceiling became reachable at mult=1 — §16.67 needs rewriting");
+    }
+
+    // 4. THE UNREACHABILITY ARITHMETIC §16.67 publishes: the mult at which the
+    //    ceiling binds is ⌈4·srtt/min_rtt⌉, and at four of five sender-site
+    //    cells it exceeds RACK's own maximum of 17.
+    let need = |srtt: u64, mrtt: u64| (4 * srtt).div_ceil(mrtt);
+    for &(name, srtt, mrtt, want) in &[
+        ("c1", 9_000u64, 2_000u64, 18u64),
+        ("c7", 87_000, 11_000, 32),
+        ("sc2", 104_000, 13_000, 32),
+        ("c8", 376_000, 38_000, 40),
+        ("c8-AU", 464_000, 40_000, 47),
+    ] {
+        assert_eq!(need(srtt, mrtt), want, "{name}: the published ceiling-mult changed");
+        assert!(want > RACK_REO_WND_MULT_MAX, "{name}: §16.67 claims this is unreachable");
+    }
+    // The receiver site, where it IS reachable at exactly two cells.
+    assert_eq!(need(77_000, 38_000), 9, "c8 receiver");
+    assert_eq!(need(82_000, 40_000), 9, "c8-AU receiver");
+    assert!(9 <= RACK_REO_WND_MULT_MAX, "the one reachable row is no longer reachable");
+}
+
+/// **LAW: the derived quantile round, paper §16.68**, and its REFUTATION,
+/// pinned at the tree's own contract numbers so it cannot be quietly tuned
+/// into passing.
+#[test]
+fn published_quantile_round_equals_the_engine_and_the_refutation_is_arithmetic() {
+    // 1. Cantelli's closed form, at the contract's own α per hint.
+    for &(hint, want_alpha, want_k) in &[
+        (ProtocolHint::Realtime, 1e-7, 3_162.0f64),
+        (ProtocolHint::Auto, 1e-5, 316.0),
+        (ProtocolHint::Bulk, 1e-3, 31.6),
+    ] {
+        let a = contract_alpha(hint);
+        assert!((a - want_alpha).abs() < want_alpha * 1e-9, "{hint:?}: α = {a}");
+        let k = cantelli_k(a);
+        assert!(
+            (k - want_k).abs() / want_k < 0.01,
+            "{hint:?}: k(α) = {k}, §16.68 publishes {want_k}"
+        );
+        // Cantelli's guarantee, checked as the identity it is: 1/(1+k²) = α.
+        assert!((1.0 / (1.0 + k * k) - a).abs() < a * 1e-6, "{hint:?}: not Cantelli");
+    }
+
+    // 2. AGREEMENT with the paper's transcription.
+    for &(srtt, sigma) in &[(77_000u64, 10_000u64), (2_000, 500), (150, 50)] {
+        for &a in &[1e-7, 1e-5, 1e-3, 0.0625, 0.5] {
+            assert_eq!(
+                quantile_recovery_round_us(srtt, sigma, a),
+                published_quantile_round(srtt, sigma, a),
+                "srtt={srtt} σ={sigma} α={a}"
+            );
+        }
+    }
+
+    // 3. THE REFUTATION, REASON 1, as arithmetic. At c8's measured srtt and a
+    //    10 ms σ the derived clock is SECONDS at the contract's own α — 32×
+    //    the 100 ms clamp it would replace, and 4× RWM_DERIVED_SWEEP's already
+    //    slow 752 ms. If this ever passes, §16.68's verdict must be revisited
+    //    rather than the number quietly adjusted.
+    let w_auto = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Auto));
+    assert!(
+        (3_200_000..3_300_000).contains(&w_auto),
+        "§16.68 publishes 3.24 s at c8/Auto; the law computes {w_auto} µs"
+    );
+    assert!(w_auto > 32 * 100_000, "the refutation's 32× statement no longer holds");
+    let w_rt = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Realtime));
+    assert!((31_000_000..32_500_000).contains(&w_rt), "§16.68 publishes 31.7 s at Realtime");
+    let w_bulk = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Bulk));
+    assert!((380_000..400_000).contains(&w_bulk), "§16.68 publishes 393 ms at Bulk");
+
+    // 4. α is CONTINUOUS in the dial — it rides ζ, the hint's one declared
+    //    price ratio, and nothing keys on a threshold. Monotone in the same
+    //    direction as the latency price, at every named point.
+    let (r, a, b) = (
+        contract_alpha(ProtocolHint::Realtime),
+        contract_alpha(ProtocolHint::Auto),
+        contract_alpha(ProtocolHint::Bulk),
+    );
+    assert!(r < a && a < b, "α is not monotone across the dial's named points");
 }
