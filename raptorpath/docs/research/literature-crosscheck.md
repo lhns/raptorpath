@@ -1950,6 +1950,27 @@ ADR-0058's own record shows the pooled/percap verdict *differing between c7 and
 c8*, which is the signature Eppen predicts. **This is a genuinely new reading
 of an existing result and it costs one correlation measurement.**
 
+> **EXECUTED 2026-08-19 (`analysis/eppen-c8`; goal-gate "Eppen's Condition at
+> c8", paper §16.72) — VERDICT PARTIAL, and this paragraph is AMENDED by its own
+> experiment.** The ORDERING holds and is significant: on the pool-DRAIN series
+> the cross-path correlation is **−0.814 at c7 and +0.612 at c8** (two-way
+> centered; +0.048/+0.800 rep-centered), `ρ_c8 > ρ_c7` under all three
+> estimators, Fisher two-sample **p = 0.009**, implying pooling benefits of
+> **0.695 vs 0.102** — ADR-0058's two verdicts, unfitted. **But this paragraph's
+> REFERENT and its GUESS are both wrong.** The stall/loss series named above
+> does not separate the cells (`p` = 0.26/0.28); and c7's loss processes are not
+> *"likely correlated"* but **ρ = +1 EXACTLY**, because `tools/l1/topo_dual.sh`
+> passes one `--seed` to both legs — the two paths run the same GE realization,
+> read off the `-q.txt` captures. The maximum-correlation end of Eppen's axis,
+> at the cell where pooling wins. **Run as written this experiment would have
+> returned the opposite answer.** The deeper amendment: our demands are one flow
+> SPLIT against a binding total, so the mean pairwise correlation is pinned at
+> `−1/(N−1)` by the adding-up constraint, and positive drain correlation in this
+> machine diagnoses a **shared constraint starving every path at once** (the
+> un-SACKed frontier) rather than correlated environmental demand. Eppen's ρ is
+> an input; ours is partly an output of the design under test, which is why the
+> verdict is PARTIAL. The exogeneity bar is pre-registered as c9-4.
+
 **(c) The √N law is not distribution-free.** From the heavy-tailed pooling
 literature (Bimpikis & Markakis, *Management Science* 62(6), 2016), the
 square-root law *"depends critically on the 'light-tailed' nature of the demand
@@ -2401,7 +2422,7 @@ adding an instrument.
 | CD-2 | span as buffer sizing | ROB `W/D` coverage; balanced design `W ∝ D²` | **CONFIRMS** units; **CONTRADICTS** the linear form; third field to call the term negligible |
 | CD-3 | the c8 dead wall | metastable failure; `Cstable = Cnorm/(w*L·w*C)`; RFC 896 *"This condition is stable"* | **CONFIRMS** — named class, quantified gap, published mitigation list |
 | CD-4 | δ setpoint enforcement speed | Hollot `ω_g·R₀ < 0.85`; RED averaging flaw | **SHARPENS** — family 2 specifies the setpoint but not the bandwidth bound |
-| CD-5 | one pooled cap (ADR-0058) | Eppen 1979 √N risk pooling; Fukuda 1964 slow-lead-time base | **CONFIRMS** the pooled decision — with an untested correlation condition |
+| CD-5 | one pooled cap (ADR-0058) | Eppen 1979 √N risk pooling; Fukuda 1964 slow-lead-time base | **CONFIRMS** the pooled decision — correlation condition now TESTED, verdict **PARTIAL** (2026-08-19, §16.72): ordering predicts at p = 0.009, but CD-5's named referent is refuted and the exogeneity is unverified |
 | CD-6 | recovery clocks | Lorden/Moustakides CUSUM optimality `log γ / I`; φ-accrual | **NO COUNTERPART IN TRANSPORT** — a real opportunity |
 | CD-7 | FORMULA-FIRST / discipline 17 | Buckingham 1914, Rayleigh 1915, Roy 2005 order-of-accuracy | **CONFIRMS** — 110-year-old discipline, independently re-derived |
 | CD-8 | cross-path attribution | Reid 1979 measurement-origin uncertainty | **CONFIRMS** framing; "tag at source" claim **NOT SUPPORTED** |
@@ -2488,7 +2509,7 @@ adding an instrument.
 
 | # | item |
 |---|---|
-| 3.1 | **Cross-path correlation of stall/loss events** (Eppen's condition). Does the pooling advantage track √N or collapse toward 1? Reframes ADR-0058's c7-vs-c8 split from anomaly to prediction. |
+| 3.1 | ~~**Cross-path correlation of stall/loss events** (Eppen's condition). Does the pooling advantage track √N or collapse toward 1? Reframes ADR-0058's c7-vs-c8 split from anomaly to prediction.~~ **DONE 2026-08-19, verdict PARTIAL** — §16.72 / goal-gate "Eppen's Condition at c8". The series to correlate is the pool DRAIN, not stall/loss; the successor is the c9 pre-registration's exogeneity bar (C9-4) and the two named instruments (250 ms `[ACKDIAG]` window; a second netem seed). |
 | 3.2 | **The metastable amplification factor** `w*L·w*C` at c8, instead of tuning the cliff. Report the **collapse RATE** (§16.63's 0/27 vs 2/21 already is one), not a mean — the literature's own reporting convention, and the answer to the bistable-statistic problem. |
 | 3.3 | **A recovery clock derived from a declared spurious-retransmit budget** (Lorden's γ; RACK's own <7 %). The one item in this document where the literature does **not** already have our answer. |
 

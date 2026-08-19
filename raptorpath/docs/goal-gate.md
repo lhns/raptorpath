@@ -32890,3 +32890,267 @@ c8L's `[WALL]` is reported direction-only and scored on nothing, as pre-declared
 * **What would refute it**, restated so it stays falsifiable after a flip: ADR-0071's own condition — a cell where the δ-priced ceiling binds below the shipped cap and costs > 2σ goodput at a cell with permitted headroom. **Not observed at any of the five cells here.**
 
 **Nothing in this section flips a default.** Every deliverable is a recommendation with its noise bounds, written so a separate trivial flip commit can cite it.
+
+---
+
+## Eppen's Condition at c8 (2026-08-19, `analysis/eppen-c8` from main@`6ad964d`) — **PARTIAL: the ORDERING Eppen 1979 predicts is measured and significant (c8's cross-path drain correlation exceeds c7's under all three estimators, p = 0.009), but CD-5 named the WRONG SERIES and guessed the WRONG DIRECTION, the harness makes the series it named ρ = +1 BY CONSTRUCTION at exactly the cell where pooling wins, and the exogeneity Eppen's theorem requires is UNVERIFIED — at c8 the shared pool is a candidate CAUSE of the correlation rather than a victim of it.** ERA LEDGER item 3, executing `docs/research/literature-crosscheck.md` CD-5's own named experiment ("measure cross-path correlation of stall/loss events, and check whether the pooling advantage tracks Eppen's √N or collapses toward 1"). **STRICTLY LOCAL: no VM, no new arm, no new binary, no engine line, no gate, no default.** Script `tools/l1/eppen_corr.py`; reads only ledgers already committed under `docs/l1-raw/`. Full output: `docs/l1-raw/eppen-corr-report.txt`.
+
+### 1 — THE TRANSLATION, SYMBOL BY SYMBOL
+
+| Eppen 1979 | ours | where it is EXACT | where it STRAINS |
+|---|---|---|---|
+| location `i` | path `i` | one-to-one | — |
+| demand per period `D_i` | per-path DRAIN of the outstanding pool over one gauge window (`[ACKDIAG]` `rate_lr`, `acks`) | both are the draw against the stock that period | **the load-bearing strain — see below** |
+| centralized stock | `RWM_STORE_PATHS`, one shared pool (ADR-0058, shipped) | exact — one pool, any path may draw | — |
+| decentralized stock at `i` | `RWM_STORE_PERCAP` per-path accounts (refuted, ADR-0058) | exact — `cap_i` drawn only by path `i` | — |
+| lateral transshipment | `RWM_STORE_BORROW` bounded borrowing (refuted, §16.22) | exact, including the known limitation (recovers part of the pooling benefit, never all) | — |
+| holding cost `h` | standing queue → delivered residence | **a theorem, not a convention**: by Little 1961, every unit of cap above `rate·RTprop` that is in flight sits in queue and residence rises by exactly that excess (CD-5(f)) | — |
+| penalty / stockout cost `p` | idle wire — the starved frontier (`z` zero-delta acks, `wait_tun`/`wait_paused`) | directionally exact: no stock ⇒ no service | **not linear.** A newsboy stockout costs one lost sale. A starved frontier costs a stall whose price grows with the drain tail — the 2026-08-06 c8 finding ("costs more in frontier stalls + drain tail than it banks") |
+| lead time `L_i` | per-path RTT (measured RTprop 8.45 ms / 38.33 ms at c8) | structural, and confirmed twice independently: Fukuda 1964 and RFC 6182 both size on the SLOWEST source with an additive term for the fast one | **no purchase price `c_k`, and we do not choose the supplier — the scheduler does.** CD-5's own honest limit: cite Fukuda for the structure, never the algebra |
+| service factor `k` (identical linear costs at every location) | — | — | **absent.** Our δ dial prices queue against loss per-transfer, not per-path; there is no per-path service level to hold identical |
+
+**THE ONE HONEST PARAGRAPH — the strain that decides the reading.** Eppen's
+`D_i` are **exogenous and their sum is free**: N shopkeepers face N independent
+draws and nothing in the model makes one location's sale another's loss. Ours
+are **one flow SPLIT by a work-conserving scheduler against a binding total**.
+Under that adding-up constraint the per-path draws are *mechanically*
+anti-correlated — a symbol placed on path A is a symbol not placed on path B —
+and for N exchangeable series summing to a constant the mean pairwise
+correlation is pinned at the floor `ρ̄ = −1/(N−1)`, i.e. **exactly −1 at N = 2**.
+So a saturated symmetric dual sits at the ρ → −1 end of Eppen's axis **by
+construction**, which is precisely where his theorem says pooling is worth the
+most. That is not a coincidence in our favour; it is a *disanalogy* that
+happens to point the same way, and it means **the interesting question is never
+"is ρ negative?" but "what pushes ρ back UP toward +1?"** In our machine only
+one thing can: a **shared constraint that starves every path at once**. Positive
+drain correlation therefore does not diagnose correlated environmental demand
+the way it does in Eppen — **it diagnoses a coupling defect**, and the pool
+itself is the leading suspect. Eppen's ρ is an INPUT to his model; ours is at
+least partly an OUTPUT of the design under test. Everything below is read with
+that caveat in force, and §4's pre-registration puts a bar on it.
+
+### 2 — THE MEASUREMENT
+
+**Instrument.** `[ACKDIAG]` per-path window series (`src/net/ackdiag.rs`), the
+ack-cadence gauge, sender-side, one line per path per window. Ledger
+`docs/l1-raw/ackdiag-ackdiag-s42.log` + the per-run captures under
+`docs/l1-raw/ackdiag-diag/`. **ONE ARM** — the shipped default
+(`RWM_STORE_PATHS=1`, pooled). There is no per-path-account arm in this
+capture, so the pooled-vs-percap VERDICTS below are carried from ADR-0058 and
+none is re-derived here.
+
+**Three estimators, because two of them disagree in sign at c7 and hiding that
+would be the whole finding.** `raw` = no centering. `rep-ctr` = within-rep
+centered (a rep is one invocation with its own level). `two-way` = rep AND
+window-index effects removed, i.e. the common warm-up ramp taken out (c8's
+window 0 is the highest of its rep in 3/3 reps on BOTH paths). The two-way
+estimator's CI is taken at an effective n of 7 (df `(3−1)(4−1) = 6`), not 12.
+
+| cell | series | ρ raw | ρ rep-ctr | 95 % CI | ρ two-way | 95 % CI | B(ρ) | B·(σ₀+σ₁) |
+|---|---|---|---|---|---|---|---|---|
+| **c7** | delivered rate | +0.282 | **+0.048** | [−0.541, +0.605] | **−0.814** | [−0.972, −0.157] | 0.250 | 82.3 sym/s |
+| c7 | ack arrivals | +0.395 | +0.259 | [−0.370, +0.725] | −0.818 | [−0.972, −0.169] | 0.188 | 136.5 |
+| c7 | zero-delta frac | −0.298 | −0.238 | [−0.715, +0.389] | −0.504 | [−0.911, +0.401] | — | — |
+| c7 | over-read `x` p50 | −0.064 | −0.179 | [−0.683, +0.440] | −0.422 | [−0.892, +0.485] | — | — |
+| **c8** | delivered rate | +0.786 | **+0.800** | [+0.417, +0.941] | **+0.612** | [−0.262, +0.934] | 0.029 | 59.0 sym/s |
+| c8 | ack arrivals | +0.781 | +0.795 | [+0.406, +0.940] | +0.610 | [−0.265, +0.934] | 0.030 | 119.4 |
+| c8 | zero-delta frac | +0.211 | +0.263 | [−0.366, +0.727] | +0.236 | [−0.629, +0.840] | — | — |
+| c8 | over-read `x` p50 | +0.600 | +0.599 | [+0.038, +0.873] | +0.505 | [−0.400, +0.911] | — | — |
+
+Per-path levels, so the asymmetry sits beside the ρ:
+
+| cell | path | `rate_lr` mean | sd | **CV** | RTprop |
+|---|---|---|---|---|---|
+| c7 | p0 | 9 370 sym/s | 231 | **2.5 %** | 8.74 ms |
+| c7 | p1 | 9 416 | 154 | **1.6 %** | 10.12 ms |
+| c8 | p0 | 6 894 | 1 727 | **25.1 %** | 8.45 ms |
+| c8 | p1 | 1 397 | 353 | **25.3 %** | 38.33 ms |
+
+**THE CONTRAST — the only thing Eppen's condition actually asks for.** Eppen
+(ii) is a statement about the ORDERING of two cells, not about either cell's
+point estimate. The single-cell CIs overlap and are not the test; the Fisher
+two-sample z is:
+
+| series | estimator | ρ_c7 | ρ_c8 | z | p |
+|---|---|---|---|---|---|
+| **delivered rate** | rep-ctr | +0.048 | +0.800 | **+2.23** | **0.026** |
+| **delivered rate** | two-way | −0.814 | +0.612 | **+2.62** | **0.009** |
+| ack arrivals | rep-ctr | +0.259 | +0.795 | +1.74 | 0.082 |
+| ack arrivals | two-way | −0.818 | +0.610 | +2.63 | 0.009 |
+| zero-delta frac | rep-ctr | −0.238 | +0.263 | +1.09 | 0.277 |
+| zero-delta frac | two-way | −0.504 | +0.236 | +1.12 | 0.261 |
+| over-read `x` p50 | rep-ctr | −0.179 | +0.599 | +1.85 | 0.064 |
+| over-read `x` p50 | two-way | −0.422 | +0.505 | +1.42 | 0.155 |
+
+**`ρ_c8 > ρ_c7` on the drain series under ALL THREE estimators.** The sign of
+the difference is what survives; the magnitude is not claimed.
+
+**THE MECHANISM IS VISIBLE IN THE RAW WINDOWS, which is why the estimator
+disagreement resolves.** At c7 both legs are PINNED at their own bottleneck
+(CV 2.5 % / 1.6 %) — there is almost no demand variance to pool, and the little
+there is trades between the paths. At c8 neither leg is pinned (CV 25 % on
+both) and they swing TOGETHER:
+
+```text
+c8  rep1 w0  p0 8670  p1 1848      c7  rep1 w0  p0 8985  p1 9520
+    rep1 w1  p0 3422  p1  955          rep1 w1  p0 9593  p1 9590
+    rep1 w2  p0 6652  p1 1745          rep1 w2  p0 9272  p1 9368
+    rep1 w3  p0 6106  p1  885          rep1 w3  p0 9503  p1 9204
+```
+
+The c8 collapse at `w1` is **simultaneous on both paths**, and it is the
+already-recorded mechanism seen from a new angle: the fast path parks the
+un-SACKed frontier span, and when the frontier stalls the slow path starves
+with it. **At c8 the two paths do not have two demands. They have one.**
+
+**THE SEED AUDIT — the other half of the answer, and it costs nothing.**
+`tools/l1/topo_dual.sh:58-59` shapes `cli0` and `cli1` with the SAME `--seed`.
+Read straight off the `-q.txt` qdisc captures rather than argued:
+
+| capture class | same netem seed | same loss/delay params | consequence |
+|---|---|---|---|
+| c7 (3/3) | **yes, `seed 42`** | **yes** (`gemodel p 1.3 % r 50 %`, `delay 5ms 3ms`, 100 Mbit) | **the two paths' GE chains and delay-jitter draws are the SAME realization indexed by packet — ρ_loss = +1 BY CONSTRUCTION** |
+| c2r100 (3/3) | yes, `seed 42` | yes | same (single-path cell; recorded for completeness) |
+| c8 (3/3) | yes, `seed 42` | **no** (`1.3 %/50 %/5ms/100Mbit` vs `2 %/40 %/20ms/20Mbit`) | same seed, different chains — ρ_loss unconstrained and UNMEASURED |
+
+The reverse (ack) direction gets no seed and the kernel draws its own, which is
+why `SRV0`/`SRV1` read random 64-bit values in every capture — the mechanism is
+confirmed by its own control.
+
+**THE GRANULARITY LIMIT, stated as the headline it is.**
+`ACKDIAG_WINDOW_US = 2 s` against a 9–11 s invocation gives **four window pairs
+per rep, twelve pooled**. That supports an ordering test and nothing finer. It
+also **cannot see the loss process at all**: the cells' Gilbert-Elliott bursts
+(`p 1.3 % r 50 %` / `p 2 % r 40 %`) live at millisecond scale and are averaged
+flat by a 2 s window. Everything measured above is the correlation of the
+**scheduler's split**; the loss-side condition is known only from the seed
+audit, which is exact rather than estimated. The two are never conflated here.
+
+### 3 — THE SCORE
+
+**Eppen's prediction, restated as a falsifiable ordering:** the pooling
+advantage is largest at ρ → −1 / independent and vanishes at ρ → +1.
+
+**Our record (ADR-0058, unmodified here):** pooling won clearly at **c7** —
+`RWM_STORE_PERCAP` reached parity-or-better only after two derived repairs, and
+LOO shows removing the pooled law re-opens a c7 collapse class on both seeds.
+Pooling's story never closed at **c8** — percap `<` pooled but the legacy 1024
+pool then read BETTER than the path-scaled one (0.85–0.87×Σ vs 0.72–0.76), the
+capacity-weighted successor was built and LOST, and the 2026-08-06 verdict named
+slow-path CONVERSION rather than pool sizing.
+
+**The match, in the benefit units the theorem is stated in** (`B(N, ρ̄) = 1 −
+√((1 + (N−1)ρ̄)/N)`, the pooled-variance identity — `[SECONDARY: Eppen's closed
+form is paywalled and NOT CONSULTED]`):
+
+| cell | measured ρ (drain) | B(2, ρ) | ADR-0058's verdict | agrees? |
+|---|---|---|---|---|
+| c7 | −0.814 (two-way) / +0.048 (rep-ctr) | **0.695** / 0.276 | pooling WINS, LOO-defended | **yes** |
+| c8 | +0.612 (two-way) / +0.800 (rep-ctr) | **0.102** / 0.051 | pooling's edge never appeared | **yes** |
+
+And it holds in absolute units too, which is not automatic — `B` is scale-free
+while the safety stock Eppen prices is `B·(σ₀+σ₁)`. c7 has the *smaller* σ and
+still the *larger* absolute saving: **82.3 vs 59.0 sym/s**, 1.4×.
+
+**Does the asymmetric-lead-time extension carry c8 instead?** It carries a
+DISTINCT PART, and the two faces are the same mechanism seen twice. The measured
+lead-time ratio at c8 is **4.5×** (38.33 / 8.45 ms) and the rate ratio **4.9×**
+(6 894 / 1 397 sym/s). Fukuda 1964's structure — *the policy for the slow lead
+time plus an additive constant for the fast source* — is exactly the shape the
+c8 record already reports as its own worst reading: **"legacy c8 = fast single
++ 2.7 Mbit"**, i.e. the slow source's additive term measured at ~2.7 Mbit
+against 20 Mbit of link. So c8's residual has a correlation face (ρ = +0.61
+kills the pooling benefit) and a lead-time face (the slow source contributes an
+additive term ~7× below its own capacity), and the drain windows above show why
+they are one thing: the slow path's draw is **slaved to the fast path's
+frontier**.
+
+> ## VERDICT: **PARTIAL**
+>
+> **PREDICTS —** the ordering. `ρ_c8 > ρ_c7` on the pool-drain series under all
+> three estimators, `p = 0.009` (two-way) and `p = 0.026` (rep-centered), and
+> the implied benefits (0.695 vs 0.102 scale-free; 82.3 vs 59.0 sym/s absolute)
+> line up with ADR-0058's two verdicts without any parameter being fitted. The
+> c7-vs-c8 split really is the signature CD-5 said it was.
+>
+> **DOES NOT PREDICT —** on the referent CD-5 named. CD-5 wrote the experiment
+> as *"cross-path correlation of stall/loss events"* and guessed *"c7 (two
+> identical legs, likely correlated) and c8 (asymmetric, likely less so)"*.
+> **Both halves are wrong.** The series that separates the cells is the DRAIN,
+> not the stall/loss series (`zfrac` does not separate them at all: `p` = 0.26 /
+> 0.28 on both estimators). And on the loss series the seed audit shows c7 is
+> ρ = +1 **by harness construction** — the maximum-correlation, zero-benefit end
+> of Eppen's axis, at exactly the cell where pooling demonstrably wins. Run as
+> written, CD-5's experiment would have returned the opposite answer.
+>
+> **UNVERIFIED —** the exogeneity the theorem requires. Eppen's ρ is a property
+> of the environment. Ours is at least partly a property of the design under
+> test: at a saturated symmetric cell the adding-up constraint pins ρ near its
+> −1 floor mechanically, and the only thing in this machine that can push ρ back
+> toward +1 is a shared constraint starving both paths at once — for which the
+> pool is the leading suspect. **Until ρ is measured on a per-path-account arm
+> at the same geometry, "pooling loses at c8 because the demands are correlated"
+> and "the demands are correlated at c8 because of pooling" are the same data.**
+> §4 pre-registers the bar that separates them.
+>
+> **BOUNDS.** n = 12 window pairs per cell, one arm, one seed, one gauge cadence
+> that cannot resolve the loss process. Nothing here flips a default, amends
+> ADR-0058, or scores the c8 WATCH.
+
+**TWO NEEDS-MORE, each with the named instrument:**
+
+1. **The cadence.** All of §4's bars need a per-path delivered series that
+   resolves WITHIN-transfer variation. The named instrument is `[ACKDIAG]` at
+   `ACKDIAG_WINDOW_US = 250_000` — the `[DIAG]` line's own cadence, 8× finer,
+   ≥ 30 windows per rep instead of 4. That is **one constant in
+   `src/net/ackdiag.rs` plus an env override**, and the gauge's `SAMPLE_CAP`
+   and `ov=` overflow print already bound the cost.
+2. **THE HARNESS DEFECT, named.** `topo_dual.sh` takes ONE `--seed` and passes
+   it to both legs, so **at every symmetric cell in this tree the two paths'
+   loss processes are the same realization, and no arm ever run can measure the
+   loss-side correlation condition in either direction.** The instrument is a
+   second seed parameter (`--seed A[,B]`) so ρ_loss becomes a DIAL — `B = A` for
+   the ρ = +1 arm we have been running unknowingly, `B ≠ A` for the independent
+   arm we have never run. This is recorded as a defect against the harness, not
+   worked around.
+
+### 4 — c9 PRE-REGISTRATION (written 2026-08-19, BEFORE c9 exists)
+
+**Standing under ERA LEDGER item 5's wire validation. `c9` has no definition in
+this tree yet — `c7x4` (the symmetric quad, `tests/store_cap_sf_bench.rs`) is
+the only N = 4 geometry that exists and it is a bench cell.** These bars are
+written now so they cannot be tuned to the answer. Each is stated for the
+geometry it applies to; a c9 that is neither shape scores NONE of them and the
+mismatch is reported rather than substituted.
+
+The arithmetic, once. For N exchangeable per-path series the pooled-variance
+identity gives
+
+```text
+  B(N, rho_bar) = 1 - sqrt( (1 + (N-1)*rho_bar) / N )
+```
+
+and the adding-up constraint (one flow, work-conserving split, binding total)
+puts a FLOOR under the mean pairwise correlation at `rho_bar = -1/(N-1)`:
+**−1.000 at N = 2, −0.333 at N = 4.** c7 measured −0.814, i.e. **81.4 % of the
+way to its own floor**. Carrying that same fraction to N = 4 is the point
+prediction below.
+
+| # | applies to | PREDICTION | FALSIFIED IF |
+|---|---|---|---|
+| **C9-1** | symmetric quad (4 × c2) | mean pairwise two-way-centered drain ρ̄ is **NEGATIVE**, point **−0.27**, band **[−0.34, −0.15]** | ρ̄ > 0, or ρ̄ < −0.34 (below the algebraic floor — the series are not exchangeable and this model is wrong, not the measurement) |
+| **C9-2** | symmetric quad | pooling's ratio advantage GROWS with N: `B(4, −0.27) = 0.782` vs c7's measured `B(2, −0.814) = 0.695`, so the **percap-minus-pooled goodput gap at c9 EXCEEDS the gap at c7**, same battery, same seeds | percap ≥ pooled at a symmetric quad, or the c9 gap ≤ the c7 gap |
+| **C9-3** | heterogeneous quad (e.g. 2 × c2 + 2 × c3) | the shared-frontier coupling DOMINATES the adding-up anti-correlation: ρ̄ **≥ +0.3**, and the **fast–slow pairwise ρ exceeds the fast–fast pairwise ρ**. Then `B(4, +0.3) = 0.311` — the heterogeneous quad's pooling benefit is **BELOW the symmetric quad's and nowhere near the √4 law's 0.500** | ρ̄ ≤ 0 at the heterogeneous quad, or fast–slow ρ ≤ fast–fast ρ |
+| **C9-4** | **either quad — THE DECIDING ONE** | ρ̄ is measured on the pooled arm AND on `RWM_STORE_PERCAP=1` at the SAME geometry. **If Eppen applies as written, ρ̄ is a property of the cell and the two arms agree: `\|ρ̄_pooled − ρ̄_percap\| ≤ 0.15`.** | `ρ̄_pooled − ρ̄_percap ≥ +0.30` ⇒ the correlation is the POOL'S OWN, Eppen's theorem is being applied to a quantity his model treats as given, and the c8 residual's true name is the shared frontier — not risk pooling. **This outcome would retire CD-5's reading, not confirm it.** |
+
+**C9-4 is the single most informative measurement in this pre-registration and
+it costs one extra arm.** It is also the only one that can turn this section's
+PARTIAL into either a PREDICTS or a DOES-NOT-PREDICT.
+
+**Both quads are unscoreable at the shipped gauge cadence** (needs-more 1
+above): four windows per rep cannot support six pairwise correlations. **The
+250 ms `[ACKDIAG]` window is a hard prerequisite for C9-1 … C9-4 and is
+recorded here as a blocking dependency**, not as a nice-to-have.
+
+**Nothing in this section flips a default, adds a gate, or touches an engine
+line.**
