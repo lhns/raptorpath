@@ -37981,3 +37981,85 @@ The wire carries `is_repair` but **no retransmit bit**, so the receiver cannot l
 **Test counts.** `tests/rfa_reachability.rs` **4/4** — the class truth table, the line format, the configuration contract both ways, the reachability run. **VERIFIED to fail on the pre-change receiver** (*"no [RFA] line from the RECEIVER over a lossy transfer"*). lib **452/452**, `formula_agreement` 15, `gate_suite` 12, `gauge_reachability` 2. Compiler warning count **unchanged at 47**.
 
 **Nothing in this section flips a default, adds a gate, edits a law, or changes a byte on the wire.**
+
+---
+
+## THE PASSIVE PRIMITIVES — PRE-REGISTRATION AMENDMENT, PLAIN WINDOW (2026-08-20, `feat/primitives-pw` from main@`83db750`) — **the same measurement, on the machine the α-sweep will actually run.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single number is read. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
+
+### 1 — WHY THERE IS AN AMENDMENT
+
+The primitives pass measured `σ`, `d` and `ν` correctly, with zero aborts, on a machine that is **not the one every δ-consuming ledger ran and not the one goal #100 item 2 will run.** "THE 31 Mbit/s ANOMALY — THE SCORED RESULT" §4 established the mechanism: `prim_battery.sh` left `RWM_GEN` unset, `perf_rwm_c.sh:74` reads `GEN_GATE="${RWM_GEN:-1}"`, and generation coding was therefore ON. Under generation `recv_nack_tx = None` (`net/mod.rs:2434`), so **`record_fire` is unreachable and `ν = 0` by construction** — and `d` is the FEC-decode stall because FEC decode is the only recovery mechanism that exists there.
+
+**This amendment re-runs the identical measurement at `RWM_GEN=0`.** The attribution rules of the original pre-registration §2 are carried **unchanged and are not re-derived** — one observation is one resolved frontier-blocking episode, warm-up excluded by dropping the first 20 % of `[FDIAG]` emissions and differencing cumulative counters, `d` bounded by `0.5 ×` transfer seconds, episodes conflating concurrent holes so `d` bounds per-symbol stall from above.
+
+**ONE ATTRIBUTION EXPECTATION IS INVERTED, AND IT IS STATED BEFORE THE RUN.** The original §2 caveat 2 said the `SOURCE` class is reorder-contaminated and the `DECODE` class is clean, and the generation pass then found `SOURCE n = 0` everywhere — structurally, because there was no ARQ. **At `RWM_GEN=0` the per-seq ARQ loop is live, so `d_source` is expected NONZERO and the contamination caveat becomes live for the first time.** Both classes are reported at every cell; they are never averaged; and `d_decode` remains the clean genuine-loss reading. **If `d_source` is again zero at a lossy cell, that is an instrument-fail of this pass, not a result** — it would mean the ARQ loop did not execute and the configuration did not take.
+
+### 2 — THE GENERATION-OFF WITNESSES, AND WHY `[GATES] RWM_GEN` IS NOT ONE OF THEM
+
+`H9` established that `[GATES] RWM_GEN={}` formats `self.gen_size` (`gates.rs:1007`) — the generation **size**, default 384 — and is emitted **byte-identically whether or not `--window-generation-coding` was passed.** It is inert. **No liveness table in this pass may cite it, and the harness does not.** Five witnesses that actually discriminate, all asserted per invocation and recorded in the witness ledger:
+
+| # | witness | plain window (required) | generation (what it would show) | why it discriminates |
+|---|---|---|---|---|
+| **W1** | `[RFA] gen=` on the **receiver** | **`gen=0`** | `gen=1` | **This is the generation echo §8 of the anomaly section said did not exist.** `[RFA]` prints `window_generation` directly. It is the only *direct* witness in the list and it arrived four commits ago. |
+| **W2** | `[PFRAC]` lines on the sender | **0 lines** | > 0 | `perf_rwm_c.sh:104-106` force-sets `RWM_PFRAC=1` **only when `GEN_FLAG` is non-empty**; the gate's own default is OFF (`gates.rs:961`). Presence *is* generation. |
+| **W3** | `cod=` in the sender `[DIAG]` tail | **`cod=0sym/s`** | 2 852–8 501 sym/s | The coded-emission pacer. |
+| **W4** | `[DIAG] retx=` | **> 0 at every lossy cell** | 0, structurally | The gap-driven retransmit loop fed by `nack_tx`. |
+| **W5** | `[RACK] fa=<spur>/<fired>` on the sender | **present, `fired > 0`** at lossy cells | line absent | `record_fire`'s only call site. |
+
+**W4 AND W5 ARE ALSO THE α-REACHABILITY GATE** the anomaly section's §7(3) requires — MEASUREMENT DISCIPLINE rule 1, prove the mechanism under test executed. α's two consumers (`sweep_timeout_us_all`, `hole_refresh_all`) drive the machinery `retx` and `fired` count. **A rep reading `retx = 0` or `fired = 0` at a lossy cell is VOID, not a small number**, and this pass pre-commits to reporting it as void rather than as a `ν` of zero. `c1`, whose realised loss is 0.013 %, is **exempt from the W4/W5 lower bound** and its `retx`/`fired` are reported without a bar.
+
+### 3 — THE GOODPUT ABORT BANDS, PER CELL
+
+An independent, mechanical cross-check on W1–W5: **the generation plateau is 26.8–34.1 Mbit/s at every cell** (measured, 15/15 reps of the generation pass), and the plain-window ledger is 78–222. A rep landing in the plateau is a generation rep whatever else says otherwise.
+
+| cell | committed plain-window ledger, `mbps` p05 / **p50** / p95 (n) | **ABORT band** | expectation |
+|---|---|---|---|
+| `c1` | 147.3 / **222.3** / 293.2 (624) | **[147, 294]** | 170–222 |
+| `c7` | 146.4 / **171.2** / 176.0 (577) | **[140, 180]** | ~171 |
+| `c8` | 52.8 / **82.8** / 95.4 (701) | **[50, 100]** | ~83 |
+| `c8L` | 34.5 / **77.9** / 91.2 (323) | **[45, 95]** † | ~78 |
+| `sc2` | 82.3 / **87.3** / 89.1 (580) | **[78, 92]** | ~87 |
+
+**† `c8L`'s BAND IS THE ONE THAT COULD NOT BE INHERITED, AND THE REASON IS PRINTED RATHER THAN THE BAND QUIETLY WIDENED.** Its ledger p05 is **34.5 Mbit/s**, which lies **inside the generation plateau's 26.8–34.1 range**. A band admitting 34.5 cannot discriminate the thing this band exists to discriminate. The floor is therefore set at **45** — 1.3× the plateau ceiling — and the cost is stated: **a legitimately slow `c8L` rep between 34.5 and 45 would be flagged.** Such a rep is adjudicated by W1–W5, which are mechanical and do not depend on load, and the disagreement between the two guards would itself be reported.
+
+**PRECEDENCE, FIXED HERE:** W1–W5 are **primary and mechanical**; the goodput band is a **secondary cross-check**. Where they disagree, the witnesses rule and the disagreement is printed. A band violation with all five witnesses clean is reported as an **out-of-band rep**, not as a generation rep.
+
+### 4 — WHAT IS ADDED TO THE MEASUREMENT: `[RFA]`, REALIZED AGAINST COMMANDED
+
+The `[RFA]` gauge (main@`83db750`) did not exist when the generation pass ran. It is read-only, adds no gate, and emits on the existing `RWM_DIAG`/`RWM_FDIAG` cadence — **already set by this pass.** It gives the receiver-site ground truth the sender's `fa=` only predicts.
+
+**SCORED TWO-SIDED, PER CELL:** the sender's **commanded** `[RACK] fa_frac` beside the receiver's **realized** `[RFA] false_frac`, both against `fa_class = 0.0625`. The loopback shim read a **2.9–3.7× realized/commanded gap**; this is its first shaped-cell reading.
+
+**THE THREE READING RULES OF THE `[RFA]` SECTION ARE CARRIED VERBATIM AND NOT RELAXED.** `[RFA]`'s `ν_recv` has a different denominator (`src_n`, source arrivals at the receiver) and a broader numerator (all four repair classes) than the ledger's `ν`, so **`ν_recv > ν_ledger` is expected and structural** and is never reported as a discrepancy. `false_frac` is a **LOWER BOUND** because `fill_src` counts a reordered original as a successful repair. And every `[RFA]` reading is printed with its `gen=` field beside it so no row can be read out of configuration scope.
+
+### 5 — THE SCORED CLAUSES
+
+* **`Q1` — WHAT IS `d` ON THE MACHINE THE LEDGERS RAN?** The generation pass read `d_decode = 2.912 ms` at `c8`; the committed placeholder is `srtt = 77 ms`. **NO BAND IS ASSERTED AND EITHER DIRECTION IS A RESULT.** Pre-committing a band would be inventing a prior for a quantity that has never been measured in this configuration, and the generation reading is a different machine's. What IS pre-committed is the **decision rule**: `d` for every δ-consuming purpose is **this pass's `d_decode` at `RWM_GEN=0`**, and the generation pass's 2.912 ms is retired to a configuration-labelled row.
+* **`Q2` — DOES `σ` SURVIVE THE CONFIGURATION CHANGE?** Both existing σ measurements ran generation ON, so the "two sessions, 6 % reproduction" is two samples of one configuration. **`Q2` PASSES if the data-path σ median at every cell falls in `[0.2, 4.0] ms`** — the same band as `P2`, deliberately unchanged so the two configurations are scored identically. A miss is the first evidence σ moves with the generation gate.
+* **`Q3` — DOES `ν` REPRODUCE THE LEDGER, ON THE LEDGER'S OWN INSTRUMENT AND MACHINE?** This is `P3` asked properly. `ν = [RACK] fired / dgq_hand`, the same ratio `nu_measure.py` computes. **`Q3` PASSES if `ν(c8)` falls within 2× of the ledger's 0.0438, i.e. `[0.0219, 0.0876]`** — tighter than `P3`'s 3× because this is now a genuine within-configuration reproduction and not a cross-machine comparison. Per-cell ledger values for the other four (`c1` 0.00324, `c7` 0.02910, `c8L` 0.04858, `sc2` 0.03701) are reported against the same 2× rule but **only `c8` is scored**, because `c8` is the cell the memo's arithmetic uses.
+* **`Q4` — THE REALIZED/COMMANDED GAP AT A SHAPED CELL.** **NO BAND.** The loopback's 2.9–3.7× is one shim on one host and is not a prior for a shaped cell. Reported per cell, two-sided, with `fa_class = 0.0625` beside both. **What is pre-committed: if realized and commanded both exceed 0.0625, that is reported as RFC 8985's budget being exceeded on BOTH instruments**, which is a stronger statement than either alone and is the form goal #100 item 2 will consume.
+* **`Q5` — ABORTS ≈ 0 AND THE WITNESS TABLE IS READ FIRST.** **Predicted: 0 aborts across all 15 invocations, and W1–W5 clean at 15/15.** The abort-cause table and the witness table are both printed **before any primitive is quoted.**
+
+### 6 — THE PROTOCOL
+
+| | |
+|---|---|
+| **cells** | `c1`, `c7`, `c8`, `c8L`, `sc2` — the committed five, `cell_spec` unchanged |
+| **reps / seed** | **n = 3**, **seed 42**, 15 invocations, one binary, **no arms** |
+| **binary** | **REBUILT on the VM from main@`83db750`** — the `[RFA]` instrument is new and the previous binary (`330ebfcc…`) does not carry it. `sha256` recorded in the session header. |
+| **gates** | **`RWM_GEN=0`** + `RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1` — the last two added so the rows **pool with the `ccand`/`ccap`/ladder ledgers**, which set them. All read-only. |
+| **captures** | per rep: driver log, sender log (`σ`, `ν`, `fa`, W2–W5), receiver log (`d`, `[RFA]`, W1), sectioned qdisc dump (`p`) |
+| **execution** | **DETACHED, output to a file, checked by short reconnects.** A single silent SSH wait killed the previous session's agent at the 600 s watchdog while the pass itself completed. |
+
+### 7 — WHAT WOULD MAKE THIS PASS UNREADABLE
+
+* **Any of W1–W5 failing at any rep** ⇒ that rep is **VOID** and its primitives are not read. If W1–W5 fail at 15/15, the configuration did not take and **nothing in the pass is reported as a measurement.**
+* **`d_source = 0` at a lossy cell with `retx > 0`** ⇒ the two instruments contradict each other across hosts, and both classes of `d` at that cell are unscoreable.
+* **`c7`'s legs collapsing again** — the generation pass saw CLI0 carry 1.5 % of the transfer at two reps of three — ⇒ that cell's per-leg `p` is not readable and stands at the committed captures' value, as before.
+* **`[RFA]` absent from a receiver log while `RWM_DIAG=1`** ⇒ an unreached emission site, reported as an instrument-fail rather than as an absent gauge; the `[RFA]` section's own test pins that presence/absence contract.
+
+### 8 — WHAT THIS PASS DOES NOT DO
+
+It does not sweep α, does not choose between routes (b) and (d), does not flip a default, does not edit a law, and **does not modify any committed scored section** — including the ten annotations the anomaly section §6 listed as owed, which remain owed and unapplied. It measures four primitives and one two-sided gap on the machine item 2 will run.
+
+**Nothing in this section flips a default, adds a gate, or edits an engine crate.**

@@ -208,6 +208,33 @@ def scan_rack(path):
     return best
 
 
+RFA = re.compile(
+    r"\[RFA\] gen=(\d+) fires=(\d+) false=(\d+) false_frac=([\d.]+) "
+    r"fill_coded=(\d+) fill_src=(\d+) dup_src=(\d+) preempt_src=(\d+) "
+    r"src_n=(\d+) rep_n=(\d+) nu_recv=([\d.]+) fa_class=([\d.]+)")
+
+RFA_FIELDS = ("gen", "fires", "false", "false_frac", "fill_coded", "fill_src",
+              "dup_src", "preempt_src", "src_n", "rep_n", "nu_recv", "fa_class")
+
+
+def scan_rfa(path):
+    """LAST [RFA] line — the gauge is CUMULATIVE and emits on a 1 s cadence
+    under RWM_DIAG/RWM_FDIAG (the cadence exists because every tools/l1
+    harness SIGKILLs the server, so the Drop emission never reaches a log).
+    Same last-line convention as [WIDLE] and [FDIAG]."""
+    last = None
+    with open(path, "r", errors="replace") as fh:
+        for line in fh:
+            m = RFA.search(line)
+            if m:
+                g = m.groups()
+                last = dict(zip(RFA_FIELDS,
+                                [int(g[0])] + [int(x) for x in g[1:3]]
+                                + [float(g[3])] + [int(x) for x in g[4:10]]
+                                + [float(g[10]), float(g[11])]))
+    return last
+
+
 RETX = re.compile(r"retx=(\d+)")
 
 
@@ -322,6 +349,48 @@ def report_pass(logdir):
             gmax, hmax, wedge))
 
 
+def report_rfa(logdir):
+    """REALIZED (receiver [RFA] false_frac) against COMMANDED (sender [RACK]
+    fa_frac), both against RFC 8985's fa_class = 0.0625.
+
+    THREE READING RULES, carried verbatim from the [RFA] section and NOT
+    relaxed here:
+      * `nu_recv` has a different denominator (src_n, source ARRIVALS at the
+        receiver) and a broader numerator (all four repair classes) than the
+        ledger's nu, so nu_recv > nu_ledger is EXPECTED AND STRUCTURAL and is
+        never reported as a discrepancy.
+      * `false_frac` is a LOWER BOUND: fill_src counts a reordered original as
+        a successful repair, inflating `fires` and deflating the fraction.
+      * every row prints its `gen=` so it cannot be read out of configuration
+        scope. Under gen=1 both FALSE classes are structurally empty and the
+        row means nothing.
+    """
+    srv = sorted(glob(os.path.join(logdir, "*-s.log")))
+    print("REALIZED vs COMMANDED false repair (fa_class = 0.0625)")
+    print("%-26s %4s %9s %9s %9s %8s %8s %9s %9s %9s" % (
+        "rep", "gen", "cmd_fa", "real_fa", "ratio", "fires", "false",
+        "dup_src", "preempt", "nu_recv"))
+    for spath in srv:
+        r = scan_rfa(spath)
+        cpath = spath[:-6] + "-c.log"
+        rk = scan_rack(cpath) if os.path.exists(cpath) else None
+        cmd = (rk[0] / rk[1]) if (rk and rk[1]) else None
+        if not r:
+            print("%-26s %4s %9s %9s %9s %8s %8s %9s %9s %9s" % (
+                os.path.basename(spath), "-",
+                ("%.4f" % cmd) if cmd is not None else "-",
+                "ABSENT", "-", "-", "-", "-", "-", "-"))
+            continue
+        ratio = (r["false_frac"] / cmd) if (cmd not in (None, 0.0)) else None
+        print("%-26s %4d %9s %9.4f %9s %8d %8d %9d %9d %9.5f" % (
+            os.path.basename(spath), r["gen"],
+            ("%.4f" % cmd) if cmd is not None else "-",
+            r["false_frac"],
+            ("%.2fx" % ratio) if ratio is not None else "-",
+            r["fires"], r["false"], r["dup_src"], r["preempt_src"],
+            r["nu_recv"]))
+
+
 def main():
     if len(sys.argv) < 3:
         print(__doc__)
@@ -333,6 +402,10 @@ def main():
         report_qdisc(sys.argv[2:])
     elif mode == "pass":
         report_pass(sys.argv[2])
+        print()
+        report_rfa(sys.argv[2])
+    elif mode == "rfa":
+        report_rfa(sys.argv[2])
     else:
         print(__doc__)
         return 2
