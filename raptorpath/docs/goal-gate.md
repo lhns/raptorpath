@@ -37483,3 +37483,112 @@ Reading rule transcribed verbatim from the `c8` σ pass: **LAST `[DIAG]` per pat
 **Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
 
 **Artifacts** (VM 10.1.5.16): per-rep driver logs `/home/vibe/prim/out/<cell>-s42-r<n>-run.log`; sender logs (`σ`, `ν`) `…-c.log`; receiver logs (`d`) `…-s.log`; sectioned qdisc captures (`p`) `…-q.txt`; witness ledger `/home/vibe/prim/out/prim-witness-s42.jsonl`; tarball **`/home/vibe/prim-artifacts.tar.gz`**. Binary sha256 **`330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984`** — **NOT REBUILT**, the same binary as the `c8` σ pass, verified before the run. Harness shipped fresh from `feat/primitives`'s `tools/l1` to `/home/vibe/prim/l1` (the VM's `/home/vibe/l1` copy is stale and was not used). VM left at 0 `raptorpath` processes, 0 `rp-*` namespaces, lock released.
+
+---
+
+## THE 31 Mbit/s ANOMALY — THE HYPOTHESIS TABLE (2026-08-20, `feat/throughput-anomaly` from main@`3a97dc3`) — **goal #100 item 1's highest-priority open item, and it BLOCKS item 2.** Written and committed BEFORE any hypothesis is scored, in its OWN commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No verdict below is a result.**
+
+### 0 — WHAT THIS TABLE IS, AND THE HONESTY CAVEAT IT CARRIES
+
+"THE PASSIVE PRIMITIVES — THE SCORED RESULT" §6 recorded a validity condition it
+refused to explain away: **every one of five cells ran at 27–34 Mbit/s, at every
+rep, regardless of whether its link is shaped at 1 Gbit or at 20 Mbit**, against
+a committed ledger reading **78–222 Mbit/s at the same five cells**. It named the
+finding *"the highest-priority open item this pass produced, ahead of everything
+in goal #100's own list"*, and it is: **until it is named, no cost-curve
+measurement is interpretable**, because a cell whose throughput does not depend
+on its link is not measuring what the α-sweep intends to price.
+
+**THIS TABLE IS AN ENUMERATION, NOT A BLIND PRE-REGISTRATION, AND SAYING SO IS
+THE POINT.** The driver sources and §6 were read before it was written — the
+differences between two invocations are *enumerable from the harness source*,
+which is exactly why the enumeration can be complete. What committing it
+separately buys is not blindness. It is that **every alternative is listed and
+given a falsifier before any one of them is scored**, including the ones that
+turn out to be wrong, so that the answer cannot be the first thing that looked
+plausible. The scored section that follows is written against this list and
+against nothing else.
+
+### 1 — THE TWO POPULATIONS, NAMED EXACTLY
+
+**ANOMALOUS (27–34 Mbit/s at every cell):**
+
+| pass | driver | env | binary |
+|---|---|---|---|
+| "THE PASSIVE PRIMITIVES — THE SCORED RESULT" (15 invocations, 5 cells) | `tools/l1/prim_battery.sh:66` | `SEED=42 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1` | `330ebfcc…` |
+| "THE MEASURED σ AT c8 — THE SCORED RESULT" (3 invocations, `c8`) | protocol §4 of its own pre-registration | `RWM_DIAG=1`, *"shipped defaults otherwise (**no `RWM_GEN` override**, no arm gate)"* | `330ebfcc…` |
+
+**HEALTHY (78–222 Mbit/s at the same cells, `c1` at 170–222 the SAME WEEK):**
+
+| pass | driver | the line |
+|---|---|---|
+| `ccand` ledger (477 records) | `ccand_battery.sh:434` | `env SEED=$SEED_ARG RWM_GEN=0 …` |
+| `ccap` | `ccap_battery.sh:266` | `RWM_GEN=0` |
+| ladder | `ladder_battery.sh:335` | `RWM_GEN=0` |
+| era | `era_battery.sh:324` | `RWM_GEN=0` |
+| gap phase 1 + 2 | `gap_battery.sh:359` | `RWM_GEN=0` *("on every arm — the plain-window control, and it is what BOTH prior ledgers ran")* |
+| latency battery | `lat_battery.sh:81` | `RWM_GEN=0` |
+| span run | `span_battery.sh:87` | `RWM_GEN=0` |
+
+**FORTY-ONE `tools/l1` drivers set `RWM_GEN=0`. `prim_battery.sh` is the only
+battery in the tree that deliberately does not**, and its own header says so at
+line 18: *"NOT SET, DELIBERATELY: `RWM_GEN=0`."*
+
+### 2 — THE HYPOTHESES, EACH WITH ITS PREDICTED SIGNATURE AND ITS FALSIFIER
+
+Every signature named below is checkable against material **already committed or
+already on the VM**. No hypothesis in this table requires a run to be ruled in or
+out, and that is the first thing the scored section must establish or refute.
+
+| # | hypothesis | predicted signature in EXISTING material | falsifier |
+|---|---|---|---|
+| **H1** | **THE GENERATION-CODING AXIS.** `perf_rwm_c.sh:74` reads `GEN_GATE="${RWM_GEN:-1}"` and `:100` drops `--window-generation-coding` **only** when it is `0`. Both anomalous passes omit `RWM_GEN` ⇒ generation coding **ON**; every healthy ledger sets `RWM_GEN=0` ⇒ plain window. | anomalous sender logs: `--window-generation-coding` on the client line, `cod>0`, `src=0`, `[PFRAC] total_coded>0`. Healthy ledger sender logs: `cod=0`, `enc=0.0/n0`, `src=0.0/n0`, **no** `[PFRAC]`. | any healthy-ledger sender log showing `cod>0`, or any anomalous log showing `cod=0` (which `perf_rwm_c.sh:510`'s guard would have aborted on). |
+| **H2** | **DIAGNOSTIC INSTRUMENT LOAD.** `RWM_FDIAG=1` is new in the primitives pass — its first use as a scored instrument. | throughput should scale **inversely with emission count**. `c8` emitted 12–15 `[FDIAG]` lines per rep; `c1` emitted 193–201, ~15×. | both read 27–34 Mbit/s ⇒ no correlation ⇒ H2 dead. Independently: gap phase 1's `Oe` arm was built to bound instrument load and published the bound. |
+| **H3** | **`RWM_LATPROBE` ABSENCE.** Present on `ccand`/`ccap`/ladder/`lat`/gap-`Oe`; absent from both anomalous passes. | the probe **adds** a 20 pkt/s `ping` per leg, i.e. it adds load. Its absence cannot **lower** throughput. | direction is wrong a priori; `Oe`/`Op` measured its cost and it is small. |
+| **H4** | **TRANSFER SIZE / RUNS.** | `prim_battery.sh:43-51` transcribes `ccand_battery.sh:202-215` **verbatim** (`c1` 400 MB single, `c8` 25 MB dual, `c8L` 200 MB dual, …), `runs=1` on both. `c8` (25 MB) and `c8L` (200 MB) are an 8× size contrast **within the anomalous pass**. | `c8` 26.8–31.5 vs `c8L` 32.5–34.1 Mbit/s ⇒ size does not move it ⇒ H4 dead. |
+| **H5** | **`single` vs `dual` MODE.** | `c1`/`sc2` single, `c7`/`c8`/`c8L` dual, within the same anomalous pass. | all five in 27–34 ⇒ mode does not move it ⇒ H5 dead. |
+| **H6** | **BINARY ERA.** `330ebfcc…` against the `ccand`-era binary; §5 of the primitives pass already blamed "the binary era" for the dead `[RACK]` gauge. | a binary-era ceiling would have to be **present at `RWM_GEN=0` too**. | gap phase 1/2 ran `c1` at `RWM_GEN=0` **the same week** and read **170–200 Mbit/s** on two binaries (`fbd6b279…` OLD and today's main). A 31 Mbit/s floor is not a property of any binary at `RWM_GEN=0` ⇒ H6 cannot be the whole cause. |
+| **H7** | **SUBSTRATE / HOST DRIFT** (steal, co-tenant desktop, thermal). | drift lowers everything by a factor; it does **not** produce a **link-independent invariant** across a 50× capacity range. | gap phase 1/2's same-week `c1` at 170–200 Mbit/s; and the shape of the observation (a 1 Gbit cell and a 20 Mbit cell landing on the same number) is not a drift shape ⇒ H7 dead. |
+| **H8** | **SHAPING NOT APPLIED** (netem/tbf silently absent ⇒ every cell is really the same cell). | the `-q.txt` qdisc captures would show identical per-leg drop and rate across cells. | this session's per-leg `p` spans **0.00013 at `c1`** to **0.0196 at `c8` CLI1**, a 150× range that tracks each cell's configured loss ⇒ netem IS applied per cell ⇒ H8 dead. |
+| **H9** | **THE `[GATES]` ECHO IS A FALSE WITNESS FOR H1.** §6 asserts *"the same generation gates"* and §5 asserts the `ccand` rows are *"byte-identical to this pass"*, both off `[GATES] RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_RATE=9000`. | `gates.rs:1007` formats `RWM_GEN={}` from **`self.gen_size`** — the generation **SIZE** (default 384) — and `window_generation_coding` is a **CLI bool** (`main.rs:190,291`) that appears **nowhere in `echo_line()`**. So `RWM_GEN=384` is echoed **identically** whether the flag was passed or not. | find `window_generation` in the `[GATES]` echo. If H9 holds, the primitives pass's "same gates" claims carry no information and **H1 is not excluded by them.** |
+
+### 3 — THE MECHANISM H1 MUST SUPPLY IF IT IS THE CAUSE
+
+Naming a configuration difference is not naming a cause. If H1 is the cause it
+owes **three** things, and they are pre-committed here so a partial answer cannot
+be read as a whole one:
+
+1. **A RATE ARITHMETIC.** A quantity in the generation pipeline that lands on
+   ~31 Mbit/s, reconciled against the sender's own published gauge
+   (`src=0sym/s cod=3858sym/s` at `c1`).
+2. **AN INVARIANCE MECHANISM.** Why a 1 Gbit cell and a 20 Mbit cell read the
+   same number — i.e. why the binding constraint is **not** the link. A rate cap
+   alone does not do this; it would clip the fast cells and leave `c8`/`c8L`
+   (100+20 Mbit) at their links.
+3. **A PRIOR.** If generation mode is control-loop bound, this tree has measured
+   it before and the earlier number must be found and quoted, or the mechanism is
+   being invented to fit.
+
+### 4 — WHAT THE SCORED SECTION MUST DELIVER, FIXED HERE
+
+* Each of H1–H9 ruled **in** or **out** by named evidence, not by argument.
+* **THE BLAST RADIUS, ITEM BY ITEM.** Which committed scored numbers are
+  contaminated and which survive — `σ`, `d`, `ν`, `p`, `h`, `P4`, `S1`, and the
+  `δ` table's "off by four". A primitive is contaminated if its value **or its
+  interpretation** depends on the configuration axis the cause names.
+* **THE OWED ANNOTATIONS, LISTED AND NOT APPLIED.** Any committed number this
+  invalidates is named here with the correction it needs. **The corrections are
+  NOT written into the sections they belong to in this step** — a scored section
+  is not edited by the session that finds the fault, it is edited by the one that
+  agrees to.
+* **THE α-SWEEP'S REQUIRED ENVIRONMENT**, derived from the cause rather than
+  copied from a driver, including any *reachability* gate the cause implies for
+  the machinery α parameterizes.
+
+### 5 — WHAT THIS STEP IS NOT
+
+**No default is flipped. No engine crate is edited** — the cause is a defect in
+what a battery measured, not necessarily in what the engine does, and if the
+diagnosis lands on the harness the engine stays untouched. **No committed scored
+section is modified.** **No route is advanced:** neither route (b) nor route (d)
+gains or loses anything here, and `S1`'s FAIL is not reopened by this table.
