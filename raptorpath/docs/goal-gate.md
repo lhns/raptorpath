@@ -37245,3 +37245,65 @@ Correcting both confounds — subtract the non-symbol packets at an assumed ACK 
 **NOT established.** Why `c1`'s `h` is 1.4× the duals'. Whether quinn coalesces ACK frames into data packets (the named candidate for the code-vs-wire residual). Whether the 0.17–0.41× realised-to-nominal loss ratio is a netem seeding artefact or a shaping one. Per-leg `p` at `c8L` and per-leg `p` under the pass's own gates. **And nothing here says anything about `d`, `σ` or `ν`** — those are the pre-registration's business, below.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate, or runs on the VM.** The one tool added, `tools/l1/prim_measure.py`, opens files and prints.
+
+---
+
+## THE PASSIVE PRIMITIVES — PRE-REGISTRATION (2026-08-20, `feat/primitives` from main@`ca058db`) — **goal #100 item 1's VM HALF: `d` gets its FIRST FIELD DATA and `σ`/`ν` get their FULL-CELL PASS.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single number is read. **Nothing here flips a default, adds a gate, or edits an engine crate. No number below is a result.**
+
+### 1 — WHAT THIS PASS IS, IN ONE PARAGRAPH
+
+The user's ruling of 2026-08-20 said a value must be **derived from what it actually depends on**, and the two measurements that preceded it — `ν = 0.0438` off committed ledgers, `σ = 0.85 ms` at `c8` — showed that the YES-option's self-consistency evidence had been manufactured by inputs nobody had measured. **This pass measures the remaining unmeasured inputs at all five committed cells, in one session, on one binary.** `h` and `p` are already discharged locally in the section above and need no run. What is left is `σ` (one cell measured, four not), `ν` (one cell measured, four not, and that one under `RWM_GEN=0` rather than the shipped pipeline), and **`d`, which has never been measured at all** — it has been `srtt = 77 ms` in every document that used it, and `srtt` is not a delivery stall.
+
+### 2 — `d`: THE ATTRIBUTION RULE, FIXED HERE, BEFORE ANY MEASUREMENT
+
+**`d` IS PASSIVE-SUFFICIENT. NO ENGINE GAUGE IS BUILT AND NO ENGINE CRATE IS TOUCHED.** The instrument already exists and is default-OFF: `[FDIAG]`, `net/receiver.rs:1477-1556`, gated by `RWM_FDIAG` (`gates.rs:959`), forwarded by `rwm_forward_env` (`lib.sh`), echoed in `[GATES]` (`gates.rs:1018`). It arms on a frontier hole with an `Instant`, resolves when the frontier passes it, and accumulates the elapsed micros into two classes.
+
+**WHAT COUNTS AS ONE GENUINE LOSS — the definition this pass is bound to, and it is NOT "one lost symbol".**
+
+> **One `d` observation is one RESOLVED FRONTIER-BLOCKING EPISODE**: the interval from the receiver observing its in-order frontier blocked at sequence `f + 1` to the frontier passing `f + 1`. It is counted once, in one of two classes, and it is **not** one lost symbol.
+
+**THE THREE THINGS THAT MAKES IT NOT, STATED BEFORE THE RUN RATHER THAN DISCOVERED AFTER IT.**
+
+1. **EPISODES CONFLATE CONCURRENT HOLES.** `receiver.rs:1509-1515` arms a new hole only `if fdiag_hole.is_none()`. Under bursty Gilbert-Elliott loss — which is every cell here except `c1` — a burst of `k` lost symbols produces **ONE** episode whose duration covers the whole multi-hole stall. **Therefore the measured `d` is an UPPER BOUND on per-symbol stall, by the mean burst width, which is ≥ 1 by construction.** This pass reports `d_episode` and states the bound; it does **not** divide by an unmeasured burst width to manufacture a per-symbol number. The `[FDIAG]` line's own `gap=` and `probe_holes=` fields are printed beside every `d` as the burst-width evidence, and they are the only evidence this instrument can offer on the question.
+2. **THE `SOURCE` CLASS IS CONTAMINATED BY REORDER; THE `DECODE` CLASS IS NOT.** `receiver.rs:1483-1486` classes an episode `by_source` when a **non-repair** symbol for the blocking sequence arrives. That fires both for a genuine ARQ retransmit *and* for the original symbol simply arriving late out of order — and every cell here runs netem `jitter`, so reorder is real. **`d_decode` — the episode resolved by FEC decode, meaning the symbol never arrived at all — is the clean genuine-loss reading and is the one this pass treats as `d`.** `d_source` is reported beside it, always, and is never averaged with it.
+3. **THE CLOCK STARTS AT OBSERVATION, NOT AT LOSS.** `t0` is taken inside the decoder-output loop, so it is at most one `add_symbol` batch after the true miss and a silent gap defers arming. **This biases `d` DOWNWARD** — in the opposite direction from caveat 1. Neither correction is applied; both are named.
+
+**WARM-UP EXCLUSION, PRE-COMMITTED.** `[FDIAG]`'s counters are **cumulative from process start**, and its `avg=` field is therefore contaminated by the connection's opening transient at every emission. **The rule: drop the first 20 % of `[FDIAG]` lines emitted in a rep and difference the cumulative counters across the remainder** — `d = (avg_last·n_last − avg_cut·n_cut)/(n_last − n_cut)`, per class, implemented in `tools/l1/prim_measure.py:windowed()`. The integer division inside the gauge's own `avg=` costs at most 1 µs per resolved episode, i.e. under 0.2 % at any plausible `d`, and that is the whole of the reconstruction error. **A rep whose surviving window contains zero resolved episodes of a class reports that class as absent, never as zero.**
+
+**HOW `d` IS BOUNDED.** No episode can exceed the rep's wall time, and the pre-committed sanity bar is `d < 0.5 ×` the rep's transfer seconds; a `d` above it means the frontier was wedged rather than stalled and the rep is reported as **WEDGED**, not as a large `d`. The `[WEDGE]` line (same gate family) is grepped per rep as the corroborating witness.
+
+### 3 — THE SCORED CLAUSES, WITH THEIR BANDS PRE-COMMITTED
+
+* **`P1` — IS `d = srtt` ANYWHERE NEAR RIGHT?** The committed value is `d = 77 ms`, and its provenance is that the memo *chose* `srtt` as the denominator of a fractional-delay price (`cost-ratio-memo.md:361-364`). **`P1` PASSES if `d_decode` at `c8` falls in `[38, 154] ms`** — a factor-of-two band either side of 77 ms, chosen deliberately loose so a FAIL cannot be dismissed as a harsh window. **`P1` is two-sided and neither outcome flips anything.** A PASS says the substitution was lucky and the number stands; a FAIL retires `d = 77 ms` the way `S1` retired `δ = 0.4838`.
+* **`P2` — DOES `σ` HOLD AT ORDER 1 ms ACROSS THE CELLS?** Two independent cells now read `σ ≈ 0.85–1.27 ms` against §16.69's working 10 ms and the memo's 18.1 ms. **`P2` PASSES if the data-path `σ` median at EVERY one of `c1`, `c7`, `c8L`, `sc2` falls in `[0.2, 4.0] ms`.** The band is one order of magnitude wide around the two existing readings; a cell outside it is the first evidence that `σ` is cell-dependent, and that would be the finding. **The reading rule is the c8 σ pass's own, transcribed and not re-derived:** LAST `[DIAG]` line per path, `n` printed beside every `σ` without exception, data path identified by sample count, median across reps.
+* **`P3` — DOES `ν` REPRODUCE UNDER THE SHIPPED PIPELINE?** `nu_measure.py` read `ν(c8) = 0.0438` off records that all ran **`RWM_GEN=0`**, the plain-window control. **This pass runs the shipped machine with the generation pipeline ON, so its `ν` is not the same quantity**, and that is deliberate — the ruling asks for values derived from what they depend on, and the shipped machine is what ships. **`P3` PASSES if `ν(c8)` under the shipped pipeline falls within 3× of 0.0438, i.e. `[0.0146, 0.131]`.** A miss is a statement that the generation pipeline changes the false-alarm rate materially, which is a finding about the pipeline and not about ν.
+* **`P4` — ABORTS ≈ 0, AND THE ABORT TABLE IS READ FIRST.** `aw_ping` retries to `AW_PING_ATTEMPTS = 26`, and the two batteries since the repair (`gap` phase 2, the `c8` σ pass, the span run) recorded **0 aborts** between them. **Predicted: 0 aborts across all 15 invocations.** Any abort is reported with its `abort_cause` and never retried away. **A rate above 2 hurts nothing structurally but is reported before any primitive is quoted**, per G-ABORT.
+
+### 4 — THE PROTOCOL, FIXED HERE
+
+| | |
+|---|---|
+| **cells** | `c1`, `c7`, `c8`, `c8L`, `sc2` — the committed five, transcribed **verbatim** from `ccand_battery.sh:202-215` into `prim_battery.sh:cell_spec` |
+| **reps** | **n = 3** per cell, each an independent `perf_rwm_c.sh` invocation at `runs=1`, its own topology bring-up and its own log. **15 invocations.** |
+| **seed** | **42**, one seed. Three reps at one seed do not support a dispersion claim and none is made. |
+| **binary** | ONE, `sha256` recorded in the session header, **not rebuilt** if the existing one already carries the gauges |
+| **arms** | **NONE.** There is no contrast in this pass. It is a measurement of the shipped machine against nothing. |
+| **gates** | `RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1`, and **nothing else** — three read-only `eprintln!`/counter gates. Every other knob is the shipped default. |
+| **`RWM_GEN`** | **NOT SET** — the shipped generation pipeline, deliberately, per `P3` above. The rows therefore do **NOT** pool with the ccand/ladder/ccap ledgers, all of which ran `RWM_GEN=0`. |
+| **captures** | per rep: driver log, sender log (`σ`, `ν`), receiver log (`d`), and the sectioned `tc -s qdisc` dump (`p`, same-session) |
+
+**TWO-SIDED GATE VERIFICATION (G-GATES), MECHANICAL, EVERY INVOCATION.** `[GATES]` must appear on **both** endpoints with `RWM_DIAG=1` and `RWM_FDIAG=1` in the echo. `[FDIAG]` lines must be **> 0 on the receiver** and `sig_us=` lines **> 0 on the sender**. A rep failing either is an **INSTRUMENT-FAIL**, reported as one, and its primitives are not read. This is MEASUREMENT DISCIPLINE 1: prove the mechanism under test executes.
+
+**`p` IS RE-CAPTURED BUT NOT RE-SCORED.** The section above already discharged `p` off committed captures. The pass's own `-q.txt` files are carried as a **same-session guard**: if this pass's per-leg `p` at `c7`/`c8` disagrees with the committed captures by more than 2×, the session's cells are not the ledger's cells and every number in it is reported with that stated.
+
+### 5 — WHAT WOULD MAKE THIS PASS UNREADABLE, STATED IN ADVANCE
+
+* **`[FDIAG]` emits but resolves nothing** (`DECODE n=0` and `SOURCE n=0` at every rep of a cell) ⇒ that cell has **no `d`**, reported as absent. At `c1`, whose realised loss is 0.015 %, this is the **expected** outcome and it is not a failure: `c1` is carried for `σ` and `ν`, and its `d` column is expected empty.
+* **The two paths cannot be separated by sample count** at a dual cell ⇒ the "data path" selector is ambiguous and **both** `σ` values are reported, with `P2` scored only if both fall on the same side of the band. (At `c8` the σ pass measured a ~300× separation in `n`; the selector has never actually been ambiguous.)
+* **`fired = 0`** on the sender's `[RACK]` line ⇒ `ν = 0` for that rep, reported as a zero **with its denominator**, because a zero numerator over 300 000 symbols and a zero over 300 are different data.
+
+### 6 — WHAT THIS PASS DOES NOT DO
+
+It does not compare arms, does not score the shipped clamp, does not touch `RWM_QUANTILE_CLOCKS`, does not evaluate `α`, does not evaluate either route (b) or route (d), and **does not choose between them**. It measures four inputs. **The α-sweep isolation experiment — goal #100's item 2, with FLAT-CURVE a pre-registered legal outcome — is a separate pass with its own pre-registration, and nothing in this one may be read as evidence for or against either route.**
+
+**Nothing in this section flips a default, adds a gate, or edits an engine crate.**
