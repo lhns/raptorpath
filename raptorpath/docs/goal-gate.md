@@ -37130,3 +37130,118 @@ gauge — **NOT REBUILT**, verified before the run); harness shipped from
 `feat/sigma-c8`'s `tools/l1` to `/home/vibe/sigmac8/l1`; kernel
 7.0.14-101.fc43.x86_64; Xeon E5-2650 v3, 6 cores. VM left at 0 `raptorpath`
 processes, 0 `rp-*` namespaces, lock released.
+
+---
+
+## THE PASSIVE PRIMITIVES — `h` AND `p`, OFF COMMITTED LEDGERS (2026-08-20, `feat/primitives` from main@`ca058db`) — **goal #100 item 1's LOCAL HALF. No VM run, no engine change, no gate flipped, no default touched. 3 146 committed records and 9 committed qdisc captures.**
+
+### THE VERDICT FIRST
+
+**`h` — the per-symbol wire overhead the user's ruling named as the example of an admissible constant — DOES NOT QUALIFY AS ONE YET, and the reason is measurable rather than rhetorical.** Two derivations were taken:
+
+* **CODE-DERIVED, and one part of it is EXACT.** The only byte-level difference between a repair datagram and a source datagram is the FEC span header: **14 B** for a sealed-generation or sliding-window repair, **16 B** for a filling-generation repair, **4 B** for block-mode RLC, **0 B** for block-mode RaptorQ/Reed-Solomon. Everything else in the stack — Ethernet, IP, UDP, QUIC, the `rp` compact frame — is **byte-identical for the two classes**, because the compact frame carries the class in one bit of an envelope byte that is present either way.
+* **WIRE-MEASURED, and it is NOT cell-invariant.** Read off the committed `tc -s qdisc` counters, the absolute overhead is **60–75 B/symbol at the 100–120 Mbit cells** and **97–101 B/symbol at the 1 Gbit cell `c1`**. That is a **1.4× spread across cells for a quantity the code says is fixed**, and no confound in the estimator accounts for it.
+
+**So the two derivations agree on the part that is exact and disagree on the part that is not.** `h_marginal = 14 B` is pinned by code and cell-invariant by construction; `h_absolute` has measured provenance in a range, not at a value, and admitting it as a constant would be admitting the middle of a range that the wire says is not one.
+
+**AND THE CONSEQUENCE FOR THE COST MODEL IS THE OPPOSITE OF WHAT `h` WAS INVOKED FOR.** The memo's wasted-bandwidth term is `L_waste = α·ν`, resting on *"each false alarm costs exactly ONE symbol"* (`docs/research/cost-ratio-memo.md:355-358`). With `T = 1200` and `h_marginal = 14 B`, a repair datagram costs `1.011×` a source datagram on the wire. **The memo's term is right to 1.1 %, and `h` does not perturb it.** `h` is not the missing constant of the recovery price; it is a 1 % correction to a term that was already correct. **That is a negative result and it is recorded as one.**
+
+### THE CODE-DERIVED STACK, FIELD BY FIELD
+
+Shipped defaults: window/generation mode, hint `bulk` ⇒ `T = symbol_size = 1200` (`net/mod.rs:138-170`), `RWM_WIRE_COMPACT` default **ON** (`transport/protocol.rs:79-82`), one symbol per QUIC DATAGRAM (`transport/quic.rs:1128-1153`; symbols never ride streams).
+
+| layer | bytes | site |
+|---|---|---|
+| Ethernet (veth, counted by the qdisc) | 14 | `topo_dual.sh` builds veth pairs; `qdisc_pkt_len = skb->len` at egress enqueue includes the pushed MAC header |
+| IPv4 | 20 | — |
+| UDP | 8 | — |
+| QUIC 1-RTT short header: flags 1 + DCID 8 + PN 1–4 | 10–13 | quinn 0.11 default 8-byte CIDs; no CID length is configured in `transport/quic.rs` |
+| DATAGRAM frame type (written last, implicit length) | 1 | `conn.send_datagram`, `quic.rs:805-849` |
+| AEAD tag | 16 | — |
+| `rp` compact frame v5: tag 1 + flags 1 + varint `path_id` + varint `block_id` + varint `payload_id` + varint `send_timestamp_us` + varint `batch_seq` | 14–20 | `serialize_data_compact`, `transport/protocol.rs:142-157` |
+| **FEC span header — THE ONLY CLASS DIFFERENCE** | **0 source / 14 repair / 16 filling repair** | `REPAIR_HEADER_SIZE = 14`, `fec/generation.rs:44-47`, `fec/rlc_window.rs:11`; `FILL_FLAG` adds a `coded_width` u16 at `generation.rs:379-385` |
+| **TOTAL beyond `T`** | **source 83–92, repair 97–106** | |
+
+**Two things in that table are worth naming.**
+
+1. **`send_timestamp_us` is the single most expensive field in the compact frame, at 8 varint bytes**, because `now_us()` is micros since the **UNIX epoch** (`net/mod.rs:1695-1700`) — 1.79 × 10¹⁵ in 2026, 51 bits, 8 LEB128 bytes. The docstring at `protocol.rs:139` estimates the compact frame at *"~14–16 B total"*; with a real epoch timestamp and mid-transfer ids it is **18–20 B**. The estimate was written against small ids. **No change is proposed here** — this is a passive-primitives section and it flips nothing — but it is a named, measured, 4–6 B/packet finding sitting in the shipped default path, and it is recorded so that a later commit can act on it or refuse to.
+2. **The coefficient vector is NOT on the wire.** Coefficients are regenerated at the decoder from `(window_start, window_count, coded_index)` (`generation.rs:232`, `rlc_window.rs:468`). **This is why `h` is O(1) and not O(G)** — and it is the structural reason the wasted-bandwidth term can be a pure symbol count with the symbol size cancelling, exactly as the memo assumed.
+
+### THE WIRE-MEASURED DERIVATION, AND ITS THREE CONFOUNDS
+
+`tools/l1/prim_measure.py wire docs/l1-raw` — **3 146 usable committed records**, nine cells, both seeds, every battery from `ccand` through `latlever`. Two counters exist on the data-direction legs and they count different populations:
+
+* **`dgq_hand`** — symbols handed to the datagram queue, **including** those netem then dropped and those the queue never drained.
+* **`tc_pkts` / `tc_bytes`** — packets the qdisc actually **sent**, **including** the sender's own QUIC ACKs of the receiver's control stream, which carry no symbol.
+
+Neither ratio is `h`. They bracket it from opposite sides:
+
+```text
+   h_hi = tc_bytes/dgq_hand − T     charges every non-payload byte to a symbol  (ACKs inflate)
+   h_lo = tc_bytes/tc_pkts  − T     charges every sent packet a full T          (ACKs deflate)
+```
+
+| cell | n | `h_lo` | `h_hi` | width | pkt/sym | drop | gap/sym |
+|---|---|---|---|---|---|---|---|
+| `c1` | 624 | 64.2 | **102.8** | 38.6 | 1.0304 | 0.00015 | 0.00002 |
+| `c7` | 577 | 41.8 | **65.7** | 23.9 | 1.0204 | 0.00561 | 0.00003 |
+| `c8` | 701 | 43.0 | **66.0** | 23.0 | 1.0197 | 0.00730 | 0.00009 |
+| `c8L` | 323 | 49.7 | 38.1 | **−11.6** | 0.9845 | 0.00578 | **0.02010** |
+| `sc2` | 580 | 7.6 | 76.5 | 68.9 | 1.0543 | 0.00547 | 0.00000 |
+| `jit25` | 187 | 3.6 | 64.3 | 60.6 | 1.0529 | 0.00611 | 0.00000 |
+
+**`c8L`'s bracket is INVERTED and that is the estimator telling the truth about itself:** 2.0 % of its handoffs never reached the wire (`gap/sym = 0.0201`, `pkt/sym < 1`), so `dgq_hand` over-counts the denominator and `h_hi` falls below `h_lo`. **A bracket that crosses is a discarded cell, not a small `h`,** and `c8L` is excluded from every `h` reading below.
+
+Correcting both confounds — subtract the non-symbol packets at an assumed ACK size, and use `dgq_hand − dgq_gap` as the symbol count — the ACK size barely moves the answer over a 4× sweep:
+
+| cell | `s_ack` = 50 B | 100 B | 200 B | + drop correction (`+1200·p`) |
+|---|---|---|---|---|
+| `c1` | 100.9 | 99.4 | 96.8 | **~97–101** |
+| `c7` | 65.1 | 64.1 | 62.2 | **~69–72** |
+| `c8` | 66.1 | 64.8 | 62.6 | **~71–75** |
+| `sc2` | 75.2 | 72.4 | 65.5 | **~72–82** |
+| `jit25` | 62.4 | 59.4 | 54.2 | **~61–70** |
+
+### THE AGREEMENT, STATED PLAINLY, INCLUDING WHERE THERE IS NONE
+
+* **On `h_marginal` (repair − source): AGREEMENT IS EXACT AND NEEDS NO MEASUREMENT.** 14 B is a `const` the encoder writes and the decoder reads; the two sites are pinned against each other by `mtu_floor_covers_symbol_batch` (`tests/mtu_blackhole_wedge.rs:232-264`), which builds a worst-case `14 + 1200` repair and asserts the serialization fits under the MTU floor. **1.17 % of `T`.**
+* **On `h_absolute` at the 100–120 Mbit cells: THEY AGREE.** Code-derived 83–92 B (source) / 97–106 B (repair); wire-measured 61–82 B before the drop correction and 61–82 B after it, against a mix that is ~90 % source at these cells. The overlap is real and the residual (wire slightly under code) has a named, unmeasured candidate: **quinn coalesces ACK frames into outgoing 1-RTT data packets**, which would put ACK bytes inside the symbol packets and shrink the separate-ACK population the correction assumes. **Named, not claimed.**
+* **On `h_absolute` at `c1`: THEY DO NOT AGREE, and this is the finding.** 97–101 B measured against 83–92 B derived, and — worse for the constant — **1.4× the same measurement at `c7`/`c8`, whose code path is byte-identical.** None of the three confounds explains it: `c1`'s drop rate is 0.015 % (37× lower than `c8`), its `gap/sym` is 2 × 10⁻⁵ (450× lower than `c8L`), and its ACK fraction is 3.0 % against `c8`'s 2.0 % — all three point the *wrong way* or are too small by an order of magnitude. **`c1` is the cell where the estimator is cleanest and it is the cell that disagrees most.**
+
+**THE DISPOSAL, PRE-COMMITTED HERE RATHER THAN ARGUED LATER.** `h_marginal = 14 B` is admissible as a constant under the user's clause 3: measured provenance (a `const` plus a pinning test), proven necessity (it is the entire repair-vs-source wire difference), and it was not chosen to make anything fit — it makes the memo's `α·ν` term *less* interesting, not more. **`h_absolute` is NOT admissible**: it has provenance but no single value, and the 1.4× cell spread is unexplained. Any construction that needs `h_absolute` must either explain `c1` or carry the range.
+
+### `p` — MEASURED PER LEG, PASSIVELY, AND IT REPRODUCES THE MEMO'S VALUE INDEPENDENTLY
+
+`p` needed no VM run either. Nine committed sectioned qdisc captures (`docs/l1-raw/ackdiag-diag/*-q.txt`) carry each data-direction leg's netem counters **with its GE parameters on the same line**, so the realised loss and the nominal loss are readable side by side:
+
+| cell | leg | scenario | realised `p` (3 reps) | GE nominal `p/(p+r)` | realised / nominal |
+|---|---|---|---|---|---|
+| `c8` | CLI0 | `c2` | 0.00456 / 0.00430 / 0.00436 | 0.02534 | **0.17×** |
+| `c8` | CLI1 | `c3` | 0.01995 / 0.01991 / 0.01921 | 0.04762 | **0.41×** |
+| `c7` | CLI0 | `c2` | 0.00540 / 0.00557 / 0.00550 | 0.02534 | 0.22× |
+| `c7` | CLI1 | `c2` | 0.00549 / 0.00556 / 0.00607 | 0.02534 | 0.22× |
+| `c2r100` | CLI0 | `c2` | 0.00801 / 0.00808 / 0.00793 | 0.02534 | 0.32× |
+
+**`c8` reads `p = 0.0044 / 0.0196` per leg.** The memo's committed value is **`0.0055 / 0.0196`** (`tools/l1/xpath_loss_replay.py:29-33`), derived from the *sender's own* per-path loss estimate. **The slow leg agrees to three decimals; the fast leg agrees to 20 %.** These are two independent instruments — one is the kernel's drop counter, the other is the engine's estimator — and this is the first time they have been put beside each other. **`p` at `c8` is CONFIRMED, and the memo's `p = 0.0126` mean stands (measured mean 0.0120, −5 %).**
+
+**AND THE `0.17–0.41×` COLUMN IS A SECOND FINDING, REPORTED AND NOT RESOLVED.** Realised loss is **2.4–5.9× below** the Gilbert-Elliott stationary mean at every leg of every capture. Two candidates, neither measured here: the GE chain is re-seeded per qdisc and a short transfer may not sample the bad state at its stationary rate; or netem's `rate` shaping serialises packets such that the per-packet chain advances differently than the stationary calculation assumes. **The consequence for every battery in this document that quoted a GE floor is that the floors are floors on the NOMINAL loss and are 2–6× above the realised one.** Nothing is revised here; the number is put on the record beside the nominal one.
+
+**Pooled `p` per cell**, from all 3 146 records (`tc_drop` summed over the data legs, so a dual cell's value is a packet-weighted pool of its two legs and not either one):
+
+| cell | n | `p` p25 | **`p` median** | `p` p75 | per-leg, where captured |
+|---|---|---|---|---|---|
+| `c1` | 624 | 0.00015 | **0.00015** | 0.00016 | single leg ⇒ this IS the per-leg value |
+| `c7` | 577 | 0.00541 | **0.00561** | 0.00605 | 0.0055 / 0.0056 |
+| `c8` | 701 | 0.00681 | **0.00730** | 0.00781 | 0.0044 / 0.0196 |
+| `c8L` | 323 | 0.00516 | **0.00578** | 0.00695 | same scenarios as `c8`, not separately captured |
+| `sc2` | 580 | 0.00500 | **0.00547** | 0.00578 | single leg ⇒ this IS the per-leg value |
+
+**`p` IS DISCHARGED FOR GOAL #100 ITEM 1.** It is measured at all five cells off committed data, per leg at three of them, and it cross-checks against an independent instrument at the load-bearing one. **It does not need the VM pass**, which will nonetheless re-capture it as a same-session guard.
+
+### WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** `h_marginal = 14 B` (16 B filling, 4 B block-RLC, 0 B block-RaptorQ/RS), exact, from code, with a pinning test. `h_absolute` = 61–82 B at the 100–120 Mbit cells and 97–101 B at `c1`, wire-measured, brackets and confounds printed. `p` per cell and, at three cells, per leg — with `c8`'s slow leg reproducing the memo's committed value exactly. A repair symbol costs 1.011× a source symbol on the wire, so the memo's one-symbol false-alarm cost is right to 1.1 %.
+
+**NOT established.** Why `c1`'s `h` is 1.4× the duals'. Whether quinn coalesces ACK frames into data packets (the named candidate for the code-vs-wire residual). Whether the 0.17–0.41× realised-to-nominal loss ratio is a netem seeding artefact or a shaping one. Per-leg `p` at `c8L` and per-leg `p` under the pass's own gates. **And nothing here says anything about `d`, `σ` or `ν`** — those are the pre-registration's business, below.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate, or runs on the VM.** The one tool added, `tools/l1/prim_measure.py`, opens files and prints.
