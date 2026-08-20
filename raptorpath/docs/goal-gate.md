@@ -40656,3 +40656,359 @@ wires a consumer, or modifies the pre-registration it will be scored against.**
 the session scratchpad, `{cli,srv}-{quiet,loaded}-r{1,2,3}.err`; binary
 `target/debug/raptorpath.exe` built from `d0e42a9`; 452 lib tests green,
 `sigma_diag_reachability` green, warning count unchanged at 19.
+
+---
+
+## THE SIGMA ESTIMATOR — THE BATTERY, PRE-REGISTRATION (2026-08-21, `feat/sigma-battery` from main@`2a1719a`) — goal #101 item 2's **VM HALF**. Written and committed BEFORE the VM is touched, in its OWN commit, before a single number is read. **No number below is a result.** **Nothing here flips a default, adds a gate, edits an engine crate, or wires a consumer. No clock is touched.**
+
+### 1 — WHAT THIS IS, IN ONE SENTENCE
+
+The acceptance bar was pre-registered before any candidate existed; the three
+candidates were then built as read-only gauges and characterized on loopback,
+which the bar's own §6 said scores nothing. **This section says exactly what
+the VM battery runs, what it computes, and which verdicts it is allowed to
+reach — written before the VM is touched, so no clause can be chosen by the
+data it is scored on.** The unit under test is the **estimator**. There is no
+arm, no treatment, and no clock.
+
+### 2 — WHAT RUNS
+
+| | |
+|---|---|
+| **cells** | `c1`, `c7`, `c8` **at 25 MB**, `c8L`, `sc2` — the committed five, transcribed from `ccand_battery.sh:202-215` via `alpha_battery.sh:147-156`. Not redefined here: a cell that differs from the ledger's cell is a different cell and its rows do not pool |
+| **reps** | **8 per cell per seed** |
+| **seeds** | **42 and 7**, seed 42 first and scored on its own if seed 7 does not complete |
+| **invocations** | **80** scored, plus 5 calibration and 2 smoke |
+| **arms** | **NONE.** `RWM_QUANTILE_CLOCKS` OFF, `RWM_ALPHA_OVERRIDE` ABSENT, the shipped clamp exactly as it ships |
+| **configuration** | `RWM_GEN=0` — the plain window, the machine the clock lives on |
+| **instruments** | `RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1` |
+| **driver** | `tools/l1/sigb_battery.sh`; calibration `sigb_calib.sh`; detached `sigb_all.sh`; parse `sigb_parse.py` + `sigb_probe.py`; score `sigb_report.py`; local gate `test_sigb_report.py` |
+
+**THE FOUR GAUGES COME OFF THE SAME INVOCATIONS AND THAT IS THE DESIGN.**
+`sig_us` (the shipped estimator, its own control) and the three candidates
+`rvar_us` / `qsp_us` / `msd_us` are emitted by ONE `format!` in
+`net/diag.rs`, per path, per `[DIAG]` block, from the SAME RTT sample stream,
+in the SAME run. **One run scores all four.** No arm axis is needed and none is
+added: every comparison is PAIRED within an interval and none is across
+sessions.
+
+**THE INSTRUMENT SET IS `prim_battery_pw.sh`'s AND `alpha_battery.sh`'s,
+UNCHANGED, AND THAT IS NOT A PREFERENCE.** The 287× `σ(c8)` spread this
+battery exists to answer was measured with exactly this set, so the `sig_us`
+column here **pools with that reading** instead of merely resembling it.
+`RWM_FDIAG` is load-bearing in particular: the receiver's `[RFA] gen=` line is
+`W1`, and it is the only direct engine echo of `window_generation` that exists.
+
+**`RWM_GEN=0`, AND THE REASON IS MECHANICAL, NOT STYLISTIC.** Under generation
+`recv_nack_tx = None` (`net/mod.rs:2434`), so both consumers of the clock this
+estimator feeds drive machinery with no producer. The estimator would still
+emit — but it would be measured on a machine where the thing it exists to feed
+does not run. §4 of the plain-window scored result also measured that `σ` moves
+with the generation gate by up to 41×, so the two configurations are two
+different input streams and not two views of one.
+
+### 3 — THE SCORING DOMAIN IS THE **LEG**, AND THE POOLING UNIT IS THE `[DIAG]` BLOCK
+
+A **leg** is one `(cell, site, path)` triple — `site` ∈ {sender, receiver},
+`path` the `p<id>` in the `[DIAG]` line. A **reading** is one gauge emission:
+one leg, one block.
+
+```text
+   R_total(leg, gauge)  =  p95 / p05  over the POOLED readings of ALL reps
+                           of BOTH seeds at that leg
+```
+
+**BOTH SEEDS POOL INTO ONE `R_total`, AND IT IS STATED HERE BECAUSE IT IS THE
+HARDER READING.** The bar defines `R_total` over "the POOLED σ̂ readings of ALL
+reps at ONE cell, ONE seat, ONE α". A seed is a netem loss realisation — not a
+seat and not an α — so both seeds' reps pool. Pooling two realisations can only
+widen a spread, never narrow one, so this choice can only make a candidate
+harder to pass. Per-seed reports are produced beside the pooled one so the
+seed-42-only reading is available without re-running anything.
+
+**THE BAR BINDS AT EVERY LEG, NOT AT EVERY CELL-AVERAGE.** The bar's §3 rule 1
+says the worst cell binds; here the worst **leg** binds, which is strictly
+stronger. This is deliberate and it is what promotes the sampling-rate finding
+(§7) from a footnote to a verdict: the sparse legs are legs, they carry an RTT
+sample stream, the estimator runs on them, and averaging them into a
+cell-level number would hide exactly the effect the local pass measured.
+
+**THERE IS NO THRESHOLD THAT SELECTS A DIFFERENT SCORING PATH FOR A SPARSE
+LEG.** Every leg is scored by the same formula against the same bar. The sample
+rate is reported as a CONTINUOUS column beside every leg's verdict, never as a
+classifier — the no-mode-switch rule applied to a scoring script.
+
+**AND ONE LEG-LEVEL GATE, DERIVED HERE AND SHOWN AS ARITHMETIC.** A leg with
+fewer than **20** pooled post-warm-up readings is **UNSCOREABLE-THIN** — never
+a pass and never a fail. The reason is the bar's own: it refused `sup/inf`
+because a range statistic grows without bound with sample count. At `n < 20`
+the nearest-rank `p05`/`p95` **are** `min`/`max` (`int(0.05·n) = 0` and
+`int(0.95·n) = n−1` for every `n ≤ 19`), so an `R_total` computed there IS
+`sup/inf` wearing a quantile's name. At `n = 20` the indices are 1 and 19, both
+interior. `test_sigb_report.py` asserts that arithmetic rather than trusting it.
+
+### 4 — CLAUSE `S`, AS SCORED
+
+Per leg, per gauge: `p05` / `p50` / `p95`, **`R_total = p95/p05`**, and
+**`sup/inf` BESIDE IT AS THE DISCLOSURE THE BAR REQUIRES** and not as the
+accept/reject statistic. Verdicts:
+
+| | |
+|---|---|
+| `R_total ≤ 3.5` | PASS, PREFER tier |
+| `R_total ≤ 6.0` | PASS, accept tier |
+| `R_total > 6.0` | FAIL — and the worst leg binds |
+| `n < 20` readings | UNSCOREABLE-THIN |
+| no reading survives warm-up | UNSCOREABLE-NO-SAMPLE |
+
+The shipped `sig_us` is measured on the same battery **as a control, under its
+own bar**, per the bar's §3 rule 3. It is not exempt from a bar written after
+its failure.
+
+### 5 — CLAUSE `B`, AS SCORED, AND THE PROBE'S OWN LIMITS BEFORE ITS NUMBERS
+
+`β_σ` is the ratio of the candidate's reading to the **per-leg delivered-latency
+probe's own sample stream through the SAME functional the candidate computes**.
+The functional map is the bar's §4, transcribed into code
+(`sigb_report.PROBE_FUNC`) so it cannot be re-chosen later:
+
+| gauge | class | probe functional |
+|---|---|---|
+| `qsp_us` | windowed quantile | `P90(x) − P50(x)` |
+| `msd_us` | successive difference | `median` of `|x_i − x_{i−1}|`, **in arrival order** |
+| `rvar_us` | moment | sample standard deviation |
+| `sig_us` | moment | sample standard deviation |
+
+**LIKE-FOR-LIKE MEANS LIKE WINDOWS.** Both sides are computed **per rep over
+that rep's run window**, then median over reps — never one side pooled and the
+other not.
+
+**`rvar` READS AGAINST `sd` LITERALLY, AND THE MISMATCH IS DISCLOSED RATHER
+THAN CORRECTED.** The bar says "the moment-class candidate**s**", plural, and
+`rvar` is one of them. `rvar` estimates `E|dev|`, which for a Gaussian is
+`0.7979·σ`, so a literal `β_rvar` carries a built-in ≈0.80×. The probe's own
+mean absolute deviation is emitted beside its `sd` as that disclosure and
+**nothing in the scoring reads it.** Applying it would be a bar amendment
+written after the functional map, which is the thing a pre-registration exists
+to prevent.
+
+**FOUR LIMITS OF THE PROBE, PRE-COMMITTED, AND THE FIRST TWO ARE THE BAR'S OWN.**
+
+1. **THE SITE.** It measures the peer path and excludes sender scheduling,
+   store residency and the ack-generation path, all of which ADD dispersion.
+   Its dispersion is a **lower bound** on the ack path's, so every `β` is a
+   lower bound on the true bias. **Clause `B` can REJECT and cannot ACQUIT.** A
+   candidate inside the band is recorded as *"not shown to be biased"*, never
+   as *"unbiased"* — asserted as a string-level property in
+   `test_sigb_report.py`.
+2. **THE CENSORING.** A lost probe never produces a sample, and the losses are
+   drawn from exactly the worst states. `censor_frac` prints beside every
+   functional. `latt_probe.py`'s contract bar (`> 20 %`) kills the whole leg;
+   and **`P90` dies STRUCTURALLY above 10 %**, because the top `c` of the
+   distribution produced no sample and `0.90 > 1 − c` cannot be placed. That
+   second bar is derived here, at the quantile `qsp` actually needs, from the
+   same structural rule `latt_probe` applies to `p95`/`p99`.
+3. **THE SAMPLING RATE, AND IT IS SPECIFIC TO `msd`.** The probe runs at
+   **20 Hz** (`perf_rwm_c.sh`'s `ping -i 0.05`); the sender's RTT stream runs
+   at kHz. `msd` estimates dispersion at a lag of one inter-sample interval and
+   is **measurably** rate-dependent — 15× level change across a 137× rate gap
+   on one host (the candidates section §4). **So `β_msd` against this probe is
+   NOT like-for-like in the one axis `msd` is known to depend on.** It is
+   computed, printed, and marked **CONFOUNDED**; it is not read as a pass and
+   it is not read as a clean fail.
+4. **THE DISAGREEMENT RULE, MECHANISED.** Per the bar's §4 last sentence: if
+   two candidates both sit inside the band but disagree with **each other** by
+   more than the band's own width (`1.47/0.68 = 2.162×`), that is a **finding
+   about the probe**, is reported as one, and `B` goes **UNRESOLVED** at that
+   leg rather than being read as a pass.
+
+`β` is scored at the **sender** site, where the clock is. The receiver site's
+`β` is printed as a DISCLOSURE row and takes no verdict.
+
+**THE CONSEQUENCE FOR `msd`, STATED BEFORE THE DATA AND NOT AFTER IT.** Because
+limit 3 makes `B` unevaluable for `msd` at this probe, **`msd` cannot reach
+ACCEPT in this battery even if it clears `S` at every leg.** Its strongest
+legal outcome here is **ADMISSIBLE-ON-`S`, `B`-UNSCOREABLE** — and an
+unevaluated clause is not a passed one. **This is not a softening and not an
+escape hatch: it is stricter than the bar, it is stated before the run, and it
+names the instrument that would close it** (a delivered-latency probe at the
+sender's own sample rate, which does not exist in this tree and is not built
+here).
+
+### 6 — CLAUSE `C`, AS SCORED
+
+`C1`'s warm-up exclusions are applied by **`sigb_report.py`**, against the `n`
+each row carries, and by nothing else:
+
+```text
+   EWMA class   (sig_us, rvar_us)   n ≥ 16
+   window class (qsp_us)            n ≥ 256          = L
+   window class (msd_us)            n ≥ 255          = L − 1, the DIFFERENCE count
+```
+
+`tests/sigma_candidates_reachability.rs` already asserts exactly this pair for
+the window class, so the two live in one place and cannot drift.
+
+**THE LEDGER IS RAW AND THE EXCLUSION IS RE-DERIVABLE FROM IT.** `sigb_parse.py`
+writes **every** emission, warm-up included, with `-` preserved as `-`. Clause
+`C3` forbids a warm-up gate in the engine because *"a field that disappears
+below a threshold cannot be told apart from a path that was never sampled"* —
+and putting the exclusion in the **invocation** parser would have the same
+effect on the ledger, since the excluded readings would simply not exist.
+`test_sigb_report.py` asserts that the exclusion actually excludes, on a
+synthetic ledger carrying a wild sub-bar value that must not enter.
+
+`C2` — `n_warm ≤ 0.05 × N_cell` — is scored **from this battery's own recorded
+`n` counts**, per leg, not from the pre-registration's remembered `N ≈ 17 660`
+at `c8`. That number is quoted as the expected binding cell and nothing more.
+
+### 7 — THE SAMPLING-RATE ROW, FIRST-CLASS
+
+Per leg: measured **RTT samples/second** (the leg's final `n` over the median
+transfer wall), `msd`'s pooled `p50`, `sig_us`'s pooled `p50`, their ratio, and
+`msd`'s `R_total`. Plus **Spearman rank correlation** across all scoreable legs
+of (rate vs `msd` `R_total`) and (rate vs `msd`/`sig` level), computed in the
+report because there is no `scipy` on the VM and a number is required rather
+than an impression.
+
+**THE FALSIFIER, PRE-STATED:** *if `msd`'s advantage tracks the sample RATE
+rather than the CELL, it is an artefact and this battery says so.* The local
+pass measured the two legs of one loopback host at a 137× rate gap and found
+`msd`'s level moved 15× and its `R_local` moved **the wrong way** (3.12 on the
+dense leg, 8.64 on the sparse one, where it was the WORST of the four gauges).
+This battery's cells span a far wider rate range — the asymmetric duals `c8`
+and `c8L` carry a ~21× sender-side leg asymmetry on their own — so the row has
+real leverage. **No verdict is taken from `ρ` alone**; it is reported beside
+the per-leg clause-`S` verdicts, which are what binds.
+
+### 8 — WITNESSES, AND ABORT-CAUSE FIRST
+
+Read before any statistic, at both endpoints, on every invocation. **`W3`
+(`cod=0`) IS NOT CITED — it was RETIRED** by the plain-window pass §2 (the
+plain window still emits proactive FEC, so `cod` is 111–750 at every lossy
+plain-window cell and it never discriminated the generation axis).
+
+| | |
+|---|---|
+| **W1** | `[RFA] gen=` on the receiver — must read `0` |
+| **W2** | `[PFRAC]` lines on the sender — must be `0` |
+| **W4′** | `[DIAG] retx=`, **MAX OVER ALL LINES**, `> 0` at lossy cells. Never off the last line: `retx=` in the `[DIAG]` tail is an INTERVAL counter, and reading it off the last line reported this witness failing at 5 of 15 clean reps |
+| **W5** | `[RACK] fa=<spur>/<fired>` on the sender — present, `fired > 0` at lossy cells |
+| **W7** | **THIS BATTERY'S OWN.** All four gauge tokens **with their `/n` counts** on **every** path entry of **every** `[DIAG]` block, at **both** endpoints. Counted twice by two independent readers (the parser's group regex and the driver's raw token count), because the parser's own regex is what a token change breaks first |
+
+**`W7` IS THE REACHABILITY GATE FOR THE UNIT UNDER TEST** (MEASUREMENT
+DISCIPLINE rule 1: prove the mechanism under test executes). There is no arm
+axis here, so there is nothing for an arm-liveness witness to check; `W7` is
+what replaces it. A path entry carrying three of the four fields is an
+**engine-surface fault**, not a missing column — the `-`-iff-no-sample
+convention is a biconditional `tests/sigma_candidates_reachability.rs` asserts.
+
+**ABORT-CAUSE FIRST.** No `[GATES]` on **either** endpoint = ABORT: no datum,
+no liveness verdict, and **not in any denominator**. Checked before any
+assertion, so an aborted invocation never produces a wall of liveness failures.
+
+**THE GOODPUT WITNESS HAS TEETH HERE THAT THE α-SWEEP'S DID NOT.** That battery
+ran treatment arms whose clocks legitimately moved goodput, so a control-derived
+band could not abort them. **This battery has no arms** — every invocation runs
+the shipped stack — so the discriminating test is the **GENERATION PLATEAU,
+26.8–34.1 Mbit/s**: a reading inside it is the 31 Mbit/s anomaly's own
+signature, means generation leaked in, and the invocation is **ABORTED** as a
+configuration fault. A reading outside the committed cell band but also outside
+the plateau, with `W1`/`W2` clean, is an **OUT-OF-BAND RESULT**, retained with
+its cause named — the precedence the plain-window pass fixed on `c7` r3's leg
+collapse, inherited unchanged.
+
+**0 ABORTS IS THE EXPECTATION** and is stated as one: the α-sweep ran 480
+invocations at these five cells on the repaired topology with 0 aborts, 0 VOID
+and 0 DNF. A nonzero abort count here is a finding about the session, not a
+tolerance.
+
+### 9 — THE LEGAL OUTCOMES, PER ESTIMATOR, AND THE PRE-COMMITMENT
+
+Exactly four, and there is no fifth:
+
+| outcome | condition |
+|---|---|
+| **ACCEPT** (plain-window seat) | `S` at every leg, `C` at every cell, `B` scoreable and not REJECT |
+| **PREFER** (plain-window seat) | ACCEPT **and** `R_total ≤ 3.5` at every leg |
+| **REJECT-`<clause>`** | the failing clause **and the binding leg**, named |
+| **UNSCOREABLE-`<gate>`** | the gate that could not be evaluated, named. **Not a pass** |
+
+Tie-break, per the bar's §3 rule 2: among admissible candidates, the PREFER
+tier (`R_total ≤ 3.5`) first, and only then clause `B`.
+
+**THE PRE-COMMITMENT, WRITTEN BEFORE THE DATA: IF NO CANDIDATE ACCEPTS AT
+EVERY LEG, goal #101 ITEM 2 CLOSES `NEEDS-MORE` WITH THE FAILING CLAUSE NAMED.
+THE BAR IS NOT SOFTENED, NO CANDIDATE IS PROMOTED ON A PARTIAL CLAUSE, AND NO
+VERDICT IS UPGRADED BY A PARTIAL SEED.** `NEEDS-MORE` is a legal outcome of
+this battery and is not a failure of it.
+
+### 10 — SCOPE: WHAT THIS BATTERY DOES **NOT** DO
+
+**IT RUNS ONE SEAT OF THE TWO.** §16.74.5 requirement 3 says an estimator
+qualified at one seat is not qualified at the other, and names the plain-window
+and generation seats. **This battery runs the plain-window seat only**, for the
+mechanical reason in §2. **Every verdict it reaches is therefore a
+plain-window-seat verdict and none of them transports to the generation seat**
+— the report prints that scope note unconditionally, and requirement 3 stays
+partly open however this pass scores.
+
+It **wires no consumer**: all four gauges remain read-only, `sig_us` still
+feeds exactly what it fed before, and no candidate is connected to any clock.
+It **flips no default**: `RWM_QUANTILE_CLOCKS` stays OFF and REFUTED-STANDING,
+and the shipped clamp stays convicted and unreplaced. It **takes no route
+decision** between (b) and (d). It **does not re-run the α-sweep** and reaches
+no verdict on §16.74.6's `P1`. It **does not reopen `S1`**.
+
+### 11 — THE CALIBRATION CLAUSE, TO BE FILLED AND COMMITTED BEFORE THE SCORED RUN
+
+`sigb_calib.sh` runs **one rep per cell at seed 42**, on the same binary and in
+the same session as the scored run, before it. **Nothing in it is a result** —
+`n = 1`, and the report says NO VERDICT on that input, which is correct. It
+must discharge two things, and neither may be skipped:
+
+1. **HEADROOM (MEASUREMENT DISCIPLINE 16)** — `tc -s qdisc show` on **every**
+   cell and **every** invocation, `util = tc_bytes·8 / (TRANSFER seconds ×
+   shaped capacity)`. The denominator is the **transfer wall**, never
+   `INVOCATION_S`, which runs 1.12–2.11× the transfer and read `c7` at 77.6 %
+   when the cell was at 96.9 %. **This battery writes no goodput clause
+   anywhere, so the table licenses nothing.** It is here because a cell running
+   at its ceiling produces a different RTT sample process from one that is
+   not — a property of the **input** to the thing under test.
+2. **THE SMOKE**, and this battery needs it as much as its predecessors did,
+   because **three of the four things it reads have never been on a wire**:
+   `rvar_us` / `qsp_us` / `msd_us` present with `/n` on every path entry at
+   both endpoints (`W7`); the **window-class gauges reaching a full window** at
+   every cell, since a cell where the window never fills yields ZERO scoreable
+   readings and `c8` at 25 MB is the cell at risk; and the **per-leg probe
+   through the candidates' own functionals**, whose censoring accounting is
+   field-tested but whose functionals are not.
+
+**The calibration's completion is committed in its own commit, BEFORE the
+scored battery launches.** Launch order: calibrate → commit → smoke one rep at
+`c8` + `sc2` → launch detached.
+
+### 12 — WHAT IS ESTABLISHED BY THIS SECTION
+
+**Nothing measured.** This section establishes only what will be measured, how
+it will be scored, and which verdicts are reachable. The local gate
+`tools/l1/test_sigb_report.py` is green before the VM is touched, and it
+asserts the properties that would otherwise fail silently: that the warm-up
+exclusion excludes, that `-` is not a zero, that `R_total` is the pooled
+quantile and not `sup/inf`, that the thin-leg gate's derivation is arithmetic,
+that all four legs of a two-site two-path ledger are read, that the probe's
+`msd` is computed in arrival order (a sort would destroy it and still return a
+plausible number), and that the bar's constants are the committed ones.
+
+**AND IT ASSERTS THE VERDICT PATHS BY NAME, ON A LEDGER BUILT TO REACH THEM.**
+The synthetic ledger carries no probe row at all, so clause `B` is never
+evaluated — and the gate asserts that **nothing reaches ACCEPT or PREFER**
+there, because a scorer that handed out a pass on two clauses out of three when
+the third produced no rows is the exact silent failure this file exists to make
+loud. Its `N = 5 000` puts the `C2` bar at 250, which the EWMA class (16)
+clears and both window-class gauges (256 and 255) do not — so the `REJECT-C`
+path is exercised on real rows rather than trusted.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or modifies the acceptance bar it will be
+scored against.**
