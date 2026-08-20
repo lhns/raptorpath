@@ -14875,6 +14875,456 @@ designed.
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or scores any clause of the α-sweep's pre-registration.**
 
+### 16.74 The recovery decision's loss function, written as ONE formula continuous in the (δ, ρ, r) triangle: routes (b) and (d) are the two limits of a single Lagrangian, they diverged at measured inputs because their σ-elasticities differ by a factor of three, and the model's own precondition is a dispersion estimator the tree does not have (2026-08-20, `feat/recovery-derivation`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test; goal-gate "GOAL #100 — CLOSED" and the α-sweep / r-law sections are the measurement record, this section is the model)
+
+**This is goal #100 item 4, THE DERIVATION.** It is written FROM the measured
+primitives (all five, both machines, §16.73's provenance table and the
+primitives passes) and from the α-sweep's honest content — the realized-`W`
+medians monotone in α at four cells of five, and the σ-consumed separation
+that made them unreadable. **It picks no winner between route (b) and route
+(d); it does not reopen `S1`; it flips no default and licenses no engine
+change.** §16.74.8 states that in full and it governs every sentence above it.
+
+#### 16.74.0 Verdict first — the expression
+
+One loss per source symbol, per repair decision, in Copa's own currency
+(`U = log(throughput) − δ·log(delay)`: a bandwidth fraction enters linearly, a
+delay enters as `δ·Δd/d`). Every term is always computed; there is no branch,
+no threshold on δ or ρ, and no hint match anywhere in it:
+
+```text
+   L(α; δ, ρ, r, λ)  =  ν·α·(1 + h/T)                                    [B]
+                     +  δ · owed(ρ, r) · k(α)·σ / d                      [C]
+                     +  λ · owed(ρ, r) · max(0, k(α)·σ − D(δ)) / D(δ)    [D]
+
+   k(α)      = √((1−α)/α)                       Cantelli margin, §16.69
+   owed(ρ,r) = max(0, ε̂·(1 − P_fec(r)) − (1 − ρ))    repairs still owed
+   D(δ)      = min( b(δ)·RTprop , 2·RTprop )         the δ-leg's allowance
+   b(δ)      = 2^(−½·log₁₀(δ/δ_auto)) ,  δ_auto = 0.5
+   W(α)      = srtt + k(α)·σ                         the clock the law sets
+```
+
+**The recovery clock is `W(α*)` at the `α*` that minimises `L`.** `λ ≥ 0` is
+the multiplier on the δ-leg's declared latency allowance and it is the ONE
+quantity in the model that measurement has not supplied. **Route (d) is the
+`λ → 0` limit; route (b) is the `λ → ∞` limit** (§16.74.3). The ruling's
+empirical question — which route models the machine — **is exactly the
+question of λ's value**, and no number is assigned to it here, because
+assigning one would be the fitted constant the ruling's clause 3 forbids.
+
+#### 16.74.1 The three terms, each beside the sentence it implements
+
+**[B] — the wasted repair.** A clock that fires when the original was merely
+slow spends one repair symbol for nothing. `ν` fires per delivered symbol, `α`
+of them spurious by the Cantelli construction, and each costs one repair
+symbol: `T = 1200 B` of payload plus `h = h_marginal = 14 B` of repair header.
+
+```text
+   [B]  =  ν · α · (1 + h/T) ,      h/T = 14/1200 = 1.1667 %
+```
+
+**`h` does NOT cancel here, and §16.73 is where it does.** In §16.73 the
+condition equates a *proactive* repair symbol against a *reactive* one: the
+same wire object on both sides, so `(1 + h/T)` multiplies both bandwidth terms
+and divides out exactly. **In this loss function there is only one bandwidth
+leg**, traded against a latency leg that carries no header at all, so `h`
+survives into the stationarity condition and scales it. Its size is derived,
+not guessed: it enters `α*` as `(1 + h/T)^(−2/3)`, i.e. **`h` moves `α*` down
+by 0.770 %** — small, signed, and now a result rather than an omission.
+
+**[C] — the delayed genuine repair.** The margin `k(α)·σ` is added to the
+detection of data that really was lost, and Copa prices a fractional delay
+increase at `δ` per unit of `Δd/d`. It is charged only on the repairs the
+contract still owes:
+
+```text
+   [C]  =  δ · owed(ρ, r) · k(α)·σ / d ,      d = srtt  (Copa's normaliser)
+```
+
+**[D] — the δ-leg's declared allowance.** The δ leg independently declares, in
+milliseconds of the path's own propagation delay, how much added latency it
+will tolerate: `D(δ) = min(b(δ)·RTprop, 2·RTprop)`. [D] charges the overrun of
+that allowance, as a fraction of the allowance itself:
+
+```text
+   [D]  =  λ · owed(ρ, r) · max(0, k(α)·σ − D(δ)) / D(δ)
+```
+
+**`b(δ)` IS WRITTEN CONTINUOUS IN δ AND THE ENGINE'S IS NOT — the divergence
+is named and it is exactly zero at every point the engine can express.** The
+shipped `net::delta_budget_b` is a three-arm `match` on `ProtocolHint`
+returning ½ / 1 / 2 (`net/mod.rs:3662-3668`). The contract's three named δ
+points are `50 / 0.5 / 0.005`, equally spaced by two decades in `log₁₀ δ`, and
+their `b` values are equally spaced by one octave in `log₂ b`; the log-linear
+law through them is therefore unique and introduces no constant:
+
+```text
+   b(50) = 0.5 ,   b(0.5) = 1.0 ,   b(0.005) = 2.0     — exactly, all three
+```
+
+`b(δ)` is strictly decreasing and smooth in δ; `D(δ)` is non-increasing in δ,
+and its `min(·, 2·RTprop)` cap begins to bind exactly at the Bulk named point.
+**The model and the engine agree to machine precision at δ ∈ {50, 0.5, 0.005}
+and the engine cannot be asked anywhere else**, since the hint is the only
+thing it reads. That is the whole bound on this divergence, and closing it —
+routing `b` through a continuous `b(δ)` in the engine — is an owed item, not a
+finding of this section and not licensed by it.
+
+#### 16.74.2 The ρ leg, derived from the retention contract's own semantics
+
+**A branch was available here and is refused.** "At ρ = 1 chase every repair;
+below ρ = 1 stop at `T_cut`" is a threshold on ρ that selects a behaviour, and
+§6.3 already supplies the continuous quantity that makes it unnecessary. §6.3
+derives, from the reliability target alone,
+
+```text
+   P(permanent loss) = ε·(1 − P_fec)·(1 − P_arq) = 1 − ρ
+   ⇒  P_arq(ρ)  =  1 − (1 − ρ) / (ε·(1 − P_fec))
+```
+
+`P_arq` **is** the value of a late repair: the probability that a repair the
+sender is about to emit is still owed to the receiver rather than already
+released by the retention contract. Multiplying it by the fraction of symbols
+that reach the reactive plane at all — `ε̂·(1 − P_fec(r))`, what FEC missed —
+the product collapses:
+
+```text
+   ε̂·(1 − P_fec(r)) · P_arq(ρ)  =  ε̂·(1 − P_fec(r)) − (1 − ρ)
+   owed(ρ, r)  =  max( 0 , ε̂·(1 − P_fec(r)) − (1 − ρ) )
+```
+
+**Read it in words: what FEC missed, minus what the contract has released.**
+Three properties, all derived, none assumed:
+
+* **At ρ = 1 a late repair is mandatory.** `owed(1, r) = ε̂·(1 − P_fec(r))` —
+  every symbol FEC missed is still owed, which is the `T_cut = ∞` limit of
+  §15.7 stated as a number rather than as a policy.
+* **As ρ falls the value decays continuously and LINEARLY in `(1 − ρ)`**, with
+  slope exactly `−1`. No exponent, no rate constant, no half-life: the
+  contract's own inversion fixes the shape, so there is nothing left to
+  choose.
+* **It reaches zero at a DERIVED point, not a clamped one.**
+  `ρ_floor(r) = 1 − ε̂·(1 − P_fec(r))` is the reliability the channel already
+  delivers with no reactive plane at all; below it the contract asks for less
+  than FEC alone provides and a repair buys nothing. The `max(0, ·)` is the
+  same construction §8.4's shipped `r*` uses, is continuous, and selects no
+  code path.
+
+**And the r leg enters through the same quantity**, which is why the triangle
+composes here rather than being asserted to. `P_fec(r) = Φ(z_f(r))` is §8.2's,
+so more proactive rate shrinks `owed` and makes the reactive clock more
+patient. At the machine's shipped operating point §16.73.4 established
+`r* = 0` identically, where `z_f(0) = −√u`, `u ≡ W·ε̂/((1−ε̂)·σ²_burst)`, so
+`P_fec(0) = Φ(−√u)` — at `u = 1`, `Φ(−1) = 0.1587`, and `owed(1, 0) = 0.841·ε̂`.
+
+**A consequence worth stating because it is uncomfortable and falsifiable.**
+At the measured loss rates (`p` = 0.00013 … 0.046, §16.73's inputs table) the
+whole dynamic range of the ρ leg for a repair decision lies in
+`ρ ∈ [1 − ε̂·(1−P_fec), 1]` — a band roughly **one per cent wide at c8, and
+0.01 % wide at c1.** Any experiment that sweeps ρ on coarse steps (0.9, 0.95,
+0.99) is sweeping entirely below `ρ_floor` at four of five cells and will
+measure a flat curve for a structural reason, not a physical one. **No battery
+in this tree has swept ρ, and this is the resolution one would need.**
+
+#### 16.74.3 Where routes (b) and (d) sit: the two limits of one Lagrangian
+
+Differentiating `L` in α with `k′(α) = −1/(2·α^{3/2}·(1−α)^{1/2})`:
+
+**`λ = 0` — the allowance is advisory, only Copa's marginal price is paid.**
+[D] vanishes and the stationarity condition is
+
+```text
+   α_d^{3/2}·(1 − α_d)^{1/2}  =  δ · owed(ρ,r) · σ / ( 2·ν·(1 + h/T)·d )
+```
+
+**That is the cost-ratio memo's route (d) verbatim**, with two additions the
+memo could not write: `owed(ρ, r)` in place of a bare `p` (the ρ and r legs,
+absent from the memo entirely), and the `(1 + h/T)` the ruling's clause 3
+admitted. Its closure condition is unchanged — the left side maxes at
+`3√3/16 = 0.32476`, so above that there is no interior optimum and the corner
+is "fire immediately".
+
+**`λ → ∞` — the allowance is a hard constraint.** [D] becomes the requirement
+`k(α)·σ ≤ D(δ)`, which is a **lower bound on α**:
+
+```text
+   α  ≥  α_b(δ)  =  σ² / ( σ² + D(δ)² ) ,        W = srtt + D(δ)
+```
+
+**That is route (b) verbatim**, including its own most distinctive property —
+`σ` cancels out of `W` entirely, so the clock is `srtt + b(δ)·RTprop`, two
+measured quantities and one contract dial. Since [B] rises in α and [C] falls
+in α, the constrained minimiser is:
+
+```text
+   α*(δ, ρ, r)  =  max( α_d(δ, ρ, r) , α_b(δ) )        [λ → ∞]
+```
+
+**One formula, both terms always computed, continuous in every dial** — the
+shape `CLAUDE.md`'s no-mode-switch invariant requires, and it is what the two
+routes look like once they are written as one model instead of two.
+
+**THE STRUCTURAL STATEMENT THIS BUYS, WHICH NEITHER ROUTE COULD MAKE ALONE.**
+Routes (b) and (d) are not rival answers to one question; they are the same
+law read at two values of a multiplier that was never named. They **agree
+exactly** whenever `α_d ≥ α_b` — whenever the Copa-marginal optimum already
+fits inside the declared allowance — and they differ **only** where it does
+not. The memo's celebrated 3 % agreement at c8/Auto was not two theories
+converging: it was one theory evaluated near its own kink.
+
+**AND ROUTE (b) IS ρ-BLIND, WHICH IS A DEFECT OF THE ROUTE AND NOT OF THE
+CONTRACT.** In the `λ → ∞` limit, wherever `α_b` binds, `owed(ρ, r)` has
+divided out of the answer: `α_b = σ²/(σ² + D(δ)²)` contains neither ρ nor r.
+The recovery plane would then be parameterised by one leg of a
+three-leg triangle. That is a coherent position, but it must be chosen
+knowingly, and §16.74.6's third prediction is the experiment that would
+detect it.
+
+#### 16.74.4 Why they diverged at measured inputs — the elasticities, and then the deeper reason
+
+**FIRST, THE ARITHMETIC, AT c8/Bulk, WITH THE COMPOUNDING DIRECTION STATED.**
+The memo's inputs against the measured ones (`δ = 0.005`, `RTprop = 38 ms` so
+`D = 76 ms`, `srtt = 77 ms`, `ρ = 1`, `owed` at its instrumented proxy `p`):
+
+| inputs | `σ` | `ν` | `p` | `α_b` | `α_d` | `α_b/α_d` |
+|---|---|---|---|---|---|---|
+| memo, assumed | 18.1 ms | 0.0097 | 0.0126 | **0.05367** | **0.00831** | **6.46×** |
+| measured, plain-window seat | 3.140 ms | 0.03776 | 0.011215 | **0.001704** | **0.000964** | **1.77×** |
+| measured, generation seat | 0.803 ms | 0.0388 | 0.011215 | **0.000112** | **0.000381** | **0.29× — INVERTED** |
+
+* **`ν` is 4.5× the assumed value** (0.0438 against 0.0097 at c8, measured off
+  477 committed L1 records). It sits in `α_d`'s denominator and `α ∝ RHS^{2/3}`
+  for small α, so **`ν` alone moves `α_d` DOWN by 4.5^(2/3) = 2.73×.** It does
+  not move `α_b` at all.
+* **`σ` is 5.6×–22.5× the measured value at the generation seat and
+  5.8×–231× at the plain-window seat** (assumed 8.1/15.2/18.1/10.6/15 ms
+  against 1.452/2.030/0.803/1.560/1.229 and 0.035/0.499/3.140/0.665/0.492).
+  `σ` sits in `α_d`'s numerator, so it moves `α_d` **DOWN as well — the same
+  direction as `ν`, and the two compound.** At c8 the combined move is
+  10.9×–20.7× down.
+* **`d` is the 26× that is NOT an input error and must not be counted as one.**
+  The memo's route (d) writes `d = srtt = 77 ms`, Copa's delay *normaliser*;
+  the primitives passes measured `d` as the *repair delivery delay*, 2.6–5.7 ms.
+  §16.73's per-cell evaluation already resolved this: **two quantities wearing
+  one letter.** This model keeps them separate — `d = srtt` in [C]'s Copa
+  normaliser, the delivery delay only inside `D_arq` where §16.73 needs it. Had
+  the substitution been made, `α_d` would have risen by 26^(2/3) = **8.78×**,
+  in the direction of a faster and wastier clock. The direction is stated so
+  that the collision cannot be re-imported later as a correction.
+
+**THE MECHANISM: THE TWO ROUTES HAVE DIFFERENT σ-ELASTICITIES, AND THE FACTOR
+IS THREE.**
+
+```text
+   d ln α_b / d ln σ  =  2        for σ ≪ D(δ)     ( α_b = σ²/(σ² + D²) )
+   d ln α_d / d ln σ  =  2/3      for small α      ( α_d ∝ σ^{2/3} )
+```
+
+Two curves in σ with exponents 2 and 2/3 cross at most once and diverge on
+both sides of the crossing. **The memo evaluated them at σ = 18.1 ms — a value
+it had obtained by inverting Cantelli across two clocks — and found them 3 %
+apart at Auto. That is what a crossing looks like when you only stand on it.**
+At c8/Bulk the crossing sits at **σ = 2.05 ms**, which lies *between* the two
+seats at which σ(c8) has actually been measured (0.803 ms and 3.140 ms).
+**The two routes' ORDERING inverts inside the measured dispersion of the single
+input they both depend on.** That is why a ratio between them is not a stable
+quantity, and it is the mechanical reason item 2 could not separate them.
+
+**THE DEEPER REASON: THEY PRICE DIFFERENT DELAYS.** Copa's δ is the marginal
+price of **standing queue** — the delay a sender's own bytes impose on the
+bottleneck, which is what `U = log(throughput) − δ·log(delay)` is written over.
+`D(δ) = b(δ)·RTprop` is the shed law's **head-of-line blocking** allowance —
+how long a receiver may be left waiting on a hole before the symbol is shed.
+These are different physical quantities on different queues; §16.70's own era
+finding (`q_p50` and delivered ICMP moving in opposite directions) is the same
+distinction measured. **At the assumed σ = 18.1 ms the two prices happened to
+agree numerically, and the agreement was doing all the argumentative work. At
+the measured σ of order 1 ms the standing-queue price and the head-of-line
+allowance are one to two orders of magnitude apart, and the difference can no
+longer hide.** The routes did not become wrong; they became distinguishable in
+principle — which is precisely what makes λ an empirical quantity rather than
+a philosophical one.
+
+#### 16.74.5 The estimator-stability precondition — the model stating what instrument it needs
+
+**This is a REQUIREMENT OF THE MODEL, not a caveat about a run.** Every clock
+in this family has the form `W = mean + k(α)·σ̂`. The dial's authority over the
+clock is the dynamic range of `k` across the α range; the estimator's noise is
+the rep-to-rep dispersion of `σ̂` at fixed conditions. **A clock is only as
+good as the ratio between them**, and that is statable as an inequality before
+any clock is instantiated:
+
+```text
+   ┌────────────────────────────────────────────────────────────────────┐
+   │   k(α_lo) / k(α_hi)   >   R_σ̂                              (E)     │
+   │                                                                    │
+   │   k(α_lo)/k(α_hi) = √( α_hi·(1 − α_lo) / ( α_lo·(1 − α_hi) ) )     │
+   │   R_σ̂ = sup σ̂ / inf σ̂  over reps at one cell, one window, one α    │
+   └────────────────────────────────────────────────────────────────────┘
+```
+
+**Evaluated on the α-sweep's own swept range `[0.002, 0.400]`:**
+
+```text
+   k(0.002) = 22.338 ,  k(0.400) = 1.2247   ⇒   k-ratio = 18.24
+```
+
+**Against the measured `R_σ̂`: realized 1.2×–78.6× across cells (`c1` 16.3,
+`c7` 4.3, `c8` 2.4, `c8L` 78.6, `sc2` 1.2), and 287× rep-to-rep at `c8` at
+converged `n` ≈ 18 000.** The precondition therefore **fails at `c8L` by 4.3×
+and at `c8` by 15.7×**, and holds at the rest only against the weaker
+prereg-vs-realized measure rather than against rep-to-rep dispersion, which is
+the quantity (E) is actually about. **That is the α-sweep's finding elevated
+to a model requirement**: 50 of 50 treatment pairs realized overlapping clocks
+while the realized-`W` medians were monotone in α at four cells of five — the
+law worked and the estimator consumed the contrast.
+
+**AND THE PRECONDITION CANNOT BE MET BY WIDENING THE DIAL.** Inverting (E) for
+the α range that would survive the measured dispersion, holding `α_hi = 0.400`:
+
+```text
+   R_σ̂ = 78.6  ⇒  α_lo  =  1.08 × 10⁻⁴
+   R_σ̂ = 287   ⇒  α_lo  =  8.09 × 10⁻⁶
+```
+
+**§16.69 already refuted that region on its own arithmetic** — a
+distribution-free quantile at `α = 10⁻⁵` needs 316 standard deviations of
+margin and 100 000 samples to estimate. The α range that would beat the
+current estimator is the range the paper has already ruled out. **The
+instrument must move, not the dial.**
+
+**WHAT AN ADMISSIBLE ESTIMATOR MUST SATISFY, BEFORE ANY CLOCK IS BUILT ON IT.**
+Three requirements, in order, and the first is the one the tree has never done:
+
+1. **`R_σ̂` is MEASURED FIRST**, rep-to-rep at fixed conditions, at every cell
+   the clock will run at — not inferred from a median of three reps, which is
+   how a 287× spread survived two sessions unnoticed.
+2. **(E) holds with the α range the contract can actually express**, i.e.
+   `R_σ̂ < 18.24` for the `[0.002, 0.400]` grid, and the acceptance bar is
+   **pre-registered before the estimator is chosen**, not after.
+3. **The estimator is re-measured under the shipped window policy it will run
+   in.** `σ̂`'s dispersion is a property of the estimator *and* its input
+   stream; the plain-window and generation seats already disagree by 4× on
+   `σ(c8)`'s central value, so an estimator qualified at one seat is not
+   qualified at the other.
+
+**This is the named successor from goal #100's closure, stated formula-first
+as the thing the model requires rather than as an item on a list.** Windowed
+quantile dispersion and RACK-style `rttvar` are the obvious candidates; this
+section names neither as preferred, because (E) is a bar and not a design.
+
+#### 16.74.6 What the model predicts, and how a post-estimator sweep falsifies it
+
+Shapes, not fitted numbers, pre-stated so that no reading of a future sweep
+can be chosen after the fact.
+
+**P1 — THE ESTIMATOR GATE IS THE SEPARATOR, AND IT IS TWO-SIDED.** Re-running
+the α-sweep unchanged on an estimator satisfying (E) separates the extreme
+pair (`Q002` vs `Q400`) **at the cells where (E) holds and at no cell where it
+fails**. *Falsified by:* separation appearing at a cell where (E) still fails
+(the model has mis-identified the blocker), **or** non-separation at a cell
+where (E) holds with margin (the contrast is consumed by something the model
+does not contain). Either outcome refutes §16.74.5, and neither is repairable
+by a coefficient.
+
+**P2 — THE σ-ELASTICITY IS BOUNDED BY THE TWO ROUTES, AND IT IS THE ONLY
+THING THAT SEPARATES THEM.** Where a sweep separates, the winning `α*`
+responds to a controlled change in σ with
+
+```text
+   2/3  ≤  d ln α* / d ln σ  ≤  2
+```
+
+— `2/3` where the allowance is slack and route (d) governs, `2` where it binds
+and route (b) does. *Falsified by:* a measured elasticity outside `[2/3, 2]`,
+or one whose sign is unstable across cells. **Both routes are refuted
+together by that**, which is the only form in which this model permits
+"BOTH REFUTED" to be said. A level comparison at one cell separates nothing —
+§16.74.4's crossing is why.
+
+**P3 — THE ρ LEG IS THE DISCRIMINATOR NO EXPERIMENT HAS TOUCHED, AND ROUTE (b)
+PREDICTS A FLAT LINE.** At fixed δ, r and α range, sweeping ρ downward from 1
+**inside the band `[1 − ε̂·(1−P_fec), 1]`** (≈ one per cent wide at c8):
+
+* `owed` falls linearly in `(1 − ρ)` ⇒ `α_d` falls ⇒ **`W*` is monotone
+  non-decreasing as ρ falls** — a contract that owes fewer repairs should be
+  more patient, not less.
+* **Wherever the δ allowance binds, `α*` is FLAT in ρ** — route (b) contains
+  no ρ at all (§16.74.3). A measured ρ-dependence there refutes the `λ → ∞`
+  limit; a measured *independence* refutes the `λ = 0` limit.
+
+*Falsified by:* any non-monotone `W*` in ρ inside the band, or a measured
+zero-crossing of the ρ effect materially away from `ρ_floor = 1 − ε̂·(1−P_fec)`.
+**This prediction does not require σ stability to be readable**, because it
+asks for the presence or absence of a dependence rather than for the position
+of an optimum — which makes it the cheapest live route experiment this model
+produces, and the reason §16.74.2's band width is stated in the paper rather
+than discovered in a run.
+
+#### 16.74.7 Shape check
+
+* **Units.** All three terms dimensionless, in Copa's utility units. `ν`, `α`,
+  `h/T`, `owed`, `p`, `ε̂`, `λ`, `δ` are pure; `k(α)·σ`, `d`, `D(δ)` are
+  seconds and appear only as ratios. `W` is seconds.
+* **Continuity in δ.** `α*` depends on δ through [C]'s linear `δ` and through
+  `D(δ) = min(b(δ)·RTprop, 2·RTprop)` with `b(δ) = 2^(−½·log₁₀(δ/0.5))` —
+  smooth and strictly monotone, the `min` continuous, the `max` in the
+  `λ → ∞` limit continuous. **No threshold on δ selects anything; the three
+  hints are named points at which `b` takes ½, 1, 2 and nothing changes shape.**
+* **Continuity in ρ.** Through `owed` only, linear in `(1 − ρ)` with slope −1,
+  and the `max(0, ·)` kink sits at a derived `ρ_floor`, not at a preset. **At
+  ρ = 1 nothing special happens to the law** — `owed` is simply at its maximum.
+* **Continuity in r.** Through `P_fec(r) = Φ(z_f(r))`, smooth; `r*` reaching
+  the corner at 0 is `max(0, ·)` in §8.4's own law, not a mode.
+* **Monotone in α.** [B] strictly increasing, [C] strictly decreasing
+  (`k′ < 0`), so `L` is unimodal and `α*` unique on `(0, 0.75]`; `[D]` adds a
+  one-sided term that can only raise `α*`. `W(α)` strictly decreasing in α.
+* **Monotone in ν** (decreasing `α*`): a clock that fires more often wastes
+  more wire per unit of detection delay bought, so it should be more patient.
+* **Monotone in σ** (increasing `α*`, elasticity 2/3 or 2 per §16.74.4).
+* **Monotone in δ** (increasing `α*`): a contract that prices latency higher
+  fires sooner. Both legs agree in sign — [C] rises with δ and `D(δ)` shrinks
+  with δ — which is why the composite `max(α_d, α_b)` is monotone in δ and not
+  merely piecewise so.
+* **Monotone in ρ** (increasing `α*`): more reliability owed ⇒ less patience.
+* **Monotone in λ** (non-decreasing `α*`), from `α_d` at 0 to
+  `max(α_d, α_b)` in the limit. Continuous throughout, which is what makes
+  "somewhere between the routes" a statable position rather than a fudge.
+
+#### 16.74.8 What this section does NOT claim
+
+* **NO WINNER between route (b) and route (d).** Both remain live per the
+  ruling. This section states them as two limits of one law and names λ as the
+  unmeasured quantity that separates them; it assigns λ no value, and any
+  reading that infers one from §16.74.4's tables is a misuse of them.
+* **`S1` IS NOT REOPENED, not re-scored, and not declared passed.** No δ is
+  computed from a σ median here and none is offered.
+* **THE SHIPPED CLAMP STAYS, CONVICTED AND UNREPLACED.**
+  `round = (2·srtt).clamp(25, 100) ms` keeps its measured conviction —
+  binding 92.4–99.7 % of the time and exceeding RFC 8985 §6.2's spurious
+  budget at 30 of 30 cell-arms including the control — and **this model does
+  not replace it**, because the clock it specifies is not instantiable until
+  §16.74.5's precondition is met.
+* **NOTHING HERE LICENSES AN ENGINE CHANGE.** No default is flipped, no gate
+  is added, no engine crate is touched. `RWM_QUANTILE_CLOCKS` stays default
+  OFF and stays REFUTED-STANDING. The continuous `b(δ)` of §16.74.1 is a
+  statement of the model, and the engine's three-arm `delta_budget_b` is
+  recorded as an owed divergence with a bound, not as a change to make.
+* **THE MODEL'S OWN KNOWN DIVERGENCE FROM THE WIRE, STATED WITH ITS
+  DIRECTION.** Term [B] prices the wasted repair as `ν·α`, i.e. it treats α as
+  the realized spurious fraction. The α-sweep measured that **commanded
+  `fa_frac` is not monotone in α at any cell and exceeds α by up to 386× at
+  the smallest arms.** [B] is therefore a **LOWER bound** on the true
+  wasted-repair cost; under-pricing waste pushes the optimum toward larger α,
+  so **every `α*` this model reports is an UPPER bound** and every `W*` a
+  lower bound. That is §16.69's category error — the Cantelli bound is taken
+  over the ack-arrival distribution, which is not the quantity the clock fires
+  on — carried into this model as a signed bound rather than a footnote, and
+  it is a second precondition on any future instantiation.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or scores any clause of any pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
