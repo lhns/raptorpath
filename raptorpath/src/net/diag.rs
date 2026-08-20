@@ -621,6 +621,46 @@ pub(crate) fn report(
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "-".to_string());
                     let sig_n = p.rtt_sigma_samples();
+                    // goal #101 item 2 — THE THREE CANDIDATE DISPERSION
+                    // GAUGES, beside the shipped one and READ BY NOTHING.
+                    //
+                    // §16.74.5 made the estimator a REQUIREMENT OF THE MODEL:
+                    // every clock in the family is `W = mean + k(α)·σ̂`, and a
+                    // clock is only as good as the ratio between the dial's
+                    // authority (k-ratio 18.24 over the swept range) and the
+                    // estimator's own dispersion (measured 287× at c8). The
+                    // successor cannot be chosen by argument, so all three
+                    // candidates run SIMULTANEOUSLY, on the same sample stream,
+                    // in the same run, on the same line — a paired comparison
+                    // per path per interval, which is the only layout in which
+                    // "candidate A is steadier than the shipped one" is a
+                    // measurement rather than a comparison across sessions.
+                    //
+                    // They form a DECOMPOSITION over three axes (memory,
+                    // deviation power, reference) — see the block comment above
+                    // `Path::cand_quantile`. The differences BETWEEN them are
+                    // the finding; no one of them alone identifies a cause.
+                    //
+                    // FORMAT — the `sig_us` convention exactly:
+                    // `<µs|->/n<count>`, `-` before the first sample, the count
+                    // describing that value's OWN sample set (window fill for
+                    // the two window-class gauges, difference count for `msd`,
+                    // lifetime EWMA count for `rvar`). No threshold gates any
+                    // of them; the warm-up exclusions are pre-registered as
+                    // PARSER rules in goal-gate "THE SIGMA ESTIMATOR — THE
+                    // ACCEPTANCE BAR" clause C3.
+                    //
+                    // NO CONSUMER, NO GATE, NO DEFAULT. `sig_us` is unchanged
+                    // and still feeds exactly what it fed before.
+                    let cand = |v: Option<u64>| {
+                        v.map(|x| x.to_string()).unwrap_or_else(|| "-".to_string())
+                    };
+                    let rvar_s = cand(p.rtt_mdev_us());
+                    let rvar_n = p.rtt_mdev_samples();
+                    let qsp_s = cand(p.rtt_qspread_us());
+                    let qsp_n = p.rtt_qspread_samples();
+                    let msd_s = cand(p.rtt_msd_us());
+                    let msd_n = p.rtt_msd_samples();
                     // feat/store-borrowing DIAG: this path's loan
                     // gauges — symbols LENT out (charged here,
                     // flying elsewhere) / BORROWED in (flying
@@ -649,8 +689,8 @@ pub(crate) fn report(
                     let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
                     let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }

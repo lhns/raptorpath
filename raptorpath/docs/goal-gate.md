@@ -40247,3 +40247,412 @@ scored and no route was chosen, advanced or refuted — §16.74's routes (b) and
 (d) stand exactly where §16.74.8 left them, `RWM_QUANTILE_CLOCKS` stays default
 OFF and REFUTED-STANDING, and the shipped clamp stays convicted and unreplaced.
 **The only artifact of this pass is this section.**
+---
+
+## THE SIGMA ESTIMATOR — THE ACCEPTANCE BAR (PRE-REGISTRATION) (2026-08-20, `feat/sigma-estimator` from main@`16402ef`) — goal #101 item 2's FIRST HALF. Written and committed BEFORE any candidate estimator exists, in its OWN commit, per paper §16.74.5 requirement 2: *"the acceptance bar is pre-registered before the estimator is chosen, not after."* **No number below is a result. Nothing here flips a default, adds a gate, or edits an engine crate.**
+
+### 1 — WHAT THIS IS, IN ONE SENTENCE
+
+Goal #100 closed **NEEDS-MORE** and named one instrument: `rtt_sigma_us()`'s
+own dispersion exceeds the dynamic range of the `k(α)` it multiplies, so every
+clock of the form `mean + k·σ̂` inherits an estimator's noise instead of a
+dial's authority. **This section states the numbers a successor estimator must
+hit, before any successor is designed, so that the choice cannot be made by
+the data it is scored on.**
+
+### 2 — THE STABILITY CLAUSE `S`, AND A CORRECTION TO (E) AS WRITTEN
+
+**§16.74.5's inequality, restated:**
+
+```text
+   k(α_lo) / k(α_hi)  >  R          (E)
+
+   k(0.002) = 22.3383 ,  k(0.400) = 1.2247   ⇒   k-ratio = 18.239
+```
+
+**(E) NAMES THE WRONG DISPERSION, AND THE α-SWEEP'S OWN RESULT SAYS SO.**
+§16.74.5 defines `R_σ̂ = sup σ̂ / inf σ̂ over reps` — a **between-rep** quantity.
+But the sweep's separation rule was applied to each arm's **median-over-reps
+`[QCLK]` `p05`–`p95` interval**, and its §6 recorded the mechanism in one
+sentence: *"The medians separated and the DISTRIBUTIONS did not, because the
+same σ that pushes the medians apart widens every arm's own `p05`–`p95` by
+more."* The quantity that consumed the contrast was the **within-rep** spread,
+which (E) does not contain. Two arms at `k_a > k_b` fail to overlap iff
+
+```text
+   k_a · σ̂_p05   >   k_b · σ̂_p95        ⇔       k_a / k_b   >   σ̂_p95 / σ̂_p05
+```
+
+— the within-rep quantile spread plays **exactly the role `R` plays in (E),
+against exactly the same k-ratio.** So the scored statistic is neither the
+between-rep range alone nor the within-rep spread alone:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │   R_total  =  σ̂_p95 / σ̂_p05   over the POOLED σ̂ readings of ALL     │
+   │               reps at ONE cell, ONE seat, ONE α                      │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+Pooling first and taking quantiles second contains both axes by construction.
+
+**AND IT IS A QUANTILE SPREAD, NOT `sup/inf`, FOR A STATED REASON.** `sup/inf`
+is a **range statistic and grows without bound with rep count**: Hartley's
+control-chart constant gives `d2(3) = 1.693` against `d2(10) = 3.078`, so the
+same estimator measured at 3 reps and at 10 reps reports `R` differing by
+**1.82×** with nothing about the estimator having changed. A bar written on
+`sup/inf` would tighten every time a battery got longer, and the 287× at `c8`
+is a `sup/inf` over three reps — a number that can only get worse. `p95/p05`
+is rep-count stable and is the same functional the sweep's separation rule
+already uses. **`sup/inf` is still REPORTED, as a disclosure column, and it is
+not the accept/reject statistic.**
+
+### 3 — THE BAR, TWO TIERS, DERIVED FROM THE SWEPT GRID AND NOT PICKED
+
+The α grid is fixed and committed (`Q002 / Q009 / Q050 / Q184 / Q400`). Its ten
+pairwise k-ratios are arithmetic, so what any bar buys is arithmetic too:
+
+| pair | k-ratio | | pair | k-ratio |
+|---|---|---|---|---|
+| Q184/Q400 | 1.719 | | Q050/Q400 | 3.559 |
+| Q050/Q184 | 2.070 | | Q009/Q184 | 4.983 |
+| Q002/Q009 | 2.129 | | Q002/Q050 | 5.125 |
+| Q009/Q050 | 2.407 | | Q009/Q400 | 8.568 |
+| | | | Q002/Q184 | 10.608 |
+| | | | **Q002/Q400** | **18.239** |
+
+| bar on `R_total` | pairs that separate | what it buys |
+|---|---|---|
+| < 18.24 | **0 of 10** | nothing — this is the point where the extreme pair exactly TOUCHES. §16.74.5's inequality is strict, and at equality the two arms share one endpoint. **Not a bar.** |
+| ≤ 10.0 | 2 of 10 | the ceiling the Hartley factor alone permits (18.24 / 1.82). One-witness separation. |
+| **≤ 6.0** | **3 of 10** | **THE ACCEPT BAR.** `P1` becomes decidable with **three independent witnesses per cell** (Q002/Q400, Q002/Q184, Q009/Q400) rather than one, at **3.04× headroom** on the extreme pair. |
+| **≤ 3.5** | **6 of 10** | **THE PREFER BAR.** The three-point sub-grid **{Q002, Q050, Q400} separates completely** (5.125 and 3.559 both clear), which is the coarsest grid on which an **interior** optimum can be LOCATED at all — and locating an interior optimum is what the pre-registration built `Q400` for and what §16.74's cost curve needs. |
+| ≤ 1.72 | 10 of 10 | every adjacent step resolves. Recorded as unreachable, not as a target. |
+
+**THE DECISION RULE, PRE-COMMITTED.**
+
+1. **A candidate is ADMISSIBLE iff `R_total ≤ 6.0` at EVERY cell it is measured
+   at** (§16.74.5 requirement 1: measured first, rep-to-rep, at every cell —
+   not inferred from a median of three reps). One cell over bar is a fail; the
+   worst cell binds. **`R_total` is reported per cell whatever the verdict.**
+2. **If more than one candidate is admissible, the tie is broken by `R_total ≤
+   3.5`** — the interior-optimum tier — and only then by the bias clause `B`.
+3. **The shipped `sig_us` EWMA is measured on the same battery as a control**,
+   under its own bar. It is not exempt from a bar written after its failure.
+
+**THE MARGIN IS 3.04× AND ITS TWO FACTORS ARE NAMED.** `18.239 / 6.0 = 3.04`,
+of which **1.82 is derived** (Hartley `d2(10)/d2(3)`: `R` at battery scale
+against `R` at the three-rep scale everything in this tree has been measured
+at, so a bar must survive the battery getting longer) and the residual **1.67
+is a CHOICE, stated as one** — it is what turns a one-witness separation into a
+three-witness separation at each cell, which is the difference between `P1`
+resting on a single interval comparison and `P1` resting on a consistent
+pattern. **No factor here is fitted to any candidate's measured value, because
+no candidate has been measured.**
+
+### 4 — THE BIAS CLAUSE `B`: AN ESTIMATOR THAT IS STABLE AND WRONG MOVES EVERY α
+
+Stability is scale-free — `R_total` is a ratio, so an estimator reading a
+constant 10× low passes `S` perfectly. That estimator is useless, because σ̂ is
+not a comparator, it is an **input to `α*`**, and §16.74.4 already measured how
+hard it pushes:
+
+```text
+   d ln α_b / d ln σ  =  2          (route b, the λ→∞ limit)
+   d ln α_d / d ln σ  =  2/3        (route d, the λ→0  limit)
+   d ln W   / d ln σ  →  1          (at fixed k, in the k·σ term)
+```
+
+**THE BAND IS DERIVED FROM THE GRID, NOT CHOSEN.** A bias `β_σ = σ̂_cand /
+σ_truth` is tolerable exactly while it cannot displace `α*` by a **full grid
+step**. The grid's smallest adjacent α step is `0.400 / 0.184 = 2.174`:
+
+```text
+   route (b), elasticity 2    :   β_σ  <  2.174^(1/2)  =  1.474
+   route (d), elasticity 2/3  :   β_σ  <  2.174^(3/2)  =  3.205
+```
+
+**§16.74.0 declines to choose between (b) and (d), so the tighter one binds:**
+
+| band | verdict |
+|---|---|
+| `0.68× ≤ β_σ ≤ 1.47×` | **ACCEPT** — no route's `α*` moves a full grid step |
+| `0.50× ≤ β_σ < 0.68×` or `1.47× < β_σ ≤ 2.00×` | **ADMISSIBLE, BIAS CARRIED** — the candidate may proceed, and **every `α*` computed from it carries the stated multiplicative uncertainty on its face**, `β_σ²` on route (b) and `β_σ^{2/3}` on route (d) |
+| outside `[0.50×, 2.00×]` | **REJECT** — at `β_σ = 2` route (b)'s `α*` moves **4×**, nearly two grid steps, and `W` moves 2× directly |
+
+**AGAINST WHAT TRUTH — AND ITS BIAS IS NAMED BEFORE IT IS USED.** The ground
+truth is the **per-leg delivered-latency probe** (`tools/l1/latt_probe.py`,
+"Latency Truth"), scored like-for-like: over the same run window, the probe's
+own sample stream is fed through the **same functional the candidate computes**
+(P90−P50 for the quantile candidate; median successive absolute difference for
+the successive-difference candidate; sample standard deviation for the
+moment-class candidates), and `β_σ` is the ratio of the candidate's reading to
+the probe's.
+
+**It is INDEPENDENT — a different site, a different clock, and no shared code
+with the sender's EWMA — and it is BIASED, in a direction that flatters the
+candidate.** The probe measures the peer path, not the application's ack path:
+it excludes sender scheduling, store residency and the ack-generation path, all
+of which add dispersion. **The probe's dispersion is therefore a LOWER bound on
+the ack-path dispersion, so a `β_σ` scored against it is a lower bound on the
+true bias.** The consequence is pre-committed and it is asymmetric: **clause
+`B` can REJECT a candidate but cannot ACQUIT one.** A candidate inside the band
+is recorded as *"not shown to be biased"*, never as *"unbiased"*. If two
+candidates disagree with each other by more than the band while both sit inside
+it against the probe, that is a **finding about the probe**, reported as one,
+and `B` goes UNRESOLVED at that cell rather than being read as a pass.
+
+### 5 — THE CONVERGENCE CLAUSE `C`: USABLE AFTER HOW MANY SAMPLES
+
+**`C1` — WARM-UP EXCLUSION, DECLARED PER ESTIMATOR CLASS, BEFORE THE RUN.**
+
+| class | `n_warm` | why exactly that |
+|---|---|---|
+| **EWMA** (`sig_us`, RACK `rttvar`) | **16** | the EWMA is seeded at 0 and retains `(1−β)^n` of that seed at β = 1/4: 23.7 % at n = 5, 10.0 % at n = 8, **1.00 % at n = 16**. n = 16 is the first count at which the seed is under 1 % of the reading. |
+| **window** (quantile spread, successive difference) | **`L`** | no seed exists; the window is either full or it is not. A partly-full window reports a quantile of fewer order statistics than it claims. |
+| **direct empirical quantile at α** | `10 / α` | the standard requirement that the target quantile rest on ≥ 10 order statistics in its own tail. |
+
+**`C2` — AND THE ESTIMATOR MUST BE USABLE FOR THE RUN, NOT MERELY AT ITS END.**
+
+```text
+   n_warm   ≤   0.05 × N_cell        (the cell's total RTT-sample count)
+```
+
+The binding cell is `c8`, the cell that failed (E) worst, at `N ≈ 17 660` —
+the **smallest converged sample count in the primitives table**, 5–19× below
+every other cell. So `C2` reads **`n_warm ≤ 883` at `c8`**, and every candidate
+must clear it there rather than at `c1`'s 334 000.
+
+**`C2` REPRODUCES §16.69's REFUTATION AS ARITHMETIC RATHER THAN CITING IT.**
+The direct-empirical-quantile route at the contract's `α = 10⁻⁵` needs
+`n_warm = 10/α = 100 000` samples. That is **5.7× more than `c8` supplies in a
+whole rep**, so the route fails `C2` outright — the same conclusion §16.69
+reached from its own arithmetic, now falling out of a clause written for
+something else. **Over the SWEPT range it does not fail**: at `α = 0.002`,
+`n_warm = 5 000`, which is 28 % of `c8`'s budget and over the `C2` bar of
+883 — so the direct route is **out of scope for this pass** and is recorded as
+such, not silently dropped.
+
+**`C3` — WARM-UP IS A SCORING RULE ON THE PARSER, NEVER A GATE IN THE ENGINE.**
+Every candidate gauge emits from its first sample, renders `-` before it, and
+carries its own sample count beside its value — the shipped `sig_us=<µs|->/n<count>`
+convention exactly. `diag.rs` already states the reason and it is the
+no-mode-switch rule in gauge clothing: *"a field that disappears below a
+threshold cannot be told apart from a path that was never sampled."* **The
+`n_warm` exclusions of `C1` are applied by the battery's parser, are declared
+in this section before the battery exists, and are not thresholds in any code
+path.**
+
+### 6 — WHAT THIS SECTION DOES NOT DO
+
+It **names no candidate and prefers none** — candidates are the next commit,
+and they are scored by these numbers rather than these numbers by them. It
+**takes no route decision**: `S`, `B` and `C` are stated so that (b) and (d)
+both survive them, and clause `B`'s band is deliberately the tighter of the two
+routes' for that reason. It **flips no default**: `RWM_QUANTILE_CLOCKS` stays
+OFF and REFUTED-STANDING, and the shipped clamp stays convicted and unreplaced.
+It **scores nothing** — no candidate has been measured, and the local
+characterization that follows this pass is explicitly not a verdict against
+these numbers, because §16.74.5 requirement 3 binds it: an estimator qualified
+at one seat is not qualified at the other, and loopback is neither seat.
+
+**The battery that scores this bar is a VM pass and is not this pass.**
+
+---
+
+## THE SIGMA ESTIMATOR — THE CANDIDATES, AND THEIR LOCAL CHARACTERIZATION (2026-08-21, `feat/sigma-estimator` from main@`16402ef`) — goal #101 item 2's LOCAL HALF. **No VM run, no engine law, no gate, no default, no consumer.** 6 loopback invocations, one binary, two arms, three reps. **This section SCORES NOTHING against the acceptance bar** — loopback is neither of the two seats §16.74.5 requirement 3 names, and the bar's battery is a VM pass that is not this pass.
+
+### 1 — THE VERDICT FIRST
+
+**THE 287× IS THE ESTIMATOR, NOT THE CELL, AND THE DOMINANT TERM IS THE
+REFERENCE.** The shipped `sig_us` EWMA, measured on **loopback with no netem
+and no shaped cell at all**, pooled over three reps:
+
+```text
+    R_local ( sig_us , loopback , data path )  =  274.9        quiet arm
+                                              =  184.7        loaded arm
+```
+
+against the **287×** the plain-window pass measured at `c8`. **A statistic
+that reproduces its worst shaped-cell dispersion on the quietest link
+available is not reporting the link.** And `R_local = 275` on loopback already
+exceeds the k-ratio 18.24 by 15×, so §16.74.5's precondition (E) fails **on
+loopback**, before any cell is shaped.
+
+**AND THE THREE CANDIDATES SEPARATE THE CAUSE INTO THREE TERMS THAT DO NOT
+OVERLAP.** Each candidate moves exactly one axis, so each ratio is an
+attribution and not a comparison:
+
+| what the step removes | ratio of `R_local` | quiet | loaded |
+|---|---|---|---|
+| **the SQUARE** (deviation enters linearly) | `rvar / sig_us` | **0.65×** | **0.62×** |
+| **the MEMORY** (7 samples → L = 256) | `qsp / rvar` | **0.15×** | **0.31×** |
+| **the REFERENCE** (drop the lagging `srtt`) | `msd / qsp` | **0.12×** | **0.09×** |
+
+**The square is a minor term — it buys ~1.5×.** The memory is a real term and
+buys 3.2–6.8×, **and it is not enough**: `qsp` still lands at 26–36, over the
+k-ratio 18.24 and far over the accept bar. **The reference is the dominant
+term and it buys another 8–11× on its own**, at an identical window and an
+identical rank statistic, which is the only pair in the set that isolates it.
+
+**THE OBVIOUS HYPOTHESIS — LOSS BURSTS — WAS REFUTED BEFORE THE RUN, ON
+COMMITTED LEDGERS.** `sc2` and `c8`'s fast leg carry the **same `p` = 0.0040**
+and their σ spreads differ by **87×** (3.3× against 287×). Loss rate does not
+predict the spread, so no loss-window-excluding estimator was built.
+
+### 2 — THE THREE CANDIDATES, AND WHAT EACH IS FOR
+
+All three are **read-only `[DIAG]` gauges with no consumer**, emitted per path
+per interval beside `sig_us` on the same line, from the same RTT sample stream,
+in the same run. That layout is the design: every comparison below is **paired**,
+never across sessions.
+
+| gauge | formula | provenance | what it is for |
+|---|---|---|---|
+| **`qsp_us`** | `P90(rtt) − P50(rtt)` over `L = 256`, **UNSCALED** | the construction is §16.69's own (`W(α) = F⁻¹_X(1−α)`); the window is a declared resource bound | moves MEMORY and RANK-ROBUSTNESS together |
+| **`rvar_us`** | `rvar ← ¾·rvar + ¼·|rtt − srtt|` | **CITED — RFC 6298 §2 verbatim**, inherited by RFC 8985 §6.2 | **the CONTROL.** The shipped EWMA with the square removed and nothing else changed |
+| **`msd_us`** | `median |rtt_i − rtt_{i−1}|` over the same `L` | **CITED — von Neumann et al. 1941** successive-difference variance; RFC 3550 §A.8 is the same construction | drops the REFERENCE; argued from the measured σ process, §1 |
+
+**`qsp` IS UNSCALED AND THAT IS A DECISION.** The bar's `R_total` and
+§16.74.5's `R_σ̂` are both ratios, so no fixed scaling changes any clause of
+`S`; a Gaussian conversion would import an assumption the data refutes (`c8`
+read σ = 54.836 ms at a cell whose measured `d` is 3.298 ms); and §16.69's
+construction line says the clock **is** a quantile, with Cantelli as the
+moments-only fallback — an estimator reporting quantiles does not need the
+fallback. The Gaussian constants are documented in the code and applied
+nowhere (`P90 − P50 = 1.2816·σ`; `E|dev| = 0.7979·σ`; `median|Δ| = 0.9539·σ`).
+
+**WHY `msd` EXISTS.** `c8`'s 54.836 ms "dispersion" is **1.4× that cell's own
+`RTprop` of 38 ms and 17× its measured `d` of 3.298 ms.** No dispersion of a
+stationary RTT about a tracking mean can be that. `srtt` is an EWMA at β = 1/8
+chasing the same series; across a level shift it lags by ~8 samples and every
+`rtt − srtt` in that window is a step height, not a spread. Successive
+differencing cancels a level shift exactly — **and the tree already had this
+argument**: `CopaState::jitter_est`'s field doc says it in as many words for
+consecutive differences.
+
+### 3 — THE CHARACTERIZATION TABLE — DATA PATH, POOLED OVER 3 REPS
+
+Loopback, `perf --bulk --window-reliable`, 200 MB/rep, `RWM_DIAG=1
+RWM_PLAIN_RS=1`. Warm-up excluded exactly as the bar's clause `C1`
+pre-registered it (EWMA class `n ≥ 16`; window class at a FULL window).
+**`R_local` is the bar's own functional `p95/p05` over pooled readings**; the
+`sup/inf` column is the disclosure the bar requires beside it.
+
+**The data path identifies itself and no judgement call was needed:** the
+sender leg took **167 712 RTT samples per rep** against the receiver leg's
+**1 226** — a **137× separation in sample count**, the same discriminator the
+`c8` σ pass used.
+
+**ARM `quiet`** (79 blocks):
+
+| gauge | `p05` | `p50` | `p95` | **`R_local`** | `sup/inf` | level vs `sig_us` |
+|---|---|---|---|---|---|---|
+| `sig_us` | 30 | **1 203** | 8 246 | **274.9** | 559.6 | 1.00× |
+| `rvar_us` | 27 | 899 | 4 820 | **178.5** | 414.2 | 0.75× |
+| `qsp_us` | 513 | 7 497 | 13 457 | **26.2** | 93.4 | 6.23× |
+| `msd_us` | 8 | **13** | 25 | **3.12** | 4.7 | **0.011×** |
+
+**ARM `loaded`** (92 blocks; a second concurrent transfer on the same host as
+the jitter generator — the only controlled jitter a Windows loopback offers,
+and it is named as such):
+
+| gauge | `p05` | `p50` | `p95` | **`R_local`** | `sup/inf` | level vs `sig_us` |
+|---|---|---|---|---|---|---|
+| `sig_us` | 53 | **1 157** | 9 788 | **184.7** | 505.3 | 1.00× |
+| `rvar_us` | 51 | 1 063 | 5 844 | **114.6** | 791.6 | 0.92× |
+| `qsp_us` | 345 | 5 288 | 12 239 | **35.5** | 71.2 | 4.57× |
+| `msd_us` | 7 | **12** | 22 | **3.14** | 5.9 | **0.010×** |
+
+**THE DIRECTION THE THEORY PREDICTED IS THE DIRECTION MEASURED, AT BOTH ARMS,
+AND THE ORDERING IS UNANIMOUS.** `msd < qsp < rvar < sig_us` in `R_local` at
+both arms and in both statistics. **`msd` is the only candidate that would
+clear the pre-registered accept bar of 6.0** (3.12, 3.14) — **and it also
+clears the prefer bar of 3.5** — while `qsp` fails it by 4.4–5.9× and `rvar`
+by 19–30×. **`msd` is also nearly INVARIANT to the load arm** (3.12 → 3.14,
++0.6 %) where `sig_us` moves by 1.5× and `qsp` by 1.4×.
+
+**NONE OF THAT IS A PASS.** Loopback is not a seat; three reps of one host is
+not a battery; and `R_local` pools intervals of a run rather than reps at fixed
+conditions. **The bar is scored on the VM or it is not scored.**
+
+### 4 — AND THE RESULT THAT CUTS THE OTHER WAY, REPORTED FIRST RATHER THAN LAST
+
+**`msd` READS 90–100× BELOW THE SHIPPED ESTIMATOR, AND STABILITY BOUGHT BY
+MEASURING A SMALLER QUANTITY IS NOT STABILITY.** A gauge that reported a
+constant zero would score `R_local` = 1.00 and be worthless. That is the entire
+reason clause `B` exists, it was pre-registered before these numbers, and **on
+its face `msd` at 0.010× the shipped level sits 50× outside `B`'s REJECT
+bound of `[0.5×, 2.0×]` — if `sig_us` is the truth.** Whether it is, is exactly
+what neither this run nor `sig_us` itself can say.
+
+**AND THIS PASS FOUND THE MECHANISM THAT WOULD MAKE `msd` BIASED, SO IT IS
+NAMED WITH A MEASURED SIGNATURE RATHER THAN LEFT AS A WORRY.** `msd` estimates
+dispersion at a lag of **one inter-sample interval**, so for a temporally
+correlated process its magnitude depends on the SAMPLING RATE, which is not a
+property of the link. The two legs of this run differ in exactly that:
+
+| leg | samples/rep | inter-sample spacing | `msd` / `sig_us` level | `R_local` of `msd` |
+|---|---|---|---|---|
+| **data path** (sender) | 167 712 | **134 µs** | **0.011×** | **3.12** |
+| control leg (receiver) | 1 226 | **18.3 ms** | **0.166×** | **8.64** |
+
+**A 137× change in sampling rate moves `msd`'s level by 15× and its `R_local`
+by 2.8× — and it moves `R_local` the WRONG WAY.** On the sparse leg `msd` is
+the WORST of the four gauges (8.64 against `sig_us`'s 2.69), which is the exact
+reverse of its data-path ordering. **§16.74.5 requirement 3 in one table**: an
+estimator qualified at one seat is not qualified at the other, and here it is
+not even qualified at one sampling rate from another on the same host.
+
+**The loaded arm reproduces both halves** (control leg: `msd` level 0.799×,
+`R_local` 8.83 against `sig_us`'s 2.68).
+
+### 5 — WHAT THE VM BATTERY WILL SCORE, AND WHAT IT CANNOT
+
+**Scored, against the pre-registered bar and nothing else:**
+
+1. **`S` — `R_total ≤ 6.0` at every cell**, per candidate and for `sig_us` as
+   its own control, at both the plain-window and generation seats
+   (requirement 3), rep-to-rep at fixed conditions (requirement 1).
+2. **`B` — `β_σ` against the delivered-latency probe**, like-for-like: the
+   probe's own sample stream through each candidate's own functional. **Clause
+   `B` can REJECT but cannot ACQUIT** — the probe excludes the sender path and
+   its dispersion is a lower bound, so a `β_σ` scored against it is a lower
+   bound on the true bias.
+3. **`C` — `n_warm ≤ 883` at `c8`.** All three candidates clear it locally by
+   ≥ 3.4× (window class `n_warm` = 256; EWMA class 16), and the full window was
+   reached on every leg of every rep here.
+4. **The sampling-rate confound of §4, as a first-class row**: `msd`'s level
+   and `R_total` reported against each cell's measured RTT sample RATE, not
+   only against the cell. **If `msd`'s advantage tracks the sample rate rather
+   than the cell, it is an artefact and this pass said so first.**
+
+**Not scored, and stated so no later reading can claim it:** no ordering here
+is a verdict; no candidate is preferred; loopback establishes nothing about any
+cell; and `R_local` is not `R_total`.
+
+### 6 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** All three candidate gauges exist on the `[DIAG]` surface, are
+fed, reach a full window, and honour the `-`-iff-no-sample convention as a
+biconditional a test asserts (`tests/sigma_candidates_reachability.rs`, which
+fails on the pre-change engine — none of the three tokens occurs anywhere at
+`16402ef`). `sig_us` is unchanged and still present on every block, asserted.
+On loopback and on this host, the ordering `msd < qsp < rvar < sig_us` in
+dispersion is unanimous across two arms and three reps, and the three
+attribution ratios are stable across arms.
+
+**NOT established.** **Nothing about any cell, either seat, or the bar.** One
+host, one link, two arms, three reps, and the link is loopback — the dispersion
+is the Windows scheduler's, not a network's. No candidate has a bias reading at
+all, because the delivered-latency probe is a VM instrument and was not run.
+`msd`'s stability is **unexplained-or-artefactual** until §4's sampling-rate
+confound is scored, and this section prefers no candidate.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or modifies the pre-registration it will be scored against.**
+
+**Artifacts** (local, not committed): 6 sender logs and 6 receiver logs under
+the session scratchpad, `{cli,srv}-{quiet,loaded}-r{1,2,3}.err`; binary
+`target/debug/raptorpath.exe` built from `d0e42a9`; 452 lib tests green,
+`sigma_diag_reachability` green, warning count unchanged at 19.
