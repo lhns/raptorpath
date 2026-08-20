@@ -39724,3 +39724,41 @@ the division that the pooled count is not.**
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or modifies the pre-registration it is scored against.**
+
+---
+
+## GOAL #100 — CLOSED (2026-08-20): NEEDS-MORE, WITH THE INSTRUMENT NAMED
+
+The goal's own order clause governs: *"a failure at any stage closes the goal
+with that verdict rather than proceeding."* Item 2 closed `NO VERDICT —
+UNSEPARATED` (the pre-registered precondition, at 50/50 treatment pairs on
+both seeds); item 3 closed `F4` at all five cells — its own pre-committed
+modal outcome, correct 5/5. Items 4 and 5 therefore DO NOT RUN AS SPECIFIED:
+there is no measured curve to derive from and no winner to battery.
+
+**The verdict: NEEDS-MORE, and the named instrument is the RTT-variance
+estimator.** The route question — Copa-marginal (d) vs budget-derived (b) —
+has NO measurable answer on this stack, not because the clock law fails (the
+realized-W medians were monotone in α at four cells of five) but because
+`rtt_sigma_us()`'s own dispersion (realized 1.2–78.6× its committed inputs;
+287× across reps at c8) exceeds the dynamic range of the multiplier k(α) it
+feeds. Any clock of the form `mean + k·σ` inherits that. The successor is a
+dispersion estimator whose rep-to-rep stability is MEASURED FIRST (windowed
+quantile dispersion and RACK-style rttvar are the obvious candidates; the
+acceptance bar for the estimator itself must be pre-registered before any
+clock is rebuilt on it), after which the sweep re-runs unchanged — the
+harness, witnesses, and admissibility machinery are all in place and validated.
+
+What the goal banked regardless: all five primitives measured on both
+machines (d = 77 ms refuted; h = 14 B exact; σ order 1 ms but unstable; ν
+configuration-split and reproduced within-config to 1.02×); the generation-
+pipeline throughput regime diagnosed from disk; the [RFA] realized-fa
+instrument (commanded fa violates RACK's budget at 30/30 cell-arms including
+the shipped clamp — the clamp's conviction now rests on modern instruments);
+the r-law inequality (§16.73: δ and h cancel; route (b)'s α inadmissible at
+every non-vacuous cell — a standing constraint on ANY future winner); and
+the routes themselves, both intact, per the ruling that neither ships until
+the wire decides.
+
+**Nothing here flips a default. The shipped clamp stays, convicted and
+unreplaced, until the estimator successor exists.**
