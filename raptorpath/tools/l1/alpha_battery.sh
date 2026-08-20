@@ -96,7 +96,14 @@ arm_alpha() { # arm -> α, or "unset" for the control
     Q009) echo 0.009 ;;
     Q050) echo 0.05 ;;
     Q184) echo 0.184 ;;
-    Q400) echo 0.40 ;;
+    # `0.4`, NOT `0.40`. The [GATES] echo prints the RESOLVED f64 through
+    # Rust's own `to_string()`, which renders 0.40 as `0.4` — and the arm
+    # table is matched against that echo LITERALLY, on purpose, so the arm's
+    # env and its liveness assertion cannot drift apart. The smoke caught the
+    # mismatch (`got='RWM_ALPHA_OVERRIDE=0.4' want=0.40`) at 2 of 12
+    # endpoint-checks, which is exactly what a smoke is for: the arm was live
+    # and correct, and the HARNESS would have called it dead at every rep.
+    Q400) echo 0.4 ;;
     CTL)  echo unset ;;
     *)    echo "" ;;
   esac
