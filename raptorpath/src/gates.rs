@@ -757,6 +757,34 @@ pub struct RuntimeGates {
     /// REPRODUCIBLE rather than asserted. OUTRANKS [`Self::rack_clocks`] and
     /// [`Self::derived_sweep`] when set — rival laws for one quantity.
     pub quantile_clocks: bool,
+    /// `RWM_ALPHA_OVERRIDE` (**ABSENT by default**) — the EXPERIMENT knob that
+    /// sets the quantile law's α **directly**, replacing the contract's
+    /// `target_tail_loss × ζ(hint)` at the seat [`crate::net::contract_alpha`]
+    /// occupies. Read ONLY when [`Self::quantile_clocks`] is armed; on the
+    /// default arm it is inert and the engine is byte-identical without it.
+    ///
+    /// **Why it exists, and why it is not a law.** §16.69 refuted the quantile
+    /// clock three ways. Two of the three are consequences of α = 1e-5 alone,
+    /// and the third is a CATEGORY ERROR in *what feeds α* — not in the
+    /// Cantelli construction `W(α) = srtt + √((1−α)/α)·σ`, which was never the
+    /// defective part (`docs/research/cost-ratio-memo.md`, §5 step 3: *"the
+    /// change is what feeds α, not the Cantelli construction"*). The cost-ratio
+    /// memo lays out four candidate mappings and **recommends none**; each
+    /// picks a different α at the same cell. This knob makes α the ONE free
+    /// variable of a sweep so the cost curve can be measured before any mapping
+    /// is written into a law. **It is not a mapping, it is not continuous in
+    /// any dial, and nothing may ship reading it** — a shipped law must derive
+    /// α from the (δ, ρ, r) triangle, which is the decision the sweep informs.
+    ///
+    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
+    /// Unset, empty, unparseable, non-finite, or outside the open-closed range
+    /// `(0, 1]` on which `k(α) = √((1−α)/α)` is finite and non-negative ⇒
+    /// `None` ⇒ the contract's own α, exactly as before. The `[GATES]` echo
+    /// prints the RESOLVED value (`unset` or the number), so "my override did
+    /// not take" is READ off the run's own output rather than inferred — the
+    /// `RWM_ACKDIAG_WINDOW_US` precedent, whose echo is its resolved µs and not
+    /// a flag.
+    pub alpha_override: Option<f64>,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -947,6 +975,12 @@ impl RuntimeGates {
             delta_cap: env_flag("RWM_DELTA_CAP", true),
             rack_clocks: env_flag("RWM_RACK_CLOCKS", false),
             quantile_clocks: env_flag("RWM_QUANTILE_CLOCKS", false),
+            // ABSENT by default; garbage resolves back to ABSENT and the echo
+            // prints `unset`, so a mistyped arm is READ rather than inferred.
+            // The range is the law's own domain, not a taste: `k(α)` is
+            // undefined at α ≤ 0 and negative-radicand above 1.
+            alpha_override: env_parse::<f64>("RWM_ALPHA_OVERRIDE")
+                .filter(|a| a.is_finite() && *a > 0.0 && *a <= 1.0),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
             rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
                 .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
@@ -1013,6 +1047,7 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
+             RWM_ALPHA_OVERRIDE={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
@@ -1042,6 +1077,17 @@ impl RuntimeGates {
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
             b(self.derived_sweep), b(self.rack_clocks), self.rack_reo_mult, b(self.quantile_clocks),
+            // THE EXPERIMENT α, echoed as its RESOLVED value and never as a
+            // flag — the `RWM_ACKDIAG_WINDOW_US` precedent one line below,
+            // and for the same reason. α is the ONE variable of the sweep
+            // this knob exists for, so a row whose α is not readable off its
+            // own run is not a row. `unset` means the contract's own
+            // `target_tail_loss × ζ(hint)` is in force; a number means it is
+            // not. A mistyped or out-of-domain override resolves back to
+            // `unset` and prints as `unset`, so "my arm did not take" is READ
+            // rather than inferred — the failure mode that produced the
+            // 31 Mbit/s anomaly, where a configuration axis had no echo at all.
+            o(&self.alpha_override),
             // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
             // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
             // measured in, so a ledger whose windows are 250 ms and one whose
@@ -1297,9 +1343,30 @@ mod tests {
             "RWM_RACK_CLOCKS=0",
             "RWM_QUANTILE_CLOCKS=0",
             "RWM_RACK_REO_MULT=1",
+            // The EXPERIMENT α knob is ABSENT on every shipped arm, and its
+            // echo says so in the same line every battery already scrapes.
+            "RWM_ALPHA_OVERRIDE=unset",
         ] {
             assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
         }
+        assert!(
+            g.alpha_override.is_none(),
+            "RWM_ALPHA_OVERRIDE is an EXPERIMENT knob and is ABSENT by default \
+             - it is not a mapping, it is not continuous in any dial, and \
+             nothing shipped may read it (paper 16.69; \
+             docs/research/cost-ratio-memo.md)"
+        );
+        // THE ARMED ARM'S ECHO, two-sided: a swept row must be able to state
+        // its own alpha off its own log. Set by FIELD rather than through the
+        // environment - env mutation is process-global in a parallel runner.
+        let mut swept = g.clone();
+        swept.alpha_override = Some(0.184);
+        assert!(
+            swept.echo_line().contains("RWM_ALPHA_OVERRIDE=0.184"),
+            "the armed arm's echo must NAME the RESOLVED alpha, not a flag - \
+             the RWM_ACKDIAG_WINDOW_US precedent: {}",
+            swept.echo_line()
+        );
         // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
         // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
         // re-running the displaced `gain = 2.0` fossil must be able to assert
