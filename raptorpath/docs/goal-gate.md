@@ -37307,3 +37307,179 @@ The user's ruling of 2026-08-20 said a value must be **derived from what it actu
 It does not compare arms, does not score the shipped clamp, does not touch `RWM_QUANTILE_CLOCKS`, does not evaluate `α`, does not evaluate either route (b) or route (d), and **does not choose between them**. It measures four inputs. **The α-sweep isolation experiment — goal #100's item 2, with FLAT-CURVE a pre-registered legal outcome — is a separate pass with its own pre-registration, and nothing in this one may be read as evidence for or against either route.**
 
 **Nothing in this section flips a default, adds a gate, or edits an engine crate.**
+
+---
+
+## THE PASSIVE PRIMITIVES — THE SCORED RESULT (2026-08-20, `feat/primitives` from main@`ca058db`) — **`d` IS MEASURED FOR THE FIRST TIME AND IT IS 26× SMALLER THAN THE COMMITTED VALUE. `P1` FAILS, `P2` PASSES AT ALL FOUR CELLS, `P3`'s INSTRUMENT IS DEAD, `P4` PASSES.** 15 invocations, one binary, five cells, one seed, **0 aborts**, scored against the PRE-REGISTRATION above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+### 1 — THE VERDICT FIRST
+
+**`d` HAS NEVER BEEN A DELIVERY STALL AND IT IS NOT 77 ms. IT IS 2.9 ms.**
+
+```text
+    d(c8, FEC-resolved, warm-up excluded)  =  2.912 ms      vs  the committed  d = srtt = 77 ms
+```
+
+`P1`'s band was `[38, 154] ms` — a factor of two either side of the committed value, chosen loose. The field reads **2.912 ms**, **13× below the band's floor** and **26× below the value every document in this tree has used. `P1` FAILS.**
+
+**AND THAT FAILURE PARTLY UNDOES THE ONE ABOVE IT.** "THE MEASURED σ AT c8 — THE SCORED RESULT" published `δ = 45.0` and the headline *"gone by a factor of ninety"*. That arithmetic is `δ = 2·ν·d·α_b^{3/2}(1−α_b)^{1/2}/(p·σ)`, which is **linear in `d`** — and it was evaluated at `σ` measured and **`d` still at the unmeasured 77 ms**. Its own §5 named `d = 77 ms` as one of *"the next inputs owed the same treatment"*. It is now owed and paid:
+
+| inputs | `δ` | vs `δ_auto = 0.5` |
+|---|---|---|
+| memo, nothing measured (`σ` 18.1 ms, `ν` 0.01, `d` 77 ms) | 0.484 | 0.97× — the published "3 % agreement" |
+| `ν` measured only | 2.12 | 4.2× |
+| `ν` + `σ` measured, `d` still 77 ms — **the committed headline** | **45.0** | **90×** |
+| `ν` + `σ` + **`d`** measured (`ν` 0.0438, `σ` 0.853 ms, `d` 2.912 ms, `p` 0.0126) | **1.696** | **3.4×** |
+| **every input measured on the shipped machine this session** (`ν` 0.0388, `σ` 0.803 ms, `d` 2.912 ms, `p` 0.00941) | **2.137** | **4.3×** |
+
+**`S1` STILL FAILS** — its band was `[0.4, 0.6]` and 2.1 is 3.6× above the ceiling — **but "off by ninety" is retired and replaced by "off by four".** The factor of 26 was `d`, not the construction. **This is a POINTER EDIT to a committed result, of exactly the kind that section anticipated, and it is not a route verdict:** nothing here says route (d) is right, only that the number it was convicted on was computed at an input nobody had measured.
+
+**`σ` HOLDS AT ORDER 1 ms EVERYWHERE.** `P2` passes at all four previously-unmeasured cells, and `c8` reproduces the committed 0.853 ms at **0.803 ms** on a different session — a 6 % reproduction. **Three cells and two sessions now agree that `σ` is order 1 ms**, against §16.69's 10 ms and the memo's 18.1 ms.
+
+**`ν`'s INSTRUMENT IS DEAD ON THE SHIPPED BINARY, AND ITS SUCCESSOR IS ALREADY IN THE LOG.** The `[RACK]` gauge's `fired` counter — the memo's named source for `ν` — reads **exactly zero at all 15 invocations**, corroborated three ways. The equivalent work now flows through `[PFRAC] recovery_coded`, and that ratio reads **0.0388 at `c8` against the ledger's 0.0438 — 0.89×.** `P3` is **UNSCOREABLE on its own instrument**; the successor's number is reported beside it and **not** substituted for a PASS.
+
+**AND A VALIDITY CONDITION THAT IS BIGGER THAN ANYTHING THIS PASS WAS LOOKING FOR, REPORTED BECAUSE IT WAS MEASURED:** every one of the five cells ran at **27–34 Mbit/s**, at every rep, regardless of whether its link is shaped at 1 Gbit or 20 Mbit. The committed ledger reads **78–222 Mbit/s at the same five cells with the same generation gates**. See §6. **It is not diagnosed here and it is not explained away.**
+
+### 2 — THE ABORT-CAUSE TABLE, READ BEFORE ANY PRIMITIVE (`P4` / G-ABORT)
+
+**0 aborts in 15 invocations. `P4` PASSES.** `rc = 0`, `[GATES]` present on **both** endpoints, `[FDIAG]` lines **> 0** on every receiver, `sig_us=` lines **> 0** on every sender — the two-sided instrument gate of §4 of the pre-registration, satisfied at every rep.
+
+| cell | reps | `rc≠0` | `[GATES]` cli/srv | `[FDIAG]` lines | `sig_us=` lines |
+|---|---|---|---|---|---|
+| `c1` | 3 | 0 | 1/1 each | 201 / 197 / 193 | 362 / 372 / 332 |
+| `c7` | 3 | 0 | 1/1 each | 98 / 101 / 98 | 194 / 201 / 195 |
+| `c8` | 3 | 0 | 1/1 each | 12 / 15 / 13 | 25 / 29 / 25 |
+| `c8L` | 3 | 0 | 1/1 each | 98 / 96 / 93 | 195 / 190 / 186 |
+| `sc2` | 3 | 0 | 1/1 each | 50 / 49 / 48 | 99 / 96 / 93 |
+
+`dnf = 0` at every rep. The repaired `aw_ping` retry now has **four consecutive zero-abort batteries** behind it.
+
+### 3 — `d`, THE FIRST FIELD MEASUREMENT (`P1`)
+
+Per the attribution rule fixed before the run: one observation is one **resolved frontier-blocking episode**, warm-up excluded by dropping the first 20 % of `[FDIAG]` emissions and differencing the cumulative counters across the rest.
+
+| cell | `d_decode` per rep (µs) | **median** | n episodes | `d_source` | `gap_max` | `holes_max` |
+|---|---|---|---|---|---|---|
+| `c1` | 5375 / 1990 / 3756 | **3.756 ms** | 534 / 545 / 527 | **absent** | 2688 | 384 |
+| `c7` | 5702 / 22229 / 3467 | **5.702 ms** | 259 / 246 / 258 | **absent** | 3072 | 768 |
+| `c8` | 2505 / 3051 / 2912 | **2.912 ms** | 29 / 32 / 34 | **absent** | 768 | 384 |
+| `c8L` | 5113 / 13837 / 4562 | **5.113 ms** | 265 / 255 / 267 | **absent** | 4224 | 768 |
+| `sc2` | 2587 / 4823 / 2615 | **2.615 ms** | 128 / 133 / 151 | **absent** | 0 | 0 |
+
+**`d_source` IS ABSENT AT ALL 15 REPS — `n_src = 0` EVERYWHERE — AND THAT IS A RESULT, NOT A GAP.** Not one frontier hole, at any cell, was ever filled by a source symbol arriving. **Every stall this machine suffers is ended by FEC decode.** Two consequences, both of them good for this measurement:
+
+* **The reorder contamination the attribution rule warned about NEVER FIRES.** Caveat 2 of §2 was that the `SOURCE` class conflates an ARQ retransmit with a merely-late original. There is no `SOURCE` class. **The clean class is the only class,** and `d` is unambiguously the stall of symbols that never arrived.
+* **It is a fourth independent witness for `ν = 0` on the `[RACK]` instrument** (§5), taken at the *receiver*, on a different host, by a different gauge.
+
+**THE UPPER-BOUND CAVEAT IS LIVE AND ITS SIZE IS VISIBLE.** `gap_max` reaches 2688–4224 and `holes_max` reaches 384–768 at `c1`, `c7` and `c8L` — the frontier is genuinely many holes behind at times, and one episode covers all of them. **`d` therefore bounds per-symbol stall from ABOVE at those three cells**, and no division by an unmeasured burst width is performed, exactly as pre-committed. At **`sc2`** the probe read `gap = 0` and `holes = 0` at **every** emission and at `c8` at two reps of three — those are the cells where the episode is closest to a single hole, and `sc2`'s **2.615 ms** is therefore the tightest `d` in the table. **`c8`'s 2.912 ms — the one `P1` scores — sits within 12 % of it.**
+
+**`c1` HAS A `d` AND THE PRE-REGISTRATION EXPECTED IT NOT TO.** §5 of the pre-registration predicted `c1`'s `d` column would be empty because its realised loss is 0.013 %. It is not empty: **527–545 episodes per rep.** With 419 000 symbols handed and 55 packets dropped, 534 stall episodes cannot all be loss. **The candidate, named and not measured: at `c1` the frontier blocks on symbols that are late rather than lost** — the shaped path's own serialisation and the generation pipeline's emission order — and the episodes resolve by decode because the decoder has enough repair to close the window without waiting. **`c1`'s `d` is therefore reported and NOT used**: it measures a different phenomenon from the lossy cells' `d`, and the fact that it lands in the same 2–6 ms range as theirs is either reassuring or a warning, and this pass cannot say which.
+
+**No rep is WEDGED.** The pre-committed bar was `d < 0.5 ×` transfer seconds; the largest `d` is 22.2 ms against a 50.8 s transfer, a factor of 2 300 inside it. One `[WEDGE]` line appears, at `c7` r2 — the same rep carrying the largest `d` — and is reported without being used.
+
+### 4 — `σ`, THE FULL-CELL PASS (`P2`)
+
+Reading rule transcribed verbatim from the `c8` σ pass: **LAST `[DIAG]` per path**, data path identified by sample count, `n` printed beside every σ, median across reps.
+
+| cell | data-path σ per rep (µs) / n | **median σ** | in `[0.2, 4.0] ms`? | slow-leg σ (n) |
+|---|---|---|---|---|
+| `c1` | 1452 / n417657 · **521986** / n422271 · 943 / n423188 | **1.452 ms** | **YES** | single path |
+| `c7` | 1437 / n200968 · **21122** / n169276 · 2030 / n200196 | **2.030 ms** | **YES** | 1813 (n40584) / 182460 (n2470) / 40624 (n1581) |
+| `c8L` | 761 / n199820 · 1560 / n199572 · 3143 / n200036 | **1.560 ms** | **YES** | 146355 (n1647) / 126489 (**n33**) / 39665 (n793) |
+| `sc2` | 2463 / n101573 · 544 / n101695 · 1229 / n102282 | **1.229 ms** | **YES** | single path |
+| `c8` *(not scored — the already-measured cell)* | 803 / n24778 · 592 / n24699 · 1402 / n23743 | **0.803 ms** | (reproduces 0.853) | 62541 (n595) / 15932 (n475) / 161760 (n1038) |
+
+**`P2` PASSES AT ALL FOUR PREVIOUSLY-UNMEASURED CELLS**, on the median, at converged sample counts (`n` = 100 000–423 000 on every scored reading). **§16.69's working `σ = 10 ms` and the memo's Cantelli-inverted `18.1 ms` are 5–22× and 9–40× high at every cell in this tree.**
+
+**THE EXCURSIONS ARE DISCLOSED AND THEY DO NOT MOVE `P2`.** `c1` r2 reads **521 986 µs — 522 ms — at n = 422 271**, i.e. at full convergence, 360× its own cell's median; `c7` r2 reads 21.1 ms at n = 169 276. **These are not warm-up artefacts and the EWMA cannot explain them.** They reproduce the structure the `c8` σ pass saw at its r3 (8.55 ms, 10× the median at identical n) and named as *"structure this battery cannot resolve"*. **It is now seen at three cells and two sessions, so it is a property of the estimator or of the machine and not of one run** — and it is the single most concrete open item this pass hands to the next one. `P2` is scored on medians, as pre-committed, and a median of three with one 360× excursion is stated as exactly that.
+
+**THE SLOW LEGS ARE NOT READINGS.** Every slow-leg σ is 16–182 ms at `n` = 33–2470, on legs the scheduler gave under 4 % of the bytes and whose own `pl=` reads 0.59–0.77. **`n = 33` is not a dispersion estimate.** They are printed so the data-path selection is auditable and for no other purpose.
+
+### 5 — `ν`: THE INSTRUMENT THE MEMO NAMED READS ZERO (`P3`)
+
+**`fired = 0` at all 15 invocations, so `ν = 0` on the pre-registered instrument.** The `[RACK]` line is **absent** from every sender log, and its `Drop` emits whenever `self.on || self.fired > 0` (`net/mod.rs:4380-4390`), so absence with the gate off means `fired == 0` **exactly**. Corroborated **three further ways, two of them on the other host**:
+
+| witness | site | reading |
+|---|---|---|
+| `[RACK]` line absent | sender | `fired == 0` |
+| `[DIAG] retx=0` | sender | 0 at every last-line, every rep |
+| `[DIAG] mpr[… fired=0 …]` | sender | 0 at every last-line, every rep |
+| `[FDIAG] SOURCE n=0` | **receiver** | no hole, at any cell, ever filled by an arriving source symbol |
+
+**`P3` IS UNSCOREABLE ON ITS OWN TERMS** — a band cannot be applied to an instrument that does not fire — **and the pre-registration's rationale for `P3` was itself wrong and is corrected here.** It said the ledger's `ν = 0.0438` came off `RWM_GEN=0` rows and this pass would differ by running the shipped pipeline. **It does not: the committed `ccand` rows echo `RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1`, byte-identical to this pass.** Nor is it the δ-cap or the RACK gate — pooling all 477 ledger records by `(delta_cap, rack_clocks)` gives `ν` = 0.0290 / 0.0300 / 0.0261 / 0.0253 across the four combinations, i.e. **no dependence on either.** The difference is the **binary era**, and this pass does not identify what in it.
+
+**THE SUCCESSOR IS ALREADY IN THE LOG, DEFAULT-ON, AND IT AGREES WITH THE LEDGER AT THREE CELLS OF FIVE.** `[PFRAC]` counts `recovery_coded` — symbols emitted in response to a detected loss, the same population `fired` was meant to count — and `RWM_PFRAC` is a shipped default:
+
+| cell | `recovery_coded` / `dgq_hand` per rep | **ν median (PFRAC)** | ledger `ν` (`fired`) | ratio |
+|---|---|---|---|---|
+| `c1` | 0.0313 / 0.0406 / 0.0442 | **0.0406** | 0.00324 | 12.5× |
+| `c7` | 0.0317 / 0.0634 / 0.0194 | **0.0317** | 0.02910 | **1.09×** |
+| `c8` | 0.0388 / 0.0434 / 0.0359 | **0.0388** | 0.04376 | **0.89×** |
+| `c8L` | 0.0208 / 0.0124 / 0.0153 | **0.0153** | 0.04858 | 0.32× |
+| `sc2` | 0.0316 / 0.0327 / 0.0414 | **0.0327** | 0.03701 | **0.88×** |
+
+**At `c8` — the only cell `P3` scored — the successor reads 0.0388 against 0.0438, inside `P3`'s band at 0.89×.** That number is reported and **is not used to convert `P3` into a PASS**: swapping an instrument after a run is exactly what pre-registration exists to prevent. **What it is used for is §1's `δ`**, where it is labelled as PFRAC-sourced in the one row that uses it, beside a row that uses the ledger's `fired`-sourced 0.0438 so the reader can see the whole sensitivity.
+
+### 6 — THE VALIDITY CONDITION THIS PASS FOUND AND DID NOT GO LOOKING FOR
+
+**Every cell ran at 27–34 Mbit/s. All five. Every rep.**
+
+| cell | shaped capacity | **this pass, mean_mbps (3 reps)** | committed ledger, median | gap |
+|---|---|---|---|---|
+| `c1` | 1 Gbit, single | 31.8 / 32.4 / 33.1 | **222.3** | **6.9×** |
+| `c7` | 2 × 100 Mbit | 32.5 / 31.5 / 32.5 | **171.2** | 5.3× |
+| `c8` | 100 + 20 Mbit | 31.5 / 26.8 / 29.8 | **82.8** | 2.8× |
+| `c8L` | 100 + 20 Mbit | 32.5 / 33.2 / 34.1 | **77.9** | 2.4× |
+| `sc2` | 100 Mbit, single | 31.6 / 32.2 / 33.2 | **87.3** | 2.7× |
+
+**A cell whose throughput does not depend on its link is not being limited by its link.** The sender's own gauges say where it is instead: `wait[gen=98%]` at `c7`, `wait[gen=99%]` at `sc2`, `stall[budget=100%]` at `sc2`, `src=0sym/s cod=3858sym/s` at `c1` — **the generation pipeline is the binding constraint at every cell, and `RWM_GEN_RATE=9000` is echoed identically in this pass and in the committed ledger.**
+
+**THIS IS NOT AN ARTEFACT OF THIS PASS AND IT IS NOT NEW.** The committed "THE MEASURED σ AT c8 — THE SCORED RESULT" ran the **same binary** `330ebfcc…` and printed `mean_mbps` **31.16 / 29.10 / 31.01** in its own §2 table, beside a ledger value of 82.8, **without comment**. Two independent sessions on this binary agree; 3 146 committed records on the older binary disagree with both.
+
+**WHAT IT DOES AND DOES NOT COMPROMISE, STATED RATHER THAN LEFT TO THE READER.**
+
+* **It does NOT invalidate `σ`, `d` or `ν` as measurements of THIS machine.** They are what the shipped binary does at these cells, which is what the ruling asked for.
+* **It DOES mean these are not the ledger's operating points.** Queue occupancy, and therefore `p`, is systematically lower — this session's `c8` reads `p = 0.0033 / 0.0155` against the committed captures' `0.0044 / 0.0196`, **0.75× and 0.79×**, which passes the pre-registered 2× same-session guard but is a consistent one-way deficit at every cell, and the reduced load is its obvious cause.
+* **It means no cross-era number in §1's `δ` table should be read as a like-for-like comparison**, and the table labels each row's provenance for that reason.
+* **It is a THROUGHPUT finding in a PRIMITIVES pass, so it is recorded and not diagnosed.** It needs its own bisection between `330ebfcc…` and the `ccand` binary, with its own pre-registration. **It is named here as the highest-priority open item this pass produced**, ahead of everything in goal #100's own list.
+
+### 7 — `p`, THE SAME-SESSION GUARD
+
+| cell | leg | this pass (3 reps) | committed captures | ratio | within 2×? |
+|---|---|---|---|---|---|
+| `c1` | CLI0 | 0.00013 ×3 | 0.00015 (pooled, n=624) | 0.87× | **yes** |
+| `c8` | CLI0 (`c2`) | 0.00335 / 0.00333 / 0.00326 | 0.00456 / 0.00430 / 0.00436 | 0.75× | **yes** |
+| `c8` | CLI1 (`c3`) | 0.01958 / 0.01468 / 0.01548 | 0.01995 / 0.01991 / 0.01921 | 0.79× | **yes** |
+| `c8L` | CLI0 (`c2`) | 0.00308 / 0.00295 / 0.00310 | — (not separately captured) | — | — |
+| `c8L` | CLI1 (`c3`) | 0.02182 / 0.04587 / 0.02241 | — | — | — |
+| `sc2` | CLI0 | 0.00315 / 0.00324 / 0.00322 | 0.00547 (pooled, n=580) | 0.59× | **yes** |
+| `c7` | CLI0/CLI1 | 0.0031–0.0141 | 0.0054–0.0061 | — | see below |
+
+**THE GUARD PASSES: every comparable leg is within 2×.** Two disclosures beside it. **First**, the deficit is one-way at every single leg (0.59–0.87×), which §6 explains. **Second, `c7`'s per-leg `p` is not readable this session** because the scheduler collapsed onto one leg — r1 gave CLI0 **3 272** packets against CLI1's 203 626, r3 gave CLI0 **2 231** against 202 240 — and a loss rate over 2–3 k packets on a leg carrying 1.5 % of the transfer is noise. `c7`'s per-leg `p` stands at the committed captures' 0.0054 / 0.0056 and this session does not revise it. The same collapse is visible at `c8L` (CLI1 down to **624** packets in r2, where its `p` reads 0.0459) and its slow-leg `p` is reported with that stated.
+
+### 8 — THE PRIMITIVES TABLE (goal #100 item 1's deliverable)
+
+| primitive | `c1` | `c7` | `c8` | `c8L` | `sc2` | provenance |
+|---|---|---|---|---|---|---|
+| **`h_marginal`** (B/repair symbol beyond source) | 14 | 14 | 14 | 14 | 14 | **CODE, exact** — `REPAIR_HEADER_SIZE`, `fec/generation.rs:44`; pinned by `mtu_blackhole_wedge.rs:232` |
+| **`h_absolute`** (B/symbol beyond `T`=1200) | 97–101 | 69–72 | 71–75 | *(bracket inverted)* | 72–82 | **WIRE**, 3 146 committed records, ACK- and gap-corrected; **NOT cell-invariant** |
+| **`p`** per leg | 0.00013 | 0.0054 / 0.0056 † | **0.0033 / 0.0155** | 0.0031 / 0.022–0.046 ‡ | 0.0032 | **WIRE**, netem drop counters, this session; † from committed captures (this session's `c7` legs collapsed); ‡ slow leg noisy |
+| **`σ`** data path, median of 3 | **1.452 ms** | **2.030 ms** | **0.803 ms** | **1.560 ms** | **1.229 ms** | **`[DIAG] sig_us`**, this session, `n` = 100 k–423 k |
+| **`d`** FEC-resolved stall, median of 3 | 3.756 ms § | 5.702 ms | **2.912 ms** | 5.113 ms | 2.615 ms | **`[FDIAG]`**, this session, warm-up excluded; **UPPER BOUND** where `holes_max > 0`; § `c1`'s is not a loss stall (§3) |
+| **`ν`** fires/symbol, `[RACK]` | **0** | **0** | **0** | **0** | **0** | **the memo's instrument, DEAD on this binary** |
+| **`ν`** recovery-coded/symbol, `[PFRAC]` | 0.0406 | 0.0317 | **0.0388** | 0.0153 | 0.0327 | **successor instrument**, this session; ledger `fired` gave 0.0032 / 0.0291 / 0.0438 / 0.0486 / 0.0370 |
+| **`δ`** contract | — | — | — | — | — | **CONTRACT-DECLARED**, `COPA_DELTA/ζ(hint)`, not measured and not measurable |
+
+**ALL FIVE PRIMITIVES ARE NOW MEASURED AT ALL FIVE CELLS.** `h` and `p` locally with no VM; `σ`, `d` and `ν` in one 15-invocation session with zero aborts. **The one that was missing entirely — `d` — is the one that moved the published answer, by 26×.**
+
+### 9 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** `d` is measurable passively off the shipped `[FDIAG]` gauge with no engine change, and reads 2.6–5.7 ms across five cells against a committed 77 ms. Every stall this machine suffers is FEC-resolved; the ARQ class is empty. `σ` is order 1 ms at five cells and two sessions. The `[RACK]` `fired` gauge reads zero on the current binary and `[PFRAC] recovery_coded` reproduces the ledger's `ν` at three cells of five. `p` reproduces the committed captures within 2× at every comparable leg. `S1`'s "off by ninety" was 26× `d` and is now "off by four".
+
+**NOT established.** Why the `[RACK]` gauge stopped firing between the `ccand` binary and `330ebfcc…`. Why every cell runs at 31 Mbit/s on this binary (§6) — **the highest-priority open item this pass produced.** Why `σ` shows 10–360× single-rep excursions at converged `n`, now seen at three cells. What `c1`'s 534 non-loss stall episodes per rep actually are. The mean burst width that would convert `d_episode` into `d_symbol`. **One seed, three reps: no dispersion claim is made about any primitive and none is offered.**
+
+**NOT DONE AND NOT ATTEMPTED.** The α-sweep isolation experiment (goal #100 item 2), the r-law consistency check (item 3), the derivation from the measured curve (item 4), and the verdict battery (item 5). **Neither route (b) nor route (d) is chosen, advanced or refuted here.** §1's `δ` table revises a committed *arithmetic* with a newly measured input; it does not evaluate a route, and `S1` still fails.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
+
+**Artifacts** (VM 10.1.5.16): per-rep driver logs `/home/vibe/prim/out/<cell>-s42-r<n>-run.log`; sender logs (`σ`, `ν`) `…-c.log`; receiver logs (`d`) `…-s.log`; sectioned qdisc captures (`p`) `…-q.txt`; witness ledger `/home/vibe/prim/out/prim-witness-s42.jsonl`; tarball **`/home/vibe/prim-artifacts.tar.gz`**. Binary sha256 **`330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984`** — **NOT REBUILT**, the same binary as the `c8` σ pass, verified before the run. Harness shipped fresh from `feat/primitives`'s `tools/l1` to `/home/vibe/prim/l1` (the VM's `/home/vibe/l1` copy is stale and was not used). VM left at 0 `raptorpath` processes, 0 `rp-*` namespaces, lock released.

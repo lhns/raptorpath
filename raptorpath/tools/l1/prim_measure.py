@@ -208,6 +208,27 @@ def scan_rack(path):
     return best
 
 
+RETX = re.compile(r"retx=(\d+)")
+
+
+def scan_retx(path):
+    last = None
+    with open(path, "r", errors="replace") as fh:
+        for line in fh:
+            for m in RETX.finditer(line):
+                last = int(m.group(1))
+    return last
+
+
+def count_tag(path, tag):
+    n = 0
+    with open(path, "r", errors="replace") as fh:
+        for line in fh:
+            if tag in line:
+                n += 1
+    return n
+
+
 def scan_fdiag(path):
     """Every [FDIAG] line, in order. The counters are CUMULATIVE, so the
     windowed mean between two lines is (us_b - us_a)/(n_b - n_a) with
@@ -255,35 +276,50 @@ def report_pass(logdir):
 
     print()
     print("nu — fires per symbol handed, sender log")
-    print("%-30s %10s %10s %10s %12s" % ("rep", "fired", "spurious", "dgq_hand", "nu"))
+    print("   ABSENCE OF [RACK] IS A DATUM, NOT A MISSING FILE. The gauge's")
+    print("   Drop emits on `self.on || self.fired > 0` (net/mod.rs:4380-4390),")
+    print("   so with RWM_RACK_CLOCKS off — the shipped default — no line at")
+    print("   all means fired == 0 exactly. `retx=` is the corroborating")
+    print("   counter and is printed beside it.")
+    print("%-30s %10s %10s %10s %8s %12s" % (
+        "rep", "fired", "spurious", "dgq_hand", "retx", "nu"))
     for path in cli:
         rk = scan_rack(path)
         dg = scan_dgq(path)
         hand = sum(v[0] for v in dg.values()) or 0
-        if rk and hand:
-            print("%-30s %10d %10d %10d %12.5f" % (
-                os.path.basename(path), rk[1], rk[0], hand, rk[1] / hand))
-        else:
-            print("%-30s %10s %10s %10d %12s" % (
-                os.path.basename(path), rk[1] if rk else "-",
-                rk[0] if rk else "-", hand, "-"))
+        rtx = scan_retx(path)
+        fired = rk[1] if rk else 0
+        spur = rk[0] if rk else 0
+        nu = ("%.5f" % (fired / hand)) if hand else "-"
+        print("%-30s %10d %10d %10d %8s %12s" % (
+            os.path.basename(path), fired, spur, hand,
+            rtx if rtx is not None else "-", nu))
 
     print()
     print("d — per-hole delivery stall, receiver log, WARM-UP EXCLUDED")
-    print("%-30s %8s %12s %8s %12s %8s" % (
-        "rep", "lines", "d_decode_us", "n_dec", "d_source_us", "n_src"))
+    print("   `gap`/`holes` are the BURST-WIDTH evidence the attribution rule")
+    print("   requires beside every d: an episode covers every hole open at")
+    print("   the time, so d bounds per-symbol stall from ABOVE.")
+    print("%-30s %6s %12s %7s %12s %7s %8s %7s %6s" % (
+        "rep", "lines", "d_decode_us", "n_dec", "d_source_us", "n_src",
+        "gap_max", "hol_max", "wedge"))
     for path in srv:
         lines = scan_fdiag(path)
+        wedge = count_tag(path, "[WEDGE]")
         w = windowed(lines)
+        gmax = max((x["gap"] for x in lines), default=0)
+        hmax = max((x["holes"] for x in lines), default=0)
         if not w:
-            print("%-30s %8d %12s %8s %12s %8s" % (
-                os.path.basename(path), len(lines), "-", "-", "-", "-"))
+            print("%-30s %6d %12s %7s %12s %7s %8d %7d %6d" % (
+                os.path.basename(path), len(lines), "-", "-", "-", "-",
+                gmax, hmax, wedge))
             continue
         dus, dn, sus, sn = w
-        print("%-30s %8d %12s %8d %12s %8d" % (
+        print("%-30s %6d %12s %7d %12s %7d %8d %7d %6d" % (
             os.path.basename(path), len(lines),
             ("%.0f" % dus) if dus is not None else "-", dn,
-            ("%.0f" % sus) if sus is not None else "-", sn))
+            ("%.0f" % sus) if sus is not None else "-", sn,
+            gmax, hmax, wedge))
 
 
 def main():
