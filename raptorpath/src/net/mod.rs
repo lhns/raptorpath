@@ -769,6 +769,67 @@ pub fn contract_alpha(hint: ProtocolHint) -> f64 {
     (CONTRACT_TAIL_LOSS_BASE * hint.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0)
 }
 
+/// The α ACTUALLY supplied to the quantile law — the contract's own, unless
+/// the EXPERIMENT knob `RWM_ALPHA_OVERRIDE` replaces it (`gates.rs`).
+///
+/// **This is the seat §16.69 refuted, and the refutation is of what FEEDS α.**
+/// Reason 3 is a CATEGORY ERROR in the mapping `α = target_tail_loss × ζ`, not
+/// in the Cantelli construction `W(α) = srtt + √((1−α)/α)·σ`, which was never
+/// the defective part. The cost-ratio memo (`docs/research/cost-ratio-memo.md`)
+/// lays out four candidate mappings, recommends none, and shows they are three
+/// points on one curve — so the measurement that adjudicates them is a SWEEP of
+/// α with everything else held fixed. This function is the one place that sweep
+/// enters the engine.
+///
+/// **It is an OVERRIDE, not a law.** `None` is byte-identical to the engine
+/// before this existed. Nothing continuous in (δ, ρ, r) is expressed here and
+/// nothing may ship reading the override: a shipped α must be DERIVED from the
+/// triangle, which is the decision this sweep informs and does not take.
+pub fn resolved_alpha(hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
+    match override_alpha {
+        Some(a) if a.is_finite() && a > 0.0 && a <= 1.0 => a,
+        // Garbage that survived the gate's own filter, or absent: the contract.
+        _ => contract_alpha(hint),
+    }
+}
+
+/// The RESOLVED-α echo — one line, two-sided, emitted once per site that owns
+/// a quantile clock.
+///
+/// `[GATES] RWM_ALPHA_OVERRIDE=` says what was ASKED FOR. This says what the
+/// law is EVALUATING, at the site that evaluates it, together with the `k(α)`
+/// it produces — because α and k are the sweep's independent variable and a
+/// row that cannot state its own α off its own log is not a row. Printed on
+/// EVERY arm including the control (`quantile=0`), so "quantile clocks off"
+/// is as checkable as "quantile clocks on", per MEASUREMENT DISCIPLINE 15.
+pub fn qalpha_report_line(
+    site: &str,
+    quantile: bool,
+    contract: f64,
+    override_alpha: Option<f64>,
+    resolved: f64,
+) -> String {
+    format!(
+        // `fa_class` LAST, and not only because it is useful there. Both
+        // `[RACK]` and `[RFA]` end on this same constant, and a run of this
+        // gauge showed why that convention earns its keep: an interleaved
+        // `tracing` write landed inside the final field, so `k=2.1059` parsed
+        // as `k=2.1059<ansi><timestamp>`. **The last field of a gauge line is
+        // the one a concurrent writer corrupts**, so the last field is a
+        // CONSTANT the parser already knows and can lose without losing a
+        // datum. Every load-bearing number sits ahead of it.
+        "[QALPHA] site={} quantile={} contract_alpha={:.6e} override={} \
+         alpha={:.6e} k={:.4} fa_class={:.4}",
+        site,
+        quantile as u8,
+        contract,
+        override_alpha.map_or("unset".to_string(), |a| format!("{a:.6e}")),
+        resolved,
+        cantelli_k(resolved),
+        RACK_SPURIOUS_BUDGET,
+    )
+}
+
 /// Cantelli's one-sided Chebyshev multiplier — `k(α) = √((1 − α)/α)`.
 ///
 /// DERIVED, distribution-free, no fitted coefficient: for ANY distribution
@@ -787,6 +848,186 @@ pub fn cantelli_k(alpha: f64) -> f64 {
 pub fn quantile_recovery_round_us(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
     let w = srtt_us as f64 + cantelli_k(alpha) * sigma_us as f64;
     (w.max(0.0) as u64).max(TIMER_GRANULARITY_US)
+}
+
+/// How many `W` samples [`QuantileClockGauge`] retains. Bounded because the
+/// clock is evaluated on every recovery-timer tick and a rep can produce tens
+/// of thousands; 4096 is enough for a p95 that is stable to well inside the
+/// spread this gauge exists to report.
+pub const QCLK_SAMPLE_CAP: usize = 4096;
+
+/// The `[QCLK]` gauge — **the REALIZED recovery clock, as a DISTRIBUTION.**
+///
+/// **The defect this repairs, stated as the measurement that forced it.**
+/// `W(α) = srtt + k(α)·σ` is commanded by α and realized through σ, and σ is
+/// not a constant: the plain-window primitives pass measured `σ(c8)` at
+/// **0.191 / 3.140 / 54.836 ms across three reps at n ≈ 18 000** — a **287×
+/// spread at converged sample count** (goal-gate, "THE PASSIVE PRIMITIVES —
+/// PLAIN WINDOW, THE SCORED RESULT" §4, recorded there as the pass's largest
+/// open item). A clock proportional to σ inherits that spread, so **W is a
+/// distribution and an α-sweep that reads only the commanded α is reading a
+/// label, not the treatment.** Two arms commanded at different α can realize
+/// overlapping W and are then not two arms.
+///
+/// **And today the quantile arm records NOTHING.** `[RACK]`'s `round=` is a
+/// mean over evaluations and is fed only under `RWM_RACK_CLOCKS`; neither
+/// clock call site has a `quantile_clocks` gauge branch at all. So this gauge
+/// is what the sweep's own scoring rule requires to exist before it can run.
+///
+/// Observation only: no gate of its own, no control flow, no wire byte.
+/// Emitted on EVERY arm that evaluated a recovery clock, control included —
+/// the control's realized W is the comparison every arm is read against.
+pub(crate) struct QuantileClockGauge {
+    site: &'static str,
+    on: bool,
+    alpha: f64,
+    evals: u64,
+    w_sum: f64,
+    w_min: u64,
+    w_max: u64,
+    srtt_sum: f64,
+    sigma_sum: f64,
+    sigma_n: u64,
+    /// Evaluations where the ARM'S OWN law produced the number. On the
+    /// control every evaluation qualifies (the clamped law always runs); on a
+    /// quantile arm an evaluation with NO σ sample yet falls through to the
+    /// legacy law by design — information availability, never a mode — and
+    /// that fall-through is a DIFFERENT law's output.
+    ///
+    /// **This is a bind-fraction gauge and it is here because the reachability
+    /// test caught its absence.** Pooling the fall-throughs into the
+    /// distribution made a run at α = 0.002 report a `W` p50 of exactly
+    /// 25 000 µs — `TAIL_SWEEP_MIN_US`, the legacy floor — while a run at
+    /// α = 0.9 on the same cell reported 128 ms, i.e. **the sweep's own
+    /// independent variable appeared INVERTED** because the two arms' medians
+    /// were drawn from two different laws. `law_n / evals` makes that visible
+    /// instead of silently wrong (CLAUDE.md FORMULA-FIRST: every clamp gets a
+    /// bind-fraction gauge, reported).
+    law_n: u64,
+    /// Uniformly decimated `W` samples, µs, **from the `law_n` population
+    /// only**. DETERMINISTIC — no RNG, so two runs of one binary on one log
+    /// produce the same quantiles.
+    samples: Vec<u32>,
+    /// Keep every `stride`-th evaluation; doubles each time the store fills,
+    /// halving what is held. Uniform over the whole run rather than biased to
+    /// its warm-up, which is where a reservoir-free prefix would sit.
+    stride: u64,
+    seen: u64,
+}
+
+impl QuantileClockGauge {
+    pub(crate) fn new(site: &'static str, on: bool, alpha: f64) -> Self {
+        Self {
+            site,
+            on,
+            alpha,
+            evals: 0,
+            w_sum: 0.0,
+            w_min: u64::MAX,
+            w_max: 0,
+            srtt_sum: 0.0,
+            sigma_sum: 0.0,
+            sigma_n: 0,
+            law_n: 0,
+            samples: Vec::new(),
+            stride: 1,
+            seen: 0,
+        }
+    }
+
+    /// One recovery-clock evaluation. `w_us` is the cadence the engine will
+    /// actually use, computed by the caller through the same function the
+    /// engine uses — never recomputed here, so this can never report a clock
+    /// the engine did not run.
+    pub(crate) fn record(&mut self, w_us: u64, srtt_us: u64, sigma_us: Option<u64>) {
+        self.evals += 1;
+        if let Some(sg) = sigma_us {
+            self.sigma_sum += sg as f64;
+            self.sigma_n += 1;
+        }
+        // The armed law needs a σ sample; without one the caller fell through
+        // to the law below it, and that number belongs to a different law.
+        // The control has no such requirement — its clamped law always runs.
+        let law_ran = !self.on || sigma_us.is_some_and(|s| s > 0);
+        if !law_ran {
+            self.seen += 1;
+            return;
+        }
+        self.law_n += 1;
+        self.w_sum += w_us as f64;
+        self.w_min = self.w_min.min(w_us);
+        self.w_max = self.w_max.max(w_us);
+        self.srtt_sum += srtt_us as f64;
+        if self.seen % self.stride == 0 {
+            self.samples.push(w_us.min(u32::MAX as u64) as u32);
+            if self.samples.len() >= QCLK_SAMPLE_CAP {
+                let mut i = 0;
+                self.samples.retain(|_| {
+                    i += 1;
+                    i % 2 == 1
+                });
+                self.stride = self.stride.saturating_mul(2);
+            }
+        }
+        self.seen += 1;
+    }
+
+    /// How many recovery-clock evaluations this gauge has seen. Zero means
+    /// the evaluation site was never reached — the reachability question, not
+    /// a value.
+    pub(crate) fn evals(&self) -> u64 {
+        self.evals
+    }
+
+    fn quantile(sorted: &[u32], q: f64) -> u64 {
+        if sorted.is_empty() {
+            return 0;
+        }
+        let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
+        sorted[idx.min(sorted.len() - 1)] as u64
+    }
+
+    /// The `[QCLK]` line this gauge would emit right now.
+    pub(crate) fn line(&self) -> String {
+        let mut s = self.samples.clone();
+        s.sort_unstable();
+        let mean = |sum: f64, n: u64| if n == 0 { 0.0 } else { sum / n as f64 };
+        format!(
+            "[QCLK] site={} on={} alpha={:.6e} k={:.4} evals={} law_n={} kept={} \
+             w_us_mean={:.1} w_us_p05={} w_us_p50={} w_us_p95={} \
+             w_us_min={} w_us_max={} srtt_us_mean={:.1} sigma_us_mean={:.1}/n{} \
+             fa_class={:.4}",
+            self.site,
+            self.on as u8,
+            self.alpha,
+            cantelli_k(self.alpha),
+            self.evals,
+            self.law_n,
+            s.len(),
+            mean(self.w_sum, self.law_n),
+            Self::quantile(&s, 0.05),
+            Self::quantile(&s, 0.50),
+            Self::quantile(&s, 0.95),
+            if self.w_min == u64::MAX { 0 } else { self.w_min },
+            self.w_max,
+            mean(self.srtt_sum, self.law_n),
+            mean(self.sigma_sum, self.sigma_n),
+            self.sigma_n,
+            // The sacrificial trailing constant — see `qalpha_report_line`.
+            RACK_SPURIOUS_BUDGET,
+        )
+    }
+}
+
+impl Drop for QuantileClockGauge {
+    fn drop(&mut self) {
+        // A run that never evaluated a recovery clock stays silent — the same
+        // rule `[RACK]` uses, so an absent line can only be read as an
+        // unreached evaluation site and never as an unset gate.
+        if self.evals > 0 {
+            eprintln!("{}", self.line());
+        }
+    }
 }
 
 /// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
@@ -5784,6 +6025,26 @@ async fn run_window_sender(
     // `[25, 100] ms` clamp has never had, and the one CLAUDE.md's
     // FORMULA-FIRST clamp rule owes any law that adds two new bounds.
     let mut rack_echo = RackClockGauge::new(pol.rack_clocks, pol.rack_reo_mult);
+    // `[QALPHA]` — the RESOLVED α at THIS site, printed once, two-sided
+    // (`quantile=0` on the control arm as loudly as `quantile=1` on the
+    // treatment). α is the α-sweep's one independent variable and the
+    // `[GATES]` line can only say what was ASKED FOR; this says what the law
+    // evaluates. Emitted on every arm — MEASUREMENT DISCIPLINE 15.
+    eprintln!(
+        "{}",
+        qalpha_report_line(
+            "sender",
+            pol.quantile_clocks,
+            pol.contract_alpha_base,
+            pol.alpha_override,
+            pol.contract_alpha,
+        )
+    );
+    // `[QCLK]` — the REALIZED recovery clock as a DISTRIBUTION, at the site
+    // that runs it. σ moves 287× between reps at c8 and `W ∝ σ`, so a sweep
+    // scored on commanded α alone is scored on a label; see the gauge's decl.
+    let mut qclk_echo =
+        QuantileClockGauge::new("sender", pol.quantile_clocks, pol.contract_alpha);
 
 
 
@@ -7642,6 +7903,12 @@ async fn run_window_sender(
                     pol.rack_reo_mult,
                     pol.contract_alpha,
                 );
+                // EVERY arm, control included: the realized clock is the
+                // quantity the cost curve is read against, and the control's
+                // realized clock is what every treatment arm is compared to.
+                // `timeout_us` is what the engine WILL use — never recomputed
+                // here, so this gauge cannot report a clock that did not run.
+                qclk_echo.record(timeout_us, srtt_us, sigma_us);
                 if pol.rack_clocks {
                     if let Some(m) = min_rtt_us.filter(|m| *m > 0) {
                         rack_echo.record(

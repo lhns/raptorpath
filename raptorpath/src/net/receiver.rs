@@ -199,8 +199,38 @@ pub(crate) async fn run_receiver(
     // of the REFUTED arm (paper 16.68) rather than papered over: it means the
     // two sites can disagree on alpha at Realtime and Bulk, which is a reason
     // this arm may not be scored across hints without plumbing the hint first.
-    let recv_contract_alpha =
+    let recv_contract_alpha_base =
         crate::net::contract_alpha(crate::control::fec_rate::ProtocolHint::Auto);
+    // `RWM_ALPHA_OVERRIDE` (EXPERIMENT, absent by default) replaces it when
+    // set. It is a NUMBER and not a hint mapping, so — unlike the contract's
+    // α — it reaches BOTH sites identically and the hint-plumbing limitation
+    // above does not apply to an overridden arm. That is the one respect in
+    // which a swept arm is better defined than the contract arm, and it is
+    // why the sweep can be scored across sites at all.
+    let recv_contract_alpha = crate::net::resolved_alpha(
+        crate::control::fec_rate::ProtocolHint::Auto,
+        recv_gates.alpha_override,
+    );
+    eprintln!(
+        "{}",
+        crate::net::qalpha_report_line(
+            "receiver",
+            recv_quantile_clocks,
+            recv_contract_alpha_base,
+            recv_gates.alpha_override,
+            recv_contract_alpha,
+        )
+    );
+    // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
+    // NOTE the harness SIGKILLs the server, so a `Drop` never reaches a server
+    // log (the `[RFA]` lesson); this gauge is therefore ALSO emitted on the
+    // same 1 s cadence, last line wins.
+    let mut recv_qclk_echo = crate::net::QuantileClockGauge::new(
+        "receiver",
+        recv_quantile_clocks,
+        recv_contract_alpha,
+    );
+    let mut qclk_report_at = Instant::now();
     // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
     // DIVERGED). Observation only; emitted on the armed arm alone.
     let mut recv_derived_echo = DerivedRoundEcho::default();
@@ -773,6 +803,12 @@ pub(crate) async fn run_receiver(
                         sigma_us,
                         recv_rack_reo_mult,
                         recv_contract_alpha,
+                    );
+                    // Every arm, control included — see the sender's twin.
+                    recv_qclk_echo.record(
+                        refresh.as_micros() as u64,
+                        srtt.map_or(0, |s| s.as_micros() as u64),
+                        sigma_us,
                     );
                     if recv_rack_clocks {
                         if let (Some(sv), Some(mv)) = (srtt, min_rtt) {
@@ -1609,6 +1645,20 @@ pub(crate) async fn run_receiver(
                     {
                         rfa_report_at = Instant::now();
                         eprintln!("{}", recv_rack_echo.rfa_line());
+                    }
+
+                    // ── `[QCLK]` PERIODIC READOUT ─────────────────────────
+                    // Same SIGKILL reason, same 1 s cadence, same existing
+                    // gates, same last-line-wins convention. A run that never
+                    // evaluated a recovery clock stays silent, so an absent
+                    // line reads as an unreached evaluation site and never as
+                    // an unset gate.
+                    if (recv_gates.diag || fdiag_on)
+                        && recv_qclk_echo.evals() > 0
+                        && qclk_report_at.elapsed() >= Duration::from_secs(1)
+                    {
+                        qclk_report_at = Instant::now();
+                        eprintln!("{}", recv_qclk_echo.line());
                     }
 
                     // Send SACK-extended WindowAck to sender.
