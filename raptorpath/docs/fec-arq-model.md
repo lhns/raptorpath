@@ -14702,6 +14702,179 @@ bars that separate them, before c9 exists — including the deciding one, which
 costs a single extra arm and can retire CD-5's reading rather than confirm it.
 
 
+### 16.73 The r-law consistency condition, written as a formula: the proactive and reactive planes spend the same bandwidth against the same latency, and at the machine's own shipped operating point the proactive plane's price is a CORNER, not an equality (2026-08-20, `feat/rlaw-condition`, **DOCS ONLY** — no VM, no benchmark, no engine file, no gate, no default, no test; goal-gate "THE r-LAW CONSISTENCY CONDITION" is the full derivation, this section is the paper's statement of the law)
+
+**This is goal #100 item 3.** It writes the condition that item 2's scored
+α-sweep will be intersected with. **It scores nothing, chooses no route,
+flips no default, and edits no engine crate.** Three of its findings are
+negative and are stated first, because two of them change what the check can
+mean.
+
+#### 16.73.1 Which rate law is "the shipped rate law" — and it is not the one CLAUDE.md quotes
+
+`CLAUDE.md` names `r(β) = (1−β)·r_anchor + β·r_late-is-fine`,
+`β = bulkness_of_delta(δ)`, as *"the shipped rate law"*. **That law lives only
+in `raptorpath-wasm` (`lib.rs:234`, `lib.rs:1009-1023`) and is the
+VISUALIZER's.** §8's own 2026-08-12 correction already says so in terms
+(*"the r(β) blend does not exist in the engine"*). The engine's rate law is
+the §8.4 `r*` closed form, evaluated by
+`raptorpath_math::controller_rate` (`math/src/lib.rs:618`) through
+`FecRateController::compute_repair_rate` (`control/fec_rate.rs:269`):
+
+```text
+   r*  =  max( 0,  ε̂/(1−ε̂) + z_{δ_eff/ε̂} · √( ε̂·σ²_burst / (W·(1−ε̂)) ) )   [+ codec]
+   z_{δ_eff/ε̂} = Φ⁻¹(1 − δ_eff/ε̂)
+```
+
+**The condition below is derived against `controller_rate`, the engine's, and
+against nothing in `raptorpath-wasm`.** A consistency check written against
+the visualizer's blend would have checked a model of the machine against a
+model of the machine.
+
+#### 16.73.2 Does the shipped law support a marginal reading? YES, and it is a SHADOW PRICE, not a preference
+
+§8.1 states `r*` as a **constrained minimisation** — *minimise* `r` *subject
+to* a tail constraint — not as a cost-benefit trade. It therefore declares no
+price directly. But a constrained minimum has a shadow price by construction,
+and here it is exact and closed-form, so no constant is introduced to obtain
+it. Write the joint decision as one loss per source symbol, in the same
+currency the memo's route (d) used (Copa's `U = log(throughput) − δ·log(delay)`,
+so a bandwidth fraction enters linearly and a delay enters as `δ·Δd/d`):
+
+```text
+   L_pro(r)  =  r  +  δ · ε̂·(1 − P_fec(r)) · D_arq / d
+```
+
+*The first term is the wire fraction spent proactively; the second is the
+Copa-priced latency of the symbols FEC fails to cover, each of which falls
+through to an ARQ round `D_arq`.* Differentiating and using §8.2's
+`P_fec = Φ(z_f)` with §8.4's first-order `∂z_f/∂r = 1/S`,
+`S ≡ √(ε̂·σ²_burst/(W(1−ε̂)))` — and noting that the shipped `r*` is by
+construction the `r` at which `z_f = z_{δ_eff/ε̂}` — gives the **implied
+proactive latency price**:
+
+```text
+   δ_pro  =  d · S / ( D_arq · ε̂ · φ(z_{δ_eff/ε̂}) )        [r* > 0, interior]
+   δ_pro  ≤  d · S / ( D_arq · ε̂ · φ(z_f(0)) )             [r* = 0, corner]
+            with  z_f(0) = −√( W·ε̂ / ((1−ε̂)·σ²_burst) )
+```
+
+**Every symbol is `r*`'s own: nothing is added.** `φ` is the standard normal
+density — the marginal productivity of one more repair symbol, which is
+exactly what a marginal reading needs and exactly what a constraint statement
+hides.
+
+#### 16.73.3 The reactive side, and the condition
+
+The recovery clock is §16.69's Cantelli construction `W(α) = srtt + k(α)·σ`,
+`k(α) = √((1−α)/α)`, whose loss per source symbol is the cost-ratio memo's
+`L(α)` with the per-symbol overhead `h_marginal` (14 B, `REPAIR_HEADER_SIZE`,
+`fec/generation.rs:44`) admitted per the user's clause 3:
+
+```text
+   L_react(α)  =  ν·α·(1 + h_marginal/T)  +  δ · p · k(α)·σ / d
+   δ_react(α)  =  2·ν·(1 + h_marginal/T)·d·α^{3/2}(1−α)^{1/2} / (p·σ)
+```
+
+**`h_marginal` CANCELS.** A proactive repair symbol and a reactive one are the
+same wire object, so `(1 + h_marginal/T)` multiplies *both* legs' bandwidth
+terms and divides out of the equality. The memo found `h` to be a 1.1 %
+correction to a term that was already correct; **in this condition it is
+exactly zero**, and it is written into the derivation only so that its absence
+is a result rather than an omission. **`d` — Copa's delay normaliser — cancels
+for the same reason: it appears once in each leg's latency term.** The
+condition is therefore **free of the transfer claim entirely: δ never appears.**
+
+Setting `δ_pro = δ_react(α)` and substituting
+`S/((1−ε̂)·ε̂) → 1/((1−ε̂)·√u)`, `u ≡ W·ε̂/((1−ε̂)·σ²_burst)`:
+
+```text
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │   α^{3/2}·(1−α)^{1/2}   =   p·σ·G(u) / ( 2·ν·D_arq·(1−ε̂) )            │   [interior]
+  │   α^{3/2}·(1−α)^{1/2}   ≤   p·σ·G(u) / ( 2·ν·D_arq·(1−ε̂) )            │   [r* = 0]
+  │                                                                        │
+  │   G(u) = √(2π)·e^{u/2}/√u ,   u = W·ε̂/((1−ε̂)·σ²_burst)                │
+  │   D_arq(α) = srtt + k(α)·σ + d                                         │
+  └───────────────────────────────────────────────────────────────────────┘
+```
+
+| symbol | provenance |
+|---|---|
+| `p` | **MEASURED** — realized per-leg loss, plain window (goal-gate, primitives-pw §7) |
+| `σ` | **MEASURED** — `rtt_sigma_us()`, plain window; **the 287× rep spread at `c8` is this condition's dominant error term** |
+| `ν` | **MEASURED** — `[RACK] fired`/delivered symbol, plain window |
+| `d` | **MEASURED** — repair delivery delay, plain window; enters `D_arq` only (its Copa-normaliser role cancels) |
+| `srtt` | **MEASURED** — `srtt_wire`, α-sweep pre-registration §4 |
+| `σ²_burst` | **DERIVED, EXACT** — §8.3's `1 + 2(1−p−q)/(p+q)` on the harness's own `gemodel` parameters (`tools/l1/lib.sh::scenario_params`): c1 2.996, c2 2.899, c3 3.762, reproducing §8.3's own DC/WiFi/LTE table |
+| `W` | **DERIVED, NOT ECHOED** — §8.8 `derive_window`, clamped `[16, 512]` by the math layer and `MAX_WINDOW_SIZE = 200` by the sender. No gauge reports it |
+| `ε̂` | **DERIVED, NOT ECHOED** — `predictive_loss_upper(0.95)` on the max-loss path (`net/emit_source.rs:614-618`). No gauge reports it |
+| `h_marginal` | **CODE-EXACT** — 14 B; **cancels** |
+| `δ` | **absent** — cancels; the condition does not need the transfer claim |
+
+**The two un-echoed inputs enter ONLY through `u`, and `G` is minimised at
+`u = 1` with `G(1) = √(2πe) = 4.1327`.** Every `W` and every `ε̂` therefore
+makes the bound **looser**, never tighter — so the `u = 1` evaluation is the
+strongest statement the condition can make, and it rests on measured inputs
+alone. That is a derived containment of two missing provenances, not a chosen
+value for them.
+
+#### 16.73.4 The shipped machine sits at the CORNER, and this is the section's principal finding
+
+At the operating point every `tools/l1` invocation runs — hint `bulk`,
+`bulk_pure_arq` default `true` (`fec_rate.rs:183`), `completion_exposure`
+never set by any caller in `src/` (χ = 0) — §14.26's glide gives
+`δ_eff = ε̂` **exactly**. Then `z_{δ_eff/ε̂} = Φ⁻¹(0) = −∞`, the `max(0, ·)`
+floor takes the core term, `required_fec_fraction = (1 − δ_eff/ε̂) = 0` kills
+the burst term, and `δ_wf = 1` returns 0 from `r_star_mass`:
+
+```text
+   r*(Bulk, χ = 0)  =  0   identically, at every plain-window cell
+```
+
+This is not an inference; it is pinned by
+`fec_rate.rs::test_bulk_pure_arq_zero_steady_state_rate`, which asserts
+`r < 0.01` at 5 % loss. **The consequence for the consistency check is
+structural: the equality never applies at the sweep's own operating point.**
+Complementary slackness on a slack constraint gives the corner form — an
+inequality, an UPPER BOUND on α — and the check becomes *"is the sweep's
+winner inside the bound the shipped `r*` = 0 admits?"* rather than *"does the
+sweep's winner equal the r law's α?"*. **A check written as an equality would
+have been checking a stationarity condition the shipped machine does not
+satisfy.**
+
+Two further consequences follow and both are stated here rather than
+discovered later. First, `[FDIAG] cod > 0` on the plain window — the
+green-light checklist's reason for retiring witness `W3` — **cannot be
+evidence of proactive FEC at the Bulk hint**, since `r* = 0` there; the coded
+symbols on that wire are the reactive plane's own repairs. Second, §8's
+correction notes that `r*` reaches the wire *only* through the plain-window
+taper path, never through `gen_budget` — so the plain window is the **only**
+configuration in which this condition is checkable at all, and it is the
+configuration the sweep runs. That alignment is fortunate and was not
+designed.
+
+#### 16.73.5 Shape check
+
+* **Units.** Both sides dimensionless: `p`, `ν`, `G`, `(1−ε̂)` are pure; `σ`
+  and `D_arq` are both seconds and appear as a ratio.
+* **Monotone in α.** `α^{3/2}(1−α)^{1/2}` rises on `(0, 0.75]` to
+  `3√3/16 = 0.32476`, so the bound inverts uniquely over the swept range
+  `[0.002, 0.40]`; an RHS above `0.32476` means **no bound at all**, which is
+  a legal outcome and is reported as one.
+* **Monotone in ν.** `α_max` falls as the clock fires more often — more fires
+  means more wasted symbols per unit of detection delay bought, so the
+  proactive leg's silence buys less. Correct sign.
+* **Monotone in σ.** `α_max` rises with `σ`: a noisier RTT makes the Cantelli
+  margin expensive in latency, so a looser false-alarm budget is admissible.
+  **Linear in `σ`, hence `α_max ∝ σ^{2/3}` for small α — the 287× spread
+  propagates to 43×, and the condition is NOT σ-free.**
+* **In δ.** `δ` cancels. The condition is silent on the transfer claim by
+  construction, which is why it can adjudicate a sweep without first taking
+  the cost-ratio decision.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or scores any clause of the α-sweep's pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
