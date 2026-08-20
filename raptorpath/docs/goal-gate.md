@@ -39906,3 +39906,214 @@ the wire decides.
 
 **Nothing here flips a default. The shipped clamp stays, convicted and
 unreplaced, until the estimator successor exists.**
+
+---
+
+## THE SIGMA ESTIMATOR — THE ACCEPTANCE BAR (PRE-REGISTRATION) (2026-08-20, `feat/sigma-estimator` from main@`16402ef`) — goal #101 item 2's FIRST HALF. Written and committed BEFORE any candidate estimator exists, in its OWN commit, per paper §16.74.5 requirement 2: *"the acceptance bar is pre-registered before the estimator is chosen, not after."* **No number below is a result. Nothing here flips a default, adds a gate, or edits an engine crate.**
+
+### 1 — WHAT THIS IS, IN ONE SENTENCE
+
+Goal #100 closed **NEEDS-MORE** and named one instrument: `rtt_sigma_us()`'s
+own dispersion exceeds the dynamic range of the `k(α)` it multiplies, so every
+clock of the form `mean + k·σ̂` inherits an estimator's noise instead of a
+dial's authority. **This section states the numbers a successor estimator must
+hit, before any successor is designed, so that the choice cannot be made by
+the data it is scored on.**
+
+### 2 — THE STABILITY CLAUSE `S`, AND A CORRECTION TO (E) AS WRITTEN
+
+**§16.74.5's inequality, restated:**
+
+```text
+   k(α_lo) / k(α_hi)  >  R          (E)
+
+   k(0.002) = 22.3383 ,  k(0.400) = 1.2247   ⇒   k-ratio = 18.239
+```
+
+**(E) NAMES THE WRONG DISPERSION, AND THE α-SWEEP'S OWN RESULT SAYS SO.**
+§16.74.5 defines `R_σ̂ = sup σ̂ / inf σ̂ over reps` — a **between-rep** quantity.
+But the sweep's separation rule was applied to each arm's **median-over-reps
+`[QCLK]` `p05`–`p95` interval**, and its §6 recorded the mechanism in one
+sentence: *"The medians separated and the DISTRIBUTIONS did not, because the
+same σ that pushes the medians apart widens every arm's own `p05`–`p95` by
+more."* The quantity that consumed the contrast was the **within-rep** spread,
+which (E) does not contain. Two arms at `k_a > k_b` fail to overlap iff
+
+```text
+   k_a · σ̂_p05   >   k_b · σ̂_p95        ⇔       k_a / k_b   >   σ̂_p95 / σ̂_p05
+```
+
+— the within-rep quantile spread plays **exactly the role `R` plays in (E),
+against exactly the same k-ratio.** So the scored statistic is neither the
+between-rep range alone nor the within-rep spread alone:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │   R_total  =  σ̂_p95 / σ̂_p05   over the POOLED σ̂ readings of ALL     │
+   │               reps at ONE cell, ONE seat, ONE α                      │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+Pooling first and taking quantiles second contains both axes by construction.
+
+**AND IT IS A QUANTILE SPREAD, NOT `sup/inf`, FOR A STATED REASON.** `sup/inf`
+is a **range statistic and grows without bound with rep count**: Hartley's
+control-chart constant gives `d2(3) = 1.693` against `d2(10) = 3.078`, so the
+same estimator measured at 3 reps and at 10 reps reports `R` differing by
+**1.82×** with nothing about the estimator having changed. A bar written on
+`sup/inf` would tighten every time a battery got longer, and the 287× at `c8`
+is a `sup/inf` over three reps — a number that can only get worse. `p95/p05`
+is rep-count stable and is the same functional the sweep's separation rule
+already uses. **`sup/inf` is still REPORTED, as a disclosure column, and it is
+not the accept/reject statistic.**
+
+### 3 — THE BAR, TWO TIERS, DERIVED FROM THE SWEPT GRID AND NOT PICKED
+
+The α grid is fixed and committed (`Q002 / Q009 / Q050 / Q184 / Q400`). Its ten
+pairwise k-ratios are arithmetic, so what any bar buys is arithmetic too:
+
+| pair | k-ratio | | pair | k-ratio |
+|---|---|---|---|---|
+| Q184/Q400 | 1.719 | | Q050/Q400 | 3.559 |
+| Q050/Q184 | 2.070 | | Q009/Q184 | 4.983 |
+| Q002/Q009 | 2.129 | | Q002/Q050 | 5.125 |
+| Q009/Q050 | 2.407 | | Q009/Q400 | 8.568 |
+| | | | Q002/Q184 | 10.608 |
+| | | | **Q002/Q400** | **18.239** |
+
+| bar on `R_total` | pairs that separate | what it buys |
+|---|---|---|
+| < 18.24 | **0 of 10** | nothing — this is the point where the extreme pair exactly TOUCHES. §16.74.5's inequality is strict, and at equality the two arms share one endpoint. **Not a bar.** |
+| ≤ 10.0 | 2 of 10 | the ceiling the Hartley factor alone permits (18.24 / 1.82). One-witness separation. |
+| **≤ 6.0** | **3 of 10** | **THE ACCEPT BAR.** `P1` becomes decidable with **three independent witnesses per cell** (Q002/Q400, Q002/Q184, Q009/Q400) rather than one, at **3.04× headroom** on the extreme pair. |
+| **≤ 3.5** | **6 of 10** | **THE PREFER BAR.** The three-point sub-grid **{Q002, Q050, Q400} separates completely** (5.125 and 3.559 both clear), which is the coarsest grid on which an **interior** optimum can be LOCATED at all — and locating an interior optimum is what the pre-registration built `Q400` for and what §16.74's cost curve needs. |
+| ≤ 1.72 | 10 of 10 | every adjacent step resolves. Recorded as unreachable, not as a target. |
+
+**THE DECISION RULE, PRE-COMMITTED.**
+
+1. **A candidate is ADMISSIBLE iff `R_total ≤ 6.0` at EVERY cell it is measured
+   at** (§16.74.5 requirement 1: measured first, rep-to-rep, at every cell —
+   not inferred from a median of three reps). One cell over bar is a fail; the
+   worst cell binds. **`R_total` is reported per cell whatever the verdict.**
+2. **If more than one candidate is admissible, the tie is broken by `R_total ≤
+   3.5`** — the interior-optimum tier — and only then by the bias clause `B`.
+3. **The shipped `sig_us` EWMA is measured on the same battery as a control**,
+   under its own bar. It is not exempt from a bar written after its failure.
+
+**THE MARGIN IS 3.04× AND ITS TWO FACTORS ARE NAMED.** `18.239 / 6.0 = 3.04`,
+of which **1.82 is derived** (Hartley `d2(10)/d2(3)`: `R` at battery scale
+against `R` at the three-rep scale everything in this tree has been measured
+at, so a bar must survive the battery getting longer) and the residual **1.67
+is a CHOICE, stated as one** — it is what turns a one-witness separation into a
+three-witness separation at each cell, which is the difference between `P1`
+resting on a single interval comparison and `P1` resting on a consistent
+pattern. **No factor here is fitted to any candidate's measured value, because
+no candidate has been measured.**
+
+### 4 — THE BIAS CLAUSE `B`: AN ESTIMATOR THAT IS STABLE AND WRONG MOVES EVERY α
+
+Stability is scale-free — `R_total` is a ratio, so an estimator reading a
+constant 10× low passes `S` perfectly. That estimator is useless, because σ̂ is
+not a comparator, it is an **input to `α*`**, and §16.74.4 already measured how
+hard it pushes:
+
+```text
+   d ln α_b / d ln σ  =  2          (route b, the λ→∞ limit)
+   d ln α_d / d ln σ  =  2/3        (route d, the λ→0  limit)
+   d ln W   / d ln σ  →  1          (at fixed k, in the k·σ term)
+```
+
+**THE BAND IS DERIVED FROM THE GRID, NOT CHOSEN.** A bias `β_σ = σ̂_cand /
+σ_truth` is tolerable exactly while it cannot displace `α*` by a **full grid
+step**. The grid's smallest adjacent α step is `0.400 / 0.184 = 2.174`:
+
+```text
+   route (b), elasticity 2    :   β_σ  <  2.174^(1/2)  =  1.474
+   route (d), elasticity 2/3  :   β_σ  <  2.174^(3/2)  =  3.205
+```
+
+**§16.74.0 declines to choose between (b) and (d), so the tighter one binds:**
+
+| band | verdict |
+|---|---|
+| `0.68× ≤ β_σ ≤ 1.47×` | **ACCEPT** — no route's `α*` moves a full grid step |
+| `0.50× ≤ β_σ < 0.68×` or `1.47× < β_σ ≤ 2.00×` | **ADMISSIBLE, BIAS CARRIED** — the candidate may proceed, and **every `α*` computed from it carries the stated multiplicative uncertainty on its face**, `β_σ²` on route (b) and `β_σ^{2/3}` on route (d) |
+| outside `[0.50×, 2.00×]` | **REJECT** — at `β_σ = 2` route (b)'s `α*` moves **4×**, nearly two grid steps, and `W` moves 2× directly |
+
+**AGAINST WHAT TRUTH — AND ITS BIAS IS NAMED BEFORE IT IS USED.** The ground
+truth is the **per-leg delivered-latency probe** (`tools/l1/latt_probe.py`,
+"Latency Truth"), scored like-for-like: over the same run window, the probe's
+own sample stream is fed through the **same functional the candidate computes**
+(P90−P50 for the quantile candidate; median successive absolute difference for
+the successive-difference candidate; sample standard deviation for the
+moment-class candidates), and `β_σ` is the ratio of the candidate's reading to
+the probe's.
+
+**It is INDEPENDENT — a different site, a different clock, and no shared code
+with the sender's EWMA — and it is BIASED, in a direction that flatters the
+candidate.** The probe measures the peer path, not the application's ack path:
+it excludes sender scheduling, store residency and the ack-generation path, all
+of which add dispersion. **The probe's dispersion is therefore a LOWER bound on
+the ack-path dispersion, so a `β_σ` scored against it is a lower bound on the
+true bias.** The consequence is pre-committed and it is asymmetric: **clause
+`B` can REJECT a candidate but cannot ACQUIT one.** A candidate inside the band
+is recorded as *"not shown to be biased"*, never as *"unbiased"*. If two
+candidates disagree with each other by more than the band while both sit inside
+it against the probe, that is a **finding about the probe**, reported as one,
+and `B` goes UNRESOLVED at that cell rather than being read as a pass.
+
+### 5 — THE CONVERGENCE CLAUSE `C`: USABLE AFTER HOW MANY SAMPLES
+
+**`C1` — WARM-UP EXCLUSION, DECLARED PER ESTIMATOR CLASS, BEFORE THE RUN.**
+
+| class | `n_warm` | why exactly that |
+|---|---|---|
+| **EWMA** (`sig_us`, RACK `rttvar`) | **16** | the EWMA is seeded at 0 and retains `(1−β)^n` of that seed at β = 1/4: 23.7 % at n = 5, 10.0 % at n = 8, **1.00 % at n = 16**. n = 16 is the first count at which the seed is under 1 % of the reading. |
+| **window** (quantile spread, successive difference) | **`L`** | no seed exists; the window is either full or it is not. A partly-full window reports a quantile of fewer order statistics than it claims. |
+| **direct empirical quantile at α** | `10 / α` | the standard requirement that the target quantile rest on ≥ 10 order statistics in its own tail. |
+
+**`C2` — AND THE ESTIMATOR MUST BE USABLE FOR THE RUN, NOT MERELY AT ITS END.**
+
+```text
+   n_warm   ≤   0.05 × N_cell        (the cell's total RTT-sample count)
+```
+
+The binding cell is `c8`, the cell that failed (E) worst, at `N ≈ 17 660` —
+the **smallest converged sample count in the primitives table**, 5–19× below
+every other cell. So `C2` reads **`n_warm ≤ 883` at `c8`**, and every candidate
+must clear it there rather than at `c1`'s 334 000.
+
+**`C2` REPRODUCES §16.69's REFUTATION AS ARITHMETIC RATHER THAN CITING IT.**
+The direct-empirical-quantile route at the contract's `α = 10⁻⁵` needs
+`n_warm = 10/α = 100 000` samples. That is **5.7× more than `c8` supplies in a
+whole rep**, so the route fails `C2` outright — the same conclusion §16.69
+reached from its own arithmetic, now falling out of a clause written for
+something else. **Over the SWEPT range it does not fail**: at `α = 0.002`,
+`n_warm = 5 000`, which is 28 % of `c8`'s budget and over the `C2` bar of
+883 — so the direct route is **out of scope for this pass** and is recorded as
+such, not silently dropped.
+
+**`C3` — WARM-UP IS A SCORING RULE ON THE PARSER, NEVER A GATE IN THE ENGINE.**
+Every candidate gauge emits from its first sample, renders `-` before it, and
+carries its own sample count beside its value — the shipped `sig_us=<µs|->/n<count>`
+convention exactly. `diag.rs` already states the reason and it is the
+no-mode-switch rule in gauge clothing: *"a field that disappears below a
+threshold cannot be told apart from a path that was never sampled."* **The
+`n_warm` exclusions of `C1` are applied by the battery's parser, are declared
+in this section before the battery exists, and are not thresholds in any code
+path.**
+
+### 6 — WHAT THIS SECTION DOES NOT DO
+
+It **names no candidate and prefers none** — candidates are the next commit,
+and they are scored by these numbers rather than these numbers by them. It
+**takes no route decision**: `S`, `B` and `C` are stated so that (b) and (d)
+both survive them, and clause `B`'s band is deliberately the tighter of the two
+routes' for that reason. It **flips no default**: `RWM_QUANTILE_CLOCKS` stays
+OFF and REFUTED-STANDING, and the shipped clamp stays convicted and unreplaced.
+It **scores nothing** — no candidate has been measured, and the local
+characterization that follows this pass is explicitly not a verdict against
+these numbers, because §16.74.5 requirement 3 binds it: an estimator qualified
+at one seat is not qualified at the other, and loopback is neither seat.
+
+**The battery that scores this bar is a VM pass and is not this pass.**
