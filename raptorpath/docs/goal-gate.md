@@ -39906,3 +39906,344 @@ the wire decides.
 
 **Nothing here flips a default. The shipped clamp stays, convicted and
 unreplaced, until the estimator successor exists.**
+
+## THE ρ SWEEP — THE FEASIBILITY GATE (2026-08-20, `feat/rho-sweep` from main@`16402ef`) — **VERDICT (c): ρ IS A COMPILE-TIME `1.0` WITH NO SURFACE, AND THE RECOVERY PLANE READS NO ρ AT ALL. goal #101 item 1 CLOSES UNREADABLE-WITH-NAMED-REASON.** **STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test, no lock taken.** No pre-registration was written and no battery was designed, because the gate that decides whether one may be written returned NO. **No number below is a result**; every number is either transcribed from a committed section with its citation, or arithmetic done here and shown in full.
+
+### 1 — VERDICT FIRST
+
+**Outcome (c) of the three the gate was written against: ρ is a compile-time
+`1.0` with no operand — no CLI flag, no environment variable, no config field,
+no builder, no protocol hint, and no parameter in the function that resolves
+it.** The single assignment is a literal:
+
+```rust
+// net/sender_policy.rs:1033-1036
+// ρ, the retention dial's declared value in this scope (see the
+// field doc): the plain dynamic cap is RETAIN-UNTIL-ACKED, so the
+// contract's ρ is 1 here — a scope, not a branch.
+let contract_rho: f64 = 1.0;
+```
+
+and `SenderPolicy::resolve` (`net/sender_policy.rs:486`) takes `reliable: bool`
+— **there is no `rho` parameter to pass one in.**
+
+**But (c) understates it, and the sharper statement is the one that closes the
+item.** The gate also asked, for outcomes (b) and (c), whether the receiver
+side has a ρ<1 path a different seat could reach. It does — and checking it
+produced the finding that makes the sweep unreadable on EVERY seat, not just
+on the reliable one:
+
+> **THE ENGINE EXPRESSES EXACTLY THE TWO ENDPOINTS OF §16.74's ρ BAND AND
+> NOTHING INSIDE IT, AND ON NEITHER ENDPOINT IS ρ AN INPUT.**
+>
+> * On the **reliable** seat (`--window-reliable`), ρ is the literal `1.0`
+>   above — the band's **upper** endpoint, `owed(1, r) = ε̂·(1−P_fec)`.
+> * On the **EVICT** seat (`!reliable`), the shed law does consume a
+>   continuous `1−ρ` budget — but it is **derived, never commanded**:
+>   `st.shed_budget_frac = residual_loss_after_fec(ε̂, r, W, σ²_burst)`
+>   (`net/emit_source.rs:681-686`), and `control/fec_rate.rs:673-679` defines
+>   that as exactly `ε·(1 − P_fec)`. The engine's own comment says so:
+>   *"`budget_frac` = the derived 1−ρ (`residual_loss_after_fec`)"*
+>   (`net/mod.rs:1259-1260`). Setting `1−ρ ≡ ε̂·(1−P_fec)` puts the machine on
+>   `ρ_floor = 1 − ε̂·(1−P_fec)` **by construction** — the band's **lower**
+>   endpoint.
+>
+> Substituting the engine's own definition into §16.74.2's formula:
+>
+> ```text
+>    owed(ρ_engine, r) = max(0, ε̂·(1−P_fec) − (1−ρ))
+>                      = max(0, ε̂·(1−P_fec) − ε̂·(1−P_fec))   [EVICT seat]
+>                      ≡ 0,  identically, at every cell, for every r
+> ```
+>
+> **P3's independent variable is not merely unset in this engine. It is
+> algebraically pinned to the two endpoints of its own dynamic range, by two
+> different mechanisms, on the only two seats that exist.**
+
+**The named reason item 1 closes on:** *the ρ dial is not plumbed to the
+recovery plane on any seat — the recovery plane reads no ρ at all, and the one
+place a continuous `1−ρ` appears it is an estimator OUTPUT, not a contract
+INPUT.* A sweep would have produced a flat curve at every cell, cleanly
+witnessed and zero-abort, for a structural reason — precisely the failure mode
+§16.74.2's band warning was written to prevent, arriving through a door that
+warning did not cover.
+
+**NO SWEEP IS DESIGNED, NO PRE-REGISTRATION IS WRITTEN, AND NO VM IS
+CONTACTED.** The owed instrument is named in §7 and deliberately not built.
+
+### 2 — EVERY ρ SITE IN THE ENGINE, EXHAUSTIVELY
+
+`grep -rin rho raptorpath/src` returns hits in **three** files at `16402ef`.
+That is the complete inventory, and it is short enough to state in full.
+
+| # | site | what ρ is there | live? |
+|---|---|---|---|
+| 1 | `net/sender_policy.rs:360-368` | the `contract_rho: f64` field + its doc | — |
+| 2 | `net/sender_policy.rs:1036` | **`let contract_rho: f64 = 1.0;`** — the only assignment | the source |
+| 3 | `net/sender_policy.rs:1443` | struct init, forwarding #2 | — |
+| 4 | `net/mod.rs:3731-3739` | `contract_stall_s(rho, b, rtprop, srtt)` — the ONE continuous ρ law | via #6 only |
+| 5 | `net/mod.rs:4022-4038` | `three_term_store_cap(…, rho, …)` calling #4 | via #6 only |
+| 6 | `net/mod.rs:6902-6910` | **the only non-test call site**, in `run_window_sender` | **LIVE**, gate-off by default |
+| 7 | `net/mod.rs:5874` | `rho =` on the three-term ACTIVE liveness echo | log only, gated |
+| 8 | `net/mod.rs:7050` | `rho =` on the per-tick `[3T]` gauge | log only, gated |
+| 9 | `net/mod.rs:12816-12821` | `#[cfg(test)]` — the 21-point ρ grid | test only |
+| 10 | `scheduler/mod.rs:572,646,687` | three doc comments asserting a thing is *not* a dial on (δ,ρ,r) | prose |
+| 11 | `scheduler/mod.rs:6203` | `RHO = 0.25`, an AR(1) correlation constant | **unrelated symbol** |
+
+**Sites 1-9 are one mechanism: the three-term store cap.** Site 11 is a name
+collision and is not the retention contract.
+
+### 3 — WHAT SETS ρ: NOTHING, ON ANY SEAT THE BINARY CAN REACH
+
+| candidate surface | present? | evidence |
+|---|---|---|
+| CLI flag | **NO** | `main.rs` `RunArgs`/`PerfArgs` carry no ρ-valued arg; `grep -ni "rho\|contract" src/main.rs` is **empty**. Only the **bool** `--window-reliable` (`main.rs:126`, `:164`) |
+| environment variable | **NO** | `gates.rs` has no `RWM_*RHO*`; `grep -ni rho src/gates.rs` returns only the word *retention* in unrelated `RWM_STORE` / `RWM_OOO_RETAIN` docs |
+| config file field | **NO** | `config.rs` has no ρ field; `grep -ni "rho\|contract" src/config.rs` returns two prose comments. The retention axis ships as the **bool** `window_reliable: Option<bool>` (`config.rs:58`), default `false` (`config.rs:328`) |
+| builder / public API | **NO** | `contract_rho` is a `let` without `mut`; no setter exists |
+| protocol hint | **sets δ, not ρ** | `delta_budget_b(hint)` → 0.5 / 1.0 / 2.0 (`net/mod.rs:3662-3668`); ρ untouched |
+
+**The one settable ρ in the whole tree is offline and does not link against
+the transport.** `tests/slack_bench.rs:61` reads `env_f64("RWM_SB_RHO", 1.0)`,
+and that file's own header (`:1-5`) declares it a *"COMPONENT BENCH … No CC,
+no scheduler, no transport, no tokio, no VM"*. It feeds a **re-implementation**
+of the law, `contract_stall_us` (`tests/slack_bench.rs:130-134`), not the
+engine's `contract_stall_s`. It cannot appear in an L1 ledger.
+
+### 4 — WHAT READS ρ: ONE FLOW-CONTROL LAW, DEFAULT OFF — AND IT IS THE WRONG PLANE
+
+Site #6 is genuinely live machinery: `dyn_store_cap` is the outstanding /
+backpressure ceiling inside `run_window_sender`. Two facts bound it.
+
+**(a) It is behind a default-OFF gate.** `gates.rs:956` reads
+`three_term: env_flag("RWM_THREE_TERM", false)`, and
+`sender_policy.rs:915` resolves
+`let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;`.
+On the shipped default the law does not run and ρ is **never printed at all**
+(both echoes, #7 and #8, are conditioned on `pol.three_term_on`).
+
+**(b) It is the STORE-CAP plane, and §16.74's P3 is about the RECOVERY plane.**
+`contract_stall_s` is TERM 2 of the outstanding limit — emission slack, a
+Little's-law quantity in bytes. P3 predicts movement in **`α*`, the argmin of
+`L`, and through it the clock `W(α*) = srtt + k(α*)·σ`** (§16.74.6, §16.74.0).
+Nothing connects them. Concretely, in the engine:
+
+* **`owed(ρ, r)` does not exist as a function.** (`fec_rate.rs:497`'s `owed()`
+  is the taper budget's, an unrelated method on `TaperBudget`.)
+* **`P_arq` does not exist.** `grep -ni p_arq raptorpath/src` returns exactly
+  one hit — a doc comment at `fec_rate.rs:665-666` *describing* §6.3 — and no
+  code.
+* **The live FEC rate is ρ-blind.** The engine calls
+  `raptorpath_math::controller_rate(&RateInputs{…})` (`fec_rate.rs:297`);
+  `RateInputs` carries `tail_target`, `p_upper`, `sigma2`, `window`,
+  `completion_exposure` — **no ρ**.
+* **The recovery clock is ρ-blind.** The shipped clamp is
+  `(2·srtt).clamp(25, 100) ms`; the armed alternative is
+  `W(α) = srtt + k(α)·σ` with α from `RWM_ALPHA_OVERRIDE` or
+  `contract_alpha(hint)` (the α-sweep's §2). Neither reads ρ, `owed`, or ε̂.
+* **The (δ, ρ, r) triangle solver is not in the engine and has no engine
+  caller.** `solve_r_from_delta_rho` / `solve_delta_from_r_rho` /
+  `solve_rho_from_r_delta` / `find_t_cut` / `P_arq` live in
+  `raptorpath-math/src/lib.rs:1072-1175`. Their complete caller set is
+  `raptorpath-math`'s own `FecRateController` (`fec_rate_controller.rs:40,77-81`),
+  the wasm bindings (`raptorpath-wasm/src/lib.rs:89-95, 262-276`), and tests.
+  **`raptorpath_math::FecRateController` and `TriangleMode` are never named
+  anywhere in `raptorpath/src`** — and `compute_triangle` has **zero callers
+  in the entire tree**. The ρ triangle is an L0-model artifact; the engine has
+  its own, ρ-free, `FecRateController` (`control/fec_rate.rs:80`).
+
+**The empirical basis for ρ ≠ 1 in this engine is 21 arithmetic assertions
+with no transport attached** (`net/mod.rs:12816-12821`, the "unit-tested at 21
+points" the field doc cites), plus the offline bench of §3.
+
+### 5 — THE SHED LAW: ρ AS A BOOLEAN, EXACTLY AS THE MITIGATIONS RECORD PREDICTED
+
+`research/dead-wall-mitigations.md:220-228` recorded this against CLAUDE.md and
+deliberately did not act on it. The gate confirms it verbatim at `16402ef`:
+
+```rust
+// net/mod.rs:1245-1249
+/// Is the shed law armed at all? Realtime-EVICT under the unified machine
+/// only — NEVER the reliable (ρ = 1) contract, never the legacy machines.
+pub(crate) fn shed_armed(unified_on: bool, reliable: bool, gate: bool) -> bool {
+    unified_on && !reliable && gate
+}
+```
+
+There is no ρ argument: **`reliable` IS the ρ axis, collapsed to two points.**
+`RWM_UNIFIED` and `RWM_UNIFIED_SHED` both default ON (`net/mod.rs:1455-1457`,
+`gates.rs:884`), so in practice `shed_on == !reliable` — the arming predicate
+is the retention bool and nothing else. The receiver's copy hardcodes the slot:
+
+```rust
+// net/receiver.rs:174-178
+let recv_shed_on = recv_window_mode
+    && !recv_window_reliable
+    && !recv_window_ooo
+    && reorder_buf.is_some()
+    && shed_armed(recv_gates.unified, false, recv_gates.unified_shed);
+```
+
+**The mitigations record's warning is now load-bearing rather than latent, and
+this section is where a successor will find it discharged or not:** the moment
+ρ becomes a live dial, `shed_armed`'s `!reliable` becomes a **step on the ρ
+axis** — the exact shape THE NO-MODE-SWITCH INVARIANT forbids. Any change that
+makes ρ settable must retire that boolean in the same commit, or it ships the
+defect the invariant names. §7's ladder is written so that its first two rungs
+cannot trigger it.
+
+### 6 — THE PERF SEAT, AND WHY NO OTHER SEAT SALVAGES THE SWEEP
+
+**The reliable seat is forced, and the forcing is unconditional.**
+`tools/l1/perf_rwm_c.sh:204-205` and `:320-322` pass `--window-reliable` on
+both endpoints with no branch that omits it. The chain:
+
+1. `main.rs:288` — `window_reliable: if args.window_reliable { Some(true) } else { None }`
+2. `net/mod.rs:2100` — `let window_reliable = window_mode && config.window_reliable;`
+3. → `run_window_sender`'s `reliable` param → `sender_policy.rs:1189`
+   `shed_armed(unified, /*reliable=*/true, gate) == false`
+4. → `sender_policy.rs:1036` `let contract_rho: f64 = 1.0;`
+
+**And every window submode requires it**, so no perf invocation can reach
+`!reliable`: `main.rs:295-311` `bail!`s unless `--window-reliable` for
+`--window-out-of-order`, `--window-coded-only`,
+`--window-generation-coding` and `--window-systematic-repair`. Even the
+`--protocol-hint realtime` cells run `--window-reliable`
+(`tools/l1/shed_all.sh:67`), a fact that harness already documents at `:8-10`:
+*"the perf cell is --window-reliable (rho=1), so U == U0 is ALSO the
+never-shed-the-reliable-contract check at L1"*.
+
+**The receiver DOES have a ρ<1 path, it IS reachable in principle, and it
+still does not salvage the sweep — for a different reason, stated so the
+answer is not "we did not look".** `receiver.rs:153-161` forks three ways:
+OOO (no buffer, never holds, **never drops** — still ρ=1), reliable
+(`ReorderBuffer::new_reliable()`, *"the hole is never given up on"*,
+`receiver.rs:787-793`), and EVICT (timeout-based, the only ρ<1 seat). On the
+EVICT seat the give-up budget is
+`shed_recv_budget_ok(holes, frontier, eps_recv)` — *"holes given up < ε̂_recv ×
+frontier"* (`net/mod.rs:1295-1297`) — **an ε̂-derived class bound, not a
+target**, exactly as on the sender. So:
+
+* the L1 perf mode **cannot** reach it (the `bail!` chain above), and
+* if a new seat were built that could, **ρ would still not be an input there**
+  — it would be pinned to `ρ_floor` by §1's algebra, and `owed ≡ 0`.
+
+**Two seats, two different mechanisms, one closure.** The sweep is not
+salvageable by choosing a different seat; it is blocked by the absence of an
+input, which no seat supplies.
+
+**One corollary worth recording because it is uncomfortable.** With ρ pinned
+at 1, `contract_stall_s` multiplies `shed_deadline_us(b_hint, …)` by
+`(1 − ρ) = 0`. **`delta_budget_b`'s hint mapping therefore has no effect on
+the store cap on any perf run**: on the measured seat the δ dial and the ρ
+dial are *both* collapsed inside this law. That is a statement about the store
+cap only — δ reaches the machine by other routes — but it means the one law
+written to compose δ with ρ has been measured at a single point of each.
+
+### 7 — THE OWED INSTRUMENT, NAMED AND SCOPED — AND THE BAND ARITHMETIC THAT SIZES IT
+
+The band arithmetic is done here even though no sweep runs, because it is what
+tells a successor the **resolution** the instrument must carry, and it is
+cheaper to write once than to rediscover. Inputs are transcribed, with
+citations, and nothing is fitted.
+
+**Inputs.** `ε̂` has no gauge — `goal-gate:39004` and `fec-arq-model.md:14810`
+both record it **"DERIVED, NOT ECHOED"** — so the paper's own instrumented
+proxy `p` is used (§16.74.4, `fec-arq-model.md:15087`). `p` per cell is the
+plain-window primitives table (`goal-gate:39174-39180`). `(1 − P_fec) = 0.841`
+is the only usable value the paper supplies: `P_fec(0) = Φ(−√u)` at `u = 1`
+gives `Φ(−1) = 0.1587` (`fec-arq-model.md:15016-15018`), and §16.73.4's
+`r* = 0` is the shipped operating point. **`u` is not measured** — the r-law
+pass found it lands in `0.001–3.11` across its grid (`goal-gate:39230-39231`),
+over which `(1−P_fec)` ranges ≈ 0.5 … 0.97, so **every ρ_floor below carries a
+factor-≈2 uncertainty** and the instrument must not assume otherwise.
+
+| cell | `p` (mean of legs) | band width `ε̂·(1−P_fec)` | `ρ_floor` | band |
+|---|---|---|---|---|
+| `c1` | 0.00015 | 1.2615e-4 | 0.99987385 | **0.013 %** |
+| `c7` | 0.00545 | 4.5835e-3 | 0.9954165 | 0.46 % |
+| `c8` | 0.011215 | 9.4318e-3 | 0.9905682 | **0.94 %** |
+| `c8L` | 0.0102 | 8.5782e-3 | 0.9914218 | 0.86 % |
+| `sc2` | 0.0040 | 3.3640e-3 | 0.9966360 | **0.34 %** |
+
+**Both of the paper's stated numbers reproduce from this column** — "roughly
+one per cent wide at c8" (0.94 %) and "0.01 % wide at c1" (0.013 %) — which is
+the check that the transcription is the one §16.74.2 meant. (The *worst-leg*
+column, which is the seat `ε̂` actually reads per `goal-gate:39184-39191`,
+would give c8 1.55 % instead; the sweep-facing number should be stated on both
+seats and is not resolved here, because no sweep is being designed.)
+
+**Placement, in the law's own coordinate.** `owed` is linear in `(1 − ρ)` with
+slope exactly −1 (§16.74.2), so equal spacing in `(1 − ρ)` — not in ρ — is the
+placement that makes the isotonic-vs-constant contrast equal-leverage. Five
+points at fractions 0, ¼, ½, ¾, 1 of the band:
+
+```text
+   c8  :  ρ = 1.000000, 0.997642, 0.995284, 0.992926, 0.990568
+   sc2 :  ρ = 1.000000, 0.999159, 0.998318, 0.997477, 0.996636
+```
+
+**The smallest adjacent gap is 8.41e-4 (sc2).** So the instrument must accept
+and echo ρ to **at least six decimal places**, and coarse steps (0.9, 0.95,
+0.99) sweep entirely below `ρ_floor` at four of five cells — §16.74.2's
+warning, now with the arithmetic attached.
+
+**THE OWED INSTRUMENT, AS A THREE-RUNG LADDER WITH EACH RUNG'S CLASS STATED.
+RUNGS 1 AND 2 ARE READ-ONLY AND BUILDABLE; RUNG 3 IS LAW-TOUCHING AND IS NOT
+LICENSED BY THIS SECTION.**
+
+1. **`RWM_CONTRACT_RHO` — the input, plus a two-sided echo. READ-ONLY except
+   the input itself; the `RWM_ALPHA_OVERRIDE` precedent exactly.**
+   `Option<f64>`, **ABSENT by default**, domain `(0, 1]`, resolved at the one
+   seat `sender_policy.rs:1036`; unset/garbage ⇒ absent ⇒ `1.0` stands
+   byte-identically. Echoed as `[GATES] RWM_CONTRACT_RHO=<resolved|unset>`
+   (the resolved value, not a flag) so *"my arm did not take"* is READ off the
+   run's output, plus a `rho=` field on a gauge that is **not** gated on
+   `RWM_THREE_TERM` — today ρ is unprintable on the shipped default (§4a).
+   **What this buys: ρ becomes expressible and witnessed. What it does NOT
+   buy: P3.** It reaches only the store-cap law, so it would measure the
+   store cap's ρ-response — a real and previously unmeasured thing, and the
+   honest name for that experiment is *a store-cap ρ sweep*, not item 1.
+   **Blocked on §5:** it makes ρ a live dial, so `shed_armed`'s `!reliable`
+   must be retired in the same change or the step ships with it.
+2. **`[OWED]` — the gauge that is worth building on its own merits, and the
+   cheapest true progress here. STRICTLY READ-ONLY, reachability-testable.**
+   Emit `eps_hat= p_fec= r= owed= n<count>` at the seat where
+   `residual_loss_after_fec` is ALREADY computed
+   (`emit_source.rs:681-686` / `fec_rate.rs:673-679`), with the last field a
+   constant per the `fa_class=` convention. **This gives ε̂ its FIRST echo** —
+   `goal-gate:39004` has carried *"No gauge reports it"* since the primitives
+   pass, and every per-cell band in §7 above had to proxy it with `p` for
+   exactly that reason. It also makes `u` and `(1−P_fec)` readable, retiring
+   the factor-2 uncertainty stated above. **It computes nothing new and
+   changes no control flow**, and it is independently useful to §16.73,
+   §16.74.5 and any successor to the α-sweep.
+3. **Routing `owed(ρ, r)` into the recovery clock — i.e. instantiating
+   §16.74's `α*(δ, ρ, r) = max(α_d, α_b)`. LAW-TOUCHING. NOT BUILT HERE, AND
+   NOT LICENSED BY THIS SECTION.** This is what P3 actually requires, and it
+   is a new law in the recovery plane, not plumbing. **It is also blocked
+   upstream by a condition this tree has already measured failing:**
+   §16.74.5's estimator precondition (E) fails at `c8` by 15.7× and at `c8L`
+   by 4.3× (`R_σ̂` = 2.4 and 78.6 against a k-ratio of 18.24), which is the
+   same blocker that closed goal #100 NEEDS-MORE with the σ estimator named.
+   **P3 was reached for because §16.74.6 says it "does not require σ stability
+   to be readable" — and that is true of the PREDICTION, but not of the
+   INSTRUMENT that would have to exist to read it.** That distinction is this
+   gate's second finding, and it is why rung 3 is named rather than started.
+
+**The honest ordering.** Rung 2 is buildable now, read-only, and pays for
+itself. Rung 1 is buildable now but must first retire §5's boolean, and it
+does not reach P3. Rung 3 reaches P3 and is blocked by the estimator. **Item
+1 was chosen as "the cheapest route discriminator" on §16.74.6's own
+recommendation; the gate's finding is that its cheapness is a property of the
+prediction and not of this engine, in which the discriminator's independent
+variable does not exist.**
+
+### 8 — WHAT THIS PASS DID NOT DO
+
+No VM was contacted and no lock was taken. No pre-registration was written.
+No engine file, gate, default, test, harness or ledger was touched. No arm was
+scored and no route was chosen, advanced or refuted — §16.74's routes (b) and
+(d) stand exactly where §16.74.8 left them, `RWM_QUANTILE_CLOCKS` stays default
+OFF and REFUTED-STANDING, and the shipped clamp stays convicted and unreplaced.
+**The only artifact of this pass is this section.**
