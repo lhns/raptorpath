@@ -37893,3 +37893,91 @@ falsifier in the hypothesis table was checkable against committed sources and
 committed ledgers, which is what the table asserted and what §4 of it required
 to be established first. **The most expensive part of this finding was reading
 one environment variable that was not there.**
+## `fa` AND `σ` AT THE SAME SITE — `[RFA]`, THE REALIZED FALSE-REPAIR GAUGE (2026-08-20, `feat/fa-instrument` from main@`3a97dc3`) — **goal #100 item 2's missing instrument. `record_fire` WAS NEVER DEAD — the primitives pass's `ν = 0` was a CONFIGURATION, and the RECEIVER site was the thing that had no counter at all. LOCAL ONLY, no VM. Read-only: no gate added, no default flipped, no control flow touched.**
+
+### 1 — THE PREMISE THIS WAS COMMISSIONED ON WAS WRONG, AND THE CORRECTION IS THE FIRST RESULT
+
+The brief said *"the receiver's `[RACK]` gauge never calls `record_fire`, so `[RACK] fired` reads 0 on every invocation."* **Half of that is true, and it is the half that matters least.**
+
+`RackClockGauge::record_fire` has **exactly one call site** — the sender's gap-driven retransmit loop fed by `recv_nack_tx` (`net/mod.rs`). That channel is `None` under **generation coding and only there**:
+
+```
+let recv_nack_tx = if window_mode && !window_generation { Some(nack_tx) } else { None };
+```
+
+`window_generation = window_reliable && (window_generation_coding || window_systematic_repair)` — the `--window-generation-coding` **CLI flag**, which `tools/l1/perf_rwm_c.sh` drives off its own `RWM_GEN` on/off convention (`RWM_GEN=0` ⇒ flag dropped ⇒ plain-window control; unset ⇒ generation ON at the binary's default `G`).
+
+* **`ccand_battery.sh:434` sets `RWM_GEN=0`.** Every ledger row behind `ν = 0.0438` is a **PLAIN-WINDOW** row, where the loop is live.
+* **`prim_battery.sh` deliberately does NOT** — its own header says so: *"NOT SET, DELIBERATELY: `RWM_GEN=0` … the shipped machine runs the generation pipeline."* The primitives pass ran **GENERATION**, so its `fired = 0` at 15/15 was **structural to that configuration** — as were `retx=0`, `mpr[fired=0]` and `[FDIAG] SOURCE n=0`. **Four witnesses of one configuration fact, not four witnesses of a dead gauge.**
+
+**MEASURED HERE RATHER THAN ASSUMED EITHER WAY.** One binary, `c3`-lossy in-process shim (`RWM_L0_NETEM=c3`, GE ε ≈ 4.8 % on client egress), 4 MB × 2 runs, seed 42:
+
+| configuration | `[RACK]` at the sender | `[DIAG] retx` |
+|---|---|---|
+| **plain window** (no `--window-generation-coding`) | `fa=326/1215`, `fa_frac = 0.268` | **1170** |
+| **generation** | absent / `fa=0/3` | **0** |
+
+**The α-sweep runs plain window. The sender's `fa=` already works there.** This pass therefore did **not** rewire it, and the α-sweep's arm list is now pinned by a test rather than by this paragraph (`tests/rfa_reachability.rs::the_senders_fa_is_alive_in_plain_window_and_dead_under_generation`).
+
+### 2 — WHAT WAS GENUINELY MISSING: REALIZED ≠ COMMANDED, AND ONLY THE RECEIVER CAN SEE REALIZED
+
+The sender's `fa=` is a **PREDICTION**. At fire time it asks whether the target's live flight is younger than its own per-path law threshold — whether the data *was going to* arrive anyway. That is the **COMMANDED** false-alarm fraction, and it is what RFC 8985 §6.2 Step 4's 6.25 % budget is a budget on.
+
+Goal #100 item 2 scores **realized against commanded**. A **FALSE REPAIR** is *a repair emitted whose original arrived anyway*, and that is only observable **where both copies land** — at the receiver. The receiver builds the same `RackClockGauge` (`receiver.rs`) and calls `record` (evaluations) and **nothing else**, so a receiver-role `[RACK]` has read `fa=0/0` since the gauge was written. `ccand_battery.sh`'s own instrument notes say exactly this (facts 5 and 7(b): *"a receiver-role `[RACK]` line always reads fa=0/0"*, *"THE SERVER LOG CARRIES NO `[RACK]` LINE AT ALL in this harness, on any arm"*).
+
+**AND THE GAP IS LARGE.** Same run, both sites:
+
+| | commanded (sender `[RACK] fa_frac`) | realized (receiver `[RFA] false_frac`) | ratio |
+|---|---|---|---|
+| `c3` shim, 4 MB × 2, seed 42 | **0.268** | **0.7703** | **2.9×** |
+| repeat invocation | **0.2087** | **0.7660** | **3.7×** |
+
+Both are **far above** RFC 8985's 6.25 % class bar, and they disagree with each other by ~3×. **Neither number existed in this tree before.** No claim is made about the VALUE at a real cell — loopback's redundancy is the shim's GE process and the host scheduler's — this is the instrument gate that must pass before an L1 α-sweep is worth making.
+
+### 3 — THE EVENT CLASS, DEFINED BECAUSE THE FIRE SITE IS GENUINELY AMBIGUOUS
+
+The wire carries `is_repair` but **no retransmit bit**, so the receiver cannot label an arriving source symbol a retransmit. It can observe **REDUNDANCY**, which is the same fact as ground truth rather than as a prediction. Four **disjoint** classes, each with its own counter rather than one ambiguous total, all read off the decoder's existing `&self` `seq_probe(seq) -> (seen_as_source, recovered, output)` **before** the symbol is fed:
+
+| class | observation | verdict | `[FDIAG]` analogue |
+|---|---|---|---|
+| `fill_coded` | a seq the DECODER reconstructed from coded repair | **TRUE** repair | DECODE class |
+| `fill_src` | a source arrival that first-resolved an **overdue** seq (a higher seq had already arrived) | **TRUE** repair | SOURCE class |
+| `dup_src` | a **second** source copy of a seq already `seen_as_source` | **FALSE** — ARQ class | — |
+| `preempt_src` | a source arrival for a seq the decoder had **already reconstructed** | **FALSE** — FEC class | — |
+
+`fired = fill_coded + fill_src + dup_src + preempt_src`; `false = dup_src + preempt_src`. `seen_as_source` **dominates** `recovered`: a second source copy is a wasted transmission whatever the decoder did in the meantime. The truth table is a pure function (`classify_recv_repair`) and is pinned exhaustively.
+
+**NOT INSTRUMENTED, AND NAMED RATHER THAN OMITTED: redundant CODED RANK.** Coded repair is fungible, so a repair that recovers nothing may still have carried rank the decoder banks for later; separating *"carried no rank"* from *"carried rank nobody needed"* needs decoder-internal accounting this gauge deliberately does not do. **That class is the FEC overhead commanded by `r`, not a false alarm of the recovery clock**, and it stays with `[PFRAC]` / `repairs_useful`.
+
+**CONTAMINATION, DISCLOSED RATHER THAN CORRECTED.** `fill_src` counts a **reordered original** as a successful repair, because the receiver cannot tell it from a retransmit. This inflates `fired` and therefore **DEFLATES** `false_frac` — **the realized fraction reported is a LOWER BOUND.** On this engine the bias is bounded by measurement: `[FDIAG] SOURCE n = 0` at all five primitives cells, i.e. `fill_src` is empty there and the bias is nil.
+
+**THE LINE.** `[RFA] gen=<0|1> fires= false= false_frac= fill_coded= fill_src= dup_src= preempt_src= src_n= rep_n= nu_recv= fa_class=0.0625`. Cumulative; the LAST line is the reading (`[WIDLE]`/`[FDIAG]` convention). Emitted from the gauge's `Drop` on `[RACK]`'s own ungated rule, **and** on a 1 s cadence under the **existing** `RWM_DIAG`/`RWM_FDIAG` — the cadence exists because **every `tools/l1` harness SIGKILLs the server**, which is the mechanical reason a receiver `Drop` has never reached a server log on any arm. **No new gate**, so there is no new two-sided `[GATES]` echo owed; `RWM_DIAG=1` present / `RWM_DIAG=0` absent **is** asserted in the test so a missing `[RFA]` can only be read as an unreached emission site.
+
+### 4 — THE `ν` RECONCILIATION, CONFIGURATION-SPLIT (this is the section a later reader needs)
+
+**There are now FOUR `ν`s in this repository and they are not four measurements of one thing.** Two live on different MACHINES; the new one lives at a different SITE with a different DENOMINATOR and a broader CLASS.
+
+| `ν` | value | site | numerator | denominator | **machine** | provenance |
+|---|---|---|---|---|---|---|
+| **ledger** | **0.0438** (`c8`) | SENDER | `[RACK] fired` = `rack_fa_d_cli` — per-seq NACK-driven retransmit fires carrying a flight record | `dgq_hand` — symbols handed to the wire | **PLAIN WINDOW** (`ccand_battery.sh:434` sets `RWM_GEN=0`) | 477 usable committed `ccand` records, `nu_measure.py` |
+| **primitives, `[RACK]`** | **0** at all 5 cells | SENDER | same counter | same | **GENERATION** (`prim_battery.sh` leaves `RWM_GEN` unset) | 15 invocations — **structurally 0**, `recv_nack_tx = None` |
+| **primitives, `[PFRAC]`** | **0.0388** (`c8`) | SENDER | `recovery_coded` — reactive **coded** repair symbols | same | **GENERATION** | 3 reps × 5 cells, this-session |
+| **NEW, `[RFA]`** | *(loopback only: 0.174)* | **RECEIVER** | `fires` — **all four** repair classes of §3 | `src_n` — **source ARRIVALS** | **PLAIN WINDOW** (echoed as `gen=0`) | this pass; no L1 number yet |
+
+**THE THREE THINGS A READER MUST NOT DO WITH THIS TABLE.**
+
+1. **Do not read 0.0388 vs 0.0438 as a within-machine cross-check.** The primitives pass presented `[PFRAC]` as *"the successor … the same population `fired` was meant to count"*, agreeing at `0.89×`. **The population intent is right; the agreement crosses a CONFIGURATION boundary.** 0.0438 is per-seq ARQ on the plain window; 0.0388 is reactive coded repair under generation — **generation's actual and only recovery mechanism, because the per-seq ARQ path is switched off there.** That two different machines' recovery rates land within 11 % of each other is interesting and is **not** evidence that either instrument reproduces the other. **The primitives §5 and §8 `ν` rows should be read with `RWM_GEN` beside them**, and this section is that annotation.
+2. **Do not compare `ν_recv` to either without adjusting for the denominator and the class.** `ν_recv` counts fires per **source arrival at the receiver**, not per **symbol handed to the wire at the sender** — `src_n ≈ dgq_hand × (1 − p) ×` source-share — and its numerator includes `fill_coded` and `fill_src`, which the ledger's `fired` excludes by construction. **`ν_recv > ν_ledger` is expected and structural**, not a discrepancy. The loopback's 0.174 is reported so the arithmetic is auditable and for no other purpose.
+3. **Do not use `[RFA]` under generation.** The line reads `gen=1 … src_n=0` there: every arrival is coded, both FALSE classes are structurally empty, and `fill_coded` counts the **ordinary carrier** rather than any repair. MEASURED: `[RFA] gen=1 fires=5376 false=0 fill_coded=5376 src_n=0 rep_n=7769`. **This is why `gen=` and `rep_n=` are on the line** — so no α-sweep row can be read out of its configuration scope by accident.
+
+**WHAT THE α-SWEEP CAN NOW DO THAT IT COULD NOT BEFORE.** Score commanded against realized on the same run, plain window, at the same site as `σ`: `[RACK] fa_frac` (sender, predicted) beside `[RFA] false_frac` (receiver, realized), both printed against `fa_class = 0.0625`. **The 2.9–3.7× gap measured at loopback is the quantity item 2 exists to sweep α against.**
+
+### 5 — WHAT WAS AND WAS NOT ESTABLISHED
+
+**Established.** `record_fire` is reachable and fires in plain window (`fa=326/1215`, `retx=1170`) and is structurally silent under generation (`retx=0`) — the primitives pass's `ν = 0` is now **explained**, not open. The receiver-site realized false-repair fraction is measurable, is disjointly classified, and reads 2.9–3.7× the commanded one at loopback. The ledger's `ν = 0.0438` and the primitives' `[PFRAC] ν = 0.0388` belong to **different machines**, and their `0.89×` agreement is not a cross-instrument validation.
+
+**NOT established.** Any field value of either fraction — no VM was touched. Whether the 2.9–3.7× realized/commanded gap survives at a shaped cell, or is an artefact of the shim's GE burst structure. The magnitude of the `fill_src` reordering contamination anywhere except the five primitives cells where it is nil. Whether the redundant-coded-rank class (§3) matters to the α closure; it is named, not measured.
+
+**Test counts.** `tests/rfa_reachability.rs` **4/4** — the class truth table, the line format, the configuration contract both ways, the reachability run. **VERIFIED to fail on the pre-change receiver** (*"no [RFA] line from the RECEIVER over a lossy transfer"*). lib **452/452**, `formula_agreement` 15, `gate_suite` 12, `gauge_reachability` 2. Compiler warning count **unchanged at 47**.
+
+**Nothing in this section flips a default, adds a gate, edits a law, or changes a byte on the wire.**

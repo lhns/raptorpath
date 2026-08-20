@@ -4299,6 +4299,186 @@ pub fn rack_report_line(
 /// measurement so a parser never has to know it.
 pub const RACK_SPURIOUS_BUDGET: f64 = 1.0 / 16.0;
 
+// ── `[RFA]`: THE REALIZED FALSE-REPAIR GAUGE, AT THE RECEIVER ────────────
+//
+// **WHAT WAS AND WAS NOT MISSING — the premise, corrected before this was
+// written.** `RackClockGauge::record_fire` has exactly ONE call site, the
+// sender's gap-driven retransmit loop fed by `recv_nack_tx`. It is NOT dead.
+// `recv_nack_tx` is `None` under GENERATION CODING and only there (the
+// suppression a few hundred lines above: generation recovers a short
+// generation with more coded symbols, never by resending a seq), so the
+// primitives pass's `fired = 0` at 15/15 was structural to the configuration
+// it ran — generation ON — and not to the instrument. MEASURED here on a
+// `c3`-lossy loopback: plain window gives `[RACK] fa=278/1332` with
+// `[DIAG] retx=1327`; the same run with `--window-generation-coding` gives
+// `retx=0`. The α-sweep runs plain window, so the SENDER's `fa=` already
+// works there and this gauge does not replace it.
+//
+// **WHAT IS GENUINELY MISSING, AND IS WHAT THIS ADDS.** The sender's `fa=` is
+// a PREDICTION: at fire time it asks whether the target's live flight is
+// younger than its own per-path law threshold, i.e. whether the data *was
+// going to* arrive anyway. That is the COMMANDED false-alarm fraction. The
+// α-sweep (goal #100 item 2) scores REALIZED against commanded, and
+// "realized" — the repair was emitted AND the original arrived anyway — is
+// only observable where both copies land, at the RECEIVER, which built this
+// same gauge and never called `record_fire` at all. The two numbers are not
+// close: the run above reads a commanded `fa_frac = 0.2087` against a
+// realized `false_frac = 0.7660`, 3.7×. That gap is the measurand, and
+// nothing in the tree reported it before.
+//
+// **THE EVENT CLASS, STATED BECAUSE THE FIRE SITE IS GENUINELY AMBIGUOUS.**
+// A FALSE REPAIR is *a repair emitted whose original arrived anyway.* The
+// wire carries `is_repair` but no "this is a retransmit" bit, so the receiver
+// cannot label an arriving source symbol a retransmit directly — it can only
+// observe REDUNDANCY, which is the same fact and is ground truth rather than
+// a prediction. Four disjoint classes are separated, each with its own
+// counter, rather than one ambiguous total:
+//
+//   * `fill_coded`   — a seq the DECODER reconstructed from coded repair.
+//                      The repair WORKED (the source had not arrived).
+//                      TRUE repair. This is `[FDIAG]`'s DECODE class.
+//   * `fill_src`     — a source arrival that first-resolved a seq the
+//                      receiver was already OVERDUE on (a higher seq had
+//                      already arrived). TRUE repair — or plain reordering;
+//                      see the contamination note below. `[FDIAG]`'s SOURCE
+//                      class, measured EMPTY on this engine at five cells.
+//   * `dup_src`      — a SECOND source copy of a seq whose source copy had
+//                      already arrived. The engine transmits each source
+//                      symbol once; a second copy exists only because a
+//                      repair mechanism resent it. **FALSE**: the repair was
+//                      emitted and the original arrived anyway. ARQ class.
+//   * `preempt_src`  — a source arrival for a seq the decoder had ALREADY
+//                      reconstructed from coded repair. **FALSE**: the coded
+//                      repair was unnecessary; the original arrived anyway.
+//                      FEC class.
+//
+//   fired  = fill_coded + fill_src + dup_src + preempt_src
+//   false  = dup_src + preempt_src
+//
+// so `[RACK]`'s `fa_frac` at a receiver-role gauge reads the REALIZED false-
+// repair fraction, on the same denominator shape as the sender's predicted
+// one, and is scored against the same [`RACK_SPURIOUS_BUDGET`] class bar.
+//
+// **THE DENOMINATOR, AND THE ONE CLASS THAT IS NOT RECEIVER-OBSERVABLE.**
+// `src_n` (every source arrival) is carried beside the four classes so a
+// reader can form `ν_recv = fired / src_n` — fires per delivered source
+// symbol, the receiver-site analogue of the ledger's `fired / dgq_hand`. What
+// is NOT here: REDUNDANT CODED RANK (a repair symbol that arrives and
+// contributes no new degree of freedom). Coded repair is fungible, so a
+// repair that recovers nothing may still have carried rank the decoder banked
+// for later; separating "carried no rank" from "carried rank nobody needed"
+// requires decoder-internal accounting this gauge deliberately does not do.
+// That class is the FEC OVERHEAD commanded by `r`, not a false alarm of the
+// recovery clock, and it is left to `[PFRAC]`/`repairs_useful`.
+//
+// **CONTAMINATION, DISCLOSED RATHER THAN CORRECTED.** `fill_src` counts a
+// reordered ORIGINAL that arrives late as a successful repair, because the
+// receiver cannot tell it from a retransmit. This inflates `fired` and so
+// DEFLATES `fa_frac` — the realized false fraction reported here is a LOWER
+// BOUND. On this engine the bias is bounded by measurement: `[FDIAG] SOURCE
+// n = 0` at all five cells of the primitives pass, i.e. `fill_src` is empty
+// and the bias is nil there.
+//
+// **THE CONFIGURATION CONTRACT, ECHOED ON THE LINE ITSELF.** This is a
+// PLAIN-WINDOW instrument, for the same reason the sender's `fa=` is. Under
+// generation coding every arrival is coded: `src_n = 0`, both FALSE classes
+// are structurally empty, and `fill_coded` counts the ORDINARY carrier rather
+// than any repair. So the line carries `gen=` and `rep_n=` and a reader never
+// has to infer which machine a row belongs to. MEASURED: the generation arm
+// of the run above emits `gen=1 … src_n=0`.
+//
+// **READ-ONLY.** Every counter here is fed from an `&self` probe of state the
+// decoder already keeps. No control flow, no law, no default, no gate.
+
+/// One receiver-observed source arrival's repair class — see the `[RFA]`
+/// commentary above. `NotRepair` is the ordinary case (a first, in-order
+/// source arrival) and is NOT a fire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecvRepair {
+    /// First resolution of this seq and it was not overdue — the ordinary
+    /// forward progress of the stream. Not a repair event.
+    NotRepair,
+    /// First resolution of a seq the receiver was already overdue on.
+    /// A repair that WORKED (or a reordered original — see the note).
+    FillSource,
+    /// A second SOURCE copy of a seq already seen as source. FALSE repair.
+    DupSource,
+    /// A source arrival for a seq the decoder had already reconstructed from
+    /// coded repair. FALSE repair.
+    PreemptedSource,
+}
+
+impl RecvRepair {
+    /// Is this class a FIRE (any repair-class event at all)?
+    pub fn is_fire(self) -> bool {
+        !matches!(self, RecvRepair::NotRepair)
+    }
+    /// Is this class a FALSE repair — a repair emitted whose original
+    /// arrived anyway?
+    pub fn is_false(self) -> bool {
+        matches!(self, RecvRepair::DupSource | RecvRepair::PreemptedSource)
+    }
+}
+
+/// Classify ONE source-symbol arrival, from the decoder's own `seq_probe`
+/// and the receiver's own frontier. Pure, total, and pinned by test.
+///
+/// * `seen_as_source` — the decoder's dup filter has already recorded a
+///   SOURCE arrival of this seq.
+/// * `recovered` — the decoder already holds reconstructed data for the seq.
+/// * `overdue` — a strictly higher seq had already arrived when this one
+///   landed, so this seq was a hole rather than forward progress.
+///
+/// The order of the arms is the semantics: `seen_as_source` DOMINATES,
+/// because a second source copy is a wasted transmission regardless of what
+/// the decoder had reconstructed in the meantime.
+pub fn classify_recv_repair(seen_as_source: bool, recovered: bool, overdue: bool) -> RecvRepair {
+    if seen_as_source {
+        RecvRepair::DupSource
+    } else if recovered {
+        RecvRepair::PreemptedSource
+    } else if overdue {
+        RecvRepair::FillSource
+    } else {
+        RecvRepair::NotRepair
+    }
+}
+
+/// The `[RFA]` line — the receiver-site class breakdown behind `[RACK]`'s
+/// `fa=`. Cumulative counters: the LAST line of a log is the reading, the
+/// same convention `[WIDLE]` and `[FDIAG]` use.
+#[allow(clippy::too_many_arguments)]
+pub fn rfa_report_line(
+    fill_coded: u64,
+    fill_src: u64,
+    dup_src: u64,
+    preempt_src: u64,
+    src_n: u64,
+    rep_n: u64,
+    gen: bool,
+) -> String {
+    let fires = fill_coded + fill_src + dup_src + preempt_src;
+    let falses = dup_src + preempt_src;
+    let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
+    format!(
+        "[RFA] gen={} fires={} false={} false_frac={:.4} fill_coded={} \
+         fill_src={} dup_src={} preempt_src={} src_n={} rep_n={} \
+         nu_recv={:.5} fa_class={:.4}",
+        gen as u8,
+        fires,
+        falses,
+        frac(falses, fires),
+        fill_coded,
+        fill_src,
+        dup_src,
+        preempt_src,
+        src_n,
+        rep_n,
+        frac(fires, src_n),
+        RACK_SPURIOUS_BUDGET,
+    )
+}
+
 /// The `[RACK]` tally, fed at every recovery-clock evaluation on the ON arm.
 #[derive(Default)]
 pub(crate) struct RackClockGauge {
@@ -4324,6 +4504,27 @@ pub(crate) struct RackClockGauge {
     /// [`RACK_SPURIOUS_BUDGET`] = 1/16 = 6.25 %.
     fired: u64,
     spurious: u64,
+    /// ── THE RECEIVER-SITE CLASSES (`[RFA]`) ──────────────────────────
+    /// See the `[RFA]` commentary above [`RACK_SPURIOUS_BUDGET`] for the
+    /// event-class definition each of these counts. They FEED `fired` /
+    /// `spurious` above, so a receiver-role `[RACK]` line reports the
+    /// REALIZED false-repair fraction on the same two slots the sender uses
+    /// for its PREDICTED one.
+    fill_coded: u64,
+    fill_src: u64,
+    dup_src: u64,
+    preempt_src: u64,
+    /// Every source-symbol arrival. The `ν_recv` denominator.
+    src_n: u64,
+    /// Every REPAIR-symbol arrival. Carried for the CONFIGURATION CONTRACT
+    /// and for nothing else: under generation coding (§16.3) every arrival is
+    /// coded, so `src_n = 0` and the two FALSE classes are structurally empty
+    /// — the same configuration fact that empties the SENDER's `fa=`. Printing
+    /// both makes that readable off one line instead of inferred.
+    rep_n: u64,
+    /// Is generation coding on at this receiver? Echoed as `[RFA] gen=` so
+    /// the line says which machine it is a measurement of.
+    recv_gen: bool,
 }
 
 impl RackClockGauge {
@@ -4360,6 +4561,66 @@ impl RackClockGauge {
         }
     }
 
+    /// Record ONE source-symbol arrival at the RECEIVER, in its repair class
+    /// (`classify_recv_repair`). Every repair-class arrival is a FIRE and the
+    /// two redundant classes are the FALSE ones, so this is the receiver's
+    /// feed for the same `fa=<spurious>/<fired>` slots the sender feeds.
+    /// Observation only.
+    pub(crate) fn record_recv_source(&mut self, class: RecvRepair) {
+        self.src_n += 1;
+        self.record_fire_for(class);
+    }
+
+    fn record_fire_for(&mut self, class: RecvRepair) {
+        if !class.is_fire() {
+            return;
+        }
+        match class {
+            RecvRepair::NotRepair => unreachable!("is_fire() excluded it"),
+            RecvRepair::FillSource => self.fill_src += 1,
+            RecvRepair::DupSource => self.dup_src += 1,
+            RecvRepair::PreemptedSource => self.preempt_src += 1,
+        }
+        self.record_fire(class.is_false());
+    }
+
+    /// Record ONE repair-symbol arrival — the configuration-contract
+    /// denominator, not a fire.
+    pub(crate) fn record_recv_repair_arrival(&mut self) {
+        self.rep_n += 1;
+    }
+
+    /// Record ONE seq reconstructed by the DECODER rather than by its own
+    /// source arrival — a repair that WORKED. A fire, never false.
+    pub(crate) fn record_recv_coded_fill(&mut self) {
+        self.fill_coded += 1;
+        self.record_fire(false);
+    }
+
+    /// Echo which machine this receiver is: generation coding on or off.
+    pub(crate) fn set_recv_generation(&mut self, gen: bool) {
+        self.recv_gen = gen;
+    }
+
+    /// Has this gauge seen ANY symbol arrival, i.e. does it sit at a
+    /// RECEIVER? A sender-role gauge sees none and never emits `[RFA]`.
+    pub(crate) fn is_receiver_site(&self) -> bool {
+        self.src_n > 0 || self.rep_n > 0
+    }
+
+    /// The `[RFA]` line this gauge would emit right now.
+    pub(crate) fn rfa_line(&self) -> String {
+        rfa_report_line(
+            self.fill_coded,
+            self.fill_src,
+            self.dup_src,
+            self.preempt_src,
+            self.src_n,
+            self.rep_n,
+            self.recv_gen,
+        )
+    }
+
     /// The `[RACK]` line this gauge would emit right now.
     pub(crate) fn rack_line(&self) -> String {
         rack_report_line(
@@ -4385,6 +4646,16 @@ impl Drop for RackClockGauge {
         // this tree has never had. A run that fired nothing stays silent.
         if self.on || self.fired > 0 {
             eprintln!("{}", self.rack_line());
+        }
+        // The receiver-site class breakdown behind that `fa=`. Emitted on the
+        // SAME rule and with NO gate of its own: a gauge that saw source
+        // arrivals sits at a receiver and owes the breakdown; a sender-role
+        // gauge never sees one and stays silent. NOTE that the L1 harnesses
+        // SIGKILL the server, so this `Drop` is not reachable there — the
+        // receiver also emits `[RFA]` on a cadence under the EXISTING
+        // `RWM_DIAG`/`RWM_FDIAG` gates, and its last line is the reading.
+        if self.is_receiver_site() {
+            eprintln!("{}", self.rfa_line());
         }
     }
 }

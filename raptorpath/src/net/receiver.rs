@@ -207,6 +207,12 @@ pub(crate) async fn run_receiver(
     // `[RACK]` bind-fraction gauge at the receiver site (paper §16.68).
     let mut recv_rack_echo =
         crate::net::RackClockGauge::new(recv_rack_clocks, recv_rack_reo_mult);
+    // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
+    // sender's `fa=` has — `recv_nack_tx` is None under generation). The line
+    // echoes which machine it measured so no row is ever read out of scope.
+    recv_rack_echo.set_recv_generation(recv_window_generation);
+    // `[RFA]` cadence — see the readout site. Cumulative, 1 s, last line wins.
+    let mut rfa_report_at = Instant::now();
     let mut recv_shed_diag_at = Instant::now();
     // RWM Phase C unordered delivery: next in-order seq NOT yet received
     // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -1235,6 +1241,22 @@ pub(crate) async fn run_receiver(
                         {
                             *c8r_dup.entry(path_id).or_insert(0) += 1;
                         }
+                        // ── `[RFA]`: THE REALIZED FALSE-REPAIR CLASS, read
+                        // BEFORE the symbol is fed (the probe is about the
+                        // state this arrival is ABOUT to change). See the
+                        // event-class definition in `net/mod.rs` beside
+                        // `RACK_SPURIOUS_BUDGET`. `seq_probe` is `&self` and
+                        // the counters feed nothing but the gauge: READ-ONLY,
+                        // no control flow, no gate, always fed so the datum
+                        // exists on every arm exactly as `fa=` does.
+                        let rfa_class = (!symbol.is_repair).then(|| {
+                            let (seen_src, rec, _out) = win_dec.seq_probe(symbol.block_id);
+                            crate::net::classify_recv_repair(
+                                seen_src,
+                                rec,
+                                symbol.block_id < highest_seen_seq,
+                            )
+                        });
                         let recovered = if fdiag_on {
                             let t_dec = Instant::now();
                             let r = win_dec.add_symbol(symbol);
@@ -1249,7 +1271,21 @@ pub(crate) async fn run_receiver(
                         if !recovered.is_empty() {
                             recovered_any = true;
                         }
+                        match rfa_class {
+                            Some(c) => recv_rack_echo.record_recv_source(c),
+                            None => recv_rack_echo.record_recv_repair_arrival(),
+                        }
                         for (seq, sym_data) in recovered {
+                            // A seq that came out of the decoder rather than
+                            // off its OWN source arrival was reconstructed
+                            // from coded repair — `[RFA]`'s `fill_coded`, a
+                            // repair that WORKED. (A source arrival can
+                            // cascade other seqs out of the row space; those
+                            // are coded fills too, hence the seq test rather
+                            // than `symbol.is_repair` alone.)
+                            if symbol.is_repair || seq != symbol.block_id {
+                                recv_rack_echo.record_recv_coded_fill();
+                            }
                             received_seqs.insert(seq);
                             if seq > highest_seen_seq {
                                 highest_seen_seq = seq;
@@ -1555,6 +1591,24 @@ pub(crate) async fn run_receiver(
                                     .unwrap_or_default(),
                             );
                         }
+                    }
+
+                    // ── `[RFA]` PERIODIC READOUT ──────────────────────────
+                    // The gauge's `Drop` is the authoritative emission, but
+                    // every L1 harness in `tools/l1` SIGKILLs the server, so
+                    // a receiver-site `Drop` is not reachable there — which
+                    // is why the server log has never carried a `[RACK]`
+                    // line on ANY arm. Cumulative counters on a 1 s cadence
+                    // under the EXISTING diagnosis gates (no new gate; both
+                    // already ride the two-sided `[GATES]` echo), so the
+                    // LAST line is the reading whatever kills the process.
+                    // A run with no repair-class event stays silent.
+                    if (recv_gates.diag || fdiag_on)
+                        && recv_rack_echo.is_receiver_site()
+                        && rfa_report_at.elapsed() >= Duration::from_secs(1)
+                    {
+                        rfa_report_at = Instant::now();
+                        eprintln!("{}", recv_rack_echo.rfa_line());
                     }
 
                     // Send SACK-extended WindowAck to sender.
