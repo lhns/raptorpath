@@ -39330,3 +39330,397 @@ network; its printed output is reproduced in §0, §2, §3 and §4 above.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or modifies any committed scored section.**
+
+---
+
+## THE α-SWEEP — THE SCORED RESULT (2026-08-20, `feat/alpha-score` from main@`4d693bc`) — **NO VERDICT — UNSEPARATED, at all five cells, on both seeds, unanimously: 50 of 50 treatment pairs realize overlapping clocks.** goal #100 **item 2 CLOSES** on the pre-registered precondition, and **item 3 CLOSES at `F4` at all five cells.** 480 invocations, one binary, five cells, six arms, two seeds, **0 aborts, 0 VOID, 0 DNF, witnesses clean at 480/480.** Scored against "THE α-SWEEP — PRE-REGISTRATION" and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+### 1 — THE VERDICT FIRST
+
+**THE BATTERY RAN PERFECTLY AND ANSWERED NOTHING IT WAS ASKED, AND THOSE TWO
+FACTS ARE THE SAME FACT.** 480 of 480 invocations produced a live, witnessed,
+in-scope row. `W6` — the arm-liveness witness this pass built for itself —
+passes at **480/480**: every treatment arm echoed its own α on both `[GATES]`
+lines and resolved to it at both `[QALPHA]` sites. The independent variable
+was set, echoed, routed and realized on every single rep.
+
+**AND THE ARMS STILL CANNOT BE TOLD APART.** Applying the separation rule
+exactly as pre-committed — `overlap = |I_a ∩ I_b| / min(|I_a|, |I_b|)` on each
+arm's median-over-reps `[QCLK]` `p05`–`p95` interval, `> 0.50` ⇒ UNSEPARATED —
+to the **50 treatment-vs-treatment pairs that bear on the verdict** (5 cells ×
+10 pairs):
+
+| cell | UNSEPARATED | of | separated pairs |
+|---|---|---|---|
+| `c1` | **10** | 10 | none |
+| `c7` | **10** | 10 | none |
+| `c8` | **10** | 10 | none |
+| `c8L` | **10** | 10 | none |
+| `sc2` | **10** | 10 | none |
+| **total** | **50** | **50** | **none** |
+
+**Not one pair of α arms separated at any cell.** Overlaps run 0.52–1.00. The
+pre-registration's §6 fixed what that means and it is not one of the four
+outcomes:
+
+> *"If a cell's arms fail the separation rule of §4, that cell yields NO
+> VERDICT and is reported `NO VERDICT — UNSEPARATED`. It is **not** `FLAT
+> CURVE`: a flat curve is a measurement that α does not matter; an unseparated
+> battery is a measurement that this battery could not tell its own arms
+> apart."*
+
+**`NO VERDICT — UNSEPARATED` at every cell, and therefore overall. Neither
+route (b) nor route (d) is advanced, chosen or refuted. `BOTH REFUTED` is
+NOT declared, and neither is `FLAT CURVE`.**
+
+**THE ΔU CURVE IS ALSO FLAT — AT EVERY CELL AND BOTH SEEDS — AND THAT IS
+DELIBERATELY NOT PROMOTED.** At the contract's own `δ_bulk = 0.005`, no arm's
+`ΔU` reaches `2 × σ_pooled` anywhere (§5). Read alone that is the `FLAT CURVE`
+outcome verbatim. **It is not claimed**, because the precondition fires first
+and the pre-registration says in as many words that conflating the two *"would
+be the `A7` pathology landing on a route verdict."* The flat curve is reported
+as a **corroborating observation**, not as the verdict: **when two arms realize
+the same clock, their costs being equal is a tautology, not a measurement.**
+
+### 2 — THE ABORT-CAUSE TABLE, READ BEFORE ANY NUMBER
+
+**0 aborts in 480 invocations. `rc = 0` at 480/480. `[GATES]` two-sided at
+480/480. 0 DNF. 0 VOID.** No `ARM-LIVENESS-FAIL`, no `ARM-CONTAMINATION`, no
+`INSTRUMENT-FAIL-GATE`, no `INSTRUMENT-FAIL-PROBE`, no `W6-FAIL`, no
+`QCLK-LAW-DEAD`, no `ALPHA-PARSE-FAIL`, no `ARM-VANISHED`, no `QCAP-MISSING`
+anywhere in either ledger. Every one of the 30 (cell, arm) groups reports
+`rows = 16/16`. **The pre-registered 0-abort expectation is met exactly.**
+
+### 3 — THE WITNESS TABLE, FULL `n`
+
+| # | witness | required | **result** |
+|---|---|---|---|
+| **W1** | `[RFA] gen=` on the receiver | `gen=0` | **480/480** |
+| **W2** | `[PFRAC]` lines on the sender | 0 lines | **480/480** |
+| **W4′** | max `retx` over ALL `[DIAG]` lines | > 0 at lossy cells | **384/384** (`c1` exempt) |
+| **W5** | `[RACK] fa=`, `fired > 0` | at lossy cells | **384/384** |
+| **W6** | the arm's own α at BOTH endpoints | equal / `unset` | **480/480** |
+
+**`W3` (`cod=`) IS RETIRED AND APPEARS NOWHERE**, as the pre-registration
+required of any battery inheriting the anomaly section's list. **`W4′` was read
+as the MAXIMUM over all `[DIAG]` lines**, never the last, and it is positive at
+every lossy rep — the plain-window pass's harness defect does not recur.
+
+**`W6` IS THE ONE THAT EARNED ITS PLACE.** It is why this section can state
+that the sweep's own independent variable took, on every rep, rather than
+inferring it — and it is what makes `UNSEPARATED` a finding about the WORLD
+rather than a suspicion about the harness. **The arms were set correctly and
+still did not separate.**
+
+### 4 — THE GOODPUT BAND TABLE, AND THE PRE-COMMITTED SCOPE HONOURED
+
+The bands apply to **`CTL` only** (pre-registration §7): they were measured on
+the shipped clamp, and applying them to a treatment arm would discard the
+effect the battery exists to measure.
+
+| cell | band | **`CTL` in band** | treatment arms in band (reported, NOT an abort condition) |
+|---|---|---|---|
+| `c1` | [147, 294] | **16/16** | 16/16 · 16/16 · 15/16 · 16/16 · 16/16 |
+| `c7` | [140, 180] | **13/16** | 14/16 · 14/16 · 13/16 · 10/16 · 12/16 |
+| `c8` | [50, 100] | **16/16** | 16/16 ×5 |
+| `c8L` | [45, 95] | **13/16** | 15/16 · 10/16 · 12/16 · 14/16 · 15/16 |
+| `sc2` | [78, 92] | **16/16** | 16/16 ×5 |
+
+**SIX `CTL` REPS LANDED OUT OF BAND — 3 at `c7`, 3 at `c8L` — AND THE
+PRE-COMMITTED PRECEDENCE RESOLVES ALL SIX WITHOUT A JUDGEMENT CALL.** Every one
+is clean on W1, W2, W4′, W5 and W6. **They are OUT-OF-BAND REPS, not generation
+reps**, and the disagreement between the two guards is printed here as the
+pre-registration requires. `c7` and `c8L` are the same two cells the generation
+and plain-window passes both flagged for leg collapse; **no rep is excluded on
+this basis and none is re-scoped.**
+
+### 5 — THE COST CURVE, PER CELL, PER SEED, AND ITS SCORE
+
+Delivered latency is `RWM_LATPROBE`'s ping, **with its censoring fraction beside
+every percentile**; the engine's `q_p50` is a DIFFERENT quantity and is never
+averaged with it.
+
+| cell | `mbps` p50 range over arms | `ping_p50` ms | `ping_p95` ms | **censor** | `q_p50` ms |
+|---|---|---|---|---|---|
+| `c1` | 200.4 – 203.1 | 2.1 (flat) | 2.6 (flat) | 0.00–0.29 % | 8.0 (flat) |
+| `c7` | 158.9 – 165.9 | 39.4 – 43.1 | 82.1 – 93.2 | 2.08–2.60 % | 44.5 – 47.0 |
+| `c8` | 85.2 – 90.0 | 63.9 – 83.5 | 94.0 – 119.0 | 2.86–4.12 % | 88.0 – 130.0 |
+| `c8L` | 58.7 – 87.0 | 38.3 – 135.5 | 118.5 – 188.0 | 2.25–2.60 % | 137.0 – 196.0 |
+| `sc2` | 87.0 – 88.3 | 91.9 – 99.6 | 102.0 – 105.0 | 2.80–3.07 % | 90.0 – 92.0 |
+
+**THE CONTRACT-PRICED SCORE**, `ΔU = ln(mbps/mbps_CTL) − δ·ln(lat_p95/lat_p95_CTL)`
+at `δ_bulk = 0.005`, per cell **per seed**, against the pooled within-arm
+standard deviation of per-rep `ΔU`:
+
+| cell | seed | max &#124;ΔU&#124; over arms | `σ_pooled` | `2σ_pooled` | verdict |
+|---|---|---|---|---|---|
+| `c1` | 42 | 0.0099 | 0.0710 | 0.142 | **inside noise** |
+| `c1` | 7 | 0.0199 | 0.1161 | 0.232 | **inside noise** |
+| `c7` | 42 | 0.0207 | 0.2771 | 0.554 | **inside noise** |
+| `c7` | 7 | 0.2415 | 0.3312 | 0.662 | **inside noise** |
+| `c8` | 42 | 0.0570 | 0.0984 | 0.197 | **inside noise** |
+| `c8` | 7 | 0.0587 | 0.0980 | 0.196 | **inside noise** |
+| `c8L` | 42 | 0.2393 | 0.3819 | 0.764 | **inside noise** |
+| `c8L` | 7 | 0.2670 | 0.3805 | 0.761 | **inside noise** |
+| `sc2` | 42 | 0.0087 | 0.0114 | 0.023 | **inside noise** |
+| `sc2` | 7 | 0.0083 | 0.0098 | 0.020 | **inside noise** |
+
+**TEN OF TEN CELL-SEEDS INSIDE THE NOISE BAND, AND THE MARGIN IS NOT
+MARGINAL** — the largest ratio of `max|ΔU|` to `2σ_pooled` anywhere is 0.42
+(`sc2`, seed 7). The same holds at `δ_auto` and `δ_realtime`: **every `α*` in
+the pooled report is starred at every cell and every one of the contract's
+three named dial points**, i.e. no arm clears twice the noise at any declared
+price. **No cell is averaged with any other and no seed is averaged with the
+other**; the pre-registration gave no rule for pooling across cells and none is
+invented here.
+
+### 6 — WHY THE ARMS DID NOT SEPARATE, MEASURED RATHER THAN GUESSED
+
+**THE PRE-REGISTRATION'S OWN σ INPUT WAS WRONG BY UP TO 79×, AND IT WAS WRONG
+IN THE DIRECTION THAT SHOULD HAVE HELPED.** The realized sender-site σ
+(`[QCLK] sigma_us_mean`, median over 96 reps per cell) against the
+plain-window primitives median the arm list was computed from:
+
+| cell | prereg σ | **realized σ** | ratio |
+|---|---|---|---|
+| `c1` | 0.035 ms | **0.572 ms** | **16.3×** |
+| `c7` | 0.499 ms | **2.134 ms** | 4.3× |
+| `c8` | 3.140 ms | **7.386 ms** | 2.4× |
+| `c8L` | 0.665 ms | **52.287 ms** | **78.6×** |
+| `sc2` | 0.492 ms | **0.574 ms** | 1.2× |
+
+A larger σ makes the `k(α)·σ` margin larger and the arms *further apart* in
+their medians — and the realized medians duly spread by up to 5.2× at `c8L`
+(1 175.6 ms at `Q002` down to 225.9 ms at `Q400`). **The medians separated and
+the DISTRIBUTIONS did not**, because the same σ that pushes the medians apart
+widens every arm's own `p05`–`p95` by more. That is the pre-registration's §4
+thesis confirmed on the wire and then some: **σ's instability does not merely
+threaten the contrast, it consumes it, and it consumes it faster than the
+contrast grows.**
+
+| cell | realized `W` p50, ms: CTL / Q002 / Q009 / Q050 / Q184 / Q400 |
+|---|---|
+| `c1` | 25.0 / 12.9 / 11.7 / 11.0 / 10.6 / 10.4 |
+| `c7` | 100.0 / 99.2 / 82.1 / 79.0 / 72.9 / 71.0 |
+| `c8` | 100.0 / 299.6 / 245.5 / 219.7 / 178.7 / 189.3 |
+| `c8L` | 100.0 / 1175.6 / 607.4 / 534.6 / 279.1 / 225.9 |
+| `sc2` | 100.0 / 113.0 / 108.3 / 105.7 / 104.6 / 104.2 |
+
+**THE MEDIANS ARE MONOTONE IN α AT FOUR CELLS OF FIVE** (`c8` inverts once, at
+`Q184`/`Q400`). **The law works. The estimator it divides by does not hold
+still long enough for the law's output to be a measurement.**
+
+**ONE EXCEPTION IS REPORTED RATHER THAN BURIED: THE `law_n` BIND FRACTION AT
+`c1` IS 0.67–0.70.** At every other cell the armed law produced 94–100 % of the
+clocks; at `c1` roughly a third of evaluations had no σ sample yet and fell
+through to the law below. It is not zero, so no row is void and `F5` is not
+declared — **and no threshold is invented after the fact to make it one.** It
+is stated because `c1` is the cell whose arm span the pre-registration already
+called the smallest, and a third of its clocks came from a different law.
+
+### 7 — REALIZED AGAINST COMMANDED FALSE ALARMS, AND `c1` RESOLVES
+
+`fa_class = 0.0625` beside every reading. The realized fraction is reported
+**only as the bracket** `[false_frac, false/(false + fill_coded)]`.
+
+| cell | commanded `fa_frac` (median over arms) | × `fa_class` | realized bracket | verdict |
+|---|---|---|---|---|
+| **`c1`** | 0.1305 – 0.2745 | **2.1 – 4.4×** | **[0.25, 0.99] … [0.57, 0.99]** | **RESOLVED — realized > commanded, at 6 of 6 arms** |
+| `c7` | 0.1651 – 0.1817 | 2.6 – 2.9× | [0.018, 0.63] | UNRESOLVED |
+| `c8` | 0.2033 – 0.3333 | 3.3 – 5.3× | [0.083, 0.78] | UNRESOLVED |
+| `c8L` | 0.1023 – 0.3766 | 1.6 – 6.0× | [0.066, 0.55] | UNRESOLVED |
+| `sc2` | 0.7395 – 0.7779 | **11.8 – 12.5×** | [0.34, 0.89] | UNRESOLVED |
+
+**THE PRE-REGISTRATION PREDICTED EXACTLY THIS SHAPE AND IT LANDS EXACTLY.**
+§5(i) said `c1` is the only cell where the realized half resolves, and it is —
+at **all six arms**, in the same direction the loopback and the plain-window
+pass both found: **realized false repair exceeds commanded.** At the four
+shaped cells the `fill_src` contamination keeps the bracket wide and the
+contrast **UNRESOLVED**, reported as unresolved and never as a ratio.
+
+**AND THE UNAMBIGUOUS READING, ON A SIXTH INSTRUMENT: COMMANDED `fa_frac`
+EXCEEDS RFC 8985 §6.2's 6.25 % BUDGET AT 30 OF 30 CELL-ARMS, BY 1.6× TO
+12.5×** — including **on the shipped `CTL` clamp at all five cells** (0.1305 /
+0.1755 / 0.2377 / 0.1642 / 0.7486, i.e. 2.1× to 12.0×). The memo's conviction
+of the shipped clamp reproduces on a rebuilt binary at n = 16 per cell.
+
+**THE CANTELLI HONESTY CHECK, AND IT IS A FINDING ABOUT THE MAPPING AND NOT
+ABOUT THE INEQUALITY.** `fa_frac ≤ α` holds at **6 of 25** treatment cell-arms
+— all of them at `Q184` or `Q400`, i.e. only where α was set so large that
+almost anything satisfies it. At the small-α arms the measured false-alarm
+fraction exceeds the commanded α by up to 386× (`c1`-`Q002`: 0.1665 against
+0.002). **Cantelli is not violated by this**: the bound is over the ack-arrival
+distribution, and what this measures is that **the quantity the bound is taken
+over is not the quantity the recovery clock fires on.** That is precisely the
+category error §16.69 identified, now measured on the wire rather than argued
+from the contract. **And `fa_frac` is NOT MONOTONE in α at any cell** — the
+commanded false-alarm rate does not track α at all.
+
+### 8 — ITEM 3'S INTERSECTION: `F4` AT ALL FIVE CELLS
+
+The r-law evaluation's §5 fixed the procedure with nothing left to decide.
+Executed in order:
+
+**Step 1 — the winning α per cell and its bind fraction.** There is no winning
+α: every cell is UNSEPARATED and every `α*` is a ranking inside the noise.
+`law_n/evals` is 0.94–1.00 at four cells and 0.67–0.70 at `c1`.
+
+**Step 2 — `α_max` recomputed at the σ ACTUALLY REALISED**, replacing the
+primitives median and removing §4's largest error term by construction
+(`rlaw_condition.py`'s own `rhs`/`inv_f`/`G`, `u = 1`, `D_arq = srtt + d`):
+
+| cell | `α_max` at prereg σ | **`α_max` at REALISED σ** | arms admitted |
+|---|---|---|---|
+| `c1` | 0.0157 | **0.1041** | Q002, Q009, Q050 |
+| `c7` | 0.0191 | **0.0509** | Q002, Q009, Q050 |
+| `c8` | 0.0868 | **0.1578** | Q002, Q009, Q050 |
+| `c8L` | 0.0304 | **VACUOUS** (RHS 0.4095 > 3√3/16 = 0.3248) | all — the condition says nothing |
+| `sc2` | 0.0102 | **0.0113** | Q002, Q009 |
+
+**THE CONDITION'S STRONGEST STANDING CLAIM SURVIVES THE RE-RUN.** Its §3 said
+*"the grid never crosses `α = 0.184`"*. At the sweep's own realized σ that
+still holds: **no non-vacuous cell admits `Q184` or `Q400`**, and the widening
+is 1.1×–6.6× rather than unbounded. `c8L`'s 78.6× σ makes its interval
+vacuous — the failure mode §4 predicted for `c8` at its high-σ rep, now
+realised at a different cell.
+
+**Step 3 — compare.** `F1` needs an `α_win ≤ α_max`; `F2` needs
+`α_win > α_max` on a non-vacuous interval **at a separated cell**; `F3` needs
+an inconsistency across cells with a winner to be inconsistent about. **There
+is no `α_win` at any cell.** The rule's own fourth branch applies verbatim:
+
+> *"Vacuous interval or flat curve ⇒ **F4**."*
+
+| cell | separation | ΔU | interval at realised σ | **verdict** |
+|---|---|---|---|---|
+| `c1` | UNSEPARATED 10/10 | flat both seeds | 0.1041 | **F4** |
+| `c7` | UNSEPARATED 10/10 | flat both seeds | 0.0509 | **F4** |
+| `c8` | UNSEPARATED 10/10 | flat both seeds | 0.1578 | **F4** |
+| `c8L` | UNSEPARATED 10/10 | flat both seeds | **VACUOUS** | **F4** (doubly) |
+| `sc2` | UNSEPARATED 10/10 | flat both seeds | 0.0113 | **F4** |
+
+**`F4` AT ALL FIVE CELLS. `F4` SCORES NOTHING, AND THE EVALUATION SAID SO
+BEFORE THE DATA EXISTED**: *"the sweep's pre-registration predicts an
+UNSEPARATED or FLAT curve as the modal outcome at four of five cells, so **F4
+is the most likely verdict of this intersection**, and F4 scores nothing."*
+**That prediction is now scored and it is correct at five of five.** **No
+coefficient is introduced in any branch**, per the ruling's clause 3.
+
+### 9 — WHAT THE MEASURED COST CURVE SAYS ABOUT PRICING THE RECOVERY CLOCK, IN PLAIN LANGUAGE
+
+When a transport has not heard back about a packet, it has to guess: was the
+packet lost, or is the acknowledgement just slow? Wait too little and you
+resend data that was already arriving — wasted bandwidth. Wait too long and
+everything behind the loss is stuck — wasted time. **α is the dial that sets
+that guess**, and the open question was what it should be set to. Four
+candidate answers existed on paper, none had ever been run, and two of them —
+routes (b) and (d) — disagreed by a factor of about five.
+
+**This experiment set that dial to five different values, held everything else
+fixed, ran 480 transfers across five network conditions and two random seeds,
+and asked what each setting cost. The answer is that we could not tell the
+settings apart.**
+
+Not because the experiment failed — it is the cleanest battery in this tree's
+history: every one of the 480 runs produced a valid, witnessed row, and every
+run proved on its own output that its dial had actually been set. **The problem
+is upstream of the dial.** The clock is computed as *"the average round-trip
+time, plus some number of standard deviations of round-trip time"*, and α only
+chooses how many standard deviations. **But the standard deviation itself is
+not stable.** We measured it at up to 79× larger than the best previous
+estimate at one cell, and it moves so much from run to run that the *spread
+within a single setting* is wider than the *gap between settings*. Turning the
+dial moves the clock's typical value — visibly, in the right direction, at four
+of five cells — and it does not move the clock's *range* out of the neighbouring
+setting's range. **Two settings that produce overlapping clocks are one setting
+with two names, and no cost comparison between them means anything.**
+
+**So the honest answer to "how should the recovery clock be priced?" is: that
+is not yet the binding question.** Before any price can be measured, the thing
+being priced has to hold still. **The blocking item is not the cost ratio the
+memo asks the user to decide — it is the round-trip-variance estimator, which
+has now shown unexplained order-of-magnitude swings in four separate sessions
+across both configurations.** A decision taken now would be taken on a
+measurement that cannot distinguish it from its alternatives.
+
+**Two things this run does establish, and they point the same way.** First,
+**the shipped clock is genuinely bad and this is now the sixth instrument to
+say so** — it wastes a retransmit 13 % to 75 % of the time against a published
+budget of 6.25 %, at every cell, and at one cell (`sc2`) it is set *below* the
+average of the very thing it is waiting for. Second, **the quantile clock is
+clearly a different machine from the shipped clamp**: at three cells the
+shipped clamp sits pinned at exactly 100 ms while every quantile arm runs
+somewhere else entirely (up to 1 176 ms at `c8L`). **The successor is
+distinguishable from the incumbent. It is only the successor's own settings
+that are not distinguishable from each other** — and neither fact licenses a
+flip, because a clock whose margin term has an unstable input is not obviously
+better than a constant, and this battery measured no goodput or latency
+difference to say that it is.
+
+### 10 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** 480/480 live rows, 0 aborts, 0 VOID, W1/W2/W4′/W5/W6 clean at
+full `n` — the α knob is reachable, echoed two-sided, routed to the law at both
+sites, and realized as a reported distribution. **50 of 50 treatment pairs
+UNSEPARATED at every cell on both seeds.** `ΔU` inside the pooled noise band at
+10 of 10 cell-seeds and at all three declared dial points. The realized σ at
+the five cells, for the first time at `n` = 96 per cell: **0.57 / 2.13 / 7.39 /
+52.29 / 0.57 ms**, 1.2×–78.6× the plain-window primitives median. Realized
+false repair **exceeds** commanded at `c1` at 6 of 6 arms. Commanded `fa_frac`
+exceeds RFC 8985's budget at **30 of 30** cell-arms, 1.6×–12.5×, the shipped
+clamp included. `fa_frac` is **not monotone in α at any cell**. The r-law
+condition's intervals at realised σ, and the fact that **no non-vacuous cell
+admits `α = 0.184` or above.**
+
+**NOT established.** Any ordering between routes (b) and (d) — the sweep is
+structurally incapable of supplying one from this data, at any `n`, because
+the arms did not separate. Whether α matters at all: `FLAT CURVE` is **not**
+declared and the flat `ΔU` is a tautology under UNSEPARATED. Where inside its
+bracket the realized false-repair fraction lies at any shaped cell. Why σ
+moves by 16× and 79× between the primitives pass and this one at `c1` and
+`c8L` — **the same open item, now on its fourth session and its largest
+excursion.** Whether `c1`'s 0.67 `law_n` bind fraction matters to anything.
+
+**NOT DONE AND NOT ATTEMPTED.** Item 4's derivation, item 5's verdict battery,
+any flip. **`RWM_QUANTILE_CLOCKS` remains DEFAULT OFF and REFUTED-STANDING**;
+§16.69's reasons 1 and 2 are untouched; `RWM_ALPHA_OVERRIDE` remains an
+EXPERIMENT input that nothing shipped reads; `S1` is not reopened.
+
+**ITEM 2 CLOSES: `NO VERDICT — UNSEPARATED` at all five cells and overall.
+Neither route is chosen, advanced or refuted.**
+
+**ITEM 3 CLOSES: `F4` at all five cells, exactly as its own §5 pre-committed
+as the modal outcome. No coefficient introduced.**
+
+**WHAT ITEM 4'S DERIVATION MUST NOW EXPLAIN.** Not "which α wins" — that
+question has no measurable answer on this stack until σ is stable. It must
+explain **why a clock built as `mean + k·σ` inherits an estimator whose own
+dispersion exceeds the dynamic range of its multiplier**, and whether any
+recovery clock priced on a second moment can be measured here at all. The
+cost-ratio decision the memo requests is **not unblocked by this battery, and
+is now known not to be the blocking item.**
+
+**Artifacts.** Ledgers `raptorpath/docs/l1-raw/alpha-s42.log`,
+`alpha-s7.log`; scored report `alpha-report.txt`; witness JSONLs
+`alpha-witness-s42.jsonl`, `alpha-witness-s7.jsonl`; calibration ledger
+`alpha-calib-s42.log` — all committed with this section for provenance parity.
+VM 10.1.5.16: per-rep captures `/home/vibe/alpha/diag/`, tarball
+`/home/vibe/alpha-artifacts.tar.gz`. Binary REBUILT from `feat/alpha-sweep`,
+**sha256 `92673ff509607be588cc3ff5454fe6297af378430c56da36a9fb0e8d1c867187`**.
+Battery wall 2026-08-20 **17:36:12Z → 19:40:42Z**, 2 h 04 m, 480 invocations.
+**VM left at 0 `raptorpath` processes, 0 `rp-*` namespaces, `/tmp/rwm-vm.lock`
+RELEASED.**
+
+**A NOTE ON ONE NUMBER IN THE COMMITTED REPORT.** `alpha-report.txt`'s §1
+prints *"114/150 ordered arm pairs UNSEPARATED"*, counting `CTL` pairs as well
+as treatment pairs. `CTL` has no α, so its pairs bear on no legal outcome, and
+its `[QCLK]` interval is **zero-width at three cells** (the clamp pins at
+exactly 100 ms), which makes `min(|I_a|, |I_b|)` zero and the overlap ratio
+`0/0`. **§1 of this section therefore scores the 50 treatment pairs only**,
+where every interval has positive width and no such degeneracy arises. The two
+readings agree on the verdict; the restricted one is the one the
+pre-registration's rule is about, and it is **50/50 — unanimous, and free of
+the division that the pooled count is not.**
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies the pre-registration it is scored against.**
