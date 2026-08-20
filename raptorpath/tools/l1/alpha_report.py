@@ -784,7 +784,7 @@ print("  alone reports a BOUND as if it were a measurement.")
 print()
 print(f"  {'cell-arm':<10} {'n':>3} {'alpha_cmd':>10} {'fired':>8} {'spur':>7} "
       f"{'fa_frac':>8} {'x fa_class':>11} {'<=alpha?':>9} "
-      f"{'realized [lo, hi]':>22}   commanded in bracket?")
+      f"{'realized [lo, hi]':>22}   realized-vs-commanded")
 FA = {}
 for c in PCELLS:
     for a in PARMS:
@@ -807,9 +807,22 @@ for c in PCELLS:
         hi = med([r.get("rfa_bracket_hi") for r in rs])
         want = ARM_ALPHA.get(a, med([r.get("alpha_cmd") for r in rs]))
         FA[(c, a)] = ff
+        # THE SENSE OF THIS COLUMN IS THE OPPOSITE OF THE OBVIOUS ONE, and the
+        # plain-window pass is where it was settled. The bracket is what this
+        # instrument can say about the REALIZED fraction. If the COMMANDED
+        # value lies INSIDE it, the instrument cannot say whether realized
+        # exceeds commanded or falls short of it -- that is UNRESOLVED, and
+        # the plain-window pass reported four cells of five that way rather
+        # than quoting the 0.13-0.55x the printed column would have suggested.
+        # It RESOLVES only when commanded sits OUTSIDE the bracket, because
+        # then the direction holds at BOTH ends: at c1 commanded 0.0911 sat
+        # below a floor of 0.187, so realized exceeded commanded by at least
+        # 2x, and that is a measurement.
         inside = "-"
         if ff is not None and lo is not None and hi is not None:
-            inside = "RESOLVED" if (min(lo, hi) <= ff <= max(lo, hi)) else "UNRESOLVED"
+            straddles = min(lo, hi) <= ff <= max(lo, hi)
+            inside = "UNRESOLVED" if straddles else (
+                "RESOLVED realized>cmd" if ff < min(lo, hi) else "RESOLVED realized<cmd")
         cant = "-"
         if ff is not None and want is not None:
             cant = "YES" if ff <= want else "NO"
