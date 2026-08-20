@@ -34969,6 +34969,40 @@ controller's declared latency price govern the recovery plane?
 
 **STOP HERE. No further work on this line proceeds without that decision.**
 
+### THE DECISION — TAKEN (2026-08-20, the user, in direct review)
+
+**The ruling is neither YES nor NO as posed — it rejects the framing that those
+were the only options, and it supersedes the binary question above.** In the
+user's terms: *"unified machinery, yes, but not at the cost of incorrect
+modelling"* — architecture taken to its maximum is the goal, **but a value must
+be derived from what it actually depends on**, and the σ/ν measurements (taken
+after this memo was written) showed the YES-option's self-consistency evidence
+was manufactured by its unmeasured inputs. Specifically:
+
+1. **α must be derived, not transferred on faith.** The user's own analysis:
+   Copa alone is plausibly insufficient (its δ prices standing queue, not
+   head-of-line blocking) and **the triangle enters** — ρ changes the value of
+   a late repair continuously, and the δ-leg's declared budget `D(δ)` is the
+   "how much latency we allow" quantity. Whether route (d) (Copa-marginal) or
+   route (b) (budget-derived) is the correct model is now an **empirical
+   question**, to be separated by isolated measurement, not argued.
+2. **BOTH routes stay live until measurement separates them.** Neither ships.
+3. **A constant is admissible ONLY with measured provenance and proven
+   necessity** — the named example is per-symbol overhead h (headers +
+   encoding), pinned by wire counters; a constant may never be chosen to make
+   a model fit.
+4. The execution of this ruling is **goal #100** ("THE RECOVERY PRICE —
+   MEASURE FIRST, DERIVE SECOND, KEEP BOTH UNTIL THE WIRE DECIDES"): passive
+   primitives (h, measured d, full-cell σ/ν/p) → the α-sweep isolation
+   experiment on the existing quantile-clock machinery with α as the only
+   variable and FLAT-CURVE a pre-registered legal outcome → the r-law
+   marginal-equality consistency check → the derivation written FROM the
+   measured curve → only then a verdict battery against the shipped clamp.
+
+The "second price becomes an open problem with a named owner" branch of NO is
+subsumed: the owner is goal #100's measurement program, and the price — one or
+two of them — comes out of the measured cost curve or the model is refuted.
+
 ## Latency Truth — PRE-REGISTRATION (2026-08-19, `feat/lat-truth` from main@`7f2b009`) — MEASUREMENT DISCIPLINE 1 + 11 + 13 + 16 + 17 + 18: written and committed BEFORE any VM contact, in its OWN commit, before a single number is read. **This is MEASUREMENT TRUTH item 1, and it GATES the era ledger's headline latency claim.** **Nothing in this session flips a default, adds a gate, or edits an engine crate. No number below is a result.**
 
 ### THE QUESTION
