@@ -15092,6 +15092,14 @@ The memo's inputs against the measured ones (`δ = 0.005`, `RTprop = 38 ms` so
 | measured, plain-window seat | 3.140 ms | 0.03776 | 0.011215 | **0.001704** | **0.000964** | **1.77×** |
 | measured, generation seat | 0.803 ms | 0.0388 | 0.011215 | **0.000112** | **0.000381** | **0.29× — INVERTED** |
 
+**THE SEAT CONVENTION, STATED SO THE ROWS CAN BE COMPARED WITH ANYTHING
+ELSE.** Each row uses ONE seat for all of its inputs; no row mixes an assumed
+σ with a measured ν. The α-sweep's pre-registration §3 quotes `α_b = 0.00170`
+at c8/Bulk on the measured σ and `0.0537` on the estimated one — **this
+table's `α_b` column reproduces both exactly** — and quotes an `α_d` of
+0.0080 at its own seat, against 0.00831 here, the difference being the
+`(1 + h/T)` factor and the ν seat. Nothing is re-scored by either number.
+
 * **`ν` is 4.5× the assumed value** (0.0438 against 0.0097 at c8, measured off
   477 committed L1 records). It sits in `α_d`'s denominator and `α ∝ RHS^{2/3}`
   for small α, so **`ν` alone moves `α_d` DOWN by 4.5^(2/3) = 2.73×.** It does
@@ -15305,6 +15313,12 @@ than discovered in a run.
   budget at 30 of 30 cell-arms including the control — and **this model does
   not replace it**, because the clock it specifies is not instantiable until
   §16.74.5's precondition is met.
+* **§16.73's INEQUALITY IS NOT SUPERSEDED AND STILL BINDS ANY α THIS MODEL
+  PRODUCES.** `α^{3/2}(1−α)^{1/2} ≤ p·σ·G(u)/(2·ν·D_arq·(1−ε̂))` is a
+  containment test on the *proactive* plane's silence, derived independently
+  and free of δ; it constrains `α*` from above wherever it is non-vacuous. This
+  section adds a loss function; it does not relax that bound, and any future
+  instantiation must satisfy both.
 * **NOTHING HERE LICENSES AN ENGINE CHANGE.** No default is flipped, no gate
   is added, no engine crate is touched. `RWM_QUANTILE_CLOCKS` stays default
   OFF and stays REFUTED-STANDING. The continuous `b(δ)` of §16.74.1 is a
