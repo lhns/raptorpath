@@ -776,6 +776,43 @@ const JITTER_HEADROOM: f64 = 2.0;
 /// fast-exit consults the threshold from the first ACKs on, so the
 /// estimate must converge within tens of samples).
 const JITTER_GAIN: f64 = 0.125;
+
+/// EWMA gain for the `rvar_us=` CANDIDATE DISPERSION GAUGE — **RFC 6298 §2's
+/// own `β`, and its provenance is the RFC.**
+///
+/// `RTTVAR ← (1 − β)·RTTVAR + β·|SRTT − R'|`, β = 1/4, verbatim. The same
+/// constant RFC 8985 §6.2 inherits for RACK. **CITED, never fitted** — this is
+/// the constant the CLAUDE.md FORMULA-FIRST rule asks for a reference for, and
+/// the reference is the standard the shipped `rtt_var_sq` EWMA already cites
+/// for the identical gain on the SECOND moment.
+const SIGMA_CAND_RVAR_GAIN: f64 = 0.25;
+
+/// Window length `L` for the two WINDOW-CLASS candidate dispersion gauges
+/// (`qsp_us=`, `msd_us=`) — the count of most-recent raw RTT samples held.
+///
+/// **Why a window at all, and why 256.** The shipped `sig_us` EWMA at β = 1/4
+/// has an effective memory of `N_eff = (2 − β)/β = 7 samples`. It is a
+/// SEVEN-SAMPLE estimate no matter what its `n` reads, which is precisely why
+/// "converged at `n` ≈ 18 000" did not mean converged: the plain-window
+/// primitives measured `σ(c8)` at 0.191 / 3.140 / 54.836 ms across three reps
+/// at that same `n` (goal-gate, plain-window scored result §4 — a 287× spread
+/// that survived two sessions because the `n` column looked converged). `n`
+/// counts how long the gauge has been FED; it does not count what is IN the
+/// reading.
+///
+/// 256 is `L` for two reasons, both stated before any candidate was measured:
+/// it is **36× the EWMA's memory**, so the memory axis is separated from the
+/// functional axis by more than an order of magnitude; and the `P90` these
+/// gauges take needs its tail to rest on real order statistics —
+/// `L·(1 − 0.90) = 25.6` clears the standard ≥ 10 requirement by 2.6×. It is
+/// also 1.4 % of `c8`'s per-rep sample budget, so a window-class `n_warm = L`
+/// clears the pre-registered `C2` bar (`n_warm ≤ 883` at `c8`) by 3.4×.
+///
+/// **Resource bound, stated OUTSIDE the law** (FORMULA-FIRST): 256 × 4 B =
+/// 1 KiB per path, and the sort that reads it is `O(L log L)` at the `[DIAG]`
+/// cadence only — the feed site stays `O(1)`.
+const SIGMA_CAND_WINDOW: usize = 256;
+
 /// Quantile of the per-update window-min history used as the QUEUE floor
 /// (paper Section 12.4, jitter-robust queue floor).
 ///
@@ -1168,6 +1205,40 @@ pub struct CopaState {
     /// tell "σ suppressed" from "path never sampled". The parser gets the
     /// number and the evidence about it, and decides.
     rtt_var_n: u64,
+    /// **CANDIDATE 2 of 3 — the `rvar_us=` gauge.** RFC 6298 §2's `RTTVAR`,
+    /// the MEAN-DEVIATION EWMA: `rvar ← (1−β)·rvar + β·|rtt − srtt|` at the
+    /// RFC's own β = 1/4 (`SIGMA_CAND_RVAR_GAIN`).
+    ///
+    /// **It is the shipped `rtt_var_sq` with the SQUARE removed and nothing
+    /// else changed** — same feed site, same β, same lagging `srtt` reference,
+    /// same 7-sample memory. That is the entire point of building it: it is
+    /// not a competitor, it is the CONTROLLED COMPARISON that isolates one of
+    /// the three candidate causes of the 287×. If `rvar`'s dispersion lands
+    /// near `√(dispersion of sig_us)`, the culprit is OUTLIER LEVERAGE — the
+    /// square, which admits a single excursion as its square — and the memory
+    /// is innocent. If `rvar`'s dispersion stays near `sig_us`'s, the square is
+    /// innocent and the memory or the reference is the culprit. **Neither
+    /// candidate alone can tell those apart; the pair can.**
+    ///
+    /// Provenance: CITED (RFC 6298 §2; RFC 8985 §6.2 inherits it for RACK).
+    /// Observation only: read by nothing but `[DIAG]`.
+    rtt_mdev: f64,
+    /// Samples folded into [`CopaState::rtt_mdev`] — its warm-up denominator,
+    /// on the line beside it. EWMA-class, so the pre-registered `n_warm` is 16
+    /// (`0.75^16` = 1.00 % seed retention), the same as `rtt_var_n`'s.
+    rtt_mdev_n: u64,
+    /// **THE RAW RTT SERIES, last `SIGMA_CAND_WINDOW` samples, µs, FIFO.**
+    /// Feeds candidates 1 (`qsp_us`) and 3 (`msd_us`).
+    ///
+    /// **This cannot reuse `rtt_samples`.** That deque is MONOTONIC — it pops
+    /// from the back on every sample that is not larger than the incoming one,
+    /// because it exists to serve a windowed MINIMUM in O(1). It therefore does
+    /// not hold the series; it holds a lower envelope of it, and a dispersion
+    /// statistic taken over an envelope would read the drift and not the
+    /// spread. This is a plain FIFO and holds every sample in arrival order,
+    /// which is also what makes the SUCCESSIVE differences of candidate 3
+    /// meaningful.
+    rtt_win: VecDeque<u32>,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1329,6 +1400,9 @@ impl CopaState {
             bw_o1: honest_anchor_active(),
             rtt_var_sq: 0.0,
             rtt_var_n: 0,
+            rtt_mdev: 0.0,
+            rtt_mdev_n: 0,
+            rtt_win: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -1684,7 +1758,24 @@ impl CopaState {
             // `sig_us=<µs>/n<count>` gauge's denominator can never describe a
             // different sample set than its numerator.
             self.rtt_var_n += 1;
+            // CANDIDATE 2 (`rvar_us=`): RFC 6298 §2's mean deviation, fed at
+            // the SAME site, from the SAME `dev`, at the SAME β. Identical in
+            // every respect to the line above except that the deviation enters
+            // LINEARLY instead of squared — which is what makes the pair a
+            // decomposition rather than two guesses. Read by nothing.
+            self.rtt_mdev += (dev.abs() - self.rtt_mdev) * SIGMA_CAND_RVAR_GAIN;
+            self.rtt_mdev_n += 1;
         }
+        // CANDIDATES 1 and 3 (`qsp_us=`, `msd_us=`): the raw series, FIFO,
+        // last `SIGMA_CAND_WINDOW`. Fed unconditionally and WITHOUT an `srtt`
+        // precondition — unlike the two EWMAs above, neither of these gauges
+        // takes a deviation against a reference, so neither has to wait for
+        // one. O(1): one push, at most one pop. Read by nothing.
+        if self.rtt_win.len() == SIGMA_CAND_WINDOW {
+            self.rtt_win.pop_front();
+        }
+        self.rtt_win
+            .push_back((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
             self.rtt_samples.pop_back();
         }
@@ -3075,6 +3166,252 @@ impl PathState {
     /// [`rtt_sigma_us`]: Self::rtt_sigma_us
     pub fn rtt_sigma_samples(&self) -> u64 {
         self.copa.rtt_var_n
+    }
+
+    // ---------------------------------------------------------------------
+    // THE THREE CANDIDATE DISPERSION GAUGES — goal #101 item 2, paper
+    // §16.74.5's named successor. READ-ONLY, READ BY NOTHING but `[DIAG]`.
+    //
+    // **They are a DECOMPOSITION, not three guesses.** The shipped `sig_us`
+    // carries three independent suspect properties at once, and the measured
+    // 287× at `c8` cannot say which of them produced it. Each candidate moves
+    // exactly one axis away from the shipped estimator, so the differences
+    // between them identify the cause:
+    //
+    //   axis                shipped `sig_us`      `rvar`    `qsp`     `msd`
+    //   ------------------  --------------------  --------  --------  --------
+    //   memory              7 samples (β = 1/4)   7         L = 256   L = 256
+    //   deviation enters    SQUARED               linear    rank      rank
+    //   reference           lagging `srtt` EWMA   lagging   none      none
+    //
+    //   `rvar` vs `sig_us` : isolates the SQUARE   (memory + reference fixed)
+    //   `qsp`  vs `rvar`   : isolates the MEMORY   (reference still absent)
+    //   `msd`  vs `qsp`    : isolates the REFERENCE (memory + rank fixed)
+    //
+    // **All three render `-` before their first sample and carry their own
+    // sample count beside their value**, the shipped `sig_us=<µs|->/n<count>`
+    // convention — with one deliberate repair: `sig_us` returns `None` on a
+    // non-positive `rtt_var_sq`, so it renders `-` for "no sample yet" AND for
+    // "dispersion is exactly zero", which a parser cannot tell apart. These
+    // return `None` **iff the sample set is empty** and report a genuine zero
+    // as `0`. Neither is a threshold and neither gates anything: the warm-up
+    // exclusions live in the battery's parser, pre-registered in goal-gate
+    // "THE SIGMA ESTIMATOR — THE ACCEPTANCE BAR" clause `C3`.
+    //
+    // **No consumer. No gate. No default.** Nothing in the engine reads any of
+    // these; the acceptance bar's battery is a later, VM-side pass.
+    // ---------------------------------------------------------------------
+
+    /// The `q`-quantile of an already-sorted slice, by the tree's own
+    /// convention (`net::QuantileClockGauge::quantile`) — nearest-rank on
+    /// `round((len − 1)·q)`, no interpolation, so two reads of one sample set
+    /// always agree and the value is always a sample that actually occurred.
+    fn cand_quantile(sorted: &[u32], q: f64) -> u64 {
+        if sorted.is_empty() {
+            return 0;
+        }
+        let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
+        sorted[idx.min(sorted.len() - 1)] as u64
+    }
+
+    /// **CANDIDATE 1 — `qsp_us=`, WINDOWED QUANTILE DISPERSION, UNSCALED.**
+    ///
+    /// ```text
+    ///     qsp  =  P90(rtt)  −  P50(rtt)      over the last L = 256 samples
+    /// ```
+    ///
+    /// **UNSCALED, and that is a decision with a reason rather than an
+    /// omission.** The obvious alternative is to divide by 1.2816 — the
+    /// Gaussian value of `(P90 − P50)/σ` — and call the result a σ-equivalent.
+    /// It is not done, for three reasons:
+    ///
+    /// 1. **The acceptance bar is scale-free.** `R_total = σ̂_p95/σ̂_p05` and
+    ///    §16.74.5's `R_σ̂` are both RATIOS, so no fixed positive scaling
+    ///    changes any clause of `S`. The constant would buy the bar nothing.
+    /// 2. **The assumption it imports is refuted by the data it would be
+    ///    applied to.** A Gaussian conversion is only meaningful on a Gaussian;
+    ///    `c8` produced a σ reading of 54.836 ms at a cell whose measured `d`
+    ///    is 3.298 ms and whose `RTprop` is 38 ms. That is not a Gaussian tail.
+    ///    §16.69's one real virtue is being DISTRIBUTION-FREE, and scaling by a
+    ///    Gaussian constant would spend exactly that.
+    /// 3. **§16.69's own construction permits the quantile-native route over
+    ///    this range.** Its construction line reads `W(α) = F⁻¹_X(1 − α)` — the
+    ///    clock IS a quantile — and Cantelli is the distribution-free FALLBACK
+    ///    for when only moments are available. An estimator that reports
+    ///    quantiles directly does not need the fallback. §16.69 refuted the
+    ///    direct route at the CONTRACT's `α = 10⁻⁵` (100 000 samples); over the
+    ///    SWEPT range `[0.002, 0.400]` that arithmetic does not bind, and the
+    ///    acceptance bar's clause `C2` records exactly where the line falls.
+    ///
+    /// The Gaussian constant is documented here and applied nowhere, so a
+    /// future consumer that wants a σ-equivalent can multiply by `1/1.2816`
+    /// with its assumption on the record: **for `X ~ N(µ, σ²)`,
+    /// `P90 − P50 = 1.2816·σ`.**
+    ///
+    /// **Why it should beat the shipped EWMA, argued from the measured data.**
+    /// It moves two axes at once. MEMORY: 256 samples against the EWMA's 7, so
+    /// a reading is a property of the window and not of wherever the last
+    /// seven samples happened to land. OUTLIER LEVERAGE: a quantile moves by
+    /// one RANK regardless of an excursion's magnitude — `P90` over `L = 256`
+    /// is unmoved by up to 25 arbitrarily large outliers, where the shipped
+    /// EWMA admits one 200 ms excursion as `(200 ms)²` and needs ~16 samples
+    /// to decay it below 1 %.
+    ///
+    /// `None` iff no sample has been recorded.
+    pub fn rtt_qspread_us(&self) -> Option<u64> {
+        if self.copa.rtt_win.is_empty() {
+            return None;
+        }
+        let mut s: Vec<u32> = self.copa.rtt_win.iter().copied().collect();
+        s.sort_unstable();
+        Some(Self::cand_quantile(&s, 0.90) - Self::cand_quantile(&s, 0.50))
+    }
+
+    /// Samples in [`rtt_qspread_us`]'s window RIGHT NOW — **the window FILL,
+    /// not the path's lifetime sample count**, and it saturates at
+    /// `SIGMA_CAND_WINDOW`.
+    ///
+    /// That is deliberate and it follows the rule `diag.rs` already states for
+    /// `sig_us`: the count must describe the sample set the value was computed
+    /// from, so *"the denominator can never describe a different sample set
+    /// than its numerator."* A lifetime count beside a windowed value would
+    /// describe a different set. It also makes the pre-registered window-class
+    /// warm-up test exact: **the window is warm iff `n == L`.**
+    ///
+    /// [`rtt_qspread_us`]: Self::rtt_qspread_us
+    pub fn rtt_qspread_samples(&self) -> u64 {
+        self.copa.rtt_win.len() as u64
+    }
+
+    /// **CANDIDATE 2 — `rvar_us=`, RFC 6298 §2's `RTTVAR`.**
+    ///
+    /// ```text
+    ///     rvar  ←  (1 − β)·rvar  +  β·|rtt − srtt| ,     β = 1/4
+    /// ```
+    ///
+    /// **Provenance: CITED.** β = 1/4 and the mean-deviation form are RFC 6298
+    /// §2 verbatim, inherited by RFC 8985 §6.2 for RACK. Nothing here is
+    /// fitted, and the shipped `rtt_var_sq` already cites the same RFC for the
+    /// same gain on the second moment — so the two differ by the square alone.
+    ///
+    /// **It exists to be the CONTROL, not to win.** See `CopaState::rtt_mdev`:
+    /// it holds memory and reference fixed against the shipped estimator and
+    /// moves only the power the deviation enters at, which is the only way to
+    /// attribute the 287× to outlier leverage or acquit it of that.
+    ///
+    /// Gaussian conversion, documented and not applied: for `X ~ N(µ, σ²)`,
+    /// `E|X − µ| = √(2/π)·σ = 0.7979·σ`, so a consumer wanting a σ-equivalent
+    /// multiplies by 1.2533. RFC 6298 itself does not: it uses `4·RTTVAR`
+    /// directly, which is a mean-deviation multiplier and not a σ one.
+    ///
+    /// `None` iff no sample has been folded in.
+    pub fn rtt_mdev_us(&self) -> Option<u64> {
+        if self.copa.rtt_mdev_n == 0 {
+            return None;
+        }
+        Some((self.copa.rtt_mdev * 1e6).max(0.0) as u64)
+    }
+
+    /// Samples folded into [`rtt_mdev_us`]'s EWMA. EWMA-class, so its
+    /// pre-registered warm-up is `n ≥ 16` — identical to
+    /// [`rtt_sigma_samples`], because it is the identical EWMA at the
+    /// identical gain, fed at the identical site.
+    ///
+    /// [`rtt_mdev_us`]: Self::rtt_mdev_us
+    /// [`rtt_sigma_samples`]: Self::rtt_sigma_samples
+    pub fn rtt_mdev_samples(&self) -> u64 {
+        self.copa.rtt_mdev_n
+    }
+
+    /// **CANDIDATE 3 — `msd_us=`, THE REFERENCE-FREE DISPERSION.** Median
+    /// absolute SUCCESSIVE difference over the same window `L = 256`:
+    ///
+    /// ```text
+    ///     msd  =  median( |rtt_i − rtt_{i−1}| )        over the window
+    /// ```
+    ///
+    /// **THIS CANDIDATE IS ARGUED FROM THE MEASURED σ PROCESS, AND THE
+    /// ARGUMENT IS THAT THE 287× IS NOT WHAT IT LOOKS LIKE.** The obvious
+    /// reading of the `c8` spread is loss-burst contamination: a lossy cell
+    /// produces RTT excursions and the estimator inhales them. **The committed
+    /// ledgers refute that reading on their own numbers.** From the
+    /// plain-window primitives table, per-cell loss `p` against the measured
+    /// rep-to-rep σ spread:
+    ///
+    /// ```text
+    ///     cell   p (per leg)        σ reps (ms)              sup/inf
+    ///     c1     0.00015            0.013 / 0.035 / 0.046      3.5×
+    ///     sc2    0.0040             0.335 / 0.492 / 1.113      3.3×
+    ///     c7     0.0056 / 0.0053    0.480 / 0.499 / 2.321      4.8×
+    ///     c8L    0.0039 / 0.0165    0.343 / 0.665 / 4.088     11.9×
+    ///     c8     0.0040 / 0.0184    0.191 / 3.140 / 54.836   287×
+    /// ```
+    ///
+    /// **`sc2` and `c8`'s fast leg carry the SAME loss rate (0.0040) and their
+    /// σ spreads differ by 87×.** Loss rate does not predict the spread, so a
+    /// loss-window-excluding estimator would be excluding the wrong thing —
+    /// and it would also need a loss signal to key on, which is a coupling this
+    /// gauge has no business introducing.
+    ///
+    /// **What the data points at instead is the REFERENCE.** The shipped
+    /// estimator's deviation is `rtt − srtt`, and `srtt` is itself an EWMA at
+    /// β = 1/8 chasing the same series. When the queue takes a LEVEL SHIFT,
+    /// `srtt` lags it by ~8 samples and every deviation in that window is a
+    /// full step height rather than a dispersion. Squared, that is the 54.836
+    /// ms reading — **a "dispersion" 1.4× the cell's own `RTprop` of 38 ms and
+    /// 17× its measured `d` of 3.298 ms, which no dispersion of a stationary
+    /// RTT about a tracking mean can be.** It is `srtt`'s tracking error
+    /// wearing σ's clothes. The two cells with the largest spreads (`c8`,
+    /// `c8L`) are also the two with the largest per-leg loss ASYMMETRY (4.6×
+    /// and 4.2×), which is a standing-queue-shift generator and not a
+    /// loss-rate effect.
+    ///
+    /// **Successive differencing cancels a level shift exactly** — that is
+    /// what the statistic is FOR, and it is the tree's own idea already:
+    /// `CopaState::jitter_est` uses consecutive differences and its field doc
+    /// gives this exact reason (*"a standing queue shifts ALL samples and
+    /// leaves the consecutive differences at jitter scale"*). This candidate is
+    /// that insight applied to the dispersion estimator, with the EWMA replaced
+    /// by a median so an excursion moves it by one rank instead of by its
+    /// magnitude.
+    ///
+    /// **Provenance: CITED.** The mean/median of absolute successive
+    /// differences is the standard robust scale estimator under an unknown
+    /// drifting mean (von Neumann's ratio, 1941; the successive-difference
+    /// variance estimator of von Neumann, Kent, Bellinson & Hart 1941), and
+    /// RFC 3550 §A.8's interarrival jitter is the same construction.
+    ///
+    /// Gaussian conversion, documented and not applied: for iid `X ~ N(µ, σ²)`
+    /// the successive difference is `N(0, 2σ²)`, so
+    /// `median|Δ| = 0.6745·√2·σ = 0.9539·σ` — within 5 % of unity, which is a
+    /// convenience and not a licence to treat it as σ.
+    ///
+    /// `None` until at least two samples exist (one difference).
+    pub fn rtt_msd_us(&self) -> Option<u64> {
+        if self.copa.rtt_win.len() < 2 {
+            return None;
+        }
+        let mut d: Vec<u32> = self
+            .copa
+            .rtt_win
+            .iter()
+            .zip(self.copa.rtt_win.iter().skip(1))
+            .map(|(a, b)| a.abs_diff(*b))
+            .collect();
+        d.sort_unstable();
+        Some(Self::cand_quantile(&d, 0.50))
+    }
+
+    /// SUCCESSIVE DIFFERENCES available to [`rtt_msd_us`] right now — the
+    /// window fill minus one, saturating at `SIGMA_CAND_WINDOW − 1`.
+    ///
+    /// It is the difference count and not the sample count because the
+    /// differences are what the median is taken over, and the count beside a
+    /// value must describe that value's own sample set.
+    ///
+    /// [`rtt_msd_us`]: Self::rtt_msd_us
+    pub fn rtt_msd_samples(&self) -> u64 {
+        (self.copa.rtt_win.len() as u64).saturating_sub(1)
     }
 
     pub fn rtt_jitter_us(&self) -> u64 {
