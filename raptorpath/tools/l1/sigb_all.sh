@@ -56,12 +56,35 @@ if [ ! -f "$OUTDIR/sigb-calib-s42.log" ]; then
   [ "${RWM_SIGB_NO_CALIB:-0}" = "1" ] || exit 4
 fi
 REPS="${1:-8}"
+
+# ── A SENTINEL IS EARNED, NOT UNCONDITIONAL ──────────────────────────────
+#
+# MEASURED, 2026-08-21: `sigb_calib.sh`'s first invocation hit a CRLF trap in
+# `lib.sh`, ran ZERO invocations, and still wrote its DONE sentinel — because
+# the `touch` was the script's last line and nothing else. Discipline 13 tells
+# a watcher to watch the SENTINEL rather than the process table, so an
+# unconditional `touch` converts a total failure into a clean-looking success
+# at exactly the moment nobody is looking. Every sentinel this script writes is
+# now conditional on the battery's own DONE line being in its own ledger.
+seed_done() {  # seed sentinel — write it only if the ledger earned it
+  local s="$1" f="$OUTDIR/sigb-s$1.log"
+  if [ -s "$f" ] && grep -q "SIGB-BATTERY-DONE seed=$s" "$f"; then
+    touch "$OUTDIR/DONE-S$s"
+    return 0
+  fi
+  echo "SIGB-ALL seed $s DID NOT COMPLETE — no SIGB-BATTERY-DONE in $f" \
+    | tee -a "$OUTDIR/all-era.txt"
+  touch "$OUTDIR/FAILED-S$s"
+  return 1
+}
+
+rm -f "$OUTDIR/FAILED-S42" "$OUTDIR/FAILED-S7"
 echo "SIGB-ALL start $(date -u +%FT%TZ) reps=$REPS load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.txt"
 bash sigb_battery.sh 42 "$REPS"
-touch "$OUTDIR/DONE-S42"
+seed_done 42
 echo "SIGB-ALL s42 done $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" >> "$OUTDIR/all-era.txt"
 bash sigb_battery.sh 7 "$REPS"
-touch "$OUTDIR/DONE-S7"
+seed_done 7
 echo "SIGB-ALL end $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" >> "$OUTDIR/all-era.txt"
 python3 ./sigb_report.py "$OUTDIR/sigb-s42.log" "$OUTDIR/sigb-s7.log" \
   > "$OUTDIR/sigb-report.txt" 2>&1 || true
@@ -71,5 +94,18 @@ python3 ./sigb_report.py "$OUTDIR/sigb-s42.log" \
   > "$OUTDIR/sigb-report-s42.txt" 2>&1 || true
 python3 ./sigb_report.py "$OUTDIR/sigb-s7.log" \
   > "$OUTDIR/sigb-report-s7.txt" 2>&1 || true
-touch "$OUTDIR/DONE-ALL"
-echo SIGB-ALL-DONE
+
+# THE TERMINAL SENTINEL, AND THERE ARE TWO OF THEM SO SILENCE IS NEVER THE
+# ANSWER. DONE-ALL means at least seed 42 earned its DONE line — the state the
+# contract pre-commits to scoring. FAILED-ALL means neither seed did. A watcher
+# waits on `DONE-ALL || FAILED-ALL`, so a battery that dies still ends the wait
+# instead of looking like one that is still running.
+if [ -f "$OUTDIR/DONE-S42" ]; then
+  touch "$OUTDIR/DONE-ALL"
+  [ -f "$OUTDIR/DONE-S7" ] || echo "SIGB-ALL: seed 7 NOT COMPLETE — score seed 42 alone, and report the seed-7 half as NOT RUN" | tee -a "$OUTDIR/all-era.txt"
+  echo SIGB-ALL-DONE
+else
+  touch "$OUTDIR/FAILED-ALL"
+  echo SIGB-ALL-FAILED
+  exit 5
+fi

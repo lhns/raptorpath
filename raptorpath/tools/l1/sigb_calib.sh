@@ -57,7 +57,40 @@ rm -f "$OUTDIR/DONE-CALIB"
 } > "$OUTDIR/calib-era.txt"
 RWM_SIGB_TAG=sigb-calib bash sigb_battery.sh 42 1
 echo "SIGB-CALIB end $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" >> "$OUTDIR/calib-era.txt"
-python3 ./sigb_report.py "$OUTDIR/sigb-calib-s42.log" \
-  > "$OUTDIR/sigb-calib-report.txt" 2>&1 || true
-touch "$OUTDIR/DONE-CALIB"
-echo SIGB-CALIB-DONE
+
+# ── THE SENTINEL IS EARNED, NOT UNCONDITIONAL ────────────────────────────
+#
+# MEASURED, 2026-08-21, ON THIS SCRIPT'S FIRST INVOCATION. The shipped source
+# tree reached the VM with CRLF line endings (`git archive` under
+# `core.autocrlf=true`), so `lib.sh` died at line 6 with `$'\r': command not
+# found`, `sigb_battery.sh` exited immediately, NOT ONE INVOCATION RAN — and
+# this script cheerfully `touch`ed DONE-CALIB and printed SIGB-CALIB-DONE.
+#
+# **A WATCHER WATCHING THE SENTINEL — WHICH IS EXACTLY WHAT DISCIPLINE 13 TELLS
+# IT TO WATCH — WOULD HAVE READ THAT AS A COMPLETED CALIBRATION.** The whole
+# point of watching a sentinel instead of the process table is that the
+# sentinel means something, and an unconditional `touch` at the end of a script
+# means only "the script reached its last line". That is not a completion
+# signal, it is a liveness signal for the shell.
+#
+# So the sentinel is now CONDITIONAL on the battery's own DONE line being in
+# its own ledger. A run that produced no ledger writes FAILED-CALIB instead,
+# which is a sentinel too — one that says the opposite thing.
+LEDGER="$OUTDIR/sigb-calib-s42.log"
+rm -f "$OUTDIR/FAILED-CALIB"
+if [ -s "$LEDGER" ] && grep -q "SIGB-BATTERY-DONE" "$LEDGER"; then
+  python3 ./sigb_report.py "$LEDGER" \
+    > "$OUTDIR/sigb-calib-report.txt" 2>&1 || true
+  touch "$OUTDIR/DONE-CALIB"
+  echo SIGB-CALIB-DONE
+else
+  {
+    echo "SIGB-CALIB FAILED $(date -u +%FT%TZ)"
+    echo "  no ledger at $LEDGER, or no SIGB-BATTERY-DONE line in it."
+    echo "  THE BATTERY DID NOT RUN. Check for a CRLF trap in tools/l1 first:"
+    echo "    python3 -c 'print(open(\"lib.sh\",\"rb\").read().count(b\"\\r\\n\"))'"
+  } | tee -a "$OUTDIR/calib-era.txt"
+  touch "$OUTDIR/FAILED-CALIB"
+  echo SIGB-CALIB-FAILED
+  exit 5
+fi

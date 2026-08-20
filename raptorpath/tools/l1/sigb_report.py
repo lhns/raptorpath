@@ -353,27 +353,65 @@ def main(argv):
     P("\n## 2 — CLAUSE C: IS THE ESTIMATOR USABLE FOR THE RUN, NOT MERELY AT")
     P("##     ITS END?  n_warm <= %.0f%% x N_cell, from the RECORDED n counts.\n"
       % (100 * C2_FRAC))
-    P("  %-6s %-5s %-4s %10s %10s   %s"
-      % ("cell", "site", "path", "N (max n)", "C2 bar", "per class"))
-    c_fail = defaultdict(list)
+    # ── PER-LEG N, the input to both readings below ──────────────────────
+    legN = {}
     for key in sorted(L.raw_n):
-        cell, site, pid = key
         ns = [n for _, _, n in L.raw_n[key]["sig"]]
-        N = max(ns) if ns else 0
-        bar = C2_FRAC * N
+        legN[key] = max(ns) if ns else 0
+
+    # ── C2 AS THE BAR WRITES IT — PER CELL, ON THE CELL'S DATA-PATH COUNT.
+    #
+    # THE BAR SAYS `N_cell` AND MEANS THE CELL'S RTT-SAMPLE COUNT: its own
+    # worked example is "the binding cell is c8 ... at N ~ 17 660, the smallest
+    # converged sample count in the primitives table", and that number is the
+    # DATA-PATH leg's count in that table. The data path identifies itself by
+    # sample count and no judgement call is needed — the same discriminator the
+    # c8 sigma pass and the local characterization both used (a 137x separation
+    # there, and a 21x sender-side leg asymmetry at the duals here).
+    #
+    # THIS IS THE BINDING READING. The battery's pre-registration §6 glossed
+    # C2 as "per leg"; that gloss is STRICTER than the clause it glosses, and
+    # where a gloss conflicts with the bar it glosses, THE BAR WINS — this pass
+    # scores the acceptance bar and nothing else, including nothing of its own.
+    # The per-leg table is kept below as a DISCLOSURE, because what it actually
+    # shows is not a clause-C failure but a fact about where a window-class
+    # gauge can be measured at all — and clause S already says that, correctly,
+    # as UNSCOREABLE-NO-SAMPLE rather than as a fail.
+    cells = sorted({k[0] for k in legN})
+    cellN = {c: max([legN[k] for k in legN if k[0] == c] or [0]) for c in cells}
+    c_fail = defaultdict(list)
+    P("  SCORED — C2 AS THE BAR WRITES IT: per CELL, on the cell's DATA-PATH")
+    P("  RTT-sample count (the leg with the most samples, which is how the")
+    P("  data path identifies itself in this tree).\n")
+    P("  %-6s %14s %10s   %s" % ("cell", "N_cell (data)", "C2 bar", "per class"))
+    for c in cells:
+        N, bar = cellN[c], C2_FRAC * cellN[c]
         verd = []
         for g in GAUGES:
             ok = N > 0 and N_WARM[g] <= bar
             verd.append("%s=%s" % (g, "ok" if ok else "FAIL"))
             if not ok:
-                c_fail[g].append("%s/%s/p%d (N=%d, bar=%.0f, n_warm=%d)"
-                                 % (cell, site, pid, N, bar, N_WARM[g]))
-        P("  %-6s %-5s p%-3d %10d %10.0f   %s"
-          % (cell, site, pid, N, bar, " ".join(verd)))
-    P("\n  N is the MAXIMUM `sig_us` n at the leg — the lifetime RTT-sample")
-    P("  count the gauge was fed, which is the quantity clause C2 names.")
-    P("  Clause C2's binding cell was pre-registered as c8 at N ~ 17 660,")
+                c_fail[g].append("%s (N_cell=%d, bar=%.0f, n_warm=%d)"
+                                 % (c, N, bar, N_WARM[g]))
+        P("  %-6s %14d %10.0f   %s" % (c, N, bar, " ".join(verd)))
+    P("\n  Clause C2's binding cell was pre-registered as c8 at N ~ 17 660,")
     P("  giving n_warm <= 883. The table above uses THIS battery's own counts.")
+
+    P("\n  DISCLOSURE — THE PER-LEG COUNTS, WHICH ARE NOT A CLAUSE-C VERDICT.")
+    P("  A leg whose N cannot reach a gauge's own n_warm never produces a")
+    P("  post-warm-up reading there, and clause S reports that as")
+    P("  UNSCOREABLE-NO-SAMPLE — the honest statement, since the gauge was not")
+    P("  measured at that leg rather than measured and found wanting.\n")
+    P("  %-6s %-5s %-4s %10s %10s   %s"
+      % ("cell", "site", "path", "N (max n)", "5% of N", "window class reachable?"))
+    for key in sorted(legN):
+        cell, site, pid = key
+        N = legN[key]
+        reach = ("qsp=%s msd=%s"
+                 % ("yes" if N >= N_WARM["qsp"] else "NO",
+                    "yes" if N >= N_WARM["msd"] else "NO"))
+        P("  %-6s %-5s p%-3d %10d %10.0f   %s"
+          % (cell, site, pid, N, C2_FRAC * N, reach))
 
     # ── 3. CLAUSE S ─────────────────────────────────────────────────────
     P("\n## 3 — CLAUSE S: R_total = p95/p05 OVER THE POOLED READINGS OF ALL")

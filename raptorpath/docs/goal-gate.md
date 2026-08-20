@@ -41012,3 +41012,220 @@ path is exercised on real rows rather than trusted.
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 wires a consumer, touches a clock, or modifies the acceptance bar it will be
 scored against.**
+
+### 13 — A HARNESS DEFECT THIS PASS CAUSED AND CAUGHT, RECORDED RATHER THAN QUIETLY FIXED — **AN UNCONDITIONAL SENTINEL IS NOT A COMPLETION SIGNAL**
+
+**WHAT HAPPENED.** The source tree was shipped to the VM with `git archive`
+from a checkout at `core.autocrlf=true`, and it arrived with **CRLF line
+endings on all 568 text files.** `tools/l1/lib.sh` therefore died at line 6
+with `$'\r': command not found`, `sigb_battery.sh` exited immediately, and
+**not one invocation ran.**
+
+**AND `sigb_calib.sh` REPORTED SUCCESS.** Its last two lines were `touch
+DONE-CALIB` and `echo SIGB-CALIB-DONE`, executed unconditionally, so a
+zero-invocation failure produced **the exact sentinel a watcher is told to
+watch for.** MEASUREMENT DISCIPLINE 13 says to watch the sentinel instead of
+the process table precisely because the process table lies — and an
+unconditional `touch` at the end of a script means only *"the script reached
+its last line"*, which is a liveness signal for the shell and not a completion
+signal for the battery. **The one thing a watcher is instructed to trust was
+the one thing that could not fail.**
+
+**THE REPAIR, IN BOTH SCRIPTS.** Every sentinel is now **earned**: it is
+written only if the battery's own `SIGB-BATTERY-DONE` line is present in the
+battery's own ledger. A run that does not earn it writes the OPPOSITE sentinel
+instead — `FAILED-CALIB` / `FAILED-S<seed>` / `FAILED-ALL` — so a watcher waits
+on `DONE-ALL || FAILED-ALL` and **a battery that dies ends the wait instead of
+looking like one that is still running.** Silence is never the answer to
+"did it finish".
+
+**THE CRLF ITSELF IS ALSO REPAIRED AND THE BINARY WAS REBUILT.** All 568 files
+were converted back to LF before anything else ran. The release binary had
+already been built from the CRLF sources; `rustc` accepts them, but a binary
+built from CRLF sources is not the binary this branch describes, so **it was
+discarded and rebuilt from the repaired tree.** Both `sha256` values are
+recorded in the calibration section below, and whether they agree is reported
+as a measured fact rather than assumed either way.
+
+---
+
+## THE SIGMA ESTIMATOR — THE CALIBRATION AND SMOKE, DISCHARGED (2026-08-21, `feat/sigma-battery`) — **the pre-registration's §11 calibration clause is COMPLETE and the scored battery is cleared to launch.** 5 invocations, one REBUILT binary, all five cells, seed 42, **0 aborts, `rc = 0` at 5/5, W1/W2/W4′/W5/W7 clean at 5/5.** `n = 1`. **NOTHING HERE IS A RESULT** — no clause of `S`, `B` or `C` is scored, and no number below is quoted as a measurement of anything.
+
+### 1 — THE BINARY, AND THE CRLF QUESTION ANSWERED WITH A NUMBER
+
+**Both builds produced the IDENTICAL `sha256`.**
+
+```text
+   from the CRLF-damaged tree   5f87359e0ffe6d014fb87efbd92f96177254af27fc8bc26c90143cb1069f0781
+   from the LF-repaired tree    5f87359e0ffe6d014fb87efbd92f96177254af27fc8bc26c90143cb1069f0781
+```
+
+So the CRLF made **no difference to the binary** — which is what one would
+expect and is now measured rather than assumed. `cargo build --release -p
+raptorpath`, 4 m 43 s, 42 warnings (unchanged). The engine tree is
+main@`2a1719a`; commit `a3709af` is doc-and-harness-only and touches no engine
+crate.
+
+### 2 — THE WITNESSES, AND THE ONE OUT-OF-BAND READING
+
+**0 aborts. `rc = 0` at 5/5. `[GATES]` two-sided at 5/5. No `ABORT`,
+`SUBSTRATE-FAIL`, `INSTRUMENT-FAIL-GATE`, `INSTRUMENT-FAIL-PROBE`,
+`SIGB-PARSE-FAIL` or `W7-FAIL` at any invocation.**
+
+| cell | runtime | `mean_mbps` | band | in band | plateau? |
+|---|---|---|---|---|---|
+| `c1` | 19 s | 188.5 | [147, 294] | yes | no |
+| `c7` | 12 s | 161.3 | [140, 180] | yes | no |
+| `c8` | 5 s | 86.3 | [50, 100] | yes | no |
+| `c8L` | 38 s | **44.6** | [45, 95] | **NO** | no |
+| `sc2` | 11 s | 89.2 | [78, 92] | yes | no |
+
+**`c8L` READS 44.6 AGAINST A FLOOR OF 45 — 0.8 % UNDER — AND THE PRE-COMMITTED
+PRECEDENCE RESOLVES IT WITHOUT A JUDGEMENT CALL.** It is nowhere near the
+generation plateau (26.8–34.1), `W1` reads `gen=0`, there are zero `[PFRAC]`
+lines, and `W5` is present. So it is an **OUT-OF-BAND RESULT**, printed as one,
+not an abort — exactly as §8 pre-registered. **And `c8L`'s floor is the one
+band edge in this table that was never measured**: the plain-window amendment
+set it at 45 by hand because `c8L`'s own `p05` of 34.5 lies *inside* the
+generation plateau and therefore cannot discriminate. A reading 0.8 % below a
+hand-set floor is a statement about the floor, and it is recorded as one.
+
+**`W7` — THE REACHABILITY GATE — IS CLEAN AND IS THE POINT OF THIS PASS.** All
+four tokens appear with `/n` counts on every path entry of every `[DIAG]`
+block, at both endpoints, with **identical counts per gauge per site** at every
+cell (`c1` 48/64, `c7` 76/68, `c8` 18/16, `c8L` 248/236, `sc2` 35/30). The
+biconditional holds: the four gauges are present exactly where `sig_us` is.
+**The three candidates are on a wire for the first time.**
+
+### 3 — HEADROOM (MEASUREMENT DISCIPLINE 16), EVERY CELL, EVERY INVOCATION
+
+`util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`. `INVOCATION_S` is
+carried only so the correction is auditable.
+
+| cell | shaped | xfer s | `INVOC_S` | util % | headroom % | claims permitted |
+|---|---|---|---|---|---|---|
+| `c1` | 1000 Mbit | 16.98 | 19 | 20.6 | 79.4 | headroom exists |
+| `c7` | 200 Mbit | 9.92 | 12 | 89.8 | 10.2 | headroom exists |
+| `c8` | 120 Mbit | 2.32 | 5 | 80.9 | 19.1 | headroom exists |
+| `c8L` | 120 Mbit | 35.86 | 38 | 43.0 | 57.0 | headroom exists |
+| `sc2` | 100 Mbit | 8.97 | 11 | **99.7** | **0.3** | **NO-THROUGHPUT-TARGET (discipline 16c)** |
+
+**THIS BATTERY WRITES NO GOODPUT CLAUSE ANYWHERE, SO THE TABLE LICENSES
+NOTHING.** It is recorded because a cell at its ceiling produces a different
+RTT sample process from one that is not, and that is a property of the **input
+to the thing under test**. `sc2` at **99.7 % utilisation** is the cell to
+remember when its σ columns are read: its RTT stream is the stream of a
+saturated pipe, and `c1` at 20.6 % is not.
+
+### 4 — THE CALIBRATION'S OWN FINDING: A SPECIFICATION CONFLICT IN §6, RESOLVED IN FAVOUR OF THE BAR
+
+**THE PRE-REGISTRATION'S §6 SAID CLAUSE `C2` IS SCORED "PER LEG". THE BAR SAYS
+`N_cell` AND MEANS THE CELL.** The bar's own worked example is *"the binding
+cell is `c8` … at `N ≈ 17 660`, the smallest converged sample count in the
+primitives table"*, and that number is the **data-path leg's** count in that
+table. Scored per leg, the sparse legs' `N` (6–1 202) put the `C2` bar below
+the window class's own `n_warm` and manufactured a `REJECT-C` for `qsp` and
+`msd` at nine legs.
+
+**THAT REJECTION IS MY GLOSS'S, NOT THE BAR'S, AND IT IS WITHDRAWN.** The rule
+applied is the one that needs no judgement: **where a gloss conflicts with the
+clause it glosses, the clause wins** — this pass scores the acceptance bar and
+nothing else, *including nothing of its own*. Clause `C2` is now scored **per
+cell on the data-path count**, which is the bar's own reading, and the per-leg
+table is kept as a **DISCLOSURE**.
+
+**AND THE DISCLOSURE IS THE MORE HONEST STATEMENT ANYWAY.** What the sparse
+legs show is not that a gauge failed there — it is that a **window-class gauge
+cannot be measured there at all**, because `N` never reaches `L`. Clause `S`
+already says exactly that, in the right words, as **UNSCOREABLE-NO-SAMPLE**.
+A gauge that was not measured is not a gauge that was measured and found
+wanting, and the report now distinguishes the two.
+
+**SCORED (the bar's reading) — all four gauges clear `C2` at all five cells:**
+
+| cell | `N_cell` (data path) | `C2` bar | `sig`/`rvar` (16) | `qsp` (256) | `msd` (255) |
+|---|---|---|---|---|---|
+| `c1` | 334 460 | 16 723 | ok | ok | ok |
+| `c7` | 85 791 | 4 290 | ok | ok | ok |
+| `c8` | **20 523** | **1 026** | ok | ok | ok |
+| `c8L` | 163 709 | 8 185 | ok | ok | ok |
+| `sc2` | 84 070 | 4 204 | ok | ok | ok |
+
+`c8` is the binding cell exactly as pre-registered, and its measured
+`N = 20 523` sits within 16 % of the primitives table's remembered 17 660.
+
+**DISCLOSED — where a window-class gauge can be measured at all:** the sender
+legs reach a full window everywhere (`N` = 1 133 – 334 460, including `c8`'s
+sparse `p1`); **the receiver legs do not, at four cells of five** (`c7` 167/21,
+`c8` 26/6, `c8L` 112/23, `sc2` 106) and reach it only at `c1` (1 202). So the
+receiver seat contributes `sig`/`rvar` rows and **no** `qsp`/`msd` rows outside
+`c1`, and that is a fact about the seat, stated now rather than discovered in
+the scored report.
+
+**FULL DISCLOSURE ON THE ORDER OF EVENTS: I had already read the calibration's
+§3 clause-`S` table when I made this change.** It is recorded here rather than
+presented as a clean pre-run decision. The change is **candidate-neutral by
+construction** — it removes the same invented rejection from `qsp` and `msd`
+together, both window-class, at the same nine legs — and it touches no other
+clause. Clause `S` is unchanged and still binds **per leg**, which is where the
+sparse-leg question belongs.
+
+### 5 — THE SMOKE: EVERY INSTRUMENT THIS BATTERY READS IS LIVE
+
+| thing | never on a wire before | reading |
+|---|---|---|
+| `rvar_us` / `qsp_us` / `msd_us` | **yes** | present with `/n` on every path entry, both endpoints, 5/5 (`W7`) |
+| the window class reaching a full window | **yes** | `qsp` `n = 256` and `msd` `n = 255` reached on every sender leg at every cell, `c8`'s 25 MB included |
+| the per-leg probe through the candidates' own functionals | **yes** | all 16 legs returned `qsp`/`msd`/`sd`; censoring **0.3 – 5.05 %** |
+| `latt_probe`'s contract bar (20 %) | no | not triggered on any leg |
+| the `P90` structural bar (10 %) | **yes** | not triggered on any leg — `qsp`'s probe functional is alive everywhere |
+| the sampling-rate row | **yes** | 16 legs spanning **0.6 – 19 702 samples/s**, a 32 000× range, with Spearman computed |
+| clause `B`'s CONFOUNDED marking for `msd` | **yes** | applied at 8/8 sender legs, as §5 pre-committed |
+
+**AND THE VERDICT MACHINERY EXERCISED EVERY PATH IT OWNS** on this input:
+`REJECT-S`, `UNSCOREABLE-THIN`, `UNSCOREABLE-NO-SAMPLE`, `CONFOUNDED-`, and the
+`NEEDS-MORE` tie-break branch. **None of those is a result** — `n = 1`, `c8`
+emits only 9 `[DIAG]` blocks per rep so every `c8` leg is legitimately
+`UNSCOREABLE-THIN` here, and the report says NO VERDICT on this input, which is
+correct.
+
+### 6 — THE SCORED RUN'S OWN ADEQUACY, COMPUTED FROM THE CALIBRATION
+
+The thin-leg gate needs **20** pooled post-warm-up readings. At 8 reps × 2
+seeds = **16 reps**, the calibration's per-rep read counts give:
+
+| leg | reads/rep | × 16 | scoreable? |
+|---|---|---|---|
+| `c8L` sender | 123–125 | ~2 000 | yes |
+| `c1` sender / receiver | 48 / 51–63 | ~800 | yes |
+| `c7` sender | 37–39 | ~600 | yes |
+| `sc2` sender / receiver | 35 / 28 | ~450–560 | yes |
+| **`c8` sender `p0`/`p1`** | **9 / 5–9** | **~80–144** | **yes, and it is the thinnest** |
+| `c8` receiver `p0` | 5 | ~80 | yes |
+| `c8` receiver `p1` | 0 | 0 | **no — UNSCOREABLE-NO-SAMPLE, and genuinely so** (`N` = 6) |
+
+**`c8` IS THE BINDING CELL ON THIS AXIS TOO**, at ~80–144 pooled readings
+against a gate of 20 — a 4–7× margin, and the reason the scored run needs both
+seeds rather than one.
+
+**ETA.** 85 s of runtime per rep-sweep over the five cells (19 + 12 + 5 + 38 +
+11), so 16 rep-sweeps ≈ **23 minutes** of transfer, plus per-invocation
+topology bring-up and teardown. **Expect 35–50 minutes** for both seeds.
+
+### 7 — WHAT IS AND IS NOT DISCHARGED
+
+**Discharged.** The pre-registration's §11 clause, both halves: the headroom
+table exists for every cell and every invocation, and the smoke has put all
+three candidate gauges, the window-class fill, the per-leg probe functionals
+and the sampling-rate row on a wire with clean witnesses. The binary is
+rebuilt, its `sha256` recorded, and the CRLF question answered with a
+measurement. The sentinel defect of §13 is repaired in both scripts.
+
+**NOT discharged, and not claimed.** **No clause is scored.** `n = 1`, and
+every number in this section is a configuration reading or a sample count, not
+a dispersion measurement. No candidate is preferred, no verdict is reached, and
+the `R_total` figures the calibration report prints are **not results** and are
+not quoted here.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or modifies the acceptance bar.**
