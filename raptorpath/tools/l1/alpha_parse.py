@@ -247,9 +247,17 @@ def toks(line):
     return dict(TOKEN.findall(line))
 
 
+#: SELECTED BY ROLE, NOT BY LOG — the same trap `[QCLK]` fell into below. A
+#: `perf --client` process runs a receiver task for the reverse direction and
+#: emits `[QALPHA] site=receiver` into the CLIENT log, where it reads the AUTO
+#: contract point (the hint is not plumbed to the receiver task) rather than
+#: the sender's own. Taking the last line of the client log would make W6 -
+#: the arm-liveness witness - depend on emission order.
+QALPHA_ROLE = {"cli": "sender", "srv": "receiver"}
 qalpha = {}
 for site, lines in (("cli", cli), ("srv", srv)):
-    hits = [ln for ln in lines if "[QALPHA]" in ln]
+    hits = [ln for ln in lines
+            if "[QALPHA]" in ln and f"site={QALPHA_ROLE[site]}" in ln]
     r = {f"qalpha_lines_{site}": len(hits), f"qalpha_site_{site}": None,
          f"qalpha_quantile_{site}": None, f"qalpha_contract_{site}": None,
          f"qalpha_override_{site}": None, f"qalpha_{site}": None,
@@ -294,9 +302,25 @@ QCLK_FIELDS = (["site"] + QCLK_FLOAT + QCLK_INT + ["sigma_us_mean", "sigma_n"])
 #: one at this era. The column is carried so that when it appears the ledger
 #: records it, and so that its ABSENCE is a visible null rather than a parser
 #: that silently returned nothing for the whole line.
+#
+# ── THE ROLE FILTER, AND WHY IT IS NOT OPTIONAL ─────────────────────────────
+# **A `perf --client` PROCESS CARRIES BOTH GAUGES.** It is the bulk SENDER, but
+# it also runs a receiver task for the reverse direction, so a `[QCLK]
+# site=receiver` line lands in the CLIENT log — and selecting by max `evals`
+# alone let that receiver-role gauge win the `qclk_cli_*` columns whenever it
+# happened to evaluate more often. THE CALIBRATION CAUGHT IT: `c8-CTL` reported
+# `alpha=1e-5, k=316.2` where the sender's own line on the same run read
+# `alpha=1e-3, k=31.6` — the receiver's AUTO contract point, at one cell of
+# five, silently, in the column the SEPARATION RULE is computed from.
+#
+# So the selection is by ROLE and not by log: `qclk_cli_*` is the SENDER-role
+# gauge and `qclk_srv_*` is the RECEIVER-role gauge, and an absent role yields
+# nulls rather than the other role's numbers.
+QCLK_ROLE = {"cli": "sender", "srv": "receiver"}
 qclk = {}
 for site, lines in (("cli", cli), ("srv", srv)):
-    hits = [toks(ln) for ln in lines if "[QCLK]" in ln]
+    hits = [t for t in (toks(ln) for ln in lines if "[QCLK]" in ln)
+            if t.get("site") == QCLK_ROLE[site]]
     r = {f"qclk_{site}_lines": len(hits)}
     for f in QCLK_FIELDS:
         r[f"qclk_{site}_{f}"] = None
