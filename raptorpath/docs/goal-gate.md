@@ -37483,3 +37483,413 @@ Reading rule transcribed verbatim from the `c8` σ pass: **LAST `[DIAG]` per pat
 **Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
 
 **Artifacts** (VM 10.1.5.16): per-rep driver logs `/home/vibe/prim/out/<cell>-s42-r<n>-run.log`; sender logs (`σ`, `ν`) `…-c.log`; receiver logs (`d`) `…-s.log`; sectioned qdisc captures (`p`) `…-q.txt`; witness ledger `/home/vibe/prim/out/prim-witness-s42.jsonl`; tarball **`/home/vibe/prim-artifacts.tar.gz`**. Binary sha256 **`330ebfccc1b5f9f371731f6d1deef4511fcc11b3570788ed3eed3627f3d8d984`** — **NOT REBUILT**, the same binary as the `c8` σ pass, verified before the run. Harness shipped fresh from `feat/primitives`'s `tools/l1` to `/home/vibe/prim/l1` (the VM's `/home/vibe/l1` copy is stale and was not used). VM left at 0 `raptorpath` processes, 0 `rp-*` namespaces, lock released.
+
+---
+
+## THE 31 Mbit/s ANOMALY — THE HYPOTHESIS TABLE (2026-08-20, `feat/throughput-anomaly` from main@`3a97dc3`) — **goal #100 item 1's highest-priority open item, and it BLOCKS item 2.** Written and committed BEFORE any hypothesis is scored, in its OWN commit. **Nothing here flips a default, adds a gate, or edits an engine crate. No verdict below is a result.**
+
+### 0 — WHAT THIS TABLE IS, AND THE HONESTY CAVEAT IT CARRIES
+
+"THE PASSIVE PRIMITIVES — THE SCORED RESULT" §6 recorded a validity condition it
+refused to explain away: **every one of five cells ran at 27–34 Mbit/s, at every
+rep, regardless of whether its link is shaped at 1 Gbit or at 20 Mbit**, against
+a committed ledger reading **78–222 Mbit/s at the same five cells**. It named the
+finding *"the highest-priority open item this pass produced, ahead of everything
+in goal #100's own list"*, and it is: **until it is named, no cost-curve
+measurement is interpretable**, because a cell whose throughput does not depend
+on its link is not measuring what the α-sweep intends to price.
+
+**THIS TABLE IS AN ENUMERATION, NOT A BLIND PRE-REGISTRATION, AND SAYING SO IS
+THE POINT.** The driver sources and §6 were read before it was written — the
+differences between two invocations are *enumerable from the harness source*,
+which is exactly why the enumeration can be complete. What committing it
+separately buys is not blindness. It is that **every alternative is listed and
+given a falsifier before any one of them is scored**, including the ones that
+turn out to be wrong, so that the answer cannot be the first thing that looked
+plausible. The scored section that follows is written against this list and
+against nothing else.
+
+### 1 — THE TWO POPULATIONS, NAMED EXACTLY
+
+**ANOMALOUS (27–34 Mbit/s at every cell):**
+
+| pass | driver | env | binary |
+|---|---|---|---|
+| "THE PASSIVE PRIMITIVES — THE SCORED RESULT" (15 invocations, 5 cells) | `tools/l1/prim_battery.sh:66` | `SEED=42 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1` | `330ebfcc…` |
+| "THE MEASURED σ AT c8 — THE SCORED RESULT" (3 invocations, `c8`) | protocol §4 of its own pre-registration | `RWM_DIAG=1`, *"shipped defaults otherwise (**no `RWM_GEN` override**, no arm gate)"* | `330ebfcc…` |
+
+**HEALTHY (78–222 Mbit/s at the same cells, `c1` at 170–222 the SAME WEEK):**
+
+| pass | driver | the line |
+|---|---|---|
+| `ccand` ledger (477 records) | `ccand_battery.sh:434` | `env SEED=$SEED_ARG RWM_GEN=0 …` |
+| `ccap` | `ccap_battery.sh:266` | `RWM_GEN=0` |
+| ladder | `ladder_battery.sh:335` | `RWM_GEN=0` |
+| era | `era_battery.sh:324` | `RWM_GEN=0` |
+| gap phase 1 + 2 | `gap_battery.sh:359` | `RWM_GEN=0` *("on every arm — the plain-window control, and it is what BOTH prior ledgers ran")* |
+| latency battery | `lat_battery.sh:81` | `RWM_GEN=0` |
+| span run | `span_battery.sh:87` | `RWM_GEN=0` |
+
+**FORTY-ONE `tools/l1` drivers set `RWM_GEN=0`. `prim_battery.sh` is the only
+battery in the tree that deliberately does not**, and its own header says so at
+line 18: *"NOT SET, DELIBERATELY: `RWM_GEN=0`."*
+
+### 2 — THE HYPOTHESES, EACH WITH ITS PREDICTED SIGNATURE AND ITS FALSIFIER
+
+Every signature named below is checkable against material **already committed or
+already on the VM**. No hypothesis in this table requires a run to be ruled in or
+out, and that is the first thing the scored section must establish or refute.
+
+| # | hypothesis | predicted signature in EXISTING material | falsifier |
+|---|---|---|---|
+| **H1** | **THE GENERATION-CODING AXIS.** `perf_rwm_c.sh:74` reads `GEN_GATE="${RWM_GEN:-1}"` and `:100` drops `--window-generation-coding` **only** when it is `0`. Both anomalous passes omit `RWM_GEN` ⇒ generation coding **ON**; every healthy ledger sets `RWM_GEN=0` ⇒ plain window. | anomalous sender logs: `--window-generation-coding` on the client line, `cod>0`, `src=0`, `[PFRAC] total_coded>0`. Healthy ledger sender logs: `cod=0`, `enc=0.0/n0`, `src=0.0/n0`, **no** `[PFRAC]`. | any healthy-ledger sender log showing `cod>0`, or any anomalous log showing `cod=0` (which `perf_rwm_c.sh:510`'s guard would have aborted on). |
+| **H2** | **DIAGNOSTIC INSTRUMENT LOAD.** `RWM_FDIAG=1` is new in the primitives pass — its first use as a scored instrument. | throughput should scale **inversely with emission count**. `c8` emitted 12–15 `[FDIAG]` lines per rep; `c1` emitted 193–201, ~15×. | both read 27–34 Mbit/s ⇒ no correlation ⇒ H2 dead. Independently: gap phase 1's `Oe` arm was built to bound instrument load and published the bound. |
+| **H3** | **`RWM_LATPROBE` ABSENCE.** Present on `ccand`/`ccap`/ladder/`lat`/gap-`Oe`; absent from both anomalous passes. | the probe **adds** a 20 pkt/s `ping` per leg, i.e. it adds load. Its absence cannot **lower** throughput. | direction is wrong a priori; `Oe`/`Op` measured its cost and it is small. |
+| **H4** | **TRANSFER SIZE / RUNS.** | `prim_battery.sh:43-51` transcribes `ccand_battery.sh:202-215` **verbatim** (`c1` 400 MB single, `c8` 25 MB dual, `c8L` 200 MB dual, …), `runs=1` on both. `c8` (25 MB) and `c8L` (200 MB) are an 8× size contrast **within the anomalous pass**. | `c8` 26.8–31.5 vs `c8L` 32.5–34.1 Mbit/s ⇒ size does not move it ⇒ H4 dead. |
+| **H5** | **`single` vs `dual` MODE.** | `c1`/`sc2` single, `c7`/`c8`/`c8L` dual, within the same anomalous pass. | all five in 27–34 ⇒ mode does not move it ⇒ H5 dead. |
+| **H6** | **BINARY ERA.** `330ebfcc…` against the `ccand`-era binary; §5 of the primitives pass already blamed "the binary era" for the dead `[RACK]` gauge. | a binary-era ceiling would have to be **present at `RWM_GEN=0` too**. | gap phase 1/2 ran `c1` at `RWM_GEN=0` **the same week** and read **170–200 Mbit/s** on two binaries (`fbd6b279…` OLD and today's main). A 31 Mbit/s floor is not a property of any binary at `RWM_GEN=0` ⇒ H6 cannot be the whole cause. |
+| **H7** | **SUBSTRATE / HOST DRIFT** (steal, co-tenant desktop, thermal). | drift lowers everything by a factor; it does **not** produce a **link-independent invariant** across a 50× capacity range. | gap phase 1/2's same-week `c1` at 170–200 Mbit/s; and the shape of the observation (a 1 Gbit cell and a 20 Mbit cell landing on the same number) is not a drift shape ⇒ H7 dead. |
+| **H8** | **SHAPING NOT APPLIED** (netem/tbf silently absent ⇒ every cell is really the same cell). | the `-q.txt` qdisc captures would show identical per-leg drop and rate across cells. | this session's per-leg `p` spans **0.00013 at `c1`** to **0.0196 at `c8` CLI1**, a 150× range that tracks each cell's configured loss ⇒ netem IS applied per cell ⇒ H8 dead. |
+| **H9** | **THE `[GATES]` ECHO IS A FALSE WITNESS FOR H1.** §6 asserts *"the same generation gates"* and §5 asserts the `ccand` rows are *"byte-identical to this pass"*, both off `[GATES] RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_RATE=9000`. | `gates.rs:1007` formats `RWM_GEN={}` from **`self.gen_size`** — the generation **SIZE** (default 384) — and `window_generation_coding` is a **CLI bool** (`main.rs:190,291`) that appears **nowhere in `echo_line()`**. So `RWM_GEN=384` is echoed **identically** whether the flag was passed or not. | find `window_generation` in the `[GATES]` echo. If H9 holds, the primitives pass's "same gates" claims carry no information and **H1 is not excluded by them.** |
+
+### 3 — THE MECHANISM H1 MUST SUPPLY IF IT IS THE CAUSE
+
+Naming a configuration difference is not naming a cause. If H1 is the cause it
+owes **three** things, and they are pre-committed here so a partial answer cannot
+be read as a whole one:
+
+1. **A RATE ARITHMETIC.** A quantity in the generation pipeline that lands on
+   ~31 Mbit/s, reconciled against the sender's own published gauge
+   (`src=0sym/s cod=3858sym/s` at `c1`).
+2. **AN INVARIANCE MECHANISM.** Why a 1 Gbit cell and a 20 Mbit cell read the
+   same number — i.e. why the binding constraint is **not** the link. A rate cap
+   alone does not do this; it would clip the fast cells and leave `c8`/`c8L`
+   (100+20 Mbit) at their links.
+3. **A PRIOR.** If generation mode is control-loop bound, this tree has measured
+   it before and the earlier number must be found and quoted, or the mechanism is
+   being invented to fit.
+
+### 4 — WHAT THE SCORED SECTION MUST DELIVER, FIXED HERE
+
+* Each of H1–H9 ruled **in** or **out** by named evidence, not by argument.
+* **THE BLAST RADIUS, ITEM BY ITEM.** Which committed scored numbers are
+  contaminated and which survive — `σ`, `d`, `ν`, `p`, `h`, `P4`, `S1`, and the
+  `δ` table's "off by four". A primitive is contaminated if its value **or its
+  interpretation** depends on the configuration axis the cause names.
+* **THE OWED ANNOTATIONS, LISTED AND NOT APPLIED.** Any committed number this
+  invalidates is named here with the correction it needs. **The corrections are
+  NOT written into the sections they belong to in this step** — a scored section
+  is not edited by the session that finds the fault, it is edited by the one that
+  agrees to.
+* **THE α-SWEEP'S REQUIRED ENVIRONMENT**, derived from the cause rather than
+  copied from a driver, including any *reachability* gate the cause implies for
+  the machinery α parameterizes.
+
+### 5 — WHAT THIS STEP IS NOT
+
+**No default is flipped. No engine crate is edited** — the cause is a defect in
+what a battery measured, not necessarily in what the engine does, and if the
+diagnosis lands on the harness the engine stays untouched. **No committed scored
+section is modified.** **No route is advanced:** neither route (b) nor route (d)
+gains or loses anything here, and `S1`'s FAIL is not reopened by this table.
+
+---
+
+## THE 31 Mbit/s ANOMALY — THE SCORED RESULT (2026-08-20, `feat/throughput-anomaly` from main@`3a97dc3`) — **THE CAUSE IS `H1`: THE TWO ANOMALOUS PASSES RAN GENERATION CODING ON AND EVERY LEDGER THEY WERE COMPARED AGAINST RAN IT OFF. `H9` IS ALSO TRUE, AND IT IS WHY NOBODY SAW IT.** Scored against the HYPOTHESIS TABLE above and against nothing else. **ZERO VM INVOCATIONS: the answer was already on disk, exactly as the table required it to be checked for.** **Nothing here flips a default, adds a gate, or edits an engine crate, and no committed scored section is modified.**
+
+### 1 — THE VERDICT FIRST
+
+```text
+    prim_battery.sh:66   env SEED=42 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1  bash perf_rwm_c.sh ...
+    ccand_battery.sh:434 env SEED=$SEED  RWM_GEN=0  ... RWM_DIAG=1 ...      bash perf_rwm_c.sh ...
+                                         ^^^^^^^^^
+    perf_rwm_c.sh:74     GEN_GATE="${RWM_GEN:-1}"
+    perf_rwm_c.sh:96-100 GEN_FLAG="--window-generation-coding";  [[ "$GEN_GATE" == "0" ]] && GEN_FLAG=""
+```
+
+**The anomalous passes ran `--window-generation-coding`. The healthy ledgers did
+not.** That is the whole difference, it is one absent environment variable, and
+it is a **different machine**, not a different tuning: the generation pipeline
+replaces the plain moving window, replaces ARQ with rateless deficit feedback,
+and moves the payload onto QUIC's **droppable datagram path behind a token
+bucket clocked to its own delivered-ack rate**.
+
+**AND THE ANOMALY IS NOT A REGRESSION. IT IS A PLATEAU THIS TREE MEASURED SIX
+WEEKS AGO AND WROTE DOWN.** "Generation Coding —
+FAST DENSE DECODER landed" (2026-07-07) §*"The mechanism of the (remaining)
+shortfall: CONTROL-LOOP BOUND, not decode"* reports **C8 dual generation at
+10.97 Mbit/s and single-path `c2` generation at 10.95 Mbit/s** — the same
+link-invariance, on a different binary, at a lower plateau — and names the
+mechanism in its own words: *"the uploader is `tx_paused=true` in ~90 % of
+samples … coded emission running only ~1.3× the delivered ack … it is throttled
+by the generation-mode control loop."* It even ran the confirming experiment:
+**`RWM_GEN_RATE_FLOOR=6000` (forcing ~57 Mbit/s of coded emission) DROPPED C8
+dual to 5.2 Mbit/s.** The plateau is the design's known operating point.
+
+**`P4` STILL PASSES, THE HARNESS DID NOT MALFUNCTION, AND THE BINARY IS NOT
+DEFECTIVE.** Both anomalous passes measured, correctly and with zero aborts, a
+machine that **is not the machine the ledgers they were compared against
+measured.** Every one of the primitives pass's cross-ledger comparisons is
+therefore a comparison across the generation axis, and none of them said so —
+because of `H9`.
+
+### 2 — THE HYPOTHESES, RULED IN OR OUT
+
+| # | verdict | the evidence, named |
+|---|---|---|
+| **H1** | **RULED IN — THE CAUSE** | `perf_rwm_c.sh:74` `GEN_GATE="${RWM_GEN:-1}"`; `:100` clears `GEN_FLAG` only at `0`. `prim_battery.sh:18` states the omission is deliberate; the σ-`c8` pre-registration §4 states *"no `RWM_GEN` override"*. **41 `tools/l1` drivers set `RWM_GEN=0`; these two are the only scored passes that do not.** Confirmed on the wire by the pass's own quoted gauges — `cod=3858 sym/s` and `wait[gen=98 %]` / `wait[gen=99 %]` — and by `perf_rwm_c.sh:501-518`, whose `total_coded > 0` guard **cannot pass on an `RWM_GEN=0` run and did pass on all 15 reps.** |
+| **H2** | **RULED OUT** | `c1` emitted 193–201 `[FDIAG]` lines/rep, `c8` emitted 12–15 — a 15× instrument-load contrast **inside the anomalous pass** — and both cells read 27–34 Mbit/s. No correlation. |
+| **H3** | **RULED OUT** | Direction is wrong: `RWM_LATPROBE` **adds** a 20 pkt/s `ping` per leg. Its absence cannot lower throughput, and gap phase 1's `Oe` arm exists precisely to bound it. |
+| **H4** | **RULED OUT** | `prim_battery.sh:43-51` transcribes the ledger's `cell_spec` verbatim. `c8` (25 MB) reads 26.8–31.5 and `c8L` (200 MB) reads 32.5–34.1 — an 8× size contrast that moves nothing. |
+| **H5** | **RULED OUT** | `c1`/`sc2` single and `c7`/`c8`/`c8L` dual all land in 27–34. |
+| **H6** | **RULED OUT AS A CAUSE, AND ITS ONE SURVIVING CLAIM IS RETIRED IN §5** | Gap phase 1/2 ran `c1` at `RWM_GEN=0` **the same week**, on **two different binaries** (`fbd6b279…` and today's main), and read **170–200 Mbit/s**. A 31 Mbit/s floor is not a property of any binary at `RWM_GEN=0`. |
+| **H7** | **RULED OUT** | Same-week gap evidence as H6, plus the shape: drift scales a number, it does not pin a 1 Gbit cell and a 120 Mbit cell to the same value. |
+| **H8** | **RULED OUT** | Per-leg `p` this session spans 0.00013 (`c1`) to 0.0196 (`c8` CLI1), a 150× range tracking each cell's configured loss. netem is applied. |
+| **H9** | **RULED IN — AND IT IS WHY THE PASS COULD ASSERT THE OPPOSITE IN GOOD FAITH** | `gates.rs:1007` formats `RWM_GEN={}` from **`self.gen_size`** — the generation **SIZE**, default 384 — so `[GATES] RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_RATE=9000` is emitted **byte-identically whether or not `--window-generation-coding` was passed.** And `window_generation_coding` is a **CLI bool** (`main.rs:190, 291`) that is resolved at `net/mod.rs:1882` and appears **nowhere in `echo_line()`**. **The single most consequential configuration axis in this harness has NO GATE ECHO AT ALL.** |
+
+### 3 — THE MECHANISM, PAYING §3 OF THE TABLE'S THREE DEBTS
+
+**(1) THE RATE ARITHMETIC.** Coded emission is a token bucket
+(`net/mod.rs:5228-5233`) whose rate is set at `net/mod.rs:7308-7310`:
+
+```text
+    src_rate = clamp( max(gen_rate_ewma, Σ_i cwnd_i/SRTT_i) × 1.1 ,  gen_rate_floor ,  gen_rate × n_live )
+             = clamp(                 …                        ,  2 000 sym/s   ,  9 000 × N sym/s )
+```
+
+The pass's own `c1` gauge reads **`cod=3858 sym/s`**. At the 1200 B symbol size
+that is `3858 × 1200 × 8 =` **37.0 Mbit/s on the wire**, against a measured
+goodput of **31.8–33.1 Mbit/s** — the gap is symbol and datagram framing. **The
+arithmetic closes on the sender's own published number.** The ceiling
+(`9000 × 1 = 86.4 Mbit/s` at single-path `c1`) is **not** what binds: at 3858
+sym/s the pacer is running at 45 % of its own clamp, so the binding term is
+`link_est`, the closed loop.
+
+*One caveat, disclosed:* the companion `src=0 sym/s` is a **last-`[DIAG]`** read
+and this tree has already recorded that `src=0` appears in DIAG tails as a drain
+phase. `cod=3858` is the load-bearing figure here; `src=0` is corroborating and
+is not leaned on.
+
+**(2) THE INVARIANCE.** `gen_rate_ewma` is the **delivered-ack (decode) rate** —
+the pipeline's own output fed back as its own input, at a headroom of 1.1
+(`RWM_CC_PACE_HR` default 1.1). The other term, `Σcwnd_i/SRTT_i`, is only
+reached when it exceeds it. Under generation the delivered-ack clock is not the
+link's: **nothing in a generation delivers until `K_g = G = 384` independent
+symbols arrive**, the frontier advances in 384-symbol jumps, and a short
+generation costs a **deficit round-trip** before it can be topped up
+(`receiver.rs:570-620`, `net/mod.rs`'s recovery loop). So the loop's clock is
+the **generation turnaround**, and its rate is 1.1× its own last turnaround.
+That plateau is ~31 Mbit/s on this binary.
+
+**AND THE PRECISE STATEMENT IS SLIGHTLY DIFFERENT FROM §6's, IN A WAY THAT
+STRENGTHENS IT.** §6 wrote *"regardless of whether its link is shaped at 1 Gbit
+or 20 Mbit"*; 20 Mbit is one **leg** of `c8`'s 100+20 dual, not a cell.
+**Every cell in the set has aggregate capacity ≥ 100 Mbit**, and the plateau sits
+below all of them. The correct claim is therefore the stronger and cleaner one:
+**the plateau is below every cell's link, so the link never binds anywhere in
+this set** — which is exactly why the five cells are indistinguishable.
+
+**(3) THE PRIOR.** Found and quoted in §1: 2026-07-07, C8 dual **10.97** vs `c2`
+single **10.95** Mbit/s, `tx_paused` 90 %, and `RWM_GEN_RATE_FLOOR=6000` making
+it **worse** (5.2). The mechanism is not invented to fit; it was measured,
+named "CONTROL-LOOP BOUND, not decode", and written down before this session
+existed.
+
+### 4 — THE SECOND FINDING, WHICH IS BIGGER THAN THE FIRST: `ν = 0` IS STRUCTURAL, NOT A BINARY ERA
+
+The primitives pass §5 concluded: *"The difference is the **binary era**, and
+this pass does not identify what in it."* **It is not the binary era. It is the
+same one variable, and the mechanism is four lines of shipped code:**
+
+```rust
+// net/mod.rs:2426-2438
+// Generation coding (§16.3) turns the per-seq targeted ARQ OFF beneath the
+// code … So the SACK→gap producer is suppressed in generation mode.
+let recv_nack_tx = if window_mode && !window_generation { Some(nack_tx) } else { None };
+```
+
+`RackStats::record_fire` has **exactly one call site** — `net/mod.rs:8143`,
+inside `run_window_sender`'s gap-driven retransmit loop, which is fed by
+`nack_tx`. **With no NACK producer there are no gaps, so `record_fire` is
+unreachable and `fired == 0` BY CONSTRUCTION.** Consequences, each of which the
+primitives pass reported as a finding:
+
+* **`[RACK] fired = 0` at all 15 reps** — structural, not a gauge that "stopped
+  firing".
+* **`[DIAG] retx = 0`** — the same fact.
+* **`[DIAG] mpr[… fired=0 …]`** — the same fact.
+* **`[FDIAG] SOURCE n = 0` at the receiver** — the same fact, seen from the
+  other end. There is no source-retransmit class **because there is no ARQ**.
+
+**§5's four "corroborating witnesses, two of them on the other host" ARE ONE
+FACT COUNTED FOUR TIMES.** And §3's *"`d_source` IS ABSENT AT ALL 15 REPS — AND
+THAT IS A RESULT, NOT A GAP … Every stall this machine suffers is ended by FEC
+decode"* is **true of the configuration and empty as a discovery**: in
+generation mode, FEC decode is the *only* recovery mechanism there is.
+
+**`[PFRAC]` IS ALSO NOT WHAT §5 SAID IT WAS.** §5 calls `RWM_PFRAC` *"a shipped
+default"*. `gates.rs:961` reads `env_flag("RWM_PFRAC", false)` — **default OFF**.
+It was injected by `perf_rwm_c.sh:104-106`, which force-sets it **only when
+`GEN_FLAG` is non-empty**, to feed the `cod > 0` guard. **The presence of
+`[PFRAC]` lines in the primitives logs is itself an independent witness that
+generation was on** — and `recovery_coded` is a generation-only counter, so the
+0.0388-vs-0.0438 comparison in §5 is a cross-configuration comparison too.
+
+### 5 — THE BLAST RADIUS, ITEM BY ITEM
+
+**THE RULE APPLIED:** a number **stands** if it is a measurement of the machine
+that actually ran and is not quoted against a number from the other
+configuration. It **falls** if its *value* or its *interpretation* depends on the
+generation axis.
+
+| result | verdict | why |
+|---|---|---|
+| **`h_marginal` = 14 B** (code-exact) | **STANDS** | `REPAIR_HEADER_SIZE`, `fec/generation.rs:44`. No run involved. |
+| **`h_absolute` = 69–101 B** (3 146 committed records) | **STANDS** | Local pass off committed ledgers, no VM, all rows `RWM_GEN=0` — internally consistent. |
+| **`P4` — 0 aborts in 15 invocations** | **STANDS** | An abort-cause result about the harness, indifferent to configuration. |
+| **`p` per leg, this session** | **STANDS, AND ITS ONE OPEN QUESTION IS NOW CLOSED** | §7 flagged a *"consistent one-way deficit"* of 0.59–0.87× at **every** leg and called §6 its "obvious cause". Confirmed: the offered load was ~31 Mbit/s instead of 78–222, so queue occupancy — and therefore drop — is lower. **The deficit is explained, and `p` for the LEDGER's operating point remains the committed captures' value, not this session's.** |
+| **`σ` = order 1 ms at five cells** | **STANDS AS MEASURED — WITH ONE CROSS-CHECK THAT DOES NOT EXIST AND WAS BELIEVED TO** | Both sessions that measured σ (`c8` σ pass 0.853 ms; primitives 0.803 ms) ran generation **ON**. The "two sessions, 6 % reproduction" is real but is **two samples of one configuration**, not a cross-check. σ is an RTT-dispersion statistic and there is no *a priori* reason it should move with the generation gate — **but that is an argument, and this tree's own rule is that a divergence gets a bound and not a paragraph.** σ at `RWM_GEN=0` is **unmeasured**, and it is cheap: one `c8` invocation with `RWM_GEN=0 RWM_DIAG=1`. |
+| **`ν` — `[RACK] fired = 0`** | **FALLS AS AN INTERPRETATION; the reading itself is correct and uninformative** | Structural (§4). `P3` is unscoreable for a reason the pass could have determined from the source before the run. **The claim that it is a binary-era effect is REFUTED.** |
+| **`ν` — `[PFRAC] recovery_coded` 0.0153–0.0406** | **STANDS as a generation-mode number; FALLS as a comparison to the ledger's 0.0438** | `recovery_coded` exists only under generation; the ledger's `fired` exists only without it. The two instruments **cannot both run in one configuration**, so the "0.89× at `c8`" agreement is a coincidence of magnitude across two different machines, not a reproduction. |
+| **`d` = 2.6–5.7 ms, FEC-resolved stall** | **STANDS as the first field measurement of `d` UNDER GENERATION; FALLS as `d` for the configuration every δ-consuming ledger ran** | With ARQ structurally absent, `d` is the FEC-decode stall and nothing else. At `RWM_GEN=0` — where the `ν`, `p` and `h` that go into δ were all measured — recovery is ARQ and `d` is a **different quantity that has still never been measured.** |
+| **`δ` table §1 — "off by ninety is retired and replaced by off by four"** | **NOT ESTABLISHED FOR THE LEDGER CONFIGURATION** | Every row of that table mixes axes. The `1.696` row takes `ν = 0.0438` and `p = 0.0126` from `RWM_GEN=0` ledgers and `d = 2.912 ms` and `σ = 0.853 ms` from generation-**on** sessions. The `2.137` row is all-generation-on but is then read against `δ_auto`, a contract value for the shipped plain-window machine. **δ is linear in `d`, and `d` is the term that changed by 26×, and `d` is the term that is configuration-specific.** |
+| **`S1` FAILS** | **STANDS — and it does not depend on any of this** | Its band was `δ ∈ [0.4, 0.6]`. Every rep failed independently, the most generous by 7.5×; the slow leg fails by 3.2×. Whether the answer is "off by ninety", "off by four" or something else at `RWM_GEN=0`, **no reading in either configuration lands in the band.** |
+| **`P1` FAILS (`d` ≠ 77 ms)** | **STANDS IN DIRECTION, NOT IN MAGNITUDE** | `d = 77 ms` was `srtt`, a made-up placeholder; 2.9 ms refutes it under generation. Whether the plain-window `d` is 2.9 ms, 30 ms or 77 ms is **open**, and `P1`'s specific *factor of 26* is a generation-mode factor. |
+| **`P2` PASSES** | **STANDS**, with the σ caveat above. |
+| **The gap, era, ladder, ccand, ccap, lat and span ledgers** | **ENTIRELY UNAFFECTED** | All `RWM_GEN=0`, all internally consistent, all pool with each other. **Nothing outside the two named passes is touched by this finding.** |
+
+### 6 — THE OWED ANNOTATIONS — **LISTED HERE, DELIBERATELY NOT APPLIED**
+
+A scored section is not edited by the session that finds the fault. These are
+the corrections owed to two committed sections; **this commit writes none of
+them into those sections.**
+
+1. **PRIMITIVES §6** — *"the committed ledger reads 78–222 Mbit/s at the same
+   five cells **with the same generation gates**"*. The gates were **not** the
+   same; that sentence rests on `H9`'s false witness. Owed: the correction, and
+   the replacement of the 1 Gbit/20 Mbit phrasing with §3's stronger statement
+   (the plateau is below every cell's aggregate link).
+2. **PRIMITIVES §6** — *"It needs its own bisection between `330ebfcc…` and the
+   `ccand` binary"*. **No bisection is needed and none was run.** Owed: a pointer
+   to this section.
+3. **PRIMITIVES §5** — *"the committed `ccand` rows echo `RWM_GEN=384
+   RWM_PIPELINE=2 RWM_GEN_PIPE=1`, **byte-identical to this pass**"*. True and
+   **uninformative**: those are generation *parameters*, echoed identically with
+   the pipeline off. Owed: the correction.
+4. **PRIMITIVES §5** — *"The difference is the **binary era**, and this pass does
+   not identify what in it."* **REFUTED.** Owed: replacement with the structural
+   reason (`net/mod.rs:2434`).
+5. **PRIMITIVES §5** — *"`RWM_PFRAC` is a shipped default"*. **False**
+   (`gates.rs:961`, default OFF). Owed: correction, and the note that its
+   presence is itself a generation witness.
+6. **PRIMITIVES §5** — the four `ν = 0` witnesses *"corroborated three further
+   ways, two of them on the other host"*. Owed: they are **one fact**.
+7. **PRIMITIVES §3** — *"`d_source` IS ABSENT … AND THAT IS A RESULT, NOT A
+   GAP"* and *"a fourth independent witness"*. Owed: it is a structural
+   consequence of ARQ being off.
+8. **PRIMITIVES §1 and §8** — the `δ` table and the primitives table owe a
+   **CONFIGURATION column**, and the "off by four" headline owes the caveat that
+   it is not established for the plain-window machine.
+9. **THE σ-`c8` SCORED RESULT** — owes one line stating that its 3 reps ran
+   generation ON (per its own pre-registration §4's *"no `RWM_GEN` override"*),
+   that its 29–31 Mbit/s column is the plateau and not a defect, and that its σ
+   therefore does not pool with the `RWM_GEN=0` ledgers. **`S1`'s FAIL is not
+   reopened.**
+10. **`prim_battery.sh:18-24`** — its header's reasoning (*"this pass measures
+    the SHIPPED machine … the shipped machine runs the generation pipeline"*) is
+    **the one substantive judgement to re-examine, and it is not obviously
+    wrong.** But `window_generation_coding` is a CLI flag defaulting to `None`
+    (`main.rs:291, 395`): **the binary as invoked without arguments does NOT run
+    generation.** "The shipped machine" is doing contested work in that sentence
+    and the contest was never held. Owed: a decision, in the open.
+
+### 7 — WHAT THE α-SWEEP MUST SET, AND THE TRAP IT WOULD HAVE WALKED INTO
+
+**`RWM_GEN=0` ON EVERY ARM. THIS IS NOT A POOLING PREFERENCE — IT IS THE
+DIFFERENCE BETWEEN A RESULT AND A FALSE REFUTATION.**
+
+`α` is `pol.contract_alpha` (`sender_policy.rs:432-434`: *"Read only by the
+quantile clocks law"*). It has exactly two consumers:
+
+* `sweep_timeout_us_all(...)` at `net/mod.rs:7363` — the sender's gap-sweep
+  timeout, inside the loop fed by `nack_tx`;
+* `hole_refresh_all(...)` at `receiver.rs:760` — the receiver's hole
+  re-advertisement cadence, which produces the SACK gaps that feed
+  `recv_nack_tx`.
+
+**Under generation, `recv_nack_tx` is `None` (`net/mod.rs:2434`). Both of α's
+consumers drive machinery with no producer.** An α-sweep run with generation on
+would return a **perfectly flat curve at every α** — and goal #100 item 2 lists
+**FLAT-CURVE as a PRE-REGISTERED LEGAL OUTCOME.** It would have produced a
+clean, well-witnessed, zero-abort **false refutation of route (b) or route (d)**,
+scored against a pre-registration that permitted exactly that reading. **This is
+the `A7` pathology — a clause satisfied trivially and carrying no information —
+and it would have landed on a route verdict.**
+
+**THE REQUIRED ENVIRONMENT AND GATES:**
+
+1. **`RWM_GEN=0` on every arm**, plus `RWM_DIAG=1` and the ledger's instrument
+   set (`RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1`) if the rows are to pool
+   with `ccand`/`ccap`/ladder.
+2. **A POSITIVE GENERATION-OFF WITNESS IN THE LIVENESS TABLE, AND IT MAY NOT BE
+   `[GATES] RWM_GEN`.** `H9` proves that line is inert. The witnesses that
+   actually discriminate, all two-sided:
+   * `--window-generation-coding` **absent** from the client command echo;
+   * **no** `[PFRAC]` line and no `total_coded=` on the sender;
+   * `cod=0` / `enc=0.0/n0` / `src=0.0/n0` in the sender `[DIAG]` tail.
+3. **AN α-REACHABILITY GATE (MEASUREMENT DISCIPLINE rule 1).** Assert the
+   machinery α parameterizes actually executed **before any α number is read**:
+   `[RACK] fired > 0` and `[DIAG] retx > 0` on the lossy cells. **If they read
+   zero, the flat curve is mechanical and the rep is void** — this is the one
+   gate that would have caught the trap from the inside.
+4. **A GOODPUT SANITY BAND, PER CELL, AS AN ABORT CONDITION.** `c1` must read
+   **170–222 Mbit/s**. A rep reading 27–34 is a generation-on rep and is void,
+   whatever its `[GATES]` line says.
+5. **The α-sweep does NOT need this session's `σ`, `d` or `ν`.** It measures a
+   cost curve directly. Where it needs a primitive, it must take the
+   `RWM_GEN=0`-provenance one (the committed captures' `p`, the ledger's
+   `fired`-sourced `ν`) and **not** this session's — and `d` at `RWM_GEN=0` does
+   not exist yet, which is a reason to re-run `prim_battery.sh` with
+   `RWM_GEN=0` rather than a reason to substitute.
+
+### 8 — THE OWED INSTRUMENT, NAMED AND NOT BUILT
+
+**`window_generation` HAS NO GATE ECHO.** It is resolved at `net/mod.rs:1882`
+from a CLI bool and never printed. Every other configuration axis in this engine
+is in `GateSet::echo_line()`; the one that swaps the entire send pipeline is
+not, and `[GATES] RWM_GEN=<size>` sits in that line looking exactly like the
+witness it is not. **A two-sided one-line echo would have made this session
+unnecessary and would make it unrepeatable.**
+
+**IT IS NOT BUILT HERE.** The cause is a battery that measured a different
+machine from the one it compared against — a harness and protocol defect, not an
+engine defect — and this step's contract is that no engine crate is edited
+unless the cause is an engine defect. **It is named as owed, with its site, and
+left for the commit that agrees to it.** The gate-echo coverage test
+(`gates.rs:1283` region) is where its assertion belongs.
+
+### 9 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** The 27–34 Mbit/s plateau is the generation-coding pipeline's
+ack-clocked control loop, entered because two scored passes omitted `RWM_GEN=0`
+while every ledger they were compared against set it. The rate arithmetic closes
+on the sender's own `cod=3858 sym/s`. The link never binds because the plateau
+is below every cell's capacity. The tree measured the same plateau and named the
+same mechanism on 2026-07-07. `[RACK] fired = 0` is structural
+(`net/mod.rs:2434`), not a binary-era effect, and the four "independent
+witnesses" for it are one fact. `[GATES] RWM_GEN` is not a witness for the
+generation pipeline and never was.
+
+**NOT established.** `d`, `σ` and `ν` for the plain-window machine — the
+configuration every δ-consuming ledger ran — remain **unmeasured**, and `d` in
+that configuration is the term the "off by four" headline turns on. Whether
+"the shipped machine" runs generation coding is a **judgement in the open**, not
+a fact this session settles. Why `σ` shows 10–360× single-rep excursions at
+converged `n` is untouched here. **No route is advanced, no default is flipped,
+no engine line is edited, and `S1`'s FAIL stands.**
+
+**ZERO VM INVOCATIONS.** No lock was taken, because none was needed: every
+falsifier in the hypothesis table was checkable against committed sources and
+committed ledgers, which is what the table asserted and what §4 of it required
+to be established first. **The most expensive part of this finding was reading
+one environment variable that was not there.**
