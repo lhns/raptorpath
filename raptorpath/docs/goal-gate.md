@@ -38704,3 +38704,165 @@ currency, against a verdict list written before the first byte moved.
 
 **Nothing in this section flips a default, edits a law, or changes a byte on
 the wire.**
+
+---
+
+## THE α-SWEEP — THE CALIBRATION AND SMOKE, DISCHARGED (2026-08-20, `feat/alpha-sweep`) — **the PRE-REGISTRATION's §8 calibration clause is COMPLETE and the scored battery is cleared to launch.** 36 invocations (6 smoke at `c8` + 30 calibration across all five cells), one REBUILT binary, seed 42, **0 aborts, 0 VOID, W1/W2/W4′/W5/W6 clean at 30/30**. `n = 1`. **NOTHING HERE IS A RESULT** — no clause of §5 or §6 is scored, and no number below is quoted as a measurement of anything.
+
+### 1 — THE THREE DEFECTS THIS PASS EXISTS TO HAVE CAUGHT, ALL OF THEM CAUGHT
+
+The pre-registration's §8 calls the calibration *"the discipline-16 headroom
+pass AND the smoke"*, and says the smoke matters more here than for its
+predecessors because `[QALPHA]` and `[QCLK]` had never been on a wire. It
+found three things, and **every one of them would have produced a clean,
+well-witnessed, zero-abort WRONG ANSWER.**
+
+1. **`RWM_ALPHA_OVERRIDE=0.4` vs `want=0.40`, at the `Q400` arm, both
+   endpoints.** The `[GATES]` echo prints the resolved `f64` through Rust's
+   own `to_string()`, which renders `0.40` as `0.4`; the arm table is matched
+   against that echo LITERALLY, on purpose, so an arm's env and its liveness
+   assertion cannot drift apart. **THE ARM WAS LIVE AND CORRECT** — `[QALPHA]`
+   read `override=4.000000e-1 alpha=4.000000e-1 k=1.2247` at both sites,
+   `[QCLK] law_n=21900`, the transfer ran at 78.0 Mbit/s in band. The literal
+   was wrong. **One arm of six would have been declared dead at every rep of
+   480.** Fixed as a literal, not made numeric: a canonicalising comparison
+   would accept `0.4`, `0.40`, `4e-1` and `0.400000001` alike, and the point
+   of the single arm table is that the string a battery ASKS for and the
+   string the engine ECHOES are the same string.
+2. **`[QCLK]` AND `[QALPHA]` WERE SELECTED BY LOG, NOT BY ROLE.** A
+   `perf --client` process carries BOTH gauges — it is the bulk sender, and it
+   also runs a receiver task for the reverse direction — so a
+   `[QCLK] site=receiver` line lands in the CLIENT log. The parser took the
+   maximum-`evals` `[QCLK]` in that log, and **at `c8`-`CTL` the receiver-role
+   gauge won**: the row reported `alpha = 1e-5, k = 316.2` where the sender's
+   own line on the same run read `alpha = 1e-3, k = 31.6`. `c1`, `c7`, `c8L`
+   and `sc2` read the sender correctly, so **the defect was invisible at four
+   rows of five, in the column the SEPARATION RULE of §4 is computed from.**
+   `[QALPHA]` carried the same exposure and it is worse there — W6 is the
+   arm-liveness witness, and last-line selection would have made the witness
+   depend on emission order. Selection is now by ROLE and never by log.
+3. **THE REALIZED/COMMANDED BRACKET VERDICT WAS INVERTED.** The report read
+   `RESOLVED` when the commanded `fa_frac` fell INSIDE the `[RFA]` bracket.
+   That is backwards and the plain-window pass is where the sense was settled:
+   the bracket is what the instrument can say about the REALIZED fraction, so
+   commanded INSIDE it means the instrument cannot say whether realized
+   exceeds commanded — **UNRESOLVED** — and it RESOLVES only when commanded
+   sits OUTSIDE, because the direction then holds at both ends. The verdict
+   now names the direction it resolved in, which the boolean could not.
+
+### 2 — THE LIVENESS TABLE, READ BEFORE ANY NUMBER
+
+**30 invocations, 30 live, 0 ABORTS, 0 VOID, 0 DNF, 0 `ARM-LIVENESS-FAIL`,
+0 `ARM-CONTAMINATION`, 0 `INSTRUMENT-FAIL-GATE`, 0 `W6-FAIL`,
+0 `QCLK-LAW-DEAD`, 0 `ALPHA-PARSE-FAIL`, 0 `ARM-VANISHED`.** Every
+(cell, arm) cell of the 5 × 6 grid reports `rows=1/1`.
+
+| witness | result |
+|---|---|
+| **W1** `[RFA] gen=0` at the receiver | **30/30** |
+| **W2** no `[PFRAC]` on the sender | **30/30** |
+| **W4′** max `retx` over all `[DIAG]` lines > 0 | **24/24** at the four lossy cells (`c1` exempt) |
+| **W5** `[RACK] fa=`, `fired > 0` | **24/24** at the four lossy cells |
+| **W6** the arm's own α at BOTH endpoints | **30/30** |
+
+**W6 IS THE NEW ONE AND IT IS THE ONE THAT MATTERED.** Every treatment arm
+echoed its own α on both `[GATES]` lines and resolved to it at both `[QALPHA]`
+sites; `CTL` read `unset` / `quantile=0` at both. The smoke's twelve
+site-arm pairs are on the record verbatim, including the site asymmetry the
+refuted arm carries: on `CTL` the sender resolves the contract's Bulk point
+`1.000000e-3` and the receiver the Auto point `1.000000e-5`, because the hint
+is not plumbed to the receiver task — **and on every treatment arm both sites
+read the same number, because an override is a number and not a hint
+mapping.** That is the one respect in which a swept arm is better defined than
+the contract arm it is compared against, and it is now measured rather than
+argued.
+
+### 3 — THE HEADROOM TABLE (MEASUREMENT DISCIPLINE 16), FILLED
+
+Denominator is the TRANSFER WALL (`seconds`), never `INVOCATION_S`. `tc -s
+qdisc show` captured on **every** cell and **every** invocation.
+
+| cell | shaped | transfer s | `INVOCATION_S` | **util %** | **headroom %** | claims permitted |
+|---|---|---|---|---|---|---|
+| `c1` | 1000 Mbit | 16.51 | 18.0 | 21.3 | **78.7** | throughput targets permitted |
+| `c7` | 200 Mbit | 9.92 | 12.0 | 89.7 | **10.3** | throughput targets permitted |
+| `c8` | 120 Mbit | 2.23 | 4.0 | 84.4 | **15.6** | throughput targets permitted |
+| `c8L` | 120 Mbit | 17.60 | 20.0 | 85.3 | **14.7** | throughput targets permitted |
+| `sc2` | 100 Mbit | 9.18 | 11.0 | 97.4 | **2.6** | **NO-THROUGHPUT-TARGET** (< 5 %) |
+
+**THIS CHANGES NOTHING IN THE CONTRACT, AND THAT IS THE POINT.** The
+pre-registration writes **no goodput-gain clause anywhere** — the goodput axis
+of a cost curve is one-sided DOWN by construction — so there is no target for
+`sc2`'s 2.6 % headroom to make unsatisfiable. The table is filled because
+discipline 16(b) requires the number to exist BEFORE the run, not because a
+clause depends on it. The `INVOCATION_S` column is printed beside the transfer
+wall so the 1.1–1.8× ratio the discipline warns about is visible.
+
+### 4 — THE REALIZED CLOCK MOVES WITH α, AND IT MOVES BY MORE THAN THE
+### PRE-REGISTRATION PREDICTED
+
+**`n = 1`. This is not a result and no clause is scored on it.** It is
+reported because the pre-registration's §4 predicted the arms might not
+separate at all, and the calibration says something different — which a reader
+is entitled to know before the scored run, and which is now on the record
+BEFORE that run's data exists.
+
+Sender-site `[QCLK] w_us_p50`, µs, one rep:
+
+| cell | CTL | Q002 | Q009 | Q050 | Q184 | Q400 | Q002 ÷ Q400 |
+|---|---|---|---|---|---|---|---|
+| `c1` | 25 000 | 12 557 | 14 551 | 11 120 | 10 696 | 10 440 | **1.20×** |
+| `c7` | 100 000 | 92 557 | 76 098 | 72 562 | 192 535 † | 64 202 | **1.44×** |
+| `c8` | 100 000 | 102 674 | 387 192 | 219 542 | 326 017 | 170 856 | **0.60×** |
+| `c8L` | 100 000 | 2 202 945 | 733 171 | 445 875 | 303 368 | 200 543 | **11.0×** |
+| `sc2` | 100 000 | 113 637 | 108 530 | 104 773 | 104 415 | 104 080 | **1.09×** |
+
+† `c7`-`Q184`'s σ reads 9 693 µs against 1 770–2 252 µs at that cell's other
+five arms — a 4–5× excursion in the input, at one rep. This is the σ
+instability §4 of the pre-registration is written around, appearing at n = 1
+on the very first pass.
+
+**AT `c8L` THE SPAN IS 11× AND MONOTONE IN α; at `c1` and `sc2` it is 1.1–1.2×
+and monotone; at `c8` it is not monotone at all.** The pre-registration
+predicted spans of 0.8–14.1 ms from the plain-window σ medians and predicted
+UNSEPARATED as the modal outcome. **The field's σ at these cells is 300 µs
+to 78 ms, not the 35 µs–3.1 ms the prediction was computed from**, and the
+realized clock therefore moves much more than the table in §4 said. **THAT
+PREDICTION IS NOT AMENDED AND THE ARM LIST IS NOT CHANGED** — it is scored as
+written, against the run that is about to happen, and this paragraph is the
+disclosure that the pre-registration's own σ input has already been contradicted
+by the first thing that measured it.
+
+**AND THE SEPARATION RULE IS UNCHANGED AT 0.50.** It is computed from the
+`p05`–`p95` intervals, not from the medians above, and at `n = 1` those
+intervals are one rep wide. The smoke's own six-arm run at `c8` returned
+**`NO VERDICT — UNSEPARATED`, 20 of 30 ordered pairs overlapping**, which is
+the report doing exactly what §6 requires of it on data too thin to separate.
+
+### 5 — WHAT IS AND IS NOT DISCHARGED
+
+**Discharged.** The pre-registration's §8 calibration row: one rep per arm per
+cell, same session, same binary, before the scored run, `tc` on every cell,
+committed in its own commit. The smoke: `[QALPHA]` and `[QCLK]` are reachable,
+two-sided, and carry `law_n` at 21 751–22 466 of 21 975–22 466 evaluations —
+**the armed law produced 98–100 % of the clocks at every arm**, so no arm is
+reading a fall-through. The three defects of §1.
+
+**NOT discharged, and NOT attempted.** Every clause of §5 and §6. `n = 1`
+carries no σ, no seed-7 evidence, and no verdict. **Neither route (b) nor
+route (d) is advanced, chosen or refuted by anything above**, and no default
+is flipped.
+
+**Artifacts** (VM 10.1.5.16): calibration ledger
+`/home/vibe/alpha/alpha-calib-s42.log`; witness JSONL
+`/home/vibe/alpha/alpha-calib-witness-s42.jsonl`; smoke ledger
+`/home/vibe/alpha/alpha-smoke-s42.log`; per-rep captures under
+`/home/vibe/alpha/diag/`; build log `/home/vibe/alpha-build.log`. Binary
+**REBUILT** from `feat/alpha-sweep`@`3d569ca`, `cargo build --release -p
+raptorpath`, **sha256
+`92673ff509607be588cc3ff5454fe6297af378430c56da36a9fb0e8d1c867187`**. The
+three fixes above are HARNESS-ONLY (`alpha_battery.sh`, `alpha_parse.py`,
+`alpha_report.py`); **no engine crate was touched after the build and the
+binary is unchanged.**
+
+**Nothing in this section flips a default, edits a law, or scores a clause.**
