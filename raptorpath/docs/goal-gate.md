@@ -39727,14 +39727,155 @@ or modifies the pre-registration it is scored against.**
 
 ---
 
+## GOAL #100 ITEM 4 — THE DERIVATION: **DELIVERED**, and ITEM 5: **DOES-NOT-RUN-BY-ITS-OWN-CONDITION** (2026-08-20, `feat/recovery-derivation` from main@`6e1e356`) — **the two closing lines the goal's sequence was still owed. STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test. NO ROUTE IS CHOSEN, ADVANCED OR REFUTED. `S1` is not reopened. `RWM_QUANTILE_CLOCKS` stays default OFF and stays REFUTED-STANDING.**
+
+### 0 — VERDICT FIRST
+
+**Item 4 CLOSES `DELIVERED`. Item 5 CLOSES
+`DOES-NOT-RUN-BY-ITS-OWN-CONDITION`. The goal's overall verdict is UNCHANGED
+in substance — `NEEDS-MORE`, with the σ estimator as the named instrument —
+and is now backed by a complete sequence: all five items carry a closing
+line.**
+
+### 1 — ITEM 4 CLOSES **DELIVERED**: paper §16.74
+
+**The closing line, in full:** *goal #100 item 4 — "the derivation written
+FROM the measured curve" — is **DELIVERED** as paper §16.74, "The recovery
+decision's loss function, written as ONE formula continuous in the (δ, ρ, r)
+triangle".*
+
+**WHY IT RAN DESPITE ITEM 2's NO-VERDICT, STATED BEFORE THE CONTENT.** Item
+4's own text requires a cost model written **from the measured curve and the
+primitives**. The primitives are measured — all five, at all five cells, on
+both machines ("THE PASSIVE PRIMITIVES" §8 and the plain-window pass §7). The
+α-sweep's curve has honest measured content even though it produced no route
+verdict: **the realized-`W` medians are monotone in α at four cells of five**
+(the law works) and **the separation was consumed by σ's own dispersion** (the
+estimator does not). Both are measurements and both are inputs to a model.
+**Only item 5 required a winner**, and it does not have one — §2 below.
+
+**What §16.74 states, in one screen:**
+
+```text
+   L(α; δ, ρ, r, λ)  =  ν·α·(1 + h/T)                                    [B]
+                     +  δ · owed(ρ, r) · k(α)·σ / d                      [C]
+                     +  λ · owed(ρ, r) · max(0, k(α)·σ − D(δ)) / D(δ)    [D]
+
+   owed(ρ, r) = max(0, ε̂·(1 − P_fec(r)) − (1 − ρ))
+   D(δ)       = min(b(δ)·RTprop, 2·RTprop) ,  b(δ) = 2^(−½·log₁₀(δ/0.5))
+   W(α)       = srtt + k(α)·σ ,  k(α) = √((1−α)/α)
+```
+
+| §16.74 clause | what it delivers against item 4's text |
+|---|---|
+| **§16.74.1–2** | the loss function, continuous in the whole triangle; the ρ leg DERIVED from §6.3's own `P_arq(ρ)` inversion rather than chosen — `owed` is "what FEC missed minus what the contract released", linear in `(1−ρ)` with slope −1, zero at a derived `ρ_floor = 1 − ε̂(1−P_fec)`, **no threshold on ρ or δ anywhere** |
+| **§16.74.1** | `h_marginal = 14 B` (`fec/generation.rs:47`, `T` = 1200 B, `net/mod.rs:161`) carried in [B], where it does **not** cancel — one bandwidth leg, not two — moving `α*` down **0.770 %**; §16.73 is cited as where it cancels exactly, and why |
+| **§16.74.3** | routes **(b) and (d) as the `λ→∞` and `λ→0` limits of one Lagrangian**, with `α* = max(α_d, α_b)` at `λ→∞`. They agree exactly when the Copa-marginal optimum already fits inside the declared allowance |
+| **§16.74.4** | **why they diverged at measured inputs**: σ-elasticities **2 vs 2/3**; ν 4.5× and σ 5.6–22.5× compound in the SAME direction (α_d down 10.9–20.7× at c8); `d`'s 26× kept as the NAME COLLISION it is, with the 8.78× it would have moved stated; and the deeper reason — **standing queue vs head-of-line blocking**, two different queues that the measured σ of order 1 ms no longer lets coincide |
+| **§16.74.5** | **the estimator-stability precondition as a MODEL REQUIREMENT**: `k(α_lo)/k(α_hi) > R_σ̂`, k-ratio **18.24** on `[0.002, 0.400]` against measured `R_σ̂` of 1.2–78.6× (287× rep-to-rep at c8) — **fails 4.3× at c8L and 15.7× at c8** — and the dial cannot be widened out of it (`R_σ̂ = 287` needs `α_lo = 8.1×10⁻⁶`, inside the region §16.69 already refuted) |
+| **§16.74.6** | three pre-stated falsifiable predictions as SHAPES, including the ρ leg, which route (b) predicts **flat** and which needs no σ stability to read |
+| **§16.74.7–8** | shape check (units, continuity in δ/ρ/r, monotonicities) and the must-not-claim list, including the model's own signed divergence: [B] under-prices waste (measured `fa_frac` exceeds α by up to 386×), so **every `α*` §16.74 reports is an UPPER bound** |
+
+**THE ONE THING ITEM 4 PRODUCED THAT WAS NOT ASKED FOR, AND IT IS A ROUTE
+FINDING WITHOUT BEING A ROUTE VERDICT.** Writing both routes as one law makes
+the ruling's empirical question concrete: **it is the value of `λ`**, the
+multiplier on the δ-leg's declared allowance. **No number is assigned to it**
+— that would be the fitted constant the ruling's clause 3 forbids — but naming
+it converts "which route" from a choice between two theories into a
+measurement of one parameter, and §16.74.6's P3 is an experiment that reads it
+without needing the σ estimator first.
+
+**ONE OWED ITEM IS OPENED AND NOT ACTED ON.** §16.74.1 writes `b(δ)`
+continuous where the shipped `net::delta_budget_b` (`net/mod.rs:3662-3668`) is
+a three-arm `match` on `ProtocolHint`. The divergence is **exactly zero at all
+three δ points the engine can express** and the engine cannot be asked
+anywhere else, so the bound is complete. **Closing it is an engine change and
+is NOT licensed by this pass.**
+
+### 2 — ITEM 5 CLOSES **DOES-NOT-RUN-BY-ITS-OWN-CONDITION**
+
+**The closing line, in full:** *goal #100 item 5 — "only then a verdict
+battery against the shipped clamp" ("THE DECISION — TAKEN", clause 4) —
+**DOES NOT RUN, BY ITS OWN CONDITION.** Its text conditions it on items 2–4
+closing with a winner. **There is no winner.** Item 2 closed `NO VERDICT —
+UNSEPARATED` at 50 of 50 treatment pairs on both seeds; item 3 closed `F4` at
+all five cells, and `F4` scores nothing; item 4 delivers a model in which
+**both routes remain live as two limits of one law**, per the ruling's clause
+2 ("BOTH routes stay live until measurement separates them. Neither ships").
+A battery with no candidate to run against the clamp has nothing to measure.
+**This IS item 5's closure — a conditional that did not fire is closed by
+reporting that it did not fire, not by leaving it open.***
+
+**AND WHAT THE NON-RUN DOES NOT DO.** It does not acquit the shipped clamp,
+and it does not schedule a replacement. `round = (2·srtt).clamp(25, 100) ms`
+stays **convicted and unreplaced**: binding 92.4–99.7 % of the time at every
+cell, and exceeding RFC 8985 §6.2's spurious budget at **30 of 30 cell-arms
+including the control at all five cells** (2.1× to 12.0×). §16.74.8 says the
+same thing from the model's side: the clock §16.74 specifies is **not
+instantiable** until §16.74.5's precondition is met, so there was never a
+successor for item 5 to weigh.
+
+### 3 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** Item 4's deliverable exists as paper §16.74 and is
+formula-first: every symbol carries a provenance class (measured / declared /
+derived), no constant appears without one, and the model is continuous in
+every leg of the triangle with no threshold selecting a code path. Routes (b)
+and (d) are two limits of one Lagrangian and their measured divergence has a
+named mechanism (a factor-of-three difference in σ-elasticity, evaluated by
+the memo at its own crossing point). The estimator precondition is an
+inequality on measured quantities and it fails at two of five cells.
+
+**NOT established.** The value of `λ` — i.e. the route question, unchanged.
+Whether `W` or `ε̂` sit anywhere near `u = 1`; nothing echoes them, and
+§16.74's `owed` inherits §16.73's containment rather than resolving it.
+Whether the ρ leg behaves as §16.74.6's P3 predicts; **no battery in this tree
+has ever swept ρ**, and §16.74.2 shows the band it would have to be swept in
+is ≈ 1 % wide at c8. Whether any admissible dispersion estimator exists on
+this stack — §16.74.5 states the bar, not a design.
+
+**NOT DONE AND NOT ATTEMPTED.** Item 5's verdict battery (closed as not-run,
+§2). Any re-run of the α-sweep. Any estimator candidate, measured or proposed.
+Any engine change, including the `b(δ)` continuity §16.74.1 names as owed.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies any committed scored section other than the GOAL #100 — CLOSED
+amendment below, which supersedes only its own "items 4 and 5 do not run"
+sentence and leaves its verdict unchanged.**
+
+---
+
 ## GOAL #100 — CLOSED (2026-08-20): NEEDS-MORE, WITH THE INSTRUMENT NAMED
 
+> **AMENDED 2026-08-20 (`feat/recovery-derivation`, the section immediately
+> above): ALL FIVE ITEMS NOW CARRY A CLOSING LINE, and the verdict below is
+> UNCHANGED IN SUBSTANCE.** This section originally read *"items 4 and 5
+> therefore DO NOT RUN AS SPECIFIED."* That is superseded for item 4 and made
+> precise for item 5. **Item 4 RAN and closes `DELIVERED`** — its text needed
+> the measured primitives and the curve's honest content (monotone realized-`W`
+> medians at four cells of five; separation consumed by σ), not a winner — and
+> the deliverable is **paper §16.74**. **Item 5 closes
+> `DOES-NOT-RUN-BY-ITS-OWN-CONDITION`**: a conditional that did not fire is
+> closed by reporting that it did not fire. The overall verdict remains
+> **NEEDS-MORE with the σ estimator as the named instrument**, now with the
+> full sequence closed rather than truncated.
+
 The goal's own order clause governs: *"a failure at any stage closes the goal
-with that verdict rather than proceeding."* Item 2 closed `NO VERDICT —
-UNSEPARATED` (the pre-registered precondition, at 50/50 treatment pairs on
-both seeds); item 3 closed `F4` at all five cells — its own pre-committed
-modal outcome, correct 5/5. Items 4 and 5 therefore DO NOT RUN AS SPECIFIED:
-there is no measured curve to derive from and no winner to battery.
+with that verdict rather than proceeding."*
+
+| item | what it was | **closing line** |
+|---|---|---|
+| **1** | passive primitives (`h`, `d`, `σ`, `ν`, `p`) | **DELIVERED** — all five measured at all five cells on **both** machines; `d` = 77 ms refuted by 26×, `h` = 14 B code-exact |
+| **2** | the α-sweep isolation experiment | **NO VERDICT — UNSEPARATED**, on the pre-registered precondition, 50/50 treatment pairs, both seeds, 480/480 live rows. **The named instrument: the σ estimator** |
+| **3** | the r-law marginal-equality consistency check | **`F4` AT ALL FIVE CELLS** — its own pre-committed modal outcome, correct 5/5. `F4` scores nothing and said so before the data existed |
+| **4** | the derivation written FROM the measured curve | **DELIVERED** — **paper §16.74**, the loss function continuous in (δ, ρ, r); routes (b) and (d) as its `λ→∞` / `λ→0` limits; the estimator precondition as a model requirement |
+| **5** | the verdict battery against the shipped clamp | **DOES-NOT-RUN-BY-ITS-OWN-CONDITION** — conditioned on a winner from 2–4; there is none, and both routes stay live per the ruling's clause 2 |
+
+Item 2's failure closed the goal at its own stage, as the order clause
+requires. Item 4 is not a resumption of the sequence past that failure: it
+consumes the primitives and the curve's honest content, both of which are
+measurements, and it produces a model — **not a route verdict, which item 2
+was the only item that could have produced.**
 
 **The verdict: NEEDS-MORE, and the named instrument is the RTT-variance
 estimator.** The route question — Copa-marginal (d) vs budget-derived (b) —
@@ -39756,7 +39897,10 @@ pipeline throughput regime diagnosed from disk; the [RFA] realized-fa
 instrument (commanded fa violates RACK's budget at 30/30 cell-arms including
 the shipped clamp — the clamp's conviction now rests on modern instruments);
 the r-law inequality (§16.73: δ and h cancel; route (b)'s α inadmissible at
-every non-vacuous cell — a standing constraint on ANY future winner); and
+every non-vacuous cell — a standing constraint on ANY future winner); **the
+cost model itself (§16.74: one loss function continuous in the triangle, with
+routes (b) and (d) as its two limits and the estimator precondition stated as
+an inequality the model requires before its clock is instantiable)**; and
 the routes themselves, both intact, per the ruling that neither ships until
 the wire decides.
 
