@@ -38866,3 +38866,467 @@ three fixes above are HARNESS-ONLY (`alpha_battery.sh`, `alpha_parse.py`,
 binary is unchanged.**
 
 **Nothing in this section flips a default, edits a law, or scores a clause.**
+
+---
+
+## THE r-LAW CONSISTENCY CONDITION (2026-08-20, `feat/rlaw-condition` from main@`c4ce89f`) — **goal #100 item 3, THE CONDITION ONLY.** Written and committed BEFORE item 2's scored sweep lands, in its OWN commit. **STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test.** **No route is chosen, advanced or refuted here; no arm is scored; `RWM_QUANTILE_CLOCKS` stays default OFF and stays REFUTED-STANDING.** Paper §16.73 is this section's statement of the law.
+
+### 0 — VERDICT FIRST
+
+**The condition is `α^{3/2}(1−α)^{1/2} ≤ p·σ·G(u) / (2·ν·D_arq·(1−ε̂))`, it is
+an INEQUALITY and not an equality, and `δ` is not in it.**
+
+Four findings, three of them negative:
+
+1. **The law the check must be written against is NOT the one `CLAUDE.md`
+   quotes.** `r(β) = (1−β)·r_anchor + β·r_late-is-fine` is the VISUALIZER's;
+   the engine's is §8.4's `r*` through `raptorpath_math::controller_rate`.
+2. **The shipped law DOES support a marginal reading** — a constrained
+   minimum has a shadow price, and here it is closed-form
+   (`δ_pro = d·S/(D_arq·ε̂·φ(z))`) with no constant introduced.
+3. **But at the α-sweep's own operating point the shipped law is at a CORNER:
+   `r* = 0` identically**, pinned by an existing test. Complementary slackness
+   turns the equality into an upper bound on α, and the check becomes a
+   containment test, not an agreement test.
+4. **`h_marginal` and `δ` both CANCEL EXACTLY.** The condition needs neither
+   the 14 B constant nor the transfer claim the cost-ratio decision turns on.
+
+### 1 — WHICH r LAW, AND THE FIRST NEGATIVE FINDING
+
+`CLAUDE.md`'s no-mode-switch invariant gives its worked example as *"the
+shipped rate law: r(β) = (1−β)·r_anchor + β·r_late-is-fine, β =
+bulkness_of_delta(δ)"*. **`bulkness_of_delta` exists at exactly three sites in
+this tree and all three are in `raptorpath-wasm`** (`lib.rs:234`,
+`lib.rs:1009`, `lib.rs:1023`). The engine has no `β` and computes no blend.
+Paper §8's 2026-08-12 correction states this already — *"the r(β) blend does
+not exist in the engine … a reader should not assume the engine computes the
+visualizer's formula"* — and this pass is the first to have to act on it.
+
+**The engine's rate law**, and the one this condition is derived against:
+
+```text
+   r*  =  max( 0,  ε̂/(1−ε̂) + z_{δ_eff/ε̂}·√( ε̂·σ²_burst/(W·(1−ε̂)) ) )  [+ ε_codec]
+```
+
+`raptorpath_math::controller_rate` (`math/src/lib.rs:618`), reached from
+`FecRateController::compute_repair_rate` (`control/fec_rate.rs:269`), paper
+§8.4. Amendments in force: §8.4.1's measured-mass tail term, §14.21.1's soft
+saturation cap, §14.26's completion-exposure glide, §14.28's inner-feedback
+floor (weight 0 by config default), §9.2's codec term.
+
+**Had the check been written against `r(β)`, it would have compared a model of
+the machine to a model of the machine.** That is the same defect class
+`CLAUDE.md` names — reached, this time, by trusting `CLAUDE.md`'s own example.
+
+### 2 — DOES THE SHIPPED LAW SUPPORT A MARGINAL READING?
+
+**Yes, as a SHADOW PRICE — and the distinction is load-bearing.** §8.1 states
+`r*` as *minimise `r` subject to `P(repairs < K) ≤ δ/ε`*. A constraint
+statement declares no willingness-to-pay; it declares a floor. But its
+Lagrange multiplier is a price, it is derived rather than posited, and for
+this constraint it is available in closed form because §8.2 supplies
+`P_fec = Φ(z_f)` explicitly. **Nothing is introduced to obtain it.**
+
+The joint loss per source symbol, in Copa's currency (`U = log(throughput) −
+δ·log(delay)`: a bandwidth fraction enters linearly, a delay as `δ·Δd/d`) —
+one line per term, each beside the sentence it implements:
+
+*The proactive leg spends `r` of the wire and pays for the symbols FEC misses,
+each of which falls through to an ARQ round:*
+
+```text
+   L_pro(r)  =  r  +  δ · ε̂·(1 − P_fec(r)) · D_arq / d
+```
+
+*The reactive leg spends the false repairs and pays for the detection margin
+on the genuine ones:*
+
+```text
+   L_react(α)  =  ν·α·(1 + h_marginal/T)  +  δ · p · k(α)·σ / d
+```
+
+Differentiating, with §8.2's `∂z_f/∂r = 1/S` at §8.4's own first order
+(`S ≡ √(ε̂·σ²_burst/(W(1−ε̂)))`), Cantelli's `k(α) = √((1−α)/α)` and
+`k′(α) = −1/(2α^{3/2}(1−α)^{1/2})`, and using that the shipped `r*` is by
+construction the `r` at which `z_f = z_{δ_eff/ε̂}`:
+
+```text
+   δ_pro    =  d·S / ( D_arq·ε̂·φ(z_{δ_eff/ε̂}) )                      [r* > 0]
+   δ_pro    ≤  d·S / ( D_arq·ε̂·φ(z_f(0)) ),  z_f(0) = −√(u)          [r* = 0]
+   δ_react  =  2·ν·(1 + h_marginal/T)·d·α^{3/2}(1−α)^{1/2} / (p·σ)
+```
+
+`φ` is the standard normal density: **the marginal productivity of one more
+repair symbol.** That is the quantity a marginal reading needs and the
+quantity a constraint statement hides, and it is why the answer to *"does the
+law support a marginal reading"* is yes rather than no.
+
+### 3 — THE CONDITION, AND THE TWO CANCELLATIONS
+
+Equating the two prices:
+
+```text
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │   α^{3/2}·(1−α)^{1/2}   =   p·σ·G(u) / ( 2·ν·D_arq·(1−ε̂) )   [interior] │
+  │   α^{3/2}·(1−α)^{1/2}   ≤   p·σ·G(u) / ( 2·ν·D_arq·(1−ε̂) )   [r* = 0]   │
+  │                                                                         │
+  │   G(u) = √(2π)·e^{u/2}/√u ,    u = W·ε̂ / ((1−ε̂)·σ²_burst)               │
+  │   D_arq(α) = srtt + k(α)·σ + d                                          │
+  └────────────────────────────────────────────────────────────────────────┘
+```
+
+**`h_marginal` cancels EXACTLY.** A proactive repair symbol and a reactive
+repair symbol are the same wire object — 14 B of `REPAIR_HEADER_SIZE`
+(`fec/generation.rs:44`) over the same 1200 B payload — so `(1 + h/T)`
+multiplies both legs' bandwidth terms and divides out. The `h`/`p` pass
+concluded `h` is *"a 1 % correction to a term that was already correct"* and
+recorded that as a negative result; **here it is exactly zero, and it is
+carried through the derivation only so that its absence is a result rather
+than an omission.**
+
+**`δ` cancels EXACTLY.** It multiplies both latency terms; `d`, Copa's delay
+normaliser, cancels with it. **The condition does not need the transfer claim
+the cost-ratio decision turns on** — which is precisely what makes it usable
+as an independent check on a sweep whose routes (b) and (d) both depend on
+that claim. It is silent on route selection by construction, not by choice.
+
+### 4 — PROVENANCE OF EVERY SURVIVING SYMBOL
+
+| symbol | class | provenance |
+|---|---|---|
+| `p` | **MEASURED** | realized per-leg loss, plain window — primitives-pw §7 |
+| `σ` | **MEASURED** | `rtt_sigma_us()`, plain window — primitives-pw §7 |
+| `ν` | **MEASURED** | `[RACK] fired`/delivered symbol, plain window — primitives-pw §7 |
+| `d` | **MEASURED** | repair delivery delay (`SOURCE`/ARQ class), plain window — primitives-pw §7. Enters `D_arq` only; the Copa-normaliser role cancels |
+| `srtt` | **MEASURED** | `srtt_wire`, α-sweep pre-registration §4 |
+| `σ²_burst` | **DERIVED, EXACT** | §8.3's `1 + 2(1−p−q)/(p+q)` on the harness's own `gemodel` parameters (`tools/l1/lib.sh::scenario_params`): c1 `0.05%/50%` → 2.996, c2 `1.3%/50%` → 2.899, c3 `2%/40%` → 3.762. These reproduce §8.3's own DC / WiFi / LTE rows to three figures — the harness was parameterised from that table |
+| `W` | **DERIVED, NOT ECHOED** | §8.8 `derive_window`, clamped `[16, 512]` by the math layer and by `MAX_WINDOW_SIZE = 200` (`net/mod.rs:183`). **No gauge reports it** |
+| `ε̂` | **DERIVED, NOT ECHOED** | `predictive_loss_upper(0.95)` on the max-loss active path (`net/emit_source.rs:614-618`). **No gauge reports it** |
+| `h_marginal` | **CODE-EXACT** | 14 B — **cancels** |
+| `δ` | **absent** | **cancels** |
+
+**THE TWO UN-ECHOED INPUTS ARE CONTAINED, NOT GUESSED.** `W` and `ε̂` enter
+only through `u`, and `G(u) = √(2π)e^{u/2}/√u` is minimised at `u = 1` with
+`G(1) = √(2πe) = 4.1327`. **Every value of `W` and `ε̂` therefore makes the
+bound LOOSER, never tighter.** The `u = 1` evaluation is the strongest
+statement the condition can make and rests on measured inputs alone. This is a
+derived containment of two missing provenances — not a constant chosen to
+close a gap, which the ruling's clause 3 forbids.
+
+### 5 — THE CORNER, AND WHY THE CHECK IS A CONTAINMENT TEST
+
+Every `tools/l1` invocation runs hint `bulk` (`alpha_battery.sh:291`).
+`bulk_pure_arq` defaults `true` (`fec_rate.rs:183`) and is never set false
+outside tests; `set_completion_exposure` is **never called anywhere in
+`src/`** (declaration and default `0.0` only), so χ = 0. §14.26's glide then
+gives `δ_eff = ε̂` exactly, and four things happen at once in
+`controller_rate`:
+
+```text
+   z_{δ_eff/ε̂} = Φ⁻¹(0) = −∞   ⇒  core = 0 through max(0, ·)
+   required_fec_fraction = (1 − δ_eff/ε̂) = 0   ⇒  burst term = 0
+   δ_wf = δ_eff/ε̂ = 1          ⇒  r_star_mass = 0
+   inner_feedback weight = 0 (config default)  ⇒  floor inert
+   ────────────────────────────────────────────────────────────
+   r*(Bulk, χ = 0)  =  0   identically, at every plain-window cell
+```
+
+**Pinned, not inferred:** `fec_rate.rs::test_bulk_pure_arq_zero_steady_state_rate`
+asserts `r < 0.01` at 5 % loss, and names the mechanism in its own comment.
+
+**Consequence.** The constraint is SLACK at the shipped operating point, so
+complementary slackness gives shadow price at the boundary, the equality never
+applies, and the check the sweep will be intersected with is:
+
+> **is the sweep's winning α inside the interval the shipped `r*` = 0 admits?**
+
+not *"does the sweep's winner equal the r law's α?"*. **A condition written as
+an equality would have been checking a stationarity the shipped machine does
+not satisfy, and would have reported a disagreement at every cell as a
+finding.**
+
+**TWO COROLLARIES, STATED HERE RATHER THAN DISCOVERED LATER.**
+
+* **`[FDIAG] cod > 0` on the plain window is NOT evidence of proactive FEC at
+  the Bulk hint.** The green-light checklist retired witness `W3` on the
+  reasoning *"it is nonzero at every lossy plain-window cell because the plain
+  window still emits proactive FEC."* With `r* = 0` that reasoning cannot
+  stand; the coded symbols on that wire are the reactive plane's own repairs.
+  **The retirement of `W3` is still correct — `cod = 0` is not a
+  generation-off witness — but its stated reason is not.** This is filed as an
+  owed annotation, not a re-score.
+* **The plain window is the ONLY configuration in which this condition is
+  checkable.** §8's correction records that `r*` reaches the wire only through
+  the plain-window taper path, never through `gen_budget` (whose `r` is the
+  constant `pol.gen_repair_floor`). The sweep runs the plain window. That
+  alignment was not designed and is stated so nobody later reads it as one.
+
+### 6 — SHAPE CHECK
+
+* **Units.** Dimensionless both sides. `p`, `ν`, `G`, `(1−ε̂)`, `α` pure;
+  `σ` and `D_arq` both seconds, appearing as a ratio.
+* **Monotone in α.** `α^{3/2}(1−α)^{1/2}` rises on `(0, 0.75]` to
+  `3√3/16 = 0.32476` — unique inversion across the whole swept range
+  `[0.002, 0.40]`. **An RHS above `0.32476` means NO BOUND: every α is
+  admissible. That is a legal outcome and will be reported as one.**
+* **Monotone in ν** (decreasing): a clock that fires more often wastes more
+  wire per unit of detection delay bought, so less false-alarm budget is
+  consistent with a proactive leg that spends nothing.
+* **Monotone in σ** (increasing, linear): noisier RTT makes the Cantelli
+  margin expensive in latency, so a looser budget is admissible. **`α_max ∝
+  σ^{2/3}` for small α, so the 287× rep spread propagates as 43×. The
+  condition is NOT σ-free**, and §7 of the evaluation carries the propagation.
+* **Monotone in `D_arq`** (decreasing): the longer the ARQ round the FEC would
+  have saved, the more valuable proactive coverage is, and the harder it is to
+  reconcile a proactive leg that spends nothing with a fast, wasteful clock.
+* **In δ.** Cancels. Zero sensitivity by construction.
+
+### 7 — THE FALSIFIER STRUCTURE, PRE-COMMITTED
+
+Written before item 2's scored curve is read, so that no reading of it can be
+chosen after the fact.
+
+| # | what the sweep + this condition would jointly show | verdict |
+|---|---|---|
+| **F1 — CONSISTENT** | the sweep's winning α at a cell lies **inside** that cell's admissible interval, **and** the interval is not vacuous (RHS ≤ 0.32476) | **CONSISTENCY CONFIRMED at that cell.** The shipped r law's silence and the measured best clock price latency compatibly. Weak evidence, honestly labelled: an inequality that is satisfied constrains little |
+| **F2 — CONTRADICTION** | the sweep's winning α lies **above** the cell's admissible `α_max`, on a non-vacuous interval, at a cell where the sweep separated its arms (α-sweep pre-registration §4 warns four of five cells may not) | **THE SWEEP WINNER CONTRADICTS THE SHIPPED LAW.** The machine cannot hold both: either `bulk_pure_arq`'s `δ_eff = ε̂` is under-spending proactively, or the winning clock is over-firing. **Neither side may be closed by introducing a coefficient** — the ruling's clause 3 forbids it. The disposal is to name which leg is wrong and measure it |
+| **F3 — MODEL REFUTED** | the ordering is **inconsistent across cells** — winner inside at some cells and outside at others with no measured input explaining the split — **or** the winner is outside `α_max` at a cell where `α_max` is vacuous-adjacent and the only way to reconcile is a fitted multiplier | **THE MARGINAL MODEL ITSELF IS REFUTED**, and the correct response is to record it as such. Explicitly: a constant may not be introduced to close the gap; the condition either survives on measured inputs or it does not survive |
+| **F4 — UNRESOLVED (expected)** | the interval is **vacuous** (RHS > 0.32476, which the σ propagation makes reachable at `c8`), or the sweep is FLAT / UNSEPARATED — a pre-registered legal outcome of item 2 | **NO VERDICT.** The condition scored nothing and says so. The named blocker is σ, already this tree's largest open item |
+| **F5 — INSTRUMENT** | the sweep reports a winner at a cell where `[QCLK] law_n/evals` shows the armed law did not dominate | **NO VERDICT at that cell**, per the sweep's own bind-fraction gauge |
+
+**AND ONE THING F1–F5 MAY NOT DO.** None of them selects between route (b)
+and route (d). `δ` cancels out of this condition; it cannot adjudicate a
+question about `δ`'s transfer. Any reading of the sweep that uses this section
+to advance a route is a misuse of it, and is pre-emptively refused here.
+
+### 8 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** The engine's rate law is §8.4's `r*`, not `CLAUDE.md`'s
+`r(β)`. That law carries a closed-form shadow price and therefore supports a
+marginal reading. The marginal-equality condition between the proactive and
+reactive planes is `α^{3/2}(1−α)^{1/2} = p·σ·G(u)/(2·ν·D_arq·(1−ε̂))`, with
+`h_marginal` and `δ` cancelling exactly. At the α-sweep's operating point
+`r* = 0` identically, so the applicable form is the inequality. `W` and `ε̂`
+are contained by `G(u) ≥ √(2πe)` rather than assumed. `σ²_burst` is exact from
+the harness's own scenario table.
+
+**NOT established.** Whether any cell's interval is non-vacuous once σ's
+spread is carried — §7 of the evaluation section computes it and the answer is
+not uniform. Whether `W` or `ε̂` sit anywhere near `u = 1`; nothing echoes
+them. Whether the first-order `∂z_f/∂r = 1/S` — §8.4's own approximation,
+which drops `r` from the variance denominator — is adequate **at `r = 0`**,
+where the dropped term is exactly zero and the approximation is therefore at
+its best; this is argued, not measured.
+
+**NOT DONE AND NOT ATTEMPTED.** The α-sweep's scored curve (item 2, running),
+the intersection of it with this condition, the derivation from the measured
+curve (item 4), the verdict battery (item 5). **Neither route (b) nor route
+(d) is chosen, advanced or refuted, and this condition is structurally
+incapable of doing so.**
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies any committed scored section.**
+
+---
+
+## THE r-LAW CONSISTENCY CONDITION — THE PER-CELL EVALUATION (2026-08-20, `feat/rlaw-condition` from main@`c4ce89f`) — **goal #100 item 3's second half: the condition of the section above, evaluated at the five cells' measured primitives as a function of α.** **STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test.** **NO VERDICT ON ROUTE (b) OR ROUTE (d), and no arm of item 2 is scored** — the sweep has not landed. Script `tools/l1/rlaw_condition.py`, which reads no ledger and contacts nothing; every input is a literal transcribed from a committed section and cited beside it.
+
+### 0 — VERDICT FIRST
+
+**The five intervals, on measured inputs alone, at the tightest the condition
+can ever be** (`u = 1`, `D_arq = srtt + d`):
+
+| cell | `D_arq` (ms) | RHS | **`α_max`** | arms the condition admits | arms it would flag |
+|---|---|---|---|---|---|
+| `c1` | 3.05 | 0.00195 | **0.0157** | Q002, Q009 | Q050, Q184, Q400 |
+| `c7` | 72.78 | 0.00262 | **0.0191** | Q002, Q009 | Q050, Q184, Q400 |
+| `c8` | 80.30 | 0.02445 | **0.0868** | Q002, Q009, Q050 | Q184, Q400 |
+| `c8L` | 91.04 | 0.00521 | **0.0304** | Q002, Q009 | Q050, Q184, Q400 |
+| `sc2` | 105.37 | 0.00102 | **0.0102** | Q002, Q009 | Q050, Q184, Q400 |
+
+**Read exactly as written: these are the SMALLEST the intervals can be.**
+`W` and `ε̂` are un-echoed and enter only through `u`; `G(u) ≥ G(1)` for every
+`u`, so every real `(W, ε̂)` widens them. On a realistic grid
+(`W ∈ {16, 56, 200}`, `ε̂ ∈ {1, 2, 3}×p_worst`) they widen by up to 8× (§3).
+
+**Three things this table says and one it does not.**
+
+1. **The bounds are LOW.** At four of five cells the condition admits only the
+   two smallest swept arms even before it is widened; at `c8` it admits three.
+   **Every cell's bound sits below `α = 0.184`, and every cell's bound sits
+   below RACK's own `1/16 = 0.0625` except `c8`.**
+2. **The ordering is not the σ ordering alone.** `c8` is loosest because it
+   carries the largest σ *and* the largest `p`; `sc2` is tightest because its
+   `D_arq` is the largest and its `ν` is near the top with a small `p`.
+3. **The condition is NOT σ-free and the propagation is severe** (§4).
+4. **It does NOT say the shipped clamp is wrong.** The shipped clamp's
+   commanded `fa_frac` is 0.0911–0.7269, above every bound in the table — but
+   scoring that requires the sweep's own control arm, which has not landed,
+   and this section refuses to pre-empt it.
+
+### 1 — THE INPUTS, WITH THE SEAT EACH ONE IS READ AT
+
+`p`, `σ`, `ν`, `d`: goal-gate "THE PASSIVE PRIMITIVES — PLAIN WINDOW, THE
+SCORED RESULT" §7, **PLAIN-WINDOW rows only**. `srtt`: the α-sweep
+pre-registration §4's `srtt_wire`. `σ²_burst`: §8.3 on
+`tools/l1/lib.sh::scenario_params`.
+
+| cell | `srtt` ms | `d` ms | `σ` ms | `ν` | `p` (mean of legs) | `p` (worst leg) | `σ²_burst` (worst leg) |
+|---|---|---|---|---|---|---|---|
+| `c1` | 2 | 1.048 | 0.035 | 0.00183 | 0.00015 | 0.00015 | 2.996 (c1) |
+| `c7` | 72 | 0.777 | 0.499 | 0.02966 | 0.00545 | 0.0056 | 2.899 (c2) |
+| `c8` | 77 | 3.298 | 3.140 | 0.03776 | 0.011215 | 0.0184 | 3.762 (c3) |
+| `c8L` | 82 | 9.038 | 0.665 | 0.03006 | 0.0102 | 0.0165 | 3.762 (c3) |
+| `sc2` | 101 | 4.370 | 0.492 | 0.03789 | 0.0040 | 0.0040 | 2.899 (c2) |
+
+**TWO CONVENTIONS, BOTH FORCED BY THE CODE RATHER THAN CHOSEN.**
+
+* **The two legs get two different `p`s, and that is not an inconsistency.**
+  The reactive term's `p` is the fraction of *all* source symbols needing
+  repair, so it is the across-leg mean — the same convention the α-sweep
+  pre-registration used when it wrote `p = 0.011215` at `c8`. The proactive
+  term's `ε̂` is read from **one** estimator, the max-loss active path's
+  (`net/emit_source.rs:614-618`), so it tracks the **worst** leg, and
+  `σ²_burst` comes from that same path's GE estimator. The condition inherits
+  both seats.
+* **`d` COLLIDES WITH ITSELF ACROSS TWO DOCUMENTS AND THE COLLISION IS
+  RESOLVED HERE.** The cost-ratio memo's route (d) writes `d = srtt` — a
+  *normaliser*, Copa's own denominator for a fractional delay. The primitives
+  passes measured `d` as the *repair delivery delay* (0.777–9.038 ms), and
+  `P1` was scored against the memo's `d = 77 ms` and **FAILED by 26×**. They
+  are different quantities wearing one letter. In the condition, the
+  normaliser role **cancels** (§3 of the condition section) and only the
+  delivery-delay role survives, inside `D_arq = srtt + k(α)·σ + d`. **This
+  section therefore uses the measured `d` and does not inherit `P1`'s
+  failure**; the failure was of a value substituted for a normaliser, which
+  the condition no longer contains.
+
+### 2 — THE EVALUATION, AS A FUNCTION OF α
+
+The condition inverts uniquely because `f(α) = α^{3/2}(1−α)^{1/2}` is strictly
+increasing on `(0, 0.75]`, which contains the whole swept range:
+
+```text
+   α_max = f⁻¹( p·σ·G(u) / (2·ν·D_arq·(1−ε̂)) ),   f(α) = α^{3/2}(1−α)^{1/2}
+   NO BOUND when the RHS exceeds max f = 3√3/16 = 0.32476
+```
+
+`tools/l1/rlaw_condition.py` §A prints the table in §0. **The `D_arq(α)`
+self-consistent form**, in which the detection wait the clock itself imposes
+is part of the round the FEC would have saved, tightens every cell slightly
+(script §E): `c1` 0.0148, `c7` 0.0185, `c8` 0.0797, `c8L` 0.0295, `sc2`
+0.0099. **No cell changes which arms it admits**, so the linearisation
+`D_arq = srtt + d` is reported as the headline and the exact form as the
+check on it.
+
+### 3 — THE TWO UN-ECHOED INPUTS, SWEPT RATHER THAN CHOSEN
+
+`u = W·ε̂/((1−ε̂)·σ²_burst)`; `G(u) = √(2π)e^{u/2}/√u`, minimised at `u = 1`:
+
+| `u` | 0.10 | 0.25 | 0.50 | **1.00** | 2.00 | 4.00 | 8.00 | 16.0 |
+|---|---|---|---|---|---|---|---|---|
+| `G(u)/G(1)` | 2.02 | 1.37 | 1.10 | **1.00** | 1.17 | 2.24 | 11.7 | 452 |
+
+Over `W ∈ {16, 56, 200}` and `ε̂ ∈ {1, 2, 3}×p_worst`, the realised `u` lands
+in **0.001–3.11** at every cell — i.e. **on the flat part of `G`**, within a
+factor of ~8 of its floor at the extreme and within ~1.4 over most of the
+grid. `α_max` across that whole grid (script §C):
+
+| cell | `α_max` min | `α_max` max | floor bound (§0) |
+|---|---|---|---|
+| `c1` | 0.0367 | 0.1258 | 0.0157 |
+| `c7` | 0.0194 | 0.0444 | 0.0191 |
+| `c8` | 0.0868 | 0.1522 | 0.0868 |
+| `c8L` | 0.0304 | 0.0541 | 0.0304 |
+| `sc2` | 0.0103 | 0.0263 | 0.0102 |
+
+**THE GRID NEVER CROSSES `α = 0.184`.** At no `(W, ε̂)` on this grid does any
+cell admit `Q184` or `Q400`. That is the strongest statement this section
+makes, and it is robust to both un-echoed inputs across their whole legal
+ranges. **`c1` is the only cell where the un-echoed inputs matter to which
+arms are admitted** (`Q050` enters at small `W`), and `c1` is also the only
+cell where the sweep's own pre-registration says the arm span is 0.8 ms —
+i.e. the cell least likely to produce a separated winner.
+
+### 4 — σ, AND THE HONEST PROPAGATION
+
+**The condition is NOT σ-free.** `σ` enters the reactive leg linearly and
+appears nowhere on the proactive leg — the proactive leg's `σ²_burst` is a
+different quantity entirely (a dimensionless GE variance-inflation factor,
+§8.3) and the two share a letter by historical accident. So `RHS ∝ σ`, and for
+small α, `α_max ∝ σ^{2/3}`: **a 287× input spread propagates to 43×.**
+
+At `c8`, where the plain-window pass measured `σ = 0.191 / 3.140 / 54.836 ms`
+across three reps at `n ≈ 18 000` (script §D, `u = 1`):
+
+| rep σ | RHS | `α_max` |
+|---|---|---|
+| 0.191 ms | 0.00149 | **0.0131** — admits Q002 only |
+| 3.140 ms (median) | 0.02445 | **0.0868** — admits Q002, Q009, Q050 |
+| 54.836 ms | **0.42697** | **NO BOUND** — RHS exceeds `3√3/16`; every α is consistent |
+
+**AT THE HIGH-σ REP THE CONDITION SAYS NOTHING AT ALL.** One rep of three, on
+one seed, at the cell with the largest arm separation, makes the check
+vacuous. **The pass's largest open item is this condition's largest error term
+too**, and it is the same item: *"why σ shows 287× spreads at converged `n`,
+now seen in three sessions and both configurations."* No σ-median-derived
+`α_max` in this section is entitled to more than one significant figure, and
+the `c8` row is entitled to none until the σ question is resolved. **This
+qualification is attached before the sweep lands, not after.**
+
+The other four cells' σ spreads are not published per-rep in the primitives
+table, so **no propagation is claimed for them** and their intervals carry the
+same single-figure caution by inheritance rather than by measurement.
+
+### 5 — WHAT THIS EVALUATION IS READY TO DO WHEN THE SWEEP LANDS
+
+Mechanically, and with nothing left to decide:
+
+1. Take the sweep's winning α per cell, and its `[QCLK] law_n/evals`
+   bind fraction. `law_n/evals` low ⇒ **F5, no verdict at that cell.**
+2. Recompute this section's `α_max` at that cell using **the σ actually
+   realised in the winning rep** (`[QCLK] sigma_us_mean`), not the primitives
+   median. That is a one-line re-run of `rlaw_condition.py`, and it removes
+   the largest error term in §4 by construction.
+3. Compare. `α_win ≤ α_max` ⇒ **F1**. `α_win > α_max` on a non-vacuous
+   interval at a separated cell ⇒ **F2**. Inconsistent across cells with no
+   measured input explaining the split ⇒ **F3**. Vacuous interval or flat
+   curve ⇒ **F4**.
+4. **In no branch is a coefficient introduced.** Per the ruling's clause 3, if
+   the gap can only be closed by a fitted constant, the correct output is F3
+   — the marginal model is refuted — and not a constant.
+
+**The pre-committed expectation, said before the data so it cannot be claimed
+afterwards:** the sweep's pre-registration predicts an UNSEPARATED or FLAT
+curve as the modal outcome at four of five cells, so **F4 is the most likely
+verdict of this intersection**, and F4 scores nothing. The intersection is
+worth writing anyway because F2 is cheap to detect and would be a genuine
+internal contradiction in a shipped machine.
+
+### 6 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** The condition's per-cell floor bounds on measured inputs
+alone: `α_max` = 0.0157 / 0.0191 / 0.0868 / 0.0304 / 0.0102 at c1 / c7 / c8 /
+c8L / sc2. Their widening under the two un-echoed inputs, over the whole legal
+`(W, ε̂)` range, never reaches `α = 0.184`. The `D_arq(α)` self-consistent form
+tightens every cell without changing which arms are admitted. The `d`
+collision between the memo's normaliser and the primitives' measured delivery
+delay is identified and resolved by cancellation.
+
+**NOT established.** Whether `W` or `ε̂` sit anywhere near `u = 1` at any cell
+— nothing echoes them, and the grid is a legal range, not a measurement.
+Whether `c8`'s interval is non-vacuous at all: one rep of three makes it
+vacuous. Any per-rep σ at the four non-`c8` cells. Whether the sweep separates
+its arms anywhere, which its own pre-registration doubts.
+
+**NOT DONE AND NOT ATTEMPTED.** The intersection itself (item 2's curve has
+not landed), the derivation from the measured curve (item 4), the verdict
+battery (item 5). **Neither route (b) nor route (d) is chosen, advanced or
+refuted — and per §3 of the condition section, `δ` cancels out of this
+condition, so it is structurally incapable of doing so.**
+
+**Artifacts.** `tools/l1/rlaw_condition.py`, deterministic, no I/O, no
+network; its printed output is reproduced in §0, §2, §3 and §4 above.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+or modifies any committed scored section.**
