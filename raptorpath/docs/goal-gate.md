@@ -38063,3 +38063,198 @@ The `[RFA]` gauge (main@`83db750`) did not exist when the generation pass ran. I
 It does not sweep α, does not choose between routes (b) and (d), does not flip a default, does not edit a law, and **does not modify any committed scored section** — including the ten annotations the anomaly section §6 listed as owed, which remain owed and unapplied. It measures four primitives and one two-sided gap on the machine item 2 will run.
 
 **Nothing in this section flips a default, adds a gate, or edits an engine crate.**
+
+---
+
+## THE PASSIVE PRIMITIVES — PLAIN WINDOW, THE SCORED RESULT (2026-08-20, `feat/primitives-pw` from main@`83db750`) — **`Q1` MEASURED, `Q2` FAILS AT `c1`, `Q3` PASSES AT ALL FIVE CELLS, `Q4` IS UNRESOLVED AT FOUR OF FIVE AND THE REASON IS MEASURED, `Q5` PASSES.** 15 invocations, one REBUILT binary, five cells, one seed, **0 aborts**, scored against the PRE-REGISTRATION AMENDMENT above and against nothing else. **Nothing here flips a default and no engine crate is touched.**
+
+### 1 — THE VERDICT FIRST
+
+**THE CONFIGURATION TOOK, AND THE PLATEAU IS GONE.** All five cells ran at **83–203 Mbit/s** against the generation pass's 27–34, `[RFA] gen=0` at 15/15, zero `[PFRAC]` lines at 15/15, and `[RACK] fa=` present with `fired` = 11–5 717 at 15/15. **The α-reachability gate passes at every rep.** The 31 Mbit/s anomaly's diagnosis is confirmed on the wire, by the arm that was supposed to be different being different.
+
+**`ν` REPRODUCES THE LEDGER AT ALL FIVE CELLS, AND THREE OF THEM TO 2 %.** `Q3`'s band was 2× around the ledger's value; the field lands at **1.02×** (`c7`), **1.02×** (`sc2`), **0.86×** (`c8`), 0.62× (`c8L`), 0.56× (`c1`). **This is the within-configuration, within-instrument reproduction `P3` could never have been**, and it retires the generation pass's `ν = 0` to a configuration-labelled row.
+
+**AND THE HEADLINE, WHICH IS NOT A CLEAN ONE AND IS NOT ALLOWED TO LOOK LIKE ONE.** With every input measured on the plain-window machine:
+
+```text
+    δ(c8)  =  2·ν·d·α_b^{3/2}(1−α_b)^{1/2} / (p·σ)
+           =  2 × 0.03776 × 3.298 ms × 0.07146 / (0.011215 × 3.140 ms)
+           =  0.505                                      vs  δ_auto = 0.5
+```
+
+**That is inside `S1`'s `[0.4, 0.6]` band, and it would be the first reading in this tree's history that is. IT IS ALSO ALMOST CERTAINLY A COINCIDENCE, AND THIS SECTION REFUSES TO PUBLISH IT AS ANYTHING ELSE.** `σ(c8)` reads **0.191 / 3.140 / 54.836 ms** across the three reps — a **287× spread at comparable `n`** — and δ goes as `1/σ`, so the same three reps give:
+
+| rep | `σ(c8)` | **`δ`** | in `[0.4, 0.6]`? |
+|---|---|---|---|
+| r2 | 0.191 ms | **8.31** | no — 14× high |
+| r1 | 3.140 ms | **0.505** | **yes** |
+| r3 | 54.836 ms | **0.029** | no — 14× low |
+
+**Three reps, three orders of magnitude, and the median happens to land on the contract value.** The σ pass's own §4 said it plainly: *"a formula with two free inputs can be made to produce any answer."* One of those inputs is still not constrained. **`S1` is NOT reopened, NOT re-scored, and NOT declared passed** — this section reports what the plain-window inputs give and says, before anyone else can, that three reps at one seed with a 287× σ spread do not resolve a band of ±20 %.
+
+**THE `d` PICTURE INVERTED EXACTLY AS PRE-REGISTERED, AND THE NUMBER BARELY MOVED.** Under generation every stall was FEC-resolved (`SOURCE n = 0` at 15/15, structurally). At `RWM_GEN=0` the ARQ loop is live and the classes swap: `SOURCE` carries **292–10 502** episodes per rep and `DECODE` collapses to **0–8**. `d(c8)` = **3.30 ms** from the source class, against the generation pass's **2.91 ms** from the decode class. **Two different recovery mechanisms on two different machines agree to 13 %,** and both refute `d = srtt = 77 ms` by more than 20×.
+
+### 2 — `Q5`, THE ABORT AND WITNESS TABLES, READ BEFORE ANY PRIMITIVE
+
+**0 aborts in 15 invocations, `rc = 0` at every rep, `[GATES]` two-sided at every rep. `Q5` PASSES.**
+
+| cell | reps | `mean_mbps` | band | in band | W1 `[RFA] gen=` | W2 `[PFRAC]` | W5 `[RACK] fa=spur/fired` | W4′ max `retx` |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 3 | 203.2 / 200.1 / 198.7 | [147, 294] | **3/3** | `0` ×3 | 0 ×3 | 56/615 · 48/606 · 76/692 | 614 / 606 / 692 |
+| `c7` | 3 | 164.4 / 166.3 / **89.0** | [140, 180] | **2/3** | `0` ×3 | 0 ×3 | 1265/5672 · 1000/5230 · 1228/4466 | 5584 / 5221 / 4449 |
+| `c8` | 3 | 83.4 / 90.9 / 91.4 | [50, 100] | **3/3** | `0` ×3 | 0 ×3 | 164/694 · 353/875 · 304/844 | 684 / 856 / 774 |
+| `c8L` | 3 | 90.4 / 88.5 / 89.8 | [45, 95] | **3/3** | `0` ×3 | 0 ×3 | 2670/5354 · 1783/4207 · 2162/5717 | 5314 / 4207 / 5708 |
+| `sc2` | 3 | 86.7 / 88.5 / 89.0 | [78, 92] | **3/3** | `0` ×3 | 0 ×3 | 2504/3445 · 2524/3352 · 2324/3223 | 3379 / 3342 / 3178 |
+
+**THE ONE OUT-OF-BAND REP IS `c7` r3, AND THE PRE-COMMITTED PRECEDENCE RESOLVES IT WITHOUT A JUDGEMENT CALL.** §3 of the amendment fixed it: the witnesses are primary and mechanical, the band is a secondary cross-check, and where they disagree the witnesses rule. `c7` r3 is clean on W1, W2 and W5. **It is an out-of-band rep, not a generation rep**, and it is reported as one. Its cause is visible and is the same pathology the generation pass saw at the same cell: **its legs collapsed** — CLI1 carried **649 packets** against CLI0's 179 944, 0.4 % of the transfer — so a two-leg cell ran as one leg at half the aggregate rate. `c7` r3's per-leg `p` is not readable and its σ/`d` are reported with that stated.
+
+**TWO OF MY OWN FIVE WITNESSES WERE MIS-SPECIFIED, AND THAT IS RECORDED AS A SPECIFICATION FAILURE RATHER THAN QUIETLY DROPPED.**
+
+* **`W3` — `cod = 0sym/s` — IS WRONG AND WAS WRONG WHEN WRITTEN.** It reads `0`/`0`/`4` at `c1` but **111–750 at every lossy cell.** The plain window still emits **proactive FEC repair** — that is what `r` is — and `cod` counts it. `W3` was transcribed from the anomaly section's §7 list without checking what the counter counts at a *lossy* cell, and the anomaly section itself only ever observed it at generation-on reps. **`W3` is RETIRED. It does not discriminate the generation axis and never could have.**
+* **`W4` — `[DIAG] retx > 0` — WAS READ OFF THE WRONG LINE.** The harness took the **last** `retx=` in the log, and `retx=` in the `[DIAG]` tail is an **interval** counter, not a cumulative one: it reads `0` at 5 of 15 reps whose `[RACK]` line on the same run shows `fired` = 11–5 717. Re-read as the **maximum over all `[DIAG]` lines** (`W4′` above) it is **606–5 708, positive at 15/15 including `c1`**, and it tracks `fired` to within 2 % at every rep. **The gate passes; the harness's reading of it did not, and the fix is at analysis time, not a re-run.**
+
+**W1, W2 AND W5 ARE SOUND AND PASS 15/15, AND THEY ARE SUFFICIENT.** W1 is a direct engine echo of `window_generation`; W2 is a mechanical consequence of `perf_rwm_c.sh:104-106`; W5 is `record_fire`'s only call site. **The configuration determination does not rest on either retired witness.**
+
+### 3 — `Q1`: `d` ON THE MACHINE THE LEDGERS RAN
+
+No band was asserted, and either direction was pre-committed as a result. Warm-up excluded by the amendment's unchanged rule.
+
+| cell | **`d_source`** per rep (µs) / n | **median** | `d_decode` per rep / n | `gap_max` | `holes_max` |
+|---|---|---|---|---|---|
+| `c1` | 935/n294 · 1071/n355 · 1048/n416 | **1.048 ms** | **absent** (n=0 ×3) | 131 | 30 |
+| `c7` | 777/n9313 · 707/n10502 · 5920/n2137 † | **0.777 ms** | 6248/n8 · 4955/n7 · 17345/**n1** | 8241 | 1014 |
+| `c8` | 4772/n292 · 1534/n931 · 3298/n443 | **3.298 ms** | absent · absent · 25085/**n1** | 5064 | 1078 |
+| `c8L` | 10942/n1208 · 7891/n1714 · 9038/n1522 | **9.038 ms** | 244718/**n1** · 63484/**n2** · absent | 15067 | 1900 |
+| `sc2` | 4370/n1427 · 4334/n1378 · 5158/n1093 | **4.370 ms** | absent · absent · 49576/**n2** | 1606 | 93 |
+
+† `c7` r3 is the out-of-band, leg-collapsed rep of §2.
+
+**THE CLASSES INVERTED, AND THE INVERSION IS THE POINT.** The amendment pre-registered this: *"At `RWM_GEN=0` the per-seq ARQ loop is live, so `d_source` is expected NONZERO … If `d_source` is again zero at a lossy cell, that is an instrument-fail."* It is nonzero at 15/15 — **and `d_decode` has become the class that cannot be measured**, with `n` = 0 at 8 reps and `n` = 1–2 at 5 more. **`n = 1` is not a measurement and none of those readings is used.** Only `c7` r1/r2 (n = 8, 7) carry a `d_decode` worth printing, at 6.2 and 5.0 ms.
+
+**SO `d` FOR THE PLAIN-WINDOW MACHINE IS THE SOURCE CLASS**, because ARQ is what recovery *is* there — and per the amendment's pre-committed decision rule, **this is `d` for every δ-consuming purpose from here on**, with the generation pass's 2.912 ms retired to a configuration-labelled row.
+
+**ITS BIAS IS NAMED AND IT POINTS THE OTHER WAY FROM THE GENERATION PASS'S.** `d_source` cannot distinguish an ARQ retransmit from a merely-late original; a reordered original resolves its hole *fast*, so including it **deflates** `d_source`. **`d_source` is a LOWER bound on the true ARQ stall.** The `[RFA]` gauge measures the size of that contamination directly and it is large — §5 — so the bound is not tight. Meanwhile the episode-conflation caveat still bounds from *above* (`gap_max` reaches 15 067 and `holes_max` 1 900). **Two bounds pointing opposite ways, both named, neither corrected for.**
+
+**AND THE NUMBER SURVIVED THE MACHINE CHANGE.** `d(c8)` = 3.30 ms plain window (ARQ) against 2.91 ms under generation (FEC decode) — **13 % apart, from two different recovery mechanisms.** `P1`'s direction stands and its magnitude is now configuration-independent: **`d` is single-digit milliseconds, not 77.**
+
+### 4 — `Q2`: `σ` MOVES WITH THE CONFIGURATION, AND AT `c1` IT MOVES BY 41×
+
+| cell | data-path σ per rep (µs) / n | **median** | in `[0.2, 4.0] ms`? | generation pass's σ | ratio |
+|---|---|---|---|---|---|
+| `c1` | 13/n334324 · 35/n333820 · 46/n336287 | **0.035 ms** | **NO — 5.7× BELOW THE FLOOR** | 1.452 ms | **41×** |
+| `c7` | 499/n85032 · 2321/n85853 ‡ · 480/n170962 | **0.499 ms** | yes | 2.030 ms | 4.1× |
+| `c8` | 3140/n19782 · 191/n17660 · 54836/n18516 | **3.140 ms** | yes (barely) | 0.803 ms | 0.26× |
+| `c8L` | 343/n164217 · 665/n170915 · 4088/n165454 | **0.665 ms** | yes | 1.560 ms | 2.3× |
+| `sc2` | 1113/n84164 · 335/n85998 · 492/n83937 | **0.492 ms** | yes | 1.229 ms | 2.5× |
+
+‡ the one rep where the data-path selector is genuinely ambiguous — `n` = 85 853 vs 85 361, a 0.6 % separation. Per the reading rule's §6 clause both are reported: p0 2 321 µs, p1 1 105 µs. Both are in band, so `Q2` is unaffected.
+
+**`Q2` FAILS AT `c1` AND PASSES AT `c7`, `c8L` AND `sc2`.** `c1` reads **35 µs** — 5.7× below the band floor, at `n` > 330 000, at all three reps, with a spread of only 3.5× between them. **This is not noise and it is not warm-up: it is the tightest σ reading in the whole tree and it is out of band on the low side.**
+
+**AND IT ANSWERS A QUESTION THE ANOMALY SECTION LEFT AS AN ARGUMENT.** Its §5 wrote: *"σ is an RTT-dispersion statistic and there is no a priori reason it should move with the generation gate — but that is an argument, and this tree's own rule is that a divergence gets a bound and not a paragraph."* **The bound is now measured: σ moves with the generation gate, by 41× at `c1`, 4.1× at `c7`, 2.3–2.5× at `c8L`/`sc2`, and 0.26× at `c8`.** It moves in *both* directions, so it is not a simple offset. **Every σ-consuming number in this tree now carries a configuration.**
+
+**THE EXCURSIONS ARE WORSE HERE THAN UNDER GENERATION AND THEY ARE THE PASS'S LARGEST OPEN ITEM.** `c8` spans **0.191 → 54.836 ms, 287×**, at `n` ≈ 18 000 on all three reps. The generation pass saw 360× at `c1`; the `c8` σ pass saw 10× at its r3. **Three sessions, two configurations, five cells: the estimator has structure nobody has resolved, and δ goes as `1/σ`.** Until it is resolved, no δ computed from a three-rep σ median is entitled to a two-significant-figure reading — **which is exactly the qualification §1 attaches to `0.505`.**
+
+### 5 — `Q3`: `ν` REPRODUCES, AND `Q4`: THE REALIZED/COMMANDED GAP IS UNRESOLVED FOR A MEASURED REASON
+
+**`Q3` — `ν = [RACK] fired / dgq_hand`, the ledger's own ratio on the ledger's own machine.**
+
+| cell | ν per rep | **median** | ledger ν | **ratio** | within 2×? |
+|---|---|---|---|---|---|
+| `c1` | 0.00183 / 0.00181 / 0.00204 | **0.00183** | 0.00324 | 0.56× | yes |
+| `c7` | 0.03229 / 0.02966 / 0.02518 | **0.02966** | 0.02910 | **1.02×** | yes |
+| `c8` | 0.03112 / 0.04022 / 0.03776 | **0.03776** | 0.04376 | **0.86×** | **yes — `Q3` PASSES** |
+| `c8L` | 0.03006 / 0.02370 / 0.03214 | **0.03006** | 0.04858 | 0.62× | yes |
+| `sc2` | 0.03939 / 0.03789 / 0.03698 | **0.03789** | 0.03701 | **1.02×** | yes |
+
+**`Q3` PASSES at `c8`, the scored cell, and at all four reported ones.** `c7` and `sc2` reproduce to **2 %**, across a different binary, a different session and a five-month-old ledger. **`ν` is a real, stable property of the plain-window machine, and the generation pass's `ν = 0` was a configuration, exactly as the anomaly section said.**
+
+**`Q4` — REALIZED (`[RFA] false_frac`, receiver) AGAINST COMMANDED (`[RACK] fa_frac`, sender), both against `fa_class = 0.0625`.**
+
+| cell | commanded (median) | realized, **as printed** | realized **bracket** † | commanded inside the bracket? |
+|---|---|---|---|---|
+| `c1` | 0.0911 | 0.2013 | **[0.187, 0.985]** | **NO — commanded is BELOW the floor** |
+| `c7` | 0.2230 | 0.0221 | [0.017, 0.636] | yes — unresolved |
+| `c8` | 0.3602 | 0.0457 | [0.044, 0.785] | yes — unresolved |
+| `c8L` | 0.4238 | 0.0701 | [0.067, 0.643] | yes — unresolved |
+| `sc2` | 0.7269 | 0.3815 | [0.337, 0.903] | yes — unresolved |
+
+**† THE BRACKET IS THE `fill_src` CONTAMINATION, QUANTIFIED FOR THE FIRST TIME, AND IT IS THE REAL RESULT OF `Q4`.** The `[RFA]` section disclosed it as a known lower-bound bias: *"`fill_src` counts a reordered original as a successful repair … the realized fraction reported is a LOWER BOUND"*, and bounded it by measurement at *"nil"* on the five primitives cells — **but that measurement was `[FDIAG] SOURCE n = 0` under generation, where `fill_src` is empty because ARQ is off.** On the plain window it is not empty; it is **dominant**:
+
+| cell | `fill_src` / `fires` |
+|---|---|
+| `c1` | 493/627 = **79 %** |
+| `c7` | 85 636/88 721 = **97 %** |
+| `c8` | 7 673/8 147 = **94 %** |
+| `c8L` | 18 167/20 412 = **89 %** |
+| `sc2` | 1 980/3 429 = **58 %** |
+
+The printed `false_frac` divides by a denominator that is **58–97 % reordered originals**; the bracket's ceiling removes them entirely (`false/(false + fill_coded)`). **The truth is inside that bracket and this instrument cannot say where.** At four cells of five the bracket straddles the commanded value, so **`Q4` is UNRESOLVED there and is reported as unresolved, not as the 0.13–0.55× the printed column would suggest.** At `c1` it resolves: commanded 0.0911 sits below the bracket's floor of 0.187, so **realized exceeds commanded by at least 2×** — the same direction as the loopback's 2.9–3.7×, at the one cell where reordering is rarest.
+
+**WHAT IS UNAMBIGUOUS, AND IT IS THE SHIPPED CLAMP'S CONVICTION REPRODUCED ON A FIFTH INSTRUMENT: COMMANDED `fa_frac` EXCEEDS RFC 8985 §6.2's 6.25 % BUDGET AT 15 OF 15 REPS, BY 1.3× TO 12.0×** (0.0792 at `c1` r2 to 0.7530 at `sc2` r2). The memo's *"violating RACK's own published spurious budget at all five cells by 1.7× to 12.0×"* is reproduced on a rebuilt binary, at the same five cells, to the same range. **And the realized bracket's FLOOR exceeds 6.25 % at four cells of five**, so on both instruments and at both ends of the bracket the budget is blown almost everywhere.
+
+**THE CONSEQUENCE FOR GOAL #100 ITEM 2, STATED PLAINLY: the α-sweep's realized/commanded contrast is NOT YET READABLE at the lossy cells.** Sweeping α against a quantity whose bracket spans 0.017–0.64 would resolve nothing. **The instrument gap is named and it is narrow:** the wire carries `is_repair` but no retransmit bit, so the receiver cannot separate a retransmit from a reordered original. Either the sweep reads `Q4` at `c1` only, or that bit is added. **Neither is decided here.**
+
+### 6 — `p`, AND THE ANOMALY SECTION'S PREDICTION SCORED
+
+| cell | leg | **this pass** | committed captures | ratio | generation pass's ratio |
+|---|---|---|---|---|---|
+| `c1` | CLI0 | 0.00015 / 0.00014 / 0.00014 | 0.00015 | **0.97×** | 0.87× |
+| `c7` | CLI0 | 0.00558 / 0.00573 / (0.00477) ‡ | 0.0054 | **1.05×** | — (collapsed) |
+| `c7` | CLI1 | 0.00524 / 0.00527 / (0.01067) ‡ | 0.0055 | **0.96×** | — (collapsed) |
+| `c8` | CLI0 (`c2`) | 0.00370 / 0.00404 / 0.00519 | 0.00436 | **0.93×** | 0.75× |
+| `c8` | CLI1 (`c3`) | 0.01651 / 0.01839 / 0.01839 | 0.01991 | **0.92×** | 0.79× |
+| `c8L` | CLI0 (`c2`) | 0.00396 / 0.00387 / 0.00394 | — | — | — |
+| `c8L` | CLI1 (`c3`) | 0.01534 / 0.02551 / 0.01647 | — | — | — |
+| `sc2` | CLI0 | 0.00463 / 0.00385 / 0.00397 | 0.00547 | 0.73× | 0.59× |
+
+‡ `c7` r3, the leg-collapsed rep, excluded from the median.
+
+**THE ANOMALY SECTION'S §5 MADE A PREDICTION AND IT SCORES.** It said the generation pass's *"consistent one-way deficit of 0.59–0.87× at every leg"* was caused by the reduced offered load, and that **`p` for the ledger's operating point remains the committed captures' value.** At the ledger's operating point the deficit closes: **0.73–1.05×, with four legs inside 0.92–1.05×** against 0.59–0.87× before. **`p` is confirmed at the plain-window operating point and the committed captures stand.**
+
+### 7 — THE AMENDED PRIMITIVES TABLE, BOTH MACHINES, CONFIGURATION EXPLICIT
+
+**This table supersedes §8 of "THE PASSIVE PRIMITIVES — THE SCORED RESULT" for every plain-window purpose. Neither column is deleted; the generation column is a measurement of a real machine and is labelled as one.**
+
+| primitive | machine | `c1` | `c7` | `c8` | `c8L` | `sc2` |
+|---|---|---|---|---|---|---|
+| **`h_marginal`** (B) | **both** — code-exact, `REPAIR_HEADER_SIZE` | 14 | 14 | 14 | 14 | 14 |
+| **`h_absolute`** (B) | **plain window** (all 3 146 ledger rows) | 97–101 | 69–72 | 71–75 | *(bracket inverted)* | 72–82 |
+| **`p`** per leg | **PLAIN WINDOW** | 0.00015 | 0.0056 / 0.0053 | **0.0040 / 0.0184** | 0.0039 / 0.0165 | 0.0040 |
+| | generation | 0.00013 | *(collapsed)* | 0.0033 / 0.0155 | 0.0031 / 0.022–0.046 | 0.0032 |
+| **`σ`** data path | **PLAIN WINDOW** | **0.035 ms** ✗ | **0.499 ms** | **3.140 ms** | **0.665 ms** | **0.492 ms** |
+| | generation | 1.452 ms | 2.030 ms | 0.803 ms | 1.560 ms | 1.229 ms |
+| **`d`** | **PLAIN WINDOW** — `SOURCE` (ARQ) | **1.048 ms** | **0.777 ms** | **3.298 ms** | **9.038 ms** | **4.370 ms** |
+| | plain window — `DECODE` | absent | 6.2 ms (n=8) | *(n≤1)* | *(n≤2)* | *(n≤2)* |
+| | generation — `DECODE` (FEC) | 3.756 ms | 5.702 ms | 2.912 ms | 5.113 ms | 2.615 ms |
+| **`ν`** `[RACK] fired`/hand | **PLAIN WINDOW** | **0.00183** | **0.02966** | **0.03776** | **0.03006** | **0.03789** |
+| | ledger (`ccand`, plain window) | 0.00324 | 0.02910 | 0.04376 | 0.04858 | 0.03701 |
+| | generation | 0 (structural) | 0 | 0 | 0 | 0 |
+| **commanded `fa_frac`** | **PLAIN WINDOW** | 0.0911 | 0.2230 | 0.3602 | 0.4238 | 0.7269 |
+| **realized `false_frac`** | **PLAIN WINDOW**, bracketed | **[0.187, 0.985]** | [0.017, 0.636] | [0.044, 0.785] | [0.067, 0.643] | [0.337, 0.903] |
+
+### 8 — THE α-SWEEP GREEN-LIGHT CHECKLIST
+
+The anomaly section §7 listed five requirements. Scored:
+
+| # | requirement | status |
+|---|---|---|
+| **1** | `RWM_GEN=0` on every arm + the ledger's instrument set | **VERIFIED** — `prim_battery_pw.sh` sets `RWM_GEN=0 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1`; 15/15 reps pool with the `ccand` gate set |
+| **2** | a positive generation-off witness that is **not** `[GATES] RWM_GEN` | **VERIFIED, and the list is now shorter than §7's.** `W1` (`[RFA] gen=0`) and `W2` (no `[PFRAC]`) are sound at 15/15. **`W3` (`cod=0`) is RETIRED — it is nonzero at every lossy plain-window cell because the plain window still emits proactive FEC.** Any battery inheriting §7's list must drop it. |
+| **3** | α-reachability: `[RACK] fired > 0` and `retx > 0` at the lossy cells | **VERIFIED at 15/15**, `fired` = 11–5 717, max `retx` = 606–5 708 — **including `c1`**, which the amendment had exempted. **Caveat carried forward: `retx=` in the `[DIAG]` tail is an INTERVAL counter and must be read as a maximum over lines, not from the last line.** |
+| **4** | a per-cell goodput abort band | **VERIFIED, 14/15 in band.** The bands of §3 of the amendment are field-tested; `c7`'s lower edge is the one that fired, on a leg-collapsed rep, and the witnesses correctly overrode it. |
+| **5** | the sweep must take `RWM_GEN=0`-provenance primitives | **NOW SATISFIABLE — this pass supplies them.** §7's table is the plain-window set. |
+
+**AND ONE REQUIREMENT §7 DID NOT KNOW TO ASK FOR, WHICH THIS PASS ADDS: `Q4` IS NOT READABLE AT THE LOSSY CELLS.** The realized/commanded gap — *"the quantity item 2 exists to sweep α against"* — has a bracket spanning 0.017–0.64 at `c7` because 58–97 % of `fires` is reordered originals. **The sweep is green-lit on σ, `d`, `ν`, `p` and the reachability gate, and is NOT green-lit on the realized/commanded contrast at any cell except `c1`.**
+
+### 9 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** The plain-window configuration takes, at 83–203 Mbit/s with `[RFA] gen=0` at 15/15, and the 31 Mbit/s plateau is generation-only. `ν` reproduces the `ccand` ledger at all five cells and to 2 % at two of them. `d` at `RWM_GEN=0` is the ARQ/source class, 0.78–9.04 ms, and `d(c8)` agrees with the generation pass's FEC-class `d` to 13 % — `d` is single-digit milliseconds on both machines and `d = 77 ms` is refuted on both. σ **does** move with the generation gate, by 41× at `c1`, answering the anomaly section's open argument with a bound. `p` at the ledger's operating point closes the generation pass's one-way deficit to 0.92–1.05× at four legs. Commanded `fa_frac` exceeds RFC 8985's budget at 15/15 reps by 1.3–12.0×. The `fill_src` contamination in `[RFA]` is 58–97 % of `fires` at a shaped cell.
+
+**NOT established.** **`δ = 0.505` is NOT established as a result** — it is the median of three reps whose per-rep values are 0.029, 0.505 and 8.31, and its agreement with `δ_auto` is not resolved by this data. `S1` is not reopened. Why σ shows 287× spreads at converged `n`, now seen in three sessions and both configurations — **the pass's largest open item, and δ goes as `1/σ`.** Where inside its bracket the realized false-repair fraction actually lies at any lossy cell. `d_decode` in plain window, which has `n ≤ 8` everywhere. Why `c7`'s legs collapse. Whether `c1`'s 0.035 ms σ is the estimator's floor or the cell's truth.
+
+**NOT DONE AND NOT ATTEMPTED.** The α-sweep itself, the r-law consistency check, the derivation from the measured curve, the verdict battery. **Neither route (b) nor route (d) is chosen, advanced or refuted.** The ten annotations the anomaly section §6 listed as owed to committed sections **remain owed and unapplied** — this section adds an eleventh (the generation pass's §8 table owes a pointer to §7 here) and applies none of them.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate, or modifies the pre-registration it is scored against.**
+
+**Artifacts** (VM 10.1.5.16): per-rep driver logs `/home/vibe/primpw/out/<cell>-s42-r<n>-run.log`; sender logs (σ, ν, `fa`, W2/W5) `…-c.log`; receiver logs (`d`, `[RFA]`, W1) `…-s.log`; qdisc captures (`p`) `…-q.txt`; witness ledger `/home/vibe/primpw/out/primpw-witness-s42.jsonl`; build log `/home/vibe/primpw-build.log`; tarball **`/home/vibe/primpw-artifacts.tar.gz`**. Binary **REBUILT** from main@`83db750` (the `[RFA]` instrument is new; the previous binary `330ebfcc…` does not carry it and was preserved at `/home/vibe/raptorpath-330ebfcc.bak`), `cargo build --release -p raptorpath`, 5 m 01 s, 42 warnings, **sha256 `89bb0e2e0655535a5eb94534293c8d30edece6b2736a4883b7b3f1c58d06cade`**. Harness shipped fresh from `feat/primitives-pw`'s `tools/l1` to `/home/vibe/primpw/l1`. VM left at 0 `raptorpath` processes, 0 `rp-*` namespaces, lock released.
