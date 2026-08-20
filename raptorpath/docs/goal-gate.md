@@ -40117,3 +40117,202 @@ these numbers, because §16.74.5 requirement 3 binds it: an estimator qualified
 at one seat is not qualified at the other, and loopback is neither seat.
 
 **The battery that scores this bar is a VM pass and is not this pass.**
+
+---
+
+## THE SIGMA ESTIMATOR — THE CANDIDATES, AND THEIR LOCAL CHARACTERIZATION (2026-08-21, `feat/sigma-estimator` from main@`16402ef`) — goal #101 item 2's LOCAL HALF. **No VM run, no engine law, no gate, no default, no consumer.** 6 loopback invocations, one binary, two arms, three reps. **This section SCORES NOTHING against the acceptance bar** — loopback is neither of the two seats §16.74.5 requirement 3 names, and the bar's battery is a VM pass that is not this pass.
+
+### 1 — THE VERDICT FIRST
+
+**THE 287× IS THE ESTIMATOR, NOT THE CELL, AND THE DOMINANT TERM IS THE
+REFERENCE.** The shipped `sig_us` EWMA, measured on **loopback with no netem
+and no shaped cell at all**, pooled over three reps:
+
+```text
+    R_local ( sig_us , loopback , data path )  =  274.9        quiet arm
+                                              =  184.7        loaded arm
+```
+
+against the **287×** the plain-window pass measured at `c8`. **A statistic
+that reproduces its worst shaped-cell dispersion on the quietest link
+available is not reporting the link.** And `R_local = 275` on loopback already
+exceeds the k-ratio 18.24 by 15×, so §16.74.5's precondition (E) fails **on
+loopback**, before any cell is shaped.
+
+**AND THE THREE CANDIDATES SEPARATE THE CAUSE INTO THREE TERMS THAT DO NOT
+OVERLAP.** Each candidate moves exactly one axis, so each ratio is an
+attribution and not a comparison:
+
+| what the step removes | ratio of `R_local` | quiet | loaded |
+|---|---|---|---|
+| **the SQUARE** (deviation enters linearly) | `rvar / sig_us` | **0.65×** | **0.62×** |
+| **the MEMORY** (7 samples → L = 256) | `qsp / rvar` | **0.15×** | **0.31×** |
+| **the REFERENCE** (drop the lagging `srtt`) | `msd / qsp` | **0.12×** | **0.09×** |
+
+**The square is a minor term — it buys ~1.5×.** The memory is a real term and
+buys 3.2–6.8×, **and it is not enough**: `qsp` still lands at 26–36, over the
+k-ratio 18.24 and far over the accept bar. **The reference is the dominant
+term and it buys another 8–11× on its own**, at an identical window and an
+identical rank statistic, which is the only pair in the set that isolates it.
+
+**THE OBVIOUS HYPOTHESIS — LOSS BURSTS — WAS REFUTED BEFORE THE RUN, ON
+COMMITTED LEDGERS.** `sc2` and `c8`'s fast leg carry the **same `p` = 0.0040**
+and their σ spreads differ by **87×** (3.3× against 287×). Loss rate does not
+predict the spread, so no loss-window-excluding estimator was built.
+
+### 2 — THE THREE CANDIDATES, AND WHAT EACH IS FOR
+
+All three are **read-only `[DIAG]` gauges with no consumer**, emitted per path
+per interval beside `sig_us` on the same line, from the same RTT sample stream,
+in the same run. That layout is the design: every comparison below is **paired**,
+never across sessions.
+
+| gauge | formula | provenance | what it is for |
+|---|---|---|---|
+| **`qsp_us`** | `P90(rtt) − P50(rtt)` over `L = 256`, **UNSCALED** | the construction is §16.69's own (`W(α) = F⁻¹_X(1−α)`); the window is a declared resource bound | moves MEMORY and RANK-ROBUSTNESS together |
+| **`rvar_us`** | `rvar ← ¾·rvar + ¼·|rtt − srtt|` | **CITED — RFC 6298 §2 verbatim**, inherited by RFC 8985 §6.2 | **the CONTROL.** The shipped EWMA with the square removed and nothing else changed |
+| **`msd_us`** | `median |rtt_i − rtt_{i−1}|` over the same `L` | **CITED — von Neumann et al. 1941** successive-difference variance; RFC 3550 §A.8 is the same construction | drops the REFERENCE; argued from the measured σ process, §1 |
+
+**`qsp` IS UNSCALED AND THAT IS A DECISION.** The bar's `R_total` and
+§16.74.5's `R_σ̂` are both ratios, so no fixed scaling changes any clause of
+`S`; a Gaussian conversion would import an assumption the data refutes (`c8`
+read σ = 54.836 ms at a cell whose measured `d` is 3.298 ms); and §16.69's
+construction line says the clock **is** a quantile, with Cantelli as the
+moments-only fallback — an estimator reporting quantiles does not need the
+fallback. The Gaussian constants are documented in the code and applied
+nowhere (`P90 − P50 = 1.2816·σ`; `E|dev| = 0.7979·σ`; `median|Δ| = 0.9539·σ`).
+
+**WHY `msd` EXISTS.** `c8`'s 54.836 ms "dispersion" is **1.4× that cell's own
+`RTprop` of 38 ms and 17× its measured `d` of 3.298 ms.** No dispersion of a
+stationary RTT about a tracking mean can be that. `srtt` is an EWMA at β = 1/8
+chasing the same series; across a level shift it lags by ~8 samples and every
+`rtt − srtt` in that window is a step height, not a spread. Successive
+differencing cancels a level shift exactly — **and the tree already had this
+argument**: `CopaState::jitter_est`'s field doc says it in as many words for
+consecutive differences.
+
+### 3 — THE CHARACTERIZATION TABLE — DATA PATH, POOLED OVER 3 REPS
+
+Loopback, `perf --bulk --window-reliable`, 200 MB/rep, `RWM_DIAG=1
+RWM_PLAIN_RS=1`. Warm-up excluded exactly as the bar's clause `C1`
+pre-registered it (EWMA class `n ≥ 16`; window class at a FULL window).
+**`R_local` is the bar's own functional `p95/p05` over pooled readings**; the
+`sup/inf` column is the disclosure the bar requires beside it.
+
+**The data path identifies itself and no judgement call was needed:** the
+sender leg took **167 712 RTT samples per rep** against the receiver leg's
+**1 226** — a **137× separation in sample count**, the same discriminator the
+`c8` σ pass used.
+
+**ARM `quiet`** (79 blocks):
+
+| gauge | `p05` | `p50` | `p95` | **`R_local`** | `sup/inf` | level vs `sig_us` |
+|---|---|---|---|---|---|---|
+| `sig_us` | 30 | **1 203** | 8 246 | **274.9** | 559.6 | 1.00× |
+| `rvar_us` | 27 | 899 | 4 820 | **178.5** | 414.2 | 0.75× |
+| `qsp_us` | 513 | 7 497 | 13 457 | **26.2** | 93.4 | 6.23× |
+| `msd_us` | 8 | **13** | 25 | **3.12** | 4.7 | **0.011×** |
+
+**ARM `loaded`** (92 blocks; a second concurrent transfer on the same host as
+the jitter generator — the only controlled jitter a Windows loopback offers,
+and it is named as such):
+
+| gauge | `p05` | `p50` | `p95` | **`R_local`** | `sup/inf` | level vs `sig_us` |
+|---|---|---|---|---|---|---|
+| `sig_us` | 53 | **1 157** | 9 788 | **184.7** | 505.3 | 1.00× |
+| `rvar_us` | 51 | 1 063 | 5 844 | **114.6** | 791.6 | 0.92× |
+| `qsp_us` | 345 | 5 288 | 12 239 | **35.5** | 71.2 | 4.57× |
+| `msd_us` | 7 | **12** | 22 | **3.14** | 5.9 | **0.010×** |
+
+**THE DIRECTION THE THEORY PREDICTED IS THE DIRECTION MEASURED, AT BOTH ARMS,
+AND THE ORDERING IS UNANIMOUS.** `msd < qsp < rvar < sig_us` in `R_local` at
+both arms and in both statistics. **`msd` is the only candidate that would
+clear the pre-registered accept bar of 6.0** (3.12, 3.14) — **and it also
+clears the prefer bar of 3.5** — while `qsp` fails it by 4.4–5.9× and `rvar`
+by 19–30×. **`msd` is also nearly INVARIANT to the load arm** (3.12 → 3.14,
++0.6 %) where `sig_us` moves by 1.5× and `qsp` by 1.4×.
+
+**NONE OF THAT IS A PASS.** Loopback is not a seat; three reps of one host is
+not a battery; and `R_local` pools intervals of a run rather than reps at fixed
+conditions. **The bar is scored on the VM or it is not scored.**
+
+### 4 — AND THE RESULT THAT CUTS THE OTHER WAY, REPORTED FIRST RATHER THAN LAST
+
+**`msd` READS 90–100× BELOW THE SHIPPED ESTIMATOR, AND STABILITY BOUGHT BY
+MEASURING A SMALLER QUANTITY IS NOT STABILITY.** A gauge that reported a
+constant zero would score `R_local` = 1.00 and be worthless. That is the entire
+reason clause `B` exists, it was pre-registered before these numbers, and **on
+its face `msd` at 0.010× the shipped level sits 50× outside `B`'s REJECT
+bound of `[0.5×, 2.0×]` — if `sig_us` is the truth.** Whether it is, is exactly
+what neither this run nor `sig_us` itself can say.
+
+**AND THIS PASS FOUND THE MECHANISM THAT WOULD MAKE `msd` BIASED, SO IT IS
+NAMED WITH A MEASURED SIGNATURE RATHER THAN LEFT AS A WORRY.** `msd` estimates
+dispersion at a lag of **one inter-sample interval**, so for a temporally
+correlated process its magnitude depends on the SAMPLING RATE, which is not a
+property of the link. The two legs of this run differ in exactly that:
+
+| leg | samples/rep | inter-sample spacing | `msd` / `sig_us` level | `R_local` of `msd` |
+|---|---|---|---|---|
+| **data path** (sender) | 167 712 | **134 µs** | **0.011×** | **3.12** |
+| control leg (receiver) | 1 226 | **18.3 ms** | **0.166×** | **8.64** |
+
+**A 137× change in sampling rate moves `msd`'s level by 15× and its `R_local`
+by 2.8× — and it moves `R_local` the WRONG WAY.** On the sparse leg `msd` is
+the WORST of the four gauges (8.64 against `sig_us`'s 2.69), which is the exact
+reverse of its data-path ordering. **§16.74.5 requirement 3 in one table**: an
+estimator qualified at one seat is not qualified at the other, and here it is
+not even qualified at one sampling rate from another on the same host.
+
+**The loaded arm reproduces both halves** (control leg: `msd` level 0.799×,
+`R_local` 8.83 against `sig_us`'s 2.68).
+
+### 5 — WHAT THE VM BATTERY WILL SCORE, AND WHAT IT CANNOT
+
+**Scored, against the pre-registered bar and nothing else:**
+
+1. **`S` — `R_total ≤ 6.0` at every cell**, per candidate and for `sig_us` as
+   its own control, at both the plain-window and generation seats
+   (requirement 3), rep-to-rep at fixed conditions (requirement 1).
+2. **`B` — `β_σ` against the delivered-latency probe**, like-for-like: the
+   probe's own sample stream through each candidate's own functional. **Clause
+   `B` can REJECT but cannot ACQUIT** — the probe excludes the sender path and
+   its dispersion is a lower bound, so a `β_σ` scored against it is a lower
+   bound on the true bias.
+3. **`C` — `n_warm ≤ 883` at `c8`.** All three candidates clear it locally by
+   ≥ 3.4× (window class `n_warm` = 256; EWMA class 16), and the full window was
+   reached on every leg of every rep here.
+4. **The sampling-rate confound of §4, as a first-class row**: `msd`'s level
+   and `R_total` reported against each cell's measured RTT sample RATE, not
+   only against the cell. **If `msd`'s advantage tracks the sample rate rather
+   than the cell, it is an artefact and this pass said so first.**
+
+**Not scored, and stated so no later reading can claim it:** no ordering here
+is a verdict; no candidate is preferred; loopback establishes nothing about any
+cell; and `R_local` is not `R_total`.
+
+### 6 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** All three candidate gauges exist on the `[DIAG]` surface, are
+fed, reach a full window, and honour the `-`-iff-no-sample convention as a
+biconditional a test asserts (`tests/sigma_candidates_reachability.rs`, which
+fails on the pre-change engine — none of the three tokens occurs anywhere at
+`16402ef`). `sig_us` is unchanged and still present on every block, asserted.
+On loopback and on this host, the ordering `msd < qsp < rvar < sig_us` in
+dispersion is unanimous across two arms and three reps, and the three
+attribution ratios are stable across arms.
+
+**NOT established.** **Nothing about any cell, either seat, or the bar.** One
+host, one link, two arms, three reps, and the link is loopback — the dispersion
+is the Windows scheduler's, not a network's. No candidate has a bias reading at
+all, because the delivered-latency probe is a VM instrument and was not run.
+`msd`'s stability is **unexplained-or-artefactual** until §4's sampling-rate
+confound is scored, and this section prefers no candidate.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or modifies the pre-registration it will be scored against.**
+
+**Artifacts** (local, not committed): 6 sender logs and 6 receiver logs under
+the session scratchpad, `{cli,srv}-{quiet,loaded}-r{1,2,3}.err`; binary
+`target/debug/raptorpath.exe` built from `d0e42a9`; 452 lib tests green,
+`sigma_diag_reachability` green, warning count unchanged at 19.
