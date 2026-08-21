@@ -16133,8 +16133,10 @@ a receiver gap report.** Every clock this tree has written — the shipped
 ```
 
 `Y_(i)` are the sender's own observed hole OUTSTANDING times — first gap
-report to retirement (§16.77.8a, which is where that differs from `[SUCC]`'s
-`orig` and by how much, in a signed direction).
+report to retirement (§16.77.8a for how that differs from `[SUCC]`'s `orig` and in
+which direction; §16.77.8b for how the sender learns a hole closed, and for the
+two-decade inflation the calibration measured when it learned it the obvious
+way).
 **There is no new law**: `T` is §16.76's order statistic, at §16.76's `K`, under
 §16.76's window law and §16.76's unavailability rule, read off a different
 sample stream. **There is no free constant**: `w` is code-exact, `orig_frac`
@@ -16736,6 +16738,89 @@ a receiver-side number used to locate a LEVEL, and never to set a time.** That
 the lever is a level and not a time is what makes all three divergences
 tolerable, and it is an argument the 6.67× dial-dependence finding had already
 forced.
+
+#### 16.77.8b The RESOLUTION SIGNAL, and the head-of-line inflation the calibration measured at two decades
+
+**THIS IS THE SECOND CORRECTION TO §16.77.2 AND IT WAS FOUND ON THE WIRE.**
+§16.77.8a settled *what* the sender times — the hole's outstanding time. It did
+not settle *when the sender learns the hole closed*, and the first
+implementation took the obvious answer: **the cumulative ack passing the seq.**
+
+**THAT ANSWER IS A MAX-STATISTIC AND NOT A RESOLUTION TIME.** The cumulative
+frontier cannot pass a hole until **every earlier hole** is also filled. A hole
+reported at `t₀` and filled at `t₀ + x` is therefore not *observed* filled until
+the frontier arrives, which is
+
+```text
+   t_observed  =  max over every hole at or below this one of its own fill time
+```
+
+so the sample is head-of-line lag across the whole outstanding set. It inflates,
+it inflates by an amount that grows with the number of concurrent holes, and it
+inflates **most at the cells with the most holes** — exactly where the estimator
+is supposed to be most reliable.
+
+**THE CALIBRATION MEASURED IT AND THE NUMBER IS NOT SUBTLE.** At `c1` — a cell
+whose RTT is **2 ms**, whose measured `orig` p50 is **24.6 ms**, and whose
+maximum measured `orig` is **102.3 ms**:
+
+| arm | `n_req` | `samp_n` | **`T` read** | realized hold-down p50 / p90 / max |
+|---|---|---|---|---|
+| `H500` | 20 | 20 | **568.5 ms** | 262 / 492 / **590 ms** |
+| `H136` | 74 | 74 | **429.0 ms** | 197 / 360 / 429 ms |
+| `H037` | 271 | 271 | **602.4 ms** | 295 / 492 / 609 ms |
+| `H010` | 1 000 | 569 | `-` (UNSCOREABLE, **as predicted**) | — |
+
+**A clock two decades above the distribution it is supposed to be a quantile
+of, on the cleanest cell, at `n = 1`.** No scored battery was spent on it: the
+calibration clause §16.77.8's own §9 requires exists for this, and it fired at
+the fifth invocation of twenty-five.
+
+**WHAT REPLACES IT: THE RECEIVER'S OWN REPORT.** The gap report **is** the
+receiver's statement of which seqs are still missing. A hole the sender stamped,
+which the newest report **no longer lists** inside the span that report covers,
+is one the receiver has.
+
+```text
+   resolved(report)  =  { s ∈ stamped : s ≤ max_end(report)
+                                        and s ∉ any gap of report }
+```
+
+**It is per hole, it is exact, and no other hole's timing can enter it.** There
+is no frontier, no max, and no dependence on the outstanding set's size. A
+stamped seq **above** the report's span is untouched: the report says nothing
+about it, and its absence proves nothing — information availability, the same
+rule the window law and the `[SUCC]` gauge already follow.
+
+**ONE RESIDUAL, STATED WITH ITS SIGN.** The report is built from SACK ranges,
+and the wire format bounds how many a report can carry. Truncation drops the
+HIGHEST ranges, which lowers `max_end` and moves the affected seqs OUT of the
+covered span rather than into the resolved set — so the common case is a lost
+sample, not a false one. A dropped MIDDLE range would resolve a still-missing
+hole early, and the sample it then contributes is **shorter** than the truth.
+**That is the same direction §16.77.8a signed**: it shortens `T`, which
+shortens the hold-down, which under-delivers the improvement. It is carried and
+not corrected.
+
+**THE FRONTIER SWEEP SURVIVES AS A PRUNE AND FEEDS NOTHING.** A hole the
+cumulative ack passed without any report ever showing it filled has a resolution
+time this sender never observed, and the frontier's own arrival is not a
+substitute for it. Dropping those samples costs `n` and buys the estimand; the
+calibration's own `fed` counts (449–760 per rep at `c1` against `N = 20…271`)
+say the trade is affordable at every arm the window law can fill.
+
+**BOTH CLAUSES ARE PINNED BY A TEST, NOT BY THIS PARAGRAPH.**
+`the_holddown_estimator_never_takes_a_head_of_line_gated_sample` asserts (1) the
+frontier sweep feeds nothing at any ack on any path, and (2) that a hole
+resolves on **its own** timing while an earlier hole is still open and still
+pinning the frontier below it — the exact configuration that produced the 590 ms
+reading. **Every documented divergence carries a test that BOUNDS it.**
+
+**AND THE PREDICTION §16.77.8 MADE ABOUT `c1`-`H010` SCORED, ON THE DEFECTIVE
+BINARY, BEFORE THE REPAIR.** `samp_n = 569` against `n_req = 1000`, `law_n = 0`,
+`t_us = -`: **UNSCOREABLE, exactly where the window-fill table said it would
+be.** That is a pre-registered prediction scoring on a run that was thrown away
+for an unrelated defect, and it is recorded here rather than re-claimed later.
 
 #### 16.77.9 What falsifies this section
 

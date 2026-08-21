@@ -44941,3 +44941,111 @@ from it.
 
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, or scores any clause of anything.**
+
+## THE HOLD-DOWN SWEEP — THE CALIBRATION FIRED, AND IT FIRED TWICE (2026-08-21, `feat/holddown-clock`) — **THE PRE-REGISTRATION'S §9 CALIBRATION CLAUSE STOPPED A 200-INVOCATION BATTERY AT ITS FIFTH INVOCATION.** One defect in the ENGINE'S ESTIMAND (a two-decade head-of-line inflation) and one in the HARNESS'S SCRAPE (a live arm reported dead). Both are repaired, both are pinned, and the scored battery has NOT run. **NOTHING BELOW IS A RESULT** — `n = 1`, and no clause of the pre-registration's §5 or §6 is scored by any of it.
+
+### 1 — WHAT RAN
+
+25 invocations were planned (5 cells × 5 arms, one rep, seed 42) on binary
+`sha256 d803da8e…`, commit `6e81463`. **Six completed and the run was stopped
+by hand**, because the first cell's five arms already carried both defects
+unambiguously and spending the remaining nineteen would have bought nothing.
+The ledger of the stopped run is kept at `/home/vibe/hold/holdcal-DEFECT-s42.log`
+(1 012 lines) so the repair is reproducible against it.
+
+### 2 — DEFECT 1, IN THE ENGINE: THE ESTIMAND WAS HEAD-OF-LINE GATED
+
+The estimator fed a hole's outstanding time **when the cumulative ack passed
+it**. The cumulative frontier cannot pass a hole until **every earlier hole** is
+also filled, so the sample is
+
+```text
+   t_observed  =  max over every hole at or below this one of its own fill time
+```
+
+— head-of-line lag across the whole outstanding set, not this hole's resolution.
+At `c1`, a cell whose **RTT is 2 ms**, whose measured `orig` p50 is **24.6 ms**
+and whose measured `orig` maximum is **102.3 ms**:
+
+| arm | `n_req` | `samp_n` | `fed` | **`T` read** | realized hold-down p50 / p90 / max | `sup` / `evals` |
+|---|---|---|---|---|---|---|
+| `CTL` | `-` | 0 | 0 | `-` | — | 0 / 634 |
+| `H500` | 20 | 20 | 532 | **568.5 ms** | 262 / 492 / **590 ms** | 38 252 / 38 954 |
+| `H136` | 74 | 74 | 449 | **429.0 ms** | 197 / 360 / 429 ms | 22 556 / 23 175 |
+| `H037` | 271 | 271 | 760 | **602.4 ms** | 295 / 492 / 609 ms | 31 138 / 32 166 |
+| `H010` | 1 000 | **569** | 569 | **`-`** | — | 0 / 698 |
+
+**A clock two decades above the distribution it is meant to be a quantile of, on
+the cleanest cell.** Paper **§16.77.8b** is the correction: the resolution
+signal is now read off **the receiver's own gap report** — a stamped hole the
+newest report no longer lists, inside the span that report covers, is one the
+receiver has. Per hole, exact, no frontier, no max. The cumulative-ack sweep
+survives as a **prune that feeds nothing**.
+
+**IT IS PINNED BY A TEST AND NOT BY THAT PARAGRAPH.**
+`the_holddown_estimator_never_takes_a_head_of_line_gated_sample` asserts (1) the
+frontier sweep feeds nothing at any ack on any path, and (2) that a hole
+resolves on **its own** timing while an earlier hole is still open and still
+pinning the frontier below it — the exact configuration that produced the
+590 ms reading.
+
+### 3 — DEFECT 2, IN THE HARNESS: `n_req=20` CONTAINS `q=20`
+
+W3 scraped the resolved level with `grep -o 'q=[^ ]*'`. **`n_req=20` contains
+the substring `q=20`**, and `tail -1` took it, so the witness read the WINDOW
+SIZE and compared it against the LEVEL:
+
+```text
+   W3-QLEVEL-FAIL c1-H500 rep=1 got=20   exp=0.5
+   W3-QLEVEL-FAIL c1-H136 rep=1 got=74   exp=0.864
+   W3-QLEVEL-FAIL c1-H037 rep=1 got=271  exp=0.963
+   W3-QLEVEL-FAIL c1-H010 rep=1 got=1000 exp=0.99
+```
+
+**Every armed arm was live and correct, and the harness called all four dead**
+— the same failure the quantile-native smoke caught at 2 of 12 endpoint checks,
+in a different disguise. The pattern now carries a leading space. `n_req` was
+scraped correctly throughout and matched at 5 of 5 arms, which is what makes the
+diagnosis unambiguous rather than a guess.
+
+### 4 — WHAT THE STOPPED RUN ESTABLISHED THAT SURVIVES THE REPAIR
+
+**NONE OF IT IS A RESULT ABOUT THE MACHINE.** All three items are about the
+instrument.
+
+* **W4, THE ROUTING WITNESS, PASSED EXACTLY AT 5 OF 5 ARMS.**
+  `Σ evals = Σ sup + [FCAUSE] n` held to the unit: `38 971 = 38 252 + 719`,
+  `23 192 = 22 556 + 636`, `32 185 = 31 138 + 1 047`, `634 = 0 + 634`,
+  `715 = 0 + 715`. **The gate is where the pre-registration says it is**, and
+  the two sides of that identity come from two gauges at two sites.
+* **W5 PASSED AT 6 OF 6.** `[SUCC] det` 450–85 141, `res` > 0, `orig_frac`
+  0.9885–0.9983 — the measurand the derivation rests on is live on this binary.
+* **§16.77.8's `c1`-`H010` PREDICTION SCORED, ON THE DEFECTIVE BINARY.**
+  `samp_n = 569` against `n_req = 1 000`, `law_n = 0`, `t_us = -`:
+  **UNSCOREABLE, exactly where the window-fill table said it would be**, from
+  749 resolutions per rep against a 1 000-sample window. A pre-registered
+  prediction scoring on a run that was thrown away for an unrelated defect is
+  recorded here rather than re-claimed later.
+
+**AND ONE THING IS DELIBERATELY NOT READ.** The stopped run's `rpd` moved 1.22
+to 1.41 across the arms with no order — that is clause 5(i)'s statistic, at
+`n = 1`, on an estimator now known to be wrong by two decades. **It is not a
+reading of the wiring test and it is not offered as one.** The pre-registration
+scores `rpd` on eight reps at two seeds on the repaired binary, and on nothing
+else.
+
+### 5 — WHAT CHANGED, AND WHAT DID NOT
+
+| changed | unchanged |
+|---|---|
+| the resolution signal (`on_report`, gap-report based) | the LAW: `T(q) = W_q(1−q)`, `K = 10`, `N = max(⌈K/(1−q)⌉, 2K)` |
+| the frontier sweep is now a prune | the arm grid, the levels, `N` per arm, the (Q) separation table |
+| W3's scrape pattern | the cells, the bands, the reps, the seeds, the witnesses |
+| paper §16.77.8b, and one new bounding test | every scoring bar and every legal outcome in §5 and §6 |
+
+**NO PRE-REGISTERED BAR MOVED AND NO ARM WAS ADDED, REMOVED OR RE-LEVELLED.**
+The pre-registration stands as committed at `6e81463` and this amendment scores
+nothing against it.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or scores any clause of any pre-registration.**

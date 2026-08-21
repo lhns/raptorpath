@@ -309,7 +309,11 @@ check_and_parse() { # name cell arm alpha cpus cpuc pingp qp
     echo "INSTRUMENT-FAIL-HOLD $name rep=$REP (no [HOLD] at the sender -- the gap-report site was never reached)" >> "$OUT"
     hq=none; hn=none
   else
-    hq=$(printf '%s' "$hl" | grep -o 'q=[^ ]*' | tail -1 | sed 's/^q=//')
+    # A LEADING SPACE IS LOAD-BEARING. `n_req=20` CONTAINS `q=20`, so the
+    # bare pattern matched the window size and the calibration reported
+    # `got=20 exp=0.5` at every armed arm - the harness calling a live and
+    # correct arm dead, which is exactly what a calibration is for.
+    hq=$(printf '%s' "$hl" | grep -o ' q=[^ ]*' | tail -1 | sed 's/^ q=//')
     hn=$(printf '%s' "$hl" | grep -o 'n_req=[^ ]*' | tail -1 | sed 's/^n_req=//')
     hq="${hq:-none}"; hn="${hn:-none}"
     # `q=` is printed to six places; the arm table carries the [GATES] echo's

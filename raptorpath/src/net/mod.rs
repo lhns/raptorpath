@@ -1502,79 +1502,104 @@ impl HoldDownGauge {
         }
     }
 
-    /// Retire every hole the cumulative ack just passed and FEED the estimator
-    /// with its OUTSTANDING TIME — first report to retirement, on the sender's
-    /// own clock.
+    /// Feed one sample into a path's window and re-read the order statistic.
     ///
-    /// **THE ESTIMAND IS THE OUTSTANDING TIME AND NOT `[SUCC]`'s `orig`, AND
-    /// THE REASON IS THAT `orig` CANNOT BOOTSTRAP.** The obvious sender-side
-    /// reading of "resolved by its own original" is *"the hole retired and no
-    /// repair ever flew for it"*. It is unmeasurable on this machine, and the
-    /// reachability test measured why: with `T` unavailable the sender answers
-    /// every report immediately, so a repair flies for **every** hole, the
-    /// "no repair flew" set is **empty**, the window never fills, `T` stays
-    /// unavailable — and the estimator can never start. It is a fixed point at
-    /// zero. Feeding the outstanding time unconditionally removes it.
+    /// **The `O(N)` selection sits HERE, on the feed path, and not on the eval
+    /// path.** §16.76.3 evaluates its order statistic at the recovery-timer
+    /// cadence; a hold-down is consulted once per reported hole per report,
+    /// which at `c7` is tens of thousands of times per rep. Feeds are strictly
+    /// fewer — one per RESOLVED hole — so the linear work is moved to them and
+    /// the eval path is a map lookup. It is still a SELECTION and never a sort.
+    fn feed(&mut self, path: u32, sample_us: u64) {
+        let Some(n) = self.n_req else { return };
+        let s = sample_us.min(u32::MAX as u64) as u32;
+        let w = self.win.entry(path).or_default();
+        if w.len() >= n {
+            w.pop_front();
+        }
+        w.push_back(s);
+        *self.fed.entry(path).or_insert(0) += 1;
+        if w.len() >= n {
+            let q = self.q.expect("n_req is Some ⇒ q is Some");
+            if let Some(t) = holddown_us(w.make_contiguous(), q) {
+                self.t_us.insert(path, t);
+            }
+        }
+    }
+
+    /// **THE RESOLUTION SIGNAL, READ OFF THE RECEIVER'S OWN REPORT.** A hole
+    /// this sender stamped, which the receiver's newest gap report **no longer
+    /// lists** inside the region that report covers, has been filled at the
+    /// receiver. Feed its outstanding time and drop it.
     ///
-    /// **THE BIAS IS SIGNED, IT IS TOWARD ZERO, AND THAT IS THE SAFE
-    /// DIRECTION.** A hole retires when the FIRST of its original and its
-    /// repair arrives, so the observed outstanding time is
-    /// `min(orig_arrival, repair_arrival)` and can only be **shorter** than the
-    /// original's own arrival, never longer. Right-censoring pushes the same
-    /// way: a hole still open when the transfer ends is never fed at all. So:
+    /// **THIS REPLACES RETIREMENT-BY-CUMULATIVE-ACK, AND THE CALIBRATION IS WHY
+    /// (§16.77.8b).** The first implementation fed a hole's outstanding time
+    /// when the cumulative ack passed it. The cumulative frontier cannot pass a
+    /// hole until **every earlier hole** is also filled, so that sample is a
+    /// **max-statistic over the whole outstanding set** — head-of-line lag, not
+    /// this hole's resolution. The calibration measured the inflation and it is
+    /// not subtle: at `c1`, a cell whose RTT is **2 ms** and whose measured
+    /// `orig` p50 is **24.6 ms**, `T` read **429–602 ms** and the realized
+    /// hold-down delays ran to a **590 ms** maximum. **A clock two decades
+    /// wrong, on the cleanest cell, at `n = 1`.**
     ///
-    /// * `T` **under-estimates** the orig quantile it is meant to command;
-    /// * an under-estimate is a **shorter** hold-down, i.e. **less** delay
-    ///   charged to the `(1 \u2212 orig_frac)` of holes that really were lost;
-    /// * and it makes the arm **under-deliver** \u00a716.77.3's predicted waste
-    ///   reduction rather than over-deliver it.
+    /// The report is per-hole and exact: `gaps` IS the receiver's statement of
+    /// which seqs are still missing, and a stamped seq inside the report's own
+    /// span that the report does not list is one the receiver has. No frontier,
+    /// no max, no other hole's timing.
     ///
-    /// **It is also a CONVERGENT fixed point rather than a static bias.** As
-    /// the hold-down arms, repairs are suppressed on exactly the holes whose
-    /// originals were coming, those holes then retire on their originals'
-    /// own timing, and the window's contents move **toward** the target
-    /// distribution from below. `T` rises to meet it. **One rule, applied
-    /// identically at every level and at every window occupancy** — no
-    /// bootstrap mode, no warm-up branch, nothing that changes behaviour when
-    /// the window fills.
+    /// **MUST run BEFORE this batch's own seqs are stamped**, or every hole
+    /// would be resolved by the report that first announced it.
     ///
-    /// `shed` is the δ-honest shed set and is the ONE exclusion: a shed hole was
-    /// **abandoned**, not resolved, and its "retirement" is the contract giving
-    /// up rather than the path delivering. Feeding it would bias `T` upward
-    /// exactly where the contract had already stopped caring — the only
-    /// direction this estimator must not be biased in.
-    pub(crate) fn on_retired(
+    /// `shed` is the δ-honest shed set and is the ONE exclusion. A shed hole
+    /// was **abandoned**, not resolved: the sender stopped serving it and the
+    /// receiver's own δ-horizon eventually passes it, so it leaves the reports
+    /// having been given up on rather than delivered. Feeding it would push `T`
+    /// **upward** exactly where the contract had already stopped caring — the
+    /// only sign this estimator must not be biased in (§16.77.8a). It is
+    /// dropped from the map and fed to nothing.
+    pub(crate) fn on_report(
         &mut self,
-        ack: u64,
+        gaps: &[(u64, u64)],
         now_us: u64,
         shed: &std::collections::BTreeSet<u64>,
     ) {
-        let Some(n) = self.n_req else { return };
-        if self.first.is_empty() {
+        if self.n_req.is_none() || self.first.is_empty() {
+            return;
+        }
+        // The span this report speaks about. A stamped seq ABOVE it is not
+        // covered by this report and its absence proves nothing — information
+        // availability, the same rule everywhere else in this construction.
+        let Some(hi) = gaps.iter().map(|&(_, b)| b).max() else {
+            return;
+        };
+        let resolved: Vec<u64> = self
+            .first
+            .range(..=hi)
+            .map(|(&s, _)| s)
+            .filter(|&s| !gaps.iter().any(|&(a, b)| s >= a && s <= b))
+            .collect();
+        for s in resolved {
+            if let Some((t0, path)) = self.first.remove(&s) {
+                if shed.contains(&s) {
+                    continue;
+                }
+                self.feed(path, now_us.saturating_sub(t0));
+            }
+        }
+    }
+
+    /// Drop every stamped hole the cumulative ack has passed. **PRUNE ONLY —
+    /// it feeds nothing.** A hole the frontier swept without a report ever
+    /// showing it filled has a resolution time this sender never observed, and
+    /// the frontier's own arrival is not a substitute for it (§16.77.8b). The
+    /// map is bounded by the outstanding set either way.
+    pub(crate) fn on_retired(&mut self, ack: u64) {
+        if self.n_req.is_none() || self.first.is_empty() {
             return;
         }
         let mut above = self.first.split_off(&ack.saturating_add(1));
         std::mem::swap(&mut self.first, &mut above);
-        let retired = above;
-        for (seq, (t0, path)) in retired {
-            if shed.contains(&seq) {
-                continue;
-            }
-            let s = now_us.saturating_sub(t0).min(u32::MAX as u64) as u32;
-            let w = self.win.entry(path).or_default();
-            if w.len() >= n {
-                w.pop_front();
-            }
-            w.push_back(s);
-            *self.fed.entry(path).or_insert(0) += 1;
-            // The `O(N)` selection, on the FEED path — see `t_us`'s decl.
-            if w.len() >= n {
-                let q = self.q.expect("n_req is Some ⇒ q is Some");
-                if let Some(t) = holddown_us(w.make_contiguous(), q) {
-                    self.t_us.insert(path, t);
-                }
-            }
-        }
     }
 
     fn line(&self, path: u32) -> String {
@@ -9342,6 +9367,12 @@ async fn run_window_sender(
                 }
             }
 
+            // §16.77 THE RESOLUTION SIGNAL. Every stamped hole this report no
+            // longer lists, inside the span this report covers, is one the
+            // receiver has — feed its outstanding time. Placed HERE, before the
+            // loop below stamps this batch's own seqs, or every hole would be
+            // resolved by the report that first announced it.
+            hold_echo.on_report(&gaps, now_repair_us, &st.shed_seqs);
             'gaps: for &(gap_start, gap_end) in &gaps {
                 // EVICT: only the coding window can serve a gap — older
                 // seqs are gone. RETAIN: the sent-data store serves ANY
@@ -9868,13 +9899,13 @@ async fn run_window_sender(
                     );
                 }
             }
-            // §16.77: retire the holes the frontier just passed and FEED the
-            // hold-down estimator with their OUTSTANDING TIME. See
-            // `HoldDownGauge::on_retired` for why the estimand is the
-            // outstanding time and not "closed by its own original" — the
-            // latter is a fixed point at zero on this machine and cannot
-            // bootstrap — and for the SIGN of the bias that buys.
-            hold_echo.on_retired(ack, now_us(), &st.shed_seqs);
+            // §16.77: drop the stamped holes the frontier has passed. PRUNE
+            // ONLY — the estimator is fed off the receiver's own gap report
+            // (`on_report`), never off the cumulative frontier, because the
+            // frontier cannot pass a hole until EVERY earlier hole is filled
+            // and that sample is head-of-line lag rather than this hole's
+            // resolution. §16.77.8b, and the calibration that measured it.
+            hold_echo.on_retired(ack);
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             st.nack_retx_at.retain(|&seq, _| seq > ack);
             // feat/recovery-suppression: drop packet-threshold evidence the
@@ -10608,7 +10639,8 @@ mod tests {
             }
         }
         // Nothing was stamped, so nothing can be fed and nothing can be held.
-        g.on_retired(1_000, 2_000_000, &std::collections::BTreeSet::new());
+        g.on_report(&[(0, 1_000)], 2_000_000, &std::collections::BTreeSet::new());
+        g.on_retired(1_000);
         let l = g.line(u32::MAX);
         assert!(l.contains("q=unset"), "the disarmed line must say so: {l}");
         assert!(l.contains("n_req=-"), "no window law is in force: {l}");
@@ -10640,7 +10672,7 @@ mod tests {
         let empty_shed = std::collections::BTreeSet::new();
         for i in 1..=20u64 {
             g.on_reported(i, 0, 0, true);
-            g.on_retired(i, i * 1_000, &empty_shed);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
         }
         // `T` is the K-th largest of the freshest 20 = the 11th smallest.
         let t = g.t_us.get(&0).copied().expect("the law ran once the window filled");
@@ -10681,7 +10713,7 @@ mod tests {
         }
         shed.insert(9);
         shed.insert(11);
-        g.on_retired(30, 5_000, &shed);
+        g.on_report(&[(31, 31)], 5_000, &shed);
         assert_eq!(
             g.fed.get(&0).copied().unwrap_or(0),
             28,
@@ -10693,7 +10725,7 @@ mod tests {
         for i in 1..=30u64 {
             g2.on_reported(i, 0, 0, true);
         }
-        g2.on_retired(10, 5_000, &std::collections::BTreeSet::new());
+        g2.on_report(&[(11, 11)], 5_000, &std::collections::BTreeSet::new());
         assert_eq!(g2.fed.get(&0).copied().unwrap_or(0), 10, "seqs 1..=10 only");
         assert_eq!(g2.first.len(), 20, "11..=30 are still outstanding");
     }
@@ -10718,11 +10750,61 @@ mod tests {
         // the shipped machine. The window fills and the law arms itself.
         for i in 2..=(n as u64 + 1) {
             g.on_reported(i, 0, 0, true);
-            g.on_retired(i, i * 1_000, &empty);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty);
         }
         assert!(
             g.t_us.get(&0).is_some(),
             "the estimator must arm from a cold start on repaired holes alone"
+        );
+    }
+
+    /// **THE HEAD-OF-LINE DEFECT IS BOUNDED BY A TEST AND NOT BY PROSE.** The
+    /// estimator must NEVER take a sample whose length is another hole's
+    /// timing. Two clauses, and the second is the one the calibration earned:
+    ///
+    /// 1. `on_retired` — the cumulative-frontier sweep — **feeds nothing, ever**,
+    ///    at any ack, on any path. It is a prune.
+    /// 2. `on_report` resolves a hole **per hole**, even while an EARLIER hole
+    ///    is still open and therefore still pinning the frontier far below it.
+    ///
+    /// Without (2) the sample for a late hole is a max-statistic over the whole
+    /// outstanding set. The calibration measured that inflation at `c1`, a cell
+    /// whose RTT is 2 ms: `T` read 429–602 ms with hold-down delays to 590 ms.
+    #[test]
+    fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
+        let empty = std::collections::BTreeSet::new();
+        // (1) THE FRONTIER SWEEP FEEDS NOTHING.
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        for i in 1..=50u64 {
+            g.on_reported(i, 0, 0, true);
+        }
+        g.on_retired(50);
+        assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 0, "on_retired must PRUNE, never feed");
+        assert!(g.t_us.get(&0).is_none(), "and therefore must never arm a T");
+        assert!(g.first.is_empty(), "but it must still bound the map");
+
+        // (2) A HOLE RESOLVES WHILE AN EARLIER ONE IS STILL OPEN. seq 1 stays
+        // missing for the whole test — the cumulative frontier can never pass
+        // seq 2 — and seq 2..=21 must nevertheless be timed on their own.
+        let mut g2 = HoldDownGauge::new("sender", Some(0.5));
+        for i in 1..=21u64 {
+            g2.on_reported(i, 0, 0, true);
+        }
+        for i in 2..=21u64 {
+            // seq 1 is STILL REPORTED MISSING; seq `i` is not.
+            g2.on_report(&[(1, 1), (i + 1, 30)], (i - 1) * 1_000, &empty);
+        }
+        assert_eq!(
+            g2.fed.get(&0).copied().unwrap_or(0),
+            20,
+            "seqs 2..=21 must resolve on their own timing with seq 1 still open"
+        );
+        assert!(g2.first.contains_key(&1), "the still-missing hole must stay outstanding");
+        // Samples are 1_000..=20_000 us; the K-th largest of 20 is 11_000.
+        assert_eq!(
+            g2.t_us.get(&0).copied(),
+            Some(11_000),
+            "and T must be the order statistic of THOSE samples, not of the frontier's lag"
         );
     }
 
@@ -10736,11 +10818,11 @@ mod tests {
         // Path 0: 1..=20 ms. Path 1: 100..=2000 ms, 100x slower.
         for i in 1..=20u64 {
             g.on_reported(i, 0, 0, true);
-            g.on_retired(i, i * 1_000, &empty_shed);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
         }
         for i in 101..=120u64 {
             g.on_reported(i, 1, 0, true);
-            g.on_retired(i, (i - 100) * 100_000, &empty_shed);
+            g.on_report(&[(i + 1, i + 1)], (i - 100) * 100_000, &empty_shed);
         }
         assert_eq!(g.t_us.get(&0).copied(), Some(11_000));
         assert_eq!(g.t_us.get(&1).copied(), Some(1_100_000));
@@ -10757,7 +10839,7 @@ mod tests {
         let empty_shed = std::collections::BTreeSet::new();
         for i in 1..=19u64 {
             g.on_reported(i, 0, 0, true);
-            g.on_retired(i, i * 1_000, &empty_shed);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
         }
         assert_eq!(g.win.get(&0).map(|w| w.len()), Some(19), "one short of N");
         assert!(g.t_us.get(&0).is_none(), "the law must not have run");
