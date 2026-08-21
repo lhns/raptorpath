@@ -41696,3 +41696,321 @@ three named successors above, each with its acceptance machinery already
 committed and waiting.
 
 **Nothing here flips a default.**
+
+---
+
+## THE τ-LAG ESTIMATOR — THE BATTERY, PRE-REGISTRATION (AMENDMENT) (2026-08-21, `feat/tlag-estimator` from main@`6cf2328`) — goal #101 item 2's NAMED SUCCESSOR, its **VM HALF**. Written and committed BEFORE the VM is touched, in its OWN commit, before a single number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine law, or wires a consumer. No clock is touched.**
+
+### 1 — WHAT THIS IS, IN ONE SENTENCE
+
+This is an **AMENDMENT** to "THE SIGMA ESTIMATOR — THE BATTERY,
+PRE-REGISTRATION", not a replacement. **Everything that section fixed stays
+fixed** — the same five cells, the same two seeds, the same 8 reps, the same
+leg-level scoring domain, the same `R_total = p95/p05` pooled statistic, the
+same accept bar `6.0` and prefer bar `3.5`, the same clause-`C` construction,
+the same witnesses, the same abort-cause-first discipline, the same four legal
+outcomes and the same closure pre-commitment. **The bar is not softened
+anywhere and no number in it moves.** Three things change, each because the
+scored result named it, and each is stated below with what it replaces.
+
+| # | what changes | why, from the scored result's own text |
+|---|---|---|
+| **A** | a **FIFTH** estimator, `tlag_us`, is scored beside the four | *"a fixed-TIME lag rather than a fixed-SAMPLE lag is the obvious candidate and is not built here"* |
+| **B** | **clause `B`'s REFERENCE** becomes the raw sample stream, not the 20 Hz probe | *"clause `B`'s reference is now the part of the bar most in need of scrutiny"* |
+| **C** | the four old gauges become **CONTROLS AND A REGRESSION CHECK**, with a pre-committed suppression rule | new, and it is the amendment's own safeguard |
+
+### 2 — CHANGE A: THE FIFTH ESTIMATOR, AND WHAT IT IS SCORED ON
+
+`tlag_us` is paper §16.75, already committed as a formula **before** this
+section and **before** its gauge:
+
+```text
+   σ̂_Δ(τ) = median { |rtt(tᵢ) − rtt(tⱼ)| : (i, j) ∈ P(τ) }
+
+   P(τ) = { (i, j(i)) : j(i) = the most recent sample with tᵢ − tⱼ ≥ τ,
+                        admitted iff tᵢ − t_{j(i)} ≤ c·τ }
+
+   τ = RTprop (MEASURED),  c = 2,  m = 8,  L = 256
+```
+
+**IT IS SCORED ON THE SAME BAR AS THE OTHER FOUR AND ON NOTHING ELSE.** Clause
+`S` at `R_total ≤ 6.0` at every leg, worst leg binding. Clause `C`. Clause `B`
+as amended below. No new tier, no new tolerance, no allowance for being new.
+
+**ITS WARM-UP RULE IS DECLARED HERE AND IT IS A PARSER RULE.** The window class
+of the acceptance bar's clause `C1` reads *"`n_warm = L` — the window is either
+full or it is not."* `tlag_us`'s count is a PAIR count, not a window fill, so
+`L` is the wrong number for it and a rule written for another gauge is not
+silently borrowed:
+
+```text
+   n_warm ( tlag )  =  K  =  L / 8  =  32 pairs
+```
+
+A reading resting on fewer than 32 pairs is **excluded from pooling**, and a
+leg with no reading at or above 32 is **`UNSCOREABLE-THIN`**. `K = L/8` says a
+reading must rest on pairs drawn from at least an eighth of its own window. It
+is declared in paper §16.75.6 F1, applied by `tlagb_parse.py`, and is **not a
+threshold in any engine code path** — the engine emits from its first sample
+and renders `-` iff `n == 0`, the biconditional held by construction because
+value and count come from one pair-set function.
+
+**AND `UNSCOREABLE-THIN` IS PRE-COMMITTED AS A REFUTATION, NOT A CLEAN SHEET.**
+This is the amendment's most important line and it is written before the run.
+`tlag_us` exists to work at the sparse legs where `msd_us` failed. **If it
+clears the bar only because those legs went `UNSCOREABLE-THIN`, the design is
+REFUTED, not passed** — passing by not measuring is the failure mode a
+rate-invariance claim is most likely to produce, and §16.75.7's prediction `P4`
+names it as a falsifier in exactly those words. The report prints the
+scoreable-leg count beside every verdict, and a `tlag` verdict resting on fewer
+scoreable sender legs than `msd`'s eight is reported as **REFUTED-BY-ABSENCE**.
+
+**THE PRE-STATED PREDICTION, from §16.75.7, restated so this section can be
+scored against it directly:**
+
+> `R_total ≤ 6.0` at **every scoreable leg, INCLUDING** `c8L p1` (581
+> samples/s) and `c8 p1` (1 762 samples/s), the two legs where `msd_us` read
+> 34.6 and 16.5 — **and** `|rho| < 0.548` between `R_total` and sample rate
+> over the sender legs.
+>
+> *Falsified by:* `R_total > 6.0` at any scoreable leg. *Falsified equally by:*
+> clearing the bar with either sparse leg `UNSCOREABLE-THIN`. *Falsified
+> equally by:* `rho ≤ −0.548` — the lag was made physical and the dependence
+> survived, which refutes the mechanism this whole successor rests on.
+
+### 3 — CHANGE B: WHAT CLAUSE `B` COMPARES, EXACTLY
+
+**THE OLD REFERENCE IS WITHDRAWN AS A SCORING INPUT AND RETAINED AS A
+DISCLOSURE COLUMN.** The scored result found a uniform 30–90× gap across all
+four gauges — *"not four independent biases; it is one property of the
+COMPARISON"* — and `latt_probe.py`'s own docstring names the mismatch: a 20 Hz
+ICMP probe through the whole shaped path **including our own queued bytes**,
+against a kHz sender's smoothed estimate of its own ack path. `B` was written
+REJECT-only for that reason and was UNSCOREABLE for `msd_us` entirely.
+
+**THE NEW REFERENCE, stated exactly, because "exact" is the claim.** With
+`RWM_RTT_DUMP=1` the engine emits the sender's raw RTT sample stream. `B` now
+compares **each gauge's online reading against that gauge's OWN defining
+functional, computed offline over the identical samples**:
+
+| gauge | what it claims to be | the offline functional `B` scores it against |
+|---|---|---|
+| `sig_us` | `σ_rtt`, the quantity `W = mean + k(α)·σ̂` multiplies | **`sd`** — sample standard deviation of `rtt` about its own mean |
+| `rvar_us` | RFC 6298 `RTTVAR`, a **mean deviation** | **`mad`** — `E\|rtt − mean(rtt)\|` |
+| `qsp_us` | `P90(rtt) − P50(rtt)` | the same, over the whole leg, no window |
+| `msd_us` | `median\|rtt_i − rtt_{i−1}\|` | the same, over the whole leg |
+| `tlag_us` | `median\|Δ\|` at lag in `[τ, 2τ]` | the same, over the whole leg, at the leg's own measured `τ` |
+
+```text
+   β_σ  =  (the gauge's ONLINE median reading at that leg)
+           ─────────────────────────────────────────────────
+           (that gauge's OWN functional, offline, same samples)
+```
+
+**Bands are UNCHANGED**: ACCEPT `[0.68, 1.47]`, ADMISSIBLE-BIAS-CARRIED out to
+`[0.50, 2.00]`, REJECT outside. **What changes is what `B` can do with them.**
+
+**THE REBUILT `B` CAN ACQUIT, and the reason is structural rather than
+generous.** The old `B`'s one-sidedness came entirely from the probe measuring
+a different path whose dispersion was a **lower bound** on the ack path's.
+There is no second path here and therefore no bound: same samples, same
+functional, no instrument mismatch, no sampling-rate gap. **A candidate inside
+the band is now recorded as reading its own functional faithfully — a positive
+finding.** `msd_us`'s `CONFOUNDED` marking is **withdrawn**: it was confounded
+against a 20 Hz probe, and nothing is confounded against its own input.
+
+**AND THIS IS A NARROWING, RECORDED AS ONE BEFORE ANY NUMBER IS READ.** The
+rebuilt `B` asks whether an estimator faithfully computes **its functional over
+its own input**. It does **not** ask whether that input is the true delivered
+latency. **The instrument the scored battery named as missing — a
+delivered-latency probe at the sender's own sample rate — is still missing, and
+this pass does not build it.** Any future reading that treats a `B`-ACQUIT here
+as "the estimator measures true latency" is a misuse of this section. The 20 Hz
+probe's `β` is printed beside the new one, labelled **SUPERSEDED-REFERENCE**,
+and **no verdict is taken from it.**
+
+**THE CROSS-FUNCTIONAL LEVEL TABLE, reported and scored NOWHERE.** Because all
+five functionals are evaluated on one stream, the report prints them side by
+side per leg. This settles what the scored battery had to leave open —
+*"`msd`'s 90–100× level gap against `sig_us` is unexplained, and 'unexplained'
+is not 'fine'"* — by showing how much of that gap is the two functionals
+genuinely differing. **It is a disclosure. It scores no clause and no verdict
+may be read from it.**
+
+### 4 — THE `B` PASS IS A SEPARATE RUN, AND THAT IS A MEASUREMENT DECISION
+
+At a kHz sender leg the dump writes **megabytes of stderr during the run**.
+That is CPU and I/O cost **on the sender**, and sender-side dispersion is
+precisely what clause `S` measures. **Running the dump on the scored
+invocations would perturb the measurement it exists to explain.** So:
+
+| pass | invocations | dump | what it scores |
+|---|---|---|---|
+| **the scored battery** (`tlagb_all.sh`) | 5 cells × 2 seeds × 8 reps = **80** | **OFF**, and `RWM_RTT_DUMP` is `unset` by the driver | `S`, `C`, and the sampling-rate row |
+| **the `B` pass** (`tlagb_bpass.sh`) | 5 cells × 1 rep, seed 42 = **5** | **ON** | `B` only |
+
+**AND THE PERTURBATION IS MEASURED RATHER THAN ASSUMED ABSENT.** The `B` pass's
+own `S` readings are printed as a **DISCLOSURE** column against the scored
+battery's. If the dump moves `R_total` materially at a cell, that is a finding
+about the instrument and it is reported as one — and `B` at that cell is
+reported **`B-PERTURBED`**, still scored but carrying the note on its face.
+
+**THE COST OF THE SEPARATION IS STATED, NOT HIDDEN.** `B`'s samples come from a
+different rep than `S`'s. `B` is a level-and-fidelity question rather than a
+rep-to-rep stability question, so a different rep of the same cell at the same
+seed on the same binary is the right unit for it; but it is a different rep,
+and no statement of the form "this gauge's `S` and `B` come from one
+invocation" may be made from this battery.
+
+**COVERAGE IS REPORTED, NEVER ASSUMED.** Three bounded losses are declared in
+`src/net/rttdump.rs` and each is checkable off the run's own output: the tail
+partial batch (< 256 samples per path), the `RWM_RTT_DUMP_MAX = 400 000` cap
+(which announces itself once via `[RTTDUMP-CAP]`), and the coverage ratio
+`emitted / n` against the final `[DIAG]` `sig_us=…/n<count>`. **A capped leg is
+marked `PREFIX-SCORED`** and its `B` is understood as scored over a contiguous
+time-prefix — contiguous because the functionals under test are successive
+differences and a decimated subset would change the very lag the estimand is
+defined at. `B` stays like-for-like regardless, because every functional is
+computed over the same prefix.
+
+### 5 — CHANGE C: THE FOUR OLD GAUGES ARE CONTROLS, AND A PRE-COMMITTED SUPPRESSION RULE
+
+All six columns — `sig_us`, `rvar_us`, `qsp_us`, `msd_us`, `tlag_us`, and the
+sample rate — come from **one sample stream, one run, one binary, per path per
+interval.** That layout is inherited from the candidate pass and it is the
+whole design: every comparison is paired, never across sessions.
+
+**THE FOUR OLD GAUGES ARE ALSO A REGRESSION CHECK ON THE HARNESS**, and this is
+new. Their committed values are:
+
+| gauge | worst leg `R_total` | data-path `R_total` |
+|---|---|---|
+| `sig_us` | 256.3 | 86.6 |
+| `rvar_us` | 351.3 | 103.9 |
+| `qsp_us` | 78.6 | 78.6 |
+| `msd_us` | 34.6 | 8.667 |
+
+**THE PRE-COMMITMENT, WRITTEN BEFORE THE DATA: if any control's `R_total` moves
+by more than 2× from its committed value, the report prints `CONTROL-DRIFT` and
+NO VERDICT IS READ FROM THE `tlag_us` COLUMN AT ALL.** A harness, cell or
+substrate that no longer reproduces four committed results has not earned the
+right to certify a fifth. The 2× factor is the Hartley disclosure factor 1.82
+(`d2(10)/d2(3)`) rounded up to the next round number, i.e. it is the movement a
+rep-count change alone could produce; it is **not** fitted to anything, because
+nothing has been measured.
+
+**AND A CONTROL-DRIFT IS A FINDING ABOUT THE SESSION, REPORTED FIRST.** It is
+not a reason to re-run until the controls agree. If it fires, this battery
+closes on it and names it.
+
+### 6 — WITNESSES: `W7` GROWS A TOKEN, AND THE DUMP GATE GETS A TWO-SIDED WITNESS
+
+`W1`, `W2`, `W4′`, `W5` and the abort-cause-first discipline are inherited
+**unchanged**. Two changes:
+
+* **`W7` now counts FIVE gauge tokens** — `sig_us rvar_us qsp_us msd_us
+  tlag_us` — with their `/n` counts, on **every** path entry of **every**
+  `[DIAG]` block at **both** endpoints, counted twice by two independent
+  readers. A path entry carrying four of five is an **engine-surface fault**,
+  and `tests/tlag_reachability.rs` asserts the biconditional it rests on.
+* **`W8` — THE DUMP GATE, TWO-SIDED, AND IT IS A HARD ABORT.** The scored
+  battery asserts `RWM_RTT_DUMP=0` in the `[GATES]` echo of every invocation
+  and aborts on anything else (`TLAGB-DUMP-ON-FAIL`); the `B` pass asserts
+  `RWM_RTT_DUMP=1` and records the resolved `RWM_RTT_DUMP_MAX`. **A scored
+  invocation that ran with the dump on is measuring a perturbed sender and is
+  no datum** — the same class of contamination the gate-forwarding audit
+  exists for, and inheritance defeats an allowlist, so the driver `unset`s the
+  variable rather than trusting it to be absent.
+
+### 7 — THE CONFIGURATION BAND CARRIES ITS RECORDED CAVEAT EXPLICITLY
+
+The scored battery's §2 recorded a **specification defect against its own §8**
+and this amendment inherits the finding rather than the defect:
+
+> *"a goodput band cannot discriminate a configuration: generation-on and 'this
+> rep lost badly and retransmitted hard' both land at ~30 Mbit/s, and only
+> `W1`/`W2` tell them apart. The α-sweep's design — witnesses primary, band
+> secondary — was right, and this battery's §8 hardening of the band into an
+> abort was wrong."*
+
+**SO THE PRECEDENCE IS FIXED HERE, BEFORE THE RUN, AND IT IS WITNESS-FIRST.** A
+reading inside the generation plateau 26.8–34.1 Mbit/s with **`W1` reading
+`gen=0` and zero `[PFRAC]` lines** is an **OUT-OF-BAND RESULT, RETAINED**, with
+the `gen=0` witness carried explicitly beside it in the report — not a hard
+abort. A plateau reading **without** clean `W1`/`W2` is an abort as before.
+`RWM_GEN=0` is set on every invocation and the plain-window seat is established
+by direct engine echo, never inferred from a goodput number.
+
+**This is a repair to a rule this tree wrote and convicted, applied before the
+data rather than after it, and the previous battery's voided row stays void.**
+
+### 8 — LEGAL OUTCOMES, SCOPE, AND THE CLOSURE PRE-COMMITMENT
+
+**Unchanged from the section this amends**: four outcomes and no fifth (ACCEPT
+/ PREFER / REJECT-`<clause>` with the binding leg named / UNSCOREABLE-`<gate>`,
+which is not a pass); the tie-break; and —
+
+> **IF NO CANDIDATE ACCEPTS AT EVERY LEG, goal #101 ITEM 2 STAYS `NEEDS-MORE`
+> WITH THE FAILING CLAUSE NAMED. THE BAR IS NOT SOFTENED, NO CANDIDATE IS
+> PROMOTED ON A PARTIAL CLAUSE, AND NO VERDICT IS UPGRADED BY A PARTIAL SEED.**
+
+**Scope, unchanged and restated because it still binds.** This runs the
+**plain-window seat only**; every verdict is a plain-window-seat verdict and
+none transports to the generation seat, so §16.74.5 requirement 3 stays partly
+open however this scores. It **wires no consumer** — all five gauges stay
+read-only and `sig_us` still feeds exactly what it fed before. It **flips no
+default** — `RWM_QUANTILE_CLOCKS` stays OFF and REFUTED-STANDING,
+`RWM_RTT_DUMP` ships OFF, and the shipped clamp stays convicted and unreplaced.
+It **takes no route decision** between (b) and (d), **does not re-run the
+α-sweep**, reaches no verdict on §16.74.6's `P1`, and **does not reopen `S1`**.
+
+**AND ONE MORE, SPECIFIC TO THIS PASS:** a `B`-ACQUIT here is **not** evidence
+that any estimator measures true delivered latency. §3 says why, and the report
+prints that scope note unconditionally beside every `B` verdict.
+
+### 9 — THE CALIBRATION CLAUSE, TO BE FILLED AND COMMITTED BEFORE THE SCORED RUN
+
+`tlagb_calib.sh` runs **one rep per cell at seed 42**, on the same binary and in
+the same session as the scored run, before it. **Nothing in it is a result** —
+`n = 1`, and the report says NO VERDICT on that input. It must discharge three
+things and none may be skipped:
+
+1. **HEADROOM (MEASUREMENT DISCIPLINE 16)** — `tc -s qdisc show` on every cell
+   and every invocation, `util = tc_bytes·8 / (TRANSFER seconds × shaped
+   capacity)`, denominator the **transfer wall** and never `INVOCATION_S`.
+   **This battery writes no goodput clause, so the table licenses nothing.**
+2. **THE SMOKE, and this battery needs it because the thing it exists to
+   measure has never been on a wire.** `tlag_us` present with `/n` on every
+   path entry at both endpoints (`W7`); **and — the clause that matters — the
+   pair count `n` reaching `K = 32` at every cell.** A cell where `tlag`'s pair
+   set never reaches 32 yields ZERO scoreable readings, and by §2's own
+   pre-commitment that is a REFUTATION rather than a missing column, so it must
+   be seen at `n = 1` before 80 invocations are spent.
+3. **THE `B` PASS's OWN SMOKE** — `tlagb_bpass.sh` at one cell, confirming the
+   `[RTTDUMP]` stream parses, that coverage against the `[DIAG]` `n` is
+   reported, and that `RWM_RTT_DUMP=1` is echoed. The dump has never been on a
+   wire either.
+
+**The calibration's completion is committed in its own commit, BEFORE the
+scored battery launches.** Launch order: calibrate → commit → smoke →
+launch detached.
+
+### 10 — WHAT IS ESTABLISHED BY THIS SECTION
+
+**Nothing measured.** This section establishes only what will be measured, how
+it will be scored, and which verdicts are reachable. `tlag_us` has never been
+on a shaped cell and no reading of it exists anywhere.
+
+The local gates are green before the VM is touched:
+`tools/l1/test_tlagb_rttdump.py` (the new reference: the dump format
+round-trips exactly, the τ band is the engine's band, each functional is the
+one its gauge claims, and one process sampled at two rates 20× apart moves
+`msd` by more than 5× while `tlag` holds within 10 %) and
+`tools/l1/test_tlagb_report.py` (the scorer: the warm-up and `UNSCOREABLE-THIN`
+exclusions exclude, `-` is not a zero, `R_total` is the pooled quantile and not
+`sup/inf`, a voided invocation is in no denominator, and `CONTROL-DRIFT`
+suppresses the `tlag` verdict).
+
+**Nothing in this section flips a default, adds a gate to any law, edits an
+engine law, wires a consumer, touches a clock, or scores any clause of any
+pre-registration — including this one.**
