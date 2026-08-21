@@ -321,10 +321,71 @@ class Ledger:
         parser ran has only the driver's row, and leaving it in the denominator
         would be the very defect this method exists to close.
 
+        AND THE PLATEAU IS NOT ITSELF THE VOID CAUSE — THE WITNESSES ARE.
+        This is the amendment's §7, committed BEFORE the VM was touched, and
+        it is a repair to a rule this tree wrote and then convicted. The
+        previous battery hardened the goodput plateau into an unconditional
+        abort, voided a rep on it, and then recorded in its own §2 that the
+        hardening was WRONG:
+
+            "a goodput band cannot discriminate a configuration:
+             generation-on and 'this rep lost badly and retransmitted hard'
+             both land at ~30 Mbit/s, and only W1/W2 tell them apart. The
+             alpha-sweep's design -- witnesses primary, band secondary -- was
+             right, and this battery's section 8 hardening of the band into an
+             abort was wrong."
+
+        So the precedence here is WITNESS-FIRST: a plateau reading whose `W1`
+        reads `gen=0` AND whose `[PFRAC]` count is 0 is generation-OFF by
+        direct engine echo, and is an OUT-OF-BAND **RESULT, RETAINED**, with
+        its `gen=0` witness carried explicitly into the report. A plateau
+        reading WITHOUT clean witnesses is a configuration fault and voids as
+        before.
+
+        **Retaining is also the honest direction for THIS battery specifically**
+        -- a plateau rep is a heavy-loss, heavy-retransmit rep, and a
+        high-dispersion rep is exactly the rep an ESTIMATOR battery must not
+        discard. Discarding it would flatter every gauge's `R_total`.
+
+        THE FALLBACK IS CONSERVATIVE AND IS STATED. The driver's `TLAGBBAND`
+        row carries `gen_plateau` but no `W1`/`W2`; only the parser's
+        `TLAGBWITNESS` carries those. So the evidence is MERGED per
+        `(cell, seed, rep)` across both row kinds, and a rep that aborted
+        before the parser ran has no witness at all -- unknown is NOT clean,
+        and it voids.
+
         Returns the void set so the report can print it before any statistic.
         """
-        void = {(w["cell"], str(w["seed"]), str(w["rep"]))
-                for w in self.wit if w.get("gen_plateau")}
+        # Merge both row kinds per (cell, seed, rep): the DRIVER's row carries
+        # the plateau flag, the PARSER's carries the witnesses, and the rule
+        # needs both.
+        ev = {}
+        for w in self.wit:
+            k = (w["cell"], str(w["seed"]), str(w["rep"]))
+            e = ev.setdefault(k, {"plateau": False, "w1": None, "w2": None,
+                                  "mbps": None})
+            if w.get("gen_plateau"):
+                e["plateau"] = True
+            if w.get("mbps") is not None:
+                e["mbps"] = w.get("mbps")
+            if "W1_rfa_gen" in w:
+                e["w1"] = w.get("W1_rfa_gen")
+            if "W2_pfrac_lines" in w:
+                e["w2"] = w.get("W2_pfrac_lines")
+
+        void = set()
+        #: Plateau reps RETAINED by the witness-first rule, each with the
+        #: `gen=0` witness that acquitted it. Printed by the report; a
+        #: retention that is not visible is indistinguishable from an
+        #: exclusion nobody noticed.
+        self.plateau_retained = []
+        for k, e in sorted(ev.items()):
+            if not e["plateau"]:
+                continue
+            if e["w1"] == 0 and e["w2"] == 0:
+                self.plateau_retained.append((k, e["mbps"], e["w1"], e["w2"]))
+            else:
+                void.add(k)
         if not void:
             return void
         keep = lambda s, r, cell: (cell, str(s), str(r)) not in void
@@ -626,9 +687,36 @@ def main(argv):
     else:
         P("  0 abort/fail markers.")
 
+    # ── 1a. THE PLATEAU RETENTIONS, BEFORE THE VOIDS ────────────────────
+    # A retention that is not visible is indistinguishable from an exclusion
+    # nobody noticed, so these print FIRST and carry the witness that acquitted
+    # them on their face.
+    retained = list(getattr(L, "plateau_retained", []))
+    if BL is not L:
+        retained += list(getattr(BL, "plateau_retained", []))
+    P("\n  GOODPUT-PLATEAU READINGS, RETAINED BY THE WITNESS-FIRST RULE")
+    P("  (amendment §7, committed BEFORE the VM was touched). A reading inside")
+    P("  the 26.8-34.1 Mbit/s plateau with W1 gen=0 AND zero [PFRAC] lines is")
+    P("  generation-OFF by DIRECT ENGINE ECHO, so it is an OUT-OF-BAND RESULT")
+    P("  and NOT a configuration abort. A goodput band cannot discriminate a")
+    P("  configuration -- generation-on and 'this rep lost badly and")
+    P("  retransmitted hard' both land at ~30 Mbit/s, and only W1/W2 tell them")
+    P("  apart. Retaining is also the honest direction here: a plateau rep is a")
+    P("  heavy-loss, heavy-retransmit rep, and a HIGH-DISPERSION rep is exactly")
+    P("  the rep an ESTIMATOR battery must not discard.")
+    if retained:
+        for (c, s, r), mb, w1, w2 in retained:
+            P("    RETAINED %s seed=%s rep=%s mbps=%s "
+              "[W1 gen=%s, W2 pfrac=%s — generation definitively OFF]"
+              % (c, s, r, mb, w1, w2))
+        P("  %d plateau reading(s) retained as RESULTS." % len(retained))
+    else:
+        P("    none — no reading landed in the plateau with clean witnesses.")
+
     P("\n  VOIDED INVOCATIONS — dropped from EVERY container before any")
     P("  statistic below, per §8: an aborted invocation is no datum and is NOT")
-    P("  in any denominator.")
+    P("  in any denominator. A plateau reading voids HERE only when its")
+    P("  witnesses are dirty or absent — unknown is not clean.")
     if VOID or BVOID:
         for c, s, r in sorted(set(VOID) | set(BVOID)):
             P("    VOID %s seed=%s rep=%s" % (c, s, r))

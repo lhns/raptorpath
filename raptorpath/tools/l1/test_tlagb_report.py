@@ -275,12 +275,17 @@ for rep, val in ((1, 1000), (2, 999999)):        # rep 2 will be VOIDed
                 '"recv": 40, "censor_frac": 0.02, "censor_pct": 2.0, '
                 '"leg_unscoreable": false, "qsp": 100, "msd": 50, "sd": 200, '
                 '"spacing_ms": 50.0, "qsp_structural_dead": false}' % rep)
+    # Rep 2 is the plateau rep AND its W1 is DIRTY (gen=1), so it is a real
+    # configuration fault and voids. Amendment §7 makes the WITNESS the void
+    # cause, not the goodput band — the retention direction is pinned
+    # separately below.
     vled.append('TLAGBWITNESS {"cell": "c7", "seed": 42, "rep": %d, '
-                '"mbps": %s, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, '
+                '"mbps": %s, "W1_rfa_gen": %d, "W2_pfrac_lines": 0, '
                 '"W4_retx_max": 700, "W5_rack_fa": "1/694", '
                 '"W7_group_misses_cli": 0, "W7_group_misses_srv": 0, '
                 '"gen_plateau": %s}'
                 % (rep, "161.0" if rep == 1 else "28.767",
+                   0 if rep == 1 else 1,
                    "false" if rep == 1 else "true"))
 VPATH = tmpfile("\n".join(vled) + "\n")
 VL = R.Ledger()
@@ -318,6 +323,54 @@ check("aborted before the parser ran still leaves no row in the denominator",
       BL0.apply_voids() == {("c1", "7", "1")}
       and BL0.reads[("c1", "cli", 0)]["sig"] == [],
       str(BL0.reads[("c1", "cli", 0)]["sig"]))
+check("...and unknown witnesses are NOT treated as clean",
+      BL0.plateau_retained == [], str(BL0.plateau_retained))
+
+# ── THE WITNESS-FIRST PLATEAU RULE, THE RETENTION DIRECTION ──────────────
+# Amendment §7, committed BEFORE the VM was touched. The previous battery
+# hardened the goodput plateau into an unconditional abort, voided a rep on
+# it, and then recorded in its own §2 that the hardening was WRONG: a goodput
+# band cannot discriminate a configuration, because generation-on and "this
+# rep lost badly and retransmitted hard" both land at ~30 Mbit/s, and only
+# W1/W2 tell them apart. So a plateau reading with W1 gen=0 and zero [PFRAC]
+# is generation-OFF BY DIRECT ENGINE ECHO and is a RESULT, retained.
+#
+# Retaining is also the honest direction for an ESTIMATOR battery: a plateau
+# rep is a heavy-loss, heavy-retransmit rep, and a HIGH-DISPERSION rep is
+# exactly the rep this battery must not discard. Voiding it would flatter
+# every gauge's R_total, which is the direction a bar must never drift.
+rled = [row("c7", "42", "1", "cli", 0, b, 30,
+            ((7, 5000), (7, 5000), (7, 300), (7, 300), (7, 64)))
+        for b in range(1, 4)]
+rled.append('TLAGBBAND {"cell":"c7","seed":42,"rep":1,"rc":0,"mbps":33.291,'
+            '"band":[140,180],"in_band":0,"gen_plateau":1,"lossy":1}')
+rled.append('TLAGBWITNESS {"cell": "c7", "seed": 42, "rep": 1, '
+            '"mbps": 33.291, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, '
+            '"W4_retx_max": 9000, "W5_rack_fa": "1/8900", '
+            '"W7_group_misses_cli": 0, "W7_group_misses_srv": 0, '
+            '"gen_plateau": true}')
+RL = R.Ledger()
+RL.load(tmpfile("\n".join(rled) + "\n"))
+n_before = len(RL.reads[("c7", "cli", 0)]["sig"])
+rvoid = RL.apply_voids()
+check("a plateau reading with W1 gen=0 and zero PFRAC is NOT voided",
+      rvoid == set(), str(rvoid))
+check("its readings stay in the denominator",
+      len(RL.reads[("c7", "cli", 0)]["sig"]) == n_before == 3,
+      "before=%d after=%d" % (n_before,
+                              len(RL.reads[("c7", "cli", 0)]["sig"])))
+check("and it is RECORDED as a retention, with its acquitting witness",
+      len(RL.plateau_retained) == 1
+      and RL.plateau_retained[0][0] == ("c7", "42", "1")
+      and RL.plateau_retained[0][2] == 0,
+      str(RL.plateau_retained))
+# The plateau flag reaches the report from the DRIVER's row while the
+# witnesses reach it only from the PARSER's row, so the evidence must be
+# MERGED across both kinds. A reader that looked at either row alone would
+# void this rep (driver row: plateau, no witnesses) or miss the plateau
+# entirely (parser row read without the band).
+check("the rule merges the DRIVER's plateau flag with the PARSER's witnesses",
+      RL.plateau_retained[0][1] == 33.291, str(RL.plateau_retained))
 
 # ── B. THE REBUILT CLAUSE B, END TO END, THROUGH THE REAL WIRE FORMAT ─────
 print("\n[B-e2e] beta = online / population, exact, ACQUITTING")
