@@ -46822,3 +46822,438 @@ writable sentinel doctrine, and a complete adversarially-verified negative.
 
 **Nothing in this program flipped a default. The clamp stays — convicted,
 undefeated everywhere, and explained.**
+
+---
+
+## THE VERDICT BATTERY — PRE-REGISTRATION (2026-08-21, `feat/verdict-battery` from main@`abcdf44`) — **goal #101 ITEM 4, RUN AS SPECIFIED, AGAINST THE STRONGEST MEASURED CHALLENGER THIS PROGRAM PRODUCED.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine crate, wires a consumer, or derives a clock.** `THE CONSTANTS FALL` is a legal outcome of this battery and it is written first so it cannot later be described as one nobody allowed for.
+
+### 1 — WHY THIS RUNS AT ALL, AND WHAT IS DIFFERENT ABOUT IT
+
+Item 4 asked for the shipped `25 / 100 ms` constants to be put against **a
+derived winner**. It has now closed `DOES-NOT-RUN-BY-ITS-OWN-CONDITION` twice —
+once for §16.77.8's one-dimensional sweep, once for §16.78's two-dimensional
+surface — because at neither pass did a derived winner exist to instantiate.
+Both closures were correct and both were recorded with their conditions so the
+non-licensing was checkable.
+
+**They also left the same hole twice: "survives on merit" was a verdict nobody
+had run a battery to obtain.** It was an inference from the absence of a
+challenger. This battery removes that, and the way it removes it is the one
+change of substance:
+
+> **THE CHALLENGER IS THE STRONGEST ONE THE RECORD CONTAINS, NOT A DERIVED ONE.**
+> There is no derived winner and this battery does not manufacture one. It takes
+> the single configuration anywhere in this program that measurably beat the
+> shipped machine on anything item 4 scores, and puts it up.
+
+**THE CHALLENGER, WITH ITS FULL PROVENANCE.** `c7`-`R2Q86` from the
+(q, refresh) sweep's scored result §6 — the one arm in 140 invocations that
+realized a hold **below** its cell's self-heal median and read goodput **in
+band** while doing it. Its measured contrast against `CTL`, everything paired,
+`n = 8`, both seeds, transcribed:
+
+| quantity | `CTL` | `R2Q86` | change |
+|---|---|---|---|
+| realized hold `hd_p50` | — (no hold) | 27 648 µs (**0.90 ×** the 30 700 µs self-heal p50) | the target regime |
+| delivered cadence | 100 000 µs | 15 352 µs | 6.5× finer |
+| repair volume `rpd` | 0.05773 | 0.05417 | **−6.2 %** |
+| `[RFA]` false FRACTION | 0.0168 | 0.0136 | **−19.0 %** |
+| `[RFA]` false COUNT | 1 431 | 1 182 | **−17.4 %** |
+| queue p50 | 46.45 ms | 38.60 ms | **−16.9 %** |
+| queue p99 | 120.50 ms | 104.00 ms | **−13.7 %** |
+| goodput | 169.1 | 161.3 | **−4.6 %** |
+
+**That row is the best case the incumbent has ever faced**, and paper §16.79.4
+records the reading on which it WINS: Copa utility at the contract's default
+`δ_auto = 0.5`, evaluated on that pair, returns `log(0.954) − 0.5·log(0.831) =
++0.045`. §16.79 decided the formula against that dissent and named this battery
+as the thing that settles it. **This battery is therefore pointed at a paper
+section that could lose.**
+
+**WHAT THIS BATTERY IS NOT.** It is not a sweep — there is no surface, no
+optimum to find, no grid. It is a two-arm paired contrast with a pre-registered
+bar, and its only job is to return a verdict on a comparison that has never
+been run as one.
+
+### 2 — THE ARMS, AND THE GRID LAW THAT INSTANTIATES THE CHALLENGER PER CELL
+
+**Two arms. No others.**
+
+| arm | `RWM_HOLDDOWN_Q` | `RWM_REFRESH_FLOOR_US` | what it is |
+|---|---|---|---|
+| `CTL` | **absent** | **absent** | **the shipped machine, byte-identical.** With `F` absent the re-expressed cadence law `(2·srtt).clamp(F, 4F)` returns the same `Duration` as `(2·srtt).clamp(25, 100)` for every input in the domain, asserted by a unit test (§16.78.0) and not argued here |
+| `R2Q86` | `0.864` | per cell, below | **the challenger**, instantiated at each cell's own `p50/2` point |
+
+**THE CHALLENGER IS SCALED, NOT COPIED.** §16.78.3's grid law computes `F` from
+the cell's measured `[SUCC] orig` p50 **and** the cell's binding rail, and both
+differ by cell. Copying `c7`'s `F = 3838` to every cell would deliver a
+different cadence at each of them and would be a different treatment wearing one
+name. Transcribed from §16.78.3, and from the driver's own table:
+
+| cell | `[SUCC] orig` p50 | binding rail | target `p50/2` | **`RWM_REFRESH_FLOOR_US`** | **delivered cadence** | shipped effective floor |
+|---|---|---|---|---|---|---|
+| `c1` | 24.6 ms | LOWER (`2·srtt ≈ 4 ms`) | 12.3 ms | **12300** | **12.3 ms** = `F` | 25 ms |
+| `c7` | 30.7 ms | UPPER (`2·srtt ≥ 100 ms`) | 15.35 ms | **3838** | **15.352 ms** = `4F` | 100 ms |
+| `sc2` | 98.3 ms | UPPER | 49.15 ms | **12288** | **49.152 ms** = `4F` | 100 ms |
+| `c8` | 98.3 ms **(3.20× rep dispersion — §4)** | UPPER, **PREDICTED** | 49.15 ms | **12288** | **49.152 ms** = `4F` | 100 ms |
+
+**`c8`'s RAIL IS A PREDICTION AND IT IS CHECKED, NOT ASSUMED.** `c8` is a
+`c2`/`c3` dual (5 ms and 20 ms per leg), so `2·srtt ≥ 100 ms ≥ 4F` is expected
+and the UPPER rail is expected to bind — but `c8` has never had its delivered
+cadence read, because the (q, refresh) sweep did not run it. The `CADENCE`
+witness reads what the receiver actually delivers and clause `F1-c8` (§5) scores
+it. **If the prediction is wrong, `c8` reports it as a result and forfeits its
+own row; it cannot corrupt the verdict, because `c8` does not vote (§4).**
+
+**`q = 0.864` IS THE CHALLENGER'S LEVEL AND ITS `n_req` IS 74, TRANSCRIBED.**
+`q* = 0.99` needs `n_req = 1000` outstanding-time samples and was measured
+`ARM-VOID` (`law_n = 0`) at 4 of 4 reps at `c1` even under a lifted cadence.
+`0.864` is the level the challenger actually ran at and it is the level this
+battery runs; no other level is swept, because this is not a sweep.
+
+### 3 — THE PAIRING, THE SEEDS, AND `RWM_GEN=0`
+
+**Paired within rep, arms INNERMOST**: the loop is `for REP → for CELL → for
+ARM` in the fixed order `CTL R2Q86`, so every contrast is taken against its own
+rep's control. **Rows from different reps are never differenced.** Seeds `42`
+and `7`; a seed is a netem loss realisation, not a repetition, and every clause
+below is written "on both seeds" and cannot be evaluated on one.
+
+`RWM_GEN=0` on every invocation. Every contamination gate asserted at its OFF
+value, two-sided, per invocation (`W4`). `RWM_W_FORM` must RESOLVE to `cantelli`
+and `RWM_ALPHA_OVERRIDE` to `unset` on every arm — the sender's timer is the
+shipped clamp on every row, asserted rather than assumed. ρ is held at 1
+throughout, per §16.77.5's stated structural reason, and this battery claims
+nothing about it.
+
+### 4 — THE CELLS, AND WHAT `c8` DOES AND DOES NOT LICENSE
+
+| cell | legs | mode | bytes | paths | goodput band (`CTL` scope) | role |
+|---|---|---|---|---|---|---|
+| `c1` | c1 / c1 | single | 400 000 000 | 1 | `[147, 294]` | STABLE — votes |
+| `c7` | c2 / c2 | dual | 200 000 000 | 2 | `[140, 180]` | STABLE — votes, and the challenger's HOME cell |
+| `sc2` | c2 / c2 | single | 100 000 000 | 1 | `[78, 92]` | STABLE — votes |
+| `c8` | c2 / c3 | dual | 25 000 000 | 2 | `[50, 100]` | **WITNESS — does NOT vote** |
+
+**`c8`'s CAVEAT, FROM THE RECORD, VERBATIM IN SUBSTANCE.** The successor-arrival
+pass scored `c8` `UNSTABLE` at 3 of 6 slots — `orig_p50` **3.20×**, `rep_p50`
+**4.00×**, `rep_p90` **2.40×** rep-to-rep — and ruled: *"No p90 or p99 at `c8` or
+`c8L` may be used as a derivation input from this pass. Their p50s are
+borderline (3.2×, 3.75×) and are also excluded."* §16.78.7 then declined to run
+it for exactly that reason: **a cell whose p50 cannot be trusted cannot supply a
+`p50/2`.**
+
+**WHAT `c8` THEREFORE DOES LICENSE HERE, STATED BEFORE THE RUN:**
+
+* A **direction check at the loss-heavy end of the dial**, which no battery in
+  this program has ever taken on the gap-report path. `c8` is the cell where the
+  hold-down sweep's goodput collapse was worst, and the challenger has never
+  been shown it.
+* A **guard-violation record**: the goodput band `[50, 100]` is an ABSOLUTE
+  test, and an absolute test does not need a trustworthy `p50` to be read.
+* A **falsifier for §16.79 in the strong direction**: if the challenger wins
+  both dimensions cleanly at `c8` as well as at a majority of stable cells, that
+  is recorded as reinforcing and is stated in the verdict.
+
+**WHAT IT DOES NOT LICENSE:**
+
+* **It is not in the majority denominator.** The majority is over
+  `{c1, c7, sc2}` and over nothing else. A `c8` win cannot make the constants
+  fall and a `c8` loss cannot save them.
+* **No derived quantity may be computed from its `F`.** Its `F = 12288` is
+  transcribed from a p50 whose own dispersion is 3.20×, which means the
+  challenger at `c8` is *a* sub-floor hold and not demonstrably *the cell's*
+  `p50/2` hold. That is a named difference in kind from the three stable cells,
+  not a smaller version of the same thing.
+* **`c8L` is not run at all.** 52× dispersion; nothing this battery could do
+  with it would be readable.
+
+### 5 — WHAT IS MEASURED, AND HOW EACH PIECE IS SCORED. Item 4's TWO dimensions, and the guard.
+
+Scored in this order. **Clause (0) gates every clause below it.**
+
+**(0) THE WIRING TEST — `F1`, SCORED FIRST.** The DELIVERED cadence from the
+receiver's own `[QCLK] site=receiver` (`w_us_p50 / w_us_min / w_us_max`), and
+the realized hold `[HOLD] hd_p50_us` on the sender.
+
+* **`F1` DOES NOT FIRE at a cell** ⇔ that cell's `R2Q86` arm reads
+  `[QCLK] w_us_max` **below** the cell's shipped effective floor **and** inside
+  its commanded band `[F, 4F]`, on both seeds; **and** `CTL` reads its shipped
+  floor with both gates resolving `unset` two-sided.
+* **`F1` FIRES at a cell** ⇔ that fails there. **That CELL is VOID in full** and
+  reports `UNSCOREABLE-cite-gate(F1, <cell>)`. It is removed from the majority
+  denominator rather than counted as a loss for either side.
+* **`F1-ALL`** ⇔ `F1` fires at ≥ 2 of the 3 STABLE cells. **The battery is then
+  VOID in full**, no other clause is read, and the outcome is
+  `UNSCOREABLE-cite-gate(F1-ALL)`.
+* **`F1-c8`** is scored and REPORTED SEPARATELY and never contributes to
+  `F1-ALL`, because `c8` does not vote.
+
+**DIMENSION 1 — DELIVERED LATENCY, PER-LEG, CENSORING-AWARE.** `p50` **and**
+`p95` per leg from the latency probe (`leg<i>_p50`, `leg<i>_p95`, each with its
+`_censored` / `_scoreable` twin), with `legs_censor_max` printed beside every
+reading. The scored statistic is the **WORST LEG** — `max` over legs of that
+leg's median — because a dual-path machine that improves one leg and ruins the
+other has not improved delivery. Queue `p50` / `p99` is carried beside it,
+always, and neither is read alone.
+
+* **`DIM1-WIN(cell)`** ⇔ the challenger's median worst-leg `p50` **AND** its
+  median worst-leg `p95` are **both** lower than `CTL`'s, **and** the `p50`
+  improvement exceeds `CTL`'s OWN rep spread at that cell **measured in this
+  battery**, **on both seeds**.
+* **`DIM1-LOSS(cell)`** ⇔ either quantile is higher than `CTL`'s by more than
+  `CTL`'s own rep spread, on both seeds.
+* **`DIM1-FLAT(cell)`** ⇔ anything else.
+* **`DIM1-BLIND(cell)`** ⇔ `legs_censor_max > 20 %` at either arm. The cell's
+  DIM-1 column is then unreadable and the cell reports
+  `UNSCOREABLE-cite-gate(CENSOR, <cell>)`.
+
+**DIMENSION 2 — REALIZED FALSE REPAIR, FRACTION AND COUNT.** `[RFA] false_frac`
+**and** `[RFA] false` (the count), both, at every cell-arm. **A moved count with
+a level fraction, or the reverse, is a reading and not a contradiction** —
+`fa ⊥ W`, `fa ⊥ T` and `fa ⊥ refresh` are three measured nulls and this battery
+does not challenge them; it asks whether the challenger's specific
+configuration moves the realized quantity, which is a different question from
+whether a lever controls it.
+
+* **`DIM2-WIN(cell)`** ⇔ the challenger's median `false_frac` **AND** its median
+  false COUNT are **both** lower than `CTL`'s, **and** the fraction improvement
+  exceeds `CTL`'s OWN rep spread at that cell measured in this battery, **on
+  both seeds**.
+* **`DIM2-LOSS` / `DIM2-FLAT`**: the mirror of DIM-1's.
+
+**THE GUARD BAND — GOODPUT. A CHALLENGER "WIN" THAT COSTS BAND-EXCEEDING
+GOODPUT IS NOT A WIN.** Two clauses, and the weighing rule is taken from the
+contract's default δ rather than invented here.
+
+* **`G1` — BAND (absolute).** `BAND-OK(cell)` ⇔ the challenger's median goodput
+  is INSIDE that cell's `CTL` band, on both seeds. The band is `CTL`-scope; an
+  out-of-band `CTL` is an ABORT (§7), an out-of-band CHALLENGER is a
+  **GUARD VIOLATION** and is a result.
+* **`G2` — EXCHANGE, at `δ_auto = 0.5` (difference).** Copa's own utility,
+  `U = log(throughput) − δ·log(delay)`, at the contract's DEFAULT named point,
+  with `delay` = the DIM-1 statistic (worst-leg delivered `p50`):
+
+  ```text
+     EXCHANGE-OK(cell)  ⇔  log( g_chal / g_ctl )  −  0.5 · log( L_chal / L_ctl )  ≥  0
+                        ⇔  g_chal / g_ctl  ≥  ( L_chal / L_ctl ) ^ 0.5
+  ```
+
+  δ = 0.5 is `δ_auto`, the Auto named point, and it is used because it is the
+  contract's DEFAULT and for no other reason. **The same expression evaluated on
+  the challenger's own measured `c7` pair returns `0.954` against a bar of
+  `0.912` and PASSES**, which is §16.79.4's dissent, which is why this clause is
+  written here in advance and in the challenger's favour.
+* **`GUARD-VIOLATION(cell)`** ⇔ `¬G1`, **OR** (`¬G2` **AND** the goodput
+  difference exceeds that cell's resolvable Δ from §6).
+* **`GUARD-UNDERPOWERED(cell)`** ⇔ `¬G2` but the goodput difference is INSIDE
+  the cell's resolvable Δ. **The guard then defers to `G1` alone at that cell**,
+  and the deferral is printed. This token exists because §6's arithmetic says in
+  advance that two cells cannot resolve a 4.6 % goodput difference at the `n`
+  this battery can afford, and discovering that during scoring would be
+  discovering it too late.
+
+**`CELL-WIN(cell)`** ⇔ `DIM1-WIN(cell)` **AND** `DIM2-WIN(cell)` **AND**
+`¬GUARD-VIOLATION(cell)`. **Both dimensions. Not one.**
+
+### 6 — `n`, WITH ITS ARITHMETIC IN FULL, AND WHAT IT CANNOT RESOLVE
+
+`n` is sized on the (q, refresh) sweep's **own** per-cell dispersion — its `CTL`
+goodput rep ranges, the only per-rep dispersion that battery published — using
+the same estimator that battery used: `σ̂ = range / E[range|n]`, with
+`E[range]/σ = 2.059` at `n = 4` and `2.847` at `n = 8`.
+
+| cell | `CTL` median | rep range | `n` there | `σ̂` | **CV** | `σ_d = √2·CV` (paired, conservative) | `n ≥ (2σ_d/Δ)²` at Δ = 4.6 % | **`n` USED** | **resolvable Δ at that `n`** |
+|---|---|---|---|---|---|---|---|---|---|
+| `c1` | 207.7 | [197, 210] | 4 | 6.31 | **3.04 %** | 4.30 % | **3.5 → 4** | **4** | **4.30 %** |
+| `c7` | 169.1 | [109, 171] | 8 | 21.78 | **12.88 %** | 18.21 % | **62.7 → 63** | **8** | **12.88 %** |
+| `sc2` | 87.3 | [87, 89] | 8 | 0.70 | **0.80 %** | 1.14 % | **0.2 → 1** | **8** | **0.80 %** |
+| `c8` | — (not run by that sweep) | — | — | — | **9.30 %** † | 13.15 % | **32.7 → 33** | **8** | **9.30 %** |
+
+† `c8`'s CV is the hold-down sweep's within-arm goodput CV (median 0.093), cited
+because the (q, refresh) sweep never ran the cell. It is a PRIOR from a
+different battery and is labelled as one.
+
+`Δ = 4.6 %` is the challenger's own measured goodput cost — the smallest effect
+the guard would have to resolve for `G2` to be a difference test rather than a
+sign test.
+
+**TWO CELLS ARE UNDERPOWERED FOR `G2` AND IT IS STATED HERE RATHER THAN
+DISCOVERED IN THE SCORING.** `c7` asks for `n = 63` and `c8` for `n = 33`
+against a total budget of ~100 invocations; at `n = 8` they resolve `12.88 %`
+and `9.30 %`. **The consequences, pre-declared:**
+
+1. **`G1` does not need that power and is unaffected** — it is an absolute test
+   against a fixed band, not a difference.
+2. **`G2` is scored with `GUARD-UNDERPOWERED` at any cell where the observed
+   difference lands inside the resolvable Δ**, and the guard defers to `G1`
+   there. That is the honest reading and it is the one written in advance.
+3. **The two SCORED dimensions do not inherit the problem**, because their bars
+   are **self-calibrating**: each requires the improvement to exceed `CTL`'s own
+   rep spread **measured in this battery at that cell**. No unmeasured prior is
+   used, and a cell whose control is noisy raises its own bar. The (q, refresh)
+   sweep published no per-rep dispersion for latency or for `[RFA]`, so this is
+   not a convenience — it is the only defensible construction available.
+4. **`c7` at `n = 8` reproduces the challenger's own measurement conditions
+   exactly.** Its effect was READ at `n = 8`, two seeds, paired. Running it at
+   `n = 8` asks whether that reading replicates; running it at `n = 63` would
+   ask a different and better question this budget cannot buy, and the
+   difference is recorded rather than elided.
+
+**TOTAL: 2 arms × (4 + 8 + 8 + 8) reps = 56 SCORED INVOCATIONS**, plus 8
+calibration invocations (§9) = **64**, one binary, one era, both locks.
+
+### 7 — ABORT CAUSES, STATED FIRST AND IN PRIORITY ORDER
+
+1. `ABORT-LOCK` — either VM lock could not be taken. Both
+   (`/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`) are required and both are
+   held for the whole era, builds and probes included.
+2. `ABORT-SHA` — the shipped binary's `sha256` does not match the recorded one.
+   The expected value is `91a4f8ccda35941cdbcbaf09988a2fb01baf221899131f4078200e10faa8c7f3`
+   at engine commit `999aa63`, **written here before the VM is touched** so the
+   comparison is against a pre-registered constant and not against whatever is
+   found.
+3. `ABORT-SENTINEL-UNWRITABLE` — §8. **Checked at LAUNCH, not at exit.**
+4. `ABORT-SMOKE` — §9's smoke did not witness both of its two required
+   conditions. **The battery does not start.**
+5. `ABORT-CTL-BAND` — a cell's `CTL` reads out of its own band. **That cell is
+   aborted; the others continue**, and the cell leaves the denominator.
+6. `ABORT-RC` — a non-zero exit from an invocation. The ROW is void; the arm
+   continues, and `ARMCOUNT rows=N/WANT` reports it so a vanished arm is READ.
+
+**An out-of-band CHALLENGER arm is NOT an abort — it is the guard's `G1`
+reading.** `UNSCOREABLE-cite-gate` and `GUARD-UNDERPOWERED` are not aborts
+either. This is stated before any number exists so that a challenger collapse
+cannot later be re-labelled as an abort to keep the incumbent's table tidy, and
+so that a challenger *win* cannot be re-labelled as an abort either.
+
+### 8 — SENTINELS: EARNED, AND PROVEN WRITABLE BEFORE THE FIRST MEASUREMENT
+
+The rule the hold-down sweep earned, unchanged: **a sentinel must be written by
+the same privilege level that will read it, and its writability must be PROVEN
+AT LAUNCH, not at exit.** Discharged three ways, as in the (q, refresh) sweep:
+the output directory is created UNPRIVILEGED before `sudo` is ever invoked;
+every ABSOLUTE sentinel path is write+unlink probed as `vibe` before any
+measurement, with a failure being `ABORT-SENTINEL-UNWRITABLE` and a launch that
+does not happen; and `DONE-S<seed>` is written **only if** that seed's ledger
+exists, is non-empty, and carries its own `VERDICT-BATTERY-DONE seed=<s>` line.
+
+```text
+   /home/vibe/verdict/DONE-ALL        /home/vibe/verdict/FAILED-ALL
+   /home/vibe/verdict/DONE-S42        /home/vibe/verdict/FAILED-S42
+   /home/vibe/verdict/DONE-S7         /home/vibe/verdict/FAILED-S7
+   /home/vibe/verdict/all.out         /home/vibe/verdict/all-era.txt
+```
+
+Ledgers `/home/vibe/verdict/vrd-s<seed>.log`, witnesses
+`vrd-witness-s<seed>.jsonl`, captures `diag/`. **The watcher's rule is
+unchanged**: never poll the running battery, never `pgrep -f` a name that
+matches the watcher's own shell, wait on `DONE-ALL || FAILED-ALL` and on nothing
+else.
+
+### 9 — THE CALIBRATION AND SMOKE CLAUSE, DISCHARGED BEFORE LAUNCH
+
+One invocation per cell per arm — **8 invocations, 4 cells × 2 arms, `reps=1`,
+seed 42** — must show, before the 56 are spent:
+
+1. `rc = 0` at 8 of 8, and `CTL` goodput **in band** at 4 of 4 cells.
+2. **THE CHALLENGER ECHOES ITS `(q, refresh)` RESOLVED, TWO-SIDED.**
+   `[GATES] RWM_HOLDDOWN_Q=0.864` and `[GATES] RWM_REFRESH_FLOOR_US=<cell's F>`
+   on **both** endpoints, matched LITERALLY against Rust's own `to_string()`
+   (`0.864`, not `0.8640`), plus `[HOLD] n_req=74`.
+3. **`CTL` IS BYTE-IDENTICAL-SHIPPED, PROVEN AND NOT ASSERTED.** Both gates echo
+   `unset` on **both** endpoints, and the delivered `[QCLK] w_us_p50` equals that
+   cell's shipped effective floor (25 000 µs at `c1`, 100 000 µs elsewhere).
+   **An inherited `RWM_REFRESH_FLOOR_US` would make `CTL` a lifted-cadence
+   configuration silently sharing a ledger with the control it is supposed to
+   BE**; the driver unsets it in its own process for exactly that reason and the
+   echo is what settles it.
+4. **THE WIRING WITNESS**: the challenger's `[QCLK] w_us_max` below that cell's
+   shipped effective floor, at 4 of 4 cells — including `c8`, whose rail is a
+   prediction (§2).
+5. `W1`–`W10` clean at 8 of 8.
+
+**If any of 1–5 fails: `ABORT-SMOKE`, and nothing is launched.** **NOTHING IN
+THE CALIBRATION IS A RESULT** — `n = 1`, and no clause of §5 is scored by any of
+it.
+
+### 10 — WITNESSES, PER INVOCATION. A failure NAMES itself.
+
+| # | witness | fail token |
+|---|---|---|
+| `W1` | `[GATES]` present on **both** endpoints | `W1-NO-GATES` |
+| `W2` | `[GATES] RWM_REFRESH_FLOOR_US=` is the arm's expected resolved value (`unset` on `CTL`), both endpoints | `W2-FLOOR-MISMATCH` |
+| `W3` | `[GATES] RWM_HOLDDOWN_Q=` is the arm's expected level, matched LITERALLY, both endpoints | `W3-Q-MISMATCH` |
+| `W4` | every contamination gate reads OFF on every arm; `RWM_GEN=0` | `W4-CONTAM` |
+| `W5` | `[HOLD]` present, `evals > 0`, `evals = sup + emit`; `law_n` reported (`law_n = 0` ⇒ `ARM-VOID`, a RESULT) | `W5-NO-HOLD` |
+| `W6` | `[QCLK] site=receiver` present, `evals > 0`, `kept > 0` | `W6-NO-QCLK` |
+| `W7` | `[FCAUSE]` present, `n = timer + gap_data + gap_refresh + other`, `timer_frac` recorded | `W7-NO-FCAUSE` |
+| `W8` | `[SUCC]` present with `det > 0` | `W8-NO-SUCC` |
+| `W9` | `[RFA]` present; `false_frac` **and** its count both recorded | `W9-NO-RFA` |
+| `W10` | `rc = 0` and the run's own `mean_mbps` scraped | `W10-RC` |
+
+Every witness writes one `VRDWITNESS {json}` row per invocation.
+
+### 11 — THE LEGAL OUTCOMES, VERBATIM. Exactly one is chosen for the battery.
+
+1. **`THE CONSTANTS FALL`** ⇔ `CELL-WIN` at a **MAJORITY of the three STABLE
+   cells** — that is, at ≥ 2 of `{c1, c7, sc2}`, or at ≥ 2 of the stable cells
+   that remain scoreable if one is removed by `F1` / `ABORT-CTL-BAND` /
+   `DIM1-BLIND`. Its meaning, written before the run so it cannot be softened
+   afterwards:
+
+   > **THE SHIPPED `25 / 100 ms` CONSTANTS ARE BEATEN ON MERIT, ON BOTH OF
+   > ITEM 4's DIMENSIONS AT ONCE, BY A CONFIGURATION THAT DOES NOT VIOLATE THE
+   > GOODPUT GUARD, AT A MAJORITY OF THE CELLS WHERE BOTH CAN BE READ.** The
+   > program's terminal closure ("undefeated everywhere") is WITHDRAWN and
+   > paper §16.79's decision is **UNDECIDED** by its own falsifier `F3`. **It
+   > still flips no default in this pass** — §16.77.11's clause stands verbatim,
+   > nothing may ship reading a result until a battery has scored it and one
+   > battery finding a winner is not that — but the successor is then a
+   > derivation pass and not another sweep, and the goal-gate says so.
+
+2. **`SURVIVE ON MERIT`** ⇔ **anything else that is scoreable.** Stated plainly,
+   because "anything else" is doing real work here and must not be allowed to
+   sound like a default:
+
+   > The challenger fails to take both dimensions at a majority of stable cells,
+   > **or** takes them while violating the goodput guard. **Concretely, every
+   > one of these is `SURVIVE ON MERIT` and each is a different sentence about
+   > the machine, so the verdict names which one occurred**: the challenger wins
+   > one dimension and not the other; it wins both at one stable cell only; it
+   > wins both everywhere but reads out of band; it is flat at every cell; it
+   > loses. **`SURVIVE ON MERIT` is not a null and it is not an absence — it is
+   > the incumbent beating a real, measured, previously-successful opponent in a
+   > contest that was actually held**, which is precisely what item 4's two
+   > prior `DOES-NOT-RUN` closures could not deliver and what this battery
+   > exists to obtain.
+
+3. **`UNSCOREABLE-cite-gate(<gate>[, <cell>])`** — a named gate failed. The gate
+   is `F1`, `F1-ALL`, `CENSOR`, or an `ABORT-*` cause from §7, and it is cited
+   by name and by cell. A battery-wide `UNSCOREABLE` requires `F1-ALL` or an
+   abort that removes ≥ 2 stable cells; anything narrower removes cells from the
+   denominator and the remaining cells are scored.
+
+**Per-cell tokens compose with the battery outcome where they do not conflict**
+(`SURVIVE ON MERIT` with one `UNSCOREABLE-cite-gate(F1, c8)` is legal and
+expected). **Where they conflict, the lower number wins.**
+
+### 12 — WHAT THIS BATTERY DOES NOT CLAIM
+
+* **NO DEFAULT MOVES, ON EITHER OUTCOME.** `RWM_HOLDDOWN_Q` and
+  `RWM_REFRESH_FLOOR_US` are ABSENT by default, nothing shipped reads either,
+  and `THE CONSTANTS FALL` explicitly does not ship anything (§11.1).
+* **NO CLOCK IS DERIVED.** This battery scores one comparison. A derivation is
+  downstream of a verdict, not this pass.
+* **`fa ⊥ W` / `fa ⊥ T` / `fa ⊥ refresh` ARE NOT CHALLENGED.** DIM-2 asks
+  whether ONE configuration moves the realized quantity, not whether a lever
+  controls it. Those are different questions and §5 says so.
+* **ρ IS NOT SWEPT.** Held at 1 throughout.
+* **`c8` DOES NOT VOTE**, `c8L` is not run, and §4 states both in advance.
+* **THE 25 ms TAIL SWEEP AND THE 25 ms STALL-GAUGE CEILING ARE UNMOVED**, and
+  both remain stated confounds on the challenger's sub-floor cadence rather than
+  negligible ones. `W7` watches the first.
+* **NO NUMBER ABOVE IS A RESULT.** Every measured value quoted here is a PRIOR
+  taken from the (q, refresh) sweep, the hold-down sweep or the
+  successor-arrival pass, and each is cited to the record it came from.
+
