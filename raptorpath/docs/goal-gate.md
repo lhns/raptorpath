@@ -43947,3 +43947,164 @@ acceptance bar. **It does not name the successor measurand's FORMULA** — §5(i
 pre-commits only to naming the QUANTITY the waiting time must be positioned on;
 deriving the law is the next step of the spine and gets its own formula-first
 section, IF the data licenses one.
+
+## THE FIRE-CAUSE PASS — THE SCORED RESULT (2026-08-21, `feat/fire-cause`) — **THE RECOVERY FIRES ARE NOT TIMER-DRIVEN, AT 10 OF 10 CELL-ARMS, BY THREE ORDERS OF MAGNITUDE: 0.59 % OF 107,597 CLASSIFIED FIRES CAME FROM A TIMER.** `fa ⊥ W` is EXPLAINED, §16.69's measurand is refuted **with a count**, and the successor measurand is named from the data by the rule pre-registered before the pass ran. 30 invocations, one binary, five cells, two arms, three reps, seed 42, **0 aborts, 0 VOID, `rc = 0` at 30/30, W1–W6 clean at 30/30.** Scored against "THE FIRE-CAUSE PASS — PRE-REGISTRATION" and against nothing else. **Nothing here flips a default, adds a gate, edits an engine law, wires a consumer, or touches a clock.**
+
+Binary `sha256 87993150c58efb1a5880c39a868b2b01f99056d0f2b870dc9a8185fb6288a32e`
+(commit `b6cbe3e`, built fresh on the VM from a CRLF-repaired tree — 176 files
+needed repair, the `sigb_calib.sh` trap caught before it could fire). VM
+10.1.5.16, lock held **06:39:07Z–06:55:23Z**, taken with the box verified QUIET
+(0 rp processes, no rp namespaces, load 0.09) and released with it verified
+clean. Ledger `/home/vibe/fcause/fcause-s42.log`, witness JSONL
+`fcause-witness-s42.jsonl`, report `fcause-report.txt`.
+
+### 1. READING (i) — THE CAUSE DISTRIBUTION
+
+Pooled on COUNTS, per §5(i). `n` is every fire that reached the wire.
+
+| cell | arm | fires | timer | gap_data | gap_refresh | **timer_frac** | gap_frac |
+|---|---|---|---|---|---|---|---|
+| c1 | OFF | 3 427 | 65 | 3 362 | 0 | **0.0190** | 0.9810 |
+| c1 | Q009 | 2 379 | 331 | 2 048 | 0 | **0.1391** | 0.8609 |
+| sc2 | OFF | 9 726 | 102 | 9 624 | 0 | **0.0105** | 0.9895 |
+| sc2 | Q009 | 10 414 | 106 | 10 308 | 0 | **0.0102** | 0.9898 |
+| c7 | OFF | 15 050 | 8 | 15 042 | 0 | **0.0005** | 0.9995 |
+| c7 | Q009 | 17 414 | 5 | 17 409 | 0 | **0.0003** | 0.9997 |
+| c8 | OFF | 2 791 | 3 | 2 762 | 26 | **0.0011** | 0.9989 |
+| c8 | Q009 | 2 717 | 3 | 2 700 | 14 | **0.0011** | 0.9989 |
+| c8L | OFF | 17 862 | 11 | 17 730 | 121 | **0.0006** | 0.9994 |
+| c8L | Q009 | 25 817 | 2 | 25 523 | 292 | **0.0001** | 0.9999 |
+
+**POOLED: `n` = 107 597 — `timer` = 636 (0.0059), `gap_data` = 106 508
+(0.9899), `gap_refresh` = 453 (0.0042), `other` = 0.**
+
+### 2. THE MEASURAND VERDICT — §5(ii)'s RULE, APPLIED
+
+The pre-registered rule was `timer_frac < 0.5` ⇒ MINORITY. **It fires at 10 of
+10 cell-arms, and not marginally: the largest timer fraction measured anywhere
+is 0.1391 and the median is 0.0011.** The rule was written to be decidable at
+0.5; the data came in at 0.006.
+
+> **VERDICT: the recovery fires are NOT timer-driven.** `fa ⊥ W` is explained —
+> the commanded false-alarm fraction did not move across a 200× α span because
+> **99.0 % of the fires are not clocked by the sender's `W` at all.** Moving the
+> waiting time repositions the tail-sweep deadline, which decides 0.59 % of the
+> fires; the other 99.41 % are decided by the receiver. §16.69's measurand — the
+> ack-arrival distribution — is **REFUTED as the quantity a recovery waiting
+> time should be positioned on**, and it is refuted by a count rather than by
+> the inference the sweep could only support.
+
+This closes the first half of goal #101's named successor. The second half —
+"then re-derive the measurand from the classified data" — is §4 below.
+
+### 3. READING (ii′) — ARMING THE CLOCK DOES NOT RESCUE THE TIMER
+
+| cell | timer_frac OFF | timer_frac Q009 | Δ |
+|---|---|---|---|
+| c1 | 0.0190 | 0.1391 | **+0.1202** |
+| sc2 | 0.0105 | 0.0102 | −0.0003 |
+| c7 | 0.0005 | 0.0003 | −0.0002 |
+| c8 | 0.0011 | 0.0011 | +0.0000 |
+| c8L | 0.0006 | 0.0001 | −0.0005 |
+
+At **4 of 5 cells `|Δ| ≤ 0.0005`** — the timer's irrelevance is a property of
+the machine, not an artifact of the shipped `[25, 100] ms` clamp. Arming a
+quantile-native clock at α = 0.009 changes which timer fires and does not
+change that almost nothing is timer-fired.
+
+**`c1` IS THE EXCEPTION AND IT IS REPORTED AS A RESULT, NOT SMOOTHED.** At the
+clean (lossless) cell, arming the clock raises the timer fraction 7.3× —
+0.0190 → 0.1391 — and it is CONSISTENT ACROSS ALL THREE REPS (0.1335, 0.1202,
+0.1726), so it is an effect and not a rep. It is still a MINORITY, so §5(ii)'s
+rule is unaffected. Its natural reading, stated as a reading and not a claim:
+at `c1` there are few real holes, so the data arm has little to report and the
+quantile clock — which at α = 0.009 sits well inside the shipped clamp's floor
+— fires the tail sweep more often than the clamp would. **It is beside a
+goodput cost measured on the same rows: `c1`-Q009 median 162.5 Mbit/s against
+`c1`-OFF's 199.2.** That is the same direction as the sweep's own `c1` finding
+(every challenger arm worse than the shipped clamp) and it is now accompanied
+by a mechanism: the challenger fires a timer that the shipped clamp does not.
+
+### 4. THE SUCCESSOR MEASURAND, NAMED FROM THE DATA
+
+`gap_data` is the majority at 10 of 10 cell-arms and 98.99 % pooled, so §5(ii)'s
+pre-stated `gap_data` branch applies **verbatim, with no choice left to make
+now**:
+
+> **The waiting time must be positioned on the SAME-FLOW SUCCESSOR-ARRIVAL
+> DISTRIBUTION:** `P(the next in-flight symbol for this flow arrives by t | a
+> hole is outstanding)`.
+
+The mechanism that makes it the right quantity, read off the producer: a
+`gap_data` fire originates in the receiver's data-arm SACK report, which is
+emitted when **a HIGHER seq arrives while a hole is outstanding** — the dupack
+analog. What decides whether a repair is emitted, and when, is therefore the
+arrival of the SUCCESSOR symbol, not the arrival of an ACK. The sender's clock
+never gets a vote on these fires; the receiver's gap-report cadence does.
+
+**`gap_refresh` is the road not taken, and the pass says why rather than
+leaving it open.** The receiver's own hole-refresh timer contributed 453 fires
+— 0.42 % pooled — and it is **nonzero at only two cells, `c8` (40) and `c8L`
+(413), the two asymmetric-loss dual-path cells.** Everywhere else it is exactly
+zero: the data arm always beats the refresh timer. So the HOLE-RESIDENCY branch
+of §5(ii) does not fire, and the receiver-side successor it would have named is
+not the one the data licenses.
+
+### 5. THE INSTRUMENT'S OWN DISCLOSED DEFECT IS MEASURED EMPTY
+
+The `[FCAUSE]` commit documented that `[RACK] fired` undercounts, because
+`record_fire` sits inside `if let Some(mp_flight)` while the emission does not,
+and printed `unattr = n − fired` rather than repairing it. **Measured:
+`unattr = 0` at 30 of 30 rows — `fired == n` exactly, everywhere.** The
+undercount is real in the code and empty in the measurement on these cells, so
+every `fa=` denominator the sweep scored was a true fire count. This is a
+BOUND, obtained because the discrepancy was printed instead of argued away.
+
+Likewise `other = 0` at 30/30: **every gap batch reaching the fire site carried
+a cause tag**, so no fire in this pass is attributed by inference, and W4's
+independent witness (`[DIAG] retx=`, bumped by different code at the same
+emission) never once exceeded `n`.
+
+### 6. THE CONSTRAINT — GOODPUT
+
+Per §8, the bands apply to the `OFF` (shipped) arm only. **`OFF` is in band at
+15 of 15 rows, all five cells.** The pass did not perturb the machine it
+measured.
+
+On `Q009` (`band_applies = 0`, a RESULT): `c7` reads 124.4 Mbit/s against a
+[140, 180] band at 3/3 rows, and `c1` 162.5 against 199.2 on the paired `OFF`
+arm. Both are consistent with the sweep's own measurement that arming the clock
+costs goodput, and neither is scored here.
+
+### 7. WHAT THIS CHANGES, AND WHAT THE NEXT STEP OF THE SPINE IS
+
+Goal #101 closed with the model family refuted and one named successor. **That
+successor has now run and returned a positive result** — not another
+refutation, but the first affirmative fact the recovery-clock program has
+produced: *the fires are receiver-clocked, and the quantity that governs them
+is successor arrival.*
+
+The next step of the spine is **the re-derived clock's formula-first section**
+(ADR-0070: no law ships without its formula and its derivation IN THE PAPER,
+before the code). **This section deliberately does not write that formula.**
+What it hands the next step is the thing a formula-first derivation needs and
+did not have:
+
+- **the quantity to position on** — `P(successor arrival by t | hole
+  outstanding)`, same-flow, receiver-observable;
+- **the site that owns it** — the receiver's gap-report path, not the sender's
+  tail sweep, which means the next instrument is a receiver-side one and the
+  banked `[RFA]`/`[QCLK]` receiver gauges are where it goes;
+- **the reason the previous derivation failed** — it positioned a waiting time
+  on a distribution that governs 0.59 % of the events it was supposed to
+  control.
+
+Before any such law is derived, one reading is owed and is named here so it is
+not skipped: **the successor-arrival distribution has never been measured on
+this engine.** §16.69's measurand was wrong; this pass names its replacement but
+does not characterize it. A derivation written against an uncharacterized
+distribution would repeat the exact defect just corrected.
+
+**Nothing here flips a default. The clamp stays: convicted on `fa`, undefeated
+on the wire, and now — for the first time — EXPLAINED. It was never the thing
+firing the repairs.**

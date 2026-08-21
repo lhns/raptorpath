@@ -1,0 +1,86 @@
+==========================================================================
+1  LIVENESS + ABORT/VOID
+==========================================================================
+rows=30  live=30  void=0
+  no void rows -- every invocation produced a classified cause mix
+  W6 Q009 sender win_n=1112 at the law: 15/15 rows
+  W6 OFF sender form=cantelli (the SHIPPED clamp): 15/15 rows
+
+==========================================================================
+2  READING (i) -- THE CAUSE DISTRIBUTION, per cell per arm
+==========================================================================
+ cell   arm   n     fires    timer  gap_data  gap_ref  timer_f   gap_f  unattr
+   c1   OFF   3      3427       65      3362        0   0.0190  0.9810       0
+   c1  Q009   3      2379      331      2048        0   0.1391  0.8609       0
+  sc2   OFF   3      9726      102      9624        0   0.0105  0.9895       0
+  sc2  Q009   3     10414      106     10308        0   0.0102  0.9898       0
+   c7   OFF   3     15050        8     15042        0   0.0005  0.9995       0
+   c7  Q009   3     17414        5     17409        0   0.0003  0.9997       0
+   c8   OFF   3      2791        3      2762       26   0.0011  0.9989       0
+   c8  Q009   3      2717        3      2700       14   0.0011  0.9989       0
+  c8L   OFF   3     17862       11     17730      121   0.0006  0.9994       0
+  c8L  Q009   3     25817        2     25523      292   0.0001  0.9999       0
+
+==========================================================================
+3  READING (ii) -- DOES ARMING THE CLOCK MOVE THE MIX?
+==========================================================================
+If timer_frac is materially the same OFF and armed, the timer's
+irrelevance is not an artifact of the shipped clamp.
+ cell   timer_f OFF   timer_f Q009     delta
+   c1        0.0190         0.1391   +0.1202
+  sc2        0.0105         0.0102   -0.0003
+   c7        0.0005         0.0003   -0.0002
+   c8        0.0011         0.0011   +0.0000
+  c8L        0.0006         0.0001   -0.0005
+  max |delta timer_frac| across cells = 0.1202
+
+==========================================================================
+4  THE MEASURAND VERDICT -- the pre-stated decision rule, applied
+==========================================================================
+Rule (pre-registered): timer_frac < 0.5 at a cell means the
+recovery fires at that cell are NOT timer-driven, so fa _|_ W is
+EXPLAINED and 16.69's measurand (the ack-arrival distribution) is
+refuted as the quantity to position a waiting time on. timer_frac >
+0.5 means the timer DOMINATES and the sweep's F2 is UNEXPLAINED --
+which is itself the finding, and names a contradiction rather than a
+successor.
+
+  MINORITY  c1-OFF: timer_frac=0.0190 -- fires are NOT timer-driven
+  MINORITY  c1-Q009: timer_frac=0.1391 -- fires are NOT timer-driven
+  MINORITY  c7-OFF: timer_frac=0.0005 -- fires are NOT timer-driven
+  MINORITY  c7-Q009: timer_frac=0.0003 -- fires are NOT timer-driven
+  MINORITY  c8-OFF: timer_frac=0.0011 -- fires are NOT timer-driven
+  MINORITY  c8-Q009: timer_frac=0.0011 -- fires are NOT timer-driven
+  MINORITY  c8L-OFF: timer_frac=0.0006 -- fires are NOT timer-driven
+  MINORITY  c8L-Q009: timer_frac=0.0001 -- fires are NOT timer-driven
+  MINORITY  sc2-OFF: timer_frac=0.0105 -- fires are NOT timer-driven
+  MINORITY  sc2-Q009: timer_frac=0.0102 -- fires are NOT timer-driven
+
+POOLED: n=107597 timer=636 (0.0059) gap_data=106508 (0.9899) gap_refresh=453 (0.0042)
+
+VERDICT: the recovery fires are NOT timer-driven. fa _|_ W is
+explained, and 16.69's measurand is refuted with a count.
+
+THE SUCCESSOR MEASURAND, read off the majority cause (pre-stated):
+  MAJORITY = gap_data -- fires driven by the receiver's DATA-arm
+  SACK report (the dupack analog). A gap report is emitted when a
+  HIGHER seq arrives while a hole is outstanding, so the waiting
+  time must be positioned on the SAME-FLOW SUCCESSOR-ARRIVAL
+  distribution: P(the next in-flight symbol for this flow arrives
+  by t | a hole is outstanding). NOT the ack-arrival distribution
+  -- the sender's clock never gets to decide these fires at all;
+  the receiver's gap-report cadence does.
+
+==========================================================================
+5  THE CONSTRAINT -- goodput bands (OFF arm only; Q009 is a RESULT)
+==========================================================================
+   c1   OFF  median=   199.2 Mbit/s  band=[147,294]  BAND  out_of_band=0/3
+   c1  Q009  median=   162.5 Mbit/s  band=[147,294]  result  out_of_band=0/3
+  sc2   OFF  median=    86.7 Mbit/s  band=[78,92]  BAND  out_of_band=0/3
+  sc2  Q009  median=    87.1 Mbit/s  band=[78,92]  result  out_of_band=0/3
+   c7   OFF  median=   161.2 Mbit/s  band=[140,180]  BAND  out_of_band=0/3
+   c7  Q009  median=   124.4 Mbit/s  band=[140,180]  result  out_of_band=3/3
+   c8   OFF  median=    83.6 Mbit/s  band=[50,100]  BAND  out_of_band=0/3
+   c8  Q009  median=    97.2 Mbit/s  band=[50,100]  result  out_of_band=0/3
+  c8L   OFF  median=    88.9 Mbit/s  band=[45,95]  BAND  out_of_band=0/3
+  c8L  Q009  median=    79.5 Mbit/s  band=[45,95]  result  out_of_band=0/3
