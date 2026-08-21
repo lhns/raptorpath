@@ -811,6 +811,34 @@ pub struct RuntimeGates {
     /// purpose: it must be runnable on an arm that is not paying for the
     /// 250 ms `[DIAG]` report.
     pub ackdiag: bool,
+    /// `RWM_RTT_DUMP` (default OFF): the RAW RTT SAMPLE DUMP — the instrument
+    /// that makes the estimator battery's clause `B` EXACT.
+    ///
+    /// The scored battery (goal-gate, "THE SIGMA ESTIMATOR — THE SCORED
+    /// RESULT" §7) rejected three of four candidates on `B` and then recorded
+    /// that `B`'s own reference was the part of the bar most in need of
+    /// scrutiny: a uniform 30–90× gap across ALL FOUR gauges is *"not four
+    /// independent biases; it is one property of the COMPARISON"* — a 20 Hz
+    /// ICMP probe riding the whole shaped path against a kHz sender's estimate
+    /// of its own ack path. `B` was written REJECT-only for that reason and
+    /// was UNSCOREABLE for `msd_us` entirely.
+    ///
+    /// This gauge emits the sender's raw RTT sample stream, so each candidate
+    /// is scored against **the same functional computed offline over the
+    /// identical samples**. The reference becomes exact and like-for-like by
+    /// construction, and `B` can ACQUIT rather than only convict.
+    ///
+    /// **It ships OFF and its pass is SEPARATE from the scored battery on
+    /// purpose**: at a kHz leg it writes megabytes of stderr, which is a
+    /// sender-side cost, and sender-side dispersion is exactly what clause `S`
+    /// measures. Running it on the scored invocations would perturb the
+    /// measurement it exists to explain.
+    ///
+    /// Observation only: the gauge owns all its state and no engine decision
+    /// can reach it. Zero cost off — the process-global is a
+    /// `OnceLock<Option<…>>` that resolves to `None`, so the feed site is a
+    /// null check.
+    pub rtt_dump: bool,
     /// `RWM_WALLDIAG` (default OFF): the DEAD-WALL ONSET/DURATION instrument
     /// — the statistic-stability prerequisite recorded at the close of the
     /// mode-hunt work (#93) and made step 2 of ADR-0070's validation path.
@@ -987,6 +1015,7 @@ impl RuntimeGates {
                 .clamp(crate::net::RACK_REO_WND_MULT_INIT, crate::net::RACK_REO_WND_MULT_MAX),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
+            rtt_dump: env_flag("RWM_RTT_DUMP", false),
             walldiag: env_flag("RWM_WALLDIAG", false),
             cpuprof: env_flag("RWM_CPUPROF", false),
             rdiag: env_flag("RWM_RDIAG", false),
@@ -1049,6 +1078,7 @@ impl RuntimeGates {
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_ALPHA_OVERRIDE={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
+             RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
@@ -1096,6 +1126,12 @@ impl RuntimeGates {
             // resolves back to the default and this prints 2000000, so "my arm
             // did not take" is visible rather than inferred.
             b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
+            // The raw-sample dump's CAP is echoed as its RESOLVED value, for
+            // the reason `RWM_ACKDIAG_WINDOW_US` two lines above is: a leg
+            // whose dump was truncated at 400 000 samples and one that was not
+            // are different measurements of clause `B`, and the difference has
+            // to be readable off the run's own output rather than inferred.
+            b(self.rtt_dump), crate::net::rttdump::dump_max(),
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
@@ -1579,6 +1615,26 @@ mod tests {
         assert!(
             g.echo_line().contains("RWM_ACKDIAG=0"),
             "the default echo must NAME the ack-cadence gauge with its 0 value: {}",
+            g.echo_line()
+        );
+        // The raw RTT sample dump (clause `B`'s exact reference, 2026-08-21)
+        // is the same class and ships the same way — and it matters more here
+        // than for its siblings, because ON it writes megabytes of stderr per
+        // path and takes a lock on every RTT sample.
+        assert!(
+            !g.rtt_dump,
+            "RWM_RTT_DUMP ships default OFF (raw-sample dump: megabytes of \
+             stderr and a per-sample lock)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_RTT_DUMP=0"),
+            "the default echo must NAME the raw-sample dump with its 0 value: {}",
+            g.echo_line()
+        );
+        assert!(
+            g.echo_line().contains("RWM_RTT_DUMP_MAX=400000"),
+            "the default echo must carry the dump cap's RESOLVED value, so a \
+             truncated leg's clause B is readable off its own run: {}",
             g.echo_line()
         );
         // The dead-wall onset/duration instrument (ADR-0070 validation path

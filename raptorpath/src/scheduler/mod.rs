@@ -3118,6 +3118,16 @@ impl PathState {
     /// Feed an RTT measurement into Copa state.
     /// Call this when processing ACKs/reports that include RTT.
     pub fn record_rtt_sample(&mut self, rtt: Duration) {
+        // THE RAW SAMPLE DUMP (`RWM_RTT_DUMP`, default OFF) — fed HERE, at the
+        // single delegate every ack path funnels through, so the dumped series
+        // is EXACTLY the series the five dispersion gauges consume. Clause `B`
+        // compares an estimator against its own input; "its own input" has to
+        // be literally true, or the comparison is the incommensurable one the
+        // scored battery convicted (a 20 Hz ICMP probe against a kHz sender).
+        // Null check with the gate off; no engine decision reads it.
+        if let Some(d) = crate::net::rttdump::gauge() {
+            d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
         self.copa.record_rtt(rtt);
     }
 
