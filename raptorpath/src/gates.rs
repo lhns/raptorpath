@@ -874,6 +874,32 @@ pub struct RuntimeGates {
     /// `OnceLock<Option<…>>` that resolves to `None`, so the feed site is a
     /// null check.
     pub rtt_dump: bool,
+    /// `RWM_SUCC_DUMP` (default OFF): the RAW SUCCESSOR-ARRIVAL SAMPLE DUMP,
+    /// beside the always-on `[SUCC]` quantile line.
+    ///
+    /// The fire-cause pass named the successor measurand —
+    /// `P(the next in-flight symbol arrives by t | a hole is outstanding)` —
+    /// and recorded that it *"has never been measured on this engine"*, and
+    /// that *"a derivation written against an uncharacterized distribution
+    /// would repeat the exact defect just corrected."* `[SUCC]` characterizes
+    /// it. Its quantile line is emitted on EVERY arm, ungated by this knob, so
+    /// no pass depends on the dump being on.
+    ///
+    /// This gate adds the RAW `(outcome, µs)` records, so the derivation that
+    /// follows can compute any functional over the exact samples rather than
+    /// over the gauge's log buckets — the `[RTTDUMP]` lesson (a clause scored
+    /// against a summary statistic could neither acquit nor be re-derived),
+    /// applied BEFORE the battery rather than after it.
+    ///
+    /// It ships OFF for `[RTTDUMP]`'s reason: at a lossy cell it writes
+    /// megabytes of stderr at the RECEIVER, and receiver-side cost is
+    /// goodput-visible. The quantile line costs a fixed ~12 kB of buckets and
+    /// is what the scored pass reads.
+    ///
+    /// Observation only: the gauge holds no engine handle and nothing in the
+    /// engine branches on any value it computes
+    /// (`net::succ::tests::succ_is_observation_only`).
+    pub succ_dump: bool,
     /// `RWM_WALLDIAG` (default OFF): the DEAD-WALL ONSET/DURATION instrument
     /// — the statistic-stability prerequisite recorded at the close of the
     /// mode-hunt work (#93) and made step 2 of ADR-0070's validation path.
@@ -1058,6 +1084,7 @@ impl RuntimeGates {
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
+            succ_dump: env_flag("RWM_SUCC_DUMP", false),
             walldiag: env_flag("RWM_WALLDIAG", false),
             cpuprof: env_flag("RWM_CPUPROF", false),
             rdiag: env_flag("RWM_RDIAG", false),
@@ -1121,6 +1148,7 @@ impl RuntimeGates {
              RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
+             RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
@@ -1180,6 +1208,12 @@ impl RuntimeGates {
             // are different measurements of clause `B`, and the difference has
             // to be readable off the run's own output rather than inferred.
             b(self.rtt_dump), crate::net::rttdump::dump_max(),
+            // The successor dump's CAP, echoed as its RESOLVED value for the
+            // reason `RWM_RTT_DUMP_MAX` one line above is: a receiver whose
+            // raw record stream was truncated and one that was not are
+            // different inputs to the derivation that reads them, and the
+            // difference has to be readable off the run's own output.
+            b(self.succ_dump), crate::net::succ::dump_max(),
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
@@ -1714,6 +1748,28 @@ mod tests {
             g.echo_line().contains("RWM_RTT_DUMP_MAX=400000"),
             "the default echo must carry the dump cap's RESOLVED value, so a \
              truncated leg's clause B is readable off its own run: {}",
+            g.echo_line()
+        );
+        // The successor-arrival RAW dump (2026-08-21) is the same class and
+        // ships the same way — at the RECEIVER, where the cost is directly
+        // goodput-visible. Its QUANTILE line is ungated and always emitted;
+        // only the raw record stream is behind this flag, which is what lets a
+        // scored pass read the distribution without paying for the dump.
+        assert!(
+            !g.succ_dump,
+            "RWM_SUCC_DUMP ships default OFF (raw per-hole records: megabytes \
+             of receiver-side stderr on a lossy cell)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_SUCC_DUMP=0"),
+            "the default echo must NAME the successor dump with its 0 value: {}",
+            g.echo_line()
+        );
+        assert!(
+            g.echo_line().contains("RWM_SUCC_DUMP_MAX=200000"),
+            "the default echo must carry the successor dump cap's RESOLVED \
+             value, so a truncated record stream is readable off its own run \
+             rather than inferred by whoever derives against it: {}",
             g.echo_line()
         );
         // The dead-wall onset/duration instrument (ADR-0070 validation path

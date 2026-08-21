@@ -248,6 +248,21 @@ pub(crate) async fn run_receiver(
     recv_rack_echo.set_recv_generation(recv_window_generation);
     // `[RFA]` cadence — see the readout site. Cumulative, 1 s, last line wins.
     let mut rfa_report_at = Instant::now();
+    // ── `[SUCC]`: THE SAME-FLOW SUCCESSOR-ARRIVAL DISTRIBUTION ────────────
+    // The measurand the fire-cause pass NAMED (98.99 % of recovery fires are
+    // `gap_data` — a higher seq arriving while a hole is outstanding) and
+    // explicitly did not characterize. Per hole: detection → resolution, in
+    // three disjoint outcomes. See `net/succ.rs` for the measurand, the origin
+    // event, and why it is DETECTION rather than hole creation.
+    //
+    // ALWAYS FED, on every arm, for the `[RFA]` reason: the datum must exist
+    // wherever `gap_data` fires do. Only the RAW dump is gated.
+    let mut recv_succ = crate::net::succ::SuccGauge::new(
+        recv_window_generation,
+        recv_gates.succ_dump,
+        crate::net::succ::dump_max(),
+    );
+    let mut succ_report_at = Instant::now();
     let mut recv_shed_diag_at = Instant::now();
     // RWM Phase C unordered delivery: next in-order seq NOT yet received
     // (the frontier). Walks `received_seqs` to drive the cumulative
@@ -1063,6 +1078,11 @@ pub(crate) async fn run_receiver(
                             );
                         }
                     }
+                    // `[SUCC]`: the hold-expiry give-up is the OTHER site the
+                    // frontier can jump a hole at, and it is swept here rather
+                    // than at the next arrival so an abandoned hole's age is
+                    // stamped when it was abandoned. Read-only.
+                    recv_succ.abandon_below(reorder.next_deliver_seq(), Instant::now());
                     for (dseq, ddata) in expired {
                         debug!(seq = dseq, "window hold expired — force-delivering");
                         for pkt_data in extract_window_packets(&ddata, window_packed) {
@@ -1325,6 +1345,29 @@ pub(crate) async fn run_receiver(
                             Some(c) => recv_rack_echo.record_recv_source(c),
                             None => recv_rack_echo.record_recv_repair_arrival(),
                         }
+                        // ── `[SUCC]`, IN TWO PASSES, AND THE ORDER IS THE
+                        // SEMANTICS. One `add_symbol` can emit SEVERAL seqs in
+                        // arbitrary order; if the batch's high-water mark were
+                        // raised while some of its own seqs were still
+                        // unresolved, the gauge would OPEN a hole for a seq
+                        // this very batch is closing and then close it at 0 µs
+                        // — a manufactured sample at the bottom of the
+                        // histogram, exactly where a waiting time is read.
+                        // So: RESOLVE the whole batch first, THEN advance the
+                        // mark. Read-only; see `net/succ.rs`.
+                        {
+                            let succ_now = Instant::now();
+                            for (seq, _) in &recovered {
+                                recv_succ.resolve(
+                                    *seq,
+                                    symbol.is_repair || *seq != symbol.block_id,
+                                    succ_now,
+                                );
+                            }
+                            for (seq, _) in &recovered {
+                                recv_succ.observe_high(*seq, succ_now);
+                            }
+                        }
                         for (seq, sym_data) in recovered {
                             // A seq that came out of the decoder rather than
                             // off its OWN source arrival was reconstructed
@@ -1445,6 +1488,22 @@ pub(crate) async fn run_receiver(
                                 if dseq > highest_delivered_seq {
                                     highest_delivered_seq = dseq;
                                 }
+                            }
+
+                            // `[SUCC]` ABANDONMENT, read off the frontier
+                            // itself rather than off any give-up decision: a
+                            // hole the in-order frontier has moved PAST was
+                            // given up, whatever moved it. Under the reliable
+                            // window this is structurally unreachable
+                            // (`ReorderBuffer::new_reliable` never delivers
+                            // past a hole) — so `aban_n = 0` there is a
+                            // CONFIGURATION fact, and a nonzero reading is a
+                            // finding about the engine. Read-only.
+                            if let Some(ref reorder) = reorder_buf {
+                                recv_succ.abandon_below(
+                                    reorder.next_deliver_seq(),
+                                    Instant::now(),
+                                );
                             }
                         }
                     }
@@ -1673,6 +1732,28 @@ pub(crate) async fn run_receiver(
                     {
                         qclk_report_at = Instant::now();
                         eprintln!("{}", recv_qclk_echo.line());
+                    }
+
+                    // ── `[SUCC]` PERIODIC READOUT ─────────────────────────
+                    // Same SIGKILL reason, same 1 s cadence, same existing
+                    // gates, same last-line-wins convention as `[RFA]` and
+                    // `[QCLK]` above. `is_receiver_site()` keeps a site that
+                    // saw no arrival silent, so an absent line reads as an
+                    // unreached feed and never as an unset gate.
+                    //
+                    // The RAW dump rides its own gate and is flushed here so
+                    // no recorded sample is ever left in a partial batch — the
+                    // `[RTTDUMP]` tail-loss caveat, designed out rather than
+                    // disclosed.
+                    if (recv_gates.diag || fdiag_on)
+                        && recv_succ.is_receiver_site()
+                        && succ_report_at.elapsed() >= Duration::from_secs(1)
+                    {
+                        succ_report_at = Instant::now();
+                        for l in recv_succ.take_dump_lines(true) {
+                            eprintln!("{l}");
+                        }
+                        eprintln!("{}", recv_succ.line());
                     }
 
                     // Send SACK-extended WindowAck to sender.
