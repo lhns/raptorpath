@@ -42148,3 +42148,402 @@ run.
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, touches a clock, or scores any clause of any
 pre-registration.**
+
+---
+
+## THE τ-LAG ESTIMATOR — THE SCORED RESULT (2026-08-21, `feat/tlag-score` from main@`5d59f56`) — **THE RATE-INVARIANCE MECHANISM IS CONFIRMED AND THE ESTIMATOR STILL FAILS THE BAR.** `tlag` fixes all three sparse legs `msd` failed and breaks one dense leg `msd` passed; one of `P4`'s three falsifiers fires. **goal #101 item 2 RE-CLOSES `NEEDS-MORE`**, and the `CONTROL-DRIFT` gate this pass pre-registered against itself **also fired**, so the candidate column carries no verdict either way. 85 invocations (80 scored + 5 `B` pass), one binary, five cells, two seeds, 8 reps. **0 hard aborts, 0 VOID, `rc = 0` at 80/80, W1/W2/W4′/W5/W7/W-DUMP clean at 160/160 witness rows.** Scored against "THE SIGMA ESTIMATOR — THE ACCEPTANCE BAR" as amended, and against nothing else. **Nothing here flips a default, adds a gate, edits an engine crate, wires a consumer, or touches a clock.**
+
+### 1 — THE VERDICT FIRST
+
+| estimator | worst scoreable leg | `R_total` | vs bar 6.0 | **verdict** |
+|---|---|---|---|---|
+| `sig_us` (shipped, control) | `c7` cli `p0` | **3011.5** | 502× over | **REJECT-`S`** |
+| `rvar_us` (RFC 6298, control) | `c7` cli `p0` | **3518.5** | 586× over | **REJECT-`S`** |
+| `qsp_us` (control) | `c7` cli `p0` | **60.7** | 10.1× over | **REJECT-`S`** |
+| `msd_us` (control) | `c8L` cli `p1` | **12.04** | 2.0× over | **REJECT-`S`** |
+| **`tlag_us` (candidate)** | `c8L` cli `p0` | **14.35** | 2.4× over | **VERDICT WITHHELD — `CONTROL-DRIFT`** |
+
+**NO CANDIDATE IS ADMISSIBLE. Item 2 re-closes `NEEDS-MORE`, the bar is not
+softened, and no candidate is promoted on a partial clause.**
+
+**AND THE WITHHELD VERDICT IS NOT HIDING A PASS — SAY IT PLAINLY.** `tlag`
+reads `R_total = 14.352` at `c8L` cli `p0` and `6.614` at `c7` cli `p0`, both
+above 6.0. **Had the controls reproduced perfectly, `tlag` would still have
+been `REJECT-S`.** The `CONTROL-DRIFT` gate changes what may be *concluded*
+from the number; it does not change the number, and the number fails.
+
+### 2 — ABORT-CAUSE TABLE FIRST
+
+| marker | count | disposition |
+|---|---|---|
+| `ABORT` (no `[GATES]` either endpoint) | **0** | — |
+| `ABORT-GEN-PLATEAU` | **1** | `c7` s42 r4, 33.291 Mbit/s — **RETAINED, not void** (§3) |
+| `OUT-OF-BAND` (retained as RESULT) | 5 | `c7` r8 106.7, `c7` r3 138.8, `c8L` r8 41.4, `c8L` r1 36.3, `c1` r1 122.9 |
+| `TLAGB-DUMP-ON-FAIL` (`W8`) | **0** | the scored battery ran dump-OFF at 80/80 |
+| `SUBSTRATE-FAIL` / `INSTRUMENT-FAIL-*` / `W7-FAIL` / `TLAGB-PARSE-FAIL` | **0** | — |
+| `rc ≠ 0` | **0** of 80 | — |
+| **VOIDED INVOCATIONS** | **0** | — |
+
+**`W7` IS CLEAN AT 160/160 AND IT IS THE GATE THAT MATTERS.** All **five**
+gauge tokens carry their `/n` counts, plus the block's own `rtp…ms`, on every
+path entry of every `[DIAG]` block at both endpoints, counted twice by two
+independent readers. `W8` — this battery's new two-sided dump gate — is clean
+on both sides: dump OFF at every scored invocation, ON at every `B`-pass
+invocation.
+
+### 3 — THE WITNESS-FIRST PLATEAU RULE FIRED, AND IT MOVED A CONTROL BY 33×
+
+The amendment's §7 was written **before the VM was touched** and it repaired a
+rule this tree had already convicted. It fired exactly once:
+
+```text
+   RETAINED  c7 seed=42 rep=4  mbps=33.291
+             [W1 gen=0, W2 pfrac=0 — generation definitively OFF]
+```
+
+The reading sits inside the 26.8–34.1 Mbit/s generation plateau, and the
+witnesses say generation was off. Under the previous battery's rule it would
+have been a hard abort and a VOID. Under the amended rule it is an
+**OUT-OF-BAND RESULT, RETAINED** — and retaining is the honest direction for an
+estimator battery, because a heavy-loss, heavy-retransmit rep is a
+**high-dispersion** rep and that is exactly the rep a dispersion battery must
+not discard.
+
+**AND THE COST OF THAT ONE ROW IS THE LARGEST SINGLE NUMBER IN THIS PASS.** A
+sensitivity re-score with that one invocation removed — the previous battery's
+rule, run for disclosure and for nothing else:
+
+| gauge | committed data-path | **retained** (amended rule) | **voided** (old rule) |
+|---|---|---|---|
+| `sig` | 86.6 | **3011.5** (34.8×) | **91.0** (1.05×) |
+| `rvar` | 103.9 | **3518.5** (33.9×) | **109.9** (1.06×) |
+| `qsp` | 78.6 | 60.7 (0.77×) | 58.0 (0.74×) |
+| `msd` | 8.667 | 7.80 (0.90×) | 6.14 (0.71×) |
+
+**ONE INVOCATION OUT OF EIGHTY MOVES THE SHIPPED ESTIMATOR'S POOLED `R_total`
+BY 33×.** That is a property of a pooled quantile with a fat upper tail, and it
+is the sharpest available demonstration of *why* `sig_us` is unusable: a single
+bad rep does not perturb it, it **dominates** it. `qsp` and `msd` — rank
+statistics over a bounded window — move by 4 % and 21 % on the same row.
+
+**THE INTERACTION WAS NOT FORESEEN WHEN BOTH RULES WERE WRITTEN INTO ONE
+AMENDMENT, AND THAT IS RECORDED AS A SPECIFICATION DEFECT AGAINST THIS PASS.**
+§7 changed the scoring **domain** while §5 compared this pass's numbers against
+committed numbers taken on the **old** domain. The two clauses were written in
+the same commit and they are not compatible as written: a domain change makes a
+regression check against the prior domain partly a measurement of the change.
+**No number is revised on that account** — the pre-registered consequence is
+unconditional and is applied below — but any future amendment that moves a
+scoring domain must re-state the control baselines on the new domain in the
+same commit.
+
+### 4 — THE CONTROL REGRESSION CHECK: `CONTROL-DRIFT` FIRES, AND IT FIRES UNDER BOTH DOMAINS
+
+| gauge | committed worst | this worst | × | verdict |
+|---|---|---|---|---|
+| `sig` | 256.3 | 3011.5 | **11.75×** | **CONTROL-DRIFT** |
+| `rvar` | 351.3 | 3518.5 | **10.02×** | **CONTROL-DRIFT** |
+| `qsp` | 78.6 | 60.7 | 0.77× | reproduces |
+| `msd` | 34.6 | 12.04 | **0.35× (2.87× the other way)** | **CONTROL-DRIFT** |
+
+**THE PRE-REGISTERED CONSEQUENCE APPLIES AND IS NOT SOFTENED: no verdict is
+read from the `tlag_us` column. Its statistics stand as measurements of an
+unknown machine and as nothing else.**
+
+**AND THE GATE IS ROBUST TO §3's INTERACTION, WHICH IS THE ONLY REASON THIS
+SECTION CAN BE TRUSTED AT ALL.** On the old domain `sig` and `rvar` reproduce
+(1.05×, 1.06×) — their drift was the retained row. **But `msd` drifts on BOTH
+domains** (0.35× retained, 0.35× voided), so `CONTROL-DRIFT` fires either way
+and the withholding is not an artefact of the rule change.
+
+**`msd`'s DRIFT IS A REAL SESSION DIFFERENCE AND IT IS CONSISTENT WITH `msd`'s
+OWN KNOWN DEFECT.** Its worst committed leg was `c8L` cli `p1` at 34.6, taken
+at 581 samples/s; this session the same leg ran at **684 samples/s** and read
+**12.04**. A gauge whose estimand is a function of the sample rate reads
+differently when the sample rate moves — which is precisely the property
+§16.75.1 says makes it unfit, now visible as an inability to reproduce its own
+committed number across sessions.
+
+### 5 — CLAUSE `S` IN FULL, AND THE SPARSE/DENSE INVERSION THAT IS THIS PASS'S REAL FINDING
+
+Sender seat, ordered by sample rate. `R_total = p95/p05` over pooled readings,
+both seeds.
+
+| cell / leg | samp/s | `sig` | `rvar` | `qsp` | `msd` | **`tlag`** |
+|---|---|---|---|---|---|---|
+| `c1` `p0` | 20 158 | 71.1 | 75.2 | 12.9 | **4.00** ✓ | **1.95** ✓✓ |
+| `c7` `p0` | 15 916 | **3011.5** | **3518.5** | 60.7 | 7.80 | **6.61** |
+| `c8L` `p0` | 9 218 | 78.4 | 79.5 | 58.0 | **4.00** ✓ | **14.35** |
+| `sc2` `p0` | 9 389 | 12.6 | 16.8 | 7.04 | **3.50** ✓✓ | **2.90** ✓✓ |
+| `c8` `p0` | 8 811 | 61.6 | 85.6 | 15.1 | **5.50** ✓ | **5.78** ✓ |
+| `c7` `p1` | 8 693 | 313.5 | 368.0 | 18.2 | 10.0 | **2.64** ✓✓ |
+| **`c8` `p1`** | **2 035** | 109.3 | 93.7 | 11.6 | 8.81 | **1.75** ✓✓ |
+| **`c8L` `p1`** | **684** | 155.5 | 167.7 | 8.38 | 12.04 | **2.19** ✓✓ |
+
+(✓ clears 6.0; ✓✓ clears 3.5.)
+
+**THE DESIGN DID EXACTLY WHAT IT WAS BUILT TO DO, AND THEN FAILED SOMEWHERE
+ELSE.** `msd` failed at three sender legs — `c7 p1` (10.0), `c8 p1` (8.81),
+`c8L p1` (12.04) — **and those are the three thinnest legs in the battery.**
+`tlag` clears all three, and clears them with room: **2.64, 1.75, 2.19, all
+inside the PREFER tier.** The sparse-leg failure mode §16.75 was written to
+remove is removed.
+
+**AND IT BROKE ONE DENSE LEG `msd` PASSED.** At `c8L` cli `p0` — 9 218
+samples/s, the *data path* — `msd` reads 4.00 and `tlag` reads **14.35**. At
+`c7` cli `p0`, `msd` 7.80 and `tlag` **6.61**: both fail, `tlag` by less.
+
+```text
+   msd   fails 3 of 8 sender legs, all SPARSE
+   tlag  fails 2 of 8 sender legs, both DENSE
+```
+
+**Net the successor is better — 2 failures against 3, and its worst leg is
+14.35 against `msd`'s worst-leg 12.04 on a different leg — but "better" is not
+the bar, and 6.0 is.**
+
+**`c8L` `p0` IS THE ONE TO EXPLAIN AND THIS SECTION DOES NOT PRETEND TO.** It
+is the only leg where `tlag` is worse than `msd` by more than a factor of two
+(3.6×), it is a dense leg where the τ band is comfortably populated (254
+pairs), and its τ is 11 ms against `c8L p1`'s 38 ms. The honest statement is
+that the fixed-time lag traded a sparse-leg failure for a dense-leg one at one
+cell, and **why is not established by this battery.** A named candidate
+mechanism, not tested here: at a dense leg with a deep queue the τ = RTprop
+band straddles the queue's own oscillation period, so `V(τ)` is read on the
+steep part of the structure function where it is most variable — which
+§16.75.2's "octave residual" (F4) allows for but does not bound.
+
+### 6 — THE RATE-DEPENDENCE PREDICTION: THE MECHANISM IS CONFIRMED
+
+`P4`'s second half asked for `|rho| < 0.548` between `R_total` and sample rate
+over the sender legs.
+
+```text
+   msd   (committed, previous battery)   rho = −0.548
+   msd   (this battery, 8 sender legs)   rho = −0.755
+   tlag  (this battery, 8 sender legs)   rho = +0.333        |rho| < 0.548  ✓
+```
+
+**THE RATE DEPENDENCE IS BROKEN, MEASURED, AND IT IS THE ONE THING THIS PASS
+ESTABLISHES POSITIVELY.** `msd`'s dependence did not weaken between sessions —
+it **strengthened**, to −0.755, on a battery run at the same cells. `tlag`'s is
++0.333, inside the pre-registered bound and of the **opposite sign**.
+
+**THE SIGN FLIP IS A FINDING, EXACTLY AS §16.75.6 F4 PRE-COMMITTED IT WOULD
+BE.** F4 said a residual of the opposite sign is *"a finding about the
+construction, not a small number"*, and here it is: `tlag` now degrades mildly
+toward the DENSE end rather than the sparse end, which is the same story §5's
+inversion tells from the other side. **The construction moved the failure, and
+the direction of the move is the direction F4 named as informative.**
+
+### 7 — CLAUSE `C`: PASSES FOR EVERY GAUGE AT EVERY CELL
+
+| cell | `N_cell` | `C2` bar | `sig`/`rvar` (16) | `qsp` (256) | `msd` (255) | `tlag` (32 pairs) |
+|---|---|---|---|---|---|---|
+| `c1` | 338 440 | 16 922 | ok | ok | ok | ok |
+| `c7` | 159 476 | 7 974 | ok | ok | ok | ok |
+| **`c8`** | **20 942** | **1 047** | ok | ok | ok | ok |
+| `c8L` | 174 448 | 8 722 | ok | ok | ok | ok |
+| `sc2` | 86 124 | 4 306 | ok | ok | ok | ok |
+
+**`C` IS NOT THE BLOCKER AND NEVER WAS, FOR ANY OF THE FIVE.**
+
+**AND `tlag` DID NOT PASS BY NOT MEASURING — THE `REFUTED-BY-ABSENCE` CLAUSE
+DOES NOT FIRE.** The amendment pre-committed that a `tlag` verdict resting on
+fewer scoreable **sender** legs than `msd`'s eight would be
+`REFUTED-BY-ABSENCE`. `tlag` is scoreable at **8 sender legs, exactly as many
+as `msd`.** It is also scoreable at `c7` srv `p0` (93 pairs) where `qsp` and
+`msd` are both `UNSCOREABLE-NO-SAMPLE` — **the τ-band gauge reaches legs the
+fixed-window gauges cannot**, because 32 pairs is a cheaper quorum than a
+256-sample window. `tlag` loses one receiver leg (`c1` srv, 14 post-warm-up
+readings against a 20-reading floor) and gains one; net 9 scoreable legs
+against `msd`'s 10, and **equal on the seat where the clock lives.**
+
+### 8 — CLAUSE `B`, NOW EXACT: THE SHIPPED ESTIMATOR SUPPLIES 0.3–5 % OF ITS OWN FUNCTIONAL
+
+`β = (online reading) / (that gauge's own functional, offline, over the
+IDENTICAL samples)`, from the raw `[RTTDUMP]` stream. Sender legs, seed 42:
+
+| leg | `β_sig` | `β_rvar` | `β_qsp` | `β_msd` | **`β_tlag`** |
+|---|---|---|---|---|---|
+| `c1` `p0` | 0.021 ✗ | 0.030 ✗ | 0.353 ✗ | 1.100 ✓ | **0.995** ✓ |
+| `c7` `p0` | 0.035 ✗ | 0.037 ✗ | 0.143 ✗ | 1.133 ✓ | **0.954** ✓ |
+| `c7` `p1` | 0.023 ✗ | 0.025 ✗ | 0.137 ✗ | 1.071 ✓ | **0.906** ✓ |
+| `c8` `p0` | 0.039 ✗ | 0.043 ✗ | 0.391 ✗ | 1.143 ✓ | **0.982** ✓ |
+| `c8L` `p0` | **0.003** ✗ | 0.006 ✗ | 0.079 ✗ | 1.083 ✓ | 1.495 ⊙ |
+| `c8L` `p1` | 0.798 ✓ | 0.803 ✓ | 0.038 ✗ | 1.574 ⊙ | **1.018** ✓ |
+| `sc2` `p0` | 0.054 ✗ | 0.092 ✗ | 0.507 ⊙ | 1.000 ✓ | **0.926** ✓ |
+
+(✓ ACQUIT, inside `[0.68, 1.47]`; ⊙ ADMISSIBLE-BIAS-CARRIED; ✗ REJECT.)
+
+**THE REBUILT CLAUSE `B` ACQUITS, WHICH THE OLD ONE STRUCTURALLY COULD NOT.**
+`tlag` is acquitted at **6 of 7** scoreable sender legs with a median `β` of
+**0.982**, and `msd` at 6 of 7 with a median of **1.100**. The two
+window/band-class gauges compute what they claim to compute, over their own
+input, to within a few per cent. **`msd`'s `CONFOUNDED` marking is withdrawn**
+— it was confounded against a 20 Hz probe across a 500× rate gap, and there is
+no gap against its own stream.
+
+**AND THE SHIPPED `sig_us` READS A MEDIAN `β` OF 0.039 — THREE TO FIVE PER CENT
+OF ITS OWN DEFINING FUNCTIONAL, ON ITS OWN SAMPLES, WITH NO SECOND INSTRUMENT
+ANYWHERE IN THE COMPARISON.** The previous battery saw a 30–90× gap and could
+not tell an estimator defect from a reference mismatch. **There is no reference
+mismatch here by construction, and the gap is still 20–300×.**
+
+**BUT THE READING OF THAT NUMBER MUST BE PRECISE, AND HALF OF IT IS
+DEFINITIONAL.** `sig_us` is a **tracking** estimator: it measures dispersion
+about a moving `srtt`, i.e. a **conditional** spread. The population `sd` is the
+**marginal** spread of the leg's whole RTT distribution, which also contains the
+level process. **A tracking estimator is expected to read below a marginal
+`sd`, and part of the 20–300× is that expectation rather than a defect.**
+
+**WHICH IS WHY THIS IS THE PASS'S MOST CONSEQUENTIAL MEASUREMENT RATHER THAN A
+BUG REPORT.** §16.74.8 already recorded, as prose, *"§16.69's category error —
+the Cantelli bound is taken over the ack-arrival distribution, which is not the
+quantity the clock fires on."* §16.69's construction is
+`W(α) = F⁻¹_X(1−α)`, a quantile of the ack-arrival **distribution**, bounded by
+Cantelli using that distribution's **marginal** `σ`. **The clock formula wants a
+marginal dispersion and the shipped estimator supplies a conditional one, and
+this battery is the first to put a number on the discrepancy: 20–300×, exact,
+like-for-like, at seven of eight sender legs.** That is a statement about
+`W = mean + k(α)·σ̂` being fed the wrong quantity — not a statement that
+`sig_us` computes its own EWMA incorrectly.
+
+**AND THE NARROWING IS RECORDED, AS PRE-REGISTERED.** `B` establishes that a
+gauge computes **its** functional over **its** input. It does **not** establish
+that the input is the true delivered latency. **The instrument the previous
+battery named as missing — a delivered-latency probe at the sender's own sample
+rate — is still missing, and this pass did not build it.** No `B`-ACQUIT above
+stands in for it.
+
+**THE CROSS-FUNCTIONAL LEVEL TABLE (disclosure, scored nowhere)** settles the
+question the previous battery left open. On one stream at `c1` cli `p0`:
+`sd` 4418 µs, `mad` 2905, `qsp` 5121, `msd` **10**. **`msd`'s 90–100× level gap
+against `sig_us` is the two functionals genuinely differing** — a lag-1
+difference of a smooth series is small because the series is smooth, not
+because the gauge is broken. `msd/sd` runs 0.0001–0.07 across legs, tracking
+the sample rate exactly as §16.75.1 predicts.
+
+### 9 — WHAT SHOULD FEED THE CLOCK, IN PLAIN LANGUAGE
+
+**Still nothing, and the tree still does not have an admissible estimator.**
+That is the result, for the second battery running.
+
+But this pass narrowed the problem more than the last one did, and it did it by
+confirming a mechanism rather than by ranking candidates. **The claim that a
+dispersion estimator must name its lag in physical time is now measured, not
+argued**: a fixed-time lag removed all three sparse-leg failures, at legs
+running 684–8 693 samples/s, and it broke the rank correlation with sample rate
+(−0.755 → +0.333). **The successor's premise was right.** Its execution is
+2.4× outside a bar written to be generous, at one dense leg, for a reason this
+battery names as unexplained and does not guess at.
+
+**Three things are now specific enough to act on.**
+
+First, **`c8L` cli `p0` is one leg and it is the whole gap.** Remove it and
+`tlag`'s worst sender leg is 6.614 — still a fail, but a 1.10× fail rather than
+a 2.39× one. A pass that explains that one leg is the cheapest remaining move,
+and §5 names a candidate mechanism (the τ band sitting on the steep part of
+`V(τ)` at a deep-queued dense leg) that is testable by sweeping `c` and `m`,
+both of which are declared resource bounds rather than law.
+
+Second, **the clock is being fed the wrong KIND of quantity, and that is now a
+number.** §16.69 wants a marginal dispersion; `sig_us` supplies a conditional
+one at 3–5 % of it. **No amount of estimator stability fixes a category
+mismatch**, and `R_total` cannot see it — a perfectly stable conditional
+estimator would pass `S` and still mis-price the clock. Clause `B` as rebuilt is
+the first instrument in this tree that can see it at all.
+
+Third, **the pooled-quantile fragility measured in §3 is itself a finding about
+the bar.** One invocation in eighty moved `sig`'s `R_total` by 33×. `R_total` is
+`p95/p05` over pooled readings and it inherits the fat upper tail of whatever it
+pools. That is not an argument to change the statistic — it was chosen for
+rep-count stability and it delivered that — but any future pass must state its
+retention rule **before** it states its controls, and this one did not.
+
+**What is genuinely settled, and it is not nothing:** the rate-invariance
+mechanism works; the τ-band gauge reaches legs the fixed-window gauges cannot;
+clause `B` is exact and can acquit; and the shipped `sig_us` is **502× outside
+the bar at its worst leg and supplies 3–5 % of the marginal dispersion its own
+clock formula requires.** `rvar_us` — the RFC 6298 construction — is worse on
+both counts. **The clock family `W = mean + k(α)·σ̂` cannot be instantiated on
+any estimator this tree owns.**
+
+### 10 — ITEM 2's RE-CLOSURE, AND WHAT ITEM 3 WOULD NEED
+
+> **goal #101 item 2 — RE-CLOSED, `NEEDS-MORE`.** The named successor was
+> written formula-first in the paper (§16.75), built as a read-only gauge,
+> scored on the unchanged bar over 80 VM invocations at five cells and two
+> seeds, with clause `B` rebuilt to be exact. **`tlag_us` reaches `R_total` ≤
+> 6.0 at six of eight sender legs, including all three sparse legs `msd_us`
+> failed, and fails at two dense legs — worst 14.352 at `c8L` cli `p0`.**
+> **ONE of `P4`'s three pre-registered falsifiers fired**: `R_total > 6.0` at a
+> scoreable leg. The other two did **not** — `tlag` did not clear the bar by
+> going `UNSCOREABLE` (8 scoreable sender legs, equal to `msd`'s), and the rate
+> correlation was broken as predicted (`rho = +0.333`, inside `|rho| < 0.548`).
+> **Separately and independently, `CONTROL-DRIFT` fired** (`sig` 11.75×, `rvar`
+> 10.02×, `msd` 0.35×), so the pre-registered consequence applies and no
+> verdict is read from the candidate column at all. Clause `C` passes for all
+> five gauges at all five cells. **Clause `B`, now exact, ACQUITS `tlag` at 6 of
+> 7 legs (median `β` 0.982) and REJECTS `sig_us` at 6 of 8 (median `β` 0.039).**
+> §16.74.5's precondition (E) remains unmet, on the plain-window seat, by every
+> estimator this tree has.
+
+**ITEM 3 — THE α-SWEEP RE-RUN — IS NOT LICENSED, AND THE ARGUMENT IS THE BAR'S
+OWN TEXT.** §16.74.6's `P1` reads *"an estimator satisfying (E)"*. No estimator
+satisfies (E): the best worst-leg reading in this battery is `msd`'s 12.04 and
+`tlag`'s 14.35, both above the k-ratio 18.24's own accept bar of 6.0 and neither
+carrying a readable verdict. **A sweep re-run on an estimator that fails (E)
+measures the estimator, not the dial** — which is precisely what goal #100
+already did and what this whole line of work exists to escape.
+
+**AND THE PLUMBING ITEM 3 WOULD NEED IS NAMED PRECISELY, SO IT IS NOT
+DISCOVERED LATE.** The recovery clock consumes the **shipped `sig_us`** and
+nothing else; all five gauges are read-only with no consumer, deliberately.
+Pointing the clock at a different gauge is therefore **an engine change**, and
+it must be built as an **experiment input, not a default flip**:
+
+```text
+   RWM_SIGMA_SOURCE = shipped | rvar | qsp | msd | tlag
+       default `shipped`  — byte-identical to today on every path
+       echoed TWO-SIDED in [GATES] as its RESOLVED value, like
+       RWM_ALPHA_OVERRIDE and RWM_ACKDIAG_WINDOW_US
+       ONE formula, ONE call site: the clock's σ̂ term reads
+       `sigma_source().unwrap_or(shipped)` — a selected INPUT, never a
+       selected code path, law, or constructor argument
+```
+
+**That is an input selector on an experiment axis and it is NOT a mode
+switch** — the same shape `RWM_ALPHA_OVERRIDE` already has, where α is a
+measured input the sweep varies and not a branch. It changes which measured
+series feeds one term; with the default it changes nothing. **It is not
+licensed by this pass and is not built here**, because there is no admissible
+estimator to point it at — building it now would be plumbing for an experiment
+whose own precondition is unmet.
+
+### 11 — WHAT THIS SECTION DOES NOT CLAIM
+
+* **NO DEFAULT MOVED.** `RWM_QUANTILE_CLOCKS` stays OFF and REFUTED-STANDING,
+  `RWM_RTT_DUMP` stays OFF, the shipped clamp stays convicted and unreplaced,
+  and no consumer is wired to any candidate.
+* **PLAIN-WINDOW SEAT ONLY.** §16.74.5 requirement 3 names the generation seat
+  as a second seat and this battery did not run it. No verdict here transports.
+* **NO ROUTE DECISION** between (b) and (d); no verdict on §16.74.6 `P1`; `S1`
+  not reopened.
+* **A `B`-ACQUIT IS NOT A LATENCY CLAIM.** It says a gauge computes its own
+  functional over its own input. The delivered-latency probe at the sender's
+  sample rate remains the named missing instrument.
+* **`tlag_us` CARRIES NO VERDICT FROM THIS BATTERY.** `CONTROL-DRIFT` fired and
+  the consequence was pre-registered. Its numbers are reported and are
+  measurements of an unknown machine.
+
+**Artifacts** (committed under `raptorpath/docs/l1-raw/`): `tlagb-s42.log`,
+`tlagb-s7.log`, `tlagb-witness-s{42,7}.jsonl`, `tlagb-bpass-s42.log`,
+`tlagb-bpass-parsed-s42.log`, `tlagb-report-FINAL.txt`,
+`tlagb-report-SENSITIVITY-noplateau.txt`. Binary
+`sha256 45a703fab33d13139b5e6ac104fc8abf0098758de6e8751d5a89083ab612d8c6`.
+Raw `[RTTDUMP]` captures (3.0 MB gzipped, 5 cells) retained in session scratch
+and not committed, per the provenance-parity precedent.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, or touches a clock.**

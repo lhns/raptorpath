@@ -1,0 +1,532 @@
+==============================================================================
+THE T-LAG ESTIMATOR BATTERY — SCORED AGAINST 'THE SIGMA ESTIMATOR — THE
+ACCEPTANCE BAR' AND AGAINST NOTHING ELSE. FIVE GAUGES: FOUR CONTROLS
+AND ONE CANDIDATE (`tlag`, paper §16.75).
+ledgers:  /home/vibe/tlagb/tlagb-s42.log, /home/vibe/tlagb/tlagb-s7.log
+B pass:   /tmp/bpass-parsed.log
+dumps:    /home/vibe/tlagb/dump
+bars: S accept R_total<=6.0, prefer <=3.5 (k-ratio 18.239) | B accept [0.68,1.47], reject outside [0.50,2.00] | C n_warm<=5% N
+warm-up (clause C1, applied by THIS parser): sig>=16 samples(EWMA) rvar>=16 samples(EWMA) qsp>=256 samples(window) msd>=255 differences(window) tlag>=32 pairs(tau-band)
+==============================================================================
+
+## 1 — ABORTS AND WITNESSES, BEFORE ANY STATISTIC
+
+  6 abort/fail marker(s):
+    ABORT-GEN-PLATEAU c7 rep=4 mbps=33.291 (26.8-34.1 = generation leaked in; row VOID)
+    OUT-OF-BAND c7 rep=8 mbps=106.693 band=[140,180] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c8L rep=8 mbps=41.407 band=[45,95] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c1 rep=1 mbps=122.882 band=[147,294] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c8L rep=1 mbps=36.275 band=[45,95] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c7 rep=3 mbps=138.8 band=[140,180] (RESULT, not an abort — cause to be named)
+
+  GOODPUT-PLATEAU READINGS, RETAINED BY THE WITNESS-FIRST RULE
+  (amendment §7, committed BEFORE the VM was touched). A reading inside
+  the 26.8-34.1 Mbit/s plateau with W1 gen=0 AND zero [PFRAC] lines is
+  generation-OFF by DIRECT ENGINE ECHO, so it is an OUT-OF-BAND RESULT
+  and NOT a configuration abort. A goodput band cannot discriminate a
+  configuration -- generation-on and 'this rep lost badly and
+  retransmitted hard' both land at ~30 Mbit/s, and only W1/W2 tell them
+  apart. Retaining is also the honest direction here: a plateau rep is a
+  heavy-loss, heavy-retransmit rep, and a HIGH-DISPERSION rep is exactly
+  the rep an ESTIMATOR battery must not discard.
+    RETAINED c7 seed=42 rep=4 mbps=33.291 [W1 gen=0, W2 pfrac=0 — generation definitively OFF]
+  1 plateau reading(s) retained as RESULTS.
+
+  VOIDED INVOCATIONS — dropped from EVERY container before any
+  statistic below, per §8: an aborted invocation is no datum and is NOT
+  in any denominator. A plateau reading voids HERE only when its
+  witnesses are dirty or absent — unknown is not clean.
+    none.
+
+  160 witness row(s).
+    W1       clean
+    W2       clean
+    W4       clean
+    W5       clean
+    W7       clean
+    WDUMP    clean
+    PLATEAU  FAIL at 1: c7-s42-r4 mbps=33.291
+
+  W7 is THIS BATTERY'S OWN reachability gate: all FIVE gauge tokens
+  with their /n counts, plus the block's own rtp<>ms, on every path
+  entry of every [DIAG] block, both endpoints. A miss is the
+  MEASUREMENT failing, not a column absent.
+  W-DUMP: the S/C ledger's invocations must carry ZERO [RTTDUMP]
+  batches. The dump writes megabytes of SENDER stderr and sender-side
+  dispersion is the quantity clause S measures, so a scored invocation
+  with the dump live was measuring its own instrument.
+
+  HEADROOM, from the qdisc capture on EVERY cell and EVERY invocation
+  — the omission discipline 16 exists to prevent. The denominator is
+  the TRANSFER wall, NEVER the invocation wall (which runs 1.12-2.11x
+  the transfer and read c7 at 77.6%% when the cell was at 96.9%%).
+
+    cell     shaped bps   xfer_s  INVOC_S    util %  headroom %   claims permitted
+    c1       1000000000    16.79       18      21.1        78.9   headroom exists
+    c7        200000000    10.02       12      89.1        10.9   headroom exists
+    c8        120000000     2.38        5      81.2        18.8   headroom exists
+    c8L       120000000    18.93       21      80.0        20.0   headroom exists
+    sc2       100000000     9.17       11      98.5         1.5   NO-THROUGHPUT-TARGET — headroom < 5% (discipline 16c)
+
+  THIS BATTERY WRITES NO GOODPUT CLAUSE ANYWHERE, so the headroom
+  table cannot license one. It is here because discipline 16 requires
+  it on every cell of every pass, and because a cell running at its
+  ceiling produces a DIFFERENT RTT sample process from one that is not
+  — which is a property of the estimator's INPUT and therefore of the
+  thing under test.
+
+## 2 — CLAUSE C: IS THE ESTIMATOR USABLE FOR THE RUN, NOT MERELY AT
+##     ITS END?  n_warm <= 5% x N_cell, from the RECORDED n counts.
+
+  SCORED — C2 AS THE BAR WRITES IT: per CELL, on the cell's DATA-PATH
+  RTT-sample count (the leg with the most samples, which is how the
+  data path identifies itself in this tree).
+
+  cell    N_cell (data)     C2 bar   per class
+  c1             338440      16922   sig=ok rvar=ok qsp=ok msd=ok tlag=ok
+  c7             159476       7974   sig=ok rvar=ok qsp=ok msd=ok tlag=ok
+  c8              20942       1047   sig=ok rvar=ok qsp=ok msd=ok tlag=ok
+  c8L            174448       8722   sig=ok rvar=ok qsp=ok msd=ok tlag=ok
+  sc2             86124       4306   sig=ok rvar=ok qsp=ok msd=ok tlag=ok
+
+  Clause C2's binding cell was pre-registered as c8 at N ~ 17 660,
+  giving n_warm <= 883. The table above uses THIS battery's own counts.
+  `tlag`'s n_warm is 32 PAIRS and the C2 bar is a SAMPLE count, so its
+  row is CONSERVATIVE: |P(τ)| <= the sample count by construction (one
+  pair per anchor at most), so a `tlag` row that clears C2 read against
+  samples clears it against its own denominator too.
+
+  DISCLOSURE — THE PER-LEG COUNTS, WHICH ARE NOT A CLAUSE-C VERDICT.
+  A leg whose N cannot reach a gauge's own n_warm never produces a
+  post-warm-up reading there, and clause S reports that as
+  UNSCOREABLE — the honest statement, since the gauge was not measured
+  at that leg rather than measured and found wanting.
+
+  cell   site  path  N (max n)    5% of N   rtp ms   window class reachable?
+  c1     cli   p0       338440      16922        3   qsp=yes msd=yes tlag(max pairs 254)=yes
+  c1     srv   p0         1313         66        2   qsp=yes msd=yes tlag(max pairs 231)=yes
+  c7     cli   p0       159476       7974        9   qsp=yes msd=yes tlag(max pairs 254)=yes
+  c7     cli   p1        87103       4355        9   qsp=yes msd=yes tlag(max pairs 254)=yes
+  c7     srv   p0          230         12       12   qsp=NO msd=NO tlag(max pairs 93)=yes
+  c7     srv   p1          189          9       13   qsp=NO msd=NO tlag(max pairs 5)=NO
+  c8     cli   p0        20942       1047       11   qsp=yes msd=yes tlag(max pairs 254)=yes
+  c8     cli   p1         4837        242       40   qsp=yes msd=yes tlag(max pairs 253)=yes
+  c8     srv   p0           47          2       13   qsp=NO msd=NO tlag(max pairs 2)=NO
+  c8     srv   p1           13          1       47   qsp=NO msd=NO tlag(max pairs 1)=NO
+  c8L    cli   p0       174448       8722       11   qsp=yes msd=yes tlag(max pairs 254)=yes
+  c8L    cli   p1        12946        647       38   qsp=yes msd=yes tlag(max pairs 253)=yes
+  c8L    srv   p0          269         13       16   qsp=yes msd=yes tlag(max pairs 56)=yes
+  c8L    srv   p1           83          4       78   qsp=NO msd=NO tlag(max pairs 2)=NO
+  sc2    cli   p0        86124       4306       12   qsp=yes msd=yes tlag(max pairs 255)=yes
+  sc2    srv   p0          132          7       13   qsp=NO msd=NO tlag(max pairs 7)=NO
+
+## 3 — CLAUSE S: R_total = p95/p05 OVER THE POOLED READINGS OF ALL
+##     REPS AT ONE CELL, ONE LEG. sup/inf is the DISCLOSURE column and
+##     is NOT the accept/reject statistic (§2: it grows with rep count).
+
+  --- c1  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         856       18       89     1280    71.111   3114.75  FAIL
+      rvar        856       14       80     1053    75.214    3548.0  FAIL
+      qsp         856      385     1725     4952    12.862   995.819  FAIL
+      msd         856        5        9       20       4.0    11.333  PASS-ACCEPT
+      tlag        856     1443     2123     2810     1.947    12.825  PASS-PREFER
+  --- c1  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1014     1299     2598    10520     8.099     138.2  FAIL
+      rvar       1014      989     2185     7165     7.245   212.081  FAIL
+      qsp         816     3560     4572    47437    13.325    56.879  FAIL
+      msd         816      168      252      370     2.202     5.483  PASS-PREFER
+      tlag         14     3404     3765     3851     1.131     1.131  UNSCOREABLE-THIN(n=14<20)
+  --- c7  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         765       64      615   192739  3011.547 10945.286  FAIL
+      rvar        765       47      536   165369  3518.489 11778.222  FAIL
+      qsp         765     1332     5200    80867    60.711  1456.781  FAIL
+      msd         765        5       12       39       7.8      30.5  FAIL
+      tlag        764     1359     5679     8989     6.614     25.33  FAIL
+  --- c7  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         765       68      848    21317   313.485 14421.727  FAIL
+      rvar        765       51      720    18768     368.0 19874.333  FAIL
+      qsp         764     1960     6350    35638    18.183   460.157  FAIL
+      msd         764        7       16       70      10.0     33.75  FAIL
+      tlag        764     4186     5553    11031     2.635      4.06  PASS-PREFER
+  --- c7  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         524     2458    24504   132545    53.924   211.979  FAIL
+      rvar        524     2018    19859   110324     54.67   232.484  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 678 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 678 reading(s) below n_warm=255 differences)
+      tlag          6     2038     4576     4668      2.29      2.29  UNSCOREABLE-THIN(n=6<20)
+  --- c7  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         407     8525    18437    41933     4.919    49.256  PASS-ACCEPT
+      rvar        407     6593    15332    38529     5.844      60.9  PASS-ACCEPT
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 678 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 678 reading(s) below n_warm=255 differences)
+      tlag          0        -        -        -         -         -  UNSCOREABLE-THIN-PAIRS(every one of 678 reading(s) below n_warm=32 pairs)
+  --- c8  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         141      123      650     7573    61.569  3290.458  FAIL
+      rvar        141       70      571     5994    85.629  3409.619  FAIL
+      qsp         140     1151     3599    17374    15.095   153.797  FAIL
+      msd         140        4        8       22       5.5     11.25  PASS-ACCEPT
+      tlag        139     1307     3935     7559     5.783     8.619  PASS-ACCEPT
+  --- c8  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         146     1222     3931   133536   109.277   289.502  FAIL
+      rvar        146     1073     3607   100529     93.69     290.4  FAIL
+      qsp         111     9671    24798   111827    11.563    24.406  FAIL
+      msd         111       21       72      185      8.81    23.455  FAIL
+      tlag        111    21590    28544    37678     1.745     2.787  PASS-PREFER
+  --- c8  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig          43     7136    27869    82689    11.588    19.653  FAIL
+      rvar         43     5486    25640    79868    14.559    27.008  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=255 differences)
+      tlag          0        -        -        -         -         -  UNSCOREABLE-THIN-PAIRS(every one of 128 reading(s) below n_warm=32 pairs)
+  --- c8  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=16 samples)
+      rvar          0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=16 samples)
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 128 reading(s) below n_warm=255 differences)
+      tlag          0        -        -        -         -         -  UNSCOREABLE-THIN-PAIRS(every one of 128 reading(s) below n_warm=32 pairs)
+  --- c8L  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1376       72      530     5647    78.431   32660.0  FAIL
+      rvar       1376       59      456     4691    79.508   35715.5  FAIL
+      qsp        1376     1026     3706    59478    57.971  3164.989  FAIL
+      msd        1376        6       10       24       4.0    16.667  PASS-ACCEPT
+      tlag       1375     1275     4976    18299    14.352    55.593  FAIL
+  --- c8L  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1389     2222    36719   345474   155.479  5239.781  FAIL
+      rvar       1389     1886    30595   316197   167.655  7016.222  FAIL
+      qsp        1273     8034    27693    67333     8.381   655.748  FAIL
+      msd        1273       24      130      289    12.042    60.818  FAIL
+      tlag       1271    16965    30323    37215     2.194     4.622  PASS-PREFER
+  --- c8L  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1187     2639    50159   235531     89.25   344.761  FAIL
+      rvar       1187     2124    41223   193361    91.036   443.242  FAIL
+      qsp          56   207076   207076   311064     1.502     1.502  PASS-PREFER
+      msd          56      863     1646     1646     1.907     1.907  PASS-PREFER
+      tlag         80     3392     5329     7703     2.271     3.669  PASS-PREFER
+  --- c8L  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig          74    27257    76702   234950      8.62    12.301  FAIL
+      rvar         74    22603    63492   199512     8.827    13.771  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 1269 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 1269 reading(s) below n_warm=255 differences)
+      tlag          0        -        -        -         -         -  UNSCOREABLE-THIN-PAIRS(every one of 1269 reading(s) below n_warm=32 pairs)
+  --- sc2  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         542      118      512     1490    12.627   953.455  FAIL
+      rvar        542       77      443     1291    16.766    1879.3  FAIL
+      qsp         542      862     1524     6066     7.037     26.02  FAIL
+      msd         542        6       12       21       3.5       8.0  PASS-PREFER
+      tlag        542     1067     1398     3091     2.897     14.03  PASS-PREFER
+  --- sc2  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         454     1251     2907    21156    16.911    85.403  FAIL
+      rvar        454      911     2440    19238    21.117    124.24  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 485 reading(s) below n_warm=256 samples)
+      msd           0        -        -        -         -         -  UNSCOREABLE-THIN-WARMUP(every one of 485 reading(s) below n_warm=255 differences)
+      tlag          0        -        -        -         -         -  UNSCOREABLE-THIN-PAIRS(every one of 485 reading(s) below n_warm=32 pairs)
+
+## 3b — THE SAME CLAUSE S ON THE BAR'S OWN MOST GENEROUS DOMAIN:
+##      THE DATA-PATH LEG OF EACH CELL (the leg `N_cell` refers to).
+
+  cell   data-path leg       sig      rvar       qsp       msd      tlag
+  c1     cli/p0           71.11     75.21     12.86      4.00      1.95
+  c7     cli/p0         3011.55   3518.49     60.71      7.80      6.61
+  c8     cli/p0           61.57     85.63     15.10      5.50      5.78
+  c8L    cli/p0           78.43     79.51     57.97      4.00     14.35
+  sc2    cli/p0           12.63     16.77      7.04      3.50      2.90
+
+  worst DATA-PATH cell per gauge, against the accept bar of 6.0:
+    sig    c7    R_total = 3011.547  FAILS by 501.92x
+    rvar   c7    R_total = 3518.489  FAILS by 586.41x
+    qsp    c7    R_total = 60.711    FAILS by 10.12x
+    msd    c7    R_total = 7.800     FAILS by 1.30x
+    tlag   c8L   R_total = 14.352    FAILS by 2.39x
+
+## 3c — THE CONTROL REGRESSION CHECK. THE FOUR OLD GAUGES ARE CONTROLS
+##      HERE, AND THIS SECTION IS THE ONLY THING THAT LICENSES READING
+##      THE `tlag` COLUMN AT ALL.
+
+  `tlag`'s entire claim is a COMPARISON against four predecessors
+  measured in the SAME run from the SAME sample stream. If the
+  predecessors do not reproduce their committed readings, this run is
+  not the previous run's peer, the comparison has no referent, and a
+  `tlag` number taken out of it would be a number about an unknown
+  machine.
+
+  PRE-REGISTERED CONSEQUENCE, STATED BEFORE THE NUMBERS: **IF ANY
+  CONTROL MOVES BY MORE THAN 2.0x IN EITHER DIRECTION, NO VERDICT IS
+  READ FROM THE `tlag` COLUMN.** Not a softened one, not a provisional
+  one — none.
+
+  gauge  committed worst   this worst        x   committed d-path  this d-path        x   verdict
+  sig           256.300     3011.547    11.75           86.600     3011.547    34.78   CONTROL-DRIFT (worst 11.75x; data-path 34.78x)
+  rvar          351.300     3518.489    10.02          103.900     3518.489    33.86   CONTROL-DRIFT (worst 10.02x; data-path 33.86x)
+  qsp            78.600       60.711     0.77           78.600       60.711     0.77   reproduces
+  msd            34.600       12.042     0.35            8.667        7.800     0.90   CONTROL-DRIFT (worst 0.35x)
+
+  ==> CONTROL-DRIFT. 3 control reading(s) moved by more than 2.0x:
+        sig: worst 11.75x; data-path 34.78x
+        rvar: worst 10.02x; data-path 33.86x
+        msd: worst 0.35x
+  ==> THE PRE-REGISTERED CONSEQUENCE APPLIES: NO VERDICT IS READ
+      FROM THE `tlag` COLUMN. Its statistics are still printed, and
+      they are printed as MEASUREMENTS OF AN UNKNOWN MACHINE.
+
+  A control being UNREPRODUCED (no scoreable leg at all) counts as
+  drift. An absent control is not a passing one — the same rule clause
+  B applies to itself.
+
+## 4 — THE SAMPLING-RATE ROW, FIRST-CLASS. `msd` ESTIMATES DISPERSION
+##     AT A LAG OF ONE INTER-SAMPLE INTERVAL, SO ITS MAGNITUDE DEPENDS
+##     ON THE SAMPLING RATE, WHICH IS NOT A PROPERTY OF THE LINK. THIS
+##     IS THE DEFECT `tlag` EXISTS TO REMOVE, SO ITS COLUMN SITS HERE.
+
+  The previous battery measured R_total tracking the sample rate at
+  rho = -0.548 over eight sender legs, with the two thinnest legs the
+  two worst readings. `tlag` selects pairs by ELAPSED TIME, so its own
+  rho is the direct reading of whether that was fixed.
+
+  cell   site  path     samp/s   msd p50   sig p50  tlag p50 msd R_tot tlag R_tot
+  c1     cli   p0      20158.1         9        89      2123       4.0     1.947
+  c1     srv   p0         78.2       252      2598      3765     2.202     1.131
+  c7     cli   p0      15915.6        12       615      5679       7.8     6.614
+  c7     cli   p1       8692.8        16       848      5553      10.0     2.635
+  c7     srv   p0         23.0         -     24504      4576         -      2.29
+  c7     srv   p1         18.9         -     18437         -         -         -
+  c8     cli   p0       8810.6         8       650      3935       5.5     5.783
+  c8     cli   p1       2035.0        72      3931     28544      8.81     1.745
+  c8     srv   p0         19.8         -     27869         -         -         -
+  c8     srv   p1          5.5         -         -         -         -         -
+  c8L    cli   p0       9217.9        10       530      4976       4.0    14.352
+  c8L    cli   p1        684.1       130     36719     30323    12.042     2.194
+  c8L    srv   p0         14.2      1646     50159      5329     1.907     2.271
+  c8L    srv   p1          4.4         -     76702         -         -         -
+  sc2    cli   p0       9388.8        12       512      1398       3.5     2.897
+  sc2    srv   p0         14.4         -      2907         -         -         -
+
+  Spearman rank correlation, rate vs R_total:
+    msd   over 10 scoreable leg(s)   rho = 0.109
+    tlag  over 9 scoreable leg(s)   rho = 0.35
+    [seat=cli] msd 8 leg(s) rho = -0.755 | tlag 8 leg(s) rho = 0.333
+    [seat=srv] msd 2 leg(s) rho = None | tlag 1 leg(s) rho = None
+  A |rho| near 1 says the RATE, not the cell, orders the gauge. NO
+  VERDICT IS TAKEN FROM rho ALONE — it is reported beside the per-leg
+  clause-S verdicts, which are what binds.
+
+## 5 — CLAUSE B, REBUILT: beta vs THE GAUGE'S OWN FUNCTIONAL OVER THE
+##     GAUGE'S OWN SAMPLES, FROM THE RAW [RTTDUMP] STREAM.
+##     **THE REBUILT B CAN ACQUIT.**
+
+  beta = (the gauge's ONLINE reading) / (its own functional, offline,
+  over the IDENTICAL samples). Same stream, same functional, no second
+  instrument, no sampling-rate gap — like-for-like BY CONSTRUCTION.
+  The old B was written REJECT-only because a 20 Hz ICMP probe's
+  dispersion is a LOWER bound on the ack path's. There is no such bound
+  here because there is no second path, so a candidate inside the band
+  is a POSITIVE finding: the online implementation reads the same
+  magnitude as the functional it claims to compute. It ACQUITS.
+
+  THE OLD `CONFOUNDED-` MARKING ON `msd` IS GONE. `msd` was confounded
+  against the 20 Hz probe by a ~500x sampling-rate gap. Against its own
+  stream there is no gap and nothing to confound.
+
+  AND THE NARROWING IS RECORDED AS ONE. B now asks whether an estimator
+  faithfully computes ITS functional over ITS input. It does NOT ask
+  whether that input is the true delivered latency. **THE INSTRUMENT
+  THE PREVIOUS BATTERY NAMED AS MISSING — a delivered-latency probe at
+  the sender's own sample rate — IS STILL MISSING.** The 20 Hz probe's
+  beta is printed beside every row as THE SUPERSEDED REFERENCE and NO
+  VERDICT IS TAKEN FROM IT.
+
+  5 UNMAPPED-DUMP file(s), scored NOWHERE (a dump attributed to the
+  wrong leg would compare one leg's reading to another leg's
+  stream):
+    UNMAPPED-DUMP /home/vibe/tlagb/dump/c1-s42-r1-abort.txt
+    UNMAPPED-DUMP /home/vibe/tlagb/dump/c7-s42-r1-abort.txt
+    UNMAPPED-DUMP /home/vibe/tlagb/dump/c8-s42-r1-abort.txt
+    UNMAPPED-DUMP /home/vibe/tlagb/dump/c8L-s42-r1-abort.txt
+    UNMAPPED-DUMP /home/vibe/tlagb/dump/sc2-s42-r1-abort.txt
+  --- c1 site=cli p0  seed=42 rep=1 ---
+      dump: n=338688 emitted=338688 capped=False tau=3000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig            92         sd   4417.714    0.0208  REJECT                   - (no probe row for this leg)
+      rvar           86        mad   2904.633    0.0296  REJECT                   - (no probe row for this leg)
+      qsp          1807        qsp   5121.000    0.3529  REJECT                   - (no probe row for this leg)
+      msd            11        msd     10.000       1.1  ACQUIT                   - (no probe row for this leg)
+      tlag         2337       tlag   2350.000    0.9945  ACQUIT                   - (the 20 Hz probe computes no such functional)
+  --- c1 site=srv p0  seed=42 rep=1 ---
+      dump: n=1280 emitted=1280 capped=False tau=2000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig          2686         sd   5238.329    0.5128  ADMISSIBLE-BIAS-CARRIED  - (no probe row for this leg)
+      rvar         2274        mad   3200.550    0.7105  ACQUIT                   - (no probe row for this leg)
+      qsp          4869        qsp   5253.000    0.9269  ACQUIT                   - (no probe row for this leg)
+      msd           360        msd    384.000    0.9375  ACQUIT                   - (no probe row for this leg)
+      tlag            -       tlag   3841.000         -  UNSCOREABLE              - (the 20 Hz probe computes no such functional)
+  --- c7 site=cli p0  seed=42 rep=1 ---
+      dump: n=85248 emitted=85248 capped=False tau=9000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig           702         sd  20016.928    0.0351  REJECT                   - (no probe row for this leg)
+      rvar          598        mad  16285.087    0.0367  REJECT                   - (no probe row for this leg)
+      qsp          4440        qsp  31110.000    0.1427  REJECT                   - (no probe row for this leg)
+      msd            17        msd     15.000    1.1333  ACQUIT                   - (no probe row for this leg)
+      tlag         5164       tlag   5415.000    0.9536  ACQUIT                   - (the 20 Hz probe computes no such functional)
+  --- c7 site=cli p1  seed=42 rep=1 ---
+      dump: n=87040 emitted=87040 capped=False tau=9000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig           483         sd  21052.282    0.0229  REJECT                   - (no probe row for this leg)
+      rvar          413        mad  16642.771    0.0248  REJECT                   - (no probe row for this leg)
+      qsp          4591        qsp  33426.000    0.1373  REJECT                   - (no probe row for this leg)
+      msd            15        msd     14.000    1.0714  ACQUIT                   - (no probe row for this leg)
+      tlag         5056       tlag   5583.000    0.9056  ACQUIT                   - (the 20 Hz probe computes no such functional)
+  --- c8 site=cli p0  seed=42 rep=1 ---
+      dump: n=21248 emitted=21248 capped=False tau=11000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig           539         sd  13730.503    0.0393  REJECT                   - (no probe row for this leg)
+      rvar          462        mad  10831.631    0.0427  REJECT                   - (no probe row for this leg)
+      qsp          3217        qsp   8237.000    0.3906  REJECT                   - (no probe row for this leg)
+      msd             8        msd      7.000    1.1429  ACQUIT                   - (no probe row for this leg)
+      tlag         1563       tlag   1591.000    0.9824  ACQUIT                   - (the 20 Hz probe computes no such functional)
+  --- c8L site=cli p0  seed=42 rep=1 ---
+      dump: n=172544 emitted=172544 capped=False tau=10000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig           479         sd 151891.889    0.0032  REJECT                   - (no probe row for this leg)
+      rvar          404        mad  73885.479    0.0055  REJECT                   - (no probe row for this leg)
+      qsp          6060        qsp  76928.000    0.0788  REJECT                   - (no probe row for this leg)
+      msd            13        msd     12.000    1.0833  ACQUIT                   - (no probe row for this leg)
+      tlag         5188       tlag   3470.000    1.4951  ADMISSIBLE-BIAS-CARRIED  - (the 20 Hz probe computes no such functional)
+  --- c8L site=cli p1  seed=42 rep=1 ---
+      dump: n=4096 emitted=4096 capped=False tau=43000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig        137453         sd 172198.171    0.7982  ACQUIT                   - (no probe row for this leg)
+      rvar       118678        mad 147865.200    0.8026  ACQUIT                   - (no probe row for this leg)
+      qsp         12183        qsp 319262.000    0.0382  REJECT                   - (no probe row for this leg)
+      msd            96        msd     61.000    1.5738  ADMISSIBLE-BIAS-CARRIED  - (no probe row for this leg)
+      tlag        36398       tlag  35746.000    1.0182  ACQUIT                   - (the 20 Hz probe computes no such functional)
+  --- sc2 site=cli p0  seed=42 rep=1 ---
+      dump: n=86016 emitted=86016 capped=False tau=12000 us (from invocation)
+      gauge      online   pop func    pop val      beta  verdict                  SUPERSEDED 20Hz beta
+      sig           632         sd  11750.948    0.0538  REJECT                   - (no probe row for this leg)
+      rvar          553        mad   5986.840    0.0924  REJECT                   - (no probe row for this leg)
+      qsp          1942        qsp   3828.000    0.5073  ADMISSIBLE-BIAS-CARRIED  - (no probe row for this leg)
+      msd            13        msd     13.000       1.0  ACQUIT                   - (no probe row for this leg)
+      tlag         1578       tlag   1704.000    0.9261  ACQUIT                   - (the 20 Hz probe computes no such functional)
+
+## 5b — THE CROSS-FUNCTIONAL LEVEL TABLE. ALL FIVE POPULATION
+##      FUNCTIONALS ON THE SAME DUMPED STREAM, PER LEG. REPORTED,
+##      AND SCORED NOWHERE.
+
+  The previous battery closed with `msd`'s 90-100x level gap
+  against `sig_us` UNEXPLAINED, and 'unexplained' is not 'fine'.
+  These columns come from ONE stream, so the gap is readable here
+  as the functionals genuinely differing — or not.
+
+  cell   site  path        n   rate Hz         sd        mad        qsp        msd       tlag   msd/sd  tlag/sd
+  c1     cli   p0     338688   18328.0     4417.7     2904.6     5121.0       10.0     2350.0   0.0023   0.5319
+  c1     srv   p0       1280      72.0     5238.3     3200.6     5253.0      384.0     3841.0   0.0733   0.7332
+  c7     cli   p0      85248    8159.7    20016.9    16285.1    31110.0       15.0     5415.0   0.0007   0.2705
+  c7     cli   p1      87040    8286.7    21052.3    16642.8    33426.0       14.0     5583.0   0.0007   0.2652
+  c8     cli   p0      21248    9460.3    13730.5    10831.6     8237.0        7.0     1591.0   0.0005   0.1159
+  c8L    cli   p0     172544    6326.7   151891.9    73885.5    76928.0       12.0     3470.0   0.0001   0.0228
+  c8L    cli   p1       4096    1751.0   172198.2   147865.2   319262.0       61.0    35746.0   0.0004   0.2076
+  sc2    cli   p0      86016    9568.1    11750.9     5986.8     3828.0       13.0     1704.0   0.0011   0.1450
+
+  NO BAR IS APPLIED TO ANY COLUMN ABOVE. Five functionals of one
+  distribution are five different quantities, and a ratio between
+  two of them is a property of the distribution, not a defect in
+  either estimator.
+
+## 5c — DUMP COVERAGE PER LEG. `emitted` FROM THE DUMP AGAINST THE
+##      LEG'S OWN FINAL sig_us n — THE NUMBER OF SAMPLES THE
+##      ESTIMATORS ACTUALLY SAW.
+
+  cell   site  path    emitted      sig n  coverage   state
+  c1     cli   p0       338688     334818     1.012   full run
+  c1     srv   p0         1280       1326     0.965   full run | tail partial batch (<256/path) not written
+  c7     cli   p0        85248      85342     0.999   full run
+  c7     cli   p1        87040      86938     1.001   full run
+  c8     cli   p0        21248      21197     1.002   full run
+  c8L    cli   p0       172544     171277     1.007   full run
+  c8L    cli   p1         4096       4242     0.966   full run | tail partial batch (<256/path) not written
+  sc2    cli   p0        86016      83821     1.026   full run
+
+  Coverage below 1 is EXPECTED and BOUNDED: the tail partial batch
+  (< 256 samples per path per run) is never written. A capped leg is
+  marked PREFIX-SCORED and its B is a statement about that prefix.
+
+## 6 — THE VERDICT, PER ESTIMATOR. FOUR LEGAL OUTCOMES AND NO FIFTH.
+
+  ACCEPT              S at every leg, C at every cell, B not REJECT
+                      and B scoreable. Qualified at the PLAIN-WINDOW
+                      SEAT ONLY — §16.74.5 req 3's generation seat is
+                      not run by this battery and no verdict here
+                      transports to it.
+  PREFER              ACCEPT and R_total <= 3.5 at every leg.
+  REJECT-<clause>     the failing clause and the binding leg, named.
+  UNSCOREABLE-<gate>  the gate that could not be evaluated, named. NOT
+                      a pass.
+
+  === sig (EWMA class, n_warm=16 samples)  [CONTROL] ===
+    S: worst leg c7/cli/p0  R_total = 3011.547   (best c7/srv/p1 = 4.919)
+       15 scoreable leg(s), 1 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s), median 0.0393, 1 ACQUIT, 6 REJECT, 0 unscoreable
+    ==> REJECT-S (R_total 3011.547 > 6.0 at c7/cli/p0; the worst leg binds, §3 rule 1)
+
+  === rvar (EWMA class, n_warm=16 samples)  [CONTROL] ===
+    S: worst leg c7/cli/p0  R_total = 3518.489   (best c7/srv/p1 = 5.844)
+       15 scoreable leg(s), 1 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s), median 0.0427, 2 ACQUIT, 6 REJECT, 0 unscoreable
+    ==> REJECT-S (R_total 3518.489 > 6.0 at c7/cli/p0; the worst leg binds, §3 rule 1)
+
+  === qsp (window class, n_warm=256 samples)  [CONTROL] ===
+    S: worst leg c7/cli/p0  R_total = 60.711   (best c8L/srv/p0 = 1.502)
+       10 scoreable leg(s), 6 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s), median 0.3529, 1 ACQUIT, 6 REJECT, 0 unscoreable
+    ==> REJECT-S (R_total 60.711 > 6.0 at c7/cli/p0; the worst leg binds, §3 rule 1)
+
+  === msd (window class, n_warm=255 differences)  [CONTROL] ===
+    S: worst leg c8L/cli/p1  R_total = 12.042   (best c8L/srv/p0 = 1.907)
+       10 scoreable leg(s), 6 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s), median 1.1, 7 ACQUIT, 0 REJECT, 0 unscoreable
+    ==> REJECT-S (R_total 12.042 > 6.0 at c8L/cli/p1; the worst leg binds, §3 rule 1)
+
+  === tlag (tau-band class, n_warm=32 pairs)  [CANDIDATE] ===
+    S: worst leg c8L/cli/p0  R_total = 14.352   (best c8/cli/p1 = 1.745)
+       9 scoreable leg(s), 7 unscoreable-thin
+    C: clean at every leg
+    B: 7 beta(s), median 0.9824, 6 ACQUIT, 0 REJECT, 1 unscoreable
+    ==> TLAG-VERDICT-WITHHELD-CONTROL-DRIFT — the controls did not reproduce (§3c), so NO verdict is read from this column. The statistics above stand as measurements of an unknown machine and as nothing else.
+
+  --- THE TIE-BREAK, PRE-COMMITTED (§3 rule 2) ---
+  NO CANDIDATE ACCEPTS AT EVERY LEG. Per the battery's own
+  pre-commitment, the goal closes NEEDS-MORE with the failing
+  clause named above. THE BAR IS NOT SOFTENED and no candidate is
+  promoted on a partial clause.
+
+  AND THE TIE-BREAK ABOVE EXCLUDES `tlag` BY PRE-REGISTRATION:
+  the controls drifted, so the candidate column carries no verdict
+  to break a tie with.
+
+  SCOPE, STANDING: every verdict above is at the PLAIN-WINDOW SEAT.
+  §16.74.5 requirement 3 names the generation seat as a SECOND seat and
+  this battery did not run it. An estimator qualified at one seat is
+  NOT qualified at the other, by the requirement's own words.
+  AND THE REBUILT CLAUSE B IS A NARROWING: it establishes that an
+  estimator computes its own functional over its own input faithfully.
+  The delivered-latency instrument at the sender's sample rate is STILL
+  MISSING, and no ACCEPT above stands in for it.
