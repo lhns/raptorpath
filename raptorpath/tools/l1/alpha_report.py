@@ -58,6 +58,46 @@ ARM_ALPHA = {"CTL": None, "Q002": 0.002, "Q009": 0.009,
              "Q050": 0.05, "Q184": 0.184, "Q400": 0.40}
 CTL = "CTL"
 
+# ── THE QUANTILE-NATIVE AXIS (`RWM_W_FORM`), and its own liveness witness ──
+#
+# ADDITIVE. Every column and section above and below is unchanged; a ledger from
+# the CANTELLI era carries none of these fields, `w7()` returns `None` for it,
+# and the W7 column prints `n/a` rather than a failure. A witness that fails on
+# ledgers written before it existed is a harness bug reported as a result.
+#
+# `RWM_W_FORM` is a WORD, not a flag: `cantelli` | `quantile`, read ONLY when
+# `RWM_QUANTILE_CLOCKS=1`, and ABSENT or GARBAGE resolves to `cantelli`. The CTL
+# arm therefore carries NO TOKEN in its env and EXPECTS `cantelli` in the echo.
+ARM_WFORM = {"CTL": "cantelli", "Q002": "quantile", "Q009": "quantile",
+             "Q050": "quantile", "Q184": "quantile", "Q400": "quantile"}
+#: The arm's expected quantile-window sample count, as the ENGINE prints it.
+#: `unavail` on CTL is a REACHABILITY FACT — there is no quantile window to size
+#: — and never a zero. Compared as STRINGS, against the engine's own token.
+ARM_WINN = {"CTL": "unavail", "Q002": "5000", "Q009": "1112",
+            "Q050": "200", "Q184": "55", "Q400": "25"}
+
+# ── PRE-DERIVED, PRE-REGISTERED, AND NOT RECOMPUTED HERE ─────────────────────
+#
+# THE ARMS ARE PARTLY UNSEPARATED BEFORE A SINGLE PACKET IS SENT, and that is a
+# property of the WINDOW SIZES, not of the data. A quantile window of N samples
+# with K = 10 order statistics in the tail realizes a tail level whose exact
+# 95 % interval is Beta(K, N-K+1). Two arms whose intervals touch cannot be
+# separated by ANY amount of measurement at these window sizes.
+#
+# TRANSCRIBED AS LITERAL CONSTANTS ON PURPOSE. Recomputing them here would make
+# the report agree with itself by construction; they belong to the
+# pre-registration and this file only reads them.
+ARM_WINDOW_N = {"Q002": 5000, "Q009": 1112, "Q050": 200, "Q184": 55, "Q400": 25}
+# 95 % CI on the realized tail level, exact Beta(K, N-K+1), K=10
+ARM_TAU_CI = {"Q002": (0.000959, 0.003414), "Q009": (0.004321, 0.015308),
+              "Q050": (0.024234, 0.083703), "Q184": (0.090791, 0.288030),
+              "Q400": (0.211255, 0.574794)}
+UNSEPARATED_BY_CONSTRUCTION = [("Q184", "Q400")]   # margin 0.733
+MARGINAL_BY_CONSTRUCTION = [("Q050", "Q184")]      # margin 1.085 — the thin one
+#: The ordered arms of the construction table, low alpha first. The margin of a
+#: pair is `lo(higher arm) / hi(lower arm)`: above 1 the intervals are disjoint.
+CONSTRUCTION_ORDER = ["Q002", "Q009", "Q050", "Q184", "Q400"]
+
 #: The cells, TRANSCRIBED from `ccand_battery.sh:202-215`'s own `cell_spec`.
 CELLS = ["c1", "c7", "c8", "c8L", "sc2"]
 #: `prim_battery_pw.sh:73` -- c1 is the only cell exempt from the W4'/W5 lower
@@ -261,12 +301,67 @@ def w6(r):
     return True, ""
 
 
+def w7(r):
+    """W7 -- THE WINDOW-FORM ARM-LIVENESS WITNESS. Returns (ok, why), where
+    `ok` is `None` for NOT APPLICABLE.
+
+    `form` must equal the arm's expected token at BOTH endpoints. `win_n` is
+    asserted at the SENDER always and at the RECEIVER on a Q arm ONLY, and that
+    asymmetry is a documented property of the engine rather than a softened
+    gate: the protocol hint is NOT plumbed to the receiver task -- the same fact
+    that makes CTL's two `[QALPHA]` sites disagree about the contract alpha --
+    so an UNOVERRIDDEN receiver resolves a different contract alpha and
+    therefore a different window size. On a Q arm both sites carry a NUMBER
+    override, so both must read the expected `win_n`.
+
+    A LEDGER FROM BEFORE `RWM_W_FORM` EXISTED CARRIES NONE OF THESE FIELDS and
+    returns `None` -- NOT a failure. A witness that fails on ledgers written
+    before it existed reports a harness fact as a result.
+
+    W7 VOIDS A ROW, EXACTLY AS W6 DOES, AND THE RULE IS MECHANICAL RATHER THAN
+    A JUDGEMENT CALL. The quantile-native pre-registration's section 9 states
+    it: a row whose W FORM did not take is not a rep of the arm whose name it
+    carries, any more than a row whose alpha did not take is. Leaving the
+    consequence to the reader would put a scoring decision after the data, and
+    the whole point of pre-registering the witness is that it is applied the
+    same way whichever direction it fires.
+
+    `None` (a pre-`RWM_W_FORM` ledger) NEVER voids: it is the ABSENCE of the
+    axis, not a failure on it, and the CANTELLI-era ledgers this file still
+    reads must score exactly as they did before."""
+    a = r.get("arm")
+    wf, wn = ARM_WFORM.get(a), ARM_WINN.get(a)
+    fc, fs = r.get("qalpha_form_cli"), r.get("qalpha_form_srv")
+    nc, ns = r.get("qalpha_winn_cli"), r.get("qalpha_winn_srv")
+    if wf is None or wn is None:
+        return None, "unknown arm"
+    if fc is None and fs is None and nc is None and ns is None:
+        return None, "n/a"          # a pre-RWM_W_FORM ledger
+    if fc != wf:
+        return False, "form_cli"
+    if fs != wf:
+        return False, "form_srv"
+    if nc is None or str(nc) != wn:
+        return False, "win_n_cli"
+    if a != CTL and (ns is None or str(ns) != wn):
+        return False, "win_n_srv"
+    return True, ""
+
+
 ABORTS = [r for r in rows if is_abort(r)]
 LIVEROWS = [r for r in rows if not is_abort(r)]
 for r in LIVEROWS:
     r["_w6"], r["_w6why"] = w6(r)
-VOID = [r for r in LIVEROWS if not r["_w6"]]
-SCORED = [r for r in LIVEROWS if r["_w6"]]
+    r["_w7"], r["_w7why"] = w7(r)
+
+def _took(r):
+    """Did this row's arm actually take, on BOTH of its axes? `_w7 is None` is
+    a pre-`RWM_W_FORM` ledger and is not a failure — see `w7`."""
+    return bool(r["_w6"]) and r["_w7"] is not False
+
+
+VOID = [r for r in LIVEROWS if not _took(r)]
+SCORED = [r for r in LIVEROWS if _took(r)]
 
 by_all = defaultdict(list)      # every live row, void included: the accounting
 by = defaultdict(list)          # SCORED rows only: everything else
@@ -499,7 +594,7 @@ print("  VOID  = live, but the arm's OWN independent variable did not take.")
 print()
 _W4H = "W4'"
 print(f"  {'cell-arm':<10} {'rows':>5} {'ABORT':>6} {'live':>5} {'VOID':>5} "
-      f"{'DNF':>4} {'W1':>7} {'W2':>7} {_W4H:>8} {'W5':>9} {'W6':>7}")
+      f"{'DNF':>4} {'W1':>7} {'W2':>7} {_W4H:>8} {'W5':>9} {'W6':>7} {'W7':>7}")
 LIVENESS_CLEAN = True
 for c in PCELLS:
     for a in PARMS:
@@ -508,7 +603,7 @@ for c in PCELLS:
             continue
         lv = by_all[(c, a)]
         n = len(lv)
-        vd = sum(1 for r in lv if not r["_w6"])
+        vd = sum(1 for r in lv if not _took(r))
         dnf = sum(1 for r in lv if r.get("dnf"))
         # W1: the RECEIVER's [RFA] gen= field -- the only DIRECT echo of
         # window_generation. This battery runs RWM_GEN=0, so gen=0 is the pass.
@@ -530,11 +625,21 @@ for c in PCELLS:
         else:
             w5s = "n/a(c1)"
         w6n = n - vd
+        # W7: `form` AND `win_n` agreement at both endpoints against the arm's
+        # own expectation. A ledger predating `RWM_W_FORM` yields `None` at
+        # every row and prints `n/a` -- absence of the axis, not failure on it.
+        w7j = [r for r in lv if r["_w7"] is not None]
+        if not w7j:
+            w7s = "n/a"
+        else:
+            w7s = f"{sum(1 for r in w7j if r['_w7'])}/{len(w7j)}"
+            if any(not r["_w7"] for r in w7j):
+                LIVENESS_CLEAN = False
         if vd or (LOSSY.get(c, True) and w6n and w1 != n):
             LIVENESS_CLEAN = False
         print(f"  {c + '-' + a:<10} {len(allr):>5} {len(allr) - n:>6} {n:>5} "
               f"{vd:>5} {dnf:>4} {f'{w1}/{n}':>7} {f'{w2}/{n}':>7} {w4s:>8} "
-              f"{w5s:>9} {f'{w6n}/{n}':>7}")
+              f"{w5s:>9} {f'{w6n}/{n}':>7} {w7s:>7}")
 if not by_all:
     print("  (no live rows in this ledger)")
 print()
@@ -552,7 +657,28 @@ print("      equal the commanded alpha, AND qalpha_cli / qalpha_srv equal it to"
 print("      1e-9. CTL: both gates read `unset` and qalpha_quantile_* read 0.")
 print("      A ROW FAILING W6 IS VOID -- its own independent variable did not")
 print("      take, so it is not a rep of the arm whose name it carries.")
+print("  W7  THE WINDOW-FORM WITNESS, for the QUANTILE-NATIVE axis. `[QALPHA]")
+print("      form=` must equal the arm's expected token (`cantelli` on CTL,")
+print("      where RWM_W_FORM is ABSENT and the engine RESOLVES it, `quantile`")
+print("      on every Q arm) at BOTH endpoints, and `win_n=` must equal the")
+print("      arm's expected window size. `win_n` IS ASSERTED AT THE SENDER")
+print("      ALWAYS AND AT THE RECEIVER ON A Q ARM ONLY: the protocol hint is")
+print("      not plumbed to the receiver task, so an UNOVERRIDDEN CTL receiver")
+print("      resolves a different contract alpha and therefore a different")
+print("      window. On a Q arm BOTH sites carry a NUMBER override and both")
+print("      are checked. `n/a` means the ledger predates the axis -- absence")
+print("      of the axis, never failure on it. W7 DOES NOT VOID A ROW: it is")
+print("      reported here and the pre-registration decides what it costs.")
 print("  W3 (cod=) IS RETIRED and appears nowhere in this report.")
+_W7BAD = [r for r in LIVEROWS if r["_w7"] is False]
+if _W7BAD:
+    print()
+    print("  W7 FAILURES, with the field that failed:")
+    seen7 = defaultdict(int)
+    for r in _W7BAD:
+        seen7[(r.get("cell"), r.get("arm"), r["_w7why"])] += 1
+    for (c, a, why), k in sorted(seen7.items()):
+        print(f"    {c + '-' + a:<10} {why:<14} x{k}")
 if VOID:
     print()
     print("  VOID ROWS, with the field that failed:")
@@ -600,6 +726,80 @@ for c in PCELLS:
           f"{fmt(util):>8} {fmt(hr):>11}   {claim}")
 if not any(by.get((c, CTL)) for c in PCELLS):
     print("  (no scored CTL row -- headroom cannot be computed)")
+
+# ── 3b. UNSEPARATED-BY-CONSTRUCTION, READ BEFORE THE SEPARATION RULE ─────
+#
+# THIS SECTION IS PRE-DERIVED AND IS NOT RECOMPUTED FROM THE ROWS. It comes
+# BEFORE the empirical separation rule on purpose: some of what section 4 is
+# about to measure was decided by the WINDOW SIZES before a packet was sent, and
+# a reader who meets the empirical overlap first will read a construction as a
+# finding.
+print()
+print("=" * 100)
+print("### 3b. UNSEPARATED-BY-CONSTRUCTION (PRE-DERIVED)")
+print("=" * 100)
+print()
+print("  A quantile window of N samples with K = 10 order statistics in the")
+print("  tail realizes a TAIL LEVEL whose exact 95 % interval is Beta(K,")
+print("  N-K+1). Where two arms' intervals TOUCH, no amount of measurement at")
+print("  these window sizes can separate them: the arms are one arm run twice,")
+print("  by construction and not by outcome.")
+print()
+print("  THESE NUMBERS ARE TRANSCRIBED FROM THE PRE-REGISTRATION AS LITERAL")
+print("  CONSTANTS AND ARE NOT RECOMPUTED HERE. A report that re-derived them")
+print("  would agree with itself by construction; the pre-registration owns")
+print("  them and this file only reads them.")
+print()
+print(f"  {'pair':<12} {'N_lo':>6} {'N_hi':>6} {'tau CI (low arm)':>22} "
+      f"{'tau CI (high arm)':>22} {'margin':>8}   label")
+for _i in range(len(CONSTRUCTION_ORDER) - 1):
+    _a, _b = CONSTRUCTION_ORDER[_i], CONSTRUCTION_ORDER[_i + 1]
+    _ca, _cb = ARM_TAU_CI[_a], ARM_TAU_CI[_b]
+    # margin = lo(higher arm) / hi(lower arm). > 1 = disjoint intervals.
+    _m = safediv(_cb[0], _ca[1])
+    if (_a, _b) in UNSEPARATED_BY_CONSTRUCTION:
+        _lab = "UNSEPARATED-BY-CONSTRUCTION"
+    elif (_a, _b) in MARGINAL_BY_CONSTRUCTION:
+        _lab = "MARGINAL"
+    else:
+        _lab = "separated"
+    _sa = "[%.6f, %.6f]" % _ca
+    _sb = "[%.6f, %.6f]" % _cb
+    print(f"  {_a + '-' + _b:<12} {ARM_WINDOW_N[_a]:>6} {ARM_WINDOW_N[_b]:>6} "
+          f"{_sa:>22} {_sb:>22} {fmt(_m, 3):>8}   {_lab}")
+print()
+print("  margin = lo(higher arm) / hi(lower arm). Above 1 the two tail-level")
+print("  intervals are DISJOINT; at or below 1 they overlap and the pair is")
+print("  UNSEPARATED BEFORE THE EXPERIMENT RUNS.")
+print()
+for _a, _b in UNSEPARATED_BY_CONSTRUCTION:
+    print(f"  *** {_a}-{_b} IS UNSEPARATED BY CONSTRUCTION. ***")
+    print(f"      An empirical non-separation of {_a}-{_b} in section 4 is")
+    print("      EXPECTED (no verdict may rest on it). It is not a finding, it")
+    print("      is not evidence about alpha, and it is not a failure of the")
+    print("      run -- it is the window sizes, restated by the data.")
+for _a, _b in MARGINAL_BY_CONSTRUCTION:
+    print(f"  {_a}-{_b} IS MARGINAL BY CONSTRUCTION -- the thin one. Its")
+    print("      intervals are disjoint by a hair, so an empirical separation")
+    print("      there carries far less weight than its overlap number looks")
+    print("      like, and an empirical NON-separation is close to expected.")
+_BYC = set(UNSEPARATED_BY_CONSTRUCTION)
+if PCELLS:
+    print()
+    print("  THE PRE-DERIVED PAIRS AS THE ROWS ACTUALLY REALIZED THEM, marked:")
+    for _c in PCELLS:
+        for _a, _b in list(UNSEPARATED_BY_CONSTRUCTION) + list(MARGINAL_BY_CONSTRUCTION):
+            _ov, _sep = PAIRS.get((_c, _a, _b), (None, None))
+            if _ov is None:
+                _note = "no realized-W interval at this cell"
+            elif _sep:
+                _note = "separated empirically"
+            else:
+                _note = ("UNSEPARATED empirically -- EXPECTED "
+                         "(no verdict may rest on it)" if (_a, _b) in _BYC
+                         else "UNSEPARATED empirically -- MARGINAL by construction")
+            _ovs = "-" if _ov is None else "%.2f" % _ov
+            print(f"    {_c:<5} {_a + '-' + _b:<12} overlap={_ovs:>6}   {_note}")
 
 # ── 4. THE REALIZED-W DISTRIBUTIONS AND THE SEPARATION RULE ──────────────
 print()

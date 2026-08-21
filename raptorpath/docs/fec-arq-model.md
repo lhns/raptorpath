@@ -15831,6 +15831,18 @@ capped at `QNATIVE_WINDOW_MAX = 8192` samples × 4 B = **32 KiB per path**. The
 cap is ≥ `N(0.002) = 5 000`, so it does not bind anywhere on the swept grid; it
 binds hard at `α ≤ 10⁻³`, and §16.76.5 states what happens there.
 
+**AND THE CPU BOUND IS DECLARED WITH IT, BECAUSE THIS ONE SITS ON THE SENDER.**
+Reading the order statistic is **a selection, not a sort**: `O(N)` in one pass
+(`select_nth_unstable`), at the recovery-timer cadence only, over a copy of the
+freshest `N(α)` samples. The feed site stays `O(1)`. A full sort would be `≈12×`
+the work at `N = 5 000` and returns the same number, so it buys nothing. **This
+is stated rather than assumed negligible because the τ-lag battery had to run a
+SEPARATE pass to keep an instrument's sender-side cost out of the measurement
+that instrument was explaining** — *"running the dump on the scored invocations
+would perturb the measurement it exists to explain."* Here the cost is in the
+LAW rather than in a gauge, so it cannot be moved to another pass, and the
+right response is to make it linear and say so.
+
 #### 16.76.4 The stability property that REPLACES precondition (E)
 
 §16.74.5's precondition (E) is a property of the clock family

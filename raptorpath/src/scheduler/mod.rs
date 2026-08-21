@@ -1288,6 +1288,28 @@ pub struct CopaState {
     /// the ring spans `32 · RTprop` at every sample rate (see the const doc).
     /// Fed unconditionally; read by nothing but `[DIAG]`.
     rtt_tlag: VecDeque<(Instant, u32)>,
+    /// **THE QUANTILE-NATIVE CLOCK's SAMPLE WINDOW** (paper §16.76): the raw
+    /// RTT series, µs, FIFO, last [`crate::net::QNATIVE_WINDOW_MAX`].
+    ///
+    /// **This cannot reuse `rtt_win`.** That FIFO is capped at
+    /// `SIGMA_CAND_WINDOW = 256`, and 256 is LOAD-BEARING for `qsp_us`'s and
+    /// `msd_us`'s estimands — it is 36× the shipped EWMA's memory and it is
+    /// what makes their `P90` rest on 25.6 order statistics. The clock's
+    /// window is a DIFFERENT quantity: `N(α) = ⌈K/α⌉`, which is 5 000 at the
+    /// α-sweep's smallest arm. Widening `rtt_win` to serve both would change
+    /// two committed estimands to serve a third.
+    ///
+    /// **And it cannot reuse `rtt_samples`** for the reason `rtt_win` cannot:
+    /// that deque is a MONOTONIC min-deque and holds a lower envelope of the
+    /// series, not the series. §16.69 reason 2 named exactly this — *"the Copa
+    /// RTT store is a MIN-DEQUE … it does not retain the upper tail at all, by
+    /// construction"* — and an upper quantile read off an envelope is the
+    /// extrapolation that refutation was about.
+    ///
+    /// **Resource bound, stated OUTSIDE the law**: 8192 × 4 B = 32 KiB per
+    /// path. Fed unconditionally at O(1); read by nothing unless
+    /// `RWM_W_FORM=quantile` is armed inside `RWM_QUANTILE_CLOCKS`.
+    rtt_qwin: VecDeque<u32>,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1453,6 +1475,7 @@ impl CopaState {
             rtt_mdev_n: 0,
             rtt_win: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_tlag: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
+            rtt_qwin: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -1825,6 +1848,16 @@ impl CopaState {
             self.rtt_win.pop_front();
         }
         self.rtt_win
+            .push_back((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        // THE QUANTILE-NATIVE CLOCK's WINDOW (paper §16.76): the same raw
+        // series, same site, same order, held to a DIFFERENT depth because the
+        // clock's window length is `N(α) = ⌈K/α⌉` and not 256. Fed
+        // unconditionally so the default arm is byte-identical with the gate
+        // absent; O(1), one push and at most one pop.
+        if self.rtt_qwin.len() == crate::net::QNATIVE_WINDOW_MAX {
+            self.rtt_qwin.pop_front();
+        }
+        self.rtt_qwin
             .push_back((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
             self.rtt_samples.pop_back();
@@ -3241,6 +3274,45 @@ impl PathState {
             return None;
         }
         Some((self.copa.rtt_var_sq.sqrt() * 1e6) as u64)
+    }
+
+    /// **THE QUANTILE-NATIVE RECOVERY CLOCK's INPUT** — `W_q(α)` in µs, paper
+    /// §16.76. The `K`-th largest of this path's most recent `N(α)` raw RTT
+    /// samples, computed through the ONE law function
+    /// [`crate::net::qnative_recovery_round_us`] so the clock and this reader
+    /// can never disagree.
+    ///
+    /// **`None` is the UNSCOREABLE rule and it is the whole safety property**
+    /// (§16.76.5(1)): fewer than `N(α)` samples in the window, or an α at
+    /// which `N(α)` exceeds the declared cap, means the arm's own law did not
+    /// run and the caller falls through to the law below it — information
+    /// availability, never a mode, and counted by `[QCLK]`'s `win_ok/evals`.
+    /// Reading a SHORTER window would silently return a quantile at a
+    /// different level, which is a different law's output.
+    ///
+    /// **COST, DECLARED**: one `N(α)`-element copy plus an `O(N)` selection
+    /// (never a sort — see [`crate::net::qnative_recovery_round_us`]), at the
+    /// recovery-timer cadence only; the feed site stays `O(1)`. At the
+    /// battery's deepest arm that is 5 000 × 4 B copied and one selection
+    /// pass. **This sits on the SENDER's own path and sender-side cost is
+    /// what the τ-lag battery ran a separate pass to keep out of its
+    /// measurement**, which is why the bound is stated rather than assumed
+    /// negligible. Read by nothing unless `RWM_W_FORM=quantile` is armed
+    /// inside `RWM_QUANTILE_CLOCKS` — both default OFF.
+    pub fn rtt_tail_quantile_us(&self, alpha: f64) -> Option<u64> {
+        let n = crate::net::qnative_window_n(alpha)?;
+        if self.copa.rtt_qwin.len() < n {
+            return None;
+        }
+        let w: Vec<u32> = self.copa.rtt_qwin.iter().copied().collect();
+        crate::net::qnative_recovery_round_us(&w, alpha)
+    }
+
+    /// Samples in the quantile-native window RIGHT NOW — the window FILL,
+    /// reported beside `W_q` so an UNSCOREABLE row states how far short it
+    /// was rather than only that it fell short.
+    pub fn rtt_qwin_samples(&self) -> u64 {
+        self.copa.rtt_qwin.len() as u64
     }
 
     /// How many RTT samples have been folded into [`rtt_sigma_us`]'s EWMA —

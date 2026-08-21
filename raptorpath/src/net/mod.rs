@@ -803,13 +803,22 @@ pub fn resolved_alpha(hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
 /// row that cannot state its own α off its own log is not a row. Printed on
 /// EVERY arm including the control (`quantile=0`), so "quantile clocks off"
 /// is as checkable as "quantile clocks on", per MEASUREMENT DISCIPLINE 15.
+#[allow(clippy::too_many_arguments)]
 pub fn qalpha_report_line(
     site: &str,
     quantile: bool,
+    form: WForm,
     contract: f64,
     override_alpha: Option<f64>,
     resolved: f64,
 ) -> String {
+    // §16.76: `form=` and the RESOLVED window length `N(α)` sit here, on the
+    // same line as the α they are derived from, for the reason `alpha=` does —
+    // `[GATES]` can only say what was ASKED FOR. `win_n=unavail` is the honest
+    // rendering at an α where `N(α)` exceeds `QNATIVE_WINDOW_MAX`, i.e. where
+    // §16.69 reason 2 still binds; it is never a number the law did not use.
+    let win_n = qnative_window_n(resolved)
+        .map_or_else(|| "unavail".to_string(), |n| n.to_string());
     format!(
         // `fa_class` LAST, and not only because it is useful there. Both
         // `[RACK]` and `[RFA]` end on this same constant, and a run of this
@@ -819,10 +828,12 @@ pub fn qalpha_report_line(
         // the one a concurrent writer corrupts**, so the last field is a
         // CONSTANT the parser already knows and can lose without losing a
         // datum. Every load-bearing number sits ahead of it.
-        "[QALPHA] site={} quantile={} contract_alpha={:.6e} override={} \
+        "[QALPHA] site={} quantile={} form={} win_n={} contract_alpha={:.6e} override={} \
          alpha={:.6e} k={:.4} fa_class={:.4}",
         site,
         quantile as u8,
+        form.as_str(),
+        win_n,
         contract,
         override_alpha.map_or("unset".to_string(), |a| format!("{a:.6e}")),
         resolved,
@@ -849,6 +860,189 @@ pub fn cantelli_k(alpha: f64) -> f64 {
 pub fn quantile_recovery_round_us(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
     let w = srtt_us as f64 + cantelli_k(alpha) * sigma_us as f64;
     (w.max(0.0) as u64).max(TIMER_GRANULARITY_US)
+}
+
+// ── The QUANTILE-NATIVE recovery round (`RWM_W_FORM=quantile`, OFF) ───────
+//
+// Paper §16.76. §16.69 wrote the clock's job and then could not evaluate the
+// quantity it named:
+//
+//     W(α) = F⁻¹_X(1 − α)      ← the construction
+//     W(α) = srtt + k(α)·σ     ← what it had to settle for, because a
+//                                1 − 1e-5 quantile needs ~1e5 samples
+//
+// The bound exists to buy a tail quantile WITHOUT samples, and it is paid for
+// in looseness (k = 316 at the contract's own α). **That trade is priced by α
+// and by nothing else, and the α-sweep does not run where it favours the
+// bound**: on `[0.002, 0.40]` the direct route needs 25–5 000 samples and the
+// cells supply 684–20 158 ack samples per second on the sender legs. So:
+//
+//     W_q(α) = X_(N−K+1)                 the K-th LARGEST of the window's N
+//                                        most recent raw ack-arrival samples
+//     N(α)   = max( ⌈K/α⌉ , 2K ) ,  K = 10
+//
+// NO σ, NO k(α), NO srtt, NO smoothing gain, NO assumed distribution and NO
+// reference series. `K = 10` is the standard order-statistic exceedance
+// requirement, CITED — the same "≥ 10" `SIGMA_CAND_WINDOW`'s own derivation
+// cites for its `P90`.
+//
+// WHY THIS IS NOT AN IMPROVEMENT ON THE ESTIMATOR — IT REMOVES THE TERM THE
+// ESTIMATOR WAS FOR. The τ-lag battery's rebuilt clause `B` measured the
+// shipped `sig_us` at a median β of 0.039 against its own functional, and read
+// the gap: the Cantelli form wants the ack-arrival distribution's MARGINAL
+// dispersion and a tracking EWMA supplies a CONDITIONAL one — 20–300× at seven
+// of eight sender legs. `W_q` never forms a deviation against a reference, so
+// the category error cannot occur; and a rank statistic at level `1 − α` does
+// not move when the far tail wanders, which is the second failure family (one
+// rep in eighty moved `sig`'s pooled `R_total` by 33×; the two rank gauges on
+// the same row moved 4 % and 21 %).
+//
+// AND `W_q ≤ max(window)` STRUCTURALLY. §16.69 reason 1 — the clock waiting
+// 316 standard deviations — is removed by construction rather than by choosing
+// α to avoid it: this clock cannot exceed an RTT the path actually realized.
+//
+// EXPERIMENT ARM, never a dial. `RWM_W_FORM` lives INSIDE `RWM_QUANTILE_CLOCKS`
+// (both default OFF) and selects between two RIVAL LAWS FOR ONE QUANTITY — the
+// same shape the `quantile / rack / derived` precedence chain below already
+// has, and the same reason its precedence is written down rather than left to
+// evaluation order. Nothing keys on a threshold in the (δ, ρ, r) triangle, and
+// nothing may ship reading it: a shipped α must be DERIVED from the triangle.
+
+/// **WHICH `W` LAW THE ARMED QUANTILE CLOCK EVALUATES** — `RWM_W_FORM`, paper
+/// §16.76. Two RIVAL LAWS FOR ONE QUANTITY, exactly like the
+/// `quantile / rack / derived` chain, and the selection is an A/B EXPERIMENT
+/// ARM behind a default-OFF gate — never a dial of the (δ, ρ, r) triangle.
+///
+/// [`WForm::Cantelli`] is the DEFAULT and is byte-identical to the engine
+/// before this existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WForm {
+    /// `W(α) = srtt + √((1−α)/α)·σ` — §16.69's distribution-free bound.
+    /// **The default**: absent, empty or unparseable `RWM_W_FORM` lands here.
+    #[default]
+    Cantelli,
+    /// `W_q(α) = X_(N(α)−K+1)` — §16.76's direct empirical quantile.
+    Quantile,
+}
+
+impl WForm {
+    /// The RESOLVED token, for the two-sided echo. A row that cannot state
+    /// which law it evaluated off its own log is not a row.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WForm::Cantelli => "cantelli",
+            WForm::Quantile => "quantile",
+        }
+    }
+
+    /// Parse `RWM_W_FORM`. **Garbage resolves back to ABSENT** — the
+    /// `RWM_ALPHA_OVERRIDE` rule, and for the same reason: a mistyped arm must
+    /// be READ off the run's own output rather than inferred. Case- and
+    /// whitespace-insensitive; everything else is `None`, and the gate turns
+    /// `None` into [`WForm::Cantelli`] **and says so on the echo**.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "cantelli" => Some(WForm::Cantelli),
+            "quantile" => Some(WForm::Quantile),
+            _ => None,
+        }
+    }
+}
+
+/// The order-statistic EXCEEDANCE COUNT `K` of the quantile-native window law
+/// — **CITED, not fitted** (paper §16.76.3).
+///
+/// To read the `1 − α` quantile from a window the window must hold enough
+/// samples above it that the reading rests on real order statistics; the
+/// classical requirement is `N·min(α, 1−α) ≥ 10`. **That constant is already
+/// cited in this tree for exactly this job**: `SIGMA_CAND_WINDOW`'s own
+/// declaration derives `L = 256` in part because *"the `P90` these gauges take
+/// needs its tail to rest on real order statistics — `L·(1 − 0.90) = 25.6`
+/// clears the standard ≥ 10 requirement by 2.6×."* `K = 10` is that
+/// requirement taken as an EQUALITY rather than exceeded by an unstated
+/// factor.
+///
+/// **Fixing the exceedance count rather than the window is the whole design.**
+/// The realized tail level of `X_(N−K+1)` is exactly `Beta(K, N−K+1)` — the
+/// probability-integral transform, valid for ANY continuous `F` and therefore
+/// as distribution-free as Cantelli was — with relative sampling SD `≈ 1/√K`.
+/// **That is `0.24–0.32` at every arm across a 200× span of α**, where a fixed
+/// window would have made the tail arm's precision 200× worse than the head
+/// arm's. Raising `K` narrows every CI as `1/√K` and lengthens every window as
+/// `K`; this takes the cited floor so nothing is bought with an unstated
+/// constant.
+pub const QNATIVE_EXCEEDANCE_K: usize = 10;
+
+/// **DECLARED RESOURCE BOUND, stated OUTSIDE the law** (CLAUDE.md
+/// FORMULA-FIRST): the deepest window the quantile-native ring will hold.
+/// 8192 × 4 B = **32 KiB per path**.
+///
+/// It is `≥ N(0.002) = 5 000`, so it does **not bind anywhere on the α-sweep's
+/// grid**. It binds hard below `α ≈ 1.2e-3`, and at the contract's own
+/// `α = 1e-5` the law simply declares itself unavailable and the evaluation
+/// falls through — **which is §16.69 reason 2 made VISIBLE through the
+/// existing `law_n` bind-fraction gauge instead of silently extrapolated.**
+pub const QNATIVE_WINDOW_MAX: usize = 8192;
+
+/// **THE WINDOW LAW** — `N(α) = max(⌈K/α⌉, 2K)`, paper §16.76.3.
+///
+/// * `⌈K/α⌉` is the EXCEEDANCE clause: the window must carry `K` samples above
+///   the quantile for the reading to be an order statistic.
+/// * `2K` is the symmetric clause `N·(1−α) ≥ K` made explicit. It is implied
+///   for `α ≤ ½` and **does not bind anywhere on the swept grid**
+///   (`N(0.40) = 25`), which is stated so a floor that never binds is never
+///   mistaken for a tuned one.
+///
+/// Returns `None` when the law asks for more than [`QNATIVE_WINDOW_MAX`] — the
+/// α at which the direct route is UNAVAILABLE, which is a property of α and
+/// the declared bound and never a mode.
+pub fn qnative_window_n(alpha: f64) -> Option<usize> {
+    if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
+        return None;
+    }
+    let exceedance = (QNATIVE_EXCEEDANCE_K as f64 / alpha).ceil();
+    if !exceedance.is_finite() || exceedance > QNATIVE_WINDOW_MAX as f64 {
+        return None;
+    }
+    let n = (exceedance as usize).max(2 * QNATIVE_EXCEEDANCE_K);
+    (n <= QNATIVE_WINDOW_MAX).then_some(n)
+}
+
+/// **THE QUANTILE-NATIVE RECOVERY ROUND** (µs) — `W_q(α) = X_(N−K+1)`, paper
+/// §16.76.0. One index into a sorted window; there is no arithmetic in the law
+/// beyond the index.
+///
+/// `window` is the most recent `N(α)` raw ack-arrival samples in ARRIVAL
+/// order — the caller supplies exactly `N(α)` of them or nothing at all, so
+/// this function cannot silently read a shorter window at a different level.
+/// **A short window is a DIFFERENT LAW's output**, which is why the caller
+/// falls through rather than truncating (§16.76.5(1), the UNSCOREABLE rule).
+///
+/// Floored at the timer granularity for the same information-availability
+/// reason [`quantile_recovery_round_us`] and the RACK law are.
+pub fn qnative_recovery_round_us(window: &[u32], alpha: f64) -> Option<u64> {
+    let n = qnative_window_n(alpha)?;
+    if window.len() < n {
+        return None;
+    }
+    // Only the freshest `n` count — a longer slice would read a different
+    // level of a longer window, i.e. a law nobody named.
+    let mut s: Vec<u32> = window[window.len() - n..].to_vec();
+    // `X_(n−K+1)` with 1-based order statistics ⇒ index `n − K` 0-based:
+    // exactly `K − 1` samples lie strictly above it and it is the K-th from
+    // the top. Chosen over `X_(n−K)` so `E[τ] = K/(n+1) ≈ α` rather than
+    // `≈ 1.1·α` (§16.76.3).
+    let idx = n.saturating_sub(QNATIVE_EXCEEDANCE_K).min(n - 1);
+    // **SELECTION, NOT A SORT — a DECLARED COST BOUND and the reason it is
+    // stated here** (§16.76.3's resource paragraph). This runs at the
+    // recovery-timer cadence on the SENDER, and sender-side cost is exactly
+    // what the τ-lag battery had to run a separate `B` pass to keep out of its
+    // own measurement. A full sort is `O(N log N)` ≈ 12× the work at
+    // `N(0.002) = 5 000`; `select_nth_unstable` is `O(N)` average, one pass,
+    // and returns the SAME order statistic. **The estimand is unchanged; only
+    // the cost is.**
+    let (_, nth, _) = s.select_nth_unstable(idx);
+    Some((*nth as u64).max(TIMER_GRANULARITY_US))
 }
 
 /// How many `W` samples [`QuantileClockGauge`] retains. Bounded because the
@@ -881,6 +1075,19 @@ pub const QCLK_SAMPLE_CAP: usize = 4096;
 pub(crate) struct QuantileClockGauge {
     site: &'static str,
     on: bool,
+    /// Which of the two rival `W` laws this arm evaluated — §16.76. On the
+    /// line so realized-`W` provenance is PER INVOCATION and never inferred
+    /// from the driver's env table.
+    form: WForm,
+    /// The COMMANDED window length `N(α)` for this arm, or `None` where the
+    /// window law asks for more than [`QNATIVE_WINDOW_MAX`]. Constant for the
+    /// invocation because α is; printed so a row can state its own window.
+    win_n: Option<usize>,
+    /// Evaluations at which the quantile-native law actually had its `N(α)`
+    /// samples. **This is the §16.76.5(1) UNSCOREABLE counter**: on the
+    /// quantile form `win_ok / evals` is the fill fraction, and it is the
+    /// quantity that says whether `c8`-`Q002` was measurable at all.
+    win_ok: u64,
     alpha: f64,
     evals: u64,
     w_sum: f64,
@@ -917,10 +1124,13 @@ pub(crate) struct QuantileClockGauge {
 }
 
 impl QuantileClockGauge {
-    pub(crate) fn new(site: &'static str, on: bool, alpha: f64) -> Self {
+    pub(crate) fn new(site: &'static str, on: bool, form: WForm, alpha: f64) -> Self {
         Self {
             site,
             on,
+            form,
+            win_n: qnative_window_n(alpha),
+            win_ok: 0,
             alpha,
             evals: 0,
             w_sum: 0.0,
@@ -940,16 +1150,35 @@ impl QuantileClockGauge {
     /// actually use, computed by the caller through the same function the
     /// engine uses — never recomputed here, so this can never report a clock
     /// the engine did not run.
-    pub(crate) fn record(&mut self, w_us: u64, srtt_us: u64, sigma_us: Option<u64>) {
+    /// `w_q_us` is `Some` **iff** the quantile-native law had its full `N(α)`
+    /// window at this evaluation — the one input that decides whether the
+    /// §16.76 arm's own law ran, and the same role `sigma_us` plays for the
+    /// Cantelli arm.
+    pub(crate) fn record(
+        &mut self,
+        w_us: u64,
+        srtt_us: u64,
+        sigma_us: Option<u64>,
+        w_q_us: Option<u64>,
+    ) {
         self.evals += 1;
         if let Some(sg) = sigma_us {
             self.sigma_sum += sg as f64;
             self.sigma_n += 1;
         }
-        // The armed law needs a σ sample; without one the caller fell through
-        // to the law below it, and that number belongs to a different law.
-        // The control has no such requirement — its clamped law always runs.
-        let law_ran = !self.on || sigma_us.is_some_and(|s| s > 0);
+        if w_q_us.is_some() {
+            self.win_ok += 1;
+        }
+        // The armed law needs its OWN input; without it the caller fell
+        // through to the law below, and that number belongs to a different
+        // law. Cantelli needs a σ sample; the quantile-native form needs
+        // `N(α)` samples in the window (§16.76.5(1)). The control has no such
+        // requirement — its clamped law always runs.
+        let law_ran = match (self.on, self.form) {
+            (false, _) => true,
+            (true, WForm::Cantelli) => sigma_us.is_some_and(|s| s > 0),
+            (true, WForm::Quantile) => w_q_us.is_some(),
+        };
         if !law_ran {
             self.seen += 1;
             return;
@@ -994,12 +1223,17 @@ impl QuantileClockGauge {
         s.sort_unstable();
         let mean = |sum: f64, n: u64| if n == 0 { 0.0 } else { sum / n as f64 };
         format!(
-            "[QCLK] site={} on={} alpha={:.6e} k={:.4} evals={} law_n={} kept={} \
+            "[QCLK] site={} on={} form={} win_n={} win_ok={} alpha={:.6e} k={:.4} \
+             evals={} law_n={} kept={} \
              w_us_mean={:.1} w_us_p05={} w_us_p50={} w_us_p95={} \
              w_us_min={} w_us_max={} srtt_us_mean={:.1} sigma_us_mean={:.1}/n{} \
              fa_class={:.4}",
             self.site,
             self.on as u8,
+            self.form.as_str(),
+            self.win_n
+                .map_or_else(|| "unavail".to_string(), |n| n.to_string()),
+            self.win_ok,
             self.alpha,
             cantelli_k(self.alpha),
             self.evals,
@@ -1064,6 +1298,7 @@ pub fn sweep_timeout_us_rack(
 /// never a mode.
 #[allow(clippy::too_many_arguments)]
 pub fn sweep_timeout_us_all(
+    form: WForm,
     quantile: bool,
     rack: bool,
     derived: bool,
@@ -1071,11 +1306,22 @@ pub fn sweep_timeout_us_all(
     jitter_us: u64,
     min_rtt_us: Option<u64>,
     sigma_us: Option<u64>,
+    w_q_us: Option<u64>,
     reo_mult: u64,
     alpha: f64,
 ) -> u64 {
-    match (quantile, sigma_us) {
-        (true, Some(sg)) if sg > 0 => quantile_recovery_round_us(srtt_us, sg, alpha),
+    match (quantile, form) {
+        // §16.76: the DIRECT empirical quantile. `w_q_us` is `None` whenever
+        // the window is shorter than `N(α)` — the UNSCOREABLE rule — and the
+        // evaluation then falls through to the law below, information
+        // availability and never a mode, exactly as the σ arm does.
+        (true, WForm::Quantile) => w_q_us.unwrap_or_else(|| {
+            sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult)
+        }),
+        // §16.69: Cantelli. THE DEFAULT, byte-identical to before `WForm`.
+        (true, WForm::Cantelli) if sigma_us.is_some_and(|s| s > 0) => {
+            quantile_recovery_round_us(srtt_us, sigma_us.unwrap_or(0), alpha)
+        }
         _ => sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult),
     }
 }
@@ -1084,6 +1330,7 @@ pub fn sweep_timeout_us_all(
 /// fallback chain as [`sweep_timeout_us_all`].
 #[allow(clippy::too_many_arguments)]
 pub fn hole_refresh_all(
+    form: WForm,
     quantile: bool,
     rack: bool,
     derived: bool,
@@ -1091,13 +1338,25 @@ pub fn hole_refresh_all(
     jitter_us: u64,
     min_rtt: Option<Duration>,
     sigma_us: Option<u64>,
+    w_q_us: Option<u64>,
     reo_mult: u64,
     alpha: f64,
 ) -> Duration {
-    match (quantile, srtt, sigma_us) {
-        (true, Some(sv), Some(sg)) if sg > 0 => {
-            Duration::from_micros(quantile_recovery_round_us(sv.as_micros() as u64, sg, alpha))
-        }
+    match (quantile, form) {
+        // §16.76. Note the quantile-native form needs NO `srtt` — it is the
+        // one law in this chain whose input is the sample window alone.
+        (true, WForm::Quantile) => w_q_us.map_or_else(
+            || hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+            Duration::from_micros,
+        ),
+        (true, WForm::Cantelli) => match (srtt, sigma_us) {
+            (Some(sv), Some(sg)) if sg > 0 => Duration::from_micros(quantile_recovery_round_us(
+                sv.as_micros() as u64,
+                sg,
+                alpha,
+            )),
+            _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+        },
         _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
     }
 }
@@ -6036,6 +6295,7 @@ async fn run_window_sender(
         qalpha_report_line(
             "sender",
             pol.quantile_clocks,
+            pol.w_form,
             pol.contract_alpha_base,
             pol.alpha_override,
             pol.contract_alpha,
@@ -6045,7 +6305,7 @@ async fn run_window_sender(
     // that runs it. σ moves 287× between reps at c8 and `W ∝ σ`, so a sweep
     // scored on commanded α alone is scored on a label; see the gauge's decl.
     let mut qclk_echo =
-        QuantileClockGauge::new("sender", pol.quantile_clocks, pol.contract_alpha);
+        QuantileClockGauge::new("sender", pol.quantile_clocks, pol.w_form, pol.contract_alpha);
 
 
 
@@ -7865,7 +8125,7 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let (srtt_us, jitter_us, min_rtt_us, sigma_us) = {
+                let (srtt_us, jitter_us, min_rtt_us, sigma_us, w_q_us) = {
                     let sched = scheduler.lock();
                     let paths: Vec<_> = sched
                         .active_paths()
@@ -7891,9 +8151,19 @@ async fn run_window_sender(
                     // quantile law's margin must cover the widest dispersion
                     // any live path presents, not the narrowest.
                     let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
-                    (pooled_recovery_srtt_us(&pooled), jit, mrtt, sg)
+                    // §16.76's `W_q`, MAX over the SAME path set, for the same
+                    // reason σ is: the recovery clock's margin must cover the
+                    // widest delay any live path presents, not the narrowest.
+                    // `None` at every path (window short of `N(α)`) ⇒ the
+                    // quantile arm falls through — the UNSCOREABLE rule.
+                    let wq = paths
+                        .iter()
+                        .filter_map(|p| p.rtt_tail_quantile_us(pol.contract_alpha))
+                        .max();
+                    (pooled_recovery_srtt_us(&pooled), jit, mrtt, sg, wq)
                 };
                 let timeout_us = sweep_timeout_us_all(
+                    pol.w_form,
                     pol.quantile_clocks,
                     pol.rack_clocks,
                     pol.derived_sweep,
@@ -7901,6 +8171,7 @@ async fn run_window_sender(
                     jitter_us,
                     min_rtt_us,
                     sigma_us,
+                    w_q_us,
                     pol.rack_reo_mult,
                     pol.contract_alpha,
                 );
@@ -7909,7 +8180,7 @@ async fn run_window_sender(
                 // realized clock is what every treatment arm is compared to.
                 // `timeout_us` is what the engine WILL use — never recomputed
                 // here, so this gauge cannot report a clock that did not run.
-                qclk_echo.record(timeout_us, srtt_us, sigma_us);
+                qclk_echo.record(timeout_us, srtt_us, sigma_us, w_q_us);
                 if pol.rack_clocks {
                     if let Some(m) = min_rtt_us.filter(|m| *m > 0) {
                         rack_echo.record(
