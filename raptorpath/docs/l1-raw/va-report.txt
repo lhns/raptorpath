@@ -1,0 +1,86 @@
+SEEDS [7, 42]   ledger rows: ALPHARESULT 64  VAWITNESS 64
+
+=== ABORT-CAUSE TABLE, READ BEFORE ANY NUMBER
+  VAWITNESS rows parsed      : 64
+  rc != 0                    : 0
+  witness fail tokens        : NONE
+  ARM-VOID (law_n=0 on Q400) : 0   [a RESULT, never an abort]
+
+=== c1  n_CTL=4 n_Q400=4
+   F1 (wiring) = PASS
+   lat50  CTL=2.09       Q400=2.09        d=+0.00%    CTLspread=0.48%
+   lat95  CTL=2.585      Q400=2.575       d=-0.39%    CTLspread=1.55%
+   ffrac  CTL=0.2848     Q400=0.5612      d=+97.07%   CTLspread=32.45%
+   fcnt   CTL=189.5      Q400=719.5       d=+279.68%  CTLspread=22.16%
+   cmdfa  CTL=0.126      Q400=0.2228      d=+76.90%   CTLspread=57.88%
+   qp50   CTL=8          Q400=8.5         d=+6.25%    CTLspread=12.50%
+   qp99   CTL=28.5       Q400=14.5        d=-49.12%   CTLspread=35.09%
+   good   CTL=199        Q400=183         d=-8.06%    CTLspread=13.55%
+   realized W p50: CTL=25000.0  Q400=10903.5   (shipped clock 25000 us)   law_n=0 rows=0   censor_max=1.15%
+   DIM2(2b) commanded fa_frac / alpha(0.40) = 0.557
+   DIM2(2c) realized bracket vs alpha       = UNRESOLVED (bracket [0.561, 0.987] wider than 0.30)
+   band=(147, 294)  g_ratio=0.9194  G2 bar=(L_ratio)^0.5=1.0000  gdiff=8.06% resolvable=2.18%
+   CTL median in band both seeds = True
+   s7  good 205.8->179.1 (-13.0%)  lat50 2.085->2.09  lat95 2.57->2.575  ffrac 0.2692->0.5612 (sprdCTL 34%)  fcnt 200->742
+   s42 good 188.3->183.1 (-2.7%)  lat50 2.09->2.085  lat95 2.605->2.555  ffrac 0.2848->0.5705 (sprdCTL 5%)  fcnt 180->699
+   DIM1=FLAT  DIM2=LOSS  GUARD=VIOLATION(exchange)  ==> CELL-WIN=False   fails=[]
+
+=== c7  n_CTL=12 n_Q400=12
+   F1 (wiring) = PASS
+   lat50  CTL=38.9       Q400=22.05       d=-43.32%   CTLspread=269.41%
+   lat95  CTL=83.2       Q400=64.05       d=-23.02%   CTLspread=166.59%
+   ffrac  CTL=0.01985    Q400=0.0227      d=+14.36%   CTLspread=442.32%
+   fcnt   CTL=1701       Q400=2196        d=+29.07%   CTLspread=84.95%
+   cmdfa  CTL=0.1769     Q400=0.101       d=-42.89%   CTLspread=94.32%
+   qp50   CTL=43         Q400=25          d=-41.86%   CTLspread=188.37%
+   qp99   CTL=101        Q400=89          d=-11.88%   CTLspread=246.53%
+   good   CTL=159        Q400=137.2       d=-13.69%   CTLspread=48.69%
+   realized W p50: CTL=100000.0  Q400=46175.5   (shipped clock 100000 us)   law_n=0 rows=0   censor_max=4.43%
+   DIM2(2b) commanded fa_frac / alpha(0.40) = 0.253
+   DIM2(2c) realized bracket vs alpha       = UNRESOLVED (bracket [0.023, 0.629] wider than 0.30)
+   band=(140, 180)  g_ratio=0.8631  G2 bar=(L_ratio)^0.5=0.7529  gdiff=13.69% resolvable=8.61%
+   CTL median in band both seeds = True
+   s7  good 158.8->137.2 (-13.6%)  lat50 38.9->22.05  lat95 80.35->58.35  ffrac 0.0201->0.02235 (sprdCTL 437%)  fcnt 1615->2105
+   s42 good 160.4->136.0 (-15.2%)  lat50 38.7->22.45  lat95 87.15->66.85  ffrac 0.01985->0.02325 (sprdCTL 21%)  fcnt 1776->2290
+   DIM1=FLAT  DIM2=FLAT  GUARD=VIOLATION(band)  ==> CELL-WIN=False   fails=[]
+
+=== sc2  n_CTL=8 n_Q400=8
+   F1 (wiring) = PASS
+   lat50  CTL=98.75      Q400=100.5       d=+1.77%    CTLspread=36.76%
+   lat95  CTL=105        Q400=105         d=+0.00%    CTLspread=33.14%
+   ffrac  CTL=0.3581     Q400=0.3547      d=-0.95%    CTLspread=14.69%
+   fcnt   CTL=1191       Q400=1186        d=-0.38%    CTLspread=33.25%
+   cmdfa  CTL=0.7672     Q400=0.7802      d=+1.69%    CTLspread=9.93%
+   qp50   CTL=92.5       Q400=92          d=-0.54%    CTLspread=5.41%
+   qp99   CTL=101        Q400=104         d=+2.97%    CTLspread=8.91%
+   good   CTL=88.37      Q400=87.3        d=-1.20%    CTLspread=2.76%
+   realized W p50: CTL=100000.0  Q400=103802.5   (shipped clock 100000 us)   law_n=0 rows=0   censor_max=5.26%
+   DIM2(2b) commanded fa_frac / alpha(0.40) = 1.950
+   DIM2(2c) realized bracket vs alpha       = UNRESOLVED (bracket [0.355, 0.877] wider than 0.30)
+   band=(78, 92)  g_ratio=0.9880  G2 bar=(L_ratio)^0.5=1.0088  gdiff=1.20% resolvable=0.79%
+   CTL median in band both seeds = True
+   s7  good 88.4->87.6 (-0.9%)  lat50 96.65->100.5  lat95 104.5->105  ffrac 0.3599->0.3568 (sprdCTL 15%)  fcnt 1184->1190
+   s42 good 88.0->87.3 (-0.8%)  lat50 98.75->96.85  lat95 105.5->101.7  ffrac 0.3581->0.3539 (sprdCTL 9%)  fcnt 1235->1186
+   DIM1=FLAT  DIM2=FLAT  GUARD=VIOLATION(exchange)  ==> CELL-WIN=False   fails=[]
+
+=== c8  n_CTL=8 n_Q400=8  [WITNESS - DOES NOT VOTE]
+   F1 (wiring) = PASS
+   lat50  CTL=72.1       Q400=65          d=-9.85%    CTLspread=68.93%
+   lat95  CTL=87.4       Q400=106         d=+21.22%   CTLspread=97.60%
+   ffrac  CTL=0.0845     Q400=0.0719      d=-14.91%   CTLspread=122.13%
+   fcnt   CTL=366        Q400=294         d=-19.67%   CTLspread=206.01%
+   cmdfa  CTL=0.2233     Q400=0.1852      d=-17.08%   CTLspread=164.85%
+   qp50   CTL=108        Q400=127.5       d=+18.06%   CTLspread=98.15%
+   qp99   CTL=226.5      Q400=315.5       d=+39.29%   CTLspread=106.40%
+   good   CTL=88.98      Q400=88.97       d=-0.01%    CTLspread=11.80%
+   realized W p50: CTL=100000.0  Q400=174550.0   (shipped clock 100000 us)   law_n=0 rows=0   censor_max=6.38%
+   DIM2(2b) commanded fa_frac / alpha(0.40) = 0.463
+   DIM2(2c) realized bracket vs alpha       = UNRESOLVED (bracket [0.072, 0.746] wider than 0.30)
+   band=(50, 100)  g_ratio=0.9999  G2 bar=(L_ratio)^0.5=0.9495  gdiff=0.01% resolvable=4.78%
+   CTL median in band both seeds = True
+   s7  good 89.0->86.6 (-2.7%)  lat50 69.9->64.75  lat95 86.15->105  ffrac 0.0845->0.068 (sprdCTL 39%)  fcnt 262->294
+   s42 good 91.5->91.1 (-0.5%)  lat50 79.7->65  lat95 87.4->106  ffrac 0.08715->0.0719 (sprdCTL 118%)  fcnt 499->297
+   DIM1=FLAT  DIM2=FLAT  GUARD=OK  ==> CELL-WIN=False   fails=[]
+
+STABLE CELL-WINS: 0 of 3 scoreable  (none)
+OUTCOME: SURVIVE ON MERIT
