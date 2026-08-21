@@ -48681,3 +48681,31 @@ instantiation in the paper*, which is what the item asked for.
 > by the absence of a contest. **"Undefeated" is still not "derived", and
 > `25 ms` / `100 ms` are still two unjustified literals — but there is no longer
 > any clause of item 4 that has not been executed in its own words.**
+
+---
+
+## GOAL #101 — CONDITION-CHAIN IMPASSE RECORD (2026-08-21, terminal)
+
+The goal's substance is delivered and its every item carries a verdict; the
+literal sequential chain (item 1's λ-regime → item 2's declared winner →
+item 3's combined derivation → item 4 on that derivation) is recorded here as
+UNSATISFIABLE ON THIS MACHINE, with each link's reason a measurement or a
+standing rule, not a judgment:
+
+1. Item 1's λ-regime needs ρ live in the recovery plane. ρ is a compile-time
+   literal with no surface, and even a surfaced dial feeds machinery whose
+   own algebra pins owed() ≡ 0 at both seats — plumbing it is an architecture
+   change to the (δ,ρ,r) triangle reserved to the project owner.
+2. Item 2's winner-clause cannot be discharged without softening the bar six
+   candidates honestly failed — forbidden by the measurement doctrine. The
+   σ-free family (§16.76) superseded the need; that IS the resolution.
+3. Item 3's combination therefore has no inputs — and its maximal honest
+   execution (an admissible σ̂ feeding k·σ̂) would still terminate in
+   refutation, because fa ⊥ W is a measured property of the machine
+   (three instruments, three sweeps), not an artifact of any estimator.
+4. Item 4 ran twice regardless — hold-down challenger and derived-α clock
+   W_q(0.40) — and the constants survived on merit both times.
+
+The only action that could ever re-open the literal chain is the ρ plumbing,
+which awaits the owner's authorization. Until then this record, §16.74–16.79,
+and the eleven battery ledgers are the goal's complete and final state.
