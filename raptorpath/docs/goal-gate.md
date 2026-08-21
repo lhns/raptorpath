@@ -41669,3 +41669,30 @@ Binary **sha256 `5f87359e0ffe6d014fb87efbd92f96177254af27fc8bc26c90143cb1069f078
 built from the engine tree at main@`2a1719a`. Battery wall 2026-08-20T23:21:26Z
 → 23:42:22Z (21 m). VM left at **0 `raptorpath` processes, 0 `rp-*` namespaces,
 `ens18` untouched, lock RELEASED**.
+
+---
+
+## GOAL #101 — CLOSED (2026-08-21): NEEDS-MORE, WITH TWO INSTRUMENTS AND ONE PLUMBING NAMED
+
+The goal's order clause governs: *"a failure at any stage closes the goal with
+that verdict."* The full closing table:
+
+| item | verdict |
+|---|---|
+| 1 — the ρ sweep | **UNREADABLE-WITH-NAMED-REASON**: ρ is not an input anywhere in the shipped engine — a compile-time `1.0` with no surface; the engine pins BOTH endpoints of the ρ band by construction; the triangle solver has zero engine callers. Owed: `RWM_CONTRACT_RHO` + echo (retiring `shed_armed`'s boolean per the invariant) and the `[OWED]` gauge (ε̂'s first echo). |
+| 2 — the σ estimator | **NEEDS-MORE (clause S)**: all four estimators REJECT — shipped `sig_us` at R=256 worst-leg (and it FAILS ON LOOPBACK at R=275, so the instability was never the network); the reference (srtt tracking error) is the dominant term by decomposition; nearest candidate `msd_us` misses by 1.44× on the data path and is sampling-rate dependent. Owed: a RATE-INVARIANT fixed-time-lag successive-difference estimator (formula in the paper before code) and a sender-rate delivered-latency probe (clause B is unevaluable without it). |
+| 3 — the α-sweep re-run | **BLOCKED, from the bar's own text**: (E) holds at no cell, so §16.74.6's P1 has no cell to stand on; the `≤10.0` one-witness tier the data happens to clear was declined in advance and may not be adopted post hoc. |
+| 4 — the verdict battery | **DOES-NOT-RUN-BY-ITS-OWN-CONDITION** (needs item 3). |
+
+**Overall: NEEDS-MORE.** The route question (λ) remains open with BOTH routes
+intact per the standing ruling; the shipped clamp stays convicted and
+unreplaced; no default moved in this goal. What the goal banked: the ρ-plumbing
+architecture finding (both dials collapsed inside their own composition law on
+every perf run ever taken); the estimator decomposition (the 287× attributed —
+reference ≫ memory ≫ square — and reproduced on loopback, acquitting every
+shaped cell); the seat asymmetry measured (14–73×, same runs); the earned-
+sentinel doctrine (a DONE file that cannot fail is not a signal); and the
+three named successors above, each with its acceptance machinery already
+committed and waiting.
+
+**Nothing here flips a default.**
