@@ -681,9 +681,9 @@ fn derived_clamp_readout() {
 #[test]
 fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
     use raptorpath::net::{
-        derived_recovery_round_us, hole_nack_refresh, hole_refresh, patience_floor_us,
-        sweep_timeout_us, tail_sweep_timeout_us, HOLE_NACK_REFRESH_MAX, TAIL_SWEEP_MAX_US,
-        TAIL_SWEEP_MIN_US,
+        derived_recovery_round_us, hole_nack_refresh, hole_nack_refresh_floored, hole_refresh,
+        patience_floor_us, sweep_timeout_us, tail_sweep_timeout_us, HOLE_NACK_REFRESH_BAND,
+        HOLE_NACK_REFRESH_MAX, HOLE_NACK_REFRESH_MIN, TAIL_SWEEP_MAX_US, TAIL_SWEEP_MIN_US,
     };
     // The band where the literal law is not clamping: 2·srtt in [25, 100] ms.
     for srtt_us in (12_500..=50_000).step_by(250) {
@@ -715,16 +715,162 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
             derived_recovery_round_us(srtt_us, JITTER_US)
         );
         let d = std::time::Duration::from_micros(srtt_us);
-        assert_eq!(hole_refresh(false, Some(d), JITTER_US), hole_nack_refresh(Some(d)));
+        assert_eq!(hole_refresh(false, Some(d), JITTER_US, HOLE_NACK_REFRESH_MIN), hole_nack_refresh(Some(d)));
         assert_eq!(
-            hole_refresh(true, Some(d), JITTER_US).as_micros() as u64,
+            hole_refresh(true, Some(d), JITTER_US, HOLE_NACK_REFRESH_MIN).as_micros() as u64,
             derived_recovery_round_us(srtt_us, JITTER_US)
         );
     }
     // No clock at all ⇒ the legacy fallback in BOTH arms (an
     // information-availability fallback, not a mode).
-    assert_eq!(hole_refresh(false, None, JITTER_US), HOLE_NACK_REFRESH_MAX);
-    assert_eq!(hole_refresh(true, None, JITTER_US), HOLE_NACK_REFRESH_MAX);
+    assert_eq!(hole_refresh(false, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
+    assert_eq!(hole_refresh(true, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
+    // -- paper 16.78 `F2`: THE RE-EXPRESSION IS BYTE-IDENTICAL AT THE SHIPPED
+    //    FLOOR, OVER THE WHOLE INPUT DOMAIN. ---------------------------------
+    //
+    // The refresh-floor lift re-expresses ONE law as
+    //
+    //     refresh(srtt) = (2*srtt).clamp(F, HOLE_NACK_REFRESH_BAND * F)
+    //
+    // and `HOLE_NACK_REFRESH_BAND` is COMPUTED from the two shipped literals
+    // (100 ms / 25 ms = 4) rather than written down, so it is not a new
+    // constant. This asserts the consequence that makes the whole gate safe:
+    // at `F = HOLE_NACK_REFRESH_MIN` the re-expressed law returns the SAME
+    // Duration as the shipped literal expression for every input, INCLUDING
+    // the no-clock fallback. Not approximately - identically. If this fails,
+    // 16.78 introduced a behaviour change on the default path and is
+    // withdrawn; it is discharged here, before any VM is touched.
+    assert_eq!(
+        HOLE_NACK_REFRESH_BAND, 4,
+        "the band ratio must be the shipped clamp's OWN aspect ratio \
+         (HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN = 100/25 = 4); a \
+         different value would make it a NEW constant with no provenance"
+    );
+    for srtt_us in [
+        0u64, 1, 999, 1_000, 2_000, 4_000, 12_499, 12_500, 12_501, 20_000, 25_000, 49_999,
+        50_000, 50_001, 100_000, 376_000, 1_000_000,
+    ] {
+        let d = std::time::Duration::from_micros(srtt_us);
+        let shipped = (d * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX);
+        assert_eq!(
+            hole_nack_refresh_floored(Some(d), HOLE_NACK_REFRESH_MIN),
+            shipped,
+            "the re-expressed refresh law must be BYTE-IDENTICAL to the \
+             shipped clamp at srtt = {srtt_us} us (paper 16.78 F2)"
+        );
+        assert_eq!(hole_nack_refresh(Some(d)), shipped);
+    }
+    assert_eq!(
+        hole_nack_refresh_floored(None, HOLE_NACK_REFRESH_MIN),
+        HOLE_NACK_REFRESH_MAX,
+        "the no-clock fallback is the band's own ceiling, which at the \
+         shipped floor IS HOLE_NACK_REFRESH_MAX verbatim (paper 16.78 F2)"
+    );
+    // AND THE LIFT REACHES, AS ARITHMETIC, AT BOTH BINDING RAILS. This is the
+    // clause a sweep of `q` at fixed refresh could never satisfy: a commanded
+    // floor puts the DELIVERED cadence strictly below the shipped 25 ms rail
+    // for EVERY srtt - both where the lower rail binds (2*srtt small, c1-like)
+    // and where the upper rail binds (2*srtt >= 100 ms, c7/sc2-like). An
+    // override of the lower rail ALONE would be inert in the second case.
+    // Paper 16.78.0/16.78.3; the floors below are the derived grid's own.
+    //
+    // ABSOLUTE, AT THE ANCHOR POINTS. Paper 16.78.3's grid, verbatim: the
+    // cell, its measured srtt operating point, the commanded floor, and the
+    // cadence the law must then DELIVER. The last column is what the SHIPPED
+    // law delivers at the same srtt - the cell's effective floor, and the
+    // thing 16.77.8d found sitting on top of the self-heal median.
+    //
+    //   cell  arm  2*srtt     floor F    delivered   shipped    binding rail
+    //   c1    R2   ~4 ms      12 300     12 300      25 000     LOWER
+    //   c1    R4   ~4 ms       6 150      6 150      25 000     LOWER
+    //   c7    R2   >= 100 ms   3 838     15 352     100 000     UPPER
+    //   c7    R4   >= 100 ms   1 919      7 676     100 000     UPPER
+    //   sc2   R2   >= 100 ms  12 288     49 152     100 000     UPPER
+    //   sc2   R4   >= 100 ms   6 144     24 576     100 000     UPPER
+    //
+    // Note `sc2`-R2 at 49 152 us is ABOVE the 25 ms lower rail and still far
+    // BELOW that cell's 100 ms effective floor - which is exactly why the
+    // treatment is the DELIVERED CADENCE and not the floor, and why an
+    // override of the lower rail alone reaches neither `c7` nor `sc2`.
+    for (cell, arm, srtt_us, floor_us, want_us, shipped_us) in [
+        ("c1", "R2", 2_000u64, 12_300u64, 12_300u64, 25_000u64),
+        ("c1", "R4", 2_000, 6_150, 6_150, 25_000),
+        ("c7", "R2", 50_000, 3_838, 15_352, 100_000),
+        ("c7", "R4", 50_000, 1_919, 7_676, 100_000),
+        ("sc2", "R2", 50_000, 12_288, 49_152, 100_000),
+        ("sc2", "R4", 50_000, 6_144, 24_576, 100_000),
+    ] {
+        let d = std::time::Duration::from_micros(srtt_us);
+        let f = std::time::Duration::from_micros(floor_us);
+        let got = hole_nack_refresh_floored(Some(d), f).as_micros() as u64;
+        assert_eq!(
+            got, want_us,
+            "{cell}-{arm}: a commanded floor of {floor_us} us at srtt = \
+             {srtt_us} us must DELIVER {want_us} us - paper 16.78.3's derived \
+             grid, and the value the pre-registration scores against"
+        );
+        assert_eq!(
+            hole_nack_refresh(Some(d)).as_micros() as u64,
+            shipped_us,
+            "{cell}: the SHIPPED cadence at this operating point is the \
+             cell's effective floor and must be {shipped_us} us"
+        );
+        assert!(
+            got < shipped_us,
+            "{cell}-{arm}: the whole point is that the delivered cadence gets \
+             BELOW the cell's effective floor - got {got} against {shipped_us} \
+             (paper 16.78 F1)"
+        );
+    }
+    // AND THE LIFT NEVER RAISES THE CADENCE, at any srtt, for any floor at or
+    // below the shipped one: the commanded band is contained in the shipped
+    // band, so the clamp can only move the answer down. Asserted over the
+    // whole domain rather than at the grid, because an arm that RAISED the
+    // cadence somewhere would be measuring the opposite of the treatment.
+    for floor_us in [1_919u64, 3_838, 6_144, 6_150, 12_288, 12_300, 25_000] {
+        let f = std::time::Duration::from_micros(floor_us);
+        for srtt_us in [0u64, 1, 999, 1_000, 2_000, 5_000, 12_500, 20_000, 50_000, 100_000,
+                        376_000, 500_000] {
+            let d = std::time::Duration::from_micros(srtt_us);
+            let got = hole_nack_refresh_floored(Some(d), f);
+            assert!(
+                got <= hole_nack_refresh(Some(d)),
+                "a floor at or below the shipped one can only LOWER the \
+                 cadence - at floor {floor_us} us, srtt {srtt_us} us it \
+                 returned {got:?} against the shipped \
+                 {:?} (paper 16.78)",
+                hole_nack_refresh(Some(d))
+            );
+            assert!(
+                got >= f && got <= f * HOLE_NACK_REFRESH_BAND,
+                "the delivered cadence must stay inside the commanded band \
+                 at floor {floor_us} us - got {got:?}"
+            );
+        }
+    }
+    // AND IT IS ONE LAW, CONTINUOUS IN THE FLOOR - NO MODE BIT. Sweeping the
+    // floor across the shipped value must not step the delivered cadence: the
+    // 25 000 us point is an ordinary point of the function and not a boundary
+    // between two behaviours. CLAUDE.md's no-mode-switch invariant, asserted
+    // on the engine law rather than described in prose.
+    {
+        let d = std::time::Duration::from_micros(3_000);
+        let at = |f_us: u64| {
+            hole_nack_refresh_floored(Some(d), std::time::Duration::from_micros(f_us)).as_micros()
+                as u64
+        };
+        // 2*srtt = 6 ms <= floor at every point here, so the LOWER rail
+        // delivers and the cadence IS the floor: strictly increasing, with no
+        // step across the shipped value.
+        for f_us in [24_500u64, 24_750, 24_999, 25_000, 25_001, 25_250, 25_500] {
+            assert_eq!(
+                at(f_us), f_us,
+                "the cadence must be continuous in the floor at {f_us} us"
+            );
+        }
+        assert!(at(24_999) < at(25_000) && at(25_000) < at(25_001));
+    }
+
     // ZERO NEW CONSTANTS: the derived round is expressible with only the
     // shipped multiplier and the already-derived patience floor.
     for srtt_us in [0u64, 1, 999, 12_500, 376_000] {
@@ -1065,7 +1211,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
 /// each falling back to the next when its own input is unavailable.
 #[test]
 fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode() {
-    use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh, WForm};
+    use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh, HOLE_NACK_REFRESH_MIN, WForm};
     use std::time::Duration;
     let (srtt, mrtt, sigma) = (376_000u64, 38_000u64, 10_000u64);
     let a = contract_alpha(raptorpath::control::fec_rate::ProtocolHint::Auto);
@@ -1093,7 +1239,7 @@ fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode
     let sd = Some(Duration::from_micros(srtt));
     let md = Some(Duration::from_micros(mrtt));
     let hr = |q, r, d, m, sg| {
-        hole_refresh_all(WForm::Cantelli, q, r, d, sd, JITTER_US, m, sg, None, 1, a)
+        hole_refresh_all(WForm::Cantelli, q, r, d, sd, JITTER_US, m, sg, None, 1, a, HOLE_NACK_REFRESH_MIN)
     };
     assert_eq!(hr(false, false, false, md, Some(sigma)), hole_nack_refresh(sd));
     assert_eq!(
@@ -1160,14 +1306,15 @@ fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode
     assert_eq!(
         hole_refresh_all(
             WForm::Quantile, true, true, true, None, JITTER_US, md, Some(sigma),
-            Some(w_q), 1, a_q
+            Some(w_q), 1, a_q, HOLE_NACK_REFRESH_MIN
         ),
         Duration::from_micros(w_q),
         "the quantile-native hole refresh must not require an srtt it does not use"
     );
     assert_eq!(
         hole_refresh_all(
-            WForm::Quantile, true, true, true, sd, JITTER_US, md, Some(sigma), None, 1, a_q
+            WForm::Quantile, true, true, true, sd, JITTER_US, md, Some(sigma), None, 1, a_q,
+            HOLE_NACK_REFRESH_MIN
         ),
         Duration::from_micros(rack_recovery_round_us(srtt, mrtt, 1))
     );

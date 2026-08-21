@@ -69,7 +69,7 @@ use super::{
     BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
-    hole_nack_refresh, hole_refresh_all, horizon_gate_deficits, now_us, received_sack_ranges,
+    hole_nack_refresh_floored, hole_refresh_all, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::control::FecRateController;
@@ -192,6 +192,12 @@ pub(crate) async fn run_receiver(
     let recv_derived_sweep = recv_gates.derived_sweep;
     let recv_rack_clocks = recv_gates.rack_clocks;
     let recv_rack_reo_mult = recv_gates.rack_reo_mult;
+    // Paper §16.78 — the hole-refresh clamp band's FLOOR, resolved ONCE.
+    // ABSENT ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` verbatim and the
+    // shipped cadence, byte-identically. Echoed on `[GATES]` at BOTH endpoints.
+    let recv_refresh_floor = recv_gates
+        .refresh_floor_us
+        .map_or(crate::net::HOLE_NACK_REFRESH_MIN, Duration::from_micros);
     let recv_quantile_clocks = recv_gates.quantile_clocks;
     // Paper §16.76: WHICH of the two rival `W` laws the armed clock evaluates.
     // `cantelli` on every shipped arm; read only when the quantile gate is on.
@@ -831,6 +837,7 @@ pub(crate) async fn run_receiver(
                         w_q_us,
                         recv_rack_reo_mult,
                         recv_contract_alpha,
+                        recv_refresh_floor,
                     );
                     // Every arm, control included — see the sender's twin.
                     recv_qclk_echo.record(
@@ -845,7 +852,7 @@ pub(crate) async fn run_receiver(
                                 sv.as_micros() as u64,
                                 mv.as_micros() as u64,
                                 refresh.as_micros() as u64,
-                                hole_nack_refresh(srtt).as_micros() as u64,
+                                hole_nack_refresh_floored(srtt, recv_refresh_floor).as_micros() as u64,
                             );
                         }
                     }
@@ -856,7 +863,7 @@ pub(crate) async fn run_receiver(
                                 s.as_micros() as u64,
                                 srtt_jitter_us,
                                 refresh.as_micros() as u64,
-                                hole_nack_refresh(srtt).as_micros() as u64,
+                                hole_nack_refresh_floored(srtt, recv_refresh_floor).as_micros() as u64,
                             );
                         }
                     }

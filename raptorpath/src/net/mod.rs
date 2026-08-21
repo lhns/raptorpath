@@ -574,14 +574,55 @@ pub fn tail_sweep_timeout_us(srtt_us: u64) -> u64 {
     (srtt_us.saturating_mul(2)).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US)
 }
 
+/// The shipped clamp's own ASPECT RATIO,
+/// `HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN` = 100 ms / 25 ms = **4**.
+///
+/// Paper §16.78.0. This is NOT a new constant: it is the ratio the two
+/// existing literals already stand in, computed from them rather than
+/// written down, so that [`hole_nack_refresh_floored`] at
+/// `floor = HOLE_NACK_REFRESH_MIN` reproduces the shipped law's output for
+/// EVERY input — identically, not approximately, asserted by a unit test.
+pub const HOLE_NACK_REFRESH_BAND: u32 = (HOLE_NACK_REFRESH_MAX.as_micros()
+    / HOLE_NACK_REFRESH_MIN.as_micros()) as u32;
+
+/// Receiver hole-refresh cadence with the clamp band's FLOOR supplied
+/// (paper §16.78) — the ONE law, with one of its two constants resolved from
+/// a value instead of read from a literal:
+///
+/// ```text
+///   refresh(srtt)  =  (2·srtt).clamp( floor , HOLE_NACK_REFRESH_BAND · floor )
+/// ```
+///
+/// **Why the whole BAND scales and not the lower rail alone.** The rail that
+/// bounds the cadence is whichever rail BINDS, and that differs by operating
+/// point: at a 2 ms-RTT cell `2·srtt ≈ 4 ms` and the LOWER rail binds; at a
+/// loaded 100 Mbit cell `2·srtt ≥ 100 ms` and the UPPER rail binds. Moving
+/// the lower rail alone is INERT wherever the upper rail is the one doing the
+/// bounding, which is most measured cells (§16.78.0's table). One parameter
+/// scaling the band moves whichever rail binds, everywhere, with one formula.
+///
+/// **This is not a mode.** There is no branch on `floor`, no second law, and
+/// no threshold that selects a code path — the cadence is continuous in
+/// `floor` over the whole domain, and `floor = HOLE_NACK_REFRESH_MIN` IS the
+/// shipped machine.
+///
+/// The no-clock fallback is the band's own ceiling, which at the shipped
+/// floor is `HOLE_NACK_REFRESH_MAX` verbatim.
+pub fn hole_nack_refresh_floored(srtt: Option<Duration>, floor: Duration) -> Duration {
+    let ceil = floor * HOLE_NACK_REFRESH_BAND;
+    srtt.map(|s| (s * 2).clamp(floor, ceil)).unwrap_or(ceil)
+}
+
 /// Receiver hole-refresh cadence: 2×SRTT clamped to
 /// [`HOLE_NACK_REFRESH_MIN`, `HOLE_NACK_REFRESH_MAX`], falling back to the
 /// MAX when no path clock exists yet. In reliable window mode this cadence
 /// — not any sender timer — is what re-presents a stalled hole to the
 /// sender, so it bounds every recovery channel's observable latency.
+///
+/// The SHIPPED law, and the `floor = HOLE_NACK_REFRESH_MIN` instance of
+/// [`hole_nack_refresh_floored`].
 pub fn hole_nack_refresh(srtt: Option<Duration>) -> Duration {
-    srtt.map(|s| (s * 2).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX))
-        .unwrap_or(HOLE_NACK_REFRESH_MAX)
+    hole_nack_refresh_floored(srtt, HOLE_NACK_REFRESH_MIN)
 }
 
 // ── The DERIVED recovery round (`RWM_DERIVED_SWEEP`, default OFF) ─────────
@@ -1782,12 +1823,13 @@ pub fn hole_refresh_all(
     w_q_us: Option<u64>,
     reo_mult: u64,
     alpha: f64,
+    refresh_floor: Duration,
 ) -> Duration {
     match (quantile, form) {
         // §16.76. Note the quantile-native form needs NO `srtt` — it is the
         // one law in this chain whose input is the sample window alone.
         (true, WForm::Quantile) => w_q_us.map_or_else(
-            || hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+            || hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
             Duration::from_micros,
         ),
         (true, WForm::Cantelli) => match (srtt, sigma_us) {
@@ -1796,9 +1838,9 @@ pub fn hole_refresh_all(
                 sg,
                 alpha,
             )),
-            _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+            _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
         },
-        _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult),
+        _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
     }
 }
 
@@ -1812,12 +1854,13 @@ pub fn hole_refresh_rack(
     jitter_us: u64,
     min_rtt: Option<Duration>,
     reo_mult: u64,
+    refresh_floor: Duration,
 ) -> Duration {
     match (rack, srtt, min_rtt) {
         (true, Some(s), Some(m)) if m.as_micros() > 0 => Duration::from_micros(
             rack_recovery_round_us(s.as_micros() as u64, m.as_micros() as u64, reo_mult),
         ),
-        _ => hole_refresh(derived, srtt, jitter_us),
+        _ => hole_refresh(derived, srtt, jitter_us, refresh_floor),
     }
 }
 
@@ -1837,13 +1880,22 @@ pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
 /// `RWM_DERIVED_SWEEP`. With NO clock at all the legacy fallback
 /// (`HOLE_NACK_REFRESH_MAX`) is kept verbatim in BOTH arms — an
 /// information-availability fallback, not a mode.
-pub fn hole_refresh(derived: bool, srtt: Option<Duration>, jitter_us: u64) -> Duration {
+/// `refresh_floor` is the legacy law's clamp-band floor (paper §16.78);
+/// `HOLE_NACK_REFRESH_MIN` ⇒ the shipped cadence, byte-identically. It is
+/// read ONLY by the legacy arm: the derived round has no clamp to floor, and
+/// the no-clock fallback stays `HOLE_NACK_REFRESH_MAX` verbatim in BOTH arms.
+pub fn hole_refresh(
+    derived: bool,
+    srtt: Option<Duration>,
+    jitter_us: u64,
+    refresh_floor: Duration,
+) -> Duration {
     match (derived, srtt) {
         (true, Some(s)) => {
             Duration::from_micros(derived_recovery_round_us(s.as_micros() as u64, jitter_us))
         }
         (true, None) => HOLE_NACK_REFRESH_MAX,
-        (false, s) => hole_nack_refresh(s),
+        (false, s) => hole_nack_refresh_floored(s, refresh_floor),
     }
 }
 

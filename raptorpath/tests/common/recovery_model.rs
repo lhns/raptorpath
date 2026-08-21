@@ -390,6 +390,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
         cell.arm.derived_sweep,
         Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))),
         cal.jitter_us,
+        raptorpath::net::HOLE_NACK_REFRESH_MIN,
     )
     .as_micros() as u64;
     // The SENDER's tail-sweep round: the pooled ESTIMATOR clock (the

@@ -815,6 +815,46 @@ pub struct RuntimeGates {
     /// continuous in every dial; that is the decision this arm informs and
     /// does not take.
     pub holddown_q: Option<f64>,
+    /// `RWM_REFRESH_FLOOR_US` (**ABSENT by default**; paper §16.78) — the
+    /// EXPERIMENT input that supplies the clamp-band FLOOR of the RECEIVER'S
+    /// hole-refresh cadence, in microseconds:
+    ///
+    /// ```text
+    ///   refresh(srtt) = (2·srtt).clamp( F , HOLE_NACK_REFRESH_BAND · F )
+    ///   F = this value, absent ⇒ HOLE_NACK_REFRESH_MIN = 25 ms
+    /// ```
+    ///
+    /// **Why it exists.** §16.77.8d established as arithmetic that the sender
+    /// learns a hole closed from the ABSENCE of that hole in a LATER report,
+    /// so the finest gap response it can time is one refresh interval — and at
+    /// **four of five measured cells that interval sits AT OR ABOVE the median
+    /// of the hole-self-heal distribution it is supposed to quantile**
+    /// (`[SUCC]` `orig` p50: `c1` 24.6 ms vs a 25 ms floor, `c7` 30.7 ms and
+    /// `sc2` 98.3 ms vs a 100 ms floor). Until this constant moves, no
+    /// hold-down level `q` is commandable below the self-heal median, and the
+    /// whole sub-floor region of the `(q, refresh)` surface is unreadable.
+    /// This is the named PRECONDITION, not a rival law.
+    ///
+    /// **It scales the BAND, and that is arithmetic, not preference.** The
+    /// rail that bounds the cadence is whichever rail BINDS: the LOWER rail at
+    /// `c1` (`2·srtt ≈ 4 ms`), the UPPER rail at `c7`/`sc2` (`2·srtt ≥ 100 ms`
+    /// under load). An override of the lower rail alone would be INERT at two
+    /// of the three cells the sweep runs. See [`crate::net::HOLE_NACK_REFRESH_BAND`],
+    /// which is COMPUTED from the two shipped literals and is therefore not a
+    /// new constant.
+    ///
+    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
+    /// Unset, empty, unparseable, or outside `[LOOP_WAKE_US, 100 000] µs` ⇒
+    /// `None` ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ today's machine byte-identically.
+    /// The domain is the law's own and not a taste: below the receiver loop's
+    /// wake granularity a cadence cannot be expressed by the loop that has to
+    /// emit it, and above `HOLE_NACK_REFRESH_MAX` the band's LOWER rail would
+    /// leave the shipped band entirely. The `[GATES]` echo prints the RESOLVED
+    /// value on BOTH endpoints, so "my arm did not take" is READ.
+    ///
+    /// **Nothing may ship reading it.** A shipped cadence must be DERIVED;
+    /// this makes a censored region readable and takes no decision.
+    pub refresh_floor_us: Option<u64>,
     /// `RWM_W_FORM` (**`cantelli` by default**; paper §16.76) — WHICH of the
     /// two rival `W` laws the armed quantile clock evaluates. Read ONLY when
     /// [`Self::quantile_clocks`] is armed; on the default arm it is inert and
@@ -1106,6 +1146,15 @@ impl RuntimeGates {
             // window law diverges at `q ≥ 1`. Paper §16.77.
             holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
                 .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
+            // ABSENT by default; garbage resolves back to ABSENT and the echo
+            // prints `unset`. The range is the law's own domain, not a taste:
+            // below the receiver loop's wake granularity the cadence cannot be
+            // expressed by the loop that emits it, and above the shipped upper
+            // rail the band's LOWER rail leaves the shipped band. Paper §16.78.
+            refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
+                *f >= crate::net::LOOP_WAKE_US
+                    && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
+            }),
             // ABSENT by default; garbage resolves back to `cantelli` — today's
             // law — and the echo prints the RESOLVED token, so a mistyped arm
             // is READ rather than inferred. Paper §16.76.
@@ -1156,6 +1205,7 @@ impl RuntimeGates {
         let b = |v: bool| if v { "1" } else { "0" };
         let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
         let ou = |v: &Option<usize>| v.map_or("unset".to_string(), |x| x.to_string());
+        let o64 = |v: &Option<u64>| v.map_or("unset".to_string(), |x| x.to_string());
         format!(
             "[GATES] RWM_UNIFIED={} RWM_UNIFIED_SHED={} RWM_TAPER_R={} \
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
@@ -1182,6 +1232,7 @@ impl RuntimeGates {
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
+             RWM_REFRESH_FLOOR_US={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -1235,6 +1286,14 @@ impl RuntimeGates {
             // and today's machine; a number means the sender is waiting before
             // it answers a gap report. Paper §16.77.
             o(&self.holddown_q),
+            // THE REFRESH-BAND FLOOR, echoed as its RESOLVED µs and never as a
+            // flag — same precedent, same reason. `unset` means the shipped
+            // 25 ms floor and today's cadence; a number means the receiver is
+            // re-advertising a stalled hole on a band this run chose. It is
+            // consumed at the RECEIVER and echoed at BOTH endpoints, so the
+            // control's absence is as mechanically assertable as the arm's
+            // presence. Paper §16.78.
+            o64(&self.refresh_floor_us),
             // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
             // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
             // measured in, so a ledger whose windows are 250 ms and one whose
@@ -1493,6 +1552,57 @@ mod tests {
             crate::net::RACK_REO_WND_MULT_INIT,
             "RWM_RACK_REO_MULT must default to RACK's OWN initial value"
         );
+        // THE REFRESH-BAND FLOOR IS ABSENT BY DEFAULT, AND ABSENT IS THE
+        // SHIPPED 25 ms (paper 16.78). Both halves asserted: the resolved
+        // field AND the echo token, so "the control was really a control" is
+        // read off the run's own output rather than inferred.
+        assert!(
+            g.refresh_floor_us.is_none(),
+            "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to              HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the              shipped one byte-identically (paper 16.78)"
+        );
+        assert!(
+            g.echo_line().contains("RWM_REFRESH_FLOOR_US=unset"),
+            "the absent floor must echo `unset`: {}",
+            g.echo_line()
+        );
+        let mut armed = g.clone();
+        armed.refresh_floor_us = Some(6_150);
+        assert!(
+            armed.echo_line().contains("RWM_REFRESH_FLOOR_US=6150"),
+            "the armed floor must echo its RESOLVED us: {}",
+            armed.echo_line()
+        );
+        // THE DOMAIN IS THE LAW'S OWN, NOT A TASTE, AND IT IS PINNED ON BOTH
+        // SIDES. Below the receiver loop's wake granularity the cadence cannot
+        // be expressed by the loop that has to emit it; above the shipped upper
+        // rail the band's LOWER rail leaves the shipped band entirely. The arms
+        // paper 16.78.3 derives must all be INSIDE it - a pre-registration
+        // whose own grid is out of its gate's domain is unsatisfiable when
+        // written, and this tree has that failure on the record once already.
+        for bad in [0u64, crate::net::LOOP_WAKE_US - 1, 100_001, u64::MAX] {
+            assert!(
+                bad < crate::net::LOOP_WAKE_US
+                    || bad > crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
+                "`{bad}` us must be OUTSIDE the refresh floor's domain (paper 16.78)"
+            );
+        }
+        for good in [
+            crate::net::LOOP_WAKE_US,
+            1_919,
+            3_838,
+            6_144,
+            6_150,
+            12_288,
+            12_300,
+            crate::net::HOLE_NACK_REFRESH_MIN.as_micros() as u64,
+            crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
+        ] {
+            assert!(
+                good >= crate::net::LOOP_WAKE_US
+                    && good <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
+                "`{good}` us is an arm the (q, refresh) sweep commands and must                  be INSIDE the refresh floor's domain (paper 16.78.3)"
+            );
+        }
         // The gates echo is what a battery parses; assert the three new names
         // are on it with their resolved values, two-sided.
         let line = g.echo_line();
