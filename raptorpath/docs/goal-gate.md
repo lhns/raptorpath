@@ -45330,3 +45330,394 @@ it is stated here rather than after the ratio is quoted.
 
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, or scores any clause of any pre-registration.**
+
+## THE HOLD-DOWN SWEEP — THE SCORED RESULT (2026-08-21, `feat/holddown-score` from main@`e3549a2`) — **THE LEVER IS FULLY ENGAGED AND THE OUTCOME DOES NOT MOVE: THE SENDER SUPPRESSED 97.3–99.6 % OF ITS OWN REPAIR DECISIONS AND THE REALIZED FALSE-REPAIR RATE CHANGED BY ≤ 1.66×.** `fa ⊥ W` is reproduced as `fa ⊥ T` on the 99 % path. **goal #101's successor CLOSES `WIRING TEST FAILS` at 5 of 5 cells**, the pre-registered branch fires, and its named next layer — the RECEIVER's own detection-and-report clock — is now the finding rather than the contingency. 200 invocations, one binary, five cells, five arms, two seeds, 8 reps. **0 aborts, 0 VOID by abort, `rc = 0` at 200/200, W3–W7 clean at 200/200.** Scored against "THE HOLD-DOWN SWEEP — PRE-REGISTRATION" and against nothing else. **Nothing here flips a default, edits an engine law, wires a consumer, or touches a clock.**
+
+Binary `sha256 c36e12e955fba8ee…eafb`, `COMMIT 7e18d04`. Ledgers at
+`raptorpath/docs/l1-raw/hold-s42.log`, `hold-s7.log`, witness JSONL beside
+them. Started `2026-08-21T11:05:33Z`, `HOLD-SWEEP-ALL-DONE 14:05:53Z`.
+
+### 0 — ABORT-CAUSE TABLE FIRST, EVERY CLASS PRINTED WHETHER OR NOT IT IS ZERO
+
+| class | s42 | s7 | **total** |
+|---|---|---|---|
+| `ABORT` | 0 | 0 | **0** |
+| `ARM-LIVENESS-FAIL-CLI` / `-SRV` | 0 / 0 | 0 / 0 | **0 / 0** |
+| `ARM-CONTAMINATION` | 0 | 0 | **0** |
+| `ROUTING-FAIL-ACCOUNT` | 0 | 0 | **0** |
+| `ROUTING-FAIL-FCAUSE` | 0 | 0 | **0** |
+| `INSTRUMENT-FAIL-HOLD` / `-SUCC` / `-RFA` / `-CLASS` / `-GATE` / `-PROBE` | 0 | 0 | **0 at all six** |
+| `W3-QLEVEL-FAIL` / `-NREQ-FAIL` / `-GEN-FAIL` | 0 | 0 | **0 at all three** |
+| `HOLD-PARSE-FAIL` / `QCAP-MISSING` / `ARM-VANISHED` / `UNKNOWN-CELL` | 0 | 0 | **0** |
+| **`HOLD-LAW-DEAD`** *(a RESULT, never an abort)* | 5 | 7 | **12** |
+| **`WINDOW-PARTIAL`** *(a RESULT, never an abort)* | 76 | 74 | **150** |
+| **`DNF`** | 1 | 1 | **2** |
+| `RUNTIME` (invocations) | 100 | 100 | **200** |
+
+**`HOLD-LAW-DEAD` IS CONCENTRATED AT EXACTLY THE ARM §16.77.8 PREDICTED
+UNSCOREABLE.** `c1`-`H010` **8 of 8 reps** and `c1`-`H037` 2 of 8 — and
+**nowhere else on the grid**. The window-fill table predicted `c1`-`H010` from
+749 resolutions per rep against `N = 1000`; it is dead at every rep of both
+seeds. Those rows are **VOID for scoring** and are never pooled. `c1`-`H010`'s
+`law_n/evals` is **0.000** and `c1`-`H037`'s is **0.440**; every other cell-arm
+runs its own law at **0.986–1.000**.
+
+**`DNF` 2 of 200**, both `c8L`-`H037` (s42 r3, s7 r4), `mbps` absent; excluded
+from every median by construction, reported here.
+
+### 1 — THE WITNESSES, AT FULL n
+
+| # | witness | result |
+|---|---|---|
+| **W3** | `[HOLD]` present, `q=`/`n_req=` matching the arm table, `gen=0` | **200 / 200** |
+| **W4** | `evals = sup + emit` per line **and** `Σ evals = Σ sup + [FCAUSE] n` | **200 / 200** |
+| **W5** | `[SUCC] det > 0`, `res > 0`, accounting identity `det = orig+rep+aban+open+over` | **200 / 200** (identity 200/200) |
+| **W6** | `[RFA] fires > 0` | **200 / 200** |
+| **W7** | `[FCAUSE] other = 0` and `unattr = 0` | **200 / 200** |
+
+**W4 IS THE CLAUSE THAT MAKES §2 A FINDING RATHER THAN A NULL RESULT.** Its two
+sides come from two gauges at two sites, and it held to the unit on every one of
+200 invocations. **The gate is exactly where the pre-registration says it is.**
+
+### 2 — (i) THE WIRING TEST: **FAILS**, AT 5 OF 5 CELLS
+
+`rpd = [FCAUSE] n / [SUCC] det` — numerator a **sender** gauge, denominator a
+**receiver** gauge, so it cannot be an instrument agreeing with itself. Median
+of 8 reps per cell-arm.
+
+| cell | `CTL` | `H500` | `H136` | `H037` | `H010` | `CTL/H010` | monotone? | **treatment span** |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 1.3466 | 1.4196 | 1.4030 | 1.3860 | 1.3003 | 1.036 | **no** | **1.092×** |
+| `c7` | 0.0593 | 0.0506 | 0.0513 | 0.0492 | 0.0606 | 0.978 | **no** | **1.232×** |
+| `c8` | 0.1778 | 0.2161 | 0.1300 | 0.1660 | 0.1857 | 0.957 | **no** | 1.663× |
+| `c8L` | 0.3712 | 0.5106 | 0.5076 | 0.5058 | 0.5000 | 0.743 | **no** | **1.021×** |
+| `sc2` | 1.5615 | 1.6354 | 1.6870 | 1.6426 | 1.5467 | 1.010 | **no** | **1.091×** |
+
+**AGAINST THE PRE-REGISTERED RULE, VERBATIM.**
+
+* *WIRING CONFIRMED* needed `rpd` monotone non-increasing at **≥ 4 of 5** cells
+  **and** a `CTL`-to-`H010` ratio above **3×** at **≥ 3**. Measured: monotone at
+  **0 of 5**, above 3× at **0 of 5**.
+* *WIRING FAILS* needed the treatment-arm span `max/min` below **1.5×** at
+  **≥ 3 of 5**. Measured: **4 of 5** (`c8` alone clears, at 1.663×).
+
+> **⇒ (i) SCORES `WIRING TEST FAILS`.**
+
+**AND THE CONTRAST IS THE WHOLE FINDING, BECAUSE THE LEVER DID ENGAGE.**
+
+| cell | `sup_frac` `CTL` → max arm | `rpd` span | `[RFA] false_frac` `CTL` → `H010` |
+|---|---|---|---|
+| `c1` | 0.000 → **0.9726** | 1.092× | 0.2631 → 0.2350 |
+| `c7` | 0.000 → **0.9890** | 1.232× | 0.0200 → 0.0169 |
+| `c8` | 0.000 → **0.9801** | 1.663× | 0.0751 → 0.0588 |
+| `c8L` | 0.000 → **0.9960** | 1.021× | 0.0804 → 0.0792 |
+| `sc2` | 0.000 → **0.9921** | 1.091× | 0.3546 → 0.3556 |
+
+**The sender suppressed 97.3–99.6 % of the repair decisions it was consulted on,
+and the realized false-repair rate did not follow — at either endpoint.**
+`[RFA] false_frac` is a **receiver-side** gauge, independent of both `rpd`'s
+numerator and of `[HOLD]` entirely, and it is flat to within ±12 % at every
+cell. §16.77.3 predicted `rpd ≈ 1 − orig_frac·q`, i.e. a fall to ≈ 0.031 at
+`H010`; §16.77.8a's signed bias made that an **upper** bound and the rule
+therefore scored **movement, not level**. **There is no movement.**
+
+**This is `fa ⊥ W` reproduced as `fa ⊥ T`.** The quantile-native sweep moved the
+realized timer `W` p50 by 2.1× across a 200× span of α and the false-alarm rate
+did not follow at 5 of 5 cells. Here the hold-down moved the *suppression
+fraction* from 0 to 0.99 — **a far stronger intervention, on the path that
+carries 98.99 % of the fires** — and the outcome is equally inert.
+
+### 3 — (ii) THE COST CURVE, AND `H4` FIRES
+
+**GOODPUT, median of 8 with the rep range beside it.** Band scope is `CTL`-only
+by pre-registration; an out-of-band treatment reading is a **RESULT**.
+
+| cell | band | `CTL` | `H500` | `H136` | `H037` | `H010` |
+|---|---|---|---|---|---|---|
+| `c1` | [147, 294] | **194.1** [192,201] | 187.0 [175,197] | 188.5 [73,199] | 195.2 [189,201] | 195.7 [168,203] |
+| `c7` | [140, 180] | **160.7** [148,166] | 158.0 [15,168] | 156.5 [10,162] | 144.7 [22,153] | **29.5** [13,119] **OUT** |
+| `c8` | [50, 100] | **91.5** [76,97] | 69.5 [54,87] | 67.3 [55,71] | 55.6 [28,64] | 70.1 [60,79] |
+| `c8L` | [45, 95] | **87.1** [25,91] | **8.2 OUT** | **6.5 OUT** | **7.5 OUT** | **7.4 OUT** |
+| `sc2` | [78, 92] | **88.0** [87,89] | **20.1 OUT** | **22.8 OUT** | **28.5 OUT** | **67.1 OUT** |
+
+**`CTL` IS IN BAND AT 5 OF 5. Nine treatment cell-arms of twenty are OUT.**
+At `c8L` **every** armed arm collapses to **0.074–0.094× `CTL`** — 87.1 down to
+6.5–8.2 Mbit/s, a **10.6–13.4× loss** — and at `sc2` to 0.229–0.762×.
+
+> **⇒ §16.77.9's `H4` (GOODPUT PAYS FOR IT) FIRES**, at `c8L` and `sc2` on both
+> seeds and at `c7`-`H010`. The frame priced the hold-down's cost entirely in
+> the latency of the `(1 − orig_frac) ≈ 2 %` of holes that really were lost.
+> **It is not paid there. It is paid in throughput, by an order of magnitude.**
+
+**AND THE CURVE HAS NO INTERIOR MINIMUM IN THE PREDICTED DIRECTION.**
+§16.77.3 predicted a **monotone-decreasing cost** in `q` with the optimum at or
+above the grid's top edge. Measured `argmax` goodput per cell: **`CTL` at `c7`,
+`c8`, `c8L`, `sc2`**, and `H010` at `c1` by **+0.8 %** with fully overlapping
+rep ranges. **The cost curve rises with the lever at four of five cells.**
+
+**DELIVERED LATENCY, per-leg, censoring-aware.** Censored fraction printed
+beside every reading: `legs_censor_max` is **0.000–0.030** at every cell-arm, so
+none of these quantiles is materially blind.
+
+| cell | queue p50 (ms) `CTL` → `H010` | queue p99 (ms) `CTL` → `H010` |
+|---|---|---|
+| `c1` | 8.0 → 9.0 | 27.0 → 26.0 |
+| `c7` | 40.0 → 25.0 | 103.5 → 116.5 |
+| `c8` | 118.0 → 49.5 | 286.0 → 161.5 |
+| `c8L` | 170.0 → 50.0 | 483.0 → 382.5 |
+| `sc2` | 92.0 → 83.0 | 102.0 → 96.5 |
+
+**THE LATENCY IMPROVEMENTS ARE NOT A WIN AND MUST NOT BE READ AS ONE.** Queue
+delay falls at `c8`/`c8L`/`c7` **because goodput collapsed**: `c8L` shows
+170 → 50 ms of queue at 87.1 → 7.4 Mbit/s. A machine moving an eleventh of the
+data holds an eleventh of the queue. **The pairing is the reading; either half
+alone is a mis-statement.**
+
+**THE ONLINE `T` AND THE REALIZED HOLD-DOWN, BESIDE THE CURVE** (`T` = the law's
+order statistic at p0, `hd_p50` = the realized wait, both ms, median of 8):
+
+| cell | `H500` | `H136` | `H037` | `H010` |
+|---|---|---|---|---|
+| `c1` | T=428 / hd=180 | T=371 / hd=164 | T=67 / hd=41 | **VOID** (`law_n=0`) |
+| `c7` | T=87 / hd=26 | T=83 / hd=31 | T=179 / hd=53 | **T=6110 / hd=2753** |
+| `c8` | T=659 / hd=119 | T=783 / hd=172 | T=1042 / hd=508 | T=625 / hd=360 |
+| `c8L` | T=22097 / hd=9437 | T=24798 / hd=11534 | T=25142 / hd=11010 | T=22407 / hd=11010 |
+| `sc2` | T=6207 / hd=3277 | T=5794 / hd=3146 | T=5025 / hd=2884 | T=2043 / hd=1376 |
+
+**`T` IS NOT ORDERED BY `q` AT ANY CELL, AND AT `c8L` IT IS 22–25 SECONDS.**
+Against `[SUCC]`'s measured `orig` p50 of 163.8 ms at that cell, the law is
+commanding a wait **135–153× the median of the distribution it is supposed to be
+a quantile of.** §4 is why.
+
+### 4 — (v) `H5` FIRES, AND THE (q, refresh) TWO-DIMENSIONALITY IS NOW MEASURED
+
+**`obs_p50` — the sender-observed outstanding-time distribution, ms, median of 8.**
+`CTL` carries the instrument since §16.77.8c, so the unforced baseline exists
+for the first time.
+
+| cell | `CTL` | `H500` | `H136` | `H037` | `H010` | **max inflation** |
+|---|---|---|---|---|---|---|
+| `c1` | **12.6** | 428.0 | 333.3 | 14.3 | 13.5 | **33.9×** |
+| `c7` | **19.5** | 78.6 | 50.5 | 27.7 | 3355.8 | **172.2×** |
+| `c8` | **16.1** | 537.6 | 717.2 | 618.7 | 20.9 | **44.6×** |
+| `c8L` | **351.1** | 22096.7 | 24722.7 | 24516.7 | 19850.4 | **70.4×** |
+| `sc2` | **102.9** | 6201.0 | 5680.9 | 4613.0 | 258.1 | **60.2×** |
+
+**`H5`'s bar was an inflation above 2× at three or more cells. Measured:
+33.9× to 172.2×, at FIVE of five.**
+
+> **⇒ `H5` FIRES. `T(q)` is NOT a well-posed estimator on this machine.** The
+> stream it quantiles is dominated by the hold-down's own delay, so **no level
+> this sweep reports is a level of the distribution §16.77.3 derives against**,
+> and clause (iii) below inherits that caveat entire.
+
+**THE DISCLOSURE MADE BEFORE THE RATIO WAS EVER QUOTED STILL APPLIES:** `n_obs`
+is `N(1−q)` on a treatment arm and 1000 on the control, so the two `obs_p50`s
+are quantiles over windows of different **lengths** — same estimand, same
+functional, different smoothing. **It does not explain a 172× ratio**, and it is
+restated here rather than deployed as one.
+
+**THE REFRESH FLOOR (§16.77.8d), PER CELL, AND WHAT IT CENSORS.**
+`hole_nack_refresh(srtt) = (2·srtt).clamp(25, 100) ms`.
+
+| cell | `2·srtt` | **refresh floor** | `[SUCC]` `orig` p50 | floor / p50 | `obs_p50(CTL)` | **what the sender's instrument cannot see** |
+|---|---|---|---|---|---|---|
+| `c1` | ~4 ms | **25 ms** (clamped UP) | 24.6 ms | **1.02×** | 12.6 ms | **the entire body below the median** |
+| `c7` | ≥ 100 ms | **100 ms** | 30.7 ms | **3.26×** | 19.5 ms | **the whole distribution up to p90+** |
+| `c8` | 154 ms | **100 ms** (clamped DOWN) | 98.3 ms | **1.02×** | 16.1 ms | **the entire body below the median** |
+| `c8L` | ≥ 100 ms | **100 ms** | 163.8 ms | 0.61× | 351.1 ms | everything below the 61 % point |
+| `sc2` | ≥ 100 ms | **100 ms** | 98.3 ms | **1.02×** | 102.9 ms | **the entire body below the median** |
+
+**AT FOUR OF FIVE CELLS THE INSTRUMENT'S RESOLUTION FLOOR SITS AT OR ABOVE THE
+MEDIAN OF THE DISTRIBUTION IT QUANTILES.** Two arms whose commanded levels
+differ by less than one refresh interval command the **same clock** — a
+separability limit **(Q) cannot see**, because (Q) bounds the sampling precision
+of the LEVEL and says nothing about the resolution of the QUANTITY. **This
+caveat is carried on clause (i)'s levels, clause (ii)'s `T` column and clause
+(iii) in full**: a sweep of `q` at fixed refresh is a sweep inside one
+instrument step at four of five cells.
+
+### 5 — (iii) THE DERIVED LEVEL AGAINST THE MEASURED OPTIMUM
+
+`q* = 0.99` (`H010`) is §16.77.3's and §16.77.7's answer — reached twice, from
+the δ-dependent reactive side and the δ-free proactive side.
+
+| cell | `H010` | `CTL` | ratio | measured `argmax` | rep ranges overlap? | verdict |
+|---|---|---|---|---|---|---|
+| `c1` | 195.7 | 194.1 | 1.008 | `H010` | **yes** | **tie** — +0.8 % inside the spread |
+| `c7` | 29.5 | 160.7 | **0.184** | `CTL` | no | derived level **loses 5.4×** |
+| `c8` | 70.1 | 91.5 | 0.766 | `CTL` | yes | derived level loses |
+| `c8L` | 7.4 | 87.1 | **0.085** | `CTL` | no | derived level **loses 11.8×** |
+| `sc2` | 67.1 | 88.0 | 0.762 | `CTL` | no | derived level loses |
+
+**THE DERIVED LEVEL LOSES AT FOUR OF FIVE CELLS AND TIES AT THE FIFTH**, and at
+`c1` — the one cell where it is nominally ahead — **its own law never ran**
+(`law_n = 0` at 8 of 8 reps), so `c1`-`H010` is a **behavioural control** that
+happened to be labelled a treatment. **The derived level is not measured as
+better than the shipped machine anywhere on this grid.**
+
+**AND CLAUSE (iii) CANNOT BE READ AS A REFUTATION OF THE DERIVATION.** §4
+established that the level the arm *realized* is a level of a stream the arm
+itself moved by 34–172×. **§16.77.3's `q*` was never actually commanded**; what
+was commanded was a quantile of a contaminated distribution. The derivation's
+own inputs — `orig_frac`, `d`, `w`, `δ` — are untouched by this pass.
+
+### 6 — (iv) `CTL`: THE CLAMP IS **UNDEFEATED**, AND FOR THE FIRST TIME ON THE PATH THAT DECIDES
+
+| cell | `CTL` goodput | best treatment | verdict |
+|---|---|---|---|
+| `c1` | 194.1 IN band | 195.7 (`H010`, law dead) | **UNDEFEATED** — tie inside the spread |
+| `c7` | 160.7 IN band | 158.0 | **UNDEFEATED** |
+| `c8` | 91.5 IN band | 70.1 | **UNDEFEATED**, 1.31× |
+| `c8L` | 87.1 IN band | 8.2 | **UNDEFEATED**, 10.6× |
+| `sc2` | 88.0 IN band | 67.1 | **UNDEFEATED**, 1.31× |
+
+**§16.77.6 said the clamp was undefeated because nothing that fought it was on
+the deciding path. That excuse is now spent.** This battery put a lever on the
+gap-report response site, W4 proved at 200/200 that the lever sat exactly there,
+and `sup_frac` proved it moved 97–99.6 % of the decisions. **The clamp is still
+undefeated at 5 of 5.** The paradox does not dissolve into "the challengers were
+on the wrong plane"; the right plane was reached and the shipped machine won on
+it.
+
+**BUT THE PRE-REGISTERED ORDER CLAUSE GOVERNS WHICH OUTCOME THIS IS.** Outcome 3
+(`LEVER WORKS — CLAMP UNDEFEATED`) requires clause (i) CONFIRMED. **It is not.**
+Outcome 4 fires first, and outcome 4 is the verdict.
+
+### 7 — THE LEGAL OUTCOME, VERBATIM
+
+> **4. `WIRING TEST FAILS`.** (i) FAILS. **Then the gap-report response site is
+> not the whole of the 99 % path either.** The named successor, pre-committed
+> here so it is not chosen afterwards: **the RECEIVER's own
+> detection-and-report clock** — the sender cannot hold down below the cadence
+> at which it is told, and `hole_nack_refresh(srtt) = (2·srtt).clamp(25, 100 ms)`
+> is the receiver's twin of the clamp §16.77.6 convicts. The next instrument is
+> at the receiver's report site.
+
+**`WIRING TEST FAILS` at `c1`, `c7`, `c8`, `c8L`, `sc2` — 5 of 5.** Beside it,
+**`H4` fires** (`c8L`, `sc2`, `c7`-`H010`), **`H5` fires** at 5 of 5, and
+`c1`-`H010` closes **`UNSCOREABLE`** at 8 of 8 reps exactly as pre-registered.
+`H2` (an interior minimum below `H136` at Bulk) **does not fire**: the cost
+curve has no interior minimum, it simply rises. `H3` (`BOTH REFUTED`) **does not
+fire**: the measured optimum is `CTL`, which is `q = 0`, outside the grid rather
+than below `H500` within it — and with `H5` firing, no level reading is
+admissible evidence about `orig_frac` either way.
+
+### 8 — IN PLAIN LANGUAGE
+
+The sender answers a receiver's "I'm missing packet N" with a repair. Almost all
+of those holes — 97.9 % — were going to fill themselves a moment later, because
+the original was merely late, not lost. So we taught the sender to wait before
+answering, and we derived how long it should wait from measured costs.
+
+It waited. It waited on 97 to 99.6 percent of the reports it got, at every cell,
+proven by two independent counters at two different machines. **And the number
+of wasted repairs did not change.** Both the sender's own accounting and the
+receiver's independent one say the false-repair rate is what it always was.
+
+Two reasons, and the sweep measured both. First, **waiting is expensive in a way
+the model did not price**: at the hardest cell throughput fell by more than ten
+times, because a held repair is a held *stream* — the receiver cannot deliver
+past a hole it is still waiting for. Second, and worse for the construction,
+**the sender cannot see finely enough to aim.** It learns a hole closed only
+when the *next* gap report omits it, and those reports come every 25 to 100 ms.
+At four of five cells that step is bigger than the entire typical delay we were
+trying to measure. The sender was told to wait for the 99th percentile of a
+distribution it can only see in one-step increments the size of the whole thing
+— and the waits it computed drifted to 22 *seconds* at one cell, because the
+waiting made the delays longer, which made the next wait longer still.
+
+So the honest reading is not "waiting doesn't help". It is: **on this machine
+the sender cannot measure what it would need to measure, and the thing standing
+in its way is the receiver's report cadence — the very same `[25, 100] ms` clamp
+that has been convicted twice on the other side of the connection.** The shipped
+machine remains undefeated, and it is now undefeated on the path that actually
+decides, which is a stronger statement about it than any previous battery could
+make.
+
+### 9 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** The hold-down reaches the gap-report response site and controls
+it (W4 200/200, `sup_frac` → 0.99). Realized false-repair does **not** track it
+(5/5, two independent gauges). Goodput pays a 1.3–13.4× cost at three cells.
+`T(q)` is not well-posed on this machine (`H5`, 34–172× at 5/5). The refresh
+floor sits at or above the quantiled median at 4/5 cells. `c1`-`H010` is
+UNSCOREABLE exactly as predicted. **The shipped clamp is undefeated on the
+deciding path.**
+
+**NOT established, and explicitly not claimed.** That the *derivation* of
+§16.77.2/3/7 is wrong — its inputs are untouched and its `q*` was never actually
+commanded (§5). That a hold-down cannot help — only that this one, measured
+through this instrument, does not. Anything about ρ (held at 1 throughout) or
+about `r` (`r* = 0` at the Bulk operating point). Any refutation of `orig_frac`,
+which `H5` makes inadmissible from these rows.
+
+### 10 — THE VERDICT BATTERY IS **NOT LICENSED**, AND THE ORDER CLAUSE SAYS WHY
+
+The goal's order clause licenses the verdict battery (item 4) only if the wiring
+test passes **and** some `q` beats `CTL`. **Neither holds**: (i) FAILS at 5/5,
+and `CTL` is the `argmax` at 4/5 with the fifth a tie whose arm's law never ran.
+**No verdict battery is specified and none is launched.**
+
+**THE CLOSURE THE ORDER CLAUSE GIVES: `WIRING TEST FAILS` — the successor is
+named, and it is named FROM THE RECORD.** Two items, in the order the record
+puts them, and the first is a **precondition** for the second:
+
+1. **THE REFRESH-FLOOR LIFT, FIRST, BECAUSE IT IS A PRECONDITION AND NOT A
+   RIVAL.** §16.77.8d established that the sender's resolution is one
+   `hole_nack_refresh` interval and that this sits at or above the quantiled
+   median at 4 of 5 cells. **Until that floor moves, no sweep of `q` can command
+   a level the sender can express**, and `H5` is the measured consequence. The
+   quantity is already named and already convicted on the other side of the
+   connection: `(2·srtt).clamp(25, 100 ms)`, `net/mod.rs:583`.
+2. **THEN THE `(q, refresh)` SWEEP** — §16.77.8d's own words, *"the sweep that
+   has content is over the pair"*. It is two-dimensional by necessity, not by
+   ambition: `q` alone is inside one instrument step at 4/5 cells.
+
+**AND ONE INSTRUMENT IS OWED BEFORE EITHER**, from §16.77.9's `H1` disposal:
+the next reading is at the **receiver's report site**, not the sender's response
+site. This battery moved the question one hop and answered it there; the hop it
+moved to is the receiver's.
+
+**THE n THAT WOULD BE NEEDED, FROM THIS PASS'S OWN MEASURED VARIANCE**, recorded
+so a successor is designed rather than inherited (within-arm CV of goodput,
+median over the five arms; `n` for a 10 % detection at 95/80):
+
+| cell | within-arm CV (median / max) | `n` for a 10 % effect |
+|---|---|---|
+| `c1` | 0.035 / 0.222 | **2** |
+| `c8` | 0.093 / 0.265 | **7** |
+| `sc2` | 0.092 / 0.225 | **7** |
+| `c8L` | 0.194 / 0.348 | **30** |
+| `c7` | 0.339 / 0.844 | **90** |
+
+**`c7`'s CV of 0.34 is itself a finding about this arm and not about the cell**:
+`CTL`'s range is [148, 166] while `H500`'s is [15, 168] — the hold-down makes
+the cell *bimodal*, and a successor that plans `n` from the control's variance
+will be under-powered by an order of magnitude. **Stated here rather than
+discovered in the next non-separation.**
+
+### 11 — TWO PROCESS DEFECTS, RECORDED AGAINST MYSELF
+
+**(1) THE EARNED SENTINEL WAS NEVER WRITTEN, AND IT WAS STRUCTURALLY
+UNWRITABLE.** I declared `/home/vibe/hold/HOLD-SWEEP.done` at EXIT.
+`holdrun.sh` ends with `touch` on that path, but `/home/vibe/hold` is
+**root-owned `drwxr-xr-x`** — the battery runs under `sudo` and created it — and
+the `touch` runs unprivileged. `set -uo pipefail` **without `-e`** made the
+failure silent. **A sentinel that cannot be written is not a sentinel**, and the
+completion evidence that did exist was the driver's own
+`HOLD-BATTERY-DONE-42` / `-7` and `HOLD-SWEEP-ALL-DONE` in `holdrun.log`
+(vibe-owned), committed as `hold-run.log`. The rule this earns: **a sentinel
+must be written by the same privilege level that will read it, and its
+writability must be proven at launch, not at exit.**
+
+**(2) THE LEDGER ROW TAG IS `ALPHARESULT`, NOT `HOLDRESULT`.** This is by
+design — the parser is `alpha_parse.py` extended additively so rows POOL with
+the α-sweep and quantile-native ledgers — and the pre-registration says so. But
+every prior battery in this tree names its own rows, so `grep HOLDRESULT`
+returning 0 is a reasonable first check that this pass made fail. **100
+`ALPHARESULT` rows per seed against 100 `RUNTIME` lines per seed: complete, both
+seeds.** Recorded so the next reader of this ledger is not misled the same way.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or licenses any battery.**
