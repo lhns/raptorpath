@@ -43702,3 +43702,32 @@ committed, per the provenance-parity precedent.
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 wires a consumer, or touches a clock.**
 
+
+---
+
+## GOAL #101 — CLOSED (2026-08-21): THE CLOCK QUESTION IS DECIDED IN THE NEGATIVE, AND THE MEASURAND IS THE DEFECT
+
+The goal's order clause governs. The full closing table:
+
+| item | verdict |
+|---|---|
+| 1 — the ρ sweep | **UNREADABLE-WITH-NAMED-REASON** (ρ not plumbed; both endpoints pinned by construction; the triangle solver has zero engine callers). |
+| 2 — the σ estimator | **NEEDS-MORE ×2, then SUPERSEDED**: six estimators rejected by one unmoved bar; the exact clause-B pass quantified the CATEGORY ERROR (the shipped gauge supplies 3–5% of its own defining functional; conditional vs marginal, 20–300×); the quantile-native clock then REMOVED σ̂ from the construction entirely, which is the only way the bar was ever going to be satisfied. |
+| 3 — the α-sweep re-run (quantile-native) | **CLOSED WITH A RESULT: BOTH REFUTED at the readable cell / FLAT at its control / F2 at 5-of-5.** The instrument works (11/45 pairs separate vs 0/50 Cantelli-era; the pre-derived cannot-separate pair didn't, 5/5). The theory does not: commanded fa is constant across a 200× α span while the realized clock demonstrably moves — **§16.69's measurand (the ack-arrival distribution) is not what the clock's fires respond to.** λ is NOT pinned: α* sits outside the Lagrangian's span at any λ, and §16.73's ceiling fires against it, unresolved. |
+| 4 — the verdict battery | **DOES-NOT-RUN-BY-ITS-OWN-CONDITION** (no winning α to instantiate). **And its question received an answer anyway, in the one clean curve: every challenger arm at c1 is WORSE than the shipped clamp** — the clamp's first positive evidence in its life. It stays, still convicted on fa (30/30 over budget), now also undefeated on the wire. |
+
+**Overall: the recovery-clock program's model family — "a waiting time positioned
+on the ack-arrival distribution controls the false-repair rate" — is REFUTED
+WITH RECORD on this machine.** Patience does not buy fewer wasted repairs
+(fa ⊥ W across 200×); the routes' shared premise, not either route, was the
+defect; λ is unpinnable inside a refuted frame. The named successor, before ANY
+new clock is derived: the **fire-cause instrument** — classify every [RACK]
+fire by trigger (timer expiry vs NACK vs gap report), because fa's independence
+from W is only explicable if most fires are not timer-driven; then re-derive
+the measurand from the classified data; then the sweep machinery (validated,
+reusable, with measured σ_pooled sizing it) re-runs. The banked instruments —
+[RFA], [RTTDUMP], the quantile clock arm, the earned-sentinel harness — all
+carry forward.
+
+**Nothing here flips a default. The clamp stays: convicted, undefeated,
+unexplained.**
