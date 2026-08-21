@@ -140,6 +140,18 @@ def parse_dump(src):
     which is the exact class of defect this whole pass exists to remove.
     """
     if isinstance(src, str):
+        # `tlagb_bpass.sh` gzips its megabyte-scale client captures after the
+        # last invocation, so the on-disk artefact is normally `.log.gz`.
+        # Opening one as text yields zero matches and a SILENTLY EMPTY clause
+        # B -- a leg scored over nothing looks identical to a leg with no
+        # dump. Sniff the magic rather than trusting the extension.
+        with open(src, "rb") as probe:
+            gz = probe.read(2) == b"\x1f\x8b"
+        if gz:
+            import gzip
+
+            with gzip.open(src, "rt", errors="replace") as fh:
+                return parse_dump(fh)
         with open(src, "r", errors="replace") as fh:
             return parse_dump(fh)
 
