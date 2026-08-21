@@ -75,8 +75,11 @@
 # RWM_GEN=0 ON EVERY ROW, AND IT IS LOAD-BEARING. Under generation coding the
 # SACK->gap producer is suppressed (recv_nack_tx = None), so [FCAUSE]'s gap_
 # classes and [SUCC]'s orig are STRUCTURALLY EMPTY -- this battery's entire
-# measurand would read zero for a configuration reason. W4 asserts the RESOLVED
-# `RWM_GEN=0` off the [GATES] echo rather than trusting the arm env.
+# measurand would read zero for a configuration reason. W4 asserts `gen=0` off
+# the MEASURAND'S OWN GAUGES ([HOLD], [FCAUSE], [SUCC]) rather than off the
+# [GATES] echo: `RWM_GEN` is the generation SIZE IN SYMBOLS, so the engine
+# echoes its default `RWM_GEN=384` even when the invocation passed 0 and
+# generation coding is off. MEASURED in this battery's calibration.
 #
 # THE TIMER IS DISARMED ON EVERY ROW. RWM_QUANTILE_CLOCKS, RWM_RACK_CLOCKS and
 # RWM_DERIVED_SWEEP are contamination gates here and RWM_W_FORM must resolve to
@@ -91,7 +94,8 @@
 #       endpoints.                                        W2-FLOOR-MISMATCH
 #   W3  RWM_HOLDDOWN_Q RESOLVED == the arm's own level, LITERALLY, on both.
 #                                                         W3-Q-MISMATCH
-#   W4  contamination gates all 0 AND RWM_GEN=0.          W4-CONTAM
+#   W4  contamination gates all 0 AND gen=0 at [HOLD]/[FCAUSE]/[SUCC].
+#                                                         W4-CONTAM
 #   W5  [HOLD] present at the sender, evals > 0, and evals == sup + emit.
 #                                                         W5-NO-HOLD
 #   W6  [QCLK] site=receiver present with evals > 0 and kept > 0 -- the seat
@@ -439,16 +443,28 @@ check_and_parse() { # name cell arm alpha cpus cpuc pingp qp
   { [ "$q_got" != "$q_exp" ] || [ "$q_got_s" != "$q_exp" ]; } \
     && { echo "W3-Q-MISMATCH $name rep=$REP cli='$q_got' srv='$q_got_s' exp=$q_exp" >> "$OUT"; FAILS="$FAILS W3-Q-MISMATCH"; }
 
-  # -- W4: RWM_GEN=0, READ OFF THE ECHO ------------------------------------
+  # -- W4: GENERATION CODING IS OFF, READ OFF THE GAUGES' OWN `gen=` --------
   # Under generation coding the SACK->gap producer is suppressed, so [FCAUSE]'s
   # gap classes and [SUCC]'s orig are STRUCTURALLY EMPTY and this battery's
-  # whole measurand reads zero for a configuration reason. Asserted from the
-  # RESOLVED echo, not from the arm env this script itself wrote.
-  local gen_c gen_s
-  gen_c=$(printf '%s' "$gl_c" | grep -o 'RWM_GEN=[^ ]*' | sed 's/^RWM_GEN=//'); gen_c="${gen_c:-none}"
-  gen_s=$(printf '%s' "$gl_s" | grep -o 'RWM_GEN=[^ ]*' | sed 's/^RWM_GEN=//'); gen_s="${gen_s:-none}"
-  { [ "$gen_c" != "0" ] || [ "$gen_s" != "0" ]; } \
-    && { echo "W4-CONTAM $name rep=$REP RWM_GEN cli='$gen_c' srv='$gen_s' exp=0 (the gap-report path is structurally empty under generation coding)" >> "$OUT"; FAILS="$FAILS W4-CONTAM"; }
+  # whole measurand reads zero for a configuration reason.
+  #
+  # READ FROM THE GAUGE LINE AND *NOT* FROM `[GATES] RWM_GEN=`. `RWM_GEN` is
+  # the generation SIZE IN SYMBOLS, not a flag: the invocation passes
+  # `RWM_GEN=0` meaning "no generation coding", and the engine resolves and
+  # echoes its own default `RWM_GEN=384` regardless. MEASURED in this battery's
+  # calibration, where a check against the echo fired W4-CONTAM at 6 of 6
+  # invocations while generation coding was in fact OFF at 6 of 6. The witness
+  # that carries the meaning is the one the MEASURAND'S OWN GAUGES stamp:
+  # `[HOLD]`, `[FCAUSE]` and `[SUCC]` each print `gen=<0|1>`, and `gen=0` there
+  # is the statement that the rows this battery scores were produced with the
+  # gap-report path live. That is a stronger check than the env echo, because
+  # it is taken at the site rather than at the launcher.
+  local gen_h gen_f gen_u
+  gen_h=$(grep "\[HOLD\] site=sender" "$C" 2>/dev/null | tail -1 | grep -o ' gen=[0-9]*' | sed 's/^ gen=//'); gen_h="${gen_h:-none}"
+  gen_f=$(grep "\[FCAUSE\]" "$C" 2>/dev/null | tail -1 | grep -o ' gen=[0-9]*' | sed 's/^ gen=//'); gen_f="${gen_f:-none}"
+  gen_u=$(grep "\[SUCC\]" "$S" 2>/dev/null | tail -1 | grep -o ' gen=[0-9]*' | sed 's/^ gen=//'); gen_u="${gen_u:-none}"
+  { [ "$gen_h" != "0" ] || [ "$gen_f" != "0" ] || [ "$gen_u" != "0" ]; } \
+    && { echo "W4-CONTAM $name rep=$REP gen HOLD='$gen_h' FCAUSE='$gen_f' SUCC='$gen_u' exp=0 (the gap-report path is structurally empty under generation coding)" >> "$OUT"; FAILS="$FAILS W4-CONTAM"; }
 
   # The instruments must be armed on BOTH endpoints or their columns are void.
   local i
@@ -506,7 +522,15 @@ check_and_parse() { # name cell arm alpha cpus cpuc pingp qp
   ql=$(grep "\[QCLK\] site=receiver" "$S" 2>/dev/null | tail -1)
   qev=$(printf '%s' "$ql" | grep -o ' evals=[0-9]*' | tail -1 | tr -dc '0-9'); qev="${qev:-0}"
   qkept=$(printf '%s' "$ql" | grep -o ' kept=[0-9]*' | tail -1 | tr -dc '0-9'); qkept="${qkept:-0}"
-  qp50=$(printf '%s' "$ql" | grep -o 'w_us_p50=[0-9]*' | tail -1 | tr -dc '0-9'); qp50="${qp50:--1}"
+  # `sed 's/^KEY=//'` and NOT `tr -dc '0-9'`: the key `w_us_p50` CONTAINS the
+  # digits `50`, and `tr -dc` strips non-digits from the WHOLE match, so
+  # `w_us_p50=25000` reads back as `5025000`. MEASURED in this battery's own
+  # calibration, which is why the calibration exists. `w_us_min` / `w_us_max` /
+  # `evals` / `kept` have no digits in their names and were never affected -
+  # `below=` is computed from `max`, so the F1 verdict was never at risk - but
+  # the p50 is the cadence figure clauses (i) and (iv) read, and a corrupted one
+  # would have been a two-decade error inside a scored column.
+  qp50=$(printf '%s' "$ql" | grep -o 'w_us_p50=[0-9]*' | tail -1 | sed 's/^w_us_p50=//'); qp50="${qp50:--1}"
   qmin=$(printf '%s' "$ql" | grep -o 'w_us_min=[0-9]*' | tail -1 | tr -dc '0-9'); qmin="${qmin:--1}"
   qmax=$(printf '%s' "$ql" | grep -o 'w_us_max=[0-9]*' | tail -1 | tr -dc '0-9'); qmax="${qmax:--1}"
   if [ -z "$ql" ] || [ "$qev" -eq 0 ] || [ "$qkept" -eq 0 ]; then

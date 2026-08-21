@@ -46188,3 +46188,182 @@ invocations are spent. **If it fails, `ABORT-SMOKE` and nothing is launched.**
   taken from the hold-down sweep, the successor-arrival pass, or the fire-cause
   pass, and each is cited to the record it came from.
 
+
+## THE (q, refresh) SWEEP — CALIBRATION DISCHARGED, AND THE PRE-REGISTRATION AMENDED BEFORE THE SCORED RUN (2026-08-21, `feat/qrefresh`) — **`F1` IS ALREADY SATISFIED AT 3 OF 3 CELLS: THE COMMANDED CADENCE IS DELIVERED AND IT IS BELOW EVERY CELL'S SHIPPED FLOOR. AND THE CALIBRATION FOUND A SPECIFICATION FAILURE IN `P-B` THAT IS REPAIRED HERE RATHER THAN DISCOVERED IN THE SCORING.**
+
+**THIS SECTION CONTAINS VM NUMBERS AND THEY ARE CALIBRATION READINGS, NOT
+RESULTS.** Six invocations, seed 42, **one** rep, arms `CTL` and `R4Q86` only,
+binary `91a4f8cc…`, commit `999aa63`. No clause of §5 is scored on them and no
+outcome of §6 is chosen. They are disclosed in full because the amendment below
+is written **with them in hand**, and saying otherwise would be false — the
+fire-cause pass's own disclosure rule, applied to its successor.
+
+### A — THE SENTINEL IS PROVABLY WRITABLE, PROVEN BEFORE ANY MEASUREMENT
+
+```text
+   drwxr-xr-x. vibe vibe /home/vibe/qrefresh
+   SENTINEL-WRITABLE /home/vibe/qrefresh/{DONE,FAILED}-{ALL,S42,S7}   6 of 6
+   SENTINEL-PROOF rc=0 uid=1001 user=vibe
+```
+
+Write **and unlink**, on the ABSOLUTE paths, as the unprivileged identity that
+will write them, with the directory created before `sudo` was ever invoked.
+**§9's rule is discharged, at launch, in the run's own output.**
+
+### B — `F1`, THE WIRING TEST: **SATISFIED AT 3 OF 3 CELLS**
+
+`CADENCE` rows, from the RECEIVER's own `[QCLK] site=receiver`:
+
+| cell | arm | `F` commanded | delivered min | delivered **max** | cell's shipped floor | `below` |
+|---|---|---|---|---|---|---|
+| `c1` | `CTL` | absent | 25 000 | 29 036 | 25 000 | **0** |
+| `c1` | `R4Q86` | 6 150 | 6 150 | **24 600** | 25 000 | **1** |
+| `c7` | `CTL` | absent | 57 201 | 100 000 | 100 000 | **0** |
+| `c7` | `R4Q86` | 1 919 | 7 676 | **7 676** | 100 000 | **1** |
+| `sc2` | `CTL` | absent | 32 506 | 100 000 | 100 000 | **0** |
+| `sc2` | `R4Q86` | 6 144 | 19 823 | **24 576** | 100 000 | **1** |
+
+**Every armed arm delivered a cadence whose MAXIMUM is below its cell's shipped
+effective floor, and every control stayed inside the shipped band.** The
+commanded bands are honoured exactly: `[6 150, 24 600]`, `[1 919, 7 676]`,
+`[6 144, 24 576]` — each `4·F` to the microsecond, which is the re-expressed
+law's own ceiling. **The precondition goal #101 named is met on the wire.**
+
+**AND ONE COLUMN OF §3.1 IS CORRECTED BY ITS OWN CALIBRATION.** §3.1 predicted a
+single `delivered` value per cell-arm from the binding-rail argument. That is
+exact at `c7` (`min = max = 7 676 µs`, the upper rail binds at every sample) and
+is a **BRACKET** at `c1` and `sc2`, where `2·srtt` moves across the commanded
+band under load: `c1`'s `2·srtt` is ~4 ms at rest but its `CTL` reads
+`max = 29 036 µs`, so the transfer's own queueing carries it above 25 ms. **The
+delivered cadence is a DISTRIBUTION inside `[F, 4F]`, not a point.** `want=` is
+therefore reported as the binding-rail prediction and **`below=` — computed from
+the MAXIMUM — is the clause that scores `F1`**, which is what it was already
+written to do. No bar moves.
+
+### C — TWO HARNESS DEFECTS, FOUND BY THE CALIBRATION AND FIXED BEFORE THE RUN
+
+**THIS IS WHAT THE CALIBRATION IS FOR, AND BOTH ARE RECORDED AGAINST MYSELF.**
+
+1. **THE `w_us_p50` SCRAPE WAS CORRUPT BY TWO DECADES.** The driver read
+   `grep -o 'w_us_p50=[0-9]*' | tr -dc '0-9'`, and `tr -dc` strips non-digits
+   from the WHOLE match — **the key's own `50` survived into the value**, so
+   `w_us_p50=25000` read back as `5025000`. `w_us_min`, `w_us_max`, `evals` and
+   `kept` have no digits in their names and were never affected, so **`below=`
+   and the `F1` verdict were never at risk** — but the p50 is the cadence figure
+   clauses (i) and (iv) read. Fixed to `sed 's/^w_us_p50=//'`, the idiom the
+   `[HOLD]` scrapes already used.
+2. **`W4` ASSERTED THE WRONG TOKEN AND FIRED AT 6 OF 6 INVOCATIONS WHILE THE
+   CONDITION IT GUARDS WAS SATISFIED AT 6 OF 6.** `RWM_GEN` is the generation
+   **SIZE IN SYMBOLS**, not a flag: the invocation passes `RWM_GEN=0` meaning
+   "no generation coding" and the engine resolves and echoes its own default
+   `RWM_GEN=384` regardless. The witness that carries the meaning is the one
+   **the measurand's own gauges stamp** — `[HOLD]`, `[FCAUSE]` and `[SUCC]` each
+   print `gen=`, and all three read `gen=0` at 6 of 6. `W4` now reads those.
+   **A witness that fires on every row is not a witness; it is noise that would
+   have been dismissed by hand at scoring time**, which is exactly how a real
+   contamination gets through.
+
+### D — THE SPECIFICATION FAILURE IN `P-B`, AND ITS REPAIR
+
+**`P-B` AS WRITTEN IN §5(ii) HAS NO QUALIFYING ARM AT ANY CELL, AND WOULD HAVE
+SCORED VACUOUSLY TRUE.** Its clause reads *"every arm whose realized
+`hd_p50_us ≤` that cell's `[SUCC] orig` p50"*. Measured:
+
+| cell | `[SUCC] orig` p50 | realized `hd_p50_us` at `R4Q86` | ratio |
+|---|---|---|---|
+| `c1` | 24.6 ms | **163.8 ms** | 6.7× |
+| `c7` | 30.7 ms | **655.4 ms** / **2 097.2 ms** (two paths) | 21× / 68× |
+| `sc2` | 98.3 ms | **3 932.2 ms** | 40× |
+
+**Not one arm holds for less than its cell's self-heal median. The set `P-B`
+quantifies over is empty, and an empty universal is true.** Written that way the
+criterion was **unsatisfiable in the direction that matters** — it could pass
+without being tested. This tree has that failure on its record once already; it
+is repaired here, before the run, rather than found in the scoring.
+
+**THE REASON IS A SECOND CENSORING CONSTANT, AND NAMING IT IS THE FINDING.**
+The refresh floor bounded what the sender could **OBSERVE**. §16.77.8c's
+feedback loop bounds what it can **COMMAND**: `T(q)` is an order statistic of the
+sender's own outstanding-time stream, and once the hold-down holds, that stream
+inflates **with the hold itself**. Lifting the cadence removes the first
+constant and does not touch the second. **The calibration proves both halves in
+one row-pair:**
+
+```text
+   c1-CTL     obs_p50 = 12 771 µs   sup_frac = 0.000   ← 12.8 ms, BELOW the old
+                                                          25 ms floor. The
+                                                          unforced stream is
+                                                          sub-floor-readable for
+                                                          the FIRST TIME.
+   c1-R4Q86   obs_p50 = 277 251 µs  sup_frac = 0.962   ← the same sender, same
+                                                          cadence, 21× the
+                                                          stream, because it is
+                                                          now measuring its own
+                                                          hold.
+```
+
+**THE LIFT WORKED AND IT IS NOT SUFFICIENT.** That is a result about the
+machine, it was not knowable before the cadence was liftable, and it is the
+reason this battery is still worth its 140 invocations rather than a reason to
+cancel it.
+
+**`P-B` IS RE-STATED IN A FORM THAT IS ALWAYS EVALUABLE — A PAIRED CONTRAST AT
+MATCHED `q`.** The cadence is the treatment this battery actually commands, so
+the question `P-B` should have been asking is what **lowering the cadence**
+costs at a fixed hold level:
+
+> **`P-B` (paired form).** For each cell and each `q ∈ {0.99, 0.864}`, contrast
+> `goodput(R2Qx)` and `goodput(R4Qx)` against `goodput(R0Qx)` — same `q`, same
+> cell, same rep, same seed.
+>
+> * **`P-B` HOLDS** ⇔ no sub-floor arm is worse than its own `R0` twin by more
+>   than that cell's `CTL` rep-spread, at **≥ 2 of 3** cells, on **both seeds**.
+> * **`P-B` REFUTED** ⇔ a sub-floor arm is worse than its `R0` twin beyond that
+>   spread at **≥ 2 of 3** cells on **both seeds**. **Lowering the receiver's
+>   report cadence costs throughput on its own**, independently of the hold —
+>   which would close the sub-floor region on MECHANISM and is a strong result.
+
+**The `R0` arms were already in the grid as anchors; this makes them the
+denominator.** No arm is added, no invocation is added, and the contrast is
+within-rep and within-`q`, which is strictly better controlled than the absolute
+band it replaces.
+
+**THE ABSOLUTE BAND CLAUSE IS RETAINED AND PRE-DECLARED POSSIBLY VACUOUS.** If
+any arm does realize `hd_p50 ≤` its cell's `orig` p50, that arm must read in
+band. If none does — which the calibration says is likely — the clause reports
+**`P-B-ABSOLUTE-VACUOUS`** and the paired form carries the prediction. **Stated
+now, so a vacuous clause can never be reported later as a passed one.**
+
+### E — ONE OUTCOME ADDED TO §6, AND IT IS LEGAL AND MEANINGFUL
+
+> **9. `SECOND-CENSOR-NAMED`** — the delivered cadence is commanded (`F1`
+> satisfied) and the realized hold `hd_p50` still exceeds the cell's self-heal
+> p50 at every armed arm. **The refresh floor was NECESSARY AND NOT SUFFICIENT:
+> the sender's observation is freed while its command is not**, and the named
+> next constant is §16.77.8c's feedback loop — `T(q)` evaluated on a stream the
+> hold's own delay dominates. This outcome **composes with** `FLAT`,
+> `P-A-REFUTED` and `P-C-REFUTED` rather than replacing them, and it does not
+> void the battery: every clause below (0) is still read, because the arms
+> differ in the cadence they realize whether or not they differ in the hold.
+
+**AND ITS SUCCESSOR IS NAMED IN ADVANCE, AS EVERY BRANCH IN THIS PROGRAM HAS
+BEEN.** If `SECOND-CENSOR-NAMED` is the reading, the next instrument is a
+hold-down whose level is evaluated on a stream the hold **cannot** contaminate —
+the receiver-side `[SUCC]` `orig` distribution rather than the sender-side
+outstanding time — which is a different estimand, not a different constant, and
+is therefore a construction question and not a lift.
+
+### F — THE CONTROLS ARE IN BAND AT 3 OF 3, AND §10 IS DISCHARGED
+
+`CTL` goodput: `c1` **202.98** in `[147, 294]`; `c7` **166.89** in `[140, 180]`;
+`sc2` **88.95** in `[78, 92]`. `rc = 0` at 6 of 6, `[GATES]` two-sided at 6 of 6,
+`[HOLD]`/`[QCLK]`/`[FCAUSE]`/`[SUCC]`/`[RFA]` present at 6 of 6, `evals = sup +
+emit` on every `[HOLD]` line, `gen=0` on every gauge.
+
+**§10's calibration clause is DISCHARGED, including the clause this battery
+added** — the armed wiring witness at every cell, checked at the cell, before
+140 invocations are spent. **The scored run is authorized.**
+
+**Everything in §1–§11 not amended above stands unchanged.** No default moves,
+no gate is added, no engine law is edited, and no clock is derived.
+
