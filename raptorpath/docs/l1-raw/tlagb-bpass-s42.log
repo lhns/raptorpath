@@ -1,0 +1,121 @@
+=== TLAGB B-PASS seed=42 reps=1 2026-08-21T01:31:56Z
+PURPOSE clause B only — the RAW RTT SAMPLE STREAM via RWM_RTT_DUMP=1
+NOT-A-DATUM no S-clause or C-clause row is scored from this pass (the dump perturbs the sender)
+CELLS c1 c7 c8 c8L sc2
+DUMP  RWM_RTT_DUMP=1 — THIS IS THE ONLY SCRIPT THAT SETS IT
+SEAT  plain window (RWM_GEN=0)
+ENV   RWM_GEN=0 RWM_RTT_DUMP=1 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1
+CAPTURES full client logs under /home/vibe/tlagb/dump (gzipped after the run)
+BIN /home/vibe/raptorpath/target/release/raptorpath
+SHA256 45a703fab33d13139b5e6ac104fc8abf0098758de6e8751d5a89083ab612d8c6  /home/vibe/raptorpath/target/release/raptorpath
+COMMIT 
+KERNEL 7.0.14-101.fc43.x86_64
+UPTIME  03:31:56 up 2 days,  6:14,  7 users,  load average: 3.63, 3.34, 2.81
+COTENANT kwin=0
+0 sddm=4
+CPU Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+=== rep=1 cell=c1 seed=42 spec=c1/c1/single bytes=400000000 01:31:56
+[2m2026-08-21T01:31:58.594116Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.4966,"mean_mbps":173.005,"mean_s":18.4966,"median_s":18.4966,"min_s":18.4966,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=368 recv=368 censor=0.00% p50=2.1[censor=0.00% ok] p95=2.68[censor=0.00% ok] p99=3.5[censor=0.00% ok]
+    LATPROBE: 1 leg(s) /tmp/rwm-ping-0.txt=368 replies
+    CPU: CPUSRV=19.19s CPUCLI=21.26s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad45: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 42  Sent 437942288 bytes 343290 pkt (dropped 50, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad47: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9281660057736619863  Sent 30742707 bytes 69294 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1 rep=1 21s rc=0
+TLAGB-BPASS-GATES c1 dump=1 max=400000
+W1 c1 rep=1 rfa_lines=18 nonzero_gen=0
+W2 c1 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c1 p=0 capped=0
+TLAGB-BPASS-LINES c1 p=0 dumplines=1323
+TLAGB-BPASS-MBPS c1 rep=1 mbps=173.005 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c7 seed=42 spec=c2/c2/dual bytes=200000000 01:32:17
+[2m2026-08-21T01:32:19.397904Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":10.57,"mean_mbps":151.372,"mean_s":10.57,"median_s":10.57,"min_s":10.57,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=213 recv=205 censor=3.76% p50=28.2[censor=3.76% ok] p95=64.9[censor=3.76% ok] p99=87.9[censor=3.76% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=213 recv=208 censor=2.35% p50=28.4[censor=2.35% ok] p95=61.7[censor=2.35% ok] p99=86.6[censor=2.35% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=205 /tmp/rwm-ping-1.txt=208 replies
+    CPU: CPUSRV=13.92s CPUCLI=15.25s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad49: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 110706542 bytes 89235 pkt (dropped 500, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad4a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 1042  Sent 113061330 bytes 91051 pkt (dropped 472, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad4b: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 14900089848069298400  Sent 12415828 bytes 44466 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad4c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 11202682133250208349  Sent 12662524 bytes 45325 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c7 rep=1 13s rc=0
+TLAGB-BPASS-GATES c7 dump=1 max=400000
+W1 c7 rep=1 rfa_lines=10 nonzero_gen=0
+W2 c7 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c7 p=0 capped=0
+TLAGB-BPASS-LINES c7 p=0 dumplines=333
+TLAGB-BPASS-CAP c7 p=1 capped=0
+TLAGB-BPASS-LINES c7 p=1 dumplines=340
+TLAGB-BPASS-MBPS c7 rep=1 mbps=151.372 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c8 seed=42 spec=c2/c3/dual bytes=25000000 01:32:30
+[2m2026-08-21T01:32:32.347303Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.2579,"mean_mbps":88.579,"mean_s":2.2579,"median_s":2.2579,"min_s":2.2579,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=49 recv=48 censor=2.04% p50=62.7[censor=2.04% ok] p95=73.7[censor=2.04% ok] p99=86.7[censor=2.04% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=49 recv=48 censor=2.04% p50=40.4[censor=2.04% ok] p95=47.3[censor=2.04% ok] p99=49.8[censor=2.04% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=48 /tmp/rwm-ping-1.txt=48 replies
+    CPU: CPUSRV=2.19s CPUCLI=1.51s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad4d: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 27871991 bytes 22886 pkt (dropped 111, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad4e: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 1042  Sent 49625 bytes 117 pkt (dropped 1, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad4f: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 14065246574824580738  Sent 2729642 bytes 15290 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad50: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 1552357267204216021  Sent 19987 bytes 113 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c8 rep=1 5s rc=0
+TLAGB-BPASS-GATES c8 dump=1 max=400000
+W1 c8 rep=1 rfa_lines=2 nonzero_gen=0
+W2 c8 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c8 p=0 capped=0
+TLAGB-BPASS-LINES c8 p=0 dumplines=83
+TLAGB-BPASS-MBPS c8 rep=1 mbps=88.579 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c8L seed=42 spec=c2/c3/dual bytes=200000000 01:32:35
+[2m2026-08-21T01:32:36.995276Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":27.2831,"mean_mbps":58.644,"mean_s":27.2831,"median_s":27.2831,"min_s":27.2831,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=545 recv=533 censor=2.20% p50=37.7[censor=2.20% ok] p95=79.6[censor=2.20% ok] p99=82.2[censor=2.20% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=547 recv=519 censor=5.12% p50=40.9[censor=5.12% ok] p95=129.0[censor=5.12% UNSCOREABLE(inside censored tail)] p99=565.0[censor=5.12% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=533 /tmp/rwm-ping-1.txt=519 replies
+    CPU: CPUSRV=19.20s CPUCLI=27.65s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad51: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 224226601 bytes 175543 pkt (dropped 785, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad52: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 1042  Sent 5614282 bytes 5686 pkt (dropped 117, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad53: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17424760822131679052  Sent 23219962 bytes 118215 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad54: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 13825284001955101466  Sent 807771 bytes 4426 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c8L rep=1 29s rc=0
+TLAGB-BPASS-GATES c8L dump=1 max=400000
+W1 c8L rep=1 rfa_lines=26 nonzero_gen=0
+W2 c8L rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c8L p=0 capped=0
+TLAGB-BPASS-LINES c8L p=0 dumplines=674
+TLAGB-BPASS-CAP c8L p=1 capped=0
+TLAGB-BPASS-LINES c8L p=1 dumplines=16
+TLAGB-BPASS-MBPS c8L rep=1 mbps=58.644 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=sc2 seed=42 spec=c2/c2/single bytes=100000000 01:33:05
+[2m2026-08-21T01:33:06.810317Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.9962,"mean_mbps":88.927,"mean_s":8.9962,"median_s":8.9962,"min_s":8.9962,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=173 recv=170 censor=1.73% p50=101.0[censor=1.73% ok] p95=106.0[censor=1.73% ok] p99=107.0[censor=1.73% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 1 leg(s) /tmp/rwm-ping-0.txt=170 replies
+    CPU: CPUSRV=8.11s CPUCLI=7.14s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad55: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 111960421 bytes 92546 pkt (dropped 540, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad57: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 7688212758948206812  Sent 10863016 bytes 59830 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME sc2 rep=1 11s rc=0
+TLAGB-BPASS-GATES sc2 dump=1 max=400000
+W1 sc2 rep=1 rfa_lines=8 nonzero_gen=0
+W2 sc2 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP sc2 p=0 capped=0
+TLAGB-BPASS-LINES sc2 p=0 dumplines=336
+TLAGB-BPASS-MBPS sc2 rep=1 mbps=88.927 (dump ON perturbs the sender — NOT a goodput datum)
+TLAGB-BPASS-GZ c1 raw_bytes=3096566 -> /home/vibe/tlagb/dump/c1-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c7 raw_bytes=1657312 -> /home/vibe/tlagb/dump/c7-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c8 raw_bytes=219453 -> /home/vibe/tlagb/dump/c8-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c8L raw_bytes=1934236 -> /home/vibe/tlagb/dump/c8L-s42-r1-c.log.gz
+TLAGB-BPASS-GZ sc2 raw_bytes=899210 -> /home/vibe/tlagb/dump/sc2-s42-r1-c.log.gz
+=== CELLCOUNTS (invocations, NOT clause-B legs) 2026-08-21T01:33:19Z
+CELLCOUNT c1 rows=1/1
+CELLCOUNT c7 rows=1/1
+CELLCOUNT c8 rows=1/1
+CELLCOUNT c8L rows=1/1
+CELLCOUNT sc2 rows=1/1
+TLAGB-BPASS-DONE seed=42 2026-08-21T01:33:19Z

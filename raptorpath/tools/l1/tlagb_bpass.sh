@@ -224,6 +224,30 @@ echo "TLAGB-BPASS end $(date -u +%FT%TZ) load=$(cat /proc/loadavg)" >> "$OUTDIR/
 for CELL in $BP_CELLS; do
   F="$DUMPDIR/${CELL}-s${SEED_ARG}-r1-c.log"
   if [ -f "$F" ]; then
+    # PARSE BEFORE GZIPPING — the defect this repairs, recorded rather than
+    # quietly fixed. This script preserved the raw [RTTDUMP] captures but never
+    # ran `tlagb_parse.py` over them, so its ledger carried NO `TLAGBREAD` rows
+    # (the gauges' ONLINE readings) and no `rtp` (the tau the tlag band is built
+    # on). Clause B is `beta = online / population`, so with the online half and
+    # tau both missing it scored UNSCOREABLE at EVERY leg -- while the dumps
+    # themselves parsed perfectly, which is the failure mode that looks like
+    # success. The first scored run hit exactly this and clause B had to be
+    # recovered off-box by re-parsing the preserved captures.
+    #
+    # The parse must happen HERE, before `gzip`, because the parser reads a
+    # plain log. Its rows go into THIS ledger, so the B pass is self-contained
+    # and `tlagb_report.py --bpass <this ledger>` needs nothing else.
+    S="$DUMPDIR/${CELL}-s${SEED_ARG}-r1-s.log"
+    if [ -f "$S" ]; then
+      if python3 ./tlagb_parse.py "$CELL" "$SEED_ARG" 1 "$F" "$S" - \
+           >> "$OUT" 2>>"$OUTDIR/bpass-era.txt"; then
+        echo "TLAGB-BPASS-PARSED $CELL rows=$(grep -c "^TLAGBREAD $CELL $SEED_ARG 1 " "$OUT" || echo 0)" >> "$OUT"
+      else
+        echo "TLAGB-BPASS-PARSE-FAIL $CELL (clause B will be UNSCOREABLE at this cell)" >> "$OUT"
+      fi
+    else
+      echo "TLAGB-BPASS-PARSE-SKIP $CELL (no server capture at $S)" >> "$OUT"
+    fi
     SZ=$(stat -c %s "$F" 2>/dev/null); SZ="${SZ:-0}"
     gzip -f "$F" \
       && echo "TLAGB-BPASS-GZ $CELL raw_bytes=$SZ -> ${F}.gz" >> "$OUT" \

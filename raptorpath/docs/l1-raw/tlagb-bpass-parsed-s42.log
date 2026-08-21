@@ -1,0 +1,886 @@
+=== TLAGB B-PASS seed=42 reps=1 2026-08-21T01:31:56Z
+PURPOSE clause B only — the RAW RTT SAMPLE STREAM via RWM_RTT_DUMP=1
+NOT-A-DATUM no S-clause or C-clause row is scored from this pass (the dump perturbs the sender)
+CELLS c1 c7 c8 c8L sc2
+DUMP  RWM_RTT_DUMP=1 — THIS IS THE ONLY SCRIPT THAT SETS IT
+SEAT  plain window (RWM_GEN=0)
+ENV   RWM_GEN=0 RWM_RTT_DUMP=1 RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1
+CAPTURES full client logs under /home/vibe/tlagb/dump (gzipped after the run)
+BIN /home/vibe/raptorpath/target/release/raptorpath
+SHA256 45a703fab33d13139b5e6ac104fc8abf0098758de6e8751d5a89083ab612d8c6  /home/vibe/raptorpath/target/release/raptorpath
+COMMIT 
+KERNEL 7.0.14-101.fc43.x86_64
+UPTIME  03:31:56 up 2 days,  6:14,  7 users,  load average: 3.63, 3.34, 2.81
+COTENANT kwin=0
+0 sddm=4
+CPU Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+=== rep=1 cell=c1 seed=42 spec=c1/c1/single bytes=400000000 01:31:56
+[2m2026-08-21T01:31:58.594116Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":18.4966,"mean_mbps":173.005,"mean_s":18.4966,"median_s":18.4966,"min_s":18.4966,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=368 recv=368 censor=0.00% p50=2.1[censor=0.00% ok] p95=2.68[censor=0.00% ok] p99=3.5[censor=0.00% ok]
+    LATPROBE: 1 leg(s) /tmp/rwm-ping-0.txt=368 replies
+    CPU: CPUSRV=19.19s CPUCLI=21.26s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad45: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 42  Sent 437942288 bytes 343290 pkt (dropped 50, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad47: root refcnt 7 limit 1000 delay 1ms rate 1Gbit seed 9281660057736619863  Sent 30742707 bytes 69294 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME c1 rep=1 21s rc=0
+TLAGB-BPASS-GATES c1 dump=1 max=400000
+W1 c1 rep=1 rfa_lines=18 nonzero_gen=0
+W2 c1 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c1 p=0 capped=0
+TLAGB-BPASS-LINES c1 p=0 dumplines=1323
+TLAGB-BPASS-MBPS c1 rep=1 mbps=173.005 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c7 seed=42 spec=c2/c2/dual bytes=200000000 01:32:17
+[2m2026-08-21T01:32:19.397904Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":10.57,"mean_mbps":151.372,"mean_s":10.57,"median_s":10.57,"min_s":10.57,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=213 recv=205 censor=3.76% p50=28.2[censor=3.76% ok] p95=64.9[censor=3.76% ok] p99=87.9[censor=3.76% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=213 recv=208 censor=2.35% p50=28.4[censor=2.35% ok] p95=61.7[censor=2.35% ok] p99=86.6[censor=2.35% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=205 /tmp/rwm-ping-1.txt=208 replies
+    CPU: CPUSRV=13.92s CPUCLI=15.25s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad49: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 110706542 bytes 89235 pkt (dropped 500, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad4a: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 1042  Sent 113061330 bytes 91051 pkt (dropped 472, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad4b: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 14900089848069298400  Sent 12415828 bytes 44466 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad4c: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 11202682133250208349  Sent 12662524 bytes 45325 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c7 rep=1 13s rc=0
+TLAGB-BPASS-GATES c7 dump=1 max=400000
+W1 c7 rep=1 rfa_lines=10 nonzero_gen=0
+W2 c7 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c7 p=0 capped=0
+TLAGB-BPASS-LINES c7 p=0 dumplines=333
+TLAGB-BPASS-CAP c7 p=1 capped=0
+TLAGB-BPASS-LINES c7 p=1 dumplines=340
+TLAGB-BPASS-MBPS c7 rep=1 mbps=151.372 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c8 seed=42 spec=c2/c3/dual bytes=25000000 01:32:30
+[2m2026-08-21T01:32:32.347303Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.2579,"mean_mbps":88.579,"mean_s":2.2579,"median_s":2.2579,"min_s":2.2579,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=49 recv=48 censor=2.04% p50=62.7[censor=2.04% ok] p95=73.7[censor=2.04% ok] p99=86.7[censor=2.04% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=49 recv=48 censor=2.04% p50=40.4[censor=2.04% ok] p95=47.3[censor=2.04% ok] p99=49.8[censor=2.04% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=48 /tmp/rwm-ping-1.txt=48 replies
+    CPU: CPUSRV=2.19s CPUCLI=1.51s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad4d: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 27871991 bytes 22886 pkt (dropped 111, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad4e: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 1042  Sent 49625 bytes 117 pkt (dropped 1, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad4f: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 14065246574824580738  Sent 2729642 bytes 15290 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad50: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 1552357267204216021  Sent 19987 bytes 113 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c8 rep=1 5s rc=0
+TLAGB-BPASS-GATES c8 dump=1 max=400000
+W1 c8 rep=1 rfa_lines=2 nonzero_gen=0
+W2 c8 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c8 p=0 capped=0
+TLAGB-BPASS-LINES c8 p=0 dumplines=83
+TLAGB-BPASS-MBPS c8 rep=1 mbps=88.579 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=c8L seed=42 spec=c2/c3/dual bytes=200000000 01:32:35
+[2m2026-08-21T01:32:36.995276Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":27.2831,"mean_mbps":58.644,"mean_s":27.2831,"median_s":27.2831,"min_s":27.2831,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=545 recv=533 censor=2.20% p50=37.7[censor=2.20% ok] p95=79.6[censor=2.20% ok] p99=82.2[censor=2.20% UNSCOREABLE(inside censored tail)]
+    LATPROBE-LEG leg=1 file=/tmp/rwm-ping-1.txt sent=547 recv=519 censor=5.12% p50=40.9[censor=5.12% ok] p95=129.0[censor=5.12% UNSCOREABLE(inside censored tail)] p99=565.0[censor=5.12% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 2 leg(s) /tmp/rwm-ping-0.txt=533 /tmp/rwm-ping-1.txt=519 replies
+    CPU: CPUSRV=19.20s CPUCLI=27.65s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad51: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 224226601 bytes 175543 pkt (dropped 785, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC cli1: qdisc netem ad52: root refcnt 7 limit 1000 delay 20ms  5ms loss gemodel p 2% r 40% 1-h 100% 1-k 0% rate 20Mbit seed 1042  Sent 5614282 bytes 5686 pkt (dropped 117, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad53: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 17424760822131679052  Sent 23219962 bytes 118215 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv1: qdisc netem ad54: root refcnt 7 limit 1000 delay 20ms  5ms rate 20Mbit seed 13825284001955101466  Sent 807771 bytes 4426 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 18 lines
+RUNTIME c8L rep=1 29s rc=0
+TLAGB-BPASS-GATES c8L dump=1 max=400000
+W1 c8L rep=1 rfa_lines=26 nonzero_gen=0
+W2 c8L rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP c8L p=0 capped=0
+TLAGB-BPASS-LINES c8L p=0 dumplines=674
+TLAGB-BPASS-CAP c8L p=1 capped=0
+TLAGB-BPASS-LINES c8L p=1 dumplines=16
+TLAGB-BPASS-MBPS c8L rep=1 mbps=58.644 (dump ON perturbs the sender — NOT a goodput datum)
+=== rep=1 cell=sc2 seed=42 spec=c2/c2/single bytes=100000000 01:33:05
+[2m2026-08-21T01:33:06.810317Z[0m [32m INFO[0m [2mraptorpath::gates[0m[2m:[0m [GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAPW=0 RWM_STORE_CAP_UNIFIED=0 RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 RWM_DELTA_CAP=1 RWM_STORE_PERCAP=0 RWM_PERCAP_GUARD=1 RWM_STORE_BORROW=0 RWM_HONEST_CAP=1 RWM_POOL_ANCHOR=0 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=0 RWM_ACK_MERGE=1 RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 RWM_PATIENCE_DERIVED=0 RWM_SIDLE_DERIVED=0 RWM_WIN_DECOUPLE=0 RWM_PLACE_SLACK=0 RWM_COLD_PLACE=0 RWM_GEN=384 RWM_PIPELINE=2 RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 RWM_RACK_CLOCKS=0 RWM_RACK_REO_MULT=1 RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset RWM_DIAG=1 RWM_ACKDIAG=1 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=1 RWM_RTT_DUMP_MAX=400000 RWM_WALLDIAG=1 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=1 RWM_TRACE=0 RWM_PFRAC=0
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":8.9962,"mean_mbps":88.927,"mean_s":8.9962,"median_s":8.9962,"min_s":8.9962,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    LATPROBE-LEG leg=0 file=/tmp/rwm-ping-0.txt sent=173 recv=170 censor=1.73% p50=101.0[censor=1.73% ok] p95=106.0[censor=1.73% ok] p99=107.0[censor=1.73% UNSCOREABLE(inside censored tail)]
+    LATPROBE: 1 leg(s) /tmp/rwm-ping-0.txt=170 replies
+    CPU: CPUSRV=8.11s CPUCLI=7.14s (srv=decoder cli=sender; whole-invocation incl warmup)
+    QDISC cli0: qdisc netem ad55: root refcnt 7 limit 1000 delay 5ms  3ms loss gemodel p 1.3% r 50% 1-h 100% 1-k 0% rate 100Mbit seed 42  Sent 111960421 bytes 92546 pkt (dropped 540, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QDISC srv0: qdisc netem ad57: root refcnt 7 limit 1000 delay 5ms  3ms rate 100Mbit seed 7688212758948206812  Sent 10863016 bytes 59830 pkt (dropped 0, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 
+    QCAP: /tmp/rwm-q.txt 10 lines
+RUNTIME sc2 rep=1 11s rc=0
+TLAGB-BPASS-GATES sc2 dump=1 max=400000
+W1 sc2 rep=1 rfa_lines=8 nonzero_gen=0
+W2 sc2 rep=1 pfrac_lines=0
+TLAGB-BPASS-CAP sc2 p=0 capped=0
+TLAGB-BPASS-LINES sc2 p=0 dumplines=336
+TLAGB-BPASS-MBPS sc2 rep=1 mbps=88.927 (dump ON perturbs the sender — NOT a goodput datum)
+TLAGB-BPASS-GZ c1 raw_bytes=3096566 -> /home/vibe/tlagb/dump/c1-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c7 raw_bytes=1657312 -> /home/vibe/tlagb/dump/c7-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c8 raw_bytes=219453 -> /home/vibe/tlagb/dump/c8-s42-r1-c.log.gz
+TLAGB-BPASS-GZ c8L raw_bytes=1934236 -> /home/vibe/tlagb/dump/c8L-s42-r1-c.log.gz
+TLAGB-BPASS-GZ sc2 raw_bytes=899210 -> /home/vibe/tlagb/dump/sc2-s42-r1-c.log.gz
+=== CELLCOUNTS (invocations, NOT clause-B legs) 2026-08-21T01:33:19Z
+CELLCOUNT c1 rows=1/1
+CELLCOUNT c7 rows=1/1
+CELLCOUNT c8 rows=1/1
+CELLCOUNT c8L rows=1/1
+CELLCOUNT sc2 rows=1/1
+TLAGB-BPASS-DONE seed=42 2026-08-21T01:33:19Z
+TLAGBREAD c1 42 1 cli p0 blk=1 rtp=3 sig=19/834 rvar=19/834 qsp=264/256 msd=6/255 tlag=2619/117
+TLAGBREAD c1 42 1 cli p0 blk=2 rtp=3 sig=541/5262 rvar=377/5262 qsp=1209/256 msd=5/255 tlag=2290/183
+TLAGBREAD c1 42 1 cli p0 blk=3 rtp=3 sig=685/10005 rvar=404/10005 qsp=1406/256 msd=7/255 tlag=2402/183
+TLAGBREAD c1 42 1 cli p0 blk=5 rtp=3 sig=342/19187 rvar=257/19187 qsp=1967/256 msd=5/255 tlag=2526/181
+TLAGBREAD c1 42 1 cli p0 blk=6 rtp=3 sig=37/23977 rvar=27/23977 qsp=10654/256 msd=5/255 tlag=2760/196
+TLAGBREAD c1 42 1 cli p0 blk=7 rtp=3 sig=10/28870 rvar=7/28870 qsp=2365/256 msd=11/255 tlag=2566/179
+TLAGBREAD c1 42 1 cli p0 blk=9 rtp=3 sig=472/38856 rvar=391/38856 qsp=2603/256 msd=5/255 tlag=2364/198
+TLAGBREAD c1 42 1 cli p0 blk=10 rtp=3 sig=2018/43549 rvar=1901/43549 qsp=7541/256 msd=3/255 tlag=2044/173
+TLAGBREAD c1 42 1 cli p0 blk=11 rtp=3 sig=1276/47669 rvar=860/47669 qsp=513/256 msd=8/255 tlag=1909/189
+TLAGBREAD c1 42 1 cli p0 blk=12 rtp=3 sig=648/51615 rvar=527/51615 qsp=1953/256 msd=6/255 tlag=2184/169
+TLAGBREAD c1 42 1 cli p0 blk=13 rtp=3 sig=80/55418 rvar=69/55418 qsp=994/256 msd=4/255 tlag=1867/147
+TLAGBREAD c1 42 1 cli p0 blk=14 rtp=3 sig=28/60230 rvar=27/60230 qsp=1314/256 msd=4/255 tlag=2203/196
+TLAGBREAD c1 42 1 cli p0 blk=15 rtp=3 sig=119/64935 rvar=86/64935 qsp=680/256 msd=6/255 tlag=2522/202
+TLAGBREAD c1 42 1 cli p0 blk=17 rtp=3 sig=208/72915 rvar=205/72915 qsp=3488/256 msd=22/255 tlag=2183/147
+TLAGBREAD c1 42 1 cli p0 blk=18 rtp=3 sig=40/76936 rvar=34/76936 qsp=1347/256 msd=9/255 tlag=2050/103
+TLAGBREAD c1 42 1 cli p0 blk=19 rtp=3 sig=87/82039 rvar=81/82039 qsp=4245/256 msd=10/255 tlag=2612/180
+TLAGBREAD c1 42 1 cli p0 blk=20 rtp=3 sig=465/86517 rvar=355/86517 qsp=1357/256 msd=12/255 tlag=2743/175
+TLAGBREAD c1 42 1 cli p0 blk=22 rtp=3 sig=441/94624 rvar=386/94624 qsp=3101/256 msd=20/255 tlag=3145/116
+TLAGBREAD c1 42 1 cli p0 blk=23 rtp=3 sig=1075/99169 rvar=957/99169 qsp=677/256 msd=9/255 tlag=1948/162
+TLAGBREAD c1 42 1 cli p0 blk=25 rtp=3 sig=92/107759 rvar=91/107759 qsp=3008/256 msd=9/255 tlag=2564/132
+TLAGBREAD c1 42 1 cli p0 blk=26 rtp=3 sig=22/112158 rvar=20/112158 qsp=851/256 msd=8/255 tlag=2276/159
+TLAGBREAD c1 42 1 cli p0 blk=27 rtp=3 sig=92/117294 rvar=91/117294 qsp=522/256 msd=8/255 tlag=2091/211
+TLAGBREAD c1 42 1 cli p0 blk=29 rtp=3 sig=978/126755 rvar=930/126755 qsp=2889/256 msd=6/255 tlag=1810/196
+TLAGBREAD c1 42 1 cli p0 blk=30 rtp=3 sig=207/131272 rvar=102/131272 qsp=615/256 msd=12/255 tlag=2052/170
+TLAGBREAD c1 42 1 cli p0 blk=32 rtp=3 sig=32/141076 rvar=30/141076 qsp=2759/256 msd=18/255 tlag=2428/159
+TLAGBREAD c1 42 1 cli p0 blk=33 rtp=3 sig=433/146059 rvar=402/146059 qsp=1180/256 msd=13/255 tlag=2303/148
+TLAGBREAD c1 42 1 cli p0 blk=34 rtp=3 sig=32/150041 rvar=22/150041 qsp=1633/256 msd=19/255 tlag=2642/136
+TLAGBREAD c1 42 1 cli p0 blk=35 rtp=3 sig=325/153809 rvar=291/153809 qsp=3819/256 msd=20/255 tlag=2667/136
+TLAGBREAD c1 42 1 cli p0 blk=36 rtp=3 sig=42/157731 rvar=39/157731 qsp=1179/256 msd=7/255 tlag=2928/98
+TLAGBREAD c1 42 1 cli p0 blk=39 rtp=3 sig=40/171207 rvar=38/171207 qsp=1071/256 msd=12/255 tlag=1908/150
+TLAGBREAD c1 42 1 cli p0 blk=40 rtp=3 sig=338/175711 rvar=303/175711 qsp=1807/256 msd=9/255 tlag=1667/194
+TLAGBREAD c1 42 1 cli p0 blk=41 rtp=3 sig=115/179978 rvar=113/179978 qsp=3704/256 msd=15/255 tlag=2877/205
+TLAGBREAD c1 42 1 cli p0 blk=42 rtp=3 sig=181/184078 rvar=134/184078 qsp=1905/256 msd=10/255 tlag=3038/142
+TLAGBREAD c1 42 1 cli p0 blk=43 rtp=3 sig=35/188770 rvar=31/188770 qsp=2511/256 msd=12/255 tlag=2776/179
+TLAGBREAD c1 42 1 cli p0 blk=44 rtp=3 sig=52/194129 rvar=35/194129 qsp=2842/256 msd=15/255 tlag=2369/205
+TLAGBREAD c1 42 1 cli p0 blk=45 rtp=3 sig=54/199007 rvar=49/199007 qsp=1643/256 msd=12/255 tlag=2328/175
+TLAGBREAD c1 42 1 cli p0 blk=46 rtp=3 sig=113/204199 rvar=112/204199 qsp=475/256 msd=11/255 tlag=2302/200
+TLAGBREAD c1 42 1 cli p0 blk=47 rtp=3 sig=52/209025 rvar=49/209025 qsp=3002/256 msd=14/255 tlag=2564/188
+TLAGBREAD c1 42 1 cli p0 blk=49 rtp=3 sig=1358/218309 rvar=1092/218309 qsp=2531/256 msd=8/255 tlag=2619/165
+TLAGBREAD c1 42 1 cli p0 blk=50 rtp=3 sig=57/223199 rvar=49/223199 qsp=6518/256 msd=10/255 tlag=1898/185
+TLAGBREAD c1 42 1 cli p0 blk=51 rtp=3 sig=81/228167 rvar=49/228167 qsp=894/256 msd=16/255 tlag=2780/180
+TLAGBREAD c1 42 1 cli p0 blk=52 rtp=3 sig=193/233515 rvar=172/233515 qsp=457/256 msd=9/255 tlag=1483/199
+TLAGBREAD c1 42 1 cli p0 blk=53 rtp=3 sig=49/238573 rvar=49/238573 qsp=1524/256 msd=12/255 tlag=2416/186
+TLAGBREAD c1 42 1 cli p0 blk=54 rtp=3 sig=49/243683 rvar=47/243683 qsp=1601/256 msd=9/255 tlag=2176/214
+TLAGBREAD c1 42 1 cli p0 blk=55 rtp=3 sig=45/249321 rvar=43/249321 qsp=3931/256 msd=11/255 tlag=1770/216
+TLAGBREAD c1 42 1 cli p0 blk=56 rtp=3 sig=59/254507 rvar=57/254507 qsp=1064/256 msd=11/255 tlag=1802/194
+TLAGBREAD c1 42 1 cli p0 blk=57 rtp=3 sig=50/259351 rvar=45/259351 qsp=810/256 msd=10/255 tlag=2938/185
+TLAGBREAD c1 42 1 cli p0 blk=58 rtp=3 sig=32/264087 rvar=31/264087 qsp=3169/256 msd=12/255 tlag=2426/183
+TLAGBREAD c1 42 1 cli p0 blk=59 rtp=3 sig=63/269441 rvar=58/269441 qsp=534/256 msd=13/255 tlag=2324/200
+TLAGBREAD c1 42 1 cli p0 blk=60 rtp=3 sig=29/274087 rvar=26/274087 qsp=1228/256 msd=9/255 tlag=2337/208
+TLAGBREAD c1 42 1 cli p0 blk=61 rtp=3 sig=287/278907 rvar=249/278907 qsp=4330/256 msd=13/255 tlag=2081/196
+TLAGBREAD c1 42 1 cli p0 blk=62 rtp=3 sig=344/283200 rvar=230/283200 qsp=5983/256 msd=15/255 tlag=2709/154
+TLAGBREAD c1 42 1 cli p0 blk=63 rtp=3 sig=36/287493 rvar=33/287493 qsp=1819/256 msd=13/255 tlag=2069/157
+TLAGBREAD c1 42 1 cli p0 blk=64 rtp=3 sig=196/292592 rvar=192/292592 qsp=1782/256 msd=15/255 tlag=2192/203
+TLAGBREAD c1 42 1 cli p0 blk=65 rtp=3 sig=22/297318 rvar=18/297318 qsp=1950/256 msd=11/255 tlag=2620/199
+TLAGBREAD c1 42 1 cli p0 blk=66 rtp=3 sig=67/301966 rvar=52/301966 qsp=2729/256 msd=12/255 tlag=3004/171
+TLAGBREAD c1 42 1 cli p0 blk=67 rtp=3 sig=149/306835 rvar=126/306835 qsp=1960/256 msd=17/255 tlag=2097/197
+TLAGBREAD c1 42 1 cli p0 blk=68 rtp=3 sig=131/311489 rvar=129/311489 qsp=1582/256 msd=15/255 tlag=2622/186
+TLAGBREAD c1 42 1 cli p0 blk=69 rtp=3 sig=105/315610 rvar=104/315610 qsp=2764/256 msd=24/255 tlag=3008/135
+TLAGBREAD c1 42 1 cli p0 blk=70 rtp=3 sig=93/319942 rvar=91/319942 qsp=1007/256 msd=18/255 tlag=1912/175
+TLAGBREAD c1 42 1 cli p0 blk=71 rtp=3 sig=84/324704 rvar=83/324704 qsp=1166/256 msd=13/255 tlag=2162/173
+TLAGBREAD c1 42 1 cli p0 blk=72 rtp=3 sig=65/329399 rvar=62/329399 qsp=3473/256 msd=11/255 tlag=2626/208
+TLAGBREAD c1 42 1 cli p0 blk=73 rtp=3 sig=393/334818 rvar=321/334818 qsp=2400/256 msd=7/255 tlag=2038/218
+TLAGBREAD c1 42 1 srv p0 blk=1 rtp=2 sig=31104/6 rvar=21435/6 qsp=14788/6 msd=22158/5 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=2 rtp=2 sig=6942/20 rvar=4758/20 qsp=53953/20 msd=1545/19 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=3 rtp=2 sig=2686/40 rvar=1629/40 qsp=8599/40 msd=1448/39 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=4 rtp=2 sig=4769/60 rvar=4480/60 qsp=7535/60 msd=691/59 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=5 rtp=2 sig=1844/80 rvar=1433/80 qsp=7305/80 msd=691/79 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=6 rtp=2 sig=2623/100 rvar=2490/100 qsp=7047/100 msd=517/99 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=7 rtp=2 sig=3665/120 rvar=3300/120 qsp=6204/120 msd=584/119 tlag=23196/2
+TLAGBREAD c1 42 1 srv p0 blk=8 rtp=2 sig=5931/138 rvar=4078/138 qsp=6536/138 msd=594/137 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=9 rtp=2 sig=1268/156 rvar=1106/156 qsp=5892/156 msd=503/155 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=10 rtp=2 sig=5469/176 rvar=3824/176 qsp=6510/176 msd=584/175 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=11 rtp=2 sig=2468/196 rvar=1686/196 qsp=6510/196 msd=517/195 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=12 rtp=2 sig=2831/214 rvar=1696/214 qsp=6745/214 msd=594/213 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=13 rtp=2 sig=4618/232 rvar=4124/232 qsp=6583/232 msd=585/231 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=14 rtp=2 sig=2069/252 rvar=1491/252 qsp=6593/252 msd=594/251 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=15 rtp=2 sig=4682/272 rvar=3122/272 qsp=6214/256 msd=503/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=16 rtp=2 sig=3038/288 rvar=2325/288 qsp=6278/256 msd=503/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=17 rtp=2 sig=1939/306 rvar=1605/306 qsp=6235/256 msd=517/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=18 rtp=2 sig=946/326 rvar=697/326 qsp=6411/256 msd=503/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=19 rtp=2 sig=2920/346 rvar=2454/346 qsp=6167/256 msd=503/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=20 rtp=2 sig=2018/366 rvar=1709/366 qsp=5962/256 msd=487/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=21 rtp=2 sig=1774/384 rvar=1459/384 qsp=5880/256 msd=487/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=22 rtp=2 sig=1614/404 rvar=1276/404 qsp=5414/256 msd=476/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=23 rtp=2 sig=5559/424 rvar=4547/424 qsp=5599/256 msd=470/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=24 rtp=2 sig=1920/444 rvar=1801/444 qsp=5744/256 msd=464/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=25 rtp=2 sig=2333/464 rvar=2202/464 qsp=5463/256 msd=410/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=26 rtp=2 sig=1948/484 rvar=1698/484 qsp=4783/256 msd=376/255 tlag=22158/3
+TLAGBREAD c1 42 1 srv p0 blk=27 rtp=2 sig=3279/504 rvar=2692/504 qsp=5044/256 msd=376/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=28 rtp=2 sig=1543/524 rvar=1202/524 qsp=4869/256 msd=360/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=29 rtp=2 sig=3666/544 rvar=2629/544 qsp=4051/256 msd=353/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=30 rtp=2 sig=1992/564 rvar=1690/564 qsp=4160/256 msd=343/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=31 rtp=2 sig=3327/584 rvar=2854/584 qsp=4268/256 msd=262/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=32 rtp=2 sig=4136/604 rvar=3359/604 qsp=4451/256 msd=260/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=33 rtp=2 sig=2545/622 rvar=1991/622 qsp=4410/256 msd=244/255 tlag=3411/1
+TLAGBREAD c1 42 1 srv p0 blk=34 rtp=2 sig=3167/640 rvar=2881/640 qsp=4464/256 msd=200/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=35 rtp=2 sig=4277/660 rvar=3762/660 qsp=4865/256 msd=200/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=36 rtp=2 sig=2288/678 rvar=1786/678 qsp=4733/256 msd=200/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=37 rtp=2 sig=2009/698 rvar=1678/698 qsp=4653/256 msd=191/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=38 rtp=2 sig=5284/718 rvar=3579/718 qsp=4629/256 msd=191/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=39 rtp=2 sig=3930/736 rvar=3705/736 qsp=4980/256 msd=244/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=40 rtp=2 sig=2780/754 rvar=2274/754 qsp=4642/256 msd=244/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=41 rtp=2 sig=2152/774 rvar=1298/774 qsp=4598/256 msd=244/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=42 rtp=2 sig=1714/794 rvar=1130/794 qsp=4736/256 msd=277/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=43 rtp=2 sig=984/814 rvar=832/814 qsp=4776/256 msd=277/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=44 rtp=2 sig=3751/834 rvar=3571/834 qsp=5096/256 msd=277/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=45 rtp=2 sig=1894/854 rvar=1153/854 qsp=5096/256 msd=345/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=46 rtp=2 sig=4893/870 rvar=4039/870 qsp=5544/256 msd=403/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=47 rtp=2 sig=2921/888 rvar=2795/888 qsp=5622/256 msd=403/255 tlag=-/0
+TLAGBREAD c1 42 1 srv p0 blk=48 rtp=4 sig=1676/906 rvar=1524/906 qsp=5548/256 msd=403/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=49 rtp=4 sig=2235/926 rvar=1552/926 qsp=5249/256 msd=360/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=50 rtp=4 sig=2011/946 rvar=1713/946 qsp=5011/256 msd=360/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=51 rtp=4 sig=1760/966 rvar=1191/966 qsp=5112/256 msd=360/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=52 rtp=4 sig=2252/986 rvar=1851/986 qsp=5232/256 msd=403/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=53 rtp=4 sig=3795/1006 rvar=3028/1006 qsp=5147/256 msd=499/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=54 rtp=4 sig=3231/1024 rvar=2703/1024 qsp=5184/256 msd=499/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=55 rtp=4 sig=2165/1044 rvar=1829/1044 qsp=4817/256 msd=499/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=56 rtp=4 sig=1716/1064 rvar=1217/1064 qsp=5232/256 msd=499/255 tlag=18639/4
+TLAGBREAD c1 42 1 srv p0 blk=57 rtp=4 sig=3252/1084 rvar=2948/1084 qsp=5130/256 msd=545/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=58 rtp=4 sig=2443/1104 rvar=2324/1104 qsp=4863/256 msd=538/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=59 rtp=4 sig=2078/1124 rvar=1558/1124 qsp=4746/256 msd=497/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=60 rtp=4 sig=1383/1144 rvar=1287/1144 qsp=4499/256 msd=480/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=61 rtp=4 sig=8032/1164 rvar=5896/1164 qsp=4558/256 msd=288/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=62 rtp=4 sig=3016/1182 rvar=2793/1182 qsp=4637/256 msd=288/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=63 rtp=4 sig=4336/1200 rvar=3940/1200 qsp=4340/256 msd=288/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=64 rtp=4 sig=2844/1220 rvar=2348/1220 qsp=4178/256 msd=256/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=65 rtp=4 sig=4918/1240 rvar=4020/1240 qsp=4593/256 msd=256/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=66 rtp=4 sig=4732/1256 rvar=4027/1256 qsp=4764/256 msd=258/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=67 rtp=4 sig=2082/1272 rvar=1475/1272 qsp=4523/256 msd=256/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=68 rtp=4 sig=1441/1290 rvar=1273/1290 qsp=4140/256 msd=237/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=69 rtp=4 sig=4337/1306 rvar=3730/1306 qsp=4479/256 msd=233/255 tlag=7773/3
+TLAGBREAD c1 42 1 srv p0 blk=70 rtp=4 sig=5489/1326 rvar=4806/1326 qsp=5242/256 msd=221/255 tlag=7773/3
+TLAGBMETA c1 42 1 {"seconds": 18.496563, "mbps": 173.005, "diag_blocks_cli": 73, "diag_blocks_srv": 70, "reads_cli": 63, "reads_srv": 70, "tc_bytes": null, "tc_pkts": null, "tc_drop": null, "tc_s": null, "dump_gate": 1, "dump_batches": 1323, "dump_cap": {}}
+TLAGBWITNESS {"cell": "c1", "seed": 42, "rep": 1, "mbps": 173.005, "seconds": 18.496563, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 888, "W5_rack_fa": "117/918", "W7_group_misses_cli": 0, "W7_group_misses_srv": 0, "diag_blocks_cli": 73, "diag_blocks_srv": 70, "W_dump_gate_cli": 1, "W_dump_batches_cli": 1323, "tlag_thin_K": 32, "gen_plateau": false, "plateau_band": [26.8, 34.1]}
+TLAGBREAD c7 42 1 cli p0 blk=1 rtp=9 sig=293/1689 rvar=219/1689 qsp=3054/256 msd=10/255 tlag=4194/94
+TLAGBREAD c7 42 1 cli p1 blk=1 rtp=12 sig=2752/1652 rvar=2126/1652 qsp=4535/256 msd=25/255 tlag=5488/83
+TLAGBREAD c7 42 1 cli p0 blk=2 rtp=9 sig=4332/3391 rvar=4064/3391 qsp=7169/256 msd=29/255 tlag=4318/208
+TLAGBREAD c7 42 1 cli p1 blk=2 rtp=12 sig=340/4011 rvar=314/4011 qsp=3266/256 msd=9/255 tlag=5060/194
+TLAGBREAD c7 42 1 cli p0 blk=3 rtp=9 sig=370/5117 rvar=338/5117 qsp=2359/256 msd=15/255 tlag=5207/243
+TLAGBREAD c7 42 1 cli p1 blk=3 rtp=12 sig=475/6276 rvar=293/6276 qsp=8044/256 msd=15/255 tlag=5385/247
+TLAGBREAD c7 42 1 cli p0 blk=4 rtp=9 sig=1293/6858 rvar=1238/6858 qsp=2257/256 msd=22/255 tlag=4245/239
+TLAGBREAD c7 42 1 cli p1 blk=4 rtp=12 sig=154/8542 rvar=135/8542 qsp=2901/256 msd=7/255 tlag=6451/247
+TLAGBREAD c7 42 1 cli p0 blk=5 rtp=9 sig=985/8927 rvar=857/8927 qsp=1828/256 msd=13/255 tlag=4308/241
+TLAGBREAD c7 42 1 cli p1 blk=5 rtp=9 sig=1395/10495 rvar=1145/10495 qsp=3397/256 msd=18/255 tlag=5418/245
+TLAGBREAD c7 42 1 cli p0 blk=6 rtp=9 sig=188/10798 rvar=148/10798 qsp=10605/256 msd=9/255 tlag=4730/252
+TLAGBREAD c7 42 1 cli p1 blk=6 rtp=9 sig=2689/12339 rvar=2000/12339 qsp=2274/256 msd=12/255 tlag=5661/247
+TLAGBREAD c7 42 1 cli p0 blk=7 rtp=9 sig=860/12781 rvar=822/12781 qsp=2722/256 msd=15/255 tlag=5472/247
+TLAGBREAD c7 42 1 cli p1 blk=7 rtp=9 sig=43/14335 rvar=34/14335 qsp=4309/256 msd=11/255 tlag=4793/250
+TLAGBREAD c7 42 1 cli p0 blk=8 rtp=9 sig=18339/14263 rvar=16240/14263 qsp=5713/256 msd=50/255 tlag=5819/245
+TLAGBREAD c7 42 1 cli p1 blk=8 rtp=9 sig=491/16735 rvar=449/16735 qsp=2422/256 msd=10/255 tlag=5286/252
+TLAGBREAD c7 42 1 cli p0 blk=9 rtp=9 sig=719/16165 rvar=689/16165 qsp=3206/256 msd=17/255 tlag=5872/241
+TLAGBREAD c7 42 1 cli p1 blk=9 rtp=9 sig=1028/19048 rvar=1001/19048 qsp=11909/256 msd=19/255 tlag=5355/247
+TLAGBREAD c7 42 1 cli p0 blk=10 rtp=9 sig=1056/18456 rvar=1012/18456 qsp=4509/256 msd=10/255 tlag=5854/248
+TLAGBREAD c7 42 1 cli p1 blk=10 rtp=9 sig=1200/21114 rvar=1161/21114 qsp=5910/256 msd=18/255 tlag=5444/247
+TLAGBREAD c7 42 1 cli p0 blk=11 rtp=9 sig=81/20727 rvar=78/20727 qsp=1763/256 msd=17/255 tlag=5497/251
+TLAGBREAD c7 42 1 cli p1 blk=11 rtp=9 sig=169/23154 rvar=106/23154 qsp=4452/256 msd=13/255 tlag=5572/248
+TLAGBREAD c7 42 1 cli p0 blk=12 rtp=9 sig=1282/23038 rvar=1093/23038 qsp=4440/256 msd=23/255 tlag=5591/249
+TLAGBREAD c7 42 1 cli p1 blk=12 rtp=9 sig=483/25419 rvar=398/25419 qsp=6789/256 msd=12/255 tlag=5056/247
+TLAGBREAD c7 42 1 cli p0 blk=13 rtp=9 sig=235/25151 rvar=175/25151 qsp=30119/256 msd=25/255 tlag=5621/248
+TLAGBREAD c7 42 1 cli p1 blk=13 rtp=9 sig=346/27764 rvar=316/27764 qsp=7403/256 msd=7/255 tlag=5237/249
+TLAGBREAD c7 42 1 cli p0 blk=14 rtp=9 sig=91/27477 rvar=80/27477 qsp=1080/256 msd=14/255 tlag=5428/249
+TLAGBREAD c7 42 1 cli p1 blk=14 rtp=9 sig=252/30063 rvar=228/30063 qsp=6561/256 msd=6/255 tlag=5522/251
+TLAGBREAD c7 42 1 cli p0 blk=15 rtp=9 sig=91/29878 rvar=43/29878 qsp=2890/256 msd=19/255 tlag=5235/250
+TLAGBREAD c7 42 1 cli p1 blk=15 rtp=9 sig=1169/32345 rvar=1093/32345 qsp=6920/256 msd=15/255 tlag=6045/251
+TLAGBREAD c7 42 1 cli p0 blk=16 rtp=9 sig=702/31927 rvar=669/31927 qsp=30654/256 msd=18/255 tlag=5227/251
+TLAGBREAD c7 42 1 cli p1 blk=16 rtp=9 sig=2301/34682 rvar=1359/34682 qsp=4770/256 msd=7/255 tlag=6103/247
+TLAGBREAD c7 42 1 cli p0 blk=17 rtp=9 sig=1216/34154 rvar=701/34154 qsp=4122/256 msd=31/255 tlag=4697/246
+TLAGBREAD c7 42 1 cli p1 blk=17 rtp=9 sig=913/36618 rvar=829/36618 qsp=2105/256 msd=15/255 tlag=6142/242
+TLAGBREAD c7 42 1 cli p0 blk=18 rtp=9 sig=485/36443 rvar=465/36443 qsp=2349/256 msd=17/255 tlag=5408/244
+TLAGBREAD c7 42 1 cli p1 blk=18 rtp=9 sig=703/38393 rvar=648/38393 qsp=4217/256 msd=14/255 tlag=5893/243
+TLAGBREAD c7 42 1 cli p0 blk=19 rtp=9 sig=344/38540 rvar=324/38540 qsp=1619/256 msd=21/255 tlag=5731/250
+TLAGBREAD c7 42 1 cli p1 blk=19 rtp=9 sig=797/40583 rvar=779/40583 qsp=5943/256 msd=12/255 tlag=5708/247
+TLAGBREAD c7 42 1 cli p0 blk=20 rtp=9 sig=3156/40432 rvar=2788/40432 qsp=4004/256 msd=32/255 tlag=5927/248
+TLAGBREAD c7 42 1 cli p1 blk=20 rtp=9 sig=83/42964 rvar=42/42964 qsp=4575/256 msd=11/255 tlag=5613/250
+TLAGBREAD c7 42 1 cli p0 blk=21 rtp=9 sig=239/42603 rvar=171/42603 qsp=6420/256 msd=15/255 tlag=5311/250
+TLAGBREAD c7 42 1 cli p1 blk=21 rtp=9 sig=480/44980 rvar=395/44980 qsp=12688/256 msd=38/255 tlag=5697/250
+TLAGBREAD c7 42 1 cli p0 blk=22 rtp=8 sig=1167/44507 rvar=845/44507 qsp=3585/256 msd=29/255 tlag=4164/250
+TLAGBREAD c7 42 1 cli p1 blk=22 rtp=9 sig=344/47216 rvar=321/47216 qsp=2324/256 msd=20/255 tlag=4618/249
+TLAGBREAD c7 42 1 cli p0 blk=23 rtp=8 sig=1150/46622 rvar=1048/46622 qsp=2634/256 msd=12/255 tlag=4070/249
+TLAGBREAD c7 42 1 cli p1 blk=23 rtp=9 sig=38/49544 rvar=34/49544 qsp=1079/256 msd=15/255 tlag=4922/253
+TLAGBREAD c7 42 1 cli p0 blk=24 rtp=8 sig=808/48770 rvar=548/48770 qsp=5739/256 msd=35/255 tlag=4830/249
+TLAGBREAD c7 42 1 cli p1 blk=24 rtp=9 sig=532/51376 rvar=499/51376 qsp=5179/256 msd=23/255 tlag=4915/251
+TLAGBREAD c7 42 1 cli p1 blk=25 rtp=9 sig=12361/53099 rvar=11934/53099 qsp=4922/256 msd=17/255 tlag=4477/247
+TLAGBREAD c7 42 1 cli p0 blk=26 rtp=8 sig=633/53022 rvar=446/53022 qsp=889/256 msd=25/255 tlag=3833/247
+TLAGBREAD c7 42 1 cli p1 blk=26 rtp=9 sig=1634/54428 rvar=1174/54428 qsp=7501/256 msd=58/255 tlag=4896/244
+TLAGBREAD c7 42 1 cli p1 blk=27 rtp=9 sig=36135/56575 rvar=30282/56575 qsp=8047/256 msd=10/255 tlag=5564/246
+TLAGBREAD c7 42 1 cli p1 blk=28 rtp=7 sig=89/58083 rvar=59/58083 qsp=9470/256 msd=10/255 tlag=4705/245
+TLAGBREAD c7 42 1 cli p0 blk=29 rtp=8 sig=100/58412 rvar=50/58412 qsp=6073/256 msd=23/255 tlag=4408/251
+TLAGBREAD c7 42 1 cli p1 blk=29 rtp=7 sig=9000/60203 rvar=8748/60203 qsp=2286/256 msd=21/255 tlag=4667/248
+TLAGBREAD c7 42 1 cli p0 blk=30 rtp=8 sig=110/59899 rvar=109/59899 qsp=92137/256 msd=15/255 tlag=5002/243
+TLAGBREAD c7 42 1 cli p1 blk=30 rtp=6 sig=148/62164 rvar=143/62164 qsp=4953/256 msd=9/255 tlag=4242/241
+TLAGBREAD c7 42 1 cli p0 blk=31 rtp=8 sig=798/62130 rvar=686/62130 qsp=7549/256 msd=9/255 tlag=5164/247
+TLAGBREAD c7 42 1 cli p1 blk=31 rtp=6 sig=253/64013 rvar=244/64013 qsp=5879/256 msd=16/255 tlag=4615/242
+TLAGBREAD c7 42 1 cli p0 blk=32 rtp=8 sig=15046/64497 rvar=14537/64497 qsp=4771/256 msd=13/255 tlag=4239/249
+TLAGBREAD c7 42 1 cli p1 blk=32 rtp=6 sig=1702/66292 rvar=1570/66292 qsp=2793/256 msd=17/255 tlag=3517/249
+TLAGBREAD c7 42 1 cli p0 blk=33 rtp=8 sig=48/66284 rvar=24/66284 qsp=2946/256 msd=16/255 tlag=3846/240
+TLAGBREAD c7 42 1 cli p1 blk=33 rtp=6 sig=439/68574 rvar=413/68574 qsp=39863/256 msd=31/255 tlag=3754/243
+TLAGBREAD c7 42 1 cli p0 blk=34 rtp=8 sig=646/68540 rvar=598/68540 qsp=6755/256 msd=11/255 tlag=4413/241
+TLAGBREAD c7 42 1 cli p1 blk=34 rtp=6 sig=255/70817 rvar=226/70817 qsp=4812/256 msd=20/255 tlag=4266/248
+TLAGBREAD c7 42 1 cli p0 blk=35 rtp=8 sig=234/70540 rvar=219/70540 qsp=7870/256 msd=19/255 tlag=4413/251
+TLAGBREAD c7 42 1 cli p1 blk=35 rtp=6 sig=566/72926 rvar=550/72926 qsp=2750/256 msd=14/255 tlag=4035/250
+TLAGBREAD c7 42 1 cli p0 blk=36 rtp=8 sig=1087/72704 rvar=1027/72704 qsp=8376/256 msd=46/255 tlag=4566/250
+TLAGBREAD c7 42 1 cli p1 blk=36 rtp=6 sig=403/75107 rvar=302/75107 qsp=33475/256 msd=101/255 tlag=4244/249
+TLAGBREAD c7 42 1 cli p0 blk=37 rtp=8 sig=819/74887 rvar=622/74887 qsp=8842/256 msd=23/255 tlag=4910/252
+TLAGBREAD c7 42 1 cli p1 blk=37 rtp=6 sig=306/77279 rvar=278/77279 qsp=4250/256 msd=14/255 tlag=4159/250
+TLAGBREAD c7 42 1 cli p0 blk=38 rtp=8 sig=1277/76966 rvar=1168/76966 qsp=3213/256 msd=8/255 tlag=5031/251
+TLAGBREAD c7 42 1 cli p1 blk=38 rtp=6 sig=183/78447 rvar=152/78447 qsp=4090/256 msd=8/255 tlag=3709/248
+TLAGBREAD c7 42 1 cli p0 blk=39 rtp=8 sig=16081/79253 rvar=14831/79253 qsp=5219/256 msd=12/255 tlag=5855/250
+TLAGBREAD c7 42 1 cli p1 blk=39 rtp=6 sig=159/80152 rvar=158/80152 qsp=2948/256 msd=22/255 tlag=3740/236
+TLAGBREAD c7 42 1 cli p0 blk=40 rtp=8 sig=541/81134 rvar=448/81134 qsp=3519/256 msd=19/255 tlag=5648/249
+TLAGBREAD c7 42 1 cli p1 blk=40 rtp=6 sig=5438/82503 rvar=5343/82503 qsp=4591/256 msd=29/255 tlag=4432/240
+TLAGBREAD c7 42 1 cli p0 blk=41 rtp=8 sig=645/83524 rvar=581/83524 qsp=5398/256 msd=36/255 tlag=6325/246
+TLAGBREAD c7 42 1 cli p1 blk=41 rtp=6 sig=296/84555 rvar=222/84555 qsp=1453/256 msd=8/255 tlag=4004/242
+TLAGBREAD c7 42 1 cli p0 blk=42 rtp=7 sig=514/85342 rvar=471/85342 qsp=6722/256 msd=17/255 tlag=5257/249
+TLAGBREAD c7 42 1 cli p1 blk=42 rtp=6 sig=1063/86938 rvar=776/86938 qsp=2379/256 msd=10/255 tlag=4057/252
+TLAGBREAD c7 42 1 srv p1 blk=1 rtp=15 sig=5355/4 rvar=3913/4 qsp=12/4 msd=3914/3 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=1 rtp=51 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=2 rtp=15 sig=14606/7 rvar=11116/7 qsp=3252/7 msd=3914/6 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=2 rtp=29 sig=11063/4 rvar=7984/4 qsp=15020/4 msd=6796/3 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=3 rtp=15 sig=14606/7 rvar=11116/7 qsp=3252/7 msd=3914/6 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=3 rtp=18 sig=15319/10 rvar=13690/10 qsp=19884/10 msd=6796/9 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=4 rtp=15 sig=14606/7 rvar=11116/7 qsp=3252/7 msd=3914/6 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=4 rtp=18 sig=11523/18 rvar=8193/18 qsp=9672/18 msd=6796/17 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=5 rtp=15 sig=17650/9 rvar=15388/9 qsp=21601/9 msd=3006/8 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=5 rtp=18 sig=9862/22 rvar=8644/22 qsp=15280/22 msd=571/21 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=6 rtp=15 sig=17650/9 rvar=15388/9 qsp=21601/9 msd=3006/8 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=6 rtp=14 sig=15018/30 rvar=14358/30 qsp=18907/30 msd=571/29 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=7 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=7 rtp=14 sig=15927/36 rvar=15746/36 qsp=19935/36 msd=571/35 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=8 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=8 rtp=14 sig=16076/42 rvar=12939/42 qsp=19944/42 msd=571/41 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=9 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=9 rtp=14 sig=12574/48 rvar=9495/48 qsp=19668/48 msd=594/47 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=10 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=10 rtp=14 sig=9151/54 rvar=8416/54 qsp=19928/54 msd=594/53 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=11 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=11 rtp=14 sig=19729/60 rvar=18900/60 qsp=31274/60 msd=1231/59 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=12 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=12 rtp=14 sig=16086/66 rvar=15412/66 qsp=27084/66 msd=1231/65 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=13 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=13 rtp=14 sig=10455/72 rvar=9388/72 qsp=26505/72 msd=1231/71 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=14 rtp=15 sig=47285/11 rvar=38614/11 qsp=85916/11 msd=3006/10 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=14 rtp=14 sig=11968/78 rvar=9888/78 qsp=22185/78 msd=1231/77 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=15 rtp=15 sig=35836/13 rvar=25124/13 qsp=74110/13 msd=3006/12 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=15 rtp=14 sig=10672/82 rvar=8854/82 qsp=23206/82 msd=1231/81 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=16 rtp=15 sig=32668/15 rvar=26387/15 qsp=74086/15 msd=3006/14 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=16 rtp=14 sig=12318/86 rvar=11109/86 qsp=23206/86 msd=1231/85 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=17 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=17 rtp=14 sig=8817/90 rvar=7786/90 qsp=23094/90 msd=1231/89 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=18 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=18 rtp=14 sig=11515/96 rvar=8942/96 qsp=23948/96 msd=1231/95 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=19 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=19 rtp=14 sig=14358/102 rvar=13566/102 qsp=22075/102 msd=1231/101 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=20 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=20 rtp=14 sig=17569/108 rvar=14279/108 qsp=21746/108 msd=1231/107 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=21 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=21 rtp=14 sig=11913/114 rvar=10510/114 qsp=22068/114 msd=1231/113 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=22 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=22 rtp=14 sig=21839/120 rvar=19024/120 qsp=22160/120 msd=1231/119 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=23 rtp=15 sig=27242/17 rvar=22702/17 qsp=32378/17 msd=3006/16 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=23 rtp=14 sig=24076/126 rvar=19695/126 qsp=24278/126 msd=1577/125 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=24 rtp=15 sig=30968/19 rvar=28128/19 qsp=54304/19 msd=3006/18 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=24 rtp=14 sig=13799/130 rvar=8205/130 qsp=24160/130 msd=1577/129 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=25 rtp=15 sig=30968/19 rvar=28128/19 qsp=54304/19 msd=3006/18 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=25 rtp=14 sig=23532/136 rvar=19986/136 qsp=24423/136 msd=1577/135 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=26 rtp=15 sig=30968/19 rvar=28128/19 qsp=54304/19 msd=3006/18 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=26 rtp=14 sig=19458/142 rvar=16510/142 qsp=24460/142 msd=1577/141 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=27 rtp=15 sig=30968/19 rvar=28128/19 qsp=54304/19 msd=3006/18 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=27 rtp=14 sig=15002/147 rvar=12721/147 qsp=24460/147 msd=1751/146 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=28 rtp=15 sig=23419/21 rvar=17801/21 qsp=53414/21 msd=3006/20 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=28 rtp=14 sig=10276/151 rvar=8696/151 qsp=26885/151 msd=1751/150 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=29 rtp=15 sig=23419/21 rvar=17801/21 qsp=53414/21 msd=3006/20 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=29 rtp=14 sig=20087/157 rvar=18831/157 qsp=27840/157 msd=1751/156 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=30 rtp=15 sig=23419/21 rvar=17801/21 qsp=53414/21 msd=3006/20 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=30 rtp=14 sig=14413/163 rvar=11908/163 qsp=28312/163 msd=1751/162 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=31 rtp=15 sig=23419/21 rvar=17801/21 qsp=53414/21 msd=3006/20 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=31 rtp=14 sig=14899/169 rvar=13658/169 qsp=28138/169 msd=1751/168 tlag=35901/1
+TLAGBREAD c7 42 1 srv p1 blk=32 rtp=15 sig=20456/22 rvar=14682/22 qsp=40502/22 msd=1883/21 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=32 rtp=11 sig=32458/174 rvar=29912/174 qsp=28591/174 msd=1751/173 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=33 rtp=15 sig=17465/24 rvar=13767/24 qsp=38759/24 msd=1883/23 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=33 rtp=11 sig=24373/178 rvar=22709/178 qsp=28850/178 msd=1751/177 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=34 rtp=15 sig=17465/24 rvar=13767/24 qsp=38759/24 msd=1883/23 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=34 rtp=11 sig=15055/183 rvar=12731/183 qsp=28869/183 msd=2058/182 tlag=-/0
+TLAGBREAD c7 42 1 srv p1 blk=35 rtp=15 sig=17465/24 rvar=13767/24 qsp=38759/24 msd=1883/23 tlag=-/0
+TLAGBREAD c7 42 1 srv p0 blk=35 rtp=11 sig=19134/189 rvar=17016/189 qsp=28591/189 msd=2606/188 tlag=-/0
+TLAGBMETA c7 42 1 {"seconds": 10.570008, "mbps": 151.372, "diag_blocks_cli": 42, "diag_blocks_srv": 35, "reads_cli": 81, "reads_srv": 70, "tc_bytes": null, "tc_pkts": null, "tc_drop": null, "tc_s": null, "dump_gate": 1, "dump_batches": 673, "dump_cap": {}}
+TLAGBWITNESS {"cell": "c7", "seed": 42, "rep": 1, "mbps": 151.372, "seconds": 10.570008, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 5355, "W5_rack_fa": "693/5360", "W7_group_misses_cli": 0, "W7_group_misses_srv": 0, "diag_blocks_cli": 42, "diag_blocks_srv": 35, "W_dump_gate_cli": 1, "W_dump_batches_cli": 673, "tlag_thin_K": 32, "gen_plateau": false, "plateau_band": [26.8, 34.1]}
+TLAGBREAD c8 42 1 cli p1 blk=1 rtp=46 sig=1668/26 rvar=1480/26 qsp=1897/26 msd=311/25 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=2 rtp=11 sig=140/4284 rvar=61/4284 qsp=4634/256 msd=11/255 tlag=1516/223
+TLAGBREAD c8 42 1 cli p1 blk=2 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=3 rtp=11 sig=823/6708 rvar=732/6708 qsp=3705/256 msd=8/255 tlag=1404/249
+TLAGBREAD c8 42 1 cli p1 blk=3 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=4 rtp=11 sig=199/9114 rvar=190/9114 qsp=1636/256 msd=9/255 tlag=1455/250
+TLAGBREAD c8 42 1 cli p1 blk=4 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=5 rtp=11 sig=539/11521 rvar=462/11521 qsp=3217/256 msd=7/255 tlag=1447/251
+TLAGBREAD c8 42 1 cli p1 blk=5 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=6 rtp=11 sig=784/13935 rvar=733/13935 qsp=1481/256 msd=6/255 tlag=1600/249
+TLAGBREAD c8 42 1 cli p1 blk=6 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=7 rtp=11 sig=408/16352 rvar=385/16352 qsp=2186/256 msd=8/255 tlag=1563/252
+TLAGBREAD c8 42 1 cli p1 blk=7 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=8 rtp=11 sig=684/18766 rvar=568/18766 qsp=5434/256 msd=4/255 tlag=1637/250
+TLAGBREAD c8 42 1 cli p1 blk=8 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 cli p0 blk=9 rtp=11 sig=473/21197 rvar=330/21197 qsp=1428/256 msd=7/255 tlag=1749/250
+TLAGBREAD c8 42 1 cli p1 blk=9 rtp=34 sig=7867/27 rvar=4977/27 qsp=1913/27 msd=330/26 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=1 rtp=40 sig=3172/4 rvar=2101/4 qsp=6/4 msd=58/3 tlag=-/0
+TLAGBREAD c8 42 1 srv p1 blk=1 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=2 rtp=40 sig=3043/10 rvar=2616/10 qsp=148/10 msd=1273/9 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=2 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=3 rtp=40 sig=10327/16 rvar=9007/16 qsp=16272/16 msd=332/15 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=3 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=4 rtp=40 sig=8658/22 rvar=7630/22 qsp=15671/22 msd=332/21 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=4 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=5 rtp=40 sig=7156/28 rvar=6096/28 qsp=9569/28 msd=332/27 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=5 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=6 rtp=40 sig=5152/34 rvar=3668/34 qsp=9686/34 msd=380/33 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=6 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=7 rtp=40 sig=2981/40 rvar=2333/40 qsp=5938/40 msd=332/39 tlag=2458/1
+TLAGBREAD c8 42 1 srv p1 blk=7 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBREAD c8 42 1 srv p0 blk=8 rtp=14 sig=28743/47 rvar=24081/47 qsp=8257/47 msd=380/46 tlag=-/0
+TLAGBREAD c8 42 1 srv p1 blk=8 rtp=40 sig=-/1 rvar=0/1 qsp=0/1 msd=-/0 tlag=-/0
+TLAGBMETA c8 42 1 {"seconds": 2.257862, "mbps": 88.579, "diag_blocks_cli": 9, "diag_blocks_srv": 8, "reads_cli": 17, "reads_srv": 16, "tc_bytes": null, "tc_pkts": null, "tc_drop": null, "tc_s": null, "dump_gate": 1, "dump_batches": 83, "dump_cap": {}}
+TLAGBWITNESS {"cell": "c8", "seed": 42, "rep": 1, "mbps": 88.579, "seconds": 2.257862, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 473, "W5_rack_fa": "46/476", "W7_group_misses_cli": 0, "W7_group_misses_srv": 0, "diag_blocks_cli": 9, "diag_blocks_srv": 8, "W_dump_gate_cli": 1, "W_dump_batches_cli": 83, "tlag_thin_K": 32, "gen_plateau": false, "plateau_band": [26.8, 34.1]}
+TLAGBREAD c8L 42 1 cli p0 blk=1 rtp=10 sig=303/2030 rvar=277/2030 qsp=3966/256 msd=10/255 tlag=4371/109
+TLAGBREAD c8L 42 1 cli p1 blk=1 rtp=43 sig=1540/101 rvar=1244/101 qsp=4733/101 msd=68/100 tlag=9364/2
+TLAGBREAD c8L 42 1 cli p0 blk=2 rtp=10 sig=935/4406 rvar=899/4406 qsp=7020/256 msd=14/255 tlag=5311/226
+TLAGBREAD c8L 42 1 cli p1 blk=2 rtp=43 sig=2821/589 rvar=2746/589 qsp=26969/256 msd=89/255 tlag=33195/38
+TLAGBREAD c8L 42 1 cli p0 blk=3 rtp=10 sig=675/6814 rvar=658/6814 qsp=7402/256 msd=10/255 tlag=4683/250
+TLAGBREAD c8L 42 1 cli p1 blk=3 rtp=43 sig=2128/1072 rvar=1935/1072 qsp=27776/256 msd=89/255 tlag=33195/74
+TLAGBREAD c8L 42 1 cli p0 blk=4 rtp=10 sig=4611/9271 rvar=4217/9271 qsp=7818/256 msd=7/255 tlag=4922/251
+TLAGBREAD c8L 42 1 cli p1 blk=4 rtp=43 sig=2462/1558 rvar=2260/1558 qsp=27587/256 msd=40/255 tlag=33195/108
+TLAGBREAD c8L 42 1 cli p0 blk=5 rtp=10 sig=329/11685 rvar=271/11685 qsp=1711/256 msd=11/255 tlag=4334/250
+TLAGBREAD c8L 42 1 cli p1 blk=5 rtp=43 sig=3386/2035 rvar=3325/2035 qsp=17644/256 msd=48/255 tlag=31961/144
+TLAGBREAD c8L 42 1 cli p0 blk=6 rtp=10 sig=222/14079 rvar=188/14079 qsp=2750/256 msd=11/255 tlag=2936/251
+TLAGBREAD c8L 42 1 cli p1 blk=6 rtp=43 sig=7284/2372 rvar=5987/2372 qsp=208271/256 msd=366/255 tlag=34674/172
+TLAGBREAD c8L 42 1 cli p0 blk=7 rtp=10 sig=181/16488 rvar=102/16488 qsp=29859/256 msd=15/255 tlag=4347/246
+TLAGBREAD c8L 42 1 cli p1 blk=7 rtp=43 sig=2815/2848 rvar=2728/2848 qsp=50285/256 msd=21/255 tlag=36267/206
+TLAGBREAD c8L 42 1 cli p0 blk=8 rtp=10 sig=125/18785 rvar=104/18785 qsp=19861/256 msd=10/255 tlag=6351/248
+TLAGBREAD c8L 42 1 cli p1 blk=8 rtp=43 sig=2322/3316 rvar=2173/3316 qsp=44372/256 msd=27/255 tlag=37069/239
+TLAGBREAD c8L 42 1 cli p0 blk=9 rtp=10 sig=133/21333 rvar=77/21333 qsp=2041/256 msd=18/255 tlag=4644/246
+TLAGBREAD c8L 42 1 cli p1 blk=9 rtp=43 sig=2285/3814 rvar=1926/3814 qsp=27064/256 msd=57/255 tlag=36711/250
+TLAGBREAD c8L 42 1 cli p0 blk=10 rtp=10 sig=1287/23741 rvar=1172/23741 qsp=1675/256 msd=9/255 tlag=2195/245
+TLAGBREAD c8L 42 1 cli p1 blk=10 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=11 rtp=10 sig=98/26156 rvar=78/26156 qsp=9095/256 msd=6/255 tlag=2743/250
+TLAGBREAD c8L 42 1 cli p1 blk=11 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=12 rtp=10 sig=1530/28549 rvar=1255/28549 qsp=1197/256 msd=9/255 tlag=3578/250
+TLAGBREAD c8L 42 1 cli p1 blk=12 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=13 rtp=10 sig=300/30963 rvar=223/30963 qsp=1326/256 msd=9/255 tlag=1833/250
+TLAGBREAD c8L 42 1 cli p1 blk=13 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=14 rtp=10 sig=310/33364 rvar=292/33364 qsp=1219/256 msd=7/255 tlag=1293/249
+TLAGBREAD c8L 42 1 cli p1 blk=14 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=15 rtp=10 sig=3513/35684 rvar=2213/35684 qsp=1545/256 msd=11/255 tlag=1235/251
+TLAGBREAD c8L 42 1 cli p1 blk=15 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=16 rtp=10 sig=182/38053 rvar=153/38053 qsp=23241/256 msd=9/255 tlag=1461/246
+TLAGBREAD c8L 42 1 cli p1 blk=16 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=17 rtp=10 sig=461/40618 rvar=418/40618 qsp=933/256 msd=9/255 tlag=1911/244
+TLAGBREAD c8L 42 1 cli p1 blk=17 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=18 rtp=10 sig=695/43018 rvar=642/43018 qsp=1271/256 msd=10/255 tlag=1778/250
+TLAGBREAD c8L 42 1 cli p1 blk=18 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=19 rtp=10 sig=432/45448 rvar=315/45448 qsp=1340/256 msd=10/255 tlag=1606/250
+TLAGBREAD c8L 42 1 cli p1 blk=19 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=20 rtp=10 sig=434/47858 rvar=390/47858 qsp=1245/256 msd=15/255 tlag=2137/250
+TLAGBREAD c8L 42 1 cli p1 blk=20 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=21 rtp=10 sig=697/50266 rvar=404/50266 qsp=2208/256 msd=13/255 tlag=1569/249
+TLAGBREAD c8L 42 1 cli p1 blk=21 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=22 rtp=10 sig=409/52687 rvar=384/52687 qsp=1547/256 msd=10/255 tlag=1173/251
+TLAGBREAD c8L 42 1 cli p1 blk=22 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=23 rtp=10 sig=460/55078 rvar=382/55078 qsp=4009/256 msd=11/255 tlag=1480/249
+TLAGBREAD c8L 42 1 cli p1 blk=23 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=24 rtp=10 sig=381/57462 rvar=302/57462 qsp=3751/256 msd=9/255 tlag=1989/248
+TLAGBREAD c8L 42 1 cli p1 blk=24 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=25 rtp=10 sig=416/59894 rvar=344/59894 qsp=1292/256 msd=14/255 tlag=2260/247
+TLAGBREAD c8L 42 1 cli p1 blk=25 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=26 rtp=10 sig=340/62295 rvar=318/62295 qsp=2384/256 msd=13/255 tlag=1971/250
+TLAGBREAD c8L 42 1 cli p1 blk=26 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=27 rtp=10 sig=666/64716 rvar=642/64716 qsp=2323/256 msd=13/255 tlag=1538/250
+TLAGBREAD c8L 42 1 cli p1 blk=27 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=28 rtp=10 sig=677/67114 rvar=622/67114 qsp=3066/256 msd=9/255 tlag=1628/251
+TLAGBREAD c8L 42 1 cli p1 blk=28 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=29 rtp=10 sig=379/69521 rvar=190/69521 qsp=2045/256 msd=15/255 tlag=1445/249
+TLAGBREAD c8L 42 1 cli p1 blk=29 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=30 rtp=10 sig=487/71921 rvar=445/71921 qsp=1623/256 msd=13/255 tlag=1300/250
+TLAGBREAD c8L 42 1 cli p1 blk=30 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=31 rtp=10 sig=1280/74326 rvar=1205/74326 qsp=1634/256 msd=10/255 tlag=1416/249
+TLAGBREAD c8L 42 1 cli p1 blk=31 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=32 rtp=10 sig=498/76576 rvar=344/76576 qsp=3081/256 msd=7/255 tlag=1332/242
+TLAGBREAD c8L 42 1 cli p1 blk=32 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=33 rtp=10 sig=194/79164 rvar=136/79164 qsp=1420/256 msd=13/255 tlag=1439/242
+TLAGBREAD c8L 42 1 cli p1 blk=33 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=34 rtp=10 sig=594/81564 rvar=568/81564 qsp=1471/256 msd=11/255 tlag=1640/249
+TLAGBREAD c8L 42 1 cli p1 blk=34 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=35 rtp=10 sig=597/83965 rvar=568/83965 qsp=1636/256 msd=12/255 tlag=1773/249
+TLAGBREAD c8L 42 1 cli p1 blk=35 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=36 rtp=10 sig=309/86400 rvar=290/86400 qsp=2020/256 msd=15/255 tlag=1708/249
+TLAGBREAD c8L 42 1 cli p1 blk=36 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=37 rtp=10 sig=793/88792 rvar=757/88792 qsp=1543/256 msd=8/255 tlag=1430/249
+TLAGBREAD c8L 42 1 cli p1 blk=37 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=38 rtp=10 sig=284/91196 rvar=246/91196 qsp=1742/256 msd=13/255 tlag=1342/249
+TLAGBREAD c8L 42 1 cli p1 blk=38 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=39 rtp=10 sig=309/93593 rvar=232/93593 qsp=5549/256 msd=17/255 tlag=1474/249
+TLAGBREAD c8L 42 1 cli p1 blk=39 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=40 rtp=10 sig=1142/96030 rvar=940/96030 qsp=5986/256 msd=11/255 tlag=1957/248
+TLAGBREAD c8L 42 1 cli p1 blk=40 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=41 rtp=14 sig=846/98409 rvar=821/98409 qsp=6614/256 msd=11/255 tlag=2638/247
+TLAGBREAD c8L 42 1 cli p1 blk=41 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=42 rtp=92 sig=398/100733 rvar=374/100733 qsp=6603/256 msd=10/255 tlag=5188/207
+TLAGBREAD c8L 42 1 cli p1 blk=42 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=43 rtp=92 sig=380/103125 rvar=308/103125 qsp=3597/256 msd=14/255 tlag=8120/209
+TLAGBREAD c8L 42 1 cli p1 blk=43 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=44 rtp=92 sig=252/105368 rvar=236/105368 qsp=6669/256 msd=14/255 tlag=10570/207
+TLAGBREAD c8L 42 1 cli p1 blk=44 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=45 rtp=92 sig=786/107661 rvar=679/107661 qsp=3397/256 msd=11/255 tlag=11533/213
+TLAGBREAD c8L 42 1 cli p1 blk=45 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=46 rtp=92 sig=1125/109848 rvar=988/109848 qsp=5901/256 msd=15/255 tlag=10482/211
+TLAGBREAD c8L 42 1 cli p1 blk=46 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=47 rtp=67 sig=5675/112775 rvar=5228/112775 qsp=212387/256 msd=18/255 tlag=10868/223
+TLAGBREAD c8L 42 1 cli p1 blk=47 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=48 rtp=12 sig=1142/114626 rvar=576/114626 qsp=5235/256 msd=30/255 tlag=7901/231
+TLAGBREAD c8L 42 1 cli p1 blk=48 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=49 rtp=12 sig=521/116097 rvar=503/116097 qsp=4087/256 msd=8/255 tlag=8581/224
+TLAGBREAD c8L 42 1 cli p1 blk=49 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=50 rtp=12 sig=2774/118236 rvar=1528/118236 qsp=19476/256 msd=16/255 tlag=8152/235
+TLAGBREAD c8L 42 1 cli p1 blk=50 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=51 rtp=12 sig=875/120412 rvar=404/120412 qsp=6879/256 msd=23/255 tlag=7571/243
+TLAGBREAD c8L 42 1 cli p1 blk=51 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=52 rtp=12 sig=1440/121317 rvar=1363/121317 qsp=8095/256 msd=13/255 tlag=8262/236
+TLAGBREAD c8L 42 1 cli p1 blk=52 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=53 rtp=12 sig=6583/122052 rvar=5993/122052 qsp=21820/256 msd=12/255 tlag=8467/229
+TLAGBREAD c8L 42 1 cli p1 blk=53 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=54 rtp=12 sig=387/122632 rvar=330/122632 qsp=33482/256 msd=9/255 tlag=8519/223
+TLAGBREAD c8L 42 1 cli p1 blk=54 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=55 rtp=12 sig=448/123448 rvar=448/123448 qsp=39850/256 msd=24/255 tlag=8780/211
+TLAGBREAD c8L 42 1 cli p1 blk=55 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=56 rtp=12 sig=1210/125389 rvar=1113/125389 qsp=10375/256 msd=18/255 tlag=9275/206
+TLAGBREAD c8L 42 1 cli p1 blk=56 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=57 rtp=7 sig=197/126391 rvar=180/126391 qsp=9853/256 msd=18/255 tlag=5531/209
+TLAGBREAD c8L 42 1 cli p1 blk=57 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=58 rtp=7 sig=6528/127037 rvar=5513/127037 qsp=6730/256 msd=26/255 tlag=5638/208
+TLAGBREAD c8L 42 1 cli p1 blk=58 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=59 rtp=7 sig=331/128363 rvar=232/128363 qsp=8747/256 msd=19/255 tlag=5501/222
+TLAGBREAD c8L 42 1 cli p1 blk=59 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=60 rtp=7 sig=166/129240 rvar=104/129240 qsp=9941/256 msd=34/255 tlag=5531/215
+TLAGBREAD c8L 42 1 cli p1 blk=60 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=61 rtp=7 sig=171/130625 rvar=169/130625 qsp=16730/256 msd=9/255 tlag=5288/217
+TLAGBREAD c8L 42 1 cli p1 blk=61 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=62 rtp=7 sig=524/132148 rvar=467/132148 qsp=8958/256 msd=27/255 tlag=5088/196
+TLAGBREAD c8L 42 1 cli p1 blk=62 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=63 rtp=7 sig=614/133892 rvar=539/133892 qsp=8905/256 msd=10/255 tlag=5333/205
+TLAGBREAD c8L 42 1 cli p1 blk=63 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=64 rtp=7 sig=1120/134414 rvar=958/134414 qsp=15020/256 msd=14/255 tlag=5433/205
+TLAGBREAD c8L 42 1 cli p1 blk=64 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=65 rtp=7 sig=2253/134944 rvar=2113/134944 qsp=12275/256 msd=34/255 tlag=5362/213
+TLAGBREAD c8L 42 1 cli p1 blk=65 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=66 rtp=7 sig=528/135751 rvar=257/135751 qsp=8409/256 msd=12/255 tlag=5445/229
+TLAGBREAD c8L 42 1 cli p1 blk=66 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=67 rtp=7 sig=2803/136519 rvar=2684/136519 qsp=26730/256 msd=21/255 tlag=5525/223
+TLAGBREAD c8L 42 1 cli p1 blk=67 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=68 rtp=7 sig=2255/137382 rvar=2217/137382 qsp=7602/256 msd=11/255 tlag=5468/226
+TLAGBREAD c8L 42 1 cli p1 blk=68 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=69 rtp=7 sig=1757/138116 rvar=1406/138116 qsp=22762/256 msd=35/255 tlag=5435/224
+TLAGBREAD c8L 42 1 cli p1 blk=69 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=70 rtp=7 sig=1146/138732 rvar=1028/138732 qsp=5087/256 msd=30/255 tlag=4940/224
+TLAGBREAD c8L 42 1 cli p1 blk=70 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=71 rtp=7 sig=472/139157 rvar=450/139157 qsp=6060/256 msd=39/255 tlag=5019/217
+TLAGBREAD c8L 42 1 cli p1 blk=71 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=72 rtp=7 sig=249/139529 rvar=246/139529 qsp=43476/256 msd=22/255 tlag=5020/206
+TLAGBREAD c8L 42 1 cli p1 blk=72 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=73 rtp=7 sig=67/140086 rvar=65/140086 qsp=5301/256 msd=9/255 tlag=5005/199
+TLAGBREAD c8L 42 1 cli p1 blk=73 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=74 rtp=7 sig=800/140505 rvar=779/140505 qsp=53579/256 msd=25/255 tlag=4915/189
+TLAGBREAD c8L 42 1 cli p1 blk=74 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=75 rtp=7 sig=1737/142574 rvar=1289/142574 qsp=17552/256 msd=18/255 tlag=5084/180
+TLAGBREAD c8L 42 1 cli p1 blk=75 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=76 rtp=7 sig=2105/143103 rvar=1954/143103 qsp=8717/256 msd=6/255 tlag=5558/186
+TLAGBREAD c8L 42 1 cli p1 blk=76 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=77 rtp=7 sig=527/143477 rvar=507/143477 qsp=3942/256 msd=13/255 tlag=5582/182
+TLAGBREAD c8L 42 1 cli p1 blk=77 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=78 rtp=7 sig=62/144099 rvar=62/144099 qsp=28602/256 msd=8/255 tlag=5616/172
+TLAGBREAD c8L 42 1 cli p1 blk=78 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=79 rtp=7 sig=30635/144654 rvar=15501/144654 qsp=52088/256 msd=26/255 tlag=5796/162
+TLAGBREAD c8L 42 1 cli p1 blk=79 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=80 rtp=7 sig=339/145319 rvar=318/145319 qsp=15470/256 msd=24/255 tlag=5955/149
+TLAGBREAD c8L 42 1 cli p1 blk=80 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=81 rtp=7 sig=115/146255 rvar=110/146255 qsp=8215/256 msd=25/255 tlag=6054/142
+TLAGBREAD c8L 42 1 cli p1 blk=81 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=82 rtp=7 sig=963/147362 rvar=867/147362 qsp=4899/256 msd=33/255 tlag=5991/137
+TLAGBREAD c8L 42 1 cli p1 blk=82 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=83 rtp=7 sig=3662/147970 rvar=3190/147970 qsp=3741/256 msd=16/255 tlag=6020/138
+TLAGBREAD c8L 42 1 cli p1 blk=83 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=84 rtp=7 sig=68/148558 rvar=66/148558 qsp=44962/256 msd=8/255 tlag=6020/138
+TLAGBREAD c8L 42 1 cli p1 blk=84 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=85 rtp=7 sig=313/148866 rvar=225/148866 qsp=35008/256 msd=16/255 tlag=5991/128
+TLAGBREAD c8L 42 1 cli p1 blk=85 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=86 rtp=7 sig=64/149314 rvar=64/149314 qsp=42602/256 msd=9/255 tlag=5991/119
+TLAGBREAD c8L 42 1 cli p1 blk=86 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=87 rtp=7 sig=16/149849 rvar=12/149849 qsp=2977/256 msd=11/255 tlag=5955/107
+TLAGBREAD c8L 42 1 cli p1 blk=87 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=88 rtp=7 sig=128/150607 rvar=126/150607 qsp=42840/256 msd=8/255 tlag=5880/97
+TLAGBREAD c8L 42 1 cli p1 blk=88 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=89 rtp=7 sig=1185/151631 rvar=834/151631 qsp=35846/256 msd=11/255 tlag=5837/90
+TLAGBREAD c8L 42 1 cli p1 blk=89 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=90 rtp=7 sig=79/152498 rvar=77/152498 qsp=40416/256 msd=9/255 tlag=5961/78
+TLAGBREAD c8L 42 1 cli p1 blk=90 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=91 rtp=8 sig=266/153334 rvar=90/153334 qsp=170776/256 msd=16/255 tlag=6848/73
+TLAGBREAD c8L 42 1 cli p1 blk=91 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=92 rtp=8 sig=479/154975 rvar=472/154975 qsp=3643/256 msd=46/255 tlag=10867/65
+TLAGBREAD c8L 42 1 cli p1 blk=92 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p1 blk=93 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=94 rtp=6 sig=293/159185 rvar=267/159185 qsp=4622/256 msd=13/255 tlag=5113/246
+TLAGBREAD c8L 42 1 cli p1 blk=94 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p1 blk=95 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p1 blk=96 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=97 rtp=6 sig=431/166441 rvar=387/166441 qsp=11393/256 msd=6/255 tlag=5250/250
+TLAGBREAD c8L 42 1 cli p1 blk=97 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p1 blk=98 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 cli p0 blk=99 rtp=6 sig=484/171277 rvar=300/171277 qsp=4474/256 msd=4/255 tlag=5505/250
+TLAGBREAD c8L 42 1 cli p1 blk=99 rtp=43 sig=137453/4242 rvar=118678/4242 qsp=12183/256 msd=96/255 tlag=36398/249
+TLAGBREAD c8L 42 1 srv p0 blk=1 rtp=10 sig=24800/5 rvar=19804/5 qsp=8000/5 msd=8112/4 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=1 rtp=0 sig=-/0 rvar=-/0 qsp=-/0 msd=-/0 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=2 rtp=10 sig=28432/6 rvar=24169/6 qsp=12586/6 msd=8112/5 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=2 rtp=149 sig=28902/3 rvar=19074/3 qsp=53656/3 msd=53670/2 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=3 rtp=10 sig=55140/10 rvar=47582/10 qsp=76234/10 msd=8112/9 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=3 rtp=149 sig=28902/3 rvar=19074/3 qsp=53656/3 msd=53670/2 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=4 rtp=10 sig=55140/10 rvar=47582/10 qsp=76234/10 msd=8112/9 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=4 rtp=149 sig=28902/3 rvar=19074/3 qsp=53656/3 msd=53670/2 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=5 rtp=10 sig=67999/11 rvar=59892/11 qsp=76246/11 msd=20537/10 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=5 rtp=149 sig=28717/4 rvar=21344/4 qsp=19598/4 msd=53670/3 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=6 rtp=10 sig=93710/13 rvar=85575/13 qsp=122665/13 msd=20537/12 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=6 rtp=149 sig=28717/4 rvar=21344/4 qsp=19598/4 msd=53670/3 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=7 rtp=10 sig=93710/13 rvar=85575/13 qsp=122665/13 msd=20537/12 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=7 rtp=149 sig=28717/4 rvar=21344/4 qsp=19598/4 msd=53670/3 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=8 rtp=10 sig=93710/13 rvar=85575/13 qsp=122665/13 msd=20537/12 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=8 rtp=149 sig=213130/6 rvar=151952/6 qsp=365694/6 msd=53670/5 tlag=-/0
+TLAGBREAD c8L 42 1 srv p0 blk=9 rtp=10 sig=93710/13 rvar=85575/13 qsp=122665/13 msd=20537/12 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=9 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=10 rtp=10 sig=93429/15 rvar=88762/15 qsp=125179/15 msd=8112/14 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=10 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=11 rtp=10 sig=77799/17 rvar=72237/17 qsp=84277/17 msd=8112/16 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=11 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=12 rtp=10 sig=64274/19 rvar=58421/19 qsp=84265/19 msd=2514/18 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=12 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=13 rtp=10 sig=52933/21 rvar=47292/21 qsp=49152/21 msd=2339/20 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=13 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=14 rtp=10 sig=41870/23 rvar=35384/23 qsp=24320/23 msd=2339/22 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=14 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=15 rtp=10 sig=34688/25 rvar=29628/25 qsp=24314/25 msd=2339/24 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=15 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=16 rtp=10 sig=26115/27 rvar=18164/27 qsp=24298/27 msd=2339/26 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=16 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=17 rtp=10 sig=22234/29 rvar=17162/29 qsp=24292/29 msd=2339/28 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=17 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=18 rtp=10 sig=17777/31 rvar=13719/31 qsp=22207/31 msd=2339/30 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=18 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=19 rtp=10 sig=13355/33 rvar=8229/33 qsp=24292/33 msd=2339/32 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=19 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=20 rtp=10 sig=18656/35 rvar=15016/35 qsp=22533/35 msd=2339/34 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=20 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=21 rtp=10 sig=15330/37 rvar=12581/37 qsp=24314/37 msd=2339/36 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=21 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=22 rtp=10 sig=11699/39 rvar=8506/39 qsp=22229/39 msd=2339/38 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=22 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=23 rtp=10 sig=8916/41 rvar=5831/41 qsp=22203/41 msd=2029/40 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=23 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=24 rtp=10 sig=6755/43 rvar=3909/43 qsp=21391/43 msd=497/42 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=24 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=25 rtp=10 sig=5079/45 rvar=2440/45 qsp=22032/45 msd=497/44 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=25 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=26 rtp=10 sig=6463/47 rvar=4818/47 qsp=21369/47 msd=497/46 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=26 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=27 rtp=10 sig=4943/49 rvar=3350/49 qsp=22010/49 msd=497/48 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=27 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=28 rtp=10 sig=6724/51 rvar=5587/51 qsp=22078/51 msd=497/50 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=28 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=29 rtp=10 sig=9685/53 rvar=8598/53 qsp=22010/53 msd=497/52 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=29 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=30 rtp=10 sig=7483/55 rvar=6023/55 qsp=21369/55 msd=497/54 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=30 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=31 rtp=10 sig=6603/57 rvar=5685/57 qsp=14268/57 msd=497/56 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=31 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=32 rtp=10 sig=10197/59 rvar=9061/59 qsp=14336/59 msd=729/58 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=32 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=33 rtp=10 sig=14026/61 rvar=12856/61 qsp=19678/61 msd=729/60 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=33 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=34 rtp=50 sig=10564/63 rvar=7870/63 qsp=19037/63 msd=729/62 tlag=8161/1
+TLAGBREAD c8L 42 1 srv p1 blk=34 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=35 rtp=109 sig=23605/65 rvar=19101/65 qsp=21376/65 msd=729/64 tlag=38410/3
+TLAGBREAD c8L 42 1 srv p1 blk=35 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=36 rtp=109 sig=23605/65 rvar=19101/65 qsp=21376/65 msd=729/64 tlag=38410/3
+TLAGBREAD c8L 42 1 srv p1 blk=36 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=37 rtp=109 sig=23605/65 rvar=19101/65 qsp=21376/65 msd=729/64 tlag=38410/3
+TLAGBREAD c8L 42 1 srv p1 blk=37 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=38 rtp=109 sig=23605/65 rvar=19101/65 qsp=21376/65 msd=729/64 tlag=38410/3
+TLAGBREAD c8L 42 1 srv p1 blk=38 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=39 rtp=194 sig=51270/69 rvar=42903/69 qsp=23408/69 msd=729/68 tlag=12537/30
+TLAGBREAD c8L 42 1 srv p1 blk=39 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=40 rtp=13 sig=137235/71 rvar=111076/71 qsp=23422/71 msd=729/70 tlag=277194/1
+TLAGBREAD c8L 42 1 srv p1 blk=40 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=41 rtp=13 sig=138712/73 rvar=123851/73 qsp=23890/73 msd=729/72 tlag=277194/1
+TLAGBREAD c8L 42 1 srv p1 blk=41 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=42 rtp=13 sig=104088/75 rvar=71881/75 qsp=23905/75 msd=729/74 tlag=277194/1
+TLAGBREAD c8L 42 1 srv p1 blk=42 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=43 rtp=13 sig=81971/77 rvar=56932/77 qsp=22352/77 msd=729/76 tlag=277194/1
+TLAGBREAD c8L 42 1 srv p1 blk=43 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=44 rtp=8 sig=107640/79 rvar=90336/79 qsp=22420/79 msd=729/78 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=44 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=45 rtp=8 sig=103556/81 rvar=93618/81 qsp=22425/81 msd=729/80 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=45 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=46 rtp=8 sig=123255/83 rvar=115829/83 qsp=24635/83 msd=729/82 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=46 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=47 rtp=8 sig=123255/83 rvar=115829/83 qsp=24635/83 msd=729/82 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=47 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=48 rtp=8 sig=105296/87 rvar=84385/87 qsp=44005/87 msd=729/86 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=48 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=49 rtp=8 sig=126822/89 rvar=112957/89 qsp=44646/89 msd=729/88 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=49 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=50 rtp=8 sig=119933/91 rvar=111752/91 qsp=44714/91 msd=729/90 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=50 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=51 rtp=8 sig=108248/93 rvar=102605/93 qsp=44719/93 msd=729/92 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=51 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=52 rtp=7 sig=94623/95 rvar=89792/95 qsp=44734/95 msd=729/94 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=52 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=53 rtp=7 sig=78758/97 rvar=73048/97 qsp=24738/97 msd=729/96 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=53 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=54 rtp=7 sig=82351/99 rvar=78959/99 qsp=24764/99 msd=729/98 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=54 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=55 rtp=7 sig=61998/101 rvar=47972/101 qsp=25977/101 msd=729/100 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=55 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=56 rtp=7 sig=59164/103 rvar=51128/103 qsp=25999/103 msd=729/102 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=56 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=57 rtp=7 sig=53573/105 rvar=48571/105 qsp=26849/105 msd=729/104 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=57 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=58 rtp=7 sig=45132/107 rvar=40886/107 qsp=26834/107 msd=729/106 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=58 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=59 rtp=7 sig=34364/109 rvar=26908/109 qsp=27761/109 msd=729/108 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=59 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=60 rtp=7 sig=26609/111 rvar=19505/111 qsp=27771/111 msd=729/110 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=60 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=61 rtp=7 sig=20057/113 rvar=12295/113 qsp=32505/113 msd=729/112 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=61 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=62 rtp=7 sig=20428/115 rvar=16036/115 qsp=32540/115 msd=729/114 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=62 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=63 rtp=7 sig=19769/117 rvar=17266/117 qsp=31429/117 msd=729/116 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=63 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=64 rtp=7 sig=76220/119 rvar=53667/119 qsp=31437/119 msd=1119/118 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=64 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=65 rtp=7 sig=76220/119 rvar=53667/119 qsp=31437/119 msd=1119/118 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=65 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=66 rtp=7 sig=76220/119 rvar=53667/119 qsp=31437/119 msd=1119/118 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=66 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=67 rtp=7 sig=238969/125 rvar=141144/125 qsp=75689/125 msd=1119/124 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=67 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=68 rtp=7 sig=229955/127 rvar=174449/127 qsp=75698/127 msd=2029/126 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=68 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=69 rtp=7 sig=203524/129 rvar=169446/129 qsp=76781/129 msd=2029/128 tlag=-/0
+TLAGBREAD c8L 42 1 srv p1 blk=69 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=70 rtp=7 sig=173965/131 rvar=150194/131 qsp=76789/131 msd=2041/130 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=70 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=71 rtp=7 sig=173965/131 rvar=150194/131 qsp=76789/131 msd=2041/130 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=71 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=72 rtp=7 sig=186173/133 rvar=172131/133 qsp=82911/133 msd=2041/132 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=72 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=73 rtp=7 sig=191931/135 rvar=183733/135 qsp=89084/135 msd=2041/134 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=73 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=74 rtp=7 sig=167000/137 rvar=159234/137 qsp=89055/137 msd=2041/136 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=74 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=75 rtp=7 sig=167000/137 rvar=159234/137 qsp=89055/137 msd=2041/136 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=75 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=76 rtp=7 sig=264511/139 rvar=243329/139 qsp=124940/139 msd=2041/138 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=76 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=77 rtp=7 sig=264511/139 rvar=243329/139 qsp=124940/139 msd=2041/138 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=77 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=78 rtp=7 sig=264511/139 rvar=243329/139 qsp=124940/139 msd=2041/138 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=78 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=79 rtp=7 sig=531663/141 rvar=462414/141 qsp=134420/141 msd=2041/140 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=79 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=80 rtp=7 sig=339762/145 rvar=265362/145 qsp=198575/145 msd=2041/144 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=80 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=81 rtp=7 sig=339762/145 rvar=265362/145 qsp=198575/145 msd=2041/144 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=81 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=82 rtp=7 sig=339762/145 rvar=265362/145 qsp=198575/145 msd=2041/144 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=82 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=83 rtp=7 sig=255262/147 rvar=159161/147 qsp=227480/147 msd=2041/146 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=83 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=84 rtp=7 sig=388178/149 rvar=312391/149 qsp=228330/149 msd=2041/148 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=84 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=85 rtp=7 sig=388178/149 rvar=312391/149 qsp=228330/149 msd=2041/148 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=85 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=86 rtp=8 sig=358021/151 rvar=313248/151 qsp=228336/151 msd=2041/150 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=86 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=87 rtp=8 sig=358021/151 rvar=313248/151 qsp=228336/151 msd=2041/150 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=87 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=88 rtp=8 sig=306667/153 rvar=273968/153 qsp=229263/153 msd=2041/152 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=88 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=89 rtp=8 sig=254471/155 rvar=225966/155 qsp=229273/155 msd=2041/154 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=89 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBREAD c8L 42 1 srv p0 blk=90 rtp=8 sig=228164/157 rvar=209626/157 qsp=204252/157 msd=2041/156 tlag=11033/1
+TLAGBREAD c8L 42 1 srv p1 blk=90 rtp=130 sig=189891/10 rvar=169440/10 qsp=365298/10 msd=53670/9 tlag=69507/1
+TLAGBMETA c8L 42 1 {"seconds": 27.283134, "mbps": 58.644, "diag_blocks_cli": 99, "diag_blocks_srv": 90, "reads_cli": 194, "reads_srv": 180, "tc_bytes": null, "tc_pkts": null, "tc_drop": null, "tc_s": null, "dump_gate": 1, "dump_batches": 690, "dump_cap": {}}
+TLAGBWITNESS {"cell": "c8L", "seed": 42, "rep": 1, "mbps": 58.644, "seconds": 27.283134, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 9514, "W5_rack_fa": "1470/9643", "W7_group_misses_cli": 0, "W7_group_misses_srv": 0, "diag_blocks_cli": 99, "diag_blocks_srv": 90, "W_dump_gate_cli": 1, "W_dump_batches_cli": 690, "tlag_thin_K": 32, "gen_plateau": false, "plateau_band": [26.8, 34.1]}
+TLAGBREAD sc2 42 1 cli p0 blk=2 rtp=12 sig=512/4301 rvar=475/4301 qsp=4761/256 msd=8/255 tlag=10214/196
+TLAGBREAD sc2 42 1 cli p0 blk=3 rtp=12 sig=584/6694 rvar=553/6694 qsp=8607/256 msd=7/255 tlag=9641/252
+TLAGBREAD sc2 42 1 cli p0 blk=4 rtp=12 sig=861/9117 rvar=779/9117 qsp=965/256 msd=14/255 tlag=3704/250
+TLAGBREAD sc2 42 1 cli p0 blk=5 rtp=12 sig=1473/11521 rvar=1045/11521 qsp=1938/256 msd=8/255 tlag=1543/249
+TLAGBREAD sc2 42 1 cli p0 blk=6 rtp=12 sig=1091/13936 rvar=1011/13936 qsp=1338/256 msd=10/255 tlag=1528/249
+TLAGBREAD sc2 42 1 cli p0 blk=7 rtp=12 sig=390/16357 rvar=234/16357 qsp=2385/256 msd=10/255 tlag=1765/249
+TLAGBREAD sc2 42 1 cli p0 blk=8 rtp=12 sig=362/18743 rvar=315/18743 qsp=1596/256 msd=13/255 tlag=1553/250
+TLAGBREAD sc2 42 1 cli p0 blk=9 rtp=12 sig=288/21186 rvar=256/21186 qsp=2452/256 msd=9/255 tlag=1659/249
+TLAGBREAD sc2 42 1 cli p0 blk=10 rtp=12 sig=677/23602 rvar=613/23602 qsp=3585/256 msd=8/255 tlag=1642/249
+TLAGBREAD sc2 42 1 cli p0 blk=11 rtp=12 sig=114/26006 rvar=58/26006 qsp=1488/256 msd=10/255 tlag=1573/249
+TLAGBREAD sc2 42 1 cli p0 blk=12 rtp=12 sig=1791/28400 rvar=1345/28400 qsp=2128/256 msd=12/255 tlag=1561/251
+TLAGBREAD sc2 42 1 cli p0 blk=13 rtp=12 sig=1367/30810 rvar=928/30810 qsp=1875/256 msd=7/255 tlag=1403/249
+TLAGBREAD sc2 42 1 cli p0 blk=14 rtp=12 sig=1063/33199 rvar=967/33199 qsp=3297/256 msd=9/255 tlag=1171/250
+TLAGBREAD sc2 42 1 cli p0 blk=15 rtp=12 sig=440/35618 rvar=366/35618 qsp=1095/256 msd=7/255 tlag=1072/249
+TLAGBREAD sc2 42 1 cli p0 blk=16 rtp=12 sig=1315/37952 rvar=1191/37952 qsp=566/256 msd=8/255 tlag=1057/249
+TLAGBREAD sc2 42 1 cli p0 blk=17 rtp=12 sig=1539/40441 rvar=1474/40441 qsp=1229/256 msd=16/255 tlag=1734/242
+TLAGBREAD sc2 42 1 cli p0 blk=18 rtp=12 sig=806/42853 rvar=521/42853 qsp=1302/256 msd=18/255 tlag=1590/242
+TLAGBREAD sc2 42 1 cli p0 blk=19 rtp=12 sig=632/45263 rvar=613/45263 qsp=5629/256 msd=22/255 tlag=1589/249
+TLAGBREAD sc2 42 1 cli p0 blk=20 rtp=12 sig=926/47671 rvar=861/47671 qsp=908/256 msd=17/255 tlag=1522/251
+TLAGBREAD sc2 42 1 cli p0 blk=21 rtp=12 sig=470/50083 rvar=405/50083 qsp=2529/256 msd=15/255 tlag=1272/249
+TLAGBREAD sc2 42 1 cli p0 blk=22 rtp=12 sig=156/52497 rvar=92/52497 qsp=2883/256 msd=24/255 tlag=1263/249
+TLAGBREAD sc2 42 1 cli p0 blk=23 rtp=12 sig=671/54900 rvar=586/54900 qsp=1197/256 msd=16/255 tlag=1358/249
+TLAGBREAD sc2 42 1 cli p0 blk=24 rtp=12 sig=328/57191 rvar=281/57191 qsp=1307/256 msd=18/255 tlag=1398/249
+TLAGBREAD sc2 42 1 cli p0 blk=25 rtp=12 sig=361/59728 rvar=302/59728 qsp=1942/256 msd=20/255 tlag=1605/245
+TLAGBREAD sc2 42 1 cli p0 blk=26 rtp=12 sig=264/62142 rvar=182/62142 qsp=1399/256 msd=20/255 tlag=1924/245
+TLAGBREAD sc2 42 1 cli p0 blk=27 rtp=12 sig=471/64554 rvar=447/64554 qsp=6355/256 msd=12/255 tlag=1781/250
+TLAGBREAD sc2 42 1 cli p0 blk=28 rtp=12 sig=398/66971 rvar=350/66971 qsp=2158/256 msd=16/255 tlag=1702/250
+TLAGBREAD sc2 42 1 cli p0 blk=29 rtp=12 sig=376/69396 rvar=369/69396 qsp=2932/256 msd=15/255 tlag=2179/250
+TLAGBREAD sc2 42 1 cli p0 blk=30 rtp=12 sig=249/71788 rvar=104/71788 qsp=1774/256 msd=20/255 tlag=1825/250
+TLAGBREAD sc2 42 1 cli p0 blk=31 rtp=12 sig=1321/74192 rvar=1182/74192 qsp=4238/256 msd=15/255 tlag=1578/249
+TLAGBREAD sc2 42 1 cli p0 blk=32 rtp=12 sig=784/76488 rvar=723/76488 qsp=13110/256 msd=20/255 tlag=1402/249
+TLAGBREAD sc2 42 1 cli p0 blk=33 rtp=12 sig=140/79008 rvar=51/79008 qsp=2286/256 msd=13/255 tlag=1598/248
+TLAGBREAD sc2 42 1 cli p0 blk=34 rtp=12 sig=1417/81406 rvar=1289/81406 qsp=1498/256 msd=10/255 tlag=1530/249
+TLAGBREAD sc2 42 1 cli p0 blk=35 rtp=12 sig=878/83821 rvar=747/83821 qsp=1226/256 msd=9/255 tlag=1166/250
+TLAGBREAD sc2 42 1 srv p0 blk=1 rtp=15 sig=21955/9 rvar=19140/9 qsp=14787/9 msd=11513/8 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=2 rtp=15 sig=28426/15 rvar=27215/15 qsp=33644/15 msd=8555/14 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=3 rtp=15 sig=26762/19 rvar=25507/19 qsp=29633/19 msd=8555/18 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=4 rtp=15 sig=17189/25 rvar=16125/25 qsp=23122/25 msd=1325/24 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=5 rtp=15 sig=7216/32 rvar=4749/32 qsp=9695/32 msd=1325/31 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=6 rtp=15 sig=5807/36 rvar=4727/36 qsp=7443/36 msd=1325/35 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=7 rtp=15 sig=3890/40 rvar=3226/40 qsp=6252/40 msd=305/39 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=8 rtp=15 sig=3458/42 rvar=3040/42 qsp=3506/42 msd=305/41 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=9 rtp=15 sig=2147/46 rvar=1679/46 qsp=3506/46 msd=305/45 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=10 rtp=15 sig=2811/50 rvar=2555/50 qsp=4027/50 msd=305/49 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=11 rtp=15 sig=2543/52 rvar=2376/52 qsp=4014/52 msd=305/51 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=12 rtp=15 sig=2545/54 rvar=2449/54 qsp=3494/54 msd=305/53 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=13 rtp=15 sig=2793/58 rvar=2532/58 qsp=2907/58 msd=305/57 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=14 rtp=15 sig=13246/62 rvar=10304/62 qsp=3506/62 msd=305/61 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=15 rtp=15 sig=9956/64 rvar=6223/64 qsp=3478/64 msd=305/63 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=16 rtp=15 sig=7809/66 rvar=5009/66 qsp=3536/66 msd=305/65 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=17 rtp=15 sig=4655/70 rvar=2698/70 qsp=3521/70 msd=266/69 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=18 rtp=15 sig=3517/72 rvar=1798/72 qsp=3463/72 msd=242/71 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=19 rtp=15 sig=3240/74 rvar=2254/74 qsp=3521/74 msd=242/73 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=20 rtp=15 sig=2766/76 rvar=2138/76 qsp=3696/76 msd=177/75 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=21 rtp=15 sig=4942/80 rvar=4533/80 qsp=3711/80 msd=177/79 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=22 rtp=15 sig=4079/82 rvar=3673/82 qsp=3760/82 msd=177/81 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=23 rtp=15 sig=3280/84 rvar=2847/84 qsp=3711/84 msd=177/83 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=24 rtp=15 sig=3498/86 rvar=3242/86 qsp=3760/86 msd=177/85 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=25 rtp=15 sig=2053/90 rvar=1494/90 qsp=3625/90 msd=177/89 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=26 rtp=15 sig=2460/92 rvar=2107/92 qsp=3621/92 msd=177/91 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=27 rtp=15 sig=2189/96 rvar=2061/96 qsp=3621/96 msd=177/95 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=28 rtp=15 sig=3298/98 rvar=3047/98 qsp=3610/98 msd=177/97 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=29 rtp=15 sig=2784/102 rvar=2398/102 qsp=3610/102 msd=177/101 tlag=-/0
+TLAGBREAD sc2 42 1 srv p0 blk=30 rtp=15 sig=28728/106 rvar=20688/106 qsp=3690/106 msd=177/105 tlag=-/0
+TLAGBMETA sc2 42 1 {"seconds": 8.996174, "mbps": 88.927, "diag_blocks_cli": 35, "diag_blocks_srv": 30, "reads_cli": 34, "reads_srv": 30, "tc_bytes": null, "tc_pkts": null, "tc_drop": null, "tc_s": null, "dump_gate": 1, "dump_batches": 336, "dump_cap": {}}
+TLAGBWITNESS {"cell": "sc2", "seed": 42, "rep": 1, "mbps": 88.927, "seconds": 8.996174, "W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 3221, "W5_rack_fa": "2744/3445", "W7_group_misses_cli": 0, "W7_group_misses_srv": 0, "diag_blocks_cli": 35, "diag_blocks_srv": 30, "W_dump_gate_cli": 1, "W_dump_batches_cli": 336, "tlag_thin_K": 32, "gen_plateau": false, "plateau_band": [26.8, 34.1]}
