@@ -43075,3 +43075,163 @@ on an instrument whose resolution was derived before the first byte moved.
 **Nothing in this section flips a default, edits a law, or changes a byte on
 the wire.**
 
+
+---
+
+## THE QUANTILE-NATIVE α-SWEEP — THE CALIBRATION AND SMOKE, DISCHARGED (2026-08-21, `feat/qnative-clock`) — **the PRE-REGISTRATION's §8 calibration clause is COMPLETE and the scored battery is cleared to launch.** 30 invocations (one rep per arm per cell, all five cells, all six arms), one REBUILT binary, seed 42, **0 aborts, `rc = 0` at 30/30, W1/W2/W4′/W5/W6/W7-QFORM/W7-QWINN clean at 30/30.** `n = 1`. **NOTHING HERE IS A RESULT** — no clause of §5 or §6 is scored, and no number below is quoted as a measurement of anything.
+
+### 1 — THE OWED CLAUSES, DISCHARGED
+
+| clause (pre-registration §8) | required | **discharged** |
+|---|---|---|
+| ONE rep per arm per cell before the battery | 30 invocations | **30** |
+| headroom from `tc -s qdisc show` on **every** cell | 5 cells, not a subset | **5/5**, §2 |
+| W1/W2/W4′/W5/W6 clean | 30/30 | **30/30** |
+| **W7-QFORM / W7-QWINN clean** (this battery's own) | 30/30, both endpoints | **30/30** |
+| the `win_ok/evals` fill fraction at every (cell, arm) | §5(iii)'s own smoke | **§3** |
+| binary REBUILT on the VM from the branch | one binary, sha recorded | **§4** |
+
+**Binary `sha256 aede7b186fd2186cc9379034f933c6396d9f3e6ee80efd0c9e64873cbcfab347`**,
+built on the VM from `ab545cfe49e1492e23c5c51b7ac78c0ff26f110a`, kernel
+`7.0.14-101.fc43.x86_64`, Xeon E5-2650 v3 with `aes avx2 pclmulqdq`. **The same
+binary runs the calibration, the smoke and both scored seeds.**
+
+**AND THE SHIPPING STEP EARNED ITS KEEP, RECORDED BECAUSE IT ALMOST DID NOT
+HAVE TO BE.** The repaired-tree step found **335 files carrying CRLF** and
+normalised every one of them to LF before the tree touched the build or the
+shell; the post-repair count is **0**, asserted rather than assumed, and the
+three new drivers were `bash -n`'d and the three python tools `py_compile`'d
+**on the shipped copies** rather than on the authoring host. The failure this
+prevents is on this tree's record: a driver hit a CRLF trap, ran **zero
+invocations**, and still wrote its `DONE` file.
+
+### 2 — HEADROOM, FROM `tc -s qdisc` ON EVERY CELL (MEASUREMENT DISCIPLINE 16(b))
+
+`CTL` arm, one rep, seed 42. `tc Mbit/s` is the shaper's own byte counter over
+the invocation's wall time; `mbps` is the transfer's reported goodput.
+
+| cell | `mbps` | `tc` Mbit/s | ABORT band | **in band** | probe censoring | probe `p50`/`p95` ms |
+|---|---|---|---|---|---|---|
+| `c1` | 193.21 | 184.50 | [147, 294] | **YES** | 0.00 % | 2.09 / 2.6 |
+| `c7` | 156.80 | 148.70 | [140, 180] | **YES** | 3.90 % | 30.3 / 65.9 |
+| `c8` | 86.97 | 56.44 | [50, 100] | **YES** | 4.08 % | 65.0 / 114.0 |
+| `c8L` | 88.43 | 89.99 | [45, 95] | **YES** | 3.95 % | 99.8 / 120.0 |
+| `sc2` | 87.82 | 81.20 | [78, 92] | **YES** | 1.65 % | 90.1 / 94.9 |
+
+**ALL FIVE CONTROL ARMS LAND IN THEIR PRE-REGISTERED BAND**, so the substrate
+reproduces and the band scope of §7 (CTL only) starts from a control that is
+where it is supposed to be. **Probe censoring is 0.0–4.1 % at every cell**,
+i.e. every cell's `lat_p95` is inside its readable range and §9's
+censoring-exclusion clause is not expected to fire anywhere. Backlog reads
+`0b 0p` on both directions at every capture.
+
+**NO `NO-THROUGHPUT-TARGET` CELL, AND NO GOODPUT-GAIN CLAUSE EXISTS TO BE
+TEMPTED BY.** The pre-registration writes none; the goodput axis of a cost
+curve is a cost axis whose only available direction is down.
+
+### 3 — THE WINDOW FILL FRACTION, AND THE PRE-REGISTERED PREDICTION LANDS
+
+`win_ok / evals` at the SENDER, per (cell, arm) — the fraction of
+recovery-clock evaluations at which the quantile-native window actually held
+its `N(α)` samples. **This is the §16.76.5(1) UNSCOREABLE rule measured rather
+than argued.**
+
+| arm | `N(α)` | `c1` | `c7` | **`c8`** | `c8L` | `sc2` | worst |
+|---|---|---|---|---|---|---|---|
+| `Q002` | 5 000 | 0.925 | 0.945 | **0.617** | 0.928 | 0.930 | **0.617 at `c8`** |
+| `Q009` | 1 112 | 0.770 | 0.985 | 0.903 | 0.979 | 0.938 | 0.770 at `c1` |
+| `Q050` | 200 | 0.818 | 0.996 | 0.966 | 0.994 | 0.950 | 0.818 at `c1` |
+| `Q184` | 55 | 0.771 | 0.999 | 0.990 | 0.991 | 0.903 | 0.771 at `c1` |
+| `Q400` | 25 | 0.894 | 0.999 | 0.990 | 0.999 | 0.945 | 0.894 at `c1` |
+| `CTL` | `unavail` | 0 | 0 | 0 | 0 | 0 | — **by construction** |
+
+**THE LOWEST FILL ON THE WHOLE GRID IS `c8`-`Q002` AT 0.617, AND THAT IS THE
+EXACT (cell, arm) PAIR §16.76.5 NAMED BEFORE THE VM WAS TOUCHED.** The
+pre-registration's §5(iii) reads: *"§16.76.5 predicts `c8`-`Q002` at the `p1`
+leg as the one at-risk pair on the grid (2.46 s to fill 5 000 samples at
+2 035 samples/s, against a `c8` rep of order 2.4 s)."* It is the only reading
+below 0.9 that is not at `c1`, and it is 1.25× below the next-lowest `Q002`
+reading. **The prediction was on the record first and it lands.**
+
+**AND THE PRE-DERIVED `UNSCOREABLE-WINDOW` SET IS EMPTY. NO ARM IS EXCLUDED.**
+§9 fixed the rule — `win_ok = 0` at 8/8 reps of a (cell, arm) makes that pair
+`UNSCOREABLE-WINDOW` — and **no (cell, arm) reads `win_ok = 0` at all.** Every
+treatment arm at every cell ran its own law for the majority of its
+evaluations. **The scored battery therefore scores all 25 treatment cell-arms,
+and `c8`-`Q002` is carried as `WINDOW-PARTIAL` with its fraction on its face
+rather than dropped.** That is the exclusion decision the coordinator's own
+sequencing asked to be taken NOW, and it is taken: **nothing is excluded.**
+
+**ONE THING THE FILL TABLE DOES *NOT* SHOW, SAID PLAINLY BECAUSE IT WOULD BE
+EASY TO ASSUME IT DID.** The fill fraction is **not monotone in window
+length** — at `c1`, `Q002` (`N = 5 000`) fills at 0.925 while `Q009`
+(`N = 1 112`) fills at 0.770, and a pure warm-up effect would order them the
+other way. So the fraction is **not** simply "time to accumulate `N` samples":
+recovery-clock evaluations are not uniform over the run, and a share of them
+land early, before the sample stream has run. **The `c8`-`Q002` reading matches
+the prediction's DIRECTION and its identified cell-arm; this calibration does
+not establish the prediction's MECHANISM, and no claim is made that it does.**
+`n = 1`, at one seed, and the scored battery reports the fraction per rep.
+
+### 4 — THE SMOKE, IN FULL: EVERY ARM, EVERY CELL, BOTH ENDPOINTS
+
+**The calibration IS the smoke and it is broader than the clause asked for.**
+§8 requires one rep per arm per cell; that is 6 arms × 5 cells including
+**four loss cells**, so the "one rep per arm at one loss cell" smoke is
+contained in it four times over and is reported here at full `n`.
+
+| clause | **result** |
+|---|---|
+| `[GATES] RWM_W_FORM` = the arm's resolved token, **both endpoints** | **30/30** — `quantile` at 25 treatment rows, `cantelli` at 5 CTL rows |
+| `[QALPHA] form=`, **both seats** | **30/30**, agreeing with `[GATES]` at every row |
+| `[QALPHA] win_n=` = the arm's own `N(α)`, **both seats** | **30/30** — `5000 / 1112 / 200 / 55 / 25`, `unavail` on CTL |
+| resolved α = the commanded α, **both seats**, to 1e-9 | **25/25 treatment rows**; `override` absent at both seats on all 5 CTL rows |
+| `[RFA]` present on the receiver | **30/30** (2–36 lines per rep) |
+| `RWM_LATPROBE` legs captured | **30/30**, 1 leg per invocation, censoring 0.0–4.1 % |
+| W1 `[RFA] gen=0` | **30/30** |
+| W2 `[PFRAC]` 0 lines | **30/30** |
+| W4′ max `retx > 0` at lossy cells | **24/24** (`c1` exempt) |
+| W5 `[RACK] fired > 0` at lossy cells | **24/24** |
+| `QNAT-LAW-DEAD` (`law_n = 0` on a treatment arm) | **0** |
+| `rc ≠ 0` | **0 of 30** |
+| ABORT / SUBSTRATE-FAIL / ARM-LIVENESS-FAIL / ARM-CONTAMINATION / INSTRUMENT-FAIL-GATE / INSTRUMENT-FAIL-PROBE / W6-FAIL / W7-QFORM-FAIL / W7-QWINN-FAIL / QNAT-PARSE-FAIL / ARM-VANISHED / UNKNOWN-CELL / QCAP-MISSING | **0 each** |
+
+**THE 0-ABORT EXPECTATION IS MET AT THE CALIBRATION AND IS CARRIED INTO THE
+BATTERY UNCHANGED.**
+
+**AND THE GARBAGE ARM WAS SMOKED ON THE WIRE BINARY, NOT ONLY IN A UNIT
+TEST.** Three bare engine spawns on the built binary: `RWM_W_FORM=quantile`
+echoed `quantile`; **`RWM_W_FORM=quantle` echoed `cantelli`**; and the
+gate-absent spawn echoed `RWM_QUANTILE_CLOCKS=0 RWM_ALPHA_OVERRIDE=unset
+RWM_W_FORM=cantelli`. **A mistyped arm resolves back to today's law and says
+so on the run's own output** — the property the 31 Mbit/s anomaly's failure
+mode is the reason for.
+
+### 5 — WHAT IS DELIBERATELY NOT READ FROM THIS PASS
+
+**The calibration's realized `[QCLK]` distributions are recorded in the ledger
+and are SCORED NOWHERE, and that restraint is the point of writing it down.**
+`n = 1`, one seed. The separation rule of §4 is defined on each arm's **median
+over 8 reps** of `w_us_p05`/`w_us_p95`, and applying it to a single rep would
+be scoring a number the pre-registration does not define. **No arm ordering,
+no separation count, no `ΔU`, no route reading, and no `F1`/`F2`/`F3` verdict
+is taken here, in either direction.**
+
+Nine of the 25 treatment rows read goodput outside their cell's CTL band. **Per
+§7 that is a RESULT and never an abort** — the bands were measured on the
+shipped clamp and a treatment arm running a different recovery law may
+legitimately sit outside them, which is the effect the battery exists to
+measure. At `n = 1` those readings are **not** quoted as a cost and are listed
+only so the scored battery's out-of-band rows are not a surprise.
+
+**Artifacts** (on the VM, to be committed with the scored result):
+`/home/vibe/qnat/qnat-calib-s42.log`,
+`/home/vibe/qnat/qnat-calib-witness-s42.jsonl`,
+`/home/vibe/qnat/calib-era.txt`, and 204 per-rep captures under
+`/home/vibe/qnat/diag/` (driver log, sender log, receiver log, sectioned qdisc
+dump and per-leg ping file for each of the 30 invocations).
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
+
