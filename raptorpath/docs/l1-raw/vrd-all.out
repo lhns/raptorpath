@@ -1,0 +1,34 @@
+SENTINEL-WRITABLE /home/vibe/verdict/all.out (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/DONE-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/FAILED-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/DONE-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/FAILED-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/DONE-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/FAILED-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/verdict/all-era.txt (probed as vibe, write+unlink)
+SENTINEL-PROOF-COMPLETE 2026-08-21T17:37:48Z user=vibe dir=/home/vibe/verdict
+VRD-ALL seeds: 42 7
+VRD-ALL grid: cell=c1 reps_per_seed=2 reps_total=4
+VRD-ALL grid: cell=c7 reps_per_seed=4 reps_total=8
+VRD-ALL grid: cell=sc2 reps_per_seed=4 reps_total=8
+VRD-ALL grid: cell=c8 reps_per_seed=4 reps_total=8
+VRD-ALL invoke seed=42 cell=c1 reps=2 2026-08-21T17:37:48Z
+VERDICT-BATTERY-DONE-42
+VRD-ALL invoke seed=42 cell=c7 reps=4 2026-08-21T17:39:06Z
+VERDICT-BATTERY-DONE-42
+VRD-ALL invoke seed=42 cell=sc2 reps=4 2026-08-21T17:43:11Z
+VERDICT-BATTERY-DONE-42
+VRD-ALL invoke seed=42 cell=c8 reps=4 2026-08-21T17:46:27Z
+VERDICT-BATTERY-DONE-42
+VRD-ALL invoke seed=7 cell=c1 reps=2 2026-08-21T17:47:13Z
+VERDICT-BATTERY-DONE-7
+VRD-ALL invoke seed=7 cell=c7 reps=4 2026-08-21T17:48:26Z
+VERDICT-BATTERY-DONE-7
+VRD-ALL invoke seed=7 cell=sc2 reps=4 2026-08-21T17:50:41Z
+VERDICT-BATTERY-DONE-7
+VRD-ALL invoke seed=7 cell=c8 reps=4 2026-08-21T17:54:03Z
+VERDICT-BATTERY-DONE-7
+VRD-ALL-DONE
+ seed=7 cell=c8 reps=4 2026-08-21T17:54:03Z
+VERDICT-BATTERY-DONE-7
+VRD-ALL-DONE

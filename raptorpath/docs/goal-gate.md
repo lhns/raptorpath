@@ -47400,3 +47400,399 @@ the first time, and labelled so they cannot be mistaken for measurements.
 crate, or licenses anything. It repairs one criterion of this pass's own
 pre-registration and discharges its smoke.**
 
+
+
+## THE VERDICT BATTERY — THE SCORED RESULT (2026-08-21, `feat/verdict-battery` from main@`f2c13cd`) — **THE CONTEST WAS HELD AND THE SHIPPED CONSTANTS WIN IT: `CELL-WIN` AT 0 OF 3 STABLE CELLS. THE CHALLENGER NEVER TOOK BOTH OF ITEM 4's DIMENSIONS AT ANY CELL, AND AT EVERY CELL WHERE IT MOVED ONE MATERIALLY IT PAID FOR IT OUTSIDE THE GUARD.** The outcome is **`SURVIVE ON MERIT`** — item 4's second pre-registered branch, reached this time **by a battery that ran** rather than by a condition that was not met. 56 scored invocations, one binary, four cells, two arms, two seeds. **0 aborts, `rc = 0` at 56/56, ZERO witness fail tokens in the whole battery, `ARM-VANISHED` at 0 of 16 cell-arm-seeds, `ARM-VOID` at 0 of 28 challenger rows.** Scored against "THE VERDICT BATTERY — PRE-REGISTRATION" **as amended by its own calibration**, and against nothing else. **Nothing here flips a default, edits an engine crate, wires a consumer, or derives a clock.**
+
+### 0 — THE ABORT-CAUSE TABLE, FIRST
+
+| cause | count | detail |
+|---|---|---|
+| `ABORT-LOCK` | **0** | `/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`, both held for the whole era, both taken with the box verified QUIET (0 `raptorpath` procs, 0 `rp-*` namespaces, load 0.08) |
+| `ABORT-SHA` | **0** | `91a4f8cc…` against the constant pre-registered in §7 **before the VM was touched**; commit `999aa63`; no rebuild was needed and none was done |
+| `ABORT-SENTINEL-UNWRITABLE` | **0** | **8 of 8** absolute paths proved write+unlink as `vibe` **before** any measurement |
+| `ABORT-SMOKE` | **0** | discharged in its own commit, §9 as amended, 8 invocations, 5 of 5 clauses PASS |
+| `ABORT-CTL-BAND` | **0** | `CTL`'s MEDIAN in band at **4 of 4** cells on **both** seeds (§3 names the one control ROW that was not) |
+| `ABORT-RC` | **0** | `rc = 0` at **56 of 56** |
+| **TOTAL ABORTS** | **0** | — |
+
+**WITNESSES, AT FULL `n`.** `W1`–`W10` over all 56 invocations:
+
+| witness | clean | failures |
+|---|---|---|
+| `W1` `[GATES]` both endpoints | **56/56** | 0 |
+| `W2` `RWM_REFRESH_FLOOR_US` resolved, two-sided | **56/56** | 0 |
+| `W3` `RWM_HOLDDOWN_Q` resolved, two-sided, matched LITERALLY | **56/56** | 0 |
+| `W4` `gen=0`, every contamination gate OFF | **56/56** | 0 |
+| `W5` `[HOLD]`, `evals = sup + emit`, `law_n` reported | **56/56** | 0 |
+| `W6` `[QCLK] site=receiver`, `evals>0`, `kept>0` | **56/56** | 0 |
+| `W7` `[FCAUSE]`, `n = timer+gap_data+gap_refresh+other` | **56/56** | 0 |
+| `W8` `[SUCC]`, `det > 0` | **56/56** | 0 |
+| `W9` `[RFA]` fraction and count | **56/56** | 0 |
+| `W10` `rc = 0` and `mean_mbps` scraped | **56/56** | 0 |
+
+**`fails=[]` ON EVERY ROW OF THE BATTERY.** The resolved-gate echo, pooled: 28
+rows of `(unset, unset)` — the `CTL` arm at every cell — and 28 rows of
+`q = 0.864` with `F` at `12300` (c1, 4), `3838` (c7, 8), `12288` (sc2, 8) and
+`12288` (c8, 8), each read back on **both endpoints**. `ARMCOUNT rows = WANT` at
+**16 of 16** cell-arm-seeds.
+
+**AND `ARM-VOID` DOES NOT APPEAR ANYWHERE, WHICH IS NEW.** `[HOLD] law_n = 0` at
+**0 of 28** challenger rows. The (q, refresh) sweep carried three `ARM-VOID`
+cell-arms at `c1` — arms that never ran their own law and were behavioural
+controls wearing treatment labels. **At `q = 0.864` under a lifted cadence the
+hold-down law runs at every row of every cell, including `c1`.** Every number
+below is a treatment that actually happened.
+
+### 1 — CLAUSE (0): `F1`, THE WIRING TEST, AS AMENDED — **DOES NOT FIRE AT ANY CELL**
+
+| cell | `F` | delivered `w_us_p50` | commanded band `[F, 4F]` | shipped floor | `p50` sub-floor? | `SUB-FLOOR-AT-MAX`? | **`F1`** |
+|---|---|---|---|---|---|---|---|
+| `c1` | 12 300 | **21 570** | [12 300, 49 200] | 25 000 | **yes** | **no** (49 200 > 25 000) | **DOES NOT FIRE** — `CEILING-ABOVE-RAIL(c1)` |
+| `c7` | 3 838 | **15 352** | [3 838, 15 352] | 100 000 | **yes** | yes | **DOES NOT FIRE** |
+| `sc2` | 12 288 | **49 152** | [12 288, 49 152] | 100 000 | **yes** | yes | **DOES NOT FIRE** |
+| `c8` | 12 288 | **49 152** | [12 288, 49 152] | 100 000 | **yes** | yes | **DOES NOT FIRE** |
+
+`CTL` delivered its shipped floor exactly at 4 of 4 cells (25 000 / 100 000 /
+100 000 / 100 000) with both gates echoing `unset` two-sided. **The control is
+the shipped machine and the challenger is commanded. The battery is scoreable
+in full**, and `c8` — a cell whose delivered cadence no battery in this tree had
+ever read — is readable, its UPPER-rail prediction confirmed at `4F` exactly.
+
+### 2 — THE REALIZED HOLD: **THE TARGET REGIME IS REACHED AT TWO CELLS AND THE ESTIMATOR RUNS AWAY AT TWO, AND THAT SPLIT IS THIS BATTERY'S CENTRAL MECHANICAL FINDING**
+
+`[HOLD] hd_p50_us`, median over the challenger's reps, against each cell's
+`[SUCC] orig` p50 — the quantity the whole hold-down family exists to sit inside.
+
+| cell | self-heal p50 | challenger `hd_p50` | **ratio** | reading |
+|---|---|---|---|---|
+| `c7` | 30 700 | **29 696** | **0.97×** | **THE TARGET REGIME**, reproduced from the (q, refresh) sweep |
+| `c8` | 98 300 † | **81 920** | **0.83×** | **THE TARGET REGIME AT A LOSS-HEAVY DUAL-PATH CELL — the first time in this program** |
+| `c1` | 24 600 | **172 032** | **6.99×** | `SECOND-CENSOR-NAMED` — the loop runs away |
+| `sc2` | 98 300 | **3 276 800** | **33.3×** | `SECOND-CENSOR-NAMED` — 3.3 SECONDS |
+
+† `c8`'s p50 carries 3.20× rep dispersion and is not a derivation input (§4 of
+the pre-registration). The ratio is indicative and is marked as such.
+
+**AND THE SPLIT IS NOT EVEN WITHIN A CELL.** At `c7`, seed 7 ran the hold at
+20 480–30 720 µs at **4 of 4** reps — squarely in the target regime — while seed
+42 ran away at **2 of 4** (786 432 µs and **5 767 168 µs**). **The same cell,
+the same arm, the same commanded level, on two netem realisations.** That is
+`SECOND-CENSOR-NAMED` as a *stochastic* property rather than a cell property,
+which is more than either prior battery could say, and §5 shows it is exactly
+what decides the guard.
+
+### 3 — THE CONTROL'S OWN DISPERSION, NAMED BEFORE IT IS USED AS A BAR
+
+Both scored dimensions are barred by `CTL`'s own rep spread measured in this
+battery (§6.3 of the pre-registration). Those spreads are therefore data and are
+printed:
+
+| cell | `CTL` lat50 spread | `CTL` `ffrac` spread | `CTL` goodput spread |
+|---|---|---|---|
+| `c1` | 0.48 % | 23.2 % | 8.2 % |
+| `c7` | **93.6 %** | **656.0 %** | **80.2 %** |
+| `sc2` | 33.2 % | 15.2 % | 3.0 % |
+| `c8` | **86.9 %** | **253.7 %** | 44.9 % |
+
+**ONE CONTROL ROW IS RESPONSIBLE FOR MOST OF `c7`'s, AND IT IS NAMED.**
+`c7`-`CTL` seed 7 rep 3 read `mean_mbps = 38.2`, `[RFA] false_frac = 0.1296` and
+`[SUCC] det = 11 827` against ~85 000 at its three siblings — a control
+invocation that mostly did not transfer. **It is NOT excluded**: `rc = 0`, every
+witness clean, no abort cause applies, and the pre-registration has no clause
+that discards a control row for being extreme. It is reported, it stays in every
+median, and it is the single reason `c7`'s `ffrac` bar is 656 %.
+
+> **THE BAR'S DIRECTION IS STATED PLAINLY BECAUSE IT MATTERS TO THE VERDICT.**
+> A self-calibrating bar built on the control's dispersion is **conservative
+> toward the incumbent**: a noisy control cannot be beaten. It can therefore
+> manufacture a false `SURVIVE ON MERIT` and it can NEVER manufacture a false
+> `THE CONSTANTS FALL`. **The verdict below is safe in the direction it landed
+> and is not safe in the other**, and §7 says what that costs.
+
+### 4 — DIMENSION 1: DELIVERED LATENCY `p50` **AND** `p95`, PER-LEG, WORST LEG, CENSORING-AWARE
+
+`censor_max` is **0.31 %–10.91 %** at every cell, so `DIM1-BLIND` (the > 20 %
+clause) fires nowhere and no quantile below is materially blind. Queue `p50` /
+`p99` is carried beside every reading and neither is read alone.
+
+| cell | `lat50` CTL → CH | Δ | `lat95` CTL → CH | Δ | `q_p50` Δ | `q_p99` Δ | bar (`CTL` spread) | **DIM-1** |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 2.080 → 2.085 | **+0.24 %** | 2.565 → 2.585 | +0.78 % | +0.0 % | −14.9 % | 0.48 % | **FLAT** |
+| `c7` | 41.45 → 38.90 | **−6.15 %** | 91.05 → 83.30 | −8.51 % | −5.6 % | −6.2 % | 93.6 % | **FLAT** |
+| `sc2` | 97.20 → 11.75 | **−87.91 %** | 103.50 → 79.95 | −22.75 % | −86.8 % | −12.8 % | 33.2 % | **WIN** |
+| `c8` † | 61.35 → 58.00 | −5.46 % | 137.0 → 106.5 | −22.26 % | −24.1 % | −54.2 % | 86.9 % | **FLAT** |
+
+† witness cell, does not vote.
+
+**`sc2`'s WIN IS THE ONLY ONE AND IT IS EXACTLY WHAT THE GUARD EXISTS FOR.** An
+87.9 % cut in delivered latency, on both seeds, clearing a 33.2 % bar — while
+moving **27 %** of the data (§6). The pre-registration's clause (iii) was written
+against precisely this shape and is applied without softening: a machine moving
+a quarter of the bytes holds a quarter of the queue.
+
+**`c7` MOVED THE RIGHT WAY ON BOTH QUANTILES AND DID NOT CLEAR ITS OWN CONTROL.**
+−6.15 % and −8.51 % against a 93.6 % bar. On seed 7 alone — where the hold landed
+in the target regime at 4 of 4 reps — it reads 43.10 → 39.95 and 94.55 → 85.90.
+**Real in the medians, unresolvable against this control.** That is a statement
+about the measurement, and §7 does not upgrade it to a statement about the
+machine.
+
+### 5 — DIMENSION 2: REALIZED FALSE REPAIR, **FRACTION AND COUNT**
+
+| cell | `false_frac` CTL → CH | Δ | `false` COUNT CTL → CH | Δ | bar (`CTL` frac spread) | **DIM-2** |
+|---|---|---|---|---|---|---|
+| `c1` | 0.2621 → 0.2588 | −1.26 % | 195.5 → **233.5** | **+19.44 %** | 23.2 % | **FLAT** (count moves AGAINST) |
+| `c7` | 0.01750 → 0.01325 | **−24.29 %** | 1 524 → 1 116 | **−26.71 %** | 656.0 % | **FLAT** |
+| `sc2` | 0.3388 → **0.3884** | **+14.65 %** | 1 131 → **1 392** | **+23.08 %** | 15.2 % | **FLAT** (both move AGAINST) |
+| `c8` † | 0.07165 → 0.05800 | −19.05 % | 395 → 224 | **−43.29 %** | 253.7 % | **FLAT** |
+
+**`DIM2-WIN` AT 0 OF 4 CELLS, AND THE FOUR ROWS SAY FOUR DIFFERENT THINGS.**
+
+* **`c1` — the count moves AGAINST the challenger, +19.4 %.** `[SUCC] det` rose
+  from 461–664 to 602–676: the challenger DETECTED more holes. **A faster
+  refresh cadence produces more gap reports, and a gap report is what the sender
+  answers with a repair.** That is the (q, refresh) sweep's `P-A` mechanism
+  reproduced on a two-arm contrast, and it is the mechanism §16.79.1's ceiling
+  is a bound on.
+* **`c7` — the challenger's original headline result REPLICATES in the medians
+  and does not clear its control.** −24.3 % fraction, −26.7 % count, against the
+  −19.0 % / −17.4 % it was recruited on. On seed 7: 0.02015 → 0.01295 (−35.7 %),
+  1 664 → 1 178 (−29.2 %). **This is the strongest evidence in the battery for
+  the challenger and the bar does not admit it.**
+* **`sc2` — both halves move AGAINST**, +14.7 % and +23.1 %, on both seeds. The
+  challenger makes false repair *worse* here.
+* **`c8` — the largest count movement in the battery, −43.3 %**, at the
+  loss-heavy cell, against a 253.7 % bar.
+
+**`fa` MOVES IN BOTH DIRECTIONS ACROSS CELLS AGAIN — −43 % to +23 % on the count
+— on a single fixed configuration.** `fa ⊥ W`, `fa ⊥ T`, `fa ⊥ refresh`, and now
+`fa` not even signed by one configuration across four cells. That is a fourth
+reading of the same null and it was not this battery's question.
+
+### 6 — THE GUARD BAND: GOODPUT, AND THE WEIGHING RULE AT `δ_auto = 0.5`
+
+| cell | band | `CTL` (med, both seeds) | CH s42 | CH s7 | **`G1` band** | `g_ratio` | `G2` bar `(L_ratio)^0.5` | **`G2`** | `Δg` vs resolvable | **GUARD** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `c1` | [147, 294] | 201.4 | 187.9 ✓ | 199.1 ✓ | **OK** | 0.9602 | 1.0012 | fail | 3.98 % < **4.30 %** | **`GUARD-UNDERPOWERED(c1) → G1`** |
+| `c7` | [140, 180] | 163.5 | **103.0 ✗** | 158.4 ✓ | **FAIL** | 0.9687 | 0.9688 | fail by 1e−4 | 3.13 % < **12.88 %** | **`VIOLATION(band)`** |
+| `sc2` | [78, 92] | 87.2 | **24.8 ✗** | **21.7 ✗** | **FAIL** | 0.2686 | 0.3477 | fail | 73.14 % > 0.80 % | **`VIOLATION(band)`** |
+| `c8` † | [50, 100] | 85.0 | 67.5 ✓ | 67.6 ✓ | **OK** | 0.7950 | 0.9723 | **fail** | 20.50 % > **9.30 %** | **`VIOLATION(exchange)`** |
+
+**`c7`'s `G2` IS A DEAD HEAT AND IS REPORTED AS ONE.** `g_ratio = 0.9687`
+against a bar of `0.9688` — the Copa exchange at the contract's default weights
+lands **on** the line, one part in ten thousand under it, far inside the
+measurement's own power. **§16.79.4's dissent is neither confirmed nor refuted
+at `c7`; it is a tie**, and the guard fires there on the BAND clause instead,
+for a reason that has nothing to do with the exchange: **seed 42's median
+collapsed to 103.0 because the estimator ran away at 2 of 4 reps** (§2).
+
+> **SO THE GUARD FIRED ON A SEED, NOT ON THE ECONOMICS, AT THE ONE CELL WHERE
+> THE CHALLENGER WAS COMPETITIVE.** That is stated as the limitation it is. The
+> challenger's benefit at `c7` is real when the hold lands where it is aimed;
+> the hold lands where it is aimed at 4 of 4 reps on one seed and 2 of 4 on the
+> other. **An intervention that delivers its benefit on three-quarters of its
+> attempts and collapses the transfer on the rest has not beaten a clamp that
+> never collapses anything**, and that is the honest content of `c7`'s
+> `VIOLATION(band)`.
+
+**`c8`'s IS THE CLEAN EXCHANGE VIOLATION AND IT IS THE MOST INFORMATIVE ROW IN
+THE BATTERY.** `G1` passes — 67.5 / 67.6 inside `[50, 100]` on both seeds — so
+the band does not decide it. The **exchange** does: 20.5 % of throughput for a
+22.3 % `p95` latency cut and a 43.3 % false-repair-count cut, which at
+`δ_auto = 0.5` prices at `0.795` against a `0.972` bar and **fails by 18
+points**. And the difference is 20.5 % against a 9.30 % resolvable Δ, so it is
+**not** underpowered — it is measured. **At the loss-heavy end of the dial the
+exchange is worse, not better**, and it is worse in the direction §16.79
+predicted, at the cell §16.79 explicitly scoped itself away from.
+
+### 7 — THE VERDICT
+
+| cell | DIM-1 latency | DIM-2 false repair | GUARD | **`CELL-WIN`** |
+|---|---|---|---|---|
+| `c1` `[CEILING-ABOVE-RAIL]` | **FLAT** | **FLAT** (count +19.4 % against) | `UNDERPOWERED → G1` OK | **NO** |
+| `c7` | **FLAT** (−6.2 % / −8.5 %) | **FLAT** (−24.3 % / −26.7 %) | **`VIOLATION(band)`** | **NO** |
+| `sc2` | **WIN** (−87.9 %) | **FLAT** (both +) | **`VIOLATION(band)`** | **NO** |
+| `c8` **witness, no vote** | **FLAT** | **FLAT** (count −43.3 %) | **`VIOLATION(exchange)`** | **NO** |
+
+**`CELL-WIN` at 0 of 3 stable cells. The `THE CONSTANTS FALL` condition needed
+≥ 2.**
+
+> ## **OVERALL: `SURVIVE ON MERIT`.**
+>
+> §11.2's branch, and §11.2 required the verdict to NAME which of its cases
+> occurred rather than let "anything else" sound like a default. **Three of its
+> five named cases occurred, at three different cells, and no cell produced
+> fewer than one:**
+>
+> * **`sc2` — "it wins one dimension and not the other"**, and additionally
+>   "wins while reading out of band": an 87.9 % latency cut bought by moving
+>   27 % of the data, with false repair moving *against* the challenger on both
+>   halves and both seeds.
+> * **`c7` — "it wins both everywhere but reads out of band"**, in its weakest
+>   form: both dimensions move the challenger's way in the medians, neither
+>   clears the control's own dispersion, and the band fails on one seed because
+>   the hold ran away at 2 of 4 reps.
+> * **`c1` — "it is flat at every cell"**, with the false-repair COUNT moving
+>   19.4 % against it because a faster cadence solicits more repairs.
+>
+> **THE SHIPPED `25 / 100 ms` CONSTANTS ARE UNDEFEATED BY THE STRONGEST MEASURED
+> OPPONENT THIS PROGRAM PRODUCED, IN A CONTEST THAT WAS ACTUALLY HELD.** Item
+> 4's two prior closures were `DOES-NOT-RUN-BY-ITS-OWN-CONDITION` and were
+> correct; what they could not deliver was a verdict from a battery. **This is
+> that verdict, and it is the same one.** The constants remain **non-derived**
+> — this battery does not upgrade "undefeated" to "derived" and §16.79.6 says so
+> in the paper — and they are now beaten by nothing above their floor (two
+> sweeps), below their floor (one sweep) and **head-to-head against the one
+> configuration that ever beat them at anything** (this battery).
+
+**AND THE VERDICT'S OWN LIMITATION IS PART OF IT.** §3: the self-calibrating bar
+is conservative toward the incumbent and cannot manufacture the opposite result.
+At `c7` the challenger's fa fraction fell 24.3 % and its count 26.7 % — the
+result it was recruited on, **replicated** — and the bar did not admit it because
+one control row read 38.2 Mbit/s. **The honest form of `c7`'s row is "the
+challenger's effect is reproduced and is not resolvable against this control at
+`n = 8`", not "there is no effect."** §6's arithmetic said `c7` wanted `n = 63`
+and the budget bought 8; that was written before the run and it is what it cost.
+
+### 8 — WHAT THIS DOES TO PAPER §16.79
+
+**§16.79's FALSIFIER `F3` DOES NOT FIRE.** Its text: *"A paired contrast that
+reproduces a goodput GAIN under a sub-self-heal hold, at a majority of cells,
+undecides this section outright."* Measured: **goodput FELL at 4 of 4 cells and
+at 8 of 8 cell-seeds** — `−3.98 %`, `−3.13 %`, `−73.14 %`, `−20.50 %`. The hold
+landed in the sub-self-heal regime at 2 of 4 cells (`c7` 0.97×, `c8` 0.83×) and
+**cost throughput at both.** `[W]` is signed negative four more times.
+
+**§16.79.4's DISSENT IS SCORED AND IT DOES NOT SURVIVE ITS OWN EXTENSION.** The
+Copa `+0.045` was computed at one cell from one battery. Extended to four cells
+under the same weights: `c7` **ties** (0.9687 vs 0.9688), `c1`, `sc2` and `c8`
+**fail**, `c8` by 18 points with the difference well above its resolvable Δ.
+**The dissent's one favourable reading was a single cell and it does not
+generalise**, which is what §16.79.4's second bound predicted and the reason it
+was written as a bound rather than as a rebuttal.
+
+**§16.79's DECISION THEREFORE STANDS, AND IT STANDS ON A BATTERY RATHER THAN ON
+AN ABSENCE.** The corner `T* = 0` is where the loss function's minimiser sits at
+every measured input, and the contest confirms it at the one place a contest
+could have moved it.
+
+### 9 — WHAT REMAINS, STATED PLAINLY AND WITHOUT INFLATION
+
+* **`c7` at `n = 63` is the one measurement this battery could not afford**, and
+  it is named as an owed item rather than a caveat. It would decide whether the
+  challenger's replicated 24–27 % false-repair reduction is resolvable against
+  its own control. **It would not change the verdict**: the guard fires at `c7`
+  on the BAND clause, and no `n` repairs a hold that runs away at 2 of 4 reps.
+* **`SECOND-CENSOR-NAMED` is now a stochastic property, not a cell property**
+  (§2), and that is a sharper form of the defect than either prior battery
+  reached. The construction that would fix it — a hold-down evaluated on a
+  stream its own delay cannot contaminate — remains named and remains unbuilt,
+  and the (q, refresh) sweep's judgment that building it *would not pay* is
+  reinforced here by `c8`: at the one new cell where the hold DID land in the
+  target regime, the machine got 22 % less tail latency and 43 % less wasted
+  repair and **still lost 20.5 % of throughput.**
+* **The `(δ, hold)` contrast at Bulk is still owed**, per §16.79.5's `F2`. This
+  battery ran at `δ_auto` and claims nothing at `δ = 0.005`.
+* **ρ is still unswept by any battery in this tree.**
+
+### 10 — THE PLAIN-LANGUAGE ANSWER
+
+We had spent this whole program showing that making the sender wait before it
+resends does not pay. But we had never actually put the best waiting
+configuration we ever found *head to head* against the machine as it ships. We
+said "the constants survive on merit" — and what we meant was "nothing turned up
+to beat them," which is a weaker thing.
+
+So we found the single best opponent in the entire record — the one setting that
+had genuinely produced less wasted work and less delay — and ran it against the
+shipped machine at four network conditions, two random seeds, everything paired.
+
+**It lost, at every condition, and it lost differently at each one.** At the
+clean fast link it changed nothing and actually caused *more* wasted resends,
+because a receiver that speaks more often simply asks more often. At the lossy
+link it reproduced its old result — about a quarter fewer wasted repairs — but on
+one of the two random seeds the sender's own waiting estimate spiralled and the
+transfer collapsed, which a shipping machine cannot do. At the third condition it
+cut delay by 88 % — by moving barely a quarter of the data. And at the hardest,
+lossiest condition, where it worked best of all — 43 % less wasted repair, 22 %
+less tail delay — it still cost a fifth of the throughput.
+
+**That last one is the whole answer in one line: even where waiting works, it
+costs more than it saves.** The shipped machine keeps doing what it does, and now
+it has won a fight rather than merely gone unchallenged.
+
+### 11 — PROVENANCE
+
+Binary `91a4f8ccda35941cdbcbaf09988a2fb01baf221899131f4078200e10faa8c7f3`,
+engine commit `999aa63`, paper §16.79, pre-registration + amendment in this
+ledger. VM 10.1.5.16. Locks `/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock` held
+for the whole era **17:31:31Z–18:00Z** and **both released** at collection, with
+**0 `raptorpath` processes and 0 `rp-*` namespaces** verified before release and
+after. Era `17:37:48Z–17:55:06Z`, 17 minutes, 56 scored invocations. Sentinels
+`DONE-S42`, `DONE-S7`, `DONE-ALL` all **earned** (each seed's ledger non-empty
+and carrying its own `VERDICT-BATTERY-DONE seed=<s>` line) and all **proved
+writable before the first measurement**.
+
+Raw, in `docs/l1-raw/`: `vrd-s42.log`, `vrd-s7.log`, `vrd-witness-s42.jsonl`,
+`vrd-witness-s7.jsonl`, `vrd-cal-s42.log`, `vrd-cal-witness-s42.jsonl`,
+`vrd-report.txt`, `vrd-all.out`, `vrd-all-era.txt`, `vrd-cal.out`. Drivers:
+`raptorpath/tools/l1/verdict_battery.sh`, `verdict_all.sh`.
+
+**Nothing in this pass flips a default, edits an engine law, wires a consumer,
+derives a clock, or licenses a battery.**
+
+
+---
+
+## GOAL #101 — COMPLETE (2026-08-21): EVERY NUMBERED ITEM HAS RUN-OR-CLOSED WITH ITS VERDICT
+
+**Item 1 — the ρ feasibility gate. CLOSED, `UNREADABLE-WITH-NAMED-REASON`.**
+ρ is a compile-time `1.0` with no surface and the recovery plane reads no ρ at
+all. The gate that decides whether a ρ battery may be written returned NO, and
+no battery was written against a dial that does not exist.
+
+**Item 2 — the dispersion estimator. CLOSED, `NEEDS-MORE`, twice.** Four
+estimators failed clause `S` including the shipped one; the named successor
+`tlag` confirmed the rate-invariance mechanism and still failed the bar, and its
+own `CONTROL-DRIFT` gate fired. The failing clause and the missing instrument
+are named on the record.
+
+**Item 3 — the recovery-clock formula. `DECIDED`.** Paper **§16.79** — "THE
+SINGLE INSTANTIATION" — evaluates §16.74's loss function at every measured input
+this program produced and finds its minimiser at the corner where the added
+waiting time on the gap-report path is zero. **The decided instantiation is the
+shipped response law**: answer the gap report at the control-plane cadence
+`(2·srtt).clamp(25, 100)`, with no added hold. It is a corner of one continuous
+minimisation selected by a single inequality between two always-computed
+quantities — no threshold on δ, no threshold on ρ, no mode bit — and it is
+decided because `[W]`, the only term that can favour waiting, is bounded above
+by the machine's own repair traffic (0.242 % / 2.966 % / 4.084 % of the
+transfer) while the measured cost of the deepest commandable hold is 3.47 % /
+4.58 % / 74.88 %: **the cost exceeds the ceiling, not merely the realized
+benefit, at 3 of 3 fully-swept cells.** Its falsifiers are written with their
+directions checked, and one of them — `F3` — was handed to item 4 as that
+battery's licence to overturn it.
+
+**Item 4 — the verdict battery. `RUN`. Verdict: `SURVIVE ON MERIT`.** The
+shipped clamp against the strongest measured challenger anywhere in the record
+(`c7`-`R2Q86`'s configuration, instantiated per cell at its own grid point), 56
+paired invocations, four cells, two seeds, 0 aborts, 0 witness failures.
+**`CELL-WIN` at 0 of 3 stable cells** — the challenger never took both of item
+4's dimensions at any cell, and where it moved one materially it paid outside
+the goodput guard. §16.79's falsifier `F3` did not fire: goodput fell at 4 of 4
+cells and 8 of 8 cell-seeds, including at the two cells where the hold landed
+inside the self-heal median. **Item 4's question is no longer answered by its
+own second branch — it is answered by its own battery, and the answer is the
+same.**
+
+> **GOAL #101 IS COMPLETE. Every numbered item has now RUN-or-CLOSED with its
+> verdict, in the order the goal's own clause required: the feasibility gate
+> before the sweep, the estimator before the formula, the formula before the
+> battery, and the battery last. Two items closed negative with their failing
+> clauses named, one is DECIDED in the paper, and one RAN and returned a verdict.
+> Nothing in this goal flipped a default. The clamp stays — convicted on its
+> `fa` budget, undefeated above its floor, undefeated below it, undefeated
+> head-to-head, explained by a measured mechanism, and now DECIDED by a loss
+> function rather than merely left standing by the absence of a challenger.**
+
