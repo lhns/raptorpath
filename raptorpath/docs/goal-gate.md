@@ -44601,3 +44601,343 @@ armed, no consumer is wired. The instrument's own test forbids `receiver.rs`
 from calling `crossing_us`, `orig_frac` or `.quantile(` — no law may read this
 gauge. The derivation is the next step, in the paper, and it now has a measured
 distribution to be written against instead of a named one.**
+
+## THE HOLD-DOWN SWEEP — PRE-REGISTRATION (2026-08-21, `feat/holddown-clock` from main@`5481a0b`) — **THE FIRST BATTERY THIS TREE HAS EVER POINTED AT THE PATH THAT DECIDES 99 % OF ITS RECOVERY FIRES.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine law, or wires a consumer. No clock is touched.**
+
+The derivation is **paper §16.77**, committed at `4e7d2e2` before this section
+and before the engine arm. This section is the battery written against it.
+
+### 1 — WHY THIS BATTERY EXISTS, IN ONE PARAGRAPH OF PRIOR COUNTS
+
+The fire-cause pass classified **107 597** recovery fires: **0.59 % came from a
+timer, 98.99 % from the sender answering a receiver gap report**, `other = 0`
+and `unattr = 0` at 30/30. The quantile-native sweep moved the realized timer
+`W` p50 by 2.1× at `c1` across a 200× span of α, witnessed at 480/480, **and
+the realized false-alarm rate did not follow at five of five cells** — `fa ⊥ W`.
+The successor-arrival pass then measured the distribution the sender would have
+to wait on: **97.86 % of 374 120 resolved holes closed by their own ORIGINAL**,
+with an `orig` p50 **DIAL-DEPENDENT at 6.67×** (24.6–163.8 ms), stable at
+`c1`/`c7`/`sc2` and unstable at `c8`/`c8L`.
+
+**Every clock this tree has swept sets the timer. This battery sweeps the other
+one.** `RWM_HOLDDOWN_Q` makes the sender wait `T(q) = W_q(1 − q)` — §16.76's
+order statistic on the hole-resolution stream — before answering a reported
+hole. The level `q` is derived in §16.77.2 from the measured cost primitives
+with no free constant; this battery measures whether the machine agrees.
+
+### 2 — THE ENGINE CHANGE: ONE EXPERIMENT ARM AND ONE GAUGE
+
+Committed at `491872e` before this section, in its own commit.
+
+| what | where |
+|---|---|
+| `RWM_HOLDDOWN_Q` — the level, **ABSENT by default** | `gates.rs` (field + resolve + `echo_line`), `net/sender_policy.rs` (field + `from(gates)`) |
+| `holddown_window_n(q)` = `qnative_window_n(1−q)`; `holddown_us(win, q)` = `qnative_recovery_round_us(win, 1−q)` | `net/mod.rs` — **no new law**, §16.76's window law and order statistic re-parameterised |
+| THE GATE — one `continue` at the gap-report response site, after every other suppression and **before** `record_fire_cause` | `net/mod.rs`, the `'gaps` per-seq loop |
+| the estimator's FEED — retire on cumulative ack, feed the hole's **OUTSTANDING TIME**, excluding only the δ-honest shed set | `net/mod.rs`, at the frontier advance |
+| `[HOLD]` — the gauge, **per path** | `net/mod.rs`, sender site, emitted on **every** arm |
+
+```text
+[HOLD] site= path= gen= q= n_req= samp_n= fed= t_us= evals= law_n= sup= emit=
+       hd_p50_us= hd_p90_us= hd_p99_us= hd_mx_us= hd_n= fa_class=
+```
+
+* **`q=` and `n_req=` are the RESOLVED level and the window law's own answer**,
+  echoed at the seat that evaluates them. `unset` / `-` on the control.
+* **`evals` / `law_n` is the bind-fraction gauge** `CLAUDE.md`'s FORMULA-FIRST
+  clamp rule owes any law that adds a bound. `law_n = 0` ⇒ the arm's own law
+  never ran ⇒ **the row is VOID** and is never pooled with a full one.
+* **`samp_n` and `fed` are the estimator's `n` per path** — §16.76's window
+  conventions. They distinguish "never filled" from "filled and rolled".
+* **`t_us` is the live `T` estimate**, `-` when unavailable.
+* **`sup` / `emit` is the suppression the arm exists to produce.**
+
+**THE ENGINE PASS FOUND A DEFECT IN THE DERIVATION AND THE PAPER RECORDS IT
+(§16.77.8a).** §16.77.2 was written against the distribution of "resolved by its
+own ORIGINAL". The sender cannot observe it: with `T` unavailable the sender
+answers every report immediately, so a repair flies for **every** hole, the "no
+repair flew" set is **empty**, the window never fills and `T` is a **fixed point
+at zero**. `holddown_reachability.rs` printed it in one line —
+`evals=1175 fed=0 samp_n=0 law_n=0 t_us=- sup=0` — **before any VM was touched**.
+The estimand is now the hole's **OUTSTANDING TIME**, fed unconditionally, one
+rule at every window occupancy, with no bootstrap mode and no warm-up branch.
+**The bias that buys is signed and it is toward zero** (`Y = min(orig, repair)`,
+plus right-censoring), so `T` under-estimates, the hold-down is **shorter** than
+derived, and the arm **under-delivers** the predicted improvement. §5(i) is
+written against that asymmetry.
+
+**DISARMED IS BYTE-IDENTICAL AND IT IS ASSERTED, NOT CLAIMED.**
+`raptorpath/tests/recovery_bench.rs` pins the window law and the order
+statistic ABSOLUTELY at all four grid points and pins the unscoreable rule at
+its exact boundary; `net/mod.rs`'s unit tests pin that with the level absent the
+gate returns `false` **at every age**, stamps nothing, feeds nothing and
+suppresses nothing. `raptorpath/tests/holddown_reachability.rs` **fails on the
+pre-change engine** — `RWM_HOLDDOWN_Q`, `[HOLD]`, `q=` and `n_req=` do not exist
+there — and asserts the routing end-to-end over a lossy loopback, including the
+exact cross-gauge identity
+
+```text
+   sum([HOLD] evals)  ==  sum([HOLD] sup)  +  [FCAUSE] n
+```
+
+which is the one assertion a gauge agreeing only with itself could not pass.
+
+**`RWM_HOLDDOWN_Q` is NOT a rival law for the timer's quantity** and does not
+join the `quantile ≻ rack ≻ derived ≻ clamp` precedence chain. It is a different
+decision at a different site and it composes with all four. **Nothing may ship
+reading it.**
+
+### 3 — THE ARMS, DERIVED
+
+Three constraints fix the grid and none is free. **(a)** the top is the
+derivation's own answer — §16.77.3 and §16.77.7 both land at or above 0.99;
+**(b)** the floor is the window law's — `N` is flat at `2K = 20` for every
+`q ≤ 0.5` and the level such a window commands is `1 − 10/21 = 0.5238`, so no
+level below that is expressible; **(c)** the spacing is §16.76.8's
+adjacent-ratio rule — four arms across `a ∈ [0.010, 0.500]` at the uniform
+geometric ratio `50^{1/3} = 3.684`, above the `3.4–3.6` separation threshold at
+`K = 10`.
+
+| arm | `q` | `a = 1−q` | `N(a)` | `E[τ] = K/(N+1)` | **realized level** | 95 % CI on `τ` (exact Beta) |
+|---|---|---|---|---|---|---|
+| **`H010`** — **THE DERIVED LEVEL** | 0.990 | 0.010 | **1 000** | 0.009990 | **0.99001** | `[0.004806, 0.017016]` |
+| `H037` | 0.963 | 0.037 | **271** | 0.036765 | 0.96324 | `[0.017835, 0.062105]` |
+| `H136` | 0.864 | 0.136 | **74** | 0.133333 | 0.86667 | `[0.066751, 0.218361]` |
+| `H500` — the window law's floor | 0.500 | 0.500 | **20** | 0.476190 | **0.52381** | `[0.271958, 0.684722]` |
+| **`CTL`** | — | — | — | — | **shipped, `T = 0`** | — |
+
+**THE UNSEPARATED-BY-CONSTRUCTION SET, DECIDED BEFORE THE VM IS TOUCHED.**
+§16.76.4's (Q), `m = τ_2.5%(a_hi)/τ_97.5%(a_lo)`; `m ≤ 1` is
+UNSEPARATED-BY-CONSTRUCTION.
+
+| pair | ratio | **`m`** | verdict |
+|---|---|---|---|
+| `H010` – `H037` | 3.70 | **1.048** | separated, **THIN — 4.8 %** |
+| `H037` – `H136` | 3.68 | **1.075** | separated, **THIN — 7.5 %** |
+| `H136` – `H500` | 3.68 | 1.246 | separated |
+| `H010` – `H136` | 13.6 | 3.923 | separated |
+| `H037` – `H500` | 13.5 | 4.379 | separated |
+| `H010` – `H500` | 50.0 | 15.98 | separated |
+
+**ZERO PAIRS OF SIX ARE UNSEPARATED BY CONSTRUCTION AND TWO ARE THIN.** Both
+thin pairs are named here with their margins beside them; a non-separation at
+either is read as **thin-margin and not as a finding** — the disposal §16.76.8
+gave `Q050`–`Q184` at 1.085. §16.76.5(4)'s independence caveat applies with
+MORE force here than there, because hole resolutions inside one RTT are more
+correlated than acks are; it can only make arms harder to separate, never
+easier, so a measured separation is safe against it.
+
+**THE WINDOW-FILL RISK, COMPUTED BEFORE THE RUN**, from the successor-arrival
+pass's own `res` counts (per rep, per path):
+
+| cell | resolutions / rep | paths | **/ path** | `H010` (N=1000) | `H037` (N=271) | `H136` (74) | `H500` (20) |
+|---|---|---|---|---|---|---|---|
+| `c1` | 749 | 1 | **749** | **PREDICTED UNSCOREABLE** | fills | fills | fills |
+| `sc2` | 2 005 | 1 | 2 005 | **PARTIAL RISK** | fills | fills | fills |
+| `c8` | 3 937 | 2 | 1 968 | **PARTIAL RISK** | fills | fills | fills |
+| `c7` | 90 766 | 2 | 45 383 | fills | fills | fills | fills |
+| `c8L` | 27 249 | 2 | 13 625 | fills | fills | fills | fills |
+
+**`c1`-`H010` IS PREDICTED UNSCOREABLE OR HEAVILY PARTIAL BEFORE THE RUN, AND
+THE PREDICTION IS ON THIS LINE RATHER THAN IN A POST-HOC EXPLANATION.** It is
+the derived arm at the cleanest cell and the window law cannot fill it there.
+`law_n = 0` ⇒ the row is **VOID**; a partial `law_n` is reported with its
+fraction and **never pooled with a full one**.
+
+### 4 — THE CELLS, THE REPS, THE PAIRING
+
+**Cells TRANSCRIBED, never redefined**, from `succ_battery.sh`/`qnat_battery.sh`
+verbatim:
+
+| cell | leg A | leg B | mode | bytes | paths | goodput band (Mbit/s) |
+|---|---|---|---|---|---|---|
+| `c1` | c1 | c1 | single | 400 000 000 | 1 | `[147, 294]` |
+| `sc2` | c2 | c2 | single | 100 000 000 | 1 | `[78, 92]` |
+| `c7` | c2 | c2 | dual | 200 000 000 | 2 | `[140, 180]` |
+| `c8` | c2 | c3 | dual | 25 000 000 | 2 | `[50, 100]` |
+| `c8L` | c2 | c3 | dual | 200 000 000 | 2 | `[45, 95]` |
+
+The driver is **`raptorpath/tools/l1/hold_battery.sh`**, the parser is
+**`alpha_parse.py`** — extended ADDITIVELY with `[HOLD]`, `[FCAUSE]` and
+`[SUCC]` blocks, no field removed, no field renamed, the `ALPHARESULT ` prefix
+unchanged, **so these rows POOL with the α-sweep and quantile-native ledgers**.
+
+**`n = 8` reps, seeds 42 and 7 (4 reps each). `RWM_GEN=0` on every invocation.**
+5 cells × 5 arms × 8 reps = **200 invocations**, one binary, one lock.
+
+**PAIRED WITHIN-REP.** All five arms of a cell run back-to-back inside one rep,
+in a fixed order, so substrate drift is common-mode and every arm-to-arm
+contrast is taken against its own rep's control. **Rows from different reps are
+never differenced.**
+
+**`RWM_GEN=0` IS NOT OPTIONAL AND ITS REASON IS STRUCTURAL.** Under generation
+coding the SACK→gap producer is suppressed (`recv_nack_tx = None`), so
+`[FCAUSE]`'s `gap_` classes and `[SUCC]`'s `orig` are **structurally empty** —
+this battery's entire measurand would read zero for a configuration reason. The
+`[HOLD] gen=` field carries the machine on every line so a mis-set run is READ.
+
+### 5 — THE SCORE, PRE-STATED
+
+Definitions, fixed here:
+
+```text
+   sup_frac(cell, arm)  =  Σ_paths sup  /  Σ_paths evals          [HOLD], sender
+   rpd(cell, arm)       =  [FCAUSE] n   /  [SUCC] det             SENDER / RECEIVER
+                          "repairs emitted per hole detected"
+```
+
+**`rpd` IS THE WIRING TEST'S STATISTIC AND IT IS DELIBERATELY CROSS-ENDPOINT.**
+Its numerator is a sender gauge and its denominator a receiver gauge, so it
+cannot be an instrument agreeing with itself — the failure mode the τ-lag
+battery's clause `B` exists to catch. `sup_frac` is reported beside it as the
+sender's own account and is **never** the wiring verdict on its own.
+
+**(i) THE WIRING TEST — DOES THE REALIZED FALSE-REPAIR RATE FINALLY MOVE WITH
+THE LEVER?** §16.77.3 predicts `rpd ≈ 1 − orig_frac·q`, i.e. from ≈ 1 at `CTL`
+to ≈ 0.031 at `H010` on the pooled `orig_frac = 0.97858`.
+
+**THAT LEVEL IS AN UPPER BOUND ON THE IMPROVEMENT AND THE RULE BELOW SCORES
+MOVEMENT, NOT LEVEL.** §16.77.8a's estimator bias is toward zero, so a shortfall
+against `1 − orig_frac·q` is explained by an instrument this pass has already
+signed; a **failure to move** is not. The asymmetry is what keeps the clause
+falsifiable, and it is stated here rather than discovered when the shortfall
+appears.
+
+Pre-stated decision rule, on cells where `law_n / evals ≥ 0.5` at every
+treatment arm:
+
+* **WIRING CONFIRMED** — `rpd` is monotone non-increasing across
+  `CTL → H500 → H136 → H037 → H010` at **≥ 4 of 5 scoreable cells**, AND the
+  `CTL`-to-`H010` ratio exceeds **3×** at ≥ 3 of them. **No claim is made that
+  `rpd` reaches 0.031**; §16.77.8a is why.
+* **WIRING FAILS** — the max/min of `rpd` over the four treatment arms is
+  **< 1.5×** at **≥ 3 of 5** scoreable cells. That is the α-sweep's own reading
+  (`c7`: 1.11× while α moved 200×) reproduced on the other path.
+* Anything between ⇒ **NEEDS-MORE**, reported as such, with no winner named.
+
+**(ii) THE COST CURVE.** Delivered latency — **per-leg and censoring-aware, the
+existing instrument, with the censored fraction printed beside every quantile**
+— and goodput, per (cell, arm), median over the 8 reps with the rep spread
+beside it. §16.77.3 predicts, at Bulk, a **MONOTONE-DECREASING cost curve with
+NO interior minimum**, because the derived optimum is at or above the grid's top
+edge at five of five cells.
+
+**(iii) THE DERIVED LEVEL AGAINST THE MEASURED OPTIMUM.** `H010` against
+whichever arm minimises (ii), per cell, with the separation margin from §3
+beside it. A difference across a THIN pair is reported as thin-margin.
+
+**(iv) `CTL` PER CELL — THE CLAMP EXPLAINED, BEATEN, OR UNDEFEATED.** For the
+first time on the path that decides the fires.
+
+### 6 — THE LEGAL OUTCOMES, VERBATIM
+
+Exactly one is chosen per cell; the battery's verdict is the multiset.
+
+1. **`LEVER WORKS — DERIVED LEVEL WINS`.** (i) CONFIRMED and (ii) minimised at
+   `H010`, beating `CTL` outside the rep spread.
+2. **`LEVER WORKS — OPTIMUM INTERIOR`.** (i) CONFIRMED and (ii) minimised
+   strictly inside the grid, outside the rep spread and across a non-thin pair.
+   **This locates `λ` (§16.77.4) and fires §16.77.9's `H2` against §16.77.3's
+   no-interior-minimum prediction.** Both are reported.
+3. **`LEVER WORKS — CLAMP UNDEFEATED`.** (i) CONFIRMED and (ii) minimised at
+   `CTL`. **The hold-down reaches the path and the path does not want it**: the
+   mechanism is confirmed and §16.77.3's cost frame is refuted at this cell.
+4. **`WIRING TEST FAILS`.** (i) FAILS. **Then the gap-report response site is
+   not the whole of the 99 % path either.** The named successor, pre-committed
+   here so it is not chosen afterwards: **the RECEIVER's own
+   detection-and-report clock** — the sender cannot hold down below the cadence
+   at which it is told, and `hole_nack_refresh(srtt) = (2·srtt).clamp(25, 100 ms)`
+   is the receiver's twin of the clamp §16.77.6 convicts. The next instrument is
+   at the receiver's report site.
+5. **`UNSEPARATED`.** The arms are scoreable, the witnesses are clean, and **no
+   pair separates on (ii) beyond the within-arm rep spread at this cell.** No
+   winner is named, no ordering is claimed, and the row is reported as
+   UNSEPARATED rather than as a flat curve.
+6. **`UNSCOREABLE`.** `law_n = 0` at one or more treatment arms — the window
+   never filled. Those arm-rows are **VOID**; the cell is scored on the arms
+   that remain, or reported UNSCOREABLE if fewer than two treatment arms
+   survive. `c1`-`H010` is predicted here in §3.
+7. **`BOTH REFUTED`.** §16.77.9's `H3`: the measured optimum lands **below
+   `H500`** at **≥ 3 cells**. §16.77.3 (δ-dependent, reactive) and §16.77.7
+   (δ-free, proactive) are then refuted together, and their one shared input —
+   `orig_frac` — is the named alternative cause, with its own stated limitation
+   (*"`orig` cannot separate a late original from a resent one"*).
+8. **`NO VERDICT — ABORTED`.** Any witness fails, or the abort guard fires. The
+   cause is reported FIRST and no number from the invocation is quoted.
+
+### 7 — THE WITNESSES, EARNED
+
+Every one is scraped per invocation at BOTH endpoints where it exists. **A
+witness failure is an ABORT, not a footnote**, and the cause is printed before
+any number.
+
+| # | witness | fail token |
+|---|---|---|
+| **W1** | `[GATES] RWM_HOLDDOWN_Q=<the arm's own value>` at CLI **and** SRV | `ARM-LIVENESS-FAIL-CLI` / `-SRV` |
+| **W2** | contamination: `RWM_QUANTILE_CLOCKS=0`, `RWM_RACK_CLOCKS=0`, `RWM_DERIVED_SWEEP=0`, `RWM_W_FORM=cantelli`, `RWM_ALPHA_OVERRIDE=unset` on **every** arm, and `RWM_HOLDDOWN_Q=unset` on `CTL` | `ARM-CONTAMINATION` |
+| **W3** | `[HOLD] site=sender` present, with `n_req=` equal to the arm's own `N` from §3 (and `n_req=-` on `CTL`) | `INSTRUMENT-FAIL-HOLD` |
+| **W4** | **THE ROUTING WITNESS.** `evals = sup + emit` on every `[HOLD]` line, **and** `Σ evals = Σ sup + [FCAUSE] n` per invocation | `ROUTING-FAIL-FCAUSE` |
+| **W5** | **THE SECOND ROUTING WITNESS.** `[SUCC] det > 0` and `res > 0` and `orig_frac` present — the measurand the derivation rests on is live on THIS binary | `INSTRUMENT-FAIL-SUCC` |
+| **W6** | `[RFA] fires > 0` at the receiver — the realized-false-repair read is live | `INSTRUMENT-FAIL-RFA` |
+| **W7** | `[FCAUSE] other=0` and `unattr=0` — the classification is exhaustive on this binary, as it was on the fire-cause pass's | `INSTRUMENT-FAIL-CLASS` |
+| **W8** | `rc = 0`, no hard abort, no DNF | `ABORT` |
+| **W9** | goodput inside the cell's band (§4) | `BAND-MISS` |
+
+**W4 AND W5 ARE THE WITNESSES THIS BATTERY IS ABOUT.** The fire-cause and
+successor-arrival gauges are not decoration here: they are the independent
+endpoints that make the wiring test a measurement rather than an instrument
+reading itself.
+
+### 8 — ABORT CAUSES, STATED FIRST
+
+Reported before any number, in this order: `ABORT` (rc ≠ 0 / hard failure) →
+`ARM-LIVENESS-FAIL` → `ARM-CONTAMINATION` → `ROUTING-FAIL` → `INSTRUMENT-FAIL`
+→ `BAND-MISS` → `VOID` (`law_n = 0`) → `DNF`. **An invocation carrying any of
+these contributes no number to any table**, and the count of each is printed
+whether or not it is zero.
+
+**A `BAND-MISS` is a DEFECT FINDING requiring a ledger verdict, never an
+explanatory footnote** — MEASUREMENT DISCIPLINE 17/18. The successor-arrival
+pass's `c8L` rep-1 at 38.2 Mbit/s is the precedent and is expected to recur;
+if it does, it is scored as a defect of the substrate and not attributed to any
+arm without a labelled control.
+
+### 9 — THE CALIBRATION CLAUSE, DISCHARGED BEFORE LAUNCH
+
+The scored battery does not launch until, on the REBUILT binary, one invocation
+per arm per cell (25) has shown: **W1–W8 clean at 25/25**, `[HOLD]` present with
+the right `n_req` on every treatment arm, a **live `t_us` with a sane `samp_n`**
+on every arm whose window §3 says should fill, `[SUCC]` and `[FCAUSE]` armed and
+non-empty, and `sup > 0` on at least the `H500` arm at every cell. **`n = 1`:
+NOTHING IN THE CALIBRATION IS A RESULT** and no clause of §5 or §6 is scored
+from it.
+
+### 10 — WHAT THIS BATTERY DOES NOT CLAIM
+
+* **NO DEFAULT MOVES.** `RWM_HOLDDOWN_Q` stays ABSENT by default whatever this
+  battery reports. A flip, if one is ever earned, is a separate commit under the
+  no-self-flip rule.
+* **NO ρ CLAIM.** ρ is held at 1 throughout. §16.77.5 derives the ρ leg and
+  §16.74.2's band-width warning is why no battery here sweeps it: at coarse ρ
+  steps four of five cells sweep entirely below `ρ_floor` and measure a flat
+  curve for a structural reason.
+* **NO `r` CLAIM.** `r* = 0` identically at the Bulk operating point
+  (§16.73.4), so the r leg is pinned at its own corner throughout.
+* **NO `λ` VALUE.** Outcome 2 LOCATES `λ` between the limits; it does not
+  assign it a number, and no mapping from (δ, ρ, r) to `q` is written.
+* **NO CLAIM ABOUT THE TIMER.** The shipped clamp, `RWM_DERIVED_SWEEP`,
+  `RWM_RACK_CLOCKS` and `RWM_QUANTILE_CLOCKS` keep their committed verdicts
+  unchanged. This battery does not re-open, rescue or refute any of them.
+* **`orig_frac` BOUNDS THE FALSE-REPAIR FRACTION FROM ONE SIDE.** The wire
+  carries no retransmit bit. Every prediction built on it inherits that, in the
+  stated direction.
+* **THE MEASURAND DIVERGENCE IS CARRIED, NOT CLOSED — AND THERE ARE NOW
+  THREE.** `[SUCC]` times from **detection at the receiver**; the hold-down
+  times from **first report at the sender**; and the sender's estimand is the
+  **outstanding time**, biased toward zero against the orig arrival
+  (§16.77.8a). All three are signed, all three are carried, and none is
+  corrected — a correction would be a fitted constant. **Every millisecond
+  figure quoted from `[SUCC]` locates a LEVEL and never sets a time.**
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or scores any clause of anything.**
