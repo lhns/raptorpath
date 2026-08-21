@@ -44108,3 +44108,226 @@ distribution would repeat the exact defect just corrected.
 **Nothing here flips a default. The clamp stays: convicted on `fa`, undefeated
 on the wire, and now — for the first time — EXPLAINED. It was never the thing
 firing the repairs.**
+
+## THE SUCCESSOR-ARRIVAL PASS — PRE-REGISTRATION (2026-08-21, `feat/succ-arrival` from main@`d9cc9cc`) — goal #101's spine, **THE MEASUREMENT THE FIRE-CAUSE PASS SAID IT OWED**. Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No VM number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine law, wires a consumer, or derives a formula. No clock is touched.**
+
+### 1. WHY THIS PASS EXISTS, AND WHY IT IS NOT A LAW TEST
+
+The fire-cause pass closed by naming its own successor and, in the same
+paragraph, naming the one thing it had not done:
+
+> *"the successor-arrival distribution has never been measured on this engine.
+> §16.69's measurand was wrong; this pass names its replacement but does not
+> characterize it. **A derivation written against an uncharacterized
+> distribution would repeat the exact defect just corrected.**"*
+
+ADR-0070 says no law ships without its formula and its derivation IN THE PAPER,
+before the code. **This pass is what makes that derivation possible: it is the
+characterization, and it deliberately does not write the formula.** There is no
+treatment, no control, no arm to score. There is one machine — the shipped one
+— and a quantity nobody has looked at.
+
+**The measurand, restated from the fire-cause verdict verbatim:**
+
+> `P(the next in-flight symbol for this flow arrives by t | a hole is
+> outstanding)`
+
+### 2. THE INSTRUMENT, AND THE ONE CHOICE IT MADE
+
+`[SUCC]` (`raptorpath/src/net/succ.rs`, committed first, in its own commit,
+with its reachability gate). Per hole: **detection → resolution**, in three
+disjoint outcomes with per-outcome timing histograms.
+
+**THE ORIGIN EVENT IS DETECTION, AND THE CHOICE IS ARGUED RATHER THAN
+DEFAULTED.** Hole CREATION is not receiver-observable at all — the receiver
+never sees the lost symbol, holds no send-timestamp for it, and has no arrival
+to subtract one from. DETECTION — the first arrival of a strictly higher seq
+while the seq is unresolved — is **exactly the event `gap_data` fires on**
+(`gap_report_due = highest_seen_seq > highest_delivered_seq && …`). So a
+waiting time positioned on a clock starting at detection is positioned on the
+same origin as 99 % of the fires it must govern, and one started at creation
+would be positioned on an origin the deciding site cannot observe.
+
+**DISCLOSED IN ADVANCE:** every duration reported by this pass EXCLUDES the
+creation→detection interval. It is a **lower bound on hole AGE** and an
+**exact measure of the conditional the fire site sees.** The second is the
+quantity under study; the first is not measured by this pass and the scored
+section will say so again.
+
+**The three outcomes**, disjoint, first terminal event wins:
+`orig` (the seq's own SOURCE symbol arrived — a late reorder or a retransmit,
+indistinguishable at the receiver); `rep` (the DECODER reconstructed it from
+coded repair); `aban` (the in-order frontier moved past it while open). A hole
+still outstanding is in NONE of the three — it is `open`, a **census**.
+
+**THE ACCOUNTING IDENTITY IS A WITNESS, NOT A CLAIM:**
+`det = orig_n + rep_n + aban_n + open + over`, asserted per row (W2 below) on
+the engine's own output. `over` makes the declared resource bounds visible.
+
+### 3. THE PASS
+
+**Five cells, three reps, seed 42, ONE shipped arm — 15 invocations.**
+
+| | |
+|---|---|
+| cells | `c1 c7 c8 c8L sc2` — TRANSCRIBED from `fcause_battery.sh`, never redefined |
+| reps | 3 |
+| seed | 42 |
+| arm | SHIPPED: `RWM_GEN=0`, clock DISARMED (`RWM_QUANTILE_CLOCKS` absent, no `RWM_ALPHA_OVERRIDE`, no `RWM_W_FORM`) |
+| readout | `RWM_DIAG=1 RWM_FDIAG=1` (the existing gates `[RFA]`/`[QCLK]` ride; no new gate on the line) |
+| dump | `RWM_SUCC_DUMP=0` on every row |
+| runs | **1 per invocation** |
+| site | `[SUCC]` read at the **SERVER**; `[FCAUSE]`/`[RACK]` at the **CLIENT** |
+
+**`RWM_GEN=0` IS LOAD-BEARING.** Under generation coding every arrival is
+coded, so `orig` is structurally empty and the pass would read
+`orig_frac = 0.0000` **by construction** — a clean, well-witnessed FALSE
+reading of the exact quantity under study. The line echoes `gen=` and W3
+asserts it rather than trusting the arm env.
+
+**THE DUMP IS OFF ON THE SCORED PASS, AND THAT IS A MEASUREMENT BOUNDARY.** The
+raw record dump writes megabytes of stderr AT THE RECEIVER, and receiver-side
+cost is directly goodput-visible — the goodput bands in §8 are the constraint
+saying this observation-only gauge did not cost the transfer it observed, and
+running the dump on the scored invocations would spend exactly that constraint.
+This is `[RTTDUMP]`'s rule, applied before the pass rather than discovered
+after it.
+
+**ONE RUN PER INVOCATION IS A DECLARED SCOPE.** The gauge's high-water mark and
+open-hole map outlive an individual perf RUN, so `--runs N>1` reads across a
+seq-space reset. MEASURED at the instrument gate: the reachability run's
+`--runs 2` shows `aban_n = 1` under a reliable window that cannot abandon a
+hole. The battery invokes with runs = 1.
+
+**ONE SEED, and what buys what a second seed would.** This pass characterizes a
+distribution on one machine; it does not score an effect size against a null.
+The question a second seed answers — is the shape a property of the machine or
+of one loss realization? — is bought here by **five cells × three reps**, and by
+§7's commitment to report the rep-to-rep dispersion of every quantile rather
+than only its central value. If the reps disagree, THAT is the finding, and it
+is the finding the derivation most needs.
+
+### 4. THE WITNESSES (per invocation; a failure NAMES itself)
+
+* **W1 — ROW VALIDITY.** `[SUCC]` present at the RECEIVER with `det > 0`. Else
+  the row is **VOID**: no hole was detected, so there is no distribution. A
+  void row is NOT a measured quantile of zero and enters no denominator.
+* **W2 — THE ACCOUNTING IDENTITY, ON THE WIRE.**
+  `det == orig_n + rep_n + aban_n + open + over`. A violation is a **FINDING
+  ABOUT THE INSTRUMENT** and VOIDS the row: the three outcomes either partition
+  the detected holes or they are not outcomes.
+* **W3 — THE CONFIGURATION CONTRACT.** `[SUCC] gen=0`. Else VOID.
+* **W4 — A DECLARED BOUND THAT BOUND.** `over = 0`. Nonzero means a resource
+  bound truncated the measurement, and it is reported rather than absorbed.
+* **W5 — THE ROUTING GATE** (MEASUREMENT DISCIPLINE rule 1: prove the mechanism
+  under test executes). At every LOSSY cell: `[RFA] fires > 0` at the SERVER
+  **and** `[FCAUSE] gap_data > 0` at the CLIENT **and** `[DIAG] retx > 0`.
+  **These are three counters bumped by different code at different events** —
+  `[RFA]` classifies ARRIVALS, `[FCAUSE]` classifies FIRES, `[SUCC]` times
+  HOLES. A `det` that moved while the other two read zero would mean this gauge
+  invented its own denominator, and a distribution measured on a row where not
+  one `gap_data` fire happened is not a measurement of the thing those fires
+  are governed by.
+* **W6 — LIVENESS, BOTH ENDPOINTS.** `[GATES]`: `RWM_DIAG=1`, `RWM_FDIAG=1`,
+  `RWM_QUANTILE_CLOCKS=0`, `RWM_SUCC_DUMP=0`, and every contamination gate 0.
+  A row failing this is VOID: its own configuration did not take.
+
+**ABORT-CAUSE FIRST:** no `[GATES]` on either endpoint ⇒ ABORT, no datum, no
+liveness verdict, in no denominator — checked before any assertion, so an
+aborted invocation never produces a wall of liveness failures.
+
+### 5. WHAT THE DERIVATION WILL NEED — THE READINGS, STATED IN ADVANCE
+
+**READING (i) — THE SHAPE.** Per cell, per outcome: `n`, `p50`, `p90`, `p99`,
+`mx`, `mean`. Plus the census `det / res / open / over / aban_n`.
+
+**READING (ii) — THE FALSE-REPAIR BOUNDARY, IN TWO PARTS.**
+
+* **`orig_frac` = `orig_n / (orig_n + rep_n)`** — of the holes that resolved,
+  the fraction the ORIGINAL closed. A repair emitted for a hole whose original
+  was coming was unnecessary; this is that quantity in the large.
+* **`cross` — THE CROSSING POINT, AND ITS DEFINITION IS FIXED HERE, BEFORE THE
+  PASS RUNS, SO IT CANNOT BE CHOSEN AFTERWARDS:** the smallest histogram-bucket
+  lower edge `t` at which **strictly more holes have closed by a REPAIR within
+  `t` than by their own ORIGINAL within `t`.** Below `cross`, waiting pays —
+  most holes that close, close by themselves. Above it, waiting does not. **It
+  is the derived waiting time's natural anchor, and this is the reading, stated
+  in advance.** `-` — no such `t` — is a **LEGAL OUTCOME** reading *"the
+  original leads at every horizon"*, never a missing value.
+
+**READING (iii) — THE CONDITIONAL STRUCTURE / DIAL-DEPENDENCE.** Does the
+distribution shift with the cell? **PRE-STATED RULE:** the cell medians'
+`max/min > 2.0` ⇒ **DIAL-DEPENDENT** — the formula the next step derives must
+CARRY the dial. Otherwise **DIAL-FLAT** — a constant is licensed *by this pass*.
+Applied to `orig_p50`, `rep_p50` and `cross`.
+
+**READING (iv) — REP-TO-REP DISPERSION. THE SIGMA SAGA'S LESSON, APPLIED
+BEFORE THE DERIVATION AND NOT AFTER.** That battery's arm orderings INVERTED
+between pools collected minutes apart, because a central value had been printed
+without its dispersion. **PRE-STATED BAR:** a quantile whose rep-to-rep
+`max/min > 2.0` is **UNSTABLE**, and the handoff must carry it as such. No
+central value in the scored section may appear without its own `[min–max]`
+beside it.
+
+**THE POOLING RULE, STATED BEFORE THE DATA.** The gauge emits SUMMARIES, not
+per-bucket counts, so a count-pooled quantile across reps **is not available**
+and the report will not manufacture one. **Counts are SUMMED** across reps;
+**quantiles are the MEDIAN ACROSS REPS**, always printed beside their own
+rep-to-rep min and max.
+
+### 6. UNSCOREABLE-thin — LEGAL OUTCOMES, PER OUTCOME PER CELL
+
+A reading below its bar is **UNSCOREABLE-thin** and is reported as such, never
+rounded into a number. `n = 0` is **ABSENT (`-`)**, not thin: nothing was
+measured, so there is no small sample to be cautious about.
+
+| reading | bar |
+|---|---|
+| `p50`, `p90` | pooled `n ≥ 100` |
+| `p99` | pooled `n ≥ 300` (below this a p99 is one or two samples) |
+| `orig_frac` | pooled `res ≥ 100` |
+| `cross` | **EACH** of `orig_n`, `rep_n` `≥ 100` — a crossing between a populated distribution and an empty one is not a crossing |
+| dial-dependence | ≥ 2 scoreable cells |
+| stability | ≥ 2 reps with the slot present |
+
+### 7. PREDICTIONS — FALSIFIABLE, AND ONLY WHERE THE CODE LICENSES ONE
+
+* **PRED-1: `aban_n = 0` at every row.** `ReorderBuffer::new_reliable` never
+  delivers past a hole (ρ = 1), and runs = 1 removes the seq-reset artifact
+  measured at the instrument gate. **A nonzero is a FINDING ABOUT THE ENGINE
+  and will be reported as a result, not smoothed.**
+* **PRED-2: `over = 0` at every row.** The declared bounds (`MAX_OPEN` =
+  65 536, `MAX_SPAN` = 4 096) do not bind on these cells.
+* **PRED-3: W5 holds at all 12 lossy rows** — `det > 0` co-occurs with
+  `[RFA] fires > 0` and `[FCAUSE] gap_data > 0`.
+* **PRED-4: `c1` (lossless) is THIN or ABSENT** on most slots. That is a legal
+  outcome and a *reading*: a cell with no loss has no successor-arrival
+  distribution to speak of, which is itself information about where the
+  measurand exists.
+
+**AND THE ONES DELIBERATELY NOT MADE.** No direction is predicted for `cross`,
+for `orig_frac`, or for the dial-dependence verdict. **Nothing in the code
+licenses a prediction about any of them** — that is precisely why they are
+being measured — and predicting them would be theatre dressed as
+pre-registration. Whatever they come in at is the result.
+
+### 8. THE CONSTRAINT — GOODPUT
+
+There is ONE arm and it is the shipped machine, so the goodput abort bands
+apply to **EVERY row** (`band_applies = 1` throughout). The bands are
+TRANSCRIBED from `fcause_battery.sh`: `c1` [147, 294], `c7` [140, 180], `c8`
+[50, 100], `c8L` [45, 95], `sc2` [78, 92] Mbit/s.
+
+**An out-of-band reading here is not a footnote — it is a DEFECT FINDING.**
+`[SUCC]` is an observation-only gauge fed on every arrival; a gauge that moved
+the transfer it observed has failed at being an instrument, and the scored
+section will say so in those words.
+
+### 9. WHAT THIS PASS DOES NOT DO
+
+It does not derive a waiting time, does not position one, does not flip a
+default, does not arm a clock, does not touch the shipped clamp, and does not
+wire any consumer to `[SUCC]`. The instrument's own test forbids `receiver.rs`
+from so much as calling `crossing_us`, `orig_frac` or `.quantile(` — **no law
+may read this gauge.** The derivation this pass hands off to is FORMULA-FIRST,
+in the paper, and is the NEXT step of the spine, not this one.
