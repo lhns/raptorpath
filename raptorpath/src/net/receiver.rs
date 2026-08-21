@@ -107,7 +107,7 @@ pub(crate) async fn run_receiver(
     recv_window_ack: Arc<AtomicU64>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
-    recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, Vec<(u64, u64)>)>>,
     recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
     reasm_bdp_on: bool,
     ack_merge_recv: bool,
