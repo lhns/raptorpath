@@ -65,7 +65,10 @@ pub(crate) struct ControlCtx<'a> {
     #[allow(dead_code)]
     pub fec_backend: FecBackend,
     pub stats: &'a Arc<SharedStats>,
-    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
+    /// tag so the sender's `[FCAUSE]` gauge can say WHICH receiver arm
+    /// caused each fire. Label only — no arm branches on it.
+    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, Vec<(u64, u64)>)>>,
     /// P8: Some(..) in block mode — Ack diffs drive repair sends.
     pub block_arq: Option<&'a Arc<parking_lot::Mutex<BlockArq>>>,
     pub batch_counter: Option<&'a Arc<AtomicU64>>,
@@ -842,7 +845,21 @@ fn on_window_ack(
         if !gaps.is_empty() {
             debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
             if let Some(tx) = nack_tx {
-                let _ = tx.try_send(gaps);
+                // `[FCAUSE]` (§16.69 successor): tag WHICH receiver arm sent
+                // this gap report, read off a field already in scope. The
+                // receiver's timer-driven hole re-advertisement broadcasts one
+                // message to every live path and so cannot carry a per-path
+                // echo — it stamps `echo_send_timestamp_us: 0`, the same "no
+                // counter payload" sentinel this handler already branches on
+                // for its RTT update above. The DATA arm carries the real
+                // batch timestamp. Classification only: both tags take the
+                // identical path from here on.
+                let cause = if echo_send_timestamp_us == 0 {
+                    super::FireCause::GapRefresh
+                } else {
+                    super::FireCause::GapData
+                };
+                let _ = tx.try_send((cause, gaps));
             }
         }
     }

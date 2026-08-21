@@ -2555,8 +2555,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // Shared window ACK: receiver writes, sender reads to advance the encoder window
     let window_ack_seq = Arc::new(AtomicU64::new(0));
 
-    // NACK gap channel: handle_control_message sends gap ranges, window sender receives for targeted repair
-    let (nack_tx, nack_rx) = tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(16);
+    // NACK gap channel: handle_control_message sends gap ranges, window sender
+    // receives for targeted repair. The batch rides with its [`FireCause`] tag
+    // (`[FCAUSE]`) — a LABEL for the counters only; nothing branches on it.
+    let (nack_tx, nack_rx) =
+        tokio::sync::mpsc::channel::<(FireCause, Vec<(u64, u64)>)>(16);
 
     // Generation-deficit channel (§16.3): the data-arm's control handler parses
     // inbound GenerationDeficit messages and forwards the (anchor, deficit)
@@ -2932,7 +2935,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // With no NACK producer, a short generation is recovered by MORE coded
     // symbols for that generation (fungible, cross-path), never by resending a
     // specific seq. So the SACK→gap producer is suppressed in generation mode.
-    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
+    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<(FireCause, Vec<(u64, u64)>)>> =
         if window_mode && !window_generation {
             Some(nack_tx)
         } else {
@@ -4980,6 +4983,141 @@ pub fn rfa_report_line(
     )
 }
 
+// ── `[FCAUSE]`: WHY EACH RECOVERY FIRE FIRED ─────────────────────────────
+//
+// **THE QUESTION THIS ANSWERS, AND WHY IT IS OPEN.** The quantile-native
+// sweep (goal-gate, "qnative sweep SCORED") moved the realized recovery
+// clock `W` cleanly across arms — a 200× span in the contract α — and the
+// commanded false-alarm fraction `[RACK] fa_frac` did not move at 4 of 5
+// cells. `fa ⊥ W`. §16.69's measurand (the ack-arrival distribution the
+// waiting time is positioned on) is therefore WRONG: a clock that the fires
+// do not respond to cannot be the thing that decides them. Both routes'
+// shared premise — that the recovery fires are TIMER-DRIVEN, so positioning
+// the timer repositions the fires — is refuted by that independence.
+//
+// The only explanation the code leaves standing is that MOST FIRES ARE NOT
+// TIMER-DRIVEN. This gauge classifies them and closes the question with a
+// count instead of an argument.
+//
+// **THE CAUSAL STRUCTURE, READ OFF THE CODE.** `record_fire`'s ONE call site
+// is the sender's gap loop, and that loop's `gaps` vector has exactly two
+// producers:
+//
+//   * the sender's OWN tail-sweep deadline arm — `pending_gaps =
+//     Some(vec![(seq, seq)])` — which is the arm the quantile/Cantelli `W`
+//     actually clocks (`sweep_timeout_us_all` → `tail_deadline`). THIS, and
+//     only this, is a timer-driven fire in the sense §16.69 assumed.
+//   * the `nack_rx` channel, whose sole producer is the SACK→gap inversion
+//     in the WindowAck handler. These fires are clocked by the RECEIVER, not
+//     by the sender's `W` at all.
+//
+// **THE RECEIVER'S TWO ARMS ARE SEPARABLE ON THE WIRE, FOR FREE.** The
+// receiver emits a SACK-bearing WindowAck from two places, and they are
+// already distinguishable in the message the sender is holding:
+//
+//   * the DATA arm (`gap_report_due`, the dupack analog) carries the real
+//     `echo_send_timestamp_us` of the batch that triggered it;
+//   * the timer-driven HOLE RE-ADVERTISEMENT arm broadcasts one message to
+//     every live path and so cannot carry a per-path echo — it sets
+//     `echo_send_timestamp_us: 0`, the "no counter payload" SENTINEL that
+//     site already documents and that `on_window_ack` already branches on
+//     for its RTT update.
+//
+// So the split costs NO wire change and NO behaviour change: it reads a
+// field the handler has in scope. That matters for the measurand question,
+// because the refresh arm is clocked by `hole_refresh_all` — the RECEIVER's
+// twin of the very law under test. A fire in `gap_refresh` is timer-driven
+// by the receiver's clock; a fire in `gap_data` is driven by DATA ARRIVAL
+// and by no clock at all.
+//
+//   n = timer + gap_data + gap_refresh + other
+//
+// **THE ALIASING, DISCLOSED.** `echo == 0` is a sentinel, not a proof: a
+// data-arm ack whose batch genuinely carried `batch_send_ts == 0` would be
+// misfiled as `gap_refresh`. The engine stamps `send_timestamp_us: now_us()`
+// on every batch, so a zero there is a wall-clock impossibility rather than
+// a rare event — but this is an inference from the producer, not from this
+// gauge, so it is named here rather than asserted away.
+//
+// **WHAT CANNOT BE CLASSIFIED, NAMED RATHER THAN GUESSED.** `other` is not
+// decoration. A gap batch that reaches the loop through neither tagged
+// producer would land there, and the reachability test asserts it is EMPTY
+// on the configurations measured rather than assuming it must be. No fire is
+// attributed by inference; a fire whose cause tag is absent is counted as
+// `other` and reported as such.
+//
+// **THE DENOMINATOR DISCREPANCY, REPORTED RATHER THAN REPAIRED.** `[RACK]`'s
+// `fired` is bumped only inside `if let Some(mp_flight)` — a fire whose
+// target has no live-flight record is EMITTED to the wire but never counted,
+// so `fa=`'s denominator undercounts. This gauge counts at the emission
+// itself, after every `continue`, so `n` is the true fire count. Both are
+// printed and `unattr = n - fired` names the gap. `fired` is NOT changed:
+// it is the number the sweep already scored, and moving it would silently
+// re-base every prior reading.
+//
+// **READ-ONLY.** A tag rides the existing gap channel and a counter is
+// bumped. No law, no threshold, no gate, no default, no control flow.
+
+/// Why one recovery fire fired — see the `[FCAUSE]` commentary above.
+///
+/// This is a LABEL carried alongside a gap batch, never a selector: no code
+/// path, law, or constant anywhere branches on it. Only counters read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FireCause {
+    /// The sender's own tail-sweep deadline expired — the ONE cause the
+    /// quantile/Cantelli recovery clock `W` actually clocks.
+    Timer,
+    /// A SACK-bearing WindowAck from the receiver's DATA arm (the dupack
+    /// analog): driven by data arrival, by no clock.
+    GapData,
+    /// A SACK-bearing WindowAck from the receiver's timer-driven hole
+    /// re-advertisement arm: clocked by `hole_refresh_all` at the RECEIVER.
+    GapRefresh,
+    /// A gap batch that reached the fire site carrying no cause tag. Counted,
+    /// never guessed at.
+    #[default]
+    Other,
+}
+
+/// The `[FCAUSE]` line — the per-cause breakdown of every recovery fire the
+/// sender emitted. Cumulative counters; the LAST line of a log is the
+/// reading, the same convention `[RACK]` and `[RFA]` use.
+///
+/// Fractions render as `-` when their denominator is zero, so an absent
+/// reading is never confusable with a measured zero.
+pub fn fcause_report_line(
+    timer: u64,
+    gap_data: u64,
+    gap_refresh: u64,
+    other: u64,
+    fired: u64,
+    gen: bool,
+) -> String {
+    let n = timer + gap_data + gap_refresh + other;
+    let frac = |v: u64| {
+        if n == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.4}", v as f64 / n as f64)
+        }
+    };
+    format!(
+        "[FCAUSE] gen={} n={} timer={} gap_data={} gap_refresh={} other={} \
+         timer_frac={} gap_frac={} fired={} unattr={} fa_class={:.4}",
+        gen as u8,
+        n,
+        timer,
+        gap_data,
+        gap_refresh,
+        other,
+        frac(timer),
+        frac(gap_data + gap_refresh),
+        fired,
+        n.saturating_sub(fired),
+        RACK_SPURIOUS_BUDGET,
+    )
+}
+
 /// The `[RACK]` tally, fed at every recovery-clock evaluation on the ON arm.
 #[derive(Default)]
 pub(crate) struct RackClockGauge {
@@ -5026,6 +5164,19 @@ pub(crate) struct RackClockGauge {
     /// Is generation coding on at this receiver? Echoed as `[RFA] gen=` so
     /// the line says which machine it is a measurement of.
     recv_gen: bool,
+    /// ── THE FIRE-CAUSE CLASSES (`[FCAUSE]`) ──────────────────────────
+    /// One counter per [`FireCause`], bumped at the EMISSION of every
+    /// recovery fire — after every suppression `continue`, so their sum is
+    /// the true fire count rather than `fired`'s flight-attributed subset.
+    /// See the `[FCAUSE]` commentary above [`FireCause`].
+    cause_timer: u64,
+    cause_gap_data: u64,
+    cause_gap_refresh: u64,
+    cause_other: u64,
+    /// Is generation coding on at this SENDER? Echoed as `[FCAUSE] gen=`:
+    /// under generation the SACK→gap producer is suppressed, so both `gap_`
+    /// classes are STRUCTURALLY empty and the line must say so on its face.
+    send_gen: bool,
 }
 
 impl RackClockGauge {
@@ -5103,6 +5254,49 @@ impl RackClockGauge {
         self.recv_gen = gen;
     }
 
+    /// Echo which machine this SENDER is — the `[FCAUSE]` configuration
+    /// contract. Observation only.
+    pub(crate) fn set_send_generation(&mut self, gen: bool) {
+        self.send_gen = gen;
+    }
+
+    /// Record the CAUSE of one recovery fire that reached the wire.
+    ///
+    /// Called at the emission itself, so `fcause_n()` counts every fire —
+    /// including the ones `record_fire` drops for want of a live-flight
+    /// record. Observation only; nothing branches on the cause.
+    pub(crate) fn record_fire_cause(&mut self, cause: FireCause) {
+        match cause {
+            FireCause::Timer => self.cause_timer += 1,
+            FireCause::GapData => self.cause_gap_data += 1,
+            FireCause::GapRefresh => self.cause_gap_refresh += 1,
+            FireCause::Other => self.cause_other += 1,
+        }
+    }
+
+    /// The true fire count — the sum of the four cause classes.
+    pub(crate) fn fcause_n(&self) -> u64 {
+        self.cause_timer + self.cause_gap_data + self.cause_gap_refresh + self.cause_other
+    }
+
+    /// Has this gauge classified ANY fire, i.e. does it sit at a SENDER that
+    /// ran the gap loop? A receiver-role gauge never does and stays silent.
+    pub(crate) fn is_fire_cause_site(&self) -> bool {
+        self.fcause_n() > 0
+    }
+
+    /// The `[FCAUSE]` line this gauge would emit right now.
+    pub(crate) fn fcause_line(&self) -> String {
+        fcause_report_line(
+            self.cause_timer,
+            self.cause_gap_data,
+            self.cause_gap_refresh,
+            self.cause_other,
+            self.fired,
+            self.send_gen,
+        )
+    }
+
     /// Has this gauge seen ANY symbol arrival, i.e. does it sit at a
     /// RECEIVER? A sender-role gauge sees none and never emits `[RFA]`.
     pub(crate) fn is_receiver_site(&self) -> bool {
@@ -5157,6 +5351,14 @@ impl Drop for RackClockGauge {
         // `RWM_DIAG`/`RWM_FDIAG` gates, and its last line is the reading.
         if self.is_receiver_site() {
             eprintln!("{}", self.rfa_line());
+        }
+        // The SENDER-site cause breakdown behind that same `fa=`. Same rule,
+        // no gate of its own: a gauge that classified a fire ran the gap loop
+        // and owes the breakdown. Two-sided — it is emitted on the clock-OFF
+        // arm too, because "what fires when the clock is DISARMED" is the
+        // shipped machine's reading and the whole point of the question.
+        if self.is_fire_cause_site() {
+            eprintln!("{}", self.fcause_line());
         }
     }
 }
@@ -5846,7 +6048,7 @@ async fn run_window_sender(
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
-    nack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
+    nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, Vec<(u64, u64)>)>,
     // Generation-deficit feedback (§16.3): each element is the receiver's
     // reported (generation_anchor, residual_deficit) vector. Drives the
     // bounded, targeted recovery emission that replaces the feedback-free cap.
@@ -6285,6 +6487,11 @@ async fn run_window_sender(
     // `[25, 100] ms` clamp has never had, and the one CLAUDE.md's
     // FORMULA-FIRST clamp rule owes any law that adds two new bounds.
     let mut rack_echo = RackClockGauge::new(pol.rack_clocks, pol.rack_reo_mult);
+    // `[FCAUSE]`'s configuration contract: under generation coding the
+    // SACK→gap producer is suppressed (`recv_nack_tx = None`), so both
+    // `gap_` classes are structurally empty and only the sender's own
+    // tail-sweep timer can fire. The line says which machine it measured.
+    rack_echo.set_send_generation(pol.generation);
     // `[QALPHA]` — the RESOLVED α at THIS site, printed once, two-sided
     // (`quantile=0` on the control arm as loudly as `quantile=1` on the
     // treatment). α is the α-sweep's one independent variable and the
@@ -8111,7 +8318,11 @@ async fn run_window_sender(
         // TUN packets — and the old structure only drained the NACK channel
         // after a TUN read, so repairs stalled precisely when they were the
         // only thing that could unstall the tunnel.
-        let mut pending_gaps: Option<Vec<(u64, u64)>> = None;
+        // `[FCAUSE]`: the gap batch carries the CAUSE that produced it, so a
+        // fire can be attributed to the sender's own tail-sweep timer or to
+        // one of the receiver's two arms. Label only — the loop below reads
+        // it for counters and for nothing else.
+        let mut pending_gaps: Option<(FireCause, Vec<(u64, u64)>)> = None;
 
         // P10b tail sweep: the LAST symbols of a burst have no successors,
         // so the receiver can never SACK a gap behind them — the sender must
@@ -8239,6 +8450,10 @@ async fn run_window_sender(
                 }
                 None
             }
+            // NOTE (`[FCAUSE]`): the tail-sweep arm below is the ONLY producer
+            // the quantile/Cantelli recovery clock `W` clocks — `tail_deadline`
+            // is computed from `sweep_timeout_us_all`. Every other fire in this
+            // loop is clocked by the RECEIVER or by data arrival.
             // Generation-deficit feedback (§16.3): the receiver reports how many
             // MORE coded symbols each frontier generation still needs. Rebuild
             // the per-generation want from the report, subtracting what is
@@ -8325,7 +8540,7 @@ async fn run_window_sender(
                 if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
                     dg.diag_sweeps += 1;
-                    pending_gaps = Some(vec![(seq, seq)]);
+                    pending_gaps = Some((FireCause::Timer, vec![(seq, seq)]));
                 }
                 None
             }
@@ -8606,7 +8821,7 @@ async fn run_window_sender(
         }
 
         loop {
-            let gaps = match pending_gaps.take() {
+            let (gap_cause, gaps) = match pending_gaps.take() {
                 Some(g) => g,
                 None => match nack_rx.try_recv() {
                     Ok(g) => {
@@ -8621,6 +8836,11 @@ async fn run_window_sender(
                         // they change; coalescing removes that walk tax.
                         // Legacy path (gate off) keeps per-report
                         // processing bit-exactly.
+                        // `[FCAUSE]`: coalescing keeps the NEWEST snapshot, so
+                        // it keeps that snapshot's cause tag with it — the
+                        // fires this batch produces are caused by the report
+                        // that actually drove them, not by the stale ones the
+                        // walk discarded.
                         let mut g = g;
                         if pol.recov_mp_law {
                             while let Ok(n) = nack_rx.try_recv() {
@@ -8948,6 +9168,16 @@ async fn run_window_sender(
                     // arrive anyway - the spurious-by-law class, which is the
                     // measurable stand-in for RACK's DSACK-detected spurious
                     // recovery. Scored against RFC 8985 6.2.4's own budget.
+                    // `[FCAUSE]` (§16.69 successor): classify THIS fire by the
+                    // producer of the gap batch that drove it. Placed here —
+                    // after every suppression `continue`, before the emission
+                    // below — so `n` counts exactly the fires that reach the
+                    // wire. Note this is OUTSIDE the `mp_flight` guard that
+                    // `record_fire` sits inside, which is why `[FCAUSE] n` can
+                    // exceed `[RACK] fired`; the difference is printed as
+                    // `unattr=` rather than repaired, so no prior reading of
+                    // `fa=` is silently re-based.
+                    rack_echo.record_fire_cause(gap_cause);
                     if let Some((t, p)) = mp_flight {
                         let age = now_repair_us.saturating_sub(t);
                         rack_echo.record_fire(age < mp_thr_of(&mp_clocks, p));
@@ -11972,6 +12202,21 @@ mod tests {
         // The ceiling's bind fraction is the DEFECT FINDING §16.68 predicts at
         // mult = 1; it must be readable as an explicit 0.0000, never absent.
         assert!(rack_report_line(4, 0, 0, 0, 1.0, 1.0, 1, 0, 0, true).contains("ceil=0.0000"));
+
+        // [FCAUSE] — the per-cause breakdown of `fa=`'s numerator population.
+        // Full contract in `tests/fcause_reachability.rs`; pinned HERE too
+        // because this is the one test an L1 parser change is checked against.
+        assert_eq!(
+            crate::net::fcause_report_line(12, 430, 58, 0, 494, false),
+            "[FCAUSE] gen=0 n=500 timer=12 gap_data=430 gap_refresh=58 other=0 \
+             timer_frac=0.0240 gap_frac=0.9760 fired=494 unattr=6 fa_class=0.0625"
+        );
+        // NEVER FIRED renders `-`, so an absent reading is never poolable with
+        // a measured zero.
+        assert!(
+            crate::net::fcause_report_line(0, 0, 0, 0, 0, false).contains("timer_frac=-"),
+            "a fraction with no denominator must render `-`"
+        );
 
         // [LCW] — the one-sided-clamp witness, and its scoreable ratio.
         crate::scheduler::lcw_reset();
