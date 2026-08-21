@@ -47796,3 +47796,471 @@ same.**
 > head-to-head, explained by a measured mechanism, and now DECIDED by a loss
 > function rather than merely left standing by the absence of a challenger.**
 
+
+
+## THE VERDICT-ALPHA BATTERY — PRE-REGISTRATION (2026-08-21, `feat/verdict-alpha` from main@`fa7e314`) — **goal #101 ITEM 4, AGAINST THE DERIVED-α CLOCK ITSELF, WHICH IS THE ONE THING THE VERDICT BATTERY DID NOT PUT UP.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine crate, wires a consumer, or derives a clock.** `THE CONSTANTS FALL` is a legal outcome of this battery and it is written first so it cannot later be described as one nobody allowed for.
+
+### 1 — THE LITERAL GAP, AND WHY IT IS THE LAST ONE
+
+Item 4's condition, in its own words, is *"derived clock vs shipped clamp …
+realized false-repair vs the derived alpha."* The verdict battery of 2026-08-21
+**ran that contest and ran it honestly — against the HOLD-DOWN challenger**,
+`c7`-`R2Q86`, the strongest configuration the RECORD contained. It said so in
+its own §1, in its title, and in its commit message. It returned
+`SURVIVE ON MERIT` at 0 of 3 stable cells.
+
+**But `R2Q86` is not a member of the derived-α family at all.** It is a
+`(q, refresh)` point on the hold-down/cadence surface. So after that battery,
+the derived-α family — the family item 4's clause actually names — remained
+closed **only by its curve**: the α-sweep measured the curve, read its optimum
+at the boundary, and nothing was ever put head-to-head against the clamp.
+
+**THIS BATTERY CLOSES THAT BY CONTEST.** Paper §16.79.7, committed before this
+section and in its own commit, names the member:
+
+> The single instantiation of §16.74 within the derived-α family is `W_q(α*)`
+> with `α*` at the measured boundary optimum **`0.40`** — the **maximal non-null
+> member**; the curve's continuation beyond the boundary is the corner
+> (§16.79's decision). **`W_q(0.40)` is therefore the derived clock item 4
+> adjudicates: if the clamp beats even the family's best measured member, the
+> family is closed by contest as well as by curve.**
+
+**WHAT IS DIFFERENT FROM THE VERDICT BATTERY, IN ONE LINE.** That battery's
+challenger was chosen for being the strongest thing measured *anywhere*; this
+one's is chosen for being the strongest thing measured **inside the family
+item 4 names**. They are different questions and both are worth a verdict.
+
+### 2 — THE ARMS
+
+**Two arms. No others. This is not a sweep — there is no surface, no optimum to
+find, no grid.**
+
+| arm | `RWM_QUANTILE_CLOCKS` | `RWM_W_FORM` | `RWM_ALPHA_OVERRIDE` | what it is |
+|---|---|---|---|---|
+| `CTL` | **absent** → `0` | **absent** → `cantelli` | **absent** → `unset` | **the shipped machine, byte-identical.** The sender's timer is `(2·srtt).clamp(25 ms, 100 ms)` |
+| `Q400` | `1` | `quantile` | `0.4` | **`W_q(0.40)`** — the derived-α family's maximal non-null member, expected `[QALPHA] win_n = 25` |
+
+**THE MACHINERY IS THE QUANTILE-NATIVE SWEEP'S, TRANSCRIBED AND NOT
+RE-DERIVED.** Same three gates, same arm name, same α, same expected window
+size, same two-sided echo assertion. **A battery that re-derived the arm would
+be adjudicating a different clock from the one §16.79.7 names**, and the whole
+value of running this is that the thing put up is the thing the paper named.
+
+**`0.4`, NOT `0.40`, AND IT IS PRE-REGISTERED AS SUCH.** The `[GATES]` echo
+prints the RESOLVED `f64` through Rust's own `to_string()`, which renders `0.40`
+as `0.4`. The arm table is matched against that echo LITERALLY. The
+quantile-native smoke caught exactly this mismatch at 2 of 12 endpoint-checks
+(`got='RWM_ALPHA_OVERRIDE=0.4' want=0.40`) — **the arm was live and correct and
+the HARNESS would have called it dead at every rep.** It is written here so the
+smoke has a constant to check rather than a discovery to make.
+
+**THE MIRRORED AXIS, ASSERTED ABSENT.** `RWM_HOLDDOWN_Q` and
+`RWM_REFRESH_FLOOR_US` — the verdict battery's two axes — must resolve `unset`
+on **both** endpoints on **every** row here. They are WORD gates, not flags, so
+they are asserted literally against `unset` and never matched as `[01]`: a
+`[01]` pattern returns the empty string for every value of a word gate and
+produces a liveness check that passes because it never matched. **A row on which
+the previous battery's axis moved is not a row of this battery.**
+
+### 3 — THE PAIRING, THE SEEDS, AND `RWM_GEN=0`
+
+**Paired within rep, arms INNERMOST**: the loop is `for REP → for CELL → for
+ARM` in the fixed order `CTL Q400`, so every contrast is taken against its own
+rep's control. **Rows from different reps are never differenced.** Seeds `42`
+and `7`; a seed is a netem loss realisation, not a repetition, and every clause
+below is written "on both seeds" and cannot be evaluated on one.
+
+`RWM_GEN=0` on every invocation, asserted off the MEASURAND'S OWN GAUGES
+(`[FCAUSE]`, `[SUCC]`, `[RFA]` each stamp `gen=`) and **not** off the `[GATES]`
+echo — `RWM_GEN` is the generation SIZE IN SYMBOLS, so the engine echoes its
+default `384` even when the invocation passed `0`. Measured in the verdict
+battery's calibration, where a check against the echo fired `W4-CONTAM` at 6 of
+6 invocations while generation coding was in fact OFF at 6 of 6. Every
+contamination gate asserted at its OFF value, two-sided, per invocation. ρ is
+held at 1 throughout, per §16.77.5's structural reason, and this battery claims
+nothing about it.
+
+### 4 — THE CELLS
+
+| cell | legs | mode | bytes | paths | goodput band (`CTL` scope) | role |
+|---|---|---|---|---|---|---|
+| `c1` | c1 / c1 | single | 400 000 000 | 1 | `[147, 294]` | STABLE — votes |
+| `c7` | c2 / c2 | dual | 200 000 000 | 2 | `[140, 180]` | STABLE — votes, **and the cell that can flip this verdict** |
+| `sc2` | c2 / c2 | single | 100 000 000 | 1 | `[78, 92]` | STABLE — votes |
+| `c8` | c2 / c3 | dual | 25 000 000 | 2 | `[50, 100]` | **WITNESS — does NOT vote** |
+
+Cells and bands are the verdict battery's, transcribed and never redefined, so
+these rows POOL with it and with the quantile-native sweep.
+
+**`c8`'s CAVEAT IS NARROWER HERE THAN IT WAS THERE, AND THE DIFFERENCE IS
+STATED RATHER THAN QUIETLY ENJOYED.** The verdict battery's `c8` treatment was
+derived from `c8`'s own `[SUCC] orig` p50 — a quantity the successor-arrival
+pass recorded **NOT USABLE** (3.20× rep dispersion) — so its challenger there
+was *a* sub-floor hold and not demonstrably *the cell's* `p50/2` hold. **This
+battery derives nothing from `c8`'s p50: α = 0.40 is a contract quantity, not a
+cell-scaled one, so `Q400` at `c8` is exactly the same treatment as `Q400`
+everywhere else.** `c8`'s remaining caveat is about its GOODPUT DISPERSION alone
+(4.78 % CV), and that is a power problem and not a definitional one.
+
+**`c8` STILL DOES NOT VOTE.** The majority is over `{c1, c7, sc2}` and over
+nothing else. What it licenses: a direction check at the loss-heavy end, an
+absolute band read (`G1` needs no trustworthy p50), and a strong-direction
+falsifier. What it does not: the majority denominator. **`c8L` is not run at
+all** — 52× dispersion.
+
+### 5 — WHAT IS MEASURED, AND HOW EACH PIECE IS SCORED. Item 4's TWO dimensions, and the guard.
+
+Scored in this order. **Clause (0) gates every clause below it.**
+
+**(0) THE WIRING TEST — `F1`, SCORED FIRST.** The realized clock from the
+sender's own `[QCLK] site=sender`, and the resolved α/form/window from
+`[QALPHA]` at both endpoints.
+
+* **`F1` DOES NOT FIRE at a cell** ⇔ that cell's `Q400` arm reads
+  `[QALPHA] form=quantile` and `win_n=25` on **both** endpoints, `[GATES]
+  RWM_ALPHA_OVERRIDE=0.4` on **both**, and `[QCLK] law_n > 0`, on both seeds;
+  **and** `CTL` reads all three gates absent two-sided with `[QCLK] w_us_p50`
+  equal to that cell's shipped clock (25 000 µs at `c1`, 100 000 µs elsewhere).
+* **`F1` FIRES at a cell** ⇔ that fails there. **That CELL is VOID in full** and
+  reports `UNSCOREABLE-cite-gate(F1, <cell>)`. It is removed from the majority
+  denominator rather than counted as a loss for either side.
+* **`F1-ALL`** ⇔ `F1` fires at ≥ 2 of the 3 STABLE cells. **The battery is then
+  VOID in full** and the outcome is `UNSCOREABLE-cite-gate(F1-ALL)`.
+* **`ARM-VOID` (`law_n = 0`) and `WINDOW-PARTIAL` (`win_ok < evals`) are
+  RESULTS, never aborts.** The α-sweep read 0.829–0.999 fill at `Q400` across
+  five cells and excluded nothing; the honest denominator is printed and an
+  invocation is not deleted for carrying one.
+
+**DIMENSION 1 — DELIVERED LATENCY, PER-LEG, CENSORING-AWARE.** `p50` **and**
+`p95` per leg from the `RWM_LATPROBE` per-leg ping, each with its censoring
+fraction. The scored statistic is the **WORST LEG** — `max` over legs of that
+leg's quantile — because a dual-path machine that improves one leg and ruins the
+other has not improved delivery. Queue `p50`/`p99` is carried beside it, always,
+and neither is read alone.
+
+* **`DIM1-WIN(cell)`** ⇔ `Q400`'s median worst-leg `p50` **AND** its median
+  worst-leg `p95` are **both** lower than `CTL`'s, **and** the `p50` improvement
+  exceeds `CTL`'s OWN rep spread at that cell **measured in this battery**, **on
+  both seeds**.
+* **`DIM1-LOSS(cell)`** ⇔ either quantile is higher than `CTL`'s by more than
+  `CTL`'s own rep spread, on both seeds.
+* **`DIM1-FLAT(cell)`** ⇔ anything else.
+* **`DIM1-BLIND(cell)`** ⇔ `legs_censor_max > 20 %` at either arm. The cell's
+  DIM-1 column is unreadable and it reports
+  `UNSCOREABLE-cite-gate(CENSOR, <cell>)`.
+
+**DIMENSION 2 — REALIZED FALSE REPAIR, FRACTION AND COUNT — *AND* AGAINST THE
+DERIVED α. THIS CLAUSE IS WHERE THIS BATTERY DIFFERS MOST FROM ITS PREDECESSOR,
+SO ITS OPERATIONAL CONTENT IS FIXED HERE IN FULL.**
+
+Item 4 says *"realized false-repair **vs the derived alpha**."* That is **three
+readings, not one**, and all three are pre-registered:
+
+1. **(2a) THE CTL CONTRAST** — `Q400`'s `[RFA] false_frac` and `[RFA] false`
+   (the COUNT) against `CTL`'s. This is the same test DIM-2 ran in the verdict
+   battery and it is what "beats the clamp" means.
+2. **(2b) COMMANDED-vs-α** — the sender's `[RACK] fa_frac` on the `Q400` arm
+   compared **directly against the number 0.40**, reported as the ratio
+   `fa_frac / α`. The quantile-native clock is *constructed* to command a false
+   alarm rate of α; whether it does is a property of the clock and not of the
+   contest, and it is read here rather than assumed.
+3. **(2c) REALIZED-vs-α** — the receiver's `[RFA]` bracket
+   `[false_frac, false/(false + fill_coded)]` on the `Q400` arm compared against
+   **0.40**. The bracket, never a point: `fill_coded` is the second-censor term
+   and at the shaped cells it keeps the bracket wide, in which case the reading
+   is reported **UNRESOLVED** and never as a ratio.
+
+* **`DIM2-WIN(cell)`** ⇔ **(2a) only**: `Q400`'s median `false_frac` **AND** its
+  median false COUNT are **both** lower than `CTL`'s, **and** the fraction
+  improvement exceeds `CTL`'s OWN rep spread at that cell measured in this
+  battery, **on both seeds**.
+* **`DIM2-LOSS` / `DIM2-FLAT`**: the mirror of DIM-1's.
+* **(2b) and (2c) DO NOT ENTER `CELL-WIN`, AND THAT IS DELIBERATE.** They are
+  reported for every cell-arm and they are what item 4's phrase literally asks
+  for, but a clock that misses its own α is not thereby beaten by the clamp —
+  the clamp has no α at all. **Reading them into the win condition would let the
+  incumbent win by a test the incumbent cannot take**, which is the shape of
+  defect this tree has spent the program removing. They are scored, printed, and
+  kept out of the denominator, and this sentence is why.
+
+**THE GUARD BAND — GOODPUT. A CHALLENGER "WIN" THAT COSTS BAND-EXCEEDING
+GOODPUT IS NOT A WIN.** Verbatim from the verdict battery's §5, unchanged:
+
+* **`G1` — BAND (absolute).** `BAND-OK(cell)` ⇔ `Q400`'s median goodput is
+  INSIDE that cell's `CTL` band, on both seeds. The band is `CTL`-scope; an
+  out-of-band `CTL` is an ABORT (§8), an out-of-band CHALLENGER is a
+  **GUARD VIOLATION** and is a result.
+* **`G2` — EXCHANGE, at `δ_auto = 0.5` (difference).** Copa's own utility with
+  `delay` = the DIM-1 statistic (worst-leg delivered `p50`):
+
+  ```text
+     EXCHANGE-OK(cell)  ⇔  log( g_chal / g_ctl )  −  0.5 · log( L_chal / L_ctl )  ≥  0
+                        ⇔  g_chal / g_ctl  ≥  ( L_chal / L_ctl ) ^ 0.5
+  ```
+
+  δ = 0.5 is `δ_auto`, the contract's DEFAULT named point, and it is used for
+  that reason and no other.
+* **`GUARD-VIOLATION(cell)`** ⇔ `¬G1`, **OR** (`¬G2` **AND** the goodput
+  difference exceeds that cell's resolvable Δ from §6).
+* **`GUARD-UNDERPOWERED(cell)`** ⇔ `¬G2` but the goodput difference is INSIDE
+  the cell's resolvable Δ. **The guard then defers to `G1` alone at that cell**,
+  and the deferral is printed.
+
+**`CELL-WIN(cell)`** ⇔ `DIM1-WIN(cell)` **AND** `DIM2-WIN(cell)` **AND**
+`¬GUARD-VIOLATION(cell)`. **Both dimensions. Not one.**
+
+### 6 — `n`, WITH ITS ARITHMETIC IN FULL, AND WHAT IT CANNOT RESOLVE
+
+**`n` IS SIZED ON THIS CHALLENGER'S OWN BATTERY, AT THIS EXACT ARM.** The
+quantile-native α-sweep published per-cell-arm goodput `p05`/`p95` over `n = 16`
+(8 reps × 2 seeds). For a normal the `p05`–`p95` span is `3.29 σ`, so
+`σ̂ = (p95 − p05)/3.29` and `CV = σ̂ / median`; paired-conservative
+`σ_d = √2 · CV`; `n ≥ (2 σ_d / Δ)²` — the verdict battery's own formula,
+unchanged. **`Δ` is `Q400`'s OWN measured goodput difference at that cell**, not
+a borrowed constant, because the smallest effect the guard must resolve is the
+one the challenger actually produces.
+
+| cell | `CTL` med | `p05`–`p95` | `σ̂` | **CV** | `σ_d` | `Q400` med | **`Δ` measured** | `n` required | **`n` USED** | **resolvable Δ** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `c1` | 190.07 | 185.44–195.09 | 2.933 | **1.543 %** | 2.182 % | 177.31 | **−6.714 %** | **1** | **4** | **2.182 %** |
+| `c7` | 156.88 | 105.87–160.30 | 16.545 | **10.546 %** | 14.914 % | 133.97 | **−14.604 %** | **5** | **12** | **8.612 %** |
+| `sc2` | 87.69 | 86.80–89.07 | 0.690 | **0.787 %** | 1.113 % | 87.88 | **+0.217 %** | **106** | **8** | **0.787 %** |
+| `c8` | 86.71 | 79.97–93.59 | 4.140 | **4.775 %** | 6.753 % | 87.34 | **+0.727 %** | **346** | **8** | **4.776 %** |
+
+**TOTAL: 2 arms × (4 + 12 + 8 + 8) reps = 64 SCORED INVOCATIONS**, plus 8
+calibration invocations (§9) = **72**. At the verdict battery's own measured
+19.5–30.6 s per invocation this is **≈ 26 minutes**, and it is run ATTENDED.
+
+**`c7` GETS THE MOST BECAUSE `c7` IS THE CELL THAT CAN FLIP THIS VERDICT**, and
+that is the one sizing decision in the table that is not mechanical. It is the
+one cell where the α-sweep measured `Q400` winning BOTH of item 4's dimensions,
+and its dispersion is the largest of the three stable cells. `n = 12` resolves
+**8.61 %** against a measured **14.60 %** effect; `n = 8` would have resolved
+10.55 % and been marginal on the only cell that matters.
+
+**`sc2` AND `c8` ARE UNDERPOWERED FOR `G2` AND IT IS STATED HERE RATHER THAN
+DISCOVERED IN THE SCORING.** Their measured `Q400`-vs-`CTL` goodput differences
+are **0.217 %** and **0.727 %** — they ask for `n = 106` and `n = 346` against a
+budget of 64. The consequences, pre-declared:
+
+1. **`G1` does not need that power and is unaffected** — it is an absolute test
+   against a fixed band, not a difference.
+2. **`G2` is scored `GUARD-UNDERPOWERED` at any cell where the observed
+   difference lands inside the resolvable Δ, and the guard defers to `G1`
+   there.** At `sc2` and `c8` this is expected in advance.
+3. **The two SCORED dimensions do not inherit the problem**, because their bars
+   are **self-calibrating**: each requires the improvement to exceed `CTL`'s own
+   rep spread **measured in this battery at that cell**. No unmeasured prior is
+   used and a cell whose control is noisy raises its own bar. The α-sweep
+   published no per-rep dispersion for latency or for `[RFA]`, so this is not a
+   convenience — it is the only defensible construction available.
+
+### 7 — THE PRE-STATED EXPECTATION, AND THE FALSIFIER THAT WOULD OVERTURN IT
+
+**THIS IS PRE-REGISTRATION AND NOT PREDICTION-FREE SCORING.** The α-sweep
+already measured this exact arm against this exact control at these exact cells,
+at `n = 16`. **Refusing to state what that implies would be a pretence of
+ignorance**, so it is stated, with its arithmetic, transcribed from
+`qnat-score-independent.txt` §5 and §6:
+
+| cell | `Q400`/`CTL` goodput | probe `p50` | probe `p95` | `[RACK] fa_frac` | `G1` band | pre-stated cell reading |
+|---|---|---|---|---|---|---|
+| `c1` | **0.933** | 2.1/2.1 = **1.000** | 2.5/2.6 = **0.962** | 0.2007/0.1172 = **1.713** | 177.31 ∈ [147,294] **OK** | DIM-1 FLAT, **DIM-2 LOSS**, no cell-win |
+| `c7` | **0.854** | 20.5/35.9 = **0.571** | 60.7/80.4 = **0.755** | 0.1028/0.1531 = **0.671** | 133.97 ∉ [140,180] **VIOLATION** | **wins both, reads OUT OF BAND** |
+| `sc2` | **1.002** | 92.6/99.1 = **0.934** | 101.2/105.0 = **0.964** | 0.7727/0.7512 = **1.029** | 87.88 ∈ [78,92] **OK** | DIM-1 FLAT-to-WIN, DIM-2 FLAT, no cell-win |
+| `c8`* | **1.007** | 66.0/71.5 = **0.923** | 127.5/111.0 = **1.149** | 0.3378/0.3151 = **1.072** | 87.34 ∈ [50,100] **OK** | mixed; witness only |
+
+\* witness cell, does not vote. **The latency figures above are the α-sweep's
+POOLED probe readings, not the per-leg maxima this battery scores**, so DIM-1's
+statistic may differ from them — which is itself a reason to run it rather than
+to infer it.
+
+> **PRE-STATED EXPECTATION: `SURVIVE ON MERIT`.** `c1` loses DIM-2 outright
+> (1.71× more commanded false repair) while buying nothing in latency. `sc2` is
+> flat inside its own noise. `c7` — **the only cell where `Q400` wins both
+> dimensions** — is expected to fail `G1`, landing 4.3 % below its band's lower
+> rail. That is the verdict battery's §11.2 case *"wins both but reads out of
+> band"*, and it would give `CELL-WIN` at 0 of 3.
+
+**THE FALSIFIER, STATED SO IT CAN FIRE.** `THE CONSTANTS FALL` ⇔ `CELL-WIN` at
+**≥ 2 of `{c1, c7, sc2}`** — i.e. `Q400` dominating **both** dimensions
+**without** a guard violation at a majority of stable cells. **The live route to
+it is `c7` reading IN BAND at `n = 12`.** `c7`'s `CTL` goodput dispersion is
+10.5 % and its band is `[140, 180]`; a `Q400` median at or above 140 with its
+measured latency and `fa` advantages intact **is a `CELL-WIN`, and this
+pre-registration commits to honouring it.** One more cell-win at `c1` or `sc2`
+carries the majority. **This is not a remote branch and it is not written to be
+unreachable: it needs a 4.5 % move at one cell on a battery whose own control
+moves 10.5 %.**
+
+### 8 — ABORT CAUSES, STATED FIRST AND IN PRIORITY ORDER
+
+1. `ABORT-LOCK` — either VM lock could not be taken. Both
+   (`/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`) are required and both are
+   held for the whole era, probes included.
+2. `ABORT-SHA` — the binary's `sha256` does not match the recorded one. The
+   expected value is
+   `91a4f8ccda35941cdbcbaf09988a2fb01baf221899131f4078200e10faa8c7f3` at engine
+   commit `999aa63`, **written here before the VM is touched** so the comparison
+   is against a pre-registered constant and not against whatever is found.
+   **This is the verdict battery's own binary, and it carries the quantile
+   machinery**: `RWM_QUANTILE_CLOCKS`, `RWM_W_FORM`, `RWM_ALPHA_OVERRIDE`,
+   `[QALPHA]` and `[QCLK]` are all present in it — that battery listed them as
+   CONTAMINATION gates and asserted them OFF, which it could only do because the
+   binary implements them. **Reusing it rather than rebuilding is what makes
+   these rows pool with both prior ledgers**, and its presence is verified by
+   `sha256` before anything runs.
+3. `ABORT-SENTINEL-UNWRITABLE` — §10. **Checked at LAUNCH, not at exit.**
+4. `ABORT-SMOKE` — §9's smoke did not witness every required condition. **The
+   battery does not start.**
+5. `ABORT-CTL-BAND` — a cell's `CTL` reads out of its own band. **That cell is
+   aborted; the others continue**, and the cell leaves the denominator.
+6. `ABORT-RC` — a non-zero exit from an invocation. The ROW is void; the arm
+   continues, and `ARMCOUNT rows=N/WANT` reports it so a vanished arm is READ.
+
+**An out-of-band CHALLENGER arm is NOT an abort — it is the guard's `G1`
+reading.** `ARM-VOID`, `WINDOW-PARTIAL`, `UNSCOREABLE-cite-gate` and
+`GUARD-UNDERPOWERED` are not aborts either. This is stated before any number
+exists so that a challenger collapse cannot later be re-labelled as an abort to
+keep the incumbent's table tidy, **and so that a challenger WIN cannot be
+re-labelled as one either.**
+
+### 9 — THE CALIBRATION AND SMOKE CLAUSE, DISCHARGED BEFORE LAUNCH
+
+One invocation per cell per arm — **8 invocations, 4 cells × 2 arms, `reps=1`,
+seed 42** — must show, before the 64 are spent:
+
+1. `rc = 0` at 8 of 8, and `CTL` goodput **in band** at 4 of 4 cells.
+2. **THE CHALLENGER ECHOES ITS α RESOLVED, TWO-SIDED.** `[GATES]
+   RWM_QUANTILE_CLOCKS=1`, `RWM_W_FORM=quantile` and `RWM_ALPHA_OVERRIDE=0.4` on
+   **both** endpoints, matched LITERALLY against Rust's own `to_string()`
+   (`0.4`, not `0.40`), plus `[QALPHA] form=quantile win_n=25` on both.
+3. **`CTL` IS BYTE-IDENTICAL-SHIPPED, PROVEN AND NOT ASSERTED.** All three gates
+   echo their absent resolutions (`0` / `cantelli` / `unset`) on **both**
+   endpoints, and `[QCLK] w_us_p50` equals that cell's shipped clock
+   (25 000 µs at `c1`, 100 000 µs elsewhere). **An inherited override would make
+   `CTL` a quantile-clock configuration silently sharing a ledger with the
+   control it is supposed to BE**; the driver unsets all three in its own
+   process for exactly that reason and the echo is what settles it.
+4. **THE MIRRORED AXIS IS ABSENT**: `RWM_HOLDDOWN_Q` and
+   `RWM_REFRESH_FLOOR_US` echo `unset` on both endpoints at 8 of 8.
+5. **`W` LINES LIVE ON THE ARMED ARM**: `[QCLK] site=sender` present with
+   `law_n > 0` at 4 of 4 cells on the `Q400` arm. **`law_n = 0` at any cell in
+   the smoke is `ABORT-SMOKE` and not `ARM-VOID`** — in the scored battery a
+   dead law is a result, but in the smoke it means the harness cannot see the
+   treatment at all, and spending 64 invocations on a clock nobody can read is
+   the failure the smoke exists to prevent.
+6. `W1`–`W10` clean at 8 of 8.
+
+**If any of 1–6 fails: `ABORT-SMOKE`, and nothing is launched.** **NOTHING IN
+THE CALIBRATION IS A RESULT** — `n = 1`, and no clause of §5 is scored by any of
+it.
+
+### 10 — SENTINELS: EARNED, AND PROVEN WRITABLE BEFORE THE FIRST MEASUREMENT
+
+The rule the hold-down sweep earned, unchanged: **a sentinel must be written by
+the same privilege level that will read it, and its writability must be PROVEN
+AT LAUNCH, not at exit.** The output directory is created UNPRIVILEGED before
+`sudo` is ever invoked; every ABSOLUTE sentinel path is write+unlink probed as
+`vibe` before any measurement; and `DONE-S<seed>` is written **only if** that
+seed's ledger exists, is non-empty, and carries its own
+`VALPHA-BATTERY-DONE seed=<s>` line.
+
+```text
+   /home/vibe/valpha/DONE-ALL        /home/vibe/valpha/FAILED-ALL
+   /home/vibe/valpha/DONE-S42        /home/vibe/valpha/FAILED-S42
+   /home/vibe/valpha/DONE-S7         /home/vibe/valpha/FAILED-S7
+   /home/vibe/valpha/all.out         /home/vibe/valpha/all-era.txt
+```
+
+Ledgers `/home/vibe/valpha/va-s<seed>.log`, witnesses
+`va-witness-s<seed>.jsonl`, captures `diag/`. **The watcher's rule is
+unchanged**: never poll the running battery, never `pgrep -f` a name that
+matches the watcher's own shell, wait on `DONE-ALL || FAILED-ALL` and on nothing
+else.
+
+### 11 — WITNESSES, PER INVOCATION. A failure NAMES itself.
+
+| # | witness | fail token |
+|---|---|---|
+| `W1` | `[GATES]` present on **both** endpoints | `W1-NO-GATES` |
+| `W2` | `[GATES] RWM_ALPHA_OVERRIDE=` is the arm's α, matched LITERALLY, both endpoints | `W2-ALPHA-MISMATCH` |
+| `W3` | `[GATES] RWM_W_FORM=` and `RWM_QUANTILE_CLOCKS=` are the arm's, both endpoints | `W3-FORM-MISMATCH` |
+| `W4` | the mirrored axis ABSENT, every contamination gate OFF, `gen=0` at the gauges | `W4-CONTAM` |
+| `W5` | `[QALPHA]` at both endpoints with `alpha=`/`form=`/`win_n=`; `win_n` asserted at the sender ALWAYS and at the receiver on `Q400` ONLY | `W5-NO-QALPHA` |
+| `W6` | `[QCLK] site=sender` present, `evals > 0`; `law_n` reported (`law_n = 0` ⇒ `ARM-VOID`, a RESULT) | `W6-NO-QCLK` |
+| `W7` | `[FCAUSE]` present, `n = timer + gap_data + gap_refresh + other` | `W7-NO-FCAUSE` |
+| `W8` | `[SUCC]` present with `det > 0` | `W8-NO-SUCC` |
+| `W9` | `[RFA]` present; `false_frac`, its COUNT and `fill_coded` all recorded | `W9-NO-RFA` |
+| `W10` | `rc = 0` and the run's own `mean_mbps` scraped | `W10-RC` |
+
+**`W5`'s RECEIVER ASYMMETRY IS A DOCUMENTED PROPERTY OF THE ENGINE, NOT A
+SOFTENED GATE.** The protocol hint is not plumbed to the receiver task, so an
+UNOVERRIDDEN `CTL` receiver resolves a DIFFERENT contract α and therefore a
+different window size. On `Q400` both sites carry a NUMBER override — an
+override is a number, not a hint mapping — so **both are asserted there**. This
+was measured by the quantile-native sweep and is transcribed, not invented.
+
+Every witness writes one `VAWITNESS {json}` row per invocation.
+
+### 12 — THE LEGAL OUTCOMES, VERBATIM. Exactly one is chosen for the battery.
+
+1. **`THE CONSTANTS FALL`** ⇔ `CELL-WIN` at a **MAJORITY of the three STABLE
+   cells** — ≥ 2 of `{c1, c7, sc2}`, or ≥ 2 of those that remain scoreable if
+   one is removed by `F1` / `ABORT-CTL-BAND` / `DIM1-BLIND`.
+
+   > **THE SHIPPED `25 / 100 ms` CONSTANTS ARE BEATEN ON MERIT, ON BOTH OF
+   > ITEM 4's DIMENSIONS AT ONCE, BY THE DERIVED-α FAMILY'S OWN BEST MEASURED
+   > MEMBER, WITHOUT VIOLATING THE GOODPUT GUARD, AT A MAJORITY OF THE CELLS
+   > WHERE BOTH CAN BE READ.** §16.79's decision is **UNDECIDED** by its own
+   > falsifier `F3`, and §16.79.7's "closed by contest" reads the other way: the
+   > family is not closed, it has a winner. **It still flips no default in this
+   > pass** — §16.77.11's clause stands verbatim, nothing may ship reading a
+   > result until a battery has scored it and one battery finding a winner is
+   > not that — but the successor is then a derivation pass and not another
+   > sweep.
+
+2. **`SURVIVE ON MERIT`** ⇔ **anything else that is scoreable.** Stated plainly,
+   because "anything else" is doing real work and must not sound like a default:
+
+   > `W_q(0.40)` fails to take both dimensions at a majority of stable cells,
+   > **or** takes them while violating the goodput guard. **Each of these is a
+   > different sentence about the machine, so the verdict NAMES which one
+   > occurred**: it wins one dimension and not the other; it wins both at one
+   > stable cell only; it wins both everywhere but reads out of band; it is flat
+   > at every cell; it loses. **The derived-α family is then closed by CONTEST
+   > as well as by curve** — §16.79.7's conditional discharged in the direction
+   > the curve already pointed, by a battery that ran rather than by a condition
+   > that was not met.
+
+3. **`UNSCOREABLE-cite-gate(<gate>[, <cell>])`** — a named gate failed. The gate
+   is `F1`, `F1-ALL`, `CENSOR`, or an `ABORT-*` cause from §8, cited by name and
+   by cell. A battery-wide `UNSCOREABLE` requires `F1-ALL` or an abort that
+   removes ≥ 2 stable cells; anything narrower removes cells from the
+   denominator and the remaining cells are scored.
+
+**Per-cell tokens compose with the battery outcome where they do not conflict.
+Where they conflict, the lower number wins.**
+
+### 13 — WHAT THIS BATTERY DOES NOT CLAIM
+
+* **NO DEFAULT MOVES, ON EITHER OUTCOME.** `RWM_QUANTILE_CLOCKS`, `RWM_W_FORM`
+  and `RWM_ALPHA_OVERRIDE` are OFF/ABSENT by default, nothing shipped reads any
+  of them, and `THE CONSTANTS FALL` explicitly ships nothing (§12.1).
+* **NO CLOCK IS DERIVED AND α IS NOT SWEPT.** One arm, one α, taken from
+  §16.79.7. A derivation is downstream of a verdict, not this pass.
+* **`F2` IS NOT RE-OPENED.** The commanded false-alarm rate is non-monotone in α
+  at 5 of 5 cells and §16.69's measurand is refuted. DIM-2's clauses (2b)/(2c)
+  REPORT the α relationship at one α; they do not test monotonicity and could
+  not, with one arm.
+* **`fa ⊥ W` IS NOT CHALLENGED.** DIM-2 asks whether ONE configuration moves the
+  realized quantity, not whether a lever controls it.
+* **ρ IS NOT SWEPT.** Held at 1 throughout.
+* **`c8` DOES NOT VOTE**, `c8L` is not run, and §4 states both in advance.
+* **THIS DOES NOT RE-LITIGATE THE VERDICT BATTERY.** That battery's
+  `SURVIVE ON MERIT` against `c7`-`R2Q86` stands on its own record. This one
+  asks a different question about a different family, and if the two disagree
+  both readings stay on the record with their challengers named.
+* **NO NUMBER ABOVE IS A RESULT.** Every measured value quoted here is a PRIOR
+  from the quantile-native α-sweep, the (q, refresh) sweep or the
+  successor-arrival pass, each cited to the record it came from.
