@@ -46783,3 +46783,42 @@ Raw, in `docs/l1-raw/`: `qref-s42.log`, `qref-s7.log`,
 **Nothing in this pass flips a default, edits an engine law, wires a consumer,
 derives a clock, or licenses a battery.**
 
+
+---
+
+## GOAL #101 — THE CLOCK IS DECIDED (2026-08-21, the program's terminal closure)
+
+The (q, refresh) surface returned **FLAT** — the branch pre-declared, in its own
+pre-registration, as the shipped clamp's **final acquittal**. With it, the
+recovery-clock program's exploration is COMPLETE:
+
+- **Above the floor**: the cost curve rises monotonically (hold-down sweep).
+- **Below the floor**: flat-to-losing at 3/3 cells, 48/48 armed invocations in
+  the region (this sweep) — best armed arm 1.010×/0.965×/0.803× CTL.
+- **The sub-self-heal hold**, the last hypothesized refuge: SAMPLED, and the
+  sample prices it — repair volume −6.2%, false fraction −19.0%, queue p50
+  −16.9%, **goodput −4.6%** — a one-for-one exchange, not a win.
+- **The timing levers themselves**: fa invariant to the timer (200×), to the
+  hold-down (97–99% suppression), and moving ±21% both directions on this
+  surface — three instruments, three sweeps, one conclusion.
+
+**ITEM 4's QUESTION IS ANSWERED BY ITS OWN SECOND BRANCH: the 25/100 ms
+constants SURVIVE ON MERIT.** The battery-as-specified does-not-run by its own
+condition (no derived winner exists), and the non-licensing is checkable in the
+scored tables. The constants remain non-derived — and are now beaten by
+nothing, above them and below them, which together is everywhere. Their
+empirical success has a measured mechanism (they coincide with the machine's
+control-plane cadence and straddle the hole-self-heal medians), and their fa
+conviction has a measured cause (the wire's reorder fraction, not any timing
+choice).
+
+**The formula question, finally:** the correct recovery-clock law for this
+machine is the null law — do not add a waiting-time mechanism; the one that
+exists is at its operating optimum's plateau. Written into the paper across
+§16.74/16.76/16.77/16.78 with every refutation pre-registered. λ closed as a
+category error. Both routes retired WITH the frame that contained them. The
+estate: seven instruments, the online quantile machinery, the earned-and-
+writable sentinel doctrine, and a complete adversarially-verified negative.
+
+**Nothing in this program flipped a default. The clamp stays — convicted,
+undefeated everywhere, and explained.**
