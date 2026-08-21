@@ -47257,3 +47257,146 @@ expected). **Where they conflict, the lower number wins.**
   taken from the (q, refresh) sweep, the hold-down sweep or the
   successor-arrival pass, and each is cited to the record it came from.
 
+
+
+## THE VERDICT BATTERY — CALIBRATION DISCHARGED, AND THE PRE-REGISTRATION AMENDED BEFORE THE SCORED RUN (2026-08-21, `feat/verdict-battery`) — **THE SMOKE PASSED FOUR OF ITS FIVE CLAUSES AND THE FIFTH WAS UNSATISFIABLE AT `c1` WHEN IT WAS WRITTEN. IT IS REPAIRED HERE, IN ITS OWN COMMIT, BEFORE A SINGLE SCORED INVOCATION.** 8 invocations (4 cells × 2 arms, `reps = 1`, seed 42), one binary `sha256 91a4f8cc…` matching the pre-registered constant, commit `999aa63`. **0 aborts, `rc = 0` at 8/8, `W1`–`W10` clean at 8/8, `fails=[]` on every row.** `n = 1`. **NOTHING BELOW IS A RESULT** — no clause of §5 or §11 is scored by any of it, and no number below is quoted as a measurement of anything.
+
+### 1 — THE SPECIFICATION FAILURE, STATED FIRST AND AGAINST MYSELF
+
+The pre-registration's §9 clause 4 reads, verbatim:
+
+> **THE WIRING WITNESS**: the challenger's `[QCLK] w_us_max` below that cell's
+> shipped effective floor, at 4 of 4 cells — including `c8`, whose rail is a
+> prediction (§2).
+
+**AT `c1` THAT CONDITION IS ARITHMETICALLY UNSATISFIABLE, AND IT WAS
+UNSATISFIABLE WHEN IT WAS WRITTEN.** The check needs no run at all — it is the
+grid law's own two numbers:
+
+| cell | `F` | commanded ceiling `4F` | shipped effective floor | **`4F < floor`?** |
+|---|---|---|---|---|
+| `c1` | 12 300 | **49 200** | **25 000** | **NO — 1.97× ABOVE the rail** |
+| `c7` | 3 838 | 15 352 | 100 000 | yes |
+| `sc2` | 12 288 | 49 152 | 100 000 | yes |
+| `c8` | 12 288 | 49 152 | 100 000 | yes |
+
+At `c1` the binding rail is the LOWER one, so the band `[F, 4F]` is scaled up
+from a floor that is *below* the shipped rail, and the band's own ceiling lands
+**above** it. A maximum drawn from `[12.3, 49.2] ms` can exceed 25 ms whenever
+`2·srtt` reaches into the upper half of the band, and under a 400 MB transfer at
+`c1` it does. **The clause therefore demanded of `c1` something the arm's own
+definition forbids.**
+
+**THIS IS ON THE RECORD ALREADY AND I DID NOT READ IT ACROSS.** The (q, refresh)
+sweep's scored §1 wrote it out in full, under the heading "THE ONE PARTIAL, AND
+IT IS §3.1'S BRACKET CORRECTION QUANTIFIED", and named the mechanism in one
+sentence: *"Scaling a band by its floor can lift the ceiling past the rail it
+was meant to duck, and at `c1`-`R2` it did."* That sweep carried the defect
+without cost because its `R4` arms (`4F = 24.6 ms < 25 ms`) covered `c1`. **This
+battery has no `R4` arm — it has exactly one challenger, and that challenger is
+`R2`** — so the same arithmetic that was a footnote there is a smoke abort here.
+
+**IT IS RECORDED AS A SPECIFICATION FAILURE OF THIS PRE-REGISTRATION, NOT AS A
+CALIBRATION FINDING ABOUT THE MACHINE.** The machine did exactly what §16.78.0
+says it does. The criterion was wrong, it was checkable from two committed
+tables before the VM was touched, and it was not checked. This tree has that
+failure class on its record once already (the three-term battery, two of three
+criteria unsatisfiable when written) and the rule it earned was to **repair it
+before the scoring, in its own commit, rather than discover it inside a null.**
+
+### 2 — THE REPAIR: ONE CELL-INDEPENDENT CRITERION, WITH ITS ANTECEDENT CHECKED AT EVERY CELL
+
+§9 clause 4 and §5 clause (0)'s `F1` are **amended**, together, to the following.
+It is ONE rule applied identically at every cell; `c1` differs only because it
+fails the rule's own arithmetic antecedent, which is exactly where a difference
+belongs.
+
+```text
+   COMMANDED(cell)   ⇔   [QCLK] w_us_p50  ∈  [ F , 4F ]           (the band)
+                     ∧   [QCLK] w_us_p50  <  shipped_floor(cell)  (sub-floor)
+
+   SUB-FLOOR-AT-MAX(cell)  ⇔  4F  <  shipped_floor(cell)     — ARITHMETIC,
+                                                               no run required
+
+   F1 DOES NOT FIRE at a cell  ⇔  COMMANDED(cell)
+                                  ∧ ( ¬SUB-FLOOR-AT-MAX(cell)
+                                      ∨  [QCLK] w_us_max < shipped_floor(cell) )
+```
+
+**In words: the treatment is the DELIVERED CADENCE, and the wiring test asks
+whether the receiver actually delivers a commanded, sub-floor cadence. Where the
+arm's own ceiling is arithmetically below the rail, the maximum is required
+too. Where it is not, requiring it would be requiring the arm not to be the arm.**
+
+**THE COST OF THE REPAIR IS NAMED AND CARRIED, NOT WAIVED.** Every reading at
+`c1` carries the token **`CEILING-ABOVE-RAIL(c1)`**, and its meaning is stated
+here in advance: at `c1` the challenger's cadence is sub-floor in the median and
+straddles the shipped rail at its maximum, so `c1`'s challenger is *a partly
+sub-floor configuration* and not a wholly sub-floor one. **A `CELL-WIN` at `c1`
+is therefore a weaker statement than a `CELL-WIN` at `c7`, `sc2` or `c8`**, and
+the verdict must say so rather than pooling them. `c1` keeps its vote — it is a
+stable cell and its arm is live and correctly commanded — and its vote carries
+its token.
+
+**NOTHING ELSE IN THE PRE-REGISTRATION MOVES.** Both scored dimensions, both
+guard clauses, the `n` table, the outcomes, the abort causes, the sentinels and
+the witnesses are unchanged. No engine file, no driver file, and no default is
+touched by this amendment: the driver already emits `cadence_p50`,
+`cadence_max`, `cadence_want` and `cadence_floor_shipped` on every row, and the
+bar lives here, which is why the repair is a paragraph and not a patch.
+
+### 3 — THE SMOKE, SCORED AGAINST §9 AS AMENDED
+
+| # | clause | result |
+|---|---|---|
+| 1 | `rc = 0` at 8/8; `CTL` goodput in band at 4/4 | **PASS** — `c1` 187.5 ∈ [147, 294], `c7` 159.3 ∈ [140, 180], `sc2` 86.9 ∈ [78, 92], `c8` 75.4 ∈ [50, 100] |
+| 2 | challenger echoes `(q, refresh)` RESOLVED, TWO-SIDED | **PASS at 4/4** — `q_got = 0.864` literally, `floor_got` = 12300 / 3838 / 12288 / 12288, `[HOLD] n_req = 74` |
+| 3 | `CTL` BYTE-IDENTICAL-SHIPPED, proven | **PASS at 4/4** — both gates echo `unset` on both endpoints, and delivered `w_us_p50` = the shipped floor exactly (25 000 / 100 000 / 100 000 / 100 000) |
+| 4 | the wiring witness, **as amended** | **PASS at 4/4** — see below |
+| 5 | `W1`–`W10` clean | **PASS at 8/8**, `fails=[]` on every row |
+
+Clause 4 in full, so the amendment can be checked rather than trusted:
+
+| cell | `F` | `w_us_p50` | band `[F, 4F]` | shipped floor | `p50` sub-floor? | `SUB-FLOOR-AT-MAX`? | `w_us_max` | **`F1`** |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 12 300 | **21 881** | [12 300, 49 200] | 25 000 | **yes** | **no** (49 200 > 25 000) | 46 477 | **DOES NOT FIRE** — `CEILING-ABOVE-RAIL(c1)` |
+| `c7` | 3 838 | **15 352** | [3 838, 15 352] | 100 000 | **yes** | yes | **15 352** | **DOES NOT FIRE** |
+| `sc2` | 12 288 | **49 152** | [12 288, 49 152] | 100 000 | **yes** | yes | **49 152** | **DOES NOT FIRE** |
+| `c8` | 12 288 | **49 152** | [12 288, 49 152] | 100 000 | **yes** | yes | **49 152** | **DOES NOT FIRE** |
+
+> **⇒ THE SCORED BATTERY IS CLEARED TO LAUNCH.** `ABORT-SMOKE = 0`,
+> `ABORT-SHA = 0` (`91a4f8cc…` against the constant pre-registered before the VM
+> was touched), `ABORT-SENTINEL-UNWRITABLE` deferred to the launcher's own probe,
+> `ABORT-CTL-BAND = 0` at 4/4.
+
+**AND `c8`'s RAIL PREDICTION IS CONFIRMED.** §2 of the pre-registration predicted
+the UPPER rail would bind at `c8` and said the prediction would be checked rather
+than assumed. Delivered: `49 152 µs = 4F`, exactly the upper-rail arithmetic, at
+a cell whose delivered cadence had never been read by any battery. **`F1-c8` does
+not fire and `c8` is readable.**
+
+### 4 — THREE `n = 1` OBSERVATIONS THE AMENDMENT IS WRITTEN BESIDE. **NONE IS A RESULT.**
+
+Recorded because a reader of the scored section should not meet them there for
+the first time, and labelled so they cannot be mistaken for measurements.
+
+1. **`c1`'s realized hold is 147 456 µs — 6.0× that cell's 24.6 ms self-heal
+   median**, at a commanded 21.9 ms cadence. That is the (q, refresh) sweep's
+   `SECOND-CENSOR-NAMED` signature at `c1`, reproduced at `n = 1` on this
+   battery's own binary. **The challenger at `c1` is not holding for 12 ms; it is
+   holding for 147 ms**, and DIM-1's reading there must be read knowing it.
+2. **`sc2`'s challenger reads 22.1 Mbit/s against an `[78, 92]` band.** The
+   (q, refresh) sweep read 21.9 at the same cell-arm. If that reproduces at full
+   `n` it is `G1` — a GUARD VIOLATION and a RESULT — and it is not an abort, per
+   §7.
+3. **`c8`'s challenger reports `[HOLD] hd_p50_us = -` with `law_n = 34 133`, and
+   `[SUCC] det` falls 6 649 → 394.** The hold law ran and no hold was timed,
+   while the receiver detected 17× fewer holes. **This is not explained here and
+   nothing is inferred from it at `n = 1`**; it is flagged so that if it
+   reproduces at `n = 8` it is read as the finding it would be rather than
+   discovered in a column.
+
+**Nothing in this section scores a clause, flips a default, edits an engine
+crate, or licenses anything. It repairs one criterion of this pass's own
+pre-registration and discharges its smoke.**
+
