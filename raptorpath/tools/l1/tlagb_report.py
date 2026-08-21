@@ -72,12 +72,18 @@ result. Then clause `C`, then clause `S`, then the control regression check,
 then the sampling-rate row, then clause `B`, then the verdict.
 
 DUMP FILE NAMING, so a leg can be matched to its rows. A dump file is mapped to
-`(cell, seed, rep, site)` by its BASENAME:
+`(cell, seed, rep, site)` by its BASENAME, and the pattern is `tlagb_bpass.sh`'s
+own capture name, transcribed rather than invented:
 
-    rttdump-<cell>-s<seed>-r<rep>-<site>.log        (the convention)
-    ...<cell>[-_.]s<seed>[-_.]r<rep>[-_.]<cli|srv>  (the liberal fallback)
+    <cell>-s<seed>-r<rep>-c.log[.gz]     the sender  (site = cli)
+    <cell>-s<seed>-r<rep>-s.log[.gz]     the receiver (site = srv)
+    ...-<cli|srv> and a leading `rttdump-` are accepted too.
 
-A file matching neither is listed as `UNMAPPED-DUMP` and scored nowhere. It is
+`.gz` is read as `.gz` — the B pass compresses every preserved client log after
+the run, so a report that could only read `.log` would silently score nothing
+the day after the pass.
+
+A file matching nothing is listed as `UNMAPPED-DUMP` and scored nowhere. It is
 NEVER guessed at: a dump attributed to the wrong leg would compare one leg's
 online reading against another leg's stream, which is the exact class of silent
 mis-comparison this whole pass exists to remove.
@@ -471,20 +477,39 @@ def b_verdict(beta):
 
 # ── THE DUMP SIDE ──────────────────────────────────────────────────────────
 
-#: The convention, and the liberal fallback. See the module docstring.
+#: THE B PASS'S OWN CAPTURE NAME, transcribed from `tlagb_bpass.sh`:
+#: `$DUMPDIR/${cell}-s${SEED}-r${REP}-c.log`, `-s.log` for the receiver, and
+#: `.gz` after the post-run compression pass. `c`/`s` are the driver's letters
+#: for the two seats; `cli`/`srv` are accepted as well so a hand-assembled dump
+#: directory reads too. The alternation is LONGEST-FIRST so `cli` never matches
+#: as `c` and leaves `li` behind.
 DUMP_NAME = re.compile(
-    r"^rttdump[-_](?P<cell>[A-Za-z0-9]+)[-_]s(?P<seed>\d+)[-_]r(?P<rep>\d+)"
-    r"[-_](?P<site>cli|srv)\b")
+    r"^(?:rttdump[-_])?(?P<cell>[A-Za-z0-9]+)[-_.]s(?P<seed>\d+)"
+    r"[-_.]r(?P<rep>\d+)[-_.](?P<site>cli|srv|c|s)\b")
 DUMP_NAME_LOOSE = re.compile(
     r"(?P<cell>[A-Za-z0-9]+)[-_.]s(?P<seed>\d+)[-_.]r(?P<rep>\d+)"
-    r"[-_.](?P<site>cli|srv)\b")
+    r"[-_.](?P<site>cli|srv|c|s)\b")
+SITE_LETTER = {"c": "cli", "s": "srv", "cli": "cli", "srv": "srv"}
 
 
 def map_dump_name(base):
     m = DUMP_NAME.match(base) or DUMP_NAME_LOOSE.search(base)
     if not m:
         return None
-    return (m.group("cell"), m.group("seed"), m.group("rep"), m.group("site"))
+    return (m.group("cell"), m.group("seed"), m.group("rep"),
+            SITE_LETTER[m.group("site")])
+
+
+def dump_lines(fp):
+    """The capture, decompressed if it is one. `tlagb_bpass.sh` gzips every
+    preserved client log after the run (they are megabytes), so a report that
+    could only read `.log` would silently score nothing the day after the pass.
+    `parse_dump` takes an iterable of lines, so no temporary file is made.
+    """
+    if fp.endswith(".gz"):
+        import gzip
+        return gzip.open(fp, "rt", errors="replace")
+    return open(fp, "r", errors="replace")
 
 
 def collect_dumps(paths):
@@ -985,7 +1010,9 @@ def main(argv):
             files = mapped[(cell, seed, rep, site)]
             per_path = {}
             for fp in files:
-                for pid, s in POP.parse_dump(fp).items():
+                with dump_lines(fp) as fh:
+                    parsed_paths = POP.parse_dump(fh)
+                for pid, s in parsed_paths.items():
                     if pid not in per_path:
                         per_path[pid] = s
                     else:

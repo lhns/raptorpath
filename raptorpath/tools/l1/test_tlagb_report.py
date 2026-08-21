@@ -347,7 +347,21 @@ for start in range(0, NS, 256):
     dump.append("[RTTDUMP] p=0 t0=%d n=%d d=%s"
                 % (batch[0][0], len(batch), ";".join(ents)))
 DDIR = tempfile.mkdtemp()
-DUMPF = os.path.join(DDIR, "rttdump-c7-s42-r1-cli.log")
+# THE B PASS'S OWN CAPTURE NAME, transcribed from `tlagb_bpass.sh`:
+# `${cell}-s${SEED}-r${REP}-c.log` for the sender, `-s.log` for the receiver,
+# `.gz` after the post-run compression. Naming the fixture anything else would
+# test a convention no driver produces.
+check("the driver's capture name maps to a leg",
+      R.map_dump_name("c7-s42-r1-c.log") == ("c7", "42", "1", "cli")
+      and R.map_dump_name("c8L-s42-r3-s.log") == ("c8L", "42", "3", "srv"),
+      str(R.map_dump_name("c7-s42-r1-c.log")))
+check("a gzipped capture maps too — the B pass gzips every log after the run",
+      R.map_dump_name("c1-s42-r1-c.log.gz") == ("c1", "42", "1", "cli"))
+check("the B pass's OTHER captures map to NOTHING and are scored nowhere",
+      R.map_dump_name("c7-s42-r1-abort.txt") is None
+      and R.map_dump_name("bpass-era.txt") is None,
+      str(R.map_dump_name("c7-s42-r1-abort.txt")))
+DUMPF = os.path.join(DDIR, "c7-s42-r1-c.log")
 with open(DUMPF, "w") as fh:
     fh.write("\n".join(dump) + "\n")
 
@@ -401,7 +415,7 @@ check("the narrowing is recorded: the delivered-latency probe is STILL MISSING",
       "STILL MISSING" in out)
 
 # A CAPPED leg must be marked PREFIX-SCORED rather than scored silently.
-CAPF = os.path.join(DDIR, "rttdump-c7-s42-r2-cli.log")
+CAPF = os.path.join(DDIR, "c7-s42-r2-c.log")
 with open(CAPF, "w") as fh:
     fh.write("\n".join(dump) + "\n")
     fh.write("[RTTDUMP-CAP] p=0 emitted=300 seen=99999 (cap bound)\n")
@@ -413,8 +427,22 @@ rc = run_report(BPATH2, "--bpass", BPATH2, "--dump", DDIR)
 check("a capped leg is marked PREFIX-SCORED", rc.returncode == 0
       and "PREFIX-SCORED" in rc.stdout, rc.stderr[-400:])
 
+# AND THE GZIPPED CAPTURE READS, because that is the form the dump directory
+# is in from the moment the B pass finishes compressing it. A report that could
+# only read `.log` would silently score nothing the day after the pass.
+import gzip                            # noqa: E402
 os.unlink(DUMPF)
 os.unlink(CAPF)
+GZF = os.path.join(DDIR, "c7-s42-r1-c.log.gz")
+with gzip.open(GZF, "wt") as fh:
+    fh.write("\n".join(dump) + "\n")
+rc = run_report(BPATH, "--bpass", BPATH, "--dump", DDIR)
+check("a .gz capture is read, not skipped",
+      rc.returncode == 0
+      and re.search(r"^\s+tlag\s+1000\s+tlag\s+1000\.000\s+1\.0\s+ACQUIT",
+                    rc.stdout, re.M) is not None,
+      rc.stderr[-400:] or rc.stdout[-600:])
+os.unlink(GZF)
 os.rmdir(DDIR)
 
 # ── C/D. THE CONTROL REGRESSION CHECK ────────────────────────────────────
