@@ -168,6 +168,46 @@ class Ledger:
                 if FAILMARK.match(ln):
                     self.fails.append(ln)
 
+    def apply_voids(self):
+        """DROP EVERY ROW OF AN ABORTED INVOCATION, FROM EVERY CONTAINER.
+
+        THE RULE IS THE PRE-REGISTRATION'S OWN, AND IT WAS NOT IMPLEMENTED
+        UNTIL THE SCORED RUN PRODUCED ITS FIRST ABORT. §8: an aborted
+        invocation is *"no datum, no liveness verdict, and NOT in any
+        denominator."* The driver marks the abort in the ledger and the report
+        printed the marker — but it went on pooling that invocation's gauge
+        readings into `R_total` anyway, which is exactly the denominator the
+        clause forbids. A single VOID rep at `c8`, where a leg carries ~9
+        readings, is ~6 % of a pooled quantile.
+
+        THE VOID SET IS BUILT FROM THE WITNESS ROWS, NOT FROM THE MARKER TEXT,
+        because the witness row carries `(cell, seed, rep)` while the marker
+        line does not carry the seed — and two seeds pool here, so a marker
+        matched by cell and rep alone would void the innocent seed's rep too.
+
+        Returns the void set so the report can print it before any statistic.
+        """
+        void = {(w["cell"], str(w["seed"]), str(w["rep"]))
+                for w in self.wit if w.get("gen_plateau")}
+        if not void:
+            return void
+        keep = lambda s, r, cell: (cell, str(s), str(r)) not in void
+        for key in list(self.reads):
+            for g in list(self.reads[key]):
+                self.reads[key][g] = [t for t in self.reads[key][g]
+                                      if keep(t[0], t[1], key[0])]
+        for key in list(self.raw_n):
+            for g in list(self.raw_n[key]):
+                self.raw_n[key][g] = [t for t in self.raw_n[key][g]
+                                      if keep(t[0], t[1], key[0])]
+        for key in list(self.probe):
+            self.probe[key] = [d for d in self.probe[key]
+                               if keep(d["_seed"], d["_rep"], key[0])]
+        for k in list(self.meta):
+            if (k[0], str(k[1]), str(k[2])) in void:
+                del self.meta[k]
+        return void
+
 
 # ── STATISTICS. One quantile estimator in the tree, imported not rewritten. ─
 
@@ -261,6 +301,7 @@ def main(argv):
     L = Ledger()
     for p in argv:
         L.load(p)
+    VOID = L.apply_voids()
 
     P = print
     P("=" * 78)
@@ -283,6 +324,17 @@ def main(argv):
             P("    %s" % f)
     else:
         P("  0 abort/fail markers.")
+
+    P("\n  VOIDED INVOCATIONS — dropped from EVERY container before any")
+    P("  statistic below, per §8: an aborted invocation is no datum and is NOT")
+    P("  in any denominator.")
+    if VOID:
+        for c, s, r in sorted(VOID):
+            P("    VOID %s seed=%s rep=%s" % (c, s, r))
+        P("  %d invocation(s) voided. Their gauge readings, probe rows and" % len(VOID))
+        P("  meta rows are ABSENT from clause S, clause B and the rate row.")
+    else:
+        P("    none.")
 
     n_inv = len(L.wit)
     bad = {"W1": [], "W2": [], "W4": [], "W5": [], "W7": [], "PLATEAU": []}
@@ -437,6 +489,48 @@ def main(argv):
                   % (g, st["n"], st["p05"], st["p50"], st["p95"],
                      st["R_total"], st["sup_inf"], v))
 
+    # ── 3b. IS THE VERDICT AN ARTEFACT OF THE SCORING DOMAIN? ───────────
+    #
+    # THE BATTERY SCORES PER LEG, WHICH IS STRICTER THAN THE BAR'S "worst
+    # cell binds". So before any REJECT is published, the SAME statistic is
+    # re-read on the bar's OWN most generous domain — the DATA-PATH leg of
+    # each cell, the leg the bar's `N_cell` refers to — and the two readings
+    # are printed side by side. If a candidate clears 6.0 on the data path and
+    # fails only on a sparse leg, that is a materially different finding from
+    # one that fails on the data path too, and a reader is entitled to see
+    # which without re-deriving it.
+    P("\n## 3b — THE SAME CLAUSE S ON THE BAR'S OWN MOST GENEROUS DOMAIN:")
+    P("##      THE DATA-PATH LEG OF EACH CELL (the leg `N_cell` refers to).\n")
+    dp = {}
+    for c in sorted({k[0] for k in L.raw_n}):
+        legs = [k for k in L.raw_n if k[0] == c]
+        best = max(legs, key=lambda k: max(
+            [n for _, _, n in L.raw_n[k]["sig"]] or [0]))
+        dp[c] = best
+    P("  %-6s %-12s %10s %10s %10s %10s"
+      % ("cell", "data-path leg", "sig", "rvar", "qsp", "msd"))
+    dp_worst = {g: (None, 0.0) for g in GAUGES}
+    for c, key in dp.items():
+        row_ = []
+        for g in GAUGES:
+            st = S.get((key, g))
+            r = st["R_total"] if (st and st["n"] >= MIN_READS and st["R_total"]) else None
+            row_.append("%.2f" % r if r else "-")
+            if r and r > dp_worst[g][1]:
+                dp_worst[g] = (c, r)
+        P("  %-6s %-12s %10s %10s %10s %10s"
+          % (c, "%s/p%d" % (key[1], key[2]), *row_))
+    P("\n  worst DATA-PATH cell per gauge, against the accept bar of %.1f:" % ACCEPT_BAR)
+    for g in GAUGES:
+        c, r = dp_worst[g]
+        P("    %-6s %-5s R_total = %-9s %s"
+          % (g, c or "-", ("%.3f" % r) if r else "-",
+             "CLEARS THE BAR" if (r and r <= ACCEPT_BAR)
+             else ("FAILS by %.2fx" % (r / ACCEPT_BAR) if r else "unscoreable")))
+    P("\n  IF EVERY GAUGE FAILS HERE TOO, THE VERDICT IS NOT AN ARTEFACT OF")
+    P("  THIS BATTERY'S STRICTER PER-LEG DOMAIN, and the closure does not")
+    P("  rest on a choice this pass made rather than one the bar made.")
+
     # ── 4. THE SAMPLING-RATE ROW ────────────────────────────────────────
     P("\n## 4 — THE SAMPLING-RATE ROW, FIRST-CLASS. `msd` ESTIMATES DISPERSION")
     P("##     AT A LAG OF ONE INTER-SAMPLE INTERVAL, SO ITS MAGNITUDE DEPENDS")
@@ -475,6 +569,32 @@ def main(argv):
     P("\n  Spearman rank correlation over the %d scoreable legs:" % len(rate_x))
     P("    rate vs msd R_total   rho = %s" % rho_r)
     P("    rate vs msd/sig level rho = %s" % rho_l)
+
+    # ── THE SAME CORRELATION, SPLIT BY SEAT — A DISCLOSURE, NOT A VERDICT.
+    # The pooled rho mixes two seats whose sample rates barely overlap (the
+    # sender runs at kHz, the receiver at tens of Hz) and whose orderings run
+    # OPPOSITE ways. A pooled rank correlation over a bimodal predictor is a
+    # number about the mixture, not about either seat, so it is reported
+    # beside the per-seat ones rather than instead of them. The seat is
+    # already a first-class axis here (§16.74.5 requirement 3 and the leg's
+    # own definition), so this is a slice of the pre-registered frame, not a
+    # new one — AND NO VERDICT IS TAKEN FROM IT.
+    for seat in ("cli", "srv"):
+        sx, sy = [], []
+        for key in sorted(L.raw_n):
+            if key[1] != seat:
+                continue
+            ns = [n for _, _, n in L.raw_n[key]["sig"]]
+            N = max(ns) if ns else 0
+            secs = [m["seconds"] for k, m in L.meta.items()
+                    if k[0] == key[0] and m.get("seconds")]
+            wall = median(secs) if secs else None
+            smsd = S.get((key, "msd"))
+            if wall and N and smsd and smsd["R_total"] and smsd["n"] >= MIN_READS:
+                sx.append(N / wall)
+                sy.append(smsd["R_total"])
+        P("    [seat=%s] %d leg(s), rate vs msd R_total   rho = %s"
+          % (seat, len(sx), spearman(sx, sy)))
     P("  A |rho| near 1 on either row says the RATE, not the cell, orders the")
     P("  gauge. NO VERDICT IS TAKEN FROM rho ALONE — it is reported beside the")
     P("  per-leg clause-S verdicts, which are what binds.")
