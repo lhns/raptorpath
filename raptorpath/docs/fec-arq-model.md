@@ -17459,6 +17459,312 @@ finding a maximum is not that.
 **Nothing in this section flips a default, ships a law, wires a consumer on any
 default path, or scores any clause of any pre-registration.**
 
+### 16.79 THE SINGLE INSTANTIATION: §16.74's loss function, evaluated at every measured input this program produced, has its minimiser at the CORNER where the added waiting time on the deciding path is zero — so the decided recovery-response law IS the shipped one, and the term that could ever have favoured waiting is bounded by the machine's own repair traffic (2026-08-21, `feat/verdict-battery`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test; goal-gate's α-sweep, hold-down, successor-arrival, fire-cause and (q, refresh) scored sections are the measurement record, this section is the decision)
+
+**This is goal #101 item 3's owed half.** §16.74 wrote the loss function and
+named `λ` as the one quantity measurement had not supplied. §16.76 removed
+`σ̂`. §16.77 put the loss on the path that decides 99 % of this engine's
+recovery fires and derived the corner conditions analytically. §16.78 lifted
+the constant that censored the region. **Every one of those sections refuted
+something. None of them DECIDED the formula.** This one does, from the measured
+inputs and from nothing else, and it decides it as a positive statement rather
+than as the residue of the refutations.
+
+**It is a decision, not a change.** The formula the loss function selects is
+the formula that already ships. That coincidence is the decision's *content*
+and it is the reason this section carries no engine diff: a derivation whose
+answer is the incumbent is still a derivation, and this tree has spent the
+whole program establishing that the incumbent had never had one.
+
+#### 16.79.0 Verdict first — the decided expression
+
+The recovery-response law, decided:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │   T*(δ, ρ, r)  =  0        on the gap-report path, at every point    │
+   │                            of the (δ, ρ, r) triangle this program    │
+   │                            measured                                  │
+   │                                                                      │
+   │   respond(srtt) = (2·srtt).clamp( HOLE_NACK_REFRESH_MIN ,            │
+   │                                   HOLE_NACK_REFRESH_MAX )            │
+   │                 = (2·srtt).clamp( 25 ms , 100 ms )                   │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+**In words: answer a gap report at the control plane's own cadence, and add no
+waiting time to it.** `T*` is the ADDED hold — the quantity §16.77's whole
+family of laws exists to set — and the decided value of that quantity is zero.
+The cadence beside it is not a second law and not a mode: it is the rate at
+which the receiver is permitted to speak, measured by §16.78's lift to be free
+(the (q, refresh) sweep's clause (ii), 12 of 12 contrasts), and it is what
+`T* = 0` means operationally — *respond on the next report you are allowed to
+send*.
+
+**THIS IS A CORNER OF THE SAME CONTINUOUS MINIMISATION, NOT A BRANCH.** §16.77.4's
+loss, in full, with every term always computed:
+
+```text
+   C(T; δ, ρ, r, λ)  =  w · orig_frac · (1 − F(T))                             [W]
+                     +  δ · (1 − orig_frac) · P_arq(ρ, r) · T / d               [L]
+                     +  λ · (1 − orig_frac) · P_arq(ρ, r) · max(0, T − D(δ))/D(δ)  [D]
+
+   w        = 1 + h_marginal/T_pay = 1 + 14/1200 = 1.011667      MEASURED (§16.73)
+   orig_frac= 0.97858  pooled over 374 120 resolved holes         MEASURED (succ-arrival)
+   F(T)     = the [SUCC] `orig` CDF — hole detection to self-heal MEASURED, per cell
+   d        = srtt, Copa's own normaliser                         MEASURED, per cell
+   P_arq(ρ,r) = 1 − (1−ρ)/(ε̂·(1−P_fec(r)))                        DERIVED (§16.74.2)
+   D(δ)     = min( b(δ)·RTprop , 2·RTprop ),  b(δ) = 2^(−½·log₁₀(δ/δ_auto))
+   λ        ≥ 0, the multiplier on the δ-leg's allowance
+```
+
+`T* = argmin_{T ≥ 0} C`. The decided value is the LEFT ENDPOINT of that
+argmin's domain, and the condition that puts it there is one inequality in the
+triangle's own quantities — no threshold on δ, no threshold on ρ, no hint match,
+no second law:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │   T* = 0   ⇔   for every T > 0 :                                     │
+   │                                                                      │
+   │     w·orig_frac·F(T)   ≤   δ·(1−orig_frac)·P_arq·T/d                 │
+   │                          + λ·(1−orig_frac)·P_arq·max(0, T−D(δ))/D(δ) │
+   │                                                                      │
+   │            [W]'s benefit   ≤   [L]'s + [D]'s cost                    │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+**`[W]` IS THE ONLY TERM IN THE LOSS THAT CAN EVER FAVOUR WAITING.** `[L]` and
+`[D]` are non-negative and non-decreasing in `T` at every `(δ, ρ, r)` — that is
+their construction, not an assumption about them. So a sum of three terms of
+which two rise in `T` has its minimum at `T = 0` exactly when the third one's
+whole available range is smaller than the other two's cost. §16.79.1 measures
+that range. §16.79.2 measures the cost. The range is smaller at 3 of 3 cells
+that were fully swept, and it is not close at 2 of them.
+
+#### 16.79.1 `[W]`'s benefit is bounded by the machine's own repair traffic, and that bound is MEASURED
+
+`[W]` prices wasted repair bandwidth: `w·orig_frac·F(T)` repair symbols per
+reported hole, saved by waiting `T` before answering. Its supremum over all
+`T` is `w·orig_frac·F(∞) ≤ w` — **at most one repair symbol per reported hole,
+which is at most every repair the machine emits.** So `[W]`'s entire dynamic
+range, expressed in the currency the guard is actually stated in (fraction of
+the transfer), is bounded above by the repair traffic itself:
+
+```text
+   sup_T  [W](T)   ≤   R_frac  ≡  ( repairs_emitted · (T_pay + h_marginal) ) / bytes_transferred
+```
+
+That is not a model quantity. Every factor is a counter this tree already
+reads: `repairs_emitted` is `[FCAUSE] n` (the sender's own classified fire
+count), `T_pay + h_marginal = 1200 + 14 = 1214 B` is §16.73's measured wire
+object, and `bytes_transferred` is the cell's own transfer size. Evaluated on
+the (q, refresh) sweep's own control arm, median over its reps, both seeds
+pooled:
+
+| cell | bytes | `[FCAUSE] n` (CTL, median) | repair traffic | **`sup_T [W]`** |
+|---|---|---|---|---|
+| `c1` | 400 MB | 797 | 797 × 1214 B = 0.968 MB | **0.242 %** |
+| `c7` | 200 MB | 4 886 | 4 886 × 1214 B = 5.932 MB | **2.966 %** |
+| `sc2` | 100 MB | 3 364 | 3 364 × 1214 B = 4.084 MB | **4.084 %** |
+
+**READ IT AS THE CEILING IT IS.** A perfect oracle — one that waited exactly
+long enough to suppress *every* repair this engine ever emits, and suppressed
+not one useful byte with them — would free **0.24 %, 2.97 % and 4.08 %** of the
+transfer at the three cells. That is the whole prize. It is the largest number
+`[W]` can take at any `T`, at any `q`, at any `δ`, at any `ρ`, at any `r`,
+because `orig_frac ≤ 1` and `F(T) ≤ 1` and there are only so many repairs.
+
+#### 16.79.2 `[L] + [D]`'s cost is MEASURED at the one point the machine could reach, and it exceeds the ceiling at 3 of 3 cells
+
+The (q, refresh) sweep is the only battery in this tree that ever commanded a
+hold **inside** the self-heal distribution — `c7`-`R2Q86` realized
+`hd_p50 = 27 648 µs = 0.90 ×` that cell's 30 700 µs `[SUCC] orig` median — and
+it ran the same treatment at all three cells. Its measured goodput cost is
+`[L] + [D]` in the same currency as §16.79.1's ceiling, because a stalled gap
+response is bandwidth the transfer did not move:
+
+| cell | `CTL` goodput | `R2Q86` goodput | **measured cost** | **`sup_T [W]`** | cost / ceiling |
+|---|---|---|---|---|---|
+| `c1` | 207.7 | 200.5 | **3.47 %** | 0.242 % | **14.4×** |
+| `c7` | 169.1 | 161.3 | **4.58 %** | 2.966 % | **1.54×** |
+| `sc2` | 87.3 | 21.9 | **74.88 %** | 4.084 % | **18.3×** |
+
+> **⇒ THE CORNER CONDITION OF §16.79.0 IS SATISFIED AT 3 OF 3 FULLY-SWEPT
+> CELLS, AND IT IS SATISFIED BY THE CEILING RATHER THAN BY THE REALIZED VALUE.**
+> The cost of the deepest hold the machine could actually command exceeds not
+> the benefit that hold delivered, but **the largest benefit any hold could ever
+> deliver at that cell.** No `T`, no `q`, no `λ` repairs that, because the
+> quantity that would have to grow is capped by a counter.
+
+**AND THE REALIZED BENEFIT, SEPARATELY, SO THE CEILING IS NOT DOING ALL THE
+WORK.** At `c7` — the one cell where the hold landed in the target regime and
+the machine measurably behaved as the theory promised — repair volume fell from
+4 886 to 4 584 fires, a saving of 302 repairs:
+
+```text
+   realized [W]  =  302 × 1214 B / 200 MB  =  0.183 %  of the transfer
+   realized cost =                            4.58 %   of the transfer
+   ratio                                    = 25.0×
+```
+
+**Holding bought 0.18 % of throughput back and paid 4.58 % for it.** That is
+§16.78's "one-for-one exchange" re-priced in the loss function's own currency,
+and in that currency it is not one-for-one — it is twenty-five to one against.
+The (q, refresh) sweep called it a MEASURED TRADEOFF because on the wire it
+looked like one: 17 % less waste and 17 % less queue against 4.6 % less data.
+The loss function is what says which side of that exchange the contract's
+weights are on, and this section is where it is finally evaluated instead of
+described.
+
+#### 16.79.3 The derivation chain, stated as four steps that can each be checked
+
+1. **THE MINIMUM OF THE MEASURED CURVE IS AT `T = 0`, AT 3 OF 3 FULLY-SWEPT
+   CELLS.** The (q, refresh) scored section's clause (iv): `CTL` is the goodput
+   `argmax` at 2 of 3 cells and ties at the third with fully overlapping rep
+   ranges and `law_n = 0` — a control wearing a treatment label. 18 treatment
+   cell-arms, 0 that beat `CTL` outside its own spread.
+2. **THE CURVE RISES IN EVERY DIRECTION THAT WAS COMMANDABLE.** Above the
+   floor: the hold-down sweep, monotone rising, 10/10 cell-comparisons. Below
+   the floor: this sweep, 48/48 armed sub-floor invocations, flat-to-losing.
+   The two sweeps between them cover the whole domain at `{c1, c7, sc2}`, which
+   §16.78.7 says in advance is what "everywhere" means for those cells.
+3. **THE ONE MEASURED BENEFIT DIRECTION PRICES AT WORSE THAN ONE-FOR-ONE AND IS
+   DOMINATED UNDER THE CONTRACT'S DEFAULT WEIGHTS.** §16.79.2: 25.0× against at
+   the realized point, 1.54×–18.3× against at the ceiling. At `δ_auto = 0.5` the
+   Copa utility of the `c7` exchange is computed and reported rather than
+   asserted — `log(0.954) − 0.5·log(0.831) = +0.045` — **and this is the one
+   place the decision could have gone the other way, so it is stated with its
+   own qualification in §16.79.4 rather than buried.**
+4. **THE CORNER IS THEREFORE THE GLOBAL MINIMISER, NOT A LOCAL ONE.** `[L]` and
+   `[D]` are non-decreasing in `T` by construction and `[W]` is bounded by
+   §16.79.1's counter, so `C(T) ≥ C(0)` for every `T > 0` at every cell where
+   the table of §16.79.2 holds. The corner is the argmin of the whole domain and
+   is reached without evaluating `λ`, which is why this section can decide the
+   formula while `λ` remains unmeasured.
+
+**`λ` IS STILL NOT ASSIGNED A VALUE, AND THE DECISION DOES NOT NEED ONE.**
+§16.74 named `λ` as the quantity separating routes (b) and (d). Both routes'
+limits — `q_d` and `min(q_d, F(D(δ)))` — are `≥ 0`, and the corner `T* = 0` is
+the common lower endpoint of both. **A decision at a corner is a decision both
+routes agree on**, which is why the ruling's clause 3 is not violated here: no
+constant is fitted, and the unmeasured multiplier is not silently given one.
+
+#### 16.79.4 Shape check, and the one reading that dissents
+
+Shape, against §16.74.7's list:
+
+* **Dimensionless.** Both sides of §16.79.0's inequality are repair symbols per
+  reported hole; §16.79.1–2 evaluate both as fractions of the transfer, one
+  conversion applied identically to both sides.
+* **Continuous in δ, ρ, r.** `T* = 0` is a constant function of the triangle
+  and is trivially continuous. **There is no mode bit and no threshold**: the
+  corner is selected by an inequality between two always-computed quantities,
+  exactly as §16.74.3's `max(α_d, α_b)` and §16.77.4's `min(q_d, q_b)` are.
+* **Monotonicity, checked in the direction that matters.** `∂C/∂T ≥ 0` at every
+  `T > 0` wherever §16.79.2's table holds; the decided `T*` is therefore
+  insensitive to `δ`, `ρ` and `r` **in the interior**, and moves only if the
+  inequality flips — which is §16.79.5.
+* **ρ composes and does not select.** `P_arq(ρ, r)` multiplies both cost terms
+  and is absent from `[W]`; lowering ρ shrinks `[L]` and `[D]` and so is the
+  one dial that moves the inequality *toward* an interior optimum. **ρ has
+  never been swept by any battery in this tree** (§16.78.7) and this section
+  claims nothing about it beyond the sign of that derivative.
+
+**THE DISSENTING READING, STATED IN FULL BECAUSE IT IS REAL.** Copa's own
+utility at the contract's default point, `U = log(throughput) − δ·log(delay)`
+with `δ_auto = 0.5`, evaluated on `c7`-`R2Q86`'s measured pair (goodput ×0.954,
+queue p50 ×0.831), returns **+0.045 — a WIN.** That number is not suppressed and
+it is not explained away. Three things bound it, all of them measured:
+
+1. **The delay it credits is not the delay `[L]` prices.** `[L]` prices the
+   waiting time imposed on the 2.14 % of holes that are genuine losses. The
+   16.9 % queue reduction is transport queue occupancy, and it fell in a run
+   that moved 4.6 % less data — the (q, refresh) pre-registration's clause (iii)
+   forbids reading either half alone, and this is that clause applied to the
+   model rather than to the table.
+2. **It is one cell of three.** The same treatment at `c1` moved the false
+   fraction the WRONG way (0.2446 → 0.2579) and at `sc2` collapsed goodput to
+   `21.9` against an `[78, 92]` band. A utility that is positive at 1 of 3 cells
+   and catastrophic at another is not a decision procedure.
+3. **It is inside the measurement's own power.** `c7`'s `CTL` rep spread in that
+   battery was 37.1 %; a 4.6 % goodput difference at `n = 8` is not resolved by
+   it. The dissent's numerator is a number the battery could not distinguish
+   from zero, and its denominator is a number that battery *could* — which is
+   the asymmetry that makes it a dissent and not a result.
+
+**This is the reading item 4's verdict battery exists to settle**, and it is
+written here, before that battery, as the thing that could defeat the decision.
+
+#### 16.79.5 What would UNDECIDE it — the falsifiers, with their directions CHECKED rather than asserted
+
+* **(F1) A WIRE WHOSE REORDER FRACTION IS FAR BELOW 0.98.** Every number above
+  is evaluated at `orig_frac = 0.97858` pooled (0.9884 at `c7`). **Direction,
+  checked and NOT as one might expect:** lowering `orig_frac` lowers `[W]`'s
+  benefit (fewer repairs are waste) while leaving `[L]` and `[D]` untouched, so
+  it *strengthens* the corner. **The falsifier is therefore the other sign** —
+  a wire on which repair traffic is a first-order share of the transfer AND the
+  stall cost of holding is small. Its threshold is §16.79.0's inequality with
+  §16.79.1's ceiling substituted, and it is arithmetic:
+
+  ```text
+     UNDECIDED  ⇔  R_frac  >  stall_frac(T)      at some commandable T
+  ```
+
+  Measured, it needs a **1.54× swing at `c7`** and **14×–18× at `c1`/`sc2`**.
+  `c7` is the near one and it is named as the near one.
+* **(F2) A COST REGIME WHERE GOODPUT IS WORTH LESS THAN QUEUE.** §16.77.3
+  already derived that corner and **it lands on the same boundary from the
+  other side**: at `δ = 50` (Realtime), `R = R₀/δ` is 1.3–6.3 ms against
+  measured quantile densities of 41–819 ms, so `q* → 0` at 5 of 5 cells — *fire
+  on the report, immediately.* **The decision is doubly determined at Realtime**,
+  once by this section's measured inequality and once by §16.77.3's analytic
+  one, and the two arrive by different routes.
+  **Where it is genuinely undecided is the OTHER end.** At `δ = 0.005` (Bulk),
+  §16.77.3 derives the OPPOSITE corner, `q* → 1`, at 4 of 5 cells — hold past
+  the 99th percentile. That corner is computed from a `[W]` term whose realized
+  value this section has now measured at **0.183 %** and bounded at **2.97 %**.
+  **§16.79 therefore records §16.77.3's Bulk corner as DERIVED-BUT-UNPRICED**,
+  and states the experiment that would settle it: the same paired contrast at
+  `δ = 0.005`, where `D(0.005) = 2·RTprop` and the goodput leg carries its
+  heaviest weight. **No battery in this tree has run the (δ, hold) contrast**,
+  and this is the first section to say so as an owed item rather than as a
+  caveat.
+* **(F3) A MEASUREMENT THAT SIGNS `[W]` POSITIVE ON THE WIRE.** The whole
+  decision rests on one empirical sign: holding a gap response COSTS bandwidth
+  at every cell measured, where the model's `[W]` says it should SAVE it.
+  `c7`-`R2Q86` is one arm at one cell of one battery. **A paired contrast that
+  reproduces a goodput GAIN under a sub-self-heal hold, at a majority of cells,
+  undecides this section outright** — and that contrast is exactly goal #101
+  item 4's verdict battery, pre-registered against this section in the goal-gate
+  ledger.
+
+#### 16.79.6 What this section does NOT claim
+
+* **NO ENGINE CHANGE, AND THAT IS THE POINT.** The decided formula is what
+  already ships. No default is flipped, no gate is added, no engine crate is
+  touched, no law is re-expressed. `RWM_REFRESH_FLOOR_US` and
+  `RWM_HOLDDOWN_Q` stay ABSENT by default and nothing shipped reads either.
+* **THE CONSTANTS ARE DECIDED, NOT DERIVED.** `25 ms` and `100 ms` are still
+  two unjustified literals. What this section decides is the quantity `T*` that
+  the whole clock program existed to set, and its decided value is zero, which
+  makes the two literals the *cadence* rather than the *clock*. §16.78 measured
+  the cadence to be free to move and §16.79.2 measures that moving it does not
+  pay. **"Undefeated" is not "derived" and this section does not upgrade it.**
+* **SCOPED TO `{c1, c7, sc2}` FOR THE MEASURED HALF.** `c8` and `c8L` supply no
+  `F` (§16.78.7, rep dispersion to 52×). The ceiling of §16.79.1 is computable
+  anywhere the counters run; the cost table of §16.79.2 is not, and is claimed
+  at three cells.
+* **ρ IS UNSWEPT AND ITS DERIVATIVE'S SIGN IS ALL THAT IS CLAIMED.** §16.79.4.
+* **`λ` IS STILL UNMEASURED.** §16.79.3 step 4.
+* **THE DISSENT IS NOT RESOLVED HERE.** §16.79.4's `+0.045` stands on the
+  record until item 4's battery scores it.
+
+**Nothing in this section flips a default, ships a law, wires a consumer on any
+default path, edits an engine crate, or scores any clause of any
+pre-registration.**
+
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
