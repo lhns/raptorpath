@@ -1,0 +1,25 @@
+SENTINEL-WRITABLE /home/vibe/qrefresh/DONE-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/FAILED-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/DONE-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/FAILED-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/DONE-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/FAILED-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/qrefresh/all-era.txt (probed as vibe, write+unlink)
+SENTINEL-PROOF-COMPLETE 2026-08-21T15:40:20Z user=vibe dir=/home/vibe/qrefresh
+QREF-ALL seeds: 42 7
+QREF-ALL grid: cell=c1 reps_per_seed=2 reps_total=4
+QREF-ALL grid: cell=c7 reps_per_seed=4 reps_total=8
+QREF-ALL grid: cell=sc2 reps_per_seed=4 reps_total=8
+QREF-ALL invoke seed=42 cell=c1 reps=2 2026-08-21T15:40:20Z
+QREFRESH-BATTERY-DONE-42
+QREF-ALL invoke seed=42 cell=c7 reps=4 2026-08-21T15:44:36Z
+QREFRESH-BATTERY-DONE-42
+QREF-ALL invoke seed=42 cell=sc2 reps=4 2026-08-21T16:01:23Z
+QREFRESH-BATTERY-DONE-42
+QREF-ALL invoke seed=7 cell=c1 reps=2 2026-08-21T16:12:47Z
+QREFRESH-BATTERY-DONE-7
+QREF-ALL invoke seed=7 cell=c7 reps=4 2026-08-21T16:17:02Z
+QREFRESH-BATTERY-DONE-7
+QREF-ALL invoke seed=7 cell=sc2 reps=4 2026-08-21T16:45:20Z
+QREFRESH-BATTERY-DONE-7
+QREF-ALL-DONE
