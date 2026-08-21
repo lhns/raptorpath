@@ -44331,3 +44331,273 @@ wire any consumer to `[SUCC]`. The instrument's own test forbids `receiver.rs`
 from so much as calling `crossing_us`, `orig_frac` or `.quantile(` — **no law
 may read this gauge.** The derivation this pass hands off to is FORMULA-FIRST,
 in the paper, and is the NEXT step of the spine, not this one.
+
+## THE SUCCESSOR-ARRIVAL PASS — THE SCORED RESULT (2026-08-21, `feat/succ-arrival`) — **THE PRE-REGISTERED ANCHOR DOES NOT EXIST. THERE IS NO CROSSING POINT AT 4 OF 5 CELLS: THE ORIGINAL LEADS AT EVERY HORIZON, AND 97.86 % OF 374,120 RESOLVED HOLES CLOSED BY THEIR OWN ORIGINAL RATHER THAN BY A REPAIR.** The distribution the fire-cause pass named is now measured; the reading it was expected to yield is REFUTED, and what replaces it is named. 15 invocations, one binary, five cells, three reps, seed 42, one shipped arm, **0 aborts, 0 VOID, `rc = 0` at 15/15, W1–W6 clean at 15/15.** Scored against "THE SUCCESSOR-ARRIVAL PASS — PRE-REGISTRATION" and against nothing else. **Nothing here flips a default, adds a gate, edits an engine law, wires a consumer, derives a formula, or touches a clock.**
+
+Binary `sha256 ff6c533197d0fb38a6226fc7ee36b36df327fd710020b0664fa05a9f022ad691`
+(commits `1064e8d` instrument + `f497bdc` pre-registration, built fresh on the
+VM from a CRLF-repaired tree — 187 script files repaired, 0 remaining, verified
+by a second scan rather than by the repair's own exit code). VM 10.1.5.16, lock
+held **07:55:54Z–08:12:20Z**, taken with the box verified QUIET (0 rp processes,
+0 rp namespaces, load 0.00) and released with it verified clean. Ledger
+`/home/vibe/succ/succ-s42.log`, witness JSONL `succ-witness-s42.jsonl`, report
+`succ-report.txt`, artifacts `succ-artifacts.tar.gz`.
+
+### 1. THE PASS EXECUTED, AND THE ROUTING GATE HELD
+
+`rows = 15, live = 15, void = 0.` Every invocation produced a distribution. W4
+(`over = 0`) held at 15/15 — **no declared resource bound bound**, so no
+quantile here is computed over a subset nobody can size. W6 held at both
+endpoints on all 15: `RWM_QUANTILE_CLOCKS=0` (the clock DISARMED),
+`RWM_SUCC_DUMP=0` (the pass did not pay for the dump), every contamination gate
+0, `RWM_DIAG=1 RWM_FDIAG=1`.
+
+**W5, THE ROUTING GATE, HELD AT 12 OF 12 LOSSY ROWS** — and it is worth stating
+what it bought. Three counters, bumped by different code at different events:
+`[RFA]` classifies ARRIVALS, `[FCAUSE]` classifies FIRES, `[SUCC]` times HOLES.
+**Pooled on this binary: `[FCAUSE] gap_data = 54,115 / 55,094 = 0.9822`** — the
+fire-cause pass's central finding REPLICATES on a different binary, a different
+commit and a different pass, without being asked to. So the distribution below
+is measured on rows where the fires it is supposed to govern demonstrably
+happened, and `det` is not a denominator this gauge invented.
+
+**THE ACCOUNTING IDENTITY HOLDS POOLED AND AT EVERY ROW:**
+
+```
+  det 376,084  =  orig 366,106 + rep 8,014 + aban 44 + open 1,920 + over 0
+```
+
+### 2. READING (i) — THE DISTRIBUTION
+
+Time from hole DETECTION to resolution. Quantiles are the MEDIAN ACROSS REPS
+with the rep-to-rep `[min–max]` beside them, per §5 of the pre-registration —
+**no central value appears here without its own dispersion.** Counts summed.
+
+**outcome `orig` — the seq's own source symbol arrived**
+
+| cell | n | p50 | p90 | p99 | mx |
+|---|---|---|---|---|---|
+| c1 | 2 237 | **24.6** [18.4–26.6] | 65.5 [57.3–106.5] | 98.3 [98.3–163.8] | 102.3 |
+| sc2 | 5 613 | **98.3** [98.3–98.3] | 114.7 [106.5–114.7] | 196.6 [180.2–213.0] | 224.8 |
+| c7 | 269 035 | **30.7** [20.5–30.7] | 65.5 [53.2–65.5] | 114.7 [98.3–131.1] | 273.2 |
+| c8 | 11 492 | **98.3** [41.0–131.1] | 294.9 [245.8–360.4] | 360.4 [327.7–589.8] | 458.1 |
+| c8L | 77 729 | **163.8** [131.1–491.5] | 491.5 [360.4–**18 874**] | 2 621 [852–**23 069**] | 3 188 |
+
+**outcome `rep` — the decoder reconstructed it from coded repair**
+
+| cell | n | p50 | p90 | p99 | mx |
+|---|---|---|---|---|---|
+| c1 | 11 | **UNSCOREABLE-thin** | thin | thin | 68.7 |
+| sc2 | 402 | 106.5 [98.3–106.5] | 114.7 [114.7–131.1] | 213.0 [196.6–213.0] | 221.9 |
+| c7 | 3 264 | 53.2 [41.0–61.4] | 114.7 [81.9–147.5] | 213.0 [180.2–229.4] | 254.6 |
+| c8 | 318 | 131.1 [41.0–163.8] | 262.1 [245.8–589.8] | 426.0 [360.4–589.8] | 458.1 |
+| c8L | 4 019 | 245.8 [196.6–1 573] | 1 049 [524–**20 972**] | 3 146 [1 180–**23 069**] | 3 188 |
+
+(all ms; `mx` is the EXACT maximum, every quantile is a bucket LOWER edge and
+so reads at or below it — the instrument's declared ≤ 9.05 % underestimate.)
+
+**outcome `aban` is THIN or ABSENT at every cell** (0, 0, 8, 1, 35) and is
+UNSCOREABLE everywhere. See §7 — it was predicted EMPTY and is not.
+
+**`c1` IS A READING AND NOT A BLANK.** The lossless cell detected **2 257
+holes** and repaired essentially none of them (`rep_n = 11`). Those holes are
+PURE REORDERING, and they are the FASTEST distribution in the table
+(p50 = 24.6 ms). At a cell with no loss the successor-arrival distribution is
+not empty — it is the reorder distribution, and it is what a waiting time
+positioned at any cell would be paying for at the clean end of the dial.
+
+### 3. READING (ii) — THE FALSE-REPAIR BOUNDARY. **THE CROSSING POINT DOES NOT EXIST.**
+
+| cell | res | `orig_frac` | `cross` |
+|---|---|---|---|
+| c1 | 2 248 | 0.9954 [0.9917–0.9974] | THIN (o=2237, r=11) |
+| sc2 | 6 015 | 0.9346 [0.9233–0.9400] | **5.6 ms** [4.6–10.2] — **UNSTABLE 2.22×** |
+| c7 | 272 299 | 0.9884 [0.9866–0.9892] | **`-` at 3/3 reps** |
+| c8 | 11 810 | 0.9716 [0.9399–0.9836] | **`-` at 3/3 reps** |
+| c8L | 81 748 | 0.9717 [0.8801–0.9748] | **`-` at 3/3 reps** |
+
+**POOLED: `orig_frac` = 366,106 / 374,120 = 0.97858.**
+
+> **VERDICT: the anchor this pass pre-registered as the derived waiting time's
+> natural one DOES NOT EXIST ON THIS ENGINE.** The crossing point is ABSENT at
+> three cells across all nine of their reps, UNSCOREABLE-thin at a fourth, and
+> present at exactly one — where it is 5.6 ms and fails the stability bar. `-`
+> was pre-declared a LEGAL OUTCOME reading *"the original leads at every
+> horizon"*, and that is what 9 of 15 rows returned: **at no elapsed time does
+> the count of holes closed by a repair overtake the count closed by their own
+> original.**
+
+**THE MECHANISM, READ OFF THE SAME TABLE RATHER THAN INFERRED.** `orig_frac` is
+0.93–0.995 at every cell, so `rep` never has the population to overtake `orig`
+at any horizon — the crossing was arithmetically unreachable at four cells
+before timing entered into it. **97.86 % of the holes this engine resolves,
+it resolves by the original arriving.** That is the false-repair boundary in
+the large, and it is a far blunter statement than a crossing time: a repair
+emitted for a hole on this engine is, to first order, a repair for a hole whose
+original was coming anyway.
+
+**AND IT IS THE SAME NUMBER `[RFA]` HAS BEEN REPORTING FROM THE OTHER SIDE.**
+The realized false-repair fraction was already measured high; this pass says
+WHY with a timing decomposition rather than an arrival classification, and adds
+the part `[RFA]` structurally cannot see — that there is no waiting time that
+would fix it, because there is no horizon at which repairs start winning.
+
+### 4. READING (iii) — DIAL-DEPENDENCE: **THE FORMULA MUST CARRY THE DIAL**
+
+Pre-stated rule: cell-median `max/min > 2.0` ⇒ DIAL-DEPENDENT.
+
+| slot | verdict | max/min | cell medians (ms) |
+|---|---|---|---|
+| `orig` p50 | **DIAL-DEPENDENT** | **6.67** | c1 24.6, sc2 98.3, c7 30.7, c8 98.3, c8L 163.8 |
+| `rep` p50 | **DIAL-DEPENDENT** | **4.62** | sc2 106.5, c7 53.2, c8 131.1, c8L 245.8 |
+| `cross` | UNSCOREABLE | — | fewer than 2 scoreable cells (only sc2) |
+
+The rule was written to be decidable at 2.0 and the data came in at 6.67.
+**A constant waiting time is NOT licensed by this pass.** The quantity moves by
+nearly seven-fold across the measured cells, and it moves in the direction the
+cells' own conditions do: fastest at the clean single-path cell, slowest at the
+asymmetric-loss dual-path cell.
+
+### 5. READING (iv) — REP-TO-REP DISPERSION: **9 UNSTABLE SLOTS, AND THEY ARE NOT SPREAD EVENLY**
+
+Pre-stated bar: rep-to-rep `max/min > 2.0` ⇒ UNSTABLE.
+
+| cell | stable slots | UNSTABLE slots |
+|---|---|---|
+| c1 | 4/4 | — |
+| sc2 | 6/7 | `cross_us` **2.22×** |
+| c7 | 6/6 | — |
+| c8 | 3/6 | `orig_p50` **3.20×**, `rep_p50` **4.00×**, `rep_p90` **2.40×** |
+| c8L | 2/7 | `orig_p50` **3.75×**, `orig_p90` **52.36×**, `orig_p99` **27.08×**, `rep_p50` **8.00×**, `rep_p90` **40.00×** |
+
+**THE INSTABILITY IS LOCALIZED, AND THAT IS THE USEFUL FORM OF THE FINDING.**
+`c1` and `c7` — 10 of 10 slots stable — carry 271,272 of the 374,120 resolved
+holes. The two asymmetric-loss DUAL-PATH cells carry every catastrophic reading,
+up to **52×** between identical invocations at `c8L`. That is the σ-saga
+signature exactly: a central value that looked like a measurement and was a rep.
+**The bar caught it BEFORE a derivation was written against it, which is the
+entire reason the bar was pre-registered rather than discovered.**
+
+The tails are where it lives: `c8L`'s `orig_p90` reads 360 ms, 492 ms and
+18,874 ms across three identical runs. **No p90 or p99 at `c8` or `c8L` may be
+used as a derivation input from this pass.** Their p50s are borderline (3.2×,
+3.75×) and are also excluded. `c1`/`c7`/`sc2` medians are the estimates this
+pass can hand over.
+
+### 6. THE CONSTRAINT — GOODPUT, AND THE ONE ROW THAT MISSED
+
+| cell | median Mbit/s | band | in band |
+|---|---|---|---|
+| c1 | 192.9 | [147, 294] | 3/3 |
+| sc2 | 88.8 | [78, 92] | 3/3 |
+| c7 | 159.0 | [140, 180] | 3/3 |
+| c8 | 79.6 | [50, 100] | 3/3 |
+| c8L | 86.4 | [45, 95] | **2/3** |
+
+**14 of 15 rows in band. The miss is `c8L` rep 1 at 38.2 Mbit/s against a floor
+of 45 — BELOW the band, and the pre-registration called an out-of-band reading
+a DEFECT FINDING rather than a footnote, so it is scored as one.**
+
+**A LABELLED POST-HOC CONTROL WAS RUN TO BOUND IT, AND IS REPORTED SEPARATELY
+RATHER THAN POOLED** (three further `c8L` reps, tag `c8Lctl`, same binary, same
+lock): **89.6, 63.8, 89.5 Mbit/s — 3/3 IN BAND.** Pooled across six `c8L` reps
+the cell is 5/6 in band, spanning 38.2–93.5, with three readings in the top
+tenth of its own band. **There is no systematic depression**, and the same row
+that missed the band is the row carrying `c8L`'s 18.9 s / 23.1 s quantile tails
+— one run that stalled, showing up in both gauges at once.
+
+**WHAT IS NOT SETTLED, AND IT IS SAID PLAINLY.** A single out-of-band row cannot
+be told apart from a gauge cost by this pass, because **`[SUCC]` is fed on every
+arrival by design and there is no gate to turn it off** — the control that would
+settle it is a gauge-off BINARY, which does not exist. The evidence available
+bounds the claim and does not close it: 14/15 pooled, 5/6 at the cell, and the
+miss co-located with an independently-visible stall. **This is recorded as an
+open item, not as an acquittal.**
+
+### 7. PREDICTION SCORING — ONE REFUTED, AND IT IS REPORTED AS A RESULT
+
+| prediction | outcome |
+|---|---|
+| **PRED-1** `aban_n = 0` at every row | **REFUTED** |
+| **PRED-2** `over = 0` at every row | CONFIRMED 15/15 |
+| **PRED-3** W5 holds at all 12 lossy rows | CONFIRMED 12/12 |
+| **PRED-4** `c1` THIN or ABSENT on most slots | CONFIRMED where it matters — `rep` THIN (n=11), `cross` THIN; `orig` was NOT thin (n=2 237), which is §2's reorder reading |
+
+**PRED-1 IS REFUTED AND THE PRE-REGISTRATION COMMITTED TO REPORTING THAT AS A
+FINDING ABOUT THE ENGINE RATHER THAN SMOOTHING IT.** Under the reliable window
+`ReorderBuffer::new_reliable`'s `drain_expired` returns before touching
+`next_deliver_seq`, so hold-expiry cannot advance the in-order frontier past a
+hole — and yet the frontier advanced past **44 open holes**: 8 at `c7`, 1 at
+`c8`, 35 at `c8L`, all three of them dual-path cells, zero at both single-path
+cells. **It REPLICATES**: the labelled `c8L` control saw 22, 77 and 15 more.
+
+**BOUNDED**: 44 of 376,084 detected holes = **0.012 %**, and the class is
+UNSCOREABLE-thin at every cell, so no reading in §2–§5 rests on it. Their
+durations are long (66 ms at `c7`, up to 2 584 ms at `c8L`), so they are genuine
+long-lived holes and not a zero-duration bookkeeping artifact.
+
+**NOT EXPLAINED, AND NOT GUESSED AT.** This pass has no seq-level instrument and
+cannot say which frontier advance produced them. It is dual-path-only, which is
+the informative half of the fact. **The next test is named rather than left
+open: a seq-tagged record of each abandonment (the `[SUCCDUMP]` path extended
+with the seq and the frontier that passed it) on a `c8L` invocation, which is a
+one-cell diagnostic and not a battery.** Inventing a mechanism for 44 events
+from a table that cannot see one is the exact failure this repository's
+discipline exists to prevent.
+
+### 8. THE HANDOFF — WHAT THE FORMULA-FIRST DERIVATION GETS, AND WHAT IT MUST NOT USE
+
+The next step of the spine is the re-derived clock's formula-first section
+(ADR-0070: the formula and its derivation IN THE PAPER, before the code).
+**This section deliberately does not write that formula.** It hands over:
+
+**THE MEASURED QUANTITY.** `P(successor arrives by t | hole outstanding)`,
+timed from DETECTION — the same event `gap_data` fires on — at the receiver,
+per hole, decomposed into three disjoint outcomes with the accounting identity
+holding at every row. **It has now been measured on this engine. It had not
+been before.**
+
+**THE ANCHOR IT WAS PROMISED — AND ITS REFUTATION.** The pre-registration named
+the crossing point as *"the derived waiting time's natural anchor"* and stated
+the reading in advance. **The data says there is no crossing point at 4 of 5
+cells.** A derivation may not position a waiting time on it. **This is the
+pass's most load-bearing output and it is a negative one.**
+
+**WHAT REPLACES IT.** The `orig` distribution itself, which IS measured, IS
+dial-dependent (6.67×), and at `c1`/`c7`/`sc2` IS stable. Together with
+`orig_frac = 0.9786` pooled, the shape the derivation must reckon with is:
+*a hole on this engine is overwhelmingly closed by its own original, on a
+timescale of 25–164 ms at the median that varies nearly seven-fold with the
+cell.*
+
+**THE STABILITY OF THE ESTIMATE, REPORTED THIS PASS AND NOT AFTER THE NEXT ONE
+FAILS** (the σ saga's lesson, which is why §5 exists at all):
+
+* **USABLE** — `c1`, `c7`, `sc2` medians: 10 of 10 slots at `c1`/`c7` stable,
+  6 of 7 at `sc2`. These carry 271 272 of 374 120 resolved holes.
+* **NOT USABLE** — every `c8` and `c8L` quantile, p50 included. Up to **52×**
+  between identical invocations. A derivation built on these would be built on
+  a rep.
+* **NOT USABLE** — the one measured crossing point (`sc2`, 2.22×).
+
+**WHAT REMAINS UNMEASURED, AND IT IS NOT NOTHING.**
+
+1. **Creation → detection.** Every duration here excludes it; it is not
+   receiver-observable. These are lower bounds on hole AGE and exact measures
+   of the conditional the fire site sees. A derivation that needs age needs a
+   different instrument.
+2. **Reorder vs retransmit.** `orig` cannot separate a late original from a
+   resent one — the wire carries no retransmit bit. So `orig_frac` bounds the
+   false-repair fraction from one side and does not decompose it.
+3. **Right-censoring.** `open = 1 920` (0.51 % of detected holes) were still
+   outstanding at the last line, because the harness SIGKILLs the receiver.
+   Every quantile here is conditioned on resolution within the run.
+4. **One seed.** Five cells × three reps stood in for a second seed, and §5 is
+   the reason that substitution is checkable rather than asserted.
+5. **The 44 abandonments** (§7), and the goodput row (§6).
+
+**Nothing here flips a default. No waiting time is positioned, no clock is
+armed, no consumer is wired. The instrument's own test forbids `receiver.rs`
+from calling `crossing_us`, `orig_frac` or `.quantile(` — no law may read this
+gauge. The derivation is the next step, in the paper, and it now has a measured
+distribution to be written against instead of a named one.**
