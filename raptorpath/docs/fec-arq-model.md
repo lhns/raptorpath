@@ -16097,6 +16097,693 @@ premise, computable from the same rows that score `F1`, and it costs nothing.**
 **Nothing in this section flips a default, ships a law, wires a consumer on any
 default path, or scores any clause of any pre-registration.**
 
+### 16.77 The HOLD-DOWN clock: the sender waits before answering a gap report, and the level it waits to is derived from the measured cost primitives with no free constant — the first instrument this tree has ever pointed at the path that decides 99 % of its recovery fires (2026-08-21, `feat/holddown-clock`, **PAPER + EXPERIMENT ARM** — gate `RWM_HOLDDOWN_Q`, absent by default; no default flipped, no law shipped)
+
+#### 16.77.0 Verdict first — the expression
+
+Three passes have now measured the recovery plane and the third one moved the
+question. §16.69's measurand is refuted with a count: **0.59 % of 107 597
+classified fires came from a timer, and 98.99 % came from the sender answering
+a receiver gap report.** Every clock this tree has written — the shipped
+`[25,100] ms` clamp, RACK's reordering window, Cantelli's `W(α)`, §16.76's
+`W_q(α)` — sets the *timer*. **The construction below sets the other one.**
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                      │
+   │   On a reported hole, EMIT REPAIR only once the hole has been        │
+   │   outstanding for at least                                           │
+   │                                                                      │
+   │       T(q)  =  W_q( 1 − q )   evaluated on the HOLE-RESOLUTION       │
+   │                               stream instead of the ack stream       │
+   │                                                                      │
+   │            =  Y_( N − K + 1 ) ,   N = max( ⌈K/(1−q)⌉ , 2K ) ,  K = 10│
+   │                                                                      │
+   │   and the LEVEL q is fixed by the measured cost primitives:          │
+   │                                                                      │
+   │       s( q* )  =  w · orig_frac · d                                  │
+   │                   ─────────────────────────────                      │
+   │                   δ · (1 − orig_frac) · P_arq(ρ, r)                  │
+   │                                                                      │
+   │       s(q) ≡ dF⁻¹(q)/dq        the quantile density, MEASURED on     │
+   │                                the same window that evaluates T      │
+   │       w    =  1 + h_marginal/T_pay  =  1.011                         │
+   │                                                                      │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+`Y_(i)` are the sender's own observed hole-resolution-by-original times.
+**There is no new law**: `T` is §16.76's order statistic, at §16.76's `K`, under
+§16.76's window law and §16.76's unavailability rule, read off a different
+sample stream. **There is no free constant**: `w` is code-exact, `orig_frac`
+and `d` are measured at all five cells, `δ` is contract-declared at three named
+points, `P_arq(ρ, r)` is §16.74.2's derived retention term, and `s(q)` is read
+from the window rather than assumed. The one residual choice — the multiplier
+`λ` of §16.74.0 — is carried forward unresolved and is stated in §16.77.4 as a
+**declared dial with its named points**, where it turns out to be decisive
+rather than a 3 % detail.
+
+#### 16.77.1 Why the decision is a hold-down and not a clock, in the fire-cause pass's own counts
+
+The fire-cause pass classified every recovery fire that reached the wire, at
+five cells, two arms, three reps, 30 invocations, `other = 0` and `unattr = 0`
+at 30/30:
+
+| class | pooled `n` | fraction |
+|---|---|---|
+| `timer` — the sender's own `W` expired | **636** | **0.0059** |
+| `gap_data` — the sender answering a receiver gap report | **106 508** | **0.9899** |
+| `gap_refresh` — the receiver re-reporting an unresolved hole | 453 | 0.0042 |
+| `other` | **0** | 0 |
+
+`timer_frac` is below the pre-registered `0.5` bar at **10 of 10 cell-arms**,
+with a **median of 0.0011** and a maximum anywhere of 0.1391. The classification
+replicates on an independent binary in the successor-arrival pass at
+`gap_data = 54 115 / 55 094 = 0.9822`.
+
+**The consequence is that every recovery-clock battery in this tree has been
+adjusting a deadline that decides one fire in 170.** That is the mechanical
+content of `fa ⊥ W`: the quantile-native sweep moved the realized `W` p50 by
+2.1× at `c1` across a 200× span of the contract α, with the arms separated and
+witnessed at 480/480, **and the realized false-alarm rate did not follow, at
+five of five cells** — 0.0945 to 0.1053 at `c7` while α moved 200×.
+
+**On the gap-report path the shipped machine has no waiting time at all.** The
+sender's response to a reported hole is a per-seq retransmit cooldown and a
+budget, and then the wire. Its hold-down is `T = 0` identically, i.e. `q = 0`.
+**This section's whole content is that `q = 0` is not the answer, and it is not
+the answer for a reason that is measured rather than argued.**
+
+#### 16.77.2 The cost, per reported hole, and the minimisation done explicitly
+
+**The unit is one reported hole**, not one source symbol, because that is the
+unit the decision is taken on. Let `F` be the distribution of the time from a
+hole being first reported to that hole being resolved **by its own original**,
+and `orig_frac` the fraction of resolved holes that close that way. The
+successor-arrival pass measured both.
+
+Holding down for `T` has exactly two consequences and they point in opposite
+directions:
+
+* **It suppresses waste.** A hole whose original arrives within `T` is resolved
+  before any repair is emitted. That is `orig_frac · F(T)` of reported holes,
+  and each suppression saves one repair symbol on the wire — `1 + h_marginal/T_pay`
+  source symbols, `h_marginal = 14 B` code-exact against `T_pay = 1200 B`, so
+  **`w = 1.011`**. A repair for a hole whose original was coming anyway is the
+  false repair, and `orig_frac` is what makes the term large.
+* **It delays every true loss.** The `(1 − orig_frac)` of holes that really were
+  lost each wait an extra `T` before their repair is even emitted. Copa prices a
+  fractional delay increase at `δ` per unit of `Δd/d`, and the baseline the
+  increase is taken against is the delay a true loss actually suffers on this
+  machine — the `[FDIAG]` `SOURCE`/ARQ-class `d`, **0.78–9.04 ms**, measured at
+  all five cells on the plain window.
+
+```text
+   C(T; δ, ρ, r)  =  w · orig_frac · (1 − F(T))                        [W]
+                  +  δ · (1 − orig_frac) · P_arq(ρ, r) · T / d          [L]
+```
+
+**THE `d` NAME COLLISION IS RESOLVED HERE IN THE OPPOSITE DIRECTION FROM
+§16.74.4, AND THAT IS DELIBERATE.** §16.74.4 kept `d = srtt`, Copa's *normaliser*,
+and recorded the measured *repair delivery delay* as a 26× name collision it
+declined to substitute. **In [L] the two are not rivals: the quantity `T` is a
+fractional increase OF is the resolution delay of the object being delayed, and
+that is the measured `d`.** Substituting `srtt` there would price a delay
+increase against a baseline the delayed object does not have. The choice is
+stated, its direction is stated — `srtt` is 50–77 ms against `d` of 0.78–9.04 ms,
+so using `srtt` would make [L] **8–99× cheaper** and push `q*` even higher — and
+the conclusions of §16.77.3 are therefore **conservative under the alternative
+reading**. Nothing in this section depends on the collision being resolved the
+way it is; it depends only on the direction, which is signed.
+
+**Minimising.** Differentiating in `T` and writing `f = F′`:
+
+```text
+   dC/dT  =  − w · orig_frac · f(T)  +  δ · (1 − orig_frac) · P_arq / d  =  0
+```
+
+which is a **density condition, not a level**. Re-parameterise by the level
+`q = F(T)`, so `T = F⁻¹(q)` and `dT/dq = 1/f = s(q)`, the quantile density
+(the sparsity function). The same stationarity reads:
+
+```text
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │   s(q*)   =   w · orig_frac · d  /  ( δ · (1 − orig_frac) · P_arq )   │
+  │                                                                       │
+  │   both sides in SECONDS; both sides MEASURED                          │
+  └───────────────────────────────────────────────────────────────────────┘
+```
+
+**AND THAT IS WHY THE LEVEL IS DERIVABLE WHERE A TIME IS NOT.** The
+successor-arrival pass ruled the orig distribution **DIAL-DEPENDENT at 6.67×**
+(cell-median `p50` from 24.6 ms at `c1` to 163.8 ms at `c8L`) and said in terms
+that *"a constant waiting time is NOT licensed by this pass."* A constant
+*level* is licensed, because the level is defined against the path's own
+measured distribution — and the right-hand side above is a ratio of cost
+primitives, which is exactly the object the dial-dependence does not touch.
+`s(q)` is read from the same sorted window that evaluates `T`, as the scaled
+difference of two adjacent order statistics, so **the estimator is
+self-measuring and no distributional shape is assumed anywhere.**
+
+**Provenance, one line per symbol.**
+
+| symbol | provenance |
+|---|---|
+| `Y_(i)` | **MEASURED, SENDER-SIDE** — time from a hole's first gap report to its retirement without a repair having flown for it |
+| `w = 1 + h_marginal/T_pay` | **CODE-EXACT** — `h_marginal = 14 B` (`REPAIR_HEADER_SIZE`, `fec/generation.rs:44`, pinned by `mtu_blackhole_wedge.rs:232`), `T_pay = 1200 B` (`net/mod.rs:161`) ⇒ **1.011**, wire-confirmed |
+| `orig_frac` | **MEASURED** — `[SUCC]`, 366 106 / 374 120 resolved holes = **0.97858** pooled; per cell 0.9954 / 0.9884 / 0.9716 / 0.9717 / 0.9346 |
+| `d` | **MEASURED** — `[FDIAG]` `SOURCE`/ARQ class, plain window: **1.048 / 0.777 / 3.298 / 9.038 / 4.370 ms**; UPPER BOUND where `holes_max > 0` |
+| `δ` | **CONTRACT-DECLARED** — `COPA_DELTA/ζ(hint)`; named points 50 / 0.5 / 0.005. Not measured and not measurable |
+| `P_arq(ρ, r)` | **DERIVED** — §16.74.2's `1 − (1−ρ)/(ε̂·(1−P_fec(r)))`, from §6.3's own inversion. No constant |
+| `s(q)` | **MEASURED ONLINE** — adjacent order statistics of the same window. No shape assumed |
+| `K = 10`, `N(a) = max(⌈K/a⌉, 2K)` | **CITED / DERIVED** — §16.76.3 verbatim, carried over unchanged |
+| `λ` | **DECLARED DIAL** — §16.74.0's multiplier, still unsupplied. §16.77.4 |
+
+**`ν` HAS VANISHED AND ITS ABSENCE IS A RESULT.** §16.73's `L_react` and
+§16.74's [B] both carry `ν`, fires per delivered symbol, because their waste
+term is per-fire and their latency term is per-symbol. Here both terms are per
+reported hole, so the fire rate **divides out exactly**. The primitive whose
+measurement moved `α_d` by 2.73× does not enter this frame at all, and §16.73.5's
+"monotone in `ν`" shape check has **no counterpart here**. That is stated so its
+absence is a finding rather than an omission.
+
+#### 16.77.3 The level EVALUATED at the measured primitives, and it is at the top of the distribution
+
+Write `R(δ, ρ, r) ≡ w · orig_frac · d / (δ · (1 − orig_frac) · P_arq)`, the
+required quantile density. At `ρ = 1` (so `P_arq = 1`) the cell-wise constant is
+`R₀ ≡ w · orig_frac · d / (1 − orig_frac)`, and `R = R₀/δ`:
+
+| cell | `orig_frac` | `d` (ms) | **`R₀`** (ms) | `R` at Bulk `δ=0.005` | `R` at Auto `δ=0.5` | `R` at Realtime `δ=50` |
+|---|---|---|---|---|---|---|
+| `c1` | 0.9954 | 1.048 | **229.3** | 45.85 s | 458.5 ms | **4.59 ms** |
+| `c7` | 0.9884 | 0.777 | **66.93** | 13.39 s | 133.9 ms | **1.34 ms** |
+| `c8` | 0.9716 | 3.298 | **114.1** | 22.81 s | 228.1 ms | **2.28 ms** |
+| `c8L` | 0.9717 | 9.038 | **313.7** | 62.75 s | 627.5 ms | **6.27 ms** |
+| `sc2` | 0.9346 | 4.370 | **63.14** | 12.63 s | 126.3 ms | **1.26 ms** |
+
+Against it, the quantile density the measured orig distribution actually
+supplies, as bin slopes of the `[SUCC]` histogram. **Every quantile is a bucket
+LOWER edge and underestimates by ≤ 9.05 %; `mx` is the sample maximum, at level
+`1 − 1/n`, not 1.** Both are declared and both bias `s` **downward**, i.e.
+toward a *lower* `q*` — the conservative direction for everything claimed below.
+
+| cell | `s` on `[0.50, 0.90]` | `s` on `[0.90, 0.99]` | `s` on `[0.99, mx]` |
+|---|---|---|---|
+| `c1` | 102 ms | 364 ms | **400 ms** |
+| `c7` | 87 ms | 547 ms | **15 850 ms** |
+| `c8` | 492 ms | 728 ms | **9 770 ms** |
+| `c8L` | 819 ms | 23 661 ms | **56 700 ms** |
+| `sc2` | 41 ms | 910 ms | **2 820 ms** |
+
+**Solving `s(q*) = R` cell by cell:**
+
+| cell | **Bulk, δ = 0.005** | **Auto, δ = 0.5** | **Realtime, δ = 50** |
+|---|---|---|---|
+| `c1` | `R` **115× above** the largest `s` ⇒ **CORNER, `q* → 1`** | `R = 458` vs `s_max = 400` ⇒ CORNER (1.15×) | `q* → 0` |
+| `c7` | `q* ∈ (0.99, 1)` — the only interior optimum at Bulk | `q* ≈ 0.90` | `q* → 0` |
+| `c8` | `R` 2.3× above `s_max` ⇒ **CORNER** | `q* < 0.50` | `q* → 0` |
+| `c8L` | `R` 1.11× above `s_max` ⇒ **CORNER** | `q* < 0.50` | `q* → 0` |
+| `sc2` | `R` 4.5× above `s_max` ⇒ **CORNER** | `q* ≈ 0.90` | `q* → 0` |
+
+**THREE READINGS, AND THE THIRD IS THE SECTION'S PRINCIPAL FINDING.**
+
+1. **The δ dial works, over four decades, with no threshold in it.** `q*` runs
+   from the corner at Bulk, through the interior at Auto, to zero at Realtime,
+   continuously, on ONE expression. The named points are points on the dial and
+   nothing selects a code path anywhere.
+
+2. **At Realtime the derived optimum IS the shipped behaviour.** `R` is
+   1.3–6.3 ms against measured quantile densities of 41–819 ms in the body of
+   every distribution, so `q* → 0`: fire on the report, immediately, at every
+   cell. **The machine's gap-report response is optimal at `δ = 50`.**
+
+3. **And every battery in this tree runs at `δ = 0.005`.** `tools/l1` invokes
+   `perf_rwm_c.sh … bulk …` unconditionally; §16.73.4 records the same operating
+   point from the other side. **At the operating point the entire measurement
+   programme has been running, the derived optimum is at or above the 99th
+   percentile of the orig distribution at five of five cells, and the machine is
+   at zero.** The gap between the shipped `q = 0` and the derived `q* ≳ 0.99` is
+   the whole content of the sweep §16.77.8 pre-registers.
+
+**What that gap is worth, as a number rather than a direction.** The waste term
+falls as `(1 − orig_frac·F(T))` repairs emitted per reported hole. At `q = 0.99`
+and the pooled `orig_frac = 0.97858`, the frame predicts
+
+```text
+   repairs emitted per detected hole   =  1 − 0.97858·0.99  =  0.0313
+```
+
+i.e. **a 32× reduction in repair emissions on the 99 % path**, bought with
+`(1 − orig_frac) = 2.1 %` of holes each waiting `F⁻¹(0.99)`. That is a
+quantitative prediction, it is falsifiable to within its own sampling noise, and
+it is the reason this arm is worth a battery.
+
+#### 16.77.4 The δ allowance, `λ`, and why it is DECISIVE here where §16.74 found it worth 3 %
+
+§16.74.0's [D] term charges the overrun of the δ leg's declared latency
+allowance `D(δ) = min(b(δ)·RTprop, 2·RTprop)`, `b(δ) = 2^(−½·log₁₀(δ/0.5))`.
+It carries the multiplier `λ`, *"the ONE quantity in the model that measurement
+has not supplied."* It carries over verbatim: the object being charged is the
+added latency `T`, and the allowance is stated in the same units.
+
+```text
+   C(T; δ, ρ, r, λ)  =  w·orig_frac·(1 − F(T))                          [W]
+                     +  δ · (1−orig_frac) · P_arq(ρ,r) · T / d           [L]
+                     +  λ · (1−orig_frac) · P_arq(ρ,r) · max(0, T − D(δ)) / D(δ)   [D]
+```
+
+**Every term is always computed. There is no branch, no threshold on δ or ρ, and
+no hint match.** The two limits are §16.74.3's, mirrored, because `q` is patience
+where `α` was impatience:
+
+```text
+   λ → 0   :   q*  =  q_d(δ, ρ, r)          the Copa-marginal level, §16.77.3
+   λ → ∞   :   q*  =  min( q_d(δ, ρ, r) , F(D(δ)) )
+```
+
+`max(α_d, α_b)` becomes `min(q_d, q_b)`; **one formula, both terms always
+computed, continuous in every dial**, the shape the no-mode-switch invariant
+requires. And route (b)'s distinctive ρ-blindness reappears in the same place:
+wherever `F(D(δ))` binds, `P_arq` has divided out and the recovery plane is
+parameterised by one leg of a three-leg triangle. That remains a defect of the
+route, not of the contract.
+
+**AND HERE THE TWO LIMITS ARE NOT 3 % APART. THEY ARE AT OPPOSITE ENDS OF THE
+DOMAIN.** `D(0.005) = 2·RTprop`, which is 4 ms at `c1`, 20 ms at `c7`/`sc2` and
+76 ms at `c8`/`c8L`. Against the measured orig `p50` of 24.6 / 30.7 / 98.3 /
+163.8 / 98.3 ms:
+
+| cell | `D(δ=0.005)` = `2·RTprop` | orig `p50` | `q_b = F(D)` | `q_d` (§16.77.3) |
+|---|---|---|---|---|
+| `c1` | 4 ms | 24.6 ms | **< 0.5** | **→ 1** |
+| `c7` | 20 ms | 30.7 ms | **< 0.5** | (0.99, 1) |
+| `c8` | 76 ms | 98.3 ms | **< 0.5** | **→ 1** |
+| `c8L` | 76 ms | 163.8 ms | **< 0.5** | **→ 1** |
+| `sc2` | 20 ms | 98.3 ms | **≪ 0.5** | **→ 1** |
+
+**At five of five cells the δ allowance is exhausted before the median original
+has arrived.** So `λ → ∞` says "hold down below the median or not at all" and
+`λ → 0` says "hold down past the 99th percentile", at every cell, at the
+operating point. §16.74.4's celebrated 0.29–6.46× divergence was a factor; this
+is the whole domain.
+
+**THAT MAKES λ MEASURABLE FOR THE FIRST TIME, AND IT IS THE CHEAPEST THING THIS
+SWEEP BUYS.** The arm grid spans `q ∈ [0.52, 0.99]`, which straddles both
+answers. A cost curve that improves monotonically to the top of the grid puts
+the machine near `λ = 0`; a curve that turns over below `q = 0.52` puts it near
+`λ = ∞`; a turning point inside the grid locates `λ` between them. **No number
+is assigned to `λ` here** — assigning one would be the fitted constant the
+ruling's clause 3 forbids — and §16.77.8 scores the shape rather than the value.
+
+#### 16.77.5 The relation to ρ and the triangle: late repair at ρ = 1
+
+The ρ leg enters through §16.74.2's `P_arq` and through nothing else, so the
+triangle composes here rather than being asserted to.
+
+```text
+   P_arq(ρ, r)  =  1 − (1 − ρ) / ( ε̂·(1 − P_fec(r)) )
+   ρ_floor(r)   =  1 − ε̂·(1 − P_fec(r))
+```
+
+`P_arq` is the probability that a repair the sender is about to emit is **still
+owed** to the receiver rather than already released by the retention contract.
+It multiplies [L] and [D] — the legs that price *delay* — and it does **not**
+multiply [W], because a wasted repair is wasted on the wire whether or not the
+contract still wanted it. Three derived consequences:
+
+* **At ρ = 1 the delay leg is at full price and the hold-down is at its LEAST
+  patient.** `P_arq(1, r) = 1`, `R` is at its minimum, `q*` at its minimum.
+  Late repair has its maximum value exactly where the contract owes every one of
+  them — which is the `T_cut = ∞` limit of §15.7 recovered as a price rather than
+  as a policy.
+* **As ρ falls, `P_arq` falls LINEARLY in `(1 − ρ)` with slope `−1/(ε̂(1−P_fec))`,
+  `R` rises, and `q*` rises.** A contract that owes fewer repairs holds down
+  longer. That is the same sign §16.74.6's P3 predicts for `W*` and it is
+  obtained from the same inversion, so the two frames agree on the ρ leg's
+  direction without either being fitted to the other.
+* **At `ρ = ρ_floor` the delay leg vanishes identically and `q* = 1`.** `R → ∞`
+  and the sender never repairs on a report — correct, because below the floor the
+  contract asks for less than FEC alone already delivers. **A DERIVED corner, not
+  a clamped one**, reached by `P_arq → 0` and not by any threshold. The
+  `max(0, ·)` that guards it is §8.4's own construction and selects no code path.
+
+**And §16.74.2's uncomfortable consequence carries over unchanged and must be
+restated, because it governs how this frame may be tested.** The whole dynamic
+range of the ρ leg lies in `ρ ∈ [1 − ε̂(1−P_fec), 1]` — roughly **one per cent
+wide at `c8` and 0.01 % wide at `c1`.** Any battery sweeping ρ at 0.9 / 0.95 /
+0.99 sweeps entirely below `ρ_floor` at four of five cells and measures a flat
+curve for a structural reason. **The sweep §16.77.8 pre-registers holds ρ = 1
+and claims nothing about the ρ leg.** The ρ leg of this frame is stated, derived,
+and left untested, and that is said here rather than discovered later.
+
+**The r leg enters through `P_fec(r)` inside `P_arq`,** so more proactive rate
+shrinks the owed fraction and makes the hold-down more patient. At the shipped
+operating point §16.73.4 established `r* = 0` identically, so
+`P_fec(0) = Φ(−√u)` and at `u = 1`, `P_fec = 0.1587` — the r leg is pinned at
+its own corner throughout, and no r-dependence is claimed or claimable from a
+Bulk battery.
+
+#### 16.77.6 Where the SHIPPED CLAMP sits in this frame — and the convicted-but-undefeated paradox is a CATEGORY ERROR, not a close call
+
+`tail_sweep_timeout_us(srtt) = (2·srtt).clamp(25 ms, 100 ms)` (`net/mod.rs:573`).
+§16.70 convicted it: it **binds 92.4–99.7 % of the time**, turning its own law
+into a constant, and it violates RACK's published false-alarm budget by 1.7–12×
+at all five cells. And it has never been beaten: no arm of any battery has
+improved on it, at any cell, and the α-sweep's arms lost to it by 2.1–12.0×.
+
+**The frame's answer is that the clamp was never on trial.** It sets the
+`timer` deadline. The timer decides **0.59 %** of the fires. Every challenger
+this tree has fielded — RACK's window, Cantelli's `W(α)`, §16.76's `W_q(α)` —
+was a rival law for **the same 0.59 %**. The quantile-native sweep proved this
+in the strongest available form: it moved the realized `W` p50 from 25.0 ms to
+11.2 ms at `c1` and from 100 ms to 234 ms at `c8L`, witnessed at both endpoints
+at 480/480, **and the machine did not notice.** A clock that governs one fire in
+170 cannot be beaten on end-to-end cost by another clock that governs the same
+one fire in 170. **The paradox dissolves: the clamp is undefeated because
+nothing that has ever fought it was on the path that decides the outcome.**
+
+**AND THE `c1` COINCIDENCE IS A COINCIDENCE. IT IS WRITTEN DOWN HERE AS ONE
+RATHER THAN CLAIMED AS A PREDICTION.** The clamp's lower rail is **25.0 ms** and
+`c1`'s measured orig `p50` is **24.6 ms** — agreement to 1.6 %, and it is
+tempting. The frame does **not** predict it:
+
+* The 25 ms rail is a bound on the *timer*, and the level it commands in the orig
+  distribution is `F(25 ms) ≈ 0.50` at `c1`, `F(100 ms) ≈ 0.98` at `c7`, `≈ 0.51`
+  at `c8` and `sc2`, and `< 0.5` at `c8L`. **That is not a constant level and it
+  is not a constant time**; it is the clamp's two rails intersecting five
+  different distributions.
+* At Bulk the frame's `c1` optimum is the **corner**, not `q ≈ 0.50`. If 25 ms
+  were the frame's answer at `c1`, the frame would be wrong by two decades in
+  `R`.
+* And the rail was set for a reason recorded in the code that has nothing to do
+  with this distribution: *"above the ack arrival time … and below the receiver's
+  reorder hold (60 ms floor) plus the inner-TCP RTO (~200 ms)."*
+
+**What the frame does say about the clamp is sharper and is falsifiable.** The
+clamp is a *ceiling* as well as a floor, so at four of five cells the timer is
+pinned at 100 ms — and the frame's derived hold-down at Bulk is at
+`F⁻¹(0.99)` of the orig distribution, which the successor-arrival pass measured
+at **98.3 / 114.7 / 360.4 / 2 621 / 196.6 ms**. **At four of five cells the
+derived hold-down exceeds the clamp's own ceiling**, by 1.1× at `c7` and by
+**26×** at `c8L`. A clamp that cannot express the answer is not merely convicted
+of binding; it is convicted of binding on the wrong side. **This is the first
+statement this tree has been able to make about the clamp that does not require
+the clamp to be the thing under test.**
+
+#### 16.77.7 §16.73's inequality re-derived in this frame: the structure translates, the DIRECTION inverts, and the CONTAINMENT does not survive
+
+§16.73's consistency condition equates the proactive plane's shadow price
+`δ_pro` against the reactive plane's `δ_react(α)`. The reactive leg is replaced,
+the proactive leg is untouched. Differentiating `C` and solving for the δ at
+which a level `q` is stationary:
+
+```text
+   δ_react(q)  =  w · orig_frac · d  /  ( (1 − orig_frac) · P_arq · s(q) )
+```
+
+Setting this against §16.73.2's corner form
+`δ_pro ≤ d·S/(D_arq·ε̂·φ(z_f(0)))` and substituting §16.73.3's own
+`ε̂·φ(z_f(0))/S = (1−ε̂)/G(u)`, `G(u) = √(2π)·e^{u/2}/√u`:
+
+```text
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │   s(q)   ≥   w · orig_frac · D_arq · (1 − ε̂)                          │
+  │              ─────────────────────────────────────                    │
+  │              (1 − orig_frac) · P_arq(ρ, r) · G(u)                     │
+  │                                                                        │
+  │   D_arq(q) = srtt + F⁻¹(q) + d ,   u = W·ε̂/((1−ε̂)·σ²_burst)           │
+  └───────────────────────────────────────────────────────────────────────┘
+```
+
+**Four things translate exactly and are worth stating one at a time.**
+
+1. **`h_marginal` STILL CANCELS, for §16.73's own reason.** The condition equates
+   a proactive repair symbol against a reactive one; `(1 + h/T_pay)` multiplies
+   both bandwidth legs and divides out. It does **not** cancel in `C` itself
+   (§16.77.2), which is exactly the §16.73/§16.74.1 split reproduced. `w` above
+   is the *ratio* surviving into `δ_react`, and it cancels against `δ_pro`'s own
+   `(1 + h/T_pay)`. **The 1.011 is real in the loss and absent from the
+   condition, in both frames, for the same structural reason.**
+2. **`δ` CANCELS.** It appears once in each leg. The condition is free of the
+   transfer claim, exactly as §16.73 is — which is what makes it an *independent*
+   check on §16.77.3, whose whole answer is a function of δ.
+3. **`d` CANCELS**, appearing once in `δ_react`'s numerator and once in
+   `δ_pro`'s.
+4. **`ν` IS ABSENT FROM BOTH SIDES.** §16.73's `2·ν` in `δ_react`'s numerator has
+   no counterpart, for §16.77.2's reason.
+
+**THE DIRECTION INVERTS, AND THAT IS THE SUBSTANTIVE TRANSLATION RESULT.**
+`s(q)` is increasing in `q` for any right-skewed `F`, so a lower bound on `s`
+is a **lower bound on `q`** — where §16.73 produced an **upper** bound on `α`.
+§16.73's finding was *"the shipped machine sits at the corner, so the check is
+'is the sweep's winner inside the bound the shipped `r* = 0` admits?'"*. Here
+the same corner produces **a MINIMUM ADMISSIBLE HOLD-DOWN LEVEL**: the r-law
+consistency condition, evaluated at the machine's own operating point, says the
+sender must hold down **at least** to a derived level. That is a stronger claim
+than §16.73 could make and it is obtained by the same complementary-slackness
+argument on the same slack constraint.
+
+**AND §16.73's `u = 1` CONTAINMENT DOES NOT SURVIVE — IT MIRRORS.** In §16.73,
+`G(u)` sits in the numerator, so every `W` and every `ε̂` makes the bound
+*looser* and the `u = 1` evaluation is the *strongest* statement, which is why
+two un-echoed provenances could be contained. **Here `G(u)` sits in the
+denominator.** `G` is minimised at `u = 1` with `G(1) = √(2πe) = 4.1327`, so
+`u = 1` yields the **largest** right-hand side, i.e. the **most demanding**
+`q_min`; every other `(W, ε̂)` relaxes it. The containment therefore flips
+polarity: §16.73's `u = 1` gave a **necessary** condition, and this one gives a
+**sufficient** one — a level clearing `q_min(u=1)` is admissible under *every*
+`(W, ε̂)`, but a level failing it is not thereby refuted. **The bound is usable in
+one direction only, and this section uses it in that direction and no other.**
+
+**Evaluated at `u = 1`, `ρ = 1`, `(1 − ε̂) ≈ 1`, with `D_arq = srtt + T + d`:**
+
+| cell | `w·orig_frac/((1−orig_frac)·G(1))` | `D_arq` (ms) | required `s(q_min)` | vs. measured `s` | **`q_min`** |
+|---|---|---|---|---|---|
+| `c1` | 52.93 | ≈ 28 | **1 482 ms** | `s_max = 400 ms` | **unreachable ⇒ corner** |
+| `c7` | 20.84 | ≈ 151 | **3 147 ms** | top bin 15 850 ms | **(0.99, 1)** |
+| `c8` | 8.370 | ≈ 180 | **1 507 ms** | top bin 9 770 ms | **(0.99, 1)** |
+| `c8L` | 8.400 | ≈ 186 | **1 562 ms** | `[0.90,0.99]` bin 23 661 ms | **(0.90, 0.99)** |
+| `sc2` | 3.496 | ≈ 154 | **538 ms** | `[0.90,0.99]` bin 910 ms | **(0.90, 0.99)** |
+
+**THE TWO CONDITIONS AGREE, AND THEY DO NOT SHARE AN INPUT THAT COULD MAKE THEM
+AGREE TRIVIALLY.** §16.77.3's Copa-marginal minimisation puts `q*` at or above
+0.99 at five of five cells **and depends on δ**. This condition is **δ-free** by
+construction, comes from the *proactive* plane's shadow price, and puts `q_min`
+at or above 0.90 at five of five and above 0.99 at three. **A frame in which the
+sender should hold down past the ninetieth percentile of the reordering
+distribution is reached twice, from the reactive side and from the proactive
+side, on primitives measured by different passes on different binaries.** That
+corroboration is the strongest structural claim this section makes, and
+§16.77.9 states precisely what would break it.
+
+**`srtt` at `c7`/`c8L`/`sc2` is taken as ≥ 50 ms, inferred from the shipped
+clamp binding at its 100 ms ceiling, and `srtt(c8) = 77 ms` from §16.74.4. It is
+not echoed by any gauge.** Every conclusion in the table is robust to a factor of
+two in `D_arq` except `c8L` and `sc2`, whose `q_min` interval would move within
+`[0.90, 0.99]` but not out of it. That is the whole dependence and it is stated.
+
+#### 16.77.8 The sweep, pre-stated: the arm grid derived, and the WIRING TEST the last clock failed
+
+**The arm grid is derived, not chosen.** Three constraints fix it and none is
+free:
+
+1. **The domain's top is the derivation's answer.** §16.77.3 and §16.77.7 both
+   land at or above 0.99, so the grid's highest arm is the **derived level**
+   `q = 0.990`.
+2. **The domain's floor is the window law's own.** `N(a) = max(⌈K/a⌉, 2K)` is
+   flat at `N = 20` for every `a ≥ 0.5`, and the level it then commands is
+   `1 − K/(N+1) = 1 − 10/21 = 0.524`. **No level below 0.524 is expressible by
+   this construction**, which is §16.76.7's `α → 1` degenerate limit read from the
+   other end. The floor arm is that limit, and it is a *derived* floor.
+3. **The spacing is the separation rule.** §16.76.8's adjacent-ratio rule at
+   `K = 10`: two arms separate once their tail levels differ by `≳ 3.4–3.6×`.
+   Four arms across `a ∈ [0.010, 0.500]` at a uniform geometric ratio give
+   `50^{1/3} = 3.684`, the largest uniform ratio the derived domain admits.
+
+| arm | `q` | `a = 1−q` | `N(a)` | `E[τ] = K/(N+1)` | **realized level** | 95 % CI on `τ` (exact Beta) |
+|---|---|---|---|---|---|---|
+| **`H010`** *(the derived level)* | 0.990 | 0.010 | **1 000** | 0.009990 | **0.99001** | `[0.004806, 0.017016]` |
+| `H037` | 0.963 | 0.037 | **271** | 0.036765 | 0.96324 | `[0.017835, 0.062105]` |
+| `H136` | 0.864 | 0.136 | **74** | 0.133333 | 0.86667 | `[0.066751, 0.218361]` |
+| `H500` *(the window law's floor)* | 0.500 | 0.500 | **20** | 0.476190 | **0.52381** | `[0.271958, 0.684722]` |
+| `CTL` | — | — | — | — | shipped, `T = 0` | — |
+
+**THE UNSEPARATED-BY-CONSTRUCTION SET, DECIDED BEFORE THE VM IS TOUCHED.**
+Applying §16.76.4's (Q), `m = τ_2.5%(a_hi)/τ_97.5%(a_lo)`:
+
+| pair | ratio | **`m`** | verdict |
+|---|---|---|---|
+| `H010` – `H037` | 3.70 | **1.048** | separated, **THIN — 4.8 %** |
+| `H037` – `H136` | 3.68 | **1.075** | separated, **THIN — 7.5 %** |
+| `H136` – `H500` | 3.68 | 1.246 | separated |
+| `H010` – `H136` | 13.6 | 3.923 | separated |
+| `H037` – `H500` | 13.5 | 4.379 | separated |
+| `H010` – `H500` | 50.0 | 15.98 | separated |
+
+**Zero pairs are unseparated by construction and two are thin.** Both thin pairs
+are flagged **here**, with their margins, and a non-separation at either is read
+as thin-margin rather than as a finding — the same disposal §16.76.8 gave
+`Q050`–`Q184` at 1.085. §16.76.5(4)'s independence caveat applies with more force
+here, because hole resolutions inside one RTT are more correlated than acks are;
+it can only make arms harder to separate, never easier.
+
+**THE WINDOW-FILL RISK, COMPUTED BEFORE THE RUN.** The hold-down window is fed
+by hole *resolutions*, which are far sparser than acks. From the
+successor-arrival pass's own `res` counts, per rep, per path:
+
+| cell | resolutions / rep | paths | **/ path** | `H010` (N=1000) | `H037` (N=271) |
+|---|---|---|---|---|---|
+| `c1` | 749 | 1 | **749** | **UNSCOREABLE OR HEAVILY PARTIAL** | fills |
+| `sc2` | 2 005 | 1 | 2 005 | fills ~½-way through the rep — **PARTIAL RISK** | fills |
+| `c8` | 3 937 | 2 | 1 968 | fills late — **PARTIAL RISK** | fills |
+| `c7` | 90 766 | 2 | 45 383 | fills | fills |
+| `c8L` | 27 249 | 2 | 13 625 | fills | fills |
+
+**`c1`-`H010` IS PREDICTED UNSCOREABLE BEFORE THE RUN AND THE PREDICTION IS ON
+THIS LINE.** It is the derived arm at the cleanest cell, and the window law
+cannot fill it there. §16.76.5(1)'s UNSCOREABLE rule governs: with fewer than
+`N` samples the construction returns nothing, the evaluation falls through to
+shipped behaviour, `law_n = 0` rows are VOID and partial rows are never pooled
+with full ones. **This is information availability, never a mode.**
+
+**THE MEASURAND DIVERGENCE, STATED BEFORE IT IS MEASURED.** `[SUCC]` times a
+hole from **detection at the receiver**; the hold-down times it from **first gap
+report at the sender**. These are different origins, separated by the report's
+own propagation and by the receiver's report cadence, and the sender's
+observable is coarser: *"the hole retired and no repair flew for it."* The
+sender-side distribution is therefore the receiver-side one shifted and
+quantised, and **every `T` in milliseconds quoted in §16.77.3 and §16.77.6 is a
+receiver-side number used to locate a LEVEL, never to set a time.** That the
+lever is a level and not a time is what makes the divergence tolerable, and it is
+an argument the dial-dependence finding already forced.
+
+**THE SCORE, PRE-STATED.**
+
+* **(i) THE WIRING TEST — does the realized false-repair rate finally MOVE with
+  the lever?** The frame predicts `repairs emitted / holes detected ≈
+  1 − orig_frac·q`, i.e. **strictly decreasing in `q`, monotone across the whole
+  grid**, from ≈ 1 at `CTL` to ≈ 0.03 at `H010`. This is the clause the last two
+  clocks failed: `fa_frac` moved by 1.03–1.11× while α moved 200×.
+* **(ii) THE COST CURVE.** Delivered latency, per-leg and censoring-aware, and
+  goodput, against `q`. **At Bulk the frame predicts a MONOTONE-DECREASING cost
+  curve with NO interior minimum** — because §16.77.3 puts the optimum at or
+  above the grid's top edge at five of five cells. An interior minimum inside the
+  grid is a `λ > 0` reading and locates it (§16.77.4).
+* **(iii) THE DERIVED LEVEL vs THE MEASURED OPTIMUM.** `H010` against whichever
+  arm minimises (ii), at each cell.
+* **(iv) `CTL` PER CELL.** The clamp explained, beaten, or undefeated — and for
+  the first time on the path that decides the fires.
+
+#### 16.77.9 What falsifies this section
+
+**`H1` — THE WIRING TEST FAILS.** Realized repair emissions per detected hole do
+**not** fall monotonically in `q`, or fall by less than half the predicted
+`1 − orig_frac·q`, at a cell where the window fills and the echo confirms the arm
+resolved. **Then the gap-report response site is not the whole of the 99 % path
+either**, and the frame is wrong in the same way §16.69's was. The named
+successor, pre-committed here so it is not chosen afterwards: **the receiver's
+own detection-and-report clock.** The sender cannot hold down below the cadence
+at which it is told, and `hole_nack_refresh(srtt) = (2·srtt).clamp(25, 100 ms)`
+is the receiver's twin of the very clamp §16.77.6 convicts. If `H1` fires, the
+next instrument is at the receiver's report site and not at the sender's
+response site, and this section will have moved the question one hop without
+answering it.
+
+**`H2` — AN INTERIOR MINIMUM APPEARS BELOW `H136` AT BULK.** §16.77.3's
+minimisation contains no term that can turn the curve over that low. A minimum
+there means the cost model is missing a leg — most likely a head-of-line term
+that charges the *receiver's* wait for a held-down repair rather than the
+symbol's own delay, which is the queue §16.74.4 identified as the deeper reason
+routes (b) and (d) diverged. *Falsified by:* that minimum appearing at two or
+more cells with margins clearing the within-arm noise.
+
+**`H3` — THE TWO DERIVATIONS DISAGREE ON THE WIRE.** §16.77.3 (δ-dependent,
+reactive) and §16.77.7 (δ-free, proactive) both put the level above 0.90. If the
+measured optimum lands below `H500`'s 0.524 at three or more cells, **both are
+refuted together**, and the corroboration of §16.77.7 becomes evidence that the
+shared input — `orig_frac`, the only primitive both use — is mis-measured. That
+is the only form in which this frame permits "BOTH REFUTED" to be said, and
+`orig_frac`'s own stated limitation is the named alternative cause: *"`orig`
+cannot separate a late original from a resent one — the wire carries no
+retransmit bit."*
+
+**`H4` — GOODPUT PAYS FOR IT.** The frame prices the hold-down's cost entirely in
+the latency of `(1 − orig_frac) ≈ 2 %` of holes. If goodput falls out of band at
+`H010` at any cell where the window fills, a cost this frame does not contain is
+being paid — the most likely being the receiver's decode window filling behind a
+held-down repair. *Falsified by:* a band miss at `H010` that reproduces at both
+seeds.
+
+#### 16.77.10 Shape check
+
+* **Units.** `T`, `F⁻¹(q)`, `d`, `s(q)`, `D(δ)`, `D_arq` are seconds. `q`, `a`,
+  `w`, `orig_frac`, `P_arq`, `δ`, `λ`, `ε̂` are pure. `N`, `K` are counts. Both
+  sides of the stationarity condition are seconds; both sides of §16.77.7's
+  inequality are seconds.
+* **Monotone in δ.** `R ∝ 1/δ` and `s` is increasing, so **`q*` is non-increasing
+  in δ**: more latency-sensitive ⇒ less patient. Correct sign, four decades,
+  no threshold.
+* **Monotone in ρ.** `P_arq` increasing in ρ ⇒ `R` decreasing ⇒ **`q*`
+  non-increasing in ρ**: a contract that owes more repairs is less patient.
+  Correct sign, and it agrees with §16.74.6's P3.
+* **Monotone in `orig_frac`.** `R ∝ orig_frac/(1−orig_frac)`, so **`q*` rises
+  with the reordering fraction.** A path that mostly reorders should mostly wait.
+  Correct sign, and it is the mechanism the whole section rests on.
+* **Monotone in `q`.** `T(q) = Y_(N−K+1)` with `N = ⌈K/(1−q)⌉` non-decreasing in
+  `q`, so **`T` is non-decreasing in `q`** on any fixed sample set. Same sign
+  §16.76.7 gives `W_q`.
+* **Continuity.** `⌈·⌉` makes `N` a step function of `q`, so `T` is
+  piecewise-constant-in-`N`. **This is not a mode switch**: `q` on an arm is an
+  experiment input, and `q*` as a *law* is continuous in δ, ρ and r with no
+  threshold on any of them. A shipped `q` would read `q*(δ, ρ, r)` and the
+  ceiling's step is then a resolution question about the window, priced at one
+  sample.
+* **No mode bit.** One expression, one call site, both terms of the `λ → ∞` form
+  always computed. `min(q_d, q_b)` is §16.74.3's `max(α_d, α_b)` mirrored, not a
+  branch. Nothing continuous in the triangle is expressed by `RWM_HOLDDOWN_Q`,
+  and **nothing may ship reading it.**
+* **Degenerate limits.** `q → 0` (below the window law's floor) ⇒ `T → 0` ⇒
+  **exactly the shipped behaviour**, which is why `CTL` is the disarmed gate and
+  not an armed arm. `q → 1` ⇒ `N → ∞`, the resource cap binds, the law declares
+  itself unavailable and falls through. `ρ → ρ_floor` ⇒ `P_arq → 0` ⇒ `q* = 1`.
+  `δ → ∞` ⇒ `q* → 0`. **Every end is the honest behaviour and none is a special
+  case in the code.**
+
+#### 16.77.11 What this section does NOT claim
+
+* **NO DEFAULT MOVES AND NO LAW SHIPS.** `RWM_HOLDDOWN_Q` is **absent by
+  default**; with it absent the engine is byte-identical to today, asserted by a
+  test. The shipped clamp is not touched, not replaced, and not reinterpreted on
+  any default path.
+* **NO MAPPING FROM (δ, ρ, r) TO `q` IS WIRED.** §16.77.3 *derives* one and
+  §16.77.5 *composes* it with the triangle, but `q` remains an experiment input
+  on an arm, exactly as `α` does under `RWM_ALPHA_OVERRIDE` and `RWM_W_FORM`.
+  **Nothing may ship reading it** until a battery has scored it.
+* **`λ` IS NOT ASSIGNED A VALUE.** §16.77.4 makes it measurable and names the
+  reading that would locate it. It is not located here, and the two limits'
+  answers are reported as a domain and not as a preference.
+* **THE ρ LEG IS DERIVED AND UNTESTED.** No battery in this tree has swept ρ, and
+  §16.77.8's does not either. §16.77.5's band-width warning is the reason.
+* **§16.69 AND §16.76 ARE NOT RE-OPENED, AND THEIR VERDICTS STAND.**
+  `RWM_QUANTILE_CLOCKS` stays default OFF and REFUTED-STANDING; `RWM_W_FORM`
+  stays inside it at `cantelli`. This section takes their *window law* and their
+  *order statistic*, which are not the things that were refuted, and points them
+  at a different stream.
+* **§16.73's ADMISSIBILITY INEQUALITY IS NOT SUPERSEDED.** §16.77.7 translates it
+  and reports that its containment argument mirrors rather than carries, which
+  means the translated bound is usable in one direction only. Any level this or
+  any construction produces is still bound by it.
+* **`orig_frac` BOUNDS THE FALSE-REPAIR FRACTION FROM ONE SIDE AND DOES NOT
+  DECOMPOSE IT.** The wire carries no retransmit bit, so a late original and a
+  resent one are indistinguishable at the gauge. Every number in this section
+  built on `orig_frac` inherits that, in the stated direction.
+* **THE MISSING TRUTH INSTRUMENT IS STILL MISSING.** A delivered-latency probe at
+  the sender's own sample rate is still not built; §16.77.8's clause (ii) reads
+  the per-leg censoring-aware delivered latency this tree already has.
+
+**Nothing in this section flips a default, ships a law, wires a consumer on any
+default path, or scores any clause of any pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
