@@ -45721,3 +45721,53 @@ seeds.** Recorded so the next reader of this ledger is not misled the same way.
 
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, or licenses any battery.**
+
+---
+
+## GOAL #101 — FINAL CLOSURE (2026-08-21): THE CLOCK IS DECIDED — THE CLAMP SURVIVES ON MERIT, AND THE REASON IS NOW A MEASURED PROPERTY OF THE MACHINE
+
+The first closure (above) preceded the successor program; this one contains it.
+The spine ran three more steps past the α-sweep: the FIRE-CAUSE table, the
+SUCCESSOR-ARRIVAL distribution, and the HOLD-DOWN derivation + sweep. The
+complete answer:
+
+**1. The formula question is decided, and the decision is the null with a
+mechanism.** No waiting-time law controls the false-repair rate on this
+machine. Three independent, instrument-verified demonstrations: fa invariant
+to the TIMER across a 200× α span (the timer decides 0.59% of fires — counted);
+fa invariant to the HOLD-DOWN at 97.3–99.6% suppression on the gap-report path
+that carries 98.99% of fires (the deciding path, reached and proven, W4 to the
+unit); and the false-repair boundary is a LEVEL, not a time — 97.86% of
+detected holes are resolved by their own original at every horizon (the
+crossing point the derivation needed is arithmetically nonexistent). On a ρ=1
+window, delaying repairs only stalls the transfer (goodput −11.8× at the
+extreme); the cost curve rises monotonically; no interior optimum exists.
+
+**2. The shipped clamp survives on merit — item 4's own terminal outcome,
+reached through evidence rather than through the battery.** Undefeated at
+10/10 cell-comparisons across two sweeps on both fire paths, in band 5/5 while
+challengers broke goodput at 9/20 cell-arms. Its constants are now also
+EXPLAINED: (2·srtt).clamp(25,100) is simultaneously the tail-sweep clamp and
+the hole-refresh floor — the machine's actual control-plane cadence — and the
+measured hole-self-heal medians (24.6–163.8 ms) straddle exactly that band.
+The clamp remains convicted on its fa budget (all instruments agree), but the
+conviction now has a mechanism: the fa level is set by the reorder fraction
+of the wire, not by any timing decision the sender can make.
+
+**3. λ is closed as a category error, twice over.** The (b)/(d) frame's shared
+measurand (§16.69, ack-arrival) was refuted by classification; the successor
+frame's own lever then failed the same wiring test. There is no λ to pin
+because the recovery plane's waste is not price-governed through timing.
+§16.74's loss function stands as the record of why both routes had to be
+built to be killed; §16.77's derivation stands with H5's finding that its T
+is not well-posed below the refresh floor.
+
+**4. The named future (not owed by this goal):** the refresh-floor lift as a
+PRECONDITION (until (2·srtt).clamp(25,100) moves, no q is commandable), then
+the (q, refresh) sweep — with the recorded caution that the measured cost
+curve gives no reason to expect an interior optimum there either. The banked
+instruments — [FCAUSE], [SUCC], [RFA], [RTTDUMP], [HOLD], the quantile
+machinery, earned sentinels — are the durable estate.
+
+**Nothing in this goal flipped a default. The clamp stays: convicted,
+undefeated, and now explained.**
