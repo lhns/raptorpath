@@ -1293,3 +1293,176 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
     let wmax = *long.iter().max().expect("non-empty") as u64;
     assert!(w002 <= wmax, "W_q must never exceed max(window): {w002} > {wmax}");
 }
+
+// ── §16.77 THE HOLD-DOWN CLOCK — THE LAW, PINNED ABSOLUTELY ─────────────
+//
+// Ordinal tests do not catch routing bugs. These assert the law's ABSOLUTE
+// values at the arm grid's own points; `holddown_reachability.rs` asserts that
+// the ENGINE routes to them. Neither is sufficient alone — CLAUDE.md's testing
+// discipline, and the reason both exist.
+
+/// The hold-down's window law IS §16.76's, at the tail level `1 − q`. Pinned as
+/// an IDENTITY over the whole domain and then at §16.77.8's grid by absolute
+/// value, so a re-parameterisation cannot silently become a second law.
+#[test]
+fn the_holddown_window_law_is_the_qnative_window_law_at_one_minus_q() {
+    use raptorpath::net::{holddown_window_n, qnative_window_n};
+    for i in 1..1000u32 {
+        let q = i as f64 / 1000.0;
+        assert_eq!(
+            holddown_window_n(q),
+            qnative_window_n(1.0 - q),
+            "N(q) must be N_qnative(1-q) at q={q}"
+        );
+    }
+    // §16.77.8's arm grid, absolutely. These four numbers ARE the
+    // pre-registration's `n_req` column; a change here is a change to the
+    // battery's own arms.
+    assert_eq!(holddown_window_n(0.990), Some(1000), "H010");
+    assert_eq!(holddown_window_n(0.963), Some(271), "H037");
+    assert_eq!(holddown_window_n(0.864), Some(74), "H136");
+    assert_eq!(holddown_window_n(0.500), Some(20), "H500");
+}
+
+/// §16.77.8's FLOOR IS DERIVED AND IT IS 0.5238 — the window law is flat at
+/// `2K = 20` for every `q ≤ 0.5`, so no level below `1 − K/(N+1) = 1 − 10/21` is
+/// expressible. §16.76.7's `α → 1` degenerate limit read from the other end, and
+/// the reason the arm grid floors where it does.
+#[test]
+fn the_holddown_level_floor_is_derived_and_it_is_0_5238() {
+    use raptorpath::net::{holddown_window_n, QNATIVE_EXCEEDANCE_K};
+    for i in 1..=500u32 {
+        let q = i as f64 / 1000.0;
+        assert_eq!(
+            holddown_window_n(q),
+            Some(20),
+            "N must be flat at 2K below q=0.5 (q={q})"
+        );
+    }
+    let n = holddown_window_n(0.5).expect("floor arm resolves") as f64;
+    let realized = 1.0 - QNATIVE_EXCEEDANCE_K as f64 / (n + 1.0);
+    assert!(
+        (realized - 0.523_809_5).abs() < 1e-6,
+        "the floor arm's REALIZED level is 1 - 10/21, not the commanded 0.5: {realized}"
+    );
+}
+
+/// GARBAGE RESOLVES TO ABSENT, AND ABSENT IS THE SHIPPED MACHINE. The domain is
+/// the law's own: at `q ≤ 0` the hold-down is zero — expressed by the gate being
+/// ABSENT, never by an armed arm — and at `q ≥ 1` the window law diverges.
+#[test]
+fn an_out_of_domain_holddown_level_resolves_to_absent() {
+    use raptorpath::net::{holddown_us, holddown_window_n};
+    let w: Vec<u32> = (1..=4000u32).map(|i| i * 100).collect();
+    for q in [
+        0.0,
+        -0.5,
+        1.0,
+        1.5,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ] {
+        assert_eq!(holddown_window_n(q), None, "q={q} must be ABSENT");
+        assert_eq!(holddown_us(&w, q), None, "q={q} must yield NO hold-down");
+    }
+    // And just inside the domain it resolves, so the boundary is the boundary
+    // and not an off-by-one that silently disarms a legal arm.
+    assert!(
+        holddown_window_n(0.990).is_some(),
+        "the DERIVED level q=0.990 is inside the domain"
+    );
+    assert!(
+        holddown_window_n(0.001).is_some(),
+        "q=0.001 is inside the domain"
+    );
+    // THE CEILING IS THE DECLARED RESOURCE BOUND AND IT IS 0.998779, STATED
+    // OUTSIDE THE LAW. `N <= QNATIVE_WINDOW_MAX = 8192` ⇒ `1 - q >= 10/8192`.
+    // The cap does NOT bind anywhere on §16.77.8's grid (the derived arm needs
+    // 1 000), and past it the law declares itself unavailable rather than
+    // truncating — §16.76.3's cap, inherited unchanged.
+    assert!(
+        holddown_window_n(0.9987).is_some(),
+        "q just inside the resource bound must resolve"
+    );
+    assert_eq!(
+        holddown_window_n(0.999),
+        None,
+        "q=0.999 needs N=10000, past the declared 8192 cap: UNAVAILABLE, not truncated"
+    );
+}
+
+/// `T(q)` IS THE K-TH LARGEST OF THE FRESHEST `N` — pinned by construction on a
+/// window whose order statistics are known exactly, and pinned MONOTONE in `q`
+/// on ONE stationary distribution. **The fixture is stationary and not a ramp**,
+/// for the reason the `W_q` pins state: on a monotone series the K-th largest of
+/// the last `n` is the same value for every `n`, so a ramp would report every arm
+/// identical and the monotonicity clause would be satisfied by nothing.
+#[test]
+fn the_holddown_reads_the_kth_largest_and_is_monotone_in_the_level() {
+    use raptorpath::net::{holddown_us, QNATIVE_EXCEEDANCE_K};
+    // 1..=1000 µs in a scrambled full-period order: at q = 0.99, N = 1000 is the
+    // whole window and the K-th largest is exactly `1000 - K + 1 = 991`.
+    let long: Vec<u32> = (0..1000u32)
+        .map(|i| ((i.wrapping_mul(7919) % 1000) + 1) * 1_000)
+        .collect();
+    let t = holddown_us(&long, 0.99).expect("N(0.99) = 1000 fits exactly");
+    assert_eq!(
+        t,
+        (1000 - QNATIVE_EXCEEDANCE_K as u64 + 1) * 1_000,
+        "T must be the K-th largest of the freshest N"
+    );
+    let big: Vec<u32> = (0..6000u32)
+        .map(|i| ((i.wrapping_mul(7919) % 1000) + 1) * 1_000)
+        .collect();
+    let t500 = holddown_us(&big, 0.500).expect("H500");
+    let t136 = holddown_us(&big, 0.864).expect("H136");
+    let t037 = holddown_us(&big, 0.963).expect("H037");
+    let t010 = holddown_us(&big, 0.990).expect("H010");
+    assert!(
+        t500 < t136 && t136 < t037 && t037 < t010,
+        "T must rise strictly with the level on one distribution: {t500} {t136} {t037} {t010}"
+    );
+    // BOUNDED ABOVE BY THE WINDOW'S OWN MAX, structurally, at every level: a
+    // hold-down cannot ask the sender to wait longer than the path has ever
+    // taken to close a hole.
+    let wmax = *big.iter().max().expect("non-empty") as u64;
+    assert!(t010 <= wmax, "T must never exceed max(window): {t010} > {wmax}");
+}
+
+/// THE UNSCOREABLE RULE: a window shorter than `N(1−q)` is a DIFFERENT LAW'S
+/// OUTPUT, so the construction returns nothing and the caller falls through to
+/// the shipped behaviour — information availability, never a mode (§16.76.5(1)).
+/// Pinned at the exact boundary, both sides.
+#[test]
+fn a_short_holddown_window_declares_itself_unavailable_rather_than_extrapolating() {
+    use raptorpath::net::{holddown_us, holddown_window_n, QNATIVE_WINDOW_MAX};
+    let n = holddown_window_n(0.963).expect("H037 resolves");
+    assert_eq!(n, 271);
+    let full: Vec<u32> = (0..n as u32).map(|i| (i + 1) * 1_000).collect();
+    assert!(
+        holddown_us(&full, 0.963).is_some(),
+        "exactly N samples must run the law"
+    );
+    assert_eq!(
+        holddown_us(&full[..n - 1], 0.963),
+        None,
+        "N-1 samples must declare the law UNAVAILABLE, not read a shorter window"
+    );
+    assert_eq!(holddown_us(&[], 0.963), None, "an empty window runs no law");
+    // The resource bound binds OUTSIDE the law, not inside it: a level whose
+    // window exceeds the declared cap is unavailable at every window length,
+    // rather than silently truncated to the cap.
+    let past_cap = 1.0 - 1.0 / (QNATIVE_WINDOW_MAX as f64 + 1.0);
+    assert_eq!(
+        holddown_window_n(past_cap),
+        None,
+        "a level past the declared resource bound is UNAVAILABLE, not truncated"
+    );
+    let w = vec![1_000u32; QNATIVE_WINDOW_MAX];
+    assert_eq!(
+        holddown_us(&w, past_cap),
+        None,
+        "and it stays unavailable even with a full cap-sized window"
+    );
+}

@@ -1266,6 +1266,446 @@ impl Drop for QuantileClockGauge {
     }
 }
 
+// ── §16.77 THE HOLD-DOWN CLOCK — THE EXPERIMENT ARM ─────────────────────
+//
+// The fire-cause pass measured that **0.59 % of 107 597 classified recovery
+// fires came from a timer and 98.99 % came from the sender answering a
+// receiver gap report** (goal-gate, "THE FIRE-CAUSE PASS — THE SCORED
+// RESULT"). Every recovery clock in this file — the shipped `[25, 100] ms`
+// clamp, `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS`, `RWM_QUANTILE_CLOCKS` — sets
+// the TIMER. The construction below sets the other one: the waiting time the
+// sender applies to a REPORTED hole before it answers with a repair.
+//
+// **It is not a new law.** `T(q) = W_q(1 − q)` is §16.76's order statistic, at
+// §16.76's cited `K = 10`, under §16.76's window law and §16.76's
+// unavailability rule — evaluated on the sender's own hole-resolution stream
+// instead of on the ack stream. Paper §16.77 is the derivation and the LEVEL's
+// provenance; this is the arm that measures it.
+//
+// **Nothing may ship reading `RWM_HOLDDOWN_Q`**, any more than
+// `RWM_ALPHA_OVERRIDE`. A shipped hold-down would read `q*(δ, ρ, r)` from
+// §16.77.2's stationarity condition, continuous in the triangle; that is the
+// decision this measurement informs and does not take.
+
+/// `T(q)`'s window law — §16.76.3's, at the tail level `a = 1 − q`.
+///
+/// The hold-down commands a level `q` of the hole-resolution distribution, so
+/// the exceedance clause binds on `1 − q`: `N = max(⌈K/(1−q)⌉, 2K)`, `K = 10`.
+/// **This is a re-parameterisation and not a second law** — the same
+/// [`qnative_window_n`], reached from the other end.
+///
+/// `None` for a `q` outside the open interval `(0, 1)`: at `q ≤ 0` the
+/// hold-down is zero, which is the SHIPPED behaviour and is expressed by the
+/// gate being ABSENT rather than by an armed arm; at `q ≥ 1` the window law
+/// diverges. Garbage therefore resolves to ABSENT, visibly (§16.77.10's
+/// degenerate limits).
+///
+/// **The floor is derived and it is 0.524.** `N` is flat at `2K = 20` for
+/// every `a ≥ 0.5`, and the level such a window commands is
+/// `1 − K/(N+1) = 1 − 10/21 = 0.5238`. No level below that is expressible by
+/// this construction — §16.76.7's `α → 1` degenerate limit read from the other
+/// end, and the reason §16.77.8's arm grid floors where it does.
+/// The CONTROL's observation window: how many hole outstanding-time samples the
+/// gauge retains on an arm that commands no level.
+///
+/// **DECLARED RESOURCE BOUND, STATED OUTSIDE THE LAW** (FORMULA-FIRST). It is
+/// not a window law and it selects nothing: no arm reads a quantile of it as a
+/// clock. It is the largest window on §16.77.8's grid (`N(0.010) = 1000`), so
+/// the control's reported distribution is directly comparable with the arm the
+/// derivation names, and it costs 1000 × 4 B = 4 KiB per path.
+pub const HOLD_OBS_WINDOW: usize = 1000;
+
+pub fn holddown_window_n(q: f64) -> Option<usize> {
+    if !q.is_finite() || q <= 0.0 || q >= 1.0 {
+        return None;
+    }
+    qnative_window_n(1.0 - q)
+}
+
+/// `T(q) = Y_(N−K+1)` — the hold-down, in µs, or `None` when the window law
+/// has not been satisfied.
+///
+/// `None` is **information availability, never a mode** (§16.76.5(1)): with
+/// fewer than `N` samples the `K`-th largest is a quantile of a shorter window
+/// at a different level, i.e. a different law's output, so the caller falls
+/// through to the behaviour below it — which here is the shipped "answer the
+/// report now". An arm whose `law_n = 0` never ran its own law and its row is
+/// VOID.
+pub fn holddown_us(window: &[u32], q: f64) -> Option<u64> {
+    if !q.is_finite() || q <= 0.0 || q >= 1.0 {
+        return None;
+    }
+    qnative_recovery_round_us(window, 1.0 - q)
+}
+
+/// The `[HOLD]` gauge — **the hold-down arm's own instrument, per path.**
+///
+/// It carries five things the sweep cannot be scored without, and each is here
+/// because a previous battery was unreadable for the want of it:
+///
+/// * **the live `T` estimate and its `n`, PER PATH** — §16.76's window
+///   conventions, so a row whose window never filled is READ as such rather
+///   than pooled with one that did;
+/// * **`evals` / `law_n`, the bind-fraction gauge** `CLAUDE.md`'s
+///   FORMULA-FIRST clamp rule owes any law that adds a bound;
+/// * **`sup` / `emit`**, the suppression the whole arm exists to produce —
+///   §16.77.8's clause (i), the WIRING TEST two clocks have now failed;
+/// * **the realized hold-down delay as a DISTRIBUTION**, because a mean would
+///   hide exactly the tail the level commands;
+/// * **`fed`**, the estimator's own intake, so "the window never filled" and
+///   "the window filled and the law still did not run" are distinguishable.
+///
+/// **Two-sided.** The gauge is constructed and `evals` counted on the DISARMED
+/// arm too, and its line prints `q=unset` there — MEASUREMENT DISCIPLINE 15.
+/// The disarmed arm allocates nothing and takes no branch that reaches a wire
+/// byte; `sup` is structurally zero and the engine is byte-identical.
+///
+/// Observation only apart from the one suppression the gate exists to make.
+pub(crate) struct HoldDownGauge {
+    site: &'static str,
+    /// The RESOLVED level, or `None` on the shipped arm. A NUMBER, never a
+    /// branch: every field below is computed identically either way, and the
+    /// only thing `None` decides is that `should_hold` returns `false` — the
+    /// `T = 0` degenerate limit, which IS the shipped behaviour.
+    q: Option<f64>,
+    /// `N(1−q)` — the window law's requirement, resolved once so the line, the
+    /// ring's capacity and the estimator cannot drift apart. `None` on the
+    /// control, where no law is in force.
+    n_req: Option<usize>,
+    /// The ring's capacity, which is `n_req` on a treatment arm and
+    /// [`HOLD_OBS_WINDOW`] on the control.
+    ///
+    /// **THE ESTIMATOR OBSERVES ON EVERY ARM AND THE CONTROL IS WHY.** The
+    /// first calibration could not tell "the outstanding-time distribution IS
+    /// long at this cell" from "the hold-down made it long", because the
+    /// control measured nothing to compare against — the arm that defines the
+    /// unforced distribution was the one arm not reading it. It now reads it.
+    /// **This is observation and nothing else**: `should_hold` still returns
+    /// `false` unconditionally when `q` is absent, so the control's wire
+    /// behaviour is the shipped machine's, byte for byte.
+    n_obs: usize,
+    /// seq → (first time this hole was REPORTED to us, the path its original
+    /// flew on). `BTreeMap` because retirement is a frontier range, which a
+    /// hash map cannot do without scanning the whole map on every ack.
+    ///
+    /// **The origin is the sender's own first report and not the receiver's
+    /// detection.** `[SUCC]` times from detection at the receiver; these two
+    /// differ by the report's propagation and by the receiver's report
+    /// cadence, and §16.77.8 states the divergence in advance. It is why the
+    /// estimator is ONLINE and self-measuring rather than seeded from
+    /// `[SUCC]`'s published quantiles.
+    first: std::collections::BTreeMap<u64, (u64, u32)>,
+    /// Per path: the freshest `N(1−q)` observed hole-resolution-by-original
+    /// times, µs, plain FIFO in arrival order. Capped AT `N`, so the ring is
+    /// exactly the window the law reads and `make_contiguous` hands the law
+    /// its own slice with no copy of a longer one — *"a longer slice would
+    /// read a different level of a longer window, i.e. a law nobody named."*
+    ///
+    /// **Resource bound, stated OUTSIDE the law** (FORMULA-FIRST): `N ≤ 8192`
+    /// by [`QNATIVE_WINDOW_MAX`], 4 B per sample, so ≤ 32 KiB per path, and
+    /// ≤ 4 KiB per path anywhere on §16.77.8's grid.
+    win: std::collections::HashMap<u32, std::collections::VecDeque<u32>>,
+    /// Per path: the live `T` estimate, recomputed on the FEED path and read
+    /// `O(1)` on the EVAL path.
+    ///
+    /// **The CPU bound is declared with it, because this one sits at a HOTTER
+    /// cadence than §16.76.3's.** §16.76 evaluates its order statistic at the
+    /// recovery-timer cadence; a hold-down is consulted once per reported hole
+    /// per report, which at `c7` is tens of thousands of times per rep. So the
+    /// `O(N)` selection is moved to the feed — strictly fewer events than the
+    /// evaluations, one per RESOLVED hole — and the eval path is a map lookup.
+    /// It is still a selection and never a sort (`select_nth_unstable`).
+    t_us: std::collections::HashMap<u32, u64>,
+    /// Per path: total samples ever fed. Distinguishes "never filled" from
+    /// "filled and rolled".
+    fed: std::collections::HashMap<u32, u64>,
+    /// Per path: (evals, law_n, sup, emit).
+    ctr: std::collections::HashMap<u32, [u64; 4]>,
+    /// Per path: the REALIZED hold-down delay — the age at which a held hole
+    /// finally passed the gate. Log-bucket, ~12 kB fixed, the same `Hist`
+    /// `[SUCC]` reports its own quantiles from, so the two are comparable
+    /// without a unit argument.
+    hd: std::collections::HashMap<u32, crate::net::succ::Hist>,
+    /// Whether generation coding was in force. Under it the SACK→gap producer
+    /// is suppressed, so the gap-report path this arm acts on is structurally
+    /// empty; the line says which machine it measured, the same contract
+    /// `[FCAUSE]` carries.
+    gen: bool,
+}
+
+impl HoldDownGauge {
+    pub(crate) fn new(site: &'static str, q: Option<f64>) -> Self {
+        Self {
+            site,
+            q,
+            n_req: q.and_then(holddown_window_n),
+            n_obs: q.and_then(holddown_window_n).unwrap_or(HOLD_OBS_WINDOW),
+            first: std::collections::BTreeMap::new(),
+            win: std::collections::HashMap::new(),
+            t_us: std::collections::HashMap::new(),
+            fed: std::collections::HashMap::new(),
+            ctr: std::collections::HashMap::new(),
+            hd: std::collections::HashMap::new(),
+            gen: false,
+        }
+    }
+
+    pub(crate) fn set_send_generation(&mut self, gen: bool) {
+        self.gen = gen;
+    }
+
+    /// Is the arm live — i.e. can it SUPPRESS? `n_req` and not `q`: a `q` whose
+    /// window law does not resolve (over [`QNATIVE_WINDOW_MAX`]) is an arm that
+    /// cannot run, and it must read as disarmed rather than as armed-and-silent.
+    ///
+    /// **The ESTIMATOR does not consult this.** It observes on every arm; only
+    /// the gate reads it.
+    pub(crate) fn armed(&self) -> bool {
+        self.n_req.is_some()
+    }
+
+    /// One reported hole. Stamps the FIRST report and never a later one: the
+    /// estimand is "how long a hole stays outstanding", and a hole re-reported
+    /// every `hole_nack_refresh` would otherwise reset its own clock.
+    ///
+    /// **`reported` is the estimand's ORIGIN CONDITION, and it is not a mode.**
+    /// The clock starts when the RECEIVER says the hole exists; the sender's own
+    /// tail-sweep timer is not a report and does not start it. A timer fire on a
+    /// hole the receiver HAS reported carries a stamp and is gated by the same
+    /// `T` as any other fire on that hole; a timer fire on a hole the receiver
+    /// has never reported carries none and falls through to the shipped
+    /// behaviour. That is information availability — the same rule the window
+    /// law follows — and no threshold on any dial enters it.
+    pub(crate) fn on_reported(
+        &mut self,
+        seq: u64,
+        orig_path: u32,
+        now_us: u64,
+        reported: bool,
+    ) {
+        if !reported {
+            return;
+        }
+        self.first.entry(seq).or_insert((now_us, orig_path));
+    }
+
+    /// **THE GATE.** `true` ⇒ this fire is held down and suppressed.
+    ///
+    /// Returns `false` — the shipped behaviour, byte-identically — whenever
+    /// the arm is disarmed, the hole has no first-report stamp, or the window
+    /// law has not been satisfied on this path. All three are *information
+    /// availability*: no threshold on δ or ρ selects anything here, and the
+    /// only number that enters is `T`.
+    pub(crate) fn should_hold(&mut self, seq: u64, now_us: u64) -> bool {
+        let Some((t0, path)) = self.first.get(&seq).copied() else {
+            // Disarmed (nothing is ever stamped), or a fire on a hole this
+            // gauge never saw reported — a timer fire, which this arm does not
+            // touch. Counted at the disarmed site below so the line is
+            // two-sided.
+            let e = self.ctr.entry(u32::MAX).or_insert([0; 4]);
+            e[0] += 1;
+            e[3] += 1;
+            return false;
+        };
+        let c = self.ctr.entry(path).or_insert([0; 4]);
+        c[0] += 1;
+        let Some(t) = self.t_us.get(&path).copied() else {
+            // The window law has not been satisfied on this path: the
+            // construction returns nothing and the evaluation falls through to
+            // the law below it (§16.76.5(1)). `law_n` stays put, so the row is
+            // READ as partial rather than pooled.
+            c[3] += 1;
+            return false;
+        };
+        c[1] += 1;
+        let age = now_us.saturating_sub(t0);
+        if age < t {
+            c[2] += 1;
+            true
+        } else {
+            c[3] += 1;
+            self.hd.entry(path).or_default().add(age);
+            false
+        }
+    }
+
+    /// Feed one sample into a path's window and re-read the order statistic.
+    ///
+    /// **The `O(N)` selection sits HERE, on the feed path, and not on the eval
+    /// path.** §16.76.3 evaluates its order statistic at the recovery-timer
+    /// cadence; a hold-down is consulted once per reported hole per report,
+    /// which at `c7` is tens of thousands of times per rep. Feeds are strictly
+    /// fewer — one per RESOLVED hole — so the linear work is moved to them and
+    /// the eval path is a map lookup. It is still a SELECTION and never a sort.
+    fn feed(&mut self, path: u32, sample_us: u64) {
+        let n = self.n_obs;
+        let s = sample_us.min(u32::MAX as u64) as u32;
+        let w = self.win.entry(path).or_default();
+        if w.len() >= n {
+            w.pop_front();
+        }
+        w.push_back(s);
+        *self.fed.entry(path).or_insert(0) += 1;
+        // The LAW's own output, only where the law is in force.
+        if let (Some(nr), Some(q)) = (self.n_req, self.q) {
+            if w.len() >= nr {
+                if let Some(t) = holddown_us(w.make_contiguous(), q) {
+                    self.t_us.insert(path, t);
+                }
+            }
+        }
+    }
+
+    /// **THE RESOLUTION SIGNAL, READ OFF THE RECEIVER'S OWN REPORT.** A hole
+    /// this sender stamped, which the receiver's newest gap report **no longer
+    /// lists** inside the region that report covers, has been filled at the
+    /// receiver. Feed its outstanding time and drop it.
+    ///
+    /// **THIS REPLACES RETIREMENT-BY-CUMULATIVE-ACK, AND THE CALIBRATION IS WHY
+    /// (§16.77.8b).** The first implementation fed a hole's outstanding time
+    /// when the cumulative ack passed it. The cumulative frontier cannot pass a
+    /// hole until **every earlier hole** is also filled, so that sample is a
+    /// **max-statistic over the whole outstanding set** — head-of-line lag, not
+    /// this hole's resolution. The calibration measured the inflation and it is
+    /// not subtle: at `c1`, a cell whose RTT is **2 ms** and whose measured
+    /// `orig` p50 is **24.6 ms**, `T` read **429–602 ms** and the realized
+    /// hold-down delays ran to a **590 ms** maximum. **A clock two decades
+    /// wrong, on the cleanest cell, at `n = 1`.**
+    ///
+    /// The report is per-hole and exact: `gaps` IS the receiver's statement of
+    /// which seqs are still missing, and a stamped seq inside the report's own
+    /// span that the report does not list is one the receiver has. No frontier,
+    /// no max, no other hole's timing.
+    ///
+    /// **MUST run BEFORE this batch's own seqs are stamped**, or every hole
+    /// would be resolved by the report that first announced it.
+    ///
+    /// `shed` is the δ-honest shed set and is the ONE exclusion. A shed hole
+    /// was **abandoned**, not resolved: the sender stopped serving it and the
+    /// receiver's own δ-horizon eventually passes it, so it leaves the reports
+    /// having been given up on rather than delivered. Feeding it would push `T`
+    /// **upward** exactly where the contract had already stopped caring — the
+    /// only sign this estimator must not be biased in (§16.77.8a). It is
+    /// dropped from the map and fed to nothing.
+    pub(crate) fn on_report(
+        &mut self,
+        gaps: &[(u64, u64)],
+        now_us: u64,
+        shed: &std::collections::BTreeSet<u64>,
+    ) {
+        if self.first.is_empty() {
+            return;
+        }
+        // The span this report speaks about. A stamped seq ABOVE it is not
+        // covered by this report and its absence proves nothing — information
+        // availability, the same rule everywhere else in this construction.
+        let Some(hi) = gaps.iter().map(|&(_, b)| b).max() else {
+            return;
+        };
+        let resolved: Vec<u64> = self
+            .first
+            .range(..=hi)
+            .map(|(&s, _)| s)
+            .filter(|&s| !gaps.iter().any(|&(a, b)| s >= a && s <= b))
+            .collect();
+        for s in resolved {
+            if let Some((t0, path)) = self.first.remove(&s) {
+                if shed.contains(&s) {
+                    continue;
+                }
+                self.feed(path, now_us.saturating_sub(t0));
+            }
+        }
+    }
+
+    /// Drop every stamped hole the cumulative ack has passed. **PRUNE ONLY —
+    /// it feeds nothing.** A hole the frontier swept without a report ever
+    /// showing it filled has a resolution time this sender never observed, and
+    /// the frontier's own arrival is not a substitute for it (§16.77.8b). The
+    /// map is bounded by the outstanding set either way.
+    pub(crate) fn on_retired(&mut self, ack: u64) {
+        if self.first.is_empty() {
+            return;
+        }
+        let mut above = self.first.split_off(&ack.saturating_add(1));
+        std::mem::swap(&mut self.first, &mut above);
+    }
+
+    /// A quantile of the path's OWN observation window — the outstanding-time
+    /// distribution as this sender saw it, on EVERY arm including the control.
+    ///
+    /// **This is a gauge and never a clock.** It is read only by `line`, at
+    /// teardown, over a copy. Nothing in the engine consults it, and the
+    /// hold-down `T` is `t_us` and not this: `T` is the LAW's order statistic
+    /// at the LAW's own `N(1−q)`, which is what an arm commands, while this is
+    /// a fixed-window description of the same stream and is what the control
+    /// has instead of a law.
+    fn obs_q(&self, path: u32, p: f64) -> Option<u64> {
+        let w = self.win.get(&path)?;
+        if w.is_empty() {
+            return None;
+        }
+        let mut v: Vec<u32> = w.iter().copied().collect();
+        let idx = (((p * v.len() as f64).ceil() as usize).max(1) - 1).min(v.len() - 1);
+        let (_, nth, _) = v.select_nth_unstable(idx);
+        Some(*nth as u64)
+    }
+
+    fn line(&self, path: u32) -> String {
+        let c = self.ctr.get(&path).copied().unwrap_or([0; 4]);
+        let us = |v: Option<u64>| v.map_or("-".to_string(), |x| x.to_string());
+        let hd = self.hd.get(&path);
+        format!(
+            "[HOLD] site={} path={} gen={} q={} n_req={} n_obs={} samp_n={} fed={} \
+             t_us={} obs_p50_us={} obs_p90_us={} obs_p99_us={} \
+             evals={} law_n={} sup={} emit={} hd_p50_us={} hd_p90_us={} hd_p99_us={} \
+             hd_mx_us={} hd_n={} fa_class={:.4}",
+            self.site,
+            if path == u32::MAX {
+                "-".to_string()
+            } else {
+                path.to_string()
+            },
+            if self.gen { 1 } else { 0 },
+            self.q.map_or("unset".to_string(), |v| format!("{v:.6}")),
+            self.n_req.map_or("-".to_string(), |v| v.to_string()),
+            self.n_obs,
+            self.win.get(&path).map_or(0, |w| w.len()),
+            self.fed.get(&path).copied().unwrap_or(0),
+            us(self.t_us.get(&path).copied()),
+            us(self.obs_q(path, 0.50)),
+            us(self.obs_q(path, 0.90)),
+            us(self.obs_q(path, 0.99)),
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            us(hd.and_then(|h| h.quantile(0.50))),
+            us(hd.and_then(|h| h.quantile(0.90))),
+            us(hd.and_then(|h| h.quantile(0.99))),
+            us(hd.map(|h| h.max_us())),
+            hd.map_or(0, |h| h.n()),
+            // The sacrificial trailing constant — stderr has two writers and a
+            // `tracing` write can land inside a gauge line's LAST field.
+            RACK_SPURIOUS_BUDGET,
+        )
+    }
+}
+
+impl Drop for HoldDownGauge {
+    fn drop(&mut self) {
+        // One line per path that saw a fire, plus the unattributed bucket when
+        // it is non-empty. A site that never ran the gap loop stays silent, so
+        // an absent line can only be read as an unreached site and never as an
+        // unset gate — the same rule `[RACK]` and `[QCLK]` use.
+        let mut paths: Vec<u32> = self.ctr.keys().copied().collect();
+        paths.sort_unstable();
+        for p in paths {
+            eprintln!("{}", self.line(p));
+        }
+    }
+}
+
 /// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
 /// clamped law, the derived round under `RWM_DERIVED_SWEEP`, or the RACK
 /// round under `RWM_RACK_CLOCKS`. All three are ENV GATES (A/B arms), never
@@ -6514,6 +6954,13 @@ async fn run_window_sender(
     // scored on commanded α alone is scored on a label; see the gauge's decl.
     let mut qclk_echo =
         QuantileClockGauge::new("sender", pol.quantile_clocks, pol.w_form, pol.contract_alpha);
+    // `[HOLD]` (paper §16.77) — THE HOLD-DOWN ARM, on the path the fire-cause
+    // pass measured at 98.99 % of the fires. Constructed on EVERY arm, control
+    // included: with `RWM_HOLDDOWN_Q` absent it stamps nothing, allocates
+    // nothing, suppresses nothing, and prints `q=unset` — so an absent arm is
+    // READ off the run's own output rather than inferred.
+    let mut hold_echo = HoldDownGauge::new("sender", pol.holddown_q);
+    hold_echo.set_send_generation(pol.generation);
 
 
 
@@ -8974,6 +9421,12 @@ async fn run_window_sender(
                 }
             }
 
+            // §16.77 THE RESOLUTION SIGNAL. Every stamped hole this report no
+            // longer lists, inside the span this report covers, is one the
+            // receiver has — feed its outstanding time. Placed HERE, before the
+            // loop below stamps this batch's own seqs, or every hole would be
+            // resolved by the report that first announced it.
+            hold_echo.on_report(&gaps, now_repair_us, &st.shed_seqs);
             'gaps: for &(gap_start, gap_end) in &gaps {
                 // EVICT: only the coding window can serve a gap — older
                 // seqs are gone. RETAIN: the sent-data store serves ANY
@@ -8996,6 +9449,16 @@ async fn run_window_sender(
                     if pol.diag_on {
                         dg.mpd_gap_seqs += 1;
                     }
+                    // §16.77: stamp the FIRST report of this hole. Placed at
+                    // the loop head so the origin is "when the sender was first
+                    // told", not "when the sender got as far as deciding" — a
+                    // hole suppressed by cooldown was still outstanding.
+                    hold_echo.on_reported(
+                        seq,
+                        st.source_path_map.get(&seq).copied().unwrap_or(st.last_source_path),
+                        now_repair_us,
+                        matches!(gap_cause, FireCause::GapData | FireCause::GapRefresh),
+                    );
                     // δ-honest shed (fix C): a hole already shed is never
                     // served again (the receiver's own δ-horizon passes it);
                     // a past-deadline hole is shed within the ρ budget — a
@@ -9178,6 +9641,20 @@ async fn run_window_sender(
                     // exceed `[RACK] fired`; the difference is printed as
                     // `unattr=` rather than repaired, so no prior reading of
                     // `fa=` is silently re-based.
+                    // §16.77 THE HOLD-DOWN GATE. The sender does not answer a
+                    // reported hole until the hole has been outstanding for at
+                    // least `T(q) = W_q(1−q)` on the path its original flew —
+                    // §16.76's order statistic on the hole-resolution stream.
+                    // Placed here, after every other suppression `continue` and
+                    // before `record_fire_cause`, so `[FCAUSE] n` keeps meaning
+                    // "fires that reached the wire" and `[HOLD] sup=` is the
+                    // only place the difference is accounted.
+                    //
+                    // ABSENT ⇒ `should_hold` is `false` on every call and this
+                    // is the shipped machine, byte-identically.
+                    if hold_echo.should_hold(seq, now_repair_us) {
+                        continue;
+                    }
                     rack_echo.record_fire_cause(gap_cause);
                     if let Some((t, p)) = mp_flight {
                         let age = now_repair_us.saturating_sub(t);
@@ -9476,6 +9953,13 @@ async fn run_window_sender(
                     );
                 }
             }
+            // §16.77: drop the stamped holes the frontier has passed. PRUNE
+            // ONLY — the estimator is fed off the receiver's own gap report
+            // (`on_report`), never off the cumulative frontier, because the
+            // frontier cannot pass a hole until EVERY earlier hole is filled
+            // and that sample is head-of-line lag rather than this hole's
+            // resolution. §16.77.8b, and the calibration that measured it.
+            hold_echo.on_retired(ack);
             // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
             st.nack_retx_at.retain(|&seq, _| seq > ack);
             // feat/recovery-suppression: drop packet-threshold evidence the
@@ -10186,6 +10670,255 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── §16.77 THE HOLD-DOWN GAUGE — DISARMED IS INERT, ARMED SUPPRESSES ──
+
+    /// **DISARMED IS BYTE-IDENTICAL AND THIS ASSERTS IT AT THE GATE ITSELF.**
+    /// With `RWM_HOLDDOWN_Q` absent, `should_hold` is `false` on every call at
+    /// every age, so every fire reaches `record_fire_cause` exactly as it does
+    /// today. **No suppression, no `T`, no law.**
+    ///
+    /// **The ESTIMATOR nevertheless OBSERVES, and that is the point of the
+    /// control.** The first calibration could not tell "the outstanding-time
+    /// distribution IS long at this cell" from "the hold-down made it long",
+    /// because the one arm that defines the unforced distribution was the one
+    /// arm not reading it. The control now reports `obs_p50/p90/p99` over its
+    /// own window while commanding nothing — observation, never a clock.
+    #[test]
+    fn disarmed_the_holddown_gate_is_inert_at_every_age() {
+        let mut g = HoldDownGauge::new("sender", None);
+        assert!(!g.armed(), "an absent level must not arm");
+        for seq in 0..64u64 {
+            g.on_reported(seq, 0, 1_000_000, true);
+            for age in [0u64, 1, 1_000, 1_000_000, u64::MAX / 2] {
+                assert!(
+                    !g.should_hold(seq, 1_000_000 + age),
+                    "disarmed must never hold (seq={seq} age={age})"
+                );
+            }
+        }
+        // The estimator observes: 64 holes resolve, at 1..=64 ms each.
+        for seq in 0..64u64 {
+            g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default());
+        }
+        let l = g.line(0);
+        // THE LAW IS ABSENT AND THE LINE SAYS SO.
+        assert!(l.contains("q=unset"), "the disarmed line must say so: {l}");
+        assert!(l.contains("n_req=-"), "no window law is in force: {l}");
+        assert!(l.contains("t_us=-"), "and therefore no T: {l}");
+        assert!(l.contains("sup=0"), "disarmed must suppress nothing: {l}");
+        assert!(l.contains("law_n=0"), "disarmed runs no law: {l}");
+        assert!(l.contains("hd_n=0"), "and holds nothing, so no realized delay: {l}");
+        // THE OBSERVATION IS LIVE AND IT IS THE CONTROL'S WHOLE JOB.
+        assert!(l.contains("n_obs=1000"), "the control's declared window: {l}");
+        assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 64, "the control must OBSERVE");
+        assert!(!l.contains("obs_p50_us=-"), "the control must report a distribution: {l}");
+        assert_eq!(g.obs_q(0, 0.50), Some(32_000), "and it must be the right one");
+        // Two-sided: the site counted every evaluation it saw.
+        assert!(
+            l.contains("evals=320"),
+            "the disarmed arm still counts its evaluations: {l}"
+        );
+        assert!(g.t_us.is_empty(), "no path may ever carry a T on the control");
+    }
+
+    /// **ARMED, THE GATE SUPPRESSES EXACTLY THE HOLES YOUNGER THAN `T`, AND
+    /// THE ACCOUNTING CLOSES.** `evals = sup + emit` at every path, always —
+    /// without which `[HOLD] sup=` is a number nobody can place.
+    #[test]
+    fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
+        const Q: f64 = 0.5; // N = 2K = 20, the derived floor arm
+        let n = holddown_window_n(Q).expect("H500 resolves");
+        assert_eq!(n, 20);
+        let mut g = HoldDownGauge::new("sender", Some(Q));
+        assert!(g.armed());
+
+        // Fill the estimator on path 0 with 20 known resolutions: 1..=20 ms.
+        // Every one retires WITHOUT a repair having flown, so every one is an
+        // original resolution and the window is exactly 1_000..=20_000 µs.
+        let empty_shed = std::collections::BTreeSet::new();
+        for i in 1..=20u64 {
+            g.on_reported(i, 0, 0, true);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+        }
+        // `T` is the K-th largest of the freshest 20 = the 11th smallest.
+        let t = g.t_us.get(&0).copied().expect("the law ran once the window filled");
+        assert_eq!(t, 11_000, "T must be the K-th largest of the window: {t}");
+
+        // A hole younger than `T` is HELD; one older is EMITTED. No threshold on
+        // any dial enters — the only number is `T`.
+        g.on_reported(100, 0, 0, true);
+        assert!(g.should_hold(100, t - 1), "younger than T must be held");
+        g.on_reported(101, 0, 0, true);
+        assert!(!g.should_hold(101, t), "at T exactly, the hold-down releases");
+        g.on_reported(102, 0, 0, true);
+        assert!(!g.should_hold(102, t + 1), "older than T must be emitted");
+
+        let c = g.ctr.get(&0).copied().expect("path 0 saw fires");
+        assert_eq!(c[0], 3, "evals");
+        assert_eq!(c[1], 3, "law_n — the window was full at every evaluation");
+        assert_eq!(c[2], 1, "sup");
+        assert_eq!(c[3], 2, "emit");
+        assert_eq!(c[0], c[2] + c[3], "evals must equal sup + emit, always");
+        let l = g.line(0);
+        assert!(l.contains("q=0.500000") && l.contains("n_req=20") && l.contains("t_us=11000"), "{l}");
+        assert!(l.contains("samp_n=20") && l.contains("fed=20"), "{l}");
+    }
+
+    /// **A SHED HOLE WAS ABANDONED, NOT RESOLVED, AND MUST NOT FEED THE
+    /// ESTIMATOR.** It is the ONE exclusion, and it is the one direction this
+    /// estimator must not be biased in: feeding a shed hole would push `T`
+    /// UPWARD exactly where the contract had already given up. A REPAIRED hole
+    /// IS fed — see `on_retired` for why "no repair flew" is a fixed point at
+    /// zero on this machine, and for the sign of the bias that buys.
+    #[test]
+    fn the_holddown_estimator_excludes_only_the_shed() {
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        let mut shed: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+        for i in 1..=30u64 {
+            g.on_reported(i, 0, 0, true);
+        }
+        shed.insert(9);
+        shed.insert(11);
+        g.on_report(&[(31, 31)], 5_000, &shed);
+        assert_eq!(
+            g.fed.get(&0).copied().unwrap_or(0),
+            28,
+            "30 retired minus two shed - and NOTHING else is excluded"
+        );
+        // And the frontier is exclusive above: a hole the ack has NOT passed is
+        // still outstanding and is not retired.
+        let mut g2 = HoldDownGauge::new("sender", Some(0.5));
+        for i in 1..=30u64 {
+            g2.on_reported(i, 0, 0, true);
+        }
+        g2.on_report(&[(11, 11)], 5_000, &std::collections::BTreeSet::new());
+        assert_eq!(g2.fed.get(&0).copied().unwrap_or(0), 10, "seqs 1..=10 only");
+        assert_eq!(g2.first.len(), 20, "11..=30 are still outstanding");
+    }
+
+    /// **THE ESTIMATOR BOOTSTRAPS FROM A COLD START WITH NO WARM-UP BRANCH.**
+    /// This is the clause the reachability test earned: the first design fed
+    /// only holes for which no repair had flown, and with `T` unavailable the
+    /// sender answers every report immediately, so that set is EMPTY, the
+    /// window never fills and `T` is a fixed point at zero. **One rule, applied
+    /// identically at every window occupancy**, must reach an armed `T` from a
+    /// completely cold gauge.
+    #[test]
+    fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        let n = holddown_window_n(0.5).expect("H500");
+        let empty = std::collections::BTreeSet::new();
+        // Cold: no T, so the gate falls through and every fire is emitted.
+        g.on_reported(1, 0, 0, true);
+        assert!(!g.should_hold(1, 10_000_000), "cold, the gate must fall through");
+        assert!(g.t_us.get(&0).is_none());
+        // Feed exactly N retirements, ALL of which would have been repaired on
+        // the shipped machine. The window fills and the law arms itself.
+        for i in 2..=(n as u64 + 1) {
+            g.on_reported(i, 0, 0, true);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty);
+        }
+        assert!(
+            g.t_us.get(&0).is_some(),
+            "the estimator must arm from a cold start on repaired holes alone"
+        );
+    }
+
+    /// **THE HEAD-OF-LINE DEFECT IS BOUNDED BY A TEST AND NOT BY PROSE.** The
+    /// estimator must NEVER take a sample whose length is another hole's
+    /// timing. Two clauses, and the second is the one the calibration earned:
+    ///
+    /// 1. `on_retired` — the cumulative-frontier sweep — **feeds nothing, ever**,
+    ///    at any ack, on any path. It is a prune.
+    /// 2. `on_report` resolves a hole **per hole**, even while an EARLIER hole
+    ///    is still open and therefore still pinning the frontier far below it.
+    ///
+    /// Without (2) the sample for a late hole is a max-statistic over the whole
+    /// outstanding set. The calibration measured that inflation at `c1`, a cell
+    /// whose RTT is 2 ms: `T` read 429–602 ms with hold-down delays to 590 ms.
+    #[test]
+    fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
+        let empty = std::collections::BTreeSet::new();
+        // (1) THE FRONTIER SWEEP FEEDS NOTHING.
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        for i in 1..=50u64 {
+            g.on_reported(i, 0, 0, true);
+        }
+        g.on_retired(50);
+        assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 0, "on_retired must PRUNE, never feed");
+        assert!(g.t_us.get(&0).is_none(), "and therefore must never arm a T");
+        assert!(g.first.is_empty(), "but it must still bound the map");
+
+        // (2) A HOLE RESOLVES WHILE AN EARLIER ONE IS STILL OPEN. seq 1 stays
+        // missing for the whole test — the cumulative frontier can never pass
+        // seq 2 — and seq 2..=21 must nevertheless be timed on their own.
+        let mut g2 = HoldDownGauge::new("sender", Some(0.5));
+        for i in 1..=21u64 {
+            g2.on_reported(i, 0, 0, true);
+        }
+        for i in 2..=21u64 {
+            // seq 1 is STILL REPORTED MISSING; seq `i` is not.
+            g2.on_report(&[(1, 1), (i + 1, 30)], (i - 1) * 1_000, &empty);
+        }
+        assert_eq!(
+            g2.fed.get(&0).copied().unwrap_or(0),
+            20,
+            "seqs 2..=21 must resolve on their own timing with seq 1 still open"
+        );
+        assert!(g2.first.contains_key(&1), "the still-missing hole must stay outstanding");
+        // Samples are 1_000..=20_000 us; the K-th largest of 20 is 11_000.
+        assert_eq!(
+            g2.t_us.get(&0).copied(),
+            Some(11_000),
+            "and T must be the order statistic of THOSE samples, not of the frontier's lag"
+        );
+    }
+
+    /// **THE WINDOW IS PER PATH AND THE PATHS DO NOT POOL.** Two paths with
+    /// different reordering distributions must command different `T`, or the
+    /// estimator is measuring a mixture nobody named.
+    #[test]
+    fn the_holddown_estimator_is_per_path_and_paths_do_not_pool() {
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        let empty_shed = std::collections::BTreeSet::new();
+        // Path 0: 1..=20 ms. Path 1: 100..=2000 ms, 100x slower.
+        for i in 1..=20u64 {
+            g.on_reported(i, 0, 0, true);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+        }
+        for i in 101..=120u64 {
+            g.on_reported(i, 1, 0, true);
+            g.on_report(&[(i + 1, i + 1)], (i - 100) * 100_000, &empty_shed);
+        }
+        assert_eq!(g.t_us.get(&0).copied(), Some(11_000));
+        assert_eq!(g.t_us.get(&1).copied(), Some(1_100_000));
+        assert_eq!(g.win.get(&0).map(|w| w.len()), Some(20));
+        assert_eq!(g.win.get(&1).map(|w| w.len()), Some(20));
+    }
+
+    /// **AN UNFILLED WINDOW FALLS THROUGH TO THE SHIPPED BEHAVIOUR AND SAYS SO
+    /// IN `law_n`.** Information availability, never a mode (§16.76.5(1)): the
+    /// arm's row is then READ as partial rather than pooled with a full one.
+    #[test]
+    fn an_unfilled_holddown_window_falls_through_and_law_n_says_so() {
+        let mut g = HoldDownGauge::new("sender", Some(0.5));
+        let empty_shed = std::collections::BTreeSet::new();
+        for i in 1..=19u64 {
+            g.on_reported(i, 0, 0, true);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+        }
+        assert_eq!(g.win.get(&0).map(|w| w.len()), Some(19), "one short of N");
+        assert!(g.t_us.get(&0).is_none(), "the law must not have run");
+        g.on_reported(100, 0, 0, true);
+        assert!(
+            !g.should_hold(100, 0),
+            "with no T the gate falls through to the shipped behaviour"
+        );
+        let c = g.ctr.get(&0).copied().expect("path 0 saw the fire");
+        assert_eq!((c[0], c[1], c[2], c[3]), (1, 0, 0, 1), "evals=1 law_n=0 sup=0 emit=1");
+        assert!(g.line(0).contains("t_us=-"), "an unavailable T renders `-`");
+    }
     // The reorder buffer moved to `net/reorder.rs` (seam pass 1) and its last
     // NON-test consumer moved to `net/receiver.rs` (seam pass 3), so this
     // import is test-only now.

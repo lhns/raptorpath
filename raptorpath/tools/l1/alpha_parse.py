@@ -682,6 +682,137 @@ if q_path and os.path.exists(q_path):
             "tc_s": secs_q,
         }
 
+
+# ── §16.77 THE HOLD-DOWN ARM: `[HOLD]`, `[FCAUSE]`, `[SUCC]` ─────────────
+#
+# ADDED ADDITIVELY. No field above is removed or renamed and the `ALPHARESULT `
+# prefix is unchanged, so the hold-down sweep's rows POOL with the alpha-sweep
+# and quantile-native ledgers instead of speaking a second dialect of them.
+#
+# `[HOLD]` IS PER PATH AND THE PATHS DO NOT POOL. The gauge emits one line per
+# path that saw a fire, plus an unattributed bucket (`path=-`, the timer fires
+# this arm does not touch). Counters are summed across the REAL paths because
+# `sup_frac` is an invocation-level rate; `t_us` and `samp_n` are kept PER PATH
+# because a T pooled across two paths with different reordering distributions is
+# a mixture nobody named. The unattributed bucket is summed separately and never
+# folded into either.
+HOLD_INT = ["samp_n", "fed", "evals", "law_n", "sup", "emit", "hd_n"]
+hold = {"hold_lines": sum(1 for l in cli if "[HOLD] site=sender" in l)}
+for f in HOLD_INT:
+    hold["hold_" + f] = None
+for f in ("hold_q", "hold_n_req", "hold_n_obs", "hold_gen", "hold_sup_frac", "hold_law_frac",
+          "hold_obs_p50_us", "hold_obs_p90_us", "hold_obs_p99_us",
+          "hold_t_us_p0", "hold_t_us_p1", "hold_samp_n_p0", "hold_samp_n_p1",
+          "hold_hd_p50_us", "hold_hd_p90_us", "hold_hd_p99_us", "hold_hd_mx_us",
+          "hold_unattr_evals", "hold_paths_n", "hold_accounting_ok"):
+    hold[f] = None
+
+_hold_hits = [toks(ln) for ln in cli if "[HOLD] site=sender" in ln]
+if _hold_hits:
+    _real = [t for t in _hold_hits if t.get("path") not in (None, "-")]
+    _un = [t for t in _hold_hits if t.get("path") in (None, "-")]
+    hold["hold_paths_n"] = len(_real)
+    hold["hold_unattr_evals"] = sum(inum(t.get("evals")) or 0 for t in _un)
+    # The resolved level and its window law: identical on every line of one
+    # invocation, so the first is the reading and a disagreement is a defect.
+    _first = _hold_hits[0]
+    hold["hold_q"] = _first.get("q")
+    hold["hold_n_req"] = _first.get("n_req")
+    hold["hold_gen"] = inum(_first.get("gen"))
+    for f in HOLD_INT:
+        hold["hold_" + f] = sum(inum(t.get(f)) or 0 for t in _real)
+    _ev, _sup, _emit = hold["hold_evals"], hold["hold_sup"], hold["hold_emit"]
+    # THE ACCOUNTING IDENTITY, at the invocation level. A fire is either held or
+    # emitted and there is no third place for it to go; a violation is a FINDING
+    # ABOUT THE INSTRUMENT and the battery VOIDS the row rather than reporting a
+    # rate over a denominator nobody can size.
+    hold["hold_accounting_ok"] = int(
+        all(
+            (inum(t.get("evals")) or 0)
+            == (inum(t.get("sup")) or 0) + (inum(t.get("emit")) or 0)
+            for t in _hold_hits
+        )
+    )
+    hold["hold_sup_frac"] = round(_sup / _ev, 6) if _ev else None
+    hold["hold_law_frac"] = round(hold["hold_law_n"] / _ev, 6) if _ev else None
+    # PER PATH, in the gauge's own path order, up to the two legs any cell here
+    # has. `-` is the law declaring itself unavailable and is carried as None.
+    for _i, _t in enumerate(_real[:2]):
+        hold["hold_t_us_p%d" % _i] = inum(_t.get("t_us"))
+        hold["hold_samp_n_p%d" % _i] = inum(_t.get("samp_n"))
+    # THE OBSERVATION WINDOW, present on EVERY arm including the control. It is
+    # the UNFORCED outstanding-time distribution where no level is commanded,
+    # and it is what makes the feedback of an armed arm READABLE: `t_us` is the
+    # law's order statistic, `obs_*` describes the same stream at a fixed
+    # window, and CTL's `obs_*` is the baseline both are measured against.
+    hold["hold_n_obs"] = inum(_first.get("n_obs"))
+    for _i, _t in enumerate(_real[:2]):
+        for f in ("obs_p50_us", "obs_p90_us", "obs_p99_us"):
+            hold["hold_%s_p%d" % (f, _i)] = inum(_t.get(f))
+    # The REALIZED hold-down delay and the observation quantiles: MAX over
+    # paths, because these are per-path distributions and a sum of quantiles is
+    # not a quantile.
+    for f in ("hd_p50_us", "hd_p90_us", "hd_p99_us", "hd_mx_us",
+              "obs_p50_us", "obs_p90_us", "obs_p99_us"):
+        _v = [inum(t.get(f)) for t in _real]
+        _v = [x for x in _v if x is not None]
+        hold["hold_" + f] = (max(_v) if _v else None)
+
+# `[FCAUSE]` — the SENDER's fire classification, and this battery's FIRST
+# ROUTING WITNESS. Cumulative: the last line wins. `net/mod.rs`
+# (`fcause_report_line`).
+FC_INT = ["gen", "n", "timer", "gap_data", "gap_refresh", "other", "fired", "unattr"]
+FC_FLOAT = ["timer_frac", "gap_frac"]
+fcause = {"fcause_lines": sum(1 for l in cli if "[FCAUSE]" in l)}
+for f in FC_INT + FC_FLOAT:
+    fcause["fcause_" + f] = None
+_fc_hits = [toks(ln) for ln in cli if "[FCAUSE]" in ln]
+if _fc_hits:
+    t = _fc_hits[-1]
+    for f in FC_INT:
+        fcause["fcause_" + f] = inum(t.get(f))
+    for f in FC_FLOAT:
+        fcause["fcause_" + f] = fnum(t.get(f))
+
+# `[SUCC]` — the RECEIVER's hole-outcome gauge, and this battery's SECOND
+# ROUTING WITNESS. `net/succ.rs` (`succ_report_line`). Every quantile is a
+# bucket LOWER edge and underestimates by <= 9.05 %; that is a property of the
+# instrument and is carried, not corrected.
+SUCC_INT = ["gen", "det", "res", "orig_n", "rep_n", "aban_n", "open", "over",
+            "orig_p50_us", "orig_p90_us", "orig_p99_us", "orig_mx_us"]
+succ = {"succ_lines": sum(1 for l in srv if "[SUCC]" in l)}
+for f in SUCC_INT:
+    succ["succ_" + f] = None
+succ["succ_orig_frac"] = None
+succ["succ_identity_ok"] = None
+_sc_hits = [toks(ln) for ln in srv if "[SUCC]" in ln]
+if _sc_hits:
+    t = _sc_hits[-1]
+    for f in SUCC_INT:
+        succ["succ_" + f] = inum(t.get(f))
+    succ["succ_orig_frac"] = fnum(t.get("orig_frac"))
+    # The successor-arrival pass's own accounting identity, re-asserted here so
+    # a row whose gauge lost holes is READ rather than pooled:
+    #   det == orig_n + rep_n + aban_n + open + over
+    _p = [succ["succ_" + f] for f in ("orig_n", "rep_n", "aban_n", "open", "over")]
+    succ["succ_identity_ok"] = (
+        int(succ["succ_det"] == sum(_p))
+        if (succ["succ_det"] is not None and all(x is not None for x in _p))
+        else None
+    )
+
+# THE WIRING TEST'S STATISTIC, and it is deliberately CROSS-ENDPOINT: its
+# numerator is a SENDER gauge and its denominator a RECEIVER gauge, so it cannot
+# be an instrument agreeing with itself.
+#
+#     rpd = [FCAUSE] n / [SUCC] det        "repairs emitted per hole detected"
+#
+# §16.77.3 predicts `rpd ~ 1 - orig_frac * q`, strictly decreasing in q.
+_n, _det = fcause["fcause_n"], succ["succ_det"]
+hold["hold_rpd"] = (
+    round(_n / _det, 6) if (_n is not None and _det) else None
+)
+
 out = {"cell": cell, "arm": arm, "alpha_cmd": alpha_cmd,
        "seed": inum(seed), "rep": inum(rep),
        "n_paths": n_paths,
@@ -716,4 +847,7 @@ out.update(sig_out)
 out.update(pl_out)
 out.update(dgq_out)
 out.update(tc)
+out.update(hold)
+out.update(fcause)
+out.update(succ)
 print("ALPHARESULT " + json.dumps(out))
