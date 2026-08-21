@@ -15339,6 +15339,311 @@ than discovered in a run.
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 or scores any clause of any pre-registration.**
 
+### 16.75 The RATE-INVARIANT dispersion estimator, written as a formula before it is code: a successive difference at a fixed TIME lag τ = RTprop rather than at a fixed SAMPLE lag, because the quantity a lag-1 statistic estimates is a function of the sampling rate and the sampling rate is a property of the traffic, not of the link (2026-08-21, `feat/tlag-estimator`, **DOCS ONLY in this commit** — no VM, no benchmark, no engine file, no gate, no default, no test; goal-gate "THE SIGMA ESTIMATOR — THE SCORED RESULT" is the measurement that names this successor, this section is the model)
+
+#### 16.75.0 Verdict first — the expression
+
+§16.74.5's precondition (E) is unmet by every estimator this tree has, and the
+scored battery named the nearest miss and its cause in one sentence: `msd_us`
+— the median absolute **successive** difference — reaches `R_total = 8.667` on
+the bar's own most generous domain against an accept bar of `6.0`, **and every
+one of its failures is a sparse leg.** This section writes the estimator that
+removes the named cause, as a formula, before any gauge exists.
+
+**The construction, on a line by itself.**
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                      │
+   │   σ̂_Δ(τ)  =  median { | rtt(tᵢ) − rtt(tⱼ) |  :  (i, j) ∈ P(τ) }      │
+   │                                                                      │
+   │   P(τ)  =  { (i, j(i))  :  j(i) = argmax  { tⱼ : tᵢ − tⱼ ≥ τ }       │
+   │                                              j < i                   │
+   │                            and  tᵢ − t_{j(i)}  ≤  c·τ }              │
+   │                                                                      │
+   │   τ = RTprop        (the path's MEASURED propagation floor)          │
+   │   c = 2             (declared band width, one octave)                │
+   │                                                                      │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+In words: **pair every RTT sample with the most recent earlier sample that is
+at least one RTprop older, keep the pair only if that partner is no more than
+two RTprop older, and report the median of the absolute differences.** The lag
+is a physical time, not a sample count. Nothing else about the shipped `msd`
+construction changes — same rank statistic, same window class, same absolute
+first difference.
+
+#### 16.75.1 What a fixed-SAMPLE lag actually estimates, and why that is the defect
+
+Let the RTT series be a stationary process with marginal scale `σ` and
+autocorrelation `ρ(·)`. The **structure function** (the variogram of the
+process, [Matheron1963]; the same object time-and-frequency metrology reports
+as the Allan deviation, [Allan1966]) is the dispersion of the process at a
+stated lag:
+
+```text
+   V(τ)  =  E | X(t + τ) − X(t) |
+
+   and, for a Gaussian marginal,
+   median | X(t + τ) − X(t) |  =  Φ⁻¹(0.75) · √( 2·(1 − ρ(τ)) ) · σ
+                               =  0.6745    · √( 2·(1 − ρ(τ)) ) · σ
+```
+
+**A lag-1 successive difference is `V` evaluated at whatever the inter-sample
+spacing happens to be.** `msd_us` computes `median|rtt_i − rtt_{i−1}|`, so its
+estimand is `V(Δt)` with `Δt` = the mean spacing of the sample stream. `Δt` is
+set by the ack rate, which is set by the traffic. It is **not** a property of
+the link and it is not a property of the estimator. **Two legs of the same run
+therefore estimate two different quantities and their readings are not
+comparable** — and `1 − ρ(τ)` is increasing in τ for any positively correlated
+process, so the sparse leg reads systematically HIGHER and, near the knee of
+`ρ`, systematically NOISIER.
+
+**This is measured, not argued.** The local characterization moved the sample
+rate 137× on one host with the link held fixed and watched `msd`'s level move
+15× and its dispersion move 2.8× the wrong way; the VM battery then found
+`rho = −0.548` between `R_total` and sample rate across the eight sender legs,
+with the two thinnest legs (581 and 1 762 samples/s) the two worst readings in
+the whole battery (34.6 and 16.5). **The failure has the shape the formula
+predicts, at the legs the formula predicts, in the direction the formula
+predicts.**
+
+#### 16.75.2 The rate-invariance argument, in one paragraph
+
+`σ̂_Δ(τ)` selects pairs by **elapsed time**, not by position in the buffer. Its
+estimand is `V` evaluated on the band `[τ, c·τ]` — a set fixed before any
+sample arrives and independent of how fast samples arrive. **A sparse leg and a
+dense leg therefore select the same τ-differences of the same underlying
+process; the sparse leg simply finds fewer of them.** Sample rate moves the
+COUNT of pairs, which the estimator reports as `n` and which the scoring rule
+below turns into an UNSCOREABLE verdict when it is too small — it does not move
+the QUANTITY estimated. That is the whole of the design, and it is the one
+property the battery is being re-run to falsify.
+
+**The residual is named rather than hidden.** Because the partner is the most
+recent admissible sample, the realized lag lands somewhere in `[τ, c·τ]` and
+where in the band it lands does depend on the spacing. **The estimand is
+therefore invariant up to the variation of `V` across one octave, not
+exactly.** `V` is monotone and slowly varying in τ away from the correlation
+knee, so this is a second-order dependence against `msd`'s first-order one; it
+is a bound on the improvement, and the battery will measure it as `rho`.
+
+#### 16.75.3 The choice of τ — three candidates, one derivation, no free constant
+
+**Candidate 1 — τ scaled to `srtt`. REJECTED, and the reason is this whole
+pass's subject.** `srtt` is an EWMA that lags the series by ~8 samples across a
+level shift; the local characterization measured that the lagging `srtt`
+reference is the DOMINANT term in the shipped estimator's noise, worth 8–11× on
+its own. Using `srtt` as the estimator's **time scale** rather than as its
+**subtracted reference** is a weaker sin than `sig_us` commits, but it is the
+same sin: the estimator's own domain would become a function of a noisy
+statistic, and `R_total` would then contain `srtt`'s dispersion by
+construction. **An estimator built to escape a lagging reference does not get
+to re-import it as its abscissa.**
+
+**Candidate 2 — τ = a fraction of the RTprop floor. ACCEPTED, and the fraction
+is 1.** `RTprop` is the path's windowed **minimum** RTT. It is the one
+RTT-derived quantity in this tree that is measured, is not an EWMA, and is a
+floor — so it does not chase a level shift, which is exactly the property
+Candidate 1 lacks. The engine already carries it per path (`Path::min_rtt`,
+already printed on the `[DIAG]` line as `rtp…ms`), and §16.74.1's own delay
+allowance `D(δ) = min(b(δ)·RTprop, 2·RTprop)` is already denominated in it.
+
+**And the fraction is DERIVED, so there is no free constant.** Two RTT samples
+separated by less than one RTprop are acks generated from packets that were in
+flight **simultaneously**: they observed the same queue occupancy on the same
+traversal, so their difference measures within-burst ack granularity rather
+than path dispersion. That is precisely the quantity whose magnitude is set by
+the sending pattern. Samples separated by at least one RTprop come from
+**distinct path traversals**. So the smallest τ at which the difference is a
+dispersion of the path at all is
+
+```text
+   τ  =  RTprop
+```
+
+and the estimator takes the smallest admissible value, because `V` is
+increasing in τ and any larger τ mixes in more of the level process the
+successive difference exists to cancel. **The tree has made this exact argument
+before, in code:** `control/anchor.rs` rejects delivery-rate samples spanning
+less than one RTprop outright, on the same ground — a sub-RTprop span does not
+observe an independent path event. This section reuses that ruling rather than
+inventing one.
+
+**Candidate 3 — τ from the probe-validated band. REJECTED as circular.** The
+delivered-latency probe runs at 20 Hz, so a probe-derived τ would be 50 ms —
+a number with no relationship to any path's physics, imported from the
+instrument that clause `B` is being rebuilt in this very pass precisely because
+its sampling rate is not commensurable with the sender's. **A candidate whose
+own domain is set by the reference it will be scored against cannot be scored
+against it.**
+
+#### 16.75.4 Three declared resource bounds, each stated as one and each with its arithmetic
+
+None of these is a fitted constant and none of them changes the estimand;
+each buys a bounded amount of memory or resolution, and the arithmetic of what
+it buys is stated here rather than discovered in a run.
+
+| bound | value | what it buys, arithmetically |
+|---|---|---|
+| **band width `c`** | **2** (one octave) | the band must be wide enough that a partner exists at the sparsest leg and narrow enough that `V` is near-constant across it. One octave is the standard dyadic binning of a structure function. At `c8L`'s slow sender leg (581 samples/s, spacing 1.72 ms) against `RTprop ≈ 38 ms`, the band `[38, 76] ms` is 22 spacings wide — a partner exists for essentially every anchor. At the sparsest leg in the battery (`c8L` receiver, 23.9 samples/s, spacing 41.8 ms) exactly one spacing fits the band, which is the boundary case the `n` convention is for. |
+| **admission spacing `s`** | **`τ / m`, `m = 8`** | a **decimation**, not a filter: a sample is entered in the ring only if `s` has elapsed since the last entered sample. It caps the ring's sample rate at `8/τ` **regardless of the ack rate**, so a 256-entry ring spans `256·τ/8 = 32·τ` at every leg instead of 12.8 ms at a 20 kHz leg — without which the band `[τ, 2τ]` would contain **no pairs at all** at the dense legs and the gauge would read `-` exactly where it is most needed. It quantizes the realized lag to `τ/8` = 12.5 % of τ. **It does not change the estimand** (§16.75.2's band does that); it changes only the weighting of lags inside the band, and any fixed `m` yields the same rate-invariance property. |
+| **ring depth `L_τ`** | **256** | the same declared window the `qsp`/`msd` candidates already carry (`SIGMA_CAND_WINDOW`), reused rather than re-chosen so the three window-class gauges share one warm-up rule and one memory budget. |
+
+**AND THE ESTIMATOR IS UNSCALED, exactly as `qsp` is, for the reason `qsp`
+records.** `R_total` and §16.74.5's `R_σ̂` are ratios, so no fixed scaling
+changes any clause of `S`; and clause `B` as rebuilt in this pass compares the
+online reading against the SAME functional computed offline, so no scaling
+changes `B` either. The Gaussian conversion `median|Δ_τ| = 0.6745·√(2(1−ρ(τ)))·σ`
+is documented and **applied nowhere** — it requires knowing `ρ(τ)`, which is
+the thing being measured.
+
+#### 16.75.5 Per-symbol provenance
+
+| symbol | provenance |
+|---|---|
+| `rtt(tᵢ)` | **measured** — the same raw RTT sample stream the four existing gauges consume, unchanged, from the same push site |
+| `tᵢ` | **measured** — the sample's own arrival instant, already read at the push site for the min-deque |
+| `τ = RTprop` | **measured** — the path's windowed minimum RTT, already computed, already on the `[DIAG]` line. **The fraction is 1 and it is DERIVED** (§16.75.3: the smallest lag at which two samples observe distinct path traversals), reusing `control/anchor.rs`'s existing sub-RTprop rejection ruling |
+| `c = 2` | **DECLARED RESOURCE BOUND**, stated as one, with its pair-count arithmetic in §16.75.4. Standard dyadic structure-function binning |
+| `m = 8` | **DECLARED RESOURCE BOUND**, stated as one. Sets ring time-span and lag resolution; provably does not change the estimand |
+| `L_τ = 256` | **DECLARED RESOURCE BOUND**, inherited unchanged from the existing window class |
+| `median`, `|·|` | **CITED** — [vonNeumann1941] successive-difference variance; [RFC3550] §A.8 is the same construction at lag 1. The extension to a stated lag is [Matheron1963]'s variogram / [Allan1966]'s two-sample deviation at averaging time τ |
+
+**There is no coefficient in this law with no provenance, and there is no
+threshold anywhere in it.** `τ` is continuous in the measured RTprop; the band
+is a fixed multiple of `τ`; `m` and `L_τ` are memory. **No branch on `δ`, `ρ`,
+`r`, a hint, or a sample rate selects a different code path, law or constant.**
+
+#### 16.75.6 The estimator's own failure modes, stated in advance
+
+**F1 — TOO FEW PAIRS AT A SPARSE LEG.** If the leg's spacing exceeds `c·τ`, no
+partner is admissible and `P(τ)` is empty. This is the honest and expected
+behaviour at a leg too thin to measure a τ-lag dispersion at all, and it is
+**reported, never patched**:
+
+* **The `n` convention is the biconditional the tree already enforces.** The
+  gauge renders `-` **iff `n == 0`**, carries `n` beside its value on every
+  emission, and emits from its first sample. No threshold in any code path
+  hides it — `diag.rs`'s own reason applies verbatim: *"a field that disappears
+  below a threshold cannot be told apart from a path that was never sampled."*
+* **The UNSCOREABLE rule is a PARSER rule and is declared here, before the
+  battery.** A leg whose readings rest on fewer than **`K = 32`** pairs is
+  scored **`UNSCOREABLE-THIN`** — the gauge was not measured there, rather than
+  measured and found wanting. `K = 32` is `L_τ / 8`: a reading must rest on
+  pairs drawn from at least an eighth of its own window. It is declared, it is
+  applied by the parser, and it is **not** a gate in the engine.
+* **`UNSCOREABLE-THIN` IS NOT A PASS AND IS NOT A FAIL.** If the estimator is
+  unscoreable at the sparse legs, the design has not been shown rate-invariant
+  — it has dodged the question, and §16.75.7 pre-commits that as a REFUTATION
+  of the design's purpose, not as a clean sheet.
+
+**F2 — `τ` UNAVAILABLE.** Before RTprop is established there is no band. The
+gauge then has no pairs, `n = 0`, and it renders `-`. **There is no fallback
+constant**, because a fallback constant is a free constant with no provenance
+and a second code path — both forbidden.
+
+**F3 — RTprop RE-ESTIMATION MOVES THE BAND MID-WINDOW.** RTprop is a windowed
+minimum and can step down when a lower floor is observed. `τ` then shrinks and
+the ring's admission spacing shrinks with it, so the window briefly holds
+samples spaced for the old τ. This is a **transient of one ring depth** and it
+is bounded: the band and the ring converge within `L_τ` admissions. It is
+recorded as an owed divergence with that bound, not as prose.
+
+**F4 — THE OCTAVE RESIDUAL of §16.75.2.** Where in `[τ, 2τ]` the realized lag
+falls does depend on spacing, so invariance is up to one octave of `V`, not
+exact. **Direction is signed**: a denser leg lands nearer `τ` and therefore
+reads LOWER, so any residual rate dependence should retain `msd`'s SIGN while
+shrinking in magnitude. A residual of the opposite sign is a finding about the
+construction, not a small number.
+
+#### 16.75.7 The pre-stated prediction, and what falsifies it
+
+**Stated as a shape and a number before the gauge exists, so that no reading of
+the re-run battery can be chosen after the fact.**
+
+> **P4 — RATE INVARIANCE IS THE WHOLE CLAIM AND IT IS TWO-SIDED.**
+> `σ̂_Δ(τ)` satisfies `R_total ≤ 6.0` at **every scoreable leg, INCLUDING the
+> two sparse sender legs where `msd` failed** (`c8L p1` at 581 samples/s,
+> `c8 p1` at 1 762 samples/s), **and** its rank correlation between `R_total`
+> and sample rate over the sender legs satisfies `|rho| < 0.548` — strictly
+> inside `msd`'s measured value, i.e. the rate dependence must be **measurably
+> reduced**, not merely differently signed.
+>
+> *Falsified by:* `R_total > 6.0` at any scoreable leg — **the design is
+> refuted, and a fixed-time lag is not the missing construction.** *Falsified
+> equally by:* clearing the bar only because the sparse legs went
+> `UNSCOREABLE-THIN` — passing by not measuring is refutation, not a pass, and
+> §16.75.6 F1 pre-commits it as such. *Falsified equally by:* `rho ≤ −0.548`,
+> i.e. `R_total` still tracking the sample rate as hard as `msd`'s did — the
+> lag was made physical and the dependence survived, which means the mechanism
+> was mis-identified and neither this section nor §16.74.5's blocker paragraph
+> named the right cause.
+
+**Neither outcome is repairable by a coefficient**, which is the point of
+pre-registering it: there is no coefficient in the law to move.
+
+**AND THE FOUR EXISTING GAUGES REMAIN ON THE SAME LINE AS CONTROLS.** The
+re-run scores six estimators side by side from one sample stream in one run.
+`sig_us`, `rvar_us`, `qsp_us` and `msd_us` are re-measured unchanged, which
+makes the re-run a **regression check on the previous battery** as well as a
+test of the successor: if the four controls do not reproduce their committed
+verdicts, the finding is about the harness and no verdict is read from the
+fifth and sixth columns at all.
+
+#### 16.75.8 Shape check
+
+* **Units.** `τ`, `tᵢ`, `rtt` are seconds; `σ̂_Δ` is seconds. `c`, `m`, `L_τ`,
+  `K` are pure counts. `R_total` is a ratio and dimensionless. **`σ̂_Δ` has the
+  units the clock's `k(α)·σ̂` term requires**, so it is type-compatible with
+  §16.69's construction without any conversion.
+* **Continuity in the dial.** `τ = RTprop` contains no `δ`, no `ρ`, no `r` and
+  no hint. **The estimator is the same estimator at every point of the
+  triangle** — it is an instrument, not a policy, and the no-mode-switch
+  invariant is satisfied vacuously rather than by care.
+* **Continuity in the sample rate.** The admission rule is a spacing cap
+  applied identically at every rate; as the arrival spacing rises through
+  `τ/m`, the admitted stream passes continuously from decimated to
+  pass-through, with no branch and no step in the estimand.
+* **Monotone in `τ`.** `V` is non-decreasing in τ for a positively correlated
+  process, so `σ̂_Δ` is non-decreasing in the band's position — which is why
+  §16.75.3 takes the SMALLEST admissible τ.
+* **Reduces to `msd` in the limit.** As `τ → Δt` (the inter-sample spacing) the
+  band collapses onto the lag-1 pair and `σ̂_Δ(τ) → msd`. **The successor
+  contains its predecessor as a special case**, and the whole of the claimed
+  improvement is the difference between a τ chosen by physics and a τ chosen by
+  the traffic.
+* **Degenerate cases.** Constant RTT ⇒ `σ̂_Δ = 0` with `n > 0`, which renders
+  `0`, not `-`; empty band ⇒ `n = 0`, which renders `-`. The two are
+  distinguishable on the wire, which is the entire purpose of the `n` column.
+
+#### 16.75.9 What this section does NOT claim
+
+* **NO CANDIDATE IS PREFERRED AND NOTHING IS SCORED.** No number in this
+  section is a measurement of `σ̂_Δ`, because `σ̂_Δ` has never been on a wire.
+  The battery that scores it is a VM pass and is not this commit.
+* **§16.74.5's PRECONDITION (E) IS STILL UNMET.** This section proposes an
+  instrument; it does not report one that works. Until the re-run scores
+  `R_total ≤ 6.0` at every leg, the clock family `W = mean + k(α)·σ̂` remains
+  un-instantiable, `RWM_QUANTILE_CLOCKS` stays default OFF and
+  REFUTED-STANDING, and the shipped clamp stays convicted and unreplaced.
+* **NO CONSUMER IS WIRED AND NO CLOCK IS TOUCHED.** `σ̂_Δ` is a read-only
+  `[DIAG]` gauge beside the other four. Nothing reads it.
+* **`msd_us` IS NOT WITHDRAWN.** It stays on the line as a control and its
+  committed verdict stands. This section explains its failure mode; it does not
+  revise its score.
+* **THE MISSING TRUTH INSTRUMENT IS STILL MISSING.** The scored battery named
+  *"a delivered-latency probe at the sender's own sample rate"* as absent, and
+  this section does not build it. The companion change to clause `B` makes the
+  bias question **exact against the estimator's own input stream**, which is a
+  narrower question than the one the probe was meant to answer — and it is
+  recorded as a narrowing, not as a substitute.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
@@ -16713,6 +17018,27 @@ distinction matters far less than this factor-of-W undercount.)
   Functions*, National Bureau of Standards, 1964.
   Rational approximation for the standard normal quantile (Section 26.2.23),
   used in our Beta quantile and z_δ computation.
+
+- **[vonNeumann1941]** J. von Neumann, R.H. Kent, H.R. Bellinson, B.I. Hart,
+  "The Mean Square Successive Difference," *Annals of Mathematical Statistics*
+  12(2):153–162, 1941.
+  The successive-difference estimator of dispersion, which cancels a level
+  shift in the mean exactly. Section 16.75's `σ̂_Δ` and the `msd_us` candidate
+  are this construction; §16.75 extends it from a fixed SAMPLE lag to a fixed
+  TIME lag.
+
+- **[Matheron1963]** G. Matheron, "Principles of Geostatistics," *Economic
+  Geology* 58(8):1246–1266, 1963.
+  The variogram / structure function `V(τ) = E|X(t+τ) − X(t)|` — dispersion
+  reported at a stated lag rather than as a single number. Section 16.75's
+  estimand.
+
+- **[Allan1966]** D.W. Allan, "Statistics of Atomic Frequency Standards,"
+  *Proceedings of the IEEE* 54(2):221–230, 1966.
+  The two-sample (Allan) deviation, defined at a stated averaging time τ
+  precisely because a lag-1 dispersion of a sampled clock is meaningless
+  without one. The closest classical precedent for §16.75's argument that a
+  successive-difference statistic must name its lag in physical time.
 
 ### FEC Codes
 
