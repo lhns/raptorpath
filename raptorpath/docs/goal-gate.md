@@ -45245,3 +45245,88 @@ receiver-side quantiles), and scores nothing.
 
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, or scores any clause of any pre-registration.**
+
+## THE HOLD-DOWN SWEEP — THE CALIBRATION AND SMOKE, DISCHARGED (2026-08-21, `feat/holddown-clock`) — **the PRE-REGISTRATION's §9 clause is COMPLETE and the scored battery is cleared to launch.** 25 invocations (one rep per arm per cell, all five cells, all five arms), one REBUILT binary `sha256 c36e12e9…`, commit `7e18d04`, seed 42, **0 aborts, `rc = 0` at 25/25, and ZERO failures of EVERY witness class.** `n = 1`. **NOTHING HERE IS A RESULT** — no clause of §5 or §6 is scored, and no number below is quoted as a measurement of anything.
+
+### 1 — THE WITNESS LEDGER, EVERY CLASS PRINTED WHETHER OR NOT IT IS ZERO
+
+| class | count |
+|---|---|
+| `ABORT` | **0** |
+| `ARM-LIVENESS-FAIL-CLI` / `-SRV` | **0** / **0** |
+| `ARM-CONTAMINATION` | **0** |
+| `ROUTING-FAIL-ACCOUNT` | **0** |
+| `ROUTING-FAIL-FCAUSE` | **0** |
+| `INSTRUMENT-FAIL-HOLD` / `-SUCC` / `-RFA` / `-CLASS` / `-GATE` / `-PROBE` | **0** at all six |
+| `W3-QLEVEL-FAIL` / `-NREQ-FAIL` / `-GEN-FAIL` | **0** at all three |
+| `HOLD-PARSE-FAIL` | **0** |
+| `HOLD-BATTERY-DONE` | 1 |
+
+**W3 PASSES AT 25 OF 25**: every armed arm's `[HOLD] q=` matches its arm-table
+level and its `n_req=` matches the window law's own answer — `0.5`/20,
+`0.864`/74, `0.963`/271, `0.99`/1000 — and `CTL` reads `q=unset n_req=-`. The
+harness scrape defect of amendment 1 and the estimand defects of amendments 2
+and 3 are all closed.
+
+**W4, THE ROUTING WITNESS, PASSES AT 25 OF 25.** `Σ evals = Σ sup + [FCAUSE] n`
+held on every invocation, from two gauges at two sites. **W5 passes at 25/25**:
+`[SUCC] det` 424–93 032 with `res > 0` everywhere.
+
+### 2 — THE TWO RESULTS-NOT-ABORTS, AND ONE OF THEM SCORES A PRE-REGISTERED PREDICTION
+
+`HOLD-LAW-DEAD` **3**, `WINDOW-PARTIAL` **18** — both are RESULTS by §16.77.8's
+UNSCOREABLE rule and neither is an abort.
+
+**AND THE `c1` PREDICTION SCORES, TWICE.** §16.77.8's window-fill table
+predicted `c1`-`H010` UNSCOREABLE before the run, from 749 resolutions per rep
+against `N = 1000`:
+
+```text
+   HOLD-LAW-DEAD c1-H010  law_n=0  fed=233  samp_n=233  n_req=1000
+   HOLD-LAW-DEAD c1-H037  law_n=0  fed=265  samp_n=265  n_req=271
+```
+
+**`c1`-`H010` is dead exactly as predicted, and `c1`-`H037` is dead too — one
+arm further down the grid than the table said.** The prediction was directionally
+right and quantitatively optimistic: the sender-observed resolution stream at
+`c1` is **sparser** than `[SUCC]`'s `det` count implied, which is §16.77.8b's
+prune-don't-feed rule spending samples exactly as it said it would. Both rows
+are **VOID for scoring** and are reported, never pooled.
+
+### 3 — THE CALIBRATION CLAUSE, ITEM BY ITEM
+
+| §9 requirement | status |
+|---|---|
+| W1–W8 clean at 25/25 | **MET** — zero failures in every class |
+| `[HOLD]` present with the right `n_req` on every treatment arm | **MET**, 20/20 |
+| a live `t_us` with a sane `samp_n` on every arm whose window §3 says should fill | **MET** — dead only at the two `c1` arms §16.77.8 predicted |
+| `[SUCC]` and `[FCAUSE]` armed and non-empty | **MET**, 25/25 |
+| `sup > 0` on at least `H500` at every cell | **MET** — 71 011 / 18 588 / 3 822 / 979 876 / 411 577 at `c1`/`c7`/`c8`/`c8L`/`sc2` |
+
+**THE BATTERY IS CLEARED TO LAUNCH.**
+
+### 4 — TWO THINGS THE CALIBRATION SAW THAT ARE **NOT** READ HERE, AND WHY
+
+**THE GOODPUT COST IS LARGE AND OUT OF BAND ON TREATMENT ARMS AT THREE CELLS**
+(`c7`, `c8L`, `sc2`), while **`CTL` is IN BAND at 5 of 5**. **BANDSCOPE applies:
+the bands are `CTL`-only and an out-of-band treatment reading is a RESULT**, which
+is §16.77.9's `H4` and is precisely what the scored battery exists to measure at
+`n = 8` over two seeds. **It is not scored from `n = 1` and no cell verdict is
+taken here.**
+
+**AND THE `H5` INFLATION IS NOW MEASURABLE FOR THE FIRST TIME**, because the
+control finally carries the instrument: `obs_p50(CTL)` reads 17.9 / 23.6 / 7.8 /
+18.3 / 102.2 ms at `c1`/`c7`/`c8`/`c8L`/`sc2`. The armed arms' `obs_p50` runs
+far above it at several cells. **That ratio is `H5`'s statistic and `n = 1` is
+not where it is read.** It is stated here only to record that the quantity
+amendment 3 built the instrument for is now present in the ledger.
+
+**ONE DISCLOSURE ABOUT THAT COMPARISON, MADE BEFORE IT IS USED.** `n_obs` is
+`N(1−q)` on a treatment arm and `HOLD_OBS_WINDOW = 1000` on the control, so the
+two `obs_p50`s are quantiles over windows of **different lengths** (20 against
+1000 at `H500`). The estimand is the same and the quantile is the same
+functional, but the smoothing is not. **`H5` must be read with that stated**, and
+it is stated here rather than after the ratio is quoted.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or scores any clause of any pre-registration.**
