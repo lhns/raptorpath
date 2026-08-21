@@ -17764,6 +17764,70 @@ written here, before that battery, as the thing that could defeat the decision.
 default path, edits an engine crate, or scores any clause of any
 pre-registration.**
 
+#### 16.79.7 ADDENDUM — the NON-NULL instantiation, named explicitly (2026-08-21, `feat/verdict-alpha`, **DOCS ONLY**)
+
+§16.79 decided the formula and §16.79.6 recorded that the decided value of `T*`
+is zero — a NULL member of §16.77's hold-down family. **This addendum names the
+one thing that decision left unnamed: which member of the DERIVED-α family
+§16.74's single instantiation actually is, when it is not the null.** It adds no
+claim. Every number in it is transcribed from a scored section with its citation.
+
+> **THE SINGLE INSTANTIATION OF §16.74 WITHIN THE DERIVED-α FAMILY IS
+> `W_q(α*)` WITH `α*` AT THE MEASURED BOUNDARY OPTIMUM `0.40` — THE MAXIMAL
+> NON-NULL MEMBER**; the curve's continuation beyond that boundary is the
+> corner, which is §16.79's decision. **`W_q(0.40)` is therefore the derived
+> clock goal #101 item 4 adjudicates: if the clamp beats even the family's best
+> measured member, the family is closed by contest as well as by curve.**
+
+**WHERE `α* = 0.40` COMES FROM, AND IT IS A READING AND NOT A CHOICE.** The
+quantile-native α-sweep's scored §7 evaluated the contract-priced score
+`ΔU = ln(mbps/mbps_CTL) − δ·ln(lat_p95/lat_p95_CTL)` at the contract's own
+`δ_bulk = 0.005` over five arms spanning a 200× range of α. **`c1` is the one
+cell in that battery with both arm separation and a curve that clears its own
+noise** (`ΔU` monotone increasing in α, spanning 0.300 against
+`σ_pooled = 0.0408` — a 7.4σ spread), and its `α*` is `Q400 = 0.40`, the
+right-hand boundary of the swept range. The sweep's own §6 boundary clause,
+written before the VM was touched, reads that as
+`BOTH REFUTED — OPTIMUM OUTSIDE THE SWEEP` — *"a result and not a failure."*
+`sc2`'s `α*` is `Q400` as well, on a `FLAT CURVE`.
+
+**"MAXIMAL NON-NULL" IS EXACT, AND IT IS THE ADDENDUM'S ONLY WORK.** Three facts
+already on the record fix it, and none of them is new here:
+
+1. **`0.40` is the largest α the family was ever measured at.** `Q400` is the
+   top arm of the swept grid, at window `N(α) = 25`.
+2. **The measured curve's optimum is AT that boundary, not inside it.** Every
+   interior arm scores worse at `c1`, monotonically (`Q002` −0.3696 → `Q400`
+   −0.0694), so no member between the two route limits is the instantiation.
+3. **The continuation beyond the boundary is the CORNER, and the corner is the
+   NULL.** §16.79.0's `T* = 0` is the limit of "wait less" carried past the last
+   commandable point; it adds no waiting time at all. **So `W_q(0.40)` is the
+   best member the family has that is still a member — the last non-degenerate
+   point before the family collapses into the incumbent.**
+
+**AND `α* = 0.40` LIES OUTSIDE THE INTERVAL THE TWO ROUTES BRACKET**, which is
+why it is the family's own best member rather than either route's: at the
+measured inputs it is 44× `α_d` and 235× `α_b`, so a one-parameter interpolation
+in `λ` cannot reach it (α-sweep §8, verbatim). **The instantiation is therefore
+not route (b) and not route (d); it is the family's measured optimum, and
+naming it is what makes item 4's contest well-posed.**
+
+**WHY THIS MATTERS FOR ITEM 4, IN ONE SENTENCE.** Item 4's condition names
+*"the derived clock vs shipped clamp"*, and the verdict battery of 2026-08-21
+adjudicated the **hold-down** challenger instead — a configuration from the
+record, correctly and explicitly labelled as such, and not a member of the
+derived-α family at all. **`W_q(0.40)` is the derived-α family's own strongest
+measured member, and until it is put against the clamp the family is closed only
+by its curve.** This addendum names it so that the closure can be by contest too.
+
+**WHAT THIS ADDENDUM DOES NOT CLAIM.** It does not claim `W_q(0.40)` is good, or
+that it beats anything: the α-sweep measured it **worse than the shipped clamp
+at `c1` on the contract-priced score** (`ΔU = −0.0694`, 1.7σ) and flat at `sc2`.
+It does not re-open `F2` — the commanded false-alarm rate is still non-monotone
+in α at five of five cells and §16.69's measurand is still refuted. It does not
+derive α, flip a default, add a gate, edit an engine crate, or score any clause
+of any pre-registration. **It names a member of a family. That is all it does.**
+
 
 ## 17. The Measured Regime Map (2026-07-19)
 

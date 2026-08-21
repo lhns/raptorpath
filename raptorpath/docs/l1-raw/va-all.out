@@ -1,0 +1,31 @@
+SENTINEL-WRITABLE /home/vibe/valpha/DONE-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/FAILED-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/DONE-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/FAILED-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/DONE-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/FAILED-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/valpha/all-era.txt (probed as vibe, write+unlink)
+SENTINEL-PROOF-COMPLETE 2026-08-21T18:33:03Z user=vibe dir=/home/vibe/valpha
+VA-ALL seeds: 42 7
+VA-ALL grid: cell=c1 reps_per_seed=2 reps_total=4
+VA-ALL grid: cell=c7 reps_per_seed=6 reps_total=12
+VA-ALL grid: cell=sc2 reps_per_seed=4 reps_total=8
+VA-ALL grid: cell=c8 reps_per_seed=4 reps_total=8
+VA-ALL total scored invocations: 64
+VA-ALL invoke seed=42 cell=c1 reps=2 2026-08-21T18:33:03Z
+VALPHA-BATTERY-DONE-42
+VA-ALL invoke seed=42 cell=c7 reps=6 2026-08-21T18:34:23Z
+VALPHA-BATTERY-DONE-42
+VA-ALL invoke seed=42 cell=sc2 reps=4 2026-08-21T18:37:07Z
+VALPHA-BATTERY-DONE-42
+VA-ALL invoke seed=42 cell=c8 reps=4 2026-08-21T18:38:42Z
+VALPHA-BATTERY-DONE-42
+VA-ALL invoke seed=7 cell=c1 reps=2 2026-08-21T18:39:23Z
+VALPHA-BATTERY-DONE-7
+VA-ALL invoke seed=7 cell=c7 reps=6 2026-08-21T18:40:41Z
+VALPHA-BATTERY-DONE-7
+VA-ALL invoke seed=7 cell=sc2 reps=4 2026-08-21T18:43:45Z
+VALPHA-BATTERY-DONE-7
+VA-ALL invoke seed=7 cell=c8 reps=4 2026-08-21T18:45:19Z
+VALPHA-BATTERY-DONE-7
+VA-ALL-DONE
