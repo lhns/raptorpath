@@ -785,6 +785,41 @@ pub struct RuntimeGates {
     /// `RWM_ACKDIAG_WINDOW_US` precedent, whose echo is its resolved µs and not
     /// a flag.
     pub alpha_override: Option<f64>,
+    /// `RWM_W_FORM` (**`cantelli` by default**; paper §16.76) — WHICH of the
+    /// two rival `W` laws the armed quantile clock evaluates. Read ONLY when
+    /// [`Self::quantile_clocks`] is armed; on the default arm it is inert and
+    /// the engine is byte-identical without it.
+    ///
+    /// ```text
+    ///   cantelli   W(α)   = srtt + √((1−α)/α)·σ           §16.69  (default)
+    ///   quantile   W_q(α) = X_(N(α)−K+1),  N = ⌈K/α⌉      §16.76
+    /// ```
+    ///
+    /// **Why it exists.** §16.74.5 made `σ̂` a precondition of the whole
+    /// `mean + k(α)·σ̂` family, and two batteries failed to find an estimator
+    /// meeting it. The τ-lag battery's clause `B` then measured why the search
+    /// was misdirected: the shipped estimator supplies a **conditional**
+    /// spread at 3–5 % of the **marginal** dispersion the Cantelli form
+    /// requires (20–300× at seven of eight sender legs), and the marginal
+    /// quantity is itself regime-dominated — one rep in eighty moved pooled
+    /// `R_total` by 33×. **`quantile` removes the `σ̂` term rather than
+    /// estimating it**, which is available on `[0.002, 0.40]` for the reason
+    /// §16.69's own reason 2 gives and unavailable at the contract's own α for
+    /// the same reason — where it says so on its echo instead of
+    /// extrapolating.
+    ///
+    /// **It is an A/B EXPERIMENT ARM and it is not a mode switch.** The two
+    /// values are RIVAL LAWS FOR ONE QUANTITY, in the same precedence chain
+    /// `quantile / rack / derived` already occupies; nothing keys on a
+    /// threshold in the (δ, ρ, r) triangle, and **nothing may ship reading
+    /// it** — the same rule [`Self::alpha_override`] carries.
+    ///
+    /// **Garbage resolves back to ABSENT VISIBLY.** Unset, empty or
+    /// unparseable ⇒ `cantelli` ⇒ today's behaviour, and the `[GATES]` echo
+    /// prints the RESOLVED token so *"my arm did not take"* is READ off the
+    /// run's own output rather than inferred — the `RWM_ALPHA_OVERRIDE`
+    /// precedent, and the failure mode that produced the 31 Mbit/s anomaly.
+    pub w_form: crate::net::WForm,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -1009,6 +1044,13 @@ impl RuntimeGates {
             // undefined at α ≤ 0 and negative-radicand above 1.
             alpha_override: env_parse::<f64>("RWM_ALPHA_OVERRIDE")
                 .filter(|a| a.is_finite() && *a > 0.0 && *a <= 1.0),
+            // ABSENT by default; garbage resolves back to `cantelli` — today's
+            // law — and the echo prints the RESOLVED token, so a mistyped arm
+            // is READ rather than inferred. Paper §16.76.
+            w_form: std::env::var("RWM_W_FORM")
+                .ok()
+                .and_then(|v| crate::net::WForm::parse(&v))
+                .unwrap_or_default(),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
             rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
                 .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
@@ -1076,7 +1118,7 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
-             RWM_ALPHA_OVERRIDE={} \
+             RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
@@ -1118,6 +1160,12 @@ impl RuntimeGates {
             // rather than inferred — the failure mode that produced the
             // 31 Mbit/s anomaly, where a configuration axis had no echo at all.
             o(&self.alpha_override),
+            // THE `W` LAW, echoed as its RESOLVED TOKEN and never as a flag —
+            // same precedent, same reason. `cantelli` means today's law is in
+            // force; `quantile` means §16.76's is. A mistyped or unknown value
+            // resolves back to `cantelli` and prints as `cantelli`, so an arm
+            // that did not take is READ rather than inferred. Paper §16.76.
+            self.w_form.as_str(),
             // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
             // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
             // measured in, so a ledger whose windows are 250 ms and one whose
@@ -1382,6 +1430,9 @@ mod tests {
             // The EXPERIMENT α knob is ABSENT on every shipped arm, and its
             // echo says so in the same line every battery already scrapes.
             "RWM_ALPHA_OVERRIDE=unset",
+            // The `W` law's RESOLVED token. `cantelli` is today's behaviour
+            // and is what the default arm must echo (paper 16.76).
+            "RWM_W_FORM=cantelli",
         ] {
             assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
         }
@@ -1403,6 +1454,34 @@ mod tests {
              the RWM_ACKDIAG_WINDOW_US precedent: {}",
             swept.echo_line()
         );
+        // THE `W` FORM SHIPS AS `cantelli` AND THE ARMED ARM ECHOES ITS OWN
+        // RESOLVED TOKEN (paper 16.76). Both sides asserted: an arm that did
+        // not take must be readable, not inferred.
+        assert_eq!(
+            g.w_form,
+            crate::net::WForm::Cantelli,
+            "RWM_W_FORM ships as `cantelli` - the quantile-native law is an \
+             A/B arm inside RWM_QUANTILE_CLOCKS (itself default OFF and \
+             REFUTED-STANDING) and nothing shipped may read it (paper 16.76)"
+        );
+        let mut qform = g.clone();
+        qform.w_form = crate::net::WForm::Quantile;
+        assert!(
+            qform.echo_line().contains("RWM_W_FORM=quantile"),
+            "the armed arm's echo must NAME the RESOLVED W law: {}",
+            qform.echo_line()
+        );
+        // GARBAGE RESOLVES BACK TO ABSENT, and `absent` is `cantelli`. Parsed
+        // by FIELD rather than through the environment - env mutation is
+        // process-global in a parallel runner.
+        for junk in ["", " ", "quantle", "1", "CANTELLI-ish", "true"] {
+            assert!(
+                crate::net::WForm::parse(junk).is_none(),
+                "RWM_W_FORM={junk:?} must resolve back to ABSENT, not to an arm"
+            );
+        }
+        assert_eq!(crate::net::WForm::parse(" Quantile ").unwrap(), crate::net::WForm::Quantile);
+        assert_eq!(crate::net::WForm::parse("cantelli").unwrap(), crate::net::WForm::Cantelli);
         // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
         // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
         // re-running the displaced `gain = 2.0` fossil must be able to assert

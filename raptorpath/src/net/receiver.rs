@@ -193,6 +193,9 @@ pub(crate) async fn run_receiver(
     let recv_rack_clocks = recv_gates.rack_clocks;
     let recv_rack_reo_mult = recv_gates.rack_reo_mult;
     let recv_quantile_clocks = recv_gates.quantile_clocks;
+    // Paper §16.76: WHICH of the two rival `W` laws the armed clock evaluates.
+    // `cantelli` on every shipped arm; read only when the quantile gate is on.
+    let recv_w_form = recv_gates.w_form;
     // The contract's alpha at the RECEIVER. The protocol hint is not plumbed
     // to this task, so the quantile arm reads the Auto point of the dial here
     // while the sender reads the tunnel's own. Recorded as a stated limitation
@@ -216,6 +219,7 @@ pub(crate) async fn run_receiver(
         crate::net::qalpha_report_line(
             "receiver",
             recv_quantile_clocks,
+            recv_w_form,
             recv_contract_alpha_base,
             recv_gates.alpha_override,
             recv_contract_alpha,
@@ -228,6 +232,7 @@ pub(crate) async fn run_receiver(
     let mut recv_qclk_echo = crate::net::QuantileClockGauge::new(
         "receiver",
         recv_quantile_clocks,
+        recv_w_form,
         recv_contract_alpha,
     );
     let mut qclk_report_at = Instant::now();
@@ -767,7 +772,7 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if pending {
-                let (srtt, srtt_jitter_us, min_rtt, sigma_us) = {
+                let (srtt, srtt_jitter_us, min_rtt, sigma_us, w_q_us) = {
                     let sched = recv_scheduler.lock();
                     let live: Vec<_> = sched
                         .live_paths()
@@ -782,6 +787,12 @@ pub(crate) async fn run_receiver(
                         live.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0),
                         live.iter().filter_map(|p| p.min_rtt()).min(),
                         live.iter().filter_map(|p| p.rtt_sigma_us()).max(),
+                        // §16.76's `W_q`, MAX over the SAME path set, for the
+                        // same reason σ is. `None` (window short of `N(α)`)
+                        // ⇒ the quantile arm falls through — UNSCOREABLE.
+                        live.iter()
+                            .filter_map(|p| p.rtt_tail_quantile_us(recv_contract_alpha))
+                            .max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
@@ -794,6 +805,7 @@ pub(crate) async fn run_receiver(
                     // Paper §16.68: `RWM_RACK_CLOCKS` REPLACES
                     // `RWM_DERIVED_SWEEP` here — rival laws for one quantity.
                     let refresh = hole_refresh_all(
+                        recv_w_form,
                         recv_quantile_clocks,
                         recv_rack_clocks,
                         recv_derived_sweep,
@@ -801,6 +813,7 @@ pub(crate) async fn run_receiver(
                         srtt_jitter_us,
                         min_rtt,
                         sigma_us,
+                        w_q_us,
                         recv_rack_reo_mult,
                         recv_contract_alpha,
                     );
@@ -809,6 +822,7 @@ pub(crate) async fn run_receiver(
                         refresh.as_micros() as u64,
                         srtt.map_or(0, |s| s.as_micros() as u64),
                         sigma_us,
+                        w_q_us,
                     );
                     if recv_rack_clocks {
                         if let (Some(sv), Some(mv)) = (srtt, min_rtt) {

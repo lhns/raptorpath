@@ -15644,6 +15644,459 @@ fifth and sixth columns at all.
 wires a consumer, touches a clock, or scores any clause of any
 pre-registration.**
 
+### 16.76 The QUANTILE-NATIVE recovery clock: delete `σ̂` and read the order statistic — the Cantelli bound was only ever needed at an `α` this tree has already refuted, and at the `α` range it actually sweeps the measurement is available, assumption-free, reference-free, and immune to both failure families two batteries measured (2026-08-21, `feat/qnative-clock`, **PAPER + EXPERIMENT ARM** — gate `RWM_W_FORM` behind `RWM_QUANTILE_CLOCKS`, both default OFF; no default flipped, no law shipped)
+
+#### 16.76.0 Verdict first — the expression
+
+Two batteries have now failed to find a `σ̂` this tree can put in
+`W = mean + k(α)·σ̂`, and the second one measured why the search was
+misdirected. **The construction below removes the term they were searching
+for.**
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                                                                      │
+   │   W_q(α)  =  X_(N(α) − K + 1)          the K-th LARGEST of the        │
+   │                                        window's N(α) most recent     │
+   │                                        raw ack-arrival samples       │
+   │                                                                      │
+   │   N(α)    =  max( ⌈ K / α ⌉ , 2K )     THE WINDOW LAW                 │
+   │                                                                      │
+   │   K       =  10                        the standard order-statistic   │
+   │                                        exceedance count, CITED — the  │
+   │                                        same "≥ 10" `SIGMA_CAND_WINDOW`│
+   │                                        already cites for its own P90  │
+   │                                                                      │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+**There is no `σ`, no `k(α)`, no `srtt`, no smoothing gain, no assumed
+distribution, and no reference series.** `W_q` is one index into a sorted
+window. Every symbol above is either a measured sample, the swept input `α`,
+or the single cited integer `K`.
+
+**And it is the same measurand.** §16.69 wrote the clock's job on a line by
+itself — *"a recovery clock's whole job is to wait long enough that an ack
+which was going to arrive has arrived. Let `X` be the ack-arrival time. A false
+alarm is `X > W`. So the clock IS a quantile"* — and then set
+`W(α) = F⁻¹_X(1 − α)`, which it could not evaluate, so it bounded it with
+Cantelli. **`W_q(α)` is `F⁻¹_X(1 − α)` evaluated.** The bound is not improved,
+tightened, or replaced by a better bound; it is deleted, because at the α range
+this tree actually sweeps the quantity it was standing in for can be read
+directly off the samples the Cantelli form was already consuming.
+
+#### 16.76.1 Why Cantelli was ever needed, in §16.69's own arithmetic
+
+§16.69's refutation reason 2, verbatim: *"Estimating a `1 − 10⁻⁵` quantile
+empirically needs of order **10⁵ independent samples in the window**."* That
+is the whole case for a distribution-free bound. A bound buys you a tail
+quantile **without samples**; you pay for it in looseness (reason 1: `k = 316`,
+a 3.24 s clock at `c8` against a 100 ms clamp).
+
+**The trade is priced by α and by nothing else, and the α-sweep does not run
+where the trade favours the bound.**
+
+| | Cantelli route | direct order statistic |
+|---|---|---|
+| samples needed | none | `⌈K/α⌉` |
+| what it needs instead | a dispersion estimate `σ̂` of the **marginal** distribution | nothing |
+| margin over the mean | `k(α)·σ̂`, `k = √((1−α)/α)` | none — it IS the quantile |
+| upper bound on `W` | **unbounded**; `k → ∞` as `α → 0` | `max(window)`, **structurally** |
+| at the contract's `α = 10⁻⁵` | `k = 316`, 3.24 s at `c8` | needs `10⁶` samples — **unavailable** |
+| at the sweep's `α = 0.40` | `k = 1.22` | needs **25** samples |
+| at the sweep's `α = 0.002` | `k = 22.3` | needs **5 000** samples |
+
+**The sweep's range is `0.002 ≤ α ≤ 0.40`.** At its most demanding arm the
+direct route needs 5 000 samples in the window. The cells supply **684 to
+20 158 ack samples per second on the sender legs** (goal-gate, "THE τ-LAG
+ESTIMATOR — THE SCORED RESULT" §5, the `samp/s` column) — so the window fills
+in **0.25 s at `c1` and 7.3 s at the battery's sparsest leg**, and in a
+fraction of a second at every arm above `Q002`. **At this α range the bound is
+unnecessary because the measurement is available.** §16.69's reasons 1 and 2
+are consequences of `α = 10⁻⁵` and are untouched: this section does not
+re-open the contract's α, and at the contract's own α the construction below
+declares itself unavailable rather than extrapolating (§16.76.5).
+
+**The `max(window)` row of that table is not a footnote.** §16.69 reason 1 is
+that the distribution-free clock waits 316 standard deviations. `W_q` **cannot
+exceed an RTT the path actually realized**, at any α, by construction. The
+looseness §16.69 refuted is removed structurally rather than by choosing α to
+avoid it.
+
+#### 16.76.2 The motivation: the category error, now a number, and the number is 20–300×
+
+This section exists because the τ-lag battery's rebuilt clause `B` quantified
+what §16.74.8 had only stated in prose.
+
+```text
+   β_σ = (the gauge's ONLINE reading) / (that gauge's OWN functional,
+          offline, over the IDENTICAL samples)
+
+   shipped `sig_us`:  median β = 0.039  — REJECT at 6 of 8 sender legs
+                      gap to the marginal `sd` = 20–300× at 7 of 8 legs
+```
+
+**Half of that gap is definitional and the scored section says so:** `sig_us`
+is a **tracking** estimator about a moving `srtt`, i.e. a **conditional**
+spread; `W = srtt + k(α)·σ` is Cantelli taken over the ack-arrival
+distribution's **marginal** dispersion. *"The clock formula wants a marginal
+dispersion and the shipped estimator supplies a conditional one."* That is a
+**category error in the input**, and the scored section's own reading of it is
+the sentence this construction answers:
+
+> *"No amount of estimator stability fixes a category mismatch, and `R_total`
+> cannot see it — a perfectly stable conditional estimator would pass `S` and
+> still mis-price the clock."*
+
+**AND THE MARGINAL QUANTITY IS ITSELF REGIME-DOMINATED, WHICH IS THE SECOND
+FAILURE FAMILY.** The same battery's §3: one retained invocation out of eighty
+— a heavy-loss, high-dispersion rep — **moved the shipped estimator's pooled
+`R_total` by 33×** (86.6 → 3011.5 on the data path; 91.0 → 3011.5 against the
+old retention rule). *"A single bad rep does not perturb it, it dominates
+it."*
+
+**`W_q` is immune to both families, and the immunity is structural rather than
+empirical.**
+
+* **The category error cannot occur**, because `W_q` never forms a deviation
+  against a reference. There is no `srtt`, no EWMA, no lag, and therefore no
+  conditional-vs-marginal distinction to get wrong: the order statistic is a
+  functional of the window's **empirical distribution**, which is the marginal
+  one by definition.
+* **The regime sensitivity cannot dominate**, because a rank statistic at
+  level `1 − α` is insensitive to where the mass above it goes. A quantile at
+  `α = 0.05` does not care whether the far tail wanders by 33× — moving the
+  top 1 % of the window arbitrarily far does not move the 95th percentile at
+  all. The same battery measured this on its own controls: on the row that
+  moved `sig` by 33×, `qsp` and `msd` — both rank statistics over bounded
+  windows — **moved by 4 % and 21 %.**
+
+#### 16.76.3 The window law, and the order-statistic derivation it comes from
+
+`N(α)` is not a tuning parameter and its safety factor is not fitted. It is
+fixed by the requirement that the estimate be an **order statistic** rather
+than an extrapolation.
+
+**The requirement.** To read the `1 − α` quantile from a window, the window
+must contain enough samples above it that the reading rests on real order
+statistics. The classical requirement is `N·min(α, 1−α) ≥ 10`. **That constant
+is already cited in this tree, for exactly this job**: `SIGMA_CAND_WINDOW`'s
+own declaration derives `L = 256` in part because *"the `P90` these gauges take
+needs its tail to rest on real order statistics — `L·(1 − 0.90) = 25.6` clears
+the standard ≥ 10 requirement by 2.6×."* **`K = 10` is that requirement, taken
+as an equality rather than exceeded by an unstated factor.**
+
+```text
+   N·α ≥ K   ⇒   N(α) = ⌈K/α⌉ ,  K = 10          (the exceedance clause)
+   N·(1−α) ≥ K  is implied for α ≤ ½;  the floor N ≥ 2K = 20 makes it
+   explicit and DOES NOT BIND anywhere on the swept grid (N(0.40) = 25).
+```
+
+**The estimator is then the `K`-th largest sample, and that index is chosen so
+the realized level is `α` and not `1.1 α`.** Sorting ascending, take
+`X_(N−K+1)`: exactly `K − 1 = 9` samples lie strictly above it and it is the
+10th from the top. Its realized tail level `τ = 1 − F(X_(N−K+1))` is
+**exactly** `Beta(K, N−K+1)`-distributed — the probability-integral-transform
+result, which holds for **any** continuous `F` and is therefore as
+distribution-free as Cantelli was:
+
+```text
+   τ  ~  Beta(K, N − K + 1)
+
+   E[τ]   =  K / (N + 1)        =  α · K/(K + α)     ≈  α
+   SD[τ]  =  √( K(N−K+1) / ((N+1)²(N+2)) )           ≈  α / √K
+```
+
+**Per arm, at the sweep's own grid, with `N` from the window law and the CI
+from the EXACT Beta (no normal approximation):**
+
+| arm | `α` | `N(α)` | `Beta(K, N−K+1)` | `E[τ]` | rel. SD | **95 % CI on the realized tail level** |
+|---|---|---|---|---|---|---|
+| `Q002` | 0.002 | **5 000** | `Beta(10, 4991)` | 0.002000 | **0.3159** | `[0.000959, 0.003414]` |
+| `Q009` | 0.009 | **1 112** | `Beta(10, 1103)` | 0.008985 | **0.3147** | `[0.004321, 0.015308]` |
+| `Q050` | 0.05 | **200** | `Beta(10, 191)` | 0.049751 | **0.3075** | `[0.024234, 0.083703]` |
+| `Q184` | 0.184 | **55** | `Beta(10, 46)` | 0.178571 | **0.2841** | `[0.090791, 0.288030]` |
+| `Q400` | 0.40 | **25** | `Beta(10, 16)` | 0.384615 | **0.2434** | `[0.211255, 0.574794]` |
+
+**THE RELATIVE SD IS CONSTANT AT 0.24–0.32 ACROSS A 200× SPAN OF α, AND THAT
+IS THE POINT OF FIXING THE EXCEEDANCE COUNT RATHER THAN THE WINDOW.** A fixed
+window would make the tail arm's CI 200× worse than the head arm's. Fixing `K`
+makes every arm's sampling precision **the same by construction**, at `≈ 1/√K`.
+Widening `K` narrows every CI as `1/√K` and lengthens every window as `K`;
+`K = 10` is the cited floor and this section takes it, so nothing is bought
+with an unstated constant.
+
+**Resource bound, stated OUTSIDE the law** (FORMULA-FIRST). The window ring is
+capped at `QNATIVE_WINDOW_MAX = 8192` samples × 4 B = **32 KiB per path**. The
+cap is ≥ `N(0.002) = 5 000`, so it does not bind anywhere on the swept grid; it
+binds hard at `α ≤ 10⁻³`, and §16.76.5 states what happens there.
+
+**AND THE CPU BOUND IS DECLARED WITH IT, BECAUSE THIS ONE SITS ON THE SENDER.**
+Reading the order statistic is **a selection, not a sort**: `O(N)` in one pass
+(`select_nth_unstable`), at the recovery-timer cadence only, over a copy of the
+freshest `N(α)` samples. The feed site stays `O(1)`. A full sort would be `≈12×`
+the work at `N = 5 000` and returns the same number, so it buys nothing. **This
+is stated rather than assumed negligible because the τ-lag battery had to run a
+SEPARATE pass to keep an instrument's sender-side cost out of the measurement
+that instrument was explaining** — *"running the dump on the scored invocations
+would perturb the measurement it exists to explain."* Here the cost is in the
+LAW rather than in a gauge, so it cannot be moved to another pass, and the
+right response is to make it linear and say so.
+
+#### 16.76.4 The stability property that REPLACES precondition (E)
+
+§16.74.5's precondition (E) is a property of the clock family
+`W = mean + k(α)·σ̂`:
+
+```text
+   (E)    k(α_lo) / k(α_hi)   >   R_σ̂
+                                   ↑
+                        a MEASURED quantity: 1.2× at sc2, 78.6× at c8L,
+                        287× rep-to-rep at c8 — cell-dependent, regime-
+                        dependent, and unknown until a battery runs.
+```
+
+**(E) does not apply to `W_q`, because `W_q` has no `σ̂` term.** Its analogue
+is the requirement that two arms command tail levels whose sampling intervals
+do not overlap:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  (Q)   τ_2.5%( α_hi )   >   τ_97.5%( α_lo )                          │
+   │                                                                      │
+   │  with both quantiles taken from Beta(K, N(α)−K+1)                    │
+   └──────────────────────────────────────────────────────────────────────┘
+```
+
+**BOTH SIDES OF (Q) ARE FUNCTIONS OF `α` AND `K` ALONE. NO MEASUREMENT
+ENTERS.** (E)'s right-hand side had to be measured, moved by 287× between reps
+of one cell, and was the quantity two batteries failed to pin. (Q)'s right-hand
+side is arithmetic, it is **identical at every cell**, and it is decidable
+**before the VM is touched** — which is why the next subsection can state the
+unseparated set as a pre-registration rather than as a result.
+
+**This is a narrower claim than (E) made and the narrowing is stated here.**
+(Q) bounds the dispersion of the **level** the clock commands. It does **not**
+bound the dispersion of `W_q` in milliseconds — that depends on the density at
+the quantile, which is a property of the link and is not derivable. **A stable
+level on a moving distribution is a moving clock, and that is intended**
+(§16.76.5). What (Q) removes is the failure two batteries measured: an
+instrument whose own noise swamps the dial. `W_q`'s instrument noise is
+`1/√K`, everywhere, by construction.
+
+#### 16.76.5 The failure modes, stated in advance
+
+**(1) WINDOW SHORTER THAN `N(α)` ⇒ THE LAW DOES NOT RUN — the UNSCOREABLE
+rule.** With fewer than `N(α)` samples in the ring, the `K`-th largest is a
+quantile of a shorter window at a different level, i.e. a **different law's
+output**. The construction therefore returns nothing and the evaluation falls
+through to the law below it — **information availability, never a mode**, the
+same rule the σ fall-through already follows, and the same rule the `[QCLK]`
+`law_n / evals` bind-fraction gauge already makes visible. An arm whose
+`law_n = 0` never ran its own law and its row is VOID; an arm with a partial
+`law_n` is reported with its fraction and never pooled with a full one.
+
+**Where this is expected to bite, computed before the run.** Time to fill
+`N(α)` at each sender leg's measured sample rate:
+
+| leg | samp/s | `Q002` (5 000) | `Q009` (1 112) | `Q050` (200) | `Q184` (55) | `Q400` (25) |
+|---|---|---|---|---|---|---|
+| `c1 p0` | 20 158 | 0.25 s | 0.06 s | 0.01 s | — | — |
+| `c7 p0` | 15 916 | 0.31 s | 0.07 s | 0.01 s | — | — |
+| `c8L p0` | 9 218 | 0.54 s | 0.12 s | 0.02 s | — | — |
+| `sc2 p0` | 9 389 | 0.53 s | 0.12 s | 0.02 s | — | — |
+| `c8 p0` | 8 811 | 0.57 s | 0.13 s | 0.02 s | — | — |
+| `c7 p1` | 8 693 | 0.58 s | 0.13 s | 0.02 s | — | — |
+| **`c8 p1`** | **2 035** | **2.46 s** | 0.55 s | 0.10 s | 0.03 s | 0.01 s |
+| **`c8L p1`** | **684** | **7.31 s** | 1.63 s | 0.29 s | 0.08 s | 0.04 s |
+
+**`c8` IS THE SHORT CELL AND `Q002` IS THE NAMED RISK.** `c8` runs 25 MB at
+~80 Mbit/s, i.e. a rep of order **2.4 s**, and its `p1` leg fills a
+5 000-sample window in **2.46 s**. **`c8`-`Q002` is therefore predicted
+UNSCOREABLE or heavily partial at the `p1` leg before the run, and the
+prediction is on this line rather than in a post-hoc explanation.** No other
+(cell, arm) pair on the grid is at risk: every other fill time is under
+1.7 s against reps of 9–19 s.
+
+**(2) REGIME SWITCHES MOVE `W_q`, AND THAT IS A FEATURE WITH A STATED TIME
+CONSTANT.** When the path's delay distribution changes regime, the empirical
+quantile follows it — over exactly `N(α)` samples, i.e. a time constant of
+`N(α) / (sample rate)`, the table above. **This is the property `σ̂`-based
+clocks lack and it is not a defect to be smoothed away**: a clock whose job is
+to bound a delay quantile SHOULD track the delay distribution. It is stated as
+a failure mode only because it is the one axis on which `W_q` is *less* stable
+than an EWMA, and it must not be reported later as a surprise. The time
+constant is **α-dependent by construction** — the small-α arms are slower to
+follow a regime change, and that is the price of their tail resolution, priced
+here rather than discovered.
+
+**(3) TIES AND DISCRETIZATION.** The Beta result assumes continuous `F`.
+Microsecond-quantized RTTs on a fast loopback leg can tie at the order
+statistic; ties bias `τ` downward (the clock reads slightly early). The effect
+is bounded by the quantization step against the window's spread and is
+reported, not corrected — a correction would be a fitted constant.
+
+**(4) THE WINDOW IS NOT A SET OF INDEPENDENT SAMPLES.** Acks inside one RTT
+are correlated, so the effective `N` is smaller than the nominal one and (Q)'s
+CIs are, if anything, optimistic. **This is a bound in a stated direction, not
+a caveat**: it can only make arms harder to separate, never easier, so a
+measured separation is safe against it and a measured non-separation carries
+this as a named alternative cause.
+
+#### 16.76.6 Per-symbol provenance
+
+| symbol | provenance |
+|---|---|
+| `X_(i)` | **measured** — raw ack-arrival (RTT) samples, plain FIFO in arrival order, the same stream `rtt_win` already carries for `qsp_us`/`msd_us` |
+| `α` | **EXPERIMENT INPUT** on this arm (`RWM_ALPHA_OVERRIDE`), contract-declared otherwise. Unchanged from §16.69; this section does not touch what feeds α |
+| `K = 10` | **CITED** — the standard order-statistic exceedance requirement, already cited in this tree at `SIGMA_CAND_WINDOW`'s own derivation |
+| `N(α) = ⌈K/α⌉` | **DERIVED** from `K` and `α`, closed form, no fit |
+| `N ≥ 2K` | **DERIVED** (the symmetric clause), and does not bind on the swept grid |
+| `QNATIVE_WINDOW_MAX` | **DECLARED RESOURCE BOUND, stated outside the law** — 8192 samples, 32 KiB/path |
+
+**There is no fitted coefficient, no smoothing gain, no assumed distribution
+and no reference series anywhere in the construction.** Where §16.69 had one
+cited gain (`β = 1/4`, carrying its own false-alarm-validation obligation),
+this has none.
+
+#### 16.76.7 Shape check
+
+* **Units.** `X`, `W_q` are seconds. `α`, `τ`, `K/N` are pure. `N` is a count.
+* **Monotone in α.** `N(α) = ⌈K/α⌉` is non-increasing in α and the commanded
+  level `1 − E[τ] = 1 − K/(N+1)` is strictly decreasing, so **`W_q` is
+  non-increasing in α** on any fixed sample set — the same sign `W(α)` has in
+  §16.69 and §16.74.7. Larger α ⇒ a lower quantile ⇒ a faster clock.
+* **Continuity.** `⌈·⌉` makes `N` a step function of α, so `W_q` is
+  piecewise-constant-in-`N` rather than smooth. **This is not a mode switch**:
+  α is an experiment input on an arm, not a dial of the (δ, ρ, r) triangle, and
+  no threshold on δ or ρ selects anything anywhere in this construction. A
+  shipped α would have to be derived from the triangle and continuous in it —
+  the decision this measurement informs and does not take — and the ceiling's
+  step is then a resolution question about the window, priced at one sample.
+* **No mode bit.** One expression, one call site, evaluated identically at both
+  clock seats. The `cantelli | quantile` selection is an **A/B experiment arm
+  behind a default-OFF gate** and sits in the same precedence chain the four
+  rival laws for this one quantity already occupy (§16.68/§16.69) — rival laws
+  for one quantity, precedence stated explicitly rather than left to evaluation
+  order. **Nothing continuous in the triangle is expressed by it, and nothing
+  may ship reading it.**
+* **Degenerate limits.** `α → 1` ⇒ `N → 2K = 20` and `W_q` is the 10th largest
+  of 20, the window median — fire at the typical RTT. `α → 0` ⇒ `N → ∞`, the
+  cap binds, the law declares itself unavailable. **Both ends are the honest
+  behaviour and neither is a special case in the code.**
+
+#### 16.76.8 The pre-registered UNSEPARATED-BY-CONSTRUCTION set, stated BEFORE the run
+
+Applying (Q) to all ten ordered pairs of the sweep's five treatment arms, using
+the exact Beta CIs of §16.76.3. **Margin `m = τ_2.5%(α_hi) / τ_97.5%(α_lo)`;
+`m ≤ 1` is UNSEPARATED-BY-CONSTRUCTION.**
+
+| pair | `α_hi / α_lo` | **margin `m`** | verdict |
+|---|---|---|---|
+| `Q002` – `Q009` | 4.50 | 1.265 | separated |
+| `Q002` – `Q050` | 25.0 | 7.098 | separated |
+| `Q002` – `Q184` | 92.0 | 26.59 | separated |
+| `Q002` – `Q400` | 200 | 61.88 | separated |
+| `Q009` – `Q050` | 5.56 | 1.583 | separated |
+| `Q009` – `Q184` | 20.4 | 5.931 | separated |
+| `Q009` – `Q400` | 44.4 | 13.80 | separated |
+| **`Q050` – `Q184`** | 3.68 | **1.085** | separated, **and it is the thin one** |
+| `Q050` – `Q400` | 8.00 | 2.524 | separated |
+| **`Q184` – `Q400`** | 2.17 | **0.733** | **UNSEPARATED-BY-CONSTRUCTION** |
+
+**ONE PAIR OF TEN IS UNSEPARATED BY CONSTRUCTION: `Q184` – `Q400`.** Its two
+arms command tail levels whose 95 % sampling intervals overlap, so **no verdict
+may rest on any difference between them**, at any cell, whatever the run
+reports. That is not a result about the world; it is a property of the arm grid
+and the exceedance count, known now.
+
+**`Q050` – `Q184` CLEARS BY 8.5 % AND IS FLAGGED HERE, NOT LATER.** It is the
+pair a small violation of §16.76.5(4)'s independence assumption would move
+across the line. It is reported with its margin beside it, and a non-separation
+there is read as thin-margin rather than as a finding.
+
+**THE ADJACENT-RATIO RULE THAT FALLS OUT, FOR ANY FUTURE GRID.** At `K = 10`
+two arms separate once `α_hi / α_lo ≳ 3.4–3.6` (scanned: 3.56 from α = 0.002,
+3.39 from α = 0.05). **A grid finer than ~3.5× per step cannot be separated by
+this instrument at `K = 10`**, and buying a finer grid means raising `K`, which
+costs window length linearly. Stated so the next grid is designed rather than
+inherited.
+
+**AND `Q184` CANNOT BE SEPARATED FROM ANYTHING ABOVE IT INSIDE THE DOMAIN.**
+Its own CI reaches to `τ = 0.288`, and `α ≤ 1` caps how far a higher arm can
+sit; the scan finds no admissible `α_hi` in `(0.184, 1]` that clears it. **The
+top of the sweep's range is at the instrument's resolution limit, and that is a
+statement about the grid rather than about the machine.**
+
+#### 16.76.9 The pre-stated predictions, and what falsifies them
+
+**`F1` — THE CONSTRUCTION SEPARATES WHERE (Q) SAYS IT WILL.** The re-run's
+realized `[QCLK]` intervals separate (by §4's `overlap ≤ 0.50` rule) at the
+nine pairs (Q) declares separated, at cells where the window is scoreable, and
+do **not** separate at `Q184` – `Q400`. *Falsified by:* non-separation at
+**every** pair at **every** cell — the α-sweep's own unanimous outcome
+reproduced on an instrument with no `σ̂` in it, which would mean the contrast is
+consumed by something neither §16.74.5 nor this section contains, and would
+refute the whole diagnosis that the estimator was the blocker. **This is the
+prediction with real content: the previous sweep's `50 of 50 UNSEPARATED` was
+attributed to `σ̂`, and if it reproduces here that attribution is wrong.**
+
+**`F2` — COMMANDED `fa_frac` TRACKS α.** The α-sweep measured commanded
+`fa_frac` **not monotone in α at any cell**, exceeding α by up to **386×** at
+`c1`-`Q002` (0.1665 against 0.002), and read it as *"the quantity the bound is
+taken over is not the quantity the recovery clock fires on."* **With the direct
+quantile there is no bound and no `σ̂`, so every estimator-side explanation is
+removed.** If `fa_frac` becomes monotone in α, the mapping defect was the
+estimator and the measurand identification of §16.69 was right. *Falsified by:*
+`fa_frac` still non-monotone in α at every cell — in which case **§16.69's
+identification of the measurand is itself wrong**, the ack-arrival distribution
+is not what the recovery clock fires on, and the next pass is about the
+measurand and not about the estimator. **Either direction closes a question
+that two batteries left open, which is why this prediction is worth more than
+the cost curve.**
+
+**`F3` — THE LEVEL-CI DERIVATION IS SELF-CHECKING.** The `Beta(K, N−K+1)`
+result is **exact** for any continuous `F` over exchangeable samples. If
+`Q184` – `Q400` — the UNSEPARATED-BY-CONSTRUCTION pair — nevertheless separates
+cleanly at any cell with a margin exceeding the pooled within-arm noise, the
+samples in the window are **not exchangeable**: the window is dominated by
+trend rather than by a marginal distribution, and the window length is then
+measuring the trend's time constant instead of a quantile. *Falsified by:* that
+separation appearing. **It is a two-sided check on the construction's own
+premise, computable from the same rows that score `F1`, and it costs nothing.**
+
+#### 16.76.10 What this section does NOT claim
+
+* **NO DEFAULT MOVES AND NO LAW SHIPS.** `RWM_QUANTILE_CLOCKS` stays default
+  OFF and REFUTED-STANDING; `RWM_W_FORM` lives **inside** it, defaults to
+  `cantelli`, and with the gate absent the engine is byte-identical to today.
+  The shipped clamp stays convicted and unreplaced.
+* **§16.69 IS NOT RE-OPENED.** Its reasons 1 and 2 are consequences of
+  `α = 10⁻⁵` and stand. This section says only that they do not bind on
+  `[0.002, 0.40]`, which §16.69's own arithmetic already implies and the
+  α-sweep pre-registration already recorded.
+* **NO COST RATIO IS DECIDED AND NO MAPPING FROM (δ, ρ, r) TO α IS WRITTEN.**
+  α remains an experiment input. **Nothing may ship reading `RWM_W_FORM`** any
+  more than `RWM_ALPHA_OVERRIDE`.
+* **§16.74.5's PRECONDITION (E) IS NOT MET AND IS NOT CLAIMED TO BE.** It is
+  **not applicable** to a clock with no `σ̂` term. Every clock in the
+  `mean + k(α)·σ̂` family remains un-instantiable on this tree, and the four
+  `σ̂` candidates keep their committed verdicts. **This section does not rescue
+  them; it routes around them.**
+* **NO ESTIMATOR IS WITHDRAWN.** `sig_us`, `rvar_us`, `qsp_us`, `msd_us` and
+  `tlag_us` stay on the `[DIAG]` line as read-only gauges with their scores
+  intact. `tlag_us`'s withheld verdict is not resolved here.
+* **THE MISSING TRUTH INSTRUMENT IS STILL MISSING.** *"A delivered-latency
+  probe at the sender's own sample rate"* is still not built. `W_q` is computed
+  over the ack-arrival stream, and a `B`-style acquittal of it would say it
+  reads its own input faithfully and nothing more.
+* **NO ROUTE DECISION** between (b) and (d) is taken, advanced or refuted, and
+  §16.73's admissibility inequality still binds any α this or any construction
+  produces.
+
+**Nothing in this section flips a default, ships a law, wires a consumer on any
+default path, or scores any clause of any pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's

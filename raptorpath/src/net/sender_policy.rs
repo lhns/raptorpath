@@ -441,6 +441,12 @@ pub(crate) struct SenderPolicy {
     /// arm. EXPERIMENT ONLY; see the gate's declaration for why nothing may
     /// ship reading it.
     pub alpha_override: Option<f64>,
+    /// `RWM_W_FORM` as resolved by the gate — `cantelli` on every shipped arm
+    /// (paper §16.76). WHICH of the two rival `W` laws the armed quantile
+    /// clock evaluates; a SELECTED LAW on an A/B experiment axis, read only
+    /// when [`Self::quantile_clocks`] is armed. EXPERIMENT ONLY; nothing
+    /// shipped may read it.
+    pub w_form: crate::net::WForm,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -1466,6 +1472,7 @@ impl SenderPolicy {
             contract_alpha: crate::net::resolved_alpha(protocol_hint, gates.alpha_override),
             contract_alpha_base: crate::net::contract_alpha(protocol_hint),
             alpha_override: gates.alpha_override,
+            w_form: gates.w_form,
             sidle_derived,
             emit_batch_on,
             emit_burst,

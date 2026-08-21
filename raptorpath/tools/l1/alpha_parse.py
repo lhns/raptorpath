@@ -222,6 +222,17 @@ gates["gate_alpha_srv"] = gate_tok(srv, "RWM_ALPHA_OVERRIDE")
 gates["gate_gen_cli"] = gate_int(cli, "RWM_GEN")
 gates["gate_gen_srv"] = gate_int(srv, "RWM_GEN")
 
+# THE QUANTILE-NATIVE ERA'S OWN GATE COLUMN, added ADDITIVELY: no field above
+# is removed or renamed and the output prefix is unchanged, so a
+# quantile-native ledger POOLS with the α-sweep's instead of speaking a second
+# dialect of it. `RWM_W_FORM` is a WORD (`cantelli` / `quantile`), not a flag,
+# and it is ABSENT on the control — where the engine resolves it to `cantelli`
+# and the echo prints THAT. Read with `gate_tok` for exactly the reason that
+# helper exists: `[01]` or a float would turn every legal value into `None`,
+# which is a liveness column that passes because it never matched.
+gates["gate_wform_cli"] = gate_tok(cli, "RWM_W_FORM")
+gates["gate_wform_srv"] = gate_tok(srv, "RWM_W_FORM")
+
 # ── `[QALPHA]` — THE RESOLVED α AT THE SITE THAT EVALUATES IT ────────────
 # `net/mod.rs:805` (`qalpha_report_line`). ONE line per site, on EVERY arm
 # INCLUDING the control (`quantile=0`), so "quantile clocks off" is as
@@ -261,11 +272,19 @@ for site, lines in (("cli", cli), ("srv", srv)):
     r = {f"qalpha_lines_{site}": len(hits), f"qalpha_site_{site}": None,
          f"qalpha_quantile_{site}": None, f"qalpha_contract_{site}": None,
          f"qalpha_override_{site}": None, f"qalpha_{site}": None,
-         f"qalpha_k_{site}": None}
+         f"qalpha_k_{site}": None,
+         # THE QUANTILE-NATIVE ERA'S TWO NEW FIELDS. Kept as RAW STRINGS: `form`
+         # is a word (`cantelli` / `quantile`) and `win_n` is a NUMBER OR THE
+         # TOKEN `unavail` — the control has no quantile window to size, and
+         # `unavail` is a reachability fact, never a zero. Coercing it to a
+         # number would erase exactly the distinction the W7 witness reads.
+         f"qalpha_form_{site}": None, f"qalpha_winn_{site}": None}
     if hits:
         t = toks(hits[-1])                 # once per site: last is the reading
         ov = t.get("override")
         r.update({
+            f"qalpha_form_{site}": t.get("form"),
+            f"qalpha_winn_{site}": t.get("win_n"),
             f"qalpha_site_{site}": t.get("site"),
             f"qalpha_quantile_{site}": inum(t.get("quantile")),
             f"qalpha_contract_{site}": fnum(t.get("contract_alpha")),
@@ -324,6 +343,15 @@ for site, lines in (("cli", cli), ("srv", srv)):
     r = {f"qclk_{site}_lines": len(hits)}
     for f in QCLK_FIELDS:
         r[f"qclk_{site}_{f}"] = None
+    # THE QUANTILE-NATIVE ERA'S THREE NEW `[QCLK]` FIELDS, added ADDITIVELY and
+    # under the SPEC'S OWN NAMES (`qclk_form_cli`, not `qclk_cli_form`) so the
+    # reporter's W7 column and the driver's own W7FORM line name one thing.
+    # `win_ok` is the count of evaluations at which the quantile window was
+    # FULL: `win_ok < evals` is a WINDOW-PARTIAL RESULT — a fraction to be
+    # scored — and never an abort and never a missing column.
+    r[f"qclk_form_{site}"] = None
+    r[f"qclk_winn_{site}"] = None
+    r[f"qclk_win_ok_{site}"] = None
     if hits:
         # BY MAXIMUM `evals`, not by last line — see the block comment.
         t = max(hits, key=lambda x: (inum(x.get("evals")) or 0))
@@ -335,6 +363,11 @@ for site, lines in (("cli", cli), ("srv", srv)):
         sg = (t.get("sigma_us_mean") or "").split("/n")
         r[f"qclk_{site}_sigma_us_mean"] = fnum(sg[0]) if sg[0] else None
         r[f"qclk_{site}_sigma_n"] = inum(sg[1]) if len(sg) > 1 else None
+        # RAW string for `form` and `win_n` (`unavail` is legal and is a
+        # reachability fact, not a zero); `win_ok` is a count.
+        r[f"qclk_form_{site}"] = t.get("form")
+        r[f"qclk_winn_{site}"] = t.get("win_n")
+        r[f"qclk_win_ok_{site}"] = inum(t.get("win_ok"))
     qclk.update(r)
 
 # ── `[RACK]` — the recovery clock's bind fractions AND §16.68.1's fa= meter ──

@@ -1065,11 +1065,17 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
 /// each falling back to the next when its own input is unavailable.
 #[test]
 fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode() {
-    use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh};
+    use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh, WForm};
     use std::time::Duration;
     let (srtt, mrtt, sigma) = (376_000u64, 38_000u64, 10_000u64);
     let a = contract_alpha(raptorpath::control::fec_rate::ProtocolHint::Auto);
-    let sw = |q, r, d, m, sg| sweep_timeout_us_all(q, r, d, srtt, JITTER_US, m, sg, 1, a);
+    // `WForm::Cantelli` is the DEFAULT arm and the whole precedence chain below
+    // is asserted on it - i.e. this test pins that 16.76's addition changed
+    // NOTHING on the shipped form. The quantile form's own routing is asserted
+    // separately, below, so a regression in either is attributable.
+    let sw = |q, r, d, m, sg| {
+        sweep_timeout_us_all(WForm::Cantelli, q, r, d, srtt, JITTER_US, m, sg, None, 1, a)
+    };
 
     // All OFF is the shipped law, byte-identically.
     assert_eq!(sw(false, false, false, Some(mrtt), Some(sigma)), tail_sweep_timeout_us(srtt));
@@ -1086,7 +1092,9 @@ fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode
     // The receiver router, same property.
     let sd = Some(Duration::from_micros(srtt));
     let md = Some(Duration::from_micros(mrtt));
-    let hr = |q, r, d, m, sg| hole_refresh_all(q, r, d, sd, JITTER_US, m, sg, 1, a);
+    let hr = |q, r, d, m, sg| {
+        hole_refresh_all(WForm::Cantelli, q, r, d, sd, JITTER_US, m, sg, None, 1, a)
+    };
     assert_eq!(hr(false, false, false, md, Some(sigma)), hole_nack_refresh(sd));
     assert_eq!(
         hr(true, true, true, md, Some(sigma)),
@@ -1097,4 +1105,191 @@ fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode
         Duration::from_micros(rack_recovery_round_us(srtt, mrtt, 1))
     );
     assert_eq!(hr(true, false, false, None, None), hole_nack_refresh(sd));
+
+    // ── §16.76: THE QUANTILE-NATIVE FORM'S OWN ROUTING, SAME PROPERTY ────
+    //
+    // `RWM_W_FORM` selects between two RIVAL LAWS FOR ONE QUANTITY inside the
+    // armed quantile gate. Asserted here, beside the chain it joins, so the
+    // two forms are never confused with two MODES: each has ONE input, each
+    // falls back on INFORMATION AVAILABILITY when that input is missing, and
+    // neither keys on any threshold in the (δ, ρ, r) triangle.
+    let a_q = 0.05_f64; // N(0.05) = 200 — inside the declared cap
+    let w_q = 123_456u64;
+    // The quantile form reads `w_q_us` and NOTHING ELSE — not σ, not srtt.
+    assert_eq!(
+        sweep_timeout_us_all(
+            WForm::Quantile, true, true, true, srtt, JITTER_US, Some(mrtt), Some(sigma),
+            Some(w_q), 1, a_q
+        ),
+        w_q,
+        "the quantile-native form must return the window's own order statistic"
+    );
+    // ... and with its window short of `N(α)` it falls through to the next
+    // ARMED law, never to an unarmed one — the UNSCOREABLE rule (§16.76.5(1)).
+    assert_eq!(
+        sweep_timeout_us_all(
+            WForm::Quantile, true, true, true, srtt, JITTER_US, Some(mrtt), Some(sigma),
+            None, 1, a_q
+        ),
+        rack_recovery_round_us(srtt, mrtt, 1),
+        "a short window must fall through on INFORMATION, not select a mode"
+    );
+    assert_eq!(
+        sweep_timeout_us_all(
+            WForm::Quantile, true, false, false, srtt, JITTER_US, None, None, None, 1, a_q
+        ),
+        tail_sweep_timeout_us(srtt),
+        "with every armed law starved the SHIPPED law stands, byte-identically"
+    );
+    // THE FORM IS INERT WITH THE QUANTILE GATE OFF. `RWM_W_FORM` lives INSIDE
+    // `RWM_QUANTILE_CLOCKS`; with the outer gate absent the two forms must be
+    // indistinguishable, or the default arm would not be byte-identical.
+    for form in [WForm::Cantelli, WForm::Quantile] {
+        assert_eq!(
+            sweep_timeout_us_all(
+                form, false, false, false, srtt, JITTER_US, Some(mrtt), Some(sigma),
+                Some(w_q), 1, a_q
+            ),
+            tail_sweep_timeout_us(srtt),
+            "{form:?}: the W form must be INERT with RWM_QUANTILE_CLOCKS off"
+        );
+    }
+    // The receiver router, same three properties. Note the quantile-native
+    // form needs NO srtt — it is the one law in the chain whose only input is
+    // the sample window.
+    assert_eq!(
+        hole_refresh_all(
+            WForm::Quantile, true, true, true, None, JITTER_US, md, Some(sigma),
+            Some(w_q), 1, a_q
+        ),
+        Duration::from_micros(w_q),
+        "the quantile-native hole refresh must not require an srtt it does not use"
+    );
+    assert_eq!(
+        hole_refresh_all(
+            WForm::Quantile, true, true, true, sd, JITTER_US, md, Some(sigma), None, 1, a_q
+        ),
+        Duration::from_micros(rack_recovery_round_us(srtt, mrtt, 1))
+    );
+}
+
+/// **§16.76, THE WINDOW LAW AND THE ORDER STATISTIC — ABSOLUTE PINS.**
+///
+/// The paper publishes `N(α)` and the exact `Beta(K, N−K+1)` CIs at the
+/// α-sweep's own grid, and the UNSEPARATED-BY-CONSTRUCTION set is DERIVED from
+/// them BEFORE the run. **If the engine's `N(α)` disagrees with the paper's by
+/// one sample, the pre-registered separation set is wrong** — which is why
+/// this is pinned absolutely, at the anchor points, and never ordinally
+/// (CLAUDE.md testing discipline).
+#[test]
+fn the_quantile_native_window_law_matches_the_papers_published_grid() {
+    use raptorpath::net::{
+        qnative_recovery_round_us, qnative_window_n, QNATIVE_EXCEEDANCE_K, QNATIVE_WINDOW_MAX,
+        TIMER_GRANULARITY_US,
+    };
+
+    // §16.76.3's table, transcribed. `N(α) = max(⌈K/α⌉, 2K)`, K = 10.
+    for &(alpha, want) in &[
+        (0.002_f64, 5000usize),
+        (0.009, 1112),
+        (0.05, 200),
+        (0.184, 55),
+        (0.40, 25),
+    ] {
+        assert_eq!(
+            qnative_window_n(alpha),
+            Some(want),
+            "N({alpha}) must equal the paper's published window length"
+        );
+    }
+    // THE SYMMETRIC FLOOR `2K` EXISTS AND DOES NOT BIND ON THE SWEPT GRID —
+    // stated in the paper as a floor that never binds, asserted here so it can
+    // never be mistaken for a tuned one.
+    assert_eq!(
+        qnative_window_n(0.40),
+        Some(25),
+        "2K = 20 must NOT bind at the sweep's largest arm"
+    );
+    assert_eq!(
+        qnative_window_n(1.0),
+        Some(2 * QNATIVE_EXCEEDANCE_K),
+        "at alpha = 1 the floor IS the law"
+    );
+
+    // THE CAP IS THE HONEST UNAVAILABILITY, AND IT IS §16.69 REASON 2. At the
+    // contract's own alpha the direct route needs 1e6 samples and must decline
+    // rather than extrapolate off a short window.
+    assert_eq!(
+        qnative_window_n(1e-5),
+        None,
+        "at the contract's own alpha the direct quantile is UNAVAILABLE and must say so"
+    );
+    assert_eq!(
+        qnative_window_n(QNATIVE_EXCEEDANCE_K as f64 / QNATIVE_WINDOW_MAX as f64),
+        Some(QNATIVE_WINDOW_MAX)
+    );
+    for bad in [0.0, -0.5, 1.5, f64::NAN, f64::INFINITY] {
+        assert_eq!(qnative_window_n(bad), None, "alpha = {bad} is outside the law's domain");
+    }
+
+    // THE ORDER STATISTIC ITSELF: the K-th LARGEST of the freshest N(alpha).
+    // On 1000..=200_000 us in 1000 us steps the 10th largest is 191_000. Values
+    // are in the MILLISECOND range on purpose: the law floors at
+    // TIMER_GRANULARITY_US for the same information-availability reason every
+    // other clock in the chain does, and a fixture built below that floor would
+    // assert the FLOOR while claiming to assert the order statistic.
+    let ramp: Vec<u32> = (1..=200u32).map(|i| i * 1_000).collect();
+    assert_eq!(
+        qnative_recovery_round_us(&ramp, 0.05),
+        Some(191_000),
+        "W_q must be X_(N-K+1) - the K-th largest, i.e. E[tau] = K/(N+1) ~ alpha"
+    );
+    // A SHORT WINDOW IS A DIFFERENT LAW'S OUTPUT AND MUST RETURN NOTHING.
+    assert_eq!(qnative_recovery_round_us(&ramp[..199], 0.05), None);
+    // ONLY THE FRESHEST N(alpha) COUNT. Prepending 500 huge stale samples must
+    // not move the reading - a longer slice would read a different level.
+    let mut stale: Vec<u32> = vec![9_000_000; 500];
+    stale.extend_from_slice(&ramp);
+    assert_eq!(
+        qnative_recovery_round_us(&stale, 0.05),
+        Some(191_000),
+        "the window is a WINDOW"
+    );
+    // AND THE GRANULARITY FLOOR IS ASSERTED AS ITSELF, ONCE, RATHER THAN
+    // SMUGGLED INTO THE FIXTURE ABOVE. A window of sub-granularity samples
+    // floors, exactly as the RACK and derived rounds do.
+    let tiny: Vec<u32> = vec![7u32; 200];
+    assert_eq!(
+        qnative_recovery_round_us(&tiny, 0.05),
+        Some(TIMER_GRANULARITY_US),
+        "W_q floors at the timer granularity - information availability, not a mode"
+    );
+
+    // MONOTONE IN alpha (§16.76.7): larger alpha => a lower quantile => a
+    // faster clock.
+    //
+    // THE FIXTURE IS STATIONARY AND NOT A RAMP, AND THAT IS THE POINT. On a
+    // monotonically increasing series the K-th largest of the LAST n samples is
+    // the same value for every n, so a ramp would report the three arms
+    // IDENTICAL and the monotonicity clause would be satisfied by nothing --
+    // the A7 pathology, in a unit test. This is a deterministic stationary
+    // series (a full-period multiplicative walk over 1..=1000, scaled to us),
+    // so the three arms read three different quantiles of ONE distribution,
+    // which is what the law claims to do.
+    let long: Vec<u32> = (0..6000u32)
+        .map(|i| ((i.wrapping_mul(7919) % 1000) + 1) * 1_000)
+        .collect();
+    let w002 = qnative_recovery_round_us(&long, 0.002).expect("N(0.002) fits");
+    let w050 = qnative_recovery_round_us(&long, 0.05).expect("N(0.05) fits");
+    let w400 = qnative_recovery_round_us(&long, 0.40).expect("N(0.40) fits");
+    assert!(
+        w002 > w050 && w050 > w400,
+        "W_q must be strictly decreasing in alpha: {w002} {w050} {w400}"
+    );
+    // BOUNDED ABOVE BY THE WINDOW'S OWN MAX - §16.69 REASON 1 REMOVED
+    // STRUCTURALLY. This clock cannot exceed an RTT the path actually realized,
+    // which is the property the Cantelli form does not have at any alpha: at
+    // alpha = 1e-5 Cantelli asks for srtt + 316*sigma with no ceiling at all.
+    let wmax = *long.iter().max().expect("non-empty") as u64;
+    assert!(w002 <= wmax, "W_q must never exceed max(window): {w002} > {wmax}");
 }
