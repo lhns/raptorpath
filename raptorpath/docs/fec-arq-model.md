@@ -16132,7 +16132,9 @@ a receiver gap report.** Every clock this tree has written — the shipped
    └──────────────────────────────────────────────────────────────────────┘
 ```
 
-`Y_(i)` are the sender's own observed hole-resolution-by-original times.
+`Y_(i)` are the sender's own observed hole OUTSTANDING times — first gap
+report to retirement (§16.77.8a, which is where that differs from `[SUCC]`'s
+`orig` and by how much, in a signed direction).
 **There is no new law**: `T` is §16.76's order statistic, at §16.76's `K`, under
 §16.76's window law and §16.76's unavailability rule, read off a different
 sample stream. **There is no free constant**: `w` is code-exact, `orig_frac`
@@ -16249,7 +16251,7 @@ self-measuring and no distributional shape is assumed anywhere.**
 
 | symbol | provenance |
 |---|---|
-| `Y_(i)` | **MEASURED, SENDER-SIDE** — time from a hole's first gap report to its retirement without a repair having flown for it |
+| `Y_(i)` | **MEASURED, SENDER-SIDE** — the hole's OUTSTANDING TIME: first gap report to retirement. **Biased toward zero against `F`, by a bounded and signed amount — §16.77.8a** |
 | `w = 1 + h_marginal/T_pay` | **CODE-EXACT** — `h_marginal = 14 B` (`REPAIR_HEADER_SIZE`, `fec/generation.rs:44`, pinned by `mtu_blackhole_wedge.rs:232`), `T_pay = 1200 B` (`net/mod.rs:161`) ⇒ **1.011**, wire-confirmed |
 | `orig_frac` | **MEASURED** — `[SUCC]`, 366 106 / 374 120 resolved holes = **0.97858** pooled; per cell 0.9954 / 0.9884 / 0.9716 / 0.9717 / 0.9346 |
 | `d` | **MEASURED** — `[FDIAG]` `SOURCE`/ARQ class, plain window: **1.048 / 0.777 / 3.298 / 9.038 / 4.370 ms**; UPPER BOUND where `holes_max > 0` |
@@ -16646,17 +16648,6 @@ cannot fill it there. §16.76.5(1)'s UNSCOREABLE rule governs: with fewer than
 shipped behaviour, `law_n = 0` rows are VOID and partial rows are never pooled
 with full ones. **This is information availability, never a mode.**
 
-**THE MEASURAND DIVERGENCE, STATED BEFORE IT IS MEASURED.** `[SUCC]` times a
-hole from **detection at the receiver**; the hold-down times it from **first gap
-report at the sender**. These are different origins, separated by the report's
-own propagation and by the receiver's report cadence, and the sender's
-observable is coarser: *"the hole retired and no repair flew for it."* The
-sender-side distribution is therefore the receiver-side one shifted and
-quantised, and **every `T` in milliseconds quoted in §16.77.3 and §16.77.6 is a
-receiver-side number used to locate a LEVEL, never to set a time.** That the
-lever is a level and not a time is what makes the divergence tolerable, and it is
-an argument the dial-dependence finding already forced.
-
 **THE SCORE, PRE-STATED.**
 
 * **(i) THE WIRING TEST — does the realized false-repair rate finally MOVE with
@@ -16674,12 +16665,87 @@ an argument the dial-dependence finding already forced.
 * **(iv) `CTL` PER CELL.** The clamp explained, beaten, or undefeated — and for
   the first time on the path that decides the fires.
 
+#### 16.77.8a The estimand the SENDER can observe, the bootstrap that killed the obvious one, and the SIGN of what is left
+
+**THIS SUBSECTION IS A CORRECTION TO §16.77.2 AND IT IS RECORDED AS ONE.** The
+derivation above was written against `F`, the distribution of the time from a
+hole being reported to its being resolved **by its own original** — the
+sender-side relative of `[SUCC]`'s `orig`. **The sender cannot observe it, and
+the reachability test measured why rather than an argument establishing it.**
+
+**THE FIXED POINT AT ZERO.** The obvious sender-side reading of "resolved by
+its own original" is *"the hole retired and no repair ever flew for it"* — the
+sender knows both halves. But with `T` unavailable the sender answers every
+report immediately, so a repair flies for **every** hole, that set is **empty**,
+the window never fills, `T` stays unavailable, and the estimator can never
+start. The first implementation did exactly this and
+`holddown_reachability.rs` printed the fixed point in one line:
+`evals=1175 fed=0 samp_n=0 law_n=0 t_us=- sup=0`. **A knob that could not arm
+on any wire, reported as an instrument reading and not as a surprise.**
+
+**WHAT REPLACES IT.** The estimator feeds on the hole's **OUTSTANDING TIME** —
+first gap report to retirement — unconditionally. One rule, applied identically
+at every level and at every window occupancy: **no bootstrap mode, no warm-up
+branch, and nothing whose behaviour changes when the window fills.**
+
+**THE BIAS IS SIGNED, IT IS TOWARD ZERO, AND EVERY CLAIM ABOVE IS CONSERVATIVE
+UNDER IT.** A hole retires when the FIRST of its original and its repair
+arrives, so
+
+```text
+   Y  =  min( orig_arrival , repair_arrival )   ≤   orig_arrival
+```
+
+and right-censoring pushes the same way — a hole still open when the transfer
+ends is never fed at all. Three consequences, in order:
+
+* **`T` UNDER-estimates the orig quantile it commands.** It reads a level of a
+  distribution that is stochastically dominated by `F`.
+* **An under-estimate is a SHORTER hold-down**, i.e. **less** delay charged to
+  the `(1 − orig_frac)` of holes that really were lost. The instrument errs on
+  the side of the shipped machine.
+* **So the arm UNDER-delivers §16.77.3's predicted waste reduction rather than
+  over-delivering it.** The predicted `rpd = 1 − orig_frac·q` is an **upper**
+  bound on the improvement, and a measured `rpd` above it is consistent with
+  the frame while a measured `rpd` below it is not explained by this bias.
+  **That asymmetry is what makes §16.77.9's `H1` still falsifiable.**
+
+**AND IT IS A CONVERGENT FIXED POINT RATHER THAN A STATIC BIAS.** As the
+hold-down arms, repairs are suppressed on exactly the holes whose originals were
+coming; those holes then retire on their originals' own timing; the window's
+contents move **toward** `F` from below and `T` rises to meet it. **The bias is
+therefore largest at the arms where it matters least** (`H500`, where `T` is
+short anyway) **and smallest at the arm the derivation names** (`H010`, where
+most repairs are suppressed and most retirements are the originals' own). No
+correction is applied and none is licensed: a correction would be a fitted
+constant, and the direction is what the falsifiers are written against.
+
+**THE ONE EXCLUSION IS THE SHED SET, AND IT IS THE ONE DIRECTION THIS ESTIMATOR
+MUST NOT BE BIASED IN.** A δ-honest shed hole was **abandoned**, not resolved;
+its "retirement" is the contract giving up rather than the path delivering.
+Feeding it would push `T` **upward** exactly where the contract had already
+stopped caring — the only sign that is not conservative — so it is excluded, and
+that is the whole of the exclusion list.
+
+**THE REMAINING DIVERGENCE FROM `[SUCC]`, CARRIED AND NOT CLOSED.** `[SUCC]`
+times a hole from **detection at the receiver**; the hold-down times it from
+**first gap report at the sender**. These differ by the report's own propagation
+and by the receiver's report cadence, and the sender's observable is coarser
+still. **Every `T` in milliseconds quoted in §16.77.3 and §16.77.6 is therefore
+a receiver-side number used to locate a LEVEL, and never to set a time.** That
+the lever is a level and not a time is what makes all three divergences
+tolerable, and it is an argument the 6.67× dial-dependence finding had already
+forced.
+
 #### 16.77.9 What falsifies this section
 
 **`H1` — THE WIRING TEST FAILS.** Realized repair emissions per detected hole do
-**not** fall monotonically in `q`, or fall by less than half the predicted
-`1 − orig_frac·q`, at a cell where the window fills and the echo confirms the arm
-resolved. **Then the gap-report response site is not the whole of the 99 % path
+**not** fall monotonically in `q` at a cell where the window fills and the echo
+confirms the arm resolved. **The LEVEL of the fall is deliberately NOT part of
+this falsifier and §16.77.8a is why**: the estimator's bias is toward zero, so
+`1 − orig_frac·q` is an UPPER bound on the improvement and a shortfall against
+it is explained by an instrument this section has already signed. **A failure to
+MOVE is not**, and that asymmetry is the whole of what `H1` asserts. **Then the gap-report response site is not the whole of the 99 % path
 either**, and the frame is wrong in the same way §16.69's was. The named
 successor, pre-committed here so it is not chosen afterwards: **the receiver's
 own detection-and-report clock.** The sender cannot hold down below the cadence

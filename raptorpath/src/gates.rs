@@ -785,6 +785,36 @@ pub struct RuntimeGates {
     /// `RWM_ACKDIAG_WINDOW_US` precedent, whose echo is its resolved µs and not
     /// a flag.
     pub alpha_override: Option<f64>,
+    /// `RWM_HOLDDOWN_Q` (**ABSENT by default**; paper §16.77) — the EXPERIMENT
+    /// knob that sets the level `q` of the SENDER'S HOLD-DOWN on a reported
+    /// hole: the sender does not answer a receiver gap report with a repair
+    /// until the hole has been outstanding for at least `T(q) = W_q(1 − q)`,
+    /// §16.76's order statistic evaluated on the hole-resolution stream.
+    ///
+    /// **Why it exists.** The fire-cause pass counted **0.59 % of 107 597
+    /// classified recovery fires from a timer and 98.99 % from the sender
+    /// answering a gap report**. Every clock this tree has written — the
+    /// shipped `[25, 100] ms` clamp, [`Self::derived_sweep`],
+    /// [`Self::rack_clocks`], [`Self::quantile_clocks`] — sets the TIMER, and
+    /// `fa ⊥ W` is the measured consequence. This is the first knob pointed at
+    /// the other 99 %. It is NOT a rival law for the timer's quantity and it
+    /// does not sit in that precedence chain: it is a different decision, at a
+    /// different site, and it composes with every one of them.
+    ///
+    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
+    /// Unset, empty, unparseable, non-finite, or outside the OPEN interval
+    /// `(0, 1)` ⇒ `None` ⇒ no hold-down at all, which is today's machine
+    /// byte-identically. The domain is the law's own and not a taste: at
+    /// `q ≤ 0` the hold-down is zero — the shipped behaviour, expressed by the
+    /// gate being absent rather than by an armed arm — and at `q ≥ 1` the
+    /// window law `N = ⌈K/(1−q)⌉` diverges (§16.77.10). The `[GATES]` echo
+    /// prints the RESOLVED value, so "my arm did not take" is READ.
+    ///
+    /// **Nothing may ship reading it.** A shipped hold-down must derive `q`
+    /// from the (δ, ρ, r) triangle through §16.77.2's stationarity condition,
+    /// continuous in every dial; that is the decision this arm informs and
+    /// does not take.
+    pub holddown_q: Option<f64>,
     /// `RWM_W_FORM` (**`cantelli` by default**; paper §16.76) — WHICH of the
     /// two rival `W` laws the armed quantile clock evaluates. Read ONLY when
     /// [`Self::quantile_clocks`] is armed; on the default arm it is inert and
@@ -1070,6 +1100,12 @@ impl RuntimeGates {
             // undefined at α ≤ 0 and negative-radicand above 1.
             alpha_override: env_parse::<f64>("RWM_ALPHA_OVERRIDE")
                 .filter(|a| a.is_finite() && *a > 0.0 && *a <= 1.0),
+            // ABSENT by default; garbage resolves back to ABSENT and the echo
+            // prints `unset`. The range is the law's own domain, not a taste:
+            // `q ≤ 0` IS the shipped machine (expressed by absence) and the
+            // window law diverges at `q ≥ 1`. Paper §16.77.
+            holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
+                .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
             // ABSENT by default; garbage resolves back to `cantelli` — today's
             // law — and the echo prints the RESOLVED token, so a mistyped arm
             // is READ rather than inferred. Paper §16.76.
@@ -1145,7 +1181,7 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
-             RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} \
+             RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -1194,6 +1230,11 @@ impl RuntimeGates {
             // resolves back to `cantelli` and prints as `cantelli`, so an arm
             // that did not take is READ rather than inferred. Paper §16.76.
             self.w_form.as_str(),
+            // THE HOLD-DOWN LEVEL, echoed as its RESOLVED value and never as a
+            // flag — same precedent, same reason. `unset` means no hold-down
+            // and today's machine; a number means the sender is waiting before
+            // it answers a gap report. Paper §16.77.
+            o(&self.holddown_q),
             // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
             // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
             // measured in, so a ledger whose windows are 250 ms and one whose
