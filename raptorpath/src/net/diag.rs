@@ -661,6 +661,17 @@ pub(crate) fn report(
                     let qsp_n = p.rtt_qspread_samples();
                     let msd_s = cand(p.rtt_msd_us());
                     let msd_n = p.rtt_msd_samples();
+                    // CANDIDATE 4 (`tlag_us=`, paper §16.75): the same
+                    // functional as `msd_us` at a fixed TIME lag `τ = RTprop`
+                    // instead of a fixed SAMPLE lag — the successor the scored
+                    // battery named when it found `msd`'s `R_total` tracking
+                    // the sample rate at `rho = −0.548` and both of its
+                    // failures at the two thinnest sender legs. Its count is
+                    // the PAIR count `|P(τ)|`, and `-` iff that count is 0 —
+                    // the biconditional holds by construction because value and
+                    // count come from one pair-set function. READ BY NOTHING.
+                    let tlag_s = cand(p.rtt_tlag_us());
+                    let tlag_n = p.rtt_tlag_samples();
                     // feat/store-borrowing DIAG: this path's loan
                     // gauges — symbols LENT out (charged here,
                     // flying elsewhere) / BORROWED in (flying
@@ -689,8 +700,8 @@ pub(crate) fn report(
                     let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
                     let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }

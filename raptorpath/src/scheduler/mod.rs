@@ -813,6 +813,37 @@ const SIGMA_CAND_RVAR_GAIN: f64 = 0.25;
 /// cadence only — the feed site stays `O(1)`.
 const SIGMA_CAND_WINDOW: usize = 256;
 
+/// Band width `c` for the FIXED-TIME-LAG dispersion gauge `tlag_us=`
+/// (**paper §16.75**): a pair is admitted iff its lag falls in `[τ, c·τ]`.
+///
+/// **DECLARED RESOURCE BOUND, stated as one** (FORMULA-FIRST), not a fitted
+/// constant — and it does not change the estimand, which §16.75.2 pins to the
+/// band's POSITION at `τ = RTprop`. One octave is the standard dyadic binning
+/// of a structure function, and the arithmetic of what it buys is in the paper:
+/// at `c8L`'s slow sender leg (581 samples/s, spacing 1.72 ms) against
+/// `RTprop ≈ 38 ms` the band `[38, 76] ms` is 22 spacings wide, so a partner
+/// exists for essentially every anchor; at the battery's sparsest leg (`c8L`
+/// receiver, 23.9 samples/s ⇒ 41.8 ms spacing) exactly one spacing fits, which
+/// is the boundary case the `n` column and the parser-side `UNSCOREABLE-THIN`
+/// rule exist for.
+const SIGMA_TLAG_BAND_C: u32 = 2;
+
+/// Decimation factor `m` for `tlag_us=`: a sample enters the gauge's ring only
+/// if `τ/m` has elapsed since the last admitted one (**paper §16.75.4**).
+///
+/// **DECLARED RESOURCE BOUND, stated as one, and it is a MEMORY measure rather
+/// than a filter.** It caps the ring's sample rate at `m/τ` REGARDLESS of the
+/// ack rate, so a `SIGMA_CAND_WINDOW`-deep ring spans `256·τ/8 = 32·τ` at every
+/// leg. Without it the ring at a 20 kHz sender leg would span 12.8 ms — far
+/// less than one `RTprop` — the band `[τ, 2τ]` would contain **no pairs at
+/// all**, and the gauge would render `-` at exactly the legs it is built for.
+///
+/// **It does not change the estimand**: rate invariance comes from selecting
+/// pairs by elapsed TIME (§16.75.2), and any fixed `m` yields it. `m` sets only
+/// the resolution of the realized lag inside the band — `τ/8`, i.e. 12.5 % of
+/// `τ`.
+const SIGMA_TLAG_DECIM_M: u32 = 8;
+
 /// Quantile of the per-update window-min history used as the QUEUE floor
 /// (paper Section 12.4, jitter-robust queue floor).
 ///
@@ -1239,6 +1270,24 @@ pub struct CopaState {
     /// which is also what makes the SUCCESSIVE differences of candidate 3
     /// meaningful.
     rtt_win: VecDeque<u32>,
+    /// **THE TIMESTAMPED, TIME-DECIMATED RTT SERIES for candidate 4
+    /// (`tlag_us=`, paper §16.75)**: `(arrival instant, rtt µs)`, ascending in
+    /// time, at most `SIGMA_CAND_WINDOW` entries.
+    ///
+    /// **This cannot reuse `rtt_win`.** That FIFO carries no timestamps, so a
+    /// lag can only be counted in SAMPLES there — which is precisely the defect
+    /// §16.75 exists to remove: a lag-1 successive difference estimates the
+    /// structure function `V` at whatever the inter-sample spacing happens to
+    /// be, and that spacing is set by the ack rate rather than by the link.
+    ///
+    /// **And it cannot reuse `rtt_samples` either**, for the same reason
+    /// `rtt_win` cannot: that deque is a MONOTONIC min-deque and holds a lower
+    /// envelope of the series, not the series.
+    ///
+    /// Entries are admitted at most one per `RTprop / SIGMA_TLAG_DECIM_M`, so
+    /// the ring spans `32 · RTprop` at every sample rate (see the const doc).
+    /// Fed unconditionally; read by nothing but `[DIAG]`.
+    rtt_tlag: VecDeque<(Instant, u32)>,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1403,6 +1452,7 @@ impl CopaState {
             rtt_mdev: 0.0,
             rtt_mdev_n: 0,
             rtt_win: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
+            rtt_tlag: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -1785,6 +1835,35 @@ impl CopaState {
         });
         self.expire_old_samples(now);
         self.min_rtt = self.rtt_samples.front().map(|s| s.rtt);
+
+        // CANDIDATE 4 (`tlag_us=`, paper §16.75): the TIMESTAMPED, TIME-DECIMATED
+        // series. Fed AFTER `min_rtt` is refreshed above, so the admission
+        // spacing uses the freshest `τ = RTprop` this sample can see.
+        //
+        // Admission is a SPACING CAP applied identically at every rate — not a
+        // branch on the rate, not a threshold that selects a code path. As the
+        // arrival spacing rises through `τ/m` the admitted stream passes
+        // continuously from decimated to pass-through (§16.75.8, continuity in
+        // the sample rate). With `τ` unavailable nothing is admitted, the pair
+        // set stays empty and the gauge renders `-`: there is NO fallback
+        // constant, because a fallback constant is a free constant with no
+        // provenance and a second code path (§16.75.6 F2).
+        //
+        // O(1): one `duration_since`, at most one push and one pop.
+        if let Some(tau) = self.min_rtt {
+            let spacing = tau / SIGMA_TLAG_DECIM_M;
+            let admit = match self.rtt_tlag.back() {
+                Some((t_last, _)) => now.duration_since(*t_last) >= spacing,
+                None => true,
+            };
+            if admit {
+                if self.rtt_tlag.len() == SIGMA_CAND_WINDOW {
+                    self.rtt_tlag.pop_front();
+                }
+                self.rtt_tlag
+                    .push_back((now, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32));
+            }
+        }
 
         // goal-gate "Honest Inputs" (`RWM_HONEST_K`): feed the K tracker the
         // RAW sample's ratio at the SAMPLE clock, against the freshest floor.
@@ -3039,6 +3118,16 @@ impl PathState {
     /// Feed an RTT measurement into Copa state.
     /// Call this when processing ACKs/reports that include RTT.
     pub fn record_rtt_sample(&mut self, rtt: Duration) {
+        // THE RAW SAMPLE DUMP (`RWM_RTT_DUMP`, default OFF) — fed HERE, at the
+        // single delegate every ack path funnels through, so the dumped series
+        // is EXACTLY the series the five dispersion gauges consume. Clause `B`
+        // compares an estimator against its own input; "its own input" has to
+        // be literally true, or the comparison is the incommensurable one the
+        // scored battery convicted (a 20 Hz ICMP probe against a kHz sender).
+        // Null check with the gate off; no engine decision reads it.
+        if let Some(d) = crate::net::rttdump::gauge() {
+            d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
         self.copa.record_rtt(rtt);
     }
 
@@ -3412,6 +3501,152 @@ impl PathState {
     /// [`rtt_msd_us`]: Self::rtt_msd_us
     pub fn rtt_msd_samples(&self) -> u64 {
         (self.copa.rtt_win.len() as u64).saturating_sub(1)
+    }
+
+    /// **CANDIDATE 4 — the τ-LAG PAIR SET. The one place the pairing rule
+    /// exists**, so that [`rtt_tlag_us`] and [`rtt_tlag_samples`] can never
+    /// describe different sample sets and the `-`-iff-`n == 0` biconditional
+    /// holds BY CONSTRUCTION rather than by two functions agreeing.
+    ///
+    /// Paper §16.75.0, transcribed:
+    ///
+    /// ```text
+    ///     P(τ) = { (i, j(i)) : j(i) = argmax { t_j : t_i − t_j ≥ τ },  j < i
+    ///                          admitted iff  t_i − t_{j(i)} ≤ c·τ }
+    ///
+    ///     τ = RTprop  (MEASURED),   c = SIGMA_TLAG_BAND_C = 2
+    /// ```
+    ///
+    /// Every anchor contributes at most one pair — its most recent admissible
+    /// partner — so `|P(τ)|` is a count of anchors and is directly readable as
+    /// the gauge's `n`.
+    ///
+    /// Empty (⇒ the gauge renders `-`) when `τ` is not yet established, when
+    /// `τ` is zero, or when the leg's own spacing exceeds `c·τ` so that no
+    /// partner is admissible anywhere in the ring. **That last case is the
+    /// honest verdict at a leg too thin to hold a τ-lag pair, and it is
+    /// reported rather than patched** (§16.75.6 F1).
+    ///
+    /// `O(L)`: the ring is ascending in time and `j` is non-decreasing in `i`,
+    /// so the scan is a two-pointer sweep, at the `[DIAG]` cadence only.
+    ///
+    /// [`rtt_tlag_us`]: Self::rtt_tlag_us
+    /// [`rtt_tlag_samples`]: Self::rtt_tlag_samples
+    fn tlag_diffs(&self) -> Vec<u32> {
+        let tau = match self.copa.min_rtt {
+            Some(t) if !t.is_zero() => t,
+            _ => return Vec::new(),
+        };
+        let hi = tau * SIGMA_TLAG_BAND_C;
+        let ring = &self.copa.rtt_tlag;
+        let n = ring.len();
+        let mut out: Vec<u32> = Vec::with_capacity(n);
+        // `j` tracks the LAST index whose lag to the current anchor is still
+        // `≥ τ`. Lag decreases in `j` and anchors advance in time, so `j` only
+        // ever moves forward.
+        let mut j = 0usize;
+        for i in 0..n {
+            let (ti, vi) = ring[i];
+            while j + 1 < i && ti.duration_since(ring[j + 1].0) >= tau {
+                j += 1;
+            }
+            if j < i {
+                let (tj, vj) = ring[j];
+                let lag = ti.duration_since(tj);
+                if lag >= tau && lag <= hi {
+                    out.push(vi.abs_diff(vj));
+                }
+            }
+        }
+        out
+    }
+
+    /// **CANDIDATE 4 — `tlag_us=`, THE RATE-INVARIANT DISPERSION.** Median
+    /// absolute difference at a fixed TIME lag `τ = RTprop`, paper §16.75:
+    ///
+    /// ```text
+    ///     σ̂_Δ(τ)  =  median { |rtt(t_i) − rtt(t_j)| : (i, j) ∈ P(τ) }
+    /// ```
+    ///
+    /// **WHY IT EXISTS, AND IT IS NOT AN IMPROVEMENT ON `msd_us` — IT IS A
+    /// DIFFERENT ESTIMAND.** For a stationary series with autocorrelation `ρ`,
+    /// the median absolute difference at lag `τ` is the structure function
+    /// (variogram) evaluated there:
+    ///
+    /// ```text
+    ///     median |X(t + τ) − X(t)|  =  0.6745 · √( 2·(1 − ρ(τ)) ) · σ
+    /// ```
+    ///
+    /// A lag-1 successive difference — which is what [`rtt_msd_us`] computes —
+    /// is therefore `V` evaluated at **whatever the inter-sample spacing
+    /// happens to be**, and that spacing is set by the ack rate, i.e. by the
+    /// traffic. It is not a property of the link and not a property of the
+    /// estimator, so **two legs of one run estimate two different quantities.**
+    ///
+    /// **That is measured, not argued.** The scored VM battery (goal-gate, "THE
+    /// SIGMA ESTIMATOR — THE SCORED RESULT" §6) found `R_total` tracking the
+    /// sample rate at `rho = −0.548` across the eight sender legs, with the two
+    /// thinnest legs (581 and 1 762 samples/s) the two worst readings in the
+    /// battery (34.6 and 16.5) — and `msd_us`'s 8.667 on the data path is the
+    /// nearest any candidate came to the pre-registered accept bar of 6.0.
+    /// Selecting pairs by ELAPSED TIME fixes the estimand before any sample
+    /// arrives: a sparse leg and a dense leg select the same τ-differences of
+    /// the same process, the sparse leg simply finds fewer of them.
+    ///
+    /// **Provenance.** `median`, `|·|` — CITED, von Neumann, Kent, Bellinson &
+    /// Hart 1941; RFC 3550 §A.8 is the same construction at lag 1. The
+    /// extension to a STATED lag is Matheron's variogram (1963) and Allan's
+    /// two-sample deviation at averaging time τ (1966). `τ = RTprop` —
+    /// MEASURED, and the fraction is **1 and DERIVED**: one `RTprop` is the
+    /// smallest lag at which two RTT samples observe distinct path traversals
+    /// rather than the same queue occupancy on one traversal, which is the same
+    /// ruling `control/anchor.rs` already enforces when it rejects sub-`RTprop`
+    /// delivery-rate samples. `c` and `m` — DECLARED RESOURCE BOUNDS with their
+    /// arithmetic, in their own const docs.
+    ///
+    /// **UNSCALED, exactly as `qsp_us` is.** Clause `S`'s `R_total` is a ratio
+    /// so no fixed scaling changes it, and the rebuilt clause `B` compares this
+    /// reading against the SAME functional computed offline over the same
+    /// samples, so no scaling changes that either. The Gaussian conversion
+    /// above needs `ρ(τ)` — the very thing being measured — so it is
+    /// **documented here and applied nowhere.**
+    ///
+    /// **Reduces to `msd_us` in the limit** `τ → Δt`: the band collapses onto
+    /// the lag-1 pair. The successor contains its predecessor, and the whole of
+    /// the claimed improvement is a τ chosen by physics instead of by traffic.
+    ///
+    /// Read by nothing. `None` **iff** [`rtt_tlag_samples`] is 0.
+    ///
+    /// [`rtt_msd_us`]: Self::rtt_msd_us
+    /// [`rtt_tlag_samples`]: Self::rtt_tlag_samples
+    pub fn rtt_tlag_us(&self) -> Option<u64> {
+        let mut d = self.tlag_diffs();
+        if d.is_empty() {
+            return None;
+        }
+        d.sort_unstable();
+        Some(Self::cand_quantile(&d, 0.50))
+    }
+
+    /// τ-LAG PAIRS available to [`rtt_tlag_us`] right now — `|P(τ)|`.
+    ///
+    /// It is the PAIR count and not the sample count because the pairs are what
+    /// the median is taken over, and the count beside a value must describe
+    /// that value's own sample set. Both come from [`tlag_diffs`], so
+    /// `rtt_tlag_us().is_none() ⇔ rtt_tlag_samples() == 0` holds by
+    /// construction.
+    ///
+    /// **A reading resting on fewer than `L/8 = 32` pairs is scored
+    /// `UNSCOREABLE-THIN` by the battery's PARSER** (paper §16.75.6 F1). That
+    /// rule is declared in the paper, applied off-box, and is deliberately
+    /// **not** a threshold anywhere in this crate: `diag.rs`'s standing reason
+    /// applies verbatim — a field that disappears below a threshold cannot be
+    /// told apart from a path that was never sampled.
+    ///
+    /// [`rtt_tlag_us`]: Self::rtt_tlag_us
+    /// [`tlag_diffs`]: Self::tlag_diffs
+    pub fn rtt_tlag_samples(&self) -> u64 {
+        self.tlag_diffs().len() as u64
     }
 
     pub fn rtt_jitter_us(&self) -> u64 {

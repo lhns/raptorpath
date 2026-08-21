@@ -20,6 +20,7 @@ pub mod framing;
 pub mod interleave;
 pub mod receiver;
 pub mod reorder;
+pub mod rttdump;
 pub mod sender_policy;
 pub mod tasks;
 pub mod walldiag;
