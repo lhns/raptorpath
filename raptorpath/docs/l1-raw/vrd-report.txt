@@ -1,0 +1,64 @@
+SEEDS [7, 42]  ledger rows: ALPHARESULT 56  VRDWITNESS 56
+
+=== c1  n_CTL=4 n_CH=4 [CEILING-ABOVE-RAIL]
+   lat50  CTL=2.08       CH=2.085       d=+0.24%    CTLspread=0.48%
+   lat95  CTL=2.565      CH=2.585       d=+0.78%    CTLspread=6.24%
+   ffrac  CTL=0.2621     CH=0.2588      d=-1.26%    CTLspread=23.16%
+   fcnt   CTL=195.5      CH=233.5       d=+19.44%   CTLspread=21.48%
+   qp50   CTL=8          CH=8           d=+0.00%    CTLspread=12.50%
+   qp99   CTL=33.5       CH=28.5        d=-14.93%   CTLspread=77.61%
+   good   CTL=201.4      CH=193.4       d=-3.98%    CTLspread=8.17%
+   cadence CTL=25000.0 CH=21569.5   hd_p50_CH=172032.0   law_n=0 rows=0   censor_max=0.31%
+   band=(147, 294)  g_ratio=0.9602  G2 bar=(L_ratio)^0.5=1.0012  gdiff=3.98% resolvable=4.30%
+   CTL median in band both seeds = True
+   s7  good 205.3->199.1 (-3.0%)  lat50 2.08->2.08  lat95 2.55->2.6  ffrac 0.245->0.245 (sprdCTL 10%)  fcnt 181->198
+   s42 good 193.9->187.9 (-3.1%)  lat50 2.085->2.09  lat95 2.565->2.56  ffrac 0.2799->0.2805 (sprdCTL 10%)  fcnt 196->260
+   DIM1=FLAT  DIM2=FLAT  GUARD=UNDERPOWERED->G1  ==> CELL-WIN=False   fails=[]
+
+=== c7  n_CTL=8 n_CH=8
+   lat50  CTL=41.45      CH=38.9        d=-6.15%    CTLspread=93.61%
+   lat95  CTL=91.05      CH=83.3        d=-8.51%    CTLspread=96.10%
+   ffrac  CTL=0.0175     CH=0.01325     d=-24.29%   CTLspread=656.00%
+   fcnt   CTL=1524       CH=1116        d=-26.71%   CTLspread=45.75%
+   qp50   CTL=45         CH=42.5        d=-5.56%    CTLspread=113.33%
+   qp99   CTL=105        CH=98.5        d=-6.19%    CTLspread=796.19%
+   good   CTL=163.5      CH=158.4       d=-3.13%    CTLspread=80.24%
+   cadence CTL=100000.0 CH=15352.0   hd_p50_CH=29696.0   law_n=0 rows=0   censor_max=4.76%
+   band=(140, 180)  g_ratio=0.9687  G2 bar=(L_ratio)^0.5=0.9688  gdiff=3.13% resolvable=12.88%
+   CTL median in band both seeds = True
+   s7  good 162.4->158.4 (-2.5%)  lat50 43.1->39.95  lat95 94.55->85.9  ffrac 0.02015->0.01295 (sprdCTL 562%)  fcnt 1664->1178
+   s42 good 166.2->103.0 (-38.0%)  lat50 41.45->25.35  lat95 89.8->72.8  ffrac 0.01545->0.01325 (sprdCTL 55%)  fcnt 1341->1073
+   DIM1=FLAT  DIM2=FLAT  GUARD=VIOLATION(band)  ==> CELL-WIN=False   fails=[]
+
+=== sc2  n_CTL=8 n_CH=8
+   lat50  CTL=97.2       CH=11.75       d=-87.91%   CTLspread=33.23%
+   lat95  CTL=103.5      CH=79.95       d=-22.75%   CTLspread=31.30%
+   ffrac  CTL=0.3388     CH=0.3884      d=+14.65%   CTLspread=15.23%
+   fcnt   CTL=1131       CH=1392        d=+23.08%   CTLspread=24.67%
+   qp50   CTL=91         CH=12          d=-86.81%   CTLspread=3.30%
+   qp99   CTL=101.5      CH=88.5        d=-12.81%   CTLspread=14.78%
+   good   CTL=87.15      CH=23.41       d=-73.14%   CTLspread=2.96%
+   cadence CTL=100000.0 CH=49152.0   hd_p50_CH=3276800.0   law_n=0 rows=0   censor_max=4.89%
+   band=(78, 92)  g_ratio=0.2686  G2 bar=(L_ratio)^0.5=0.3477  gdiff=73.14% resolvable=0.80%
+   CTL median in band both seeds = True
+   s7  good 87.0->21.7 (-75.0%)  lat50 95.25->11.7  lat95 103->80.2  ffrac 0.3322->0.3809 (sprdCTL 14%)  fcnt 1058->1401
+   s42 good 87.9->24.8 (-71.8%)  lat50 97.2->11.9  lat95 104->79.95  ffrac 0.351->0.397 (sprdCTL 10%)  fcnt 1140->1392
+   DIM1=WIN  DIM2=FLAT  GUARD=VIOLATION(band)  ==> CELL-WIN=False   fails=[]
+
+=== c8  n_CTL=8 n_CH=8 [WITNESS - DOES NOT VOTE]
+   lat50  CTL=61.35      CH=58          d=-5.46%    CTLspread=86.88%
+   lat95  CTL=137        CH=106.5       d=-22.26%   CTLspread=103.14%
+   ffrac  CTL=0.07165    CH=0.058       d=-19.05%   CTLspread=253.73%
+   fcnt   CTL=395        CH=224         d=-43.29%   CTLspread=128.86%
+   qp50   CTL=131        CH=99.5        d=-24.05%   CTLspread=428.24%
+   qp99   CTL=421.5      CH=193         d=-54.21%   CTLspread=131.67%
+   good   CTL=85.03      CH=67.6        d=-20.50%   CTLspread=44.90%
+   cadence CTL=100000.0 CH=49152.0   hd_p50_CH=81920.0   law_n=0 rows=0   censor_max=10.91%
+   band=(50, 100)  g_ratio=0.7950  G2 bar=(L_ratio)^0.5=0.9723  gdiff=20.50% resolvable=9.30%
+   CTL median in band both seeds = True
+   s7  good 82.4->67.6 (-17.9%)  lat50 58.4->46.05  lat95 137->97.85  ffrac 0.0654->0.0856 (sprdCTL 278%)  fcnt 400->204
+   s42 good 85.0->67.5 (-20.7%)  lat50 65.3->58  lat95 127->107  ffrac 0.07165->0.0469 (sprdCTL 91%)  fcnt 277->226
+   DIM1=FLAT  DIM2=FLAT  GUARD=VIOLATION(exchange)  ==> CELL-WIN=False   fails=[]
+
+STABLE CELL-WINS: 0 of 3  (none)
+OUTCOME: SURVIVE ON MERIT
