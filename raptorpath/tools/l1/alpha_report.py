@@ -47,6 +47,7 @@ THREE RULES THIS REPORTER ENFORCES AND DOES NOT SOFTEN:
   W3 IS RETIRED. `cod=0sym/s` does not appear anywhere in this file.
 """
 import json
+import re
 import math
 import sys
 from collections import defaultdict
@@ -220,6 +221,11 @@ def safeln(a, b):
 
 
 # ── LOAD ─────────────────────────────────────────────────────────────────
+#: Any battery's per-invocation WITNESS row, matched on the `WITNESS` suffix so
+#: a rename cannot silently defeat the guard again (`ALPHAWITNESS`,
+#: `QNATWITNESS`, ...). See the skip site below for what the literal cost.
+WITNESS_ROW = re.compile(r'^\s*[A-Z0-9_]*WITNESS\s')
+
 rows = []
 for path in [a for a in sys.argv[1:] if not a.startswith("--")]:
     try:
@@ -237,10 +243,23 @@ for path in [a for a in sys.argv[1:] if not a.startswith("--")]:
             # exactly the number of successful invocations. The prefix is what
             # separates the two, and a witness row is skipped explicitly rather
             # than left to a field test that a future column could satisfy.
+            #
+            # **AND THE SKIP IS MATCHED ON THE `WITNESS` SUFFIX, NOT ON THE
+            # LITERAL `ALPHAWITNESS`, BECAUSE THE LITERAL ALREADY FAILED ONCE.**
+            # The quantile-native battery renamed its witness row to
+            # `QNATWITNESS` and this guard did not follow it: all 240 witness
+            # rows per seed parsed as results and landed in the ABORT count —
+            # `ABORTS=240` against `SCORED=240`, **exactly the inflation the
+            # paragraph above predicts, by exactly the number it predicts.** No
+            # measurement moved (a phantom ABORT enters no denominator), but the
+            # abort-cause table is the FIRST thing this report prints and the
+            # pre-registration makes it the first thing a reader is entitled to.
+            # Any `<PREFIX>WITNESS ` row is a witness row, whatever the battery
+            # calls itself.
             i = ln.find("ALPHARESULT ")
             if i >= 0:
                 j = ln.find("{", i)
-            elif "ALPHAWITNESS" in ln:
+            elif WITNESS_ROW.match(ln):
                 continue
             else:
                 j = ln.find('{"cell"')

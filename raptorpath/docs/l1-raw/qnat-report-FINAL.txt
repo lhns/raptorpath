@@ -1,0 +1,481 @@
+====================================================================================================
+THE ALPHA-SWEEP -- SCORING PASS   (goal #100 item 2)
+6 arms x up to 5 cells, paired, arms innermost.  arm -> commanded alpha:
+  CTL=null  Q002=0.002  Q009=0.009  Q050=0.05  Q184=0.184  Q400=0.4
+====================================================================================================
+
+### 1. VERDICT
+
+  VERDICT: NO VERDICT -- UNSEPARATED
+
+    - separation: 90/150 ordered arm pairs UNSEPARATED (overlap > 0.50) = 0.60
+    - More than half the judged pairs realize overlapping W. The arms are labels, not treatments, and no ordering between them is a measurement.
+
+  THE FOUR PRE-REGISTERED LEGAL OUTCOMES, and the fifth thing that is
+  not an outcome at all:
+    (d) WINS       alpha* is the SYMMETRIC / POWER route's arm at the
+                   HARNESS'S OWN dial point (Bulk): Q009, alpha = 0.0080
+                   on the plain-window measured inputs
+    (b) WINS       alpha* is the LATENCY-CONSERVATIVE route's arm at the
+                   same dial point: Q002, alpha = 0.00170 on the same
+                   measured sigma
+    BOTH REFUTED   alpha* is neither -- the curve peaks somewhere the
+                   cost-ratio memo did not name, and both mappings are
+                   wrong about WHERE, not merely about how much
+    FLAT CURVE     no arm clears the noise: alpha did not matter here
+    NO VERDICT --  the arms' REALIZED W overlap. Two arms commanded at
+    UNSEPARATED    different alpha that realize the same clock are one
+                   arm run twice, and no ordering between them exists
+                   to be measured. This outranks every number below.
+
+  THE MAP FROM alpha* TO A ROUTE IS TRANSCRIBED FROM THE PRE-REGISTRATION
+  (goal-gate 'THE ALPHA-SWEEP -- PRE-REGISTRATION' section 3), NOT from
+  the memo: both routes are recomputed there on the PLAIN-WINDOW MEASURED
+  inputs, and the answer is dial-point dependent. At BULK -- the hint
+  every invocation runs -- (b) is Q002 and (d) is Q009. At AUTO the two
+  routes COINCIDE at 0.1829 vs 0.1843 and both land on Q184, so the route
+  question is answerable AT BULK AND NOWHERE ELSE in this sweep. An
+  alpha* at Q184 is therefore BOTH REFUTED at the scored delta, correctly:
+  the Auto point is not the point this battery ran.
+  The OUTCOME above is COMPUTED from the rows. It is the pre-registration
+  that decides what it means, never this file.
+
+====================================================================================================
+### 2. LIVENESS AND ABORTS, read before any number.
+====================================================================================================
+
+  invocations=480  live=480  ABORTS=0  VOID(W6 failed)=0  SCORED=480
+  ABORT = no [GATES] on EITHER endpoint and no run: the invocation died
+  before the engine started, and it is in NO denominator anywhere.
+  VOID  = live, but the arm's OWN independent variable did not take.
+
+  cell-arm    rows  ABORT  live  VOID  DNF      W1      W2      W4'        W5      W6      W7
+  c1-CTL        16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c1-Q002       16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c1-Q009       16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c1-Q050       16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c1-Q184       16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c1-Q400       16      0    16     0    0   16/16   16/16  n/a(c1)   n/a(c1)   16/16   16/16
+  c7-CTL        16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c7-Q002       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c7-Q009       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c7-Q050       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c7-Q184       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c7-Q400       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-CTL        16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-Q002       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-Q009       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-Q050       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-Q184       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8-Q400       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-CTL       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-Q002      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-Q009      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-Q050      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-Q184      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  c8L-Q400      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-CTL       16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-Q002      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-Q009      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-Q050      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-Q184      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+  sc2-Q400      16      0    16     0    0   16/16   16/16    16/16     16/16   16/16   16/16
+
+  W1  [RFA] gen=0 on the RECEIVER -- the only DIRECT echo of
+      window_generation. This battery runs RWM_GEN=0.
+  W2  no [PFRAC] lines on the sender -- [PFRAC] presence IS generation.
+  W4' [DIAG] retx > 0 at every LOSSY cell, read as the MAXIMUM over ALL
+      [DIAG] lines. `retx=` in the DIAG tail is an INTERVAL counter, and
+      reading it off the LAST line mis-reported this witness at 5 of 15
+      reps in the plain-window primitives pass.
+  W5  [RACK] fa=<spur>/<fired> with fired > 0 at every LOSSY cell.
+  W6  THIS BATTERY'S OWN ARM-LIVENESS WITNESS, and it is the one that
+      can void a row. Treatment arm: gate_alpha_cli AND gate_alpha_srv
+      equal the commanded alpha, AND qalpha_cli / qalpha_srv equal it to
+      1e-9. CTL: both gates read `unset` and qalpha_quantile_* read 0.
+      A ROW FAILING W6 IS VOID -- its own independent variable did not
+      take, so it is not a rep of the arm whose name it carries.
+  W7  THE WINDOW-FORM WITNESS, for the QUANTILE-NATIVE axis. `[QALPHA]
+      form=` must equal the arm's expected token (`cantelli` on CTL,
+      where RWM_W_FORM is ABSENT and the engine RESOLVES it, `quantile`
+      on every Q arm) at BOTH endpoints, and `win_n=` must equal the
+      arm's expected window size. `win_n` IS ASSERTED AT THE SENDER
+      ALWAYS AND AT THE RECEIVER ON A Q ARM ONLY: the protocol hint is
+      not plumbed to the receiver task, so an UNOVERRIDDEN CTL receiver
+      resolves a different contract alpha and therefore a different
+      window. On a Q arm BOTH sites carry a NUMBER override and both
+      are checked. `n/a` means the ledger predates the axis -- absence
+      of the axis, never failure on it. W7 DOES NOT VOID A ROW: it is
+      reported here and the pre-registration decides what it costs.
+  W3 (cod=) IS RETIRED and appears nowhere in this report.
+
+====================================================================================================
+### 3. HEADROOM (MEASUREMENT DISCIPLINE 16) -- the CTL arm's own
+###    utilisation of each cell's shaped capacity, from the qdisc capture.
+====================================================================================================
+
+  DENOMINATOR = THE TRANSFER WALL (`seconds`), NEVER `INVOCATION_S`:
+  INVOCATION_S is the whole script's wall (namespace bring-up, netem/tbf
+  setup, the verification pings, teardown) and dividing shaped-device
+  bytes by it understates utilisation enough to LICENSE an unsatisfiable
+  throughput target -- which is exactly what discipline 16 forbids.
+
+  cell       shaped   xfer_s  INVOC_S   util %  headroom %   claims permitted
+  c1        1000 Mb    16.84     19.0     20.8        79.2   throughput targets permitted
+  c7         200 Mb    10.20     12.0     87.5        12.5   throughput targets permitted
+  c8         120 Mb     2.31      5.0     82.9        17.1   throughput targets permitted
+  c8L        120 Mb    18.20     20.5     82.0        18.0   throughput targets permitted
+  sc2        100 Mb     9.12     11.0     98.1         1.9   NO-THROUGHPUT-TARGET -- headroom < 5% (discipline 16c)
+
+====================================================================================================
+### 3b. UNSEPARATED-BY-CONSTRUCTION (PRE-DERIVED)
+====================================================================================================
+
+  A quantile window of N samples with K = 10 order statistics in the
+  tail realizes a TAIL LEVEL whose exact 95 % interval is Beta(K,
+  N-K+1). Where two arms' intervals TOUCH, no amount of measurement at
+  these window sizes can separate them: the arms are one arm run twice,
+  by construction and not by outcome.
+
+  THESE NUMBERS ARE TRANSCRIBED FROM THE PRE-REGISTRATION AS LITERAL
+  CONSTANTS AND ARE NOT RECOMPUTED HERE. A report that re-derived them
+  would agree with itself by construction; the pre-registration owns
+  them and this file only reads them.
+
+  pair           N_lo   N_hi       tau CI (low arm)      tau CI (high arm)   margin   label
+  Q002-Q009      5000   1112   [0.000959, 0.003414]   [0.004321, 0.015308]    1.266   separated
+  Q009-Q050      1112    200   [0.004321, 0.015308]   [0.024234, 0.083703]    1.583   separated
+  Q050-Q184       200     55   [0.024234, 0.083703]   [0.090791, 0.288030]    1.085   MARGINAL
+  Q184-Q400        55     25   [0.090791, 0.288030]   [0.211255, 0.574794]    0.733   UNSEPARATED-BY-CONSTRUCTION
+
+  margin = lo(higher arm) / hi(lower arm). Above 1 the two tail-level
+  intervals are DISJOINT; at or below 1 they overlap and the pair is
+  UNSEPARATED BEFORE THE EXPERIMENT RUNS.
+
+  *** Q184-Q400 IS UNSEPARATED BY CONSTRUCTION. ***
+      An empirical non-separation of Q184-Q400 in section 4 is
+      EXPECTED (no verdict may rest on it). It is not a finding, it
+      is not evidence about alpha, and it is not a failure of the
+      run -- it is the window sizes, restated by the data.
+  Q050-Q184 IS MARGINAL BY CONSTRUCTION -- the thin one. Its
+      intervals are disjoint by a hair, so an empirical separation
+      there carries far less weight than its overlap number looks
+      like, and an empirical NON-separation is close to expected.
+
+  THE PRE-DERIVED PAIRS AS THE ROWS ACTUALLY REALIZED THEM, marked:
+    c1    Q184-Q400    overlap=  0.91   UNSEPARATED empirically -- EXPECTED (no verdict may rest on it)
+    c1    Q050-Q184    overlap=  0.71   UNSEPARATED empirically -- MARGINAL by construction
+    c7    Q184-Q400    overlap=  0.94   UNSEPARATED empirically -- EXPECTED (no verdict may rest on it)
+    c7    Q050-Q184    overlap=  1.00   UNSEPARATED empirically -- MARGINAL by construction
+    c8    Q184-Q400    overlap=  1.00   UNSEPARATED empirically -- EXPECTED (no verdict may rest on it)
+    c8    Q050-Q184    overlap=  0.93   UNSEPARATED empirically -- MARGINAL by construction
+    c8L   Q184-Q400    overlap=  0.95   UNSEPARATED empirically -- EXPECTED (no verdict may rest on it)
+    c8L   Q050-Q184    overlap=  1.00   UNSEPARATED empirically -- MARGINAL by construction
+    sc2   Q184-Q400    overlap=  0.91   UNSEPARATED empirically -- EXPECTED (no verdict may rest on it)
+    sc2   Q050-Q184    overlap=  0.86   UNSEPARATED empirically -- MARGINAL by construction
+
+====================================================================================================
+### 4. THE REALIZED-W DISTRIBUTIONS AND THE SEPARATION RULE.
+====================================================================================================
+
+  W(alpha) = srtt + k(alpha)*sigma is COMMANDED by alpha and REALIZED
+  through sigma, and sigma is not a constant: the plain-window pass
+  measured sigma(c8) at 0.191 / 3.140 / 54.836 ms across three reps at
+  n ~ 18 000 -- a 287x spread at CONVERGED sample count. So W is a
+  DISTRIBUTION, and a sweep that reads only the commanded alpha is
+  reading a LABEL, not the treatment.
+
+  cell-arm     n   alpha         k    evals  w_p05 us  w_p50 us  w_p95 us     p50 spread [min,max]  sigma us
+  c1-CTL      16  0.0010   31.6070   340306     25000     25000     29494           [25000, 25000]     391.4
+  c1-Q002     16  0.0020   22.3383   338900     19696     23502     38092           [22807, 61543]     303.3
+  c1-Q009     16  0.0090   10.4934   339128     15496     18288     27124           [17952, 20342]     271.0
+  c1-Q050     16  0.0500    4.3589   339617     10906     14393     19408           [13658, 58759]     324.2
+  c1-Q184     16  0.1840    2.1059   339838      8810     11691     16056           [11320, 12182]     395.8
+  c1-Q400     16  0.4000    1.2247   339892      8114     11165     15409           [10849, 11528]     422.9
+  c7-CTL      16  0.0010   31.6070   169841     63514    100000    100000         [100000, 100000]    2639.2
+  c7-Q002     16  0.0020   22.3383   169890     53176     74995    109403          [66813, 155394]    5269.6
+  c7-Q009     16  0.0090   10.4934   170083     37256     72720    104958          [63877, 142722]    4719.3
+  c7-Q050     16  0.0500    4.3589   170097     27475     51139     95071          [48322, 246131]    3596.6
+  c7-Q184     16  0.1840    2.1059   170028     25608     50063     98714          [41009, 245270]    3586.7
+  c7-Q400     16  0.4000    1.2247   170107     21733     44344     90430          [38011, 223231]    3653.8
+  c8-CTL      16  0.0010   31.6070    22205    100000    100000    100000          [97334, 100000]    5644.9
+  c8-Q002     16  0.0020   22.3383    21748    126864    153270    182440          [78194, 236955]    6725.5
+  c8-Q009     16  0.0090   10.4934    21980     64428    274015    358311          [54812, 501728]    8028.8
+  c8-Q050     16  0.0500    4.3589    22194    100296    277982    325320          [45628, 419983]   10784.7
+  c8-Q184     16  0.1840    2.1059    22093     62568    186676    309024          [45918, 329610]    5268.6
+  c8-Q400     16  0.4000    1.2247    22051     62939    179562    313008          [49810, 312309]    6217.0
+  c8L-CTL     16  0.0010   31.6070   175912    100000    100000    100000         [100000, 100000]   66072.1
+  c8L-Q002    16  0.0020   22.3383   172667    149791    227322    615774         [159029, 826303]   63858.8
+  c8L-Q009    16  0.0090   10.4934   174661    162446    396758    628508         [98208, 1007935]   73463.4
+  c8L-Q050    16  0.0500    4.3589   175252    162821    434509    536275         [120356, 717888]   42840.3
+  c8L-Q184    16  0.1840    2.1059   175617    157222    218864    658746          [84972, 877561]   65016.2
+  c8L-Q400    16  0.4000    1.2247   175456    139098    234027    480485          [71084, 416226]   38358.1
+  sc2-CTL     16  0.0010   31.6070    89743     32283    100000    100000         [100000, 100000]     577.8
+  sc2-Q002    16  0.0020   22.3383    88536    108410    112293    121710         [109589, 114116]     518.2
+  sc2-Q009    16  0.0090   10.4934    89285    103485    107964    116308          [98937, 108570]     544.0
+  sc2-Q050    16  0.0500    4.3589    89412     98930    105498    110491          [98460, 105955]     555.8
+  sc2-Q184    16  0.1840    2.1059    89490     96950    104426    108922          [72771, 104840]     562.9
+  sc2-Q400    16  0.4000    1.2247    89480     95408    103576    107837          [88495, 103858]     559.4
+
+  [QCLK] evals = 0 (or an ABSENT line) is an UNREACHED EVALUATION SITE,
+  never W = 0: the gauge stays silent on Drop at zero evals precisely so
+  that absence can only be read as a reachability fact.
+
+  THE PAIR MATRIX. overlap = |[p05_a,p95_a] ^ [p05_b,p95_b]| /
+  min(width_a, width_b), on each arm's MEDIAN-OVER-REPS p05 and p95.
+  A pair with overlap > 0.50 is declared UNSEPARATED and
+  supports NO comparison between its two members, at any n.
+
+  --- c1 ---
+                   CTL        Q002        Q009        Q050        Q184        Q400
+  CTL                .   1.00 UNSEP   0.47  ok   0.00  ok   0.00  ok   0.00  ok
+  Q002       1.00 UNSEP           .   0.64 UNSEP   0.00  ok   0.00  ok   0.00  ok
+  Q009       0.47  ok   0.64 UNSEP           .   0.46  ok   0.08  ok   0.00  ok
+  Q050       0.00  ok   0.00  ok   0.46  ok           .   0.71 UNSEP   0.62 UNSEP
+  Q184       0.00  ok   0.00  ok   0.08  ok   0.71 UNSEP           .   0.91 UNSEP
+  Q400       0.00  ok   0.00  ok   0.00  ok   0.62 UNSEP   0.91 UNSEP           .
+
+  --- c7 ---
+                   CTL        Q002        Q009        Q050        Q184        Q400
+  CTL                .   1.00 UNSEP   1.00 UNSEP   0.86 UNSEP   0.96 UNSEP   0.74 UNSEP
+  Q002       1.00 UNSEP           .   0.92 UNSEP   0.75 UNSEP   0.81 UNSEP   0.66 UNSEP
+  Q009       1.00 UNSEP   0.92 UNSEP           .   0.86 UNSEP   0.91 UNSEP   0.79 UNSEP
+  Q050       0.86 UNSEP   0.75 UNSEP   0.86 UNSEP           .   1.00 UNSEP   0.93 UNSEP
+  Q184       0.96 UNSEP   0.81 UNSEP   0.91 UNSEP   1.00 UNSEP           .   0.94 UNSEP
+  Q400       0.74 UNSEP   0.66 UNSEP   0.79 UNSEP   0.93 UNSEP   0.94 UNSEP           .
+
+  --- c8 ---
+                   CTL        Q002        Q009        Q050        Q184        Q400
+  CTL                .   0.00  ok   0.00  ok   0.00  ok   0.00  ok   0.00  ok
+  Q002       0.00  ok           .   1.00 UNSEP   1.00 UNSEP   1.00 UNSEP   1.00 UNSEP
+  Q009       0.00  ok   1.00 UNSEP           .   1.00 UNSEP   0.99 UNSEP   0.99 UNSEP
+  Q050       0.00  ok   1.00 UNSEP   1.00 UNSEP           .   0.93 UNSEP   0.95 UNSEP
+  Q184       0.00  ok   1.00 UNSEP   0.99 UNSEP   0.93 UNSEP           .   1.00 UNSEP
+  Q400       0.00  ok   1.00 UNSEP   0.99 UNSEP   0.95 UNSEP   1.00 UNSEP           .
+
+  --- c8L ---
+                   CTL        Q002        Q009        Q050        Q184        Q400
+  CTL                .   0.00  ok   0.00  ok   0.00  ok   0.00  ok   0.00  ok
+  Q002       0.00  ok           .   0.97 UNSEP   1.00 UNSEP   0.98 UNSEP   0.97 UNSEP
+  Q009       0.00  ok   0.97 UNSEP           .   1.00 UNSEP   1.00 UNSEP   0.93 UNSEP
+  Q050       0.00  ok   1.00 UNSEP   1.00 UNSEP           .   1.00 UNSEP   0.93 UNSEP
+  Q184       0.00  ok   0.98 UNSEP   1.00 UNSEP   1.00 UNSEP           .   0.95 UNSEP
+  Q400       0.00  ok   0.97 UNSEP   0.93 UNSEP   0.93 UNSEP   0.95 UNSEP           .
+
+  --- sc2 ---
+                   CTL        Q002        Q009        Q050        Q184        Q400
+  CTL                .   0.00  ok   0.00  ok   0.09  ok   0.25  ok   0.37  ok
+  Q002       0.00  ok           .   0.62 UNSEP   0.18  ok   0.04  ok   0.00  ok
+  Q009       0.00  ok   0.62 UNSEP           .   0.61 UNSEP   0.45  ok   0.35  ok
+  Q050       0.09  ok   0.18  ok   0.61 UNSEP           .   0.86 UNSEP   0.77 UNSEP
+  Q184       0.25  ok   0.04  ok   0.45  ok   0.86 UNSEP           .   0.91 UNSEP
+  Q400       0.37  ok   0.00  ok   0.35  ok   0.77 UNSEP   0.91 UNSEP           .
+
+====================================================================================================
+### 5. THE COST CURVE.
+====================================================================================================
+
+  `q_p50` AND `ping_*` ARE DIFFERENT QUANTITIES AND ARE NEVER AVERAGED.
+  q_p50 is median(max(0, rtt - rtp)) computed BY THE CODE UNDER TEST from
+  the sender's OWN estimate of its OWN path -- the engine's self-reported
+  standing queue. ping_* is DELIVERED round-trip time for an unrelated
+  flow, measured by the kernel, through the WHOLE shaped path. They may
+  legitimately move in OPPOSITE directions, and nothing here promotes
+  either over the other.
+
+  cell-arm     n  mbps p50  mbps p05  mbps p95  ping_p50  ping_p95   censor     q_p50
+  c1-CTL      16    190.07    185.44    195.09       2.1       2.6    0.14%       9.0
+  c1-Q002     16    131.33    128.56    132.54       2.1       2.5    0.10%       9.0
+  c1-Q009     16    161.99    157.26    166.27       2.1       2.6    0.00%       9.0
+  c1-Q050     16    174.40    169.75    177.60       2.1       2.6    0.00%       9.0
+  c1-Q184     16    176.85    172.73    181.51       2.1       2.6    0.14%       9.0
+  c1-Q400     16    177.31    173.41    179.83       2.1       2.5    0.00%       9.0
+  c7-CTL      16    156.88    105.87    160.30      35.6      80.1    2.90%      39.0
+  c7-Q002     16     96.37     92.08     98.18      14.4      41.8    2.44%      16.0
+  c7-Q009     16    123.11     99.46    125.89      16.2      53.8    2.90%      20.5
+  c7-Q050     16    133.89    102.90    134.78      19.2      55.4    2.62%      22.0
+  c7-Q184     16    137.07    102.25    141.21      22.4      64.8    2.17%      23.5
+  c7-Q400     16    133.97     88.53    140.30      20.5      60.1    2.60%      22.5
+  c8-CTL      16     86.71     79.97     93.59      71.2     111.0    2.04%     113.0
+  c8-Q002     16     85.71     81.08     92.10      50.0      95.7    2.10%     121.0
+  c8-Q009     16     89.34     82.93     96.78      58.5      97.2    2.22%     117.0
+  c8-Q050     16     87.12     79.86     94.04      77.7     117.0    2.00%     128.5
+  c8-Q184     16     86.84     77.51     92.31      64.9      89.2    4.17%     134.5
+  c8-Q400     16     87.34     76.89     95.86      65.9     127.0    3.46%     128.5
+  c8L-CTL     16     87.89     28.34     90.68      97.6     142.0    2.40%     179.0
+  c8L-Q002    16     80.13     36.82     88.72      44.2     121.5    2.10%     182.0
+  c8L-Q009    16     84.97     58.97     91.90     105.0     173.0    2.69%     141.0
+  c8L-Q050    16     79.57     37.67     90.16     109.0     134.0    2.34%     126.5
+  c8L-Q184    16     79.49     53.29     90.29      88.5     138.5    2.50%     148.0
+  c8L-Q400    16     78.76     49.51     93.43      97.8     124.5    2.80%     150.5
+  sc2-CTL     16     87.69     86.80     89.07      99.1     105.0    2.25%      91.0
+  sc2-Q002    16     87.15     86.61     88.75      96.5     104.0    2.28%      91.0
+  sc2-Q009    16     86.98     86.42     87.88      90.2     100.3    2.51%      91.0
+  sc2-Q050    16     86.92     86.07     88.73      84.6     103.5    2.82%      91.0
+  sc2-Q184    16     87.81     85.86     88.68      92.5      98.6    2.75%      90.5
+  sc2-Q400    16     87.88     86.69     88.77      92.5     101.2    2.73%      92.0
+
+  `censor` is the fraction of probes that NEVER PRODUCED A SAMPLE. Every
+  censored sample is drawn from EXACTLY the worst states (the bad GE
+  state, the full queue), so a percentile over the survivors is BIASED
+  LOW -- in the direction that makes a latency claim look better than it
+  is. It is printed beside the percentile because a number whose error
+  bar points in a KNOWN direction and is not written down is not a
+  measurement (latt_probe.py).
+
+====================================================================================================
+### 6. THE CONTRACT-PRICED SCORE -- Copa's OWN declared utility.
+====================================================================================================
+
+    U  = log(throughput) - delta * log(delay)
+    dU = ln(mbps(arm)/mbps(CTL)) - delta * ln(ping_p95(arm)/ping_p95(CTL))
+
+  NO NEW CONSTANT IS INTRODUCED. delta(hint) = COPA_DELTA / zeta(hint)
+  with COPA_DELTA = 0.5 (scheduler/mod.rs:47) and zeta in {0.01, 1, 100}
+  (ProtocolHint::tail_loss_scale), so the contract's OWN three named
+  points are Bulk 0.005, Auto 0.5, Realtime 50. The harness runs BULK;
+  the other two are a DECLARED-DIAL SENSITIVITY, printed so a reader can
+  see how much of the answer is the dial's choice rather than the data's.
+
+  --- delta = 0.005 (Bulk)  <- THE HINT THE HARNESS RUNS
+  cell            CTL        Q002        Q009        Q050        Q184        Q400  pooled sd   alpha*
+  c1         -0.0000     -0.3696     -0.1598     -0.0859     -0.0721     -0.0694      0.0379    Q400*
+  c7         +0.0004     -0.4846     -0.2408     -0.1567     -0.1344     -0.1566      0.2132    Q184*
+  c8         +0.0014     -0.0125     +0.0316     +0.0039     +0.0004     +0.0087      0.0655    Q009*
+  c8L        +0.0014     -0.0929     -0.0344     -0.0985     -0.1010     -0.1094      0.2925    Q009*
+  sc2        +0.0001     -0.0061     -0.0079     -0.0076     +0.0024     +0.0027      0.0115    Q400*
+
+  --- delta = 0.5 (Auto)
+  cell            CTL        Q002        Q009        Q050        Q184        Q400  pooled sd   alpha*
+  c1         +0.0039     -0.3589     -0.1521     -0.0847     -0.0754     -0.0624      0.0364    Q400*
+  c7         +0.0094     -0.1746     -0.0701     +0.0217     -0.0521     -0.0121      0.3142    Q050*
+  c8         +0.0168     +0.0386     +0.1113     +0.0058     +0.1394     -0.0288      0.1559    Q184*
+  c8L        -0.1420     -0.2103     -0.1305     -0.1299     -0.0605     -0.1348      0.2321    Q184*
+  sc2        +0.0127     +0.0042     +0.0244     +0.0132     +0.0269     +0.0263      0.0613    Q184*
+
+  --- delta = 50.0 (Realtime)
+  cell            CTL        Q002        Q009        Q050        Q184        Q400  pooled sd   alpha*
+  c1         +0.0046     +0.7135     -0.0363     -0.0749     +0.1185     +0.6117      1.1952    Q002*
+  c7         +0.0095    +31.9273    +19.5113    +18.2460    +10.3867    +14.1543     18.0507    Q002*
+  c8         +0.0043     +7.3937     +6.6677     -2.5696    +10.9971     -6.8840     15.3913    Q184*
+  c8L        -0.1492     +7.7146     -9.9291     +2.8743     +1.1471     +6.3685     16.3774    Q002*
+  sc2        +0.0156     +0.4690     +2.2984     +0.7186     +3.1518     +1.8803      6.2562    Q184*
+
+  `pooled sd` is the POOLED WITHIN-ARM standard deviation of PER-REP dU
+  at that cell -- sqrt of the mean of the arms' own variances. An
+  `alpha*` marked `*` did not clear 2x it and is a RANKING, not a WIN.
+  CTL's own dU is 0 by construction (it is the reference) and its column
+  is printed so that is visible rather than assumed.
+
+====================================================================================================
+### 7. FALSE ALARMS, COMMANDED AND REALIZED.
+====================================================================================================
+
+  COMMANDED is [RACK]'s own sender-site fa_frac. REALIZED is the
+  RECEIVER's [RFA] class breakdown, AS A BRACKET:
+
+    lo = false_frac as printed        -- a LOWER bound: `fill_src`
+         counts a REORDERED ORIGINAL as a successful repair, inflating
+         the denominator with arrivals no repair caused
+    hi = false / (false + fill_coded) -- the CEILING, which removes those
+         reordered originals from the denominator entirely
+
+  The realized false-repair fraction lies in [lo, hi]. Stating either end
+  alone reports a BOUND as if it were a measurement.
+
+  cell-arm     n  alpha_cmd    fired    spur  fa_frac  x fa_class  <=alpha?      realized [lo, hi]   realized-vs-commanded
+  c1-CTL      16       null      774     102   0.1172        1.87         -       [0.2477, 0.9843]   RESOLVED realized>cmd
+  c1-Q002     16     0.0020      818     814   1.0000       16.00        NO       [0.3244, 0.9812]   RESOLVED realized<cmd
+  c1-Q009     16     0.0090      850     116   0.1293        2.07        NO       [0.3538, 0.9829]   RESOLVED realized>cmd
+  c1-Q050     16     0.0500     1055     157   0.1430        2.29        NO       [0.4647, 0.9880]   RESOLVED realized>cmd
+  c1-Q184     16     0.1840     1256     243   0.1779        2.85       YES       [0.5605, 0.9868]   RESOLVED realized>cmd
+  c1-Q400     16     0.4000     1425     284   0.2007        3.21       YES       [0.5431, 0.9857]   RESOLVED realized>cmd
+  c7-CTL      16       null     5289     829   0.1531        2.45         -       [0.0215, 0.6368]   UNRESOLVED
+  c7-Q002     16     0.0020     5880     584   0.1011        1.62        NO       [0.0301, 0.6592]   UNRESOLVED
+  c7-Q009     16     0.0090     5467     587   0.1053        1.69        NO       [0.0261, 0.6468]   UNRESOLVED
+  c7-Q050     16     0.0500     5528     555   0.0945        1.51        NO       [0.0254, 0.6467]   UNRESOLVED
+  c7-Q184     16     0.1840     5543     537   0.0977        1.56       YES       [0.0239, 0.6396]   UNRESOLVED
+  c7-Q400     16     0.4000     5614     594   0.1028        1.64       YES       [0.0252, 0.6388]   UNRESOLVED
+  c8-CTL      16       null      928     302   0.3151        5.04         -       [0.0925, 0.7439]   UNRESOLVED
+  c8-Q002     16     0.0020      908     220   0.2962        4.74        NO       [0.0673, 0.7408]   UNRESOLVED
+  c8-Q009     16     0.0090      900     267   0.2868        4.59        NO       [0.0900, 0.7405]   UNRESOLVED
+  c8-Q050     16     0.0500      841     275   0.3017        4.83        NO       [0.0988, 0.7576]   UNRESOLVED
+  c8-Q184     16     0.1840      882     245   0.2823        4.52        NO       [0.0983, 0.7424]   UNRESOLVED
+  c8-Q400     16     0.4000      901     306   0.3378        5.40       YES       [0.0805, 0.7629]   UNRESOLVED
+  c8L-CTL     16       null     6027    1402   0.2152        3.44         -       [0.0757, 0.5132]   UNRESOLVED
+  c8L-Q002    16     0.0020     9974    1464   0.1605        2.57        NO       [0.0668, 0.4998]   UNRESOLVED
+  c8L-Q009    16     0.0090     7301    1267   0.1642        2.63        NO       [0.0626, 0.5057]   UNRESOLVED
+  c8L-Q050    16     0.0500     8820    1231   0.1280        2.05        NO       [0.0675, 0.4866]   UNRESOLVED
+  c8L-Q184    16     0.1840     7497    1123   0.1476        2.36       YES       [0.0678, 0.5013]   UNRESOLVED
+  c8L-Q400    16     0.4000     9137    1507   0.1936        3.10       YES       [0.0786, 0.4985]   UNRESOLVED
+  sc2-CTL     16       null     3327    2494   0.7512       12.02         -       [0.3555, 0.8905]   UNRESOLVED
+  sc2-Q002    16     0.0020     3445    2642   0.7570       12.11        NO       [0.3856, 0.8887]   UNRESOLVED
+  sc2-Q009    16     0.0090     3435    2574   0.7513       12.02        NO       [0.3747, 0.8962]   UNRESOLVED
+  sc2-Q050    16     0.0500     3384    2487   0.7497       12.00        NO       [0.3634, 0.8981]   UNRESOLVED
+  sc2-Q184    16     0.1840     3302    2425   0.7708       12.33        NO       [0.3499, 0.8915]   UNRESOLVED
+  sc2-Q400    16     0.4000     3281    2526   0.7727       12.36        NO       [0.3498, 0.8829]   UNRESOLVED
+
+  fa_class = 0.0625 = 1/16, RFC 8985 6.2 Step 4's OWN published
+  budget, carried as the SCALE every fa_frac is reported against.
+
+  THE CANTELLI-BOUND HONESTY CHECK is the `<=alpha?` column. Cantelli
+  gives P(X - mu >= k*sigma) <= 1/(1 + k^2) = alpha for ANY distribution,
+  so an arm commanded at alpha whose MEASURED false-alarm fraction
+  exceeds alpha has not violated Cantelli -- it has shown that the
+  quantity the bound is taken over is not the quantity the recovery
+  clock fires on. `NO` is therefore a finding about the MAPPING, which is
+  exactly the thing 16.69 refuted, and never about the inequality.
+
+  MONOTONICITY OF fa_frac IN alpha across the six arms:
+    c1     Q002:1.0000 Q009:0.1293 Q050:0.1430 Q184:0.1779 Q400:0.2007   -> NOT MONOTONE (3 up, 1 down)
+    c7     Q002:0.1011 Q009:0.1053 Q050:0.0945 Q184:0.0977 Q400:0.1028   -> NOT MONOTONE (3 up, 1 down)
+    c8     Q002:0.2962 Q009:0.2868 Q050:0.3017 Q184:0.2823 Q400:0.3378   -> NOT MONOTONE (2 up, 2 down)
+    c8L    Q002:0.1605 Q009:0.1642 Q050:0.1280 Q184:0.1476 Q400:0.1936   -> NOT MONOTONE (3 up, 1 down)
+    sc2    Q002:0.7570 Q009:0.7513 Q050:0.7497 Q184:0.7708 Q400:0.7727   -> NOT MONOTONE (2 up, 2 down)
+
+====================================================================================================
+### 8. WHAT THIS REPORT DOES NOT ESTABLISH
+====================================================================================================
+
+  * IT FLIPS NO DEFAULT. `RWM_ALPHA_OVERRIDE` is an EXPERIMENT KNOB and an
+    OVERRIDE, not a law (net/mod.rs:784-787): `None` is byte-identical to the
+    engine before it existed, nothing continuous in (delta, rho, r) is
+    expressed through it, and NOTHING MAY SHIP READING IT. A shipped alpha must
+    be DERIVED from the triangle -- the decision this sweep informs and does
+    not take.
+
+  * IT DOES NOT REPAIR 16.69's REFUTATION. The refutation is of what FEEDS
+    alpha -- a CATEGORY ERROR in the mapping alpha = target_tail_loss * zeta --
+    not of the Cantelli construction W(alpha) = srtt + sqrt((1-alpha)/alpha) *
+    sigma, which was never the defective part. A sweep over alpha measures the
+    curve; it does not supply the mapping.
+
+  * AN UNSEPARATED PAIR IS NOT A NULL RESULT. It is the finding that the two
+    arms realized the same clock. Nothing about the ORDERING of alpha follows
+    from it, in either direction, at any n.
+
+  * A VOID ROW IS NOT A FAILED TREATMENT. Its independent variable did not
+    take. It says something about the harness and nothing about alpha.
+
+  * `q_p50` IS NOT DELIVERED LATENCY and no claim here is stated in it. It is
+    the engine's self-report about its own path, from the code under test.
+
+  * THE CENSORED TAIL IS NOT MEASURED. Where `censor` is non-zero the top of
+    the delivered-latency distribution never produced a sample, and no
+    arithmetic on the survivors can place it.
+
+  * SIGMA IS THE ARM LIST'S LARGEST FREE INPUT AND IT IS NOT RESOLVED. Route
+    (b)'s alpha at c8 Bulk is 0.00170 on the MEASURED plain-window sigma and
+    0.0537 on the memo's ESTIMATED one -- a factor of 32 that is entirely an
+    INPUT, not a construction. The measured sigma itself spans 287x across
+    three reps at converged n. No arm's LABEL is more precise than that.
+
+  * THE ROUTES ARE SEPARATED AT BULK AND NOWHERE ELSE IN THIS SWEEP. At Auto
+    they coincide within 0.8 % on the measured inputs (0.1829 vs 0.1843), so
+    nothing here bears on the Auto point at all -- in either direction.
+
+  * nu IS NOW ON THE RECORD (0.03776 at c8, plain window) and the (b)-equals-(d)
+    coincidence at Auto SURVIVED it. That is a fact about the two formulas at
+    one cell's measured inputs, not evidence that either is correct.
+
+====================================================================================================
