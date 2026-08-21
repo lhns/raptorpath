@@ -45771,3 +45771,599 @@ machinery, earned sentinels — are the durable estate.
 
 **Nothing in this goal flipped a default. The clamp stays: convicted,
 undefeated, and now explained.**
+
+## THE (q, refresh) SWEEP — PRE-REGISTRATION (2026-08-21, `feat/qrefresh` from main@`76c0b07`) — **THE FIRST BATTERY THIS TREE HAS EVER RUN BELOW ITS OWN REPORT-CADENCE FLOOR.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine law, or wires a consumer. No clock is derived.**
+
+### 1 — THE QUESTION, AND WHY IT IS THE ONE GOAL #101 LEFT OPEN
+
+Goal #101's final closure named its own successor in two parts, quoted from its
+own paragraph 4: *"the refresh-floor lift as a PRECONDITION (until
+`(2·srtt).clamp(25, 100)` moves, no `q` is commandable), then the `(q, refresh)`
+sweep — with the recorded caution that the measured cost curve gives no reason
+to expect an interior optimum there either."* **The precondition is now built
+(§2); this battery is the successor.** The caution is inherited and is not
+argued away — it is written into §6's legal outcomes as the branch this
+battery most expects to take.
+
+**THE CENSORING, WHICH IS ARITHMETIC AND NOT AN OPINION** (paper §16.77.8d,
+§16.78.3). The sender learns a hole exists from a receiver gap report and learns
+it CLOSED from the **absence** of that hole in a **later** report. Two reports
+are one refresh interval apart, so the finest gap response the sender can time
+is one interval — and the hold-down sweep measured what that interval sits on
+top of:
+
+| cell | `2·srtt` (under load) | binding rail | **effective floor** | `[SUCC]` `orig` p50 | floor / p50 | `obs_p50(CTL)` |
+|---|---|---|---|---|---|---|
+| `c1` | ~4 ms | **LOWER** | **25 ms** | **24.6 ms** [18.4–26.6] | **1.02×** | 12.6 ms |
+| `c7` | ≥ 100 ms | **UPPER** | **100 ms** | **30.7 ms** [20.5–30.7] | **3.26×** | 19.5 ms |
+| `sc2` | ≥ 100 ms | **UPPER** | **100 ms** | **98.3 ms** [98.3–98.3] | **1.02×** | 102.9 ms |
+
+**The sender's own resolution floor sits AT OR ABOVE the median of the
+distribution it is supposed to quantile at all three cells.** `H5` fired at
+5 of 5 with inflations of **33.9× to 172.2×**; the hold-down's realized `T`
+reached **22–25 s** at `c8L` against a 163.8 ms median; and `q* = 0.99` was
+**never commanded** — it was requested and the instrument could not express it.
+
+**WHAT IS UNEXPLORED, STATED PRECISELY.** The measured cost curve rises
+monotonically **above** the floor, with no interior minimum at 4 of 5 cells.
+Every armed hold the tree has ever run lived there:
+
+| cell | realized `T` span, hold-down sweep |
+|---|---|
+| `c1` | 67 – 428 ms |
+| `c7` | 83 – 6 110 ms |
+| `sc2` | 2 043 – 6 207 ms |
+
+**Below the floor is not a region where the answer is known to be different. It
+is a region where no reading exists**, and the self-heal medians sit exactly
+there. A 5–25 ms hold could let a large fraction of reorderings close themselves
+at a stall cost bounded by the hold. That is the question, and it is the last
+one in this program.
+
+### 2 — THE ENGINE CHANGE (committed in its OWN commit, BEFORE this)
+
+```text
+   hole_nack_refresh(srtt)  =  (2·srtt).clamp( F , HOLE_NACK_REFRESH_BAND · F )
+
+   F     =  RWM_REFRESH_FLOOR_US        ABSENT ⇒ HOLE_NACK_REFRESH_MIN = 25 ms
+   BAND  =  HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN  =  100/25  =  4
+```
+
+`BAND` is **computed from the two shipped literals**, so it is not a new
+constant, and at `F = 25 ms` the law returns the same `Duration` for every input
+the shipped law does — **byte-identical, asserted over the input domain by a
+unit test**, not argued in prose. There is no branch on `F`, no second law, and
+no threshold selecting a code path.
+
+**THE BAND SCALES BECAUSE THE LOWER RAIL ALONE WOULD NOT REACH TWO OF THE THREE
+CELLS.** §1's table: the rail that binds is the LOWER one at `c1` and the UPPER
+one at `c7` and `sc2`. **An override of the lower clamp alone is INERT wherever
+the upper rail is doing the bounding**, and a battery whose treatment cannot
+reach two of its cells has criteria that were unsatisfiable when they were
+written — a failure this tree has on its record once already, and does not
+intend to repeat by inattention.
+
+**ONLY THE REFRESH PATH IS LIFTED, AND WHAT STILL HOLDS THE OLD FLOOR IS NAMED.**
+`(2·srtt).clamp(25, 100)` is written twice, over two independent constant pairs
+that happen to be equal:
+
+| site | keeps the 25 ms literal? | consequence for this battery |
+|---|---|---|
+| `hole_nack_refresh` (`net/mod.rs:582`) | **NO — this is the lift** | the treatment |
+| `tail_sweep_timeout_us` (`net/mod.rs:574`, `TAIL_SWEEP_MIN_US`) | **YES** | the sender's backstop still fires no earlier than 25 ms; it decided **0.59 %** of fires, so the arms are not confounded in volume — but a delivered cadence under 25 ms puts the receiver's clock **ahead of the backstop for the first time**. `W7` watches it. |
+| `stall_threshold_us` (`net/mod.rs:331`, reads `HOLE_NACK_REFRESH_MIN` as a constant) | **YES** | the derived stall gauge's ceiling decouples from the cadence. **A reporting caveat carried on every `sidle`-derived number and on no other.** |
+| `hole_refresh(derived = true, …)` (`RWM_DERIVED_SWEEP`) | does not read `F` | default OFF, not run |
+
+Two gauge sites (`receiver.rs:848`, `:859`) read the legacy law as their
+comparison value and will compare against the **lifted** law, which is correct —
+it *is* the legacy law — and is recorded so a moved bind-fraction is not misread.
+
+**THE TESTS THAT SHIP WITH IT.** `tests/refresh_floor_reachability.rs` — the
+gate echoed two-sided on both endpoints; the receiver's site EXECUTED
+(`[QCLK] evals > 0`, MEASUREMENT DISCIPLINE rule 1); the DELIVERED cadence
+strictly below the shipped 25 ms rail at every sample, which the shipped law
+cannot produce at any `srtt`; the control inert and saying so; garbage and
+out-of-domain resolving back to `unset` **visibly**. `tests/recovery_bench.rs`
+— byte-identity at `F = 25 ms` over the whole input domain, the derived grid's
+delivered cadence pinned ABSOLUTELY per cell-arm, the lift proven never to
+RAISE the cadence, and continuity in `F` across the shipped value (no mode bit).
+**The reachability binary fails on the pre-change engine**: the gate and its
+`[GATES]` token do not exist there and a sub-25 ms cadence is arithmetically
+unreachable through `(2·srtt).clamp(25, 100)`.
+
+### 3 — THE ARMS, DERIVED FROM THE MEASURED DISTRIBUTION
+
+**Seven arms per cell.** `refresh ∈ {shipped floor, p50/2, p50/4}` ×
+`q ∈ {q*, one bracket}`, plus the true control.
+
+| arm | `RWM_REFRESH_FLOOR_US` | `RWM_HOLDDOWN_Q` | what it is |
+|---|---|---|---|
+| `CTL` | **absent** | **absent** | today's machine, both dials off |
+| `R0Q99` | **absent** | `0.99` | the hold-down sweep's `H010` replicated on this binary — the ANCHOR |
+| `R0Q86` | **absent** | `0.864` | its `H136` replicated — the second anchor |
+| `R2Q99` | per cell, §3.1 | `0.99` | `q*` at half the self-heal median |
+| `R2Q86` | per cell, §3.1 | `0.864` | the bracket at half |
+| `R4Q99` | per cell, §3.1 | `0.99` | `q*` at a quarter — the deepest sub-floor point |
+| `R4Q86` | per cell, §3.1 | `0.864` | the bracket at a quarter |
+
+`q* = 0.99` is §16.77.3's and §16.77.7's derived level, reached twice, from the
+δ-dependent reactive side and the δ-free proactive side. `q = 0.864` is the
+bracket **and it is chosen for a stated reason**: its window law needs
+`n_req = 74` samples against `q* = 0.99`'s `n_req = 1000`, so it fills where the
+derived level may not. `c1`-`H010` read `law_n = 0` at **8 of 8** reps in the
+hold-down sweep — the law never ran and the arm was a behavioural control
+wearing a treatment label. **A lifted cadence raises the sample rate, which is
+exactly the thing that would fix it**; whether it does is `W5`, not an
+assumption.
+
+#### 3.1 The floors, and the cadence each DELIVERS — the derived grid
+
+The region is **read off `[SUCC]`'s measured `orig` p50**, not picked. Because
+the binding rail differs by cell (§1), the `F` that delivers a given cadence
+differs, and it is arithmetic in both directions:
+
+```text
+   c1     2·srtt ≈ 4 ms ≤ F        ⇒  LOWER rail delivers  ⇒  cadence = F
+   c7     2·srtt ≥ 100 ms ≥ 4·F    ⇒  UPPER rail delivers  ⇒  cadence = 4·F
+   sc2    2·srtt ≥ 100 ms ≥ 4·F    ⇒  UPPER rail delivers  ⇒  cadence = 4·F
+```
+
+| cell | `orig` p50 | arm | target cadence | **`RWM_REFRESH_FLOOR_US`** | **delivered** | shipped effective floor |
+|---|---|---|---|---|---|---|
+| `c1` | 24.6 ms | `R2` | `p50/2` = 12.3 ms | **12300** | **12.3 ms** | 25 ms |
+| `c1` | 24.6 ms | `R4` | `p50/4` = 6.15 ms | **6150** | **6.15 ms** | 25 ms |
+| `c7` | 30.7 ms | `R2` | `p50/2` = 15.35 ms | **3838** | **15.352 ms** | 100 ms |
+| `c7` | 30.7 ms | `R4` | `p50/4` = 7.675 ms | **1919** | **7.676 ms** | 100 ms |
+| `sc2` | 98.3 ms | `R2` | `p50/2` = 49.15 ms | **12288** | **49.152 ms** | 100 ms |
+| `sc2` | 98.3 ms | `R4` | `p50/4` = 24.575 ms | **6144** | **24.576 ms** | 100 ms |
+
+**Every delivered value in that table is pinned ABSOLUTELY by a unit test**
+(`recovery_bench.rs`), transcribed here rather than computed by the driver, so
+the harness checks the engine instead of agreeing with it by construction — the
+`arm_nreq()` discipline the hold battery established.
+
+**NOTE `sc2`-`R2` AT 49.152 ms IS ABOVE THE 25 ms LOWER RAIL** and still less
+than half that cell's 100 ms effective floor. **The treatment is the DELIVERED
+CADENCE, not the floor**, and this row is why.
+
+**AND `c8`/`c8L` ARE NOT RUN, WHICH IS DERIVED AND NOT A CONVENIENCE.** The
+successor-arrival pass recorded their `orig` quantiles **NOT USABLE** as
+derivation inputs (rep dispersion to 52×). This grid is computed from those
+quantiles; **a cell whose p50 cannot be trusted cannot supply a `p50/2`.** The
+consequence is stated in advance: this battery says nothing about the two cells
+where the hold-down's goodput collapse was worst, and §6's FLAT outcome is
+therefore scoped to `{c1, c7, sc2}` and claimed nowhere else.
+
+### 4 — CELLS, SEEDS, REPS, AND THE PAIRING
+
+| cell | legs | mode | bytes | paths | netem | goodput band (Mbit/s, `CTL` only) |
+|---|---|---|---|---|---|---|
+| `c1` | c1 / c1 | single | 400 000 000 | 1 | 1 gbit, 1 ms/leg (RTT 2 ms), jitter 0, GE ≈ 0.1 % | `[147, 294]` |
+| `c7` | c2 / c2 | dual | 200 000 000 | 2 | 100 mbit, 5 ms/leg, jitter 3 ms, GE ≈ 2.53 % | `[140, 180]` |
+| `sc2` | c2 / c2 | single | 100 000 000 | 1 | as above, one path | `[78, 92]` |
+
+**Seeds 42 and 7. `RWM_GEN=0` on every invocation. Paired within rep**: the
+loop is `for REP → for CELL → for ARM` with the arms innermost in fixed order
+`CTL R0Q99 R0Q86 R2Q99 R2Q86 R4Q99 R4Q86`, so every contrast is taken against
+its own rep's control. **Rows from different reps are never differenced.**
+
+**THE SIZING, WITH ITS ARITHMETIC.** The hold-down sweep did not publish
+per-rep `rpd`, so `n` is sized on the one per-rep dispersion its scored record
+does publish — `CTL` goodput rep ranges over `n = 8`, where the expected range
+of 8 normal draws is ≈ 2.85 σ:
+
+| cell | `CTL` median | rep range | σ̂ = range/2.85 | CV | σ_d = √2·σ̂ (paired, conservative) | `n ≥ (2σ_d/Δ)²` at Δ = 5 % | → |
+|---|---|---|---|---|---|---|---|
+| `c1` | 194.1 | [192, 201] | 3.16 | 1.63 % | 2.31 % | 0.85 → **1** | **4** |
+| `c7` | 160.7 | [148, 166] | 6.32 | 3.93 % | 5.56 % | 4.9 → **5** | **8** |
+| `sc2` | 88.0 | [87, 89] | 0.70 | 0.80 % | 1.13 % | 0.20 → **1** | **8** |
+
+Two documented inflations, both stated before the run:
+
+1. **SEED PAIRING.** `n` is rounded up to an even multiple of the two seeds, so
+   the minimum anywhere is **4** (2 reps × 2 seeds). `c1`'s arithmetic asks for
+   1–2; it gets 4.
+2. **BIMODALITY, AT `c7` AND `sc2`.** The control's dispersion does not size a
+   median taken over a mixture, and the hold-down sweep's TREATMENT arms at
+   these two cells were not unimodal: `c7`'s arms read rep ranges `[15, 168]`
+   and `[10, 162]` — an **11×** span — and **every** `sc2` treatment arm read
+   OUT of band with spreads to 3.3×. Both are therefore sized at **`n = 8`, the
+   `n` at which the prior battery's own medians were read**, and no smaller `n`
+   is defensible against a mixture.
+
+**RISK CARRIED, NOT HIDDEN:** `c1`'s `H136` arm also showed one outlier rep
+(`[73, 199]`). At `n = 4` a bimodal `c1` arm is **UNSCOREABLE-thin** by §6 and
+is reported as such rather than silently averaged.
+
+**7 arms × (4 + 8 + 8) reps = 140 invocations**, one binary, one lock.
+
+### 5 — WHAT IS MEASURED, AND HOW EACH PIECE IS SCORED
+
+Scored in this order. **Clause (0) gates every clause below it.**
+
+**(0) THE WIRING TEST — `F1`, SCORED FIRST.** The DELIVERED cadence, read from
+the receiver's `[QCLK] w_us_p50 / w_us_min / w_us_max`, and the realized hold
+`[HOLD] t_us / hd_p50_us` on the sender.
+
+* **LIFT CONFIRMED** ⇔ at **3 of 3** cells, every armed `R2`/`R4` arm's
+  `[QCLK] w_us_max` is below that cell's shipped effective floor (25 ms at `c1`,
+  100 ms at `c7`/`sc2`) **and** inside its own commanded band `[F, 4F]`.
+* **`F1` FIRES** ⇔ that fails at ≥ 2 of 3 cells. **The battery is then VOID in
+  full**, no other clause is read, and the successor is the *next* cadence in
+  the chain, named from the same code rather than guessed at.
+
+**(i) — P-A, REPAIR VOLUME.** `rpd = [FCAUSE] n / [SUCC] det`, a **sender**
+numerator over a **receiver** denominator, so it cannot be an instrument
+agreeing with itself. Median of the cell's reps per cell-arm.
+
+* **P-A CONFIRMED** ⇔ `rpd` is monotone non-increasing in the realized
+  `hd_p50_us` across `{R0, R2, R4}` at fixed `q`, at **≥ 2 of 3** cells,
+  **and** the `rpd` span across the sub-floor arms is **≥ 1.10×** at ≥ 2 of 3.
+* **P-A REFUTED** ⇔ non-monotone at ≥ 2 of 3, **or** span < 1.10× at ≥ 2 of 3.
+
+**AND THE SEPARATION IS PRE-STATED SO IT CANNOT BE BLURRED LATER.** `[RFA]
+false_frac` — the realized false-repair FRACTION — is reported **as a fraction
+AND as a count**, at every cell-arm, beside `rpd`. `fa ⊥ T` was measured twice
+and stands; **P-A is a claim about the COUNT and about nothing else.** A moved
+count with a level `false_frac` is the predicted reading, not a contradiction,
+and a moved fraction is a separate finding that this battery is not powered to
+claim.
+
+**(ii) — P-B, GOODPUT.** Median with the rep range beside it, per cell-arm.
+**Band scope is `CTL`-only**: an out-of-band `CTL` is an ABORT (§8); an
+out-of-band TREATMENT is a **RESULT**, and `band_applies` says so inside the
+witness row rather than in a footnote.
+
+* **P-B HOLDS** ⇔ every arm whose realized `hd_p50_us ≤` that cell's `[SUCC]`
+  `orig` p50 reads goodput **inside** the cell's `CTL` band, on both seeds.
+* **P-B REFUTED** ⇔ any such arm reads **out of band on both seeds**.
+
+**(iii) — DELIVERED LATENCY, PER-LEG, CENSORING-AWARE.** Queue p50 and p99 per
+leg with `legs_censor_max` printed beside every reading. **A latency improvement
+that accompanies a goodput fall is NOT a win and is reported as the pair or not
+at all** — the hold-down sweep's `c8L` read 170 → 50 ms of queue at 87.1 → 7.4
+Mbit/s, and a machine moving an eleventh of the data holds an eleventh of the
+queue.
+
+**(iv) — P-C, THE SURFACE'S OPTIMUM.** The `argmax`-goodput arm per cell over
+the full 7-arm grid, with rep-range overlap stated.
+
+* **INTERIOR-OPTIMUM(cell, q, refresh)** ⇔ the `argmax` is an armed arm at ≥ 1
+  cell **with rep ranges not overlapping `CTL`'s**, on **both seeds**.
+* **P-C REFUTED (no interior optimum)** ⇔ the `argmax` is `CTL` at ≥ 2 of 3
+  cells with non-overlapping rep ranges.
+
+### 6 — THE LEGAL OUTCOMES, VERBATIM. Exactly one is chosen for the battery, and exactly one per cell where marked.
+
+1. **`F1-VOID`** — the lift did not reach at ≥ 2 of 3 cells. Nothing else is
+   read. The named successor is the next cadence in the chain.
+2. **`FLAT`** — clause (0) confirms, P-A is REFUTED, P-B HOLDS, and P-C is
+   REFUTED. **This is a LEGAL AND MEANINGFUL OUTCOME and it is stated as such
+   in advance**, because it is the branch this battery's own prior expects.
+   Its meaning, pre-written so it cannot be softened or inflated afterwards:
+
+   > **THE SHIPPED CLAMP IS ACQUITTED ON MERIT IN THE LAST REGION IT HAD NEVER
+   > BEEN TESTED IN.** §16.77.6 convicted the clamp on its `fa` budget and could
+   > not defeat it on the wire. Goal #101's item 4 closed it *"survives on
+   > merit"* — with the sub-floor region censored by the clamp's own twin, which
+   > is a qualification and was recorded as one. A FLAT reading **removes the
+   > qualification**: the clamp is undefeated above its floor (two sweeps, 10/10
+   > cell-comparisons) and undefeated below it (this sweep), at `{c1, c7, sc2}`,
+   > which for those cells is the whole domain. **An unexplored region is not
+   > evidence for the incumbent, and this is the reading that converts the last
+   > unexplored region into evidence.** It flips no default; it retires a
+   > caveat.
+
+3. **`INTERIOR-OPTIMUM(<cell>, q=<level>, refresh=<us>)`** — clause (iv)'s
+   condition met. A **named point on a measured surface and nothing more.** It
+   does not ship, does not flip a default, and licenses no mapping from
+   `(δ, ρ, r)` to `refresh`. §16.77.11's clause stands verbatim: nothing may
+   ship reading it until a battery has scored it, and one battery finding a
+   maximum is not that.
+4. **`P-A-CONFIRMED-ONLY`** — repair volume moves and is ordered, but P-C is
+   refuted and no arm beats `CTL`. The lever is real and it does not pay: the
+   suppressed waste does not convert into throughput, which locates the loss and
+   is a finding about the recovery plane's economics rather than about a clock.
+5. **`P-B-REFUTED`** — clause (ii)'s falsifier fires. **A strong result, not a
+   disappointment**: holding a gap response at all, even for less than the
+   median self-heal time, costs throughput. That closes the region on
+   **mechanism** rather than on measurement and completes item 4's acquittal by
+   a shorter route than FLAT does.
+6. **`UNSCOREABLE-thin(<cell>, <arm>)`** — per cell-arm. Fewer than 3 scoreable
+   reps survive, or the arm's reps are visibly bimodal at `n = 4`. The arm is
+   reported and excluded from every median; **it is never averaged through.**
+7. **`ARM-VOID(<cell>, <arm>)`** — per cell-arm. `[HOLD] law_n = 0`: the window
+   never filled and the hold-down law never ran, so the arm is a behavioural
+   control wearing a treatment label. **Reported as a RESULT, never an abort**,
+   and excluded from clause (i) and (iv) while still counting in clause (ii).
+8. **`ABORTED(<cause>)`** — §8.
+
+**Combinations are legal where they do not conflict** (e.g. `FLAT` with two
+`ARM-VOID` rows). Where they conflict, the lower number wins.
+
+### 7 — WITNESSES, PER INVOCATION. A failure NAMES itself.
+
+| # | witness | fail token |
+|---|---|---|
+| `W1` | `[GATES]` present on **both** endpoints | `W1-NO-GATES` |
+| `W2` | `[GATES] RWM_REFRESH_FLOOR_US=` is the arm's expected resolved value (`unset` on `CTL`/`R0*`), **on both endpoints** | `W2-FLOOR-MISMATCH` |
+| `W3` | `[GATES] RWM_HOLDDOWN_Q=` is the arm's expected resolved level, matched **literally** against Rust's `to_string()` (`0.99`, not `0.990`), both endpoints | `W3-Q-MISMATCH` |
+| `W4` | every contamination gate reads its OFF value on every arm; `RWM_GEN=0` | `W4-CONTAM` |
+| `W5` | `[HOLD]` present with `evals > 0` and `evals = sup + emit`; `law_n` reported (`law_n = 0` ⇒ `ARM-VOID`, a result) | `W5-NO-HOLD` |
+| `W6` | `[QCLK] site=receiver` present with `evals > 0` and `kept > 0` — **the delivered cadence has a distribution to read** | `W6-NO-QCLK` |
+| `W7` | `[FCAUSE]` present, `n = timer + gap_data + gap_refresh + other`, and `timer_frac` recorded. **The backstop-asymmetry watch (`F3`)**: `timer_frac` and `gap_refresh` are reported per arm so an interaction between a sub-25 ms cadence and the unmoved 25 ms tail sweep is READ | `W7-NO-FCAUSE` |
+| `W8` | `[SUCC]` present with `det > 0` — `rpd`'s denominator exists | `W8-NO-SUCC` |
+| `W9` | `[RFA]` present; `false_frac` **and** its underlying count both recorded | `W9-NO-RFA` |
+| `W10` | `rc = 0` and the run's own `mean_mbps` scraped | `W10-RC` |
+
+Every witness writes one `QREFWITNESS {json}` row per invocation, and the
+verbatim gauge lines (`HOLDLINE` / `QCLKLINE` / `FCAUSELINE` / `SUCCLINE` /
+`RFA` / `LCW` / `WALL`) go to the ledger beside them.
+
+### 8 — ABORT CAUSES, STATED FIRST AND IN PRIORITY ORDER
+
+1. `ABORT-LOCK` — the VM lock could not be taken.
+2. `ABORT-SHA` — the shipped binary's sha256 does not match the built one.
+3. `ABORT-SENTINEL-UNWRITABLE` — §9. **Checked at LAUNCH, not at exit.**
+4. `ABORT-SMOKE` — the smoke did not witness a delivered cadence below the
+   shipped rail. **The battery does not start.**
+5. `ABORT-CTL-BAND` — a cell's `CTL` reads out of its band. That cell is
+   aborted; the others continue.
+6. `ABORT-RC` — a non-zero exit from an invocation. The ROW is void; the arm
+   continues, and `ARMCOUNT` reports `rows=N/WANT` so a vanished arm is READ.
+
+**An out-of-band TREATMENT arm is NOT an abort — it is `P-B`'s reading**, per
+§5(ii). `ARM-VOID` and `UNSCOREABLE-thin` are NOT aborts either. This is stated
+before any number exists so that a collapse cannot later be re-labelled as an
+abort to keep a curve tidy.
+
+### 9 — THE SENTINEL IS EARNED **AND PROVABLY WRITABLE**, AND THAT SECOND WORD IS NEW
+
+The hold-down sweep recorded this defect against itself: `/home/vibe/hold` was
+**root-owned `drwxr-xr-x`** because the battery runs under `sudo` and created it;
+the launcher's final `touch /home/vibe/hold/HOLD-SWEEP.done` ran **unprivileged**;
+`set -uo pipefail` **without `-e`** made the failure silent; and the sentinel
+declared at EXIT was never written. The rule it earned, verbatim:
+
+> **A sentinel must be written by the same privilege level that will read it,
+> and its writability must be PROVEN AT LAUNCH, not at exit.**
+
+This battery discharges it three ways:
+
+1. **The directory is created UNPRIVILEGED, before `sudo` is ever invoked.**
+   `mkdir -p /home/vibe/qrefresh` as `vibe`, so the sentinel directory is
+   `vibe`-owned and every later `touch` by `vibe` succeeds.
+2. **Writability is PROVEN in the smoke, before the battery starts.** A probe
+   file is written and removed as the unprivileged user at each sentinel's
+   ABSOLUTE path. **A failure is `ABORT-SENTINEL-UNWRITABLE` and the battery
+   does not launch.** The proof is echoed into the smoke report.
+3. **The sentinel is EARNED.** `DONE-S<seed>` is written **only if** the
+   battery's own ledger exists, is non-empty, and contains its own
+   `QREFRESH-BATTERY-DONE seed=<s>` line; otherwise `FAILED-S<seed>` is written
+   with the reason. Terminal: `DONE-ALL` if every seed earned its own, else
+   `FAILED-ALL` and a non-zero exit. **An unconditional `touch` is a liveness
+   signal for the shell, not a completion signal for the battery.**
+
+Sentinel paths, ABSOLUTE, declared here before the run:
+
+```text
+   /home/vibe/qrefresh/DONE-ALL        /home/vibe/qrefresh/FAILED-ALL
+   /home/vibe/qrefresh/DONE-S42        /home/vibe/qrefresh/FAILED-S42
+   /home/vibe/qrefresh/DONE-S7         /home/vibe/qrefresh/FAILED-S7
+```
+
+Ledgers: `/home/vibe/qrefresh/qref-s<seed>.log`, witnesses
+`/home/vibe/qrefresh/qref-witness-s<seed>.jsonl`, captures
+`/home/vibe/qrefresh/diag/`, launcher log `/home/vibe/qrefresh/all.out`.
+
+**AND THE WATCHER'S RULE IS UNCHANGED**: never poll the running battery, never
+`pgrep -f` a name that matches the watcher's own shell. Wait on
+`DONE-ALL || FAILED-ALL` and on nothing else.
+
+### 10 — THE CALIBRATION CLAUSE, DISCHARGED BEFORE LAUNCH
+
+Before the scored battery starts, one calibration invocation per cell at `CTL`
+must show: `rc = 0`; `CTL` goodput **in band**; `W1`–`W10` clean; and — the
+clause this battery adds — **one armed invocation at `R4Q86` per cell showing a
+`[QCLK] w_us_max` below that cell's shipped effective floor.** That last is the
+wiring witness, and it is checked on the VM, at the cell, before 140
+invocations are spent. **If it fails, `ABORT-SMOKE` and nothing is launched.**
+
+### 11 — WHAT THIS BATTERY DOES NOT CLAIM
+
+* **NO DEFAULT MOVES.** `RWM_REFRESH_FLOOR_US` and `RWM_HOLDDOWN_Q` are both
+  ABSENT by default and nothing shipped reads either.
+* **NO CLOCK IS DERIVED.** This battery makes a censored region readable and
+  scores what is in it. A derivation is downstream of a reading.
+* **`fa ⊥ T` IS NOT CHALLENGED.** P-A is a claim about the repair COUNT. The
+  false FRACTION is reported beside it precisely so the two cannot be confused.
+* **`c8` AND `c8L` ARE OUT OF SCOPE**, derived, §3.1. Every outcome in §6 is
+  scoped to `{c1, c7, sc2}`.
+* **ρ IS NOT SWEPT.** This battery holds ρ = 1, as §16.77.8's did, for
+  §16.77.5's stated reason.
+* **THE 25 ms TAIL SWEEP AND THE 25 ms STALL-GAUGE CEILING ARE UNMOVED**, and
+  both are stated confounds on the sub-floor arms rather than negligible ones.
+  `W7` watches the first; the second is carried on every `sidle`-derived number.
+* **NO NUMBER ABOVE IS A RESULT.** Every measured value quoted here is a PRIOR,
+  taken from the hold-down sweep, the successor-arrival pass, or the fire-cause
+  pass, and each is cited to the record it came from.
+
+
+## THE (q, refresh) SWEEP — CALIBRATION DISCHARGED, AND THE PRE-REGISTRATION AMENDED BEFORE THE SCORED RUN (2026-08-21, `feat/qrefresh`) — **`F1` IS ALREADY SATISFIED AT 3 OF 3 CELLS: THE COMMANDED CADENCE IS DELIVERED AND IT IS BELOW EVERY CELL'S SHIPPED FLOOR. AND THE CALIBRATION FOUND A SPECIFICATION FAILURE IN `P-B` THAT IS REPAIRED HERE RATHER THAN DISCOVERED IN THE SCORING.**
+
+**THIS SECTION CONTAINS VM NUMBERS AND THEY ARE CALIBRATION READINGS, NOT
+RESULTS.** Six invocations, seed 42, **one** rep, arms `CTL` and `R4Q86` only,
+binary `91a4f8cc…`, commit `999aa63`. No clause of §5 is scored on them and no
+outcome of §6 is chosen. They are disclosed in full because the amendment below
+is written **with them in hand**, and saying otherwise would be false — the
+fire-cause pass's own disclosure rule, applied to its successor.
+
+### A — THE SENTINEL IS PROVABLY WRITABLE, PROVEN BEFORE ANY MEASUREMENT
+
+```text
+   drwxr-xr-x. vibe vibe /home/vibe/qrefresh
+   SENTINEL-WRITABLE /home/vibe/qrefresh/{DONE,FAILED}-{ALL,S42,S7}   6 of 6
+   SENTINEL-PROOF rc=0 uid=1001 user=vibe
+```
+
+Write **and unlink**, on the ABSOLUTE paths, as the unprivileged identity that
+will write them, with the directory created before `sudo` was ever invoked.
+**§9's rule is discharged, at launch, in the run's own output.**
+
+### B — `F1`, THE WIRING TEST: **SATISFIED AT 3 OF 3 CELLS**
+
+`CADENCE` rows, from the RECEIVER's own `[QCLK] site=receiver`:
+
+| cell | arm | `F` commanded | delivered min | delivered **max** | cell's shipped floor | `below` |
+|---|---|---|---|---|---|---|
+| `c1` | `CTL` | absent | 25 000 | 29 036 | 25 000 | **0** |
+| `c1` | `R4Q86` | 6 150 | 6 150 | **24 600** | 25 000 | **1** |
+| `c7` | `CTL` | absent | 57 201 | 100 000 | 100 000 | **0** |
+| `c7` | `R4Q86` | 1 919 | 7 676 | **7 676** | 100 000 | **1** |
+| `sc2` | `CTL` | absent | 32 506 | 100 000 | 100 000 | **0** |
+| `sc2` | `R4Q86` | 6 144 | 19 823 | **24 576** | 100 000 | **1** |
+
+**Every armed arm delivered a cadence whose MAXIMUM is below its cell's shipped
+effective floor, and every control stayed inside the shipped band.** The
+commanded bands are honoured exactly: `[6 150, 24 600]`, `[1 919, 7 676]`,
+`[6 144, 24 576]` — each `4·F` to the microsecond, which is the re-expressed
+law's own ceiling. **The precondition goal #101 named is met on the wire.**
+
+**AND ONE COLUMN OF §3.1 IS CORRECTED BY ITS OWN CALIBRATION.** §3.1 predicted a
+single `delivered` value per cell-arm from the binding-rail argument. That is
+exact at `c7` (`min = max = 7 676 µs`, the upper rail binds at every sample) and
+is a **BRACKET** at `c1` and `sc2`, where `2·srtt` moves across the commanded
+band under load: `c1`'s `2·srtt` is ~4 ms at rest but its `CTL` reads
+`max = 29 036 µs`, so the transfer's own queueing carries it above 25 ms. **The
+delivered cadence is a DISTRIBUTION inside `[F, 4F]`, not a point.** `want=` is
+therefore reported as the binding-rail prediction and **`below=` — computed from
+the MAXIMUM — is the clause that scores `F1`**, which is what it was already
+written to do. No bar moves.
+
+### C — TWO HARNESS DEFECTS, FOUND BY THE CALIBRATION AND FIXED BEFORE THE RUN
+
+**THIS IS WHAT THE CALIBRATION IS FOR, AND BOTH ARE RECORDED AGAINST MYSELF.**
+
+1. **THE `w_us_p50` SCRAPE WAS CORRUPT BY TWO DECADES.** The driver read
+   `grep -o 'w_us_p50=[0-9]*' | tr -dc '0-9'`, and `tr -dc` strips non-digits
+   from the WHOLE match — **the key's own `50` survived into the value**, so
+   `w_us_p50=25000` read back as `5025000`. `w_us_min`, `w_us_max`, `evals` and
+   `kept` have no digits in their names and were never affected, so **`below=`
+   and the `F1` verdict were never at risk** — but the p50 is the cadence figure
+   clauses (i) and (iv) read. Fixed to `sed 's/^w_us_p50=//'`, the idiom the
+   `[HOLD]` scrapes already used.
+2. **`W4` ASSERTED THE WRONG TOKEN AND FIRED AT 6 OF 6 INVOCATIONS WHILE THE
+   CONDITION IT GUARDS WAS SATISFIED AT 6 OF 6.** `RWM_GEN` is the generation
+   **SIZE IN SYMBOLS**, not a flag: the invocation passes `RWM_GEN=0` meaning
+   "no generation coding" and the engine resolves and echoes its own default
+   `RWM_GEN=384` regardless. The witness that carries the meaning is the one
+   **the measurand's own gauges stamp** — `[HOLD]`, `[FCAUSE]` and `[SUCC]` each
+   print `gen=`, and all three read `gen=0` at 6 of 6. `W4` now reads those.
+   **A witness that fires on every row is not a witness; it is noise that would
+   have been dismissed by hand at scoring time**, which is exactly how a real
+   contamination gets through.
+
+### D — THE SPECIFICATION FAILURE IN `P-B`, AND ITS REPAIR
+
+**`P-B` AS WRITTEN IN §5(ii) HAS NO QUALIFYING ARM AT ANY CELL, AND WOULD HAVE
+SCORED VACUOUSLY TRUE.** Its clause reads *"every arm whose realized
+`hd_p50_us ≤` that cell's `[SUCC] orig` p50"*. Measured:
+
+| cell | `[SUCC] orig` p50 | realized `hd_p50_us` at `R4Q86` | ratio |
+|---|---|---|---|
+| `c1` | 24.6 ms | **163.8 ms** | 6.7× |
+| `c7` | 30.7 ms | **655.4 ms** / **2 097.2 ms** (two paths) | 21× / 68× |
+| `sc2` | 98.3 ms | **3 932.2 ms** | 40× |
+
+**Not one arm holds for less than its cell's self-heal median. The set `P-B`
+quantifies over is empty, and an empty universal is true.** Written that way the
+criterion was **unsatisfiable in the direction that matters** — it could pass
+without being tested. This tree has that failure on its record once already; it
+is repaired here, before the run, rather than found in the scoring.
+
+**THE REASON IS A SECOND CENSORING CONSTANT, AND NAMING IT IS THE FINDING.**
+The refresh floor bounded what the sender could **OBSERVE**. §16.77.8c's
+feedback loop bounds what it can **COMMAND**: `T(q)` is an order statistic of the
+sender's own outstanding-time stream, and once the hold-down holds, that stream
+inflates **with the hold itself**. Lifting the cadence removes the first
+constant and does not touch the second. **The calibration proves both halves in
+one row-pair:**
+
+```text
+   c1-CTL     obs_p50 = 12 771 µs   sup_frac = 0.000   ← 12.8 ms, BELOW the old
+                                                          25 ms floor. The
+                                                          unforced stream is
+                                                          sub-floor-readable for
+                                                          the FIRST TIME.
+   c1-R4Q86   obs_p50 = 277 251 µs  sup_frac = 0.962   ← the same sender, same
+                                                          cadence, 21× the
+                                                          stream, because it is
+                                                          now measuring its own
+                                                          hold.
+```
+
+**THE LIFT WORKED AND IT IS NOT SUFFICIENT.** That is a result about the
+machine, it was not knowable before the cadence was liftable, and it is the
+reason this battery is still worth its 140 invocations rather than a reason to
+cancel it.
+
+**`P-B` IS RE-STATED IN A FORM THAT IS ALWAYS EVALUABLE — A PAIRED CONTRAST AT
+MATCHED `q`.** The cadence is the treatment this battery actually commands, so
+the question `P-B` should have been asking is what **lowering the cadence**
+costs at a fixed hold level:
+
+> **`P-B` (paired form).** For each cell and each `q ∈ {0.99, 0.864}`, contrast
+> `goodput(R2Qx)` and `goodput(R4Qx)` against `goodput(R0Qx)` — same `q`, same
+> cell, same rep, same seed.
+>
+> * **`P-B` HOLDS** ⇔ no sub-floor arm is worse than its own `R0` twin by more
+>   than that cell's `CTL` rep-spread, at **≥ 2 of 3** cells, on **both seeds**.
+> * **`P-B` REFUTED** ⇔ a sub-floor arm is worse than its `R0` twin beyond that
+>   spread at **≥ 2 of 3** cells on **both seeds**. **Lowering the receiver's
+>   report cadence costs throughput on its own**, independently of the hold —
+>   which would close the sub-floor region on MECHANISM and is a strong result.
+
+**The `R0` arms were already in the grid as anchors; this makes them the
+denominator.** No arm is added, no invocation is added, and the contrast is
+within-rep and within-`q`, which is strictly better controlled than the absolute
+band it replaces.
+
+**THE ABSOLUTE BAND CLAUSE IS RETAINED AND PRE-DECLARED POSSIBLY VACUOUS.** If
+any arm does realize `hd_p50 ≤` its cell's `orig` p50, that arm must read in
+band. If none does — which the calibration says is likely — the clause reports
+**`P-B-ABSOLUTE-VACUOUS`** and the paired form carries the prediction. **Stated
+now, so a vacuous clause can never be reported later as a passed one.**
+
+### E — ONE OUTCOME ADDED TO §6, AND IT IS LEGAL AND MEANINGFUL
+
+> **9. `SECOND-CENSOR-NAMED`** — the delivered cadence is commanded (`F1`
+> satisfied) and the realized hold `hd_p50` still exceeds the cell's self-heal
+> p50 at every armed arm. **The refresh floor was NECESSARY AND NOT SUFFICIENT:
+> the sender's observation is freed while its command is not**, and the named
+> next constant is §16.77.8c's feedback loop — `T(q)` evaluated on a stream the
+> hold's own delay dominates. This outcome **composes with** `FLAT`,
+> `P-A-REFUTED` and `P-C-REFUTED` rather than replacing them, and it does not
+> void the battery: every clause below (0) is still read, because the arms
+> differ in the cadence they realize whether or not they differ in the hold.
+
+**AND ITS SUCCESSOR IS NAMED IN ADVANCE, AS EVERY BRANCH IN THIS PROGRAM HAS
+BEEN.** If `SECOND-CENSOR-NAMED` is the reading, the next instrument is a
+hold-down whose level is evaluated on a stream the hold **cannot** contaminate —
+the receiver-side `[SUCC]` `orig` distribution rather than the sender-side
+outstanding time — which is a different estimand, not a different constant, and
+is therefore a construction question and not a lift.
+
+### F — THE CONTROLS ARE IN BAND AT 3 OF 3, AND §10 IS DISCHARGED
+
+`CTL` goodput: `c1` **202.98** in `[147, 294]`; `c7` **166.89** in `[140, 180]`;
+`sc2` **88.95** in `[78, 92]`. `rc = 0` at 6 of 6, `[GATES]` two-sided at 6 of 6,
+`[HOLD]`/`[QCLK]`/`[FCAUSE]`/`[SUCC]`/`[RFA]` present at 6 of 6, `evals = sup +
+emit` on every `[HOLD]` line, `gen=0` on every gauge.
+
+**§10's calibration clause is DISCHARGED, including the clause this battery
+added** — the armed wiring witness at every cell, checked at the cell, before
+140 invocations are spent. **The scored run is authorized.**
+
+**Everything in §1–§11 not amended above stands unchanged.** No default moves,
+no gate is added, no engine law is edited, and no clock is derived.
+

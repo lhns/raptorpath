@@ -17127,6 +17127,338 @@ seeds.
 **Nothing in this section flips a default, ships a law, wires a consumer on any
 default path, or scores any clause of any pre-registration.**
 
+### 16.78 The REFRESH-FLOOR LIFT: the constant that censors the measurement is the receiver's own report cadence, and lifting it FOR EXPERIMENT opens the only region of the (q, refresh) surface this tree has never been able to reach (2026-08-21, `feat/qrefresh`, **PAPER + EXPERIMENT ARM** — gate `RWM_REFRESH_FLOOR_US`, absent by default; no default flipped, no law shipped)
+
+*This section is an ADDENDUM to §16.77 and supersedes nothing in it. §16.77.8d
+established the report-cadence floor as an arithmetic fact and named `(q,
+refresh)` as "the sweep that has content"; this section states what that sweep
+IS, which region of it is worth running, and what each outcome would mean —
+before it runs.*
+
+#### 16.78.0 Verdict first — the expression, and the one term that becomes an input
+
+```text
+   SHIPPED       hole_nack_refresh(srtt)  =  (2·srtt).clamp( 25 ms , 100 ms )
+
+   RE-EXPRESSED  hole_nack_refresh(srtt)  =  (2·srtt).clamp( F , R·F )
+
+                 F  =  RWM_REFRESH_FLOOR_US        (absent ⇒ 25 ms)
+                 R  =  HOLE_NACK_REFRESH_MAX / HOLE_NACK_REFRESH_MIN  =  4
+```
+
+**`R` IS NOT A NEW CONSTANT. It is the shipped clamp's own aspect ratio, and
+`100 ms = 4 × 25 ms` exactly**, so at `F = 25 ms` the re-expressed law returns
+the same `Duration` for every input the shipped law does — not approximately,
+identically, asserted by a test. With the input absent, `F` resolves to
+`HOLE_NACK_REFRESH_MIN` and **the engine is byte-identical**.
+
+**This is not a mode.** There is no branch on the input, no second law, no
+threshold that selects a code path. The cadence is ONE expression, continuous in
+`F`, and `F` is a constant of it. The precedent is `stall_threshold_us` in the
+same file, whose derivation records the same discipline in its own words: *"No
+new constant is introduced: the multiplier 3 IS the legacy
+`SIDLE_GAP_MIN_US / LOOP_WAKE_US`."*
+
+**WHY THE BAND SCALES AND THE LOWER RAIL ALONE DOES NOT — this is arithmetic and
+it is stated BEFORE the run, not discovered in a null.** The rail that censors
+the measurement is **whichever rail binds at that cell**, and it is not the same
+rail everywhere:
+
+| cell | `2·srtt` (measured, under load) | binding rail | effective floor |
+|---|---|---|---|
+| `c1` | ~4 ms | **LOWER** (25 ms) | 25 ms |
+| `c7` | ≥ 100 ms | **UPPER** (100 ms) | 100 ms |
+| `sc2` | ≥ 100 ms | **UPPER** (100 ms) | 100 ms |
+
+**An override of the lower clamp alone would be INERT at two of the three cells
+this sweep runs**, and a battery whose treatment cannot reach two of its cells is
+a battery whose criteria were unsatisfiable when they were written. Scaling the
+band by `F` moves whichever rail binds, at every cell, with one parameter and
+one formula.
+
+#### 16.78.1 One expression, three laws, and what the lift does NOT touch
+
+`(2·srtt).clamp(25, 100)` is written **twice** in `net/mod.rs`, over **two
+independent constant pairs that happen to be numerically equal**. There is no
+shared helper. The 25 ms value is read by a third law as a plain constant.
+
+| site | law | role | lifted here? |
+|---|---|---|---|
+| `hole_nack_refresh` (`net/mod.rs:582`) | `(2·srtt).clamp(HOLE_NACK_REFRESH_MIN, HOLE_NACK_REFRESH_MAX)` | **the RECEIVER's hole-refresh cadence** — how often a stalled hole is re-advertised | **YES** |
+| `tail_sweep_timeout_us` (`net/mod.rs:574`) | `(2·srtt).clamp(TAIL_SWEEP_MIN_US, TAIL_SWEEP_MAX_US)` | the SENDER's tail-sweep deadline, its own stall detector | **NO** |
+| `stall_threshold_us` (`net/mod.rs:331`) | `3·max(evt_us, LOOP_WAKE_US)` clamped to `[3 ms, HOLE_NACK_REFRESH_MIN]` | the derived stall GAUGE's ceiling | **NO** |
+
+§16.77.8d resolved the `c1` coincidence on exactly this point — *"the rail that
+pins the sender's timer is the same constant that sets the sender's estimator
+resolution"*, same value, **two owners**. This lift moves one owner. The
+consequences are stated now rather than found later:
+
+* **The tail sweep still fires no earlier than 25 ms.** It decided **0.59 %** of
+  all fires (`[FCAUSE]`, §16.77.1), so the arms are not confounded by it in
+  volume. But any arm whose delivered cadence drops below 25 ms puts the
+  receiver's report clock **ahead of the sender's backstop** for the first time
+  in this engine's history. That is a configuration never run, and it is a
+  named falsifier (`F3`), not a footnote.
+* **The derived stall gauge's ceiling stays at 25 ms.** `stall_threshold_us`
+  reads `HOLE_NACK_REFRESH_MIN` as a constant, not through the refresh law, so
+  under a lifted `F` the gauge's ceiling and the actual cadence decouple. The
+  gauge is a diagnostic and decides nothing — **this is a reporting caveat
+  carried on every `sidle`-derived number the sweep reports**, and on no other.
+* **`hole_refresh(derived = true, …)`** — the `RWM_DERIVED_SWEEP` arm — does not
+  read `F`. It is default OFF and is not run here.
+* **Two gauge sites read `hole_nack_refresh` as their LEGACY comparison value**
+  (`receiver.rs:848`, `:859`, under `RWM_RACK_CLOCKS` / `RWM_DERIVED_SWEEP`).
+  They will compare against the lifted law, which is correct — it *is* the
+  legacy law — and is recorded so that a moved bind-fraction is not misread.
+
+#### 16.78.2 The two-dimensional decision surface, and why one dimension alone was empty
+
+§16.77's battery swept `q` at fixed refresh and read flat at 5 of 5 cells.
+§16.77.8d explains why that was **guaranteed in advance** at 4 of them: two
+levels of `q` differing by less than one refresh interval command **the same
+clock**. The sweep had one dimension; the instrument had one step.
+
+The surface is over the **pair**:
+
+```text
+   COST( q , refresh )    q       — the hold-down LEVEL, §16.77.3's order statistic
+                          refresh — the RESOLUTION at which any level is expressible
+
+   structural relation:   T(q) is realizable only on  { k · refresh : k = 1, 2, 3, … }
+```
+
+**`refresh` is not a second treatment. It is the DOMAIN of the first.** Lowering
+it is not hypothesised to make the machine better; it makes `q`'s commanded level
+distinguishable from its neighbours, which is the precondition every clause of
+§16.77.8 was written assuming and none of them had.
+
+#### 16.78.3 The region of interest, DERIVED from the measured self-heal distribution
+
+The region is not picked. It is **read off `[SUCC]`'s measured `orig` p50** per
+cell — the median time from hole detection to resolution by the hole's own
+original — and scaled to it, because that median is exactly the quantity the
+hold-down is meant to sit inside and the cadence currently sits on top of.
+
+| cell | `[SUCC]` `orig` p50 (rep range) | shipped effective floor | floor / p50 | **target cadence `p50/2`** | **target cadence `p50/4`** |
+|---|---|---|---|---|---|
+| `c1` | **24.6 ms** [18.4–26.6] | 25 ms | **1.02×** | **12.3 ms** | **6.2 ms** |
+| `c7` | **30.7 ms** [20.5–30.7] | 100 ms | **3.26×** | **15.4 ms** | **7.7 ms** |
+| `sc2` | **98.3 ms** [98.3–98.3] | 100 ms | **1.02×** | **49.2 ms** | **24.6 ms** |
+
+**The region of interest is `refresh ∈ [6, 50] ms`; at the two fast cells it is
+`[6, 16] ms`.** The `p50/2` and `p50/4` points are chosen so that the *body* of
+the self-heal distribution becomes expressible: at `p50/4` the sender can name
+four distinct waits below the median where today it can name none.
+
+**`F` IS DERIVED FROM THE TARGET AND THE BINDING RAIL, PER CELL.** Because the
+binding rail differs (§16.78.0), the value of `F` that delivers a given cadence
+differs, and it is arithmetic in both directions:
+
+```text
+   c1     2·srtt ≈ 4 ms  ≤  F      ⇒  LOWER rail delivers  ⇒  cadence = F
+   c7     2·srtt ≥ 100 ms ≥ R·F    ⇒  UPPER rail delivers  ⇒  cadence = 4·F
+   sc2    2·srtt ≥ 100 ms ≥ R·F    ⇒  UPPER rail delivers  ⇒  cadence = 4·F
+```
+
+| cell | arm `R2` (`p50/2`) | `F` | arm `R4` (`p50/4`) | `F` |
+|---|---|---|---|---|
+| `c1` | 12.3 ms | **12 300 µs** | 6.2 ms | **6 150 µs** |
+| `c7` | 15.4 ms | **3 838 µs** | 7.7 ms | **1 919 µs** |
+| `sc2` | 49.2 ms | **12 288 µs** | 24.6 ms | **6 144 µs** |
+
+**The delivered cadence, not `F`, is the treatment**, and the battery must
+witness it rather than assume it — which is what `F1` below is.
+
+**AND THIS IS THE REGION NO ARM HAS EVER ENTERED.** The hold-down sweep's own
+realized waits, from its `[HOLD]` table:
+
+| cell | realized `T` span across its four armed levels |
+|---|---|
+| `c1` | 67 – 428 ms |
+| `c7` | 83 – 6 110 ms |
+| `sc2` | 2 043 – 6 207 ms |
+
+Every one is **above** the cell's self-heal p50, most by one to two orders of
+magnitude; `c8L` reached **22–25 s** against a 163.8 ms median — *"a wait
+135–153× the median of the distribution it is supposed to be a quantile of"*
+(§16.77.8d). **The measured cost curve is a curve of the region ABOVE the floor.
+Below the floor is not a region where the answer is known to be different — it
+is a region where no reading exists.**
+
+#### 16.78.4 The predictions, pre-stated, with their shapes and their falsifiers
+
+Written against a prior that is **openly unfavourable**: §16.77's closure
+recorded *"the measured cost curve gives no reason to expect an interior optimum
+there either."* That caution is inherited, not argued away.
+
+---
+
+**(P-A) — REPAIR VOLUME FALLS WITH HOLD IN THE SUB-FLOOR REGION.**
+
+*Shape:* `rpd` — repair emissions per detected hole, `[FCAUSE] n / [SUCC] det`,
+a **sender** numerator over a **receiver** denominator — is **monotone
+non-increasing** in the realized hold `hd_p50` as the cadence drops, at fixed
+`q`. The mechanism is arithmetic, not subtle: **97.86 %** of detected holes are
+resolved by their own original, and the `c1` self-heal p50 is 24.6 ms, so a hold
+of 6–12 ms should let a substantial and **countable** fraction of reorderings
+close themselves before a repair is emitted.
+
+*Why VOLUME and not FRACTION — stated here so a moved count can never be
+reported later as a moved fraction:* the false-repair FRACTION was flat to
+within ±12 % at 5 of 5 cells across a 0 → 99.6 % suppression span. `fa ⊥ T`,
+twice demonstrated. **P-A does not contradict that and does not re-litigate it.**
+`rpd` is a *count per hole*; `false_frac` is a *ratio within the count*. The
+prior sweep moved `rpd` by a treatment span of **1.02–1.66×**, non-monotone at
+**0 of 5** cells — and measured **entirely inside one instrument step**, which
+is precisely the condition under which a non-monotone reading carries no
+information about the underlying function. P-A predicts that once the step is
+smaller than the effect, the movement becomes ordered.
+
+*FALSIFIER (P-A):* `rpd` is **not** monotone non-increasing in `hd_p50` at ≥ 2 of
+3 cells, **or** the `rpd` span across the sub-floor arms stays below **1.10×** at
+≥ 2 of 3 cells — the lever still does not move the count even once it can be
+aimed.
+
+---
+
+**(P-B) — GOODPUT DOES NOT COLLAPSE AT HOLDS ≤ THE SELF-HEAL p50.**
+
+*Shape:* goodput stays **inside the cell's pre-registered CTL band** at every arm
+whose realized `hd_p50 ≤ [SUCC] orig p50` for that cell. Flat, not merely
+non-collapsing: the loss is bounded above by the hold itself, and a hold of
+6–25 ms against transfers running for seconds is a rounding error in delivered
+bytes.
+
+*Why this is a real prediction and not a hedge:* the prior sweep measured a
+**10.6–13.4×** goodput collapse at `c8L` and **1.3–4.4×** at `sc2` — at realized
+waits of **22–25 s** and **2.0–6.2 s**, i.e. `T ≫ p50` by two orders of
+magnitude. **Stall cost scales with the stall.** P-B says the collapse was a
+property of the *magnitude* of the wait and not of the *act* of waiting, and
+that is falsifiable in one reading.
+
+*FALSIFIER (P-B):* any arm with `hd_p50 ≤ orig p50` reads goodput **out of its
+cell's CTL band on both seeds**. That is **P-B-REFUTED**, and it is a strong
+result, not a disappointment: it would mean that holding a gap response at all —
+even for less than the median self-heal time — costs throughput, which closes
+the region on **mechanism** rather than on measurement, and is the last thing
+the shipped clamp needed in order to be acquitted for good.
+
+---
+
+**(P-C) — AN INTERIOR OPTIMUM EXISTS IFF TWO CURVES CROSS INSIDE THE REGION.**
+
+The optimum is **not predicted to exist**. It is predicted to exist *exactly
+when* one inequality holds, and the sweep reads both sides:
+
+```text
+   GAIN(hold)  =  goodput recovered from the repairs NOT sent
+                  ( ∝ rpd(0) − rpd(hold) )
+
+                  SHAPE: rising, CONCAVE, SATURATING at the self-heal p50 —
+                  it can capture at most the self-heal mass BELOW the hold,
+                  so it flattens as the hold approaches p50 and gains
+                  nothing above it.
+
+   COST(hold)  =  delivered latency added to the (1 − 0.9786) ≈ 2.1 % of
+                  holes that are TRUE LOSS
+
+                  SHAPE: rising, NEAR-LINEAR in hold, slope ∝ that 2.1 % —
+                  every truly-lost hole pays the full hold, and there are few.
+
+   INTERIOR OPTIMUM  ⇔  dGAIN/dhold > dCOST/dhold somewhere in (0, p50]
+                        AND the reverse above it
+```
+
+**Two curves of those shapes cross at most once in the interior**, and whether
+they cross at all is a question about two constants — `orig_frac = 0.9786` and
+the goodput value of a suppressed repair — that the sweep measures directly.
+Above the floor the prior battery already read the answer: COST dominates,
+monotonically, no interior minimum at 4 of 5 cells. **P-C asserts only that the
+sign of the comparison is unknown BELOW the floor, because GAIN's entire
+saturating region lies there.**
+
+*FALSIFIER (P-C):* the `(q, refresh)` surface's optimum is **CTL** at ≥ 2 of 3
+cells with non-overlapping rep ranges — the prior battery's verdict, now reached
+in the region that was previously unreachable.
+
+#### 16.78.5 What FLAT means here, and why it is a RESULT and not a null
+
+**FLAT is a pre-declared legal outcome**: no arm beats CTL, the surface has no
+interior optimum, and `rpd`'s movement stays inside P-A's falsifier. If that is
+the reading, the finding is stated as follows and **not** as "no effect":
+
+> **THE SHIPPED CLAMP IS ACQUITTED ON MERIT IN THE LAST REGION IT HAD NEVER BEEN
+> TESTED IN.** §16.77.6 convicted the clamp on its `fa` budget and could not
+> defeat it on the wire; goal #101's item 4 closed it *"survives on merit"* — with
+> the sub-floor region censored by the clamp's own twin. A FLAT reading removes
+> that qualification. The clamp would then be undefeated **above** its floor (two
+> sweeps, 10/10 cell-comparisons) **and below** it (this sweep), which is the
+> whole domain.
+
+**This is why the sweep is worth running under an unfavourable prior.** A FLAT
+outcome closes a branch that is currently open; the alternative is leaving item
+4's acquittal permanently qualified by a region nobody looked at. **An unexplored
+region is not evidence for the incumbent.**
+
+**AND THE SYMMETRIC POINT IS MADE HERE SO IT CANNOT BE MADE LATER.** If an
+interior optimum IS found, it is a **named point on a measured surface** and
+nothing more. It does not ship, it does not flip a default, and it licenses no
+mapping from `(δ, ρ, r)` to `refresh`. §16.77.11's clause stands verbatim:
+nothing may ship reading it until a battery has scored it, and one battery
+finding a maximum is not that.
+
+#### 16.78.6 What falsifies this section
+
+* **`F1` — THE LIFT DOES NOT REACH.** A commanded `F` does **not** produce a
+  realized `[HOLD] t_us` (and `hd_p50_us`) below the cell's shipped effective
+  floor. Then the refresh cadence was not the censoring constant, some other
+  clock bounds the sender's view, and §16.78.1's table names the wrong owner.
+  **This is the wiring test and it is scored FIRST**; if `F1` fires, every other
+  clause is VOID and the successor is the next cadence in the chain, named from
+  the same code rather than guessed.
+* **`F2` — THE RE-EXPRESSION IS NOT BYTE-IDENTICAL AT `F = 25 ms`.** If
+  `(2·srtt).clamp(F, 4F)` at `F = HOLE_NACK_REFRESH_MIN` differs from
+  `(2·srtt).clamp(25, 100)` for any `srtt`, the re-expression introduced a
+  behaviour change on the default path and the whole section is withdrawn. This
+  is a unit test over the input domain, not a run-time observation, and it is
+  discharged before the VM is touched.
+* **`F3` — THE BACKSTOP ASYMMETRY BITES.** A delivered cadence below
+  `TAIL_SWEEP_MIN_US` = 25 ms puts the receiver's report clock ahead of the
+  sender's backstop for the first time. If the sub-floor arms show a `[FCAUSE]
+  timer_frac` collapse or a `gap_refresh` explosion beyond what the cadence
+  change alone accounts for, the arms are measuring that interaction and not the
+  hold, and `F3` is recorded against every reading taken from them.
+* **`F4` — P-B REFUTED** (§16.78.4).
+
+#### 16.78.7 What this section does NOT claim
+
+* **NO DEFAULT MOVES AND NO LAW SHIPS.** `RWM_REFRESH_FLOOR_US` is **absent by
+  default**; with it absent `hole_nack_refresh` returns the same `Duration` for
+  every input it does today, asserted by a test. The shipped clamp is not
+  touched, not replaced, and not reinterpreted on any default path.
+* **THE LIFT IS AN EXPERIMENT INPUT, NOT A DERIVED LAW.** Nothing here derives
+  what the refresh cadence *should* be. It makes a censored region readable. A
+  derivation, if one is ever warranted, is downstream of a reading.
+* **ONLY THE REFRESH PATH IS LIFTED.** The tail sweep and the derived stall
+  gauge keep the 25 ms literal (§16.78.1). That is a stated confound on the
+  sub-floor arms, not a claim that it is negligible.
+* **§16.77 IS NOT RE-OPENED.** Its clause (i) `WIRING TEST FAILS`, its `H4`, and
+  its `H5` all stand. This section takes `H5`'s finding — that `T` is not
+  well-posed below the refresh floor — as its **premise**.
+* **`fa ⊥ T` IS NOT CHALLENGED.** P-A is about repair COUNT, not the false
+  FRACTION, and §16.78.4 states that separation explicitly.
+* **NO INTERIOR OPTIMUM IS PREDICTED.** P-C states a condition and two shapes;
+  the prior is recorded as unfavourable.
+* **`c8` AND `c8L` ARE NOT RUN, AND THAT IS DERIVED.** The successor-arrival pass
+  recorded their quantiles as **NOT USABLE** as derivation inputs (rep dispersion
+  up to 52×), and this section's arm grid is computed from those quantiles. A
+  cell whose p50 cannot be trusted cannot supply a `p50/2`.
+* **THE MISSING TRUTH INSTRUMENT IS STILL MISSING.** Delivered latency is read
+  per-leg and censoring-aware, as in §16.77.8's clause (ii).
+
+**Nothing in this section flips a default, ships a law, wires a consumer on any
+default path, or scores any clause of any pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
