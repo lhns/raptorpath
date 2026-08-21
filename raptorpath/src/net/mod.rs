@@ -1305,6 +1305,16 @@ impl Drop for QuantileClockGauge {
 /// `1 − K/(N+1) = 1 − 10/21 = 0.5238`. No level below that is expressible by
 /// this construction — §16.76.7's `α → 1` degenerate limit read from the other
 /// end, and the reason §16.77.8's arm grid floors where it does.
+/// The CONTROL's observation window: how many hole outstanding-time samples the
+/// gauge retains on an arm that commands no level.
+///
+/// **DECLARED RESOURCE BOUND, STATED OUTSIDE THE LAW** (FORMULA-FIRST). It is
+/// not a window law and it selects nothing: no arm reads a quantile of it as a
+/// clock. It is the largest window on §16.77.8's grid (`N(0.010) = 1000`), so
+/// the control's reported distribution is directly comparable with the arm the
+/// derivation names, and it costs 1000 × 4 B = 4 KiB per path.
+pub const HOLD_OBS_WINDOW: usize = 1000;
+
 pub fn holddown_window_n(q: f64) -> Option<usize> {
     if !q.is_finite() || q <= 0.0 || q >= 1.0 {
         return None;
@@ -1359,8 +1369,21 @@ pub(crate) struct HoldDownGauge {
     /// `T = 0` degenerate limit, which IS the shipped behaviour.
     q: Option<f64>,
     /// `N(1−q)` — the window law's requirement, resolved once so the line, the
-    /// ring's capacity and the estimator cannot drift apart.
+    /// ring's capacity and the estimator cannot drift apart. `None` on the
+    /// control, where no law is in force.
     n_req: Option<usize>,
+    /// The ring's capacity, which is `n_req` on a treatment arm and
+    /// [`HOLD_OBS_WINDOW`] on the control.
+    ///
+    /// **THE ESTIMATOR OBSERVES ON EVERY ARM AND THE CONTROL IS WHY.** The
+    /// first calibration could not tell "the outstanding-time distribution IS
+    /// long at this cell" from "the hold-down made it long", because the
+    /// control measured nothing to compare against — the arm that defines the
+    /// unforced distribution was the one arm not reading it. It now reads it.
+    /// **This is observation and nothing else**: `should_hold` still returns
+    /// `false` unconditionally when `q` is absent, so the control's wire
+    /// behaviour is the shipped machine's, byte for byte.
+    n_obs: usize,
     /// seq → (first time this hole was REPORTED to us, the path its original
     /// flew on). `BTreeMap` because retirement is a frontier range, which a
     /// hash map cannot do without scanning the whole map on every ack.
@@ -1416,6 +1439,7 @@ impl HoldDownGauge {
             site,
             q,
             n_req: q.and_then(holddown_window_n),
+            n_obs: q.and_then(holddown_window_n).unwrap_or(HOLD_OBS_WINDOW),
             first: std::collections::BTreeMap::new(),
             win: std::collections::HashMap::new(),
             t_us: std::collections::HashMap::new(),
@@ -1430,9 +1454,12 @@ impl HoldDownGauge {
         self.gen = gen;
     }
 
-    /// Is the arm live? `n_req` and not `q`: a `q` whose window law does not
-    /// resolve (over [`QNATIVE_WINDOW_MAX`]) is an arm that cannot run, and it
-    /// must read as disarmed rather than as armed-and-silent.
+    /// Is the arm live — i.e. can it SUPPRESS? `n_req` and not `q`: a `q` whose
+    /// window law does not resolve (over [`QNATIVE_WINDOW_MAX`]) is an arm that
+    /// cannot run, and it must read as disarmed rather than as armed-and-silent.
+    ///
+    /// **The ESTIMATOR does not consult this.** It observes on every arm; only
+    /// the gate reads it.
     pub(crate) fn armed(&self) -> bool {
         self.n_req.is_some()
     }
@@ -1456,7 +1483,7 @@ impl HoldDownGauge {
         now_us: u64,
         reported: bool,
     ) {
-        if !self.armed() || !reported {
+        if !reported {
             return;
         }
         self.first.entry(seq).or_insert((now_us, orig_path));
@@ -1511,7 +1538,7 @@ impl HoldDownGauge {
     /// fewer — one per RESOLVED hole — so the linear work is moved to them and
     /// the eval path is a map lookup. It is still a SELECTION and never a sort.
     fn feed(&mut self, path: u32, sample_us: u64) {
-        let Some(n) = self.n_req else { return };
+        let n = self.n_obs;
         let s = sample_us.min(u32::MAX as u64) as u32;
         let w = self.win.entry(path).or_default();
         if w.len() >= n {
@@ -1519,10 +1546,12 @@ impl HoldDownGauge {
         }
         w.push_back(s);
         *self.fed.entry(path).or_insert(0) += 1;
-        if w.len() >= n {
-            let q = self.q.expect("n_req is Some ⇒ q is Some");
-            if let Some(t) = holddown_us(w.make_contiguous(), q) {
-                self.t_us.insert(path, t);
+        // The LAW's own output, only where the law is in force.
+        if let (Some(nr), Some(q)) = (self.n_req, self.q) {
+            if w.len() >= nr {
+                if let Some(t) = holddown_us(w.make_contiguous(), q) {
+                    self.t_us.insert(path, t);
+                }
             }
         }
     }
@@ -1564,7 +1593,7 @@ impl HoldDownGauge {
         now_us: u64,
         shed: &std::collections::BTreeSet<u64>,
     ) {
-        if self.n_req.is_none() || self.first.is_empty() {
+        if self.first.is_empty() {
             return;
         }
         // The span this report speaks about. A stamped seq ABOVE it is not
@@ -1595,11 +1624,31 @@ impl HoldDownGauge {
     /// the frontier's own arrival is not a substitute for it (§16.77.8b). The
     /// map is bounded by the outstanding set either way.
     pub(crate) fn on_retired(&mut self, ack: u64) {
-        if self.n_req.is_none() || self.first.is_empty() {
+        if self.first.is_empty() {
             return;
         }
         let mut above = self.first.split_off(&ack.saturating_add(1));
         std::mem::swap(&mut self.first, &mut above);
+    }
+
+    /// A quantile of the path's OWN observation window — the outstanding-time
+    /// distribution as this sender saw it, on EVERY arm including the control.
+    ///
+    /// **This is a gauge and never a clock.** It is read only by `line`, at
+    /// teardown, over a copy. Nothing in the engine consults it, and the
+    /// hold-down `T` is `t_us` and not this: `T` is the LAW's order statistic
+    /// at the LAW's own `N(1−q)`, which is what an arm commands, while this is
+    /// a fixed-window description of the same stream and is what the control
+    /// has instead of a law.
+    fn obs_q(&self, path: u32, p: f64) -> Option<u64> {
+        let w = self.win.get(&path)?;
+        if w.is_empty() {
+            return None;
+        }
+        let mut v: Vec<u32> = w.iter().copied().collect();
+        let idx = (((p * v.len() as f64).ceil() as usize).max(1) - 1).min(v.len() - 1);
+        let (_, nth, _) = v.select_nth_unstable(idx);
+        Some(*nth as u64)
     }
 
     fn line(&self, path: u32) -> String {
@@ -1607,7 +1656,8 @@ impl HoldDownGauge {
         let us = |v: Option<u64>| v.map_or("-".to_string(), |x| x.to_string());
         let hd = self.hd.get(&path);
         format!(
-            "[HOLD] site={} path={} gen={} q={} n_req={} samp_n={} fed={} t_us={} \
+            "[HOLD] site={} path={} gen={} q={} n_req={} n_obs={} samp_n={} fed={} \
+             t_us={} obs_p50_us={} obs_p90_us={} obs_p99_us={} \
              evals={} law_n={} sup={} emit={} hd_p50_us={} hd_p90_us={} hd_p99_us={} \
              hd_mx_us={} hd_n={} fa_class={:.4}",
             self.site,
@@ -1619,9 +1669,13 @@ impl HoldDownGauge {
             if self.gen { 1 } else { 0 },
             self.q.map_or("unset".to_string(), |v| format!("{v:.6}")),
             self.n_req.map_or("-".to_string(), |v| v.to_string()),
+            self.n_obs,
             self.win.get(&path).map_or(0, |w| w.len()),
             self.fed.get(&path).copied().unwrap_or(0),
             us(self.t_us.get(&path).copied()),
+            us(self.obs_q(path, 0.50)),
+            us(self.obs_q(path, 0.90)),
+            us(self.obs_q(path, 0.99)),
             c[0],
             c[1],
             c[2],
@@ -10620,11 +10674,16 @@ mod tests {
     // ── §16.77 THE HOLD-DOWN GAUGE — DISARMED IS INERT, ARMED SUPPRESSES ──
 
     /// **DISARMED IS BYTE-IDENTICAL AND THIS ASSERTS IT AT THE GATE ITSELF.**
-    /// With `RWM_HOLDDOWN_Q` absent the gauge stamps nothing, allocates
-    /// nothing, and `should_hold` is `false` on every call at every age — so
-    /// every fire reaches `record_fire_cause` exactly as it does today. The
-    /// line still prints, with `q=unset`, because an absent arm must be READ
-    /// off the run's own output (MEASUREMENT DISCIPLINE 15).
+    /// With `RWM_HOLDDOWN_Q` absent, `should_hold` is `false` on every call at
+    /// every age, so every fire reaches `record_fire_cause` exactly as it does
+    /// today. **No suppression, no `T`, no law.**
+    ///
+    /// **The ESTIMATOR nevertheless OBSERVES, and that is the point of the
+    /// control.** The first calibration could not tell "the outstanding-time
+    /// distribution IS long at this cell" from "the hold-down made it long",
+    /// because the one arm that defines the unforced distribution was the one
+    /// arm not reading it. The control now reports `obs_p50/p90/p99` over its
+    /// own window while commanding nothing — observation, never a clock.
     #[test]
     fn disarmed_the_holddown_gate_is_inert_at_every_age() {
         let mut g = HoldDownGauge::new("sender", None);
@@ -10638,21 +10697,29 @@ mod tests {
                 );
             }
         }
-        // Nothing was stamped, so nothing can be fed and nothing can be held.
-        g.on_report(&[(0, 1_000)], 2_000_000, &std::collections::BTreeSet::new());
-        g.on_retired(1_000);
-        let l = g.line(u32::MAX);
+        // The estimator observes: 64 holes resolve, at 1..=64 ms each.
+        for seq in 0..64u64 {
+            g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default());
+        }
+        let l = g.line(0);
+        // THE LAW IS ABSENT AND THE LINE SAYS SO.
         assert!(l.contains("q=unset"), "the disarmed line must say so: {l}");
         assert!(l.contains("n_req=-"), "no window law is in force: {l}");
+        assert!(l.contains("t_us=-"), "and therefore no T: {l}");
         assert!(l.contains("sup=0"), "disarmed must suppress nothing: {l}");
         assert!(l.contains("law_n=0"), "disarmed runs no law: {l}");
-        assert!(l.contains("fed=0"), "disarmed feeds no estimator: {l}");
-        // Two-sided: the site still counted what it saw, so an absent line can
-        // only be read as an unreached site and never as an unset gate.
+        assert!(l.contains("hd_n=0"), "and holds nothing, so no realized delay: {l}");
+        // THE OBSERVATION IS LIVE AND IT IS THE CONTROL'S WHOLE JOB.
+        assert!(l.contains("n_obs=1000"), "the control's declared window: {l}");
+        assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 64, "the control must OBSERVE");
+        assert!(!l.contains("obs_p50_us=-"), "the control must report a distribution: {l}");
+        assert_eq!(g.obs_q(0, 0.50), Some(32_000), "and it must be the right one");
+        // Two-sided: the site counted every evaluation it saw.
         assert!(
             l.contains("evals=320"),
             "the disarmed arm still counts its evaluations: {l}"
         );
+        assert!(g.t_us.is_empty(), "no path may ever carry a T on the control");
     }
 
     /// **ARMED, THE GATE SUPPRESSES EXACTLY THE HOLES YOUNGER THAN `T`, AND

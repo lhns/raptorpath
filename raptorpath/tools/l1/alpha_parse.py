@@ -700,7 +700,8 @@ HOLD_INT = ["samp_n", "fed", "evals", "law_n", "sup", "emit", "hd_n"]
 hold = {"hold_lines": sum(1 for l in cli if "[HOLD] site=sender" in l)}
 for f in HOLD_INT:
     hold["hold_" + f] = None
-for f in ("hold_q", "hold_n_req", "hold_gen", "hold_sup_frac", "hold_law_frac",
+for f in ("hold_q", "hold_n_req", "hold_n_obs", "hold_gen", "hold_sup_frac", "hold_law_frac",
+          "hold_obs_p50_us", "hold_obs_p90_us", "hold_obs_p99_us",
           "hold_t_us_p0", "hold_t_us_p1", "hold_samp_n_p0", "hold_samp_n_p1",
           "hold_hd_p50_us", "hold_hd_p90_us", "hold_hd_p99_us", "hold_hd_mx_us",
           "hold_unattr_evals", "hold_paths_n", "hold_accounting_ok"):
@@ -739,9 +740,20 @@ if _hold_hits:
     for _i, _t in enumerate(_real[:2]):
         hold["hold_t_us_p%d" % _i] = inum(_t.get("t_us"))
         hold["hold_samp_n_p%d" % _i] = inum(_t.get("samp_n"))
-    # The REALIZED hold-down delay: max over paths, because the quantiles are
-    # per-path distributions and a sum of quantiles is not a quantile.
-    for f in ("hd_p50_us", "hd_p90_us", "hd_p99_us", "hd_mx_us"):
+    # THE OBSERVATION WINDOW, present on EVERY arm including the control. It is
+    # the UNFORCED outstanding-time distribution where no level is commanded,
+    # and it is what makes the feedback of an armed arm READABLE: `t_us` is the
+    # law's order statistic, `obs_*` describes the same stream at a fixed
+    # window, and CTL's `obs_*` is the baseline both are measured against.
+    hold["hold_n_obs"] = inum(_first.get("n_obs"))
+    for _i, _t in enumerate(_real[:2]):
+        for f in ("obs_p50_us", "obs_p90_us", "obs_p99_us"):
+            hold["hold_%s_p%d" % (f, _i)] = inum(_t.get(f))
+    # The REALIZED hold-down delay and the observation quantiles: MAX over
+    # paths, because these are per-path distributions and a sum of quantiles is
+    # not a quantile.
+    for f in ("hd_p50_us", "hd_p90_us", "hd_p99_us", "hd_mx_us",
+              "obs_p50_us", "obs_p90_us", "obs_p99_us"):
         _v = [inum(t.get(f)) for t in _real]
         _v = [x for x in _v if x is not None]
         hold["hold_" + f] = (max(_v) if _v else None)

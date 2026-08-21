@@ -388,9 +388,29 @@ fn without_the_level_the_gate_is_inert_and_the_echo_says_unset() {
         assert!(l.contains("n_req=-"), "no window law is in force: {l}");
         assert_eq!(u64_field(l, "sup="), 0, "the control must hold NOTHING: {l}");
         assert_eq!(u64_field(l, "law_n="), 0, "the control runs no law: {l}");
-        assert_eq!(u64_field(l, "fed="), 0, "the control feeds no estimator: {l}");
-        assert!(l.contains("t_us=-"), "the control has no T: {l}");
+        assert!(l.contains("t_us=-"), "the control commands no T: {l}");
+        // AND THE CONTROL OBSERVES. It commands no level, runs no law and
+        // holds nothing - but it reports the UNFORCED outstanding-time
+        // distribution, without which "the distribution IS long at this cell"
+        // cannot be told from "the hold-down made it long" (16.77.8c).
+        // Observation, never a clock: nothing in the engine reads it.
+        assert!(l.contains("n_obs="), "the control must declare its window: {l}");
     }
+    // THE OBSERVATION IS ASSERTED ON THE PER-PATH LINE ONLY. The
+    // unattributed bucket (`path=-`) collects the timer fires this arm does
+    // not touch; it has no window by construction, and folding it in would
+    // assert that a law which never ran produced a distribution.
+    let pl = hold_pathline(&lines);
+    assert!(u64_field(pl, "fed=") > 0, "the control must OBSERVE: {pl}");
+    assert!(u64_field(pl, "samp_n=") > 0, "its window must be non-empty: {pl}");
+    assert!(
+        !pl.contains("obs_p50_us=-"),
+        "the control must report a distribution to be a baseline: {pl}"
+    );
+    let o50 = u64_field(pl, "obs_p50_us=");
+    let o90 = u64_field(pl, "obs_p90_us=");
+    assert!(o50 > 0 && o90 >= o50, "the quantiles must be ordered: {pl}");
+
     let evals: u64 = lines.iter().map(|l| u64_field(l, "evals=")).sum();
     assert!(
         evals > 0,

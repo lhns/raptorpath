@@ -45049,3 +45049,199 @@ nothing against it.
 
 **Nothing in this section flips a default, adds a gate, edits an engine law,
 wires a consumer, or scores any clause of any pre-registration.**
+
+## THE HOLD-DOWN SWEEP — THE CALIBRATION FIRED A THIRD TIME, AND THIS ONE IS ABOUT THE LAW (2026-08-21, `feat/holddown-clock`) — **THE HEAD-OF-LINE REPAIR WAS NECESSARY AND NOT SUFFICIENT: `T` STILL READ 236–608 ms AT A 2 ms-RTT CELL, AND THE ONE ARM THAT COULD HAVE SAID WHY WAS THE ONE ARM WITH NO INSTRUMENT.** The estimator's input is a function of its own output; §16.77.8a's convergence claim is WITHDRAWN; the control is given the instrument that makes the question decidable. **NOTHING BELOW IS A RESULT** — `n = 1`, and no clause of the pre-registration's §5 or §6 is scored by any of it.
+
+### 1 — WHAT RAN, AND WHAT IT READ
+
+Five invocations of a planned twenty-five (cell `c1`, all five arms, one rep,
+seed 42), on the REPAIRED binary `sha256 b53f9d7c…`, commit `fef547d`. Stopped
+by hand once `c1`'s five arms were in.
+
+**W3 NOW PASSES AT 5 OF 5** — the harness scrape defect of the previous
+amendment is closed: `q=unset`/`n_req=-` at `CTL`, and `q=0.500000`/`0.864000`/
+`0.963000`/`0.990000` against `n_req=20`/`74`/`271`/`1000` at the four armed
+arms, each matching its own arm-table entry. **W4, the routing witness, passes
+exactly**: `860 = 0 + 860` at `CTL`, and `evals = sup + emit` on every line.
+
+**AND `T` IS STILL TWO DECADES ABOVE THE DISTRIBUTION.** At `c1` — RTT **2 ms**,
+`[SUCC]` `orig` p50 **24.6 ms**, `orig` max **102.3 ms**:
+
+| arm | `n_req` | `samp_n` | `fed` | **`T`** | realized hold-down p50 / p90 / max | `sup` / `evals` | `rpd` |
+|---|---|---|---|---|---|---|---|
+| `CTL` | `-` | — | — | `-` | — | 0 / 860 | 1.309 |
+| `H500` | 20 | 20 | 348 | **607.5 ms** | 246 / 492 / **624 ms** | 45 519 / 46 560 | 1.415 |
+| `H136` | 74 | 74 | 404 | **543.2 ms** | 213 / 459 / 543 ms | 33 236 / 34 377 | 1.341 |
+| `H037` | 271 | 271 | 401 | **235.7 ms** | 164 / 229 / 275 ms | 11 621 / 12 736 | 1.361 |
+| `H010` | 1 000 | **288** | 288 | `-` (UNSCOREABLE) | — | **0** / 767 | 1.193 |
+
+So the head-of-line gating of the previous amendment was **real and repaired**
+— it is not this — and something else is producing a 600 ms clock on a 2 ms
+path.
+
+### 2 — THE FIXED POINT, AND WHY THIS TABLE CANNOT DECIDE IT
+
+```text
+   T rises  ⇒  a genuinely lost hole waits T before its repair is EMITTED
+            ⇒  that hole's own outstanding time is LONGER
+            ⇒  the window's samples are longer
+            ⇒  T rises
+```
+
+**The estimator's input is a function of its own output.** §16.77.8a asserted
+that this loop converges from below; **that assertion had a direction and no
+bound, and it is withdrawn** (paper §16.77.8c). Nothing in §16.77.2 establishes
+which fixed point the construction lands on, or that it lands on one.
+
+**AND THE TABLE ABOVE CANNOT TELL THE LOOP FROM THE CELL.** `H010` never armed
+(`law_n = 0`, `sup = 0`), so its 767 fires are the shipped machine's — a
+*behavioural* control that collected 288 samples of the unforced distribution
+and reported **no quantile of them**. `CTL` collected nothing at all. **The one
+arm that defines the unforced outstanding-time distribution was the one arm not
+reading it**, so *"the distribution IS long at `c1`"* and *"the hold-down made
+it long"* are observationally identical on every row. Neither the feedback's
+existence nor its magnitude is decidable from this pass.
+
+**THE `rpd` COLUMN IS PRINTED AND DELIBERATELY NOT READ.** It is clause 5(i)'s
+statistic at `n = 1`, on an estimator whose well-posedness is exactly what is in
+question. It is not a reading of the wiring test and is not offered as one.
+
+### 3 — THE INSTRUMENT THE CONTROL DID NOT HAVE
+
+The gauge now stamps, resolves and windows hole outstanding times on **every
+arm**, and reports `obs_p50_us` / `obs_p90_us` / `obs_p99_us` over
+`HOLD_OBS_WINDOW = 1000` samples per path.
+
+| | `t_us` | `obs_*` |
+|---|---|---|
+| what it is | the LAW's order statistic at the LAW's own `N(1−q)` | a fixed-window description of the same stream |
+| what it means | what the arm **commands** | what the sender **saw** |
+| where it exists | armed arms only | **every arm, control included** |
+| who reads it | the gate | the ledger, at teardown, over a copy |
+
+`HOLD_OBS_WINDOW` is a **DECLARED RESOURCE BOUND stated outside the law** and
+not a second window law: no arm reads a quantile of it as a clock and nothing in
+the engine consults it. It is `N(0.010)`, the largest window on the arm grid, so
+the control's distribution is directly comparable with the arm the derivation
+names. 4 KiB per path.
+
+**THE CONTROL'S WIRE BEHAVIOUR IS UNCHANGED, BYTE FOR BYTE.** `should_hold`
+returns `false` unconditionally when `q` is absent, at every age;
+`disarmed_the_holddown_gate_is_inert_at_every_age` asserts exactly that, and
+asserts in the same test that the observation is live and reads the right
+quantile.
+
+### 4 — WHAT IT BUYS, PRE-STATED AS A FALSIFIER
+
+```text
+   inflation(cell, arm)  =  obs_p50(arm) / obs_p50(CTL)
+```
+
+both terms from the same gauge at the same site on paired reps. Paper
+§16.77.9 gains **`H5`**: an inflation above **2×** at three or more cells at any
+arm whose law ran means the outstanding-time stream is dominated by the
+hold-down's own delay rather than by the path, `T(q)` is **not a well-posed
+estimator on this machine**, and no level the sweep reports is a level of the
+distribution §16.77.3 derives against. *Falsified by* an inflation inside
+`[0.5, 2]` at four of five cells, which makes the estimator's input a property
+of the cell and the construction well-posed. **Two-sided, and it costs nothing.**
+
+**AND THE SUCCESSOR IS NAMED NOW RATHER THAN AFTER.** If `H5` fires, the stream
+to estimate is one the hold-down cannot move: the sender-observed arrival of an
+ORIGINAL for a hole **no repair was emitted for** — empty under the shipped
+machine (§16.77.8a), and **not** empty under an armed arm, because that is
+precisely the set the hold-down creates. That is a design, stated in advance,
+and not a rescue.
+
+### 5 — WHAT CHANGED, AND WHAT DID NOT
+
+| changed | unchanged |
+|---|---|
+| the estimator observes on EVERY arm (observation only) | the LAW: `T(q) = W_q(1−q)`, `K = 10`, `N = max(⌈K/(1−q)⌉, 2K)` |
+| `[HOLD]` gains `n_obs=`, `obs_p50/p90/p99_us=` | the arm grid, the levels, `N` per arm, the (Q) separation table |
+| paper §16.77.8c; §16.77.8a's convergence claim WITHDRAWN | the cells, the bands, the reps, the seeds, `RWM_GEN=0` |
+| §16.77.9 gains `H5` | every scoring bar and every legal outcome in §5 and §6 |
+
+**NO PRE-REGISTERED BAR MOVED AND NO ARM WAS ADDED, REMOVED OR RE-LEVELLED.**
+`H5` is a falsifier of the paper's construction, not a scoring clause of the
+battery; the pre-registration stands as committed at `6e81463`.
+
+**AND THE HONEST HEADLINE: THREE CALIBRATION PASSES HAVE NOW FIRED AND NO SCORED
+INVOCATION HAS RUN.** The pre-registration's §9 clause exists for exactly this,
+and the alternative — 200 invocations against a clock 25× its own distribution,
+with no baseline to read it against — is the failure it was written to prevent.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or scores any clause of any pre-registration.**
+
+### AMENDMENT 3 — THE CONTROL'S FIRST READING, AND THE REPORT-CADENCE FLOOR IT EXPOSES (2026-08-21, `feat/holddown-clock`)
+
+**THE INSTRUMENT THE CONTROL WAS JUST GIVEN ANSWERED THE QUESTION ON ITS FIRST
+READING, AND THE ANSWER IS STRUCTURAL.** On the hermetic lossy-loopback gate
+(`holddown_reachability.rs`, the `c3` shim), the disarmed control — commanding
+no level, running no law, `sup = 0`, `law_n = 0` — read
+
+```text
+   [HOLD] q=unset n_req=- n_obs=1000 law_n=0 sup=0
+          fed=203  obs_p50_us=164962  obs_p90_us=244122  obs_p99_us=306633
+```
+
+**165 ms unforced, with the hold-down provably inert.** So the sender-side
+outstanding-time distribution really is two decades above `[SUCC]`'s
+receiver-side `orig`, and §16.77.8c's feedback loop is **not** the whole
+explanation. **This is not a VM measurement and no cell claim rests on it** — it
+is a loopback shim, and it is quoted here as the instrument reading that
+identified the mechanism.
+
+**THE MECHANISM, IN THIS TREE'S OWN CODE.** The sender learns a hole exists from
+a gap report and learns it closed from the **absence** of that hole in a
+**later** report. The receiver emits those on
+`hole_nack_refresh(srtt) = (2·srtt).clamp(25 ms, 100 ms)` (`net/mod.rs:583`), so
+the observed outstanding time of a hole that closed **instantly** is not zero —
+it is the time to the next report, one refresh interval, and in expectation one
+to two of them. `2·srtt` on the `c3` shim clamps at 100 ms and `obs_p50` reads
+165 ms: **the gauge is reading the receiver's report cadence, correctly, and
+there is no reordering information below it at all.**
+
+**AND AGAINST THE MEASURED CELLS THIS IS A FINDING** (paper §16.77.8d):
+
+| cell | `2·srtt` | **refresh floor** | `orig` p50 (`[SUCC]`) | floor / p50 |
+|---|---|---|---|---|
+| `c1` | ~4 ms | **25 ms** (clamped UP) | **24.6 ms** | **1.02×** |
+| `c7` | ≥ 100 ms | **100 ms** (clamped DOWN) | 30.7 ms | **3.26×** |
+| `sc2` | ≥ 100 ms | **100 ms** | 98.3 ms | **1.02×** |
+| `c8` | 154 ms | **100 ms** | 98.3 ms | **1.02×** |
+| `c8L` | ≥ 100 ms | **100 ms** | 163.8 ms | 0.61× |
+
+**AT FOUR OF FIVE CELLS THE SENDER'S OWN RESOLUTION FLOOR IS AT OR ABOVE THE
+MEDIAN OF THE DISTRIBUTION IT IS SUPPOSED TO BE A QUANTILE OF.** Two arms whose
+commanded levels differ by less than one refresh interval command the **same
+clock** — a separability limit **(Q) does not see**, because (Q) bounds the
+sampling precision of the LEVEL and says nothing about the resolution of the
+QUANTITY.
+
+**AND `c1`'s 25 ms COINCIDENCE IS RESOLVED, IN THE DIRECTION §16.77.6 DID NOT
+GUESS.** §16.77.6 wrote down the 25.0 ms clamp rail against the 24.6 ms `orig`
+p50 **as a coincidence** and explicitly refused to claim it as the frame's
+prediction. It is neither: `TAIL_SWEEP_MIN_US` and `HOLE_NACK_REFRESH_MIN` are
+the same 25 ms, so the rail that pins the sender's timer is the same constant
+that sets the sender's estimator resolution. **The clamp appears on both sides
+of the question because one pair of undocumented constants sets both.**
+
+**THE DISPOSAL, AND IT IS NOT A LOSS.** §16.77.9's `H1` pre-committed that if
+the wiring test failed, the successor instrument would be **the receiver's own
+detection-and-report clock**, because *"the sender cannot hold down below the
+cadence at which it is told."* That was written as a contingency **before any VM
+was touched**. It is now an arithmetic fact with a table, reached **before the
+scored battery ran**, and the named quantity is `hole_nack_refresh`'s own
+`[25, 100] ms` clamp. **The sweep that has content is over the pair `(q, refresh)`
+and not over `q` at fixed refresh**, which is a design this pass produced and
+did not have to buy with 200 invocations.
+
+**NO BAR MOVED.** The pre-registration stands as committed at `6e81463`. Paper
+§16.77.8d bounds what the sender's instrument can express; it refutes no clause
+of §16.77.2, touches no number of §16.77.3 (which is taken on `[SUCC]`'s
+receiver-side quantiles), and scores nothing.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, or scores any clause of any pre-registration.**

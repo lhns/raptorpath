@@ -334,7 +334,18 @@ check_and_parse() { # name cell arm alpha cpus cpuc pingp qp
     printf '%s' "$hl" | grep -q 'gen=0' \
       || echo "W3-GEN-FAIL $name rep=$REP (the [HOLD] line is not the plain window)" >> "$OUT"
   fi
-  echo "W3HOLD $name rep=$REP q=$hq n_req=$hn (exp$want_q/$want_n)" >> "$OUT"
+  # THE OBSERVATION WINDOW, ON EVERY ARM INCLUDING THE CONTROL. `t_us` is the
+  # LAW's order statistic and exists only where a level is commanded; `obs_*` is
+  # a fixed-window description of the SAME stream and exists everywhere. The
+  # control's `obs_*` is the UNFORCED outstanding-time distribution, without
+  # which "the distribution IS long at this cell" cannot be told from "the
+  # hold-down made it long" -- the reading the first calibration could not take.
+  local o50 o90 o99 nobs
+  o50=$(printf '%s' "$hl" | grep -o 'obs_p50_us=[^ ]*' | tail -1 | sed 's/^obs_p50_us=//'); o50="${o50:-none}"
+  o90=$(printf '%s' "$hl" | grep -o 'obs_p90_us=[^ ]*' | tail -1 | sed 's/^obs_p90_us=//'); o90="${o90:-none}"
+  o99=$(printf '%s' "$hl" | grep -o 'obs_p99_us=[^ ]*' | tail -1 | sed 's/^obs_p99_us=//'); o99="${o99:-none}"
+  nobs=$(printf '%s' "$hl" | grep -o 'n_obs=[^ ]*' | tail -1 | sed 's/^n_obs=//'); nobs="${nobs:-none}"
+  echo "W3HOLD $name rep=$REP q=$hq n_req=$hn n_obs=$nobs obs_p50=$o50 obs_p90=$o90 obs_p99=$o99 (exp$want_q/$want_n)" >> "$OUT"
 
   # -- W4: THE ROUTING WITNESS ---------------------------------------------
   # `should_hold` is consulted exactly once per fire that reaches
@@ -436,7 +447,7 @@ check_and_parse() { # name cell arm alpha cpus cpuc pingp qp
   # rather than in a footnote.
   local applies=0; [ "$arm" = "CTL" ] && applies=1
 
-  echo "HOLDWITNESS {\"cell\":\"$cell\",\"arm\":\"$arm\",\"q\":\"$want_q\",\"n_req\":\"$want_n\",\"seed\":$SEED_ARG,\"rep\":$REP,\"rc\":$RC,\"mbps\":$mb,\"band\":[$lo,$hi],\"band_applies\":$applies,\"in_band\":$inband,\"lossy\":$lossy,\"hold_q\":\"$hq\",\"hold_n_req\":\"$hn\",\"hold_evals\":$hev,\"hold_sup\":$hsup,\"hold_emit\":$hemit,\"hold_law_n\":$hlaw,\"hold_fed\":$hfed,\"hold_samp_n\":$hsamp,\"fcause_n\":$fcn,\"fcause_gap_data\":$fcgap,\"fcause_other\":$fcother,\"fcause_unattr\":$fcunattr,\"succ_det\":$scdet,\"succ_res\":$scres,\"succ_orig_frac\":\"$scof\",\"rfa_lines\":$rfa_n,\"rfa_fires\":$rfa_fires,\"W1_rfa_gen\":\"$w1\",\"W2_pfrac_lines\":$w2,\"W4_retx_max\":$w4,\"W5_rack_fa\":\"$w5\"}" \
+  echo "HOLDWITNESS {\"cell\":\"$cell\",\"arm\":\"$arm\",\"q\":\"$want_q\",\"n_req\":\"$want_n\",\"seed\":$SEED_ARG,\"rep\":$REP,\"rc\":$RC,\"mbps\":$mb,\"band\":[$lo,$hi],\"band_applies\":$applies,\"in_band\":$inband,\"lossy\":$lossy,\"hold_q\":\"$hq\",\"hold_n_req\":\"$hn\",\"hold_evals\":$hev,\"hold_sup\":$hsup,\"hold_emit\":$hemit,\"hold_law_n\":$hlaw,\"hold_fed\":$hfed,\"hold_samp_n\":$hsamp,\"fcause_n\":$fcn,\"fcause_gap_data\":$fcgap,\"fcause_other\":$fcother,\"fcause_unattr\":$fcunattr,\"succ_det\":$scdet,\"succ_res\":$scres,\"succ_orig_frac\":\"$scof\",\"hold_n_obs\":\"$nobs\",\"hold_obs_p50\":\"$o50\",\"hold_obs_p90\":\"$o90\",\"hold_obs_p99\":\"$o99\",\"rfa_lines\":$rfa_n,\"rfa_fires\":$rfa_fires,\"W1_rfa_gen\":\"$w1\",\"W2_pfrac_lines\":$w2,\"W4_retx_max\":$w4,\"W5_rack_fa\":\"$w5\"}" \
     | tee -a "$OUTDIR/${TAG}-witness-s${SEED_ARG}.jsonl" >> "$OUT"
 }
 

@@ -16712,7 +16712,9 @@ ends is never fed at all. Three consequences, in order:
   the frame while a measured `rpd` below it is not explained by this bias.
   **That asymmetry is what makes §16.77.9's `H1` still falsifiable.**
 
-**AND IT IS A CONVERGENT FIXED POINT RATHER THAN A STATIC BIAS.** As the
+**AND IT IS A FIXED POINT RATHER THAN A STATIC BIAS — BUT ITS CONVERGENCE IS
+CLAIMED NOWHERE AND §16.77.8c WITHDRAWS THE CLAIM THIS PARAGRAPH ORIGINALLY
+MADE.** As the
 hold-down arms, repairs are suppressed on exactly the holes whose originals were
 coming; those holes then retire on their originals' own timing; the window's
 contents move **toward** `F` from below and `T` rises to meet it. **The bias is
@@ -16822,6 +16824,185 @@ BINARY, BEFORE THE REPAIR.** `samp_n = 569` against `n_req = 1000`, `law_n = 0`,
 be.** That is a pre-registered prediction scoring on a run that was thrown away
 for an unrelated defect, and it is recorded here rather than re-claimed later.
 
+#### 16.77.8c The FIXED POINT IS NOT KNOWN TO CONVERGE, and the control had to be given an instrument before the question could be asked
+
+**§16.77.8a CLAIMED A CONVERGENCE AND THE SECOND CALIBRATION DID NOT SHOW ONE.
+THAT CLAIM IS WITHDRAWN HERE.** It said the estimator's bias is toward zero and
+that as the hold-down arms, suppressed holes retire on their originals' own
+timing and the window moves **toward** the target **from below**. That argument
+has a direction but no bound, and it ignores the other half of the loop:
+
+```text
+   T rises  ⇒  a genuinely lost hole waits T before its repair is EMITTED
+            ⇒  that hole's own outstanding time is LONGER
+            ⇒  the window's samples are longer
+            ⇒  T rises
+```
+
+**The estimator's input is a function of its own output.** That is a fixed
+point, and nothing in §16.77.2 establishes which one it lands on or that it lands
+on any. On the repaired binary at `c1` — RTT **2 ms**, `[SUCC]` `orig` p50
+**24.6 ms**, `orig` max **102.3 ms** — the second calibration read:
+
+| arm | `n_req` | `samp_n` | `fed` | **`T`** | realized hold-down p50 / max | `sup` / `evals` |
+|---|---|---|---|---|---|---|
+| `CTL` | `-` | — | — | `-` | — | 0 / 860 |
+| `H500` | 20 | 20 | 348 | **607.5 ms** | 246 / **624 ms** | 45 519 / 46 560 |
+| `H136` | 74 | 74 | 404 | **543.2 ms** | 213 / 543 ms | 33 236 / 34 377 |
+| `H037` | 271 | 271 | 401 | **235.7 ms** | 164 / 275 ms | 11 621 / 12 736 |
+| `H010` | 1 000 | **288** | 288 | `-` (UNSCOREABLE) | — | **0** / 767 |
+
+**AND THE POINT IS THAT THIS TABLE CANNOT BE READ.** `H010` never armed, so its
+767 fires are the shipped machine's — a behavioural control that happened to
+collect 288 samples of the unforced distribution and reported no quantile of
+them. `CTL` collected nothing at all. **The one arm that defines the unforced
+outstanding-time distribution was the one arm not reading it**, so "the
+distribution IS long at this cell" and "the hold-down made it long" are
+observationally identical, and neither the feedback's existence nor its
+magnitude is decidable from any row above.
+
+**THE INSTRUMENT IS THEREFORE GIVEN TO THE CONTROL, AND IT IS OBSERVATION AND
+NOTHING ELSE.** The gauge now stamps, resolves and windows hole outstanding
+times on **every arm**, and reports
+
+```text
+   obs_p50_us , obs_p90_us , obs_p99_us      over a window of HOLD_OBS_WINDOW
+                                             = 1000 samples per path
+```
+
+* **`t_us` and `obs_*` are different objects and the line carries both.** `t_us`
+  is the LAW's order statistic at the LAW's own `N(1−q)` — what an arm
+  *commands*, absent where no level is commanded. `obs_*` is a fixed-window
+  description of the same stream — what the sender *saw*, present everywhere.
+* **`HOLD_OBS_WINDOW = 1000` is a DECLARED RESOURCE BOUND stated outside the
+  law**, not a window law: no arm reads a quantile of it as a clock, nothing in
+  the engine consults it, and it is read once at teardown over a copy. It is
+  `N(0.010)`, the largest window on §16.77.8's grid, so the control's reported
+  distribution is directly comparable with the arm the derivation names. 4 KiB
+  per path.
+* **The control's wire behaviour is unchanged, byte for byte.** `should_hold`
+  returns `false` unconditionally when `q` is absent, at every age, and
+  `disarmed_the_holddown_gate_is_inert_at_every_age` asserts exactly that while
+  also asserting the observation is live and correct.
+
+**WHAT THIS BUYS THE SWEEP, PRE-STATED.** The feedback becomes a **measured
+quantity** rather than an unfalsifiable worry:
+
+```text
+   inflation(cell, arm)  =  obs_p50(arm)  /  obs_p50(CTL)
+```
+
+both from the same gauge at the same site on paired reps. **`inflation ≈ 1`
+means the outstanding-time distribution is a property of the cell and the
+estimator is reading it; `inflation ≫ 1` means the arm is reading its own
+output.** §16.77.9 gains `H5` for it. No bar in §16.77.8's §5 or §6 moves, no arm
+is added, removed or re-levelled, and no claim of §16.77.3 or §16.77.7 is touched:
+this subsection adds a column and withdraws a convergence claim that was never
+measured.
+
+**AND THE HONEST STATEMENT OF WHAT IS NOW OPEN.** If the sweep measures a large
+inflation, then `T(q)` as specified in §16.77.0 — a quantile of a stream the
+clock itself perturbs — is **not a well-posed estimator on this machine**, and
+the successor is a stream the hold-down cannot move: the sender-observed arrival
+of an ORIGINAL for a hole **no repair was emitted for**, which §16.77.8a showed is
+empty under the shipped machine and is **not** empty under an armed arm. That is
+named here so it is a design and not a rescue.
+
+#### 16.77.8d THE REPORT-CADENCE FLOOR: the sender's clock cannot resolve finer than the receiver's report interval, and at the cleanest cell that floor sits AT the median of the distribution it is meant to quantile
+
+**THE CONTROL'S FIRST READING EXPLAINS EVERY INFLATED NUMBER IN §16.77.8b AND
+§16.77.8c, AND IT IS NOT A BUG.** On a lossy loopback with the `c3` shim, the
+disarmed control — commanding no level, running no law, holding nothing — read
+
+```text
+   [HOLD] q=unset n_req=- law_n=0 sup=0
+          fed=203  obs_p50_us=164962  obs_p90_us=244122  obs_p99_us=306633
+```
+
+**165 ms, unforced, with the hold-down provably inert.** So the sender-side
+outstanding-time distribution really is two decades above `[SUCC]`'s
+receiver-side `orig`, and the feedback loop of §16.77.8c is not the whole story.
+The reason is structural and it is in this file.
+
+**THE ARITHMETIC.** The sender learns a hole exists from a gap report, and
+learns it closed from the **absence** of that hole in a **later** report. The
+receiver emits those on its own clock:
+
+```text
+   hole_nack_refresh(srtt)  =  (2·srtt).clamp(25 ms, 100 ms)     net/mod.rs:583
+```
+
+Two consecutive reports are therefore one refresh interval apart, and the
+observed outstanding time of a hole that closed **instantly** is not zero — it
+is the time to the next report:
+
+```text
+   T_observed  ≥  one refresh interval,   and in expectation ≈ 1–2 of them
+               =   25 ms  at every cell where 2·srtt < 25 ms
+               =  100 ms  at every cell where 2·srtt > 100 ms
+```
+
+The loopback reading is exactly this: `2·srtt` on the `c3` shim clamps at
+100 ms, and `obs_p50 = 165 ms` is between one and two intervals. **The gauge is
+reading the receiver's report cadence, correctly, and there is no reordering
+information below it at all.**
+
+**AND HERE IS THE FINDING, AGAINST THE MEASURED DISTRIBUTION.** `[SUCC]`'s `orig`
+p50 per cell against the floor the sender's own observation imposes:
+
+| cell | `2·srtt` | **refresh floor** | `orig` p50 (`[SUCC]`) | floor / p50 |
+|---|---|---|---|---|
+| `c1` | ~4 ms | **25 ms** (clamped UP) | **24.6 ms** | **1.02×** |
+| `c7` | ≥ 100 ms | **100 ms** (clamped DOWN) | 30.7 ms | **3.26×** |
+| `sc2` | ≥ 100 ms | **100 ms** | 98.3 ms | **1.02×** |
+| `c8` | 154 ms | **100 ms** | 98.3 ms | **1.02×** |
+| `c8L` | ≥ 100 ms | **100 ms** | 163.8 ms | 0.61× |
+
+**AT FOUR OF FIVE CELLS THE INSTRUMENT'S OWN RESOLUTION FLOOR IS AT OR ABOVE THE
+MEDIAN OF THE DISTRIBUTION IT IS SUPPOSED TO BE A QUANTILE OF.** At `c1` the
+clamp's 25 ms LOWER rail — the same rail §16.77.6 called a coincidence against
+the 24.6 ms `orig` p50 — turns out to be the thing that **sets** the sender's
+resolution there. **The coincidence is not a coincidence and it is not the
+frame's prediction either: it is the receiver's refresh clamp appearing in the
+sender's estimator, because the same two constants set both.**
+
+**THE CONSEQUENCE FOR THE CONSTRUCTION, STATED PLAINLY.** `T(q)` is an order
+statistic of a stream whose resolution is one refresh interval. A level `q` can
+only command a `T` that the stream can express, so **the hold-down's realizable
+grid is not `[q_floor, 1)`; it is the small number of refresh intervals the
+distribution spans.** Two arms whose commanded levels differ by less than one
+interval command the **same clock**. That is a separability limit **the (Q)
+criterion does not see** — (Q) bounds the sampling precision of the LEVEL and
+says nothing about the resolution of the QUANTITY — and it is stated here, before
+the sweep, rather than discovered in its non-separations.
+
+**THIS IS THE SAME SHAPE OF DEFECT §16.68 FOUND IN RACK AND IT IS RECORDED THE
+SAME WAY.** There, a transplanted reordering window was *"refuted by its own
+arithmetic"* because its ceiling was unreachable within its own multiplier
+range. Here, a derived hold-down is bounded below by an instrument whose step is
+the size of its own domain. **Neither is refuted by a measurement of the world;
+both are refuted by their own inputs**, and both are worth more written down than
+run.
+
+**AND IT NAMES §16.77.9 `H1`'s SUCCESSOR IN ADVANCE, WHICH IS WHY THIS PASS IS
+NOT A LOSS.** `H1` pre-committed that if the wiring test failed, the next
+instrument would be **the receiver's own detection-and-report clock**, because
+*"the sender cannot hold down below the cadence at which it is told."* That was
+written as a contingency. **It is now an arithmetic fact with a table**, reached
+before the scored battery ran, and `hole_nack_refresh`'s `[25, 100] ms` clamp —
+the receiver's twin of the clamp §16.77.6 convicts — is the named quantity. The
+hold-down's own resolution is a function of it, so **a sweep of `q` at fixed
+refresh is sweeping inside one instrument step at four of five cells**, and the
+sweep that has content is over the pair.
+
+**WHAT THIS DOES NOT DO.** It does not refute §16.77.2's cost minimisation, whose
+`s(q*) = w·orig_frac·d / (δ·(1−orig_frac)·P_arq)` is a statement about the
+underlying distribution and not about the sender's view of it. It does not touch
+§16.77.3's evaluation, which is taken on `[SUCC]`'s receiver-side quantiles. It
+does not move a single bar of §16.77.8's §5 or §6. **It bounds what the sender's
+instrument can express, and that bound is now a row in the ledger instead of a
+surprise in a result.**
+
 #### 16.77.9 What falsifies this section
 
 **`H1` — THE WIRING TEST FAILS.** Realized repair emissions per detected hole do
@@ -16857,6 +17038,17 @@ is the only form in which this frame permits "BOTH REFUTED" to be said, and
 `orig_frac`'s own stated limitation is the named alternative cause: *"`orig`
 cannot separate a late original from a resent one — the wire carries no
 retransmit bit."*
+
+**`H5` — THE ESTIMATOR READS ITS OWN OUTPUT.** `obs_p50(arm) / obs_p50(CTL)`
+exceeds **2×** at three or more cells at any arm whose law ran. Then the
+outstanding-time stream is dominated by the hold-down's own delay rather than by
+the path, `T(q)` is not a well-posed estimator on this machine (§16.77.8c), and
+**no level this sweep reports is a level of the distribution §16.77.3 derives
+against.** *Falsified by:* an inflation inside `[0.5, 2]` at four of five cells,
+which would make the estimator's input a property of the cell and the whole
+construction well-posed. **This is a two-sided check on the construction's own
+premise and it costs nothing** — both terms come from the same gauge at the same
+site on paired reps.
 
 **`H4` — GOODPUT PAYS FOR IT.** The frame prices the hold-down's cost entirely in
 the latency of `(1 − orig_frac) ≈ 2 %` of holes. If goodput falls out of band at
