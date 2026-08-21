@@ -42014,3 +42014,137 @@ suppresses the `tlag` verdict).
 **Nothing in this section flips a default, adds a gate to any law, edits an
 engine law, wires a consumer, touches a clock, or scores any clause of any
 pre-registration — including this one.**
+
+---
+
+## THE τ-LAG ESTIMATOR — THE CALIBRATION AND SMOKE, DISCHARGED (2026-08-21, `feat/tlag-estimator`) — **the amendment's §9 calibration clause is COMPLETE and the scored battery is cleared to launch.** 6 invocations (5 calibration + 1 `B`-pass smoke), one binary, all five cells, seed 42, **0 aborts, `rc = 0` at 6/6, `W7` clean at 5/5 across all FIVE tokens at both endpoints, `W8` clean at 5/5.** `n = 1`. **NOTHING HERE IS A RESULT** — no clause of `S`, `B` or `C` is scored, and no number below is quoted as a measurement of anything.
+
+### 1 — THE BINARY, AND THE TREE IT CAME FROM
+
+```text
+   sha256(raptorpath)  =  45a703fab33d13139b5e6ac104fc8abf0098758de6e8751d5a89083ab612d8c6
+   cargo build --release --bin raptorpath   →   BUILD-RC = 0
+```
+
+**THE CRLF STEP WAS RUN AND VERIFIED, not assumed.** The tree shipped from the
+Windows box by `git archive` arrived with **585 files carrying CRLF** — the
+exact trap that killed the `sigb` pass's first attempt at `lib.sh` line 6 and
+let **not one invocation run**. All `.sh` / `.py` / `.rs` / `.toml` / `.md` /
+`.lock` files were converted before anything else ran, and the check the failed
+pass itself prescribed was executed: `lib.sh` reads **0 CR bytes**. The 142
+files still carrying CRLF are `.log` / `.txt` / `.json` data artefacts from
+previous passes and no harness code is among them.
+
+### 2 — ABORT-CAUSE TABLE FIRST
+
+| marker | count |
+|---|---|
+| `ABORT` (no `[GATES]` either endpoint) | **0** |
+| `ABORT-GEN-PLATEAU` | **0** |
+| `OUT-OF-BAND` | **0** — 5/5 in the committed cell band |
+| `TLAGB-DUMP-ON-FAIL` (`W8`) | **0** |
+| `W7-FAIL-CLI` / `SUBSTRATE-FAIL` / `INSTRUMENT-FAIL-*` / `TLAGB-PARSE-FAIL` | **0** |
+| `rc ≠ 0` | **0** of 6 |
+
+### 3 — HEADROOM (MEASUREMENT DISCIPLINE 16), AND THE SMOKE CLAUSE THAT MATTERS
+
+`util = tc_bytes·8 / (TRANSFER seconds × shaped capacity)`, denominator the
+**transfer wall** and never `INVOCATION_S`.
+
+| cell | xfer s | util % | headroom % | claims permitted | `tlag` max `n` (pairs) |
+|---|---|---|---|---|---|
+| `c1` | 15.88 | 22.1 | 77.9 | headroom exists | 242 |
+| `c7` | 9.58 | 92.9 | 7.1 | headroom exists | 254 |
+| `c8` | 2.23 | 83.7 | 16.3 | headroom exists | 251 |
+| `c8L` | 17.79 | 84.2 | 15.8 | headroom exists | 252 |
+| `sc2` | 9.11 | **98.3** | **1.7** | **NO-THROUGHPUT-TARGET (16c)** | 254 |
+
+**This battery writes no goodput clause, so the table licenses nothing.** It
+matters because `sc2` at 98.3 % is measuring the RTT process of a saturated
+pipe and `c1` at 22.1 % is not — a property of the **input** to the thing under
+test. Both readings reproduce the previous battery's (97.2 % / 21.1 %).
+
+**THE SMOKE CLAUSE THE AMENDMENT'S §9.2 CALLED "THE CLAUSE THAT MATTERS" IS
+DISCHARGED WITH ROOM.** `tlag_us`'s pair count reaches **242–254 at every
+cell** against the declared `UNSCOREABLE-THIN` floor of `K = 32` — a margin of
+**7.6–7.9×**. The failure mode §16.75.6 F1 named — a leg too thin to hold a
+τ-lag pair, which the amendment pre-committed would be a **REFUTATION** rather
+than a missing column — **does not occur at any cell at `n = 1`.** The gauge is
+fed, reaches a near-full ring, and is scoreable everywhere.
+
+**AND τ IS MEASURED PER LEG, WHICH IS THE CONSTRUCTION'S OWN CLAIM.** The
+per-block `rtp` the band is built on reads **2 / 8 / 35 / 163 / 12 ms** at
+`c1` / `c7` / `c8` / `c8L` / `sc2` — an **80× spread across cells.** A band at
+a fixed constant would be a different instrument at every cell; this one tracks
+each leg's own measured floor, which is what §16.75.3 rejected the two other
+τ candidates to obtain.
+
+### 4 — THE `B` PASS's OWN SMOKE, AND THE PERTURBATION IT MEASURED ON ITSELF
+
+`tlagb_bpass.sh` at `c8`, `RWM_RTT_DUMP=1`:
+
+```text
+   TLAGB-BPASS-GATES c8 dump=1 max=400000      W8, the inverse side, clean
+   TLAGB-BPASS-CAP   c8 p=0 capped=0           no truncation: the leg is scored WHOLE
+   TLAGB-BPASS-LINES c8 p=0 dumplines=84
+```
+
+**THE CHAIN PARSES END TO END, ON A REAL CAPTURE RATHER THAN A FIXTURE**, and
+that is how it was checked:
+
+```text
+   RTTDUMP-POP p=0 n=21504 rate=9086.0 span=2.37 tau=35000
+               sd=17125.9 mad=14818.6 qsp=30949.0 msd=7.0 tlag=2444.0/np21480
+               capped=0 batches=84 malformed=0
+```
+
+84 batches × 256 = **21 504 samples, 0 malformed**, reconstructed to a timeline
+and pushed through all five population functionals. **This is instrument
+evidence at `n = 1` and it is not a `B` reading of anything** — no `β` is
+computed here and no verdict is taken.
+
+**AND THE DUMP'S PERTURBATION IS MEASURED, WHICH IS WHY THE PASSES ARE
+SEPARATE.** `c8` ran at **81.1 Mbit/s with the dump ON** against **89.7 Mbit/s
+with it off** in the same session on the same binary — a **9.6 % cost on the
+sender.** The amendment's §4 predicted exactly this and separated the passes
+for exactly this reason; the driver labels the row *"NOT a goodput datum"* on
+its face. **Had the dump run on the scored invocations it would have perturbed
+the sender-side dispersion clause `S` measures, by a margin that is not small.**
+The prediction is confirmed as a design decision, not as a result.
+
+### 5 — THE TWO LOCAL GATES, RUN ON THE VM ITSELF
+
+Both are green **on the measurement box**, not only on the dev box — a gate
+that passes only where it was written is not a gate:
+
+```text
+   python3 test_tlagb_rttdump.py   →   ALL GREEN
+   python3 test_tlagb_report.py    →   GREEN  (0 failure(s))
+```
+
+**AND THE CHAIN CAUGHT A REAL DEFECT BEFORE THE BATTERY, WHICH IS WHAT A SMOKE
+IS FOR.** `tlagb_bpass.sh` gzips its megabyte-scale captures after the last
+invocation; `parse_dump` opened them as text, matched zero lines, and would
+have produced a **silently empty clause `B`** — a leg scored over nothing looks
+exactly like a leg with no dump. Found by running the chain against the real
+`c8` capture rather than a fixture, fixed by sniffing the gzip magic, and
+pinned by a new assertion. **A filename would have cost the whole of `B`.**
+
+### 6 — WHAT IS ESTABLISHED
+
+**Established.** The binary builds and runs at all five cells with 0 aborts;
+`tlag_us` is on the wire at both endpoints on every path entry of every block;
+its pair count clears the declared floor by ~8× at every cell; τ is measured
+per leg and spans 80× across cells; the raw dump parses end to end with zero
+malformed entries; `W8` is clean on both sides; and both local gates pass on
+the VM.
+
+**NOT established. Nothing about any clause of the bar.** `n = 1`, no rep-to-rep
+dispersion exists, `R_total` is undefined on this input, and **no `S`, `B` or
+`C` verdict is reachable from it.** The scored battery is a separate 80-
+invocation pass and the `B` pass a separate 5-invocation pass, and neither has
+run.
+
+**Nothing in this section flips a default, adds a gate, edits an engine law,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
