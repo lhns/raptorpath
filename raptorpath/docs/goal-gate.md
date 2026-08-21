@@ -41229,3 +41229,443 @@ not quoted here.
 
 **Nothing in this section flips a default, adds a gate, edits an engine crate,
 wires a consumer, touches a clock, or modifies the acceptance bar.**
+
+---
+
+## THE SIGMA ESTIMATOR — THE SCORED RESULT (2026-08-21, `feat/sigma-score` from main@`883fb7b`) — **ALL FOUR ESTIMATORS FAIL CLAUSE `S`, INCLUDING THE SHIPPED ONE, AND `msd` — THE ONLY ONE THAT COMES CLOSE — MISSES BY 1.44× ON THE BAR'S OWN MOST GENEROUS DOMAIN.** goal #101 **item 2 CLOSES `NEEDS-MORE`**, with the failing clause and the missing instrument named. 80 invocations, one binary, five cells, two seeds, 8 reps, **1 VOID, 0 hard aborts, `rc = 0` at 80/80, W1/W2/W4′/W5/W7 clean at 80/80.** Scored against "THE SIGMA ESTIMATOR — THE ACCEPTANCE BAR" and against nothing else. **Nothing here flips a default, adds a gate, edits an engine crate, wires a consumer, or touches a clock.**
+
+### 1 — THE VERDICT FIRST
+
+| estimator | worst leg | `R_total` | vs accept bar 6.0 | **verdict** |
+|---|---|---|---|---|
+| `sig_us` (shipped, control) | `c7` sender `p1` | **256.3** | 42.7× over | **REJECT-`S`** |
+| `rvar_us` (RFC 6298) | `c7` sender `p1` | **351.3** | 58.6× over | **REJECT-`S`** |
+| `qsp_us` (windowed quantile) | `c8L` sender `p0` | **78.6** | 13.1× over | **REJECT-`S`** |
+| `msd_us` (successive difference) | `c8L` sender `p1` | **34.6** | 5.8× over | **REJECT-`S`** |
+
+**NO CANDIDATE IS ADMISSIBLE. The pre-committed closure rule fires: item 2
+closes `NEEDS-MORE`, the bar is not softened, and no candidate is promoted on a
+partial clause.**
+
+**BOTH SEEDS REACH THE SAME VERDICT INDEPENDENTLY**, so the closure does not
+rest on one netem realisation: seed 42 gives `REJECT-S` at 326.2 / 475.0 /
+163.9 / 13.9, seed 7 at 394.3 / 505.3 / 54.1 / 24.7. Four gauges × two seeds =
+eight independent `REJECT-S` findings, and not one near-miss among them.
+
+**AND THE VERDICT IS NOT AN ARTEFACT OF THIS BATTERY'S STRICTER SCORING
+DOMAIN.** The pre-registration scored per LEG, which is stricter than the bar's
+"worst cell binds". Re-read on the bar's OWN most generous domain — the
+data-path leg of each cell, the leg its `N_cell` refers to — every gauge still
+fails:
+
+| gauge | worst DATA-PATH cell | `R_total` | fails by |
+|---|---|---|---|
+| `sig_us` | `c8L` | 86.6 | **14.4×** |
+| `rvar_us` | `c8L` | 103.9 | **17.3×** |
+| `qsp_us` | `c8L` | 78.6 | **13.1×** |
+| **`msd_us`** | **`c7`** | **8.667** | **1.44×** |
+
+**`msd` IS THE ONLY CANDIDATE THAT GETS WITHIN AN ORDER OF MAGNITUDE OF THE
+BAR, AND IT STILL MISSES.** 1.44× is a near miss, and this section refuses to
+round it. It is reported as a near miss and scored as a fail.
+
+### 2 — ABORT-CAUSE TABLE FIRST
+
+| marker | count | rows affected |
+|---|---|---|
+| `ABORT` (no `[GATES]` either endpoint) | **0** | — |
+| **`ABORT-GEN-PLATEAU`** | **1** | `c7` seed 42 rep 1, 28.767 Mbit/s — **VOID** |
+| `OUT-OF-BAND` (retained as RESULT) | 3 | `c8L` s42 r4, `c8L` s7 r2, `c7` s7 r6 |
+| `SUBSTRATE-FAIL` / `INSTRUMENT-FAIL-*` / `SIGB-PARSE-FAIL` / `W7-FAIL` | **0** | — |
+| `rc ≠ 0` | **0** of 80 | — |
+
+**THE VOIDED INVOCATION IS IN NO DENOMINATOR, AND MAKING THAT TRUE REQUIRED A
+FIX.** §8 of the pre-registration says an aborted invocation is *"no datum …
+and NOT in any denominator"*, and the report **printed the abort marker and
+then pooled that invocation's readings anyway.** The rule was written and not
+implemented, and the scored run's first abort is what exposed it. `R_total` is
+a pooled quantile, so one VOID rep at `c8` — where a leg carries ~9 readings —
+is ~6 % of the sample. The void set is now built from the **witness rows**, not
+the marker text, because the marker line carries no seed and two seeds pool
+here; a marker matched on cell and rep alone would have voided the innocent
+seed's rep too. `test_sigb_report.py` asserts the exclusion against a ledger
+whose voided rep carries a wildly different value.
+
+**THE CONFIGURATION WITNESS FIRED, AND WHAT IT CAUGHT WAS NOT GENERATION.**
+`c7` s42 r1 read 28.8 Mbit/s, inside the pre-registered generation plateau of
+26.8–34.1. But **`W1` reads `gen=0`, there are zero `[PFRAC]` lines, and its
+`retx` is 13 648 — the HIGHEST of any `c7` rep in the battery** (cell range
+4 660–13 648). Generation was definitively off; this was a heavy-loss,
+heavy-retransmit rep running at a third of the cell's median 163.0 Mbit/s.
+
+**IT IS VOIDED ANYWAY, AND THE BAND IS RECORDED AS THE DEFECTIVE PART.** §8
+made the plateau a hard abort with no witness-override clause, so the strict
+reading of my own pre-registration voids the row — and voiding is the
+conservative action, so it is taken without argument. But the finding is that
+**a goodput band cannot discriminate a configuration**: generation-on and
+"this rep lost badly and retransmitted hard" both land at ~30 Mbit/s, and only
+`W1`/`W2` tell them apart. The α-sweep's design — witnesses primary, band
+secondary — was right, and this battery's §8 hardening of the band into an
+abort was wrong. **Recorded as a specification defect against §8**, not
+repaired after the fact, and the affected row stays void.
+
+**THE THREE `OUT-OF-BAND` REPS HAVE THE SAME CAUSE AND ARE RETAINED, EXACTLY AS
+PRE-REGISTERED.** `c8L` s42 r4 (36.94, `retx` 12 041) and `c8L` s7 r2 (36.98,
+`retx` 9 974) are the two slowest `c8L` reps and carry the two highest `retx`
+counts in that cell; `c7` s7 r6 (118.3) likewise. All are `W1`/`W2` clean, all
+sit outside the plateau, all are heavy-loss reps. They are **results**, not
+aborts, and they are retained — which is the honest direction, since a
+high-dispersion rep is exactly the rep an estimator battery must not discard.
+
+### 3 — WITNESS AND CONFIGURATION TABLES, AT FULL `n`
+
+| cell | `n` | `mean_mbps` lo / median / hi | in band | plateau | `W1≠0` | `W2>0` | `W7` misses |
+|---|---|---|---|---|---|---|---|
+| `c1` | 16 | 179.6 / 192.3 / 206.4 | 16/16 | 0 | 0 | 0 | **0** |
+| `c7` | 16 | 28.8 / 163.0 / 170.5 | 14/16 | **1** | 0 | 0 | **0** |
+| `c8` | 16 | 78.9 / 90.0 / 98.4 | 16/16 | 0 | 0 | 0 | **0** |
+| `c8L` | 16 | 36.9 / 88.3 / 91.1 | 14/16 | 0 | 0 | 0 | **0** |
+| `sc2` | 16 | 86.4 / 86.9 / 88.9 | 16/16 | 0 | 0 | 0 | **0** |
+
+| cell | `W4′` max `retx` | `W5` `[RACK]` fired |
+|---|---|---|
+| `c1` | 593 – 1 376 | 595 – 1 385 |
+| `c7` | 4 660 – 13 648 | 4 704 – 13 648 |
+| `c8` | 586 – 1 153 | 596 – 1 215 |
+| `c8L` | 4 618 – 12 041 | 4 628 – 12 192 |
+| `sc2` | 2 828 – 3 514 | 2 947 – 3 542 |
+
+**`W7` IS CLEAN AT 80/80 AND IT IS THE GATE THAT MATTERS HERE.** All four gauge
+tokens carry their `/n` counts on every path entry of every `[DIAG]` block at
+both endpoints, with zero group misses across the whole battery. The unit under
+test demonstrably executed at every invocation, at every leg. `W1` and `W2` are
+clean at 80/80, so the plain-window seat is established by direct engine echo
+and not by inference from a goodput number.
+
+**HEADROOM (MEASUREMENT DISCIPLINE 16), every cell, every invocation:**
+
+| cell | xfer s | util % | headroom % | claims permitted |
+|---|---|---|---|---|
+| `c1` | 16.64 | 21.1 | 78.9 | headroom exists |
+| `c7` | 9.80 | 91.0 | 9.0 | headroom exists |
+| `c8` | 2.23 | 85.7 | 14.3 | headroom exists |
+| `c8L` | 18.17 | 83.3 | 16.7 | headroom exists |
+| `sc2` | 9.21 | **97.2** | **2.8** | **NO-THROUGHPUT-TARGET (16c)** |
+
+This battery writes no goodput clause, so the table licenses nothing. It
+matters because `sc2` at 97.2 % utilisation is measuring the RTT process of a
+saturated pipe and `c1` at 21.1 % is not — a property of the **input** to the
+thing under test.
+
+### 4 — CLAUSE `C`: PASSES FOR EVERY GAUGE AT EVERY CELL
+
+`n_warm ≤ 0.05 × N_cell`, scored per cell on the data-path count as the bar
+writes it (the calibration section §4 records why, and that the per-leg gloss
+was withdrawn):
+
+| cell | `N_cell` | `C2` bar | `sig`/`rvar` (16) | `qsp` (256) | `msd` (255) |
+|---|---|---|---|---|---|
+| `c1` | 338 279 | 16 914 | ok | ok | ok |
+| `c7` | 120 612 | 6 031 | ok | ok | ok |
+| **`c8`** | **21 281** | **1 064** | ok | ok | ok |
+| `c8L` | 174 659 | 8 733 | ok | ok | ok |
+| `sc2` | 85 925 | 4 296 | ok | ok | ok |
+
+**`C` IS NOT THE BLOCKER AND NEVER WAS.** `c8` binds exactly as pre-registered,
+at a measured `N = 21 281` against the primitives table's remembered ≈17 660,
+and the window class clears its bar there by 4.2×. **Every candidate is
+converged and usable for the run. The problem is not that they take too long to
+warm up; it is what they read once warm.**
+
+### 5 — CLAUSE `S` IN FULL, AND THE SEAT ASYMMETRY IT EXPOSES
+
+`R_total = p95/p05` over pooled readings, both seeds, per leg. `sup/inf` is the
+disclosure column and is **not** the accept/reject statistic.
+
+**SENDER SEAT (where the clock is):**
+
+| cell / leg | reads | `sig` | `rvar` | `qsp` | `msd` |
+|---|---|---|---|---|---|
+| `c1` `p0` | 788 | 81.8 | 93.1 | 14.1 | **4.75** ✓ |
+| `c7` `p0` | 594 | 60.5 | 87.6 | 14.6 | 8.67 |
+| `c7` `p1` | 595 | **256.3** | **351.3** | 14.2 | 8.33 |
+| `c8` `p0` | 126 | 30.8 | 29.9 | 12.5 | **5.75** ✓ |
+| `c8` `p1` | 102–136 | 89.5 | 125.3 | 10.5 | 16.5 |
+| `c8L` `p0` | 1 312 | 86.6 | 103.9 | **78.6** | **4.60** ✓ |
+| `c8L` `p1` | 1 147–1 324 | 119.6 | 94.7 | 35.6 | **34.6** |
+| `sc2` `p0` | 543 | 11.3 | 15.8 | 5.85 ✓ | **3.50** ✓✓ |
+
+**RECEIVER SEAT (disclosure — the clock does not live here):**
+
+| cell / leg | reads | `sig` | `rvar` | `qsp` | `msd` |
+|---|---|---|---|---|---|
+| `c1` `p0` | 791–987 | 4.69 ✓ | 5.11 ✓ | 1.74 ✓✓ | 2.55 ✓✓ |
+| `c7` `p0` | 378 | 4.25 ✓ | 5.15 ✓ | — | — |
+| `c7` `p1` | 348 | 3.50 ✓✓ | 3.81 ✓ | — | — |
+| `c8` `p0` | 38 | 42.1 | 47.8 | — | — |
+| `c8` `p1` | 0 | — | — | — | — |
+| `c8L` `p0` | 80–1 099 | 110.3 | 123.5 | 5.56 ✓ | 2.25 ✓✓ |
+| `c8L` `p1` | 131 | 18.9 | 17.7 | — | — |
+| `sc2` `p0` | 452 | 15.1 | 17.0 | — | — |
+
+(✓ = clears 6.0; ✓✓ = clears 3.5; — = UNSCOREABLE-NO-SAMPLE, the window never
+filled at that leg.)
+
+**THE SEAT ASYMMETRY CONFIRMS §16.74.5 REQUIREMENT 3 ON THE WIRE, AND IT IS
+NOT UNIFORM — WHICH IS THE MORE INTERESTING HALF.** At `c1` and `c7` the
+shipped `sig_us` **passes the bar at the receiver and fails it at the sender by
+14–73×**, on the same cells, in the same runs, from the same code:
+
+```text
+   c1     sender 81.8   receiver 4.69    17.4x
+   c7 p0  sender 60.5   receiver 4.25    14.2x
+   c7 p1  sender 256.3  receiver 3.50    73.1x
+```
+
+At `c8`, `c8L` and `sc2` **both** seats fail (receiver 42.1 / 110.3 / 15.1), so
+the receiver seat is not simply the quiet one. **An estimator qualified at one
+seat is not qualified at the other — measured, not argued — and which seat is
+better is itself cell-dependent.**
+
+**AND THE WINDOW CLASS CANNOT BE MEASURED AT THE RECEIVER OUTSIDE `c1` AND
+`c8L`'s `p0`.** Its `N` (5–1 099 samples per rep) never reaches `L = 256` at the
+other legs, so `qsp`/`msd` report **UNSCOREABLE-NO-SAMPLE** there. That is the
+honest verdict — the gauge was not measured, rather than measured and found
+wanting — and it is why `qsp` and `msd` have 10 scoreable legs against
+`sig`/`rvar`'s 15.
+
+### 6 — THE SAMPLING-RATE ROW: `msd`'s ADVANTAGE IS PARTLY RATE, AND THE POOLED CORRELATION HIDES IT
+
+| cell | seat | leg | samples/s | `msd` p50 | `sig` p50 | `msd`/`sig` | **`msd` `R_total`** |
+|---|---|---|---|---|---|---|---|
+| `c1` | cli | `p0` | 20 324 | 9 | 79 | 0.114 | **4.75** |
+| `c7` | cli | `p0` | 12 305 | 14 | 523 | 0.027 | 8.67 |
+| `c8L` | cli | `p0` | 9 612 | 9 | 496 | 0.018 | **4.60** |
+| `c8` | cli | `p0` | 9 559 | 8 | 581 | 0.014 | **5.75** |
+| `sc2` | cli | `p0` | 9 334 | 12 | 487 | 0.025 | **3.50** |
+| `c7` | cli | `p1` | 8 913 | 14 | 511 | 0.027 | 8.33 |
+| **`c8`** | cli | `p1` | **1 762** | 54 | 2 817 | 0.019 | **16.5** |
+| **`c8L`** | cli | `p1` | **581** | 114 | 39 681 | 0.003 | **34.6** |
+| `c8L` | srv | `p0` | 23.9 | 1 256 | 31 440 | 0.040 | **2.25** |
+| `c1` | srv | `p0` | 77.7 | 238 | 2 614 | 0.091 | **2.55** |
+
+```text
+   Spearman, all 10 scoreable legs        rho = +0.212
+   Spearman, the 8 SENDER legs alone      rho = -0.548
+```
+
+**THE POOLED CORRELATION IS ≈0 AND IT IS MEANINGLESS, BECAUSE IT MIXES TWO
+SEATS WHOSE RATES BARELY OVERLAP AND WHOSE ORDERINGS RUN OPPOSITE WAYS.** The
+sender runs at kHz and the receiver at tens of Hz; a rank correlation over a
+bimodal predictor describes the mixture, not either seat. **Within the sender
+seat the ordering is clear and it is the direction the local pass predicted:
+`rho = −0.548`, lower sample rate → WORSE `R_total`, and the two lowest-rate
+sender legs (581 and 1 762 samples/s) are the two worst legs in the battery
+(34.6 and 16.5).** Both are the slow leg of an asymmetric dual.
+
+**SO §4's PRE-STATED FALSIFIER FIRES, PARTLY.** *"If `msd`'s advantage tracks
+the sample RATE rather than the CELL, it is an artefact."* It tracks the rate
+**within the sender seat**, where every one of `msd`'s failures lives — and the
+failures are exactly at the sparse legs. It does **not** track the rate across
+seats: the receiver legs run 400× slower than the sender's and are `msd`'s
+BEST legs (2.25, 2.55). **`msd`'s stability is therefore not a pure artefact of
+fast sampling, and it is not a pure property of the link either.** No verdict
+is taken from `rho`; the per-leg clause-`S` verdicts bind, and they fail.
+
+### 7 — CLAUSE `B`: EVERY ESTIMATOR, INCLUDING THE SHIPPED ONE, READS 30–90× BELOW THE INDEPENDENT PROBE
+
+The probe was clean everywhere: censoring **0.0–8.16 %**, no leg over
+`latt_probe`'s 20 % contract bar, and `P90` structurally alive at every leg (no
+leg over 10 %). So clause `B` is scoreable, and at the sender seat it says:
+
+| cell | probe `sd` | `sig` p50 | **`β_sig`** | `β_rvar` | `β_qsp` | `β_msd` |
+|---|---|---|---|---|---|---|
+| `c1` `p0` | 174.7 µs | 79 | **0.452** | 0.412 | 5.313 | 0.180 ⚠ |
+| `c7` `p0` | 23 869 µs | 523 | **0.022** | 0.019 | 0.157 | 0.0007 ⚠ |
+| `c7` `p1` | 22 826 µs | 502 | **0.022** | 0.019 | 0.160 | 0.0007 ⚠ |
+| `c8` `p0` | 41 402 µs | 643 | **0.016** | 0.015 | 0.094 | 0.0022 ⚠ |
+| `c8` `p1` | 85 061 µs | 2 828 | **0.033** | 0.031 | 0.271 | 0.0036 ⚠ |
+| `c8L` `p0` | 38 997 µs | 463 | **0.012** | 0.011 | 0.150 | 0.0030 ⚠ |
+| `c8L` `p1` | 65 584 µs | 48 346 | **0.737** ✓ | 0.702 ✓ | 6.201 | 0.035 ⚠ |
+| `sc2` `p0` | 19 477 µs | 502 | **0.026** | 0.024 | 0.298 | 0.0057 ⚠ |
+
+(✓ = inside `B`'s `[0.68, 1.47]`, recorded as NOT-SHOWN-BIASED and never as
+unbiased. ⚠ = CONFOUNDED, see below.)
+
+**SEVEN OF EIGHT SENDER LEGS ARE `B`-REJECT FOR `sig_us`, `rvar_us` AND
+`qsp_us` — AND THE BAR'S ASYMMETRY MAKES THOSE REJECTS DOUBLY SAFE.** The bar
+pre-committed that the probe's dispersion is a **lower** bound on the ack
+path's, so a `β` scored against it **understates** how far a candidate reads
+below the truth. Every `β` here is far below 1, so the true under-reading is
+worse than the number shown. **Clause `B` can REJECT and cannot ACQUIT, and
+here it rejects.**
+
+**`msd`'s `β` IS MARKED CONFOUNDED AT 8/8 AND TAKES NO VERDICT**, exactly as
+§5 pre-committed before the run: the probe samples at 20 Hz and the sender at
+kHz, and `msd` is measurably rate-dependent, so the comparison is not
+like-for-like in the one axis `msd` depends on. **`msd` therefore could not
+have reached ACCEPT in this battery even had it cleared `S`** — which it did
+not, so the point is moot and is recorded only because it was pre-registered.
+
+**AND THE MAGNITUDE IS A FINDING ABOUT THE REFERENCE THAT MUST BE STATED.** A
+uniform 30–90× gap across **all four** gauges, including the estimator this
+tree has shipped and trusted for its whole history, is not four independent
+biases; it is one property of the comparison. `latt_probe.py`'s own docstring
+names it: the probe measures *"delivered round-trip time for an unrelated flow
+… through the WHOLE shaped path — netem's fixed delay, its jitter, its rate
+serialization, ITS queue, **and our own bytes sitting in front of the probe**"*,
+while `sig_us` measures the sender's smoothed estimate of its own path. **These
+are different quantities and the bar knowingly chose the probe as the reference
+anyway**, with `B` made REJECT-only for exactly this reason. The rejects stand
+as pre-registered. **But clause `B`'s reference is now the part of the bar most
+in need of scrutiny**, and no future pass should read a `β` from this
+instrument as though the two quantities were commensurable.
+
+### 8 — WHAT SHOULD FEED THE CLOCK, IN PLAIN LANGUAGE
+
+**Nothing here is ready to feed the clock, and the honest answer is that the
+tree still does not have an admissible estimator.** That is the result.
+
+But the measurement is not empty, and it points in one direction. **`msd_us` —
+the median of successive RTT differences — has the lowest `R_total` of the four
+at 7 of 8 sender legs**, and its worst leg is **2.3× better than `qsp`'s worst,
+7.4× better than `sig_us`'s and 10.2× better than `rvar`'s** (34.6 against
+78.6 / 256.3 / 351.3). On the data path the same ordering holds with more room:
+8.667 against 78.6 / 86.6 / 103.9, a **9–12× margin over every alternative.**
+It is also the only candidate whose failures are confined to two identifiable
+legs rather than spread across the battery. **The one exception is worth
+naming: at `c8`'s slow leg `qsp` reads 10.5 against `msd`'s 16.5** — the single
+sender leg where the quantile gauge is steadier, and it is a sparse leg, which
+is consistent with the rate story below rather than against it.
+The local pass predicted this and named the
+mechanism: the dominant term in the shipped estimator's noise is not the square
+and not the short memory, it is **the lagging `srtt` reference**. Across a level
+shift `srtt` trails by about eight samples and every `rtt − srtt` in that window
+is a step height rather than a spread. Successive differencing cancels a level
+shift exactly. The VM battery confirms the direction on real shaped cells and
+on both seats.
+
+**Two things block it, and both are specific.**
+
+First, **`msd` fails on sparse legs.** Its two failures — `c8L`'s slow leg at
+581 samples/s and `c8`'s at 1 762 — are the two thinnest sender legs in the
+battery, and within the sender seat its `R_total` tracks the sampling rate at
+`rho = −0.548`. A dispersion measured at a lag of one inter-sample interval
+depends on how often you sample, and the sample rate is a property of the
+traffic, not of the link. **Any successor must either be rate-invariant by
+construction (a fixed-TIME lag rather than a fixed-SAMPLE lag is the obvious
+candidate and is not built here) or must carry a rate-dependent correction with
+its own provenance.**
+
+Second, **nobody can currently say whether `msd` is measuring the right
+quantity at all.** Clause `B` exists precisely to catch an estimator that is
+stable because it measures something smaller, and for `msd` clause `B` could
+not be evaluated: the only independent latency instrument this tree owns runs
+at 20 Hz, and comparing a one-sample-lag statistic across a 500× sampling-rate
+gap is not a comparison. **The missing instrument is a delivered-latency probe
+at the sender's own sample rate.** Until it exists, `msd`'s 90–100× level gap
+against `sig_us` is unexplained, and "unexplained" is not "fine".
+
+**What is genuinely settled:** the shipped `sig_us` is not merely imperfect, it
+is **42.7× outside a bar written to be generous**, and its own dispersion
+exceeds the entire dynamic range of the `k(α)` it multiplies at every sender
+leg of every cell. `rvar_us` — the RFC 6298 construction, i.e. what most of the
+internet uses — is **worse**, not better. The clock family `W = mean + k(α)·σ̂`
+cannot be instantiated on either.
+
+### 9 — ITEM 2's CLOSING LINE, AND WHAT ITEM 3 MAY AND MAY NOT DO
+
+> **goal #101 item 2 — CLOSED, `NEEDS-MORE`.** The acceptance bar was
+> pre-registered before any candidate existed and scored literally against 80
+> VM invocations at five cells and two seeds. **All four estimators fail clause
+> `S`**: `sig_us` 256.3, `rvar_us` 351.3, `qsp_us` 78.6, `msd_us` 34.6, against
+> an accept bar of 6.0, with the worst leg binding as pre-registered — and all
+> four still fail on the bar's own most generous domain (86.6 / 103.9 / 78.6 /
+> **8.667**). Clause `C` passes for every gauge at every cell; clause `B`
+> rejects `sig_us`, `rvar_us` and `qsp_us` at seven of eight sender legs and is
+> **UNSCOREABLE for `msd_us`** for a pre-registered reason. **The failing
+> clause is `S`. The nearest candidate is `msd_us`, at 1.44× over the bar on
+> the data path. The two named blockers are its sampling-rate dependence and
+> the absence of a delivered-latency probe at the sender's sample rate.**
+> §16.74.5's precondition (E) remains unmet, on the plain-window seat, by every
+> estimator this tree has.
+
+**ITEM 3 — THE α-SWEEP RE-RUN — IS BLOCKED, AND THE ARGUMENT IS THE BAR'S OWN
+TEXT, NOT CONVENIENCE.**
+
+The coordinating question was what to do if an estimator came out
+ADMISSIBLE-ON-`S` with `B` unscoreable. **That case did not arise** — no
+estimator is admissible on `S`. But the licensing question still has to be
+answered against what *did* happen, and the answer is no, for two independent
+reasons:
+
+1. **§16.74.6's `P1` HAS NO CELL TO STAND ON.** `P1` reads: *"Re-running the
+   α-sweep unchanged on an estimator satisfying (E) separates the extreme pair
+   at the cells where (E) holds **and at no cell where it fails**."* It is a
+   **two-sided** falsifier and it needs both sides. `R_total > 18.24` — the
+   k-ratio, i.e. (E) itself — at **every sender leg of every cell for
+   `sig_us`, `rvar_us` and `qsp_us`**, and for `msd_us` at its two failing
+   legs. There is no cell where (E) holds with margin for any candidate, so
+   the "holds" side of `P1` is empty and the prediction **cannot be evaluated,
+   let alone falsified**. A re-run would produce non-separation everywhere and
+   that outcome is uninformative: it is what the model already predicts when
+   (E) fails.
+2. **THE ONE READING THAT WOULD LICENSE A RE-RUN IS A TIER THE BAR CONSIDERED
+   AND DECLINED, BEFORE ANY DATA EXISTED.** `msd` on the data path alone reads
+   8.667, which is under the k-ratio of 18.24 — so the extreme pair `Q002` /
+   `Q400` would formally separate there. But 8.667 lands in the bar's **`≤ 10.0`
+   row**, which the bar's own §3 table describes as *"the ceiling the Hartley
+   factor alone permits. **One-witness separation**"* — and the bar explicitly
+   chose 6.0 instead, to get *"three independent witnesses per cell rather than
+   one"*. **Adopting the ≤ 10.0 tier now, because it is the one the data
+   happens to clear, is choosing a bar by the data it is scored on.** That is
+   the single thing the pre-registration exists to prevent, and it is refused.
+
+**WHAT IS LICENSED INSTEAD, AND IT IS NOT A SWEEP.** The unblocking work is
+instrument work, and the battery names it precisely: (a) a **rate-invariant
+successive-difference estimator** — a fixed-TIME lag rather than a
+fixed-SAMPLE one — which addresses `msd`'s only measured failure mode and is a
+formula, so ADR-0070 requires it in the paper before any code; and (b) a
+**delivered-latency probe at the sender's own sample rate**, without which
+clause `B` cannot be evaluated for any successive-difference estimator ever.
+**Neither is built here, and no route decision, default flip or clock change
+follows from this section.** `RWM_QUANTILE_CLOCKS` stays OFF and
+REFUTED-STANDING; the shipped clamp stays convicted and unreplaced.
+
+### 10 — WHAT IS AND IS NOT ESTABLISHED
+
+**Established.** All four estimators fail clause `S` at the plain-window seat,
+on 80 invocations, five cells, two seeds, with both seeds reaching the verdict
+independently and the verdict invariant to the choice of scoring domain.
+Clause `C` passes everywhere. The estimator's own dispersion differs by 55–70×
+between the sender and receiver seats of the same machine on the same runs,
+which is §16.74.5 requirement 3 measured rather than argued. `msd`'s `R_total`
+tracks the sampling rate within the sender seat at `rho = −0.548`, and its two
+failures are its two sparsest legs. Every gauge reads 30–90× below the
+independent delivered-latency probe at every shaped cell. The generation
+plateau band cannot discriminate a configuration from a heavy-loss rep.
+
+**NOT established.** Whether any of these estimators would pass at the
+**generation seat** — it was not run, and requirement 3 forbids transporting
+the verdict. Whether `msd`'s 90–100× level gap against `sig_us` reflects a real
+difference in the quantity measured or a bias — **clause `B` could not be
+evaluated for it and this section does not guess**. Whether a rate-invariant
+variant of `msd` would clear the bar; it does not exist. Whether the probe is
+the right reference for clause `B` at all — §7 raises it and does not settle
+it. Nothing about routes (b) or (d), which are neither chosen, advanced nor
+refuted.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or modifies the acceptance bar it is scored
+against.**
+
+**Artifacts.** Ledgers `raptorpath/docs/l1-raw/sigb-s{42,7}.log` (2.8 MB, every
+gauge emission of every block of every rep, warm-up included and `-` preserved);
+scored report `sigb-report.txt`; witness ledgers `sigb-witness-s{42,7}.jsonl`;
+calibration `sigb-calib-s42.log` + `sigb-calib-report.txt`; session era
+`sigb-all-era.txt`. VM (10.1.5.16): per-run client/server/qdisc/ping captures
+`/home/vibe/sigb/diag/` (16 MB), tarball `/home/vibe/sigb-artifacts.tar.gz`.
+Binary **sha256 `5f87359e0ffe6d014fb87efbd92f96177254af27fc8bc26c90143cb1069f0781`**,
+built from the engine tree at main@`2a1719a`. Battery wall 2026-08-20T23:21:26Z
+→ 23:42:22Z (21 m). VM left at **0 `raptorpath` processes, 0 `rp-*` namespaces,
+`ens18` untouched, lock RELEASED**.

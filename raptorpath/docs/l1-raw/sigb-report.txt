@@ -1,0 +1,436 @@
+==============================================================================
+THE ESTIMATOR BATTERY — SCORED AGAINST 'THE SIGMA ESTIMATOR — THE
+ACCEPTANCE BAR' AND AGAINST NOTHING ELSE.
+ledgers: /home/vibe/sigb/sigb-s42.log, /home/vibe/sigb/sigb-s7.log
+bars: S accept R_total<=6.0, prefer <=3.5 (k-ratio 18.239) | B accept [0.68,1.47], reject outside [0.50,2.00] | C n_warm<=5% N
+warm-up (clause C1, applied by THIS parser): sig>=16(EWMA) rvar>=16(EWMA) qsp>=256(window) msd>=255(window)
+==============================================================================
+
+## 1 — ABORTS AND WITNESSES, BEFORE ANY STATISTIC
+
+  4 abort/fail marker(s):
+    ABORT-GEN-PLATEAU c7 rep=1 mbps=28.767 (26.8-34.1 = generation leaked in; row VOID)
+    OUT-OF-BAND c8L rep=4 mbps=36.943 band=[45,95] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c8L rep=2 mbps=36.98 band=[45,95] (RESULT, not an abort — cause to be named)
+    OUT-OF-BAND c7 rep=6 mbps=118.256 band=[140,180] (RESULT, not an abort — cause to be named)
+
+  VOIDED INVOCATIONS — dropped from EVERY container before any
+  statistic below, per §8: an aborted invocation is no datum and is NOT
+  in any denominator.
+    VOID c7 seed=42 rep=1
+  1 invocation(s) voided. Their gauge readings, probe rows and
+  meta rows are ABSENT from clause S, clause B and the rate row.
+
+  80 invocation(s) with a witness row.
+    W1       clean
+    W2       clean
+    W4       clean
+    W5       clean
+    W7       clean
+    PLATEAU  FAIL at 1: c7-s42-r1 mbps=28.767
+
+  W7 is THIS BATTERY'S OWN reachability gate: all four gauge tokens
+  with their /n counts on every path entry of every [DIAG] block, both
+  endpoints. A miss is the MEASUREMENT failing, not a column absent.
+
+  HEADROOM, from the qdisc capture on EVERY cell and EVERY invocation
+  — the omission discipline 16 exists to prevent. The denominator is
+  the TRANSFER wall, NEVER the invocation wall (which runs 1.12-2.11x
+  the transfer and read c7 at 77.6%% when the cell was at 96.9%%).
+
+    cell     shaped bps   xfer_s  INVOC_S    util %  headroom %   claims permitted
+    c1       1000000000    16.64       19      21.1        78.9   headroom exists
+    c7        200000000      9.8       12      91.0         9.0   headroom exists
+    c8        120000000     2.23        4      85.7        14.3   headroom exists
+    c8L       120000000    18.17       21      83.3        16.7   headroom exists
+    sc2       100000000     9.21       11      97.2         2.8   NO-THROUGHPUT-TARGET — headroom < 5% (discipline 16c)
+
+  THIS BATTERY WRITES NO GOODPUT CLAUSE ANYWHERE, so the headroom
+  table cannot license one. It is here because discipline 16 requires
+  it on every cell of every pass, and because a cell running at its
+  ceiling produces a DIFFERENT RTT sample process from one that is not
+  — which is a property of the estimator's INPUT and therefore of the
+  thing under test.
+
+## 2 — CLAUSE C: IS THE ESTIMATOR USABLE FOR THE RUN, NOT MERELY AT
+##     ITS END?  n_warm <= 5% x N_cell, from the RECORDED n counts.
+
+  SCORED — C2 AS THE BAR WRITES IT: per CELL, on the cell's DATA-PATH
+  RTT-sample count (the leg with the most samples, which is how the
+  data path identifies itself in this tree).
+
+  cell    N_cell (data)     C2 bar   per class
+  c1             338279      16914   sig=ok rvar=ok qsp=ok msd=ok
+  c7             120612       6031   sig=ok rvar=ok qsp=ok msd=ok
+  c8              21281       1064   sig=ok rvar=ok qsp=ok msd=ok
+  c8L            174659       8733   sig=ok rvar=ok qsp=ok msd=ok
+  sc2             85925       4296   sig=ok rvar=ok qsp=ok msd=ok
+
+  Clause C2's binding cell was pre-registered as c8 at N ~ 17 660,
+  giving n_warm <= 883. The table above uses THIS battery's own counts.
+
+  DISCLOSURE — THE PER-LEG COUNTS, WHICH ARE NOT A CLAUSE-C VERDICT.
+  A leg whose N cannot reach a gauge's own n_warm never produces a
+  post-warm-up reading there, and clause S reports that as
+  UNSCOREABLE-NO-SAMPLE — the honest statement, since the gauge was not
+  measured at that leg rather than measured and found wanting.
+
+  cell   site  path  N (max n)    5% of N   window class reachable?
+  c1     cli   p0       338279      16914   qsp=yes msd=yes
+  c1     srv   p0         1293         65   qsp=yes msd=yes
+  c7     cli   p0       120612       6031   qsp=yes msd=yes
+  c7     cli   p1        87366       4368   qsp=yes msd=yes
+  c7     srv   p0          181          9   qsp=NO msd=NO
+  c7     srv   p1          195         10   qsp=NO msd=NO
+  c8     cli   p0        21281       1064   qsp=yes msd=yes
+  c8     cli   p1         3923        196   qsp=yes msd=yes
+  c8     srv   p0           42          2   qsp=NO msd=NO
+  c8     srv   p1           12          1   qsp=NO msd=NO
+  c8L    cli   p0       174659       8733   qsp=yes msd=yes
+  c8L    cli   p1        10559        528   qsp=yes msd=yes
+  c8L    srv   p0          435         22   qsp=yes msd=yes
+  c8L    srv   p1           80          4   qsp=NO msd=NO
+  sc2    cli   p0        85925       4296   qsp=yes msd=yes
+  sc2    srv   p0          140          7   qsp=NO msd=NO
+
+## 3 — CLAUSE S: R_total = p95/p05 OVER THE POOLED READINGS OF ALL
+##     REPS AT ONE CELL, ONE LEG. sup/inf is the DISCLOSURE column and
+##     is NOT the accept/reject statistic (§2: it grows with rep count).
+
+  --- c1  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         788       16       79     1308     81.75    1687.4  FAIL
+      rvar        788       12       72     1117    93.083  1611.333  FAIL
+      qsp         788      348     1638     4904    14.092   179.894  FAIL
+      msd         788        4        9       19      4.75      13.5  PASS-ACCEPT
+  --- c1  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         987     1339     2614     6284     4.693     22.09  PASS-ACCEPT
+      rvar        987      993     2164     5074      5.11    50.479  PASS-ACCEPT
+      qsp         791     3514     4480     6098     1.735     2.979  PASS-PREFER
+      msd         791      148      238      377     2.547    10.738  PASS-PREFER
+  --- c7  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         595       80      523     4838    60.475    3239.2  FAIL
+      rvar        595       52      439     4557    87.635  4047.545  FAIL
+      qsp         594     1549     5362    22541    14.552   151.178  FAIL
+      msd         594        6       14       52     8.667      41.0  FAIL
+  --- c7  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         595       74      511    18966   256.297  3253.125  FAIL
+      rvar        595       53      445    18619   351.302    4126.5  FAIL
+      qsp         595     1780     5004    25330     14.23     96.03  FAIL
+      msd         595        6       14       50     8.333      29.4  FAIL
+  --- c7  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         378     8825    19699    37482     4.247    23.827  PASS-ACCEPT
+      rvar        378     6862    16437    35361     5.153      28.0  PASS-ACCEPT
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+  --- c7  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         348    11286    23357    39545     3.504    11.238  PASS-ACCEPT
+      rvar        348     8687    18854    33085     3.809    16.378  PASS-ACCEPT
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+  --- c8  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         126       94      581     2899     30.84  1651.238  FAIL
+      rvar        126       73      489     2182     29.89  2706.455  FAIL
+      qsp         126     1055     3033    13219     12.53   101.142  FAIL
+      msd         126        4        8       23      5.75    11.667  PASS-ACCEPT
+  --- c8  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         136     1130     2817   101142    89.506   448.009  FAIL
+      rvar        136      703     2484    88056   125.257  1014.585  FAIL
+      qsp         102    13448    38497   141220    10.501    60.464  FAIL
+      msd         102       18       54      297      16.5      33.3  FAIL
+  --- c8  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig          38     1646    32627    69342    42.128    57.977  FAIL
+      rvar         38     1363    25260    65188    47.827    61.598  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+  --- c8  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      rvar          0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+  --- c8L  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1312       78      496     6756    86.615  58028.25  FAIL
+      rvar       1312       55      433     5716   103.927   66771.0  FAIL
+      qsp        1312     1026     2933    80640    78.596  2442.058  FAIL
+      msd        1312        5        9       23       4.6      20.0  PASS-ACCEPT
+  --- c8L  site=cli  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1324     1900    39681   227318   119.641  2419.484  FAIL
+      rvar       1324     1595    36052   151005    94.674  5357.282  FAIL
+      qsp        1147     8018    44789   285078    35.555   167.398  FAIL
+      msd        1147       25      114      865      34.6     127.2  FAIL
+  --- c8L  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig        1099     2139    31440   235864   110.268   354.806  FAIL
+      rvar       1099     1640    26145   202609   123.542   527.669  FAIL
+      qsp          80    62020   281249   344698     5.558    11.989  PASS-ACCEPT
+      msd          80      791     1256     1782     2.253     3.453  PASS-PREFER
+  --- c8L  site=srv  p1 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         131    16515   137777   311357    18.853     24.47  FAIL
+      rvar        131    13552   109503   239375    17.663    22.638  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+  --- sc2  site=cli  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         543      132      487     1494    11.318   317.585  FAIL
+      rvar        543       79      410     1246    15.772   535.762  FAIL
+      qsp         543      860     1547     5033     5.852    31.899  PASS-ACCEPT
+      msd         543        6       12       21       3.5       5.4  PASS-PREFER
+  --- sc2  site=srv  p0 ---
+      gauge    n_read      p05      p50      p95   R_total   sup/inf  verdict
+      sig         452     1248     3026    18858    15.111    66.075  FAIL
+      rvar        452      978     2511    16673    17.048    70.618  FAIL
+      qsp           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+      msd           0        -        -        -         -         -  UNSCOREABLE-NO-SAMPLE
+
+## 3b — THE SAME CLAUSE S ON THE BAR'S OWN MOST GENEROUS DOMAIN:
+##      THE DATA-PATH LEG OF EACH CELL (the leg `N_cell` refers to).
+
+  cell   data-path leg        sig       rvar        qsp        msd
+  c1     cli/p0            81.75      93.08      14.09       4.75
+  c7     cli/p0            60.48      87.64      14.55       8.67
+  c8     cli/p0            30.84      29.89      12.53       5.75
+  c8L    cli/p0            86.61     103.93      78.60       4.60
+  sc2    cli/p0            11.32      15.77       5.85       3.50
+
+  worst DATA-PATH cell per gauge, against the accept bar of 6.0:
+    sig    c8L   R_total = 86.615    FAILS by 14.44x
+    rvar   c8L   R_total = 103.927   FAILS by 17.32x
+    qsp    c8L   R_total = 78.596    FAILS by 13.10x
+    msd    c7    R_total = 8.667     FAILS by 1.44x
+
+  IF EVERY GAUGE FAILS HERE TOO, THE VERDICT IS NOT AN ARTEFACT OF
+  THIS BATTERY'S STRICTER PER-LEG DOMAIN, and the closure does not
+  rest on a choice this pass made rather than one the bar made.
+
+## 4 — THE SAMPLING-RATE ROW, FIRST-CLASS. `msd` ESTIMATES DISPERSION
+##     AT A LAG OF ONE INTER-SAMPLE INTERVAL, SO ITS MAGNITUDE DEPENDS
+##     ON THE SAMPLING RATE, WHICH IS NOT A PROPERTY OF THE LINK.
+
+  If `msd`'s advantage tracks the RATE rather than the CELL, it is an
+  artefact. The local pass measured 15x level and 2.8x R_local across a
+  137x rate gap ON ONE HOST, and it moved R the WRONG WAY.
+
+  cell   site  path       samp/s    msd p50    sig p50    msd/sig  msd R_tot
+  c1     cli   p0        20323.6          9         79     0.1139       4.75
+  c1     srv   p0           77.7        238       2614      0.091      2.547
+  c7     cli   p0        12305.1         14        523     0.0268      8.667
+  c7     cli   p1         8913.3         14        511     0.0274      8.333
+  c7     srv   p0           18.5          -      19699          -          -
+  c7     srv   p1           19.9          -      23357          -          -
+  c8     cli   p0         9559.3          8        581     0.0138       5.75
+  c8     cli   p1         1762.2         54       2817     0.0192       16.5
+  c8     srv   p0           18.9          -      32627          -          -
+  c8     srv   p1            5.4          -          -          -          -
+  c8L    cli   p0         9611.5          9        496     0.0181        4.6
+  c8L    cli   p1          581.1        114      39681     0.0029       34.6
+  c8L    srv   p0           23.9       1256      31440     0.0399      2.253
+  c8L    srv   p1            4.4          -     137777          -          -
+  sc2    cli   p0         9333.8         12        487     0.0246        3.5
+  sc2    srv   p0           15.2          -       3026          -          -
+
+  Spearman rank correlation over the 10 scoreable legs:
+    rate vs msd R_total   rho = 0.212
+    rate vs msd/sig level rho = -0.006
+    [seat=cli] 8 leg(s), rate vs msd R_total   rho = -0.548
+    [seat=srv] 2 leg(s), rate vs msd R_total   rho = None
+  A |rho| near 1 on either row says the RATE, not the cell, orders the
+  gauge. NO VERDICT IS TAKEN FROM rho ALONE — it is reported beside the
+  per-leg clause-S verdicts, which are what binds.
+
+## 5 — CLAUSE B: beta vs THE DELIVERED-LATENCY PROBE, LIKE-FOR-LIKE.
+##     **B CAN REJECT. B CANNOT ACQUIT.** A candidate inside the band is
+##     recorded as NOT-SHOWN-BIASED, never as unbiased.
+
+  THE PROBE'S OWN LIMITS, RESTATED BEFORE ITS NUMBERS:
+   1. SITE. It measures the peer path and excludes sender scheduling,
+      store residency and the ack-generation path — all of which ADD
+      dispersion. Its dispersion is a LOWER bound on the ack path's, so
+      every beta below is a LOWER bound on the true bias.
+   2. CENSORING. A lost probe never produces a sample and the losses
+      come from exactly the worst states. censor_frac prints beside
+      every functional; >20% kills the leg (latt_probe contract bar),
+      and P90 dies structurally above 10% (0.90 > 1-c).
+   3. SAMPLING RATE, AND IT IS SPECIFIC TO `msd`. The probe runs at
+      20 Hz; the sender's RTT stream runs at kHz. `msd` is MEASURABLY
+      rate-dependent, so beta_msd against this probe is NOT like-for-
+      like in the one axis `msd` is known to depend on. It is printed
+      and it is marked CONFOUNDED; it is not read as a pass or a fail.
+   4. rvar reads against `sd` LITERALLY, per §4's 'moment-class
+      candidateS'. rvar estimates E|dev| = 0.7979*sigma for a Gaussian,
+      so beta_rvar carries a built-in ~0.80x. DISCLOSED, NOT CORRECTED.
+
+  --- c1  site=cli  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 0.0%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig            79           sd    174.705     0.4522  REJECT 
+      rvar           72           sd    174.705     0.4121  REJECT 
+      qsp          1647          qsp      310.0     5.3129  REJECT 
+      msd             9          msd       50.0       0.18  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c1  site=srv  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 0.0%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig          2646           sd    174.705    15.1455  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar         2193           sd    174.705    12.5526  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp          4507          qsp      310.0    14.5387  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd           243          msd       50.0       4.86  DISCLOSURE-CONFOUNDED-REJECT (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c7  site=cli  p0   (probe leg 0, 15 rep(s)) ---
+      probe: censor median 2.55%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig           523           sd  23869.391     0.0219  REJECT 
+      rvar          447           sd  23869.391     0.0187  REJECT 
+      qsp          5506          qsp    35100.0     0.1569  REJECT 
+      msd            14          msd    19200.0     0.0007  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c7  site=cli  p1   (probe leg 1, 15 rep(s)) ---
+      probe: censor median 3.05%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig           502           sd  22826.455      0.022  REJECT 
+      rvar          441           sd  22826.455     0.0193  REJECT 
+      qsp          5608          qsp    35100.0     0.1598  REJECT 
+      msd            14          msd    19800.0     0.0007  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c7  site=srv  p0   (probe leg 0, 15 rep(s)) ---
+      probe: censor median 2.55%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig         19699           sd  23869.391     0.8253  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar        16614           sd  23869.391      0.696  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp    35100.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd    19200.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c7  site=srv  p1   (probe leg 1, 15 rep(s)) ---
+      probe: censor median 3.05%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig         23683           sd  22826.455     1.0375  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar        20324           sd  22826.455     0.8904  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp    35100.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd    19800.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c8  site=cli  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.17%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig           643           sd  41401.899     0.0155  REJECT 
+      rvar          600           sd  41401.899     0.0145  REJECT 
+      qsp          3794          qsp    40500.0     0.0937  REJECT 
+      msd             9          msd     4100.0     0.0022  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c8  site=cli  p1   (probe leg 1, 16 rep(s)) ---
+      probe: censor median 8.16%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig          2828           sd  85061.316     0.0332  REJECT 
+      rvar         2640           sd  85061.316      0.031  REJECT 
+      qsp         39289          qsp   145000.0      0.271  REJECT 
+      msd            57          msd    16000.0     0.0036  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c8  site=srv  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.17%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig         35578           sd  41401.899     0.8593  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar        30767           sd  41401.899     0.7431  DISCLOSURE-NOT-SHOWN-BIASED  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp    40500.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd     4100.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c8  site=srv  p1   (probe leg 1, 16 rep(s)) ---
+      probe: censor median 8.16%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig             -           sd  85061.316          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar            -           sd  85061.316          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp   145000.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd    16000.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c8L  site=cli  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.56%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig           463           sd  38997.303     0.0119  REJECT 
+      rvar          411           sd  38997.303     0.0105  REJECT 
+      qsp          2708          qsp    18000.0     0.1504  REJECT 
+      msd             9          msd     3000.0      0.003  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c8L  site=cli  p1   (probe leg 1, 16 rep(s)) ---
+      probe: censor median 5.26%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig         48346           sd  65583.739     0.7372  NOT-SHOWN-BIASED 
+      rvar        46063           sd  65583.739     0.7024  NOT-SHOWN-BIASED 
+      qsp         45886          qsp     7400.0     6.2008  REJECT 
+      msd           163          msd     4700.0     0.0347  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- c8L  site=srv  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.56%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig         22506           sd  38997.303     0.5771  DISCLOSURE-ADMISSIBLE-BIAS-CARRIED  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar        17534           sd  38997.303     0.4496  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp        281249          qsp    18000.0    15.6249  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd          1256          msd     3000.0     0.4187  DISCLOSURE-CONFOUNDED-REJECT (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- c8L  site=srv  p1   (probe leg 1, 16 rep(s)) ---
+      probe: censor median 5.26%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig        137777           sd  65583.739     2.1008  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar       109503           sd  65583.739     1.6697  DISCLOSURE-ADMISSIBLE-BIAS-CARRIED  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp     7400.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd     4700.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+  --- sc2  site=cli  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.73%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig           502           sd  19476.647     0.0258  REJECT 
+      rvar          467           sd  19476.647      0.024  REJECT 
+      qsp          1547          qsp     5200.0     0.2975  REJECT 
+      msd            12          msd     2100.0     0.0057  CONFOUNDED-REJECT (20 Hz probe vs kHz sender)
+  --- sc2  site=srv  p0   (probe leg 0, 16 rep(s)) ---
+      probe: censor median 2.73%  leg_unscoreable=False  P90-dead=False  spacing=50.0ms
+      gauge    cand p50   probe func  probe val       beta  verdict
+      sig          3065           sd  19476.647     0.1574  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      rvar         2570           sd  19476.647      0.132  DISCLOSURE-REJECT  [DISCLOSURE: srv seat, the clock is at the sender]
+      qsp             -          qsp     5200.0          -  DISCLOSURE-UNSCOREABLE  [DISCLOSURE: srv seat, the clock is at the sender]
+      msd             -          msd     2100.0          -  DISCLOSURE-CONFOUNDED-UNSCOREABLE (20 Hz probe vs kHz sender) [DISCLOSURE: srv seat, the clock is at the sender]
+
+## 6 — THE VERDICT, PER ESTIMATOR. FOUR LEGAL OUTCOMES AND NO FIFTH.
+
+  ACCEPT              S at every leg, C at every cell, B not REJECT
+                      and B scoreable. Qualified at the PLAIN-WINDOW
+                      SEAT ONLY — §16.74.5 req 3's generation seat is
+                      not run by this battery and no verdict here
+                      transports to it.
+  PREFER              ACCEPT and R_total <= 3.5 at every leg.
+  REJECT-<clause>     the failing clause and the binding leg, named.
+  UNSCOREABLE-<gate>  the gate that could not be evaluated, named. NOT
+                      a pass.
+
+  === sig (EWMA class, n_warm=16) ===
+    S: worst leg c7/cli/p1  R_total = 256.297   (best c7/srv/p1 = 3.504)
+       15 scoreable leg(s), 1 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s) computed, median 0.0258, 7 REJECT, 0 unscoreable/confounded
+    ==> REJECT-S (R_total 256.297 > 6.0 at c7/cli/p1; the worst leg binds, §3 rule 1)
+
+  === rvar (EWMA class, n_warm=16) ===
+    S: worst leg c7/cli/p1  R_total = 351.302   (best c7/srv/p1 = 3.809)
+       15 scoreable leg(s), 1 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s) computed, median 0.024, 7 REJECT, 0 unscoreable/confounded
+    ==> REJECT-S (R_total 351.302 > 6.0 at c7/cli/p1; the worst leg binds, §3 rule 1)
+
+  === qsp (window class, n_warm=256) ===
+    S: worst leg c8L/cli/p0  R_total = 78.596   (best c1/srv/p0 = 1.735)
+       10 scoreable leg(s), 6 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s) computed, median 0.271, 8 REJECT, 0 unscoreable/confounded
+    ==> REJECT-S (R_total 78.596 > 6.0 at c8L/cli/p0; the worst leg binds, §3 rule 1)
+
+  === msd (window class, n_warm=255) ===
+    S: worst leg c8L/cli/p1  R_total = 34.600   (best c8L/srv/p0 = 2.253)
+       10 scoreable leg(s), 6 unscoreable-thin
+    C: clean at every leg
+    B: 8 beta(s) computed, median 0.0036, 0 REJECT, 8 unscoreable/confounded
+    ==> REJECT-S (R_total 34.600 > 6.0 at c8L/cli/p1; the worst leg binds, §3 rule 1)
+
+  --- THE TIE-BREAK, PRE-COMMITTED (§3 rule 2) ---
+  NO CANDIDATE ACCEPTS AT EVERY LEG. Per the battery's own
+  pre-commitment, goal #101 item 2 closes NEEDS-MORE with the
+  failing clause named above. THE BAR IS NOT SOFTENED and no
+  candidate is promoted on a partial clause.
+
+  SCOPE, STANDING: every verdict above is at the PLAIN-WINDOW SEAT.
+  §16.74.5 requirement 3 names the generation seat as a SECOND seat and
+  this battery did not run it. An estimator qualified at one seat is
+  NOT qualified at the other, by the requirement's own words.

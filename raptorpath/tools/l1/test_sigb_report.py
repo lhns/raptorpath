@@ -177,6 +177,48 @@ with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
 L = R.Ledger()
 L.load(LPATH)
 
+# ── 8. A VOIDED INVOCATION IS IN NO DENOMINATOR ───────────────────────────
+# The scored run's FIRST abort exposed this: the report printed the abort
+# marker and then pooled the aborted invocation's readings into R_total
+# anyway. §8 says an aborted invocation is "no datum ... and NOT in any
+# denominator", so the rule is asserted here against a ledger that contains
+# one clean rep and one plateau-aborted rep with WILDLY different values.
+print("\n[8] a voided invocation is dropped from every container")
+vled = []
+for rep, val in ((1, 1000), (2, 999999)):        # rep 2 will be VOIDed
+    for b in range(1, 31):
+        vled.append(row("c7", "42", str(rep), "cli", 0, b,
+                        str(val), 5000, str(val), 5000, str(val), 300, str(val), 300))
+    vled.append('SIGBPROBE c7 42 %d {"leg": 0, "n_samples": 40, "sent": 41, '
+                '"recv": 40, "censor_frac": 0.02, "censor_pct": 2.0, '
+                '"leg_unscoreable": false, "qsp": 100, "msd": 50, "sd": 200, '
+                '"spacing_ms": 50.0, "qsp_structural_dead": false}' % rep)
+    vled.append('SIGBWITNESS {"cell": "c7", "seed": 42, "rep": %d, "mbps": %s, '
+                '"W1_rfa_gen": 0, "W2_pfrac_lines": 0, "W4_retx_max": 700, '
+                '"W5_rack_fa": "1/694", "W7_group_misses_cli": 0, '
+                '"W7_group_misses_srv": 0, "gen_plateau": %s}'
+                % (rep, "161.0" if rep == 1 else "28.767",
+                   "false" if rep == 1 else "true"))
+with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as fh:
+    fh.write("\n".join(vled) + "\n")
+    VPATH = fh.name
+VL = R.Ledger()
+VL.load(VPATH)
+pre = len(VL.reads[("c7", "cli", 0)]["sig"])
+voided = VL.apply_voids()
+post = [v for _, _, v in VL.reads[("c7", "cli", 0)]["sig"]]
+check("the void set is built from the witness row, seed-tagged",
+      voided == {("c7", "42", "2")}, str(voided))
+check("the aborted rep's 30 readings are gone (60 -> 30)",
+      pre == 60 and len(post) == 30, "pre=%d post=%d" % (pre, len(post)))
+check("the aborted rep's VALUE is absent, so R_total is 1.0 not 1000",
+      999999 not in post and R.stats(post)["R_total"] == 1.0,
+      str(R.stats(post)))
+check("its probe row is gone too (2 -> 1)",
+      len(VL.probe[("c7", 0)]) == 1, str(len(VL.probe[("c7", 0)])))
+check("a clean ledger voids nothing", R.Ledger().apply_voids() == set())
+os.unlink(VPATH)
+
 check("[5] all four legs read (2 sites x 2 paths)",
       sorted(L.raw_n) == [("c8", "cli", 0), ("c8", "cli", 1),
                           ("c8", "srv", 0), ("c8", "srv", 1)],
