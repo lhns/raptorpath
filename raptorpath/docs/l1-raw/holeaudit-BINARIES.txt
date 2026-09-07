@@ -1,0 +1,13 @@
+# THE ATTRIBUTION AUDIT (D0) — BINARIES AND PROVENANCE
+# source commit (VM /home/vibe/raptorpath/COMMIT): 8567cba
+# instrument commit: 443bbf2  pre-registration commit: 8567cba
+# binary sha256: 3715c77c9aab9c2db49331e049debe977256fd16e5e9cb5af988f3c04c837180
+#   /home/vibe/raptorpath/target/release/raptorpath (cargo build --release, RC=0)
+# VM: vibe@10.1.5.16, Fedora, Linux 7.0.14-101.fc43.x86_64, 6 cores
+# CRLF repair on the shipped tree: 494 files repaired, 0 CR bytes after;
+#   tools/l1/lib.sh verified at 0 CR bytes (the canary).
+# locks: /tmp/rwm-vm.lock and /home/vibe/rp.lock taken at launch, RELEASED at exit.
+# exit state: 0 raptorpath processes, 0 rp-* namespaces, ens18 untouched.
+# battery: tools/l1/holeaudit_battery.sh 3   (12 invocations, 0 aborts)
+# parser:  tools/l1/holeaudit_report.py
+# ledger:  holeaudit-s42.log   report: holeaudit-report.txt

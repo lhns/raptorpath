@@ -1,0 +1,275 @@
+# holeaudit battery 2026-09-07T18:53:06Z seed=42 reps=3
+# binary: 3715c77c9aab9c2db49331e049debe977256fd16e5e9cb5af988f3c04c837180  /home/vibe/raptorpath/target/release/raptorpath
+# source: 8567cba
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+SENTINEL ok earned 2026-09-07T18:53:06Z
+=== cell=c1 rep=1 seed=42 cells=c1/c1/single bytes=400000000 18:53:06
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.3853,"mean_mbps":184.064,"mean_s":17.3853,"median_s":17.3853,"min_s":17.3853,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c1 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c1 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c1 r1 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c1 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c1 r1 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c1 r1 RWM_W_FORM cli=1 srv=1
+GATE c1 r1 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c1 r1 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=384 fed=384 t_us=- obs_p50_us=16501 obs_p90_us=20260 obs_p99_us=26219 evals=985 law_n=0 sup=0 emit=985 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=384 cx_p50_us=16384 cx_p90_us=18432 sp_n=384 xp_n=0 up_n=0 xp_frac=0.0000 age_n=789 age_ripe=757 ripe_frac=0.9594 age_p50_us=26624 age_p90_us=65536 thr_p50_us=14336 fa_class=0.0625
+HOLD c1 r1 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=28 law_n=0 sup=0 emit=28 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c1 r1 srv [SUCC] gen=0 det=702 res=702 orig_n=700 orig_p50_us=22528 orig_p90_us=53248 orig_p99_us=81920 orig_mx_us=106479 orig_mean_us=29013 rep_n=2 rep_p50_us=65536 rep_p90_us=65536 rep_p99_us=65536 rep_mx_us=67705 rep_mean_us=67705 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=0.9972 cross_us=- dump=0/0 sp_n=702 xp_n=0 xp_frac=0.0000 sp_p50_us=22528 sp_p90_us=53248 xp_p50_us=- xp_p90_us=-
+SUCC c1 r1 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c1 r1 cli [FCAUSE] gen=0 n=1013 timer=28 gap_data=985 gap_refresh=0 other=0 timer_frac=0.0276 gap_frac=0.9724 fired=1013 unattr=0 fa_class=0.0625
+RFA c1 r1 cli [RFA] gen=0 fires=631 false=631 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=631 preempt_src=0 src_n=633 rep_n=625 nu_recv=0.99684 fa_class=0.0625
+RFA c1 r1 srv [RFA] gen=0 fires=905 false=203 false_frac=0.2243 fill_coded=2 fill_src=700 dup_src=201 preempt_src=2 src_n=332071 rep_n=97 nu_recv=0.00273 fa_class=0.0625
+DIAG c1 r1 cli cum=336648/1125/336324 sweeps=28 retx=1013 gapdrop=137 mpr[rep=234 seqs=2928 fired=1013 y=145 r=868 fast=0 coal=671 supp=1915/0/0 stale=0 plost=0 taper=0 age=31ms pf=184/1692/10000 fp/on p0:1013/1013] 
+CTLD c1 r1 cli [CTLD] p0 tx=339265 rx=338397
+CTLD c1 r1 srv [CTLD] p0 tx=333375 rx=333412
+GENW c1 r1 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c7 rep=1 seed=42 cells=c2/c2/dual bytes=200000000 18:53:25
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":10.9206,"mean_mbps":146.513,"mean_s":10.9206,"median_s":10.9206,"min_s":10.9206,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c7 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c7 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c7 r1 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c7 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c7 r1 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c7 r1 RWM_W_FORM cli=1 srv=1
+GATE c7 r1 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c7 r1 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=38182 t_us=- obs_p50_us=13843 obs_p90_us=32024 obs_p99_us=42312 evals=2936 law_n=0 sup=0 emit=2936 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=36199 hn_p50_us=12288 hn_p90_us=40960 hy_n=319 hy_p50_us=4608 hy_p90_us=49152 cx_n=1664 cx_p50_us=53248 cx_p90_us=114688 sp_n=24192 xp_n=13990 up_n=0 xp_frac=0.3664 age_n=41517 age_ripe=1006 ripe_frac=0.0242 age_p50_us=40960 age_p90_us=73728 thr_p50_us=57344 fa_class=0.0625
+HOLD c7 r1 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=38341 t_us=- obs_p50_us=12644 obs_p90_us=32156 obs_p99_us=64301 evals=2746 law_n=0 sup=0 emit=2746 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=36364 hn_p50_us=14336 hn_p90_us=49152 hy_n=331 hy_p50_us=12288 hy_p90_us=49152 cx_n=1646 cx_p50_us=65536 cx_p90_us=114688 sp_n=23153 xp_n=15188 up_n=0 xp_frac=0.3961 age_n=41932 age_ripe=1169 ripe_frac=0.0279 age_p50_us=40960 age_p90_us=73728 thr_p50_us=57344 fa_class=0.0625
+HOLD c7 r1 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=1 law_n=0 sup=0 emit=1 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c7 r1 srv [SUCC] gen=0 det=90901 res=90349 orig_n=89254 orig_p50_us=26624 orig_p90_us=65536 orig_p99_us=147456 orig_mx_us=342798 orig_mean_us=34030 rep_n=1095 rep_p50_us=57344 rep_p90_us=122880 rep_p99_us=327680 rep_mx_us=342798 rep_mean_us=71741 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=552 over=0 orig_frac=0.9879 cross_us=- dump=0/0 sp_n=2346 xp_n=88003 xp_frac=0.9740 sp_p50_us=98304 sp_p90_us=147456 xp_p50_us=26624 xp_p90_us=65536
+SUCC c7 r1 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c7 r1 cli [FCAUSE] gen=0 n=5683 timer=4 gap_data=5669 gap_refresh=10 other=0 timer_frac=0.0007 gap_frac=0.9993 fired=5683 unattr=0 fa_class=0.0625
+RFA c7 r1 cli [RFA] gen=0 fires=108 false=108 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=108 preempt_src=0 src_n=110 rep_n=108 nu_recv=0.98182 fa_class=0.0625
+RFA c7 r1 srv [RFA] gen=0 fires=92580 false=2228 false_frac=0.0241 fill_coded=1097 fill_src=89255 dup_src=1208 preempt_src=1020 src_n=157589 rep_n=2000 nu_recv=0.58748 fa_class=0.0625
+DIAG c7 r1 cli cum=169206/7861/168825 sweeps=7 retx=5650 gapdrop=543 mpr[rep=6286 seqs=1151553 fired=5650 y=647 r=5003 fast=598 coal=17164 supp=78691/0/1057383 stale=9829 plost=0 taper=0 age=78ms pf=0/1072958/10000 fp/on p0:2863/2855 p1:2787/2795] 
+CTLD c7 r1 cli [CTLD] p0 tx=84728 rx=82232 p1 tx=81789 rx=79278
+CTLD c7 r1 srv [CTLD] p1 tx=78378 rx=78465 p0 tx=81415 rx=81592
+GENW c7 r1 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=sc2 rep=1 seed=42 cells=c2/c2/single bytes=100000000 18:53:38
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.2133,"mean_mbps":86.831,"mean_s":9.2133,"median_s":9.2133,"min_s":9.2133,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE sc2 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE sc2 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE sc2 r1 RWM_RACK_CLOCKS cli=1 srv=1
+GATE sc2 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE sc2 r1 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE sc2 r1 RWM_W_FORM cli=1 srv=1
+GATE sc2 r1 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD sc2 r1 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=1605 t_us=- obs_p50_us=102429 obs_p90_us=105890 obs_p99_us=200482 evals=3436 law_n=0 sup=0 emit=3436 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=1 hn_p50_us=98304 hn_p90_us=98304 hy_n=9 hy_p50_us=24576 hy_p90_us=36864 cx_n=1595 cx_p50_us=98304 cx_p90_us=98304 sp_n=1605 xp_n=0 up_n=0 xp_frac=0.0000 age_n=2227 age_ripe=366 ripe_frac=0.1643 age_p50_us=98304 age_p90_us=114688 thr_p50_us=106496 fa_class=0.0625
+HOLD sc2 r1 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=20 law_n=0 sup=0 emit=20 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC sc2 r1 srv [SUCC] gen=0 det=2211 res=2176 orig_n=2016 orig_p50_us=98304 orig_p90_us=114688 orig_p99_us=196608 orig_mx_us=231099 orig_mean_us=108248 rep_n=160 rep_p50_us=98304 rep_p90_us=114688 rep_p99_us=196608 rep_mx_us=231099 rep_mean_us=101483 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=35 over=0 orig_frac=0.9265 cross_us=1920 dump=0/0 sp_n=2176 xp_n=0 xp_frac=0.0000 sp_p50_us=98304 sp_p90_us=114688 xp_p50_us=- xp_p90_us=-
+SUCC sc2 r1 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE sc2 r1 cli [FCAUSE] gen=0 n=3456 timer=25 gap_data=3431 gap_refresh=0 other=0 timer_frac=0.0072 gap_frac=0.9928 fired=3456 unattr=0 fa_class=0.0625
+RFA sc2 r1 cli [RFA] gen=0 fires=61 false=61 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=61 preempt_src=0 src_n=63 rep_n=55 nu_recv=0.96825 fa_class=0.0625
+RFA sc2 r1 srv [RFA] gen=0 fires=3368 false=1156 false_frac=0.3432 fill_coded=161 fill_src=2051 dup_src=999 preempt_src=157 src_n=83742 rep_n=416 nu_recv=0.04022 fa_class=0.0625
+DIAG sc2 r1 cli cum=83748/3840/81932 sweeps=70 retx=3403 gapdrop=397 mpr[rep=3692 seqs=98379 fired=3403 y=2576 r=827 fast=0 coal=1049 supp=94976/0/0 stale=0 plost=0 taper=0 age=94ms pf=0/5732/10000 fp/on p0:3403/3403] 
+CTLD sc2 r1 cli [CTLD] p0 tx=80253 rx=77161
+CTLD sc2 r1 srv [CTLD] p0 tx=84278 rx=84285
+GENW sc2 r1 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c8 rep=1 seed=42 cells=c2/c3/dual bytes=25000000 18:53:50
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.2806,"mean_mbps":87.697,"mean_s":2.2806,"median_s":2.2806,"min_s":2.2806,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c8 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c8 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c8 r1 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c8 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c8 r1 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c8 r1 RWM_W_FORM cli=1 srv=1
+GATE c8 r1 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c8 r1 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=420 fed=420 t_us=- obs_p50_us=42123 obs_p90_us=55467 obs_p99_us=102529 evals=449 law_n=0 sup=0 emit=449 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=27 hn_p50_us=1536 hn_p90_us=8192 hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=393 cx_p50_us=40960 cx_p90_us=53248 sp_n=403 xp_n=17 up_n=0 xp_frac=0.0405 age_n=488 age_ripe=57 ripe_frac=0.1168 age_p50_us=40960 age_p90_us=49152 thr_p50_us=40960 fa_class=0.0625
+HOLD c8 r1 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=16 law_n=0 sup=0 emit=16 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=16 age_ripe=16 ripe_frac=1.0000 age_p50_us=18432 age_p90_us=18432 thr_p50_us=9216 fa_class=0.0625
+HOLD c8 r1 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=2 law_n=0 sup=0 emit=2 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c8 r1 srv [SUCC] gen=0 det=499 res=469 orig_n=418 orig_p50_us=40960 orig_p90_us=49152 orig_p99_us=53248 orig_mx_us=63371 orig_mean_us=41252 rep_n=51 rep_p50_us=6144 rep_p90_us=45056 rep_p99_us=53248 rep_mx_us=55601 rep_mean_us=20215 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=30 over=0 orig_frac=0.8913 cross_us=4096 dump=0/0 sp_n=448 xp_n=21 xp_frac=0.0448 sp_p50_us=40960 sp_p90_us=49152 xp_p50_us=14336 xp_p90_us=15360
+SUCC c8 r1 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c8 r1 cli [FCAUSE] gen=0 n=467 timer=2 gap_data=465 gap_refresh=0 other=0 timer_frac=0.0043 gap_frac=0.9957 fired=467 unattr=0 fa_class=0.0625
+RFA c8 r1 cli [RFA] gen=0 fires=22 false=22 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=22 preempt_src=0 src_n=24 rep_n=22 nu_recv=0.91667 fa_class=0.0625
+RFA c8 r1 srv [RFA] gen=0 fires=512 false=43 false_frac=0.0840 fill_coded=51 fill_src=418 dup_src=17 preempt_src=26 src_n=18178 rep_n=295 nu_recv=0.02817 fa_class=0.0625
+DIAG c8 r1 cli cum=21152/775/20728 sweeps=2 retx=457 gapdrop=25 mpr[rep=621 seqs=10372 fired=457 y=10 r=447 fast=10 coal=256 supp=8725/0/1000 stale=190 plost=0 taper=0 age=48ms pf=0/2320/10000 fp/on p0:440/456 p1:17/1] 
+CTLD c8 r1 cli [CTLD] p1 tx=25 rx=23 p0 tx=20136 rx=18993
+CTLD c8 r1 srv [CTLD] p1 tx=23 rx=23 p0 tx=18492 rx=18510
+GENW c8 r1 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c1 rep=2 seed=42 cells=c1/c1/single bytes=400000000 18:53:54
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":17.0496,"mean_mbps":187.687,"mean_s":17.0496,"median_s":17.0496,"min_s":17.0496,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c1 r2 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c1 r2 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c1 r2 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c1 r2 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c1 r2 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c1 r2 RWM_W_FORM cli=1 srv=1
+GATE c1 r2 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c1 r2 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=556 fed=556 t_us=- obs_p50_us=15478 obs_p90_us=22939 obs_p99_us=39565 evals=1425 law_n=0 sup=0 emit=1425 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=556 cx_p50_us=15360 cx_p90_us=22528 sp_n=556 xp_n=0 up_n=0 xp_frac=0.0000 age_n=1116 age_ripe=1114 ripe_frac=0.9982 age_p50_us=45056 age_p90_us=147456 thr_p50_us=13312 fa_class=0.0625
+HOLD c1 r2 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=29 law_n=0 sup=0 emit=29 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c1 r2 srv [SUCC] gen=0 det=1116 res=1116 orig_n=1116 orig_p50_us=32768 orig_p90_us=147456 orig_p99_us=196608 orig_mx_us=219276 orig_mean_us=61717 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=1116 xp_n=0 xp_frac=0.0000 sp_p50_us=32768 sp_p90_us=147456 xp_p50_us=- xp_p90_us=-
+SUCC c1 r2 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c1 r2 cli [FCAUSE] gen=0 n=1454 timer=30 gap_data=1424 gap_refresh=0 other=0 timer_frac=0.0206 gap_frac=0.9794 fired=1454 unattr=0 fa_class=0.0625
+RFA c1 r2 cli [RFA] gen=0 fires=626 false=626 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=626 preempt_src=0 src_n=628 rep_n=625 nu_recv=0.99682 fa_class=0.0625
+RFA c1 r2 srv [RFA] gen=0 fires=1454 false=338 false_frac=0.2325 fill_coded=0 fill_src=1116 dup_src=338 preempt_src=0 src_n=338221 rep_n=154 nu_recv=0.00430 fa_class=0.0625
+DIAG c1 r2 cli cum=338313/1608/338205 sweeps=30 retx=1454 gapdrop=155 mpr[rep=301 seqs=3909 fired=1454 y=91 r=1363 fast=0 coal=956 supp=2455/0/0 stale=0 plost=0 taper=0 age=53ms pf=244/2362/10000 fp/on p0:1454/1454] 
+CTLD c1 r2 cli [CTLD] p0 tx=325136 rx=323768
+CTLD c1 r2 srv [CTLD] p0 tx=339553 rx=339702
+GENW c1 r2 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c7 rep=2 seed=42 cells=c2/c2/dual bytes=200000000 18:54:14
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":10.6559,"mean_mbps":150.152,"mean_s":10.6559,"median_s":10.6559,"min_s":10.6559,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c7 r2 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c7 r2 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c7 r2 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c7 r2 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c7 r2 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c7 r2 RWM_W_FORM cli=1 srv=1
+GATE c7 r2 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c7 r2 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=41069 t_us=- obs_p50_us=14267 obs_p90_us=29620 obs_p99_us=40004 evals=2719 law_n=0 sup=0 emit=2719 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=39116 hn_p50_us=12288 hn_p90_us=40960 hy_n=408 hy_p50_us=6144 hy_p90_us=26624 cx_n=1545 cx_p50_us=49152 cx_p90_us=90112 sp_n=24750 xp_n=16319 up_n=0 xp_frac=0.3974 age_n=43329 age_ripe=768 ripe_frac=0.0177 age_p50_us=32768 age_p90_us=61440 thr_p50_us=49152 fa_class=0.0625
+HOLD c7 r2 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=41176 t_us=- obs_p50_us=10943 obs_p90_us=34689 obs_p99_us=61367 evals=2571 law_n=0 sup=0 emit=2571 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=39370 hn_p50_us=11264 hn_p90_us=45056 hy_n=378 hy_p50_us=6144 hy_p90_us=30720 cx_n=1428 cx_p50_us=53248 cx_p90_us=114688 sp_n=25435 xp_n=15741 up_n=0 xp_frac=0.3823 age_n=42918 age_ripe=739 ripe_frac=0.0172 age_p50_us=32768 age_p90_us=57344 thr_p50_us=49152 fa_class=0.0625
+SUCC c7 r2 srv [SUCC] gen=0 det=90223 res=90084 orig_n=88834 orig_p50_us=20480 orig_p90_us=53248 orig_p99_us=114688 orig_mx_us=204074 orig_mean_us=26921 rep_n=1250 rep_p50_us=45056 rep_p90_us=98304 rep_p99_us=147456 rep_mx_us=158034 rep_mean_us=52368 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=139 over=0 orig_frac=0.9861 cross_us=- dump=0/0 sp_n=2274 xp_n=87810 xp_frac=0.9748 sp_p50_us=73728 sp_p90_us=122880 xp_p50_us=20480 xp_p90_us=49152
+SUCC c7 r2 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c7 r2 cli [FCAUSE] gen=0 n=5290 timer=2 gap_data=5288 gap_refresh=0 other=0 timer_frac=0.0004 gap_frac=0.9996 fired=5290 unattr=0 fa_class=0.0625
+RFA c7 r2 cli [RFA] gen=0 fires=109 false=109 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=109 preempt_src=0 src_n=111 rep_n=109 nu_recv=0.98198 fa_class=0.0625
+RFA c7 r2 srv [RFA] gen=0 fires=92284 false=2170 false_frac=0.0235 fill_coded=1252 fill_src=88862 dup_src=998 preempt_src=1172 src_n=159389 rep_n=1832 nu_recv=0.57899 fa_class=0.0625
+DIAG c7 r2 cli cum=167536/7204/165491 sweeps=3 retx=5243 gapdrop=417 mpr[rep=6582 seqs=1125010 fired=5243 y=798 r=4445 fast=659 coal=16792 supp=64498/0/1042892 stale=12377 plost=0 taper=0 age=58ms pf=0/1056834/10000 fp/on p0:2688/2594 p1:2555/2649] 
+CTLD c7 r2 cli [CTLD] p0 tx=84203 rx=81663 p1 tx=84278 rx=82299
+CTLD c7 r2 srv [CTLD] p1 tx=81043 rx=81241 p0 tx=80389 rx=80523
+GENW c7 r2 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=sc2 rep=2 seed=42 cells=c2/c2/single bytes=100000000 18:54:27
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.0309,"mean_mbps":88.585,"mean_s":9.0309,"median_s":9.0309,"min_s":9.0309,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE sc2 r2 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE sc2 r2 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE sc2 r2 RWM_RACK_CLOCKS cli=1 srv=1
+GATE sc2 r2 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE sc2 r2 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE sc2 r2 RWM_W_FORM cli=1 srv=1
+GATE sc2 r2 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD sc2 r2 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=1746 t_us=- obs_p50_us=103336 obs_p90_us=107194 obs_p99_us=208169 evals=3189 law_n=0 sup=0 emit=3189 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=3 hy_p50_us=32768 hy_p90_us=36864 cx_n=1743 cx_p50_us=98304 cx_p90_us=106496 sp_n=1746 xp_n=0 up_n=0 xp_frac=0.0000 age_n=2230 age_ripe=355 ripe_frac=0.1592 age_p50_us=98304 age_p90_us=106496 thr_p50_us=106496 fa_class=0.0625
+HOLD sc2 r2 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=18 law_n=0 sup=0 emit=18 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC sc2 r2 srv [SUCC] gen=0 det=2235 res=2221 orig_n=2067 orig_p50_us=98304 orig_p90_us=114688 orig_p99_us=196608 orig_mx_us=224545 orig_mean_us=110628 rep_n=154 rep_p50_us=98304 rep_p90_us=122880 rep_p99_us=196608 rep_mx_us=224545 rep_mean_us=104518 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=14 over=0 orig_frac=0.9307 cross_us=7168 dump=0/0 sp_n=2221 xp_n=0 xp_frac=0.0000 sp_p50_us=98304 sp_p90_us=114688 xp_p50_us=- xp_p90_us=-
+SUCC sc2 r2 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE sc2 r2 cli [FCAUSE] gen=0 n=3207 timer=32 gap_data=3175 gap_refresh=0 other=0 timer_frac=0.0100 gap_frac=0.9900 fired=3207 unattr=0 fa_class=0.0625
+RFA sc2 r2 cli [RFA] gen=0 fires=55 false=55 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=55 preempt_src=0 src_n=57 rep_n=55 nu_recv=0.96491 fa_class=0.0625
+RFA sc2 r2 srv [RFA] gen=0 fires=3232 false=1009 false_frac=0.3122 fill_coded=155 fill_src=2068 dup_src=858 preempt_src=151 src_n=85374 rep_n=421 nu_recv=0.03786 fa_class=0.0625
+DIAG sc2 r2 cli cum=84604/3635/83703 sweeps=71 retx=3197 gapdrop=363 mpr[rep=3604 seqs=104531 fired=3197 y=2666 r=531 fast=0 coal=1023 supp=101334/0/0 stale=0 plost=0 taper=0 age=101ms pf=0/6000/10000 fp/on p0:3197/3197] 
+CTLD sc2 r2 cli [CTLD] p0 tx=81064 rx=77871
+CTLD sc2 r2 srv [CTLD] p0 tx=85911 rx=85919
+GENW sc2 r2 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c8 rep=2 seed=42 cells=c2/c3/dual bytes=25000000 18:54:38
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.3131,"mean_mbps":86.463,"mean_s":2.3131,"median_s":2.3131,"min_s":2.3131,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c8 r2 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c8 r2 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c8 r2 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c8 r2 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c8 r2 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c8 r2 RWM_W_FORM cli=1 srv=1
+GATE c8 r2 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c8 r2 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=6900 t_us=- obs_p50_us=8384 obs_p90_us=154813 obs_p99_us=394136 evals=576 law_n=0 sup=0 emit=576 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=6539 hn_p50_us=8192 hn_p90_us=81920 hy_n=135 hy_p50_us=4608 hy_p90_us=15360 cx_n=226 cx_p50_us=131072 cx_p90_us=196608 sp_n=6557 xp_n=342 up_n=1 xp_frac=0.0496 age_n=6543 age_ripe=472 ripe_frac=0.0721 age_p50_us=131072 age_p90_us=196608 thr_p50_us=196608 fa_class=0.0625
+HOLD c8 r2 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=3221 t_us=- obs_p50_us=14177 obs_p90_us=94642 obs_p99_us=287068 evals=252 law_n=0 sup=0 emit=252 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=3027 hn_p50_us=8192 hn_p90_us=65536 hy_n=85 hy_p50_us=2560 hy_p90_us=163840 cx_n=109 cx_p50_us=147456 cx_p90_us=294912 sp_n=205 xp_n=3016 up_n=0 xp_frac=0.9364 age_n=3264 age_ripe=76 ripe_frac=0.0233 age_p50_us=262144 age_p90_us=425984 thr_p50_us=294912 fa_class=0.0625
+HOLD c8 r2 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=1 law_n=0 sup=0 emit=1 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c8 r2 srv [SUCC] gen=0 det=7858 res=7353 orig_n=7229 orig_p50_us=73728 orig_p90_us=180224 orig_p99_us=393216 orig_mx_us=629273 orig_mean_us=97595 rep_n=124 rep_p50_us=65536 rep_p90_us=393216 rep_p99_us=524288 rep_mx_us=560762 rep_mean_us=135561 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=505 over=0 orig_frac=0.9831 cross_us=- dump=0/0 sp_n=281 xp_n=7072 xp_frac=0.9618 sp_p50_us=262144 sp_p90_us=393216 xp_p50_us=73728 xp_p90_us=180224
+SUCC c8 r2 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c8 r2 cli [FCAUSE] gen=0 n=829 timer=2 gap_data=817 gap_refresh=10 other=0 timer_frac=0.0024 gap_frac=0.9976 fired=829 unattr=0 fa_class=0.0625
+RFA c8 r2 cli [RFA] gen=0 fires=15 false=15 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=15 preempt_src=0 src_n=17 rep_n=15 nu_recv=0.88235 fa_class=0.0625
+RFA c8 r2 srv [RFA] gen=0 fires=7717 false=364 false_frac=0.0472 fill_coded=124 fill_src=7229 dup_src=246 preempt_src=118 src_n=20521 rep_n=266 nu_recv=0.37605 fa_class=0.0625
+DIAG c8 r2 cli cum=21152/1045/17782 sweeps=18 retx=746 gapdrop=79 mpr[rep=921 seqs=144950 fired=746 y=204 r=542 fast=152 coal=655 supp=25982/0/115471 stale=2751 plost=0 taper=0 age=213ms pf=0/117226/10000 fp/on p0:511/434 p1:235/312] 
+CTLD c8 r2 cli [CTLD] p1 tx=3836 rx=3544 p0 tx=18377 rx=17944
+CTLD c8 r2 srv [CTLD] p1 tx=3260 rx=3258 p0 tx=17556 rx=17564
+GENW c8 r2 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c1 rep=3 seed=42 cells=c1/c1/single bytes=400000000 18:54:43
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.7479,"mean_mbps":191.068,"mean_s":16.7479,"median_s":16.7479,"min_s":16.7479,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c1 r3 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c1 r3 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c1 r3 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c1 r3 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c1 r3 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c1 r3 RWM_W_FORM cli=1 srv=1
+GATE c1 r3 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c1 r3 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=353 fed=353 t_us=- obs_p50_us=13574 obs_p90_us=18484 obs_p99_us=24393 evals=789 law_n=0 sup=0 emit=789 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=10 hy_p50_us=3072 hy_p90_us=3072 cx_n=343 cx_p50_us=13312 cx_p90_us=18432 sp_n=353 xp_n=0 up_n=0 xp_frac=0.0000 age_n=639 age_ripe=627 ripe_frac=0.9812 age_p50_us=20480 age_p90_us=65536 thr_p50_us=11264 fa_class=0.0625
+HOLD c1 r3 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=21 law_n=0 sup=0 emit=21 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c1 r3 srv [SUCC] gen=0 det=648 res=648 orig_n=648 orig_p50_us=18432 orig_p90_us=65536 orig_p99_us=114688 orig_mx_us=120108 orig_mean_us=31525 rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=1.0000 cross_us=- dump=0/0 sp_n=648 xp_n=0 xp_frac=0.0000 sp_p50_us=18432 sp_p90_us=65536 xp_p50_us=- xp_p90_us=-
+SUCC c1 r3 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c1 r3 cli [FCAUSE] gen=0 n=810 timer=21 gap_data=789 gap_refresh=0 other=0 timer_frac=0.0259 gap_frac=0.9741 fired=810 unattr=0 fa_class=0.0625
+RFA c1 r3 cli [RFA] gen=0 fires=628 false=628 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=628 preempt_src=0 src_n=630 rep_n=622 nu_recv=0.99683 fa_class=0.0625
+RFA c1 r3 srv [RFA] gen=0 fires=828 false=180 false_frac=0.2174 fill_coded=0 fill_src=648 dup_src=180 preempt_src=0 src_n=322367 rep_n=87 nu_recv=0.00257 fa_class=0.0625
+DIAG c1 r3 cli cum=333068/896/332802 sweeps=20 retx=809 gapdrop=72 mpr[rep=218 seqs=2522 fired=809 y=51 r=758 fast=0 coal=541 supp=1713/0/0 stale=0 plost=0 taper=0 age=30ms pf=222/1134/10000 fp/on p0:809/809] 
+CTLD c1 r3 cli [CTLD] p0 tx=329262 rx=328486
+CTLD c1 r3 srv [CTLD] p0 tx=323659 rx=324133
+GENW c1 r3 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c7 rep=3 seed=42 cells=c2/c2/dual bytes=200000000 18:55:01
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":10.3375,"mean_mbps":154.777,"mean_s":10.3375,"median_s":10.3375,"min_s":10.3375,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c7 r3 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c7 r3 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c7 r3 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c7 r3 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c7 r3 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c7 r3 RWM_W_FORM cli=1 srv=1
+GATE c7 r3 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c7 r3 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=43767 t_us=- obs_p50_us=29297 obs_p90_us=76138 obs_p99_us=111631 evals=2594 law_n=0 sup=0 emit=2594 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=41951 hn_p50_us=18432 hn_p90_us=73728 hy_n=207 hy_p50_us=4608 hy_p90_us=40960 cx_n=1609 cx_p50_us=61440 cx_p90_us=131072 sp_n=27582 xp_n=16185 up_n=0 xp_frac=0.3698 age_n=46011 age_ripe=836 ripe_frac=0.0182 age_p50_us=40960 age_p90_us=90112 thr_p50_us=65536 fa_class=0.0625
+HOLD c7 r3 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=34871 t_us=- obs_p50_us=8602 obs_p90_us=18134 obs_p99_us=55898 evals=2303 law_n=0 sup=0 emit=2303 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=33180 hn_p50_us=13312 hn_p90_us=45056 hy_n=240 hy_p50_us=5632 hy_p90_us=26624 cx_n=1451 cx_p50_us=49152 cx_p90_us=114688 sp_n=22147 xp_n=12724 up_n=0 xp_frac=0.3649 age_n=37108 age_ripe=1240 ripe_frac=0.0334 age_p50_us=49152 age_p90_us=90112 thr_p50_us=65536 fa_class=0.0625
+HOLD c7 r3 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=2 law_n=0 sup=0 emit=2 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c7 r3 srv [SUCC] gen=0 det=92419 res=92100 orig_n=91099 orig_p50_us=32768 orig_p90_us=81920 orig_p99_us=131072 orig_mx_us=290287 orig_mean_us=41296 rep_n=1001 rep_p50_us=61440 rep_p90_us=131072 rep_p99_us=212992 rep_mx_us=282822 rep_mean_us=71294 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=319 over=0 orig_frac=0.9891 cross_us=- dump=0/0 sp_n=2286 xp_n=89814 xp_frac=0.9752 sp_p50_us=106496 sp_p90_us=163840 xp_p50_us=32768 xp_p90_us=73728
+SUCC c7 r3 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c7 r3 cli [FCAUSE] gen=0 n=4899 timer=4 gap_data=4889 gap_refresh=6 other=0 timer_frac=0.0008 gap_frac=0.9992 fired=4899 unattr=0 fa_class=0.0625
+RFA c7 r3 cli [RFA] gen=0 fires=100 false=100 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=100 preempt_src=0 src_n=102 rep_n=100 nu_recv=0.98039 fa_class=0.0625
+RFA c7 r3 srv [RFA] gen=0 fires=93714 false=1610 false_frac=0.0172 fill_coded=1005 fill_src=91099 dup_src=704 preempt_src=906 src_n=166809 rep_n=1594 nu_recv=0.56180 fa_class=0.0625
+DIAG c7 r3 cli cum=169206/6572/169196 sweeps=7 retx=4898 gapdrop=520 mpr[rep=6078 seqs=1411857 fired=4898 y=528 r=4370 fast=452 coal=15286 supp=80909/0/1320376 stale=5674 plost=0 taper=0 age=82ms pf=0/1333584/10000 fp/on p0:2627/2343 p1:2271/2555] 
+CTLD c7 r3 cli [CTLD] p1 tx=84746 rx=82664 p0 tx=90574 rx=87832
+CTLD c7 r3 srv [CTLD] p1 tx=81722 rx=81846 p0 tx=86888 rx=87022
+GENW c7 r3 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=sc2 rep=3 seed=42 cells=c2/c2/single bytes=100000000 18:55:14
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.2414,"mean_mbps":86.567,"mean_s":9.2414,"median_s":9.2414,"min_s":9.2414,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE sc2 r3 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE sc2 r3 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE sc2 r3 RWM_RACK_CLOCKS cli=1 srv=1
+GATE sc2 r3 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE sc2 r3 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE sc2 r3 RWM_W_FORM cli=1 srv=1
+GATE sc2 r3 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD sc2 r3 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=1681 t_us=- obs_p50_us=101854 obs_p90_us=106921 obs_p99_us=189660 evals=3393 law_n=0 sup=0 emit=3393 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=1 hn_p50_us=896 hn_p90_us=896 hy_n=13 hy_p50_us=32768 hy_p90_us=40960 cx_n=1667 cx_p50_us=98304 cx_p90_us=106496 sp_n=1681 xp_n=0 up_n=0 xp_frac=0.0000 age_n=2224 age_ripe=447 ripe_frac=0.2010 age_p50_us=98304 age_p90_us=114688 thr_p50_us=106496 fa_class=0.0625
+HOLD sc2 r3 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=28 law_n=0 sup=0 emit=28 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC sc2 r3 srv [SUCC] gen=0 det=2060 res=2044 orig_n=1901 orig_p50_us=98304 orig_p90_us=114688 orig_p99_us=212992 orig_mx_us=249254 orig_mean_us=109122 rep_n=143 rep_p50_us=106496 rep_p90_us=122880 rep_p99_us=196608 rep_mx_us=217853 rep_mean_us=107296 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=16 over=0 orig_frac=0.9300 cross_us=2816 dump=0/0 sp_n=2044 xp_n=0 xp_frac=0.0000 sp_p50_us=98304 sp_p90_us=114688 xp_p50_us=- xp_p90_us=-
+SUCC sc2 r3 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE sc2 r3 cli [FCAUSE] gen=0 n=3421 timer=41 gap_data=3380 gap_refresh=0 other=0 timer_frac=0.0120 gap_frac=0.9880 fired=3421 unattr=0 fa_class=0.0625
+RFA sc2 r3 cli [RFA] gen=0 fires=63 false=63 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=63 preempt_src=0 src_n=65 rep_n=56 nu_recv=0.96923 fa_class=0.0625
+RFA sc2 r3 srv [RFA] gen=0 fires=3201 false=1130 false_frac=0.3530 fill_coded=144 fill_src=1927 dup_src=987 preempt_src=143 src_n=82463 rep_n=386 nu_recv=0.03882 fa_class=0.0625
+DIAG sc2 r3 cli cum=84604/3809/82152 sweeps=74 retx=3385 gapdrop=398 mpr[rep=3438 seqs=95262 fired=3385 y=2493 r=892 fast=0 coal=1014 supp=91876/0/0 stale=1 plost=0 taper=0 age=96ms pf=0/5768/10000 fp/on p0:3385/3385] 
+CTLD sc2 r3 cli [CTLD] p0 tx=86794 rx=83631
+CTLD sc2 r3 srv [CTLD] p0 tx=82970 rx=82977
+GENW sc2 r3 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+=== cell=c8 rep=3 seed=42 cells=c2/c3/dual bytes=25000000 18:55:25
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.3238,"mean_mbps":86.064,"mean_s":2.3238,"median_s":2.3238,"min_s":2.3238,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+RC=0
+GATE c8 r3 RWM_HOLDDOWN_Q cli=1 srv=1
+GATE c8 r3 RWM_QUANTILE_CLOCKS cli=1 srv=1
+GATE c8 r3 RWM_RACK_CLOCKS cli=1 srv=1
+GATE c8 r3 RWM_DERIVED_SWEEP cli=1 srv=1
+GATE c8 r3 RWM_ALPHA_OVERRIDE cli=1 srv=1
+GATE c8 r3 RWM_W_FORM cli=1 srv=1
+GATE c8 r3 RWM_REFRESH_FLOOR_US cli=1 srv=1
+HOLD c8 r3 cli [HOLD] site=sender path=0 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=2650 t_us=- obs_p50_us=10029 obs_p90_us=179436 obs_p99_us=192331 evals=599 law_n=0 sup=0 emit=599 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=2182 hn_p50_us=10240 hn_p90_us=65536 hy_n=79 hy_p50_us=8192 hy_p90_us=28672 cx_n=389 cx_p50_us=147456 cx_p90_us=180224 sp_n=2477 xp_n=173 up_n=0 xp_frac=0.0653 age_n=2597 age_ripe=353 ripe_frac=0.1359 age_p50_us=98304 age_p90_us=163840 thr_p50_us=131072 fa_class=0.0625
+HOLD c8 r3 cli [HOLD] site=sender path=1 gen=0 q=unset n_req=- n_obs=1000 samp_n=1000 fed=2594 t_us=- obs_p50_us=4103 obs_p90_us=54001 obs_p99_us=236388 evals=622 law_n=0 sup=0 emit=622 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=2203 hn_p50_us=2816 hn_p90_us=40960 hy_n=297 hy_p50_us=16384 hy_p90_us=131072 cx_n=94 cx_p50_us=114688 cx_p90_us=229376 sp_n=23 xp_n=2571 up_n=0 xp_frac=0.9911 age_n=2307 age_ripe=98 ripe_frac=0.0425 age_p50_us=180224 age_p90_us=262144 thr_p50_us=196608 fa_class=0.0625
+HOLD c8 r3 cli [HOLD] site=sender path=- gen=0 q=unset n_req=- n_obs=1000 samp_n=0 fed=0 t_us=- obs_p50_us=- obs_p90_us=- obs_p99_us=- evals=1 law_n=0 sup=0 emit=1 hd_p50_us=- hd_p90_us=- hd_p99_us=- hd_mx_us=- hd_n=0 hn_n=0 hn_p50_us=- hn_p90_us=- hy_n=0 hy_p50_us=- hy_p90_us=- cx_n=0 cx_p50_us=- cx_p90_us=- sp_n=0 xp_n=0 up_n=0 xp_frac=- age_n=0 age_ripe=0 ripe_frac=- age_p50_us=- age_p90_us=- thr_p50_us=- fa_class=0.0625
+SUCC c8 r3 srv [SUCC] gen=0 det=4847 res=4836 orig_n=4712 orig_p50_us=57344 orig_p90_us=180224 orig_p99_us=262144 orig_mx_us=455589 orig_mean_us=80927 rep_n=124 rep_p50_us=147456 rep_p90_us=245760 rep_p99_us=294912 rep_mx_us=325735 rep_mean_us=146802 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=11 over=0 orig_frac=0.9744 cross_us=- dump=0/0 sp_n=427 xp_n=4409 xp_frac=0.9117 sp_p50_us=180224 sp_p90_us=262144 xp_p50_us=57344 xp_p90_us=163840
+SUCC c8 r3 cli [SUCC] gen=0 det=0 res=0 orig_n=0 orig_p50_us=- orig_p90_us=- orig_p99_us=- orig_mx_us=- orig_mean_us=- rep_n=0 rep_p50_us=- rep_p90_us=- rep_p99_us=- rep_mx_us=- rep_mean_us=- aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- aban_mx_us=- aban_mean_us=- open=0 over=0 orig_frac=- cross_us=- dump=0/0 sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-
+FCAUSE c8 r3 cli [FCAUSE] gen=0 n=1222 timer=2 gap_data=1220 gap_refresh=0 other=0 timer_frac=0.0016 gap_frac=0.9984 fired=1222 unattr=0 fa_class=0.0625
+RFA c8 r3 cli [RFA] gen=0 fires=12 false=12 false_frac=1.0000 fill_coded=0 fill_src=0 dup_src=12 preempt_src=0 src_n=14 rep_n=12 nu_recv=0.85714 fa_class=0.0625
+RFA c8 r3 srv [RFA] gen=0 fires=5560 false=723 false_frac=0.1300 fill_coded=125 fill_src=4712 dup_src=609 preempt_src=114 src_n=18175 rep_n=378 nu_recv=0.30591 fa_class=0.0625
+DIAG c8 r3 cli cum=21152/1672/18450 sweeps=17 retx=1222 gapdrop=227 mpr[rep=917 seqs=78671 fired=1222 y=627 r=595 fast=152 coal=576 supp=29145/0/46825 stale=1479 plost=0 taper=0 age=167ms pf=0/49469/10000 fp/on p0:632/1007 p1:590/215] 
+CTLD c8 r3 cli [CTLD] p1 tx=2337 rx=2203 p0 tx=19047 rx=16981
+CTLD c8 r3 srv [CTLD] p0 tx=16374 rx=16384 p1 tx=2202 rx=2202
+GENW c8 r3 succ_gen=[SUCC] gen=0 fc_gen=[FCAUSE] gen=0
+
+# DONE 2026-09-07T18:55:30Z

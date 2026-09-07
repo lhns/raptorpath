@@ -1,0 +1,79 @@
+==============================================================================
+ABORT-CAUSE / WITNESS TABLE
+==============================================================================
+c1   reps=3 holdlines=3 succlines=3 contamination=21 gen1=0
+     CONTAMINATION: GATE c1 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+     CONTAMINATION: GATE c1 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c1 r1 RWM_RACK_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c1 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+c7   reps=3 holdlines=6 succlines=3 contamination=21 gen1=0
+     CONTAMINATION: GATE c7 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+     CONTAMINATION: GATE c7 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c7 r1 RWM_RACK_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c7 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+sc2  reps=3 holdlines=3 succlines=3 contamination=21 gen1=0
+     CONTAMINATION: GATE sc2 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+     CONTAMINATION: GATE sc2 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE sc2 r1 RWM_RACK_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE sc2 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+c8   reps=3 holdlines=6 succlines=3 contamination=21 gen1=0
+     CONTAMINATION: GATE c8 r1 RWM_HOLDDOWN_Q cli=1 srv=1
+     CONTAMINATION: GATE c8 r1 RWM_QUANTILE_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c8 r1 RWM_RACK_CLOCKS cli=1 srv=1
+     CONTAMINATION: GATE c8 r1 RWM_DERIVED_SWEEP cli=1 srv=1
+
+==============================================================================
+PER-CELL: goodput, the closure-class table, same/cross, ripeness, waste
+==============================================================================
+
+--- c1  goodput med=187.7 Mbit  (n=3 reps) ---
+  [HOLD] fed=1293  hn=0 (0.0000)  hy=10 (0.0077)  cx=1283 (0.9923)   identity OK
+  pi0 (TRUE-HEAL share, corrected) = 0.0077  [0.0042, 0.0142]  n=1293
+  [HOLD] sp=1293 xp=0 up=0  (identity OK)  xp_frac=0.0000
+  RIPE AT FIRST REPORT: 2498/2544 = 0.9819   age_p50=26624.0 us  thr_p50=13312.0 us
+  F (TRUE-HEAL CDF, heal classes only): hn p50=None p90=None | hy p50=3072.0 p90=3072.0 (us)
+  cx (retransmit closure) p50=15360.0 p90=18432.0 (us)
+  [SUCC] det=2466 res=2466 orig=2464 rep=2 aban=0 open=0 over=0  identity OK
+  [SUCC] orig_frac (the RECORD's bound) = 0.9992   vs corrected pi0 = 0.0077
+  [SUCC] sp=2466 xp=0  xp/det=0.0000  xp_frac=0.0000  (identity OK)
+  WASTE SPLIT: taper_copy=0  gap-fire retx=3276  [FCAUSE] n=3277
+  GATE: evals=3199 sup=0 (must be 0)
+
+--- c7  goodput med=150.2 Mbit  (n=3 reps) ---
+  [HOLD] fed=237406  hn=226180 (0.9527)  hy=1883 (0.0079)  cx=9343 (0.0394)   identity OK
+  pi0 (TRUE-HEAL share, corrected) = 0.9606  [0.9599, 0.9614]  n=237406
+  [HOLD] sp=147259 xp=90147 up=0  (identity OK)  xp_frac=0.3797
+  RIPE AT FIRST REPORT: 5758/252815 = 0.0228   age_p50=40960.0 us  thr_p50=57344.0 us
+  F (TRUE-HEAL CDF, heal classes only): hn p50=12800.0 p90=45056.0 | hy p50=5888.0 p90=35840.0 (us)
+  cx (retransmit closure) p50=53248.0 p90=114688.0 (us)
+  [SUCC] det=273543 res=272533 orig=269187 rep=3346 aban=0 open=1010 over=0  identity OK
+  [SUCC] orig_frac (the RECORD's bound) = 0.9877   vs corrected pi0 = 0.9606
+  [SUCC] sp=6906 xp=265627  xp/det=0.9711  xp_frac=0.9747  (identity OK)
+  WASTE SPLIT: taper_copy=0  gap-fire retx=15791  [FCAUSE] n=15872
+  GATE: evals=15869 sup=0 (must be 0)
+
+--- sc2  goodput med=86.8 Mbit  (n=3 reps) ---
+  [HOLD] fed=5032  hn=2 (0.0004)  hy=25 (0.0050)  cx=5005 (0.9946)   identity OK
+  pi0 (TRUE-HEAL share, corrected) = 0.0054  [0.0037, 0.0078]  n=5032
+  [HOLD] sp=5032 xp=0 up=0  (identity OK)  xp_frac=0.0000
+  RIPE AT FIRST REPORT: 1168/6681 = 0.1748   age_p50=98304.0 us  thr_p50=106496.0 us
+  F (TRUE-HEAL CDF, heal classes only): hn p50=49600.0 p90=49600.0 | hy p50=32768.0 p90=36864.0 (us)
+  cx (retransmit closure) p50=98304.0 p90=106496.0 (us)
+  [SUCC] det=6506 res=6441 orig=5984 rep=457 aban=0 open=65 over=0  identity OK
+  [SUCC] orig_frac (the RECORD's bound) = 0.9290   vs corrected pi0 = 0.0054
+  [SUCC] sp=6441 xp=0  xp/det=0.0000  xp_frac=0.0000  (identity OK)
+  WASTE SPLIT: taper_copy=0  gap-fire retx=9985  [FCAUSE] n=10084
+  GATE: evals=10018 sup=0 (must be 0)
+
+--- c8  goodput med=86.5 Mbit  (n=3 reps) ---
+  [HOLD] fed=15785  hn=13978 (0.8855)  hy=596 (0.0378)  cx=1211 (0.0767)   identity OK
+  pi0 (TRUE-HEAL share, corrected) = 0.9233  [0.9190, 0.9273]  n=15785
+  [HOLD] sp=9665 xp=6119 up=1  (identity OK)  xp_frac=0.3877
+  RIPE AT FIRST REPORT: 1072/15215 = 0.0705   age_p50=114688.0 us  thr_p50=163840.0 us
+  F (TRUE-HEAL CDF, heal classes only): hn p50=8192.0 p90=65536.0 | hy p50=6400.0 p90=79872.0 (us)
+  cx (retransmit closure) p50=131072.0 p90=196608.0 (us)
+  [SUCC] det=13204 res=12658 orig=12359 rep=299 aban=0 open=546 over=0  identity OK
+  [SUCC] orig_frac (the RECORD's bound) = 0.9764   vs corrected pi0 = 0.9233
+  [SUCC] sp=1156 xp=11502  xp/det=0.8711  xp_frac=0.9087  (identity OK)
+  WASTE SPLIT: taper_copy=0  gap-fire retx=2425  [FCAUSE] n=2518
+  GATE: evals=2514 sup=0 (must be 0)
