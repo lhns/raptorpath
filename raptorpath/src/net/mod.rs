@@ -16,6 +16,7 @@ pub mod control_msg;
 pub mod cpuprof;
 pub mod diag;
 pub mod emit_source;
+pub mod eta;
 pub mod framing;
 pub mod interleave;
 pub mod receiver;

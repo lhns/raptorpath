@@ -263,6 +263,14 @@ pub(crate) async fn run_receiver(
     //
     // ALWAYS FED, on every arm, for the `[RFA]` reason: the datum must exist
     // wherever `gap_data` fires do. Only the RAW dump is gated.
+    // ── wire v8 `[ETA]`, RECEIVER SIDE (`net/eta.rs`) ──────────────────
+    // Per path, how late each arrival was against the SENDER'S OWN
+    // prediction, relative to that path's running best. ALWAYS FED --
+    // including the `eta_rel = 0` sentinel, which is counted as the bind
+    // fraction rather than filtered, so the printed coverage is the
+    // instrument's own and not a number a filter already decided.
+    // Read-only; no engine handle, nothing branches on it.
+    let mut recv_eta = crate::net::eta::RecvEta::default();
     let mut recv_succ = crate::net::succ::SuccGauge::new(
         recv_window_generation,
         recv_gates.succ_dump,
@@ -1164,6 +1172,9 @@ pub(crate) async fn run_receiver(
         match msg {
             WireMessage::Data(batch) => {
                 let batch_send_ts = batch.send_timestamp_us;
+                // v8: the sender's own delivery prediction for this batch,
+                // us relative to `batch_send_ts`. 0 = no prediction.
+                let batch_eta_rel_us = batch.eta_rel_us;
                 let batch_seq = batch.batch_seq;
                 let batch_path_id = batch.path_id;
                 let symbol_count = batch.symbols.len() as u32;
@@ -1234,6 +1245,26 @@ pub(crate) async fn run_receiver(
                 {
                     let arrival_us = now_us();
                     let mut sched = recv_scheduler.lock();
+                    // `[ETA]`'s reference lag, read in the borrow that is
+                    // already open so the gauge costs no second acquisition:
+                    // RTprop when this receiver has one, its SRTT otherwise,
+                    // and the SOURCE of that SRTT (Copa's wire clock vs the
+                    // app echo -- the #80 battery proved they disagree by the
+                    // sender's own reservoir dwell). Both are PRINTED; the
+                    // gauge never picks silently.
+                    let (eta_tau_us, eta_src) = match sched.path(path_id) {
+                        Some(p) => (
+                            p.min_rtt()
+                                .map(|d| d.as_micros() as u64)
+                                .unwrap_or_else(|| p.srtt().as_micros() as u64),
+                            if crate::scheduler::copa_wire_active() {
+                                crate::net::eta::SrttSource::Wire
+                            } else {
+                                crate::net::eta::SrttSource::Echo
+                            },
+                        ),
+                        None => (0, crate::net::eta::SrttSource::Echo),
+                    };
                     if let Some(path) = sched.path_mut(path_id) {
                         path.estimator.record_arrival(batch_send_ts, arrival_us);
                         // Update jitter in monitoring stats
@@ -1241,6 +1272,15 @@ pub(crate) async fn run_receiver(
                             ps.jitter_us.store(path.estimator.jitter_us() as u64, Ordering::Relaxed);
                         }
                     }
+                    drop(sched);
+                    recv_eta.observe(
+                        path_id,
+                        batch_send_ts,
+                        arrival_us,
+                        batch_eta_rel_us,
+                        eta_tau_us,
+                        eta_src,
+                    );
                 }
 
                 // Track batch sequences for loss detection (ADR-0003)
@@ -1766,6 +1806,16 @@ pub(crate) async fn run_receiver(
                             eprintln!("{l}");
                         }
                         eprintln!("{}", recv_succ.line());
+                        // ── `[ETA]` RECEIVER READOUT ──────────────────
+                        // BESIDE `[SUCC]`, on ITS cadence and under ITS
+                        // gate, because the two are read together: `[SUCC]`
+                        // times a hole from the moment SEQUENCE exposed it,
+                        // `[ETA]` measures how late the same arrivals were
+                        // against the sender's own model. One is the
+                        // measurand the other was a proxy for.
+                        if recv_eta.is_receiver_site() {
+                            eprintln!("{}", recv_eta.line());
+                        }
                     }
 
                     // Send SACK-extended WindowAck to sender.

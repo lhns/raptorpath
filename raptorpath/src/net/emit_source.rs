@@ -415,6 +415,34 @@ pub(crate) fn emit_source(
         }
     };
     st.last_source_path = source_path;
+    // ── wire v8 `[ETA]`: STAMP THE SENDER'S OWN PREDICTION ─────────────
+    // `E_picked` is the `expected_delivery_load()` of the path the placement
+    // law JUST CHOSE -- read AFTER the per-cap redirect above, so it is the
+    // FINAL path's number and not the pre-redirect pick's. This is the same
+    // quantity the law's `load` term is built from (there de-dimensionalised
+    // by `ref_srtt` and offset by the deadline; here in raw seconds), so the
+    // receiver is being told the sender's own model rather than a second one.
+    //
+    // READ BEFORE `charge_in_flight` below, which is why it is its own short
+    // acquisition: charging first would price this symbol's own backlog into
+    // its own prediction.
+    //
+    // The same call updates `F-hat` (the running max of stamped arrival
+    // times). NOTHING READS EITHER -- the wire field feeds two gauges and the
+    // frontier feeds Track A's Stage-2 HOL term, which does not exist yet.
+    let src_send_ts_us = now_us();
+    let eta_rel_us = {
+        let mut sched = ctx.scheduler.lock();
+        let e = sched
+            .path(source_path)
+            .map(|p| p.expected_delivery_load())
+            .unwrap_or(0.0);
+        // Non-finite (a path with no cwnd yet) reads as NO PREDICTION -- the
+        // 0 sentinel -- rather than as a fabricated number.
+        let us = if e.is_finite() && e > 0.0 { (e * 1e6) as u64 } else { 0 };
+        sched.eta_mut().stamp(source_path, src_send_ts_us, us);
+        us
+    };
     // ADR-0046 idle-triggered recovery: stamp the last NEW-source send
     // so the NACK throttle can tell "actively pushing data" (repairs
     // would load a congested path) from "idle except for a hole"
@@ -453,7 +481,11 @@ pub(crate) fn emit_source(
             wire_sym.clone()
         };
         let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-        let batch = SymbolBatch::new(vec![on_wire], now_us(), batch_seq, source_path);
+        // v8: the batch's `send_timestamp_us` IS the key the ack's echo will
+        // carry, so it must be the same instant the stamp above registered --
+        // hence `src_send_ts_us` rather than a second `now_us()`.
+        let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, batch_seq, source_path)
+            .with_eta(eta_rel_us);
         if let Err(e) = ctx.transport.send_symbols(source_path, batch) {
             warn!(source_path, ?e, "failed to send window source symbol");
         }

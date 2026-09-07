@@ -961,6 +961,26 @@ pub(crate) fn report(
             gdiag,
             pp,
         );
+        // ── `[ETA]` SENDER READOUT ────────────────────────────────
+        // The prediction the placement law made, and what came back. Same
+        // 250 ms cadence, same `RWM_DIAG` gate, same cumulative
+        // last-line-wins convention as `[DIAG]` itself. The COLD-PRICE binds
+        // accumulated by `place_costs` are drained here and nowhere else --
+        // `place_costs` itself only bumps a `Cell`. A sender that never
+        // stamped a placement stays silent, so an absent line reads as an
+        // unreached feed and never as an unset gate.
+        //
+        // The pre-stated witness is `sigma_sender >= sigma_recv`
+        // (`net/eta.rs`): the sender's error rides a round trip and the
+        // receiver's lateness only the forward leg. Both lines print
+        // `sig_us=` in the same units so the pair is readable off one run.
+        {
+            let mut sched = scheduler.lock();
+            sched.drain_place_bind();
+            if sched.eta().is_sender_site() {
+                eprintln!("{}", sched.eta().line());
+            }
+        }
         // feat/c8-conversion DIAG: the sender-side conversion gauges
         // (cumulative; keys sorted for stable scraping). splace =
         // first source placements; retxo = targeted retransmits by

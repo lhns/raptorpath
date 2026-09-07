@@ -731,6 +731,21 @@ fn on_window_ack(
                 };
                 path.record_rtt_sample(cc_rtt);
             }
+            // ── wire v8 `[ETA]`: THE PREDICTION ERROR ──────────────────
+            // `e = rtt_us - (eta_rel + RTprop/2)`, keyed by the echo, which
+            // is the batch's own `send_timestamp_us`. A no-op unless this
+            // echo keys a STAMPED placement (`net/eta.rs`), so repairs and
+            // the tail sweep -- which carry the 0 sentinel -- contribute
+            // nothing. Read-only: `on_ack` touches only the gauge.
+            //
+            // Placed after `record_rtt_sample` so `min_rtt()` is this ack's
+            // own RTprop and not the previous one's.
+            let rtprop_us = sched
+                .path(path_id)
+                .and_then(|p| p.min_rtt())
+                .map(|d| d.as_micros() as u64)
+                .unwrap_or(0);
+            sched.eta_mut().on_ack(path_id, echo_send_timestamp_us, rtt_us, rtprop_us);
         }
 
         // ── re-homing PART 2: loss, pool, stats, cc window ───────
