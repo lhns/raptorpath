@@ -19909,6 +19909,522 @@ measurement that would decide it.
 wires a consumer, touches a clock, or scores any clause of any
 pre-registration.**
 
+### 16.82 The `r > 0` regime, priced: the proactive plane's exit price `δ_exit = √(2π)·S·d/(ε̂·D_arq)` is derived, it is evaluated on the record's own inputs, and it puts the BULK point of the dial at a corner under EVERY admissible reading while leaving the AUTO point UNDECIDED on one quantity no gauge in this tree reports — Copa's own delay normaliser (2026-09-08, `docs/16-81-83-laws`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test; §16.73 is the consistency condition this section differentiates, §14.25/§14.26 are the object-scale rival, this section is the price)
+
+**THE SECTION IN ONE SENTENCE.** *§16.73 proved the shipped machine sits at the
+corner `r* = 0` and stopped there, because its condition was written with `δ`
+cancelled out; this section reintroduces `δ` on the proactive leg alone, where
+it does not cancel, derives WHERE THE CORNER ENDS, and finds that the answer
+hinges on a ratio the tree has never echoed.*
+
+**AND THE RULING BINDS EVERY SENTENCE OF IT.** Nothing below blesses a
+constant. `BULK_TAIL_BUDGET = 0.05`, `r_tail = 0.2`, `σ_arq`'s `4×` gain and
+`SRTT/4` floor are recorded in the register of 16.80.12 as arbitrary and
+UNCORRECTED, with their deciding measurements. **`δ_exit` being derived does
+not make one of them derived, and a corner verdict that survives a sensitivity
+sweep is still not a licence to change anything.**
+
+#### 16.82.0 Verdict first — the expression
+
+Per source symbol, at contract price `δ`, with completion exposure `χ ∈ [0, 1]`
+(§14.26's kernel, unchanged):
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                                                                          │
+   │   L_pro(r; δ, χ)  =  r  +  δ · χ · ε̂ · (1 − P_fec(r)) · D_arq / d       │
+   │                                                                          │
+   │   STATIONARITY     φ( z_f(r*) )  =  S · d / ( δ · χ · ε̂ · D_arq )       │
+   │                                                                          │
+   │   S  =  √( ε̂ · σ²_burst / ( W · (1 − ε̂) ) )                            │
+   │                                                                          │
+   │   INTERIOR  ⇔   δ · χ  ≥  δ_exit  =  √(2π) · S · d / ( ε̂ · D_arq )     │
+   │                                                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+*The first term is the wire fraction spent proactively; the second is the
+Copa-priced latency of the symbols FEC fails to cover, each falling through to
+an ARQ round `D_arq`, and each priced only in proportion to the probability
+`χ` that its recovery outlives the send stream.* The first term is §16.73.2's
+`L_pro` verbatim; **the whole of the change is the factor `χ`, and it is not a
+new constant — it is §14.26's already-written kernel moved from the TARGET to
+the PRICE.**
+
+**WHY THE INTERIOR CONDITION IS EXACTLY THAT.** Differentiating and using
+§8.2's `P_fec = Φ(z_f)` with §8.4's first-order `∂z_f/∂r = 1/S` gives the
+stationarity line. It asks the standard normal density `φ` to take a prescribed
+value; `φ ≤ φ(0) = 1/√(2π)` everywhere, so a stationary point exists at all
+only if the right-hand side is at most `1/√(2π)`, and rearranging is the third
+line. **No approximation and no fitted quantity enters the step.** `√(2π)` is
+`1/φ(0)` and is the only numeric constant in `δ_exit`.
+
+**`δ_exit` IS §16.73.2's SHADOW PRICE WITH `φ` AT ITS MAXIMUM, AND THAT IS AN
+IDENTITY, NOT A SECOND PIECE OF EVIDENCE.** §16.73.2 gives
+`δ_pro ≤ d·S/(D_arq·ε̂·φ(z_f(0)))` at the corner; `δ_exit` is the same
+expression with `φ(z_f(0))` replaced by `φ(0)`, so
+`δ_pro/δ_exit = φ(0)/φ(z_f(0)) ≥ 1` always. The two numbers are not
+independent and are never quoted as if they were.
+
+#### 16.82.1 THE ONE UN-ECHOED RATIO, NAMED BEFORE ANY NUMBER IS READ
+
+`δ_exit` is inversely proportional to `D_arq/d`. **`D_arq` is measured; `d` is
+not one quantity in this tree but a NAME THAT THREE DIFFERENT QUANTITIES
+ANSWER TO**, and until an echo distinguishes them the exit price is a bracket
+and not a number. This is stated first, before any evaluation, so that no
+reading below can be mistaken for a measurement.
+
+| reading of `d` | what it is | `D_arq/d` on the record | class |
+|---|---|---|---|
+| **(i) Copa's operating delay** | the delay Copa's `log(delay)` is linearised about — the live queue-inclusive RTT | `≈ (srtt + d_rep)/srtt` **≈ 1.01–1.05** | the utility function's own normaliser; **NOT ECHOED** |
+| **(ii) a propagation-scale reference** | `D_arq ≈ 1.5·RTprop` against a normaliser of the same scale | **≈ 2.2, DECLARED HERE, not measured** | a stated mid-reading; carried so the sensitivity has an interior point |
+| **(iii) the `[FDIAG]` repair delivery delay** | §16.73.3's `d`, "repair delivery delay, plain window" | c1 **2.91**, sc2 **24.1**, c8 **24.3**, c7 **93.7** (goal-gate, the r-law condition's own input table) | **MEASURED**, but it is the delay of a repair, not Copa's normaliser |
+
+**§16.73 COULD IGNORE THIS AND THIS SECTION CANNOT.** In §16.73.3 `d` *"cancels
+for the same reason [as `h_marginal`]: it appears once in each leg's latency
+term"*, and that section says so in terms. **Here it does not cancel**, because
+only the proactive leg is differentiated. **The ambiguity is therefore created
+by the derivation, not inherited by it, and naming it is part of the
+derivation.**
+
+```text
+   ⇒  DECIDING MEASUREMENT:  an echo of Copa's delay normaliser beside D_arq
+      on the same run.  It is one gauge field and it does not exist.
+```
+
+#### 16.82.2 The exit price, evaluated — and `ε̂` is a SECOND bracket, disclosed the same way
+
+`σ²_burst` is DERIVED EXACT from the harness's own `gemodel` parameters
+(§16.73.3: `c1` 2.996, `c2` 2.899, `c3` 3.762). `W` is **DERIVED, NOT ECHOED**
+— §8.8's `derive_window`, clamped `[16, 512]` by the math layer and
+`MAX_WINDOW_SIZE = 200` by the sender, and *"no gauge reports it"*; **`W = 64`
+below is the SIMULATOR's reference window (§14.25's own worked example), used
+here as a stated reference value and not as a measurement of the engine.**
+
+`ε̂` has two admissible readings and they differ by a factor of 3–5:
+
+* **the CHANNEL loss**, exact from the cell's GE parameters
+  (`transport/quic.rs`: `c2` = 1.3 %/50 %, `c3` = 2 %/40 %) —
+  `ε_c2 = p/(p+q) = 0.02534`, `ε_c3 = 0.04762`, which the paper elsewhere quotes
+  as *"eps ~ 2.6 %"* and ≈ 4.8 %;
+* **the ESTIMATOR's realized per-leg loss**, which the r-law condition's input
+  table measures at **0.0056** (`c7` worst leg) and **0.0184** (`c8` worst leg).
+
+**THE GAP BETWEEN THEM IS A KNOWN DEFECT AND IS NOT AVERAGED AWAY.** Goal-gate's
+standing open item records it verbatim: *"per-path `pl` reads 0.000–0.010 at
+2.5–4.8 % cells."* The estimator under-reads the channel by 3–5×. **Both
+readings are carried; neither is preferred here, because which one belongs in a
+PRICE is exactly what the open item leaves undecided.**
+
+`S = √(ε̂·σ²_burst/(W(1−ε̂)))` at `W = 64`:
+
+| leg / cell | `ε̂` reading | `ε̂` | `σ²_burst` | `S` |
+|---|---|---|---|---|
+| `c2` (the `c7` legs, `c8`'s fast leg) | channel | 0.02534 | 2.899 | 0.03432 |
+| `c3` (`c8`'s slow leg) | channel | 0.04762 | 3.762 | 0.05421 |
+| `c7` worst leg | estimator | 0.0056 | 2.899 | 0.01597 |
+| `c8` worst leg | estimator | 0.0184 | 3.762 | 0.03320 |
+
+**`δ_exit = √(2π)·S/(ε̂·(D_arq/d))`, over both brackets:**
+
+| row | `D_arq/d = 1.03` (i) | `D_arq/d = 2.2` (ii) | `D_arq/d` measured (iii) |
+|---|---|---|---|
+| `c2`, channel `ε̂` | **3.30** | **1.543** | 0.0362 (at `c7`'s 93.7) |
+| `c3`, channel `ε̂` | **2.77** | **1.297** | 0.1174 (at `c8`'s 24.3) |
+| `c7`, estimator `ε̂` | **6.94** | **3.249** | 0.0763 |
+| `c8`, estimator `ε̂` | **4.39** | **2.056** | 0.1861 |
+| `sc2`, estimator `ε̂` | **0.749** | **0.351** | 0.351 (its own `D_arq/d` IS 24.1 → 0.0320) |
+
+```text
+   ⇒  δ_exit  ∈  [ 0.032 , 6.94 ]   over BOTH brackets, at the four audited cells
+```
+
+**AND THE CONTRACT'S OWN δ POINTS ARE 50 / 0.5 / 0.005** — Realtime / Auto /
+Bulk, derived rather than written: `copa_delta(hint) = COPA_DELTA / ζ(hint)`
+with `COPA_DELTA = 0.5` (`scheduler/mod.rs:47`) and
+`ζ ∈ {0.01, 1, 100}` (`control/fec_rate.rs:70-76`). **The literals 50 / 0.5 /
+0.005 appear as executable constants nowhere in the engine — only in a doc
+comment at `scheduler/mod.rs:119-120` and in the visualizer** — which is itself
+worth recording: the engine's δ points are a QUOTIENT, and that is the one
+piece of the dial that was already continuous.
+
+Reading `δ·χ ≥ δ_exit` at each named point, with `χ` at its CEILING of 1:
+
+| hint | `δ` | `χ` required, BEST case (`δ_exit` = 0.032) | `χ` required, WORST case (`δ_exit` = 6.94) | verdict |
+|---|---|---|---|---|
+| **Bulk** | 0.005 | **6.4** | **1 388** | **CORNER under every reading — unreachable by 6.4× to 1 388×** |
+| **Auto** | 0.5 | 0.064 | **13.9** | **UNDECIDED — interior under reading (iii), corner under (i) and (ii)** |
+| Realtime | 50 | 0.0006 | 0.139 | interior over the last `≈ 1–3·σ_arq` of a finite stream, under every reading |
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  BULK-CORNER-ROBUST.   The Bulk point of the dial is a corner at every    │
+   │  χ ≤ 1, under every admissible reading of d and of ε̂, by a margin of at  │
+   │  least 6.4×.                                                             │
+   │                                                                          │
+   │  AUTO-UNDECIDED-ON-d.  The Auto point flips with the reading of Copa's    │
+   │  delay normaliser, and that quantity is echoed by no gauge in this tree.  │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**THAT IS THE SECTION'S PRINCIPAL FINDING, AND HALF OF IT IS A NEGATIVE
+RESULT.** §16.73.4 established `r* = 0` at Bulk because `δ_eff := ε̂` makes
+`z = Φ⁻¹(0) = −∞`. This establishes something independent of that mechanism:
+**even with an honest marginal price and a perfect estimator, `r*` is still 0 at
+Bulk**, because the price the contract is willing to pay for latency there is
+between six and fourteen hundred times below what one repair symbol costs.
+**`r > 0` at Bulk is not under-funded; it is over-priced.** At Auto the same
+derivation returns *"I do not know, and here is the single gauge field that
+would decide it."*
+
+#### 16.82.3 The shipped anchor law is a CONSTRAINT, not a price — and the two reach `r* = 0` for different reasons
+
+* **The anchor law** reaches it because `δ_eff := ε̂` sets the tail target equal
+  to the estimate, so the margin term is identically zero **at every δ**. It has
+  no derivative in δ at all: `r*` is 0 at `δ = 0.005` and at `δ = 50` alike,
+  mid-stream. **A law with no derivative in the dial cannot tell you where its
+  own answer would change.**
+* **The price form** reaches it because `δ·χ < δ_exit`. It has a derivative in
+  δ everywhere, and it names the point at which its answer flips — and, when
+  the inputs are bracketed, it names the measurement that would sharpen it.
+
+**⇒ THE PRICE FORM IS NOT A REPLACEMENT FOR THE ANCHOR LAW; IT IS WHAT MAKES
+THE ANCHOR LAW'S ANSWER FALSIFIABLE.** The anchor law says "0". The price form
+says "0 at Bulk under every reading, unknown at Auto, and here is the gauge."
+Only the second is a scientific object.
+
+**NO MODE BIT ANYWHERE IN THIS.** `δ_exit` is a continuous function of measured
+channel quantities and contains no δ, no ρ, no hint. The comparison
+`δ·χ ≥ δ_exit` is a stationarity test on the DECISION VARIABLE `r`, exactly as
+`1{T + d > H}` in 16.80.3 is a test on `T` — it is the derivative of the
+continuous `max(0, ·)` the shipped `r_star_mass` already computes, not an
+`if (hint == …)`. **There is no threshold on δ and no threshold on ρ in any
+expression in this section**; δ enters as a multiplier, and ρ enters not at all
+(the whole section is the `ρ = 1` reliable window).
+
+#### 16.82.4 The two rival hypotheses, pre-stated, with the number each predicts
+
+The corner result prices `r` PER SYMBOL, integrated over the stream. A
+per-symbol price can say "never" while an END-EFFECT at the stream tail still
+pays, because tail recovery is serial and mid-stream recovery is parallel —
+§14.25's own two-regime argument. **Both readings are written out in advance,
+with the number each predicts, so the battery scores a pre-stated pair rather
+than a preference.**
+
+**`H_price` — THE PER-SYMBOL READING (this section's derivation).** A funded `r`
+costs `r/(1+r)` of the wire and returns nothing at Bulk under every reading of
+the inputs. **Prediction: every funded Bulk arm loses goodput by approximately
+its own overhead and gains nothing on completion p50, at BOTH transfer sizes.**
+
+**`H_object` — THE OBJECT-SCALE READING (§14.25's).** §14.25's own arithmetic,
+verbatim:
+
+```text
+   Cost:    r_tail · W  symbols        (its worked example: 0.2 × 64 = 13 symbols)
+   Saving:  P(≥1 tail loss) × ~1.5 RTT of completion per avoided serial ARQ round
+            P(≥1 tail loss) = 1 − (1−ε)^W        (§14.25: "≈ 80% at ε=2.5%, W=64")
+```
+
+Evaluated here at `c2` — **and the evaluation is this section's, not §14.25's**,
+which states the formula and the 80 % but tabulates no per-object figure:
+
+```text
+   P        =  0.80                                    §14.25's own number at ε = 2.5 %, W = 64
+   1.5·RTT  ∈  [12 ms, 108 ms]     RTprop = 8 ms (16.80.4) at a DRAINED tail queue,
+                                   srtt = 72 ms (the r-law input table) at a LOADED one
+   saving   ≈  0.80 × [12, 108]    =  [9.6, 86] ms   PER OBJECT
+   cost     ≈  0.2 × 64 × 96 µs    =  1.23 ms        (t_sym = T_pay·8/rate = 1200·8/100 Mbit)
+```
+
+**THE BRACKET ON `1.5·RTT` IS DISCLOSED RATHER THAN RESOLVED**, and its two
+ends are the same physical question as 16.82.1's: at the stream tail the send
+queue is draining, so `srtt` is in transit from its loaded value toward
+`RTprop`, and no ledger records where it lands. **The return is between 8:1 and
+70:1 per object either way, which is why `H_object` is a live rival and not a
+formality.**
+
+**THE DISCRIMINATOR IS THE OBJECT SIZE, AND IT IS THE ONLY REASON 25 MB IS IN
+THE GRID.** A 1.8 MB object at 100 Mbit is ≈ 144 ms of transfer, so `H_object`
+predicts a **7–60 %** completion effect; a 25 MB object is ≈ 2 s, so it predicts
+**0.5–4.3 %**. `H_price` predicts the same sign at both sizes. **The two
+hypotheses are not contradictory** — one prices the steady state, the other the
+last `1.5·SRTT`. What cannot hold is the shipped composition, in which one `r*`
+serves both regimes through one δ; that is exactly what §14.26's glide was
+written to fix, and what the engine has never executed.
+
+#### 16.82.5 The χ activation — a principled feed, because the "endless tunnel" assumption is FALSE for the transfers this tree measures
+
+§14.26 records the reason χ is never fed: *"a production tunnel is an endless
+stream — there is no 'last symbol' the sender can see, so χ = 0 permanently."*
+The engine states the same thing at the setter:
+`control/fec_rate.rs:212` — *"The production tunnel never calls this (endless
+stream ⇒ χ = 0)"*, with `#[allow(dead_code)]` on the line above it.
+
+**THAT ASSUMPTION IS TRUE OF A TUNNEL AND FALSE OF EVERY TRANSFER IN THIS
+TREE'S MEASUREMENT RECORD.** Every battery runs a finite object of a declared
+size. **⇒ `χ ≡ 0` in the engine is not a physical fact about the workload; it is
+an unwired consumer** — and every `r* = 0` reading the record contains was taken
+with the one input that could have moved `r` pinned at its null value.
+
+**THE MACHINERY IS ALREADY BUILT AND ONLY THE FEED IS MISSING, WHICH IS STATED
+PRECISELY BECAUSE IT BOUNDS THE WORK.** `raptorpath_math::completion_exposure`
+exists and is the kernel:
+
+```text
+   χ(T_rem)  =  Φ̄( (T_rem − 1.5·SRTT) / σ_arq ) ,     σ_arq = max(4·RTTVAR, SRTT/4)
+```
+
+— `raptorpath-math/src/lib.rs:439-446`, consumed by the glide at `:628-633` as
+`p + (BULK_TAIL_BUDGET − p)·χ`. `FecRateController::set_completion_exposure`
+exists (`control/fec_rate.rs:215`) and its ONLY caller repo-wide is
+`tests/gate_suite.rs:744`. **So the glide is implemented, tested, and fed by
+nothing.**
+
+**WHAT THE PERF CLIENT KNOWS, AND WHAT IT DOES WITH IT — READ, NOT ASSUMED.**
+`perf.rs:174-217` computes `total = nbytes.div_ceil(payload_len)` and carries a
+`left` counter written at `:184`/`:187` and read only at `:186`; `total` goes on
+the wire inside the perf protocol's own chunk header (`perf.rs:64-70`), which
+the engine treats as opaque TUN bytes. **`T_rem` is therefore COMPUTABLE at the
+client and is computed there for another purpose, and no line of code carries
+it across the boundary.** That is the whole of the χ activation: a
+`CompletionFeed` on the peer config, a call site at the rate site, and a `[CHI]`
+gauge.
+
+**`RTTVAR`'s PROVENANCE IS STATED RATHER THAN ASSUMED.** The engine's RTTVAR is
+RFC 6298's, at the RFC's own gains — SRTT EWMA `α = 1/8` (`scheduler/mod.rs:1793`)
+and the squared deviation at `β = 1/4` (`:1829`). **The `4×` multiplier and the
+`SRTT/4` floor in `σ_arq` are NEITHER of those and are DECLARED, not derived**
+(`raptorpath-math/src/lib.rs:444`); the floor exists because a degenerate RTTVAR
+would collapse the kernel to a step. **Both go to the register of 16.80.12,
+arbitrary and UNCORRECTED.** The commonly quoted cold value `RTTVAR = 0.125·SRTT`
+is a steady-state coincidence of the `α = 1/8` gain on a smooth path, not a
+derived quantity, and it is not used here.
+
+**LIMITS.** `T_rem → ∞` ⇒ `χ → 0` ⇒ `L_pro` degenerates to `r`, whose minimiser
+is `r = 0` — **the endless tunnel is recovered exactly, with no special case**
+(and `completion_exposure` returns 0 on a non-finite `t_rem` by construction,
+`lib.rs:440-442`). `T_rem → 0` ⇒ `χ → 1` ⇒ the interior condition is
+`δ ≥ δ_exit`, i.e. the table of 16.82.2 read at its ceiling. `σ_arq → 0` ⇒ the
+kernel degenerates to §14.25's one-shot burst at `T_rem = 1.5·SRTT`, which is
+§14.26's own limiting-case statement restated as a shape check.
+
+#### 16.82.6 The battery's pre-stated falsifier — and why the record's "19–32 ms decodes" is NOT it
+
+The record contains a number that looks like a decisive refutation of proactive
+FEC and is not one. Goal-gate's frontier-repair diagnosis reported that under
+`RWM_MIN_R = 0.15` *"each decode takes ~19–32 ms, LONGER than the ARQ round it
+replaces"* — and the SAME record withdrew the reading in terms one part later:
+*"the prior 'DECODE avg' spanned hole-armed → frontier-passes and thus
+**included the wait for enough rank to isolate the hole**; it was never decode
+compute"*, with raw compute at **6–10 µs/call, 33–54 ms TOTAL over a whole
+1.8 MB transfer**, and the conclusion *"the prior 'decode ~25–67 ms > ARQ' was
+doubly wrong."*
+
+**⇒ THE `19–32 ms` FIGURE IS RESOLUTION WAITING, NOT COMPUTE, AND MUST NOT BE
+QUOTED AS A COST OF FEC.** What it measures is ENTANGLEMENT: a repair that
+lands as a multi-unknown pivot cannot isolate its hole until neighbours arrive
+(`present_at_stall = 0` in every run; `probe_holes 19` against
+`probe_buffered 4`). That is a real and separate failure mode, it is a property
+of WHERE the repair is coded rather than of `r`, and it is why this battery
+carries its own falsifier:
+
+```text
+   [FDIAG]  decode-resolved wall time   vs   ARQ-resolved wall time,  per hole
+   decode-resolved  >  ARQ-resolved   ⇒   ENTANGLEMENT-DOMINATED
+```
+
+**`ENTANGLEMENT-DOMINATED` is a legal outcome REGARDLESS OF GOODPUT**, so that a
+funded arm which happens to win on throughput cannot be reported as a
+vindication of `r` when its repairs are in fact arriving late and being redeemed
+by their neighbours. **The instrument already exists** (`RWM_FDIAG`, the raw
+`win_dec.add_symbol()` timer separated from per-hole resolution wall time); this
+section adds no instrument, it names which column decides.
+
+#### 16.82.7 The battery, in outline — arms, cells, sizes, scores
+
+**Written here as the section's owed measurement, NOT licensed by this commit.**
+Its own pre-registration is a separate commit in goal-gate; the VM is touched by
+neither.
+
+| arm | what it changes | why it is in the grid |
+|---|---|---|
+| `CTL` | nothing — shipped defaults, bulk hint | the corner, measured |
+| `MID` | `RWM_DELTA = 0.05` ⇒ `β = ½` EXACTLY (`β(δ) = clamp(−½·log₁₀(δ/δ_auto), 0, 1)`, §16.81), with `RWM_COPA_DELTA = 0.005` pinning the CC so congestion control does NOT move with the price | funds `r` through the ONE δ surface, the only way to fund it without a mode bit |
+| `GLIDE` | `RWM_COMPLETION_EXPOSURE` — χ fed from the perf client's own `T_rem` | tests `H_object` where §14.26 says the value is |
+| `GLIDE-ζ` | `GLIDE` with the tail target from the ζ quotient rather than `BULK_TAIL_BUDGET` | separates "the glide" from "the glide's arbitrary 0.05" |
+
+Cells `c8` and `sc2`; sizes **1.8 MB and 25 MB**; ×8, seeds 42 and 7. Scored on
+goodput, completion p50 and `dnf`. **Mechanism liveness is a WITNESS read
+BEFORE any score**: `[DIAG] cod/src > 0` on funded arms (an `r` that never
+reaches the wire scores nothing), `[CHI] max > 0.5` with tail `cod > 0` on the
+glide arms, and byte-identity with `CTL` when every gate is absent.
+
+**LEGAL OUTCOMES — the complete set; no verdict outside it may be recorded.**
+`R-INERT` (the funded arm does not move the wire — a wiring failure, not a
+result) / `R-FUNDED-NEGATIVE` (`H_price` confirmed) /
+`R-FUNDED-POSITIVE-SMALL-ONLY` (`H_object` confirmed: completion improves at
+1.8 MB and not at 25 MB) / `ENTANGLEMENT-DOMINATED` (16.82.6's criterion fires,
+regardless of goodput) / `GLIDE-INERT` (χ reaches the wire and `r` does not
+follow).
+
+**THE GOODPUT LEG IS A GUARD AND NOT A SCORE AT `n = 8`**, on the grounds
+§16.80's batteries used: the per-rep spread at these cells swamps the `r/(1+r)`
+effect size. **The scored dimension is completion p50 at the two sizes, which is
+where the two hypotheses disagree.**
+
+#### 16.82.8 The record's open item, CLOSED as a question and OPENED as a domain
+
+Goal-gate's standing open item reads: *"Sender loss-estimator honesty at
+singles: per-path `pl` reads 0.000–0.010 at 2.5–4.8 % cells ⇒ `r* = 0` ⇒ the
+proactive plane is dead at singles; whether funded proactive `r*` beats
+reactive-only at bulk is an open item-11 question."*
+
+**THAT ITEM ASSUMED ONE CAUSE AND THERE ARE TWO, AND THEY ARE NOT
+SUBSTITUTES.**
+
+* **Its diagnosis is superseded at Bulk.** Fixing the estimator would not fund
+  `r` there: `r* = 0` at Bulk is over-determined, by the anchor law AND by
+  `δ·χ < δ_exit` under every reading. **And the estimator's dishonesty pushes
+  `δ_exit` the WRONG way** — `δ_exit ∝ ε̂^{−1/2}`, so an under-reading estimator
+  makes the exit price HIGHER, not lower (16.82.2's rows 3–4 against rows 1–2).
+  An honest estimator would make FEC cheaper to justify, and even then Bulk
+  stays at the corner.
+* **Its question survives, sharpened.** "Does funded proactive `r*` beat
+  reactive-only at bulk?" now has a stated domain: it can only be answered by
+  funding `r` through δ (`MID`) or through χ (`GLIDE`), because those are the
+  only two inputs the price form has.
+* **The previous attempts are re-read, not re-scored.** Every `RWM_MIN_R` arm on
+  the record forced `r` past the price without changing the price — exactly the
+  configuration `H_price` says must lose. **That they all regressed is
+  CONSISTENT with this derivation and is NOT evidence for it**, because none was
+  pre-registered and none carried `[FDIAG]`.
+
+#### 16.82.9 Per-symbol provenance
+
+| symbol | value / form | class | source |
+|---|---|---|---|
+| `r` | the decision variable, a wire fraction | **DERIVED** | §8.4 `r_star_mass`; `raptorpath_math::controller_rate` via `FecRateController::compute_repair_rate` |
+| `δ` | 50 / 0.5 / 0.005 at the three named points, as the QUOTIENT `COPA_DELTA/ζ(hint)` | **DECLARED** — `COPA_DELTA = 0.5` (`scheduler/mod.rs:47`), `ζ ∈ {0.01, 1, 100}` (`control/fec_rate.rs:70-76`). **The literals 50/0.5/0.005 are executable constants NOWHERE in the engine** — doc comment only, `scheduler/mod.rs:119-120` | §16.80.6 "ONE SCALE" |
+| `χ` | `Φ̄((T_rem − 1.5·SRTT)/σ_arq)` | **DERIVED** (§14.26), **IMPLEMENTED** (`raptorpath-math/src/lib.rs:439-446`), **AND FED BY NOTHING** — `set_completion_exposure` (`control/fec_rate.rs:215`) has one caller repo-wide, `tests/gate_suite.rs:744` | §14.26 |
+| `σ_arq` | `max(4·RTTVAR, SRTT/4)` | **DECLARED — the `4×` gain and the `SRTT/4` floor are ARBITRARY. NOT corrected. Register row.** `RTTVAR` itself is RFC 6298 at `α=1/8`, `β=1/4` (`scheduler/mod.rs:1793, :1829`) | `raptorpath-math/src/lib.rs:444` |
+| `T_rem` | remaining source symbols / send rate | **COMPUTABLE AT THE CLIENT, NOT PLUMBED** — `perf.rs:174-217` carries `left` and `total`; neither crosses into the engine | read, with line numbers |
+| `ε̂` | **TWO READINGS, both carried:** channel 0.02534 (`c2`) / 0.04762 (`c3`), exact from `p/(p+q)` on `transport/quic.rs`'s cell table; estimator 0.0056 (`c7`) / 0.0184 (`c8`) | channel: **DERIVED, EXACT**. estimator: **MEASURED and KNOWN LOW by 3–5×** (goal-gate's own open item). **Neither is preferred; the gap is disclosed** | §16.73.3 records `ε̂` as *"DERIVED, NOT ECHOED … No gauge reports it"* |
+| `σ²_burst` | 2.899 (`c2`) / 3.762 (`c3`) / 2.996 (`c1`) | **DERIVED, EXACT** — §8.3's `1 + 2(1−p−q)/(p+q)` on the harness's own `gemodel` parameters | §16.73.3 |
+| `W` | 64 used as a REFERENCE | **NOT ECHOED BY ANY GAUGE.** §8.8 `derive_window`, clamped `[16, 512]` by the math layer, `MAX_WINDOW_SIZE = 200` at the sender. **`W = 64` is the SIMULATOR's window (§14.25), carried as a stated reference, not as a measurement** | §16.73.3's own provenance row |
+| `d` | **THREE readings, bracketed in 16.82.1** | **THE SECTION'S ONE UN-ECHOED RATIO.** Reading (ii)'s `D_arq/d = 2.2` is **DECLARED HERE and is not a measurement** | 16.82.1 |
+| `D_arq` | `srtt + k(α)·σ + d` | **MEASURED** | §16.73.3 |
+| `S` | `√(ε̂·σ²_burst/(W(1−ε̂)))` | **DERIVED** — §8.4's `∂z_f/∂r = 1/S`; no free parameter | §16.73.2 |
+| `φ`, `Φ̄` | standard normal density / survival | **CITED** — the same normal machinery §3.4, §8.2 and §14.26 already use | — |
+| `√(2π)` | 2.50663 | **DERIVED** — `1/φ(0)`, the density's maximum. **The only numeric constant in `δ_exit`, and it is a property of the Gaussian** | — |
+| `P(≥1 tail loss)` | `1 − (1−ε)^W` ≈ 0.80 | **§14.25's own evaluation**, quoted not recomputed | §14.25 |
+| `r_tail` | 0.2 | **ARBITRARY — §14.25's own "e.g.". NOT corrected, correct value unknown.** Register row | §14.25 |
+| `BULK_TAIL_BUDGET` | 0.05 | **ARBITRARY — §14.25's *"a modest tail-failure budget (e.g. δ_tail = 0.05)"*, an "e.g." PROMOTED TO A `const`. NOT corrected.** Register row | `raptorpath-math/src/lib.rs:124`, consumed `:633` |
+| the Bulk tail target `1e-3` | `CONTRACT_TAIL_LOSS_BASE × ζ_Bulk` = `1e-5 × 100` | **DERIVED — it is a product, not a literal**, and exists as a constant nowhere (`net/mod.rs:805` is the base; the product appears only in test comments at `control/fec_rate.rs:842, :853`) | read |
+| `t_sym` | 96 µs at 100 Mbit | **DERIVED** — `T_pay × 8 / rate`, `T_pay = 1200 B` code-exact | 16.80.9 |
+
+**There is no coefficient in `δ_exit` with no provenance.** `√(2π)` is the
+Gaussian's; every other symbol is measured, derived, or explicitly bracketed.
+**The arbitrary constants in this section are all in the BATTERY's inputs and in
+§14.25's tail budget, never in the law**, and each carries a register row.
+
+#### 16.82.10 Shape check
+
+* **Units.** `r` is a dimensionless wire fraction. `ε̂`, `χ`, `P_fec`, `φ`, `S`
+  are pure; `D_arq` and `d` are both seconds and appear as a ratio. `δ_exit` is
+  therefore dimensionless and directly comparable with `δ`, which is Copa's
+  dimensionless utility weight. **The comparison `δ·χ ≥ δ_exit` is
+  type-correct** — which is precisely what §16.69's `c_FA`-against-delay
+  comparison was not (16.80.11).
+* **Monotone in `ε̂`.** `δ_exit ∝ S/ε̂ ∝ ε̂^{−1/2}` — a lossier channel has a
+  LOWER exit price, so FEC becomes admissible at a cheaper contract. Correct
+  sign, and it is why the estimator's under-reading raises the exit price
+  instead of lowering it (16.82.8).
+* **Monotone in `W`.** `δ_exit ∝ W^{−1/2}`: a wider coding window makes each
+  repair symbol more productive, lowering the price at which it pays. Correct
+  sign. **Over the math layer's own `[16, 512]` clamp this is a factor of 5.7**,
+  and the Bulk verdict survives the whole range while the Auto verdict is
+  already undecided on `d`.
+* **Monotone in `σ²_burst`.** `δ_exit ∝ σ_burst`: burstier loss makes the normal
+  margin more expensive, raising the exit price. Correct sign.
+* **Monotone in `D_arq`.** `δ_exit ∝ 1/D_arq`: a more expensive ARQ round makes
+  avoiding it worth more. Correct sign — and this is the ONLY place the reactive
+  plane's cost enters the proactive price, which is §16.73's consistency
+  condition's whole content, now differentiated instead of equated.
+* **Limits.** `χ → 0` ⇒ the second term vanishes ⇒ `r* = 0` exactly: the endless
+  tunnel, with no case split. `χ → 1, δ → ∞` ⇒ the stationarity condition asks
+  `φ(z_f) → 0` ⇒ `z_f → ∞` ⇒ `r*` rises to the codec ceiling, i.e. the
+  `max_overhead` clamp binds and the law hands over to a declared resource
+  bound. `ε̂ → 0` ⇒ `S → 0` and the second term's own `ε̂` → 0: **both legs
+  vanish together**, `r* = 0`, and the degenerate case degenerates in the right
+  direction — nothing to protect against.
+* **Continuity in the dial.** `δ_exit` contains no δ, no ρ, no `r` and no hint —
+  it is a channel property. `L_pro` is `C¹` in `r` and linear in `δ·χ`. **The
+  only non-smooth operator is the `max(0, ·)` already in the shipped
+  `r_star_mass`, acting on the DECISION VARIABLE.**
+* **Degenerate cases render, they do not vanish.** `W` unreported ⇒ its row
+  renders `-`; `χ` unfed ⇒ `[CHI] max = 0`, which is distinguishable from an
+  ABSENT `[CHI]` line, which is an unreached emission site.
+
+#### 16.82.11 What this supersedes, and what it leaves standing
+
+* **§16.73.4's CORNER → GIVEN A BOUNDARY, AND THE BOUNDARY IS BRACKETED.**
+  §16.73's condition was written with `δ` cancelled; this section reintroduces it
+  on the proactive leg alone and obtains `δ_exit`. **§16.73 is not corrected; it
+  is differentiated.** Its own `δ_pro` corner bound is the same expression at
+  `φ(z_f(0))` instead of `φ(0)`, which is stated as an identity in 16.82.0.
+* **§16.73.3's "`d` CANCELS" → TRUE THERE, FALSE HERE, AND THE DIFFERENCE IS THE
+  DERIVATION'S OWN.** The ambiguity in `d` is created by differentiating one leg
+  and is named in 16.82.1 with the gauge that would settle it.
+* **§14.26's "future work" → NAMED AS THE ONE UNWIRED INPUT, WITH LINE
+  NUMBERS.** §14.26 wrote *"Feeding χ from an application-known transfer size …
+  is future work"*. The consequence for the record is stated here: **every `r*`
+  in it was measured at `χ = 0`**, and the kernel it would have used has been
+  implemented and unit-tested the whole time.
+* **§14.25's tail-burst arithmetic → RE-READ AS `H_object`, AND ITS BUDGET SENT
+  TO THE REGISTER.** The saving/cost shape is §14.25's own; the per-object
+  evaluation is this section's and is labelled as such. **`δ_tail = 0.05` was an
+  "e.g." in §14.25 and is a `const` in `raptorpath-math`; that promotion is
+  recorded as a defect of provenance and the constant is NOT corrected.**
+* **The record's "19–32 ms decodes" → ALREADY WITHDRAWN BY THE RECORD, AND THE
+  WITHDRAWAL IS PROMOTED HERE** to a pre-stated criterion instead of a memory.
+* **STANDING AND UNTOUCHED.** §16.73.3's consistency condition and its α bound;
+  §8.4's closed form; §16.80's entire recovery-clock theorem, which is about `T`
+  and not about `r`; every register row of 16.80.12.
+
+#### 16.82.12 What this section does NOT claim
+
+* **NO CONSTANT IS BLESSED AND NONE IS CORRECTED.** `BULK_TAIL_BUDGET = 0.05`,
+  `r_tail = 0.2`, `σ_arq`'s `4×` and `SRTT/4`, and the `RWM_MIN_R` diagnostic
+  values are arbitrary, UNCORRECTED, and in the register of 16.80.12 with their
+  deciding measurements.
+* **NO MEASUREMENT IS REPORTED.** Not one number here is a measurement of `r` at
+  `r > 0`; the engine has never run there under a pre-registered arm. The tables
+  of 16.82.2 are EVALUATIONS of a derived expression at bracketed inputs, which
+  is a different thing and is labelled as one.
+* **THE AUTO VERDICT IS NOT DECIDED AND THIS SECTION DOES NOT DECIDE IT.**
+  `AUTO-UNDECIDED-ON-d` is the verdict, and inventing a value for `d` to close
+  it would be exactly the move the ruling forbids.
+* **THE BULK VERDICT IS CONDITIONAL ON THE PER-SYMBOL FRAME AND SAYS SO.** It
+  prices one symbol against one ARQ round. `H_object` is the pre-stated rival
+  precisely because an object-scale end effect is invisible to that frame, and
+  this section does not claim to have refuted it.
+* **`W = 64` IS THE SIMULATOR'S WINDOW AND IS NOT THE ENGINE'S.** Both `S` and
+  `δ_exit` carry that gap; §16.73.3's containment argument (`G` minimised at
+  `u = 1`) does NOT transfer, because `δ_exit` is monotone in `W` rather than
+  bounded by it. The `W^{−1/2}` sensitivity is stated in the shape check rather
+  than waved away.
+* **NO ENGINE CHANGE, NO GATE, NO DEFAULT, NO TEST, NO ARM BUILT.** `RWM_DELTA`,
+  `RWM_COMPLETION_EXPOSURE`, `RWM_TAIL_BUDGET` and `[CHI]` are SPECIFIED here and
+  built by no commit in this series. `set_completion_exposure` keeps its
+  `#[allow(dead_code)]` and its single test caller.
+* **NOTHING HERE LICENSES A DEFAULT FLIP.** Even `R-FUNDED-POSITIVE-SMALL-ONLY`
+  would license only a further pre-registered pass: one positive result at one
+  size on one cell is not a law.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
+
 ## 17. The Measured Regime Map (2026-07-19)
 
 This section is the paper's standing verdict on what the model's
