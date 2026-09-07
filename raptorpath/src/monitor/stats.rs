@@ -154,6 +154,16 @@ pub struct FecStats {
     pub target_tail_loss_bits: AtomicU64,
     pub total_source_symbols: AtomicU64,
     pub total_repair_symbols: AtomicU64,
+    /// **A0.4 — THE TAPER COPY.** The proactive emission's `P_lost` branch
+    /// (`net/emit_source.rs`) spends a correction slot on a COPY of the oldest
+    /// un-acked seq instead of on a fresh coded symbol. Those copies land at
+    /// the receiver as `[RFA] dup_src` exactly as a gap-driven retransmit
+    /// does, but they are NOT gap fires — so without this counter
+    /// `dup_src / [FCAUSE] n` over-attributes realized waste to the reactive
+    /// loop. Counted at the emission decision, on EVERY arm (unlike the
+    /// DIAG-gated `mpd_plost_retx` beside it), so the waste split
+    /// {gap-fire copy, taper copy, margin} is readable from a shipped run.
+    pub taper_copy: AtomicU64,
 }
 
 /// Block decode statistics.

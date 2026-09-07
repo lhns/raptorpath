@@ -855,6 +855,14 @@ pub(crate) fn emit_source(
                     }
                 }
 
+                if use_retransmit {
+                    // A0.4 THE TAPER COPY, counted on EVERY arm: this
+                    // correction slot is about to carry a COPY of an
+                    // already-sent seq rather than a fresh coded symbol.
+                    // It is the second source of realized repair waste and
+                    // the reactive gap loop is not it.
+                    ctx.stats.fec.taper_copy.fetch_add(1, Ordering::Relaxed);
+                }
                 if use_retransmit && pol.diag_on {
                     // feat/recovery-suppression trace: the P_lost-
                     // branch retransmit channel (fed by eps_at_send).

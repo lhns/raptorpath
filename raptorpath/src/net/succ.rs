@@ -313,10 +313,20 @@ impl Hist {
 /// The receiver-site successor-arrival gauge. Owned by the receiver task; no
 /// engine handle, no shared state, no `&mut` reachable from any decision site.
 pub struct SuccGauge {
-    /// Open holes: seq → the instant it was DETECTED. `BTreeMap` because the
-    /// abandonment sweep is a frontier range, which a hash map cannot do
-    /// without scanning the whole map on every frontier advance.
-    open: BTreeMap<u64, Instant>,
+    /// Open holes: seq → (the instant it was DETECTED, **the path whose
+    /// arrival EXPOSED it**). `BTreeMap` because the abandonment sweep is a
+    /// frontier range, which a hash map cannot do without scanning the whole
+    /// map on every frontier advance.
+    ///
+    /// **A0.3 — THE EXPOSER PATH IS RECORDED AT DETECTION AND NOWHERE ELSE.**
+    /// A hole is exposed by the arrival of a strictly higher seq; that arrival
+    /// landed on exactly one path, and the seq that eventually closes the hole
+    /// lands on exactly one path too. Same ⇒ a SAME-PATH ordering event
+    /// (in-path reordering, or a real loss on that path). Different ⇒ a
+    /// CROSS-PATH skew event, which at a single-path cell is STRUCTURALLY
+    /// IMPOSSIBLE — that is the control reading. Observation only; nothing in
+    /// the engine branches on it.
+    open: BTreeMap<u64, (Instant, u32)>,
     /// The gauge's own high-water seq mark. `None` until the first arrival —
     /// the flow's first symbol exposes no hole, it establishes the baseline.
     hi: Option<u64>,
@@ -324,6 +334,12 @@ pub struct SuccGauge {
     orig: Hist,
     rep: Hist,
     aban: Hist,
+    /// **A0.3 — THE SAME/CROSS EXPOSURE SPLIT.** Resolution times of holes
+    /// whose CLOSING arrival came on the SAME path that exposed them (`sp`)
+    /// and on a DIFFERENT one (`xp`). Disjoint, and their `n`s sum to `res` by
+    /// construction: every resolution carries exactly one arrival path.
+    sp: Hist,
+    xp: Hist,
     /// Every hole ever DETECTED, tracked or not — the identity's left side.
     det: u64,
     /// Detections the bounds refused to track.
@@ -351,6 +367,8 @@ impl SuccGauge {
             orig: Hist::default(),
             rep: Hist::default(),
             aban: Hist::default(),
+            sp: Hist::default(),
+            xp: Hist::default(),
             det: 0,
             over: 0,
             gen,
@@ -372,13 +390,22 @@ impl SuccGauge {
     /// for any of them.** One `add_symbol` can emit several seqs in arbitrary
     /// order; resolving the whole batch first is what stops a batch that
     /// decodes `[10, 8]` from opening a hole for 8 and closing it at 0 µs.
-    pub fn resolve(&mut self, seq: u64, by_repair: bool, now: Instant) {
-        let Some(t0) = self.open.remove(&seq) else {
+    ///
+    /// `path_id` is the path the CLOSING arrival landed on — compared against
+    /// the path that EXPOSED the hole (A0.3). Classification only: the
+    /// comparison feeds two histograms and no decision.
+    pub fn resolve(&mut self, seq: u64, by_repair: bool, now: Instant, path_id: u32) {
+        let Some((t0, exposer)) = self.open.remove(&seq) else {
             return;
         };
         let us = now.saturating_duration_since(t0).as_micros() as u64;
         let outcome =
             if by_repair { HoleOutcome::Repair } else { HoleOutcome::Original };
+        if path_id == exposer {
+            self.sp.add(us);
+        } else {
+            self.xp.add(us);
+        }
         self.record(outcome, us);
     }
 
@@ -386,7 +413,7 @@ impl SuccGauge {
     /// current high-water mark and `seq` has, by definition of a high-water
     /// mark, never been seen — so each is a hole this arrival has just
     /// EXPOSED, and each is stamped now.
-    pub fn observe_high(&mut self, seq: u64, now: Instant) {
+    pub fn observe_high(&mut self, seq: u64, now: Instant, path_id: u32) {
         let Some(hi) = self.hi else {
             // The flow's first arrival establishes the baseline and exposes
             // nothing: there is no "outstanding hole" below a mark that does
@@ -413,7 +440,7 @@ impl SuccGauge {
                 self.over = self.over.saturating_add(seq - s);
                 return;
             }
-            self.open.insert(s, now);
+            self.open.insert(s, (now, path_id));
         }
     }
 
@@ -429,7 +456,7 @@ impl SuccGauge {
         // than O(n) in the number open.
         let keep = self.open.split_off(&frontier);
         let gone = std::mem::replace(&mut self.open, keep);
-        for (_, t0) in gone {
+        for (_, (t0, _)) in gone {
             let us = now.saturating_duration_since(t0).as_micros() as u64;
             self.record(HoleOutcome::Abandoned, us);
         }
@@ -466,6 +493,24 @@ impl SuccGauge {
     /// Detections the declared bounds refused to track.
     pub fn over_n(&self) -> u64 {
         self.over
+    }
+
+    /// A0.3: holes closed by an arrival on the SAME path that exposed them.
+    pub fn sp_n(&self) -> u64 {
+        self.sp.n()
+    }
+
+    /// A0.3: holes closed by an arrival on a DIFFERENT path from the one that
+    /// exposed them — the WIRE-REORDER (scheduler-skew) class. At a
+    /// single-path cell this is STRUCTURALLY ZERO.
+    pub fn xp_n(&self) -> u64 {
+        self.xp.n()
+    }
+
+    /// `xp_n / (sp_n + xp_n)`. `None` — rendered `-` — when nothing resolved.
+    pub fn xp_frac(&self) -> Option<f64> {
+        let d = self.sp.n() + self.xp.n();
+        (d > 0).then(|| self.xp.n() as f64 / d as f64)
     }
 
     pub fn hist(&self, outcome: HoleOutcome) -> &Hist {
@@ -511,6 +556,8 @@ impl SuccGauge {
             &self.orig,
             &self.rep,
             &self.aban,
+            &self.sp,
+            &self.xp,
             self.open_n(),
             self.over,
             self.crossing_us(),
@@ -580,6 +627,8 @@ pub fn succ_report_line(
     orig: &Hist,
     rep: &Hist,
     aban: &Hist,
+    sp: &Hist,
+    xp: &Hist,
     open: u64,
     over: u64,
     cross_us: Option<u64>,
@@ -592,9 +641,21 @@ pub fn succ_report_line(
     } else {
         format!("{:.4}", orig.n() as f64 / res as f64)
     };
+    // A0.3: the same/cross exposure split, APPENDED so every prior reader of
+    // this line keeps its offsets — the additive-column rule.
+    let xpd = sp.n() + xp.n();
+    let xf = if xpd == 0 {
+        "-".to_string()
+    } else {
+        format!("{:.4}", xp.n() as f64 / xpd as f64)
+    };
+    let qq =
+        |h: &Hist, p: f64| h.quantile(p).map_or_else(|| "-".to_string(), |v| v.to_string());
     format!(
         "[SUCC] gen={} det={} res={} {} {} {} open={} over={} \
-         orig_frac={} cross_us={} dump={}/{}",
+         orig_frac={} cross_us={} dump={}/{} \
+         sp_n={} xp_n={} xp_frac={} sp_p50_us={} sp_p90_us={} \
+         xp_p50_us={} xp_p90_us={}",
         u8::from(gen),
         det,
         res,
@@ -607,6 +668,13 @@ pub fn succ_report_line(
         cross_us.map_or_else(|| "-".to_string(), |v| v.to_string()),
         u8::from(dump_on),
         dumped,
+        sp.n(),
+        xp.n(),
+        xf,
+        qq(sp, 0.50),
+        qq(sp, 0.90),
+        qq(xp, 0.50),
+        qq(xp, 0.90),
     )
 }
 
@@ -683,17 +751,17 @@ mod tests {
         // The flow's first symbol is seq 7 — that is a BASELINE, not seven
         // holes. A gauge that opened holes below its first-ever arrival would
         // manufacture its own denominator.
-        g.observe_high(7, t);
+        g.observe_high(7, t, 0);
         assert!(g.is_receiver_site());
         assert_eq!(g.det_n(), 0, "the first arrival exposes no hole");
         assert_eq!(g.open_n(), 0);
         // seq 10 arrives: 8 and 9 have never been seen, so both are exposed.
-        g.observe_high(10, t);
+        g.observe_high(10, t, 0);
         assert_eq!(g.det_n(), 2);
         assert_eq!(g.open_n(), 2);
         // A seq at or below the mark exposes nothing.
-        g.observe_high(9, t);
-        g.observe_high(10, t);
+        g.observe_high(9, t, 0);
+        g.observe_high(10, t, 0);
         assert_eq!(g.det_n(), 2, "a non-advancing arrival exposes no hole");
     }
 
@@ -701,12 +769,12 @@ mod tests {
     fn the_three_outcomes_are_disjoint_and_the_first_terminal_event_wins() {
         let t = Instant::now();
         let mut g = SuccGauge::new(false, false, 0);
-        g.observe_high(0, t);
-        g.observe_high(4, t); // exposes 1, 2, 3
+        g.observe_high(0, t, 0);
+        g.observe_high(4, t, 0); // exposes 1, 2, 3
         assert_eq!(g.det_n(), 3);
 
-        g.resolve(1, false, at(t, 500)); // original, 500 µs
-        g.resolve(2, true, at(t, 1500)); // repair, 1500 µs
+        g.resolve(1, false, at(t, 500), 0); // original, 500 µs
+        g.resolve(2, true, at(t, 1500), 0); // repair, 1500 µs
         g.abandon_below(4, at(t, 9000)); // 3 given up, 9000 µs
 
         assert_eq!(g.hist(HoleOutcome::Original).n(), 1);
@@ -719,8 +787,8 @@ mod tests {
         // A LATE ARRIVAL OF AN ABANDONED SEQ IS NOT A SECOND OUTCOME. This is
         // the property that makes the three classes a partition rather than
         // three overlapping counts.
-        g.resolve(3, false, at(t, 20_000));
-        g.resolve(1, true, at(t, 20_000));
+        g.resolve(3, false, at(t, 20_000), 0);
+        g.resolve(1, true, at(t, 20_000), 0);
         assert_eq!(g.hist(HoleOutcome::Original).n(), 1, "no double-count");
         assert_eq!(g.hist(HoleOutcome::Repair).n(), 1);
         assert_eq!(g.hist(HoleOutcome::Abandoned).n(), 1);
@@ -742,13 +810,13 @@ mod tests {
         };
 
         let mut g = SuccGauge::new(false, false, 0);
-        g.observe_high(0, t);
+        g.observe_high(0, t, 0);
         for s in 1..200u64 {
-            g.observe_high(s * 3, t); // exposes two holes per step
+            g.observe_high(s * 3, t, 0); // exposes two holes per step
             identity(&g);
         }
         for s in 1..100u64 {
-            g.resolve(s * 3 - 1, s % 2 == 0, at(t, 100 * s));
+            g.resolve(s * 3 - 1, s % 2 == 0, at(t, 100 * s), 0);
             identity(&g);
         }
         g.abandon_below(200, at(t, 999_999));
@@ -758,8 +826,8 @@ mod tests {
         // not at all, so the identity survives the truncation that protects
         // the gauge's memory.
         let mut g2 = SuccGauge::new(false, false, 0);
-        g2.observe_high(0, t);
-        g2.observe_high(MAX_SPAN + 10, t);
+        g2.observe_high(0, t, 0);
+        g2.observe_high(MAX_SPAN + 10, t, 0);
         assert_eq!(g2.det_n(), MAX_SPAN + 9);
         assert_eq!(g2.over_n(), MAX_SPAN + 9, "a too-wide span is all `over`");
         assert_eq!(g2.open_n(), 0);
@@ -767,15 +835,15 @@ mod tests {
 
         // MAX_OPEN: the map stops growing and the excess lands in `over`.
         let mut g3 = SuccGauge::new(false, false, 0);
-        g3.observe_high(0, t);
+        g3.observe_high(0, t, 0);
         let mut next = 0u64;
         while g3.open_n() < MAX_OPEN as u64 {
             next += MAX_SPAN;
-            g3.observe_high(next, t);
+            g3.observe_high(next, t, 0);
         }
         assert_eq!(g3.open_n(), MAX_OPEN as u64);
         let before = g3.over_n();
-        g3.observe_high(next + 100, t);
+        g3.observe_high(next + 100, t, 0);
         assert_eq!(g3.over_n(), before + 99, "past the cap, detections are `over`");
         identity(&g3);
     }
@@ -786,17 +854,17 @@ mod tests {
     fn the_crossing_point_is_where_repair_overtakes_original() {
         let t = Instant::now();
         let mut g = SuccGauge::new(false, false, 0);
-        g.observe_high(0, t);
+        g.observe_high(0, t, 0);
         for s in 1..=200u64 {
-            g.observe_high(s * 2, t);
+            g.observe_high(s * 2, t, 0);
         }
         // Originals: fast (≈1 ms). Repairs: slow (≈50 ms), and MORE numerous,
         // so the repair CDF must overtake somewhere between the two clusters.
         for s in 1..=50u64 {
-            g.resolve(s * 2 - 1, false, at(t, 1_000 + s));
+            g.resolve(s * 2 - 1, false, at(t, 1_000 + s), 0);
         }
         for s in 51..=200u64 {
-            g.resolve(s * 2 - 1, true, at(t, 50_000 + s));
+            g.resolve(s * 2 - 1, true, at(t, 50_000 + s), 0);
         }
         let cross = g.crossing_us().expect("repairs outnumber originals");
         assert!(
@@ -811,10 +879,10 @@ mod tests {
         // NO CROSSING IS A LEGAL OUTCOME, not a missing value: when the
         // original leads at every horizon there is no `t` to report.
         let mut h = SuccGauge::new(false, false, 0);
-        h.observe_high(0, t);
+        h.observe_high(0, t, 0);
         for s in 1..=20u64 {
-            h.observe_high(s * 2, t);
-            h.resolve(s * 2 - 1, false, at(t, 1_000));
+            h.observe_high(s * 2, t, 0);
+            h.resolve(s * 2 - 1, false, at(t, 1_000), 0);
         }
         assert_eq!(h.crossing_us(), None, "originals only ⇒ no crossing");
         assert_eq!(h.orig_frac(), Some(1.0));
@@ -835,7 +903,13 @@ mod tests {
         let mut rep = Hist::default();
         rep.add(40_000);
         let aban = Hist::default();
-        let l = succ_report_line(false, 7, &orig, &rep, &aban, 3, 1, Some(2048), false, 0);
+        let (mut sp, mut xp) = (Hist::default(), Hist::default());
+        sp.add(700);
+        sp.add(900);
+        xp.add(30_000);
+        let l = succ_report_line(
+            false, 7, &orig, &rep, &aban, &sp, &xp, 3, 1, Some(2048), false, 0,
+        );
         assert_eq!(
             l,
             // 1000 µs ⇒ bucket [960, 1024); 2000 ⇒ [1920, 2048); 40 000 ⇒
@@ -848,16 +922,24 @@ mod tests {
              rep_p50_us=36864 rep_p90_us=36864 rep_p99_us=36864 rep_mx_us=40000 \
              rep_mean_us=40000 aban_n=0 aban_p50_us=- aban_p90_us=- aban_p99_us=- \
              aban_mx_us=- aban_mean_us=- open=3 over=1 orig_frac=0.6667 \
-             cross_us=2048 dump=0/0"
+             cross_us=2048 dump=0/0 sp_n=2 xp_n=1 xp_frac=0.3333 \
+             sp_p50_us=640 sp_p90_us=896 xp_p50_us=28672 xp_p90_us=28672"
         );
         // `-` IFF NONE, on every slot of an empty outcome, and never a 0 that
         // a parser would read as a measured zero.
         assert!(l.contains("aban_n=0 aban_p50_us=-"));
         // THE GENERATION ROW: the line says which machine it measured.
         let e = Hist::default();
-        let g = succ_report_line(true, 0, &e, &e, &e, 0, 0, None, true, 12);
+        let g = succ_report_line(true, 0, &e, &e, &e, &e, &e, 0, 0, None, true, 12);
         assert!(g.starts_with("[SUCC] gen=1 det=0 res=0 "), "{g}");
         assert!(g.contains("orig_frac=- cross_us=- dump=1/12"), "{g}");
+        assert!(
+            g.ends_with(
+                "sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-"
+            ),
+            "the A0.3 split renders `-` iff none, and sits at the END of the \
+             line so every prior reader keeps its offsets: {g}"
+        );
     }
 
     #[test]
@@ -865,19 +947,19 @@ mod tests {
         let t = Instant::now();
         // OFF: not one line, whatever happens.
         let mut off = SuccGauge::new(false, false, 0);
-        off.observe_high(0, t);
-        off.observe_high(100, t);
+        off.observe_high(0, t, 0);
+        off.observe_high(100, t, 0);
         for s in 1..100u64 {
-            off.resolve(s, false, at(t, s));
+            off.resolve(s, false, at(t, s), 0);
         }
         assert!(off.take_dump_lines(true).is_empty(), "the dump ships OFF");
 
         // ON: full batches only until flushed, then the tail.
         let mut on = SuccGauge::new(false, true, 1_000);
-        on.observe_high(0, t);
-        on.observe_high(1_000, t);
+        on.observe_high(0, t, 0);
+        on.observe_high(1_000, t, 0);
         for s in 1..=(DUMP_BATCH as u64 + 5) {
-            on.resolve(s, s % 3 == 0, at(t, s * 10));
+            on.resolve(s, s % 3 == 0, at(t, s * 10), 0);
         }
         let lines = on.take_dump_lines(false);
         assert_eq!(lines.len(), 1, "one FULL batch, tail withheld: {lines:?}");
@@ -893,10 +975,10 @@ mod tests {
         // the histograms keep counting, so a capped dump never truncates the
         // quantile line it rides beside.
         let mut cap = SuccGauge::new(false, true, 4);
-        cap.observe_high(0, t);
-        cap.observe_high(100, t);
+        cap.observe_high(0, t, 0);
+        cap.observe_high(100, t, 0);
         for s in 1..=20u64 {
-            cap.resolve(s, false, at(t, s));
+            cap.resolve(s, false, at(t, s), 0);
         }
         let out = cap.take_dump_lines(true);
         assert!(
@@ -950,4 +1032,50 @@ mod tests {
             );
         }
     }
+    // ── A0.3 THE SAME/CROSS EXPOSURE SPLIT ──────────────────────────────
+
+    /// The split is DISJOINT, CLOSES against `res`, and is STRUCTURALLY ZERO
+    /// on a single path. The last clause is the control reading the audit's
+    /// `c1` row rests on: at a one-path cell no hole can be closed by an
+    /// arrival on another path, so `xp_n = 0` is a property of the wire and
+    /// not a property of the sample.
+    #[test]
+    fn the_same_cross_exposure_split_is_disjoint_closes_and_is_zero_on_one_path() {
+        let t = Instant::now();
+
+        // Single path: every arrival on path 0.
+        let mut one = SuccGauge::new(false, false, 0);
+        one.observe_high(0, t, 0);
+        one.observe_high(4, t, 0); // exposes 1, 2, 3
+        one.resolve(1, false, at(t, 500), 0);
+        one.resolve(2, true, at(t, 1_500), 0);
+        one.resolve(3, false, at(t, 2_500), 0);
+        assert_eq!(one.xp_n(), 0, "a one-path flow cannot expose a cross-path hole");
+        assert_eq!(one.sp_n(), 3, "every resolution is same-path there");
+        assert_eq!(
+            one.sp_n() + one.xp_n(),
+            one.hist(HoleOutcome::Original).n() + one.hist(HoleOutcome::Repair).n(),
+            "the split must close against res"
+        );
+        assert_eq!(one.xp_frac(), Some(0.0), "an at-zero fraction is 0.0, not `-`");
+        assert!(one.line().contains("xp_n=0"), "{}", one.line());
+
+        // Two paths: a hole exposed by a path-1 arrival and closed by a
+        // path-0 one is CROSS-PATH; closed by a path-1 one is SAME-PATH.
+        let mut two = SuccGauge::new(false, false, 0);
+        two.observe_high(0, t, 0);
+        two.observe_high(3, t, 1); // path 1 exposes 1 and 2
+        two.resolve(1, false, at(t, 400), 0); // cross
+        two.resolve(2, false, at(t, 800), 1); // same
+        assert_eq!((two.sp_n(), two.xp_n()), (1, 1));
+        assert_eq!(two.xp_frac(), Some(0.5));
+        let l = two.line();
+        assert!(l.contains("sp_n=1 xp_n=1 xp_frac=0.5000"), "{l}");
+
+        // Nothing resolved ⇒ `-`, never 0.
+        let empty = SuccGauge::new(false, false, 0);
+        assert_eq!(empty.xp_frac(), None);
+        assert!(empty.line().contains("xp_frac=-"), "{}", empty.line());
+    }
+
 }

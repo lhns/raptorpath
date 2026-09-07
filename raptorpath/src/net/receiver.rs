@@ -107,7 +107,7 @@ pub(crate) async fn run_receiver(
     recv_window_ack: Arc<AtomicU64>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
-    recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, Vec<(u64, u64)>)>>,
+    recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
     recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
     reasm_bdp_on: bool,
     ack_merge_recv: bool,
@@ -1364,15 +1364,20 @@ pub(crate) async fn run_receiver(
                         // mark. Read-only; see `net/succ.rs`.
                         {
                             let succ_now = Instant::now();
+                            // A0.3: `path_id` is the path THIS arrival landed
+                            // on — the exposer at `observe_high`, the closer at
+                            // `resolve`. Read off the `(path_id, msg)` select
+                            // already in scope; nothing branches on it.
                             for (seq, _) in &recovered {
                                 recv_succ.resolve(
                                     *seq,
                                     symbol.is_repair || *seq != symbol.block_id,
                                     succ_now,
+                                    path_id,
                                 );
                             }
                             for (seq, _) in &recovered {
-                                recv_succ.observe_high(*seq, succ_now);
+                                recv_succ.observe_high(*seq, succ_now, path_id);
                             }
                         }
                         for (seq, sym_data) in recovered {

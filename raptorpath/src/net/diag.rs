@@ -890,7 +890,7 @@ pub(crate) fn report(
             }
         );
         let mpr = format!(
-            " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} age={:.0}ms{} fp/on{}]",
+            " mpr[rep={} seqs={} fired={} y={} r={} fast={} coal={} supp={}/{}/{} stale={} plost={} taper={} age={:.0}ms{} fp/on{}]",
             dg.mpd_gap_reports,
             dg.mpd_gap_seqs,
             mpd_fired,
@@ -903,6 +903,9 @@ pub(crate) fn report(
             dg.mpd_supp_law,
             dg.mpd_stale,
             st.mpd_plost_retx,
+            // A0.4: the ungated taper-copy count, so the waste split is
+            // readable on an arm that never set RWM_DIAG's own counters.
+            stats.fec.taper_copy.load(Ordering::Relaxed),
             if mpd_fired > 0 {
                 dg.mpd_age_ms_sum / mpd_fired as f64
             } else {

@@ -81,7 +81,14 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
     rep.add(40_000);
     let empty = Hist::default();
 
-    let l = succ_report_line(false, 7, &orig, &rep, &empty, 3, 1, Some(2048), false, 0);
+    // A0.3 (ADDITIVE): the same/cross exposure split occupies the END of the
+    // line, so every assertion below keeps its meaning unchanged.
+    let mut sp = Hist::default();
+    sp.add(700);
+    let xp = Hist::default();
+    let l = succ_report_line(
+        false, 7, &orig, &rep, &empty, &sp, &xp, 3, 1, Some(2048), false, 0,
+    );
     assert!(l.starts_with("[SUCC] gen=0 det=7 res=3 "), "{l}");
     // n BESIDE every value — no quantile is ever readable without its own
     // sample count.
@@ -107,10 +114,17 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
     assert!(l.contains("rep_mx_us=40000"), "{l}");
 
     // THE OTHER SIDE of every convention on one line: nothing measured at all.
-    let e = succ_report_line(true, 0, &empty, &empty, &empty, 0, 0, None, true, 12);
+    let e =
+        succ_report_line(true, 0, &empty, &empty, &empty, &empty, &empty, 0, 0, None, true, 12);
     assert!(e.starts_with("[SUCC] gen=1 det=0 res=0 "), "{e}");
     assert!(e.contains("orig_frac=- cross_us=- dump=1/12"), "{e}");
     assert!(!e.contains("orig_frac=0"), "an absent fraction is `-`, never 0: {e}");
+    // A0.3, pinned on the SAME two sides: a populated split and an absent one.
+    assert!(l.contains("sp_n=1 xp_n=0 xp_frac=0.0000"), "{l}");
+    assert!(
+        e.ends_with("sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-"),
+        "the A0.3 split renders `-` iff none and sits at the END of the line: {e}"
+    );
 }
 
 // ── THE REACHABILITY RUN ────────────────────────────────────────────────
