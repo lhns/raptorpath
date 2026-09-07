@@ -17853,6 +17853,36 @@ a correct one needs and reproduces the open-constants register in which every
 unprovenanced literal of the recovery plane is recorded UNCORRECTED, because
 its correct value is not known.
 
+> **AMENDMENT 2026-09-07 (`docs/16-80-measured-pi0` from main@`232f404`, DOCS
+> ONLY) — `π0` IS MEASURED AND EVERY EVALUATION IN THIS SECTION IS RE-RUN ON
+> IT.** The first pass of §16.80 marked every cell number keyed to `π0` as
+> PROVISIONAL, because `[SUCC] orig_frac` is a BOUND and not a fraction. **The
+> attribution audit (D0, goal-gate "THE ATTRIBUTION AUDIT (D0) — THE SCORED
+> RESULT") measured the fraction, and `orig_frac` turns out to be TWO
+> MECHANISMS AVERAGED:**
+>
+> | cell | measured `π0` (true heal) | 95 % CI | the record's `orig_frac` | reading |
+> |---|---|---|---|---|
+> | `c1` | **0.0077** | [0.0042, 0.0142] | 0.9954 | ARTIFACT / RETRANSMIT-DOMINATED |
+> | `sc2` | **0.0054** | [0.0037, 0.0078] | 0.9346 | ARTIFACT / RETRANSMIT-DOMINATED |
+> | `c7` | **0.9606** | [0.9599, 0.9614] | 0.9884 | WIRE-REORDER-DOMINATED |
+> | `c8` | **0.9233** | [0.9190, 0.9273] | 0.9716 | WIRE-REORDER-DOMINATED |
+>
+> **AT A SINGLE PATH THE CLOSING ARRIVAL IS THE SENDER'S OWN RETRANSMIT (99.2 %
+> at `c1`, 99.5 % at `sc2`); AT TWO PATHS IT IS THE OTHER LEG CATCHING UP.**
+> `[FCAUSE] n / [SUCC] det` = 1.33 / 1.55 at the single-path cells against
+> 0.058 / 0.191 at the duals — the sender emits more repairs than the receiver
+> detects holes, so a copy is on the wire before the original could have
+> arrived and `[SUCC]` counts the copy as "the original". **`π0` is never
+> pooled again on this engine.**
+>
+> **THREE THINGS CHANGE HERE, AND THEY ARE NOT SMALL.** (1) `R4`'s `c1` partial
+> firing is **RESOLVED** — 16.80.3a. (2) The single-path cells become a
+> DIFFERENT REGIME with its own corollary — 16.80.4a. (3) The interior-optimum
+> condition, UNRESOLVED at the dual cells in the first pass, is **SATISFIED**
+> there on the corrected, sharper `F` — 16.80.4. **Nothing in this amendment
+> blesses a constant; the register of 16.80.12 gains a row and loses none.**
+
 #### 16.80.0 Verdict first — the expression
 
 Per DETECTED hole, stopping the decision at lateness `T` (16.80.2 defines the
@@ -17886,8 +17916,8 @@ read it); `[Φ]` is new, and it is the whole of this section's technical content
    │                                                                          │
    │   (i)  DOMAIN     T*  ∈  [ 0 ,  min( (H − d)⁺ , F⁻¹(q_d) ) ]             │
    │                                                                          │
-   │   (ii) VALUE      value(T*) − value(0)  ≤  R_frac · F( (H − d)⁺ )        │
-   │                   in fraction-of-transfer currency, both factors MEASURED│
+   │   (ii) VALUE      value(T*) − value(0)  ≤  R_frac · π0 · F( (H − d)⁺ )   │
+   │                   in fraction-of-transfer currency, ALL THREE MEASURED   │
    │                                                                          │
    │   (iii) CORNER    T* = 0   ⇔   H ≤ d   or   q_d → 0                      │
    └──────────────────────────────────────────────────────────────────────────┘
@@ -17895,21 +17925,29 @@ read it); `[Φ]` is new, and it is the whole of this section's technical content
 
 **In words: waiting can only pay inside the free headroom the send store
 already carries, and everything it could win there is capped by the machine's
-own repair traffic times the lateness mass that fits inside that headroom.**
-`R_frac` is §16.79.1's measured ceiling (0.242 / 2.966 / 4.084 % of transfer at
-`c1` / `c7` / `sc2`); `F` is the measured lateness CDF; `H` is read off the
-shipped store-cap law in 16.80.3; `q_d` is §16.74's route-(d) limit.
+own repair traffic, times the share of holes that could ever self-heal, times
+the lateness mass that fits inside that headroom.** `R_frac` is the machine's
+repair-traffic share (measured — §16.79.1, and re-measured on D0's own counters
+in 16.80.4); `π0` is the MEASURED true-heal prior, per cell, never pooled; `F`
+is the true-heal lateness CDF; `H` is read off the shipped store-cap law in
+16.80.3; `q_d` is §16.74's route-(d) limit.
+
+**`π0` IS EXPLICIT IN CLAUSE (ii) AND THAT IS D0's DOING.** §16.79.1's ceiling
+folded `orig_frac ≤ 1` into `R_frac`. With `π0` measured the bound sharpens by
+that factor — **and at the single-path cells the factor is 0.005–0.008, so the
+bound collapses by two orders of magnitude** (16.80.4a).
 
 **WHAT THE THEOREM DOES NOT SAY.** It does not say `T* = 0`. It says `T*` lies
-in an interval whose right endpoint is DERIVED, and it prices that interval. At
-three of five cells the interval is under nine milliseconds wide (16.80.4) —
+in an interval whose right endpoint is DERIVED, and it prices that interval.
+**On the corrected inputs the interval is empty of value at the single-path
+cells and NON-EMPTY at the dual cells** (16.80.4) —
 **and the smallest waiting time any battery in this tree ever REALIZED, at any
 cell, in any arm, is 25.6 ms** (`c7`-`H500`, `docs/l1-raw/hold-s42.log` +
-`hold-s7.log`, 8-rep median of `hold_hd_p50_us`). **Every measurement this
-programme ever took of a waiting time was taken outside the only region where
-the theorem permits waiting to pay.** That is a statement about the measurement
-record, not about the shipped clamp, and it is why "undefeated" still is not
-"derived".
+`hold-s7.log`, 8-rep median of `hold_hd_p50_us`), against a `c7` domain cap of
+7.22 ms. **Every measurement this programme ever took of a waiting time was
+taken outside the only region where the theorem permits waiting to pay.** That
+is a statement about the measurement record, not about the shipped clamp, and
+it is why "undefeated" still is not "derived".
 
 #### 16.80.1 Hypotheses and statistic — every clock this tree wrote is ONE test
 
@@ -18023,8 +18061,26 @@ sign is stated rather than assumed.
    Δ_bkt  =  8.192 ms  =  2¹³ µs           THE RESOLUTION FLOOR OF EVERY MEASURED F
 ```
 
-That number is load-bearing in 16.80.4 and it is a property of the gauge, not a
-modelling choice.
+That number is a property of the `[SUCC]` gauge, not a modelling choice.
+
+> **AMENDMENT (D0). THAT FLOOR IS LIFTED, AND THE AGE-vs-LATENESS ARGUMENT OF
+> THIS SUBSECTION IS NOW MEASURED RATHER THAN ARGUED.**
+> **(1)** D0's `[HOLD]` closure-class histogram carries a RELATIVE error bound
+> (≤ 9.05 % on every quantile) instead of `[SUCC]`'s absolute 8.192 ms floor,
+> and it demonstrably reads inside the first `[SUCC]` bucket: `c8`'s true-heal
+> p50 is **8.2 ms**, `c7`'s `heal_retx_young` p50 is **5.9 ms**, `c1`'s is
+> **3.1 ms**. **So the "everything interesting is inside one bucket" limitation
+> of the first pass is an artifact of the OLD gauge, not of the question**, and
+> 16.80.4's evaluation is redone without it.
+> **(2)** D0 §7 measured `ripe_frac` — the fraction of holes already at or above
+> their own `9/8·max(srtt, ewma)` threshold the FIRST time the receiver
+> mentioned them: **`c1` 0.9819** (age p50 26.6 ms — thirteen round trips — on a
+> 2 ms path), `sc2` 0.1748, `c8` 0.0705, `c7` 0.0228. **At a loaded fast path
+> the age-coordinate threshold has nothing left to suppress: it is not a
+> patience law there, it is a formality.** That is exactly this subsection's
+> claim — an age coordinate has this property and a lateness coordinate does
+> not — and it is now a number rather than an argument. **The constant is NOT
+> changed; it stays in the register of 16.80.12 with its status unchanged.**
 
 **NAMED AS AN INSTRUMENT SUCCESSOR, NOT BUILT.** A sharper coordinate — using
 `arr(s⁻)` and the per-batch send timestamps to interpolate — only sharpens `f`;
@@ -18145,18 +18201,52 @@ parameters per cell, in `L`-space, `g_CTL` the same battery's own `CTL` arm.
 | pooled | 283 | 0.00075 | −13 | 0.881 | 0.869 | 0.893 |
 
 **AND THE ADMISSIBILITY CHECK ON `κ`, WHICH IS THE ONE THE MODEL ACTUALLY
-OWES.** `κ ≤ 1` by construction — it is a non-overlap fraction. `λ1` is computed
-from the record and not fitted: `λ1 = π1 × (resolved holes per rep) ÷ (rep
-duration)`, holes from the successor-arrival pass's `res` column, duration from
-the cell's own bytes and its `CTL` goodput.
+OWES.** `κ ≤ 1` by construction — it is a non-overlap fraction, so a fit that
+returns `κ > 1` refutes the mechanism rather than measuring it. `λ1` is computed
+from the record and not fitted:
 
-| cell | `res`/rep | `g_CTL` (Mbit/s) | bytes | dur (s) | holes/s | `π1` | **`λ1`** (/s) | `κλ1` (/ms) | **`κ`** | `κ ≤ 1`? |
+```text
+   λ1  =  π1 × (holes per rep) / (rep duration)         a rate, s⁻¹
+```
+
+**RECOMPUTED ON D0's MEASURED `π0` AND ON D0's OWN DENOMINATOR.** The first
+pass used `π1 = 1 − orig_frac` and the receiver's `det`. **Both are replaced:**
+`π1` is the measured `closed_retx` share — the class where the repair actually
+did the work, which is what `H1` means operationally — and the population is
+D0's `fed`, *"the set of holes the SENDER was told about and saw resolve — the
+population the repair decision actually acts on"*, not the receiver's `det`.
+Durations from D0's own in-band goodput (§3) and each cell's own bytes.
+
+| cell | `fed`/rep | `g` (Mbit/s) | bytes | dur (s) | `fed`/s | **`π1`** | **`λ1`** (/s) | `κλ1` (/ms) | **`κ`** | `κ ≤ 1`? |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `c1` | 749.3 | 194.07 | 400 MB | 16.49 | 45.4 | 0.0046 | 0.209 | 0.00168 | **8.04** | **NO — by 8.0×** |
-| `c7` | 90 766 | 160.75 | 200 MB | 9.953 | 9 119 | 0.0116 | 105.8 | 0.00188 | **0.0178** | yes |
-| `c8` | 3 936.7 | 91.48 | 25 MB | 2.186 | 1 800 | 0.0284 | 51.1 | 0.00084 | **0.0164** | yes |
-| `c8L` | 27 249.3 | 87.12 | 200 MB | 18.365 | 1 484 | 0.0283 | 42.0 | 0.00081 | **0.0193** | yes |
-| `sc2` | 2 005 | 87.96 | 100 MB | 9.095 | 220 | 0.0654 | 14.4 | 0.00102 | **0.0708** | yes |
+| `c1` | 431.0 | 187.7 | 400 MB | 17.049 | 25.28 | 0.9923 | **25.09** | 0.00168 | **0.067** | **YES** |
+| `c7` | 79 135.3 | 150.2 | 200 MB | 10.652 | 7 429.0 | 0.0394 | **292.7** | 0.00188 | **0.0064** | yes |
+| `c8` | 5 261.7 | 86.5 | 25 MB | 2.312 | 2 275.7 | 0.0767 | **174.5** | 0.00084 | **0.0048** | yes |
+| `sc2` | 1 677.3 | 86.8 | 100 MB | 9.217 | 181.98 | 0.9946 | **181.0** | 0.00102 | **0.0056** | yes |
+| `c8L` | — | — | — | — | — | 0.0283 † | 42.0 † | 0.00081 | 0.0193 † | yes † |
+
+† **`c8L` WAS NOT AUDITED** — D0 ran `c1`, `c7`, `c8`, `sc2`. Its row still rests
+on `1 − orig_frac` and **stays marked PROVISIONAL**, with the named instrument:
+a D0 pass at `c8L`. It is not imputed from `c8` even though both are `c2`+`c3`.
+
+> **⇒ `R4`'s `c1` FIRING IS RESOLVED, AND IT IS RESOLVED BY A PRE-STATED
+> PREDICTION.** The first pass of this section wrote, before D0 ran: *"`κ` at
+> `c1` becomes admissible exactly when `π1 ≥ 8.037 × 0.0046 = 0.037`, i.e. when
+> the TRUE self-heal share at `c1` is `≤ 0.963` rather than the record's
+> `0.9954`."* **D0 measured 0.0077.** `κ` at `c1` falls from **8.04 to 0.067** —
+> a 120× correction — and lands inside its own `κ ≤ 1` bound with two orders of
+> margin. **The frontier term's one inadmissible cell was a `π0` artifact, and
+> the prediction that said so was written down before the measurement existed.
+> That is a corroboration, and it is worth saying plainly: the model earned it.**
+>
+> **AND THE CROSS-CELL CONSISTENCY OF `κ` IMPROVES BY A FACTOR OF 35.** On the
+> old prior `κ` spanned 0.0164 → 8.04, a **490×** spread. On the measured prior
+> it spans **0.0048 → 0.067, a 14× spread** — and across the three cells with
+> large hole counts (`c7`, `c8`, `sc2`) it is **0.0048 / 0.0056 / 0.0064, a
+> 1.33× spread**, on cells whose goodput differs by 1.7× and whose `π0` differs
+> by 178×. `c1`'s 0.067 is the outlier and its `λ1` rests on 431 holes per rep
+> against `c7`'s 79 135. **CI propagation is negligible:** `c7`'s `π0` CI gives
+> `κ ∈ [0.0063, 0.0066]`, `c8`'s gives `[0.0046, 0.0051]`.
 
 > **⇒ `P5` SCORES `PARTIALLY CONSISTENT`, AND THE PARTS ARE NAMED SEPARATELY.**
 >
@@ -18167,10 +18257,14 @@ the cell's own bytes and its `CTL` goodput.
 > * **THE SPECIFIC HYPERBOLA IS NOT SELECTED.** Pooled R²: 0.881 hyperbolic vs
 >   0.893 exponential; `1 − e⁻ˣ` wins at `c1`, `c8` and `sc2`. The data says
 >   "saturating"; it does NOT say `x/(1+x)`.
-> * **`κ` IS ADMISSIBLE AT 4 OF 5 CELLS AND VIOLATES ITS OWN BOUND AT `c1` BY
->   8.0×.** At `c1` the store-stall law cannot produce the measured cost under
->   any admissible overlap discount. **`R4` FIRES AT `c1`.**
-> * **`H` IS NOT A SINGLE CONSTANT AND IS IDENTIFIABLE AT ONE CELL.** Implied
+> * **`κ` IS ADMISSIBLE AT 4 OF 4 AUDITED CELLS** (and at `c8L` on an unaudited
+>   prior). **`R4`'s `c1` firing, recorded in the first pass, is WITHDRAWN — see
+>   the box above.** The store-stall law now produces the measured cost at every
+>   audited cell under an admissible overlap discount, and the discount is
+>   nearly constant across the three high-count cells.
+> * **`H` IS NOT A SINGLE CONSTANT AND IS IDENTIFIABLE AT ONE CELL — UNCHANGED
+>   BY D0.** `π0` enters the fit ONLY through `λ1`, hence only through `κ`; the
+>   fitted `H` is a property of the `(T, g)` cloud and is untouched. Implied
 >   `H − d` spans **+212 / +8 / −188 / −2271 / +811 ms** — three orders of
 >   magnitude, both signs. A negative knee is not a knee. `sc2`'s smallest `T`
 >   is 721 ms and `c8L`'s is 4 194 ms, so **both have zero points below their
@@ -18248,120 +18342,199 @@ the knee.** Composing with §16.74's route-(d) limit `q_d` gives
 and integrating `[W]` over that interval — `[W]`'s whole dynamic range being
 §16.79.1's `R_frac` — gives the value bound. Both are the theorem of 16.80.0.
 
-**THE INPUTS, WITH THEIR PROVENANCE.** Cell path composition is
+**THE INPUTS, WITH THEIR PROVENANCE — ALL FOUR AUDITED CELLS RE-EVALUATED ON
+D0's MEASURED `π0`, `F` AND COUNTERS.** Cell path composition is
 `tools/l1/alpha_battery.sh:148-153` (`c1` = `c1` single; `sc2` = `c2` single;
 `c7` = `c2`+`c2` dual; `c8`/`c8L` = `c2`+`c3` dual). `RTprop`: `c1` RTT 2 ms
 (`fec-arq-model.md:16844`), `c2` 8 ms (`:9124`), `c3` 60 ms (`:9747`). `d` is
-§16.77.2's `[FDIAG]` SOURCE/ARQ class. `R_frac` is §16.79.1.
+§16.77.2's `[FDIAG]` SOURCE/ARQ class. **`R_frac` is recomputed from D0's OWN
+`[FCAUSE] n` (§8) on the same run that measured `π0`** — `n`/rep × 1214 B ÷
+bytes — so the ceiling and the prior are no longer stitched from two batteries;
+§16.79.1's figures are printed beside them as the cross-check, and at `sc2` they
+agree to 0.003 points. **`c8`'s `R_frac` is measured here for the first time.**
 
-| cell | `RTprop` | **`H` = (gain−1)·RTprop** | `d` (ms) | **`(H − d)⁺`** | `< Δ_bkt = 8.192 ms`? | `R_frac` | **value bound** |
-|---|---|---|---|---|---|---|---|
-| `c1` | 2 ms | **2.000 ms** | 1.048 | **0.952 ms** | **yes** | 0.242 % | **< 0.121 %** |
-| `c7` | 8 ms | **8.000 ms** | 0.777 | **7.223 ms** | **yes** | 2.966 % | **< 1.483 %** |
-| `sc2` | 8 ms | **8.000 ms** | 4.370 | **3.630 ms** | **yes** | 4.084 % | **< 2.042 %** |
-| `c8` | 8 / 60 mixed | rate-weighted — NOT EVALUATED | 3.298 | — | — | not measured | — |
-| `c8L` | 8 / 60 mixed | rate-weighted — NOT EVALUATED | 9.038 | — | — | not measured | — |
+| cell | `RTprop` | **`H` = (gain−1)·RTprop** | `d` (ms) | **`(H − d)⁺`** | `R_frac` (D0) | §16.79.1 | **`π0`** | **value bound** |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 2 ms | **2.000 ms** | 1.048 | **0.952 ms** | 0.332 % | 0.242 % | **0.0077** | **≤ 0.0026 %** |
+| `sc2` | 8 ms | **8.000 ms** | 4.370 | **3.630 ms** | 4.081 % | 4.084 % | **0.0054** | **≤ 0.0220 %** |
+| `c7` | 8 ms (both legs `c2`) | **8.000 ms** | 0.777 | **7.223 ms** | 3.211 % | 2.966 % | **0.9606** | **< 1.542 %** |
+| `c8` | 8 / 60 mixed | **∈ [8, 60] ms** (rate-weighted) | 3.298 | **∈ [4.70, 56.70] ms** | 4.076 % | — (never measured) | **0.9233** | **< 1.88 … 3.39 %** |
+| `c8L` | 8 / 60 mixed | not evaluated | 9.038 | — | — | — | 0.9717 † | — |
 
-The value column uses `F(x) < 0.5` for every `x` below the cell's own `[SUCC]
-orig` p50 (24.6 / 30.7 / 98.3 ms) — a rigorous bound that needs no shape
-assumption, and the ONLY bound the instrument supports, because
-`(H − d)⁺ < Δ_bkt` at all three cells: **the entire admissible waiting domain
-lies inside the FIRST BUCKET of the measured lateness histogram at 3 of 3
-fully-swept cells.** `c8`/`c8L` are excluded exactly as §16.79.6 excludes them
-(no usable `F`; rep dispersion to 52×), and their `H` additionally needs a
-rate-weighting across a 7.5× `RTprop` asymmetry that no ledger supplies. Note in
-passing that at `c8L`, `d = 9.038 ms` already EXCEEDS the fast leg's own
-`RTprop = 8 ms`, so if that leg governed the pooled cap the corner would be
-exact there by clause (iii) — stated as an observation, not as a claim.
+† `c8L` **PROVISIONAL** — not audited by D0; its `π0` is still `orig_frac`, a
+bound. Named instrument: a D0 pass at `c8L`.
 
-> **⇒ AND THE MEASUREMENT RECORD NEVER ENTERED THE DOMAIN.** The smallest
+**HOW EACH VALUE BOUND IS OBTAINED, WITH NO SHAPE ASSUMPTION.** `c1` and `sc2`
+use `F ≤ 1`: the prior alone caps them, and no distribution is needed. `c7` uses
+`F(7.223) < 0.5` because 7.223 ms is below that cell's true-heal median of
+12.8 ms. `c8`'s two figures are its `H` bracket's endpoints: at the low end
+4.70 ms < p50 8.2 ms so `F < 0.5`; at the high end 56.70 ms lies between p50
+and p90 (65.5 ms) so `F < 0.9`.
+
+**`H` AT `c8` IS A BRACKET AND NOT A NUMBER, AND THE BRACKET IS EXACT.** On the
+pooled cap at `gain = 2`, `H = (gain−1)·Σᵢ BDPᵢ / Σᵢ gᵢ` — the rate-weighted
+mean of the legs' `RTprop`, which for `c2`+`c3` lies in `[8, 60] ms` with both
+endpoints attained only in the limits. **The weighting is not in any ledger, so
+the bracket is reported rather than a point, and the `c8` row of every table
+below carries both ends.** `c8L` is excluded exactly as §16.79.6 excludes it.
+
+> **⇒ AND THE MEASUREMENT RECORD STILL NEVER ENTERED THE DOMAIN.** The smallest
 > realized wait anywhere in this tree is **25.6 ms** (`c7`-`H500`, 8-rep median
 > of `hold_hd_p50_us`, `docs/l1-raw/hold-s42.log` + `hold-s7.log`). Per-cell
 > minima: `c1` 41.0 ms, `c7` 25.6 ms, `c8` 118.8 ms, `c8L` 9 437 ms, `sc2`
-> 1 376 ms. Against the domain caps above that is **3.5× outside at `c7`, 6.9×
-> at `sc2`, 26.9× at `c1`** — and the `(q, refresh)` sweep, which lifted the
-> report-cadence floor precisely to reach smaller waits, still realized
-> `hd_p50 = 29.7 ms` at its deepest `c7` arm. **Eleven batteries sampled only
-> the region where the theorem says waiting cannot pay, and no battery in this
-> tree has ever sampled the region where it could.** That is an owed
-> measurement, not an acquittal.
+> 1 376 ms. Against the domain caps above that is **3.5× outside at `c7`**, and
+> at `c8` outside the whole bracket at 2.1× even taking `H` at its 60 ms
+> ceiling. **Eleven batteries sampled only the region where the theorem says
+> waiting cannot pay, and after D0 that is a sharper indictment than it was
+> before — because the region where it CAN pay is now known to be non-empty at
+> the dual cells.** That is an owed measurement, not an acquittal.
 
 **THE INTERIOR-OPTIMUM CONDITION, AND `p` CANCELS TO FIRST ORDER.** Put both
-legs in transfer-fraction currency. The benefit rate is `R_frac·f(T)`; in the
+legs in transfer-fraction currency. The benefit rate is `R_frac·π0·f(T)`; in the
 frontier branch the cost rate is `κ·λ1`. Writing `N_hole` for the reported-hole
-count, `τ` for the run duration, `B = g_CTL·τ` for the bytes, and taking one
-repair per reported hole to first order:
+count, `τ` for the run duration, `B = g·τ` for the bytes, and taking one repair
+per reported hole to first order:
 
 ```text
-   R_frac·f          N_hole·(T_pay+h)/(g_CTL·τ) · f          (T_pay + h) · f(T)
-   ────────    =    ──────────────────────────────    =    ──────────────────────
-     κ·λ1                κ · π1 · N_hole / τ                 g_CTL · κ · π1
+   R_frac·π0·f      N_hole·(T_pay+h)/(g·τ) · π0 · f          (T_pay + h) · π0 · f(T)
+   ───────────  =  ─────────────────────────────────  =  ─────────────────────────
+      κ·λ1               κ · π1 · N_hole / τ                    g · κ · π1
 ```
 
 **`N_hole` cancels exactly — and `N_hole` is the quantity that carries the loss
-rate `p`.** What survives is a condition on the SHARPNESS of the lateness
-distribution against the machine's own throughput:
+rate `p`.** What survives is a condition on the SHARPNESS of the true-heal
+lateness distribution against the machine's own throughput, now with the prior
+ratio `π1/π0` explicit:
 
 ```text
    ┌──────────────────────────────────────────────────────────────────────────┐
-   │   INTERIOR OPTIMUM  ⇔   f(T)  ≥  κ · π1 · g_CTL / (T_pay + h)            │
+   │   INTERIOR OPTIMUM  ⇔   f(T)  ≥  κ · (π1/π0) · g / (T_pay + h)           │
    │                          for some T ≤ min( (H−d)⁺ , F⁻¹(q_d) )           │
    └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-Evaluated at the instrument's own resolution — the strongest form the record
-supports is on the bucket-averaged density, `f̄ = F(Δ_bkt)/Δ_bkt`:
+**AND THE `π1/π0` RATIO IS WHERE D0 CHANGES THE ANSWER.** It was
+`0.0046/0.9954 = 0.0046` at `c1` and is now `0.9923/0.0077 = 129` — a 28 000×
+move against waiting. At `c7` it was `0.0117` and is now `0.0410`; at `c8`
+`0.0292 → 0.0831`. **The single-path cells move four orders of magnitude one
+way; the dual cells move a factor of three the same way — and the dual cells'
+`F` moves further the OTHER way, which is the whole of what follows.**
 
-| cell | `g_CTL/(T_pay+h)` (sym/s) | `π1` | `κ` | required **`F(8.192 ms)`** | verdict |
-|---|---|---|---|---|---|
-| `c1` | 19 982 | 0.0046 | 1 (the ceiling; measured 8.04 is inadmissible) | **≥ 75.3 %** | **FAILS** — `F(8.192) < 0.5` by the median rule |
-| `c7` | 16 552 | 0.0116 | 0.0178 | **≥ 2.80 %** | **UNRESOLVED** — inside the first bucket |
-| `c8` | 9 419 | 0.0284 | 0.0164 | **≥ 3.59 %** | **UNRESOLVED** |
-| `c8L` | 8 971 | 0.0283 | 0.0193 | **≥ 4.01 %** | **UNRESOLVED** |
-| `sc2` | 9 057 | 0.0654 | 0.0708 | **≥ 34.4 %** | **FAILS-BY-IMPLAUSIBILITY** — would need a third of the mass in the first bucket against a median twelve buckets up |
+| cell | `g/(T_pay+h)` (sym/s) | `κ` | `π1/π0` | required `f` (/ms) | domain (ms) | **required `F` over the domain** | available `F` (true-heal) | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `c1` | 19 327 | 0.067 | **129** | **1.284** | 0.952 | **≥ 122 %** | — (`heal_noretx` = 0 of 1 293) | **IMPOSSIBLE** — the requirement exceeds unity |
+| `sc2` | 8 938 | 0.0056 | **184** | **0.0501** | 3.630 | **≥ 18.2 %** | 27 heal holes of 5 032 — **UNSCOREABLE** | **FAILS ON THE PRIOR** — and the value bound is 0.022 % regardless |
+| `c7` | 15 465 | 0.0064 | 0.0410 | **0.00391** | 7.223 | **≥ 2.83 %** | p50 **12.8 ms**, p90 45.1 ms ⇒ `F(7.22) < 0.5` | **SATISFIED-PENDING one unpublished quantile** |
+| `c8` | 8 907 | 0.0048 | 0.0831 | **0.00329** | 4.70 … 56.70 | **≥ 1.55 % … ≥ 18.6 %** | p50 **8.2 ms**, p90 65.5 ms ⇒ `F(56.7) ∈ (0.5, 0.9)` | **SATISFIED** at the upper `H` endpoint, from published quantiles alone |
 
-> **⇒ THE HONEST READING, AND IT IS NOT THE ONE THE PRIOR SECTIONS WOULD HAVE
-> PREDICTED.** The condition **FAILS OUTRIGHT AT ONE CELL** (`c1`, and it fails
-> there under `κ = 1`, i.e. under the most generous overlap discount the model
-> permits — so it fails independently of `P5`'s `c1` anomaly). It fails at
-> `sc2` only by implausibility, which is not a proof. **And at `c7`, `c8` and
-> `c8L` IT IS UNRESOLVED**, because the whole question sits inside the first
-> 8.192 ms bucket of a histogram that does not resolve there. **This section
-> therefore does NOT claim the corner at those three cells.** It claims that if
-> an interior optimum exists there, its value is bounded by the table above.
-> **PROVISIONAL, pending D0's corrected `π0` and `F`.**
+> **⇒ THE INTERIOR-OPTIMUM DOMAIN OPENS AT THE DUAL CELLS. THAT IS THE
+> AMENDMENT'S PRINCIPAL FINDING AND IT REVERSES THE FIRST PASS'S "UNRESOLVED".**
+>
+> Two corrections push the same way at `c7` and `c8`. **(1) `F` is much sharper
+> than the record's.** The first pass used `[SUCC] orig` — p50 24.6–163.8 ms —
+> which D0 shows was contaminated by retransmit closures. The true-heal
+> distribution has p50 **12.8 ms at `c7` and 8.2 ms at `c8`**: the benefit
+> density near the origin is 2.4× and 12× higher. **(2) `κ` fell** by 2.8× and
+> 3.4× on the corrected `λ1`, lowering the cost density. The `π1/π0` ratio
+> pushes the other way by 3.5× and 2.8×, and the sharper `F` wins.
+>
+> **AT `c8` THE CONDITION IS SATISFIED FROM PUBLISHED QUANTILES ALONE** — 18.6 %
+> required against an `F` that is past its median well before the domain's upper
+> edge. **AT `c7` IT TURNS ON ONE NUMBER THAT EXISTS AND WAS NOT PRINTED:**
+> `F_heal(7.22 ms)`, needing only **2.83 %** against a median of 12.8 ms.
+> **That is not an instrument limitation — D0's histogram resolves there (its
+> `heal_retx_young` p50 at `c7` is 5.9 ms) — it is an unpublished quantile of a
+> committed ledger, and it is named as the owed readout rather than assumed.**
+>
+> **AND THE DOMAIN IS STILL BOUNDED, WHICH IS THE THEOREM DOING ITS JOB.** An
+> interior optimum at `c7` lives in `[0, 7.22 ms]` and is worth **< 1.54 %** of
+> transfer; at `c8` in `[0, 4.70…56.70 ms]` and worth **< 1.88…3.39 %**.
+> **Nothing here licenses a hold-down, and nothing here derives its level:** the
+> level is `F⁻¹(q)` with `q = 1 − α` and `α` still undeclared (16.80.1).
 
-**THE δ DIAL, EVALUATED, AND THE ONE PLACE THE ANSWER IS PROVED.** Substituting
-§16.77.3's `R = R₀/δ` (the required quantile density, `R₀` = 229.3 / 66.93 /
-63.14 ms at `c1` / `c7` / `sc2`), the corner condition
-`Δ_bkt/F(Δ_bkt) ≥ R` reads `F(Δ_bkt) ≤ Δ_bkt/R = δ·Δ_bkt/R₀`:
+**THE δ DIAL, RE-EVALUATED ON THE MEASURED `π0` — AND THE TWO REGIMES SEPARATE
+CLEANLY.** `R₀ ≡ w·π0·d/π1` is the required quantile density at `ρ = 1`, and
+`R = R₀/δ`. The corner holds when the distribution's own quantile density at the
+origin is at least `R`; the available density is estimated as `s̄ = 2·p50` of the
+cell's true-heal `F` (the mean quantile density up to the median).
 
-| cell | Realtime δ = 50 | Auto δ = 0.5 | Bulk δ = 0.005 |
-|---|---|---|---|
-| `c1` | `F ≤ 179 %` ⇒ **CORNER, PROVED** | `F ≤ 1.79 %` | `F ≤ 0.018 %` |
-| `c7` | `F ≤ 612 %` ⇒ **CORNER, PROVED** | `F ≤ 6.12 %` | `F ≤ 0.061 %` |
-| `sc2` | `F ≤ 649 %` ⇒ **CORNER, PROVED** | `F ≤ 6.49 %` | `F ≤ 0.065 %` |
+| cell | **`R₀`** (ms) | was (on `orig_frac`) | `s̄ = 2·p50` | Realtime δ = 50 | Auto δ = 0.5 | Bulk δ = 0.005 |
+|---|---|---|---|---|---|---|
+| `c1` | **0.0082** | 229.3 | 6.2 ms ‡ | `R` = 0.00016 ms ⇒ **CORNER** | 0.0165 ms ⇒ **CORNER** | 1.65 ms ⇒ **CORNER** |
+| `sc2` | **0.0240** | 63.14 | 99.2 ms ‡ | 0.00048 ⇒ **CORNER** | 0.048 ⇒ **CORNER** | 4.80 ⇒ **CORNER** |
+| `c7` | **19.17** | 66.93 | 25.6 ms | 0.383 ⇒ **CORNER** | 38.3 ⇒ **INTERIOR** | 3 833 ⇒ **INTERIOR** |
+| `c8` | **40.16** | 114.1 | 16.4 ms | 0.803 ⇒ **CORNER** | 80.3 ⇒ **INTERIOR** | 8 033 ⇒ **INTERIOR** |
 
-**At Realtime the required bound exceeds 1 and is therefore satisfied by every
-possible `F` — `T* = 0` at 3 of 3, by arithmetic, with no measurement of `F` at
-all.** That is §16.77.3's reading 2 re-derived by a second route. **At Bulk —
-the operating point every battery in this tree ran at — the bound is 0.018–0.065 %
-and is almost certainly violated, so an interior optimum PROBABLY EXISTS
-there**, confined by the theorem to `T ≤ (H−d)⁺ < 8.192 ms` and worth less than
-0.121 / 1.483 / 2.042 % of transfer. **That is the open item this section
-hands forward, and it is the opposite of an acquittal of the shipped clamp.**
+‡ `c1`'s `s̄` is from `heal_retx_young` (n = 10) and `sc2`'s from `heal_noretx`
+(n = 2): both are **UNSCOREABLE-thin and are printed only to show that no
+plausible value changes the verdict** — the corner at those cells is decided by
+`R₀`, which is 0.008–0.024 ms, i.e. by the prior and not by the distribution.
 
-**A CORRECTION TO §16.79.5, RECORDED AS A CORRECTION.** §16.79.5's falsifier
-`F1` named `c7` as the near cell, on its own criterion — the cost/ceiling ratio,
-1.54× at `c7` against 14–18× at `c1`/`sc2`. **In §16.80's frame the criterion is
-the admissible VALUE BOUND `R_frac·F((H−d)⁺)`, and on that criterion `sc2` is
-the near cell** (< 2.042 % against `c7`'s < 1.483 % and `c1`'s < 0.121 %),
-because `sc2` carries the largest repair-traffic share. **The sensitivity is
-stated so the correction is checkable rather than asserted:** the bound uses
-`F < 0.5`, which is loose; under a locally-uniform reading of `F` inside bucket 0
-the ordering reverses to `c7` (products `R_frac·(H−d)⁺` = 0.23 / 21.4 / 14.8
-%·ms). **D0's corrected `F` decides which.** §16.79.5's sentence is not wrong on
-its own criterion; the FRAME changed, and this is the record of that.
+> **⇒ THE δ DIAL NOW SEPARATES THE TWO REGIMES INSTEAD OF THE FIVE CELLS.**
+> **At the single-path cells the corner holds at EVERY named δ including Bulk**
+> — the first time this tree has been able to say that at Bulk, and it is said
+> because `π0` is 0.5–0.8 % there and not because any timing was measured.
+> **At the dual cells the corner holds at Realtime and an interior optimum
+> exists at Auto AND Bulk.** §16.77.3's Realtime reading survives everywhere;
+> its Bulk corner is now REFUTED at the duals and CONFIRMED at the singles, and
+> the two answers come from the same expression with no branch in it.
+
+**A CORRECTION TO §16.79.5, AND THE FIRST PASS'S OWN CORRECTION IS CORRECTED
+AGAIN.** §16.79.5's `F1` named `c7` as the near cell on the cost/ceiling ratio.
+The first pass of §16.80 re-named `sc2` on the value-bound criterion, using the
+record's `orig_frac`. **On the measured `π0` that is wrong: `sc2`'s bound is
+0.022 % — the smallest but one of all four — and the near cell is `c8`**, at
+< 1.88…3.39 %, followed by `c7` at < 1.54 %. **The ordering is now decided by
+the prior, and the prior is now measured, so this correction is not
+frame-relative the way the last one was.** Recorded plainly because the first
+pass got it wrong for a stated, checkable reason: it was reading a bound as a
+fraction, which is the very thing D0 was run to fix.
+
+#### 16.80.4a The single-path corollary — waiting cannot pay because there is nothing to wait for
+
+**`π0` = 0.0077 at `c1` and 0.0054 at `sc2`. `H0` is essentially never true at a
+single path, and the whole decision degenerates — not by a threshold, but by the
+prior going to zero in ONE continuous expression.**
+
+```text
+   π0 → 0   ⇒   [W](T) = π0·S(T)·w → 0  for every T
+            ⇒   R(T) → π1·P_arq·[ δ(T+d)/d + Φ(T) ] ,   strictly increasing in T
+            ⇒   T* = 0 ,  and  value(T*) − value(0) ≤ R_frac·π0 → 0
+```
+
+**THREE CONSEQUENCES, EACH ONE A STATEMENT ABOUT WHAT THE MACHINE IS DOING
+RATHER THAN ABOUT WHAT IT SHOULD DO.**
+
+1. **THE SPRT's PRIOR COLLAPSES, SO THE TEST HAS NOTHING TO DECIDE.** With
+   `π0 ≈ 0.006` the posterior odds favour `H1` before any observation is taken:
+   `Λ(0) = 1` against prior odds `π1/π0 = 129` at `c1` and `184` at `sc2`. **A
+   sequential test whose prior already answers the question is not a test.**
+   Every clock this tree ever pointed at a single-path cell was setting the
+   threshold of a decision that had no uncertainty in it.
+2. **THE COPY IS NOT "FALSE" AT `c1`/`sc2`.** The whole false-repair frame
+   assumes a repair emitted for a hole whose original was coming anyway.
+   D0 measures `closed_retx` at **99.23 %** and **99.46 %**: the repair is what
+   closed the hole. **`[RFA] false_frac` at those cells (0.26 at `c1`, 0.34–0.39
+   at `sc2`) is counting duplicate ARRIVALS, not unnecessary repairs**, and it
+   must not be read as waste at a single path. That is a re-reading of a
+   measured number, and it is the one place where the audit changes what a
+   shipped gauge MEANS rather than what it says.
+3. **AND `c1` HAS NO `F` TO SIT A LAW ON.** `heal_noretx = 0 of 1 293`. There is
+   no true-heal distribution at that cell — not a thin one, an EMPTY one. **A
+   waiting-time law positioned at `c1` would be a quantile of a distribution
+   with no sample.** `sc2` has 27 heal holes of 5 032 and is UNSCOREABLE by the
+   same standard. **The instrument that would change this is a wire bit
+   distinguishing a retransmit from an original**, which is a wire change and is
+   proposed by nobody.
+
+**WHAT THIS COROLLARY DOES NOT SAY.** It does not say the single-path cells are
+loss-dominated in the physical sense. D0 §5 is explicit about the limit of its
+own instrument: *"NOT known, and this instrument cannot decide it: whether the
+original would have arrived anyway had no copy flown."* **The corollary is about
+the decision the machine actually faces — given that a copy flies, essentially
+every hole is closed by it — and not about a counterfactual wire.** And D0's
+`srtt/2` classifier biases `π0` UPWARD, so **0.0077 is an upper bound on an
+upper bound**: the corollary is conservative in the direction that matters.
 
 #### 16.80.5 Dial dependence — one expression, no threshold anywhere
 
@@ -18401,9 +18574,23 @@ at most `R_frac`, i.e. **at most 4.084 % of transfer anywhere measured** — and
 costs that leg's whole capacity share. At `c8` the slow leg's own store account
 is ≈ 500 of ≈ 1 730 pooled symbols (`fec-arq-model.md:9747`, a capacity PROXY
 and labelled as one) — **≈ 29 %**. The lever is dominated by ≈ 7× before any
-measurement, and it is recorded here so nobody builds it.
+measurement, and it is recorded here so nobody builds it. **D0 sharpens the
+numerator without rescuing it:** the saving is `R_frac·π0` = 3.76 % at `c8`, not
+4.08 %, so the domination is ≈ 7.7×.
 
-##### (a2) Arrival-ordered placement — the continuous ordering term, PREDICTED INERT
+##### (a2) Arrival-ordered placement — premise CONFIRMED, term still PREDICTED INERT
+
+> **THE PREMISE IS NOW MEASURED, AND IT HOLDS.** The ordering lever assumes the
+> SCHEDULER manufactures the holes. D0 §6 measures it: `[SUCC] xp_n/det` =
+> **0.9711 at `c7`** and **0.8711 at `c8`** — the resolving arrival came in on
+> the OTHER path — with cross-path heal at a worst-case bound of **0.896** and
+> **0.802** that needs no joint distribution. And the control the split rests on
+> is exact: **`xp_n ≡ 0` at both single-path cells, on both gauges** — the same
+> field that reads 0.87–0.97 two paths over, so the zero is a property of the
+> wire and not an unreached code path. **`WIRE-REORDER-DOMINATED` fires at both
+> duals as pre-registered. The lever's premise is CONFIRMED and the lever is
+> still NOT BUILT** — a confirmed premise is not a licence, and the derivation
+> below is why it would not pay anyway.
 
 `scheduler/mod.rs:4356-4363` carries `const HOLD_HORIZON_SECS = 0.3;
 const ELIGIBLE_SKEW = HOLD_HORIZON_SECS / 4.0;` — **75 ms** — used at `:4441-4445`
@@ -18428,17 +18615,23 @@ path could have moved during one per-seq retransmit cooldown. **Evaluated at
 
 ```text
    (T_pay + h)·8  =  1214 B × 8 bit/B          =  9 712 bit
-   R_ref          =  91.48 Mbit/s              (c8 CTL, hold-down sweep §3)
+   R_ref          =  86.5 Mbit/s               (c8, D0's own in-band goodput, §3)
    P_arq          =  1                         (ρ = 1, the shipped seat)
 
-   τ_cool = NACK_RETX_COOLDOWN_FLOOR_US = 10 ms   ⇒  W = 9712 / (91.48e6 × 0.010) = 1.06e-2
+   τ_cool = NACK_RETX_COOLDOWN_FLOOR_US = 10 ms   ⇒  W = 9712 / (86.5e6 × 0.010) = 1.12e-2
    τ_cool = 9/8 · RTprop_slow = 9/8 × 60 ms = 67.5 ms
-                                                  ⇒  W = 9712 / (91.48e6 × 0.0675) = 1.57e-3
+                                                  ⇒  W = 9712 / (86.5e6 × 0.0675) = 1.66e-3
 ```
 
 ```text
-   ⇒  W  ≈  2 × 10⁻³  at the live cooldown,  W ∈ [1.6e-3, 1.1e-2] over its range
+   ⇒  W  ≈  2 × 10⁻³  at the live cooldown,  W ∈ [1.7e-3, 1.1e-2] over its range
 ```
+
+**`W` DOES NOT CARRY `π0` AND SO D0 DOES NOT MOVE IT.** Re-run on D0's own
+goodput it lands at 1.66 × 10⁻³ against the first pass's 1.57 × 10⁻³ — a 6 %
+move from a 5 % goodput difference, and nothing else. **The prediction stands
+unchanged, on inputs that are now from the same run as everything else in this
+section.**
 
 **The `load` term it is summed with is O(1)** — a delivery time divided by
 `ref_srtt`. **A term three orders of magnitude below the one it competes with
@@ -18465,19 +18658,38 @@ stored in `self.pivots`, and redeemed later by `cascade_from_recovered`).
    k_½          =  ln 2 / (−ln π0)       the span at which c_FA halves
 ```
 
-| cell | `π0` (BOUND — §16.80.9) | **`k_½`** (symbols) |
-|---|---|---|
-| `c1` | 0.9954 | **150.3** |
-| `c7` | 0.9884 | **59.4** |
-| `c8` | 0.9716 | **24.1** |
-| `c8L` | 0.9717 | **24.2** |
-| `sc2` | 0.9346 | **10.2** |
-| pooled | 0.97858 | **32.0** |
+| cell | **measured `π0`** (D0) | **`k_½`** (symbols) | was, on `orig_frac` |
+|---|---|---|---|
+| `c1` | **0.0077** | **0.142** — `< 1`, MEANINGLESS | 150.3 |
+| `sc2` | **0.0054** | **0.133** — `< 1`, MEANINGLESS | 10.2 |
+| `c7` | **0.9606** | **17.2** | 59.4 |
+| `c8` | **0.9233** | **8.7** | 24.1 |
+| `c8L` | 0.9717 † | 24.2 † | 24.2 |
+| ~~pooled~~ | **FORBIDDEN** | — | ~~32.0~~ |
 
-**`c1` IS STRUCTURALLY INERT AND THAT IS `P4`.** Halving the false cost at `c1`
-needs a span of 150 symbols; `c1`'s measured `gap_max` is 131 and its
-`holes_max` is 30 (plain-window primitives table), so the span the lever would
-need does not exist on that wire. At `sc2` it is 10.
+† `c8L` **PROVISIONAL** — not audited. **And the pooled row is struck, not
+updated:** D0 reports `π0 = 0.9351` pooled and immediately disowns it —
+*"it averages a cell where the true-heal share is 96 % with cells where it is
+half a percent. No derivation may use a pooled `π0` on this engine."*
+
+> **⇒ THE PARITY LEVER IS MEANINGLESS AT THE SINGLE-PATH CELLS, AND NOT MERELY
+> INERT.** `k_½ < 1` is not "an unreachable span" — it says the false cost is
+> already below half at a span of one. With `π0 ≈ 0.006` **essentially every
+> repair is NEEDED**, and a single parity symbol answering a span of `m` holes
+> supplies rank 1 against `m·π1 ≈ m` genuine unknowns. **At `c1`/`sc2` the
+> parity answer would UNDER-PROVIDE rank and lose data the copy answer
+> recovers.** It is dropped from the grid at those cells (goal-gate).
+>
+> **`P4` IS SUPERSEDED AND ITS PREMISE INVERTED.** The first pass predicted `c1`
+> structurally inert because `k_½ = 150` exceeded the wire's `gap_max` of 131.
+> That arithmetic was right on a prior that was wrong by two orders of
+> magnitude. **The corrected reason `c1` is out is the opposite one: the span is
+> now trivially reachable and the lever is harmful there.** Recorded as a
+> supersession, not as a re-derivation.
+>
+> **AND THE LEVER GETS CHEAPER WHERE IT IS MEANINGFUL.** `k_½` falls from 59.4
+> to **17.2** at `c7` and from 24.1 to **8.7** at `c8` — spans both wires
+> routinely produce.
 
 **BREAK-EVEN, DERIVED RATHER THAN DECLARED.** Parity beats copies per hole when
 
@@ -18504,55 +18716,81 @@ score the α-sweep's §7 used. **Every arm of every lever below is scored on thi
 one number and on nothing else**, so that a lever that trades throughput for
 latency cannot be reported as a win by choosing which half to quote.
 
-#### 16.80.7 Pre-stated predictions and refuters
+#### 16.80.7 Pre-stated predictions and refuters — RE-SCORED ON D0
 
 **PREDICTIONS.**
 
 * **`P1` — THE NULL, RESTATED AS A BOUND.** No timing arm moves `ΔU` beyond the
-  value bound of 16.80.4 — `< 0.121 / 1.483 / 2.042 %` at `c1` / `c7` / `sc2`.
-  `P1` is scored against the BOUND, not against zero.
+  value bound of 16.80.4 — **`≤ 0.0026 %` at `c1`, `≤ 0.022 %` at `sc2`,
+  `< 1.54 %` at `c7`, `< 1.88…3.39 %` at `c8`**. `P1` is scored against the
+  BOUND, not against zero. **At the single-path cells the bound is now so small
+  that `P1` there is decided by the prior and needs no arm at all.**
 * **`P2` — WASTE IS GEOMETRIC IN SPAN.** Under the parity answer, wasted repair
   volume falls as `π0^(m−1)/m`, and the realized false class MIGRATES from
   `dup_src` to `preempt_src` (`[RFA]`, `net/mod.rs:5299-5440`): a parity symbol
   that arrives after the originals is not a duplicate source, it is a pre-empted
   repair. **The migration is the wiring witness; without it the arm did not take.**
+  **SCOPE NARROWED BY D0: `P2` is scored at `c7` and `c8` only** — at the
+  single-path cells the parity answer is meaningless (16.80.6(b)).
 * **`P3` — THE FRONTIER PRICE, AND THE SIGN ACROSS TWO SPAN ARMS IS THE TEST.**
   A larger `m` lowers waste and raises `ΔT = F⁻¹(1−1/m)`, so it must raise the
   frontier cost. **Two span arms whose `ΔU` moves in the SAME direction refute
   `Φ` as the mechanism**; opposite signs across `k_½` and `2k_½` confirm it.
-* **`P4` — `c1` IS STRUCTURALLY INERT.** `k_½ = 150` against `gap_max = 131`:
-  the parity arms are predicted to read as controls at `c1`. **A `c1` that moves
-  is an instrument finding, not a lever finding** (`R3`).
-* **`P5` — OFFLINE, AND ALREADY SCORED.** 16.80.3a. `PARTIALLY CONSISTENT`:
-  saturation confirmed, hyperbola not selected over exponential, `κ` admissible
-  at 4 of 5 cells, `H` a single constant at 0 of 5.
+* **`P4` — SUPERSEDED, AND ITS PREMISE INVERTED.** It read: *"`c1` is
+  structurally inert; `k_½ = 150` against `gap_max = 131`."* On the measured
+  `π0`, `k_½ = 0.142` at `c1` — the span is trivially reachable and the lever is
+  **harmful** there, not inert (16.80.6(b)). **The conclusion survives, the
+  reason is replaced, and the replacement is recorded rather than quietly
+  substituted.** `R3` is re-pointed accordingly.
+* **`P5` — OFFLINE, AND RE-SCORED.** 16.80.3a. Still `PARTIALLY CONSISTENT`:
+  saturation confirmed; the hyperbola not selected over an exponential; **`κ`
+  now admissible at 4 of 4 AUDITED cells** with a 1.33× spread across the three
+  high-count cells; `H` still a single constant at 0 of 5 and identifiable at 1
+  of 5.
+* **`P6` — NEW, AND ALREADY ANSWERED BY D0: THE WASTE SPLIT HAS TWO SOURCES,
+  NOT THREE.** `taper_copy = 0` at 4 of 4 cells and on both L0 loopback
+  topologies (D0 §8) — the `p_lost` proactive-copy branch did not fire once.
+  **So realized repair waste on the plain reliable window is {gap-fire copy,
+  margin}, and `dup_src / [FCAUSE] n` was NOT over-attributing to the reactive
+  loop.** That could not be known before the counter existed; it is now a
+  measurement, and the constant stays in the register with its status unchanged
+  because WHY the branch never fires is undecided.
 
 **REFUTERS.**
 
 * **`R1` — THE FRONTIER IS MIS-DERIVED.** If `H` is not `(gain−1)·RTprop` — e.g.
   the pooled or honest cap governs at the dual cells — the domain of 16.80.4 is
   wrong and every value bound with it. **Discharged only by an `RWM_STORE_GAIN`
-  contrast**, which no battery has run.
+  contrast**, which no battery has run. **D0 does not touch this and `R1` stands
+  entirely open**; it is now the largest single uncertainty in the section,
+  because 16.80.4's `c8` row is a bracket precisely for this reason.
 * **`R2` — WASTE IS NOT GEOMETRIC ⇒ THE PRIOR IS WRONG ⇒ THE FRAME IS
   INDICTED.** `c_FA(m) = w·π0^m` assumes the `m` holes in a span are
   independent draws on `H0`. If waste falls slower than geometric, the holes are
   correlated, `π0` is not a per-hole prior, and 16.80.1's two-hypothesis frame
-  is the thing refuted — not the lever.
-* **`R3` — `c1` MOVES.** See `P4`.
-* **`R4` — `P5` FAILS ⇒ `Φ` IS NOT A STALL LAW.** **`R4` HAS PARTIALLY FIRED
-  ALREADY** (16.80.3a): `κ = 8.04 > 1` at `c1`, `H` inconsistent at 5 of 5, and
-  two arms at identical `T` giving 68 %-different `L`. **`Φ` is retained as the
-  frontier term because its SHAPE is confirmed and its knee agrees with the
-  derivation at the one cell where the knee is identifiable — and it is retained
-  under this firing, which is recorded, not resolved.**
-* **AND `R4`'s `c1` FAILURE IS A PRE-STATED PREDICTION FOR D0.** `λ1 = π1 ·
-  (holes/s)` and `π1 = 1 − π0`, so `κ` at `c1` falls to its admissible ceiling
-  exactly when `π1 ≥ 8.037 × 0.0046 = 0.037`, i.e. when the TRUE self-heal share
-  at `c1` is `≤ 0.963` rather than the record's `0.9954`. **D0 measures that
-  number. If `c1`'s `orig_frac` is the upper bound it is disclosed to be, the
-  frontier term's one inadmissible cell becomes admissible — and if it is not,
-  `Φ` is wrong at `c1` and the section says so.** Neither outcome is assumed
-  here.
+  is the thing refuted — not the lever. **D0 makes `R2` sharper, not softer:**
+  at the duals the holes are cross-path artifacts of ONE scheduling decision
+  (`xp_n/det` = 0.87–0.97), which is exactly the correlation `R2` names.
+* **`R3` — `c1`/`sc2` MOVE.** A parity arm that improves `ΔU` at a cell where
+  `π0 ≈ 0.006` refutes the corrected prior, not the lever. See `P4`.
+* **`R4` — `P5` FAILS ⇒ `Φ` IS NOT A STALL LAW. THE `c1` LIMB IS NOW
+  WITHDRAWN.** The first pass recorded `R4` as PARTIALLY FIRED on three counts.
+  **Count 1 — `κ = 8.04 > 1` at `c1` — is RESOLVED: it was a `π0` artifact, and
+  the section said so in advance** (16.80.3a). **Counts 2 and 3 STAND
+  UNCHANGED**, because `π0` enters neither: `H` is inconsistent at 5 of 5 cells
+  and identifiable at 1, and two arms at identical realized `T` still give
+  68 %-different `L`. **`Φ` is retained as the frontier term under a firing that
+  is now smaller and better understood, and it is retained explicitly rather
+  than by silence.**
+
+**AND THE PREDICTION THAT WAS PAID.** The first pass wrote, before D0 existed:
+*"`κ` at `c1` becomes admissible exactly when the true self-heal share is
+`≤ 0.963` rather than the record's `0.9954`. D0's `c1` row is a direct test of
+paper §16.80's frontier term, and it was not designed to be one."* **D0
+measured 0.0077 and `κ` came back at 0.067.** The prediction was numeric,
+falsifiable, written in its own commit before the measuring instrument was
+built, and it was met. **That is the strongest thing this section has, and it is
+the only thing in it that was earned rather than derived or measured.**
 
 #### 16.80.8 The ρ < 1 corollary — derivation, and the two read-only checks ANSWERED
 
@@ -18627,11 +18865,12 @@ would consume it.
 | `w` | `1 + h/T_pay` = **1.011667** | **CODE-EXACT** | `h = REPAIR_HEADER_SIZE = 14 B` (`fec/generation.rs:44`), `T_pay = 1200 B` (`net/mod.rs:161`) |
 | `h` | 14 B | **CODE-EXACT** | as above; pinned by `mtu_blackhole_wedge.rs:232` |
 | `T_pay` | 1200 B | **CODE-EXACT** | `net/mod.rs:161` |
-| `π0` | 0.9954 / 0.9884 / 0.9716 / 0.9717 / 0.9346; pooled 0.97858 | **MEASURED — UPPER BOUND, NOT A FRACTION** | `[SUCC] orig_frac`, 366 106 / 374 120 resolved holes; its own disclosed caveat: *"`orig` cannot separate a late original from a resent one — the wire carries no retransmit bit"*. **D0 measures the fraction; every number keyed to `π0` is PROVISIONAL** |
-| `π1` | `1 − π0` | **DERIVED from a bound** ⇒ a LOWER bound on the genuine-loss share | as above |
-| `F`, `S = 1 − F` | the lateness CDF / survival, per cell | **MEASURED, per cell, in the 16.80.2 coordinate** | `[SUCC]` `orig` histogram; resolution floor `Δ_bkt` below |
-| `f = F′` | bucket slope | **MEASURED, bucket-averaged only** | as above |
-| `Δ_bkt` | **8.192 ms = 2¹³ µs** | **DERIVED from the gauge** — every published `[SUCC]` quantile is an exact multiple | 16.80.2 |
+| `π0` | **0.0077 / 0.0054 / 0.9606 / 0.9233** at `c1`/`sc2`/`c7`/`c8`, with Wilson 95 % CIs; `c8L` 0.9717 † | **MEASURED, per cell, NEVER POOLED** — `(heal_noretx + heal_retx_young)/fed` | D0 §9. Biased UPWARD by the `srtt/2` classifier, so each figure is an UPPER bound on its cell's true share. The record's `[SUCC] orig_frac` is superseded: it is a BOUND that averages two mechanisms |
+| `π1` | `1 − π0` = the measured `closed_retx` share | **MEASURED** — the class where the repair did the work, which is what `H1` means operationally | D0 §4 |
+| `fed` | 1 293 / 5 032 / 237 406 / 15 785 (3 reps) | **MEASURED — the DENOMINATOR, named not assumed**: holes the SENDER was told about and saw resolve. NOT the receiver's `det` | D0 §4 |
+| `F`, `S = 1 − F` | true-heal CDF: p50/p90 = **12.8/45.1 ms** (`c7`), **8.2/65.5 ms** (`c8`); `sc2` 49.6 ms on n = 2; **`c1` DOES NOT EXIST** (`heal_noretx` = 0 of 1 293) | **MEASURED on the HEAL CLASSES ONLY** — `closed_retx` is a retransmit closure and belongs to no waiting-time distribution | D0 §9 |
+| `f = F′` | bucket slope | **MEASURED**, relative-error gauge (≤ 9.05 %), resolves below `Δ_bkt` | D0 §9; 16.80.2's amendment |
+| `Δ_bkt` (`[SUCC]`) | 8.192 ms | **SUPERSEDED as a floor** — D0's gauge reads at 3.1–8.2 ms | 16.80.2 |
 | `d` | 1.048 / 0.777 / 3.298 / 9.038 / 4.370 ms | **MEASURED; UPPER BOUND where `holes_max > 0`** | `[FDIAG]` SOURCE/ARQ class, plain window |
 | `δ` | 50 / 0.5 / 0.005 at the named points | **CONTRACT-DECLARED**, not measurable | `COPA_DELTA/ζ(hint)` |
 | `b(δ)` | `2^(−½·log₁₀(δ/δ_auto))`; 0.5 / 1.0 / 2.0 exactly at the three points | **DERIVED (log-linear, unique through the three declared points)** | §16.74.1; engine's three-arm `match` at `net/mod.rs:3662-3668` agrees to machine precision at the three points and cannot be asked elsewhere |
@@ -18652,19 +18891,21 @@ would consume it.
 | **`H`** | `(gain−1)·RTprop` = 2.000 / 8.000 / 8.000 ms at `c1`/`c7`/`sc2` | **DERIVED from the shipped store-cap law** — the release read (`net/mod.rs:9981-9983`) is what makes it finite | 16.80.3 |
 | `H` (three-term form) | `contract_stall_s(ρ, b(δ), RTprop, srtt) = (1−ρ)·D(δ) + ρ·(17/8)·srtt` | **DERIVED; gate-off by default** | `net/mod.rs:4487-4496`, `:4776-4806` |
 | `R` (recovery round) | `HONEST_RECOVERY_ROUND_S = TAIL_SWEEP_MAX_US = 100 ms` | **CODE-EXACT, but see the register** | `net/mod.rs:4221`, `:2049-2051` |
-| `g_CTL` | 194.07 / 160.75 / 91.48 / 87.12 / 87.96 Mbit/s (hold-down `CTL`) | **MEASURED, per battery** | `docs/l1-raw/hold-s42.log`, `hold-s7.log` |
-| `λ1` | 0.209 / 105.8 / 51.1 / 42.0 / 14.4 s⁻¹ | **DERIVED from measured counters** — `π1 × holes/s`; **inherits `π0`'s bound** | 16.80.3a |
-| `κ` | 8.04 / 0.0178 / 0.0164 / 0.0193 / 0.0708 | **FITTED, and BOUNDED by `κ ≤ 1` — the bound is VIOLATED at `c1`** | 16.80.3a |
-| **`R_frac`** | 0.242 / 2.966 / 4.084 % (`c1`/`c7`/`sc2`) | **MEASURED — `[FCAUSE] n` × 1214 B ÷ bytes** | §16.79.1 |
+| `g_CTL`, `g` | 194.07 / 160.75 / 91.48 / 87.12 / 87.96 Mbit/s (hold-down `CTL`, used for the `P5` fit); **187.7 / 150.2 / 86.5 / 86.8** (D0's own in-band goodput, used for every recomputation) | **MEASURED, per battery, and the battery is named at every use** | `docs/l1-raw/hold-*`; D0 §3 |
+| `λ1` | **25.09 / 181.0 / 292.7 / 174.5 s⁻¹** at `c1`/`sc2`/`c7`/`c8`; `c8L` 42.0 † | **DERIVED from measured counters** — `π1 × fed/s`, on D0's denominator and D0's goodput | 16.80.3a |
+| `κ` | **0.067 / 0.0056 / 0.0064 / 0.0048** at `c1`/`sc2`/`c7`/`c8`; `c8L` 0.0193 † | **FITTED, and BOUNDED by `κ ≤ 1` — the bound HOLDS at 4 of 4 audited cells** (it was violated 8.0× at `c1` on the record's prior) | 16.80.3a |
+| **`R_frac`** | **0.332 / 4.081 / 3.211 / 4.076 %** at `c1`/`sc2`/`c7`/`c8` (D0 §8); §16.79.1's 0.242 / 2.966 / 4.084 % beside them | **MEASURED — `[FCAUSE] n` × 1214 B ÷ bytes.** `c8` measured for the FIRST time; `sc2` agrees across the two batteries to 0.003 points | D0 §8; §16.79.1 |
 | `rpd` | repairs per detected hole; `≈ 1 − π0·q` predicted, measured FLAT | **MEASURED** | goal-gate, hold-down sweep §2 |
 | `m` | parity span, symbols | **DECISION VARIABLE**, integer ≥ 1 | 16.80.6(b) |
-| `k_½` | `ln 2 / (−ln π0)` = 150.3 / 59.4 / 24.1 / 24.2 / 10.2 | **DERIVED; PROVISIONAL on `π0`** | 16.80.6(b) |
+| `k_½` | `ln 2 / (−ln π0)` = **0.142 / 0.133 / 17.2 / 8.7** at `c1`/`sc2`/`c7`/`c8`; `c8L` 24.2 † | **DERIVED from the MEASURED `π0`.** `< 1` at the single-path cells ⇒ the lever is meaningless there | 16.80.6(b) |
 | `W` | `P_arq·(T_pay+h)·8/(R_ref·τ_cool)` ≈ **2 × 10⁻³** at `c8` | **DERIVED**, no free constant | 16.80.6(a2) |
 | `τ_cool` | floor 10 ms; live `9/8·max(srtt, ewma)` | **CODE-EXACT floor, UNPROVENANCED value** | `NACK_RETX_COOLDOWN_FLOOR_US`, `net/mod.rs:225`; `mp_time_threshold_split`, `:418-428` |
 | `R_ref` | the reference path's delivered rate | **MEASURED** | `mean_mbps` |
 | `η_i`, `ref_srtt` | `(in_flight/cwnd)·srtt + srtt/2 + ε·srtt`; min over active | **CODE-EXACT** | `scheduler/mod.rs:2988-2994`, `:4809-4819` |
 | `H_r` | `D(δ)` on the EVICT seat | **DERIVED**, up to the sender/receiver clock offset of 16.80.8 | `net/mod.rs:2004-2043` |
 | `ρ_floor` | 0.99987 / 0.99542 / 0.99057 / 0.99142 / 0.99664 | **DERIVED**, factor-≈2 uncertainty from unmeasured `u` | goal-gate ρ feasibility gate §7 |
+| `srtt/2` heal/closed classifier | the `heal_retx_young` vs `closed_retx` split | **ARBITRARY — introduced by D0's instrument, bias direction stated (biases `π0` UP), gates nothing.** In the register of 16.80.12 | D0 §9, §10 |
+| † `c8L` | every `c8L` entry above | **PROVISIONAL — not audited by D0.** Named instrument: a D0 pass at `c8L`. Not imputed from `c8` | — |
 
 #### 16.80.10 Shape check
 
@@ -18693,12 +18934,26 @@ would consume it.
   (§16.74.2's `owed ≡ 0`), so no repair is emitted and `[W] = 0` too: `R ≡ 0`,
   the decision is VACUOUS rather than divergent. ✓ (A model that returned
   `T* = ∞` here would be wrong, and this is the check that catches it.)
+* **`π0 → 0` ⇒ `T* = 0` AND THE VALUE BOUND → 0, CONTINUOUSLY.** `[W] = π0·S·w`
+  vanishes identically, the remaining two legs rise in `T`, and clause (ii)'s
+  bound `R_frac·π0·F(·)` goes to zero with it. **This is the single-path
+  corollary (16.80.4a), and it is a LIMIT of the one expression, not a second
+  law** — nothing branches on the path count, and the measured `π0` of 0.0077
+  is a point on the same continuum as `c7`'s 0.9606. ✓
+* **`π0 → 1` ⇒ THE COST LEGS VANISH** (`π1 → 0`) and `T*` is capped only by the
+  domain. The two limits bracket the four audited cells and the machine is
+  observed at both ends of the bracket on the same wire family. ✓
 * **`F` DEGENERATE (all mass at 0) ⇒ `[W] = 0`.** `S(T) = 0` for every `T > 0`:
   nothing is ever wasted because nothing is ever late, and the loss is
   `[L] + [Φ]` alone, minimised at `T = 0`. ✓
 * **`p → 0` CANCELS.** 16.80.4's interior-optimum condition is independent of
   `N_hole`, and `N_hole` is what carries the loss rate; what survives is
-  `f(T) ≥ κ·π1·g_CTL/(T_pay+h)`. ✓
+  `f(T) ≥ κ·(π1/π0)·g/(T_pay+h)`. ✓
+* **THE TWO REGIMES ARE ONE EXPRESSION, AND THAT IS THE INVARIANT GATE'S OWN
+  TEST.** The single-path cells and the dual cells return opposite verdicts at
+  Bulk (16.80.4's δ table) **from the same formula with no branch in it** — the
+  difference is entirely `π0`, a measured input, not a mode. A model that had
+  needed `if (n_paths == 1)` to produce that table would have failed here. ✓
 * **CONTINUITY IN THE TRIANGLE — THE INVARIANT GATE.** Every expression in this
   section is built from `+`, `×`, `min`, `(·)⁺`, `ln`, `F⁻¹` and one indicator
   on the decision variable. **There is no comparison against a value of δ, no
@@ -18727,13 +18982,32 @@ would consume it.
   the promotion of an undefeated formula to a decided one. §16.79.6 already said
   *"'Undefeated' is not 'derived' and this section does not upgrade it"* — the
   correction makes the header agree with its own §16.79.6.
-* **§16.79.5's "`c7` IS THE NEAR ONE" → FRAME-CORRECTED to `sc2`**, on the
-  theorem's own value-bound criterion, with the sensitivity stated (16.80.4).
+* **§16.79.5's "`c7` IS THE NEAR ONE" → CORRECTED TO `c8`** on the theorem's own
+  value-bound criterion (16.80.4). **The first pass of §16.80 corrected it to
+  `sc2` and that intermediate correction is itself withdrawn** — it was computed
+  on `orig_frac`. The ordering is now decided by a measured prior rather than by
+  a choice of frame, so unlike the first correction this one is not
+  frame-relative.
 * **§16.69's CATEGORY ERROR → THE PRICE RATIO IS `c_FA : Φ`, AND BOTH ARE NOW
   MEASURED.** §16.69 priced a false alarm against a detection delay with no
   common currency. Here both legs are repair symbols per hole: `c_FA = w·π0^m`
   from a measured prior, `Φ` from a measured throughput law. **The ratio is
   computable; §16.69's was not.**
+
+* **§16.80's OWN FIRST PASS → CORRECTED BY D0, IN FOUR PLACES, AND EACH IS
+  RECORDED RATHER THAN OVERWRITTEN.** (1) `R4`'s `c1` limb is WITHDRAWN — `κ`
+  was 8.04 on a bad prior and is 0.067 on the measured one (16.80.3a).
+  (2) The interior-optimum condition, UNRESOLVED at `c7`/`c8`, is SATISFIED
+  there (16.80.4). (3) The "near cell" is `c8`, not the first pass's `sc2`
+  (16.80.4). (4) `P4`'s reason for excluding `c1` is INVERTED — the parity lever
+  is harmful there, not unreachable (16.80.6(b), 16.80.7). **All four were
+  errors of one kind: reading `[SUCC] orig_frac` as a fraction when its own
+  gauge disclosed it was a bound. That is precisely what D0 was run to fix, and
+  the first pass marked every one of them PROVISIONAL in advance.**
+* **THE SUCCESSOR-ARRIVAL PASS's `orig_frac` → SUPERSEDED AS AN INPUT TO THIS
+  SECTION.** Not deleted and not re-based: D0 §10 annotates it in place. No
+  expression in §16.80 reads it any more except the `c8L` row, which carries its
+  PROVISIONAL marker for exactly that reason.
 
 #### 16.80.12 What this does NOT claim — and THE OPEN-CONSTANTS REGISTER
 
@@ -18748,22 +19022,48 @@ not justify a single shipped literal, and three of the numbers it uses are
 themselves unprovenanced (`gain = 2.0`, `R = 100 ms`, `τ_cool`'s floor), which
 is stated so the bound is read for exactly what it is.
 
-**WHAT IS MARKED PROVISIONAL, PENDING D0.** Every cell number keyed to `π0`:
-16.80.3a's `λ1` and `κ` columns, 16.80.4's value-bound and skew-sharpness
-tables, and 16.80.6's `k_½` table. `π0` is currently `[SUCC] orig_frac`, which
-is **a BOUND and not a fraction** by its own gauge's disclosed caveat. D0
-measures the fraction and the corrected `F`; the direction is signed —
-lowering `π0` lowers `[W]`'s benefit and lowers every value bound above, and
-raises `π1`, which is the only thing that can rescue `κ` at `c1`.
+**WHAT WAS PROVISIONAL AND IS NOW MEASURED — THE MARKERS ARE REMOVED ONLY
+WHERE D0 SUPPLIES THE NUMBER.**
 
-**THE CORRECT LAW IS OPEN, AND THESE ARE ITS INPUTS.** A correct recovery
-response law needs, and this tree does not have: (1) `α` — the spurious-repair
-budget — DECLARED as a contract quantity beside δ and ρ, which is the one thing
-Lorden's theory needs and RFC 8985 already does by hand at 1/16; (2) `F` in the
-lateness coordinate of 16.80.2, resolved BELOW 8.192 ms, which is where the
-whole admissible domain lives; (3) the measured `π0`, not its bound; (4) an
-`RWM_STORE_GAIN` contrast, because `H` — the width of the entire domain — is
-proportional to `gain − 1` and `gain` is an unprovenanced 2.0.
+| item | first pass | now |
+|---|---|---|
+| `π0` at `c1`, `sc2`, `c7`, `c8` | PROVISIONAL (a bound) | **MEASURED** — D0 §9, with CIs |
+| `λ1`, `κ` at those four cells (16.80.3a) | PROVISIONAL | **MEASURED**, on D0's `fed` denominator |
+| the value-bound and skew-sharpness tables at those four cells (16.80.4) | PROVISIONAL | **MEASURED** |
+| `k_½` at those four cells (16.80.6) | PROVISIONAL | **MEASURED** |
+| `R_frac` at `c8` | absent | **MEASURED** — D0 §8 |
+
+**WHAT KEEPS ITS MARKER, WITH THE NAMED INSTRUMENT BESIDE IT.**
+
+* **`c8L`, everywhere.** D0 ran `c1`, `c7`, `c8`, `sc2`. `c8L`'s `π0`, `λ1`, `κ`
+  and `k_½` still rest on `orig_frac`. **Instrument: a D0 pass at `c8L`.** It is
+  NOT imputed from `c8` even though both are `c2`+`c3`.
+* **`F` at `c1` and `sc2`.** `c1`'s true-heal population is EMPTY (0 of 1 293)
+  and `sc2`'s is 27 of 5 032. **There is no distribution to sit a law on there**
+  (16.80.4a). Instrument: a wire bit distinguishing a retransmit from an
+  original — a wire change, proposed by nobody.
+* **`F_heal(7.22 ms)` at `c7`.** The one number that decides whether the
+  interior optimum is SATISFIED or merely SATISFIED-PENDING. **Instrument: a
+  quantile readout of a ledger that already exists** — D0's histogram resolves
+  at 5.9 ms on that very cell; it was simply not printed at 7.22 ms.
+* **`H` at `c8`.** A bracket `[8, 60] ms`, because the rate weighting across the
+  two legs is in no ledger. **Instrument: per-leg delivered rate at `c8`**, or
+  the `RWM_STORE_GAIN` contrast of `R1`.
+* **`κ`, everywhere.** Still a FIT, not a measurement, even where admissible.
+* **`π0` itself is an UPPER bound at every cell**, because D0's `srtt/2`
+  classifier biases it up. Every value bound above is therefore conservative in
+  the direction that matters, and `c1`'s 0.0026 % is a bound on a bound.
+
+**THE CORRECT LAW IS STILL OPEN, AND THESE ARE ITS REMAINING INPUTS.** A correct
+recovery response law needs, and this tree does not have: (1) `α` — the
+spurious-repair budget — DECLARED as a contract quantity beside δ and ρ, which
+is the one thing Lorden's theory needs and RFC 8985 already does by hand at
+1/16 — **untouched by D0 and the largest gap**; (2) `F_heal` resolved inside the
+admissible domain at the dual cells, which is now a READOUT and no longer an
+instrument problem; (3) an `RWM_STORE_GAIN` contrast, because `H` — the width of
+the entire domain — is proportional to `gain − 1` and `gain` is an unprovenanced
+2.0; (4) a `c8L` audit. **`π0`, which was (3) in the first pass's list, is
+struck: D0 supplied it.**
 
 ##### THE OPEN-CONSTANTS REGISTER
 
@@ -18773,14 +19073,15 @@ known. Being undefeated is not being derived.**
 
 | constant | site | status | deciding measurement |
 |---|---|---|---|
-| tail-sweep / refresh clamp `(2·srtt).clamp(25, 100) ms` | `net/mod.rs:611-626` `hole_nack_refresh`, constants `:222-223`, band `= MAX/MIN = 4` at `:585-586` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** Undefeated; the (q, refresh) sweep was censored by it and lifting it changed nothing | a derived cadence from the measured hole-lateness distribution `F` — 16.80.2 names the form; needs D0's corrected `F` |
-| legacy age gate `srtt/2` | `net/mod.rs:527-529` `legacy_age_ripe`; the DEFAULT arm when neither `RWM_RECOV_MP` nor `RWM_RECOV_SP` is armed (`:9620-9638`) | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** Pre-RFC channel; `srtt` is the app-echo, store-dwell-inclusive estimate (`pooled_recovery_srtt_us`, `:539-541`, a MAX over live paths) while the age is flight age from the ORIGINAL send (`:9630-9631`) | per-symbol lateness against `F` — D0's `flight_age_at_first_report` histogram |
-| RECOV_MP threshold `9/8·max(srtt, ewma)` + packet threshold 3 | `net/mod.rs:418-428` `mp_time_threshold_split`; `MP_PACKET_THRESHOLD = 3` at `:443`; inert at N ≤ 1 (`mp_hole_ripe`, `:483-494`) | **RFC 9002-cited but measured against AGE including sender dwell — cannot suppress loaded-slow-path inversions. NOT corrected.** (The RFC's own note that RACK uses 5/4 is on the record at `:406`) | the lateness coordinate of 16.80.2 in place of age; D0's ripe-at-first-report fraction |
-| `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs:212-217` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** A rate limit that doubles as the hole SAMPLER: it sets how often a hole can be reported at all, so it manufactures part of the `det` denominator every number here divides by | D0 A0.1 — the loopback floor: how many holes the sampler alone manufactures on a lossless FIFO path |
+| tail-sweep / refresh clamp `(2·srtt).clamp(25, 100) ms` | `net/mod.rs:611-626` `hole_nack_refresh`, constants `:222-223`, band `= MAX/MIN = 4` at `:585-586` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** Undefeated; the (q, refresh) sweep was censored by it and lifting it changed nothing | a derived cadence from the measured true-heal `F` — 16.80.2 names the form. **D0 supplied `F` at the dual cells (p50 8.2–12.8 ms) and showed there is NONE at the single-path cells**, so the cadence is derivable at `c7`/`c8` and undefined at `c1`/`sc2`. **STILL NOT DERIVED and still not changed** |
+| legacy age gate `srtt/2` | `net/mod.rs:527-529` `legacy_age_ripe`; the DEFAULT arm when neither `RWM_RECOV_MP` nor `RWM_RECOV_SP` is armed (`:9620-9638`) | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** Pre-RFC channel; `srtt` is the app-echo, store-dwell-inclusive estimate (`pooled_recovery_srtt_us`, `:539-541`, a MAX over live paths) while the age is flight age from the ORIGINAL send (`:9630-9631`) | per-symbol lateness against `F`. **D0 §7 measured the age histogram: `ripe_frac = 0.982` at `c1` with age p50 26.6 ms on a 2 ms path** — the gate is inert there by construction. That is a DEFECT FINDING about the coordinate, not a value for the constant. **NOT corrected** |
+| RECOV_MP threshold `9/8·max(srtt, ewma)` + packet threshold 3 | `net/mod.rs:418-428` `mp_time_threshold_split`; `MP_PACKET_THRESHOLD = 3` at `:443`; inert at N ≤ 1 (`mp_hole_ripe`, `:483-494`) | **RFC 9002-cited but measured against AGE including sender dwell — cannot suppress loaded-slow-path inversions. NOT corrected.** (The RFC's own note that RACK uses 5/4 is on the record at `:406`) | the lateness coordinate of 16.80.2 in place of age. **D0 §7 DISCHARGED the ripe-at-first-report reading: 0.9819 / 0.1748 / 0.0705 / 0.0228 at `c1` / `sc2` / `c8` / `c7`.** The coordinate defect is now measured; the correct threshold value remains unknown. **NOT corrected** |
+| `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs:212-217` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** A rate limit that doubles as the hole SAMPLER: it sets how often a hole can be reported at all, so it manufactures part of the `det` denominator every number here divides by | **DISCHARGED by D0 A0.1: the loopback floor is `[SUCC] det = 0`** — single path, netem off, 2 × 50 MB in-process, the 2 ms sampler manufactures NO hole on a lossless FIFO wire, pinned by `tests/holeclass_reachability.rs`. **So `det` is not an instrument artifact — and the constant is still arbitrary, still undefeated, still NOT derived** |
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs:224-225` (10× RFC 9002's kGranularity, `:263`) | **arbitrary/unprovenanced — NOT corrected, correct value unknown** | re-fire cost against `F`; it is `τ_cool`'s provenance in 16.80.6(a2) and moves `W` by 6.8× across its own range |
 | `ELIGIBLE_SKEW = HOLD_HORIZON_SECS/4 = 75 ms` | `scheduler/mod.rs:4356-4363`, used as a hard filter at `:4441-4445` | **unprovenanced (ADR-0070) — NOT corrected, correct value unknown.** A threshold that selects a code path | the continuous ordering term of 16.80.6(a2) replaces it with a cost; its `W` is derived and PREDICTED INERT, so replacing it is predicted to change nothing — which is itself the measurement |
-| taper copy `p_lost` probabilistic retransmit | `net/emit_source.rs:809-821` — retransmits the OLDEST unacked seq with probability `p_lost(age, ε, srtt, rttvar)` | **model-derived (paper §3.4) but its waste has NEVER been measured — NOT corrected** | D0 A0.4's taper-copy counter: without it, `dup_src / [FCAUSE] n` over-attributes waste to the reactive loop |
-| store-cap headroom `H` / `κ` | the store-cap law: `gain = RWM_STORE_GAIN = 2.0` (`gates.rs:1055-1058`); `R = HONEST_RECOVERY_ROUND_S = 100 ms` (`net/mod.rs:4221`) | **`H` is now DERIVED from the law (16.80.3) — but the law's `gain` is unprovenanced and `κ` is FITTED and violates its own `κ ≤ 1` bound at `c1`. NOT corrected** | the SACK-vs-cum-ack read is DISCHARGED (cumulative only, `net/mod.rs:9981-9983`); what remains is an `RWM_STORE_GAIN` contrast, and D0's `π1` for `κ` |
+| taper copy `p_lost` probabilistic retransmit | `net/emit_source.rs:809-821` — retransmits the OLDEST unacked seq with probability `p_lost(age, ε, srtt, rttvar)` | **model-derived (paper §3.4); its waste is now MEASURED and it is ZERO — NOT corrected, because WHY it never fires is undecided** | **DISCHARGED by D0 §8: `taper_copy = 0` at 4 of 4 cells and on both L0 loopback topologies**, with the pre-existing DIAG `plost=` counter reading 0 beside it. Realized waste has TWO sources, not three, and `dup_src / [FCAUSE] n` was not over-attributing. What remains open: whether `p_lost`'s `eps_at_send` is structurally ~0 or the oldest unacked seq never ages far enough |
+| store-cap headroom `H` / `κ` | the store-cap law: `gain = RWM_STORE_GAIN = 2.0` (`gates.rs:1055-1058`); `R = HONEST_RECOVERY_ROUND_S = 100 ms` (`net/mod.rs:4221`) | **`H` is now DERIVED from the law (16.80.3) — but the law's `gain` is unprovenanced and `κ` is FITTED. NOT corrected** | the SACK-vs-cum-ack read is DISCHARGED (cumulative only, `net/mod.rs:9981-9983`), and **D0's `π1` DISCHARGED the `κ` half: `κ` is admissible at 4 of 4 audited cells (0.0048–0.067) where it was 8.04 at `c1` on the record's prior.** What remains is an `RWM_STORE_GAIN` contrast for `gain`, and `κ` is still a FIT |
+| the `srtt/2` heal/closed CLASSIFIER | D0's `[HOLD]` A0.2 split between `heal_retx_young` and `closed_retx` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED TO THIS REGISTER BY D0 §10, reproduced here rather than restated: a classifier introduced by the audit's own instrument, arbitrary in exactly the way the legacy age gate is. **Its bias direction is stated — it attributes a hole whose original and retransmit land within half an RTT to the ORIGINAL, biasing `π0` UPWARD** — so every `π0` in §16.80 is an upper bound. **It gates nothing and enters no law** | a wire bit distinguishing a retransmit from an original — a wire change, not proposed here |
 
 **Nothing in this section flips a default, ships a law, wires a consumer on any
 default path, edits an engine crate, or scores any clause of any

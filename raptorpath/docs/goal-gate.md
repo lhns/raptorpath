@@ -48739,6 +48739,15 @@ which awaits the owner's authorization. Until then this record, §16.74–16.79,
 and the eleven battery ledgers are the goal's complete and final state.
 ## §16.80 — THE LEVERS AS PREDICTIONS (**SPECIFIED, NOT BUILT**) (2026-09-07, `docs/16-80-sequential-classification` from main@`b181fa5`) — **paper §16.80.6's two levers written out as batteries, with their arm grids, their cells, their `n` computed from the measured CVs, their witnesses and their legal outcomes — so that whoever builds them inherits a pre-registration instead of writing one. STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test, no lock taken. NO ARM IS BUILT AND NO NUMBER BELOW IS A RESULT.** Every number is either transcribed from a committed scored section with its citation, or arithmetic done here and shown in full. **THIS RECORD IS GATED ON D0's READING** (see §5) and its arm grid literally cannot be fixed until D0 lands.
 
+> **AMENDMENT 2026-09-07 — READ §8 FIRST. D0 HAS LANDED AND §1 AND §3 BELOW ARE
+> SUPERSEDED.** The measured `π0` is 0.0077 / 0.0054 at the single-path cells
+> against the 0.9954 / 0.9346 these grids were sized on. **`c1` and `sc2` are
+> DROPPED from the parity grid** (the lever is harmful there, not inert),
+> **`c8` becomes the affordable cell at `n = 56`** on an `R_frac` D0 measured
+> for the first time, and **the ordering lever's premise is CONFIRMED** at both
+> duals. The tables in §1 and §3 are left standing, unrewritten, so that what
+> changed and why is legible.
+
 ### 0 — WHAT THIS IS, AND WHAT IT IS NOT
 
 Paper §16.80 proves a bound on what TIMING can win: `value(T*) − value(0) ≤
@@ -49440,3 +49449,114 @@ constant blessed. Both VM locks were released; the exit state was verified at
 0 `raptorpath` processes and 0 `rp-*` namespaces.**
 
 ---
+### 8 — AMENDMENT (2026-09-07, `docs/16-80-measured-pi0` from main@`232f404`): **D0 HAS LANDED. §1 AND §3 ABOVE ARE SUPERSEDED BY THIS SUBSECTION AND ARE NOT REWRITTEN.** The parity grid loses two of its four cells and gains a sizeable one; the ordering lever's PREMISE is CONFIRMED and the lever is still NOT BUILT.
+
+**§6's gate said this record's arm grid could not be fixed until D0 landed,
+because `k_½` and every `Δ` are functions of `π0` and `π0` was a bound. D0
+landed. The grid moves, and it moves in the direction §6 said it would: the
+numbers above are wrong and the reason they are wrong is the one that was
+written down in advance.** Corrected inputs: goal-gate "THE ATTRIBUTION AUDIT
+(D0) — THE SCORED RESULT" §4, §6, §8, §9. **Nothing below is a result, no arm is
+built, and no engine crate is touched.**
+
+#### 8.1 — GRID A (parity): TWO CELLS DROPPED, ONE CELL RESCUED
+
+| cell | measured `π0` (D0 §9) | **`k_½` = ln 2 / (−ln π0)** | §1's `k_½` | disposition |
+|---|---|---|---|---|
+| `c1` | **0.0077** | **0.142** | 150.3 | **DROPPED** |
+| `sc2` | **0.0054** | **0.133** | 10.2 | **DROPPED** |
+| `c7` | **0.9606** | **17.2** | 59.4 | kept, cheaper |
+| `c8` | **0.9233** | **8.7** | 24.1 | kept, **now sizeable** |
+| `c8L` | not audited | 24.2 (PROVISIONAL) | 24.2 | excluded — no audit |
+
+**WHY `c1` AND `sc2` ARE DROPPED, AND IT IS NOT "TOO SMALL TO MEASURE".**
+`k_½ < 1` says the false-repair cost is already below half at a span of one.
+With `π0 ≈ 0.6 %` **essentially every repair is NEEDED** — D0 measures
+`closed_retx` at 99.23 % and 99.46 % — so one parity symbol answering a span of
+`m` supplies rank 1 against ≈ `m` genuine unknowns. **The parity answer would
+UNDER-PROVIDE rank at those cells and lose data the copy answer recovers. It is
+not inert there; it is harmful.** §1 kept them on a prior that was wrong by two
+orders of magnitude, and §3 went on to name `sc2` *"THE ONLY AFFORDABLE
+CELL … affordable by three orders of magnitude."* **That sentence is withdrawn.**
+
+**THE EFFECT SIZE AND `n`, RECOMPUTED.** `Δ_parity(m) = R_frac · π0 ·
+(1 − π0^(m−1)/m)`, with `π0` now explicit (§1 folded `orig_frac ≤ 1` into
+`R_frac`) and `R_frac` taken from D0's own `[FCAUSE] n` (§8) on the same run.
+`n ≥ (2σ_d/Δ)²`, `σ_d = √2·CV`, CVs unchanged from the verdict battery's §6.3.
+
+| cell | `R_frac` (D0) | `π0` | **`Δ` at `k_½`** | `Δ` at `2k_½` | `CV` | `σ_d` | **`n`** | §3 said |
+|---|---|---|---|---|---|---|---|---|
+| `c7` | 3.211 % | 0.9606 | **2.991 %** | 3.061 % | 12.88 % | 18.21 % | **149** | 154 |
+| `c8` | 4.076 % | 0.9233 | **3.529 %** | 3.705 % | 9.30 % | 13.15 % | **56** | **NOT SIZEABLE** |
+
+> **⇒ `c8` IS THE PARITY LEVER'S CELL, AND IT BECAME ONE BECAUSE D0 MEASURED
+> `R_frac` THERE FOR THE FIRST TIME.** §3 could not size `c8` at all — the
+> (q, refresh) sweep never ran that cell, so no repair-traffic share existed for
+> it. D0's `[FCAUSE] n` supplies it (4.076 %), and with the smallest `k_½` of
+> any audited cell (8.7) and the second-quietest control, `c8` sizes at
+> **`n = 56`** against `c7`'s 149. **A 3-arm grid at `c8` is ~168 invocations —
+> affordable; the same grid at `c7` is ~447 and is not.**
+>
+> **AND `P3`'s SIGN TEST IS UNDERPOWERED BY FOUR ORDERS OF MAGNITUDE, WHICH IS
+> WORSE THAN §3 SAID.** `Δ(2k_½) − Δ(k_½)` is 0.070 % at `c7` and 0.176 % at
+> `c8`, wanting `n ≈ 2.7 × 10⁵` and `2.2 × 10⁴`. **`P3` is scored on the
+> DELIVERED-LATENCY leg and on the witness, never on `ΔU`, and
+> `GUARD-UNDERPOWERED` is pre-declared for it at every cell.**
+
+#### 8.2 — GRID B (ordering): THE PREMISE IS CONFIRMED; THE TERM IS UNCHANGED AND STILL PREDICTED INERT
+
+**THE PREMISE WAS AN ASSUMPTION IN §2 AND IS NOW A MEASUREMENT.** D0 §6:
+`[SUCC] xp_n/det` = **0.9711 at `c7`** and **0.8711 at `c8`** — the resolving
+arrival came in on the OTHER path — with cross-path heal at worst-case bounds of
+**0.896** and **0.802** that need no joint distribution. `WIRE-REORDER-DOMINATED`
+fires at both duals as pre-registered. **And the control is exact: `xp_n ≡ 0` at
+both single-path cells on both gauges, the same field that reads 0.87–0.97 two
+paths over** — so the zero is a property of the wire, not an unreached code path
+(`tests/holeclass_reachability.rs` asserts the pair).
+
+> **⇒ THE SCHEDULER DOES MANUFACTURE THE HOLES AT THE DUAL CELLS. THE ORDERING
+> LEVER'S PREMISE HOLDS, AND THE LEVER IS STILL NOT BUILT.** A confirmed premise
+> is not a licence. `W` does not carry `π0`, so D0 does not move it: re-run on
+> D0's own `c8` goodput (86.5 Mbit/s) it lands at **1.66 × 10⁻³** against §2's
+> 1.57 × 10⁻³ — a 6 % move from a 5 % goodput difference. **`W×1` stays
+> `INERT-AS-DERIVED` and the predicted crossover stays between `×100` and
+> `×1000`.** Grid B's cells narrow to `c7` and `c8` (`c8L` is unaudited).
+
+#### 8.3 — WHAT ELSE THE AUDIT SETTLED FOR THIS RECORD
+
+* **`WA1`/`WA2`/`WA3` are unchanged**, and `WA2`'s premise is strengthened: at
+  the duals the `[RFA]` false classes are dominated by cross-path arrivals, so
+  the `dup_src → preempt_src` migration has a population to move.
+* **THE `[RFA]` GAUGE MUST NOT BE READ AS WASTE AT A SINGLE PATH.** D0 measures
+  `closed_retx` at 99.2–99.5 % there, so `false_frac` (0.26 at `c1`, 0.34–0.39
+  at `sc2`) counts duplicate ARRIVALS, not unnecessary repairs (paper
+  §16.80.4a). **Any successor scoring `DIM-2` at `c1`/`sc2` is scoring the wrong
+  quantity**, and that is stated here because two committed batteries already
+  did.
+* **THE WASTE SPLIT HAS TWO SOURCES, NOT THREE.** `taper_copy = 0` at 4 of 4
+  cells and on both L0 loopback topologies (D0 §8). Any arm that budgets for a
+  taper-copy leg is budgeting for a branch that does not fire.
+* **THE REGISTER.** D0 §10 added the audit's own `srtt/2` heal/closed
+  CLASSIFIER to the open-constants register, with its bias direction stated
+  (it biases `π0` UPWARD, so every `π0` in paper §16.80 is an upper bound).
+  **That row is reproduced in paper §16.80.12 and is NOT restated here** — one
+  register, two readers. The paper's register now carries **nine** rows, not the
+  eight §7 above refers to, and D0 discharged the DECIDING MEASUREMENT of four
+  of them (`GAP_ACK_MIN_INTERVAL`'s loopback floor = 0; RECOV_MP's
+  `ripe_frac = 0.982` at `c1`; the taper copy's zero; `κ`'s admissibility).
+  **Not one constant changed value. Discharging a deciding measurement is not
+  deriving a constant, and the register says so on every row.**
+
+#### 8.4 — THE GATE, RE-STATED
+
+**§6's gate is DISCHARGED for `π0` and REMAINS SHUT for everything else.** This
+record is still a **SPECIFICATION and not a pre-registration**, and running
+either grid is still not licensed by it, because three inputs a pre-registration
+would need are still open: **(i)** `α` — the spurious-repair budget — is still
+undeclared, and it is what sets the level any span or hold would be positioned
+at (paper §16.80.1); **(ii)** `H` at `c8` is a bracket `[8, 60] ms`, so grid A's
+`P3` latency leg has no fixed frontier price to be scored against (paper
+§16.80.4); **(iii)** `c8L` is unaudited, so the grid's dual-cell coverage is two
+cells, not three. **A pre-registration written now would pre-register against a
+bracket and an undeclared budget, which is the same class of error §6 was
+written to prevent.**
