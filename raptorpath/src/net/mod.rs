@@ -8690,12 +8690,7 @@ async fn run_window_sender(
                 }
                 proactive_coded_total += 1;
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch {
-                    symbols: vec![sym],
-                    send_timestamp_us: now_us(),
-                    batch_seq,
-                    path_id: path,
-                };
+                let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                 if let Err(e) = transport.send_symbols(path, batch) {
                     warn!(path, ?e, "failed to send generation coded symbol");
                 }
@@ -8747,12 +8742,7 @@ async fn run_window_sender(
                     }
                     proactive_coded_total += 1;
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: path,
-                    };
+                    let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                     if let Err(e) = transport.send_symbols(path, batch) {
                         warn!(path, ?e, "failed to send filling-generation repair");
                     }
@@ -8861,12 +8851,7 @@ async fn run_window_sender(
                         rec_emitted += 1;
                         progressed = true;
                         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                        let batch = SymbolBatch {
-                            symbols: vec![sym],
-                            send_timestamp_us: now_us(),
-                            batch_seq,
-                            path_id: path,
-                        };
+                        let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                         if let Err(e) = transport.send_symbols(path, batch) {
                             warn!(path, ?e, "failed to send generation recovery symbol");
                         }
@@ -9963,12 +9948,7 @@ async fn run_window_sender(
                     }
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: nack_path,
-                    };
+                    let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, nack_path);
                     if let Err(e) = transport.send_symbols(nack_path, batch) {
                         warn!(nack_path, ?e, "failed to send NACK retransmission");
                     }
@@ -10054,12 +10034,7 @@ async fn run_window_sender(
                     }
                     let repair_sym = st.encoder.generate_repair();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![repair_sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: margin_path,
-                    };
+                    let batch = SymbolBatch::new(vec![repair_sym], now_us(), batch_seq, margin_path);
                     if let Err(e) = transport.send_symbols(margin_path, batch) {
                         warn!(margin_path, ?e, "failed to send NACK repair margin");
                     }
@@ -10621,12 +10596,7 @@ fn send_interleaved_batches(
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-                let batch = SymbolBatch {
-                    symbols: std::mem::take(&mut chunk),
-                    send_timestamp_us: now,
-                    batch_seq,
-                    path_id,
-                };
+                let batch = SymbolBatch::new(std::mem::take(&mut chunk), now, batch_seq, path_id);
                 let n = batch.symbols.len() as u32;
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send interleaved batch");
@@ -10642,12 +10612,7 @@ fn send_interleaved_batches(
         if !chunk.is_empty() {
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
             let ids: Vec<(u64, u32)> = chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-            let batch = SymbolBatch {
-                symbols: chunk,
-                send_timestamp_us: now,
-                batch_seq,
-                path_id,
-            };
+            let batch = SymbolBatch::new(chunk, now, batch_seq, path_id);
             let n = batch.symbols.len() as u32;
             if let Err(e) = transport.send_symbols(path_id, batch) {
                 warn!(path_id, ?e, "failed to send interleaved batch");
@@ -10875,12 +10840,7 @@ fn dispatch_repair_plans(
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
                 let n = chunk.len() as u32;
-                let batch = SymbolBatch {
-                    symbols: std::mem::take(chunk),
-                    send_timestamp_us: now,
-                    batch_seq,
-                    path_id,
-                };
+                let batch = SymbolBatch::new(std::mem::take(chunk), now, batch_seq, path_id);
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send ARQ repair batch");
                 } else {

@@ -453,12 +453,7 @@ pub(crate) fn emit_source(
             wire_sym.clone()
         };
         let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-        let batch = SymbolBatch {
-            symbols: vec![on_wire],
-            send_timestamp_us: now_us(),
-            batch_seq,
-            path_id: source_path,
-        };
+        let batch = SymbolBatch::new(vec![on_wire], now_us(), batch_seq, source_path);
         if let Err(e) = ctx.transport.send_symbols(source_path, batch) {
             warn!(source_path, ?e, "failed to send window source symbol");
         }
@@ -562,12 +557,7 @@ pub(crate) fn emit_source(
         };
         if let Some(alt) = alt_path {
             let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch {
-                symbols: vec![wire_sym],
-                send_timestamp_us: now_us(),
-                batch_seq,
-                path_id: alt,
-            };
+            let batch = SymbolBatch::new(vec![wire_sym], now_us(), batch_seq, alt);
             if let Err(e) = ctx.transport.send_symbols(alt, batch) {
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
@@ -922,12 +912,7 @@ pub(crate) fn emit_source(
                 }
             };
             let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch {
-                symbols: vec![correction_sym],
-                send_timestamp_us: now_us(),
-                batch_seq,
-                path_id: correction_path,
-            };
+            let batch = SymbolBatch::new(vec![correction_sym], now_us(), batch_seq, correction_path);
             if let Err(e) = ctx.transport.send_symbols(correction_path, batch) {
                 warn!(correction_path, ?e, "failed to send correction symbol");
             }
