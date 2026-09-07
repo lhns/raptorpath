@@ -48709,3 +48709,221 @@ standing rule, not a judgment:
 The only action that could ever re-open the literal chain is the ρ plumbing,
 which awaits the owner's authorization. Until then this record, §16.74–16.79,
 and the eleven battery ledgers are the goal's complete and final state.
+## §16.80 — THE LEVERS AS PREDICTIONS (**SPECIFIED, NOT BUILT**) (2026-09-07, `docs/16-80-sequential-classification` from main@`b181fa5`) — **paper §16.80.6's two levers written out as batteries, with their arm grids, their cells, their `n` computed from the measured CVs, their witnesses and their legal outcomes — so that whoever builds them inherits a pre-registration instead of writing one. STRICTLY LOCAL: no VM, no benchmark, no new binary, no engine file, no gate, no default, no test, no lock taken. NO ARM IS BUILT AND NO NUMBER BELOW IS A RESULT.** Every number is either transcribed from a committed scored section with its citation, or arithmetic done here and shown in full. **THIS RECORD IS GATED ON D0's READING** (see §5) and its arm grid literally cannot be fixed until D0 lands.
+
+### 0 — WHAT THIS IS, AND WHAT IT IS NOT
+
+Paper §16.80 proves a bound on what TIMING can win: `value(T*) − value(0) ≤
+R_frac·F((H−d)⁺)`, with the admissible domain narrower than one bucket of the
+measuring instrument at 3 of 3 fully-swept cells. **It also records that the
+smallest waiting time this tree ever realized anywhere is 25.6 ms — 3.5× to
+26.9× OUTSIDE that domain — so the bound has never been tested where it bites.**
+
+The two levers below act on the other two factors instead: the `H0` prior at
+the source (**ordering**), and the cost of a false answer (**parity**). They are
+written here as predictions with pre-declared falsifiers, per §16.80.7.
+**Neither is built. No engine crate is touched by this record and none is
+licensed by it.**
+
+### 1 — ARM GRID A: THE PARITY ANSWER
+
+**Construction.** Answer a reported gap span of `m` missing seqs with ONE RLC
+repair symbol over the span instead of `m` retransmit copies. The encoder
+exists (`fec/rlc_window.rs:116`, `generate_repair_range(start, count)`) and the
+decoder already retains multi-unknown rows as RANK (`rlc_window.rs:328-348`).
+
+```text
+   c_FA(m)     = w · π0^m            waste ratio (parity : m copies) = π0^(m−1)/m
+   k_½         = ln 2 / (−ln π0)     the span at which c_FA halves
+```
+
+**ARMS: `{ CTL , k_½ , 2·k_½ }`** — three arms, one dial (`m`), no constant.
+
+| cell | `π0` (BOUND, §16.80.9) | **`k_½`** | `2k_½` | waste ratio at `k_½` | waste ratio at `2k_½` |
+|---|---|---|---|---|---|
+| `c1` | 0.9954 | **150.3** | 300.6 | 0.00334 | 0.000835 |
+| `c7` | 0.9884 | **59.4** | 118.8 | 0.00851 | 0.00213 |
+| `c8` | 0.9716 | **24.1** | 48.2 | 0.0213 | 0.00533 |
+| `c8L` | 0.9717 | **24.2** | 48.4 | 0.0213 | 0.00531 |
+| `sc2` | 0.9346 | **10.2** | 20.5 | 0.0522 | 0.0130 |
+
+**THE PREDICTED EFFECT SIZE, IN THE CURRENCY THE GUARD IS STATED IN.** The
+lever can save at most the waste it removes, and `[W]`'s whole range is
+§16.79.1's `R_frac`:
+
+```text
+   Δ_parity(m)  =  R_frac · ( 1 − π0^(m−1)/m )
+```
+
+| cell | `R_frac` | **`Δ` at `k_½`** | **`Δ` at `2k_½`** | `Δ(2k_½) − Δ(k_½)` |
+|---|---|---|---|---|
+| `c1` | 0.242 % | **0.241 %** | 0.2418 % | +0.0006 % |
+| `c7` | 2.966 % | **2.941 %** | 2.960 % | +0.019 % |
+| `sc2` | 4.084 % | **3.871 %** | 4.031 % | +0.160 % |
+| `c8` / `c8L` | **NOT MEASURED** — the (q, refresh) sweep never ran those cells | — | — | — |
+
+**⇒ THE SECOND ARM BUYS ALMOST NOTHING IN WASTE, AND THAT IS ITS PURPOSE.**
+Doubling the span is second-order on the benefit leg. `2k_½` exists in the grid
+for `P3` — the SIGN of the frontier price across two spans — not for more
+saving, and this table is what says so in advance.
+
+### 2 — ARM GRID B: ARRIVAL-ORDERED PLACEMENT
+
+**Construction.** Replace `scheduler/mod.rs:4356-4363`'s hard eligibility filter
+(`ELIGIBLE_SKEW = HOLD_HORIZON_SECS/4 = 75 ms`, applied at `:4441-4445`) with a
+continuous cost term summed into `place_costs` beside `load + w_bw·r + w_div·fate`:
+
+```text
+   cost_order_i  =  W · max(0, η_prev − η_i) / ref_srtt
+   W             =  P_arq · (T_pay + h) · 8 / ( R_ref · τ_cool )
+```
+
+**ARMS: `{ CTL , W×1 , W×10 , W×100 , W×1000 }`** — five arms on ONE
+multiplier, with `W` derived and not fitted (paper §16.80.6(a2)).
+
+```text
+   at c8 :  (1214 B × 8) / (91.48e6 bit/s × τ_cool)
+            τ_cool = 10 ms  (NACK_RETX_COOLDOWN_FLOOR_US) ⇒ W = 1.06e-2
+            τ_cool = 67.5 ms (9/8 · RTprop_slow = 60 ms)  ⇒ W = 1.57e-3
+       ⇒  W ≈ 2 × 10⁻³ at the live cooldown
+```
+
+**THE PREDICTION IS `INERT-AS-DERIVED` AT `W×1`, AND IT IS A DERIVATION.** The
+`load` term `cost_order` competes with is `O(1)` (a delivery time over
+`ref_srtt`). A term at `2×10⁻³` cannot change a placement. **The grid escalates
+until it can: `W×1000 ≈ 2.0` is the first arm comparable to `load`, so the
+crossover is predicted between `×100` and `×1000`.** An arm below `×100` that
+moves placement REFUTES the derivation of `W` — that is `R1` for this lever, and
+it is what the escalation is for.
+
+**SCORED MEASURAND: THE PLACEMENT-CHANGE WITNESS FIRST, `ΔU` SECOND.** `ΔU` is
+read ONLY on arms whose witness fired; an arm whose witness did not fire is
+`INERT-AS-DERIVED` and its `ΔU` is not quoted, because a control wearing a
+treatment label is not a measurement (the (q, refresh) sweep's `law_n = 0`
+lesson, applied in advance).
+
+### 3 — CELLS AND `n`, FROM THE MEASURED CVs
+
+**The `n` law is the verdict battery's own, unchanged:** `n ≥ (2σ_d/Δ)²` with
+`σ_d = √2·CV`, `CV` the `CTL` goodput coefficient of variation. **The CVs are
+transcribed from THE VERDICT BATTERY — CALIBRATION DISCHARGED §6.3's table**
+(`c1` 3.04 %, `c7` 12.88 %, `sc2` 0.80 %, `c8` 9.30 % †, the last a prior from
+the hold-down sweep's within-arm goodput CV and labelled as one there). The
+`CTL` per-battery rep SPREADS, which are the self-calibrating bars the two
+scored dimensions use, are THE VERDICT BATTERY — SCORED RESULT §3's table
+(`c1` 8.2 %, `c7` 80.2 %, `sc2` 3.0 %, `c8` 44.9 % goodput; `ffrac` 23.2 /
+656.0 / 15.2 / 253.7 %).
+
+| cell | `CV` | `σ_d = √2·CV` | `Δ_parity(k_½)` | **`n ≥ (2σ_d/Δ)²`** | verdict |
+|---|---|---|---|---|---|
+| `c1` | 3.04 % | 4.30 % | 0.241 % | **1 273** | **INFEASIBLE** — and `P4` predicts `c1` inert anyway (`k_½ = 150` against `gap_max = 131`) |
+| `c7` | 12.88 % | 18.21 % | 2.941 % | **154** | **INFEASIBLE on any realistic budget** |
+| `sc2` | 0.80 % | 1.14 % | 3.871 % | **1** → use **4** for a median | **THE ONLY AFFORDABLE CELL, AND IT IS AFFORDABLE BY THREE ORDERS OF MAGNITUDE** |
+| `c8` | 9.30 % † | 13.15 % | **unsizeable** — `R_frac` never measured at `c8` | — | **NOT SIZEABLE** — owed: `R_frac` at `c8` |
+
+> **⇒ `sc2` IS THE PARITY LEVER'S CELL, AND THE ARITHMETIC SAYS SO BEFORE
+> ANYTHING RUNS.** It has the largest `R_frac` (4.084 %), the smallest `k_½`
+> (10.2 — a span its wire actually produces), and the quietest control
+> (`CV = 0.80 %`). `c1` is structurally inert and unaffordable at once; `c7` is
+> the cell whose control noise has defeated three batteries already.
+
+**`P3`'s SIGN TEST IS UNDERPOWERED AT EVERY CELL AND IT IS SAID HERE.** The
+`k_½`-vs-`2k_½` difference is 0.160 % at `sc2`, needing `n ≥ 203` against the
+same `CV` — so `P3` is pre-declared `GUARD-UNDERPOWERED` on the `ΔU` leg and is
+scored on the DELIVERED-LATENCY leg (`ΔT = F⁻¹(1 − 1/m)`, directly observable),
+with `GUARD-UNDERPOWERED → defer to the witness` exactly as the verdict
+battery's `G2` deferred to `G1`. **That is the honest reading and it is written
+in advance, not discovered in the scoring.**
+
+**GRID B's `n`:** the placement-change witness is a COUNT, not a difference, so
+`n = 3` per arm suffices to observe it; `ΔU` on a witness-firing arm inherits
+the table above. Cells: the dual cells only (`c7`, `c8`, `c8L`) — the ordering
+lever is structurally inert at `c1`/`sc2`, which are single-path
+(`tools/l1/alpha_battery.sh:148-153`), and **a single-path arm that moves is an
+instrument finding, not a lever finding.**
+
+### 4 — WITNESSES
+
+**Both grids (the standing set, unchanged from the verdict battery):**
+`W1` `[GATES]` resolved two-sided · `W2` the arm's own input resolved and echoed
+two-sided · `W3` `gen = 0` at `[HOLD]`/`[FCAUSE]`/`[SUCC]` · `W4` `[FCAUSE]`
+`n = timer + gap_data + gap_refresh + other` · `W5` `[SUCC] det > 0` and
+`det = orig + rep + aban + open + over` · `W6` `[RFA]` fraction AND count both
+recorded · `W7` `rc = 0` and `mean_mbps` scraped · `W8` `CTL` in band ·
+earned + writable sentinels proved before any measurement · **abort-cause table
+first.**
+
+**Grid A only — the wiring witnesses that decide whether the arm existed:**
+
+* **`WA1` SPAN ACTUALLY ENCODED.** `generate_repair_range` returns `None` unless
+  the whole `[start, start+count)` range is still retained (`rlc_window.rs:120-130`).
+  **A silent `None` is an arm that did nothing**; the count of `Some` vs `None`
+  must be echoed. `WA1-NO-SPAN` is a fail token.
+* **`WA2` THE `[RFA]` CLASS MIGRATION.** `P2` predicts the false class moves
+  `dup_src → preempt_src` (`net/mod.rs:5299-5440`; a parity symbol arriving
+  after the originals is a pre-empted repair, not a duplicate source). **No
+  migration ⇒ `WIRING-FAILS`.**
+* **`WA3` DECODER RANK REDEEMED.** pivot-row retention and
+  `cascade_from_recovered` must both be exercised (`rlc_window.rs:328-351`);
+  zero cascades means the parity symbols never resolved anything.
+
+**Grid B only:** **`WB1`** the placement-change counter > 0 on at least one arm
+(else the whole grid is `INERT-AS-DERIVED` and reports as such); **`WB2`**
+`ELIGIBLE_SKEW`'s filter echoed as disarmed two-sided on treatment arms —
+without it the continuous term and the hard filter are both live and the arm
+measures neither.
+
+### 5 — LEGAL OUTCOMES, WRITTEN FIRST
+
+* **`INERT-AS-DERIVED`** — the arm is wired (witnesses clean) and `ΔU` does not
+  clear the control's own spread. **For grid B at `W×1` this is the PREDICTED
+  outcome and it CONFIRMS the derivation of `W`; it is not a null result.**
+* **`WIRING-FAILS`** — a witness token fires: the span was never encoded, the
+  class never migrated, the filter was still live. **The arm carries no verdict
+  in either direction.** (The hold-down sweep's `WIRING TEST FAILS` at 5 of 5,
+  applied to a different lever.)
+* **`AGGREGATION-DOMINATED`** — the waste reduction is measured and real, and
+  `ΔU` still does not move because the cell's cost is dominated by something the
+  lever does not touch. **`P5`'s two-arms-at-the-same-`T` finding
+  (paper §16.80.3a) says in advance that this is live.**
+* **`CONSTRUCTION-WINS`** — `ΔU > 0` beyond the control's own rep spread, at a
+  majority of scored cells, with every witness clean. **Written first so it
+  cannot later be described as an outcome nobody allowed for.**
+* **`GUARD-UNDERPOWERED(cell)`** — the observed difference lands inside the
+  resolvable `Δ` of §3; the guard defers to the witness. Pre-declared for `P3`
+  at every cell.
+
+### 6 — THE GATE: NOTHING HERE MAY RUN BEFORE D0
+
+**`k_½ = ln 2 / (−ln π0)` and `Δ_parity = R_frac·(1 − π0^(m−1)/m)` are both
+functions of `π0`, and `π0` is currently `[SUCC] orig_frac` — which the
+successor-arrival pass's own owed item 2 discloses is a BOUND and not a
+fraction:** *"`orig` cannot separate a late original from a resent one — the
+wire carries no retransmit bit. So `orig_frac` bounds the false-repair fraction
+from one side and does not decompose it."*
+
+**⇒ EVERY ARM POSITION IN §1 AND EVERY `n` IN §3 IS PROVISIONAL.** D0 measures
+the fraction. The direction is signed: a LOWER `π0` shrinks `k_½` (`sc2`'s 10.2
+falls further; `c1`'s 150.3 may fall into its wire's reachable span, which would
+reopen `P4`), and it lowers every `Δ_parity`. **This record is therefore
+committed as a SPECIFICATION and is not a pre-registration: a
+pre-registration written against a bound would be pre-registering the wrong
+grid.**
+
+**AND ONE MORE THING D0 DECIDES, WHICH IS NOT A LEVER QUESTION.** Paper
+§16.80.3a's `P5` found `κ = 8.04` at `c1` against its own `κ ≤ 1` bound —
+the frontier term is inadmissible there. `κ` scales as `1/π1 = 1/(1 − π0)`, so
+`κ` at `c1` becomes admissible exactly when the true self-heal share is
+`≤ 0.963` rather than the record's `0.9954`. **D0's `c1` row is a direct test of
+paper §16.80's frontier term, and it was not designed to be one.**
+
+### 7 — WHAT THIS RECORD DOES NOT DO
+
+No arm is built. No engine crate is touched. No gate is added. No default is
+flipped. No lock is taken and no VM is contacted. No clause of any
+pre-registration is scored, and **nothing here licenses running either grid** —
+§6's gate is a precondition, not a formality. The paper section this record
+serves (§16.80) is itself DOCS ONLY and blesses no constant: its
+open-constants register carries eight literals, each recorded
+`arbitrary/unprovenanced — NOT corrected, correct value unknown`, with the
+measurement that would decide it.
