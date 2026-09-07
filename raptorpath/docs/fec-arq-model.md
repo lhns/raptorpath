@@ -19009,6 +19009,57 @@ would consume it.
   expression in §16.80 reads it any more except the `c8L` row, which carries its
   PROVISIONAL marker for exactly that reason.
 
+> **FORWARD NOTE (2026-09-08, `docs/16-81-83-laws`, DOCS ONLY) — WHAT §16.81,
+> §16.82 AND §16.83 DO TO THIS SECTION. Three things are DISSOLVED, one is
+> EXTENDED, and nothing in §16.80 is corrected.**
+>
+> * **16.80.12's item (1) — `α`, *"the largest gap"* — IS DISSOLVED RATHER THAN
+>   FILLED, BY §16.83.0.** This section asked for `α` to be *"DECLARED as a
+>   contract quantity beside δ and ρ."* §16.80.1 had already shown that every
+>   clock in this tree has the form `S(ℓ) ≤ α`, so a stopping threshold and a
+>   false-alarm budget are the SAME OBJECT under `α = S(ℓ*)`. **§16.83 solves the
+>   stopping problem at the receiver — where the density is observable — and
+>   READS `α` off the answer.** `α` is a function of the cost ratio the contract
+>   already declares; it is not a fourth dial, and RFC 8985's `1/16` is one
+>   instance of it rather than a transferable value.
+> * **§16.77.8a's CENSORING IS SHOWN TO VANISH ON EXACTLY ONE INTERVAL, AND IT
+>   IS THE ONE THE DECISION USES — §16.83.1.** `Y = min(orig, repair)` censors
+>   the heal density everywhere except on `[0, ℓ*)`, because under a single
+>   receiver authority no copy has flown there. **The law's own domain is its own
+>   identifiability condition.** That is the structural reason the receiver's
+>   seat can be fed where the sender-side estimator's fixed point was at zero,
+>   and §16.77.8a is not corrected — its measurement stands.
+> * **16.80.4a's SINGLE-PATH COROLLARY AND 16.80.6(b)'s m-LAW BECOME THE SAME
+>   OBJECT AS THE GENERAL LAW — §16.83.2, §16.83.3.** `π0 → 0` gives `ℓ* = 0`
+>   AND `k_½ < 1 ⇒ m = 1`, i.e. the shipped per-seq copy requested immediately.
+>   **The corner is not an approximation of the law; it IS the law at the inputs
+>   D0 measured at `c1` and `sc2`**, and the two regimes D0 forbade pooling fall
+>   out of ONE expression with no branch.
+> * **16.80.3's `Φ` IS EXTENDED TO THE SENDER'S SEAT — §16.81.2.** The same
+>   frontier physics, read at placement time, is the term the placement law is
+>   missing: `X_i = [δ·s_i + κ·(s_i − H)⁺]/ref` with `s_i` the frontier push a
+>   placement adds. **`H` and `κ` are §16.80.3's, unchanged**, which is why
+>   §16.81 inherits `gain = 2.0`'s absent provenance rather than acquiring a new
+>   one — and why §16.83.2's KNEE-BOUND prediction, if it fires, makes ONE
+>   unprovenanced literal decide THREE laws.
+> * **16.80.6(a2)'s ORDERING TERM KEEPS ITS `PREDICTED INERT` VERDICT AND GAINS
+>   A DOMAIN — §16.81.3.** `ELIGIBLE_SKEW`, the filter it was written to
+>   replace, lives in `pick_affinity_path` and is **moot on the plain window
+>   path**. The prediction is unchanged; what is added is that its target was
+>   already unreachable at the measured cells.
+> * **§16.73.4's CORNER GAINS A BOUNDARY — §16.82.** §16.73 proved `r* = 0` with
+>   `δ` cancelled out; §16.82 reintroduces `δ` on the proactive leg alone and
+>   derives `δ_exit`. **§16.80's theorem is untouched by it: §16.80 is about `T`
+>   and §16.82 is about `r`.**
+>
+> **AND THE VALUE BOUND OF 16.80.0(ii) STILL CAPS EVERYTHING THE THREE NEW
+> SECTIONS COULD WIN ON THE RECOVERY PLANE** — `< 1.54 %` of transfer at `c7`,
+> `< 1.88…3.39 %` at `c8`, `≤ 0.0026 %`/`≤ 0.022 %` at the single-path cells.
+> **A derived `α` does not raise that ceiling, and neither section claims it
+> does.** The open-constants register of 16.80.12 gains twelve rows and loses
+> none.
+
+
 #### 16.80.12 What this does NOT claim — and THE OPEN-CONSTANTS REGISTER
 
 **NO ENGINE CHANGE, NO DEFAULT, NO GATE, NO TEST, NO LEVER BUILT.** Nothing in
@@ -19082,11 +19133,1938 @@ known. Being undefeated is not being derived.**
 | taper copy `p_lost` probabilistic retransmit | `net/emit_source.rs:809-821` — retransmits the OLDEST unacked seq with probability `p_lost(age, ε, srtt, rttvar)` | **model-derived (paper §3.4); its waste is now MEASURED and it is ZERO — NOT corrected, because WHY it never fires is undecided** | **DISCHARGED by D0 §8: `taper_copy = 0` at 4 of 4 cells and on both L0 loopback topologies**, with the pre-existing DIAG `plost=` counter reading 0 beside it. Realized waste has TWO sources, not three, and `dup_src / [FCAUSE] n` was not over-attributing. What remains open: whether `p_lost`'s `eps_at_send` is structurally ~0 or the oldest unacked seq never ages far enough |
 | store-cap headroom `H` / `κ` | the store-cap law: `gain = RWM_STORE_GAIN = 2.0` (`gates.rs:1055-1058`); `R = HONEST_RECOVERY_ROUND_S = 100 ms` (`net/mod.rs:4221`) | **`H` is now DERIVED from the law (16.80.3) — but the law's `gain` is unprovenanced and `κ` is FITTED. NOT corrected** | the SACK-vs-cum-ack read is DISCHARGED (cumulative only, `net/mod.rs:9981-9983`), and **D0's `π1` DISCHARGED the `κ` half: `κ` is admissible at 4 of 4 audited cells (0.0048–0.067) where it was 8.04 at `c1` on the record's prior.** What remains is an `RWM_STORE_GAIN` contrast for `gain`, and `κ` is still a FIT |
 | the `srtt/2` heal/closed CLASSIFIER | D0's `[HOLD]` A0.2 split between `heal_retx_young` and `closed_retx` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED TO THIS REGISTER BY D0 §10, reproduced here rather than restated: a classifier introduced by the audit's own instrument, arbitrary in exactly the way the legacy age gate is. **Its bias direction is stated — it attributes a hole whose original and retransmit land within half an RTT to the ORIGINAL, biasing `π0` UPWARD** — so every `π0` in §16.80 is an upper bound. **It gates nothing and enters no law** | a wire bit distinguishing a retransmit from an original — a wire change, not proposed here |
+| **`PLACE_TEMPERATURE = 0.15`** — the placement softmax temperature | `scheduler/mod.rs:964`, resolved through `place_temperature()` `:969-979`, applied in `place_probs_with_temperature` `:4737-4744` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED BY §16.81.1. **It is ABSENT FROM THIS PAPER** — §16.3 states the softmax and calls `T` *"the one dial … PREDICTION, measure before claiming"* with no value. Its only provenance in the record is the argmax of a FOUR-POINT SWEEP AT ONE CELL **whose own verdict was a failure**: *"C8 het dual, 12.55 Mbit/s (T=0.15 best), 0.81× — FAILS … No temperature beats fast-path-alone."* **A constant selected as the best of four losers is not a measured constant** | **§16.81.1's Luce/Gumbel identity makes it a testable claim about the wire:** the softmax IS `argmin` under Gumbel noise of scale `T`, so `T = (√6/π)·σ̂_e/ref` and the shipped 0.15 ASSERTS `σ̂_e = 0.19238·ref` at every cell. Deciding measurement: `σ̂_e`, the dispersion of `realized − E_i`, via §16.75's τ-lag estimator on the `[ETA]` stream. **That stream does not exist.** A `Tσ` arm tying with `CTL` licenses `σ̂_e/ref`, NEVER 0.15 |
+| **`w_div = 1.0`** — the repair fate-diversity weight | `scheduler/mod.rs:1008`, set to 1.0 at ALL THREE hints by `SchedulingWeights::from_hint` `:1017-1019`; consumed at `place_costs:4825, :4873` | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED BY §16.81.3. The code's own comment justifies its hint-INDEPENDENCE and is silent on its VALUE | **§16.81.3's GE form:** what a correlated repair costs is the EXCESS burst probability, `fate_i·(p_BB,i − ε_i)⁺·srtt_i/ref`, which **vanishes identically on a memoryless channel** — and the shipped 1.0 does not. Evaluated on the harness's own cells the derived weight is **0.475 at `c2`** and **0.552 at `c3`**; 1.0 is reached only as `q → 0` (permanent bursts). Deciding measurement: a per-path `p_bg` / `p_BB` readout beside the placement decision |
+| **the `r_i = ∞` price `10.0`** | `scheduler/mod.rs:4240`, `:4460`, `:4565`, **`:4866`** — and **only `:4866` (`place_costs`) is on the shipped plain-window path**; `:4240`/`:4460` are the block pipeline, `:4565` the Realtime duplicate-send chooser | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED BY §16.81.3. `L_i` is `O(1)` by construction, so adding `w_bw·10.0` at `T = 0.15` is `e^(−10/0.15) = e^{−66}` relative odds — **a hard exclusion wearing a continuous costume, and a filter is exactly what `place_costs`' own doc comment (`:4766-4774`) refuses to perform** | the continuous replacement introduces NO constant: price an unmeasured path no worse than the worst MEASURED one, `r_i := max_j ε_j/(1−ε_j)` over paths with a sample. Deciding measurement: a `cold_r` BIND FRACTION — how often the clamp is taken at all |
+| **the near-tie band `0.8` and floor `0.25`** | `scheduler/mod.rs:4696-4697`, `place_repair_spare_path`: `thresh = (0.8·max_spare).min(max_spare − 0.25)` | **arbitrary/unprovenanced — NOT corrected, correct values unknown. TWO constants, and §16.81.3 IS THEIR FIRST WRITTEN APPEARANCE ANYWHERE** — neither is in this paper or in goal-gate. **A RELATIVE band combined with an ABSOLUTE floor is the signature of a missing scale, not of two decisions** | the S4 reading: the tie set is the paths whose spare capacity is statistically indistinguishable from the maximum, `thresh = max_spare − z·σ̂_spare`, leaving only the LEVEL `z`, which the cost ratio derives. Deciding measurement: `σ̂_spare` on the same stream the `0.25` floor guards (§16.75's estimator, on `spare_capacity()`) |
+| **`PLACE_SLACK_RECOV_PATIENCE = 1.125` (9/8)** — the placement slack deadline | `scheduler/mod.rs:993`, consumed at `:4856-4859`; the budget `place_slack_secs` defaults to **`0.0`** at `:4130` | **arbitrary in provenance AND UNREACHED IN PRACTICE — NOT corrected.** ADDED BY §16.81.2. It is RFC 9002's `kTimeThreshold`, which §16.80.12 already records as *"EMPIRICALLY RECOMMENDED, not derived"* (RACK uses 5/4). **AND ON EVERY SHIPPED RUN `S = 0`, so `deadline = min(0, 9/8·srtt_i) = 0` and the constant CANNOT EXECUTE.** This is a DIFFERENT 9/8 from `mp_time_threshold_split`'s, which has its own row above | §16.81.2's frontier term replaces the DECLARED budget with the sender's own MEASURED frontier `F̂` (`s_i = [(now+E_i) − F̂]⁺`), so no budget constant survives. Deciding measurement: an `S > 0` bind gauge — and the 2026-08-06 smoke already falsified an unbounded declared `S` (c8 66.2 Mbit, `retxo_p1 = 49 %`), which stands and is not re-litigated |
+| **`κ = 1`** — the non-overlapped stall fraction, as used by §16.81.2's frontier term | §16.80.3's stall law; carried into `place_costs`' `X_i` as a DECLARED UPPER BOUND | **DECLARED UPPER BOUND, NOT A VALUE — and NOT corrected.** ADDED BY §16.81.2. D0's own fits put `κ` at **0.0048–0.067** at the four audited cells, so `κ = 1` over-charges the stall leg by **15× to 200×**. It is chosen to be conservative in the direction that DISCOURAGES frontier-pushing placements, and the direction is stated rather than assumed. **`κ` is still a FIT wherever it is measured** (16.80.12, unchanged) | an `s_i > H` BIND FRACTION beside the placement decision — the term is inert wherever the bound never binds, and a `κ` that never binds cannot be wrong |
+| **`BULK_TAIL_BUDGET = 0.05`** | `raptorpath-math/src/lib.rs:124`, consumed by the χ glide at `:633` (`p + (BULK_TAIL_BUDGET − p)·χ`) | **arbitrary/unprovenanced — NOT corrected, correct value unknown.** ADDED BY §16.81.12 and §16.82.9. **It is §14.25's own *"a modest tail-failure budget (e.g. δ_tail = 0.05 — one residual serial ARQ round in 20 transfers)"* — AN "e.g." PROMOTED TO A `const`.** It is one of THREE different numbers in this tree called "the Bulk tail target"; the other two are the DERIVED product `CONTRACT_TAIL_LOSS_BASE × ζ_Bulk = 1e-5 × 100 = 1e-3` (which exists as a constant nowhere) and the visualizer's own `0.05` anchor | the tail-failure budget is a QUANTILE of the completion-time distribution, and §14.25 states the cost ratio that would set it. Deciding measurement: `RWM_TAIL_BUDGET` as a sub-arm of §16.82's `GLIDE` battery — the only arm in which the constant reaches the wire at all, since χ ≡ 0 today. **AND the 50× sim-vs-engine divergence at the Bulk point is to be BOUNDED by a wasm test now and unified later as a DELIBERATE model change with its goldens re-captured** |
+| **`queue_target_mult` = 1.08 / 1.125 / 1.25** | `scheduler/mod.rs:945-951`, a three-arm `match hint` | **arbitrary/unprovenanced — NOT corrected, correct values unknown. A DECLARED CORNER: §16.81.7 verifies that NO continuous form exists** — the three named δ are equally spaced in `log₁₀` and these three values are NOT affine in it (steps 0.045 then 0.125). **No form is invented; inventing one would be a fit with the provenance of a guess** | the Copa queue target is a standing-queue setpoint, and §16.70/§16.71 already derived one such setpoint from CoDel rather than fitting it. Deciding measurement: the same derivation applied per hint — i.e. whether the three multipliers are three readings of one CoDel-derived law at three δ, or three tunings |
+| **the block shape by hint: `BlockProfile::from_hint` and the default interleave depth** | `net/mod.rs:147-171` (block 4/64/16 KB, flush 2/5/10 ms, symbol 512/1200/1200 B); `config.rs:267-271` (interleave 2/1/3) | **arbitrary/unprovenanced — NOT corrected, correct values unknown. DECLARED CORNERS.** ADDED BY §16.81.7. **The interleave depth is NON-MONOTONE in δ (2, 3, 1 in dial order), so no continuous form CAN pass through it** — that is a proof of corner-ness, not a failure to find a form. `BlockProfile` switches three quantities on one hint read | for the block sizes, the jitter-horizon encoder-lag law of §14.24 evaluated at each δ; for interleave, the burst-length distribution `σ²_burst` the tree already derives exactly. Deciding measurement: whether either quantity, so derived, reproduces its three shipped values |
+| **the Realtime duplicate source send** | `net/emit_source.rs:557-558`, `if pol.protocol_hint == ProtocolHint::Realtime` | **unprovenanced — NOT corrected. A DECLARED CORNER.** ADDED BY §16.81.7. **It is a REDUNDANCY decision — i.e. a rate decision — taken by a hint equality and priced by nothing**, on the leg of the triangle that has a rate law | §16.82's price form: a duplicate is `r = 1` over a one-symbol window, so it is admissible iff `δ·χ ≥ δ_exit` at that window — and at Realtime's `δ = 50` §16.82.2 finds the interior REACHABLE. Deciding measurement: the duplicate's own `rep_redundant` beside the price |
+| **`use_packing`** | `net/sender_policy.rs:1243-1244`, `protocol_hint == ProtocolHint::Realtime` | **unprovenanced — NOT corrected. A DECLARED CORNER.** ADDED BY §16.81.7 | packing trades per-symbol header overhead against added dwell; both legs are code-exact (`h = 14 B`) and measurable. Deciding measurement: the dwell the packer adds, against `h/T_pay = 1.1667 %`, at each δ |
+| **the receiver hold `(srtt × 4).clamp(60 ms, 300 ms)`** | `net/mod.rs:2202-2208` `shed_recv_hold` (the disarmed arm); bounds `BLOCK_REORDER_MIN_HOLD/MAX_HOLD` at `:202-203` | **arbitrary/unprovenanced — NOT corrected, correct values unknown. THREE constants: the `4×` gain and both clamp endpoints.** ADDED BY §16.81.7 / §16.80.8. **AND THE ARMED ARM HARD-CODES `srtt/2` — i.e. `b = ½` — WITHOUT CALLING `delta_budget_b`**, justified structurally (*"the EVICT in-order window path exists only for the Realtime hint"*). **A constant that equals `b(δ_Realtime)` by coincidence of SEAT rather than by EVALUATION is a hidden hint read, and it becomes a defect the moment ρ is plumbed** | a `[SHEDH]` BIND GAUGE, with the pre-stated reading that **60 ms binds at `c2` and 300 ms binds at `c3`** — if confirmed, the "4·SRTT law" is a CONSTANT at both main cells and that is a DEFECT FINDING about the form, not a value for it. §16.80.8's ONE give-up law (both ends measuring `age_from_original_send` against `D(δ)`) is the replacement, and it needs δ at the receiver — §16.81.10's repair |
+
+> **REGISTER EXTENSION (2026-09-08, `docs/16-81-83-laws`, DOCS ONLY) — TWELVE
+> ROWS ADDED BY §16.81–§16.83, AND NOT ONE CONSTANT CORRECTED.** The rows above
+> the line were the recovery plane's. The twelve added here are the PLACEMENT
+> plane's, the DIAL's, and the RATE leg's, and they exist because three
+> derivations went looking for them. **Every one carries the same status —
+> *arbitrary/unprovenanced, NOT corrected, correct value unknown* — and every
+> one now carries a derived form beside it and a named measurement that would
+> decide it. A derived form that has never been measured does not displace a
+> shipped constant; it only makes the constant falsifiable.**
+>
+> **AND TWO EXISTING ROWS ARE AMENDED IN PLACE RATHER THAN REWRITTEN.**
+>
+> * **`ELIGIBLE_SKEW = 75 ms` — ITS REACHABILITY IS NOW STATED, AND IT IS
+>   NARROWER THAN THE ROW IMPLIED.** §16.81.3 reads the call graph: the
+>   definition (`scheduler/mod.rs:4363`) and the hard filter (`:4444`) are both
+>   inside `pick_affinity_path`, whose ONLY caller is `Scheduler::schedule`'s
+>   block-affinity branch (`:4259`). **The plain reliable window places through
+>   `place_symbol` → `place_probs` → `place_costs` and NEVER through
+>   `pick_affinity_path`, so `ELIGIBLE_SKEW` is MOOT ON THE WINDOW PATH.** That
+>   does not acquit it — it is still a threshold that selects a code path, still
+>   unprovenanced, still live on the block seat — and **the row's status is
+>   UNCHANGED.** What it bounds is the prize: 16.80.6(a2)'s continuous ordering
+>   term, already `PREDICTED INERT` at `W ≈ 1.7×10⁻³`, was aimed at a filter the
+>   measured cells never execute. **Its quantile form is the one 16.80.6(a2)
+>   already gives** — a continuous ordering cost in place of an eligibility
+>   test — and the deciding measurement is unchanged.
+> * **`store-cap headroom H / κ` — `gain = 2.0`'s ROLE HAS GROWN, AND THAT IS
+>   THE POINT OF §16.83.2's KNEE-BOUND PREDICTION.** `gain` was the store cap's
+>   own multiplier and, through `H`, the width of §16.80's domain. **§16.81.2
+>   makes the PLACEMENT law depend on it (`X_i`'s stall leg) and §16.83.2
+>   predicts that at the dual cells it SETS THE REQUEST LATENESS OUTRIGHT**
+>   (`π0 → 1 ⇒ ℓ* = (H − d)⁺ = 7.223 ms at c7`). **If the `knee_bind` gauge
+>   confirms it, one unprovenanced literal decides three laws** — the store cap,
+>   the placement frontier term, and the repair clock — **and `RWM_STORE_GAIN`
+>   stops being an owed contrast and becomes the deciding measurement of the
+>   recovery plane.** The row's status is UNCHANGED and its deciding measurement
+>   is unchanged; what is recorded is that the same measurement now discharges
+>   three debts instead of one.
+>
+> **NOTHING IN THIS EXTENSION FLIPS A DEFAULT, SHIPS A LAW, WIRES A CONSUMER,
+> EDITS AN ENGINE CRATE, ADDS A GATE OR A TEST, OR SCORES ANY CLAUSE OF ANY
+> PRE-REGISTRATION.** Being undefeated is still not being derived, and being
+> derived on paper is still not being measured.
+
 
 **Nothing in this section flips a default, ships a law, wires a consumer on any
 default path, edits an engine crate, or scores any clause of any
 pre-registration.**
 
+
+### 16.81 Placement IS the reorder law, and the dials are not yet dials: the softmax temperature is the Luce/Gumbel scale of the scheduler's OWN prediction error — `T = (√6/π)·σ̂_e/ref` — so the shipped `T = 0.15` is the falsifiable claim `σ̂_e ≈ 0.19·ref` at every cell; the frontier term the placement law is missing is §16.80.3's `Φ` read at the sender; and eighteen hint-keyed sites are inventoried with a verdict each, of which five have no continuous form and are DECLARED CORNERS rather than invented (2026-09-08, `docs/16-81-83-laws`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test; D0's attribution audit is the measurement this section is built on, this section is the model)
+
+**THE SECTION IN ONE SENTENCE.** *D0 measured that 92–96 % of the holes at a
+dual cell are closed by the OTHER leg catching up — the scheduler manufactures
+them — and this section writes the placement law that manufactures them as ONE
+expression continuous in the dial, replaces each of its arbitrary constants by
+a measured or derived quantity or records it in the register, and then
+inventories every place in the engine where a hint still selects a value
+instead of a dial reading it.*
+
+**AND THE RULING BINDS EVERY SENTENCE OF IT.** `T = 0.15`, `w_div = 1.0`, the
+`9/8` slack deadline, `ELIGIBLE_SKEW = 75 ms`, the `10.0` infinite-correction
+price, the `0.8`/`0.25` near-tie, `RWM_STORE_GAIN = 2.0` and `κ = 1` are all
+arbitrary. **Not one of them is corrected here.** Each gets a derived form
+BESIDE it, a register row, and a deciding measurement — and a derived form that
+has never been measured does not displace a shipped constant.
+
+---
+
+## PART A — PLACEMENT AS THE REORDER LAW
+
+#### 16.81.0 Verdict first — the ONE expression
+
+Per candidate path `i`, for a symbol offered now, all terms always computed:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                                                                          │
+   │   c_i  =  L_i  +  X_i  +  B_i  +  V_i                                    │
+   │                                                                          │
+   │   L_i  =  ( E_i − D_i )⁺ / ref                     the load term  (shipped)│
+   │   X_i  =  [ δ·s_i  +  κ·(s_i − H)⁺ ] / ref         THE FRONTIER TERM (new) │
+   │   B_i  =  w_bw(δ) · r_i                            the wire-waste term     │
+   │   V_i  =  fate_i · (p_BB,i − ε_i)⁺ · srtt_i / ref  the diversity term      │
+   │                                                                          │
+   │   s_i  =  [ (now + E_i)  −  F̂ ]⁺        the frontier push this placement adds
+   │   F̂    =  running max of the stamped ETAs of symbols already placed        │
+   │   H    =  (gain − 1) · RTprop           the store headroom (16.80.3)       │
+   │                                                                          │
+   │   P(i)  ∝  exp( − c_i / T ) ,   T  =  (√6/π) · σ̂_e / ref                 │
+   │                                                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+*`L_i` is the shipped completion-time term unchanged; `X_i` prices the
+head-of-line stall this placement inflicts on the cumulative frontier, at the
+contract's own δ up to the store's free headroom and at a stall rate beyond it;
+`B_i` is the shipped wire-waste term with its weight read from δ instead of
+from a hint; `V_i` prices repair/coverage correlation by the channel's own
+burst persistence instead of at a flat 1.0; and the temperature is not a dial
+at all — it is the scale of the scheduler's own ETA error.*
+
+**EVERY TERM IS DIMENSIONLESS AND EVERY TERM IS ALWAYS COMPUTED.** There is no
+`if (hint == …)`, no threshold on δ, no threshold on ρ, and no filter that
+removes a path from the candidate set. `δ` enters `X_i` and `B_i` as a
+multiplier; `ρ` does not enter at all (placement is upstream of retention).
+**The three `(·)⁺` operators act on `E_i − D_i`, on `s_i` and on `p_BB,i − ε_i`
+— all of them DECISION or MEASUREMENT quantities, never on the dial.**
+
+#### 16.81.1 The temperature is not a dial — it is the Luce/Gumbel scale of the scheduler's own ignorance
+
+**THE IDENTITY, WHICH IS EXACT AND OLD.** For i.i.d. standard Gumbel `G_i`
+(`Var G = π²/6`),
+
+```text
+   argmin_i ( c_i + T·G_i )   is distributed as   P(i) ∝ exp( −c_i / T )
+```
+
+— the Luce choice rule, and the softmax the engine samples
+(`place_probs_with_temperature`, `scheduler/mod.rs:4737-4744`) is exactly its
+right-hand side. **So the shipped sampler is not "adding exploration noise". It
+is behaving as though it were taking a strict `argmin` of a cost it believes to
+be observed with additive error of scale `T`.**
+
+**THAT FIXES `T` BY MATCHING VARIANCES, WITH NO FREE PARAMETER.**
+
+```text
+   Var( T·G )  =  π²T²/6   ≡   σ_e²        ⇒        T  =  (√6/π) · σ_e
+```
+
+and since `c_i` is de-dimensionalised by `ref` (the minimum SRTT over active
+paths, `scheduler/mod.rs:4812-4822`), so is the error:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │        T  =  (√6/π) · σ̂_e / ref  =  0.77970 · σ̂_e / ref                 │
+   │        σ̂_e  =  dispersion of  e_i = (realized arrival) − (predicted E_i) │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+`σ̂_e` is estimated per path by §16.75's rate-invariant τ-lag estimator on the
+prediction-error stream, then pooled as an RMS over the candidate set.
+
+**⇒ THE SHIPPED `T = 0.15` BECOMES A FALSIFIABLE CLAIM ABOUT THE WIRE.**
+Inverting:
+
+```text
+   T = 0.15   ⇔   σ̂_e  =  π·0.15/√6 · ref  =  0.19238 · ref
+```
+
+**The engine's own constant asserts that the scheduler's expected-delivery
+prediction is wrong by 19 % of the fastest path's SRTT, at every cell, in every
+regime.** That is a statement about a stream nobody has ever measured. It is
+scored OFFLINE from the `[ETA]` ledger (16.81.6), before any arm is read, and it
+has exactly three outcomes: `σ̂_e/ref ≈ 0.192` at every cell (the law WAS a
+dispersion all along and `0.15` was a lucky guess), `σ̂_e/ref` stable but at
+another value (the FORM is right and the value is wrong by a measurable
+amount), or `σ̂_e/ref` varying across cells (the constant is wrong at some cells
+and a fixed `T` cannot be right anywhere).
+
+**WHAT THE PROVENANCE OF `0.15` ACTUALLY IS, STATED SO IT IS NOT MISTAKEN FOR
+SUPPORT.** `PLACE_TEMPERATURE = 0.15` (`scheduler/mod.rs:964`) is **absent from
+this paper entirely** — §16.3 states the softmax and calls `T` *"the one dial
+… PREDICTION, measure before claiming"* without a value. The value appears once
+in the record, in goal-gate's placement gate, as the argmax of a four-point
+sweep at ONE cell **whose own verdict was a failure**: *"C8 het (c2+c3) dual,
+12.55 Mbit/s (T=0.15 best), 0.81× — FAILS … No temperature beats fast-path-alone."*
+**A constant selected as the best of four losers is not a measured constant.**
+It goes to the register of 16.80.12, uncorrected, with `σ̂_e/ref` as its
+deciding measurement.
+
+**LIMITS, AND THEY MATCH THE SHIPPED CODE.** `σ̂_e → 0 ⇒ T → 0 ⇒` the
+distribution collapses on the `argmin` — which is the degenerate branch the
+engine already implements (`scheduler/mod.rs:4746-4757`, "argmin gets all
+mass"). `N = 1 ⇒` the softmax over a singleton is 1 at every `T`, so the law is
+the identity on a single path and `T` is unobservable there — **which is why
+`c1` and `sc2` are controls in every placement arm and a movement at either
+VOIDS the run.** `σ̂_e → ∞ ⇒ T → ∞ ⇒` uniform placement, the no-information
+limit. All three are the correct behaviours of a decision under measurement
+error, and none of them is a mode.
+
+**THE ONE HONEST OBJECTION, RECORDED RATHER THAN ANSWERED.** The Gumbel match
+is exact only if the prediction errors are i.i.d. across paths and Gumbel; they
+are neither. **What the match gives is the SCALE, not the shape**, and the scale
+is the only thing `T` can carry. A heavier-tailed error makes the true optimal
+randomisation wider than the softmax at the same `T`; that is a bias of known
+sign and it is stated here rather than discovered later.
+
+#### 16.81.2 The frontier term `X_i` — §16.80.3's `Φ` physics, read at the sender
+
+**THE MECHANISM IS THE ONE §16.80.3 ALREADY DERIVED, VIEWED FROM THE OTHER
+END.** On the `ρ = 1` retain-until-acked contract the send store is drained by
+the cumulative frontier and by nothing else (`net/mod.rs:10216`,
+`sent_store.split_off(&(ack+1))`). A placement whose expected arrival lands
+AFTER the current frontier prediction pushes that frontier out; every symbol
+behind it is delivered but undeliverable, and the store cannot release.
+
+```text
+   s_i  =  [ (now + E_i)  −  F̂ ]⁺ ,      F̂ = running max of stamped ETAs
+```
+
+`s_i = 0` for any placement that lands behind the frontier — **a placement that
+does not push the frontier is FREE, exactly**, which is the property that makes
+the term a water-filling incentive rather than a slow-path penalty.
+
+**THE PRICE OF `s_i` SECONDS OF FROZEN FRONTIER HAS TWO LEGS AND BOTH ARE
+ALREADY DERIVED.** Within the store's free headroom `H` the freeze costs only
+delivered latency, priced by the contract at Copa's own linearisation
+`δ·Δd/d` with `d = ref`; beyond `H` the sender STALLS, and a stall of
+`(s_i − H)⁺` seconds is that many seconds of not sending, at unit weight in
+the same currency `L_i` uses:
+
+```text
+   X_i  =  [ δ·s_i  +  κ·(s_i − H)⁺ ] / ref ,      H = (gain − 1)·RTprop
+```
+
+* `H` is read off the shipped store-cap law exactly as 16.80.3 reads it —
+  `gain = RWM_STORE_GAIN`, **default 2.0** (`gates.rs:1055-1057`), so
+  `H = RTprop`. **`gain = 2.0` is UNPROVENANCED and is NOT corrected here**; it
+  already carries a register row, and `X_i` now makes a SECOND law depend on it.
+* `κ ∈ (0, 1]` is 16.80.3's non-overlapped stall fraction. **`κ = 1` is taken as
+  an UPPER BOUND, not as a value** — it charges every stall in full, so `X_i` is
+  conservative in the direction that discourages frontier-pushing placements.
+  D0's own fits put `κ` at 0.0048–0.067 at the audited cells, so **`κ = 1` is
+  between 15× and 200× above the measured non-overlap** and the term as written
+  is an over-charge whose size is known. Register row; bind gauge (`s_i > H`).
+
+**THIS IS WHAT `RWM_PLACE_SLACK` ATTEMPTED, AND THE DIFFERENCE IS THE WHOLE
+POINT.** The shipped law already carries a slack budget:
+
+```rust
+// scheduler/mod.rs:4856-4860
+let deadline = self.place_slack_secs.min(PLACE_SLACK_RECOV_PATIENCE * srtt_i);
+let load = (p.expected_delivery_load_at(srtt_i) - deadline).max(0.0) / ref_srtt;
+```
+
+`place_slack_secs` is a **DECLARED** budget `S`, defaulting to `0.0`
+(`scheduler/mod.rs:4130`). **⇒ ON EVERY SHIPPED RUN `S = 0`, so
+`deadline = min(0, 9/8·srtt_i) = 0` and `load = E_i/ref` exactly.**
+
+```text
+   ⇒  THE 9/8 SLACK DEADLINE IS DEAD CODE ON THE SHIPPED PATH.
+      PLACE_SLACK_RECOV_PATIENCE = 1.125 CANNOT EXECUTE AT S = 0.
+```
+
+That is a recorded finding about an RFC-cited constant (`scheduler/mod.rs:993`,
+RFC 9002's `kTimeThreshold`, which §16.80.12 already records as
+*"EMPIRICALLY RECOMMENDED, not derived"*, RACK using 5/4 instead): **it is not
+wrong on the shipped path, it is UNREACHED**, and the smoke falsification the
+comment records (*"c8 66.2 Mbit with retxo_p1 = 49 %"*) is a falsification of
+an unbounded declared `S`, not of a measured frontier. **`X_i` replaces the
+declared budget with the sender's OWN measured frontier `F̂`**, which is the
+one quantity a declared budget was standing in for.
+
+**LIMITS.** `s_i = 0` (behind the frontier) ⇒ `X_i = 0` exactly. `δ → 0` ⇒ the
+priced leg vanishes and placement is stall-free anywhere within `H` — **the
+Bulk end of the dial stops paying for reordering it does not care about, without
+a branch**. `H → ∞` (an unbounded store) ⇒ the stall leg vanishes identically,
+which is 16.80.3's own `Φ ≡ 0` limit. `gain → 1` ⇒ `H = 0` ⇒ every frontier
+push stalls immediately and `X_i → (δ + κ)·s_i/ref`. `N = 1` ⇒ `F̂` is the
+previous symbol's own ETA on the only path, so `s_i` is the inter-placement
+spacing and the term is a constant offset across a singleton candidate set —
+**it cannot change a placement at `N = 1`, which is the control.**
+
+#### 16.81.3 `w_div`, `B_i`, the cold price, and the near-tie — each re-expressed or registered
+
+**`w_div` → THE CHANNEL'S OWN BURST PERSISTENCE.** The shipped term is
+`w_div · fate_i` with `fate_i` the fraction of the repair's covered symbols
+already sitting on path `i`, and `w_div = 1.0` at **all three hints**
+(`scheduler/mod.rs:1017-1019`) — the code's own comment says it is
+hint-independent *"because a repair correlated with its coverage is wasted
+regardless of the (δ, ρ, r) triangle"*. **The comment is right about the SHAPE
+and silent about the VALUE.** What a correlated repair actually costs is the
+EXCESS probability that the same burst takes both:
+
+```text
+   V_i  =  fate_i · ( p_BB,i − ε_i )⁺ · srtt_i / ref
+```
+
+`p_BB,i = 1 − q_i` is the Gilbert–Elliott bad→bad persistence, `ε_i = p/(p+q)`
+the marginal loss; `(p_BB − ε)⁺` is exactly the excess, and `srtt_i/ref` prices
+the round the wasted repair costs.
+
+```text
+   MEMORYLESS CHANNEL (q = 1 − p, E[burst] = 1)  ⇒  p_BB = ε  ⇒  V_i ≡ 0
+```
+
+**A diversity term that does not vanish on a memoryless channel is pricing
+something that is not there**, and the shipped `1.0` does not vanish. Evaluated
+on the harness's own cells: `c2` (1.3 %/50 %) gives `p_BB = 0.5`,
+`ε = 0.02534`, so the derived weight is **0.475**; `c3` (2 %/40 %) gives
+`0.6 − 0.04762 =` **0.552**. **The shipped `1.0` is 1.8–2.1× the derived value
+at both legs, and reaches 1.0 only as `q → 0` — permanent bursts.**
+`w_div = 1.0` goes to the register, uncorrected; its deciding measurement is a
+per-path `[GE] p_bg` readout beside the placement decision.
+
+**`B_i` AND THE INFINITE-CORRECTION PRICE `10.0`.** `r_i = correction_rate() =
+ε_i/(1−ε_i)` (`scheduler/mod.rs:2935-2941`) and is `+∞` iff `ε_i ≥ 1`. Four
+sites clamp that infinity to `10.0`, and **exactly one of them is on the
+shipped plain-window path** — a distinction the register row must carry:
+
+| site | function | reached on the plain reliable window? |
+|---|---|---|
+| `scheduler/mod.rs:4240` | `schedule`, block source distribution | **NO** — block pipeline |
+| `scheduler/mod.rs:4460` | `pick_affinity_path` | **NO** — block pipeline |
+| `scheduler/mod.rs:4565` | `path_cost`, used by `redundant_source_path` | **NO** — Realtime duplicate-send only |
+| **`scheduler/mod.rs:4866`** | **`place_costs`** | **YES — this is the one that matters** |
+
+**`10.0` IS A THRESHOLD WEARING A CONTINUOUS COSTUME.** `L_i` is `O(1)` by
+construction; adding `w_bw·10.0` to a candidate at `T = 0.15` is
+`e^(−10/0.15) = e^{−66}` relative odds. **A cost that produces `e^{−66}` odds is
+an exclusion, and an exclusion is a filter — the exact construction
+`place_costs`' own doc comment (`scheduler/mod.rs:4766-4774`) refuses to
+perform.** The continuous replacement introduces no constant: price an
+unmeasured path no worse than the worst MEASURED one,
+
+```text
+   r_i  :=  max over active paths with a measurement of  ε_j/(1−ε_j)
+```
+
+which is finite, dimensionless, and degenerates to the shipped behaviour only
+when every path is cold. **`10.0` is NOT corrected**; register row, deciding
+measurement a `cold_r` bind fraction — how often the clamp is even taken.
+
+**THE NEAR-TIE `0.8` / `0.25`.** `place_repair_spare_path`
+(`scheduler/mod.rs:4696-4697`) builds its tie set as
+`thresh = (0.8·max_spare).min(max_spare − 0.25)` — **a RELATIVE band and an
+ABSOLUTE floor combined**, which is the signature of a missing scale rather
+than of two decisions. Neither constant appears anywhere in this paper or in
+goal-gate; **this is their first written appearance.** The S4 reading is that
+both proxy one quantile of one process: the tie set should be the paths whose
+spare capacity is statistically indistinguishable from the maximum, i.e.
+`thresh = max_spare − z·σ̂_spare` for a dispersion the tree already knows how to
+estimate (§16.75), leaving only the LEVEL `z`, which the cost ratio derives.
+**Neither constant is corrected**; two register rows; deciding measurement the
+`σ̂_spare` of the same stream the `0.25` floor is guarding.
+
+**`ELIGIBLE_SKEW = 75 ms` — A RECORDED FINDING, AND IT IS NARROWER THAN THE
+REGISTER SAYS.** 16.80.6(a2) records it as a hard filter with absent provenance
+(ADR-0070). Its definition (`scheduler/mod.rs:4356-4363`) and its use
+(`:4442-4445`) are both inside `pick_affinity_path`, whose only caller is
+`Scheduler::schedule`'s block-affinity branch (`:4259`). **The plain reliable
+window places through `place_symbol` → `place_probs` → `place_costs`
+(`net/emit_source.rs:338`, `:919`; `net/mod.rs:8673`, `:8736`, `:8840`,
+`:9876`, `:10046`) and NEVER through `pick_affinity_path`.**
+
+```text
+   ⇒  ELIGIBLE_SKEW IS MOOT ON THE WINDOW PATH.  It is a block-pipeline filter.
+```
+
+**That does not acquit it and does not remove its register row** — it is still
+a threshold that selects a code path, still unprovenanced, and still live on
+the block seat. What it does is bound the prize: 16.80.6(a2)'s continuous
+ordering term, already `PREDICTED INERT` at `W ≈ 1.7×10⁻³`, was aimed at a
+filter that the measured cells never execute. **Both facts point the same way,
+and the section records the coincidence rather than treating it as
+confirmation.**
+
+#### 16.81.4 What the law is, once every constant is replaced — and what it is NOT allowed to do
+
+Collecting 16.81.0–16.81.3, and writing `β = 0` nowhere and `if` nowhere:
+
+```text
+   c_i(δ)  =  E_i/ref                                            [shipped, S = 0]
+           +  [ δ·s_i + κ·(s_i − H)⁺ ] / ref                      [frontier]
+           +  w_bw(δ) · r_i                                       [wire waste]
+           +  fate_i · (p_BB,i − ε_i)⁺ · srtt_i / ref             [diversity]
+
+   w_bw(δ)  =  clamp( 0.5 − 0.25·log₁₀(δ/δ_auto), 0, 1 )          [16.81.7]
+   T        =  (√6/π) · σ̂_e / ref
+```
+
+**SHAPE CHECK — UNITS.** `E_i`, `s_i`, `H`, `srtt_i`, `ref` are seconds and
+appear only as ratios; `δ`, `κ`, `w_bw`, `r_i`, `fate_i`, `p_BB`, `ε` are pure.
+**`c_i` is dimensionless and `T` is dimensionless**, so the exponent `c_i/T` is
+pure — which is what makes `T` a comparable number across cells at all, and is
+the precondition for the S4 test of 16.81.1.
+
+**SHAPE CHECK — MONOTONICITY.** `c_i` is non-decreasing in `E_i` (a slower path
+costs more), in `s_i` (a bigger frontier push costs more), in `r_i` (a lossier
+path costs more) and in `fate_i` (a more correlated repair costs more). `∂c_i/∂δ
+= s_i/ref + r_i·∂w_bw/∂δ ≥ 0` with `∂w_bw/∂δ = −0.25/(δ ln 10) ≤ 0` — **the two
+δ-legs pull opposite ways and that is correct**: a latency-priced contract
+should punish frontier pushes and stop caring about wire waste, and a bulk
+contract the reverse. The sum is continuous and differentiable in `δ` on
+`(0, ∞)` except at the two `clamp` knots of `w_bw`, where it is `C⁰`.
+
+**SHAPE CHECK — LIMITS.** `T → 0` ⇒ `argmin` (the shipped degenerate branch).
+`N = 1` ⇒ identity, `s_i` a constant offset, `V_i` a constant offset ⇒ **the
+law cannot move a single-path run, which is the pre-registered control.**
+`s_i = 0` ∀i ⇒ the frontier term vanishes and the law is the shipped one plus
+`V`. Memoryless channel ⇒ `V ≡ 0`. `δ → 0` and `s_i ≤ H` ⇒ the frontier term
+vanishes entirely.
+
+**WHAT THE LAW IS NOT ALLOWED TO DO, STATED AS A CONSTRAINT ON ITS OWN
+IMPLEMENTATION.** No candidate may be removed from the set (no hard filter — the
+shipped doc comment's own rule, `:4766-4774`). No term may be computed on one
+branch and skipped on another. The `HashMap` iteration order that currently
+feeds `place_costs` must be replaced by a deterministic sort on path id **before
+any cost table is pinned**, or the pin is not a pin. And `place_costs` is
+private (`fn place_costs`, `:4775`) while `place_probs` is `pub` (`:4717`) —
+**the cost table is testable only through the probabilities today**, which is
+sufficient for a byte-identity pin and insufficient for attributing a change to
+a term.
+
+#### 16.81.5 The `[LAT]` decomposition — the pre-registered first readout, written before the instrument exists
+
+**THE RECORD HAS NEVER DECOMPOSED DELIVERED LATENCY.** It has goodput, it has
+`p95` echo, it has hole classes — and no split of a delivered symbol's wait into
+its causes. **Every argument in this section about which law matters most is
+therefore an argument about a quantity nobody has measured**, and the honest
+order of work is to measure it before scoring any arm.
+
+Per DELIVERED symbol, at the receiver:
+
+```text
+   W_total  =  A_x  +  R  +  P
+
+   A_x  =  queue + dwell ABOVE the path's running-min delivery floor
+   R    =  reorder-wait, classed  { rw_xp cross-path, rw_sp same-path, rw_rep }
+   P    =  repair-wait  (time from the resolving repair's arrival to delivery)
+```
+
+with shares `sh_ax`, `sh_xp`, `sh_sp`, `sh_rep` summing to 1. **`rw_xp ≡ 0` at
+`N = 1` is the control**, on exactly D0's argument for `xp_n`: the same field
+reads 0.87–0.97 two paths over, so a zero at one path is a property of the wire
+and not an unreached emission site.
+
+**THE READING IS PRE-REGISTERED AND IS APPLIED TO THE `CTL` ARM BEFORE ANY
+CHALLENGER IS LOOKED AT.**
+
+| reading | criterion (at a dual cell, `CTL`) | consequence |
+|---|---|---|
+| **PLACEMENT-INDICTED** | `sh_xp ≥ 0.5` | the reorder wait the scheduler manufactures IS the delivered latency; the placement law is the law to find first |
+| **QUEUE-DOMINATED** | `sh_ax ≥ 0.5` **and** `sh_xp ≤ 0.2` | **the store/pacing law is the law to find first and the placement arms are expected NULL**; a positive placement arm under this reading is to be treated as suspect, not as a win |
+| **REPAIR-DOMINATED** | `sh_rep ≥ 0.5` | §16.80/§16.83's plane owns the latency; this section's arms are out of domain |
+| **MIXED** | none of the above | no single law dominates; report the split and score nothing |
+
+**`INSTRUMENT-INDICTS-QUEUE` IS A LEGAL OUTCOME OF THE WHOLE TRACK AND MAY
+RE-ROUTE IT.** That is written here, in advance, because the alternative — 
+reading the decomposition after the arms and choosing which to believe — is the
+failure mode this discipline exists to prevent. **D0's `xp_n/det` of 0.87–0.97
+says the scheduler manufactures the HOLES; it does not say the holes are the
+LATENCY.** Those are different claims and only the second one licenses this
+section's arms.
+
+#### 16.81.6 The ETA on the wire — the lateness measurand made exact, and what it would still need
+
+§16.80.2 named a lateness coordinate and bracketed it by neighbour arrival,
+recording that *"`send_timestamp_us` and `path_id` are per-BATCH, not
+per-symbol … so the bracket resolves to batch granularity."* **The sender
+already computes the exact quantity the bracket approximates** — `E_i`, the
+expected delivery load it just used to place the symbol.
+
+```text
+   eta_rel_us  =  E_i  as used by the placement decision, stamped on the batch envelope
+   ℓ_eta(s)    =  arr(s)  −  ( send_ts(s) + eta_rel_us(s) )      LATENESS, exactly
+```
+
+**⇒ THE PLACEMENT LAW AND THE HOLE LAW BECOME THE SAME LAW READ AT TWO ENDS.**
+The sender's `E_i` is the prediction; the receiver's `ℓ_eta` is its realized
+error; `σ̂_e` — the temperature of 16.81.1 — is the dispersion of exactly that
+stream. **One quantity feeds the scheduler's randomisation, the receiver's hole
+test (§16.83), and the value of `T`**, and nothing in the tree carries it today.
+
+**THE CONSISTENCY WITNESS IS PRE-STATED.** The sender estimates `σ̂_e` over its
+whole candidate set, including paths it did not choose; the receiver observes it
+only over DELIVERED symbols, a set selected by the placement itself. Selection
+on a cost that includes the prediction can only narrow the realized spread, so
+
+```text
+   σ̂_sender  ≥  σ̂_recv        PRE-STATED; a violation indicts the plumbing, not the law
+```
+
+**WHAT THIS DOES NOT YET GIVE, NAMED SO A SUCCESSOR DOES NOT REDISCOVER IT.**
+The stamp is per BATCH, so `ℓ_eta` inherits §16.80.2's batch granularity exactly.
+A per-SYMBOL hole test — "this seq is late against the sender's own prediction
+FOR THIS SEQ" — needs either a per-symbol `eta` field or an interpolation across
+the batch, and the wire cost of the first is one varint per symbol. **The hole
+test is therefore specified at batch resolution and its per-symbol form is
+named, not built.** Nor does the stamp help at `N = 1`, where `E_i` is the same
+for every symbol and the lateness collapses to the age coordinate D0 already
+measured (`ripe_frac = 0.982` at `c1`).
+
+---
+
+## PART B — THE DIALS MADE REAL
+
+#### 16.81.7 The hint-switch inventory — eighteen sites, one verdict each
+
+**THE INVARIANT SAYS THE HINTS ARE NAMED POINTS ON THE DIALS, NEVER MODES.
+EIGHTEEN SITES IN THE ENGINE READ A HINT.** Each is listed with its line number
+on `main@2303962` and a verdict from exactly three: **DERIVED-NOW** (a
+continuous form exists and reproduces all three shipped values exactly),
+**DECLARED CORNER** (no continuous form is known; the hint reading is recorded
+as a corner and a register row, and **no form is invented**), or **STRUCTURAL**
+(the read selects a construction-time seat, not a value inside a law).
+
+| # | site | switched quantity | shipped values | verdict |
+|---|---|---|---|---|
+| 1 | `scheduler/mod.rs:129-135` | `copa_delta` / `copa_delta_for_hint` | `COPA_DELTA/ζ` = 50 / 0.5 / 0.005 | **THE ONE SURFACE** — keep. It is the definition of the named points, and it is already a quotient, not a `match` |
+| 2 | `control/fec_rate.rs:70-76` | `ζ = tail_loss_scale` | 0.01 / 1 / 100 | **THE ONE SURFACE'S other half** — keep. δ and ζ are one declaration read two ways |
+| 3 | `net/mod.rs:4590-4596` | `delta_budget_b` | 0.5 / 1.0 / 2.0 | **DERIVED-NOW** — 16.81.8 |
+| 4 | `net/mod.rs:4075-4076` | `b_lo`/`b_hi` endpoints | from #3 | **DERIVED-NOW**, follows #3 |
+| 5 | `control/fec_rate.rs:312` | `bulk_late_is_fine` | bool | **DERIVED-NOW** — 16.81.9 |
+| 6 | `scheduler/mod.rs:1012-1021` | `SchedulingWeights::from_hint` | `w_lat` 1/0.5/0, `w_bw` 0/0.5/1, `w_div` ≡ 1 | **DERIVED-NOW, CONDITIONAL** — 16.81.11 |
+| 7 | `net/receiver.rs:211-212` | receiver α base | hard-coded `Auto` | **DERIVED-NOW** — 16.81.10 |
+| 8 | `net/receiver.rs:219-221` | receiver resolved α | hard-coded `Auto` | **DERIVED-NOW** — 16.81.10 |
+| 9 | `net/mod.rs:811-813` | `contract_alpha` | via ζ | **ALREADY CONTINUOUS** — no `match`; the model for the rest |
+| 10 | `scheduler/mod.rs:945-951` | `queue_target_mult` | 1.08 / 1.125 / 1.25 | **DECLARED CORNER + REGISTER.** Not affine in `log δ` (steps 0.045 then 0.125 over equal log spacing), so **no continuous form is invented** |
+| 11 | `net/mod.rs:147-171` | `BlockProfile::from_hint` | block 4/64/16 KB, flush 2/5/10 ms, symbol 512/1200/1200 B | **DECLARED CORNER + REGISTER** — three quantities, one switch, no form |
+| 12 | `config.rs:267-271` | default interleave depth | 2 / 1 / 3 | **DECLARED CORNER + REGISTER.** Non-monotone in δ — no continuous form can pass through 2, 3, 1 in dial order |
+| 13 | `net/emit_source.rs:557-558` | Realtime duplicate source send | on / off / off | **DECLARED CORNER + REGISTER.** A redundancy decision that belongs to `r`, priced by nothing |
+| 14 | `net/sender_policy.rs:1243-1244` | `use_packing` | on / off / off | **DECLARED CORNER + REGISTER** |
+| 15 | `net/mod.rs:2991-3003` | `effective_fec_backend` | backend choice | **STRUCTURAL** — construction-time, before any law runs |
+| 16 | `net/mod.rs:2380-2382` | `is_window_mode` | seat selection | **STRUCTURAL** — and it is the seat 16.80.8 shows is the only `ρ < 1` one. Recorded, not repaired |
+| 17 | `net/mod.rs:3349` | `[DIAG]` echo of `copa_delta_for_hint` | — | **INERT** — a print |
+| 18 | `perf.rs:57-62` | `chunk_payload_len` | harness | **OUT OF SCOPE** — the test driver's own framing, not an engine law |
+
+```text
+   ⇒  FIVE SITES HAVE NO CONTINUOUS FORM AND ARE DECLARED CORNERS: #10 #11 #12 #13 #14.
+      NO FORM IS INVENTED FOR ANY OF THEM.  Each gets a register row instead.
+```
+
+**AND ONE MORE READ THAT IS NOT IN THE TABLE BECAUSE IT IS NOT A `match`.**
+`shed_recv_hold` (`net/mod.rs:2202-2208`) hard-codes `srtt/2` — i.e. `b = ½` —
+and **does not call `delta_budget_b`**; its doc justifies this structurally
+(*"the EVICT in-order window path exists only for the Realtime hint, so b = ½
+structurally"*). **A constant that equals `b(δ_Realtime)` by coincidence of seat
+rather than by evaluation is a hidden hint read**, and it becomes a defect the
+moment ρ is plumbed — the standing warning 16.80.8 already records. It is named
+here as the sixth corner and it gets no form either.
+
+#### 16.81.8 `b(δ)` — exact at all three points, and the libm caveat stated as a risk with a fallback
+
+The paper has stated the continuous form since §16.74.1 and its provenance row
+(16.80.9) already reads *"DERIVED (log-linear, unique through the three declared
+points)"*:
+
+```text
+   b(δ)  =  clamp( 2^( −½·log₁₀(δ/δ_auto) ) , ½ , 2 ) ,    δ_auto = 0.5
+```
+
+**IT IS UNIQUE AND THAT IS WHY IT IS DERIVED AND NOT FITTED.** The three named
+δ are equally spaced in `log₁₀` (`log₁₀(50/0.5) = +2`, `log₁₀(0.005/0.5) = −2`)
+and the three named `b` are equally spaced in `log₂` (`−1, 0, +1`). **A
+log-linear map through three collinear points has no free parameter**; the
+slope `−½` and the anchor `δ_auto = 0.5` are both forced. The engine's
+three-arm `match` and this expression *"agree to machine precision at the three
+points and cannot be asked elsewhere"* — the second clause being the defect.
+
+**THE RISK IS ARITHMETIC AND IT IS STATED IN ADVANCE.** `0.005` and `0.01` are
+not exactly representable in binary, so `log₁₀` of the nearest double need not
+round to exactly `−2.0`, and `2^(1.0 ± 1 ulp) ≠ 2.0`. The visualizer's own test
+tolerates `1e-9` at this point, which is the warning rather than the assurance.
+**The fallback form is algebraically identical and numerically better
+behaved:**
+
+```text
+   ζ(δ)  =  δ_auto/δ   (the same ζ as #2 of the inventory)
+   b(δ)  =  clamp( exp2( ½·log₁₀ ζ(δ) ) , ½ , 2 )
+```
+
+because at Bulk `ζ = 100.0` is **exactly** representable and `log₁₀(100.0)`
+returns exactly `2.0` on every libm this tree runs on, whereas `log₁₀(0.01)`
+need not return `−2.0`. **Which form ships is decided by a bit-exact
+`assert_eq!` at 0.5 / 1.0 / 2.0 and by nothing else** — not by preference, and
+not by relaxing the assertion to a tolerance.
+
+**THE CONTINUITY GATE IS SEPARATE FROM THE EXACTNESS PIN AND BOTH ARE
+REQUIRED.** A δ sweep with ±2 % nudges at each preset must show no step; the
+existing `formula_agreement` row carries the pin. **The exactness pin protects
+the shipped values; the continuity gate protects the invariant. Neither implies
+the other**, which is the lesson of every mode-switch this tree has caught.
+
+**AND THE CURRENT HOME OF THESE FUNCTIONS IS A FINDING.** `span_horizon_b`,
+`zeta_of_delta` and `bulkness_of_delta` exist **only in `raptorpath-wasm`**
+(`src/lib.rs:155`, `:167`, `:234`); they are **absent from `raptorpath-math` and
+from `raptorpath` entirely**, as is any symbol named `DELTA_AUTO` or
+`delta_price`. **The dial's continuous forms live in the visualizer and the
+engine has none of them** — which is the exact shape of the debt this section
+names, and it means the repair is a PORT, not an invention. `span_horizon_b`'s
+own doc comment calls it *"a visualizer interpolation, not a paper formula"*;
+**that comment is stale and contradicted by §16.74.1**, and it is recorded here
+so the port does not inherit it.
+
+#### 16.81.9 `r(β)` — the mix, its exactness at the presets, and the step bound between them
+
+The engine's rate law is swapped by a boolean:
+
+```rust
+// control/fec_rate.rs:312
+bulk_late_is_fine: self.hint == ProtocolHint::Bulk && self.bulk_pure_arq,
+```
+
+**A hint EQUALITY selects which of two laws computes the rate** — the plainest
+mode switch in the tree, and it is on the namesake leg of the triangle. The
+continuous replacement computes both and blends:
+
+```text
+   r(β)  =  (1 − β)·r_anchor  +  β·r_bulk ,    β(δ) = clamp( −½·log₁₀(δ/δ_auto), 0, 1 )
+```
+
+**β IS EXACT AT THE PRESETS, AND THE ARGUMENT IS ARITHMETIC RATHER THAN
+NUMERICAL.** The shipped implementation (`raptorpath-wasm/src/lib.rs:234-238`)
+computes `β = clamp((a − x)/(a − b), 0, 1)` with `a = log₁₀(0.5)`,
+`b = log₁₀(0.005)`, `x = log₁₀ δ`. At `δ = δ_auto` the numerator is `a − a = 0`
+**exactly**, whatever `log₁₀(0.5)` evaluates to, so `β = 0/(a−b) = 0` exactly.
+At `δ = 0.005` the numerator is `a − b`, the same expression as the denominator,
+so `β = 1` exactly by `x/x`. At `δ = 50` the ratio is negative and `clamp`
+returns `0` exactly. **The presets are exact for a structural reason and not by
+luck of rounding** — which is precisely what `b(δ)`'s `2^(·)` form does NOT
+enjoy, and the difference is why the two get different pinning strategies.
+
+**THE MIX IDENTITIES ARE EXACT UNDER ONE STATED PRECONDITION.**
+`1.0·anchor + 0.0·bulk = anchor` and `0.0·anchor + 1.0·bulk = bulk` hold
+bit-exactly in IEEE 754 **provided both operands are finite**. `0.0 × NaN` is
+`NaN` and `0.0 × ∞` is `NaN`, so **the mix is exact only if `controller_rate`
+is finite on both arms at every dial position**, including the cold start where
+`ε̂₉₅ ≈ 0.975` (§14.26's M1). That precondition is stated here because the
+reference implementation guards it with a branch instead of pinning it:
+`rate_now` (`raptorpath-wasm/src/lib.rs:874-892`) opens with
+`if self.bulkness > 0.0`, evaluating the mix only when `β > 0`. **That guard is
+a branch on the dial in the very artefact that models the invariant.** It is
+admissible only because its two sides agree exactly at `β = 0` — and that
+agreement is exactly the finiteness precondition, which nothing pins. **Recorded
+as a defect of the model, not of the law.**
+
+**THE BETWEEN-PRESET STEP IS BOUNDED, NOT ASSUMED AWAY.** At a δ just off the
+Bulk point the mix differs from the pure Bulk law by
+`(1 − β(δ))·(r_anchor − r_bulk)`, and since both rates are clamped by the
+codec's `max_overhead`,
+
+```text
+   | r(β(δ)) − r_bulk |   ≤   (1 − β(δ)) · max_overhead        →  0  as  δ → 0.005
+```
+
+**a bound that vanishes continuously at the preset, which is what "no step at a
+named point" means operationally** and is what the continuity gate asserts.
+
+**`set_bulk_pure_arq(false)` IS RE-READ AS `β := 0`**, so the existing ablation
+assertions keep their meaning; that they still hold is a required check, not an
+expectation.
+
+#### 16.81.10 The receiver's α — the one place sender and receiver disagree about the contract
+
+```rust
+// net/receiver.rs:211-212, :219-221
+let recv_contract_alpha_base = crate::net::contract_alpha(ProtocolHint::Auto);
+let recv_contract_alpha = crate::net::resolved_alpha(ProtocolHint::Auto, recv_gates.alpha_override);
+```
+
+The receiver hard-codes `Auto`. **The code says so itself** (`:205-210`):
+*"The protocol hint is not plumbed to this task, so the quantile arm reads the
+Auto point of the dial here while the sender reads the tunnel's own … the two
+sites can disagree on alpha at Realtime and Bulk."*
+
+```text
+   ⇒  AT TWO OF THE THREE NAMED POINTS THE TWO ENDS OF ONE CONTRACT
+      HOLD DIFFERENT VALUES OF THE SAME CONTRACT QUANTITY.
+```
+
+**`contract_alpha` is ALREADY continuous in ζ** (`net/mod.rs:811-813`, entry #9
+of the inventory) — there is no form to derive. The repair is plumbing: pass the
+tunnel's own hint (or, under `RWM_DELTA`, its δ) and read the target tail loss
+from config. **It is byte-identical at Auto by construction, and it CHANGES
+Realtime and Bulk — so "byte-identical on every shipped default" is a claim
+about which arm consumes these fields, and that claim must be pinned by a test
+rather than asserted here.** The witness is an `alpha_override_reachability`
+assertion that the sender's and receiver's `[QALPHA]` base fields agree at all
+three hints.
+
+#### 16.81.11 `SchedulingWeights` — derivable, and it lands only if it is bit-exact
+
+`from_hint` (`scheduler/mod.rs:1012-1021`) gives `w_lat` = 1.0 / 0.5 / 0.0 and
+`w_bw` = 0.0 / 0.5 / 1.0 at Realtime / Auto / Bulk, with `w_div ≡ 1.0`. **The
+three named δ are equally spaced in `log₁₀` and the three named weights are
+equally spaced in value, so the map is affine in `log₁₀ δ` and Auto is its exact
+midpoint:**
+
+```text
+   w_bw(δ)  =  clamp( ½ − ¼·log₁₀(δ/δ_auto) , 0 , 1 ) ,      w_lat(δ) = 1 − w_bw(δ)
+```
+
+Check: `δ = 50 ⇒ ½ − ¼·2 = 0`; `δ = 0.5 ⇒ ½`; `δ = 0.005 ⇒ ½ + ½ = 1`. **Exact
+at all three, and `w_div ≡ 1` needs no form because it is already
+hint-independent** (and its VALUE is separately indicted in 16.81.3).
+
+**IT LANDS ONLY IF THE BIT-EXACT PIN PASSES.** `log₁₀(δ/δ_auto)` at
+`δ = 0.005` carries the same representability question as `b(δ)`'s, and
+`½ − ¼x` at `x = −2 ± 1 ulp` lands at `1.0 ∓ ¼ ulp` — which rounds to `1.0` in
+double, but that is an argument and not a test. **If the `assert_eq!` at all
+three points fails, `SchedulingWeights` is a DECLARED CORNER and stays a
+`match`** — the same rule as everywhere else in this section, applied against
+the section's own preference.
+
+#### 16.81.12 The three Bulk tail targets, resolved — and one of them is a between-preset divergence
+
+The tree contains three different numbers all called "the Bulk tail target".
+They are not three versions of one constant; they are three different objects,
+and the confusion is the finding.
+
+| # | value | site | what it actually is | verdict |
+|---|---|---|---|---|
+| 1 | **1e-3** | `CONTRACT_TAIL_LOSS_BASE = 1e-5` (`net/mod.rs:805`) × `ζ_Bulk = 100` | **DERIVED — it is a PRODUCT and exists as a constant nowhere.** It appears in the tree only in two test comments (`control/fec_rate.rs:842`, `:853`) | **DERIVED. Introduces no new constant** — though the base `1e-5` is itself declared and carries its own open provenance, stated here rather than hidden |
+| 2 | **0.05** | `BULK_TAIL_BUDGET` (`raptorpath-math/src/lib.rs:124`), consumed by the χ glide at `:633` | §14.25's *"a modest tail-failure budget (**e.g.** δ_tail = 0.05 — one residual serial ARQ round in 20 transfers)"* | **AN "e.g." PROMOTED TO A `const`. ARBITRARY — NOT corrected, correct value unknown. REGISTER ROW** |
+| 3 | **0.05** | the visualizer's `sim_tail_target_of_delta` (`raptorpath-wasm/src/lib.rs:241-255`), `y_bulk = log₁₀(0.05)` | the SIM's Bulk anchor of a piecewise-log-linear map whose Auto anchor is `1e-5` and Realtime anchor `1e-7` | **A BETWEEN-PRESET DIVERGENCE from #1** — 50× at the Bulk point |
+
+```text
+   ⇒  THE SIM ANCHORS BULK AT 0.05 AND THE ENGINE AT 1e-3.
+      THAT IS A 50× DISAGREEMENT AT A NAMED POINT OF THE DIAL.
+```
+
+**THE CORRECT RESPONSE IS TO BOUND IT NOW AND UNIFY IT LATER, DELIBERATELY.**
+The sim's fingerprints pin the model era; changing its Bulk anchor is a MODEL
+CHANGE and must be made as one, with its goldens re-captured and said so.
+**Until then the divergence is bounded by a test rather than tolerated
+silently** — the sim's own tail target at the three presets, asserted against
+the engine's, with the gap declared as a number. **And #3's map is piecewise
+(`if x >= x_rt … else if x >= x_auto …`): it is `C⁰` and continuous at its
+knots, so it is not a mode switch, but it is not differentiable at the presets
+either**, and a law derived on it inherits kinks exactly where the dial is most
+often read.
+
+#### 16.81.13 `RWM_DELTA` — the ONE δ surface, and what it must and must not touch
+
+The repairs of 16.81.8–16.81.11 each replace a hint read with a δ read. **That
+is only an improvement if there is exactly one δ.** The gate is
+absent-by-default and, when present, supplies the single price consumed by
+
+```text
+   b(δ)  →  span deadline D(δ), the store-cap slack leg, shed_deadline_us
+   β(δ)  →  the rate mix r(β)
+   ζ(δ)  →  the contract tail target and contract_alpha
+   w_bw(δ) → the placement weights
+```
+
+and by nothing else. **`RWM_COPA_DELTA` keeps its separate, Copa-only override**,
+because §16.82's `MID` arm must be able to move the PRICE while pinning the
+CONGESTION CONTROL — otherwise a rate result and a CC result are confounded and
+neither is scoreable. **Two overrides with disjoint scopes is not two dials; it
+is one dial and one experimental clamp, and the distinction is recorded because
+it is exactly the kind of thing that becomes a mode switch by accretion.**
+
+#### 16.81.14 Per-symbol provenance
+
+| symbol | value / form | class | source |
+|---|---|---|---|
+| `E_i` | `(in_flight/cwnd)·srtt_i + srtt_i/2 + ε_i·srtt_i` | **MEASURED**, already computed, already the shipped load term | `scheduler/mod.rs:2988-2993` |
+| `ref` | `min` over active paths of `srtt_of(p).max(1 ms)` | **MEASURED**; the `1 ms` floor `PLACE_REF_FLOOR_SECS` is a **DECLARED RESOURCE BOUND** (a divide-by-zero guard) | `scheduler/mod.rs:984`, `:4812-4822` |
+| `T` | `(√6/π)·σ̂_e/ref` | **DERIVED** — the Luce/Gumbel variance match; `√6/π` is a property of the Gumbel distribution and the only numeric constant in it | 16.81.1 |
+| `σ̂_e` | dispersion of `realized − E_i` | **MEASURAND, NOT BUILT** — §16.75's τ-lag estimator on a stream that does not exist yet (`[ETA]`) | 16.81.6 |
+| **`T = 0.15`** | `PLACE_TEMPERATURE` | **ARBITRARY — the argmax of a four-point sweep at ONE cell whose own verdict was `0.81×, FAILS`. ABSENT FROM THIS PAPER. NOT corrected. REGISTER ROW** | `scheduler/mod.rs:964`; goal-gate's placement gate |
+| `s_i` | `[(now + E_i) − F̂]⁺` | **DERIVED** from measured `E_i` and a running max | 16.81.2 |
+| `F̂` | running max of stamped ETAs | **MEASURED at the sender**, needs no wire | 16.81.2 |
+| `H` | `(gain − 1)·RTprop` | **DERIVED from the shipped store-cap law; the law's `gain` is UNPROVENANCED** | 16.80.3; `gates.rs:1055-1057` |
+| `gain` | `RWM_STORE_GAIN = 2.0` | **ARBITRARY — NOT corrected.** Already in the register; `X_i` makes a SECOND law depend on it | `gates.rs:1055-1057` |
+| `κ` | 1 | **DECLARED UPPER BOUND, not a value.** D0's fits give 0.0048–0.067, so `κ = 1` over-charges by 15–200×. **NOT corrected. REGISTER ROW** + `s_i > H` bind gauge | 16.80.3a |
+| `δ` | `COPA_DELTA/ζ(hint)` = 50 / 0.5 / 0.005 | **DECLARED** — the contract's price; the ONE surface | `scheduler/mod.rs:47`, `:129-135` |
+| `w_bw(δ)` | `clamp(½ − ¼·log₁₀(δ/δ_auto), 0, 1)` | **DERIVED — affine through three collinear points, no free parameter. LANDS ONLY IF BIT-EXACT** | 16.81.11 |
+| `r_i` | `ε_i/(1−ε_i)` | **MEASURED**, the information-theoretic floor of §8.4 | `scheduler/mod.rs:2935-2941` |
+| **`10.0`** | the `r_i = ∞` clamp | **ARBITRARY — a hard exclusion (`e^{−66}` odds at `T = 0.15`) wearing a continuous costume. ONE of its four sites is on the shipped window path (`:4866`). NOT corrected. REGISTER ROW** | `scheduler/mod.rs:4240, 4460, 4565, 4866` |
+| `fate_i` | share of covered symbols already on `i` | **MEASURED**, already computed | `scheduler/mod.rs:4868-4872` |
+| `p_BB,i` | `1 − q_i` | **MEASURED/DERIVED** — the GE persistence; from the harness's own `gemodel` at an L0 cell, from `p_bg` on a live path | §8.3 |
+| **`w_div = 1.0`** | the diversity weight | **ARBITRARY — the derived value is 0.475 (`c2`) / 0.552 (`c3`), reaching 1.0 only at `q → 0`. NOT corrected. REGISTER ROW** | `scheduler/mod.rs:1017-1019` |
+| **`9/8`** | `PLACE_SLACK_RECOV_PATIENCE` | **RFC 9002 `kTimeThreshold`, "empirically recommended, not derived" — AND UNREACHED on the shipped path because `S = 0`. NOT corrected** | `scheduler/mod.rs:993`, `:4130`, `:4856-4859` |
+| **`ELIGIBLE_SKEW = 75 ms`** | the block eligibility filter | **UNPROVENANCED (ADR-0070), a threshold that selects a code path — AND MOOT ON THE WINDOW PATH.** NOT corrected; already in the register, now with its reachability stated | `scheduler/mod.rs:4363`, `:4444`; caller `:4259` |
+| **`0.8` / `0.25`** | the near-tie band and floor | **ARBITRARY, and FIRST WRITTEN DOWN HERE.** A relative band mixed with an absolute floor — the signature of a missing scale. NOT corrected. TWO REGISTER ROWS | `scheduler/mod.rs:4696-4697` |
+| `b(δ)` | `clamp(2^(−½·log₁₀(δ/δ_auto)), ½, 2)` | **DERIVED** — log-linear, unique through three collinear points | §16.74.1; 16.80.9's provenance row |
+| `β(δ)` | `clamp(−½·log₁₀(δ/δ_auto), 0, 1)` | **DERIVED**, exact `0`/`1` at the presets by structure | `raptorpath-wasm/src/lib.rs:234-238` |
+| `BULK_TAIL_BUDGET` | 0.05 | **ARBITRARY — an "e.g." promoted to a `const`. NOT corrected. REGISTER ROW** | `raptorpath-math/src/lib.rs:124` |
+
+**There is no coefficient in the placement law of 16.81.4 with no provenance,
+and there is no threshold on δ or ρ anywhere in it.** Every arbitrary constant
+listed above keeps its shipped value; what changes is that each now has a
+derived form beside it, a bind gauge that would prove it binds, and a named
+measurement that would decide it.
+
+#### 16.81.15 Shape check
+
+* **Units.** Every term of `c_i` is a ratio of seconds to seconds or a pure
+  probability; `T` is dimensionless. `X_i`'s two legs are the same currency as
+  `L_i`, which is why they may be added at all — and the check that they are is
+  the reason `κ` is a pure weight rather than 16.80.3's symbol-valued one.
+* **Continuity in δ.** `c_i` is continuous and piecewise-`C¹` in δ; the only
+  non-smooth points are `w_bw`'s two clamp knots, which sit OUTSIDE the named
+  interval `[0.005, 50]` on the log scale and are therefore never crossed by a
+  contract. **No `if (hint == …)`, no threshold on δ, no threshold on ρ.**
+* **Continuity in ρ.** ρ does not appear. Placement is upstream of retention;
+  the ρ-dependence enters only through `H` when the three-term store cap is
+  armed (16.80.3), and `contract_stall_s` is already a convex combination
+  continuous in ρ, pinned across 21 values.
+* **Monotone where it must be.** In `E_i`, `s_i`, `r_i`, `fate_i`: all
+  non-decreasing. In `T`: the placement distribution's entropy is increasing, so
+  a scheduler that knows less spreads more. In `σ̂_e`: `T` is linear, so the
+  spreading is exactly proportional to the ignorance.
+* **Limits.** `T → 0 ⇒ argmin`; `N = 1 ⇒` identity and every new term a constant
+  offset; `s_i = 0 ⇒ X_i = 0`; memoryless `⇒ V_i = 0`; `δ → 0` and `s_i ≤ H ⇒`
+  no frontier price at all; `gain → 1 ⇒ H = 0 ⇒` every push charged in full.
+* **Degenerate cases render.** A path with no SRTT sample uses `srtt_of`'s cold
+  price (`RWM_COLD_PLACE`, `scheduler/mod.rs:4805-4810`) — **one expression, no
+  `if cold`**, which the shipped code already gets right and which the new terms
+  must not undo. A cost table with an empty candidate set renders `-`, never `0`.
+
+#### 16.81.16 What this supersedes, and what it leaves standing
+
+* **§16.3's "T is the one dial" → CORRECTED IN KIND.** §16.3 called the softmax
+  temperature a dial and said *"PREDICTION, measure before claiming."* **`T` is
+  not a dial: it is an estimate of a measurable quantity**, and a dial that is
+  really an estimator has been mis-typed rather than mis-valued. §16.3's own
+  instruction — measure before claiming — is what 16.81.1 makes executable.
+* **16.80.6(a2)'s ORDERING TERM → GIVEN ITS REACHABILITY.** The term was derived
+  against `ELIGIBLE_SKEW` and `PREDICTED INERT` at `W ≈ 1.7e-3`. This section
+  adds that its target filter is not on the window path at all. **The prediction
+  is unchanged; its domain is now stated.**
+* **`RWM_PLACE_SLACK`'s DECLARED BUDGET → REPLACED IN FORM BY THE MEASURED
+  FRONTIER.** The 2026-08-06 smoke falsified an unbounded declared `S`. `X_i`
+  does not reinstate `S`; it computes the frontier the budget was proxying.
+  **The falsification stands and is not re-litigated.**
+* **§16.73.1's AND §8's CORRECTION → CONFIRMED AND EXTENDED.** Both record that
+  `r(β)` *"does not exist in the engine"* and lives in the visualizer. This
+  section adds the same finding for `b(δ)`, `ζ(δ)` and `β(δ)`: **`raptorpath-math`
+  has none of them.** The repair is a port.
+* **CLAUDE.md's exemplar → RE-READ AS A TARGET, NOT A DESCRIPTION.** The
+  no-mode-switch rule's own worked example names the shipped rate law; the
+  engine's counterpart is `fec_rate.rs:312`'s boolean. **The invariant is
+  satisfied in the model and violated in the machine, at eighteen sites, five of
+  which have no known continuous form.**
+* **STANDING AND UNTOUCHED.** §16.80's theorem, domain and value bound; D0's
+  measured `π0` and closure classes; every register row of 16.80.12; §16.3's
+  softmax as the placement law's SHAPE.
+
+#### 16.81.17 What this section does NOT claim
+
+* **NO CONSTANT IS CORRECTED. NOT ONE.** `T = 0.15`, `w_div = 1.0`, `10.0`,
+  `0.8`, `0.25`, `9/8`, `ELIGIBLE_SKEW`, `gain = 2.0`, `κ = 1`,
+  `queue_target_mult`, the block profile, the interleave depths, the Realtime
+  duplicate send, `use_packing`, `BULK_TAIL_BUDGET` — every one keeps its
+  shipped value and gains a register row. **A derived form that has never been
+  measured does not displace a measured-nowhere constant; it only makes it
+  falsifiable.**
+* **NO MEASUREMENT IS REPORTED.** `σ̂_e` has never been on a wire. The `[LAT]`
+  decomposition does not exist. **Every number in Part A that is not a code
+  literal or a GE parameter is an evaluation of a derived expression, and the
+  section's own first instruction (16.81.5) is to read the decomposition before
+  scoring any arm.**
+* **THE PLACEMENT ARMS ARE NOT LICENSED BY THIS COMMIT** and may be voided
+  before they run: `QUEUE-DOMINATED` on the `CTL` readout pre-declares them
+  null, and `INSTRUMENT-INDICTS-QUEUE` is a legal outcome of the whole track.
+* **A `Tσ` TIE WITH `CTL` LICENSES `σ̂_e/ref`, NEVER `0.15`.** If the derived
+  temperature merely matches the shipped one, what is licensed is the FORM — the
+  constant remains undefeated and undefeated remains underived.
+* **THE GUMBEL MATCH GIVES A SCALE, NOT A SHAPE**, and the i.i.d. assumption is
+  false in a known direction (16.81.1).
+* **`w_div`'s DERIVED VALUE IS NOT A PROPOSED DEFAULT.** 0.475/0.552 are
+  evaluations at two synthetic L0 cells whose GE parameters are declared by the
+  harness. On a live path `p_BB` is estimated, not declared, and the estimator
+  for it is not built.
+* **THE FIVE DECLARED CORNERS ARE NOT DEFECTS THIS SECTION FIXES.** No
+  continuous form is invented for `queue_target_mult`, `BlockProfile`, the
+  interleave depth, the Realtime duplicate send or `use_packing`. **Inventing
+  one would be worse than recording the corner**, because an invented form
+  passing through three points is a fit with the provenance of a guess.
+* **NO ENGINE CHANGE, NO GATE, NO DEFAULT, NO TEST, NO WIRE FIELD, NO
+  INSTRUMENT.** `RWM_DELTA`, `[LAT]`, `[ETA]`, `eta_rel_us` and the wire version
+  they need are SPECIFIED here and built by no commit in this series.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
+
+### 16.82 The `r > 0` regime, priced: the proactive plane's exit price `δ_exit = √(2π)·S·d/(ε̂·D_arq)` is derived, it is evaluated on the record's own inputs, and it puts the BULK point of the dial at a corner under EVERY admissible reading while leaving the AUTO point UNDECIDED on one quantity no gauge in this tree reports — Copa's own delay normaliser (2026-09-08, `docs/16-81-83-laws`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test; §16.73 is the consistency condition this section differentiates, §14.25/§14.26 are the object-scale rival, this section is the price)
+
+**THE SECTION IN ONE SENTENCE.** *§16.73 proved the shipped machine sits at the
+corner `r* = 0` and stopped there, because its condition was written with `δ`
+cancelled out; this section reintroduces `δ` on the proactive leg alone, where
+it does not cancel, derives WHERE THE CORNER ENDS, and finds that the answer
+hinges on a ratio the tree has never echoed.*
+
+**AND THE RULING BINDS EVERY SENTENCE OF IT.** Nothing below blesses a
+constant. `BULK_TAIL_BUDGET = 0.05`, `r_tail = 0.2`, `σ_arq`'s `4×` gain and
+`SRTT/4` floor are recorded in the register of 16.80.12 as arbitrary and
+UNCORRECTED, with their deciding measurements. **`δ_exit` being derived does
+not make one of them derived, and a corner verdict that survives a sensitivity
+sweep is still not a licence to change anything.**
+
+#### 16.82.0 Verdict first — the expression
+
+Per source symbol, at contract price `δ`, with completion exposure `χ ∈ [0, 1]`
+(§14.26's kernel, unchanged):
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                                                                          │
+   │   L_pro(r; δ, χ)  =  r  +  δ · χ · ε̂ · (1 − P_fec(r)) · D_arq / d       │
+   │                                                                          │
+   │   STATIONARITY     φ( z_f(r*) )  =  S · d / ( δ · χ · ε̂ · D_arq )       │
+   │                                                                          │
+   │   S  =  √( ε̂ · σ²_burst / ( W · (1 − ε̂) ) )                            │
+   │                                                                          │
+   │   INTERIOR  ⇔   δ · χ  ≥  δ_exit  =  √(2π) · S · d / ( ε̂ · D_arq )     │
+   │                                                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+*The first term is the wire fraction spent proactively; the second is the
+Copa-priced latency of the symbols FEC fails to cover, each falling through to
+an ARQ round `D_arq`, and each priced only in proportion to the probability
+`χ` that its recovery outlives the send stream.* The first term is §16.73.2's
+`L_pro` verbatim; **the whole of the change is the factor `χ`, and it is not a
+new constant — it is §14.26's already-written kernel moved from the TARGET to
+the PRICE.**
+
+**WHY THE INTERIOR CONDITION IS EXACTLY THAT.** Differentiating and using
+§8.2's `P_fec = Φ(z_f)` with §8.4's first-order `∂z_f/∂r = 1/S` gives the
+stationarity line. It asks the standard normal density `φ` to take a prescribed
+value; `φ ≤ φ(0) = 1/√(2π)` everywhere, so a stationary point exists at all
+only if the right-hand side is at most `1/√(2π)`, and rearranging is the third
+line. **No approximation and no fitted quantity enters the step.** `√(2π)` is
+`1/φ(0)` and is the only numeric constant in `δ_exit`.
+
+**`δ_exit` IS §16.73.2's SHADOW PRICE WITH `φ` AT ITS MAXIMUM, AND THAT IS AN
+IDENTITY, NOT A SECOND PIECE OF EVIDENCE.** §16.73.2 gives
+`δ_pro ≤ d·S/(D_arq·ε̂·φ(z_f(0)))` at the corner; `δ_exit` is the same
+expression with `φ(z_f(0))` replaced by `φ(0)`, so
+`δ_pro/δ_exit = φ(0)/φ(z_f(0)) ≥ 1` always. The two numbers are not
+independent and are never quoted as if they were.
+
+#### 16.82.1 THE ONE UN-ECHOED RATIO, NAMED BEFORE ANY NUMBER IS READ
+
+`δ_exit` is inversely proportional to `D_arq/d`. **`D_arq` is measured; `d` is
+not one quantity in this tree but a NAME THAT THREE DIFFERENT QUANTITIES
+ANSWER TO**, and until an echo distinguishes them the exit price is a bracket
+and not a number. This is stated first, before any evaluation, so that no
+reading below can be mistaken for a measurement.
+
+| reading of `d` | what it is | `D_arq/d` on the record | class |
+|---|---|---|---|
+| **(i) Copa's operating delay** | the delay Copa's `log(delay)` is linearised about — the live queue-inclusive RTT | `≈ (srtt + d_rep)/srtt` **≈ 1.01–1.05** | the utility function's own normaliser; **NOT ECHOED** |
+| **(ii) a propagation-scale reference** | `D_arq ≈ 1.5·RTprop` against a normaliser of the same scale | **≈ 2.2, DECLARED HERE, not measured** | a stated mid-reading; carried so the sensitivity has an interior point |
+| **(iii) the `[FDIAG]` repair delivery delay** | §16.73.3's `d`, "repair delivery delay, plain window" | c1 **2.91**, sc2 **24.1**, c8 **24.3**, c7 **93.7** (goal-gate, the r-law condition's own input table) | **MEASURED**, but it is the delay of a repair, not Copa's normaliser |
+
+**§16.73 COULD IGNORE THIS AND THIS SECTION CANNOT.** In §16.73.3 `d` *"cancels
+for the same reason [as `h_marginal`]: it appears once in each leg's latency
+term"*, and that section says so in terms. **Here it does not cancel**, because
+only the proactive leg is differentiated. **The ambiguity is therefore created
+by the derivation, not inherited by it, and naming it is part of the
+derivation.**
+
+```text
+   ⇒  DECIDING MEASUREMENT:  an echo of Copa's delay normaliser beside D_arq
+      on the same run.  It is one gauge field and it does not exist.
+```
+
+#### 16.82.2 The exit price, evaluated — and `ε̂` is a SECOND bracket, disclosed the same way
+
+`σ²_burst` is DERIVED EXACT from the harness's own `gemodel` parameters
+(§16.73.3: `c1` 2.996, `c2` 2.899, `c3` 3.762). `W` is **DERIVED, NOT ECHOED**
+— §8.8's `derive_window`, clamped `[16, 512]` by the math layer and
+`MAX_WINDOW_SIZE = 200` by the sender, and *"no gauge reports it"*; **`W = 64`
+below is the SIMULATOR's reference window (§14.25's own worked example), used
+here as a stated reference value and not as a measurement of the engine.**
+
+`ε̂` has two admissible readings and they differ by a factor of 3–5:
+
+* **the CHANNEL loss**, exact from the cell's GE parameters
+  (`transport/quic.rs`: `c2` = 1.3 %/50 %, `c3` = 2 %/40 %) —
+  `ε_c2 = p/(p+q) = 0.02534`, `ε_c3 = 0.04762`, which the paper elsewhere quotes
+  as *"eps ~ 2.6 %"* and ≈ 4.8 %;
+* **the ESTIMATOR's realized per-leg loss**, which the r-law condition's input
+  table measures at **0.0056** (`c7` worst leg) and **0.0184** (`c8` worst leg).
+
+**THE GAP BETWEEN THEM IS A KNOWN DEFECT AND IS NOT AVERAGED AWAY.** Goal-gate's
+standing open item records it verbatim: *"per-path `pl` reads 0.000–0.010 at
+2.5–4.8 % cells."* The estimator under-reads the channel by 3–5×. **Both
+readings are carried; neither is preferred here, because which one belongs in a
+PRICE is exactly what the open item leaves undecided.**
+
+`S = √(ε̂·σ²_burst/(W(1−ε̂)))` at `W = 64`:
+
+| leg / cell | `ε̂` reading | `ε̂` | `σ²_burst` | `S` |
+|---|---|---|---|---|
+| `c2` (the `c7` legs, `c8`'s fast leg) | channel | 0.02534 | 2.899 | 0.03432 |
+| `c3` (`c8`'s slow leg) | channel | 0.04762 | 3.762 | 0.05421 |
+| `c7` worst leg | estimator | 0.0056 | 2.899 | 0.01597 |
+| `c8` worst leg | estimator | 0.0184 | 3.762 | 0.03320 |
+
+**`δ_exit = √(2π)·S/(ε̂·(D_arq/d))`, over both brackets:**
+
+| row | `D_arq/d = 1.03` (i) | `D_arq/d = 2.2` (ii) | `D_arq/d` measured (iii) |
+|---|---|---|---|
+| `c2`, channel `ε̂` | **3.30** | **1.543** | 0.0362 (at `c7`'s 93.7) |
+| `c3`, channel `ε̂` | **2.77** | **1.297** | 0.1174 (at `c8`'s 24.3) |
+| `c7`, estimator `ε̂` | **6.94** | **3.249** | 0.0763 |
+| `c8`, estimator `ε̂` | **4.39** | **2.056** | 0.1861 |
+| `sc2`, estimator `ε̂` | **0.749** | **0.351** | 0.351 (its own `D_arq/d` IS 24.1 → 0.0320) |
+
+```text
+   ⇒  δ_exit  ∈  [ 0.032 , 6.94 ]   over BOTH brackets, at the four audited cells
+```
+
+**AND THE CONTRACT'S OWN δ POINTS ARE 50 / 0.5 / 0.005** — Realtime / Auto /
+Bulk, derived rather than written: `copa_delta(hint) = COPA_DELTA / ζ(hint)`
+with `COPA_DELTA = 0.5` (`scheduler/mod.rs:47`) and
+`ζ ∈ {0.01, 1, 100}` (`control/fec_rate.rs:70-76`). **The literals 50 / 0.5 /
+0.005 appear as executable constants nowhere in the engine — only in a doc
+comment at `scheduler/mod.rs:119-120` and in the visualizer** — which is itself
+worth recording: the engine's δ points are a QUOTIENT, and that is the one
+piece of the dial that was already continuous.
+
+Reading `δ·χ ≥ δ_exit` at each named point, with `χ` at its CEILING of 1:
+
+| hint | `δ` | `χ` required, BEST case (`δ_exit` = 0.032) | `χ` required, WORST case (`δ_exit` = 6.94) | verdict |
+|---|---|---|---|---|
+| **Bulk** | 0.005 | **6.4** | **1 388** | **CORNER under every reading — unreachable by 6.4× to 1 388×** |
+| **Auto** | 0.5 | 0.064 | **13.9** | **UNDECIDED — interior under reading (iii), corner under (i) and (ii)** |
+| Realtime | 50 | 0.0006 | 0.139 | interior over the last `≈ 1–3·σ_arq` of a finite stream, under every reading |
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  BULK-CORNER-ROBUST.   The Bulk point of the dial is a corner at every    │
+   │  χ ≤ 1, under every admissible reading of d and of ε̂, by a margin of at  │
+   │  least 6.4×.                                                             │
+   │                                                                          │
+   │  AUTO-UNDECIDED-ON-d.  The Auto point flips with the reading of Copa's    │
+   │  delay normaliser, and that quantity is echoed by no gauge in this tree.  │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**THAT IS THE SECTION'S PRINCIPAL FINDING, AND HALF OF IT IS A NEGATIVE
+RESULT.** §16.73.4 established `r* = 0` at Bulk because `δ_eff := ε̂` makes
+`z = Φ⁻¹(0) = −∞`. This establishes something independent of that mechanism:
+**even with an honest marginal price and a perfect estimator, `r*` is still 0 at
+Bulk**, because the price the contract is willing to pay for latency there is
+between six and fourteen hundred times below what one repair symbol costs.
+**`r > 0` at Bulk is not under-funded; it is over-priced.** At Auto the same
+derivation returns *"I do not know, and here is the single gauge field that
+would decide it."*
+
+#### 16.82.3 The shipped anchor law is a CONSTRAINT, not a price — and the two reach `r* = 0` for different reasons
+
+* **The anchor law** reaches it because `δ_eff := ε̂` sets the tail target equal
+  to the estimate, so the margin term is identically zero **at every δ**. It has
+  no derivative in δ at all: `r*` is 0 at `δ = 0.005` and at `δ = 50` alike,
+  mid-stream. **A law with no derivative in the dial cannot tell you where its
+  own answer would change.**
+* **The price form** reaches it because `δ·χ < δ_exit`. It has a derivative in
+  δ everywhere, and it names the point at which its answer flips — and, when
+  the inputs are bracketed, it names the measurement that would sharpen it.
+
+**⇒ THE PRICE FORM IS NOT A REPLACEMENT FOR THE ANCHOR LAW; IT IS WHAT MAKES
+THE ANCHOR LAW'S ANSWER FALSIFIABLE.** The anchor law says "0". The price form
+says "0 at Bulk under every reading, unknown at Auto, and here is the gauge."
+Only the second is a scientific object.
+
+**NO MODE BIT ANYWHERE IN THIS.** `δ_exit` is a continuous function of measured
+channel quantities and contains no δ, no ρ, no hint. The comparison
+`δ·χ ≥ δ_exit` is a stationarity test on the DECISION VARIABLE `r`, exactly as
+`1{T + d > H}` in 16.80.3 is a test on `T` — it is the derivative of the
+continuous `max(0, ·)` the shipped `r_star_mass` already computes, not an
+`if (hint == …)`. **There is no threshold on δ and no threshold on ρ in any
+expression in this section**; δ enters as a multiplier, and ρ enters not at all
+(the whole section is the `ρ = 1` reliable window).
+
+#### 16.82.4 The two rival hypotheses, pre-stated, with the number each predicts
+
+The corner result prices `r` PER SYMBOL, integrated over the stream. A
+per-symbol price can say "never" while an END-EFFECT at the stream tail still
+pays, because tail recovery is serial and mid-stream recovery is parallel —
+§14.25's own two-regime argument. **Both readings are written out in advance,
+with the number each predicts, so the battery scores a pre-stated pair rather
+than a preference.**
+
+**`H_price` — THE PER-SYMBOL READING (this section's derivation).** A funded `r`
+costs `r/(1+r)` of the wire and returns nothing at Bulk under every reading of
+the inputs. **Prediction: every funded Bulk arm loses goodput by approximately
+its own overhead and gains nothing on completion p50, at BOTH transfer sizes.**
+
+**`H_object` — THE OBJECT-SCALE READING (§14.25's).** §14.25's own arithmetic,
+verbatim:
+
+```text
+   Cost:    r_tail · W  symbols        (its worked example: 0.2 × 64 = 13 symbols)
+   Saving:  P(≥1 tail loss) × ~1.5 RTT of completion per avoided serial ARQ round
+            P(≥1 tail loss) = 1 − (1−ε)^W        (§14.25: "≈ 80% at ε=2.5%, W=64")
+```
+
+Evaluated here at `c2` — **and the evaluation is this section's, not §14.25's**,
+which states the formula and the 80 % but tabulates no per-object figure:
+
+```text
+   P        =  0.80                                    §14.25's own number at ε = 2.5 %, W = 64
+   1.5·RTT  ∈  [12 ms, 108 ms]     RTprop = 8 ms (16.80.4) at a DRAINED tail queue,
+                                   srtt = 72 ms (the r-law input table) at a LOADED one
+   saving   ≈  0.80 × [12, 108]    =  [9.6, 86] ms   PER OBJECT
+   cost     ≈  0.2 × 64 × 96 µs    =  1.23 ms        (t_sym = T_pay·8/rate = 1200·8/100 Mbit)
+```
+
+**THE BRACKET ON `1.5·RTT` IS DISCLOSED RATHER THAN RESOLVED**, and its two
+ends are the same physical question as 16.82.1's: at the stream tail the send
+queue is draining, so `srtt` is in transit from its loaded value toward
+`RTprop`, and no ledger records where it lands. **The return is between 8:1 and
+70:1 per object either way, which is why `H_object` is a live rival and not a
+formality.**
+
+**THE DISCRIMINATOR IS THE OBJECT SIZE, AND IT IS THE ONLY REASON 25 MB IS IN
+THE GRID.** A 1.8 MB object at 100 Mbit is ≈ 144 ms of transfer, so `H_object`
+predicts a **7–60 %** completion effect; a 25 MB object is ≈ 2 s, so it predicts
+**0.5–4.3 %**. `H_price` predicts the same sign at both sizes. **The two
+hypotheses are not contradictory** — one prices the steady state, the other the
+last `1.5·SRTT`. What cannot hold is the shipped composition, in which one `r*`
+serves both regimes through one δ; that is exactly what §14.26's glide was
+written to fix, and what the engine has never executed.
+
+#### 16.82.5 The χ activation — a principled feed, because the "endless tunnel" assumption is FALSE for the transfers this tree measures
+
+§14.26 records the reason χ is never fed: *"a production tunnel is an endless
+stream — there is no 'last symbol' the sender can see, so χ = 0 permanently."*
+The engine states the same thing at the setter:
+`control/fec_rate.rs:212` — *"The production tunnel never calls this (endless
+stream ⇒ χ = 0)"*, with `#[allow(dead_code)]` on the line above it.
+
+**THAT ASSUMPTION IS TRUE OF A TUNNEL AND FALSE OF EVERY TRANSFER IN THIS
+TREE'S MEASUREMENT RECORD.** Every battery runs a finite object of a declared
+size. **⇒ `χ ≡ 0` in the engine is not a physical fact about the workload; it is
+an unwired consumer** — and every `r* = 0` reading the record contains was taken
+with the one input that could have moved `r` pinned at its null value.
+
+**THE MACHINERY IS ALREADY BUILT AND ONLY THE FEED IS MISSING, WHICH IS STATED
+PRECISELY BECAUSE IT BOUNDS THE WORK.** `raptorpath_math::completion_exposure`
+exists and is the kernel:
+
+```text
+   χ(T_rem)  =  Φ̄( (T_rem − 1.5·SRTT) / σ_arq ) ,     σ_arq = max(4·RTTVAR, SRTT/4)
+```
+
+— `raptorpath-math/src/lib.rs:439-446`, consumed by the glide at `:628-633` as
+`p + (BULK_TAIL_BUDGET − p)·χ`. `FecRateController::set_completion_exposure`
+exists (`control/fec_rate.rs:215`) and its ONLY caller repo-wide is
+`tests/gate_suite.rs:744`. **So the glide is implemented, tested, and fed by
+nothing.**
+
+**WHAT THE PERF CLIENT KNOWS, AND WHAT IT DOES WITH IT — READ, NOT ASSUMED.**
+`perf.rs:174-217` computes `total = nbytes.div_ceil(payload_len)` and carries a
+`left` counter written at `:184`/`:187` and read only at `:186`; `total` goes on
+the wire inside the perf protocol's own chunk header (`perf.rs:64-70`), which
+the engine treats as opaque TUN bytes. **`T_rem` is therefore COMPUTABLE at the
+client and is computed there for another purpose, and no line of code carries
+it across the boundary.** That is the whole of the χ activation: a
+`CompletionFeed` on the peer config, a call site at the rate site, and a `[CHI]`
+gauge.
+
+**`RTTVAR`'s PROVENANCE IS STATED RATHER THAN ASSUMED.** The engine's RTTVAR is
+RFC 6298's, at the RFC's own gains — SRTT EWMA `α = 1/8` (`scheduler/mod.rs:1793`)
+and the squared deviation at `β = 1/4` (`:1829`). **The `4×` multiplier and the
+`SRTT/4` floor in `σ_arq` are NEITHER of those and are DECLARED, not derived**
+(`raptorpath-math/src/lib.rs:444`); the floor exists because a degenerate RTTVAR
+would collapse the kernel to a step. **Both go to the register of 16.80.12,
+arbitrary and UNCORRECTED.** The commonly quoted cold value `RTTVAR = 0.125·SRTT`
+is a steady-state coincidence of the `α = 1/8` gain on a smooth path, not a
+derived quantity, and it is not used here.
+
+**LIMITS.** `T_rem → ∞` ⇒ `χ → 0` ⇒ `L_pro` degenerates to `r`, whose minimiser
+is `r = 0` — **the endless tunnel is recovered exactly, with no special case**
+(and `completion_exposure` returns 0 on a non-finite `t_rem` by construction,
+`lib.rs:440-442`). `T_rem → 0` ⇒ `χ → 1` ⇒ the interior condition is
+`δ ≥ δ_exit`, i.e. the table of 16.82.2 read at its ceiling. `σ_arq → 0` ⇒ the
+kernel degenerates to §14.25's one-shot burst at `T_rem = 1.5·SRTT`, which is
+§14.26's own limiting-case statement restated as a shape check.
+
+#### 16.82.6 The battery's pre-stated falsifier — and why the record's "19–32 ms decodes" is NOT it
+
+The record contains a number that looks like a decisive refutation of proactive
+FEC and is not one. Goal-gate's frontier-repair diagnosis reported that under
+`RWM_MIN_R = 0.15` *"each decode takes ~19–32 ms, LONGER than the ARQ round it
+replaces"* — and the SAME record withdrew the reading in terms one part later:
+*"the prior 'DECODE avg' spanned hole-armed → frontier-passes and thus
+**included the wait for enough rank to isolate the hole**; it was never decode
+compute"*, with raw compute at **6–10 µs/call, 33–54 ms TOTAL over a whole
+1.8 MB transfer**, and the conclusion *"the prior 'decode ~25–67 ms > ARQ' was
+doubly wrong."*
+
+**⇒ THE `19–32 ms` FIGURE IS RESOLUTION WAITING, NOT COMPUTE, AND MUST NOT BE
+QUOTED AS A COST OF FEC.** What it measures is ENTANGLEMENT: a repair that
+lands as a multi-unknown pivot cannot isolate its hole until neighbours arrive
+(`present_at_stall = 0` in every run; `probe_holes 19` against
+`probe_buffered 4`). That is a real and separate failure mode, it is a property
+of WHERE the repair is coded rather than of `r`, and it is why this battery
+carries its own falsifier:
+
+```text
+   [FDIAG]  decode-resolved wall time   vs   ARQ-resolved wall time,  per hole
+   decode-resolved  >  ARQ-resolved   ⇒   ENTANGLEMENT-DOMINATED
+```
+
+**`ENTANGLEMENT-DOMINATED` is a legal outcome REGARDLESS OF GOODPUT**, so that a
+funded arm which happens to win on throughput cannot be reported as a
+vindication of `r` when its repairs are in fact arriving late and being redeemed
+by their neighbours. **The instrument already exists** (`RWM_FDIAG`, the raw
+`win_dec.add_symbol()` timer separated from per-hole resolution wall time); this
+section adds no instrument, it names which column decides.
+
+#### 16.82.7 The battery, in outline — arms, cells, sizes, scores
+
+**Written here as the section's owed measurement, NOT licensed by this commit.**
+Its own pre-registration is a separate commit in goal-gate; the VM is touched by
+neither.
+
+| arm | what it changes | why it is in the grid |
+|---|---|---|
+| `CTL` | nothing — shipped defaults, bulk hint | the corner, measured |
+| `MID` | `RWM_DELTA = 0.05` ⇒ `β = ½` EXACTLY (`β(δ) = clamp(−½·log₁₀(δ/δ_auto), 0, 1)`, §16.81), with `RWM_COPA_DELTA = 0.005` pinning the CC so congestion control does NOT move with the price | funds `r` through the ONE δ surface, the only way to fund it without a mode bit |
+| `GLIDE` | `RWM_COMPLETION_EXPOSURE` — χ fed from the perf client's own `T_rem` | tests `H_object` where §14.26 says the value is |
+| `GLIDE-ζ` | `GLIDE` with the tail target from the ζ quotient rather than `BULK_TAIL_BUDGET` | separates "the glide" from "the glide's arbitrary 0.05" |
+
+Cells `c8` and `sc2`; sizes **1.8 MB and 25 MB**; ×8, seeds 42 and 7. Scored on
+goodput, completion p50 and `dnf`. **Mechanism liveness is a WITNESS read
+BEFORE any score**: `[DIAG] cod/src > 0` on funded arms (an `r` that never
+reaches the wire scores nothing), `[CHI] max > 0.5` with tail `cod > 0` on the
+glide arms, and byte-identity with `CTL` when every gate is absent.
+
+**LEGAL OUTCOMES — the complete set; no verdict outside it may be recorded.**
+`R-INERT` (the funded arm does not move the wire — a wiring failure, not a
+result) / `R-FUNDED-NEGATIVE` (`H_price` confirmed) /
+`R-FUNDED-POSITIVE-SMALL-ONLY` (`H_object` confirmed: completion improves at
+1.8 MB and not at 25 MB) / `ENTANGLEMENT-DOMINATED` (16.82.6's criterion fires,
+regardless of goodput) / `GLIDE-INERT` (χ reaches the wire and `r` does not
+follow).
+
+**THE GOODPUT LEG IS A GUARD AND NOT A SCORE AT `n = 8`**, on the grounds
+§16.80's batteries used: the per-rep spread at these cells swamps the `r/(1+r)`
+effect size. **The scored dimension is completion p50 at the two sizes, which is
+where the two hypotheses disagree.**
+
+#### 16.82.8 The record's open item, CLOSED as a question and OPENED as a domain
+
+Goal-gate's standing open item reads: *"Sender loss-estimator honesty at
+singles: per-path `pl` reads 0.000–0.010 at 2.5–4.8 % cells ⇒ `r* = 0` ⇒ the
+proactive plane is dead at singles; whether funded proactive `r*` beats
+reactive-only at bulk is an open item-11 question."*
+
+**THAT ITEM ASSUMED ONE CAUSE AND THERE ARE TWO, AND THEY ARE NOT
+SUBSTITUTES.**
+
+* **Its diagnosis is superseded at Bulk.** Fixing the estimator would not fund
+  `r` there: `r* = 0` at Bulk is over-determined, by the anchor law AND by
+  `δ·χ < δ_exit` under every reading. **And the estimator's dishonesty pushes
+  `δ_exit` the WRONG way** — `δ_exit ∝ ε̂^{−1/2}`, so an under-reading estimator
+  makes the exit price HIGHER, not lower (16.82.2's rows 3–4 against rows 1–2).
+  An honest estimator would make FEC cheaper to justify, and even then Bulk
+  stays at the corner.
+* **Its question survives, sharpened.** "Does funded proactive `r*` beat
+  reactive-only at bulk?" now has a stated domain: it can only be answered by
+  funding `r` through δ (`MID`) or through χ (`GLIDE`), because those are the
+  only two inputs the price form has.
+* **The previous attempts are re-read, not re-scored.** Every `RWM_MIN_R` arm on
+  the record forced `r` past the price without changing the price — exactly the
+  configuration `H_price` says must lose. **That they all regressed is
+  CONSISTENT with this derivation and is NOT evidence for it**, because none was
+  pre-registered and none carried `[FDIAG]`.
+
+#### 16.82.9 Per-symbol provenance
+
+| symbol | value / form | class | source |
+|---|---|---|---|
+| `r` | the decision variable, a wire fraction | **DERIVED** | §8.4 `r_star_mass`; `raptorpath_math::controller_rate` via `FecRateController::compute_repair_rate` |
+| `δ` | 50 / 0.5 / 0.005 at the three named points, as the QUOTIENT `COPA_DELTA/ζ(hint)` | **DECLARED** — `COPA_DELTA = 0.5` (`scheduler/mod.rs:47`), `ζ ∈ {0.01, 1, 100}` (`control/fec_rate.rs:70-76`). **The literals 50/0.5/0.005 are executable constants NOWHERE in the engine** — doc comment only, `scheduler/mod.rs:119-120` | §16.80.6 "ONE SCALE" |
+| `χ` | `Φ̄((T_rem − 1.5·SRTT)/σ_arq)` | **DERIVED** (§14.26), **IMPLEMENTED** (`raptorpath-math/src/lib.rs:439-446`), **AND FED BY NOTHING** — `set_completion_exposure` (`control/fec_rate.rs:215`) has one caller repo-wide, `tests/gate_suite.rs:744` | §14.26 |
+| `σ_arq` | `max(4·RTTVAR, SRTT/4)` | **DECLARED — the `4×` gain and the `SRTT/4` floor are ARBITRARY. NOT corrected. Register row.** `RTTVAR` itself is RFC 6298 at `α=1/8`, `β=1/4` (`scheduler/mod.rs:1793, :1829`) | `raptorpath-math/src/lib.rs:444` |
+| `T_rem` | remaining source symbols / send rate | **COMPUTABLE AT THE CLIENT, NOT PLUMBED** — `perf.rs:174-217` carries `left` and `total`; neither crosses into the engine | read, with line numbers |
+| `ε̂` | **TWO READINGS, both carried:** channel 0.02534 (`c2`) / 0.04762 (`c3`), exact from `p/(p+q)` on `transport/quic.rs`'s cell table; estimator 0.0056 (`c7`) / 0.0184 (`c8`) | channel: **DERIVED, EXACT**. estimator: **MEASURED and KNOWN LOW by 3–5×** (goal-gate's own open item). **Neither is preferred; the gap is disclosed** | §16.73.3 records `ε̂` as *"DERIVED, NOT ECHOED … No gauge reports it"* |
+| `σ²_burst` | 2.899 (`c2`) / 3.762 (`c3`) / 2.996 (`c1`) | **DERIVED, EXACT** — §8.3's `1 + 2(1−p−q)/(p+q)` on the harness's own `gemodel` parameters | §16.73.3 |
+| `W` | 64 used as a REFERENCE | **NOT ECHOED BY ANY GAUGE.** §8.8 `derive_window`, clamped `[16, 512]` by the math layer, `MAX_WINDOW_SIZE = 200` at the sender. **`W = 64` is the SIMULATOR's window (§14.25), carried as a stated reference, not as a measurement** | §16.73.3's own provenance row |
+| `d` | **THREE readings, bracketed in 16.82.1** | **THE SECTION'S ONE UN-ECHOED RATIO.** Reading (ii)'s `D_arq/d = 2.2` is **DECLARED HERE and is not a measurement** | 16.82.1 |
+| `D_arq` | `srtt + k(α)·σ + d` | **MEASURED** | §16.73.3 |
+| `S` | `√(ε̂·σ²_burst/(W(1−ε̂)))` | **DERIVED** — §8.4's `∂z_f/∂r = 1/S`; no free parameter | §16.73.2 |
+| `φ`, `Φ̄` | standard normal density / survival | **CITED** — the same normal machinery §3.4, §8.2 and §14.26 already use | — |
+| `√(2π)` | 2.50663 | **DERIVED** — `1/φ(0)`, the density's maximum. **The only numeric constant in `δ_exit`, and it is a property of the Gaussian** | — |
+| `P(≥1 tail loss)` | `1 − (1−ε)^W` ≈ 0.80 | **§14.25's own evaluation**, quoted not recomputed | §14.25 |
+| `r_tail` | 0.2 | **ARBITRARY — §14.25's own "e.g.". NOT corrected, correct value unknown.** Register row | §14.25 |
+| `BULK_TAIL_BUDGET` | 0.05 | **ARBITRARY — §14.25's *"a modest tail-failure budget (e.g. δ_tail = 0.05)"*, an "e.g." PROMOTED TO A `const`. NOT corrected.** Register row | `raptorpath-math/src/lib.rs:124`, consumed `:633` |
+| the Bulk tail target `1e-3` | `CONTRACT_TAIL_LOSS_BASE × ζ_Bulk` = `1e-5 × 100` | **DERIVED — it is a product, not a literal**, and exists as a constant nowhere (`net/mod.rs:805` is the base; the product appears only in test comments at `control/fec_rate.rs:842, :853`) | read |
+| `t_sym` | 96 µs at 100 Mbit | **DERIVED** — `T_pay × 8 / rate`, `T_pay = 1200 B` code-exact | 16.80.9 |
+
+**There is no coefficient in `δ_exit` with no provenance.** `√(2π)` is the
+Gaussian's; every other symbol is measured, derived, or explicitly bracketed.
+**The arbitrary constants in this section are all in the BATTERY's inputs and in
+§14.25's tail budget, never in the law**, and each carries a register row.
+
+#### 16.82.10 Shape check
+
+* **Units.** `r` is a dimensionless wire fraction. `ε̂`, `χ`, `P_fec`, `φ`, `S`
+  are pure; `D_arq` and `d` are both seconds and appear as a ratio. `δ_exit` is
+  therefore dimensionless and directly comparable with `δ`, which is Copa's
+  dimensionless utility weight. **The comparison `δ·χ ≥ δ_exit` is
+  type-correct** — which is precisely what §16.69's `c_FA`-against-delay
+  comparison was not (16.80.11).
+* **Monotone in `ε̂`.** `δ_exit ∝ S/ε̂ ∝ ε̂^{−1/2}` — a lossier channel has a
+  LOWER exit price, so FEC becomes admissible at a cheaper contract. Correct
+  sign, and it is why the estimator's under-reading raises the exit price
+  instead of lowering it (16.82.8).
+* **Monotone in `W`.** `δ_exit ∝ W^{−1/2}`: a wider coding window makes each
+  repair symbol more productive, lowering the price at which it pays. Correct
+  sign. **Over the math layer's own `[16, 512]` clamp this is a factor of 5.7**,
+  and the Bulk verdict survives the whole range while the Auto verdict is
+  already undecided on `d`.
+* **Monotone in `σ²_burst`.** `δ_exit ∝ σ_burst`: burstier loss makes the normal
+  margin more expensive, raising the exit price. Correct sign.
+* **Monotone in `D_arq`.** `δ_exit ∝ 1/D_arq`: a more expensive ARQ round makes
+  avoiding it worth more. Correct sign — and this is the ONLY place the reactive
+  plane's cost enters the proactive price, which is §16.73's consistency
+  condition's whole content, now differentiated instead of equated.
+* **Limits.** `χ → 0` ⇒ the second term vanishes ⇒ `r* = 0` exactly: the endless
+  tunnel, with no case split. `χ → 1, δ → ∞` ⇒ the stationarity condition asks
+  `φ(z_f) → 0` ⇒ `z_f → ∞` ⇒ `r*` rises to the codec ceiling, i.e. the
+  `max_overhead` clamp binds and the law hands over to a declared resource
+  bound. `ε̂ → 0` ⇒ `S → 0` and the second term's own `ε̂` → 0: **both legs
+  vanish together**, `r* = 0`, and the degenerate case degenerates in the right
+  direction — nothing to protect against.
+* **Continuity in the dial.** `δ_exit` contains no δ, no ρ, no `r` and no hint —
+  it is a channel property. `L_pro` is `C¹` in `r` and linear in `δ·χ`. **The
+  only non-smooth operator is the `max(0, ·)` already in the shipped
+  `r_star_mass`, acting on the DECISION VARIABLE.**
+* **Degenerate cases render, they do not vanish.** `W` unreported ⇒ its row
+  renders `-`; `χ` unfed ⇒ `[CHI] max = 0`, which is distinguishable from an
+  ABSENT `[CHI]` line, which is an unreached emission site.
+
+#### 16.82.11 What this supersedes, and what it leaves standing
+
+* **§16.73.4's CORNER → GIVEN A BOUNDARY, AND THE BOUNDARY IS BRACKETED.**
+  §16.73's condition was written with `δ` cancelled; this section reintroduces it
+  on the proactive leg alone and obtains `δ_exit`. **§16.73 is not corrected; it
+  is differentiated.** Its own `δ_pro` corner bound is the same expression at
+  `φ(z_f(0))` instead of `φ(0)`, which is stated as an identity in 16.82.0.
+* **§16.73.3's "`d` CANCELS" → TRUE THERE, FALSE HERE, AND THE DIFFERENCE IS THE
+  DERIVATION'S OWN.** The ambiguity in `d` is created by differentiating one leg
+  and is named in 16.82.1 with the gauge that would settle it.
+* **§14.26's "future work" → NAMED AS THE ONE UNWIRED INPUT, WITH LINE
+  NUMBERS.** §14.26 wrote *"Feeding χ from an application-known transfer size …
+  is future work"*. The consequence for the record is stated here: **every `r*`
+  in it was measured at `χ = 0`**, and the kernel it would have used has been
+  implemented and unit-tested the whole time.
+* **§14.25's tail-burst arithmetic → RE-READ AS `H_object`, AND ITS BUDGET SENT
+  TO THE REGISTER.** The saving/cost shape is §14.25's own; the per-object
+  evaluation is this section's and is labelled as such. **`δ_tail = 0.05` was an
+  "e.g." in §14.25 and is a `const` in `raptorpath-math`; that promotion is
+  recorded as a defect of provenance and the constant is NOT corrected.**
+* **The record's "19–32 ms decodes" → ALREADY WITHDRAWN BY THE RECORD, AND THE
+  WITHDRAWAL IS PROMOTED HERE** to a pre-stated criterion instead of a memory.
+* **STANDING AND UNTOUCHED.** §16.73.3's consistency condition and its α bound;
+  §8.4's closed form; §16.80's entire recovery-clock theorem, which is about `T`
+  and not about `r`; every register row of 16.80.12.
+
+#### 16.82.12 What this section does NOT claim
+
+* **NO CONSTANT IS BLESSED AND NONE IS CORRECTED.** `BULK_TAIL_BUDGET = 0.05`,
+  `r_tail = 0.2`, `σ_arq`'s `4×` and `SRTT/4`, and the `RWM_MIN_R` diagnostic
+  values are arbitrary, UNCORRECTED, and in the register of 16.80.12 with their
+  deciding measurements.
+* **NO MEASUREMENT IS REPORTED.** Not one number here is a measurement of `r` at
+  `r > 0`; the engine has never run there under a pre-registered arm. The tables
+  of 16.82.2 are EVALUATIONS of a derived expression at bracketed inputs, which
+  is a different thing and is labelled as one.
+* **THE AUTO VERDICT IS NOT DECIDED AND THIS SECTION DOES NOT DECIDE IT.**
+  `AUTO-UNDECIDED-ON-d` is the verdict, and inventing a value for `d` to close
+  it would be exactly the move the ruling forbids.
+* **THE BULK VERDICT IS CONDITIONAL ON THE PER-SYMBOL FRAME AND SAYS SO.** It
+  prices one symbol against one ARQ round. `H_object` is the pre-stated rival
+  precisely because an object-scale end effect is invisible to that frame, and
+  this section does not claim to have refuted it.
+* **`W = 64` IS THE SIMULATOR'S WINDOW AND IS NOT THE ENGINE'S.** Both `S` and
+  `δ_exit` carry that gap; §16.73.3's containment argument (`G` minimised at
+  `u = 1`) does NOT transfer, because `δ_exit` is monotone in `W` rather than
+  bounded by it. The `W^{−1/2}` sensitivity is stated in the shape check rather
+  than waved away.
+* **NO ENGINE CHANGE, NO GATE, NO DEFAULT, NO TEST, NO ARM BUILT.** `RWM_DELTA`,
+  `RWM_COMPLETION_EXPOSURE`, `RWM_TAIL_BUDGET` and `[CHI]` are SPECIFIED here and
+  built by no commit in this series. `set_completion_exposure` keeps its
+  `#[allow(dead_code)]` and its single test caller.
+* **NOTHING HERE LICENSES A DEFAULT FLIP.** Even `R-FUNDED-POSITIVE-SMALL-ONLY`
+  would license only a further pre-registered pass: one positive result at one
+  size on one cell is not a law.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
+
+### 16.83 The repair decision from the receiver's seat: `α` stops being a declared budget and becomes `S(ℓ*)`, the §16.77.8a censoring VANISHES on exactly the interval the decision is evaluated over, the two measured regimes fall out of ONE expression with no branch — and at the dual cells the answer is set by `RWM_STORE_GAIN = 2.0`, which ties the repair law to the store-cap law and is stated here as a prediction with its ledger consequence (2026-09-08, `docs/16-81-83-laws`, **DOCS ONLY** — no VM, no benchmark, no new binary, no engine file, no gate, no default, no test, no wire change; §16.80 is the theorem this section instantiates, D0 is its measurement, this section is the law read at the other end)
+
+**THE SECTION IN ONE SENTENCE.** *Every recovery clock this tree has written
+lived at the sender, and the sender cannot observe the quantity the decision
+needs; move the decision to the receiver, which holds the frontier, the
+lateness distribution and the rank, and `α` — 16.80.12's *"largest gap"* —
+stops being a thing to declare and becomes a thing to read.*
+
+**AND THE RULING BINDS EVERY SENTENCE OF IT.** `GAP_ACK_MIN_INTERVAL = 2 ms`,
+`RWM_STORE_GAIN = 2.0`, `κ`, the `(2·srtt).clamp(25, 100)` refresh clamp and
+`NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` are all arbitrary. **Not one of them is
+corrected here.** The KNEE-BOUND finding below is a PREDICTION with a
+pre-stated bind gauge, and a prediction that has not been measured licenses
+nothing.
+
+#### 16.83.0 Verdict first — the request law, with `α` derived
+
+Per detected hole, at lateness `ℓ` (§16.80.2's coordinate, sharpened by
+§16.81.6's stamped ETA where it exists):
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                                                                          │
+   │   ℓ*  =  min{ ℓ ≥ 0 :  w·π0·f(ℓ)  ≤  π1·c_L(ℓ) }   ∧   (H − d)⁺         │
+   │                                                                          │
+   │   c_L(ℓ)  =  P_arq(ρ,r) · [ δ/d  +  (g_CTL·κ/T_pay)·1{ ℓ + d > H } ]    │
+   │                                                                          │
+   │   α_derived  =  S(ℓ*)                                                    │
+   │                                                                          │
+   │   REQUEST  ⇔  ℓ ≥ ℓ*                                                     │
+   │                                                                          │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+*`ℓ*` is the first lateness at which the marginal benefit of continuing to wait
+— the density of a self-heal times what a wasted copy costs — falls below the
+marginal price of the delay that waiting inflicts; the `∧ (H − d)⁺` is
+§16.80's own domain cap, not a second rule.*
+
+**THE FIRST LINE IS 16.80.4's STATIONARITY CONDITION AND NOTHING ELSE.** It is
+reproduced here in the receiver's coordinate rather than re-derived, so that a
+reader can check it is the same object:
+
+```text
+   16.80.4:   w · π0 · f(T*)  =  π1 · P_arq · [ δ/d + (g_CTL·κ/T_pay)·1{T*+d > H} ]
+```
+
+**AND THE INDICATOR NEVER FIRES INSIDE THE DOMAIN, WHICH SIMPLIFIES THE LAW
+EXACTLY.** The domain caps `ℓ` at `(H − d)⁺`, so `ℓ + d ≤ H` throughout and
+`1{ℓ + d > H} = 0` on the whole evaluation interval:
+
+```text
+   c_L(ℓ)  =  P_arq(ρ, r) · δ/d        CONSTANT in ℓ, on [0, ℓ*)
+   ⇒  ℓ*  =  min{ ℓ : f(ℓ) ≤ (π1/π0) · P_arq · δ / (w·d) }  ∧  (H − d)⁺
+```
+
+**⇒ `ℓ*` IS A LEVEL SET OF THE TRUE-HEAL DENSITY AT A HEIGHT THE CONTRACT
+SETS**, and the frontier term enters only through the cap. That is why the
+whole of §16.80's `Φ` machinery collapses to one `min` here: the theorem
+already proved that an interior optimum lies at or below the knee.
+
+**`α` IS NOW DERIVED, AND THAT CLOSES 16.80.12's ITEM (1).** §16.80.1 showed
+every clock in this tree has the form `ℓ ≥ F⁻¹(1 − α)`, i.e. `S(ℓ) ≤ α`. So a
+threshold `ℓ*` and a false-alarm budget `α` are the same object under
+`α = S(ℓ*)`. **16.80.12 named `α` as *"the one thing Lorden's theory needs and
+RFC 8985 already does by hand at 1/16"* and called it the largest remaining
+gap. It is not a quantity to declare beside δ and ρ. It is a quantity to READ
+off the cost ratio the contract already declares.** RFC 8985's `1/16` is then a
+statement about one particular `(π1/π0, δ, d, F)` and has no reason to
+transfer, which is a prediction rather than a criticism.
+
+**NO THRESHOLD ON δ AND NONE ON ρ.** `δ` enters as a multiplier of the cost
+density; `ρ` enters only through `P_arq(ρ, r)`, which multiplies that same cost
+density and no benefit — so lowering ρ lowers the price of waiting and raises
+`ℓ*` continuously, exactly §16.80.5's sign. **The only comparison anywhere is
+`f(ℓ)` against a level, and `ℓ` is the DECISION VARIABLE.**
+
+#### 16.83.1 The receiver-observable form — and why the §16.77.8a censoring vanishes on precisely the evaluation interval
+
+**THE OBJECTION THAT KILLED THE SENDER-SIDE VERSION, RESTATED.** §16.77.8a
+recorded that the estimand `F` — time from report to resolution BY THE
+ORIGINAL — is not observable, because a copy is usually already in flight:
+
+```text
+   §16.77.8a:   Y  =  min( orig_arrival , repair_arrival )   ≤   orig_arrival
+```
+
+plus right-censoring for holes still open when the transfer ends. The
+sender-side estimator's own fixed point was at zero
+(`evals=1175 fed=0 samp_n=0 law_n=0 t_us=- sup=0`) — **the law could not be fed
+by the machine it was meant to govern.**
+
+**UNDER THE REQUEST LAW THAT CENSORING DISAPPEARS, AND NOT BY ASSUMPTION.** If
+the receiver is the sole authority (16.83.4) then no copy is requested before
+`ℓ*`, so no copy is in flight before `ℓ*`, so on `[0, ℓ*)`
+
+```text
+   repair_arrival  >  ℓ*  >  ℓ    ⇒    Y(ℓ) = orig_arrival(ℓ)   for every ℓ < ℓ*
+```
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │   ρ_heal(ℓ)  =  π0 · f(ℓ)   EXACTLY, on [0, ℓ*)                          │
+   │   — the interval the decision is evaluated over, and no other.           │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**The censoring §16.77.8a documented is real everywhere EXCEPT on the one
+interval this law reads.** That is not a coincidence: the interval is defined
+as "before we send anything", and the censoring is caused by sending something.
+**The law's own domain is its own identifiability condition** — which is the
+structural reason the receiver's seat works and the sender's did not, and it is
+stated as a derivation rather than as a hope.
+
+**`π1` IS BOUNDED BY AN OBSERVABLE, AND THE BIAS IS TOWARD THE SHIPPED
+MACHINE.** The receiver cannot label a hole "genuine loss" without waiting
+forever, but it can observe `S_tot(ℓ)`, the fraction of holes unresolved by
+lateness `ℓ` **by any means**. Every genuine loss is unresolved at `ℓ*`, and so
+are the late self-healers, so
+
+```text
+   π1  ≤  S_tot(ℓ*)          observable, and an OVER-estimate of the cost side
+   ⇒   ℓ*_recv  ≤  ℓ*
+```
+
+**Substituting the bound makes waiting look more expensive than it is, so the
+receiver's threshold is never later than the true optimum. The error is
+conservative in the direction of the machine that ships today** (which requests
+at ~2 ms), and the sign is stated rather than assumed.
+
+**`H` IS OBSERVED DIRECTLY, AND IT IS NOT INFERRED FROM `gain`.** `H` is the
+seconds of frozen frontier the send store absorbs before the sender must stall.
+At the receiver that is a directly visible event: during a frontier freeze,
+arrivals continue until the store cap binds and then stop. **The delay between
+the freeze and the onset of the arrival stall IS `H`** — read as `[WIDLE]`, an
+idle-onset gauge on the receive path. So the derived `H = (gain − 1)·RTprop`
+and the observed `H` are two independent routes to the same number, exactly as
+16.80.3a's fitted `H − d = +8 ms` at `R² = 0.992` was independent of the
+`RWM_STORE_GAIN` reading it agreed with to 11 %.
+
+#### 16.83.2 The two measured regimes fall out of ONE expression, with no branch
+
+D0 measured that `π0` is **0.0077 / 0.0054** at the single-path cells and
+**0.9606 / 0.9233** at the duals — *"two mechanisms averaged"*, and it forbade
+pooling them. **A law that needs two rules for those two regimes has a mode
+switch in it. This one needs none: both are limits of the same expression.**
+
+**`π0 → 0` (the single-path cells).** The benefit density `w·π0·f(ℓ)` → 0 for
+every `ℓ`, while the cost density stays at `π1·P_arq·δ/d` → `P_arq·δ/d`. The
+inequality holds at `ℓ = 0`, so
+
+```text
+   π0 → 0   ⇒   ℓ*  =  0   ⇒   REQUEST IMMEDIATELY  =  the shipped machine
+```
+
+**The corner is not an approximation of the law; it IS the law at those
+inputs** — 16.80.4a's degeneracy read as a decision rule. And it is the correct
+answer there for the reason D0 gives: at `c1`, `heal_noretx = 0 of 1 293` and
+99.23 % of holes are closed by the sender's own copy. **There is nothing to wait
+for, so the law says do not wait.**
+
+**`π0 → 1` (the dual cells).** `π1 → 0`, so the cost density → 0 and the
+inequality `f(ℓ) ≤ (π1/π0)·P_arq·δ/(w·d)` has no solution at any finite `ℓ`
+where `f > 0`. The `min` over an empty set is `+∞`, and the `∧` takes over:
+
+```text
+   π0 → 1   ⇒   ℓ*  =  (H − d)⁺   —   THE KNEE BINDS
+```
+
+```text
+   at c7:   H = (gain−1)·RTprop = 8.000 ms ,  d = 0.777 ms  ⇒  ℓ* = 7.223 ms
+   at c8:   H ∈ [8, 60] ms (rate-weighted) , d = 3.298 ms   ⇒  ℓ* ∈ [4.70, 56.70] ms
+```
+
+**⇒ THE KNEE-BOUND FINDING, STATED AS A PREDICTION AND NOT AS A RESULT.**
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │  IF the bind gauge confirms `knee_bind ≈ 1` at the dual cells, THEN the   │
+   │  request lateness is not set by the lateness distribution at all.  It is  │
+   │  set by the store's free headroom — i.e. by RWM_STORE_GAIN = 2.0, which   │
+   │  is UNPROVENANCED.                                                       │
+   │                                                                          │
+   │  THE REPAIR LAW WOULD THEN BE THE STORE-CAP LAW, WEARING A CLOCK.         │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+**THE LEDGER CONSEQUENCE IS STATED IN ADVANCE, BECAUSE IT IS UNCOMFORTABLE.**
+`KNEE-BOUND` is a legal verdict of the receiver-law battery, and if it fires
+then (a) every number this section computes at `c7`/`c8` inherits `gain = 2.0`'s
+absent provenance, (b) `RWM_STORE_GAIN` moves from "an owed contrast for `H`"
+(16.80.12's item 3) to the deciding measurement of TWO laws rather than one,
+and (c) tuning the request clock without touching the store cap is provably
+inert at those cells. **None of that is a reason to prefer a different law; it
+is a reason to say so before the measurement rather than after.** The gauge is
+one field — the fraction of decisions at which the `∧` took the cap.
+
+**AND TODAY'S MACHINE IS THE `α ≈ 1` CORNER, WHICH IS NOT A CRITICISM BUT A
+LOCATION.** The shipped trigger is `GAP_ACK_MIN_INTERVAL = 2 ms`
+(`net/mod.rs:217`) — a rate limit that doubles as the hole SAMPLER, which
+16.80.12 already records. Reading it through `α = S(ℓ*)`:
+
+```text
+   ℓ* = 0        ⇒   α = S(0) = 1        an SPRT with a false-alarm budget of ONE
+   ℓ* = 2 ms     ⇒   α = S(2 ms) ≈ 0.9   at c7, whose true-heal p50 is 12.8 ms
+```
+
+**A test whose false-alarm budget is 1 is not a test; it is an unconditional
+action.** That is the exactly correct thing to do at `c1` and `sc2` (`π0 ≈
+0.006`) and it is what the machine does at `c7` and `c8` as well, where `π0` is
+0.92–0.96. **The defect is not the 2 ms. It is that one corner is applied at
+both regimes, and the law above reaches both from one expression.**
+
+#### 16.83.3 The vocabulary as ONE expression — and the copy is its `m = 1` limit
+
+S3's proposition is that the arbitrary constants proxy a missing MESSAGE. The
+shipped vocabulary is "seq `s` is missing", answered by a copy of `s`. The
+generalisation is one message with three fields:
+
+```text
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │   REQUEST  =  ( a ,  m ,  k )                                            │
+   │                                                                          │
+   │   a  =  the span anchor (first missing seq)                              │
+   │   m  =  clamp( ⌈ k_½(π̂0) ⌉ , 1 , A* ) ,   k_½ = ln 2 / (−ln π0)         │
+   │   k  =  holes − pivots         the RANK DEFICIT over [a, a+m)            │
+   └──────────────────────────────────────────────────────────────────────────┘
+```
+
+`k_½` is 16.80.6(b)'s own half-cost span — *"the span at which `c_FA` halves"* —
+and it is measured, not chosen:
+
+| cell | `π0` (D0) | `k_½` | `m = clamp(⌈k_½⌉, 1, A*)` |
+|---|---|---|---|
+| `c1` | 0.0077 | **0.142** | **1** — the copy, exactly |
+| `sc2` | 0.0054 | **0.133** | **1** — the copy, exactly |
+| `c7` | 0.9606 | 17.2 | 18 |
+| `c8` | 0.9233 | 8.7 | 9 |
+
+```text
+   π0 → 0   ⇒   k_½ < 1   ⇒   m = 1   ⇒   REQUEST = (s, 1, 1)  =  "resend seq s"
+```
+
+**⇒ THE SHIPPED PER-SEQ COPY IS NOT REPLACED; IT IS THE `m = 1` LIMIT OF THE
+NEW MESSAGE, REACHED AT THE INPUTS THE SINGLE-PATH CELLS ACTUALLY HAVE.** The
+`clamp`'s lower bound is not a floor imposed on the law — the law arrives there
+by itself, and the clamp only prevents `⌈0.142⌉ = 1` from being written as `0`.
+**And 16.80.6(b) already warned what a larger `m` would do there: with `π0 ≈
+0.006` essentially every repair is NEEDED, so one parity symbol against `m`
+genuine unknowns UNDER-PROVIDES rank and loses data the copy recovers.** The
+law and the warning agree without being made to.
+
+**`k` IS THE FIELD THAT MAKES THE FALSE REPAIR INEXPRESSIBLE.** With a rank
+deficit the receiver does not ask for a named symbol; it asks for `k` more
+independent equations over `[a, a+m)`. **There is no such thing as a spurious
+answer to that request** — an equation that arrives when the deficit is already
+closed is redundant, not false, and the distinction is measurable
+(`rep_redundant = repairs_fed − repairs_useful`, 16.83.6). `frontier_probe`
+(`fec/window_traits.rs:172`) and `rank_in` (`:154`) already compute both halves
+and **nothing reads them**; `deficit_span = holes − pivots` is available today.
+
+**THE SOUNDNESS PRECONDITION, STATED BEFORE THE MESSAGE IS DESIGNED.** A
+span-keyed request may only be answered by a span-keyed encoder:
+`generate_repair_range(a, m)` (`fec/window_traits.rs:67`) *"refuses to emit
+unless the whole `[start, start+count)` range is still retained"*. Beyond the
+retained window the answer falls back to a per-seq copy out of `sent_store`
+(`net/emit_source.rs:108`), and **the `Some`/`None` split must be counted (`WA1`)
+rather than assumed**, because a request law whose answers silently degrade to
+copies is the shipped machine with extra latency. **Partial progress is
+invisible to the frontier until the span's last equation lands**, and that cost
+is measured (`[RANK] pivots` dwell), not assumed away.
+
+#### 16.83.4 Four emitters, one authority — and the one-line collision seam
+
+**FOUR INDEPENDENT MECHANISMS CAN EMIT A COPY FOR THE SAME HOLE**, and until D0
+nobody knew what each contributed:
+
+| emitter | site | D0's measurement |
+|---|---|---|
+| the gap-fire loop | `net/mod.rs` gap loop, fed by `recv_nack_tx` (`:3601-3608`) | the dominant source: `retx` 2 425–15 791 per cell |
+| the `p_lost` taper copy | `net/emit_source.rs:809-821` | **ZERO at 4 of 4 cells and on both L0 loopback topologies** (D0 §8) |
+| the tail sweep / refresh | `hole_nack_refresh`, `(2·srtt).clamp(25, 100)` | in the register, uncorrected |
+| a rank arm | not shipped | — |
+
+**⇒ REALIZED WASTE HAS TWO SOURCES, NOT THREE, AND THAT IS MEASURED RATHER THAN
+ASSUMED** — but *why* the taper never fires is undecided and its register row
+keeps its status. Under the request law **the receiver's report becomes the
+single authority**, and the other two survive only as OUT-OF-DOMAIN backstops:
+the taper for the regime where no report can arrive at all, the tail sweep for
+the end of stream where §14.25's serial-recovery cost model applies and this
+section's does not.
+
+**THE COLLISION SEAM IS ONE LINE AND ITS JUSTIFICATION IS ALREADY IN THE
+CODE.** The per-seq gap producer is armed by
+`recv_nack_tx` (`net/mod.rs:3601-3608`) on `window_mode && !window_generation`
+alone; suppressing it when the request law is armed is a single `&&`. **`sack_tx`
+is NOT touched, and the reason is written at `net/mod.rs:3609-3616`**: SACK
+drives store SLOT RELEASE and never recoverability, pruning `sent_store` on SACK
+was *"refuted structurally UNSAFE"* on 2026-07-07 (C7/C8 in-order DNF), and the
+safe realization is ADR-0060's release. **A request law that touched `sack_tx`
+would be re-running a refuted experiment, and that is recorded here so it is not
+rediscovered.**
+
+**AND THE COMPOSITION DEFECT 16.80.8 FOUND STILL STANDS AND IS NOT FIXED HERE.**
+On the `ρ < 1` EVICT seat `recv_nack_tx` keys on nothing about `reliable`, so
+the receiver requests repairs it has already licensed itself to discard, and
+`T* = 0` there makes every such repair structurally late. **The request law
+would give that seat a `ρ`-aware `ℓ*` for free** — `P_arq(ρ, r)` is already in
+`c_L` — but plumbing ρ is an architecture change reserved to the project owner,
+and this section proposes nothing on that seat beyond naming that the same
+expression covers it.
+
+#### 16.83.5 The S5 loop — specified, its stability derived, and NOT licensed
+
+If `[LATE]` shows `ℓ*` drifting within a run, a fixed threshold is the wrong
+object and the law is a controller:
+
+```text
+   ℓ_{k+1}  =  ℓ_k  +  G · ( φ̂_k − φ* )
+```
+
+`φ̂_k` is the realized false fraction over update window `k`, `φ*` the target
+derived from the same cost ratio (`φ* = α_derived`, 16.83.0 — **no new
+constant**). Linearising about the fixed point, the closed loop has gain
+`1 − G·φ′(ℓ*)` with `φ′ = dφ/dℓ < 0`, so
+
+```text
+   STABLE  ⇔  0 < G·|φ′| < 2 ,   settling ≈ 3/|ln(1 − G·|φ′|)| update windows
+```
+
+**THE SETTLING ARITHMETIC AT `c7`, FROM D0's OWN COUNTERS.** D0 fed 237 406
+holes at `c7` over 3 reps; the cell runs 200 MB at a median 150.2 Mbit/s, i.e.
+10.65 s per rep and 31.96 s in total:
+
+```text
+   fed/s  =  237 406 / 31.96  =  7 429 holes per second
+   20 RTT  at RTprop = 8 ms   =  160 ms   ⇒   ≈ 1 189 holes inside the settling time
+```
+
+**⇒ THE LOOP HAS ~1 200 SAMPLES BEFORE IT IS EXPECTED TO SETTLE, WHICH IS WHY
+`c7` IS THE ONLY CELL WHERE A LOOP IS EVEN ARGUABLE.** At `c1` the same 20 RTT
+is 40 ms and D0 fed 1 293 holes over three 400 MB reps — **the loop would settle
+after the transfer ended.**
+
+**THREE CONSTRAINTS, EACH STATED BEFORE ANY IMPLEMENTATION.** (1) The loop is
+fed **ONLY by the receiver's own realized class**, never by the sender's `[RFA]
+fa=` — the sender cannot tell a late original from its own retransmit, which is
+the whole of D0's finding, and feeding a controller with a biased estimate makes
+the bias a fixed point. (2) **There is no gradient at the single-path cells**:
+`ℓ* = 0` is a corner, `φ̂` is pinned at the corner value, and a controller at a
+corner integrates noise. (3) **The loop is NOT LICENSED until `[LATE]` shows
+`ℓ*` is nonstationary.** A controller for a constant is strictly worse than the
+constant, and specifying one before the stationarity question is answered would
+be the same error as tuning a clock before measuring its measurand.
+
+#### 16.83.6 The instruments this section owes, and the arms — pre-stated, not licensed
+
+**`[LATE]` (`net/late.rs`)** — per hole: the lateness bracket `[hi_at, now]`
+(one new field on `SuccGauge`), the resolution class, same/cross path, the
+hypothetical `ℓ*_recv` computed from the running `ρ_heal` / `S_tot` / `d` /
+observed knee, and the two bind fractions `knee_bind` (the `∧` took the cap) and
+`sampler_bind` (the 2 ms sampler, not the law, set the report time).
+**`[RANK]`** — `frontier_probe` re-read as `(holes, pivots, deficit,
+tail_overcount)` per report cadence. **`rep_redundant = repairs_fed −
+repairs_useful`** added to `[RFA]` — the false measurand under coded answers.
+Reachability: `tests/late_rank_reachability.rs`, failing on the old engine,
+`lstar_us = 0` and `knee_bind = 0` at `N = 1`, both `> 0` at a dual.
+
+**THE ARMS, WITH THEIR PREDICTIONS AND REFUTERS.**
+
+**(A) `RWM_RECV_REQUEST_LAW` — the timing lever alone, `m ≡ 1`.** The deadline
+becomes `min(refresh, earliest Â + ℓ*)`; absent ⇒ shipped, byte-identical.
+**Prediction: at the duals the realized false fraction falls by a factor
+`1/(1 − F(ℓ*))` — `c7 ∈ [1.03, 2)`, `c8 ∈ [2, 10]` — with goodput inside the
+`CTL` spread**, and `knee_bind ≈ 1` at `c7`. **This is the first experiment in
+this programme positioned INSIDE the admissible domain**: every realized wait
+the tree has ever measured was ≥ 25.6 ms against a `c7` domain cap of 7.22 ms
+(16.80.4). **Refuter: the false fraction does not move, or `sampler_bind ≈ 1`
+(the 2 ms sampler, not the law, is setting the time), or goodput leaves the
+`CTL` spread.**
+
+**(B) `RWM_RANK_FEEDBACK` — the same message at derived `m`.** `dup_src → 0`
+BY CONSTRUCTION, so it is a witness of wiring and not a result. **Witnesses:
+`rep_redundant` and the `[RFA]` class migration; the frontier-invisibility cost
+measured as `[RANK] pivots` dwell and `ΔT ≈ F⁻¹(1 − 1/m)`** — 16.80.6(b)'s own
+decode delay, which is the price the parity answer pays back to the frontier.
+**Refuter: `rep_redundant` rises without the false fraction falling, or the
+`WA1` `None` count shows the answers are degrading to copies anyway.**
+
+**(C) the S5 loop — specified in 16.83.5, NOT licensed.**
+
+**CELLS AND SCORING.** A and B at `c7` and `c8`; **`c1` and `sc2` are
+MUST-NOT-MOVE controls** with `lstar_us = 0` and `knee_bind = 0` pre-declared,
+and a control that moves VOIDS the run. `n = 3` per arm, two seeds. **`ΔU` is a
+GUARD, not a score** — the `n` for a scored `ΔU` at these cells is infeasible
+(559 / 196 reps), and saying so in advance is what stops an underpowered
+throughput leg from being quoted as a win. **The scored dimensions are the
+realized false fraction (a binomial on ~80 k holes per rep, which is powered)
+and worst-leg delivered latency.**
+
+**LEGAL OUTCOMES: the goal-gate levers set, plus `KNEE-BOUND`.** No verdict
+outside that set may be recorded.
+
+#### 16.83.7 Per-symbol provenance
+
+| symbol | value / form | class | source |
+|---|---|---|---|
+| `ℓ` | lateness, §16.80.2's coordinate | **MEASURED** at batch resolution; sharpened by §16.81.6's stamped ETA where that exists | 16.80.2 |
+| `f`, `F`, `S` | the true-heal lateness density / CDF / survival | **MEASURED** — D0 §9, per cell, **never pooled**. `F` p50 12.8 ms (`c7`), 8.2 ms (`c8`); **there is no `F` at `c1` (`heal_noretx` = 0 of 1 293)** | D0 §9 |
+| `π0` | 0.0077 / 0.0054 / 0.9606 / 0.9233 | **MEASURED, per cell.** An UPPER bound at every cell — D0's `srtt/2` classifier biases it up, and that classifier is itself in the register | D0 §9 |
+| `π1` | `1 − π0`; bounded at the receiver by the observable `S_tot(ℓ*)` | **MEASURED at the sender; BOUNDED at the receiver**, with the bias direction derived (16.83.1) | D0 §4 |
+| `w` | `1 + h/T_pay` = 1.011667 | **CODE-EXACT** — `h = 14 B` (`fec/generation.rs:44`), `T_pay = 1200 B` (`net/mod.rs:161`) | 16.80.9 |
+| `δ` | 50 / 0.5 / 0.005, as `COPA_DELTA/ζ(hint)` | **DECLARED** — the contract's price, §16.81's ONE surface | `scheduler/mod.rs:47`, `:129-135` |
+| `d` | repair delivery delay: 1.048 / 4.370 / 0.777 / 3.298 ms | **MEASURED** — `[FDIAG]`. **Note §16.82.1: `d` in a Copa price is not necessarily this `d`, and where the two readings differ the section says so** | 16.80.4 |
+| `P_arq(ρ,r)` | `1 − (1−ρ)/(ε̂(1−P_fec(r)))` | **DERIVED** — §16.74.2; `= 1` on every shipped seat (ρ = 1) | §16.74.2 |
+| `H` | `(gain−1)·RTprop`; **also directly observable as the arrival-stall onset** | **DERIVED from a law whose `gain` is UNPROVENANCED — and now with an independent receiver-side route** | 16.80.3; `[WIDLE]` |
+| **`gain`** | `RWM_STORE_GAIN = 2.0` | **ARBITRARY — NOT corrected.** Already in the register. **If `knee_bind ≈ 1` it becomes the deciding input of THIS law too** | `gates.rs:1055-1057` |
+| `κ`, `g_CTL`, `T_pay` | 16.80.3's frontier constants | **`κ` is a FIT and enters only through the indicator, which never fires inside the domain** — so this law does not inherit `κ`'s error | 16.80.3a |
+| `α_derived` | `S(ℓ*)` | **DERIVED — this section's principal claim: `α` is read, not declared.** RFC 8985's `1/16` is one instance of it, not a transferable value | 16.80.1 |
+| `k_½` | `ln 2 / (−ln π0)`: 0.142 / 0.133 / 17.2 / 8.7 | **DERIVED on measured `π0`** — no free constant | 16.80.6(b) |
+| `A*` | the retained trailing span | **DECLARED RESOURCE BOUND** — `generate_repair_range` refuses beyond it, and the refusal is counted (`WA1`), not assumed | `fec/window_traits.rs:67` |
+| `k` | `holes − pivots` | **MEASURED, ALREADY COMPUTED, READ BY NOTHING** | `fec/window_traits.rs:154`, `:172` |
+| **`GAP_ACK_MIN_INTERVAL = 2 ms`** | today's trigger | **ARBITRARY — NOT corrected.** It is the `α ≈ 1` corner AND the hole sampler, so it manufactures part of the denominator every fraction here divides by. Its loopback floor is **0** (D0 A0.1) | `net/mod.rs:217` |
+| `G`, `φ*` | the S5 loop's gain and target | `φ* = α_derived` — **no new constant**; `G` is **DECLARED**, bounded by the derived stability interval, and **not licensed** | 16.83.5 |
+| `fed/s = 7 429` | `c7` | **DERIVED from D0's own counters** — 237 406 / (3 × 10.65 s), the rep duration from 200 MB at the measured 150.2 Mbit/s | D0 §3, §4 |
+
+**There is no coefficient in the request law with no provenance, and there is
+no threshold on δ or ρ anywhere in it.** The one comparison is `f(ℓ)` against a
+level; the one `min`/`∧` is the theorem's own domain cap; the one indicator is
+on `ℓ`.
+
+#### 16.83.8 Shape check
+
+* **Units.** `f` is per second; `π1·P_arq·δ/(w·d)` is `1/second` because `δ`,
+  `π`, `P_arq` and `w` are pure and `d` is seconds. **Both sides of the defining
+  inequality are densities in the same units**, which §16.69's `c_FA`-against-a-
+  delay comparison was not (16.80.11's category-error finding).
+* **Monotone in `π0`.** The threshold `(π1/π0)·P_arq·δ/(w·d)` falls as `π0`
+  rises, so `ℓ*` rises: **the more likely a hole is to heal itself, the longer
+  you wait.** Correct sign, and it is the whole content of the two regimes.
+* **Monotone in `δ`.** `ℓ*` falls as `δ` rises: **a latency-priced contract
+  waits less.** Correct sign, and continuous — Realtime does not get a different
+  rule, it gets a smaller number.
+* **Monotone in `ρ`.** `P_arq` falls as ρ falls, so the cost density falls and
+  `ℓ*` rises — §16.80.5's derivative sign, unchanged. **ρ composes; it never
+  selects.**
+* **Limits.** `π0 → 0 ⇒ ℓ* = 0` (request now). `π0 → 1 ⇒ ℓ* = (H−d)⁺` (the knee).
+  `H ≤ d ⇒ ℓ* = 0` — §16.80.0's corner clause (iii), recovered exactly.
+  `δ → 0 ⇒` the threshold → 0 ⇒ `ℓ*` → the domain cap: **a Bulk contract waits
+  the whole headroom and no longer.** `f ≡ 0` (no true-heal population, `c1`)
+  ⇒ the inequality holds at `ℓ = 0` ⇒ `ℓ* = 0`, which is the right answer and
+  not a division by zero.
+* **Continuity.** `ℓ*` is continuous in `π0`, `δ`, `ρ` and `H` wherever `f` is
+  continuous and strictly decreasing; at the knee it is continuous because `∧`
+  is. **The only discontinuity a level-set threshold can have is where `f` is
+  flat over an interval**, and there `ℓ*` jumps to the interval's far end — a
+  property of the measured distribution, not of the law, and it is exactly what
+  `[LATE]`'s histogram would expose.
+* **Degenerate cases render.** `ℓ*` undefined for want of samples renders `-`,
+  never `0` — the two are different states and the `n` column distinguishes
+  them, as §16.75.8 requires of every gauge in this tree.
+
+#### 16.83.9 What this supersedes, and what it leaves standing
+
+* **16.80.12's ITEM (1) — `α` AS THE LARGEST GAP → DISSOLVED, NOT FILLED.** The
+  register asked for `α` *"DECLARED as a contract quantity beside δ and ρ."*
+  **`α = S(ℓ*)` says it should not be declared at all**: it is a function of the
+  cost ratio the contract already declares and of a distribution the receiver
+  already observes. **A fourth dial would have been a fourth thing to get
+  wrong.**
+* **§16.77.8a's CENSORING → SHOWN TO VANISH ON THE EVALUATION INTERVAL, AND
+  NOWHERE ELSE.** §16.77.8a is not corrected; its estimator's zero fixed point
+  stands as measured. What changes is that the receiver's seat evaluates the
+  density on precisely the interval where no copy has flown, and the section
+  derives that rather than assuming it.
+* **§16.80.1's SPRT → GIVEN ITS THRESHOLD.** §16.80.1 showed every clock is one
+  one-sided test at `ℓ ≥ F⁻¹(1−α)` and left `α` open. This closes it from the
+  loss function instead of from a table.
+* **§16.80.4a's SINGLE-PATH COROLLARY → RE-READ AS A DECISION RULE.** The
+  corollary showed `T* = 0` at `π0 → 0`. Here that is the law's own `m = 1`,
+  `ℓ* = 0` limit, so the corollary and the general law are one object.
+* **16.80.6(b)'s m-LAW → GIVEN ITS MESSAGE.** The parity answer's `k_½` becomes
+  the `m` field of a request, and its warning about under-providing rank at
+  `π0 ≈ 0.006` becomes the law's own `m = 1` limit at those cells.
+* **THE FOUR-EMITTER RACE → REDUCED TO ONE AUTHORITY AND TWO BACKSTOPS**, with
+  D0's measurement that the taper contributes zero, and with the `sack_tx`
+  seam explicitly NOT touched on ADR-0060's grounds.
+* **STANDING AND UNTOUCHED.** §16.80's theorem, domain and value bound —
+  **including its bound that waiting is worth < 1.54 % at `c7` and < 1.88…3.39 %
+  at `c8`, which caps everything this section could win.** D0's measured `π0`,
+  `F` and closure classes. Every register row of 16.80.12. §16.77's hold-down
+  family, whose `q` is this section's `1 − α`.
+
+#### 16.83.10 What this section does NOT claim
+
+* **NO CONSTANT IS CORRECTED.** `GAP_ACK_MIN_INTERVAL = 2 ms`, the
+  `(2·srtt).clamp(25, 100)` refresh clamp, `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms`,
+  `RWM_STORE_GAIN = 2.0`, `κ`, D0's own `srtt/2` classifier — every one keeps its
+  value and its register row. **`α` is derived; nothing else is.**
+* **THE PRIZE IS BOUNDED AND SMALL AND THIS SECTION DOES NOT PRETEND
+  OTHERWISE.** §16.80's value bound caps the whole of what a better threshold
+  can win at **< 1.54 % of transfer at `c7`** and **< 1.88…3.39 % at `c8`**, and
+  at ~0 at the single-path cells. **A derived `α` does not raise that ceiling.**
+* **`KNEE-BOUND` IS A PREDICTION, NOT A FINDING.** `knee_bind` has never been
+  measured; the gauge does not exist. If it fires, the consequence is stated in
+  16.83.2 and it is a consequence about PROVENANCE, not about performance.
+* **THE CENSORING ARGUMENT ASSUMES THE SINGLE AUTHORITY IT PROPOSES.** If any of
+  the other three emitters fires inside `[0, ℓ*)`, `ρ_heal` is censored again and
+  the estimate is biased in §16.77.8a's own direction. **The argument is
+  therefore conditional on the collision seam actually closing, which is what
+  `[RFA]`'s class migration measures.**
+* **`π1 ≤ S_tot(ℓ*)` IS A BOUND AND THE LAW INHERITS ITS SLACK.** `ℓ*_recv ≤ ℓ*`
+  is conservative, but "conservative" here means "closer to the machine that
+  ships", so **an arm that fails to move is not evidence that the law is wrong.**
+  That is pre-stated so it cannot be argued afterwards.
+* **NOTHING IS MEASURED HERE.** `[LATE]`, `[RANK]`, `[WIDLE]`, `rep_redundant`
+  and `knee_bind` do not exist. Every per-cell number in this section is either
+  D0's, already committed, or an evaluation of a derived expression at D0's
+  inputs.
+* **NO ENGINE CHANGE, NO GATE, NO DEFAULT, NO TEST, NO WIRE FIELD, NO MESSAGE.**
+  `RepairRequest`, `RWM_RECV_REQUEST_LAW`, `RWM_RANK_FEEDBACK` and the wire
+  version they need are SPECIFIED here and built by no commit in this series.
+  **The S5 loop is specified and explicitly NOT licensed.**
+* **ρ IS STILL NOT A DIAL.** `P_arq(ρ, r)` sits in the law and ρ is a
+  compile-time `1.0` with no surface. **The law covers the EVICT seat and this
+  section does not plumb it**, because that is an architecture change reserved to
+  the project owner, and 16.80.8's warning that `shed_armed`'s `!reliable` is a
+  STEP on the ρ axis stands unaddressed.
+
+**Nothing in this section flips a default, adds a gate, edits an engine crate,
+wires a consumer, touches a clock, or scores any clause of any
+pre-registration.**
 
 ## 17. The Measured Regime Map (2026-07-19)
 
