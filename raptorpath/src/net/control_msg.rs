@@ -68,7 +68,7 @@ pub(crate) struct ControlCtx<'a> {
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
     /// tag so the sender's `[FCAUSE]` gauge can say WHICH receiver arm
     /// caused each fire. Label only — no arm branches on it.
-    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, Vec<(u64, u64)>)>>,
+    pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
     /// P8: Some(..) in block mode — Ack diffs drive repair sends.
     pub block_arq: Option<&'a Arc<parking_lot::Mutex<BlockArq>>>,
     pub batch_counter: Option<&'a Arc<AtomicU64>>,
@@ -859,7 +859,11 @@ fn on_window_ack(
                 } else {
                     super::FireCause::GapData
                 };
-                let _ = tx.try_send((cause, gaps));
+                // A0.2: `path_id` — the path THIS ack arrived on — rides with
+                // the batch so the sender can say whether a hole was
+                // resolved by a report from the path its original flew
+                // on or from another. A label, like `cause`.
+                let _ = tx.try_send((cause, path_id, gaps));
             }
         }
     }

@@ -1425,9 +1425,10 @@ pub(crate) struct HoldDownGauge {
     /// `false` unconditionally when `q` is absent, so the control's wire
     /// behaviour is the shipped machine's, byte for byte.
     n_obs: usize,
-    /// seq → (first time this hole was REPORTED to us, the path its original
-    /// flew on). `BTreeMap` because retirement is a frontier range, which a
-    /// hash map cannot do without scanning the whole map on every ack.
+    /// seq → the hole's record: first report time, the path its original flew
+    /// on, and (A0.2) the retransmit this sender emitted for it if any.
+    /// `BTreeMap` because retirement is a frontier range, which a hash map
+    /// cannot do without scanning the whole map on every ack.
     ///
     /// **The origin is the sender's own first report and not the receiver's
     /// detection.** `[SUCC]` times from detection at the receiver; these two
@@ -1435,7 +1436,7 @@ pub(crate) struct HoldDownGauge {
     /// cadence, and §16.77.8 states the divergence in advance. It is why the
     /// estimator is ONLINE and self-measuring rather than seeded from
     /// `[SUCC]`'s published quantiles.
-    first: std::collections::BTreeMap<u64, (u64, u32)>,
+    first: std::collections::BTreeMap<u64, HoleRec>,
     /// Per path: the freshest `N(1−q)` observed hole-resolution-by-original
     /// times, µs, plain FIFO in arrival order. Capped AT `N`, so the ring is
     /// exactly the window the law reads and `make_contiguous` hands the law
@@ -1467,11 +1468,68 @@ pub(crate) struct HoldDownGauge {
     /// `[SUCC]` reports its own quantiles from, so the two are comparable
     /// without a unit argument.
     hd: std::collections::HashMap<u32, crate::net::succ::Hist>,
+    /// **A0.2 — THE CLOSURE-CLASS SPLIT, per ORIGINAL path.**
+    /// `[heal_noretx, heal_retx_young, closed_retx]`, and their sum is
+    /// `fed` on that path by construction: exactly the resolutions this
+    /// gauge feeds are the resolutions it classifies, so the audit's identity
+    /// closes against a number the pre-A0.2 line already printed.
+    ///
+    /// * `heal_noretx` — resolved and NO retransmit was ever emitted for this
+    ///   hole. The TRUE self-heal class: the original arrived on its own.
+    /// * `heal_retx_young` — a retransmit WAS emitted, but the resolution came
+    ///   sooner than `srtt/2` on the retransmit's own path after it. The
+    ///   retransmit cannot plausibly have caused the fill; the original did,
+    ///   and the copy was spurious.
+    /// * `closed_retx` — the resolution came at or after `srtt/2` past the
+    ///   retransmit. ATTRIBUTED to the retransmit.
+    ///
+    /// The `srtt/2` split is the SAME half-RTT the legacy age gate uses; it is
+    /// a CLASSIFIER and not a law, it gates nothing, and its arbitrariness is
+    /// disclosed rather than blessed — see the audit's open-constants note.
+    cls: std::collections::HashMap<u32, [u64; 3]>,
+    /// Per original path, per class: the resolution-time distribution. The
+    /// TRUE-heal CDF `F` the theory needs is `clsh[0]` (and `clsh[1]`), which
+    /// is why the classes carry their own histograms rather than one pooled.
+    clsh: std::collections::HashMap<u32, [crate::net::succ::Hist; 3]>,
+    /// Per original path: `[same_path, cross_path, unattributed]` — did the
+    /// gap report whose absence resolved the hole arrive on the SAME path the
+    /// original flew? The third slot is the SENDER'S OWN TAIL SWEEP, which
+    /// carries no ack and therefore no arrival path (`u32::MAX`); it is
+    /// counted separately rather than charged to `cross`, so the three sum to
+    /// the same denominator as `cls` and `xp_frac` is read on the reports
+    /// only. `[FCAUSE]` measured that producer at 0.59 % of fires.
+    xps: std::collections::HashMap<u32, [u64; 3]>,
+    /// **THE RECOV_MP RIPENESS QUESTION.** Per original path:
+    /// (age of the seq's LIVE FLIGHT at its FIRST report, the `9/8·max(srtt,
+    /// ewma)` threshold that would have judged it, how many were already at or
+    /// above it). A hole that is already "ripe" the first time the receiver
+    /// mentions it is a hole the RFC 9002 time threshold cannot suppress —
+    /// because the age it measures INCLUDES the sender's own queue dwell.
+    age: std::collections::HashMap<
+        u32,
+        (crate::net::succ::Hist, crate::net::succ::Hist, u64),
+    >,
     /// Whether generation coding was in force. Under it the SACK→gap producer
     /// is suppressed, so the gap-report path this arm acts on is structurally
     /// empty; the line says which machine it measured, the same contract
     /// `[FCAUSE]` carries.
     gen: bool,
+}
+
+/// **A0.2 — one stamped hole.** Read-only bookkeeping: no field of this record
+/// is consulted by any decision site, and `should_hold` reads only `t0_us` and
+/// `orig_path`, exactly as it read the tuple this replaces.
+#[derive(Clone, Copy)]
+pub(crate) struct HoleRec {
+    /// The FIRST time the receiver reported this hole to us, µs.
+    t0_us: u64,
+    /// The path the hole's ORIGINAL flew on.
+    orig_path: u32,
+    /// `(emission time µs, path)` of the FIRST retransmit this sender emitted
+    /// for the hole. A re-fire after the cooldown does not restart it: the
+    /// question is whether a copy was ever put on the wire, and when the first
+    /// one was.
+    retx: Option<(u64, u32)>,
 }
 
 impl HoldDownGauge {
@@ -1482,6 +1540,10 @@ impl HoldDownGauge {
             n_req: q.and_then(holddown_window_n),
             n_obs: q.and_then(holddown_window_n).unwrap_or(HOLD_OBS_WINDOW),
             first: std::collections::BTreeMap::new(),
+            cls: std::collections::HashMap::new(),
+            clsh: std::collections::HashMap::new(),
+            xps: std::collections::HashMap::new(),
+            age: std::collections::HashMap::new(),
             win: std::collections::HashMap::new(),
             t_us: std::collections::HashMap::new(),
             fed: std::collections::HashMap::new(),
@@ -1517,17 +1579,48 @@ impl HoldDownGauge {
     /// has never reported carries none and falls through to the shipped
     /// behaviour. That is information availability — the same rule the window
     /// law follows — and no threshold on any dial enters it.
+    ///
+    /// **A0.2:** `flight` is `(age of the seq's live flight now, the
+    /// `9/8·max(srtt, ewma)` threshold for that flight's path)` when the
+    /// sender holds a flight for the seq at all, `None` when it does not. It
+    /// is recorded ON THE FIRST REPORT ONLY — a re-report must not re-sample
+    /// the very quantity whose staleness is under study.
     pub(crate) fn on_reported(
         &mut self,
         seq: u64,
         orig_path: u32,
         now_us: u64,
         reported: bool,
+        flight: Option<(u64, u64)>,
     ) {
         if !reported {
             return;
         }
-        self.first.entry(seq).or_insert((now_us, orig_path));
+        if self.first.contains_key(&seq) {
+            return;
+        }
+        self.first.insert(seq, HoleRec { t0_us: now_us, orig_path, retx: None });
+        if let Some((age_us, thr_us)) = flight {
+            let e = self.age.entry(orig_path).or_insert_with(|| {
+                (crate::net::succ::Hist::default(), crate::net::succ::Hist::default(), 0)
+            });
+            e.0.add(age_us);
+            e.1.add(thr_us);
+            if age_us >= thr_us {
+                e.2 += 1;
+            }
+        }
+    }
+
+    /// **A0.2 — THE RETRANSMIT STAMP.** Called beside `nack_retx_at.insert`,
+    /// i.e. exactly where a copy of this seq reaches the wire. Records the
+    /// FIRST such copy and never a later one. Observation only.
+    pub(crate) fn on_retx(&mut self, seq: u64, now_us: u64, path: u32) {
+        if let Some(r) = self.first.get_mut(&seq) {
+            if r.retx.is_none() {
+                r.retx = Some((now_us, path));
+            }
+        }
     }
 
     /// **THE GATE.** `true` ⇒ this fire is held down and suppressed.
@@ -1538,7 +1631,9 @@ impl HoldDownGauge {
     /// availability*: no threshold on δ or ρ selects anything here, and the
     /// only number that enters is `T`.
     pub(crate) fn should_hold(&mut self, seq: u64, now_us: u64) -> bool {
-        let Some((t0, path)) = self.first.get(&seq).copied() else {
+        let Some(HoleRec { t0_us: t0, orig_path: path, .. }) =
+            self.first.get(&seq).copied()
+        else {
             // Disarmed (nothing is ever stamped), or a fire on a hole this
             // gauge never saw reported — a timer fire, which this arm does not
             // touch. Counted at the disarmed site below so the line is
@@ -1628,11 +1723,18 @@ impl HoldDownGauge {
     /// **upward** exactly where the contract had already stopped caring — the
     /// only sign this estimator must not be biased in (§16.77.8a). It is
     /// dropped from the map and fed to nothing.
+    ///
+    /// **A0.2:** `ack_path` is the path the gap report itself arrived on, and
+    /// `half_srtt_of` returns `max(srtt, ewma)/2` for a path — the classifier's
+    /// only input. Both are labels: the resolution set, the feed and every
+    /// wire byte are computed exactly as before.
     pub(crate) fn on_report(
         &mut self,
         gaps: &[(u64, u64)],
         now_us: u64,
         shed: &std::collections::BTreeSet<u64>,
+        ack_path: u32,
+        half_srtt_of: &dyn Fn(u32) -> u64,
     ) {
         if self.first.is_empty() {
             return;
@@ -1650,11 +1752,36 @@ impl HoldDownGauge {
             .filter(|&s| !gaps.iter().any(|&(a, b)| s >= a && s <= b))
             .collect();
         for s in resolved {
-            if let Some((t0, path)) = self.first.remove(&s) {
+            if let Some(rec) = self.first.remove(&s) {
                 if shed.contains(&s) {
                     continue;
                 }
-                self.feed(path, now_us.saturating_sub(t0));
+                let dt = now_us.saturating_sub(rec.t0_us);
+                // A0.2 THE CLOSURE CLASS. Placed on the SAME resolutions the
+                // feed sees and after the SAME shed exclusion, so
+                // `heal_noretx + heal_retx_young + closed_retx = fed` on every
+                // path — the identity the audit's tables are read against.
+                let k = match rec.retx {
+                    None => 0usize,
+                    Some((tr, pr)) => {
+                        if now_us.saturating_sub(tr) < half_srtt_of(pr) {
+                            1
+                        } else {
+                            2
+                        }
+                    }
+                };
+                self.cls.entry(rec.orig_path).or_insert([0; 3])[k] += 1;
+                self.clsh.entry(rec.orig_path).or_insert_with(Default::default)[k].add(dt);
+                let x = self.xps.entry(rec.orig_path).or_insert([0; 3]);
+                if ack_path == u32::MAX {
+                    x[2] += 1;
+                } else if ack_path == rec.orig_path {
+                    x[0] += 1;
+                } else {
+                    x[1] += 1;
+                }
+                self.feed(rec.orig_path, dt);
             }
         }
     }
@@ -1696,11 +1823,28 @@ impl HoldDownGauge {
         let c = self.ctr.get(&path).copied().unwrap_or([0; 4]);
         let us = |v: Option<u64>| v.map_or("-".to_string(), |x| x.to_string());
         let hd = self.hd.get(&path);
+        // A0.2. `-` iff the denominator is zero — an absent fraction is never
+        // a measured 0, the `[SUCC]` convention.
+        let cls = self.cls.get(&path).copied().unwrap_or([0; 3]);
+        let clsh = self.clsh.get(&path);
+        let xps = self.xps.get(&path).copied().unwrap_or([0; 3]);
+        let age = self.age.get(&path);
+        let frac = |num: u64, den: u64| {
+            if den == 0 {
+                "-".to_string()
+            } else {
+                format!("{:.4}", num as f64 / den as f64)
+            }
+        };
         format!(
             "[HOLD] site={} path={} gen={} q={} n_req={} n_obs={} samp_n={} fed={} \
              t_us={} obs_p50_us={} obs_p90_us={} obs_p99_us={} \
              evals={} law_n={} sup={} emit={} hd_p50_us={} hd_p90_us={} hd_p99_us={} \
-             hd_mx_us={} hd_n={} fa_class={:.4}",
+             hd_mx_us={} hd_n={} \
+             hn_n={} hn_p50_us={} hn_p90_us={} hy_n={} hy_p50_us={} hy_p90_us={} \
+             cx_n={} cx_p50_us={} cx_p90_us={} sp_n={} xp_n={} up_n={} xp_frac={} \
+             age_n={} age_ripe={} ripe_frac={} age_p50_us={} age_p90_us={} \
+             thr_p50_us={} fa_class={:.4}",
             self.site,
             if path == u32::MAX {
                 "-".to_string()
@@ -1726,6 +1870,28 @@ impl HoldDownGauge {
             us(hd.and_then(|h| h.quantile(0.99))),
             us(hd.map(|h| h.max_us())),
             hd.map_or(0, |h| h.n()),
+            // A0.2 — THE CLOSURE-CLASS TABLE. `hn` heal_noretx, `hy`
+            // heal_retx_young, `cx` closed_retx; then the same/cross split and
+            // the ripe-at-first-report reading.
+            cls[0],
+            us(clsh.and_then(|h| h[0].quantile(0.50))),
+            us(clsh.and_then(|h| h[0].quantile(0.90))),
+            cls[1],
+            us(clsh.and_then(|h| h[1].quantile(0.50))),
+            us(clsh.and_then(|h| h[1].quantile(0.90))),
+            cls[2],
+            us(clsh.and_then(|h| h[2].quantile(0.50))),
+            us(clsh.and_then(|h| h[2].quantile(0.90))),
+            xps[0],
+            xps[1],
+            xps[2],
+            frac(xps[1], xps[0] + xps[1]),
+            age.map_or(0, |a| a.0.n()),
+            age.map_or(0, |a| a.2),
+            frac(age.map_or(0, |a| a.2), age.map_or(0, |a| a.0.n())),
+            us(age.and_then(|a| a.0.quantile(0.50))),
+            us(age.and_then(|a| a.0.quantile(0.90))),
+            us(age.and_then(|a| a.1.quantile(0.50))),
             // The sacrificial trailing constant — stderr has two writers and a
             // `tracing` write can land inside a gauge line's LAST field.
             RACK_SPURIOUS_BUDGET,
@@ -3051,8 +3217,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // NACK gap channel: handle_control_message sends gap ranges, window sender
     // receives for targeted repair. The batch rides with its [`FireCause`] tag
     // (`[FCAUSE]`) — a LABEL for the counters only; nothing branches on it.
+    // A0.2: the tuple's middle slot is the PATH THE ACK CARRYING THIS GAP
+    // REPORT ARRIVED ON (`control_msg.rs`'s `path_id`, already in scope
+    // there). It is a LABEL for the attribution counters exactly as
+    // `FireCause` is; nothing in the repair loop branches on it.
     let (nack_tx, nack_rx) =
-        tokio::sync::mpsc::channel::<(FireCause, Vec<(u64, u64)>)>(16);
+        tokio::sync::mpsc::channel::<(FireCause, u32, Vec<(u64, u64)>)>(16);
 
     // Generation-deficit channel (§16.3): the data-arm's control handler parses
     // inbound GenerationDeficit messages and forwards the (anchor, deficit)
@@ -3428,7 +3598,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // With no NACK producer, a short generation is recovered by MORE coded
     // symbols for that generation (fungible, cross-path), never by resending a
     // specific seq. So the SACK→gap producer is suppressed in generation mode.
-    let recv_nack_tx: Option<tokio::sync::mpsc::Sender<(FireCause, Vec<(u64, u64)>)>> =
+    let recv_nack_tx: Option<
+        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
+    > =
         if window_mode && !window_generation {
             Some(nack_tx)
         } else {
@@ -6541,7 +6713,7 @@ async fn run_window_sender(
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
-    nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, Vec<(u64, u64)>)>,
+    nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
     // Generation-deficit feedback (§16.3): each element is the receiver's
     // reported (generation_anchor, residual_deficit) vector. Drives the
     // bounded, targeted recovery emission that replaces the feedback-free cap.
@@ -8822,7 +8994,7 @@ async fn run_window_sender(
         // fire can be attributed to the sender's own tail-sweep timer or to
         // one of the receiver's two arms. Label only — the loop below reads
         // it for counters and for nothing else.
-        let mut pending_gaps: Option<(FireCause, Vec<(u64, u64)>)> = None;
+        let mut pending_gaps: Option<(FireCause, u32, Vec<(u64, u64)>)> = None;
 
         // P10b tail sweep: the LAST symbols of a burst have no successors,
         // so the receiver can never SACK a gap behind them — the sender must
@@ -9040,7 +9212,11 @@ async fn run_window_sender(
                 if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
                     dg.diag_sweeps += 1;
-                    pending_gaps = Some((FireCause::Timer, vec![(seq, seq)]));
+                    // A0.2: the tail sweep is the SENDER's own producer — no ack, and
+                    // so no arrival path. `u32::MAX` is the gauge's existing
+                    // unattributed sentinel and reads as cross-path by
+                    // construction, which is what "no receiver said so" means.
+                    pending_gaps = Some((FireCause::Timer, u32::MAX, vec![(seq, seq)]));
                 }
                 None
             }
@@ -9321,7 +9497,7 @@ async fn run_window_sender(
         }
 
         loop {
-            let (gap_cause, gaps) = match pending_gaps.take() {
+            let (gap_cause, ack_path, gaps) = match pending_gaps.take() {
                 Some(g) => g,
                 None => match nack_rx.try_recv() {
                     Ok(g) => {
@@ -9448,6 +9624,33 @@ async fn run_window_sender(
                     None => retx_cooldown_us,
                 }
             };
+            // A0.2: the SAME 9/8 threshold as `mp_thr_of`, WITHOUT its `pf=`
+            // counter side effect. A read-only audit gauge may not move an
+            // existing gauge's reading, and `mp_thr_of` bumps `mpd_pf_*` on
+            // every call.
+            let mp_thr_pure = |mp_clocks: &std::collections::HashMap<
+                u32,
+                (u64, u64, u64),
+            >,
+                               p: u32|
+             -> u64 {
+                match mp_clocks.get(&p) {
+                    Some(&(srtt, ewma, jit)) => {
+                        let floor =
+                            recovery_floor_us(pol.patience_derived, jit, srtt.max(ewma));
+                        mp_time_threshold_split(srtt, ewma, floor).0
+                    }
+                    None => retx_cooldown_us,
+                }
+            };
+            // A0.2: `max(srtt, ewma)/2` per path — the closure classifier's
+            // only input, and the SAME half-RTT the legacy age gate uses.
+            let half_srtt_of = |p: u32| -> u64 {
+                match mp_clocks.get(&p) {
+                    Some(&(srtt, ewma, _)) => srtt.max(ewma) / 2,
+                    None => srtt_us / 2,
+                }
+            };
 
             let (win_start, win_end) = st.encoder.window_span();
             let mut retransmitted: u64 = 0;
@@ -9478,7 +9681,13 @@ async fn run_window_sender(
             // receiver has — feed its outstanding time. Placed HERE, before the
             // loop below stamps this batch's own seqs, or every hole would be
             // resolved by the report that first announced it.
-            hold_echo.on_report(&gaps, now_repair_us, &st.shed_seqs);
+            hold_echo.on_report(
+                &gaps,
+                now_repair_us,
+                &st.shed_seqs,
+                ack_path,
+                &half_srtt_of,
+            );
             'gaps: for &(gap_start, gap_end) in &gaps {
                 // EVICT: only the coding window can serve a gap — older
                 // seqs are gone. RETAIN: the sent-data store serves ANY
@@ -9505,11 +9714,30 @@ async fn run_window_sender(
                     // the loop head so the origin is "when the sender was first
                     // told", not "when the sender got as far as deciding" — a
                     // hole suppressed by cooldown was still outstanding.
+                    // A0.2: the seq's LIVE flight at the moment of its FIRST
+                    // report — the last retransmit if any, else the original
+                    // send — against the RFC 9002 §6.1.2 threshold that would
+                    // judge it. Read at the loop HEAD, before every
+                    // suppression `continue`, so a hole the cooldown or the
+                    // shed skips is measured too.
+                    let ha_flight: Option<(u64, u32)> = st
+                        .nack_retx_at
+                        .get(&seq)
+                        .copied()
+                        .or_else(|| {
+                            st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
+                        });
                     hold_echo.on_reported(
                         seq,
                         st.source_path_map.get(&seq).copied().unwrap_or(st.last_source_path),
                         now_repair_us,
                         matches!(gap_cause, FireCause::GapData | FireCause::GapRefresh),
+                        ha_flight.map(|(t, p)| {
+                            (
+                                now_repair_us.saturating_sub(t),
+                                mp_thr_pure(&mp_clocks, p),
+                            )
+                        }),
                     );
                     // δ-honest shed (fix C): a hole already shed is never
                     // served again (the receiver's own δ-horizon passes it);
@@ -9783,6 +10011,11 @@ async fn run_window_sender(
                     // hole decision for this seq clocks THIS flight on ITS
                     // path (closes the re-NACK-while-flying feedback).
                     st.nack_retx_at.insert(seq, (now_repair_us, nack_path));
+                    // A0.2: a copy of this seq has reached the wire. Stamped
+                    // here and nowhere else, so the classifier's "was a
+                    // retransmit ever emitted" is answered by the emission
+                    // itself rather than by an intention.
+                    hold_echo.on_retx(seq, now_repair_us, nack_path);
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
@@ -10741,7 +10974,7 @@ mod tests {
         let mut g = HoldDownGauge::new("sender", None);
         assert!(!g.armed(), "an absent level must not arm");
         for seq in 0..64u64 {
-            g.on_reported(seq, 0, 1_000_000, true);
+            g.on_reported(seq, 0, 1_000_000, true, None);
             for age in [0u64, 1, 1_000, 1_000_000, u64::MAX / 2] {
                 assert!(
                     !g.should_hold(seq, 1_000_000 + age),
@@ -10751,7 +10984,7 @@ mod tests {
         }
         // The estimator observes: 64 holes resolve, at 1..=64 ms each.
         for seq in 0..64u64 {
-            g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default());
+            g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default(), 0, &|_| 0);
         }
         let l = g.line(0);
         // THE LAW IS ABSENT AND THE LINE SAYS SO.
@@ -10790,8 +11023,8 @@ mod tests {
         // original resolution and the window is exactly 1_000..=20_000 µs.
         let empty_shed = std::collections::BTreeSet::new();
         for i in 1..=20u64 {
-            g.on_reported(i, 0, 0, true);
-            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+            g.on_reported(i, 0, 0, true, None);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed, 0, &|_| 0);
         }
         // `T` is the K-th largest of the freshest 20 = the 11th smallest.
         let t = g.t_us.get(&0).copied().expect("the law ran once the window filled");
@@ -10799,11 +11032,11 @@ mod tests {
 
         // A hole younger than `T` is HELD; one older is EMITTED. No threshold on
         // any dial enters — the only number is `T`.
-        g.on_reported(100, 0, 0, true);
+        g.on_reported(100, 0, 0, true, None);
         assert!(g.should_hold(100, t - 1), "younger than T must be held");
-        g.on_reported(101, 0, 0, true);
+        g.on_reported(101, 0, 0, true, None);
         assert!(!g.should_hold(101, t), "at T exactly, the hold-down releases");
-        g.on_reported(102, 0, 0, true);
+        g.on_reported(102, 0, 0, true, None);
         assert!(!g.should_hold(102, t + 1), "older than T must be emitted");
 
         let c = g.ctr.get(&0).copied().expect("path 0 saw fires");
@@ -10828,11 +11061,11 @@ mod tests {
         let mut g = HoldDownGauge::new("sender", Some(0.5));
         let mut shed: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
         for i in 1..=30u64 {
-            g.on_reported(i, 0, 0, true);
+            g.on_reported(i, 0, 0, true, None);
         }
         shed.insert(9);
         shed.insert(11);
-        g.on_report(&[(31, 31)], 5_000, &shed);
+        g.on_report(&[(31, 31)], 5_000, &shed, 0, &|_| 0);
         assert_eq!(
             g.fed.get(&0).copied().unwrap_or(0),
             28,
@@ -10842,9 +11075,9 @@ mod tests {
         // still outstanding and is not retired.
         let mut g2 = HoldDownGauge::new("sender", Some(0.5));
         for i in 1..=30u64 {
-            g2.on_reported(i, 0, 0, true);
+            g2.on_reported(i, 0, 0, true, None);
         }
-        g2.on_report(&[(11, 11)], 5_000, &std::collections::BTreeSet::new());
+        g2.on_report(&[(11, 11)], 5_000, &std::collections::BTreeSet::new(), 0, &|_| 0);
         assert_eq!(g2.fed.get(&0).copied().unwrap_or(0), 10, "seqs 1..=10 only");
         assert_eq!(g2.first.len(), 20, "11..=30 are still outstanding");
     }
@@ -10862,14 +11095,14 @@ mod tests {
         let n = holddown_window_n(0.5).expect("H500");
         let empty = std::collections::BTreeSet::new();
         // Cold: no T, so the gate falls through and every fire is emitted.
-        g.on_reported(1, 0, 0, true);
+        g.on_reported(1, 0, 0, true, None);
         assert!(!g.should_hold(1, 10_000_000), "cold, the gate must fall through");
         assert!(g.t_us.get(&0).is_none());
         // Feed exactly N retirements, ALL of which would have been repaired on
         // the shipped machine. The window fills and the law arms itself.
         for i in 2..=(n as u64 + 1) {
-            g.on_reported(i, 0, 0, true);
-            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty);
+            g.on_reported(i, 0, 0, true, None);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty, 0, &|_| 0);
         }
         assert!(
             g.t_us.get(&0).is_some(),
@@ -10895,7 +11128,7 @@ mod tests {
         // (1) THE FRONTIER SWEEP FEEDS NOTHING.
         let mut g = HoldDownGauge::new("sender", Some(0.5));
         for i in 1..=50u64 {
-            g.on_reported(i, 0, 0, true);
+            g.on_reported(i, 0, 0, true, None);
         }
         g.on_retired(50);
         assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 0, "on_retired must PRUNE, never feed");
@@ -10907,11 +11140,11 @@ mod tests {
         // seq 2 — and seq 2..=21 must nevertheless be timed on their own.
         let mut g2 = HoldDownGauge::new("sender", Some(0.5));
         for i in 1..=21u64 {
-            g2.on_reported(i, 0, 0, true);
+            g2.on_reported(i, 0, 0, true, None);
         }
         for i in 2..=21u64 {
             // seq 1 is STILL REPORTED MISSING; seq `i` is not.
-            g2.on_report(&[(1, 1), (i + 1, 30)], (i - 1) * 1_000, &empty);
+            g2.on_report(&[(1, 1), (i + 1, 30)], (i - 1) * 1_000, &empty, 0, &|_| 0);
         }
         assert_eq!(
             g2.fed.get(&0).copied().unwrap_or(0),
@@ -10936,12 +11169,12 @@ mod tests {
         let empty_shed = std::collections::BTreeSet::new();
         // Path 0: 1..=20 ms. Path 1: 100..=2000 ms, 100x slower.
         for i in 1..=20u64 {
-            g.on_reported(i, 0, 0, true);
-            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+            g.on_reported(i, 0, 0, true, None);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed, 0, &|_| 0);
         }
         for i in 101..=120u64 {
-            g.on_reported(i, 1, 0, true);
-            g.on_report(&[(i + 1, i + 1)], (i - 100) * 100_000, &empty_shed);
+            g.on_reported(i, 1, 0, true, None);
+            g.on_report(&[(i + 1, i + 1)], (i - 100) * 100_000, &empty_shed, 0, &|_| 0);
         }
         assert_eq!(g.t_us.get(&0).copied(), Some(11_000));
         assert_eq!(g.t_us.get(&1).copied(), Some(1_100_000));
@@ -10957,12 +11190,12 @@ mod tests {
         let mut g = HoldDownGauge::new("sender", Some(0.5));
         let empty_shed = std::collections::BTreeSet::new();
         for i in 1..=19u64 {
-            g.on_reported(i, 0, 0, true);
-            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed);
+            g.on_reported(i, 0, 0, true, None);
+            g.on_report(&[(i + 1, i + 1)], i * 1_000, &empty_shed, 0, &|_| 0);
         }
         assert_eq!(g.win.get(&0).map(|w| w.len()), Some(19), "one short of N");
         assert!(g.t_us.get(&0).is_none(), "the law must not have run");
-        g.on_reported(100, 0, 0, true);
+        g.on_reported(100, 0, 0, true, None);
         assert!(
             !g.should_hold(100, 0),
             "with no T the gate falls through to the shipped behaviour"

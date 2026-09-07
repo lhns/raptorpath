@@ -44418,6 +44418,20 @@ positioned at any cell would be paying for at the clean end of the dial.
 
 **POOLED: `orig_frac` = 366,106 / 374,120 = 0.97858.**
 
+> **[ANNOTATION 2026-09-07 — THE ATTRIBUTION AUDIT (D0) MEASURED WHAT THIS
+> NUMBER IS. IT IS A BOUND, AND THE POOL AVERAGES TWO MECHANISMS.** The audit's
+> sender-side closure-class split gives the corrected TRUE-HEAL share `π0` =
+> **0.0077 at `c1`** and **0.0054 at `sc2`** (where this table reads 0.9954 and
+> 0.9346), against **0.9606 at `c7`** and **0.9233 at `c8`** (where it reads
+> 0.9884 and 0.9716). At the SINGLE-path cells a copy of the seq was on the
+> wire for essentially every hole and resolution followed the copy by more than
+> half an RTT in 99.2 % / 99.5 % of them; `[SUCC] orig` counted that copy's own
+> arrival as "the original closed it", which is exactly the caveat this pass
+> disclosed and could not measure. **The rows are NOT rewritten** — they are
+> correct as `orig_frac`, and `orig_frac` is not a self-heal fraction. See
+> "THE ATTRIBUTION AUDIT (D0) — THE SCORED RESULT" §5 and §9.]
+
+
 > **VERDICT: the anchor this pass pre-registered as the derived waiting time's
 > natural one DOES NOT EXIST ON THIS ENGINE.** The crossing point is ABSENT at
 > three cells across all nine of their reps, UNSCOREABLE-thin at a fourth, and
@@ -44431,7 +44445,12 @@ positioned at any cell would be paying for at the clean end of the dial.
 0.93–0.995 at every cell, so `rep` never has the population to overtake `orig`
 at any horizon — the crossing was arithmetically unreachable at four cells
 before timing entered into it. **97.86 % of the holes this engine resolves,
-it resolves by the original arriving.** That is the false-repair boundary in
+it resolves by the original arriving.** **[ANNOTATION
+2026-09-07: it resolves 97.86 % of them by an arrival the RECEIVER cannot
+distinguish from the original. The attribution audit (D0) separates the two at
+the sender: at two paths that arrival is overwhelmingly a genuine original on
+the other leg (`π0` = 0.92–0.96); at one path it is overwhelmingly this
+sender's own retransmit (`π0` = 0.005–0.008).]** That is the false-repair boundary in
 the large, and it is a far blunter statement than a crossing time: a repair
 emitted for a hole on this engine is, to first order, a repair for a hole whose
 original was coming anyway.
@@ -44569,6 +44588,15 @@ dial-dependent (6.67×), and at `c1`/`c7`/`sc2` IS stable. Together with
 *a hole on this engine is overwhelmingly closed by its own original, on a
 timescale of 25–164 ms at the median that varies nearly seven-fold with the
 cell.*
+
+> **[ANNOTATION 2026-09-07 — THE SHAPE IS TWO SHAPES.** The attribution audit
+> (D0) measured the pooled corrected `π0` at 0.9351, close to this 0.9786 —
+> and that closeness is the trap. The pool is dominated by `c7`'s 237 406
+> holes and averages a cell whose true-heal share is 96 % with cells where it
+> is half a percent. **No derivation may use a pooled `π0` on this engine**;
+> it must carry the cell's path count. The true-heal CDF `F`, read on the heal
+> classes ONLY, is p50/p90 = 12.8/45.1 ms at `c7` and 8.2/65.5 ms at `c8`, and
+> is UNMEASURABLE at `c1`, where `heal_noretx` is 0 of 1 293.]**
 
 **THE STABILITY OF THE ESTIMATE, REPORTED THIS PASS AND NOT AFTER THE NEXT ONE
 FAILS** (the σ saga's lesson, which is why §5 exists at all):
@@ -48927,3 +48955,488 @@ serves (§16.80) is itself DOCS ONLY and blesses no constant: its
 open-constants register carries eight literals, each recorded
 `arbitrary/unprovenanced — NOT corrected, correct value unknown`, with the
 measurement that would decide it.
+
+---
+
+## THE ATTRIBUTION AUDIT (D0) — PRE-REGISTRATION (2026-09-07, `feat/hole-audit` from main@`b181fa5`) — **THE PASS THAT DECIDES WHETHER `orig_frac = 0.9786` IS A SELF-HEAL FRACTION OR A BOUND.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds a gate to any law, edits an engine law, or wires a consumer. One arm — shipped defaults — and no challenger.**
+
+The instrument is committed at `443bbf2`, before this section: A0.2 (the
+sender-side closure-class split on `[HOLD]`), A0.3 (the receiver-side
+same/cross exposure split on `[SUCC]`), A0.4 (the `taper_copy` counter beside
+`total_repair_symbols`). `tests/holeclass_reachability.rs` is its gate.
+
+### 1 — WHY THIS PASS EXISTS, IN THE RECORD'S OWN WORDS
+
+The successor-arrival pass measured **97.86 % of 374 120 resolved holes closed
+by their own ORIGINAL** and wrote, in the same section, what that number is
+NOT:
+
+> *"Reorder vs retransmit. `orig` cannot separate a late original from a resent
+> one — the wire carries no retransmit bit. So `orig_frac` bounds the
+> false-repair fraction from one side and does not decompose it."*
+
+Every downstream claim that reads "97.9 % of holes are reorderings that
+self-heal" reads a BOUND as a FRACTION. At `c1` — a 2 ms-RTT, jitter-0,
+single-FIFO-connection path at ~0.1 % GE loss — the "reorder" median of
+**24.6 ms** is twelve RTTs, which is physically a retransmit closure and not a
+reordering. This pass measures the decomposition at the only site that can see
+it: the SENDER, which knows whether a copy of the seq ever reached the wire and
+when it did.
+
+**GOVERNING PRINCIPLE (user ruling, 2026-09-07), restated here because it
+binds this pass's own conclusions:** *we only CORRECT where the answer is now
+actually known.* This pass changes no law, derives no clock and blesses no
+constant. Its scored section will say plainly which record numbers it corrects
+and which it leaves open.
+
+### 2 — THE ARM, THE GATES, THE SEED
+
+One arm. **`RWM_GEN=0` (plain window), shipped defaults everywhere else**,
+`RWM_DIAG=1 RWM_FDIAG=1`. Seed 42, `n = 3` reps per cell. There is no
+challenger, no A/B, and therefore no win condition — this is a MEASUREMENT
+pass and its output is a table, not a verdict on a lever.
+
+**CONTAMINATION GATES, asserted ABSENT on both endpoints:** `RWM_HOLDDOWN_Q`,
+`RWM_QUANTILE_CLOCKS`, `RWM_RACK_CLOCKS`, `RWM_DERIVED_SWEEP`,
+`RWM_ALPHA_OVERRIDE`, `RWM_W_FORM`, `RWM_REFRESH_FLOOR_US`. The `[HOLD]` line
+must read `q=unset n_req=- sup=0 law_n=0` at every cell, on both endpoints —
+which is also clause 7 of the reachability gate: **the audit suppresses
+nothing**, so these rows POOL with every prior plain-window ledger.
+
+### 3 — THE CELLS AND THEIR BANDS (transcribed from the verdict battery, never redefined)
+
+| cell | legs | mode | bytes | paths | goodput band (`CTL` scope) | role in THIS pass |
+|---|---|---|---|---|---|---|
+| `c1` | c1 / c1 | single | 400 000 000 | 1 | `[147, 294]` | **THE ARTIFACT TEST.** `xp_n ≡ 0` structurally |
+| `c7` | c2 / c2 | dual | 200 000 000 | 2 | `[140, 180]` | the symmetric dual |
+| `sc2` | c2 / c2 | single | 100 000 000 | 1 | `[78, 92]` | `c7`'s single term |
+| `c8` | c2 / c3 | dual | 25 000 000 | 2 | `[50, 100]` | **THE WIRE-REORDER TEST** |
+
+**THE GENERATION-PLATEAU GUARD, with the `gen=0` WITNESS-FIRST RULE.** A band
+is read only after the row's own `[SUCC] gen=0` and `[FCAUSE] gen=0` witnesses
+are confirmed: under generation coding the SACK→gap producer is suppressed and
+BOTH gauges are structurally empty, so a `gen=1` row that read "in band" would
+be reporting a different machine. **Witness first, band second, always.**
+
+### 4 — THE ABORT-CAUSE TABLE, WRITTEN BEFORE THE RUN
+
+| class | meaning | consequence |
+|---|---|---|
+| `ABORT-LOCK` | either VM lock (`/tmp/rwm-vm.lock`, `/home/vibe/rp.lock`) is held | the battery does not start |
+| `ABORT-SHA` | the built binary's `sha256` does not match the one the smoke witnessed | the battery does not start |
+| `ABORT-SENTINEL-UNWRITABLE` | the run directory is not writable by the unprivileged user, checked at LAUNCH and proven in the smoke | the battery does not start |
+| `ABORT-SMOKE` | §6's smoke did not witness every required field on BOTH endpoints | the battery does not start |
+| `ABORT-CTL-BAND` | a cell's median goodput reads outside its own band | THAT cell is aborted and leaves the denominator; the others continue |
+| `ABORT-RC` | a non-zero exit from an invocation | the ROW is void; the cell continues, and the row count reports it |
+| `ABORT-CRLF` | the shipped tree carries CR bytes after the sync repair (`lib.sh` is the canary) | the battery does not start |
+
+`INSTRUMENT-FAIL-HOLD` (no per-path `[HOLD]` line, or `evals = 0`) and
+`INSTRUMENT-FAIL-SUCC` (`[SUCC]` absent, or `det = 0`) are NOT aborts — they
+are READINGS, and at a cell with no loss `det = 0` is the correct answer, not a
+missing one. They are reported as such.
+
+### 5 — WHAT IS MEASURED, PER CELL
+
+1. **THE CLOSURE-CLASS TABLE** (`[HOLD]`, sender, per original path):
+   `hn_n` / `hy_n` / `cx_n` with their fractions of `fed`.
+2. **THE SAME/CROSS SPLIT**, on BOTH sides: `[HOLD] sp_n / xp_n / up_n` (which
+   path the resolving report arrived on) and `[SUCC] sp_n / xp_n / xp_frac`
+   (which path's arrival closed the hole vs which exposed it).
+3. **THE RIPE-AT-FIRST-REPORT FRACTION** `[HOLD] ripe_frac`, with
+   `age_p50_us` beside `thr_p50_us` — the seq's LIVE FLIGHT age the first time
+   the receiver mentions the hole, against the `9/8·max(srtt, ewma)` threshold
+   RECOV_MP would judge it by.
+4. **THE WASTE SPLIT BY SOURCE**: `[DIAG] taper=` (the proactive copy),
+   `[DIAG] retx=` / `[FCAUSE] n` (the gap-fire copy), and the repair margin —
+   so realized waste is attributed to {gap-fire copy, taper copy, margin}
+   rather than charged whole to the reactive loop.
+5. **THE RECEIVE-SIDE EVICTION NUMBER**, derived from the EXISTING committed
+   ledgers rather than from this run: `[CTLD] … rx=` against the per-path
+   `PathBatchTracker.total_received`. It is an offline arithmetic on
+   `docs/l1-raw`, and it is pre-registered here so its direction cannot be
+   chosen after the fact.
+6. **THE LOOPBACK FLOOR** (A0.1), already measured and recorded in the
+   instrument commit: single-path, shim OFF, 2 × 50 MB, `[SUCC] det = 0`.
+
+### 6 — THE SMOKE, AND WHAT IT MUST WITNESS BEFORE THE BATTERY STARTS
+
+One short invocation at `c8` (the cheapest cell that exercises two paths).
+It must witness, on BOTH endpoints:
+
+* `[HOLD]` present with `q=unset n_req=- sup=0`, and EVERY A0.2 field by name:
+  `hn_n= hy_n= cx_n= sp_n= xp_n= up_n= xp_frac= age_n= age_ripe= ripe_frac=
+  age_p50_us= age_p90_us= thr_p50_us=`;
+* `hn_n + hy_n + cx_n = fed` and `sp_n + xp_n + up_n = fed` on every line;
+* `[SUCC]` present with `sp_n= xp_n= xp_frac= sp_p50_us= sp_p90_us=
+  xp_p50_us= xp_p90_us=`, and `sp_n + xp_n = res`;
+* `[DIAG] … taper=` present;
+* the sentinel file WRITTEN by the unprivileged user in the run directory —
+  **writability PROVEN, not assumed**;
+* `sha256` of the binary, echoed into the ledger.
+
+Any missing item ⇒ `ABORT-SMOKE`, and the battery does not start.
+
+### 7 — THE THREE PRE-REGISTERED READINGS, VERBATIM AND WITH THEIR NUMERIC CRITERIA
+
+These are the plan's own words, transcribed here before any VM number exists,
+and they will be applied LITERALLY.
+
+* **ARTIFACT / RETRANSMIT-DOMINATED** — at `c1`,
+  `heal_noretx + heal_retx_young < 20 %` of resolved holes, **or** eviction
+  `≥ 50 %` of `det`, **or** loopback-no-netem `det > 0.1 %` of symbols ⇒ *the
+  record's `orig_frac` is not a self-heal fraction*; the `c1` row of the
+  successor pass is RE-LABELLED and every number citing `0.9786` pooled gets a
+  pointer.
+* **WIRE-REORDER-DOMINATED** — at `c8`, `xp_n/det ≥ 0.5` **AND**
+  `heal_noretx + heal_retx_young ≥ 0.5` of cross-path holes ⇒ *the scheduler
+  manufactures the holes* (the ordering lever's premise holds).
+* **MIXED** — fractions reported; the theory's `π0` becomes the measured
+  `heal_*` share.
+
+**INSTRUMENT WITNESSES, pre-stated:** `det ≤ [DIAG] cum source symbols`;
+`det = orig + rep + aban + open + over`; and the two `[HOLD]` sum identities
+above. A row failing a witness is VOID, not adjusted.
+
+### 8 — THE CORRECTED `π0` AND `F`, AND HOW THEY WILL BE COMPUTED
+
+* **`π0` (the H0 prior the whole theory rests on) = the TRUE-HEAL SHARE** =
+  `(hn_n + hy_n) / (hn_n + hy_n + cx_n)`, pooled over reps within a cell, with
+  a Wilson 95 % interval on the pooled counts. It is reported BESIDE the
+  record's `orig_frac` at the same cell, and the difference between them is the
+  quantity this pass exists to measure.
+* **`F` (the self-heal CDF) is read on the HEAL CLASSES ONLY** — `hn_p50_us`,
+  `hn_p90_us`, `hy_p50_us`, `hy_p90_us`. The `cx` class is a retransmit
+  closure and belongs to no waiting-time distribution. Every quantile is a
+  bucket LOWER edge and reads at or below the truth by ≤ 9.05 %, the
+  instrument's declared and pinned error.
+
+**WHAT THIS PASS CANNOT DECIDE, STATED IN ADVANCE.** The `srtt/2` split
+between `heal_retx_young` and `closed_retx` is a CLASSIFIER, not a law, and it
+is arbitrary in exactly the way the open-constants register says the legacy
+age gate is. It is not blessed by being used here. A hole whose original and
+whose retransmit arrive within `srtt/2` of each other is attributed to the
+ORIGINAL by construction, which biases `π0` UPWARD — so a small measured `π0`
+is a stronger result than a large one, and the direction of the bias is stated
+before the number exists.
+
+### 9 — THE OPEN-CONSTANTS REGISTER THIS PASS TOUCHES AND DOES NOT RESOLVE
+
+| constant | site | what this pass contributes | resolved? |
+|---|---|---|---|
+| `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs:217` | A0.1's loopback floor: how many holes the sampler alone manufactures | **NO** — the floor is measured; the constant is not derived |
+| RECOV_MP `9/8·max(srtt,ewma)` | `net/mod.rs:389-414` | the ripe-at-first-report fraction | **NO** |
+| legacy age gate `srtt/2` (N=1) | `net/mod.rs:527` | the `age_*` histogram at N=1 | **NO** |
+| taper copy `p_lost` | `emit_source.rs:816-821` | A0.4's counter — its waste, measured for the first time | **NO** |
+
+**None is changed in this round, because the correct value is not known.**
+
+### 10 — THE VM PROTOCOL
+
+Both locks (`/tmp/rwm-vm.lock`, `/home/vibe/rp.lock`) taken and RELEASED.
+The run directory created UNPRIVILEGED before any `sudo`, and its writability
+proven in the smoke. The shipped tree CRLF-repaired after sync, with `lib.sh`
+verified at **0 CR bytes** as the canary. `ens18`, the firewall, `sshd` and
+every non-`rp-*` namespace are NEVER touched; `pkill` is `-x raptorpath ||
+true` and nothing else. On exit: zero `raptorpath` processes, no `rp-*`
+namespaces, both locks released — verified, not assumed.
+
+---
+
+---
+
+## THE ATTRIBUTION AUDIT (D0) — THE SCORED RESULT (2026-09-07, `feat/hole-audit` from main@`b181fa5`) — **`orig_frac` IS NOT ONE NUMBER. IT IS TWO MECHANISMS AVERAGED TOGETHER, AND AT THE SINGLE-PATH CELLS IT IS WRONG BY TWO ORDERS OF MAGNITUDE.** The corrected true-heal prior `π0` is **0.0077 at `c1`** and **0.0054 at `sc2`** where the record read 0.9954 and 0.9346 — and **0.9606 at `c7`** and **0.9233 at `c8`** where the record read 0.9877 and 0.9764. **12 invocations, 4 cells, 3 reps, one binary, ZERO aborts, every sum identity CLOSED at 4/4 cells on BOTH gauges, `sup = 0` at 4/4.** Scored against "THE ATTRIBUTION AUDIT (D0) — PRE-REGISTRATION" and against nothing else. **Nothing here flips a default, edits an engine law, derives a clock, wires a consumer, or blesses a constant.**
+
+### 0 — VERDICT FIRST
+
+| cell | READING (pre-registered, applied literally) | corrected `π0` (true-heal share) | the record's `orig_frac` |
+|---|---|---|---|
+| `c1` | **ARTIFACT / RETRANSMIT-DOMINATED** | **0.0077** [0.0042, 0.0142] | 0.9954 |
+| `sc2` | **ARTIFACT / RETRANSMIT-DOMINATED** | **0.0054** [0.0037, 0.0078] | 0.9346 |
+| `c7` | **WIRE-REORDER-DOMINATED** | **0.9606** [0.9599, 0.9614] | 0.9884 |
+| `c8` | **WIRE-REORDER-DOMINATED** | **0.9233** [0.9190, 0.9273] | 0.9716 |
+
+**THE ONE SENTENCE.** *At a single path a detected hole is closed by the
+sender's own retransmit essentially always; at two paths it is closed by the
+scheduler's other leg catching up essentially always. The record's 97.9 % is
+the population-weighted average of those two, and it describes neither.*
+
+### 1 — THE ABORT-CAUSE TABLE, FIRST
+
+| class | count | note |
+|---|---|---|
+| `ABORT-LOCK` | **0** | both locks free at launch, taken, RELEASED at exit |
+| `ABORT-SHA` | **0** | `3715c77c9aab9c2db49331e049debe977256fd16e5e9cb5af988f3c04c837180`, one binary, `RC=0` |
+| `ABORT-SENTINEL-UNWRITABLE` | **0** | run dir created UNPRIVILEGED before any `sudo`; sentinel WRITTEN at launch and again at exit |
+| `ABORT-SMOKE` | **0** | §2 |
+| `ABORT-CTL-BAND` | **0** | 4 of 4 cells in band (§3) |
+| `ABORT-RC` | **0** | 12 of 12 invocations, `dnf = 0` at 12/12 |
+| `ABORT-CRLF` | **0** | 494 files repaired on sync; **0 CR bytes** after, `lib.sh` verified at 0 |
+
+**CONTAMINATION: 0.** The `[GATES]` echo reads `RWM_HOLDDOWN_Q=unset`,
+`RWM_QUANTILE_CLOCKS=0`, `RWM_RACK_CLOCKS=0`, `RWM_DERIVED_SWEEP=0`,
+`RWM_ALPHA_OVERRIDE=unset`, `RWM_REFRESH_FLOOR_US=unset` on BOTH endpoints at
+every cell. **`[SUCC] gen=0` at 4/4** — the generation-plateau guard's
+witness-first rule discharged before a single band was read.
+
+**THE AUDIT SUPPRESSED NOTHING: `sup = 0` on every `[HOLD]` line of every
+cell, and `evals = sup + emit` throughout.** These rows POOL with every prior
+plain-window ledger.
+
+### 2 — THE SMOKE (c8, before the battery)
+
+Both endpoints witnessed. `[HOLD]` on the sender carried every A0.2 field with
+`hn_n + hy_n + cx_n = fed` (9 + 34 + 14 = 57) and `sp_n + xp_n + up_n = fed`
+(0 + 57 + 0 = 57); `[SUCC]` on the receiver carried every A0.3 field with
+`det = orig + rep + aban + open + over` (585 + 78 + 6 + 10 + 0 = 679) and
+`sp_n + xp_n = res` (271 + 392 = 663); `[DIAG] … taper=` present.
+**`[HOLD]` is ABSENT at the receiving endpoint and that is the correct
+reading** — the perf server sends no bulk data, so its gap-response loop never
+runs, and the gauge's own contract is that an absent line is an UNREACHED
+EMISSION SITE and never an unset gate.
+
+### 3 — THE BAND, AFTER THE WITNESS
+
+| cell | median goodput | band | verdict |
+|---|---|---|---|
+| `c1` | 187.7 Mbit | `[147, 294]` | IN BAND |
+| `c7` | 150.2 Mbit | `[140, 180]` | IN BAND |
+| `sc2` | 86.8 Mbit | `[78, 92]` | IN BAND |
+| `c8` | 86.5 Mbit | `[50, 100]` | IN BAND |
+
+### 4 — THE CLOSURE-CLASS TABLE (`[HOLD]`, sender, pooled over 3 reps)
+
+| cell | `fed` | `heal_noretx` | `heal_retx_young` | `closed_retx` | identity |
+|---|---|---|---|---|---|
+| `c1` | 1 293 | **0** (0.0000) | 10 (0.0077) | **1 283 (0.9923)** | CLOSED |
+| `c7` | 237 406 | **226 180 (0.9527)** | 1 883 (0.0079) | 9 343 (0.0394) | CLOSED |
+| `sc2` | 5 032 | 2 (0.0004) | 25 (0.0050) | **5 005 (0.9946)** | CLOSED |
+| `c8` | 15 785 | **13 978 (0.8855)** | 596 (0.0378) | 1 211 (0.0767) | CLOSED |
+
+`heal_noretx + heal_retx_young + closed_retx = fed` on **every line of every
+cell**, so the classes partition exactly the resolutions the pre-audit
+`[HOLD]` already counted and no prior reading is re-based.
+
+**THE DENOMINATOR IS NAMED RATHER THAN ASSUMED.** `fed` is the set of holes
+the SENDER was told about and saw resolve — the population the repair decision
+actually acts on, and therefore the right conditional for a decision theory.
+It is NOT the receiver's `det`, which counts holes the sender may never hear
+of (`c1`: `fed = 1 293` against `det = 2 466`). Both are reported; neither is
+substituted for the other.
+
+### 5 — READING (i): **`c1` AND `sc2` ARE RETRANSMIT-DOMINATED. THE `orig_frac` THERE IS NOT A SELF-HEAL FRACTION.**
+
+The pre-registered criterion was *"at `c1`, `heal_noretx + heal_retx_young
+< 20 %` of resolved holes ⇒ the record's `orig_frac` is not a self-heal
+fraction."* It reads **0.77 %** at `c1` and **0.54 %** at `sc2`. **The criterion
+fires by a factor of 26 and 37.**
+
+The mechanism is visible in a second number the same run produced:
+`[FCAUSE] n / [SUCC] det` — fires per detected hole — is **1.329 at `c1`** and
+**1.550 at `sc2`**, against **0.058 at `c7`** and **0.191 at `c8`**. **At the
+single-path cells the sender emits MORE repairs than the receiver detects
+holes.** A copy of the seq is on the wire before the original could plausibly
+have arrived, so `[SUCC] orig` — which cannot tell a late original from a
+retransmit — counts the retransmit's own arrival as "the original closed it."
+That is the disclosed caveat, measured, at the two cells where it dominates.
+
+**WHAT IS AND IS NOT NOW KNOWN AT `c1`.** Known: a copy flew for
+essentially every hole (`heal_noretx = 0` of 1 293), and resolution followed
+that copy by more than half an RTT in **99.23 %** of them. NOT known, and this
+instrument cannot decide it: whether the original would have arrived anyway
+had no copy flown. **The correction is therefore about what `orig_frac`
+MEASURES, not about a counterfactual** — it is not a self-heal fraction, and
+no waiting-time derivation may read it as one.
+
+**THE EVICTION CLAUSE OF THE SAME READING IS UNDECIDED, AND SAYS SO.** The
+pre-registered alternative *"eviction ≥ 50 % of `det`"* was to be computed
+from the EXISTING committed ledgers. That arithmetic is available at exactly
+one cell — `c1` is the only cell whose committed ledgers carry paired
+`CTLDLINE … site=cli` / `site=srv` rows (`docs/l1-raw/gap-s42.log`,
+`gap-s7.log`, `gap2-*.log`; `tools/l1/holeaudit_ctld.py`) — and over **200
+leg-reps and 66 101 859 datagram frames** it gives
+
+> **sender `tx` − receiver `rx` = 0.000925 of frames** (66 101 859 → 66 040 703),
+
+i.e. transport-level drop at `c1` sits at **0.0925 %**, exactly the cell's
+declared ~0.1 % GE loss. Against this run's `det / cum source symbols ≈
+0.24 %` at `c1`, wire drop accounts for roughly 40 % of detections and the
+remainder is reordering OR receive-side eviction — **which the shipped
+counters cannot separate**, because `[CTLD]` counts datagram frames at the
+transport and `PathBatchTracker.total_received` is never printed. The eviction
+clause is recorded UNDECIDED and the instrument that would decide it is named:
+a per-path counter of frames accepted by the transport but not handed to the
+decoder. **The `c1` reading does not depend on it — it fires on the first
+clause by a factor of 26.**
+
+**THE LOOPBACK FLOOR (A0.1) IS ZERO.** Single path, netem shim OFF, 2 × 50 MB
+in-process loopback: **`[SUCC] det = 0`.** The 2 ms `GAP_ACK_MIN_INTERVAL`
+sampler manufactures NO hole on a lossless FIFO wire, so the third clause of
+the artifact reading (`det > 0.1 %` of symbols on the lossless loopback) does
+NOT fire, and **`det` is not an instrument artifact.** Pinned by
+`tests/holeclass_reachability.rs`.
+
+### 6 — READING (ii): **`c8` AND `c7` ARE WIRE-REORDER-DOMINATED. THE ORDERING LEVER'S PREMISE HOLDS THERE.**
+
+The pre-registered criterion was *"at `c8`, `xp_n/det ≥ 0.5` AND
+`heal_noretx + heal_retx_young ≥ 0.5` of cross-path holes."*
+
+| cell | `[SUCC] xp_n/det` | `[SUCC] xp_frac` | `[HOLD] xp_frac` | cross-path heal, WORST CASE |
+|---|---|---|---|---|
+| `c8` | **0.8711** | 0.9087 | 0.3877 | ≥ (6 119 − 1 211)/6 119 = **0.802** |
+| `c7` | **0.9711** | 0.9747 | 0.3797 | ≥ (90 147 − 9 343)/90 147 = **0.896** |
+| `c1` | 0.0000 | 0.0000 | 0.0000 | — (structurally absent) |
+| `sc2` | 0.0000 | 0.0000 | 0.0000 | — (structurally absent) |
+
+**BOTH CLAUSES HOLD AT `c8`, and the second holds by a WORST-CASE BOUND that
+needs no joint distribution**: even if every one of `c8`'s 1 211
+`closed_retx` holes were cross-path, cross-path heal would still be 0.802.
+The same bound gives 0.896 at `c7`. **The reading fires at `c8` as
+pre-registered, and `c7` returns the same reading on the same criteria.**
+
+**`xp_n ≡ 0` AT BOTH SINGLE-PATH CELLS, ON BOTH GAUGES.** This is the control
+the whole split rests on: a one-path flow cannot close a hole with an arrival
+on another path, the field is the SAME field that reads 0.87–0.97 two paths
+over, and the zero is therefore a property of the wire and not an unreached
+code path. `tests/holeclass_reachability.rs` asserts exactly that pair.
+
+### 7 — READING (iii): **THE RECOV_MP RIPENESS FINDING — AT `c1` THE TIME THRESHOLD IS INERT BY CONSTRUCTION**
+
+`ripe_frac` is the fraction of holes whose LIVE FLIGHT was already at or above
+its own `9/8·max(srtt, ewma)` threshold **the first time the receiver
+mentioned them.**
+
+| cell | `ripe_frac` | `age_p50` | `thr_p50` |
+|---|---|---|---|
+| `c1` | **0.9819** | 26.6 ms | 13.3 ms |
+| `sc2` | 0.1748 | 98.3 ms | 106.5 ms |
+| `c8` | 0.0705 | 114.7 ms | 163.8 ms |
+| `c7` | 0.0228 | 41.0 ms | 57.3 ms |
+
+**At `c1` — a 2 ms-RTT path — 98.2 % of holes are ALREADY RIPE at their first
+report, and the median flight age at first report is 26.6 ms, thirteen
+round trips.** RFC 9002's time threshold measures AGE, and on this engine age
+includes the sender's own queue dwell, so at a loaded fast path the threshold
+has nothing left to suppress: it is not a patience law there, it is a
+formality. This is the §16.80.2 measurand argument, measured: **a lateness
+coordinate would not have this property; an age coordinate does.** The
+constant is NOT changed — the correct value is not known, and it stays in the
+open-constants register.
+
+### 8 — READING (iv): **THE WASTE SPLIT — THE TAPER COPY CONTRIBUTES ZERO**
+
+| cell | `taper_copy` (A0.4) | gap-fire `retx` | `[FCAUSE] n` |
+|---|---|---|---|
+| `c1` | **0** | 3 276 | 3 277 |
+| `c7` | **0** | 15 791 | 15 872 |
+| `sc2` | **0** | 9 985 | 10 084 |
+| `c8` | **0** | 2 425 | 2 518 |
+
+**The `P_lost` proactive-copy branch (`emit_source.rs:816-821`) did not fire
+once, at any cell, in the whole battery** — and the pre-existing DIAG-gated
+`plost=` counter reads 0 beside it, which is the two-counter agreement the
+reachability gate asserts. It also read 0 on both L0 loopback topologies.
+**So realized repair waste on the plain reliable window has TWO sources, not
+three: the gap-fire copy and the margin.** `dup_src / [FCAUSE] n` was not
+over-attributing after all — but that could not be known before this counter
+existed, and it is now a measurement rather than an assumption.
+
+**This is a reading, not a defect verdict.** What is now known is that the
+branch is not exercised at these four cells under shipped defaults. Why —
+whether `p_lost`'s `eps_at_send` is structurally ~0 on this path, or the
+oldest un-acked seq never ages far enough — is NOT decided here, and the
+constant stays in the open-constants register with its status unchanged.
+
+### 9 — THE CORRECTED `π0` AND THE TRUE-HEAL CDF `F`
+
+`π0 = (heal_noretx + heal_retx_young) / fed`, Wilson 95 % on the pooled counts.
+`F` is read on the HEAL CLASSES ONLY — the `closed_retx` class is a
+retransmit closure and belongs to no waiting-time distribution.
+
+| cell | corrected `π0` | 95 % CI | `F` p50 (heal_noretx) | `F` p90 | `heal_retx_young` p50 / p90 | `closed_retx` p50 / p90 |
+|---|---|---|---|---|---|---|
+| `c1` | 0.0077 | [0.0042, 0.0142] | — (n = 0) | — | 3.1 ms / 3.1 ms | 15.4 ms / 18.4 ms |
+| `c7` | 0.9606 | [0.9599, 0.9614] | **12.8 ms** | **45.1 ms** | 5.9 ms / 35.8 ms | 53.2 ms / 114.7 ms |
+| `sc2` | 0.0054 | [0.0037, 0.0078] | 49.6 ms | 49.6 ms | 32.8 ms / 36.9 ms | 98.3 ms / 106.5 ms |
+| `c8` | 0.9233 | [0.9190, 0.9273] | **8.2 ms** | **65.5 ms** | 6.4 ms / 79.9 ms | 131.1 ms / 196.6 ms |
+
+Every quantile is a bucket LOWER edge and reads at or below the truth by
+≤ 9.05 % — the instrument's declared and pinned error.
+
+**THE POOLED NUMBER IS REPORTED AND IMMEDIATELY DISOWNED.** Pooled over all
+four cells, `π0 = 242 674 / 259 516 = 0.9351`, close to the record's 0.97858
+— **and that closeness is the trap this pass exists to expose.** The pooled
+figure is dominated by `c7`'s 237 406 holes; it averages a cell where the
+true-heal share is 96 % with cells where it is half a percent. **No
+derivation may use a pooled `π0` on this engine.**
+
+**THE DIRECTION OF THE CLASSIFIER'S BIAS, as pre-registered before any number
+existed.** The `srtt/2` split attributes a hole whose original and whose
+retransmit land within half an RTT of each other to the ORIGINAL, biasing
+`π0` UPWARD. **So `π0 = 0.0077` at `c1` is an UPPER bound on that cell's true
+self-heal share, and the correction is if anything understated.** The `srtt/2`
+classifier is arbitrary in exactly the way the legacy age gate is; using it
+here does not bless it, and it enters no law.
+
+### 10 — WHAT THIS PASS CORRECTS IN THE RECORD, AND WHAT IT LEAVES OPEN
+
+**CORRECTED — the answer is now actually known** (annotations added in place;
+the original sections are NOT rewritten):
+
+1. **"THE SUCCESSOR-ARRIVAL PASS — THE SCORED RESULT" §3's `orig_frac` table
+   and its `POOLED = 0.97858`.** `orig_frac` is a BOUND on the false-repair
+   fraction, not a self-heal fraction — the pass said so itself in its "WHAT
+   REMAINS UNMEASURED" item 2, and this pass measures the decomposition. The
+   `c1` row (0.9954) and the `sc2` row (0.9346) are re-labelled: at those
+   cells the closing event is the sender's own retransmit at 99.2 % and
+   99.5 %. The `c7` and `c8` rows survive as approximations of a real
+   self-heal share, low by 2.8 and 5.3 points.
+2. **The same section's sentence "97.86 % of the holes this engine resolves,
+   it resolves by the original arriving."** It resolves 97.86 % of them by an
+   arrival the RECEIVER cannot distinguish from the original. At two paths
+   that arrival is overwhelmingly the original on the other leg; at one path
+   it is overwhelmingly the sender's copy.
+3. **"WHAT REPLACES IT"'s `orig_frac = 0.9786` pooled as the shape a
+   derivation must reckon with.** The shape is TWO shapes. A derivation must
+   carry the cell's path count, not a pooled prior.
+4. **§16.77.3's `rpd ≈ 1 − orig_frac·q` prediction** is stated against a
+   quantity now known to be a bound; the corrected input is `π0` per cell.
+
+**LEFT OPEN — the correct value is NOT known, and nothing is changed:**
+
+| constant | site | what this pass contributed | status |
+|---|---|---|---|
+| `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs:217` | the loopback floor is **0** — the sampler manufactures no hole | **arbitrary; undefeated; NOT derived** |
+| RECOV_MP `9/8·max(srtt,ewma)` + packet threshold 3 | `net/mod.rs:389-414, 443` | `ripe_frac = 0.982` at `c1`: the threshold is inert there by construction | **arbitrary in its COORDINATE (age, not lateness); NOT corrected** |
+| legacy age gate `srtt/2` (N=1) | `net/mod.rs:527` | the `age_*` histogram at N = 1 | **arbitrary; NOT corrected** |
+| taper copy `p_lost` | `emit_source.rs:816-821` | its waste, measured for the first time: **0 at 4/4 cells** | **NOT corrected — why it never fires is undecided** |
+| `NACK_RETX_COOLDOWN_FLOOR_US`, `ELIGIBLE_SKEW`, the `(2·srtt).clamp(25,100)` refresh clamp | as registered | untouched | **unchanged** |
+
+**AND THE ONE THIS PASS ADDS TO THE REGISTER:** the `srtt/2` split between
+`heal_retx_young` and `closed_retx` — a CLASSIFIER introduced by this
+instrument, arbitrary, with its bias direction stated. It gates nothing and
+must not be read as a law. What would decide it: a wire bit distinguishing a
+retransmit from an original, which is a wire change and is not proposed here.
+
+### 11 — WHAT REMAINS UNMEASURED
+
+1. **The counterfactual at the retransmit-dominated cells.** Whether `c1`'s
+   originals would have arrived had no copy flown. This instrument cannot see
+   it; only suppressing the copy can, and no lever was armed this round.
+2. **Receive-side eviction**, per §5 — the counters do not separate it from
+   reordering. The instrument that would is named.
+3. **The joint (class × same/cross) distribution.** §6's cross-path heal
+   figures are WORST-CASE BOUNDS, not measurements. The bound suffices for
+   both pre-registered clauses; a sharper reading needs a joint counter.
+4. **One seed.** `n = 3` at four cells, seed 42. The class fractions are
+   separated by two orders of magnitude, so the reading does not turn on
+   dispersion — but the CIs are on pooled counts within a cell and are not
+   rep-to-rep stability statements.
+5. **`heal_noretx` at `c1` is exactly 0 of 1 293**, so `F`'s true-heal p50 is
+   unmeasurable there. A waiting-time law positioned at `c1` has no
+   distribution to be positioned on, and that itself is the finding.
+
+**Nothing here flips a default. No law is touched, no clock derived, no
+constant blessed. Both VM locks were released; the exit state was verified at
+0 `raptorpath` processes and 0 `rp-*` namespaces.**
+
+---
