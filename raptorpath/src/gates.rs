@@ -1017,6 +1017,55 @@ pub struct RuntimeGates {
     /// battery switches — not a default in waiting.
     pub completion_exposure: bool,
 
+    /// `RWM_RECV_REQUEST_LAW` (**ABSENT by default**; paper 16.83.6 arm (A))
+    /// -- **THE REQUEST LAW MOVES THE REPAIR DECISION TO THE RECEIVER'S SEAT.**
+    ///
+    /// Armed, the receiver stops letting the sender infer holes from inverted
+    /// SACK ranges and REQUESTS them instead: per detected hole, at lateness
+    /// `l`, `REQUEST <=> l >= l*_recv`, where `l*_recv` is the threshold
+    /// `net/late.rs` already computes read-only from the receiver's own heal
+    /// density (`min{l : rho_heal(l) <= w/(1+w)} AND (H - d)+`). The requests
+    /// ride the v8 [`crate::transport::ControlMessage::RepairRequest`] with
+    /// `m = 1` -- the COPY, so this arm isolates the TIMING lever and nothing
+    /// else -- and the sender serves them out of `sent_store`, the same bytes
+    /// the gap loop serves today (so `[RFA] dup_src` stays comparable to CTL).
+    ///
+    /// **The collision seam.** 16.83.4: four emitters can fire a copy for the
+    /// same hole, and the censoring argument that makes `rho_heal` estimable
+    /// at all is CONDITIONAL on the receiver being the single authority. So
+    /// the per-seq SACK->gap producer is suppressed while this is armed (one
+    /// `&&` at `recv_nack_tx`) and `sack_tx` is NOT touched -- the SACK still
+    /// clocks store release (ADR-0060), because pruning `sent_store` on SACK
+    /// was refuted structurally UNSAFE on 2026-07-07 and a request law that
+    /// touched it would be re-running a refuted experiment.
+    ///
+    /// **ABSENT ⇒ no `RepairRequest` is ever constructed, the seam is the
+    /// shipped predicate verbatim, and the reliable reorder deadline reduces
+    /// to `hole_refresh_all` exactly** -- asserted, not described, by
+    /// `tests/recvlaw_reachability.rs`'s control arm and by the disarmed-inert
+    /// unit test beside the hold-down gate's.
+    pub recv_request_law: bool,
+    /// `RWM_RANK_FEEDBACK` (**ABSENT by default**; paper 16.83.6 arm (B)) --
+    /// **THE SAME MESSAGE AT THE DERIVED `m`.**
+    ///
+    /// `m = clamp(ceil(k_half(pi0)), 1, A*)`, `k_half = ln 2 / (-ln pi0)`,
+    /// with `pi0` the receiver's own running heal share (`[LATE] rho_heal0=`)
+    /// and `k = holes - pivots` from `frontier_probe` over the trailing span
+    /// -- the quantity `rank_in`/`frontier_probe` were written for and that
+    /// nothing has ever read. `pi0 -> 0 => k_half < 1 => m = 1`, so the
+    /// shipped per-seq copy is this message's own limit at the single-path
+    /// cells rather than a different message.
+    ///
+    /// **It COMPOSES with [`Self::recv_request_law`]; it does not select a
+    /// machine.** `m` is a continuous function of a measured `pi0` with no
+    /// threshold on delta or rho anywhere in it. Armed ALONE (without the
+    /// request law) the trigger stays the shipped 2 ms sampler and only the
+    /// VOCABULARY changes -- which is the wiring test, and is why the battery
+    /// runs `{CTL, A, B, A+B}` rather than `{CTL, A+B}`.
+    ///
+    /// **ABSENT ⇒ `m = 1` wherever a request is built at all.**
+    pub rank_feedback: bool,
+
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
     // stated hazard was not reachable from the sites it served. ADR-0066
@@ -1299,6 +1348,11 @@ impl RuntimeGates {
             // ABSENT by default. The glide it arms has shipped inert since P6;
             // arming it is an EXPERIMENT, not a default in waiting.
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
+            // ABSENT by default; anything but a truthy value resolves back to
+            // ABSENT and the echo prints `0`, so "my arm did not take" is READ
+            // off the run's own output rather than inferred. Paper 16.83.6.
+            recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
+            rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
             rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
                 .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
@@ -1371,6 +1425,7 @@ impl RuntimeGates {
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
              RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COMPLETION_EXPOSURE={} \
+             RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -1447,6 +1502,13 @@ impl RuntimeGates {
             // control arm's `=0` beside `[CHI] n=0` is what makes "the glide
             // never ran" a reading rather than an inference (§16.82).
             b(self.completion_exposure),
+            // THE TWO 16.83 ARMS, echoed at BOTH endpoints. The request law is
+            // consumed at the RECEIVER (which builds the message) AND at the
+            // SENDER (which serves it, and whose gap producer the seam
+            // suppresses), so the control's ABSENCE has to be as mechanically
+            // assertable as the arm's presence -- the `RWM_REFRESH_FLOOR_US`
+            // precedent, and the reason the battery can call a row VOID.
+            b(self.recv_request_law), b(self.rank_feedback),
             // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
             // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
             // measured in, so a ledger whose windows are 250 ms and one whose
@@ -1639,6 +1701,17 @@ mod forwarding_audit {
             line.contains("RWM_DERIVED_SWEEP=0"),
             "RWM_DERIVED_SWEEP must print its OFF value: {line}"
         );
+        // Paper 16.83.6: the receiver-law arms. The battery's CTL row is
+        // VOID unless BOTH of these read `=0` on the control log, so the
+        // OFF-value echo is asserted here rather than assumed downstream.
+        assert!(
+            line.contains("RWM_RECV_REQUEST_LAW=0"),
+            "RWM_RECV_REQUEST_LAW must print its OFF value: {line}"
+        );
+        assert!(
+            line.contains("RWM_RANK_FEEDBACK=0"),
+            "RWM_RANK_FEEDBACK must print its OFF value: {line}"
+        );
     }
 }
 
@@ -1665,6 +1738,19 @@ mod tests {
             !g.derived_sweep,
             "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
              \"The Derived Recovery Clamp\")"
+        );
+        // Paper 16.83.6 -- THE RECEIVER-LAW ARMS SHIP ABSENT. Both are
+        // EXPERIMENTS: (A) moves the repair DECISION to the receiver and
+        // suppresses the per-seq gap producer, (B) changes the request's
+        // VOCABULARY. Neither is a default in waiting, and 16.80's own value
+        // bound caps what either could win at < 1.54 % of transfer at c7.
+        assert!(
+            !g.recv_request_law,
+            "RWM_RECV_REQUEST_LAW ships ABSENT (16.83.6 arm A)"
+        );
+        assert!(
+            !g.rank_feedback,
+            "RWM_RANK_FEEDBACK ships ABSENT (16.83.6 arm B)"
         );
         // The three laws added 2026-08-19 (paper 16.67 / 16.68 / 16.69).
         // RWM_RACK_REO_MULT defaults to RFC 8985 6.2 Step 4's own initial

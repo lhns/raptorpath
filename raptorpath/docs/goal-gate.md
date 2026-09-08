@@ -51614,3 +51614,219 @@ section neither corrects it nor blesses it.
    and one offline scorer.
 6. **Nothing from `c1`, `c7`, `c8`, `c9h`, `sc2` or `sc3`**, and nothing at a
    hint other than Realtime or a seat other than EVICT.
+## THE RECEIVER-LAW BATTERY — PRE-REGISTRATION (2026-09-08, `feat/recvlaw-arms` from main@`9396ca0`) — **PAPER §16.83's ARMS (A) AND (B), AND THE FIRST EXPERIMENT THIS PROGRAMME HAS EVER POSITIONED INSIDE THE ADMISSIBLE DOMAIN.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, edits a shipped law, wires a consumer into a shipped path, or derives a clock.** `KNEE-BOUND` is a legal outcome of this battery and it is written FIRST so it cannot later be described as one nobody allowed for.
+
+**STATUS: PRE-REGISTRATION.** Paper §16.83. Two default-ABSENT experiment
+arms, `RWM_RECV_REQUEST_LAW` and `RWM_RANK_FEEDBACK`; the §16.83.5 loop (C) is
+specified in the paper and is **NOT BUILT and NOT LICENSED**.
+
+### 1 — What is being tested, in one sentence
+
+Every recovery clock this tree has written lived at the SENDER, and the sender
+cannot observe the quantity the decision needs. These arms move the decision to
+the RECEIVER — which holds the frontier, the lateness distribution and the rank
+— so that `α` stops being a thing to declare and becomes `S(ℓ*)`, a thing to
+read off the cost ratio the contract already declares.
+
+```text
+   ℓ*  =  min{ ℓ ≥ 0 :  w·π0·f(ℓ)  ≤  π1·c_L(ℓ) }   ∧   (H − d)⁺
+   REQUEST  ⇔  ℓ ≥ ℓ*
+```
+
+### 2 — The arms, and what each one isolates
+
+| arm | gates | what it moves | what it must NOT move |
+|---|---|---|---|
+| `CTL` | both ABSENT | nothing | — |
+| `A` | `RWM_RECV_REQUEST_LAW=1` | **THE TIMING LEVER.** The receiver requests at `ℓ ≥ ℓ*_recv`; the per-seq SACK→gap producer is suppressed by the collision seam | the VOCABULARY: `m ≡ 1`, so the bytes on the wire are today's per-seq copy out of `sent_store` |
+| `B` | `RWM_RANK_FEEDBACK=1` | **THE VOCABULARY LEVER.** `m = clamp(⌈k_½(π̂0)⌉, 1, A*)` | the TIMING: the seam stays OPEN, the trigger stays the shipped 2 ms sampler |
+| `AB` | both | the composition | — |
+
+**`B` ALONE IS THE WIRING TEST AND IT IS RUN FOR THAT REASON.** Without it,
+(B)'s effect and the seam's are one treatment and neither is measurable.
+
+### 3 — Cells, n, seeds
+
+`c7` and `c8` are SCORED. `c1` and `sc2` are **MUST-NOT-MOVE CONTROLS**:
+§16.83.2's `π0 → 0` limit gives `ℓ* = 0` and `k_½ < 1` gives `m = 1` there, so
+those are the LAW's own limits and not a configuration. Cell specs are
+TRANSCRIBED from `ccand_battery.sh:202-215` and never redefined.
+
+`n = 3` per arm per cell, seeds 42 and 7, arms INNERMOST (paired within a rep
+on one freshly built topology). 4 arms × 4 cells × 3 reps × 2 seeds = **96
+invocations.**
+
+**`RWM_GEN=0` ON EVERY ARM, AND THAT IS STRUCTURAL RATHER THAN A PREFERENCE.**
+Under generation coding `recv_nack_tx` is already `None`, the per-seq layer
+this battery's seam suppresses does not exist, and `request_law_armed` returns
+false — so a generation run would give four identical arms and a clean FALSE
+NULL (the α-sweep's own §7).
+
+### 4 — The scored dimensions, and the one that is a GUARD
+
+1. **THE REALIZED FALSE FRACTION AT THE RECEIVER** — `[RFA] false_frac`, a
+   binomial on ~80 k holes per rep. **Powered at n = 3 precisely because the
+   denominator is the hole count and not the rep count**, and the row carries
+   its own binomial standard error so that claim is checkable on the row.
+   The RECEIVER's truth, never the sender's `[RACK] fa=`: the sender cannot
+   tell a late original from its own retransmit, which is the whole of D0's
+   finding. Both are carried; they are never pooled.
+2. **WORST-LEG DELIVERED LATENCY** — `[LAT] tot_p99` at the receiver, with the
+   ping probe beside it through `latt_probe`'s ONE definition of censoring.
+
+**`ΔU` IS A GUARD AND NOT A SCORE.** The `n` for a scored `ΔU` at these cells
+is **559 reps at `c7` and 196 at `c8`** — infeasible — and saying so in ADVANCE
+is what stops an underpowered throughput leg from being quoted as a win. An arm
+that LEAVES the CTL goodput spread is REFUTED on the guard; an arm inside it has
+said nothing about goodput in either direction.
+
+**THE CEILING IS ALREADY KNOWN AND IT IS SMALL.** §16.80's value bound caps the
+whole of what a better threshold can win at **< 1.54 % of transfer at `c7`** and
+**< 1.88…3.39 % at `c8`**, and at ~0 at the single-path cells. A derived `α`
+does not raise that ceiling, and no outcome of this battery may be read as
+raising it.
+
+### 5 — The predictions, verbatim from §16.83.6, fixed before any reading
+
+* **Arm (A), at the DUALS: the realized false fraction falls by a factor
+  `1/(1 − F(ℓ*))` — `c7 ∈ [1.03, 2)`, `c8 ∈ [2, 10]` — with goodput inside the
+  CTL spread, and `knee_bind ≈ 1` at `c7`.**
+* **Arm (B): `dup_src → 0` BY CONSTRUCTION.** That is a witness of WIRING and
+  **not a result**; the result is `rep_redundant` and the `[RFA]` class
+  migration `dup_src → preempt_src`, with the frontier-invisibility cost
+  measured as `[RANK] pivots` dwell.
+* **The CONTROLS:** `lstar_us = 0`, `m_max = 1`, and no scored column moves.
+
+**THE REFUTERS, ALSO PRE-STATED.** The false fraction does not move; or
+`sampler_bind ≈ 1` (the 2 ms `GAP_ACK_MIN_INTERVAL`, not the law, set the
+time); or goodput leaves the CTL spread; or (B)'s `rep_redundant` rises without
+the false fraction falling; or `wa1_none` shows the span answers degrading to
+copies anyway.
+
+**AND ONE REFUTER IS DISALLOWED IN ADVANCE.** §16.83.1's `π1 ≤ S_tot(ℓ*)` is a
+BOUND, so `ℓ*_recv ≤ ℓ*` — conservative, and "conservative" here means "closer
+to the machine that ships". **An arm that fails to move is therefore NOT
+evidence that the law is wrong**, and that is stated here so it cannot be
+argued afterwards.
+
+### 6 — Witnesses (per invocation, both endpoints)
+
+| id | reading | must |
+|---|---|---|
+| `W1` | `[RFA] gen=` at the receiver | `0` |
+| `W2` | `[PFRAC]` lines at the sender | present |
+| `W3` | `[DIAG] retx=`, **MAX over all lines** | `> 0` at lossy cells |
+| `W4` | `[RACK] fa=<spur>/<fired>` at the sender | present |
+| `W5` | `[GATES] RWM_RECV_REQUEST_LAW` / `RWM_RANK_FEEDBACK`, BOTH endpoints | equal to the arm |
+| `W6` | `[LATE] n=` at the receiver | `> 0` at lossy cells |
+| `W7` | `[SUCC] det=` at the receiver | `> 0` — the INDEPENDENT hole witness |
+| `W8` | `[FCAUSE] n=` at the sender | `> 0` — the fire plane exists |
+| `WA1` | `[REQS] wa1_some` / `wa1_none` | **§16.83.3's SOUNDNESS PRECONDITION, COUNTED** |
+| `WA2` | `[REQS] m_max` / `coded` | `m > 1` spans actually SERVED on B/AB |
+| `WA3` | `[REQS] stale` / `budget_bound` | the serving loop's own refusals |
+| `WL1` | `[LATE] lstar_us` | `> 2000` at the duals, `= 0` at the singles |
+| `WL2` | `[REQ] sent=` at the receiver **AND** `[REQS] served=` at the sender | `> 0` on A/B/AB, `= 0` on CTL |
+| `WK` | `[LATE] knee_bind=` and `sampler_bind=` | echoed on every row |
+
+`W3` is read as a MAXIMUM and never off the last line — `retx=` in the `[DIAG]`
+tail is an INTERVAL counter (the α-sweep's own `W4'` lesson).
+
+**`WL2` IS TWO-SIDED ON PURPOSE.** A one-sided reading cannot tell "never
+built" from "never served", and the two failures have different causes and
+different fixes. A treatment row failing either half is **VOID**, not a small
+number.
+
+**`WL1` IS AN L1 WITNESS AND CANNOT BE PRODUCED ON LOOPBACK.** The `[LATE]`
+instrument's own L0 reading is `lstar_us = 0` with `knee_bind = 1.0` on BOTH
+loopback topologies, because `d` (the mean ARQ resolution) exceeds the observed
+knee `H` there so `(H − d)⁺ = 0`. `tests/recvlaw_reachability.rs` therefore
+asserts only that the field EXISTS and is echoed. **If the same inequality
+holds at the L1 duals, that is the KNEE-BOUND outcome below and not a
+malfunction.**
+
+### 7 — THE COLLISION SEAM IS ITSELF A PRE-REGISTERED READING
+
+§16.83.4's identifiability argument is CONDITIONAL on the receiver being the
+single authority: `ρ̂_heal(ℓ) = π0·f(ℓ)` holds EXACTLY on `[0, ℓ*)` only because
+no copy has flown there, and a copy flying is precisely what §16.77.8a's
+censoring is. So:
+
+* on `A` and `AB`, **`[FCAUSE] gap_data` MUST read 0.** A nonzero reading means
+  the seam did not close, the estimate is censored in §16.77.8a's own
+  direction, and **the row measured a different law than the one it names.**
+  Rows failing this are VOID.
+* on `CTL` and `B`, **`gap_data` MUST NOT read 0 at a lossy cell.** A control
+  with `gap_data = 0` makes the treatment's zero prove nothing, and that row is
+  UNSCOREABLE rather than a pass.
+
+**`sack_tx` IS NOT TOUCHED BY EITHER ARM.** SACK drives store SLOT RELEASE and
+never recoverability; pruning `sent_store` on SACK was refuted structurally
+UNSAFE on 2026-07-07 (C7/C8 in-order DNF) and the safe realization is
+ADR-0060's release. A request law that touched `sack_tx` would be re-running a
+refuted experiment, and it is recorded here so it is not rediscovered.
+
+### 8 — Legal outcomes (the goal-gate lever set, plus `KNEE-BOUND`)
+
+No verdict outside this set may be recorded.
+
+* **`LEVER ENGAGED, OUTCOME MOVES`** — the arm executes (all witnesses clean)
+  and the realized false fraction falls at a scored cell by a factor inside the
+  §16.83.6 band, with the goodput guard not violated and worst-leg delivered
+  latency not worse.
+* **`LEVER ENGAGED, OUTCOME DOES NOT MOVE`** — the arm executes and the scored
+  fraction does not move beyond the CTL spread. Given §5's disallowed refuter,
+  the reading is about the BOUND `π1 ≤ S_tot(ℓ*)`, not about the law.
+* **`WIRING TEST FAILS`** — `WL2` or the §7 seam reading fails: the mechanism
+  did not execute at one of its two seats, or the seam did not close. No
+  statement about the law is licensed.
+* **`REFUTED-WITH-RECORD`** — a pre-stated refuter of §5 fires.
+* **`KNEE-BOUND`** — **`knee_bind ≥ 0.95` at the scored duals.** Then the
+  request lateness is NOT set by the lateness distribution at all: it is set by
+  the store's free headroom, i.e. by `RWM_STORE_GAIN = 2.0`, which is
+  UNPROVENANCED. **THE REPAIR LAW WOULD THEN BE THE STORE-CAP LAW WEARING A
+  CLOCK.** The consequence is stated in advance because it is uncomfortable:
+  (a) every number §16.83 computes at `c7`/`c8` inherits `gain = 2.0`'s absent
+  provenance; (b) `RWM_STORE_GAIN` moves from "an owed contrast for `H`"
+  (§16.80.12 item 3) to **the deciding measurement of TWO laws rather than
+  one**; (c) tuning the request clock without touching the store cap is
+  provably inert at those cells. **This is a LEDGER verdict about PROVENANCE,
+  not a performance finding, and it names `RWM_STORE_GAIN` explicitly.**
+* **`UNSCOREABLE`** — `n < 2` live rows at a scored cell after aborts and VOIDs,
+  or `W1`–`W8` failing at ≥ 2 of 3 reps at a scored cell. An absent gauge is a
+  skipped datum and never a zero (`-` iff `n = 0`).
+
+### 9 — What CANNOT be concluded from this battery
+
+* **Nothing about goodput.** §4's guard is a guard. The scored dimensions are
+  two and `ΔU` is not one of them.
+* **Nothing that raises §16.80's value ceiling.** < 1.54 % at `c7`,
+  < 1.88…3.39 % at `c8`, ~0 at the singles — whatever the arms do.
+* **NO CONSTANT IS BLESSED.** `GAP_ACK_MIN_INTERVAL = 2 ms`, the
+  `(2·srtt).clamp(25, 100)` refresh clamp, `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms`,
+  `RWM_STORE_GAIN = 2.0`, `κ`, and D0's own `srtt/2` classifier every one keeps
+  its value and its register row. **`α` is derived; nothing else is.** An
+  undefeated arm blesses nothing.
+* **Nothing about the §16.83.5 loop.** It is specified in the paper and NOT
+  BUILT. A controller for a constant is strictly worse than the constant, and
+  the stationarity question `[LATE]` would answer is not answered by this
+  battery.
+* **Nothing about the ρ < 1 EVICT seat.** `request_law_armed` requires the
+  plain RELIABLE window, so that seat is out of scope here by construction —
+  §16.83.4 names that the same expression would cover it and proposes nothing.
+* **Nothing about `A*`.** The receiver bounds `m` by its own outstanding span
+  and the retained window; the SENDER's retained trailing span is not
+  observable from the receiver's seat, and the sender's refusal to code beyond
+  it is COUNTED (`WA1`) rather than predicted.
+
+### 10 — The harness, and the commit boundary
+
+`tools/l1/recvlaw_battery.sh` + `tools/l1/recvlaw_parse.py`. The battery emits
+`RECVLAWWITNESS` (one JSONL row per invocation, the witness table above) and
+`RECVLAWRESULT` (the parser's full column set). Every helper it shares with
+`alpha_parse.py` / `ccand_parse.py` keeps that file's definition TO THE LINE so
+rows POOL across sessions without a second dialect; `latt_probe.probe_stats` is
+IMPORTED because it is the ONE definition of censoring.
+
+**THIS SECTION IS COMMITTED BEFORE THE VM IS TOUCHED.** The engine arms, their
+unit tests and `tests/recvlaw_reachability.rs` are committed before it; no VM
+number exists at the time of writing and none is quoted here.

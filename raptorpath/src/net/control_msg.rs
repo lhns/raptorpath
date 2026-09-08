@@ -82,6 +82,17 @@ pub(crate) struct ControlCtx<'a> {
     /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
     /// (anchor, deficit) vector to the local window sender's recovery loop.
     pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
+    /// **v8, paper 16.83 arm (A)/(B): the RECEIVER-SEAT REPAIR REQUEST,
+    /// forwarded to the local window sender's own recovery loop** -- the exact
+    /// parallel of [`Self::deficit_tx`] one line above, and deliberately so:
+    /// the receiver's report is the authority in both vocabularies, and the
+    /// sender is a server of it in both.
+    ///
+    /// `Some(..)` ONLY when `RWM_RECV_REQUEST_LAW` (or `RWM_RANK_FEEDBACK`) is
+    /// armed on a PLAIN RELIABLE window; `None` on every shipped path, where
+    /// an arriving `RepairRequest` keeps its v8 behaviour -- counted
+    /// (`repair_request_ignored()`) and dropped, never acted on.
+    pub request_tx: Option<&'a tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
     /// Some(..) in plain-reliable mode: forwards the WindowAck's RECEIVED-above-
     /// frontier ranges to the local window sender so it can prune the sent-store
     /// for out-of-order deliveries (SACK flow control). None disables it.
@@ -196,13 +207,7 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
         // how many arrived. Read-only: the counter feeds `[ETA]`'s tail and
         // nothing else.
         ControlMessage::RepairRequest { spans, cause } => {
-            REPAIR_REQUEST_IGNORED.fetch_add(1, Ordering::Relaxed);
-            debug!(
-                path_id,
-                spans = spans.len(),
-                cause,
-                "ignoring RepairRequest: no consumer exists in v8 (16.83 arms are Stage 2)"
-            );
+            on_repair_request(ctx, path_id, spans, cause)
         }
 
         // ADR-0030: never sent by this binary; the real guard (warn + ignore)
@@ -907,6 +912,44 @@ fn on_window_ack(
                 // on or from another. A label, like `cause`.
                 let _ = tx.try_send((cause, path_id, gaps));
             }
+        }
+    }
+}
+
+/// **v8 -- THE RECEIVER-SEAT REPAIR REQUEST** (paper 16.83 arms (A)/(B)).
+///
+/// With no consumer armed this is the v8 behaviour verbatim: COUNTED and
+/// DROPPED, never acted on and never panicked on, so a peer that speaks the
+/// arm to a binary that does not is READ off `repair_request_ignored()`
+/// rather than inferred from a silence. With the arm armed it is forwarded
+/// to the local window sender exactly as a `GenerationDeficit` is -- one
+/// channel, best-effort, and a dropped report is re-sent by the receiver on
+/// its next cadence.
+fn on_repair_request(
+    ctx: &ControlCtx<'_>,
+    path_id: u32,
+    spans: Vec<(u64, u16, u32)>,
+    cause: u8,
+) {
+    debug!(
+        path_id,
+        spans = spans.len(),
+        first = ?spans.first(),
+        cause,
+        "receiver-seat repair request"
+    );
+    match ctx.request_tx {
+        // Best-effort, the `deficit_tx` contract exactly: the receiver
+        // re-reports on its own cadence and the sender's want bookkeeping
+        // self-corrects against the in-flight baseline.
+        Some(tx) => {
+            let _ = tx.try_send((cause, spans));
+        }
+        // NO CONSUMER: the arm is absent (or this is a generation / block
+        // seat, where the span vocabulary has no server). Count it so the
+        // absence is a reading.
+        None => {
+            REPAIR_REQUEST_IGNORED.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
