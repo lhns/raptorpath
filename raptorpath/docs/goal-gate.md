@@ -51872,3 +51872,392 @@ invocation and is not power-limited by n in the same way.
 
 No pre-registered outcome set, guard, or refuter is changed by this amendment;
 only n and the seed count are.
+
+## THE r > 0 BATTERY — SCORED (TRUNCATED AT n = 4, SEED 42 ONLY)
+
+(2026-09-08, `meas/r-battery-score` from main@`3eb28db`; DOCS + the scorer's
+`--max-rep` switch + its unit test ONLY — no VM contact, no engine file, no
+gate, no default, no binary.) Scored against "THE `r > 0` BATTERY —
+PRE-REGISTRATION", its committed calibration amendment (§9's goodput-band unit
+note), and the "OPERATOR AMENDMENT (2026-09-08 10:49Z)" — and against nothing
+else. **Nothing here flips a default; no default change is recommended.**
+
+Ledgers: `docs/l1-raw/rbattery-trunc/r-s42.log` (the driver ledger; every
+`RRESULT` row quoted below is `RRESULT <cell>-<size>-<arm> rep=<n>` in that
+file), `r-witness-s42.jsonl`, `all.out`, `all-era.txt`, `launch.out`,
+`truncate.out`, `TRUNCATED.txt`. The per-invocation `diag/` captures were NOT
+copied off the VM; every number below is reproducible from the driver ledger by
+`python3 tools/l1/r_report.py --outdir docs/l1-raw/rbattery-trunc --max-rep 4`
+(exit 0; `test_r_parse.py` 56/56 checks pass, including the new `--max-rep`
+balance test).
+
+### 0 — THE FACTS OF THE TRUNCATION, BEFORE ANY NUMBER
+
+- Launched **2026-09-08 07:09:43Z** (`r-s42.log:1`, `launch.out`
+  `R-ALL start`) as the pre-registered 288-invocation grid (`R-ALL grid:
+  arms=3 cells=3 sizes=2 reps=8 seeds=2`). The operator capped every
+  measurement at 5 h (the amendment above). A detached stopper ended the driver
+  when the `=== rep=5` header appeared: `rep=5 header seen
+  2026-09-08T11:58:20Z`, `driver TERM sent`, `raptorpath killed 11:58:23Z`
+  (`truncate.out`).
+- **The driver did not stop on TERM.** `tools/l1/r_battery.sh:198` is
+  `trap 'release_locks' EXIT INT TERM`; the handler releases both locks and
+  returns — it has no `exit` — so the shell released the locks and CONTINUED
+  into rep 5: `c3hg-s18-CTL rep=5` died under the `pkill` with `rc=143`
+  (`r-s42.log:954-957`, `W10-RC`, 3 of 40 objects), `c3hg-s18-MID rep=5` then
+  ran to completion for 208 s WITH BOTH LOCKS RELEASED (`r-s42.log:967`), and
+  `c3hg-s18-GLIDE rep=5` was started (`r-s42.log:971`, header + `RENV` +
+  `[GATES]`, no `RUNTIME`) before the operator SIGKILLed the driver at
+  **12:08:25Z** (`truncate.out`; `TRUNCATED.txt` carries the 12:03:29Z sentinel
+  time). **HARNESS FINDING, one sentence, not fixed here:** `r_battery.sh:198`'s
+  TERM/INT trap must `exit` after `release_locks` (a concurrent harness repair
+  owns that file; this commit does not touch it).
+- **Rows.** `r-s42.log` carries **74 `RUNTIME` rows and 74 `RRESULT` rows**:
+  **72 = reps 1–4 × 18 arm-cell-sizes, the BALANCED set**, plus the two rep-5
+  rows above (one `rc=143`/partial, one complete) and one partial rep-5 header.
+  **Only reps 1–4 are scored; the two rep-5 `RRESULT` rows exist and are
+  EXCLUDED for balance** (`r_report.py --max-rep 4` prints `MAX-REP 4: 2 RRESULT
+  row(s) with rep > 4 EXCLUDED for balance`; the ledger file is untouched).
+- **Per-arm n actually counted: CTL 24, MID 24, GLIDE 24 rows = n = 4 at every
+  one of the 18 arm-cell-sizes** (`c3hg`/`c8`/`sc2` × `s18` 1.8 MB × 40
+  objects / `s25` 25 MB × 4 objects). `GLIDE-Z` is `ARM-ABSENT` at 24/24
+  cell-size-reps (`GLIDE-Z-PROBE … armed=0`, `ARM-ABSENT GLIDE-Z` × 24), as
+  pre-declared.
+- There are **no `ARMCOUNT` and no `R-BATTERY-DONE` lines**; `DONE-S42` was
+  never earned; **seed 7 was not run**. This is an OPERATOR TRUNCATION, not a
+  battery failure: the sentinel name `FAILED-ALL-TRUNCATED-5H-BUDGET` is the
+  monitor's match pattern and nothing else.
+- **Power.** At n = 4, one seed, §6's table is NOT met (it sized the grid at 8
+  reps × 2 seeds) and §7's bar ("at BOTH seeds separately as well as pooled")
+  is UNEVALUABLE by construction. Per the amendment: **a null reading below is
+  `GUARD-UNDERPOWERED` / `NEEDS-MORE`, never `R-INERT`; only an effect wholly
+  outside `CTL`'s own 4-rep min–max at the same cell-size is read as a
+  DIRECTION**, in the pre-registered vocabulary. No p-value below is a
+  decision; the Hodges–Lehmann intervals are reported because §7 names them,
+  and they are read as effect sizes.
+
+### 1 — THE ABORT-CAUSE TABLE (reps 1–4)
+
+`rows = 72`, **`ABORT (no summary, no runs) = 0`, `ABORT-PLATEAU = 0`,
+`DNF = 0`** (every row `dnf: 0`, `runs_n` = 40 or 4 at 72/72), `W1 = 0`,
+`W8-NO-FDIAG = 0`, `W9-NO-RFA = 0`, `rc = 0` at 72/72, **SCOREABLE rows = 72**.
+`[GATES]` matched LITERALLY on both endpoints at 72/72: `RWM_DELTA`
+`unset`/`0.05`/`unset`, `RWM_COMPLETION_EXPOSURE` `0`/`0`/`1` for
+`CTL`/`MID`/`GLIDE`, **`RWM_THREE_TERM=0` on both endpoints of all 72**,
+`[RFA] gen=0` at 72/72, no `RWM_TAIL_BUDGET=` token on any row.
+
+Two instrument events, neither an abort:
+
+- `sc2-s25-CTL rep=2` (`r-s42.log:451,457,459`): the client's last `[DIAG]`
+  line was cut by the summary JSON landing on the same stdout line
+  (`[DIAG] t=372.8{"bytes":25000000,…}`), so `cum=` is UNREADABLE on that row
+  (`cum_src/cum_cod: null`; the `LIVENESS` line's `cum=0/0/0` is the scrape
+  default, not a reading). `W5` on `sc2`·25 MB `CTL` is therefore read on 3 of
+  4 reps, and `W7`'s `CTL` interval there is 3 reps wide.
+- `c8-s18-GLIDE rep=2` (`r-s42.log:364`): **`W6-CHI-DEAD`** — `[CHI] max=0.0000`
+  with the feed echo present, on a 12 s invocation (`RUNTIME … 12s`). χ was
+  live (`max = 0.9987`) on the other 23 of 24 `GLIDE` rows. Recorded; the row
+  stays in its denominators as the contract says.
+
+**The §9 goodput bands fired `OUT-OF-BAND-RESULT` on 69 of 72 rows, `CTL`
+included at every cell-size.** Attributed, per the pre-launch amendment and
+without re-attribution, to the per-object-median vs whole-transfer-mean unit
+mismatch: e.g. `sc2-s18-CTL` reads `mbps` (median of 40 objects) 1.88–2.77
+against `mbps_mean` 16.45–20.46, a 7.6× split inside one row. **Two `CTL`
+rows' `mbps_mean` landed inside the generation plateau [26.8, 34.1]**
+(`c8-s18-CTL rep=4` 28.76; `c8-s25-CTL rep=4` 33.35) while their band-checked
+medians did not (9.29; 48.59); the abort correctly did not fire, and the
+independent reading `[RFA] gen=0` is present on both rows — generation did not
+leak.
+
+### 2 — MECHANISM LIVENESS, READ BEFORE ANY SCORE — AND THE `cod` SPLIT THE CALIBRATION OWED
+
+**`W5` PASSES EVERYWHERE**: `cum_cod > 0` at 24/24 `MID` rows, 24/24 `GLIDE`
+rows, and 23/23 readable `CTL` rows. `R-INERT`, `GLIDE-INERT` and §8's
+attribution rule are **NOT REACHED** at any cell-size. `W6`: `[CHI] max =
+0.9987` on 23/24 `GLIDE` rows (`frac_gt_half` 0.39–0.93), `0.0000` on 48/48
+`CTL`+`MID` rows — two-sided, as required.
+
+**THE MANDATORY SPLIT.** The calibration read `CTL`'s `[DIAG] cod/(src+cod)` at
+4–11 % and called it "`CTL` is not at the corner". **That reading was of the
+wrong counter, and the split is now made from the ledger plus the engine
+source (read, not run):**
+
+- `[DIAG] cum=<src>/<cod>/<ack>` prints `stats.fec.total_source_symbols` /
+  `total_repair_symbols` (`src/net/diag.rs:461-462`). **`total_repair_symbols`
+  is incremented for EVERY repair emission, including a NACK-answered SOURCE
+  RETRANSMIT** — `src/net/mod.rs:10881` (`stats.fec.total_repair_symbols
+  .fetch_add(1)` in the retransmit branch, two lines above `dg.diag_retx += 1`
+  at `:10884`) and `:10326` (the NACK-answer emission, coded or copy, beside
+  `:10347`'s `diag_retx += 1`). So **`cod` = proactive coded + reactive coded
+  + retransmitted source copies**, and `diag_retx` (`[DIAG] retx=`, scraped
+  on every row) = the NACK-answered part of it.
+- **`cum_cod − diag_retx` = the NON-NACK repair emission** (the `r` law's
+  proactive symbols PLUS the margin/correction/sweep emitters at
+  `mod.rs:10938`, `emit_source.rs:960`, `mod.rs:9371/9423/9532`). **That
+  residual cannot be split further from the driver ledger** (`sweeps=` is not
+  scraped, `[RFA] rep_n` is not scraped, and `diag/` was not copied), so the
+  proactive-vs-margin share inside it is **UNRESOLVED**. What IS resolved:
+
+| arm-cell-size (4 reps) | `cod/(src+cod)` as the calibration read it | `retx` share of `cod` | **non-NACK repair, % of wire** | coded received (`fill_coded + rep_redundant`) |
+|---|---|---|---|---|
+| `CTL` `c3hg`·1.8 | 0.103–0.107 | **90 %** | **1.0–1.1 %** (682–723 sym) | 617–653 |
+| `CTL` `c3hg`·25 | 0.091–0.101 | 89–90 % | **1.0 %** (885–965) | 821–882 |
+| `CTL` `c8`·1.8 / ·25 | 0.047–0.059 / 0.050–0.062 | 68–70 % / 66–70 % | **1.4–1.9 %** / **1.6–1.9 %** | 772–1184 / 1419–1570 |
+| `CTL` `sc2`·1.8 / ·25 | 0.039–0.045 / 0.039–0.045 | 88–89 % / 86–89 % | **0.4–0.5 %** / **0.5 %** | 267–306 / 392–446 |
+| `MID` `c3hg`·1.8 / ·25 | 0.212–0.223 / 0.210–0.218 | 34–35 % | **13.9–14.4 %** / **13.8–14.1 %** | 6846–7405 / 3644–4792 |
+| `MID` `c8`·1.8 / ·25 | 0.153–0.183 / 0.158–0.172 | 12–14 % / 12–24 % | **13.1–16.1 %** / **12.2–15.2 %** | 2928–6139 / 5346–6482 |
+| `MID` `sc2`·1.8 / ·25 | 0.145–0.152 / 0.153–0.158 | 18–20 % | **11.6–12.2 %** / **12.4–13.0 %** | 5481–6496 / 7433–9383 |
+| `GLIDE` `c3hg`·1.8 / ·25 | 0.146–0.166 / 0.120–0.128 | 50–55 % / 66–72 % | **6.5–8.2 %** / **3.4–4.4 %** | 2683–2962 / 1257–2014 |
+| `GLIDE` `c8`·1.8 / ·25 | 0.043–0.306 / 0.103–0.176 | 12–67 % / 24–36 % | **1.4–27.0 %** / **6.5–13.4 %** | 741–8366 / 2250–4538 |
+| `GLIDE` `sc2`·1.8 / ·25 | 0.054–0.069 / 0.050–0.056 | 57–62 % / 66–71 % | **2.1–3.0 %** / **1.4–1.9 %** | 959–1219 / 781–1245 |
+
+(Per-rep values are in `RRESULT` fields `cum_src`, `cum_cod`, `diag_retx`,
+`rfa_fill_coded`, `rfa_rep_redundant`; the closure check that the
+non-NACK residual on `CTL` matches the coded symbols the RECEIVER counted, to
+within the channel's own loss — 688 sent vs 644 received at `c3hg-s18-CTL
+rep=1`, 320 vs 306 at `sc2-s18-CTL rep=1` — is what licenses reading
+`cum_cod − diag_retx` as the coded emission.)
+
+**THE LIVENESS CLAUSE ON `CTL`, SCORED AS THE READING RULE REQUIRES:** *`cod`
+reaches the wire on `CTL` at every cell-size; 86–90 % of it at the single cells
+and 66–70 % at `c8` is `diag_retx` — reactive retransmission, not the `r` law;
+the remaining 0.4–1.9 % of the wire is non-NACK repair whose proactive/margin
+split is UNRESOLVED from the ledger.* **The calibration's sentence "`CTL` is
+not at the corner, `cod/(src+cod)` = 4.05–11.07 %" is therefore WITHDRAWN as a
+statement about `r`: the counter it quoted is dominated by retransmits, and
+`r > 0` on `CTL` is NOT inferred.** Whether `CTL`'s ≤ 0.4–1.9 % is the anchor
+term of `r(β)` at β = 1 or the margin emitters is the question the `diag/`
+captures (not copied) and a `sweeps=` scrape would answer.
+
+**AND `MID` IS FUNDED THROUGH δ, MEASURABLY:** its non-NACK repair is 11.6–16.1
+% of the wire at every cell-size — 11–14× `CTL`'s at the singles, 7–9× at
+`c8` — with its `retx` share falling to 12–35 %. `GLIDE` is funded at
+`c3hg` (3.4–8.2 %, the reachability cell) and marginally at `sc2` (1.4–3.0 %),
+with `c8` bimodal (1.4 % on the `W6-CHI-DEAD` rep, 15–27 % otherwise).
+
+**`eps_hat` (`pl=` = `p.estimator.loss_rate()`, `diag.rs:687`, max over the
+run)** reads 0.056–0.133 on `CTL` at the singles against channels of 2.534 %
+(`sc2`) and 5.800 % (`c3hg`) — 2–3× HIGH, the opposite sign of open item 3's
+"3–5× low" — and **0.35–0.91 at `c8`**, which no 2.5/4.8 % Gilbert–Elliott leg
+produces; at the dual cell the scrape is not a loss estimate and is recorded
+against open item 3 as an instrument reading, not adjudicated here. Because
+`W5` never failed, the `BUDGET-BOUND`/`ESTIMATOR-BOUND` attribution is not
+reached and this number decides nothing.
+
+### 3 — THE PRE-STATED FALSIFIER (§16.82.6), WHICH OUTRANKS GOODPUT AND COMPLETION
+
+`[FDIAG]` last line per row, `DECODE avg` (decode-resolved wall time) vs
+`SOURCE avg` (ARQ-resolved), both `n ≥ 30`, `present_at_stall` beside every
+figure (a `DECODE avg` without it is not a reading of this battery):
+
+| arm-cell-size | readable (n≥30 both) | `DECODE > SOURCE` | DECODE avg ms (4 reps) | SOURCE avg ms | `present_at_stall` | reading |
+|---|---|---|---|---|---|---|
+| `MID` `c3hg`·1.8 | 4/4 | **4/4** | 252 / 187 / 191 / 211 | 48 / 46 / 42 / 57 | 20 / 13 / 17 / 19 | **fires** |
+| `MID` `c3hg`·25 | 4/4 | **4/4** | 396 / 382 / 404 / 677 | 82 / 95 / 101 / 105 | 17 / 16 / 16 / 12 | **fires** |
+| `MID` `sc2`·1.8 | 4/4 | **4/4** | 234 / 157 / 207 / 229 | 31 / 15 / 29 / 50 | 1 / 7 / 6 / 5 | **fires** |
+| `MID` `sc2`·25 | 4/4 | **4/4** | 251 / 227 / 340 / 275 | 53 / 56 / 78 / 99 | 12 / 17 / 8 / 14 | **fires** |
+| `MID` `c8`·1.8 | 3/4 | 2/3 | 2.6 / 6.7 / 4.1 / 3.2 | 4.2 / 3.7 / 4.1 / 5.4 | 6 / 5 / 6 / 1 | 2 of 4 reps: NOT a majority of the arm's reps — `NEEDS-MORE` |
+| `MID` `c8`·25 | 4/4 | 2/4 | 3.5 / 2.1 / 19.7 / 25.8 | 4.1 / 4.2 / 12.9 / 15.0 | 2 / 4 / 10 / 14 | does not fire |
+| `GLIDE` `c8`·1.8 | 3/4 | **3/3** | 29.7 / 20.1 / 37.8 / 28.1 | 16.2 / 3.0 / 9.8 / 13.1 | 16 / 4 / 35 / 42 | **fires** (3 of 4 reps) |
+| `GLIDE` `c8`·25 | 2/4 | 2/2 | 44.9 / 33.1 / 49.7 / 12.9 | 6.8 / 1.7 / 1.9 / 1.8 | 32 / 19 / 5 / 10 | 2 of 4 reps: `NEEDS-MORE` (fires on the majority-of-readable reading `r_report.py` prints; not on a majority of the arm's 4 reps) |
+| `GLIDE` `c3hg`·1.8 | 2/4 | 1/2 | 84 / 51 / 251 / 60 | 70 / 49 / 66 / 67 | 4 / 5 / 3 / 6 | `NEEDS-MORE` |
+| `GLIDE` `c3hg`·25, `sc2`·1.8, `sc2`·25 | 0/4 | — | `DECODE n` 6–29 | — | 0–10 | UNREADABLE at n≥30 (too few decodes) |
+| `CTL` (all six) | 0–1/4 | — | `DECODE n` 1–33 | — | 0–16 | UNREADABLE; where the single readable rep exists (`c8`, both sizes) it reads `DECODE > SOURCE` |
+
+**`ENTANGLEMENT-DOMINATED` FIRES ON `MID` AT 4 OF 6 CELL-SIZES (16 of 16
+readable reps, DECODE 4–6× SLOWER than ARQ per hole, `present_at_stall` 1–20)
+AND ON `GLIDE` AT `c8`·1.8 MB.** At the four single-cell `MID` readings the
+funded repairs resolve holes in 157–677 ms against ARQ's 15–105 ms — the
+mechanism §16.82.6 named, reproduced at n = 4 where the smoke had it at n = 1.
+`[RFA] preempt_src` (a source arrival for a seq the decoder had ALREADY
+reconstructed — the reactive plane's own view of a repair the retransmit beat)
+rises with it: `MID` 806–2053 per invocation at the singles vs `CTL` 86–476
+(`false_frac` 0.61–0.71 vs 0.26–0.38); `GLIDE` 196–752 vs `CTL` 86–511.
+
+### 4 — `W7`, THE CC PIN ON `MID`, AS PRE-REGISTERED
+
+`MID`'s `[DIAG] rtt=` p50 against `CTL`'s own 4-rep min–max at the same
+cell-size (like-for-like scrape within a cell-size; the compound
+`rtt=/wrtt=/rtp` form yields the `wrtt` component at some cells, per the
+calibration's note, and is not quoted across cells):
+
+| cell-size | `CTL` rtt ms (4 reps) → interval | `MID` rtt ms | outside | direction | `W7` |
+|---|---|---|---|---|---|
+| `c3hg`·1.8 | 154 / 139 / 61 / 168 → [61, 168] | 68 / 520 / 132 / 543 | 2/4 | ABOVE (looser queue) | **`W7-CC-PIN-FAILED`** — rows VOID |
+| `c3hg`·25 | 301 / 249 / 87 / 153 → [87, 301] | 346 / 404 / 344 / 243 | 3/4 | ABOVE | **FAILED** — VOID |
+| `c8`·1.8 | 45 / 168 / 43 / 20 → [20, 168] | 42 / 41 / 42 / 15 | 1/4 | below | **FAILED** — VOID |
+| `c8`·25 | 233 / 84 / 120 / 44 → [44, 233] | 38 / 10 / 12 / 13 | **4/4** | **BELOW, 3–23×** — the tighter-queue signature `W7` hunts | **FAILED** — VOID |
+| `sc2`·1.8 | 17 / 31 / 12 / 21 → [12, 31] | 22 / 18 / 21 / 17 | 0/4 | — | **`W7-OK`** |
+| `sc2`·25 | 58 / 22 / 18 (rep 2 unreadable) → [18, 58] | 26 / 17 / 30 / 20 | 1/4 (17 < 18) | below by 1 ms | **FAILED** — VOID |
+
+**`W7` VOIDs `MID` at 5 of 6 cell-sizes — 20 of 24 `MID` rows — and §11.6 then
+names `MID`'s outcome at those five `UNSCOREABLE-W7`.** Two things are recorded
+beside that and neither weakens it: (i) at n = 4 `CTL`'s interval is narrower
+than the n = 16 interval the witness was designed against, so the gate is
+STRICTER here than pre-registered, and `sc2`·25's miss is 1 ms; (ii) the
+direction is split — at `c3hg` `MID` sits ABOVE `CTL` (the looser queue of a
+pinned CC carrying more repair traffic, the calibration's reading), while at
+`c8`·25 MB `MID` reads 10–38 ms against `CTL`'s 44–233 ms on all four reps, which
+IS the 20×-tighter standing queue a CC that followed δ would produce. **`W7`
+stays exactly as pre-registered: it is the only witness `RWM_COPA_DELTA` has,
+because the engine-side Copa resolve echo `gates.rs:1432` claims does not exist
+on this binary. The one-line `eprintln!` at the Copa resolve site remains the
+deciding fix; it is an engine change and this commit licenses none.**
+
+**Scorer finding (not fixed here; the harness is under concurrent repair):**
+`r_report.py` prints the `W7` verdict in its section 3 but does not propagate
+the VOID into sections 4–5, so its printed `MID` scores and outcomes at the five
+failed cell-sizes are on VOID rows; the VOID is applied by hand below. Its
+section-5 `R-FUNDED-NEGATIVE` branch is also reached from any non-WIN, which
+at n = 4 is the amendment's forbidden "null read as a result"; that too is
+corrected by hand below.
+
+### 5 — THE SCORE: COMPLETION p50, EFFECT SIZES AGAINST `CTL`'s OWN SPREAD
+
+Hodges–Lehmann shift of the 4 arm p50s against the 4 `CTL` p50s, two-sided 95 %
+rank interval (§7's estimator), and — the reading the amendment licenses — whether
+all 4 arm reps lie wholly outside `CTL`'s min–max. `CTL` p50s and the 4 arm p50s
+per row are the `completion_p50` fields.
+
+| cell-size | `CTL` p50 (4 reps) → [min, max] | arm | arm p50 (4 reps) | HL shift (% of `CTL` median) | 95 % | vs `CTL` spread | reading at n = 4 |
+|---|---|---|---|---|---|---|---|
+| `c3hg`·1.8 | 7.15 / 5.42 / 6.13 / 6.56 → [5.42, 7.15] | `MID` | 4.68 / 3.78 / 4.24 / 4.97 | −1.88 s (**−29.7 %**) | [−2.91, −0.74] | **all 4 BELOW `CTL` min** | direction: FASTER — on **VOID** rows (`W7`) |
+| | | `GLIDE` | 9.65 / 9.86 / 9.78 / 10.07 | +3.51 s (**+55.4 %**) | [+2.63, +4.44] | **all 4 ABOVE `CTL` max** | **direction: SLOWER** |
+| `c3hg`·25 | 82.0 / 84.3 / 90.9 / 111.1 → [82.0, 111.1] | `MID` | 76.6 / 78.2 / 77.7 / 87.5 | −7.13 s (−8.1 %) | [−33.4, +3.2] | 3 below, 1 inside | `NEEDS-MORE` (VOID rows) |
+| | | `GLIDE` | 108.2 / 109.2 / 110.5 / 107.7 | +21.5 s (+24.6 %) | [−2.9, +27.2] | inside | `NEEDS-MORE` |
+| `c8`·1.8 | 2.84 / 0.28 / 3.71 / 1.61 → [0.28, 3.71] (spread 154 % of median) | `MID` | 2.63 / 2.44 / 2.51 / 13.28 | +0.96 s (+42.9 %) | [−1.20, +11.67] | 1 above | `NEEDS-MORE` (VOID rows) |
+| | | `GLIDE` | 0.41 / 0.20 / 3.58 / 4.04 | +0.02 s (+1.0 %) | [−3.30, +3.30] | 1 below, 1 above | `NEEDS-MORE` |
+| `c8`·25 | 41.3 / 25.5 / 3.87 / 12.5 → [3.87, 41.3] (spread 197 %) | `MID` | 51.3 / 69.9 / 113.1 / 117.6 | +68.9 s (**+363 %**) | [+25.8, +109.2] | **all 4 ABOVE `CTL` max** | direction: SLOWER, 2.4–3.7× — on **VOID** rows (`W7`, and the tight-queue direction) |
+| | | `GLIDE` | 47.7 / 10.0 / 4.64 / 6.93 | −4.05 s (−21.3 %) | [−34.4, +35.2] | 1 above | `NEEDS-MORE` |
+| `sc2`·1.8 | 5.93 / 5.55 / 7.29 / 7.72 → [5.55, 7.72] | `MID` | 5.05 / 3.15 / 4.76 / 4.85 | −2.42 s (**−36.6 %**) | [−4.14, −0.69] | **all 4 BELOW `CTL` min** | direction: FASTER — `W7-OK` rows; **outranked by §3** |
+| | | `GLIDE` | 7.69 / 7.30 / 7.18 / 7.68 | +0.82 s (+12.5 %) | [−0.43, +2.14] | inside | `NEEDS-MORE` |
+| `sc2`·25 | 96.2 / 107.1 / 105.1 / 112.1 → [96.2, 112.1] | `MID` | 76.0 / 74.7 / 77.0 / 73.3 | −30.7 s (**−29.0 %**) | [−37.4, −20.1] | **all 4 BELOW `CTL` min** | direction: FASTER — on **VOID** rows (`W7`, by 1 ms) |
+| | | `GLIDE` | 109.1 / 103.8 / 115.2 / 102.7 | +2.57 s (+2.4 %) | [−8.3, +13.0] | 1 above | `NEEDS-MORE` |
+
+**`c8` IS THE CELL WHERE `CTL` DOES NOT AGREE WITH ITSELF**: the control's
+4-rep completion spread is 154 % (1.8 MB) and 197 % (25 MB) of its own median,
+with `mbps` 3.9–55.2 and 5.1–52.6 — the dead-wall bimodality the mode-hunt
+battery recorded on this cell. Nothing inside that spread is readable at n = 4,
+and only `MID`·25 MB (all four reps 1.2–3.7× above `CTL`'s slowest) is outside
+it.
+
+**THE GOODPUT GUARD (declared `GUARD-UNDERPOWERED` in advance; reported, not
+scored), BOTH quantities per the band note**, medians of the 4 rows, against
+`H_price`'s own prediction `−cod/(src+cod)` off the arm's own rows (which,
+after §2, is the arm's REPAIR fraction and not its coded fraction):
+
+| cell-size | `CTL` `mbps` / `mbps_mean` | `MID` `mbps` / `mbps_mean` (vs `CTL`) | `H_price` predicted | `GLIDE` `mbps` / `mbps_mean` (vs `CTL`) | `H_price` predicted |
+|---|---|---|---|---|---|
+| `c3hg`·1.8 | 2.31 / 3.50 | 3.47 (**+50 %**) / 4.14 (+19 %) | −21.7 % | 1.47 (**−36 %**) / 2.51 (−28 %) | −15.8 % |
+| `c3hg`·25 | 2.57 / 2.44 | 2.66 (+3.5 %) / 2.68 (+9.9 %) | −21.5 % | 1.91 (**−25 %**) / 1.96 (−20 %) | −12.4 % |
+| `c8`·1.8 | 7.22 [3.9–55.2] / 18.9 | 5.66 (−22 %) / 5.03 (−74 %) | −16.7 % | 19.7 (+173 %) / 29.1 (+54 %) | −21.1 % |
+| `c8`·25 | 29.9 [5.1–52.6] / 22.1 | 3.59 (**−88 %**) / 3.37 (**−85 %**) | −16.5 % | 44.0 (+47 %) / 36.5 (+65 %) | −12.7 % |
+| `sc2`·1.8 | 2.30 / 17.5 | 3.04 (+32 %) / 18.4 (+5.5 %) | −14.8 % | 1.95 (−15 %) / 19.1 (+9.6 %) | −6.3 % |
+| `sc2`·25 | 1.98 / 3.49 | 4.92 (+149 %) / 4.31 (+23 %) | −15.6 % | 1.99 (+0.5 %) / 3.54 (+1.2 %) | −5.3 % |
+
+`H_price`'s goodput sign is met by `GLIDE` at `c3hg` (both sizes; larger than
+its own overhead) and by `MID` at `c8` (far larger than its overhead: −85 to
+−88 % at 25 MB); it is CONTRADICTED in sign by `MID` at `c3hg`·1.8 MB and at
+`sc2` (both sizes, both quantities). All of it is `GUARD-UNDERPOWERED` at n = 4
+and none of it scores.
+
+### 6 — `H_price` vs `H_object`, AND §6's TWO-PART CLAUSE
+
+`H_object` predicts a 1.8 MB completion gain of 7–60 % that shrinks to
+0.5–4.3 % at 25 MB; `H_price` predicts no completion gain at either size.
+
+- **`GLIDE` — the arm `H_object` was written for — moves completion the WRONG
+  WAY where it is readable.** At `c3hg`·1.8 MB (the only cell above the 5 %
+  line, χ live at 4/4, `r` funded at 6.5–8.2 % of wire) completion is **+55 %
+  SLOWER** on all four reps, outside `CTL`'s spread; at `c3hg`·25 MB +25 %
+  (inside). At `sc2` it is inside `CTL`'s spread at both sizes (+12.5 %,
+  +2.4 %). No `GLIDE` reading is in `H_object`'s predicted band at either size.
+- **`MID` shows the completion GAIN `H_object` predicted at 1.8 MB — and then
+  shows it AGAIN at 25 MB, where `H_object` predicts ≤ 4.3 %.** At `sc2`:
+  −36.6 % (1.8 MB) and **−29.0 % (25 MB)**, both wholly outside `CTL`'s spread;
+  at `c3hg`: −29.7 % and −8.1 % (the latter inside). §6's clause (b) — the 25 MB
+  point estimate strictly smaller in magnitude — is numerically met at `sc2`
+  (29.0 < 36.6) and `c3hg` (8.1 < 29.7), but the 25 MB effect at `sc2` is
+  **7× the ceiling `H_object` allows**, which is the pre-registration's
+  "WIN at both sizes alike" case: **an `OUT-OF-BAND RESULT` with its cause
+  named, never a size-discrimination claim.** The cause, from §3's own surface
+  table: `RWM_DELTA=0.05` moves FIVE surfaces at once — the tail target 10×
+  tighter (`1e-4`), `b(δ) = √2` (trailing span `A*` 0.707×, disclosed and
+  unpinnable), the CoDel setpoint 0.080, and at `c8` the placement weights — and
+  a whole-transfer effect present at 25 MB is exactly what the non-`r` surfaces
+  produce, not what the tail-`r` mechanism of §14.25 produces. `MID`'s
+  completion direction is therefore **not attributable to `r`**, as §3
+  pre-stated it could not be.
+- **And clause (a) is unreachable in this ledger**: no `MID` row is both
+  `W7`-clean and un-outranked. `R-FUNDED-POSITIVE-SMALL-ONLY` is NOT recorded
+  anywhere.
+- **The one place `H_price` and `H_object` are cleanly separated is the
+  falsifier, not the score**: the arm that is funded through δ resolves its
+  funded holes 4–6× SLOWER than ARQ at every single-cell reading (§3), which is
+  §16.82.6's mechanism and neither hypothesis's prediction.
+
+### 7 — THE VERDICT, PER CELL-SIZE, IN THE PRE-REGISTERED VOCABULARY AND NOTHING ELSE
+
+| cell-size | `MID` | `GLIDE` | `GLIDE-ζ` |
+|---|---|---|---|
+| `c3hg`·1.8 MB | **`UNSCOREABLE-W7`** (rows VOID 2/4). Recorded on the VOID rows: `ENTANGLEMENT-DOMINATED` 4/4; completion −29.7 %, all 4 below `CTL`; goodput +50 %/+19 % | **`R-FUNDED-NEGATIVE` (DIRECTION at n = 4, one seed)**: completion +55 % on all 4 reps outside `CTL`'s spread, goodput −36 %/−28 %, `r` funded at 6.5–8.2 % of wire, χ live 4/4. `H_price`'s sign; larger than `H_price`'s own overhead. Falsifier `NEEDS-MORE` (2/4 readable) | `ARM-ABSENT` |
+| `c3hg`·25 MB | **`UNSCOREABLE-W7`** (VOID 3/4). Recorded: `ENTANGLEMENT-DOMINATED` 4/4; completion −8.1 % (inside) | **`GUARD-UNDERPOWERED` / `NEEDS-MORE`**: +24.6 %, inside `CTL`'s spread; falsifier unreadable | `ARM-ABSENT` |
+| `c8`·1.8 MB | **`UNSCOREABLE-W7`** (VOID 1/4). Recorded: falsifier 2/4 (`NEEDS-MORE`); completion inside a 154 % `CTL` spread | **`ENTANGLEMENT-DOMINATED`** (3 of 4 reps, DECODE 28–38 ms vs SOURCE 10–16 ms, `present_at_stall` 16–42; outranks the goodput +173 %/+54 % reading, which sits inside `CTL`'s 3.9–55.2 spread) | `ARM-ABSENT` |
+| `c8`·25 MB | **`UNSCOREABLE-W7`** (VOID 4/4, the tight-queue direction). Recorded on the VOID rows: completion **+363 %**, all 4 above `CTL`'s max; goodput −85 %/−88 % | **`GUARD-UNDERPOWERED` / `NEEDS-MORE`**: falsifier 2 of 4 reps; completion −21 % inside a 197 % `CTL` spread | `ARM-ABSENT` |
+| `sc2`·1.8 MB | **`ENTANGLEMENT-DOMINATED`** (`W7-OK`; 4/4, DECODE 157–234 ms vs SOURCE 15–50 ms, `present_at_stall` 1–7; `preempt_src` 775–852 vs `CTL` 69–99). Outranks the recorded completion direction −36.6 % (all 4 below `CTL`) and goodput +32 %/+5.5 % | **`GUARD-UNDERPOWERED` / `NEEDS-MORE`**: +12.5 %, inside; funded at 2.1–3.0 %; falsifier unreadable | `ARM-ABSENT` |
+| `sc2`·25 MB | **`UNSCOREABLE-W7`** (VOID 1/4, by 1 ms). Recorded on the VOID rows: `ENTANGLEMENT-DOMINATED` 4/4; completion −29.0 %, all 4 below `CTL` (the `OUT-OF-BAND RESULT` of §6) | **`GUARD-UNDERPOWERED` / `NEEDS-MORE`**: +2.4 %, inside; funded at 1.4–1.9 %; falsifier unreadable | `ARM-ABSENT` |
+
+**Outcomes NOT recorded anywhere, and why:** `R-INERT` (`W5` passed at 71/71
+readable rows); `GLIDE-INERT` (`r` followed χ at every `GLIDE` cell-size);
+`R-FUNDED-POSITIVE-SMALL-ONLY` (§6 (a) unreachable at one seed and on
+VOID/outranked rows; the `sc2` 25 MB effect is out of `H_object`'s band);
+`ABORT-SMOKE`, `HEADROOM-BOUND`, `BUDGET-BOUND`, `ESTIMATOR-BOUND`, `WIRING`
+(none reached).
+
+**THE RULING CLAUSE, APPLIED.** No default flips. `RWM_DELTA`, `RWM_COPA_DELTA`
+and `RWM_COMPLETION_EXPOSURE` stay ABSENT/OFF. **`GLIDE`'s `R-FUNDED-NEGATIVE`
+direction at `c3hg`·1.8 MB does NOT bless `BULK_TAIL_BUDGET = 0.05`**: it stays
+in §16.80.12's open-constants register, arbitrary and UNCORRECTED, and the arm
+that would contest it (`GLIDE-ζ`) cannot run on this binary. `σ_arq`'s gain and
+floor and `r_tail = 0.2` are neither contested nor blessed. **No arm, gate, law,
+clock or constant is recommended for change by this section.**
+
+### 8 — WHAT WOULD MAKE THIS SCOREABLE, NAMED EXACTLY
+
+1. **`c3hg`·1.8 MB, arms `CTL` + `GLIDE`, 8 reps × 2 seeds (42 and 7) = 16
+   invocation-p50s per arm, 32 invocations.** §6's table needs n = 2 at
+   `c3hg` for a 7 % effect and the observed effect is +55 %, so 8 × 2 is the
+   committed grid rather than a power requirement; the 32 invocations at the
+   measured 4.0–6.0 min each (`RUNTIME` 238–362 s) are ≈ 2.5–3.2 h, inside the
+   5 h cap. This is the only reading in the ledger that is a DIRECTION on
+   `W7`-clean, un-outranked rows, and it needs the second seed §7 demands
+   before it can be a score.
+2. **`MID` cannot be made scoreable by reps alone.** `W7` failed at 5 of 6
+   cell-sizes and its engine-side witness — one `eprintln!` of the resolved
+   Copa δ at the resolve site (`scheduler/mod.rs:135`, the precedence
+   `RWM_COPA_DELTA ▸ RWM_DELTA ▸ hint`) — does not exist on this binary
+   (`gates.rs:1432` claims it does). That is an engine change, not licensed
+   here; until it lands, every `MID` completion number above is a VOID-row
+   record. Where `MID` was `W7`-clean (`sc2`·1.8 MB) it is
+   `ENTANGLEMENT-DOMINATED` at 4/4, and more reps do not change an outcome that
+   outranks the score.
+3. **The `cod` split needs two scrapes, not a rerun**: `[DIAG] sweeps=` and
+   `[RFA] rep_n=` into `r_parse.py`, plus the `diag/` captures copied off the
+   VM, would resolve `CTL`'s ≤ 0.4–1.9 % non-NACK residual into the `r` law's
+   proactive term versus the margin/sweep emitters. Harness only.
+4. **The `c8` control must be read as bimodal before any `c8` arm is**: at
+   154–197 % `CTL` spread no n in §6's table applies (the committed `c8` CV of
+   4.78 % is not what this ledger shows), and the mode-hunt battery's `c8`
+   finding is the prior.
+
+### 9 — WHAT THIS SECTION DOES NOT CLAIM
+
+It does not claim `r > 0` on `CTL` (the calibration's counter reading is
+withdrawn as a statement about `r`, §2). It does not claim `H_object` refuted
+or `H_price` confirmed — one seed, n = 4, and the arm `H_object` was written
+for is `R-FUNDED-NEGATIVE` in direction at one cell-size only. It does not
+attribute `MID`'s completion direction to `r` (§3's five surfaces; §6). It does
+not read any `c8` completion number inside the control's own 154–197 % spread.
+It does not relax `W7`, the falsifier's `n ≥ 30`, or the plateau rule. It
+flips nothing and recommends no default change.

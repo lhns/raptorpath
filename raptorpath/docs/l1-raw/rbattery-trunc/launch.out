@@ -1,0 +1,15 @@
+SENTINEL-WRITABLE /home/vibe/rbattery/all.out (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/DONE-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/FAILED-S42 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/DONE-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/FAILED-S7 (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/DONE-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/FAILED-ALL (probed as vibe, write+unlink)
+SENTINEL-WRITABLE /home/vibe/rbattery/all-era.txt (probed as vibe, write+unlink)
+SENTINEL-PROOF-COMPLETE 2026-09-08T07:09:43Z user=vibe dir=/home/vibe/rbattery calib=0
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+GLIDE-Z-PROBE binary=/home/vibe/raptorpath/target/release/raptorpath help_mentions_gate=0 armed=0
+R-ALL grid: arms=3 cells=3 sizes=2 reps=8 seeds=2 => 288 invocations
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

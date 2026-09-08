@@ -277,6 +277,39 @@ def main():
     check("the goodput leg is reported as a GUARD",
           "GUARD-UNDERPOWERED" in txt)
 
+    print("\n=== 7b -- r_report.py --max-rep: a truncated ledger is BALANCED, not edited")
+    # The operator-truncated r-s42.log carries two rep-5 rows beside 72
+    # balanced rep 1-4 rows. `--max-rep 4` must drop exactly the rep-5 rows,
+    # say so, and leave the ledger file byte-identical.
+    outdir3 = os.path.join(tmp, "led3")
+    os.makedirs(outdir3)
+    led3 = os.path.join(outdir3, "r-s42.log")
+    with open(led3, "w") as f:
+        for r0 in rows:
+            if r0["seed"] == 42 and r0["rep"] <= 4:
+                f.write("RRESULT " + json.dumps(r0, separators=(", ", ": ")) + "\n")
+        for arm in ("CTL", "MID"):
+            r5 = dict(rows[0]); r5.update(arm=arm, seed=42, rep=5, completion_p50=0.001)
+            f.write("RRESULT " + json.dumps(r5, separators=(", ", ": ")) + "\n")
+    before = open(led3, "rb").read()
+    p3 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir3, "--max-rep", "4"],
+                        capture_output=True, text=True)
+    check("--max-rep exits 0", p3.returncode == 0, p3.stderr[-400:])
+    check("--max-rep names the number of excluded rows",
+          "MAX-REP 4: 2 RRESULT row(s) with rep > 4 EXCLUDED" in p3.stdout,
+          p3.stdout[:200])
+    check("the excluded rep-5 rows do not reach the score (n=4, not 5)",
+          "sc2   s18  MID      n= 4" in p3.stdout, p3.stdout[-1200:])
+    check("the ledger file is byte-identical after scoring",
+          open(led3, "rb").read() == before)
+    p3b = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                          "--outdir", outdir3], capture_output=True, text=True)
+    check("without --max-rep the rep-5 rows ARE counted (n=5)",
+          "sc2   s18  MID      n= 5" in p3b.stdout, p3b.stdout[-1200:])
+    check("without --max-rep no MAX-REP line is printed",
+          "MAX-REP" not in p3b.stdout)
+
     print("\n=== 8 -- r_report.py --calib: ABORT-SMOKE on a dead glide")
     outdir2 = os.path.join(tmp, "led2")
     os.makedirs(outdir2)
