@@ -53299,3 +53299,478 @@ FAILED-ALL-TRUNCATED-5H-BUDGET`; never the process table):
    driver    /home/vibe/place/all.out, all-era.txt, launch.out, TRUNCATED.txt (backstop only)
    smoke     /home/vibe/place/smoke-s42.log, smoke.out, smoke.sh
 ```
+
+## THE PLACEMENT BATTERY — SCORED (n = 4 × 2 seeds; c9h n = 3)
+
+(2026-09-09, `meas/place-score` from main@`dc05dc7`; DOCS + the ledger files
++ one stdlib scorer ONLY — no VM contact, no engine file, no gate, no default,
+no binary, no parser change.) Scored against "PRE-REGISTRATION — THE PLACEMENT
+BATTERY (Track A)", its "n = 4 AMENDMENT DETAIL", its LAUNCH STEP, the S4
+first-point section, and paper §16.81 — and against nothing else. **Nothing
+here flips a default; no default change is recommended; no constant is
+blessed; a Tσ tie licenses `σ̂_e/ref`, never `0.15`.** Every number below is a
+`PLACERESULT` row field (the JSON `place_parse.py` emitted at battery time off
+`/tmp/rwm-{c,s}.log`, quoted as `s42:<line>` / `s7:<line>` into
+`docs/l1-raw/place/place-s42.log` / `place-s7.log`) or a ledger line quoted by
+number; the aggregation is `tools/l1/place_score.py` over the two ledgers
+(`python3 tools/l1/place_score.py docs/l1-raw/place/place-s42.log
+docs/l1-raw/place/place-s7.log`), which reads ONLY the ledgers. Ledgers
+committed raw: `place-s42.log` sha256 `f5bfd399…`, `place-s7.log`
+`ca071e22…`, plus `all.out`, `all-era.txt`, `launch.out`. **THE RAW ENDPOINT
+CAPTURES (`/home/vibe/place/diag/`) ARE NOT IN THE TREE**; nothing below
+re-parses a gauge line.
+
+**BOTH SEEDS RAN.** The amendment detail pre-stated that "on both seeds"
+clauses would be evaluated on ONE seed at the placeholder cost. They were
+not: `all-era.txt` reads `seed=42 rc=0 wall=6888s` (1 h 54 min 48 s < the 2.5 h
+gate), `seed=7 rc=0 wall=7609s`, `end 22:56:11Z … ran='42 7'`, total 14 498 s
+= 4 h 01 min 38 s against the 17 400 s backstop, `PLACE-ALL-DONE ran='42 7'`
+(`all.out:28`). n = 4 per arm-cell per seed at `c7`/`c8`/`c1`, n = 3 at `c9h`,
+n = 4 per single — **n = 8 pooled at the scored duals**, as the
+pre-registration's original design had it.
+
+### 0 — The facts of the run, before any number
+
+- **166 of 166 invocations produced a row.** Each ledger carries 83
+  `PLACERESULT` rows, 75 `RUNTIME` and 75 `LIVENESS` lines (the 8 singles per
+  seed carry neither by construction of `place_battery.sh`), `ARMCOUNT n=4/4`
+  on all 15 non-quad arm-cells and `n=3/3` on the 5 quad arm-cells,
+  `PLACE-BATTERY-DONE seed=42 20:49:22Z` / `seed=7 22:56:11Z`. Header on both:
+  `=== binary sha256 8d3f50a40dc285058db51d450a7b3ea45f841f41ccb32bfff1ec4f0fa3fa09ea`,
+  `=== source 073a6d8` — the launch step's binary.
+- **Zero** `ARM-LIVENESS-FAIL-*`, `ARM-CONTAMINATION`, `INSTRUMENT-FAIL-*`,
+  `PLACERESULT-PARSE-FAIL`, `ARM-VANISHED`, `ABORT`, `abort: true`, non-zero
+  `rc`. Every `LIVENESS` line echoes `cli=[…] srv=[…]` equal to the arm's
+  expected `td`/`hol` on both endpoints (the battery's own two-sided check
+  fired no failure line).
+- **`control_violated`: 0 of 166.** All 40 `c1` rows and all 16 single rows
+  read `succ_xp_n = 0`, `lat_rwxp_n = 0`, `sh_xp = 0.0000` (§4 below). **The
+  run is not voided.**
+- **DNF, per arm-cell (rows with `dnf: true`; every DNF row is `runs_n=2
+  acked_n=0`, i.e. the harness's one retry also did not finish):**
+
+  | | `c7` | `c8` | `c1` | `c9h` (n=3/seed) | `sc2` | `sc3` |
+  |---|---|---|---|---|---|---|
+  | `CTL` | 0/8 | 0/8 | 0/8 | **4/6** (s42 r2 r3; s7 r1 r2) | — | — |
+  | `T0` | 0/8 | 0/8 | 0/8 | **0/6** | — | — |
+  | `TSIG` | 0/8 | 0/8 | 0/8 | **5/6** (all but s42 r2) | — | — |
+  | `HOL` | 0/8 | 0/8 | 0/8 | **2/6** (s42 r2 r3) | — | — |
+  | `HOLTSIG` | 0/8 | 0/8 | 0/8 | **3/6** (s42 r3; s7 r1 r3) | — | — |
+  | `SINGLE` | | | | | **8/8** | 0/8 |
+
+  22 DNF rows in 166 (11 per seed): 14 at the quad, 8 at `sc2`. **`sc2` did
+  not finish 100 MB in 300 s once at either seed** (`s42:943,960,977,994`,
+  `s7:943,960,977,994`) — the smoke's reading (`sc2 CTL max = 2.24 Mbit/s`,
+  ~357 s for 100 MB) was the rule, not the exception. **Every DNF row still
+  carries a flushed `[LAT]`** (22/22 `lat_present`, 22/22 `lat_final`): the
+  receiver's exit flush on SIGTERM works on a run the client abandoned.
+- **THE EXIT FLUSH, ON L1, ON EVERY ROW.** `recv_final_lines=3` on 149 of
+  150 `LIVENESS` lines; `lat_final: true` on 165 of 166 rows; `succ_final`
+  and `eta_recv_final` true on 166/166. **This is the first battery whose
+  receiver readings include the final second.** The sender's `[ETA]` has no
+  flush (`eta_final: false` on 166/166 — it rides the `[DIAG]` 250 ms cadence,
+  as the launch step recorded), so every sender-side number below is the
+  last cadence tick, ≤ 250 ms stale.
+- **THE SMOKE'S ANSI-INTERLEAVE CASE APPEARS EXACTLY ONCE IN THE BATTERY:
+  `c7-CTL` seed 42 rep 1** (`s42:18`, `recv_final_lines=2`,
+  `lat_final: false`, `lat_present: true`, `lat_reading=MIXED`,
+  `succ_final: true`, `eta_recv_final: true`) — the row the launch step's §3.3
+  read live. It is the only such row in 166; seed 7 has none. Its `[LAT]`
+  fields were read off the flush (the fields precede the glued tracing
+  record), so only the `final` flag is wrong, and the row is scored. **The
+  parser now matches it**: `dc05dc7`'s `split_interleaved()` splits a
+  physical line at each embedded tracing record before colour-stripping, and
+  `test_place_parse.py` (83 checks, green on this host) pins the exact
+  "`… final=1` + `cleaning up TUN interface`" shape. **It cannot be
+  re-applied to this row here** — the raw `diag/` captures are on the VM —
+  so `recv_final_lines=2` stands in the ledger as the LOWER bound the launch
+  step said it would be. A second, harmless interleave sits in the ledger
+  itself: at `s7:803` (`c7-HOL` rep 4) and `s7:863` (`c8-HOL` rep 4) a
+  `[ETA] site=receiver` / `[SUCC]` line from the CLIENT's own log is glued in
+  front of the perf summary JSON that `place_battery.sh`'s `grep -E summary`
+  captured; `place_parse.py` reads the JSON by `find("{")`, both rows carry
+  `mbps` (70.956, 11.691), and nothing is affected.
+- **Wall per invocation (`RUNTIME`):** `c7` 20–31 s on CTL/TSIG/HOL/HOLTSIG,
+  51–78 s on `T0`; `c8` 11–260 s (arms' own transfer times, §2); `c1` 20–31 s;
+  `c9h` 7–304 s. The 303–304 s rows are the client's 300 s engine-side DNF
+  cutoff plus teardown.
+
+### 1 — THE FIRST READOUT: the CTL `[LAT]` decomposition, read before any arm
+
+`W_total = A_x + R + P` per delivered symbol at the receiver (`net/lat.rs`):
+`A_x` = queueing + sender dwell above the path's own floor (the STORE/PACING
+term — `lat.rs`'s own disclosure: the sender's reservoir dwell rides inside
+it); `R` = the reorder wait, classed `rw_xp` (released by the OTHER path — the
+scheduler's own inversion; STRUCTURALLY ZERO at one path), `rw_sp` (same
+path), `rw_rep` (released by decoded repair); `P` = the `[SUCC]` hole
+duration. Shares are of TOTAL accumulated wait; per-row shares are pooled
+over both paths by their `*_sum=` fields (`place_parse.py`), the per-cell
+pooled share below is the `lat_n`-weighted mean over reps; `sh_rep` =
+`sh_rwrep + sh_rep`. Thresholds verbatim from the pre-registration:
+PLACEMENT-INDICTED `sh_xp ≥ 0.5`; QUEUE-DOMINATED `sh_ax ≥ 0.5 ∧ sh_xp ≤ 0.2`;
+REPAIR-DOMINATED `sh_rep ≥ 0.5`; else MIXED.
+
+**THE CLASSIFICATION, WHICH IS THIS BATTERY'S PRIMARY FINDING:**
+
+| cell | seed | n | `sh_ax` min–max (pooled) | `sh_xp` min–max (pooled) | `sh_sp` (pooled) | `sh_rep` (pooled) | **reading** |
+|---|---|---|---|---|---|---|---|
+| **`c7`** | 42 | 4 | 0.4131–0.4574 (0.4394) | 0.0204–0.0929 (0.0612) | 0.2202 | 0.2792 | **MIXED** (4/4 reps MIXED) |
+| | 7 | 4 | 0.2206–0.4415 (0.3782) | 0.0024–0.0921 (0.0571) | 0.1976 | 0.3670 | **MIXED** (4/4) |
+| | **both** | **8** | **0.2206–0.4574 (0.4088)** | **0.0024–0.0929 (0.0592)** | **0.2089** | **0.3231** | **MIXED** |
+| **`c8`** | 42 | 4 | 0.2575–0.4073 (0.3258) | 0.0505–0.1189 (0.0768) | 0.2337 | 0.3637 | **MIXED** (4/4) |
+| | 7 | 4 | 0.2565–0.4468 (0.3395) | 0.0338–0.0687 (0.0530) | 0.4089 | 0.1987 | **MIXED** (4/4) |
+| | **both** | **8** | **0.2565–0.4468 (0.3326)** | **0.0338–0.1189 (0.0649)** | **0.3213** | **0.2812** | **MIXED** |
+| **`c9h`** | 42 | 3 | 0.2874–0.7834 (0.5540) | 0.0266–0.0662 (0.0425) | 0.2764 | 0.1271 | QUEUE-DOMINATED (2/3; r1 MIXED) |
+| | 7 | 3 | 0.7812–0.8443 (0.8249) | 0.0135–0.0588 (0.0387) | 0.0336 | 0.1027 | QUEUE-DOMINATED (3/3) |
+| | **both** | **6** | **0.2874–0.8443 (0.6888)** | **0.0135–0.0662 (0.0406)** | **0.1557** | **0.1149** | **QUEUE-DOMINATED** (witness row) |
+| **`c1`** | 42 | 4 | 0.8730–0.9266 (0.8927) | **0.0000** | 0.1039 | 0.0034 | QUEUE-DOMINATED (4/4) |
+| | 7 | 4 | 0.8194–0.9165 (0.8603) | **0.0000** | 0.1073 | 0.0324 | QUEUE-DOMINATED (4/4) |
+| | **both** | **8** | **0.8194–0.9266 (0.8765)** | **≡ 0.0000** | **0.1056** | **0.0179** | **QUEUE-DOMINATED; `rw_xp ≡ 0` — CONTROL HOLDS** |
+
+Rows: `c7-CTL` `s42:18,269,521,775`, `s7:18,271,523,775`; `c8-CTL`
+`s42:78,329,581,835`, `s7:78,331,583,835`; `c9h-CTL` `s42:192,444,696`,
+`s7:193,446,697`; `c1-CTL` `s42:136,387,639,893`, `s7:136,389,641,893`.
+
+**WHAT THE TABLE SAYS.** At BOTH scored duals the reading is **MIXED**, and
+it is MIXED in the same way at both seeds and in all 16 CTL reps: **the
+cross-path reorder wait the placement law manufactures (`rw_xp`) is the
+SMALLEST of the four terms — 5.9 % of delivered latency at `c7`, 6.5 % at
+`c8`, with no rep above 0.119 — and the PLACEMENT-INDICTED threshold of 0.5
+is 8× above the measurement.** The largest term at `c7` is `A_x`, the
+store/pacing term, at 0.41 pooled (0.44 at seed 42; 7 of 8 reps between 0.41
+and 0.46) — below the QUEUE-DOMINATED line of 0.5 in every rep, so the
+`INSTRUMENT-INDICTS-QUEUE` limb does NOT fire by the letter, and it is not
+claimed. At `c8` the three non-placement terms are of one size (`A_x` 0.33,
+`rw_sp` 0.32, repair 0.28) and none dominates. `rw_sp` — in-path
+reordering / real loss on the SAME path — is 3.5× (`c7`) to 5× (`c8`) the
+cross-path term. **So the pre-registered consequence of MIXED applies at both
+duals: "no single law dominates; report the split and score nothing on
+it."** The split is reported above; the arms are read in §3 against the CTL
+spread exactly as §5 of the pre-registration defines each outcome, and
+nothing in §3 is promoted over this reading.
+
+The tails, on the same rows (worst leg, µs): `c7` CTL `p95(rw_xp)`
+73 728–212 992 (median 90 112), `p95(A_x)` 61 440–458 752 (median 73 728),
+`tot_p50` 36 864–245 760, `tot_p95` 122 880–2 883 584, `tot_p99`
+147 456–3 670 016 (median 253 952); `c8` CTL `p95(rw_xp)` 163 840–1 310 720
+(median 851 968), `p95(A_x)` 360 448–1 572 864 (median 688 128), `tot_p50`
+106 496–589 824, `tot_p95` 524 288–3 670 016, `tot_p99` 851 968–11 534 336
+(median 1 376 256); `c1` CTL `p95(A_x)` 10 240–13 312, `tot_p50`
+6 144–7 168, `tot_p99` 26 624–73 728, `p95(rw_xp)` `-` (n = 0) on 8/8.
+`[SUCC] xp_n/det` at CTL: `c7` 0.7366–0.9761 (median 0.9700), `c8`
+0.8871–0.9591 (median 0.9378), `c9h` 0.8906–0.9538, `c1` ≡ 0.0000 — D0's
+0.9711 / 0.8711 reproduced at n = 8 on a different binary. One CTL rep is
+an outlier that widens the `c7` spread and is kept because the bar is
+self-calibrating: `c7-CTL` seed 7 rep 4 (`s7:775`) at 54.46 Mbit/s,
+`sh_ax` 0.2206, `xp_n/det` 0.7366, `tot_p99` 3 670 016 µs.
+
+**`c9h` reads QUEUE-DOMINATED** (pooled `sh_ax` 0.69; 5 of 6 reps ≥ 0.66,
+the sixth 0.29) — the quad's delivered latency is the store/pacing term, on a
+witness row that scores nothing (§3.5).
+
+### 2 — THE S4 OFFLINE SCORE: `σ̂_e/ref` off `[ETA]`, before any arm verdict
+
+The claim under test: `T = 0.15 ⇔ σ̂_e/ref = 0.19238` at every cell; band
+±20 % = [0.15390, 0.23086]. `σ̂_e` is the sender's per-path τ-lag `sig_us`
+pooled as an RMS over the candidate set (`sig_sender_rms_us`). **`ref` is
+read three ways, and this battery is the first where all three exist on
+every row** — the pre-registration named the preference order and the reason
+("the two `ref`s then cannot disagree"):
+
+* **(a) the engine's own inversion**, `s4_from_teff = t_eff / (√6/π)`, on the
+  `TSIG` / `HOLTSIG` rows only (`t_n > 0`) — ONE clock, the law's own
+  `min_i srtt_i`;
+* **(b) `sig_sender_rms_us / min_i tau_us`** — `eta_s4.py`'s clean reference,
+  where `tau_us` is "RTprop when the receiver has one, its SRTT otherwise";
+* **(c) `sig_sender_rms_us / min [DIAG] rtt`** — the SRTT surrogate.
+
+| cell | arm | n | **(a) `t_eff` inversion** min–max (median) | in band | (b) `tau_us` route (median) | in band | (c) `[DIAG]` route (median) | in band |
+|---|---|---|---|---|---|---|---|---|
+| `c7` | CTL | 8 | — | | 0.4844–0.9147 (0.6115) | 0/8 | 0.0787–0.2923 (0.1828) | 0/8 |
+| `c7` | TSIG | 8 | **0.1380–0.5578 (0.2802)** | **0/8** | 0.6514–1.1289 (0.9268) | 0/8 | 0.2346–0.5409 (0.2854) | 0/8 |
+| `c7` | HOLTSIG | 8 | 0.1365–0.5509 (0.3237) | 1/8 | 0.6686–1.1542 (0.7855) | 0/8 | 0.1345–0.5456 (0.3203) | 2/8 |
+| `c8` | CTL | 8 | — | | 2.1557–3.5391 (2.8367) | 0/8 | 0.0296–0.7863 (0.4536) | 0/8 |
+| `c8` | TSIG | 8 | **0.0685–1.2612 (0.5330)** | **0/8** | 0.8172–4.3847 (2.4242) | 0/8 | 0.0688–1.2648 (0.5866) | 0/8 |
+| `c8` | HOLTSIG | 8 | 0.1250–1.0500 (0.3752) | 1/8 | 1.4162–2.6188 (2.2121) | 0/8 | 0.1245–1.0526 (0.3757) | 1/8 |
+| `c9h` | CTL | 6 | — | | 3.7269–14.7495 (8.1564) | 0/6 | 0.5808–2.7417 (1.2747) | 0/6 |
+| `c9h` | TSIG | 6 | 0.6487–1.1035 (0.7576) | 0/6 | 2.0693–3.5834 (2.6083) | 0/6 | 0.6480–1.0991 (0.7660) | 0/6 |
+| `c1` | CTL | 8 | — | | 0.3478–1.5214 (0.5241) | 0/8 | 0.1101–0.4121 (0.2205) | 3/8 |
+| `c1` | TSIG | 8 | **0.1374–0.3379 (0.2097)** | **4/8** | 0.2352–1.3245 (0.4649) | 0/8 | 0.1540–0.3391 (0.2174) | 5/8 |
+| `sc2` | SINGLE | 7† | — | | 0.4541–6.3807 (0.7322) | 0/7 | 0.2222–0.6687 (0.4017) | 1/7 |
+| `sc3` | SINGLE | 8 | — | | 0.0357–1.3486 (0.3407) | 1/8 | 0.0352–0.8970 (0.2619) | 1/8 |
+
+† one `sc2` row has `sig_us=-/n0` (no pairs). Supporting fields, pooled per
+arm-cell: `t_eff` on `TSIG` `c7` 0.1076–0.4349, `c8` 0.0534–0.9833, `c9h`
+0.5058–0.8604, `c1` 0.1071–0.2635; `t_cold` 0.0004–0.0056 everywhere (the
+derived temperature resolved with a measured dispersion on > 99.4 % of
+resolutions); receiver `bind` (worst path) `c7` 0.049–0.079, `c8`
+0.142–0.211, `c9h` 0.165–0.429, `c1` 0.002–0.004, `sc2` 0.043–0.047, `sc3`
+0.088–0.110 — **all below the pre-stated 0.50**; τ-lag pairs per path
+200–250 at `c7`, 175–250 at `c8`-CTL, 240–252 at `c1`, with the short rows at
+`c9h` (1–194) and one `c1` (24); `eta_zero` = 0.0000 on 166/166 rows (no
+placement was stamped with the no-prediction sentinel).
+
+**THE S4 VERDICT: `S4-VARIES`.** On the preferred route (a), which cannot
+disagree with the law's own `ref`, the per-cell medians are `c1` 0.21, `c7`
+0.28, `c8` 0.53, `c9h` 0.76 — a 3.6× span across cells, and the within-cell
+spreads at the duals (4.0× at `c7`, 18× at `c8`) are themselves far outside
+±20 %. Routes (b) and (c) say the same with different levels (`c1` 0.52 vs
+`c8` 2.84 on (b); `c7` 0.18 vs `c9h` 1.27 on (c)). **"A fixed `T` cannot be
+right anywhere"** is the pre-registered reading of this limb. On the
+"quantile in disguise" test, `0.15 ⇔ σ̂_e/ref = 0.19238` holds as a CELL
+property at NO cell: the only cell where a majority of readings land in the
+band is `c1` on route (a) (4/8; median 0.2097 = 1.09× of 0.19238) — **and
+`c1` is the one cell where the law cannot act** (N = 1, the softmax is the
+identity), so its reading is the sender's prediction error on a path it
+never had to choose. At the duals the derived form ran at 1.46× (`c7`) and
+2.77× (`c8`) of the shipped level by median. **The register row for
+`PLACE_TEMPERATURE = 0.15` gains a DEFECT FINDING against a fixed value, at
+the measured levels above, and is NOT flipped.**
+
+**THE THREE `ref` ROUTES DISAGREE BY 3–4× AT THE DUALS, AND THE REASON IS
+NAMED.** At `c7`-TSIG rep 1 (`s42:42`) the three read 0.27497 / 1.12892 /
+0.27927: (a) and (c) agree to 2 % and (b) is 4.1× higher, because `tau_us`
+on that row is 5 937 µs (RTprop, the receiver's echo) while `[DIAG] rtt`
+reads 24 ms and the law's own `ref` is the loaded SRTT. **`eta_s4.py`'s
+"clean reference" is RTprop, and the placement law de-dimensionalises by
+SRTT**; the S4 first-point section's `tau_us` preference is therefore the
+WRONG clock for this identity — correct for the estimator's own τ-lag
+normalisation, wrong for `T`'s `ref`. The score above stands on route (a).
+Run as the tool exists, over the CTL/SINGLE sender readings synthesised
+from the rows (`place_score.py --emit-eta`; the sender's per-path `sig_us` /
+`pairs` / `tau_us` are carried verbatim, the receiver's `bind` is carried
+onto each path from the row's `eta_bind_max`, and NO receiver line is
+synthesised because the row keeps only the receiver's worst-path `sig_us`),
+`eta_s4.py` reads `[ETA] path-readings found: 80`, pooled sender `σ̂/ref`
+`c1` 0.3478/0.5241/1.5214, `c7` 0.3708/0.5740/0.7265, `c8`
+0.4887/0.8349/1.6350, `c9h` 0.2696/0.8931/21.6616, `sc2`
+0.4541/0.7323/6.3807, `sc3` 0.0357/0.3407/1.3486, and **`READING:
+CELL-DEPENDENT`** ("ranges overlap but neither nests; median level c1 0.5241
+vs sc3 0.3407 = 1.54×; 5 of 80 readings trip the UNREADABLE limb", all five
+on `pairs < 30`: `c1/7` 24, `c9h` 1, 9, 8, `sc2/42` n = 0). The tool
+compares its first and last cell alphabetically (`c1` vs `sc3`) and is
+reported as-is; the per-cell table above is the score.
+
+**THE PRE-STATED WITNESS `σ̂_sender ≥ σ̂_recv` (§16.81.6) FAILS AT `c7` AND
+`sc3`.** `witness_sender_ge_recv` (sender MAX `sig_us` over paths vs
+receiver MAX): `c7`-CTL **0/8** (receiver 5 123–27 958 µs vs sender max
+3 459–6 864), `c8`-CTL 2/8, `c9h`-CTL 4/6, `c1`-CTL **8/8**, `sc2` 6/7,
+`sc3` **0/8** (receiver 227 132–1 311 718 vs sender max 11 571–924 353). The
+paper's own clause: "a violation indicts the plumbing, not the law". At the
+symmetric dual the receiver's realized-lateness dispersion is 1.5–5× the
+sender's prediction-error dispersion, which the selection argument says
+cannot happen if both estimators measure the same stream against the same
+`tau`. **Instrument finding, recorded and not resolved here**: the two
+`sig_us` are not yet one quantity read at two ends.
+
+**READABILITY, AGAINST THE FIRST FIELD POINT.** That point was `UNREADABLE`
+on four grounds — `bind=` absent, `c2` pairs 27/13 (< 30), `c3` pairs not in
+the artefact, degenerate ranges — and pointed CELL-DEPENDENT by 3–4× through
+a surrogate `ref`. Here `bind` is on every row and below 0.50 at every cell;
+pairs are ≥ 175 per path on every dual CTL rep; every cell has n ≥ 6 with a
+within-cell spread; `tau_us` and `t_eff` are in the artefact. **The
+`UNREADABLE` limb does not fire, for the first time.** What made it readable
+was the harness scraping `[ETA]` at all (`place_parse.py`, `meas/place-prep`)
+and the receiver's `bind=` being printed; **the flushed final second made
+the receiver-side counts complete** (`eta_recv_final` 166/166, so `bind` and
+the receiver `sig_us` are end-of-run values) **but did not touch the
+sender side**, which has no flush and is where `σ̂_e` is measured — so the
+S4 score itself is a last-cadence-tick reading, ≤ 250 ms short of the run,
+on a cumulative estimator over 10⁵ stamps, and that bias is far below the
+spreads above. The first point's direction (the slower cell reading LOWER)
+is NOT what the duals show on route (a): `c8`, which carries the `c3` leg,
+reads HIGHER than `c7` (0.53 vs 0.28). The first point's prediction was made
+on single cells through a surrogate `ref` and is superseded by this table.
+
+### 3 — THE ARMS, against the CTL arm's own rep spread
+
+Reading rule, verbatim from the pre-registration: a scored dimension moves
+"beyond the CTL spread" when the arm's rep range lies ENTIRELY below (or
+above) the CTL arm's min–max over its 8 reps; ranges that overlap are
+WITHIN. Pooled n = 8 where the two seeds agree in sign (per-seed reading
+given beside); the scored dimensions are `sh_xp`, `p95(rw_xp)` (worst leg),
+`p95(A_x)` (worst leg, must not be worse), `[SUCC] xp_n/det`; goodput is the
+GUARD. Bind gauges are off the sender's `[ETA]` head.
+
+**3.0 — Execution witnesses (every armed arm executed; nothing is
+`WIRING-FAILS`).**
+
+| arm | `t_n` (TSIG witness) | `t_eff` | `hol_calls` / `hol_mv` (HOL witness) | `hol_sh` (κ's bind) | `hol_w` (predicted ≈ 10⁻²) |
+|---|---|---|---|---|---|
+| `CTL` / `T0` | **0** on 40/40 | `-` | **0** / `-` on 40/40 | `-` | `-` |
+| `TSIG` | `c7` 181 087–202 028; `c8` 87 833–94 721; `c1` 335 553–338 680; `c9h` 41 426–92 186 | `c7` 0.108–0.435; `c8` 0.053–0.983; `c1` 0.107–0.264; `c9h` 0.506–0.860 | 0 / `-` | `-` | `-` |
+| `HOL` | 0 | `-` | `c7` 166 893–169 206 / **0.0003–0.0008**; `c8` 83 645–84 604 / **0.0002–0.0038**; `c1` 334 871–338 322 / **0.0000**; `c9h` 55 668–84 604 / 0.0014–0.0077 | `c7` 0.059–0.187; `c8` 0.141–0.396; `c1` 0.0007–0.0024; `c9h` 0.525–0.746 | `c7` 0.0021–0.0101; `c8` 0.0017–0.0117; `c1` 0.0017–0.0057 |
+| `HOLTSIG` | `c7` 180 343–207 222; `c8` 87 410–96 689; `c1` 336 438–338 933 | `c7` 0.106–0.430; `c8` 0.097–0.819; `c1` 0.139–0.331 | `c7` 167 516–169 206 / 0.0001–0.0015; `c8` 84 095–84 604 / 0.0000–0.0040; `c1` 335 819–338 108 / 0.0000 | `c7` 0.047–0.135; `c8` 0.0007–0.282 | `c7` 0.0021–0.0061; `c8` 0.0026–0.0195 |
+
+`cold_r` = 0.0000 and `eta_zero` = 0.0000 on 166/166; `cold_ge`
+0.0000–0.0067. **`T0` has no bind gauge of its own** — it is the existing
+`RWM_PLACE_T` dial, which is not in the `[GATES]` echo (the ledger carries
+`RWM_PLACE_T=1e-6` only on the 15 `=== rep=` headers per seed); its
+execution is witnessed by its behaviour alone (below), which the
+pre-registration did not anticipate and which is recorded as a gap. **`HOL`
+executed and moved the argmin in 0.03–0.4 % of its calls at the duals and in
+0 % at `c1`** — `hol_mv > 0` on 31 of 32 dual-cell HOL/HOLTSIG rows, so the
+witness fires; the term is computed on every placement and decides almost
+none. **The exception is `c8`-HOLTSIG seed 7 rep 1 (`s7:126`): `hol_calls`
+84 604, `hol_mv` 0.0000, `hol_sh` 0.0007, `xp_n/det` 0.0198, 87.76 Mbit/s** —
+the run collapsed onto one path, an argmin over one live candidate cannot
+move, and by the pre-registration's own `WIRING-FAILS` clause (`hol_mv = 0`
+on a HOL arm) **that row contributes NO datum** for its HOL half; it is kept
+in the `c8`-HOLTSIG ranges below and flagged, because dropping it would
+narrow those ranges in the arm's favour. (`s42:509`, `c9h`-HOLTSIG, is the
+same shape on the witness row.) `hol_w` landed
+at 0.002–0.02 — the predicted `O(10⁻²)` against an `O(1)` load term.
+
+**3.1 — `c7` (symmetric dual; CTL spread over n = 8: `sh_xp` 0.0024–0.0929,
+`p95(rw_xp)` 73 728–212 992, `p95(A_x)` 61 440–458 752, `xp_n/det`
+0.7366–0.9761, goodput 54.46–87.27 Mbit/s).**
+
+| arm | `sh_xp` (pooled; s42 / s7 median vs CTL) | `p95(rw_xp)` µs | `p95(A_x)` µs | `xp_n/det` | goodput Mbit/s (GUARD) | rows |
+|---|---|---|---|---|---|---|
+| `T0` | 0.0282–0.1369 WITHIN (0.103 / 0.061 vs 0.066 / 0.067) | 61 440–786 432 WITHIN | 65 536–196 608 WITHIN | 0.9602–0.9750 WITHIN | **20.96–32.47 BELOW-SPREAD at both seeds** (med 28.85 / 29.64 vs 82.85 / 77.51: **0.35–0.38×**) | `s42:30,281,533,787` `s7:30,283,535,787` |
+| `TSIG` | 0.0046–0.1281 WITHIN (0.062 / 0.066) | 98 304–229 376 WITHIN | 57 344–393 216 WITHIN | 0.6874–0.9712 WITHIN | 57.86–69.05 WITHIN pooled; s42 BELOW (60.64 vs 82.85), s7 WITHIN (62.08 vs 77.51) | `s42:42,293,545,799` `s7:42,295,547,799` |
+| `HOL` | 0.0408–0.1873 WITHIN (0.080 / 0.080) | 53 248–786 432 WITHIN | 45 056–163 840 WITHIN | 0.9278–0.9773 WITHIN | 68.11–81.85 WITHIN both seeds | `s42:54,305,557,811` `s7:54,307,559,811` |
+| `HOLTSIG` | 0.0366–0.1620 WITHIN (0.088 / 0.095) | 81 920–655 360 WITHIN | 53 248–122 880 WITHIN | 0.9034–0.9751 WITHIN | 56.13–66.98 WITHIN pooled; s42 BELOW (58.16), s7 WITHIN (61.54) | `s42:66,317,569,823` `s7:66,319,571,823` |
+
+**3.2 — `c8` (heterogeneous dual; CTL spread over n = 8: `sh_xp`
+0.0338–0.1189, `p95(rw_xp)` 163 840–1 310 720, `p95(A_x)` 360 448–1 572 864,
+`xp_n/det` 0.8871–0.9591, goodput 7.25–56.86 Mbit/s — the CTL arm's own
+goodput spans 7.8× at this cell, `s42:581` 7.246 to `s42:835` 56.864).**
+
+| arm | `sh_xp` | `p95(rw_xp)` µs | `p95(A_x)` µs | `xp_n/det` | goodput Mbit/s (GUARD) | rows |
+|---|---|---|---|---|---|---|
+| `T0` | 0.0000–0.2146 WITHIN — **bimodal**: 0.0000/0.0001 at `s42:341,847`, `s7:343,847`; 0.024–0.215 on the other four | 14 336–1 441 792 WITHIN | 73 728–1 441 792 WITHIN | 0.0051–0.9399 WITHIN pooled — **collapses to 0.0051 / 0.0100 / 0.0102 / 0.1839 on the same four reps** | 29.49–88.73 WITHIN (med 61.73 / 70.66 vs 23.14 / 13.13); the four collapsed reps run 83.2–88.7 Mbit/s | `s42:90,341,593,847` `s7:90,343,595,847` |
+| `TSIG` | 0.0013–0.0645 WITHIN (0.029 / 0.016 vs 0.069 / 0.055) | 57 344–2 621 440 WITHIN | 294 912–1 179 648 WITHIN | **0.5218–0.8481 BELOW-SPREAD at both seeds** (med 0.7231 / 0.7643 vs 0.9466 / 0.9309) | 3.11–74.70 WITHIN pooled (med 12.72 / 6.27 vs 23.14 / 13.13); **4 of 8 reps below the CTL minimum** (3.11, 3.52, 3.59, 5.11) | `s42:102,353,605,859` `s7:102,355,607,859` |
+| `HOL` | 0.0212–0.1755 WITHIN | 196 608–917 504 WITHIN | 327 680–851 968 WITHIN | 0.7912–0.9672 WITHIN | 6.53–53.32 WITHIN both seeds (med 11.68 / 13.93) | `s42:114,365,617,871` `s7:114,367,619,871` |
+| `HOLTSIG` | 0.0001–0.1412 WITHIN (one collapsed rep, `s7:126`: `sh_xp` 0.0001, `xp_n/det` 0.0198, 87.76 Mbit/s, `hol_sh` 0.0007) | 16 384–1 572 864 WITHIN | 147 456–589 824 WITHIN | 0.0198–0.9225 WITHIN | 4.45–87.76 WITHIN pooled; **s42 BELOW-SPREAD** (4.45–5.75 vs 7.25–56.86: med 4.52 vs 23.14, **0.20×**), s7 WITHIN (8.47 vs 13.13) | `s42:126,377,629,883` `s7:126,379,631,883` |
+
+**3.3 — The aggregation guard is NON-DISCRIMINATING in this session.** The
+same-session denominator is `Σ` of the singles, and **`sc2` DNF'd 8/8** —
+its goodput is bounded ABOVE by 100 MB·8/300 s = 2.667 Mbit/s and is
+otherwise unknown; `sc3` read 2.360–2.957 (s7) and 2.674–3.470 (s42)
+(`s42:951,968,985,1002`, `s7:951,968,985,1002`). With the bound, `0.97·2·sc2
+≤ 5.17` and `0.87·(sc2+sc3) ≤ 4.89` (s7) / `5.34` (s42). Every `c7` arm and
+`c8`-CTL/T0/HOL clear these by 1.4–17× — a PASS against an upper bound is a
+pass — while `c8`-TSIG (min 3.11 / 3.59) and `c8`-HOLTSIG at s42 (min 4.45)
+fall below a threshold that is itself an upper bound, which is
+**UNDETERMINED**, not a fail. **A guard whose denominator is 15–30× below
+the quantity it guards cannot detect the trade it exists to detect**: the
+`c8`-T0 reps at 83–89 Mbit/s with `xp_n/det` ≈ 0.01 are the fast path alone
+(the `c2` leg's own 100 Mbit/s shaper minus overhead), the very trade the
+pre-registration's `AGGREGATION-DOMINATED` limb describes, and the guard
+passes them at 17× margin. Recorded as an instrument finding against the
+guard's construction on the current `sc2` regime.
+
+**3.4 — `c1` (the control; every arm; N = 1).** `succ_xp_n = 0`,
+`lat_rwxp_n = 0`, `sh_xp = 0.0000` on 40/40 rows across all five arms
+(`s42:136…933`, `s7:136…933`): **the control did not move under any arm at
+either seed.** `p95(A_x)` 10 240–15 360 µs and `tot_p99` 24 576–73 728 µs on
+every arm, inside or beside CTL's 10 240–13 312 / 26 624–73 728. **But
+goodput moved where the law cannot:** `c1`-TSIG 109.79–134.40 and
+`c1`-HOLTSIG 112.45–132.84 Mbit/s vs CTL 143.15–174.20, **BELOW-SPREAD at
+both seeds** (0.78–0.85×), with `CPUCLI` 30.2–34.8 s on the Tσ arms against
+22.1–28.6 s on CTL/T0/HOL (`CPU:` lines under each `=== rep=` header) and
+`RUNTIME` 26–31 s vs 20–25 s. At N = 1 the softmax is the identity and
+`t_n` = 335 553–338 933 says the derived temperature was resolved on every
+placement anyway — **the Tσ arm's cost at a cell where it cannot act is its
+computation, not its law**: ~+30 % sender CPU on a 400 MB transfer. This is
+not a scored dimension and does not void the control (the placement did not
+move); it is an instrument/implementation finding the pre-registration did
+not name, and it bounds any Tσ goodput reading at the duals from below by
+the same overhead.
+
+**3.5 — `c9h` (quad, n = 3 per seed, WITNESS ONLY): `ABORT-QUAD`, as
+pre-declared.** All 30 rows exist with their gauges (`t_n` 41 426–94 691 on
+TSIG/HOLTSIG, `hol_calls` 39 368–84 604 on HOL/HOLTSIG, 0 elsewhere): **the
+arms execute at N = 4.** DNF per arm from §0: CTL 4/6, T0 0/6, TSIG 5/6, HOL
+2/6, HOLTSIG 3/6. What the rows show, recorded and NOT scored: CTL finished
+twice (5.51 Mbit/s `s42:192`, 2.72 `s7:697`); `T0` finished 6/6 at 54.3,
+166.6, 159.7, 169.8, 156.8, 3.55 Mbit/s (`s42:208,460,712`, `s7:209,462,713`)
+with `xp_n/det` 0.9492–0.9799; `HOLTSIG` finished 3/6 at 82.2, 88.0, 6.92.
+`p95(A_x)` reads BELOW the CTL range on TSIG (73 728–294 912 vs
+524 288–917 504) and HOLTSIG (12 288–393 216) at both seeds — over all six
+rows each, of which five (TSIG) and three (HOLTSIG) are DNF rows whose
+`[LAT]` is the SIGTERM flush of an abandoned run. Three reps score nothing through the quad's
+instability; the row's job was liveness and it did that.
+
+**3.6 — VERDICTS (pre-registered vocabulary only).**
+
+| cell | arm | verdict | on what |
+|---|---|---|---|
+| `c7` | `T0` | **INERT-AS-DERIVED** on every scored dimension; **GUARD-UNDERPOWERED** carries the goodput regression | all four scored dimensions WITHIN at both seeds; goodput 0.35–0.38× of CTL, disjoint from the CTL range at both seeds. **No outcome in the pre-registered set names a goodput regression as a verdict** — `GUARD-UNDERPOWERED` is the label the pre-registration attached to "any goodput difference … never a verdict", and it covers this one; the regression is made visible exactly as that clause said it would be. `AGGREGATION-DOMINATED` does not apply (no reorder dimension improved). `T0` has no execution witness of its own (§3.0) |
+| `c7` | `TSIG` | **INERT-AS-DERIVED** | `t_n > 0` on 8/8; every scored dimension WITHIN at both seeds; goodput WITHIN pooled (s42 BELOW). **A tie: licenses `σ̂_e/ref` (§2, at 0.108–0.435 here), NOT `0.15`** |
+| `c7` | `HOL` | **INERT-AS-DERIVED** | `hol_calls` 166 893–169 206, `hol_mv` 0.0003–0.0008 > 0 on 8/8; every scored dimension and goodput WITHIN at both seeds. The predicted outcome for the (a2) wire-price term (`hol_w` 0.002–0.010) |
+| `c7` | `HOLTSIG` | **INERT-AS-DERIVED** | both witnesses fire on 8/8; every scored dimension WITHIN at both seeds; goodput WITHIN pooled (s42 BELOW) |
+| `c8` | `T0` | **INERT-AS-DERIVED** by the letter (no scored dimension beyond spread); **the bimodal collapse is OUTSIDE THE PRE-REGISTERED SET** | 4/8 reps are the fast path alone (`xp_n/det` 0.0051–0.18, 83–89 Mbit/s), 4/8 are dual (0.90–0.94); pooled ranges straddle CTL's. `AGGREGATION-DOMINATED` requires the reorder dimensions to improve beyond spread AND the guard to fail — neither is met, the second because the guard cannot fail (§3.3). Recorded with its cost: `T → 0` at the heterogeneous dual is "fast-path-alone" half the time |
+| `c8` | `TSIG` | **INERT-AS-DERIVED** on the latency dimensions; `xp_n/det` BELOW-SPREAD at both seeds; **GUARD-UNDERPOWERED** carries 4/8 reps below the CTL minimum | `sh_xp` and `p95(rw_xp)` WITHIN (the two dimensions `CONSTRUCTION-WINS` requires to move together); `xp_n/det` 0.52–0.85 vs 0.89–0.96 — the cross-path resolution fraction fell, delivered latency did not; the aggregation guard UNDETERMINED (§3.3). Tie on latency ⇒ licenses `σ̂_e/ref` (0.053–0.983 here), NOT `0.15` |
+| `c8` | `HOL` | **INERT-AS-DERIVED** | `hol_mv` 0.0002–0.0038 > 0 on 8/8; everything WITHIN at both seeds, goodput included |
+| `c8` | `HOLTSIG` | **INERT-AS-DERIVED**; **GUARD-UNDERPOWERED** carries a 0.20× goodput at seed 42 | scored dimensions WITHIN at both seeds; goodput BELOW-SPREAD at s42 (4.45–5.75 vs 7.25–56.86), WITHIN at s7; the seeds do not agree in sign on the guard, so no pooled reading. Guard UNDETERMINED at s42 |
+| `c1` | all four | **control HOLDS** (not a verdict row) | `xp_n ≡ 0`, `rw_xp ≡ 0` on 40/40; the Tσ arms' 0.8× goodput at N = 1 is overhead (§3.4) |
+| `c9h` | all four | **ABORT-QUAD** (pre-declared) | liveness only; 14/30 DNF; T0 6/6 finished |
+
+**No `CONSTRUCTION-WINS` anywhere. No `WIRING-FAILS` anywhere. No
+`INSTRUMENT-INDICTS-QUEUE` by the letter (the CTL reading is MIXED at both
+duals, with the queue term the plurality at `c7`).** The ruling clause
+applies to every Tσ row: the derived temperature ran, produced the same
+delivered latency as the constant within the CTL spread, and **that licenses
+the measured `σ̂_e/ref` as the quantity — at 0.14–0.56 (`c7`) and 0.07–1.26
+(`c8`), NOT at 0.19238 — and does not bless `0.15`.** The symmetric clause
+applies to `HOL`: an inert frontier term does not acquit `κ = 1`
+(`hol_sh` 0.05–0.40 at the duals — the bound BINDS on 5–40 % of placements
+and moves the argmin on < 0.4 %) or `PLACE_SLACK_RECOV_PATIENCE`.
+
+### 4 — WHAT THE LEDGER SAYS ABOUT THE WINS QUESTION
+
+No arm improved any scored latency dimension beyond the control's own spread
+anywhere: across both dual cells, both seeds and four challengers, the
+cross-path reorder share, its 95th percentile, and the arrival-queue 95th
+percentile stayed inside the range the shipped law itself produced over
+eight repetitions, and the one dimension that did move beyond the spread
+(the fraction of holes closed by the other path, under the derived
+temperature at the heterogeneous dual) moved without taking delivered latency
+with it. The control decomposition says why a win was not available to
+these arms: the wait the placement law manufactures — a symbol held because
+its predecessor is still in flight on the other path — is about six percent
+of delivered latency at both duals, the smallest of the four terms; the
+largest term is the time a symbol spends queued (in the sender's own
+reservoir and on the wire) above the path's floor, at forty-one percent at
+the symmetric dual and a third at the heterogeneous one, with same-path
+reordering and repair waits each as large as or larger than the cross-path
+term. A win in delivered latency would therefore have to come from the law
+that owns the queue — the store and pacing law — and not from where a
+symbol is placed; the placement arms were built to shrink a six-percent
+term, and the measurement says they could not have shrunk delivered latency
+by more than that even had they worked perfectly. Where an arm did change
+something large it changed goodput, downward (the argmin limit at the
+symmetric dual; the derived-temperature composition at the heterogeneous
+dual) or by abandoning the second path (the argmin limit at the
+heterogeneous dual), and the pre-registration had already ruled that the
+goodput leg is a guard and not a verdict.
+
+### 5 — Instrument findings (none acted on here)
+
+1. **The `[LAT]` first readout is now a measured quantity at both duals**,
+   over 16 CTL reps and ~1.7·10⁵ (`c7`) / ~8.5·10⁴ (`c8`) delivered symbols
+   per rep: MIXED, `sh_xp` ≈ 0.06. The 0.5 thresholds were set before the
+   scale of any term was known; `sh_xp` is 8× below the one that names this
+   battery's law.
+2. **The aggregation guard cannot fire in the current `sc2` regime** (§3.3).
+   Its denominator is a same-session single that DNFs at 100 MB; either the
+   single's size or its seat has to change before `AGGREGATION-DOMINATED` is
+   reachable.
+3. **`T0` carries no bind gauge and `RWM_PLACE_T` is not in the `[GATES]`
+   echo**; its execution was inferred from behaviour.
+4. **The Tσ arms cost ~0.8× goodput at `c1`**, where the law is the identity
+   (§3.4) — overhead, and a lower bound on their cost everywhere.
+5. **`σ̂_sender ≥ σ̂_recv` fails 8/8 at `c7` and 8/8 at `sc3`** (§2): the two
+   `sig_us` do not read one stream.
+6. **`eta_s4.py`'s `tau_us` reference is RTprop, not the law's `ref`**, and
+   the two differ 3–4× under load at the duals (§2); the `t_eff` inversion
+   is the route that matches.
+7. **The ANSI-interleave case occurred once in 166** (`s42:18`); the parser
+   fix on `main` matches it; the ledger's `recv_final_lines` is a lower
+   bound, as the launch step said. The sender `[ETA]` still has no exit
+   flush.
+8. **`c9h`-CTL DNF'd 4/6 while `c9h`-T0 finished 6/6 at up to 170 Mbit/s** —
+   a witness-row observation at n = 3 that scores nothing and is written
+   down so it is not rediscovered.
