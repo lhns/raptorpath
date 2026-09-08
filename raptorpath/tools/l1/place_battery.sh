@@ -99,8 +99,12 @@ BIN=/home/vibe/raptorpath/target/release/raptorpath
 if ! "$BIN" --help >/dev/null 2>&1; then
   echo "REFUSED: engine binary will not run" >&2; exit 4
 fi
+# `grep -a` on the binary itself, NOT `strings | grep -q`: under `pipefail`
+# `grep -q` exits at its first match, `strings` takes SIGPIPE (141), the
+# pipeline is non-zero and `if !` reads a PRESENT gate as absent — which is
+# how the placement smoke of 2026-09-08 18:37Z was REFUSED on the right binary.
 for G in RWM_PLACE_T_DERIVED RWM_PLACE_HOL; do
-  if ! strings "$BIN" 2>/dev/null | grep -q "$G"; then
+  if ! grep -aq "$G" "$BIN" 2>/dev/null; then
     echo "REFUSED: $G is not present in the binary — this is the OLD ENGINE" \
       | tee -a "$OUT" >&2
     exit 5
