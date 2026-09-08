@@ -2,10 +2,15 @@
 """Scorer for THE r > 0 BATTERY (goal-gate "THE r > 0 BATTERY —
 PRE-REGISTRATION"; paper §16.82).
 
-    r_report.py --outdir /home/vibe/rbattery [--calib]
+    r_report.py --outdir /home/vibe/rbattery [--calib] [--max-rep N]
 
 Reads the per-seed `RRESULT {json}` rows out of the ledgers and applies the
-pre-registration, and NOTHING ELSE. Every threshold below is transcribed from
+pre-registration, and NOTHING ELSE. `--max-rep N` keeps only rows with
+`rep <= N`: an operator-truncated ledger (goal-gate "OPERATOR AMENDMENT
+(2026-09-08 10:49Z)") can carry a few rows of the rep that was cut, and those
+are excluded for BALANCE -- every arm-cell-size at the same n -- rather than
+edited out of the ledger. The count of excluded rows is printed so the
+exclusion is on the record. Every threshold below is transcribed from
 that block; none is chosen here.
 
 THE ORDER IS THE PRE-REGISTRATION'S ORDER, AND IT IS NOT AN ACCIDENT
@@ -45,8 +50,9 @@ LINK_MBIT = {"c3hg": 20.0, "sc2": 100.0, "c8": 120.0}
 PLATEAU = (26.8, 34.1)       # §9, goal-gate ~40913
 
 
-def rows_from(outdir):
+def rows_from(outdir, max_rep=None):
     out = []
+    dropped = 0
     for path in sorted(glob.glob(os.path.join(outdir, "r-s*.log"))):
         with open(path, errors="replace") as f:
             for ln in f:
@@ -54,9 +60,16 @@ def rows_from(outdir):
                 if not ln.startswith("RRESULT "):
                     continue
                 try:
-                    out.append(json.loads(ln[len("RRESULT "):]))
+                    r = json.loads(ln[len("RRESULT "):])
                 except Exception:
-                    pass
+                    continue
+                if max_rep is not None and (r.get("rep") or 0) > max_rep:
+                    dropped += 1
+                    continue
+                out.append(r)
+    if max_rep is not None:
+        print("MAX-REP %d: %d RRESULT row(s) with rep > %d EXCLUDED for balance"
+              % (max_rep, dropped, max_rep))
     return out
 
 
@@ -104,8 +117,8 @@ def pct(x, base):
     return None if (x is None or not base) else round(100.0 * x / base, 3)
 
 
-def report(outdir, calib):
-    rows = rows_from(outdir)
+def report(outdir, calib, max_rep=None):
+    rows = rows_from(outdir, max_rep)
     if not rows:
         print("UNSCOREABLE-NO-ROWS: no RRESULT lines under %s" % outdir)
         return 5
@@ -436,5 +449,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default="/home/vibe/rbattery")
     ap.add_argument("--calib", action="store_true")
+    ap.add_argument("--max-rep", type=int, default=None,
+                    help="keep only RRESULT rows with rep <= N (balance after "
+                         "an operator truncation; the exclusion is printed)")
     a = ap.parse_args()
-    sys.exit(report(a.outdir, a.calib))
+    sys.exit(report(a.outdir, a.calib, a.max_rep))
