@@ -86,6 +86,26 @@ pub struct FecRateController {
     rq_overhead: f64,
     /// Protocol hint (stored for diagnostics)
     hint: ProtocolHint,
+    /// BULKNESS β = `bulkness_of_delta(delta_price(hint))` ∈ [0, 1] — the
+    /// log-position of this contract's latency price between the Auto anchor
+    /// (β = 0) and the Bulk anchor (β = 1), resolved ONCE at construction
+    /// (paper §16.81/§16.82, in flight).
+    ///
+    /// **THIS FIELD IS THE REPAIR OF A MODE SWITCH.** `compute_repair_rate`
+    /// used to set `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`, a hint
+    /// EQUALITY that swapped the entire `δ_eff` law inside
+    /// `raptorpath_math::controller_rate` — the largest NO-MODE-SWITCH
+    /// violation left in the engine, and the mechanism by which the r leg sat
+    /// at the corner `r* = 0` on every scored battery. The rate is now the mix
+    ///
+    ///     r(β) = (1 − β)·r_anchor + β·r_late-is-fine
+    ///
+    /// with BOTH terms always computed. β = 0 at Realtime AND Auto (the
+    /// clamp) and 1 at Bulk (x/x), all three exactly, so the shipped presets
+    /// are BYTE-IDENTICAL — pinned by `the_rate_mix_is_byte_identical_at_the_
+    /// presets` — while a δ between them (`RWM_DELTA`) now yields a rate
+    /// between them instead of a step.
+    bulkness: f64,
     /// Symbol size in bytes (needed to compute T = RTT × throughput / symbol_size)
     symbol_size: u16,
     /// P5: cap the repair rate at the p99(r) saturation point (paper
@@ -168,9 +188,18 @@ impl FecRateController {
             FecBackend::Rlc => 0.004,
         };
 
-        // Protocol hint maps to target_tail_loss, not an additive offset.
+        // The CONTRACT'S δ maps to target_tail_loss, not an additive offset.
         // This is the only principled knob: tighter tail = more proactive FEC.
-        let effective_tail_loss = target_tail_loss * hint.tail_loss_scale();
+        //
+        // Read through the DIAL since 2026-09-08 (§16.81, in flight):
+        // `ζ(δ(hint))` in place of the enum's own `hint.tail_loss_scale()`.
+        // Bit-identical at all three presets — δ = 0.5/ζ and ζ = 0.5/δ are
+        // exact f64 inverses at ζ ∈ {0.01, 1, 100}, pinned by
+        // `zeta_of_the_hints_delta_is_the_hints_own_scale` — and it means a
+        // δ set BETWEEN the presets (`RWM_DELTA`) moves the tail target
+        // continuously with b and β instead of leaving it pinned to a preset.
+        let delta = crate::net::delta_price(hint);
+        let effective_tail_loss = target_tail_loss * raptorpath_math::zeta_of_delta(delta);
         let effective_tail_loss = effective_tail_loss.clamp(1e-9, 0.1);
 
         Self {
@@ -178,6 +207,7 @@ impl FecRateController {
             max_overhead,
             rq_overhead: codec_overhead,
             hint,
+            bulkness: raptorpath_math::bulkness_of_delta(delta),
             symbol_size,
             saturation_cap_enabled: true,
             bulk_pure_arq: true,
@@ -202,8 +232,23 @@ impl FecRateController {
     /// Enable/disable the Bulk pure-ARQ tail target (P4a, on by default).
     /// Exposed for ablation: with it off, Bulk falls back to the plain
     /// 100×-loosened `target_tail_loss`.
+    ///
+    /// **RE-READ AS `β := 0`** (§16.81, in flight). The flag no longer selects
+    /// a law; it zeroes the mixing weight, which is the SAME arithmetic it
+    /// always performed — the ablation arm was never anything but "evaluate
+    /// the anchor term", and at Realtime/Auto (β = 0 already) it was, and
+    /// remains, exactly inert. The existing ablation assertions
+    /// (`test_bulk_pure_arq_zero_steady_state_rate`, `gate_suite`'s
+    /// `ablation_p4a_bulk_pure_arq`) hold unchanged under this reading and
+    /// were not edited.
     pub fn set_bulk_pure_arq(&mut self, enabled: bool) {
         self.bulk_pure_arq = enabled;
+    }
+
+    /// The effective mixing weight β of `r(β) = (1−β)·r_anchor + β·r_bulk`:
+    /// this contract's bulkness, or 0 when the P4a ablation zeroes it.
+    fn effective_bulkness(&self) -> f64 {
+        if self.bulk_pure_arq { self.bulkness } else { 0.0 }
     }
 
     /// P6: set the completion exposure χ ∈ [0, 1] (paper Section 14.26)
@@ -294,7 +339,21 @@ impl FecRateController {
         } else {
             0.0
         };
-        raptorpath_math::controller_rate(&raptorpath_math::RateInputs {
+        // ── THE RATE MIX, r(β) = (1−β)·r_anchor + β·r_late-is-fine ────────
+        // §16.81/§16.82 (in flight). ONE `RateInputs` is built, and the ONE
+        // shared `controller_rate` is evaluated TWICE — once with the
+        // late-is-fine δ_eff law off (the anchor term) and once with it on
+        // (the Bulk term) — and the two are blended by the contract's own
+        // bulkness. Both terms are ALWAYS computed: there is no `hint ==`
+        // anywhere on this path, and no δ threshold selects a law.
+        //
+        // COST, disclosed: two `controller_rate` evaluations per rate
+        // computation instead of one. The function is a few dozen flops plus
+        // one `normal_quantile`; the rate site is per-ack under a lock that
+        // already holds the estimator, and the L0 gate's own timing has never
+        // resolved it. Not conditionalised — a `if β == 0 { … }` fast path
+        // would be the mode switch again, wearing a performance costume.
+        let mut inputs = raptorpath_math::RateInputs {
             p_upper: estimator.predictive_loss_upper(0.95),
             sigma2,
             mean_burst,
@@ -309,7 +368,9 @@ impl FecRateController {
             t_sym,
             codec_overhead: self.rq_overhead,
             tail_target: self.target_tail_loss,
-            bulk_late_is_fine: self.hint == ProtocolHint::Bulk && self.bulk_pure_arq,
+            // Rebound below for each of the two terms of the mix; the value
+            // here is the anchor term's.
+            bulk_late_is_fine: false,
             // P6 (paper 14.26): 0.0 unless a T_rem-aware caller set it —
             // the production tunnel is an endless stream, so mid-stream
             // semantics (δ_eff = ε̂, r* = 0) apply permanently.
@@ -319,7 +380,18 @@ impl FecRateController {
             inner_feedback: self.inner_feedback,
             saturation_cap: self.saturation_cap_enabled,
             max_overhead: self.max_overhead,
-        })
+        };
+        // The ANCHOR term: δ_eff = the contract's own tail target.
+        inputs.bulk_late_is_fine = false;
+        let r_anchor = raptorpath_math::controller_rate(&inputs);
+        // The LATE-IS-FINE term: δ_eff = the §14.26 completion-exposure glide.
+        inputs.bulk_late_is_fine = true;
+        let r_bulk = raptorpath_math::controller_rate(&inputs);
+        // The mix. EXACT at the presets: β = 0 gives `1·r_anchor + 0·r_bulk`
+        // and β = 1 gives `0·r_anchor + 1·r_bulk`, both bit-exact for finite
+        // terms (`controller_rate` clamps to [0, max_overhead], so they are).
+        let beta = self.effective_bulkness();
+        (1.0 - beta) * r_anchor + beta * r_bulk
     }
 
     /// Derive the encoder window size W* from the current channel estimate
@@ -745,6 +817,260 @@ mod tests {
     use crate::control::estimator::LossEstimator;
 
     const W: usize = 50; // typical window size for tests
+
+    // ── THE RATE MIX'S BYTE-IDENTITY PIN (§16.81/§16.82, in flight) ───────
+    //
+    // The repair `r(β) = (1−β)·r_anchor + β·r_late-is-fine` replaced
+    //     `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`
+    // — a hint EQUALITY that swapped δ_eff's whole law inside
+    // `controller_rate`. The user's condition on the repair is that it be
+    // BIT-EXACT at every preset, so this reproduces the DELETED expression
+    // inline and compares with `assert_eq!` (not a tolerance) at all three
+    // hints, both settings of the ablation flag, over the estimator fixtures
+    // the suite already exercises plus a 200-point grid.
+
+    /// The PRE-REPAIR rate, computed with the deleted `hint == Bulk` swap.
+    /// A transcription of what `compute_repair_rate` did before the mix, kept
+    /// deliberately in the old shape so "identical" is evidence and not a
+    /// restatement of the new code.
+    fn legacy_rate(ctrl: &FecRateController, est: &LossEstimator, window_size: usize) -> f64 {
+        let ge = est.ge_estimator();
+        let (sigma2, mean_burst) = if ge.is_valid() {
+            (
+                raptorpath_math::burst_variance_factor(ge.p_gb(), ge.p_bg()),
+                ge.mean_burst_length(),
+            )
+        } else {
+            (1.0, 1.0)
+        };
+        let tput = est.throughput();
+        let rtt_secs = est.rtt().as_secs_f64();
+        let t_symbols = if ge.is_valid() && tput > 0.0 {
+            (rtt_secs * tput / ctrl.symbol_size as f64).max(1.0)
+        } else {
+            0.0
+        };
+        let t_sym = if tput > 0.0 { ctrl.symbol_size as f64 / tput } else { 0.0 };
+        raptorpath_math::controller_rate(&raptorpath_math::RateInputs {
+            p_upper: est.predictive_loss_upper(0.95),
+            sigma2,
+            mean_burst,
+            mass: ge.mass_stats(),
+            tail_provision: ctrl.tail_provision,
+            window: window_size as f64,
+            t_symbols,
+            srtt: rtt_secs,
+            t_sym,
+            codec_overhead: ctrl.rq_overhead,
+            tail_target: ctrl.target_tail_loss,
+            // THE DELETED EXPRESSION, verbatim (`fec_rate.rs:312`, 2026-09-08).
+            bulk_late_is_fine: ctrl.hint == ProtocolHint::Bulk && ctrl.bulk_pure_arq,
+            completion_exposure: ctrl.completion_exposure,
+            inner_feedback: ctrl.inner_feedback,
+            saturation_cap: ctrl.saturation_cap_enabled,
+            max_overhead: ctrl.max_overhead,
+        })
+    }
+
+    /// **THE MIX IS BYTE-IDENTICAL AT EVERY PRESET.** `assert_eq!`, not
+    /// `abs() < ε`: a repair that is only approximately the shipped machine
+    /// would move every scored battery's baseline silently.
+    #[test]
+    fn the_rate_mix_is_byte_identical_at_the_presets() {
+        // The fixtures the suite already runs: a settled 5 % channel with no
+        // throughput estimate, and the C2 tunnel operating point.
+        let mut plain = LossEstimator::new();
+        for _ in 0..100 {
+            plain.record_batch(100, 95);
+        }
+        let mut c2 = LossEstimator::new();
+        for _ in 0..200 {
+            c2.record_batch(1000, 974);
+            c2.record_rtt(std::time::Duration::from_millis(13));
+            c2.record_throughput(12_500_000.0);
+        }
+        // A 200-point estimator grid: loss from clean to catastrophic across
+        // three window sizes, with and without a throughput estimate, so the
+        // burst, mass, saturation and floor terms all take both branches.
+        let mut grid: Vec<(LossEstimator, usize)> = Vec::new();
+        for i in 0..100 {
+            let lost = (i * 7) % 60; // 0 .. 59 lost per 1000, cycling
+            let mut e = LossEstimator::new();
+            for _ in 0..120 {
+                e.record_batch(1000, 1000u32 - lost as u32);
+                if i % 2 == 0 {
+                    e.record_rtt(std::time::Duration::from_millis(5 + (i as u64 % 60)));
+                    e.record_throughput(1e6 * (1.0 + i as f64 % 40.0));
+                }
+            }
+            grid.push((e, [16usize, 64, 256][i % 3]));
+        }
+        assert_eq!(grid.len(), 100, "the grid is the pin's own denominator");
+
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            for pure_arq in [true, false] {
+                for inner in [0.0f64, 1.0] {
+                    let mut ctrl =
+                        FecRateController::new(1e-5, 0.5, hint, FecBackend::Rlc, 1200);
+                    ctrl.set_bulk_pure_arq(pure_arq);
+                    ctrl.set_inner_feedback(inner);
+                    for (label, est, w) in [
+                        ("plain-5pct", &plain, W),
+                        ("c2-tunnel", &c2, 56usize),
+                    ] {
+                        assert_eq!(
+                            ctrl.compute_repair_rate(est, w),
+                            legacy_rate(&ctrl, est, w),
+                            "{hint:?} pure_arq={pure_arq} inner={inner} {label}: \
+                             the mix is not the pre-repair machine"
+                        );
+                    }
+                    for (i, (est, w)) in grid.iter().enumerate() {
+                        assert_eq!(
+                            ctrl.compute_repair_rate(est, *w),
+                            legacy_rate(&ctrl, est, *w),
+                            "{hint:?} pure_arq={pure_arq} inner={inner} grid[{i}] (W={w}): \
+                             the mix is not the pre-repair machine"
+                        );
+                    }
+                    // And with χ armed, where the Bulk term is NOT r = 0 and
+                    // the two branches of the deleted swap actually differ.
+                    for chi in [0.25f64, 0.5, 1.0] {
+                        ctrl.set_completion_exposure(chi);
+                        assert_eq!(
+                            ctrl.compute_repair_rate(&c2, 56),
+                            legacy_rate(&ctrl, &c2, 56),
+                            "{hint:?} pure_arq={pure_arq} χ={chi}: the mix diverges \
+                             where the two terms are genuinely different"
+                        );
+                    }
+                    ctrl.set_completion_exposure(0.0);
+                }
+            }
+        }
+    }
+
+    /// **THE MIXING WEIGHT IS EXACTLY 0 / 0 / 1 AT THE PRESETS**, which is
+    /// WHY the identity above holds: `1·a + 0·b == a` and `0·a + 1·b == b`
+    /// bit-exactly for finite `a`, `b`, and `controller_rate` clamps into
+    /// `[0, max_overhead]`, so both terms are always finite.
+    #[test]
+    fn the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it() {
+        for (hint, want) in [
+            (ProtocolHint::Realtime, 0.0f64),
+            (ProtocolHint::Auto, 0.0),
+            (ProtocolHint::Bulk, 1.0),
+        ] {
+            let mut c = FecRateController::new(1e-5, 0.5, hint, FecBackend::Rlc, 1200);
+            assert_eq!(c.bulkness, want, "{hint:?}: β");
+            assert_eq!(c.effective_bulkness(), want, "{hint:?}: effective β");
+            // The P4a ablation is `β := 0`, at EVERY point of the dial —
+            // which is what makes it exactly inert at Realtime and Auto,
+            // where β is already 0. No hint appears in that sentence.
+            c.set_bulk_pure_arq(false);
+            assert_eq!(c.effective_bulkness(), 0.0, "{hint:?}: the ablation is β := 0");
+            assert_eq!(c.bulkness, want, "{hint:?}: the ablation must not move β itself");
+        }
+    }
+
+    /// **THE BULK POINT DOES NOT STEP** (CLAUDE.md: a behaviour step across a
+    /// preset is a defect even if each side is individually correct).
+    ///
+    /// At a FIXED estimator state, δ just either side of the Bulk preset must
+    /// move the rate by no more than the mix's own arithmetic allows: the two
+    /// terms differ by at most `max_overhead` (both are clamped into
+    /// `[0, max_overhead]`), so a step of `Δβ` in the weight can move `r` by
+    /// at most `Δβ·max_overhead`. The bound is therefore
+    /// `(1 − β(δ'))·max_overhead` for the off-preset δ', and it is asserted
+    /// over the WHOLE dial, not only at the seam that was twice reintroduced.
+    #[test]
+    fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
+        let mut est = LossEstimator::new();
+        for _ in 0..200 {
+            est.record_batch(1000, 974);
+            est.record_rtt(std::time::Duration::from_millis(13));
+            est.record_throughput(12_500_000.0);
+        }
+        const MAX_OH: f64 = 0.5;
+        // Evaluate the mix directly at an arbitrary β, which is what a δ
+        // between the presets produces. (`RWM_DELTA` is the shipped route to
+        // this; the unit test drives the same arithmetic without the
+        // process-global env resolve, which a parallel runner cannot own.)
+        let r_at = |beta: f64| {
+            let mut c =
+                FecRateController::new(1e-5, MAX_OH, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+            c.bulkness = beta;
+            c.compute_repair_rate(&est, 56)
+        };
+        // 1. THE BULK POINT: δ ∈ {0.005/1.02, 0.005, 0.005·1.02}.
+        let d0 = 0.005f64;
+        let (b_lo, b_at, b_hi) = (
+            raptorpath_math::bulkness_of_delta(d0 * 1.02),
+            raptorpath_math::bulkness_of_delta(d0),
+            raptorpath_math::bulkness_of_delta(d0 / 1.02),
+        );
+        assert_eq!(b_at, 1.0);
+        assert_eq!(b_hi, 1.0, "below the Bulk anchor the weight is clamped at 1");
+        let (r_lo, r_at0, r_hi) = (r_at(b_lo), r_at(b_at), r_at(b_hi));
+        assert_eq!(r_at0, r_hi, "the clamped side must be flat, not stepped");
+        assert!(
+            (r_lo - r_at0).abs() <= (1.0 - b_lo) * MAX_OH,
+            "step across the Bulk preset: r={r_lo} at β={b_lo} vs r={r_at0} at β=1, \
+             bound {}",
+            (1.0 - b_lo) * MAX_OH
+        );
+        // 2. THE WHOLE DIAL: no adjacent pair on a 400-point log-uniform sweep
+        //    of δ may move r by more than the weight's own change allows.
+        const N: usize = 400;
+        let (lo, hi) = (0.001f64, 50.0f64);
+        let mut prev: Option<(f64, f64)> = None;
+        for i in 0..=N {
+            let d = lo * (hi / lo).powf(i as f64 / N as f64);
+            let beta = raptorpath_math::bulkness_of_delta(d);
+            let r = r_at(beta);
+            if let Some((pb, pr)) = prev {
+                assert!(
+                    (r - pr).abs() <= (beta - pb).abs() * MAX_OH + 1e-12,
+                    "δ={d}: r stepped from {pr} to {r} on a Δβ of {}",
+                    (beta - pb).abs()
+                );
+            }
+            prev = Some((beta, r));
+        }
+        // 3. THE OTHER δ-PRICED LEG of the same rate — the effective tail
+        //    target `base·ζ(δ)` — is a continuous, strictly DECREASING
+        //    function of δ with no step at any preset either, so neither term
+        //    of the mix carries a hidden seam. Checked as the formula it is.
+        let tail = |d: f64| (1e-5f64 * raptorpath_math::zeta_of_delta(d)).clamp(1e-9, 0.1);
+        let mut prev_t = f64::INFINITY;
+        for i in 0..=N {
+            let d = lo * (hi / lo).powf(i as f64 / N as f64);
+            let t = tail(d);
+            assert!(t <= prev_t, "δ={d}: the effective tail target stepped UP");
+            prev_t = t;
+        }
+        // And it reproduces the PRE-REPAIR PRODUCT exactly at every preset.
+        // The reference is `base × ζ(hint)` and not the decimal it prints as:
+        // `1e-5 × 0.01` is `1.0000000000000001e-7`, one ulp above the literal
+        // `1e-7`, and it is the product that shipped.
+        for (h, want) in [
+            (ProtocolHint::Realtime, 1e-7f64),
+            (ProtocolHint::Auto, 1e-5),
+            (ProtocolHint::Bulk, 1e-3),
+        ] {
+            let c = FecRateController::new(1e-5, MAX_OH, h, FecBackend::Rlc, 1200);
+            assert_eq!(
+                c.target_tail_loss,
+                (1e-5f64 * h.tail_loss_scale()).clamp(1e-9, 0.1),
+                "{h:?}: ζ(δ(hint)) is not the hint's own scale"
+            );
+            assert!(
+                (c.target_tail_loss - want).abs() <= want * 1e-12,
+                "{h:?}: the effective tail target is {} and the paper publishes {want}",
+                c.target_tail_loss
+            );
+        }
+    }
 
     /// δ-honest shed budget (goal-gate "Unified Shedding"): the 1−ρ
     /// allowance is the DESIGN residual ε·(1−P_fec) — 0 with no loss or no

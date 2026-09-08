@@ -151,9 +151,15 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 
 /// §12.4: δ(hint) = 0.5/ζ ⇔ ζ = 0.5/δ. ζ is the hint's tail-loss scale
 /// {0.01 Realtime, 1 Auto, 100 Bulk} ⇒ δ ∈ {50, 0.5, 0.005}. Involution.
+///
+/// RE-EXPORT (2026-09-08, §16.81 in flight): the body moved DOWN into
+/// `raptorpath-math::zeta_of_delta`, which the ENGINE now reads too — the
+/// dial has exactly one implementation for the L0 model and the L1 machine.
+/// Numerically identical (`0.5 / d.max(1e-12)`, same expression, same
+/// anchor constant), so no golden fingerprint moves.
 #[wasm_bindgen]
 pub fn zeta_of_delta(delta_price: f64) -> f64 {
-    0.5 / delta_price.max(1e-12)
+    math::zeta_of_delta(delta_price)
 }
 
 /// §16.26: the horizon coefficient b of the span law's own deadline,
@@ -163,11 +169,16 @@ pub fn zeta_of_delta(delta_price: f64) -> f64 {
 /// at all three presets (δ = 50 → ½, 0.5 → 1, 0.005 → 2). Documented as a
 /// visualizer interpolation, not a paper formula, in the model-vs-engine
 /// table.
+///
+/// RE-EXPORT (2026-09-08, §16.81 in flight): the body moved DOWN into
+/// `raptorpath-math::span_horizon_b`, and `raptorpath::net::delta_budget_b`
+/// — which was a three-arm `match` on the hint — now reads THAT function of
+/// `delta_price(hint)`. The engine and the visualizer are one law again, and
+/// this is no longer "a visualizer interpolation": it is the shipped b.
+/// `d/0.5` and `2.0*d` are the same f64 scaling, so no golden moves.
 #[wasm_bindgen]
 pub fn span_horizon_b(delta_price: f64) -> f64 {
-    (2.0f64)
-        .powf(-((2.0 * delta_price.max(1e-12)).log10() / 2.0))
-        .clamp(0.5, 2.0)
+    math::span_horizon_b(delta_price)
 }
 
 /// §16.26/§16.20.3: the recovery deadline D(δ) = min(b(δ)·RTprop, 2·RTprop)
@@ -230,11 +241,16 @@ pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst
 /// (log-blend) from the interpolated anchor into §14.26's late-is-fine
 /// form (target tracks p̂ with the χ-glide) as β → 1 — one continuous
 /// law, no hint branch, exact at all three presets.
+///
+/// RE-EXPORT (2026-09-08, §16.81/§16.82 in flight): the body moved DOWN into
+/// `raptorpath-math::bulkness_of_delta`, which the ENGINE's rate law now
+/// reads as the mixing weight of `r(β) = (1−β)·r_anchor + β·r_late-is-fine`
+/// — the same formula this sim has carried since the continuum landed, now
+/// shipped in `control/fec_rate.rs` in place of the `hint == Bulk` swap.
+/// Same expression, same anchors, so no golden moves.
 #[wasm_bindgen]
 pub fn bulkness_of_delta(delta_price: f64) -> f64 {
-    let x = delta_price.max(1e-12).log10();
-    let (a, b) = (0.5f64.log10(), 0.005f64.log10());
-    ((a - x) / (a - b)).clamp(0.0, 1.0)
+    math::bulkness_of_delta(delta_price)
 }
 
 #[wasm_bindgen]
@@ -2196,6 +2212,115 @@ mod tests {
         run_to_end(&mut br);
         assert_eq!(br.get_cum_decoded() + br.get_given_up(), br.get_num_source());
         assert!(br.get_reliability() >= 0.90);
+    }
+
+    /// **THE SIM/ENGINE TAIL-ANCHOR DIVERGENCE, BOUNDED** (CLAUDE.md: every
+    /// documented model-vs-engine divergence carries a test that BOUNDS it,
+    /// not prose that describes it). §16.82 in flight.
+    ///
+    /// Three Bulk tail targets existed in three places. Two of them are
+    /// reconciled by §16.81's dial: the ENGINE's effective tail target is
+    /// now `BASE·ζ(δ)` for `BASE = 1e-5` at every point of the dial, which
+    /// is exactly what `contract_alpha`/`FecRateController` compute. The
+    /// third is this sim's own log-log interpolation through the anchor
+    /// (0.005, 0.05) — §14.26's late-is-fine budget — where the engine's
+    /// ζ-map says 1e-3. That is a DELIBERATE between-preset divergence of
+    /// the L0 model, and it is bounded here rather than unified: unifying
+    /// it would move the golden fingerprints, which is a separate,
+    /// deliberate model change (CLAUDE.md scope rule).
+    ///
+    /// The bound is TIGHT and stated three ways, so the divergence cannot
+    /// grow silently:
+    ///   1. IDENTICAL (exactly 0) on the whole Realtime–Auto half:
+    ///      both are slope −1 in log₁₀δ and agree at both anchors.
+    ///   2. ≤ log₁₀(50) over the dial between its named points.
+    ///   3. ATTAINED at the Bulk anchor, where it IS log₁₀(0.05/1e-3).
+    ///
+    /// NOTE (reported, not weakened): the pre-registration named the bound
+    /// `log₁₀(50)/2`. That bound is FALSE at the Bulk anchor by
+    /// construction — the anchors differ by exactly 50×, so the smallest
+    /// true bound is log₁₀(50). Shipped with the true bound plus the two
+    /// stronger clauses above.
+    #[test]
+    fn test_sim_engine_tail_anchor_divergence_is_bounded() {
+        /// The engine's `CONTRACT_TAIL_LOSS_BASE` / `config.target_tail_loss`
+        /// default (`raptorpath::net::CONTRACT_TAIL_LOSS_BASE`).
+        const BASE: f64 = 1e-5;
+        let engine = |d: f64| BASE * zeta_of_delta(d);
+        let bound = 50.0f64.log10();
+
+        // The dial between its named points, log-uniform.
+        let (lo, hi) = (0.005f64, 50.0f64);
+        let mut worst = 0.0f64;
+        let mut worst_at = lo;
+        for i in 0..=400 {
+            let d = lo * (hi / lo).powf(i as f64 / 400.0);
+            let gap = (sim_tail_target_of_delta(d).log10() - engine(d).log10()).abs();
+            assert!(
+                gap <= bound + 1e-12,
+                "δ={d}: sim/engine tail anchors diverge by {gap} decades, past the \
+                 log10(50) = {bound} anchor gap this divergence is documented as"
+            );
+            if gap > worst {
+                worst = gap;
+                worst_at = d;
+            }
+            // Clause 1: EXACT agreement on the Realtime–Auto half.
+            if d >= 0.5 {
+                assert!(
+                    gap < 1e-12,
+                    "δ={d}: the sim and the engine must be the SAME law above Auto \
+                     (both slope −1 in log δ through the same two anchors): {gap}"
+                );
+            }
+        }
+        // Clause 3: the worst case is the Bulk anchor and it is the anchor
+        // gap itself — an assertion on the MECHANISM, not a spread.
+        assert!(
+            (worst - bound).abs() < 1e-9 && (worst_at - 0.005).abs() < 1e-4,
+            "the divergence must be maximal AT the Bulk anchor and equal to the \
+             0.05-vs-1e-3 anchor gap: worst={worst} at δ={worst_at}, bound={bound}"
+        );
+        assert!(
+            (sim_tail_target_of_delta(0.005) - 0.05).abs() < 1e-15
+                && (engine(0.005) - 1e-3).abs() < 1e-15,
+            "the two anchors themselves moved; re-derive the bound before editing it"
+        );
+    }
+
+    /// The math-crate port is a RE-EXPORT and not a re-derivation: the three
+    /// dial functions must reproduce the exact f64 the sim shipped before
+    /// §16.81 moved their bodies down into `raptorpath-math`. Bit-exact,
+    /// because an ulp here moves a golden fingerprint.
+    #[test]
+    fn test_dial_reexports_are_bit_identical_to_the_shipped_sim_forms() {
+        for i in 0..=600 {
+            // Log-uniform over four decades either side of the dial.
+            let d = 0.0005f64 * (500.0f64 / 0.0005).powf(i as f64 / 600.0);
+            assert_eq!(zeta_of_delta(d), 0.5 / d.max(1e-12), "ζ moved at δ={d}");
+            assert_eq!(
+                span_horizon_b(d),
+                (2.0f64).powf(-((2.0 * d.max(1e-12)).log10() / 2.0)).clamp(0.5, 2.0),
+                "b moved at δ={d}"
+            );
+            let x = d.max(1e-12).log10();
+            let (a, b) = (0.5f64.log10(), 0.005f64.log10());
+            assert_eq!(
+                bulkness_of_delta(d),
+                ((a - x) / (a - b)).clamp(0.0, 1.0),
+                "β moved at δ={d}"
+            );
+        }
+        // The presets, absolutely and bit-exactly.
+        assert_eq!(span_horizon_b(50.0), 0.5);
+        assert_eq!(span_horizon_b(0.5), 1.0);
+        assert_eq!(span_horizon_b(0.005), 2.0);
+        assert_eq!(bulkness_of_delta(50.0), 0.0);
+        assert_eq!(bulkness_of_delta(0.5), 0.0);
+        assert_eq!(bulkness_of_delta(0.005), 1.0);
+        assert_eq!(zeta_of_delta(50.0), 0.01);
+        assert_eq!(zeta_of_delta(0.5), 1.0);
+        assert_eq!(zeta_of_delta(0.005), 100.0);
     }
 
     /// The ρ dial composes with the Bulk price (no hidden mode switch

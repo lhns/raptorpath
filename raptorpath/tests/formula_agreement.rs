@@ -65,7 +65,8 @@ use raptorpath::net::{
 };
 use raptorpath::control::fec_rate::ProtocolHint;
 use raptorpath::net::{
-    cantelli_k, codel_setpoint_q, contract_alpha, pool_value_multiplier,
+    cantelli_k, codel_setpoint_q, contract_alpha, delta_budget_b_of, delta_price,
+    pool_value_multiplier, CONTRACT_TAIL_LOSS_BASE,
     quantile_recovery_round_us, rack_recovery_round_us, CODEL_TARGET_HI, CODEL_TARGET_LO,
     RACK_MIN_RTT_DIVISOR, RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX, TIMER_GRANULARITY_US,
 };
@@ -167,6 +168,23 @@ const K_WIRE: &[f64] = &[1.0, 1.04, 1.14, 1.15, 1.505, 2.0];
 /// ρ across its whole dial including both ends — the shed term is live only
 /// below 1, and ρ = 1 is the shipped retain-until-acked scope.
 const RHO_GRID: &[f64] = &[0.0, 0.25, 0.5, 0.75, 0.9, 1.0];
+
+/// **PUBLISHED**: paper §16.26 / §16.81 (in flight) —
+/// `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)`, δ_Auto = 0.5.
+/// Transcribed 2026-09-08.
+///
+/// This row exists because the engine had NO function of δ until §16.81: `b`
+/// was a three-arm `match` on the protocol hint, so the paper's continuous
+/// law had nothing to be compared against and the agreement suite could only
+/// pin the three values. It is now a formula on both sides, and this is the
+/// transcription — written from the paper's own expression, deliberately in a
+/// DIFFERENT algebraic arrangement from the engine's (`2^x` via `powf` on the
+/// ratio, against the engine's identical ratio form), so the two agreeing is
+/// evidence rather than a tautology of shared code.
+fn published_span_horizon_b(delta: f64) -> f64 {
+    let raw = (-0.5 * (delta / 0.5).log10()).exp2();
+    raw.clamp(0.5, 2.0)
+}
 
 /// b(δ) at the protocol's NAMED POINTS, plus two off-point values, because
 /// they are points on a dial and not modes: the law must agree with the paper
@@ -561,6 +579,104 @@ fn published_quantile_round(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
     ((srtt_us as f64 + k * sigma_us as f64) as u64).max(TIMER_GRANULARITY_US)
 }
 
+/// **LAW: `b(δ)`, paper §16.26 / §16.81 (in flight).** The engine's span
+/// horizon against the paper's own continuous form, over the WHOLE dial.
+///
+/// Until 2026-09-08 there was nothing to put in this file for `b`: the engine
+/// held a three-arm `match` on the protocol hint and the paper held a formula,
+/// so "agreement" could only ever mean "the three numbers coincide" — which is
+/// exactly the failure mode ADR-0070 names, a law that is pinned and never
+/// READ. The engine now evaluates `span_horizon_b(delta_price(hint))`, and
+/// this row reads the paper's expression against it everywhere, including
+/// BETWEEN the presets and at both ends of the clamp.
+#[test]
+fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
+    // 1. The named points, ABSOLUTELY and BIT-EXACTLY — the numbers §16.26
+    //    publishes, and the numbers the deleted three-arm map returned.
+    assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Realtime)), 0.5);
+    assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Auto)), 1.0);
+    assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Bulk)), 2.0);
+    assert_eq!(published_span_horizon_b(50.0), 0.5);
+    assert_eq!(published_span_horizon_b(0.5), 1.0);
+    assert_eq!(published_span_horizon_b(0.005), 2.0);
+
+    // 2. AGREEMENT with the paper's transcription over a log-uniform sweep of
+    //    the dial's own span, and two decades PAST each end so the clamp — the
+    //    law's RANGE, not a mode — is exercised on both sides.
+    let (lo, hi) = (0.005f64 / 100.0, 50.0f64 * 100.0);
+    const N: usize = 600;
+    for i in 0..=N {
+        let d = lo * (hi / lo).powf(i as f64 / N as f64);
+        let (eng, pap) = (delta_budget_b_of(d), published_span_horizon_b(d));
+        assert!(
+            (eng - pap).abs() < 1e-12,
+            "δ={d}: engine {eng} vs paper {pap}"
+        );
+    }
+
+    // 3. THE OFF-POINTS `b_grid()` ALREADY SWEEPS. The store-cap rows are
+    //    evaluated at b = 0.75 and b = 1.5, which are not preset values —
+    //    before §16.81 no δ could be named for them at all. Invert the law
+    //    (δ = δ_Auto·10^(−2·log₂ b)) and check that those b really are points
+    //    ON this dial rather than free parameters of the cap benches.
+    for b in b_grid() {
+        let d = 0.5 * 10f64.powf(-2.0 * b.log2());
+        let back = delta_budget_b_of(d);
+        assert!(
+            (back - b).abs() < 1e-12,
+            "b={b} is not a point on the δ dial: δ={d} maps back to {back}"
+        );
+        assert!(
+            (published_span_horizon_b(d) - b).abs() < 1e-12,
+            "b={b}: the paper's form disagrees at its own δ={d}"
+        );
+    }
+
+    // 4. THE NO-MODE-SWITCH PROPERTY, asserted rather than described: ±2 %
+    //    nudges either side of every named point move b by less than 0.01 and
+    //    never move it UP. A behaviour STEP across a preset is a defect even
+    //    if each side is individually correct (CLAUDE.md).
+    //
+    //    THE CLAMP'S BIND, RECORDED (ADR-0070: every clamp gets a bind
+    //    gauge). Realtime and Bulk ARE the clamp's two endpoints — b(50) = ½
+    //    and b(0.005) = 2 are exactly where `clamp(½, 2)` starts binding — so
+    //    the OUTWARD nudge at those two presets is flat by construction, not
+    //    by a mode. Strictness is therefore asserted where the law is
+    //    unclamped (the open interval, clause 2's sweep and clause 5) and
+    //    non-strictness at the two endpoints, which is the honest statement.
+    for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+        let d0 = delta_price(h);
+        let (lo_b, mid, hi_b) = (
+            delta_budget_b_of(d0 * 0.98),
+            delta_budget_b_of(d0),
+            delta_budget_b_of(d0 * 1.02),
+        );
+        assert!(
+            hi_b <= mid && mid <= lo_b,
+            "{h:?}: b is not monotone through the preset: {lo_b} / {mid} / {hi_b}"
+        );
+        assert!(
+            (lo_b - mid).abs() < 0.01 && (hi_b - mid).abs() < 0.01,
+            "{h:?}: a 2 % nudge of δ stepped b: {lo_b} / {mid} / {hi_b}"
+        );
+    }
+    // 5. STRICT decrease on the dial's INTERIOR, where the clamp is inert.
+    let mut prev = f64::INFINITY;
+    for i in 0..=200 {
+        let d = 0.0051 * (49.0f64 / 0.0051).powf(i as f64 / 200.0);
+        let b = delta_budget_b_of(d);
+        assert!(b < prev, "δ={d}: b({d}) = {b} did not fall below {prev}");
+        prev = b;
+    }
+    // The Auto preset is INTERIOR: both nudges move, in the right direction.
+    let a = delta_price(ProtocolHint::Auto);
+    assert!(
+        delta_budget_b_of(a * 1.02) < delta_budget_b_of(a)
+            && delta_budget_b_of(a) < delta_budget_b_of(a * 0.98),
+        "Auto sits in the clamp's interior and must move strictly either side"
+    );
+}
+
 /// **LAW: `q(δ)`, paper §16.66.** The engine against the published map, over
 /// the whole dial including BETWEEN the named points — they are points on a
 /// dial, not modes, so the law must agree off them too.
@@ -788,7 +904,7 @@ fn published_quantile_round_equals_the_engine_and_the_refutation_is_arithmetic()
         (ProtocolHint::Auto, 1e-5, 316.0),
         (ProtocolHint::Bulk, 1e-3, 31.6),
     ] {
-        let a = contract_alpha(hint);
+        let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint);
         assert!((a - want_alpha).abs() < want_alpha * 1e-9, "{hint:?}: α = {a}");
         let k = cantelli_k(a);
         assert!(
@@ -815,24 +931,24 @@ fn published_quantile_round_equals_the_engine_and_the_refutation_is_arithmetic()
     //    the 100 ms clamp it would replace, and 4× RWM_DERIVED_SWEEP's already
     //    slow 752 ms. If this ever passes, §16.68's verdict must be revisited
     //    rather than the number quietly adjusted.
-    let w_auto = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Auto));
+    let w_auto = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Auto));
     assert!(
         (3_200_000..3_300_000).contains(&w_auto),
         "§16.68 publishes 3.24 s at c8/Auto; the law computes {w_auto} µs"
     );
     assert!(w_auto > 32 * 100_000, "the refutation's 32× statement no longer holds");
-    let w_rt = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Realtime));
+    let w_rt = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Realtime));
     assert!((31_000_000..32_500_000).contains(&w_rt), "§16.68 publishes 31.7 s at Realtime");
-    let w_bulk = quantile_recovery_round_us(77_000, 10_000, contract_alpha(ProtocolHint::Bulk));
+    let w_bulk = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Bulk));
     assert!((380_000..400_000).contains(&w_bulk), "§16.68 publishes 393 ms at Bulk");
 
     // 4. α is CONTINUOUS in the dial — it rides ζ, the hint's one declared
     //    price ratio, and nothing keys on a threshold. Monotone in the same
     //    direction as the latency price, at every named point.
     let (r, a, b) = (
-        contract_alpha(ProtocolHint::Realtime),
-        contract_alpha(ProtocolHint::Auto),
-        contract_alpha(ProtocolHint::Bulk),
+        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Realtime),
+        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Auto),
+        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Bulk),
     );
     assert!(r < a && a < b, "α is not monotone across the dial's named points");
 }

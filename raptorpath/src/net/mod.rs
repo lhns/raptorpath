@@ -798,18 +798,26 @@ pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
 // failure probability, continuous in the hint through ζ), and nothing here
 // keys on a threshold in the (δ, ρ, r) triangle.
 
-/// The contract's base tail-loss target, mirroring `config.rs`'s own
-/// `unwrap_or(1e-5)`. Read here rather than plumbed because the config does
-/// not reach this seat; §16.69 records that as a stated limitation of the
-/// refuted arm rather than a design choice.
+/// The contract's DEFAULT base tail-loss target — `config.rs`'s own
+/// `unwrap_or(1e-5)`, named here so the two cannot drift silently.
+///
+/// It was a MIRROR until 2026-09-08 (§16.81 in flight): the seat read this
+/// constant because "the config does not reach this seat", so a tunnel
+/// configured at 1e-4 or 1e-6 priced its α at 1e-5 anyway. Both ends now take
+/// the base as an ARGUMENT (`config.target_tail_loss`, plumbed to the sender
+/// policy and to the receiver task), and this constant is what an unconfigured
+/// tunnel resolves to — a default, not a mirror.
 pub const CONTRACT_TAIL_LOSS_BASE: f64 = 1e-5;
 
 /// The contract-declared false-alarm rate α on the r leg — paper §16.69.
-/// `target_tail_loss × ζ(hint)`, where ζ is the hint's ONE declared price
-/// ratio (`ProtocolHint::tail_loss_scale`). Continuous in the dial: no
-/// threshold, no mode bit, and the same ζ the Copa δ mapping already consumes.
-pub fn contract_alpha(hint: ProtocolHint) -> f64 {
-    (CONTRACT_TAIL_LOSS_BASE * hint.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0)
+/// `target_tail_loss × ζ(δ)`, where ζ is the ONE declared price ratio of the
+/// contract's own δ (`raptorpath_math::zeta_of_delta(delta_price(hint))`).
+/// Continuous in the dial: no threshold, no mode bit, the same ζ the Copa δ
+/// mapping consumes, and — since §16.81 — the same δ, so `RWM_DELTA` reaches
+/// α along with b and β instead of α alone staying pinned to a preset.
+pub fn contract_alpha(base_tail_loss: f64, hint: ProtocolHint) -> f64 {
+    (base_tail_loss * raptorpath_math::zeta_of_delta(delta_price(hint)))
+        .clamp(f64::MIN_POSITIVE, 1.0)
 }
 
 /// The α ACTUALLY supplied to the quantile law — the contract's own, unless
@@ -828,11 +836,11 @@ pub fn contract_alpha(hint: ProtocolHint) -> f64 {
 /// before this existed. Nothing continuous in (δ, ρ, r) is expressed here and
 /// nothing may ship reading the override: a shipped α must be DERIVED from the
 /// triangle, which is the decision this sweep informs and does not take.
-pub fn resolved_alpha(hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
+pub fn resolved_alpha(base_tail_loss: f64, hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
     match override_alpha {
         Some(a) if a.is_finite() && a > 0.0 && a <= 1.0 => a,
         // Garbage that survived the gate's own filter, or absent: the contract.
-        _ => contract_alpha(hint),
+        _ => contract_alpha(base_tail_loss, hint),
     }
 }
 
@@ -3479,6 +3487,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
     let sender_protocol_hint = config.protocol_hint;
+    // The contract's BASE tail-loss target, sampled beside the hint it prices
+    // alpha with (paper 16.81, in flight).
+    let sender_target_tail_loss = config.target_tail_loss;
     let sender_gates = gates.clone();
 
     let sender_handle = tokio::spawn(async move {
@@ -3499,6 +3510,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_sack_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
+                sender_target_tail_loss,
                 sender_window_reliable,
                 sender_window_coded_only,
                 sender_window_generation,
@@ -3701,6 +3713,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_gates,
         config.reorder_timeout_ms,
         config.reorder_max_size,
+        // The contract's own dial position at the RECEIVER (§16.81, in
+        // flight): the same two `config` fields the sender's policy reads.
+        config.protocol_hint,
+        config.target_tail_loss,
     ));
 
     // ADR-0004: periodic cleanup of stale decoders
@@ -4587,12 +4603,42 @@ pub fn honest_cap_terms(
 /// `emit_source.rs`, which had the same three-arm map transcribed inline
 /// and would otherwise have been transcribed a second time by the law
 /// below — the `honest_cap_term` de-triplication lesson applied early.
+///
+/// **THE THREE-ARM MATCH IS GONE (2026-09-08, §16.81 in flight).** The hint
+/// names a δ exactly once — [`delta_price`] — and b is the paper's own
+/// continuous `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)` evaluated there
+/// ([`raptorpath_math::span_horizon_b`], the same function the visualizer
+/// reads). The three shipped numbers are unchanged and pinned BIT-EXACTLY by
+/// `delta_budget_b_is_the_dial_not_a_mode`; what changed is the SHAPE, which
+/// is the whole defect: the values agreed with the paper at the three presets
+/// and the engine had no function of δ at all, so nothing between the presets
+/// could be evaluated, measured, or tested for continuity.
 pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
-    match hint {
-        ProtocolHint::Realtime => 0.5,
-        ProtocolHint::Auto => 1.0,
-        ProtocolHint::Bulk => 2.0,
-    }
+    delta_budget_b_of(delta_price(hint))
+}
+
+/// THE ONE PLACE A HINT NAMES A δ (paper §12.4, §16.81 in flight).
+///
+/// `δ(hint) = δ_Auto / ζ(hint) ∈ {50 Realtime, 0.5 Auto, 0.005 Bulk}` — the
+/// map the Copa scheduler already carried, lifted to the seat every δ-priced
+/// law reads: the span horizon `b(δ)`, the rate mix's bulkness `β(δ)`, the
+/// effective tail target `base·ζ(δ)`, and the contract's α. A hint is a NAMED
+/// POINT on this dial and nothing downstream may key on which one it is.
+///
+/// `RWM_DELTA` (ABSENT by default, `gates::delta_override`) replaces the map
+/// with a NUMBER, so a run can stand between the presets. `RWM_COPA_DELTA`
+/// still outranks it inside the congestion controller alone — see
+/// [`RuntimeGates::delta`](crate::gates::RuntimeGates::delta) for the
+/// precedence chain, stated once.
+pub fn delta_price(hint: ProtocolHint) -> f64 {
+    crate::gates::delta_override().unwrap_or_else(|| crate::scheduler::hint_delta_price(hint))
+}
+
+/// `b` at an ARBITRARY point on the δ dial — the law itself, with no hint in
+/// sight. `delta_budget_b(hint) = delta_budget_b_of(delta_price(hint))`, and
+/// the continuity gates sweep THIS.
+pub fn delta_budget_b_of(delta_price: f64) -> f64 {
+    raptorpath_math::span_horizon_b(delta_price)
 }
 
 /// The CONTRACT-declared frontier stall, in SECONDS — the time TERM 2 is
@@ -6726,6 +6772,9 @@ async fn run_window_sender(
     sack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
+    // The contract's BASE tail-loss target (config.target_tail_loss), the
+    // alpha seat's own base since it stopped mirroring a constant (16.81).
+    target_tail_loss: f64,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
     // policy block above RELIABLE_STORE_MAX).
     reliable: bool,
@@ -6778,6 +6827,7 @@ async fn run_window_sender(
         &gates,
         symbol_size,
         protocol_hint,
+        target_tail_loss,
         reliable,
         coded_only,
         generation,
@@ -12877,7 +12927,7 @@ mod tests {
         // The plain-reliable window sender: the seat every cap-law finding in
         // ADR-0070 is about.
         let resolve = |g: &RuntimeGates| {
-            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
         };
 
         // ── THE CONTROL ARM ───────────────────────────────────────────────
@@ -13058,7 +13108,8 @@ mod tests {
         use crate::gates::RuntimeGates;
         use crate::net::sender_policy::SenderPolicy;
         use crate::net::{
-            codel_setpoint_q, contract_alpha, pooled_store_cap, RACK_REO_WND_MULT_INIT,
+            codel_setpoint_q, contract_alpha, pooled_store_cap, CONTRACT_TAIL_LOSS_BASE,
+            RACK_REO_WND_MULT_INIT,
             RACK_REO_WND_MULT_MAX,
         };
 
@@ -13088,7 +13139,7 @@ mod tests {
             g
         };
         let resolve = |g: &RuntimeGates, h: ProtocolHint| {
-            SenderPolicy::resolve(g, 1200, h, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, h, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
         };
 
         // ── §16.67: the δ-cap reaches the pooled seat at every dial point ──
@@ -13159,12 +13210,12 @@ mod tests {
 
         // The recovery laws are CLOCKS, not cap laws, so they must arm on a
         // coded seat too — unlike the δ-cap, which is scoped to `plain_dyn_cap`.
-        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, true, true, false, false);
+        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
         assert!(coded.rack_clocks, "the RACK gate is wrongly scoped to the plain seat");
         let mut d = base();
         d.delta_cap = true;
         let coded_cap =
-            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, true, true, false, false);
+            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
         assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
 
         // RACK's own bound on RACK's own parameter, at both ends.
@@ -13184,7 +13235,7 @@ mod tests {
         for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
             let p = resolve(&q, hint);
             assert!(
-                (p.contract_alpha - contract_alpha(hint)).abs() < f64::EPSILON,
+                (p.contract_alpha - contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint)).abs() < f64::EPSILON,
                 "{hint:?}: α did not reach the policy from the contract"
             );
             assert!(p.contract_alpha > last, "{hint:?}: α is not monotone across the dial");
@@ -14298,11 +14349,33 @@ mod tests {
     }
 
     /// The δ dial's named points — a DIAL, read once, in one place.
+    ///
+    /// **BIT-EXACT, not approximate** (the user's condition on the §16.81
+    /// repair): `b` stopped being a three-arm `match` on the hint and became
+    /// `span_horizon_b(delta_price(hint))`, so the three shipped numbers are
+    /// now the output of `2^(−½·log₁₀(δ/0.5))` on a libm. If that composition
+    /// misses ½ / 1 / 2 by ONE ULP on some target, this assertion FAILS the
+    /// build rather than letting a step ship — and the recorded fallback is
+    /// the exact-by-construction `b = exp2(½·log₁₀ ζ)` over the enum's own ζ
+    /// literals. (SHIPPED FORM as of 2026-09-08: the `log₁₀(δ/δ_Auto)` form.
+    /// It is exact here because δ ∈ {50, 0.5, 0.005} are themselves the exact
+    /// f64 quotients `0.5/ζ`, `δ/0.5` is an exact power-of-two scaling, and
+    /// `log₁₀` of {100, 1, 0.01} returns exactly {2, 0, −2}.)
     #[test]
     fn delta_budget_b_is_the_dial_not_a_mode() {
         assert_eq!(delta_budget_b(ProtocolHint::Realtime), 0.5);
         assert_eq!(delta_budget_b(ProtocolHint::Auto), 1.0);
         assert_eq!(delta_budget_b(ProtocolHint::Bulk), 2.0);
+        // THE HINT NAMES A δ, and it names the SAME δ the Copa mapping does —
+        // one map, one seat. The dial's three named points, bit-exactly.
+        assert_eq!(delta_price(ProtocolHint::Realtime), 50.0);
+        assert_eq!(delta_price(ProtocolHint::Auto), 0.5);
+        assert_eq!(delta_price(ProtocolHint::Bulk), 0.005);
+        // `b(hint)` IS `b_of(δ(hint))` — the composition, not a coincidence.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(delta_budget_b(h), delta_budget_b_of(delta_price(h)));
+        }
+
         // The only law b enters is continuous and MONOTONE in it, through
         // every named point — no step at a preset (CLAUDE.md).
         let mut prev = 0u64;
@@ -14314,6 +14387,126 @@ mod tests {
         }
         assert_eq!(shed_deadline_us(0.5, 20_000), 10_000);
         assert_eq!(shed_deadline_us(2.0, 20_000), 40_000);
+
+        // ── THE CONTINUITY GATE ON δ ITSELF ──────────────────────────────
+        // Before §16.81 there was no function of δ to sweep: b was defined at
+        // three points and nowhere else, so "continuous in the dial" could
+        // only be asserted of `b`, never of δ. Sweep the dial log-uniformly
+        // over its own span [δ_Bulk, δ_Realtime] and assert the two shape
+        // properties the paper's b(δ) claims.
+        let (lo, hi) = (0.005f64, 50.0f64);
+        const N: usize = 500;
+        let mut prev_b = f64::INFINITY;
+        let mut prev_d = u64::MAX;
+        for i in 0..=N {
+            let d = lo * (hi / lo).powf(i as f64 / N as f64);
+            let b = delta_budget_b_of(d);
+            assert!(
+                (0.5..=2.0).contains(&b),
+                "δ={d}: b={b} left the dial's own range"
+            );
+            assert!(
+                b < prev_b,
+                "b(δ) must be STRICTLY decreasing: b({d}) = {b} did not fall below {prev_b}"
+            );
+            // D(δ) = min(b·RTprop, 2·RTprop) at the c2 RTprop: non-increasing.
+            let dl = shed_deadline_us(b, 8_000);
+            assert!(dl <= prev_d, "D(δ) stepped UP at δ={d}");
+            prev_b = b;
+            prev_d = dl;
+        }
+        // ±2 % NUDGES AT EVERY PRESET. A behaviour step across a preset is a
+        // defect even if each side is individually correct (CLAUDE.md), and
+        // the bound is ABSOLUTE in b, not a ratio that a small b could hide
+        // inside: a 2 % move in δ is a 0.0043-decade move in log δ, so
+        // |Δb| < 0.01 for every b on this dial.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let d0 = delta_price(h);
+            let b0 = delta_budget_b_of(d0);
+            for f in [0.98f64, 1.02] {
+                let b1 = delta_budget_b_of(d0 * f);
+                assert!(
+                    (b1 - b0).abs() < 0.01,
+                    "{h:?}: a {f}× nudge of δ stepped b from {b0} to {b1}"
+                );
+            }
+        }
+        // AND THE SHED DEADLINE ITSELF IS UNCHANGED at every preset over the
+        // bench's own RTprop grid — the c2/c3 legs plus the range between and
+        // around them. Bit-exact against the numbers the three-arm map gave.
+        for (h, b_old) in [
+            (ProtocolHint::Realtime, 0.5f64),
+            (ProtocolHint::Auto, 1.0),
+            (ProtocolHint::Bulk, 2.0),
+        ] {
+            for rtprop_us in [
+                1_000u64, 4_000, 8_000, /* c2 */ 20_000, 40_000, 60_000, /* c3 */
+                100_000, 250_000,
+            ] {
+                assert_eq!(
+                    shed_deadline_us(delta_budget_b(h), rtprop_us),
+                    shed_deadline_us(b_old, rtprop_us),
+                    "{h:?} at RTprop {rtprop_us} µs: D moved when b's SHAPE changed"
+                );
+            }
+        }
+    }
+
+    /// **ζ AND δ ARE ONE INVOLUTION, BIT-EXACTLY.** The rate controller's
+    /// effective tail target and the contract's α both read
+    /// `ζ(δ(hint))` where they read `hint.tail_loss_scale()` before §16.81.
+    /// That substitution is byte-identical only if the round trip
+    /// `ζ → δ = 0.5/ζ → ζ = 0.5/δ` is exact at all three preset ζ. It is
+    /// (0.01, 1, 100 are all exactly representable ratios of 0.5), and this
+    /// is the pin that says so rather than the comment that assumes it.
+    #[test]
+    fn zeta_of_the_hints_delta_is_the_hints_own_scale() {
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(
+                raptorpath_math::zeta_of_delta(delta_price(h)),
+                h.tail_loss_scale(),
+                "{h:?}: ζ(δ(hint)) is not the hint's own declared price ratio"
+            );
+        }
+        // And the contract's α is unchanged at every preset, BIT-EXACTLY, on
+        // the base an unconfigured tunnel resolves to.
+        //
+        // The reference is the PRODUCT the pre-repair code computed, not the
+        // decimal it prints as: `1e-5 * 0.01` is `1.0000000000000001e-7` and
+        // the literal `1e-7` is one ulp below it. Comparing against the
+        // literal would be asserting a DIFFERENT number from the one that
+        // shipped — which is the whole reason these pins are `assert_eq!`.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(
+                contract_alpha(CONTRACT_TAIL_LOSS_BASE, h),
+                (CONTRACT_TAIL_LOSS_BASE * h.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0),
+                "{h:?}: α is not the pre-repair product"
+            );
+        }
+        // …and it is the number §16.69 publishes, to reading precision.
+        for (h, alpha) in [
+            (ProtocolHint::Realtime, 1e-7f64),
+            (ProtocolHint::Auto, 1e-5),
+            (ProtocolHint::Bulk, 1e-3),
+        ] {
+            let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, h);
+            assert!((a - alpha).abs() <= alpha * 1e-12, "{h:?}: α = {a}");
+        }
+        // β, the rate mix's weight: 0 at BOTH the Realtime and Auto ends
+        // (the clamp) and 1 at Bulk (x/x) — all three exactly, which is what
+        // makes the mix byte-identical at the presets.
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Realtime)),
+            0.0
+        );
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Auto)),
+            0.0
+        );
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Bulk)),
+            1.0
+        );
     }
 
     /// ABSOLUTE arithmetic on the composed law — every number hand-computable

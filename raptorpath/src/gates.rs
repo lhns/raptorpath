@@ -45,6 +45,23 @@ fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok().and_then(|s| s.parse::<T>().ok())
 }
 
+/// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
+/// §16.81/§16.82, in flight). See [`RuntimeGates::delta`] for what it means
+/// and the precedence against `RWM_COPA_DELTA`.
+///
+/// Resolved through a `OnceLock` rather than only inside
+/// [`RuntimeGates::resolve`] because [`crate::net::delta_price`] is a FREE
+/// function on hot paths (`delta_budget_b`, the rate site) with no `gates`
+/// in scope — the `copa_delta_for_hint` precedent, one layer tidier: the
+/// gates struct reads THIS function too, so there is exactly one resolve and
+/// the `[GATES]` echo cannot disagree with the number the laws used.
+pub fn delta_override() -> Option<f64> {
+    static RESOLVED: std::sync::OnceLock<Option<f64>> = std::sync::OnceLock::new();
+    *RESOLVED.get_or_init(|| {
+        env_parse::<f64>("RWM_DELTA").filter(|d| d.is_finite() && *d > 0.0)
+    })
+}
+
 /// The engine's env-gate surface, resolved once at engine start.
 ///
 /// Grouping mirrors the regime map: the unified machine, anchor hygiene,
@@ -890,6 +907,36 @@ pub struct RuntimeGates {
     /// run's own output rather than inferred — the `RWM_ALPHA_OVERRIDE`
     /// precedent, and the failure mode that produced the 31 Mbit/s anomaly.
     pub w_form: crate::net::WForm,
+    /// `RWM_DELTA` (**ABSENT by default**; paper §16.81/§16.82, in flight) —
+    /// THE CONTRACT'S δ, set directly as a NUMBER instead of by naming one of
+    /// the three preset points on the dial.
+    ///
+    /// **This is not a mode selector; it is the dial itself.** Since §16.81
+    /// the hint names a δ exactly once ([`crate::net::delta_price`]) and every
+    /// δ-priced law downstream is a continuous FORMULA of that number: the
+    /// span horizon `b(δ)`, the rate mix's bulkness `β(δ)`, the effective tail
+    /// target `base·ζ(δ)`, and the contract's α. Present ⇒ ONE δ reaches all
+    /// four, so a battery can stand BETWEEN the presets (`RWM_DELTA=0.05` is
+    /// β = ½ exactly) — the position on the dial the shipped machine could
+    /// never express and the r > 0 regime needs.
+    ///
+    /// **PRECEDENCE, stated once.** `RWM_COPA_DELTA` overrides the CONGESTION
+    /// CONTROLLER's δ alone and outranks this knob there; `RWM_DELTA`
+    /// overrides the contract's δ everywhere including the CC when
+    /// `RWM_COPA_DELTA` is absent. The r-battery's MID arm uses exactly that
+    /// pair: `RWM_DELTA=0.05` moves the contract, `RWM_COPA_DELTA=0.005` pins
+    /// the CC at Bulk so the CC is not the treatment.
+    ///
+    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
+    /// Unset, empty, unparseable, non-finite or non-positive ⇒ `None` ⇒ the
+    /// hint's own map, byte-identically. The `[GATES]` echo prints the
+    /// RESOLVED value (`unset` or the number) at BOTH endpoints, so *"my arm
+    /// did not take"* is READ off the run's own output — the
+    /// `RWM_ALPHA_OVERRIDE` precedent.
+    ///
+    /// **Nothing shipped sets it.** A shipped δ is named by the contract's
+    /// hint; this is the measurement seat, not a law.
+    pub delta: Option<f64>,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -1162,6 +1209,11 @@ impl RuntimeGates {
                 .ok()
                 .and_then(|v| crate::net::WForm::parse(&v))
                 .unwrap_or_default(),
+            // ABSENT by default; garbage resolves back to ABSENT and the echo
+            // prints `unset`. The range is the law's own domain, not a taste:
+            // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
+            // undefined at δ ≤ 0. Paper §16.81/§16.82 (in flight).
+            delta: delta_override(),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
             rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
                 .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
@@ -1232,7 +1284,7 @@ impl RuntimeGates {
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
-             RWM_REFRESH_FLOOR_US={} \
+             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -1294,13 +1346,14 @@ impl RuntimeGates {
             // control's absence is as mechanically assertable as the arm's
             // presence. Paper §16.78.
             o64(&self.refresh_floor_us),
-            // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
-            // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
-            // measured in, so a ledger whose windows are 250 ms and one whose
-            // windows are 2 s are different measurements and the difference has
-            // to be readable from the run's own output. A mistyped override
-            // resolves back to the default and this prints 2000000, so "my arm
-            // did not take" is visible rather than inferred.
+            // THE CONTRACT'S δ, echoed as its RESOLVED value and never as a
+            // flag — same precedent, same reason. `unset` means the hint's own
+            // map (`δ(hint) = 0.5/ζ`) and today's machine; a number means this
+            // run stands at a point on the dial no hint names, and b(δ), β(δ),
+            // the tail target and α all read THAT number. It is the one axis
+            // an r > 0 row varies, so a row whose δ is not readable off its own
+            // run is not a row. Paper §16.81/§16.82 (in flight).
+            o(&self.delta),
             b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
             // The raw-sample dump's CAP is echoed as its RESOLVED value, for
             // the reason `RWM_ACKDIAG_WINDOW_US` two lines above is: a leg
@@ -1618,9 +1671,29 @@ mod tests {
             // The `W` law's RESOLVED token. `cantelli` is today's behaviour
             // and is what the default arm must echo (paper 16.76).
             "RWM_W_FORM=cantelli",
+            // THE CONTRACT'S δ is ABSENT on every shipped arm: the hint names
+            // the point on the dial, and the echo says so (§16.81, in flight).
+            "RWM_DELTA=unset",
         ] {
             assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
         }
+        assert!(
+            g.delta.is_none(),
+            "RWM_DELTA is an EXPERIMENT knob and is ABSENT by default — the \
+             shipped δ is the one the contract's hint names, and nothing \
+             shipped may set a δ between the presets (paper §16.81/§16.82)"
+        );
+        // THE ARMED ARM'S ECHO, two-sided: a row standing between the presets
+        // must be able to state its own δ off its own log. Set by FIELD —
+        // env mutation is process-global in a parallel runner, and the resolve
+        // is a `OnceLock` besides.
+        let mut dialed = g.clone();
+        dialed.delta = Some(0.05);
+        assert!(
+            dialed.echo_line().contains("RWM_DELTA=0.05"),
+            "the armed arm's echo must NAME the RESOLVED δ, not a flag: {}",
+            dialed.echo_line()
+        );
         assert!(
             g.alpha_override.is_none(),
             "RWM_ALPHA_OVERRIDE is an EXPERIMENT knob and is ABSENT by default \

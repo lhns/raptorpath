@@ -126,9 +126,24 @@ pub fn copa_wire_active() -> bool {
 /// essentially empty queue (jitter headroom governs), Auto reproduces the
 /// classic δ = 0.5 two-packet target. `over` = RWM_COPA_DELTA (the
 /// δ-frontier measurement knob), which overrides the hint when set.
+///
+/// THE HINT→δ MAP ITSELF now lives ONCE, in [`hint_delta_price`], and is
+/// read through [`crate::net::delta_price`] — the ONE place a hint names a
+/// δ (§16.81, in flight). This function is the CC's own view of that number:
+/// `RWM_COPA_DELTA` overrides it for the CC alone, so a battery can move the
+/// contract's δ (`RWM_DELTA`) while pinning the congestion controller.
+/// PRECEDENCE: `RWM_COPA_DELTA` ▸ `RWM_DELTA` ▸ the hint's map.
 fn copa_delta(hint: ProtocolHint, over: Option<f64>) -> f64 {
     over.filter(|d| d.is_finite() && *d > 0.0)
-        .unwrap_or(COPA_DELTA / hint.tail_loss_scale())
+        .unwrap_or_else(|| crate::net::delta_price(hint))
+}
+
+/// The hint→δ MAP, with no override of any kind applied: δ(hint) =
+/// COPA_DELTA / ζ(hint) ∈ {50, 0.5, 0.005} (paper §12.4). The ONE
+/// transcription of it in the engine; [`crate::net::delta_price`] is its
+/// public seat and every δ-priced law reads THAT.
+pub(crate) fn hint_delta_price(hint: ProtocolHint) -> f64 {
+    COPA_DELTA / hint.tail_loss_scale()
 }
 
 /// `copa_delta` with the RWM_COPA_DELTA env override applied.
@@ -1010,14 +1025,39 @@ pub struct SchedulingWeights {
 
 impl SchedulingWeights {
     pub fn from_hint(hint: ProtocolHint) -> Self {
-        // w_div is hint-independent: fate diversity for a repair is worth the
-        // same across workloads (a repair correlated with its coverage is
-        // wasted regardless of the (δ, ρ, r) triangle). See place_symbol.
-        match hint {
-            ProtocolHint::Realtime => Self { w_lat: 1.0, w_bw: 0.0, w_div: 1.0 },
-            ProtocolHint::Bulk => Self { w_lat: 0.0, w_bw: 1.0, w_div: 1.0 },
-            ProtocolHint::Auto => Self { w_lat: 0.5, w_bw: 0.5, w_div: 1.0 },
-        }
+        Self::from_delta(crate::net::delta_price(hint))
+    }
+
+    /// The placement weights at an ARBITRARY point on the δ dial — the law,
+    /// with no hint in sight (§16.81, in flight).
+    ///
+    ///     w_bw(δ) = clamp(½ − ¼·log₁₀(δ/δ_Auto), 0, 1),  w_lat = 1 − w_bw
+    ///
+    /// **THE THREE-ARM MATCH IS GONE, AND IT WAS ALREADY AFFINE.** The shipped
+    /// weights were `1/0`, `0.5/0.5`, `0/1` at Realtime / Auto / Bulk — the
+    /// EXACT log-midpoint at Auto, i.e. three samples of one affine function
+    /// of the latency price, written out as a `match` because the engine had
+    /// no δ to write it in terms of. The `¼` is the dial's own width — δ spans
+    /// exactly four decades (0.005 → 50) while the weights span exactly 1 —
+    /// and not a fourth constant. This is the paper's own transcription
+    /// (§16.81.11), arrangement included.
+    ///
+    /// **IT LANDED BECAUSE THE BIT-EXACT PIN PASSED**, which is the condition
+    /// §16.81.11 states: `log₁₀(δ/δ_Auto)` at the three presets returns
+    /// exactly {2, 0, −2}, so `½ − ¼x` is exactly {0, ½, 1} and `1 − w_bw` is
+    /// exactly {1, ½, 0}. Had `assert_eq!` failed at any of the three,
+    /// `SchedulingWeights` would have stayed a `match` and a DECLARED CORNER.
+    /// Pinned by `scheduling_weights_are_the_dial_not_a_mode`.
+    ///
+    /// `w_div` is hint-independent and stays a CONSTANT, not a corner: fate
+    /// diversity for a repair is worth the same across workloads (a repair
+    /// correlated with its coverage is wasted regardless of the (δ, ρ, r)
+    /// triangle). Its value 1.0 remains UNDERIVED and is a register row.
+    /// See `place_symbol`.
+    pub fn from_delta(delta_price: f64) -> Self {
+        let w_bw = (0.5 - 0.25 * (delta_price.max(1e-12) / raptorpath_math::DELTA_AUTO).log10())
+            .clamp(0.0, 1.0);
+        Self { w_lat: 1.0 - w_bw, w_bw, w_div: 1.0 }
     }
 }
 
@@ -7397,6 +7437,58 @@ mod tests {
         assert!(!copa_wire_from_env(Some("passthrough"), true, Some("false")));
         // RWM_COPA_WIRE=1 forces on (e.g. RWM_COPA_FEED-less diagnostics).
         assert!(copa_wire_from_env(None, false, Some("1")));
+    }
+
+    /// **THE PLACEMENT WEIGHTS ARE A DIAL, NOT A MODE** (§16.81, in flight).
+    /// Bit-exact at the three presets — the condition this repair shipped
+    /// under — plus continuity and monotonicity through every named point.
+    #[test]
+    fn scheduling_weights_are_the_dial_not_a_mode() {
+        for (h, lat, bw) in [
+            (ProtocolHint::Realtime, 1.0f64, 0.0f64),
+            (ProtocolHint::Auto, 0.5, 0.5),
+            (ProtocolHint::Bulk, 0.0, 1.0),
+        ] {
+            let w = SchedulingWeights::from_hint(h);
+            assert_eq!(w.w_lat, lat, "{h:?}: w_lat");
+            assert_eq!(w.w_bw, bw, "{h:?}: w_bw");
+            assert_eq!(w.w_div, 1.0, "{h:?}: w_div is hint-independent");
+            // The two weights are a PARTITION at every point, exactly.
+            assert_eq!(w.w_lat + w.w_bw, 1.0, "{h:?}: the weights must sum to 1");
+        }
+        // Auto is the EXACT log-midpoint of the dial — which is the fact that
+        // licensed the affine form rather than a fit.
+        let (r, a, b) = (
+            hint_delta_price(ProtocolHint::Realtime).log10(),
+            hint_delta_price(ProtocolHint::Auto).log10(),
+            hint_delta_price(ProtocolHint::Bulk).log10(),
+        );
+        assert!(
+            ((r + b) / 2.0 - a).abs() < 1e-12,
+            "Auto is not the log-midpoint: {r} {a} {b}"
+        );
+        // Continuous and strictly monotone across the dial, with ±2 % nudges
+        // at each preset (CLAUDE.md: no behaviour step at a preset).
+        let mut prev = f64::INFINITY;
+        for i in 0..=400 {
+            let d = 0.005 * (50.0f64 / 0.005).powf(i as f64 / 400.0);
+            let w = SchedulingWeights::from_delta(d);
+            assert!(w.w_lat >= 0.0 && w.w_lat <= 1.0, "δ={d}: w_lat left [0, 1]");
+            assert_eq!(w.w_lat + w.w_bw, 1.0, "δ={d}: the weights must sum to 1");
+            assert!(w.w_lat > prev - 1e-15 || i == 0, "δ={d}: w_lat is not increasing");
+            prev = w.w_lat;
+        }
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let d0 = hint_delta_price(h);
+            let w0 = SchedulingWeights::from_delta(d0).w_lat;
+            for f in [0.98f64, 1.02] {
+                let w1 = SchedulingWeights::from_delta(d0 * f).w_lat;
+                assert!(
+                    (w1 - w0).abs() < 0.01,
+                    "{h:?}: a {f}× nudge of δ stepped w_lat from {w0} to {w1}"
+                );
+            }
+        }
     }
 
     #[test]
