@@ -49642,3 +49642,576 @@ one of them contributes to `n_missing` and to nothing else.
   floor binds at `c2`, the 300 ms cap at `c3` ⇒ the "4·SRTT law" is a constant
   at both main cells, a DEFECT FINDING if confirmed); that reading is scored in
   its own section, not in this one.
+
+---
+
+---
+
+## THE `r > 0` BATTERY — PRE-REGISTRATION (2026-09-08, `prereg/r-battery` from main@`9396ca0`, **DOCS + SHELL ONLY** — no VM, no engine file, no gate, no default, no test, no binary)
+
+**Written before any VM contact.** This block is the CONTRACT: it is scored
+against, never modified, and no number in it may change once the VM has been
+touched. Its owed measurement is paper **§16.82.7** ("the battery, in outline —
+**written here as the section's owed measurement, NOT licensed by that
+commit**"); the arms it names were landed by `fix/dials-real` (main@`32728ae`)
+and the instruments by main@`9396ca0`.
+
+**NOTHING IN THIS BATTERY FLIPS A DEFAULT.** `RWM_DELTA`, `RWM_COPA_DELTA` and
+`RWM_COMPLETION_EXPOSURE` are ABSENT/OFF by default (`gates.rs:1245`,
+`gates.rs:61`) and stay that way whatever this battery reads. **A `CTL` win does
+NOT bless `BULK_TAIL_BUDGET = 0.05`** — see §12.
+
+### 0 — THE QUESTION, VERBATIM FROM THE RECORD
+
+Goal-gate's standing open item 3 (this file, ~line 2593):
+
+> **Sender loss-estimator honesty at singles**: per-path `pl` reads 0.000–0.010
+> at 2.5–4.8 % cells ⇒ r\* = 0 ⇒ the proactive plane is dead at singles;
+> **whether funded proactive r\* beats reactive-only at bulk is an open item-11
+> question** (it did NOT bind this session's gap — the waste was reactive).
+
+**§16.82.8 CLOSED ITS DIAGNOSIS AND SHARPENED ITS QUESTION.** Fixing the
+estimator would not fund `r` at Bulk: `r* = 0` there is over-determined, by the
+anchor law AND by `δ·χ < δ_exit` under every admissible reading, and the
+estimator's under-read pushes `δ_exit` the WRONG way (`δ_exit ∝ ε̂^{−1/2}`).
+The question survives with a stated domain: **`r` can only be funded through δ
+(`MID`) or through χ (`GLIDE`), because those are the only two inputs the price
+form has.** This battery asks it on exactly those two.
+
+### 1 — THE TWO RIVAL PRE-STATED HYPOTHESES, VERBATIM FROM §16.82.4
+
+Transcribed, not paraphrased. Both were written before any VM contact and
+neither is preferred here.
+
+> **`H_price` — THE PER-SYMBOL READING (this section's derivation).** A funded
+> `r` costs `r/(1+r)` of the wire and returns nothing at Bulk under every
+> reading of the inputs. **Prediction: every funded Bulk arm loses goodput by
+> approximately its own overhead and gains nothing on completion p50, at BOTH
+> transfer sizes.**
+
+> **`H_object` — THE OBJECT-SCALE READING (§14.25's).**
+>
+> ```text
+>    Cost:    r_tail · W  symbols        (its worked example: 0.2 × 64 = 13 symbols)
+>    Saving:  P(≥1 tail loss) × ~1.5 RTT of completion per avoided serial ARQ round
+>             P(≥1 tail loss) = 1 − (1−ε)^W        (§14.25: "≈ 80% at ε=2.5%, W=64")
+>
+>    P        =  0.80                                    §14.25's own number at ε = 2.5 %, W = 64
+>    1.5·RTT  ∈  [12 ms, 108 ms]     RTprop = 8 ms (16.80.4) at a DRAINED tail queue,
+>                                    srtt = 72 ms (the r-law input table) at a LOADED one
+>    saving   ≈  0.80 × [12, 108]    =  [9.6, 86] ms   PER OBJECT
+>    cost     ≈  0.2 × 64 × 96 µs    =  1.23 ms        (t_sym = T_pay·8/rate = 1200·8/100 Mbit)
+> ```
+
+> **THE DISCRIMINATOR IS THE OBJECT SIZE, AND IT IS THE ONLY REASON 25 MB IS IN
+> THE GRID.** A 1.8 MB object at 100 Mbit is ≈ 144 ms of transfer, so
+> `H_object` predicts a **7–60 %** completion effect; a 25 MB object is ≈ 2 s,
+> so it predicts **0.5–4.3 %**. `H_price` predicts the same sign at both sizes.
+
+**THE NUMBERS EACH PREDICTS, AS THIS BATTERY WILL SCORE THEM.**
+
+| | 1.8 MB | 25 MB | goodput |
+|---|---|---|---|
+| **`H_price`** | completion p50 **no better than `CTL`**; the sign of any change is NEGATIVE | same sign, same size | **−`cod/(src+cod)`** — the arm's OWN measured wire fraction, off its last `[DIAG] cum=` triple. **Self-calibrating: `H_price`'s goodput prediction IS the arm's overhead, so an arm with `cod = 0` predicts exactly 0 and `H_price` is unfalsifiable on it** (which is why `R-INERT` is a legal outcome and not a failure of the hypothesis) |
+| **`H_object`** | completion p50 **−7 % to −60 %** vs `CTL` | completion p50 **−0.5 % to −4.3 %** vs `CTL` | ≈ −1.23 ms/object of wire cost, i.e. **−0.85 %** at 1.8 MB and **−0.06 %** at 25 MB, both inside every band below |
+
+**THE TWO ARE NOT CONTRADICTORY** (§16.82.4: one prices the steady state, the
+other the last `1.5·SRTT`). What cannot hold is the shipped composition, in
+which one `r*` serves both regimes through one δ.
+
+### 2 — THE ARMS
+
+Four are named; **three are launchable on this binary** and the fourth's
+absence is a stated finding, not a silence.
+
+| arm | env, LITERALLY | what it changes | why it is in the grid |
+|---|---|---|---|
+| **`CTL`** | *(none)* | nothing — shipped defaults, bulk hint, plain reliable window | the corner, measured. `β = 1`, `χ = 0`, `r* = 0` |
+| **`MID`** | `RWM_DELTA=0.05 RWM_COPA_DELTA=0.005` | **β = ½ EXACTLY** — see the arithmetic in §3 — with the CC PINNED at Bulk | funds `r` through the ONE δ surface, the only way to fund it without a mode bit |
+| **`GLIDE`** | `RWM_COMPLETION_EXPOSURE=1` | χ fed from the perf client's own `T_rem` | tests `H_object` where §14.26 says the value is |
+| **`GLIDE-ζ`** | `RWM_COMPLETION_EXPOSURE=1 RWM_TAIL_BUDGET=1e-3` | the glide's fully-exposed target from the ζ quotient (`CONTRACT_TAIL_LOSS_BASE × ζ_Bulk = 1e-5 × 100 = 1e-3`) rather than `BULK_TAIL_BUDGET` | would separate "the glide" from "the glide's arbitrary 0.05" |
+
+> **`GLIDE-ζ` IS PRE-DECLARED `ARM-ABSENT` AND IS NOT LAUNCHED, AND THE REASON
+> IS A FACT ABOUT THE TREE RATHER THAN A BUDGET DECISION.** **`RWM_TAIL_BUDGET`
+> DOES NOT EXIST ON THIS BINARY.** Verified on `main@9396ca0`: the string
+> `TAIL_BUDGET` occurs in `raptorpath-math/src/lib.rs:124` (the `const` itself),
+> `:657`, `:712`, `:1731`, `:1738` and `gates.rs:943` (prose) and **nowhere as an
+> env gate**; it is absent from `RWM_FORWARD` (`tools/l1/lib.sh:52-98`), so even
+> a set variable would not reach the binary through this harness. What would
+> need adding is exactly one line at the glide site
+> (`raptorpath-math/src/lib.rs:712`, `p + (BULK_TAIL_BUDGET − p)·χ`) taking the
+> ceiling from a gate instead of the `const`, plus its `RWM_FORWARD` row and its
+> `[GATES]` echo. **That is an engine change and this pre-registration licenses
+> none.** The driver carries the arm behind a guard: it runs `GLIDE-ζ` ONLY if
+> `[GATES]` echoes `RWM_TAIL_BUDGET=`, and otherwise writes `ARM-ABSENT
+> GLIDE-Z` once per cell-size and moves on. **`BULK_TAIL_BUDGET = 0.05`
+> therefore stays in the open-constants register of §16.80.12 UNCONTESTED by
+> this battery**, and §12's ruling clause says so in terms.
+
+**THE CONTAMINATION SET, PINNED OFF AND ASSERTED TWO-SIDED IN EVERY ARM.**
+`RWM_THREE_TERM`, `RWM_MIN_R`, `RWM_GEN` (harness sentinel `0`),
+`RWM_QUANTILE_CLOCKS`, `RWM_RACK_CLOCKS`, `RWM_DERIVED_SWEEP`,
+`RWM_STORE_CAP_UNIFIED`, `RWM_COMPOSED_CAP`, `RWM_ALPHA_OVERRIDE`,
+`RWM_HOLDDOWN_Q`, `RWM_PLACE_SLACK`. The driver `unset`s each at entry (an
+inherited value would make `CTL` something other than the shipped stack) and
+asserts the `[GATES]` echo on BOTH endpoints.
+
+### 3 — `MID`'s ARITHMETIC, AND ITS CONFOUNDS, DECLARED IN ADVANCE
+
+**β = ½ EXACTLY, and the exactness is arithmetic and not a tolerance.**
+`raptorpath_math::bulkness_of_delta` (`raptorpath-math/src/lib.rs:199-203`):
+
+```text
+   β(δ) = clamp( (log10 δ_Auto − log10 δ) / (log10 δ_Auto − log10 δ_Bulk), 0, 1 )
+
+   δ_Auto = 0.5      log10 = −0.30102999566398120
+   δ_Bulk = 0.005    log10 = −2.30102999566398120      denominator = 2.0 EXACTLY
+   δ      = 0.05     log10 = −1.30102999566398120
+
+   β(0.05) = (−0.30102999566398120 + 1.30102999566398120) / 2.0 = 1.0 / 2.0 = 0.5
+```
+
+The two `log10` differences are the SAME f64 subtraction across the SAME decade,
+so the numerator is exactly `1.0` and the denominator exactly `2.0`: **β = 0.5
+is bit-exact, not "≈ ½"**. The rate law then evaluates
+`r(β) = (1−β)·r_anchor + β·r_late-is-fine` with both terms always computed
+(`control/fec_rate.rs`, §16.81 repair (ii)) — **there is no branch and no hint
+equality anywhere in the arm** (CLAUDE.md's no-mode-switch invariant, read off
+the formula).
+
+**THE FIVE SURFACES `RWM_DELTA=0.05` MOVES, ENUMERATED FROM THE CALL SITES
+RATHER THAN ASSUMED.** `net::delta_price` (`net/mod.rs:4857`) is the ONE place
+a hint names a δ and `RWM_DELTA` replaces its output, so every δ-priced law
+moves at once. **That is the arm's DESIGN and not its defect** — one dial, no
+mode bit — but a reading of `MID` that attributes its whole effect to `r` would
+be wrong, and the enumeration is here so no such attribution can be made later:
+
+| # | site | at Bulk (`CTL`) | at δ = 0.05 (`MID`) | gated? |
+|---|---|---|---|---|
+| 1 | `fec_rate.rs:209` — **the treatment**: `β = bulkness_of_delta(δ)` | `1.0` | **`0.5`** | no |
+| 2 | `fec_rate.rs:201-202` — the effective tail target `base·ζ(δ)`, `ζ = δ_Auto/δ` (`math:171-173`) | `ζ = 100` ⇒ `1e-3` | **`ζ = 10` ⇒ `1e-4`** (10× TIGHTER — this, not β alone, is what funds `r` on the anchor term) | no |
+| 3 | `net/mod.rs:4840` `delta_budget_b` ⇒ `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)` (`math:186-190`), consumed **UNGATED** at `emit_source.rs:686` as `d = min(b·RTprop, 2·RTprop)` and thence `A*` (the trailing repair span) and the shed deadline | `b = 2` ⇒ `d = 2·RTprop` | **`b = √2 = 1.41421356…`** ⇒ `d = √2·RTprop`, i.e. **`A*` falls to `0.7071×`** | **NO — cannot be pinned off. DISCLOSED.** |
+| 4 | `net/mod.rs:4315,5668` `codel_setpoint_q(b)` — the CoDel setpoint, affine in `b` | `q = 0.100` | **`q = 0.05 + 0.05·(√2−½)/1.5 = 0.08048`** | `RWM_DELTA_CAP`, **DEFAULT ON** (`gates.rs:1207`) — left at its default, DISCLOSED |
+| 5 | `scheduler/mod.rs:1028` `SchedulingWeights::from_delta`, `w_bw(δ) = clamp(½ − ¼·log₁₀(δ/δ_Auto), 0, 1)` | `w_bw = 1, w_lat = 0` | **`w_bw = 0.75, w_lat = 0.25`** | no. **Inert at the single cells by construction** (one path ⇒ no placement choice); LIVE at `c8` |
+
+**THE CONFOUND THE PRE-REGISTRATION IS REQUIRED TO NAME, AND IT IS PINNED OFF.**
+`b(0.05) = √2` also enters `contract_stall_s(ρ, b, RTprop, srtt)` — TERM 2 of the
+three-term store cap (`net/mod.rs:5236`) — **iff `RWM_THREE_TERM` is armed.**
+**`RWM_THREE_TERM` ships DEFAULT OFF** (`gates.rs:1188`,
+`three_term: env_flag("RWM_THREE_TERM", false)`, pinned by the gates-default test
+at `gates.rs:1914-1920`). It is **PINNED OFF** here: `unset` at driver entry, and
+`[GATES] RWM_THREE_TERM=0` asserted on **both** endpoints on **every** invocation
+of **every** arm. A rep whose echo reads `=1` is `W4-CONTAM` and its row is VOID.
+
+**AND `RWM_COPA_DELTA=0.005` IS WHY THE CC DOES NOT MOVE WITH THE PRICE.**
+Precedence, stated once at `scheduler/mod.rs:135`: **`RWM_COPA_DELTA` ▸
+`RWM_DELTA` ▸ the hint's map**, applied inside `copa_delta` alone. So `MID`
+moves the CONTRACT's δ to 0.05 while the congestion controller keeps Bulk's
+0.005 — without it, `MID` would be a 10× tighter Copa queue target wearing the
+rate law's name.
+
+> **AN INSTRUMENT GAP, RECORDED BECAUSE IT WEAKENS A WITNESS AND IS NOT FIXED
+> HERE.** `gates.rs:1432` lists `RWM_COPA_DELTA` in `EXTERNALLY_ECHOED` as
+> *"own echo: scheduler Copa family resolve"*. **No such resolve-time echo was
+> located on `main@9396ca0`** — `scheduler/mod.rs` carries exactly three
+> `eprintln!` sites (`:1654`, `:1793` and their `[RSTRACE]` pair) and none of
+> them prints a δ. **The CC pin therefore has NO engine-side two-sided echo**,
+> and its witness is (a) harness-side — the driver echoes the exact forwarded
+> environment it passed, per invocation, as its own `RENV` line — and (b)
+> **mechanical**, see `W7` in §8. The deciding fix is one `eprintln!` at the
+> Copa resolve site; it is an engine change and this commit licenses none.
+
+### 4 — THE CELLS, AND WHY ONE OF THEM IS NEW
+
+**THE REACHABILITY CONSTRAINT THAT RESHAPED THE CELL SET.** Track B's own engine
+report pinned it, and `tests/chi_reachability.rs:218-224` states it in the source:
+
+> *"the glide's fully-exposed target is `BULK_TAIL_BUDGET = 0.05`, so on any
+> channel cleaner than 5 % the corner survives full exposure and `r*` is 0
+> whatever χ does (asserted directly in clause 5 below). `c3`'s ε ≈ 4.8 % sits
+> just BELOW that line; `c3heavy` (ε ≈ 5.8 %) sits just above it. A reachability
+> gate must run where the mechanism can act."*
+
+**⇒ `δ_eff(χ=1) = BULK_TAIL_BUDGET = 0.05`, so `r* > 0` under `GLIDE` requires
+`ε̂ > 0.05`.** §16.82.7's grid (`c8` + `sc2`) contains **no such cell**: `c8`'s
+legs are `c2` (ε = 2.534 %) and `c3` (ε = 4.762 %), `sc2` is 2.534 %. **A grid
+with no cell above 5 % cannot distinguish `GLIDE-INERT` from "the glide never
+had a channel to act on", so the cells MUST include one above the line.**
+
+**`c3heavy` DOES NOT EXIST IN `tools/l1/lib.sh`, AND THE NAME MUST NOT BE
+REUSED.** It exists only as an **L0 simulator** scenario —
+`transport/quic.rs:94`, `"c3heavy" => Some(h(20.0, 20, 5, 1.0, 0.55, 0.5))` —
+whose loss law is a **Weibull heavy tail** (`k = 0.5`, `θ = 0.55`, onset 1.0 %
+⇒ ε ≈ 5.8 %, `E[burst] = 6.2`), a burst law `tc netem gemodel` **cannot
+represent**. `tools/l1/lib.sh:184-210` `scenario_params` emits
+`rate one_way_ms jitter_ms ge_p ge_q` and nothing else. **Silently adding an L1
+row called `c3heavy` would put two different loss laws behind one name across
+the L0 and L1 record**, which is the class of collision this file's era notes
+exist to prevent.
+
+**WHAT IS ADDED, AND WHAT IT IS AND IS NOT.** One row in
+`tools/l1/lib.sh`'s `scenario_params`, named **`c3hg`** — *`c3`, heavy, GE form*:
+
+```text
+   c3hg)  echo "20mbit  20  5  2.4629 40"      ε = p/(p+q) = 2.4629/42.4629 = 5.8000 %
+```
+
+`c3`'s rate / one-way / jitter EXACTLY (`20mbit 20 5`, `lib.sh:188`) and `c3`'s
+burst structure `q = 40` EXACTLY; **`p` is the ONLY changed field**, solved from
+`ε = p/(p+q)` at the `chi_reachability` target ε = 5.8 %:
+`p = 0.058·40/(1−0.058) = 2.46284…`, echoed to netem as `2.4629`. Its exact
+Gilbert–Elliott burst variance (§8.3, `1 + 2(1−p−q)/(p+q)` on the harness's own
+parameters) is `σ²_burst = 3.7101` against `c3`'s 3.762.
+
+> **`c3hg` MATCHES `c3heavy`'s LOSS RATE AND NOT ITS BURST LAW, AND THAT IS
+> STATED HERE RATHER THAN DISCOVERED IN THE SCORING.** The quantity the
+> reachability constraint depends on is the MEAN loss `ε` against the 5 %
+> budget line, and `c3hg` is above it by the same margin `c3heavy` is. The
+> heavy tail `c3heavy` also carries is UNREACHABLE through this harness and is
+> NOT claimed. Any finding at `c3hg` is a finding about a GE channel at 5.8 %.
+
+| cell | topology | scenarios | `ε` | role |
+|---|---|---|---|---|
+| **`c3hg`** | single | `c3hg` | **5.800 %** — **ABOVE the 5 % budget line** | **THE REACHABILITY CELL.** The only cell in the grid where `GLIDE` can move `r` at all. New; see above |
+| **`c8`** | dual | `c2` / `c3` | 2.534 % / 4.762 %, **mixed** | the predicted-corner control at a DUAL. The only cell where surface 5 (placement weights) is live |
+| **`sc2`** | single | `c2` | 2.534 % | the predicted-corner control at a SINGLE. §16.82.2's own `sc2` row, `δ_exit ∈ [0.032, 0.749]` |
+
+**BOTH `c8` AND `sc2` ARE PREDICTED-CORNER CONTROLS AND THEIR NULL IS A
+RESULT.** §16.82.2's `BULK-CORNER-ROBUST` box says the Bulk point is a corner
+at every `χ ≤ 1` under every admissible reading by a margin of at least 6.4×;
+`c8` and `sc2` are where that prediction is tested, and a `GLIDE` that moves
+nothing there is the derivation confirmed, not the instrument failing.
+
+### 5 — SIZES, RUNS, AND THE UNIT THAT IS SCORED
+
+Sizes **1.8 MB** and **25 MB**, exactly §16.82.4's discriminator.
+
+**THE SCORED UNIT IS THE PER-INVOCATION COMPLETION p50 OVER THAT INVOCATION'S
+OWN OBJECTS.** `H_object` is a PER-OBJECT effect at the stream tail, so an
+invocation transferring one object measures one draw of it. Objects per
+invocation:
+
+| size | `runs` per invocation | bytes moved | at `c3hg`'s 20 Mbit |
+|---|---|---|---|
+| 1.8 MB | **40** | 72 MB | ≈ 29 s |
+| 25 MB | **4** | 100 MB | ≈ 40 s |
+
+`n` is then **8 reps × 2 seeds = 16 invocation-p50s per arm-cell-size**, and the
+per-object dispersion is inside each p50 rather than across the ledger.
+
+**Configuration, identical in every arm:** `--protocol-hint bulk`,
+`--window-reliable`, `RWM_GEN=0` (the **plain reliable window** — the harness
+sentinel that withholds `--window-generation-coding`, `perf_rwm_c.sh:74-100`),
+seeds **42 and 7**, arms **interleaved round-robin per rep** (discipline 3),
+fresh topology per invocation. Instruments ON in every arm: `RWM_DIAG=1`
+(carries `[DIAG]`, `[CHI]` and `[SHEDH]` on their own cadences —
+`net/mod.rs:8868`), `RWM_FDIAG=1`, `RWM_ACKDIAG=1`, `RWM_WALLDIAG=1`.
+
+**THE GRID: 3 arms × 3 cells × 2 sizes × 8 reps × 2 seeds = 288 SCORED
+INVOCATIONS**, plus 18 calibration invocations (§10). ≈ one overnight.
+
+### 6 — THE `n` ARITHMETIC, FROM THE COMMITTED CVs
+
+**THE LICENCE TO USE GOODPUT CVs FOR A COMPLETION SCORE, STATED FIRST.** For a
+fixed-byte object, `completion = bytes / rate` exactly, so `CV(completion) =
+CV(goodput)` to first order and the committed goodput dispersions ARE the
+completion dispersions. Nothing else in this file may be read as licensing that
+substitution outside a fixed-byte transfer.
+
+**THE COMMITTED TABLE** — the quantile-native α-sweep's own per-cell-arm `CTL`
+goodput dispersion at `n = 16`, transcribed from
+`tools/l1/valpha_all.sh:19-26` (σ̂ = (p95 − p05)/3.29; σ_d = √2·CV,
+paired-conservative):
+
+```text
+     cell  CTL CV   σ_d
+     c1     1.54%   2.18%
+     c7    10.55%  14.91%
+     sc2    0.79%   1.11%
+     c8     4.78%   6.75%
+```
+
+`c3hg` has **no committed CV** — it is a new cell. The nearest committed
+`c3`-class single is `sc3` at **15.87 Mbit/s, σ = 0.39, n = 8** (this file,
+~line 10623) ⇒ **CV = 2.46 %, σ_d = 3.48 %**, carried as an ESTIMATE and
+**replaced by the calibration's own measurement** before any arm is read (§10).
+
+**THE FORMULA, WRITTEN OUT RATHER THAN INHERITED**, two-sided, α = 0.05,
+power 0.80, unpaired arms against a shared control:
+
+```text
+     n  =  ceil(  (z_0.975 + z_0.80)^2 · (σ_d / Δ)^2  )  =  ceil( 7.849 · (σ_d/Δ)^2 )
+```
+
+Evaluated at each hypothesis's own predicted Δ:
+
+| cell | σ_d | Δ = 7 % (`H_object`, 1.8 MB, **LOW end**) | Δ = 60 % (1.8 MB, high end) | Δ = 0.5 % (25 MB, low) | Δ = 4.3 % (25 MB, high) |
+|---|---|---|---|---|---|
+| `sc2` | 1.11 % | **1** | 1 | **40** | 1 |
+| `c3hg` | 3.48 % (est.) | **2** | 1 | **381** | 6 |
+| `c8` | 6.75 % | **8** | 1 | **1 431** | **20** |
+
+```text
+   ⇒  n = 8 per arm-cell-size (8 reps × 2 seeds = 16) RESOLVES H_object's
+      1.8 MB prediction at ALL THREE CELLS, at the LOW end of its own range.
+   ⇒  n = 8 DOES NOT RESOLVE the 25 MB prediction at c8 anywhere in
+      H_object's range (20 needed at the HIGH end, 1 431 at the low), and
+      resolves it at sc2 and c3hg only at the high end.
+```
+
+**THE 25 MB LEG IS A DIRECTIONAL WITNESS AND NOT A SCORE, AND THIS IS THE
+CLAUSE THAT PREVENTS THE OBVIOUS MISREADING.** `H_object` predicts ≈ nothing at
+25 MB, and **a null at an underpowered `n` is not evidence for a hypothesis that
+predicts a null.** Therefore:
+
+> **`R-FUNDED-POSITIVE-SMALL-ONLY` REQUIRES BOTH: (a) the 1.8 MB effect
+> SIGNIFICANT by the §7 bar, AND (b) the 25 MB POINT ESTIMATE strictly smaller
+> in magnitude than the 1.8 MB point estimate at the SAME cell and arm. It may
+> NEVER be reached by "25 MB was null".** If (a) holds and (b) does not, the
+> battery records `R-FUNDED-NEGATIVE` or, where the 1.8 MB effect is a WIN at
+> both sizes alike, an `OUT-OF-BAND RESULT` with its cause named — and never a
+> size-discrimination claim.
+
+**GOODPUT IS A GUARD AND NOT A SCORE**, per §16.82.7 verbatim: *"THE GOODPUT
+LEG IS A GUARD AND NOT A SCORE AT `n = 8`."* `H_price`'s own predicted goodput
+effect is `−cod/(src+cod)`, and at any `cod/src` below ≈ 5 % it sits inside
+every cell band in §9. **`GUARD-UNDERPOWERED` is declared in advance at all
+three cells for the goodput leg**, so that a goodput null is never reported as
+`H_price` refuted.
+
+### 7 — WHAT IS SCORED, AND THE BAR
+
+**Scored dimensions, in this order:** (1) **completion p50** (`seconds`, per-run
+JSON, median within the invocation), (2) **goodput** `mean_mbps` — GUARD, (3)
+**`dnf`** — any nonzero `dnf` on any arm is reported and its rows are excluded
+from the completion score and retained in the abort table.
+
+**THE BAR, self-calibrating against `CTL`'s own spread measured IN THIS
+BATTERY** (never against the committed CVs, which size the grid and do not
+score it): an arm beats `CTL` at a cell-size iff its 16 invocation-p50s'
+Hodges–Lehmann shift against `CTL`'s 16 lies wholly on one side of zero at a
+two-sided 95 % rank interval, **at BOTH seeds separately as well as pooled**. A
+result present at one seed only is reported as `SEED-SPLIT` and scores nothing.
+
+### 8 — MECHANISM LIVENESS: READ BEFORE ANY SCORE, AND THE ATTRIBUTION RULE
+
+§16.82.7 verbatim: *"Mechanism liveness is a WITNESS read BEFORE any score."*
+
+| # | witness | source | fail token |
+|---|---|---|---|
+| `W1` | `[GATES]` present on **both** endpoints | any | `W1-NO-GATES` (= **ABORT**, no datum, in no denominator) |
+| `W2` | `[GATES] RWM_DELTA=` matched LITERALLY, both endpoints: `unset` on `CTL`/`GLIDE`, `0.05` on `MID` (`gates.rs:1316`, `:1718`, `:1738`) | both | `W2-DELTA-MISMATCH` |
+| `W3` | `[GATES] RWM_COMPLETION_EXPOSURE=` two-sided: `0` on `CTL`/`MID`, `1` on `GLIDE` (`gates.rs:1245`) | both | `W3-CHI-MISMATCH` |
+| `W4` | every contamination gate of §2 OFF, both endpoints; `[RFA] gen=0`; **`RWM_THREE_TERM=0`** | both | `W4-CONTAM` |
+| `W5` | **`r` REACHES THE WIRE**: last `[DIAG] cum=<src>/<cod>/<ack>` (`net/diag.rs:934,945`) ⇒ `cod > 0` on funded arms | client | `W5-R-INERT` |
+| `W6` | **χ REACHES THE GLIDE**: `[CHI] n>0` and `max > 0.5` and `frac_gt_half > 0` on `GLIDE`; `max = 0.0000` on `CTL`/`MID` (`net/mod.rs:2340`) | client | `W6-CHI-DEAD` / `W6-CHI-CONTAM` |
+| `W7` | **THE CC PIN HELD** (the mechanical substitute for the missing Copa echo, §3): `MID`'s steady-state `[DIAG] rtt=` p50 inside `CTL`'s own rep min–max at the same cell-size. A CC that had followed δ to 0.05 would target a **20× tighter** standing queue (`q = 1/δ` packets, `scheduler/mod.rs:120-124`) and cannot hide inside `CTL`'s spread | client | `W7-CC-PIN-FAILED` (row **VOID**) |
+| `W8` | `[FDIAG]` present with `DECODE n=` and `SOURCE n=` both readable (`receiver.rs:1899`) | server | `W8-NO-FDIAG` |
+| `W9` | `[RFA]` present; `fires`, `dup_src`, **`preempt_src`**, `false_frac` all recorded (`net/mod.rs:5906-5908`) | server | `W9-NO-RFA` |
+| `W10` | `rc = 0`, the run's own `mean_mbps` and per-run `seconds` scraped | client | `W10-RC` |
+
+**THE ATTRIBUTION RULE FOR `R-INERT`, PRE-STATED SO THE VERDICT CANNOT BE
+ARGUED AFTERWARDS.** If `W5` fails on a funded arm — `cod = 0`, `r` never
+reached the wire — the outcome is `R-INERT` and it is attributed by the arm's
+own echoed loss estimate, read off the last `[DIAG]`/`[RFA]` pair:
+
+```text
+   R-INERT  on GLIDE  AND  the arm's own eps-hat < 0.05
+        =>  BUDGET-BOUND.  The glide's fully-exposed ceiling IS
+            BULK_TAIL_BUDGET = 0.05 (raptorpath-math/src/lib.rs:124, :712), so
+            delta_eff(chi=1) = 0.05 >= eps-hat leaves r* = 0 BY ARITHMETIC.
+            This is a finding about the CONSTANT, recorded against its register
+            row in 16.80.12 -- NOT a finding about r, and NOT a wiring failure.
+
+   R-INERT  on GLIDE  at c3hg  AND  the CHANNEL is 5.8 %  AND  the arm's own
+            eps-hat < 0.05
+        =>  ESTIMATOR-BOUND.  Goal-gate open item 3's own defect ("per-path pl
+            reads 0.000-0.010 at 2.5-4.8 % cells", 3-5x low) reaching the price.
+            The cell was chosen ABOVE the line and the SENDER did not see it.
+            Recorded against open item 3, not against 16.82.
+
+   R-INERT  with W2/W3 clean and neither of the above
+        =>  WIRING.  A wiring failure, not a result (16.82.7's own words).
+```
+
+**THE RISK IS DISCLOSED IN ADVANCE, NOT DISCOVERED:** `c3hg` puts the CHANNEL
+above the 5 % line; whether the ESTIMATOR is above it **is itself part of the
+measurement**, and `ESTIMATOR-BOUND` at `c3hg` is a legal, informative and
+pre-stated outcome of this battery.
+
+### 8a — THE PRE-STATED FALSIFIER, AND WHY IT OUTRANKS GOODPUT
+
+§16.82.6's criterion, verbatim:
+
+```text
+   [FDIAG]  decode-resolved wall time   vs   ARQ-resolved wall time,  per hole
+   decode-resolved  >  ARQ-resolved   =>   ENTANGLEMENT-DOMINATED
+```
+
+Read off `receiver.rs:1899`: `[FDIAG] … | DECODE n=<n> avg=<µs>
+present_at_stall=<p> | SOURCE n=<n> avg=<µs> | …` — **DECODE `avg` is
+decode-resolved wall time, SOURCE `avg` is ARQ-resolved wall time**, both per
+hole, both on the server log, last line wins. The battery fires
+`ENTANGLEMENT-DOMINATED` iff, on a funded arm with `DECODE n ≥ 30` and
+`SOURCE n ≥ 30`, `DECODE avg > SOURCE avg` at a majority of that arm's reps at
+a cell-size. **`ENTANGLEMENT-DOMINATED` is legal REGARDLESS OF GOODPUT**, so a
+funded arm that happens to win throughput cannot be reported as vindicating `r`
+while its repairs are arriving late and being redeemed by neighbours.
+
+**AND THE RECORD'S "19–32 ms DECODES" ARE THE HISTORY THIS CRITERION EXISTS TO
+CORRECT, NOT EVIDENCE FOR IT.** This file, ~line 6983:
+
+> *"Prior `RWM_MIN_R=0.15` … holes DO now decode (DECODE 14 > SOURCE 7) — but
+> each decode takes **~19–32 ms, LONGER than the ARQ round it replaces**,
+> because a leading-window RLC repair entangles the frontier hole with
+> not-yet-received in-flight symbols … Throughput fell to 10.8 Mbit."*
+
+and its RE-READING, ~lines 7078–7091:
+
+> *"The real per-hole latency is **WAITING for rank** … at the moment a hole
+> sticks, `present_at_stall = 0` in EVERY run … `probe_holes 19` vs
+> `probe_buffered 4` … So the prior 'decode ~25-67 ms > ARQ' was **doubly
+> wrong**: (a) it was resolution wall-time, not compute; and (b) … at high RTT
+> a decode-resolved hole is FASTER than ARQ, not slower."*
+
+**⇒ THE `19–32 ms` FIGURE IS RESOLUTION WAITING, NOT COMPUTE, AND MAY NOT BE
+QUOTED IN THIS BATTERY AS A COST OF FEC** (§16.82.6). Raw compute is 6–10
+µs/call, 33–54 ms TOTAL over a whole 1.8 MB transfer. `present_at_stall` is
+scraped beside DECODE/SOURCE on every rep so the same misreading cannot recur:
+**a `DECODE avg` quoted without `present_at_stall` is not a reading of this
+battery.**
+
+**`[RFA] preempt_src`** (`net/mod.rs:5789-5795`, *"a source arrival for a seq
+the decoder had ALREADY"* resolved; `false = dup_src + preempt_src`) is scraped
+on every rep as the reactive plane's own view of the same phenomenon: a funded
+arm that raises `preempt_src` is spending wire on repairs the retransmit beat.
+
+### 9 — GOODPUT BANDS, AND THE WITNESS-FIRST PLATEAU RULE
+
+Bands from the committed plain-window ledgers, transcribed from
+`tools/l1/valpha_battery.sh:271-272` (`Mbit/s`, at 1.8 MB and 25 MB alike):
+
+| cell | band |
+|---|---|
+| `sc2` | **[78, 92]** |
+| `c8` | **[50, 100]** |
+| `c3hg` | **[9, 18]** — DERIVED, not inherited: `sc3` (the same `20mbit 20 5` pipe at `c3`'s 4.76 %) reads 15.62–15.87 with σ 0.28–0.39 (~line 10623) and 100.3/99.4 % of the shaped link (~line 21477); at 5.80 % loss the floor is set at **9** and the ceiling at the link's **18**. **A DERIVED band is weaker than a committed one and that is said here**, which is why `c3hg`'s band ABORTS nothing on its own — see below |
+
+**THE WITNESS-FIRST PLATEAU RULE, inherited verbatim in its precedence** (this
+file, ~lines 40913–40919): a reading inside the **GENERATION PLATEAU,
+26.8–34.1 Mbit/s**, is the 31 Mbit/s anomaly's own signature, means generation
+leaked in despite `RWM_GEN=0`, and the invocation is **ABORTED as a
+configuration fault**. A reading outside the committed cell band but ALSO
+outside the plateau, **with `W1`/`W2`/`W3` clean, is an `OUT-OF-BAND RESULT`,
+retained with its cause named** — never an abort. **The witnesses are read
+first and the band second, at every rep, without exception.**
+
+> **THE PLATEAU RULE'S ONE CELL-SPECIFIC AMENDMENT, STATED IN ADVANCE.**
+> `c3hg`'s band `[9, 18]` and the plateau `[26.8, 34.1]` are DISJOINT and the
+> band lies entirely below the plateau, so at `c3hg` the plateau test is
+> strictly stronger than the band test and both apply unchanged. `c8`'s
+> `[50, 100]` and `sc2`'s `[78, 92]` also clear the plateau. **No band in this
+> grid overlaps the plateau, so no widening is needed and none is taken.**
+
+### 10 — CALIBRATION (`--calib`): 18 INVOCATIONS, ONE REP, NOTHING SCORED
+
+`bash r_battery.sh --calib` runs **1 rep per arm-cell-size at seed 42** (3 × 3 ×
+2 = **18 invocations**) and discharges exactly four things, in this order:
+
+1. **HEADROOM** (discipline 16): `tc -s qdisc` beside every target; the `CTL`
+   arm's `mean_mbps` against the shaped link at each cell. **A cell at ≥ 97 % of
+   its link on `CTL` can only be moved DOWN by a funded arm** and its completion
+   score is declared `HEADROOM-BOUND` before any arm is read. `sc3`'s committed
+   100.3/99.4 % (~line 21477) says `c3hg` is the cell at risk.
+2. **THE `[CHI]` LIVENESS CHECK**: `GLIDE` must read `[CHI] n > 0`,
+   `max > 0.5`, `frac_gt_half > 0` at **3 of 3 cells**, and the perf client's
+   own `completion-exposure feed ACTIVE` echo must be present
+   (`tests/chi_reachability.rs:250-256`). **`[CHI] max ≤ 0.5` at any cell in the
+   calibration is `ABORT-SMOKE` and nothing is launched**: in the scored battery
+   a dead glide is a result, but in the smoke it means the feed is unwired and
+   spending 288 invocations on it is the failure the smoke exists to prevent.
+3. **`W5` REACHABILITY**: `[DIAG] cum=` `cod > 0` on at least one funded
+   arm-cell. `cod = 0` at 18/18 is **RECORDED, NOT AN ABORT** — it is the
+   `R-INERT`/`BUDGET-BOUND` reading arriving early, and §8's attribution rule
+   applies to it unchanged.
+4. **`c3hg`'s OWN CV**, measured and written into the ledger, REPLACING the
+   `sc3`-derived 2.46 % estimate of §6 for the power statement (never for the
+   bar, which is self-calibrating).
+
+**NOTHING IN THE CALIBRATION IS A RESULT.** `n = 1`, and no clause of §7 or §11
+is scored by any of it.
+
+### 11 — THE LEGAL OUTCOMES, VERBATIM. NO VERDICT OUTSIDE THIS SET MAY BE RECORDED.
+
+The five of §16.82.7, transcribed, plus the harness's standing sixth:
+
+1. **`R-INERT`** — *the funded arm does not move the wire — a wiring failure,
+   not a result.* Reached iff `W5` fails on the funded arms. **Attributed by
+   §8's rule to `BUDGET-BOUND`, `ESTIMATOR-BOUND` or `WIRING`, and the
+   attribution is part of the outcome.**
+2. **`R-FUNDED-NEGATIVE`** — *`H_price` confirmed.* Reached iff `W5` passes and
+   no funded arm beats `CTL` on completion p50 at either size by §7's bar, at a
+   majority of scoreable cells.
+3. **`R-FUNDED-POSITIVE-SMALL-ONLY`** — *`H_object` confirmed: completion
+   improves at 1.8 MB and not at 25 MB.* **Reached only under §6's two-part
+   requirement (a) AND (b); never from a 25 MB null alone.**
+4. **`ENTANGLEMENT-DOMINATED`** — *§16.82.6's criterion fires, regardless of
+   goodput.* §8a's condition. **This outcome OUTRANKS 2 and 3**: if it fires on
+   a funded arm, it is the battery's outcome for that arm whatever the
+   completion score says.
+5. **`GLIDE-INERT`** — *χ reaches the wire and `r` does not follow.* Reached iff
+   `W6` passes (`[CHI] max > 0.5`) and `W5` fails on `GLIDE` alone.
+6. **`UNSCOREABLE-<gate>`** — the gate that could not be evaluated, NAMED. **Not
+   a pass.** Reached if `W1` aborts a majority of a cell's reps, if `W7` VOIDs a
+   majority of `MID`'s, or if `ABORT-SMOKE` fires in §10.
+
+**`GLIDE-ζ` CONTRIBUTES `ARM-ABSENT` AND NOTHING ELSE** (§2), and no outcome
+above may be reached from its absence.
+
+### 12 — THE RULING CLAUSE
+
+**NO DEFAULT FLIPS FROM THIS BATTERY.** `RWM_DELTA`, `RWM_COPA_DELTA` and
+`RWM_COMPLETION_EXPOSURE` are experiment gates, ABSENT/OFF by default, and stay
+so whatever is read. Nothing here wires `set_completion_exposure` into the
+shipped path, edits an engine law, derives a clock, or blesses a constant.
+
+**AND A `CTL` WIN DOES NOT BLESS `BULK_TAIL_BUDGET = 0.05`.** This is the clause
+the battery exists to state in advance, because the temptation is structural: if
+`CTL` beats every funded arm, the arrangement that produced `CTL` — which
+includes the `const` at `raptorpath-math/src/lib.rs:124` — will look vindicated.
+**It is not.** Per the standing ruling, *a formula known to rest on an arbitrary
+constant is never blessed because it is undefeated; we only correct where the
+answer is now actually known.* `BULK_TAIL_BUDGET = 0.05` is §14.25's own
+*"a modest tail-failure budget (e.g. δ_tail = 0.05 — one residual serial ARQ
+round in 20 transfers)"* — **an "e.g." promoted to a `const`** (§16.80.12's
+register row, §16.81.12/§16.82.9) — and the ONE arm that would have contested
+it, `GLIDE-ζ`, **cannot run on this binary** (§2). **`BULK_TAIL_BUDGET = 0.05`
+therefore REMAINS IN THE OPEN-CONSTANTS REGISTER, arbitrary and UNCORRECTED,
+with its deciding measurement still owed**, and a `CTL` win is recorded as
+`R-FUNDED-NEGATIVE` — a statement about `r` — and never as a statement about
+`0.05`. The same holds for `σ_arq`'s `4×` gain and `SRTT/4` floor, and for
+`r_tail = 0.2`: none is contested here and none is blessed here.
+
+### 13 — THE VM PROTOCOL
+
+Both locks (`/tmp/rwm-vm.lock`, `/home/vibe/rp.lock`) taken and RELEASED. **The
+run directory created UNPRIVILEGED before any `sudo`**, and every ABSOLUTE
+sentinel path write+unlink probed as `vibe` **before any measurement**;
+`DONE-S<seed>` written **only if** that seed's ledger exists, is non-empty, and
+carries its own `R-BATTERY-DONE seed=<s>` line. The shipped tree CRLF-repaired
+after sync with `lib.sh` verified at **0 CR bytes** as the canary. `ens18`, the
+firewall, `sshd` and every non-`rp-*` namespace are NEVER touched; `pkill` is
+`-x raptorpath || true` and nothing else. On exit: zero `raptorpath` processes,
+no `rp-*` namespaces, both locks released — verified, not assumed. **The watcher
+waits on `DONE-ALL || FAILED-ALL` and on nothing else** — never `pgrep -f
+r_battery.sh`, which matches the watcher's own shell.
+
+```text
+   /home/vibe/rbattery/DONE-ALL      /home/vibe/rbattery/FAILED-ALL
+   /home/vibe/rbattery/DONE-S42      /home/vibe/rbattery/FAILED-S42
+   /home/vibe/rbattery/DONE-S7       /home/vibe/rbattery/FAILED-S7
+   /home/vibe/rbattery/all.out       /home/vibe/rbattery/all-era.txt
+```
+
+Ledgers `/home/vibe/rbattery/r-s<seed>.log`, witnesses
+`r-witness-s<seed>.jsonl`, captures `diag/`.
