@@ -128,6 +128,37 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
             | awk 'NR<=6 || NR%10==0 { n++; if (n<=24) print }' \
             | sed "s|^|  SPAN $label ${size}B ${lg##*/}: |" || true
     done
+    # ── THE EVICT SEAT'S REPAIR WASTE (paper §16.81 ρ leg) ─────
+    #
+    # This matrix's own default arm — `--protocol-hint realtime` WITHOUT
+    # `--window-reliable` — IS the ρ < 1 EVICT seat, and it is the most-run
+    # cell in the whole record. The seat's defect is structural: per-seq gap
+    # ARQ is armed there (`recv_nack_tx` keys on nothing about `reliable`),
+    # so the receiver requests repairs for holes it has ALREADY licensed
+    # itself to discard, and the repair is later than the give-up by
+    # construction. Nothing has ever scored that waste, because the three
+    # gauges that measure it were never scraped — they are already fed on
+    # this seat and the harness simply walked past them.
+    #
+    # LAST LINE ONLY, on BOTH endpoints, `|| true`-guarded exactly like the
+    # [SPAN] scrape above: these are CUMULATIVE counters (the `[RFA]`
+    # convention), the server is SIGKILLed so no `Drop` ever runs, and a
+    # missing gauge must be a skipped datum and never a matrix kill.
+    #
+    # OWED BY THE INSTRUMENTS BRANCH: `[RFA]`'s `late_after_aban=` field —
+    # repairs that landed after the receiver had already abandoned the hole,
+    # i.e. the waste itself rather than its proxy. `[RFA]`'s line format is
+    # owned by the concurrent instruments work, so this scrape is written to
+    # TOLERATE the field's absence (it prints whatever the line carries) and
+    # the field is added there, not here. Until it lands the readable proxy
+    # is `[SUCC]`'s abandon count against `[RACK] fa=`'s false-alarm ratio.
+    for lg in /tmp/tm-s.log /tmp/tm-c.log; do
+        for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]'; do
+            { grep -E "^${tag} " "$lg" 2>/dev/null || true; } \
+                | tail -1 \
+                | sed "s|^|  EVICT $label ${size}B ${lg##*/}: |" || true
+        done
+    done
     hard_cleanup
     if [[ ${#p99s[@]} -gt 0 ]]; then
         printf '%s\n' "${p99s[@]}" | sort -n | awk -v h="$label" -v s="$size" '

@@ -1192,7 +1192,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     // The derived quantile clock at the contract's own α is SLOWER than the
     // already-slow unbounded arm at every cell, which is reason 1 stated as a
     // comparison rather than as a number.
-    let alpha = contract_alpha(raptorpath::control::fec_rate::ProtocolHint::Auto);
+    let alpha = contract_alpha(raptorpath::net::CONTRACT_TAIL_LOSS_BASE, raptorpath::control::fec_rate::ProtocolHint::Auto);
     for &(name, srtt, sigma) in &[
         ("c1-A", 9_000u64, 1_000u64),
         ("c8-A", 376_000, 10_000),
@@ -1214,7 +1214,7 @@ fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode
     use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh, HOLE_NACK_REFRESH_MIN, WForm};
     use std::time::Duration;
     let (srtt, mrtt, sigma) = (376_000u64, 38_000u64, 10_000u64);
-    let a = contract_alpha(raptorpath::control::fec_rate::ProtocolHint::Auto);
+    let a = contract_alpha(raptorpath::net::CONTRACT_TAIL_LOSS_BASE, raptorpath::control::fec_rate::ProtocolHint::Auto);
     // `WForm::Cantelli` is the DEFAULT arm and the whole precedence chain below
     // is asserted on it - i.e. this test pins that 16.76's addition changed
     // NOTHING on the shipped form. The quantile form's own routing is asserted

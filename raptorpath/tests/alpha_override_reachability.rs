@@ -81,24 +81,30 @@ const ARM: [(&str, &str); 3] = [
 /// did not take" and "the override took" are separate readings.
 const CONTRACT_ALPHA_BULK: f64 = 1e-3;
 
-/// The contract's own α at the RECEIVER, which is the **Auto** point at every
-/// hint: the protocol hint is not plumbed to the receiver task, a stated
-/// limitation of the refuted arm (`receiver.rs`). **The two sites therefore
-/// DISAGREE about the contract's α — and an OVERRIDE, being a number rather
-/// than a hint mapping, reaches both sites identically and removes that
-/// disagreement.** Asserted here rather than described, because it is the
-/// reason a SWEPT arm is better defined across sites than the contract arm it
-/// is compared against, and a reader of the sweep needs to know it.
-const CONTRACT_ALPHA_RECV: f64 = 1e-5;
+/// The contract's own α at the RECEIVER.
+///
+/// **THIS WAS 1e-5 UNTIL 2026-09-08, AND THAT WAS THE DEFECT.** The protocol
+/// hint was not plumbed to the receiver task, so the seat hard-coded the
+/// **Auto** point of the dial (and mirrored `target_tail_loss = 1e-5` as a
+/// constant) at every hint: the two ends of one tunnel evaluated DIFFERENT
+/// α at two of the three presets, and the arm could not be scored across
+/// hints at all. §16.81 plumbs `config.protocol_hint` and
+/// `config.target_tail_loss` into the receiver, so the two sites now agree by
+/// construction — asserted at all three hints by
+/// `the_two_ends_price_alpha_off_the_same_contract_at_every_hint`.
+const CONTRACT_ALPHA_RECV: f64 = CONTRACT_ALPHA_BULK;
 
-/// The contract's α at the site under test.
+/// The contract's α at the site under test. One number, both sites — which
+/// is itself the repair, expressed in the shape of the helper.
 fn contract_alpha_at(site: &str) -> f64 {
-    if site == "sender" {
-        CONTRACT_ALPHA_BULK
-    } else {
-        CONTRACT_ALPHA_RECV
-    }
+    let _ = site;
+    CONTRACT_ALPHA_BULK
 }
+
+/// `target_tail_loss × ζ(hint)` at the three named points, on the base an
+/// unconfigured tunnel resolves to (`config.rs`'s own `unwrap_or(1e-5)`).
+const CONTRACT_ALPHA_BY_HINT: [(&str, f64); 3] =
+    [("realtime", 1e-7), ("auto", 1e-5), ("bulk", 1e-3)];
 
 fn free_port() -> u16 {
     let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
@@ -116,7 +122,7 @@ impl Drop for Reaper {
 /// Spawn the perf SERVER — the RECEIVER of the bulk direction, and one of the
 /// two sites that owns a quantile clock. Its stderr is drained on a thread so
 /// the periodic gauge lines are captured while it runs.
-fn spawn_perf_server(extra: &[(&str, &str)]) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
+fn spawn_perf_server(extra: &[(&str, &str)], hint: &str) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
     let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
     let mut cmd = Command::new(bin);
@@ -126,7 +132,7 @@ fn spawn_perf_server(extra: &[(&str, &str)]) -> (SocketAddr, Reaper, Arc<Mutex<S
         "--bind",
         &addr.to_string(),
         "--protocol-hint",
-        "bulk",
+        hint,
         "--window-reliable",
     ]);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -242,8 +248,17 @@ fn require<'a>(log: &'a str, tag: &str, what: &str) -> &'a str {
 /// One lossy loopback run in the given gate configuration.
 /// Returns `(client/sender log, server/receiver log)`.
 fn lossy_run(extra: &[(&str, &str)]) -> (String, String) {
+    lossy_run_at(extra, "bulk", "4000000")
+}
+
+/// `lossy_run` at a NAMED POINT ON THE DIAL. The hint is a parameter because
+/// §16.81 plumbed it to the receiver: the two sites' `[QALPHA]` contract α
+/// used to agree only at Auto (the receiver hard-coded that point), so
+/// "the two ends price α off the same contract" is a claim that can only be
+/// tested by moving the hint.
+fn lossy_run_at(extra: &[(&str, &str)], hint: &str, bytes: &str) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv, srv_log) = spawn_perf_server(extra);
+    let (addr, _srv, srv_log) = spawn_perf_server(extra, hint);
 
     let mut cli = Command::new(bin);
     cli.args([
@@ -252,11 +267,11 @@ fn lossy_run(extra: &[(&str, &str)]) -> (String, String) {
         "--peer",
         &addr.to_string(),
         "--bytes",
-        "4000000",
+        bytes,
         "--runs",
         "2",
         "--protocol-hint",
-        "bulk",
+        hint,
         "--window-reliable",
     ]);
     cli.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -439,9 +454,8 @@ fn without_the_override_the_contract_alpha_stands_and_the_echo_says_unset() {
         assert!(
             (f64_field(q, "alpha=") - contract_alpha_at(site)).abs() < 1e-12,
             "{site}: with no override the CONTRACT's own alpha must stand - and \
-             the two sites DISAGREE about what that is, which is exactly why a \
-             swept arm (a number, not a hint mapping) is better defined across \
-             sites than the contract arm it is read against: {q}"
+             since 16.81 the two sites AGREE about what that is, so a contract \
+             arm is now as well defined across sites as a swept one: {q}"
         );
     }
 
@@ -486,10 +500,10 @@ fn a_garbage_override_resolves_back_to_the_contract_and_prints_unset() {
     // undefined at α ≤ 0 and has a negative radicand above 1, so the domain
     // filter is the LAW's own and not a taste.
     for bad in ["0", "-0.5", "1.5", "nan", "1e309", "0.5 "] {
-        let (_addr, _srv, log) = spawn_perf_server(&[
-            ("RWM_QUANTILE_CLOCKS", "1"),
-            ("RWM_ALPHA_OVERRIDE", bad),
-        ]);
+        let (_addr, _srv, log) = spawn_perf_server(
+            &[("RWM_QUANTILE_CLOCKS", "1"), ("RWM_ALPHA_OVERRIDE", bad)],
+            "bulk",
+        );
         std::thread::sleep(Duration::from_millis(300));
         let l = log.lock().expect("stderr sink").clone();
         let gates = require(&l, "[GATES]", "the engine never echoed its gates");
@@ -526,4 +540,59 @@ fn a_large_and_a_small_alpha_realize_different_clocks_on_the_same_cell() {
          alpha=0.002 (k=22.3) and {w_fast} us at alpha=0.9 (k=0.33). The \
          sweep's independent variable would be a LABEL, not a treatment."
     );
+}
+
+// ── 5 — THE TWO ENDS PRICE α OFF THE SAME CONTRACT (§16.81) ───
+
+/// **THE HINT REACHES THE RECEIVER, AT EVERY POINT OF THE DIAL.**
+///
+/// `receiver.rs` hard-coded `ProtocolHint::Auto` and read
+/// `CONTRACT_TAIL_LOSS_BASE` as a constant, so a `bulk` tunnel had a sender
+/// evaluating α = 1e-3 and a receiver evaluating α = 1e-5 — a factor of 100
+/// between the two ends of one contract, recorded in prose as a limitation of
+/// the refuted arm and never bounded by a test. §16.81 plumbs
+/// `config.protocol_hint` and `config.target_tail_loss` into the receiver
+/// task; this asserts the consequence at ALL THREE named points, which is the
+/// only way the repair can be told from the coincidence it was at Auto.
+///
+/// MEASUREMENT DISCIPLINE rule 1: the dial is proved to ROUTE, per hint, from
+/// the run's own output — not inferred from the diff. **Fails on the old
+/// engine at `realtime` and `bulk` and passes at `auto`**, which is precisely
+/// the shape of the defect.
+///
+/// The transfer is small and clean: `[QALPHA]` is emitted once at task start,
+/// so nothing here needs loss, a clock evaluation, or the quantile arm at all.
+#[test]
+fn the_two_ends_price_alpha_off_the_same_contract_at_every_hint() {
+    for (hint, want) in CONTRACT_ALPHA_BY_HINT {
+        let (cli, srv) = lossy_run_at(&[("RWM_QUANTILE_CLOCKS", "0")], hint, "200000");
+        let mut seen = Vec::new();
+        for (site, log) in [("sender", &cli), ("receiver", &srv)] {
+            let q = require(
+                log,
+                &format!("[QALPHA] site={site}"),
+                "the resolved-alpha echo must fire on EVERY arm and at every hint",
+            );
+            let base = f64_field(q, "contract_alpha=");
+            assert!(
+                (base - want).abs() <= want * 1e-9,
+                "{site} at --protocol-hint {hint}: the CONTRACT's own alpha is \
+                 {base}, and `target_tail_loss x zeta(hint)` is {want}: {q}"
+            );
+            // No override is set, so the RESOLVED alpha is the contract's.
+            assert_eq!(field(q, "override="), "unset", "{site}/{hint}: {q}");
+            assert!(
+                (f64_field(q, "alpha=") - base).abs() <= base * 1e-9,
+                "{site}/{hint}: the resolved alpha left the contract: {q}"
+            );
+            seen.push(base);
+        }
+        assert_eq!(
+            seen[0], seen[1],
+            "--protocol-hint {hint}: the SENDER evaluates alpha = {} and the \
+             RECEIVER {} - the two ends of one contract must price the same \
+             number at every point of the dial (16.81)",
+            seen[0], seen[1]
+        );
+    }
 }

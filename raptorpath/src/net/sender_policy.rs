@@ -493,6 +493,12 @@ impl SenderPolicy {
         gates: &RuntimeGates,
         symbol_size: u16,
         protocol_hint: ProtocolHint,
+        // The contract's BASE tail-loss target (config.target_tail_loss).
+        // Plumbed 2026-09-08 (paper 16.81): the alpha seat used to
+        // mirror config.rs's own unwrap_or(1e-5) as a constant, so a tunnel
+        // configured at 1e-4 priced alpha at 1e-5 anyway - and the RECEIVER
+        // read the same constant at a hard-coded Auto. Both ends now take it.
+        target_tail_loss: f64,
         reliable: bool,
         coded_only: bool,
         generation: bool,
@@ -1473,8 +1479,12 @@ impl SenderPolicy {
             rack_clocks: gates.rack_clocks,
             rack_reo_mult: gates.rack_reo_mult,
             quantile_clocks: gates.quantile_clocks,
-            contract_alpha: crate::net::resolved_alpha(protocol_hint, gates.alpha_override),
-            contract_alpha_base: crate::net::contract_alpha(protocol_hint),
+            contract_alpha: crate::net::resolved_alpha(
+                target_tail_loss,
+                protocol_hint,
+                gates.alpha_override,
+            ),
+            contract_alpha_base: crate::net::contract_alpha(target_tail_loss, protocol_hint),
             alpha_override: gates.alpha_override,
             holddown_q: gates.holddown_q,
             w_form: gates.w_form,

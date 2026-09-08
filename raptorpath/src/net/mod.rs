@@ -94,6 +94,12 @@ pub struct PeerConfig {
     /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
     /// measured the floor completion-neutral at C2, regressive at C3.
     pub inner_feedback_weight: f64,
+    /// The completion feed (paper §14.26 / §16.82): remaining
+    /// bytes of the transfer in progress, published by a driver that KNOWS
+    /// them. `None` on the tunnel path — an endless stream has no `T_rem` —
+    /// and `None` unless `RWM_COMPLETION_EXPOSURE` is armed, so the shipped
+    /// engine is byte-identical without it. See [`CompletionFeed`].
+    pub completion_feed: Option<Arc<CompletionFeed>>,
     /// Block-granular multipath source affinity (paper 13.8 in-order
     /// coupling refinement, L2 ws1). Default true; false = per-symbol
     /// striping (ablation).
@@ -798,18 +804,26 @@ pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
 // failure probability, continuous in the hint through ζ), and nothing here
 // keys on a threshold in the (δ, ρ, r) triangle.
 
-/// The contract's base tail-loss target, mirroring `config.rs`'s own
-/// `unwrap_or(1e-5)`. Read here rather than plumbed because the config does
-/// not reach this seat; §16.69 records that as a stated limitation of the
-/// refuted arm rather than a design choice.
+/// The contract's DEFAULT base tail-loss target — `config.rs`'s own
+/// `unwrap_or(1e-5)`, named here so the two cannot drift silently.
+///
+/// It was a MIRROR until 2026-09-08 (§16.81): the seat read this
+/// constant because "the config does not reach this seat", so a tunnel
+/// configured at 1e-4 or 1e-6 priced its α at 1e-5 anyway. Both ends now take
+/// the base as an ARGUMENT (`config.target_tail_loss`, plumbed to the sender
+/// policy and to the receiver task), and this constant is what an unconfigured
+/// tunnel resolves to — a default, not a mirror.
 pub const CONTRACT_TAIL_LOSS_BASE: f64 = 1e-5;
 
 /// The contract-declared false-alarm rate α on the r leg — paper §16.69.
-/// `target_tail_loss × ζ(hint)`, where ζ is the hint's ONE declared price
-/// ratio (`ProtocolHint::tail_loss_scale`). Continuous in the dial: no
-/// threshold, no mode bit, and the same ζ the Copa δ mapping already consumes.
-pub fn contract_alpha(hint: ProtocolHint) -> f64 {
-    (CONTRACT_TAIL_LOSS_BASE * hint.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0)
+/// `target_tail_loss × ζ(δ)`, where ζ is the ONE declared price ratio of the
+/// contract's own δ (`raptorpath_math::zeta_of_delta(delta_price(hint))`).
+/// Continuous in the dial: no threshold, no mode bit, the same ζ the Copa δ
+/// mapping consumes, and — since §16.81 — the same δ, so `RWM_DELTA` reaches
+/// α along with b and β instead of α alone staying pinned to a preset.
+pub fn contract_alpha(base_tail_loss: f64, hint: ProtocolHint) -> f64 {
+    (base_tail_loss * raptorpath_math::zeta_of_delta(delta_price(hint)))
+        .clamp(f64::MIN_POSITIVE, 1.0)
 }
 
 /// The α ACTUALLY supplied to the quantile law — the contract's own, unless
@@ -828,11 +842,11 @@ pub fn contract_alpha(hint: ProtocolHint) -> f64 {
 /// before this existed. Nothing continuous in (δ, ρ, r) is expressed here and
 /// nothing may ship reading the override: a shipped α must be DERIVED from the
 /// triangle, which is the decision this sweep informs and does not take.
-pub fn resolved_alpha(hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
+pub fn resolved_alpha(base_tail_loss: f64, hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
     match override_alpha {
         Some(a) if a.is_finite() && a > 0.0 && a <= 1.0 => a,
         // Garbage that survived the gate's own filter, or absent: the contract.
-        _ => contract_alpha(hint),
+        _ => contract_alpha(base_tail_loss, hint),
     }
 }
 
@@ -2200,11 +2214,222 @@ pub fn shed_allowed(
 /// budget (holes ≤ ε̂_recv × frontier — the loss-class bound) is spent, the
 /// hold reverts to legacy: serialize, don't shed below ρ.
 pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> Duration {
-    if shed_on && budget_ok {
+    let h = if shed_on && budget_ok {
+        SHEDH.evals.fetch_add(1, Ordering::Relaxed);
+        SHEDH.dial.fetch_add(1, Ordering::Relaxed);
         srtt / 2
     } else {
-        (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
+        SHEDH.evals.fetch_add(1, Ordering::Relaxed);
+        SHEDH.legacy.fetch_add(1, Ordering::Relaxed);
+        let raw = srtt * 4;
+        if raw < BLOCK_REORDER_MIN_HOLD {
+            SHEDH.at_floor.fetch_add(1, Ordering::Relaxed);
+        } else if raw > BLOCK_REORDER_MAX_HOLD {
+            SHEDH.at_cap.fetch_add(1, Ordering::Relaxed);
+        } else {
+            SHEDH.interior.fetch_add(1, Ordering::Relaxed);
+        }
+        raw.clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
+    };
+    SHEDH.hold_us_sum.fetch_add(h.as_micros() as u64, Ordering::Relaxed);
+    h
+}
+
+/// **THE COMPLETION FEED** — `RWM_COMPLETION_EXPOSURE`, ABSENT by default
+/// (paper §14.26 / §16.82).
+///
+/// The one input §14.26's completion-exposure glide always needed and never
+/// had: **how much of this transfer is left**. The production tunnel is an
+/// endless stream and genuinely has no `T_rem`, which is why χ was left at 0
+/// — but that "temporary" 0 made `set_completion_exposure` a function with
+/// zero engine callers, δ_eff = ε̂ at the Bulk end, and therefore `r* ≡ 0`
+/// identically on every battery this tree has ever scored. The r leg has
+/// never operated. A driver that DOES know the remaining bytes (the perf
+/// client, feeding a sized object) publishes them here.
+///
+/// One `AtomicU64` and nothing else: the writer is the object feeder, the
+/// reader is the rate site, and a stale read is a slightly stale χ — never a
+/// correctness question. `Relaxed` for the same reason.
+#[derive(Debug)]
+pub struct CompletionFeed {
+    remaining_bytes: AtomicU64,
+}
+
+impl Default for CompletionFeed {
+    fn default() -> Self {
+        Self::new()
     }
+}
+
+impl CompletionFeed {
+    pub fn new() -> Self {
+        Self { remaining_bytes: AtomicU64::new(0) }
+    }
+    /// The whole object is ahead of us: set at the start of a transfer.
+    pub fn set_remaining(&self, bytes: u64) {
+        self.remaining_bytes.store(bytes, Ordering::Relaxed);
+    }
+    /// One chunk handed to the engine: saturating, so a feeder that
+    /// over-counts by a partial chunk cannot wrap the counter.
+    pub fn consume(&self, bytes: u64) {
+        let _ = self.remaining_bytes.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |v| Some(v.saturating_sub(bytes)),
+        );
+    }
+    /// The object is acked: nothing is left, and χ has no more work to do.
+    pub fn clear(&self) {
+        self.remaining_bytes.store(0, Ordering::Relaxed);
+    }
+    pub fn remaining_bytes(&self) -> u64 {
+        self.remaining_bytes.load(Ordering::Relaxed)
+    }
+}
+
+/// **`[CHI]` — the completion-exposure gauge** (paper §16.82).
+///
+/// MEASUREMENT DISCIPLINE rule 1: prove the mechanism under test EXECUTES.
+/// An arm whose χ never left 0 is an arm that ran the shipped machine under a
+/// different label, and that has happened on this tree before. `max` and
+/// `frac_gt_half` are the two numbers that distinguish "the glide ramped" from
+/// "the gate was set and nothing happened", and both are readable off the
+/// run's own output. Reported on the 1 s cadence, cumulative, LAST LINE WINS.
+///
+/// Two-sided: the line is printed on the CONTROL arm too (where it must read
+/// `max=0.0000 n=0`), so gate-off is as mechanically assertable as gate-on.
+pub(crate) struct ChiGauge {
+    n: AtomicU64,
+    /// max χ × 1e6, as a u64 so the whole gauge is lock-free.
+    max_ppm: AtomicU64,
+    /// Observations with χ > ½ — the region where δ_eff has actually left ε̂.
+    gt_half: AtomicU64,
+    sum_ppm: AtomicU64,
+}
+
+pub(crate) static CHI: ChiGauge = ChiGauge {
+    n: AtomicU64::new(0),
+    max_ppm: AtomicU64::new(0),
+    gt_half: AtomicU64::new(0),
+    sum_ppm: AtomicU64::new(0),
+};
+
+impl ChiGauge {
+    fn observe(&self, chi: f64) {
+        let ppm = (chi.clamp(0.0, 1.0) * 1e6) as u64;
+        self.n.fetch_add(1, Ordering::Relaxed);
+        self.sum_ppm.fetch_add(ppm, Ordering::Relaxed);
+        self.max_ppm.fetch_max(ppm, Ordering::Relaxed);
+        if chi > 0.5 {
+            self.gt_half.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+pub(crate) fn chi_report_line() -> String {
+    let n = CHI.n.load(Ordering::Relaxed);
+    let mean = if n == 0 {
+        "-".to_string()
+    } else {
+        format!("{:.4}", CHI.sum_ppm.load(Ordering::Relaxed) as f64 / n as f64 / 1e6)
+    };
+    format!(
+        "[CHI] n={} max={:.4} frac_gt_half={:.4} mean={} rttvar_src=srtt_eighth",
+        n,
+        CHI.max_ppm.load(Ordering::Relaxed) as f64 / 1e6,
+        if n == 0 {
+            0.0
+        } else {
+            CHI.gt_half.load(Ordering::Relaxed) as f64 / n as f64
+        },
+        mean,
+    )
+}
+
+/// **`[SHEDH]` — THE RECEIVER HOLD'S BIND GAUGE** (ADR-0070: *every clamp gets
+/// a bind-fraction gauge, reported*; paper §16.81 ρ leg).
+///
+/// `shed_recv_hold` is TWO laws behind one signature and BOTH of them are
+/// unmeasured. The legacy branch is `(4·SRTT).clamp(60 ms, 300 ms)`, and 60,
+/// 300 and the 4 have no provenance anywhere in this repository. **A clamp
+/// that always binds turns its law into a constant and hides the law's shape
+/// from every measurement taken through it** — and the pre-stated expectation
+/// here is exactly that: the 60 ms FLOOR binds at `c2` (SRTT ≈ 13 ms ⇒
+/// 4·SRTT ≈ 52 ms) and the 300 ms CAP binds at `c3` under the inflated
+/// stalled-block SRTT, so "the 4·SRTT law" would be a CONSTANT at both main
+/// cells. If the gauge confirms it, that is a DEFECT FINDING with a ledger
+/// verdict, not an explanatory footnote (CLAUDE.md).
+///
+/// **OBSERVATION ONLY.** Nothing reads these counters; they are fed inside
+/// `shed_recv_hold` itself rather than at its call sites, so the receiver
+/// task is untouched and every branch is counted exactly once by construction
+/// (a call site added later cannot forget to feed the gauge).
+///
+/// `dial + legacy = evals` and `at_floor + at_cap + interior = legacy`, both
+/// asserted by `shedh_partitions_every_evaluation`.
+pub(crate) struct ShedHoldGauge {
+    /// Every evaluation of the hold, on both branches.
+    evals: AtomicU64,
+    /// The δ-DERIVED branch (`b·SRTT`, shed law armed and budget open).
+    dial: AtomicU64,
+    /// The LEGACY branch — the law with the three unprovenanced constants.
+    legacy: AtomicU64,
+    /// Legacy evaluations pinned at the 60 ms floor.
+    at_floor: AtomicU64,
+    /// Legacy evaluations pinned at the 300 ms cap.
+    at_cap: AtomicU64,
+    /// Legacy evaluations where `4·SRTT` actually decided the hold — the only
+    /// regime in which there IS a "4·SRTT law" to speak of.
+    interior: AtomicU64,
+    /// Σ of the holds returned, µs, so the gauge reports the MEAN hold beside
+    /// the bind fractions (a bind fraction with no scale is not a reading).
+    hold_us_sum: AtomicU64,
+}
+
+pub(crate) static SHEDH: ShedHoldGauge = ShedHoldGauge {
+    evals: AtomicU64::new(0),
+    dial: AtomicU64::new(0),
+    legacy: AtomicU64::new(0),
+    at_floor: AtomicU64::new(0),
+    at_cap: AtomicU64::new(0),
+    interior: AtomicU64::new(0),
+    hold_us_sum: AtomicU64::new(0),
+};
+
+/// The `[SHEDH]` line. Cumulative, last line wins — the `[RFA]` convention,
+/// because the harness SIGKILLs the server and a `Drop` never reaches its log.
+/// `mean_us` is `-` when `n = 0` (MEASUREMENT DISCIPLINE: a dash iff there is
+/// no datum, never a zero standing in for one).
+pub(crate) fn shedh_report_line() -> String {
+    let g = &SHEDH;
+    let (evals, legacy) = (
+        g.evals.load(Ordering::Relaxed),
+        g.legacy.load(Ordering::Relaxed),
+    );
+    let frac = |x: u64, d: u64| if d == 0 { 0.0 } else { x as f64 / d as f64 };
+    let mean = if evals == 0 {
+        "-".to_string()
+    } else {
+        format!("{}", g.hold_us_sum.load(Ordering::Relaxed) / evals)
+    };
+    format!(
+        "[SHEDH] evals={} dial={} legacy={} dial_frac={:.4} floor_n={} cap_n={} \
+         interior_n={} floor_frac={:.4} cap_frac={:.4} interior_frac={:.4} \
+         mean_us={} floor_ms={} cap_ms={}",
+        evals,
+        g.dial.load(Ordering::Relaxed),
+        legacy,
+        frac(g.dial.load(Ordering::Relaxed), evals),
+        g.at_floor.load(Ordering::Relaxed),
+        g.at_cap.load(Ordering::Relaxed),
+        g.interior.load(Ordering::Relaxed),
+        frac(g.at_floor.load(Ordering::Relaxed), legacy),
+        frac(g.at_cap.load(Ordering::Relaxed), legacy),
+        frac(g.interior.load(Ordering::Relaxed), legacy),
+        mean,
+        BLOCK_REORDER_MIN_HOLD.as_millis(),
+        BLOCK_REORDER_MAX_HOLD.as_millis(),
+    )
 }
 
 /// Receiver give-up budget: holes given up so far vs ε̂_recv × frontier.
@@ -3479,6 +3704,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
     let sender_protocol_hint = config.protocol_hint;
+    // The contract's BASE tail-loss target, sampled beside the hint it prices
+    // alpha with (paper 16.81).
+    let sender_target_tail_loss = config.target_tail_loss;
+    // §14.26/§16.82: the completion feed, if a driver published
+    // one. `None` on every shipped path.
+    let sender_completion_feed = config.completion_feed.clone();
     let sender_gates = gates.clone();
 
     let sender_handle = tokio::spawn(async move {
@@ -3499,11 +3730,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_sack_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
+                sender_target_tail_loss,
                 sender_window_reliable,
                 sender_window_coded_only,
                 sender_window_generation,
                 sender_window_systematic,
                 sender_copa_feed,
+                sender_completion_feed,
                 sender_gates,
             )
             .await;
@@ -3701,6 +3934,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_gates,
         config.reorder_timeout_ms,
         config.reorder_max_size,
+        // The contract's own dial position at the RECEIVER (§16.81, in
+        // flight): the same two `config` fields the sender's policy reads.
+        config.protocol_hint,
+        config.target_tail_loss,
     ));
 
     // ADR-0004: periodic cleanup of stale decoders
@@ -4587,12 +4824,42 @@ pub fn honest_cap_terms(
 /// `emit_source.rs`, which had the same three-arm map transcribed inline
 /// and would otherwise have been transcribed a second time by the law
 /// below — the `honest_cap_term` de-triplication lesson applied early.
+///
+/// **THE THREE-ARM MATCH IS GONE (2026-09-08, §16.81).** The hint
+/// names a δ exactly once — [`delta_price`] — and b is the paper's own
+/// continuous `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)` evaluated there
+/// ([`raptorpath_math::span_horizon_b`], the same function the visualizer
+/// reads). The three shipped numbers are unchanged and pinned BIT-EXACTLY by
+/// `delta_budget_b_is_the_dial_not_a_mode`; what changed is the SHAPE, which
+/// is the whole defect: the values agreed with the paper at the three presets
+/// and the engine had no function of δ at all, so nothing between the presets
+/// could be evaluated, measured, or tested for continuity.
 pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
-    match hint {
-        ProtocolHint::Realtime => 0.5,
-        ProtocolHint::Auto => 1.0,
-        ProtocolHint::Bulk => 2.0,
-    }
+    delta_budget_b_of(delta_price(hint))
+}
+
+/// THE ONE PLACE A HINT NAMES A δ (paper §12.4, §16.81).
+///
+/// `δ(hint) = δ_Auto / ζ(hint) ∈ {50 Realtime, 0.5 Auto, 0.005 Bulk}` — the
+/// map the Copa scheduler already carried, lifted to the seat every δ-priced
+/// law reads: the span horizon `b(δ)`, the rate mix's bulkness `β(δ)`, the
+/// effective tail target `base·ζ(δ)`, and the contract's α. A hint is a NAMED
+/// POINT on this dial and nothing downstream may key on which one it is.
+///
+/// `RWM_DELTA` (ABSENT by default, `gates::delta_override`) replaces the map
+/// with a NUMBER, so a run can stand between the presets. `RWM_COPA_DELTA`
+/// still outranks it inside the congestion controller alone — see
+/// [`RuntimeGates::delta`](crate::gates::RuntimeGates::delta) for the
+/// precedence chain, stated once.
+pub fn delta_price(hint: ProtocolHint) -> f64 {
+    crate::gates::delta_override().unwrap_or_else(|| crate::scheduler::hint_delta_price(hint))
+}
+
+/// `b` at an ARBITRARY point on the δ dial — the law itself, with no hint in
+/// sight. `delta_budget_b(hint) = delta_budget_b_of(delta_price(hint))`, and
+/// the continuity gates sweep THIS.
+pub fn delta_budget_b_of(delta_price: f64) -> f64 {
+    raptorpath_math::span_horizon_b(delta_price)
 }
 
 /// The CONTRACT-declared frontier stall, in SECONDS — the time TERM 2 is
@@ -6726,6 +6993,9 @@ async fn run_window_sender(
     sack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
+    // The contract's BASE tail-loss target (config.target_tail_loss), the
+    // alpha seat's own base since it stopped mirroring a constant (16.81).
+    target_tail_loss: f64,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
     // policy block above RELIABLE_STORE_MAX).
     reliable: bool,
@@ -6763,6 +7033,10 @@ async fn run_window_sender(
     // seq→path + a BBR send-interval rate-sample snapshot so the WindowAck
     // handler can attribute deliveries per path. None = shipped path.
     copa_feed: Option<Arc<CopaFeed>>,
+    // §14.26/§16.82: remaining bytes of the transfer, when a
+    // driver knows them. `None` on every shipped path; read ONLY under
+    // `RWM_COMPLETION_EXPOSURE`, so the rate is byte-identical without it.
+    completion_feed: Option<Arc<CompletionFeed>>,
     // The engine's env-gate surface, resolved once in run_impl (src/gates.rs).
     gates: crate::gates::RuntimeGates,
 ) {
@@ -6778,6 +7052,7 @@ async fn run_window_sender(
         &gates,
         symbol_size,
         protocol_hint,
+        target_tail_loss,
         reliable,
         coded_only,
         generation,
@@ -6859,6 +7134,12 @@ async fn run_window_sender(
     let mut proactive_coded_total: u64 = 0;
     let mut recovery_coded_total: u64 = 0;
     let mut pfrac_last_us: u64 = 0;
+    // `[SHEDH]` (paper §16.81 ρ leg): last emission of the
+    // receiver-hold bind gauge, on the same 1 s cadence convention.
+    let mut shedh_last_us: u64 = 0;
+    // `[CHI]` (paper §16.82): last emission of the
+    // completion-exposure gauge, same cadence.
+    let mut chi_last_us: u64 = 0;
     let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     let mut gen_emitted_at_report: std::collections::HashMap<u64, u64> =
         std::collections::HashMap::new();
@@ -8530,6 +8811,33 @@ async fn run_window_sender(
                 );
             }
         }
+        // `[SHEDH]` — the receiver hold's bind gauge (§16.81 ρ leg, in
+        // flight), on the 1 s cadence, cumulative, LAST LINE WINS.
+        //
+        // Emitted from the SENDER loop although it is fed at the RECEIVER:
+        // the counters are process-global and both endpoints of a tunnel run
+        // both tasks, so this reaches the log without touching the receiver
+        // task at all. It is also the only place a periodic emission survives
+        // the harness's SIGKILL of the server — a `Drop` never runs there
+        // (the `[RFA]` lesson).
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(shedh_last_us) > 1_000_000 {
+                shedh_last_us = now;
+                eprintln!("{}", shedh_report_line());
+            }
+        }
+        // `[CHI]` — the completion-exposure gauge (§16.82), same
+        // 1 s cadence, and on BOTH arms: the control's `n=0 max=0.0000` is the
+        // two-sided half of the reachability claim, and an arm whose χ never
+        // left 0 must be READ that way rather than inferred.
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(chi_last_us) > 1_000_000 {
+                chi_last_us = now;
+                eprintln!("{}", chi_report_line());
+            }
+        }
         // GDIAG: did ANY coded symbol go on the wire this iteration?
         let mut gd_flow = false;
         if generation && st.encoder.window_size() > 0 {
@@ -10128,12 +10436,54 @@ async fn run_window_sender(
             // Section 8.8) from the worst (highest-loss) active path, under a
             // single lock acquisition.
             let (repair_rate, derived_window) = {
-                let ctrl = fec_controller.lock();
+                let mut ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
                 let path_est = sched.active_paths().iter()
                     .filter_map(|id| sched.path(*id))
                     .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|p| &p.estimator);
+                // ── χ, THE COMPLETION EXPOSURE (RWM_COMPLETION_EXPOSURE) ──
+                //
+                // §14.26's glide has existed since P6 and has NEVER RUN:
+                // `set_completion_exposure` had zero engine callers, so χ ≡ 0,
+                // so δ_eff = ε̂ at the Bulk end and `controller_rate` returned
+                // exactly 0 — r* ≡ 0 forever, on every scored battery. The r
+                // leg has never operated (paper §16.82).
+                //
+                // The perf client KNOWS the remaining bytes of the object it
+                // is feeding. Under the gate it publishes them into a
+                // `CompletionFeed` and this site converts them to a time —
+                // `T_rem = remaining / throughput` — and prices the exposure
+                // with the math crate's own
+                // `completion_exposure(T_rem, srtt, rttvar)`.
+                //
+                // RTTVAR PROVENANCE, stated because it is not measured here:
+                // the engine's estimator exposes a smoothed RTT and no RTTVAR.
+                // `0.125·srtt` is RFC 6298's own STEADY-STATE relation — its
+                // initialization sets `RTTVAR = R/2` and its update mixes at
+                // β = ¼, so a link whose RTT is not moving settles near
+                // RTTVAR ≈ srtt/8. It is a STAND-IN for a quantity this engine
+                // does not estimate, it is the arm's own constant, and it is
+                // stated on the register rather than presented as derived.
+                // `completion_exposure` floors σ_ARQ at `srtt/4` regardless,
+                // so the choice only matters where 4·RTTVAR exceeds that.
+                //
+                // ABSENT BY DEFAULT ⇒ this whole block is skipped and χ stays
+                // 0, i.e. the rate is byte-identical to the engine without it.
+                if let (true, Some(feed), Some(est)) =
+                    (gates.completion_exposure, completion_feed.as_ref(), path_est)
+                {
+                    let tput = est.throughput();
+                    let srtt = est.rtt().as_secs_f64();
+                    let chi = if tput > 0.0 && srtt > 0.0 {
+                        let t_rem = feed.remaining_bytes() as f64 / tput;
+                        raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt)
+                    } else {
+                        0.0
+                    };
+                    ctrl.set_completion_exposure(chi);
+                    CHI.observe(chi);
+                }
                 match path_est {
                     Some(est) => (
                         ctrl.compute_repair_rate(est, st.encoder.window_size()),
@@ -11281,6 +11631,57 @@ mod tests {
             shed_recv_hold(Duration::from_millis(200), false, false),
             Duration::from_millis(300)
         );
+    }
+
+    /// **`[SHEDH]` PARTITIONS EVERY EVALUATION** — ADR-0070's "every clamp
+    /// gets a bind-fraction gauge", asserted as arithmetic rather than
+    /// described. A gauge whose classes do not sum to its own denominator is
+    /// not a bind fraction, it is a ratio of two unrelated counters.
+    ///
+    /// The counters are process-global and every test in this module that
+    /// calls `shed_recv_hold` feeds them, so this reads the DELTAS it causes
+    /// itself rather than absolute values — the only form that survives a
+    /// parallel runner.
+    #[test]
+    fn shedh_partitions_every_evaluation() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let snap = || {
+            (
+                SHEDH.evals.load(Relaxed),
+                SHEDH.dial.load(Relaxed),
+                SHEDH.legacy.load(Relaxed),
+                SHEDH.at_floor.load(Relaxed),
+                SHEDH.at_cap.load(Relaxed),
+                SHEDH.interior.load(Relaxed),
+            )
+        };
+        let a = snap();
+        // One of each class, by construction: dial; floor-bound (4·10 = 40 ms
+        // < 60); cap-bound (4·200 = 800 ms > 300); interior (4·20 = 80 ms).
+        shed_recv_hold(Duration::from_millis(80), true, true);
+        shed_recv_hold(Duration::from_millis(10), false, false);
+        shed_recv_hold(Duration::from_millis(200), false, false);
+        shed_recv_hold(Duration::from_millis(20), false, false);
+        let b = snap();
+        let d = |i: usize| match i {
+            0 => b.0 - a.0,
+            1 => b.1 - a.1,
+            2 => b.2 - a.2,
+            3 => b.3 - a.3,
+            4 => b.4 - a.4,
+            _ => b.5 - a.5,
+        };
+        assert_eq!(d(0), 4, "every call must be one evaluation");
+        assert_eq!(d(1) + d(2), d(0), "dial + legacy must be evals");
+        assert_eq!(d(3) + d(4) + d(5), d(2), "the three clamp classes must be legacy");
+        assert_eq!((d(1), d(3), d(4), d(5)), (1, 1, 1, 1), "one of each class");
+        // The line renders, carries the constants it is auditing, and ends on
+        // a field a concurrent stderr writer can corrupt without losing a
+        // datum (the `fa_class` convention — here the two clamp rails).
+        let l = shedh_report_line();
+        assert!(l.starts_with("[SHEDH] evals="), "{l}");
+        assert!(l.contains("floor_ms=60") && l.contains("cap_ms=300"), "{l}");
+        assert!(l.contains("mean_us="), "{l}");
     }
 
     /// Receiver give-up budget: the loss-class bound — holes given up may
@@ -12877,7 +13278,7 @@ mod tests {
         // The plain-reliable window sender: the seat every cap-law finding in
         // ADR-0070 is about.
         let resolve = |g: &RuntimeGates| {
-            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
         };
 
         // ── THE CONTROL ARM ───────────────────────────────────────────────
@@ -13058,7 +13459,8 @@ mod tests {
         use crate::gates::RuntimeGates;
         use crate::net::sender_policy::SenderPolicy;
         use crate::net::{
-            codel_setpoint_q, contract_alpha, pooled_store_cap, RACK_REO_WND_MULT_INIT,
+            codel_setpoint_q, contract_alpha, pooled_store_cap, CONTRACT_TAIL_LOSS_BASE,
+            RACK_REO_WND_MULT_INIT,
             RACK_REO_WND_MULT_MAX,
         };
 
@@ -13088,7 +13490,7 @@ mod tests {
             g
         };
         let resolve = |g: &RuntimeGates, h: ProtocolHint| {
-            SenderPolicy::resolve(g, 1200, h, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, h, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
         };
 
         // ── §16.67: the δ-cap reaches the pooled seat at every dial point ──
@@ -13159,12 +13561,12 @@ mod tests {
 
         // The recovery laws are CLOCKS, not cap laws, so they must arm on a
         // coded seat too — unlike the δ-cap, which is scoped to `plain_dyn_cap`.
-        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, true, true, false, false);
+        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
         assert!(coded.rack_clocks, "the RACK gate is wrongly scoped to the plain seat");
         let mut d = base();
         d.delta_cap = true;
         let coded_cap =
-            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, true, true, false, false);
+            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
         assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
 
         // RACK's own bound on RACK's own parameter, at both ends.
@@ -13184,7 +13586,7 @@ mod tests {
         for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
             let p = resolve(&q, hint);
             assert!(
-                (p.contract_alpha - contract_alpha(hint)).abs() < f64::EPSILON,
+                (p.contract_alpha - contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint)).abs() < f64::EPSILON,
                 "{hint:?}: α did not reach the policy from the contract"
             );
             assert!(p.contract_alpha > last, "{hint:?}: α is not monotone across the dial");
@@ -14298,11 +14700,33 @@ mod tests {
     }
 
     /// The δ dial's named points — a DIAL, read once, in one place.
+    ///
+    /// **BIT-EXACT, not approximate** (the user's condition on the §16.81
+    /// repair): `b` stopped being a three-arm `match` on the hint and became
+    /// `span_horizon_b(delta_price(hint))`, so the three shipped numbers are
+    /// now the output of `2^(−½·log₁₀(δ/0.5))` on a libm. If that composition
+    /// misses ½ / 1 / 2 by ONE ULP on some target, this assertion FAILS the
+    /// build rather than letting a step ship — and the recorded fallback is
+    /// the exact-by-construction `b = exp2(½·log₁₀ ζ)` over the enum's own ζ
+    /// literals. (SHIPPED FORM as of 2026-09-08: the `log₁₀(δ/δ_Auto)` form.
+    /// It is exact here because δ ∈ {50, 0.5, 0.005} are themselves the exact
+    /// f64 quotients `0.5/ζ`, `δ/0.5` is an exact power-of-two scaling, and
+    /// `log₁₀` of {100, 1, 0.01} returns exactly {2, 0, −2}.)
     #[test]
     fn delta_budget_b_is_the_dial_not_a_mode() {
         assert_eq!(delta_budget_b(ProtocolHint::Realtime), 0.5);
         assert_eq!(delta_budget_b(ProtocolHint::Auto), 1.0);
         assert_eq!(delta_budget_b(ProtocolHint::Bulk), 2.0);
+        // THE HINT NAMES A δ, and it names the SAME δ the Copa mapping does —
+        // one map, one seat. The dial's three named points, bit-exactly.
+        assert_eq!(delta_price(ProtocolHint::Realtime), 50.0);
+        assert_eq!(delta_price(ProtocolHint::Auto), 0.5);
+        assert_eq!(delta_price(ProtocolHint::Bulk), 0.005);
+        // `b(hint)` IS `b_of(δ(hint))` — the composition, not a coincidence.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(delta_budget_b(h), delta_budget_b_of(delta_price(h)));
+        }
+
         // The only law b enters is continuous and MONOTONE in it, through
         // every named point — no step at a preset (CLAUDE.md).
         let mut prev = 0u64;
@@ -14314,6 +14738,126 @@ mod tests {
         }
         assert_eq!(shed_deadline_us(0.5, 20_000), 10_000);
         assert_eq!(shed_deadline_us(2.0, 20_000), 40_000);
+
+        // ── THE CONTINUITY GATE ON δ ITSELF ──────────────────────────────
+        // Before §16.81 there was no function of δ to sweep: b was defined at
+        // three points and nowhere else, so "continuous in the dial" could
+        // only be asserted of `b`, never of δ. Sweep the dial log-uniformly
+        // over its own span [δ_Bulk, δ_Realtime] and assert the two shape
+        // properties the paper's b(δ) claims.
+        let (lo, hi) = (0.005f64, 50.0f64);
+        const N: usize = 500;
+        let mut prev_b = f64::INFINITY;
+        let mut prev_d = u64::MAX;
+        for i in 0..=N {
+            let d = lo * (hi / lo).powf(i as f64 / N as f64);
+            let b = delta_budget_b_of(d);
+            assert!(
+                (0.5..=2.0).contains(&b),
+                "δ={d}: b={b} left the dial's own range"
+            );
+            assert!(
+                b < prev_b,
+                "b(δ) must be STRICTLY decreasing: b({d}) = {b} did not fall below {prev_b}"
+            );
+            // D(δ) = min(b·RTprop, 2·RTprop) at the c2 RTprop: non-increasing.
+            let dl = shed_deadline_us(b, 8_000);
+            assert!(dl <= prev_d, "D(δ) stepped UP at δ={d}");
+            prev_b = b;
+            prev_d = dl;
+        }
+        // ±2 % NUDGES AT EVERY PRESET. A behaviour step across a preset is a
+        // defect even if each side is individually correct (CLAUDE.md), and
+        // the bound is ABSOLUTE in b, not a ratio that a small b could hide
+        // inside: a 2 % move in δ is a 0.0043-decade move in log δ, so
+        // |Δb| < 0.01 for every b on this dial.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let d0 = delta_price(h);
+            let b0 = delta_budget_b_of(d0);
+            for f in [0.98f64, 1.02] {
+                let b1 = delta_budget_b_of(d0 * f);
+                assert!(
+                    (b1 - b0).abs() < 0.01,
+                    "{h:?}: a {f}× nudge of δ stepped b from {b0} to {b1}"
+                );
+            }
+        }
+        // AND THE SHED DEADLINE ITSELF IS UNCHANGED at every preset over the
+        // bench's own RTprop grid — the c2/c3 legs plus the range between and
+        // around them. Bit-exact against the numbers the three-arm map gave.
+        for (h, b_old) in [
+            (ProtocolHint::Realtime, 0.5f64),
+            (ProtocolHint::Auto, 1.0),
+            (ProtocolHint::Bulk, 2.0),
+        ] {
+            for rtprop_us in [
+                1_000u64, 4_000, 8_000, /* c2 */ 20_000, 40_000, 60_000, /* c3 */
+                100_000, 250_000,
+            ] {
+                assert_eq!(
+                    shed_deadline_us(delta_budget_b(h), rtprop_us),
+                    shed_deadline_us(b_old, rtprop_us),
+                    "{h:?} at RTprop {rtprop_us} µs: D moved when b's SHAPE changed"
+                );
+            }
+        }
+    }
+
+    /// **ζ AND δ ARE ONE INVOLUTION, BIT-EXACTLY.** The rate controller's
+    /// effective tail target and the contract's α both read
+    /// `ζ(δ(hint))` where they read `hint.tail_loss_scale()` before §16.81.
+    /// That substitution is byte-identical only if the round trip
+    /// `ζ → δ = 0.5/ζ → ζ = 0.5/δ` is exact at all three preset ζ. It is
+    /// (0.01, 1, 100 are all exactly representable ratios of 0.5), and this
+    /// is the pin that says so rather than the comment that assumes it.
+    #[test]
+    fn zeta_of_the_hints_delta_is_the_hints_own_scale() {
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(
+                raptorpath_math::zeta_of_delta(delta_price(h)),
+                h.tail_loss_scale(),
+                "{h:?}: ζ(δ(hint)) is not the hint's own declared price ratio"
+            );
+        }
+        // And the contract's α is unchanged at every preset, BIT-EXACTLY, on
+        // the base an unconfigured tunnel resolves to.
+        //
+        // The reference is the PRODUCT the pre-repair code computed, not the
+        // decimal it prints as: `1e-5 * 0.01` is `1.0000000000000001e-7` and
+        // the literal `1e-7` is one ulp below it. Comparing against the
+        // literal would be asserting a DIFFERENT number from the one that
+        // shipped — which is the whole reason these pins are `assert_eq!`.
+        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            assert_eq!(
+                contract_alpha(CONTRACT_TAIL_LOSS_BASE, h),
+                (CONTRACT_TAIL_LOSS_BASE * h.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0),
+                "{h:?}: α is not the pre-repair product"
+            );
+        }
+        // …and it is the number §16.69 publishes, to reading precision.
+        for (h, alpha) in [
+            (ProtocolHint::Realtime, 1e-7f64),
+            (ProtocolHint::Auto, 1e-5),
+            (ProtocolHint::Bulk, 1e-3),
+        ] {
+            let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, h);
+            assert!((a - alpha).abs() <= alpha * 1e-12, "{h:?}: α = {a}");
+        }
+        // β, the rate mix's weight: 0 at BOTH the Realtime and Auto ends
+        // (the clamp) and 1 at Bulk (x/x) — all three exactly, which is what
+        // makes the mix byte-identical at the presets.
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Realtime)),
+            0.0
+        );
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Auto)),
+            0.0
+        );
+        assert_eq!(
+            raptorpath_math::bulkness_of_delta(delta_price(ProtocolHint::Bulk)),
+            1.0
+        );
     }
 
     /// ABSOLUTE arithmetic on the composed law — every number hand-computable

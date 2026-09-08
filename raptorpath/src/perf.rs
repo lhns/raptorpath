@@ -177,14 +177,30 @@ async fn run_object(
     nbytes: usize,
     payload_len: usize,
     deadline: Duration,
+    // §14.26/§16.82: the ONE driver in this tree that KNOWS how
+    // much of the transfer is left. `None` unless `RWM_COMPLETION_EXPOSURE`
+    // armed the feed, in which case the engine's rate site reads it as
+    // `T_rem` and the completion-exposure glide runs for the first time since
+    // P6 shipped it inert.
+    feed: Option<&std::sync::Arc<net::CompletionFeed>>,
 ) -> anyhow::Result<RunOutcome> {
     let total = (nbytes.max(1)).div_ceil(payload_len) as u32;
     let payload = vec![0xA5u8; payload_len];
     let t0 = Instant::now();
     let mut left = nbytes.max(1);
+    // The whole object is ahead of us.
+    if let Some(f) = feed {
+        f.set_remaining(left as u64);
+    }
     for idx in 0..total {
         let k = left.min(payload_len);
         left -= k;
+        // Decremented as each chunk is handed to the engine, so `T_rem` tracks
+        // what is still to be SENT rather than what is still unacked — the
+        // quantity §14.26's glide is defined over.
+        if let Some(f) = feed {
+            f.consume(k as u64);
+        }
         let pkt = encode_chunk(obj_id, idx, total, &payload[..k]);
         match tokio::time::timeout(
             deadline.saturating_sub(t0.elapsed()),
@@ -208,6 +224,11 @@ async fn run_object(
             Ok(Some(pkt)) => {
                 if let Some((oid, idx, _, _)) = parse_packet(&pkt) {
                     if oid == obj_id && idx == ACK_IDX {
+                        // Acked: nothing is left, so χ falls back to 0 and the
+                        // next object sets its own remaining from scratch.
+                        if let Some(f) = feed {
+                            f.clear();
+                        }
                         return Ok(RunOutcome::Acked(t0.elapsed().as_secs_f64()));
                     }
                 }
@@ -220,16 +241,31 @@ async fn run_object(
 /// objects on the same warm engine (matching quinn-perf's warm
 /// connection geometry). Emits one JSON line per run plus a summary
 /// line in transfer_bench.py's schema.
-pub async fn client(config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Result<()> {
+pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Result<()> {
     let hint = config.protocol_hint;
     let hint_str = format!("{hint:?}").to_lowercase();
     let payload_len = chunk_payload_len(hint);
+    // §14.26/§16.82: publish the completion feed ONLY when the arm
+    // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
+    // the engine's rate site never reads it — byte-identical.
+    let feed = if crate::config::env_flag("RWM_COMPLETION_EXPOSURE", false) {
+        let f = std::sync::Arc::new(net::CompletionFeed::new());
+        config.completion_feed = Some(f.clone());
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        tracing::info!(
+            "completion-exposure feed ACTIVE (RWM_COMPLETION_EXPOSURE: the perf client \
+             publishes remaining bytes; the 14.26 glide is fed for the first time)"
+        );
+        Some(f)
+    } else {
+        None
+    };
     let (tun, mut mem) = TunInterface::memory(1500);
     let _engine = tokio::spawn(net::run_with_tun(config, tun));
 
     // Warm-up: a single-chunk object confirms both directions are up
     // before timing starts (the engine connects asynchronously).
-    match run_object(&mut mem, 0, 64, payload_len, run_timeout()).await? {
+    match run_object(&mut mem, 0, 64, payload_len, run_timeout(), feed.as_ref()).await? {
         RunOutcome::Acked(s) => {
             println!(
                 "{}",
@@ -242,7 +278,7 @@ pub async fn client(config: PeerConfig, nbytes: usize, runs: u32) -> anyhow::Res
     let mut times: Vec<f64> = Vec::new();
     let mut dnfs = 0u32;
     for run in 1..=runs {
-        match run_object(&mut mem, run, nbytes, payload_len, run_timeout()).await? {
+        match run_object(&mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref()).await? {
             RunOutcome::Acked(secs) => {
                 times.push(secs);
                 println!(

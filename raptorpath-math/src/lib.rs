@@ -124,6 +124,85 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
 pub const BULK_TAIL_BUDGET: f64 = 0.05;
 
 // =========================================================================
+// THE delta DIAL -- b(delta), zeta(delta), beta(delta)
+// (paper 12.4 / 16.20.3 / 16.26; 16.81/16.82).
+//
+// THE ONE MACHINE, CONTINUOUS IN delta. The protocol hints are NAMED POINTS
+// on this dial, never modes (CLAUDE.md, ADR-0064): a hint names a delta
+// exactly once (`raptorpath::net::delta_price`) and every delta-priced law
+// downstream reads a FORMULA of that number. Before this section the
+// engine's b was a three-arm `match` on the hint while the paper wrote
+// b(delta) continuous -- the values agreed at the three presets and the
+// SHAPE did not, which is the defect these functions retire.
+//
+// The three functions are compositions of ONE anchor, the Copa paper's
+// delta_Auto = 0.5:
+//
+//     zeta(d) = delta_Auto / d                       (12.4, an involution)
+//     b(d)    = clamp(2^(-1/2 * log10(d/delta_Auto)), 1/2, 2)
+//     beta(d) = clamp((log10 delta_Auto - log10 d)
+//                     / (log10 delta_Auto - log10 delta_Bulk), 0, 1)
+//
+// BIT-EXACT AT THE PRESETS. delta in {50, 0.5, 0.005} are the exact f64
+// results of `0.5 / zeta` at zeta in {0.01, 1, 100}; `d / 0.5` is an exact
+// doubling; `log10` of the resulting {100, 1, 0.01} returns exactly
+// {2, 0, -2} on every libm this tree builds against, and 2^{-1, 0, 1} is
+// exact. The pins in `raptorpath::net` assert this with `assert_eq!`
+// rather than a tolerance, so a libm that misses the Bulk point by an ulp
+// FAILS the build instead of shipping a step. (The recorded fallback,
+// should that ever fire, is the exact-by-construction
+// `b = exp2(1/2 * log10 zeta)` on the enum's own zeta literals.)
+// =========================================================================
+
+/// The Copa paper's default latency price, and this dial's anchor: the Auto
+/// preset IS delta = 0.5 (paper 12.4). Every other point on the dial is
+/// expressed as a ratio to it, so no second constant exists.
+pub const DELTA_AUTO: f64 = 0.5;
+
+/// The Bulk end of the beta dial, delta_Bulk = delta_Auto/zeta_Bulk = 0.005
+/// (paper 12.4). Named here because beta(delta) is the log-position BETWEEN
+/// the two anchors and needs both; it is a POINT, not a mode.
+pub const DELTA_BULK: f64 = 0.005;
+
+/// 12.4: zeta(delta) = delta_Auto/delta, and delta(zeta) = delta_Auto/zeta.
+/// zeta is the hint's ONE declared price ratio -- the tail-loss-target scale
+/// {0.01 Realtime, 1 Auto, 100 Bulk} -- and this is its involution.
+/// Continuous and strictly decreasing in delta; no mode bit.
+pub fn zeta_of_delta(delta_price: f64) -> f64 {
+    DELTA_AUTO / delta_price.max(1e-12)
+}
+
+/// 16.26/16.20.3: the horizon coefficient b of the span law's own deadline,
+/// `D(delta) = min(b(delta)*RTprop, 2*RTprop)`.
+///
+/// ```text
+///     b(delta) = clamp(2^(-1/2 * log10(delta/delta_Auto)), 1/2, 2)
+/// ```
+///
+/// EXACT at all three presets (delta = 50 -> 1/2, 0.5 -> 1, 0.005 -> 2),
+/// strictly decreasing in delta on the open interval, and clamped to the
+/// dial's own range outside it. The clamp is the LAW's range, not a mode: b
+/// is a number of round trips and the span machine's memory ceiling is 2.
+pub fn span_horizon_b(delta_price: f64) -> f64 {
+    (2.0f64)
+        .powf(-((delta_price.max(1e-12) / DELTA_AUTO).log10() / 2.0))
+        .clamp(0.5, 2.0)
+}
+
+/// Bulkness beta(delta) in [0, 1]: the log-position of the latency price
+/// between the Auto anchor (beta = 0) and the Bulk anchor (beta = 1). This
+/// is the continuum's ONLY shaping parameter -- the rate law reads it as the
+/// mixing weight of `r(beta) = (1-beta)*r_anchor + beta*r_late-is-fine`,
+/// both terms always computed, so nothing keys on a hint equality and there
+/// is no step at any preset. beta(Realtime) = beta(Auto) = 0 exactly (the
+/// clamp), beta(Bulk) = 1 exactly (x/x).
+pub fn bulkness_of_delta(delta_price: f64) -> f64 {
+    let x = delta_price.max(1e-12).log10();
+    let (a, b) = (DELTA_AUTO.log10(), DELTA_BULK.log10());
+    ((a - x) / (a - b)).clamp(0.0, 1.0)
+}
+
+// =========================================================================
 // Burst-tail provisioning (paper Section 8.4.1): r* against heavy-tailed
 // burst-length distributions. The GE geometric burst law under-provisions
 // r* by 2-4x on real traces (paper Section 2.5, MEASURED); the corrected

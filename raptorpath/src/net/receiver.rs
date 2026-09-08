@@ -118,6 +118,14 @@ pub(crate) async fn run_receiver(
     // spawned block (see the module header).
     recv_reorder_timeout_ms: u64,
     recv_reorder_max_size: usize,
+    // THE CONTRACT'S OWN DIAL POSITION, plumbed 2026-09-08 (paper 16.81, in
+    // flight). `config.protocol_hint` and `config.target_tail_loss`, the same
+    // two values `SenderPolicy::resolve` reads, so the two ends price alpha
+    // off the same contract instead of the receiver assuming `Auto` and 1e-5.
+    // Read ONLY under `RWM_QUANTILE_CLOCKS` (default OFF) plus the `[QALPHA]`
+    // echo, so a shipped default arm is byte-identical.
+    recv_protocol_hint: crate::control::fec_rate::ProtocolHint,
+    recv_target_tail_loss: f64,
 ) {
     // Window decoder: created once, long-lived (only used in window
     // mode; codec pinned at startup, §16.4 — never rebuilt).
@@ -202,22 +210,25 @@ pub(crate) async fn run_receiver(
     // Paper §16.76: WHICH of the two rival `W` laws the armed clock evaluates.
     // `cantelli` on every shipped arm; read only when the quantile gate is on.
     let recv_w_form = recv_gates.w_form;
-    // The contract's alpha at the RECEIVER. The protocol hint is not plumbed
-    // to this task, so the quantile arm reads the Auto point of the dial here
-    // while the sender reads the tunnel's own. Recorded as a stated limitation
-    // of the REFUTED arm (paper 16.68) rather than papered over: it means the
-    // two sites can disagree on alpha at Realtime and Bulk, which is a reason
-    // this arm may not be scored across hints without plumbing the hint first.
+    // The contract's alpha at the RECEIVER. THE HINT IS NOW PLUMBED
+    // (2026-09-08, paper 16.81): this seat read a hard-coded `Auto`
+    // and the constant `CONTRACT_TAIL_LOSS_BASE` because neither the hint nor
+    // the config reached the task, so the sender and the receiver DISAGREED
+    // about alpha at two of the three presets and the arm could not be scored
+    // across hints at all. Both now arrive as parameters, from the same
+    // `config` fields the sender's policy reads, so the two sites evaluate the
+    // SAME number at every point of the dial - asserted per hint by
+    // `tests/alpha_override_reachability.rs`.
     let recv_contract_alpha_base =
-        crate::net::contract_alpha(crate::control::fec_rate::ProtocolHint::Auto);
+        crate::net::contract_alpha(recv_target_tail_loss, recv_protocol_hint);
     // `RWM_ALPHA_OVERRIDE` (EXPERIMENT, absent by default) replaces it when
-    // set. It is a NUMBER and not a hint mapping, so — unlike the contract's
-    // α — it reaches BOTH sites identically and the hint-plumbing limitation
-    // above does not apply to an overridden arm. That is the one respect in
-    // which a swept arm is better defined than the contract arm, and it is
-    // why the sweep can be scored across sites at all.
+    // set. It is a NUMBER and not a hint mapping, so it always reached BOTH
+    // sites identically; since the plumb above, so does the CONTRACT's α, and
+    // the swept arm is no longer better defined across sites than the control
+    // it is compared against.
     let recv_contract_alpha = crate::net::resolved_alpha(
-        crate::control::fec_rate::ProtocolHint::Auto,
+        recv_target_tail_loss,
+        recv_protocol_hint,
         recv_gates.alpha_override,
     );
     eprintln!(
