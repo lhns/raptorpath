@@ -188,6 +188,23 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             on_generation_deficit(ctx, path_id, deficits)
         }
 
+        // v8: the receiver-seat repair request. NOTHING IN THIS BINARY
+        // SENDS ONE, so every arrival is either a hostile peer or a future
+        // version. It is COUNTED and DROPPED -- never acted on, never
+        // panicked on -- so the Stage-2 arms that will construct it inherit a
+        // dispatch site that already exists and a counter that already says
+        // how many arrived. Read-only: the counter feeds `[ETA]`'s tail and
+        // nothing else.
+        ControlMessage::RepairRequest { spans, cause } => {
+            REPAIR_REQUEST_IGNORED.fetch_add(1, Ordering::Relaxed);
+            debug!(
+                path_id,
+                spans = spans.len(),
+                cause,
+                "ignoring RepairRequest: no consumer exists in v8 (16.83 arms are Stage 2)"
+            );
+        }
+
         // ADR-0030: never sent by this binary; the real guard (warn + ignore)
         // lives in the receiver loop in `net::mod`.
         ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
@@ -196,6 +213,16 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
 
         _ => {}
     }
+}
+
+/// v8 `RepairRequest` arrivals this process has counted and dropped. A
+/// hostile-peer / future-version witness: nonzero on a binary that has no
+/// consumer means the peer is not this version.
+static REPAIR_REQUEST_IGNORED: AtomicU64 = AtomicU64::new(0);
+
+/// Read the ignored-`RepairRequest` count. Observation only.
+pub fn repair_request_ignored() -> u64 {
+    REPAIR_REQUEST_IGNORED.load(Ordering::Relaxed)
 }
 
 /// ADR-0008: handle BlockStart — use backend from message (ADR-0030)
@@ -704,6 +731,21 @@ fn on_window_ack(
                 };
                 path.record_rtt_sample(cc_rtt);
             }
+            // ── wire v8 `[ETA]`: THE PREDICTION ERROR ──────────────────
+            // `e = rtt_us - (eta_rel + RTprop/2)`, keyed by the echo, which
+            // is the batch's own `send_timestamp_us`. A no-op unless this
+            // echo keys a STAMPED placement (`net/eta.rs`), so repairs and
+            // the tail sweep -- which carry the 0 sentinel -- contribute
+            // nothing. Read-only: `on_ack` touches only the gauge.
+            //
+            // Placed after `record_rtt_sample` so `min_rtt()` is this ack's
+            // own RTprop and not the previous one's.
+            let rtprop_us = sched
+                .path(path_id)
+                .and_then(|p| p.min_rtt())
+                .map(|d| d.as_micros() as u64)
+                .unwrap_or(0);
+            sched.eta_mut().on_ack(path_id, echo_send_timestamp_us, rtt_us, rtprop_us);
         }
 
         // ── re-homing PART 2: loss, pool, stats, cc window ───────

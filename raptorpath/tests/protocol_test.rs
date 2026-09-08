@@ -5,8 +5,8 @@ use raptorpath::transport::{ControlMessage, SymbolBatch, WireMessage};
 
 #[test]
 fn test_symbol_batch_roundtrip() {
-    let batch = SymbolBatch {
-        symbols: vec![
+    let batch = SymbolBatch::new(
+        vec![
             WireSymbol {
                 block_id: 42,
                 payload_id: 7,
@@ -22,10 +22,10 @@ fn test_symbol_batch_roundtrip() {
                 backend: FecBackend::RaptorQ,
             },
         ],
-        send_timestamp_us: 1234567890,
-        batch_seq: 99,
-        path_id: 2,
-    };
+        1234567890,
+        99,
+        2,
+    );
 
     let msg = WireMessage::Data(batch);
     let serialized = msg.serialize().unwrap();
@@ -203,12 +203,7 @@ fn test_ping_pong_roundtrip() {
 
 #[test]
 fn test_empty_batch_serialization() {
-    let msg = WireMessage::Data(SymbolBatch {
-        symbols: vec![],
-        send_timestamp_us: 0,
-        batch_seq: 0,
-        path_id: 0,
-    });
+    let msg = WireMessage::Data(SymbolBatch::new(vec![], 0, 0, 0));
 
     let bytes = msg.serialize().unwrap();
     let decoded = WireMessage::deserialize(&bytes).unwrap();
@@ -223,18 +218,18 @@ fn test_empty_batch_serialization() {
 
 #[test]
 fn test_large_symbol_data() {
-    let msg = WireMessage::Data(SymbolBatch {
-        symbols: vec![WireSymbol {
+    let msg = WireMessage::Data(SymbolBatch::new(
+        vec![WireSymbol {
             block_id: 0,
             payload_id: 0,
             is_repair: false,
             data: vec![0xAB; 1200], // full symbol
             backend: FecBackend::RaptorQ,
         }],
-        send_timestamp_us: 0,
-        batch_seq: 0,
-        path_id: 0,
-    });
+        0,
+        0,
+        0,
+    ));
 
     let bytes = msg.serialize().unwrap();
     assert!(bytes.len() > 1200);
@@ -271,12 +266,7 @@ fn test_oversized_symbol_batch_rejected() {
             backend: FecBackend::RaptorQ,
         })
         .collect();
-    let batch = SymbolBatch {
-        symbols,
-        send_timestamp_us: 0,
-        batch_seq: 0,
-        path_id: 0,
-    };
+    let batch = SymbolBatch::new(symbols, 0, 0, 0);
     let msg = WireMessage::Data(batch);
     let bytes = msg.serialize().unwrap();
     // Deserialization should fail due to batch size validation
@@ -311,12 +301,7 @@ fn test_normal_batch_accepted() {
             backend: FecBackend::RaptorQ,
         })
         .collect();
-    let batch = SymbolBatch {
-        symbols,
-        send_timestamp_us: 0,
-        batch_seq: 0,
-        path_id: 0,
-    };
+    let batch = SymbolBatch::new(symbols, 0, 0, 0);
     let msg = WireMessage::Data(batch);
     let bytes = msg.serialize().unwrap();
     assert!(WireMessage::deserialize(&bytes).is_ok());

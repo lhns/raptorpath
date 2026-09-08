@@ -242,12 +242,7 @@ fn mtu_floor_covers_symbol_batch() {
         data: vec![0xAB; 14 + 1200],
         backend: FecBackend::Rlc,
     };
-    let msg = WireMessage::Data(SymbolBatch {
-        symbols: vec![repair],
-        send_timestamp_us: u64::MAX,
-        batch_seq: u64::MAX,
-        path_id: u32::MAX,
-    });
+    let msg = WireMessage::Data(SymbolBatch::new(vec![repair], u64::MAX, u64::MAX, u32::MAX));
     let wire = msg.serialize().expect("serialize");
     let budget = 1350 - 45;
     assert!(

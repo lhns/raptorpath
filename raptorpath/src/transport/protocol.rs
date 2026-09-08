@@ -61,7 +61,32 @@ fn bincode_options() -> impl Options {
 /// silently mis-parsing control traffic. `WindowSwitch` is KEPT despite
 /// also never being sent: its receive arm is a deliberate
 /// hostile-peer/version guard that warns and ignores.
-pub const PROTOCOL_VERSION: u32 = 7;
+/// v8: ONE coordinated bump carrying TWO additions, both required by the
+/// placement/receiver-law instrument pass (plan Stage 1 item 3):
+///   (a) `SymbolBatch.eta_rel_us: u32` -- the SENDER'S OWN PREDICTION of this
+///       batch's remaining delivery time, in us, relative to
+///       `send_timestamp_us`. It is the `expected_delivery_load()` of the
+///       path the placement law JUST PICKED, stamped at the placement lock,
+///       so the receiver can read every arrival as "late against the
+///       sender's own model" instead of "out of sequence" -- the lateness
+///       measurand 16.80 named and never built. **0 is the "no prediction"
+///       sentinel** (the `cum_received` convention): every emitter that is
+///       not the window source path leaves it 0, and the receiver's bind
+///       gauge reports the zero fraction rather than hiding it. Carried in
+///       BOTH framings: one varint after `batch_seq` in the compact frame,
+///       one bincode field in the legacy one.
+///   (b) `ControlMessage::RepairRequest { spans, cause }` -- the receiver-seat
+///       repair vocabulary (16.83). APPENDED AFTER `GenerationDeficit` and
+///       never reordered: bincode FIXINT encodes the variant tag as the
+///       DECLARATION INDEX, so appending is the only non-breaking edit, and
+///       the v7 note above records what happens when that rule is broken.
+///       NO SENDER exists in v8 -- the dispatch arm counts and ignores, so a
+///       hostile or future peer cannot panic this binary. The variant is on
+///       the wire now precisely so the Stage-2 arms need no second bump.
+/// Both `Handshake::deserialize` and `WireMessage::deserialize` hard-refuse a
+/// version mismatch, so a mixed v7/v8 pair fails cleanly at handshake. Mixed
+/// versions are broken BY DESIGN -- one binary per battery.
+pub const PROTOCOL_VERSION: u32 = 8;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -134,7 +159,8 @@ fn backend_from_u8(v: u8) -> Option<FecBackend> {
 ///
 ///   [tag 0xC1][flags: bit0 = is_repair, bits1-2 = backend]
 ///   [varint path_id][varint block_id][varint payload_id]
-///   [varint send_timestamp_us][varint batch_seq][payload … to end]
+///   [varint send_timestamp_us][varint batch_seq][varint eta_rel_us]
+///   [payload to the datagram end]
 ///
 /// The payload length is the DATAGRAM boundary — both 8-byte bincode
 /// length fields (Vec len + data len), the 4-byte enum tags, and the 8-byte
@@ -152,6 +178,9 @@ pub fn serialize_data_compact(batch: &SymbolBatch) -> Option<Vec<u8>> {
     write_varint(&mut buf, sym.payload_id as u64);
     write_varint(&mut buf, batch.send_timestamp_us);
     write_varint(&mut buf, batch.batch_seq);
+    // v8: the sender's own delivery-time prediction for this batch, us,
+    // relative to `send_timestamp_us`. 0 = no prediction (one byte).
+    write_varint(&mut buf, batch.eta_rel_us as u64);
     buf.extend_from_slice(&sym.data);
     Some(buf)
 }
@@ -171,7 +200,10 @@ fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
     let payload_id = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
     let send_ts = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
     let batch_seq = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
-    if path_id > u32::MAX as u64 || payload_id > u32::MAX as u64 {
+    // v8: the ETA varint. Unconditional -- there is one compact layout per
+    // protocol version and the handshake refuses a mismatch.
+    let eta_rel_us = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
+    if path_id > u32::MAX as u64 || payload_id > u32::MAX as u64 || eta_rel_us > u32::MAX as u64 {
         return Err(err("compact field overflow"));
     }
     Ok(WireMessage::Data(SymbolBatch {
@@ -185,6 +217,7 @@ fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
         send_timestamp_us: send_ts,
         batch_seq,
         path_id: path_id as u32,
+        eta_rel_us: eta_rel_us as u32,
     }))
 }
 
@@ -233,6 +266,43 @@ pub struct SymbolBatch {
     /// The path this batch was sent on (receiver keys its per-path batch_seq
     /// gap tracking and loss estimation off it).
     pub path_id: u32,
+    /// **v8 -- THE SENDER'S OWN DELIVERY PREDICTION**, us, relative to
+    /// `send_timestamp_us`: the `expected_delivery_load()` of the path the
+    /// placement law just picked, stamped at the placement lock.
+    ///
+    /// **0 is the "no prediction" sentinel**, the `cum_received` convention.
+    /// Every emitter other than the window source path leaves it 0 today, and
+    /// the receiver's `[ETA]` gauge reports that BIND FRACTION on its face
+    /// rather than dropping the samples silently -- an absent prediction and a
+    /// predicted-zero delivery are not the same reading, and a prediction of
+    /// exactly 0 us is physically impossible (the load term carries
+    /// `srtt_i/2 > 0` at every path that has ever been measured).
+    ///
+    /// READ BY NOTHING in the data plane. It feeds two gauges and no law.
+    pub eta_rel_us: u32,
+}
+
+impl SymbolBatch {
+    /// The batch constructor every emission site goes through, so a future
+    /// envelope field is ONE edit instead of eleven. `eta_rel_us` defaults to
+    /// the 0 sentinel -- a site that has a prediction adds it with
+    /// [`Self::with_eta`], which is the only way the field is ever nonzero.
+    pub fn new(
+        symbols: Vec<WireSymbol>,
+        send_timestamp_us: u64,
+        batch_seq: u64,
+        path_id: u32,
+    ) -> Self {
+        Self { symbols, send_timestamp_us, batch_seq, path_id, eta_rel_us: 0 }
+    }
+
+    /// Stamp the sender's own delivery prediction (us, relative to
+    /// `send_timestamp_us`). Saturating: the field is a `u32` and a
+    /// prediction beyond ~71 min is pinned rather than wrapped.
+    pub fn with_eta(mut self, eta_rel_us: u64) -> Self {
+        self.eta_rel_us = eta_rel_us.min(u32::MAX as u64) as u32;
+        self
+    }
 }
 
 /// Control messages exchanged between peers.
@@ -372,6 +442,33 @@ pub enum ControlMessage {
         /// `(generation_anchor, residual_deficit)` for the frontier generations.
         deficits: Vec<(u64, u32)>,
     },
+
+    /// **v8 -- THE RECEIVER-SEAT REPAIR REQUEST** (paper 16.83, receiver ->
+    /// sender). The vocabulary change S3 names: instead of "resend seq s"
+    /// (which a false repair can express) the receiver says "over this span I
+    /// need this many more independent equations", which a false repair
+    /// cannot express at all.
+    ///
+    /// APPENDED AFTER `GenerationDeficit` and never to be reordered -- the
+    /// bincode FIXINT variant tag IS the declaration index (see the v7 note
+    /// on `PROTOCOL_VERSION`).
+    ///
+    /// **NOTHING SENDS THIS IN v8.** The receive arm counts it
+    /// (`repair_request_ignored()`) and returns; the Stage-2 request-law and
+    /// rank-feedback arms are what will construct it. It rides the wire now
+    /// so those arms need no second version bump.
+    RepairRequest {
+        /// `(start, count, deficit)` per requested span: the span
+        /// `[start, start + count)` and how many MORE independent coded
+        /// symbols over it the receiver still needs. `deficit = 1` over a
+        /// one-seq span is exactly today's per-seq copy request, so the
+        /// shipped machine is the `m = 1` corner of this message rather than
+        /// a different one.
+        spans: Vec<(u64, u16, u32)>,
+        /// Why the request fired -- the `[FCAUSE]` class vocabulary, carried
+        /// as a plain `u8` so a future cause never renumbers a variant.
+        cause: u8,
+    },
 }
 
 /// Top-level wire message.
@@ -484,12 +581,15 @@ mod tests {
             (FecBackend::RaptorQ, false),
             (FecBackend::ReedSolomon, false),
         ] {
-            let batch = SymbolBatch {
-                symbols: vec![sym(u64::MAX / 3, u32::MAX, is_repair, backend, 1200)],
-                send_timestamp_us: 123_456_789_012,
-                batch_seq: 987_654,
-                path_id: 7,
-            };
+            let batch = SymbolBatch::new(
+                vec![sym(u64::MAX / 3, u32::MAX, is_repair, backend, 1200)],
+                123_456_789_012,
+                987_654,
+                7,
+            )
+            // v8: a NONZERO eta must survive the compact frame; the 0
+            // sentinel is pinned separately below.
+            .with_eta(31_415);
             let buf = serialize_data_compact(&batch).expect("one-symbol batch");
             assert_eq!(buf[0], COMPACT_DATA_TAG);
             let msg = WireMessage::deserialize(&buf).expect("compact parse");
@@ -498,6 +598,7 @@ mod tests {
                     assert_eq!(b.path_id, batch.path_id);
                     assert_eq!(b.batch_seq, batch.batch_seq);
                     assert_eq!(b.send_timestamp_us, batch.send_timestamp_us);
+                    assert_eq!(b.eta_rel_us, batch.eta_rel_us, "v8 ETA must survive");
                     assert_eq!(b.symbols.len(), 1);
                     let (a, e) = (&b.symbols[0], &batch.symbols[0]);
                     assert_eq!(a.block_id, e.block_id);
@@ -517,17 +618,21 @@ mod tests {
     #[test]
     fn compact_frame_overhead_is_bounded_and_tag_disjoint() {
         assert_ne!(COMPACT_DATA_TAG, WIRE_MAGIC[0]);
-        let batch = SymbolBatch {
-            symbols: vec![sym(50_000, 0, false, FecBackend::Rlc, 1200)],
-            send_timestamp_us: 30_000_000_000, // ~8.3 h session, worst plausible
-            batch_seq: 100_000,
-            path_id: 1,
-        };
+        let batch = SymbolBatch::new(
+            vec![sym(50_000, 0, false, FecBackend::Rlc, 1200)],
+            30_000_000_000, // ~8.3 h session, worst plausible
+            100_000,
+            1,
+        )
+        // v8 worst case for the overhead bound: the widest ETA varint the
+        // field can hold (u32::MAX us ~ 71 min => 5 bytes).
+        .with_eta(u32::MAX as u64);
         let buf = serialize_data_compact(&batch).unwrap();
         let overhead = buf.len() - 1200;
         assert!(
-            overhead <= 24,
-            "compact overhead {overhead} B exceeds the derivation bound"
+            overhead <= 29,
+            "compact overhead {overhead} B exceeds the derivation bound \
+             (24 B through v7 + <= 5 B for the v8 ETA varint)"
         );
         // Legacy framing for the SAME batch (magic+version+bincode).
         let legacy = WireMessage::Data(batch).serialize().unwrap();
@@ -542,15 +647,15 @@ mod tests {
     /// scope is the window-mode one-symbol datagram path.
     #[test]
     fn compact_refuses_multi_symbol_batches() {
-        let batch = SymbolBatch {
-            symbols: vec![
+        let batch = SymbolBatch::new(
+            vec![
                 sym(1, 0, false, FecBackend::Rlc, 100),
                 sym(2, 1, false, FecBackend::Rlc, 100),
             ],
-            send_timestamp_us: 1,
-            batch_seq: 1,
-            path_id: 0,
-        };
+            1,
+            1,
+            0,
+        );
         assert!(serialize_data_compact(&batch).is_none());
     }
 
@@ -559,22 +664,17 @@ mod tests {
     /// instead of panicking.
     #[test]
     fn legacy_parse_unchanged_and_compact_truncation_safe() {
-        let batch = SymbolBatch {
-            symbols: vec![sym(9, 3, true, FecBackend::Rlc, 64)],
-            send_timestamp_us: 42,
-            batch_seq: 7,
-            path_id: 2,
-        };
+        let batch = SymbolBatch::new(vec![sym(9, 3, true, FecBackend::Rlc, 64)], 42, 7, 2);
         let legacy = WireMessage::Data(batch).serialize().unwrap();
         assert_eq!(&legacy[..4], &WIRE_MAGIC);
         assert!(WireMessage::deserialize(&legacy).is_ok());
         // Truncations of a compact frame must all error cleanly.
-        let full = serialize_data_compact(&SymbolBatch {
-            symbols: vec![sym(1000, 1, false, FecBackend::Rlc, 32)],
-            send_timestamp_us: 5_000_000,
-            batch_seq: 3,
-            path_id: 0,
-        })
+        let full = serialize_data_compact(&SymbolBatch::new(
+            vec![sym(1000, 1, false, FecBackend::Rlc, 32)],
+            5_000_000,
+            3,
+            0,
+        ))
         .unwrap();
         // QUIC datagrams deliver atomically, so truncation is a hostile-
         // input concern: the sub-header region must error cleanly (beyond
@@ -606,5 +706,111 @@ mod tests {
         write_varint(&mut buf, u64::MAX);
         let mut pos = 0;
         assert_eq!(read_varint(&buf[..buf.len() - 1], &mut pos), None);
+    }
+
+    // -- v8 PINS ---------------------------------------------------------
+
+    /// THE VERSION ITSELF. A silent bump is how a mixed-version battery
+    /// happens; the number is pinned here and in the handshake test below so
+    /// moving it is a deliberate two-line edit.
+    #[test]
+    fn protocol_version_is_eight() {
+        assert_eq!(PROTOCOL_VERSION, 8, "the wire version moved without its pin");
+    }
+
+    /// **THE COMPACT LAYOUT, BYTE BY BYTE.** The v8 ETA varint sits AFTER
+    /// `batch_seq` and BEFORE the payload, and the 0 sentinel costs exactly
+    /// one byte -- so the "no prediction" case pays 1 B, not 4.
+    #[test]
+    fn compact_layout_places_the_eta_varint_after_batch_seq() {
+        let base = SymbolBatch::new(vec![sym(3, 4, false, FecBackend::Rlc, 8)], 5, 6, 1);
+        let zero = serialize_data_compact(&base).unwrap();
+        let one = serialize_data_compact(&base.clone().with_eta(1)).unwrap();
+        let wide = serialize_data_compact(&base.clone().with_eta(300)).unwrap();
+        assert_eq!(one.len(), zero.len(), "a 1-byte varint either way");
+        assert_eq!(wide.len(), zero.len() + 1, "300 us needs a second varint byte");
+        // Field order: tag, flags, path, block, payload, send_ts, batch_seq,
+        // eta, payload bytes. The 0 sentinel is the byte immediately before
+        // the payload.
+        assert_eq!(zero[0], COMPACT_DATA_TAG);
+        assert_eq!(
+            &zero[..zero.len() - 8],
+            &[COMPACT_DATA_TAG, 3 << 1, 1, 3, 4, 5, 6, 0][..],
+            "the compact v8 sub-header layout moved"
+        );
+        assert_eq!(&zero[zero.len() - 8..], &base.symbols[0].data[..]);
+        // And the sentinel survives the round trip AS a sentinel.
+        match WireMessage::deserialize(&zero).unwrap() {
+            WireMessage::Data(b) => assert_eq!(b.eta_rel_us, 0),
+            _ => panic!("expected Data"),
+        }
+        match WireMessage::deserialize(&wide).unwrap() {
+            WireMessage::Data(b) => assert_eq!(b.eta_rel_us, 300),
+            _ => panic!("expected Data"),
+        }
+    }
+
+    /// `with_eta` SATURATES rather than wrapping: a prediction past the
+    /// field's range reads as the maximum, never as a small number.
+    #[test]
+    fn with_eta_saturates_at_u32_max() {
+        let b = SymbolBatch::new(vec![], 0, 0, 0).with_eta(u64::MAX);
+        assert_eq!(b.eta_rel_us, u32::MAX);
+        assert_eq!(SymbolBatch::new(vec![], 0, 0, 0).eta_rel_us, 0, "the constructor's sentinel");
+    }
+
+    /// **THE v8 CONTROL VARIANT ROUND-TRIPS, AND IT WAS APPENDED.** The
+    /// second assertion is the one that matters: bincode FIXINT encodes the
+    /// variant tag as the declaration INDEX, so `RepairRequest` must decode
+    /// at a tag STRICTLY GREATER than `GenerationDeficit`'s. A reorder would
+    /// make a v8 peer mis-parse every later control message, which is the
+    /// exact defect the v7 note records.
+    #[test]
+    fn repair_request_roundtrips_and_sits_after_generation_deficit() {
+        let msg = WireMessage::Control(ControlMessage::RepairRequest {
+            spans: vec![(100, 8, 3), (250, 1, 1)],
+            cause: 2,
+        });
+        let bytes = msg.serialize().unwrap();
+        match WireMessage::deserialize(&bytes).unwrap() {
+            WireMessage::Control(ControlMessage::RepairRequest { spans, cause }) => {
+                assert_eq!(spans, vec![(100u64, 8u16, 3u32), (250, 1, 1)]);
+                assert_eq!(cause, 2);
+            }
+            other => panic!("expected RepairRequest, got {other:?}"),
+        }
+        // The variant tag is the first 4 bytes of the bincode body, after
+        // the 8-byte magic+version header and the 4-byte WireMessage tag.
+        let tag_of = |m: &WireMessage| -> u32 {
+            let b = m.serialize().unwrap();
+            u32::from_le_bytes(b[12..16].try_into().unwrap())
+        };
+        let deficit = WireMessage::Control(ControlMessage::GenerationDeficit {
+            deficits: vec![(0, 0)],
+        });
+        assert!(
+            tag_of(&msg) > tag_of(&deficit),
+            "RepairRequest ({}) must be APPENDED after GenerationDeficit ({}) --              a bincode variant tag IS its declaration index",
+            tag_of(&msg),
+            tag_of(&deficit),
+        );
+    }
+
+    /// The handshake refuses a mismatch, pinned AT v8 -- so a v7 peer fails
+    /// cleanly and loudly instead of mis-parsing control traffic.
+    #[test]
+    fn handshake_refuses_a_version_mismatch_at_v8() {
+        let hs = Handshake { version: PROTOCOL_VERSION, max_block_size: 64, symbol_size: 1200, path_id: 0 };
+        let good = hs.serialize().unwrap();
+        assert_eq!(u32::from_be_bytes(good[4..8].try_into().unwrap()), 8);
+        assert!(Handshake::deserialize(&good).is_ok());
+        let mut stale = good.clone();
+        stale[4..8].copy_from_slice(&7u32.to_be_bytes());
+        let e = Handshake::deserialize(&stale).unwrap_err().to_string();
+        assert!(e.contains("version mismatch"), "{e}");
+        // And the data path refuses it too.
+        let mut d = WireMessage::Control(ControlMessage::Shutdown).serialize().unwrap();
+        d[4..8].copy_from_slice(&7u32.to_be_bytes());
+        assert!(WireMessage::deserialize(&d).is_err());
     }
 }

@@ -1203,7 +1203,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 }
                 buckets[b] += 1;
             }
-            for (rseq, _) in reorder.push_with_time(seq, data, now) {
+            for (rseq, _, _) in reorder.push_with_time(seq, data, now) {
                 if recovered.insert(rseq) {
                     let lat = now.duration_since(encode_time[rseq as usize]);
                     lat_causes.push((lat.as_secs_f64() * 1000.0, 0, rseq));
@@ -1212,7 +1212,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 }
             }
         }
-        for (rseq, _) in reorder.drain_expired(now) {
+        for (rseq, _, _) in reorder.drain_expired(now) {
             if recovered.insert(rseq) {
                 let lat = now.duration_since(encode_time[rseq as usize]);
                 lat_causes.push((lat.as_secs_f64() * 1000.0, 1, rseq));

@@ -16,8 +16,11 @@ pub mod control_msg;
 pub mod cpuprof;
 pub mod diag;
 pub mod emit_source;
+pub mod eta;
 pub mod framing;
 pub mod interleave;
+pub mod lat;
+pub mod late;
 pub mod receiver;
 pub mod reorder;
 pub mod rttdump;
@@ -5884,6 +5887,7 @@ pub fn classify_recv_repair(seen_as_source: bool, recovered: bool, overdue: bool
 /// `fa=`. Cumulative counters: the LAST line of a log is the reading, the
 /// same convention `[WIDLE]` and `[FDIAG]` use.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn rfa_report_line(
     fill_coded: u64,
     fill_src: u64,
@@ -5892,6 +5896,8 @@ pub fn rfa_report_line(
     src_n: u64,
     rep_n: u64,
     gen: bool,
+    rep_redundant: u64,
+    late_after_aban: u64,
 ) -> String {
     let fires = fill_coded + fill_src + dup_src + preempt_src;
     let falses = dup_src + preempt_src;
@@ -5899,7 +5905,7 @@ pub fn rfa_report_line(
     format!(
         "[RFA] gen={} fires={} false={} false_frac={:.4} fill_coded={} \
          fill_src={} dup_src={} preempt_src={} src_n={} rep_n={} \
-         nu_recv={:.5} fa_class={:.4}",
+         nu_recv={:.5} fa_class={:.4} rep_redundant={} late_after_aban={}",
         gen as u8,
         fires,
         falses,
@@ -5912,6 +5918,8 @@ pub fn rfa_report_line(
         rep_n,
         frac(fires, src_n),
         RACK_SPURIOUS_BUDGET,
+        rep_redundant,
+        late_after_aban,
     )
 }
 
@@ -6096,6 +6104,22 @@ pub(crate) struct RackClockGauge {
     /// Is generation coding on at this receiver? Echoed as `[RFA] gen=` so
     /// the line says which machine it is a measurement of.
     recv_gen: bool,
+    /// **`rep_redundant = repairs_fed - repairs_useful`** -- THE FALSE
+    /// MEASURAND UNDER CODED ANSWERS (paper 16.83). `dup_src` / `preempt_src`
+    /// count a wasted SOURCE copy; under a coded answer "the original arrived
+    /// anyway" is inexpressible, and the waste instead shows up as an
+    /// equation that added no rank. Mirrored from the decoder's own counters
+    /// at the readout, so this gauge holds no second copy of them.
+    rep_redundant: u64,
+    /// **`late_after_aban`** -- a SOURCE arrival for a seq strictly below the
+    /// in-order frontier: a copy that landed after the frontier had already
+    /// moved past it. STRUCTURALLY ZERO under the reliable window (the buffer
+    /// never delivers past a hole), so a nonzero reading there is a finding;
+    /// under the EVICT (rho < 1) seat it is the repair waste that seat has
+    /// never been scored on, and the counter `tools/l1/tail_matrix.sh`'s
+    /// scrape reads. **The name is part of the `[RFA]` line's contract** --
+    /// the Track B scrape greps for it.
+    late_after_aban: u64,
     /// ── THE FIRE-CAUSE CLASSES (`[FCAUSE]`) ──────────────────────────
     /// One counter per [`FireCause`], bumped at the EMISSION of every
     /// recovery fire — after every suppression `continue`, so their sum is
@@ -6181,6 +6205,18 @@ impl RackClockGauge {
         self.record_fire(false);
     }
 
+    /// Mirror the decoder's `repairs_fed - repairs_useful` onto the gauge at
+    /// the readout. Observation only.
+    pub(crate) fn set_rep_redundant(&mut self, n: u64) {
+        self.rep_redundant = n;
+    }
+
+    /// Record ONE source arrival below the in-order frontier -- a copy that
+    /// arrived after the give-up. Observation only.
+    pub(crate) fn record_late_after_aban(&mut self) {
+        self.late_after_aban += 1;
+    }
+
     /// Echo which machine this receiver is: generation coding on or off.
     pub(crate) fn set_recv_generation(&mut self, gen: bool) {
         self.recv_gen = gen;
@@ -6245,6 +6281,8 @@ impl RackClockGauge {
             self.src_n,
             self.rep_n,
             self.recv_gen,
+            self.rep_redundant,
+            self.late_after_aban,
         )
     }
 
@@ -8998,12 +9036,7 @@ async fn run_window_sender(
                 }
                 proactive_coded_total += 1;
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch {
-                    symbols: vec![sym],
-                    send_timestamp_us: now_us(),
-                    batch_seq,
-                    path_id: path,
-                };
+                let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                 if let Err(e) = transport.send_symbols(path, batch) {
                     warn!(path, ?e, "failed to send generation coded symbol");
                 }
@@ -9055,12 +9088,7 @@ async fn run_window_sender(
                     }
                     proactive_coded_total += 1;
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: path,
-                    };
+                    let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                     if let Err(e) = transport.send_symbols(path, batch) {
                         warn!(path, ?e, "failed to send filling-generation repair");
                     }
@@ -9169,12 +9197,7 @@ async fn run_window_sender(
                         rec_emitted += 1;
                         progressed = true;
                         let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                        let batch = SymbolBatch {
-                            symbols: vec![sym],
-                            send_timestamp_us: now_us(),
-                            batch_seq,
-                            path_id: path,
-                        };
+                        let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
                         if let Err(e) = transport.send_symbols(path, batch) {
                             warn!(path, ?e, "failed to send generation recovery symbol");
                         }
@@ -10271,12 +10294,7 @@ async fn run_window_sender(
                     }
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: nack_path,
-                    };
+                    let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, nack_path);
                     if let Err(e) = transport.send_symbols(nack_path, batch) {
                         warn!(nack_path, ?e, "failed to send NACK retransmission");
                     }
@@ -10362,12 +10380,7 @@ async fn run_window_sender(
                     }
                     let repair_sym = st.encoder.generate_repair();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch {
-                        symbols: vec![repair_sym],
-                        send_timestamp_us: now_us(),
-                        batch_seq,
-                        path_id: margin_path,
-                    };
+                    let batch = SymbolBatch::new(vec![repair_sym], now_us(), batch_seq, margin_path);
                     if let Err(e) = transport.send_symbols(margin_path, batch) {
                         warn!(margin_path, ?e, "failed to send NACK repair margin");
                     }
@@ -10971,12 +10984,7 @@ fn send_interleaved_batches(
                 let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-                let batch = SymbolBatch {
-                    symbols: std::mem::take(&mut chunk),
-                    send_timestamp_us: now,
-                    batch_seq,
-                    path_id,
-                };
+                let batch = SymbolBatch::new(std::mem::take(&mut chunk), now, batch_seq, path_id);
                 let n = batch.symbols.len() as u32;
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send interleaved batch");
@@ -10992,12 +11000,7 @@ fn send_interleaved_batches(
         if !chunk.is_empty() {
             let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
             let ids: Vec<(u64, u32)> = chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-            let batch = SymbolBatch {
-                symbols: chunk,
-                send_timestamp_us: now,
-                batch_seq,
-                path_id,
-            };
+            let batch = SymbolBatch::new(chunk, now, batch_seq, path_id);
             let n = batch.symbols.len() as u32;
             if let Err(e) = transport.send_symbols(path_id, batch) {
                 warn!(path_id, ?e, "failed to send interleaved batch");
@@ -11225,12 +11228,7 @@ fn dispatch_repair_plans(
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
                 let n = chunk.len() as u32;
-                let batch = SymbolBatch {
-                    symbols: std::mem::take(chunk),
-                    send_timestamp_us: now,
-                    batch_seq,
-                    path_id,
-                };
+                let batch = SymbolBatch::new(std::mem::take(chunk), now, batch_seq, path_id);
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send ARQ repair batch");
                 } else {
@@ -15982,7 +15980,7 @@ mod tests {
         for &seq in &arrival {
             received_seqs.insert(seq);
             highest_seen_seq = highest_seen_seq.max(seq);
-            for (dseq, _) in reorder.push(seq, Bytes::from(vec![(seq % 251) as u8; 32])) {
+            for (dseq, _, _) in reorder.push(seq, Bytes::from(vec![(seq % 251) as u8; 32])) {
                 delivered.push(dseq);
                 highest_delivered_seq = highest_delivered_seq.max(dseq);
             }
@@ -16020,7 +16018,7 @@ mod tests {
 
         // ---- RECOVERY: the hole is retransmitted from the retained store. ----
         let hole_sym = sent_store.get(&hole).expect("hole retained").clone();
-        for (dseq, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
+        for (dseq, _, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
             delivered.push(dseq);
             highest_delivered_seq = highest_delivered_seq.max(dseq);
         }

@@ -1091,7 +1091,7 @@ fn run_matrix_trial_window(
                 // Update correction deficit: this symbol survived
                 scheduler.deficit.on_ack(pkt.seq);
                 for (seq, data) in decoder.add_symbol(&pkt.symbol) {
-                    for (rseq, _) in reorder_buf.push_with_time(seq, data, $now) {
+                    for (rseq, _, _) in reorder_buf.push_with_time(seq, data, $now) {
                         if recovered.insert(rseq) {
                             delivery_order.push(rseq);
                             if (rseq as usize) < encode_times.len() {
@@ -1102,7 +1102,7 @@ fn run_matrix_trial_window(
                     }
                 }
             }
-            for (seq, _) in reorder_buf.drain_expired($now) {
+            for (seq, _, _) in reorder_buf.drain_expired($now) {
                 if recovered.insert(seq) {
                     delivery_order.push(seq);
                     if (seq as usize) < encode_times.len() {
@@ -1357,7 +1357,7 @@ fn drain_and_collect_window(
 
         for pkt in &d {
             for (seq, data) in decoder.add_symbol(&pkt.symbol) {
-                for (rseq, _) in reorder_buf.push_with_time(seq, data, now) {
+                for (rseq, _, _) in reorder_buf.push_with_time(seq, data, now) {
                     if recovered.insert(rseq) {
                         delivery_order.push(rseq);
                         if (rseq as usize) < encode_times.len() {
@@ -1368,7 +1368,7 @@ fn drain_and_collect_window(
                 }
             }
         }
-        for (seq, _) in reorder_buf.drain_expired(now) {
+        for (seq, _, _) in reorder_buf.drain_expired(now) {
             if recovered.insert(seq) {
                 delivery_order.push(seq);
                 if (seq as usize) < encode_times.len() {
@@ -1386,7 +1386,7 @@ fn drain_and_collect_window(
     // Final reorder buffer drain
     clock.advance(Duration::from_secs(1));
     let now = clock.now();
-    for (seq, _) in reorder_buf.drain_expired(now) {
+    for (seq, _, _) in reorder_buf.drain_expired(now) {
         if recovered.insert(seq) {
             delivery_order.push(seq);
             if (seq as usize) < encode_times.len() {
@@ -1499,7 +1499,7 @@ fn run_matrix_trial_block(
                             block_arrived[bid].insert(seq);
                         }
                         if recovered.insert(seq) {
-                            for (rseq, _) in
+                            for (rseq, _, _) in
                                 reorder_buf.push_with_time(seq, bytes::Bytes::from_static(&[0u8]), $now)
                             {
                                 delivery_order.push(rseq);
@@ -1526,7 +1526,7 @@ fn run_matrix_trial_block(
                                 let seq = bstart + j;
                                 if !arrived.contains(&seq) {
                                     if recovered.insert(seq) {
-                                        for (rseq, _) in
+                                        for (rseq, _, _) in
                                             reorder_buf.push_with_time(seq, bytes::Bytes::from_static(&[0u8]), $now)
                                         {
                                             delivery_order.push(rseq);
@@ -1543,7 +1543,7 @@ fn run_matrix_trial_block(
                     }
                 }
             }
-            for (seq, _) in reorder_buf.drain_expired($now) {
+            for (seq, _, _) in reorder_buf.drain_expired($now) {
                 if recovered.insert(seq) {
                     delivery_order.push(seq);
                     if let Some(&st) = send_times.get(&seq) {
@@ -1693,7 +1693,7 @@ fn run_matrix_trial_block(
     // Final reorder buffer drain
     clock.advance(Duration::from_secs(1));
     let now = clock.now();
-    for (seq, _) in reorder_buf.drain_expired(now) {
+    for (seq, _, _) in reorder_buf.drain_expired(now) {
         if recovered.insert(seq) {
             delivery_order.push(seq);
             if let Some(&st) = send_times.get(&seq) {
@@ -1772,7 +1772,7 @@ fn run_matrix_trial_retransmit(
             for pkt in all_delivered {
                 let id = pkt.symbol.payload_id as u64;
                 if !deliver_times.contains_key(&id) {
-                    for (rseq, _) in reorder_buf.push_with_time(
+                    for (rseq, _, _) in reorder_buf.push_with_time(
                         id,
                         bytes::Bytes::from_static(&[0u8]),
                         $now,
@@ -1782,7 +1782,7 @@ fn run_matrix_trial_retransmit(
                     }
                 }
             }
-            for (seq, _) in reorder_buf.drain_expired($now) {
+            for (seq, _, _) in reorder_buf.drain_expired($now) {
                 if !deliver_times.contains_key(&seq) {
                     deliver_times.insert(seq, $now);
                     delivery_order.push(seq);

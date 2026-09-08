@@ -4115,6 +4115,20 @@ impl PathState {
 /// blocks actually assigned to the slow path (smooth WRR on B_eff_i).
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
+    /// **THE SENDER-SITE `[ETA]` GAUGE** (`net/eta.rs`). It lives here and not
+    /// in the sender loop because its two feed sites -- the PLACEMENT
+    /// (`net/emit_source.rs`, which picks the path) and the ACK
+    /// (`net/control_msg.rs`, which learns what actually happened) -- already
+    /// hold this lock and would otherwise never see each other's state.
+    ///
+    /// READ BY NOTHING in any law. `place_costs` writes only its bind
+    /// counters; `place_symbol`'s probabilities do not depend on it.
+    eta: crate::net::eta::SenderEta,
+    /// `(cold_r, cold_ge, evaluations)` accumulated by `place_costs`, which is
+    /// `&self` all the way up through `place_symbol` -- hence a `Cell`.
+    /// Drained into `eta` at the report cadence by `drain_place_bind`; NOTHING
+    /// on the placement path takes a lock or reads the gauge.
+    place_bind: std::cell::Cell<(u64, u64, u64)>,
     clock: Arc<dyn Clock>,
     /// Global correction deficit tracker (paper Section 13.4).
     pub deficit: CorrectionDeficit,
@@ -4161,6 +4175,8 @@ impl Scheduler {
     pub fn new_with_hint(clock: Arc<dyn Clock>, hint: ProtocolHint) -> Self {
         Self {
             paths: HashMap::new(),
+            eta: Default::default(),
+            place_bind: std::cell::Cell::new((0, 0, 0)),
             clock,
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
@@ -4812,7 +4828,7 @@ impl Scheduler {
     /// 1.0 under overdraft, driving a saturated path's softmax mass toward zero
     /// smoothly without ever removing it, so placement never drops a symbol
     /// (the send loop's pacing/backpressure remains the real capacity gate).
-    fn place_costs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
+    pub(crate) fn place_costs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
         // ── THE COLD PRICE (`RWM_COLD_PLACE`, anchor-hygiene rule 1) ───────
         // What one second of a leg that has NEVER been measured is worth.
         // Under the gate: the active set's fastest MEASURED srtt — another
@@ -4903,7 +4919,25 @@ impl Scheduler {
             // latency-to-frontier is the completion cost itself, already carried
             // by `load` at unit weight, not a per-hint preference.
             let r = p.correction_rate();
-            let r = if r.is_infinite() { 10.0 } else { r };
+            // THE COLD-r PRICE. `correction_rate()` is `inf` on a path with no
+            // loss estimate yet, and the shipped law prices that at the
+            // literal 10.0 -- one of the open register's unprovenanced
+            // constants. The VALUE is untouched here; the BIND is COUNTED,
+            // because every clamp owes a bind-fraction gauge (`[ETA]
+            // site=sender cold_r=`).
+            //
+            // THE COLD-GE PRICE, on the same line: Track A's `w_div`
+            // derivation reads a Gilbert-Elliott burst probability off the
+            // path, and a path with no SRTT measurement has no burst model
+            // either, so its diversity term rests on the hint's `w_div`
+            // literal alone. Counted for the same reason. NO TERM OF THE COST
+            // CHANGES -- this is one `Cell` increment beside an existing
+            // branch.
+            let cold_r = r.is_infinite();
+            let cold_ge = p.srtt_measured().is_none();
+            let (br, bg, bn) = self.place_bind.get();
+            self.place_bind.set((br + cold_r as u64, bg + cold_ge as u64, bn + 1));
+            let r = if cold_r { 10.0 } else { r };
             // Fate diversity (repairs only): fraction of covered symbols on p.
             let fate = if is_repair && covered_total > 0.0 {
                 covered_paths.iter().filter(|&&c| c == p.id).count() as f64 / covered_total
@@ -4913,11 +4947,41 @@ impl Scheduler {
             load + w_bw * r + w_div * fate
         };
 
-        self.paths
+        // **DETERMINISTIC TIE-BREAK.** `self.paths` is a `HashMap`, so its
+        // iteration order is the hasher's and varies between processes. The
+        // softmax normalisation is a SUM, so no probability changes -- but
+        // `place_probs_with_temperature`'s degenerate branch resolves an exact
+        // tie with `min_by` (which keeps the FIRST minimum) and
+        // `place_symbol`'s inverse-CDF walk consumes the candidates in this
+        // order, so an exact tie could land on either path depending on the
+        // hasher. Sorting by id makes both REPRODUCIBLE without moving any
+        // probability, which is exactly what the pinned cost table asserts.
+        let mut out: Vec<(PathId, f64)> = self
+            .paths
             .values()
             .filter(|p| p.active)
             .map(|p| (p.id, cost_of(p)))
-            .collect()
+            .collect();
+        out.sort_unstable_by_key(|(id, _)| *id);
+        out
+    }
+
+    /// Move the accumulated `place_costs` cold-price binds into the `[ETA]`
+    /// gauge. Called at the sender's report cadence and nowhere else.
+    pub fn drain_place_bind(&mut self) {
+        let (r, ge, n) = self.place_bind.replace((0, 0, 0));
+        self.eta.add_place_bind(r, ge, n);
+    }
+
+    /// The sender-site `[ETA]` gauge, mutably -- the placement stamp and the
+    /// ack. Observation only; nothing downstream of it feeds a law.
+    pub fn eta_mut(&mut self) -> &mut crate::net::eta::SenderEta {
+        &mut self.eta
+    }
+
+    /// The sender-site `[ETA]` gauge, read-only.
+    pub fn eta(&self) -> &crate::net::eta::SenderEta {
+        &self.eta
     }
 
     /// Pick a secondary path for redundant source scheduling (different from primary).
@@ -8018,6 +8082,220 @@ mod tests {
         assert_eq!(e, 10);
         assert_eq!(r, 10, "received is clamped to expected, never above it");
         assert!(e >= r);
+    }
+
+    // ===================================================================
+    // THE PINNED PLACEMENT COST TABLE
+    //
+    // **Why this exists, and why it is captured BEFORE anything else in
+    // the scheduler moves.** Track A of the law search rewrites the
+    // placement cost: the softmax temperature becomes `T = (sqrt6/pi)
+    // sigma_e/ref`, a HOL term joins the objective, `w_div` gets a
+    // derived form. Every one of those arms is DEFAULT-ABSENT, and the
+    // claim that has to hold for the battery to mean anything is that
+    // with the arms off the engine is BYTE-IDENTICAL to today's.
+    //
+    // "Byte-identical" is not provable from prose about a diff. It is
+    // provable from a table of hand-built states and the cost vectors
+    // the CURRENT engine returns for them, to 1e-12. That table is
+    // below. It was captured from this engine, at this commit, with
+    // every gate absent -- so a Stage-2 edit that moves any number in it
+    // has changed the shipped law and says so here rather than in a
+    // results table three batteries later.
+    //
+    // `place_costs` was made `pub(crate)` for exactly this: the law was
+    // private and therefore untested in its operating region (the
+    // exploration's finding). Nothing else reads it.
+    // ===================================================================
+
+    /// Build one hand-specified scheduler state. `paths` is
+    /// `(id, rtt_ms, cwnd, in_flight)`; an `rtt_ms` of `None` leaves the
+    /// path COLD (no RTT sample ever), which is the state the two cold
+    /// prices bind in.
+    fn cost_state(
+        hint: ProtocolHint,
+        paths: &[(PathId, Option<u64>, u32, u32)],
+    ) -> Scheduler {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), hint);
+        for &(id, rtt_ms, cwnd, infl) in paths {
+            sched.add_path(id);
+            if let Some(ms) = rtt_ms {
+                set_rtt(&mut sched, id, ms);
+            }
+            let p = sched.path_mut(id).unwrap();
+            p.cwnd = cwnd;
+            p.in_flight = infl;
+        }
+        sched
+    }
+
+    /// The eight states of the table, in one place so the capture harness
+    /// and the pin can never describe different states.
+    #[allow(clippy::type_complexity)]
+    fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
+        vec![
+            // 1. The single-path collapse -- the pre-RWM sender.
+            ("single-idle", cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]), false, vec![]),
+            // 2. Two symmetric idle paths: the load term alone, equal.
+            (
+                "dual-symmetric-idle",
+                cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)]),
+                false,
+                vec![],
+            ),
+            // 3. The 5x RTT asymmetry (the c8 shape).
+            (
+                "dual-asymmetric-rtt",
+                cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)]),
+                false,
+                vec![],
+            ),
+            // 4. The capacity-proportional water-filling fixed point.
+            (
+                "dual-waterfill",
+                cost_state(ProtocolHint::Bulk, &[(0, Some(10), 20, 8), (1, Some(10), 10, 4)]),
+                false,
+                vec![],
+            ),
+            // 5. OVERDRAFT: in_flight past cwnd. The term climbs past 1.0
+            //    continuously; no path is ever removed.
+            (
+                "dual-overdraft",
+                cost_state(ProtocolHint::Bulk, &[(0, Some(10), 10, 25), (1, Some(10), 10, 0)]),
+                false,
+                vec![],
+            ),
+            // 6. A REPAIR with the fate-diversity term live.
+            (
+                "repair-fate",
+                cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)]),
+                true,
+                vec![0, 0, 0, 1],
+            ),
+            // 7. THE COLD PATH: no RTT sample ever, so `srtt()` hands back
+            //    the seed and BOTH cold prices bind.
+            (
+                "cold-path",
+                cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, None, 10, 0)]),
+                false,
+                vec![],
+            ),
+            // 8. THREE paths ADDED OUT OF ID ORDER -- the deterministic
+            //    tie-break's own witness.
+            (
+                "triple-out-of-order",
+                cost_state(
+                    ProtocolHint::Realtime,
+                    &[(2, Some(30), 10, 3), (0, Some(10), 10, 1), (1, Some(20), 10, 2)],
+                ),
+                false,
+                vec![],
+            ),
+        ]
+    }
+
+    /// **THE CAPTURE HARNESS.** Ignored by default -- run it with
+    /// `cargo test -p raptorpath --release -- --ignored capture_place_cost_table
+    /// --nocapture` to print the table in the exact literal form the pin
+    /// below expects. It is the ONLY blessed way to move the table, and
+    /// moving it is a declaration that the shipped law changed.
+    #[test]
+    #[ignore]
+    fn capture_place_cost_table() {
+        for (name, sched, is_repair, covered) in cost_table_states() {
+            let costs = sched.place_costs(is_repair, &covered);
+            let body = costs
+                .iter()
+                .map(|(id, c)| format!("({id}, {c:.17e})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("            (\"{name}\", &[{body}]),");
+        }
+    }
+
+    /// **THE PIN.** The current engine's `place_costs`, to 1e-12, over the
+    /// eight states above -- and the ORDER, which the deterministic
+    /// tie-break makes reproducible (state 8 adds its paths 2, 0, 1 and
+    /// must still return 0, 1, 2).
+    #[test]
+    fn place_costs_match_the_pinned_table() {
+        const PINNED: &[(&str, &[(PathId, f64)])] = &[
+            ("single-idle", &[(0, 5.00000000000000000e-1)]),
+            ("dual-symmetric-idle", &[(0, 5.00000000000000000e-1), (1, 5.00000000000000000e-1)]),
+            ("dual-asymmetric-rtt", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
+            ("dual-waterfill", &[(0, 9.00000000000000133e-1), (1, 9.00000000000000133e-1)]),
+            ("dual-overdraft", &[(0, 3.00000000000000000e0), (1, 5.00000000000000000e-1)]),
+            ("repair-fate", &[(0, 1.25000000000000000e0), (1, 7.50000000000000000e-1)]),
+            ("cold-path", &[(0, 5.00000000000000000e-1), (1, 2.50000000000000000e0)]),
+            ("triple-out-of-order", &[(0, 5.99999999999999978e-1), (1, 1.39999999999999991e0), (2, 2.39999999999999991e0)]),
+        ];
+        let states = cost_table_states();
+        assert_eq!(states.len(), PINNED.len(), "the table lost a state");
+        for ((name, sched, is_repair, covered), (pname, expect)) in
+            states.into_iter().zip(PINNED.iter())
+        {
+            assert_eq!(name, *pname, "the table was reordered");
+            let got = sched.place_costs(is_repair, &covered);
+            assert_eq!(
+                got.len(),
+                expect.len(),
+                "state `{name}`: {} candidates, table says {}",
+                got.len(),
+                expect.len()
+            );
+            for (i, ((gid, gc), (eid, ec))) in got.iter().zip(expect.iter()).enumerate() {
+                assert_eq!(
+                    gid, eid,
+                    "state `{name}` slot {i}: candidate ORDER moved -- the \
+                     deterministic tie-break is gone"
+                );
+                assert!(
+                    (gc - ec).abs() <= 1e-12,
+                    "state `{name}` path {gid}: cost {gc:.17e} != pinned {ec:.17e} \
+                     (delta {:.3e}) -- THE SHIPPED PLACEMENT LAW MOVED",
+                    (gc - ec).abs()
+                );
+            }
+        }
+    }
+
+    /// The tie-break is ASCENDING BY ID and touches no probability: the
+    /// distribution over a symmetric pair is still exactly 1/2 each, and
+    /// the candidate list is sorted whatever order the paths were added
+    /// in. (A `HashMap`'s iteration order is the hasher's, so without the
+    /// sort this assertion fails at random between processes.)
+    #[test]
+    fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        for id in [7, 3, 9, 1, 5] {
+            sched.add_path(id);
+            set_rtt(&mut sched, id, 10);
+        }
+        let ids: Vec<PathId> = sched.place_costs(false, &[]).into_iter().map(|(i, _)| i).collect();
+        assert_eq!(ids, vec![1, 3, 5, 7, 9], "candidates must be ascending by id");
+        let dist = sched.place_probs(false, &[]);
+        assert_eq!(dist.iter().map(|(i, _)| *i).collect::<Vec<_>>(), vec![1, 3, 5, 7, 9]);
+        for (id, p) in &dist {
+            assert!((p - 0.2).abs() < 1e-12, "symmetric paths must split exactly: p{id}={p}");
+        }
+    }
+
+    /// The COLD-PRICE BIND GAUGES count and never decide. State 7 has one
+    /// cold path, so one of its two cost evaluations pays both cold prices
+    /// -- and the costs themselves are the pinned ones either way.
+    #[test]
+    fn the_cold_price_binds_are_counted_and_change_no_cost() {
+        let mut sched =
+            cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, None, 10, 0)]);
+        let before = sched.place_costs(false, &[]);
+        sched.drain_place_bind();
+        let l = sched.eta().line();
+        // Two per-path evaluations, one of them cold on both prices.
+        assert!(l.contains("place_n=2"), "{l}");
+        assert!(l.contains("cold_ge=0.5000"), "one of two paths has no SRTT sample: {l}");
+        // Reading the gauge cannot have moved the law.
+        let after = sched.place_costs(false, &[]);
+        assert_eq!(before, after);
     }
 }
 

@@ -121,18 +121,18 @@ fn test_data_message_with_version() {
     use raptorpath::transport::SymbolBatch;
     use raptorpath::fec::{FecBackend, WireSymbol};
 
-    let batch = SymbolBatch {
-        symbols: vec![WireSymbol {
+    let batch = SymbolBatch::new(
+        vec![WireSymbol {
             block_id: 0,
             payload_id: 0,
             is_repair: false,
             data: vec![42; 100],
             backend: FecBackend::RaptorQ,
         }],
-        send_timestamp_us: 999,
-        batch_seq: 1,
-        path_id: 0,
-    };
+        999,
+        1,
+        0,
+    );
     let msg = WireMessage::Data(batch);
     let data = msg.serialize().unwrap();
 
