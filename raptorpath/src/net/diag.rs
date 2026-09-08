@@ -478,7 +478,7 @@ pub(crate) fn report(
             }
             dg.sidle_evt_n = 0;
         }
-        let (cw, fl, np, min_rtt_us, pp) = {
+        let (cw, fl, np, np_act, min_rtt_us, pp) = {
             let mut sched = scheduler.lock();
             let mut cw = 0u64;
             let mut fl = 0u64;
@@ -490,10 +490,36 @@ pub(crate) fn report(
             // RTprop?).  Cap gain = the BDP in-flight gain.
             let cap_gain = pol.infl_bdp_gain;
             let mut pp = String::new();
-            let ids = sched.active_paths();
+            // `np=` COUNTS REGISTERED PATHS (2026-09-08, goal-gate "OPERATOR
+            // SANCTION (2026-09-08 ~14:00Z)" defect (b)). Until then the
+            // per-path blocks — and `np` — were taken over `active_paths()`,
+            // the SATURATION-FILTERED set (`cwnd − in_flight > 0`), so a
+            // cwnd-full single path counted as `np=0` and its whole block,
+            // `sig_us=` included, vanished from the line exactly when the
+            // path was busiest. The `live_paths()` doc comment records the
+            // same trap one layer down. Every registered path now gets its
+            // block (`all_path_ids()`, sorted so the blocks are stable to
+            // scrape), `np` is their count, and the old count is kept
+            // beside it under a NEW name, `np_act=`, so no existing meaning
+            // changes silently: `np_act < np` is a tick with a saturated
+            // path, `np_act = 0 < np` a tick where every path was cwnd-full.
+            //
+            // BEHAVIOUR-INERT: `expire_in_flight()` is still called on
+            // exactly the paths it was called on (the active set). The
+            // report task expires every path on its own 2 s cadence; calling
+            // it here on a saturated path would release stranded budget up
+            // to ~1.75 s earlier under `RWM_DIAG`, which is a behaviour
+            // change under a diagnosis gate, so a saturated path's
+            // `in_flight` is READ here, not expired.
+            let act = sched.active_paths();
+            let np_act = act.len() as u64;
+            let mut ids = sched.all_path_ids();
+            ids.sort_unstable();
             for id in &ids {
                 if let Some(p) = sched.path_mut(*id) {
-                    p.expire_in_flight();
+                    if act.contains(id) {
+                        p.expire_in_flight();
+                    }
                     cw += p.cwnd as u64;
                     fl += p.in_flight as u64;
                     np += 1;
@@ -706,7 +732,7 @@ pub(crate) fn report(
                     ));
                 }
             }
-            (cw, fl, np, rtt, pp)
+            (cw, fl, np, np_act, rtt, pp)
         };
         // BDP in symbols = goodput-rate(sym/s) × RTT — but report the
         // link-capacity BDP too from the measured min RTT and a nominal
@@ -771,7 +797,15 @@ pub(crate) fn report(
         // nothing — a gauge that reads 0 for two different reasons is not a
         // gauge.
         let dgq = {
-            let ids: Vec<u32> = { scheduler.lock().active_paths().to_vec() };
+            // Registered paths, like `np=` above: a byte-full send queue is
+            // the SATURATED case, which `active_paths()` filtered out of the
+            // one gauge that measures it. Read-only stats; sorted for stable
+            // scraping.
+            let ids: Vec<u32> = {
+                let mut v = scheduler.lock().all_path_ids();
+                v.sort_unstable();
+                v
+            };
             let mut s = String::new();
             for id in ids {
                 if let Some((hand, full, err, sp, tx)) = transport.datagram_queue_stats(id) {
@@ -931,7 +965,7 @@ pub(crate) fn report(
             String::new()
         };
         eprintln!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -944,7 +978,7 @@ pub(crate) fn report(
             // emission-gap gauge (cum stall-gap ms / count / max).
             src_now, cod_now, ack_now,
             dg.sidle_us / 1000, dg.sidle_n, dg.sidle_max_us / 1000,
-            cw, fl, np,
+            cw, fl, np, np_act,
             min_rtt_us as f64 / 1000.0,
             bdp_100m,
             dg.diag_sweeps, dg.diag_retx, dg.diag_gaps_dropped, cached_nack_budget,

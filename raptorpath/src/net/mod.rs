@@ -22,6 +22,7 @@ pub mod interleave;
 pub mod lat;
 pub mod late;
 pub mod receiver;
+pub mod recv_block;
 pub mod reorder;
 pub mod rttdump;
 pub mod sender_policy;

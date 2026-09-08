@@ -35,12 +35,24 @@
 //!   * every `recv_scheduler` / `recv_fec` / `recv_decoders` lock is taken and
 //!     released at the same statement, with the same scope — nothing was
 //!     hoisted out of or into a guard's lifetime;
-//!   * all FOUR early `return`s (two TUN-inject failures on the window
+//!   * all FOUR early exits (two TUN-inject failures on the window
 //!     delivery paths, and the two `feed_block_symbol` failures — the live
-//!     one and the BlockStart replay) still end the TASK, not a helper: they
-//!     are `return` from the same future, and `feed_block_symbol` is still a
-//!     closure returning `bool` rather than a function that could swallow
-//!     them.
+//!     one and the BlockStart replay) still end the TASK, not a helper:
+//!     since 2026-09-08 they are `break 'recv` out of the same loop (they
+//!     were `return`s) so that they fall through the ONE exit-flush site at
+//!     the loop's end and then the function ends — nothing else runs after
+//!     the loop — and `feed_block_symbol` is still a closure returning
+//!     `bool` rather than a function that could swallow them.
+//!
+//! Exit flush (2026-09-08, goal-gate "OPERATOR SANCTION (2026-09-08
+//! ~14:00Z)"): the `[SUCC]`/`[ETA]`/`[LAT]`/`[LATE]`/`[REQ]`/`[RANK]` block
+//! printed only on a 1 s cadence, so an object that completes in under a
+//! second never printed it and every run lost its last partial second. The
+//! five gauges and the `[REQ]` counters now live in ONE `RecvDiagBlock`
+//! (`net/recv_block.rs`) whose destructor prints the block a last time
+//! marked `final=1`; the loop's exit site calls the same exactly-once flush
+//! first, while the decoder is still in scope for a fresh `[RANK]` probe.
+//! Diagnostic only: the gauges are fed at the same statements as before.
 //!
 //! NOT covered here: `spawn_receiver_for_path` (the per-path datagram/stream
 //! readers that FEED this task's channel) and the control fast-path task,
@@ -293,14 +305,22 @@ pub(crate) async fn run_receiver(
     // fraction rather than filtered, so the printed coverage is the
     // instrument's own and not a number a filter already decided.
     // Read-only; no engine handle, nothing branches on it.
-    let mut recv_eta = crate::net::eta::RecvEta::default();
+    //
+    // OWNERSHIP (2026-09-08, the exit flush): this gauge and the four below
+    // it (`[LAT]`, `[LATE]`, `[RANK]`, `[SUCC]`) plus the `[REQ]` counters
+    // live in ONE `RecvDiagBlock` (`net/recv_block.rs`) so that one
+    // destructor can print the block a last time, marked `final=1`, when the
+    // task ends — the 1 s cadence below was the block's only emission site,
+    // and an object that completes in under a second never printed it. They
+    // are still fed exactly where they were, through `blk.<gauge>`.
+    let recv_eta = crate::net::eta::RecvEta::default();
     // ── `[LAT]` (`net/lat.rs`): DELIVERED LATENCY, DECOMPOSED ──────────
     // Per delivered source symbol on the in-order window path: `A_x` (queue +
     // SENDER DWELL above this path's floor -- the dwell rides inside it, see
     // the module header), the reorder wait `R` CLASSED by the `[SUCC]`
     // resolution record of the hole that released it, and the repair wait
     // `P`. Always fed; read-only; nothing branches on it.
-    let mut recv_lat = crate::net::lat::LatGauge::default();
+    let recv_lat = crate::net::lat::LatGauge::default();
     // ── `[LATE]` / `[RANK]` (`net/late.rs`): THE RECEIVER'S OWN SEAT ────
     // `[LATE]` brackets every hole's lateness, classes it, and computes the
     // 16.83 request law's HYPOTHETICAL threshold `l*_recv` read-only from the
@@ -315,8 +335,7 @@ pub(crate) async fn run_receiver(
     // through the request bar and nowhere else; `DELTA_AUTO` reproduces the
     // pre-plumb reading exactly.
     let recv_delta = crate::net::delta_price(recv_protocol_hint);
-    let mut recv_late = crate::net::late::LateGauge::new(recv_delta);
-    let mut recv_rank = crate::net::late::RankGauge::default();
+    let recv_late = crate::net::late::LateGauge::new(recv_delta);
     // `[RANK]`: the highest seq seen at the PREVIOUS readout. The span above
     // it arrived within this interval and is legitimately still in flight
     // rather than missing -- the honest `tail_overcount` correction, REPORTED
@@ -328,18 +347,13 @@ pub(crate) async fn run_receiver(
     let mut late_last_arrival_us: u64 = 0;
     // `[LATE]`: did the 2 ms `GAP_ACK_MIN_INTERVAL` floor, rather than the
     // lateness, decide when a hole could be reported at all? The
-    // `sampler_bind` fraction.
-    let mut late_sampler_bound = false;
+    // `sampler_bind` fraction — `blk.late_sampler_bound`.
     // ── `[REQ]` (paper 16.83 arms (A)/(B)): WHAT THIS RECEIVER ASKED FOR ──
     // Reports built and put on the wire, spans in them, the widest `m` and
     // the acting threshold at the last build. Cumulative, printed on the
     // `[LATE]` cadence, LAST LINE WINS -- and on BOTH arms, so `on=0 sent=0`
-    // is the control's own reading rather than a missing line.
-    let mut req_sent: u64 = 0;
-    let mut req_span_n: u64 = 0;
-    let mut req_m_max: u64 = 0;
-    let mut req_lstar_us: u64 = 0;
-    let mut req_holes_n: u64 = 0;
+    // is the control's own reading rather than a missing line. The five
+    // counters are `blk.req_*`.
     // `[RFA] late_after_aban`'s exact denominator: the seqs the in-order
     // frontier moved PAST WITHOUT DELIVERING — read off `[SUCC]`'s own
     // abandonment sweep, which is the one place that set exists. A later
@@ -349,10 +363,22 @@ pub(crate) async fn run_receiver(
     // abandons forever cannot grow it without limit.
     const ABANDONED_TRACK_MAX: usize = 65_536;
     let mut abandoned_seqs: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
-    let mut recv_succ = crate::net::succ::SuccGauge::new(
+    let recv_succ = crate::net::succ::SuccGauge::new(
         recv_window_generation,
         recv_gates.succ_dump,
         crate::net::succ::dump_max(),
+    );
+    // THE BLOCK. Gate = the cadence site's own (`RWM_DIAG || RWM_FDIAG`,
+    // `fdiag_on` below is `recv_gates.fdiag`), captured once so the
+    // destructor keys on the same predicate the cadence does.
+    let mut blk = crate::net::recv_block::RecvDiagBlock::new(
+        recv_gates.diag || recv_gates.fdiag,
+        recv_succ,
+        recv_eta,
+        recv_lat,
+        recv_late,
+        recv_request_law,
+        recv_rank_feedback,
     );
     let mut succ_report_at = Instant::now();
     let mut recv_shed_diag_at = Instant::now();
@@ -848,16 +874,16 @@ pub(crate) async fn run_receiver(
             // goes on the WIRE to the peer. The two are the same predicate by
             // construction; naming the predicate says which one is meant.
             if recv_request_law || recv_rank_feedback {
-                let (lstar_opt, _knee_bound) = recv_late.request_lateness();
+                let (lstar_opt, _knee_bound) = blk.late.request_lateness();
                 let lstar = lstar_opt.unwrap_or(0);
-                req_lstar_us = lstar;
+                blk.req_lstar_us = lstar;
                 let now_rq = Instant::now();
-                let holes = recv_succ.holes_at_least(
+                let holes = blk.succ.holes_at_least(
                     now_rq,
                     lstar,
                     crate::net::MAX_NACK_GAPS,
                 );
-                req_holes_n = holes.len() as u64;
+                blk.req_holes_n = holes.len() as u64;
                 if !holes.is_empty() {
                     // `A*` AT THE RECEIVER -- A DECLARED RESOURCE BOUND, and
                     // the honest one. The SENDER's retained trailing span is
@@ -873,7 +899,7 @@ pub(crate) async fn run_receiver(
                         .saturating_sub(highest_delivered_seq)
                         .min(recv_win_cap);
                     let m = crate::net::late::request_m(
-                        recv_late.pi0(),
+                        blk.late.pi0(),
                         recv_rank_feedback,
                         a_star,
                     );
@@ -903,14 +929,14 @@ pub(crate) async fn run_receiver(
                             cursor = end;
                         }
                     }
-                    req_m_max = req_m_max.max(m as u64);
-                    req_span_n += spans.len() as u64;
+                    blk.req_m_max = blk.req_m_max.max(m as u64);
+                    blk.req_span_n += spans.len() as u64;
                     let msg = ControlMessage::RepairRequest {
                         spans,
                         cause: $cause.as_u8(),
                     };
                     if recv_transport.send_control_datagram($pid, msg).is_ok() {
-                        req_sent += 1;
+                        blk.req_sent += 1;
                     }
                 }
             }
@@ -936,7 +962,7 @@ pub(crate) async fn run_receiver(
     // binder. Code removed per the DEPRECATION REGISTER discipline —
     // commits 97bc6ea/47b04ed preserve the refuted mechanism.
 
-    loop {
+    'recv: loop {
         // Periodic generation-deficit report deadline (§16.3): re-report the
         // frontier deficit ~once per SRTT even absent new data, so a sender
         // that emitted its budget and went quiet is always re-pulled and a
@@ -1076,10 +1102,10 @@ pub(crate) async fn run_receiver(
                     // read: the whole term is behind the arm's own `if`.
                     let mut hole_deadline = last_hole_nack_at + refresh;
                     if recv_request_law {
-                        if let Some(a_hat) = recv_succ.oldest_open_at() {
+                        if let Some(a_hat) = blk.succ.oldest_open_at() {
                             let due = a_hat
                                 + Duration::from_micros(
-                                    recv_late.request_lateness().0.unwrap_or(0),
+                                    blk.late.request_lateness().0.unwrap_or(0),
                                 );
                             if due < hole_deadline {
                                 hole_deadline = due;
@@ -1325,9 +1351,9 @@ pub(crate) async fn run_receiver(
                     // than at the next arrival so an abandoned hole's age is
                     // stamped when it was abandoned. Read-only.
                     for rec in
-                        recv_succ.abandon_below(reorder.next_deliver_seq(), Instant::now())
+                        blk.succ.abandon_below(reorder.next_deliver_seq(), Instant::now())
                     {
-                        recv_late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
+                        blk.late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
                         abandoned_seqs.insert(rec.seq);
                     }
                     while abandoned_seqs.len() > ABANDONED_TRACK_MAX {
@@ -1519,7 +1545,7 @@ pub(crate) async fn run_receiver(
                         }
                     }
                     drop(sched);
-                    recv_eta.observe(
+                    blk.eta.observe(
                         path_id,
                         batch_send_ts,
                         arrival_us,
@@ -1535,7 +1561,7 @@ pub(crate) async fn run_receiver(
                     // itself and has no queueing time of its own, so it is
                     // ABSENT from `ax` rather than credited a zero.
                     for sym in &lat_arrivals {
-                        recv_lat.note_arrival(*sym, path_id, batch_send_ts, arrival_us);
+                        blk.lat.note_arrival(*sym, path_id, batch_send_ts, arrival_us);
                     }
                     // `[LATE]`'s knee: the gap since the previous arrival,
                     // counted ONLY while the in-order frontier is behind the
@@ -1547,7 +1573,7 @@ pub(crate) async fn run_receiver(
                     if late_last_arrival_us > 0 && highest_seen_seq > highest_delivered_seq {
                         let gap = arrival_us.saturating_sub(late_last_arrival_us);
                         if gap >= WIDLE_GAP_MIN_US {
-                            recv_late.note_knee(gap);
+                            blk.late.note_knee(gap);
                         }
                     }
                     late_last_arrival_us = arrival_us;
@@ -1687,14 +1713,14 @@ pub(crate) async fn run_receiver(
                                 // deliverable prefix starts at the frontier),
                                 // and `None` -- the ordinary in-order case --
                                 // classes as no wait at all.
-                                if let Some(rec) = recv_succ.resolve(
+                                if let Some(rec) = blk.succ.resolve(
                                     *seq,
                                     symbol.is_repair || *seq != symbol.block_id,
                                     succ_now,
                                     path_id,
                                 ) {
                                     lat_release = Some(rec);
-                                    recv_late.note_hole(
+                                    blk.late.note_hole(
                                         rec.outcome,
                                         rec.cross,
                                         rec.us,
@@ -1707,12 +1733,12 @@ pub(crate) async fn run_receiver(
                                     if rec.outcome
                                         == crate::net::succ::HoleOutcome::Original
                                     {
-                                        recv_late.note_source_resolution(rec.us);
+                                        blk.late.note_source_resolution(rec.us);
                                     }
                                 }
                             }
                             for (seq, _) in &recovered {
-                                recv_succ.observe_high(*seq, succ_now, path_id);
+                                blk.succ.observe_high(*seq, succ_now, path_id);
                             }
                         }
                         for (seq, sym_data) in recovered {
@@ -1779,7 +1805,7 @@ pub(crate) async fn run_receiver(
                                         .is_err()
                                     {
                                         error!("TUN inject channel closed");
-                                        return;
+                                        break 'recv;
                                     }
                                 }
                                 // Advance the in-order RECEIVED prefix for
@@ -1846,7 +1872,7 @@ pub(crate) async fn run_receiver(
                                 // buffer ever held; its CLASS is the release
                                 // record above. Fed before the packet leaves,
                                 // so a full TUN channel cannot lose the datum.
-                                recv_lat.note_delivery(
+                                blk.lat.note_delivery(
                                     dseq,
                                     lat_now.saturating_duration_since(dbuf).as_micros() as u64,
                                     lat_release,
@@ -1859,7 +1885,7 @@ pub(crate) async fn run_receiver(
                                         }
                                         Err(mpsc::error::TrySendError::Closed(_)) => {
                                             error!("TUN inject channel closed");
-                                            return;
+                                            break 'recv;
                                         }
                                     }
                                 }
@@ -1878,11 +1904,11 @@ pub(crate) async fn run_receiver(
                             // CONFIGURATION fact, and a nonzero reading is a
                             // finding about the engine. Read-only.
                             if let Some(ref reorder) = reorder_buf {
-                                for rec in recv_succ.abandon_below(
+                                for rec in blk.succ.abandon_below(
                                     reorder.next_deliver_seq(),
                                     Instant::now(),
                                 ) {
-                                    recv_late.note_hole(
+                                    blk.late.note_hole(
                                         rec.outcome,
                                         rec.cross,
                                         rec.us,
@@ -2132,81 +2158,37 @@ pub(crate) async fn run_receiver(
                     // saw no arrival silent, so an absent line reads as an
                     // unreached feed and never as an unset gate.
                     //
-                    // The RAW dump rides its own gate and is flushed here so
-                    // no recorded sample is ever left in a partial batch — the
-                    // `[RTTDUMP]` tail-loss caveat, designed out rather than
-                    // disclosed.
+                    // THE BLOCK (`net/recv_block.rs`): `[SUCC]`, then `[ETA]`
+                    // / `[LAT]` / `[LATE]` beside it under its gate, `[REQ]`,
+                    // and `[RANK]` off a fresh `frontier_probe` — the same
+                    // lines, in the same order, byte-identical to what this
+                    // site printed inline until 2026-09-08. The block ALSO
+                    // prints once more at the task's exit, marked `final=1`
+                    // (see the end of the loop), so a transfer shorter than
+                    // this cadence and the last partial second of a longer
+                    // one are no longer lost. The RAW dump is flushed with
+                    // it so no recorded sample is ever left in a partial
+                    // batch — the `[RTTDUMP]` tail-loss caveat, designed out
+                    // rather than disclosed.
                     if (recv_gates.diag || fdiag_on)
-                        && recv_succ.is_receiver_site()
+                        && blk.succ.is_receiver_site()
                         && succ_report_at.elapsed() >= Duration::from_secs(1)
                     {
                         succ_report_at = Instant::now();
-                        for l in recv_succ.take_dump_lines(true) {
-                            eprintln!("{l}");
-                        }
-                        eprintln!("{}", recv_succ.line());
-                        // ── `[ETA]` RECEIVER READOUT ──────────────────
-                        // BESIDE `[SUCC]`, on ITS cadence and under ITS
-                        // gate, because the two are read together: `[SUCC]`
-                        // times a hole from the moment SEQUENCE exposed it,
-                        // `[ETA]` measures how late the same arrivals were
-                        // against the sender's own model. One is the
-                        // measurand the other was a proxy for.
-                        if recv_eta.is_receiver_site() {
-                            eprintln!("{}", recv_eta.line());
-                        }
-                        // ── `[LAT]` READOUT ───────────────────────────
-                        // Same cadence, same gate, same last-line-wins
-                        // convention. Printed whenever the receiver has
-                        // delivered anything at all: a gauge that
-                        // disappears when it has nothing to say is a
-                        // gauge you cannot prove ran.
-                        if recv_lat.is_receiver_site() {
-                            eprintln!("{}", recv_lat.line());
-                        }
-                        // ── `[LATE]` READOUT ──────────────────────────
-                        // The two bind fractions describe the readouts
-                        // actually taken, so the sampler observation is
-                        // consumed HERE and reset for the next interval.
-                        if recv_late.is_receiver_site() {
-                            eprintln!("{}", recv_late.line(late_sampler_bound));
-                            late_sampler_bound = false;
-                        }
-                        // ── `[REQ]` READOUT (16.83 arms (A)/(B)) ──────
-                        // What this receiver ASKED FOR, beside the
-                        // threshold it asked at. Two-sided: `on=0` with
-                        // every count 0 is the control's own reading.
-                        eprintln!(
-                            "[REQ] on={} rank={} sent={} spans={} m_max={} \
-                             lstar_us={} holes={}",
-                            u8::from(recv_request_law),
-                            u8::from(recv_rank_feedback),
-                            req_sent,
-                            req_span_n,
-                            req_m_max,
-                            req_lstar_us,
-                            req_holes_n,
+                        // `[RANK]`: `frontier_probe` re-read UNCONDITIONALLY
+                        // (it is otherwise reachable only under `RWM_FDIAG`),
+                        // plus the honest tail correction: the span that
+                        // arrived since the previous readout is still in
+                        // flight rather than missing, and is REPORTED beside
+                        // the deficit rather than subtracted from it.
+                        let probe = rank_probe(
+                            &**win_dec,
+                            highest_delivered_seq,
+                            highest_seen_seq,
+                            &mut rank_prev_seen,
                         );
-                        // ── `[RANK]` READOUT ──────────────────────────
-                        // `frontier_probe` re-read UNCONDITIONALLY (it is
-                        // otherwise reachable only under `RWM_FDIAG`), plus
-                        // the honest tail correction: the span that arrived
-                        // since the previous readout is still in flight
-                        // rather than missing, and is REPORTED beside the
-                        // deficit rather than subtracted from it.
-                        {
-                            let f = highest_delivered_seq;
-                            let (holes, pivots) =
-                                win_dec.frontier_probe(f + 1, highest_seen_seq);
-                            let tail_lo = rank_prev_seen.max(f).saturating_add(1);
-                            let tail_holes = if highest_seen_seq >= tail_lo {
-                                win_dec.frontier_probe(tail_lo, highest_seen_seq).0
-                            } else {
-                                0
-                            };
-                            rank_prev_seen = highest_seen_seq;
-                            recv_rank.note(holes, pivots, tail_holes);
-                            eprintln!("{}", recv_rank.line());
+                        for l in blk.render_cadence(Some(probe)) {
+                            eprintln!("{l}");
                         }
                         // `[RFA] rep_redundant`: repairs FED minus repairs
                         // that RECOVERED anything -- the false measurand
@@ -2236,7 +2218,7 @@ pub(crate) async fn run_receiver(
                     // and the 2 ms floor -- not its lateness -- is what held
                     // the report back. A threshold that always binds turns the
                     // law it gates into a constant, so it is COUNTED.
-                    late_sampler_bound |= gap_pending && !gap_report_due;
+                    blk.late_sampler_bound |= gap_pending && !gap_report_due;
                     // ack-merge (RWM_ACK_MERGE): what the ack ADVERTISES
                     // (the cumulative point + SACK ranges) is unchanged —
                     // `advertise` is the shipped predicate verbatim, so
@@ -2462,7 +2444,7 @@ pub(crate) async fn run_receiver(
                             continue;
                         }
                         if !feed_block_symbol(symbol, path_id) {
-                            return;
+                            break 'recv;
                         }
                     }
                 }
@@ -2594,7 +2576,7 @@ pub(crate) async fn run_receiver(
                             "replaying pre-BlockStart symbols");
                         for sym in &buffered {
                             if !feed_block_symbol(sym, path_id) {
-                                return;
+                                break 'recv;
                             }
                         }
                     }
@@ -2602,4 +2584,43 @@ pub(crate) async fn run_receiver(
             }
         }
     }
+
+    // ── THE EXIT FLUSH ────────────────────────────────────────────────────
+    // Every way out of the loop lands here: the channel closing, the
+    // shutdown broadcast, and the four failure exits (`break 'recv` above:
+    // two TUN-inject closures and the two `feed_block_symbol` failures) —
+    // they all still end the TASK, at this one site, and nothing runs after
+    // it. The block prints once more, marked `final=1`, off a FRESH
+    // `[RANK]` probe while the decoder is still in scope. A task whose
+    // future is DROPPED instead (runtime teardown) never reaches this line;
+    // `RecvDiagBlock`'s destructor flushes it then, without a probe. The two
+    // share one flag, so exactly one final block is ever printed.
+    let probe = window_decoder.as_deref().map(|wd| {
+        rank_probe(wd, highest_delivered_seq, highest_seen_seq, &mut rank_prev_seen)
+    });
+    blk.flush_final(probe);
+}
+
+/// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the
+/// span `[frontier + 1, highest_seen]`, with the honest tail correction: the
+/// span that arrived since the PREVIOUS readout is still in flight rather than
+/// missing, and is reported beside the deficit rather than subtracted from
+/// it. Shared by the cadence readout and the exit flush so the two can never
+/// disagree on what a probe is. Advances `rank_prev_seen`.
+fn rank_probe(
+    win_dec: &dyn WindowDecoder,
+    highest_delivered_seq: u64,
+    highest_seen_seq: u64,
+    rank_prev_seen: &mut u64,
+) -> (u64, u64, u64) {
+    let f = highest_delivered_seq;
+    let (holes, pivots) = win_dec.frontier_probe(f + 1, highest_seen_seq);
+    let tail_lo = (*rank_prev_seen).max(f).saturating_add(1);
+    let tail_holes = if highest_seen_seq >= tail_lo {
+        win_dec.frontier_probe(tail_lo, highest_seen_seq).0
+    } else {
+        0
+    };
+    *rank_prev_seen = highest_seen_seq;
+    (holes, pivots, tail_holes)
 }
