@@ -195,7 +195,12 @@ release_locks() {
   for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p"; done
   LOCKS_TAKEN=""
 }
-trap 'release_locks' EXIT INT TERM
+# On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
+# body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
+# on for hours after TERM with both locks already cleared).
+trap 'release_locks' EXIT
+trap 'release_locks; exit 130' INT
+trap 'release_locks; exit 143' TERM
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 

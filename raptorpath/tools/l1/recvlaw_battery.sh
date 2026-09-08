@@ -125,6 +125,48 @@ mkdir -p "$(dirname "$OUT")" "$DDIR"
 unset RWM_RECV_REQUEST_LAW
 unset RWM_RANK_FEEDBACK
 
+# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; the block is r_battery.sh's,
+#    verbatim, with the INT/TERM handlers that EXIT) ────────────────────────
+# `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
+# They are OPERATOR locks — this script does not invent a third mechanism —
+# but it REFUSES to run without them and it releases exactly what it took, so
+# `ABORT-LOCK` is a reading of this ledger and not an assurance in a report.
+# `noclobber` makes the create-or-fail atomic against a second launcher.
+VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
+RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+LOCKS_TAKEN=""
+take_lock() {
+  local p="$1"
+  if (set -o noclobber; : > "$p") 2>/dev/null; then
+    echo "$$ recvlaw_battery $(date -u +%FT%TZ)" > "$p" 2>/dev/null
+    LOCKS_TAKEN="$LOCKS_TAKEN $p"
+    echo "LOCK-TAKEN $p" | tee -a "$OUT"
+    return 0
+  fi
+  echo "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)" | tee -a "$OUT"
+  echo "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for." | tee -a "$OUT"
+  release_locks
+  exit 4
+}
+release_locks() {
+  local p
+  for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p" | tee -a "$OUT"; done
+  LOCKS_TAKEN=""
+}
+# On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
+# body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
+# on for hours after TERM with both locks already cleared).
+trap 'release_locks' EXIT
+trap 'release_locks; exit 130' INT
+trap 'release_locks; exit 143' TERM
+take_lock "$VM_LOCK"
+take_lock "$RP_LOCK"
+
+if pgrep -x raptorpath >/dev/null 2>&1; then
+  echo "BUSY: raptorpath already running -- aborting" | tee -a "$OUT"
+  exit 3
+fi
+
 # ── THE ARM TABLE — the SINGLE source of both the arm's env and the arm's
 #    liveness assertion, so the two cannot drift apart. ────────────────────
 RL_ARM_GATES="RWM_RECV_REQUEST_LAW RWM_RANK_FEEDBACK"
