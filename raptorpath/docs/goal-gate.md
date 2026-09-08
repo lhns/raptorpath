@@ -49642,3 +49642,218 @@ one of them contributes to `n_missing` and to nothing else.
   floor binds at `c2`, the 300 ms cap at `c3` ⇒ the "4·SRTT law" is a constant
   at both main cells, a DEFECT FINDING if confirmed); that reading is scored in
   its own section, not in this one.
+
+## PRE-REGISTRATION — THE PLACEMENT BATTERY (Track A), 2026-09-08, `feat/place-arms` from main@`9396ca0`
+
+**STATUS: PRE-REGISTRATION. Written and committed BEFORE the VM is touched,
+in its OWN commit, before a single VM number is read. No number below is a
+result.** Paper §16.81. **Nothing here flips a default, edits a shipped law,
+wires a consumer, or blesses a constant.** Three DEFAULT-ABSENT arms and one
+existing dial, scored against the shipped law.
+
+`INSTRUMENT-INDICTS-QUEUE` is a legal outcome of this whole battery and it is
+written FIRST so it cannot later be described as one nobody allowed for: the
+`[LAT]` decomposition on the CTL arm may say that the law this battery is
+built to test is not the law that owns the milliseconds, and if it does, the
+arms are read as null and the track re-routes.
+
+### 1 — What is being scored, and what the arms are
+
+D0 measured that **92–96 % of the holes at a dual cell are closed by the OTHER
+leg catching up** (`[SUCC] xp_n/det` = 0.9711 at `c7`, 0.8711 at `c8`, with
+`xp_n ≡ 0` at both single-path cells). **The scheduler manufactures them.**
+§16.81 writes the placement law that manufactures them as ONE expression
+continuous in the dial and replaces three of its arbitrary constants with
+derived forms. **Not one shipped constant is corrected by this battery**; each
+arm makes a derived form runnable BESIDE the constant it would replace.
+
+| arm | env | what it changes | derivation |
+|---|---|---|---|
+| **`CTL`** | — | nothing; the shipped law | the pinned cost table (`scheduler/mod.rs`, `place_costs_match_the_pinned_table`) asserts every arm-absent cost to 1e-12, and `every_arm_absent_leaves_the_probabilities_bit_identical` does the same for the softmax over them |
+| **`T0`** | `RWM_PLACE_T=1e-6` | `T → 0`: the strict-argmin limit | not new — the §16.3 dial's own floor, an EXISTING knob, run so the temperature axis has two ends and `TSIG` is not scored against a single point |
+| **`TSIG`** | `RWM_PLACE_T_DERIVED=1` | `T = (√6/π)·σ̂_e/ref` | §16.81.1. The softmax IS `argmin` under Gumbel noise of scale `T`; matching `Var(T·G) = π²T²/6` to `σ̂_e²` fixes `T` with NO free parameter |
+| **`HOL`** | `RWM_PLACE_HOL=1` | `+ X_i = [δ·s_i + κ·(s_i−H)⁺]/ref` on SOURCE symbols, plus §16.80.6(a2)'s wire-price ordering term at its derived `W` | §16.81.2 — §16.80.3's `Φ` physics read at the sender, against the sender's OWN measured frontier `F̂` rather than a declared budget |
+| **`HOLTSIG`** | both | the composition | the two arms touch different parts of one expression (the cost and its scale) and a composition that is not the sum of its parts is itself a finding |
+
+`RWM_PLACE_WDIV_DERIVED` (§16.81.3's `V_i = fate_i·(p_BB−ε)⁺·srtt_i/ref`)
+**SHIPS IN THIS BRANCH AND IS NOT AN ARM OF THIS BATTERY.** `fate_i ≡ 0` for
+source symbols, so it can only move REPAIR placements, and this battery's
+scored dimensions are source-placement dimensions. It is pinned by
+`the_derived_diversity_weight_leaves_every_source_placement_alone` and
+`the_derived_diversity_weight_collapses_on_a_memoryless_channel`, and its
+deciding measurement is owed to a repair-placement battery that does not exist.
+
+**THE THREE CONSTANTS THE ARMS CARRY, DECLARED WITH THEIR BIND GAUGES.**
+`κ = 1` is a DECLARED UPPER BOUND, not a value — D0's own fits put the
+non-overlap at 0.0048–0.067, so `κ = 1` over-charges the stall leg by 15× to
+200×, deliberately, in the direction that DISCOURAGES frontier-pushing
+placements. Its bind is `[ETA] hol_sh=` (the `s_i > H` fraction). `gain = 2.0`
+(`RWM_STORE_GAIN`) enters through `H` and is unprovenanced; this battery makes
+a SECOND law depend on it and says so. `W` is computed from live scheduler
+quantities per §16.80.6(a2) — `W = 1 symbol / (R_ref·τ_cool)` with
+`R_ref = max_i cwnd_i/srtt_i` — and is echoed as `hol_w=`; it carries no
+literal of its own and is **PREDICTED INERT** against an `O(1)` load term.
+
+### 2 — THE READING ORDER IS PRE-REGISTERED, AND IT IS NOT THE ARMS
+
+**`[LAT]` ON THE `CTL` ARM IS READ FIRST, BEFORE ANY CHALLENGER IS LOOKED AT.**
+The record has never decomposed delivered latency; every argument about which
+law matters most is therefore an argument about a quantity nobody has
+measured. Per delivered symbol at the receiver,
+`W_total = A_x + R + P` with `R` classed `{rw_xp, rw_sp, rw_rep}`, shares
+summing to 1.
+
+| reading | criterion (at a DUAL cell, `CTL`) | consequence |
+|---|---|---|
+| **PLACEMENT-INDICTED** | `sh_xp ≥ 0.5` | the reorder wait the scheduler manufactures IS the delivered latency; the arms are in domain and are scored as below |
+| **QUEUE-DOMINATED** | `sh_ax ≥ 0.5` **and** `sh_xp ≤ 0.2` | **the store/pacing law is the law to find first and the arms are expected NULL.** A positive arm under this reading is treated as SUSPECT, not as a win |
+| **REPAIR-DOMINATED** | `sh_rep ≥ 0.5` | §16.80/§16.83 own the latency; this battery is out of domain |
+| **MIXED** | none of the above | no single law dominates; report the split and score nothing on it |
+
+**`rw_xp ≡ 0` at `c1` IS THE INSTRUMENT CONTROL**, on exactly D0's argument for
+`xp_n`: the same field reads 0.87–0.97 two paths over, so a zero at one path is
+a property of the wire and not an unreached emission site. **A NONZERO
+`rw_xp` OR `xp_n` AT `c1` VOIDS THE RUN.**
+
+### 3 — THE S4 OFFLINE SCORE, COMPUTED BEFORE ANY ARM VERDICT IS READ
+
+The shipped `T = 0.15` is not a dial setting — under §16.81.1's identity it is
+a **falsifiable claim about the wire**:
+
+```text
+   T = 0.15   ⇔   σ̂_e = π·0.15/√6 · ref = 0.19238 · ref     at every cell
+```
+
+`σ̂_e/ref` is read off the `[ETA]` stream two ways, and they must agree: from
+the per-path τ-lag `sig_us=` pooled as an RMS over the candidate set and
+divided by the `[DIAG]` reference SRTT, and — preferred, because the two `ref`s
+then cannot disagree — by inverting the engine's own `t_eff=` on the `TSIG`
+arm. Three pre-registered outcomes, fixed now:
+
+* **`S4-CONFIRMS`** — `σ̂_e/ref ∈ 0.19238 ± 20 %` at BOTH duals and BOTH
+  singles. Reading: the law WAS a dispersion all along and `0.15` was a lucky
+  guess. Ledger: the register row for `PLACE_TEMPERATURE` records a DERIVED
+  form that reproduces the shipped value — and **still does not bless it**, because
+  a form that reproduces a constant at four cells has not been measured at a fifth.
+* **`S4-STABLE-ELSEWHERE`** — `σ̂_e/ref` within ±20 % of itself across cells but
+  outside the 0.19238 band. Reading: the FORM is right and the VALUE is wrong
+  by a measurable amount. Ledger: DEFECT FINDING against `0.15`, with the
+  measured level recorded and NOT flipped in.
+* **`S4-VARIES`** — `σ̂_e/ref` spans more than ±20 % across the four cells.
+  Reading: **a fixed `T` cannot be right anywhere**, and the shipped constant
+  is wrong at some cells by an amount this table names.
+
+**THE S4 SCORE IS INDEPENDENT OF EVERY ARM'S OUTCOME** and is reported even if
+the battery aborts on every challenger. It is an offline reading of a stream
+the CTL arm itself produces.
+
+### 4 — CELLS AND `n`
+
+| cell | shape | `n` | role |
+|---|---|---|---|
+| `c7` | `c2`/`c2` dual, symmetric | 8 × 2 seeds | the scored dual; aggregation guard `c7 ≥ 0.97 × Σ(same-session singles)` |
+| `c8` | `c2`/`c3` dual, heterogeneous | 8 × 2 seeds | the aggregation seat; guard `c8 ≥ 0.87 × Σ` |
+| `c1` | single path | 8 × 2 seeds | **THE MUST-NOT-MOVE CONTROL.** `N = 1` collapses the softmax to an identity, so NO arm can change a placement; a movement VOIDS the run |
+| `c9h` | quad | **3, WITNESS ONLY** | `ABORT-QUAD` pre-declared |
+
+**THE `n` ARITHMETIC, AND WHY THE GOODPUT LEG IS A GUARD.** The `n` law is the
+verdict battery's own: `n ≥ (2σ_d/Δ)²`, `σ_d = √2·CV`, with the CTL goodput CVs
+transcribed from THE VERDICT BATTERY — CALIBRATION DISCHARGED §6.3
+(`c1` 3.04 %, `c7` 12.88 %, `sc2` 0.80 %, `c8` 9.30 % †). At `c7` a 5 % goodput
+effect needs `n ≥ (2·18.21/5)² = 53`; at `c8`, `n ≥ (2·13.15/5)² = 28`. **`n = 8`
+buys neither.** ⇒ **THE GOODPUT LEG IS PRE-DECLARED `GUARD-UNDERPOWERED` AT
+BOTH DUALS, BEFORE ANYTHING RUNS.** It is reported so a regression is visible;
+it is not a score, and no arm is credited or debited on it.
+
+**WHAT `n = 8` DOES BUY.** The scored dimensions are (a) the `[LAT]` shares and
+`p95(rw_xp)`, which are quantiles over ~10⁵–10⁶ delivered symbols per rep and
+whose per-rep spread is a fraction of the goodput CV, and (b) `[SUCC] xp_n/det`,
+a binomial over the same order of holes. Both are read against the CTL arm's
+OWN per-battery rep spread — the self-calibrating bar the verdict battery used
+— and never against a bar imported from another session.
+
+**`c9h` IS `n = 3` AND IS A WITNESS.** The quad's instability is a recorded
+finding and three reps cannot score anything through it. What the row is for is
+liveness: that the arms execute at `N = 4` at all. `ABORT-QUAD` is the
+pre-declared outcome for the quad row and it costs the battery nothing.
+
+**THE AGGREGATION DENOMINATOR IS SAME-SESSION.** `sc2` and `sc3` singles run in
+the same battery, on the same shaper, on the same host. An aggregation ratio
+against a denominator from another session is not a ratio, and this is where
+that rule is written rather than remembered.
+
+### 5 — LEGAL OUTCOMES (verbatim; nothing outside this list may be claimed)
+
+* **`CONSTRUCTION-WINS`** — at a dual cell, an armed arm's `[LAT]` `sh_xp` AND
+  `p95(rw_xp)` both fall beyond the CTL arm's own rep spread, with `p95(A_x)`
+  not worse beyond that spread, AND `[SUCC] xp_n/det` falls, AND the aggregation
+  guard holds (`c7 ≥ 0.97×Σ`, `c8 ≥ 0.87×Σ`), AND `c1` did not move. Reading:
+  the placement law manufactures the reordering and the derived form
+  manufactures less of it. **Ledger: the derived form is LICENSED as a
+  candidate. It is still not flipped** — a single battery does not flip a
+  default in this tree.
+* **`AGGREGATION-DOMINATED`** — the reorder dimensions improve but the
+  aggregation guard fails at either dual. Reading: the arm bought delivered
+  latency by declining to use the second path, which is the trade `T = 0.15`'s
+  own four-point sweep already lost. Ledger: NOT a win; the arm is recorded with
+  its cost.
+* **`INERT-AS-DERIVED`** — the arm's execution witness fires (`hol_mv > 0`,
+  `t_n > 0`) but no scored dimension moves beyond the CTL spread. Reading: the
+  derived form is correct and the quantity it prices is not the one that
+  matters at these cells. **This is a RESULT, not a failure**, and for the (a2)
+  wire-price term it is the PREDICTED outcome (`W ≈ 10⁻²` against an `O(1)`
+  load term).
+* **`INSTRUMENT-INDICTS-QUEUE`** — the CTL `[LAT]` reading is
+  `QUEUE-DOMINATED`. Reading: the store/pacing law owns the milliseconds and
+  the placement law does not. **Ledger: the track re-routes; every arm verdict
+  in this battery is recorded as OUT OF DOMAIN and none is quoted as support
+  for anything.** No arm result may be promoted over this reading.
+* **`WIRING-FAILS`** — an arm is echoed present in `[GATES]` on both endpoints
+  but its execution witness reads zero (`t_n = 0` on `TSIG`, `hol_calls = 0` or
+  `hol_mv = 0` on `HOL`). Reading: the mechanism under test did not execute.
+  **The arm contributes NO datum** and the row is not scored as a null —
+  MEASUREMENT DISCIPLINE rule 1, and the reachability binary
+  (`tests/place_arms_reachability.rs`) exists to make this outcome unreachable
+  by construction.
+* **`GUARD-UNDERPOWERED`** — the pre-declared state of the goodput leg at both
+  duals at `n = 8`. Any goodput difference is reported with this label attached
+  and is never a verdict.
+* **`ABORT-QUAD`** — the `c9h` row, pre-declared. Liveness only; no dimension
+  is scored at the quad.
+
+### 6 — THE RULING CLAUSE
+
+**A `TSIG` TIE WITH `CTL` LICENSES `σ̂_e/ref`. IT NEVER LICENSES `0.15`.**
+
+If the derived temperature runs (`t_n > 0`, `t_cold < 1`) and produces the same
+scored dimensions as the shipped constant within the CTL spread, the finding is
+that **the placement law's temperature is a measured dispersion whose current
+value happens to be near a constant** — not that the constant is correct. The
+constant remains in the open register with its one-cell provenance (the argmax
+of a four-point sweep whose own verdict was *"No temperature beats
+fast-path-alone"*, `0.81×` at `c8` = FAIL) and the derived form remains
+unflipped. **An undefeated constant is not a blessed constant**, and a battery
+that ties is a battery that has removed an excuse, not one that has confirmed a
+number.
+
+The symmetric clause holds for `HOL`: an `INERT-AS-DERIVED` frontier term does
+not acquit `PLACE_SLACK_RECOV_PATIENCE = 1.125` or `κ = 1`. The `9/8` deadline
+is **dead code on the shipped path** (`S = 0` ⇒ `deadline = min(0, 9/8·srtt) = 0`)
+and stays a register row that no measurement here can reach.
+
+### 7 — WHAT CANNOT BE CONCLUDED FROM THIS BATTERY
+
+* **Nothing about `r`.** The rate leg is at a corner on every seat this battery
+  runs (`bulk_pure_arq ⇒ r* = 0`); §16.82's battery owns it.
+* **Nothing about `ρ`.** Every cell here is the retain-until-acked window.
+* **Nothing about `w_div`, `ELIGIBLE_SKEW`, or the near-tie `0.8`/`0.25`.**
+  `w_div` moves repairs only and is not an arm here; `ELIGIBLE_SKEW` is
+  **MOOT ON THE WINDOW PATH** (§16.81.3 reads the call graph: it lives inside
+  `pick_affinity_path`, which the plain reliable window never reaches) and its
+  register row stands untouched; the near-tie constants live in
+  `place_repair_spare_path`, which this battery does not exercise.
+* **Nothing about the per-SYMBOL hole test.** `eta_rel_us` is stamped per
+  BATCH, so every lateness reading inherits §16.80.2's batch granularity. The
+  per-symbol form is named in §16.81.6 and is not built.
+* **Nothing from a cell whose `c1` control moved**, and nothing from an arm
+  whose `[GATES]` echo disagrees with its configured value on either endpoint.
