@@ -51354,3 +51354,263 @@ and stays a register row that no measurement here can reach.
   per-symbol form is named in §16.81.6 and is not built.
 * **Nothing from a cell whose `c1` control moved**, and nothing from an arm
   whose `[GATES]` echo disagrees with its configured value on either endpoint.
+
+## S4 — THE FIRST FIELD POINT (single-path crown cells; NOT the pre-registered score), 2026-09-08, `docs/s4-first-point` from main@`51edcd4` — **DOCS + ONE TOOL ONLY, no VM, no engine, no arm.** **THE VERDICT IS `UNREADABLE`, AND THE REASON IS AN INSTRUMENT FINDING RATHER THAN A NUMBER: `[ETA]` IS NOT SCRAPED BY THE HARNESS, SO THE 64-REP CROWN SPOT LEFT THREE ENDPOINT-ARMS OF A POSSIBLE 128 IN THE RECORD — hand-copied into prose, WITHOUT their `ref`, WITHOUT their `bind=`, and at `c3` without their pair counts.** What arithmetic those three do support is **recorded, not scored**, and it points **CELL-DEPENDENT by a factor of 3–4**, robust to both plausible `ref` choices. **Nothing is shipped, nothing is blessed, no default is flipped, and `PLACE_TEMPERATURE = 0.15` keeps its register row unchanged.**
+
+### 0 — THE LIMITS, STATED BEFORE THE NUMBERS, BECAUSE THEY BOUND EVERY ONE OF THEM
+
+**(a) THE PLACEMENT LAW DOES NOT ACT HERE.** `c2` and `c3` are **SINGLE-PATH**
+cells on the **Realtime EVICT seat**. `N = 1` collapses `place_probs_with_temperature`
+to the identity — a softmax over one candidate is 1 at every `T` — so **no
+value of `T`, shipped or derived, can change one placement on this record.**
+This is the same argument the placement battery's §4 makes for `c1` as its
+MUST-NOT-MOVE control, and it applies with full force here. **This section is
+not a verdict on the placement law and does not claim to be one.**
+
+**(b) IT IS NOT THE PRE-REGISTERED S4 SCORE.** "PRE-REGISTRATION — THE
+PLACEMENT BATTERY (Track A)" §3 fixes S4's outcome set (`S4-CONFIRMS`,
+`S4-STABLE-ELSEWHERE`, `S4-VARIES`) over **BOTH duals and BOTH singles** —
+`c7`, `c8`, `c1`, `sc2`/`sc3`. **None of those cells has an `[ETA]` reading.**
+The placement battery is queued behind the `r` battery and has not run.
+**No limb of that outcome set is entered, touched, or pre-empted by anything
+below**, and this section is not admissible as any part of it.
+
+**(c) THE `ref` IS A SURROGATE AT 6 OF 6 READINGS.** The clean reference is the
+`[ETA]` line's own `tau_us` — `net/eta.rs` feeds each path's τ-lag estimator
+with `tau = Duration::from_micros(p.tau_us)`, "the path's reference lag
+(RTprop when the receiver has one, its SRTT otherwise)", so `tau_us` is the
+reference the dispersion was **already measured against**, and at `N = 1`
+`min_i srtt_i` IS that one path's srtt. **`tau_us` is not in the artefact.**
+Every ratio below therefore divides by a surrogate, and the surrogate is named
+in its own column.
+
+**(d) `bind=` IS NOT IN THE ARTEFACT AT ALL**, at any of the six readings. The
+pre-stated `UNREADABLE` limb keys on it, and it cannot be evaluated. That is
+the finding, not a footnote to it.
+
+### 1 — THE READING RULE, PRE-STATED BEFORE THE ARITHMETIC WAS RUN
+
+Under §16.81.1's Luce/Gumbel identity the softmax IS `argmin` under Gumbel
+noise of scale `T`, so the shipped constant is a claim about the wire:
+
+```text
+   T = 0.15   ⇔   σ̂_e = (π/√6)·0.15·ref = 0.19238·ref     at EVERY cell
+   inverted:   T_eff  = (√6/π)·σ̂_e/ref
+```
+
+`σ̂_e` is the §16.75 τ-lag dispersion printed as `sig_us=<µs>/n<pairs>` on both
+`[ETA]` lines; `ref = min_i srtt_i` over active paths. Three limbs, fixed
+before computing:
+
+| limb | criterion | what it would mean |
+|---|---|---|
+| **CELL-INVARIANT** | `c2` and `c3` pooled `σ̂/ref` each lie inside the other's min–max | the 'quantile in disguise' hypothesis **survives its first test** |
+| **CELL-DEPENDENT** | the ranges are disjoint | the hypothesis takes **a strike before the duals are measured**; report the ratio |
+| **UNREADABLE** | `bind` too high, or τ-lag pairs `n` too low, or the ranges are degenerate | **no reading**; cite the `[ETA] bind=` field |
+
+**A DEGENERATE RANGE IS THE `UNREADABLE` LIMB AND NOT A DEPENDENCE FINDING.**
+A cell carrying ONE reading has a range that is a point, and a point cannot
+contain another cell's range nor be honestly called disjoint from it: the rule
+compares a **between-cell gap against a within-cell spread**, and with no
+within-cell spread there is nothing to compare against. This clause is written
+here rather than remembered, and `tools/l1/eta_s4.py` enforces it mechanically.
+
+Thresholds, also fixed before computing: `--min-pairs 30`, `--max-bind 0.50`.
+
+### 2 — THE ARTEFACT LIMIT, WHICH IS LARGER THAN THE PLACEMENT LIMIT
+
+The crown spot ran **64 scored reps at `c2` and `c3`, two sizes, two seeds,
+two endpoints** with `[ETA]` live and two-sided (§2 of the smoke section reads
+`[ETA]` present at 100/100/100/101 lines across the four endpoint logs).
+**None of it is in the ledger.** `tools/l1/tail_matrix.sh:156` scrapes exactly
+
+```text
+   for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]'; do
+```
+
+plus the `[SPAN]` grep above it. **`[ETA]` is not in that list**, and
+`/tmp/tm-{s,c}.log` is overwritten per arm, so no `[ETA]` line survives
+teardown. `grep -c 'ETA]'` over **every** file in `raptorpath/docs/l1-raw/`
+returns **0**. Run against the three committed crown ledgers the tool says so
+in as many words:
+
+```text
+   $ python tools/l1/eta_s4.py docs/l1-raw/crownspot8-crown-s42.log \
+         docs/l1-raw/crownspot8-crown-s7.log docs/l1-raw/crownspot8-smoke.log
+   ledgers scanned: 3   [ETA] path-readings found: 0
+   READING: UNREADABLE -- not one `[ETA]` line in the artefact.
+```
+
+**So the table this section was asked for — per cell × seed × endpoint over 64
+reps — DOES NOT EXIST, and cannot be made to exist offline.** What exists is
+what a human copied into prose: **§6(ii) of the scored crown section (one arm,
+`c3`·1200B, seed 7, both endpoints, `n = 8`) and §2 of the smoke section (one
+arm, `c2`, seed 42, server endpoint, `n = 1`).** **Three endpoint-arms of a
+possible 128.** They are carried in `eta_s4.py`'s `TRANSCRIBED` table so the
+reading is reproducible, and every one of them is flagged `SURROGATE-REF`.
+
+### 3 — THE TABLE (`--transcribed`; six readings, all six flagged)
+
+`ref` from `tools/l1/lib.sh:186-189`, the harness's own scenario table
+(`rate one_way_ms jitter_ms ge_p ge_q`): `c2` = 5 ms one-way ⇒ **RTT 10 ms**,
+`c3` = 20 ms one-way ⇒ **RTT 40 ms**. Target `σ̂/ref` = **0.19238**.
+
+| cell | seed | endpoint | arm | site | `sig_us` | pairs | `ref` µs | ref src | **`σ̂/ref`** | **`T_eff`** | `T_eff`/0.15 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c2 | 42 | `tm-s` | smoke `n=1` | sender | 1668 | **27** | 10 000 | SURROGATE | **0.1668** | **0.1301** | 0.87× |
+| c2 | 42 | `tm-s` | smoke `n=1` | receiver | 3430 | **13** | 10 000 | SURROGATE | **0.3430** | **0.2674** | 1.78× |
+| c3 | 7 | `tm-s` | 1200B `n=8` | sender | 2633 | **–** | 40 000 | SURROGATE | **0.0658** | **0.0513** | 0.34× |
+| c3 | 7 | `tm-s` | 1200B `n=8` | receiver | 2242 | **–** | 40 000 | SURROGATE | **0.0561** | **0.0437** | 0.29× |
+| c3 | 7 | `tm-c` | 1200B `n=8` | sender | 3662 | **–** | 40 000 | SURROGATE | **0.0916** | **0.0714** | 0.48× |
+| c3 | 7 | `tm-c` | 1200B `n=8` | receiver | 2250 | **–** | 40 000 | SURROGATE | **0.0563** | **0.0439** | 0.29× |
+
+Pooled per cell × site, min / median / max across the readings that exist:
+
+| cell | site | min | median | max | reps | `T_eff` span |
+|---|---|---|---|---|---|---|
+| c2 | receiver | 0.3430 | 0.3430 | 0.3430 | **1** | 0.2674 |
+| c2 | sender | 0.1668 | 0.1668 | 0.1668 | **1** | 0.1301 |
+| c3 | receiver | 0.0561 | 0.0562 | 0.0563 | 2 | 0.0437–0.0439 |
+| c3 | sender | 0.0658 | 0.0787 | 0.0916 | 2 | 0.0513–0.0714 |
+
+**Every cell × site pool has one or two readings. There is no rep-level spread
+anywhere in this table**, because per-rep `[ETA]` resolution does not exist in
+the artefact — the same cumulative-counter granularity defect §5 of the scored
+crown section already recorded against this harness, now hitting a second
+instrument.
+
+### 4 — THE READING: `UNREADABLE`
+
+**The pre-stated `UNREADABLE` limb fires, and it fires on four independent
+grounds, any one of which is sufficient:**
+
+1. **`bind=` is absent at 6 of 6 readings.** The limb keys on the `[ETA]`
+   receiver line's own coverage gauge — the fraction of arrivals carrying the
+   `eta_rel = 0` "no prediction" sentinel — and no reading carries it. A ratio
+   whose coverage is unknown is not a measurement of coverage-weighted
+   dispersion; it is a number.
+2. **The `c2` pair counts are 27 and 13, both under the pre-stated 30**, and
+   the record has **already withdrawn** that reading: §6(ii) of the scored
+   crown section calls the `n = 1` `c2` inversion "a small-sample artefact
+   (`sig_us=3430/n13` — thirteen samples)" and withdraws it **as a reading**.
+   **The only `c2` point this section has is one the record itself struck out**,
+   and re-admitting it here as a denominator would be exactly the move that
+   withdrawal forbids.
+3. **The `c3` pair counts are not in the artefact at all** — §6(ii) transcribed
+   the σ̂ values without their `/n`.
+4. **`c2`'s range is degenerate at both sites** (one reading each), so §1's
+   degeneracy clause fires: there is no within-cell spread to compare a
+   between-cell gap against.
+
+**`UNREADABLE` is the verdict of this section.** The 'quantile in disguise'
+hypothesis **is neither struck nor survived**: it has not been tested, because
+the instrument that would test it was not scraped.
+
+### 5 — WHAT THE ARITHMETIC SAYS ANYWAY, RECORDED AND EXPLICITLY NOT SCORED
+
+Because a number that was computed should be written down rather than hidden:
+**the six readings that exist point CELL-DEPENDENT, and not marginally.**
+
+* `c2` spans **0.1668–0.3430**; `c3` spans **0.0561–0.0916**. **Disjoint**,
+  with a gap of **1.82×** between the ranges and **4.18×** between the cell
+  medians (0.2549 vs 0.0610).
+* **IT SURVIVES THE `ref` IT IS MOST VULNERABLE TO.** Re-run against the
+  alternative references — `c2` = 13 ms (the class the record's own p50 and
+  `[SHEDH]` floor-bind imply) and `c3` = **37.89 ms** (the LIVE measurement:
+  `[SHEDH]`'s `mean_us = 151 561` over 35 214 interior evaluations at `n = 8`,
+  ÷ 4 for the 4·SRTT law) — the ranges are **still disjoint**: `c2`
+  0.1283–0.2638 vs `c3` 0.0592–0.0966, gap 1.33×, median level **3.04×**.
+  For the two ranges to touch, one `ref` would have to be wrong by **a factor
+  of about 1.8**, and `c3`'s is independently corroborated to within 5 % by a
+  second instrument on the same run.
+* **THE DIRECTION IS THE INTERESTING PART.** `c3` — the slower, lossier cell —
+  reads `σ̂/ref` **LOWER**, not higher: the dispersion does not scale with the
+  reference. That is the shape a **cell-dependent** `T` would have, and the
+  opposite of what a single shipped constant asserts.
+
+**THIS IS NOT A STRIKE AGAINST THE HYPOTHESIS.** It is arithmetic over three
+endpoint-arms, on cells where the law cannot act, through a surrogate `ref`,
+with an unknown bind fraction, using a `c2` point the record withdrew. **It is
+a PREDICTION about what `c7`/`c8` will read, written down now so that the
+placement battery can be scored against it rather than after it.**
+
+### 6 — `T_eff` AGAINST THE SHIPPED 0.15
+
+| cell | `T_eff` range (both sites, both endpoints) | shipped | ratio | inside §3's ±20 % band [0.120, 0.180]? |
+|---|---|---|---|---|
+| **c2** | **0.1301 – 0.2674** | 0.15 | **0.87× – 1.78×** | sender **yes** (0.1301); receiver **NO** (0.2674, +78 %) |
+| **c3** | **0.0437 – 0.0714** | 0.15 | **0.29× – 0.48×** | **NO at all four readings** — every one below the floor |
+
+**The one reading in this whole record that lands on the shipped constant is
+the `c2` sender's `T_eff = 0.1301`** — 0.87× of 0.15, inside the band — and it
+is the reading built on **27 τ-lag pairs**, on the arm whose companion the
+record already withdrew. **At `c3`, all four readings sit 2.1× to 3.4× BELOW
+the shipped 0.15**, which under §16.81.1's identity says the shipped
+temperature over-states the sender's own prediction error at that cell by that
+factor. **Under a fixed `T`, an over-stated `σ̂_e` is an over-hot softmax: the
+placement law spreads probability across paths whose costs the engine's own
+gauge says it can tell apart.** Recorded as a prediction, not a defect finding
+— on a cell where `N = 1` there is no probability to spread.
+
+### 7 — THE TOOL, AND WHY IT IS COMMITTED RATHER THAN INLINED
+
+`raptorpath/tools/l1/eta_s4.py`, ~300 lines, stdlib only, no engine, no
+network. It parses the **real** `[ETA]` line shapes off `net/eta.rs` (both
+sites, per-path `sig_us=<µs>/n<pairs>`, `tau_us=`, `bind=`, `srtt_src=`, and
+the sender line's own `t_eff=`), resolves `ref` from `tau_us` **in preference
+to any other clock** — §3 of the placement pre-registration's stated reason,
+"the two `ref`s then cannot disagree" — falls back to `--ref-us` or the
+`lib.sh` scenario table with a **`SURROGATE` flag on the row**, computes
+`σ̂/ref` and `T_eff = (√6/π)·σ̂/ref`, pools per cell × site with min/median/max,
+and applies §1's three limbs mechanically including the degeneracy clause.
+Multi-path cells pool the per-path `sig_us` as an RMS over the candidate set
+and take `ref = min_i tau_us`, which is the placement battery's own rule, so
+**the placement battery's scorer reuses this file rather than reimplementing
+the identity.**
+
+**IT WAS EXERCISED THREE WAYS BEFORE THIS SECTION WAS WRITTEN.** (i) On the
+three committed crown ledgers — **0 readings, `UNREADABLE`**, §2 above.
+(ii) On `--transcribed` — the table in §3. (iii) On a fixture carrying the
+line shapes verbatim from `net/eta.rs`'s own unit tests, which is the
+MEASUREMENT-DISCIPLINE-1 check that the parser executes at all rather than
+silently matching nothing: a path stamped `tau_us=10000 sig_us=1924/n64`
+returns `σ̂/ref = 0.1924` and **`T_eff = 0.1500`**, round-tripping the identity
+to four places and proving the `tau_us` branch is live. **A parser that has
+only ever seen zero lines is not a parser.**
+
+### 8 — THE ONE-LINE FIX THIS SECTION EARNS, AND THE LEDGER
+
+**The fix is one token.** `tail_matrix.sh:156` reads
+`for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]'; do` — adding `'\[ETA\]'` to that
+list puts the per-arm cumulative `[ETA]` line into every future ledger, with
+its `tau_us`, its `bind=` and its pair counts intact, at which point this
+section's `UNREADABLE` becomes a real reading at **zero** additional VM time.
+**It is NOT applied here**, because this branch is DOCS + one tool and touching
+the harness would change what the queued `r` battery and placement battery
+scrape mid-flight. **It is owed to the placement battery's launch checklist**,
+and it is written down here rather than remembered.
+
+**LEDGER: `S4-UNREADABLE-ON-ARTEFACT`, plus an INSTRUMENT FINDING against
+`tail_matrix.sh`'s scrape list.** No limb of the placement pre-registration's
+S4 outcome set is entered. **The `PLACE_TEMPERATURE = 0.15` register row in
+`fec-arq-model.md` §16.81.1 is UNCHANGED** — it still reads
+"arbitrary/unprovenanced — NOT corrected, correct value unknown", and this
+section neither corrects it nor blesses it.
+
+### 9 — WHAT THIS SECTION DOES NOT CLAIM
+
+1. **No verdict on the placement law.** `N = 1`; the softmax is the identity;
+   `T` cannot act.
+2. **No S4 score.** The pre-registered score needs `c7`/`c8` `[ETA]` from a
+   battery that has not run.
+3. **No strike against 'quantile in disguise'.** §5's cell-dependence is a
+   PREDICTION over three endpoint-arms, not a test.
+4. **No claim about `σ̂_sender ≥ σ̂_recv`.** That witness is §6(ii) of the
+   scored crown section's and it holds there; nothing here re-reads it. Note
+   only that the `c2` smoke row inverts it, which is precisely the reading the
+   record withdrew.
+5. **No default flipped, no arm built, no engine crate touched, no gate added,
+   no constant blessed, no binary rebuilt, no VM contacted.** One doc section
+   and one offline scorer.
+6. **Nothing from `c1`, `c7`, `c8`, `c9h`, `sc2` or `sc3`**, and nothing at a
+   hint other than Realtime or a seat other than EVICT.
