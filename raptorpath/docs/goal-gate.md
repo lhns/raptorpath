@@ -49560,3 +49560,85 @@ at (paper §16.80.1); **(ii)** `H` at `c8` is a bracket `[8, 60] ms`, so grid A'
 cells, not three. **A pre-registration written now would pre-register against a
 bracket and an undeclared budget, which is the same class of error §6 was
 written to prevent.**
+
+---
+
+## PRE-REGISTRATION — THE EVICT SEAT'S REPAIR WASTE (ρ < 1), 2026-09-08
+
+**STATUS: PRE-REGISTRATION. Written before any scrape output is read.**
+Paper §16.81 (ρ leg), in flight. Nothing here flips a default and nothing here
+is an arm: the measurement is three `tail_matrix.sh` greps on a configuration
+this record has already run more than any other.
+
+### 1 — What is being scored, and why it has never been scored
+
+`--protocol-hint realtime` **without** `--window-reliable` is the ρ < 1 EVICT
+seat, and it is `tail_matrix.sh`'s own default arm — the most-run cell in the
+record. On that seat the receiver **gives up** on a hole (the in-order hold
+expires) **and separately requests repairs for it**: `recv_nack_tx` keys on
+nothing about `reliable`, so per-seq gap ARQ is armed for the whole hold at up
+to the refresh cadence, and suppression only follows the give-up. **The repair
+is therefore later than the give-up by construction, not by accident.** The
+sender's give-up (`D(δ)` from ORIGINAL SEND against RTprop) and the receiver's
+give-up (the hold from head-of-line entry against SRTT) are two decisions on
+two clocks over two base quantities, and nothing carries either across.
+
+The three gauges that would price that waste — `[RFA]`, `[SUCC]`'s abandon
+count, `[RACK] fa=` — are **already fed on this seat**. The harness scraped
+none of them. The accompanying commit adds the three last-line greps on BOTH
+endpoint logs, next to the existing `[SPAN]` scrape and under the same
+`|| true` guard, so the reading rides the crown no-regression spot for free.
+
+### 2 — The measurand, and the field this pre-registration does NOT own
+
+* `A` = `[SUCC]`'s abandon count (`aban_n`) — holes the delivery frontier
+  passed undelivered. The ρ < 1 contract's own realized shed.
+* `R` = `[RFA] fires` — recovery fires the sender answered on the same run.
+* `F` = `[RACK] fa=<spur>/<fired>` — the realized false-alarm ratio.
+* `L` = `[RFA] late_after_aban` — repairs that landed after the receiver had
+  already abandoned the hole. **THIS FIELD DOES NOT EXIST YET AND IS NOT ADDED
+  BY THIS COMMIT.** `[RFA]`'s line format is owned by the concurrent
+  receiver-instruments branch; **the counter is OWED BY THAT BRANCH**, and the
+  scrape here is written to TOLERATE its absence (it prints whatever the line
+  carries). Until it lands, `L` is unavailable and every clause below that
+  names it reads `UNSCOREABLE` on that clause — never zero.
+
+### 3 — Pre-registered verdicts (numeric, fixed before any reading)
+
+Scored on the ship arm at `c2` and `c3`, ×8 reps, both seeds, per endpoint.
+`n` is the number of reps whose logs carry all THREE lines; a rep missing any
+one of them contributes to `n_missing` and to nothing else.
+
+* **WASTE-DOMINANT** — `R ≥ A` on ≥ 6 of 8 reps at BOTH cells: the seat answers
+  at least one repair per abandoned hole. Reading: the ρ < 1 seat pays full ARQ
+  for holes its own contract has licensed it to discard, and the give-up law is
+  not one law but two. Ledger: DEFECT FINDING; the ONE give-up law (§16.81's ρ
+  leg) becomes a licensed change rather than a proposal.
+* **WASTE-MINOR** — `R < 0.25·A` on ≥ 6 of 8 reps at BOTH cells. Reading: the
+  suppression that follows the give-up already does most of the work and the
+  structural lateness is a small tax. Ledger: the ρ leg's repair stays a
+  correctness argument, not a prize argument, and no arm is licensed.
+* **MIXED** — anything between the two, or the two cells disagreeing. Ledger:
+  recorded as measured, no verdict on the give-up law; the deciding
+  measurement is re-stated with the cell that split named.
+* **UNSCOREABLE** — `n < 6` at either cell, or any of the three lines absent
+  from ≥ 3 reps at either cell. **An absent gauge is a skipped datum and never
+  a zero** (MEASUREMENT DISCIPLINE: `-` iff `n = 0`). This is the expected
+  outcome for any clause naming `L` until the instruments branch lands it.
+
+### 4 — What CANNOT be concluded from this reading
+
+* **Nothing about goodput or latency.** The scrape rides an existing crown
+  no-regression spot; it adds no arm, changes no default, and its reps are the
+  spot's reps. Any difference between reps is the spot's own spread.
+* **Nothing about `[RFA] false_frac` AS WASTE at a single path** — paper
+  §16.80.4a and this record already establish that `false_frac` counts
+  duplicate ARRIVALS at `c1`/`sc2`, not unnecessary repairs. `c2`/`c3` are the
+  cells here and the same caution carries: `F` is reported, never scored alone.
+* **Nothing about the sender's `shed_deadline_us` feed.** Its SRTT-for-RTprop
+  mismatch is recorded in the paper, not measured here.
+* **Nothing about the `[SHEDH]` hold-bound bind fractions** shipped alongside
+  it. `[SHEDH]` is an instrument with its own pre-stated expectation (the 60 ms
+  floor binds at `c2`, the 300 ms cap at `c3` ⇒ the "4·SRTT law" is a constant
+  at both main cells, a DEFECT FINDING if confirmed); that reading is scored in
+  its own section, not in this one.
