@@ -186,6 +186,26 @@ scenario_params() {
         c1|dc)       echo "1gbit   1   0  0.05 50" ;;
         c2|wifi)     echo "100mbit 5   3  1.3  50" ;;
         c3|lte)      echo "20mbit  20  5  2    40" ;;
+        # `c3hg` -- "c3, HEAVY, GE form" (goal-gate "THE r > 0 BATTERY --
+        # PRE-REGISTRATION" section 4). THE REACHABILITY CELL: the glide's
+        # fully-exposed target IS `BULK_TAIL_BUDGET = 0.05`, so on any channel
+        # cleaner than 5 % the r corner survives full exposure and r* = 0
+        # whatever chi does (tests/chi_reachability.rs:218-224). `c3`'s
+        # eps = 2/(2+40) = 4.762 % sits just BELOW that line, so no cell in the
+        # existing table can measure the mechanism at all.
+        #
+        # c3's rate/one-way/jitter EXACTLY and c3's burst structure q = 40
+        # EXACTLY; `p` is the ONLY changed field, solved from eps = p/(p+q) at
+        # 5.8 %:  p = 0.058*40/(1-0.058) = 2.46284...  ->  eps = 5.8000 %.
+        # sigma^2_burst = 1 + 2(1-p-q)/(p+q) = 3.7101 (c3's is 3.762).
+        #
+        # NOT `c3heavy`, AND THE NAME IS DELIBERATE. `c3heavy` exists ONLY as
+        # an L0 simulator scenario (src/transport/quic.rs:94) whose loss law is
+        # a WEIBULL heavy tail (k = 0.5, theta = 0.55, E[burst] = 6.2) that
+        # `tc netem gemodel` cannot represent. Reusing the name here would put
+        # two different loss laws behind one name across the L0 and L1 record.
+        # `c3hg` matches c3heavy's loss RATE and not its burst LAW.
+        c3hg)        echo "20mbit  20  5  2.4629 40" ;;
         c4|sat)      echo "20mbit  100 10 3    30" ;;
         c5|badwifi)  echo "50mbit  5   3  5.3  30" ;;
         clean)       echo "100mbit 5   0  0    100" ;;
