@@ -53774,3 +53774,46 @@ goodput leg is a guard and not a verdict.
 8. **`c9h`-CTL DNF'd 4/6 while `c9h`-T0 finished 6/6 at up to 170 Mbit/s** —
    a witness-row observation at n = 3 that scores nothing and is written
    down so it is not rediscovered.
+
+## STAGE 2 CLOSED (2026-09-09): THE THREE BATTERIES OF "THE SEARCH FOR THE CORRECT LAWS"
+
+All three pre-registered batteries ran inside the user's 5 h cap, were scored
+from the pre-registered outcome sets only, and are merged (main 5e6e3f5).
+Nothing flipped a default; no constant was blessed.
+
+| battery | design as run | verdict in one line |
+|---|---|---|
+| r > 0 (Track B) | seed 42, n = 4 (truncated at rep 4) | GLIDE R-FUNDED-NEGATIVE (direction) at the lossy single; MID VOID by W7 at 5/6; ENTANGLEMENT-DOMINATED where scoreable; CTL confirmed AT the corner (`cod` was retransmits) |
+| receiver law (Track C) | n = 3 × 2 seeds | REFUTED-WITH-RECORD everywhere; KNEE-BOUND degenerate (ℓ* = 0, names RWM_STORE_GAIN); CONTROL-MOVED at c1; sc2 substrate collapsed on the shipped machine |
+| placement (Track A) | n = 4 × 2 seeds | first readout MIXED at both duals: cross-path wait ≈ 6 % of delivered latency, queueing above the floor the largest term; all arms INERT-AS-DERIVED on latency, goodput regressions under the guard; S4-VARIES (0.15 is not a stable quantile) |
+
+The answer to "where would a win have to come from": the CTL decomposition
+puts the placement-manufactured wait at ~6 % of delivered latency at both
+duals; the largest term is queueing above the path floor (store/pacing), with
+same-path reordering and repair each comparable to the cross-path term. The
+next law worth deriving is the store/pacing law, and the next measurement is
+its decomposition, not another placement arm.
+
+### Instrument and substrate findings owed from Stage 2 (none fixed here)
+1. The receiver's self-heal estimator counts the sender's retransmit copy as
+   a self-heal (`succ.rs:236-238`), so π̂0 ≈ 1 everywhere (D0 at c1: 0.0077).
+   Every receiver-side derived quantity in §16.83 inherits this. Same error
+   class as the sender's "98 % self-heal" premise. Must be fixed before any
+   receiver-side law is re-tested.
+2. The clean 100 Mbit single path (sc2) did not finish 100 MB in 300 s on the
+   shipped machine, 6/6 and 8/8 across two batteries, and read ~2 Mbit/s in the
+   r-battery calibration. A substrate/engine regression on the current binary
+   line at that cell; needs its own diagnosis (bisect against the crown era).
+3. The sender's `[ETA]` block has no exit flush (0/166 final); the receiver's
+   now does. `eta_s4.py` uses RTprop for `tau_us` where the law uses SRTT, so
+   its three `ref` routes disagree 3-4×; the σ̂ witness fails at c7/sc3.
+4. c8 shows a bimodal fast-path-alone collapse on CTL (4/8 reps `xp_n/det`
+   ≈ 0.01 at 83-89 Mbit/s) — a behaviour of the shipped machine, outside every
+   pre-registered set, and the likely source of c8's 75 % CV in every battery.
+5. MID cannot be scored again without an engine echo of the Copa δ (the W7
+   pin); `RWM_COPA_DELTA` still has no engine echo.
+6. The `tracing` crate interleaves records onto readout lines (parser split
+   landed; the engine-side fix is a newline discipline on the diagnostic
+   writer).
+7. `r_report.py` does not propagate W7 VOID into its outcome section and its
+   R-FUNDED-NEGATIVE branch fires on any null (applied by hand this time).
