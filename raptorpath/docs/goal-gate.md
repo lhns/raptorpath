@@ -52632,3 +52632,499 @@ in the scored section; do not edit the battery's cell table.
 5. **`[LAT]` exists on the receiver only** — there is no sender-side `[LAT]`
    in the engine, so a "both sides" reading of the decomposition is not
    available and is not claimed.
+
+## THE RECEIVER-LAW BATTERY — SCORED (n = 3 × 2 seeds)
+
+(2026-09-08, `meas/recvlaw-score` from main@`dec3865`; DOCS + the ledger files
+ONLY — no VM contact, no engine file, no gate, no default, no binary, no
+parser change.) Scored against "THE RECEIVER-LAW BATTERY — PRE-REGISTRATION"
+(`0afb38b`), its LAUNCH STEP (`1b4a591`, `62102fe`), the OPERATOR SANCTION,
+and paper §16.83 — and against nothing else. **Nothing here flips a default;
+no default change is recommended; no constant is blessed.** Every number below
+is a `RECVLAWRESULT` row field (the parser's last-line-wins reading of the
+gauge dump that sits directly above it in the same ledger) or a line quoted by
+`file:line`. Ledgers: `docs/l1-raw/recvlaw/recvlaw-s42.log.gz`,
+`recvlaw-s7.log.gz` (committed gzipped; raw sha256 `9905af40…` and
+`339aa6e8…`), `recvlaw-witness-s42.jsonl`, `recvlaw-witness-s7.jsonl`,
+`run_all.log`. Line numbers below are into the UNCOMPRESSED `.log`.
+
+### 0 — The facts of the run, before any number
+
+- **Both seeds completed on the sanctioned binary.** `run_all.log`: `LAUNCH
+  … bin_sha256=4cd94255…` 14:06:17Z, `DONE-S42 rc=0 elapsed=6452s` 15:53:49Z,
+  `DONE-S7 rc=0 elapsed=12543s` 17:35:20Z, `QUIET raptorpath=0 rp-ns=0`,
+  `DONE-ALL`. Seed 7 ran because seed 42 finished in 1 h 47 min, under the
+  2.5 h gate. Both ledgers carry `SHA256 4cd942551e…` on line 21.
+- **96 of 96 invocations produced a row.** `recvlaw-s42.log` and
+  `recvlaw-s7.log` each carry 48 `=== rep=` headers, 48 `RUNTIME … rc=0`
+  lines and 48 `RECVLAWRESULT` rows; each witness file carries 48 rows.
+  **n = 3 per arm-cell per seed at all 16 arm-cells, n = 6 pooled.** No
+  `ABORT`, no `ARM-LIVENESS-FAIL-*`, no `ARM-CONTAMINATION`, no
+  `INSTRUMENT-FAIL-*`, no `WL2-FAIL-*`, no `SEAM-*`, no `RECVLAW-PARSE-FAIL`,
+  no `QCAP-MISSING`, no non-zero `rc`.
+- **DNF, per arm-cell (rows with `dnf=true`, client `timeout_s=300`):**
+
+  | | `c1` | `sc2` | `c7` | `c8` |
+  |---|---|---|---|---|
+  | `CTL` | 0/6 | **6/6** | 0/6 | 0/6 |
+  | `A` | 0/6 | 1/6 | 0/6 | 0/6 |
+  | `B` | 0/6 | **6/6** | 0/6 | 0/6 |
+  | `AB` | **3/6** | **6/6** | **6/6** | **6/6** |
+
+  34 DNF invocations in 96 (18 in seed 42, 16 in seed 7). **The composition
+  arm `AB` did not finish a single 200 MB `c7` or 25 MB `c8` object at either
+  seed** (`RUNTIME c7-AB rep=1 303s`, `c8-AB rep=1 303s`, … all six each); the
+  smoke's `c8-AB` DNF was the first reading of exactly this. **The CONTROL arm
+  itself did not finish `sc2` once** (§2 below).
+- **`CONTROL-MOVED` fired 24 times** — `c1-B`, `c1-AB`, `sc2-B`, `sc2-AB` at
+  every rep of both seeds (`recvlaw-s42.log:1061`, `:3030`, …;
+  `recvlaw-s7.log:839`, `:1112`, …), always on `m_max` (200, once 125, once
+  172), never on `lstar_us`. §1 and §9 read it.
+- **The `ARMCOUNT rows=0/3` / `ARM-VANISHED` lines (32 per seed,
+  `recvlaw-s42.log:49780-49811`, `recvlaw-s7.log:47585-47616`) are the
+  launch step's known cosmetic bug and are FALSE.** `recvlaw_battery.sh:476`
+  greps `"cell": "<c>", "arm": "<a>"` while `recvlaw_parse.py:432` prints
+  `json.dumps(row, sort_keys=True)`, i.e. `"arm": …` BEFORE `"cell": …`, so
+  the pattern can never match. The defect is in the battery script's summary
+  grep, not in the parser; it touches no scored field; the scorer counted the
+  rows itself (48 + 48). **Not fixed here** — the task's rule was to touch the
+  parser only if scoring depended on it, and it does not. `DONE-S<seed>` keyed
+  on `RECVLAW-BATTERY-DONE` (`recvlaw-s42.log:49812`, `recvlaw-s7.log:47617`),
+  so the sentinels were unaffected.
+
+### 1 — Per-invocation verification (the witness table, both seeds)
+
+| witness | must | read |
+|---|---|---|
+| `W5` arm liveness | both endpoints echo the arm | **96/96**: every `LIVENESS` line reads `RWM_RECV_REQUEST_LAW`/`RWM_RANK_FEEDBACK` = the arm at BOTH endpoints, substrate gates `1/1`, contamination gates `0/0`; zero `ARM-LIVENESS-FAIL`, zero `ARM-CONTAMINATION` |
+| `WL2` request built AND served | `> 0`/`> 0` on A/B/AB; `0`/`0` on CTL | **96/96** (`WL2=1` on every row). A at `c7`: `req_sent` 39 236–47 043 / `reqs_served` 28 667–32 205; B at `c7`: 26 728–38 859 / 25 360–28 289; CTL: `0/0` at every cell |
+| seam `[FCAUSE] gap_data` | `≡ 0` on A/AB; `> 0` on CTL/B at lossy cells | **holds on every row where the gauge printed**: A/AB `gap_data=0` at 45/45 rows carrying `[FCAUSE]`; CTL/B `gap_data` 331–7 023 at 48/48. Three A/AB rows have NO `[FCAUSE]` line at all (below) |
+| `CONTROL-MOVED` (`c1`/`sc2`) | `lstar_us = 0`, `m_max = 1` | `lstar_us = 0` on **48/48** control rows. **`m_max = 200` on B and AB at 24/24 control rows** (harness line ×24). See §1a |
+| `W1` `[RFA] gen=` | 0 | 96/96 |
+| `W2` `[PFRAC]` present | present | **0/96 — structurally unreachable.** `[PFRAC]` is gated `if generation && gates.pfrac` (`net/mod.rs:9127`) and §3 of the pre-registration mandates `RWM_GEN=0` on every arm. A skipped datum under §8's own rule ("an absent gauge is a skipped datum and never a zero"), and a witness that could never have been present: the pre-registration mis-specified it |
+| `W3` `[DIAG] retx=` max | `> 0` at lossy cells | 96/96 (`retx_max` 1–15 791 on lossy rows, read as the MAXIMUM) |
+| `W4` `[RACK] fa=` | present | 96/96 (carried, never pooled with the receiver truth) |
+| `W6` `[LATE] n=` | `> 0` at lossy cells | 96/96 |
+| `W7` `[SUCC] det=` | `> 0` | 96/96 |
+| `W8` `[FCAUSE] n=` | `> 0` | **93/96.** Absent (no line at all, even at the sender's exit `Drop`) on `c7-AB` s42 rep 2 and rep 3 and `c7-A` s7 rep 2. `[FCAUSE]` prints only when `is_fire_cause_site()` (`net/mod.rs:6543`), i.e. when the gap loop classified at least one fire; on those three rows it never did (on the other A/AB rows it printed `n=1–4`, all `timer`). Skipped datum under §8; nonetheless `c7-AB` at seed 42 meets §8's literal "`W1`–`W8` failing at ≥ 2 of 3 reps" clause — moot, since `c7-AB` DNF'd 6/6 |
+| `WL1` `[LATE] lstar_us` | `> 2000` at the duals | **FAILS 24/24 dual rows: `lstar_us = 0` on every `c7` and `c8` row of every arm.** Per §6 of the pre-registration this is the KNEE-BOUND outcome, not a malfunction — §7 below |
+| `WK` `knee_bind` / `sampler_bind` | echoed | 96/96 |
+
+**1a — What `CONTROL-MOVED` actually caught, and what it missed.** The harness
+asserts only `lstar_us` and `m_max`. The pre-registration's own control
+clause (§5) is wider: "`lstar_us = 0`, `m_max = 1`, **and no scored column
+moves**". Against that clause, at `c1` (400 MB, single path, lossless):
+
+| `c1` | `[RFA] false_frac` per rep (s42; s7) | pooled | vs CTL |
+|---|---|---|---|
+| `CTL` | 0.2992 0.2240 0.3600; 0.2463 0.2917 0.2866 | 1 533/5 259 = **0.2915** | spread [0.224, 0.360] |
+| `A` | 0.6374 0.6605 0.6245; 0.6579 0.6521 0.7068 | 7 490/11 353 = **0.6597** | **×2.26, 6/6 reps outside the CTL spread** |
+| `B` | 0.8528 0.8312 0.8591; 0.8757 0.8045 0.8510 | 27 733/32 619 = **0.8502** | ×2.92, 6/6 outside; `m_max=200` |
+| `AB` | 0.9446 0.8065 0.9496; 0.8218 0.8796 0.9639 | 26 644/29 083 = **0.9161** | ×3.14, 6/6 outside; `m_max=200`; **DNF 3/6** (s42 r1 `:1065`, r3; s7 r3) |
+
+(`RECVLAWRESULT` rows `recvlaw-s42.log:39`, `:344`, `:669`, `:1074`, `:16464`,
+`:16743`, `:17009`, `:17263`, `:32631`, `:32904`, `:33268`, `:33766`;
+`recvlaw-s7.log:39`, `:299`, `:558`, `:851`, `:15351`, `:15676`, `:16039`,
+`:16443`, `:30518`, `:30823`, `:31266`, `:31931`.) **The scored column moved
+at the control on EVERY treatment arm, including A**, whose `lstar_us = 0`
+and `m_max = 1` passed the harness. Arm A at `c1` is supposed to be, in the
+paper's words (§16.83.2), "REQUEST IMMEDIATELY = the shipped machine"; it
+served 10 475 copies against the shipped machine's 5 259 `[RFA]` fires and
+more than doubled the realized false fraction. §9 names the mechanism.
+`c1` goodput: CTL [132.0, 167.4] Mbit/s; A 3/6 below the CTL minimum (94.4,
+117.1, 117.5); B 4/6 below (60.3, 83.9, 105.8, 105.9).
+
+**The pre-registration's second control pre-declaration also fails, on the
+CONTROL ARM ITSELF.** §16.83.6 and the task brief pre-declare `knee_bind = 0`
+at `c1`/`sc2`; the ledger reads `knee_bind = 1.0000` on 46/48 control rows
+(0.9583 and 0.9474 on the other two), on CTL as much as on any arm
+(`c1-CTL` s42: `LATELINE … knee_bind=1.0000` at `:152`, `:16567`, `:32732`).
+That is the instrument's own L0 reading transported to L1 (pre-registration
+§6 already said the loopback reads `lstar_us = 0` with `knee_bind = 1.0`), a
+property of the gauge at these cells and not of any arm: at `c1-CTL`
+`knee_us` = 4 096–5 120 µs against `d_us` = 32 955–51 881 µs, so
+`(H − d)⁺ = 0` binds there too. The two pre-declarations (`knee_bind = 0` in
+§16.83.6; `knee_bind = 1.0` on loopback in §6) contradicted each other before
+the run; the ledger sides with §6.
+
+**On "a control that moves VOIDS the run."** The battery header, paper
+§16.83.6 and the harness line all say RUN; the task brief says CELL. Under
+the RUN reading every treatment row of this battery is VOID and the scored
+cells have zero live treatment rows — `UNSCOREABLE` for A, B and AB by §8's
+"n < 2 live rows" clause — and §§3–8 below are observations on a voided run.
+Under the CELL reading the scored cells stand and §10's verdicts apply. **The
+two readings are not in tension about the outcome: neither licenses a
+statement in any arm's favour, and this section flips nothing under either.**
+The verdict table (§10) carries the CELL-reading verdict as primary and the
+control clause beside it, so a reader applying the RUN reading loses nothing.
+
+### 2 — The CTL arm, read first: what the shipped machine was doing at these cells
+
+- **`sc2-CTL` did not finish once (6/6 DNF, `RUNTIME sc2-CTL rep=1 303s`,
+  `recvlaw-s42.log:3034` `"dnf":true … "timeout_s":300`; `cpucli` 297.7–299.7 s
+  of ~302 s wall).** The receiver's last tick reads `[SUCC] det=2022 res=2022
+  open=0` (s42 r1; `LATE reports=192`), and `QDISC cli0 … Sent 106088552 bytes
+  88105 pkt (dropped 463)`: the whole 100 MB object crossed the link and the
+  client then spun to the timeout. **This is NOT new to binary `4cd94255…`.**
+  The r-battery on `85c8a9c2…` (same VM, same day, pre-wire-v8) already read
+  `sc2-s25-CTL` at **2.287 / 1.917 Mbit/s** and `sc2-s18-CTL` at 2.599 / 2.765
+  (`docs/l1-raw/rbattery-trunc/r-s42.log:225`, `:458`, `:188`, `:421`,
+  `OUT-OF-BAND-RESULT … band=[78,92] … RETAINED, cause to be named in
+  scoring`), against **87.557 Mbit/s in 11 s** on the α-sweep's binary
+  `92673ff5…` (`docs/l1-raw/alpha-s42.log:14`, `:1676-1677`). At ~2 Mbit/s a
+  100 MB object needs ~400 s and the client timeout is 300 s. **The `sc2`
+  MUST-NOT-MOVE control was collapsed before this battery launched, the
+  r-battery had recorded it, and the smoke (c8 only) could not see it.** As a
+  control cell `sc2` is therefore `UNSCOREABLE` in this battery: there is no
+  completed control to not-move against. (`sc2-A` completed 5/6 at 4.0–7.2
+  Mbit/s with a realized false fraction of 0.958–0.973 and 456 579 served
+  copies pooled; `sc2-B` and `sc2-AB` DNF'd 6/6. None of that is a scored
+  reading and none of it is a win — see §9.) The cause of the `sc2` collapse
+  is owed by the r-battery's own line and is not diagnosed here.
+- **`c8-CTL` is bimodal, as the smoke and the mode-hunt battery already
+  read:** 6.011 / 8.057 Mbit/s (33 s, 25 s) and 71.559 / 64.020 / 78.297 /
+  64.648 Mbit/s (2.5–3.1 s). Its 6-rep spread is therefore [6.01, 78.30], and
+  the goodput GUARD at `c8` has almost no power — pre-declared
+  `GUARD-UNDERPOWERED`, and now visibly so.
+- **`c7-CTL` is stable:** 59.68–82.62 Mbit/s, `[RFA] false_frac`
+  0.0335–0.0445, `tot_p99` 131 072–294 912 µs.
+- **At every cell, on CTL itself, `[LATE]` reads `lstar_us = 0`,
+  `knee_bind = 1.0`, and `rho_heal0` = 0.98–1.00** (`c7-CTL` 0.9790–0.9844,
+  `c8-CTL` 0.9466–0.9794, `c1-CTL` 0.9899–0.9986, `sc2-CTL` 0.9332–0.9461).
+  D0 measured `π0` = 0.0077 at `c1`. The receiver's `π̂0` (`late.rs:255`,
+  `at_risk_heal[0]/at_risk[0]`) counts `HoleOutcome::Original`, whose own
+  doc-comment reads "a late reorder or a retransmit, indistinguishable at the
+  receiver" (`net/succ.rs:236-238`): the sender's per-seq COPY carries the
+  same seq and is counted as the original healing. **The receiver's `π̂0` is
+  not the law's `π0`; it is the fraction of holes closed by ANY source symbol,
+  and it reads ≈ 1 everywhere.** §9 carries the consequences.
+- At `c7-CTL` the gauge's two knee inputs read `knee_us` = 4 608–5 120 µs and
+  `d_us` = 17 323–22 823 µs (`LATELINE c7-CTL rep=1 site=srv`,
+  `recvlaw-s42.log:11520`; s7 `:9937`); at `c8-CTL` `knee_us` = 4 096–7 168 µs,
+  `d_us` = 45 182–215 190 µs. §16.83.2 computed `ℓ* = 7.223 ms` at `c7` from
+  `H = 8.000 ms, d = 0.777 ms`. **The gauge's `d` exceeds its `H` by 3.4–4.9×
+  at `c7`, so `(H − d)⁺ = 0` and `ℓ* = 0` before any arm is armed.**
+- `sampler_bind = 1.0000` on 24/24 `c7` rows and on 17/24 `c8` rows
+  (`c8` range 0.75–1.0): at `c7` every readout was 2 ms-sampler-bound, on
+  CTL as on the arms.
+
+### 3 — Scored dimension 1: the realized false fraction at the receiver (`[RFA] false/fires`, receiver site, last cadence tick)
+
+Pooled over both seeds (n = 6), binomial SE from the pooled hole count; the
+per-seed pooled ratio is given so the two-seed agreement is checkable.
+`rep_redundant` is carried as the false measurand under coded answers.
+
+| cell | arm | per-rep `false_frac` (s42; s7) | pooled `false/fires` | SE | vs CTL pooled | per-seed ratio |
+|---|---|---|---|---|---|---|
+| `c7` | `CTL` | 0.0335 0.0391 0.0382; 0.0445 0.0386 0.0339 | 19 580/517 182 = **0.0379** | 0.00027 | spread [0.0335, 0.0445] | — |
+| `c7` | `A` | 0.2228 0.2047 0.2511; 0.2124 0.2177 0.1995 | 148 995/685 971 = **0.2172** | 0.00050 | **×5.74 RISE**, 6/6 outside | s42 ×6.11, s7 ×5.41 |
+| `c7` | `B` | 0.2195 0.2050 0.2028; 0.2164 0.2099 0.2655 | 150 454/686 178 = **0.2193** | 0.00050 | **×5.79 RISE**, 6/6 outside | s42 ×5.69, s7 ×5.92 |
+| `c7` | `AB` (DNF 6/6) | 0.4009 0.4338 0.4082; 0.6227 0.4363 0.4559 | 18 569/42 104 = **0.4410** | 0.00242 | ×11.65 RISE on a TRUNCATED population (`fires` 3 398–10 509 vs 57 595–122 088) | s42 ×11.21, s7 ×12.32 |
+| `c8` | `CTL` | 0.1766 0.0933 0.0666; 0.1296 0.1956 0.0931 | 3 586/35 502 = **0.1010** | 0.00160 | spread [0.0666, 0.1956] | — |
+| `c8` | `A` | 0.3712 0.7097 0.6939; 0.5884 0.6216 0.6199 | 27 842/47 864 = **0.5817** | 0.00225 | **×5.76 RISE**, 6/6 outside | s42 ×6.20, s7 ×5.15 |
+| `c8` | `B` | 0.3096 0.3926 0.4587; 0.5832 0.5686 0.3058 | 15 216/39 264 = **0.3875** | 0.00246 | **×3.84 RISE**, 6/6 outside | s42 ×4.02, s7 ×3.51 |
+| `c8` | `AB` (DNF 6/6) | 0.7033 0.8685 0.7060; 0.4318 0.8263 0.8273 | 33 779/44 483 = **0.7594** | 0.00203 | ×7.52 RISE, truncated | s42 ×8.74, s7 ×6.03 |
+
+Rows: `c7` s42 `:11410` `:11707` `:11983` `:12261` `:27555` `:27893` `:28175`
+`:28446` `:44510` `:44773` `:45088` `:45404`; `c7` s7 `:9820` `:10136`
+`:10412` `:10690` `:25324` `:25619` `:25899` `:26190` `:42932` `:43196`
+`:43474` `:43760`; `c8` s42 `:14082` `:14467` `:14523` `:14585` `:30265`
+`:30313` `:30374` `:30724` `:47251` `:47307` `:47678` `:48014`; `c8` s7
+`:12485` `:12776` `:13065` `:13547` `:27995` `:28043` `:28331` `:28678`
+`:45484` `:45545` `:45694` `:45769`.
+
+**The class split behind it.** At `c7`, pooled: CTL `dup_src` 11 300 /
+`preempt_src` 8 280; **A `dup_src` 148 991 / `preempt_src` 4**; B 144 239 /
+6 215; AB 18 566 / 3. A's entire excess is `dup_src` — a second source copy of
+a seq whose source copy had already arrived (`net/mod.rs`, the `[RFA]` class
+table): **of the 179 055 copies the sender served to A's requests at `c7`,
+148 991 (83 %) arrived after the original had.** At `c8`, A: 27 837 dup of
+31 653 served (88 %).
+
+**`rep_redundant`** (per rep, s42; s7): `c7-CTL` 1 158 1 658 1 116; 1 468
+1 089 1 349 (max 1 658); **`c7-B` 1 831 1 932 4 865; 2 574 2 875 1 995 — 6/6
+above the CTL maximum** (pooled 16 072 vs 7 838); `c7-A` 1 0 1; 1 0 0;
+`c7-AB` 22 21 19; 0 0 17. `c8-CTL` 291 41 110; 169 43 155 (max 291);
+**`c8-B` 76 1 269 836; 797 1 008 64 — 4/6 above the CTL maximum** (pooled
+4 050 vs 809); `c8-A` 0 1 3; 0 2 1; `c8-AB` 1 1 1; 0 0 1.
+
+The sender's own `[RACK] fa=` is carried, NOT pooled: `c7-CTL` 727/5 900,
+785/5 285, 602/6 278; 302/6 248, 611/7 047, 569/6 135. On A/AB it reads
+`0/1`–`0/4` (the gap loop is closed) or the `evals=0 … fa=N/N` exit form —
+it cannot see the request-served copies and says nothing about them.
+
+### 4 — Scored dimension 2: worst-leg delivered latency (`[LAT] tot_p99`, receiver, µs)
+
+Caveat carried from the OPERATOR SANCTION: the receiver's `[LAT]` block has
+no exit flush; every reading is the last 1 s cadence tick, identical in kind
+across arms. On the DNF rows the receiver was starved (`lat_n` 1 082–4 884
+delivered symbols against 160 174–168 769 on completed `c7` rows), so those
+readings describe a stalled transfer and are listed, not compared.
+
+| cell | arm | `tot_p99` per rep (s42; s7) | CTL spread (n = 6 pooled) | position |
+|---|---|---|---|---|
+| `c7` | `CTL` | 262 144 196 608 131 072; 294 912 262 144 212 992 | [131 072, 294 912] | — |
+| `c7` | `A` | 327 680 327 680 262 144; 294 912 294 912 229 376 | | 2/6 above the CTL max, 0/6 below the CTL min: **not better anywhere** |
+| `c7` | `B` | 393 216 458 752 262 144; 360 448 360 448 2 359 296 | | **5/6 above the CTL max** (one at 8× it) |
+| `c7` | `AB` (DNF) | 524 288 458 752 1 310 720; 491 520 1 048 576 524 288 | | 6/6 above, on a starved receiver |
+| `c8` | `CTL` | 851 968 360 448 491 520; 851 968 655 360 983 040 | [360 448, 983 040] | — |
+| `c8` | `A` | 458 752 589 824 1 572 864; 1 703 936 917 504 5 242 880 | | 3/6 above the CTL max (one at 5.3×), 0/6 below the CTL min |
+| `c8` | `B` | 851 968 917 504 2 097 152; 655 360 851 968 1 179 648 | | 2/6 above, 0/6 below |
+| `c8` | `AB` (DNF) | 180 224 15 728 640 109 051 904; 655 360 4 194 304 1 703 936 | | starved receiver; listed only |
+
+**No arm at either scored cell has a single rep below the CTL minimum.** The
+ping probe beside it (`LATPROBE-LEG … p99=…[UNSCOREABLE(inside censored
+tail)]` on the DNF rows) adds nothing the pre-registration can score.
+
+### 5 — The GUARD: goodput (`ΔU`), with DNF as a first-class reading
+
+| cell | arm | Mbit/s per rep (s42; s7) | CTL spread | guard |
+|---|---|---|---|---|
+| `c7` | `CTL` | 70.851 59.681 82.620; 67.783 73.043 82.143 | [59.68, 82.62] | — |
+| `c7` | `A` | 79.757 77.534 69.251; 79.285 77.116 75.772 | | inside 6/6 — **says nothing about goodput in either direction** (`GUARD-UNDERPOWERED`, n for a score is 559) |
+| `c7` | `B` | 78.772 79.921 67.498; 77.996 74.205 74.493 | | inside 6/6 — same |
+| `c7` | `AB` | **DNF DNF DNF; DNF DNF DNF** | | **LEAVES the spread (0 Mbit/s, 6/6): REFUTED on the guard** |
+| `c8` | `CTL` | 6.011 71.559 64.020; 8.057 78.297 64.648 | [6.01, 78.30] (bimodal) | — |
+| `c8` | `A` | 65.576 58.583 6.025; 8.479 8.709 17.156 | | inside 6/6 — says nothing |
+| `c8` | `B` | 58.733 6.878 6.759; **5.189** 7.012 48.192 | | 1/6 below the CTL minimum (s7 rep 1, `recvlaw-s7.log:13065`): a literal breach, 14 % under a bimodal floor, `GUARD-UNDERPOWERED` |
+| `c8` | `AB` | **DNF ×6** | | **LEAVES the spread: REFUTED on the guard** |
+
+**Which pre-registered outcome covers a DNF.** §4 of the pre-registration:
+"An arm that LEAVES the CTL goodput spread is REFUTED on the guard"; §5's
+refuter list: "goodput leaves the CTL spread"; §8: `REFUTED-WITH-RECORD` — "a
+pre-stated refuter of §5 fires". A transfer that does not complete has
+goodput outside any finite spread. **`AB` at `c7` and `c8` is
+`REFUTED-WITH-RECORD` on the guard, 6/6 at both cells, both seeds.** This is
+inside the pre-registered set; nothing is invented. `cpucli` on those rows is
+320.9–325.8 s against a 302–303 s wall — the sender burned more than three
+cores for the whole timeout. `AB` at `c1` (a control) DNF'd 3/6 at 400 MB with
+`cpucli` 314.6–316.1 s.
+
+### 6 — The §16.83.6 prediction bands, tested literally
+
+| prediction (verbatim) | reading | result |
+|---|---|---|
+| Arm A at `c7`: realized false fraction FALLS by `1/(1 − F(ℓ*))` ∈ **[1.03, 2)** | CTL/A pooled = 0.0379/0.2172 = **0.174** (a ×5.74 RISE); s42 0.164, s7 0.185 | **FAILS at both seeds separately and pooled** |
+| Arm A at `c8`: FALLS by a factor ∈ **[2, 10]** | CTL/A = 0.1010/0.5817 = **0.174** (×5.76 RISE); s42 0.161, s7 0.194 | **FAILS at both seeds and pooled** |
+| … with goodput inside the CTL spread | A inside 6/6 at both duals | holds (and, per §4, says nothing) |
+| … and `knee_bind ≈ 1` at `c7` | `knee_bind = 1.0000`, 6/6 on A at `c7` (and on CTL, B, AB — 24/24) | holds — **and it is the `KNEE-BOUND` verdict, §7** |
+| Arm B: `dup_src → 0` BY CONSTRUCTION (a wiring witness) | `dup_src` on B: `c7` 144 239 pooled (per rep 21 486–27 113), `c8` 14 285 | **NOT observed.** 95.2 % (`c7`) / 88.7 % (`c8`) of B's span requests were refused by `generate_repair_range` and answered as per-seq copies (`WA1`, §8) — the construction that was to zero `dup_src` was not the construction that ran |
+| Arm B: the result is `rep_redundant` and the class migration `dup_src → preempt_src` | `rep_redundant` rose (6/6 at `c7`, 4/6 at `c8` above the CTL max); `preempt_src` on B: `c7` 6 215 vs CTL 8 280, `c8` 931 vs 759 — **no migration**: the false mass stayed in `dup_src` (144 239 of 150 454) | the pre-stated B refuter "`rep_redundant` rises without the false fraction falling" **FIRES** — the fraction rose ×5.79 / ×3.84 |
+| Controls: `lstar_us = 0`, `m_max = 1`, no scored column moves | `lstar_us = 0` 48/48; `m_max = 200` on B/AB 24/24; the false fraction rose ×2.26 (A), ×2.92 (B), ×3.14 (AB) at `c1` | **`lstar_us` holds; the other two FAIL** (§1a) |
+| Refuter: `sampler_bind ≈ 1` | 1.0000 on 24/24 `c7` rows; 0.9524–1.0 on A at `c8` | **FIRES on A at both duals** (and on CTL — the 2 ms sampler, not the law, set every report time at `c7`) |
+| Refuter: the false fraction does not move | it moved — UP, ×3.8–×5.8 on completed rows | the refuter's literal wording is "does not move"; the observed RISE is a stronger failure than the refuter names. **As a named outcome, a RISE is OUTSIDE THE PRE-REGISTERED SET**; the verdict is carried by the refuters that fire literally (`sampler_bind`, `rep_redundant`, the guard) and by `KNEE-BOUND` |
+| The DISALLOWED refuter (`π1 ≤ S_tot(ℓ*)` is conservative, so a NULL is not evidence against the law) | not a null: the arms moved the scored fraction the wrong way; `s_tot = 1.0000` on 96/96 rows | **not applicable** — no reading here is a null, so nothing is being read against the law on the strength of a null |
+
+### 7 — `KNEE-BOUND`: the ledger verdict, and what form it took
+
+`[LATE] knee_bind` reads **1.0000 on 24/24 `c7` rows and 24/24 `c8` rows**,
+every arm, both seeds (`RECVLAWRESULT … "WK_knee_bind": 1.0`; e.g.
+`LATELINE c7-A rep=1 site=srv … lstar_us=0 … knee_bind=1.0000
+sampler_bind=1.0000`, `recvlaw-s42.log:11808`). §8's bar is `≥ 0.95`.
+
+**`KNEE-BOUND` fires at both scored duals, and it fires in its degenerate
+form: the cap is not merely binding, it is ZERO.** `late.rs:360`: `cap =
+knee_us − d_us` saturating at 0; at `c7` the gauge's `H` (`knee_us`, the
+median arrival-stall onset fed from the `[WIDLE]` machinery) is 4.6–5.1 ms and
+its `d` (`d_us`, the mean lateness at which holes were closed by a source
+symbol, `receiver.rs:1710`) is 17–23 ms, so `(H − d)⁺ = 0` and `ℓ* = 0`
+regardless of the lateness distribution. The consequence the pre-registration
+wrote in advance applies verbatim: **the request lateness at `c7`/`c8` is NOT
+set by the lateness distribution; it is set by the store's free headroom,
+i.e. by `RWM_STORE_GAIN = 2.0`, which is UNPROVENANCED — the repair law is the
+store-cap law wearing a clock**, and here the clock reads zero. (a) Every
+number §16.83 computes at `c7`/`c8` inherits `gain = 2.0`'s absent provenance;
+(b) `RWM_STORE_GAIN` is now the deciding measurement of two laws rather than
+one; (c) tuning the request clock without touching the store cap is provably
+inert at those cells. **This is a LEDGER verdict about PROVENANCE, not a
+performance finding, and it names `RWM_STORE_GAIN`.** Two things it does NOT
+say: it does not say `gain = 2.0` is wrong, and it does not say the paper's
+`H = 8 ms` is what the gauge measured — the gauge read `H` at 4.6–5.1 ms and
+`d` at 17–23 ms against the paper's 8.000 ms and 0.777 ms, and whether the
+gauge's `d` and §16.83.2's `d` are the same object is a question for the paper.
+The gauge's number is the one the arm acted on.
+
+**And the timing lever therefore never existed in this run.** With
+`ℓ* = 0` on every dual row, arm A's `earliest Â + ℓ*` deadline is `Â`: it
+requested at once, at the `α = S(0) = 1` corner §16.83.2 itself calls "an
+unconditional action". The contrast the battery was built to measure (a
+receiver that WAITS `ℓ* > 2 ms` before requesting) was not present on any of
+the 24 A/AB dual rows. `WL1`'s failure and `KNEE-BOUND` are one reading.
+
+### 8 — The remaining pre-registered readings
+
+- **`[REQS] m_max`** (sender seat; receiver `[REQ] m_max` agrees on every
+  row): CTL `0`; A `1` (48/48, the copy exactly); **B and AB `200`** at `c7`
+  (24/24) and `c1`/`sc2` (`m_max = 200` ×22, 125 ×1, 172 ×1); at `c8` B
+  125/200/200; 168/200/200, AB 200/200/200; 182/200/200. `m = 200` is the
+  receiver's `A*` cap (`receiver.rs:872`, `min(outstanding span,
+  recv_win_cap)`) reached because `π̂0 ≥ 0.99` makes `k_½ = ln 2 / (−ln π̂0)`
+  ≥ 69 (and `+∞` at `π̂0 = 1.0000`, `late.rs:123-131`). The paper's own table
+  (§16.83.3) expected `m = 18` at `c7`, `9` at `c8`, `1` at the singles.
+- **Copy vs coded served** (pooled): `c7-A` 179 055 copy / 0 coded; `c7-B`
+  145 879 / 12 366; `c7-AB` 21 892 / 104; `c8-A` 31 653 / 0; `c8-B` 13 626 /
+  3 431; `c8-AB` 36 149 / 42. **On the vocabulary arms 92–99.5 % of what
+  reached the wire was a per-seq copy.**
+- **`WA1`** (`[REQS] wa1_some / wa1_none`, pooled): `c7-B` 12 366 / 246 088
+  (`wa1_none_frac` 0.952); `c7-AB` 104 / 22 980 (0.995); `c8-B` 3 431 /
+  26 803 (0.887); `c8-AB` 42 / 39 331 (0.999); `c1-B` 120 / 29 329;
+  `c1-AB` 322 / 30 250. **§16.83.3's soundness precondition failed on
+  ~9 of every 10 span requests: `generate_repair_range` refused the span
+  (`m = 200` exceeds what the encoder retains) and the answer degraded to
+  copies — "the shipped machine with extra latency", in the paper's own
+  words. The pre-stated refuter "`wa1_none` shows the span answers degrading
+  to copies anyway" FIRES on B and AB at every cell.**
+- **`[REQS] stale` / `budget_bound`** (WA3): `c7-A` s42 r1 `reports=33598
+  spans=591619 served=32205 stale=314354 budget_bound=108795` — 53 % of
+  requested spans stale (already released by ack), 18 % refused by the
+  per-iteration budget; the same shape on every A row (`stale` 278 529–
+  379 789 at `c7`). The serving loop was budget-bound on every A row; §9.
+- **`[RANK] pivots` dwell** (last tick): CTL `c7` 7 1 0; 0 6 8, `c8` 0 8 26;
+  0 0 0; **B `c7` 1 0 0; 0 0 0, `c8` 30 0 0; 0 7 0**; A and AB 0 on 23/24.
+  With `m = 200` and 12 366 coded answers against 246 088 refusals at `c7-B`,
+  the "frontier-invisibility cost" the paper wanted measured was not
+  exercised; `[RANK] deficit` at the last tick equals `holes` (pivots 0) on
+  almost every treatment row.
+- **`[FCAUSE]` migration.** CTL `c7`: `gap_data` 5 825 5 153 6 271; 6 141
+  7 023 6 109, `timer` 7 7 7; 7 4 6, `gap_refresh` 68 125 0; 100 20 20. **A
+  `c7`: `n` = 4 1 3; 3 – 2, all `timer`, `gap_data` 0** — the seam closed
+  exactly as §7 of the pre-registration requires. B `c7`: `gap_data` 4 438
+  3 862 4 256; 4 530 3 910 4 428 (the seam stays open, ~25 % fewer gap fires
+  than CTL). AB: `n` = 1–2, `timer` only. **The request fires are
+  DELIBERATELY NOT COUNTED INTO `[FCAUSE]`** (`net/mod.rs:7431-7437`: folding
+  them in "would erase exactly the reading the arm exists to produce"); they
+  ride on `[REQS] served` and their cause tag on `[REQS] cause` (`gap_data`
+  on 8/12 A rows, `gap_refresh` on 4/12; `gap_refresh` on 12/12 AB rows).
+  So on A the sender's classified fires fell from ~6 000 to ~3 while its
+  request-served copies rose to ~30 000 — the migration is from the
+  `[FCAUSE]` plane into the `[REQS]` plane, and the `[RFA]` receiver truth is
+  the only line that sees both.
+- **`sampler_bind`**: `c7` 1.0000 on 24/24 rows (23/24 exactly, one 0.8571);
+  `c8` CTL 0.86–1.0, A 0.95–1.0, B 0.75–1.0, AB 0.89–1.0.
+
+### 9 — The mechanism the ledger supports — and "the law" versus "the arm's implementation of the law"
+
+Three separable facts, each read off the ledger, each cited:
+
+**(i) The receiver's `π̂0` is ≈ 1 at every cell, including the lossless
+single-path control where D0 measured 0.0077** (§2). `HoleOutcome::Original`
+counts the sender's own copy as the original (`succ.rs:236-238`). Downstream:
+`m = A* = 200` on every B/AB row (the `CONTROL-MOVED` ×24), the crossing term
+of `ℓ*` can never fire (`ρ̂_heal(ℓ) ≈ 1 > bar` in every bucket), and
+§16.83.1's identifiability argument — "no copy flies on `[0, ℓ*)`" — has an
+EMPTY domain when `ℓ* = 0`. This is an IMPLEMENTATION fact about the estimator
+the arms were fed, and it is also the fact §16.83.1 said could not arise. The
+paper's derivation assumed the receiver can separate a late original from a
+copy on the evaluation interval; the shipped gauge cannot, and the interval
+was empty anyway.
+
+**(ii) `ℓ* = 0` at the duals because `d > H` in the gauge** (§7). That is the
+LAW's own domain cap evaluated on the gauge's inputs, and at `ℓ* = 0` the law
+says "request immediately = the shipped machine" and predicts a false-fraction
+factor of `1/(1 − F(0)) = 1`, i.e. NO change. The §16.83.6 band `[1.03, 2)`
+was computed from `H = 8 ms, d = 0.777 ms`, which the gauge does not
+reproduce. **So the LAW, at the inputs the receiver measured, predicted a
+null; the arm delivered a ×5.7 rise. The rise is therefore not the law's
+prediction failing — it is the arm's implementation at `ℓ* = 0` NOT being
+the shipped machine.**
+
+**(iii) The arm's implementation at `ℓ* = 0` is a request storm, and the
+ledger shows it directly.** `[REQ]` on `c7-A` s42 rep 1 (`recvlaw-s42.log:
+11728-11747`): `sent=1133 spans=21151 holes=20` → … → `sent=43500
+spans=779897 holes=20`. The receiver built 43 500 requests carrying 779 897
+span entries for a hole population whose OPEN census never exceeded 20 at any
+tick (`MAX_NACK_GAPS = 20`, `net/mod.rs:214`): **each open hole was
+re-requested on every report** — `holes_at_least(now, ℓ* = 0, 20)`
+(`receiver.rs:855`, `succ.rs:582`) returns every open hole, and the macro
+fires on both the data-ack cadence (`receiver.rs:2330`, `advertise` = the
+2 ms sampler) and the refresh timer (`receiver.rs:1280`), with no per-hole
+request cooldown at the receiver. The sender's `req_at_report` in-flight
+subtraction (`net/mod.rs:9883`) is per-span-per-report and still passed
+32 205 copies to the wire at `c7-A` rep 1 (`stale=314354 budget_bound=108795`
+refused the rest), against `c7-CTL`'s 5 825 gap fires — **5.5× the copies,
+of which 83 % were `dup_src`**. The shipped gap loop has `NACK_RETX_COOLDOWN_
+FLOOR_US = 10 ms` per seq; the request path has the sender's per-report
+subtraction and nothing else. On AB the same storm at `m = 200` spans reaches
+`req_sent` 225 599 (`c7-AB` s42 r3) and 203 157 (`c8-AB` s7 r2) with `served`
+4 691 / 4 644 — **48:1 and 44:1 request:service ratios** — and the sender
+spends > 3 cores for 300 s not finishing 25 MB. The smoke's 85 338 / 5 495
+(15:1) was the mild case. This is the arm's implementation, and it is what
+every scored number above is measuring.
+
+**What that distinction does and does not buy.** It does not excuse a loss:
+the arms as built lose on the scored false fraction at both duals and both
+seeds by ×3.8–×5.8, never win on `tot_p99`, and the composition DNFs
+everywhere. It does say where the loss lives: (ii) is the law reaching its
+own corner on measured inputs (`KNEE-BOUND`); (i) and (iii) are the shipped
+arms not implementing that corner as "the shipped machine". **No reading here
+is evidence FOR the law either** — at the inputs this receiver measured, the
+law's prediction was a null and the null was not observed. The DISALLOWED
+refuter is not in play (§6).
+
+### 10 — Verdict table (cell × arm), pre-registered vocabulary only
+
+| cell | arm | verdict | also fires | control clause (§1a) |
+|---|---|---|---|---|
+| `c7` | `A` | **`REFUTED-WITH-RECORD`** — `sampler_bind ≈ 1` (1.0000, 6/6); the §16.83.6 band `[1.03, 2)` FAILS (observed 0.174, a ×5.74 rise); `tot_p99` not better on any rep | **`KNEE-BOUND`** (1.0000, 6/6) | scored column moved at `c1` (×2.26) |
+| `c7` | `B` | **`REFUTED-WITH-RECORD`** — `rep_redundant` rises (6/6 above CTL max) without the false fraction falling (×5.79 rise); `wa1_none` = 95.2 %; `tot_p99` above CTL max 5/6 | `KNEE-BOUND` | `m_max = 200` at `c1`/`sc2` (harness ×12), scored column moved |
+| `c7` | `AB` | **`REFUTED-WITH-RECORD` on the GUARD** — DNF 6/6 = goodput leaves the CTL spread; also `wa1_none` 99.5 % | `KNEE-BOUND`; `W8` absent 2/3 reps at s42 (§8 literal `UNSCOREABLE` clause, moot) | `m_max = 200`; DNF 3/6 at `c1` |
+| `c8` | `A` | **`REFUTED-WITH-RECORD`** — `sampler_bind ≈ 1` (0.9524–1.0, 6/6); the band `[2, 10]` FAILS (observed 0.174, ×5.76 rise); `tot_p99` above CTL max 3/6 | `KNEE-BOUND` | as above |
+| `c8` | `B` | **`REFUTED-WITH-RECORD`** — `rep_redundant` rises (4/6 above CTL max) without the fraction falling (×3.84 rise); `wa1_none` 88.7 %; goodput below the CTL min 1/6 (`GUARD-UNDERPOWERED`) | `KNEE-BOUND` | as above |
+| `c8` | `AB` | **`REFUTED-WITH-RECORD` on the GUARD** — DNF 6/6 | `KNEE-BOUND` | as above |
+| `c1` | `CTL` | control: `lstar_us = 0`, `req_sent = 0`, `gap_data > 0` — holds; `knee_bind = 1.0` contradicts §16.83.6's `0` on the CTL arm itself (instrument, §1a) | — | — |
+| `c1` | `A` `B` `AB` | **`CONTROL-MOVED`** (A: scored column ×2.26, 6/6 outside; B/AB: `m_max = 200` ×12 + scored column ×2.9/×3.1; AB DNF 3/6) | — | fired |
+| `sc2` | `CTL` | **`UNSCOREABLE`** as a control — DNF 6/6, a substrate collapse the r-battery already recorded on the previous binary (§2) | — | — |
+| `sc2` | `A` `B` `AB` | **`CONTROL-MOVED` / `UNSCOREABLE`** — no completed control; B/AB DNF 6/6; A completed 5/6 at 4.0–7.2 Mbit/s with `false_frac` 0.966 | — | fired |
+
+Under the RUN reading of "a control that moves VOIDS the run" (§1a), replace
+every treatment verdict at `c7`/`c8` with **`UNSCOREABLE`** (zero live
+treatment rows) and read the rest of this section as observations on a voided
+run. **Under either reading: no arm wins anything, nothing flips, and the
+`KNEE-BOUND` ledger verdict stands on the CTL rows alone.**
+
+### 11 — What cannot be concluded, and what this section owes forward
+
+- **Nothing about goodput** beyond the guard (`AB` refuted on it; A and B
+  inside a spread that at `c8` is [6, 78] Mbit/s). `GUARD-UNDERPOWERED` at
+  n = 6 is the pre-declared state and stays so.
+- **Nothing that raises §16.80's value ceiling** (< 1.54 % at `c7`,
+  < 1.88…3.39 % at `c8`), and — now measured — nothing that reaches it.
+- **No constant is blessed and none is corrected**: `GAP_ACK_MIN_INTERVAL =
+  2 ms` (whose `sampler_bind = 1.0` at `c7` is on the CTL rows too),
+  `NACK_RETX_COOLDOWN_FLOOR_US`, `RWM_STORE_GAIN = 2.0` (named by
+  `KNEE-BOUND` as the deciding constant, not adjusted), `κ`, the refresh
+  clamp. `α` was to be derived; at these cells it derived to `S(0) = 1`.
+- **Nothing about §16.83.5's loop** — its licensing condition (`[LATE]`
+  showing `ℓ*` drifting) cannot be evaluated on a gauge whose `ℓ*` is pinned
+  at 0 by the cap.
+- **Owed, and named rather than fixed here** (no engine file is touched by
+  this branch): (1) a per-hole request cooldown or a "requested-at" mark in
+  the receiver's request producer — without it `ℓ* = 0` is a storm, not the
+  shipped machine, and no reading of arm A at any `ℓ*` is interpretable;
+  (2) a receiver-side `π̂0` that does not count the sender's copy as the
+  original — or a paper statement that the receiver cannot have one, which
+  §16.83.1 currently denies; (3) the `sc2` substrate collapse (~2 Mbit/s on
+  `85c8a9c2…`, DNF on `4cd94255…`), owed since the r-battery's
+  `OUT-OF-BAND-RESULT … cause to be named in scoring`; (4) `[FCAUSE]`'s
+  emission when the gap loop never fired (3 rows absent), and `W2`'s
+  re-specification for `RWM_GEN=0`; (5) the `ARMCOUNT` grep in
+  `recvlaw_battery.sh:476`; (6) the exit flush for the receiver's `[LAT]`
+  block, already owed by the OPERATOR SANCTION.
+
+### WHAT THE LEDGER SAYS ABOUT THE WINS QUESTION
+
+No. Across both seeds and both scored dual-path cells, neither the
+receiver-timed request arm, nor the coded-vocabulary arm, nor their
+composition improved either scored dimension anywhere beyond the control's
+own spread. The realized false-repair fraction at the receiver — the primary
+score, powered on hundreds of thousands of holes — went UP on every treatment
+row, by roughly four to six times on the arms that finished and by eight to
+twelve times on the composition, which never finished a transfer at either
+scored cell. Worst-leg delivered latency was never better than the control on
+any single repetition and was often worse. The one prediction that held is
+the one the pre-registration wrote down as a warning rather than a hope: the
+request threshold is pinned at zero by the store-headroom cap, so the "law"
+at these cells is the store-cap constant wearing a clock — and, as built, the
+arm that was to act on that threshold re-requests every open hole on every
+report, which is where the extra false repairs come from. Nothing here is a
+win, nothing flips a default, and no constant is blessed.
