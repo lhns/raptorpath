@@ -53,6 +53,12 @@
 //! **No new gate.** The readout rides the EXISTING `RWM_DIAG` surface beside
 //! `[SUCC]` and `[ETA]`, on their cadence, so a missing line can only be read
 //! as an unreached emission site.
+//!
+//! **The exit flush (2026-09-08).** The receiver block ALSO prints once at
+//! the end of the receiver task, marked `final=1` (`net/recv_block.rs`), so a
+//! transfer shorter than the cadence still has a reading. The N = 1 test
+//! below is that case; it stops the server with SIGINT so the task actually
+//! reaches an exit (see `stop_server`).
 
 use std::io::Read;
 use std::net::{SocketAddr, TcpListener};
@@ -83,7 +89,13 @@ fn join(a: &[SocketAddr]) -> String {
     a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
 }
 
-fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
+/// Spawn the perf server. Returns the child, its accumulated log (stderr,
+/// plus the stdout readiness banner) and the two reader threads, which
+/// `stop_server` joins so the log holds EVERYTHING the process wrote —
+/// including what it writes on its way out.
+fn spawn_perf_server(
+    binds: &[SocketAddr],
+) -> (Reaper, Arc<Mutex<String>>, Vec<std::thread::JoinHandle<()>>) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
     let mut cmd = Command::new(bin);
     cmd.args([
@@ -105,7 +117,7 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
     let log = Arc::new(Mutex::new(String::new()));
     let sink = Arc::clone(&log);
     let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
+    let err_reader = std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
             match err.read(&mut buf) {
@@ -130,7 +142,7 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
         }
     }
     assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    {
+    let out_reader = {
         let sink = Arc::clone(&log);
         sink.lock().expect("stderr sink").push_str(&seen);
         std::thread::spawn(move || {
@@ -144,9 +156,63 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
                         .push_str(&String::from_utf8_lossy(&buf[..n])),
                 }
             }
-        });
+        })
+    };
+    (srv, log, vec![err_reader, out_reader])
+}
+
+/// STOP THE SERVER THE WAY ITS RECEIVER CAN SEE (the exit flush, 2026-09-08).
+///
+/// The perf server never ends a tunnel on its own: the client leaving is not
+/// a terminal event for the engine (dead-path detection is 6 s away and does
+/// not shut the tunnel down), and `Reaper` SIGKILLs, which runs no
+/// destructor — so under the old "sleep 1.5 s and read" the receiver task
+/// never reached ANY of its exit paths and its `final=1` block could never
+/// be observed. Here the server is sent SIGINT — the engine's `ctrl_c`
+/// handler → the shutdown broadcast → the receiver's shutdown arm → its
+/// exit flush — then waited for, and its readers are joined so the log holds
+/// everything the process wrote on the way out. This is the terminal path the
+/// L1 harnesses would take with `pkill -INT`; a harness that SIGKILLs still
+/// reads the last cadence line.
+///
+/// Without `kill` (non-unix) the old grace period is kept: the cadence lines
+/// are still there, the `final=1` block is not, and the tests that need it
+/// are `cfg(unix)`.
+fn stop_server(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>) {
+    #[cfg(unix)]
+    {
+        let pid = srv.0.id().to_string();
+        let sent = Command::new("kill")
+            .args(["-INT", &pid])
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(sent, "could not send SIGINT to the perf server (pid {pid})");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && !matches!(srv.0.try_wait(), Ok(Some(_))) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            matches!(srv.0.try_wait(), Ok(Some(_))),
+            "perf server did not exit within 15 s of SIGINT — the shutdown \
+             broadcast never reached its tasks"
+        );
     }
-    (srv, log)
+    #[cfg(not(unix))]
+    {
+        std::thread::sleep(Duration::from_millis(1500));
+        let _ = srv.0.kill();
+        let _ = srv.0.wait();
+    }
+    for r in readers {
+        let _ = r.join();
+    }
+}
+
+/// `final=1` as a whole token — the exit-flush marker, never a substring of
+/// some other field.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn is_final(line: &str) -> bool {
+    line.split_whitespace().any(|t| t == "final=1")
 }
 
 /// One loopback transfer. Returns the SERVER (receiver) log.
@@ -155,7 +221,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
     let binds: Vec<SocketAddr> = (0..paths)
         .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
         .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds);
+    let (mut srv, srv_log, readers) = spawn_perf_server(&binds);
 
     let mut cli = Command::new(bin);
     cli.args([
@@ -194,7 +260,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
          --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
         out.status
     );
-    std::thread::sleep(Duration::from_millis(1500));
+    stop_server(&mut srv, readers);
     let out = srv_log.lock().expect("stderr sink").clone();
     out
 }
@@ -312,10 +378,26 @@ fn assert_lat_line(l: &str) -> Vec<String> {
 // ── THE TWO TOPOLOGIES ──────────────────────────────────────────────────
 
 /// 1, 2, 3, 5, 6: THE GAUGE FIRES AND THE CROSS-PATH CLASS IS ZERO ON ONE
-/// PATH. The control — a nonzero reading here voids every dual-cell number.
+/// PATH, ON A SHORT TRANSFER. The control — a nonzero reading here voids
+/// every dual-cell number.
+///
+/// 7. **THE EXIT FLUSH** (goal-gate "OPERATOR SANCTION (2026-09-08
+///    ~14:00Z)"). The object is 1 MB — it completes in well under the
+///    receiver block's 1 s cadence on any host, which is EXACTLY the case
+///    that went red on the VM: the 8 MB object this test used to send
+///    finished in ~0.4 s there, the cadence never fired, and there was no
+///    `[LAT]` line at all. The receiver line must now be present, carry
+///    `final=1`, be the LAST of its kind (a scraper that takes the last line
+///    reads the complete counts) and be the ONLY `final=1` line of its kind
+///    (the flush is exactly-once). Fails on the shipped-before engine twice
+///    over: no line on a fast host, and no marker on any host.
+///
+/// `cfg(unix)`: the server has to be stopped with SIGINT for its receiver to
+/// reach an exit path at all — see `stop_server`.
+#[cfg(unix)]
 #[test]
 fn the_decomposition_fires_and_cross_path_is_structurally_zero_on_one_path() {
-    let log = run(1, None, "8000000");
+    let log = run(1, None, "1000000");
     assert!(log.contains("RWM_DIAG=1"), "the receiver's [GATES] echo lacks RWM_DIAG=1:\n{log}");
     let l = last_lat(&log);
     println!("[lat-reach] N=1: {l}");
@@ -330,6 +412,36 @@ fn the_decomposition_fires_and_cross_path_is_structurally_zero_on_one_path() {
          through it is void:\n{l}"
     );
     assert_eq!(u64_field(&sl[0], "rwxp_sum="), 0, "{l}");
+
+    // 7. THE EXIT FLUSH. The last `[LAT]` line IS the flush, and it is the
+    //    only one; its siblings in the block are flushed with it.
+    assert!(
+        is_final(l),
+        "the LAST [LAT] site=receiver line of a short transfer is not the exit \
+         flush (`final=1`) — the receiver block was never flushed at exit, so a \
+         transfer shorter than the 1 s cadence has no reading and every longer \
+         one loses its final partial second:\n{l}"
+    );
+    let finals = log
+        .lines()
+        .filter(|l| l.contains("[LAT] site=receiver") && is_final(l))
+        .count();
+    assert_eq!(
+        finals, 1,
+        "exactly ONE final [LAT] block is owed per receiver task; the flush is \
+         not idempotent:\n{log}"
+    );
+    for tag in ["[SUCC] ", "[ETA] site=receiver", "[REQ] ", "[RANK] "] {
+        let last = log
+            .lines()
+            .rev()
+            .find(|x| x.contains(tag))
+            .unwrap_or_else(|| panic!("no `{tag}` line in the receiver log:\n{log}"));
+        assert!(
+            is_final(last),
+            "`{tag}` was not flushed with the block: {last}"
+        );
+    }
 }
 
 /// 4: THE CROSS-PATH CLASS IS POPULATED ON TWO PATHS — the scheduler's own
