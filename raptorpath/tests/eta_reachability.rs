@@ -55,6 +55,12 @@
 //! — so a missing line can only be read as an unreached emission site.
 //! `RWM_DIAG=1` IS asserted present in the `[GATES]` echo below.
 //!
+//! **The exit flush (2026-09-08).** The receiver block ALSO prints once at
+//! the end of the receiver task, marked `final=1` (`net/recv_block.rs`), so a
+//! transfer shorter than the cadence still has a reading. The N = 1 test
+//! below is that case; it stops the server with SIGINT so the task actually
+//! reaches an exit (see `stop_server`).
+//!
 //! Own test binary, for `succ_reachability.rs`'s reason: `RWM_L0_NETEM` is
 //! process-global in the child and the spawned pair must not contend with the
 //! in-process loopback tests.
@@ -88,7 +94,13 @@ fn join(a: &[SocketAddr]) -> String {
     a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
 }
 
-fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
+/// Spawn the perf server. Returns the child, its accumulated log (stderr,
+/// plus the stdout readiness banner) and the two reader threads, which
+/// `stop_server` joins so the log holds EVERYTHING the process wrote —
+/// including what it writes on its way out.
+fn spawn_perf_server(
+    binds: &[SocketAddr],
+) -> (Reaper, Arc<Mutex<String>>, Vec<std::thread::JoinHandle<()>>) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
     let mut cmd = Command::new(bin);
     cmd.args([
@@ -110,7 +122,7 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
     let log = Arc::new(Mutex::new(String::new()));
     let sink = Arc::clone(&log);
     let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
+    let err_reader = std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
             match err.read(&mut buf) {
@@ -135,7 +147,7 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
         }
     }
     assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    {
+    let out_reader = {
         let sink = Arc::clone(&log);
         sink.lock().expect("stderr sink").push_str(&seen);
         std::thread::spawn(move || {
@@ -149,18 +161,88 @@ fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
                         .push_str(&String::from_utf8_lossy(&buf[..n])),
                 }
             }
-        });
+        })
+    };
+    (srv, log, vec![err_reader, out_reader])
+}
+
+/// STOP THE SERVER THE WAY ITS RECEIVER CAN SEE (the exit flush, 2026-09-08).
+///
+/// The perf server never ends a tunnel on its own: the client leaving is not
+/// a terminal event for the engine (dead-path detection is 6 s away and does
+/// not shut the tunnel down), and `Reaper` SIGKILLs, which runs no
+/// destructor — so under the old "sleep 1.5 s and read" the receiver task
+/// never reached ANY of its exit paths and its `final=1` block could never
+/// be observed. Here the server is sent SIGINT — the engine's `ctrl_c`
+/// handler → the shutdown broadcast → the receiver's shutdown arm → its
+/// exit flush — then waited for, and its readers are joined so the log holds
+/// everything the process wrote on the way out. This is the terminal path the
+/// L1 harnesses would take with `pkill -INT`; a harness that SIGKILLs still
+/// reads the last cadence line.
+///
+/// Without `kill` (non-unix) the old grace period is kept: the cadence lines
+/// are still there, the `final=1` block is not, and the tests that need it
+/// are `cfg(unix)`.
+fn stop_server(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>) {
+    stop_server_with(srv, readers, "INT")
+}
+
+/// The same stop, with the signal named: `"INT"` is `ctrl_c`, `"TERM"` is
+/// what `pkill -x raptorpath` sends from every tools/l1 harness. The engine
+/// treats the two as ONE shutdown trigger (`net/mod.rs`, `shutdown_signal`),
+/// and the SIGTERM test below is what proves the L1 path reaches the flush.
+#[cfg_attr(not(unix), allow(unused_variables))]
+fn stop_server_with(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>, sig: &str) {
+    #[cfg(unix)]
+    {
+        let pid = srv.0.id().to_string();
+        let flag = format!("-{sig}");
+        let sent = Command::new("kill")
+            .args([&flag, &pid])
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(sent, "could not send SIG{sig} to the perf server (pid {pid})");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && !matches!(srv.0.try_wait(), Ok(Some(_))) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            matches!(srv.0.try_wait(), Ok(Some(_))),
+            "perf server did not exit within 15 s of SIG{sig} — the shutdown \
+             broadcast never reached its tasks (for TERM: no SIGTERM handler, \
+             so the harness's `pkill -x raptorpath` is an abrupt kill)"
+        );
     }
-    (srv, log)
+    #[cfg(not(unix))]
+    {
+        std::thread::sleep(Duration::from_millis(1500));
+        let _ = srv.0.kill();
+        let _ = srv.0.wait();
+    }
+    for r in readers {
+        let _ = r.join();
+    }
+}
+
+/// `final=1` as a whole token — the exit-flush marker, never a substring of
+/// some other field.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn is_final(line: &str) -> bool {
+    line.split_whitespace().any(|t| t == "final=1")
 }
 
 /// One loopback transfer. Returns `(client/sender log, server/receiver log)`.
 fn run(paths: usize, netem: Option<&str>, bytes: &str) -> (String, String) {
+    run_with_signal(paths, netem, bytes, "INT")
+}
+
+/// `run`, with the server stopped by the named signal (see `stop_server_with`).
+fn run_with_signal(paths: usize, netem: Option<&str>, bytes: &str, sig: &str) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
     let binds: Vec<SocketAddr> = (0..paths)
         .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
         .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds);
+    let (mut srv, srv_log, readers) = spawn_perf_server(&binds);
 
     let mut cli = Command::new(bin);
     cli.args([
@@ -199,7 +281,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> (String, String) {
          --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
         out.status
     );
-    std::thread::sleep(Duration::from_millis(1500));
+    stop_server_with(&mut srv, readers, sig);
     let srv = srv_log.lock().expect("stderr sink").clone();
     (format!("{cli_stdout}\n{cli_stderr}"), srv)
 }
@@ -387,9 +469,33 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
     );
 }
 
-/// The SINGLE-PATH CONTROL. The placement law collapses to an identity, but
-/// the prediction is still stamped and still read — so a reading of zero on
-/// the dual cell could never be blamed on the topology.
+/// The SINGLE-PATH CONTROL, ON A SHORT TRANSFER. The placement law collapses
+/// to an identity, but the prediction is still stamped and still read — so a
+/// reading of zero on the dual cell could never be blamed on the topology.
+///
+/// 7. **THE EXIT FLUSH** (goal-gate "OPERATOR SANCTION (2026-09-08
+///    ~14:00Z)"). The 8 MB object finished in ~0.4 s on the VM, the
+///    receiver block's 1 s cadence never fired, and there was no
+///    `[ETA] site=receiver` line at all. The receiver line must now be
+///    present, carry `final=1`, be the LAST of its kind (so a scraper that
+///    takes the last line reads the complete counts), and be the ONLY
+///    `final=1` line of its kind (the flush is exactly-once through
+///    whichever exit reaches it). Fails on the shipped-before engine twice
+///    over: no line on a fast host, and no marker on any host.
+///
+///    THE OBJECT STAYS AT 8 MB (2026-09-08, VM verification of the merged
+///    fix): the SENDER's `[ETA] site=sender` line rides the `[DIAG]` 250 ms
+///    cadence (`net/diag.rs`) and has NO exit flush, so a 1 MB object
+///    (0.066 s per run on the VM) ends before the sender's first tick and
+///    the sender assertions above are unreachable — that variant went red
+///    with `no line containing [ETA] site=sender` while every receiver
+///    sibling carried `final=1`. The under-cadence RECEIVER case is pinned
+///    at 1 MB by `the_exit_flush_fires_on_sigterm_too` below, which reads
+///    the receiver only.
+///
+/// `cfg(unix)`: the server has to be stopped with SIGINT for its receiver to
+/// reach an exit path at all — see `stop_server`.
+#[cfg(unix)]
 #[test]
 fn the_prediction_is_stamped_and_read_on_one_path_too() {
     let (cli, srv) = run(1, None, "8000000");
@@ -409,4 +515,65 @@ fn the_prediction_is_stamped_and_read_on_one_path_too() {
         f64_field(s, "zero=").is_some_and(|z| z < 1.0),
         "even the identity placement must carry a prediction: {s}"
     );
+
+    // 7. THE EXIT FLUSH. The last receiver line IS the flush, and it is the
+    //    only one.
+    assert!(
+        is_final(r),
+        "the LAST [ETA] site=receiver line of a short transfer is not the exit \
+         flush (`final=1`) — the receiver block was never flushed at exit, so a \
+         transfer shorter than the 1 s cadence has no reading and every longer \
+         one loses its final partial second:\n{r}"
+    );
+    let finals = srv
+        .lines()
+        .filter(|l| l.contains("[ETA] site=receiver") && is_final(l))
+        .count();
+    assert_eq!(
+        finals, 1,
+        "exactly ONE final [ETA] site=receiver block is owed per receiver task; \
+         the flush is not idempotent:\n{srv}"
+    );
+    // The whole block flushes together: its siblings carry the same marker
+    // on their own last line.
+    for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
+        let l = last_with(&srv, tag);
+        assert!(is_final(l), "`{tag}` was not flushed with the block: {l}");
+    }
+}
+
+/// **THE EXIT FLUSH ON SIGTERM — THE L1 PATH.** Every tools/l1 harness stops
+/// the server with `pkill -x raptorpath`, which is SIGTERM; the SIGINT test
+/// above proves the flush exists but not that L1 can see it. Before the
+/// engine handled SIGTERM this was an abrupt kill: no shutdown broadcast, no
+/// Drop, no `final=1` — the flush landed on main and STILL never reached a
+/// ledger. The mirror of the SIGINT case, stopped with `kill -TERM`: the
+/// server must exit within the grace, the last `[ETA] site=receiver` line
+/// must be the flush, exactly once, and its siblings flush with it.
+#[cfg(unix)]
+#[test]
+fn the_exit_flush_fires_on_sigterm_too() {
+    let (_cli, srv) = run_with_signal(1, None, "1000000", "TERM");
+    let r = last_with(&srv, "[ETA] site=receiver");
+    println!("[eta-reach] N=1 receiver after SIGTERM: {r}");
+    assert!(u64_field(r, "n=") > 0, "no arrival observed on one path: {r}");
+    assert!(
+        is_final(r),
+        "the LAST [ETA] site=receiver line after SIGTERM is not the exit flush \
+         (`final=1`) — the harness's `pkill -x raptorpath` does not reach the \
+         receiver's exit path, so no L1 ledger can carry complete counts:\n{r}"
+    );
+    let finals = srv
+        .lines()
+        .filter(|l| l.contains("[ETA] site=receiver") && is_final(l))
+        .count();
+    assert_eq!(
+        finals, 1,
+        "exactly ONE final [ETA] site=receiver block is owed per receiver task \
+         on the SIGTERM path too:\n{srv}"
+    );
+    for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
+        let l = last_with(&srv, tag);
+        assert!(is_final(l), "`{tag}` was not flushed with the block on SIGTERM: {l}");
+    }
 }

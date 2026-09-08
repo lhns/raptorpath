@@ -175,7 +175,7 @@ run_seed() {
   echo "PLACE-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ)"
   # `sudo` HERE AND NOWHERE ELSE: the battery needs root for the rp-*
   # namespaces; every sentinel path above and below is touched as `vibe`.
-  sudo env RWM_PLACE_TAG="$TAG" bash place_battery.sh "$s" "$REPS"
+  sudo env RWM_PLACE_TAG="$TAG" RWM_PLACE_OUTDIR="$OUTDIR" bash place_battery.sh "$s" "$REPS"
   rc=$?
   echo "PLACE-ALL seed=$s rc=$rc wall=$(( $(date +%s) - t0 ))s elapsed_since_launch=$(( $(date +%s) - LAUNCH_TS ))s $(date -u +%FT%TZ)" \
     | tee -a "$OUTDIR/all-era.txt"

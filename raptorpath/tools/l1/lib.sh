@@ -231,3 +231,21 @@ scenario_params() {
         *) echo "unknown scenario: $1" >&2; exit 1 ;;
     esac
 }
+
+# STOP THE ENGINE THE WAY ITS RECEIVER CAN SEE (2026-09-08, the exit flush).
+# The engine handles SIGINT and SIGTERM as ONE shutdown trigger; the receiver's
+# diagnostic block ([SUCC]/[ETA]/[LAT]/[LATE]/[REQ]/[RANK], `final=1`) flushes
+# on that path and on Drop, and NEVER on SIGKILL. A bare `pkill -x raptorpath`
+# is a TERM with no grace: the topology teardown that follows deletes the
+# namespaces underneath a process that is still writing its last lines. So:
+# TERM, a bounded wait (3 s) for the exit, and only then KILL as the last
+# resort. `-x raptorpath` and nothing else (goal-gate "THE VM PROTOCOL").
+stop_raptorpath() {
+    pkill -TERM -x raptorpath 2>/dev/null || true
+    local _i
+    for _i in $(seq 1 30); do
+        pgrep -x raptorpath >/dev/null 2>&1 || return 0
+        sleep 0.1
+    done
+    pkill -KILL -x raptorpath 2>/dev/null || true
+}

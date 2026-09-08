@@ -37,7 +37,7 @@ TM_TMO=$((TM_DUR + 10))
 TM_TOPO="${RWM_TM_TOPO:-./topo.sh}"
 
 hard_cleanup() {
-    pkill -x raptorpath 2>/dev/null || true
+    stop_raptorpath   # TERM, 3 s grace, then KILL (lib.sh)
     pkill -f 'python3 ./transfer_bench.py' 2>/dev/null || true
     ip netns del "$NS_CLI" 2>/dev/null || true
     ip netns del "$NS_SRV" 2>/dev/null || true
