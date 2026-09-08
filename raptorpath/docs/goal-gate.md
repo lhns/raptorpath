@@ -50557,3 +50557,152 @@ shell, wait on `DONE-ALL || FAILED-ALL` and on nothing else.**
    wire measurement. The Auto/Bulk crown remains unmeasured on this binary and
    is not claimed.
 5. **It does not license any default flip, any arm, or any constant.**
+
+## THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — THE SMOKE, DISCHARGED, AND TWO WITNESS CLAUSES AMENDED BEFORE LAUNCH (2026-09-08, `meas/crown-spot-v8`) — **the smoke witnessed every gauge the merges were supposed to ship, INCLUDING the `late_after_aban` field Track B was owed; two clauses of §8/§10 were written against the engine's behaviour rather than off it, and they are corrected HERE, before the 64 reps, with the mechanism named in each case.** Committed BEFORE the battery is launched. **NOTHING IN THE SMOKE IS A RESULT** (`n = 1` per arm). No clause of §4 or §6 is scored by any of it, and neither amendment touches §4's reading or §6's criteria.
+
+### 1 — THE BUILD, AND WHAT IS IN IT
+
+| item | value |
+|---|---|
+| branch / prereg commit | `meas/crown-spot-v8` @ `d3e0aa0` (from main@`9396ca0`) |
+| binary `sha256` | `85c8a9c2c99dc7c1ac75730851ab22d7af2d2108c40e7b6f74812ccf20265901` |
+| built | 2026-09-08 04:47→04:52 UTC on the VM, `cargo build --release -p raptorpath`, `rc = 0`, after `rm` of the stale binary |
+| tree | `git archive` of `d3e0aa0`, CRLF-repaired on the VM: **479 files carried CR, 0 remain**; `tools/l1/lib.sh`, `tail_matrix.sh` and `crownspot8.sh` each verified at **0 CR bytes** |
+| `PROTOCOL_VERSION` | **8**, `raptorpath/src/transport/protocol.rs:89`, read out of the tree that was built |
+| host | E5-2650 v3, `aes` + `avx2` + `pclmulqdq`, kernel `7.0.14-101.fc43.x86_64` |
+| locks | `/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`, both found FREE, both taken 04:46:08 UTC, both held |
+
+### 2 — THE SMOKE TABLE (one `tail_matrix.sh` invocation per cell, `ship`, `reps=1`, seed 42)
+
+| cell·size | p50 | p99 | p999 | max | `count` | committed class (§2) | in class? |
+|---|---|---|---|---|---|---|---|
+| c2·400B | **8.105** | **36.8** | 78.736 | 78.736 | **1000** | p99 35–41, p50 7.5–8.5 | **yes** |
+| c2·1200B | **8.350** | **35.177** | 63.786 | 63.786 | **1000** | p99 35–41, p50 7.5–8.5 | **yes** |
+| c3·400B | **24.054** | **115.333** | 168.138 | 168.138 | **1000** | p99 [91.3–118.6], p50 23.7–25.8 | **yes** |
+| c3·1200B | *(ran, `rc = 0`; per-rep line in `smoke.log`)* | | | | | | |
+
+`rc = 0` at both cells. **`p999` and `max` are recorded here for the first time
+at `c2`/`c3` on any crown** — §2 of the pre-registration declared them REPORTED,
+NOT SCORED for exactly this reason, and these four numbers are the beginning of
+the baseline the next crown will have.
+
+**CONTAMINATION, from the `[GATES]` echo on BOTH endpoints at every arm:**
+`RWM_QUANTILE_CLOCKS=0`, `RWM_DELTA=unset`, `RWM_COMPLETION_EXPOSURE=0`,
+`RWM_ALPHA_OVERRIDE=unset`, `RWM_THREE_TERM=0`, `RWM_DIAG=1`. The defaults the
+era clause names are all live and echoed: `RWM_ACK_MERGE=1`, `RWM_SUM_CAP=1`,
+`RWM_DELTA_CAP=1`, `RWM_HONEST_ANCHOR=1`. **This is the shipped machine and
+nothing else.**
+
+**HANDSHAKE, TWO-SIDED:** `connected and handshake complete` on the client log
+and `accepted with handshake` on the server log, at both cells. Since
+`Handshake::deserialize` (`protocol.rs:250`) hard-`bail!`s on a version
+mismatch, a completed handshake at both ends IS the v8 agreement.
+
+**GAUGE PRESENCE, per endpoint log, `n = 1` arm at each cell:**
+
+| gauge | c2 srv | c2 cli | c3 srv | c3 cli | reading |
+|---|---|---|---|---|---|
+| `[ETA]` | 100 | 100 | 100 | 101 | two-sided |
+| `[LAT]` | 21 | 21 | 21 | 21 | two-sided |
+| `[RANK]` | 21 | 21 | 21 | 21 | two-sided |
+| `[SHEDH]` | 22 | 22 | 22 | 22 | two-sided |
+| `[CHI]` | 22 | 22 | 22 | 22 | two-sided, `n=0 max=0.0000` — the control half of the reachability claim |
+| `[RFA]` | 21 | 21 | 21 | 21 | two-sided, **with `late_after_aban=`** |
+| `[LATE]` | 19 | **0** | 20 | **0** | RECEIVER-SITE ONLY — site-asymmetric by construction, recorded per §8.4 and not an abort |
+| `[RACK]` | **0** | **0** | **0** | **0** | **ABSENT — see §4** |
+
+**THE v8 FIELD IS LIVE ON THE WIRE, AND THIS IS THE POSITIVE VERSION WITNESS.**
+`[ETA] site=sender … n=1532 zero=0.0000` at c2-srv and `n=2996 zero=0.0000` at
+c2-cli: **not one stamped batch carried the 0 sentinel**, so the Realtime
+emitter DOES route through `emit_source.rs:488` and `eta_rel_us` is a live
+varint on this seat. `[ETA] site=receiver n=3918` (c2-srv) / `n=2078` (c2-cli)
+/ `n=3985` (c3-srv): the receiver is parsing v8 frames and measuring against
+the sender's own prediction. **§8.3's pre-stated failure mode (`zero=1.0000`,
+an unstamped emitter) did NOT occur** — it was pre-registered as a recordable
+result rather than an abort, and it simply did not happen.
+
+**`[RFA] late_after_aban` IS BEING SCRAPED.** Server-site values at `n = 1`:
+**11** (c2·400B), **57** (c2·1200B), **29** (c3·400B). **Track B's owed field
+has landed, the harness sees it, and `EVICT-INSTRUMENT-BLIND` is therefore NOT
+the reading.** Client-site reads `late_after_aban=0` with `false_frac=1.0000`
+and `fill_src=0`, which is the sender-role gauge and is reported as such.
+
+**THREE READINGS RECORDED, NONE OF THEM SCORED HERE, EACH OWED TO ANOTHER
+SECTION.** They are written down because they were seen, not because this spot
+adjudicates them. **(i)** `[SHEDH]`'s pre-stated expectation is HALF RIGHT: the
+60 ms floor binds at `c2` (`floor_frac = 0.9997`, receiver site) exactly as
+predicted, but at `c3` the hold is **INTERIOR at 1.0000** (`floor_n = 0`,
+`cap_n = 0`, `mean_us = 152470` against a 300 ms cap) — the pre-stated "300
+binds at `c3`" is **not what the instrument reads**, and the "4·SRTT law is a
+constant at both main cells" claim survives at one cell and fails at the other.
+**(ii)** `[ETA]`'s pre-stated witness `σ̂_sender ≥ σ̂_recv` is **INVERTED** at
+c2-srv (sender `sig_us = 1668/n27`, receiver `sig_us = 3430/n13`). **(iii)**
+`[LATE] knee_bind` is **0.0000 at `c2`** and **1.0000 at `c3`** — Track C's
+KNEE-BOUND question has a cell-split answer waiting in it. Each belongs to the
+section that pre-registered it, and none of them is read here.
+
+### 3 — AMENDMENT 1: `[RACK]`'s ABSENCE IS THE ENGINE'S DOCUMENTED BEHAVIOUR, NOT A BROKEN INSTRUMENT
+
+**What §8.4 and `W7` said:** `[RACK]` present with `fa=` on both endpoints; a
+line absent at both endpoints is `ABORT-SMOKE`.
+
+**What the engine actually does, at `net/mod.rs:6310`:**
+
+```text
+   if self.on || self.fired > 0 { eprintln!("{}", self.rack_line()); }
+```
+
+`RWM_RACK_CLOCKS` is **0 by default**, so `self.on` is false; the RACK clock
+never armed and never fired, so `self.fired` is 0; and the emission sits in a
+`Drop`, which the L1 harness's `SIGKILL` of the server never runs. **`[RACK]`
+is silent here because it has nothing to say and says so by staying silent —
+"a run that fired nothing stays silent" is the gauge's own written rule.**
+Treating that as `ABORT-SMOKE` would abort a healthy spot on an instrument
+behaving exactly as specified.
+
+**THE AMENDMENT, narrow and stated in full.** `[RACK]` moves from REQUIRED to
+**REPORTED-IF-PRESENT** in §8.4 and in `W7`. `W7` is split: the `[SUCC]`
+half stays REQUIRED (it was witnessed, two-sided, at 4 of 4 endpoint logs);
+the `[RACK]` half becomes `W7b-NO-RACK`, a RECORDED token and not a fail
+token. **No other gauge is downgraded**, and the `[RFA]` and `[SUCC]`
+requirements — the two that carry the EVICT measurands `R`, `A` and `L` — are
+untouched.
+
+**THE CONSEQUENCE FOR §6, STATED BEFORE ANY EVICT NUMBER IS SCORED.** Track B's
+`F` = `[RACK] fa=<spur>/<fired>` is **UNAVAILABLE on this seat**, and §6 already
+declared `F` "reported, never scored alone", so no scored criterion loses an
+input: `WASTE-DOMINANT` (`R ≥ A`) and `WASTE-MINOR` (`R < 0.25·A`) are computed
+from `[RFA] fires` and `[SUCC] aban_n` alone and remain fully scoreable.
+**What DOES change is Track B's `n` clause**, which counted only reps carrying
+all THREE lines and would therefore have read `n = 0` ⇒ `UNSCOREABLE` on an
+instrument that is correctly silent. **`n` is hereby counted over the TWO lines
+the criteria actually use (`[RFA]` and `[SUCC]`), and the `F` clause is
+pre-declared `UNSCOREABLE-ON-F` with its mechanism named above.** This is
+recorded as a **defect against the EVICT pre-registration's own `n` rule**, not
+as a licence: it was written for three gauges when only two feed its verdicts.
+
+### 4 — AMENDMENT 2: `[GATES] RWM_GEN=` PRINTS A GENERATION SIZE, NOT THE HARNESS'S `0`
+
+**What `W2` said:** `[GATES] RWM_DIAG=1 RWM_GEN=0` on both endpoints.
+
+**What the echo actually prints:** `RWM_GEN=1`. The `[GATES]` field is
+`self.gen_size` (`gates.rs:1300`ff), a SIZE that clamps to 1, not the harness's
+`RWM_GEN=0` sentinel. The environment was set correctly — the driver exports
+`RWM_GEN=0`, `lib.sh`'s `rwm_forward_env` carries it, and the machine is in
+window mode, which the unified-decoder echo states directly:
+`receive path on the unified global decoder (one machine, both wires)
+generation=false`.
+
+**THE AMENDMENT.** `W2`'s generation half is re-pointed at the witness that
+actually carries the fact: **`generation=false` in the unified-decoder echo on
+both endpoints**, plus `gen=0` on the `[RFA]` and `[SUCC]` lines (both present
+and both reading `gen=0` at 4 of 4 endpoint logs). `RWM_DIAG=1` in `[GATES]`
+is unchanged and was witnessed. **This is a correction to a witness that was
+written against the wrong field, and it neither adds nor removes a condition.**
+
+### 5 — THE SMOKE VERDICT
+
+**PASS, with the two amendments above and with `[LATE]`'s receiver-site-only
+presence recorded per §8.4.** Clauses 1, 2, 3, 5 and 6 of §8 were witnessed
+as written; clause 4 was witnessed for seven of the eight named gauges and
+amended for the eighth. **The battery is launched.**
