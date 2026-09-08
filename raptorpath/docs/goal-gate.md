@@ -50215,6 +50215,102 @@ r_battery.sh`, which matches the watcher's own shell.
 
 Ledgers `/home/vibe/rbattery/r-s<seed>.log`, witnesses
 `r-witness-s<seed>.jsonl`, captures `diag/`.
+## THE `r > 0` BATTERY — THE CALIBRATION, DISCHARGED, AND ONE §9 CLAUSE AMENDED BEFORE LAUNCH (2026-09-08, `meas/r-battery-run` from main@`e18da61`) — **THE SMOKE DID NOT ABORT, AND ITS LOUDEST READING IS THAT `CTL` IS NOT AT THE CORNER: `r` REACHES THE WIRE ON THE CONTROL ARM AT EVERY ONE OF THE SIX CELL-SIZES, `cod/(src+cod)` = 4.05–11.07 %.** Committed BEFORE the 288-invocation battery is launched, in its OWN commit. **NOTHING IN THE CALIBRATION IS A RESULT** (`n = 1`, seed 42 only): no clause of §7 or §11 is scored by any of it, and the one amendment below touches §9's GUARD alone and neither §7's bar nor §11's outcome set.
+
+### 0 — WHAT RAN, AND ON WHAT
+
+`bash r_battery.sh --calib` on VM 10.1.5.16, **2026-09-08 05:56:15 → 07:00:57 UTC (64 min 42 s)**, 18/18 invocations, `DONE-ALL` + `DONE-S42` written. E5-2650 v3, kernel 7.0.14-101.fc43. Ledger `/home/vibe/rbattery/r-s42.log`, witnesses `r-witness-s42.jsonl`, per-run captures `diag/`, report `all-era.txt`.
+
+**THE BINARY, AND A BYTE-IDENTITY FINDING WORTH RECORDING.** Built fresh on the VM from a cleared, CRLF-repaired `git archive` of `meas/r-battery-run` @ main@`e18da61` (4 m 12 s, `EXIT=0`), stale binary `rm`'d first, `lib.sh` verified at **0 CR bytes** as the canary:
+
+```text
+   sha256  85c8a9c2c99dc7c1ac75730851ab22d7af2d2108c40e7b6f74812ccf20265901
+```
+
+**That is BIT-IDENTICAL to the crown spot's binary**, which was built from main@`9396ca0` plus the docs/shell commits since. The two trees therefore differ in **documentation and harness only**, and the identity is a MEASURED fact of this rebuild rather than an inference from the diff. The crown spot's verdict — the merged repairs are inert on the crown at 7 of 8 — transfers to this battery's binary without re-measurement, and this battery's `CTL` arm is the same executable the crown was read on.
+
+**ABORT ACCOUNTING.** `rows = 18`, `ABORT (no summary) = 0`, `ABORT-PLATEAU = 0`, `DNF = 0`, `W1 = 0`, `W8-NO-FDIAG = 0`, `W9-NO-RFA = 0`, `rc = 0` at 18/18, `SCOREABLE rows = 18`. Every `[GATES]` echo matched its arm LITERALLY on **both** endpoints: `RWM_DELTA` `unset`/`unset`/`0.05`, `RWM_COMPLETION_EXPOSURE` `0`/`1`/`0`, **`RWM_THREE_TERM=0` on both endpoints of all 18**, `[RFA] gen=0` on all 18. `RWM_COPA_DELTA` has no engine echo (§3's disclosed instrument gap) and its witness is the harness's own per-invocation `RENV` line, present on all 18, plus the mechanical `W7` below.
+
+**`GLIDE-ζ` IS `ARM-ABSENT`, AND THE DECLARATION IS NOW A MEASUREMENT.** `GLIDE-Z-PROBE … help_mentions_gate=0 armed=0`, and the per-rep re-probe of the resolved `[GATES]` line found no `RWM_TAIL_BUDGET=` token on any of the 18. `ARMCOUNT …-GLIDE-Z n=0/1` at all six cell-sizes. **`BULK_TAIL_BUDGET = 0.05` therefore remains in §16.80.12's open-constants register, arbitrary and UNCONTESTED by this battery**, exactly as §2 and §12 pre-stated.
+
+### 1 — THE FOUR CALIBRATION CLAUSES OF §10, IN §10's ORDER
+
+**1. HEADROOM (discipline 16) — NO CELL IS `HEADROOM-BOUND`, AND NOT NARROWLY.** `CTL`'s own reading against each shaped link:
+
+| cell | `CTL` max | shaped link | utilisation | verdict |
+|---|---|---|---|---|
+| `c3hg` | 2.37 Mbit/s | 20 Mbit | **11.8 %** | headroom OK |
+| `c8` | 15.79 Mbit/s | 120 Mbit | **13.2 %** | headroom OK |
+| `sc2` | 2.24 Mbit/s | 100 Mbit | **2.2 %** | headroom OK |
+
+**§10.1's own named risk did not materialise and its opposite did.** §10.1 said `sc3`'s committed 100.3/99.4 % of the shaped link made `c3hg` "the cell at risk" of being movable only DOWN. It is not: `c3hg` uses **11.8 %** of its pipe. Every cell in this grid has room for a funded arm to move the reading UP, which is the condition the completion score needs and it is met at 3 of 3. The transfer-wall denominator is the *shaped link*, not a measured wall, and the utilisations above are its quotient.
+
+**2. THE `[CHI]` LIVENESS CHECK — THE ONE CLAUSE THAT COULD HAVE FIRED `ABORT-SMOKE`. IT PASSES AT 3 OF 3 CELLS.**
+
+```text
+   c3hg   [CHI] max = 0.9987   frac_gt_half = 0.9332   feed ACTIVE echoes = 1   OK
+   c8     [CHI] max = 0.9987                           feed ACTIVE echoes = 1   OK
+   sc2    [CHI] max = 0.9987                           feed ACTIVE echoes = 1   OK
+```
+
+and two-sided: **`[CHI] max = 0.0000` on every `CTL` and every `MID` row**, 12 of 12, so "the glide never ran" is a READING on the unarmed arms and never an inference. **χ is fed and it saturates** — `max = 0.9987` is χ at the stream tail where §14.26 says the value is. The `BUDGET-BOUND` vs `ESTIMATOR-BOUND` attribution rule of §8 is therefore **NOT reached in calibration**, and no `[CHI]`-side reading is owed against §16.80.12's register row.
+
+**3. `W5` REACHABILITY — AND THIS IS THE CALIBRATION'S LOUDEST READING.** §10.3 asked only for `cod > 0` on *at least one* funded arm-cell. It is satisfied at **6 of 6 funded cell-arms**, and the reading that was not asked for is the one that matters:
+
+| cell·size | `CTL` `cod_frac` | `MID` `cod_frac` | `GLIDE` `cod_frac` | `CTL` ε̂ | channel ε |
+|---|---|---|---|---|---|
+| `c3hg`·1.8 MB | **0.1107** | 0.2067 | 0.1670 | 0.0806 | 5.800 % |
+| `c3hg`·25 MB | **0.1048** | 0.2109 | 0.1341 | 0.0608 | 5.800 % |
+| `c8`·1.8 MB | **0.0517** | 0.1574 | 0.0398 | 0.6980 | 2.534/4.762 % |
+| `c8`·25 MB | **0.0552** | 0.1596 | 0.1336 | 0.7889 | 2.534/4.762 % |
+| `sc2`·1.8 MB | **0.0436** | 0.1428 | 0.0576 | 0.0855 | 2.534 % |
+| `sc2`·25 MB | **0.0405** | 0.1560 | 0.0496 | 0.0472 | 2.534 % |
+
+**`R-INERT` IS OFF THE TABLE, AND SO IS THE PREMISE THAT PUT IT THERE.** §16.82's derivation reads `r* = 0` at the Bulk point as over-determined; the shipped default, on this binary, at this grid, **spends 4.05–11.07 % of its wire on coded symbols with every experiment gate absent**. Whatever produces that `cod` on `CTL`, it is not the corner the price form predicts, and the battery is now measuring a CONTRAST between three funded arms rather than a funded arm against a dead one. `MID` roughly TRIPLES the control's coded fraction at the two single cells (0.0436 → 0.1428 at `sc2`·1.8 MB; 0.0405 → 0.1560 at `sc2`·25 MB) and doubles it at `c3hg`, so `RWM_DELTA=0.05` demonstrably moves `r` on the wire and the `MID` arm is live in the sense §8's `W5` asks about.
+
+**THIS IS RECORDED, NOT ADJUDICATED.** It is `n = 1` at one seed. Whether `CTL`'s coded traffic is the proactive plane funded by an ε̂ that reads ABOVE 0.05 (the ε̂ column is 0.0405–0.7889 and §8's budget line is 0.05), or the REACTIVE plane's own coded fills (`[RFA] fill_coded` is nonzero on every row), is a question for the scored battery with its `n = 16` and its `[RFA]` decomposition — **and §12's ruling clause is untouched by it either way.**
+
+**4. `c3hg`'s OWN CV, MEASURED — REPLACING §6's `sc3`-DERIVED 2.46 % ESTIMATE FOR THE POWER STATEMENT ONLY.** The driver's own computation, and its weakness is stated with it:
+
+```text
+   c3hg   n=2  mean=2.36 Mbit/s  sd=0.017   CV=0.72 %    sigma_d = sqrt(2)*CV =  1.02 %
+   c8     n=2  mean=10.28        sd=7.794   CV=75.83 %   sigma_d              = 107.24 %
+   sc2    n=2  mean=2.05         sd=0.261   CV=12.72 %   sigma_d              =  17.99 %
+```
+
+**`n = 2` HERE IS `CTL`'s TWO SIZES POOLED, NOT TWO REPS OF ONE CELL-SIZE, AND THAT MAKES ALL THREE NUMBERS DEGENERATE AS DISPERSION ESTIMATES.** `c3hg`'s 0.72 % is the accident of two nearly equal size-medians (2.344 and 2.368) and is not evidence that `c3hg` is a quiet cell; `c8`'s 75.8 % is the accident of two very unequal ones (4.767 and 15.789). **None of the three may be quoted as a per-cell CV**, and §6's power table — which sized this grid at `n = 8` and has already done its work — stands as committed. **The bar of §7 is self-calibrating against `CTL`'s own spread measured IN THE BATTERY and is untouched by every number in this clause**, which is why a degenerate power estimate cannot reach the score.
+
+### 2 — THE AMENDMENT: §9's GOODPUT BANDS ARE READ AGAINST A DIFFERENT QUANTITY THAN THE ONE THAT PRODUCED THEM
+
+**THE CONTRADICTION, STATED FLATLY.** 16 of the 18 calibration rows fired `OUT-OF-BAND-RESULT`, including `CTL` at all three cells and both sizes: `c3hg` 2.344/2.368 against `[9, 18]`; `c8` 4.767/15.789 against `[50, 100]`; `sc2` 2.236/1.867 against `[78, 92]`. A guard that fires on the CONTROL arm at 6 of 6 cell-sizes is not guarding anything, and §9 as written would have every scored row in the battery arrive pre-flagged.
+
+**THE CAUSE, NAMED — AND IT IS A UNIT MISMATCH IN THE GUARD, NOT A CONFIGURATION FAULT IN THE GRID.** §9's bands were transcribed from `tools/l1/valpha_battery.sh:271-272`, whose ledgers report a **whole-transfer mean rate**. The quantity this driver band-checks is `r_parse.py`'s `row["mbps"]` — the **MEDIAN, across the invocation's 40 (or 4) objects, of each object's own `mean_mbps`** (`r_parse.py:145`). At 1.8 MB the two are not the same measurement: a 1.8 MB object is 14.4 Mbit, which at `sc2`'s 100 Mbit pipe is 0.144 s of pure transfer, so **every object in the invocation completes inside its own connection ramp** and its per-object rate is set by the ramp rather than by the pipe. The same invocation's `mbps_mean` reads **22.93** where its median reads **2.236** — a 10× median/mean split within one `sc2`·1.8 MB row, which is the signature of a heavily right-skewed per-object distribution and not of a slow link. The headroom clause above reads the same rows against the same links and finds 2.2–13.2 % utilisation, so the pipes are demonstrably not the binder.
+
+**THE AMENDMENT, AND IT DELIBERATELY WEAKENS NOTHING.**
+
+1. **The three bands of §9 STAY EXACTLY AS WRITTEN and keep aborting nothing.** §9 already says an out-of-band reading with `W1`/`W2`/`W3` clean is an **`OUT-OF-BAND RESULT`, retained with its cause named — never an abort**, and `c3hg`'s band was already declared DERIVED and weaker. Nothing about that is changed.
+2. **The cause is named HERE, in advance, once**: `OUT-OF-BAND-RESULT` in this battery is attributed to the per-object-median vs whole-transfer-mean unit mismatch above, at every cell and both sizes, unless the scored ledger shows otherwise. A scoring session may not re-attribute it to a configuration fault without new evidence, and may not treat the 16/18 flag rate as an instrument failure.
+3. **THE GENERATION PLATEAU RULE IS UNCHANGED AND IS NOT WIDENED.** `[26.8, 34.1]` Mbit/s still ABORTS, 0 rows landed in it, and §9's "no band in this grid overlaps the plateau, so no widening is needed and none is taken" is reaffirmed. **ONE PLATEAU RISK IS DISCLOSED IN ADVANCE RATHER THAN DISCOVERED**: `c8`·25 MB `CTL`'s `mbps_mean` read **28.068**, which is INSIDE the plateau, while its band-checked median read 15.789, which is not. The band check reads the median and the abort did not fire, correctly. Should a scored row's median land in `[26.8, 34.1]`, the row ABORTS as the contract says — **and the witness row's own `[RFA] gen=` is the independent reading of whether generation actually leaked**, since `W4` scrapes it on every rep and it read `0` on all 18 here. That reading is recorded beside any such abort; the abort itself is not negotiated.
+4. **`H_price`'s goodput prediction is unaffected.** It is `−cod/(src+cod)`, the arm's OWN measured wire fraction off its own `[DIAG] cum=` triple, and is self-calibrating by construction (§1). It is not read against these bands.
+
+**NOTHING ELSE IN THE PRE-REGISTRATION IS AMENDED.** §7's bar, §8's witnesses, §8's attribution rule, §8a's falsifier, §11's outcome set and §12's ruling clause are untouched.
+
+### 3 — TWO WITNESS READINGS RECORDED WITHOUT AMENDMENT, BECAUSE WEAKENING A LIVENESS GATE ON `n = 1` IS THE DEFECT THIS FILE EXISTS TO PREVENT
+
+**`W7` READ `W7-CC-PIN-FAILED` AT 5 OF 6 CELL-SIZES, AND THE READING IS DEGENERATE BY CONSTRUCTION AT `n = 1`.** `W7` asks whether `MID`'s `[DIAG] rtt=` p50 sits inside **`CTL`'s own rep min–max**. At one rep `CTL`'s min–max is a single point (`c3hg`·1.8 MB `[112.00, 112.00]`, `sc2`·1.8 MB `[12.00, 12.00]`), so any `MID` value but the identical one fails. **In the battery `CTL` has 16 reps and the interval is real; the calibration cannot evaluate this gate and its 5/6 is not a finding.**
+
+**AND THE DIRECTION OF THE MISS IS THE OPPOSITE OF THE ONE `W7` HUNTS.** `W7` exists to catch a CC that FOLLOWED δ to 0.05 and therefore targets a **20× TIGHTER** standing queue (`q = 1/δ` packets, `scheduler/mod.rs:120-124`). `MID` read **HIGHER** RTT than `CTL` at four of the five misses — 300 vs 112 (`c3hg`·1.8 MB), 216 vs 127 (`c3hg`·25 MB), 23 vs 12 (`sc2`·1.8 MB), 25 vs 22 (`sc2`·25 MB) — i.e. a LOOSER queue, which is what a pinned CC carrying the funded arm's extra repair traffic looks like and is not what an unpinned CC looks like. The single miss in the tight direction is `c8`·25 MB (11 vs 323), where `CTL`'s own 323 ms is the outlier. **`W7` IS LEFT EXACTLY AS PRE-REGISTERED**: it is the only witness `RWM_COPA_DELTA` has, the engine-side echo `gates.rs:1432` claims still does not exist, and a gate relaxed on calibration evidence is a gate that was never a gate.
+
+**AN INSTRUMENT NOTE ON `W7`'s QUANTITY, RECORDED SO THE SCORING DOES NOT DISCOVER IT.** `r_parse.py:172` takes `diag_rtt_ms` as the first `rtt`-keyed number on the last `[DIAG] t=` line. Some cells' `[DIAG]` lines carry a bare `rtt=12.2ms`; others carry a compound `rtt=71/wrtt=112/rtp49ms` form, on which the scrape yields the `wrtt` component. **The comparison stays like-for-like within a cell-size** — the same field is scraped from `CTL` and from `MID` — so `W7`'s containment test is valid as posed, but the number must not be quoted across cells as if it were one gauge.
+
+**`ENTANGLEMENT-DOMINATED` ALREADY FIRES ON `MID` AT 5 OF 6 CELL-SIZES IN THE SMOKE**, at `n = 1` and therefore deciding nothing: `DECODE avg > SOURCE avg` with both `n ≥ 30` at `c3hg`·1.8 MB (146 223 µs vs 45 705 µs, `DECODE n = 93`, `SOURCE n = 1124`), `c3hg`·25 MB, `c8`·1.8 MB, `sc2`·1.8 MB and `sc2`·25 MB; not at `c8`·25 MB. `present_at_stall` is recorded beside every one of them (max 1–11), per §8a's standing requirement that **a `DECODE avg` quoted without `present_at_stall` is not a reading of this battery**. §11 ranks this outcome above 2 and 3 if it fires on the scored `n`; whether it does is the battery's question and not the smoke's.
+
+### 4 — THE LAUNCH
+
+288 scored invocations (3 arms × 3 cells × 2 sizes × 8 reps × 2 seeds; `GLIDE-ζ` `ARM-ABSENT`), arms interleaved round-robin per rep, launched detached and NOT polled (discipline 13), watched on `DONE-ALL || FAILED-ALL` and on nothing else. **The calibration's own clock sets the honest ETA and it is longer than the pre-registration's "≈ one overnight"**: 18 invocations took 64 min 42 s, i.e. **3.59 min/invocation**, so 288 invocations is **≈ 17.2 h** on this box. That is a statement about the grid's cost, not a licence to shrink it: **the grid is the contract's and is launched exactly as pre-registered.**
+
+Sentinel writability was PROVEN as `vibe`, on the exact ABSOLUTE paths, write+unlink, BEFORE any `sudo` and before the first measurement — `SENTINEL-PROOF-COMPLETE 2026-09-08T05:56:15Z user=vibe dir=/home/vibe/rbattery` — and the run directory was created unprivileged. Both locks were taken by the driver itself (`LOCK-TAKEN /tmp/rwm-vm.lock`, `LOCK-TAKEN /home/vibe/rp.lock`) and released on exit.
+
 ## THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — PRE-REGISTRATION (2026-09-08, `meas/crown-spot-v8` from main@`9396ca0`) — **A REPAIR THAT MOVES THE CROWN HAS ESCAPED ITS PROOF.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds an arm, adds a gate, edits an engine crate, or derives a constant.** ONE arm — `ship`, env unset — and no challenger. Plan §4 Stage 1 item 5.
 
 ### 0 — WHAT THIS IS, IN ONE PARAGRAPH
