@@ -44,6 +44,13 @@
 //!      wildly out-of-scale number (a unit error between µs and s, the most
 //!      likely mistake in this change) is caught here rather than in a
 //!      battery's results table.
+//!   6. (3b, 2026-09-08) `np=` counts REGISTERED paths and the per-path
+//!      block — `sig_us=` with it — prints on a cwnd-full path. `np` used to
+//!      be the saturation-filtered `active_paths()` count, so a saturated
+//!      single path read `np=0` and lost its block exactly when it was
+//!      busiest; on the VM that was every tick, and clause 3 found no block
+//!      at all (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)"). The old
+//!      count survives as `np_act=`.
 //!
 //! **What this binary deliberately does NOT assert.** Any particular VALUE of
 //! σ. Loopback's dispersion is the host scheduler's, not a network's, and no
@@ -201,8 +208,11 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
         // `rtt=<app>/wrtt=<wire>/rtp<floor>ms`. The `/wrtt=` is what
         // distinguishes it from the line's AGGREGATE `rtt=<ms>ms` field —
         // a `starts_with("rtt=")` test matches both, and a `[DIAG]` line
-        // emitted with `np=0` (no live path yet) has the aggregate and no
-        // block at all, which is a legitimate reading and not a missing gauge.
+        // emitted with `np=0` (no path REGISTERED — since 2026-09-08 `np`
+        // counts registered paths, not the saturation-filtered set) has the
+        // aggregate and no block at all, which is a legitimate reading and
+        // not a missing gauge. Clause 3b below pins that this never happens
+        // on a single-path run.
         let n_sig = toks.iter().filter(|t| t.starts_with("sig_us=")).count();
         let n_rtp = toks
             .iter()
@@ -227,6 +237,61 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
     assert!(
         blocks > 0,
         "no per-path [DIAG] block in the whole log — nothing to read σ off:\n{log}"
+    );
+
+    // 3b. `np=` COUNTS REGISTERED PATHS AND THE BLOCK PRINTS ON A SATURATED
+    //     ONE (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)", defect
+    //     (b)). Until then `np` and the per-path blocks were taken over the
+    //     saturation-filtered `active_paths()`, so a cwnd-full single path
+    //     read `np=0` with NO block — and on the VM, where the loopback path
+    //     is cwnd-full at every 250 ms tick, clause 3 above found no block in
+    //     the whole log. The path is registered before the sender loop
+    //     starts (`run_impl` adds every configured path up front), so on a
+    //     single-path run EVERY `[DIAG]` line owes `np=1`, `np_act=` (the
+    //     old count under its new name) with `np_act <= np`, and exactly `np`
+    //     per-path blocks. Fails on the shipped-before engine: `np_act=` does
+    //     not exist there, and `np=0` lines carry no block.
+    let mut saturated_ticks = 0usize;
+    for line in &diag {
+        let toks: Vec<&str> = line.split_whitespace().collect();
+        let num = |key: &str| -> u64 {
+            toks.iter()
+                .find_map(|t| t.strip_prefix(key))
+                .unwrap_or_else(|| panic!("`{key}` missing from [DIAG]: {line}"))
+                .parse()
+                .unwrap_or_else(|e| panic!("`{key}` does not parse: {e} in {line}"))
+        };
+        let np = num("np=");
+        let np_act = num("np_act=");
+        assert_eq!(
+            np, 1,
+            "one configured path must read np=1 on every tick: {line}"
+        );
+        assert!(
+            np_act <= np,
+            "the saturation-filtered count exceeds the registered one: {line}"
+        );
+        let n_sig = toks.iter().filter(|t| t.starts_with("sig_us=")).count() as u64;
+        assert_eq!(
+            n_sig, np,
+            "np={np} registered paths but {n_sig} sig_us= blocks — the block's \
+             print condition is still keyed on the saturation-filtered set: {line}"
+        );
+        if np_act < np {
+            saturated_ticks += 1;
+        }
+    }
+    println!(
+        "[sigma-diag] {saturated_ticks} of {} [DIAG] ticks had a cwnd-full path (np_act < np) — \
+         each still carried its sig_us= block",
+        diag.len()
+    );
+    assert!(
+        saturated_ticks > 0,
+        "no [DIAG] tick saw the single loopback path cwnd-full over two 8 MB bulk \
+         objects — the saturated case this clause exists to cover was not \
+         exercised:\n{}",
+        diag.join("\n")
     );
 
     // 4. AND IT IS FED. Over a multi-megabyte transfer the sender takes
