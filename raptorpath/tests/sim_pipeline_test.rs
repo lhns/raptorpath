@@ -97,7 +97,7 @@ fn run_pipeline(
             let decoded = decoder.add_symbol(&pkt.symbol);
             for (seq, data) in decoded {
                 let reordered = reorder_buf.push_with_time(seq, data, now);
-                for (rseq, _) in reordered {
+                for (rseq, _, _) in reordered {
                     recovered.insert(rseq);
                 }
             }
@@ -105,7 +105,7 @@ fn run_pipeline(
 
         // Drain expired from reorder buffer
         let expired = reorder_buf.drain_expired(now);
-        for (seq, _) in expired {
+        for (seq, _, _) in expired {
             recovered.insert(seq);
         }
 

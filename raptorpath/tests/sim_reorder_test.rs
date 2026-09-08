@@ -89,7 +89,7 @@ fn test_timeout_delivers_stuck_entries() {
     );
 
     // Verify the delivered seqs include 3 and 4
-    let seqs: Vec<u64> = expired.iter().map(|(s, _)| *s).collect();
+    let seqs: Vec<u64> = expired.iter().map(|(s, _, _)| *s).collect();
     assert!(seqs.contains(&3), "seq 3 should be delivered");
     assert!(seqs.contains(&4), "seq 4 should be delivered");
 }

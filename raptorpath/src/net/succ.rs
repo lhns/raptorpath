@@ -287,6 +287,12 @@ impl Hist {
     pub fn mean_us(&self) -> Option<u64> {
         (self.n > 0).then(|| self.sum_us / self.n)
     }
+    /// The EXACT accumulated total, us. `[LAT]`'s shares are sums and not
+    /// quantiles: a share must add up across classes, and bucket lower edges
+    /// do not.
+    pub fn sum_us(&self) -> u64 {
+        self.sum_us
+    }
 
     /// The `p`-quantile as the LOWER EDGE of the bucket the rank falls in —
     /// an underestimate by at most one bucket width (≤ 9.05 %). `None` iff no
@@ -394,19 +400,34 @@ impl SuccGauge {
     /// `path_id` is the path the CLOSING arrival landed on — compared against
     /// the path that EXPOSED the hole (A0.3). Classification only: the
     /// comparison feeds two histograms and no decision.
-    pub fn resolve(&mut self, seq: u64, by_repair: bool, now: Instant, path_id: u32) {
-        let Some((t0, exposer)) = self.open.remove(&seq) else {
-            return;
-        };
+    /// **RETURNS THE RESOLUTION RECORD** `(outcome, cross-path, hole age us)`
+    /// -- `None` when the seq was not an open, tracked hole, which is the
+    /// ordinary in-order case. NON-BREAKING: every existing caller ignores it.
+    ///
+    /// `[LAT]` (`net/lat.rs`) is the consumer: the class of a reorder wait is
+    /// the class of the hole whose resolution RELEASED it, and this gauge is
+    /// the only place that record exists. Handing it back beats recomputing
+    /// it, which would be a second classification able to disagree with this
+    /// one.
+    pub fn resolve(
+        &mut self,
+        seq: u64,
+        by_repair: bool,
+        now: Instant,
+        path_id: u32,
+    ) -> Option<(HoleOutcome, bool, u64)> {
+        let (t0, exposer) = self.open.remove(&seq)?;
         let us = now.saturating_duration_since(t0).as_micros() as u64;
         let outcome =
             if by_repair { HoleOutcome::Repair } else { HoleOutcome::Original };
-        if path_id == exposer {
-            self.sp.add(us);
-        } else {
+        let cross = path_id != exposer;
+        if cross {
             self.xp.add(us);
+        } else {
+            self.sp.add(us);
         }
         self.record(outcome, us);
+        Some((outcome, cross, us))
     }
 
     /// **DETECTION.** One seq has arrived. Every seq strictly between the

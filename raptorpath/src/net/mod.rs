@@ -19,6 +19,7 @@ pub mod emit_source;
 pub mod eta;
 pub mod framing;
 pub mod interleave;
+pub mod lat;
 pub mod receiver;
 pub mod reorder;
 pub mod rttdump;
@@ -15399,7 +15400,7 @@ mod tests {
         for &seq in &arrival {
             received_seqs.insert(seq);
             highest_seen_seq = highest_seen_seq.max(seq);
-            for (dseq, _) in reorder.push(seq, Bytes::from(vec![(seq % 251) as u8; 32])) {
+            for (dseq, _, _) in reorder.push(seq, Bytes::from(vec![(seq % 251) as u8; 32])) {
                 delivered.push(dseq);
                 highest_delivered_seq = highest_delivered_seq.max(dseq);
             }
@@ -15437,7 +15438,7 @@ mod tests {
 
         // ---- RECOVERY: the hole is retransmitted from the retained store. ----
         let hole_sym = sent_store.get(&hole).expect("hole retained").clone();
-        for (dseq, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
+        for (dseq, _, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
             delivered.push(dseq);
             highest_delivered_seq = highest_delivered_seq.max(dseq);
         }

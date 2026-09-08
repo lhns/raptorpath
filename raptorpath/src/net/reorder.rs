@@ -50,21 +50,36 @@ impl ReorderBuffer {
         }
     }
 
-    /// Push a recovered symbol. Returns a contiguous prefix of deliverable entries.
-    /// Uses `Instant::now()` for the buffered timestamp.
-    pub fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes)> {
+    /// Push a recovered symbol. Returns a contiguous prefix of deliverable
+    /// entries as `(seq, data, buffered_at)`.
+    ///
+    /// **`buffered_at` is the third element on EVERY return path of this
+    /// type** (`[LAT]`, `net/lat.rs`): the REORDER WAIT is
+    /// `t_deliver - buffered_at`, and the receiver cannot reconstruct it
+    /// afterwards because the buffer is the only place that instant was ever
+    /// held. A symbol that was never buffered -- the in-order case, and the
+    /// below-frontier late fill -- reports the delivery instant itself, so its
+    /// wait is exactly 0 rather than a fabricated one. Read by the gauge and
+    /// by nothing else.
+    pub fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes, Instant)> {
         self.push_with_time(seq, data, Instant::now())
     }
 
     /// Push a recovered symbol with an explicit timestamp (for MockClock-driven tests).
     /// Returns a contiguous prefix of deliverable entries.
-    pub fn push_with_time(&mut self, seq: u64, data: Bytes, now: Instant) -> Vec<(u64, Bytes)> {
+    pub fn push_with_time(
+        &mut self,
+        seq: u64,
+        data: Bytes,
+        now: Instant,
+    ) -> Vec<(u64, Bytes, Instant)> {
         if seq < self.next_deliver_seq {
             // The in-order gate has already advanced past this sequence (an
             // expiry gave up on the hole). Holding a late fill buys no
             // ordering — it would only strand for a full extra timeout
             // until the next drain_expired sweep. Deliver immediately.
-            return vec![(seq, data)];
+            // Never buffered: `buffered_at = now` makes its wait exactly 0.
+            return vec![(seq, data, now)];
         }
         self.pending.insert(seq, (data, now));
 
@@ -79,10 +94,10 @@ impl ReorderBuffer {
     }
 
     /// Drain the contiguous prefix starting from `next_deliver_seq`.
-    pub fn drain_contiguous(&mut self) -> Vec<(u64, Bytes)> {
+    pub fn drain_contiguous(&mut self) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
-        while let Some((data, _)) = self.pending.remove(&self.next_deliver_seq) {
-            result.push((self.next_deliver_seq, data));
+        while let Some((data, at)) = self.pending.remove(&self.next_deliver_seq) {
+            result.push((self.next_deliver_seq, data, at));
             self.next_deliver_seq += 1;
         }
         result
@@ -95,7 +110,7 @@ impl ReorderBuffer {
     /// `next_deliver_seq` past k while younger entries were still pending
     /// used to STRAND them: a hole filled by FEC/retransmit just after a
     /// later entry expired would sit for a full extra timeout.)
-    pub fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes)> {
+    pub fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
 
         // Reliable policy: a hole is never given up on — recovery (NACK /
@@ -120,8 +135,8 @@ impl ReorderBuffer {
         // Release every pending entry up to and including k, in order.
         let to_deliver: Vec<u64> = self.pending.range(..=k).map(|(&seq, _)| seq).collect();
         for seq in to_deliver {
-            if let Some((data, _)) = self.pending.remove(&seq) {
-                result.push((seq, data));
+            if let Some((data, at)) = self.pending.remove(&seq) {
+                result.push((seq, data, at));
             }
         }
         self.next_deliver_seq = self.next_deliver_seq.max(k + 1);
@@ -132,12 +147,12 @@ impl ReorderBuffer {
     }
 
     /// Force-drain the oldest entries to get back under capacity.
-    pub fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes)> {
+    pub fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
         while self.pending.len() > self.max_buffered / 2 {
             if let Some((&seq, _)) = self.pending.iter().next() {
-                if let Some((data, _)) = self.pending.remove(&seq) {
-                    result.push((seq, data));
+                if let Some((data, at)) = self.pending.remove(&seq) {
+                    result.push((seq, data, at));
                     if seq >= self.next_deliver_seq {
                         self.next_deliver_seq = seq + 1;
                     }
@@ -205,7 +220,7 @@ mod tests {
         assert_eq!(rb.next_deliver_seq(), 1);
         // The hole is recovered → everything drains in order
         let out = rb.push(1, b(1));
-        let seqs: Vec<u64> = out.iter().map(|(s, _)| *s).collect();
+        let seqs: Vec<u64> = out.iter().map(|(s, _, _)| *s).collect();
         assert_eq!(seqs, vec![1, 2, 3, 4, 5]);
         assert_eq!(rb.next_deliver_seq(), 6);
     }
@@ -223,6 +238,42 @@ mod tests {
         assert_eq!(rb.next_deliver_seq(), 0, "no eviction may skip the hole");
         let out = rb.push(0, b(0));
         assert_eq!(out.len(), 801, "recovering the hole releases the whole prefix");
+    }
+
+    /// **THE `buffered_at` CONTRACT** (`[LAT]`): a symbol that WAITED reports
+    /// the instant it entered the buffer, and one that never waited reports
+    /// the delivery instant -- so `t_deliver - buffered_at` is the reorder
+    /// wait exactly, and is exactly 0 for an in-order arrival.
+    #[test]
+    fn every_delivery_carries_the_instant_it_was_buffered() {
+        let mut rb = ReorderBuffer::new_reliable();
+        let t0 = Instant::now();
+        // In order: never buffered, so its stamp IS the delivery instant.
+        let out = rb.push_with_time(0, b(0), t0);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].2, t0, "an in-order symbol must report zero wait");
+        // Held behind a hole, then released 30 ms later: each entry keeps its
+        // OWN arrival stamp, not the releasing one's.
+        let t1 = t0 + Duration::from_millis(10);
+        let t2 = t0 + Duration::from_millis(20);
+        assert!(rb.push_with_time(2, b(2), t1).is_empty());
+        assert!(rb.push_with_time(3, b(3), t2).is_empty());
+        let t3 = t0 + Duration::from_millis(30);
+        let out = rb.push_with_time(1, b(1), t3);
+        assert_eq!(
+            out.iter().map(|(s, _, at)| (*s, *at)).collect::<Vec<_>>(),
+            vec![(1, t3), (2, t1), (3, t2)],
+            "each released entry keeps its own buffered_at"
+        );
+        // A late fill below the frontier is delivered immediately and its
+        // stamp is the delivery instant, so its wait is 0 and not the age of
+        // a hole the buffer already gave up on.
+        let mut ev = ReorderBuffer::new(10, 500);
+        assert!(ev.push_with_time(1, b(1), t0).is_empty());
+        let _ = ev.drain_expired(t0 + Duration::from_millis(20));
+        let late = ev.push_with_time(0, b(0), t3);
+        assert_eq!(late.len(), 1);
+        assert_eq!(late[0].2, t3);
     }
 
     /// Contrast: the EVICT-policy buffer force-delivers past holes on expiry
