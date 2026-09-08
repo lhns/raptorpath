@@ -474,10 +474,8 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 /// reading of zero on the dual cell could never be blamed on the topology.
 ///
 /// 7. **THE EXIT FLUSH** (goal-gate "OPERATOR SANCTION (2026-09-08
-///    ~14:00Z)"). The object is 1 MB — it completes in well under the
-///    receiver block's 1 s cadence on any host, which is EXACTLY the case
-///    that went red on the VM: the 8 MB object this test used to send
-///    finished in ~0.4 s there, the cadence never fired, and there was no
+///    ~14:00Z)"). The 8 MB object finished in ~0.4 s on the VM, the
+///    receiver block's 1 s cadence never fired, and there was no
 ///    `[ETA] site=receiver` line at all. The receiver line must now be
 ///    present, carry `final=1`, be the LAST of its kind (so a scraper that
 ///    takes the last line reads the complete counts), and be the ONLY
@@ -485,12 +483,22 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 ///    whichever exit reaches it). Fails on the shipped-before engine twice
 ///    over: no line on a fast host, and no marker on any host.
 ///
+///    THE OBJECT STAYS AT 8 MB (2026-09-08, VM verification of the merged
+///    fix): the SENDER's `[ETA] site=sender` line rides the `[DIAG]` 250 ms
+///    cadence (`net/diag.rs`) and has NO exit flush, so a 1 MB object
+///    (0.066 s per run on the VM) ends before the sender's first tick and
+///    the sender assertions above are unreachable — that variant went red
+///    with `no line containing [ETA] site=sender` while every receiver
+///    sibling carried `final=1`. The under-cadence RECEIVER case is pinned
+///    at 1 MB by `the_exit_flush_fires_on_sigterm_too` below, which reads
+///    the receiver only.
+///
 /// `cfg(unix)`: the server has to be stopped with SIGINT for its receiver to
 /// reach an exit path at all — see `stop_server`.
 #[cfg(unix)]
 #[test]
 fn the_prediction_is_stamped_and_read_on_one_path_too() {
-    let (cli, srv) = run(1, None, "1000000");
+    let (cli, srv) = run(1, None, "8000000");
     let s = last_with(&cli, "[ETA] site=sender");
     let r = last_with(&srv, "[ETA] site=receiver");
     println!("[eta-reach] N=1 sender: {s}");
