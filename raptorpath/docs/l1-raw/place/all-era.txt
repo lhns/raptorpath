@@ -1,0 +1,4 @@
+PLACE-ALL start 2026-09-08T18:54:33Z load=0.93 1.16 1.37 1/330 2546306
+PLACE-ALL seed=42 rc=0 wall=6888s elapsed_since_launch=6889s 2026-09-08T20:49:22Z
+PLACE-ALL seed=7 rc=0 wall=7609s elapsed_since_launch=14498s 2026-09-08T22:56:11Z
+PLACE-ALL end 2026-09-08T22:56:11Z load=0.94 1.29 1.48 2/324 2634283 ran='42 7'
