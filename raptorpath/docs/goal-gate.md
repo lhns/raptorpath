@@ -51830,3 +51830,45 @@ IMPORTED because it is the ONE definition of censoring.
 **THIS SECTION IS COMMITTED BEFORE THE VM IS TOUCHED.** The engine arms, their
 unit tests and `tests/recvlaw_reachability.rs` are committed before it; no VM
 number exists at the time of writing and none is quoted here.
+
+## OPERATOR AMENDMENT (2026-09-08 10:49Z): EVERY MEASUREMENT IS CAPPED AT 5 HOURS
+
+Written BEFORE any truncated result is read. The user's instruction, verbatim:
+"continue your measurements but they cannot take over 5 hours". This applies to
+every VM battery from this point on, including the one already running.
+
+**The r > 0 battery (launched 07:09:43Z, 288 invocations, measured 3.59 min each,
+ETA 17.2 h)** is truncated by a detached VM-side stopper
+(`/home/vibe/rbattery/stop_after_rep4.sh`): it ends the driver once the
+`=== rep=5` header appears in `r-s42.log` (i.e. reps 1-4 of seed 42 complete and
+balanced across all 18 arm-cell-size combinations), or at a hard deadline of
+12:05Z, whichever comes first. It then kills only `raptorpath` (`pkill -x`),
+lets `perf_rwm_c.sh` finish its own namespace teardown, clears both operator
+locks, and writes `FAILED-ALL-TRUNCATED-5H-BUDGET` plus `TRUNCATED.txt`. That
+sentinel name is the monitor's match pattern; it is NOT a battery failure and
+the scored section must say so.
+
+Consequences, stated now:
+- Seed 42 is scored at **n = 4** per arm-cell-size (pre-registration said n = 8,
+  two seeds). Seed 7 is NOT RUN. The pre-registration's power table is therefore
+  not met; a null reading is **GUARD-UNDERPOWERED / NEEDS-MORE-named**, never
+  R-INERT. Only an effect outside the CTL spread at n = 4 may be read as a
+  direction, and only in the pre-registered outcome vocabulary.
+- The partial rep-5 row (header + RENV, no RUNTIME) that may sit at the tail of
+  `r-s42.log` is excluded by construction (no `rc=`, no summary).
+- `ARMCOUNT` / `R-BATTERY-DONE` lines will be absent; the scorer counts rows
+  itself and must report the per-arm n it found.
+
+**The receiver-law battery** (pre-registered 96 invocations, two seeds, n = 3)
+runs seed 42 first; seed 7 runs only if seed 42 completed in under 2.5 h so the
+pair stays inside one 5 h envelope. Otherwise it is scored at one seed and says so.
+
+**The placement battery** (pre-registered n = 8, 5 arms x 4 cells + singles) is
+cut to **n = 4** before launch (about 3 h at the measured per-invocation cost).
+Its goodput leg was already pre-declared GUARD-UNDERPOWERED at n = 8; at n = 4
+that applies to every goodput reading. The `[LAT]` CTL decomposition (the first
+readout, read before any arm) is a share measurement over ~10^4-10^5 symbols per
+invocation and is not power-limited by n in the same way.
+
+No pre-registered outcome set, guard, or refuter is changed by this amendment;
+only n and the seed count are.
