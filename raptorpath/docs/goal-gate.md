@@ -49566,7 +49566,7 @@ written to prevent.**
 ## PRE-REGISTRATION — THE EVICT SEAT'S REPAIR WASTE (ρ < 1), 2026-09-08
 
 **STATUS: PRE-REGISTRATION. Written before any scrape output is read.**
-Paper §16.81 (ρ leg), in flight. Nothing here flips a default and nothing here
+Paper §16.81 (ρ leg). Nothing here flips a default and nothing here
 is an arm: the measurement is three `tail_matrix.sh` greps on a configuration
 this record has already run more than any other.
 

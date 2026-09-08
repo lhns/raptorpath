@@ -152,7 +152,7 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 /// §12.4: δ(hint) = 0.5/ζ ⇔ ζ = 0.5/δ. ζ is the hint's tail-loss scale
 /// {0.01 Realtime, 1 Auto, 100 Bulk} ⇒ δ ∈ {50, 0.5, 0.005}. Involution.
 ///
-/// RE-EXPORT (2026-09-08, §16.81 in flight): the body moved DOWN into
+/// RE-EXPORT (2026-09-08, §16.81): the body moved DOWN into
 /// `raptorpath-math::zeta_of_delta`, which the ENGINE now reads too — the
 /// dial has exactly one implementation for the L0 model and the L1 machine.
 /// Numerically identical (`0.5 / d.max(1e-12)`, same expression, same
@@ -170,7 +170,7 @@ pub fn zeta_of_delta(delta_price: f64) -> f64 {
 /// visualizer interpolation, not a paper formula, in the model-vs-engine
 /// table.
 ///
-/// RE-EXPORT (2026-09-08, §16.81 in flight): the body moved DOWN into
+/// RE-EXPORT (2026-09-08, §16.81): the body moved DOWN into
 /// `raptorpath-math::span_horizon_b`, and `raptorpath::net::delta_budget_b`
 /// — which was a three-arm `match` on the hint — now reads THAT function of
 /// `delta_price(hint)`. The engine and the visualizer are one law again, and
@@ -242,7 +242,7 @@ pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst
 /// form (target tracks p̂ with the χ-glide) as β → 1 — one continuous
 /// law, no hint branch, exact at all three presets.
 ///
-/// RE-EXPORT (2026-09-08, §16.81/§16.82 in flight): the body moved DOWN into
+/// RE-EXPORT (2026-09-08, §16.81/§16.82): the body moved DOWN into
 /// `raptorpath-math::bulkness_of_delta`, which the ENGINE's rate law now
 /// reads as the mixing weight of `r(β) = (1−β)·r_anchor + β·r_late-is-fine`
 /// — the same formula this sim has carried since the continuum landed, now
@@ -2216,7 +2216,7 @@ mod tests {
 
     /// **THE SIM/ENGINE TAIL-ANCHOR DIVERGENCE, BOUNDED** (CLAUDE.md: every
     /// documented model-vs-engine divergence carries a test that BOUNDS it,
-    /// not prose that describes it). §16.82 in flight.
+    /// not prose that describes it). §16.82.
     ///
     /// Three Bulk tail targets existed in three places. Two of them are
     /// reconciled by §16.81's dial: the ENGINE's effective tail target is

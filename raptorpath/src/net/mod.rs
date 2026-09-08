@@ -94,7 +94,7 @@ pub struct PeerConfig {
     /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
     /// measured the floor completion-neutral at C2, regressive at C3.
     pub inner_feedback_weight: f64,
-    /// The completion feed (paper §14.26 / §16.82, in flight): remaining
+    /// The completion feed (paper §14.26 / §16.82): remaining
     /// bytes of the transfer in progress, published by a driver that KNOWS
     /// them. `None` on the tunnel path — an endless stream has no `T_rem` —
     /// and `None` unless `RWM_COMPLETION_EXPOSURE` is armed, so the shipped
@@ -807,7 +807,7 @@ pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
 /// The contract's DEFAULT base tail-loss target — `config.rs`'s own
 /// `unwrap_or(1e-5)`, named here so the two cannot drift silently.
 ///
-/// It was a MIRROR until 2026-09-08 (§16.81 in flight): the seat read this
+/// It was a MIRROR until 2026-09-08 (§16.81): the seat read this
 /// constant because "the config does not reach this seat", so a tunnel
 /// configured at 1e-4 or 1e-6 priced its α at 1e-5 anyway. Both ends now take
 /// the base as an ARGUMENT (`config.target_tail_loss`, plumbed to the sender
@@ -2236,7 +2236,7 @@ pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> 
 }
 
 /// **THE COMPLETION FEED** — `RWM_COMPLETION_EXPOSURE`, ABSENT by default
-/// (paper §14.26 / §16.82, in flight).
+/// (paper §14.26 / §16.82).
 ///
 /// The one input §14.26's completion-exposure glide always needed and never
 /// had: **how much of this transfer is left**. The production tunnel is an
@@ -2287,7 +2287,7 @@ impl CompletionFeed {
     }
 }
 
-/// **`[CHI]` — the completion-exposure gauge** (paper §16.82, in flight).
+/// **`[CHI]` — the completion-exposure gauge** (paper §16.82).
 ///
 /// MEASUREMENT DISCIPLINE rule 1: prove the mechanism under test EXECUTES.
 /// An arm whose χ never left 0 is an arm that ran the shipped machine under a
@@ -2347,7 +2347,7 @@ pub(crate) fn chi_report_line() -> String {
 }
 
 /// **`[SHEDH]` — THE RECEIVER HOLD'S BIND GAUGE** (ADR-0070: *every clamp gets
-/// a bind-fraction gauge, reported*; paper §16.81 ρ leg, in flight).
+/// a bind-fraction gauge, reported*; paper §16.81 ρ leg).
 ///
 /// `shed_recv_hold` is TWO laws behind one signature and BOTH of them are
 /// unmeasured. The legacy branch is `(4·SRTT).clamp(60 ms, 300 ms)`, and 60,
@@ -3705,9 +3705,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_sack_rx = sack_rx;
     let sender_protocol_hint = config.protocol_hint;
     // The contract's BASE tail-loss target, sampled beside the hint it prices
-    // alpha with (paper 16.81, in flight).
+    // alpha with (paper 16.81).
     let sender_target_tail_loss = config.target_tail_loss;
-    // §14.26/§16.82 (in flight): the completion feed, if a driver published
+    // §14.26/§16.82: the completion feed, if a driver published
     // one. `None` on every shipped path.
     let sender_completion_feed = config.completion_feed.clone();
     let sender_gates = gates.clone();
@@ -4825,7 +4825,7 @@ pub fn honest_cap_terms(
 /// and would otherwise have been transcribed a second time by the law
 /// below — the `honest_cap_term` de-triplication lesson applied early.
 ///
-/// **THE THREE-ARM MATCH IS GONE (2026-09-08, §16.81 in flight).** The hint
+/// **THE THREE-ARM MATCH IS GONE (2026-09-08, §16.81).** The hint
 /// names a δ exactly once — [`delta_price`] — and b is the paper's own
 /// continuous `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)` evaluated there
 /// ([`raptorpath_math::span_horizon_b`], the same function the visualizer
@@ -4838,7 +4838,7 @@ pub fn delta_budget_b(hint: ProtocolHint) -> f64 {
     delta_budget_b_of(delta_price(hint))
 }
 
-/// THE ONE PLACE A HINT NAMES A δ (paper §12.4, §16.81 in flight).
+/// THE ONE PLACE A HINT NAMES A δ (paper §12.4, §16.81).
 ///
 /// `δ(hint) = δ_Auto / ζ(hint) ∈ {50 Realtime, 0.5 Auto, 0.005 Bulk}` — the
 /// map the Copa scheduler already carried, lifted to the seat every δ-priced
@@ -7033,7 +7033,7 @@ async fn run_window_sender(
     // seq→path + a BBR send-interval rate-sample snapshot so the WindowAck
     // handler can attribute deliveries per path. None = shipped path.
     copa_feed: Option<Arc<CopaFeed>>,
-    // §14.26/§16.82 (in flight): remaining bytes of the transfer, when a
+    // §14.26/§16.82: remaining bytes of the transfer, when a
     // driver knows them. `None` on every shipped path; read ONLY under
     // `RWM_COMPLETION_EXPOSURE`, so the rate is byte-identical without it.
     completion_feed: Option<Arc<CompletionFeed>>,
@@ -7134,10 +7134,10 @@ async fn run_window_sender(
     let mut proactive_coded_total: u64 = 0;
     let mut recovery_coded_total: u64 = 0;
     let mut pfrac_last_us: u64 = 0;
-    // `[SHEDH]` (paper §16.81 ρ leg, in flight): last emission of the
+    // `[SHEDH]` (paper §16.81 ρ leg): last emission of the
     // receiver-hold bind gauge, on the same 1 s cadence convention.
     let mut shedh_last_us: u64 = 0;
-    // `[CHI]` (paper §16.82, in flight): last emission of the
+    // `[CHI]` (paper §16.82): last emission of the
     // completion-exposure gauge, same cadence.
     let mut chi_last_us: u64 = 0;
     let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
@@ -8827,7 +8827,7 @@ async fn run_window_sender(
                 eprintln!("{}", shedh_report_line());
             }
         }
-        // `[CHI]` — the completion-exposure gauge (§16.82, in flight), same
+        // `[CHI]` — the completion-exposure gauge (§16.82), same
         // 1 s cadence, and on BOTH arms: the control's `n=0 max=0.0000` is the
         // two-sided half of the reachability claim, and an arm whose χ never
         // left 0 must be READ that way rather than inferred.
@@ -10448,7 +10448,7 @@ async fn run_window_sender(
                 // `set_completion_exposure` had zero engine callers, so χ ≡ 0,
                 // so δ_eff = ε̂ at the Bulk end and `controller_rate` returned
                 // exactly 0 — r* ≡ 0 forever, on every scored battery. The r
-                // leg has never operated (paper §16.82, in flight).
+                // leg has never operated (paper §16.82).
                 //
                 // The perf client KNOWS the remaining bytes of the object it
                 // is feeding. Under the gate it publishes them into a

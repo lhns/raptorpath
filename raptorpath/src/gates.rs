@@ -46,7 +46,7 @@ fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
 }
 
 /// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
-/// §16.81/§16.82, in flight). See [`RuntimeGates::delta`] for what it means
+/// §16.81/§16.82). See [`RuntimeGates::delta`] for what it means
 /// and the precedence against `RWM_COPA_DELTA`.
 ///
 /// Resolved through a `OnceLock` rather than only inside
@@ -907,7 +907,7 @@ pub struct RuntimeGates {
     /// run's own output rather than inferred — the `RWM_ALPHA_OVERRIDE`
     /// precedent, and the failure mode that produced the 31 Mbit/s anomaly.
     pub w_form: crate::net::WForm,
-    /// `RWM_DELTA` (**ABSENT by default**; paper §16.81/§16.82, in flight) —
+    /// `RWM_DELTA` (**ABSENT by default**; paper §16.81/§16.82) —
     /// THE CONTRACT'S δ, set directly as a NUMBER instead of by naming one of
     /// the three preset points on the dial.
     ///
@@ -1238,7 +1238,7 @@ impl RuntimeGates {
             // ABSENT by default; garbage resolves back to ABSENT and the echo
             // prints `unset`. The range is the law's own domain, not a taste:
             // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
-            // undefined at δ ≤ 0. Paper §16.81/§16.82 (in flight).
+            // undefined at δ ≤ 0. Paper §16.81/§16.82.
             delta: delta_override(),
             // ABSENT by default. The glide it arms has shipped inert since P6;
             // arming it is an EXPERIMENT, not a default in waiting.
@@ -1381,7 +1381,7 @@ impl RuntimeGates {
             // run stands at a point on the dial no hint names, and b(δ), β(δ),
             // the tail target and α all read THAT number. It is the one axis
             // an r > 0 row varies, so a row whose δ is not readable off its own
-            // run is not a row. Paper §16.81/§16.82 (in flight).
+            // run is not a row. Paper §16.81/§16.82.
             o(&self.delta),
             // THE χ ARM. A flag here rather than a value: what it turns on is
             // the FEED, and the value χ takes is a measurement, printed by
@@ -1714,7 +1714,7 @@ mod tests {
             // and is what the default arm must echo (paper 16.76).
             "RWM_W_FORM=cantelli",
             // THE CONTRACT'S δ is ABSENT on every shipped arm: the hint names
-            // the point on the dial, and the echo says so (§16.81, in flight).
+            // the point on the dial, and the echo says so (§16.81).
             "RWM_DELTA=unset",
             // The χ arm is OFF on every shipped arm: §14.26's glide stays
             // inert and `r*` stays at the corner unless a battery arms it.

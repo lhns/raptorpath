@@ -169,7 +169,7 @@ const K_WIRE: &[f64] = &[1.0, 1.04, 1.14, 1.15, 1.505, 2.0];
 /// below 1, and ρ = 1 is the shipped retain-until-acked scope.
 const RHO_GRID: &[f64] = &[0.0, 0.25, 0.5, 0.75, 0.9, 1.0];
 
-/// **PUBLISHED**: paper §16.26 / §16.81 (in flight) —
+/// **PUBLISHED**: paper §16.26 / §16.81 —
 /// `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)`, δ_Auto = 0.5.
 /// Transcribed 2026-09-08.
 ///
@@ -579,7 +579,7 @@ fn published_quantile_round(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
     ((srtt_us as f64 + k * sigma_us as f64) as u64).max(TIMER_GRANULARITY_US)
 }
 
-/// **LAW: `b(δ)`, paper §16.26 / §16.81 (in flight).** The engine's span
+/// **LAW: `b(δ)`, paper §16.26 / §16.81.** The engine's span
 /// horizon against the paper's own continuous form, over the WHOLE dial.
 ///
 /// Until 2026-09-08 there was nothing to put in this file for `b`: the engine

@@ -89,7 +89,7 @@ pub struct FecRateController {
     /// BULKNESS β = `bulkness_of_delta(delta_price(hint))` ∈ [0, 1] — the
     /// log-position of this contract's latency price between the Auto anchor
     /// (β = 0) and the Bulk anchor (β = 1), resolved ONCE at construction
-    /// (paper §16.81/§16.82, in flight).
+    /// (paper §16.81/§16.82).
     ///
     /// **THIS FIELD IS THE REPAIR OF A MODE SWITCH.** `compute_repair_rate`
     /// used to set `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`, a hint
@@ -191,7 +191,7 @@ impl FecRateController {
         // The CONTRACT'S δ maps to target_tail_loss, not an additive offset.
         // This is the only principled knob: tighter tail = more proactive FEC.
         //
-        // Read through the DIAL since 2026-09-08 (§16.81, in flight):
+        // Read through the DIAL since 2026-09-08 (§16.81):
         // `ζ(δ(hint))` in place of the enum's own `hint.tail_loss_scale()`.
         // Bit-identical at all three presets — δ = 0.5/ζ and ζ = 0.5/δ are
         // exact f64 inverses at ζ ∈ {0.01, 1, 100}, pinned by
@@ -233,7 +233,7 @@ impl FecRateController {
     /// Exposed for ablation: with it off, Bulk falls back to the plain
     /// 100×-loosened `target_tail_loss`.
     ///
-    /// **RE-READ AS `β := 0`** (§16.81, in flight). The flag no longer selects
+    /// **RE-READ AS `β := 0`** (§16.81). The flag no longer selects
     /// a law; it zeroes the mixing weight, which is the SAME arithmetic it
     /// always performed — the ablation arm was never anything but "evaluate
     /// the anchor term", and at Realtime/Auto (β = 0 already) it was, and
@@ -340,7 +340,7 @@ impl FecRateController {
             0.0
         };
         // ── THE RATE MIX, r(β) = (1−β)·r_anchor + β·r_late-is-fine ────────
-        // §16.81/§16.82 (in flight). ONE `RateInputs` is built, and the ONE
+        // §16.81/§16.82. ONE `RateInputs` is built, and the ONE
         // shared `controller_rate` is evaluated TWICE — once with the
         // late-is-fine δ_eff law off (the anchor term) and once with it on
         // (the Bulk term) — and the two are blended by the contract's own
@@ -818,7 +818,7 @@ mod tests {
 
     const W: usize = 50; // typical window size for tests
 
-    // ── THE RATE MIX'S BYTE-IDENTITY PIN (§16.81/§16.82, in flight) ───────
+    // ── THE RATE MIX'S BYTE-IDENTITY PIN (§16.81/§16.82) ───────
     //
     // The repair `r(β) = (1−β)·r_anchor + β·r_late-is-fine` replaced
     //     `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`

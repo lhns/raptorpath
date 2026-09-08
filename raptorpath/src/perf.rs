@@ -177,7 +177,7 @@ async fn run_object(
     nbytes: usize,
     payload_len: usize,
     deadline: Duration,
-    // §14.26/§16.82 (in flight): the ONE driver in this tree that KNOWS how
+    // §14.26/§16.82: the ONE driver in this tree that KNOWS how
     // much of the transfer is left. `None` unless `RWM_COMPLETION_EXPOSURE`
     // armed the feed, in which case the engine's rate site reads it as
     // `T_rem` and the completion-exposure glide runs for the first time since
@@ -245,7 +245,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     let hint = config.protocol_hint;
     let hint_str = format!("{hint:?}").to_lowercase();
     let payload_len = chunk_payload_len(hint);
-    // §14.26/§16.82 (in flight): publish the completion feed ONLY when the arm
+    // §14.26/§16.82: publish the completion feed ONLY when the arm
     // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
     // the engine's rate site never reads it — byte-identical.
     let feed = if crate::config::env_flag("RWM_COMPLETION_EXPOSURE", false) {

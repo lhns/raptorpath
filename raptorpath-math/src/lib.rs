@@ -125,7 +125,7 @@ pub const BULK_TAIL_BUDGET: f64 = 0.05;
 
 // =========================================================================
 // THE delta DIAL -- b(delta), zeta(delta), beta(delta)
-// (paper 12.4 / 16.20.3 / 16.26; 16.81/16.82 in flight).
+// (paper 12.4 / 16.20.3 / 16.26; 16.81/16.82).
 //
 // THE ONE MACHINE, CONTINUOUS IN delta. The protocol hints are NAMED POINTS
 // on this dial, never modes (CLAUDE.md, ADR-0064): a hint names a delta

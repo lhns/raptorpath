@@ -128,7 +128,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
             | awk 'NR<=6 || NR%10==0 { n++; if (n<=24) print }' \
             | sed "s|^|  SPAN $label ${size}B ${lg##*/}: |" || true
     done
-    # ── THE EVICT SEAT'S REPAIR WASTE (paper §16.81 ρ leg, in flight) ─────
+    # ── THE EVICT SEAT'S REPAIR WASTE (paper §16.81 ρ leg) ─────
     #
     # This matrix's own default arm — `--protocol-hint realtime` WITHOUT
     # `--window-reliable` — IS the ρ < 1 EVICT seat, and it is the most-run

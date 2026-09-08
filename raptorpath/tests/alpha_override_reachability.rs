@@ -542,7 +542,7 @@ fn a_large_and_a_small_alpha_realize_different_clocks_on_the_same_cell() {
     );
 }
 
-// ── 5 — THE TWO ENDS PRICE α OFF THE SAME CONTRACT (§16.81, in flight) ───
+// ── 5 — THE TWO ENDS PRICE α OFF THE SAME CONTRACT (§16.81) ───
 
 /// **THE HINT REACHES THE RECEIVER, AT EVERY POINT OF THE DIAL.**
 ///

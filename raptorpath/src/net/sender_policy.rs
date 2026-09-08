@@ -494,7 +494,7 @@ impl SenderPolicy {
         symbol_size: u16,
         protocol_hint: ProtocolHint,
         // The contract's BASE tail-loss target (config.target_tail_loss).
-        // Plumbed 2026-09-08 (paper 16.81, in flight): the alpha seat used to
+        // Plumbed 2026-09-08 (paper 16.81): the alpha seat used to
         // mirror config.rs's own unwrap_or(1e-5) as a constant, so a tunnel
         // configured at 1e-4 priced alpha at 1e-5 anyway - and the RECEIVER
         // read the same constant at a hard-coded Auto. Both ends now take it.

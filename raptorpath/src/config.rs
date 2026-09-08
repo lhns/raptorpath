@@ -342,7 +342,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
             .inner_feedback_weight
             .unwrap_or(0.0)
             .clamp(0.0, 1.0),
-        // Paper §14.26/§16.82 (in flight): the completion feed. ALWAYS `None`
+        // Paper §14.26/§16.82: the completion feed. ALWAYS `None`
         // here — the tunnel is an endless stream and has no `T_rem` to
         // publish. Only a driver that knows the size of what it is sending
         // (the perf client, under `RWM_COMPLETION_EXPOSURE`) sets it.

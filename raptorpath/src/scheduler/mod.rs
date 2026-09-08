@@ -129,7 +129,7 @@ pub fn copa_wire_active() -> bool {
 ///
 /// THE HINT→δ MAP ITSELF now lives ONCE, in [`hint_delta_price`], and is
 /// read through [`crate::net::delta_price`] — the ONE place a hint names a
-/// δ (§16.81, in flight). This function is the CC's own view of that number:
+/// δ (§16.81). This function is the CC's own view of that number:
 /// `RWM_COPA_DELTA` overrides it for the CC alone, so a battery can move the
 /// contract's δ (`RWM_DELTA`) while pinning the congestion controller.
 /// PRECEDENCE: `RWM_COPA_DELTA` ▸ `RWM_DELTA` ▸ the hint's map.
@@ -1029,7 +1029,7 @@ impl SchedulingWeights {
     }
 
     /// The placement weights at an ARBITRARY point on the δ dial — the law,
-    /// with no hint in sight (§16.81, in flight).
+    /// with no hint in sight (§16.81).
     ///
     ///     w_bw(δ) = clamp(½ − ¼·log₁₀(δ/δ_Auto), 0, 1),  w_lat = 1 − w_bw
     ///
@@ -7439,7 +7439,7 @@ mod tests {
         assert!(copa_wire_from_env(None, false, Some("1")));
     }
 
-    /// **THE PLACEMENT WEIGHTS ARE A DIAL, NOT A MODE** (§16.81, in flight).
+    /// **THE PLACEMENT WEIGHTS ARE A DIAL, NOT A MODE** (§16.81).
     /// Bit-exact at the three presets — the condition this repair shipped
     /// under — plus continuity and monotonicity through every named point.
     #[test]

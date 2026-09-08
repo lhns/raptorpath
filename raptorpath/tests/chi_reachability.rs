@@ -1,6 +1,6 @@
 //! **χ IS REACHABLE, AND WITHOUT THE ARM THE RATE IS BYTE-IDENTICAL.**
 //!
-//! Paper §14.26 / §16.82 (in flight).
+//! Paper §14.26 / §16.82.
 //!
 //! **The thing this binary exists to prevent has already happened once.**
 //! `FecRateController::set_completion_exposure` shipped with P6 and had

@@ -211,7 +211,7 @@ pub(crate) async fn run_receiver(
     // `cantelli` on every shipped arm; read only when the quantile gate is on.
     let recv_w_form = recv_gates.w_form;
     // The contract's alpha at the RECEIVER. THE HINT IS NOW PLUMBED
-    // (2026-09-08, paper 16.81 in flight): this seat read a hard-coded `Auto`
+    // (2026-09-08, paper 16.81): this seat read a hard-coded `Auto`
     // and the constant `CONTRACT_TAIL_LOSS_BASE` because neither the hint nor
     // the config reached the task, so the sender and the receiver DISAGREED
     // about alpha at two of the three presets and the arm could not be scored
