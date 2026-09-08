@@ -1,0 +1,4 @@
+CROWNSPOT sentinel-probe OK 2026-09-08T04:58:34Z
+CROWNSPOT start 2026-09-08T04:58:34Z cells='c2 c3' reps=8 seeds='42 7'
+85c8a9c2c99dc7c1ac75730851ab22d7af2d2108c40e7b6f74812ccf20265901  /home/vibe/raptorpath/target/release/raptorpath
+CROWNSPOT DONE-ALL 2026-09-08T05:31:12Z
