@@ -153,7 +153,14 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # the field is added there, not here. Until it lands the readable proxy
     # is `[SUCC]`'s abandon count against `[RACK] fa=`'s false-alarm ratio.
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
-        for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]'; do
+        # `[ETA]` and `[LAT]` (wire v8, `net/eta.rs` / `net/lat.rs`): the
+        # placement law's own prediction-error dispersion and the delivered-
+        # latency decomposition. Same last-line-wins convention (an exit-flush
+        # line carrying `final=1`, when the engine emits one, IS the last line
+        # and so is the one taken). Their absence from this list is why S4's
+        # first field point was UNREADABLE (goal-gate "S4 — THE FIRST FIELD
+        # POINT"): `eta_s4.py` reads its points off this scrape.
+        for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]' '\[ETA\]' '\[LAT\]'; do
             { grep -E "^${tag} " "$lg" 2>/dev/null || true; } \
                 | tail -1 \
                 | sed "s|^|  EVICT $label ${size}B ${lg##*/}: |" || true

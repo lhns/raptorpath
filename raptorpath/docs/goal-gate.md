@@ -52483,3 +52483,152 @@ FAILED-ALL-TRUNCATED-5H-BUDGET`; never the process table):
    captures  /home/vibe/recvlaw/diag/                       driver    /home/vibe/recvlaw/run_all.log, battery-s<seed>.out
    smoke     /home/vibe/recvlaw/smoke-s42.log, smoke-witness-s42.jsonl, diag-smoke/
 ```
+
+## PLACEMENT BATTERY — n = 4 AMENDMENT DETAIL (2026-09-08, `meas/place-prep` from main@`c22b5b7`; HARNESS + DOCS ONLY, no VM contact, no engine file, no gate, no default)
+
+The "OPERATOR AMENDMENT (2026-09-08 10:49Z)" cuts the placement battery to
+**n = 4 before launch**. This section carries the arithmetic that amendment
+left implicit, the envelope that enforces it, and the harness changes that were
+owed before the battery could be read at all. **No pre-registered outcome set,
+guard, refuter, cell or arm is changed; only n and the seed count are** — and
+the seed count is changed BY the envelope, not by this text.
+
+### 1 — The invocation count at n = 4, per seed
+
+| row | invocations | shape | placeholder cost | subtotal |
+|---|---|---|---|---|
+| `c7` | 5 arms × 4 reps = 20 | 200 MB dual | 2.0 min | 40 min |
+| `c8` | 5 arms × 4 reps = 20 | 100 MB dual | 2.0 min | 40 min |
+| `c1` | 5 arms × 4 reps = 20 | 400 MB single | 2.0 min | 40 min |
+| `c9h` | 5 arms × 3 reps = 15 | 100 MB quad, WITNESS | 3.6 min | 54 min |
+| `sc2` | 4 reps = 4 | 100 MB single | 2.0 min | 8 min |
+| `sc3` | 4 reps = 4 | 25 MB single | 2.0 min | 8 min |
+| **total** | **83 / seed** | | | **190 min ≈ 3 h 10 min / seed** |
+
+The placeholders are the r-battery's measured 3.59 min per invocation (quad
+class) and a 2 min dual/single figure — **NOT a measurement of this grid**.
+The engine's own `RUNTIME` lines across `docs/l1-raw` put the transfer itself
+at 7–34 s (`c8` 7 s, `c7` 14 s, `c1` 18 s, `sc2` 17 s, `sc3` 11 s, `c9h` 10 s,
+means over 12–1 319 rows); the rest of an invocation is topology build and
+teardown, so **the per-invocation cost does NOT scale with bytes** and the
+400 MB `c1` row is not the long pole the byte count suggests. A DNF costs the
+client's `timeout 700` s ≈ 12 min (`perf_rwm_c.sh:320`).
+
+### 2 — The envelope (`tools/l1/place_run_all.sh`), and what it does to the seed count
+
+`place_run_all.sh` is the receiver-law battery's `run_all.sh` shape, committed
+to the tree: unprivileged sentinel proof (touch + rm on every sentinel path,
+`SENTINEL-PROOF-COMPLETE` in `all.out`, before anything privileged); seed 42 at
+n = 4; **seed 7 only if seed 42 EARNED `DONE-S42` under 2.5 h from launch**,
+else `SKIPPED-S7-5H-BUDGET` (`SKIPPED-S7-S42-FAILED` when seed 42 did not earn
+DONE at all); a detached backstop at **4 h 50 min** that TERMs the battery (its
+INT/TERM traps now release both operator locks and `exit 143` — the r-battery
+fix, `3560a50` — once the in-flight invocation returns), `sudo pkill -x
+raptorpath || true` to make it return, waits up to 180 s for the `rp-*`
+namespaces to clear, and only then writes `FAILED-ALL-TRUNCATED-5H-BUDGET`;
+`DONE-ALL` only when every seed it actually RAN earned its own DONE.
+
+**CONSEQUENCE, STATED BEFORE LAUNCH: at the placeholder cost seed 42 takes
+~3 h 10 min, the 2.5 h gate is NOT met, and seed 7 is skipped BY CONSTRUCTION.**
+Seed 7 runs only if the measured mean cost comes in under 150 min / 83 =
+**1.81 min per invocation**. The pre-registration's every "on both seeds" clause
+is therefore expected to be evaluated on ONE seed, and a scored section that
+reads this battery must say so in its first line. One seed fits the backstop
+with ~1 h 40 min of slack, which ~8 DNFs would consume.
+
+### 3 — The first readout, restated verbatim from the pre-registration
+
+**`[LAT]` ON THE `CTL` ARM IS READ FIRST, BEFORE ANY CHALLENGER IS LOOKED AT.**
+Pooled shares over the receiver's per-path `*_sum=` fields (`net/lat.rs:239`):
+
+| reading | criterion (at a DUAL cell, `CTL`) | consequence |
+|---|---|---|
+| **PLACEMENT-INDICTED** | `sh_xp ≥ 0.5` | the arms are in domain and are scored |
+| **QUEUE-DOMINATED** | `sh_ax ≥ 0.5` **and** `sh_xp ≤ 0.2` | **`INSTRUMENT-INDICTS-QUEUE`**: the track re-routes; every arm verdict is OUT OF DOMAIN |
+| **REPAIR-DOMINATED** | `sh_rep ≥ 0.5` | §16.80/§16.83 own the latency; out of domain |
+| **MIXED** | none of the above | report the split; score nothing on it |
+
+`place_parse.py` emits `lat_reading` on every row; it is BINDING only on the
+CTL arm, and the report reads it there first. The `[LAT]` shares are a
+measurement over ~10⁴–10⁵ delivered symbols per invocation and are not
+power-limited by n the way goodput is. **The S4 score (§3 of the
+pre-registration) is likewise read before any arm**, now off THREE `ref`
+routes carried on every row: the engine's own `t_eff=` inversion (preferred),
+the sender `[ETA]` line's own `tau_us` (`eta_s4.py`'s clean reference), and
+the `[DIAG] rtt=` surrogate.
+
+**THE GOODPUT LEG IS `GUARD-UNDERPOWERED` AT n = 4** — it was pre-declared so at
+n = 8 (`c7` needs n ≥ 53, `c8` n ≥ 28 for a 5 % effect) and n = 4 buys less.
+Every goodput number this battery produces carries that label and is never a
+verdict. The `c1` control (`xp_n ≡ 0` AND `rw_xp ≡ 0` at N = 1) voids the run
+if it moves, at any n.
+
+### 4 — If the estimate is exceeded: what to drop FIRST (proposed, NOT applied)
+
+The estimate (3 h 10 min for one seed) is inside the 4.5 h line, so nothing is
+dropped now. If the measured cost exceeds **3.25 min per invocation flat**
+(≈ 270 min / 83), the one-seed run itself breaches 4.5 h, and the order of
+retreat is:
+
+1. **`c9h` first** — the pre-registration names it an n = 3 WITNESS with
+   `ABORT-QUAD` pre-declared and "it costs the battery nothing"; dropping it
+   saves 54 min (28 % of the seed) and no scored dimension. It is also the row
+   with the highest placeholder cost per invocation.
+2. Then `c1` to n = 2 — a MUST-NOT-MOVE control detects movement at any n
+   (the assertion is `= 0`, not a spread), saving 20 min.
+3. Nothing else: `c7`/`c8` are the scored duals and the singles are the
+   same-session aggregation denominator the pre-registration forbids importing.
+
+Apply any of these through `RWM_PLACE_CELLS` on the launch line and record it
+in the scored section; do not edit the battery's cell table.
+
+### 5 — The harness changes this section rides on (all on `meas/place-prep`)
+
+* **`tail_matrix.sh` now scrapes `[ETA]` and `[LAT]`** (last line, both
+  endpoints, `|| true`-guarded like `[RFA]`/`[SUCC]`/`[RACK]`). The S4 first
+  field point was `UNREADABLE` because `[ETA]` was never scraped; that is
+  closed. NOTE: the task's premise that a `[LAT]` grep already existed there
+  was wrong — neither tag was in the list; both are now.
+* **`place_parse.py`** is refactored into a `parse()` function with the
+  engine's field names matched literally (`net/eta.rs:424-427`, `:441-443`,
+  `:574-580`; `net/lat.rs:239-268`; `net/succ.rs:775-778`), the sender's full
+  bind-gauge set (`zero=`, `place_n=`, `cold_r=`, `cold_ge=`, `t_eff=`,
+  `t_cold=`, `t_n=`, `hol_sh=` = the `s_i > H` fraction, `hol_mv=` = the term
+  moved the argmin, `hol_calls=`, `hol_w=`), per-path `tau_us`, the receiver's
+  `bind=`, and `[LAT]`'s `rwxp_n` carried into the `c1` control.
+  `test_place_parse.py`: 76 checks from synthetic lines copied off those
+  format strings.
+* **`final=1` exit-flush rule**, in `place_parse.py` and `eta_s4.py`, tested
+  with and without the field: a last-line scraper takes the flush (and prefers
+  it wherever it sits); a line COUNTER skips it; a `final=1` point in
+  `eta_s4.py` SUPERSEDES the cadence points of its key so `n` is not inflated.
+  `test_eta_s4.py`: 19 checks. The battery's `LIVENESS` line carries
+  `recv_final_lines=` so "complete counts" is readable off the ledger.
+* **A parser defect found and fixed before launch**: `perf.rs:296` prints a DNF
+  summary WITHOUT `mbps`, and the parser recognised runs by `mbps` alone — so
+  **every DNF-only invocation would have been recorded as `ABORT`**, exactly
+  the ABORT ≠ DNF conflation the parser's own comment warns against. DNF rows
+  are now recognised by their own key; `mbps` is `None` on them.
+* **`place_battery.sh`**: `reps` defaults to 4; the r-battery's operator-lock
+  block (`take_lock`/`release_locks`, INT/TERM handlers that `exit`) replaces
+  the battery's private `mkdir` lock, so it REFUSES to run without both
+  `/tmp/rwm-vm.lock` and `/home/vibe/rp.lock` like every other battery.
+
+### 6 — What the pre-registration did not anticipate
+
+1. **The 5 h cap collapses the two-seed design to one seed at the placeholder
+   cost** (§2). "On both seeds" clauses cannot be evaluated; the scored section
+   must open with that.
+2. **The receiver's diagnostic block has no exit flush on the shipped engine**
+   (`receiver.rs:2128`, 1 s cadence, SIGKILLed server): every `[LAT]`/`[SUCC]`/
+   `[ETA] site=receiver` reading is the last cadence tick, biased low by up to
+   1 s of arrivals — identical across arms, but a bias. The `final=1` flush is
+   owed by a concurrent branch; the parsers are ready for either format.
+3. **DNF was indistinguishable from ABORT in the parser** (§5). Pre-registration
+   §5's `WIRING-FAILS`/`ABORT-QUAD` accounting depends on that distinction.
+4. **`[ETA]`/`[LAT]` were never scraped by `tail_matrix.sh`**, so no committed
+   ledger before this branch carries either; the crown-spot S4 points remain
+   SURROGATE-REF and are not admissible to §3's outcome set.
+5. **`[LAT]` exists on the receiver only** — there is no sender-side `[LAT]`
+   in the engine, so a "both sides" reading of the decomposition is not
+   available and is not claimed.

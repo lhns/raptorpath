@@ -37,13 +37,44 @@
 # so ANY movement at c1 VOIDS the run), c9h (n = 3 quad, WITNESS ONLY —
 # `ABORT-QUAD` is pre-declared).
 #
-# GOODPUT IS A GUARD, PRE-DECLARED UNDERPOWERED AT n = 8. It is reported so a
-# regression is visible; it is not a score.
+# GOODPUT IS A GUARD, PRE-DECLARED UNDERPOWERED AT n = 8 AND THEREFORE AT n = 4.
+# It is reported so a regression is visible; it is not a score.
+#
+# ── THE 5 h CAP (goal-gate "OPERATOR AMENDMENT (2026-09-08 10:49Z)") ──────
+# Every measurement is capped at 5 hours. The pre-registered n = 8 is cut to
+# **n = 4** (the default `reps` below) BEFORE launch; no outcome set, guard or
+# refuter changes, only n and the seed count. The envelope is enforced by
+# `place_run_all.sh` (launch as `vibe`, NOT this script directly): seed 42,
+# then seed 7 only if seed 42 finished under 2.5 h, hard backstop at 4 h 50 min.
+#
+# INVOCATION COUNT AT n = 4, PER SEED (arms x cells x reps + singles):
+#
+#     c7   5 arms x 4 reps = 20   200 MB dual        placeholder 2.0 min each
+#     c8   5 arms x 4 reps = 20   100 MB dual        placeholder 2.0 min each
+#     c1   5 arms x 4 reps = 20   400 MB single      placeholder 2.0 min each
+#     c9h  5 arms x 3 reps = 15   100 MB quad        placeholder 3.6 min each
+#     sc2  4 reps          =  4   100 MB single      placeholder 2.0 min each
+#     sc3  4 reps          =  4    25 MB single      placeholder 2.0 min each
+#     ─────────────────────────
+#     83 invocations/seed: 68 x 2.0 + 15 x 3.6 = 190 min ≈ 3 h 10 min/seed
+#
+# The placeholders are the r-battery's measured 3.59 min/quad-class invocation
+# and a 2 min dual/single figure, NOT a measurement of THIS grid; the engine's
+# own `RUNTIME` lines in docs/l1-raw put the transfer itself at 7–34 s and the
+# rest is topology build/teardown, so the per-invocation cost does NOT scale
+# with bytes. CONSEQUENCE, STATED BEFORE LAUNCH: at ~3.2 h for seed 42 the
+# 2.5 h gate is NOT met and seed 7 is `SKIPPED-S7-5H-BUDGET` by construction
+# unless the measured cost comes in under 1.8 min/invocation (150 min / 83).
+# One seed fits the 4 h 50 min backstop with ~1 h 40 min of slack; a DNF costs
+# `timeout 700` s ≈ 12 min, so ~8 DNFs consume that slack. The cell to drop
+# first if the estimate is exceeded is `c9h` (witness only, ABORT-QUAD
+# pre-declared: 54 min) — proposed in goal-gate "PLACEMENT BATTERY — n = 4
+# AMENDMENT DETAIL", NOT applied here.
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
 cd /home/vibe/raptorpath/raptorpath/tools/l1
 
-SEED_ARG="${1:?seed}"; REPS="${2:-8}"
+SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h amendment
 PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8 c1 c9h}"
 PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0 TSIG HOL HOLTSIG}"
 TAG="${RWM_PLACE_TAG:-place}"
@@ -71,20 +102,50 @@ for G in RWM_PLACE_T_DERIVED RWM_PLACE_HOL; do
     exit 5
   fi
 done
-# BOTH LOCKS: no other engine may be running, and no second battery may start.
+# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; the block is r_battery.sh's,
+#    verbatim, with the INT/TERM handlers that EXIT) ────────────────────────
+# `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
+# They are OPERATOR locks — this script does not invent a third mechanism —
+# but it REFUSES to run without them and it releases exactly what it took, so
+# `ABORT-LOCK` is a reading of this ledger and not an assurance in a report.
+# `noclobber` makes the create-or-fail atomic against a second launcher, which
+# is also what keeps a second place_battery from starting.
+VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
+RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+LOCKS_TAKEN=""
+take_lock() {
+  local p="$1"
+  if (set -o noclobber; : > "$p") 2>/dev/null; then
+    echo "$$ place_battery $(date -u +%FT%TZ)" > "$p" 2>/dev/null
+    LOCKS_TAKEN="$LOCKS_TAKEN $p"
+    echo "LOCK-TAKEN $p" | tee -a "$OUT"
+    return 0
+  fi
+  echo "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)" | tee -a "$OUT"
+  echo "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for." | tee -a "$OUT"
+  release_locks
+  exit 4
+}
+release_locks() {
+  local p
+  for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p" | tee -a "$OUT"; done
+  LOCKS_TAKEN=""
+}
+# On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
+# body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
+# on for hours after TERM with both locks already cleared). Bash runs the
+# handler only once the in-flight foreground invocation returns — which is why
+# `place_run_all.sh`'s backstop follows its TERM with `pkill -x raptorpath`.
+trap 'release_locks' EXIT
+trap 'release_locks; exit 130' INT
+trap 'release_locks; exit 143' TERM
+take_lock "$VM_LOCK"
+take_lock "$RP_LOCK"
+
 if pgrep -x raptorpath >/dev/null 2>&1; then
-  echo "BUSY: raptorpath already running -- aborting" | tee -a "$OUT" >&2
+  echo "BUSY: raptorpath already running -- aborting" | tee -a "$OUT"
   exit 3
 fi
-LOCK=/tmp/rwm-place-battery.lock
-if ! mkdir "$LOCK" 2>/dev/null; then
-  echo "BUSY: another place_battery holds $LOCK -- aborting" | tee -a "$OUT" >&2
-  exit 3
-fi
-trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
-# INT/TERM: release, then EXIT — a signal handler that returns resumes the loop.
-trap 'rmdir "$LOCK" 2>/dev/null || true; exit 130' INT
-trap 'rmdir "$LOCK" 2>/dev/null || true; exit 143' TERM
 
 arm_env() {
   case "$1" in
@@ -147,7 +208,7 @@ run_one() { # cell arm
   # Scoped to the `[GATES]` line: the resolve-time liveness echoes carry the
   # gate NAMES in their prose, and an unscoped grep reads the documentation
   # instead of the resolved value.
-  local gtc gts ghc ghs etan lat succ
+  local gtc gts ghc ghs etan lat succ nfin
   gtc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   gts=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   ghc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
@@ -155,7 +216,12 @@ run_one() { # cell arm
   etan=$(grep -c "\[ETA\] site=sender" /tmp/rwm-c.log 2>/dev/null || true)
   lat=$(grep -c "\[LAT\] site=receiver" /tmp/rwm-s.log 2>/dev/null || true)
   succ=$(grep -c "\[SUCC\]" /tmp/rwm-s.log 2>/dev/null || true)
-  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ (expect td=$etd hol=$ehl)" >> "$OUT"
+  # The counts above INCLUDE a `final=1` exit-flush line when the engine emits
+  # one (a flushed-only short run is still a live instrument); the flush is
+  # counted separately so "complete counts" is readable off the ledger.
+  # place_parse.py applies the cadence rule (final skipped) on its own fields.
+  nfin=$(grep -cE "^\[(LAT|SUCC|ETA)\] .*(^| )final=1( |$)" /tmp/rwm-s.log 2>/dev/null || true)
+  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin (expect td=$etd hol=$ehl)" >> "$OUT"
   [ "$gtc" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-CLI $name rep=$REP got='$gtc'" >> "$OUT"
   [ "$gts" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-SRV $name rep=$REP got='$gts'" >> "$OUT"
   [ "$ghc" != "RWM_PLACE_HOL=$ehl" ] && echo "ARM-LIVENESS-FAIL-HOL-CLI $name rep=$REP got='$ghc'" >> "$OUT"

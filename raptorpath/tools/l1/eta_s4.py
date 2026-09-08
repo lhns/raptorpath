@@ -90,6 +90,20 @@ RE_ARM = re.compile(r"^---\s+(?P<arm>\S+)\s+(?P<size>\d+)B\b")
 RE_PREFIX = re.compile(
     r"^\s*\S+\s+(?P<arm>\S+)\s+(?P<size>\d+)B\s+(?P<endpoint>\S+?):\s*\[ETA\]"
 )
+# `final=1` -- THE EXIT-FLUSH RULE. A concurrent engine branch adds an
+# exit-flush line to the receiver's diagnostic block carrying a `final=1`
+# field (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)", the owed flush).
+# `[ETA]` is CUMULATIVE, so the flush line is the COMPLETE reading and every
+# cadence line of the same (cell, seed, endpoint, arm, size, site, path) key
+# is a partial count of the same run: the flush SUPERSEDES them rather than
+# adding one more "rep". A ledger with no `final=` field at all parses
+# exactly as before. The token is matched on its own boundaries so `final=10`
+# or `xfinal=1` is not the flag.
+RE_FINAL = re.compile(r"(?:^|\s)final=1(?:\s|$)")
+
+
+def is_final(line):
+    return bool(line) and RE_FINAL.search(line) is not None
 
 
 def _num(tok):
@@ -107,15 +121,20 @@ class Point:
 
     __slots__ = ("cell", "seed", "endpoint", "arm", "size", "site",
                  "path", "sigma_us", "pairs", "tau_us", "bind", "srtt_src",
-                 "t_eff_engine")
+                 "t_eff_engine", "final")
 
     def __init__(self, **kw):
         for k in self.__slots__:
             setattr(self, k, kw.get(k))
+        if self.final is None:
+            self.final = False
 
     def key(self):
         return (self.cell, self.seed, self.endpoint, self.arm, self.size,
                 self.site)
+
+    def path_key(self):
+        return self.key() + (self.path,)
 
 
 def parse_eta_line(line, ctx):
@@ -137,6 +156,7 @@ def parse_eta_line(line, ctx):
     head = rest.split(" p", 1)[0]
     head_fields = dict(RE_FIELD.findall(head))
     t_eff_engine = _num(head_fields.get("t_eff"))
+    final = is_final(line)
 
     out = []
     for pmatch in RE_PATH.finditer(rest):
@@ -159,8 +179,29 @@ def parse_eta_line(line, ctx):
             bind=_num(f.get("bind")),
             srtt_src=f.get("srtt_src", "-"),
             t_eff_engine=t_eff_engine,
+            final=final,
         ))
     return out
+
+
+def merge_points(pts, new):
+    """Append `new` points to `pts` under the exit-flush rule: a `final=1`
+    point REPLACES every earlier non-final point with the same path key, and
+    a non-final point arriving AFTER a final one with the same key (a stale
+    cadence line scraped out of order) is dropped. Without any `final=1` in
+    the artefact this is a plain extend."""
+    finals = {p.path_key() for p in pts if p.final}
+    for p in new:
+        k = p.path_key()
+        if p.final:
+            pts[:] = [q for q in pts if not (q.path_key() == k and not q.final)]
+            finals.add(k)
+            pts.append(p)
+        elif k in finals:
+            continue
+        else:
+            pts.append(p)
+    return pts
 
 
 def parse_ledger(path):
@@ -177,15 +218,18 @@ def parse_ledger(path):
                 ctx["arm"] = am.group("arm")
                 ctx["size"] = am.group("size")
             if "[ETA]" in line:
-                pts.extend(parse_eta_line(line, ctx))
+                merge_points(pts, parse_eta_line(line, ctx))
     return pts
 
 
 # ── THE TRANSCRIBED RECORD ─────────────────────────────────────────────
-# `tail_matrix.sh:156` scrapes only `[RFA]`, `[SUCC]`, `[RACK]` (and `[SPAN]`
-# above it).  `[ETA]` is NOT scraped and `/tmp/tm-{s,c}.log` is overwritten per
-# arm, so NO `[ETA]` line survives into any committed ledger.  What survives is
-# what a human copied into goal-gate "THE CROWN NO-REGRESSION SPOT" -- section
+# Until 2026-09-08 `tail_matrix.sh:156` scraped only `[RFA]`, `[SUCC]`,
+# `[RACK]` (and `[SPAN]` above it); `[ETA]` was NOT scraped and
+# `/tmp/tm-{s,c}.log` is overwritten per arm, so NO `[ETA]` line survived into
+# any ledger committed before that date (the scrape now carries `[ETA]` and
+# `[LAT]`, last line, both endpoints -- `meas/place-prep`).  What survives from
+# the crown spot is what a human copied into goal-gate "THE CROWN
+# NO-REGRESSION SPOT" -- section
 # 6(ii) at full n and section 2 at the smoke.  Those points are recorded here
 # so the reading is reproducible; every one of them is missing `tau_us`,
 # `bind` and `t_eff`, which is why they are scored SURROGATE-REF.
@@ -367,17 +411,19 @@ def main(argv=None):
     print("target sigma/ref = (pi/sqrt6)*T = %.5f   band +/-%d%% = [%.5f, %.5f]"
           % (TARGET_RATIO, int(BAND * 100),
              TARGET_RATIO * (1 - BAND), TARGET_RATIO * (1 + BAND)))
-    print("ledgers scanned: %d   [ETA] path-readings found: %d%s"
+    print("ledgers scanned: %d   [ETA] path-readings found: %d   "
+          "of which exit-flushed (final=1): %d%s"
           % (scanned, sum(1 for p in points if p.tau_us is not None),
+             sum(1 for p in points if p.final),
              "   transcribed points: %d" % len(transcribed_points())
              if args.transcribed else ""))
     print()
 
     if not points:
         print("READING: UNREADABLE -- not one `[ETA]` line in the artefact.")
-        print("  `tail_matrix.sh:156` scrapes only [RFA] [SUCC] [RACK] (and")
-        print("  [SPAN]); `[ETA]` is not in that list and /tmp/tm-{s,c}.log is")
-        print("  overwritten per arm. Nothing to divide.")
+        print("  Ledgers written before 2026-09-08 carry none: tail_matrix.sh")
+        print("  scraped only [RFA] [SUCC] [RACK] (and [SPAN]) until then, and")
+        print("  /tmp/tm-{s,c}.log is overwritten per arm. Nothing to divide.")
         return 0
 
     rows = score(points, ref_override, args.min_pairs, args.max_bind)
