@@ -78,8 +78,12 @@ SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h amendment
 PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8 c1 c9h}"
 PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0 TSIG HOL HOLTSIG}"
 TAG="${RWM_PLACE_TAG:-place}"
-OUT="/home/vibe/placement/${TAG}-s${SEED_ARG}.log"
-DDIR="/home/vibe/placement/diag"
+# The run directory is `place_run_all.sh`'s (`RWM_PLACE_OUTDIR`, passed
+# through its `sudo env`), so the ledger the envelope reads for DONE-S<seed>
+# and the sentinels it writes are in ONE directory.
+OUTDIR="${RWM_PLACE_OUTDIR:-/home/vibe/placement}"
+OUT="$OUTDIR/${TAG}-s${SEED_ARG}.log"
+DDIR="$OUTDIR/diag"
 mkdir -p "$(dirname "$OUT")" "$DDIR"
 
 # ── THE EARNED + WRITABLE SENTINELS (discipline 7/15) ────────────────────

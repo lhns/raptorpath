@@ -123,7 +123,9 @@ TOPO=./topo_dual.sh
 [[ "$MODE" == "quad" ]] && TOPO=./topo_quad.sh
 
 cleanup() {
-    pkill -x raptorpath 2>/dev/null || true
+    # TERM + 3 s grace + KILL (lib.sh): the receiver's `final=1` exit flush
+    # rides on the graceful path, and the server log is read AFTER this.
+    stop_raptorpath
     # BOTH topologies are torn down regardless of this invocation's mode: they
     # share the rp-cli/rp-srv namespaces, so a quad left behind by a crashed
     # run would otherwise be inherited by the next dual run as a four-legged

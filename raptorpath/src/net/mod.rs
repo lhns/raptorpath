@@ -3431,11 +3431,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_shutdown_rx = shutdown_tx.subscribe();
     let recv_shutdown_rx = shutdown_tx.subscribe();
 
-    // Spawn Ctrl+C handler
+    // Spawn the shutdown-signal handler. SIGINT (`ctrl_c`) and, on unix,
+    // SIGTERM are ONE trigger on ONE code path: both resolve `shutdown_signal`
+    // and fire the same broadcast. SIGTERM matters because every tools/l1
+    // harness stops the server with `pkill -x raptorpath` (SIGTERM), and
+    // until it was handled that was an abrupt kill — no destructor ran, so
+    // the receiver's exit flush (`net/recv_block.rs`, `final=1`) could never
+    // be seen on L1 (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)").
     let ctrlc_shutdown_tx = shutdown_tx.clone();
     tokio::spawn(async move {
-        if let Ok(()) = tokio::signal::ctrl_c().await {
-            info!("received Ctrl+C, initiating graceful shutdown...");
+        if shutdown_signal().await {
+            info!("received SIGINT/SIGTERM, initiating graceful shutdown...");
             let _ = ctrlc_shutdown_tx.send(());
         }
     });
@@ -17802,5 +17808,28 @@ mod tests {
                 off[p].leak_per_delivered
             );
         }
+    }
+}
+
+/// Resolves when the process is asked to stop: SIGINT (`ctrl_c`, every
+/// platform) or SIGTERM (unix). Returns `true` when a signal arrived and
+/// `false` only if the listener could not be installed. One awaited future,
+/// one trigger — the two signals are not two shutdown paths.
+async fn shutdown_signal() -> bool {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = match signal(SignalKind::terminate()) {
+            Ok(t) => t,
+            Err(_) => return tokio::signal::ctrl_c().await.is_ok(),
+        };
+        tokio::select! {
+            r = tokio::signal::ctrl_c() => r.is_ok(),
+            _ = term.recv() => true,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.is_ok()
     }
 }

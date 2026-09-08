@@ -184,22 +184,33 @@ fn spawn_perf_server(
 /// are still there, the `final=1` block is not, and the tests that need it
 /// are `cfg(unix)`.
 fn stop_server(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>) {
+    stop_server_with(srv, readers, "INT")
+}
+
+/// The same stop, with the signal named: `"INT"` is `ctrl_c`, `"TERM"` is
+/// what `pkill -x raptorpath` sends from every tools/l1 harness. The engine
+/// treats the two as ONE shutdown trigger (`net/mod.rs`, `shutdown_signal`),
+/// and the SIGTERM test below is what proves the L1 path reaches the flush.
+#[cfg_attr(not(unix), allow(unused_variables))]
+fn stop_server_with(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>, sig: &str) {
     #[cfg(unix)]
     {
         let pid = srv.0.id().to_string();
+        let flag = format!("-{sig}");
         let sent = Command::new("kill")
-            .args(["-INT", &pid])
+            .args([&flag, &pid])
             .status()
             .is_ok_and(|s| s.success());
-        assert!(sent, "could not send SIGINT to the perf server (pid {pid})");
+        assert!(sent, "could not send SIG{sig} to the perf server (pid {pid})");
         let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline && !matches!(srv.0.try_wait(), Ok(Some(_))) {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(
             matches!(srv.0.try_wait(), Ok(Some(_))),
-            "perf server did not exit within 15 s of SIGINT — the shutdown \
-             broadcast never reached its tasks"
+            "perf server did not exit within 15 s of SIG{sig} — the shutdown \
+             broadcast never reached its tasks (for TERM: no SIGTERM handler, \
+             so the harness's `pkill -x raptorpath` is an abrupt kill)"
         );
     }
     #[cfg(not(unix))]
@@ -222,6 +233,11 @@ fn is_final(line: &str) -> bool {
 
 /// One loopback transfer. Returns `(client/sender log, server/receiver log)`.
 fn run(paths: usize, netem: Option<&str>, bytes: &str) -> (String, String) {
+    run_with_signal(paths, netem, bytes, "INT")
+}
+
+/// `run`, with the server stopped by the named signal (see `stop_server_with`).
+fn run_with_signal(paths: usize, netem: Option<&str>, bytes: &str, sig: &str) -> (String, String) {
     let bin = env!("CARGO_BIN_EXE_raptorpath");
     let binds: Vec<SocketAddr> = (0..paths)
         .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
@@ -265,7 +281,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> (String, String) {
          --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
         out.status
     );
-    stop_server(&mut srv, readers);
+    stop_server_with(&mut srv, readers, sig);
     let srv = srv_log.lock().expect("stderr sink").clone();
     (format!("{cli_stdout}\n{cli_stderr}"), srv)
 }
@@ -515,5 +531,41 @@ fn the_prediction_is_stamped_and_read_on_one_path_too() {
     for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
         let l = last_with(&srv, tag);
         assert!(is_final(l), "`{tag}` was not flushed with the block: {l}");
+    }
+}
+
+/// **THE EXIT FLUSH ON SIGTERM — THE L1 PATH.** Every tools/l1 harness stops
+/// the server with `pkill -x raptorpath`, which is SIGTERM; the SIGINT test
+/// above proves the flush exists but not that L1 can see it. Before the
+/// engine handled SIGTERM this was an abrupt kill: no shutdown broadcast, no
+/// Drop, no `final=1` — the flush landed on main and STILL never reached a
+/// ledger. The mirror of the SIGINT case, stopped with `kill -TERM`: the
+/// server must exit within the grace, the last `[ETA] site=receiver` line
+/// must be the flush, exactly once, and its siblings flush with it.
+#[cfg(unix)]
+#[test]
+fn the_exit_flush_fires_on_sigterm_too() {
+    let (_cli, srv) = run_with_signal(1, None, "1000000", "TERM");
+    let r = last_with(&srv, "[ETA] site=receiver");
+    println!("[eta-reach] N=1 receiver after SIGTERM: {r}");
+    assert!(u64_field(r, "n=") > 0, "no arrival observed on one path: {r}");
+    assert!(
+        is_final(r),
+        "the LAST [ETA] site=receiver line after SIGTERM is not the exit flush \
+         (`final=1`) — the harness's `pkill -x raptorpath` does not reach the \
+         receiver's exit path, so no L1 ledger can carry complete counts:\n{r}"
+    );
+    let finals = srv
+        .lines()
+        .filter(|l| l.contains("[ETA] site=receiver") && is_final(l))
+        .count();
+    assert_eq!(
+        finals, 1,
+        "exactly ONE final [ETA] site=receiver block is owed per receiver task \
+         on the SIGTERM path too:\n{srv}"
+    );
+    for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
+        let l = last_with(&srv, tag);
+        assert!(is_final(l), "`{tag}` was not flushed with the block on SIGTERM: {l}");
     }
 }
