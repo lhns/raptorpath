@@ -51984,3 +51984,88 @@ raptorpath` + `FAILED-ALL-TRUNCATED-5H-BUDGET`) and `/home/vibe/recvlaw/smoke.sh
 **Exit state, verified and not assumed (13:50Z): 0 `raptorpath`, 0 `rp-*`
 namespaces, `/tmp/rwm-vm.lock` and `/home/vibe/rp.lock` both free.** Test logs
 remain at `/home/vibe/sync/test.log`, `test2.log`, `test3.log`.
+
+### 5 — ADDENDUM (2026-09-08 14:07Z): THE LAUNCH WAS SANCTIONED AND HAS HAPPENED — smoke readings, launch time, ETA, sentinels
+
+The operator sanctioned the launch on binary `4cd94255…` (main@`c22b5b7`
+carries the sanction: the three §2 failures are instrument-cadence artefacts on
+a fast box, not behaviour regressions; the same `eta`/`lat` tests are green on
+the slower host at the same source). §0–§4 above are left as written.
+
+**A NEAR-MISS, RECORDED BECAUSE THE SHA CHECK CAUGHT IT.** At 13:57Z the smoke
+was started and the quiet-check line read `sha=f20b2ea9…`, NOT `4cd94255…`:
+`cargo test --release` had REBUILT `target/release/raptorpath` under
+dev-dependency feature unification (pass 1's log shows `Compiling raptorpath`),
+silently replacing the sanctioned binary. The smoke was TERMed at once (the
+fixed trap did exactly what `3560a50` says: both `LOCK-RELEASED`, exit), its
+artefacts moved to `/home/vibe/recvlaw/aborted-wrongbin-f20b2ea9/`, and
+`cargo build --release --bin raptorpath` re-emitted the cached artefact in 3 s at
+**`4cd942551e38b00896bb5d986928bd668ae56548d6bc98b682299e91e2b7ca33`**, the
+identical hash. **Rule for every future launch step: `sha256sum` the binary
+AFTER the test suite and IMMEDIATELY BEFORE the smoke, never only after the
+build.** Every ledger below carries `SHA256 4cd94255…` on its own header line.
+
+**THE SMOKE** (`RWM_RECVLAW_TAG=smoke`, `c8` only, one invocation per arm,
+13:58:21 → 14:04:59Z, `SMOKE-RC=0`, `RECVLAW-BATTERY-DONE seed=42` earned;
+ledger `/home/vibe/recvlaw/smoke-s42.log`, captures `diag-smoke/`):
+
+| arm | env (arm gates) | `LIVENESS` both endpoints | WL2 `req_sent` / `req_served` | seam `gap_data` | runtime | goodput |
+|---|---|---|---|---|---|---|
+| `c8-CTL` | `RECV_REQUEST_LAW=0 RANK_FEEDBACK=0` | `0/0(exp0)` · `0/0(exp0)` — OK | **0 / 0** | **653** | 37 s, rc 0 | 5.82 Mbit/s (`in_band=0` vs [50,100], recorded) |
+| `c8-A` | `RECV_REQUEST_LAW=1 RANK_FEEDBACK=0` | `1/1(exp1)` · `0/0(exp0)` — OK | **19 105 / 5 322** | **0** | 45 s, rc 0 | 4.66 Mbit/s |
+| `c8-B` | `RECV_REQUEST_LAW=0 RANK_FEEDBACK=1` | `0/0(exp0)` · `1/1(exp1)` — OK | 1 765 / 5 387 | **635** | 9 s, rc 0 | 27.97 Mbit/s |
+| `c8-AB` | `RECV_REQUEST_LAW=1 RANK_FEEDBACK=1` | `1/1(exp1)` · `1/1(exp1)` — OK | **85 338 / 5 495** | **0** | **302 s, rc 0, `dnf=true`** | 0 (DNF) |
+
+Zero `ARM-LIVENESS-FAIL`, `ARM-CONTAMINATION`, `INSTRUMENT-FAIL-*`, `ABORT`,
+`WL2-FAIL-*`, `SEAM-*`, `CONTROL-MOVED`, `RECVLAW-PARSE-FAIL` lines. Substrate
+gates `RWM_DELTA_CAP`/`RWM_SUM_CAP`/`RWM_STORE_SACK_RELEASE` echoed `1/1` on
+every arm, both endpoints; every contamination gate `0/0`. **The arm-liveness
+condition for launch is met at both endpoints on all four arms, the mechanism
+witness WL2 is alive on A and AB and is `0/0` on CTL, and the seam reads exactly
+as §7 of the pre-registration requires (`gap_data = 0` on A/AB, ≠ 0 on CTL/B).**
+Two things to say precisely: (i) the `[REQ]`/`[REQS]` gauge LINES print on
+every arm (with `on=0` on CTL/B), so presence is read off WL2's counts and not
+off line counts; (ii) B's WL2 `> 0` is what the battery script's own WL2 rule
+pre-declares (`> 0 on A/B/AB, = 0 on CTL` — B is the shipped trigger spoken in
+the request vocabulary), so it is not a leak. Two smoke READINGS, neither an
+abort clause and neither a result at `n = 1`: **`c8-AB` DID NOT FINISH 25 MB in
+302 s** (`cpucli = 322 %`, `req_sent = 85 338` — the composition arm at c8 is
+a live outcome the battery will now measure at n = 3), and `c8-CTL` at 5.82
+Mbit/s is far under the plain-window §3 band [50,100] (the r-battery's own
+calibration already read `c8 CTL max = 15.79`; the band is stale and the row
+says `in_band=0` rather than aborting). One harness cosmetic: `ARMCOUNT
+rows=0/1` on every arm because its grep spacing (`"cell": "c8", "arm"`) matches
+neither JSON dialect; `DONE-S<seed>` keys on `RECVLAW-BATTERY-DONE`, so the
+sentinels are unaffected and the scorer counts rows itself.
+
+**THE LAUNCH.** Quiet verified at 14:06Z (0 `raptorpath`, 0 `rp-*`, both locks
+free, sha `4cd94255…`), then `setsid nohup bash /home/vibe/recvlaw/run_all.sh
+< /dev/null &` as `vibe`:
+
+```text
+   14:06:17Z  SENTINEL-PROBE-OK ×9, SENTINEL-PROOF-COMPLETE user=vibe dir=/home/vibe/recvlaw
+   14:06:17Z  LAUNCH reps=3 s7_cutoff=9000s backstop=17400s bin_sha256=4cd94255… commit=3560a50
+   14:06:17Z  SEED-START 42   (the battery took /tmp/rwm-vm.lock and /home/vibe/rp.lock itself)
+   first rows  c1-CTL 25 s rc=0 142.28 Mbit/s  WL2 0/0  gap_data=779
+               c1-A   27 s rc=0 131.57 Mbit/s  WL2 1173/1698  gap_data=0
+   disconnected 14:07:15Z with c1-B running — the battery is NOT polled from here on
+```
+
+**ETA.** 48 invocations for seed 42. Measured: `c1` ≈ 25 s per non-AB
+invocation, `c8` 9–45 s non-AB and 302 s for AB (DNF). If AB DNFs at every
+cell the rep costs ≈ 12 × ~40 s + 4 × 300–700 s ≈ 28–55 min, so **`DONE-S42`
+≈ 15:30–16:55Z**. Seed 7 runs ONLY if `DONE-S42` lands before **16:36Z**
+(2.5 h from launch), else `SKIPPED-S7-5H-BUDGET`; the hard backstop TERMs the
+battery at **18:56Z** (4 h 50 min) and writes `FAILED-ALL-TRUNCATED-5H-BUDGET`.
+
+**WATCH THESE AND NOTHING ELSE** (`DONE-ALL || FAILED-ALL ||
+FAILED-ALL-TRUNCATED-5H-BUDGET`; never the process table):
+
+```text
+   /home/vibe/recvlaw/DONE-ALL        /home/vibe/recvlaw/FAILED-ALL        /home/vibe/recvlaw/FAILED-ALL-TRUNCATED-5H-BUDGET
+   /home/vibe/recvlaw/DONE-S42        /home/vibe/recvlaw/FAILED-S42
+   /home/vibe/recvlaw/DONE-S7         /home/vibe/recvlaw/FAILED-S7         /home/vibe/recvlaw/SKIPPED-S7-5H-BUDGET
+   ledgers   /home/vibe/recvlaw/recvlaw-s<seed>.log        witnesses /home/vibe/recvlaw/recvlaw-witness-s<seed>.jsonl
+   captures  /home/vibe/recvlaw/diag/                       driver    /home/vibe/recvlaw/run_all.log, battery-s<seed>.out
+   smoke     /home/vibe/recvlaw/smoke-s42.log, smoke-witness-s42.jsonl, diag-smoke/
+```
