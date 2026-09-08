@@ -308,6 +308,59 @@ pub struct RuntimeGates {
     /// tests that bound both directions.
     pub cold_place: bool,
 
+    /// **`RWM_PLACE_T_DERIVED`** (Track A arm 1, ABSENT by default) - the
+    /// placement softmax temperature read as the Luce/Gumbel scale of the
+    /// scheduler's OWN prediction error instead of the `0.15` literal
+    /// (paper 16.81.1):
+    ///
+    ///   `T = (sqrt(6)/pi) * sigma_e / ref_srtt`
+    ///
+    /// `sigma_e` is the pooled RMS, over the ACTIVE candidate set, of the
+    /// per-path tau-lag dispersion of the ETA prediction error already
+    /// maintained on the sender's `[ETA]` gauge
+    /// (`net::eta::SenderEta::sigma_us`). ABSENT => `place_temperature()`
+    /// verbatim (`0.15`, or `RWM_PLACE_T`), which the pinned cost/probability
+    /// table asserts byte-identically.
+    ///
+    /// THE COLD RULE IS STATED AND GAUGED, NEVER HIDDEN: the pool is taken
+    /// over the paths that HAVE a dispersion sample; if NO active path has
+    /// one, `T_eff` is the shipped `T` and the `t_cold` bind counter is
+    /// bumped (`[ETA] site=sender t_cold=`). The `sigma -> 0` degenerate case
+    /// needs no branch of its own - `place_probs_with_temperature`'s existing
+    /// `z <= 0` arm resolves it to the argmin, which IS the law's `T -> 0`
+    /// limit.
+    pub place_t_derived: bool,
+    /// **`RWM_PLACE_HOL`** (Track A arm 2, ABSENT by default) - the frontier
+    /// (head-of-line) term the placement law is missing, 16.81.2's `Phi`
+    /// physics read at the sender, added to `cost_i` for SOURCE symbols:
+    ///
+    ///   `X_i = [ delta*s_i + kappa*(s_i - H)+ ] / ref`,
+    ///   `s_i = [(now + E_i) - F_hat]+`
+    ///
+    /// with `F_hat` the sender's running max of stamped ETAs (`SenderEta`),
+    /// `delta` the contract's own price (`net::delta_price`, continuous - no
+    /// hint read), `kappa = 1` a DECLARED UPPER BOUND (register row +
+    /// `s_i > H` bind gauge), and `H` the store headroom of the LIVE
+    /// store-cap law. The 16.80.6(a2) wire-price ordering term rides the same
+    /// gate at its DERIVED `W` (computed from live scheduler quantities, no
+    /// literal), pricing the opposite sign of the same difference.
+    /// ABSENT => the term is absent and the cost is the shipped one, byte for
+    /// byte.
+    pub place_hol: bool,
+    /// **`RWM_PLACE_WDIV_DERIVED`** (Track A arm 3, ABSENT by default) - the
+    /// diversity weight read off the channel's own burst persistence instead
+    /// of the `1.0` literal (paper 16.81.3):
+    ///
+    ///   `V_i = fate_i * (p_BB,i - eps_i)+ * srtt_i / ref`
+    ///
+    /// in place of `w_div * fate_i`. `p_BB = 1 - p_bg` from the path's
+    /// Gilbert-Elliott estimator, `eps` its marginal loss rate. Vanishes
+    /// identically on a memoryless channel, which the shipped `1.0` does not.
+    /// REPAIRS ONLY - `fate_i == 0` for source, so the arm cannot move a
+    /// source placement. Cold rule (no valid GE estimate on the path): the
+    /// shipped `w_div * fate_i`, counted by the existing `cold_ge` bind gauge.
+    pub place_wdiv_derived: bool,
+
     // ── Generation stack ──────────────────────────────────────────────────
     /// `RWM_GEN` (default 384, min 1): generation size G.
     pub gen_size: usize,
@@ -1146,6 +1199,9 @@ impl RuntimeGates {
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             cold_place: crate::scheduler::cold_place_active(),
+            place_t_derived: crate::scheduler::place_t_derived_active(),
+            place_hol: crate::scheduler::place_hol_active(),
+            place_wdiv_derived: crate::scheduler::place_wdiv_derived_active(),
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -1301,7 +1357,8 @@ impl RuntimeGates {
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
-             RWM_COLD_PLACE={} \
+             RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
+             RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
              RWM_GEN_RATE={} RWM_GEN_RATE_FLOOR={} RWM_GEN_INFLIGHT={} \
              RWM_OOO_RETAIN={}/{} RWM_WINDOW={} RWM_REPORT_GENS={} \
@@ -1332,7 +1389,8 @@ impl RuntimeGates {
             b(self.release_1to1), b(self.charge_recovery),
             b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
-            b(self.cold_place),
+            b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
+            b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
             self.gen_rate, self.gen_rate_floor, o(&self.gen_inflight),
             b(self.ooo_retain), self.ooo_gens, ou(&self.window_override),
@@ -1901,6 +1959,33 @@ mod tests {
             "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
              placement repair must be opted into"
         );
+        // ── TRACK A's THREE PLACEMENT ARMS (paper §16.81) ─────────────
+        // All three ABSENT by default, and all three NAMED with their `0`
+        // value on the echo: the placement battery's CTL arm must be able to
+        // assert the arms ABSENT rather than merely unmentioned, and the
+        // pinned cost table is an oracle only while this holds.
+        assert!(
+            !g.place_t_derived,
+            "RWM_PLACE_T_DERIVED ships ABSENT (Track A arm 1 — the derived \
+             softmax temperature must be opted into)"
+        );
+        assert!(
+            !g.place_hol,
+            "RWM_PLACE_HOL ships ABSENT (Track A arm 2 — the frontier term \
+             must be opted into)"
+        );
+        assert!(
+            !g.place_wdiv_derived,
+            "RWM_PLACE_WDIV_DERIVED ships ABSENT (Track A arm 3 — the derived \
+             diversity weight must be opted into)"
+        );
+        for k in ["RWM_PLACE_T_DERIVED=0", "RWM_PLACE_HOL=0", "RWM_PLACE_WDIV_DERIVED=0"] {
+            assert!(
+                g.echo_line().contains(k),
+                "the default echo must NAME `{k}` two-sided: {}",
+                g.echo_line()
+            );
+        }
         assert!(
             !g.recov_mp_live,
             "RWM_RECOV_MP_LIVE ships default OFF (A/B arm)"

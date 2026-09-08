@@ -249,6 +249,28 @@ pub struct SenderEta {
     cold_r: u64,
     cold_ge: u64,
     place_n: u64,
+    /// **TRACK A ARM 1 (`RWM_PLACE_T_DERIVED`).** `t_eff` is the temperature
+    /// the placement softmax LAST resolved - a LEVEL, so the last value is the
+    /// reading and it is printed rather than averaged. `t_cold` counts the
+    /// resolutions in which NO active path had a dispersion sample and the
+    /// law therefore fell back to the shipped `place_temperature()`, out of
+    /// `t_n`: the cold rule is READ off the line, never assumed. With the arm
+    /// absent `t_n` stays 0 and all three print `-`.
+    t_eff: f64,
+    t_cold: u64,
+    t_n: u64,
+    /// **TRACK A ARM 2 (`RWM_PLACE_HOL`).** `hol_sh` / `hol_n`: the
+    /// `s_i > H` BIND FRACTION - how often `kappa`, a declared upper bound
+    /// 15x-200x above D0's measured non-overlap, was reachable at all.
+    /// `hol_moved` / `hol_calls`: THE EXECUTION WITNESS - how many placements
+    /// the frontier term actually changed the argmin of. `hol_w`: `W`, the
+    /// (a2) wire price, at its last live value. A term with `hol_moved = 0`
+    /// has been computed, not measured.
+    hol_sh: u64,
+    hol_n: u64,
+    hol_moved: u64,
+    hol_calls: u64,
+    hol_w: f64,
     paths: BTreeMap<u32, PathEta>,
 }
 
@@ -290,6 +312,24 @@ impl SenderEta {
     /// here as `e = rtt − rtprop/2` — a reading about the wire, not about a
     /// prediction — so they are DELIBERATELY excluded by the `eta == 0` test.
     pub fn on_ack(&mut self, path_id: u32, echo_send_ts_us: u64, rtt_us: u64, rtprop_us: u64) {
+        self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, Instant::now());
+    }
+
+    /// [`SenderEta::on_ack`] with the arrival instant supplied by the caller.
+    ///
+    /// The tau-lag admits a pair only inside `[tau, 2*tau]` of REAL time, so a
+    /// test that cannot say when a sample arrived cannot produce a `sigma_e`
+    /// at all - and a `sigma_e` nobody can produce cannot be asserted on.
+    /// `Tlag::push` already takes its instant; this is the same seam one level
+    /// up, and `on_ack` is `on_ack_at(.., Instant::now())` verbatim.
+    pub(crate) fn on_ack_at(
+        &mut self,
+        path_id: u32,
+        echo_send_ts_us: u64,
+        rtt_us: u64,
+        rtprop_us: u64,
+        now: Instant,
+    ) {
         let Some(p) = self.paths.get_mut(&path_id) else {
             return;
         };
@@ -307,11 +347,7 @@ impl SenderEta {
             p.late_n += 1;
         }
         p.err_abs.add(e.unsigned_abs());
-        p.err_sig.push(
-            Instant::now(),
-            (e + ERR_BIAS).max(0) as u64,
-            Duration::from_micros(rtprop_us),
-        );
+        p.err_sig.push(now, (e + ERR_BIAS).max(0) as u64, Duration::from_micros(rtprop_us));
     }
 
     /// Fold in a batch of `place_costs` cold-price binds: `cold_r` and
@@ -321,6 +357,42 @@ impl SenderEta {
         self.cold_r += cold_r;
         self.cold_ge += cold_ge;
         self.place_n += n;
+    }
+
+    /// Fold in Track A arm 1's temperature reading: the `T_eff` last
+    /// resolved, the cold-rule count and its denominator. Observation only.
+    /// A drain with `n == 0` (the arm absent, or no placement since the last
+    /// report) leaves the level untouched rather than zeroing it.
+    pub fn add_place_t(&mut self, t_eff: f64, cold: u64, n: u64) {
+        if n > 0 {
+            self.t_eff = t_eff;
+        }
+        self.t_cold += cold;
+        self.t_n += n;
+    }
+
+    /// Fold in Track A arm 2's frontier-term gauges: the `s_i > H` binds out
+    /// of `n` source cost evaluations, the argmin-moved witness out of
+    /// `calls` placements, and `W` at its live value. Observation only.
+    pub fn add_place_hol(&mut self, sh: u64, n: u64, moved: u64, calls: u64, w: f64) {
+        self.hol_sh += sh;
+        self.hol_n += n;
+        self.hol_moved += moved;
+        self.hol_calls += calls;
+        if calls > 0 {
+            self.hol_w = w;
+        }
+    }
+
+    /// `T_eff` as last resolved, or `None` with the arm absent. Test seat.
+    pub fn t_eff(&self) -> Option<f64> {
+        (self.t_n > 0).then_some(self.t_eff)
+    }
+
+    /// `(s_i > H binds, source evaluations, argmin moved, placements, W)`.
+    /// Test seat for the reachability assertions.
+    pub fn hol_gauges(&self) -> (u64, u64, u64, u64, f64) {
+        (self.hol_sh, self.hol_n, self.hol_moved, self.hol_calls, self.hol_w)
     }
 
     /// `F̂`, µs on the sender clock. Read by nothing today.
@@ -343,14 +415,28 @@ impl SenderEta {
     /// The `[ETA] site=sender` line. Cumulative: the LAST line is the
     /// reading — the `[SUCC]` / `[RFA]` convention.
     pub fn line(&self) -> String {
+        // THE ARM READINGS RIDE THE SAME LINE, and they are `-` iff their own
+        // denominator is 0 - so "the arm is absent" and "the arm ran and
+        // measured zero" are different characters on the page, which is the
+        // whole point of a two-sided echo.
+        let lvl = |v: f64, n: u64| if n == 0 { "-".to_string() } else { format!("{v:.6}") };
         let mut s = format!(
-            "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={}",
+            "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={} \
+             t_eff={} t_cold={} t_n={} hol_sh={} hol_n={} hol_mv={} hol_calls={} hol_w={}",
             self.frontier_eta_us,
             self.stamped_n,
             optf(self.stamped_zero, self.stamped_n),
             self.place_n,
             optf(self.cold_r, self.place_n),
             optf(self.cold_ge, self.place_n),
+            lvl(self.t_eff, self.t_n),
+            optf(self.t_cold, self.t_n),
+            self.t_n,
+            optf(self.hol_sh, self.hol_n),
+            self.hol_n,
+            optf(self.hol_moved, self.hol_calls),
+            self.hol_calls,
+            lvl(self.hol_w, self.hol_calls),
         );
         for (id, p) in &self.paths {
             let tau = Duration::from_micros(p.tau_us);

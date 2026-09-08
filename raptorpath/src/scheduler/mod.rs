@@ -446,6 +446,228 @@ pub fn honest_anchor_active() -> bool {
 ///
 /// OFF is bit-identical by construction: with the gate off the cold price IS
 /// `p.srtt()`, i.e. the shipped expression verbatim at every leg.
+/// **THE ARM FLAG, WITH GARBAGE RESOLVING TO ABSENT — VISIBLY.**
+///
+/// `config::env_flag` reads anything outside `{"", "0", "false"}` as ON, which
+/// is the right convention for a gate whose value a human types once. It is
+/// the WRONG one for a battery arm: `RWM_PLACE_HOL=of` is a typo that would
+/// arm the challenger in the control row, and the row would look valid. So a
+/// value that is not a recognised boolean resolves the arm to ABSENT and says
+/// so at `warn` level, with the `[GATES]` echo then printing the honest `0`.
+/// **"My arm did not take" is READ off the run rather than inferred** — the
+/// `RWM_ALPHA_OVERRIDE` precedent, and for its reason: a configuration axis
+/// that cannot be read off its own run produced the 31 Mbit/s anomaly.
+///
+/// On every RECOGNISED value this agrees with `env_flag` exactly, so the arms
+/// have no dialect of their own.
+fn place_arm_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Err(_) => false,
+        Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "" | "0" | "false" => false,
+            "1" | "true" => true,
+            other => {
+                tracing::warn!(
+                    gate = name,
+                    value = other,
+                    "unrecognised value for a placement arm gate — resolving it \
+                     ABSENT. The [GATES] echo prints 0, so this run is a CONTROL \
+                     row and must not be read as a challenger."
+                );
+                false
+            }
+        },
+    }
+}
+
+/// **`RWM_PLACE_T_DERIVED`** (Track A arm 1, ABSENT by default) - the
+/// placement softmax temperature read as the Luce/Gumbel scale of the
+/// scheduler's own ETA prediction error (paper 16.81.1):
+///
+/// ```text
+///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt  =  0.77970 * sigma_e / ref
+/// ```
+///
+/// The softmax IS `argmin` under i.i.d. Gumbel noise of scale `T` (the Luce
+/// choice rule), so matching `Var(T*G) = pi^2 T^2/6` to `sigma_e^2` fixes `T`
+/// with no free parameter. `sigma_e` is the dispersion of
+/// `e = realized - predicted`, already maintained per path by the sender
+/// `[ETA]` gauge's tau-lag estimator (`net::eta::SenderEta::sigma_us`), pooled
+/// as an RMS over the ACTIVE candidate set.
+///
+/// **The shipped `0.15` is thereby a falsifiable claim about the wire**:
+/// `T = 0.15 <=> sigma_e = 0.19238 * ref` at every cell. This gate does not
+/// correct it - it makes the derived form runnable beside it. A `T_sigma` arm
+/// that TIES with `CTL` licenses `sigma_e/ref`, never `0.15`.
+///
+/// OFF is byte-identical by construction: `place_temperature()` verbatim, which
+/// the pinned cost/probability table asserts.
+pub fn place_t_derived_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let on = place_arm_flag("RWM_PLACE_T_DERIVED");
+        // LIVENESS ECHO, TWO-SIDED (MEASUREMENT DISCIPLINE item 1): the OFF
+        // value prints too, so "gate absent" is as checkable as "gate present".
+        tracing::info!(
+            place_t_derived = on,
+            "placement temperature (RWM_PLACE_T_DERIVED, paper 16.81.1): \
+             T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
+             dispersion when ON; the shipped place_temperature() when OFF"
+        );
+        on
+    })
+}
+
+/// **`RWM_PLACE_HOL`** (Track A arm 2, ABSENT by default) - the frontier
+/// (head-of-line) term the placement law is missing, 16.80.3's `Phi` physics
+/// read at the SENDER and added to `cost_i` for SOURCE symbols:
+///
+/// ```text
+///     X_i  =  [ delta*s_i  +  kappa*(s_i - H)+ ] / ref
+///     s_i  =  [ (now + E_i) - F_hat ]+          the frontier push this placement adds
+///     F_hat  =  running max of the stamped ETAs of symbols already placed
+///     H      =  the free headroom of the LIVE store-cap law
+/// ```
+///
+/// plus 16.80.6(a2)'s wire-price ORDERING term at its derived `W`, which
+/// prices the opposite sign of the same difference:
+///
+/// ```text
+///     O_i  =  W * [ F_hat - (now + E_i) ]+ / ref
+///     W    =  1 symbol / ( R_ref * tau_cool )        no literal; see place_hol_wire_price
+/// ```
+///
+/// A placement that lands BEHIND the frontier pushes nothing and is FREE
+/// (`s_i = 0` exactly) - the property that makes `X_i` a water-filling
+/// incentive rather than a slow-path penalty. `delta` is read from
+/// `net::delta_price`, so the term is continuous in the dial and no hint is
+/// ever compared. `kappa = 1` is a DECLARED UPPER BOUND, not a value (D0's
+/// own fits put it at 0.0048-0.067), chosen conservative in the direction that
+/// DISCOURAGES frontier-pushing placements; its bind is gauged (`s_i > H`).
+///
+/// OFF is byte-identical by construction: the term is not merely zero, the
+/// whole frontier read is skipped and the shipped sum is returned unchanged.
+pub fn place_hol_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let on = place_arm_flag("RWM_PLACE_HOL");
+        tracing::info!(
+            place_hol = on,
+            "placement frontier term (RWM_PLACE_HOL, paper 16.81.2): \
+             X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
+             against the sender's own F_hat, plus the (a2) wire-price ordering \
+             term at its derived W; ABSENT leaves the shipped cost untouched"
+        );
+        on
+    })
+}
+
+/// **`RWM_PLACE_WDIV_DERIVED`** (Track A arm 3, ABSENT by default) - the
+/// repair diversity weight read off the channel's own burst persistence
+/// instead of the `w_div = 1.0` literal (paper 16.81.3):
+///
+/// ```text
+///     V_i  =  fate_i * ( p_BB,i - eps_i )+ * srtt_i / ref
+///     p_BB  =  1 - p_bg      Gilbert-Elliott bad->bad persistence
+///     eps   =  the path's marginal loss rate
+/// ```
+///
+/// What a correlated repair costs is the EXCESS probability that one burst
+/// takes both, and that excess VANISHES on a memoryless channel
+/// (`p_BB = eps`) - which the shipped `1.0` does not. REPAIRS ONLY: `fate_i`
+/// is identically zero for source symbols, so this arm cannot move a source
+/// placement, and the pinned table's source rows are untouched even with it
+/// armed. Cold rule: a path whose GE estimator is not yet valid keeps the
+/// shipped `w_div * fate_i` and is already counted by the `cold_ge` bind
+/// gauge.
+pub fn place_wdiv_derived_active() -> bool {
+    use std::sync::OnceLock;
+    static F: OnceLock<bool> = OnceLock::new();
+    *F.get_or_init(|| {
+        let on = place_arm_flag("RWM_PLACE_WDIV_DERIVED");
+        tracing::info!(
+            place_wdiv_derived = on,
+            "placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper 16.81.3): \
+             fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott \
+             burst persistence when ON; the shipped w_div*fate when OFF"
+        );
+        on
+    })
+}
+
+/// `kappa` - 16.80.3's non-overlapped stall fraction, as `X_i` uses it.
+///
+/// **A DECLARED UPPER BOUND, NOT A VALUE.** `kappa = 1` charges every second
+/// of frontier stall in full. D0's own fits put the measured non-overlap at
+/// 0.0048-0.067 at the four audited cells, so this over-charges the stall leg
+/// by 15x to 200x - deliberately, in the direction that discourages
+/// frontier-pushing placements. The direction is stated rather than assumed,
+/// the constant carries a register row (paper 16.80.12), and its bind is
+/// gauged: `[ETA] site=sender hol_sh=` is the fraction of source cost
+/// evaluations in which `s_i > H`, i.e. in which `kappa` was reachable at all.
+/// A `kappa` that never binds cannot be wrong.
+pub(crate) const PLACE_KAPPA: f64 = 1.0;
+
+/// **THE FRONTIER TERM ITSELF** (paper 16.81.2 + 16.80.6(a2)), as a pure
+/// function of its inputs so its SHAPE can be asserted without a scheduler:
+///
+/// ```text
+///     X_i + O_i  =  [ delta*push + kappa*(push - H)+ ] / ref  +  W*behind / ref
+/// ```
+///
+/// `push = [(now + E_i) - F_hat]+` and `behind = [F_hat - (now + E_i)]+` are
+/// the two signs of ONE difference, so at most one of them is nonzero and the
+/// sum is continuous through the crossing. It is `C0` at the knee `push = H`
+/// (the `(.)+` kink), non-decreasing in `push`, zero at `push = behind = 0`,
+/// and continuous and non-decreasing in `delta` - the properties the
+/// continuity gates assert at +/-2 % around each named point on the dial.
+///
+/// No branch reads a hint, a mode, or a threshold on the dial: the two `(.)+`
+/// operators act on MEASUREMENT differences only.
+pub(crate) fn place_frontier_cost(
+    delta: f64,
+    push_s: f64,
+    behind_s: f64,
+    h_s: f64,
+    w: f64,
+    ref_srtt: f64,
+) -> f64 {
+    (delta * push_s + PLACE_KAPPA * (push_s - h_s).max(0.0)) / ref_srtt + w * behind_s / ref_srtt
+}
+
+/// `(sqrt(6)/pi)` - the Gumbel scale-to-standard-deviation factor of
+/// 16.81.1's variance match. NOT a tuning constant: `Var(Gumbel) = pi^2/6`
+/// is arithmetic.
+pub(crate) fn place_gumbel_scale() -> f64 {
+    6.0_f64.sqrt() / std::f64::consts::PI
+}
+
+/// The two STORE-CAP inputs `X_i`'s headroom `H` reads, resolved ONCE per
+/// process from the gate struct itself so this law and the store-cap law can
+/// never disagree about which cap is live. `RuntimeGates::resolve()` walks the
+/// whole environment, which is far too expensive per placement.
+fn place_store_terms() -> (f64, bool) {
+    use std::sync::OnceLock;
+    static G: OnceLock<(f64, bool)> = OnceLock::new();
+    *G.get_or_init(|| {
+        let g = crate::gates::RuntimeGates::resolve();
+        (g.store_gain, g.three_term)
+    })
+}
+
+/// Wall clock in microseconds since the UNIX epoch - the SAME domain
+/// `net::emit_source` stamps `send_ts_us` in, which is what makes `F_hat`
+/// comparable with `now` here. (A monotonic `Instant` would not be: `F_hat`
+/// is built from epoch stamps.)
+fn place_wall_now_us() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros() as u64)
+        .unwrap_or(0)
+}
+
 pub fn cold_place_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
@@ -4129,11 +4351,34 @@ pub struct Scheduler {
     /// Drained into `eta` at the report cadence by `drain_place_bind`; NOTHING
     /// on the placement path takes a lock or reads the gauge.
     place_bind: std::cell::Cell<(u64, u64, u64)>,
+    /// **THE TRACK A ARM GAUGES**, same `Cell` discipline and for the same
+    /// reason: `place_costs` takes `&self`, and an observation may not need a
+    /// write lock the law itself does not need. Drained by
+    /// `drain_place_bind`.
+    ///
+    /// `place_t_gauge` = `(last T_eff, t_cold, n)` - the temperature actually
+    /// used, how many resolutions had NO measured dispersion anywhere in the
+    /// active set (and therefore fell back to the shipped `T`), and the
+    /// denominator.
+    place_t_gauge: std::cell::Cell<(f64, u64, u64)>,
+    /// `place_hol_gauge` = `(s_i > H binds, source cost evaluations,
+    /// argmin-moved count, place_costs calls, last W_live)` - the `kappa`
+    /// bind fraction and the WB1-style EXECUTION WITNESS that the term
+    /// actually changed a decision.
+    place_hol_gauge: std::cell::Cell<(u64, u64, u64, u64, f64)>,
     clock: Arc<dyn Clock>,
     /// Global correction deficit tracker (paper Section 13.4).
     pub deficit: CorrectionDeficit,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
+    /// `RWM_PLACE_T_DERIVED` (Track A arm 1) as resolved for THIS scheduler.
+    /// Defaults to the process gate; settable so a unit test can drive both
+    /// sides of the arm in one process.
+    place_t_derived: bool,
+    /// `RWM_PLACE_HOL` (Track A arm 2), same discipline.
+    place_hol: bool,
+    /// `RWM_PLACE_WDIV_DERIVED` (Track A arm 3), same discipline.
+    place_wdiv_derived: bool,
     /// Protocol hint — also sets Copa-lite's queue target on each path
     /// (paper Section 12.4 / P1).
     hint: ProtocolHint,
@@ -4177,6 +4422,11 @@ impl Scheduler {
             paths: HashMap::new(),
             eta: Default::default(),
             place_bind: std::cell::Cell::new((0, 0, 0)),
+            place_t_gauge: std::cell::Cell::new((0.0, 0, 0)),
+            place_hol_gauge: std::cell::Cell::new((0, 0, 0, 0, 0.0)),
+            place_t_derived: place_t_derived_active(),
+            place_hol: place_hol_active(),
+            place_wdiv_derived: place_wdiv_derived_active(),
             clock,
             deficit: CorrectionDeficit::new(),
             weights: SchedulingWeights::from_hint(hint),
@@ -4200,6 +4450,36 @@ impl Scheduler {
     /// sets this instead of racing the environment.
     pub fn set_cold_place(&mut self, enabled: bool) {
         self.cold_place = enabled;
+    }
+
+    /// `RWM_PLACE_T_DERIVED` (Track A arm 1) for this scheduler.
+    pub fn set_place_t_derived(&mut self, enabled: bool) {
+        self.place_t_derived = enabled;
+    }
+
+    /// Is the derived temperature armed on this scheduler?
+    pub fn place_t_derived(&self) -> bool {
+        self.place_t_derived
+    }
+
+    /// `RWM_PLACE_HOL` (Track A arm 2) for this scheduler.
+    pub fn set_place_hol(&mut self, enabled: bool) {
+        self.place_hol = enabled;
+    }
+
+    /// Is the frontier term armed on this scheduler?
+    pub fn place_hol(&self) -> bool {
+        self.place_hol
+    }
+
+    /// `RWM_PLACE_WDIV_DERIVED` (Track A arm 3) for this scheduler.
+    pub fn set_place_wdiv_derived(&mut self, enabled: bool) {
+        self.place_wdiv_derived = enabled;
+    }
+
+    /// Is the derived diversity weight armed on this scheduler?
+    pub fn place_wdiv_derived(&self) -> bool {
+        self.place_wdiv_derived
     }
 
     /// The cold-start placement price setting in force for this scheduler.
@@ -4770,8 +5050,58 @@ impl Scheduler {
     /// unit-testing the placement law (concentration, continuous spillover,
     /// water-filling, fate steering, T → 0 argmin) without sampling noise.
     /// Returns `(PathId, probability)` summing to 1 over the candidate set.
+    /// **THE EFFECTIVE PLACEMENT TEMPERATURE** - `place_temperature()` (the
+    /// shipped `0.15`, or `RWM_PLACE_T`) with the arm ABSENT, and 16.81.1's
+    /// Luce/Gumbel scale with `RWM_PLACE_T_DERIVED` armed:
+    ///
+    /// ```text
+    ///     T  =  (sqrt(6)/pi) * sigma_e / ref_srtt
+    ///     sigma_e  =  pooled RMS, over the ACTIVE candidate set, of the
+    ///                 per-path tau-lag dispersion of  e = realized - predicted
+    /// ```
+    ///
+    /// **THE COLD RULE, STATED IN FULL BECAUSE THE ALTERNATIVE WOULD BE A
+    /// HIDDEN CONSTANT.** The pool is taken over the paths that HAVE a
+    /// dispersion sample - a path with none contributes nothing rather than a
+    /// fabricated zero, which would drag `T` toward `argmin` on the strength of
+    /// a missing measurement. If NO active path has one, `T_eff` is the
+    /// shipped `T` and the `t_cold` counter is bumped, so the fallback is READ
+    /// off `[ETA] site=sender t_cold=` rather than assumed.
+    ///
+    /// `sigma_e -> 0` needs no branch here: `T = 0` reaches
+    /// `place_probs_with_temperature`'s existing degenerate handling and
+    /// resolves to the argmin, which IS the law's own `T -> 0` limit.
+    ///
+    /// Observation is a `Cell` write, never a lock: this is on `&self` because
+    /// the law is.
+    pub(crate) fn place_temperature_eff(&self) -> f64 {
+        let shipped = place_temperature();
+        if !self.place_t_derived {
+            return shipped;
+        }
+        let cold_srtt = self.place_cold_srtt();
+        let ref_srtt = self.place_ref_srtt(cold_srtt);
+        let (sum_sq, n) = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .filter_map(|p| self.eta.sigma_us(p.id))
+            .fold((0.0_f64, 0_u64), |(acc, k), sig_us| {
+                let x = sig_us as f64 / 1e6;
+                (acc + x * x, k + 1)
+            });
+        let t = if n > 0 {
+            place_gumbel_scale() * (sum_sq / n as f64).sqrt() / ref_srtt
+        } else {
+            shipped
+        };
+        let (_, cold, k) = self.place_t_gauge.get();
+        self.place_t_gauge.set((t, cold + u64::from(n == 0), k + 1));
+        t
+    }
+
     pub fn place_probs(&self, is_repair: bool, covered_paths: &[PathId]) -> Vec<(PathId, f64)> {
-        self.place_probs_with_temperature(is_repair, covered_paths, place_temperature())
+        self.place_probs_with_temperature(is_repair, covered_paths, self.place_temperature_eff())
     }
 
     /// `place_probs` with an explicit temperature — the T dial exposed for
@@ -4817,6 +5147,49 @@ impl Scheduler {
         weights
     }
 
+    /// The COLD PRICE of the placement law's SRTT reference
+    /// (`RWM_COLD_PLACE`): the active set's fastest MEASURED srtt, or `None`
+    /// with the gate off / nothing measured yet. Lifted out of `place_costs`
+    /// VERBATIM so `place_temperature_eff` divides by exactly the same `ref`
+    /// the costs are de-dimensionalised by - two `ref`s would make `c_i/T`
+    /// meaningless.
+    fn place_cold_srtt(&self) -> Option<f64> {
+        if self.cold_place {
+            let m = self
+                .paths
+                .values()
+                .filter(|p| p.active)
+                .filter_map(|p| p.srtt_measured())
+                .map(|d| d.as_secs_f64())
+                .fold(f64::INFINITY, f64::min);
+            m.is_finite().then_some(m)
+        } else {
+            None
+        }
+    }
+
+    /// `ref_srtt` - the fastest active path's SRTT, floored. Lifted out of
+    /// `place_costs` verbatim; see `place_cold_srtt`.
+    fn place_ref_srtt(&self, cold_srtt: Option<f64>) -> f64 {
+        let srtt_of = |p: &PathState| -> f64 {
+            p.srtt_measured()
+                .map(|d| d.as_secs_f64())
+                .or(cold_srtt)
+                .unwrap_or_else(|| p.srtt().as_secs_f64())
+        };
+        let ref_srtt = self
+            .paths
+            .values()
+            .filter(|p| p.active)
+            .map(|p| srtt_of(p).max(PLACE_REF_FLOOR_SECS))
+            .fold(f64::INFINITY, f64::min);
+        if ref_srtt.is_finite() {
+            ref_srtt
+        } else {
+            PLACE_REF_FLOOR_SECS
+        }
+    }
+
     /// Per-path marginal placement cost (paper §16.3), over ALL active paths.
     ///
     /// We deliberately do NOT hard-filter on spare capacity. The paper phrases
@@ -4842,18 +5215,7 @@ impl Scheduler {
         // and the load term, so the objective (§13.8) keeps its shape and
         // only its COLD-regime inputs change. Once every leg has a sample
         // `srtt_of == p.srtt()` at every leg and the fix is inert.
-        let cold_srtt: Option<f64> = if self.cold_place {
-            let m = self
-                .paths
-                .values()
-                .filter(|p| p.active)
-                .filter_map(|p| p.srtt_measured())
-                .map(|d| d.as_secs_f64())
-                .fold(f64::INFINITY, f64::min);
-            m.is_finite().then_some(m)
-        } else {
-            None
-        };
+        let cold_srtt: Option<f64> = self.place_cold_srtt();
         // ONE expression, no `if cold`: the leg's own measurement when it has
         // one, the cold price when it does not, and `p.srtt()` when there is
         // no cold price — which is `p.srtt()` unconditionally with the gate
@@ -4865,24 +5227,93 @@ impl Scheduler {
                 .unwrap_or_else(|| p.srtt().as_secs_f64())
         };
 
-        let ref_srtt = self
-            .paths
-            .values()
-            .filter(|p| p.active)
-            .map(|p| srtt_of(p).max(PLACE_REF_FLOOR_SECS))
-            .fold(f64::INFINITY, f64::min);
-        let ref_srtt = if ref_srtt.is_finite() {
-            ref_srtt
-        } else {
-            PLACE_REF_FLOOR_SECS
-        };
+        let ref_srtt = self.place_ref_srtt(cold_srtt);
 
         let w_bw = self.weights.w_bw;
         let w_div = self.weights.w_div;
 
         let covered_total = covered_paths.len() as f64;
 
-        let cost_of = |p: &PathState| -> f64 {
+        // ── TRACK A ARM 2 (`RWM_PLACE_HOL`): THE FRONTIER TERM'S INPUTS ────
+        // Read ONCE per placement, all of them from live state, and only when
+        // the arm is armed AND the symbol is SOURCE (a repair does not extend
+        // the cumulative frontier - it fills behind it). `None` otherwise, and
+        // the closure below adds a literal `0.0`, so the shipped sum is
+        // returned unchanged - which is what the pinned cost table asserts.
+        let hol = (self.place_hol && !is_repair).then(|| {
+            // `F_hat` - the sender's running max of stamped ETAs, epoch us.
+            // ZERO IS THE "NOTHING STAMPED YET" SENTINEL, NOT A TIME: pricing
+            // against it would charge every placement its whole distance from
+            // the epoch. No frontier => no push to price, and the arm is inert
+            // until the gauge has seen one placement.
+            let f_hat_us = self.eta.frontier_eta_us();
+            let f_hat_s = (f_hat_us > 0).then(|| f_hat_us as f64 / 1e6);
+            let now_s = place_wall_now_us() as f64 / 1e6;
+            // The CONTRACT's own price, continuous in the dial. `delta_price`
+            // is the one seat a hint names a delta, and `RWM_DELTA` moves it
+            // between the named points - nothing here compares a hint.
+            let delta = crate::net::delta_price(self.hint);
+            let (gain, three_term) = place_store_terms();
+            // RTprop reference: the fastest MEASURED windowed-min over the
+            // active set. With none measured the law falls back to the SRTT
+            // reference it already holds - another leg's MEASUREMENT, never a
+            // constant (anchor-hygiene rule 1).
+            let rtprop_ref_s = self
+                .paths
+                .values()
+                .filter(|p| p.active)
+                .filter_map(|p| p.min_rtt())
+                .map(|d| d.as_secs_f64())
+                .fold(f64::INFINITY, f64::min);
+            let rtprop_ref_s = if rtprop_ref_s.is_finite() { rtprop_ref_s } else { ref_srtt };
+            // `H` - the FREE HEADROOM of the store-cap law that is actually in
+            // force: `(gain-1)*RTprop` for the shipped cap, the contract's own
+            // declared stall when `RWM_THREE_TERM` is the live cap. The read
+            // selects which CAP law's headroom is quoted; it does not select a
+            // placement law, and neither branch invents arithmetic - both are
+            // the existing expressions.
+            let h_s = if three_term {
+                crate::net::contract_stall_s(
+                    1.0,
+                    crate::net::delta_budget_b_of(delta),
+                    rtprop_ref_s,
+                    ref_srtt,
+                )
+            } else {
+                (gain - 1.0).max(0.0) * rtprop_ref_s
+            };
+            // `W` - 16.80.6(a2)'s wire price of one spurious fire, DERIVED
+            // FROM LIVE QUANTITIES WITH NO LITERAL OF ITS OWN:
+            //
+            //     W = P_arq * (T_pay+h)*8 / (R_ref_bits * tau_cool)
+            //       = 1 symbol / (R_ref_symbols * tau_cool)
+            //
+            // - the object's byte size cancels because the scheduler's own
+            // state is denominated in SYMBOLS: `cwnd_i/srtt_i` is path i's
+            // delivery rate in symbols per second, and `R_ref` is the fastest
+            // mover among the active paths. `P_arq = 1` on the retain-until-
+            // acked seat (rho = 1), which is the only seat the plain window
+            // has. `tau_cool` is the shipped per-seq retransmit cooldown
+            // floor, an existing engine constant read rather than restated.
+            // At the c8 shape (10 ms srtt, ~89 symbols of cwnd, 10 ms
+            // cooldown) this evaluates to 1.1e-2, reproducing the paper's own
+            // arithmetic - and PREDICTED INERT against an O(1) load term.
+            let r_ref = self
+                .paths
+                .values()
+                .filter(|p| p.active)
+                .map(|p| p.cwnd.max(1) as f64 / srtt_of(p).max(PLACE_REF_FLOOR_SECS))
+                .fold(0.0_f64, f64::max);
+            let tau_cool_s = crate::net::NACK_RETX_COOLDOWN_FLOOR_US as f64 / 1e6;
+            let w = if r_ref > 0.0 { 1.0 / (r_ref * tau_cool_s) } else { 0.0 };
+            (f_hat_s, now_s, delta, h_s, w)
+        });
+
+        // Returns `(shipped cost, the arm's addition)` so the execution
+        // witness below can ask whether the addition moved the argmin. With
+        // the arm absent the addition is a literal `0.0` and `base + 0.0` is
+        // `base` exactly.
+        let cost_of = |p: &PathState| -> (f64, f64) {
             // Frontier-completion-time — the always-on load term (unit weight),
             // de-dimensionalised by the fastest SRTT so it is O(1). This single
             // term carries BOTH the congestion signal (queue drain at the pacing
@@ -4944,7 +5375,50 @@ impl Scheduler {
             } else {
                 0.0
             };
-            load + w_bw * r + w_div * fate
+            // ── TRACK A ARM 3 (`RWM_PLACE_WDIV_DERIVED`) ──────────────────
+            // What a correlated repair COSTS is the excess probability that
+            // one burst takes both legs, priced at the round it wastes:
+            //
+            //     V_i = fate_i * (p_BB,i - eps_i)+ * srtt_i / ref
+            //
+            // and that excess VANISHES on a memoryless channel, which the
+            // shipped `w_div = 1.0` does not. Cold rule: a path whose
+            // Gilbert-Elliott estimator is not yet valid has no burst model,
+            // so it keeps the shipped term - the case the `cold_ge` gauge
+            // above already counts. `fate_i == 0` for every SOURCE symbol, so
+            // this arm cannot move a source placement at all.
+            let ge = p.estimator.ge_estimator();
+            let div = if self.place_wdiv_derived && ge.is_valid() {
+                fate * (1.0 - ge.p_bg() - p.estimator.loss_rate()).max(0.0) * srtt_i / ref_srtt
+            } else {
+                w_div * fate
+            };
+            // ── TRACK A ARM 2's term, the only new addend ─────────────────
+            //
+            //     X_i = [ delta*s_i + kappa*(s_i - H)+ ] / ref
+            //     s_i = [ (now + E_i) - F_hat ]+
+            //
+            // plus the (a2) ordering term `W*[F_hat - (now + E_i)]+/ref`,
+            // which prices the OTHER sign of the same difference: a placement
+            // that lands behind the frontier pushes nothing (`s_i = 0`
+            // EXACTLY - such a placement is free, which is what makes `X` a
+            // water-filling incentive rather than a slow-path penalty) but
+            // still costs the wire what a spurious re-serve of it would.
+            let x_i = hol.as_ref().map_or(0.0, |&(f_hat_s, now_s, delta, h_s, w)| {
+                let arrival = now_s + p.expected_delivery_load_at(srtt_i);
+                let (push, behind) = f_hat_s
+                    .map_or((0.0, 0.0), |f| ((arrival - f).max(0.0), (f - arrival).max(0.0)));
+                let over = (push - h_s).max(0.0);
+                // THE KAPPA BIND GAUGE. `kappa = 1` is a declared upper bound
+                // 15x-200x above D0's measured non-overlap; `over > 0` is the
+                // only regime in which it is reachable at all, and a bound
+                // that never binds cannot be wrong.
+                let (sh, n, moved, calls, _) = self.place_hol_gauge.get();
+                self.place_hol_gauge
+                    .set((sh + u64::from(over > 0.0), n + 1, moved, calls, w));
+                place_frontier_cost(delta, push, behind, h_s, w, ref_srtt)
+            });
+            (load + w_bw * r + div, x_i)
         };
 
         // **DETERMINISTIC TIE-BREAK.** `self.paths` is a `HashMap`, so its
@@ -4956,13 +5430,42 @@ impl Scheduler {
         // order, so an exact tie could land on either path depending on the
         // hasher. Sorting by id makes both REPRODUCIBLE without moving any
         // probability, which is exactly what the pinned cost table asserts.
+        // THE SHIPPED SHAPE IS UNCHANGED, ALLOCATION INCLUDED: one `Vec` of
+        // `(id, cost)` on the CTL path. The arm's own SHIPPED-cost column is
+        // kept in a SECOND vector that exists only while the arm is armed, so
+        // an absent arm costs neither an allocation nor a comparison.
+        let mut bases: Vec<(PathId, f64)> = Vec::new();
         let mut out: Vec<(PathId, f64)> = self
             .paths
             .values()
             .filter(|p| p.active)
-            .map(|p| (p.id, cost_of(p)))
+            .map(|p| {
+                let (base, x) = cost_of(p);
+                if hol.is_some() {
+                    bases.push((p.id, base));
+                }
+                (p.id, base + x)
+            })
             .collect();
         out.sort_unstable_by_key(|(id, _)| *id);
+        // **THE EXECUTION WITNESS** (MEASUREMENT DISCIPLINE rule 1: prove the
+        // mechanism under test executes). A term whose magnitude is reported
+        // but which never changes a DECISION has not been measured. This asks
+        // the question `place_probs_with_temperature` will actually ask —
+        // first-minimum over the id-sorted candidates — with and without the
+        // arm's addition, and counts the disagreements.
+        if hol.is_some() {
+            bases.sort_unstable_by_key(|(id, _)| *id);
+            let arg = |v: &[(PathId, f64)]| -> Option<PathId> {
+                v.iter()
+                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(id, _)| *id)
+            };
+            let moved_now = arg(&bases) != arg(&out);
+            let (sh, n, moved, calls, w) = self.place_hol_gauge.get();
+            self.place_hol_gauge
+                .set((sh, n, moved + u64::from(moved_now), calls + 1, w));
+        }
         out
     }
 
@@ -4971,6 +5474,16 @@ impl Scheduler {
     pub fn drain_place_bind(&mut self) {
         let (r, ge, n) = self.place_bind.replace((0, 0, 0));
         self.eta.add_place_bind(r, ge, n);
+        // Track A arm 1: the temperature actually used, and how often the
+        // cold rule fired. `T_eff` is a LEVEL, so the LAST value is the
+        // reading; the two counters are cumulative like every other bind
+        // gauge on this line.
+        let (t_eff, t_cold, t_n) = self.place_t_gauge.replace((0.0, 0, 0));
+        self.eta.add_place_t(t_eff, t_cold, t_n);
+        // Track A arm 2: the kappa bind fraction, the argmin-moved witness,
+        // and `W` at its live value.
+        let (sh, sh_n, moved, calls, w) = self.place_hol_gauge.replace((0, 0, 0, 0, 0.0));
+        self.eta.add_place_hol(sh, sh_n, moved, calls, w);
     }
 
     /// The sender-site `[ETA]` gauge, mutably -- the placement stamp and the
@@ -8278,6 +8791,454 @@ mod tests {
         for (id, p) in &dist {
             assert!((p - 0.2).abs() < 1e-12, "symmetric paths must split exactly: p{id}={p}");
         }
+    }
+
+    // ===================================================================
+    // TRACK A -- THE PLACEMENT ARMS (paper 16.81, all three DEFAULT-ABSENT)
+    //
+    // The order of these tests is the order of the claims they defend:
+    // (1) with every arm absent the shipped law is byte-identical, in COSTS
+    // and in PROBABILITIES; (2) each arm's own limits are the ones the
+    // derivation states; (3) the shape checks -- knee continuity,
+    // monotonicity, dial continuity -- hold on the law itself; (4) the
+    // controls (N = 1, the tie-break) still hold with everything armed.
+    // ===================================================================
+
+    /// **GATE-OFF BYTE-IDENTITY, THE PROBABILITY SIDE.** The pinned table
+    /// asserts the COSTS; this asserts that the softmax over them is
+    /// untouched too, to 1e-12 -- because the arms enter through the
+    /// TEMPERATURE as well as through the cost, and a temperature change
+    /// leaves every cost fixed while moving every probability.
+    #[test]
+    fn every_arm_absent_leaves_the_probabilities_bit_identical() {
+        for (name, mut sched, is_repair, covered) in cost_table_states() {
+            sched.set_place_t_derived(false);
+            sched.set_place_hol(false);
+            sched.set_place_wdiv_derived(false);
+            let got = sched.place_probs(is_repair, &covered);
+            let want =
+                sched.place_probs_with_temperature(is_repair, &covered, PLACE_TEMPERATURE);
+            assert_eq!(got.len(), want.len(), "state `{name}`");
+            for ((gid, gp), (wid, wp)) in got.iter().zip(want.iter()) {
+                assert_eq!(gid, wid, "state `{name}`: candidate order moved");
+                assert!(
+                    (gp - wp).abs() <= 1e-12,
+                    "state `{name}` path {gid}: p={gp:.17e} != shipped {wp:.17e} \
+                     -- AN ABSENT ARM MOVED THE SHIPPED LAW"
+                );
+            }
+        }
+    }
+
+    /// **GARBAGE RESOLVES TO ABSENT, VISIBLY.** A typo in an arm's value must
+    /// produce a CONTROL row that says it is a control row — not a challenger
+    /// that silently is not one. On every recognised boolean the arm flag
+    /// agrees with `config::env_flag` exactly, so the arms have no dialect of
+    /// their own. (Unique var names: the test threads share one environment.)
+    #[test]
+    fn an_unrecognised_arm_value_resolves_absent_and_agrees_elsewhere() {
+        let var = "RWM_TEST_PLACE_ARM_FLAG";
+        for bad in ["of", "yes", "on", "2", "-1", "trve"] {
+            std::env::set_var(var, bad);
+            assert!(!place_arm_flag(var), "`{bad}` must resolve the arm ABSENT");
+        }
+        for (v, want) in [
+            ("1", true),
+            ("true", true),
+            ("TRUE", true),
+            (" 1 ", true),
+            ("0", false),
+            ("false", false),
+            ("", false),
+        ] {
+            std::env::set_var(var, v);
+            assert_eq!(place_arm_flag(var), want, "value `{v}`");
+            assert_eq!(
+                place_arm_flag(var),
+                crate::config::env_flag(var, false),
+                "the arm flag must agree with env_flag on the recognised value `{v}`"
+            );
+        }
+        std::env::remove_var(var);
+        assert!(!place_arm_flag(var), "unset is ABSENT");
+    }
+
+    /// **THE ARMS ARE ABSENT BY DEFAULT.** A fresh scheduler in a clean
+    /// environment carries all three OFF, which is what makes the pinned
+    /// table an oracle for every other test in this file.
+    #[test]
+    fn the_placement_arms_are_absent_by_default() {
+        let sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        assert!(!sched.place_t_derived(), "RWM_PLACE_T_DERIVED ships ABSENT");
+        assert!(!sched.place_hol(), "RWM_PLACE_HOL ships ABSENT");
+        assert!(!sched.place_wdiv_derived(), "RWM_PLACE_WDIV_DERIVED ships ABSENT");
+    }
+
+    /// **ARM 1, THE `sigma -> 0` LIMIT.** A candidate set whose ETA-error
+    /// dispersion is zero has `T = 0`, and the derived law must then be
+    /// EXACTLY the argmin -- the shipped degenerate branch, reached with
+    /// `place_probs_with_temperature(.., 0.0)`. Same distribution, element by
+    /// element.
+    #[test]
+    fn the_derived_temperature_at_zero_dispersion_is_the_argmin() {
+        let mut sched = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
+        );
+        sched.set_place_t_derived(true);
+        // A dispersion series that never moves: sigma = 0 at both paths. The
+        // tau-lag admits a pair only inside `[tau, 2*tau]` of real time, so the
+        // arrival instants are supplied rather than slept for.
+        let t0 = std::time::Instant::now();
+        for pid in [0u32, 1] {
+            for k in 0..40u64 {
+                let ts = 1_000 + k * 1_000 + u64::from(pid) * 1_000_000;
+                sched.eta_mut().stamp(pid, ts, 5_000);
+                sched.eta_mut().on_ack_at(
+                    pid,
+                    ts,
+                    10_000,
+                    10_000,
+                    t0 + Duration::from_micros(1_250 * k),
+                );
+            }
+        }
+        assert_eq!(sched.eta().sigma_us(0), Some(0), "the fixture must be zero-dispersion");
+        let got = sched.place_probs(false, &[]);
+        let want = sched.place_probs_with_temperature(false, &[], 0.0);
+        assert_eq!(got, want, "sigma = 0 must resolve to the argmin exactly");
+        // And the gauge says the cold rule did NOT fire -- a measured zero and
+        // an absent measurement are different findings.
+        sched.drain_place_bind();
+        let l = sched.eta().line();
+        assert!(l.contains("t_cold=0.0000"), "{l}");
+        assert!(l.contains("t_eff=0.000000"), "{l}");
+    }
+
+    /// **ARM 1's COLD RULE IS STATED AND GAUGED, NEVER A HIDDEN CONSTANT.**
+    /// With NO path carrying a dispersion sample the temperature is the
+    /// SHIPPED one and `t_cold` says so, so a reader can tell "the derived
+    /// law ran" from "the derived law had nothing to run on".
+    #[test]
+    fn the_derived_temperature_falls_back_to_the_shipped_one_and_counts_it() {
+        let mut sched = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
+        );
+        sched.set_place_t_derived(true);
+        assert!((sched.place_temperature_eff() - PLACE_TEMPERATURE).abs() < 1e-15);
+        sched.drain_place_bind();
+        let l = sched.eta().line();
+        assert!(l.contains("t_cold=1.0000"), "the cold rule must be READ, not assumed: {l}");
+        assert!(l.contains("t_n=1"), "{l}");
+    }
+
+    /// **ARM 1's OWN ARITHMETIC**, asserted absolutely and not ordinally: with
+    /// one measured dispersion of `sigma` microseconds and a reference SRTT of
+    /// `ref`, `T = (sqrt6/pi)*sigma/ref` to floating precision. The inverse is
+    /// the section's falsifiable claim: `T = 0.15 <=> sigma = 0.19238*ref`.
+    #[test]
+    fn the_derived_temperature_is_the_gumbel_variance_match() {
+        let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]);
+        sched.set_place_t_derived(true);
+        // A RAMP, so a tau-lag pair spans a real difference: the error rises
+        // 100 us per sample at 1.25 ms spacing, tau = 10 ms, exactly the
+        // fixture `net::eta`'s own band test uses.
+        let t0 = std::time::Instant::now();
+        for k in 0..40u64 {
+            let ts = 1_000 + k * 1_000;
+            sched.eta_mut().stamp(0, ts, 5_000);
+            sched.eta_mut().on_ack_at(
+                0,
+                ts,
+                10_000 + 100 * k,
+                10_000,
+                t0 + Duration::from_micros(1_250 * k),
+            );
+        }
+        let sig = sched.eta().sigma_us(0).expect("the fixture must measure a dispersion");
+        assert!(sig > 0, "the fixture must measure a NONZERO dispersion");
+        let ref_srtt = 0.010_f64;
+        let want = place_gumbel_scale() * (sig as f64 / 1e6) / ref_srtt;
+        assert!(
+            (sched.place_temperature_eff() - want).abs() < 1e-12,
+            "T must be (sqrt6/pi)*sigma/ref exactly"
+        );
+        // The inversion the paper states, checked as arithmetic: T = 0.15
+        // asserts sigma/ref = 0.19238.
+        assert!(
+            ((PLACE_TEMPERATURE / place_gumbel_scale()) - 0.192_38).abs() < 1e-5,
+            "the shipped T inverts to sigma_e = 0.19238*ref"
+        );
+    }
+
+    /// **ARM 2's OWN LIMIT: A PLACEMENT BEHIND THE FRONTIER IS FREE.**
+    /// `now + E_i <= F_hat` gives `push = 0` and therefore `X_i = 0` EXACTLY
+    /// -- not "small", zero -- which is the property that makes the term a
+    /// water-filling incentive rather than a slow-path penalty. Only the (a2)
+    /// wire price, three orders of magnitude down, remains.
+    #[test]
+    fn the_frontier_term_is_exactly_zero_behind_the_frontier() {
+        assert_eq!(place_frontier_cost(0.5, 0.0, 0.0, 0.010, 0.0, 0.010), 0.0);
+        // Any distance BEHIND the frontier leaves the priced and the stall
+        // legs both at zero; the wire price is all that is left.
+        let only_wire = place_frontier_cost(50.0, 0.0, 0.030, 0.010, 1.12e-2, 0.010);
+        assert!((only_wire - 1.12e-2 * 0.030 / 0.010).abs() < 1e-15);
+        assert!(only_wire < 0.04, "the (a2) price is PREDICTED INERT against an O(1) load term");
+    }
+
+    /// **ARM 2's KNEE IS `C0` AT `push = H`.** The `(push - H)+` kink is a
+    /// corner, not a step: nudging `push` by +/-eps around `H` moves the cost
+    /// by O(eps), and the one-sided limits agree at the knee itself. A step
+    /// here would be exactly the behaviour-across-a-point defect the
+    /// NO-MODE-SWITCH invariant forbids.
+    #[test]
+    fn the_frontier_knee_is_continuous_at_the_headroom() {
+        let (delta, h, w, refs) = (0.5_f64, 0.010_f64, 0.0_f64, 0.010_f64);
+        let at = place_frontier_cost(delta, h, 0.0, h, w, refs);
+        for eps in [1e-6_f64, 1e-9, 1e-12] {
+            let lo = place_frontier_cost(delta, h - eps, 0.0, h, w, refs);
+            let hi = place_frontier_cost(delta, h + eps, 0.0, h, w, refs);
+            // Both sides converge on the knee value, and the jump across it is
+            // bounded by (delta + kappa)*2eps/ref -- a slope, not a step.
+            let bound = (delta + PLACE_KAPPA) * 2.0 * eps / refs + 1e-15;
+            assert!((hi - lo).abs() <= bound, "step at the knee: {lo} -> {hi} (eps {eps})");
+            assert!((at - lo).abs() <= bound && (hi - at).abs() <= bound);
+        }
+    }
+
+    /// **ARM 2 IS MONOTONE IN THE PUSH.** A bigger frontier push costs more,
+    /// everywhere, on both sides of the knee -- the shape check 16.81.4
+    /// states. (And the slope BEYOND the knee is the steeper one, which is
+    /// what `kappa` is for.)
+    #[test]
+    fn the_frontier_term_is_monotone_in_the_push() {
+        let (delta, h, refs) = (0.5_f64, 0.010_f64, 0.010_f64);
+        let mut prev = f64::NEG_INFINITY;
+        for i in 0..200 {
+            let push = i as f64 * 0.0002;
+            let c = place_frontier_cost(delta, push, 0.0, h, 0.0, refs);
+            assert!(c >= prev - 1e-15, "cost fell as the push grew at push={push}");
+            prev = c;
+        }
+        let below = place_frontier_cost(delta, h * 0.5, 0.0, h, 0.0, refs);
+        let just = place_frontier_cost(delta, h, 0.0, h, 0.0, refs);
+        let above = place_frontier_cost(delta, h * 1.5, 0.0, h, 0.0, refs);
+        assert!(
+            (above - just) > (just - below),
+            "the stall leg must be the STEEPER one beyond H"
+        );
+    }
+
+    /// **THE DIAL-CONTINUITY GATE (CLAUDE.md).** `delta` enters `X_i` as a
+    /// multiplier and nothing else, so the term is continuous and
+    /// non-decreasing in `delta` THROUGH each of the three named points --
+    /// checked at +/-2 % around every one of them, plus a dense sweep of the
+    /// whole dial. A behaviour step across a preset is a defect even if each
+    /// side is individually correct.
+    #[test]
+    fn the_frontier_term_is_continuous_through_every_named_point_on_the_dial() {
+        let (push, h, refs) = (0.020_f64, 0.010_f64, 0.010_f64);
+        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+            let d = crate::scheduler::hint_delta_price(hint);
+            let at = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
+            for f in [0.98_f64, 1.02] {
+                let n = place_frontier_cost(d * f, push, 0.0, h, 0.0, refs);
+                let jump = (n - at).abs();
+                // The exact bound the form gives: |delta - delta'|*push/ref.
+                let bound = (d * (f - 1.0)).abs() * push / refs + 1e-12;
+                assert!(
+                    jump <= bound,
+                    "a 2 % nudge at {hint:?} (delta={d}) moved the term by {jump} > {bound}"
+                );
+            }
+        }
+        // Dense monotone sweep across the whole dial, presets included.
+        let mut prev = f64::NEG_INFINITY;
+        for i in 0..=400 {
+            let d = 0.001_f64 * 10f64.powf(i as f64 / 80.0);
+            let c = place_frontier_cost(d, push, 0.0, h, 0.0, refs);
+            assert!(c >= prev - 1e-12, "the dial sweep is not monotone at delta={d}");
+            prev = c;
+        }
+    }
+
+    /// **ARM 2, END TO END: the term reaches `place_costs` and its gauges
+    /// fire.** A pure-function test proves the FORM; this proves the WIRING
+    /// -- MEASUREMENT DISCIPLINE rule 1. With `F_hat` set far in the past
+    /// every candidate pushes the frontier hard, so the `s_i > H` bind is
+    /// taken and the costs are strictly above the shipped ones.
+    #[test]
+    fn the_frontier_term_reaches_place_costs_and_gauges_its_bind() {
+        let mut sched = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(50), 10, 0)],
+        );
+        let shipped = sched.place_costs(false, &[]);
+        // A stamp in the distant past: `now` is far beyond it, so every
+        // candidate lands ahead of the frontier by more than any headroom.
+        sched.eta_mut().stamp(0, 1_000, 1);
+        sched.set_place_hol(true);
+        let armed = sched.place_costs(false, &[]);
+        for ((_, a), (_, b)) in armed.iter().zip(shipped.iter()) {
+            assert!(a > b, "the frontier term must CHARGE a frontier push: {a} vs {b}");
+        }
+        sched.drain_place_bind();
+        let l = sched.eta().line();
+        assert!(l.contains("hol_sh=1.0000"), "the s_i > H bind must be gauged: {l}");
+        assert!(l.contains("hol_n=2"), "{l}");
+        assert!(!l.contains("hol_w=-"), "W must print at its live value: {l}");
+    }
+
+    /// **THE EXECUTION WITNESS ITSELF.** The `hol_mv` counter is what
+    /// distinguishes "the term was computed" from "the term decided". It is
+    /// zero for a symmetric pair (nothing to move) and nonzero when the
+    /// frontier term genuinely reverses the argmin -- built here by giving the
+    /// SHIPPED-cheaper path a backlog large enough that its arrival, and only
+    /// its arrival, clears the frontier.
+    #[test]
+    fn the_argmin_witness_counts_only_real_reversals() {
+        // Symmetric: no reversal is possible, and the witness says 0.
+        let mut sym = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)],
+        );
+        sym.eta_mut().stamp(0, 1_000, 1);
+        sym.set_place_hol(true);
+        let _ = sym.place_costs(false, &[]);
+        sym.drain_place_bind();
+        let (_, _, moved, calls, _) = sym.eta().hol_gauges();
+        assert_eq!((moved, calls), (0, 1), "a symmetric pair has no argmin to move");
+
+        // Asymmetric, with `F_hat` between the two arrivals: path 0 is the
+        // shipped argmin and lands AHEAD of the frontier; path 1 is dearer by
+        // the shipped law but lands behind it. The stall leg is worth more
+        // than the load gap, so the term reverses the pick.
+        let mut sched = cost_state(
+            ProtocolHint::Realtime,
+            &[(0, Some(10), 10, 9), (1, Some(11), 10, 0)],
+        );
+        let base = sched.place_costs(false, &[]);
+        let base_arg = if base[0].1 <= base[1].1 { 0 } else { 1 };
+        // `F_hat` a hair AHEAD of the cheaper path's arrival: path 0's own
+        // backlog pushes it past the frontier, path 1's idle propagation does
+        // not.
+        let now_us = place_wall_now_us();
+        sched.eta_mut().stamp(0, now_us, 6_000);
+        sched.set_place_hol(true);
+        let armed = sched.place_costs(false, &[]);
+        let armed_arg = if armed[0].1 <= armed[1].1 { 0 } else { 1 };
+        sched.drain_place_bind();
+        let (_, _, moved, calls, _) = sched.eta().hol_gauges();
+        assert_eq!(calls, 1);
+        assert_eq!(
+            moved,
+            u64::from(base_arg != armed_arg),
+            "the witness must count exactly the reversals that happened \
+             (base {base_arg} -> armed {armed_arg}; {base:?} -> {armed:?})"
+        );
+    }
+
+    /// **ARM 3 CANNOT MOVE A SOURCE PLACEMENT**, by construction: `fate_i` is
+    /// identically zero for source symbols, so the derived diversity weight
+    /// multiplies zero. Every source row of the pinned table therefore stands
+    /// with the arm ARMED -- which is what makes the arm attributable to
+    /// repairs alone.
+    #[test]
+    fn the_derived_diversity_weight_leaves_every_source_placement_alone() {
+        for (name, mut sched, is_repair, covered) in cost_table_states() {
+            if is_repair {
+                continue;
+            }
+            let shipped = sched.place_costs(false, &covered);
+            sched.set_place_wdiv_derived(true);
+            let armed = sched.place_costs(false, &covered);
+            assert_eq!(armed, shipped, "state `{name}`: arm 3 moved a SOURCE placement");
+        }
+    }
+
+    /// **ARM 3's OWN LIMIT, ASSERTED ABSOLUTELY.** On a MEMORYLESS channel the
+    /// bad->bad persistence equals the marginal loss, so the excess
+    /// `(p_BB - eps)+` -- and with it the whole diversity charge -- collapses,
+    /// which the shipped `w_div = 1.0` does not do. The assertion is on the
+    /// TERM'S OWN ARITHMETIC read off the path's estimator, not on an ordinal
+    /// comparison, and it is checked against the shipped charge it replaces.
+    #[test]
+    fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
+        let mut sched = cost_state(
+            ProtocolHint::Auto,
+            &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)],
+        );
+        // Independent 2 % loss on both legs -- no burst structure at all.
+        for pid in [0u32, 1] {
+            let p = sched.path_mut(pid).unwrap();
+            for i in 0..4000u32 {
+                p.estimator.record_symbol(i % 50 != 0);
+            }
+        }
+        let (excess, srtt_i) = {
+            let p = sched.path(0).unwrap();
+            let ge = p.estimator.ge_estimator();
+            assert!(ge.is_valid(), "the fixture must produce a VALID GE estimate");
+            ((1.0 - ge.p_bg() - p.estimator.loss_rate()).max(0.0), 0.010_f64)
+        };
+        let ref_srtt = 0.010_f64;
+        let shipped = sched.place_costs(true, &[0, 0, 0, 0]);
+        sched.set_place_wdiv_derived(true);
+        let armed = sched.place_costs(true, &[0, 0, 0, 0]);
+        // Path 0 carries all four covered symbols (fate = 1), path 1 none.
+        // The DERIVED charge is the excess, priced at srtt/ref; the SHIPPED
+        // one is a flat w_div = 1.0.
+        let derived_gap = armed[0].1 - armed[1].1;
+        assert!(
+            (derived_gap - excess * srtt_i / ref_srtt).abs() < 1e-12,
+            "the diversity charge must be exactly fate*(p_BB-eps)+*srtt/ref              (excess {excess}, got {derived_gap})"
+        );
+        let shipped_gap = shipped[0].1 - shipped[1].1;
+        assert!((shipped_gap - 1.0).abs() < 1e-12, "the shipped charge is the flat 1.0");
+        assert!(
+            derived_gap < 0.25,
+            "a memoryless channel must price essentially NO diversity,              where the shipped law prices a full round: {derived_gap}"
+        );
+    }
+
+    /// **THE `N = 1` CONTROL, WITH EVERY ARM ON.** A softmax over a singleton
+    /// is 1 at every temperature and every cost, so the law is the identity on
+    /// a single path -- which is why `c1` and `sc2` are controls in every
+    /// placement arm and a movement at either VOIDS the run.
+    #[test]
+    fn a_single_path_is_the_identity_with_every_arm_armed() {
+        let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 3)]);
+        sched.set_place_t_derived(true);
+        sched.set_place_hol(true);
+        sched.set_place_wdiv_derived(true);
+        sched.eta_mut().stamp(0, 1_000, 1);
+        let dist = sched.place_probs(false, &[]);
+        assert_eq!(dist.len(), 1);
+        assert_eq!(dist[0].0, 0);
+        assert_eq!(dist[0].1, 1.0, "a singleton candidate set must place at probability 1");
+        assert_eq!(sched.place_symbol(false, &[]), Some(0));
+    }
+
+    /// **THE DETERMINISTIC TIE-BREAK SURVIVES EVERY ARM.** The arms add terms
+    /// to the cost and change the temperature; neither may touch the ASCENDING
+    /// candidate order the pinned table rests on.
+    #[test]
+    fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
+        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
+        for id in [7, 3, 9, 1, 5] {
+            sched.add_path(id);
+            set_rtt(&mut sched, id, 10);
+        }
+        sched.set_place_t_derived(true);
+        sched.set_place_hol(true);
+        sched.set_place_wdiv_derived(true);
+        sched.eta_mut().stamp(3, 1_000, 1);
+        let ids: Vec<PathId> =
+            sched.place_costs(false, &[]).into_iter().map(|(i, _)| i).collect();
+        assert_eq!(ids, vec![1, 3, 5, 7, 9], "candidates must stay ascending by id");
+        let dist = sched.place_probs(false, &[]);
+        assert_eq!(dist.iter().map(|(i, _)| *i).collect::<Vec<_>>(), vec![1, 3, 5, 7, 9]);
     }
 
     /// The COLD-PRICE BIND GAUGES count and never decide. State 7 has one
