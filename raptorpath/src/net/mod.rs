@@ -94,6 +94,12 @@ pub struct PeerConfig {
     /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
     /// measured the floor completion-neutral at C2, regressive at C3.
     pub inner_feedback_weight: f64,
+    /// The completion feed (paper §14.26 / §16.82, in flight): remaining
+    /// bytes of the transfer in progress, published by a driver that KNOWS
+    /// them. `None` on the tunnel path — an endless stream has no `T_rem` —
+    /// and `None` unless `RWM_COMPLETION_EXPOSURE` is armed, so the shipped
+    /// engine is byte-identical without it. See [`CompletionFeed`].
+    pub completion_feed: Option<Arc<CompletionFeed>>,
     /// Block-granular multipath source affinity (paper 13.8 in-order
     /// coupling refinement, L2 ws1). Default true; false = per-symbol
     /// striping (ablation).
@@ -2215,6 +2221,117 @@ pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> 
     }
 }
 
+/// **THE COMPLETION FEED** — `RWM_COMPLETION_EXPOSURE`, ABSENT by default
+/// (paper §14.26 / §16.82, in flight).
+///
+/// The one input §14.26's completion-exposure glide always needed and never
+/// had: **how much of this transfer is left**. The production tunnel is an
+/// endless stream and genuinely has no `T_rem`, which is why χ was left at 0
+/// — but that "temporary" 0 made `set_completion_exposure` a function with
+/// zero engine callers, δ_eff = ε̂ at the Bulk end, and therefore `r* ≡ 0`
+/// identically on every battery this tree has ever scored. The r leg has
+/// never operated. A driver that DOES know the remaining bytes (the perf
+/// client, feeding a sized object) publishes them here.
+///
+/// One `AtomicU64` and nothing else: the writer is the object feeder, the
+/// reader is the rate site, and a stale read is a slightly stale χ — never a
+/// correctness question. `Relaxed` for the same reason.
+#[derive(Debug)]
+pub struct CompletionFeed {
+    remaining_bytes: AtomicU64,
+}
+
+impl Default for CompletionFeed {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CompletionFeed {
+    pub fn new() -> Self {
+        Self { remaining_bytes: AtomicU64::new(0) }
+    }
+    /// The whole object is ahead of us: set at the start of a transfer.
+    pub fn set_remaining(&self, bytes: u64) {
+        self.remaining_bytes.store(bytes, Ordering::Relaxed);
+    }
+    /// One chunk handed to the engine: saturating, so a feeder that
+    /// over-counts by a partial chunk cannot wrap the counter.
+    pub fn consume(&self, bytes: u64) {
+        let _ = self.remaining_bytes.fetch_update(
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+            |v| Some(v.saturating_sub(bytes)),
+        );
+    }
+    /// The object is acked: nothing is left, and χ has no more work to do.
+    pub fn clear(&self) {
+        self.remaining_bytes.store(0, Ordering::Relaxed);
+    }
+    pub fn remaining_bytes(&self) -> u64 {
+        self.remaining_bytes.load(Ordering::Relaxed)
+    }
+}
+
+/// **`[CHI]` — the completion-exposure gauge** (paper §16.82, in flight).
+///
+/// MEASUREMENT DISCIPLINE rule 1: prove the mechanism under test EXECUTES.
+/// An arm whose χ never left 0 is an arm that ran the shipped machine under a
+/// different label, and that has happened on this tree before. `max` and
+/// `frac_gt_half` are the two numbers that distinguish "the glide ramped" from
+/// "the gate was set and nothing happened", and both are readable off the
+/// run's own output. Reported on the 1 s cadence, cumulative, LAST LINE WINS.
+///
+/// Two-sided: the line is printed on the CONTROL arm too (where it must read
+/// `max=0.0000 n=0`), so gate-off is as mechanically assertable as gate-on.
+pub(crate) struct ChiGauge {
+    n: AtomicU64,
+    /// max χ × 1e6, as a u64 so the whole gauge is lock-free.
+    max_ppm: AtomicU64,
+    /// Observations with χ > ½ — the region where δ_eff has actually left ε̂.
+    gt_half: AtomicU64,
+    sum_ppm: AtomicU64,
+}
+
+pub(crate) static CHI: ChiGauge = ChiGauge {
+    n: AtomicU64::new(0),
+    max_ppm: AtomicU64::new(0),
+    gt_half: AtomicU64::new(0),
+    sum_ppm: AtomicU64::new(0),
+};
+
+impl ChiGauge {
+    fn observe(&self, chi: f64) {
+        let ppm = (chi.clamp(0.0, 1.0) * 1e6) as u64;
+        self.n.fetch_add(1, Ordering::Relaxed);
+        self.sum_ppm.fetch_add(ppm, Ordering::Relaxed);
+        self.max_ppm.fetch_max(ppm, Ordering::Relaxed);
+        if chi > 0.5 {
+            self.gt_half.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+pub(crate) fn chi_report_line() -> String {
+    let n = CHI.n.load(Ordering::Relaxed);
+    let mean = if n == 0 {
+        "-".to_string()
+    } else {
+        format!("{:.4}", CHI.sum_ppm.load(Ordering::Relaxed) as f64 / n as f64 / 1e6)
+    };
+    format!(
+        "[CHI] n={} max={:.4} frac_gt_half={:.4} mean={} rttvar_src=srtt_eighth",
+        n,
+        CHI.max_ppm.load(Ordering::Relaxed) as f64 / 1e6,
+        if n == 0 {
+            0.0
+        } else {
+            CHI.gt_half.load(Ordering::Relaxed) as f64 / n as f64
+        },
+        mean,
+    )
+}
+
 /// Receiver give-up budget: holes given up so far vs ε̂_recv × frontier.
 /// (The receiver owns no r/A*, so its bound is the loss CLASS, not the
 /// FEC residual; give-up is intrinsically holes-only, which keeps the
@@ -3490,6 +3607,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // The contract's BASE tail-loss target, sampled beside the hint it prices
     // alpha with (paper 16.81, in flight).
     let sender_target_tail_loss = config.target_tail_loss;
+    // §14.26/§16.82 (in flight): the completion feed, if a driver published
+    // one. `None` on every shipped path.
+    let sender_completion_feed = config.completion_feed.clone();
     let sender_gates = gates.clone();
 
     let sender_handle = tokio::spawn(async move {
@@ -3516,6 +3636,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 sender_window_generation,
                 sender_window_systematic,
                 sender_copa_feed,
+                sender_completion_feed,
                 sender_gates,
             )
             .await;
@@ -6812,6 +6933,10 @@ async fn run_window_sender(
     // seq→path + a BBR send-interval rate-sample snapshot so the WindowAck
     // handler can attribute deliveries per path. None = shipped path.
     copa_feed: Option<Arc<CopaFeed>>,
+    // §14.26/§16.82 (in flight): remaining bytes of the transfer, when a
+    // driver knows them. `None` on every shipped path; read ONLY under
+    // `RWM_COMPLETION_EXPOSURE`, so the rate is byte-identical without it.
+    completion_feed: Option<Arc<CompletionFeed>>,
     // The engine's env-gate surface, resolved once in run_impl (src/gates.rs).
     gates: crate::gates::RuntimeGates,
 ) {
@@ -6909,6 +7034,9 @@ async fn run_window_sender(
     let mut proactive_coded_total: u64 = 0;
     let mut recovery_coded_total: u64 = 0;
     let mut pfrac_last_us: u64 = 0;
+    // `[CHI]` (paper §16.82, in flight): last emission of the
+    // completion-exposure gauge, same cadence.
+    let mut chi_last_us: u64 = 0;
     let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     let mut gen_emitted_at_report: std::collections::HashMap<u64, u64> =
         std::collections::HashMap::new();
@@ -8580,6 +8708,17 @@ async fn run_window_sender(
                 );
             }
         }
+        // `[CHI]` — the completion-exposure gauge (§16.82, in flight), same
+        // 1 s cadence, and on BOTH arms: the control's `n=0 max=0.0000` is the
+        // two-sided half of the reachability claim, and an arm whose χ never
+        // left 0 must be READ that way rather than inferred.
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(chi_last_us) > 1_000_000 {
+                chi_last_us = now;
+                eprintln!("{}", chi_report_line());
+            }
+        }
         // GDIAG: did ANY coded symbol go on the wire this iteration?
         let mut gd_flow = false;
         if generation && st.encoder.window_size() > 0 {
@@ -10178,12 +10317,54 @@ async fn run_window_sender(
             // Section 8.8) from the worst (highest-loss) active path, under a
             // single lock acquisition.
             let (repair_rate, derived_window) = {
-                let ctrl = fec_controller.lock();
+                let mut ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
                 let path_est = sched.active_paths().iter()
                     .filter_map(|id| sched.path(*id))
                     .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                     .map(|p| &p.estimator);
+                // ── χ, THE COMPLETION EXPOSURE (RWM_COMPLETION_EXPOSURE) ──
+                //
+                // §14.26's glide has existed since P6 and has NEVER RUN:
+                // `set_completion_exposure` had zero engine callers, so χ ≡ 0,
+                // so δ_eff = ε̂ at the Bulk end and `controller_rate` returned
+                // exactly 0 — r* ≡ 0 forever, on every scored battery. The r
+                // leg has never operated (paper §16.82, in flight).
+                //
+                // The perf client KNOWS the remaining bytes of the object it
+                // is feeding. Under the gate it publishes them into a
+                // `CompletionFeed` and this site converts them to a time —
+                // `T_rem = remaining / throughput` — and prices the exposure
+                // with the math crate's own
+                // `completion_exposure(T_rem, srtt, rttvar)`.
+                //
+                // RTTVAR PROVENANCE, stated because it is not measured here:
+                // the engine's estimator exposes a smoothed RTT and no RTTVAR.
+                // `0.125·srtt` is RFC 6298's own STEADY-STATE relation — its
+                // initialization sets `RTTVAR = R/2` and its update mixes at
+                // β = ¼, so a link whose RTT is not moving settles near
+                // RTTVAR ≈ srtt/8. It is a STAND-IN for a quantity this engine
+                // does not estimate, it is the arm's own constant, and it is
+                // stated on the register rather than presented as derived.
+                // `completion_exposure` floors σ_ARQ at `srtt/4` regardless,
+                // so the choice only matters where 4·RTTVAR exceeds that.
+                //
+                // ABSENT BY DEFAULT ⇒ this whole block is skipped and χ stays
+                // 0, i.e. the rate is byte-identical to the engine without it.
+                if let (true, Some(feed), Some(est)) =
+                    (gates.completion_exposure, completion_feed.as_ref(), path_est)
+                {
+                    let tput = est.throughput();
+                    let srtt = est.rtt().as_secs_f64();
+                    let chi = if tput > 0.0 && srtt > 0.0 {
+                        let t_rem = feed.remaining_bytes() as f64 / tput;
+                        raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt)
+                    } else {
+                        0.0
+                    };
+                    ctrl.set_completion_exposure(chi);
+                    CHI.observe(chi);
+                }
                 match path_est {
                     Some(est) => (
                         ctrl.compute_repair_rate(est, st.encoder.window_size()),

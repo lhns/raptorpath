@@ -937,6 +937,32 @@ pub struct RuntimeGates {
     /// **Nothing shipped sets it.** A shipped δ is named by the contract's
     /// hint; this is the measurement seat, not a law.
     pub delta: Option<f64>,
+    /// `RWM_COMPLETION_EXPOSURE` (**default OFF**; paper §14.26/§16.82, in
+    /// flight) — ARM the completion-exposure glide by actually FEEDING χ.
+    ///
+    /// **Why it exists.** §14.26's glide `δ_eff = ε̂ + (BULK_TAIL_BUDGET − ε̂)·χ`
+    /// has shipped since P6 and has never run: `set_completion_exposure` had
+    /// **zero engine callers**, so χ ≡ 0, so δ_eff = ε̂ at the Bulk end of the
+    /// dial, so `controller_rate` returned exactly 0 — `r* ≡ 0` identically on
+    /// every scored battery this tree has produced, all of which ran the bulk
+    /// hint. The FEC/ARQ trade-off law that names this project has therefore
+    /// never been measured anywhere but at its corner. This gate is the wire
+    /// that makes the interior reachable.
+    ///
+    /// **What it turns on, and nothing more.** Under the gate the rate site
+    /// reads a [`crate::net::CompletionFeed`] (remaining bytes, published by a
+    /// driver that knows them — the perf client), converts it to `T_rem` with
+    /// the path's own throughput, and calls `set_completion_exposure`. It adds
+    /// no law: `completion_exposure` and the glide are both already in the
+    /// math crate and both already tested there. OFF ⇒ the feed is never read
+    /// and the rate is BYTE-IDENTICAL to the engine without this gate, which
+    /// `tests/chi_reachability.rs` asserts rather than describes.
+    ///
+    /// **It is an EXPERIMENT ARM.** Nothing shipped sets it; the tunnel path
+    /// has no feed to give it. Whether χ > 0 is worth its overhead is exactly
+    /// what the §16.82 r > 0 battery is for, and this gate is the arm that
+    /// battery switches — not a default in waiting.
+    pub completion_exposure: bool,
 
     // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
     // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
@@ -1214,6 +1240,9 @@ impl RuntimeGates {
             // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
             // undefined at δ ≤ 0. Paper §16.81/§16.82 (in flight).
             delta: delta_override(),
+            // ABSENT by default. The glide it arms has shipped inert since P6;
+            // arming it is an EXPERIMENT, not a default in waiting.
+            completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
             // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
             rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
                 .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
@@ -1284,7 +1313,7 @@ impl RuntimeGates {
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
              RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
-             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} \
+             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COMPLETION_EXPOSURE={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -1354,6 +1383,19 @@ impl RuntimeGates {
             // an r > 0 row varies, so a row whose δ is not readable off its own
             // run is not a row. Paper §16.81/§16.82 (in flight).
             o(&self.delta),
+            // THE χ ARM. A flag here rather than a value: what it turns on is
+            // the FEED, and the value χ takes is a measurement, printed by
+            // `[CHI]` on its own cadence. Two-sided by construction — the
+            // control arm's `=0` beside `[CHI] n=0` is what makes "the glide
+            // never ran" a reading rather than an inference (§16.82).
+            b(self.completion_exposure),
+            // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
+            // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
+            // measured in, so a ledger whose windows are 250 ms and one whose
+            // windows are 2 s are different measurements and the difference has
+            // to be readable from the run's own output. A mistyped override
+            // resolves back to the default and this prints 2000000, so "my arm
+            // did not take" is visible rather than inferred.
             b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
             // The raw-sample dump's CAP is echoed as its RESOLVED value, for
             // the reason `RWM_ACKDIAG_WINDOW_US` two lines above is: a leg
@@ -1674,6 +1716,9 @@ mod tests {
             // THE CONTRACT'S δ is ABSENT on every shipped arm: the hint names
             // the point on the dial, and the echo says so (§16.81, in flight).
             "RWM_DELTA=unset",
+            // The χ arm is OFF on every shipped arm: §14.26's glide stays
+            // inert and `r*` stays at the corner unless a battery arms it.
+            "RWM_COMPLETION_EXPOSURE=0",
         ] {
             assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
         }
