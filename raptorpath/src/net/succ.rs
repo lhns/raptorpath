@@ -570,6 +570,36 @@ impl SuccGauge {
         self.hi.is_some()
     }
 
+    /// **THE OPEN HOLES, ASCENDING, THAT ARE AT LEAST `min_age_us` LATE**
+    /// -- 16.83's `REQUEST <=> l >= l*` predicate, evaluated on the ONE set
+    /// that already exists. At most `max` of them (the caller's declared wire
+    /// bound), and the age is the LOWER end of the lateness bracket -- the
+    /// conservative one, and the same clock `[SUCC]` times and `[LATE]` fits
+    /// its density on.
+    ///
+    /// Read-only: this gauge decides nothing. The caller that reads it is the
+    /// arm, and with the arm absent nothing calls it.
+    pub fn holes_at_least(&self, now: Instant, min_age_us: u64, max: usize) -> Vec<u64> {
+        let mut out = Vec::new();
+        for (&seq, &(t0, _, _)) in self.open.iter() {
+            if out.len() >= max {
+                break;
+            }
+            if now.saturating_duration_since(t0).as_micros() as u64 >= min_age_us {
+                out.push(seq);
+            }
+        }
+        out
+    }
+
+    /// **THE EARLIEST `A_hat`** -- the detection instant of the OLDEST open
+    /// hole. `None` when nothing is outstanding. This is the term the request
+    /// law's deadline is built on: a hole with NO further arrivals still has
+    /// to become requestable, and `earliest A_hat + l*` is when it does.
+    pub fn oldest_open_at(&self) -> Option<Instant> {
+        self.open.values().map(|&(t0, _, _)| t0).min()
+    }
+
     /// Holes currently outstanding — a CENSUS, not an outcome.
     pub fn open_n(&self) -> u64 {
         self.open.len() as u64

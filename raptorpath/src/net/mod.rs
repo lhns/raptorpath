@@ -3459,6 +3459,20 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (deficit_tx, deficit_rx) =
         tokio::sync::mpsc::channel::<Vec<(u64, u32)>>(64);
 
+    // Receiver-seat repair-request channel (paper 16.83, arms (A)/(B)): the
+    // data-arm's control handler parses inbound `RepairRequest` messages and
+    // forwards `(cause, spans)` to the local window sender, which serves each
+    // span from `sent_store` at `m = 1` and from `generate_repair_range` above
+    // it. THE EXACT PARALLEL OF `deficit_tx` ABOVE, at the same depth and with
+    // the same best-effort contract -- the two are one mechanism in two
+    // vocabularies, and writing them differently would be the defect.
+    //
+    // NEVER PRODUCED with both arms absent: `recv_request_tx` is `None`, so
+    // an arriving `RepairRequest` is counted and dropped exactly as it is in
+    // v8.
+    let (request_tx, request_rx) =
+        tokio::sync::mpsc::channel::<RepairRequestBatch>(64);
+
     // SACK flow-control channel (feat/sack-flow-control): forwards the
     // receiver's RECEIVED-above-frontier ranges (the SACK ranges themselves,
     // NOT the inverted gaps) to the plain-reliable window sender. The sender
@@ -3706,6 +3720,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
+    let mut sender_request_rx = request_rx;
     let sender_protocol_hint = config.protocol_hint;
     // The contract's BASE tail-loss target, sampled beside the hint it prices
     // alpha with (paper 16.81).
@@ -3731,6 +3746,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_nack_rx,
                 &mut sender_deficit_rx,
                 &mut sender_sack_rx,
+                &mut sender_request_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
                 sender_target_tail_loss,
@@ -3834,14 +3850,79 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // With no NACK producer, a short generation is recovered by MORE coded
     // symbols for that generation (fungible, cross-path), never by resending a
     // specific seq. So the SACK→gap producer is suppressed in generation mode.
+    //
+    // ── PAPER 16.83.4 -- THE COLLISION SEAM (a), ONE `&&` ────────────
+    //
+    // The request law (`RWM_RECV_REQUEST_LAW`) makes the RECEIVER'S REPORT
+    // the single authority for a repair. Its identifiability argument depends
+    // on that: `rho_heal(l) = pi0*f(l)` holds EXACTLY on `[0, l*)` only
+    // because no copy has flown there, and a copy flying is precisely what
+    // 16.77.8a's censoring is. So while the arm is armed the per-seq
+    // SACK->gap producer is suppressed at its source -- HERE, where it is
+    // ARMED -- rather than filtered downstream, so `[FCAUSE] gap_data` going
+    // to zero on the treatment arm IS the proof that the seam closed.
+    //
+    // `sack_tx` BELOW IS DELIBERATELY NOT TOUCHED, and the justification is
+    // the one already written there: SACK drives store SLOT RELEASE and never
+    // recoverability; pruning `sent_store` on SACK was refuted structurally
+    // UNSAFE on 2026-07-07 (C7/C8 in-order DNF) and the safe realization is
+    // ADR-0060's release. A request law that touched `sack_tx` would be
+    // re-running a refuted experiment.
+    //
+    // The two backstops 16.83.4 leaves standing are untouched and OUT OF
+    // DOMAIN by construction: the `p_lost` taper (measured ZERO at 4 of 4
+    // cells) and the end-of-stream tail sweep, whose producer is the sender's
+    // own `tail_deadline` arm and not this channel.
+    //
+    // ABSENT => this is the shipped predicate, character for character.
+    let recv_request_law = request_law_armed(
+        window_mode,
+        window_reliable,
+        window_generation,
+        gates.recv_request_law,
+    );
+    // Arm (B) alone is the VOCABULARY-ONLY wiring test: the trigger stays the
+    // shipped 2 ms sampler, so the gap producer stays armed and only the
+    // message the receiver sends changes. The two arms COMPOSE; neither
+    // selects a machine.
+    let recv_rank_feedback = request_law_armed(
+        window_mode,
+        window_reliable,
+        window_generation,
+        gates.rank_feedback,
+    );
     let recv_nack_tx: Option<
         tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
     > =
-        if window_mode && !window_generation {
+        if window_mode && !window_generation && !recv_request_law {
             Some(nack_tx)
         } else {
             None
         };
+    // The request channel's producer seat: `Some(..)` iff EITHER arm is live,
+    // so arm (B) alone still has a server. `None` on every shipped path => an
+    // arriving `RepairRequest` keeps its v8 counted-and-dropped behaviour.
+    let recv_request_tx: Option<tokio::sync::mpsc::Sender<RepairRequestBatch>> =
+        if recv_request_law || recv_rank_feedback {
+            Some(request_tx)
+        } else {
+            None
+        };
+    if recv_request_law || recv_rank_feedback {
+        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1), emitted in
+        // `run_impl` so BOTH roles echo: the receiver builds the message, the
+        // sender serves it, and the battery asserts the echo on both logs.
+        info!(
+            request_law = recv_request_law,
+            rank_feedback = recv_rank_feedback,
+            gap_producer_armed = recv_nack_tx.is_some(),
+            "receiver-seat repair request ACTIVE (paper 16.83: the receiver \
+             REQUESTS repairs at lateness l >= l*_recv instead of the sender \
+             inferring them from inverted SACK ranges; the per-seq SACK->gap \
+             producer is suppressed by the collision seam while the request \
+             law is armed; sack_tx UNTOUCHED - ADR-0060 store release)"
+        );
+    }
     // SACK forwarding channel producer. Historical note: the original consumer
     // was the RWM_SACK_PRUNE experiment (feat/sack-flow-control, 2026-07-07),
     // refuted structurally UNSAFE — pruning `sent_store` on SACK destroys the
@@ -3930,6 +4011,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_deficit_tx,
         recv_nack_tx,
         recv_sack_tx,
+        // Paper 16.83 arms (A)/(B): the request producer and the two
+        // resolved arm predicates. `None`/`false` on every shipped path.
+        recv_request_tx,
+        recv_request_law,
+        recv_rank_feedback,
         reasm_bdp_on,
         ack_merge_recv,
         recv_diag_on,
@@ -4083,6 +4169,35 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
 // ---------------------------------------------------------------------------
 // WindowNack gap computation
 // ---------------------------------------------------------------------------
+
+/// **THE RECEIVER-SEAT REPAIR REQUEST, AS IT CROSSES THE TASK SEAM** (paper
+/// 16.83, wire v8). `(cause, spans)` where each span is
+/// `(start, count, deficit)`: *over `[start, start+count)` I need `deficit`
+/// more independent equations*.
+///
+/// `count = 1, deficit = 1` is EXACTLY today's per-seq copy request, so the
+/// shipped machine is this message's `m = 1` corner and not a different
+/// message. `cause` is the `[FCAUSE]` class vocabulary carried as a plain
+/// `u8` -- a LABEL for the counters, exactly as `FireCause` is on the gap
+/// channel; nothing in the serving loop branches on it.
+pub type RepairRequestBatch = (u8, Vec<(u64, u16, u32)>);
+
+/// **THE COLLISION SEAM'S OWN PREDICATE** (paper 16.83.4), lifted out of
+/// `run_impl` so it can be asserted rather than described.
+///
+/// The request law lives on the PLAIN RELIABLE WINDOW and nowhere else:
+/// generation coding has no per-seq layer to suppress and answers a
+/// different vocabulary already (`GenerationDeficit`), and block mode has no
+/// window at all. A `false` here means the gap producer keeps its shipped
+/// arming and no `RepairRequest` is ever constructed.
+pub fn request_law_armed(
+    window_mode: bool,
+    reliable: bool,
+    generation: bool,
+    gate: bool,
+) -> bool {
+    window_mode && reliable && !generation && gate
+}
 
 /// Compute gap ranges from a set of received sequences in a window.
 /// Returns Vec<(start, end)> of inclusive ranges of missing sequences.
@@ -6019,6 +6134,104 @@ pub enum FireCause {
     Other,
 }
 
+impl FireCause {
+    /// **THE WIRE FORM** -- the v8 `RepairRequest`'s `cause` byte. A plain
+    /// `u8` so a future cause never renumbers a wire variant, and a total
+    /// function in BOTH directions so an unknown byte from a future peer
+    /// reads as [`FireCause::Other`] (*a batch that reached the fire site
+    /// carrying no cause this binary knows*) rather than panicking or being
+    /// guessed at.
+    pub fn as_u8(self) -> u8 {
+        match self {
+            FireCause::Timer => 0,
+            FireCause::GapData => 1,
+            FireCause::GapRefresh => 2,
+            FireCause::Other => 3,
+        }
+    }
+
+    /// The inverse of [`Self::as_u8`], total: anything else is `Other`.
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => FireCause::Timer,
+            1 => FireCause::GapData,
+            2 => FireCause::GapRefresh,
+            _ => FireCause::Other,
+        }
+    }
+
+    /// The class NAME, for the `[REQS]` echo. Same vocabulary as
+    /// `[FCAUSE]`'s own columns, so a request's cause and a fire's cause are
+    /// read off one dictionary.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FireCause::Timer => "timer",
+            FireCause::GapData => "gap_data",
+            FireCause::GapRefresh => "gap_refresh",
+            FireCause::Other => "other",
+        }
+    }
+}
+
+/// **THE `[REQS]` LINE -- WHAT THE SENDER DID WITH THE RECEIVER'S REQUESTS**
+/// (paper 16.83 arms (A)/(B)). Cumulative; the LAST line of a log is the
+/// reading, the `[RACK]`/`[RFA]`/`[FCAUSE]` convention.
+///
+/// **TWO-SIDED.** `on=0` with every count at 0 is the CONTROL's reading and
+/// is emitted on every diagnosed run, so "the arm never reached the wire" is
+/// a reading rather than an inference from a missing line.
+///
+/// `WA1` is the pair `wa1_some`/`wa1_none`: 16.83.3's soundness precondition,
+/// COUNTED. `none` means `generate_repair_range` refused the span and the
+/// answer fell back to a per-seq copy -- which is the shipped machine with
+/// extra latency, and the refuter arm (B) is scored against.
+///
+/// Fractions render `-` on a zero denominator, never 0.
+#[allow(clippy::too_many_arguments)]
+pub fn reqs_report_line(
+    on: bool,
+    reports: u64,
+    spans: u64,
+    m_max: u64,
+    copy: u64,
+    coded: u64,
+    wa1_some: u64,
+    wa1_none: u64,
+    stale: u64,
+    budget_bound: u64,
+    open_wants: u64,
+    cause: FireCause,
+) -> String {
+    let served = copy + coded;
+    let wa1_n = wa1_some + wa1_none;
+    let frac = |n: u64, d: u64| {
+        if d == 0 {
+            "-".to_string()
+        } else {
+            format!("{:.4}", n as f64 / d as f64)
+        }
+    };
+    format!(
+        "[REQS] on={} reports={} spans={} m_max={} served={} copy={} coded={} \
+         wa1_some={} wa1_none={} wa1_none_frac={} stale={} budget_bound={} \
+         open_wants={} cause={}",
+        u8::from(on),
+        reports,
+        spans,
+        m_max,
+        served,
+        copy,
+        coded,
+        wa1_some,
+        wa1_none,
+        frac(wa1_none, wa1_n),
+        stale,
+        budget_bound,
+        open_wants,
+        cause.as_str(),
+    )
+}
+
 /// The `[FCAUSE]` line — the per-cause breakdown of every recovery fire the
 /// sender emitted. Cumulative counters; the LAST line of a log is the
 /// reading, the same convention `[RACK]` and `[RFA]` use.
@@ -7029,6 +7242,13 @@ async fn run_window_sender(
     // outstanding, decoupling the sender from the in-order cumulative frontier.
     // Only fed in plain-reliable mode; empty (never producing) otherwise.
     sack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
+    // Receiver-seat repair requests (paper 16.83 arms (A)/(B)): each
+    // element is `(cause, spans)` with `spans[i] = (start, count,
+    // deficit)`. Drives the span-serving loop that mirrors the
+    // generation-deficit recovery emission. NEVER PRODUCED with both arms
+    // absent -- `recv_request_tx` is `None` there -- so the select arm
+    // below is disarmed and this receiver is silent for the whole run.
+    request_rx: &mut tokio::sync::mpsc::Receiver<RepairRequestBatch>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
     // The contract's BASE tail-loss target (config.target_tail_loss), the
@@ -7178,6 +7398,77 @@ async fn run_window_sender(
     // `[CHI]` (paper §16.82): last emission of the
     // completion-exposure gauge, same cadence.
     let mut chi_last_us: u64 = 0;
+    // ── PAPER 16.83 ARMS (A)/(B): THE REQUEST-SERVING SEAT ───────────────
+    //
+    // The receiver-seat request law makes the RECEIVER the authority and the
+    // sender a SERVER of spans. The bookkeeping below is the
+    // generation-deficit machinery's, term for term, because it is the same
+    // mechanism in a second vocabulary:
+    //
+    //   * `req_want[a]`     -- equations still owed over the span anchored at
+    //                          `a`, with the span's own width `m`.
+    //   * `req_emitted[a]`  -- cumulative answers this sender has put on the
+    //                          wire for that span, ever.
+    //   * `req_at_report[a]`-- `req_emitted[a]` as of the LAST report, so the
+    //                          in-flight subtraction is "sent since the
+    //                          receiver last looked" and a sub-RTT report
+    //                          stream cannot re-send the same answers.
+    //
+    // **THE FIRST-REPORT SPECIAL CASE IS LOAD-BEARING AND IS COPIED
+    // DELIBERATELY** (see the deficit consumer's own note): with no baseline
+    // the in-flight count is 0, not `emitted`. Initialising the baseline to 0
+    // instead would treat every earlier proactive symbol as in flight, send
+    // nothing, and DEADLOCK the loop -- the measured first-report deadlock.
+    let mut req_want: BTreeMap<u64, (u16, u64)> = BTreeMap::new();
+    let mut req_emitted: std::collections::HashMap<u64, u64> =
+        std::collections::HashMap::new();
+    let mut req_at_report: std::collections::HashMap<u64, u64> =
+        std::collections::HashMap::new();
+    // `[REQS]` -- the SERVING gauge, cumulative, 1 s cadence, LAST LINE WINS
+    // (the `[RFA]`/`[SHEDH]` convention; a `Drop` never survives the
+    // harness's SIGKILL of a server).
+    //
+    // **WHY THE REQUEST FIRES ARE NOT COUNTED INTO `[FCAUSE]`.** `[FCAUSE]`
+    // classifies fires of the SACK->gap machinery, and the whole proof that
+    // the collision seam closed is `[FCAUSE] gap_data -> 0` on the treatment
+    // arm. Folding request fires into that line would erase exactly the
+    // reading the arm exists to produce. The cause tag the receiver stamped
+    // rides here instead, in `[FCAUSE]`'s own class vocabulary, so no
+    // information is lost and no existing counter changes meaning.
+    let mut reqs_last_us: u64 = 0;
+    // Reports consumed, spans in them, and the largest `m` ever asked for.
+    let mut reqs_reports: u64 = 0;
+    let mut reqs_spans: u64 = 0;
+    let mut reqs_m_max: u64 = 0;
+    // Answers that reached the wire, by kind: a per-seq COPY out of
+    // `sent_store` (the `m = 1` corner -- today's bytes exactly, which is what
+    // keeps `[RFA] dup_src` comparable to CTL) and a SPAN-CODED equation.
+    let mut reqs_copy: u64 = 0;
+    let mut reqs_coded: u64 = 0;
+    // **WA1 -- THE SOUNDNESS PRECONDITION, COUNTED AND NEVER ASSUMED**
+    // (16.83.3): `generate_repair_range` refuses unless the WHOLE span is
+    // still retained. `wa1_some` is an answer in the requested vocabulary;
+    // `wa1_none` is the refusal, which falls back to per-seq copies out of
+    // `sent_store`. A request law whose answers silently degrade to copies is
+    // the shipped machine with extra latency, so the split is a COUNT.
+    let mut reqs_wa1_some: u64 = 0;
+    let mut reqs_wa1_none: u64 = 0;
+    // A requested seq the store no longer holds: removal is by ack only, so
+    // the receiver has it and the request is stale. Skipped, and counted.
+    let mut reqs_stale: u64 = 0;
+    // Answers the per-iteration budget refused. A serving loop that is always
+    // budget-bound is not measuring the law it was built for.
+    let mut reqs_budget_bound: u64 = 0;
+    // The last cause tag the receiver stamped, in `[FCAUSE]`'s vocabulary.
+    let mut reqs_cause: FireCause = FireCause::Other;
+    // The arms, resolved ONCE from the same three predicates `run_impl` used
+    // to decide whether to give the receiver a producer at all -- so the
+    // producer and the consumer can never disagree about whether the arm is
+    // live. Arm (B) alone is served too: it is the VOCABULARY-only wiring
+    // test, and an unserved request is a deadlock, not a control.
+    let request_arm = reliable
+        && !generation
+        && (gates.recv_request_law || gates.rank_feedback);
     let mut gen_emitted: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     let mut gen_emitted_at_report: std::collections::HashMap<u64, u64> =
         std::collections::HashMap::new();
@@ -8876,6 +9167,34 @@ async fn run_window_sender(
                 eprintln!("{}", chi_report_line());
             }
         }
+        // `[REQS]` -- THE REQUEST-SERVING GAUGE (paper 16.83 arms (A)/(B)),
+        // same 1 s cadence, cumulative, LAST LINE WINS -- and on BOTH arms,
+        // because `[REQS] n=0 served=0` on the control is the two-sided half
+        // of the reachability claim: an arm that never reached the wire must
+        // be READ that way rather than inferred from a missing line.
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(reqs_last_us) > 1_000_000 {
+                reqs_last_us = now;
+                eprintln!(
+                    "{}",
+                    reqs_report_line(
+                        request_arm,
+                        reqs_reports,
+                        reqs_spans,
+                        reqs_m_max,
+                        reqs_copy,
+                        reqs_coded,
+                        reqs_wa1_some,
+                        reqs_wa1_none,
+                        reqs_stale,
+                        reqs_budget_bound,
+                        req_want.len() as u64,
+                        reqs_cause,
+                    )
+                );
+            }
+        }
         // GDIAG: did ANY coded symbol go on the wire this iteration?
         let mut gd_flow = false;
         if generation && st.encoder.window_size() > 0 {
@@ -9532,6 +9851,48 @@ async fn run_window_sender(
                 }
                 None
             }
+            // PAPER 16.83 ARMS (A)/(B) -- THE RECEIVER'S REQUEST, CONSUMED.
+            // Sits beside the generation-deficit arm above and is its exact
+            // parallel: one report REPLACES the outstanding wants (it is a
+            // STATE SNAPSHOT of the receiver's open holes, not a delta), the
+            // in-flight baseline is subtracted, and the serving loop drains
+            // what is left, paced by the SAME `cached_nack_budget` the gap
+            // loop is paced by.
+            //
+            // DISARMED ⇒ this arm never resolves: `recv_request_tx` is `None`,
+            // so nothing is ever sent on the channel, AND the `if` guard is
+            // false, so the future is not even polled.
+            //
+            // NOTE it claims no `wait_arm` bucket: `dg.wait_us` is `[u64; 8]`
+            // and its eight arms belong to the shipped `[DIAG]` line. The
+            // request arm's own wall-time accounting is `[REQS]`'s business,
+            // and inventing a ninth bucket here would re-shape a line this
+            // change does not own.
+            rq = request_rx.recv(), if request_arm => {
+                if let Some((cause, spans)) = rq {
+                    reqs_reports += 1;
+                    reqs_cause = FireCause::from_u8(cause);
+                    req_want.clear();
+                    for (start, count, deficit) in spans {
+                        reqs_spans += 1;
+                        let m = count.max(1);
+                        reqs_m_max = reqs_m_max.max(m as u64);
+                        let emitted = req_emitted.get(&start).copied().unwrap_or(0);
+                        // THE FIRST-REPORT SPECIAL CASE. See the state block:
+                        // without it the loop deadlocks.
+                        let in_flight = match req_at_report.get(&start) {
+                            Some(&b) => emitted.saturating_sub(b),
+                            None => 0,
+                        };
+                        let to_send = (deficit as u64).saturating_sub(in_flight);
+                        req_at_report.insert(start, emitted);
+                        if to_send > 0 {
+                            req_want.insert(start, (m, to_send));
+                        }
+                    }
+                }
+                None
+            }
             _ = async {
                 match tail_deadline {
                     Some(d) => tokio::time::sleep_until(d).await,
@@ -9825,6 +10186,181 @@ async fn run_window_sender(
                     None => cached_max_repairs,
                 }
             };
+        }
+
+        // ── PAPER 16.83 ARMS (A)/(B): SERVE THE RECEIVER'S REQUESTS ──────
+        //
+        // Mirrors the DEFICIT-DRIVEN RECOVERY EMISSION above, one vocabulary
+        // over: round-robin over the requested spans so none starves, paced
+        // by the SAME `cached_nack_budget` / `cached_max_repairs` the gap loop
+        // is paced by (so an arm's wire cost is comparable to the control's by
+        // construction, not by hope), and bounded by the receiver's own
+        // reported deficit minus what is already in flight.
+        //
+        // TWO ANSWERS, ONE EXPRESSION:
+        //   * `m = 1` -- the COPY, served from `sent_store` exactly as the gap
+        //     loop serves it, byte for byte. This is the shipped answer, and
+        //     16.83.3's own limit of the new message rather than a special
+        //     case beside it.
+        //   * `m > 1` -- ONE coded equation over `[a, a+m)` from
+        //     `generate_repair_range`, which REFUSES unless the whole range is
+        //     still retained. The refusal is COUNTED (`WA1`) and falls back to
+        //     per-seq copies out of `sent_store`, because an answer that
+        //     silently degrades to a copy is the shipped machine with extra
+        //     latency and the battery has to be able to read that.
+        //
+        // DISARMED ⇒ `req_want` is empty forever (nothing ever fills it) and
+        // this block is one `is_empty()` test per iteration.
+        if request_arm && !req_want.is_empty() {
+            let mut served: u64 = 0;
+            'serve: loop {
+                if served >= cached_max_repairs || cached_nack_budget == 0 {
+                    if !req_want.is_empty() {
+                        reqs_budget_bound += 1;
+                    }
+                    break;
+                }
+                let anchors: Vec<u64> = req_want.keys().copied().collect();
+                if anchors.is_empty() {
+                    break;
+                }
+                let mut progressed = false;
+                for a in anchors {
+                    if served >= cached_max_repairs || cached_nack_budget == 0 {
+                        reqs_budget_bound += 1;
+                        break 'serve;
+                    }
+                    let (m, want) = match req_want.get(&a) {
+                        Some(&v) => v,
+                        None => continue,
+                    };
+                    if want == 0 {
+                        req_want.remove(&a);
+                        continue;
+                    }
+                    // THE ANSWER. `m > 1` asks for an equation over the span;
+                    // `m = 1` asks for the seq itself. `None` from either is a
+                    // COUNTED refusal, never a silent skip.
+                    let coded = if m > 1 {
+                        let sym = st.encoder.generate_repair_range(a, m);
+                        if sym.is_some() {
+                            reqs_wa1_some += 1;
+                        } else {
+                            reqs_wa1_none += 1;
+                        }
+                        sym
+                    } else {
+                        None
+                    };
+                    // The seqs this answer is placed against: the whole span
+                    // for a coded equation, the anchor alone for a copy.
+                    let (sym, copy_seq) = match coded {
+                        Some(sym) => (Some(sym), None),
+                        None => {
+                            // The COPY -- and the FALLBACK when the span was
+                            // no longer retained. `a` is the receiver's own
+                            // first missing seq, so it is the copy that closes
+                            // the head of the span.
+                            match st.sent_store.get(&a) {
+                                Some(v) => (Some(v.clone()), Some(a)),
+                                // Not in the store ⇒ already acked (removal is
+                                // by ack ONLY): the receiver has it and the
+                                // request is stale. Drop the want and count it.
+                                None => {
+                                    reqs_stale += 1;
+                                    req_want.remove(&a);
+                                    continue;
+                                }
+                            }
+                        }
+                    };
+                    let sym = match sym {
+                        Some(sym) => sym,
+                        None => {
+                            req_want.remove(&a);
+                            continue;
+                        }
+                    };
+                    // PLACEMENT: the shipped reliable law, with the paths that
+                    // carried the covered source as the fate penalty -- the
+                    // gap loop's own `place_symbol(true, &[original])` for a
+                    // copy, and the span's own source paths for an equation.
+                    let covered: Vec<u32> = match copy_seq {
+                        Some(seq) => vec![
+                            st.source_path_map
+                                .get(&seq)
+                                .copied()
+                                .unwrap_or(st.last_source_path),
+                        ],
+                        None => (a..a.saturating_add(m as u64))
+                            .filter_map(|q| st.source_path_map.get(&q).copied())
+                            .collect(),
+                    };
+                    let path = {
+                        let sched = scheduler.lock();
+                        sched
+                            .place_symbol(true, &covered)
+                            .unwrap_or(st.last_source_path)
+                    };
+                    let now_r = now_us();
+                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                    let batch = SymbolBatch::new(vec![sym], now_r, batch_seq, path);
+                    if let Err(e) = transport.send_symbols(path, batch) {
+                        warn!(path, ?e, "failed to send requested repair");
+                    }
+                    // The three meters, at the handoff, exactly as every other
+                    // correction channel meters them (the accounting-ledger
+                    // finding: the gap loop's two BYPASS channels are the
+                    // exception, not the rule, and a NEW channel does not
+                    // inherit an exception).
+                    {
+                        let mut sched = scheduler.lock();
+                        if let Some(p) = sched.path_mut(path) {
+                            p.charge_in_flight(1);
+                            p.consume_pace_tokens(1);
+                        }
+                    }
+                    if let Some(ps) = stats.path(path) {
+                        ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
+                    }
+                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    if let Some(seq) = copy_seq {
+                        reqs_copy += 1;
+                        // The retransmit inherits the in-flight state and the
+                        // hold-down gauge's "a copy of this seq reached the
+                        // wire" stamp, both exactly as the gap loop sets them,
+                        // so no downstream gauge can tell the two producers
+                        // apart where it should not.
+                        st.nack_retx_at.insert(seq, (now_r, path));
+                        hold_echo.on_retx(seq, now_r, path);
+                        if let Some(feed) = copa_feed.as_ref().filter(|f| !f.n1_paused()) {
+                            feed.on_sent(seq, path);
+                            let mut sched = scheduler.lock();
+                            if let Some(p) = sched.path_mut(path) {
+                                p.on_src_sent(seq, false);
+                            }
+                        }
+                    } else {
+                        reqs_coded += 1;
+                    }
+                    recovery_coded_total += 1;
+                    dg.diag_retx += 1;
+                    nack_repairs_this_period += 1;
+                    cached_nack_budget = cached_nack_budget.saturating_sub(1);
+                    served += 1;
+                    progressed = true;
+                    *req_emitted.entry(a).or_insert(0) += 1;
+                    let nw = want - 1;
+                    if nw == 0 {
+                        req_want.remove(&a);
+                    } else {
+                        req_want.insert(a, (m, nw));
+                    }
+                }
+                if !progressed {
+                    break;
+                }
+            }
         }
 
         loop {
@@ -10553,6 +11089,23 @@ async fn run_window_sender(
                     .map(|w| w.clamp(16, pol.win_cap))
                     .unwrap_or(pol.win_cap / 2) as u64;
                 st.encoder.advance(ack.saturating_sub(keep_behind));
+            }
+
+            // PAPER 16.83 ARMS (A)/(B): the request bookkeeping's own prune,
+            // the exact parallel of the generation maps' `retain` above and
+            // for the same reason. A span anchor at or below the cumulative
+            // ack is DELIVERED -- the receiver will never ask about it again
+            // -- so its want, its emission count and its in-flight baseline
+            // are dead. Without this the three maps grow with the transfer
+            // rather than with the outstanding window, because a report's
+            // anchor is the receiver's FIRST MISSING SEQ and a long run
+            // produces a new one for every hole it ever had.
+            //
+            // Costs nothing on a disarmed run: all three are empty forever.
+            if !req_want.is_empty() || !req_emitted.is_empty() {
+                req_want.retain(|&a, _| a > ack);
+                req_emitted.retain(|&a, _| a > ack);
+                req_at_report.retain(|&a, _| a > ack);
             }
 
             // Reset budget period counters on significant window advancement
@@ -11355,6 +11908,92 @@ mod tests {
         assert!(g.t_us.is_empty(), "no path may ever carry a T on the control");
     }
 
+
+    // ── 16.83's ARMS — DISARMED IS INERT, AND THE SEAM IS ONE `&&` ────
+
+    /// **DISARMED, NOTHING IN THE REQUEST LAW EXISTS, AND THIS ASSERTS IT AT
+    /// THE SEAM ITSELF** — the twin of
+    /// [`disarmed_the_holddown_gate_is_inert_at_every_age`], and for the same
+    /// reason: an arm whose ABSENCE is only described is an arm nobody can
+    /// prove was absent.
+    ///
+    /// Three things are pinned, in the order they could break:
+    ///
+    ///   1. **THE SEAM.** With the gate absent `request_law_armed` is `false`
+    ///      at EVERY configuration, so `recv_nack_tx` keeps its shipped
+    ///      arming and the per-seq SACK->gap producer is untouched.
+    ///   2. **THE VOCABULARY.** With arm (B) absent `m = 1` at EVERY `pi0`
+    ///      and every resource bound — the COPY, so arm (A) alone cannot
+    ///      accidentally change the bytes as well as the timing.
+    ///   3. **THE ECHO IS TWO-SIDED.** `[REQS] on=0` renders every counter at
+    ///      zero and its fraction as `-`, never `0`, so "the arm never
+    ///      reached the wire" is a READING and not an inference from a
+    ///      missing line.
+    #[test]
+    fn disarmed_the_request_law_is_inert_at_every_configuration() {
+        // 1. THE SEAM. The gate is the LAST conjunct, so with it absent no
+        //    combination of the other three can arm anything.
+        for wm in [false, true] {
+            for rel in [false, true] {
+                for gen in [false, true] {
+                    assert!(
+                        !request_law_armed(wm, rel, gen, false),
+                        "an absent gate armed the seam at ({wm},{rel},{gen})"
+                    );
+                }
+            }
+        }
+        // And ARMED it is the plain reliable window and nothing else — the
+        // configuration scope, asserted rather than commented.
+        assert!(request_law_armed(true, true, false, true));
+        assert!(!request_law_armed(true, true, true, true), "generation has no per-seq layer");
+        assert!(!request_law_armed(true, false, false, true), "the EVICT seat is out of scope");
+        assert!(!request_law_armed(false, true, false, true), "block mode has no window");
+
+        // 2. THE VOCABULARY. `m = 1` at every input while (B) is absent.
+        for p in [None, Some(0.0), Some(0.006), Some(0.5), Some(0.96), Some(1.0)] {
+            for a in [0u64, 1, 2, 64, 100_000] {
+                assert_eq!(
+                    crate::net::late::request_m(p, false, a),
+                    1,
+                    "disarmed (B) must give the COPY at pi0={p:?} a_star={a}"
+                );
+            }
+        }
+        // ARMED, the same law reaches m = 1 BY ITSELF at the single-path
+        // inputs D0 measured (pi0 = 0.0077 / 0.0054), which is 16.83.3's
+        // whole point: the copy is the law's own limit, not a special case.
+        assert_eq!(crate::net::late::request_m(Some(0.0077), true, 4096), 1);
+        assert_eq!(crate::net::late::request_m(Some(0.0054), true, 4096), 1);
+        // ... and rises continuously with pi0 at the duals (0.9606 / 0.9233).
+        assert_eq!(crate::net::late::request_m(Some(0.9606), true, 4096), 18);
+        assert_eq!(crate::net::late::request_m(Some(0.9233), true, 4096), 9);
+        // The clamp is a RESOURCE BOUND and it binds visibly.
+        assert_eq!(crate::net::late::request_m(Some(0.9606), true, 4), 4);
+
+        // 3. THE TWO-SIDED ECHO.
+        let ctl = reqs_report_line(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, FireCause::Other);
+        assert!(ctl.starts_with("[REQS] on=0 "), "{ctl}");
+        assert!(ctl.contains("served=0 copy=0 coded=0"), "{ctl}");
+        assert!(
+            ctl.contains("wa1_none_frac=-"),
+            "an absent fraction is `-`, never 0: {ctl}"
+        );
+        assert!(ctl.contains("cause=other"), "{ctl}");
+        // ARMED and serving, the same line reads its counts and its WA1 split.
+        let arm = reqs_report_line(true, 9, 40, 18, 30, 7, 7, 3, 2, 1, 5, FireCause::GapData);
+        assert!(arm.starts_with("[REQS] on=1 reports=9 spans=40 m_max=18 "), "{arm}");
+        assert!(arm.contains("served=37 copy=30 coded=7"), "{arm}");
+        assert!(arm.contains("wa1_some=7 wa1_none=3 wa1_none_frac=0.3000"), "{arm}");
+        assert!(arm.contains("stale=2 budget_bound=1 open_wants=5 cause=gap_data"), "{arm}");
+
+        // THE WIRE FORM IS TOTAL IN BOTH DIRECTIONS, so an unknown cause byte
+        // from a future peer reads as `other` rather than panicking.
+        for c in [FireCause::Timer, FireCause::GapData, FireCause::GapRefresh, FireCause::Other] {
+            assert_eq!(FireCause::from_u8(c.as_u8()), c, "{c:?}");
+        }
+        assert_eq!(FireCause::from_u8(200), FireCause::Other);
+    }
     /// **ARMED, THE GATE SUPPRESSES EXACTLY THE HOLES YOUNGER THAN `T`, AND
     /// THE ACCOUNTING CLOSES.** `evals = sup + emit` at every path, always —
     /// without which `[HOLD] sup=` is a number nobody can place.

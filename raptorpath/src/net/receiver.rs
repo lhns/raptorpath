@@ -109,6 +109,18 @@ pub(crate) async fn run_receiver(
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
     recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    // **PAPER 16.83 ARMS (A)/(B).** `Some(..)` iff a request arm is live on a
+    // plain reliable window; the local sender's own consumer sits on the far
+    // end. `None` on every shipped path, where an arriving `RepairRequest` is
+    // counted and dropped exactly as it is in v8.
+    recv_request_tx: Option<tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
+    // Arm (A): the receiver REQUESTS at `l >= l*_recv`, and the per-seq
+    // SACK->gap producer is suppressed by the collision seam. Resolved in
+    // `run_impl` beside that seam so the two can never disagree.
+    recv_request_law: bool,
+    // Arm (B): the request carries the DERIVED `m` instead of `m = 1`.
+    // Composes with (A); alone it is the vocabulary-only wiring test.
+    recv_rank_feedback: bool,
     reasm_bdp_on: bool,
     ack_merge_recv: bool,
     recv_diag_on: bool,
@@ -297,7 +309,13 @@ pub(crate) async fn run_receiver(
     // tail_overcount) UNCONDITIONALLY: it exists today only inside
     // `RWM_FDIAG`'s block, so the rank picture 16.83's vocabulary is built on
     // has never been on an ordinary diagnosed run. Neither decides anything.
-    let mut recv_late = crate::net::late::LateGauge::default();
+    // THE CONTRACT'S OWN PRICE AT THIS SEAT (16.81's plumb, 16.83's use):
+    // `delta_price` is the ONE surface a hint names a delta on, and
+    // `RWM_DELTA` stands between the presets on it. It enters `[LATE]`
+    // through the request bar and nowhere else; `DELTA_AUTO` reproduces the
+    // pre-plumb reading exactly.
+    let recv_delta = crate::net::delta_price(recv_protocol_hint);
+    let mut recv_late = crate::net::late::LateGauge::new(recv_delta);
     let mut recv_rank = crate::net::late::RankGauge::default();
     // `[RANK]`: the highest seq seen at the PREVIOUS readout. The span above
     // it arrived within this interval and is legitimately still in flight
@@ -312,6 +330,16 @@ pub(crate) async fn run_receiver(
     // lateness, decide when a hole could be reported at all? The
     // `sampler_bind` fraction.
     let mut late_sampler_bound = false;
+    // ── `[REQ]` (paper 16.83 arms (A)/(B)): WHAT THIS RECEIVER ASKED FOR ──
+    // Reports built and put on the wire, spans in them, the widest `m` and
+    // the acting threshold at the last build. Cumulative, printed on the
+    // `[LATE]` cadence, LAST LINE WINS -- and on BOTH arms, so `on=0 sent=0`
+    // is the control's own reading rather than a missing line.
+    let mut req_sent: u64 = 0;
+    let mut req_span_n: u64 = 0;
+    let mut req_m_max: u64 = 0;
+    let mut req_lstar_us: u64 = 0;
+    let mut req_holes_n: u64 = 0;
     // `[RFA] late_after_aban`'s exact denominator: the seqs the in-order
     // frontier moved PAST WITHOUT DELIVERING — read off `[SUCC]`'s own
     // abandonment sweep, which is the one place that set exists. A later
@@ -784,6 +812,110 @@ pub(crate) async fn run_receiver(
         }};
     }
 
+
+    // ── PAPER 16.83 ARMS (A)/(B): THE RECEIVER-SEAT REPAIR REQUEST ───────
+    //
+    // `REQUEST <=> l >= l*_recv`. `l*_recv` is `[LATE]`'s own threshold --
+    // the ACTING name and the HYPOTHETICAL name are one function, so the
+    // number this arm requests at and the number the gauge prints can never
+    // be two laws -- and the hole set is `[SUCC]`'s own open map, which is
+    // the only place the receiver's holes and their exposure instants exist.
+    //
+    // **AN UNESTIMABLE `l*` ACTS AS 0, AND `[LATE]` STILL PRINTS `-`.** The
+    // two states stay distinguishable on the line; the DECISION takes the
+    // conservative limit, which is 16.83.1's own bias direction: with no
+    // evidence at all, request immediately -- the machine that ships. The
+    // alternative (request nothing until the first hole closes) would make
+    // the arm's bootstrap depend on the very backstop it is measuring.
+    //
+    // **ONE PATH, NOT A BROADCAST.** A request is a STATE SNAPSHOT of the
+    // receiver's open holes and is re-built on every report; broadcasting it
+    // would hand the sender N identical snapshots whose in-flight baselines
+    // have not moved between them, and it would serve each one. A dropped
+    // datagram costs one cadence, which is the same contract the SACK gap
+    // report already runs under.
+    //
+    // `$dec` is the window decoder (for `frontier_probe`'s rank deficit),
+    // `$pid` the path to send on, `$cause` the `[FCAUSE]` class of the arm
+    // that built it -- the DATA arm or the timer-driven REFRESH arm. The tag
+    // is carried, not acted on.
+    macro_rules! send_repair_request {
+        ($dec:expr, $pid:expr, $cause:expr) => {{
+            // THE ARM, read off the two resolved predicates rather than off
+            // `recv_request_tx`: that channel is the LOCAL SENDER's seat (it
+            // rides in `ControlCtx` so an INBOUND request reaches this
+            // process's own window sender), and the request this macro builds
+            // goes on the WIRE to the peer. The two are the same predicate by
+            // construction; naming the predicate says which one is meant.
+            if recv_request_law || recv_rank_feedback {
+                let (lstar_opt, _knee_bound) = recv_late.request_lateness();
+                let lstar = lstar_opt.unwrap_or(0);
+                req_lstar_us = lstar;
+                let now_rq = Instant::now();
+                let holes = recv_succ.holes_at_least(
+                    now_rq,
+                    lstar,
+                    crate::net::MAX_NACK_GAPS,
+                );
+                req_holes_n = holes.len() as u64;
+                if !holes.is_empty() {
+                    // `A*` AT THE RECEIVER -- A DECLARED RESOURCE BOUND, and
+                    // the honest one. The SENDER's retained trailing span is
+                    // not observable from here, so `m` is bounded by the two
+                    // quantities that ARE: the receiver's own outstanding
+                    // span (asking about seqs it has not seen is meaningless)
+                    // and the RETAINED WINDOW both ends share
+                    // (`generate_repair_range` refuses beyond what the
+                    // encoder holds, so a wider ask is a guaranteed refusal).
+                    // The refusal is still COUNTED (`[REQS] wa1_none`) and
+                    // never predicted away -- that is `WA1`'s whole job.
+                    let a_star = highest_seen_seq
+                        .saturating_sub(highest_delivered_seq)
+                        .min(recv_win_cap);
+                    let m = crate::net::late::request_m(
+                        recv_late.pi0(),
+                        recv_rank_feedback,
+                        a_star,
+                    );
+                    let mut spans: Vec<(u64, u16, u32)> = Vec::new();
+                    if m <= 1 {
+                        // THE COPY -- `(s, 1, 1)` is 'resend seq s' exactly,
+                        // so arm (A) puts today's bytes on the wire and only
+                        // the TIMING has changed.
+                        for &h in &holes {
+                            spans.push((h, 1, 1));
+                        }
+                    } else {
+                        // THE SPAN. `k = holes - pivots` over `[a, a+m)` from
+                        // `frontier_probe` -- the quantity that has existed
+                        // since the decoder was written and that nothing has
+                        // ever read. Spans do not overlap: a hole already
+                        // covered by the previous span is already asked for.
+                        let mut cursor = 0u64;
+                        for &h in &holes {
+                            if h < cursor {
+                                continue;
+                            }
+                            let end = h.saturating_add(m as u64);
+                            let (hn, pv) = $dec.frontier_probe(h, end.saturating_sub(1));
+                            let k = hn.saturating_sub(pv).max(1).min(u32::MAX as u64) as u32;
+                            spans.push((h, m, k));
+                            cursor = end;
+                        }
+                    }
+                    req_m_max = req_m_max.max(m as u64);
+                    req_span_n += spans.len() as u64;
+                    let msg = ControlMessage::RepairRequest {
+                        spans,
+                        cause: $cause.as_u8(),
+                    };
+                    if recv_transport.send_control_datagram($pid, msg).is_ok() {
+                        req_sent += 1;
+                    }
+                }
+            }
+        }};
+    }
     // RWM_RDIAG state (see rdiag_probe above): idle time awaiting the
     // select, message count, queue-depth samples over each ~500 ms window.
     let rdiag_on = recv_gates.rdiag;
@@ -925,7 +1057,36 @@ pub(crate) async fn run_receiver(
                             );
                         }
                     }
-                    Some(last_hole_nack_at + refresh)
+                    // ── PAPER 16.83 ARM (A): THE DEADLINE TERM ─────────
+                    //
+                    //     deadline = min( refresh ,  earliest A_hat + l* )
+                    //
+                    // The refresh cadence is clocked by the LAST REPORT, so a
+                    // hole that gets no further arrivals -- exactly the case
+                    // the request law exists for, since an arrival is what
+                    // exposes a hole and nothing says another is coming -- has
+                    // to wait a whole refresh before it can be asked for.
+                    // `earliest A_hat + l*` is the instant the OLDEST open
+                    // hole becomes requestable, and taking the `min` is what
+                    // makes `l >= l*` the binding condition rather than an
+                    // upper bound on it.
+                    //
+                    // ABSENT ⇒ this reduces to `last_hole_nack_at + refresh`,
+                    // the shipped expression, with no allocation and no clock
+                    // read: the whole term is behind the arm's own `if`.
+                    let mut hole_deadline = last_hole_nack_at + refresh;
+                    if recv_request_law {
+                        if let Some(a_hat) = recv_succ.oldest_open_at() {
+                            let due = a_hat
+                                + Duration::from_micros(
+                                    recv_late.request_lateness().0.unwrap_or(0),
+                                );
+                            if due < hole_deadline {
+                                hole_deadline = due;
+                            }
+                        }
+                    }
+                    Some(hole_deadline)
                 } else {
                     // δ-honest shed (fix C): under the unified realtime
                     // machine the EVICT hold is the δ dial b·SRTT while
@@ -1103,6 +1264,22 @@ pub(crate) async fn run_receiver(
                     };
                     for pid in recv_scheduler.lock().live_paths() {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                    }
+                    // PAPER 16.83 ARMS (A)/(B): the TIMER arm's request. This
+                    // is the arm the deadline term above pulls forward to
+                    // `earliest A_hat + l*`, and it is the ONLY producer for a
+                    // hole that gets no further arrivals -- which is the case
+                    // the whole law exists for. Cause tag: the receiver's
+                    // timer-driven refresh, in `[FCAUSE]`'s own vocabulary.
+                    if recv_request_law || recv_rank_feedback {
+                        let pid_rq = recv_scheduler.lock().live_paths().first().copied();
+                        if let (Some(pid), Some(ref dec)) = (pid_rq, window_decoder.as_ref()) {
+                            send_repair_request!(
+                                dec,
+                                pid,
+                                crate::net::FireCause::GapRefresh
+                            );
+                        }
                     }
                     continue;
                 }
@@ -1995,6 +2172,21 @@ pub(crate) async fn run_receiver(
                             eprintln!("{}", recv_late.line(late_sampler_bound));
                             late_sampler_bound = false;
                         }
+                        // ── `[REQ]` READOUT (16.83 arms (A)/(B)) ──────
+                        // What this receiver ASKED FOR, beside the
+                        // threshold it asked at. Two-sided: `on=0` with
+                        // every count 0 is the control's own reading.
+                        eprintln!(
+                            "[REQ] on={} rank={} sent={} spans={} m_max={} \
+                             lstar_us={} holes={}",
+                            u8::from(recv_request_law),
+                            u8::from(recv_rank_feedback),
+                            req_sent,
+                            req_span_n,
+                            req_m_max,
+                            req_lstar_us,
+                            req_holes_n,
+                        );
                         // ── `[RANK]` READOUT ──────────────────────────
                         // `frontier_probe` re-read UNCONDITIONALLY (it is
                         // otherwise reachable only under `RWM_FDIAG`), plus
@@ -2123,6 +2315,20 @@ pub(crate) async fn run_receiver(
                         };
                         if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                             debug!(?e, path_id, "failed to send WindowAck");
+                        }
+                        // PAPER 16.83 ARMS (A)/(B): the DATA arm's request,
+                        // on exactly the cadence the gap report it replaces
+                        // runs on. `advertise` is the shipped predicate
+                        // verbatim, so `GAP_ACK_MIN_INTERVAL` still rate-limits
+                        // this -- 16.83.10 leaves that 2 ms literal STANDING,
+                        // uncorrected, and `[LATE] sampler_bind` is what says
+                        // whether it, rather than `l*`, set the time.
+                        if advertise {
+                            send_repair_request!(
+                                win_dec,
+                                path_id,
+                                crate::net::FireCause::GapData
+                            );
                         }
                     }
 
@@ -2373,6 +2579,7 @@ pub(crate) async fn run_receiver(
                         peer_window_ack: if recv_window_mode { Some(&recv_window_ack) } else { None },
                         deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         sack_tx: recv_sack_tx.as_ref(),
+                        request_tx: recv_request_tx.as_ref(),
                         copa_feed: recv_copa_feed.as_ref(),
                         mstar_anchor: recv_gates.mstar_anchor,
                     },

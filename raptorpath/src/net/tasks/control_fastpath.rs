@@ -66,6 +66,7 @@ pub(crate) async fn run_control_fastpath(
                         batch_counter: None,
                         peer_window_ack: None,
                         deficit_tx: None,
+                        request_tx: None,
                         sack_tx: None,
                         copa_feed: None,
                         mstar_anchor: ctrl_mstar_anchor,
