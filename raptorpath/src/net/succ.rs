@@ -254,6 +254,32 @@ impl HoleOutcome {
     }
 }
 
+/// **ONE HOLE'S TERMINAL RECORD**, handed back by
+/// [`SuccGauge::resolve`] and [`SuccGauge::abandon_below`].
+///
+/// `us` is the lower end of the lateness bracket (from the arrival that
+/// EXPOSED the hole) and `hi_us` the upper end (from the previous advance of
+/// the high-water mark, the earliest instant the seq could have been due).
+/// `us <= hi_us` always. Both are printed by `[LATE]`; `[LAT]` uses `us` and
+/// the class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HoleRecord {
+    /// The sequence number this record is about. `[RFA] late_after_aban`
+    /// needs it: a copy that arrives after the frontier gave up is only
+    /// identifiable against the set of seqs the frontier actually SKIPPED.
+    pub seq: u64,
+    /// Which terminal event closed the hole.
+    pub outcome: HoleOutcome,
+    /// The closing arrival landed on a DIFFERENT path from the exposer.
+    pub cross: bool,
+    /// Time from EXPOSURE to close, µs — the bracket's lower end, and the
+    /// number `[SUCC]`'s own histograms carry.
+    pub us: u64,
+    /// Time from the previous HIGH-WATER ADVANCE to close, µs — the bracket's
+    /// upper end.
+    pub hi_us: u64,
+}
+
 /// A bounded log-bucket histogram over µs, plus exact `n`, `max` and `sum`.
 #[derive(Clone)]
 pub struct Hist {
@@ -332,10 +358,22 @@ pub struct SuccGauge {
     /// CROSS-PATH skew event, which at a single-path cell is STRUCTURALLY
     /// IMPOSSIBLE — that is the control reading. Observation only; nothing in
     /// the engine branches on it.
-    open: BTreeMap<u64, (Instant, u32)>,
+    open: BTreeMap<u64, (Instant, u32, Instant)>,
     /// The gauge's own high-water seq mark. `None` until the first arrival —
     /// the flow's first symbol exposes no hole, it establishes the baseline.
     hi: Option<u64>,
+    /// **THE INSTANT `hi` LAST ADVANCED** (`[LATE]`, `net/late.rs`).
+    ///
+    /// A hole's true lateness is not observable: the receiver learns a seq is
+    /// missing only when a HIGHER one arrives, and the seq was actually due
+    /// some time between the previous advance of this mark and that arrival.
+    /// So every hole carries a BRACKET — the third element of the `open`
+    /// tuple is this instant, captured at the moment the hole was exposed —
+    /// and `[LATE]` prints BOTH ends. A law positioned on a bracketed
+    /// quantity must say which end it used.
+    ///
+    /// Observation only; `[SUCC]` itself still times from the exposure.
+    hi_at: Instant,
     /// Per-outcome distributions, indexed by `HoleOutcome`.
     orig: Hist,
     rep: Hist,
@@ -370,6 +408,7 @@ impl SuccGauge {
         Self {
             open: BTreeMap::new(),
             hi: None,
+            hi_at: Instant::now(),
             orig: Hist::default(),
             rep: Hist::default(),
             aban: Hist::default(),
@@ -400,7 +439,7 @@ impl SuccGauge {
     /// `path_id` is the path the CLOSING arrival landed on — compared against
     /// the path that EXPOSED the hole (A0.3). Classification only: the
     /// comparison feeds two histograms and no decision.
-    /// **RETURNS THE RESOLUTION RECORD** `(outcome, cross-path, hole age us)`
+    /// **RETURNS THE RESOLUTION RECORD** ([`HoleRecord`])
     /// -- `None` when the seq was not an open, tracked hole, which is the
     /// ordinary in-order case. NON-BREAKING: every existing caller ignores it.
     ///
@@ -415,8 +454,8 @@ impl SuccGauge {
         by_repair: bool,
         now: Instant,
         path_id: u32,
-    ) -> Option<(HoleOutcome, bool, u64)> {
-        let (t0, exposer) = self.open.remove(&seq)?;
+    ) -> Option<HoleRecord> {
+        let (t0, exposer, hi_at) = self.open.remove(&seq)?;
         let us = now.saturating_duration_since(t0).as_micros() as u64;
         let outcome =
             if by_repair { HoleOutcome::Repair } else { HoleOutcome::Original };
@@ -427,7 +466,13 @@ impl SuccGauge {
             self.sp.add(us);
         }
         self.record(outcome, us);
-        Some((outcome, cross, us))
+        Some(HoleRecord {
+            seq,
+            outcome,
+            cross,
+            us,
+            hi_us: now.saturating_duration_since(hi_at).as_micros() as u64,
+        })
     }
 
     /// **DETECTION.** One seq has arrived. Every seq strictly between the
@@ -440,13 +485,19 @@ impl SuccGauge {
             // nothing: there is no "outstanding hole" below a mark that does
             // not exist yet.
             self.hi = Some(seq);
+            self.hi_at = now;
             return;
         };
         if seq <= hi {
             return;
         }
         let span = seq - hi - 1;
+        // `[LATE]`: the PREVIOUS advance is the earliest instant the holes
+        // this arrival exposes could have been due, so it is stamped on each
+        // of them BEFORE the mark moves.
+        let hi_prev = self.hi_at;
         self.hi = Some(seq);
+        self.hi_at = now;
         if span == 0 {
             return;
         }
@@ -461,26 +512,44 @@ impl SuccGauge {
                 self.over = self.over.saturating_add(seq - s);
                 return;
             }
-            self.open.insert(s, (now, path_id));
+            self.open.insert(s, (now, path_id, hi_prev));
         }
     }
 
     /// **ABANDONMENT.** The in-order delivery frontier has advanced to
     /// `frontier` (the next seq that will be delivered). Every open hole
     /// strictly below it was passed over undelivered — given up.
-    pub fn abandon_below(&mut self, frontier: u64, now: Instant) {
+    ///
+    /// **RETURNS the abandoned holes' records** so `[LATE]` sees the third
+    /// outcome class too. Empty — and allocating nothing — in the overwhelming
+    /// common case where the frontier passed no open hole, which is EVERY
+    /// advance under the reliable window.
+    pub fn abandon_below(&mut self, frontier: u64, now: Instant) -> Vec<HoleRecord> {
         if self.open.is_empty() {
-            return;
+            return Vec::new();
         }
         // `split_off` leaves the below-frontier prefix behind and returns the
         // rest, so the sweep costs O(k log n) in the number ABANDONED rather
         // than O(n) in the number open.
         let keep = self.open.split_off(&frontier);
         let gone = std::mem::replace(&mut self.open, keep);
-        for (_, (t0, _)) in gone {
+        let mut out = Vec::with_capacity(gone.len());
+        for (seq, (t0, exposer, hi_at)) in gone {
             let us = now.saturating_duration_since(t0).as_micros() as u64;
             self.record(HoleOutcome::Abandoned, us);
+            out.push(HoleRecord {
+                seq,
+                outcome: HoleOutcome::Abandoned,
+                // An abandoned hole was closed by no arrival at all, so it has
+                // no closing path: it is reported SAME-path, the conservative
+                // class, which can only make the cross-path share read LOW.
+                cross: false,
+                us,
+                hi_us: now.saturating_duration_since(hi_at).as_micros() as u64,
+            });
+            let _ = exposer;
         }
+        out
     }
 
     fn record(&mut self, outcome: HoleOutcome, us: u64) {

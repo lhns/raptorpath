@@ -20,6 +20,7 @@ pub mod eta;
 pub mod framing;
 pub mod interleave;
 pub mod lat;
+pub mod late;
 pub mod receiver;
 pub mod reorder;
 pub mod rttdump;
@@ -5619,6 +5620,7 @@ pub fn classify_recv_repair(seen_as_source: bool, recovered: bool, overdue: bool
 /// `fa=`. Cumulative counters: the LAST line of a log is the reading, the
 /// same convention `[WIDLE]` and `[FDIAG]` use.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn rfa_report_line(
     fill_coded: u64,
     fill_src: u64,
@@ -5627,6 +5629,8 @@ pub fn rfa_report_line(
     src_n: u64,
     rep_n: u64,
     gen: bool,
+    rep_redundant: u64,
+    late_after_aban: u64,
 ) -> String {
     let fires = fill_coded + fill_src + dup_src + preempt_src;
     let falses = dup_src + preempt_src;
@@ -5634,7 +5638,7 @@ pub fn rfa_report_line(
     format!(
         "[RFA] gen={} fires={} false={} false_frac={:.4} fill_coded={} \
          fill_src={} dup_src={} preempt_src={} src_n={} rep_n={} \
-         nu_recv={:.5} fa_class={:.4}",
+         nu_recv={:.5} fa_class={:.4} rep_redundant={} late_after_aban={}",
         gen as u8,
         fires,
         falses,
@@ -5647,6 +5651,8 @@ pub fn rfa_report_line(
         rep_n,
         frac(fires, src_n),
         RACK_SPURIOUS_BUDGET,
+        rep_redundant,
+        late_after_aban,
     )
 }
 
@@ -5831,6 +5837,22 @@ pub(crate) struct RackClockGauge {
     /// Is generation coding on at this receiver? Echoed as `[RFA] gen=` so
     /// the line says which machine it is a measurement of.
     recv_gen: bool,
+    /// **`rep_redundant = repairs_fed - repairs_useful`** -- THE FALSE
+    /// MEASURAND UNDER CODED ANSWERS (paper 16.83). `dup_src` / `preempt_src`
+    /// count a wasted SOURCE copy; under a coded answer "the original arrived
+    /// anyway" is inexpressible, and the waste instead shows up as an
+    /// equation that added no rank. Mirrored from the decoder's own counters
+    /// at the readout, so this gauge holds no second copy of them.
+    rep_redundant: u64,
+    /// **`late_after_aban`** -- a SOURCE arrival for a seq strictly below the
+    /// in-order frontier: a copy that landed after the frontier had already
+    /// moved past it. STRUCTURALLY ZERO under the reliable window (the buffer
+    /// never delivers past a hole), so a nonzero reading there is a finding;
+    /// under the EVICT (rho < 1) seat it is the repair waste that seat has
+    /// never been scored on, and the counter `tools/l1/tail_matrix.sh`'s
+    /// scrape reads. **The name is part of the `[RFA]` line's contract** --
+    /// the Track B scrape greps for it.
+    late_after_aban: u64,
     /// ── THE FIRE-CAUSE CLASSES (`[FCAUSE]`) ──────────────────────────
     /// One counter per [`FireCause`], bumped at the EMISSION of every
     /// recovery fire — after every suppression `continue`, so their sum is
@@ -5916,6 +5938,18 @@ impl RackClockGauge {
         self.record_fire(false);
     }
 
+    /// Mirror the decoder's `repairs_fed - repairs_useful` onto the gauge at
+    /// the readout. Observation only.
+    pub(crate) fn set_rep_redundant(&mut self, n: u64) {
+        self.rep_redundant = n;
+    }
+
+    /// Record ONE source arrival below the in-order frontier -- a copy that
+    /// arrived after the give-up. Observation only.
+    pub(crate) fn record_late_after_aban(&mut self) {
+        self.late_after_aban += 1;
+    }
+
     /// Echo which machine this receiver is: generation coding on or off.
     pub(crate) fn set_recv_generation(&mut self, gen: bool) {
         self.recv_gen = gen;
@@ -5980,6 +6014,8 @@ impl RackClockGauge {
             self.src_n,
             self.rep_n,
             self.recv_gen,
+            self.rep_redundant,
+            self.late_after_aban,
         )
     }
 

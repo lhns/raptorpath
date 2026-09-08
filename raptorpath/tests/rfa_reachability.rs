@@ -133,21 +133,26 @@ fn the_event_class_is_exactly_what_the_alpha_sweep_needs() {
 
 #[test]
 fn the_rfa_line_format_is_pinned() {
+    // v8 ADDITIVE: `rep_redundant` (the false measurand under coded answers)
+    // and `late_after_aban` (a copy that arrived after the give-up -- the
+    // EVICT-seat counter `tools/l1/tail_matrix.sh` greps for BY NAME) are
+    // APPENDED to the END of the line, so every field a parser already reads
+    // keeps its position and its meaning.
     // fill_coded=9 fill_src=3 dup_src=4 preempt_src=1 over src_n=1000:
     //   fires = 17, false = 5, false_frac = 5/17, nu_recv = 17/1000.
     assert_eq!(
-        rfa_report_line(9, 3, 4, 1, 1000, 200, false),
+        rfa_report_line(9, 3, 4, 1, 1000, 200, false, 41, 7),
         "[RFA] gen=0 fires=17 false=5 false_frac=0.2941 fill_coded=9 \
          fill_src=3 dup_src=4 preempt_src=1 src_n=1000 rep_n=200 \
-         nu_recv=0.01700 fa_class=0.0625"
+         nu_recv=0.01700 fa_class=0.0625 rep_redundant=41 late_after_aban=7"
     );
     // THE GENERATION ROW. `src_n = 0` is structural there, so every ratio
     // formed on it must read 0 rather than divide — and `gen=1` says why.
     assert_eq!(
-        rfa_report_line(0, 0, 0, 0, 0, 9730, true),
+        rfa_report_line(0, 0, 0, 0, 0, 9730, true, 0, 0),
         "[RFA] gen=1 fires=0 false=0 false_frac=0.0000 fill_coded=0 \
          fill_src=0 dup_src=0 preempt_src=0 src_n=0 rep_n=9730 \
-         nu_recv=0.00000 fa_class=0.0625"
+         nu_recv=0.00000 fa_class=0.0625 rep_redundant=0 late_after_aban=0"
     );
 }
 

@@ -278,6 +278,38 @@ pub(crate) async fn run_receiver(
     // resolution record of the hole that released it, and the repair wait
     // `P`. Always fed; read-only; nothing branches on it.
     let mut recv_lat = crate::net::lat::LatGauge::default();
+    // ── `[LATE]` / `[RANK]` (`net/late.rs`): THE RECEIVER'S OWN SEAT ────
+    // `[LATE]` brackets every hole's lateness, classes it, and computes the
+    // 16.83 request law's HYPOTHETICAL threshold `l*_recv` read-only from the
+    // receiver's own heal density -- with both its clamps' bind fractions.
+    // `[RANK]` re-reads `frontier_probe` as (holes, pivots, deficit,
+    // tail_overcount) UNCONDITIONALLY: it exists today only inside
+    // `RWM_FDIAG`'s block, so the rank picture 16.83's vocabulary is built on
+    // has never been on an ordinary diagnosed run. Neither decides anything.
+    let mut recv_late = crate::net::late::LateGauge::default();
+    let mut recv_rank = crate::net::late::RankGauge::default();
+    // `[RANK]`: the highest seq seen at the PREVIOUS readout. The span above
+    // it arrived within this interval and is legitimately still in flight
+    // rather than missing -- the honest `tail_overcount` correction, REPORTED
+    // and never silently subtracted.
+    let mut rank_prev_seen: u64 = 0;
+    // `[LATE]`: the observed knee `H`. An arrival gap taken WHILE THE FRONTIER
+    // IS FROZEN is the store-cap headroom running out -- the `[WIDLE]`
+    // measurand, read here ungated so `H` exists on every diagnosed run.
+    let mut late_last_arrival_us: u64 = 0;
+    // `[LATE]`: did the 2 ms `GAP_ACK_MIN_INTERVAL` floor, rather than the
+    // lateness, decide when a hole could be reported at all? The
+    // `sampler_bind` fraction.
+    let mut late_sampler_bound = false;
+    // `[RFA] late_after_aban`'s exact denominator: the seqs the in-order
+    // frontier moved PAST WITHOUT DELIVERING — read off `[SUCC]`'s own
+    // abandonment sweep, which is the one place that set exists. A later
+    // source copy for one of these is the EVICT seat's repair waste; a copy
+    // for a seq that WAS delivered is an ordinary duplicate and is NOT this.
+    // Bounded (a declared resource bound, oldest-first) so a run that
+    // abandons forever cannot grow it without limit.
+    const ABANDONED_TRACK_MAX: usize = 65_536;
+    let mut abandoned_seqs: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     let mut recv_succ = crate::net::succ::SuccGauge::new(
         recv_window_generation,
         recv_gates.succ_dump,
@@ -1104,7 +1136,17 @@ pub(crate) async fn run_receiver(
                     // frontier can jump a hole at, and it is swept here rather
                     // than at the next arrival so an abandoned hole's age is
                     // stamped when it was abandoned. Read-only.
-                    recv_succ.abandon_below(reorder.next_deliver_seq(), Instant::now());
+                    for rec in
+                        recv_succ.abandon_below(reorder.next_deliver_seq(), Instant::now())
+                    {
+                        recv_late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
+                        abandoned_seqs.insert(rec.seq);
+                    }
+                    while abandoned_seqs.len() > ABANDONED_TRACK_MAX {
+                        if let Some(&oldest) = abandoned_seqs.iter().next() {
+                            abandoned_seqs.remove(&oldest);
+                        }
+                    }
                     for (dseq, ddata, _) in expired {
                         debug!(seq = dseq, "window hold expired — force-delivering");
                         for pkt_data in extract_window_packets(&ddata, window_packed) {
@@ -1307,6 +1349,20 @@ pub(crate) async fn run_receiver(
                     for sym in &lat_arrivals {
                         recv_lat.note_arrival(*sym, path_id, batch_send_ts, arrival_us);
                     }
+                    // `[LATE]`'s knee: the gap since the previous arrival,
+                    // counted ONLY while the in-order frontier is behind the
+                    // highest seq seen. A gap with the frontier caught up is
+                    // the application idling; a gap with the frontier frozen
+                    // is the store running out of headroom, which is what `H`
+                    // is. Ungated -- the `[WIDLE]` machinery's own 3 ms floor,
+                    // reused rather than re-derived.
+                    if late_last_arrival_us > 0 && highest_seen_seq > highest_delivered_seq {
+                        let gap = arrival_us.saturating_sub(late_last_arrival_us);
+                        if gap >= WIDLE_GAP_MIN_US {
+                            recv_late.note_knee(gap);
+                        }
+                    }
+                    late_last_arrival_us = arrival_us;
                 }
 
                 // Track batch sequences for loss detection (ADR-0003)
@@ -1450,6 +1506,21 @@ pub(crate) async fn run_receiver(
                                     path_id,
                                 ) {
                                     lat_release = Some(rec);
+                                    recv_late.note_hole(
+                                        rec.outcome,
+                                        rec.cross,
+                                        rec.us,
+                                        rec.hi_us,
+                                    );
+                                    // `d` -- the `[FDIAG]` SOURCE class: a
+                                    // hole closed by its OWN original is the
+                                    // ARQ/late-reorder resolution whose mean
+                                    // time the knee cap subtracts.
+                                    if rec.outcome
+                                        == crate::net::succ::HoleOutcome::Original
+                                    {
+                                        recv_late.note_source_resolution(rec.us);
+                                    }
                                 }
                             }
                             for (seq, _) in &recovered {
@@ -1541,6 +1612,23 @@ pub(crate) async fn run_receiver(
                             // ----- in-order delivery (default: TCP-in-
                             // tunnel and Realtime need the frontier) -----
                             let deliverable = if let Some(ref mut reorder) = reorder_buf {
+                                // `[RFA] late_after_aban`: this seq's copy
+                                // arrived for a seq the frontier had already
+                                // moved past WITHOUT DELIVERING -- the EVICT
+                                // seat's repair waste, the counter Track B's
+                                // `tail_matrix.sh` scrape reads BY NAME.
+                                //
+                                // The `abandoned_seqs` test is what makes it
+                                // that and not something else: a copy for a
+                                // seq that WAS delivered is an ordinary
+                                // duplicate (already `[RFA] dup_src`), and
+                                // conflating the two would report waste on
+                                // the reliable window, where the reorder
+                                // buffer never delivers past a hole and the
+                                // count is STRUCTURALLY zero.
+                                if abandoned_seqs.remove(&seq) {
+                                    recv_rack_echo.record_late_after_aban();
+                                }
                                 reorder.push(seq, sym_data)
                             } else {
                                 // Never buffered: the delivery instant is
@@ -1602,10 +1690,23 @@ pub(crate) async fn run_receiver(
                             // CONFIGURATION fact, and a nonzero reading is a
                             // finding about the engine. Read-only.
                             if let Some(ref reorder) = reorder_buf {
-                                recv_succ.abandon_below(
+                                for rec in recv_succ.abandon_below(
                                     reorder.next_deliver_seq(),
                                     Instant::now(),
-                                );
+                                ) {
+                                    recv_late.note_hole(
+                                        rec.outcome,
+                                        rec.cross,
+                                        rec.us,
+                                        rec.hi_us,
+                                    );
+                                    abandoned_seqs.insert(rec.seq);
+                                }
+                                while abandoned_seqs.len() > ABANDONED_TRACK_MAX {
+                                    if let Some(&oldest) = abandoned_seqs.iter().next() {
+                                        abandoned_seqs.remove(&oldest);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1875,6 +1976,44 @@ pub(crate) async fn run_receiver(
                         if recv_lat.is_receiver_site() {
                             eprintln!("{}", recv_lat.line());
                         }
+                        // ── `[LATE]` READOUT ──────────────────────────
+                        // The two bind fractions describe the readouts
+                        // actually taken, so the sampler observation is
+                        // consumed HERE and reset for the next interval.
+                        if recv_late.is_receiver_site() {
+                            eprintln!("{}", recv_late.line(late_sampler_bound));
+                            late_sampler_bound = false;
+                        }
+                        // ── `[RANK]` READOUT ──────────────────────────
+                        // `frontier_probe` re-read UNCONDITIONALLY (it is
+                        // otherwise reachable only under `RWM_FDIAG`), plus
+                        // the honest tail correction: the span that arrived
+                        // since the previous readout is still in flight
+                        // rather than missing, and is REPORTED beside the
+                        // deficit rather than subtracted from it.
+                        {
+                            let f = highest_delivered_seq;
+                            let (holes, pivots) =
+                                win_dec.frontier_probe(f + 1, highest_seen_seq);
+                            let tail_lo = rank_prev_seen.max(f).saturating_add(1);
+                            let tail_holes = if highest_seen_seq >= tail_lo {
+                                win_dec.frontier_probe(tail_lo, highest_seen_seq).0
+                            } else {
+                                0
+                            };
+                            rank_prev_seen = highest_seen_seq;
+                            recv_rank.note(holes, pivots, tail_holes);
+                            eprintln!("{}", recv_rank.line());
+                        }
+                        // `[RFA] rep_redundant`: repairs FED minus repairs
+                        // that RECOVERED anything -- the false measurand
+                        // under coded answers, where "the original arrived
+                        // anyway" is inexpressible and waste shows up as an
+                        // equation that added no rank. Read off the decoder
+                        // at the readout so the gauge holds no second copy.
+                        recv_rack_echo.set_rep_redundant(
+                            win_dec.repairs_fed().saturating_sub(win_dec.repairs_useful()),
+                        );
                     }
 
                     // Send SACK-extended WindowAck to sender.
@@ -1886,9 +2025,15 @@ pub(crate) async fn run_receiver(
                     // hold-expiry force-delivery.
                     let cumulative_advanced =
                         highest_delivered_seq > last_advertised_ack;
-                    let gap_report_due = highest_seen_seq > highest_delivered_seq
-                        && highest_seen_seq > last_gap_ack_seen
-                        && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
+                    let gap_pending = highest_seen_seq > highest_delivered_seq
+                        && highest_seen_seq > last_gap_ack_seen;
+                    let gap_report_due =
+                        gap_pending && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
+                    // `[LATE] sampler_bind`: a hole was ready to be reported
+                    // and the 2 ms floor -- not its lateness -- is what held
+                    // the report back. A threshold that always binds turns the
+                    // law it gates into a constant, so it is COUNTED.
+                    late_sampler_bound |= gap_pending && !gap_report_due;
                     // ack-merge (RWM_ACK_MERGE): what the ack ADVERTISES
                     // (the cumulative point + SACK ranges) is unchanged —
                     // `advertise` is the shipped predicate verbatim, so

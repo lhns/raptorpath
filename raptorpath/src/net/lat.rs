@@ -65,7 +65,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use super::succ::{Hist, HoleOutcome};
+use super::succ::{Hist, HoleOutcome, HoleRecord};
 
 /// How many arrivals may be pending delivery before the oldest record is
 /// dropped. A declared resource bound, not a timeout: a seq that arrives and
@@ -85,9 +85,8 @@ pub enum RwClass {
 }
 
 /// The `[SUCC]` resolution record of the hole this delivery was waiting
-/// behind: `(outcome, cross-path, hole duration µs)`. `None` when the
-/// releasing arrival closed no tracked hole.
-pub type Release = Option<(HoleOutcome, bool, u64)>;
+/// behind. `None` when the releasing arrival closed no tracked hole.
+pub type Release = Option<HoleRecord>;
 
 #[derive(Default)]
 struct PathLat {
@@ -208,15 +207,17 @@ impl LatGauge {
                 RwClass::Repair => p.rwrep.add(wait_us),
             }
         }
-        if let Some((HoleOutcome::Repair, _, hole_us)) = release {
-            p.rep.add(hole_us);
+        if let Some(r) = release {
+            if r.outcome == HoleOutcome::Repair {
+                p.rep.add(r.us);
+            }
         }
     }
 
     fn class_of(release: Release) -> RwClass {
         match release {
-            Some((HoleOutcome::Repair, _, _)) => RwClass::Repair,
-            Some((_, true, _)) => RwClass::CrossPath,
+            Some(r) if r.outcome == HoleOutcome::Repair => RwClass::Repair,
+            Some(r) if r.cross => RwClass::CrossPath,
             _ => RwClass::SamePath,
         }
     }
@@ -295,11 +296,12 @@ mod tests {
         assert!(!g.is_receiver_site());
         assert_eq!(g.line(), "[LAT] site=receiver n=0 over=0 -");
         // Four deliveries on path 0: one of each wait class, one with none.
+        let rec = |outcome, cross, us| Some(HoleRecord { seq: 0, outcome, cross, us, hi_us: us });
         for (i, (wait, rel)) in [
             (0u64, None),
-            (1_000, Some((HoleOutcome::Original, true, 900))),
-            (2_000, Some((HoleOutcome::Original, false, 1_800))),
-            (3_000, Some((HoleOutcome::Repair, false, 2_700))),
+            (1_000, rec(HoleOutcome::Original, true, 900)),
+            (2_000, rec(HoleOutcome::Original, false, 1_800)),
+            (3_000, rec(HoleOutcome::Repair, false, 2_700)),
         ]
         .into_iter()
         .enumerate()
@@ -346,7 +348,11 @@ mod tests {
     #[test]
     fn a_delivery_without_an_arrival_record_is_counted_not_invented() {
         let mut g = LatGauge::default();
-        g.note_delivery(99, 5_000, Some((HoleOutcome::Repair, false, 1)));
+        g.note_delivery(
+            99,
+            5_000,
+            Some(HoleRecord { seq: 99, outcome: HoleOutcome::Repair, cross: false, us: 1, hi_us: 1 }),
+        );
         let l = g.line();
         assert!(l.starts_with("[LAT] site=receiver n=1 over=1"), "{l}");
         assert!(l.ends_with(" -"), "no path slot may be invented: {l}");
