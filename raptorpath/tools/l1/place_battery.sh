@@ -82,6 +82,9 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   exit 3
 fi
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+# INT/TERM: release, then EXIT — a signal handler that returns resumes the loop.
+trap 'rmdir "$LOCK" 2>/dev/null || true; exit 130' INT
+trap 'rmdir "$LOCK" 2>/dev/null || true; exit 143' TERM
 
 arm_env() {
   case "$1" in

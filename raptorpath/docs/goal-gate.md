@@ -52261,3 +52261,141 @@ attribute `MID`'s completion direction to `r` (§3's five surfaces; §6). It doe
 not read any `c8` completion number inside the control's own 154–197 % spread.
 It does not relax `W7`, the falsifier's `n ≥ 30`, or the plateau rule. It
 flips nothing and recommends no default change.
+## THE RECEIVER-LAW BATTERY — LAUNCH STEP, **BLOCKED AT THE MERGE-VERIFICATION GATE** (2026-09-08, `meas/recvlaw-run` from main@`3eb28db`) — **THREE NON-SANCTIONED RED BINARIES ON THE VM; NOTHING WAS MEASURED, THE VM IS QUIET, BOTH LOCKS ARE RELEASED.**
+
+Written in its own commit before any battery row exists. **No number below is a
+battery result.** The rule this step ran under (operator, verbatim): every
+engine test binary green EXCEPT `tests/qnative_clock_reachability.rs`; **any
+other failure: STOP, do not launch.** Three other binaries are red, deterministically,
+so the battery was NOT launched and the smoke was NOT run.
+
+### 0 — What ran, and on what
+
+| item | value |
+|---|---|
+| branch / tree | `meas/recvlaw-run` = main@`3eb28db` + `3560a50` (tools/l1 trap fix) |
+| sync | `git archive` → scp → CRLF repair on the VM: **504 files carried CR, 0 remain**; `lib.sh`, `recvlaw_battery.sh`, `recvlaw_parse.py` each verified at **0 CR bytes**; stale binary `rm`'d first |
+| build | `cargo build --release --bin raptorpath` 12:15:20 → 12:20:02 UTC (4 m 42 s), `BUILD-RC=0` |
+| **binary sha256** | **`4cd942551e38b00896bb5d986928bd668ae56548d6bc98b682299e91e2b7ca33`** (NOT byte-identical to the r-battery's `85c8a9c2…`: this tree carries the wire-v8 merge `9396ca0` and the 16.83 arms) |
+| VM | 10.1.5.16, quiet at entry (12:14Z: 0 `raptorpath`, 0 `rp-*`, both locks free); both operator locks taken 12:14:47Z for the whole of build + tests, released 13:50Z; `/home/vibe/rbattery/` untouched |
+
+### 1 — The harness defect fixed first (`3560a50`)
+
+`r_battery.sh:198` had `trap 'release_locks' EXIT INT TERM`. A bash signal
+handler that does not `exit` RETURNS, and the script resumes — which is how the
+r-battery ran on after TERM with both locks already cleared. The INT/TERM
+handlers in `r_battery.sh` now release and `exit 130`/`143`; `place_battery.sh`
+gets explicit INT/TERM handlers of the same shape; and `recvlaw_battery.sh`,
+which took **no operator locks at all** (contrary to THE VM PROTOCOL), now
+carries `r_battery.sh`'s `take_lock`/`release_locks` block verbatim with the
+corrected traps plus the BUSY refusal. Verified locally: TERM → `released lock`,
+`rc=143`, the loop body after the signal never runs.
+
+### 2 — The merge-verification suite, per binary (`cargo test -p raptorpath -p raptorpath-math --release -- --test-threads=2`)
+
+Two passes were needed. Pass 1 (12:20Z) was launched WITHOUT `--no-fail-fast`,
+which would have halted at `qnative_clock_reachability` — alphabetically BEFORE
+`recvlaw_reachability` and 29 other binaries — so it was cut at `bench_suite`
+(the full codec/matrix benchmark, single test, 98 % CPU, **41 min and still
+running, with no timing record anywhere in this ledger**; cargo confirms the only
+failure in pass 1 is that operator SIGTERM). Pass 2 (13:20:39 → 13:47:36Z)
+re-ran every other target with `--no-fail-fast`.
+
+| binary | result |
+|---|---|
+| `unittests src/lib.rs` / `src/main.rs` | **ok** 524 passed, 7 ignored (each) |
+| `raptorpath-math` lib + doc-tests | **ok** 59 passed |
+| **`tests/recvlaw_reachability.rs`** | **ok 5/5** (75.3 s) |
+| `tests/alpha_override_reachability.rs` | **ok 5/5** (40.0 s) |
+| `tests/late_rank_reachability.rs` | **ok 2/2** (54.8 s) |
+| `tests/protocol_test.rs` | **ok 13/13** |
+| `tests/formula_agreement.rs` | **ok 13/13** |
+| `tests/gate_suite.rs` | **ok 15/15**, 17 ignored (753.8 s) |
+| 79 other `tests/*.rs` binaries | **ok** — 1 641 tests passed in pass 2, 4 failed, all 4 below |
+| `tests/qnative_clock_reachability.rs` | **FAILED 4/5** — `the_quantile_native_form_arms_echoes_routes_and_reports_its_own_window` (`:365`) — **the one SANCTIONED failure** (the receiver seat cannot fill a 200-sample quantile window in that harness) |
+| **`tests/eta_reachability.rs`** | **FAILED 1/2** — `the_prediction_is_stamped_and_read_on_one_path_too` (`:250`): `no line containing [ETA] site=receiver` |
+| **`tests/lat_reachability.rs`** | **FAILED 1/2** — `the_decomposition_fires_and_cross_path_is_structurally_zero_on_one_path` (`:247`): `no [LAT] line from the RECEIVER` |
+| **`tests/sigma_diag_reachability.rs`** | **FAILED 0/1** — `the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs` (`:227`): `no per-path [DIAG] block in the whole log` |
+| `tests/bench_suite.rs` | **UNRUN** (cut by operator at 41 min; not red) |
+
+**All three reproduce in isolation** (pass 3, `--test-threads=1`, the three
+binaries alone: 26.9 s / 21.9 s / 0.84 s, same three panics) — they are NOT a
+`--test-threads=2` co-tenancy artefact. All four test files are in main@`3eb28db`
+(`eta`/`lat` landed today with the wire-v8 merge; `sigma_diag` dates from
+2026-08-19 and is recorded green in this ledger on another box).
+
+### 3 — What the three red binaries are reading (diagnosis, NOT a repair; the rule says STOP)
+
+**`eta` and `lat` at N = 1 share ONE cause.** The receiver's `[SUCC]` /
+`[ETA] site=receiver` / `[LAT]` block prints ONLY on a 1 s cadence
+(`receiver.rs:2128` — `succ_report_at.elapsed() >= 1 s`) and has **no end-of-run
+flush** (`[RFA] gen=` and `[RACK] fa=` DO flush at exit and are present in the
+same log). On this VM's loopback an 8 MB object moves in ~0.4 s (140–170 Mbit/s
+read off `sigma_diag`'s own JSON); the failing N = 1 server logs end at
+`[DIAG] t=0.9s` with **no `[SUCC]` line at all**, and the harness reads the
+server log 1.5 s after the client exits. The N = 2 siblings pass because netem
+makes them last longer. That is the reachability harness's transfer length
+against the gauge's cadence — on a fast box it is deterministic.
+
+**`sigma_diag` is a different reading and the more interesting one.** The
+sender's three `[DIAG]` lines (t = 0.3/0.5/0.8 s) each say **`np=0 rtt=0.0ms`
+while `good=159–167 Mbit`**. `np` counts `sched.active_paths()` at the tick
+(`diag.rs:489`) — the SATURATION-FILTERED set (`available() > 0`), the same
+filter this ledger already names as a trap at the Copa-sole store law and
+`capw_store_cap`. A single loopback path that is cwnd-full at every tick is
+counted as 0 paths, so the per-path block carrying `sig_us=` is never printed.
+The test's own message ("nothing to read σ off") is therefore literally true at
+the tick and false of the engine.
+
+**None of the three is the sanctioned exception, so the launch is blocked.** The
+operator decides whether these three are sanctioned as harness-cadence failures
+(and the battery relaunched on THIS binary) or repaired first. Nothing in this
+section flips a default, edits an engine crate, or changes any pre-registered
+clause of the receiver-law battery.
+
+### 4 — Staged and NOT run (left on the VM for the relaunch)
+
+`/home/vibe/recvlaw/run_all.sh` (the 5 h envelope driver: unprivileged sentinel
+proof, seed 42 with n = 3, seed 7 only if `DONE-S42` in < 2.5 h else
+`SKIPPED-S7-5H-BUDGET`, hard backstop at 4 h 50 min → TERM + `pkill -x
+raptorpath` + `FAILED-ALL-TRUNCATED-5H-BUDGET`) and `/home/vibe/recvlaw/smoke.sh`
+(one invocation per arm at `c8`, tag `smoke`). Sentinel paths, when it does run:
+
+```text
+   /home/vibe/recvlaw/DONE-ALL      /home/vibe/recvlaw/FAILED-ALL
+   /home/vibe/recvlaw/FAILED-ALL-TRUNCATED-5H-BUDGET
+   /home/vibe/recvlaw/DONE-S42      /home/vibe/recvlaw/FAILED-S42
+   /home/vibe/recvlaw/DONE-S7       /home/vibe/recvlaw/FAILED-S7      /home/vibe/recvlaw/SKIPPED-S7-5H-BUDGET
+   ledgers recvlaw-s<seed>.log, witnesses recvlaw-witness-s<seed>.jsonl, captures diag/, driver log run_all.log
+```
+
+**Exit state, verified and not assumed (13:50Z): 0 `raptorpath`, 0 `rp-*`
+namespaces, `/tmp/rwm-vm.lock` and `/home/vibe/rp.lock` both free.** Test logs
+remain at `/home/vibe/sync/test.log`, `test2.log`, `test3.log`.
+
+### OPERATOR SANCTION (2026-09-08 ~14:00Z): the receiver-law battery launches on binary 4cd94255… despite three unsanctioned red tests
+
+The VM verification of main@3eb28db (+ the trap fix) is green at 1 641 tests
+except the sanctioned `qnative_clock_reachability` and THREE others:
+`eta_reachability` (N = 1 variant), `lat_reachability` (N = 1 variant),
+`sigma_diag_reachability`. The launch agent's diagnosis, adopted here as the
+operator's reading: (a) the receiver's `[SUCC]`/`[ETA]`/`[LAT]` block prints on a
+1 s cadence with NO exit flush (`receiver.rs:2128`), and an 8 MB loopback object
+finishes in ~0.4 s on the VM, so the block never prints; the same two tests were
+GREEN on the (slower) Windows host at the same source (task b45d4chqu, pre-merge
+tree; eta 2/2, lat 2/2); (b) `[DIAG] np` counts the saturation-filtered
+`active_paths()` (`diag.rs:489`), so a cwnd-full single path counts as 0 and the
+`sig_us=` block is suppressed — a pre-existing diagnostic defect, `diag.rs`
+untouched by the merge. None of the three is a behaviour regression; all three
+are INSTRUMENT defects (a missing flush, a wrong count) on a fast box.
+
+Sanction: the battery runs on this binary. Caveats carried into the scored
+section: every invocation loses its final partial second of `[LAT]`/`[ETA]`/`[LATE]`
+samples (no exit flush) — a bias identical across arms, bounded by
+1 s / transfer wall; `[DIAG] np=0` rows are not evidence of a dead path.
+
+Owed (not weakened, not skipped): an exit flush of the receiver's diagnostic
+block and an `np` that counts configured paths, each with a reachability test
+that fails on the current engine, verified on the VM after the battery — the VM
+is the only box that can build right now. Until then these three tests stay red
+on main and are named here as such.
