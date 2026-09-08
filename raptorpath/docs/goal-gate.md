@@ -52632,3 +52632,174 @@ in the scored section; do not edit the battery's cell table.
 5. **`[LAT]` exists on the receiver only** — there is no sender-side `[LAT]`
    in the engine, so a "both sides" reading of the decomposition is not
    available and is not claimed.
+## THE PLACEMENT BATTERY — LAUNCH STEP (2026-09-08, `meas/place-run` from main@`dec3865` + `fix/diag-exit-flush`) — **LAUNCHED 18:54:33Z ON BINARY `8d3f50a4…`; THE RECEIVER'S EXIT FLUSH IS SEEN ON L1 (`recv_final_lines` > 0 ON EVERY SMOKE ARM); ONE SEED EXPECTED INSIDE THE 5 h CAP.**
+
+Written in its own commit after the first ledger row and before any second
+one is read. **No number below is a battery result**: the smoke is `n = 1`,
+seed 42, `c8` + the two singles, and it scores nothing.
+
+### 0 — What ran, and on what
+
+| item | value |
+|---|---|
+| branch / tree | `meas/place-run` = main@`dec3865` + `fix/diag-exit-flush` (`246764b`, `c50c0a0`; clean merge `18c4b4d`) + `7fc275c` (SIGTERM handler, harness grace-stop, SIGTERM flush test, `RWM_PLACE_OUTDIR`) + `5e2dae1` (eta test back to 8 MB) + `073a6d8` (OLD-ENGINE guard) |
+| sync | `git archive` → scp → CRLF repair on the VM: **718 files carried CR, 0 remain**; `lib.sh`, `place_battery.sh`, `place_run_all.sh`, `place_parse.py`, `perf_rwm_c.sh` each at **0 CR bytes**; every `.sh`/`.py` under the tree at 0 CR bytes; stale binary `rm`'d first |
+| build | `cargo build --release --bin raptorpath` 17:48:53 → 17:54:12Z (5 m 18 s), `BUILD-RC=0` |
+| **binary sha256** | **`8d3f50a40dc285058db51d450a7b3ea45f841f41ccb32bfff1ec4f0fa3fa09ea`** — the SAME hash after the test suite (`cargo test` rebuilt it under dev-dep feature unification), after the near-miss rebuild at 18:35:29Z, after the eta re-run + rebuild at 18:37Z, at the quiet check before the smoke (18:37:35Z) and before the launch (18:54:33Z); the battery's own ledger header carries it |
+| VM | 10.1.5.16, quiet at entry (17:47Z: 0 `raptorpath`, 0 `rp-*`, both locks free); both operator locks taken 17:47:50Z for build + tests, released 18:37:35Z right before the smoke (the battery takes them itself); `/home/vibe/rbattery/`, `/home/vibe/recvlaw/` untouched |
+
+### 1 — The engine change this launch rides on (`7fc275c`), and why it was owed
+
+`fix/diag-exit-flush` flushes the receiver's block (`[SUCC]`/`[ETA]`/`[LAT]`/
+`[LATE]`/`[REQ]`/`[RANK]`, `final=1`, exactly once) on clean loop exit and on
+Drop. The engine handled only SIGINT (`tokio::signal::ctrl_c`) and every
+tools/l1 harness stops the server with `pkill -x raptorpath` = SIGTERM, which
+was an abrupt kill — so the flush could land on main and STILL never reach a
+ledger. `net/mod.rs`'s one shutdown listener is now `shutdown_signal()`:
+SIGINT and (cfg(unix)) SIGTERM awaited in one `select!`, firing the one
+broadcast — one trigger, no second path, no behaviour change beyond a
+graceful exit on SIGTERM. `lib.sh` gains `stop_raptorpath` (`pkill -TERM -x
+raptorpath || true`, wait ≤ 3 s, then `pkill -KILL -x raptorpath || true`),
+used by `perf_rwm_c.sh`'s and `tail_matrix.sh`'s cleanup. The proof is
+`the_exit_flush_fires_on_sigterm_too` (`tests/eta_reachability.rs`): 1 MB
+object, `kill -TERM`, the last `[ETA] site=receiver` line is the flush,
+exactly once, siblings flushed with it — **green on the VM (below)**.
+
+### 2 — The merge-verification suite, per binary
+
+`cargo test -p raptorpath --release --lib -- --test-threads=2`, then the 13
+named binaries with `--no-fail-fast -- --test-threads=1`
+(17:54:54 → 18:35:26Z); `qnative_clock_reachability` not run (the one
+sanctioned red).
+
+| binary | result |
+|---|---|
+| `unittests src/lib.rs` | **ok** 528 passed, 7 ignored |
+| `tests/alpha_override_reachability.rs` | **ok 5/5** (82.5 s) |
+| `tests/eta_reachability.rs` (first pass, at the fix branch's 1 MB) | **FAILED 2/3** — `the_prediction_is_stamped_and_read_on_one_path_too`: `no line containing [ETA] site=sender`; **`the_exit_flush_fires_on_sigterm_too` ok**, dual-path test ok — see §3 |
+| **`tests/eta_reachability.rs` (re-run at `5e2dae1`, 18:37Z)** | **ok 3/3** (16.0 s) |
+| `tests/formula_agreement.rs` | **ok 13/13** |
+| `tests/gate_suite.rs` | **ok 15/15**, 17 ignored (1480.2 s at threads=1) |
+| `tests/holeclass_reachability.rs` | **ok 3/3** (31.6 s) |
+| **`tests/lat_reachability.rs`** | **ok 2/2** (21.9 s) — was red on main@`3eb28db` |
+| `tests/late_rank_reachability.rs` | **ok 2/2** (66.6 s) |
+| `tests/place_arms_reachability.rs` | **ok 4/4** (48.9 s) |
+| `tests/protocol_test.rs` | **ok 13/13** |
+| `tests/recvlaw_reachability.rs` | **ok 5/5** (114.7 s) |
+| `tests/rfa_reachability.rs` | **ok 4/4** (31.4 s) |
+| **`tests/sigma_diag_reachability.rs`** | **ok 1/1** (0.97 s) — was red on main@`3eb28db` |
+| `tests/succ_reachability.rs` | **ok 3/3** (16.1 s) |
+
+Test logs: `/home/vibe/sync/place-test-lib.log`, `place-test-int.log`,
+`place-eta.log`, `place-verify.log`.
+
+### 3 — Three defects found on the way, each fixed in its own commit, none in an engine file
+
+1. **The fix branch's own N = 1 SIGINT test was red for a reason unrelated
+   to its purpose.** Its author shrank the object from 8 MB to 1 MB to force
+   the under-cadence receiver case; but the SENDER's `[ETA] site=sender`
+   rides the `[DIAG]` 250 ms cadence (`net/diag.rs`) and has no exit flush,
+   so a 1 MB object (0.066 s per run on the VM) ends before the sender's
+   first tick and the test's sender assertions are unreachable. The failing
+   log shows every receiver sibling carrying `final=1` — **the fix did what
+   it claims under SIGINT and under SIGTERM**. `5e2dae1` returns that test
+   to 8 MB; the under-cadence receiver case stays pinned at 1 MB by the
+   SIGTERM test, which reads the receiver only. Test-only change. The
+   launch rule ("eta/lat/sigma_diag red → STOP") was read against its stated
+   condition, "the fix failed its own purpose", which the log refutes;
+   this is recorded here so the operator can overrule it.
+2. **`place_battery.sh`'s OLD-ENGINE guard refused the right binary**
+   (smoke 18:37:35Z, `REFUSED: RWM_PLACE_T_DERIVED is not present`): under
+   `set -o pipefail`, `strings "$BIN" | grep -q` exits at grep's first match,
+   `strings` takes SIGPIPE (141), the pipeline is non-zero and `if !` reads a
+   PRESENT gate as absent. `073a6d8`: `grep -aq "$G" "$BIN"`, no pipe. The
+   refusal fired before any lock was taken; nothing ran.
+3. **A concurrent-writer interleave on the flush line, read on the first
+   battery row (`c7-CTL` rep 1: `recv_final_lines=2`, `lat_final=False`).**
+   The capture holds the complete block (SUCC/ETA/LAT/LATE/REQ/RANK all
+   `final=1`), but the `[LAT]` line reads `… sh_rep=0.2628 final=1` followed
+   ON THE SAME LINE by the ANSI-coloured tracing line `cleaning up TUN
+   interface name=mem` and then its own newline (a blank line 562). The
+   harness regex `( |$)` and `place_parse.py`'s whole-token `final=1` both
+   miss the marker; the LAT fields BEFORE it are intact, so `lat_reading`
+   is read off the flush and only the `final` flag is wrong. Every smoke
+   row read 3/3 — the interleave is a race, not the rule. **Scoring-time
+   repair, not touched under the running battery**: strip ANSI (or accept
+   `final=1` followed by ESC) in `place_parse.py` and re-run it over the
+   `diag/` captures; `recv_final_lines` in the ledger is a LOWER bound.
+
+### 4 — The smoke (`RWM_PLACE_TAG=smoke`, `c8` + singles, reps = 1, 18:39:19 → 18:53:34Z, `SMOKE-RC=0`, `PLACE-BATTERY-DONE seed=42` earned; ledger `/home/vibe/place/smoke-s42.log`)
+
+| arm | env | `[GATES]` cli · srv | runtime | goodput | `recv_final_lines` / `lat_final` | `t_n` / `t_eff` | `hol_calls` / `hol_mv` / `hol_sh` | `lat_reading` (`sh_xp`, `sh_ax`) |
+|---|---|---|---|---|---|---|---|---|
+| `c8-CTL` | — | `td=0 hol=0` · same | 47 s | 18.00 Mbit/s | **3** / true | 0 / — | 0 / — / — | MIXED (0.064, 0.306) |
+| `c8-T0` | `RWM_PLACE_T=1e-6` | `0/0` · same | 24 s | 37.14 | **3** / true | 0 / — | 0 / — / — | REPAIR-DOMINATED (0.095, 0.288) |
+| `c8-TSIG` | `RWM_PLACE_T_DERIVED=1` | `1/0` · same | 143 s | 5.70 | **3** / true | **93 410** / 0.364 | 0 / — / — | QUEUE-DOMINATED (0.029, 0.584) |
+| `c8-HOL` | `RWM_PLACE_HOL=1` | `0/1` · same | 91 s | 9.04 | **3** / true | 0 / — | **84 604** / **0.0022** / 0.249 | MIXED (0.072, 0.385) |
+| `c8-HOLTSIG` | both | `1/1` · same | 171 s | 4.75 | **3** / true | **95 466** / 0.237 | **84 502** / **0.0034** / 0.270 | QUEUE-DOMINATED (0.089, 0.552) |
+| `sc2-SINGLE` | — | — | 302 s | **DNF** (`dnf=1`) | flush present / true | | | |
+| `sc3-SINGLE` | — | — | 76 s | 2.71 | flush present / true | | | |
+
+Zero `ARM-LIVENESS-FAIL`, `ARM-CONTAMINATION`, `INSTRUMENT-FAIL-*`, `ABORT`,
+`PLACERESULT-PARSE-FAIL` lines; `ARMCOUNT` 1/1 on all five arms. **The
+launch conditions are met: every arm alive on both endpoints, the flush
+seen on L1 on every arm (`recv_final_lines=3`: `[LAT]`, `[SUCC]`, `[ETA]`),
+and the bind gauges read as the pre-registration requires** — `t_n > 0` on
+the Tσ arms and 0 elsewhere, `hol_calls > 0` with `hol_mv > 0` on the HOL
+arms and 0 on CTL/T0/TSIG. Two smoke READINGS, neither an abort clause and
+neither a result at `n = 1`: (i) **`sc2-SINGLE` DID NOT FINISH 100 MB in
+302 s** — the r-battery's calibration already read `sc2 CTL max = 2.24
+Mbit/s`, at which 100 MB needs ~357 s, so this is the engine's current
+`sc2` regime and the parser's DNF≠ABORT repair recorded it as a DNF row
+(`mbps=None`), not an ABORT; each `sc2` DNF costs ~5 min of the envelope
+(engine-side, not the 700 s harness timeout); (ii) the Tσ and HOL arms run
+at 4.7–9.0 Mbit/s against CTL's 18.0 at `c8`, i.e. **an invocation on those
+arms costs 2–4× CTL's**, which is the number the ETA below is built on.
+`[LAT]` on CTL at `c8` reads MIXED at `n = 1`; it is not read here.
+
+The smoke's `diag/` captures carry the battery's own names
+(`c8-<arm>-s42-r1-*.log`, no tag) and are OVERWRITTEN by the battery's
+rep-1 `c8` rows; `smoke-s42.log` is the smoke's record and its PLACERESULT
+rows are complete.
+
+### 5 — The launch
+
+Quiet verified 18:54:33Z (0 `raptorpath`, 0 `rp-*`, both locks free, sha
+`8d3f50a4…`), then as `vibe` from `tools/l1`:
+`setsid nohup env RWM_PLACE_OUTDIR=/home/vibe/place bash place_run_all.sh
+< /dev/null &` (`/home/vibe/place/` created unprivileged; `place_battery.sh`
+now honours `RWM_PLACE_OUTDIR`, passed through the envelope's `sudo env`,
+so ledger and sentinels share one directory).
+
+```text
+   18:54:33Z  SENTINEL-WRITABLE x12 (touch+rm as vibe), SENTINEL-PROOF-COMPLETE user=vibe dir=/home/vibe/place reps=4 seeds='42 7'
+   18:54:33Z  PLACE-ALL envelope: seed7_gate=9000s backstop=17400s
+   18:54:34Z  PLACE-ALL invoke seed=42 reps=4; LOCK-TAKEN /tmp/rwm-vm.lock, /home/vibe/rp.lock (by the battery)
+   header     === binary sha256 8d3f50a4...   === source 073a6d8
+   first row  c7-CTL rep=1  23 s  rc 0  77.75 Mbit/s  LIVENESS cli=[0 0] srv=[0 0] eta_lines=81 lat_lines=21 succ_lines=21 recv_final_lines=2 (see 3.3)
+              lat_reading=MIXED sh_xp=0.077 sh_ax=0.457 sh_rep=0.263 (n = 1; NOT the first readout, which is pooled over the CTL reps)
+   disconnected 18:55:07Z with c7-T0 running -- the battery is NOT polled from here on
+```
+
+**ETA.** Placeholder: 83 invocations at ~2.0/3.6 min ≈ **3 h 10 min per
+seed**. Smoke-derived (c8 arm costs above, c7-CTL 23 s, sc2 DNF 302 s):
+c7 ≈ 58 min, c8 ≈ 32 min, c1 ≈ 15 min (arms inert at N = 1), c9h ≈ 30 min,
+singles ≈ 25 min ⇒ **≈ 2 h 40 min, `DONE-S42` ≈ 21:35Z**. **The seed-7
+rule**: seed 7 runs ONLY if `DONE-S42` lands before **21:24:33Z** (2.5 h
+from launch), else `SKIPPED-S7-5H-BUDGET`; on the estimate above the gate is
+missed by ~10 min and this is a ONE-SEED battery, as the amendment detail
+pre-stated. If seed 7 does run, the backstop TERMs the battery at
+**23:44:33Z** (4 h 50 min) and writes `FAILED-ALL-TRUNCATED-5H-BUDGET` — the
+operator cap, not a battery failure.
+
+**WATCH THESE AND NOTHING ELSE** (`DONE-ALL || FAILED-ALL ||
+FAILED-ALL-TRUNCATED-5H-BUDGET`; never the process table):
+
+```text
+   /home/vibe/place/DONE-ALL        /home/vibe/place/FAILED-ALL        /home/vibe/place/FAILED-ALL-TRUNCATED-5H-BUDGET
+   /home/vibe/place/DONE-S42        /home/vibe/place/FAILED-S42
+   /home/vibe/place/DONE-S7         /home/vibe/place/FAILED-S7         /home/vibe/place/SKIPPED-S7-5H-BUDGET   /home/vibe/place/SKIPPED-S7-S42-FAILED
+   ledgers   /home/vibe/place/place-s<seed>.log         captures /home/vibe/place/diag/
+   driver    /home/vibe/place/all.out, all-era.txt, launch.out, TRUNCATED.txt (backstop only)
+   smoke     /home/vibe/place/smoke-s42.log, smoke.out, smoke.sh
+```
