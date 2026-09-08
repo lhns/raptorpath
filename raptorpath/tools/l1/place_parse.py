@@ -113,10 +113,29 @@ def is_final(line):
     return bool(line) and _FINAL_RE.search(line) is not None
 
 
+# A `tracing` record (ANSI-dimmed ISO timestamp + level) can be interleaved
+# onto the SAME physical line as a gauge readout -- MEASURED on the placement
+# battery's first row (2026-09-08 18:54Z): the receiver's `[LAT] ... final=1`
+# flush was followed on one line by "cleaning up TUN interface", so the
+# `final=1` token match failed (`final=1` + the timestamp's leading digit).
+# Split every physical line at the start of each embedded tracing record
+# BEFORE stripping colour codes, so each readout is matched on its own.
+_TRACE_SPLIT = re.compile(
+    r"(?<!^)(?=(?:\x1b\[[0-9;]*m)?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+    r"(?:\.\d+)?Z?(?:\x1b\[[0-9;]*m)?\s+(?:\x1b\[[0-9;]*m)?"
+    r"(?:TRACE|DEBUG|INFO|WARN|ERROR))"
+)
+
+
+def split_interleaved(ln):
+    """One physical log line -> the readout(s) it carries, colour stripped."""
+    return [re.sub(r"\x1b\[[0-9;]*m", "", piece) for piece in _TRACE_SPLIT.split(ln)]
+
+
 def read(path):
     try:
         with open(path, errors="replace") as f:
-            return [re.sub(r"\x1b\[[0-9;]*m", "", ln) for ln in f]
+            return [piece for ln in f for piece in split_interleaved(ln)]
     except OSError:
         return []
 
