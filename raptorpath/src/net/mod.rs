@@ -2214,11 +2214,25 @@ pub fn shed_allowed(
 /// budget (holes ≤ ε̂_recv × frontier — the loss-class bound) is spent, the
 /// hold reverts to legacy: serialize, don't shed below ρ.
 pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> Duration {
-    if shed_on && budget_ok {
+    let h = if shed_on && budget_ok {
+        SHEDH.evals.fetch_add(1, Ordering::Relaxed);
+        SHEDH.dial.fetch_add(1, Ordering::Relaxed);
         srtt / 2
     } else {
-        (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
-    }
+        SHEDH.evals.fetch_add(1, Ordering::Relaxed);
+        SHEDH.legacy.fetch_add(1, Ordering::Relaxed);
+        let raw = srtt * 4;
+        if raw < BLOCK_REORDER_MIN_HOLD {
+            SHEDH.at_floor.fetch_add(1, Ordering::Relaxed);
+        } else if raw > BLOCK_REORDER_MAX_HOLD {
+            SHEDH.at_cap.fetch_add(1, Ordering::Relaxed);
+        } else {
+            SHEDH.interior.fetch_add(1, Ordering::Relaxed);
+        }
+        raw.clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
+    };
+    SHEDH.hold_us_sum.fetch_add(h.as_micros() as u64, Ordering::Relaxed);
+    h
 }
 
 /// **THE COMPLETION FEED** — `RWM_COMPLETION_EXPOSURE`, ABSENT by default
@@ -2329,6 +2343,92 @@ pub(crate) fn chi_report_line() -> String {
             CHI.gt_half.load(Ordering::Relaxed) as f64 / n as f64
         },
         mean,
+    )
+}
+
+/// **`[SHEDH]` — THE RECEIVER HOLD'S BIND GAUGE** (ADR-0070: *every clamp gets
+/// a bind-fraction gauge, reported*; paper §16.81 ρ leg, in flight).
+///
+/// `shed_recv_hold` is TWO laws behind one signature and BOTH of them are
+/// unmeasured. The legacy branch is `(4·SRTT).clamp(60 ms, 300 ms)`, and 60,
+/// 300 and the 4 have no provenance anywhere in this repository. **A clamp
+/// that always binds turns its law into a constant and hides the law's shape
+/// from every measurement taken through it** — and the pre-stated expectation
+/// here is exactly that: the 60 ms FLOOR binds at `c2` (SRTT ≈ 13 ms ⇒
+/// 4·SRTT ≈ 52 ms) and the 300 ms CAP binds at `c3` under the inflated
+/// stalled-block SRTT, so "the 4·SRTT law" would be a CONSTANT at both main
+/// cells. If the gauge confirms it, that is a DEFECT FINDING with a ledger
+/// verdict, not an explanatory footnote (CLAUDE.md).
+///
+/// **OBSERVATION ONLY.** Nothing reads these counters; they are fed inside
+/// `shed_recv_hold` itself rather than at its call sites, so the receiver
+/// task is untouched and every branch is counted exactly once by construction
+/// (a call site added later cannot forget to feed the gauge).
+///
+/// `dial + legacy = evals` and `at_floor + at_cap + interior = legacy`, both
+/// asserted by `shedh_partitions_every_evaluation`.
+pub(crate) struct ShedHoldGauge {
+    /// Every evaluation of the hold, on both branches.
+    evals: AtomicU64,
+    /// The δ-DERIVED branch (`b·SRTT`, shed law armed and budget open).
+    dial: AtomicU64,
+    /// The LEGACY branch — the law with the three unprovenanced constants.
+    legacy: AtomicU64,
+    /// Legacy evaluations pinned at the 60 ms floor.
+    at_floor: AtomicU64,
+    /// Legacy evaluations pinned at the 300 ms cap.
+    at_cap: AtomicU64,
+    /// Legacy evaluations where `4·SRTT` actually decided the hold — the only
+    /// regime in which there IS a "4·SRTT law" to speak of.
+    interior: AtomicU64,
+    /// Σ of the holds returned, µs, so the gauge reports the MEAN hold beside
+    /// the bind fractions (a bind fraction with no scale is not a reading).
+    hold_us_sum: AtomicU64,
+}
+
+pub(crate) static SHEDH: ShedHoldGauge = ShedHoldGauge {
+    evals: AtomicU64::new(0),
+    dial: AtomicU64::new(0),
+    legacy: AtomicU64::new(0),
+    at_floor: AtomicU64::new(0),
+    at_cap: AtomicU64::new(0),
+    interior: AtomicU64::new(0),
+    hold_us_sum: AtomicU64::new(0),
+};
+
+/// The `[SHEDH]` line. Cumulative, last line wins — the `[RFA]` convention,
+/// because the harness SIGKILLs the server and a `Drop` never reaches its log.
+/// `mean_us` is `-` when `n = 0` (MEASUREMENT DISCIPLINE: a dash iff there is
+/// no datum, never a zero standing in for one).
+pub(crate) fn shedh_report_line() -> String {
+    let g = &SHEDH;
+    let (evals, legacy) = (
+        g.evals.load(Ordering::Relaxed),
+        g.legacy.load(Ordering::Relaxed),
+    );
+    let frac = |x: u64, d: u64| if d == 0 { 0.0 } else { x as f64 / d as f64 };
+    let mean = if evals == 0 {
+        "-".to_string()
+    } else {
+        format!("{}", g.hold_us_sum.load(Ordering::Relaxed) / evals)
+    };
+    format!(
+        "[SHEDH] evals={} dial={} legacy={} dial_frac={:.4} floor_n={} cap_n={} \
+         interior_n={} floor_frac={:.4} cap_frac={:.4} interior_frac={:.4} \
+         mean_us={} floor_ms={} cap_ms={}",
+        evals,
+        g.dial.load(Ordering::Relaxed),
+        legacy,
+        frac(g.dial.load(Ordering::Relaxed), evals),
+        g.at_floor.load(Ordering::Relaxed),
+        g.at_cap.load(Ordering::Relaxed),
+        g.interior.load(Ordering::Relaxed),
+        frac(g.at_floor.load(Ordering::Relaxed), legacy),
+        frac(g.at_cap.load(Ordering::Relaxed), legacy),
+        frac(g.interior.load(Ordering::Relaxed), legacy),
+        mean,
+        BLOCK_REORDER_MIN_HOLD.as_millis(),
+        BLOCK_REORDER_MAX_HOLD.as_millis(),
     )
 }
 
@@ -7034,6 +7134,9 @@ async fn run_window_sender(
     let mut proactive_coded_total: u64 = 0;
     let mut recovery_coded_total: u64 = 0;
     let mut pfrac_last_us: u64 = 0;
+    // `[SHEDH]` (paper §16.81 ρ leg, in flight): last emission of the
+    // receiver-hold bind gauge, on the same 1 s cadence convention.
+    let mut shedh_last_us: u64 = 0;
     // `[CHI]` (paper §16.82, in flight): last emission of the
     // completion-exposure gauge, same cadence.
     let mut chi_last_us: u64 = 0;
@@ -8706,6 +8809,22 @@ async fn run_window_sender(
                     "[PFRAC] proactive_coded={} recovery_coded={} total_coded={} proactive_fraction={:.4}",
                     proactive_coded_total, recovery_coded_total, tot, frac
                 );
+            }
+        }
+        // `[SHEDH]` — the receiver hold's bind gauge (§16.81 ρ leg, in
+        // flight), on the 1 s cadence, cumulative, LAST LINE WINS.
+        //
+        // Emitted from the SENDER loop although it is fed at the RECEIVER:
+        // the counters are process-global and both endpoints of a tunnel run
+        // both tasks, so this reaches the log without touching the receiver
+        // task at all. It is also the only place a periodic emission survives
+        // the harness's SIGKILL of the server — a `Drop` never runs there
+        // (the `[RFA]` lesson).
+        if gates.diag {
+            let now = now_us();
+            if now.saturating_sub(shedh_last_us) > 1_000_000 {
+                shedh_last_us = now;
+                eprintln!("{}", shedh_report_line());
             }
         }
         // `[CHI]` — the completion-exposure gauge (§16.82, in flight), same
@@ -11512,6 +11631,57 @@ mod tests {
             shed_recv_hold(Duration::from_millis(200), false, false),
             Duration::from_millis(300)
         );
+    }
+
+    /// **`[SHEDH]` PARTITIONS EVERY EVALUATION** — ADR-0070's "every clamp
+    /// gets a bind-fraction gauge", asserted as arithmetic rather than
+    /// described. A gauge whose classes do not sum to its own denominator is
+    /// not a bind fraction, it is a ratio of two unrelated counters.
+    ///
+    /// The counters are process-global and every test in this module that
+    /// calls `shed_recv_hold` feeds them, so this reads the DELTAS it causes
+    /// itself rather than absolute values — the only form that survives a
+    /// parallel runner.
+    #[test]
+    fn shedh_partitions_every_evaluation() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let snap = || {
+            (
+                SHEDH.evals.load(Relaxed),
+                SHEDH.dial.load(Relaxed),
+                SHEDH.legacy.load(Relaxed),
+                SHEDH.at_floor.load(Relaxed),
+                SHEDH.at_cap.load(Relaxed),
+                SHEDH.interior.load(Relaxed),
+            )
+        };
+        let a = snap();
+        // One of each class, by construction: dial; floor-bound (4·10 = 40 ms
+        // < 60); cap-bound (4·200 = 800 ms > 300); interior (4·20 = 80 ms).
+        shed_recv_hold(Duration::from_millis(80), true, true);
+        shed_recv_hold(Duration::from_millis(10), false, false);
+        shed_recv_hold(Duration::from_millis(200), false, false);
+        shed_recv_hold(Duration::from_millis(20), false, false);
+        let b = snap();
+        let d = |i: usize| match i {
+            0 => b.0 - a.0,
+            1 => b.1 - a.1,
+            2 => b.2 - a.2,
+            3 => b.3 - a.3,
+            4 => b.4 - a.4,
+            _ => b.5 - a.5,
+        };
+        assert_eq!(d(0), 4, "every call must be one evaluation");
+        assert_eq!(d(1) + d(2), d(0), "dial + legacy must be evals");
+        assert_eq!(d(3) + d(4) + d(5), d(2), "the three clamp classes must be legacy");
+        assert_eq!((d(1), d(3), d(4), d(5)), (1, 1, 1, 1), "one of each class");
+        // The line renders, carries the constants it is auditing, and ends on
+        // a field a concurrent stderr writer can corrupt without losing a
+        // datum (the `fa_class` convention — here the two clamp rails).
+        let l = shedh_report_line();
+        assert!(l.starts_with("[SHEDH] evals="), "{l}");
+        assert!(l.contains("floor_ms=60") && l.contains("cap_ms=300"), "{l}");
+        assert!(l.contains("mean_us="), "{l}");
     }
 
     /// Receiver give-up budget: the loss-class bound — holes given up may
