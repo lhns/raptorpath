@@ -50215,3 +50215,832 @@ r_battery.sh`, which matches the watcher's own shell.
 
 Ledgers `/home/vibe/rbattery/r-s<seed>.log`, witnesses
 `r-witness-s<seed>.jsonl`, captures `diag/`.
+## THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — PRE-REGISTRATION (2026-09-08, `meas/crown-spot-v8` from main@`9396ca0`) — **A REPAIR THAT MOVES THE CROWN HAS ESCAPED ITS PROOF.** Written and committed BEFORE the VM is touched, in its OWN commit, before a single VM number is read. **No number below is a result.** **Nothing here flips a default, adds an arm, adds a gate, edits an engine crate, or derives a constant.** ONE arm — `ship`, env unset — and no challenger. Plan §4 Stage 1 item 5.
+
+### 0 — WHAT THIS IS, IN ONE PARAGRAPH
+
+Two merges landed on `main` since the last crown was measured: `32728ae` (THE
+DIALS MADE REAL — `b(δ)`, `r(β)`, the receiver α plumb, `SchedulingWeights`,
+`RWM_DELTA`, the χ arm, the EVICT instruments) and `9396ca0` (wire v8 +
+`[LAT]`/`[ETA]`/`[LATE]`/`[RANK]` + the pinned cost table). **Every one of those
+repairs is claimed CORRECT-NOW: bit-exact at the three presets by a local
+test.** A local bit-exact test proves an expression, not a machine. This spot
+puts the merged binary on the configuration this record has run more than any
+other and asks the only question a local pin cannot answer: **did anything
+move?** It also carries, for free, the EVICT-seat repair-waste scrape that
+Track B pre-registered on 2026-09-08 and could not read, because the field it
+needed did not exist yet. **It exists now** (`net/mod.rs:5900,6122` —
+`late_after_aban`), and picking it up is the second reading here.
+
+### 1 — THE CROWN CONFIGURATION, VERBATIM
+
+`tools/l1/tail_matrix.sh`, arm **`ship`** (`AENV=""`, `AFLAGS=""` — env unset,
+whatever the binary's current defaults are), hint **`realtime`**, **no
+`--window-reliable`** (this is the ρ < 1 EVICT seat and that is deliberate),
+cells **`c2`** and **`c3`**, sizes **400 B and 1200 B**, **×8 reps** per
+cell-size, **seeds 42 and 7**, warm tunnel, 50 msg/s × 20 s = 1000 messages per
+rep, `RWM_GEN=0 RWM_DIAG=1`, one binary for the smoke and every rep.
+
+That is **64 scored reps** (2 cells × 2 sizes × 8 reps × 2 seeds) plus the
+smoke. No second arm exists, by construction: **the control is the committed
+record, not a same-session arm.** That is the weakness of this design and it is
+stated here rather than discovered later — see §3's ERA CLAUSE.
+
+### 2 — THE COMMITTED CROWN NUMBERS THIS MUST REPRODUCE, WITH THEIR CITATIONS
+
+**Primary baseline — "Streaming Crown Re-Test" § *L1 RESULTS* (2026-07-27,
+binary `2aac6b5fd088…` ≡ commit `8cf2b6f`, Rust byte-identical to main
+`44dd7d4`), the `U` column** = `ship` = env unset = the unified default. It is
+the ONLY committed crown that ran **both** `c2` and `c3`, **both** sizes,
+**both** seeds, at **×8**, on this exact arm. Per-rep **p99 medians [min–max]**:
+
+| cell·size | `U` s42 | `U` s7 |
+|---|---|---|
+| c2·400B | **35.4** [34.5–36.7] | **36.5** [35.3–39.1] |
+| c2·1200B | **40.3** [35.9–48.0] (n=7) | **41.9** [37.0–113.3] |
+| c3·400B | **104.6** [91.3–118.6] | **105.2** [88.5–112.8] |
+| c3·1200B | **92.6** [84.3–152.1] | **99.3** [90.8–139.1] |
+
+with, from the same section: **p50 equal-class — c2 7.9–8.4 ms, c3 23.7–25.8 ms**,
+both seeds; **delivered `count` = 1000/1000 in EVERY captured rep** (127 crown
+reps across both arms). **`p999` and `max` are NOT in that section for cells
+1–4.** They were recorded only at its cell 5 (the 30-s L2 shape, c2·1200B,
+×5/arm/seed): `U` p999 med **69.5** [60.0–117.2] s42 · **98.5** [70.4–129.0] s7;
+p99 med 39.5 [38.4–43.3] · 43.3 [40.8–65.6]; delivered 1500/1500 every rep.
+
+**Secondary, and MORE RECENT at `c2`** — "Ack-Merge Flip" § *CROWN* (2026-08-08,
+binary `fbd6b279…` ≡ commit `c2bfab7`), ×4, both seeds, p99 min/median/max. Its
+**`am` column is today's default** (`RWM_ACK_MERGE` has been DEFAULT ON since
+2026-08-08, `gates.rs:195`), so `am` is the era-nearest `ship`:
+
+| seed | size | `ship` (pre-flip default) | `am` (= today's default) |
+|---|---|---|---|
+| 42 | 400 B | 35 / **35** / 36 | 34 / **38** / 39 |
+| 42 | 1200 B | 39 / **39** / 45 | 35 / **40** / 57 |
+| 7 | 400 B | 35 / **37** / 60 | 35 / **36** / 48 |
+| 7 | 1200 B | 36 / **39** / 42 | 35 / **37** / 63 |
+
+with **p50 7.5–8.5 ms in every rep of every arm** and **delivered 1000/1000 in
+32/32 reps**. Third corroboration at `c2`, seed 42, ×5: "Latency Lever" §
+*THE CROWN* (2026-08-10), `ship` p99 medians **35** [35–48] at 400 B and **40**
+[37–43] at 1200 B.
+
+**The class this defines, and it is the thing being defended.** Across three
+independent batteries, three binaries and fifteen days, `c2` realtime p99
+medians sit in **35–41 ms** and p50 in **7.5–8.5 ms** at 1000/1000 delivery.
+`c3` has **one** committed ×8 both-seed measurement and its medians sit in
+**92.6–105.2 ms** at p50 23.7–25.8 ms.
+
+### 3 — THE ERA CLAUSE, STATED BEFORE THE READING AND NOT AFTER IT
+
+**Five engine defaults have flipped since the primary baseline was measured on
+2026-07-27**: `RWM_WIRE_COMPACT`/`RWM_WIN_DECOUPLE` (2026-08-06),
+`RWM_ACK_MERGE` (2026-08-08), `RWM_HONEST_ANCHOR` (2026-08-11), `RWM_SUM_CAP`
+and `RWM_DELTA_CAP` (both 2026-08-19). **The 2026-07-27 `U` arm is therefore
+NOT the same machine as today's `ship` arm**, and this pre-registration will not
+pretend otherwise.
+
+* At **`c2`** the era problem is DISCHARGED BY MEASUREMENT: the 2026-08-08 `am`
+  column is post-ack-merge, and the 2026-08-10 `ship` column is post-ack-merge
+  too; the class did not move across any of those flips. `c2` is scored against
+  the **union of the three committed spreads**.
+* At **`c3`** the era problem is NOT discharged: there is exactly one committed
+  measurement and it predates all five flips. **`c3` is therefore ERA-LIMITED,
+  and that is declared here, before the numbers exist.** A `c3` excursion is
+  reported as `CROWN-MOVED(c3, …)` **only if** the suspect analysis of §5 names
+  a mechanism that can reach it; an excursion at `c3` with no suspect that can
+  reach it is recorded as **`CROWN-BASELINE-ERA-LIMITED(c3, …)`** — a finding
+  about the RECORD, which then owes a same-session two-arm `c3` spot, not a
+  finding about the repairs. **This escape hatch is available at `c3` and at NO
+  other cell**, and it cannot be invoked for `c2`, for delivery, or for p50
+  anywhere.
+* Harness era: the per-leg-netem-seed boundary (2026-08-19, `lib.sh`) touches
+  **dual** cells only. `c2` and `c3` are single-path cells brought up by
+  `topo.sh`, so that boundary does not cut this comparison. Recorded so no one
+  has to re-derive it.
+
+### 4 — THE PRE-REGISTERED READING, NUMERIC, FIXED BEFORE ANY OUTPUT
+
+Per cell-size-seed (8 rows), on the **p99 median over 8 reps**, the **p50
+median**, and the **delivered `count`**:
+
+* **`REPAIRS-INERT-ON-CROWN`** ⇔ **all** of:
+  1. p99 median **inside the union of the committed spreads** for that
+     cell-size-seed (§2), where the union for `c2` is taken over all three
+     batteries and for `c3` over the one that exists;
+  2. p50 median inside **7.0–9.0 ms** at `c2` and **22.0–27.0 ms** at `c3`
+     (the committed classes widened by ~1 ms, stated as a number here);
+  3. **delivered `count` = 1000 in ≥ 62 of 64 reps** and never below 995 in any
+     rep. Delivery has been 1000/1000 in every crown rep ever recorded on this
+     seat; a two-rep allowance is for the harness, not for the machine;
+  4. `p999` and `max` **reported, not scored** — no committed `c2`/`c3`
+     baseline exists for them (§2). They are recorded so the NEXT crown has one.
+* **`CROWN-MOVED(cell, seed, metric, direction)`** ⇔ any clause of 1–3 fails.
+  The verdict NAMES the cell, the seed, the metric and the sign. **It is not a
+  pass/fail of the battery; it is a statement that a repair claimed inert is
+  not**, and §5 says which repairs could possibly be responsible.
+* **`SPOT-UNSCOREABLE`** ⇔ fewer than 6 of 8 reps carry a summary at any
+  cell-size-seed, or the smoke aborts. `-` iff `n = 0`; an absent datum is
+  never a zero.
+
+**Direction matters and is pre-stated: an IMPROVEMENT is also `CROWN-MOVED`.**
+Every repair here is claimed bit-exact at Realtime. A machine that got FASTER
+has still escaped a proof that said it would not change at all.
+
+### 5 — THE SPECIFIC SUSPECTS, AND WHAT EACH IS PINNED TO
+
+If the crown moves, exactly these merged changes are in scope. Each is listed
+with the pin that says it cannot be, so a `CROWN-MOVED` reading indicts a
+NAMED pin rather than a vague merge:
+
+1. **`b(δ)` at Realtime = 0.5 exactly** — `net/mod.rs:4840` `delta_budget_b(hint)
+   = span_horizon_b(delta_price(hint))`; pinned by
+   `delta_budget_b_is_the_dial_not_a_mode` (`assert_eq!` 0.5/1.0/2.0, plus the
+   `delta_budget_b(h) == delta_budget_b_of(delta_price(h))` identity at all
+   three hints). **Realtime is the crown's hint, so this term is exercised on
+   every rep.**
+2. **`r(β)` at Realtime, β = 0** — the `fec_rate.rs:312` hint swap is gone and
+   `compute_repair_rate` evaluates `controller_rate` twice; pinned by
+   `the_rate_mix_is_byte_identical_at_the_presets`,
+   `the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it` and
+   `the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial`.
+3. **The receiver α plumb** (`receiver.rs:212,220`) — **read only under
+   `RWM_QUANTILE_CLOCKS`, which is UNSET on this arm**, so it is INERT on the
+   crown by construction. The `[GATES]` echo proves the gate is unset; that is
+   witness `W3`.
+4. **`SchedulingWeights::from_hint` affine, (1,0) at Realtime** — pinned by
+   `scheduling_weights_are_the_dial_not_a_mode` (exact log-midpoint at Auto).
+5. **The wire v8 `eta_rel_us` varint — THE ONE MEASURABLE, PREDICTED EFFECT,
+   AND ITS SIZE IS STATED HERE.** `transport/protocol.rs:183` writes
+   `eta_rel_us` as a **varint** into the compact DATA frame
+   (`RWM_WIRE_COMPACT` is default ON), immediately after `batch_seq`. At the
+   0 sentinel a varint is **exactly 1 byte**. Every compact DATA datagram on
+   this seat therefore grows by **+1 B** where the emitter does not stamp, and
+   by **1–3 B** on the window source path where `emit_source.rs:488`
+   `with_eta` does. **Expected magnitude on the crown's tail percentiles:** a
+   1200 B message rides one ~1252 B datagram, so the wire cost is
+   **+1/1252 ≈ 0.08 %**; at 400 B messages the datagram is ~452 B, so
+   **+1/452 ≈ 0.22 %** of bytes — but the cell is a 50 msg/s trickle at
+   ~0.16–0.5 Mbit/s against `c2`'s 100 Mbit and `c3`'s 20 Mbit pipe
+   (`lib.sh` `scenario_params`), i.e. **the link is not the binding resource at
+   either cell or either size**, and the serialisation delay of one extra byte
+   is **0.08 µs at `c2` and 0.4 µs at `c3`**. **PREDICTION: < 0.1 % on every tail percentile at
+   both sizes — ~0.04 ms on a 40 ms p99 and ~0.1 ms on a 100 ms p99, three
+   orders of magnitude below the committed rep-to-rep spread.** A crown move
+   larger than that **cannot be the varint**, and this paragraph exists so that
+   it cannot later be blamed on it.
+6. **`[ETA]`/`[LAT]`/`[LATE]`/`[RANK]`/`[SHEDH]`/`[CHI]` are READ-ONLY gauges**
+   under `RWM_DIAG` on a 250 ms–1 s cadence. They feed no law. They are in
+   scope only as an `eprintln!` cost, and the crown has run with `RWM_DIAG=1`
+   in every battery cited in §2, so that cost is already inside the baseline.
+
+### 6 — THE EVICT-SEAT WASTE READING, RIDING FOR FREE
+
+Transcribed VERBATIM in substance from "PRE-REGISTRATION — THE EVICT SEAT'S
+REPAIR WASTE (ρ < 1), 2026-09-08" §2–§3, which owns these definitions. Nothing
+below redefines them.
+
+* `A` = `[SUCC]`'s abandon count (`aban_n`) — holes the delivery frontier
+  passed undelivered.
+* `R` = `[RFA] fires` — recovery fires the sender answered on the same run.
+* `F` = `[RACK] fa=<spur>/<fired>` — the realized false-alarm ratio. **Reported,
+  never scored alone** (§16.80.4a: `false_frac` counts duplicate ARRIVALS).
+* `L` = `[RFA] late_after_aban` — repairs that landed after the receiver had
+  already abandoned the hole. **THE OWED FIELD HAS LANDED**: `net/mod.rs:5900`
+  and `:6122` declare it, `:6216` `record_late_after_aban` feeds it,
+  `receiver.rs:1626` calls it, and `:5908` prints it on the `[RFA]` line. **The
+  scrape must pick it up. If the scrape still reads `late_after_aban` ABSENT
+  from the `[RFA]` line, that is an INSTRUMENT FINDING — the merge shipped a
+  counter the harness cannot see — and it is recorded as
+  `EVICT-INSTRUMENT-BLIND`, never as `L = 0`.**
+
+Scored on the `ship` arm at `c2` and `c3`, ×8, both seeds, per endpoint. `n` =
+reps whose logs carry all THREE lines; a rep missing any one contributes to
+`n_missing` and to nothing else.
+
+* **`WASTE-DOMINANT`** — `R ≥ A` on ≥ 6 of 8 reps at BOTH cells. Reading: the
+  ρ < 1 seat pays full ARQ for holes its own contract licensed it to discard,
+  and the give-up law is not one law but two. Ledger: DEFECT FINDING; the ONE
+  give-up law (§16.81's ρ leg) becomes a licensed change rather than a proposal.
+* **`WASTE-MINOR`** — `R < 0.25·A` on ≥ 6 of 8 reps at BOTH cells. Reading: the
+  suppression that follows the give-up already does most of the work and the
+  structural lateness is a small tax. Ledger: the ρ leg's repair stays a
+  correctness argument, not a prize argument, and no arm is licensed.
+* **`MIXED`** — anything between, or the two cells disagreeing. Ledger: recorded
+  as measured, no verdict on the give-up law; the deciding measurement is
+  re-stated with the cell that split named.
+* **`UNSCOREABLE`** — `n < 6` at either cell, or any of the three lines absent
+  from ≥ 3 reps at either cell. **An absent gauge is a skipped datum and never
+  a zero.**
+
+**What this reading CANNOT conclude** (also transcribed): nothing about goodput
+or latency; nothing about `F` as waste at a single path; nothing about the
+sender's `shed_deadline_us` feed; nothing about `[SHEDH]`'s bind fractions,
+which are scraped here and scored in their own section.
+
+### 7 — ABORT CAUSES, STATED FIRST AND IN PRIORITY ORDER
+
+1. **`ABORT-LOCK`** — either VM lock could not be taken. **Both**
+   (`/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`) are required and both are
+   held for the whole era, smoke included.
+2. **`ABORT-CRLF`** — the shipped tree is not CR-free. `tools/l1/lib.sh` must
+   contain **0 CR bytes** after sync, verified by count and not by eye.
+3. **`ABORT-SHA`** — the binary's `sha256` at the moment of an invocation is not
+   the one recorded at build time. **The value cannot be pre-stated here
+   because the binary is BUILT FRESH on the VM from this branch** (the record's
+   standing practice); it is recorded in the launch line and re-verified before
+   the smoke and before the battery. What IS pre-stated: `PROTOCOL_VERSION = 8`
+   at `transport/protocol.rs:89` in the tree that is built.
+4. **`ABORT-SENTINEL-UNWRITABLE`** — §9. **Checked AT LAUNCH, not at exit**, by
+   an unprivileged write+unlink probe of every ABSOLUTE path.
+5. **`ABORT-SMOKE`** — §8's smoke did not witness every required condition.
+   **The battery does not start.**
+6. **`ABORT-RC`** — a non-zero exit from a `tail_matrix.sh` stage. That stage's
+   rows are void; the remaining stages continue; `FAILED-S<seed>` is earned.
+7. **`ABORT-BRINGUP`** — `BRINGUP_FAIL` (3 retries exhausted) at any arm. That
+   arm is `NO_DATA`, a skipped datum; the matrix continues. **Not an abort of
+   the spot**, and named here so it cannot be relabelled later.
+
+A rep with no `"summary"` line is a **skipped datum** (`NO_DATA`), not an abort.
+The documented seed-7 topo-abort class is expected and is reported, not worked
+around.
+
+### 8 — THE SMOKE, DISCHARGED BEFORE LAUNCH
+
+**One `tail_matrix.sh` invocation per cell** (`c2`, `c3`), `ship` arm, `reps=1`,
+seed 42 — two sizes each, so 4 measured arms. It must witness, before the 64
+reps are spent:
+
+1. `rc = 0`, a `"summary"` on every rep, `count = 1000`, and p99/p50 in the
+   §2 classes at `n = 1` resolution.
+2. **THE v8 HANDSHAKE, ON BOTH ENDPOINTS.** `PROTOCOL_VERSION` is checked
+   inside `Handshake::deserialize` (`protocol.rs:250`) and a mismatch is a hard
+   `bail!`, so a completed handshake IS the version proof: `connected and
+   handshake complete` on the client log **and** `accepted with handshake` on
+   the server log. **The version is not printed by either endpoint** — that is
+   a recorded instrument gap, not a softened gate — so the POSITIVE v8 witness
+   is clause 3.
+3. **THE v8 FIELD ON THE WIRE**: `[ETA] site=receiver` present with `n > 0` on
+   the receiving endpoint, and `[ETA] site=sender` on the sender. `eta_rel_us`
+   is a v8-only envelope field; a receiver that reports `[ETA]` samples has
+   parsed a v8 frame. **If the crown's Realtime emitter does not route through
+   `emit_source.rs:488`, `[ETA] site=receiver` will show `zero=1.0000` — that
+   is a RESULT about emitter coverage, recorded, and it is NOT `ABORT-SMOKE`**;
+   an absent `[ETA]` LINE is.
+4. **ALL GAUGES PRESENT, TWO-SIDED** (both endpoint logs): `[RFA]` **carrying a
+   `late_after_aban=` field**, `[SUCC]` with its abandon fields, `[RACK]` with
+   `fa=`, `[SHEDH]`, `[LAT]`, `[ETA]`, `[LATE]`, `[RANK]`. A line absent at
+   both endpoints is `ABORT-SMOKE`; a line present at one endpoint only is
+   RECORDED with its site and is not an abort (several of these are
+   site-asymmetric by construction — a sender-role gauge never sees a receiver
+   sample).
+5. **CONTAMINATION OFF**: `[GATES]` on both endpoints echoes
+   `RWM_QUANTILE_CLOCKS=0`, `RWM_DELTA=unset`, `RWM_COMPLETION_EXPOSURE=0`,
+   `RWM_ALPHA_OVERRIDE=unset`, `RWM_THREE_TERM=0`, `RWM_GEN=0`, `RWM_DIAG=1`.
+   **The crown is the SHIPPED machine and nothing else.**
+6. **SENTINEL WRITABILITY PROVEN** (§9), before any measurement.
+
+**If any of 1–6 fails: `ABORT-SMOKE`, and nothing is launched. NOTHING IN THE
+SMOKE IS A RESULT** — `n = 1`, and no clause of §4 or §6 is scored by any of it.
+
+### 9 — SENTINELS: EARNED, AND PROVEN WRITABLE BEFORE THE FIRST MEASUREMENT
+
+The standing rule, unchanged: **a sentinel is written by the same privilege
+level that will read it, and its writability is PROVEN AT LAUNCH, not at exit.**
+The output directory is created UNPRIVILEGED as `vibe` before `sudo` is ever
+invoked; every ABSOLUTE path below is write+unlink probed as `vibe`;
+`DONE-S<seed>` is written **only if** that seed's ledger exists, is non-empty,
+and carries its own `CROWNSPOT-DONE seed=<s>` line; `DONE-ALL` **only if** both
+`DONE-S42` and `DONE-S7` exist.
+
+```text
+   /home/vibe/crownspot8/DONE-ALL      /home/vibe/crownspot8/FAILED-ALL
+   /home/vibe/crownspot8/DONE-S42      /home/vibe/crownspot8/FAILED-S42
+   /home/vibe/crownspot8/DONE-S7       /home/vibe/crownspot8/FAILED-S7
+```
+
+Ledgers `/home/vibe/crownspot8/crown-s<seed>.log`, smoke
+`/home/vibe/crownspot8/smoke.log`, build/env `/home/vibe/crownspot8/build.log`
+and `env.txt`, driver `/home/vibe/crownspot8/run.sh`, its own stdout
+`/home/vibe/crownspot8/run.out`. **The watcher's rule is unchanged: never poll
+the running battery, never `pgrep -f` a name that matches the watcher's own
+shell, wait on `DONE-ALL || FAILED-ALL` and on nothing else.**
+
+### 10 — WITNESSES, PER INVOCATION. A failure NAMES itself.
+
+| # | witness | fail token |
+|---|---|---|
+| `W1` | `[GATES]` present on **both** endpoints | `W1-NO-GATES` |
+| `W2` | `[GATES] RWM_DIAG=1 RWM_GEN=0`, both endpoints | `W2-DIAG` |
+| `W3` | every contamination gate of §8.5 echoes its absent resolution, both endpoints | `W3-CONTAM` |
+| `W4` | handshake completed at both endpoints (client `connected and handshake complete`, server `accepted with handshake`) | `W4-NO-HANDSHAKE` |
+| `W5` | `[ETA]` present; receiver `n` and sender `place_n` recorded (`zero=` reported, never asserted) | `W5-NO-ETA` |
+| `W6` | `[RFA]` present **with a `late_after_aban=` field** | `W6-NO-LAA` |
+| `W7` | `[SUCC]` present with its abandon count; `[RACK]` present with `fa=` | `W7-NO-SUCC-RACK` |
+| `W8` | `[SHEDH]` present with `floor_n`/`cap_n` | `W8-NO-SHEDH` |
+| `W9` | `[LAT]`, `[LATE]`, `[RANK]` present (site recorded) | `W9-NO-TRACKAC` |
+| `W10` | `rc = 0`, a `"summary"` scraped, `count` recorded | `W10-RC` |
+
+### 11 — WHAT THIS SPOT DOES NOT CLAIM
+
+1. **It is not a two-arm comparison.** There is no same-session control. Its
+   power is the committed record's spread and nothing more, and §3 says exactly
+   where that is strong (`c2`) and where it is not (`c3`).
+2. **It resolves a CLASS, not a millisecond.** `n = 8` per cell-size-seed
+   against rep spreads of 3–70 ms catches a tail collapse or a delivery loss —
+   which is what a no-regression spot is for — and does not catch a 1–2 ms
+   median drift, which nothing here will claim either way.
+3. **It says nothing about goodput.** No throughput leg is run and none is
+   scored.
+4. **It does not test the repairs at Auto or Bulk.** Realtime is one point on
+   the dial; the pins in §5 cover the other two, and a bit-exact pin is not a
+   wire measurement. The Auto/Bulk crown remains unmeasured on this binary and
+   is not claimed.
+5. **It does not license any default flip, any arm, or any constant.**
+
+## THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — THE SMOKE, DISCHARGED, AND TWO WITNESS CLAUSES AMENDED BEFORE LAUNCH (2026-09-08, `meas/crown-spot-v8`) — **the smoke witnessed every gauge the merges were supposed to ship, INCLUDING the `late_after_aban` field Track B was owed; two clauses of §8/§10 were written against the engine's behaviour rather than off it, and they are corrected HERE, before the 64 reps, with the mechanism named in each case.** Committed BEFORE the battery is launched. **NOTHING IN THE SMOKE IS A RESULT** (`n = 1` per arm). No clause of §4 or §6 is scored by any of it, and neither amendment touches §4's reading or §6's criteria.
+
+### 1 — THE BUILD, AND WHAT IS IN IT
+
+| item | value |
+|---|---|
+| branch / prereg commit | `meas/crown-spot-v8` @ `d3e0aa0` (from main@`9396ca0`) |
+| binary `sha256` | `85c8a9c2c99dc7c1ac75730851ab22d7af2d2108c40e7b6f74812ccf20265901` |
+| built | 2026-09-08 04:47→04:52 UTC on the VM, `cargo build --release -p raptorpath`, `rc = 0`, after `rm` of the stale binary |
+| tree | `git archive` of `d3e0aa0`, CRLF-repaired on the VM: **479 files carried CR, 0 remain**; `tools/l1/lib.sh`, `tail_matrix.sh` and `crownspot8.sh` each verified at **0 CR bytes** |
+| `PROTOCOL_VERSION` | **8**, `raptorpath/src/transport/protocol.rs:89`, read out of the tree that was built |
+| host | E5-2650 v3, `aes` + `avx2` + `pclmulqdq`, kernel `7.0.14-101.fc43.x86_64` |
+| locks | `/tmp/rwm-vm.lock` **and** `/home/vibe/rp.lock`, both found FREE, both taken 04:46:08 UTC, both held |
+
+### 2 — THE SMOKE TABLE (one `tail_matrix.sh` invocation per cell, `ship`, `reps=1`, seed 42)
+
+| cell·size | p50 | p99 | p999 | max | `count` | committed class (§2) | in class? |
+|---|---|---|---|---|---|---|---|
+| c2·400B | **8.105** | **36.8** | 78.736 | 78.736 | **1000** | p99 35–41, p50 7.5–8.5 | **yes** |
+| c2·1200B | **8.350** | **35.177** | 63.786 | 63.786 | **1000** | p99 35–41, p50 7.5–8.5 | **yes** |
+| c3·400B | **24.054** | **115.333** | 168.138 | 168.138 | **1000** | p99 [91.3–118.6], p50 23.7–25.8 | **yes** |
+| c3·1200B | *(ran, `rc = 0`; per-rep line in `smoke.log`)* | | | | | | |
+
+`rc = 0` at both cells. **`p999` and `max` are recorded here for the first time
+at `c2`/`c3` on any crown** — §2 of the pre-registration declared them REPORTED,
+NOT SCORED for exactly this reason, and these four numbers are the beginning of
+the baseline the next crown will have.
+
+**CONTAMINATION, from the `[GATES]` echo on BOTH endpoints at every arm:**
+`RWM_QUANTILE_CLOCKS=0`, `RWM_DELTA=unset`, `RWM_COMPLETION_EXPOSURE=0`,
+`RWM_ALPHA_OVERRIDE=unset`, `RWM_THREE_TERM=0`, `RWM_DIAG=1`. The defaults the
+era clause names are all live and echoed: `RWM_ACK_MERGE=1`, `RWM_SUM_CAP=1`,
+`RWM_DELTA_CAP=1`, `RWM_HONEST_ANCHOR=1`. **This is the shipped machine and
+nothing else.**
+
+**HANDSHAKE, TWO-SIDED:** `connected and handshake complete` on the client log
+and `accepted with handshake` on the server log, at both cells. Since
+`Handshake::deserialize` (`protocol.rs:250`) hard-`bail!`s on a version
+mismatch, a completed handshake at both ends IS the v8 agreement.
+
+**GAUGE PRESENCE, per endpoint log, `n = 1` arm at each cell:**
+
+| gauge | c2 srv | c2 cli | c3 srv | c3 cli | reading |
+|---|---|---|---|---|---|
+| `[ETA]` | 100 | 100 | 100 | 101 | two-sided |
+| `[LAT]` | 21 | 21 | 21 | 21 | two-sided |
+| `[RANK]` | 21 | 21 | 21 | 21 | two-sided |
+| `[SHEDH]` | 22 | 22 | 22 | 22 | two-sided |
+| `[CHI]` | 22 | 22 | 22 | 22 | two-sided, `n=0 max=0.0000` — the control half of the reachability claim |
+| `[RFA]` | 21 | 21 | 21 | 21 | two-sided, **with `late_after_aban=`** |
+| `[LATE]` | 19 | **0** | 20 | **0** | RECEIVER-SITE ONLY — site-asymmetric by construction, recorded per §8.4 and not an abort |
+| `[RACK]` | **0** | **0** | **0** | **0** | **ABSENT — see §4** |
+
+**THE v8 FIELD IS LIVE ON THE WIRE, AND THIS IS THE POSITIVE VERSION WITNESS.**
+`[ETA] site=sender … n=1532 zero=0.0000` at c2-srv and `n=2996 zero=0.0000` at
+c2-cli: **not one stamped batch carried the 0 sentinel**, so the Realtime
+emitter DOES route through `emit_source.rs:488` and `eta_rel_us` is a live
+varint on this seat. `[ETA] site=receiver n=3918` (c2-srv) / `n=2078` (c2-cli)
+/ `n=3985` (c3-srv): the receiver is parsing v8 frames and measuring against
+the sender's own prediction. **§8.3's pre-stated failure mode (`zero=1.0000`,
+an unstamped emitter) did NOT occur** — it was pre-registered as a recordable
+result rather than an abort, and it simply did not happen.
+
+**`[RFA] late_after_aban` IS BEING SCRAPED.** Server-site values at `n = 1`:
+**11** (c2·400B), **57** (c2·1200B), **29** (c3·400B). **Track B's owed field
+has landed, the harness sees it, and `EVICT-INSTRUMENT-BLIND` is therefore NOT
+the reading.** Client-site reads `late_after_aban=0` with `false_frac=1.0000`
+and `fill_src=0`, which is the sender-role gauge and is reported as such.
+
+**THREE READINGS RECORDED, NONE OF THEM SCORED HERE, EACH OWED TO ANOTHER
+SECTION.** They are written down because they were seen, not because this spot
+adjudicates them. **(i)** `[SHEDH]`'s pre-stated expectation is HALF RIGHT: the
+60 ms floor binds at `c2` (`floor_frac = 0.9997`, receiver site) exactly as
+predicted, but at `c3` the hold is **INTERIOR at 1.0000** (`floor_n = 0`,
+`cap_n = 0`, `mean_us = 152470` against a 300 ms cap) — the pre-stated "300
+binds at `c3`" is **not what the instrument reads**, and the "4·SRTT law is a
+constant at both main cells" claim survives at one cell and fails at the other.
+**(ii)** `[ETA]`'s pre-stated witness `σ̂_sender ≥ σ̂_recv` is **INVERTED** at
+c2-srv (sender `sig_us = 1668/n27`, receiver `sig_us = 3430/n13`). **(iii)**
+`[LATE] knee_bind` is **0.0000 at `c2`** and **1.0000 at `c3`** — Track C's
+KNEE-BOUND question has a cell-split answer waiting in it. Each belongs to the
+section that pre-registered it, and none of them is read here.
+
+### 3 — AMENDMENT 1: `[RACK]`'s ABSENCE IS THE ENGINE'S DOCUMENTED BEHAVIOUR, NOT A BROKEN INSTRUMENT
+
+**What §8.4 and `W7` said:** `[RACK]` present with `fa=` on both endpoints; a
+line absent at both endpoints is `ABORT-SMOKE`.
+
+**What the engine actually does, at `net/mod.rs:6310`:**
+
+```text
+   if self.on || self.fired > 0 { eprintln!("{}", self.rack_line()); }
+```
+
+`RWM_RACK_CLOCKS` is **0 by default**, so `self.on` is false; the RACK clock
+never armed and never fired, so `self.fired` is 0; and the emission sits in a
+`Drop`, which the L1 harness's `SIGKILL` of the server never runs. **`[RACK]`
+is silent here because it has nothing to say and says so by staying silent —
+"a run that fired nothing stays silent" is the gauge's own written rule.**
+Treating that as `ABORT-SMOKE` would abort a healthy spot on an instrument
+behaving exactly as specified.
+
+**THE AMENDMENT, narrow and stated in full.** `[RACK]` moves from REQUIRED to
+**REPORTED-IF-PRESENT** in §8.4 and in `W7`. `W7` is split: the `[SUCC]`
+half stays REQUIRED (it was witnessed, two-sided, at 4 of 4 endpoint logs);
+the `[RACK]` half becomes `W7b-NO-RACK`, a RECORDED token and not a fail
+token. **No other gauge is downgraded**, and the `[RFA]` and `[SUCC]`
+requirements — the two that carry the EVICT measurands `R`, `A` and `L` — are
+untouched.
+
+**THE CONSEQUENCE FOR §6, STATED BEFORE ANY EVICT NUMBER IS SCORED.** Track B's
+`F` = `[RACK] fa=<spur>/<fired>` is **UNAVAILABLE on this seat**, and §6 already
+declared `F` "reported, never scored alone", so no scored criterion loses an
+input: `WASTE-DOMINANT` (`R ≥ A`) and `WASTE-MINOR` (`R < 0.25·A`) are computed
+from `[RFA] fires` and `[SUCC] aban_n` alone and remain fully scoreable.
+**What DOES change is Track B's `n` clause**, which counted only reps carrying
+all THREE lines and would therefore have read `n = 0` ⇒ `UNSCOREABLE` on an
+instrument that is correctly silent. **`n` is hereby counted over the TWO lines
+the criteria actually use (`[RFA]` and `[SUCC]`), and the `F` clause is
+pre-declared `UNSCOREABLE-ON-F` with its mechanism named above.** This is
+recorded as a **defect against the EVICT pre-registration's own `n` rule**, not
+as a licence: it was written for three gauges when only two feed its verdicts.
+
+### 4 — AMENDMENT 2: `[GATES] RWM_GEN=` PRINTS A GENERATION SIZE, NOT THE HARNESS'S `0`
+
+**What `W2` said:** `[GATES] RWM_DIAG=1 RWM_GEN=0` on both endpoints.
+
+**What the echo actually prints:** `RWM_GEN=1`. The `[GATES]` field is
+`self.gen_size` (`gates.rs:1300`ff), a SIZE that clamps to 1, not the harness's
+`RWM_GEN=0` sentinel. The environment was set correctly — the driver exports
+`RWM_GEN=0`, `lib.sh`'s `rwm_forward_env` carries it, and the machine is in
+window mode, which the unified-decoder echo states directly:
+`receive path on the unified global decoder (one machine, both wires)
+generation=false`.
+
+**THE AMENDMENT.** `W2`'s generation half is re-pointed at the witness that
+actually carries the fact: **`generation=false` in the unified-decoder echo on
+both endpoints**, plus `gen=0` on the `[RFA]` and `[SUCC]` lines (both present
+and both reading `gen=0` at 4 of 4 endpoint logs). `RWM_DIAG=1` in `[GATES]`
+is unchanged and was witnessed. **This is a correction to a witness that was
+written against the wrong field, and it neither adds nor removes a condition.**
+
+### 5 — THE SMOKE VERDICT
+
+**PASS, with the two amendments above and with `[LATE]`'s receiver-site-only
+presence recorded per §8.4.** Clauses 1, 2, 3, 5 and 6 of §8 were witnessed
+as written; clause 4 was witnessed for seven of the eight named gauges and
+amended for the eighth. **The battery is launched.**
+
+## THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — THE SCORED RESULT (2026-09-08, `meas/crown-spot-v8` from main@`2e2db5a`) — **THE REPAIRS ARE INERT ON THE CROWN AT 7 OF 8 CELL-SIZE-SEEDS, AND THE ONE EXCURSION IS AT `c3` SEED 7, WHERE THE PRE-REGISTRATION HAD ALREADY DECLARED THE BASELINE ERA-LIMITED BEFORE ANY NUMBER EXISTED.** And the reading that rode along for free is the loud one: **THE ρ < 1 EVICT SEAT ANSWERS 1.8–3.1 REPAIRS FOR EVERY HOLE ITS OWN CONTRACT ABANDONED, AND 82–99 % OF THOSE ABANDONED HOLES GET THEIR DATA ANYWAY — AFTER THE GIVE-UP.** **64 scored reps, one binary, two cells, two sizes, two seeds, ZERO aborts, `count = 1000` at 64 of 64, `rc = 0` at 4 of 4 stages, 0 `NO_DATA`, 0 `BRINGUP_RETRY`, 0 `BRINGUP_FAIL`.** Scored against "THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS — PRE-REGISTRATION" and its committed amendment, and against nothing else. **Nothing here flips a default, edits an engine crate, wires a consumer, or blesses a constant.**
+
+### 0 — THE VERDICT FIRST
+
+1. **`REPAIRS-INERT-ON-CROWN` at 7 of 8 cell-size-seeds.** Every `c2` row on
+   both seeds and both sizes; `c3` on seed 42 at both sizes; `c3·1200B` on
+   seed 7. p50 medians inside their pre-registered bands at **8 of 8**;
+   `count = 1000` at **64 of 64 reps**.
+2. **`CROWN-BASELINE-ERA-LIMITED(c3, s7, p99, WORSE)` at the eighth.** The
+   `c3·400B` seed-7 p99 median reads **113 ms** against a committed
+   **105.2 [88.5–112.8]** — outside the committed spread by **0.2 ms**, i.e.
+   by 0.2 % of the number. Per §3, which named `c3` ERA-LIMITED before the
+   run and gave the escape at `c3` and nowhere else, and per §5, which
+   requires a NAMED suspect that can reach the excursion: **there is none**
+   (see §4). It is **NOT** `CROWN-MOVED`.
+3. **THE `[RFA] late_after_aban` FIELD TRACK B WAS OWED IS LANDED, SCRAPED,
+   AND IT ANSWERS THE QUESTION IT WAS BUILT FOR.** **`WASTE-DOMINANT`**, at
+   **8 of 8** cell-size-seed arms, at both cells, on both seeds.
+4. **The v8 wire cost is at or below its predicted bound.** The
+   pre-registration computed **< 0.1 % of any tail percentile** for the
+   `eta_rel_us` varint. No `c2` row moved at all, and the one `c3` row that
+   did moved by **74× that bound** in a cell whose baseline is a single
+   pre-flip measurement — which is exactly the discrimination §5 was written
+   to make possible.
+
+### 1 — THE ABORT-CAUSE TABLE, READ BEFORE ANY NUMBER
+
+| cause | count | evidence |
+|---|---|---|
+| `ABORT-LOCK` | **0** | both locks found FREE, taken 04:46:08 UTC, held for the whole era |
+| `ABORT-CRLF` | **0** | 479 files carried CR after `git archive`; **0 remain**; `lib.sh` / `tail_matrix.sh` / `crownspot8.sh` each verified at 0 CR bytes |
+| `ABORT-SHA` | **0** | `85c8a9c2c99dc7c1ac75730851ab22d7af2d2108c40e7b6f74812ccf20265901`, printed at build, re-printed at smoke and re-printed by the driver at launch — the same value three times |
+| `ABORT-SENTINEL-UNWRITABLE` | **0** | 9 absolute paths write+unlink probed as `vibe` BEFORE the first measurement (`CROWNSPOT sentinel-probe OK 04:58:34Z`) |
+| `ABORT-SMOKE` | **0** | discharged in its own committed section, with two disclosed amendments |
+| `ABORT-RC` | **0** | `rc = 0` at 4 of 4 stages |
+| `ABORT-BRINGUP` | **0** | no `BRINGUP_RETRY`, no `BRINGUP_FAIL`, no `NO_DATA` in either ledger |
+| reps with `count < 1000` | **0** | every one of the 64 reps reads `n=1000` |
+
+Battery **04:58:34 → 05:31:12 UTC** (32 m 38 s); stages 8 m 09 s / 8 m 10 s /
+8 m 10 s / 8 m 09 s. Sentinels **EARNED**: `DONE-S42` (stages 2/2, 05:14:53Z),
+`DONE-S7` (stages 2/2, 05:31:12Z), `DONE-ALL` (05:31:12Z). Ledgers committed
+verbatim at `raptorpath/docs/l1-raw/crownspot8-crown-s{42,7}.log`.
+
+### 2 — THE NO-REGRESSION TABLE, APPLIED LITERALLY
+
+p99, **per-rep medians [min–max] over 8 reps**, computed by `tail_matrix.sh`'s
+own `ARM` line — **the same arithmetic that produced every committed number in
+§2 of the pre-registration**, so the two columns are like-for-like. The
+committed column is the union of the committed spreads named in §2 (three
+batteries at `c2`, one at `c3`).
+
+| cell·size | seed | committed median [min–max] | **NEW** median [min–max] | scored |
+|---|---|---|---|---|
+| c2·400B | 42 | 35.4 [34.5–36.7] · `am` 38 [34–39] · 35 [35–48] ⇒ **[34–48]** | **36** [34–199] | **INSIDE** |
+| c2·1200B | 42 | 40.3 [35.9–48.0] · `am` 40 [35–57] · 40 [37–43] ⇒ **[35–57]** | **40** [35–42] | **INSIDE** |
+| c3·400B | 42 | 104.6 **[91.3–118.6]** | **103** [87–154] | **INSIDE** |
+| c3·1200B | 42 | 92.6 **[84.3–152.1]** | **103** [89–175] | **INSIDE** |
+| c2·400B | 7 | 36.5 [35.3–39.1] · `am` 36 [35–48] ⇒ **[35.3–48]** | **36** [34–56] | **INSIDE** |
+| c2·1200B | 7 | 41.9 [37.0–113.3] · `am` 37 [35–63] ⇒ **[35–113.3]** | **40** [37–169] | **INSIDE** |
+| **c3·400B** | **7** | 105.2 **[88.5–112.8]** | **113** [90–297] | **OUTSIDE by 0.2 ms** |
+| c3·1200B | 7 | 99.3 **[90.8–139.1]** | **100** [92–139] | **INSIDE** |
+
+**p50 (arithmetic median of the 8 per-rep p50s; pre-registered bands
+7.0–9.0 ms at `c2`, 22.0–27.0 ms at `c3`):**
+
+| cell·size | s42 | s7 | band | scored |
+|---|---|---|---|---|
+| c2·400B | 8.10 [7.83–8.27] | 8.17 [7.74–8.45] | 7.0–9.0 | **INSIDE** |
+| c2·1200B | 8.63 [8.40–8.77] | 8.59 [8.47–8.69] | 7.0–9.0 | **INSIDE** |
+| c3·400B | 24.22 [23.93–24.71] | 24.09 [23.95–24.49] | 22.0–27.0 | **INSIDE** |
+| c3·1200B | 26.10 [25.32–26.68] | 25.39 [25.16–25.68] | 22.0–27.0 | **INSIDE** |
+
+**8 of 8 p50 rows inside. `count = 1000` at 64 of 64 reps** (clause 3 required
+≥ 62 and no rep below 995).
+
+**`p999` and `max`, REPORTED AND NOT SCORED** — §2 declared them so because no
+committed `c2`/`c3` baseline existed for them. **This table IS that baseline
+now**, medians [min–max] over 8 reps:
+
+| cell·size | seed | p999 | max |
+|---|---|---|---|
+| c2·400B | 42 | 85.2 [59.8–301.0] | 85.2 [59.8–301.0] |
+| c2·1200B | 42 | 68.5 [49.3–75.1] | 68.5 [49.3–75.1] |
+| c3·400B | 42 | 152.1 [122.7–280.6] | 152.1 [122.7–280.6] |
+| c3·1200B | 42 | 154.0 [103.6–355.2] | 154.0 [103.6–355.2] |
+| c2·400B | 7 | 69.3 [57.6–126.4] | 69.3 [57.6–126.4] |
+| c2·1200B | 7 | 72.6 [43.7–298.4] | 72.6 [43.7–298.4] |
+| c3·400B | 7 | 176.0 [131.5–437.4] | 176.0 [131.5–437.4] |
+| c3·1200B | 7 | 170.1 [141.4–305.8] | 170.1 [141.4–305.8] |
+
+*(`p999` and `max` are identical at every row because a 1000-message rep has
+exactly one message at or above the 99.9th percentile. That is arithmetic, not
+a scraping bug, and it means the crown's `p999` IS its worst message.)*
+
+### 3 — THE MEDIAN-CONVENTION DISCLOSURE, BECAUSE THE PRE-REGISTRATION DID NOT PIN ONE
+
+§4 said "p99 median inside the union of the committed spreads" and **did not
+say which median**. That is a gap in this pre-registration and it is disclosed
+rather than resolved silently. Both conventions are reported:
+
+| convention | c3·400B s7 | vs ceiling 112.8 |
+|---|---|---|
+| `tail_matrix.sh`'s own `ARM` line (`a[int((NR+1)/2)]` = 4th of 8) — **the one that produced every committed number** | **113** | outside by **0.2 ms** |
+| arithmetic median (mean of 4th and 5th) | **117.5** | outside by **4.7 ms** |
+
+**The scored column above uses the harness's own, because a comparison against
+the committed record must be computed the way the committed record was.** The
+verdict is the same under either: the same single row is outside, and no other
+row is outside under either convention. Future crown pre-registrations should
+name the convention; this one is amended by disclosure only, after the fact,
+and the change of convention changes no verdict.
+
+### 4 — WHY THE `c3`·s7 EXCURSION IS NOT `CROWN-MOVED`: THE SUSPECTS, ONE AT A TIME
+
+§5 named five suspects and required that a `CROWN-MOVED` reading indict a
+NAMED pin. Applied to a **+7.8 ms** move of the median (105.2 → 113) at one
+size of one cell on one seed:
+
+| suspect | can it reach this? | why not |
+|---|---|---|
+| **v8 `eta_rel_us` varint** | **NO** | §5 predicted **< 0.1 %** ≈ 0.1 ms on a 105 ms p99. The move is **7.4 %** — **74× the bound**. §5 was written so this could not be blamed on the varint, and it cannot |
+| **`b(δ)` at Realtime = 0.5** | **NO** | Realtime is the hint on **every one of the 64 reps**. A moved `b` moves `c2` too; `c2` is inert at **4 of 4** rows. And it moves `c3` seed 42; `c3` s42 is inert at **2 of 2** rows (103 vs 104.6 and 103 vs 92.6) |
+| **`r(β)` at Realtime, β = 0** | **NO** | same argument, same evidence: the rate mix is evaluated on every rep at every cell |
+| **`SchedulingWeights` affine, (1,0)** | **NO** | same argument. A pinned law cannot be selective in seed AND size AND cell |
+| **receiver α plumb** | **NO** | read only under `RWM_QUANTILE_CLOCKS`, which `[GATES]` echoed as **`0` on both endpoints at every arm** |
+| **read-only gauges** | **NO** | `RWM_DIAG=1` was on in every battery cited as a baseline; the cost is already inside the committed numbers |
+
+**No suspect reaches it**, so §3's pre-declared escape applies — and it applies
+at `c3`, which is the ONLY cell where it is available. The reading is
+**`CROWN-BASELINE-ERA-LIMITED(c3, s7, p99, WORSE)`**: a finding about the
+RECORD, not about the repairs. **What it owes, per §3: a same-session two-arm
+`c3` spot.** Until that is run, `c3` has no post-flip control and this session
+cannot supply one, because it has no second arm by construction (§11.1).
+
+**THE HONEST PATTERN BEHIND IT, STATED RATHER THAN BURIED.** The excursion is
+not isolated: **this session's upper rep-tail is fatter than the baselines' at
+6 of 8 rows**, while medians and minima reproduce almost exactly. `c3` maxima:
+154 / 175 / 297 / 139 against committed 118.6 / 152.1 / 112.8 / 139.1. `c2`
+carries two single-rep excursions larger than anything in its committed record
+(**198.6 ms** at s42·400B rep 5, **168.6 ms** at s7·1200B rep 4) on rows whose
+medians are 36 and 40. **The floors and the centres reproduce; the outlier
+class does not.** Since `max` is REPORTED-NOT-SCORED this changes no verdict,
+but it is the honest limitation on the whole reading, and it is a
+session-or-era property rather than a law property: **a broken pinned law
+moves the median and the floor, and neither moved anywhere.**
+
+### 5 — THE EVICT SEAT'S REPAIR WASTE: THE FIRST MEASUREMENT EVER TAKEN, AND IT IS `WASTE-DOMINANT`
+
+Per Track B's "PRE-REGISTRATION — THE EVICT SEAT'S REPAIR WASTE (ρ < 1)" §2–§3
+and this branch's committed AMENDMENT 1. **Receiver site (`tm-s`, the endpoint
+that holds the frontier and does the abandoning).** Counters are cumulative and
+the scrape takes the LAST line, so each row is the **8 reps of that arm
+pooled**:
+
+| cell·size | seed | `det` | `A` = `aban_n` | `A/det` | `R` = `fires` | **`R/A`** | `false_frac` | `L` = `late_after_aban` | **`L/A`** | `fill_src` | `preempt_src` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| c2·400B | 42 | 157 | 100 | 0.637 | 249 | **2.49** | 0.257 | 82 | **0.820** | 120 | 15 |
+| c2·1200B | 42 | 705 | 484 | 0.687 | 1088 | **2.25** | 0.385 | 445 | **0.919** | 512 | 147 |
+| c3·400B | 42 | 406 | 324 | 0.798 | 649 | **2.00** | 0.371 | 321 | **0.991** | 340 | 47 |
+| c3·1200B | 42 | 1128 | 740 | 0.656 | 2297 | **3.10** | 0.516 | 723 | **0.977** | 403 | 665 |
+| c2·400B | 7 | 156 | 99 | 0.635 | 248 | **2.51** | 0.254 | 86 | **0.869** | 129 | 13 |
+| c2·1200B | 7 | 683 | 488 | 0.714 | 1000 | **2.05** | 0.377 | 427 | **0.875** | 488 | 131 |
+| c3·400B | 7 | 376 | 321 | 0.854 | 581 | **1.81** | 0.389 | 296 | **0.922** | 299 | 43 |
+| c3·1200B | 7 | 1157 | 793 | 0.685 | 2307 | **2.91** | 0.518 | 745 | **0.939** | 423 | 652 |
+
+**Sender site (`tm-c`), reported and NOT scored**, exactly as §6 required: it
+reads `fires` 230–459 with `false_frac = 1.0000`, `dup_src` equal to `fires`,
+`fill_src = 0` and `late_after_aban = 0` at 8 of 8 rows — the sender-role
+gauge, whose `false_frac` counts duplicate ARRIVALS (§16.80.4a) and which sees
+no abandonment because abandonment is a receiver decision. Its `[SUCC]` is
+all-zero/`-` at 8 of 8, which is `-` iff `n = 0` behaving correctly.
+
+**`[RACK]`: ABSENT at 16 of 16 endpoint logs**, as AMENDMENT 1 pre-stated and
+for the reason it named (`net/mod.rs:6310` emits only `if self.on || fired > 0`;
+`RWM_RACK_CLOCKS` is 0 by default; the emission sits in a `Drop` the harness
+SIGKILLs past). **`F` is `UNSCOREABLE-ON-F`, never zero.**
+
+**THE VERDICT: `WASTE-DOMINANT`.** `R ≥ A` at **8 of 8** cell-size-seed arms,
+at **BOTH** cells, on **BOTH** seeds, by a factor of **1.81 to 3.10**.
+
+**THE GRANULARITY DISCLOSURE, WHICH IS A DEFECT AGAINST THE SCRAPE AND NOT A
+SOFTENING OF THE CRITERION.** Track B's criterion reads "`R ≥ A` on ≥ 6 of 8
+reps", but the scrape it shipped takes the **last** line of a **cumulative**
+counter on a warm tunnel that carries all 8 reps in one process — **so per-rep
+resolution does not exist in the artefact its own criterion asks for.** The
+verdict above is therefore scored at **arm-pooled** resolution: 8 arms, each
+pooling 8 reps, each with `R ≥ A`. This is coarser than the criterion asks and
+unanimous in direction at every arm. Recorded as a **second defect against that
+pre-registration's instrument design** (the first was its three-line `n` rule),
+and the fix is one line: emit or scrape the counters per rep.
+
+**WHAT THE NUMBERS SAY, IN THE MEASURAND'S OWN TERMS.**
+
+* **`A/det` = 0.635–0.854.** The ρ < 1 contract abandons **64–85 % of every
+  hole it detects.** The shedding is not a corner case on this seat; it is the
+  normal path.
+* **`R/A` = 1.81–3.10.** For every hole it abandoned, the receiver had already
+  asked for — and the sender had already answered — **about two to three
+  repairs.** This is the structural double-decision §16.81's ρ leg predicted:
+  `recv_nack_tx` keys on nothing about `reliable`, so per-seq gap ARQ runs for
+  the whole hold, and suppression only follows the give-up.
+* **`L/A` = 0.820–0.991, AND THIS IS THE NUMBER THE FIELD WAS BUILT FOR.**
+  `late_after_aban` counts a source arrival for a seq strictly below the
+  in-order frontier that had already been abandoned. **Between 82 % and 99 % of
+  abandoned holes received their data anyway, after the receiver had given up
+  on it.** At `c3·400B` seed 42 it is **0.991** — essentially every one.
+* **`L` IS A LOWER BOUND ON THE WASTE, NOT AN ESTIMATE OF IT.** It counts only
+  copies that ARRIVED. A repair that was requested, sent, and lost is waste
+  too, and is not in `L`. `L ≤ A` holds at 16 of 16 readings (max 0.991), which
+  is the closure check the counter owes its own denominator, and it passes.
+* **`preempt_src` rises with the cell's cost**: 13–15 at `c2·400B`, 652–665 at
+  `c3·1200B` — the taper/gap emitters racing each other, at the cell where the
+  hold is longest.
+
+### 6 — THE THREE READINGS THE SMOKE FLAGGED, AT THE `n` THAT ACTUALLY EXISTS
+
+**A SCRAPE LIMITATION, STATED FIRST.** `tail_matrix.sh` scrapes only `[SPAN]`
+and the three EVICT tags into the ledger. **`[SHEDH]`, `[ETA]`, `[LATE]`,
+`[RANK]` and `[CHI]` are NOT scraped**, and `/tmp/tm-{s,c}.log` is overwritten
+per arm. So the only full-`n` (8-rep cumulative) readings that survive the
+battery are the **LAST arm's — seed 7, `c3`, 1200 B** — read off the surviving
+`/tmp` logs before teardown. Everything else is the smoke's `n = 1`. **These
+are recorded, not scored**, and each belongs to the section that pre-registered
+it.
+
+**(i) `[SHEDH]` — THE PRE-STATED EXPECTATION IS HALF RIGHT, AND THE HALF THAT
+IS WRONG IS THE INTERESTING ONE.** The expectation was "the 60 ms floor binds
+at `c2`, the 300 ms cap binds at `c3` ⇒ the 4·SRTT law is a constant at both
+main cells".
+
+| site | cell | `floor_frac` | `cap_frac` | `interior_frac` | `mean_us` | evals |
+|---|---|---|---|---|---|---|
+| receiver | c2 (`n=1`) | **0.9997** | 0.0000 | 0.0003 | 55 999 | 3 966 |
+| receiver | c3 (`n=1`) | 0.0000 | 0.0000 | **1.0000** | 152 470 | 4 350 |
+| receiver | **c3, `n=8`** | **0.0000** | **0.0000** | **1.0000** | **151 561** | **35 214** |
+
+**At `c2` the floor binds essentially always and the "law" IS the constant 60 ms
+— the DEFECT FINDING holds there.** **At `c3` it does not bind at all: the hold
+sits at ~152 ms, interior at 1.0000 over 35 214 evaluations, against a floor of
+60 and a cap of 300.** So what the instrument says the `c3` hold actually is:
+**a live 4·SRTT ≈ 152 ms with SRTT ≈ 38 ms, freely varying and clamped by
+neither bound.** The pre-registration predicted the cap would bind at `c3`;
+**it never binds once.** The "4·SRTT law is a constant at both main cells"
+claim is therefore **true at `c2` and false at `c3`**, and the corrected
+statement is that the law is a constant at ONE of the two main cells.
+
+**(ii) `[ETA]` — THE `σ̂_sender ≥ σ̂_recv` WITNESS HOLDS AT FULL `n`, AT BOTH
+ENDPOINTS. The smoke's inversion did not survive.**
+
+| site | `n = 1` (smoke, c2) | `n = 8` (c3·1200B s7) |
+|---|---|---|
+| `tm-s` | sender 1668 / recv 3430 — **INVERTED** | sender **2633** / recv **2242** — **HOLDS** |
+| `tm-c` | *(not read at n=1)* | sender **3662** / recv **2250** — **HOLDS** |
+
+At full `n` the sender's prediction error is wider than the receiver's lateness
+at both endpoints, which is the pre-stated direction (the sender's error rides
+a round trip, the receiver's only the forward leg). **The `n = 1` inversion at
+`c2`-srv was a small-sample artefact** (`sig_us=3430/n13` — thirteen samples)
+and is withdrawn as a reading. **`zero=0.0000` at both sender sites over
+`n = 11 266` and `n = 24 330` stamped batches**: the v8 field is stamped on
+every batch at full `n`, which is the strongest version witness this spot
+produced.
+
+**(iii) `[LATE] knee_bind` — THE CELL SPLIT IS REAL AND IT SURVIVES TO FULL
+`n`.** `c2` `n=1`: **0.0000**. `c3` `n=1`: **1.0000**. `c3·1200B` s7 `n=8`:
+**0.9940** over 1 157 holes (`aban = 793`, `rep = 309`, `orig = 55`,
+`knee_us = 13 312`, `rho_heal0 = 0.0475`, `lstar_us = 0`, `sampler_bind =
+0.8623`). **At `c3` the store-cap headroom binds the hypothetical request
+lateness essentially always; at `c2` it never does.** Track C's KNEE-BOUND
+question has a cell-split answer waiting in it, and this spot is not the place
+it is adjudicated.
+
+**(iv) `[RANK]`, recorded because it is empty and an empty gauge is a finding.**
+`holes=0 pivots=0 deficit=0` at every site at both `n = 1` and `n = 8`
+(`max_deficit` 0–11, `empty` 159 of 168 reports). The rank feed is dead on the
+Realtime EVICT seat, as its scope implies. **`[CHI] n=0 max=0.0000` at every
+site** — the two-sided control half of the χ reachability claim, on an arm that
+never armed it.
+
+### 7 — THE PLAIN-LANGUAGE ANSWER
+
+**Did the repairs move the crown? No.** Two merges landed a continuous `b(δ)`,
+a continuous `r(β)`, a plumbed receiver α, an affine `SchedulingWeights`, a new
+wire version and six new instruments, each claimed bit-exact at the three
+presets by a local test — and a local test proves an expression, not a machine.
+Put on the wire at the configuration this record has run more than any other,
+the machine did not move: **every `c2` row on both seeds and both sizes lands
+inside the committed spread, `c3` seed 42 lands inside at both sizes, and the
+delivery statistic is 1000 of 1000 on all 64 reps.** One row of eight —
+`c3·400B` on seed 7 — sits **0.2 ms outside** a spread whose only measurement
+predates five default flips, and no named suspect can reach it: the one
+predicted, measurable effect (the +1-byte v8 varint) was pre-computed at under
+0.1 %, and this is 74 times that. So it is read as what the pre-registration
+said it would be read as before the numbers existed — a limit of the RECORD at
+`c3`, which now owes a same-session two-arm spot. **The honest caveat is that
+this session's outlier reps are fatter than the baselines' at six of eight
+rows while the medians and floors reproduce almost exactly; that is the shape
+of a session or era difference, not of a broken law, and `max` was declared
+unscored in advance for exactly the reason that no baseline for it existed.**
+
+**And what does the EVICT seat's waste look like, now that it is finally
+measured? It looks worse than the argument for fixing it assumed.** On the
+ρ < 1 seat the receiver detects a hole, waits out its hold, **abandons 64–85 %
+of them** — and has meanwhile asked for, and been sent, **two to three repairs
+per abandoned hole**. Then, for **82 % to 99 %** of those abandoned holes, the
+data arrives anyway, after the give-up, into a frontier that has already moved
+past it. The transport pays full ARQ for holes its own contract licensed it to
+discard, and it pays that price at both cells, on both seeds, at every arm
+measured. **This is not a tuning question and it is not a constant that is set
+wrong. It is two give-up decisions — the sender's `D(δ)` from original send,
+the receiver's hold from head-of-line entry — running on two clocks over two
+base quantities, with nothing carrying either across, exactly as §16.81's ρ leg
+described it in prose before anyone had a number.** The number is now in the
+record: `R/A` between 1.81 and 3.10, `L/A` between 0.820 and 0.991, and `L` is
+a lower bound because it only counts the copies that arrived. **Ledger: DEFECT
+FINDING. The ONE give-up law becomes a licensed change rather than a
+proposal** — which is what Track B's pre-registration said `WASTE-DOMINANT`
+would buy, and it is all it buys: **no default is flipped here, no arm is
+built, and no constant is blessed.**
+
+### 8 — WHAT THIS SECTION DOES NOT CLAIM
+
+1. **No goodput leg was run**, and none is claimed. The spot measures a
+   message tail and a delivery count.
+2. **It is not a two-arm comparison** and never was (§11.1). Its power is the
+   committed record's spread, which is strong at `c2` (three batteries, two
+   eras) and thin at `c3` (one battery, one era, pre-flip).
+3. **It resolves a CLASS, not a millisecond** (§11.2). A 1–2 ms median drift is
+   below what `n = 8` against 3–70 ms spreads can see, and nothing above claims
+   one either way.
+4. **The repairs are untested at Auto and Bulk.** Realtime is one point on the
+   dial; the other two are held by bit-exact pins and by nothing measured.
+5. **`F` is unmeasured on this seat** and `[SHEDH]`/`[ETA]`/`[LATE]` are
+   measured at full `n` at ONE arm only, because the harness does not scrape
+   them. Both are instrument findings recorded above, not results.
+6. **Nothing here flips a default, licenses an arm, edits an engine crate, or
+   blesses a constant.**
