@@ -122,14 +122,17 @@ def is_final(line):
 # BEFORE stripping colour codes, so each readout is matched on its own.
 _TRACE_SPLIT = re.compile(
     r"(?<!^)(?=(?:\x1b\[[0-9;]*m)?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
-    r"(?:\.\d+)?Z?(?:\x1b\[[0-9;]*m)?\s+(?:\x1b\[[0-9;]*m)?"
+    r"(?:\.\d+)?Z?(?:\x1b\[[0-9;]*m)?\s+(?:\x1b\[[0-9;]*m)?\s*"
     r"(?:TRACE|DEBUG|INFO|WARN|ERROR))"
 )
 
 
 def split_interleaved(ln):
     """One physical log line -> the readout(s) it carries, colour stripped."""
-    return [re.sub(r"\x1b\[[0-9;]*m", "", piece) for piece in _TRACE_SPLIT.split(ln)]
+    # The optional colour code lets the lookahead fire twice at one record
+    # (before and after the code), leaving an empty piece: drop those.
+    pieces = [re.sub(r"\x1b\[[0-9;]*m", "", p) for p in _TRACE_SPLIT.split(ln)]
+    return [p for p in pieces if p != ""] or [""]
 
 
 def read(path):
