@@ -1325,7 +1325,19 @@ impl QuicTransport {
     ) -> ClientConfig {
         let verifier: Arc<dyn rustls::client::danger::ServerCertVerifier> = match pinned_hash {
             Some(hash) => Arc::new(PinnedCertVerifier { expected_hash: hash }),
-            None => Arc::new(SkipCertVerification),
+            None => {
+                // No behaviour change: dev/test mode stays available, but it
+                // must never be silent. Once per process.
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    tracing::warn!(
+                        "TLS server certificate verification is DISABLED: no \
+                         certificate pin was given (--pin-cert), so the peer is \
+                         not authenticated. Pass --pin-cert outside dev/test."
+                    );
+                });
+                Arc::new(SkipCertVerification)
+            }
         };
 
         let crypto = rustls::ClientConfig::builder()

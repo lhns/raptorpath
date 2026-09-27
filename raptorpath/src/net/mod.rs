@@ -40,7 +40,7 @@ use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
 use crate::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
-use crate::monitor::stats::SharedStats;
+use crate::monitor::stats::{CorrectionKind, SharedStats};
 use crate::routing::{self, ManagedDns, ManagedRoute};
 use crate::scheduler::{Scheduler, WallClock};
 use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
@@ -548,6 +548,27 @@ pub fn legacy_age_ripe(now_us: u64, send_time_us: u64, srtt_us: u64) -> bool {
 /// inherit the dwell through this one reduction.
 pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
     path_rtt_us.iter().copied().max().unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+}
+
+/// The path set the sender's recovery clocks pool over: the tail-sweep
+/// clock, the per-seq retransmit cooldown's pooled SRTT/jitter, and the
+/// repair margin's loss rate. LIVE paths, as the receiver's recovery timer
+/// uses (`receiver.rs`, `live_paths()`): the saturation-filtered
+/// `active_paths()` (`available() > 0`) is empty exactly when every path is
+/// cwnd-full, which collapsed the clocks to the 10 ms floor / zero margin.
+pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> {
+    sched.live_paths()
+}
+
+/// [`pooled_recovery_srtt_us`] over [`recovery_clock_paths`]: the pooled
+/// app-echo RTT the recovery clocks run on.
+pub fn pooled_recovery_srtt_of(sched: &Scheduler) -> u64 {
+    let rtts: Vec<u64> = recovery_clock_paths(sched)
+        .iter()
+        .filter_map(|id| sched.path(*id))
+        .map(|p| p.estimator.rtt().as_micros() as u64)
+        .collect();
+    pooled_recovery_srtt_us(&rtts)
 }
 
 /// The per-seq retransmit cooldown clock (µs): the pooled smoothed RTT,
@@ -3081,11 +3102,33 @@ fn copa_attribute_newly(
     per_path
 }
 
-fn now_us() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
+/// Lowest base [`now_us`] starts from, µs (~12.7 days): keeps every stamp
+/// non-zero (`echo_send_timestamp_us == 0` is the timer-ack sentinel) and
+/// leaves headroom below "now" even if the wall clock reads before 1970.
+const NOW_US_MIN_BASE: u64 = 1 << 40;
+
+/// The engine clock, µs. MONOTONIC: an `Instant` offset from a base read
+/// ONCE from the wall clock at first use, so a wall-clock step (NTP, manual
+/// set) can neither freeze nor storm the recovery clocks, and a clock before
+/// the UNIX epoch cannot panic. The wall-clock base keeps stamps in the
+/// familiar epoch-µs range (same varint width on the wire as before).
+///
+/// Every consumer is a same-process difference, an echo of this process's
+/// own stamp (RTT, ETA book, ping), or — at the peer — an `arrival −
+/// send_ts` difference that is min-subtracted or differenced again
+/// (`lat.rs` A_x, `eta.rs` receiver ℓ, the estimator's jitter), in which the
+/// constant offset between the two hosts' bases cancels. Nothing compares
+/// this clock to the peer's as an absolute time.
+pub(crate) fn now_us() -> u64 {
+    static BASE: std::sync::OnceLock<(Instant, u64)> = std::sync::OnceLock::new();
+    let &(t0, base_us) = BASE.get_or_init(|| {
+        let wall_us = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or(0);
+        (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
+    });
+    base_us.saturating_add(t0.elapsed().as_micros() as u64)
 }
 
 /// Collect per-generation residual deficits for the deficit-feedback report
@@ -4243,7 +4286,16 @@ pub fn compute_gap_ranges(
 /// are NOT reported — they may simply still be in flight.)
 pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
     let mut gaps = Vec::new();
-    let mut expected = received_up_to + 1;
+    // Seq 0: `received_up_to = 0` is advertised both after seq 0 was
+    // delivered and while NOTHING is delivered (the receiver's frontier
+    // starts at 0). Under prefix delivery a received-but-undelivered seq 1
+    // (a SACK range starting at 1) is only possible if seq 0 is missing, so
+    // that report also names seq 0 — no wire change. (Seq 0 lost together
+    // with seq 1 is reported one round later, once seq 1 arrives; the tail
+    // sweep still backstops it.)
+    let seq0_missing =
+        received_up_to == 0 && sack_ranges.first().is_some_and(|&(start, _)| start == 1);
+    let mut expected = if seq0_missing { 0 } else { received_up_to + 1 };
     for &(start, end) in sack_ranges {
         if start > expected {
             gaps.push((expected, start - 1));
@@ -9667,8 +9719,7 @@ async fn run_window_sender(
                     .max(last_tail_sweep_us);
                 let (srtt_us, jitter_us, min_rtt_us, sigma_us, w_q_us) = {
                     let sched = scheduler.lock();
-                    let paths: Vec<_> = sched
-                        .active_paths()
+                    let paths: Vec<_> = recovery_clock_paths(&sched)
                         .iter()
                         .filter_map(|id| sched.path(*id))
                         .collect();
@@ -10312,9 +10363,13 @@ async fn run_window_sender(
                     let now_r = now_us();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![sym], now_r, batch_seq, path);
-                    if let Err(e) = transport.send_symbols(path, batch) {
-                        warn!(path, ?e, "failed to send requested repair");
-                    }
+                    let sent = match transport.send_symbols(path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(path, ?e, "failed to send requested repair");
+                            false
+                        }
+                    };
                     // The three meters, at the handoff, exactly as every other
                     // correction channel meters them (the accounting-ledger
                     // finding: the gap loop's two BYPASS channels are the
@@ -10330,7 +10385,14 @@ async fn run_window_sender(
                     if let Some(ps) = stats.path(path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(
+                        if copy_seq.is_some() {
+                            CorrectionKind::SourceCopy
+                        } else {
+                            CorrectionKind::Coded
+                        },
+                        sent,
+                    );
                     if let Some(seq) = copy_seq {
                         reqs_copy += 1;
                         // The retransmit inherits the in-flight state and the
@@ -10347,11 +10409,13 @@ async fn run_window_sender(
                                 p.on_src_sent(seq, false);
                             }
                         }
+                        // `[DIAG] retx=` counts source retransmits only; a
+                        // coded answer is `cod=`.
+                        dg.diag_retx += 1;
                     } else {
                         reqs_coded += 1;
                     }
                     recovery_coded_total += 1;
-                    dg.diag_retx += 1;
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                     served += 1;
@@ -10454,13 +10518,16 @@ async fn run_window_sender(
                 }
                 // The pooled jitter for the pooled cooldown clock below: the
                 // MAX over live paths, matching the pooled srtt's own max.
-                pooled_jitter_us = ids
+                // Both read `recovery_clock_paths` (live paths) whatever
+                // `RWM_RECOV_MP_LIVE` selects for the hole law's snapshot.
+                let clock_ids = recovery_clock_paths(&sched);
+                pooled_jitter_us = clock_ids
                     .iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.rtt_jitter_us())
                     .max()
                     .unwrap_or(0);
-                let pooled: Vec<u64> = ids
+                let pooled: Vec<u64> = clock_ids
                     .iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.estimator.rtt().as_micros() as u64)
@@ -10838,9 +10905,13 @@ async fn run_window_sender(
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, nack_path);
-                    if let Err(e) = transport.send_symbols(nack_path, batch) {
-                        warn!(nack_path, ?e, "failed to send NACK retransmission");
-                    }
+                    let sent = match transport.send_symbols(nack_path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(nack_path, ?e, "failed to send NACK retransmission");
+                            false
+                        }
+                    };
                     debug!(seq, nack_path, "SACK-gap retransmit");
                     // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
                     // OFF — MECHANICAL DEFECT SWEEP item 5, defect 1): BYPASS
@@ -10885,7 +10956,7 @@ async fn run_window_sender(
                     // retransmit ever emitted" is answered by the emission
                     // itself rather than by an intention.
                     hold_echo.on_retx(seq, now_repair_us, nack_path);
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(CorrectionKind::SourceCopy, sent);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                     dg.diag_retx += 1;
@@ -10897,8 +10968,7 @@ async fn run_window_sender(
             if retransmitted > 0 {
                 let current_loss = {
                     let sched = scheduler.lock();
-                    sched
-                        .active_paths()
+                    recovery_clock_paths(&sched)
                         .iter()
                         .filter_map(|id| sched.path(*id))
                         .map(|p| p.estimator.loss_rate())
@@ -10924,9 +10994,13 @@ async fn run_window_sender(
                     let repair_sym = st.encoder.generate_repair();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![repair_sym], now_us(), batch_seq, margin_path);
-                    if let Err(e) = transport.send_symbols(margin_path, batch) {
-                        warn!(margin_path, ?e, "failed to send NACK repair margin");
-                    }
+                    let sent = match transport.send_symbols(margin_path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(margin_path, ?e, "failed to send NACK repair margin");
+                            false
+                        }
+                    };
                     // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
                     // OFF): BYPASS CHANNEL 2 of 2 — same defect, same fix, same
                     // three meters as the SACK-gap retransmit above.
@@ -10942,7 +11016,7 @@ async fn run_window_sender(
                             ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(CorrectionKind::Coded, sent);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                 }
@@ -13723,6 +13797,59 @@ mod tests {
         assert!(newly.len() <= 65_536);
     }
 
+    /// The recovery clocks must not lose a path because its cwnd is full.
+    /// `active_paths()` drops every path with `available() == 0`, so on a
+    /// sender whose paths are all cwnd-saturated (the normal state of a
+    /// wire-bound bulk transfer) the pooled clock fell to the 10 ms floor
+    /// instead of the paths' measured RTT.
+    #[test]
+    fn recovery_clocks_keep_cwnd_saturated_paths() {
+        let clock = Arc::new(crate::scheduler::MockClock::new());
+        let mut sched = Scheduler::new(clock);
+        sched.add_path(0);
+        sched.add_path(1);
+        for (id, ms) in [(0u32, 40u64), (1, 80)] {
+            let p = sched.path_mut(id).unwrap();
+            for _ in 0..32 {
+                p.estimator.record_rtt(Duration::from_millis(ms));
+            }
+            let cw = p.cwnd;
+            p.charge_in_flight(cw);
+            assert_eq!(p.available(), 0, "path {id} must be cwnd-saturated");
+        }
+        assert!(sched.active_paths().is_empty(), "precondition: both paths saturated");
+        let want = [0u32, 1]
+            .iter()
+            .map(|id| sched.path(*id).unwrap().estimator.rtt().as_micros() as u64)
+            .max()
+            .unwrap();
+        assert!(want > NACK_RETX_COOLDOWN_FLOOR_US, "precondition: measured RTT above the floor");
+        let mut ids = recovery_clock_paths(&sched);
+        ids.sort_unstable();
+        assert_eq!(ids, vec![0, 1], "recovery clocks must pool over every live path");
+        assert_eq!(
+            pooled_recovery_srtt_of(&sched),
+            want,
+            "pooled recovery SRTT must be the saturated paths' measured RTT, not the floor"
+        );
+    }
+
+    /// The engine clock is monotonic, non-zero and never panics. (A wall-
+    /// clock STEP cannot be injected from a unit test; the guarantee against
+    /// it is structural — the value is `base + Instant::elapsed()`.)
+    #[test]
+    fn now_us_is_monotonic_and_nonzero() {
+        let mut prev = now_us();
+        assert!(prev >= NOW_US_MIN_BASE, "stamps start at or above the base");
+        for _ in 0..10_000 {
+            let t = now_us();
+            assert!(t >= prev, "now_us went backwards: {t} < {prev}");
+            prev = t;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(now_us() > prev, "now_us advances with real time");
+    }
+
     // ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
 
     #[test]
@@ -13771,6 +13898,27 @@ mod tests {
         assert_eq!(sack_ranges, vec![(11, 12), (15, 15), (18, 20)]);
         // Sender-side inversion recovers the missing seqs 13..=14, 16..=17
         assert_eq!(sack_to_gaps(highest_delivered, &sack_ranges), vec![(13, 14), (16, 17)]);
+    }
+
+    /// SEQ 0 LOST. The receiver starts at `highest_delivered_seq = 0`, so a
+    /// receiver that has delivered NOTHING advertises `received_up_to = 0` —
+    /// the same value as "seq 0 delivered". Driven through the receiver's own
+    /// encoding (`received_sack_ranges`) and the sender's inversion: seq 0
+    /// must be reported as a gap, and when seq 0 WAS delivered it must not.
+    #[test]
+    fn a_lost_seq_zero_is_sack_reported() {
+        // Seq 0 dropped; 1..=10 received, none deliverable in order.
+        let received: BTreeSet<u64> = (1..=10).collect();
+        let ranges = received_sack_ranges(&received, 0, 10);
+        let gaps = sack_to_gaps(0, &ranges);
+        assert!(
+            gaps.iter().any(|&(a, _)| a == 0),
+            "seq 0 lost must be SACK-reported: ranges={ranges:?} gaps={gaps:?}"
+        );
+        // Control: seq 0 delivered, seq 1 lost, 2..=10 received.
+        let received: BTreeSet<u64> = (2..=10).collect();
+        let ranges = received_sack_ranges(&received, 0, 10);
+        assert_eq!(sack_to_gaps(0, &ranges), vec![(1, 1)], "delivered seq 0 is not re-reported");
     }
 
     #[test]

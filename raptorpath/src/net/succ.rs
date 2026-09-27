@@ -56,11 +56,16 @@
 //!
 //! ## THE THREE OUTCOMES — disjoint by construction, first terminal event wins
 //!
-//!   * `orig` — **the seq's own SOURCE symbol arrived.** A late reorder, or a
-//!     retransmit; the receiver cannot tell them apart (the wire carries
-//!     `is_repair` but no "this is a retransmit" bit — the same contamination
-//!     `[RFA]`'s `fill_src` discloses, restated here rather than assumed
-//!     inherited).
+//!   * `orig` — **the seq's own SOURCE symbol arrived.** A late reorder, or
+//!     the sender's copy (retransmit / taper copy). The wire carries no
+//!     "this is a retransmit" bit, but every batch carries its SENDER stamp:
+//!     originals are stamped in seq order, so a closing copy stamped later
+//!     than the arrival that exposed the hole cannot be the original. Those
+//!     holes are the `HoleOutcome::Retransmit` subset, printed as `rtx_n=`
+//!     (still inside `orig_n`, whose meaning — own-source arrival — is
+//!     unchanged) and excluded from `[LATE]`'s self-heal estimate π̂0. The
+//!     split is a lower bound on copies: a copy stamped before its hole's
+//!     exposer was stamped reads `orig`.
 //!   * `rep` — **the seq came out of the DECODER**, reconstructed from coded
 //!     repair rather than from its own source arrival. The same test the
 //!     `[RFA]` site already uses for `fill_coded`: `symbol.is_repair ||
@@ -227,15 +232,39 @@ pub fn bucket_lower_edge(i: usize) -> u64 {
     (SUB + sub) << (e - SUB_BITS as u64)
 }
 
+/// Classify a hole closed by an arrival of the seq's own SOURCE symbol.
+///
+/// Originals are stamped in seq order by one sender clock, so the original
+/// of a hole was stamped no later than any original of a higher seq —
+/// including the arrival that exposed it. A closing copy stamped STRICTLY
+/// LATER than the exposer is therefore the sender's copy, not the original.
+/// Both stamps are the SENDER's clock (a same-clock comparison). A copy sent
+/// before the exposer was sent is not caught (it reads `Original`), so
+/// `Retransmit` is a lower bound. A stamp of 0 means "unknown".
+pub fn classify_source_close(closer_ts_us: u64, exposer_ts_us: u64) -> HoleOutcome {
+    if exposer_ts_us > 0 && closer_ts_us > exposer_ts_us {
+        HoleOutcome::Retransmit
+    } else {
+        HoleOutcome::Original
+    }
+}
+
 // ── ONE OUTCOME'S DISTRIBUTION ──────────────────────────────────────────
 
 /// Which terminal event closed a hole. A LABEL: nothing in the engine
 /// branches on it, only counters read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoleOutcome {
-    /// The seq's OWN source symbol arrived — a late reorder or a retransmit,
-    /// indistinguishable at the receiver.
+    /// The seq's OWN source symbol arrived and it was the ORIGINAL send — a
+    /// late reorder, i.e. a genuine self-heal.
     Original,
+    /// The seq's own source symbol arrived as the SENDER'S COPY
+    /// (retransmit / taper copy): its sender stamp is later than the stamp of
+    /// the arrival that exposed the hole, which no original can be (see
+    /// [`classify_source_close`]). Printed inside `orig_*` (an own-source
+    /// arrival, the field's historic meaning) and separately as `rtx_n=`;
+    /// NOT a self-heal for `[LATE]`'s pi0.
+    Retransmit,
     /// The decoder reconstructed the seq from coded repair.
     Repair,
     /// The in-order delivery frontier moved past the hole while it was still
@@ -248,6 +277,7 @@ impl HoleOutcome {
     pub fn tag(self) -> char {
         match self {
             HoleOutcome::Original => 'o',
+            HoleOutcome::Retransmit => 'x',
             HoleOutcome::Repair => 'r',
             HoleOutcome::Abandoned => 'a',
         }
@@ -358,7 +388,10 @@ pub struct SuccGauge {
     /// CROSS-PATH skew event, which at a single-path cell is STRUCTURALLY
     /// IMPOSSIBLE — that is the control reading. Observation only; nothing in
     /// the engine branches on it.
-    open: BTreeMap<u64, (Instant, u32, Instant)>,
+    ///
+    /// The fourth element is the exposing arrival's SENDER stamp
+    /// (`send_timestamp_us`, 0 = unknown), for [`classify_source_close`].
+    open: BTreeMap<u64, (Instant, u32, Instant, u64)>,
     /// The gauge's own high-water seq mark. `None` until the first arrival —
     /// the flow's first symbol exposes no hole, it establishes the baseline.
     hi: Option<u64>,
@@ -384,6 +417,9 @@ pub struct SuccGauge {
     /// construction: every resolution carries exactly one arrival path.
     sp: Hist,
     xp: Hist,
+    /// Of the `orig` class, the holes closed by the sender's COPY
+    /// ([`HoleOutcome::Retransmit`]). Printed as `rtx_n=`.
+    rtx_n: u64,
     /// Every hole ever DETECTED, tracked or not — the identity's left side.
     det: u64,
     /// Detections the bounds refused to track.
@@ -414,6 +450,7 @@ impl SuccGauge {
             aban: Hist::default(),
             sp: Hist::default(),
             xp: Hist::default(),
+            rtx_n: 0,
             det: 0,
             over: 0,
             gen,
@@ -455,10 +492,27 @@ impl SuccGauge {
         now: Instant,
         path_id: u32,
     ) -> Option<HoleRecord> {
-        let (t0, exposer, hi_at) = self.open.remove(&seq)?;
+        self.resolve_at(seq, by_repair, now, path_id, 0)
+    }
+
+    /// [`Self::resolve`] with the closing arrival's SENDER stamp
+    /// (`send_timestamp_us`), which separates the sender's copy from the
+    /// original ([`classify_source_close`]). The receiver calls this one.
+    pub fn resolve_at(
+        &mut self,
+        seq: u64,
+        by_repair: bool,
+        now: Instant,
+        path_id: u32,
+        send_ts_us: u64,
+    ) -> Option<HoleRecord> {
+        let (t0, exposer, hi_at, exposer_ts) = self.open.remove(&seq)?;
         let us = now.saturating_duration_since(t0).as_micros() as u64;
-        let outcome =
-            if by_repair { HoleOutcome::Repair } else { HoleOutcome::Original };
+        let outcome = if by_repair {
+            HoleOutcome::Repair
+        } else {
+            classify_source_close(send_ts_us, exposer_ts)
+        };
         let cross = path_id != exposer;
         if cross {
             self.xp.add(us);
@@ -480,6 +534,12 @@ impl SuccGauge {
     /// mark, never been seen — so each is a hole this arrival has just
     /// EXPOSED, and each is stamped now.
     pub fn observe_high(&mut self, seq: u64, now: Instant, path_id: u32) {
+        self.observe_high_at(seq, now, path_id, 0)
+    }
+
+    /// [`Self::observe_high`] with the arrival's SENDER stamp, recorded on
+    /// every hole it exposes. The receiver calls this one.
+    pub fn observe_high_at(&mut self, seq: u64, now: Instant, path_id: u32, send_ts_us: u64) {
         let Some(hi) = self.hi else {
             // The flow's first arrival establishes the baseline and exposes
             // nothing: there is no "outstanding hole" below a mark that does
@@ -512,7 +572,7 @@ impl SuccGauge {
                 self.over = self.over.saturating_add(seq - s);
                 return;
             }
-            self.open.insert(s, (now, path_id, hi_prev));
+            self.open.insert(s, (now, path_id, hi_prev, send_ts_us));
         }
     }
 
@@ -534,7 +594,7 @@ impl SuccGauge {
         let keep = self.open.split_off(&frontier);
         let gone = std::mem::replace(&mut self.open, keep);
         let mut out = Vec::with_capacity(gone.len());
-        for (seq, (t0, exposer, hi_at)) in gone {
+        for (seq, (t0, exposer, hi_at, _)) in gone {
             let us = now.saturating_duration_since(t0).as_micros() as u64;
             self.record(HoleOutcome::Abandoned, us);
             out.push(HoleRecord {
@@ -555,6 +615,10 @@ impl SuccGauge {
     fn record(&mut self, outcome: HoleOutcome, us: u64) {
         match outcome {
             HoleOutcome::Original => self.orig.add(us),
+            HoleOutcome::Retransmit => {
+                self.orig.add(us);
+                self.rtx_n += 1;
+            }
             HoleOutcome::Repair => self.rep.add(us),
             HoleOutcome::Abandoned => self.aban.add(us),
         }
@@ -581,7 +645,7 @@ impl SuccGauge {
     /// arm, and with the arm absent nothing calls it.
     pub fn holes_at_least(&self, now: Instant, min_age_us: u64, max: usize) -> Vec<u64> {
         let mut out = Vec::new();
-        for (&seq, &(t0, _, _)) in self.open.iter() {
+        for (&seq, &(t0, _, _, _)) in self.open.iter() {
             if out.len() >= max {
                 break;
             }
@@ -597,7 +661,7 @@ impl SuccGauge {
     /// law's deadline is built on: a hole with NO further arrivals still has
     /// to become requestable, and `earliest A_hat + l*` is when it does.
     pub fn oldest_open_at(&self) -> Option<Instant> {
-        self.open.values().map(|&(t0, _, _)| t0).min()
+        self.open.values().map(|&(t0, _, _, _)| t0).min()
     }
 
     /// Holes currently outstanding — a CENSUS, not an outcome.
@@ -633,9 +697,11 @@ impl SuccGauge {
         (d > 0).then(|| self.xp.n() as f64 / d as f64)
     }
 
+    /// `Original` and `Retransmit` share the `orig` histogram (own-source
+    /// arrivals); `rtx_n` is the retransmit share of it.
     pub fn hist(&self, outcome: HoleOutcome) -> &Hist {
         match outcome {
-            HoleOutcome::Original => &self.orig,
+            HoleOutcome::Original | HoleOutcome::Retransmit => &self.orig,
             HoleOutcome::Repair => &self.rep,
             HoleOutcome::Abandoned => &self.aban,
         }
@@ -669,8 +735,15 @@ impl SuccGauge {
     /// The `[SUCC]` line this gauge would emit right now. Cumulative: the LAST
     /// line of a log is the reading — the `[RACK]` / `[RFA]` / `[FCAUSE]`
     /// convention.
+    /// Holes closed by the sender's copy ([`HoleOutcome::Retransmit`]).
+    pub fn rtx_n(&self) -> u64 {
+        self.rtx_n
+    }
+
     pub fn line(&self) -> String {
-        succ_report_line(
+        // `rtx_n=` APPENDED (the additive-column rule): the subset of
+        // `orig_n` closed by the sender's copy rather than the original.
+        let mut l = succ_report_line(
             self.gen,
             self.det,
             &self.orig,
@@ -683,7 +756,9 @@ impl SuccGauge {
             self.crossing_us(),
             self.dump_on,
             self.dumped,
-        )
+        );
+        l.push_str(&format!(" rtx_n={}", self.rtx_n));
+        l
     }
 
     /// Drain whatever raw-dump lines are ready. `flush` also emits the partial
@@ -802,6 +877,44 @@ pub fn succ_report_line(
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    /// A hole closed by the SENDER'S COPY is not a self-heal: `[LATE]`'s
+    /// pi0 must not count it, while a late ORIGINAL (stamped before the
+    /// arrival that exposed the hole) still is one.
+    #[test]
+    fn a_retransmit_resolved_hole_is_not_counted_as_self_heal() {
+        let t = Instant::now();
+        let mut g = SuccGauge::new(false, false, 0);
+        let mut late = crate::net::late::LateGauge::default();
+        g.observe_high_at(0, t, 0, 1_000);
+        g.observe_high_at(2, t, 0, 1_020); // exposes seq 1
+        // seq 1 closes with a copy the sender stamped after the exposer.
+        let rec = g
+            .resolve_at(1, false, t + Duration::from_millis(30), 0, 40_000)
+            .expect("seq 1 is an open hole");
+        assert_eq!(rec.outcome, HoleOutcome::Retransmit, "the copy is a retransmit");
+        late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
+        assert_eq!(
+            late.pi0(),
+            Some(0.0),
+            "a retransmit-resolved hole must not be counted in pi0"
+        );
+        // Control: seq 3's ORIGINAL (stamped before its exposer) heals it.
+        g.observe_high_at(4, t, 0, 1_060); // exposes seq 3
+        let rec = g
+            .resolve_at(3, false, t + Duration::from_millis(5), 1, 1_040)
+            .expect("seq 3 is an open hole");
+        assert_eq!(rec.outcome, HoleOutcome::Original, "a late original is a self-heal");
+        late.note_hole(rec.outcome, rec.cross, rec.us, rec.hi_us);
+        assert_eq!(late.pi0(), Some(0.5), "one heal of two holes at risk");
+        // Both stay in `orig_n` (own-source arrivals); `rtx_n` is the copy.
+        assert_eq!(g.hist(HoleOutcome::Original).n(), 2);
+        assert_eq!(g.rtx_n(), 1);
+        assert!(g.line().ends_with(" rtx_n=1"), "{}", g.line());
+        // Unknown stamps (0) keep the historic class.
+        assert_eq!(classify_source_close(5, 0), HoleOutcome::Original);
+        assert_eq!(classify_source_close(0, 5), HoleOutcome::Original);
+    }
 
     fn at(base: Instant, us: u64) -> Instant {
         base + Duration::from_micros(us)

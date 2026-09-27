@@ -25,7 +25,9 @@ WHAT IT READS, AND WHY EACH FIELD IS HERE
     triple (`net/diag.rs:934,945` — "the end-of-run accounting reads the LAST
     line"). `cod = 0` on a funded arm is `R-INERT`. `cod_frac` is also
     `H_price`'s OWN predicted goodput cost, `−cod/(src+cod)`, so the hypothesis
-    is scored against a number the same run produced.
+    is scored against a number the same run produced. `cod` is CODED repair
+    only: source retransmits/taper copies are no longer folded into it (they
+    are `[DIAG] retx=` / `taper`), so `cod = 0` means no coded symbol flowed.
 
 `chi_*`         — `W6`. `[CHI] n / max / frac_gt_half` (`net/mod.rs:2340`),
     read on BOTH arms: the control's `n=0 max=0.0000` is the two-sided half of

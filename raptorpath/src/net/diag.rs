@@ -207,6 +207,10 @@ pub(crate) struct DiagState {
     // wedge shows good=0 with in_flight=0 for tens of seconds and these name
     // which stage of the reactive-repair chain is dead.
     pub diag_sweeps: u64,
+    /// `[DIAG] retx=`: cumulative SOURCE retransmits (SACK-gap copies and
+    /// request-law copies). Coded repair — proactive, margin, or a
+    /// request-law equation — is `cod=` (`total_repair_symbols`) and never
+    /// counted here, so `src`/`cod`/`retx` partition the reactive handoffs.
     pub diag_retx: u64,
     pub diag_gaps_dropped: u64,
     pub diag_eff_rate: f64,
@@ -426,12 +430,13 @@ pub(crate) fn report(
     }
     let dnow = now_us();
     // diag/lossy-residual emission-gap gauge (see decls): observe the
-    // cumulative wire handoff count (src+cod, retx rides cod) once per
+    // cumulative wire handoff count (src + coded + source copies) once per
     // iteration; a change closes the current gap — accumulate it when
     // it is a stall-class gap (≥ 3 ms), not a pacing interval.
     {
         let wt = stats.fec.total_source_symbols.load(Ordering::Relaxed)
-            + stats.fec.total_repair_symbols.load(Ordering::Relaxed);
+            + stats.fec.total_repair_symbols.load(Ordering::Relaxed)
+            + stats.fec.total_copy_symbols.load(Ordering::Relaxed);
         if wt != dg.sidle_last_total {
             let gap = dnow.saturating_sub(dg.sidle_last_change_us);
             if dg.sidle_last_total > 0 && gap >= SIDLE_GAP_MIN_US {

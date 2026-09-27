@@ -815,7 +815,7 @@ pub(crate) fn emit_source(
             // Check oldest un-ACKed symbol in retransmit buffer.
             // If P_lost is high enough, retransmit it (immediate decode).
             // Otherwise, generate a new repair symbol (FEC).
-            let correction_sym = {
+            let (correction_sym, correction_kind) = {
                 let now = now_us();
                 let (srtt_secs, rttvar_secs, epsilon) = {
                     let sched = ctx.scheduler.lock();
@@ -890,7 +890,13 @@ pub(crate) fn emit_source(
                     // branch retransmit channel (fed by eps_at_send).
                     st.mpd_plost_retx += 1;
                 }
-                if use_retransmit {
+                // A taper copy (`use_retransmit`) is a source COPY, not coded.
+                let kind = if use_retransmit {
+                    crate::monitor::stats::CorrectionKind::SourceCopy
+                } else {
+                    crate::monitor::stats::CorrectionKind::Coded
+                };
+                let sym = if use_retransmit {
                     // Retransmit: exact source symbol — from the
                     // sent-data store (reliable: survives window
                     // eviction) or the encoder window (EVICT).
@@ -926,7 +932,8 @@ pub(crate) fn emit_source(
                     // Repair: generate a new FEC symbol (legacy
                     // leading-window emission)
                     st.encoder.generate_repair()
-                }
+                };
+                (sym, kind)
             };
 
             // RWM Phase B (§16.3): reliable multipath places the
@@ -945,9 +952,13 @@ pub(crate) fn emit_source(
             };
             let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
             let batch = SymbolBatch::new(vec![correction_sym], now_us(), batch_seq, correction_path);
-            if let Err(e) = ctx.transport.send_symbols(correction_path, batch) {
-                warn!(correction_path, ?e, "failed to send correction symbol");
-            }
+            let sent = match ctx.transport.send_symbols(correction_path, batch) {
+                Ok(()) => true,
+                Err(e) => {
+                    warn!(correction_path, ?e, "failed to send correction symbol");
+                    false
+                }
+            };
             {
                 let mut sched = ctx.scheduler.lock();
                 if let Some(p) = sched.path_mut(correction_path) {
@@ -957,7 +968,7 @@ pub(crate) fn emit_source(
             if let Some(ps) = ctx.stats.path(correction_path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
-            ctx.stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+            ctx.stats.fec.record_correction(correction_kind, sent);
         }
     }
 

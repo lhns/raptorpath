@@ -41,8 +41,49 @@
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};
 
-fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
-    std::env::var(name).ok().and_then(|s| s.parse::<T>().ok())
+/// A numeric env value, or `None` when unset or unparseable. Non-finite
+/// floats (`NaN`, `inf`, an overflowing `1e400`) are rejected: every float
+/// knob is a rate, gain or bound, and a NaN would poison each law it reaches.
+fn env_parse<T: std::str::FromStr + EnvFinite>(name: &str) -> Option<T> {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| s.parse::<T>().ok())
+        .filter(|v| v.is_finite_value())
+}
+
+/// Finiteness for [`env_parse`]; integers are always finite.
+trait EnvFinite {
+    fn is_finite_value(&self) -> bool {
+        true
+    }
+}
+impl EnvFinite for f64 {
+    fn is_finite_value(&self) -> bool {
+        self.is_finite()
+    }
+}
+impl EnvFinite for u16 {}
+impl EnvFinite for u32 {}
+impl EnvFinite for u64 {}
+impl EnvFinite for usize {}
+
+/// `RWM_GEN_RATE_FLOOR` resolved against the pace ceiling `gen_rate`
+/// (default 2000, bounded to `[1, gen_rate]`).
+fn gen_rate_floor(raw: Option<f64>, gen_rate: f64) -> f64 {
+    // `f64::max` returns the non-NaN operand, so the upper bound is always a
+    // number >= the lower one and `clamp` cannot panic.
+    let ceil = gen_rate.max(1.0);
+    let floor = raw.unwrap_or(2000.0);
+    if floor.is_nan() { 1.0 } else { floor.clamp(1.0, ceil) }
+}
+
+/// `RWM_OOO_RETAIN`'s flag half: the variable doubles as the retention depth
+/// (`RWM_OOO_RETAIN=16`), so a depth value also arms the decouple.
+fn flag_or_depth(name: &str) -> bool {
+    match std::env::var(name).ok().and_then(|v| v.trim().parse::<u64>().ok()) {
+        Some(depth) => depth > 0,
+        None => env_flag(name, false),
+    }
 }
 
 /// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
@@ -151,7 +192,8 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BORROW` (default OFF): bounded account borrowing
     /// (§16.22; loans ≡ 0 at symmetric cells by theorem).
     pub store_borrow: bool,
-    /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live): honest
+    /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live; the `[GATES]`
+    /// echo prints the effective `honest_cap && plain_rs`): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
     pub honest_cap: bool,
     /// `RWM_POOL_ANCHOR` (default = the `RWM_EST_CADENCE` resolution — OFF
@@ -1256,11 +1298,9 @@ impl RuntimeGates {
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
             gen_r: env_parse::<f64>("RWM_GEN_R"),
             gen_rate,
-            gen_rate_floor: env_parse::<f64>("RWM_GEN_RATE_FLOOR")
-                .unwrap_or(2000.0)
-                .clamp(1.0, gen_rate),
+            gen_rate_floor: gen_rate_floor(env_parse::<f64>("RWM_GEN_RATE_FLOOR"), gen_rate),
             gen_inflight: env_parse::<f64>("RWM_GEN_INFLIGHT"),
-            ooo_retain: env_flag("RWM_OOO_RETAIN", false),
+            ooo_retain: flag_or_depth("RWM_OOO_RETAIN"),
             ooo_gens: env_parse::<usize>("RWM_OOO_RETAIN")
                 .filter(|&n| n >= 2)
                 .unwrap_or(16),
@@ -1439,7 +1479,8 @@ impl RuntimeGates {
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
-            b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
+            // EFFECTIVE value: the honest-cap law only runs with plain_rs.
+            b(self.honest_cap && self.plain_rs), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.patience_derived),
@@ -1718,6 +1759,76 @@ mod forwarding_audit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
+    /// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
+    #[test]
+    fn honest_cap_echo_is_the_effective_value() {
+        let mut g = RuntimeGates::resolve();
+        for (honest, plain, want) in
+            [(true, false, "0"), (true, true, "1"), (false, true, "0"), (false, false, "0")]
+        {
+            g.honest_cap = honest;
+            g.plain_rs = plain;
+            let e = g.echo_line();
+            assert!(
+                e.contains(&format!("RWM_HONEST_CAP={want} RWM_POOL_ANCHOR=")),
+                "honest_cap={honest} plain_rs={plain} must echo {want}: {e}"
+            );
+        }
+    }
+
+    // Unique env var names per test: test threads share one environment.
+
+    #[test]
+    fn env_parse_rejects_non_finite_floats() {
+        for (var, val) in [
+            ("RWM_TEST_EP_NAN", "NaN"),
+            ("RWM_TEST_EP_INF", "inf"),
+            ("RWM_TEST_EP_NINF", "-inf"),
+            ("RWM_TEST_EP_OVF", "1e400"),
+        ] {
+            std::env::set_var(var, val);
+            assert_eq!(env_parse::<f64>(var), None, "{var}={val:?} must be rejected");
+            std::env::remove_var(var);
+        }
+        std::env::set_var("RWM_TEST_EP_OK", "2.5");
+        assert_eq!(env_parse::<f64>("RWM_TEST_EP_OK"), Some(2.5));
+        std::env::remove_var("RWM_TEST_EP_OK");
+    }
+
+    #[test]
+    fn gen_rate_floor_cannot_panic_on_a_small_or_nan_ceiling() {
+        for (raw, ceil) in [
+            (None, 0.5),
+            (Some(5.0), 0.0),
+            (Some(5.0), -3.0),
+            (None, f64::NAN),
+            (Some(f64::NAN), 100.0),
+        ] {
+            let f = std::panic::catch_unwind(|| gen_rate_floor(raw, ceil));
+            let f = f.unwrap_or_else(|_| panic!("gen_rate_floor({raw:?}, {ceil}) panicked"));
+            assert!(f >= 1.0 && f.is_finite(), "floor {f} out of range for ({raw:?}, {ceil})");
+        }
+        assert_eq!(gen_rate_floor(None, 9000.0), 2000.0, "default unchanged");
+        assert_eq!(gen_rate_floor(Some(50_000.0), 9000.0), 9000.0, "bounded by the ceiling");
+        assert_eq!(gen_rate_floor(Some(0.1), 9000.0), 1.0, "bounded below by 1");
+    }
+
+    #[test]
+    fn ooo_retain_accepts_a_depth_and_the_strict_booleans() {
+        for (var, val, want) in [
+            ("RWM_TEST_OOO_DEPTH", "16", true),
+            ("RWM_TEST_OOO_ONE", "1", true),
+            ("RWM_TEST_OOO_ZERO", "0", false),
+            ("RWM_TEST_OOO_OFF", "off", false),
+            ("RWM_TEST_OOO_NO", "no", false),
+        ] {
+            std::env::set_var(var, val);
+            assert_eq!(flag_or_depth(var), want, "{var}={val:?}");
+            std::env::remove_var(var);
+        }
+    }
 
     /// Default-env resolution reproduces the shipped defaults (the ADR-0067
     /// consolidated stack): the CORE laws ON, every experiment gate OFF.

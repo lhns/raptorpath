@@ -1713,11 +1713,12 @@ pub(crate) async fn run_receiver(
                                 // deliverable prefix starts at the frontier),
                                 // and `None` -- the ordinary in-order case --
                                 // classes as no wait at all.
-                                if let Some(rec) = blk.succ.resolve(
+                                if let Some(rec) = blk.succ.resolve_at(
                                     *seq,
                                     symbol.is_repair || *seq != symbol.block_id,
                                     succ_now,
                                     path_id,
+                                    batch_send_ts,
                                 ) {
                                     lat_release = Some(rec);
                                     blk.late.note_hole(
@@ -1727,18 +1728,26 @@ pub(crate) async fn run_receiver(
                                         rec.hi_us,
                                     );
                                     // `d` -- the `[FDIAG]` SOURCE class: a
-                                    // hole closed by its OWN original is the
+                                    // hole closed by its OWN source symbol
+                                    // (original or the sender's copy) is the
                                     // ARQ/late-reorder resolution whose mean
                                     // time the knee cap subtracts.
-                                    if rec.outcome
-                                        == crate::net::succ::HoleOutcome::Original
-                                    {
+                                    if matches!(
+                                        rec.outcome,
+                                        crate::net::succ::HoleOutcome::Original
+                                            | crate::net::succ::HoleOutcome::Retransmit
+                                    ) {
                                         blk.late.note_source_resolution(rec.us);
                                     }
                                 }
                             }
                             for (seq, _) in &recovered {
-                                blk.succ.observe_high(*seq, succ_now, path_id);
+                                blk.succ.observe_high_at(
+                                    *seq,
+                                    succ_now,
+                                    path_id,
+                                    batch_send_ts,
+                                );
                             }
                         }
                         for (seq, sym_data) in recovered {

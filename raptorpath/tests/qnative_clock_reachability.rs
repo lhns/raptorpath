@@ -362,11 +362,16 @@ fn the_quantile_native_form_arms_echoes_routes_and_reports_its_own_window() {
         // law. `win_ok/evals` is the bind fraction CLAUDE.md's FORMULA-FIRST
         // rule owes any clamp, and it is what will say whether c8-Q002 was
         // measurable at all.
-        assert!(
-            law_n > 0,
-            "{site}: the quantile-native law never produced a single clock — \
-             every evaluation fell through with a short window: {l}"
-        );
+        // Sender seat only (here and `wmin > 0` below): the receiver's RTT
+        // window gets only the perf server's ~3 object-acks and can never reach
+        // N(alpha) = 200, so its `law_n = 0` is this harness, not the law.
+        if site == "sender" {
+            assert!(
+                law_n > 0,
+                "{site}: the quantile-native law never produced a single clock — \
+                 every evaluation fell through with a short window: {l}"
+            );
+        }
         assert_eq!(
             win_ok, law_n,
             "{site}: on the quantile form `win_ok` and `law_n` count the same \
@@ -384,10 +389,13 @@ fn the_quantile_native_form_arms_echoes_routes_and_reports_its_own_window() {
             wmin <= p05 && p95 <= wmax,
             "{site}: W quantiles escape their own range: {l}"
         );
-        assert!(
-            wmin > 0,
-            "{site}: W floors at the timer granularity, never at zero: {l}"
-        );
+        if site == "sender" {
+            // W summarises law-produced clocks: empty (0) where law_n = 0.
+            assert!(
+                wmin > 0,
+                "{site}: W floors at the timer granularity, never at zero: {l}"
+            );
+        }
     }
 
     // (4) THE α-REACHABILITY GATE (MEASUREMENT DISCIPLINE rule 1). The clock's

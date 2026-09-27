@@ -230,6 +230,13 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Resolve the env-gate surface once, up front: a malformed boolean gate
+    // (`config::env_flag`) is then a startup error naming the variable
+    // rather than a panic at first use mid-transfer.
+    if matches!(cli.command, None | Some(Commands::Run(_)) | Some(Commands::Perf(_))) {
+        let _ = gates::RuntimeGates::resolve();
+    }
+
     match cli.command.unwrap_or(Commands::Run(RunArgs {
         server: false,
         bind: vec![],

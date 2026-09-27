@@ -164,6 +164,36 @@ pub struct FecStats {
     /// DIAG-gated `mpd_plost_retx` beside it), so the waste split
     /// {gap-fire copy, taper copy, margin} is readable from a shipped run.
     pub taper_copy: AtomicU64,
+    /// SOURCE COPIES put on the wire in a correction slot: SACK-gap
+    /// retransmits, request-law copies and taper copies. Disjoint from
+    /// `total_repair_symbols`, which counts genuinely CODED repair only.
+    pub total_copy_symbols: AtomicU64,
+}
+
+/// What one correction-slot handoff carried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CorrectionKind {
+    /// A coded repair symbol (a linear combination over the window).
+    Coded,
+    /// A copy of an already-sent source symbol (retransmit / taper copy).
+    SourceCopy,
+}
+
+impl FecStats {
+    /// Meter one correction-slot handoff: CODED symbols into
+    /// `total_repair_symbols` (`[DIAG] cod=`), source COPIES into
+    /// `total_copy_symbols`. `sent` is whether the transport accepted it; a
+    /// refused handoff never reached the wire and is not counted.
+    pub fn record_correction(&self, kind: CorrectionKind, sent: bool) {
+        if !sent {
+            return;
+        }
+        let ctr = match kind {
+            CorrectionKind::Coded => &self.total_repair_symbols,
+            CorrectionKind::SourceCopy => &self.total_copy_symbols,
+        };
+        ctr.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Block decode statistics.
@@ -256,6 +286,22 @@ mod tests {
         let snap = path.snapshot();
         assert!((snap.loss_rate - 0.05).abs() < 1e-6);
         assert!((snap.rtt_ms - 15.0).abs() < 0.01);
+    }
+
+    /// `[DIAG] cod=` reads `total_repair_symbols`: a source COPY must not
+    /// land there, and a handoff the transport refused must land nowhere.
+    #[test]
+    fn corrections_are_metered_by_kind_and_only_when_sent() {
+        let fec = FecStats::default();
+        fec.record_correction(CorrectionKind::SourceCopy, true);
+        assert_eq!(fec.total_repair_symbols.load(Ordering::Relaxed), 0, "a copy is not coded");
+        assert_eq!(fec.total_copy_symbols.load(Ordering::Relaxed), 1);
+        fec.record_correction(CorrectionKind::Coded, true);
+        assert_eq!(fec.total_repair_symbols.load(Ordering::Relaxed), 1);
+        fec.record_correction(CorrectionKind::Coded, false);
+        fec.record_correction(CorrectionKind::SourceCopy, false);
+        assert_eq!(fec.total_repair_symbols.load(Ordering::Relaxed), 1, "failed send not counted");
+        assert_eq!(fec.total_copy_symbols.load(Ordering::Relaxed), 1, "failed send not counted");
     }
 
     #[test]

@@ -183,6 +183,9 @@ pub struct LateGauge {
     hi: Hist,
     /// Resolution class, and the same/cross-path split of it.
     by_orig: u64,
+    /// Of `by_orig`, the holes closed by the SENDER'S COPY — an own-source
+    /// arrival, but not a self-heal. Printed as `rtx=`.
+    by_retx: u64,
     by_rep: u64,
     by_aban: u64,
     xp_n: u64,
@@ -218,6 +221,7 @@ impl Default for LateGauge {
             lo: Hist::default(),
             hi: Hist::default(),
             by_orig: 0,
+            by_retx: 0,
             by_rep: 0,
             by_aban: 0,
             xp_n: 0,
@@ -273,6 +277,10 @@ impl LateGauge {
         self.hi.add(hi_us.max(lo_us));
         match outcome {
             HoleOutcome::Original => self.by_orig += 1,
+            HoleOutcome::Retransmit => {
+                self.by_orig += 1;
+                self.by_retx += 1;
+            }
             HoleOutcome::Repair => self.by_rep += 1,
             HoleOutcome::Abandoned => self.by_aban += 1,
         }
@@ -419,7 +427,7 @@ impl LateGauge {
              orig={} rep={} aban={} xp_n={} sp_n={} xp_frac={} d_us={} d_n={} \
              knee_us={} knee_n={} rho_heal0={rho0} s_tot={s_tot} lstar_us={} w={:.2} \
              delta={:.5} bar={:.4} \
-             knee_bind={} sampler_bind={} reports={}",
+             knee_bind={} sampler_bind={} reports={} rtx={}",
             self.n,
             q(&self.lo, 0.50),
             q(&self.lo, 0.90),
@@ -444,6 +452,7 @@ impl LateGauge {
             frac(self.knee_bind_n, self.report_n),
             frac(self.sampler_bind_n, self.report_n),
             self.report_n,
+            self.by_retx,
         )
     }
 }
