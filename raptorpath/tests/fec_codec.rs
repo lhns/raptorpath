@@ -134,8 +134,13 @@ fn decoder_created_at_is_recent() {
         repair_count: 5,
         block_id: 0,
     };
+    // Bracketed, not timed: `created_at` is the construction instant, so it
+    // lies between two clock reads taken around the call on ANY host speed.
+    let before = std::time::Instant::now();
     let decoder = FecBackend::RaptorQ.create_decoder(params, 12000);
-    assert!(decoder.created_at().elapsed().as_secs() < 1);
+    let after = std::time::Instant::now();
+    let created = decoder.created_at();
+    assert!(before <= created && created <= after, "created_at is not the construction instant");
 }
 
 // ===== Cross-backend: backend tag mismatch rejection =====
@@ -256,8 +261,13 @@ fn rs_decoder_created_at_is_recent() {
         repair_count: 5,
         block_id: 0,
     };
+    // Bracketed, not timed: `created_at` is the construction instant, so it
+    // lies between two clock reads taken around the call on ANY host speed.
+    let before = std::time::Instant::now();
     let decoder = FecBackend::ReedSolomon.create_decoder(params, 12000);
-    assert!(decoder.created_at().elapsed().as_secs() < 1);
+    let after = std::time::Instant::now();
+    let created = decoder.created_at();
+    assert!(before <= created && created <= after, "created_at is not the construction instant");
 }
 
 // ===== RLC Backend Tests =====
@@ -357,6 +367,11 @@ fn rlc_decoder_created_at_is_recent() {
         repair_count: 5,
         block_id: 0,
     };
+    // Bracketed, not timed: `created_at` is the construction instant, so it
+    // lies between two clock reads taken around the call on ANY host speed.
+    let before = std::time::Instant::now();
     let decoder = FecBackend::Rlc.create_decoder(params, 12000);
-    assert!(decoder.created_at().elapsed().as_secs() < 1);
+    let after = std::time::Instant::now();
+    let created = decoder.created_at();
+    assert!(before <= created && created <= after, "created_at is not the construction instant");
 }

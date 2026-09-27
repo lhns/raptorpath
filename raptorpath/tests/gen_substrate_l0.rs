@@ -23,9 +23,12 @@
 //!   RWM_L0_DUAL   =1 → two loopback paths (C7/C8 shape via RWM_L0_NETEM)
 //!   plus every RWM_* knob the engine itself reads (RWM_GEN_R, RWM_STORE, …)
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
@@ -47,19 +50,7 @@ async fn gen_substrate_l0_bench() {
         _ => (true, false),
     };
 
-    let (srv_bind, cli_bind, peers): (Vec<String>, Vec<String>, Vec<String>) = if dual {
-        (
-            vec!["127.0.0.1:47901".into(), "127.0.0.1:47902".into()],
-            vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()],
-            vec!["127.0.0.1:47901".into(), "127.0.0.1:47902".into()],
-        )
-    } else {
-        (
-            vec!["127.0.0.1:47901".into()],
-            vec!["127.0.0.1:0".into()],
-            vec!["127.0.0.1:47901".into()],
-        )
-    };
+    let n_paths = if dual { 2 } else { 1 };
 
     eprintln!(
         "--- gen_substrate_l0: mode={mode} dual={dual} bytes={bytes} runs={runs} \
@@ -67,39 +58,13 @@ async fn gen_substrate_l0_bench() {
         std::env::var("RWM_L0_NETEM").ok()
     );
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(srv_bind),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(gen_coding),
-        window_systematic_repair: Some(sys_repair),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(cli_bind),
-        peer: Some(peers),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(gen_coding),
-        window_systematic_repair: Some(sys_repair),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (mut s, mut c) = cfgs(&ports(n_paths), "bulk", true);
+    for cfg in [&mut s, &mut c] {
+        cfg.window_generation_coding = Some(gen_coding);
+        cfg.window_systematic_repair = Some(sys_repair);
+    }
+    let (srv, cli) = (resolve(&s), resolve(&c));
 
     // Generous overall bound: the runs themselves have the perf RUN_TIMEOUT.
-    tokio::time::timeout(
-        Duration::from_secs(1200),
-        perf::client(cli_pc, bytes, runs),
-    )
-    .await
-    .expect("gen_substrate_l0 bench timed out")
-    .expect("gen_substrate_l0 perf client failed");
-
-    srv.abort();
+    run(srv, cli, bytes, runs, Duration::from_secs(1200), "gen_substrate_l0 bench").await;
 }

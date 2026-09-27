@@ -30,9 +30,12 @@
 //! Own test binary and ONE test function: `RWM_ACKDIAG` is a process-global
 //! `OnceLock`, resolved once at first touch and never re-read.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ackdiag_gauge_is_wired_self_consistent_and_behaviour_neutral() {
@@ -53,40 +56,22 @@ async fn ackdiag_gauge_is_wired_self_consistent_and_behaviour_neutral() {
     // Window-reliable, and long enough to cross at least one ~2 s ACKDIAG
     // window so the `[ACKDIAG]` line itself is exercised (run with
     // `-- --nocapture` to read it).
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47871".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47871".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
 
     // BEHAVIOUR NEUTRALITY, executed: an observation-only instrument cannot
     // stall a transfer. A gauge that took a lock in the wrong order, or that
     // dropped an ack, would time out here rather than merely print oddly.
-    tokio::time::timeout(
+    run(
+        srv,
+        cli,
+        20_000_000,
+        3,
         Duration::from_secs(120),
-        perf::client(cli_pc, 20_000_000, 3),
+        "ackdiag loopback (a timeout = the gauge is not observation-only)",
     )
-    .await
-    .expect("ackdiag loopback timed out — the gauge is not observation-only")
-    .expect("ackdiag perf client failed");
-
-    srv.abort();
+    .await;
 
     // ── ROUTING + SELF-CONSISTENCY ───────────────────────────────────────
     let ids = gauge.known_paths();

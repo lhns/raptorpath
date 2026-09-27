@@ -12,9 +12,12 @@
 //! env var, and integration-test files compile to their own binary, so a
 //! single test here cannot race other tests' env reads.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_reliable_window_copa_sole_passthrough() {
@@ -24,32 +27,17 @@ async fn perf_loopback_reliable_window_copa_sole_passthrough() {
     // implies. Read at transport creation / engine start below.
     std::env::set_var("RWM_QUIC_CC", "passthrough");
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47861".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47861".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(Duration::from_secs(60), perf::client(cli_pc, 200_000, 2))
-        .await
-        .expect("copa-sole passthrough loopback timed out")
-        .expect("copa-sole passthrough perf client failed");
-
-    srv.abort();
+    run(
+        srv,
+        cli,
+        200_000,
+        2,
+        Duration::from_secs(60),
+        "copa-sole passthrough loopback timed out",
+    )
+    .await;
 }

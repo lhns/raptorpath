@@ -76,12 +76,12 @@
 //! Own test binary: `RWM_L0_NETEM` is process-global in the child, and the
 //! spawned pair must not contend with the in-process loopback tests.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
 
+use gauge::{f64_field, numeric_prefix, str_field, u64_field};
 use raptorpath::net::fcause_report_line;
 
 // ── 1: THE PURE PIN ─────────────────────────────────────────────────────
@@ -142,159 +142,18 @@ const ARM: [(&str, &str); 2] = [
     ("RWM_PLAIN_RS", "1"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn spawn_perf_server(generation: bool) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    if generation {
-        cmd.arg("--window-generation-coding");
-    }
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    // The shim shapes the CLIENT's egress; the server's own datagram path
-    // (the ack direction) is left clean so acks are not the thing under test.
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (addr, srv, log)
-}
-
-/// Parse `key=<value>` out of one whitespace-tokenised gauge line.
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn f64_field(line: &str, key: &str) -> f64 {
-    let v = field(line, key);
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
 /// Run ONE lossy loopback in the given configuration. Returns
 /// `(client log, server log)`. The CLIENT is the bulk-direction SENDER and so
 /// is the site whose `[FCAUSE]` this test is about.
+///
+/// The L1 `c3` cell on client egress, seeded ([`loopback::C3`]): loss is what
+/// forces the recovery fires this gauge classifies to exist. The shim shapes
+/// the CLIENT's egress; the server's own datagram path (the ack direction) is
+/// left clean so acks are not the thing under test. The server log is not
+/// read.
 fn lossy_run(generation: bool) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv, srv_log) = spawn_perf_server(generation);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "4000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    if generation {
-        cli.arg("--window-generation-coding");
-    }
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    // The L1 `c3` cell (LTE-class: 20 Mbit, 20 ms one-way, 5 ms jitter,
-    // GE p = 2 % / q = 40 % ⇒ ε ≈ 4.8 %) on client egress, seeded. Loss is
-    // what forces the recovery fires this gauge classifies to exist.
-    cli.env("RWM_L0_NETEM", "c3");
-    cli.env("RWM_L0_SEED", "42");
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (generation={generation}, {:?})\n--- stdout ---\n\
-         {cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
+    let extra: &[&str] = if generation { &["--window-generation-coding"] } else { &[] };
+    loopback::transfer(loopback::Transfer { env: &ARM, extra_args: extra, ..Default::default() })
 }
 
 /// `[DIAG]`'s cumulative retransmit count, MAX over all lines (the W4'
@@ -303,7 +162,7 @@ fn lossy_run(generation: bool) -> (String, String) {
 fn max_retx(log: &str) -> u64 {
     log.split_whitespace()
         .filter_map(|t| t.strip_prefix("retx="))
-        .filter_map(|v| v.parse::<u64>().ok())
+        .filter_map(|v| numeric_prefix(v).parse::<u64>().ok())
         .max()
         .unwrap_or_else(|| panic!("no `retx=` in the sender log — [DIAG] never fired"))
 }
@@ -421,11 +280,11 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
     let racks: Vec<&str> = cli.lines().filter(|l| l.contains("[RACK] ")).collect();
     if !racks.is_empty() {
         let fired_of = |rack: &str| -> u64 {
-            let fa = field(rack, "fa=");
+            let fa = str_field(rack, "fa=");
             let (_sp, fd) = fa
                 .split_once('/')
                 .unwrap_or_else(|| panic!("fa= must render `<spurious>/<fired>`: {rack}"));
-            fd.parse::<u64>().expect("fired parses")
+            numeric_prefix(fd).parse::<u64>().expect("fired parses")
         };
         assert!(
             racks.iter().any(|r| fired_of(r) == fired),

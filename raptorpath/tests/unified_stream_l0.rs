@@ -45,6 +45,9 @@
 //!
 //! `#[ignore]` — measurement instrument, not a CI gate.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -134,23 +137,24 @@ async fn unified_stream_l0_arm() {
     );
 
     // ── server engine ──
+    let port = loopback::free_port();
     let srv_cfg = config::RaptorpathConfig {
         server: Some(true),
-        bind: Some(vec!["127.0.0.1:47931".into()]),
+        bind: Some(vec![format!("127.0.0.1:{port}")]),
         protocol_hint: Some(hint.clone()),
         fec_backend: backend.clone(),
         ..Default::default()
     };
     let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    let srv_binds = srv_pc.bind_addrs.clone();
     let (srv_tun, mut srv_mem) = TunInterface::memory(1500);
-    let _srv_engine = tokio::spawn(net::run_with_tun(srv_pc, srv_tun));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    let mut _srv_engine = tokio::spawn(net::run_with_tun(srv_pc, srv_tun));
+    loopback::in_process::wait_bound(&srv_binds, &mut _srv_engine, "unified_stream_l0 server").await;
 
     // ── client engine ──
     let cli_cfg = config::RaptorpathConfig {
         bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47931".into()]),
+        peer: Some(vec![format!("127.0.0.1:{port}")]),
         protocol_hint: Some(hint),
         fec_backend: backend,
         ..Default::default()

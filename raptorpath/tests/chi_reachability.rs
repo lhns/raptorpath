@@ -37,11 +37,12 @@
 //! **Nothing here flips a default.** `RWM_COMPLETION_EXPOSURE` is ABSENT on
 //! every shipped arm and the tunnel path has no feed to give it.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{f64_field, max_u64_token, require};
 
 /// The base arm. `RWM_DIAG` carries `[CHI]`, `[SHEDH]` and `[DIAG] cod=`.
 const ARM: [(&str, &str); 3] = [
@@ -49,135 +50,6 @@ const ARM: [(&str, &str); 3] = [
     ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
-
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn spawn_perf_server(extra: &[(&str, &str)]) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    for (k, v) in extra {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (addr, srv, log)
-}
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-/// Keep the leading numeric prefix — stderr has two interleaving writers and
-/// a concurrent write can land inside a gauge line's LAST field (the
-/// `alpha_override_reachability` lesson, inherited here).
-fn numeric_prefix(v: &str) -> &str {
-    let end = v
-        .find(|c: char| {
-            !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
-        })
-        .unwrap_or(v.len());
-    &v[..end]
-}
-
-fn f64_field(line: &str, key: &str) -> f64 {
-    let v = numeric_prefix(field(line, key));
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn last_line<'a>(log: &'a str, tag: &str) -> Option<&'a str> {
-    log.lines().rev().find(|l| l.contains(tag))
-}
-
-fn require<'a>(log: &'a str, tag: &str, what: &str) -> &'a str {
-    last_line(log, tag).unwrap_or_else(|| panic!("no `{tag}` line — {what}\n--- log ---\n{log}"))
-}
-
-/// The MAXIMUM `cod=<n>` the sender printed — read as a max over lines, never
-/// off the last one: `[DIAG]`'s counters are INTERVAL counters and reading
-/// them off the tail is the harness defect that mis-scored `W4`.
-fn max_u64_token(log: &str, key: &str) -> u64 {
-    log.split_whitespace()
-        .filter_map(|t| t.strip_prefix(key))
-        .filter_map(|v| numeric_prefix(v).parse::<u64>().ok())
-        .max()
-        .unwrap_or(0)
-}
 
 /// One object loopback run.
 ///
@@ -189,31 +61,9 @@ fn max_u64_token(log: &str, key: &str) -> u64 {
 /// exactly like the failure the binary exists to detect. Three 3 MB objects at
 /// the `c3` cell's 20 Mbit/s run ≈ 1.2 s each, so every arm gets several
 /// emissions and the last one carries the transfer's own totals.
-fn run(extra: &[(&str, &str)]) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv, srv_log) = spawn_perf_server(extra);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "3000000",
-        "--runs",
-        "3",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    for (k, v) in extra {
-        cli.env(k, v);
-    }
+fn run(extra: &[(&str, &str)]) -> String {
+    let mut env = ARM.to_vec();
+    env.extend_from_slice(extra);
     // A lossy cell, so the rate law has something to price at all.
     // `c3heavy` and not `c3`, for a reason that IS the arm's own finding: the
     // glide's fully-exposed target is `BULK_TAIL_BUDGET = 0.05`, so on any
@@ -221,28 +71,23 @@ fn run(extra: &[(&str, &str)]) -> (String, String) {
     // 0 whatever χ does (asserted directly in clause 5 below). `c3`'s ε ≈ 4.8 %
     // sits just BELOW that line; `c3heavy` (ε ≈ 5.8 %) sits just above it. A
     // reachability gate must run where the mechanism can act.
-    cli.env("RWM_L0_NETEM", "c3heavy");
-    cli.env("RWM_L0_SEED", "42");
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed ({extra:?}, {:?})\n--- stdout ---\n{cli_stdout}\n\
-         --- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
+    let netem = [("RWM_L0_NETEM", "c3heavy"), ("RWM_L0_SEED", "42")];
+    // Every assertion reads the client (sender) log; the server log is unused.
+    let (cli, _srv) = loopback::transfer(loopback::Transfer {
+        env: &env,
+        client_env: &netem,
+        bytes: "3000000",
+        runs: "3",
+        ..Default::default()
+    });
+    cli
 }
 
 // ── 1 — THE ARMED ARM: χ is fed, reaches the glide, and reaches the wire ──
 
 #[test]
 fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
-    let (cli, _srv) = run(&[("RWM_COMPLETION_EXPOSURE", "1")]);
+    let cli = run(&[("RWM_COMPLETION_EXPOSURE", "1")]);
 
     // (1) THE GATE ECHO. A missing gauge below can then only be read as an
     // unreached emission site, never as an unset gate.
@@ -286,7 +131,7 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
 
 #[test]
 fn without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so() {
-    let (cli, _srv) = run(&[]);
+    let cli = run(&[]);
 
     let gates = require(&cli, "[GATES]", "the engine never echoed its gates");
     assert!(

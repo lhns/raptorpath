@@ -46,13 +46,12 @@
 //! `RWM_ACKDIAG_WINDOW_US` are process-global `OnceLock`s, resolved once at
 //! first touch and never re-read.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
-
-/// The quad's loopback ports. Distinct from every other loopback binary's
-/// range (47831-47931, 47991-47992 are taken) so the suite stays parallel-safe.
-const PORTS: [u16; 4] = [47951, 47952, 47953, 47954];
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_engine_carries_four_paths_and_the_gauge_names_all_four() {
@@ -85,40 +84,22 @@ async fn the_engine_carries_four_paths_and_the_gauge_names_all_four() {
         .expect("RWM_ACKDIAG=1 must construct the process-global gauge");
 
     // ── four binds, four peers ───────────────────────────────────────────
-    let binds: Vec<String> = PORTS.iter().map(|p| format!("127.0.0.1:{p}")).collect();
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(binds.clone()),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(); 4]),
-        peer: Some(binds),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (s, c) = cfgs(&ports(4), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
+    assert_eq!(srv.bind_addrs.len(), 4, "the server must bind the quad");
 
     // Long enough to cross MANY 250 ms windows, so the per-window report path
     // is exercised repeatedly rather than once at the end.
-    tokio::time::timeout(
+    run(
+        srv,
+        cli,
+        20_000_000,
+        3,
         Duration::from_secs(180),
-        perf::client(cli_pc, 20_000_000, 3),
+        "four-path loopback (a timeout = the engine did not carry the quad)",
     )
-    .await
-    .expect("four-path loopback timed out — the engine did not carry the quad")
-    .expect("four-path perf client failed");
-
-    srv.abort();
+    .await;
 
     // ── THE pid<2 GATE ───────────────────────────────────────────────────
     let ids = gauge.known_paths();

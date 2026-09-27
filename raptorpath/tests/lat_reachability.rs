@@ -58,13 +58,15 @@
 //! the end of the receiver task, marked `final=1` (`net/recv_block.rs`), so a
 //! transfer shorter than the cadence still has a reading. The N = 1 test
 //! below is that case; it stops the server with SIGINT so the task actually
-//! reaches an exit (see `stop_server`).
+//! reaches an exit (see `run`).
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+#[cfg_attr(not(unix), allow(unused_imports))]
+use gauge::{f64_field, is_final, opt_field, slots, u64_field};
 
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
@@ -72,95 +74,8 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-/// Spawn the perf server. Returns the child, its accumulated log (stderr,
-/// plus the stdout readiness banner) and the two reader threads, which
-/// `stop_server` joins so the log holds EVERYTHING the process wrote —
-/// including what it writes on its way out.
-fn spawn_perf_server(
-    binds: &[SocketAddr],
-) -> (Reaper, Arc<Mutex<String>>, Vec<std::thread::JoinHandle<()>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    let err_reader = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    let out_reader = {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        })
-    };
-    (srv, log, vec![err_reader, out_reader])
-}
-
+/// One loopback transfer. Returns the SERVER (receiver) log.
+///
 /// STOP THE SERVER THE WAY ITS RECEIVER CAN SEE (the exit flush, 2026-09-08).
 ///
 /// The perf server never ends a tunnel on its own: the client leaving is not
@@ -175,135 +90,21 @@ fn spawn_perf_server(
 /// L1 harnesses would take with `pkill -INT`; a harness that SIGKILLs still
 /// reads the last cadence line.
 ///
-/// Without `kill` (non-unix) the old grace period is kept: the cadence lines
-/// are still there, the `final=1` block is not, and the tests that need it
-/// are `cfg(unix)`.
-fn stop_server(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>) {
-    #[cfg(unix)]
-    {
-        let pid = srv.0.id().to_string();
-        let sent = Command::new("kill")
-            .args(["-INT", &pid])
-            .status()
-            .is_ok_and(|s| s.success());
-        assert!(sent, "could not send SIGINT to the perf server (pid {pid})");
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < deadline && !matches!(srv.0.try_wait(), Ok(Some(_))) {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        assert!(
-            matches!(srv.0.try_wait(), Ok(Some(_))),
-            "perf server did not exit within 15 s of SIGINT — the shutdown \
-             broadcast never reached its tasks"
-        );
-    }
-    #[cfg(not(unix))]
-    {
-        std::thread::sleep(Duration::from_millis(1500));
-        let _ = srv.0.kill();
-        let _ = srv.0.wait();
-    }
-    for r in readers {
-        let _ = r.join();
-    }
-}
-
-/// `final=1` as a whole token — the exit-flush marker, never a substring of
-/// some other field.
-#[cfg_attr(not(unix), allow(dead_code))]
-fn is_final(line: &str) -> bool {
-    line.split_whitespace().any(|t| t == "final=1")
-}
-
-/// One loopback transfer. Returns the SERVER (receiver) log.
+/// Without `kill` (non-unix) the server is killed once one fresh cadence line
+/// arrived: the cadence lines are there, the `final=1` block is not, and the
+/// tests that need it are `cfg(unix)`.
 fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (mut srv, srv_log, readers) = spawn_perf_server(&binds);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
-        bytes,
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
+    let binds = loopback::free_addrs(paths);
+    let srv = loopback::spawn_perf_server(&binds, &ARM, &["--protocol-hint", "bulk", "--window-reliable"]);
+    let mut env = ARM.to_vec();
+    if let Some(spec) = netem {
+        env.extend([("RWM_L0_NETEM", spec), ("RWM_L0_SEED", "42")]);
     }
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    stop_server(&mut srv, readers);
-    let out = srv_log.lock().expect("stderr sink").clone();
-    out
+    loopback::run_perf_client(&binds, &env, &loopback::perf_args("bulk", bytes, "2"));
+    srv.stop_with("INT", "[LAT] site=receiver")
 }
 
 // ── READERS ─────────────────────────────────────────────────────────────
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn f64_field(line: &str, key: &str) -> f64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-/// `-`-or-number. `None` is the ABSENT reading and is never 0.
-fn opt_field(line: &str, key: &str) -> Option<u64> {
-    let v = field(line, key);
-    (v != "-").then(|| v.parse().expect("numeric slot"))
-}
-
-/// The per-path slots, each rendered so `field()` can read it.
-fn slots(line: &str) -> Vec<String> {
-    line.split_whitespace().fold(Vec::new(), |mut acc: Vec<String>, t| {
-        let head = t.split_once(':').is_some_and(|(h, _)| {
-            h.len() > 1 && h.starts_with('p') && h[1..].chars().all(|c| c.is_ascii_digit())
-        });
-        if head {
-            acc.push(t.replacen(':', " ", 1));
-        } else if let Some(last) = acc.last_mut() {
-            last.push(' ');
-            last.push_str(t);
-        }
-        acc
-    })
-}
 
 fn last_lat(log: &str) -> &str {
     log.lines()
@@ -393,7 +194,7 @@ fn assert_lat_line(l: &str) -> Vec<String> {
 ///    over: no line on a fast host, and no marker on any host.
 ///
 /// `cfg(unix)`: the server has to be stopped with SIGINT for its receiver to
-/// reach an exit path at all — see `stop_server`.
+/// reach an exit path at all — see `run`.
 #[cfg(unix)]
 #[test]
 fn the_decomposition_fires_and_cross_path_is_structurally_zero_on_one_path() {

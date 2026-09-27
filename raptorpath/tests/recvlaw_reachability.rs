@@ -73,11 +73,12 @@
 //!
 //! **Nothing here flips a default.** Both gates ship ABSENT.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{field, opt_field, u64_field};
 
 /// The base arm. `RWM_DIAG` carries `[REQ]`, `[REQS]`, `[LATE]`, `[FCAUSE]`
 /// and `[RFA]`; no gate here changes a law.
@@ -87,181 +88,39 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-fn spawn_perf_server(binds: &[SocketAddr], extra: &[(&str, &str)]) -> (Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    // THE CONTROL MUST BE ABSENT: inheritance defeats an allowlist, and the
-    // whole point of a control is that nothing set the arm.
-    cmd.env_remove("RWM_RECV_REQUEST_LAW");
-    cmd.env_remove("RWM_RANK_FEEDBACK");
-    for (k, v) in extra {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (srv, log)
-}
-
 /// One loopback transfer under `extra`. Returns `(sender log, receiver log)` —
 /// BOTH, because the arm has a seat at each end and a one-sided reading cannot
 /// tell "never built" from "never served".
+///
+/// Both arms ride BOTH endpoints; the harness clears every inherited `RWM_*`
+/// var, so an absent arm is absent rather than inherited. CLAUSE 5, in its
+/// operational form, is `run_perf_client`'s success assertion: the SACK still
+/// clocks store release, so the transfer completes — a request law that
+/// touched `sack_tx` would wedge the sender's flow control and show there.
+/// The receiver log is taken once a `[REQ]` readout post-dating the transfer
+/// landed (with its cadence siblings `[LATE]`/`[RFA]`).
 fn run(paths: usize, netem: Option<&str>, bytes: &str, extra: &[(&str, &str)]) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds, extra);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
+    let mut env = ARM.to_vec();
+    env.extend_from_slice(extra);
+    loopback::transfer(loopback::Transfer {
+        paths,
+        env: &env,
+        client_env: &loopback::shaped(netem),
         bytes,
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    cli.env_remove("RWM_RECV_REQUEST_LAW");
-    cli.env_remove("RWM_RANK_FEEDBACK");
-    for (k, v) in extra {
-        cli.env(k, v);
-    }
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    // CLAUSE 5, in its operational form: the SACK still clocks store release,
-    // so the transfer completes. A request law that touched `sack_tx` would
-    // wedge the sender's flow control here and this is where it shows.
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, arm={extra:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (cli_stderr, srv)
+        srv_tag: Some("[REQ] "),
+        ..Default::default()
+    })
 }
 
 // ── READERS ─────────────────────────────────────────────────────────────
 
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn opt_field(line: &str, key: &str) -> Option<u64> {
-    let v = field(line, key);
-    (v != "-").then(|| v.parse().expect("numeric slot"))
-}
-
 fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
-    log.lines().rev().find(|l| l.contains(pat)).unwrap_or_else(|| {
-        panic!(
-            "no `{pat}` line — the gauge is unreachable, which is the \
-             DEAD-GAUGE reading this test exists to fail on:\n{log}"
-        )
-    })
+    gauge::require(
+        log,
+        pat,
+        "the gauge is unreachable, which is the DEAD-GAUGE reading this test \
+         exists to fail on",
+    )
 }
 
 /// CLAUSE 1: the arm's own axis, READ AT BOTH SEATS.
@@ -403,22 +262,51 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
     assert_eq!(u64_field(reqs, "coded="), 0, "{reqs}");
 
     // CLAUSE 4: THE SEAM. This is the whole identifiability argument.
-    let fc = last_with(&cli, "[FCAUSE] ");
-    println!("[recvlaw-reach] A {fc}");
-    assert_eq!(
-        u64_field(fc, "gap_data="),
-        0,
-        "[FCAUSE] gap_data > 0 with the request law armed — the collision seam \
-         did NOT close, so a copy still flies inside `[0, ℓ*)`, so \
-         `ρ̂_heal` is censored in §16.77.8a's own direction and the arm is \
-         measuring a different law than the one it names:\n{fc}"
-    );
-    assert_eq!(
-        u64_field(fc, "gap_refresh="),
-        0,
-        "[FCAUSE] gap_refresh > 0 with the request law armed — the SACK→gap \
-         producer is armed at ONE site and both its arms must go with it:\n{fc}"
-    );
+    //
+    // `[FCAUSE]` is emitted at the sender gauge's teardown IFF the gap loop
+    // classified at least one fire (`is_fire_cause_site`: `n > 0`). Under (A)
+    // the SACK→gap producer is suppressed, so the only producer left is the
+    // tail sweep (`timer`/`other`), which can legitimately fire ZERO times on
+    // a loopback run — and then there is no line at all. That absence is not
+    // a dead gauge: the emission site's reachability in this harness is
+    // proven by the CONTROL (`[FCAUSE] gap_data > 0` there), and this run's
+    // sender diag surface is live (`[REQS] on=1 served > 0` above). So the
+    // two readings are:
+    //   * line present ⇒ `gap_data = gap_refresh = 0` on the line itself;
+    //   * line absent  ⇒ `n = 0` ⇒ `gap_data = gap_refresh = 0` exactly.
+    // Either way the seam claim is asserted, and the repair traffic this
+    // lossy transfer needed provably went through the request path
+    // (`served > 0`), not through a silent third producer.
+    match gauge::last_line(&cli, "[FCAUSE] ") {
+        Some(fc) => {
+            println!("[recvlaw-reach] A {fc}");
+            assert_eq!(
+                u64_field(fc, "gap_data="),
+                0,
+                "[FCAUSE] gap_data > 0 with the request law armed — the collision seam \
+                 did NOT close, so a copy still flies inside `[0, ℓ*)`, so \
+                 `ρ̂_heal` is censored in §16.77.8a's own direction and the arm is \
+                 measuring a different law than the one it names:\n{fc}"
+            );
+            assert_eq!(
+                u64_field(fc, "gap_refresh="),
+                0,
+                "[FCAUSE] gap_refresh > 0 with the request law armed — the SACK→gap \
+                 producer is armed at ONE site and both its arms must go with it:\n{fc}"
+            );
+        }
+        None => {
+            println!(
+                "[recvlaw-reach] A: no [FCAUSE] line — the gap loop classified 0 \
+                 fires (tail sweep never fired); gap_data = gap_refresh = 0 exactly"
+            );
+            assert!(
+                !cli.contains("gap_data="),
+                "a `gap_data=` token without an `[FCAUSE]` tag — the line was \
+                 mangled, not absent:\n{cli}"
+            );
+        }
+    }
 
     // CLAUSE 8: the threshold and the bind gauge are echoed, so the
     // pre-registration can read them. NO VALUE is asserted — see the header's

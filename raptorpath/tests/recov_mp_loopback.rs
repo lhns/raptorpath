@@ -16,9 +16,12 @@
 //! Own test binary so `RWM_RECOV_MP` (process-global env) cannot leak into
 //! the other window-mode loopback tests running in parallel.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn recov_mp_dual_path_reliable_completion() {
@@ -26,36 +29,21 @@ async fn recov_mp_dual_path_reliable_completion() {
 
     std::env::set_var("RWM_RECOV_MP", "1");
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47881".into(), "127.0.0.1:47882".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    let (s, c) = cfgs(&ports(2), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
     assert!(
-        srv_pc.window_reliable,
+        srv.window_reliable,
         "recovery suppression targets the plain reliable window"
     );
-    let srv = tokio::spawn(perf::server(srv_pc));
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47881".into(), "127.0.0.1:47882".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(Duration::from_secs(90), perf::client(cli_pc, 2_000_000, 1))
-        .await
-        .expect("RWM_RECOV_MP dual-path loopback timed out")
-        .expect("RWM_RECOV_MP dual-path perf client failed");
-
-    srv.abort();
+    run(
+        srv,
+        cli,
+        2_000_000,
+        1,
+        Duration::from_secs(90),
+        "RWM_RECOV_MP dual-path loopback timed out",
+    )
+    .await;
     std::env::remove_var("RWM_RECOV_MP");
 }

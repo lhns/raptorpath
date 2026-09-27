@@ -18,8 +18,13 @@
 //! Run:
 //!   cargo test --test store_cap_bench --release -- --ignored --nocapture
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::collections::HashMap;
 use std::time::Duration;
+
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 use raptorpath::net::{
     EchoRatioMin, HonestCapPath, honest_cap_terms, path_scaled_store_cap, store_cap_sf_gauge,
@@ -283,35 +288,13 @@ fn store_cap_pathset_sweep() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "component bench; run with --ignored --nocapture"]
 async fn store_cap_saturation_population_dual_l0() {
-    use raptorpath::{config, perf};
     let _ = rustls::crypto::ring::default_provider().install_default();
     store_cap_sf_reset();
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47991".into(), "127.0.0.1:47992".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47991".into(), "127.0.0.1:47992".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-    tokio::time::timeout(Duration::from_secs(120), perf::client(cli_pc, 8_000_000, 1))
-        .await
-        .expect("dual-path L0 store-cap population run timed out")
-        .expect("dual-path L0 store-cap population run failed");
-    srv.abort();
+    let (s, c) = cfgs(&ports(2), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
+    run(srv, cli, 8_000_000, 1, Duration::from_secs(120), "dual-path L0 store-cap population run").await;
 
     let (ticks, live, active, short, zero) = store_cap_sf_gauge();
     println!("\n=== sf= GAUGE (dual-path L0, 8 MB, plain window-reliable) ===");
@@ -344,34 +327,12 @@ async fn store_cap_saturation_population_dual_l0() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "component bench; run with --ignored --nocapture"]
 async fn store_cap_saturation_population_single_l0() {
-    use raptorpath::{config, perf};
     let _ = rustls::crypto::ring::default_provider().install_default();
     store_cap_sf_reset();
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47993".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47993".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-    tokio::time::timeout(Duration::from_secs(120), perf::client(cli_pc, 8_000_000, 1))
-        .await
-        .expect("single-path L0 store-cap population run timed out")
-        .expect("single-path L0 store-cap population run failed");
-    srv.abort();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    run(srv, cli, 8_000_000, 1, Duration::from_secs(120), "single-path L0 store-cap population run").await;
 
     let (ticks, live, active, short, zero) = store_cap_sf_gauge();
     println!("\n=== sf= GAUGE (SINGLE-path L0, 8 MB, plain window-reliable) ===");

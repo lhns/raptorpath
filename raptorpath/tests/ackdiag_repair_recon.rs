@@ -35,9 +35,12 @@
 //! Own test binary: `RWM_ACKDIAG` and `RWM_L0_NETEM` are process-global and
 //! the gauge must not be contaminated by the clean-loopback arm.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn repairs_enter_the_receivers_expected_received_counters() {
@@ -56,35 +59,25 @@ async fn repairs_enter_the_receivers_expected_received_counters() {
     let gauge = raptorpath::net::ackdiag::gauge()
         .expect("RWM_ACKDIAG=1 must construct the process-global gauge");
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47873".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    run(srv, cli, 4_000_000, 2, Duration::from_secs(180), "lossy ackdiag loopback").await;
+
+    // Let the last acks land before reading the totals: wait (≤ 2 s) until
+    // the gauge's ack count has been still for 100 ms.
+    let acks = || -> u64 {
+        gauge.known_paths().iter().filter_map(|id| gauge.totals(*id)).map(|t| t.acks).sum()
     };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47873".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(Duration::from_secs(180), perf::client(cli_pc, 4_000_000, 2))
-        .await
-        .expect("lossy ackdiag loopback timed out")
-        .expect("lossy ackdiag perf client failed");
-
-    srv.abort();
-    // Let the last acks land before reading the totals.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut last = acks();
+    let mut still_since = std::time::Instant::now();
+    loopback::wait_until(Duration::from_secs(2), || {
+        let now = acks();
+        if now != last {
+            last = now;
+            still_since = std::time::Instant::now();
+        }
+        still_since.elapsed() >= Duration::from_millis(100)
+    });
 
     let mut crecv_sum = 0u64;
     let mut cexp_sum = 0u64;
