@@ -896,11 +896,7 @@ impl QuantileClockGauge {
     }
 
     fn quantile(sorted: &[u32], q: f64) -> u64 {
-        if sorted.is_empty() {
-            return 0;
-        }
-        let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
-        sorted[idx.min(sorted.len() - 1)] as u64
+        crate::monitor::quantile::nearest_rank(sorted, q) as u64
     }
 
     /// The `[QCLK]` line this gauge would emit right now.

@@ -3399,11 +3399,7 @@ impl PathState {
     /// `round((len − 1)·q)`, no interpolation, so two reads of one sample set
     /// always agree and the value is always a sample that actually occurred.
     fn cand_quantile(sorted: &[u32], q: f64) -> u64 {
-        if sorted.is_empty() {
-            return 0;
-        }
-        let idx = ((sorted.len() - 1) as f64 * q).round() as usize;
-        sorted[idx.min(sorted.len() - 1)] as u64
+        crate::monitor::quantile::nearest_rank(sorted, q) as u64
     }
 
     /// **CANDIDATE 1 — `qsp_us=`, WINDOWED QUANTILE DISPERSION, UNSCALED.**

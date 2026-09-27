@@ -217,25 +217,11 @@ fn push_capped<T>(v: &mut Vec<T>, x: T, overflow: &mut u64) {
     }
 }
 
-/// Nearest-rank quantile of an UNSORTED slice copy. `q ∈ [0, 1]`.
-/// Returns 0 for an empty series (and the caller prints `n=0` beside it, so a
-/// zero from emptiness is never confusable with a measured zero).
-fn quantile_u32(sorted: &[u32], q: f64) -> u32 {
-    if sorted.is_empty() {
-        return 0;
-    }
-    let idx = ((sorted.len() as f64 - 1.0) * q).round() as usize;
-    sorted[idx.min(sorted.len() - 1)]
-}
-
-/// Nearest-rank quantile over `f32` samples (the rate series).
-fn quantile_f32(sorted: &[f32], q: f64) -> f32 {
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    let idx = ((sorted.len() as f64 - 1.0) * q).round() as usize;
-    sorted[idx.min(sorted.len() - 1)]
-}
+// Nearest-rank quantile (the engine's one convention,
+// [`crate::monitor::quantile::nearest_rank`]). Returns 0 for an empty series
+// (and the caller prints `n=0` beside it, so a zero from emptiness is never
+// confusable with a measured zero).
+use crate::monitor::quantile::nearest_rank;
 
 /// What one path's report line needs from the ENGINE, snapshotted under the
 /// scheduler lock and passed in after it is released (see the lock-order note
@@ -443,7 +429,7 @@ impl AckCadenceGauge {
         };
         let xq = |q: f64| -> String {
             if rate_lr > 0.0 && !rates.is_empty() {
-                format!("{:.2}", quantile_f32(&rates, q) as f64 / rate_lr)
+                format!("{:.2}", nearest_rank(&rates, q) as f64 / rate_lr)
             } else {
                 "-".to_string()
             }
@@ -480,12 +466,12 @@ impl AckCadenceGauge {
             p.acks_win,
             p.zero_win,
             zpct,
-            quantile_u32(&gaps, 0.50),
-            quantile_u32(&gaps, 0.90),
-            quantile_u32(&gaps, 0.99),
+            nearest_rank(&gaps, 0.50),
+            nearest_rank(&gaps, 0.90),
+            nearest_rank(&gaps, 0.99),
             gaps.len(),
-            quantile_u32(&deltas, 0.50),
-            quantile_u32(&deltas, 0.90),
+            nearest_rank(&deltas, 0.50),
+            nearest_rank(&deltas, 0.90),
             deltas.last().copied().unwrap_or(0),
             deltas.len(),
             p.d_recv_win,
