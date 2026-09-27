@@ -584,11 +584,15 @@ RC_REPORT="${PIPESTATUS[0]}"
 ALL_OK=1
 for s in $SEEDS; do [ -f "$OUTDIR/DONE-S$s" ] || ALL_OK=0; done
 
-if [ "$ALL_OK" -eq 1 ]; then
+# DONE-ALL needs EVERY seed's earned DONE *and* a report that exited 0: a
+# report that crashed, or a `--calib` that fired ABORT-SMOKE (rc 6), is a
+# FAILED-ALL carrying that rc, never a DONE-ALL beside a failure line.
+if [ "$ALL_OK" -eq 1 ] && [ "$RC_REPORT" -eq 0 ]; then
   touch "$OUTDIR/DONE-ALL"
   echo "R-ALL-DONE report_rc=$RC_REPORT"
 else
-  touch "$OUTDIR/FAILED-ALL"
-  echo "R-ALL-FAILED report_rc=$RC_REPORT"
-  exit 5
+  echo "report_rc=$RC_REPORT seeds_done=$ALL_OK $(date -u +%FT%TZ)" > "$OUTDIR/FAILED-ALL"
+  echo "R-ALL-FAILED report_rc=$RC_REPORT seeds_done=$ALL_OK"
+  [ "$ALL_OK" -eq 1 ] || exit 5
+  exit "$RC_REPORT"
 fi
