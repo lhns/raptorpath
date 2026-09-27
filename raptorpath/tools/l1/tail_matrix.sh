@@ -210,7 +210,7 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # windowed machine, so these arms fail loudly instead of silently
             # measuring a different machine (use `rlc` / `ship`).
             streaming|bulkstream)
-                echo "ARM $arm RETIRED 2026-07-28: streaming machine deleted (goal-gate 'Streaming Crown Re-Test' / register); RWM_UNIFIED=0 now = legacy-RLC. Use 'rlc' or 'ship'." >&2
+                echo "ARM $arm was removed with the streaming machine (ADR-0064); RWM_UNIFIED=0 now = legacy-RLC. Use 'rlc' or 'ship'." >&2
                 continue ;;
             bulkship)   AENV="";              AFLAGS=""; AHINT="bulk" ;;
             *) echo "unknown arm '$arm'" >&2; continue ;;

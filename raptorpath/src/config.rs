@@ -268,9 +268,8 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         // The streaming machine is gone; the unified span machine
         // (ADR-0064) replaces it.
         Some("streaming") => anyhow::bail!(
-            "fec_backend 'streaming' was REMOVED (2026-07-28): the streaming two-layer machine \
-             was retired after the unified default held its historic tail crown cell-by-cell \
-             (DEPRECATION REGISTER / ADR-0064; goal-gate \"Streaming Crown Re-Test\"). \
+            "fec_backend 'streaming' was removed: the streaming two-layer machine \
+             was retired in favour of the unified span machine (ADR-0064). \
              Realtime rides the unified RLC span machine (default); RWM_UNIFIED=0 selects the \
              legacy-RLC windowed machine. Available: raptorq, rs, rlc"
         ),
@@ -286,7 +285,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     if config.fec_auto_switch == Some(true) {
         tracing::warn!(
             "config: fec_auto_switch is deprecated and ignored — mid-stream FEC \
-             backend switching was removed (codec is pinned at startup; paper §16.4)"
+             backend switching was removed (codec is pinned at startup; paper §5.10)"
         );
     }
     if config.fec_switch_threshold_low.is_some()
@@ -296,7 +295,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         tracing::warn!(
             "config: fec_switch_threshold_low/high and fec_switch_interval are \
              deprecated and ignored — mid-stream FEC backend switching was removed \
-             (paper §16.4)"
+             (paper §5.10)"
         );
     }
 

@@ -670,11 +670,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 info!("RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)");
             } else {
                 // Mechanism-liveness echo for the legacy opt-out arm.
-                info!("Realtime mode (RWM_UNIFIED=0): streaming machine retired — riding the legacy-RLC windowed machine");
+                info!("Realtime mode (RWM_UNIFIED=0): riding the legacy-RLC windowed machine");
             }
             FecBackend::Rlc
         } else if config.window_reliable {
-            info!("reliable window mode (RWM Phase A): auto-selecting RLC windowed backend");
+            info!("reliable window mode (retain until acked): auto-selecting RLC windowed backend");
             FecBackend::Rlc
         } else {
             config.fec_backend
@@ -1319,7 +1319,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             request_law = recv_request_law,
             rank_feedback = recv_rank_feedback,
             gap_producer_armed = recv_nack_tx.is_some(),
-            "receiver-seat repair request ACTIVE (paper 16.83: the receiver \
+            "receiver-seat repair request ACTIVE (paper §7.6: the receiver \
              REQUESTS repairs at lateness l >= l*_recv instead of the sender \
              inferring them from inverted SACK ranges; the per-seq SACK->gap \
              producer is suppressed by the collision seam while the request \
@@ -1933,7 +1933,7 @@ async fn run_window_sender(
         // Mechanism-liveness echo (measurement-discipline rule 1): asserted
         // present on the unified arm, absent on the default arm.
         info!(
-            "unified store-cap path set ACTIVE (RWM_STORE_CAP_UNIFIED, goal-gate \"Store-Cap Triplication\": the plain dyn-store-cap phase's Sigma-anchor base and honest per-path cap sum iterate live_paths() instead of the cwnd-saturation-filtered active_paths(), so the path-scaled law's Sigma-base and its xN multiplier range over the SAME set; Copa-sole, capw and pool-anchor already read live_paths(); RWM_STORE_CAP_UNIFIED=0 = the shipped-default control arm)"
+            "unified store-cap path set ACTIVE (RWM_STORE_CAP_UNIFIED: the plain dyn-store-cap phase's Sigma-anchor base and honest per-path cap sum iterate live_paths() instead of the cwnd-saturation-filtered active_paths(), so the path-scaled law's Sigma-base and its xN multiplier range over the SAME set; Copa-sole, capw and pool-anchor already read live_paths(); RWM_STORE_CAP_UNIFIED=0 = the shipped-default control arm)"
         );
     }
     if pol.three_term_on {
@@ -1943,7 +1943,7 @@ async fn run_window_sender(
         info!(
             rho = pol.contract_rho,
             b = pol.delta_b,
-            "three-term outstanding limit ACTIVE (RWM_THREE_TERM, goal-gate \"Three-Term Law\": \
+            "three-term outstanding limit ACTIVE (RWM_THREE_TERM: \
              the plain dyn-store-cap is Sigma_i rate_i*K_i*RTprop_i (network window) + \
              Sigma_i rate_i*stall(delta,rho,i) (emission slack) + 2*rate_fast*skew \
              (resequencing span), each Little's law over a measured signal with no fitted \

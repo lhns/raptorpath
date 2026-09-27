@@ -955,7 +955,7 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
     let warm_cap = cap_over(&sched, &active);
     assert_eq!(
         warm_cap, RELIABLE_STORE_MAX,
-        "c1-class honest cap latches the store max (ledger: DH occcap 1024 phases)"
+        "c1-class honest cap latches the store max"
     );
 
     // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
@@ -1931,12 +1931,12 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     let mut base = RuntimeGates::resolve();
     assert!(
         base.sum_cap,
-        "the shipped default must carry the ×N deletion since 2026-08-19 — \
+        "the shipped default must carry the ×N deletion — \
          if this fails the flip drifted back (gates.rs pins it too)"
     );
     assert!(
         base.delta_cap,
-        "the shipped default must carry the δ-cap since 2026-08-19 (§16.71) \
+        "the shipped default must carry the δ-cap (paper §6.1) \
          — if this fails the flip drifted back (gates.rs pins it too)"
     );
     base.sum_cap = false; // the DISPLACED quadratic, still re-runnable
@@ -2047,7 +2047,7 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
         "the `=0` arm is not the pinned quadratic law — the displaced arm \
          must stay re-runnable and must still reproduce the 4096 pin"
     );
-    assert_eq!(corrected, 3_020, "the FULL arm is not §16.60's published c8 value");
+    assert_eq!(corrected, 3_020, "the FULL arm is not the published c8 value");
     assert!(corrected < shipped, "the FULL arm did not free the law from its ceiling");
 
     // 5. The one real cross-layer interaction. The trio is not inert with
@@ -2090,8 +2090,7 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
     // control into its arm.
     assert!(
         RuntimeGates::resolve().delta_cap,
-        "RWM_DELTA_CAP must resolve ON by default since 2026-08-19 \
-         (candidates battery rung D) — the flip drifted back"
+        "RWM_DELTA_CAP must resolve ON by default — the flip drifted back"
     );
     let base = || {
         let mut g = RuntimeGates::resolve();

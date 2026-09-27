@@ -174,7 +174,7 @@ fn recovery_bench() {
         ARMS.iter().copied().filter(|a| arm_names.iter().any(|n| n == a.name)).collect();
     let seeds = list_u64("RWM_RB_SEEDS", "42,7");
 
-    println!("\n=== RECOVERY PLANE COMPONENT BENCH (goal-gate \"Component Benches\") ===");
+    println!("\n=== RECOVERY PLANE COMPONENT BENCH ===");
     println!(
         "N={} src @ {:.1} Mbit/s ({} µs/sym) · skew {} ms · wireQ {} ms · dwell {} ms · jitter {} ms · shed {} · budget {}/report",
         cal.n_src,
@@ -569,7 +569,7 @@ fn derived_clamp_readout() {
     use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us};
     println!("\n=== THE DERIVED RECOVERY CLAMP — cadence at the MEASURED geometry ===");
     println!(
-        "srtt_app = rtp_med + q_p50 (docs/l1-raw medians) · wire = loaded ICMP p50 · jitter {} ms",
+        "srtt_app = rtp_med + q_p50 (measured L1 medians) · wire = loaded ICMP p50 · jitter {} ms",
         JITTER_US / 1_000
     );
     println!(
@@ -730,7 +730,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
             hole_nack_refresh_floored(Some(d), HOLE_NACK_REFRESH_MIN),
             shipped,
             "the re-expressed refresh law must be BYTE-IDENTICAL to the \
-             shipped clamp at srtt = {srtt_us} us (paper 16.78 F2)"
+             shipped clamp at srtt = {srtt_us} us (paper §7.4)"
         );
         assert_eq!(hole_nack_refresh(Some(d)), shipped);
     }
@@ -738,7 +738,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
         hole_nack_refresh_floored(None, HOLE_NACK_REFRESH_MIN),
         HOLE_NACK_REFRESH_MAX,
         "the no-clock fallback is the band's own ceiling, which at the \
-         shipped floor IS HOLE_NACK_REFRESH_MAX verbatim (paper 16.78 F2)"
+         shipped floor IS HOLE_NACK_REFRESH_MAX verbatim (paper §7.4)"
     );
     // AND THE LIFT REACHES, AS ARITHMETIC, AT BOTH BINDING RAILS. This is the
     // clause a sweep of `q` at fixed refresh could never satisfy: a commanded
@@ -780,8 +780,8 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
         assert_eq!(
             got, want_us,
             "{cell}-{arm}: a commanded floor of {floor_us} us at srtt = \
-             {srtt_us} us must DELIVER {want_us} us - paper 16.78.3's derived \
-             grid, and the value the pre-registration scores against"
+             {srtt_us} us must DELIVER {want_us} us - the derived grid \
+             (paper §7.4), and the value the pre-registration scores against"
         );
         assert_eq!(
             hole_nack_refresh(Some(d)).as_micros() as u64,
@@ -793,7 +793,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
             got < shipped_us,
             "{cell}-{arm}: the whole point is that the delivered cadence gets \
              BELOW the cell's effective floor - got {got} against {shipped_us} \
-             (paper 16.78 F1)"
+             (paper §7.4)"
         );
     }
     // AND THE LIFT NEVER RAISES THE CADENCE, at any srtt, for any floor at or
@@ -812,7 +812,7 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
                 "a floor at or below the shipped one can only LOWER the \
                  cadence - at floor {floor_us} us, srtt {srtt_us} us it \
                  returned {got:?} against the shipped \
-                 {:?} (paper 16.78)",
+                 {:?} (paper §7.4)",
                 hole_nack_refresh(Some(d))
             );
             assert!(
@@ -1109,7 +1109,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     }
     assert_eq!(
         control_violations, 3,
-        "§16.67.1 publishes THREE cells where the SHIPPED clamp violates RFC 8985's \
+        "paper §7.1 publishes THREE cells where the SHIPPED clamp violates RFC 8985's \
          own <7 % spurious budget; the arithmetic now says {control_violations}"
     );
 }

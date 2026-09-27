@@ -673,8 +673,8 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
     assert_eq!(
         STORE_CAP_FLOOR,
         warm_clause.max(burst_clause),
-        "the shipped floor is not `max(warm, RFC 6928 IW)` — §16.59's \
-         derivation and the constant have drifted apart"
+        "the shipped floor is not `max(warm, RFC 6928 IW)` — the \
+         derivation (paper §6.1) and the constant have drifted apart"
     );
     assert_eq!(STORE_CAP_FLOOR, 10, "the derivation evaluates to 10 today");
 
@@ -697,7 +697,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
     assert_eq!(
         STORE_CAP_FLOOR, burst_clause,
         "RFC 6928's initial window is the binding clause at the shipped ack \
-         cadence; if this fires, the cadence moved and §16.59 must be re-read"
+         cadence; if this fires, the cadence moved and paper §6.1 must be re-read"
     );
 
     // (3) The delta is bounded to the degenerate end. `sigma` here is the
@@ -723,7 +723,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
                     unclamped > LEGACY_FLOOR as f64,
                     "{}: the shipped law's ask ({unclamped}) is beneath the \
                      LEGACY floor at N={n} — the floor change is not inert here \
-                     and §16.59's bound is wrong",
+                     and the floor's bound (paper §6.1) is wrong",
                     cell.name
                 );
                 assert_eq!(

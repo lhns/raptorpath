@@ -163,33 +163,31 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(!g.recov_sp, "RWM_RECOV_SP ships default OFF (A/B arm)");
     assert!(
         !g.derived_sweep,
-        "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
-         \"The Derived Recovery Clamp\")"
+        "RWM_DERIVED_SWEEP ships default OFF (A/B arm)"
     );
     // The receiver-law arms (paper §7.6) ship absent.
     assert!(
         !g.recv_request_law,
-        "RWM_RECV_REQUEST_LAW ships ABSENT (16.83.6 arm A)"
+        "RWM_RECV_REQUEST_LAW ships ABSENT (paper §7.6, arm A)"
     );
     assert!(
         !g.rank_feedback,
-        "RWM_RANK_FEEDBACK ships ABSENT (16.83.6 arm B)"
+        "RWM_RANK_FEEDBACK ships ABSENT (paper §7.6, arm B)"
     );
     // The CoDel-derived setpoint ships on (paper §6.1); the `=0` arm's off value
     // is asserted below on an explicit arm.
     assert!(
         g.delta_cap,
-        "RWM_DELTA_CAP ships DEFAULT ON since 2026-08-19 (candidates \
-         battery rung D DELIVERED: D-LAT 6/6 - goodput parity at every \
-         dual both seeds with q_p50 down 10-200 ms; interior with the \
-         ceiling inert at c7/c8; bit-identical at N = 1). `=0` remains \
-         the re-runnable A/B arm - the displaced gain = 2.0 fossil."
+        "RWM_DELTA_CAP ships default ON (paper §6.1); `=0` remains the \
+         re-runnable A/B arm - the displaced gain = 2.0 law."
     );
     // The refresh-band floor is absent by default, which is the shipped 25 ms
     // (paper §7.4); both the field and the echo token are asserted.
     assert!(
         g.refresh_floor_us.is_none(),
-        "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to              HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the              shipped one byte-identically (paper 16.78)"
+        "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to \
+         HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the \
+         shipped one byte-identically (paper §7.4)"
     );
     assert!(
         g.echo_line().contains("RWM_REFRESH_FLOOR_US=unset"),
@@ -210,7 +208,7 @@ fn default_env_resolves_the_shipped_stack() {
         assert!(
             bad < crate::net::LOOP_WAKE_US
                 || bad > crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{bad}` us must be OUTSIDE the refresh floor's domain (paper 16.78)"
+            "`{bad}` us must be OUTSIDE the refresh floor's domain (paper §7.4)"
         );
     }
     for good in [
@@ -227,7 +225,8 @@ fn default_env_resolves_the_shipped_stack() {
         assert!(
             good >= crate::net::LOOP_WAKE_US
                 && good <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64,
-            "`{good}` us is an arm the (q, refresh) sweep commands and must                  be INSIDE the refresh floor's domain (paper 16.78.3)"
+            "`{good}` us is an arm the (q, refresh) sweep commands and must \
+             be INSIDE the refresh floor's domain (paper §7.4)"
         );
     }
     // The echo is what a battery parses; assert these names with their resolved
@@ -247,7 +246,7 @@ fn default_env_resolves_the_shipped_stack() {
         g.delta.is_none(),
         "RWM_DELTA is an EXPERIMENT knob and is ABSENT by default — the \
          shipped δ is the one the contract's hint names, and nothing \
-         shipped may set a δ between the presets (paper §16.81/§16.82)"
+         shipped may set a δ between the presets (paper §4.1)"
     );
     // An armed δ must echo its resolved value. Set by field: env mutation is
     // process-global in a parallel runner, and the resolve is a `OnceLock`.
@@ -264,7 +263,7 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(
         off_arm.echo_line().contains("RWM_DELTA_CAP=0"),
         "the `=0` arm's echo must NAME the delta-cap gate with its 0 value \
-         - the displaced gain = 2.0 fossil stays re-runnable and \
+         - the displaced gain = 2.0 law stays re-runnable and \
          scrapeable: {}",
         off_arm.echo_line()
     );
@@ -277,7 +276,7 @@ fn default_env_resolves_the_shipped_stack() {
     // The window-mode control-datagram merge ships on (paper §9.5).
     assert!(
         g.ack_merge,
-        "RWM_ACK_MERGE ships default ON since 2026-08-08 (paper §16.42); \
+        "RWM_ACK_MERGE ships default ON (paper §9.5); \
          RWM_ACK_MERGE=0 is the opt-out arm"
     );
     // The three honest-accounting gates ship off: honest loss re-heats the
@@ -306,21 +305,19 @@ fn default_env_resolves_the_shipped_stack() {
     // control arm can assert them (`docs/measurement-discipline.md` rule 15).
     assert!(
         g.honest_anchor,
-        "RWM_HONEST_ANCHOR ships DEFAULT ON since 2026-08-11 (flip-battery F7 \
-         swept: goodput within 2σ every cell/seed, CPU/byte 0.90–1.03×; \
-         value-identical by the unit-pinned equivalence). `=0` remains the \
-         re-runnable legacy-fold A/B arm."
+        "RWM_HONEST_ANCHOR ships default ON (value-identical by the \
+         unit-pinned equivalence); `=0` remains the re-runnable \
+         legacy-fold A/B arm."
     );
     assert!(
         !g.honest_k,
-        "RWM_HONEST_K ships default OFF (A/B arm — goal-gate \"Honest Inputs\"; \
-         flip battery: rode only the failed BHU composition, khr−kraw ≈ 0 in-cell)"
+        "RWM_HONEST_K ships default OFF (A/B arm)"
     );
     assert!(
         g.echo_line().contains("RWM_HONEST_ANCHOR=1")
             && g.echo_line().contains("RWM_HONEST_K=0"),
         "the default echo must NAME both Honest-Inputs gates with their shipped \
-         values (anchor=1 since the 2026-08-11 flip, K=0): {}",
+         values (anchor=1, K=0): {}",
         g.echo_line()
     );
     assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
@@ -365,7 +362,7 @@ fn default_env_resolves_the_shipped_stack() {
     );
     assert!(
         !g.three_term,
-        "RWM_THREE_TERM ships default OFF (A/B arm — goal-gate \"Three-Term Law\")"
+        "RWM_THREE_TERM ships default OFF (A/B arm)"
     );
     // Off value named on the echo, two-sided (`docs/measurement-discipline.md`
     // rule 15).
@@ -377,7 +374,7 @@ fn default_env_resolves_the_shipped_stack() {
     // The composed cap (paper §10) ships off, same two-sided property.
     assert!(
         !g.composed_cap,
-        "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §16.56)"
+        "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §10)"
     );
     assert!(
         g.echo_line().contains("RWM_COMPOSED_CAP=0"),
@@ -388,15 +385,13 @@ fn default_env_resolves_the_shipped_stack() {
     // asserted below on an explicit arm.
     assert!(
         g.sum_cap,
-        "RWM_SUM_CAP ships DEFAULT ON since 2026-08-19 (ladder battery rung \
-         N DELIVERED: interior at both duals, pin 0.000 / eng 1.000 / \
-         chg_frac 1.000, goodput ≥ control at c8 both seeds). `=0` remains \
-         the re-runnable A/B arm — the displaced quadratic."
+        "RWM_SUM_CAP ships default ON (paper §6.1); `=0` remains the \
+         re-runnable A/B arm — the displaced quadratic."
     );
     assert!(
         g.echo_line().contains("RWM_SUM_CAP=1"),
         "the default echo must NAME the sum-cap gate with its shipped 1 \
-         value (flipped 2026-08-19): {}",
+         value: {}",
         g.echo_line()
     );
     // The `=0` arm must echo the gate with its 0 value. Set by field, not env.
@@ -411,8 +406,7 @@ fn default_env_resolves_the_shipped_stack() {
     // The extracted late-stage brake is still an experiment arm and ships off.
     assert!(
         !g.late_brake,
-        "RWM_LATE_BRAKE ships default OFF (A/B arm — paper §16.60.1; ladder \
-         battery: armed on 110/110 FULL reps but its EFFECT is unresolved)"
+        "RWM_LATE_BRAKE ships default OFF (A/B arm; its effect is unresolved)"
     );
     assert!(
         g.echo_line().contains("RWM_LATE_BRAKE=0"),

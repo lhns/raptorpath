@@ -963,7 +963,7 @@ impl QuicTransport {
             info!("MTU floor OFF (RWM_MTU_FLOOR=0): stock quinn MTUD — black-hole reset lands at 1200 < symbol datagram (wedge-reproduction arm)");
             return; // stock quinn MTU behavior (wedge-reproduction arm)
         }
-        info!(floor, "MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (fix/frontier-wedge)");
+        info!(floor, "MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (ADR-0055)");
         transport.initial_mtu(floor);
         transport.min_mtu(floor);
         // Mechanism-liveness echo (docs/measurement-discipline.md rule 1):

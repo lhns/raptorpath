@@ -196,7 +196,7 @@ fn published_delta_deadline_equals_the_engine_shed_deadline() {
             // A representation artefact, and the only slack on this side.
             assert!(
                 (-f64::EPSILON..D_QUANT_BOUND_S).contains(&err),
-                "D(δ) diverges from §16.20.3 beyond the µs quantization: \
+                "D(δ) diverges from paper §5.6 beyond the µs quantization: \
                  b={b} RTprop={rtprop_ms}ms paper={paper_s} engine={engine_s} err={err}"
             );
         }
@@ -226,13 +226,13 @@ fn published_contract_stall_equals_the_engine_stall() {
                     if rho == 1.0 {
                         assert_eq!(
                             engine, paper,
-                            "at the SHIPPED ρ = 1 the stall must equal §16.56 EXACTLY: \
+                            "at the SHIPPED ρ = 1 the stall must equal paper §6.4 EXACTLY: \
                              b={b} K={k} RTprop={rtprop_ms}ms"
                         );
                     }
                     assert!(
                         (-f64::EPSILON..=bound + f64::EPSILON).contains(&err),
-                        "stall diverges from §16.56 beyond (1−ρ)·quantization: \
+                        "stall diverges from paper §6.4 beyond (1−ρ)·quantization: \
                          ρ={rho} b={b} K={k} RTprop={rtprop_ms}ms \
                          paper={paper} engine={engine} err={err} bound={bound}"
                     );
@@ -299,7 +299,7 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
                     let n = g.len();
                     assert!(
                         (-1e-9..=bound).contains(&err),
-                        "the composed cap diverges from §16.56 (amended 2026-08-18): \
+                        "the composed cap diverges from its published law: \
                          N={n} ρ={rho} b={b} K={k} paper={paper} engine={engine_total} \
                          (window={window} slack={slack} span={span}) err={err} bound={bound}"
                     );
@@ -340,7 +340,7 @@ fn the_amended_term_one_is_k_times_the_pre_amendment_term_one() {
         let pct = 100.0 * (k - 1.0);
         assert!(
             (4.0..=50.5).contains(&pct),
-            "K={k} is outside the range §16.57 measured on the wire"
+            "K={k} is outside the range measured on the wire"
         );
     }
 }
@@ -467,7 +467,7 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
             .expect("on");
         assert_eq!(
             corrected, expect_corrected,
-            "{cell}: §16.60's published prediction is not what the law computes"
+            "{cell}: the published prediction is not what the law computes"
         );
         assert!(
             corrected < 2 * KNEE && corrected > POOL_FLOOR,

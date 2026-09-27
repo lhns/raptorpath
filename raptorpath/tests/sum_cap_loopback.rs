@@ -85,7 +85,7 @@ async fn sum_cap_and_late_brake_route_without_the_composed_law_and_the_loopback_
     );
     assert_eq!(
         g.store_boot, 128,
-        "the ×N deletion must not carry the boot cap's derived value — §16.61 \
+        "the ×N deletion must not carry the boot cap's derived value — paper §6.2 \
          records that as DERIVED and NOT SHIPPED, blocked on the cliff"
     );
     assert!(

@@ -469,7 +469,7 @@ run_seed() {
   : > "$OUTDIR/r-witness-s${SEED_ARG}.jsonl"
   {
     echo "=== THE r > 0 BATTERY seed=$SEED_ARG reps=$REPS calib=$CALIB $(date -u +%FT%TZ)"
-    echo "CONTRACT goal-gate \"THE r > 0 BATTERY -- PRE-REGISTRATION\", and nothing else. Paper 16.82 is the derivation; 16.82.4 the two rival hypotheses; 16.82.6 the falsifier."
+    echo "CONTRACT the pre-registration \"THE r > 0 BATTERY -- PRE-REGISTRATION\" (git history before 22b56d9), and nothing else. Paper §4.9 is the derivation; the pre-registration names the two rival hypotheses and the falsifier."
     echo "ARMS  $R_ARMS   (GLIDE-Z pre-declared ARM-ABSENT unless the binary echoes RWM_TAIL_BUDGET; armed=$GLIDE_Z_OK)"
     echo "AXIS  RWM_DELTA + RWM_COPA_DELTA + RWM_COMPLETION_EXPOSURE, all ABSENT/OFF by default. Nothing here flips a default."
     echo "PURGE $R_CONTAM_GATES  (unset at entry, asserted two-sided every rep; RWM_THREE_TERM is the named confound and ships DEFAULT OFF)"

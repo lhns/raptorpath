@@ -288,21 +288,21 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         ..Default::default()
     };
     if args.window_out_of_order && !args.window_reliable {
-        anyhow::bail!("--window-out-of-order requires --window-reliable (RWM Phase C)");
+        anyhow::bail!("--window-out-of-order requires --window-reliable (out-of-order object delivery)");
     }
     if args.window_coded_only && !args.window_reliable {
         anyhow::bail!(
-            "--window-coded-only requires --window-reliable (fungible frontier, §16.3)"
+            "--window-coded-only requires --window-reliable (fungible frontier)"
         );
     }
     if args.window_generation_coding && !args.window_reliable {
         anyhow::bail!(
-            "--window-generation-coding requires --window-reliable (§16.3 stable anchor)"
+            "--window-generation-coding requires --window-reliable (generation coding)"
         );
     }
     if args.window_systematic_repair && !args.window_reliable {
         anyhow::bail!(
-            "--window-systematic-repair requires --window-reliable (§16.3 systematic+repair)"
+            "--window-systematic-repair requires --window-reliable (systematic + deficit repair)"
         );
     }
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;

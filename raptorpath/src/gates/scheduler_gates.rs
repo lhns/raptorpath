@@ -155,7 +155,7 @@ pub(crate) fn resolve_place_t_derived() -> bool {
     // Two-sided liveness echo (`docs/measurement-discipline.md` rule 1).
     tracing::info!(
         place_t_derived = on,
-        "placement temperature (RWM_PLACE_T_DERIVED, paper 16.81.1): \
+        "placement temperature (RWM_PLACE_T_DERIVED, paper §5.7): \
          T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
          dispersion when ON; the shipped place_temperature() when OFF"
     );
@@ -196,7 +196,7 @@ pub(crate) fn resolve_place_hol() -> bool {
     let on = place_arm_flag("RWM_PLACE_HOL");
     tracing::info!(
         place_hol = on,
-        "placement frontier term (RWM_PLACE_HOL, paper 16.81.2): \
+        "placement frontier term (RWM_PLACE_HOL, paper §5.7): \
          X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
          against the sender's own F_hat, plus the (a2) wire-price ordering \
          term at its derived W; ABSENT leaves the shipped cost untouched"
@@ -228,7 +228,7 @@ pub(crate) fn resolve_place_wdiv_derived() -> bool {
     let on = place_arm_flag("RWM_PLACE_WDIV_DERIVED");
     tracing::info!(
         place_wdiv_derived = on,
-        "placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper 16.81.3): \
+        "placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper §5.7): \
          fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott \
          burst persistence when ON; the shipped w_div*fate when OFF"
     );
@@ -260,7 +260,7 @@ pub(crate) fn resolve_cold_place() -> bool {
     tracing::info!(
         cold_place = on,
         "cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): \
-         an unmeasured leg's SRTT_i in the §16.3 cost is the active set's \
+         an unmeasured leg's SRTT_i in the §5.7 cost is the active set's \
          fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed \
          when OFF (shipped, bit-identical)"
     );

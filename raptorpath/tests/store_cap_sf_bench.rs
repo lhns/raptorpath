@@ -3162,7 +3162,7 @@ fn pacer_debit_bounds_only_the_source_arm_not_the_wire() {
     );
     assert!(
         l.wire() > l.tokens,
-        "the paper's §12 claim would need wire == tokens; measured wire {} vs tokens {}",
+        "a token-exact wire would need wire == tokens; measured wire {} vs tokens {}",
         l.wire(),
         l.tokens
     );
@@ -3934,7 +3934,7 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
             ratio > 2.0,
             "{cell}: the bench's Sigma cwnd {:.0} is not above 2x the wire's \
              Sigma anchor {sigma_wire:.0} — if this ever drops, the headroom \
-             attribution in goal-gate \"The Coupling Model\" is void and must \
+             attribution of the coupling model is void and must \
              be re-taken",
             r.cwnd_live_mean
         );
@@ -4070,7 +4070,7 @@ fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_br
             w.queue_over_rtprop() > 5.0,
             "{tag}: the wire's standing queue is {:.1} ms on a {:.1} ms RTprop \
              ({:.1}x). The dispatch's premise was that the wire reads ~1x. If \
-             this row ever drops below 5x, goal-gate \"The Queue Fix\" FINDING 1 \
+             this row ever drops below 5x, the queue-attribution finding \
              is void and must be re-taken.",
             w.q_ms,
             w.rtprop_ms,
@@ -4270,7 +4270,7 @@ fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_i
         q / rtp < w.queue_over_rtprop(),
         "c7: the bench's standing queue is {:.1}x RTprop and the wire's is \
          {:.1}x — the dispatch assumed the reverse. If this ever flips, \
-         goal-gate \"The Queue Fix\" FINDING 1 must be re-taken.",
+         the queue-attribution finding must be re-taken.",
         q / rtp,
         w.queue_over_rtprop()
     );
@@ -4356,8 +4356,8 @@ fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_a
             infl_x < 1.15,
             "{cell}: min_rtt is {infl_x:.2}x the configured RTprop at a \
              {horizon}s horizon — inside the 10 s window the t=0 floor must \
-             still win, or the attribution in goal-gate \"The Queue Fix\" \
-             FINDING 3 is wrong"
+             still win, or the min_rtt-floor attribution \
+             is wrong"
         );
         // (b) And Σ cwnd lands on the wire's measured anchor sum.
         assert!(
@@ -4389,7 +4389,7 @@ fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_a
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_horizon_against_the_engines_own_filter_window() {
     println!("\n=== THE HORIZON AXIS vs CopaState::window_duration = 10 s ===");
-    println!("wire transfer durations (the `seconds` column, docs/l1-raw): c7 9.23s, sc2 9.11s, c8 2.56s.");
+    println!("wire transfer durations (the `seconds` column of the L1 records): c7 9.23s, sc2 9.11s, c8 2.56s.");
     println!("Below 10 s NEITHER windowed extreme expires — min_rtt and max_bw are whole-transfer.\n");
     for (name, cell, geom, shapes) in [
         ("sc2  single fast (c2r100)  ", "sc2", vec![C2], &ACK_SC2[..]),
@@ -4701,7 +4701,7 @@ impl MeasEns {
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_composed_cap_law_as_one_arm() {
-    println!("\n=== THE COMPOSED CAP LAW as ONE ARM (§16.56) — 8 s, honest era ===");
+    println!("\n=== THE COMPOSED CAP LAW as ONE ARM (paper §10) — 8 s ===");
     println!(
         "law: cap = SUM_live [ rate_i*RTprop_i + rate_i*stall(delta,rho,srtt_i) ] \
          + 2*rate_fast*skew"
@@ -5661,7 +5661,7 @@ fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() 
         assert!(
             r.mean_cap < WIN_STORE_MAX as f64,
             "{name}: the composed cap reads {:.1} at the MEMORY bound {WIN_STORE_MAX} — \
-             the resource limit has become the law (§16.56 STOP)",
+             the resource limit has become the law (stop condition)",
             r.mean_cap
         );
         assert!(
@@ -5973,7 +5973,7 @@ fn the_wires_offered_load_has_no_congestion_control() {
     assert!(
         tun.contains("without a kernel TUN or an inner TCP stack"),
         "tun/mod.rs no longer states that the perf vehicle has no inner TCP \
-         stack — the premise of goal-gate \"The Latency-Feedback Source\" \
+         stack — the premise of the latency-feedback attribution \
          must be re-read against whatever replaced it"
     );
     // The feed loop is open: one bare iteration per chunk, no gate but the

@@ -607,7 +607,7 @@ impl DerivedRoundEcho {
     /// The execution echo's full text.
     pub(crate) fn ran_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
         format!(
-            "{DS_ECHO_RAN} (RWM_DERIVED_SWEEP, goal-gate \"The Derived Recovery Clamp\": \
+            "{DS_ECHO_RAN} (RWM_DERIVED_SWEEP: \
              round = max(2*srtt, patience_floor(jitter, srtt)), NO ceiling and zero new \
              constants, replacing 2*srtt clamped to [25, 100] ms at both recovery-clock \
              sites; RWM_DERIVED_SWEEP=0 = the shipped clamped control arm) site={site} \
@@ -618,8 +618,7 @@ impl DerivedRoundEcho {
     /// The binding echo's full text.
     pub(crate) fn diverged_msg(site: &str, srtt_us: u64, jitter_us: u64, d_us: u64, l_us: u64) -> String {
         format!(
-            "{DS_ECHO_DIVERGED} from the clamped law (goal-gate \"The Derived Recovery \
-             Clamp\", coincidence property: the two laws agree wherever 2*srtt already lies \
+            "{DS_ECHO_DIVERGED} from the clamped law (coincidence property: the two laws agree wherever 2*srtt already lies \
              inside [25, 100] ms, so this line, not the execution echo, is what proves the \
              derived round BOUND at this site) site={site} srtt_us={srtt_us} \
              jitter_us={jitter_us} derived_us={d_us} legacy_us={l_us}"

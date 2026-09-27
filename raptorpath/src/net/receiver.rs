@@ -2309,7 +2309,7 @@ pub(crate) async fn run_receiver(
                         flush_seq,
                         ?new_backend,
                         "ignoring WindowSwitch: mid-stream FEC backend switching \
-                         was removed (codec is pinned at stream setup; paper §16.4)"
+                         was removed (codec is pinned at stream setup; paper §5.10)"
                     );
                 }
 
