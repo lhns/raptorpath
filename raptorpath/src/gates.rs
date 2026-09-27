@@ -7,10 +7,8 @@
 //! resolution: every gate is read exactly once per engine start
 //! (`RuntimeGates::resolve()`), documented in one place with its default and
 //! its decision record (ADR / goal-gate section), and the resolved struct is
-//! passed to the tasks that consume it. When a register Class-C gate exists,
-//! its deprecation warning (`config::deprecated_env_flag`) fires here, once
-//! (none currently — the 2026-07-27 consolidation passes executed the whole
-//! DEPRECATION REGISTER).
+//! passed to the tasks that consume it. Refuted experiment arms are removed
+//! outright rather than kept behind a deprecation warning.
 //!
 //! Behavior contract: `resolve()` reproduces the exact per-site semantics the
 //! scattered reads had (same defaults, same parse/clamp rules, same chaining
@@ -267,21 +265,6 @@ pub struct RuntimeGates {
     /// the divergence is PIPELINE VERIFICATION MATRIX rows 2 + 6 and is
     /// bounded by `pacer_debit_bounds_only_the_source_arm_not_the_wire`.
     pub charge_recovery: bool,
-    /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
-    /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
-    /// = 10 ms literal — 10× RFC 9002's kGranularity, and at c2/c7 at or
-    /// ABOVE the 9/8·srtt term it was meant to floor — becomes
-    /// `net::patience_floor_us` = the engine's timer granularity (the sender
-    /// loop's 1 ms wake, coinciding with RFC 9002's RECOMMENDED value) + the
-    /// path's OWN measured RTT jitter (`PathState::rtt_jitter_us`), clamped
-    /// at one srtt, with the legacy floor kept verbatim before the first
-    /// clock sample. Applied at the two BEHAVIOURAL sites only: the
-    /// kGranularity analog inside `mp_time_threshold_split` and the per-seq
-    /// retransmit cooldown. The tail-sweep fallback is left alone (it feeds
-    /// `(srtt·2).clamp(25 ms, 100 ms)`, so every value ≤ 12.5 ms is
-    /// identical — INERT, unit-tested). RFC 9002's kTimeThreshold 9/8 and
-    /// kPacketThreshold 3 are UNTOUCHED.
-    pub patience_derived: bool,
     /// `RWM_SIDLE_DERIVED` (default OFF — DIAG-only and behaviour-inert;
     /// goal-gate "Unlock The Default 2"): print `sidle2=`/`idle2=` beside
     /// the UNCHANGED legacy `sidle=`/`idle=` gauges, computed by
@@ -1264,7 +1247,6 @@ impl RuntimeGates {
             loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
             release_1to1: crate::scheduler::release_1to1_active(),
             charge_recovery: crate::scheduler::charge_recovery_active(),
-            patience_derived: crate::scheduler::patience_derived_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
             win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
@@ -1428,7 +1410,6 @@ impl RuntimeGates {
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
-             RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
              RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
              RWM_PLACE_WDIV_DERIVED={} \
@@ -1462,7 +1443,6 @@ impl RuntimeGates {
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
-            b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
             b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
             b(self.place_wdiv_derived),
@@ -2081,10 +2061,6 @@ mod tests {
         // recovery-patience floor is a pure A/B arm and must not reach the
         // shipped default stack until its pre-registered gate set passes;
         // the derived stall gauge is DIAG-only and also ships OFF.
-        assert!(
-            !g.patience_derived,
-            "RWM_PATIENCE_DERIVED ships default OFF (A/B arm)"
-        );
         assert!(
             !g.sidle_derived,
             "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"

@@ -409,8 +409,6 @@ pub(crate) struct SenderPolicy {
     pub recov_sp: bool,
     /// `RWM_RECOV_MP_LIVE`: recovery clocks on `live_paths()`.
     pub recov_mp_live: bool,
-    /// `RWM_PATIENCE_DERIVED`: the derived recovery-patience floor.
-    pub patience_derived: bool,
     /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
     /// tail-sweep / hole-refresh ROUND on the derived law (2·SRTT floored by
     /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
@@ -1302,11 +1300,9 @@ impl SenderPolicy {
         // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
         // threshold. Under this gate the snapshot uses `live_paths()`.
         let recov_mp_live = gates.recov_mp_live && recov_mp_law;
-        // Goal-gate "Unlock The Default 2: derived patience" — the two gates.
-        // `patience_derived` is BEHAVIOURAL (the recovery-patience floor);
-        // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
-        // beside the unchanged legacy one). Both default OFF.
-        let patience_derived = gates.patience_derived;
+        // Goal-gate "Unlock The Default 2": `sidle_derived` is DIAG-only (the
+        // second, derived stall gauge printed beside the unchanged legacy
+        // one). Default OFF.
         let sidle_derived = gates.sidle_derived && diag_on;
         // ── Emission batching (goal-gate "Emission Batching", RWM_EMIT_BATCH,
         // DEFAULT OFF — same-binary A/B) ──────────────────────────────────────
@@ -1474,7 +1470,6 @@ impl SenderPolicy {
             recov_mp_law,
             recov_sp,
             recov_mp_live,
-            patience_derived,
             derived_sweep: gates.derived_sweep,
             rack_clocks: gates.rack_clocks,
             rack_reo_mult: gates.rack_reo_mult,

@@ -23,7 +23,7 @@
 //!   RWM_RB_PATTERN    uniform,ge           iid vs Gilbert-Elliott bursty
 //!   RWM_RB_PATHS      1,2                  path count (2 ⇒ skew applied)
 //!   RWM_RB_CLOCK      app,wire             THE clock ARGUMENT (see below)
-//!   RWM_RB_ARMS       shipped,legacy,sp,pd gate arms (see `ARMS`)
+//!   RWM_RB_ARMS       shipped,legacy,sp    gate arms (see `ARMS`)
 //!   RWM_RB_N          6000                 source symbols per cell
 //!   RWM_RB_SEEDS      42,7
 //!   RWM_RB_MBPS       100.0                source rate (c7 class)
@@ -177,7 +177,7 @@ fn recovery_bench() {
         .iter()
         .map(|s| if s == "wire" { Clock::Wire } else { Clock::App })
         .collect();
-    let arm_names = list_str("RWM_RB_ARMS", "shipped,legacy,sp,pd");
+    let arm_names = list_str("RWM_RB_ARMS", "shipped,legacy,sp");
     let arms: Vec<Arm> =
         ARMS.iter().copied().filter(|a| arm_names.iter().any(|n| n == a.name)).collect();
     let seeds = list_u64("RWM_RB_SEEDS", "42,7");
@@ -202,8 +202,8 @@ fn recovery_bench() {
     let t0 = std::time::Instant::now();
 
     for arm in &arms {
-        println!("\n--- arm `{}` (recov_mp={} recov_sp={} patience_derived={}) ---",
-            arm.name, arm.recov_mp, arm.recov_sp, arm.patience_derived);
+        println!("\n--- arm `{}` (recov_mp={} recov_sp={}) ---",
+            arm.name, arm.recov_mp, arm.recov_sp);
         println!(
             "{:>4} {:>6} {:>5} {:>3} {:>5} | {:>9} {:>8} {:>8} {:>7} | {:>6} {:>5} | {:>7} {:>7} {:>7} {:>8} | {:<26} | {:>6} {:>6} {:>6} | {}",
             "rtp", "loss", "pat", "np", "clk",
@@ -633,7 +633,7 @@ fn derived_clamp_readout() {
         "{:<9} {:>5} | {:>9} {:>9} | {:>6} {:>6} {:>7} | {:>8} {:>8}",
         "arm", "clk", "sweep", "refresh", "holes", "retx", "sweeps", "p50 ms", "p90 ms"
     );
-    for (arm_ix, arm_tag) in [(0usize, "shipped"), (4usize, "ds")] {
+    for (arm_ix, arm_tag) in [(0usize, "shipped"), (3usize, "ds")] {
         for (clock, ctag) in [(Clock::App, "app"), (Clock::Wire, "wire")] {
             let (mut retx, mut sweeps, mut holes) = (0u64, 0u64, 0usize);
             let mut svc: Vec<u64> = Vec::new();
@@ -1029,9 +1029,9 @@ fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
     let cal = c8_calib(2_000);
     let base = c8_cell();
     let shipped = run_cell(base, cal);
-    let ds = run_cell(Cell { arm: ARMS[4], ..base }, cal);
-    assert_eq!(ARMS[4].name, "ds");
-    assert!(ARMS[4].derived_sweep && !ARMS[0].derived_sweep);
+    let ds = run_cell(Cell { arm: ARMS[3], ..base }, cal);
+    assert_eq!(ARMS[3].name, "ds");
+    assert!(ARMS[3].derived_sweep && !ARMS[0].derived_sweep);
 
     // Same wire: the A/B is over the LAWS, never over the losses.
     assert_eq!(shipped.holes.len(), ds.holes.len());
@@ -1051,8 +1051,7 @@ fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
         2 * ds.pooled_us
     );
 
-    // And the gate is NOT inert. (`RWM_PATIENCE_DERIVED` was measurably
-    // inert at this bench; this one is not, which is worth pinning.)
+    // And the gate is NOT inert, which is worth pinning.
     assert!(
         ds.counts.sweeps < shipped.counts.sweeps,
         "the derived arm must fire FEWER sweeps: {} vs {}",

@@ -834,48 +834,16 @@ pub fn charge_recovery_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_CHARGE_RECOVERY", false))
 }
 
-/// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
-/// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
-/// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
-/// analog inside `mp_time_threshold_split`, and the per-seq retransmit
-/// cooldown) with `net::patience_floor_us` = timer granularity + the path's
-/// own measured RTT jitter. RFC 9002's 9/8 and packet-threshold 3 untouched.
-/// Cached so every read site resolves identically within a process.
-///
-/// Not a dial: it selects no law and no constructor argument on (δ, ρ, r).
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): eliminated on BOTH population and response
-/// — the literal it replaces wins 0 of 177 543 §6.1.2 evaluations at c7, and
-/// where it does bind (c1) collapsing it moves nothing ≫σ. The goal closed as
-/// a documented STRUCTURAL BOUND. Activation warns via
-/// [`crate::config::deprecated_env_flag`]. NOTE: the schedule deletes the LAW
-/// only — the `pf=<floor>/<clock>/<mean>` gauge is explicitly excluded, the
-/// named successor (a store-dwell-inclusive recovery RTT) needs it verbatim.
-pub fn patience_derived_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_PATIENCE_DERIVED",
-            false,
-            "Unlock The Default 2: derived patience (2026-08-07)",
-        )
-    })
-}
-
 /// `RWM_SIDLE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2".
 /// DIAG-ONLY and behaviour-inert: the legacy `sidle=`/`[WIDLE] idle=` fields
 /// are printed UNCHANGED; this gate adds a SECOND field (`sidle2=`,
 /// `idle2=`) computed by `net::stall_threshold_us` over the same event
 /// stream, so the fixed-3 ms-threshold artifact question is answered on the
 /// SAME runs in every arm, controls included.
-/// Deliberately NOT wired to `deprecated_env_flag` even though it was built
-/// and closed in the same session as its three deprecated mates: this is an
-/// INSTRUMENT whose verdict is a STANDING INSTRUCTION the register issues to
-/// future sessions (*where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not
-/// `sidle`*). Warning "deprecated, removal scheduled" on a gauge the ledger
-/// tells you to switch on would contradict the register. See goal-gate
-/// "Batch-2 removal schedule".
+/// An INSTRUMENT whose verdict is a STANDING INSTRUCTION (*where
+/// `evt ≫ LOOP_WAKE_US`, read `sidle2`, not `sidle`*), retained after its
+/// three session-mates (`RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
+/// `RWM_PATIENCE_DERIVED`) were removed as refuted arms.
 pub fn sidle_derived_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();

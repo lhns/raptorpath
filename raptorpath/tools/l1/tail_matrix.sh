@@ -243,14 +243,6 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # composed pool-anchor default off with it; eb=0 restores the
             # per-symbol sender).
             prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
-            # feat/derived-patience (goal-gate "Unlock The Default 2"): the
-            # crown spot for THE candidate. `pat` = est+eb+the derived
-            # recovery-patience floor; the tail cell is exactly where a
-            # patience change could hurt (a floor that fires too eagerly buys
-            # throughput with p99), so this arm is a gate, not a formality.
-            # Compare against `ship` (env unset = today's default) and
-            # `deliv` (est+eb, the same composition WITHOUT the derived floor).
-            pat)     AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_PATIENCE_DERIVED=1"; AFLAGS="" ;;
             # feat/ack-merge-flip (goal-gate "Ack-Merge Flip"): the crown
             # NO-REGRESSION spot for the single-knob candidate. `am` =
             # RWM_ACK_MERGE=1 alone against `ship` (env unset = today's
