@@ -2111,6 +2111,16 @@ fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool
     (hint == ProtocolHint::Realtime || window_reliable) && backend.is_streaming()
 }
 
+/// The `[PIPE]` echo (block re-test pre-registration, docs/status.md §4;
+/// MEASUREMENT DISCIPLINE rules 1 and 15b): the pipeline the engine ACTUALLY
+/// selected and the FEC backend it pinned, one line per engine start on both
+/// endpoints. An instrument only — it reads the decision, it takes none.
+fn pipe_echo_line(hint: ProtocolHint, backend: FecBackend, window_mode: bool) -> String {
+    let pipeline = if window_mode { "window" } else { "block" };
+    let hint = format!("{hint:?}").to_lowercase();
+    format!("[PIPE] pipeline={pipeline} backend={backend:?} hint={hint}")
+}
+
 // ---------------------------------------------------------------------------
 // RWM Phase A retention policy (paper §15.7/§16.3), unit-tested below.
 //
@@ -2728,6 +2738,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
     let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend, config.window_reliable);
+    info!("{}", pipe_echo_line(config.protocol_hint, effective_fec_backend, window_mode));
     // The retention policy is per-stream/per-config, NOT global: Realtime
     // keeps its lossy EVICT window unless explicitly opted in.
     let window_reliable = window_mode && config.window_reliable;
@@ -14574,6 +14585,25 @@ mod tests {
             is_window_mode(ProtocolHint::Realtime, FecBackend::Rlc, false),
             "Realtime rides the window pipeline at the default (EVICT retention)"
         );
+    }
+
+    /// The `[PIPE]` echo names BOTH routes by the same predicate the engine
+    /// routes on: the shipped default config prints `pipeline=block
+    /// backend=RaptorQ`, the `--window-reliable` arm (run_impl auto-selects
+    /// RLC) prints `pipeline=window backend=Rlc`. The battery greps exactly
+    /// these tokens, so the format is pinned here.
+    #[test]
+    fn pipe_echo_names_the_route_the_engine_takes() {
+        let (pc, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default())
+            .expect("the empty default config resolves");
+        for (hint, h) in [(ProtocolHint::Bulk, "bulk"), (ProtocolHint::Auto, "auto")] {
+            let blk_mode = is_window_mode(hint, pc.fec_backend, pc.window_reliable);
+            let blk = pipe_echo_line(hint, pc.fec_backend, blk_mode);
+            assert_eq!(blk, format!("[PIPE] pipeline=block backend=RaptorQ hint={h}"));
+            let win_mode = is_window_mode(hint, FecBackend::Rlc, true);
+            let win = pipe_echo_line(hint, FecBackend::Rlc, win_mode);
+            assert_eq!(win, format!("[PIPE] pipeline=window backend=Rlc hint={h}"));
+        }
     }
 
     // ── fix/loss-crosspath: the cross-path loss contamination, BOUNDED ──
