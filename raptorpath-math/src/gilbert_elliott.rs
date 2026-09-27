@@ -37,7 +37,7 @@ pub struct GilbertElliottEstimator {
     min_samples: u64,
     /// Total transitions observed
     total_transitions: u64,
-    /// --- window loss-mass statistics (paper Section 8.4.1) ---
+    /// --- window loss-mass statistics (paper §4.3) ---
     /// Losses observed in the current (partial) mass block.
     mass_cur_losses: f64,
     /// Symbols observed in the current (partial) mass block.
@@ -56,7 +56,7 @@ pub struct GilbertElliottEstimator {
 }
 
 /// Block scale w0 of the window loss-mass statistic, in wire symbols
-/// (the default encoder window; paper Section 8.4.1).
+/// (the default encoder window; paper §4.3).
 pub const MASS_BLOCK_SCALE: u32 = 64;
 /// Local mirror of raptorpath_math::MASS_SCALES (kept equal by the
 /// mass_stats() construction below).
@@ -111,7 +111,7 @@ impl GilbertElliottEstimator {
         self.state = new_state;
         self.total_transitions += 1;
 
-        // Window loss-mass statistic (paper Section 8.4.1): bin the same
+        // Window loss-mass statistic: bin the same
         // per-symbol observations into blocks of MASS_BLOCK_SCALE and
         // track the multi-scale sliding block-mass moments.
         if !received {
@@ -215,8 +215,8 @@ impl GilbertElliottEstimator {
         self.total_transitions >= self.min_samples
     }
 
-    /// The measured multi-scale window loss-mass statistics (paper
-    /// Section 8.4.1), for the r* burst-tail provisioning term. Returns
+    /// The measured multi-scale window loss-mass statistics (paper §4.3),
+    /// for the r* burst-tail provisioning term. Returns
     /// the no-data default until `min_samples` nonzero blocks have been
     /// observed (the same validity threshold as the transition counts):
     /// clean channels keep the tail term inert.

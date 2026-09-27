@@ -237,10 +237,10 @@ fn test_window_cascade_recovery() {
 #[test]
 fn test_frontier_range_repair_decodes_hole_no_retransmit() {
     // Proactive-frontier mechanism (isolation): a repair coded over a small
-    // TRAILING window whose members are ALL already received EXCEPT the hole
-    // must decode that hole IMMEDIATELY from the single repair — no source
-    // retransmit. (At L1 this does not lift throughput; see goal-gate
-    // "Proactive Frontier" — but the coding/decoding mechanism is correct.)
+    // trailing window whose members are all already received except the hole
+    // must decode that hole immediately from the single repair — no source
+    // retransmit. This pins the coding/decoding mechanism only, not a
+    // throughput effect.
     let symbol_size = 64u16;
     let mut encoder = RlcWindowEncoder::new(symbol_size);
     let mut decoder = RlcWindowDecoder::new(symbol_size);

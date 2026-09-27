@@ -8,7 +8,7 @@
 //!
 //! 2. **Protocol hint → tail quantile**: The protocol hint (Realtime/Bulk/Auto)
 //!    maps to `target_tail_loss`, which sets z_δ in the r* margin (paper
-//!    Section 8.4), controlling the FEC/NACK balance. Tighter tail = more
+//!    §4.2), controlling the FEC/NACK balance. Tighter tail = more
 //!    proactive FEC = less NACK latency. No magic additive offsets.
 //!
 //!    The two margins cover distinct variance sources and do not stack on
@@ -62,12 +62,11 @@ impl std::str::FromStr for ProtocolHint {
 impl ProtocolHint {
     /// The hint's tail-loss-target scale ζ: `effective_tail_loss =
     /// target_tail_loss × ζ` (the FEC/NACK balance knob, see
-    /// `FecRateController::new_with_toggles`). ζ is the hint's ONE declared
+    /// `FecRateController::new_with_toggles`). ζ is the hint's one declared
     /// price ratio — Realtime prices a late symbol 100× dearer than Auto,
-    /// Bulk 100× cheaper — and everything else hint-coupled should derive
-    /// from it rather than adding independent magic constants. The Copa δ
-    /// mapping (scheduler, paper §12.4) consumes it as the latency price:
-    /// δ(hint) = δ_auto / ζ(hint).
+    /// Bulk 100× cheaper — and everything else hint-coupled derives from it.
+    /// The Copa δ mapping (scheduler, paper §4.1) consumes it as the latency
+    /// price: δ(hint) = δ_auto / ζ(hint).
     pub fn tail_loss_scale(self) -> f64 {
         match self {
             ProtocolHint::Realtime => 0.01, // 100× tighter tail
@@ -87,77 +86,59 @@ pub struct FecRateController {
     rq_overhead: f64,
     /// Protocol hint (stored for diagnostics)
     hint: ProtocolHint,
-    /// BULKNESS β = `bulkness_of_delta(delta_price(hint))` ∈ [0, 1] — the
+    /// Bulkness β = `bulkness_of_delta(delta_price(hint))` ∈ [0, 1] — the
     /// log-position of this contract's latency price between the Auto anchor
-    /// (β = 0) and the Bulk anchor (β = 1), resolved ONCE at construction
-    /// (paper §16.81/§16.82).
-    ///
-    /// **THIS FIELD IS THE REPAIR OF A MODE SWITCH.** `compute_repair_rate`
-    /// used to set `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`, a hint
-    /// EQUALITY that swapped the entire `δ_eff` law inside
-    /// `raptorpath_math::controller_rate` — the largest NO-MODE-SWITCH
-    /// violation left in the engine, and the mechanism by which the r leg sat
-    /// at the corner `r* = 0` on every scored battery. The rate is now the mix
+    /// (β = 0) and the Bulk anchor (β = 1), resolved once at construction.
+    /// It weights the rate mix (paper §4.5)
     ///
     /// ```text
     ///     r(β) = (1 − β)·r_anchor + β·r_late-is-fine
     /// ```
     ///
-    /// with BOTH terms always computed. β = 0 at Realtime AND Auto (the
-    /// clamp) and 1 at Bulk (x/x), all three exactly, so the shipped presets
-    /// are BYTE-IDENTICAL — pinned by `the_rate_mix_is_byte_identical_at_the_
-    /// presets` — while a δ between them (`RWM_DELTA`) now yields a rate
-    /// between them instead of a step.
+    /// with both terms always computed, so no hint equality selects a law.
+    /// β is exactly 0 at Realtime and Auto and 1 at Bulk, so the presets are
+    /// byte-identical to the single-term rates (pinned by
+    /// `the_rate_mix_is_byte_identical_at_the_presets`), and a δ between
+    /// them (`RWM_DELTA`) yields a rate between them instead of a step.
     bulkness: f64,
     /// Symbol size in bytes (needed to compute T = RTT × throughput / symbol_size)
     symbol_size: u16,
     /// P5: cap the repair rate at the p99(r) saturation point (paper
-    /// Section 14.21). Past r_sat, extra repairs displace source symbols
+    /// §4.4). Past r_sat, extra repairs displace source symbols
     /// and stretch the recovery window faster than the shrinking FEC-miss
     /// cost pays back — more FEC hurts the tail.
     saturation_cap_enabled: bool,
     /// P4a/P6: Bulk maps the tail target to the completion-exposure glide
-    /// δ_eff = ε̂ + (0.05 − ε̂)·χ (paper Section 14.26): mid-stream (χ = 0)
+    /// δ_eff = ε̂ + (0.05 − ε̂)·χ (paper §4.6): mid-stream (χ = 0)
     /// δ_eff = ε̂ and r* = 0 identically — pure ARQ, volume parity with
-    /// retransmission transports (paper Sections 5.3, 12.5) — and near a
-    /// KNOWN end of stream χ → 1 ramps r to the 14.25 tail budget.
-    /// Public setter exists for ablation.
+    /// retransmission transports (paper §4.5) — and near a known end of
+    /// stream χ → 1 ramps r to the tail budget. Public setter exists for
+    /// ablation.
     bulk_pure_arq: bool,
-    /// P6: completion exposure χ ∈ [0, 1] (paper Section 14.26). The
-    /// production tunnel is an ENDLESS stream — there is no known T_rem,
-    /// so χ stays 0 and Bulk's steady state is pure ARQ; the existing
-    /// production tail behavior is unchanged. Future work: feed this from
-    /// an application-known transfer size, or an idle-onset heuristic
-    /// (send-queue drained = provisional end of stream). Drivers that DO
-    /// know T_rem (the L0 gate, the wasm sim) set it per tick via
+    /// P6: completion exposure χ ∈ [0, 1] (paper §4.6). The production
+    /// tunnel is an endless stream — there is no known T_rem, so χ stays 0
+    /// and Bulk's steady state is pure ARQ. Drivers that do know T_rem (the L0 gate, the wasm sim) set it per tick via
     /// `set_completion_exposure` with `raptorpath_math::completion_exposure`.
     completion_exposure: f64,
-    /// #46: window-mass burst-tail provisioning (paper Section 8.4.1).
+    /// #46: window-mass burst-tail provisioning (paper §4.3, ADR-0063).
     /// The GE geometric burst law under-provisions r* by 2-4x on real
-    /// bursty traces (Section 2.5, MEASURED); when enabled, the rate
-    /// includes the `r_star_mass` quantile term fed by the receiver's own
-    /// multi-scale window loss-mass statistics (GilbertElliottEstimator
-    /// mass_stats). Env gate RWM_RSTAR_TAIL (default ON — this is a
-    /// correctness fix to the reliability contract; =0 restores the
-    /// legacy GE-only provisioning for A/B).
+    /// bursty traces (paper §2.5); when enabled, the rate includes the
+    /// `r_star_mass` quantile term fed by the receiver's own multi-scale
+    /// window loss-mass statistics (GilbertElliottEstimator mass_stats).
+    /// Env gate `RWM_RSTAR_TAIL` (default ON; `=0` is GE-only provisioning).
     tail_provision: bool,
-    /// P10a: inner-feedback weight in [0, 1] (paper Section 14.28). The
-    /// Bulk glide's mid-stream r* = 0 prices VOLUME; when the payload is
-    /// itself a latency-sensitive control loop (TCP inside the tunnel),
-    /// each unrepaired loss stalls the inner flow's in-order delivery
+    /// P10a: inner-feedback weight in [0, 1] (paper §4.4). The Bulk glide's
+    /// mid-stream r* = 0 prices volume; when the payload is itself a
+    /// latency-sensitive control loop (TCP inside the tunnel), each
+    /// unrepaired loss stalls the inner flow's in-order delivery
     /// ~min(1.5×SRTT_outer, RTO_inner) and that stall feeds back into the
-    /// inner send rate (L1 C2: ~20 events per 1.8 MB transfer). Weight 1
-    /// enables the `inner_feedback_floor` mid-stream repair floor — the
-    /// smallest r whose residual stall fraction sits within delivery-jitter
-    /// noise; weight 0 (default) is the old pure-glide behavior, kept for
-    /// FILE-TRANSFER payload semantics (the L0 gate driver, bench_suite):
-    /// there the transfer is the payload and mid-stream ARQ recovery is
-    /// genuinely free. The production tunnel ALSO defaults to 0 (config
-    /// `inner_feedback_weight`): the L1 C2/C3 ablation measured the floor
-    /// active (FEC volume 2.5% -> 4.7%) but completion-neutral at C2 and
-    /// 28% regressive at C3 — post-14.27/P9b the inner flow absorbs the
-    /// residual stalls, and floor repairs displace source symbols inside
-    /// the same inner-limited loop (paper 14.28, L1 verification).
+    /// inner send rate. Weight 1 enables the `inner_feedback_floor`
+    /// mid-stream repair floor — the smallest r whose residual stall
+    /// fraction sits within delivery-jitter noise. Weight 0 (the default,
+    /// including the production tunnel via config `inner_feedback_weight`)
+    /// is the pure glide: the inner flow absorbs the residual stalls, and
+    /// floor repairs would displace source symbols inside the same
+    /// inner-limited loop.
     inner_feedback: f64,
 }
 
@@ -191,16 +172,13 @@ impl FecRateController {
             FecBackend::Rlc => 0.004,
         };
 
-        // The CONTRACT'S δ maps to target_tail_loss, not an additive offset.
-        // This is the only principled knob: tighter tail = more proactive FEC.
-        //
-        // Read through the DIAL since 2026-09-08 (§16.81):
-        // `ζ(δ(hint))` in place of the enum's own `hint.tail_loss_scale()`.
-        // Bit-identical at all three presets — δ = 0.5/ζ and ζ = 0.5/δ are
-        // exact f64 inverses at ζ ∈ {0.01, 1, 100}, pinned by
-        // `zeta_of_the_hints_delta_is_the_hints_own_scale` — and it means a
-        // δ set BETWEEN the presets (`RWM_DELTA`) moves the tail target
-        // continuously with b and β instead of leaving it pinned to a preset.
+        // The contract's δ maps to target_tail_loss, not an additive offset:
+        // tighter tail = more proactive FEC. Read through the dial as
+        // `ζ(δ(hint))` (paper §4.1), bit-identical to `hint.tail_loss_scale()`
+        // at the three presets (δ = 0.5/ζ and ζ = 0.5/δ are exact f64
+        // inverses at ζ ∈ {0.01, 1, 100}, pinned by
+        // `zeta_of_the_hints_delta_is_the_hints_own_scale`), so a δ between
+        // the presets (`RWM_DELTA`) moves the tail target continuously.
         let delta = crate::net::delta_price(hint);
         let effective_tail_loss = target_tail_loss * raptorpath_math::zeta_of_delta(delta);
         let effective_tail_loss = effective_tail_loss.clamp(1e-9, 0.1);
@@ -220,13 +198,13 @@ impl FecRateController {
         }
     }
 
-    /// Enable/disable the saturation cap (paper Section 14.21). Default: on.
+    /// Enable/disable the saturation cap (paper §4.4). Default: on.
     pub fn set_saturation_cap(&mut self, enabled: bool) {
         self.saturation_cap_enabled = enabled;
     }
 
     /// #46: enable/disable the window-mass burst-tail provisioning term
-    /// (paper Section 8.4.1). Default follows RWM_RSTAR_TAIL (ON).
+    /// (paper §4.3). Default follows `RWM_RSTAR_TAIL` (ON).
     /// Exposed for ablation.
     pub fn set_tail_provision(&mut self, enabled: bool) {
         self.tail_provision = enabled;
@@ -236,14 +214,9 @@ impl FecRateController {
     /// Exposed for ablation: with it off, Bulk falls back to the plain
     /// 100×-loosened `target_tail_loss`.
     ///
-    /// **RE-READ AS `β := 0`** (§16.81). The flag no longer selects
-    /// a law; it zeroes the mixing weight, which is the SAME arithmetic it
-    /// always performed — the ablation arm was never anything but "evaluate
-    /// the anchor term", and at Realtime/Auto (β = 0 already) it was, and
-    /// remains, exactly inert. The existing ablation assertions
-    /// (`test_bulk_pure_arq_zero_steady_state_rate`, `gate_suite`'s
-    /// `ablation_p4a_bulk_pure_arq`) hold unchanged under this reading and
-    /// were not edited.
+    /// Off means `β := 0` (paper §4.5): the flag selects no law, it zeroes
+    /// the mixing weight so only the anchor term is evaluated. At
+    /// Realtime/Auto (β = 0 already) it is inert.
     pub fn set_bulk_pure_arq(&mut self, enabled: bool) {
         self.bulk_pure_arq = enabled;
     }
@@ -254,7 +227,7 @@ impl FecRateController {
         if self.bulk_pure_arq { self.bulkness } else { 0.0 }
     }
 
-    /// P6: set the completion exposure χ ∈ [0, 1] (paper Section 14.26)
+    /// P6: set the completion exposure χ ∈ [0, 1] (paper §4.6)
     /// for callers that know the remaining send time T_rem — compute it
     /// with `raptorpath_math::completion_exposure(t_rem, srtt, rttvar)`.
     /// The production tunnel never calls this (endless stream ⇒ χ = 0).
@@ -263,11 +236,10 @@ impl FecRateController {
         self.completion_exposure = chi.clamp(0.0, 1.0);
     }
 
-    /// P10a: set the inner-feedback weight ∈ [0, 1] (paper Section 14.28).
+    /// P10a: set the inner-feedback weight ∈ [0, 1] (paper §4.4).
     /// 1.0 = the payload's delivery latency feeds back into its own
     /// throughput (TCP-in-tunnel) — enables the mid-stream repair floor;
-    /// 0.0 (default everywhere, including the production tunnel after the
-    /// negative L1 C2/C3 ablation) = pure Bulk glide. Config knob:
+    /// 0.0 (default everywhere) = pure Bulk glide. Config knob:
     /// `inner_feedback_weight`.
     pub fn set_inner_feedback(&mut self, weight: f64) {
         self.inner_feedback = weight.clamp(0.0, 1.0);
@@ -292,7 +264,7 @@ impl FecRateController {
     /// to generate per source symbol. E.g., 0.1 = 1 repair per 10 source symbols.
     ///
     /// Uses the BOCD predictive quantile as the loss estimate and the paper's
-    /// r* formula (Section 8.4) for the rate:
+    /// r* formula (paper §4.2) for the rate:
     ///
     ///   p    = BOCD posterior upper quantile at 95% (estimation margin)
     ///   z    = normal_quantile(1 - δ/p) — fluid: margin shrinks continuously
@@ -309,13 +281,13 @@ impl FecRateController {
     /// Codec overhead is weighted by P(decoder_invoked) for systematic codecs.
     ///
     /// When enabled (default), the result is capped at the p99 saturation
-    /// point r_sat (paper Section 14.21): past it, extra repairs hurt the
+    /// point r_sat (paper §4.4): past it, extra repairs hurt the
     /// tail by displacing source symbols. See `set_saturation_cap`.
     ///
     /// `window_size`: current encoder window or block size.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator, window_size: usize) -> f64 {
         // The formula itself lives in raptorpath-math::controller_rate — a
-        // SINGLE shared implementation used by both this production
+        // single shared implementation used by both this production
         // controller and the visualizer (raptorpath-wasm), so the two
         // cannot drift. This method only extracts the estimator state.
         let ge = estimator.ge_estimator();
@@ -341,27 +313,22 @@ impl FecRateController {
         } else {
             0.0
         };
-        // ── THE RATE MIX, r(β) = (1−β)·r_anchor + β·r_late-is-fine ────────
-        // §16.81/§16.82. ONE `RateInputs` is built, and the ONE
-        // shared `controller_rate` is evaluated TWICE — once with the
-        // late-is-fine δ_eff law off (the anchor term) and once with it on
-        // (the Bulk term) — and the two are blended by the contract's own
-        // bulkness. Both terms are ALWAYS computed: there is no `hint ==`
-        // anywhere on this path, and no δ threshold selects a law.
-        //
-        // COST, disclosed: two `controller_rate` evaluations per rate
-        // computation instead of one. The function is a few dozen flops plus
-        // one `normal_quantile`; the rate site is per-ack under a lock that
-        // already holds the estimator, and the L0 gate's own timing has never
-        // resolved it. Not conditionalised — a `if β == 0 { … }` fast path
-        // would be the mode switch again, wearing a performance costume.
+        // ── The rate mix, r(β) = (1−β)·r_anchor + β·r_late-is-fine ────────
+        // Paper §4.5. One `RateInputs` is built and the shared
+        // `controller_rate` is evaluated twice — once with the late-is-fine
+        // δ_eff law off (the anchor term) and once with it on (the Bulk
+        // term) — and the two are blended by the contract's bulkness. Both
+        // terms are always computed: no `hint ==` and no δ threshold selects
+        // a law. The second evaluation (a few dozen flops plus one
+        // `normal_quantile`) is deliberately not skipped at β = 0: that fast
+        // path would be a mode switch.
         let mut inputs = raptorpath_math::RateInputs {
             p_upper: estimator.predictive_loss_upper(0.95),
             sigma2,
             mean_burst,
-            // #46 (paper 8.4.1): the receiver's measured window loss-mass
+            // #46 (paper §4.3): the receiver's measured window loss-mass
             // tail; MassStats::default() until enough nonzero blocks are
-            // observed, keeping cold start identical to pre-#46.
+            // observed, so cold start provisions from the GE law alone.
             mass: ge.mass_stats(),
             tail_provision: self.tail_provision,
             window: window_size as f64,
@@ -373,23 +340,23 @@ impl FecRateController {
             // Rebound below for each of the two terms of the mix; the value
             // here is the anchor term's.
             bulk_late_is_fine: false,
-            // P6 (paper 14.26): 0.0 unless a T_rem-aware caller set it —
+            // P6 (paper §4.6): 0.0 unless a T_rem-aware caller set it —
             // the production tunnel is an endless stream, so mid-stream
             // semantics (δ_eff = ε̂, r* = 0) apply permanently.
             completion_exposure: self.completion_exposure,
-            // P10a (paper 14.28): mid-stream repair floor for payloads
+            // P10a (paper §4.4): mid-stream repair floor for payloads
             // whose latency feeds back (TCP-in-tunnel). 0.0 default.
             inner_feedback: self.inner_feedback,
             saturation_cap: self.saturation_cap_enabled,
             max_overhead: self.max_overhead,
         };
-        // The ANCHOR term: δ_eff = the contract's own tail target.
+        // The anchor term: δ_eff = the contract's own tail target.
         inputs.bulk_late_is_fine = false;
         let r_anchor = raptorpath_math::controller_rate(&inputs);
-        // The LATE-IS-FINE term: δ_eff = the §14.26 completion-exposure glide.
+        // The late-is-fine term: δ_eff = the completion-exposure glide (paper §4.6).
         inputs.bulk_late_is_fine = true;
         let r_bulk = raptorpath_math::controller_rate(&inputs);
-        // The mix. EXACT at the presets: β = 0 gives `1·r_anchor + 0·r_bulk`
+        // The mix, exact at the presets: β = 0 gives `1·r_anchor + 0·r_bulk`
         // and β = 1 gives `0·r_anchor + 1·r_bulk`, both bit-exact for finite
         // terms (`controller_rate` clamps to [0, max_overhead], so they are).
         let beta = self.effective_bulkness();
@@ -397,7 +364,7 @@ impl FecRateController {
     }
 
     /// Derive the encoder window size W* from the current channel estimate
-    /// (paper Section 8.8). Returns `None` when the estimator lacks the
+    /// (paper §4.8). Returns `None` when the estimator lacks the
     /// throughput/RTT sample the latency ceiling needs, so the caller can
     /// keep its default window. The formula lives in
     /// `raptorpath_math::derive_window` — the same code the visualizer reads.
@@ -420,7 +387,7 @@ impl FecRateController {
         };
         let eps = estimator.predictive_loss_upper(0.95).max(1e-6);
         let send_rate = tput / self.symbol_size as f64; // source symbols per second
-        // latency_budget = 0 => the math layer aligns W to ~1 RTT (Section 14.5).
+        // latency_budget = 0 => the math layer aligns W to ~1 RTT (paper §4.8).
         let w = raptorpath_math::derive_window(
             self.target_tail_loss,
             eps,
@@ -471,7 +438,7 @@ impl FecRateController {
 /// likely (right after a burst), fewer as time passes. The amplitude A is
 /// derived from the optimal correction rate r* and the GE parameter q.
 ///
-/// See paper Section 4 (The Taper Function).
+/// See paper §3.3 (the taper).
 #[derive(Debug, Clone)]
 pub struct TaperFunction {
     /// Taper amplitude: peak correction density at t=0.
@@ -521,16 +488,13 @@ impl TaperFunction {
 }
 
 /// #85: budget-conserving taper accrual for the plain-mode proactive-repair
-/// emission (env `RWM_TAPER_R`, default OFF).
+/// emission (env `RWM_TAPER_R`, default = `RWM_UNIFIED`, ON).
 ///
-/// MEASURED bug (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13):
-/// the legacy accrual feeds the emission debt with the raw taper density
-/// τ(t) = r·q·(1−q)^t and t resets on every cumulative-ack advance, so the
-/// emitted proactive repair sums to Σ_t τ(t) = r symbols PER ACK CYCLE —
+/// Why: accruing the raw taper density τ(t) = r·q·(1−q)^t with t reset on
+/// every cumulative-ack advance emits Σ_t τ(t) = r symbols per ack cycle —
 /// nearly independent of r's magnitude (an ack cycle at BDP is hundreds of
-/// symbols; measured cod/src ≈ 0.03–0.10 for BOTH r* = 0.206 and 0.255).
-/// The whole r* control loop, including the §8.4.1 burst-tail correction,
-/// was therefore INERT on the plain-mode wire.
+/// symbols) — which leaves the r* loop, including the burst-tail term,
+/// inert on the wire.
 ///
 /// The budget law: emitted repair must track r × (source symbols) — the
 /// wire consumes r AS COMPUTED, per coding window. Per source symbol the
@@ -549,7 +513,7 @@ impl TaperFunction {
 /// the TOTAL is governed by the budget, not by the ack cadence. No new
 /// constants: the floor at `rate` guarantees the budget drains at least
 /// uniformly (the desire tail cannot strand it), `spare` is the same
-/// link-headroom anchor the legacy path capped with, and the 1.0 cap paces
+/// link-headroom anchor as the per-cycle accrual, and the 1.0 cap paces
 /// backlog at ≤ 1 repair per source send (the source clock is the emission
 /// clock — no bursts). `owed` is capped at one coding window's budget,
 /// max(r·W, 1): repair budget for source older than a window has expired
@@ -578,10 +542,10 @@ impl TaperBudget {
     ///              upstream by `compute_repair_rate_capped`)
     /// * `offset` — source symbols since the last cumulative-ack advance
     ///              (the taper phase; the caller keeps resetting it — under
-    ///              the budget law the reset re-times, it no longer sizes)
+    ///              the budget law the reset re-times, it does not size)
     /// * `taper`  — the GE taper shape (q, decay) for this estimator state
     /// * `span`   — the coding window W (shape renormalization span)
-    /// * `spare`  — link spare capacity (legacy cap anchor)
+    /// * `spare`  — link spare capacity (cap anchor)
     pub fn accrue(
         &mut self,
         rate: f64,
@@ -614,7 +578,7 @@ impl TaperBudget {
     }
 }
 
-/// P_lost(t) (paper §3.4), the shared math crate's single definition —
+/// P_lost(t) (paper §3.2), the shared math crate's single definition —
 /// re-exported so `control::fec_rate::p_lost` keeps its path.
 pub use raptorpath_math::p_lost;
 
@@ -624,7 +588,7 @@ pub use raptorpath_math::p_lost;
 ///
 /// where p = P(Good→Bad), q = P(Bad→Good) from the GE model.
 /// This inflates the margin term in the r* formula to account for
-/// correlated (bursty) losses. See paper Section 8.3.
+/// correlated (bursty) losses. See paper §2.4.
 ///
 /// Returns 1.0 (iid) when GE parameters are unavailable or degenerate.
 pub fn burst_variance_factor(estimator: &LossEstimator) -> f64 {
@@ -649,12 +613,12 @@ pub fn burst_variance_factor(estimator: &LossEstimator) -> f64 {
 }
 
 /// The (δ, ρ, r) residual-loss allowance 1−ρ at the operating point (the
-/// δ-honest overload-shedding budget, goal-gate "Unified Shedding"):
+/// δ-honest overload-shedding budget, paper §5.6):
 ///
 ///   1−ρ = ε · (1 − P_fec(r, ε, W, σ²_burst))
 ///
 /// — the loss fraction the design already concedes past in-window FEC at
-/// the deadline (§6.3: P(lost) = ε·(1−P_fec)·(1−P_arq); at small δ,
+/// the deadline (paper §3.5: P(lost) = ε·(1−P_fec)·(1−P_arq); at small δ,
 /// recovery past D(δ) belongs to no one, so P_arq's contribution is priced
 /// out and the residual IS the shed allowance). Every input is a measured
 /// anchor or an already-derived parameter: ε̂ from the loss estimator,

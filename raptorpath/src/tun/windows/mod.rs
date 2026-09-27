@@ -78,9 +78,8 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
 
     // Write loop: raptorpath → OS
     tokio::spawn(async move {
-        // A single bad inner packet must NEVER tear down the tunnel (see the
-        // Linux writer for the full rationale — one malformed FEC-delivered
-        // packet used to kill the whole tunnel). Drop malformed packets and
+        // A single bad inner packet must never tear down the tunnel (see the
+        // Linux writer for the full rationale). Drop malformed packets and
         // continue; only give up after a run of consecutive write failures,
         // which signals the device itself is gone.
         const MAX_CONSECUTIVE_WRITE_ERRORS: u32 = 64;

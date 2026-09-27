@@ -94,20 +94,19 @@ struct RunArgs {
     #[arg(long)]
     fec_backend: Option<String>,
 
-    /// Inner-feedback weight in [0,1] (paper 14.28): mid-stream repair
-    /// floor for TCP-in-tunnel payloads. Default 0.0 — the L1 ablation
-    /// measured it completion-neutral at C2 and regressive at C3; pass
+    /// Inner-feedback weight in [0,1] (paper §4.4): mid-stream repair
+    /// floor for TCP-in-tunnel payloads. Default 0.0 (the floor is
+    /// completion-neutral to regressive on a TCP-in-tunnel payload); pass
     /// 1.0 to enable the floor.
     #[arg(long)]
     inner_feedback_weight: Option<f64>,
 
-    /// Block-granular multipath source affinity (paper 13.8 in-order
-    /// coupling refinement). Default true; pass false for the striping
-    /// ablation.
+    /// Block-granular multipath source affinity (paper §5.7 in-order
+    /// coupling). Default true; pass false for the striping ablation.
     #[arg(long)]
     mp_block_affinity: Option<bool>,
 
-    /// RWM Phase A (paper §15.7/§16.3): reliable sliding-window pipeline
+    /// Reliable sliding-window pipeline (paper §5.1)
     /// for Bulk/Auto — sent-data store retained until acked (targeted
     /// retransmit for aged holes, store-full ⇒ backpressure), receiver
     /// holds at holes until recovered. Default off (block mode).
@@ -146,47 +145,47 @@ struct PerfArgs {
     #[arg(long)]
     protocol_hint: Option<String>,
 
-    /// RWM Phase A A/B arm: run bulk/auto on the reliable sliding-window
-    /// pipeline (RLC). Omit for the block-mode baseline — same binary,
-    /// same chunk geometry, flag-only difference.
+    /// Run bulk/auto on the reliable sliding-window pipeline (RLC). Omit
+    /// for the block-mode baseline — same binary, same chunk geometry,
+    /// flag-only difference.
     #[arg(long)]
     window_reliable: bool,
 
-    /// RWM Phase C: out-of-order object delivery (paper §16.2 H→∞ corner).
+    /// Out-of-order object delivery (paper §4.11, the H→∞ corner).
     /// Requires --window-reliable. Decoded symbols are delivered the
     /// instant they decode (any order); the perf server reassembles by
     /// offset and completes on total-decoded — no in-order frontier wait.
     #[arg(long)]
     window_out_of_order: bool,
 
-    /// Fungible frontier (paper §16.3 "empty quadrant", coded-object mode).
-    /// Requires --window-reliable; implies out-of-order delivery. Emits ONLY
+    /// Fungible frontier (coded-object mode; paper §10).
+    /// Requires --window-reliable; implies out-of-order delivery. Emits only
     /// coded (random-linear-combination) symbols over the window — no raw
-    /// systematic source — so any K independent coded symbols from ANY path
+    /// systematic source — so any K independent coded symbols from any path
     /// reconstruct the K sources and no symbol is a fixed position a slow
-    /// path can long-pole. Bulk-object / loose-δ ONLY.
+    /// path can long-pole. Bulk-object / loose-δ only.
     #[arg(long)]
     window_coded_only: bool,
 
-    /// Generation-based cross-path fungible coding (paper §16.3, the
-    /// oracle-validated stable-anchor fix, ×1.19 at C8). Requires
-    /// --window-reliable; implies coded-only + out-of-order delivery. Codes
-    /// RLC symbols WITHIN fixed generations of RWM_GEN (default 384) source
-    /// symbols with RWM_PIPELINE (default 2) generations in flight; each
-    /// generation decodes out-of-order on any K_G coded symbols from any path,
-    /// recovery is generation-level, and per-seq ARQ is OFF. Bulk-object ONLY.
+    /// Generation-based cross-path fungible coding (paper §5.8, stable
+    /// anchors). Requires --window-reliable; implies coded-only +
+    /// out-of-order delivery. Codes RLC symbols within fixed generations of
+    /// RWM_GEN (default 384) source symbols with RWM_PIPELINE (default 2)
+    /// generations in flight; each generation decodes out-of-order on any
+    /// K_G coded symbols from any path, recovery is generation-level, and
+    /// per-seq ARQ is off. Bulk-object only.
     #[arg(long)]
     window_generation_coding: bool,
 
-    /// Systematic + deficit-driven cross-path REPAIR (paper §16.3 oracle — the
-    /// cheaper realization of generation coding that reaches ×1.19 at C8 without
-    /// coded-only's decode-on-K latency + O(G²) decode). Requires
-    /// --window-reliable; implies out-of-order delivery. The raw systematic
-    /// source rides the wire as primary (delivered on arrival, ZERO decode);
-    /// coded symbols are windowed REPAIR only — ceil(len·r) proactive per
-    /// generation of ~W_mp (RWM_GEN) plus a deficit-driven top-up — so decode is
-    /// O(deficit) not O(G). NO per-seq ARQ. RWM_GEN_R (default 0.15) tunes r.
-    /// Bulk-object ONLY.
+    /// Systematic + deficit-driven cross-path repair (paper §5.8, ADR-0056 —
+    /// the cheaper realization of generation coding, without coded-only's
+    /// decode-on-K latency + O(G²) decode). Requires --window-reliable;
+    /// implies out-of-order delivery. The raw systematic source rides the
+    /// wire as primary (delivered on arrival, zero decode); coded symbols
+    /// are windowed repair only — ceil(len·r) proactive per generation of
+    /// ~W_mp (RWM_GEN) plus a deficit-driven top-up — so decode is
+    /// O(deficit) not O(G). No per-seq ARQ. RWM_GEN_R (default 0.15) tunes
+    /// r. Bulk-object only.
     #[arg(long)]
     window_systematic_repair: bool,
 }
@@ -206,13 +205,13 @@ struct StatusArgs {
 async fn main() -> anyhow::Result<()> {
     // rustls 0.23: quinn's dependency graph enables both ring and
     // aws-lc-rs, so provider auto-detection fails at the first TLS config
-    // built without an explicit provider (client panic found by the L1
-    // harness). Install ring process-wide up front.
+    // built without an explicit provider (the client panics). Install ring
+    // process-wide up front.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     // RUST_LOG wins when set; the info default applies only otherwise
-    // (an added directive at equal specificity overrides the env one, so
-    // RUST_LOG=raptorpath=debug used to be silently ignored).
+    // (an added directive at equal specificity would override the env one
+    // and silently ignore RUST_LOG=raptorpath=debug).
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("raptorpath=info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();

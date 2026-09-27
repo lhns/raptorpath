@@ -1,27 +1,25 @@
-//! Anchor hygiene (branch `feat/anchor-hygiene`): the shared sampling-layer
-//! discipline for every measured anchor the transport derives control values
-//! from (A*/M* span law, BtlBw/BDP, RTT floors).
+//! Anchor hygiene: the shared sampling-layer discipline for every measured
+//! anchor the transport derives control values from (A*/M* span law,
+//! BtlBw/BDP, RTT floors). ADR-0061, paper §2.6.
 //!
-//! The principle (paper "Anchor Hygiene" section; goal-gate ledger):
-//! an anchor is trustworthy only if
-//!   1. it is SEEDED from measured sends/samples (a windowed-max of real
+//! An anchor is trustworthy only if
+//!   1. it is seeded from measured sends/samples (a windowed-max of real
 //!      samples — never a static default surviving warm-up),
-//!   2. its samples EXCLUDE scheduler clock gaps (a sample whose interval
+//!   2. its samples exclude scheduler clock gaps (a sample whose interval
 //!      spans a process stall measures the stall, not the link; detect it and
-//!      DISCARD it, don't average it in), and
-//!   3. its floors/backstops EXPIRE (a floor that outlives its min-window is
+//!      discard it, don't average it in), and
+//!   3. its floors/backstops expire (a floor that outlives its min-window is
 //!      a constant wearing a floor's clothes).
 //!
-//! This module factors the clock-gap detector ONCE (`is_clock_gap` + the
+//! This module factors the clock-gap detector once (`is_clock_gap` + the
 //! process-clock `StallWitness`) and provides the windowed-max send-rate
-//! anchor (`SendRateAnchor`) that replaces the cold 2-s-interval α=0.125 EWMA
-//! behind the unified span law's A* (the defect measured in goal-gate
-//! "Unified Decoder" COLLAPSE ATTRIBUTION: A* pinned at 1 for ~10 s, then
-//! flood-poisoned 1→38 by the post-stall release burst).
+//! anchor (`SendRateAnchor`) behind the unified span law's A*. A slow
+//! (2-s-interval α=0.125) EWMA there pins A* at 1 for ~10 s and is then
+//! flood-poisoned by the post-stall release burst.
 //!
-//! Everything here is pure/injectable-time state — no env reads, no globals —
-//! so each consumer gates it behind its own `RWM_*` flag and the shipped
-//! default stays byte-identical.
+//! Apart from the process-global stall witness, everything here is
+//! pure/injectable-time state with no env reads, so each consumer gates it
+//! behind its own `RWM_*` flag.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -37,7 +35,7 @@ const GAP_ABS_FLOOR_S: f64 = 0.25;
 /// the backlog the stall built, so it is at most gap-long), capped at 2 s.
 const QUARANTINE_CAP_S: f64 = 2.0;
 
-/// THE gap predicate, factored once (hygiene rule 2). `expected_s` is the
+/// The gap predicate, factored once (hygiene rule 2). `expected_s` is the
 /// consumer's notion of a typical inter-sample interval (the fixed tick
 /// period for the stall witness, the bucket duration for the send-rate
 /// anchor).
@@ -45,19 +43,17 @@ pub fn is_clock_gap(interval_s: f64, expected_s: f64) -> bool {
     interval_s > (GAP_FACTOR * expected_s).max(GAP_ABS_FLOOR_S)
 }
 
-/// PROCESS-clock stall witness — the correct detector for the post-stall
-/// estimator poisoning (fix 4 / `RWM_CLOCK_GAP`).
+/// Process-clock stall witness — the detector for post-stall estimator
+/// poisoning (`RWM_CLOCK_GAP`).
 ///
-/// WHY NOT the ack-arrival clock: at high-RTT lossy cells, ack silences of
-/// 0.5–3 s are NORMAL protocol behavior (in-order frontier waves, deficit
+/// Why not the ack-arrival clock: at high-RTT lossy cells, ack silences of
+/// 0.5–3 s are normal protocol behavior (in-order frontier waves, deficit
 /// rounds at 2·RTprop) — an arrival-clock detector reads every recovery
 /// quiet period as a "stall" and quarantines exactly the ack wave that
-/// carries the true delivered rate (MEASURED on the r200 gen L0 rung:
-/// gapd 9/5578 with both median and p90 cadence statistics — a discard
-/// storm during healthy transfer). A whole-process scheduler stall — the
-/// COLLAPSE ATTRIBUTION trigger — freezes the tokio timer wheel itself, so
-/// the witness is a fixed-cadence timer tick: a tick interval ≫ the tick
-/// period is a PROCESS stall (nothing else can delay a timer that far);
+/// carries the true delivered rate, a discard storm during healthy
+/// transfer. A whole-process scheduler stall freezes the tokio timer wheel
+/// itself, so the witness is a fixed-cadence timer tick: a tick interval ≫
+/// the tick period is a process stall (nothing else can delay a timer that far);
 /// samples processed during the stall's release flood (one quarantine =
 /// min(gap, 2 s)) are the poisoned ones (echo RTTs that measured the stall,
 /// ack-interval Δt collapsed by the flood) and are discarded at the feed
@@ -109,7 +105,7 @@ impl StallWitness {
     }
 
     /// Timer-task tick at `now_us` (monotonic µs). Detects a process stall
-    /// when the tick interval is a gap against the FIXED tick period.
+    /// when the tick interval is a gap against the fixed tick period.
     pub fn on_tick(&self, now_us: u64) {
         use std::sync::atomic::Ordering;
         let last = self.last_tick_us.swap(now_us, Ordering::Relaxed);
@@ -148,19 +144,15 @@ impl Default for StallWitness {
     }
 }
 
-/// Process-global stall witness (fix 4, `RWM_CLOCK_GAP`): a scheduler stall
-/// is process-wide by definition, so ONE witness serves every engine and
-/// estimator in the process (the "shared sampling layer" — the detector is
-/// factored once, not scattered). None when the gate is off (shipped
-/// default: zero cost, no task spawned, every feed site byte-identical).
-/// The env gate is read once at first touch (process-global cache, the
-/// `copa_wire_active` pattern).
+/// Process-global stall witness (`RWM_CLOCK_GAP`): a scheduler stall is
+/// process-wide by definition, so one witness serves every engine and
+/// estimator in the process. None when the gate is off (zero cost, no task
+/// spawned, every feed site byte-identical). The gate is read once at first
+/// touch.
 pub fn stall_witness() -> Option<&'static StallWitness> {
     static W: std::sync::OnceLock<Option<StallWitness>> = std::sync::OnceLock::new();
     W.get_or_init(|| {
-        // DEFAULT ON (2026-07-21, "Consolidation" battery: bulk cells inert
-        // within sigma on both seeds, tail crown unregressed, the post-stall
-        // poisoning fix wins at the realtime family — goal-gate).
+        // Default ON.
         if crate::gates::get().clock_gap {
             Some(StallWitness::new())
         } else {
@@ -170,24 +162,24 @@ pub fn stall_witness() -> Option<&'static StallWitness> {
     .as_ref()
 }
 
-/// Windowed-max SEND-rate anchor (hygiene rules 1+2 for the span law's A*).
+/// Windowed-max send-rate anchor (hygiene rules 1+2 for the span law's A*).
 ///
 /// Sends are bucketed on the sender's own clock (bucket ≈ SRTT/2, clamped
 /// [5 ms, 250 ms]); each closed bucket yields one rate sample
-/// count/Δt, and the anchor is the MAX over samples in a ~8·SRTT window —
-/// the same statistic family as BBR's BtlBw filter and §16.15/§16.17's
-/// windowed-max delivered rate, applied to the send process the A* law
-/// actually models (W = rate·D symbols of trailing span).
+/// count/Δt, and the anchor is the max over samples in a ~8·SRTT window —
+/// the same statistic family as BBR's BtlBw filter and the windowed-max
+/// delivered rate (paper §2.7), applied to the send process the A* law
+/// actually models (W = rate·D symbols of trailing span; paper §5.3).
 ///
 /// Seeding: the first bucket closes ~SRTT/2 after the first send, so the
-/// anchor is live within ONE RTT of stream start (vs the 2-s α=0.125 EWMA's
-/// ~10 s crawl — defect (i) of the collapse attribution).
+/// anchor is live within one RTT of stream start (a 2-s α=0.125 EWMA
+/// needs ~10 s).
 ///
 /// Clock gaps: a bucket whose Δt is a gap (`is_clock_gap` against the
 /// bucket duration) measured the stall — it is discarded and a quarantine
-/// (gap length, capped) swallows the release-flood buckets behind it
-/// (defect (ii): flood-poison A* 1→38). During quarantine the window does
-/// NOT expire: the anchor holds the last known-good rate through the
+/// (gap length, capped) swallows the release-flood buckets behind it, so
+/// the flood cannot poison A*. During quarantine the window does
+/// not expire: the anchor holds the last known-good rate through the
 /// disturbance instead of collapsing to "no sample".
 #[derive(Debug)]
 pub struct SendRateAnchor {
@@ -267,7 +259,7 @@ impl SendRateAnchor {
     /// The windowed-max send rate (symbols/s), or None before the first
     /// surviving bucket (the honest cold-start: the caller's clamp floor —
     /// A* ≥ 1 — is the only defensible value until a send interval has been
-    /// MEASURED).
+    /// measured).
     pub fn rate(&self, now: Instant, srtt: Duration) -> Option<f64> {
         let iter = self.samples.iter();
         let max = if self.in_quarantine(now) {
@@ -286,7 +278,7 @@ impl SendRateAnchor {
         }
     }
 
-    /// The GAP-ROBUST RATCHETED MEAN send rate (symbols/s): the MAX of the
+    /// The gap-robust ratcheted mean send rate (symbols/s): the max of the
     /// two rolling half-window means Σ count / Σ Δt over the surviving
     /// buckets (clock-gap buckets were discarded on entry; during
     /// quarantine the window is anchored to the last surviving bucket —
@@ -295,18 +287,17 @@ impl SendRateAnchor {
     /// shorter mean is burst-weighted — the honest cold-start is the
     /// caller's fallback law).
     ///
-    /// Why this statistic (goal-gate "Ship The Wins 1" amendment, both
-    /// smoke-named defects):
-    /// - NOT the per-bucket windowed-MAX (`rate()`, the paced-A*
-    ///   statistic): an ADMISSION-GATED sender legitimately bursts whole
+    /// Why this statistic:
+    /// - Not the per-bucket windowed-max (`rate()`, the paced-A*
+    ///   statistic): an admission-gated sender legitimately bursts whole
     ///   buckets at emission speed on every store-refill (SACK-release
-    ///   flood, boot-cap ramp) and the max latches the burst — the
-    ///   measured sr=53k-vs-8.9k defect. A half-window mean (≫ one refill
-    ///   cycle) is time-normalized: burst concentration cannot inflate it.
-    /// - NOT the plain full-window mean: the cap this anchor feeds limits
+    ///   flood, boot-cap ramp) and the max latches the burst (a ~6×
+    ///   over-read). A half-window mean (≫ one refill cycle) is
+    ///   time-normalized: burst concentration cannot inflate it.
+    /// - Not the plain full-window mean: the cap this anchor feeds limits
     ///   the send process itself, so an un-ratcheted mean inherits the
-    ///   anchor⇄cap circularity (cap dip → carried rate dip → mean dip —
-    ///   the measured 3588→938 oscillation). The max-of-two-halves holds
+    ///   anchor⇄cap circularity (cap dip → carried rate dip → mean dip, an
+    ///   oscillation). The max-of-two-halves holds
     ///   the pre-dip half's rate for up to a half window — the same
     ///   escape BBR's BtlBw max-filter provides over its interval-mean
     ///   samples, on the rolling two-half-window pattern already
@@ -397,7 +388,7 @@ mod tests {
         let mut a = SendRateAnchor::new();
         // 150 sym/s (the c3-1200B realtime stream class). One SRTT of sends
         // must be enough for a live, truthful anchor — the A* ≈ rate·D law
-        // needs no 10-s warm-up (defect (i)).
+        // needs no 10-s warm-up.
         let t = feed_steady(&mut a, t0, 150.0, 0.062, SRTT);
         let r = a.rate(t, SRTT).expect("anchor live within ~1 RTT");
         assert!(
@@ -412,7 +403,7 @@ mod tests {
 
     #[test]
     fn send_rate_anchor_flood_poison_injection_does_not_move_the_max() {
-        // THE poison test from the collapse attribution: steady stream, a
+        // The poison test: steady stream, a
         // synthetic 1-s clock gap (process stall), then the whole backlog
         // released as an instantaneous flood. A* = clamp(rate·D, 1, W) must
         // not move: the anchor may not read the flood as link rate.
@@ -456,12 +447,11 @@ mod tests {
         assert!(a.mean_rate(Instant::now(), SRTT).is_none());
     }
 
-    /// Goal-gate "Ship The Wins 1" amendment law: an ADMISSION-GATED sender
-    /// legitimately bursts whole buckets at emission speed on every
-    /// store-refill (SACK-release flood) — the windowed-MAX latches the
-    /// burst (the measured sr=53k-vs-8.9k smoke defect), while the
-    /// GAP-ROBUST WINDOWED MEAN reads the true carried rate. Both
-    /// statistics from the SAME buckets: max for the paced A* consumer,
+    /// Burst-immunity law: an admission-gated sender legitimately bursts
+    /// whole buckets at emission speed on every store-refill (SACK-release
+    /// flood) — the windowed-max latches the burst, while the gap-robust
+    /// windowed mean reads the true carried rate. Both statistics from the
+    /// same buckets: max for the paced A* consumer,
     /// mean for the pooled store-cap law.
     #[test]
     fn send_rate_anchor_mean_is_refill_burst_immune_where_the_max_latches() {
@@ -487,16 +477,16 @@ mod tests {
         // The ratcheted mean carries a bounded upward bias (max of two
         // half-window means, ≤ ~1.6× under this burst geometry — the
         // anti-circularity ratchet) but must stay in the carried-truth
-        // CLASS where the max reads the 5× burst peak.
+        // class where the max reads the 5× burst peak.
         assert!(
             mean > 0.6 * truth && mean < 2.0 * truth,
             "the ratcheted mean stays in the carried-truth class: mean={mean} truth={truth}"
         );
     }
 
-    /// The anti-circularity ratchet law: a self-inflicted rate DIP (the
-    /// cap→rate→mean feedback the smoke measured as the 3588→938
-    /// oscillation) must not drag the anchor down within a half window —
+    /// The anti-circularity ratchet law: a self-inflicted rate dip (the
+    /// cap→rate→mean feedback) must not drag the anchor down within a half
+    /// window —
     /// the previous half's mean holds the pre-dip rate.
     #[test]
     fn send_rate_anchor_mean_ratchets_through_a_self_dip() {
@@ -521,9 +511,8 @@ mod tests {
         let tick_us = (STALL_TICK_S * 1e6) as u64;
         let mut t: u64 = 1_000_000;
         // Steady 50-ms ticks: never quarantined — an ack silence (no samples
-        // arriving) with a LIVE process leaves the witness untouched, so a
-        // recovery quiet period can never be misread as a stall (the r200
-        // discard-storm lesson).
+        // arriving) with a live process leaves the witness untouched, so a
+        // recovery quiet period can never be misread as a stall.
         for _ in 0..100 {
             w.on_tick(t);
             assert!(!w.in_quarantine(t));
@@ -535,8 +524,8 @@ mod tests {
         w.on_tick(t);
         assert!(w.in_quarantine(t), "post-stall flood is quarantined");
         assert!(w.in_quarantine(t + 900_000), "quarantine ≈ the gap length");
-        // …which EXPIRES (hygiene rule 3): min(gap, cap) later. The timer
-        // keeps ticking THROUGH the quarantine (the process is live again),
+        // …which expires (hygiene rule 3): min(gap, cap) later. The timer
+        // keeps ticking through the quarantine (the process is live again),
         // so no cascade fires.
         let q_end = t + 1_000_000;
         while t < q_end + 500_000 {
@@ -556,7 +545,7 @@ mod tests {
             w.on_tick(t);
             t += 50_000;
         }
-        // A 10-s stall quarantines only QUARANTINE_CAP_S, not 10 s.
+        // A 10-s stall quarantines only `QUARANTINE_CAP_S`, not 10 s.
         t += 10_000_000;
         w.on_tick(t);
         assert!(w.in_quarantine(t + 1_900_000));

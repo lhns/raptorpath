@@ -22,42 +22,35 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 // ───────────────────────────────────────────────────────────────────────────
-// QUIC substrate congestion-controller override (env `RWM_QUIC_CC`, DEFAULT
-// UNSET ⇒ quinn BBR — the Default CC Flip, 2026-07-21).
+// QUIC substrate congestion-controller override (env `RWM_QUIC_CC`, default
+// unset ⇒ quinn BBR; ADR-0054, paper §8.4).
 //
-// WHY (feat/gen-substrate-ceiling JOB 1): quinn gates EVERY packet send —
-// including DATAGRAM frames, which carry all raptorpath wire symbols — on its
-// own congestion window (quinn-proto connection/mod.rs "blocked by congestion
-// control"), default CUBIC. On a GE-lossy path the loss-reactive Cubic window
-// is a hard substrate ceiling underneath raptorpath's own loss-tolerant
-// FEC/CC design — the exact per-connection (= per-path) wall the L1
-// generation-mode measurements hit (plain 17.5 → plain+BBR 74.5 pooled,
-// ×4.3; "Gen Substrate Ceiling"). Every measured best arm since has used
-// BBR; as of 2026-07-21 the shipped default IS BBR (the A/B inverts: the
-// legacy wire is now the explicit `RWM_QUIC_CC=cubic` opt-out arm).
-// FAIRNESS CAVEAT (documented at flip time, "Cross-Traffic" battery): BBR
-// takes a 0.95–0.96 share against a competing Cubic flow at the c2 cell —
-// mildly aggressive, within the deployed-BBRv1 envelope.
+// Why: quinn gates every packet send — including the DATAGRAM frames that
+// carry all raptorpath wire symbols — on its own congestion window
+// (quinn-proto connection/mod.rs "blocked by congestion control"). A
+// loss-reactive Cubic window is a hard per-connection (= per-path) ceiling
+// underneath raptorpath's loss-tolerant FEC/CC design on a GE-lossy path,
+// so the default is BBR and Cubic is the explicit opt-out. BBR takes a
+// 0.95–0.96 share against a competing Cubic flow — mildly aggressive,
+// within the deployed-BBRv1 envelope.
 //   RWM_QUIC_CC=bbr          quinn BBR (explicit; = the default)
 //   RWM_QUIC_CC=bbr_rs       in-tree burst-robust BBR (transport/bbr_rs.rs:
 //                            quinn's Bbr with the interval-guarded per-flight
-//                            rate sampler — goal-gate "Ship The Wins 2:
-//                            shal8 anchor", ADR-0054/0061; built as an
-//                            explicit arm, flip decision battery-gated)
+//                            rate sampler; ADR-0054/0061; an experiment arm)
 //   RWM_QUIC_CC=newreno
-//   RWM_QUIC_CC=cubic        quinn stock Cubic (the legacy/fairness arm)
-//   RWM_QUIC_CC=passthrough  OUR engine owns the window (see below)
+//   RWM_QUIC_CC=cubic        quinn stock Cubic (the fairness arm)
+//   RWM_QUIC_CC=passthrough  our engine owns the window (see below)
 // Unrecognized values warn and keep the BBR default.
-// Applied to BOTH client and server configs (each direction's sends are
+// Applied to both client and server configs (each direction's sends are
 // governed by the sender-side controller of that connection).
 //
-// PASSTHROUGH (feat/copa-sole-cc, task #80): substrate CC as POLICY. quinn's
-// controller becomes a pass-through shim whose window() simply reads an
+// Passthrough (ADR-0062): substrate CC as policy. quinn's controller
+// becomes a pass-through shim whose window() simply reads an
 // Arc<AtomicU64> (bytes) that the raptorpath engine writes per path — the
-// engine's own Copa-lite per-path cwnd becomes THE congestion window of the
+// engine's own Copa-lite per-path cwnd becomes the congestion window of the
 // substrate (per connection = per path), instead of min(app CC, quinn CC)
 // double control. quinn's loss events are recorded (stats only), never acted
-// on — loss handling is the FEC layer's job (paper §12); congestion safety is
+// on — loss handling is the FEC layer's job (paper §8); congestion safety is
 // Copa's delay backoff, which the engine writes into the atomic. quinn's own
 // pacer derives its rate from this window, so pacing stays consistent with
 // the engine's cwnd. The atomic starts at PASSTHROUGH_INITIAL_WINDOW so the
@@ -66,15 +59,14 @@ use tracing::{error, info, warn};
 // direction) simply keep that static window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum QuicCcMode {
-    /// Env unset/unrecognized/explicit `bbr`: quinn BBR — the shipped default
-    /// (Default CC Flip, 2026-07-21).
+    /// Env unset/unrecognized/explicit `bbr`: quinn BBR — the shipped default.
     Bbr,
     /// Explicit `bbr_rs`: the in-tree burst-robust BBR (one changed
     /// mechanism vs quinn's: the bandwidth estimator — see
     /// transport/bbr_rs.rs module docs).
     BbrRs,
     NewReno,
-    /// Explicit `cubic`: quinn stock Cubic — the legacy wire / fairness arm.
+    /// Explicit `cubic`: quinn stock Cubic — the fairness arm.
     Cubic,
     Passthrough,
 }
@@ -108,7 +100,7 @@ const PASSTHROUGH_INITIAL_WINDOW: u64 = 256 * 1024;
 /// control packets keep flowing at a trickle).
 const PASSTHROUGH_MIN_WINDOW_MTUS: u64 = 2;
 
-/// Record-only counters for what quinn WOULD have reacted to (RWM_DIAG-class
+/// Record-only counters for what quinn would have reacted to (RWM_DIAG-class
 /// observability; never gates anything).
 #[derive(Debug, Default)]
 pub struct PassthroughCcStats {
@@ -168,7 +160,7 @@ impl quinn::congestion::Controller for PassthroughController {
     }
 }
 
-/// Factory handing every connection built from it the SAME per-path window
+/// Factory handing every connection built from it the same per-path window
 /// atomic (one factory per path/endpoint — per-connection = per-path).
 struct PassthroughFactory {
     window: Arc<std::sync::atomic::AtomicU64>,
@@ -197,8 +189,8 @@ fn quic_cc_factory(
             Some(Arc::new(quinn::congestion::BbrConfig::default()))
         }
         QuicCcMode::BbrRs => {
-            // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1): the
-            // battery greps for "burst-robust BBR".
+            // Mechanism-liveness echo (docs/measurement-discipline.md rule
+            // 1): the battery greps for "burst-robust BBR".
             info!(
                 "RWM_QUIC_CC=bbr_rs: burst-robust BBR (in-tree controller, \
                  interval-guarded per-flight rate sampler — ADR-0061 family)"
@@ -213,7 +205,7 @@ fn quic_cc_factory(
             info!("RWM_QUIC_CC=cubic: quinn stock Cubic (legacy wire / fairness arm)");
             Some(Arc::new(quinn::congestion::CubicConfig::default()))
         }
-        // Passthrough needs a PER-PATH handle — built in cc_factory_for_path.
+        // Passthrough needs a per-path handle — built in cc_factory_for_path.
         QuicCcMode::Passthrough => None,
     }
 }
@@ -242,11 +234,11 @@ pub struct QuicTransport {
     /// Per-path record-only pass-through congestion stats (diagnostics).
     cc_stats: DashMap<PathId, Arc<PassthroughCcStats>>,
     /// `RWM_DIAG`: run the datagram send-queue audit at the
-    /// `send_datagram_shaped` seam. Resolved ONCE, here, so the shipped
+    /// `send_datagram_shaped` seam. Resolved once, here, so the shipped
     /// default pays neither the extra connection-lock take nor the atomics.
     dg_audit: bool,
-    /// Datagram send-queue audit counters, per path (goal-gate "What Binds
-    /// Throughput", instrument 3). See `datagram_queue_stats`.
+    /// Datagram send-queue audit counters, per path. See
+    /// `datagram_queue_stats`.
     dg_stats: DashMap<PathId, Arc<DatagramQueueAudit>>,
 }
 
@@ -254,14 +246,12 @@ pub struct QuicTransport {
 ///
 /// **The gap this closes.** `quinn::Connection::send_datagram` calls
 /// `Datagrams::send(data, drop = true)` (quinn-proto 0.11.14,
-/// `connection/datagrams.rs`:38–48), which **silently evicts the OLDEST
-/// queued datagrams** when the 4 MB send buffer overflows — about 3 300
+/// `connection/datagrams.rs`:38–48), which silently evicts the oldest
+/// queued datagrams when the 4 MB send buffer overflows — about 3 300
 /// 1 200 B symbols — logging a `trace!` nobody enables and returning `Ok`.
-/// The engine's `src=`/`cod=` gauges count HANDOFFS, not transmissions, so
-/// an evicted symbol is indistinguishable from a delivered one in every log
-/// the three-term battery produced. The law set the cap to 3 073 at c2r100
-/// and 4 096 at c2r200 — the same order as that buffer — so the arm most
-/// exposed to the loss was the scored one.
+/// The engine's `src=`/`cod=` gauges count handoffs, not transmissions, so
+/// an evicted symbol is indistinguishable from a delivered one. Store caps
+/// of a few thousand symbols are the same order as that buffer.
 ///
 /// **It cannot be counted exactly from quinn's public API, and this is what
 /// is available instead.** quinn exposes no eviction counter and no hook;
@@ -269,29 +259,29 @@ pub struct QuicTransport {
 /// transmission. What it does expose is
 /// `Connection::datagram_send_buffer_space()`, which is
 /// `datagram_send_buffer_size.saturating_sub(outgoing_total)`. Read at the
-/// seam, immediately BEFORE the send, that gives an exact predicate:
+/// seam, immediately before the send, that gives an exact predicate:
 ///
 /// * quinn's eviction loop runs iff `outgoing_total > buffer_size` on entry;
 /// * `space == 0` iff `outgoing_total >= buffer_size` on entry.
 ///
 /// So `full` counts every call that evicted, plus the measure-zero tie where
 /// the queue is byte-exactly full. **`full` is therefore an upper bound on
-/// the number of evicting CALLS that is tight to one boundary case, and a
-/// LOWER bound on the number of datagrams EVICTED** — one call's `while`
+/// the number of evicting calls that is tight to one boundary case, and a
+/// lower bound on the number of datagrams evicted** — one call's `while`
 /// loop pops until it is back under the ceiling, which is one datagram when
 /// sizes are uniform (ours are: 1 200 B symbols) and more when they are not.
 /// Both directions are named because neither is exact.
 ///
 /// The corroborating cross-check is independent of that predicate:
 /// `tx_frames` is quinn's own `stats().frame_tx.datagram`, the count of
-/// DATAGRAM frames actually put on the wire. DATAGRAM frames are never
+/// DATAGRAM frames actually put on the wire. They are never
 /// retransmitted, so in a run that ends with a drained queue
 /// `handoff − tx_frames` is the total lost to eviction, computed without
 /// reference to `full` at all. `space` is echoed so the queue depth at the
 /// last DIAG window is readable and `handoff − tx_frames` can be corrected
 /// for what was still queued.
 ///
-/// **OFF-value property:** with `RWM_DIAG` unset the audit does not run and
+/// **Off-value property:** with `RWM_DIAG` unset the audit does not run and
 /// every counter reads 0, so `dgq[...]` never appears — enforced by
 /// `transport::quic::tests::datagram_queue_audit_is_off_without_diag`.
 ///
@@ -300,12 +290,12 @@ pub struct QuicTransport {
 /// (`l0_transit_stats`) and does not touch quinn's datagram buffer at all.
 #[derive(Default)]
 pub struct DatagramQueueAudit {
-    /// Calls into the seam that quinn ACCEPTED (returned `Ok`).
+    /// Calls into the seam that quinn accepted (returned `Ok`).
     pub handoff: std::sync::atomic::AtomicU64,
     /// Calls whose `datagram_send_buffer_space()` was 0 on entry — the
     /// eviction predicate. See the type doc for exactly what it bounds.
     pub full: std::sync::atomic::AtomicU64,
-    /// Calls quinn REJECTED (`TooLarge` / `UnsupportedByPeer` / `Disabled`).
+    /// Calls quinn rejected (`TooLarge` / `UnsupportedByPeer` / `Disabled`).
     /// These are loud (the seam returns `Err`); counted so that
     /// `handoff + err` reconciles with the engine's own handoff count.
     pub err: std::sync::atomic::AtomicU64,
@@ -379,16 +369,16 @@ impl QuicTransport {
             cc_stats,
             // Resolved once, at construction: the audit's per-datagram cost
             // (one connection-lock take for `datagram_send_buffer_space`)
-            // must not exist on the shipped path. `RWM_DIAG` is an existing
-            // gate — already in `RWM_FORWARD`, already in the `[GATES]` echo
-            // — so this adds no name to the gate surface.
+            // must not exist on the shipped path. `RWM_DIAG` is already in
+            // `RWM_FORWARD` and the `[GATES]` echo, so this adds no name to
+            // the gate surface.
             dg_audit: crate::gates::get().diag,
             dg_stats: DashMap::new(),
         })
     }
 
     /// Per-path congestion-controller factory. Passthrough mode gets a
-    /// PER-PATH factory sharing that path's window atomic (per-connection =
+    /// per-path factory sharing that path's window atomic (per-connection =
     /// per-path: each endpoint serves exactly one path, and any reconnect on
     /// it correctly inherits the same engine-owned window); the other modes
     /// use the stock env-selected factory.
@@ -415,7 +405,7 @@ impl QuicTransport {
     }
 
     /// Engine write side of the pass-through window: set path `path_id`'s
-    /// substrate congestion window in BYTES. No-op unless
+    /// substrate congestion window in bytes. No-op unless
     /// `RWM_QUIC_CC=passthrough` created a handle for this path.
     pub fn set_cc_window_bytes(&self, path_id: PathId, bytes: u64) {
         if !self.cc_passthrough {
@@ -433,10 +423,10 @@ impl QuicTransport {
     }
 
     /// Packet-timed path RTT for `path_id` from quinn's RFC 9002 estimator
-    /// (feat/copa-wire-signal): measured at the QUIC packet layer — send of
-    /// an ack-eliciting packet to receipt of its ACK, ack-delay corrected —
-    /// so it EXCLUDES the sender's own app-layer store/reservoir dwell in
-    /// the datagram queue (which sits BEFORE packetization). This is the
+    /// (ADR-0062): measured at the QUIC packet layer — send of an
+    /// ack-eliciting packet to receipt of its ACK, ack-delay corrected — so
+    /// it excludes the sender's own app-layer store/reservoir dwell in the
+    /// datagram queue (which sits before packetization). This is the
     /// wire clock for Copa's queue term d_q = wire_rtt − wire_RTTmin; the
     /// app-layer echo RTT stays with the reliability/tail machinery where
     /// end-to-end (pipeline-inclusive) delay is the right quantity.
@@ -447,10 +437,10 @@ impl QuicTransport {
     /// Quinn-level DATAGRAM frame counters for `path_id`:
     /// `(datagram_frames_rx, datagram_frames_tx)` from `Connection::stats()`.
     ///
-    /// Wedge forensics (fix/frontier-wedge): `frame_rx.datagram` counts every
-    /// DATAGRAM frame quinn ACCEPTED at the packet layer — BEFORE the app's
-    /// `read_datagram()` and before quinn's bounded incoming datagram buffer
-    /// (which silently drops the OLDEST buffered datagram on overflow). If
+    /// Wedge forensics: `frame_rx.datagram` counts every DATAGRAM frame quinn
+    /// accepted at the packet layer — before the app's `read_datagram()` and
+    /// before quinn's bounded incoming datagram buffer (which silently drops
+    /// the oldest buffered datagram on overflow). If
     /// this counter advances while the app-level receive loop sees nothing,
     /// arriving datagrams are being destroyed between quinn's packet layer
     /// and the application (buffer overflow), not lost on the wire.
@@ -461,14 +451,13 @@ impl QuicTransport {
         })
     }
 
-    /// Quinn substrate congestion gauge for `path_id` (goal-gate "Ship The
-    /// Wins 2: shal8 anchor" diagnosis instrument — read only at the
-    /// RWM_DIAG print, never gates anything):
+    /// Quinn substrate congestion gauge for `path_id` (a diagnosis
+    /// instrument — read only at the RWM_DIAG print, never gates anything):
     /// `(cwnd_bytes, congestion_events, lost_packets, sent_packets)` from
     /// `Connection::stats().path`. Under the shipped BBR default the cwnd
     /// IS 2 × quinn's internal BtlBŵ × RTprop, so a cwnd many multiples of
     /// the true BDP·MTU is direct in-vivo evidence of the max-filter
-    /// over-read (P-D1).
+    /// over-read.
     pub fn quinn_path_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64)> {
         self.connections.get(&path_id).map(|c| {
             let p = c.stats().path;
@@ -476,8 +465,8 @@ impl QuicTransport {
         })
     }
 
-    /// diag/unified-collapse: L0 shim transit counters, None when the shim is
-    /// off — (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
+    /// L0 shim transit counters, None when the shim is off —
+    /// (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
     pub fn l0_transit_stats(&self) -> Option<(u64, u64, u64, u64, u64, usize)> {
         self.l0_netem.as_ref().map(|s| s.transit_stats())
     }
@@ -522,7 +511,7 @@ impl QuicTransport {
                     return Ok(());
                 }
                 use std::sync::atomic::Ordering::Relaxed;
-                // Read the queue depth BEFORE the send: quinn's eviction
+                // Read the queue depth before the send: quinn's eviction
                 // decision is taken against the state on entry, so this is
                 // the only moment at which the predicate is meaningful.
                 let space = conn.datagram_send_buffer_space() as u64;
@@ -551,13 +540,13 @@ impl QuicTransport {
 
     /// Datagram send-queue audit readout for a path (`RWM_DIAG` only):
     /// `(handoff, full, err, space_bytes, tx_frames)`. `None` when the audit
-    /// is off or the path has never sent a datagram — which is the OFF-value
+    /// is off or the path has never sent a datagram — which is the off-value
     /// property: no audit, no gauge, rather than a gauge reading zero for two
     /// different reasons.
     ///
     /// `tx_frames` is read live from quinn (`stats().frame_tx.datagram`) —
     /// DATAGRAM frames actually transmitted. See `DatagramQueueAudit` for why
-    /// `handoff − tx_frames` is the eviction estimate that does NOT depend on
+    /// `handoff − tx_frames` is the eviction estimate that does not depend on
     /// the `full` predicate.
     pub fn datagram_queue_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64, u64)> {
         use std::sync::atomic::Ordering::Relaxed;
@@ -688,10 +677,10 @@ impl QuicTransport {
         let mut handles = vec![];
 
         let conn_uni = conn.clone();
-        // Stream-origin control messages go to a DEDICATED channel: the
+        // Stream-origin control messages go to a dedicated channel: the
         // data channel backs up under symbol floods, and liveness
-        // (PathReport/Ping) queued behind it starved the dead-path check
-        // (L1 finding: bulk transfers killed the tunnel in ~6 s).
+        // (PathReport/Ping) queued behind it would starve the dead-path
+        // check and kill the tunnel under bulk transfers.
         let tx_uni = ctrl_tx;
 
         // Datagram receiver
@@ -822,22 +811,21 @@ impl QuicTransport {
 
     /// Send a symbol batch over a path using QUIC datagrams.
     ///
-    /// feat/window-mtu part 2 (`RWM_WIRE_COMPACT`, v5): one-symbol batches
+    /// With `RWM_WIRE_COMPACT` (default ON, v5 framing), one-symbol batches
     /// — the window-mode data path, one symbol per datagram — ride the
     /// compact tag+varint frame (~14–16 B vs the 65-B magic+bincode
-    /// framing, the measured ~4.3 Mbit/0.95 Mbit framing tax at c2/c3).
-    /// Multi-symbol (block-mode) batches and everything else keep legacy
-    /// framing; gate OFF is byte-identical.
+    /// framing). Multi-symbol (block-mode) batches and everything else keep
+    /// the bincode framing.
     pub fn send_symbols(&self, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
         let conn = self
             .connections
             .get(&path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
-        // The two `RWM_CPUPROF` seams of the send path, and they are ADJACENT
-        // rather than nested so their shares add rather than over-count:
-        //   `ser`  the wire serialization (compact v5, or the bincode legacy)
-        //   `hand` the datagram HANDOFF to quinn — NOT the send syscall, which
+        // The two `RWM_CPUPROF` seams of the send path, adjacent rather than
+        // nested so their shares add rather than over-count:
+        //   `ser`  the wire serialization (compact v5, or bincode)
+        //   `hand` the datagram handoff to quinn — not the send syscall, which
         //          happens on quinn's endpoint driver task and is invisible
         //          here by construction (see `net::cpuprof` module docs).
         use crate::net::cpuprof::{timed, Seam};
@@ -929,36 +917,31 @@ impl QuicTransport {
     }
 
     /// Apply the symbol-datagram MTU floor to a quinn transport config
-    /// (fix/frontier-wedge — the c3/C8 ~60 s "collapse run" root cause).
+    /// (ADR-0055).
     ///
-    /// THE WEDGE: every wire symbol rides ONE QUIC datagram of ~1261–1275
+    /// The wedge: every wire symbol rides one QUIC datagram of ~1261–1275
     /// bytes (1200-byte symbol + repair header + bincode/batch framing).
     /// quinn's defaults are `initial_mtu = min_mtu = 1200`; PMTUD raises the
-    /// path MTU to ~1452 right after the handshake, which is the ONLY reason
+    /// path MTU to ~1452 right after the handshake, which is the only reason
     /// those datagrams are sendable at all. quinn also runs an MTU
-    /// BLACK-HOLE DETECTOR: a burst of lost large packets (GE loss at c3
-    /// looks exactly like an MTU black hole) resets `current_mtu` to
-    /// `min_mtu` (1200) and pauses discovery for `black_hole_cooldown`
-    /// (default 60 s). During that window `max_datagram_size` ≈ 1170 <
-    /// every symbol datagram, so EVERY data send — source, repair, and
-    /// every targeted retransmit of the frontier blocker — fails at the
-    /// sender with `SendDatagramError::TooLarge` (measured: 8 077
-    /// consecutive failures over 60 s in the wedge forensics), while small
-    /// control datagrams (acks) still flow and keep the wire RTT fresh.
-    /// The transfer freezes for exactly the cooldown, then self-resolves
-    /// when PMTUD re-probes. Cross-arm (BBR / Copa / stock) because it is
-    /// below the CC layer.
+    /// black-hole detector: a burst of lost large packets (GE loss looks
+    /// exactly like an MTU black hole) resets `current_mtu` to `min_mtu`
+    /// (1200) and pauses discovery for `black_hole_cooldown` (default 60 s).
+    /// During that window `max_datagram_size` ≈ 1170 < every symbol
+    /// datagram, so every data send — source, repair, and every targeted
+    /// retransmit of the frontier blocker — fails at the sender with
+    /// `SendDatagramError::TooLarge`, while small control datagrams (acks)
+    /// still flow and keep the wire RTT fresh. The transfer freezes for
+    /// exactly the cooldown. It is below the CC layer, so every CC arm hits it.
     ///
-    /// THE FIX: the engine structurally REQUIRES ~1275-byte datagrams (a
+    /// The fix: the engine structurally requires ~1275-byte datagrams (a
     /// symbol is never fragmented), so declare that floor to quinn:
     /// `min_mtu = initial_mtu = MTU_FLOOR`. A (possibly spurious)
-    /// black-hole reset then lands AT the floor and symbol sends keep
-    /// working; PMTUD and the black-hole detector otherwise stay active
-    /// (upward probing unchanged — the 60 s cooldown remains as quinn's
-    /// safety net, no longer wedging ours). A path that truly cannot carry
-    /// MTU_FLOOR-byte UDP payloads could never carry a symbol anyway —
-    /// before this fix it failed as a silent send blackout; now it fails
-    /// loudly as persistent large-packet loss.
+    /// black-hole reset then lands at the floor and symbol sends keep
+    /// working; PMTUD and the black-hole detector otherwise stay active.
+    /// A path that truly cannot carry MTU_FLOOR-byte UDP payloads could
+    /// never carry a symbol anyway; it now fails loudly as persistent
+    /// large-packet loss instead of a silent send blackout.
     ///
     /// `RWM_MTU_FLOOR` overrides (A/B instrument): `0` restores stock quinn
     /// defaults (the wedge-prone control arm), any other value sets the
@@ -983,8 +966,8 @@ impl QuicTransport {
         info!(floor, "MTU floor: min_mtu=initial_mtu — quinn black-hole reset keeps symbol datagrams sendable (fix/frontier-wedge)");
         transport.initial_mtu(floor);
         transport.min_mtu(floor);
-        // feat/window-mtu part 2 mechanism-liveness echo (MEASUREMENT
-        // DISCIPLINE item 1): the compact-framing gate, resolved once.
+        // Mechanism-liveness echo (docs/measurement-discipline.md rule 1):
+        // the compact-framing gate, resolved once.
         if crate::transport::protocol::wire_compact_active() {
             info!(
                 "compact DATA framing ACTIVE (RWM_WIRE_COMPACT v5: one-symbol \
@@ -1209,7 +1192,7 @@ mod passthrough_cc_tests {
     }
 
     /// The shim's window() follows the engine-owned atomic: what our engine
-    /// writes IS the substrate congestion window.
+    /// writes is the substrate congestion window.
     #[test]
     fn window_follows_the_atomic() {
         let w = Arc::new(AtomicU64::new(PASSTHROUGH_INITIAL_WINDOW));
@@ -1236,7 +1219,7 @@ mod passthrough_cc_tests {
     }
 
     /// clone_box (quinn clones controllers for path state) keeps sharing the
-    /// SAME engine-owned atomic.
+    /// same engine-owned atomic.
     #[test]
     fn clone_box_shares_the_atomic() {
         let w = Arc::new(AtomicU64::new(50_000));
@@ -1268,18 +1251,17 @@ mod passthrough_cc_tests {
 mod datagram_queue_audit_tests {
     use super::*;
 
-    /// **The OFF-value property** for the datagram send-queue audit
-    /// (goal-gate "What Binds Throughput", instrument 3).
+    /// **The off-value property** for the datagram send-queue audit.
     ///
     /// The audit costs one connection-lock take per datagram, so it must not
-    /// exist on the shipped path. `dg_audit` resolves `RWM_DIAG` ONCE at
+    /// exist on the shipped path. `dg_audit` resolves `RWM_DIAG` once at
     /// construction, and with it off `datagram_queue_stats` must return
     /// `None` for every path — not `Some((0,0,0,0,0))`, which would be
     /// indistinguishable from "the audit ran and saw nothing".
     ///
-    /// **Written to be correct in BOTH process conditions.** A test that
+    /// **Written to be correct in both process conditions.** A test that
     /// mutated `RWM_DIAG` would race every other test in the process (and is
-    /// `unsafe` in edition 2024), so this reads the AMBIENT value and asserts
+    /// `unsafe` in edition 2024), so this reads the ambient value and asserts
     /// the branch that value selects. Run it in a process with `RWM_DIAG`
     /// unset and again with `RWM_DIAG=1` and both arms are covered — which is
     /// the multi-process discipline this repo already applies to env gates.
@@ -1297,7 +1279,7 @@ mod datagram_queue_audit_tests {
             "dg_audit must be RWM_DIAG resolved at construction"
         );
 
-        // No path has sent a datagram, so the readout is `None` EITHER WAY —
+        // No path has sent a datagram, so the readout is `None` either way —
         // the two reasons are distinguished by `dg_audit`, never by a zero.
         assert!(
             t.datagram_queue_stats(0).is_none(),
@@ -1305,7 +1287,7 @@ mod datagram_queue_audit_tests {
         );
 
         if !diag_on {
-            // The stronger OFF claim: the map itself is never touched, so the
+            // The stronger off claim: the map itself is never touched, so the
             // seam takes no lock and allocates no per-path audit record.
             assert!(
                 t.dg_stats.is_empty(),

@@ -26,79 +26,53 @@ fn bincode_options() -> impl Options {
 /// because `send_timestamp_us` is shared by every chunk of one drain call
 /// and a batch may mix symbols from several blocks, so neither field keys
 /// the sender-side batch ledger unambiguously.
-/// v5: compact DATA framing exists (goal-gate "Window Decoupling + MTU
-/// Scaling" part 2, `RWM_WIRE_COMPACT`): a one-symbol SymbolBatch may ride
-/// a tag-byte + varint frame whose payload runs to the datagram boundary
-/// (~14–16 B vs the 65-B magic+bincode framing — the measured ~4.3 Mbit
-/// framing tax at c2). RECEIVE support is unconditional in v5 (the tag
-/// byte 0xC1 is dead space under the legacy 'R' magic), sending is
-/// env-gated; the version bump makes pre-compact binaries refuse cleanly
-/// at handshake instead of dropping datagrams mid-stream if the gate is
-/// ever flipped on.
-/// v6: `WindowAck` carries the receiver's per-path CUMULATIVE
-/// `cum_expected`/`cum_received` symbol counters (goal-gate "Unlock The
-/// Default 1: ack-merge"). They are the payload of the legacy per-batch
-/// `ControlMessage::Ack`, folded onto the SACK ack so window mode can send
-/// ONE control datagram per data message instead of two. The fields are
-/// unconditional — always present, always populated on a data-triggered ack —
-/// so there is exactly one wire format per binary and no gate-dependent
-/// framing; `RWM_ACK_MERGE` gates only whether the legacy `Ack` is still
-/// ALSO sent. Cumulative (not per-ack) so a dropped control datagram costs
-/// nothing: the next ack carries the whole outstanding delta. No new tag is
-/// claimed; `COMPACT_DATA_TAG` is untouched.
-/// v7: SIX never-sent `ControlMessage` variants removed (refactor arc,
-/// "dead code batch 2"): `RepairRequest`, `PathAdd`, `PathRemove`,
-/// `WindowNack`, `WindowSwitchAck`, `NackAck`. None had a construction
-/// site anywhere in the workspace — their only life was receive-side
-/// handlers (a `debug!`/`info!` each, plus `WindowNack`'s handler, which
-/// was the sole construction site of `NackAck`) and round-trip codec
-/// tests. Because `ControlMessage` rides bincode FIXINT encoding, the
-/// variant tag IS the declaration index, so removing them RENUMBERS every
-/// later variant — a v6 peer's `WindowAck` would deserialize as something
-/// else entirely. Hence the version bump: both `Handshake::deserialize`
-/// and `WireMessage::deserialize` hard-refuse a version mismatch, so a
-/// mixed v6/v7 pair fails cleanly and loudly at handshake instead of
-/// silently mis-parsing control traffic. `WindowSwitch` is KEPT despite
-/// also never being sent: its receive arm is a deliberate
+/// v5: compact DATA framing (`RWM_WIRE_COMPACT`): a one-symbol SymbolBatch
+/// may ride a tag-byte + varint frame whose payload runs to the datagram
+/// boundary (~14–16 B vs the 65-B magic+bincode framing). Receive support
+/// is unconditional (the tag byte 0xC1 is dead space under the 'R' magic);
+/// sending is env-gated.
+/// v6: `WindowAck` carries the receiver's per-path cumulative
+/// `cum_expected`/`cum_received` symbol counters — the payload of the
+/// per-batch `ControlMessage::Ack`, folded onto the SACK ack so window mode
+/// can send one control datagram per data message instead of two
+/// (`RWM_ACK_MERGE` gates only whether the separate `Ack` is also sent).
+/// Cumulative so a dropped control datagram costs nothing: the next ack
+/// carries the whole outstanding delta.
+/// v7: six never-sent `ControlMessage` variants removed. Because
+/// `ControlMessage` rides bincode fixint encoding, the variant tag is the
+/// declaration index, so removing a variant renumbers every later one.
+/// `WindowSwitch` is kept despite never being sent: its receive arm is a
 /// hostile-peer/version guard that warns and ignores.
-/// v8: ONE coordinated bump carrying TWO additions, both required by the
-/// placement/receiver-law instrument pass (plan Stage 1 item 3):
-///   (a) `SymbolBatch.eta_rel_us: u32` -- the SENDER'S OWN PREDICTION of this
+/// v8: two additions in one bump:
+///   (a) `SymbolBatch.eta_rel_us: u32` -- the sender's own prediction of this
 ///       batch's remaining delivery time, in us, relative to
 ///       `send_timestamp_us`. It is the `expected_delivery_load()` of the
-///       path the placement law JUST PICKED, stamped at the placement lock,
+///       path the placement law just picked, stamped at the placement lock,
 ///       so the receiver can read every arrival as "late against the
-///       sender's own model" instead of "out of sequence" -- the lateness
-///       measurand 16.80 named and never built. **0 is the "no prediction"
-///       sentinel** (the `cum_received` convention): every emitter that is
-///       not the window source path leaves it 0, and the receiver's bind
-///       gauge reports the zero fraction rather than hiding it. Carried in
-///       BOTH framings: one varint after `batch_seq` in the compact frame,
-///       one bincode field in the legacy one.
+///       sender's own model" instead of "out of sequence" (the lateness
+///       coordinate of paper §7.2). **0 is the "no prediction" sentinel**
+///       (the `cum_received` convention): every emitter that is not the
+///       window source path leaves it 0, and the receiver's bind gauge
+///       reports the zero fraction rather than hiding it. Carried in both
+///       framings: one varint after `batch_seq` in the compact frame, one
+///       bincode field in the bincode one.
 ///   (b) `ControlMessage::RepairRequest { spans, cause }` -- the receiver-seat
-///       repair vocabulary (16.83). APPENDED AFTER `GenerationDeficit` and
-///       never reordered: bincode FIXINT encodes the variant tag as the
-///       DECLARATION INDEX, so appending is the only non-breaking edit, and
-///       the v7 note above records what happens when that rule is broken.
-///       NO SENDER exists in v8 -- the dispatch arm counts and ignores, so a
-///       hostile or future peer cannot panic this binary. The variant is on
-///       the wire now precisely so the Stage-2 arms need no second bump.
+///       repair vocabulary (paper §7.6). Appended after `GenerationDeficit`
+///       and never reordered: appending is the only non-breaking edit to a
+///       fixint-tagged enum. Nothing sends it yet; the dispatch arm counts
+///       and ignores, so a hostile or future peer cannot panic this binary.
 /// Both `Handshake::deserialize` and `WireMessage::deserialize` hard-refuse a
-/// version mismatch, so a mixed v7/v8 pair fails cleanly at handshake. Mixed
-/// versions are broken BY DESIGN -- one binary per battery.
+/// version mismatch, so mixed versions fail cleanly at handshake instead of
+/// silently mis-parsing control traffic.
 pub const PROTOCOL_VERSION: u32 = 8;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
-/// Compact DATA frame tag (v5). MUST stay distinct from the legacy magic's
+/// Compact DATA frame tag (v5). Must stay distinct from the bincode magic's
 /// first byte b'R' (0x52) — the receive path classifies on byte 0.
 pub const COMPACT_DATA_TAG: u8 = 0xC1;
 
-/// `RWM_WIRE_COMPACT` (default ON since 2026-08-06 — goal-gate "Window
-/// Decoupling + MTU Scaling" part 2, flip earned by the pre-registered
-/// battery: sc2 +2.59/+3.64, sc3 +0.55/+0.60 Mbit/s ≫σ both seeds, c7
-/// +8.1/+4.6, c8 unregressed, crown tail spot unregressed, wire overhead
-/// 119 → ~71 B/pkt at the qdisc gauge; `=0` is the legacy-framing opt-out
+/// `RWM_WIRE_COMPACT` (default ON; `=0` is the bincode-framing opt-out
 /// arm): sender-side compact DATA framing. Resolved once per process
 /// (transport-layer knob, like `RWM_MTU_FLOOR`/`RWM_QUIC_CC`).
 pub fn wire_compact_active() -> bool {
@@ -152,16 +126,16 @@ fn backend_from_u8(v: u8) -> Option<FecBackend> {
     })
 }
 
-/// Serialize a ONE-symbol batch as a compact DATA frame (v5,
+/// Serialize a one-symbol batch as a compact DATA frame (v5,
 /// `RWM_WIRE_COMPACT`). Returns None for multi-symbol batches (block-mode
-/// drains keep legacy framing). Layout:
+/// drains keep bincode framing). Layout:
 ///
 ///   [tag 0xC1][flags: bit0 = is_repair, bits1-2 = backend]
 ///   [varint path_id][varint block_id][varint payload_id]
 ///   [varint send_timestamp_us][varint batch_seq][varint eta_rel_us]
 ///   [payload to the datagram end]
 ///
-/// The payload length is the DATAGRAM boundary — both 8-byte bincode
+/// The payload length is the datagram boundary — both 8-byte bincode
 /// length fields (Vec len + data len), the 4-byte enum tags, and the 8-byte
 /// magic+version header are gone: ~14–16 B total vs 65.
 pub fn serialize_data_compact(batch: &SymbolBatch) -> Option<Vec<u8>> {
@@ -265,25 +239,25 @@ pub struct SymbolBatch {
     /// The path this batch was sent on (receiver keys its per-path batch_seq
     /// gap tracking and loss estimation off it).
     pub path_id: u32,
-    /// **v8 -- THE SENDER'S OWN DELIVERY PREDICTION**, us, relative to
+    /// **v8 -- the sender's own delivery prediction**, us, relative to
     /// `send_timestamp_us`: the `expected_delivery_load()` of the path the
     /// placement law just picked, stamped at the placement lock.
     ///
     /// **0 is the "no prediction" sentinel**, the `cum_received` convention.
     /// Every emitter other than the window source path leaves it 0 today, and
-    /// the receiver's `[ETA]` gauge reports that BIND FRACTION on its face
+    /// the receiver's `[ETA]` gauge reports that bind fraction on its face
     /// rather than dropping the samples silently -- an absent prediction and a
     /// predicted-zero delivery are not the same reading, and a prediction of
     /// exactly 0 us is physically impossible (the load term carries
     /// `srtt_i/2 > 0` at every path that has ever been measured).
     ///
-    /// READ BY NOTHING in the data plane. It feeds two gauges and no law.
+    /// Read by nothing in the data plane. It feeds two gauges and no law.
     pub eta_rel_us: u32,
 }
 
 impl SymbolBatch {
     /// The batch constructor every emission site goes through, so a future
-    /// envelope field is ONE edit instead of eleven. `eta_rel_us` defaults to
+    /// envelope field is one edit instead of eleven. `eta_rel_us` defaults to
     /// the 0 sentinel -- a site that has a prediction adds it with
     /// [`Self::with_eta`], which is the only way the field is ever nonzero.
     pub fn new(
@@ -372,9 +346,8 @@ pub enum ControlMessage {
 
     /// Acknowledge received window-mode symbols with SACK (receiver → sender).
     ///
-    /// Replaces the former WindowNack mechanism. Per-packet ACK with selective
-    /// acknowledgment ranges, RTT echo, jitter, and cumulative received count.
-    /// See paper Section 6.2 (SACK-Extended ACK).
+    /// Per-packet ACK with selective acknowledgment ranges, RTT echo,
+    /// jitter, and cumulative received count. See paper §2.2.
     WindowAck {
         /// All sequences up to this have been received or recovered.
         received_up_to: u64,
@@ -387,18 +360,17 @@ pub enum ControlMessage {
         jitter_us: u32,
         /// Running total of symbols received (self-healing reliability metric).
         cumulative_received: u64,
-        /// v6 (goal-gate "Unlock The Default 1: ack-merge"): the receiver's
-        /// per-path CUMULATIVE expected-symbol counter
+        /// v6: the receiver's per-path cumulative expected-symbol counter
         /// (`PathBatchTracker::total_expected` — batch-gap derived). Paired
-        /// with `cum_received` below, this is the entire payload of the legacy
+        /// with `cum_received` below, this is the entire payload of the
         /// per-batch `ControlMessage::Ack`, carried here so window mode can
-        /// merge two control datagrams into one. The sender DIFFS it against a
-        /// per-path cursor to recover `(expected, received)` for the loss
+        /// merge two control datagrams into one. The sender diffs it against
+        /// a per-path cursor to recover `(expected, received)` for the loss
         /// estimator and the in-flight release — identical totals to the
-        /// legacy arm, and robust to a dropped ack (the next one carries the
-        /// whole delta).
+        /// separate `Ack`, and robust to a dropped ack (the next one carries
+        /// the whole delta).
         cum_expected: u64,
-        /// v6: the receiver's per-path CUMULATIVE received-symbol counter
+        /// v6: the receiver's per-path cumulative received-symbol counter
         /// (`PathBatchTracker::total_received`). See `cum_expected`.
         ///
         /// **Zero is the "no counter payload" sentinel**, exactly parallel to
@@ -413,11 +385,11 @@ pub enum ControlMessage {
 
     /// Sender signals backend switch at a window flush point (sender → receiver).
     ///
-    /// NEVER SENT by this binary (mid-stream FEC backend switching was retired,
-    /// ADR-0030 / goal-gate "streaming retirement"). The variant and its receive
-    /// arm are KEPT deliberately as a hostile-peer / future-version guard: an
-    /// inbound `WindowSwitch` is warned about and ignored rather than silently
-    /// mis-parsed. Do not delete without a version bump.
+    /// Never sent by this binary (there is no mid-stream FEC backend
+    /// switching). The variant and its receive arm are kept deliberately as a
+    /// hostile-peer / future-version guard: an inbound `WindowSwitch` is
+    /// warned about and ignored rather than silently mis-parsed. Do not
+    /// delete without a version bump.
     WindowSwitch {
         /// Last source sequence number under the old backend.
         flush_seq: u64,
@@ -428,10 +400,10 @@ pub enum ControlMessage {
     },
 
     /// Per-generation deficit feedback (receiver → sender, generation coding
-    /// mode; paper §16.3). For each in-flight / frontier generation the receiver
+    /// mode; paper §5.8). For each in-flight / frontier generation the receiver
     /// still needs, carries `(anchor, deficit)` where `anchor` is the
     /// generation's stable coding anchor (= `window_start`, a multiple of the
-    /// generation size) and `deficit = K_g − rank_g` is how many MORE independent
+    /// generation size) and `deficit = K_g − rank_g` is how many more independent
     /// coded symbols that generation needs to decode. This closes the rateless-
     /// with-feedback loop: the sender emits exactly the residual deficit for each
     /// generation (bounding recovery — no bursty flood) while a stalled frontier
@@ -442,23 +414,21 @@ pub enum ControlMessage {
         deficits: Vec<(u64, u32)>,
     },
 
-    /// **v8 -- THE RECEIVER-SEAT REPAIR REQUEST** (paper 16.83, receiver ->
-    /// sender). The vocabulary change S3 names: instead of "resend seq s"
-    /// (which a false repair can express) the receiver says "over this span I
-    /// need this many more independent equations", which a false repair
-    /// cannot express at all.
+    /// **v8 -- the receiver-seat repair request** (paper §7.6, receiver ->
+    /// sender). Instead of "resend seq s" (which a false repair can express)
+    /// the receiver says "over this span I need this many more independent
+    /// equations", which a false repair cannot express at all.
     ///
-    /// APPENDED AFTER `GenerationDeficit` and never to be reordered -- the
-    /// bincode FIXINT variant tag IS the declaration index (see the v7 note
+    /// Appended after `GenerationDeficit` and never to be reordered -- the
+    /// bincode fixint variant tag is the declaration index (see the v7 note
     /// on `PROTOCOL_VERSION`).
     ///
-    /// **NOTHING SENDS THIS IN v8.** The receive arm counts it
-    /// (`repair_request_ignored()`) and returns; the Stage-2 request-law and
-    /// rank-feedback arms are what will construct it. It rides the wire now
-    /// so those arms need no second version bump.
+    /// **Nothing sends this in v8.** The receive arm counts it
+    /// (`repair_request_ignored()`) and returns; the request-law and
+    /// rank-feedback arms will construct it without a second version bump.
     RepairRequest {
         /// `(start, count, deficit)` per requested span: the span
-        /// `[start, start + count)` and how many MORE independent coded
+        /// `[start, start + count)` and how many more independent coded
         /// symbols over it the receiver still needs. `deficit = 1` over a
         /// one-seq span is exactly today's per-seq copy request, so the
         /// shipped machine is the `m = 1` corner of this message rather than
@@ -488,8 +458,8 @@ impl WireMessage {
 
     pub fn deserialize(data: &[u8]) -> Result<Self, bincode::Error> {
         // v5 compact DATA frame: classified on byte 0 (0xC1 is dead space
-        // under the legacy 'R' magic — unconditional receive support,
-        // byte-identical for all legacy traffic).
+        // under the 'R' magic — unconditional receive support, byte-identical
+        // for all bincode-framed traffic).
         if data.first() == Some(&COMPACT_DATA_TAG) {
             return parse_data_compact(data);
         }
@@ -569,8 +539,8 @@ mod tests {
         }
     }
 
-    /// feat/window-mtu part 2: compact frame round-trips bit-exactly into
-    /// the SAME SymbolBatch the legacy path would deliver — for source and
+    /// The compact frame round-trips bit-exactly into the same SymbolBatch
+    /// the bincode path would deliver — for source and
     /// repair symbols, every backend, and boundary field values.
     #[test]
     fn compact_data_frame_roundtrip_is_exact() {
@@ -586,7 +556,7 @@ mod tests {
                 987_654,
                 7,
             )
-            // v8: a NONZERO eta must survive the compact frame; the 0
+            // v8: a nonzero eta must survive the compact frame; the 0
             // sentinel is pinned separately below.
             .with_eta(31_415);
             let buf = serialize_data_compact(&batch).expect("one-symbol batch");
@@ -612,8 +582,8 @@ mod tests {
     }
 
     /// The derivation's overhead claim, held as a law: compact framing for
-    /// a typical mid-transfer symbol is <= 24 B (vs 65 legacy) and the tag
-    /// never collides with the legacy magic's first byte.
+    /// a typical mid-transfer symbol is <= 24 B (vs 65 bincode) and the tag
+    /// never collides with the bincode magic's first byte.
     #[test]
     fn compact_frame_overhead_is_bounded_and_tag_disjoint() {
         assert_ne!(COMPACT_DATA_TAG, WIRE_MAGIC[0]);
@@ -633,7 +603,7 @@ mod tests {
             "compact overhead {overhead} B exceeds the derivation bound \
              (24 B through v7 + <= 5 B for the v8 ETA varint)"
         );
-        // Legacy framing for the SAME batch (magic+version+bincode).
+        // Bincode framing for the same batch (magic+version+bincode).
         let legacy = WireMessage::Data(batch).serialize().unwrap();
         assert!(
             legacy.len() - 1200 >= 60,
@@ -658,8 +628,8 @@ mod tests {
         assert!(serialize_data_compact(&batch).is_none());
     }
 
-    /// Legacy frames still parse unchanged (byte-identical receive path for
-    /// all legacy traffic), and malformed/truncated compact frames error
+    /// Bincode frames still parse unchanged (byte-identical receive path for
+    /// all bincode traffic), and malformed/truncated compact frames error
     /// instead of panicking.
     #[test]
     fn legacy_parse_unchanged_and_compact_truncation_safe() {
@@ -707,18 +677,17 @@ mod tests {
         assert_eq!(read_varint(&buf[..buf.len() - 1], &mut pos), None);
     }
 
-    // -- v8 PINS ---------------------------------------------------------
+    // -- v8 pins ---------------------------------------------------------
 
-    /// THE VERSION ITSELF. A silent bump is how a mixed-version battery
-    /// happens; the number is pinned here and in the handshake test below so
-    /// moving it is a deliberate two-line edit.
+    /// The version itself: pinned here and in the handshake test below so
+    /// moving it is a deliberate two-line edit, never a silent bump.
     #[test]
     fn protocol_version_is_eight() {
         assert_eq!(PROTOCOL_VERSION, 8, "the wire version moved without its pin");
     }
 
-    /// **THE COMPACT LAYOUT, BYTE BY BYTE.** The v8 ETA varint sits AFTER
-    /// `batch_seq` and BEFORE the payload, and the 0 sentinel costs exactly
+    /// **The compact layout, byte by byte.** The v8 ETA varint sits after
+    /// `batch_seq` and before the payload, and the 0 sentinel costs exactly
     /// one byte -- so the "no prediction" case pays 1 B, not 4.
     #[test]
     fn compact_layout_places_the_eta_varint_after_batch_seq() {
@@ -738,7 +707,7 @@ mod tests {
             "the compact v8 sub-header layout moved"
         );
         assert_eq!(&zero[zero.len() - 8..], &base.symbols[0].data[..]);
-        // And the sentinel survives the round trip AS a sentinel.
+        // And the sentinel survives the round trip as a sentinel.
         match WireMessage::deserialize(&zero).unwrap() {
             WireMessage::Data(b) => assert_eq!(b.eta_rel_us, 0),
             _ => panic!("expected Data"),
@@ -749,7 +718,7 @@ mod tests {
         }
     }
 
-    /// `with_eta` SATURATES rather than wrapping: a prediction past the
+    /// `with_eta` saturates rather than wrapping: a prediction past the
     /// field's range reads as the maximum, never as a small number.
     #[test]
     fn with_eta_saturates_at_u32_max() {
@@ -758,12 +727,11 @@ mod tests {
         assert_eq!(SymbolBatch::new(vec![], 0, 0, 0).eta_rel_us, 0, "the constructor's sentinel");
     }
 
-    /// **THE v8 CONTROL VARIANT ROUND-TRIPS, AND IT WAS APPENDED.** The
-    /// second assertion is the one that matters: bincode FIXINT encodes the
-    /// variant tag as the declaration INDEX, so `RepairRequest` must decode
-    /// at a tag STRICTLY GREATER than `GenerationDeficit`'s. A reorder would
-    /// make a v8 peer mis-parse every later control message, which is the
-    /// exact defect the v7 note records.
+    /// **The v8 control variant round-trips, and it was appended.** The
+    /// second assertion is the one that matters: bincode fixint encodes the
+    /// variant tag as the declaration index, so `RepairRequest` must decode
+    /// at a tag strictly greater than `GenerationDeficit`'s. A reorder would
+    /// make a v8 peer mis-parse every later control message.
     #[test]
     fn repair_request_roundtrips_and_sits_after_generation_deficit() {
         let msg = WireMessage::Control(ControlMessage::RepairRequest {
@@ -795,7 +763,7 @@ mod tests {
         );
     }
 
-    /// The handshake refuses a mismatch, pinned AT v8 -- so a v7 peer fails
+    /// The handshake refuses a mismatch, pinned at v8 -- so a v7 peer fails
     /// cleanly and loudly instead of mis-parsing control traffic.
     #[test]
     fn handshake_refuses_a_version_mismatch_at_v8() {

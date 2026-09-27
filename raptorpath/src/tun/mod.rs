@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 /// first nibble is the IP version; garbage (e.g. a mis-decoded or mis-framed
 /// FEC symbol) written verbatim makes the kernel reject the write with EINVAL.
 /// Dropping obviously-malformed packets keeps that garbage out of the write
-/// path — see the write loops, where a raw write error must NOT be fatal.
+/// path — see the write loops, where a raw write error must not be fatal.
 pub(crate) fn looks_like_ip(packet: &[u8]) -> bool {
     match packet.first().map(|b| b >> 4) {
         Some(4) => packet.len() >= 20, // minimum IPv4 header
@@ -103,9 +103,9 @@ impl TunInterface {
         self.rx.recv().await
     }
 
-    /// Non-blocking read (goal-gate "Emission Batching", `RWM_EMIT_BATCH`):
-    /// drain an already-queued packet without yielding, `None` when the
-    /// queue is empty OR the channel is closed (closure is then observed by
+    /// Non-blocking read (`RWM_EMIT_BATCH`): drain an already-queued packet
+    /// without yielding, `None` when the queue is empty or the channel is
+    /// closed (closure is then observed by
     /// the next blocking `read_packet`, which owns the shutdown path).
     pub fn try_read_packet(&mut self) -> Option<Bytes> {
         self.rx.try_recv().ok()
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn rejects_ip_version_but_too_short() {
         // Correct version nibble but truncated below the header — exactly the
-        // garbage that made the kernel return EINVAL and kill the tunnel.
+        // garbage the kernel rejects with EINVAL.
         let short_v4 = vec![0x45u8; 8];
         assert!(!looks_like_ip(&short_v4));
         let short_v6 = vec![0x60u8; 20];

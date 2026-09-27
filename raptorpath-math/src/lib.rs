@@ -16,7 +16,7 @@ pub use fec_rate_controller::FecRateController;
 pub use rlc::{RlcEncoder, RlcDecoder};
 
 /// Triangle mode: which variable to compute from the other two.
-/// See paper Section 1.4, 8.6.
+/// See paper §1.2, §4.10.
 #[derive(Debug, Clone)]
 pub enum TriangleMode {
     /// Fix delta (tail latency) + rho (reliability) → compute r (bandwidth).
@@ -60,7 +60,7 @@ pub fn normal_quantile(p: f64) -> f64 {
 ///
 /// P_lost(t) = epsilon / [epsilon + (1-epsilon) * P(RTT > t)]
 ///
-/// See paper Section 3.4.
+/// See paper §3.2.
 pub fn p_lost(age_secs: f64, epsilon: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
     if epsilon >= 1.0 { return 1.0; }
     if epsilon <= 0.0 { return 0.0; }
@@ -78,13 +78,12 @@ pub fn p_lost(age_secs: f64, epsilon: f64, srtt_secs: f64, rttvar_secs: f64) -> 
 ///
 /// where p = P(Good->Bad), q = P(Bad->Good).
 /// Returns 1.0 (iid) when parameters are degenerate.
-/// See paper Section 8.3.
+/// See paper §2.4.
 pub fn burst_variance_factor(p: f64, q: f64) -> f64 {
-    // q = 0 (or p = 0) is the estimator's NO-DATA sentinel (no observed
+    // q = 0 (or p = 0) is the estimator's no-data sentinel (no observed
     // Bad-state transitions on very clean channels), not a measurement of
     // infinite bursts — treating it as one makes sigma2 ~ 2/p explode and
     // over-provisions the cleanest links. No data => iid default.
-    // See paper Section 8.3.
     if p <= 0.0 || q <= 0.0 { return 1.0; }
     let sum = p + q;
     if sum < 1e-10 { return 1.0; }
@@ -96,7 +95,7 @@ pub fn burst_variance_factor(p: f64, q: f64) -> f64 {
 ///
 /// r* = epsilon/(1-epsilon) + z * sqrt(epsilon * sigma2 / (W * (1-epsilon)))
 ///
-/// where z = 2.33 (99th percentile). See paper Section 8.4.
+/// where z = 2.33 (99th percentile). See paper §4.2.
 pub fn compute_r_star(epsilon: f64, sigma2: f64, window_size: f64) -> f64 {
     compute_r_star_with_z(epsilon, sigma2, window_size, 2.33)
 }
@@ -105,7 +104,7 @@ pub fn compute_r_star(epsilon: f64, sigma2: f64, window_size: f64) -> f64 {
 ///
 /// Canonical (continuous) choice: z = normal_quantile(1 - delta/epsilon),
 /// so the margin shrinks continuously as the channel improves relative to
-/// the target and r* decreases to 0 (paper Section 8.4). Negative z (delta
+/// the target and r* decreases to 0 (paper §4.2). Negative z (delta
 /// close to epsilon) is allowed; the result is clamped at the physical
 /// floor 0.
 pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delta: f64) -> f64 {
@@ -119,69 +118,67 @@ pub fn compute_r_star_with_z(epsilon: f64, sigma2: f64, window_size: f64, z_delt
     (base + margin).max(0.0)
 }
 
-/// Bulk completion-tail budget delta_tail (paper Sections 14.25/14.26):
+/// Bulk completion-tail budget delta_tail (paper §4.6):
 /// the residual probability of one serial ARQ round at end-of-stream.
 pub const BULK_TAIL_BUDGET: f64 = 0.05;
 
 // =========================================================================
-// THE delta DIAL -- b(delta), zeta(delta), beta(delta)
-// (paper 12.4 / 16.20.3 / 16.26; 16.81/16.82).
+// The delta dial -- b(delta), zeta(delta), beta(delta)
+// (paper §4.1, §4.5, §5.4).
 //
-// THE ONE MACHINE, CONTINUOUS IN delta. The protocol hints are NAMED POINTS
+// One machine, continuous in delta. The protocol hints are named points
 // on this dial, never modes (CLAUDE.md, ADR-0064): a hint names a delta
 // exactly once (`raptorpath::net::delta_price`) and every delta-priced law
-// downstream reads a FORMULA of that number. Before this section the
-// engine's b was a three-arm `match` on the hint while the paper wrote
-// b(delta) continuous -- the values agreed at the three presets and the
-// SHAPE did not, which is the defect these functions retire.
+// downstream reads a formula of that number.
 //
 // The three functions are compositions of ONE anchor, the Copa paper's
 // delta_Auto = 0.5:
 //
-//     zeta(d) = delta_Auto / d                       (12.4, an involution)
+//     zeta(d) = delta_Auto / d                       (an involution)
 //     b(d)    = clamp(2^(-1/2 * log10(d/delta_Auto)), 1/2, 2)
 //     beta(d) = clamp((log10 delta_Auto - log10 d)
 //                     / (log10 delta_Auto - log10 delta_Bulk), 0, 1)
 //
-// BIT-EXACT AT THE PRESETS. delta in {50, 0.5, 0.005} are the exact f64
+// Bit-exact at the presets: delta in {50, 0.5, 0.005} are the exact f64
 // results of `0.5 / zeta` at zeta in {0.01, 1, 100}; `d / 0.5` is an exact
 // doubling; `log10` of the resulting {100, 1, 0.01} returns exactly
 // {2, 0, -2} on every libm this tree builds against, and 2^{-1, 0, 1} is
 // exact. The pins in `raptorpath::net` assert this with `assert_eq!`
 // rather than a tolerance, so a libm that misses the Bulk point by an ulp
-// FAILS the build instead of shipping a step. (The recorded fallback,
-// should that ever fire, is the exact-by-construction
-// `b = exp2(1/2 * log10 zeta)` on the enum's own zeta literals.)
+// fails the build instead of shipping a step. (The fallback, should that
+// ever fire, is the exact-by-construction `b = exp2(1/2 * log10 zeta)` on
+// the enum's own zeta literals.)
 // =========================================================================
 
 /// The Copa paper's default latency price, and this dial's anchor: the Auto
-/// preset IS delta = 0.5 (paper 12.4). Every other point on the dial is
+/// preset is delta = 0.5 (paper §4.1). Every other point on the dial is
 /// expressed as a ratio to it, so no second constant exists.
 pub const DELTA_AUTO: f64 = 0.5;
 
 /// The Bulk end of the beta dial, delta_Bulk = delta_Auto/zeta_Bulk = 0.005
-/// (paper 12.4). Named here because beta(delta) is the log-position BETWEEN
-/// the two anchors and needs both; it is a POINT, not a mode.
+/// (paper §4.5). Named here because beta(delta) is the log-position between
+/// the two anchors and needs both; it is a point, not a mode.
 pub const DELTA_BULK: f64 = 0.005;
 
-/// 12.4: zeta(delta) = delta_Auto/delta, and delta(zeta) = delta_Auto/zeta.
-/// zeta is the hint's ONE declared price ratio -- the tail-loss-target scale
-/// {0.01 Realtime, 1 Auto, 100 Bulk} -- and this is its involution.
+/// zeta(delta) = delta_Auto/delta, and delta(zeta) = delta_Auto/zeta
+/// (paper §4.1). zeta is the hint's one declared price ratio -- the
+/// tail-loss-target scale {0.01 Realtime, 1 Auto, 100 Bulk} -- and this is
+/// its involution.
 /// Continuous and strictly decreasing in delta; no mode bit.
 pub fn zeta_of_delta(delta_price: f64) -> f64 {
     DELTA_AUTO / delta_price.max(1e-12)
 }
 
-/// 16.26/16.20.3: the horizon coefficient b of the span law's own deadline,
+/// The horizon coefficient b of the span law's own deadline (paper §5.4),
 /// `D(delta) = min(b(delta)*RTprop, 2*RTprop)`.
 ///
 /// ```text
 ///     b(delta) = clamp(2^(-1/2 * log10(delta/delta_Auto)), 1/2, 2)
 /// ```
 ///
-/// EXACT at all three presets (delta = 50 -> 1/2, 0.5 -> 1, 0.005 -> 2),
+/// Exact at all three presets (delta = 50 -> 1/2, 0.5 -> 1, 0.005 -> 2),
 /// strictly decreasing in delta on the open interval, and clamped to the
-/// dial's own range outside it. The clamp is the LAW's range, not a mode: b
+/// dial's own range outside it. The clamp is the law's range, not a mode: b
 /// is a number of round trips and the span machine's memory ceiling is 2.
 pub fn span_horizon_b(delta_price: f64) -> f64 {
     (2.0f64)
@@ -191,7 +188,7 @@ pub fn span_horizon_b(delta_price: f64) -> f64 {
 
 /// Bulkness beta(delta) in [0, 1]: the log-position of the latency price
 /// between the Auto anchor (beta = 0) and the Bulk anchor (beta = 1). This
-/// is the continuum's ONLY shaping parameter -- the rate law reads it as the
+/// is the continuum's only shaping parameter -- the rate law reads it as the
 /// mixing weight of `r(beta) = (1-beta)*r_anchor + beta*r_late-is-fine`,
 /// both terms always computed, so nothing keys on a hint equality and there
 /// is no step at any preset. beta(Realtime) = beta(Auto) = 0 exactly (the
@@ -203,13 +200,13 @@ pub fn bulkness_of_delta(delta_price: f64) -> f64 {
 }
 
 // =========================================================================
-// Burst-tail provisioning (paper Section 8.4.1): r* against heavy-tailed
+// Burst-tail provisioning (paper §4.3): r* against heavy-tailed
 // burst-length distributions. The GE geometric burst law under-provisions
-// r* by 2-4x on real traces (paper Section 2.5, MEASURED); the corrected
-// solver provisions against the burst-length QUANTILE the (delta, rho)
-// contract implies, under a discrete-Weibull burst-tail model whose k = 1
-// special case IS the geometric (GE) law — so on a GE channel the
-// correction reproduces the Section 8.7 exact r*, and on heavy tails it
+// r* on real traces (paper §2.5); this solver provisions against the
+// burst-length quantile the (delta, rho) contract implies, under a
+// discrete-Weibull burst-tail model whose k = 1 special case is the
+// geometric (GE) law — so on a GE channel the correction reproduces the
+// exact r* (paper §4.7), and on heavy tails it
 // provisions for the fade bursts that actually kill windows.
 // =========================================================================
 
@@ -258,7 +255,7 @@ pub fn ln_gamma(x: f64) -> f64 {
 /// Discrete-Weibull burst-length survival: S(t) = P(B > t) = theta^(t^k).
 ///
 /// k = 1 is exactly geometric with persistence theta = 1 - q (the GE burst
-/// law, Section 2.3); k < 1 is a stretched-exponential heavy tail. t is
+/// law, paper §2.3); k < 1 is a stretched-exponential heavy tail. t is
 /// real-valued (the survival extends continuously between integers).
 pub fn burst_tail_survival(theta: f64, k: f64, t: f64) -> f64 {
     if t <= 0.0 { return 1.0; }
@@ -271,10 +268,10 @@ pub fn burst_tail_survival(theta: f64, k: f64, t: f64) -> f64 {
 /// moments of the observed burst lengths: m1 = E[B], m2 = E[B^2].
 ///
 /// Both moments are online-estimable from the receiver's own loss runs
-/// with the SAME decayed-counter pattern as the GE transition counts —
+/// with the same decayed-counter pattern as the GE transition counts —
 /// no new parameter enters the (delta, rho, r) contract.
 ///
-/// Method (paper Section 8.4.1): midpoint-correct the discrete variable
+/// Method (paper §4.3): midpoint-correct the discrete variable
 /// (X = B - 1/2 on (0, inf)), then moment-match the continuous Weibull
 /// exp(-c x^k):
 ///
@@ -323,7 +320,7 @@ pub fn fit_burst_tail(m1: f64, m2: f64) -> (f64, f64) {
 /// 8 x 64 = 512 wire slots — the derive_window WINDOW_MAX.
 pub const MASS_SCALES: usize = 8;
 
-/// Multi-scale window loss-mass statistics (paper Section 8.4.1): for
+/// Multi-scale window loss-mass statistics (paper §4.3): for
 /// each m in 1..=MASS_SCALES, the tail of J_m = losses in m consecutive
 /// blocks of `block_scale` wire slots (sliding at block granularity),
 /// measured by the receiver with the same decayed counters as the GE
@@ -375,22 +372,22 @@ impl MassStats {
     }
 }
 
-/// Window-mass quantile r* (paper Section 8.4.1): the least rate whose
+/// Window-mass quantile r* (paper §4.3): the least rate whose
 /// repair count covers the measured window LOSS-MASS quantile the tail
 /// target implies.
 ///
-/// THE EXACT FAILURE CRITERION. A coding window of W source symbols and
+/// The exact failure criterion. A coding window of W source symbols and
 /// R = rW repairs spans N = W + R wire slots. If K of those N slots are
 /// lost — x of them repairs — the window fails iff source losses exceed
 /// surviving repairs: K - x > R - x, i.e. **K > R, independent of x**.
-/// So the window-failure probability is EXACTLY the upper tail of the
+/// So the window-failure probability is exactly the upper tail of the
 /// window loss mass K_N, and the right statistic to provision against is
 /// the receiver's own measured window-mass tail — not the single-burst
 /// length law (a window is killed just as dead by two clustered 20-loss
 /// bursts as by one 40-loss burst, and real traces cluster far beyond
-/// GE: the Section 2.5 "long memory" miss).
+/// GE: the paper §2.5 "long memory" miss).
 ///
-/// LAW. P(K_N > R) is read from the measured multi-scale mass tails at
+/// Law: P(K_N > R) is read from the measured multi-scale mass tails at
 /// the scale matching N: with x = N / w0 in [1, MASS_SCALES],
 ///
 ///   F(r) = (1-f) T_lo(R) + f T_hi(R),   f = frac(x)
@@ -404,31 +401,31 @@ impl MassStats {
 /// window is chunked and a union bound applies:
 /// F = c x T_max(R / c), c = ceil(x / MASS_SCALES). r* is the least r
 /// on [0, R_STAR_TAIL_CEILING] with F(r) <= delta_wf (= delta/eps, the
-/// same per-window mapping as Section 8.4).
+/// same per-window mapping as paper §4.2).
 ///
 /// Properties:
 /// - Measured mass tail at the window's own scale: heavy burst tails,
-///   burst CLUSTERING, and loss/repair correlation are all inside K, and
+///   burst clustering, and loss/repair correlation are all inside K, and
 ///   there is no union-bound slack at the scales that matter — on a GE
-///   channel r* tracks the Section 8.7 exact r* (validated: no material
+///   channel r* tracks the exact r* of paper §4.7 (validated: no material
 ///   over-provisioning where GE is adequate).
 /// - Continuous in delta_wf and in the measured moments; 0 when the
 ///   measured tail already meets the target at r = 0 (pure ARQ), and
 ///   R_STAR_TAIL_CEILING when even the ceiling cannot (the contract is
 ///   infeasible in-window; the caller's max_overhead clamp governs and
 ///   the miss is declared, not hidden).
-/// - This is an ESTIMATE of the window-failure tail (block-aligned
+/// - This is an estimate of the window-failure tail (block-aligned
 ///   measurement + Weibull-fit tail extension), validated against replay
 ///   in rstar_tail_validation.rs — not a distribution-free bound.
 ///
-/// LEVEL RESCALING (`level_scale`). The mass moments carry a LONG memory
-/// (they estimate rare tails), so after a loss-REGIME change they lag the
+/// Level rescaling (`level_scale`). The mass moments carry a long memory
+/// (they estimate rare tails), so after a loss-regime change they lag the
 /// fast BOCD level estimate. The caller passes
 /// level_scale = eps_now / eps_mass, where eps_mass = nz_1 x m1_1 / w0 is
 /// the mean loss level the mass statistics themselves embody; the tail is
 /// then read as P(K > R) = T(R / level_scale) — the level-equivariant
-/// family assumption (a regime LEVEL shift rescales the whole mass
-/// distribution; the SHAPE keeps its long memory). With eps_now the BOCD
+/// family assumption (a regime level shift rescales the whole mass
+/// distribution; the shape keeps its long memory). With eps_now the BOCD
 /// posterior upper quantile this also inherits the architecture's
 /// estimation-uncertainty margin. level_scale -> 0 (channel now clean)
 /// sends the term to 0 continuously; 1.0 = no rescale (stationary case,
@@ -502,12 +499,12 @@ pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64, level_scale: f
     hi
 }
 
-/// Completion-exposure kernel chi(T_rem) (paper Section 14.26).
+/// Completion-exposure kernel chi(T_rem) (paper §4.6).
 ///
-/// chi is the probability that a loss suffered NOW can no longer hide
+/// chi is the probability that a loss suffered now can no longer hide
 /// behind ongoing sends: its ~1.5 x SRTT ARQ recovery would outlive the
 /// remaining send time T_rem and become serial completion time. Reuses
-/// the Section 3.4/5.4 P_lost machinery (normal RTT tail):
+/// the P_lost machinery of paper §3.2 (normal RTT tail):
 ///
 ///   chi(T_rem) = Phi_bar((T_rem - 1.5 x SRTT) / sigma_arq)
 ///   sigma_arq  = max(4 x RTTVAR, SRTT / 4)     (floor avoids div-by-0)
@@ -524,30 +521,24 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
     normal_survival((t_rem - 1.5 * srtt_secs) / sigma_arq)
 }
 
-/// Mid-stream repair floor for inner-feedback flows (paper Section 14.28).
+/// Mid-stream repair floor for inner-feedback flows (paper §4.4).
 ///
-/// Bulk's completion-exposure glide (Section 14.26) sets r* = 0 mid-stream
+/// Bulk's completion-exposure glide (paper §4.6) sets r* = 0 mid-stream
 /// on the grounds that ARQ recovery runs in parallel with ongoing sends and
-/// costs no completion time. That argument prices VOLUME, not delivery
+/// costs no completion time. That argument prices volume, not delivery
 /// latency: when the payload is itself a latency-sensitive control loop
 /// (TCP inside the tunnel), every unrepaired loss stalls the inner flow's
-/// in-order delivery for one outer ARQ round, and — IF the stall exceeds
+/// in-order delivery for one outer ARQ round, and — if the stall exceeds
 /// the inner loss-detection tolerance — the inner congestion controller
-/// feeds it back into its send rate. The P9b analysis attributed the
-/// residual L1 C2 gap to ~20 such events per 1.8 MB transfer.
+/// feeds it back into its send rate.
 ///
-/// HONEST STATUS (paper 14.28, L1 verification): the premise was REFUTED
-/// post-14.27 — with block-mode ARQ (~1.5 RTT recovery) and in-order
-/// delivery in place, the inner TCP absorbs the residual stalls (its RTO
-/// floor is 200 ms >> the 20-60 ms stalls). The floor, measured ACTIVE
-/// (+2.2% FEC volume at C2), was completion-neutral at C2 and 28%
-/// REGRESSIVE at C3 (floor repairs displace source symbols in the same
-/// inner-limited closed loop). Production therefore defaults the weight
-/// to 0; the derivation and mechanism are kept for payloads whose inner
-/// loop is genuinely stall-brittle — measure before enabling.
+/// The inner TCP usually absorbs these stalls (its 200 ms RTO floor is far
+/// above a 20-60 ms stall), and floor repairs displace source symbols in
+/// the same closed loop, so production defaults the weight to 0. The
+/// mechanism is kept for payloads whose inner loop is genuinely
+/// stall-brittle; measure before enabling.
 ///
-/// Derivation (Section 14.28). Per unrepaired loss event the inner flow
-/// stalls for
+/// Derivation. Per unrepaired loss event the inner flow stalls for
 ///
 ///   L_stall = min(1.5 x SRTT_outer, RTO_inner),
 ///            RTO_inner >= max(RTO_MIN = 200 ms, SRTT_inner)
@@ -556,7 +547,7 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 /// (q_hat = 1/mean_burst), and a proactive repair stream at rate r repairs
 /// an m-loss event within the stall horizon T_arq = L_stall / t_sym slots
 /// with probability C(r) = p_fec_recovery_marginalized(T_arq, r, q_hat,
-/// eps) (the Section 14.14 race, run against the ARQ horizon). The
+/// eps) (the FEC/ARQ race of paper §3.7, run against the ARQ horizon). The
 /// expected fraction of wall time the inner flow spends stalled is
 ///
 ///   S(r) = eps x q_hat x T_arq x (1 - C(r))
@@ -566,7 +557,7 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 ///
 ///   S(r_min) <= theta,   theta = sigma_j / L_stall,   sigma_j = SRTT/4
 ///
-/// (sigma_j is the Section 14.26 sigma_arq evaluated at its SRTT/4 floor —
+/// (sigma_j is the sigma_arq of paper §4.6 evaluated at its SRTT/4 floor —
 /// the sender cannot observe the inner flow's tolerance, and the outer
 /// RTTVAR estimate is a heuristic in production, so the floor uses the
 /// deterministic branch). Everything is continuous: S is continuous and
@@ -631,12 +622,11 @@ pub struct RateInputs {
     pub sigma2: f64,
     /// GE mean burst length (1.0 when unknown).
     pub mean_burst: f64,
-    /// Measured multi-scale window loss-mass statistics (paper Section
-    /// 8.4.1). `MassStats::default()` (no data) leaves the tail term
-    /// inert and the controller behaves exactly as pre-#46.
+    /// Measured multi-scale window loss-mass statistics (paper §4.3).
+    /// `MassStats::default()` (no data) leaves the tail term inert.
     pub mass: MassStats,
-    /// Enable the window-mass quantile provisioning term (paper Section
-    /// 8.4.1; production gates this on RWM_RSTAR_TAIL, default ON).
+    /// Enable the window-mass quantile provisioning term (paper §4.3;
+    /// production gates this on RWM_RSTAR_TAIL, default on).
     pub tail_provision: bool,
     /// Encoder window W.
     pub window: f64,
@@ -652,40 +642,39 @@ pub struct RateInputs {
     pub codec_overhead: f64,
     /// Hint-adjusted tail-latency target delta.
     pub tail_target: f64,
-    /// Bulk "late is fine" (P4a/P6, paper 14.26): the effective target
-    /// becomes the completion-exposure glide
-    /// delta_eff = p + (BULK_TAIL_BUDGET - p) x chi, so mid-stream
-    /// (chi = 0) delta_eff = p and r* = 0 IDENTICALLY — independent of
-    /// estimator uncertainty — and near completion (chi -> 1) delta_eff
-    /// glides to the 14.25 tail budget.
+    /// Bulk "late is fine" (paper §4.5): the effective target becomes the
+    /// completion-exposure glide delta_eff = p + (BULK_TAIL_BUDGET - p) x chi,
+    /// so mid-stream (chi = 0) delta_eff = p and r* = 0 identically —
+    /// independent of estimator uncertainty — and near completion
+    /// (chi -> 1) delta_eff glides to the tail budget.
     pub bulk_late_is_fine: bool,
-    /// Completion exposure chi in [0, 1] (paper 14.26, see
+    /// Completion exposure chi in [0, 1] (paper §4.6, see
     /// `completion_exposure`). 0 = mid-stream or T_rem unknown (endless
     /// tunnel stream); 1 = final ~1.5 SRTT of the transfer. Only read
     /// when `bulk_late_is_fine`.
     pub completion_exposure: f64,
-    /// Inner-feedback weight in [0, 1] (paper 14.28): how strongly the
+    /// Inner-feedback weight in [0, 1] (paper §4.4): how strongly the
     /// payload's delivery latency feeds back into its own throughput.
     /// 1 = tunnel carrying TCP (an unrepaired loss stalls the inner
     /// control loop ~one ARQ round); 0 = file-transfer semantics (the L0
     /// gate, the wasm sim, true bulk objects), where mid-stream ARQ
-    /// recovery is genuinely free and the old behavior is preserved
-    /// exactly. The weight scales the `inner_feedback_floor` repair floor,
+    /// recovery is genuinely free and the floor is exactly absent. The
+    /// weight scales the `inner_feedback_floor` repair floor,
     /// so the rate is continuous in it.
     pub inner_feedback: f64,
-    /// Cap the rate at the p99(r) saturation point (paper 14.21).
+    /// Cap the rate at the p99(r) saturation point (paper §4.4).
     pub saturation_cap: bool,
     /// Hard overhead ceiling.
     pub max_overhead: f64,
 }
 
-/// The production FEC rate formula (paper Sections 8.4, 9.2, 14.21; ADR-0050
-/// architecture with the continuous z_{delta/eps} margin). This is the SINGLE
+/// The production FEC rate formula (paper §4.4; ADR-0050 architecture with
+/// the continuous z_{delta/eps} margin). This is the single
 /// implementation shared by the production controller and the visualizer --
 /// they cannot drift.
 ///
 ///   delta_eff = p + (0.05 - p) x chi             if bulk_late_is_fine
-///                                                (paper 14.26: chi = 0
+///                                                (paper §4.5: chi = 0
 ///                                                mid-stream -> r* = 0;
 ///                                                chi -> 1 -> tail budget)
 ///             = tail_target                      otherwise
@@ -693,7 +682,7 @@ pub struct RateInputs {
 ///   random    = max(0, p/(1-p) + z*sqrt(p*sigma2/(W(1-p)))) [+ codec_eff]
 ///   burst     = (B / t_symbols) x (1 - delta_eff/p)+
 ///   rate      = clamp( soft_saturate(max(random, burst), r_sat), 0, max_overhead )
-///               (soft_saturate = kink-free approach to r_sat, Section 14.21.1)
+///               (soft_saturate = kink-free approach to r_sat)
 pub fn controller_rate(inp: &RateInputs) -> f64 {
     let p = inp.p_upper;
     if p < 1e-10 {
@@ -701,9 +690,9 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
     }
 
     let delta_eff = if inp.bulk_late_is_fine {
-        // Completion-exposure glide (paper 14.26): a convex combination of
+        // Completion-exposure glide (paper §4.5): a convex combination of
         // "late is fine" (delta = p, exactly the channel: pure ARQ) and the
-        // 14.25 completion-tail budget. chi = NaN is treated as unknown.
+        // completion-tail budget. chi = NaN is treated as unknown.
         let chi = if inp.completion_exposure.is_nan() {
             0.0
         } else {
@@ -722,7 +711,7 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
         0.0
     };
 
-    // Continuous tail margin (paper Section 8.4).
+    // Continuous tail margin (paper §4.2).
     let z = z_for_tail_target(delta_eff, p);
     let core = compute_r_star_with_z(p, inp.sigma2, inp.window, z);
     let random_rate = if core > 0.0 {
@@ -739,16 +728,15 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
         0.0
     };
 
-    // Window-mass quantile term (paper Section 8.4.1): provisions the
-    // repair count that covers the measured window loss-mass quantile the
-    // tail target implies (heavy burst tails AND burst clustering — the
-    // structures the GE margin misses on real traces, Section 2.5). Inert
-    // (0) without measured mass data, so cold start behaves exactly as
-    // pre-#46; delta_wf >= 1 (the Bulk chi = 0 identity delta_eff = p)
+    // Window-mass quantile term (paper §4.3): provisions the repair count
+    // that covers the measured window loss-mass quantile the tail target
+    // implies (heavy burst tails and burst clustering — the structures the
+    // GE margin misses on real traces, paper §2.5). Inert (0) without
+    // measured mass data; delta_wf >= 1 (the Bulk chi = 0 identity delta_eff = p)
     // returns 0 inside r_star_mass, keeping r*(delta = p) = 0.
     let tail_rate = if inp.tail_provision && inp.mass.is_valid() {
         // Level rescale (see r_star_mass): read the long-memory mass tail
-        // at the CURRENT BOCD loss level, so the term follows regime
+        // at the current BOCD loss level, so the term follows regime
         // changes at estimator speed (level-equivariant tail family).
         let eps_mass = inp.mass.eps_mass();
         if eps_mass > 0.0 {
@@ -762,13 +750,13 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
 
     let mut rate = random_rate.max(burst_rate).max(tail_rate);
 
-    // Inner-feedback repair floor (paper Section 14.28): for payloads whose
+    // Inner-feedback repair floor (paper §4.4): for payloads whose
     // delivery latency feeds back into their own throughput (TCP inside the
     // tunnel), the Bulk glide's mid-stream r* = 0 leaves every loss to stall
-    // the INNER flow one ARQ round. The floor is the smallest r whose
+    // the inner flow one ARQ round. The floor is the smallest r whose
     // residual stall fraction sits within delivery-jitter noise, weighted
-    // by inner_feedback (0 = old behavior, exactly). Applied before the
-    // saturation cap: 14.21's "more FEC hurts the tail" still overrides.
+    // by inner_feedback (0 = no floor). Applied before the saturation cap,
+    // so "more FEC hurts the tail" still overrides.
     let w = if inp.inner_feedback.is_nan() {
         0.0
     } else {
@@ -779,11 +767,11 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
         rate = rate.max(w * floor);
     }
 
-    // Saturation cap (paper Section 14.21): past r_sat more FEC hurts p99.
-    // Soft, kink-free (Section 14.21.1): the rate eases ASYMPTOTICALLY toward
-    // r_sat instead of hitting a wall, modeling the p99 curve's smooth
-    // interior minimum. `soft_saturate` <= min(rate, r_sat) always, so the
-    // cap never adds FEC, and -> the old hard min as SAT_SOFTNESS -> 0.
+    // Saturation cap (paper §4.4): past r_sat more FEC hurts p99. Soft and
+    // kink-free: the rate eases asymptotically toward r_sat instead of
+    // hitting a wall, modeling the p99 curve's smooth interior minimum.
+    // `soft_saturate` <= min(rate, r_sat) always, so the cap never adds
+    // FEC, and -> the hard min as SAT_SOFTNESS -> 0.
     if inp.saturation_cap && inp.t_sym > 0.0 && inp.srtt > 0.0 {
         rate = soft_saturate(rate, r_saturation(p, inp.sigma2, inp.window, inp.srtt, inp.t_sym));
     }
@@ -795,11 +783,11 @@ pub fn controller_rate(inp: &RateInputs) -> f64 {
 ///
 /// Returns NEG_INFINITY when delta >= epsilon — the exact value of
 /// Phi^-1(0): the tail target is met by pure ARQ, so r* evaluates to 0
-/// through the max(0, ..) floor REGARDLESS of the size of the IT term
+/// through the max(0, ..) floor regardless of the size of the IT term
 /// epsilon/(1-epsilon). (A finite clamp here breaks the Bulk chi = 0
 /// identity r*(delta = p) = 0 at cold-start p close to 1, where no
-/// finite z can cancel the IT term — paper 14.26.) Returns a large
-/// positive value when delta << epsilon. See paper Section 8.4.
+/// finite z can cancel the IT term — paper §4.5.) Returns a large
+/// positive value when delta << epsilon. See paper §4.2.
 pub fn z_for_tail_target(delta: f64, epsilon: f64) -> f64 {
     if epsilon <= 0.0 { return f64::NEG_INFINITY; }
     let ratio = delta / epsilon;
@@ -809,7 +797,7 @@ pub fn z_for_tail_target(delta: f64, epsilon: f64) -> f64 {
 
 /// Taper function: time-decaying correction density tau(t) = A * (1-q)^t.
 ///
-/// See paper Section 4.
+/// See paper §3.3.
 #[derive(Debug, Clone)]
 pub struct TaperFunction {
     pub amplitude: f64,
@@ -842,7 +830,7 @@ impl TaperFunction {
     }
 }
 
-/// P_fec using normal approximation (paper Section 8.1).
+/// P_fec using normal approximation (paper §4.2).
 ///
 /// P_fec = Phi(sqrt(W) * (r(1-epsilon)-epsilon) / sqrt(epsilon*(1-epsilon)*(r+sigma2)))
 pub fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -> f64 {
@@ -855,12 +843,12 @@ pub fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -
     1.0 - normal_survival(z)
 }
 
-/// Saturation point r_sat of the p99(r) tail model (paper Section 14.21).
+/// Saturation point r_sat of the p99(r) tail model (paper §4.4).
 ///
 /// The tail latency has decreasing and increasing components in r:
 ///
 ///   tail_fec(r) = (1 - P_fec(r)) x L_arq,       L_arq = 1.5 x SRTT
-///                 (FEC-miss cost: the Section 8.2 normal P_fec; misses
+///                 (FEC-miss cost: the normal P_fec of §4.2; misses
 ///                 fall through to ARQ)                       [decreasing]
 ///   tail_rec(r) = B x t_sym x (1+r) / (r x (1-eps)), B = (sigma2+1)/2
 ///                 (wait for B surviving repairs: repairs occupy an
@@ -870,7 +858,7 @@ pub fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -
 ///                 window traversal at the diluted source rate) [increasing]
 ///
 /// p99_model(r) = tail_fec + tail_rec + tail_svc has an interior minimum
-/// r_sat; past it, more FEC HURTS the tail. The controller should emit
+/// r_sat; past it, more FEC hurts the tail. The controller should emit
 /// min(r_hint, r_sat). All inputs are estimator-known. The model is rough:
 /// c is a constant and queueing is ignored beyond linear dilution — see
 /// the paper for caveats.
@@ -888,7 +876,7 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     }
     let l_arq = 1.5 * srtt;
     // Mean burst length implied by the GE variance factor (sigma2 = 2B - 1
-    // when p << q, Section 8.3), so B is recoverable from estimator state.
+    // when p << q, paper §2.4), so B is recoverable from estimator state.
     let b_hat = (sigma2 + 1.0) / 2.0;
     const C_DILUTION: f64 = 0.5;
     let mut best_r = 1.0;
@@ -912,17 +900,17 @@ pub const WINDOW_MIN: f64 = 16.0;
 /// Upper bound on the derived encoder window (`derive_window`).
 pub const WINDOW_MAX: f64 = 512.0;
 /// Overhead knee fraction alpha (`derive_window`): the window is sized so the
-/// residual variance margin of r* (Section 8.4) is within alpha of the
+/// residual variance margin of r* (paper §4.2) is within alpha of the
 /// information-theoretic floor eps/(1-eps). Smaller alpha demands a larger
 /// window (the margin must be pushed further below the floor).
 pub const WINDOW_KNEE_ALPHA: f64 = 0.25;
 
-/// Derive the encoder window size W* (paper Section 8.8).
+/// Derive the encoder window size W* (paper §4.8).
 ///
-/// W enters the model through THREE opposing channels, each giving a bound:
+/// W enters the model through three opposing channels, each giving a bound:
 ///
 ///   1. Overhead knee (upper target, favours large W). The r* margin
-///      (Section 8.4) is `z * sqrt(eps*sigma2 / (W*(1-eps)))`, decaying as
+///      is `z * sqrt(eps*sigma2 / (W*(1-eps)))`, decaying as
 ///      W^-1/2 with slope d(r*)/dW ~ W^-3/2 — diminishing returns. Sizing
 ///      the window so the residual margin sits within a fraction alpha of the
 ///      IT floor eps/(1-eps) gives a closed form:
@@ -939,7 +927,7 @@ pub const WINDOW_KNEE_ALPHA: f64 = 0.25;
 ///      for a covering repair within the window horizon, traversed at the
 ///      source rate: recovery latency ~ W / send_rate = W * t_sym. Keeping it
 ///      within the latency budget (the Realtime hint's budget, else ~1 RTT so
-///      FEC and ARQ horizons align, Section 14.5) bounds
+///      FEC and ARQ horizons align) bounds
 ///
 ///        W_lat = budget * send_rate.
 ///
@@ -947,7 +935,7 @@ pub const WINDOW_KNEE_ALPHA: f64 = 0.25;
 ///
 ///   3. Burst floor (lower bound, favours large-enough W). Ambient FEC at
 ///      r = eps/(1-eps) must accumulate B surviving repairs to absorb a mean
-///      burst (Section 14.5): W_bur = B / (eps*(1-eps)), B = (sigma2+1)/2.
+///      burst: W_bur = B / (eps*(1-eps)), B = (sigma2+1)/2.
 ///      The floor never overrides the latency ceiling — if a burst cannot be
 ///      absorbed within budget, no window size fixes it and latency wins.
 ///
@@ -958,7 +946,7 @@ pub const WINDOW_KNEE_ALPHA: f64 = 0.25;
 /// (W rises to the ceiling); moderate delta/eps -> overhead-knee-bound.
 ///
 /// Inputs: `delta` reliability tail target; `eps` loss rate; `sigma2` burst
-/// variance factor (Section 8.3); `srtt` smoothed RTT (s); `send_rate` source
+/// variance factor (paper §2.4); `srtt` smoothed RTT (s); `send_rate` source
 /// symbols per second; `latency_budget` seconds (<= 0 => fall back to srtt).
 pub fn derive_window(
     delta: f64,
@@ -970,7 +958,7 @@ pub fn derive_window(
 ) -> f64 {
     let sigma2 = if sigma2.is_finite() && sigma2 >= 1.0 { sigma2 } else { 1.0 };
 
-    // Latency budget: explicit Realtime budget, else ~1 RTT (Section 14.5).
+    // Latency budget: explicit Realtime budget, else ~1 RTT.
     let budget = if latency_budget.is_finite() && latency_budget > 0.0 {
         latency_budget
     } else if srtt.is_finite() && srtt > 0.0 {
@@ -1006,16 +994,16 @@ pub fn derive_window(
     w.clamp(WINDOW_MIN, WINDOW_MAX)
 }
 
-/// Soft-saturation smoothing scale as a fraction of r_sat (paper 14.21.1).
+/// Soft-saturation smoothing scale as a fraction of r_sat (paper §4.4).
 ///
 /// The hard cap `min(r, r_sat)` has a kink at r = r_sat. The soft cap
 /// approaches r_sat asymptotically over a rate band of width ~SAT_SOFTNESS x
-/// r_sat. Deliberately NARROW: the p99 model is trusted for the LOCATION of
-/// r_sat, not the DEPTH of the penalty past it (Section 14.21 caveat: the
-/// real cost is a queueing knee much steeper than the model's shallow
-/// quadratic). A curvature-derived width (s = C'_svc/C'' at r_sat) would
-/// track the model's OWN shallow curvature and over-soften the cap, letting
-/// FEC drift into the measured +115 ms regime. A small fixed fraction keeps
+/// r_sat. Deliberately narrow: the p99 model is trusted for the location of
+/// r_sat, not the depth of the penalty past it (the real cost is a queueing
+/// knee much steeper than the model's shallow quadratic). A
+/// curvature-derived width (s = C'_svc/C'' at r_sat) would track the
+/// model's own shallow curvature and over-soften the cap, letting FEC drift
+/// past the knee into the queueing regime. A small fixed fraction keeps
 /// the soft cap faithful to the gate-validated hard min while removing the
 /// discontinuity. As SAT_SOFTNESS -> 0 the hard min is recovered exactly.
 pub const SAT_SOFTNESS: f64 = 0.1;
@@ -1025,7 +1013,7 @@ fn softplus(x: f64) -> f64 {
     x.max(0.0) + (-x.abs()).exp().ln_1p()
 }
 
-/// Soft saturation cap (paper Section 14.21.1): a continuous, kink-free
+/// Soft saturation cap (paper §4.4): a continuous, kink-free
 /// replacement for `min(rate, r_sat)`.
 ///
 ///   r_eff = r_sat - s x softplus((r_sat - rate) / s),   s = SAT_SOFTNESS x r_sat
@@ -1034,12 +1022,12 @@ fn softplus(x: f64) -> f64 {
 ///   - rate << r_sat  -> r_eff -> rate           (unsaturated: request honored)
 ///   - rate  = r_sat  -> r_eff = r_sat - s x ln2 (smoothly just below)
 ///   - rate >> r_sat  -> r_eff -> r_sat          (asymptote, never crossed)
-///   - r_eff <= min(rate, r_sat) always          (the cap never ADDS FEC)
+///   - r_eff <= min(rate, r_sat) always          (the cap never adds FEC)
 ///   - dr_eff/drate = 1 - sigmoid((rate - r_sat)/s) in (0,1): C-infinity,
-///     monotone. The complement sigmoid IS the saturation pressure below.
+///     monotone. The complement sigmoid is the saturation pressure below.
 ///
-/// The asymptotic approach models the p99 curve's smooth interior minimum
-/// (Section 14.21): past r_sat the marginal p99 penalty grows continuously
+/// The asymptotic approach models the p99 curve's smooth interior minimum:
+/// past r_sat the marginal p99 penalty grows continuously
 /// (queue-delay-like), so the effective rate eases toward r_sat instead of
 /// hitting a wall. Degenerate r_sat (<= 0) falls back to the hard min.
 pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
@@ -1053,8 +1041,8 @@ pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
     (r_sat - s * softplus((r_sat - rate) / s)).max(0.0)
 }
 
-/// Saturation pressure in [0, 1] (paper Section 14.21.1): the continuous
-/// indicator that supersedes the binary "CAP BINDING" badge.
+/// Saturation pressure in [0, 1] (paper §4.4): the continuous indicator
+/// of how hard the saturation cap is binding.
 ///
 ///   pressure = sigmoid((rate_requested - r_sat) / s),  s = SAT_SOFTNESS x r_sat
 ///
@@ -1064,7 +1052,7 @@ pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
 ///   - 0.5 : exactly at r_sat (marginal p99 benefit = marginal harm)
 ///   - ->1 : past r_sat (more FEC hurts the tail; the cap holds r near r_sat)
 ///
-/// `rate_requested` is the UNCAPPED controller output (what the hint asked
+/// `rate_requested` is the uncapped controller output (what the hint asked
 /// for); pass the rate computed with the saturation cap disabled. Degenerate
 /// r_sat returns 0 (no cap, no pressure).
 pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
@@ -1082,13 +1070,13 @@ pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
 /// ⌊(i+1)R/N⌋ > ⌊iR/N⌋, N = W + R), tracking the joint distribution of
 /// channel state and running deficit D = (#source losses) − (#surviving
 /// repairs). FEC succeeds iff D ≤ 0 at the end of the window — the same
-/// criterion as `p_fec_normal` (Section 8.2), but on the exact joint
+/// criterion as `p_fec_normal`, but on the exact joint
 /// distribution: burst-correlated losses, burst-correlated repair
 /// erasures, and the negative loss/repair correlation are all captured.
 ///
 /// `p_gb` = P(Good→Bad), `q_bg` = P(Bad→Good); implied ε = p/(p+q).
-/// O(W²) time, O(W) space. Codec overhead is NOT modeled here.
-/// See paper Section 8.7.
+/// O(W²) time, O(W) space. Codec overhead is not modeled here.
+/// See paper §4.7.
 pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 1.0; }
     let p = p_gb.min(1.0);
@@ -1131,7 +1119,7 @@ pub fn p_fec_exact(p_gb: f64, q_bg: f64, r: f64, window_size: usize) -> f64 {
 /// Binary search on r; P_fail(r) is monotone nonincreasing up to the 1/W
 /// rounding of the repair count, so r* is resolved in steps of 1/W.
 /// Returns 2.0 (the search ceiling) if even 200% overhead cannot meet the
-/// target. See paper Section 8.7.
+/// target. See paper §4.7.
 pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64) -> f64 {
     if window_size == 0 || p_gb <= 0.0 { return 0.0; }
     let fail = |r: f64| 1.0 - p_fec_exact(p_gb, q_bg, r, window_size);
@@ -1147,7 +1135,7 @@ pub fn compute_r_star_exact(p_gb: f64, q_bg: f64, window_size: usize, delta: f64
 
 /// Compute delta (tail latency) from r and rho.
 ///
-/// delta = P(late delivery) / rho. See paper Section 6.3.
+/// delta = P(late delivery) / rho. See paper §3.5.
 pub fn compute_delta(epsilon: f64, r: f64, rho: f64, window_size: f64, sigma2_burst: f64) -> f64 {
     if epsilon <= 0.0 || rho <= 0.0 { return 0.0; }
     let p_fec = p_fec_normal(r, epsilon, window_size, sigma2_burst);
@@ -1169,7 +1157,7 @@ pub fn p_recovered_within(t: f64, epsilon: f64, q: f64, r: f64, window_size: f64
 }
 
 /// Find T_cut from target reliability rho via binary search.
-/// Returns Infinity at rho=1.0. See paper Section 8.6 (Mode 1, Step 1).
+/// Returns Infinity at rho=1.0. See paper §4.10.
 ///
 /// Search range is capped at 10×W: if the true T_cut exceeds that (rho
 /// very close to 1 with marginal r), the capped value is returned.
@@ -1191,7 +1179,7 @@ pub fn find_t_cut(epsilon: f64, q: f64, r: f64, window_size: f64, sigma2_burst: 
 }
 
 /// Maximum burst length B_max at 99.99th percentile.
-/// B_max = ceil(ln(0.0001) / ln(1-q)). See paper Section 9.3.
+/// B_max = ceil(ln(0.0001) / ln(1-q)).
 pub fn b_max(q: f64) -> u64 {
     if q <= 0.0 || q >= 1.0 { return 1; }
     let ln_persist = (1.0 - q).ln();
@@ -1199,7 +1187,7 @@ pub fn b_max(q: f64) -> u64 {
     ((0.0001_f64).ln() / ln_persist).ceil() as u64
 }
 
-/// Buffer max from T_cut. See paper Section 9.3.
+/// Buffer max from T_cut.
 pub fn compute_buffer_max(epsilon: f64, q: f64, r: f64, t_cut: f64) -> f64 {
     if t_cut.is_infinite() {
         let bmax = b_max(q) as f64;
@@ -1220,7 +1208,7 @@ pub struct ThreeVarResult {
     pub buffer_max: f64,
 }
 
-/// Mode 1: Given (delta, rho) -> compute r. See paper Section 8.6.
+/// Mode 1: Given (delta, rho) -> compute r. See paper §4.10.
 pub fn solve_r_from_delta_rho(epsilon: f64, q: f64, window_size: f64, sigma2_burst: f64, delta: f64, rho: f64) -> ThreeVarResult {
     let mut lo = epsilon / (1.0 - epsilon);
     let mut hi = 2.0;
@@ -1234,14 +1222,14 @@ pub fn solve_r_from_delta_rho(epsilon: f64, q: f64, window_size: f64, sigma2_bur
     ThreeVarResult { r, delta, rho, t_cut, buffer_max: compute_buffer_max(epsilon, q, r, t_cut) }
 }
 
-/// Mode 2: Given (r, rho) -> compute delta. See paper Section 8.6.
+/// Mode 2: Given (r, rho) -> compute delta. See paper §4.10.
 pub fn solve_delta_from_r_rho(epsilon: f64, q: f64, window_size: f64, sigma2_burst: f64, r: f64, rho: f64) -> ThreeVarResult {
     let delta = compute_delta(epsilon, r, rho, window_size, sigma2_burst);
     let t_cut = find_t_cut(epsilon, q, r, window_size, sigma2_burst, rho);
     ThreeVarResult { r, delta, rho, t_cut, buffer_max: compute_buffer_max(epsilon, q, r, t_cut) }
 }
 
-/// Mode 3: Given (r, delta) -> compute rho. See paper Section 8.6.
+/// Mode 3: Given (r, delta) -> compute rho. See paper §4.10.
 pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_burst: f64, r: f64, delta: f64) -> ThreeVarResult {
     let mut lo = 0.5;
     let mut hi = 1.0 - 1e-12;
@@ -1256,7 +1244,7 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 }
 
 // =========================================================================
-// FEC Latency Distribution (Paper Section 14.3)
+// FEC latency distribution
 // =========================================================================
 
 /// Poisson CDF: P(X ≥ m) where X ~ Poisson(lambda).
@@ -1277,18 +1265,16 @@ fn poisson_cdf_ge(m: u32, lambda: f64) -> f64 {
 ///
 /// T is measured in wire slots after the loss. Every repair covers the
 /// entire encoder window, so the useful-equation arrival rate is the
-/// AGGREGATE correction rate — a fraction r/(1+r) of wire slots, each
+/// aggregate correction rate — a fraction r/(1+r) of wire slots, each
 /// surviving with probability (1-ε):
 ///
 /// λ(T) = T × r/(1+r) × (1-ε)
 ///
 /// P(t_fec ≤ T | m) = P(Poisson(λ(T)) ≥ m)
 ///
-/// The taper shape (q) deliberately does NOT enter: in steady state the
-/// aggregate correction rate per slot is shape-invariant (paper Section
-/// 4.2); the parameter is kept for API stability.
-///
-/// See paper Section 14.3.
+/// The taper shape (q) deliberately does not enter: in steady state the
+/// aggregate correction rate per slot is shape-invariant (paper §3.3);
+/// the parameter is kept for API stability.
 pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, _q: f64, epsilon: f64) -> f64 {
     if m == 0 { return 1.0; }
     if epsilon <= 0.0 || r <= 0.0 { return if m == 0 { 1.0 } else { 0.0 }; }
@@ -1299,8 +1285,6 @@ pub fn p_fec_recovery_by_time(t: f64, m: u32, r: f64, _q: f64, epsilon: f64) -> 
 /// Unconditional P(FEC recovers by T), marginalized over burst length.
 ///
 /// P(t_fec ≤ T) = Σ_{m=1}^{B_99} (1-q)^{m-1} × q × Q(m, λ(T))
-///
-/// See paper Section 14.14.
 pub fn p_fec_recovery_marginalized(t: f64, r: f64, q: f64, epsilon: f64) -> f64 {
     let q_clamped = q.clamp(0.01, 1.0);
     // B_99: 99th-percentile burst length, ceil(ln(0.01)/ln(1-q)).
@@ -1320,7 +1304,7 @@ pub fn p_fec_recovery_marginalized(t: f64, r: f64, q: f64, epsilon: f64) -> f64 
 ///
 /// P(delivered by T) = (1-ε) + ε × P_fec(T) + ε × (1-P_fec(T)) × I(T ≥ L_arq)
 ///
-/// See paper Section 14.9.
+/// See paper §3.7 (the FEC/ARQ race).
 pub fn p_delivered_by_time(t: f64, epsilon: f64, q: f64, r: f64, srtt: f64) -> f64 {
     if epsilon <= 0.0 { return 1.0; }
     let p_not_lost = 1.0 - epsilon;
@@ -1335,7 +1319,6 @@ pub fn p_delivered_by_time(t: f64, epsilon: f64, q: f64, r: f64, srtt: f64) -> f
 /// P_lost_seq(k) = 1 - reorder_rate^k
 ///
 /// On a FIFO channel (reorder_rate=0): P_lost_seq(1) = 1.0.
-/// See paper Section 14.22.
 pub fn p_lost_seq(k: u32, reorder_rate: f64) -> f64 {
     if k == 0 { return 0.0; }
     1.0 - reorder_rate.powi(k as i32)
@@ -1349,7 +1332,7 @@ pub fn p_lost_combined(age_secs: f64, epsilon: f64, srtt: f64, rttvar: f64,
     p_time.max(p_seq)
 }
 
-/// Compute correction deficit after a burst (Section 14.23).
+/// Compute correction deficit after a burst.
 pub fn burst_deficit(burst_length: u32, r: f64, epsilon: f64, time_in_window: f64) -> f64 {
     let pipeline = r * (1.0 - epsilon) * time_in_window / (1.0 + r);
     (burst_length as f64 - pipeline).max(0.0)
@@ -1367,7 +1350,6 @@ pub fn boost_params(deficit: f64, r: f64, epsilon: f64) -> (f64, f64) {
 /// Solve for minimum r given a time budget and reliability target.
 ///
 /// Binary search: find r such that P(delivered by T_budget) ≥ 1 - delta_target.
-/// See paper Section 14.9.
 pub fn solve_r_from_time_budget(
     epsilon: f64, q: f64, t_budget: f64, rho: f64, srtt: f64,
 ) -> f64 {
@@ -1416,11 +1398,10 @@ mod tests {
 
     #[test]
     fn test_r_saturation_c4_interior_minimum() {
-        // C4-Satellite numbers (paper Section 14.21 worked example):
-        // eps ~ 9%, sigma2 ~ 5, W = 64, SRTT ~ 0.21s, throughput 2.5 MB/s,
-        // symbol 1225 B -> t_sym = 4.9e-4 s. The saturation point must land
-        // below Realtime's uncapped request (~0.49) — consistent with the
-        // measured p99 reversal (412ms vs Auto's 297ms).
+        // C4-Satellite numbers: eps ~ 9%, sigma2 ~ 5, W = 64, SRTT ~ 0.21s,
+        // throughput 2.5 MB/s, symbol 1225 B -> t_sym = 4.9e-4 s. The
+        // saturation point must land below Realtime's uncapped request
+        // (~0.49), where more FEC made the p99 worse than Auto's.
         let r_sat = r_saturation(0.09, 5.0, 64.0, 0.21, 1225.0 / 2.5e6);
         println!("r_sat(C4) = {r_sat}");
         assert!(
@@ -1433,8 +1414,8 @@ mod tests {
     fn test_r_saturation_c2_non_binding() {
         // C2-WiFi-like numbers: eps = 2.5%, sigma2 = 3, W = 64,
         // srtt = 13ms, t_sym = 0.1ms. Realtime requests ~0.2 here and the
-        // measured tail does NOT revert (more FEC still helps at C2), so
-        // the cap must sit ABOVE the request — non-binding.
+        // tail does not revert (more FEC still helps at C2), so the cap
+        // must sit above the request — non-binding.
         let r_sat = r_saturation(0.025, 3.0, 64.0, 0.013, 0.0001);
         println!("r_sat(C2) = {r_sat}");
         assert!(r_sat > 0.2, "C2 r_sat must be above the ~0.2 Realtime request: {r_sat}");
@@ -1511,10 +1492,10 @@ mod tests {
 
     #[test]
     fn test_controller_soft_cap_continuous_across_rsat() {
-        // C4-like inputs (Section 14.21 worked example) with saturation on.
-        // Sweep the tail target from loose to very tight: the emitted rate
-        // must rise CONTINUOUSLY and approach r_sat without a kink where the
-        // uncapped request crosses it (the old hard min had a corner there).
+        // C4-like inputs with saturation on. Sweep the tail target from
+        // loose to very tight: the emitted rate must rise continuously and
+        // approach r_sat without a kink where the uncapped request crosses
+        // it (a hard min has a corner there).
         let mk = |tail: f64| RateInputs {
             p_upper: 0.09,
             sigma2: 5.0,
@@ -1536,7 +1517,7 @@ mod tests {
         let r_sat = r_saturation(0.09, 5.0, 64.0, 0.21, 1225.0 / 2.5e6);
         // Geometric sweep of the tail target from ~eps (uncapped r = 0) down
         // to 9e-11 (very aggressive request, uncapped r well past r_sat), so
-        // the INPUT moves smoothly and any kink is the function's own.
+        // the input moves smoothly and any kink is the function's own.
         let mut prev = controller_rate(&mk(0.09));
         let mut max_step = 0.0f64;
         for i in 1..=2000 {
@@ -1574,7 +1555,7 @@ mod tests {
         }
     }
 
-    /// C2-tunnel operating point (paper 14.28): eps ~ 2.6% (GE 1.3%/50%,
+    /// C2-tunnel operating point: eps ~ 2.6% (GE 1.3%/50%,
     /// mean burst 2), SRTT ~ 13 ms, 100 Mbit with 1200 B symbols.
     fn tunnel_inputs(p: f64, w: f64) -> RateInputs {
         RateInputs {
@@ -1599,9 +1580,8 @@ mod tests {
 
     #[test]
     fn test_inner_feedback_floor_c2_band() {
-        // At the L1 C2 operating point the floor must land in the sane
-        // band the P6 fixed-floor ablation suggested (~0.01-0.04), and
-        // stay there across the plausible p_upper range.
+        // At the C2 operating point the floor must land in a sane band
+        // (~0.01-0.04) and stay there across the plausible p_upper range.
         for p in [0.026, 0.035, 0.045] {
             let r = controller_rate(&tunnel_inputs(p, 1.0));
             println!("r_floor(C2, p={p}) = {r}");
@@ -1610,7 +1590,7 @@ mod tests {
                 "C2 floor out of band at p={p}: {r}"
             );
         }
-        // Without the weight the Bulk glide keeps r* = 0 (old behavior).
+        // Without the weight the Bulk glide keeps r* = 0.
         assert_eq!(controller_rate(&tunnel_inputs(0.026, 0.0)), 0.0);
     }
 
@@ -1714,13 +1694,12 @@ mod tests {
 
     #[test]
     fn test_bulk_chi_zero_rate_zero_even_at_cold_start() {
-        // M1 (paper 14.26): mid-stream chi = 0 -> delta_eff = p -> r* = 0
-        // IDENTICALLY, even at the estimator's Beta(1,1) cold-start upper
-        // quantile p ~ 0.975 (the old min(0.1, p) clamp pinned r at
-        // max_overhead here, wasting ~1/3 of the wire for 2-3 RTTs).
+        // Mid-stream chi = 0 -> delta_eff = p -> r* = 0 identically, even
+        // at the estimator's Beta(1,1) cold-start upper quantile p ~ 0.975
+        // (a min(0.1, p) clamp would pin r at max_overhead here).
         assert_eq!(controller_rate(&bulk_inputs(0.975, 0.0)), 0.0);
-        // M2 (paper 14.26): p above the old 0.1 clamp forever -> the old
-        // mapping paid permanent FEC on top of ARQ; chi = 0 -> 0 now.
+        // p above 0.1 forever: a min(0.1, p) mapping would pay permanent
+        // FEC on top of ARQ; chi = 0 -> 0.
         assert_eq!(controller_rate(&bulk_inputs(0.12, 0.0)), 0.0);
         // And an ordinary steady state.
         assert_eq!(controller_rate(&bulk_inputs(0.05, 0.0)), 0.0);
@@ -1729,7 +1708,7 @@ mod tests {
     #[test]
     fn test_bulk_chi_one_matches_tail_target_rate() {
         // chi = 1 -> delta_eff = BULK_TAIL_BUDGET regardless of p: the rate
-        // equals the plain controller at tail_target = 0.05 (the 14.25 tail
+        // equals the plain controller at tail_target = 0.05 (the tail
         // budget) — the tail burst as the glide's limiting case.
         for p in [0.05, 0.10, 0.20] {
             let bulk = controller_rate(&bulk_inputs(p, 1.0));
@@ -1748,9 +1727,9 @@ mod tests {
 
     #[test]
     fn test_bulk_chi_glide_is_continuous() {
-        // Sweep chi 0 -> 1 at the M2 operating point: the rate must rise
-        // from 0 to the tail rate with no jumps (continuity — the hard
-        // project principle; the ramp REPLACES the one-shot tail burst).
+        // Sweep chi 0 -> 1 at the high-p operating point: the rate must
+        // rise from 0 to the tail rate with no jumps (the ramp replaces a
+        // one-shot tail burst).
         let p = 0.12;
         let mut prev = controller_rate(&bulk_inputs(p, 0.0));
         assert_eq!(prev, 0.0);
@@ -1769,7 +1748,7 @@ mod tests {
         );
     }
 
-    // --- window-mass tail provisioning (paper Section 8.4.1) ---------------
+    // --- window-mass tail provisioning (paper §4.3) ------------------------
 
     /// Exact moments of a geometric burst law with exit probability q:
     /// E[B] = 1/q, E[B^2] = (2-q)/q^2.
@@ -1818,7 +1797,7 @@ mod tests {
         stats
     }
 
-    /// MassStats with the SAME (nz, m1, m2) at every scale — a mechanical
+    /// MassStats with the same (nz, m1, m2) at every scale — a mechanical
     /// fixture for controller-level tests (unphysical but well-defined).
     fn uniform_mass(w0: f64, nz: f64, m1: f64, m2: f64) -> MassStats {
         MassStats {
@@ -1843,7 +1822,7 @@ mod tests {
 
     #[test]
     fn test_fit_burst_tail_recovers_geometric() {
-        // Feeding EXACT geometric moments must fit k ~ 1 and theta ~ 1-q:
+        // Feeding exact geometric moments must fit k ~ 1 and theta ~ 1-q:
         // the geometric law is the k = 1 special case, so a GE-like
         // measured tail is reproduced, not inflated.
         for &q in &[0.5, 0.4, 0.3] {
@@ -1895,9 +1874,9 @@ mod tests {
 
     #[test]
     fn test_r_star_mass_tracks_exact_ge() {
-        // On a GE channel the measured mass tail is what the Section 8.7
-        // exact DP predicts, so the mass-quantile r* must land in a band
-        // around r*_exact on the Section 2.4 scenarios: no material
+        // On a GE channel the measured mass tail is what the exact DP
+        // (paper §4.7) predicts, so the mass-quantile r* must land in a band
+        // around r*_exact on the paper §2.3 scenarios: no material
         // over-provisioning where GE is adequate (Weibull-fit slack and
         // scale interpolation are the honest error bars).
         let cases = [("WiFi", 0.013, 0.5), ("LTE", 0.02, 0.4), ("Sat", 0.03, 0.3)];
@@ -2012,7 +1991,7 @@ mod tests {
     #[test]
     fn test_controller_tail_provision_identities() {
         // The Bulk chi = 0 identity r*(delta = p) = 0 must survive with
-        // the tail term ON and mass data present; loose targets likewise.
+        // the tail term on and mass data present; loose targets likewise.
         let mk = |tail_on: bool, tgt: f64| RateInputs {
             p_upper: 0.026,
             sigma2: 2.9,
@@ -2037,7 +2016,7 @@ mod tests {
         // delta above eps: both 0 (delta_wf >= 1 short-circuits the term).
         assert_eq!(controller_rate(&mk(true, 0.05)), 0.0);
         assert_eq!(controller_rate(&mk(false, 0.05)), 0.0);
-        // No mass data => term inert => exactly the old rate.
+        // No mass data => term inert => exactly the GE-only rate.
         let mut no_mass = mk(true, 1e-4);
         no_mass.mass = MassStats::default();
         let mut off = mk(false, 1e-4);
@@ -2126,9 +2105,9 @@ mod tests {
         assert!((m1.delta - m2.delta).abs() < 0.01);
     }
 
-    // --- derive_window (paper Section 8.8) ---------------------------------
+    // --- derive_window (paper §4.8) ----------------------------------------
 
-    // Reference channels (paper Sections 2.4 / 8.5 / 14.21). send_rate in
+    // Reference channels (paper §2.3). send_rate in
     // symbols/s = throughput / symbol_size; srtt in seconds.
     // WiFi:  eps=0.025, sigma2=3.0, srtt=13 ms,  send_rate=10_000 (t_sym=1e-4)
     // Sat:   eps=0.09,  sigma2=5.0, srtt=210 ms, send_rate=2_041  (t_sym=4.9e-4)
@@ -2209,7 +2188,7 @@ mod tests {
     fn test_derive_window_loose_delta_is_burst_floor_bound() {
         // Bulk (delta >= eps): no margin pressure (z <= 0, W_over = 0), so the
         // window collapses to the burst-absorbency floor min(W_bur, W_lat),
-        // i.e. a small window — NOT the latency ceiling. At eps=0.09,
+        // i.e. a small window — not the latency ceiling. At eps=0.09,
         // sigma2=5, W_bur = 3/(0.09*0.91) = 36.6; W_lat huge (loose budget).
         let w = derive_window(0.2, 0.09, 5.0, 0.21, 5_000.0, 10.0);
         assert!((30.0..45.0).contains(&w), "expected burst-floor ~37, got {w}");

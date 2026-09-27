@@ -1,37 +1,34 @@
 //! Burst-robust BBR substrate congestion controller (`RWM_QUIC_CC=bbr_rs`).
 //!
-//! Goal-gate "Ship The Wins 2: shal8 anchor" (2026-08-07), ADR-0054/0061.
+//! ADR-0054/0061. An experiment arm, not the default.
 //!
 //! This is quinn-proto 0.11.14's `congestion::bbr` ported into the engine
 //! tree (quinn is Apache-2.0/MIT dual-licensed; the port keeps the upstream
 //! structure, gains, mode machine, recovery window, ProbeRTT, and
-//! ack-aggregation cwnd term VERBATIM — one mechanism changes, so a battery
-//! attributes one mechanism), with the bandwidth estimator replaced.
+//! ack-aggregation cwnd term verbatim, so a measurement attributes the
+//! changed mechanisms only), with the bandwidth estimator replaced.
 //!
-//! WHY (the named defect, measured at the shal8 8-packet-buffer cell —
-//! goal-gate "Adversarial Cells (B1)"): upstream `bw_estimation.rs` samples
-//! BOTH of its rates over ADJACENT-EVENT gaps — `ack_rate` = this ack
+//! Why: upstream `bw_estimation.rs` samples both of its rates over
+//! adjacent-event gaps — `ack_rate` = this ack
 //! event's bytes / gap to the previous ack event, `send_rate` = the last
 //! two send events' delta (and `u64::MAX` when they share a timestamp,
 //! which quinn's own ≥10-packet pacer bursts and GSO batches guarantee).
 //! A token-bucket bottleneck drains its bucket at line rate, delivering
 //! ~11-packet clusters; the resulting ack clusters make `ack_rate` read
-//! the LINE rate, `min(send, ack)` admits it (the send side is vacuous
-//! inside a burst), and the 10-round windowed-MAX filter LATCHES a
+//! the line rate, `min(send, ack)` admits it (the send side is vacuous
+//! inside a burst), and the 10-round windowed-max filter latches a
 //! bottleneck estimate ~10x the true link — after which pacing_rate and
 //! cwnd (both derived from the estimate) never bind, and the controller
-//! sustains overshoot into the shallow buffer forever (measured: 9.8/10.0
-//! Mbit of a 100 Mbit link at 7.3% sustained drops, vs 75-79 for a
-//! delay-law controller on the same cell).
+//! sustains overshoot into a shallow buffer indefinitely.
 //!
-//! THE FIX is the same one the engine's own delivery anchor received in
-//! ADR-0061 (`CopaState::rs_on_delivered`, scheduler/mod.rs — the
+//! The fix is the same one the engine's own delivery anchor received in
+//! ADR-0061 (`CopaState::rs_on_delivered`, scheduler — the
 //! Cardwell/Cheng draft-cheng-iccrg-delivery-rate-estimation sampler,
 //! law-tested by `rate_sample_anchor_reads_true_btlbw_under_aggregation_
 //! and_queue`): per-flight rate samples
 //!     rate = delta_delivered / max(send_elapsed, ack_elapsed)
 //! taken against a snapshot of the delivery state at the acked packet's
-//! SEND time, with samples spanning < RTprop rejected (an interval below
+//! send time, with samples spanning < RTprop rejected (an interval below
 //! one propagation RTT cannot estimate the bottleneck — it is the
 //! ack-aggregation artefact itself) and app-limited samples admitted
 //! raise-only. The `Controller` trait hands `on_ack` the acked packet's
@@ -145,7 +142,7 @@ impl MinMax {
 }
 
 // ---------------------------------------------------------------------------
-// THE CHANGED MECHANISM: interval-guarded per-flight delivery-rate sampler
+// The changed mechanism: interval-guarded per-flight delivery-rate sampler
 // (replaces upstream bw_estimation.rs; the rs_* design of ADR-0061).
 // ---------------------------------------------------------------------------
 
@@ -274,7 +271,7 @@ impl RsBandwidthEstimation {
             return;
         };
         // App-limited samples underestimate the pipe (it was starved, not
-        // full): admit them only when they RAISE the filter (BBR
+        // full): admit them only when they raise the filter (BBR
         // §app-limited; the engine rs_* semantics).
         if app_limited && rate <= self.max_filter.get() {
             self.samples_rejected_app_limited += 1;
@@ -674,22 +671,18 @@ impl BbrRs {
             .recovery_window
             .max(in_flight + bytes_acked)
             .max(self.min_cwnd);
-        // MECHANISM 2 (AMENDMENT 2026-08-07, pre-registered in the ledger
-        // before this build — goal-gate "Ship The Wins 2: shal8 anchor",
-        // attempt-1 battery evidence): floor the recovery window at the
-        // rate model's own 1×BDP target once a bandwidth estimate exists.
-        // Upstream's quiche-style recovery window requires a LOSS-FREE
-        // round to exit recovery; on a shallow-buffer/GE cell with ~7%
-        // per-packet loss a loss-free round has probability ≈ 0, so the
-        // conservation clamp becomes the PERMANENT window and ratchets the
-        // controller to ~0.5×BDP (measured attempt 1: qcwnd_med 64-67 KB
-        // vs true BDP ≈ 130 KB, goodput 19-23 of 100 Mbit) — loss-limited
-        // Reno-class behavior on a rate-model controller. Linux BBRv1
-        // holds cwnd at the model target through channel loss (loss is
-        // not a model signal in v1); this floor restores exactly that
-        // semantic: conservation may hold the window AT the measured
-        // pipe, never clamp it below (the engine's own §12.1 law at the
-        // substrate: channel loss is the recovery plane's job; congestion
+        // Second changed mechanism: floor the recovery window at the rate
+        // model's own 1×BDP target once a bandwidth estimate exists.
+        // Upstream's quiche-style recovery window requires a loss-free
+        // round to exit recovery; with ~7% per-packet GE loss a loss-free
+        // round has probability ≈ 0, so the conservation clamp becomes the
+        // permanent window and ratchets the controller to ~0.5×BDP —
+        // loss-limited Reno-class behavior on a rate-model controller.
+        // Linux BBRv1 holds cwnd at the model target through channel loss
+        // (loss is not a model signal in v1); this floor restores exactly
+        // that semantic: conservation may hold the window at the measured
+        // pipe, never clamp it below (paper §8.1 at the substrate: channel
+        // loss is the recovery plane's job; congestion
         // evidence is the model's falling bw estimate). When no bandwidth
         // estimate exists yet, get_target_cwnd returns init_cwnd — the
         // floor then keeps startup loss from wedging the handshake window,
@@ -734,7 +727,7 @@ impl Controller for BbrRs {
         app_limited: bool,
         rtt: &RttEstimator,
     ) {
-        // THE CHANGED CALL: per-flight sample with the RTprop interval guard
+        // The changed call: per-flight sample with the RTprop interval guard
         // (rtt.min() — quinn's packet-timed floor; RS_MIN_INTERVAL until
         // real samples exist / for sub-ms LAN paths).
         self.max_bandwidth
@@ -979,12 +972,12 @@ mod tests {
 
     const MS: Duration = Duration::from_millis(1);
 
-    /// The law test (mirrors scheduler/mod.rs
+    /// The law test (mirrors the scheduler's
     /// `rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue`,
     /// here at the substrate controller): a token-bucket bottleneck that
-    /// delivers line-rate ACK CLUSTERS at the true-link average must read
-    /// ≈ the true link, NOT the cluster rate — the upstream adjacent-event
-    /// estimator's measured ×10 latch is the defect under test.
+    /// delivers line-rate ack clusters at the true-link average must read
+    /// ≈ the true link, not the cluster rate — the upstream adjacent-event
+    /// estimator's ×10 latch is the defect under test.
     #[test]
     fn estimator_reads_true_link_under_token_bucket_ack_clusters() {
         let t0 = Instant::now();
@@ -1032,7 +1025,7 @@ mod tests {
             "estimator must establish under clustered acks (generated={:?})",
             est.rs_diag()
         );
-        // The law: within [0.5x, 2x] of the true link, and NEVER the
+        // The law: within [0.5x, 2x] of the true link, and never the
         // ×10-class over-read the adjacent-event estimator latches.
         assert!(
             read > 0.5 * true_rate_bps && read < 2.0 * true_rate_bps,
@@ -1073,7 +1066,7 @@ mod tests {
         assert!(rej_interval > 0, "the interval guard must have fired");
     }
 
-    /// App-limited samples may only RAISE the filter, never depress it —
+    /// App-limited samples may only raise the filter, never depress it —
     /// and a low app-limited sample is not admitted.
     #[test]
     fn app_limited_samples_are_raise_only() {
@@ -1097,7 +1090,7 @@ mod tests {
         }
         let established = est.get_estimate();
         assert!(established > 0);
-        // App-limited dribble at 1/10th the rate: filter must NOT drop.
+        // App-limited dribble at 1/10th the rate: filter must not drop.
         let mut send_t = ack_t + MS;
         for _ in 0..50 {
             est.on_sent(send_t, pkt);
@@ -1117,11 +1110,11 @@ mod tests {
         );
     }
 
-    /// MECHANISM 2 law (the amendment): sustained per-round loss must not
-    /// clamp the recovery window below the rate model's 1×BDP target — a
+    /// Recovery-window floor law: sustained per-round loss must not clamp
+    /// the recovery window below the rate model's 1×BDP target — a
     /// loss-free round has probability ~0 at 7% per-packet loss, so
     /// without the floor the conservation clamp becomes the permanent
-    /// window (measured attempt 1: ~0.5×BDP, 19-23 of 100 Mbit).
+    /// window (~0.5×BDP).
     #[test]
     fn sustained_loss_cannot_clamp_recovery_below_the_pipe() {
         let cfg = Arc::new(BbrRsConfig::default());
@@ -1137,7 +1130,7 @@ mod tests {
         bbr.probe_rtt_last_started_at = Some(t0);
         bbr.cwnd = bbr.get_target_cwnd(2.0);
         let bdp = bbr.get_target_cwnd(1.0); // = bw x RTprop = 120 kB
-        // Drive rounds that EACH carry loss (GE + tail-drop cell class):
+        // Drive rounds that each carry loss (GE + tail-drop cell class):
         // a link-consistent flight (100 x 1200 B per 10 ms = 12 MB/s, the
         // planted bw) is sent, acked, one loss recorded, batch closed —
         // recovery never sees a loss-free round.

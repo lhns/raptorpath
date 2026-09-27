@@ -151,8 +151,8 @@ fn pipeline_bounds_active_generations() {
     assert!(!after.contains(&3), "gen 3 is beyond pipeline depth M");
 }
 
-/// feat/gen-substrate-ceiling: `set_pipeline_depth` (the derived M*, #61's
-/// dynamic advance quantized to generations) WIDENS the proactive
+/// `set_pipeline_depth` (the derived M*, the dynamic advance quantized to
+/// generations) widens the proactive
 /// round-robin span at runtime — deepening from M=2 to M=4 makes gens
 /// {2,3} (previously beyond the pipeline) proactively codeable, and
 /// narrowing back restores the original bound. Retention is untouched.
@@ -191,9 +191,9 @@ fn set_pipeline_depth_widens_the_proactive_span() {
 }
 
 /// The deficit-driven recovery path (`generate_repair_for`) emits coded
-/// symbols for a SPECIFIC sealed generation BEYOND its proactive budget, and
+/// symbols for a specific sealed generation beyond its proactive budget, and
 /// those extra coded symbols still let the decoder finish that generation —
-/// the sender arm of per-generation deficit feedback (§16.3).
+/// the sender arm of per-generation deficit feedback (paper §5.8).
 #[test]
 fn generate_repair_for_recovers_beyond_budget() {
     let symbol_size = 64u16;
@@ -239,12 +239,12 @@ fn generate_repair_for_recovers_beyond_budget() {
 }
 
 // -----------------------------------------------------------------------
-// SYSTEMATIC + deficit-repair submode (§16.3 oracle). Source rides the wire
-// as primary; the encoder emits only the ceil(len·r) repair overhead, and
-// the dense decoder solves ONLY the holes (deficit), not the whole generation.
+// Systematic + deficit-repair submode. Source rides the wire as primary;
+// the encoder emits only the ceil(len·r) repair overhead, and the dense
+// decoder solves only the holes (deficit), not the whole generation.
 // -----------------------------------------------------------------------
 
-/// The systematic encoder's PROACTIVE budget is the loss-FEC overhead ONLY
+/// The systematic encoder's proactive budget is the loss-FEC overhead only
 /// (`ceil(len·r)`), not coded-only's `ceil(len·(1+r))` — because the K base
 /// degrees of freedom ride the wire as raw source, so coded need only cover
 /// the r overhead. This is the one-line difference that turns φ from ≈(1+r)
@@ -373,16 +373,14 @@ fn systematic_source_primary_repair_recovers_deficit_only() {
     assert_eq!(delivered.len() as u64, k);
 }
 
-/// SMALL-G FRONTIER-ADVANCE DEADLOCK regression (G=96). Reproduces the exact
-/// wedge the `feat/c8-final` receiver-seeding fix targets: a FULL generation
-/// whose ENTIRE proactive repair budget is lost on the wire. Before the fix
-/// the receiver learned a generation's width ONLY from a repair header, so
-/// such a generation never entered its deficit map — it reported ZERO deficit
-/// while the in-order frontier wedged on its hole forever (MEASURED at G=96:
-/// in_flight/src/cod all 0). The fix seeds the width (= G) from the PRIMARY
-/// seqs of any provably-full generation, so the deficit is computable from the
-/// primaries ALONE. This test asserts that invariant end to end against the
-/// dense decoder:
+/// Small-G frontier-advance deadlock regression (G=96): a full generation
+/// whose entire proactive repair budget is lost on the wire. If the receiver
+/// learns a generation's width only from a repair header, such a generation
+/// never enters its deficit map — it reports zero deficit while the in-order
+/// frontier wedges on its hole forever. The receiver seeds the width (= G)
+/// from the primary seqs of any provably-full generation, so the deficit is
+/// computable from the primaries alone. This test asserts that invariant end
+/// to end against the dense decoder:
 ///   (1) with NO repair seen, `rank_in(anchor, G)` == (G − holes) — the
 ///       deficit is computable from the delivered primaries alone (the
 ///       receiver-seeding branch);
@@ -466,11 +464,11 @@ fn advance_drops_whole_generations_only() {
     assert_eq!(enc.base_gen, 1);
 }
 
-/// Fix 3 (transport-substrate): `set_code_base` moves the PROACTIVE coding
-/// window to follow the SEND frontier, decoupled from the retention floor,
-/// so a stalled in-order-frontier generation is left to reactive recovery
-/// while fresh generations get their upfront proactive budget — the change
-/// that breaks the ∝1/RTT serialization. Reliability is preserved: the
+/// `set_code_base` moves the proactive coding window to follow the send
+/// frontier, decoupled from the retention floor, so a stalled
+/// in-order-frontier generation is left to reactive recovery while fresh
+/// generations get their upfront proactive budget — which breaks the ∝1/RTT
+/// serialization. Reliability is preserved: the
 /// stalled generation stays retained and reactively codeable.
 #[test]
 fn set_code_base_moves_proactive_window_past_stalled_generation() {
@@ -491,7 +489,7 @@ fn set_code_base_moves_proactive_window_past_stalled_generation() {
     let a0 = anchor_gen(&enc.generate_repair());
     assert!(a0 < pipeline as u64, "default coding at base_gen window, got gen {a0}");
 
-    // Fix 3: advance the coding floor toward the send frontier. Newest seq =
+    // Advance the coding floor toward the send frontier. Newest seq =
     // 59 (gen 5); anchor at newest − pipeline·G = 39 (gen 3).
     enc.set_code_base(59u64.saturating_sub((pipeline * g) as u64));
     assert_eq!(enc.code_base, 3);
@@ -510,8 +508,8 @@ fn set_code_base_moves_proactive_window_past_stalled_generation() {
     assert!(enc.code_base >= enc.base_gen, "code_base must not trail base_gen");
 }
 
-/// "Repair In-Flight" (goal-gate): interspersed trailing-window repair is
-/// PRESENT when a hole is detected, so the hole decodes PROACTIVELY — no
+/// Interspersed trailing-window repair is present when a hole is detected,
+/// so the hole decodes proactively — no
 /// reactive deficit round-trip. Mirrors the sender's inline emission: the
 /// source rides the wire raw (all but one hole delivered), and a repair coded
 /// over the trailing block `[anchor, anchor+W)` via `generate_repair_range`
@@ -578,7 +576,7 @@ fn interspersed_block_repair_present_at_hole_decodes_proactively() {
 /// matrix short by two holes and only one repair fed, the decoder holds one
 /// independent DoF whose pivot lies at a hole column — buffered == 1 — so the
 /// receiver knows proactive repair is present and in progress (no ARQ needed
-/// yet). This is the metric the L1 harness reads as `present_at_stall`.
+/// yet). This is the `present_at_stall` diagnostic.
 #[test]
 fn frontier_probe_reports_buffered_proactive_equation() {
     let symbol_size = 64u16;
@@ -834,13 +832,12 @@ fn payload_ss(seq: u64, ss: usize) -> Vec<u8> {
         .collect()
 }
 
-/// DIAGNOSIS (feat/fec-recovery-bug). Reproduces the PRODUCTION arrival
-/// pattern the existing tests DON'T: a generation's first repair arrives
-/// BEFORE some of its own (non-lost) sources, which then arrive LATE. In
-/// production, sources and repairs interleave and reorder, so this is the
-/// common case, not the corner. If the decoder freezes its known-source
-/// pre-load at slot-creation and never injects late sources into the
-/// existing matrix, coded repair can NEVER complete the generation (it would
+/// Reproduces the production arrival pattern: a generation's first repair
+/// arrives before some of its own (non-lost) sources, which then arrive late.
+/// Sources and repairs interleave and reorder, so this is the common case,
+/// not the corner. If the decoder freezes its known-source pre-load at
+/// slot-creation and never injects late sources into the existing matrix,
+/// coded repair can never complete the generation (it would
 /// need `width − sources_present_at_first_repair` repairs, not `holes`), and
 /// recovery is forced onto ARQ raw retransmit.
 #[test]
@@ -1006,13 +1003,13 @@ fn proactive_pacer_recovers_filling_generation_hole_under_backpressure() {
 }
 
 // -----------------------------------------------------------------------
-// Differential test: sparse-aware decoder vs the pre-rewrite reference.
+// Differential test: sparse-aware decoder vs the dense reference.
 // -----------------------------------------------------------------------
 
-/// The sparse-aware `GenerationDecoder` must deliver EXACTLY the same
-/// (seq, payload) set as the pre-rewrite dense `reference::RefGenerationDecoder`
-/// on randomized traces — per `add_symbol` CALL (as a seq-sorted set; the
-/// intra-call ORDER on a completing call is the one documented divergence),
+/// The sparse-aware `GenerationDecoder` must deliver exactly the same
+/// (seq, payload) set as the dense `reference::RefGenerationDecoder`
+/// on randomized traces — per `add_symbol` call (as a seq-sorted set; the
+/// intra-call order on a completing call is the one documented divergence),
 /// with identical `added-rank` accounting (`repairs_useful`), `rank_in`,
 /// and `total_fed`/`repairs_fed` at every step.  Traces randomize:
 /// systematic vs coded-only wire, loss, reordering (late sources), FILL_FLAG
@@ -1023,7 +1020,7 @@ fn sparse_decoder_matches_reference_on_random_traces() {
 
     let symbol_size = 96u16;
 
-    // SplitMix64 (deterministic, seeds 42 and 7 — the L1 discipline pair).
+    // SplitMix64 (deterministic, seeds 42 and 7).
     struct Rng(u64);
     impl Rng {
         fn next(&mut self) -> u64 {
@@ -1162,10 +1159,10 @@ fn sparse_decoder_matches_reference_on_random_traces() {
 }
 
 // -----------------------------------------------------------------------
-// Differential test: UNIFIED global decoder vs the keyed generation
-// machine AND the pre-§16.18 reference oracle on ALIGNED generation
-// wires (task #61, paper §16.20). On span-aligned traces the global
-// system is block-diagonal, so the unified machine must agree EXACTLY —
+// Differential test: unified global decoder vs the keyed generation
+// machine and the dense reference oracle on aligned generation
+// wires (paper §5.2). On span-aligned traces the global
+// system is block-diagonal, so the unified machine must agree exactly —
 // per call, sets, bytes, rank_in, and the added-rank accounting.
 // -----------------------------------------------------------------------
 #[test]

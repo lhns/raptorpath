@@ -7,11 +7,6 @@
 //!
 //! Block-mode backends (RaptorQ, RS, RLC) use [`FecEncoder`]/[`FecDecoder`].
 //! Window-mode backends (RLC) use [`WindowEncoder`]/[`WindowDecoder`].
-//!
-//! (The **Streaming** two-layer code (Badr/Martinian) — `fec/streaming.rs` +
-//! the `streaming-codes` crate — was RETIRED 2026-07-28: displaced by the
-//! unified span machine (ADR-0064), register re-test clause discharged
-//! cell-by-cell by goal-gate "Streaming Crown Re-Test" 2026-07-27.)
 
 mod traits;
 pub(crate) mod raptorq_backend;

@@ -4,21 +4,18 @@ use crate::control::estimator::LossEstimator;
 
 const W: usize = 50; // typical window size for tests
 
-// ── THE RATE MIX'S BYTE-IDENTITY PIN (§16.81/§16.82) ───────
+// ── The rate mix's byte-identity pin (paper §4.5) ───────
 //
-// The repair `r(β) = (1−β)·r_anchor + β·r_late-is-fine` replaced
+// The mix `r(β) = (1−β)·r_anchor + β·r_late-is-fine` must be bit-exact
+// at every preset against the single-term hint rule
 //     `bulk_late_is_fine = hint == Bulk && bulk_pure_arq`
-// — a hint EQUALITY that swapped δ_eff's whole law inside
-// `controller_rate`. The user's condition on the repair is that it be
-// BIT-EXACT at every preset, so this reproduces the DELETED expression
-// inline and compares with `assert_eq!` (not a tolerance) at all three
-// hints, both settings of the ablation flag, over the estimator fixtures
-// the suite already exercises plus a 200-point grid.
+// so this reproduces that expression inline and compares with
+// `assert_eq!` (not a tolerance) at all three hints, both settings of the
+// ablation flag, over the suite's estimator fixtures plus a 200-point grid.
 
-/// The PRE-REPAIR rate, computed with the deleted `hint == Bulk` swap.
-/// A transcription of what `compute_repair_rate` did before the mix, kept
-/// deliberately in the old shape so "identical" is evidence and not a
-/// restatement of the new code.
+/// The single-term reference rate, computed with the `hint == Bulk` rule.
+/// Kept deliberately in that shape so "identical" is evidence and not a
+/// restatement of the mix.
 fn legacy_rate(ctrl: &FecRateController, est: &LossEstimator, window_size: usize) -> f64 {
     let ge = est.ge_estimator();
     let (sigma2, mean_burst) = if ge.is_valid() {
@@ -49,7 +46,7 @@ fn legacy_rate(ctrl: &FecRateController, est: &LossEstimator, window_size: usize
         t_sym,
         codec_overhead: ctrl.rq_overhead,
         tail_target: ctrl.target_tail_loss,
-        // THE DELETED EXPRESSION, verbatim (`fec_rate.rs:312`, 2026-09-08).
+        // The single-term rule, verbatim.
         bulk_late_is_fine: ctrl.hint == ProtocolHint::Bulk && ctrl.bulk_pure_arq,
         completion_exposure: ctrl.completion_exposure,
         inner_feedback: ctrl.inner_feedback,
@@ -58,9 +55,9 @@ fn legacy_rate(ctrl: &FecRateController, est: &LossEstimator, window_size: usize
     })
 }
 
-/// **THE MIX IS BYTE-IDENTICAL AT EVERY PRESET.** `assert_eq!`, not
-/// `abs() < ε`: a repair that is only approximately the shipped machine
-/// would move every scored battery's baseline silently.
+/// The mix is byte-identical at every preset. `assert_eq!`, not
+/// `abs() < ε`: an approximate match would move every measured baseline
+/// silently.
 #[test]
 fn the_rate_mix_is_byte_identical_at_the_presets() {
     // The fixtures the suite already runs: a settled 5 % channel with no
@@ -119,8 +116,8 @@ fn the_rate_mix_is_byte_identical_at_the_presets() {
                          the mix is not the pre-repair machine"
                     );
                 }
-                // And with χ armed, where the Bulk term is NOT r = 0 and
-                // the two branches of the deleted swap actually differ.
+                // And with χ armed, where the Bulk term is not r = 0 and
+                // the two branches of the single-term rule actually differ.
                 for chi in [0.25f64, 0.5, 1.0] {
                     ctrl.set_completion_exposure(chi);
                     assert_eq!(
@@ -136,8 +133,8 @@ fn the_rate_mix_is_byte_identical_at_the_presets() {
     }
 }
 
-/// **THE MIXING WEIGHT IS EXACTLY 0 / 0 / 1 AT THE PRESETS**, which is
-/// WHY the identity above holds: `1·a + 0·b == a` and `0·a + 1·b == b`
+/// The mixing weight is exactly 0 / 0 / 1 at the presets, which is why
+/// the identity above holds: `1·a + 0·b == a` and `0·a + 1·b == b`
 /// bit-exactly for finite `a`, `b`, and `controller_rate` clamps into
 /// `[0, max_overhead]`, so both terms are always finite.
 #[test]
@@ -150,25 +147,24 @@ fn the_bulkness_weight_is_exact_at_the_presets_and_the_ablation_zeroes_it() {
         let mut c = FecRateController::new(1e-5, 0.5, hint, FecBackend::Rlc, 1200);
         assert_eq!(c.bulkness, want, "{hint:?}: β");
         assert_eq!(c.effective_bulkness(), want, "{hint:?}: effective β");
-        // The P4a ablation is `β := 0`, at EVERY point of the dial —
-        // which is what makes it exactly inert at Realtime and Auto,
-        // where β is already 0. No hint appears in that sentence.
+        // The P4a ablation is `β := 0` at every point of the dial, which
+        // makes it exactly inert at Realtime and Auto, where β is already 0.
         c.set_bulk_pure_arq(false);
         assert_eq!(c.effective_bulkness(), 0.0, "{hint:?}: the ablation is β := 0");
         assert_eq!(c.bulkness, want, "{hint:?}: the ablation must not move β itself");
     }
 }
 
-/// **THE BULK POINT DOES NOT STEP** (CLAUDE.md: a behaviour step across a
+/// The Bulk point does not step (CLAUDE.md: a behaviour step across a
 /// preset is a defect even if each side is individually correct).
 ///
-/// At a FIXED estimator state, δ just either side of the Bulk preset must
+/// At a fixed estimator state, δ just either side of the Bulk preset must
 /// move the rate by no more than the mix's own arithmetic allows: the two
 /// terms differ by at most `max_overhead` (both are clamped into
 /// `[0, max_overhead]`), so a step of `Δβ` in the weight can move `r` by
 /// at most `Δβ·max_overhead`. The bound is therefore
 /// `(1 − β(δ'))·max_overhead` for the off-preset δ', and it is asserted
-/// over the WHOLE dial, not only at the seam that was twice reintroduced.
+/// over the whole dial, not only at the Bulk seam.
 #[test]
 fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
     let mut est = LossEstimator::new();
@@ -188,7 +184,7 @@ fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
         c.bulkness = beta;
         c.compute_repair_rate(&est, 56)
     };
-    // 1. THE BULK POINT: δ ∈ {0.005/1.02, 0.005, 0.005·1.02}.
+    // 1. The Bulk point: δ ∈ {0.005/1.02, 0.005, 0.005·1.02}.
     let d0 = 0.005f64;
     let (b_lo, b_at, b_hi) = (
         raptorpath_math::bulkness_of_delta(d0 * 1.02),
@@ -205,7 +201,7 @@ fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
          bound {}",
         (1.0 - b_lo) * MAX_OH
     );
-    // 2. THE WHOLE DIAL: no adjacent pair on a 400-point log-uniform sweep
+    // 2. The whole dial: no adjacent pair on a 400-point log-uniform sweep
     //    of δ may move r by more than the weight's own change allows.
     const N: usize = 400;
     let (lo, hi) = (0.001f64, 50.0f64);
@@ -223,8 +219,8 @@ fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
         }
         prev = Some((beta, r));
     }
-    // 3. THE OTHER δ-PRICED LEG of the same rate — the effective tail
-    //    target `base·ζ(δ)` — is a continuous, strictly DECREASING
+    // 3. The other δ-priced leg of the same rate — the effective tail
+    //    target `base·ζ(δ)` — is a continuous, strictly decreasing
     //    function of δ with no step at any preset either, so neither term
     //    of the mix carries a hidden seam. Checked as the formula it is.
     let tail = |d: f64| (1e-5f64 * raptorpath_math::zeta_of_delta(d)).clamp(1e-9, 0.1);
@@ -235,10 +231,9 @@ fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
         assert!(t <= prev_t, "δ={d}: the effective tail target stepped UP");
         prev_t = t;
     }
-    // And it reproduces the PRE-REPAIR PRODUCT exactly at every preset.
-    // The reference is `base × ζ(hint)` and not the decimal it prints as:
-    // `1e-5 × 0.01` is `1.0000000000000001e-7`, one ulp above the literal
-    // `1e-7`, and it is the product that shipped.
+    // And it reproduces `base × ζ(hint)` exactly at every preset — the
+    // product, not the decimal it prints as: `1e-5 × 0.01` is
+    // `1.0000000000000001e-7`, one ulp above the literal `1e-7`.
     for (h, want) in [
         (ProtocolHint::Realtime, 1e-7f64),
         (ProtocolHint::Auto, 1e-5),
@@ -258,11 +253,11 @@ fn the_rate_does_not_step_across_the_bulk_preset_or_anywhere_on_the_dial() {
     }
 }
 
-/// δ-honest shed budget (goal-gate "Unified Shedding"): the 1−ρ
-/// allowance is the DESIGN residual ε·(1−P_fec) — 0 with no loss or no
+/// δ-honest shed budget (paper §5.6): the 1−ρ allowance is the design
+/// residual ε·(1−P_fec) — 0 with no loss or no
 /// FEC sample (cold start sheds nothing), ε itself when r cannot
 /// overcome the loss (P_fec = 0), monotone non-increasing in r, and in
-/// the streaming-machine ~1% class at the measured c3 operating point.
+/// the ~1% class at a lossy dual-path operating point.
 #[test]
 fn residual_loss_after_fec_is_the_design_residual() {
     // Cold / degenerate inputs: budget 0.
@@ -279,9 +274,9 @@ fn residual_loss_after_fec_is_the_design_residual() {
         assert!(v <= prev + 1e-12, "residual must fall as r rises");
         prev = v;
     }
-    // The measured c3 operating point (ε≈4.8%, consumed r≈0.34, A*≈3–5,
-    // GE σ²≈3.76): the residual sits in the ~1% class the streaming
-    // machine sheds — well below ε, well above zero.
+    // A lossy dual-path operating point (ε≈4.8%, consumed r≈0.34,
+    // A*≈3–5, GE σ²≈3.76): the residual sits in the ~1% class — well
+    // below ε, well above zero.
     let c3 = residual_loss_after_fec(eps, 0.34, 4.0, 3.76);
     assert!(c3 > 0.001 && c3 < eps, "c3-class residual out of class: {c3}");
 }
@@ -349,7 +344,7 @@ fn test_hint_controls_tail_loss_not_offset() {
 
 #[test]
 fn test_continuous_rate_no_fec_when_target_met() {
-    // Paper Section 8.4 continuity: the z_{δ/ε} margin lets the rate
+    // Paper §4.2 continuity: the z_{δ/ε} margin lets the rate
     // decrease to 0 when pure ARQ meets the tail target — no cutoff
     // branch. Clean link (0.1% loss) under Bulk (δ = 1e-5 × 100 = 1e-3).
     let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
@@ -403,7 +398,7 @@ fn test_saturation_cap_binds_with_throughput() {
         "saturation cap must bind for an aggressive request: capped={capped}, uncapped={uncapped}"
     );
     // The capped rate must be the SOFT saturation of the uncapped request
-    // (paper 14.21.1): it sits just below r_sat, approaching it
+    // (paper §4.4): it sits just below r_sat, approaching it
     // asymptotically rather than pinning to it exactly.
     let p = est.predictive_loss_upper(0.95);
     let ge = est.ge_estimator();
@@ -428,7 +423,7 @@ fn test_saturation_cap_binds_with_throughput() {
 
 #[test]
 fn test_bulk_pure_arq_zero_steady_state_rate() {
-    // P4a/P6 (paper 14.26): Bulk's effective tail target is the
+    // P4a/P6 (paper §4.6): Bulk's effective tail target is the
     // completion-exposure glide δ_eff = ε̂ + (0.05 − ε̂)·χ; the tunnel
     // never sets χ, so δ_eff = ε̂ ("late is fine") and even at 5% loss
     // the steady-state rate is 0 identically (pure ARQ, volume parity
@@ -460,7 +455,7 @@ fn test_bulk_pure_arq_zero_steady_state_rate() {
 
 #[test]
 fn test_inner_feedback_floor_tunnel_bulk() {
-    // P10a (paper 14.28): at the L1 C2 operating point (ε ≈ 2.6%,
+    // P10a (paper §4.4): at a tunnel operating point (ε ≈ 2.6%,
     // SRTT ≈ 13 ms, 100 Mbit) the Bulk glide alone is pure ARQ
     // mid-stream, but with the inner-feedback weight set (TCP-in-tunnel
     // payload) the repair floor keeps a small proactive rate that
@@ -505,12 +500,12 @@ fn test_inner_feedback_floor_tunnel_bulk() {
 
 #[test]
 fn test_tail_provision_bursty_channel_raises_rate() {
-    // #46 (paper 8.4.1): feed a HEAVY-CLUSTERED per-symbol loss
+    // #46 (paper §4.3): feed a heavy-clustered per-symbol loss
     // pattern (fade episodes of ~48 lost symbols every ~1500) so the
     // measured window-mass tail is far beyond what the GE margin
-    // models. With the tail term ON (shipped default) the rate must
-    // rise materially above the legacy GE-only rate; with it OFF
-    // (RWM_RSTAR_TAIL=0 arm, via the setter) the legacy rate returns.
+    // models. With the tail term on (shipped default) the rate must
+    // rise materially above the GE-only rate; with it off
+    // (RWM_RSTAR_TAIL=0 arm, via the setter) the GE-only rate returns.
     let mut est = LossEstimator::new();
     for _ in 0..60 {
         // one fade episode + clean stretch, fed with true interleaving
@@ -539,7 +534,7 @@ fn test_tail_provision_bursty_channel_raises_rate() {
         "clustered fades must raise the corrected rate materially: {corrected} vs {legacy}"
     );
 
-    // On a NON-bursty channel of the same average loss the two arms
+    // On a non-bursty channel of the same average loss the two arms
     // stay close (no over-provisioning where GE is adequate): iid-fed
     // pattern (isolated losses).
     let mut est_iid = LossEstimator::new();
@@ -694,17 +689,17 @@ fn test_taper_total_rate_geometric_sum() {
 // --- #85 TaperBudget tests (RWM_TAPER_R budget law) ---
 
 /// #85 attribution probe (not a gate; `--ignored`): the controller-level
-/// r for the two RWM_RSTAR_TAIL arms on the L0 2x2 battery cell
+/// r for the two RWM_RSTAR_TAIL arms on a heavy-burst cell
 /// (heavy:20;20;5;0.6;0.55;0.5 — semi-Markov, Weibull k=0.5 theta=0.55
-/// bursts, onset 0.6% => eps ~3.6%), realtime hint, W=64, with the c3
-/// rate/RTT anchors so the saturation cap is live. Prints legacy vs
-/// corrected r — the number the emission path consumes per arm.
+/// bursts, onset 0.6% => eps ~3.6%), realtime hint, W=64, with rate/RTT
+/// anchors that keep the saturation cap live. Prints GE-only vs
+/// tail-provisioned r — the number the emission path consumes per arm.
 #[test]
 #[ignore = "measurement probe for the #85 L0 cell, not a CI gate"]
 fn probe_rstar_arms_c3heavy() {
     let mut est = LossEstimator::new();
     // Deterministic semi-Markov replay of the c3heavy law (splitmix-ish
-    // LCG for portability; the exact stream is irrelevant — the SHAPE
+    // LCG for portability; the exact stream is irrelevant — the shape
     // is the cell's).
     let mut state = 42u64;
     let mut rand = move || {
@@ -742,7 +737,7 @@ fn probe_rstar_arms_c3heavy() {
             }
         }
     }
-    // c3 anchors: 20 mbit, 40 ms RTT, realtime symbol size 512.
+    // Anchors: 20 mbit, 40 ms RTT, realtime symbol size 512.
     for _ in 0..100 {
         est.record_rtt(std::time::Duration::from_millis(40));
         est.record_throughput(2_500_000.0);
@@ -767,9 +762,8 @@ fn probe_rstar_arms_c3heavy() {
 /// endless cycle). Returns emitted repair symbols.
 ///
 /// `budget = true` runs the #85 TaperBudget law; `false` runs the
-/// legacy density accrual (τ at the offset, spare-capped) — the
-/// measured-inert arm, kept here as the executable statement of the
-/// bug this law fixes.
+/// per-ack-cycle density accrual (τ at the offset, spare-capped), kept
+/// here as the executable statement of the failure the law prevents.
 fn simulate_emission(
     rate: f64,
     q: f64,
@@ -802,7 +796,7 @@ fn simulate_emission(
             emitted += 1;
         }
         // Cumulative-ack advancement resets the taper phase (the
-        // net/mod.rs `taper_offset = 0` on window advancement).
+        // sender's `taper_offset = 0` on window advancement).
         if ack_every > 0 && (i + 1) % ack_every == 0 {
             offset = 0;
         }
@@ -812,9 +806,9 @@ fn simulate_emission(
 
 #[test]
 fn test_taper_budget_tracks_r_magnitude() {
-    // The bug (#46 L1): with the legacy law, r = 0.05 and r = 0.25
-    // emit the SAME repair (≈ r per ack cycle → cycle-count-sized, not
-    // r-sized). The budget law must emit ~5x apart and ≈ r × source.
+    // With the per-cycle accrual, r = 0.05 and r = 0.25 emit the same
+    // repair (≈ r per ack cycle → cycle-count-sized, not r-sized). The
+    // budget law must emit ~5x apart and ≈ r × source.
     let (q, span, n, ack_every) = (0.4, 64, 20_000u64, 200u64);
     let lo = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, true);
     let hi = simulate_emission(0.25, q, span, n, ack_every, f64::INFINITY, true);
@@ -834,7 +828,7 @@ fn test_taper_budget_tracks_r_magnitude() {
         "5x the rate must emit ~5x the repair: {ratio:.2}x ({lo} vs {hi})"
     );
 
-    // The legacy arm documents the pathology: BOTH rates emit ≈ r per
+    // The per-cycle arm documents the pathology: both rates emit ≈ r per
     // ack cycle (n/ack_every cycles), an order below the budget and
     // nearly invariant in r.
     let lo_legacy = simulate_emission(0.05, q, span, n, ack_every, f64::INFINITY, false);
@@ -853,9 +847,9 @@ fn test_taper_budget_tracks_r_magnitude() {
 
 #[test]
 fn test_taper_budget_ack_cadence_invariance() {
-    // The budget must be governed by SOURCE COUNT, not ack cadence:
-    // burst acks (reset every symbol — the old reset pathology's fast
-    // edge), a c3-like cycle (hundreds of symbols), and sparse acks
+    // The budget must be governed by source count, not ack cadence:
+    // burst acks (reset every symbol), a BDP-sized cycle (hundreds of
+    // symbols), and sparse acks
     // (one endless cycle) must all emit ≈ r × source.
     let (r, q, span, n) = (0.23, 0.4, 64, 20_000u64);
     let expect = r * n as f64;
@@ -866,7 +860,7 @@ fn test_taper_budget_ack_cadence_invariance() {
             "budget law must emit ~r x source under {name} acks: {e} vs {expect:.0}"
         );
     }
-    // Contrast: legacy under burst acks pins the phase at 0 → emits
+    // Contrast: the per-cycle accrual under burst acks pins the phase at 0 → emits
     // A = r·q per symbol (under), and under sparse acks emits ~r TOTAL.
     let sparse_legacy = simulate_emission(r, q, span, n, 0, f64::INFINITY, false);
     assert!(
@@ -878,7 +872,7 @@ fn test_taper_budget_ack_cadence_invariance() {
 #[test]
 fn test_taper_budget_spare_cap_and_expiry() {
     // Zero spare ⇒ zero grants (the never-hurts anchor is respected)
-    // and the banked budget must EXPIRE at one window's worth
+    // and the banked budget must expire at one window's worth
     // (max(r·W, 1)) instead of accumulating unboundedly.
     let (r, q, span) = (0.25, 0.4, 64usize);
     let taper = TaperFunction {
@@ -918,7 +912,7 @@ fn test_taper_budget_spare_cap_and_expiry() {
 
 #[test]
 fn test_taper_budget_front_loads_at_frontier() {
-    // The taper's INTENT survives: with banked budget, the grant right
+    // The taper's intent survives: with banked budget, the grant right
     // after a frontier advance (offset 0) exceeds the mid-span grant —
     // repair is still concentrated where it recovers a hole without a
     // round-trip. (Total is budget-governed; only the timing is shaped.)
@@ -1044,7 +1038,7 @@ fn test_burst_variance_iid_channel() {
 
 #[test]
 fn test_burst_variance_scenarios() {
-    // Paper Section 8.3 reference values:
+    // Reference values (formula: paper §2.4):
     // DC: σ²≈3.0, WiFi: σ²≈2.9, LTE: σ²≈3.8, Satellite: σ²≈5.1
     // Test the formula: σ² = 1 + 2(1-p-q)/(p+q)
 

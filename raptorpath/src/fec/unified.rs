@@ -1,62 +1,63 @@
-//! UNIFIED RLC-family decoder (task #61, paper §16.20).
+//! Unified RLC-family decoder (paper §5.2).
 //!
-//! WHY THIS EXISTS. The two RLC-family production decoders were two
-//! computations of the SAME closure over the SAME wire language:
+//! The two other RLC-family decoders compute the same closure over the
+//! same wire language:
 //!
 //!   * `RlcWindowDecoder` — the (near-)full global closure (one incremental
-//!     GE over the seq line; equations from ANY spans combine), but with the
-//!     measured ~200× cost defect (BTreeMap-of-coefficients rows + cascade).
-//!   * `GenerationDecoder` — the sparse-aware cost model (§16.18), but a
-//!     BLOCK-RESTRICTED closure: equations are keyed by `(anchor, width)`,
+//!     GE over the seq line; equations from any spans combine), but with a
+//!     large cost defect (BTreeMap-of-coefficients rows + cascade).
+//!   * `GenerationDecoder` — the sparse-aware cost model, but a
+//!     block-restricted closure: equations are keyed by `(anchor, width)`,
 //!     systems never share partial rows, and only fully-solved sources
-//!     propagate between them. Valid on span-ALIGNED wires (generation mode,
+//!     propagate between them. Valid on span-aligned wires (generation mode,
 //!     block-diagonal), provably stranding on moving-span wires (the generic
-//!     2-loss burst covered by two different sliding spans — §16.20.1).
+//!     2-loss burst covered by two different sliding spans).
 //!
-//! This decoder computes the FULL global closure WITH the sparse-aware cost
+//! This decoder computes the full global closure with the sparse-aware cost
 //! model — one machine for every span policy the sender may derive from δ
-//! (paper §16.20.3):
+//! (paper §5.3):
 //!
-//!   * KNOWN columns never enter the matrix: received/recovered payloads live
+//!   * Known columns never enter the matrix: received/recovered payloads live
 //!     in `recovered`; an incoming row's known columns are eliminated
 //!     payload-only (S bytes each). The invariant "no stored row has a
 //!     nonzero at a recovered column" is maintained at insert AND at every
 //!     delivery (back-elimination worklist), so — unlike the keyed machine —
 //!     late sources need no special injection apparatus: a late source is a
 //!     unit equation like any other.
-//!   * Only CODED rows are matrix rows, kept in global RREF: each row is
-//!     dense over its interval SPAN `[start, start+len)`; combining two
+//!   * Only coded rows are matrix rows, kept in global RREF: each row is
+//!     dense over its interval span `[start, start+len)`; combining two
 //!     overlapping rows yields a row spanning their (interval) union, so
 //!     rows stay dense-over-span — no per-coefficient maps, no cascade
 //!     allocation. Every stored row's leading coefficient is 1 at its pivot
 //!     column, and no other stored row is nonzero at any pivot column
 //!     (Gauss–Jordan maintained on insert).
-//!   * A row that becomes UNIT delivers immediately and converts to a known
+//!   * A row that becomes unit delivers immediately and converts to a known
 //!     column (dropped from the matrix) — the per-arrival incremental-decode
-//!     property that carries the realtime tail win (§16.20.3).
+//!     property the realtime tail depends on.
 //!   * k = 0 fast path: a repair whose span is fully known is recognized
 //!     redundant in O(w) with zero GF work.
 //!
 //! Cost per solve involving k coded rows of span ≤ L: O(k·L·S + k²·(L+S)) —
-//! §16.18's per-generation bound when the wire is aligned (the global system
-//! block-diagonalizes by itself), bounded by L ≤ W on sliding wires.
+//! the generation machine's per-generation bound when the wire is aligned
+//! (the global system block-diagonalizes by itself), bounded by L ≤ W on
+//! sliding wires.
 //!
-//! DELIVERED-SET CONTRACT (differential-tested):
+//! Delivered-set contract (differential-tested):
 //!   * vs `RlcWindowDecoder`: identical per-call delivered sets and bytes on
-//!     in-order traces; a SUPERSET-or-equal under reorder/duplication. The
-//!     one divergence is a documented LEGACY DEFECT, not a semantics change:
-//!     when a source arrives late for a seq that is already a stored row's
-//!     pivot, the legacy machine DISCARDS that row ("just confirming what we
-//!     know", rlc_window.rs `cascade_from_recovered`) — but the row still
-//!     carries one independent DoF over its OTHER unknowns. This machine
+//!     in-order traces; a superset-or-equal under reorder/duplication. The
+//!     one divergence is a defect of the sliding decoder, not a semantics
+//!     change: when a source arrives late for a seq that is already a stored
+//!     row's pivot, the sliding decoder discards that row ("just confirming
+//!     what we know", rlc_window.rs `cascade_from_recovered`) — but the row
+//!     still carries one independent DoF over its other unknowns. This machine
 //!     re-assimilates the displaced equation (exactly what the generation
 //!     machine's unit-injection does), so it never loses rank.
-//!   * vs `GenerationDecoder` (+ the pre-§16.18 `reference` oracle) on
+//!   * vs `GenerationDecoder` (+ the dense `reference` oracle) on
 //!     aligned generation wires: identical delivered sets when blocks are
 //!     disjoint; superset-or-equal in the mixed-width same-anchor overlap
 //!     the keyed machine documents as separate systems.
 //!
-//! WIRE FORMAT: identical to `rlc_window`/`generation` (14-byte self-
+//! Wire format: identical to `rlc_window`/`generation` (14-byte self-
 //! describing repair header, FILL_FLAG variant included).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
@@ -71,7 +72,7 @@ pub use gf256::generate_window_coefficients;
 
 /// Repair header: 8 (window_start) + 2 (window_count) + 4 (coded_index).
 const REPAIR_HEADER_SIZE: usize = 14;
-/// FILLING-generation marker bit (see `generation.rs`).
+/// Filling-generation marker bit (see `generation.rs`).
 const FILL_FLAG: u32 = 0x8000_0000;
 
 /// One coded row of the global RREF system, dense over its interval span.
@@ -170,7 +171,7 @@ enum Item {
     Eq(URow),
 }
 
-/// Unified global sparse-aware RLC decoder. Drop-in `WindowDecoder` for BOTH
+/// Unified global sparse-aware RLC decoder. Drop-in `WindowDecoder` for both
 /// the sliding-window and the generation wire (env `RWM_UNIFIED`).
 pub struct UnifiedDecoder {
     symbol_size: usize,
@@ -206,7 +207,7 @@ impl UnifiedDecoder {
 
     /// Drive the assimilation worklist to fixpoint. Returns
     /// `(first_eq_added_rank, deliveries)` — the flag reports whether the
-    /// FIRST `Item::Eq` (the wire equation, when called from a repair)
+    /// first `Item::Eq` (the wire equation, when called from a repair)
     /// contributed a new independent DoF (the honest `repairs_useful`
     /// signal, same semantics as the generation machine).
     fn assimilate(&mut self, initial: Vec<Item>) -> (bool, Vec<(u64, Bytes)>) {
@@ -224,11 +225,11 @@ impl UnifiedDecoder {
                     if self.delivered.insert(s) {
                         out.push((s, Bytes::from(d.clone())));
                     }
-                    // A row PIVOTING at s is displaced, not discarded: fold
+                    // A row pivoting at s is displaced, not discarded: fold
                     // the now-known payload out of it and re-assimilate the
                     // remaining equation (it still carries one DoF over its
-                    // other unknowns — the legacy sliding machine's drop here
-                    // is a rank-loss defect, see module docs).
+                    // other unknowns — the sliding decoder's drop here is a
+                    // rank-loss defect, see module docs).
                     if let Some(mut row) = self.rows.remove(&s) {
                         let f = row.coeff_at(s); // normalized: 1
                         row.zero_at(s);
@@ -264,7 +265,7 @@ impl UnifiedDecoder {
                 Item::Eq(mut row) => {
                     let counting = is_first_eq_pending;
                     is_first_eq_pending = false;
-                    // 1) eliminate KNOWN columns payload-only.
+                    // 1) eliminate known columns payload-only.
                     let (rs, re) = (row.start, row.end());
                     let known_in: Vec<u64> = self
                         .recovered
@@ -421,7 +422,7 @@ impl WindowDecoder for UnifiedDecoder {
     fn advance(&mut self, oldest_seq: u64) {
         // Rows pivoting below the frontier: the ack contract says everything
         // below is received/recovered, so these rows are stale — mirror the
-        // legacy sliding decoder and drop them.
+        // sliding decoder and drop them.
         let stale: Vec<u64> = self.rows.range(..oldest_seq).map(|(&p, _)| p).collect();
         for p in stale {
             self.rows.remove(&p);
@@ -476,8 +477,8 @@ impl WindowDecoder for UnifiedDecoder {
         self.repairs_useful
     }
 
-    /// diag/unified-collapse (roadmap item 3): the live cost drivers of the
-    /// global RREF — active coded-row count L, widest row span, total
+    /// The live cost drivers of the global RREF — active coded-row count L,
+    /// widest row span, total
     /// coefficient bytes (matrix memory), payload-store and dedup-set sizes.
     fn diag_stats(&self) -> Option<String> {
         let rows = self.rows.len();
@@ -498,9 +499,9 @@ impl WindowDecoder for UnifiedDecoder {
 }
 
 // ---------------------------------------------------------------------------
-// Differential tests — unified vs legacy sliding machine (moving spans).
-// The aligned-wire differential (vs GenerationDecoder + the pre-§16.18
-// reference oracle) lives in generation.rs next to the existing old-vs-new
+// Differential tests — unified vs the sliding machine (moving spans).
+// The aligned-wire differential (vs GenerationDecoder + the dense
+// reference oracle) lives in generation/tests.rs next to the sparse-vs-dense
 // differential, sharing its trace generator.
 // ---------------------------------------------------------------------------
 
@@ -517,7 +518,7 @@ mod tests {
         v
     }
 
-    /// The §16.20.1 minimal trap: two holes covered by two DIFFERENT moving
+    /// The minimal trap: two holes covered by two different moving
     /// spans that are jointly determining. The global machine must solve
     /// both; this is exactly where the keyed machine strands.
     #[test]
@@ -535,7 +536,7 @@ mod tests {
                 dec.add_symbol(s);
             }
         }
-        // two repairs over two DIFFERENT spans, both covering {3, 9}
+        // two repairs over two different spans, both covering {3, 9}
         let r1 = enc.generate_repair_range(0, 12).unwrap(); // span [0,12)
         let r2 = enc.generate_repair_range(2, 10).unwrap(); // span [2,12)
         let out1 = dec.add_symbol(&r1);
@@ -548,8 +549,8 @@ mod tests {
     }
 
     /// In-order traces (loss only, no reorder/dup): the late-source-on-pivot
-    /// corner cannot fire, so unified and legacy sliding machines must agree
-    /// EXACTLY, per call, on delivered sets AND bytes.
+    /// corner cannot fire, so unified and sliding machines must agree
+    /// exactly, per call, on delivered sets and bytes.
     #[test]
     fn unified_matches_legacy_sliding_exactly_in_order() {
         let ss = 48u16;
@@ -613,9 +614,9 @@ mod tests {
     }
 
     /// Adversarial traces (reorder, duplication, loss): unified must deliver
-    /// a SUPERSET-or-equal of the legacy sliding machine at every point,
+    /// a superset-or-equal of the sliding machine at every point,
     /// with identical bytes on the common seqs. Extras must be exactly the
-    /// documented legacy defect (rank dropped on late-source-on-pivot) —
+    /// documented sliding-decoder defect (rank dropped on late-source-on-pivot) —
     /// counted and printed, never the other direction.
     #[test]
     fn unified_superset_of_legacy_sliding_under_reorder() {
@@ -698,7 +699,7 @@ mod tests {
         );
     }
 
-    /// Decoder-side advance parity and probe surfaces vs the legacy machine.
+    /// Decoder-side advance parity and probe surfaces vs the sliding machine.
     #[test]
     fn unified_advance_and_probe_parity() {
         let ss = 32u16;
@@ -731,8 +732,8 @@ mod tests {
         assert!(b.iter().any(|(s, _)| *s == 31));
     }
 
-    /// The legacy rank-loss defect, isolated: a repair pivots at a lost seq;
-    /// the source then arrives late. Legacy discards the displaced row and
+    /// The sliding decoder's rank-loss defect, isolated: a repair pivots at a
+    /// lost seq; the source then arrives late. Sliding discards the displaced row and
     /// cannot recover a second hole; unified re-assimilates it and can.
     #[test]
     fn unified_recovers_rank_legacy_drops_on_late_source() {
@@ -744,7 +745,7 @@ mod tests {
         for i in 0..10u64 {
             syms.push(enc.add_source(&vec![(i + 1) as u8; 24]));
         }
-        // holes: 2 and 5. Feed everything else FIRST.
+        // holes: 2 and 5. Feed everything else first.
         for (i, s) in syms.iter().enumerate() {
             if i != 2 && i != 5 {
                 d_leg.add_symbol(s);
@@ -755,9 +756,9 @@ mod tests {
         let r = enc.generate_repair_range(0, 10).unwrap();
         assert!(d_leg.add_symbol(&r).is_empty());
         assert!(d_uni.add_symbol(&r).is_empty());
-        // seq 2's source arrives LATE: the pivot row is displaced. Legacy
+        // seq 2's source arrives late: the pivot row is displaced. Sliding
         // discards it (rank lost); unified folds it into an equation over
-        // seq 5 — recovering BOTH.
+        // seq 5 — recovering both.
         let a = sorted(d_leg.add_symbol(&syms[2]));
         let b = sorted(d_uni.add_symbol(&syms[2]));
         let sa: Vec<u64> = a.iter().map(|(s, _)| *s).collect();

@@ -102,9 +102,7 @@ pub struct RlcDecoder {
     /// seq -> index into `recovered` for O(1) membership/lookup. Without
     /// this the linear scans in insert_equation/cascade cost O(W·N) per
     /// repair and O(N) per source feed (N = symbols recovered so far); at
-    /// W=512 over a 2000-symbol stream that dominated decode wall-time
-    /// (visualizer realtime-high-saturation slowdown; also real transport
-    /// decode latency).
+    /// W=512 over a 2000-symbol stream that dominated decode wall-time.
     recovered_idx: HashMap<u64, usize>,
     /// Pivot table for incremental GE
     pivots: Vec<PivotRow>,
