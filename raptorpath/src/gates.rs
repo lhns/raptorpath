@@ -192,7 +192,8 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BORROW` (default OFF): bounded account borrowing
     /// (§16.22; loans ≡ 0 at symmetric cells by theorem).
     pub store_borrow: bool,
-    /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live): honest
+    /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live; the `[GATES]`
+    /// echo prints the effective `honest_cap && plain_rs`): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
     pub honest_cap: bool,
     /// `RWM_POOL_ANCHOR` (default = the `RWM_EST_CADENCE` resolution — OFF
@@ -1478,7 +1479,8 @@ impl RuntimeGates {
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
-            b(self.honest_cap), b(self.pool_anchor), b(self.pool_deliv),
+            // EFFECTIVE value: the honest-cap law only runs with plain_rs.
+            b(self.honest_cap && self.plain_rs), b(self.pool_anchor), b(self.pool_deliv),
             b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.patience_derived),
