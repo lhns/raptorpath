@@ -1,8 +1,0 @@
-stopper armed 2026-09-08T10:49:18Z
-rep=5 header seen 2026-09-08T11:58:20Z
-driver TERM sent
-raptorpath killed 2026-09-08T11:58:23Z
-post-kill: rp-ns=2 raptorpath=2
-locks cleared
-sentinel written 2026-09-08T12:03:29Z
-driver KILLed by operator at 2026-09-08T12:08:25Z after TERM trap did not exit; rep-5 rows are partial and excluded
