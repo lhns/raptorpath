@@ -1,26 +1,23 @@
 #!/bin/bash
-# LOCAL GATE for THE PER-LEG DELIVERED-LATENCY PROBE — `latt_probe.py` and the
+# Local gate for the per-leg delivered-latency probe — `latt_probe.py` and the
 # `RWM_LATPROBE` block of `perf_rwm_c.sh`. No root, no namespaces, no VM, no
-# kernel: the probe's failure modes are all statements about WHICH COMMANDS ARE
-# ISSUED and WHAT ARITHMETIC IS DONE ON THE OUTPUT, and both are checkable
+# kernel: the probe's failure modes are all statements about which commands
+# are issued and what arithmetic is done on the output, and both are checkable
 # against stubs and synthetic `ping` text.
 #
 #   usage: bash test_latprobe.sh     (exit 0 = pass; one line per check)
 #
-# WHY THIS EXISTS, and it is not hypothetical. The era battery scored a
-# delivered-latency claim on a probe that (a) sampled ONE leg of a two-leg
-# asymmetric cell, (b) was SIGTERM'd so `ping` never wrote its
-# transmitted/received summary and the loss columns were None on all 204
-# invocations, and (c) computed tail percentiles over the SURVIVING probes of a
-# deliberately lossy link — which censors exactly the worst samples and biases
-# the tail LOW. Not one of those three was catchable by any existing test,
-# because nothing read the probe's command stream and nothing exercised its
-# arithmetic on known input. This file does both.
+# The probe's three failure modes: (a) sampling one leg of a multi-leg cell,
+# (b) SIGTERM'ing `ping` so it never writes its transmitted/received summary
+# and the loss columns are empty, and (c) computing tail percentiles over the
+# surviving probes of a lossy link, which censors exactly the worst samples
+# and biases the tail low. This file reads the probe's command stream and
+# exercises its arithmetic on known input.
 #
-# MEASUREMENT DISCIPLINE 1 (prove the mechanism under test executes) is why the
-# command-stream half exists at all: an assertion that the parser computes a
-# censoring fraction is worth nothing if the harness never routes a second leg's
-# file into it.
+# docs/measurement-discipline.md rule 1 (prove the mechanism under test
+# executed) is why the command-stream half exists: an assertion that the
+# parser computes a censoring fraction is worth nothing if the harness never
+# routes a second leg's file into it.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -36,7 +33,7 @@ ckeq() { # desc want got
     else bad "$(printf '%-62s want %s got %s' "$1" "$2" "$3")"; fi
 }
 
-# ── PART 1: THE ARITHMETIC, on synthetic `ping` output ────────────────────
+# ── Part 1: the arithmetic, on synthetic `ping` output ────────────────────
 # Every fixture below is written by hand so the expected answer is known
 # independently of the code under test. `-D` timestamps are included because
 # that is the format the harness actually produces.
@@ -57,7 +54,7 @@ mkping() { # file  n_replies  first_seq_gap_list  summary_tx  summary_rx  rtt_ba
     fi
 }
 
-# (a) NO LOSS: 100 replies, summary says 100/100 -> censor 0, everything scoreable.
+# (a) No loss: 100 replies, summary says 100/100 -> censor 0, everything scoreable.
 mkping "$STUB/p-clean.txt" 100 100 100
 J=$(python3 ./latt_probe.py --json "$STUB/p-clean.txt")
 ckeq "clean leg: sent"            "100"   "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["sent"])')"
@@ -69,10 +66,9 @@ ckeq "clean leg: leg_unscoreable" "False" "$(echo "$J" | python3 -c 'import json
 ckeq "clean leg: p50 = l1common.q (linear interpolation)" "50.5" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p50"])')"
 
-# (b) 5 % CENSORING — the c8 leg-B GE floor (2/42 = 4.76 %), rounded up. 95 of
-#     100 probes came back. THE STRUCTURAL RULE MUST KILL p99 AND SPARE p50.
-#     This is the case that decides whether the era battery's `ping_p99` column
-#     ever meant anything: 0.99 > 1 - 0.05, so it did not.
+# (b) 5 % censoring — the c8 leg-B GE floor (2/42 = 4.76 %), rounded up. 95 of
+#     100 probes came back. The structural rule must kill p99 and spare p50:
+#     0.99 > 1 - 0.05, so a p99 over the survivors is not scoreable.
 mkping "$STUB/p-ge.txt" 95 100 95
 J=$(python3 ./latt_probe.py --json "$STUB/p-ge.txt")
 ckeq "5% censored: censor_frac"        "0.05"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
@@ -84,7 +80,7 @@ ckeq "5% censored: p95 still scoreable (0.95 < 0.95x)" "True" \
 ckeq "5% censored: p50 still scoreable" "True" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p50_scoreable"])')"
 
-# (c) THE CONTRACT BAR: 25 % censoring kills the WHOLE leg, p50 included.
+# (c) The contract bar: 25 % censoring kills the whole leg, p50 included.
 mkping "$STUB/p-bad.txt" 75 100 75
 J=$(python3 ./latt_probe.py --json "$STUB/p-bad.txt")
 ckeq "25% censored: censor_frac"       "0.25"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
@@ -96,9 +92,9 @@ else
     bad "25% censored: the printed line does not carry the contract verdict"
 fi
 
-# (d) THE SIGTERM CASE — no summary at all, which is exactly what the era
-#     battery produced. `sent` must fall back to max(icmp_seq) and SAY SO, and
-#     the fallback must never be reported as a clean count.
+# (d) The SIGTERM case — no summary at all. `sent` must fall back to
+#     max(icmp_seq) and say so, and the fallback must never be reported as a
+#     clean count.
 mkping "$STUB/p-nosum.txt" 40 "" ""
 J=$(python3 ./latt_probe.py --json "$STUB/p-nosum.txt")
 ckeq "no summary: sent_source flagged as a lower bound" "max_icmp_seq(LOWER BOUND)" \
@@ -111,7 +107,7 @@ else
     bad "no summary: the fallback denominator is not disclosed on the line"
 fi
 
-# (e) A GAP IN THE SEQUENCE — 90 replies but seq runs to 100, no summary. The
+# (e) A gap in the sequence — 90 replies but seq runs to 100, no summary. The
 #     lower-bound denominator must still find the censoring rather than read 0.
 : > "$STUB/p-gap.txt"
 for i in $(seq 1 100); do
@@ -121,18 +117,17 @@ done
 J=$(python3 ./latt_probe.py --json "$STUB/p-gap.txt")
 ckeq "seq gaps, no summary: recv" "90"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["recv"])')"
 # 100 probes were sent; seq 10,20,...,100 were lost. The last one, seq 100, is
-# UNRECOVERABLE from the replies — the highest surviving seq is 99. So the
+# unrecoverable from the replies — the highest surviving seq is 99. So the
 # fallback denominator reads 99, not 100, and the censoring comes out 9/99 =
-# 9.09 % against a true 10 %. THAT UNDERSTATEMENT IS THE POINT, and it is
-# asserted here rather than papered over: it is precisely why `sent_source`
-# labels this denominator a LOWER BOUND, and why the reaper goes to the trouble
-# of making `ping` write its own summary instead of settling for this.
+# 9.09 % against a true 10 %. That understatement is asserted: it is why
+# `sent_source` labels this denominator a lower bound, and why the reaper makes
+# `ping` write its own summary instead of settling for this.
 ckeq "seq gaps, no summary: sent floor is max surviving seq (99, NOT 100)" "99" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["sent"])')"
 ckeq "seq gaps, no summary: censoring FOUND but UNDERSTATED (9/99 vs true 10%)" "0.0909" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
 
-# (f) THE EMPTY PROBE — the leg that produced nothing. It must be an explicit
+# (f) The empty probe — the leg that produced nothing. It must be an explicit
 #     NO-PROBE-DATA line, never a silent zero-length sample that a scorer could
 #     average into a verdict.
 : > "$STUB/p-empty.txt"
@@ -142,35 +137,34 @@ else
     bad "empty probe file: not reported"
 fi
 
-# (g) TWO LEGS, ONE INVOCATION — the shape the duals need, and the ordering
+# (g) Two legs, one invocation — the shape the duals need, and the ordering
 #     must be stable so `leg=0` is always path A.
 OUT2=$(python3 ./latt_probe.py "$STUB/p-clean.txt" "$STUB/p-ge.txt")
 ckeq "two legs: two output lines" "2" "$(echo "$OUT2" | grep -c 'LATPROBE-LEG')"
 ckeq "two legs: leg indices are 0 then 1" "leg=0 leg=1" \
     "$(echo "$OUT2" | grep -o 'leg=[01]' | tr '\n' ' ' | sed 's/ $//')"
 
-# ── PART 2: THE COMMAND STREAM — does the harness actually probe every leg? ──
+# ── Part 2: the command stream — does the harness actually probe every leg? ──
 # `perf_rwm_c.sh` is not runnable end to end without a kernel, so the probe
-# block is extracted and executed against an `ip` stub. Extraction is BY
-# MARKER, from the file under test, so this gate cannot pass against a copy
+# block is extracted and executed against an `ip` stub. Extraction is by
+# marker, from the file under test, so this gate cannot pass against a copy
 # that has drifted from the shipped script.
 mkdir -p "$STUB/bin"
 cat > "$STUB/bin/ip" <<'STUBEOF'
 #!/bin/bash
 echo "ip $*" >> "$STUB_LOG"
-# A BOUNDED `ping` emulator: 12 replies with ONE drop (seq 7), then the
+# A bounded `ping` emulator: 12 replies with one drop (seq 7), then the
 # statistics summary `iputils` writes from its `sigexit` handler, then exit.
 #
-# WHY BOUNDED RATHER THAN SIGNAL-DRIVEN, stated because it is a real limit on
-# what this half of the gate proves. A shell sets SIGINT to SIG_IGN for jobs
-# started with `&` when job control is off, and POSIX then forbids a child
-# SHELL from trapping it — so a bash stub CANNOT emulate the signal path at
-# all, no matter how it is written. Real `ping` is a C program using
-# `sigaction`, which is not subject to that rule; the reaper's INT -> ALRM ->
-# TERM escalation is written for exactly that uncertainty. So: the SIGNAL
-# CHOICE is asserted textually against the extracted block above, and this
-# stub asserts the parts a stub honestly can — leg count, addresses, files,
-# and the censoring arithmetic flowing through the reaper's own output.
+# Bounded rather than signal-driven, which limits what this half of the gate
+# proves: a shell sets SIGINT to SIG_IGN for jobs started with `&` when job
+# control is off, and POSIX then forbids a child shell from trapping it — so
+# a bash stub cannot emulate the signal path at all. Real `ping` is a C
+# program using `sigaction`, which is not subject to that rule; the reaper's
+# INT -> ALRM -> TERM escalation covers that uncertainty. So the signal choice
+# is asserted textually against the extracted block, and this stub asserts
+# the rest — leg count, addresses, files, and the censoring arithmetic
+# flowing through the reaper's own output.
 peer=""; for a in "$@"; do peer="$a"; done
 for n in 1 2 3 4 5 6 8 9 10 11 12; do
     echo "[1755600000.0000] 64 bytes from $peer: icmp_seq=$n ttl=64 time=$n.0 ms"
@@ -230,8 +224,8 @@ if grep -q 'censor=' "$STUB/probe_out.txt"; then
 else
     bad "dual: the reap printed percentiles with no censoring fraction"
 fi
-# END TO END through the shipped reaper: the stub sent 12 and delivered 11, so
-# the ledger line must read the SUMMARY's denominator (12) and not the reply
+# End to end through the shipped reaper: the stub sent 12 and delivered 11, so
+# the output line must read the summary's denominator (12) and not the reply
 # count (11). A reaper that failed to make `ping` write its summary would show
 # sent=12 sourced from `max_icmp_seq` and a censoring of 1/12 by luck — so the
 # `sent_source` absence is asserted too.
@@ -245,8 +239,8 @@ else
     bad "dual: the legacy /tmp/rwm-ping.txt was dropped — existing callers break"
 fi
 
-# QUAD-SAFETY, which is the `pid < 2` defect restated for the probe: the leg
-# count is DERIVED, so four legs must produce four probes with no edit here.
+# Quad-safety: the leg count is derived, so four legs must produce four probes
+# with no edit here.
 run_probe 4
 ckeq "quad: FOUR ping commands issued" "4" "$(grep -c 'netns exec rp-cli ping' "$LOG")"
 ckeq "quad: the four peers are 10.77-10.80 .0.2" "4" \
@@ -256,7 +250,7 @@ ckeq "quad: FOUR per-leg files" "4" "$(ls /tmp/rwm-ping-[0-3].txt 2>/dev/null | 
 run_probe 1
 ckeq "single: ONE ping command issued" "1" "$(grep -c 'netns exec rp-cli ping' "$LOG")"
 
-# The probe must be OFF by default, or every existing driver silently gains an
+# The probe must be off by default, or every existing driver silently gains an
 # unmeasured competing flow.
 (
     export PATH="$STUB/bin:$PATH"

@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""Offline exercise of `r_parse.py` + `r_report.py` on a SYNTHETIC ledger.
+"""Offline exercise of `r_parse.py` + `r_report.py` on a synthetic log.
 
     python3 test_r_parse.py
 
-NO ENGINE, NO VM, NO NAMESPACE. The gauge lines below are transcribed from the
+No engine, no VM, no namespace. The gauge lines below are transcribed from the
 engine's own format strings and nothing else:
 
-  * `[DIAG]`  — `net/diag.rs:934` (`cum=<src>/<cod>/<ack>`, the last line is
+  * `[DIAG]`  — `net/diag.rs` (`cum=<src>/<cod>/<ack>`, the last line is
                 the run's accounting)
-  * `[CHI]`   — `net/mod.rs:2340`
-  * `[FDIAG]` — `net/receiver.rs:1899`
-  * `[RFA]`   — `net/mod.rs:5906-5908` (`preempt_src` by name)
-  * `[GATES]` — `gates.rs:1296-1322`
+  * `[CHI]`   — `net/shed.rs`
+  * `[FDIAG]` — `net/receiver.rs`
+  * `[RFA]`   — `net/report.rs` (`preempt_src` by name)
+  * `[GATES]` — `gates.rs`
 
-THE POINT OF THIS FILE. MEASUREMENT DISCIPLINE 1 says prove the mechanism under
-test executes. A parser is a mechanism, and a battery whose parser has never
-been run against a line it will actually meet is a battery that discovers its
-own scrape bugs at hour six of an overnight. Every assertion below is a claim
-about a NUMBER the pre-registration will read.
+A parser is a mechanism too (docs/measurement-discipline.md rule 1): a
+battery whose parser has never been run against a line it will actually meet
+discovers its own scrape bugs hours into a run. Every assertion below is a
+claim about a number the report will read.
 """
 import json
 import os
@@ -40,8 +39,8 @@ def client_log(*, mbps, seconds, runs, delta, chi, src, cod, ack, chimax,
     out = [GATES.format(delta=delta, chi=chi, three_term=three_term)]
     if chi == "1":
         out.append("completion-exposure feed ACTIVE (T_rem from the perf client)\n")
-    # A MID-RUN [DIAG] with SMALLER cumulative totals, deliberately: the parser
-    # must read the LAST line and not the first, and a scrape that took the
+    # A mid-run [DIAG] with smaller cumulative totals, deliberately: the parser
+    # must read the last line and not the first, and a scrape that took the
     # first would silently under-report `cod` by a factor of ten.
     out.append(
         "[DIAG] t=0.5s win=10/4096 paused=0%% good=1.0Mbit ackrate_ewma=100sym/s "
@@ -216,9 +215,9 @@ def main():
     check("a CRLF ledger yields a byte-identical row", a == b)
 
     print("\n=== 7 -- r_report.py end to end on a synthetic ledger")
-    # A ledger where MID wins at 1.8 MB and moves less at 25 MB: the shape
+    # A log where MID wins at 1.8 MB and moves less at 25 MB: the shape
     # `R-FUNDED-POSITIVE-SMALL-ONLY` requires, so the outcome branch and the
-    # §6 two-part clause both execute.
+    # two-part clause both execute.
     outdir = os.path.join(tmp, "led")
     os.makedirs(outdir)
     rows = []
@@ -278,9 +277,9 @@ def main():
           "GUARD-UNDERPOWERED" in txt)
 
     print("\n=== 7b -- r_report.py --max-rep: a truncated ledger is BALANCED, not edited")
-    # The operator-truncated r-s42.log carries two rep-5 rows beside 72
-    # balanced rep 1-4 rows. `--max-rep 4` must drop exactly the rep-5 rows,
-    # say so, and leave the ledger file byte-identical.
+    # A truncated r-s42.log carries two rep-5 rows beside 72 balanced rep 1-4
+    # rows. `--max-rep 4` must drop exactly the rep-5 rows, say so, and leave
+    # the log file byte-identical.
     outdir3 = os.path.join(tmp, "led3")
     os.makedirs(outdir3)
     led3 = os.path.join(outdir3, "r-s42.log")

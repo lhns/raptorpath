@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-"""Offline exercise of `place_parse.py` on SYNTHETIC endpoint logs.
+"""Offline exercise of `place_parse.py` on synthetic endpoint logs.
 
     python3 test_place_parse.py
 
-NO ENGINE, NO VM, NO NAMESPACE. Every gauge line below is transcribed from the
+No engine, no VM, no namespace. Every gauge line below is transcribed from the
 engine's own format string and nothing else:
 
-  * `[ETA] site=sender`    `net/eta.rs:424-427` (head), `:441-443` (per path)
-  * `[ETA] site=receiver`  `net/eta.rs:574-580`
-  * `[LAT] site=receiver`  `net/lat.rs:239-268`
-  * `[SUCC]`               `net/succ.rs:775-778`, slots `:727-731`
-  * `[DIAG]`               `net/diag.rs:934` (`rtt={:.1}ms`) + `:703`
-                           (per-path `rtt={:.0}/wrtt=...`)
-  * the perf summaries     `perf.rs:284-300` (acked carries `mbps`; a DNF
-                           carries `dnf: true` and NO `mbps`)
+  * `[ETA] site=sender`    `net/eta.rs` (head and per-path slots)
+  * `[ETA] site=receiver`  `net/eta.rs`
+  * `[LAT] site=receiver`  `net/lat.rs`
+  * `[SUCC]`               `net/succ.rs`
+  * `[DIAG]`               `net/diag.rs` (`rtt={:.1}ms` on the head,
+                           per-path `rtt={:.0}/wrtt=...`)
+  * the perf summaries     `perf.rs` (acked carries `mbps`; a DNF carries
+                           `dnf: true` and no `mbps`)
 
-THE POINT OF THIS FILE. MEASUREMENT DISCIPLINE 1 says prove the mechanism
-under test executes. A parser is a mechanism, and a battery whose parser has
-never been run against a line it will actually meet is a battery that
-discovers its own scrape bugs at hour three of a five-hour envelope. The
-`final=1` cases exercise the exit-flush rule BEFORE the engine branch that
-emits the flush has landed: both formats must parse, and the counts a flush
+A parser is a mechanism too (docs/measurement-discipline.md rule 1): a
+battery whose parser has never been run against a line it will actually meet
+discovers its own scrape bugs hours into a run. The `final=1` cases exercise
+the exit-flush rule: both formats must parse, and the counts a flush
 completes must not be double-counted by a scraper that counts lines.
 """
 import json
@@ -49,13 +47,13 @@ def approx(a, b, tol=1e-6):
     return a is not None and b is not None and abs(a - b) <= tol
 
 
-# ── THE SYNTHETIC LINES ──────────────────────────────────────────────────
+# ── The synthetic lines ──────────────────────────────────────────────────
 ACKED = ('{"proto":"rp-native","hint":"bulk","bytes":100000000,"run":1,'
          '"seconds":8.6,"mbps":93.023}')
 DNF = ('{"proto":"rp-native","hint":"bulk","bytes":100000000,"run":1,'
        '"dnf":true,"timeout_s":600}')
 
-# net/diag.rs:934 + :703 -- `rtt=10.4ms` on the head, `rtt=10/wrtt=11/rtp9ms`
+# net/diag.rs -- `rtt=10.4ms` on the head, `rtt=10/wrtt=11/rtp9ms`
 # per path. `\brtt=` must not match `wrtt=`.
 DIAG = ("[DIAG] t=8.0s win=100/200 paused=0% good=93.0Mbit ackrate_ewma=8000sym/s "
         "eff_pace=9000sym/s src=9000sym/s cod=0sym/s cum=90000/0/90000 "
@@ -68,7 +66,7 @@ DIAG = ("[DIAG] t=8.0s win=100/200 paused=0% good=93.0Mbit ackrate_ewma=8000sym/
         "btlbw=20 sr=1/g0d0 dr=1/a0s0g0d0 est=1 pl=0.0200 cmp=0 "
         "rtt=40/wrtt=41/rtp39ms sig_us=300/n20")
 
-# net/eta.rs:424 -- the TSIG+HOL (HOLTSIG) sender line, every gauge live.
+# net/eta.rs -- the TSIG+HOL (HOLTSIG) sender line, every gauge live.
 ETA_S_ARMED = (
     "[ETA] site=sender fhat_us=1950 n=4000 zero=0.2500 place_n=1200 cold_r=0.0100 "
     "cold_ge=0.0000 t_eff=0.150000 t_cold=0.0000 t_n=50 hol_sh=0.1200 hol_n=1200 "
@@ -85,7 +83,7 @@ ETA_S_CTL = (
     "late=0.3333 sig_us=1668/n27"
     " p2:n=2000/4000 drop=1 tau_us=40000 e_p50=150 e_p90=250 e_p99=350 e_mx=450 "
     "late=0.5000 sig_us=2633/n31")
-# net/eta.rs:574
+# net/eta.rs, receiver line
 ETA_R = ("[ETA] site=receiver n=2000 p1:n=2000 bind=0.0100 tau_us=10000 srtt_src=wire "
          "l_p50=900 l_p90=1500 l_p95=1800 l_p99=2200 l_mx=3000 sig_us=3430/n13 minrst=0")
 
@@ -157,7 +155,7 @@ def srv_log(lat=LAT_DUAL, succ=None, eta_r=ETA_R, extra=()):
     ] + [x + "\n" for x in extra]
 
 
-# ── 1. THE FULL ROW, NO `final=` ANYWHERE (the pre-flush engine) ─────────
+# ── 1. The full row, no `final=` anywhere ────────────────────────────────
 row = pp.parse("c8L", "HOLTSIG", "42", "1", cli_log(), srv_log())
 check(row["cell"] == "c8L" and row["arm"] == "HOLTSIG", "cell/arm carried")
 check(list(row)[:2] == ["cell", "arm"], "cell then arm FIRST: ARMCOUNT greps on that shape")
@@ -179,7 +177,7 @@ check(len(row["lat_paths"]) == 2 and row["lat_paths"][1]["path"] == "p2"
 check(row["lat_final"] is False and row["recv_final"] is False, "no flush -> recv_final False")
 check(row["lat_lines"] == 2 and row["succ_lines"] == 2 and row["eta_recv_lines"] == 1
       and row["eta_sender_lines"] == 2, "cadence counts without any flush")
-# [ETA] sender head, every gauge by its eta.rs:424 name
+# [ETA] sender head, every gauge by its net/eta.rs name
 for k, v in (("fhat_us", 1950.0), ("eta_stamped", 4000.0), ("eta_zero", 0.25),
              ("place_n", 1200.0), ("cold_r", 0.01), ("cold_ge", 0.0),
              ("t_eff", 0.15), ("t_cold", 0.0), ("t_n", 50.0), ("hol_sh", 0.12),
@@ -220,7 +218,7 @@ check("hol_executed" not in row and "s4_from_teff" not in row, "no witness, no e
 check(approx(row["s4_sigma_over_ref"], row["sig_ref_sender_tau"], 1e-9),
       "S4 falls back to the tau_us route before [DIAG]")
 
-# ── 3. THE READING TABLE ─────────────────────────────────────────────────
+# ── 3. The reading table ─────────────────────────────────────────────────
 row = pp.parse("c8L", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_QUEUE))
 check(row["lat_reading"] == "QUEUE-DOMINATED", "sh_ax 0.875, sh_xp 0.025 -> QUEUE-DOMINATED")
 row = pp.parse("c8L", "CTL", "7", "1", cli_log(),
@@ -233,7 +231,7 @@ row = pp.parse("c8L", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_EMPTY))
 check(row["lat_present"] and row["lat_paths"] == [] and "lat_reading" not in row
       and row["rwxp_p95_worst"] is None, "the empty `-` body parses to nothing")
 
-# ── 4. THE c1 CONTROL, BOTH SIDES ────────────────────────────────────────
+# ── 4. The c1 control, both sides ────────────────────────────────────────
 row = pp.parse("c1", "TSIG", "42", "1", cli_log(), srv_log(lat=LAT_C1, succ=succ_line(xp_n=0)))
 check("control_violated" not in row, "c1 with xp_n=0 and rwxp_n=0 is clean")
 row = pp.parse("c1", "TSIG", "42", "1", cli_log(), srv_log(lat=LAT_C1, succ=succ_line(xp_n=1)))
@@ -252,14 +250,14 @@ row = pp.parse("c8L", "CTL", "42", "1", cli_log(summaries=(DNF, ACKED)), srv_log
 check(row["dnf"] is True and row["mbps"] == 93.023 and row["runs_n"] == 2 and row["acked_n"] == 1,
       "mixed DNF + acked: dnf flagged, goodput off the acked object")
 
-# ── 6. `final=1`: THE EXIT-FLUSH RULE ────────────────────────────────────
+# ── 6. `final=1`: the exit-flush rule ────────────────────────────────────
 check(pp.is_final("[LAT] site=receiver n=5 over=0 final=1"), "final=1 at end")
 check(pp.is_final("[SUCC] gen=0 final=1 det=7"), "final=1 mid-line")
 check(pp.is_final("[ETA] site=receiver final=1 n=5"), "final=1 after the site")
 check(not pp.is_final("[LAT] site=receiver n=5 final=10"), "final=10 is not the flag")
 check(not pp.is_final("[LAT] site=receiver n=5 xfinal=1"), "xfinal=1 is not the flag")
 
-# Interleaved tracing record glued after the flush marker (MEASURED 2026-09-08 18:54Z).
+# Interleaved tracing record glued after the flush marker (seen in real logs).
 _glued = ("[LAT] site=receiver n=5 over=0 final=1\x1b[2m2026-09-08T18:54:50.123456Z"
           "\x1b[0m \x1b[32m INFO\x1b[0m raptorpath::tun: cleaning up TUN interface\n")
 _pieces = pp.split_interleaved(_glued)
@@ -294,7 +292,7 @@ check(row["lat_lines"] == 2 and row["succ_lines"] == 2 and row["eta_recv_lines"]
       % (row["lat_lines"], row["succ_lines"], row["eta_recv_lines"]))
 check(approx(row["sh_xp"], 0.475), "shares computed on the flushed line")
 
-# The flush wins WHEREVER it sits: a stale cadence line scraped after it
+# The flush wins wherever it sits: a stale cadence line scraped after it
 # (a log captured mid-teardown, or two lines racing on stderr) must not
 # displace the complete count.
 srv = srv_log(lat=partial_lat, extra=(final_lat, partial_lat))
@@ -309,14 +307,14 @@ row = pp.parse("c8L", "HOLTSIG", "42", "3", cli, srv)
 check(row["eta_final"] is True and row["t_n"] == 0.0, "a sender flush is the sender reading")
 check(row["eta_sender_lines"] == 2, "sender cadence count skips the flush")
 
-# ── 7. SWAPPED LOGS ARE A PARSE, NOT A SILENT ZERO ───────────────────────
+# ── 7. Swapped logs are a parse, not a silent zero ───────────────────────
 row = pp.parse("c8L", "CTL", "42", "1", cli_log() + srv_log(), cli_log(summaries=()))
 check(row["lat_present"] and row["succ_present"] and row["eta_recv_present"],
       "receiver lines found in the other log")
 row = pp.parse("c8L", "CTL", "42", "1", [ACKED + "\n"], srv_log() + [ETA_S_CTL + "\n"])
 check(row["eta_present"] and row["fhat_us"] == 1950.0, "sender line found in the other log")
 
-# ── 8. THE CLI CONTRACT the battery greps on ─────────────────────────────
+# ── 8. The CLI contract the battery greps on ─────────────────────────────
 with tempfile.TemporaryDirectory() as td:
     c = os.path.join(td, "c.log")
     s = os.path.join(td, "s.log")

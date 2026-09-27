@@ -1,5 +1,5 @@
 #!/bin/bash
-# Quad-path L1 topology (C9/C9H): FOUR veth pairs between rp-cli and rp-srv,
+# Quad-path L1 topology (C9/C9H): four veth pairs between rp-cli and rp-srv,
 # each shaped independently. Follows topo_dual.sh's shape exactly — same
 # namespaces, same addressing stride, same reverse-direction treatment, same
 # MPTCP endpoint configuration — widened from 2 legs to 4.
@@ -11,37 +11,27 @@
 #
 # Usage: sudo bash topo_quad.sh up <scenA> <scenB> <scenC> <scenD> [--seed S]
 #        sudo bash topo_quad.sh down
-#   C9  = up c2 c2 c2 c2     the SYMMETRIC quad  (4 × the c2-class leg)
-#   C9H = up c2 c2 c3 c3     the HETEROGENEOUS quad (2 × c2 + 2 × c3)
+#   C9  = up c2 c2 c2 c2     the symmetric quad  (4 × the c2-class leg)
+#   C9H = up c2 c2 c3 c3     the heterogeneous quad (2 × c2 + 2 × c3)
 #
-# THE BENCH TWIN, stated so the correspondence is checkable rather than
-# implied. `tests/store_cap_sf_bench.rs`'s `c7x4` is `vec![C2, C2, C2, C2]`
-# with `C2 = (10_400 sym/s, RTprop 0.008 s, GE loss 0.013, GE persistence
-# 0.50)` and `MAX_PATHS = 4`. c9 is the WIRE twin of that SIMULATED geometry:
-# the same four-way symmetric c2 leg, shaped by netem instead of by the
-# bench's link model. The two are not interchangeable and must never be
-# pooled — the bench has no kernel, no QUIC and no real scheduler — but c9's
-# per-leg parameters are chosen to make the bench's numbers the PREDICTION
-# the wire is read against, which is what makes a divergence informative.
-# c9h has NO bench twin; it is C9-3's geometry and nothing in the tree
-# simulates it.
+# The bench twin: `tests/store_cap_sf_bench.rs`'s `c7x4` is
+# `vec![C2, C2, C2, C2]` with `C2 = (10_400 sym/s, RTprop 0.008 s, GE loss
+# 0.013, GE persistence 0.50)` and `MAX_PATHS = 4`. c9 is the wire twin of
+# that simulated geometry: the same four-way symmetric c2 leg, shaped by netem
+# instead of by the bench's link model. The two must never be pooled — the
+# bench has no kernel, no QUIC and no real scheduler — but the bench's numbers
+# are the prediction the wire is read against. c9h has no bench twin.
 #
-# SEEDS ARE PER LEG (see the HARNESS ERA note in lib.sh). `--seed 42` gives
-# 42/1042/2042/3042 — four INDEPENDENT netem realizations. `--seed
-# 42,42,42,42` pins them equal, i.e. the rho_loss = +1 arm the dual topology
-# ran unknowingly for its whole previous era. The quad has no legacy era: it
-# inherits per-leg seeds from its first invocation and every ledger it
-# produces is on the near side of the boundary.
+# Seeds are per leg (see lib.sh `leg_seed`). `--seed 42` gives
+# 42/1042/2042/3042 — four independent netem realizations. `--seed
+# 42,42,42,42` pins them equal, i.e. the rho_loss = +1 arm.
 
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
-# THE ABORT-CAUSE WITNESS, on the quad — goal-gate's c9 contract §6 step 3,
-# which was owed and is paid here. This script was written on a base where the
-# witness did not exist, so a quad failure could only ever be reported as
-# `topo_up` plus a stderr blob; with the `ERR` trap it names the exact FAILING
-# LINE inside `up()`, which is worth strictly more at four legs than at two
-# because there are twice as many identical-looking statements to confuse.
+# The abort-cause witness: with the `ERR` trap a quad failure names the exact
+# failing line inside `up()`, not just `topo_up` plus a stderr blob — worth
+# more at four legs, with twice as many identical-looking statements.
 # `set -E` makes the trap inherit into `up()` (without it the trap is not taken
 # inside a function); it changes nothing else, and the trap body only writes to
 # the witness record.
@@ -49,7 +39,7 @@ set -E
 source ./abort_witness.sh
 trap 'aw_err_trap "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
-# The four legs, as parallel arrays. ONE definition, read by both `up` and
+# The four legs, as parallel arrays. One definition, read by both `up` and
 # `down`, so a fifth leg is a single edit and cannot be added to one half of
 # the script only.
 CLI_DEVS=(cli0 cli1 cli2 cli3)
@@ -68,12 +58,11 @@ down() {
 
 shape() { # ns dev scenario seed
     local ns="$1" dev="$2" scenario="$3" seed="${4:-}"
-    # THE GUARDS, on every shaping call. `guard_dev` refuses the management
+    # The guards, on every shaping call. `guard_dev` refuses the management
     # interface (ens18 — it carries the SSH session) and loopback; `guard_ns`
-    # refuses any namespace that is not rp-* prefixed. topo_dual.sh's `shape`
-    # calls NEITHER, relying on its device names being literals; this script
-    # calls both, because a quad's device names come out of an ARRAY and an
-    # array is exactly the thing a later edit can widen wrongly.
+    # refuses any namespace that is not rp-* prefixed. topo_dual.sh relies on
+    # its device names being literals; here they come out of an array, which
+    # is exactly the thing a later edit can widen wrongly.
     guard_ns "$ns"
     guard_dev "$dev"
     read -r rate one_way jitter ge_p ge_q <<< "$(scenario_params "$scenario")"
@@ -109,14 +98,14 @@ up() {
     for l in "${CLI_DEVS[@]}" lo; do ip -n "$NS_CLI" link set "$l" up; done
     for l in "${SRV_DEVS[@]}" lo; do ip -n "$NS_SRV" link set "$l" up; done
 
-    # Data direction: loss + delay + rate, one INDEPENDENT netem seed per leg.
+    # Data direction: loss + delay + rate, one independent netem seed per leg.
     for ((i = 0; i < NLEGS; i++)); do
         shape "$NS_CLI" "${CLI_DEVS[$i]}" "${scen[$i]}" "$(leg_seed "$seed" "$i")"
     done
-    # Reverse (ACK) direction: delay/rate only, no loss and NO SEED — exactly
-    # as topo_dual.sh does it. The kernel draws its own prng seed there, which
-    # is why `SRV0`/`SRV1` read random 64-bit values in every committed
-    # capture; that is the seed audit's own control and it is preserved here.
+    # Reverse (ACK) direction: delay/rate only, no loss and no seed — as
+    # topo_dual.sh does it. The kernel draws its own prng seed there, so the
+    # `SRV*` captures read random 64-bit values; that is the seed audit's own
+    # control.
     for ((i = 0; i < NLEGS; i++)); do
         read -r rate ow jit_ms _ _ <<< "$(scenario_params "${scen[$i]}")"
         j=""; [[ "$jit_ms" != "0" ]] && j="${jit_ms}ms"
@@ -128,10 +117,9 @@ up() {
 
     # MPTCP: allow the extra subflows and announce the extra addresses. The
     # dual sets `subflow 2 add_addr_accepted 2` for its one extra leg; a quad
-    # has THREE extra legs, so the limits and the endpoint count widen with
-    # NLEGS rather than being hard-coded (the pid<2 lesson: a widened array
-    # beside an un-widened bound is the defect class this file is written
-    # against).
+    # has three extra legs, so the limits and the endpoint count widen with
+    # NLEGS rather than being hard-coded (a widened array beside an un-widened
+    # bound is the defect class to avoid).
     local extra=$((NLEGS))
     for ns in "$NS_CLI" "$NS_SRV"; do
         ip netns exec "$ns" sysctl -q net.mptcp.enabled=1
@@ -145,27 +133,19 @@ up() {
             dev "${SRV_DEVS[$i]}" signal
     done
 
-    # The ACTIVE per-leg seeds, echoed: the derivation must be readable from
+    # The active per-leg seeds, echoed: the derivation must be readable from
     # the run's own output and not only from lib.sh.
     local seeds=""
     for ((i = 0; i < NLEGS; i++)); do
         seeds="${seeds}${seeds:+,}$(leg_seed "$seed" "$i")"
     done
     echo "quad topology up: paths=${scen[*]} seeds=[$seeds] (spec='${seed:-unset}')"
-    # THE TOPO-PING, REPAIRED AND RECORDED, on all four legs. This script
-    # inherited `topo_dual.sh`'s 2-packet no-retry check verbatim — the exact
-    # shape the era battery resolved ALL 38 of its 204 aborts to — and inherited
-    # it into a topology with TWICE THE LEGS, i.e. twice the independent chances
-    # to draw a false abort per invocation. It was never run on the wire in that
-    # form, so no quad ledger carries the defect; this repair lands before the
-    # first one exists.
-    #
-    # `aw_ping` retries to at most `AW_PING_ATTEMPTS = 26` draws and accepts the
-    # FIRST reply. At the worst committed GE cell (c5, pi_bad = 0.1501,
-    # persistence 0.70) that is 2.0e-5 per leg and **8.05e-5 for the whole
-    # four-legged invocation — under 1e-4** — against 1.05e-1 per leg before.
-    # See the sizing arithmetic in `abort_witness.sh`. A leg with no namespace,
-    # no address or no route still aborts, and still aborts fast.
+    # The sanity ping, recorded, on all four legs. `aw_ping` retries to at
+    # most `AW_PING_ATTEMPTS = 26` draws and accepts the first reply. At the
+    # worst GE cell (c5, pi_bad = 0.1501, persistence 0.70) a false abort is
+    # 2.0e-5 per leg and 8.05e-5 for the whole four-legged invocation, under
+    # 1e-4 (sizing arithmetic in `abort_witness.sh`). A leg with no namespace,
+    # no address or no route still aborts, and fast.
     for ((i = 0; i < NLEGS; i++)); do
         aw_ping "$NS_CLI" "${SRV_ADDRS[$i]}" "path$i"
     done

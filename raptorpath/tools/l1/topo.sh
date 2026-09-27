@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
-# THE ABORT-CAUSE WITNESS — see topo_dual.sh for why `set -E` is required (the
+# The abort-cause witness — see topo_dual.sh for why `set -E` is required (the
 # ERR trap is not inherited into `up()` without it) and why it is otherwise
 # inert.
 set -E
@@ -84,8 +84,8 @@ up() {
         delay "${one_way}ms" $jit rate "$rate" $rloss $seed
 
     echo "topology up: $scenario (rate=$rate, one_way=${one_way}ms, jitter=${jitter}ms, GE p=${ge_p}% q=${ge_q}%, symmetric=$symmetric)"
-    # Sanity ping (also warms ARP). RECORDED, with the same exit semantics —
-    # and, as in topo_dual.sh, it is the LAST statement of `up()`, so its
+    # Sanity ping (also warms ARP). Recorded, with the same exit semantics —
+    # and, as in topo_dual.sh, it is the last statement of `up()`, so its
     # failure cannot leave an incomplete topology behind.
     aw_ping "$NS_CLI" 10.77.0.2 single
 }

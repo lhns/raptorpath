@@ -1,96 +1,85 @@
 #!/bin/bash
-# THE r > 0 BATTERY — the VM driver for goal-gate "THE r > 0 BATTERY —
-# PRE-REGISTRATION" (own commit, written before any VM contact). That block is
-# the CONTRACT: it is scored against, never modified, and no number in it may
-# change now that the VM has been touched. Paper §16.82 is the derivation.
+# The r > 0 battery: does funded proactive r* beat reactive-only at bulk?
+# Derivation: paper §4.9 (the corner r* = 0 and δ_exit); results: paper §9.8
+# and docs/status.md §2 (Track B).
 #
 #   nohup bash r_battery.sh          >/home/vibe/rbattery/all.out 2>&1 &   # the battery
 #   nohup bash r_battery.sh --calib  >/home/vibe/rbattery/all.out 2>&1 &   # the smoke
 #
-# ── THIS SCRIPT IS STARTED AS `vibe`, NOT AS ROOT, AND THAT IS THE POINT ──
-# It uses `sudo` for the transfer invocations alone (they need root for the
-# rp-* namespaces) and does every sentinel operation as the UNPRIVILEGED user,
-# so the sentinel writability it proves at launch is the writability the exit
-# path will actually have. See "SENTINELS: EARNED, AND PROVEN WRITABLE BEFORE
-# THE FIRST MEASUREMENT" in goal-gate, and the recorded defect it closes.
+# Started as `vibe`, not root: `sudo` is used for the transfer invocations
+# alone (they need root for the rp-* namespaces), and every sentinel operation
+# runs as the unprivileged user, so the writability proven at launch is the
+# writability the exit path has (docs/measurement-discipline.md,
+# pre-registration protocol 5).
 #
-# ── THE QUESTION ────────────────────────────────────────────────────────
-# Goal-gate's standing open item 3: "whether funded proactive r* beats
-# reactive-only at bulk is an open item-11 question". §16.82.8 sharpened it to
-# a stated domain — r can be funded through δ (`MID`) or through χ (`GLIDE`)
-# and through nothing else, because those are the only two inputs the price
-# form has. This battery asks it on exactly those two, against the two rival
-# pre-stated hypotheses `H_price` and `H_object` (§16.82.4).
+# ── The question ────────────────────────────────────────────────────────
+# r can be funded through δ (`MID`) or through χ (`GLIDE`) and through
+# nothing else, because those are the only two inputs the price form has
+# (paper §4.9). The two rival hypotheses are `H_price` (the price form is
+# right) and `H_object` (a per-object effect at the stream tail).
 #
-# ── ARMS ────────────────────────────────────────────────────────────────
+# ── Arms ────────────────────────────────────────────────────────────────
 #   CTL     (unset)                                  the corner, measured.
 #                                                    β = 1, χ = 0, r* = 0.
-#   MID     RWM_DELTA=0.05 RWM_COPA_DELTA=0.005      β = ½ EXACTLY (the
-#                                                    arithmetic is in §3 of the
-#                                                    pre-registration and is
-#                                                    bit-exact, not "≈ ½"),
-#                                                    with the CC PINNED at Bulk
+#   MID     RWM_DELTA=0.05 RWM_COPA_DELTA=0.005      β = ½ exactly, with the
+#                                                    CC pinned at Bulk
 #                                                    (`RWM_COPA_DELTA` ▸
 #                                                    `RWM_DELTA` ▸ the hint's
-#                                                    map, scheduler/mod.rs:135).
+#                                                    map, scheduler/mod.rs).
 #   GLIDE   RWM_COMPLETION_EXPOSURE=1                χ fed from the perf
 #                                                    client's own T_rem.
-#   GLIDE-Z RWM_COMPLETION_EXPOSURE=1                PRE-DECLARED ARM-ABSENT:
-#           RWM_TAIL_BUDGET=1e-3                     `RWM_TAIL_BUDGET` DOES NOT
-#                                                    EXIST on this binary (see
-#                                                    the guard in `arm_env`).
+#   GLIDE-Z RWM_COMPLETION_EXPOSURE=1                pre-declared arm-absent:
+#           RWM_TAIL_BUDGET=1e-3                     `RWM_TAIL_BUDGET` does not
+#                                                    exist on this binary (see
+#                                                    the guard below).
 #
-# ── CELLS ───────────────────────────────────────────────────────────────
-#   c3hg  single c3hg      THE REACHABILITY CELL, eps = 5.8000 % — the ONLY
-#                          cell in the grid ABOVE the 5 % line the glide's own
-#                          ceiling `BULK_TAIL_BUDGET = 0.05` draws. NEW; see
-#                          lib.sh's own note on why it is not called c3heavy.
-#   c8    dual   c2/c3     the predicted-corner control at a DUAL (mixed legs).
-#   sc2   single c2        the predicted-corner control at a SINGLE.
+# ── Cells ───────────────────────────────────────────────────────────────
+#   c3hg  single c3hg      the reachability cell, eps = 5.8000 % — the only
+#                          cell in the grid above the 5 % line the glide's own
+#                          ceiling `BULK_TAIL_BUDGET = 0.05` draws (see
+#                          lib.sh for the name).
+#   c8    dual   c2/c3     the predicted-corner control at a dual (mixed legs).
+#   sc2   single c2        the predicted-corner control at a single.
 #
-# ── SIZES, AND THE UNIT THAT IS SCORED ──────────────────────────────────
-# 1.8 MB and 25 MB — §16.82.4's discriminator, and the ONLY reason 25 MB is in
-# the grid. The SCORED UNIT is the per-invocation completion p50 over that
-# invocation's own objects (40 at 1.8 MB, 4 at 25 MB), because `H_object` is a
-# PER-OBJECT effect at the stream tail. n = 8 reps × 2 seeds = 16 p50s per
-# arm-cell-size.
+# ── Sizes, and the scored unit ──────────────────────────────────────────
+# 1.8 MB and 25 MB discriminate `H_object`, a per-object effect at the stream
+# tail. The scored unit is the per-invocation completion p50 over that
+# invocation's own objects (40 at 1.8 MB, 4 at 25 MB). n = 8 reps × 2 seeds =
+# 16 p50s per arm-cell-size.
 #
-# ── INSTRUMENTS on every invocation, in every arm ───────────────────────
+# ── Instruments on every invocation, in every arm ───────────────────────
 # RWM_DIAG=1 (carries `[DIAG]` — whose `cum=src/cod/ack` triple is the r
 # liveness witness — plus `[CHI]` and `[SHEDH]` on their own cadences),
-# RWM_FDIAG=1 (the pre-stated falsifier's own instrument: DECODE-resolved vs
-# SOURCE-resolved wall time per hole), RWM_ACKDIAG=1, RWM_WALLDIAG=1.
-# `[RFA]`'s `preempt_src` rides along on the server log.
+# RWM_FDIAG=1 (the falsifier's instrument: decode-resolved vs source-resolved
+# wall time per hole), RWM_ACKDIAG=1, RWM_WALLDIAG=1. `[RFA]`'s `preempt_src`
+# rides along on the server log.
 #
-# ── LIVENESS, asserted per arm BEFORE any number is read ────────────────
-# W1..W10 of the pre-registration's §8, one `RWITNESS {json}` row per
-# invocation. The three that carry the battery:
-#   W5  `r` REACHES THE WIRE — last `[DIAG] cum=` ⇒ cod > 0 on funded arms.
-#       Its failure is `R-INERT`, ATTRIBUTED by the pre-registration's rule to
-#       BUDGET-BOUND / ESTIMATOR-BOUND / WIRING and never left unattributed.
-#   W6  χ REACHES THE GLIDE — `[CHI] max > 0.5` on GLIDE, `= 0` elsewhere.
-#   W7  THE CC PIN HELD — the MECHANICAL substitute for the Copa echo that
-#       `gates.rs:1432` claims exists and that this tree does not have.
+# ── Liveness, asserted per arm before any number is read ────────────────
+# Witnesses W1..W10, one `RWITNESS {json}` row per invocation. The three that
+# carry the battery:
+#   W5  r reaches the wire — last `[DIAG] cum=` ⇒ cod > 0 on funded arms.
+#       Its failure is `R-INERT`, attributed to budget-bound, estimator-bound
+#       or wiring, never left unattributed.
+#   W6  χ reaches the glide — `[CHI] max > 0.5` on GLIDE, `= 0` elsewhere.
+#   W7  the CC pin held — a mechanical check, since no Copa δ echo exists.
 #
-# ABORT != DNF != INSTRUMENT-FAIL. No `[GATES]` on EITHER endpoint = ABORT: no
-# datum, no liveness verdict, and in NO denominator.
+# ABORT != DNF != INSTRUMENT-FAIL. No `[GATES]` on either endpoint = ABORT: no
+# datum, no liveness verdict, and in no denominator.
 #
-# NOTHING HERE FLIPS A DEFAULT. RWM_DELTA, RWM_COPA_DELTA and
-# RWM_COMPLETION_EXPOSURE are ABSENT/OFF by default and stay so.
+# Nothing here flips a default: RWM_DELTA, RWM_COPA_DELTA and
+# RWM_COMPLETION_EXPOSURE are absent/off by default and stay so.
 set -uo pipefail
 
-# ── CRLF SAFETY ─────────────────────────────────────────────────────────
-# MEASURED, 2026-08-21: `sigb_calib.sh`'s first invocation hit a CRLF trap in
-# lib.sh, ran ZERO invocations, and still wrote its DONE sentinel. The shipped
-# tree is CRLF-repaired after every sync and `lib.sh` is verified at 0 CR bytes
-# as the canary — that is the VM protocol's job — but this script ALSO refuses
-# to start if it can see a CR in itself or in lib.sh, because a launcher that
-# cannot parse its own library must fail LOUDLY at line 1 rather than at the
-# first `case` arm. Every scrape below additionally strips CR from the logs it
-# reads, so a CRLF-tainted log is a parse problem and never a silent zero.
+# ── CRLF safety ─────────────────────────────────────────────────────────
+# A CRLF-tainted library can run zero invocations and still write a DONE
+# sentinel. The VM protocol keeps the tree CR-free
+# (docs/measurement-discipline.md rule 10), and this script also refuses to
+# start if it sees a CR in itself or in its libraries, so it fails at line 1
+# rather than at the first `case` arm. Every scrape below strips CR from the
+# logs it reads, so a CRLF-tainted log is a parse problem, never a silent zero.
 SELF="${BASH_SOURCE[0]}"
 cd "$(dirname "$SELF")" || { echo "ABORT-CD $(dirname "$SELF")"; exit 3; }
-# lib_battery.sh is sourced FIRST so its guard can check it too; a CR-tainted
+# lib_battery.sh is sourced first so its guard can check it too; a CR-tainted
 # library would fail to define crlf_guard, which the next line catches.
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
@@ -114,34 +103,28 @@ if [ "$CALIB" -eq 1 ]; then
   SEEDS="${RWM_R_SEEDS:-42}"
 fi
 
-# ── THE INHERITED-ENVIRONMENT PURGE, BEFORE ANYTHING ELSE ───────────────
+# ── The inherited-environment purge, before anything else ───────────────
 # An inherited value would make CTL something other than the shipped stack
 # while it still wore CTL's name, and the whole battery reads against CTL.
-# `RWM_THREE_TERM` is FIRST in this list on purpose: b(0.05) = sqrt(2) enters
-# `contract_stall_s` — TERM 2 of the three-term store cap — iff that gate is
-# armed, which is the ONE confound the pre-registration is required to name.
-# It ships DEFAULT OFF (gates.rs:1188) and is pinned off here and asserted
-# two-sided on every invocation of every arm.
+# `RWM_THREE_TERM` is first on purpose: b(0.05) = sqrt(2) enters
+# `contract_stall_s` — term 2 of the three-term store cap — iff that gate is
+# armed, the one named confound. It ships off, is pinned off here, and is
+# asserted two-sided on every invocation of every arm.
 R_CONTAM_GATES="RWM_THREE_TERM RWM_MIN_R \
 RWM_DERIVED_SWEEP RWM_STORE_CAP_UNIFIED RWM_COMPOSED_CAP \
 RWM_HOLDDOWN_Q"
 # shellcheck disable=SC2086
 unset RWM_DELTA RWM_COPA_DELTA RWM_COMPLETION_EXPOSURE RWM_TAIL_BUDGET $R_CONTAM_GATES
 
-# ── SENTINEL WRITABILITY IS PROVEN AT LAUNCH, NOT DISCOVERED AT EXIT ────
-# THE RECORDED DEFECT THIS CLOSES: the hold-down sweep's launcher ran to
-# completion and wrote NO sentinel at all — the output directory was owned by
-# ROOT, the `touch` ran as the unprivileged user, and the script carried
-# `set -uo pipefail` WITHOUT `-e`. So the touch failed, silently, and the
-# watcher waited on a file that could never appear for a battery that had
-# already finished. The fix is to PROVE the write, as the user who will perform
-# it, on the exact ABSOLUTE paths, BEFORE any measurement is taken.
-#
-# THE RUN DIRECTORY IS CREATED UNPRIVILEGED, HERE, BEFORE `sudo` IS EVER
-# INVOKED — that is the whole point of the ordering.
+# ── Sentinel writability is proven at launch, not discovered at exit ────
+# A root-owned output directory makes the unprivileged `touch` fail silently
+# (no `-e`), and a watcher then waits forever on a finished battery. So the
+# write is proven, as the user who will perform it, on the exact absolute
+# paths, before any measurement. The run directory is created unprivileged,
+# here, before `sudo` is ever invoked.
 mkdir -p "$OUTDIR" "$DDIR" 2>/dev/null
 
-# `all.out` IS PROVED FIRST AND THE TEE IS OPENED ONLY AFTERWARDS: opening the
+# `all.out` is proved first and the tee is opened only afterwards: opening the
 # transcript before proving it would send the abort message that explains the
 # failure into the file the failure is about.
 probe_sentinel "$OUTDIR/all.out"
@@ -152,19 +135,18 @@ for s in $SEEDS; do SENTINELS="$SENTINELS DONE-S$s FAILED-S$s"; done
 # shellcheck disable=SC2086
 LB_PROOF_EXTRA="calib=$CALIB" prove_sentinels "$OUTDIR" $SENTINELS
 
-# ── BOTH LOCKS ──────────────────────────────────────────────────────────
-# The VM protocol's two locks (goal-gate "THE VM PROTOCOL"): `/tmp/rwm-vm.lock`
-# is the box lock and `/home/vibe/rp.lock` the tree lock. They are OPERATOR
-# locks — this script does not invent a third mechanism — but it REFUSES to run
-# without them and it releases exactly what it took, so `ABORT-LOCK` is a
-# reading of this ledger and not an assurance in a report. `noclobber` makes
-# the create-or-fail atomic against a second launcher.
+# ── Both locks ──────────────────────────────────────────────────────────
+# The VM protocol's two locks (docs/measurement-discipline.md, "The VM
+# protocol"): `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the
+# tree lock. This script refuses to run without them and releases exactly what
+# it took. `noclobber` makes the create-or-fail atomic against a second
+# launcher.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
 RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
 LB_TAG=r_battery
-# On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
-# body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
-# on for hours after TERM with both locks already cleared).
+# On INT/TERM the handler must exit after releasing: a `trap 'f' INT TERM`
+# body that does not `exit` resumes the script, which then runs on with both
+# locks already cleared.
 install_lock_traps
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
@@ -181,25 +163,22 @@ arm_env() { case "$1" in
   GLIDE)   echo "RWM_COMPLETION_EXPOSURE=1" ;;
   GLIDE-Z) echo "RWM_COMPLETION_EXPOSURE=1 RWM_TAIL_BUDGET=1e-3" ;;
 esac; }
-# The EXPECTED two-sided `[GATES]` echoes, per arm. `RWM_DELTA` echoes `unset`
-# when absent and its resolved NUMBER when present (gates.rs:1718, :1738);
-# `RWM_COMPLETION_EXPOSURE` is a flag (gates.rs:1245).
+# The expected two-sided `[GATES]` echoes, per arm. `RWM_DELTA` echoes `unset`
+# when absent and its resolved number when present (gates.rs);
+# `RWM_COMPLETION_EXPOSURE` is a flag.
 arm_delta_expect() { case "$1" in MID) echo "0.05" ;; *) echo "unset" ;; esac; }
 arm_chi_expect()   { case "$1" in GLIDE|GLIDE-Z) echo "1" ;; *) echo "0" ;; esac; }
 arm_funded()       { case "$1" in CTL) echo 0 ;; *) echo 1 ;; esac; }
 
-# ── THE GLIDE-Z GUARD ───────────────────────────────────────────────────
-# `RWM_TAIL_BUDGET` DOES NOT EXIST ON THIS BINARY. Verified on main@9396ca0:
-# `BULK_TAIL_BUDGET` is a `const` (raptorpath-math/src/lib.rs:124) consumed by
-# the glide at :712 as `p + (BULK_TAIL_BUDGET - p)*chi`; there is NO env gate
-# behind it and no `RWM_FORWARD` row, so even a set variable would not reach
-# the binary through this harness. The pre-registration declares GLIDE-Z
-# ARM-ABSENT in advance; this guard is what makes that declaration a MEASURED
-# fact of the run rather than an assumption carried from the desk.
+# ── The GLIDE-Z guard ───────────────────────────────────────────────────
+# `RWM_TAIL_BUDGET` does not exist on the binary: `BULK_TAIL_BUDGET` is a
+# `const` in raptorpath-math consumed by the glide as
+# `p + (BULK_TAIL_BUDGET - p)*chi`, with no env gate behind it and no
+# `RWM_FORWARD` row. GLIDE-Z is declared arm-absent in advance; this guard
+# makes that a measured fact of the run rather than an assumption.
 #
-# It probes the binary's OWN `[GATES]` echo once, at launch, and caches the
-# answer. A binary that DOES echo the gate flips GLIDE-Z on automatically —
-# nothing here has to be edited when the engine gains the line.
+# It probes the binary once, at launch, and caches the answer. A binary that
+# does echo the gate flips GLIDE-Z on automatically.
 GLIDE_Z_OK=0
 probe_tail_budget_gate() {
   local echoed
@@ -221,9 +200,9 @@ cell_spec() { case "$1" in
   sc2)  echo "c2   c2   single" ;;
   *)    echo "" ;;
 esac; }
-# size -> "bytes runs".  THE OBJECT COUNT IS THE SCORED UNIT'S SAMPLE:
+# size -> "bytes runs". The object count is the scored unit's sample:
 # `H_object` is a per-object effect at the stream tail, so an invocation
-# transferring ONE object measures ONE draw of it. 40 objects at 1.8 MB and 4
+# transferring one object measures one draw of it. 40 objects at 1.8 MB and 4
 # at 25 MB keep the bytes moved per invocation comparable (72 MB vs 100 MB).
 size_spec() { case "$1" in
   s18) echo "1800000  40" ;;
@@ -231,28 +210,28 @@ size_spec() { case "$1" in
   *)   echo "" ;;
 esac; }
 
-# GOODPUT BANDS, from the committed plain-window ledgers
-# (tools/l1/valpha_battery.sh:271-272). `c3hg`'s is DERIVED from `sc3` and said
-# to be weaker, which is why it aborts nothing on its own — see the
+# Goodput bands, from earlier plain-window measurements. `c3hg`'s is derived
+# from `sc3` and weaker, which is why it aborts nothing on its own — see the
 # witness-first rule below.
 band_lo() { case "$1" in sc2) echo 78 ;; c8) echo 50 ;; c3hg) echo 9  ;; *) echo 0     ;; esac; }
 band_hi() { case "$1" in sc2) echo 92 ;; c8) echo 100;; c3hg) echo 18 ;; *) echo 99999 ;; esac; }
-# THE GENERATION PLATEAU (goal-gate ~40913): a reading inside it is the 31
-# Mbit/s anomaly's own signature and means generation leaked in despite
-# RWM_GEN=0. It ABORTS. No band in this grid overlaps it.
+# The generation plateau: a reading inside it is the signature of generation
+# coding leaking in despite RWM_GEN=0. It aborts. No band in this grid
+# overlaps it.
 PLATEAU_LO=26.8
 PLATEAU_HI=34.1
-# The shaped link per cell, for the calibration's headroom check (discipline
-# 16): a cell already at >= 97 % of its link on CTL can only be moved DOWN.
+# The shaped link per cell, for the calibration's headroom check
+# (docs/measurement-discipline.md rule 16): a cell already at >= 97 % of its
+# link on CTL can only be moved down.
 cell_link() { case "$1" in c3hg) echo 20 ;; sc2) echo 100 ;; c8) echo 120 ;; *) echo 0 ;; esac; }
 
 # ── SCRAPE HELPERS ──────────────────────────────────────────────────────
-# EVERY read is last-line-wins, CR-stripped, and `|| true` guarded: the gauges
-# below are CUMULATIVE (the `[RFA]` convention, net/mod.rs:2402), so the last
-# line is the run's accounting, and a MISSING gauge must produce an empty
-# string that the witness reports — never a shell failure that kills the rep.
+# Every read is last-line-wins, CR-stripped, and `|| true` guarded: the gauges
+# below are cumulative (the `[RFA]` convention), so the last line is the run's
+# accounting, and a missing gauge must produce an empty string that the
+# witness reports — never a shell failure that kills the rep.
 # lastline / field / countlines: lib_battery.sh. `field` is token-anchored
-# and first-occurrence (it used to match `n=` inside `mean=`).
+# and first-occurrence.
 
 REP=0
 FAILS=""
@@ -276,18 +255,16 @@ run_one() { # cell size arm
 
   local t0; t0=$(date +%s)
   echo "=== rep=$REP arm=$name seed=$SEED_ARG env=\"$envs\" cell=$ca/$cb/$mode bytes=$bytes runs=$runs $(date -u +%T)" >> "$OUT"
-  # THE FORWARDED ENVIRONMENT, ECHOED BY THE HARNESS ITSELF. This is the ONLY
-  # two-sided-ish witness `RWM_COPA_DELTA` has: gates.rs:1432 lists it in
-  # EXTERNALLY_ECHOED as having its "own echo: scheduler Copa family resolve"
-  # and NO SUCH ECHO EXISTS on this tree (scheduler/mod.rs carries three
-  # eprintln! sites and none prints a delta). The MECHANICAL witness is W7.
+  # The forwarded environment, echoed by the harness itself: the engine prints
+  # no `RWM_COPA_DELTA` echo, so this is its only direct witness. The
+  # mechanical witness is W7.
   echo "RENV $name rep=$REP forwarded=\"SEED=$SEED_ARG RWM_GEN=0 $envs RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1\"" >> "$OUT"
 
-  # Stale-echo hygiene: an aborted invocation must never read the PREVIOUS
+  # Stale-echo hygiene: an aborted invocation must never read the previous
   # arm's log and pass its liveness gate.
   sudo rm -f /tmp/rwm-c.log /tmp/rwm-s.log 2>/dev/null
 
-  # `sudo` HERE AND NOWHERE ELSE: the transfer needs root for the rp-*
+  # `sudo` here and nowhere else: the transfer needs root for the rp-*
   # namespaces; every sentinel and lock path above and below is touched as the
   # unprivileged user.
   # shellcheck disable=SC2086
@@ -295,10 +272,9 @@ run_one() { # cell size arm
       RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 \
       bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" "$runs" "$mode" 2>&1 \
     | grep -aE "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|BUSY" >> "$OUT"
-  # THE TRANSFER'S rc, NOT THE GREP'S. `${PIPESTATUS[0]}` is read on the very
+  # The transfer's rc, not the grep's. `${PIPESTATUS[0]}` is read on the very
   # next line because any command in between clobbers it, and a `|| true` here
-  # would silently report rc = 0 for every invocation — which is exactly how a
-  # W10 gate stops being a gate.
+  # would silently report rc = 0 for every invocation.
   local rc="${PIPESTATUS[0]}"
   echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s rc=$rc" >> "$OUT"
 
@@ -316,8 +292,8 @@ check_arm() { # cell size arm rc
   local C=/tmp/rwm-c.log S=/tmp/rwm-s.log
   FAILS=""
 
-  # ── W1: ABORT-CAUSE FIRST. No [GATES] on EITHER endpoint = ABORT: no
-  # datum, no liveness verdict, and in NO denominator. Checked before any
+  # ── W1: abort cause first. No [GATES] on either endpoint = ABORT: no
+  # datum, no liveness verdict, and in no denominator. Checked before any
   # assertion, so an aborted invocation never produces a wall of liveness
   # failures that look like findings.
   local gl_c gl_s
@@ -329,7 +305,7 @@ check_arm() { # cell size arm rc
     return 0
   fi
 
-  # ── W2 / W3: the arm's OWN gates, matched LITERALLY, on BOTH endpoints ──
+  # ── W2 / W3: the arm's own gates, matched literally, on both endpoints ──
   local d_exp c_exp d_c d_s x_c x_s
   d_exp="$(arm_delta_expect "$arm")"; c_exp="$(arm_chi_expect "$arm")"
   d_c=$(field "$gl_c" "RWM_DELTA");                d_c="${d_c:-none}"
@@ -341,18 +317,16 @@ check_arm() { # cell size arm rc
   { [ "$x_c" != "$c_exp" ] || [ "$x_s" != "$c_exp" ]; } \
     && { echo "W3-CHI-MISMATCH $name rep=$REP cli='$x_c' srv='$x_s' exp='$c_exp'" >> "$OUT"; FAILS="$FAILS W3-CHI-MISMATCH"; }
 
-  # GLIDE-Z's own re-probe: the AUTHORITATIVE reading of whether the gate
-  # exists is the resolved [GATES] line, and it is taken every rep so a mid-era
-  # binary swap cannot go unnoticed.
+  # GLIDE-Z's own re-probe: the authoritative reading of whether the gate
+  # exists is the resolved [GATES] line, taken every rep so a binary swap
+  # cannot go unnoticed.
   local tb_c
   tb_c=$(field "$gl_c" "RWM_TAIL_BUDGET"); tb_c="${tb_c:-none}"
   [ "$tb_c" != "none" ] && [ "$GLIDE_Z_OK" -eq 0 ] \
     && { GLIDE_Z_OK=1; echo "GLIDE-Z-NOW-ARMED $name rep=$REP (the binary echoes RWM_TAIL_BUDGET=$tb_c)" >> "$OUT"; }
 
-  # ── W4: CONTAMINATION. Every gate of the purge list OFF on both endpoints.
-  # RWM_THREE_TERM is the one the pre-registration names: b(0.05) = sqrt(2)
-  # enters contract_stall_s (TERM 2 of the three-term store cap) IFF it is
-  # armed, and it ships DEFAULT OFF (gates.rs:1188).
+  # ── W4: contamination. Every gate of the purge list off on both endpoints
+  # (RWM_THREE_TERM is the named confound; see the purge above).
   local g v_c v_s
   for g in $R_CONTAM_GATES; do
     v_c=$(field "$gl_c" "$g"); v_s=$(field "$gl_s" "$g")
@@ -366,12 +340,11 @@ check_arm() { # cell size arm rc
   [ "$gen_c" != "0" ] && [ "$gen_c" != "none" ] \
     && { echo "W4-CONTAM $name rep=$REP [RFA] gen=$gen_c (RWM_GEN=0 did not take)" >> "$OUT"; FAILS="$FAILS W4-CONTAM"; }
 
-  # ── W5: DOES `r` REACH THE WIRE? The last [DIAG] cum=src/cod/ack triple
-  # (net/diag.rs:934,945 -- "the end-of-run accounting reads the LAST line").
-  # `cod = 0` on a funded arm is R-INERT, and the pre-registration's
-  # ATTRIBUTION RULE decides between BUDGET-BOUND, ESTIMATOR-BOUND and WIRING
-  # from the arm's OWN echoed loss estimate. Nothing is attributed here; the
-  # numbers the rule needs are all written into the witness row.
+  # ── W5: does `r` reach the wire? The last [DIAG] cum=src/cod/ack triple
+  # (net/diag.rs: the end-of-run accounting reads the last line).
+  # `cod = 0` on a funded arm is R-INERT; the attribution between budget-bound,
+  # estimator-bound and wiring is made in scoring from the arm's own echoed
+  # loss estimate. The numbers it needs are all written into the witness row.
   local diag cum src_cum cod_cum ack_cum cod_frac funded
   diag=$(lastline "$C" "\[DIAG\] t=")
   cum=$(field "$diag" "cum"); cum="${cum:-//}"
@@ -385,10 +358,10 @@ check_arm() { # cell size arm rc
     case "$cod_cum" in ''|0) echo "W5-R-INERT $name rep=$REP cum=$cum (r never reached the wire; ATTRIBUTION per the pre-registration's rule, from this row's own eps-hat)" >> "$OUT"; FAILS="$FAILS W5-R-INERT" ;; esac
   fi
 
-  # ── W6: DOES χ REACH THE GLIDE? [CHI] n/max/frac_gt_half (net/mod.rs:2340),
-  # printed on BOTH arms on purpose: the control's `n=0 max=0.0000` is the
-  # two-sided half of the reachability claim, so "the glide never ran" is a
-  # READING and never an inference.
+  # ── W6: does χ reach the glide? [CHI] n/max/frac_gt_half, printed on both
+  # arms on purpose: the control's `n=0 max=0.0000` is the two-sided half of
+  # the reachability claim, so "the glide never ran" is a reading and never an
+  # inference.
   local chi chi_n chi_max chi_gt chi_feed
   chi=$(lastline "$C" "\[CHI\]")
   chi_n=$(field "$chi" "n");            chi_n="${chi_n:-0}"
@@ -405,22 +378,20 @@ check_arm() { # cell size arm rc
       && { echo "W6-CHI-CONTAM $name rep=$REP [CHI] max=$chi_max on an UNARMED arm" >> "$OUT"; FAILS="$FAILS W6-CHI-CONTAM"; }
   fi
 
-  # ── W7: DID THE CC PIN HOLD? The MECHANICAL substitute for the Copa echo
-  # this tree does not have. `RWM_COPA_DELTA=0.005` keeps the congestion
-  # controller at Bulk while the CONTRACT's delta moves to 0.05; a CC that had
-  # followed delta would target a 20x TIGHTER standing queue (q = 1/delta
-  # packets, scheduler/mod.rs:120-124) and cannot hide inside CTL's own rep
-  # spread. The reading is recorded here and ADJUDICATED in r_report.py, which
-  # is the only place that has CTL's spread to compare against.
+  # ── W7: did the CC pin hold? A mechanical check in place of a Copa δ echo.
+  # `RWM_COPA_DELTA=0.005` keeps the congestion controller at Bulk while the
+  # contract's delta moves to 0.05; a CC that had followed delta would target
+  # a 20x tighter standing queue (q = 1/delta packets, paper §8.2) and cannot
+  # hide inside CTL's own rep spread. Recorded here, adjudicated in
+  # r_report.py, which has CTL's spread to compare against.
   local rtt_ms
   rtt_ms=$(field "$diag" "rtt"); rtt_ms="${rtt_ms:-}"
   rtt_ms="${rtt_ms%ms}"
 
-  # ── W8: THE PRE-STATED FALSIFIER'S OWN INSTRUMENT. [FDIAG]
-  # (receiver.rs:1899) -- DECODE avg is decode-resolved wall time, SOURCE avg
-  # is ARQ-resolved wall time, both per hole. `present_at_stall` rides beside
-  # them BECAUSE of the 19-32 ms history: a DECODE avg quoted without it is not
-  # a reading of this battery (16.82.6; goal-gate ~6983, 7078-7091).
+  # ── W8: the falsifier's own instrument, [FDIAG] (net/receiver.rs) --
+  # DECODE avg is decode-resolved wall time, SOURCE avg is ARQ-resolved wall
+  # time, both per hole. `present_at_stall` rides beside them: a DECODE avg
+  # quoted without it cannot tell how many holes were already buffered.
   local fd fd_dec_n fd_dec_avg fd_src_n fd_src_avg fd_pas fd_probe_h fd_probe_b
   fd=$(lastline "$S" "\[FDIAG\]")
   [ -z "$fd" ] && fd=$(lastline "$C" "\[FDIAG\]")
@@ -434,7 +405,7 @@ check_arm() { # cell size arm rc
   [ -z "$fd" ] && { echo "W8-NO-FDIAG $name rep=$REP" >> "$OUT"; FAILS="$FAILS W8-NO-FDIAG"; }
 
   # ── W9: [RFA], and `preempt_src` by name -- the reactive plane's own view of
-  # the same phenomenon (net/mod.rs:5789-5795: false = dup_src + preempt_src).
+  # the same phenomenon (false = dup_src + preempt_src).
   local rfa_fires rfa_false rfa_ff rfa_dup rfa_pre rfa_fillc rfa_redund
   rfa_fires=$(field "$rfa" "fires");        rfa_fires="${rfa_fires:-0}"
   rfa_false=$(field "$rfa" "false");        rfa_false="${rfa_false:-0}"
@@ -447,7 +418,7 @@ check_arm() { # cell size arm rc
 
   # ── W10: rc = 0, and the run's own numbers scraped. The completion p50 and
   # mean_mbps come out of r_parse.py, which reads the per-run JSON the engine
-  # prints; this block only records that the parse HAPPENED.
+  # prints; this block only records that the parse happened.
   [ "$rc" != "0" ] && { echo "W10-RC $name rep=$REP rc=$rc" >> "$OUT"; FAILS="$FAILS W10-RC"; }
 
   local parsed
@@ -458,11 +429,11 @@ check_arm() { # cell size arm rc
   fi
   echo "RRESULT $parsed" >> "$OUT"
 
-  # ── THE GOODPUT GUARD, WITNESS-FIRST. The witnesses above are read FIRST and
-  # the band SECOND, at every rep, without exception (goal-gate ~40913):
-  #   * inside the GENERATION PLATEAU [26.8, 34.1] Mbit/s  => ABORT, a
+  # ── The goodput guard, witness-first. The witnesses above are read first
+  # and the band second, at every rep:
+  #   * inside the generation plateau [26.8, 34.1] Mbit/s  => ABORT, a
   #     configuration fault (generation leaked in despite RWM_GEN=0);
-  #   * outside the cell band but ALSO outside the plateau, with W1/W2/W3
+  #   * outside the cell band but also outside the plateau, with W1/W2/W3
   #     clean => OUT-OF-BAND RESULT, retained with its cause named -- never an
   #     abort.
   local mb lo hi inband plateau
@@ -490,7 +461,7 @@ check_arm() { # cell size arm rc
   echo "LIVENESS $name rep=$REP delta=[$d_c/$d_s exp=$d_exp] chi=[$x_c/$x_s exp=$c_exp] cum=$src_cum/$cod_cum/$ack_cum cod_frac=$cod_frac CHI(n=$chi_n max=$chi_max gt=$chi_gt feed=$chi_feed) FDIAG(dec=$fd_dec_n/${fd_dec_avg}us src=$fd_src_n/${fd_src_avg}us pas=$fd_pas) RFA(fires=$rfa_fires pre=$rfa_pre dup=$rfa_dup) rtt=${rtt_ms:-none}ms fails='${FAILS# }'" >> "$OUT"
 }
 
-# ── THE ERA HEADER, PER SEED ────────────────────────────────────────────
+# ── The era header, per seed ────────────────────────────────────────────
 run_seed() {
   SEED_ARG="$1"
   OUT="$OUTDIR/r-s${SEED_ARG}.log"
@@ -515,7 +486,8 @@ run_seed() {
     echo "PLATEAU [$PLATEAU_LO,$PLATEAU_HI] Mbit/s -- inside it is an ABORT (generation leaked in). No band in this grid overlaps it."
   } >> "$OUT"
 
-  # ARMS INTERLEAVED ROUND-ROBIN PER REP (discipline 3): a drifting box must
+  # Arms interleaved round-robin per rep (docs/measurement-discipline.md
+  # rule 3): a drifting box must
   # drift across all arms equally, not across the tail of the last one.
   local CELL SIZE ARM
   for REP in $(seq 1 "$REPS"); do
@@ -528,8 +500,8 @@ run_seed() {
     done
   done
 
-  # Per-arm result-count tally: an arm that VANISHED must fail loudly rather
-  # than quietly reduce an n (discipline 7).
+  # Per-arm result-count tally: an arm that vanished must fail loudly rather
+  # than quietly reduce an n (docs/measurement-discipline.md rule 7).
   echo "=== ARMCOUNTS seed=$SEED_ARG $(date -u +%FT%TZ)" >> "$OUT"
   for CELL in $R_CELLS; do
     for SIZE in $R_SIZES; do
@@ -551,9 +523,9 @@ run_seed() {
   echo "R-BATTERY-DONE seed=$SEED_ARG $(date -u +%FT%TZ)" >> "$OUT"
 }
 
-# A SENTINEL IS EARNED, NOT UNCONDITIONAL. An unconditional `touch` converts a
-# total failure into a clean-looking success; the ledger must EXIST, be
-# NON-EMPTY, and carry the battery's own terminal line.
+# A sentinel is earned, not unconditional. An unconditional `touch` converts a
+# total failure into a clean-looking success; the log must exist, be
+# non-empty, and carry the battery's own terminal line.
 rm -f "$OUTDIR/DONE-ALL" "$OUTDIR/FAILED-ALL"
 for s in $SEEDS; do rm -f "$OUTDIR/DONE-S$s" "$OUTDIR/FAILED-S$s"; done
 
@@ -570,21 +542,19 @@ for s in $SEEDS; do
 done
 echo "R-ALL end $(date -u +%FT%TZ) load=$(cat /proc/loadavg 2>/dev/null)" >> "$OUTDIR/all-era.txt"
 
-# ── THE REPORT. In --calib it discharges the four smoke clauses and NOTHING
-# in it is a result (n = 1). In the battery it applies the pre-registration's
-# §7 bar, §8 attribution rule, §8a falsifier and §11 outcome set.
+# ── The report. In --calib it discharges the four smoke clauses and nothing
+# in it is a result (n = 1). In the battery it applies the pre-registered
+# bar, attribution rule, falsifier and outcome set (see r_report.py).
 python3 ./r_report.py --outdir "$OUTDIR" $( [ "$CALIB" -eq 1 ] && echo --calib ) \
   | tee -a "$OUTDIR/all-era.txt"
-# THE REPORT'S rc, NOT THE TEE'S. `--calib` exits 6 on ABORT-SMOKE and that is
-# the whole point of the smoke: a launcher that read the tee's 0 would print
-# "nothing is launched" and then be believed to have launched nothing while
-# reporting success.
+# The report's rc, not the tee's. `--calib` exits 6 on ABORT-SMOKE; a launcher
+# that read the tee's 0 would report success for a failed smoke.
 RC_REPORT="${PIPESTATUS[0]}"
 
 ALL_OK=1
 for s in $SEEDS; do [ -f "$OUTDIR/DONE-S$s" ] || ALL_OK=0; done
 
-# DONE-ALL needs EVERY seed's earned DONE *and* a report that exited 0: a
+# DONE-ALL needs every seed's earned DONE *and* a report that exited 0: a
 # report that crashed, or a `--calib` that fired ABORT-SMOKE (rc 6), is a
 # FAILED-ALL carrying that rc, never a DONE-ALL beside a failure line.
 if [ "$ALL_OK" -eq 1 ] && [ "$RC_REPORT" -eq 0 ]; then

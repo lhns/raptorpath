@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Score the PLACEMENT BATTERY (Track A, paper 16.81) off its committed ledgers.
+"""Score the placement battery (Track A; the placement law is paper §5.7) off
+its logs.
 
-    place_score.py docs/l1-raw/place/place-s42.log docs/l1-raw/place/place-s7.log
+    place_score.py place-s42.log place-s7.log
     place_score.py ... --emit-eta OUT.log     # synthesise `[ETA]` lines for eta_s4.py
 
-READS ONLY THE LEDGER. Every `PLACERESULT` row is the JSON `place_parse.py`
-emitted at battery time off `/tmp/rwm-{c,s}.log`; the raw endpoint captures
-live in the VM's `diag/` directory and are NOT in the tree, so nothing here
-re-parses a gauge line -- it aggregates the rows and quotes their ledger line
+Reads only the battery log. Every `PLACERESULT` row is the JSON
+`place_parse.py` emitted at battery time off `/tmp/rwm-{c,s}.log`; the raw
+endpoint captures live in the VM's `diag/` directory, so nothing here
+re-parses a gauge line -- it aggregates the rows and quotes their log line
 numbers. `RUNTIME` and `LIVENESS` lines are joined to their row by
 (cell, arm, rep).
 
-THE ORDER OF THE OUTPUT IS THE PRE-REGISTERED READING ORDER (goal-gate
-"PRE-REGISTRATION -- THE PLACEMENT BATTERY (Track A)" section 2): the facts of
-the run; the CTL `[LAT]` decomposition FIRST; the S4 offline score; and only
-then the arms against the CTL arm's own rep spread. The script classifies
-with the pre-registered thresholds and prints them; it does not choose.
+The order of the output is the battery's reading order: the facts of the run;
+the CTL `[LAT]` decomposition first; the S4 offline score; and only then the
+arms against the CTL arm's own rep spread. The script classifies with the
+fixed thresholds and prints them; it does not choose.
 
-"Beyond the CTL spread" is read the way the pre-registration reads it: the
-arm's pooled min-max range lies ENTIRELY below (or above) the CTL arm's pooled
-min-max range. A range that overlaps CTL's is WITHIN.
+"Beyond the CTL spread" means the arm's pooled min-max range lies entirely
+below (or above) the CTL arm's pooled min-max range. A range that overlaps
+CTL's is WITHIN.
 """
 import argparse
 import json
@@ -288,9 +288,9 @@ def main(argv=None):
         print(f"{cell}: rows {len(rr)}; succ_xp_n values {sorted(set(r.get('succ_xp_n') for r in rr))}; lat_rwxp_n values {sorted(set(r.get('lat_rwxp_n') for r in rr))}; control_violated {sum(1 for r in rr if r.get('control_violated'))}; sh_xp values {sorted(set(r.get('sh_xp') for r in rr))}")
 
     # ── emit [ETA] for eta_s4.py ────────────────────────────────────────
-    # CTL / SINGLE rows only (the S4 score is "an offline reading of a stream
-    # the CTL arm itself produces"), SENDER lines only: the row carries the
-    # sender's per-path sig_us / pairs / tau_us verbatim, but only the MAX of
+    # CTL / single rows only (the S4 score is an offline reading of a stream
+    # the CTL arm itself produces), sender lines only: the row carries the
+    # sender's per-path sig_us / pairs / tau_us verbatim, but only the max of
     # the receiver's per-path sig_us and bind, so a receiver line cannot be
     # rebuilt faithfully. The receiver's `bind=` (worst path) is carried onto
     # each sender path so eta_s4.py's UNREADABLE limb can read it -- that is

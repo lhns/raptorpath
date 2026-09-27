@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-# The VM's management interface — carries our SSH session. NEVER touched.
+# The VM's management interface — carries our SSH session. Never touched.
 MGMT_IF="ens18"
 
 NS_CLI="rp-cli"
@@ -29,25 +29,19 @@ guard_ns() {
     fi
 }
 
-# ── GATE FORWARDING (goal-gate "Gate-Forwarding Audit", 2026-08-09) ──────
+# ── Gate forwarding ──────────────────────────────────────────────────────
 #
-# THE ONE list of `RWM_*` knobs the harness forwards to the binary, and the
-# ONE function that turns it into an `env` prefix. Every driver that launches
+# The one list of `RWM_*` knobs the harness forwards to the binary, and the
+# one function that turns it into an `env` prefix. Every driver that launches
 # the binary sources this file and passes `$(rwm_forward_env)`.
 #
-# WHY THIS EXISTS. Before this, each driver hand-rolled its own allowlist
-# (`perf_rwm_c.sh` had 78 lines of `[[ -n "${RWM_X:-}" ]] && TENV="$TENV ..."`)
-# and the ack-merge battery discovered `RWM_ACK_MERGE` had never been added to
-# it. That battery was nevertheless VALID — the audit MEASURED (PROBE 0,
-# 2026-08-09) that `sudo env VAR=… → bash driver → ip netns exec ns env $TENV`
-# delivers the var by plain process-environment INHERITANCE whether or not the
-# allowlist names it. So the allowlists were, and are, load-bearing for
-# NOTHING; they only created a false impression of explicitness while 12
-# engine gates silently sat outside them. This function makes the forwarding
-# TOTAL and EXPLICIT so the impression matches the mechanism.
+# `sudo env VAR=… → bash driver → ip netns exec ns env $TENV` also delivers a
+# var by plain process-environment inheritance whether or not a list names it;
+# the list makes the forwarding total and explicit so every set gate is
+# visible on the command line (docs/measurement-discipline.md rule 15).
 #
-# ENFORCEMENT: `raptorpath`'s `gate_forwarding_list_covers_the_engine_surface`
-# test parses THIS array and fails if any `RWM_*` the engine reads is missing.
+# Enforcement: `raptorpath`'s `gate_forwarding_list_covers_the_engine_surface`
+# test parses this array and fails if any `RWM_*` the engine reads is missing.
 # Adding a gate to the engine without adding it here fails the suite.
 RWM_FORWARD=(
     RWM_ACKDIAG RWM_ACKDIAG_WINDOW_US
@@ -84,7 +78,7 @@ RWM_FORWARD=(
     RWM_WALLDIAG RWM_WINDOW RWM_WIRE_COMPACT RWM_XPATH_REPAIR
 )
 
-# Emit `VAR=value` for every RWM_FORWARD knob that is SET in this process's
+# Emit `VAR=value` for every RWM_FORWARD knob that is set in this process's
 # environment. Word-splitting at the call site is intended:
 #   ip netns exec "$NS" env $(rwm_forward_env) "$BIN" ...
 # Values containing whitespace are not supported (no RWM_* knob takes one).
@@ -97,70 +91,47 @@ rwm_forward_env() {
     done
 }
 
-# ── HARNESS ERA: PER-LEG NETEM SEEDS (2026-08-19) ────────────────────────
+# ── Per-leg netem seeds ──────────────────────────────────────────────────
 #
-# THE DEFECT THIS CLOSES, and the ERA BOUNDARY IT CREATES. Read the boundary
-# first: it is the part that can silently corrupt a cross-era comparison.
+# netem's prng is seeded per qdisc. Handing the same seed to both legs of a
+# symmetric cell (identical scenario on both legs, e.g. c7 = c2/c2) makes the
+# two paths' Gilbert-Elliott loss chains and delay-jitter draws the same
+# realization indexed by packet: cross-path loss correlation rho = +1 by
+# construction, at exactly the cells where pooling wins. So each leg gets its
+# own seed by default.
 #
-# UNTIL 2026-08-19, `topo_dual.sh` took ONE `--seed` and handed the SAME value
-# to both legs' `netem` qdiscs. netem's prng is seeded per qdisc, so at a
-# SYMMETRIC cell (identical scenario on both legs — c7 = c2/c2, and every
-# symmetric cell in this tree) the two paths' Gilbert-Elliott loss chains and
-# delay-jitter draws were THE SAME REALIZATION INDEXED BY PACKET. The
-# cross-path loss correlation was therefore rho = +1 BY CONSTRUCTION, not by
-# measurement, at exactly the cells where pooling wins. This was read straight
-# off the committed `-q.txt` qdisc captures (goal-gate "Eppen's Condition at
-# c8" §2, THE SEED AUDIT: c7 3/3 captures same seed AND same params) and is
-# recorded as a defect against the harness, not worked around.
+# Comparability: a symmetric-cell measurement taken with equal leg seeds and
+# one taken with per-leg seeds are not the same measurement, and neither is a
+# control for the other. Any statistic that depends on the cross-path loss
+# process — cross-path correlation, pooling benefit, repair sharing, the
+# variance of any per-path series — differs between them. Asymmetric cells
+# (c8 = c2/c3) run different GE parameters per leg, so their chains differ
+# even from a shared seed; their rho_loss is unconstrained and unmeasured.
 #
-# **THE ERA-COMPARABILITY CONSEQUENCE, stated so no reading mixes the two.**
-#   * Ledgers captured BEFORE this change at a SYMMETRIC cell carry the
-#     rho_loss = +1 coupling. Any statistic whose value depends on the
-#     cross-path loss process — cross-path correlation, pooling benefit,
-#     repair sharing, the variance of any per-path series — is conditioned on
-#     it.
-#   * Ledgers captured AFTER carry INDEPENDENT loss realizations at the same
-#     cell, because `leg_seed` gives each leg its own stride.
-#   * ASYMMETRIC cells (c8 = c2/c3) are NOT affected in the same way: the legs
-#     already ran different GE parameters, so the chains differed even from a
-#     shared seed. Their rho_loss was unconstrained and UNMEASURED in both
-#     eras, and it still is.
-#   * So: **a symmetric-cell number from before this date and one from after
-#     are NOT the same measurement, and neither is a control for the other.**
-#     A comparison that spans the boundary must either re-run the old arm with
-#     an EXPLICIT equal-seed list (below — the old behaviour is still exactly
-#     reachable) or state the boundary in its own verdict.
-#
-# THE DIAL, which is the point. `--seed` accepts a comma list, one value per
-# leg; a single value derives the rest. So rho_loss is now a HARNESS DIAL with
-# both ends reachable and neither of them accidental:
-#   --seed 42        -> 42, 1042, 2042, 3042   INDEPENDENT legs   (the default)
-#   --seed 42,42     -> 42, 42                 the rho = +1 arm we ran
-#                                              unknowingly for the whole
-#                                              previous era, now DELIBERATE
+# The dial: `--seed` accepts a comma list, one value per leg; a single value
+# derives the rest. So rho_loss is a harness dial with both ends reachable:
+#   --seed 42        -> 42, 1042, 2042, 3042   independent legs   (the default)
+#   --seed 42,42     -> 42, 42                 the rho = +1 arm
 # The stride is 1000 and the derivation is `base + 1000*leg_index`: plain
 # arithmetic, deterministic, reproducible from the base seed alone, and
-# recorded in the `-q.txt` capture per leg so the audit that found the defect
-# re-runs unchanged against the new era and reads `same_seed: False`.
+# recorded in the `-q.txt` capture per leg.
 LEG_SEED_STRIDE=1000
 
 # `leg_seed <seed_spec> <leg_index>` -> the netem seed for that leg, or the
 # empty string when no seed was requested (netem then draws its own, which is
 # what the reverse/ACK direction has always done).
 #
-# `seed_spec` is a comma-separated list, and there are exactly TWO legal
+# `seed_spec` is a comma-separated list, and there are exactly two legal
 # shapes — no third, partially-derived one:
 #
-#   ONE element   the BASE. Every leg is derived: `base + LEG_SEED_STRIDE*i`.
+#   one element   the base. Every leg is derived: `base + LEG_SEED_STRIDE*i`.
 #   N elements    all N legs pinned explicitly, element `i` used verbatim.
 #
-# A spec with more than one element but FEWER than the topology's legs is a
-# HARD ERROR, deliberately. The tempting rule — "use the listed ones, derive
-# the rest" — would make `--seed 42,42` at a QUAD mean legs (42, 42, 2042,
-# 3042): half the cell coupled at rho = +1 and half independent, which is
-# neither arm and would be discovered only by reading the qdisc capture. That
-# is the same class of silent mixed attribution the era note above exists to
-# prevent, so it aborts instead.
+# A spec with more than one element but fewer than the topology's legs is a
+# hard error. "Use the listed ones, derive the rest" would make `--seed 42,42`
+# at a quad mean legs (42, 42, 2042, 3042): half the cell coupled at
+# rho = +1 and half independent, which is neither arm and would be
+# discovered only by reading the qdisc capture.
 leg_seed() {
     local spec="${1:-}" idx="${2:-0}"
     [[ -z "$spec" ]] && { echo ""; return 0; }
@@ -179,46 +150,44 @@ independent legs in the same cell." >&2
     fi
 }
 
-# Scenario table — identical parameterization to ADR-0051 / paper 2.4.
+# Scenario table — identical parameterization to ADR-0051 / paper §2.3.
 # Fields: rate one_way_ms jitter_ms ge_p ge_q
 scenario_params() {
     case "$1" in
         c1|dc)       echo "1gbit   1   0  0.05 50" ;;
         c2|wifi)     echo "100mbit 5   3  1.3  50" ;;
         c3|lte)      echo "20mbit  20  5  2    40" ;;
-        # `c3hg` -- "c3, HEAVY, GE form" (goal-gate "THE r > 0 BATTERY --
-        # PRE-REGISTRATION" section 4). THE REACHABILITY CELL: the glide's
-        # fully-exposed target IS `BULK_TAIL_BUDGET = 0.05`, so on any channel
-        # cleaner than 5 % the r corner survives full exposure and r* = 0
-        # whatever chi does (tests/chi_reachability.rs:218-224). `c3`'s
-        # eps = 2/(2+40) = 4.762 % sits just BELOW that line, so no cell in the
-        # existing table can measure the mechanism at all.
+        # `c3hg` -- "c3, heavy, GE form": the reachability cell for the
+        # completion glide. The glide's fully-exposed target is
+        # `BULK_TAIL_BUDGET = 0.05`, so on any channel cleaner than 5 % the
+        # r corner survives full exposure and r* = 0 whatever chi does
+        # (paper §4.5; tests/chi_reachability.rs). `c3`'s eps = 2/(2+40) =
+        # 4.762 % sits just below that line.
         #
-        # c3's rate/one-way/jitter EXACTLY and c3's burst structure q = 40
-        # EXACTLY; `p` is the ONLY changed field, solved from eps = p/(p+q) at
-        # 5.8 %:  p = 0.058*40/(1-0.058) = 2.46284...  ->  eps = 5.8000 %.
+        # c3's rate/one-way/jitter and burst structure q = 40 exactly; `p` is
+        # the only changed field, solved from eps = p/(p+q) at 5.8 %:
+        # p = 0.058*40/(1-0.058) = 2.46284...  ->  eps = 5.8000 %.
         # sigma^2_burst = 1 + 2(1-p-q)/(p+q) = 3.7101 (c3's is 3.762).
         #
-        # NOT `c3heavy`, AND THE NAME IS DELIBERATE. `c3heavy` exists ONLY as
-        # an L0 simulator scenario (src/transport/quic.rs:94) whose loss law is
-        # a WEIBULL heavy tail (k = 0.5, theta = 0.55, E[burst] = 6.2) that
-        # `tc netem gemodel` cannot represent. Reusing the name here would put
-        # two different loss laws behind one name across the L0 and L1 record.
-        # `c3hg` matches c3heavy's loss RATE and not its burst LAW.
+        # Not named `c3heavy`: that is an L0 simulator scenario
+        # (src/transport/l0_netem.rs) whose loss law is a Weibull heavy tail
+        # (k = 0.5, theta = 0.55, E[burst] = 6.2) that `tc netem gemodel`
+        # cannot represent. `c3hg` matches c3heavy's loss rate, not its burst
+        # law.
         c3hg)        echo "20mbit  20  5  2.4629 40" ;;
         c4|sat)      echo "20mbit  100 10 3    30" ;;
         c5|badwifi)  echo "50mbit  5   3  5.3  30" ;;
         clean)       echo "100mbit 5   0  0    100" ;;
-        # FEC-vs-ARQ crossover RTT sweep (feat/fec-arq-crossover): c2 loss/bw
-        # (100mbit, GE 1.3/50 ≈ 2.5% mean loss) with jitter=0 so RTT is the ONLY
+        # FEC-vs-ARQ crossover RTT sweep: c2 loss/bw
+        # (100mbit, GE 1.3/50 ≈ 2.5% mean loss) with jitter=0 so RTT is the only
         # swept variable. one_way = RTT/2.  RTT ∈ {10,30,50,100,200} ms.
         c2r10)       echo "100mbit 5   0  1.3  50" ;;
         c2r30)       echo "100mbit 15  0  1.3  50" ;;
         c2r50)       echo "100mbit 25  0  1.3  50" ;;
         c2r100)      echo "100mbit 50  0  1.3  50" ;;
         c2r200)      echo "100mbit 100 0  1.3  50" ;;
-        # Receiver-tail + FEC-favorable-regime sweep (feat/receiver-tail): the
-        # SAME c2 pipe (100mbit, jitter=0) at RTT{100,200} but with HIGHER GE
+        # Receiver-tail + FEC-favorable-regime sweep: the
+        # same c2 pipe (100mbit, jitter=0) at RTT{100,200} but with HIGHER GE
         # loss. GE mean loss = p/(p+q); holding q=50 (burst structure) and
         # solving for p: 5% ⇒ p=2.63, 10% ⇒ p=5.56. FEC's advantage grows with
         # loss (ARQ retransmit-of-a-retransmit cascades; proactive FEC does not).
@@ -230,14 +199,15 @@ scenario_params() {
     esac
 }
 
-# STOP THE ENGINE THE WAY ITS RECEIVER CAN SEE (2026-09-08, the exit flush).
-# The engine handles SIGINT and SIGTERM as ONE shutdown trigger; the receiver's
+# Stop the engine the way its receiver can see (the exit flush).
+# The engine handles SIGINT and SIGTERM as one shutdown trigger; the receiver's
 # diagnostic block ([SUCC]/[ETA]/[LAT]/[LATE]/[REQ]/[RANK], `final=1`) flushes
-# on that path and on Drop, and NEVER on SIGKILL. A bare `pkill -x raptorpath`
+# on that path and on Drop, and never on SIGKILL. A bare `pkill -x raptorpath`
 # is a TERM with no grace: the topology teardown that follows deletes the
 # namespaces underneath a process that is still writing its last lines. So:
 # TERM, a bounded wait (3 s) for the exit, and only then KILL as the last
-# resort. `-x raptorpath` and nothing else (goal-gate "THE VM PROTOCOL").
+# resort. `-x raptorpath` and nothing else (docs/measurement-discipline.md,
+# "The VM protocol").
 stop_raptorpath() {
     pkill -TERM -x raptorpath 2>/dev/null || true
     local _i
