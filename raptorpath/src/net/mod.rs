@@ -550,6 +550,24 @@ pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
     path_rtt_us.iter().copied().max().unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
 }
 
+/// The path set the sender's recovery clocks pool over: the tail-sweep
+/// clock, the per-seq retransmit cooldown's pooled SRTT/jitter, and the
+/// repair margin's loss rate.
+pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> {
+    sched.active_paths()
+}
+
+/// [`pooled_recovery_srtt_us`] over [`recovery_clock_paths`]: the pooled
+/// app-echo RTT the recovery clocks run on.
+pub fn pooled_recovery_srtt_of(sched: &Scheduler) -> u64 {
+    let rtts: Vec<u64> = recovery_clock_paths(sched)
+        .iter()
+        .filter_map(|id| sched.path(*id))
+        .map(|p| p.estimator.rtt().as_micros() as u64)
+        .collect();
+    pooled_recovery_srtt_us(&rtts)
+}
+
 /// The per-seq retransmit cooldown clock (µs): the pooled smoothed RTT,
 /// floored. `floor_us` is `NACK_RETX_COOLDOWN_FLOOR_US` with
 /// `RWM_PATIENCE_DERIVED` off and `patience_floor_us(jitter, srtt)` with it
@@ -13721,6 +13739,43 @@ mod tests {
         let feed = CopaFeed::new();
         let newly = feed.newly_delivered(u64::MAX - 1, &[]);
         assert!(newly.len() <= 65_536);
+    }
+
+    /// The recovery clocks must not lose a path because its cwnd is full.
+    /// `active_paths()` drops every path with `available() == 0`, so on a
+    /// sender whose paths are all cwnd-saturated (the normal state of a
+    /// wire-bound bulk transfer) the pooled clock fell to the 10 ms floor
+    /// instead of the paths' measured RTT.
+    #[test]
+    fn recovery_clocks_keep_cwnd_saturated_paths() {
+        let clock = Arc::new(crate::scheduler::MockClock::new());
+        let mut sched = Scheduler::new(clock);
+        sched.add_path(0);
+        sched.add_path(1);
+        for (id, ms) in [(0u32, 40u64), (1, 80)] {
+            let p = sched.path_mut(id).unwrap();
+            for _ in 0..32 {
+                p.estimator.record_rtt(Duration::from_millis(ms));
+            }
+            let cw = p.cwnd;
+            p.charge_in_flight(cw);
+            assert_eq!(p.available(), 0, "path {id} must be cwnd-saturated");
+        }
+        assert!(sched.active_paths().is_empty(), "precondition: both paths saturated");
+        let want = [0u32, 1]
+            .iter()
+            .map(|id| sched.path(*id).unwrap().estimator.rtt().as_micros() as u64)
+            .max()
+            .unwrap();
+        assert!(want > NACK_RETX_COOLDOWN_FLOOR_US, "precondition: measured RTT above the floor");
+        let mut ids = recovery_clock_paths(&sched);
+        ids.sort_unstable();
+        assert_eq!(ids, vec![0, 1], "recovery clocks must pool over every live path");
+        assert_eq!(
+            pooled_recovery_srtt_of(&sched),
+            want,
+            "pooled recovery SRTT must be the saturated paths' measured RTT, not the floor"
+        );
     }
 
     // ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
