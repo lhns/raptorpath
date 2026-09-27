@@ -1513,6 +1513,43 @@ mod forwarding_audit {
 mod tests {
     use super::*;
 
+    /// Structure-cleanup behaviour pin: the default-environment `[GATES]`
+    /// echo, byte for byte. A refactor of where gates are resolved must not
+    /// move a single character of what a battery parses.
+    #[test]
+    fn gates_echo_default_is_byte_pinned() {
+        let line = RuntimeGates::resolve().echo_line();
+        assert_eq!(line, PINNED_DEFAULT_GATES_ECHO);
+    }
+
+    const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
+        "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
+        "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",
+        "RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 ",
+        "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
+        "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAP_UNIFIED=0 ",
+        "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
+        "RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
+        "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
+        "RWM_SIDLE_DERIVED=0 RWM_COLD_PLACE=0 RWM_PLACE_T_DERIVED=0 ",
+        "RWM_PLACE_HOL=0 RWM_PLACE_WDIV_DERIVED=0 RWM_GEN=384 RWM_PIPELINE=2 ",
+        "RWM_GEN_PIPE=1 RWM_GEN_R=unset RWM_GEN_RATE=9000 ",
+        "RWM_GEN_RATE_FLOOR=2000 RWM_GEN_INFLIGHT=unset RWM_OOO_RETAIN=0/16 ",
+        "RWM_WINDOW=unset RWM_REPORT_GENS=unset RWM_REPAIR_WAIT=unset ",
+        "RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 ",
+        "RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 ",
+        "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
+        "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 ",
+        "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
+        "RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
+        "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
+        "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
+        "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
+        "RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 ",
+        "RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=0 RWM_TRACE=0 ",
+        "RWM_PFRAC=0",
+    );
+
     /// The gates removed as refuted experiment arms (cleanup Stage 2) are
     /// UNKNOWN names now: an operator or a stale battery script that still
     /// exports one — even with a value the strict boolean parser would
