@@ -34,7 +34,7 @@ def check(cond, msg):
 
 TS = "\x1b[2m2026-09-27T10:00:00.000000Z\x1b[0m \x1b[32m INFO\x1b[0m raptorpath::net: "
 GATES = TS + "[GATES] RWM_UNIFIED=1 RWM_GEN=384 RWM_PIPELINE=0"
-WINL = TS + "reliable window mode (RWM Phase A): auto-selecting RLC windowed backend"
+WINL = TS + "reliable window mode (retain until acked): auto-selecting RLC windowed backend"
 
 
 def pipe(p, b, h="bulk"):

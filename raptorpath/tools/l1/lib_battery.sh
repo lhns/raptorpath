@@ -78,24 +78,53 @@ seed_done() { # seed ledger done_mark [message-prefix]
 # Co-tenancy on the box under measurement manufactures the abort signature
 # the batteries look for (docs/measurement-discipline.md rules 12-13), so a
 # second battery must refuse.
+#
+# One convention, two witnesses (docs/measurement-discipline.md, VM protocol):
+#   1. the lock is HELD while the file EXISTS -- it is created with noclobber,
+#      so a second creator fails, and removed on release;
+#   2. the holder also keeps flock(2) on the file through an fd opened `<>`
+#      (read-write, NO truncation), so a script that locks with
+#      `exec 8>PATH; flock -n 8` finds it held and runs nothing.
+# `>` on an existing lock file truncates the owner's token; never do it.
 LOCKS_TAKEN=""
-take_lock() { # path
-  local p="$1"
-  if (set -o noclobber; : > "$p") 2>/dev/null; then
-    echo "$$ ${LB_TAG:-$(basename "$0" .sh)} $(date -u +%FT%TZ)" > "$p" 2>/dev/null
-    LOCKS_TAKEN="$LOCKS_TAKEN $p"
-    _lb_say "LOCK-TAKEN $p"
-    return 0
-  fi
-  _lb_say "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)"
+declare -gA LB_LOCK_FD=()
+_lb_lock_refuse() { # path reason
+  _lb_say "ABORT-LOCK $1 $2"
   _lb_say "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for."
   release_locks
   exit 4
 }
+take_lock() { # path
+  local p="$1" fd
+  command -v flock >/dev/null 2>&1 || _lb_lock_refuse "$p" "cannot be taken: flock(1) is not installed"
+  if ! (set -o noclobber; : > "$p") 2>/dev/null; then
+    _lb_lock_refuse "$p" "is held: $(cat "$p" 2>/dev/null)"
+  fi
+  if ! exec {fd}<>"$p" 2>/dev/null; then
+    rm -f "$p" 2>/dev/null
+    _lb_lock_refuse "$p" "was created but cannot be opened <> for flock"
+  fi
+  if ! flock -n "$fd"; then
+    # Someone opened the fresh file and took flock(2) between our create and
+    # our open: they hold it. Leave the file to them.
+    exec {fd}>&-
+    _lb_lock_refuse "$p" "is held by a foreign flock(2) holder"
+  fi
+  echo "$$ ${LB_TAG:-$(basename "$0" .sh)} $(date -u +%FT%TZ)" >&"$fd"
+  LB_LOCK_FD["$p"]="$fd"
+  LOCKS_TAKEN="$LOCKS_TAKEN $p"
+  _lb_say "LOCK-TAKEN $p (noclobber + flock fd $fd)"
+  return 0
+}
+# Remove first, then close: a process that inherited the fd keeps flock(2) on
+# the unlinked inode only, which no later locker can open.
 release_locks() {
-  local p
+  local p fd
   for p in $LOCKS_TAKEN; do
     rm -f "$p" 2>/dev/null && _lb_say "LOCK-RELEASED $p"
+    fd="${LB_LOCK_FD[$p]:-}"
+    if [ -n "$fd" ]; then exec {fd}>&-; fi
+    unset 'LB_LOCK_FD[$p]'
   done
   LOCKS_TAKEN=""
   return 0

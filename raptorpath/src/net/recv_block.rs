@@ -1,23 +1,17 @@
-//! **THE RECEIVER'S DIAGNOSTIC BLOCK, WITH AN EXIT FLUSH.**
+//! The receiver's diagnostic block, with an exit flush.
 //!
 //! The `[SUCC]` / `[ETA]` / `[LAT]` / `[LATE]` / `[REQ]` / `[RANK]` readouts
 //! are cumulative gauges printed together on a 1 s cadence from the receiver
-//! task (`net/receiver.rs`), last line wins. Until 2026-09-08 that cadence was
-//! the ONLY emission site, so:
+//! task (`net/receiver.rs`), last line wins. With the cadence as the only
+//! emission site, an object that completes in under a second would never
+//! print the block, and every invocation would lose its final partial second
+//! of samples.
 //!
-//!   * a loopback object that completes in under a second never printed the
-//!     block at all — the VM's 8 MB transfer finishes in ~0.4 s, and the N = 1
-//!     `eta_reachability` / `lat_reachability` variants went red there while
-//!     staying green on a slower host (goal-gate "OPERATOR SANCTION
-//!     (2026-09-08 ~14:00Z)");
-//!   * every invocation lost its final partial second of samples.
-//!
-//! This type owns the five gauges and the `[REQ]` counters so that ONE
+//! This type owns the five gauges and the `[REQ]` counters so that one
 //! destructor can print the block once more at the end of the task, marked
-//! `final=1`. The receiver's ~90 other locals stay locals (see the module
+//! `final=1`. The receiver's other locals stay locals (see the module
 //! header of `net/receiver.rs`); only the gauges that must share a
-//! destructor moved in here, and they are read and fed through plain field
-//! access, so nothing about how they are fed changed.
+//! destructor live here, read and fed through plain field access.
 //!
 //! **The contract.**
 //!
@@ -25,23 +19,23 @@
 //!     cadence site printed it: the raw `[SUCCDUMP]` batches first (flushed,
 //!     never a partial tail), then `[SUCC]`, `[ETA]` (if the ETA gauge is a
 //!     receiver site), `[LAT]` (same), `[LATE]` (same), `[REQ]`, `[RANK]`.
-//!     A cadence line is BYTE-IDENTICAL to what it was; a final line is that
-//!     line plus one trailing ` final=1` token, so a scraper that takes the
-//!     LAST line of a kind reads the complete counts and a scraper that counts
+//!     A final line is the cadence line plus one trailing ` final=1` token,
+//!     so a scraper that takes the
+//!     last line of a kind reads the complete counts and a scraper that counts
 //!     lines can drop the marker. The raw-dump lines carry no marker: they are
 //!     samples, not readouts.
-//!   * `take_final(probe)` renders the final block EXACTLY ONCE: the first call
+//!   * `take_final(probe)` renders the final block exactly once: the first call
 //!     returns `Some(lines)` (possibly empty — a site that never saw an arrival
 //!     stays silent, the two-sided convention every gauge here already
 //!     follows), every later call returns `None`. `Drop` calls it, so a task
 //!     that is cancelled (its future dropped at runtime teardown) still flushes;
-//!     the receiver ALSO calls it at every clean exit of its loop, where the
+//!     the receiver also calls it at every clean exit of its loop, where the
 //!     decoder is still reachable for a fresh `[RANK]` probe. Whichever runs
 //!     first wins; the other is a no-op.
 //!   * The gate is the cadence site's own: `on` (`RWM_DIAG` or `RWM_FDIAG`) and
 //!     `succ.is_receiver_site()`. No new gate, no new default.
 //!
-//! What SIGKILL does is unchanged: a process killed with SIGKILL runs no
+//! A process killed with SIGKILL runs no
 //! destructor and prints nothing. The exit flush covers a clean loop exit
 //! (channel closed, shutdown broadcast, the four TUN/decoder failure exits)
 //! and a dropped task; it cannot cover a harness that SIGKILLs the server —
@@ -67,9 +61,9 @@ pub(crate) struct RecvDiagBlock {
     /// rather than the lateness, decide when a hole could be reported at all?
     /// Consumed and reset by each readout.
     pub late_sampler_bound: bool,
-    // `[REQ]` (paper 16.83 arms (A)/(B)): what this receiver ASKED FOR.
+    // `[REQ]` (paper §7.6): what this receiver asked for.
     // Cumulative, printed on the block's cadence, last line wins — and on
-    // BOTH arms, so `on=0 sent=0` is the control's own reading.
+    // both arms, so `on=0 sent=0` is the control's own reading.
     pub req_sent: u64,
     pub req_span_n: u64,
     pub req_m_max: u64,
@@ -138,16 +132,16 @@ impl RecvDiagBlock {
     /// fresh `(holes, pivots, tail_overcount)` frontier reading when the
     /// caller can take one; `None` re-reports the latest census (the
     /// destructor cannot reach the decoder). `final_` appends the marker to
-    /// every readout line. Does NOT consult the gate: callers do, so the
+    /// every readout line. Does not consult the gate: callers do, so the
     /// exactly-once bookkeeping in `take_final` cannot be bypassed by it.
     fn render(&mut self, rank_probe: Option<(u64, u64, u64)>, final_: bool) -> Vec<String> {
         let mark = |s: String| if final_ { s + FINAL_MARK } else { s };
         let mut out = Vec::with_capacity(8);
-        // The RAW dump rides its own gate and is flushed here so no recorded
+        // The raw dump rides its own gate and is flushed here so no recorded
         // sample is ever left in a partial batch.
         out.extend(self.succ.take_dump_lines(true));
         out.push(mark(self.succ.line()));
-        // `[ETA]` BESIDE `[SUCC]`, on ITS cadence and under ITS gate, because
+        // `[ETA]` beside `[SUCC]`, on its cadence and under its gate, because
         // the two are read together.
         if self.eta.is_receiver_site() {
             out.push(mark(self.eta.line()));
@@ -156,7 +150,7 @@ impl RecvDiagBlock {
         if self.lat.is_receiver_site() {
             out.push(mark(self.lat.line()));
         }
-        // `[LATE]`: the sampler observation is consumed HERE and reset.
+        // `[LATE]`: the sampler observation is consumed here and reset.
         if self.late.is_receiver_site() {
             let l = self.late.line(self.late_sampler_bound);
             self.late_sampler_bound = false;
@@ -170,7 +164,7 @@ impl RecvDiagBlock {
         out
     }
 
-    /// One CADENCE readout. Empty when the gate is closed.
+    /// One cadence readout. Empty when the gate is closed.
     pub(crate) fn render_cadence(&mut self, rank_probe: Option<(u64, u64, u64)>) -> Vec<String> {
         if !self.emits() {
             return Vec::new();
@@ -178,7 +172,7 @@ impl RecvDiagBlock {
         self.render(rank_probe, false)
     }
 
-    /// THE EXIT FLUSH, exactly once. `Some(lines)` the first time (empty when
+    /// The exit flush, exactly once. `Some(lines)` the first time (empty when
     /// the gate is closed — a silent site stays silent), `None` ever after.
     pub(crate) fn take_final(
         &mut self,
@@ -206,7 +200,7 @@ impl RecvDiagBlock {
 
 impl Drop for RecvDiagBlock {
     fn drop(&mut self) {
-        // The authoritative emission for a DROPPED task (the `[RACK]` /
+        // The authoritative emission for a dropped task (the `[RACK]` /
         // `[RFA]` discipline in `net/mod.rs`); a no-op after a clean-exit
         // flush, by `take_final`'s own flag.
         self.flush_final(None);
@@ -237,7 +231,7 @@ mod tests {
         b
     }
 
-    /// THE INSTRUMENT'S OWN CLAIM: the final block is emitted exactly once,
+    /// The instrument's own claim: the final block is emitted exactly once,
     /// through whichever door reaches it first, and never twice.
     #[test]
     fn the_final_block_is_taken_exactly_once() {
@@ -259,7 +253,7 @@ mod tests {
         assert!(b.final_done());
     }
 
-    /// Every READOUT line of the final block carries the marker, exactly once,
+    /// Every readout line of the final block carries the marker, exactly once,
     /// as its last token; the cadence render of the same state carries none.
     #[test]
     fn the_marker_is_on_every_final_readout_and_on_no_cadence_line() {
@@ -297,7 +291,7 @@ mod tests {
     }
 
     /// Two-sided: a site that never saw an arrival, or a run without the
-    /// gate, prints NOTHING — but still counts as flushed, so a later drop
+    /// gate, prints nothing — but still counts as flushed, so a later drop
     /// cannot print a block the cadence never did.
     #[test]
     fn a_silent_site_stays_silent_and_is_still_flushed_once() {

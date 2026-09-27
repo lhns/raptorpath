@@ -189,7 +189,7 @@ fn rateless_repairs_are_fresh_and_distinct() {
     assert_eq!(plans[0].symbols.len(), 2);
     assert!(plans[0].symbols.iter().all(|s| s.is_repair));
 
-    // A second round must mint DIFFERENT repair symbols.
+    // A second round must mint different repair symbols.
     let ev = vec![LossEvent {
         block_id: 42,
         path_id: 0,
@@ -316,8 +316,8 @@ fn block_failed_mints_deficit_repairs() {
 
 #[test]
 fn idle_reannounce_recovers_orphaned_block() {
-    // Reproduce the L1 idle-stall: a block's BlockStart datagram is lost,
-    // its symbols are all delivered-and-acked, so the ARQ ledger is EMPTY
+    // The idle stall: a block's BlockStart datagram is lost,
+    // its symbols are all delivered-and-acked, so the ARQ ledger is empty
     // and `sweep` sees nothing — yet the block never decoded. The idle
     // re-announce must re-send BlockStart (+ spare) once the block has been
     // quiet past the loss timeout, and stop the instant it completes.
@@ -325,7 +325,7 @@ fn idle_reannounce_recovers_orphaned_block() {
     let t0 = Instant::now();
     let data = Bytes::from(vec![7u8; 640]);
     arq.on_block_encoded(70, data, params(10, 64, 2, 70), FecBackend::RaptorQ, t0);
-    // Its batch was sent AND acked (ledger cleared): activity at t0.
+    // Its batch was sent and acked (ledger cleared): activity at t0.
     arq.on_batch_sent(1, 0, vec![(70, 0)], t0);
     arq.on_ack(1, 0, &[0], t0, TIMEOUT);
     assert_eq!(arq.ledger_len(), 0, "ledger empty — sweep is blind here");

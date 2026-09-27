@@ -199,7 +199,7 @@ def report(outdir, calib, max_rep=None):
     # ── 2 — the falsifier, which outranks goodput ───────────────────────
     print("\n=== 2 — THE PRE-STATED FALSIFIER (§16.82.6): [FDIAG] decode-resolved vs ARQ-resolved")
     print("  REMINDER, and it is not decoration: the record's '19-32 ms decodes' were")
-    print("  RESOLUTION WAITING, not compute (goal-gate ~6983 vs ~7078-7091; raw compute")
+    print("  RESOLUTION WAITING, not compute (the pre-registration record; raw compute")
     print("  6-10 us/call, 33-54 ms TOTAL over a 1.8 MB transfer). A DECODE avg quoted")
     print("  without present_at_stall is not a reading of this battery.")
     entangled = set()

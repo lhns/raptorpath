@@ -30,21 +30,19 @@ pub struct RaptorpathConfig {
     pub pin_cert: Option<String>,
     /// FEC backend: "raptorq" (default), "rs", or "rlc"
     pub fec_backend: Option<String>,
-    /// DEPRECATED (parsed, warned, ignored): mid-stream FEC backend
-    /// auto-switching was removed (paper §16.4). A switch strands every
-    /// in-flight symbol of the old code (no cross-code algebra), discards
-    /// estimator/ARQ state, and the hard 0.01/0.12 loss thresholds violated
-    /// the no-hard-cutoffs convention. The codec is chosen once at startup
-    /// (per config/hint) and never changes mid-stream.
+    /// Deprecated (parsed, warned, ignored). The codec is chosen once at
+    /// startup (per config/hint) and never changes mid-stream: a switch
+    /// would strand every in-flight symbol of the old code (no cross-code
+    /// algebra, paper §5.10).
     pub fec_switch_threshold_low: Option<f64>,
-    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
+    /// Deprecated (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_switch_threshold_high: Option<f64>,
-    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
+    /// Deprecated (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_switch_interval: Option<u64>,
-    /// DEPRECATED (parsed, warned, ignored) — see fec_switch_threshold_low.
+    /// Deprecated (parsed, warned, ignored) — see fec_switch_threshold_low.
     pub fec_auto_switch: Option<bool>,
-    /// RWM Phase A (paper §15.7/§16.3): run the sliding-window pipeline
-    /// with the RETAIN-UNTIL-ACKED policy for this stream. Retention is the
+    /// Run the sliding-window pipeline with the retain-until-acked policy
+    /// for this stream (paper §5.1). Retention is the
     /// ARQ layer's contract: sent source bytes are retained in a store
     /// until the peer acks them (removal by ack only), aged SACK-confirmed
     /// holes are recovered by targeted retransmits from the store, and a
@@ -54,7 +52,7 @@ pub struct RaptorpathConfig {
     /// (NACK/repair), never force-delivering past them. Also routes
     /// Bulk/Auto hints onto the window pipeline (RLC codec unless
     /// fec_backend says otherwise). Default false: Bulk/Auto stay on block
-    /// mode, Realtime keeps its lossy EVICT window (correct for its δ).
+    /// mode, Realtime keeps its lossy evict window (correct for its δ).
     pub window_reliable: Option<bool>,
     /// Enable PI feedback loop in FEC rate controller (default: true)
     pub enable_pi_feedback: Option<bool>,
@@ -66,63 +64,59 @@ pub struct RaptorpathConfig {
     pub reorder_timeout_ms: Option<u64>,
     /// Reorder buffer max capacity (default: 500)
     pub reorder_max_size: Option<usize>,
-    /// Inner-feedback weight in [0,1] (paper 14.28): mid-stream repair
+    /// Inner-feedback weight in [0,1] (paper §4.4): mid-stream repair
     /// floor for payloads whose delivery latency feeds back into their own
-    /// throughput (TCP-in-tunnel). Default 0.0 (L1-measured: neutral at
-    /// C2, regressive at C3); set 1.0 to enable the floor.
+    /// throughput (TCP-in-tunnel). Default 0.0 (measured neutral at c2,
+    /// regressive at c3); set 1.0 to enable the floor.
     pub inner_feedback_weight: Option<f64>,
-    /// Block-granular multipath source affinity (paper 13.8 in-order
-    /// coupling refinement, L2 ws1): a whole block's source symbols ride
-    /// one path; blocks are WRR-distributed by capacity share. Default
-    /// true; false restores legacy per-symbol striping (ablation).
+    /// Block-granular multipath source affinity (paper §5.5): a whole
+    /// block's source symbols ride one path; blocks are WRR-distributed by
+    /// capacity share. Default true; false restores per-symbol striping
+    /// (ablation).
     pub mp_block_affinity: Option<bool>,
-    /// RWM Phase C (paper §16.2, H→∞ corner): out-of-order OBJECT delivery
-    /// on the reliable sliding window. When set (object/perf path only,
+    /// Out-of-order object delivery on the reliable sliding window (the
+    /// H → ∞ corner, paper §4.11). When set (object/perf path only,
     /// requires `window_reliable`), the receiver hands each decoded source
-    /// symbol to the consumer the instant it decodes — in ANY order — and
+    /// symbol to the consumer the instant it decodes — in any order — and
     /// the sender's retention backpressure is relaxed so a stalled in-order
     /// frontier no longer throttles the fast path. The native object API
     /// reassembles by offset and completes on total-decoded, so no in-order
     /// frontier is needed. Default false: the TCP-in-tunnel path keeps its
-    /// in-order delivery contract (a live inner stream DOES need the
+    /// in-order delivery contract (a live inner stream does need the
     /// frontier). Not a codec/rate change — just the delivery latency
     /// budget H raised to ∞ for a bounded object.
     pub window_out_of_order: Option<bool>,
-    /// Fungible frontier (paper §16.3 "empty quadrant", coded-object mode):
-    /// on the reliable sliding window, emit ONLY coded (random-linear-
-    /// combination) symbols over the window — no raw systematic source. Any
-    /// K linearly independent coded symbols from ANY path reconstruct the K
-    /// window sources (GF(256), MDS-tight), so no symbol is a fixed in-order
-    /// position a slow path can long-pole (the §16.7 systematic-window cap).
-    /// Bulk-object / loose-δ ONLY: pays a window-fill decode latency before
-    /// any delivery, so it implies out-of-order delivery and requires
-    /// `window_reliable`. Realtime / in-order streams stay systematic.
-    /// Default false.
+    /// Coded-only window (coded-object mode): on the reliable sliding
+    /// window, emit only coded (random-linear-combination) symbols over the
+    /// window — no raw systematic source. Any K linearly independent coded
+    /// symbols from any path reconstruct the K window sources (GF(256),
+    /// MDS-tight), so no symbol is a fixed in-order position a slow path can
+    /// long-pole. Bulk-object / loose-δ only: pays a window-fill decode
+    /// latency before any delivery, so it implies out-of-order delivery and
+    /// requires `window_reliable`. Realtime / in-order streams stay
+    /// systematic. Default false (paper §10).
     pub window_coded_only: Option<bool>,
-    /// Generation-based cross-path fungible coding (paper §16.3, the
-    /// oracle-validated fix for the coded-*sliding*-window drag). Partitions
-    /// the object's source symbols into FIXED generations of ~W_mp (384–512 at
-    /// C8) and emits RANDOM-LINEAR-COMBINATION symbols WITHIN each generation
-    /// (a STABLE coding anchor, unlike the moving sliding window). Any K_G
-    /// independent coded symbols from ANY path reconstruct generation g, which
-    /// decodes out-of-order the instant K_G arrive; recovery is generation-level
-    /// (more coded symbols for a short generation) with NO per-seq targeted ARQ
-    /// beneath the code — the per-seq layer is exactly what made the moving
-    /// window path-affine and invoked the ADR-0046 throttle (measured ×0.26 at
-    /// C8). Implies coded-only wire symbols + out-of-order delivery; requires
-    /// `window_reliable`. Bulk-object / loose-δ ONLY. `RWM_GEN` (default 384)
-    /// and `RWM_PIPELINE` (default 2) tune G and M. Default false.
+    /// Generation-based cross-path coding (the generation seat, paper
+    /// §5.8). Partitions the object's source symbols into fixed generations
+    /// of ~W_mp and emits random-linear-combination symbols within each
+    /// generation (a stable coding anchor, unlike the moving sliding
+    /// window). Any K_G independent coded symbols from any path reconstruct
+    /// generation g, which decodes out-of-order the instant K_G arrive;
+    /// recovery is generation-level (more coded symbols for a short
+    /// generation) with no per-seq targeted ARQ beneath the code. Implies
+    /// coded-only wire symbols + out-of-order delivery; requires
+    /// `window_reliable`. Bulk-object / loose-δ only. `RWM_GEN` (default
+    /// 384) and `RWM_PIPELINE` (default 2) tune G and M. Default false.
     pub window_generation_coding: Option<bool>,
-    /// Systematic + deficit-driven cross-path REPAIR (paper §16.3 oracle — the
-    /// cheaper realization of generation coding that reaches ×1.19 at C8 without
-    /// coded-only's two L1-killers). Reuses the generation machinery but sends
-    /// the RAW systematic source as primary (delivered on arrival, ZERO decode);
-    /// coded symbols are windowed REPAIR only (`ceil(len·r)` proactive per
-    /// generation of ~W_mp + deficit-driven top-up), so decode is O(deficit)
-    /// (the holes) not O(G) and nothing waits for K_G. NO per-seq ARQ; implies
-    /// out-of-order delivery; requires `window_reliable`. `RWM_GEN` (~480 at C8)
-    /// sets the repair window / fungibility horizon, `RWM_GEN_R` (default 0.15)
-    /// the proactive overhead. Bulk-object / loose-δ ONLY. Default false.
+    /// Systematic + deficit-driven cross-path repair (paper §5.8): the
+    /// generation machinery with the raw systematic source as primary
+    /// (delivered on arrival, zero decode); coded symbols are windowed
+    /// repair only (`ceil(len·r)` proactive per generation of ~W_mp +
+    /// deficit-driven top-up), so decode is O(deficit) (the holes) not O(G)
+    /// and nothing waits for K_G. No per-seq ARQ; implies out-of-order
+    /// delivery; requires `window_reliable`. `RWM_GEN` sets the repair
+    /// window / fungibility horizon, `RWM_GEN_R` (default 0.15) the
+    /// proactive overhead. Bulk-object / loose-δ only. Default false.
     pub window_systematic_repair: Option<bool>,
 }
 
@@ -254,16 +248,14 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         .transpose()
         .map_err(|e| anyhow::anyhow!("invalid DNS address: {e}"))?;
 
-    // Default interleave depth based on protocol hint.
-    //
-    // Bulk was 4 and is now 1 (L1 C2 measurement): interleaving delays
+    // Default interleave depth based on protocol hint (a declared
+    // hint-keyed corner, paper §11.1). Bulk uses 1: interleaving delays
     // every block's completion by (depth-1) block serialization times, and
     // for TCP-in-tunnel that inflates the inner RTT in a closed loop
     // (slower inner TCP → lower rate → longer block serialization → higher
-    // latency). With block-mode ARQ (P8) + in-order block delivery
-    // handling burst loss reactively, the burst-spreading insurance no
-    // longer pays its latency cost: median 1.8MB completion 1.38s
-    // (depth 1) vs 1.63s (depth 4) at C2, same inner-TCP retransmits.
+    // latency). Block-mode ARQ + in-order block delivery handle burst loss
+    // reactively, so the burst-spreading insurance does not pay its
+    // latency cost there.
     let default_interleave = match protocol_hint {
         ProtocolHint::Realtime => 2,
         ProtocolHint::Bulk => 1,
@@ -273,13 +265,11 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     let fec_backend = match config.fec_backend.as_deref() {
         Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
         Some("rlc") => FecBackend::Rlc,
-        // The streaming machine was RETIRED 2026-07-28 (DEPRECATION REGISTER:
-        // displaced by the unified span machine ADR-0064; re-test clause
-        // discharged cell-by-cell, goal-gate "Streaming Crown Re-Test").
+        // The streaming machine is gone; the unified span machine
+        // (ADR-0064) replaces it.
         Some("streaming") => anyhow::bail!(
-            "fec_backend 'streaming' was REMOVED (2026-07-28): the streaming two-layer machine \
-             was retired after the unified default held its historic tail crown cell-by-cell \
-             (DEPRECATION REGISTER / ADR-0064; goal-gate \"Streaming Crown Re-Test\"). \
+            "fec_backend 'streaming' was removed: the streaming two-layer machine \
+             was retired in favour of the unified span machine (ADR-0064). \
              Realtime rides the unified RLC span machine (default); RWM_UNIFIED=0 selects the \
              legacy-RLC windowed machine. Available: raptorq, rs, rlc"
         ),
@@ -289,13 +279,13 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
 
     let fec_backend_explicit = config.fec_backend.is_some();
 
-    // Mid-stream FEC backend auto-switching was REMOVED (paper §16.4): the
-    // codec is pinned at startup. The old knobs are still parsed so existing
+    // The codec is pinned at startup (paper §5.10). The old auto-switch
+    // knobs are still parsed so existing
     // configs keep loading, but they are ignored — warn when set.
     if config.fec_auto_switch == Some(true) {
         tracing::warn!(
             "config: fec_auto_switch is deprecated and ignored — mid-stream FEC \
-             backend switching was removed (codec is pinned at startup; paper §16.4)"
+             backend switching was removed (codec is pinned at startup; paper §5.10)"
         );
     }
     if config.fec_switch_threshold_low.is_some()
@@ -305,7 +295,7 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         tracing::warn!(
             "config: fec_switch_threshold_low/high and fec_switch_interval are \
              deprecated and ignored — mid-stream FEC backend switching was removed \
-             (paper §16.4)"
+             (paper §5.10)"
         );
     }
 
@@ -329,38 +319,34 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
         reorder_max_size: config.reorder_max_size.unwrap_or(500),
-        // Paper 14.28 (P10a): mid-stream repair floor for inner-feedback
-        // payloads (TCP-in-tunnel). Default 0.0 — the L1 ablation MEASURED
-        // the floor active (client FEC volume 2.5% -> 4.7% at C2) with NO
-        // completion or inner-retransmit improvement at C2 and a 28%
-        // median REGRESSION at C3: post-P8/P9b the inner flow absorbs the
-        // residual ARQ stalls, and the floor's repair volume displaces
+        // Mid-stream repair floor for inner-feedback payloads
+        // (TCP-in-tunnel), paper §4.4. Default 0.0: the inner flow absorbs
+        // the residual ARQ stalls, and the floor's repair volume displaces
         // source symbols inside the same inner-limited closed loop. The
-        // knob is kept for payload semantics that measure differently; see
-        // docs/fec-arq-model.md 14.28 and docs/goal-gate.md P10a.
+        // knob is kept for payload semantics that measure differently.
         inner_feedback_weight: config
             .inner_feedback_weight
             .unwrap_or(0.0)
             .clamp(0.0, 1.0),
-        // Paper §14.26/§16.82: the completion feed. ALWAYS `None`
+        // The completion feed (paper §4.6). Always `None`
         // here — the tunnel is an endless stream and has no `T_rem` to
         // publish. Only a driver that knows the size of what it is sending
         // (the perf client, under `RWM_COMPLETION_EXPOSURE`) sets it.
         completion_feed: None,
         mp_block_affinity: config.mp_block_affinity.unwrap_or(true),
-        // RWM Phase C: out-of-order object delivery (H→∞). Default false —
+        // Out-of-order object delivery (H→∞). Default false —
         // set only by the perf/native-object path (which is bounded and
         // reassembles by offset). The run() tunnel path keeps in-order.
         window_out_of_order: config.window_out_of_order.unwrap_or(false),
-        // Fungible frontier (§16.3 coded-object mode). Default false — set
+        // Coded-only window (coded-object mode). Default false — set
         // only by the native object / perf path (bulk, loose-δ). Coded-only
         // implies out-of-order delivery (it pays window-fill decode latency).
         window_coded_only: config.window_coded_only.unwrap_or(false),
-        // Generation-based fungible coding (§16.3 stable anchor). Default
+        // Generation coding (stable anchor, paper §5.8). Default
         // false — set only by the native object / perf path (bulk, loose-δ).
         // Implies coded-only wire symbols + out-of-order delivery.
         window_generation_coding: config.window_generation_coding.unwrap_or(false),
-        // Systematic + deficit-repair (§16.3 oracle). Default false — set only by
+        // Systematic + deficit-repair. Default false — set only by
         // the native object / perf path (bulk, loose-δ). A submode of generation
         // coding: source rides the wire as primary, coded is windowed repair only.
         window_systematic_repair: config.window_systematic_repair.unwrap_or(false),
@@ -369,26 +355,26 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     Ok((peer_config, status_addr))
 }
 
-/// feat/anchor-hygiene: per-fix gate with the `RWM_ANCHOR_HYGIENE` umbrella
-/// as its default — `RWM_ANCHOR_HYGIENE=1` turns the whole anchor-repair
+/// Per-fix anchor-hygiene gate (ADR-0061) with the `RWM_ANCHOR_HYGIENE`
+/// umbrella as its default — `RWM_ANCHOR_HYGIENE=1` turns the whole anchor-repair
 /// family on for a battery, while each fix stays individually A/B-able
 /// (`RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_PLAIN_RS`, `RWM_CLOCK_GAP`).
-/// Everything defaults OFF: the shipped path is byte-identical unset.
+/// Everything defaults off: the shipped path is byte-identical unset.
 pub fn anchor_gate(name: &str) -> bool {
     anchor_gate_default(name, false)
 }
 
-/// `anchor_gate` with a per-gate shipped default (feat/consolidation): a
+/// `anchor_gate` with a per-gate shipped default: a
 /// member of the anchor-hygiene family can flip its own default while the
-/// umbrella semantics are preserved — `RWM_ANCHOR_HYGIENE` SET overrides the
+/// umbrella semantics are preserved — `RWM_ANCHOR_HYGIENE`, when set, overrides the
 /// family default in either direction (`=1` all on, `=0` all off), the
 /// individual gate env always wins, and unset-everything yields `default`.
 pub fn anchor_gate_default(name: &str, default: bool) -> bool {
     env_flag(name, env_flag("RWM_ANCHOR_HYGIENE", default))
 }
 
-/// THE boolean dialect for every env gate (trimmed, case-insensitive):
-/// `1`/`true`/`on`/`yes` → ON; `0`/`false`/`off`/`no`/empty → OFF; anything
+/// The boolean dialect for every env gate (trimmed, case-insensitive):
+/// `1`/`true`/`on`/`yes` → on; `0`/`false`/`off`/`no`/empty → off; anything
 /// else → `None`.
 pub fn parse_bool(v: &str) -> Option<bool> {
     match v.trim().to_ascii_lowercase().as_str() {
@@ -398,15 +384,15 @@ pub fn parse_bool(v: &str) -> Option<bool> {
     }
 }
 
-/// Boolean `RWM_*` env gate parser — the ONE way to read an on/off gate.
+/// Boolean `RWM_*` env gate parser — the one way to read an on/off gate.
 ///
 ///   - unset → `default` (shipped default preserved)
 ///   - set → [`parse_bool`]; an unrecognised value (a typo such as `of`, or
-///     a number) is a hard error naming the variable, never a silent ON or
-///     OFF. The engine resolves its gates at startup (`RuntimeGates::resolve`
+///     a number) is a hard error naming the variable, never a silent on or
+///     off. The engine resolves its gates at startup (`RuntimeGates::resolve`
 ///     from `main`), so the error surfaces before any transfer.
 ///
-/// Numeric-VALUE knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do NOT use
+/// Numeric-value knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do not use
 /// this — they parse their value, and 0 may be a legitimate value there.
 pub fn env_flag(name: &str, default: bool) -> bool {
     match std::env::var(name) {
@@ -424,7 +410,7 @@ pub fn env_flag(name: &str, default: bool) -> bool {
 mod env_flag_tests {
     use super::env_flag;
 
-    // Each test uses UNIQUE var names so parallel test threads never race.
+    // Each test uses unique var names so parallel test threads never race.
 
     #[test]
     fn unset_returns_the_default() {
@@ -586,15 +572,15 @@ mod tests {
 
     #[test]
     fn test_inner_feedback_weight_defaults() {
-        // Default OFF (paper 14.28: the L1 ablation measured the floor
-        // active but completion-neutral at C2 and regressive at C3).
+        // Default off (paper §4.4: measured completion-neutral at c2 and
+        // regressive at c3).
         let bulk = RaptorpathConfig {
             protocol_hint: Some("bulk".into()),
             ..Default::default()
         };
         let (pc, _) = resolve(&bulk).unwrap();
         assert_eq!(pc.inner_feedback_weight, 0.0);
-        // Explicit opt-in wins (the L1 ablation arm / future payloads).
+        // Explicit opt-in wins.
         let opt_in = RaptorpathConfig {
             protocol_hint: Some("bulk".into()),
             inner_feedback_weight: Some(1.0),
@@ -613,14 +599,14 @@ mod tests {
 
     #[test]
     fn test_window_reliable_default_off_and_opt_in() {
-        // Default OFF: bulk stays on block mode (no big-bang switch).
+        // Default off: bulk stays on block mode.
         let bulk = RaptorpathConfig {
             protocol_hint: Some("bulk".into()),
             ..Default::default()
         };
         let (pc, _) = resolve(&bulk).unwrap();
         assert!(!pc.window_reliable);
-        // Explicit opt-in (the RWM Phase A A/B arm).
+        // Explicit opt-in.
         let opt_in = RaptorpathConfig {
             protocol_hint: Some("bulk".into()),
             window_reliable: Some(true),
@@ -633,7 +619,7 @@ mod tests {
     #[test]
     fn test_deprecated_switch_fields_still_parse() {
         // Old configs with auto-switch knobs must keep loading (warned,
-        // ignored) — paper §16.4 removal is not allowed to break configs.
+        // ignored): pinning the codec is not allowed to break configs.
         let cfg: RaptorpathConfig = toml::from_str(
             "fec_auto_switch = true\nfec_switch_threshold_low = 0.01\n\
              fec_switch_threshold_high = 0.12\nfec_switch_interval = 5\n",

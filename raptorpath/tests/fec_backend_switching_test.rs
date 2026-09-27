@@ -1,15 +1,8 @@
-//! Integration tests for per-block FEC backend selection (ADR-0030).
-//!
-//! Tests block-mode per-block switching with actual encode/decode cycles
-//! across different backends, and the WindowSwitch wire round-trip
-//! (`WindowSwitchAck` was deleted in dead-code batch 2 — never constructed;
-//! `WindowSwitch` itself is kept as a hostile-peer/version guard).
-//!
-//! The BackendSelector arms were dropped in the dead-code refactor (batch 1):
-//! MID-STREAM backend switching was removed from the data path (paper §16.4)
-//! and the selector deleted with it. Per-BLOCK backend choice (the `backend`
-//! field on BlockStart, decoded by the receiver) is still live — that is what
-//! the remaining tests cover.
+//! Per-block FEC backend selection: the `backend` field on `BlockStart`,
+//! decoded by the receiver, with real encode/decode cycles across backends,
+//! plus the `WindowSwitch` wire round-trip (kept as a hostile-peer/version
+//! guard). There is no mid-stream backend switch on the data path (paper
+//! §5.10).
 
 use raptorpath::fec::{EncodingParams, FecBackend, FecStream};
 use raptorpath::transport::{ControlMessage, WireMessage};

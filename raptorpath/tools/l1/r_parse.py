@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Per-invocation parser for THE r > 0 BATTERY (goal-gate "THE r > 0 BATTERY —
-PRE-REGISTRATION"; paper §16.82).
+"""Per-invocation parser for THE r > 0 BATTERY (pre-registration "THE r > 0
+BATTERY — PRE-REGISTRATION", in git history before 22b56d9; paper §4.9).
 
     r_parse.py <cell> <size> <arm> <seed> <rep> <client.log> <server.log>
 
@@ -37,7 +37,7 @@ WHAT IT READS, AND WHY EACH FIELD IS HERE
     decode-resolved wall time and `SOURCE avg` is ARQ-resolved wall time, per
     hole (`receiver.rs:1899`). `present_at_stall`, `probe_holes` and
     `probe_buffered` ride BESIDE them because the record's "19–32 ms decodes"
-    were RESOLUTION WAITING and not compute (goal-gate ~6983 vs ~7078-7091):
+    were resolution waiting and not compute (per the pre-registration record):
     a `DECODE avg` quoted without `present_at_stall` is not a reading of this
     battery.
 

@@ -207,7 +207,7 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
                 0,
                 "[FCAUSE] gap_data > 0 with the request law armed — the collision seam \
                  did NOT close, so a copy still flies inside `[0, ℓ*)`, so \
-                 `ρ̂_heal` is censored in §16.77.8a's own direction and the arm is \
+                 `ρ̂_heal` is censored in the direction paper §7.4 names and the arm is \
                  measuring a different law than the one it names:\n{fc}"
             );
             assert_eq!(

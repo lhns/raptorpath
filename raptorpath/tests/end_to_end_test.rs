@@ -232,7 +232,7 @@ fn test_e2e_empty_block_sentinel_only() {
 #[test]
 fn test_e2e_maximum_loss_recovery() {
     // Frame 1 packet, encode with K source + K repair.
-    // Drop ALL source symbols. Feed only repair. Must recover.
+    // Drop all source symbols. Feed only repair. Must recover.
     let packet = vec![0xFE; 800];
 
     let mut block = Vec::new();

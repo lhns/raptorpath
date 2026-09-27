@@ -1,12 +1,10 @@
-//! Block-mode ARQ via batch acknowledgements (P8, paper §14.27).
+//! Block-mode ARQ via batch acknowledgements (the block pipeline, paper
+//! §1.5).
 //!
-//! Block mode had NO loss recovery of its own: on a failed block the sender
-//! only updated stats/CC and the receiver evicted the incomplete decoder
-//! after a timeout. With the Bulk completion-exposure glide (P6) mid-stream
-//! r* = 0, so there were no proactive repairs either — the inner flow saw
-//! the raw channel loss and collapsed (L1: 1.8 MB in ~8 s at C2 vs quinn's
-//! 0.175 s). This module implements the retransmission half of the paper §5
-//! correction model for block mode:
+//! Mid-stream Bulk runs at r* = 0, so the block pipeline has no proactive
+//! repairs; without its own loss recovery the inner flow would see the raw
+//! channel loss. This module implements the retransmission half of the
+//! correction model (paper §3.4) for block mode:
 //!
 //! - **Batch ledger**: every sent SymbolBatch is recorded under its
 //!   `batch_seq` with the (block_id, payload_id) pairs it carried. The
@@ -18,7 +16,7 @@
 //!   later traffic).
 //! - **Retained blocks**: source data for the last `RETAIN_MAX_BLOCKS`
 //!   blocks (byte-capped LRU) so fresh repairs can be minted post-hoc.
-//!   Rateless backends (RaptorQ, RLC) mint NEW repair symbols — any repair
+//!   Rateless backends (RaptorQ, RLC) mint new repair symbols — any repair
 //!   fills any hole, strictly better than resending the lost symbol.
 //!   Fixed-rate backends (RS) resend the exact missing symbols,
 //!   which every backend accepts.
@@ -53,15 +51,15 @@ pub const MAX_REPAIR_ROUNDS: u8 = 3;
 /// Maximum idle re-announce rounds per block (BlockStart + spare repair for a
 /// still-un-decoded block once the sender goes quiet — see `idle_reannounce`).
 /// Kept generous: a lost BlockStart with all its symbols delivered-and-acked
-/// leaves the ARQ ledger empty, so this is the ONLY recovery path for that
+/// leaves the ARQ ledger empty, so this is the only recovery path for that
 /// block, and each round only clears if the re-announced BlockStart datagram
 /// itself survives the channel (~ε̂ loss per try).
 pub const MAX_REANNOUNCE_ROUNDS: u8 = 16;
 /// Per-round cap on idle re-announce spare symbols. The spare ramps
 /// geometrically toward a block's deficit (unknown to the sender), but each
 /// round's burst is capped small so a stuck block cannot flood a constrained
-/// path or jam the in_flight budget — the L1 C3 (20 Mbit) failure mode when a
-/// full-block resend went out every round. A deficit up to k recovers in a
+/// path or jam the in_flight budget (a full-block resend every round does
+/// that on a 20 Mbit path). A deficit up to k recovers in a
 /// handful of capped rounds at the (clamped) re-announce cadence.
 pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// Completed/failed block ids remembered to suppress late spurious repairs.
@@ -93,7 +91,7 @@ struct RetainedBlock {
     /// longer than the loss timeout while still un-decoded is stuck.
     last_activity: Instant,
     /// Idle re-announce rounds already spent (separate from `rounds`: a lost
-    /// BlockStart is orphaned with an EMPTY ledger, so ARQ repair rounds never
+    /// BlockStart is orphaned with an empty ledger, so ARQ repair rounds never
     /// engage — this is its own recovery budget).
     reannounce_rounds: u8,
 }
@@ -129,7 +127,7 @@ pub struct BlockArq {
     /// Blocks decoded (or abandoned) — loss events for these are ignored.
     done_ring: VecDeque<u64>,
     done_set: HashSet<u64>,
-    /// Fractional ε̂-margin accumulator (continuous, paper §14.27).
+    /// Fractional ε̂-margin accumulator (continuous, no per-event ceil).
     margin_debt: f64,
     max_ledger: usize,
     max_retained_blocks: usize,
@@ -354,7 +352,7 @@ impl BlockArq {
         events
     }
 
-    /// Idle re-announce (paper §14.27, send-idle recovery leg).
+    /// Idle re-announce (the send-idle recovery leg).
     ///
     /// A block whose BlockStart datagram was lost is orphaned in a way the
     /// batch ledger cannot see: the receiver buffers its symbols pre-decoder

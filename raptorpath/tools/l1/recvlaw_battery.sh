@@ -410,8 +410,8 @@ run_one() { # cell arm
 
 {
   echo "=== RECVLAW BATTERY seed=$SEED_ARG reps=$REPS $(date -u +%FT%TZ)"
-  echo "CONTRACT goal-gate 'THE RECEIVER-LAW BATTERY — PRE-REGISTRATION' (feat/recvlaw-arms from main@9396ca0)"
-  echo "PAPER 16.83 arms (A) RWM_RECV_REQUEST_LAW and (B) RWM_RANK_FEEDBACK; (C) the S5 loop is NOT built"
+  echo "CONTRACT the pre-registration 'THE RECEIVER-LAW BATTERY — PRE-REGISTRATION' (git history before 22b56d9)"
+  echo "PAPER §7.6 arms (A) RWM_RECV_REQUEST_LAW and (B) RWM_RANK_FEEDBACK; (C) the S5 loop is NOT built"
   echo "CELLS $RL_CELLS   (c7,c8 SCORED; c1,sc2 MUST-NOT-MOVE controls)"
   echo "ARMS  $RL_ARMS   (paired within rep, ARMS INNERMOST)"
   for A in $RL_ARMS; do echo "ARMENV $A | $(arm_env "$A")"; done
@@ -421,7 +421,7 @@ run_one() { # cell arm
   echo "PREDICT B: dup_src -> 0 BY CONSTRUCTION (a WIRING witness, not a result); rep_redundant + the [RFA] class migration is the result"
   echo "PREDICT controls: lstar_us=0, m_max=1, no scored column moves"
   echo "REFUTERS false fraction does not move; sampler_bind ~ 1; goodput leaves the CTL spread; rep_redundant rises without the false fraction falling; wa1_none shows the answers degrading to copies"
-  echo "OUTCOMES the goal-gate lever set + KNEE-BOUND (the cap binds >= 95% => a LEDGER verdict naming RWM_STORE_GAIN) + UNSCOREABLE"
+  echo "OUTCOMES the pre-registered lever set + KNEE-BOUND (the cap binds >= 95% => a LEDGER verdict naming RWM_STORE_GAIN) + UNSCOREABLE"
   echo "BANDSCOPE the goodput abort bands apply to CTL ONLY; out-of-band on a treatment arm is a RESULT"
   echo "BIN $BIN"
   echo "SHA256 $(sha256sum "$BIN" 2>/dev/null)"

@@ -205,7 +205,7 @@ impl InterleavingBuffer {
         }
     }
 
-    /// Core flat drain: round-robin across blocks, per path. (Original behavior.)
+    /// Core flat drain: round-robin across blocks, per path.
     fn drain_flat(&mut self) -> Vec<(PathId, Vec<WireSymbol>)> {
         // Collect all path IDs across all slots.
         let path_ids: Vec<PathId> = {

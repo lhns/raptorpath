@@ -1,10 +1,9 @@
 //! Periodic eviction of stale block decoders (ADR-0004).
 //!
-//! Behavior contract: the loop body is the former inline `async move` block
-//! from `run_impl` verbatim — same `CLEANUP_INTERVAL` tick, same single
-//! `retain` pass computing `timed_out` while it removes, same
-//! `feedback_update(false)` per timed-out block under ONE `fec_controller`
-//! guard, same `decoded_fail` stat and warn. This task never returns.
+//! Each `CLEANUP_INTERVAL` tick runs one `retain` pass that computes
+//! `timed_out` while it removes, then reports `feedback_update(false)` per
+//! timed-out block under one `fec_controller` guard and bumps the
+//! `decoded_fail` stat. This task never returns.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;

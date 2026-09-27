@@ -470,7 +470,7 @@ fn slack_bench() {
     let grid = s_grid();
     let t0 = std::time::Instant::now();
 
-    println!("\n=== EMISSION-SLACK COMPONENT BENCH (goal-gate \"Emission-Slack Bench\") ===");
+    println!("\n=== EMISSION-SLACK COMPONENT BENCH ===");
     println!(
         "N={} src · wireQ {} ms · dwell {} ms · skew {} ms · seeds {:?} · ρ={} · b(δ)={}",
         cal.n_src,
@@ -748,7 +748,7 @@ fn slack_bench() {
     println!("  predicted receiver-hold span   = rate_fast × Δowd    = {span_recv:.0} symbols");
     println!("  predicted sender-retention span = rate_fast × ΔRTprop = {span_store:.0} symbols");
     println!(
-        "  LEDGER (\"Store-Cap Triplication\", \"Anchor Hygiene\", `honest_store_cap` doc):\n\
+        "  MEASURED (`honest_store_cap` doc):\n\
      \x20   honest pooled cap at c8 with one path filtered .......... 480–500\n\
      \x20   the guard session's independently measured GOOD pin ..... 508\n\
      \x20   the arm that read −19.6% at seed 7 (cap pinned N×knee) ... 4096\n\
@@ -1007,7 +1007,7 @@ fn coverage_bench() {
     let b_hint = env_f64("RWM_SB_DELTA_B", 0.5);
     let t0 = std::time::Instant::now();
 
-    println!("\n=== PHASE 1.3 — COVERAGE: DERIVABLE OR NOT (goal-gate \"Coverage: derivable or not\") ===");
+    println!("\n=== COVERAGE: DERIVABLE OR NOT ===");
     println!(
         "S* = mean store occupancy of the UNCONSTRAINED run = Σd ÷ (N·g) — Little's law\n\
          on the RETENTION STORE. The claim under test: open-loop idle(S) = 1 − S/S*, so the\n\
@@ -2083,8 +2083,8 @@ fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
         let stall = contract_stall_s(1.0, 1.0, rtprop_s, srtt_s);
         assert!(
             (stall - RETAIN_MULT * srtt_s).abs() < 1e-12,
-            "the shipped stall is no longer 17/8·srtt at ρ = 1 — §16.58's \
-             closed form does not apply"
+            "the shipped stall is no longer 17/8·srtt at ρ = 1 — the \
+             closed form of paper §6.4 does not apply"
         );
     }
 
@@ -2118,7 +2118,7 @@ fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
             assert!(
                 cand_total > MEM,
                 "{cell}: the queue-free slack clock CLEARED the memory bound \
-                 ({cand_total} < {MEM}) — §16.58's REFUTATION no longer holds \
+                 ({cand_total} < {MEM}) — the refutation (paper §10) no longer holds \
                  and the paper must be re-scored, not this assertion relaxed"
             );
             still_pinning += 1;

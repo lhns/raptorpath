@@ -80,22 +80,11 @@ RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 export BR_LOCK_OWNER="blockretest_run_all:$$"
-# THE SECOND LOCK PROTOCOL (found live, 2026-09-27, first launch): some
-# co-tenant scripts lock these same paths with `exec 8>PATH; flock -n 8`. The
-# `>` TRUNCATES our lock file and, with nobody holding flock(2), their flock
-# succeeds -- a cargo build then ran through the crown spot and the battery
-# met an empty lock file (ABORT-LOCK). So the envelope ALSO holds flock(2) on
-# both paths for the session (opened `<>`, which does not truncate): a flock
-# user now gets HELD and runs nothing. The truncation itself cannot be
-# prevented, so `refresh_locks` re-writes our token before every stage and
-# records `LOCK-TRUNCATED-BY-FOREIGN` if it finds the file emptied.
-exec 8<>"$VM_LOCK" 9<>"$RP_LOCK"
-if ! flock -n 8 || ! flock -n 9; then
-  echo "ABORT-LOCK a foreign flock(2) holder on $VM_LOCK / $RP_LOCK" | tee -a "$OUTDIR/all-era.txt"
-  touch "$OUTDIR/FAILED-ALL"
-  exit 4
-fi
-echo "FLOCK-HELD $VM_LOCK $RP_LOCK (fd 8/9)" | tee -a "$OUTDIR/all-era.txt"
+# `take_lock` holds flock(2) on both paths as well as the noclobber files, so
+# a co-tenant that locks with `exec 8>PATH; flock -n 8` finds them held. Its
+# `>` still truncates our token before its flock fails, so `refresh_locks`
+# re-writes the token before every stage and records
+# `LOCK-TRUNCATED-BY-FOREIGN` if it finds the file emptied.
 refresh_locks() { # stage-name
   local l
   for l in "$VM_LOCK" "$RP_LOCK"; do
