@@ -46,14 +46,13 @@ pub async fn create_tun(config: TunConfig) -> anyhow::Result<TunInterface> {
 
     // Write loop: raptorpath → OS
     tokio::spawn(async move {
-        // A single bad inner packet must NEVER tear down the tunnel. When the
+        // A single bad inner packet must never tear down the tunnel. When the
         // window/packing FEC path occasionally delivers a mis-framed packet,
-        // the kernel rejects the write with EINVAL; the old code `break`ed on
-        // that, dropping inject_rx, which closed the receiver's inject channel
-        // and shut the whole tunnel down. The peer's path liveness then timed
-        // out ~6s later (L1: this killed rp-realtime streams). Drop malformed
-        // packets and continue; only give up after a run of consecutive write
-        // failures, which signals the device itself is gone.
+        // the kernel rejects the write with EINVAL; breaking out of the loop
+        // would drop inject_rx, close the receiver's inject channel and shut
+        // the whole tunnel down (the peer's path liveness then times out).
+        // Drop malformed packets and continue; only give up after a run of
+        // consecutive write failures, which signals the device itself is gone.
         const MAX_CONSECUTIVE_WRITE_ERRORS: u32 = 64;
         let mut consecutive_errors: u32 = 0;
         while let Some(packet) = inject_rx.recv().await {

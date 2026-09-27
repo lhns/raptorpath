@@ -1,80 +1,35 @@
-//! WHY EACH RECOVERY FIRE FIRED — `[FCAUSE]` — AND THE CONFIGURATION
-//! CONTRACT THE CAUSE MIX IS ONLY READABLE UNDER.
+//! `[FCAUSE]` attributes every sender recovery fire to a named cause, and
+//! echoes the configuration the cause mix is readable under.
+//! `RackClockGauge::record_fire` has one call site, the sender's gap loop,
+//! whose `gaps` vector has two producers:
 //!
-//! **The question this instrument was built to close.** The quantile-native
-//! α-sweep (goal-gate, "qnative sweep SCORED") moved the realized recovery
-//! clock `W` cleanly across six arms — a 200× span in the contract α, with
-//! `[QALPHA] win_n` tracking it arm for arm — and the commanded false-alarm
-//! fraction `[RACK] fa_frac` DID NOT MOVE at 4 of 5 cells. `fa ⊥ W`.
+//!   * `timer` — the sender's tail-sweep deadline arm, the only cause the
+//!     sender's recovery clock (`sweep_timeout_us`) times.
+//!   * the `nack_rx` channel, fed by the SACK→gap inversion in the WindowAck
+//!     handler and clocked by the receiver. The timer-driven hole
+//!     re-advertisement broadcasts one message to every path and stamps
+//!     `echo_send_timestamp_us: 0`, so it separates as `gap_refresh`;
+//!     `gap_data` is the dupack analog, driven by data arrival alone.
 //!
-//! That independence refutes the shared premise of both §16.69 routes: that
-//! the recovery fires are timer-driven, so that repositioning the waiting
-//! time repositions the fires. A clock the fires do not respond to is not the
-//! clock that decides them, and the measurand derived from it — the
-//! ack-arrival distribution — is therefore the wrong quantity to position a
-//! waiting time on.
+//! Clauses, in the order they can fail:
 //!
-//! The only explanation the code leaves standing is that MOST FIRES ARE NOT
-//! TIMER-DRIVEN. `[FCAUSE]` classifies them, so the successor measurand is
-//! named from a count rather than from an argument.
+//!   1. `fcause_report_line`'s format, including `-` iff no denominator.
+//!   2. The line fires with populated causes over a `c3`-lossy plain-window
+//!      loopback.
+//!   3. The four classes sum to `n`, `other` is empty (an unclassifiable fire
+//!      is counted, never guessed), and the fractions match the counts.
+//!   4. `n` agrees with the independent witness `[DIAG] retx=`, bumped by
+//!      different code at the same emission.
+//!   5. `n >= [RACK] fired`, the difference printed as `unattr=`:
+//!      `record_fire` sits inside `if let Some(mp_flight)`, so `fired` drops
+//!      fires with no live-flight record; `[FCAUSE]` counts at the emission.
+//!   6. Under generation coding the SACK→gap producer is suppressed
+//!      (`recv_nack_tx = None`), so both `gap_` classes are structurally
+//!      empty; the line echoes `gen=` so no row is read out of scope.
 //!
-//! **The classification, read off the code and not invented.**
-//! `RackClockGauge::record_fire` has ONE call site, the sender's gap loop, and
-//! that loop's `gaps` vector has exactly two producers:
-//!
-//!   * `timer` — the sender's own tail-sweep deadline arm. This is the ONLY
-//!     cause the sender's recovery clock clocks: `tail_deadline` is computed
-//!     from `sweep_timeout_us`, and nothing else in the loop reads it.
-//!   * the `nack_rx` channel, fed solely by the SACK→gap inversion in the
-//!     WindowAck handler — clocked by the RECEIVER, never by the sender's `W`.
-//!     Its two receiver arms are separable for free, because the timer-driven
-//!     hole re-advertisement broadcasts ONE message to every live path and so
-//!     cannot carry a per-path echo: it stamps `echo_send_timestamp_us: 0`,
-//!     the sentinel the handler ALREADY branches on for its RTT update.
-//!     `gap_refresh` is that arm; `gap_data` is the dupack analog, driven by
-//!     data arrival and by no clock at all.
-//!
-//! **What is asserted, in the order it can fail.**
-//!
-//!   1. `fcause_report_line`'s FORMAT, so an L1 parser has a pin — including
-//!      the `-`-iff-no-denominator rule, so an absent reading can never be
-//!      read as a measured zero.
-//!   2. **THE LINE FIRES AND ITS CAUSES ARE POPULATED**, over a `c3`-lossy
-//!      plain-window loopback. THIS IS THE
-//!      ASSERTION THAT FAILS ON THE OLD ENGINE: `[FCAUSE]` does not exist
-//!      there and no fire was ever attributed to a cause.
-//!   3. The line is INTERNALLY CONSISTENT: the four classes sum to `n`,
-//!      `other` is EMPTY (an unclassifiable fire is counted, never guessed —
-//!      this asserts the tag reaches every producer rather than assuming it),
-//!      and the two fractions agree with the counts they are formed from.
-//!   4. `n` AGREES WITH AN INDEPENDENT WITNESS. `[DIAG] retx=` is bumped at
-//!      the same emission, by different code, so `n` and `retx` count the
-//!      same events. A gauge that double-counts a cause is caught here.
-//!   5. `n >= [RACK] fired`, and the difference is what `unattr=` reports.
-//!      This is NOT a defect of this gauge: `record_fire` sits inside
-//!      `if let Some(mp_flight)`, so `fa=`'s denominator has always dropped
-//!      fires whose target had no live-flight record. `[FCAUSE]` counts at
-//!      the emission, after every suppression `continue`. The discrepancy is
-//!      PRINTED rather than repaired, because moving `fired` would silently
-//!      re-base every reading the sweep already scored.
-//!   6. **THE CONFIGURATION CONTRACT.** Under GENERATION coding the SACK→gap
-//!      producer is suppressed (`recv_nack_tx = None`), so BOTH `gap_` classes
-//!      are structurally empty and the cause mix is not a measurement of the
-//!      shipped plain-window machine at all. The line echoes `gen=` so no row
-//!      is ever read out of its configuration scope.
-//!
-//! **No new gate.** `[FCAUSE]` rides `[RACK]`'s own ungated `Drop` rule; there
-//! is no new dial to echo two-sidedly. `RWM_DIAG=1` is asserted present in the
-//! `[GATES]` echo, so a missing `[DIAG] retx=` can only be read as an
-//! unreached site.
-//!
-//! **What this deliberately does NOT assert.** Any particular cause MIX.
-//! Loopback's loss is the shim's GE process, not a network's; the ratio that
-//! answers the measurand question comes off the L1 diagnostic pass. This is
-//! the instrument gate that must pass before that pass is worth making.
-//!
-//! Own test binary: `RWM_L0_NETEM` is process-global in the child, and the
-//! spawned pair must not contend with the in-process loopback tests.
+//! `[FCAUSE]` rides `[RACK]`'s ungated `Drop` rule; no cause mix is asserted
+//! (loopback loss is the shim's GE process). Own test binary: `RWM_L0_NETEM`
+//! is process-global in the child.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -84,7 +39,7 @@ mod loopback;
 use gauge::{f64_field, numeric_prefix, str_field, u64_field};
 use raptorpath::net::fcause_report_line;
 
-// ── 1: THE PURE PIN ─────────────────────────────────────────────────────
+// ── 1: the pure pin ─────────────────────────────────────────────────────
 
 #[test]
 fn the_fcause_line_format_is_pinned() {
@@ -97,9 +52,8 @@ fn the_fcause_line_format_is_pinned() {
          timer_frac=0.0240 gap_frac=0.9760 fired=494 unattr=6 fa_class=0.0625"
     );
 
-    // NEVER FIRED reads `-`, never `0.0000`: a fraction with no denominator
-    // is ABSENT, and an absent reading must not be poolable with a measured
-    // zero. This is the rule the `[DIAG]` candidate estimators use.
+    // Never fired reads `-`, never `0.0000`: a fraction with no denominator
+    // is absent and must not pool with a measured zero.
     let empty = fcause_report_line(0, 0, 0, 0, 0, false);
     assert_eq!(
         empty,
@@ -111,9 +65,8 @@ fn the_fcause_line_format_is_pinned() {
         "an unfired gauge must not render a fraction: {empty}"
     );
 
-    // THE GENERATION ROW. Both `gap_` classes are structurally empty there,
-    // so a 1.0000 timer fraction is a CONFIGURATION fact, and `gen=1` is what
-    // says so on the line's face.
+    // The generation row: both `gap_` classes are structurally empty, so a
+    // 1.0000 timer fraction is a configuration fact, stated by `gen=1`.
     let g = fcause_report_line(37, 0, 0, 0, 37, true);
     assert!(g.contains("gen=1"), "{g}");
     assert!(g.contains("timer_frac=1.0000"), "{g}");
@@ -121,7 +74,7 @@ fn the_fcause_line_format_is_pinned() {
     assert!(g.contains("unattr=0"), "{g}");
 
     // The trailing sacrificial constant: a concurrent `tracing` write corrupts
-    // the LAST field, so the last field is a constant every parser knows.
+    // the last field, so the last field is a constant every parser knows.
     for l in [&empty, &g] {
         assert!(
             l.trim_end().ends_with("fa_class=0.0625"),
@@ -130,35 +83,26 @@ fn the_fcause_line_format_is_pinned() {
     }
 }
 
-// ── 2-6: THE REACHABILITY RUN ───────────────────────────────────────────
+// ── 2-6: the reachability run ───────────────────────────────────────────
 
 /// The arm. `RWM_DIAG` carries `[DIAG] retx=`, the independent witness. No
-/// gate here changes a law: the sender runs the shipped recovery clock. (The
-/// run used to arm the quantile clock at the α-sweep's `Q009` probe point;
-/// that arm was removed, and the classification does not depend on which
-/// clock times the `timer` class.)
+/// gate here changes a law: the sender runs the shipped recovery clock.
 const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
 ];
 
-/// Run ONE lossy loopback in the given configuration. Returns
-/// `(client log, server log)`. The CLIENT is the bulk-direction SENDER and so
-/// is the site whose `[FCAUSE]` this test is about.
-///
-/// The L1 `c3` cell on client egress, seeded ([`loopback::C3`]): loss is what
-/// forces the recovery fires this gauge classifies to exist. The shim shapes
-/// the CLIENT's egress; the server's own datagram path (the ack direction) is
-/// left clean so acks are not the thing under test. The server log is not
-/// read.
+/// Run one lossy loopback in the given configuration. Returns
+/// `(client log, server log)`; the client is the bulk-direction sender whose
+/// `[FCAUSE]` is under test. The `c3` cell shapes the client's egress
+/// ([`loopback::C3`]) so recovery fires exist; the ack direction stays clean.
 fn lossy_run(generation: bool) -> (String, String) {
     let extra: &[&str] = if generation { &["--window-generation-coding"] } else { &[] };
     loopback::transfer(loopback::Transfer { env: &ARM, extra_args: extra, ..Default::default() })
 }
 
-/// `[DIAG]`'s cumulative retransmit count, MAX over all lines (the W4'
-/// convention: the periodic readout can be cut off mid-transfer, so the
-/// largest reading is the one that saw the most).
+/// `[DIAG]`'s cumulative retransmit count, max over all lines (the periodic
+/// readout can be cut off mid-transfer, so the largest reading saw the most).
 fn max_retx(log: &str) -> u64 {
     log.split_whitespace()
         .filter_map(|t| t.strip_prefix("retx="))
@@ -167,20 +111,20 @@ fn max_retx(log: &str) -> u64 {
         .unwrap_or_else(|| panic!("no `retx=` in the sender log — [DIAG] never fired"))
 }
 
-/// 2-5. THE CAUSES ARE PRESENT, CONSISTENT, AND WITNESSED.
+/// Clauses 2-5: the causes are present, consistent, and witnessed.
 #[test]
 fn every_recovery_fire_is_attributed_to_a_named_cause() {
     let (cli, _srv) = lossy_run(false);
 
-    // THE GATE. A missing witness must be readable as an unreached site and
-    // never as an unset gate.
+    // The gate: a missing witness must read as an unreached site, never as an
+    // unset gate.
     assert!(
         cli.contains("RWM_DIAG=1"),
         "the client's [GATES] echo does not carry RWM_DIAG=1 — the arm did \
          not arm:\n{cli}"
     );
 
-    // 2. THE LINE FIRES. This is what fails on the old engine.
+    // 2. The line fires.
     let last = cli
         .lines()
         .rev()
@@ -213,15 +157,14 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
          never fired, so there is no cause mix to read:\n{last}"
     );
 
-    // 3. INTERNAL CONSISTENCY.
+    // 3. Internal consistency.
     assert_eq!(
         n,
         timer + gap_data + gap_refresh + other,
         "[FCAUSE] n is not the sum of its four causes: {last}"
     );
-    // `other` is the NAMED unclassifiable class, and it must be EMPTY: every
-    // producer of the gap loop's batches carries a tag. This asserts the
-    // plumbing reaches all of them rather than assuming it.
+    // `other` is the named unclassifiable class and must be empty: every
+    // producer of the gap loop's batches carries a tag.
     assert_eq!(
         other, 0,
         "[FCAUSE] other={other} — a gap batch reached the fire site with no \
@@ -245,10 +188,9 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
          {timer_frac} + {gap_frac} != 1 in {last}"
     );
 
-    // 4. THE INDEPENDENT WITNESS. `[DIAG] retx=` is bumped by different code
-    //    at the same emission, so it counts the same events. `>=` rather than
-    //    `==` because the periodic `[DIAG]` readout can be cut off before the
-    //    final fires while `[FCAUSE]` emits at teardown.
+    // 4. The independent witness. `>=` rather than `==` because the periodic
+    //    `[DIAG]` readout can be cut off before the final fires while
+    //    `[FCAUSE]` emits at teardown.
     let retx = max_retx(&cli);
     println!("[fcause-reach] n={n} vs [DIAG] retx={retx} (unattr={unattr})");
     assert!(retx > 0, "[DIAG] retx=0 while [FCAUSE] n={n}: {last}");
@@ -258,9 +200,8 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
          the cause counters are missing fires the gap loop emitted:\n{last}"
     );
 
-    // 5. THE DENOMINATOR DISCREPANCY IS REPORTED, NOT HIDDEN. `record_fire`
-    //    sits inside `if let Some(mp_flight)`; `[FCAUSE]` does not. `fired`
-    //    is therefore a SUBSET, and `unattr` names the difference.
+    // 5. The denominator discrepancy is reported: `fired` is a subset, and
+    //    `unattr` names the difference.
     assert!(
         n >= fired,
         "[FCAUSE] n={n} < [RACK] fired={fired} — `fired` counts a strict \
@@ -272,11 +213,9 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
         "[FCAUSE] unattr must be exactly n - fired: {last}"
     );
 
-    // And the SENDER's `[RACK]` line must agree about `fired`. The client
-    // process runs a receiver task too, whose receiver-site gauge prints its
-    // own `[RACK]` (its `fa=` counts repair-class ARRIVALS, not the sender's
-    // fires), and the two tasks' teardown order is not fixed — so the
-    // sender's line is found by its value, never by its position.
+    // The sender's `[RACK]` line must agree about `fired`. The client also
+    // runs a receiver task whose own `[RACK]` counts repair-class arrivals,
+    // and teardown order is not fixed, so the sender's line is found by value.
     let racks: Vec<&str> = cli.lines().filter(|l| l.contains("[RACK] ")).collect();
     if !racks.is_empty() {
         let fired_of = |rack: &str| -> u64 {
@@ -294,16 +233,15 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
     }
 }
 
-/// 6. THE CONFIGURATION CONTRACT. The cause mix is only a measurement of the
-/// shipped machine in PLAIN WINDOW: generation coding suppresses the SACK→gap
-/// producer outright, so both `gap_` classes are structurally empty there and
-/// a row from that arm does not pool with a plain-window row.
+/// Clause 6: the cause mix measures the shipped machine only in plain window;
+/// generation coding suppresses the SACK→gap producer, so both `gap_` classes
+/// are structurally empty there.
 #[test]
 fn the_gap_causes_are_structurally_empty_under_generation() {
     let (gen_cli, _gen_srv) = lossy_run(true);
 
-    // `recv_nack_tx = None` under generation, so the per-seq retransmit path
-    // does not run at all — the same fact `rfa_reachability` measures.
+    // `recv_nack_tx = None` under generation: the per-seq retransmit path does
+    // not run (the same fact `rfa_reachability` measures).
     let gen_retx: u64 = gen_cli
         .split_whitespace()
         .filter_map(|t| t.strip_prefix("retx="))
@@ -339,10 +277,9 @@ fn the_gap_causes_are_structurally_empty_under_generation() {
             );
         }
         None => {
-            // Legal and expected: with no gap producer AND no tail-sweep fire,
-            // nothing was classified and the gauge stays silent by the same
-            // rule `[RACK]` uses. What is NOT legal is a silent gauge beside a
-            // retransmit — that would be an unattributed fire.
+            // Legal: with no gap producer and no tail-sweep fire nothing was
+            // classified and the gauge stays silent (`[RACK]`'s rule). A silent
+            // gauge beside a retransmit would be an unattributed fire.
             assert_eq!(
                 gen_retx, 0,
                 "no [FCAUSE] line under generation while [DIAG] retx={gen_retx} \

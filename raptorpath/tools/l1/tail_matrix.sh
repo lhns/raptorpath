@@ -1,20 +1,16 @@
 #!/bin/bash
-# Realtime-vs-bulk tail comparison, robust + fast: bring the tunnel up ONCE
-# per arm, run N stream measurements through the SAME warm tunnel (no flaky
-# per-rep bringup), report the p99 DISTRIBUTION (single-run p99 is
-# variance-dominated). Matrix: {realtime,bulk} x {400,1200}B at <cell>.
-# Every arm is hard-timeout-bounded so nothing can wedge the matrix.
+# Realtime-vs-bulk tail comparison: bring the tunnel up once per arm, run N
+# stream measurements through the same warm tunnel, and report the p99
+# distribution (a single-run p99 is variance-dominated). Matrix:
+# {realtime,bulk} x {400,1200}B at <cell>. Every arm is hard-timeout-bounded
+# so nothing can wedge the matrix.
 #   sudo bash tail_matrix.sh <cell> <reps>
 #
-# Task #61 (paper 16.20) 3-arm flip-gate mode: RWM_TM_ARMS="stream unified rlc"
-# runs the REALTIME hint only, once per named code-family arm x size:
-#   stream  = shipped default (Realtime auto-selects the streaming two-layer)
-#   unified = RWM_UNIFIED=1 (Realtime rides the RLC family on the unified
-#             global decoder + span law)
-#   rlc     = --fec-backend rlc (legacy RlcWindowDecoder realtime)
-# Mechanism-liveness echoes (backend selection / "unified global decoder")
-# are scraped from both endpoint logs per arm.  SEED env forwards to topo.sh
-# (default 42).  Unset RWM_TM_ARMS = legacy behavior, byte-identical.
+# Named-arm mode: RWM_TM_ARMS="ship unified rlc ..." runs the realtime hint
+# (unless the arm says otherwise) once per named arm x size; the arm table is
+# at the bottom. Mechanism-liveness echoes are scraped from both endpoint logs
+# per arm. SEED forwards to topo.sh (default 42). With RWM_TM_ARMS unset the
+# plain {realtime,bulk} matrix runs.
 set -uo pipefail
 cd "$(dirname "$0")" || { echo "ABORT-CD $(dirname "$0")"; exit 3; }
 source ./lib.sh
@@ -25,18 +21,15 @@ set +e
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 CELL="${1:-c2}"; REPS="${2:-5}"
 SEED="${SEED:-42}"
-# meas/streaming-retirement (crown re-test) harness glue: message rate,
-# stream duration and size list are overridable so the L2-era stream_bench
-# shape (50 msg/s x 30 s, 1200 B) is reproducible through the SAME matrix
-# machinery. Defaults = the historic tail_matrix shape, byte-identical.
+# Message rate, stream duration and size list are overridable (e.g. the
+# 50 msg/s x 30 s, 1200 B stream_bench shape). Defaults: 50 msg/s x 20 s,
+# 400 and 1200 B.
 TM_RATE="${RWM_TM_RATE:-50}"; TM_DUR="${RWM_TM_DUR:-20}"
 TM_SIZES="${RWM_TM_SIZES:-400 1200}"
 TM_TMO=$((TM_DUR + 10))
-# meas/adversarial-cells (ARC B1) harness glue: the topology script is
-# overridable (RWM_TM_TOPO=./adv_cells.sh) so the SAME matrix machinery can
-# run the realtime-crown row on an adversarial cell (`up <cell> [--seed N]`
-# interface shared by topo.sh and adv_cells.sh). Default = topo.sh,
-# byte-identical.
+# The topology script is overridable (RWM_TM_TOPO=./adv_cells.sh) so the same
+# matrix can run on an adversarial cell (`up <cell> [--seed N]` is shared by
+# topo.sh and adv_cells.sh). Default: topo.sh.
 TM_TOPO="${RWM_TM_TOPO:-./topo.sh}"
 
 hard_cleanup() {
@@ -45,9 +38,9 @@ hard_cleanup() {
     ip netns del "$NS_CLI" 2>/dev/null || true
     ip netns del "$NS_SRV" 2>/dev/null || true
 }
-# ONE EXIT handler: a second `trap ... EXIT` REPLACES the first, which is how
-# the "EXIT rc=" line was lost behind hard_cleanup. The rc is captured first
-# and the handler does not `exit`, so the script's own status is unchanged.
+# One EXIT handler: a second `trap ... EXIT` replaces the first. The rc is
+# captured first and the handler does not `exit`, so the script's own status
+# is unchanged.
 on_exit() {
     local rc=$?
     hard_cleanup
@@ -58,16 +51,13 @@ trap on_exit EXIT
 run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream measurements
     local hint="$1" size="$2" label="${3:-$1}" armenv="${4:-}" armflags="${5:-}"
     echo "ARMENV $label ${size}B: hint=$hint env='${armenv:-<unset>}' flags='${armflags:-}' rate=$TM_RATE dur=$TM_DUR"
-    # Discipline item 7: lib.sh forces set -e — a transient topo bringup
-    # failure must fail THIS arm loudly (the ping probe below catches it),
-    # not kill the whole matrix silently (bit the shed battery's c3-s7
-    # rlc-1200B arm, 2026-07-21).
-    # Crown re-test hardening (the embatch "retry-hardened driver"
-    # precedent): per-rep-interleaved invocations cycle netns fast enough
-    # to hit transient bringup collisions — retry the WHOLE bringup up to
-    # 3 times, each attempt counted loudly (BRINGUP_RETRY), before the arm
-    # is declared BRINGUP_FAIL. Captured measurements are never affected:
-    # the stream reps only run after a verified ping.
+    # docs/measurement-discipline.md rule 7: a transient topo bringup failure
+    # must fail this arm loudly (the ping probe below catches it), not kill
+    # the whole matrix silently.
+    # Per-rep-interleaved invocations cycle netns fast enough to hit
+    # transient bringup collisions, so the whole bringup is retried up to 3
+    # times, each attempt counted (BRINGUP_RETRY), before the arm is declared
+    # BRINGUP_FAIL. The stream reps only run after a verified ping.
     local up=0 attempt
     for attempt in 1 2 3; do
         hard_cleanup; sleep 1
@@ -89,10 +79,10 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
         echo "  BRINGUP_RETRY $label ${size}B attempt=$attempt failed"
     done
     [[ $up -eq 0 ]] && { echo "ARM $label ${size}B: BRINGUP_FAIL"; hard_cleanup; return; }
-    # Mechanism-liveness echoes (MEASUREMENT DISCIPLINE): code-family selection
-    # + decoder machine, from BOTH endpoints.  NOTE lib.sh turns on set -e:
-    # every pipeline here must be no-match-safe (the rlc arm has no RWM_UNIFIED
-    # echo — an unguarded grep kills the whole matrix silently).
+    # Mechanism-liveness echoes (docs/measurement-discipline.md rule 1):
+    # code-family selection + decoder machine, from both endpoints. Every
+    # pipeline here must be no-match-safe (the rlc arm has no RWM_UNIFIED
+    # echo, and an unguarded grep under set -e would kill the matrix).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
             | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*|derived patience ACTIVE[^"]*|derived stall gauge ACTIVE[^"]*|estimator heavy-math cadence ACTIVE[^"]*|ack-merge ACTIVE[^"]*)' \
@@ -115,10 +105,9 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
         sline=$({ grep '"summary"' /tmp/tm-srv.log || true; } | tail -1)
         p99=$(echo "$sline" | sed -n 's/.*"p99_ms": \([0-9.]*\).*/\1/p')
         p50=$(echo "$sline" | sed -n 's/.*"p50_ms": \([0-9.]*\).*/\1/p')
-        # goal-gate "Unified Shedding": delivered count per rep (the ρ story
-        # — shedding must stay within the 1−ρ class; rate*dur msgs sent/rep).
-        # Crown re-test glue: p999/max scraped too (the L2-era record's p99.9
-        # metric — gated on the 30-s shape, free everywhere else).
+        # Delivered count per rep: shedding must stay within the 1−ρ class
+        # (paper §5.6); rate*dur msgs are sent per rep. p999/max are scraped
+        # too.
         local cnt p999 pmax
         cnt=$(echo "$sline" | sed -n 's/.*"count": \([0-9]*\).*/\1/p')
         p999=$(echo "$sline" | sed -n 's/.*"p999_ms": \([0-9.]*\).*/\1/p')
@@ -128,49 +117,37 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
             echo "  $label ${size}B rep$r: p50=${p50:-?}ms p99=${p99}ms p999=${p999:-?}ms max=${pmax:-?}ms n=${cnt:-?}"
         fi
     done
-    # feat/anchor-hygiene: A* trajectory + witness gauges (RWM_DIAG-gated
-    # [SPAN] trace on the sending engines). MUST be pipeline-failure-safe
-    # under lib.sh's set -e + pipefail: a `head` in the pipe SIGPIPEs the
-    # upstream and killed the s42 pass after one arm (MEASUREMENT
-    # DISCIPLINE item 7 recurrence, recorded in "Anchor Hygiene") — the
-    # line cap lives inside awk and the whole pipeline is `|| true`-guarded.
+    # A* trajectory + witness gauges (RWM_DIAG-gated [SPAN] trace on the
+    # sending engines). Must be pipeline-failure-safe under set -e +
+    # pipefail: a `head` in the pipe SIGPIPEs the upstream, so the line cap
+    # lives inside awk and the whole pipeline is `|| true`-guarded.
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         { grep -E '^\[SPAN\] ' "$lg" 2>/dev/null || true; } \
             | awk 'NR<=6 || NR%10==0 { n++; if (n<=24) print }' \
             | sed "s|^|  SPAN $label ${size}B ${lg##*/}: |" || true
     done
-    # ── THE EVICT SEAT'S REPAIR WASTE (paper §16.81 ρ leg) ─────
+    # ── The EVICT seat's repair waste (the ρ leg, paper §5.1) ─────
     #
-    # This matrix's own default arm — `--protocol-hint realtime` WITHOUT
-    # `--window-reliable` — IS the ρ < 1 EVICT seat, and it is the most-run
-    # cell in the whole record. The seat's defect is structural: per-seq gap
-    # ARQ is armed there (`recv_nack_tx` keys on nothing about `reliable`),
-    # so the receiver requests repairs for holes it has ALREADY licensed
-    # itself to discard, and the repair is later than the give-up by
-    # construction. Nothing has ever scored that waste, because the three
-    # gauges that measure it were never scraped — they are already fed on
-    # this seat and the harness simply walked past them.
+    # This matrix's default arm — `--protocol-hint realtime` without
+    # `--window-reliable` — is the ρ < 1 EVICT seat. Per-seq gap ARQ is
+    # armed there (`recv_nack_tx` keys on nothing about `reliable`), so the
+    # receiver requests repairs for holes it has already licensed itself to
+    # discard, and the repair is later than the give-up by construction.
+    # `[RFA]` (including `late_after_aban=`, repairs that landed after the
+    # hole was abandoned), `[SUCC]`'s abandon count and `[RACK] fa=` measure
+    # that waste.
     #
-    # LAST LINE ONLY, on BOTH endpoints, `|| true`-guarded exactly like the
-    # [SPAN] scrape above: these are CUMULATIVE counters (the `[RFA]`
-    # convention), the server is SIGKILLed so no `Drop` ever runs, and a
-    # missing gauge must be a skipped datum and never a matrix kill.
-    #
-    # OWED BY THE INSTRUMENTS BRANCH: `[RFA]`'s `late_after_aban=` field —
-    # repairs that landed after the receiver had already abandoned the hole,
-    # i.e. the waste itself rather than its proxy. `[RFA]`'s line format is
-    # owned by the concurrent instruments work, so this scrape is written to
-    # TOLERATE the field's absence (it prints whatever the line carries) and
-    # the field is added there, not here. Until it lands the readable proxy
-    # is `[SUCC]`'s abandon count against `[RACK] fa=`'s false-alarm ratio.
+    # Last line only, on both endpoints, `|| true`-guarded like the [SPAN]
+    # scrape above: these are cumulative counters (the `[RFA]` convention),
+    # the server is SIGKILLed so no `Drop` ever runs, and a missing gauge must
+    # be a skipped datum and never a matrix kill. The scrape prints whatever
+    # the line carries, so it tolerates absent fields.
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
-        # `[ETA]` and `[LAT]` (wire v8, `net/eta.rs` / `net/lat.rs`): the
-        # placement law's own prediction-error dispersion and the delivered-
-        # latency decomposition. Same last-line-wins convention (an exit-flush
-        # line carrying `final=1`, when the engine emits one, IS the last line
-        # and so is the one taken). Their absence from this list is why S4's
-        # first field point was UNREADABLE (goal-gate "S4 — THE FIRST FIELD
-        # POINT"): `eta_s4.py` reads its points off this scrape.
+        # `[ETA]` and `[LAT]` (`net/eta.rs` / `net/lat.rs`): the placement
+        # law's own prediction-error dispersion and the delivered-latency
+        # decomposition. Same last-line-wins convention (an exit-flush line
+        # carrying `final=1`, when the engine emits one, is the last line and
+        # so is the one taken). `eta_s4.py` reads its points off this scrape.
         for tag in '\[RFA\]' '\[SUCC\]' '\[RACK\]' '\[ETA\]' '\[LAT\]'; do
             { grep -E "^${tag} " "$lg" 2>/dev/null || true; } \
                 | tail -1 \
@@ -192,78 +169,46 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
     for arm in $RWM_TM_ARMS; do
         AHINT="realtime"
         case "$arm" in
-            # meas/competitive-baseline: `ship` = env fully unset = whatever the
-            # binary's CURRENT defaults are (post-unified-flip: the unified
-            # machine + the consolidation stack). `stream` predates the flip
-            # (env-empty then meant the streaming machine); kept for battery
-            # reproducibility — on a post-flip binary the two are identical.
+            # `ship` = env fully unset = the binary's current defaults.
+            # `stream` is an alias kept so older arm lists still run.
             ship)    AENV="";              AFLAGS="" ;;
             stream)  AENV="";              AFLAGS="" ;;
             unified) AENV="RWM_UNIFIED=1"; AFLAGS="" ;;
             rlc)     AENV="";              AFLAGS="--fec-backend rlc" ;;
-            # feat/consolidation: the shipped streaming Realtime machine UNDER
-            # the candidate default stack env (the tail-crown regression gate
-            # — the 12-48x property must survive the stack). STORE_PATHS /
-            # RECOV_MP are reliable-window-gated (inert here by construction);
-            # the live members at this cell are the anchor pair.
+            # The shipped Realtime machine under an explicit default-stack env
+            # (STORE_PATHS / RECOV_MP are reliable-window-gated, inert here;
+            # the live members at this cell are the anchor pair).
             stack)   AENV="RWM_STORE_PATHS=1 RWM_RECOV_MP=1 RWM_MSTAR_ANCHOR=1 RWM_CLOCK_GAP=1"; AFLAGS="" ;;
-            # feat/copa-sole-clean: the substrate-CC tail cell — the shipped
-            # default machine (unified Realtime, post-flip) under BBR-under
-            # (default) vs Copa-sole passthrough. `default` is an alias for
-            # env-unset (the historical `stream` name predates the unified
-            # default flip).
+            # The substrate-CC tail cell: the shipped machine under BBR
+            # (`default`, an alias for env-unset) vs Copa-sole passthrough
+            # (ADR-0062).
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
-            # feat/window-mtu (goal-gate "Window Decoupling + MTU Scaling"):
-            # the crown-gate arm — part 2 compact framing (mandatory spot);
-            # the part-1 decoupled-window arms were removed with their gate.
+            # No-regression spots for single gates. Each changes a clock or a
+            # path the tail cell is sensitive to, so the spot is a gate, not a
+            # formality:
+            #   mtu    compact DATA framing
             mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
-            # feat/recv-permsg (goal-gate "Receiver Per-Message Wall"): the
-            # crown-gate arm — estimator heavy-math cadence (delivery path
-            # touched at the estimator only; the spot is mandatory).
+            #   est    estimator heavy-math cadence
             est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
-            # fix/shal8-anchor (goal-gate "Ship The Wins 2: shal8 anchor"):
-            # the crown-gate arm — burst-robust BBR substrate controller
-            # (P-F4; the estimator barely engages app-limited, the spot is
-            # mandatory).
+            #   bbrrs  burst-robust BBR substrate controller
             bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
-            # fix/store-cap-triplication (goal-gate "Store-Cap
-            # Triplication"): the crown-gate arm - the dyn-store-cap
-            # phase's path set moves off the cwnd-saturation-filtered
-            # active_paths() onto live_paths(). Realtime is single-path
-            # here, which is exactly where the filter EMPTIES the set
-            # (component bench: 88.6% of L0 refresh ticks; L1 smoke: 31.3%
-            # at c1), so the spot is mandatory.
+            #   uni    the dyn-store-cap phase's path set on live_paths() rather
+            #          than the cwnd-filtered active_paths(), which empties the
+            #          set at single-path Realtime
             uni)     AENV="RWM_STORE_CAP_UNIFIED=1"; AFLAGS="" ;;
-            # feat/ship-est-cadence (goal-gate "Ship The Wins 1"): the
-            # composed-default crown spot — `ship` (env unset = est+eb+
-            # pool-anchor NEW default) vs the prior default (est=0 turns the
-            # composed pool-anchor default off with it; eb=0 restores the
-            # per-symbol sender).
+            #   prior  est cadence and emit batching both off (est=0 also turns
+            #          the composed pool-anchor default off)
             prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
-            # feat/ack-merge-flip (goal-gate "Ack-Merge Flip"): the crown
-            # NO-REGRESSION spot for the single-knob candidate. `am` =
-            # RWM_ACK_MERGE=1 alone against `ship` (env unset = today's
-            # default). The knob changes the receiver's control-datagram
-            # cadence, which is exactly the clock a tail cell is sensitive
-            # to, so this arm is a gate, not a formality.
+            #   am     RWM_ACK_MERGE=1 alone (the receiver's control cadence)
             am)      AENV="RWM_ACK_MERGE=1"; AFLAGS="" ;;
-            # feat/three-term-battery (goal-gate "Three-Term Law"): the crown
-            # NO-REGRESSION spot (criterion 5, <= ~41 ms at 1000/1000). `tt` =
-            # the SCORED composed arm RWM_THREE_TERM=1 RWM_PLAIN_RS=1 against
-            # `ship` (env unset). The law is scoped to the reliable window's
-            # plain dynamic cap, so Realtime streaming should be INERT here —
-            # which is precisely why the spot is a gate: an inert law that
-            # moves the crown has escaped its scope.
+            #   tt     the three-term store cap; scoped to the reliable window's
+            #          plain dynamic cap, so it must be inert here
             tt)      AENV="RWM_THREE_TERM=1 RWM_PLAIN_RS=1"; AFLAGS="" ;;
-            # meas/streaming-retirement (crown re-test) HISTORIC arms: the
-            # `streaming`/`bulkstream` arms drove the 2026-07-27 crown re-test
-            # (RWM_UNIFIED=0 selected the streaming two-layer machine). The
-            # streaming machine was DELETED 2026-07-28 (register RE-TESTED/
-            # CLEARED); on current binaries RWM_UNIFIED=0 + Realtime selects
-            # the LEGACY-RLC windowed machine, so these arms would silently
-            # measure a different machine than their name claims — they now
-            # fail loudly instead (use `rlc` / `ship`).
+            # `streaming`/`bulkstream` named the deleted streaming machine; on
+            # current binaries RWM_UNIFIED=0 + Realtime selects the legacy-RLC
+            # windowed machine, so these arms fail loudly instead of silently
+            # measuring a different machine (use `rlc` / `ship`).
             streaming|bulkstream)
                 echo "ARM $arm RETIRED 2026-07-28: streaming machine deleted (goal-gate 'Streaming Crown Re-Test' / register); RWM_UNIFIED=0 now = legacy-RLC. Use 'rlc' or 'ship'." >&2
                 continue ;;

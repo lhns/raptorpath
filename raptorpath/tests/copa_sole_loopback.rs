@@ -1,6 +1,6 @@
-//! feat/copa-sole-cc end-to-end loopback guard: the PLAIN reliable-window
+//! Copa-sole end-to-end loopback guard (ADR-0062): the plain reliable-window
 //! perf exchange with `RWM_QUIC_CC=passthrough` — quinn's congestion window
-//! is the pass-through shim fed by OUR per-path Copa-lite cwnd (which the
+//! is the pass-through shim fed by our per-path Copa-lite cwnd (which the
 //! plain-mode WindowAck delivery feed drives). Guards, over real QUIC on
 //! 127.0.0.1:
 //!   - the handshake is not starved by the shim (connection establishes),

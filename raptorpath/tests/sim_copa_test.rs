@@ -1,4 +1,4 @@
-//! B2: Copa delay-based CC convergence tests with SimChannel.
+//! Copa delay-based CC convergence tests with SimChannel.
 //!
 //! Verifies that Copa congestion control converges through realistic
 //! simulated network conditions rather than manually injected data.

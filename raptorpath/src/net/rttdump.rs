@@ -1,77 +1,35 @@
-//! THE RAW RTT SAMPLE DUMP (`RWM_RTT_DUMP`, default OFF, observation only) —
-//! the instrument that makes the estimator battery's CLAUSE `B` EXACT.
+//! The raw RTT sample dump (`RWM_RTT_DUMP`, default OFF, observation only).
 //!
-//! WHY IT EXISTS — the defect it repairs, in the words of the record that
-//! found it.
+//! It emits the exact RTT sample stream the dispersion estimators consume, so
+//! each estimator's online reading can be compared against the same
+//! functional computed offline over the identical samples. That reference is
+//! exact and like-for-like by construction, unlike an external latency probe
+//! (e.g. `latt_probe.py`'s 20 Hz ICMP), which measures delivered round-trip
+//! time through the whole shaped path — a different quantity, sampled at a
+//! rate hundreds of times lower — and so can only ever reject an estimator,
+//! never acquit one.
 //!
-//! The scored estimator battery (goal-gate, "THE SIGMA ESTIMATOR — THE SCORED
-//! RESULT" §7) rejected three of four candidates on clause `B` and then
-//! recorded that the rejection's own reference was the part of the bar most in
-//! need of scrutiny:
+//! This is a narrowing: the comparison asks whether an estimator faithfully
+//! computes its functional over its own input, not whether that input is the
+//! true delivered latency. A delivered-latency probe at the sender's own
+//! sample rate does not exist.
 //!
-//! > *"A uniform 30–90× gap across ALL FOUR gauges, including the estimator
-//! > this tree has shipped and trusted for its whole history, is not four
-//! > independent biases; it is one property of the COMPARISON."*
+//! At a sender leg running tens of kHz this gauge writes megabytes of stderr,
+//! a CPU and I/O cost on the sender that perturbs sender-side dispersion. A
+//! dump-on pass is therefore run separately from the scored dump-off
+//! invocations, and its own dispersion readings are reported so the
+//! perturbation is visible.
 //!
-//! Clause `B`'s reference was `latt_probe.py`, a 20 Hz ICMP probe. Its own
-//! docstring names the mismatch: the probe measures delivered round-trip time
-//! *"through the WHOLE shaped path — netem's fixed delay, its jitter, its rate
-//! serialization, ITS queue, and our own bytes sitting in front of the probe"*,
-//! while `sig_us` measures the sender's smoothed estimate of its own ack path.
-//! **These are different quantities**, so `B` was written REJECT-only —
-//! it could convict and could never acquit. And for `msd_us`, the one
-//! candidate that came near the bar, `B` could not be evaluated at all: the
-//! probe samples at 20 Hz and the sender at kHz, and comparing a lag-dependent
-//! statistic across a 500× sampling-rate gap is not a comparison. The battery
-//! closed with the consequence stated plainly: *"nobody can currently say
-//! whether `msd` is measuring the right quantity at all … `msd`'s 90–100 %
-//! level gap against `sig_us` is unexplained, and 'unexplained' is not 'fine'."*
-//!
-//! WHAT THIS CHANGES — the question `B` asks, made answerable EXACTLY.
-//!
-//! Clause `B` exists to catch **an estimator that is stable because it
-//! measures something smaller.** That question is about the estimator against
-//! **the sample stream it consumes** — not about the sender's RTT against some
-//! other path's latency. This gauge emits that sample stream. With it, each
-//! candidate's online reading is compared against **the same functional
-//! computed offline over the identical samples**, so the reference is exact by
-//! construction, like-for-like by construction, and free of the lower-bound
-//! asymmetry that made `B` REJECT-only. **The rebuilt `B` can therefore
-//! ACQUIT.**
-//!
-//! It also settles the question the battery had to leave open, in one table:
-//! every functional evaluated offline on ONE sample stream says exactly how
-//! much of the 90–100× level gap between `msd_us` and `sig_us` is the
-//! functionals differing and how much is anything else.
-//!
-//! **AND THIS IS A NARROWING, RECORDED AS ONE.** The rebuilt `B` asks whether
-//! an estimator faithfully computes its functional over its own input. It does
-//! **not** ask whether that input is the true delivered latency — the question
-//! the probe was reaching for and answering badly. **The missing instrument
-//! the battery named — a delivered-latency probe at the sender's own sample
-//! rate — is still missing, and this module does not build it.**
-//!
-//! WHY THE DUMP PASS MUST BE SEPARATE FROM THE SCORED BATTERY.
-//!
-//! At a sender leg running tens of kHz this gauge writes megabytes of stderr
-//! during the run. That is a CPU and I/O cost on the sender, and sender-side
-//! dispersion is precisely the quantity clause `S` measures. **Running the
-//! dump on the scored invocations would perturb the measurement it is there to
-//! explain**, so the pre-registration amendment scores `S` and `C` on the
-//! dump-OFF battery and `B` on a separate dump-ON pass, and discloses the
-//! dump-ON pass's own `S` readings so the perturbation is visible rather than
-//! assumed absent.
-//!
-//! THE FORMAT, and how truncation is made READABLE rather than silent.
+//! ## Format
 //!
 //! ```text
 //!   [RTTDUMP] p=<path> t0=<µs since gauge epoch> n=<count> d=<dt,rtt;dt,rtt;…>
 //! ```
 //!
 //! One line per `BATCH` samples per path, so the per-sample cost is a push
-//! into a string rather than a write. Each batch is SELF-CONTAINED: `t0` is
+//! into a string rather than a write. Each batch is self-contained: `t0` is
 //! the absolute stamp of its first sample and every `dt` is a delta from the
-//! previous sample **within the batch**, with the first `dt` always 0. Both
+//! previous sample within the batch, with the first `dt` always 0. Both
 //! `dt` and `rtt` are µs. Offline reconstruction is
 //! `t_k = t0 + Σ_{i≤k} dt_i`, exactly, with no cross-batch state.
 //!
@@ -82,22 +40,21 @@
 //!      at end of run and are never written. Bounded by `BATCH − 1 = 255`
 //!      samples per path per run.
 //!   2. **The cap.** At most `RWM_RTT_DUMP_MAX` samples per path are dumped,
-//!      as a contiguous PREFIX of the run. When it binds, one
+//!      as a contiguous prefix of the run. When it binds, one
 //!      `[RTTDUMP-CAP]` line is printed, once, naming the count.
 //!   3. Both are checkable against the gauges' own denominators: the final
 //!      `[DIAG]` block's `sig_us=…/n<count>` is the number of samples the
 //!      estimators saw, so `dumped / n` is the dump's own coverage and the
 //!      parser reports it rather than assuming it is 1.
 //!
-//! **A PREFIX, AND THE CAVEAT IS STATED.** Truncation keeps the run's early
-//! samples, not a random subset — a contiguous prefix is required because the
-//! functionals under test are successive differences and a decimated sample
-//! set would change the very lag the estimand is defined at. The consequence
-//! is that a capped leg's `B` is scored over a time-prefix of the run. **`B`
-//! stays like-for-like regardless**, because every functional is computed over
-//! the same prefix.
+//! Truncation keeps a prefix. It keeps the run's early samples, not a random
+//! subset — a contiguous prefix is required because the functionals under
+//! test are successive differences and a decimated sample set would change
+//! the lag the estimand is defined at. A capped leg is therefore scored over
+//! a time-prefix of the run, and stays like-for-like because every functional
+//! is computed over the same prefix.
 //!
-//! OBSERVATION ONLY. The gauge owns all its state, no engine decision can
+//! Observation only. The gauge owns all its state, no engine decision can
 //! reach it, and with the gate off every feed site is a null check on a
 //! `OnceLock<Option<…>>` that resolved to `None`.
 
@@ -109,18 +66,17 @@ use std::time::Instant;
 /// Samples per emitted line. Amortises the write over a batch so the
 /// per-sample cost at a kHz leg is a `write!` into a `String`.
 ///
-/// **DECLARED RESOURCE BOUND**, and it is also the bound on loss 1 above: at
+/// Declared resource bound, and the bound on loss 1 above: at
 /// most `BATCH − 1` samples per path per run are left unwritten in the tail
 /// partial batch.
 const BATCH: usize = 256;
 
 /// Default cap on dumped samples per path (`RWM_RTT_DUMP_MAX`).
 ///
-/// **DECLARED RESOURCE BOUND.** At ~10 B per sample on the wire format above
-/// this is ~4 MB of stderr per path. The densest leg in the battery (`c1`,
-/// 338 279 samples per rep) is covered whole; the cap exists so that a longer
-/// or faster leg degrades to a declared, reported prefix instead of filling a
-/// disk.
+/// Declared resource bound. At ~10 B per sample on the wire format above
+/// this is ~4 MB of stderr per path, which covers a dense single-path leg
+/// whole; a longer or faster leg degrades to a declared, reported prefix
+/// instead of filling a disk.
 const DUMP_MAX_DEFAULT: usize = 400_000;
 
 /// Lower/upper clamps on the override, in the shape `ackdiag::window_us` uses.
@@ -128,7 +84,7 @@ const DUMP_MAX_MIN: usize = 1_000;
 const DUMP_MAX_MAX: usize = 20_000_000;
 
 /// Resolved `RWM_RTT_DUMP_MAX`, once per process. A mistyped or out-of-domain
-/// override resolves back to the default and is echoed as its RESOLVED value,
+/// override resolves back to the default and is echoed as its resolved value,
 /// so "my arm did not take" is read rather than inferred.
 pub fn dump_max() -> usize {
     crate::gates::get().rtt_dump_max
@@ -186,10 +142,9 @@ impl RttDump {
     }
 
     /// Offer one RTT sample. Called from the single delegate every ack path
-    /// funnels through, so the dumped stream is EXACTLY the stream the five
-    /// estimators consume — which is the whole point: clause `B` compares an
-    /// estimator against its own input, and "its own input" has to be
-    /// literally true or the comparison is the one this gauge replaces.
+    /// funnels through, so the dumped stream is exactly the stream the
+    /// estimators consume — the comparison is only valid if "its own input"
+    /// is literally true.
     pub fn note_rtt(&self, path_id: u32, rtt_us: u32) {
         let now = self.now_us();
         let mut m = self.paths.lock();
@@ -199,7 +154,7 @@ impl RttDump {
         if p.emitted >= self.cap {
             if !p.capped {
                 p.capped = true;
-                // Printed ONCE, at the moment the cap binds, so truncation is
+                // Printed once, at the moment the cap binds, so truncation is
                 // a line in the log rather than a silent shortfall. The parser
                 // also cross-checks `emitted` against the `[DIAG]` gauge `n`.
                 eprintln!(
@@ -262,10 +217,10 @@ mod tests {
 
     #[test]
     fn the_gauge_is_absent_on_the_shipped_default() {
-        // The gate is a process-global `OnceLock`, so this asserts the DEFAULT
-        // resolution in a process where nothing set the variable. It is the
-        // two-sided OFF-VALUE property (MEASUREMENT DISCIPLINE 15) at the
-        // module level: an instrument that could be on by accident would put
+        // The gate is a process-global `OnceLock`, so this asserts the default
+        // resolution in a process where nothing set the variable — the
+        // two-sided off-value property (`docs/measurement-discipline.md`
+        // rule 15). An instrument that could be on by accident would put
         // megabytes of stderr and a per-sample lock into every shipped run.
         assert!(
             std::env::var("RWM_RTT_DUMP").is_err(),
@@ -293,7 +248,7 @@ mod tests {
         // recovers absolute stamps with no cross-batch state. This is the
         // property the offline scorer depends on; if it were false, every
         // successive difference computed off the dump would be at the wrong
-        // lag and clause B would be scored against a mis-timed series.
+        // lag.
         let d = RttDump {
             epoch: Instant::now(),
             cap: 1_000,
@@ -306,7 +261,7 @@ mod tests {
         assert_eq!((emitted, seen), (3, 3));
         let m = d.paths.lock();
         let p = &m[&0];
-        // First dt is 0 by construction, so t0 IS the first sample's stamp.
+        // First dt is 0 by construction, so t0 is the first sample's stamp.
         assert!(
             p.buf.starts_with("0,1234;"),
             "the first entry of a batch must carry dt = 0 so that t0 is the \
@@ -322,9 +277,9 @@ mod tests {
 
     #[test]
     fn the_cap_is_reported_not_hidden() {
-        // A truncated dump that looked complete would silently make clause B a
-        // scoring over an unknown subset. The cap must announce itself, and it
-        // must announce itself EXACTLY ONCE however long the run continues.
+        // A truncated dump that looked complete would make the comparison a
+        // scoring over an unknown subset. The cap must announce itself, and
+        // exactly once however long the run continues.
         let d = RttDump {
             epoch: Instant::now(),
             cap: 2,

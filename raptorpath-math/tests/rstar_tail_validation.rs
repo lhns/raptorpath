@@ -1,14 +1,13 @@
-//! Task #46 — r* BURSTY-LOSS PROVISIONING: validation of the corrected
-//! (burst-tail quantile) r* solver against the OLD (GE closed-form) solver,
-//! through the #41/#43 oracle machinery.
+//! r* burst-tail provisioning (paper §4.3): the window loss-mass quantile
+//! solver against the GE closed-form solver, through the trace-replay
+//! oracle of `real_trace_validation.rs`.
 //!
-//! THE CLAIM UNDER TEST (paper Section 8.4.1). The Section 8.4 closed form
-//! provisions r* against the GE geometric burst law; on real traces the
-//! burst-length tail is 3.8x-26x heavier than geometric, bursts CLUSTER
-//! (long memory), and the delivered window-failure misses the delta/eps
-//! target by 2-4x beyond the GE-ideal (Section 2.5, MEASURED in
-//! real_trace_validation.rs — task #43). The corrected solver provisions
-//! against the measured WINDOW LOSS-MASS quantile (the exact failure
+//! The claim under test. The closed form (paper §4.2) provisions r* against
+//! the GE geometric burst law; on real traces the burst-length tail is
+//! 3.8x-26x heavier than geometric, bursts cluster (long memory), and the
+//! delivered window-failure misses the delta/eps target by 2-4x beyond the
+//! GE-ideal (paper §2.5, measured in `real_trace_validation.rs`). The
+//! corrected solver provisions against the measured WINDOW LOSS-MASS quantile (the exact failure
 //! statistic: a window fails iff its total loss mass exceeds its repair
 //! count) via the multi-scale mass tail (`MassStats` + `r_star_mass`).
 //! Composition mirrors production `controller_rate` exactly:
@@ -17,12 +16,12 @@
 //!
 //! THREE ARMS:
 //!   (1) GE-SYNTHETIC control: on GE-generated traces the measured mass
-//!       tail is the one the Section 8.7 exact DP implies, so r_new must
+//!       tail is the one the exact DP (paper §4.7) implies, so r_new must
 //!       track r*_exact (within fit/sampling slack) — no over-provisioning
 //!       beyond what the GE world itself requires (r_old, the closed
-//!       form, sits BELOW r*_exact: that shortfall is Section 8.7's own
+//!       form, sits BELOW r*_exact: that shortfall is the exact DP's own
 //!       documented finding, not a regression of this change).
-//!   (2) REAL traces (the five #43 cellular traces, identical loss
+//!   (2) REAL traces (the five cellular traces, identical loss
 //!       derivation): r_new must deliver the window-failure target where
 //!       r_old missed by 1.5-4x — or, where no in-window rate up to the
 //!       solver ceiling can meet it (deep multi-window fades), return the
@@ -48,7 +47,7 @@ const BUFFER: f64 = 64.0; // drop-tail buffer, packets
 const W: usize = 50; // FEC coding window (paper's canonical W)
 
 // ===========================================================================
-// Helpers mirrored from real_trace_validation.rs (task #43 methodology)
+// Helpers mirrored from real_trace_validation.rs
 // ===========================================================================
 
 fn trace_path(name: &str) -> PathBuf {
@@ -208,8 +207,7 @@ fn mass_stats(loss: &[bool], w0: usize) -> MassStats {
     stats
 }
 
-/// OLD solver: the Section 8.4 closed form with the sigma2_burst margin —
-/// exactly what production computed pre-#46 (and what #43 measured).
+/// OLD solver: the closed form (paper §4.2) with the sigma2_burst margin.
 fn r_old(eps: f64, s2: f64, tgt_wf: f64) -> f64 {
     let z = normal_quantile(1.0 - tgt_wf);
     compute_r_star_with_z(eps, s2, W as f64, z)
@@ -232,7 +230,7 @@ const TARGETS: [f64; 2] = [0.05, 0.02];
 
 #[test]
 fn rstar_tail_ge_control_no_overprovisioning() {
-    // Section 2.4 scenarios, 2M-symbol GE draws.
+    // Paper §2.3 scenarios, 2M-symbol GE draws.
     let cases = [("WiFi", 0.013, 0.5), ("LTE", 0.02, 0.4), ("Sat", 0.03, 0.3)];
     println!("\n=== ARM 1: GE-SYNTHETIC control (W={W}, 2M symbols, seed 42) ===");
     println!(
@@ -265,8 +263,8 @@ fn rstar_tail_ge_control_no_overprovisioning() {
             // NO OVER-PROVISIONING REGRESSION: the corrected r* stays at or
             // near the exact GE optimum — the mass-quantile law reproduces,
             // not exceeds, what the GE world itself requires. (r_old sits
-            // BELOW r*_exact and under-delivers even on GE — Section 8.7's
-            // own documented closed-form gap, visible in WF_old.)
+            // BELOW r*_exact and under-delivers even on GE — the closed-form
+            // gap of paper §4.7, visible in WF_old.)
             assert!(
                 rn <= 1.2 * rx,
                 "{name} tgt={tgt}: r_new {rn:.3} must not exceed 1.2x the exact GE r* {rx:.3}"
@@ -343,7 +341,7 @@ fn rstar_tail_real_traces_delivers_target() {
     println!(
         "\n  worst residual/target over FEASIBLE cells: OLD {worst_old_feasible:.2}x  NEW {worst_new_feasible:.2}x"
     );
-    // The documented #43 miss must still be visible for the OLD solver...
+    // The documented real-trace miss must still be visible for the OLD solver...
     assert!(
         old_missed_somewhere && worst_old_feasible > 1.5,
         "old solver should still miss materially on feasible cells (worst {worst_old_feasible:.2}x)"

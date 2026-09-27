@@ -1,38 +1,34 @@
-//! fix/frontier-wedge — deterministic reproduction + regression gate for the
-//! historic c3/C8 plain-mode "collapse run" (~2.2–3.3 Mbit/s for ~60 s,
-//! self-resolving, cross-arm).
+//! Deterministic reproduction of, and regression gate for, the plain-mode
+//! MTU black-hole wedge (~2.2–3.3 Mbit/s for ~60 s, self-resolving; ADR-0055).
 //!
-//! PROVEN MECHANISM (forensics: /home/vibe/wedge-c.log, 2026-07-13 battery):
-//! every wire symbol rides one ~1261–1275-byte QUIC datagram; quinn's
+//! Mechanism: every wire symbol rides one ~1261–1275-byte QUIC datagram; quinn's
 //! defaults are `initial_mtu = min_mtu = 1200`, so symbol datagrams are only
 //! sendable because post-handshake PMTUD raises the path MTU to ~1452. A GE
-//! loss burst of all-large packets looks to quinn's MTU BLACK-HOLE DETECTOR
+//! loss burst of all-large packets looks to quinn's MTU black-hole detector
 //! exactly like an MTU black hole: it resets `current_mtu` to `min_mtu`
 //! (1200) and pauses discovery for `black_hole_cooldown` (default 60 s).
 //! During that window `max_datagram_size` (~1170) is smaller than every
-//! symbol datagram, so EVERY data send — including every targeted retransmit
+//! symbol datagram, so every data send — including every targeted retransmit
 //! of the receiver's frontier blocker — fails at the sender with
-//! `SendDatagramError::TooLarge` (8 077 consecutive failures in the captured
-//! wedge), while small control datagrams keep the wire RTT fresh and the
-//! path alive. The receiver's frontier freeze is the SYMPTOM; the sender's
-//! MTU collapse is the disease. Self-resolution at ~60 s = the cooldown
-//! expiring and PMTUD re-probing.
+//! `SendDatagramError::TooLarge`, while small control datagrams keep the wire
+//! RTT fresh and the path alive. The receiver's frontier freeze is the
+//! symptom; the sender's MTU collapse is the cause. Self-resolution at ~60 s
+//! is the cooldown expiring and PMTUD re-probing.
 //!
-//! THE FIX (`QuicTransport::apply_mtu_floor`): `min_mtu = initial_mtu =
+//! The fix (`QuicTransport::apply_mtu_floor`): `min_mtu = initial_mtu =
 //! 1350`, so a black-hole reset lands at a floor that still carries a full
 //! symbol datagram. `RWM_MTU_FLOOR=0` restores stock quinn behavior (the
 //! wedge-reproduction control arm).
 //!
-//! This file deliberately contains the env-touching tests in ONE process-
+//! This file deliberately contains the env-touching tests in one process-
 //! isolated integration binary (env is process-global; the control arm is
 //! gated behind `RWM_WEDGE_CONTROL=1` so the default run stays short).
 //!
 //! The repro shapes the wire with an in-process lossy UDP proxy that drops
 //! every UDP payload ≥ 1280 bytes for a 3-second window mid-transfer — a
-//! REAL (transient) MTU black hole below quinn, which the L0 netem shim
+//! real (transient) MTU black hole below quinn, which the L0 netem shim
 //! structurally cannot express (it drops above quinn's packet layer, so
-//! quinn never sees the large-packet loss pattern; that is why the wedge
-//! never reproduced at L0).
+//! quinn never sees the large-packet loss pattern).
 
 #[path = "common/loopback.rs"]
 mod loopback;
@@ -184,8 +180,8 @@ async fn run_transfer(bytes: usize) -> Duration {
     elapsed
 }
 
-/// REGRESSION GATE (the fix, default env): a 3-second true MTU black hole
-/// mid-transfer must NOT wedge the transfer for the 60-second quinn
+/// Regression gate (the fix, default env): a 3-second true MTU black hole
+/// mid-transfer must not wedge the transfer for the 60-second quinn
 /// black-hole cooldown. With the MTU floor, a black-hole reset lands at
 /// 1350 — symbol datagrams stay sendable — so the transfer resumes the
 /// moment the hole closes and completes in a few seconds.

@@ -1,4 +1,4 @@
-//! ADR-0009 + ADR-0019: BBR-style delay-based congestion control tests.
+//! Delay-based congestion control tests (paper §8; ADR-0054).
 
 use raptorpath::fec::{FecBackend, WireSymbol};
 use raptorpath::scheduler::{MockClock, PathState, Scheduler};
@@ -288,7 +288,7 @@ fn test_multipath_independent_cc() {
 }
 
 // ---------------------------------------------------------------------------
-// Copa delay-based congestion control tests (replaces ProbeRTT / ADR-0024)
+// Copa delay-based congestion control tests
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -424,7 +424,7 @@ fn test_copa_startup_exits_on_congestion() {
 
 #[test]
 fn test_btlbw_anchor_establishes_after_samples() {
-    // Section 12.6: the BtlBw×RTprop anchor needs both a min-RTT sample and
+    // Paper §8.3: the BtlBw×RTprop anchor needs both a min-RTT sample and
     // ANCHOR_MIN_SAMPLES delivery samples before it is trusted.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
@@ -457,10 +457,10 @@ fn test_btlbw_anchor_establishes_after_samples() {
 
 #[test]
 fn test_btlbw_anchor_floors_cwnd_under_backoff() {
-    // Section 12.6: once the BtlBw anchor is established, repeated delay
-    // backoffs must NOT crawl cwnd below the BtlBw×RTprop floor (the pre-
-    // anchor behavior collapsed toward MIN_CWND = 8; measured L1 C2 root
-    // cause of cwnd 80-110 vs BDP ~160).
+    // Paper §8.3: once the BtlBw anchor is established, repeated delay
+    // backoffs must not crawl cwnd below the BtlBw×RTprop floor (without
+    // the anchor, backoff collapses cwnd toward MIN_CWND = 8, well under
+    // the BDP).
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);

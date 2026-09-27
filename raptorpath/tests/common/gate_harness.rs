@@ -1,8 +1,8 @@
-// The ADR-0051 L0 gate harness: the paper §2.4 channels, the SimRetx /
-// SimQUIC baselines and the raptorpath FEC+ARQ model, with the cell runner.
-// Textually `include!`d (not a module) by `gate_suite.rs` (the gates) and
-// `ablation_bench.rs` (the ignored diagnostics), so both see one copy of the
-// harness with no visibility plumbing. The includer supplies `mod common;`
+// The ADR-0051 L0 gate harness: the paper §2.3 Gilbert-Elliott channels, the
+// SimRetx / SimQUIC baselines and the raptorpath FEC+ARQ model, with the cell
+// runner. Textually `include!`d (not a module) by `gate_suite.rs` (the gates)
+// and `ablation_bench.rs` (the ignored diagnostics), so both see one copy of
+// the harness with no visibility plumbing. The includer supplies `mod common;`
 // and the `use` lines.
 const SYMBOL_SIZE: u16 = 1200;
 const WIRE_BYTES: f64 = 1225.0; // symbol + per-symbol wire overhead
@@ -13,8 +13,8 @@ const TICK: Duration = Duration::from_micros(500);
 const ENC_WINDOW: u64 = 64; // encoder sliding window (paper W)
 
 // ---------------------------------------------------------------------------
-// ADR-0051 channels — paper Section 2.4 GE parameterization (h_G=0, h_B=1,
-// so epsilon = p/(p+q) exactly).
+// ADR-0051 channels — paper §2.3 GE parameterization (h_G=0, h_B=1, so
+// epsilon = p/(p+q) exactly).
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
@@ -240,7 +240,7 @@ fn run_baseline(paths: &[GateChannel], seed: u64) -> Outcome {
 
 // ---------------------------------------------------------------------------
 // SimQuic baseline (P3): loss-blind delay-based CC + SACK-timed ARQ, no FEC,
-// in-order stream delivery, single path. The honest QUIC-class adversary.
+// in-order stream delivery, single path. The QUIC-class adversary.
 // ---------------------------------------------------------------------------
 
 /// SimQuic: models QUIC-as-deployed at L0 fidelity. Single path (no MPQUIC
@@ -427,8 +427,8 @@ fn prewarm(ch: &GateChannel) -> LossEstimator {
     est
 }
 
-/// Expected delivery time score for source-path selection (paper 13.5, with
-/// the geometric retransmit chain of 13.4: expected retries = eps/(1-eps)).
+/// Expected delivery time score for source-path selection (paper §5.7), with
+/// the geometric retransmit chain: expected retries = eps/(1-eps).
 fn path_score(srtt: f64, eps: f64) -> f64 {
     let chain = (eps / (1.0 - eps).max(1e-6)).min(50.0);
     srtt / 2.0 + chain * 1.5 * srtt
@@ -438,13 +438,13 @@ struct FecConfig {
     hint: ProtocolHint,
     /// Outage on path 0: (start, end) after t0.
     outage: Option<(Duration, Duration)>,
-    /// P1: protocol hint also tightens the Copa queue target (paper 12.4).
+    /// P1: protocol hint also tightens the Copa queue target (paper §8.2).
     hint_delay_target: bool,
     /// P2: Copa floor is a running min estimate, not ground truth.
     estimated_floor: bool,
-    /// P4a/P6: Bulk maps to the completion-exposure glide (paper 14.26):
-    /// pure-ARQ steady state (χ = 0 ⇒ r* = 0), ramping to the 14.25 tail
-    /// budget over the final ~1.5 SRTT (χ is fed per tick).
+    /// P4a/P6: Bulk maps to the completion-exposure glide (paper §4.6):
+    /// pure-ARQ steady state (χ = 0 ⇒ r* = 0), ramping to the tail budget
+    /// over the final ~1.5 SRTT (χ is fed per tick).
     bulk_arq_delta: bool,
     /// P4b: burst of repairs covering the final window at end-of-stream.
     /// Under the Bulk χ glide (bulk_arq_delta) the burst is subsumed by
@@ -475,10 +475,10 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
 
     let mut chans: Vec<SimChannel> = Vec::new();
     let mut ests: Vec<LossEstimator> = Vec::new();
-    // Copa-lite congestion window (paper Section 12): delay-based — grow
-    // while queueing delay is low, back off when SRTT rises above the
-    // propagation floor. Keeps queues near-empty (low p99), unlike the
-    // baseline's loss-based AIMD which fills the buffer.
+    // Copa-lite congestion window (paper §8): delay-based — grow while
+    // queueing delay is low, back off when SRTT rises above the propagation
+    // floor. Keeps queues near-empty (low p99), unlike the baseline's
+    // loss-based AIMD which fills the buffer.
     let mut cwnd: Vec<f64> = Vec::new();
     let mut srtt: Vec<f64> = Vec::new();
     let mut debt: Vec<f64> = Vec::new();
@@ -491,12 +491,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     let mut tokens: Vec<f64> = Vec::new();
     let mut last_flush: Vec<Instant> = Vec::new();
     let mut last_probe: Vec<Instant> = Vec::new();
-    // Copa uses the MINIMUM RTT sample per window: the min sees through
+    // Copa uses the minimum RTT sample per window: the min sees through
     // transient serialization bursts to the standing queue; an EWMA stays
     // inflated long after the queue drains and causes a backoff spiral.
     let mut min_rtt_win: Vec<f64> = Vec::new();
     // P2 (estimated_floor): running lifetime-min RTT sample = the endpoint's
-    // ESTIMATE of the propagation floor. Copa uses a 10s min window, which
+    // estimate of the propagation floor. Copa uses a 10 s min window, which
     // exceeds any trial here, so lifetime min is the faithful analogue. The
     // ground-truth paths[i].rtt() is a simulation cheat a real endpoint
     // cannot make.
@@ -537,21 +537,18 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     }
 
     let mut ctrl = FecRateController::new(1e-5, 0.5, cfg.hint, FecBackend::Rlc, SYMBOL_SIZE);
-    // P5: cap r at the p99(r) saturation point (paper 14.21).
+    // P5: cap r at the p99(r) saturation point (paper §4.4).
     ctrl.set_saturation_cap(cfg.saturation_cap);
     // P4a/P6: Bulk maps δ to the completion-exposure glide
-    // δ_eff = ε̂ + (0.05 − ε̂)·χ (paper 14.26): pure ARQ mid-stream (χ = 0,
-    // r* = 0 identically), ramping to the 14.25 tail budget over the final
-    // ~1.5 SRTT. χ is fed per tick below (the driver KNOWS N_SYMBOLS).
+    // δ_eff = ε̂ + (0.05 − ε̂)·χ (paper §4.6): pure ARQ mid-stream (χ = 0,
+    // r* = 0 identically), ramping to the tail budget over the final
+    // ~1.5 SRTT. χ is fed per tick below (the driver knows N_SYMBOLS).
     // Flag-gated for ablation; no-op for non-Bulk hints.
     ctrl.set_bulk_pure_arq(cfg.bulk_arq_delta);
-    // P10a (paper 14.28): inner-feedback weight stays at its default 0 —
-    // the gate's payload IS the transfer (file-transfer semantics), its
-    // delivery latency does not feed back into its own throughput, so
-    // mid-stream ARQ recovery is genuinely free and Bulk keeps the pure
-    // glide. (The production tunnel also defaults to 0 after the L1
-    // ablation measured the floor completion-neutral at C2 / regressive
-    // at C3; `inner_feedback_weight` opts in.)
+    // P10a: the inner-feedback weight stays at its default 0 — the gate's
+    // payload is the transfer (file-transfer semantics), its delivery latency
+    // does not feed back into its own throughput, so mid-stream ARQ recovery
+    // is free and Bulk keeps the pure glide.
     // P6 rides P4a's flag: χ only matters under the Bulk glide.
     let chi_active = cfg.hint == ProtocolHint::Bulk && cfg.bulk_arq_delta;
     let mut encoder = RlcWindowEncoder::new(SYMBOL_SIZE);
@@ -564,7 +561,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     // jitter x send_rate sources) carries no usable information at arrival
     // time — it parks as a deep pivot instead of decoding the actual loss.
     // Lagging the encoder behind the send stream by that horizon makes a
-    // repair's unknowns be TRUE losses, decodable on arrival.
+    // repair's unknowns true losses, decodable on arrival.
     let max_jitter_s = paths.iter().map(|c| c.jitter_ms).max().unwrap() as f64 / 1000.0;
     let total_rate: f64 = paths
         .iter()
@@ -581,30 +578,29 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     let mut source_store: Vec<WireSymbol> = Vec::with_capacity(N_SYMBOLS as usize);
     let mut encode_time: Vec<Instant> = Vec::with_capacity(N_SYMBOLS as usize);
     let mut last_retx: Vec<Instant> = Vec::with_capacity(N_SYMBOLS as usize);
-    // Path a source symbol was LAST sent on — the retransmit gate must use
+    // Path a source symbol was last sent on — the retransmit gate must use
     // that path's SRTT and loss rate. A global (srtt_min, eps_max) gate
     // declares slow-path in-flights lost at the fast path's timescale and
-    // saturates P_lost for ALL in-flights during an outage (spurious-retx
+    // saturates P_lost for all in-flights during an outage (spurious-retx
     // storm once retransmits preempt source).
     let mut src_path: Vec<usize> = Vec::with_capacity(N_SYMBOLS as usize);
-    // Retransmit round per symbol: the k-th round sends min(k, 3) copies
-    // (paper 13.4 geometric chain — a symbol whose retransmit was ALSO
-    // lost is deep in the completion tail, and each further single-copy
-    // round is another eps-coin-flip costing a full RTT; escalating copies
-    // converts that multiplicative tail into an additive one for eps² of
-    // holes, a negligible volume cost).
+    // Retransmit round per symbol: the k-th round sends min(k, 3) copies. A
+    // symbol whose retransmit was also lost is deep in the completion tail,
+    // and each further single-copy round is another eps-coin-flip costing a
+    // full RTT; escalating copies converts that multiplicative tail into an
+    // additive one for eps² of holes, a negligible volume cost.
     let mut retx_round: Vec<u8> = Vec::with_capacity(N_SYMBOLS as usize);
-    // Highest source seq ARRIVED on each path (wire-level, pre-decode):
-    // packet-threshold gap evidence (RFC 9002 kPacketThreshold, paper
-    // 14.22). A hole with ≥ enc_lag + 3 later seqs arrived on its own path
-    // is lost with near-certainty — no need to wait out the time threshold.
+    // Highest source seq arrived on each path (wire-level, pre-decode):
+    // packet-threshold gap evidence (RFC 9002 kPacketThreshold). A hole with
+    // ≥ enc_lag + 3 later seqs arrived on its own path is lost with
+    // near-certainty — no need to wait out the time threshold.
     let mut max_arr_src_on_path: Vec<u64> = vec![0; n_paths];
     // Decode instant per source seq (diagnostics: separates decode time
     // from reorder-release time in the completion tail).
     let mut decode_time: Vec<Option<Instant>> = vec![None; N_SYMBOLS as usize];
     let mut recovered: BTreeSet<u64> = BTreeSet::new();
     // Decode-level receipt (pre-reorder) — the sender's SACK view. The
-    // retransmit scan MUST use this, not the reorder-released set, or
+    // retransmit scan must use this, not the reorder-released set, or
     // symbols buffered behind a gap get spuriously retransmitted.
     let mut decoded: BTreeSet<u64> = BTreeSet::new();
     let mut latencies: Vec<f64> = Vec::new();
@@ -623,9 +619,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
     let mut hole_fill_ms: Vec<f64> = Vec::new();
     let mut sent: u32 = 0;
     let mut in_batch: u32 = 0;
-    // P4b: end-of-stream tail FEC fired exactly once (paper 14.25).
-    // Repairs are pre-generated (the encoder window moves at the flush) and
-    // drained under pacing tokens on the best path.
+    // P4b: end-of-stream tail FEC, fired exactly once. Repairs are
+    // pre-generated (the encoder window moves at the flush) and drained under
+    // pacing tokens on the best path.
     let mut tail_flushed = false;
     let mut tail_queue: VecDeque<WireSymbol> = VecDeque::new();
     let mut tail_best = 0usize;
@@ -643,9 +639,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
         }};
     }
 
-    // Room = a send token is available. Tokens replenish at cwnd/SRTT
-    // per second (Copa's sending rate) — the OFFERED load is paced by
-    // sender knowledge, independent of what the channel drops.
+    // Room = a send token is available. Tokens replenish at cwnd/SRTT per
+    // second (Copa's sending rate) — the offered load is paced by sender
+    // knowledge, independent of what the channel drops.
     macro_rules! has_room {
         ($i:expr, $now:expr) => {{
             let _ = $now;
@@ -655,9 +651,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
 
     // Path-selection loss estimate: blend of the BOCD-informed median
     // (regime-aware, converges within a few batches) and the GE
-    // state-conditional loss rate (paper C.6 eps_burst — flips on the
-    // FIRST delivery after an outage ends). The blend reacts within one
-    // symbol of a state change while staying anchored to the posterior.
+    // state-conditional loss rate (eps_burst — flips on the first delivery
+    // after an outage ends). The blend reacts within one symbol of a state
+    // change while staying anchored to the posterior.
     macro_rules! eps_sel {
         ($i:expr) => {{
             let med = ests[$i].predictive_loss_upper(0.5);
@@ -693,11 +689,11 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             }
         }
 
-        // P6 — completion exposure (paper 14.26): the driver knows the
+        // P6 — completion exposure (paper §4.6): the driver knows the
         // transfer length, so T_rem = (N − sent) / aggregate send rate.
-        // SRTT is the slowest path's (its ARQ round is the one that can
-        // no longer overlap sends); RTTVAR mirrors the retx gate's
-        // 0.125 × SRTT. Unknown rate ⇒ T_rem = ∞ ⇒ χ = 0 (pure ARQ).
+        // SRTT is the slowest path's (its ARQ round is the one that can no
+        // longer overlap sends); RTTVAR mirrors the retx gate's 0.125 × SRTT.
+        // Unknown rate ⇒ T_rem = ∞ ⇒ χ = 0 (pure ARQ).
         if chi_active {
             let srtt_max = srtt.iter().cloned().fold(0.0f64, f64::max);
             let t_rem = if total_rate > 0.0 {
@@ -712,9 +708,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             ));
         }
 
-        // Correction preemption (paper C.1 / Mehrotra): due corrections are
-        // sent BEFORE new source symbols — they compete for the same wire
-        // budget and win when the taper says they are due.
+        // Correction preemption: due corrections are sent before new source
+        // symbols — they compete for the same wire budget and win when the
+        // taper says they are due.
         for i in 0..n_paths {
             loop {
                 let now2 = clock.now();
@@ -728,9 +724,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             }
         }
 
-        // P4b: drain the end-of-stream tail burst (paper 14.25) under
-        // pacing tokens on the best path — corrections preempt source
-        // (there is no source left by then anyway).
+        // P4b: drain the end-of-stream tail burst under pacing tokens on the
+        // best path — corrections preempt source (there is no source left by
+        // then anyway).
         loop {
             let now2 = clock.now();
             if tail_queue.is_empty() || !has_room!(tail_best, now2) {
@@ -742,16 +738,15 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
         }
 
         // P_lost-gated exact-source retransmit (correction symbols of the
-        // retransmit kind, paper Section 5.4), cross-path via best E_i.
-        // Scanned every tick — models per-ACK gap detection (SACK).
+        // retransmit kind, paper §3.4), cross-path via best E_i. Scanned every
+        // tick — models per-ACK gap detection (SACK).
         //
-        // The gate is PATH-AWARE: a symbol's loss evidence is measured on
-        // the clock and loss rate of the path it was last sent on, with a
-        // 9/8 × SRTT time-threshold floor (RFC 9002 discipline) plus a
-        // packet-threshold detector when ARQ is the primary recovery. A
-        // global (srtt_min, eps_max) gate declares slow-path in-flights
-        // lost at the fast path's timescale and saturates P_lost for ALL
-        // in-flights during an outage (spurious-retx storm).
+        // The gate is path-aware: a symbol's loss evidence is measured on the
+        // clock and loss rate of the path it was last sent on, with a
+        // 9/8 × SRTT time-threshold floor (RFC 9002) plus a packet-threshold
+        // detector when ARQ is the primary recovery. A global (srtt_min,
+        // eps_max) gate declares slow-path in-flights lost at the fast path's
+        // timescale and saturates P_lost for all in-flights during an outage.
         macro_rules! retx_scan {
             ($arq_primary:expr) => {{
                 let now3 = clock.now();
@@ -782,13 +777,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                         && max_arr_src_on_path[sp] >= seq + enc_lag as u64 + 3;
                     let time_detected =
                         age > 1.125 * srtt_p && pl > 0.9 && rng.gen::<f64>() < pl;
-                    // End-of-stream cross-path tail reinjection (paper
-                    // 13.10 + 14.25): once nothing overlaps recovery, an
-                    // undecoded symbol whose path is much slower than the
-                    // best path is worth duplicating onto the fast path —
-                    // the fast-path flight beats the slow path's residual
-                    // queue + propagation wait, and the duplicate costs
-                    // spare end-of-stream tokens only.
+                    // End-of-stream cross-path tail reinjection: once nothing
+                    // overlaps recovery, an undecoded symbol whose path is
+                    // much slower than the best path is worth duplicating onto
+                    // the fast path — the fast-path flight beats the slow
+                    // path's residual queue + propagation wait, and the
+                    // duplicate costs spare end-of-stream tokens only.
                     let tail_reinject =
                         sent == N_SYMBOLS && sp != best && srtt_p > 1.5 * srtt[best];
                     if (gap_detected || time_detected || tail_reinject)
@@ -796,10 +790,10 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                         && has_room!(best, now3)
                     {
                         let round = retx_round[seq as usize];
-                        // Copy escalation only where rounds are SERIAL
-                        // (end-of-stream, paper 14.25): mid-transfer a
-                        // repeat-lost retransmit recovers in parallel with
-                        // ongoing sends, so extra copies are pure overhead.
+                        // Copy escalation only where rounds are serial
+                        // (end-of-stream): mid-transfer a repeat-lost
+                        // retransmit recovers in parallel with ongoing sends,
+                        // so extra copies are pure overhead.
                         let copies = if sent == N_SYMBOLS {
                             (round as u32 + 1).min(3)
                         } else {
@@ -828,20 +822,19 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             }};
         }
 
-        // FEC/ARQ budget coordination (paper 5.4, 14.16): when ambient
-        // repairs are flowing they own the fast recovery path, and the
-        // retransmit-kind is a BACKSTOP that rides spare tokens AFTER the
-        // send phase — a preempting retransmit would double-spend wire on
-        // holes a repair is already in flight for, and each duplicate
-        // displaces a source symbol onto the slower path (stretching the
-        // multipath completion tail). When ARQ is the PRIMARY recovery —
-        // the rate is ~0 (Bulk pure-ARQ steady state, paper 5.3), or the
-        // hint is Bulk (mid-transfer lateness is free, paper 14.25, so a
-        // due retransmit preempts source like any correction, paper C.1) —
-        // it runs BEFORE the send phase: starved behind it, ALL recovery
-        // serializes at end-of-stream (measured hole-fill p50 ~110 ms
-        // instead of ~1.5 RTT at C2-Bulk). The packet-threshold detector
-        // is enabled only in the true pure-ARQ regime.
+        // FEC/ARQ budget coordination: when ambient repairs are flowing they
+        // own the fast recovery path, and the retransmit kind is a backstop
+        // that rides spare tokens after the send phase — a preempting
+        // retransmit would double-spend wire on holes a repair is already in
+        // flight for, and each duplicate displaces a source symbol onto the
+        // slower path (stretching the multipath completion tail). When ARQ is
+        // the primary recovery — the rate is ~0 (Bulk pure-ARQ steady state,
+        // paper §4.5), or the hint is Bulk (mid-transfer lateness is free, so
+        // a due retransmit preempts source like any correction) — it runs
+        // before the send phase: starved behind it, all recovery serializes at
+        // end-of-stream (hole-fill p50 ~110 ms instead of ~1.5 RTT at
+        // C2-Bulk). The packet-threshold detector is enabled only in the true
+        // pure-ARQ regime.
         let mut fec_rate_max = 0.0f64;
         for i in 0..n_paths {
             fec_rate_max =
@@ -854,12 +847,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             retx_scan!(pure_arq);
         }
 
-        // Send phase: source symbols while a path has window room.
-        // Paths are ranked by expected delivery time E_i (paper 13.5 with
-        // the 13.4 geometric retransmit chain). Overflow onto a worse path
-        // happens with probability (1 - eps_i): a path's usefulness for
-        // source is its delivery probability, so a dead path receives a
-        // vanishing (but never zero) share, continuously.
+        // Send phase: source symbols while a path has window room. Paths are
+        // ranked by expected delivery time E_i (paper §5.7, with the
+        // geometric retransmit chain). Overflow onto a worse path happens with
+        // probability (1 - eps_i): a path's usefulness for source is its
+        // delivery probability, so a dead path receives a vanishing (but never
+        // zero) share, continuously.
         'send: while sent < N_SYMBOLS {
             let now2 = clock.now();
             let mut order: Vec<usize> = (0..n_paths).collect();
@@ -881,7 +874,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             let Some(i) = pick else { break 'send };
 
             let data = vec![(sent % 251) as u8; SYMBOL_SIZE as usize];
-            // Source symbols go on the wire immediately; the ENCODER sees
+            // Source symbols go on the wire immediately; the encoder sees
             // them enc_lag symbols later (jitter horizon, see above).
             let sym = WireSymbol {
                 block_id: sent as u64,
@@ -917,12 +910,11 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 // Correction debt per path. In steady state the aggregate
                 // correction rate is shape-invariant: every in-window symbol
                 // contributes its taper at a different age, and the ages sum
-                // to r per source symbol (paper Section 4.2). So the debt
-                // accumulates at the flat aggregate rate — NOT at τ(t) with
-                // a global ever-growing t, which decays to zero and starves
-                // repair generation entirely (a latent bench_suite bug).
-                // Corrections share the path's wire budget with source
-                // (Section 12.5) and preempt new source when due (C.1).
+                // to r per source symbol (paper §3.3). So the debt accumulates
+                // at the flat aggregate rate — not at τ(t) with a global
+                // ever-growing t, which decays to zero and starves repair
+                // generation. Corrections share the path's wire budget with
+                // source and preempt new source when due.
                 for i in 0..n_paths {
                     let rate = ctrl.compute_repair_rate(&ests[i], encoder.window_size());
                     if std::env::var("RP_GATE_DEBUG").is_ok() {
@@ -934,7 +926,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                             raptorpath::control::fec_rate::burst_variance_factor(&ests[i])
                         );
                     }
-                    // Each path protects ITS share of the source stream —
+                    // Each path protects its share of the source stream —
                     // accruing the full rate on every path would double the
                     // correction budget on multipath.
                     debt[i] += rate * batch_src[i] as f64;
@@ -943,23 +935,22 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             }
         }
 
-        // P4b — completion-tail FEC (paper 14.25): a transfer's completion
-        // is send duration + recovery of the LAST window's losses. Mid-
-        // transfer losses recover in parallel with ongoing sends; tail
-        // losses cost ~1.5 RTT of serial ARQ each round. At end-of-stream,
-        // burst n_tail repairs covering the final window: cost r_tail × W
-        // symbols (negligible), saving P(≥1 tail loss) × ~1.5 RTT. r_tail
-        // from the exact transfer-matrix computation (paper 8.7): smallest
-        // r with P_fail ≤ 0.05.
+        // P4b — completion-tail FEC: a transfer's completion is send duration
+        // + recovery of the last window's losses. Mid-transfer losses recover
+        // in parallel with ongoing sends; tail losses cost ~1.5 RTT of serial
+        // ARQ each round. At end-of-stream, burst n_tail repairs covering the
+        // final window: cost r_tail × W symbols (negligible), saving
+        // P(≥1 tail loss) × ~1.5 RTT. r_tail from the exact transfer-matrix
+        // computation (paper §4.7): smallest r with P_fail ≤ 0.05.
         //
-        // NOT under the Bulk χ glide (P6, paper 14.26): the ramp already
-        // raised r continuously over the final ~1.5 SRTT — the one-shot
-        // burst is the ramp's limiting case, and firing both would
-        // double-pay the tail budget. Non-Bulk hints keep the burst.
+        // Not under the Bulk χ glide (P6, paper §4.6): the ramp already raised
+        // r continuously over the final ~1.5 SRTT — the one-shot burst is the
+        // ramp's limiting case, and firing both would double-pay the tail
+        // budget. Non-Bulk hints keep the burst.
         if cfg.tail_fec && !chi_active && !tail_flushed && sent == N_SYMBOLS {
             tail_flushed = true;
             let ge = ests[0].ge_estimator();
-            // p_gb/q_bg = 0 are NO-DATA sentinels (decayed counters on very
+            // p_gb/q_bg = 0 are no-data sentinels (decayed counters on very
             // clean channels), not measurements — the transfer-matrix DP
             // would see infinite bursts and return its search ceiling.
             let r_tail = if ge.is_valid() && ge.p_gb() > 0.0 && ge.p_bg() > 0.0 {
@@ -977,8 +968,8 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                     tail_queue.push_back(encoder.generate_repair());
                 }
             }
-            // The encoder trails the send stream by enc_lag (paper 14.24);
-            // drain the lag queue so repairs cover the FINAL window.
+            // The encoder trails the send stream by enc_lag; drain the lag
+            // queue so repairs cover the final window.
             while let Some(d) = enc_queue.pop_front() {
                 let es = encoder.add_source(&d);
                 if es.block_id >= ENC_WINDOW {
@@ -1012,8 +1003,8 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
 
         // Path probing: one repair symbol per path per RTT. Probing with
         // repairs is free information — a repair is never wasted (paper
-        // Section 5.2) — and its loss/arrival feedback is what lets a
-        // recovered path come back into rotation.
+        // §3.4) — and its loss/arrival feedback is what lets a recovered path
+        // come back into rotation.
         for i in 0..n_paths {
             let now2 = clock.now();
             // Probe faster on lossier paths (down to srtt/4 when dead):
@@ -1076,9 +1067,9 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 newly.extend(outs);
             }
         }
-        // Estimator feedback once per RTT per path (paper Section 7.1: a
-        // batch = one ACK feedback cycle). Tiny per-10-symbol updates keep
-        // the BOCD posterior artificially wide; RTT cadence matches the
+        // Estimator feedback once per RTT per path (a batch = one ACK
+        // feedback cycle, paper §2.6). Tiny per-10-symbol updates keep the
+        // BOCD posterior artificially wide; RTT cadence matches the
         // information rate of a real ACK stream.
         for i in 0..n_paths {
             if now.duration_since(last_flush[i]).as_secs_f64() >= srtt[i] {
@@ -1099,12 +1090,12 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 // Copa-lite: standing queue = min-RTT-in-window minus the
                 // propagation floor. While the queue is empty, ramp
                 // multiplicatively (fills the pipe in a few RTTs); once the
-                // MIN sample rises above the floor, back off. Continuous
-                // oscillation, no phases, no loss reaction — channel loss
-                // is FEC's job, not CC's (paper Section 12).
+                // min sample rises above the floor, back off. Continuous
+                // oscillation, no phases, no loss reaction — channel loss is
+                // FEC's job, not CC's (paper §8.1).
                 // P2: with estimated_floor the propagation floor is the
                 // running min RTT sample, not ground truth. The estimate is
-                // slightly LOWER than rtt() (a min sample carries ~zero
+                // slightly lower than rtt() (a min sample carries ~zero
                 // jitter while rtt() includes the jitter term), so the
                 // effective queue target tightens a little — honest, not
                 // compensated.
@@ -1114,19 +1105,16 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                     paths[i].rtt().as_secs_f64()
                 };
                 //
-                // P1 (paper 12.4): the protocol hint sets the queue TARGET,
+                // P1 (paper §8.2): the protocol hint sets the queue target,
                 // not just the FEC rate. At high utilization the standing
                 // queue sits at this target, so Realtime keeps it near-empty
-                // while Bulk trades a deeper queue for utilization. A
-                // 3-level mapping for now; a continuous delta-based mapping
-                // (tail latency budget -> Copa d_copa) is the future option.
+                // while Bulk trades a deeper queue for utilization. A 3-level
+                // mapping here; the continuous δ-based mapping is §8.2's.
                 //
-                // Calibration (merged with P2's estimated floor): `base` is
-                // the jitter-free min-sample floor (~2xone_way), so the
-                // Realtime multiplier sits just above 1: 1.08 = floor +
-                // ~0.8ms of queue on C2. (P1 originally measured 0.85
-                // against the ground-truth base, which carried the jitter
-                // bound as implicit slack — see the P1 branch history.)
+                // Calibration (with P2's estimated floor): `base` is the
+                // jitter-free min-sample floor (~2×one_way), so the Realtime
+                // multiplier sits just above 1: 1.08 = floor + ~0.8 ms of
+                // queue on C2.
                 let queue_mult = if cfg.hint_delay_target {
                     match cfg.hint {
                         ProtocolHint::Realtime => 1.08,
@@ -1158,7 +1146,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 if let Some(lt) = loss_time.get(&seq) {
                     hole_fill_ms.push(now.duration_since(*lt).as_secs_f64() * 1000.0);
                 }
-                // Goodput buckets count DECODE-level delivery: the tunnel
+                // Goodput buckets count decode-level delivery: the tunnel
                 // forwards packets; ordering is a per-flow latency concern
                 // (measured via the reorder buffer), not a throughput one.
                 let b = (now.duration_since(t0).as_nanos() / BUCKET.as_nanos()) as usize;

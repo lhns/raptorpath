@@ -1,4 +1,4 @@
-//! B5: NACK repair flow tests with SimChannel.
+//! NACK repair flow tests with SimChannel.
 //!
 //! Verifies gap detection, NACK-triggered repair recovery,
 //! cooldown bounds, and gap range limits.

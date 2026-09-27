@@ -4,26 +4,25 @@
 //! Unlike round-robin MPTCP, we schedule symbols proportional to each path's
 //! effective goodput and route repair symbols preferentially to better paths.
 //!
-//! Congestion control is Copa-lite (delay-based, paper Sections 12.4-12.5),
-//! ported from the L0-proven gate-suite driver (P1+P2 semantics):
+//! Congestion control is Copa-lite (delay-based, paper §8.2):
 //!
 //!   - Propagation floor = min RTT sample in a sliding ~10s window.
 //!   - Queuing-delay signal = min RTT sample since the last cwnd update
 //!     (a windowed MIN, not an EWMA: the min sees through transient
 //!     serialization bursts to the standing queue; an EWMA stays inflated
 //!     long after the queue drains and causes a backoff spiral).
-//!   - Hint-coupled queue target (P1): back off when the windowed min
+//!   - Hint-coupled queue target: back off when the windowed min
 //!     exceeds floor × {1.08 Realtime, 1.125 Auto, 1.25 Bulk}.
 //!   - Two-speed ramp: multiplicative ×1.5+1 per RTT until the first
 //!     backoff, then additive +2 / multiplicative ×0.92.
 //!   - Token-bucket pacing at cwnd/SRTT with burst allowance max(10, cwnd/8)
 //!     (state lives here; the drain in net/mod.rs consumes the tokens).
 //!
-//! Loss alone does NOT reduce the window — only a standing queue does.
+//! Loss alone does not reduce the window — only a standing queue does.
 //! This prevents wireless random loss from collapsing throughput.
 //! No ProbeRTT phase (natural oscillation refreshes the floor).
 //!
-//! UNITS: `cwnd`, `in_flight`, and pacing tokens are all in SYMBOLS.
+//! Units: `cwnd`, `in_flight`, and pacing tokens are all in symbols.
 //! Pacing rate = cwnd [symbols] / SRTT [s] = symbols/second.
 
 pub mod clock;
@@ -54,19 +53,18 @@ use std::time::{Duration, Instant};
 pub type PathId = u32;
 
 /// Scheduling weights derived from protocol hint.
-/// Controls the latency vs bandwidth trade-off in the interpolated objective.
-/// See paper Section 13.8.
+/// Controls the latency vs bandwidth trade-off in the interpolated objective
+/// (paper §5.7).
 #[derive(Debug, Clone, Copy)]
 pub struct SchedulingWeights {
     /// Weight for latency cost: SUM(x_i × E_i)
     pub w_lat: f64,
     /// Weight for bandwidth overhead cost: SUM(x_i × r_i)
     pub w_bw: f64,
-    /// Weight for the fate-diversity penalty ρ_fate (RWM per-symbol placement,
-    /// paper Section 16.3). Applies to REPAIR symbols only: it is the
-    /// continuous form of the old hard `best_repair_path_avoiding` rule — a
-    /// repair placed on a path that already carried the window symbols it
-    /// covers gains no diversity, so its marginal cost rises. Zero for source.
+    /// Weight for the fate-diversity penalty ρ_fate (per-symbol placement,
+    /// paper §5.7). Applies to repair symbols only: a repair placed on a path
+    /// that already carried the window symbols it covers gains no diversity,
+    /// so its marginal cost rises. Zero for source.
     pub w_div: f64,
 }
 
@@ -75,34 +73,20 @@ impl SchedulingWeights {
         Self::from_delta(crate::net::delta_price(hint))
     }
 
-    /// The placement weights at an ARBITRARY point on the δ dial — the law,
-    /// with no hint in sight (§16.81).
+    /// The placement weights at any point on the δ dial (paper §5.7).
     ///
     /// ```text
     ///     w_bw(δ) = clamp(½ − ¼·log₁₀(δ/δ_Auto), 0, 1),  w_lat = 1 − w_bw
     /// ```
     ///
-    /// **THE THREE-ARM MATCH IS GONE, AND IT WAS ALREADY AFFINE.** The shipped
-    /// weights were `1/0`, `0.5/0.5`, `0/1` at Realtime / Auto / Bulk — the
-    /// EXACT log-midpoint at Auto, i.e. three samples of one affine function
-    /// of the latency price, written out as a `match` because the engine had
-    /// no δ to write it in terms of. The `¼` is the dial's own width — δ spans
-    /// exactly four decades (0.005 → 50) while the weights span exactly 1 —
-    /// and not a fourth constant. This is the paper's own transcription
-    /// (§16.81.11), arrangement included.
-    ///
-    /// **IT LANDED BECAUSE THE BIT-EXACT PIN PASSED**, which is the condition
-    /// §16.81.11 states: `log₁₀(δ/δ_Auto)` at the three presets returns
-    /// exactly {2, 0, −2}, so `½ − ¼x` is exactly {0, ½, 1} and `1 − w_bw` is
-    /// exactly {1, ½, 0}. Had `assert_eq!` failed at any of the three,
-    /// `SchedulingWeights` would have stayed a `match` and a DECLARED CORNER.
+    /// The `¼` is the dial's own width: δ spans four decades (0.005 → 50)
+    /// while the weights span 1. At the presets `log₁₀(δ/δ_Auto)` is exactly
+    /// {2, 0, −2}, so `w_bw` is exactly {0, ½, 1} at Realtime / Auto / Bulk.
     /// Pinned by `scheduling_weights_are_the_dial_not_a_mode`.
     ///
-    /// `w_div` is hint-independent and stays a CONSTANT, not a corner: fate
-    /// diversity for a repair is worth the same across workloads (a repair
-    /// correlated with its coverage is wasted regardless of the (δ, ρ, r)
-    /// triangle). Its value 1.0 remains UNDERIVED and is a register row.
-    /// See `place_symbol`.
+    /// `w_div` is hint-independent: a repair correlated with its coverage is
+    /// wasted regardless of the (δ, ρ, r) triangle. Its value 1.0 is
+    /// underived (open-constants register, paper §11.2). See `place_symbol`.
     pub fn from_delta(delta_price: f64) -> Self {
         let w_bw = (0.5 - 0.25 * (delta_price.max(1e-12) / raptorpath_math::DELTA_AUTO).log10())
             .clamp(0.0, 1.0);
@@ -113,7 +97,7 @@ impl SchedulingWeights {
 /// Global correction deficit tracker.
 ///
 /// Tracks `deficit = SUM(epsilon_s for un-ACKed symbols)` — the total expected
-/// corrections still needed across all paths. See paper Section 13.4.
+/// corrections still needed across all paths (paper §5.9).
 ///
 /// Each sent symbol adds `epsilon_i` (loss rate of its path) to the deficit.
 /// Each ACKed symbol removes its send-time `epsilon_s` (confirmed survived).
@@ -192,66 +176,67 @@ impl CorrectionDeficit {
 
 /// The multipath scheduler.
 ///
-/// Uses the interpolated objective function from paper Section 13.8:
+/// Uses the interpolated objective function (paper §5.7):
+///
+/// ```text
 ///   minimize: w_lat × SUM(x_i × E_i) + w_bw × SUM(x_i × r_i)
+/// ```
+///
 /// where E_i is effective delivery time and r_i is correction rate per path.
 ///
-/// Source placement is BLOCK-granular (paper Section 13.8 in-order coupling
-/// refinement, L2 ws1): one schedule() call = one FEC block = one delivery
-/// unit, and under the cross-block in-order delivery contract a block's
-/// delivery time is the MAX over the paths its source symbols touch — the
-/// linear per-symbol objective silently assumed independent delivery.
-/// Measured at L1 C8 (100mbit/10ms + 20mbit/40ms): blocks striped across
-/// both paths completed at mean 189 ms vs 17.5 ms for fast-path-only blocks,
-/// and 92% of in-order head-of-line waits were caused by blocks touching the
-/// slow path. Whole-block affinity bounds the damage to the y_i fraction of
-/// blocks actually assigned to the slow path (smooth WRR on B_eff_i).
+/// Source placement is block-granular: one schedule() call = one FEC block =
+/// one delivery unit, and under the cross-block in-order delivery contract a
+/// block's delivery time is the max over the paths its source symbols touch —
+/// the linear per-symbol objective assumes independent delivery. A block
+/// striped across a fast and a slow path completes at the slow path's time,
+/// so whole-block affinity bounds the damage to the y_i fraction of blocks
+/// actually assigned to the slow path (smooth WRR on B_eff_i).
 pub struct Scheduler {
     paths: HashMap<PathId, PathState>,
-    /// **THE SENDER-SITE `[ETA]` GAUGE** (`net/eta.rs`). It lives here and not
-    /// in the sender loop because its two feed sites -- the PLACEMENT
+    /// The sender-site `[ETA]` gauge (`net/eta.rs`). It lives here and not
+    /// in the sender loop because its two feed sites -- the placement
     /// (`net/emit_source.rs`, which picks the path) and the ACK
     /// (`net/control_msg.rs`, which learns what actually happened) -- already
     /// hold this lock and would otherwise never see each other's state.
     ///
-    /// READ BY NOTHING in any law. `place_costs` writes only its bind
+    /// Read by no law. `place_costs` writes only its bind
     /// counters; `place_symbol`'s probabilities do not depend on it.
     eta: crate::net::eta::SenderEta,
     /// `(cold_r, cold_ge, evaluations)` accumulated by `place_costs`, which is
     /// `&self` all the way up through `place_symbol` -- hence a `Cell`.
-    /// Drained into `eta` at the report cadence by `drain_place_bind`; NOTHING
+    /// Drained into `eta` at the report cadence by `drain_place_bind`; nothing
     /// on the placement path takes a lock or reads the gauge.
     place_bind: std::cell::Cell<(u64, u64, u64)>,
-    /// **THE TRACK A ARM GAUGES**, same `Cell` discipline and for the same
+    /// The placement-arm gauges, same `Cell` discipline and for the same
     /// reason: `place_costs` takes `&self`, and an observation may not need a
     /// write lock the law itself does not need. Drained by
     /// `drain_place_bind`.
     ///
     /// `place_t_gauge` = `(last T_eff, t_cold, n)` - the temperature actually
-    /// used, how many resolutions had NO measured dispersion anywhere in the
+    /// used, how many resolutions had no measured dispersion anywhere in the
     /// active set (and therefore fell back to the shipped `T`), and the
     /// denominator.
     place_t_gauge: std::cell::Cell<(f64, u64, u64)>,
     /// `place_hol_gauge` = `(s_i > H binds, source cost evaluations,
     /// argmin-moved count, place_costs calls, last W_live)` - the `kappa`
-    /// bind fraction and the WB1-style EXECUTION WITNESS that the term
-    /// actually changed a decision.
+    /// bind fraction and the execution witness that the term actually
+    /// changed a decision.
     place_hol_gauge: std::cell::Cell<(u64, u64, u64, u64, f64)>,
     clock: Arc<dyn Clock>,
-    /// Global correction deficit tracker (paper Section 13.4).
+    /// Global correction deficit tracker (paper §5.9).
     pub deficit: CorrectionDeficit,
     /// Scheduling weights from protocol hint.
     weights: SchedulingWeights,
-    /// `RWM_PLACE_T_DERIVED` (Track A arm 1) as resolved for THIS scheduler.
+    /// `RWM_PLACE_T_DERIVED` (placement arm 1) as resolved for this scheduler.
     /// Defaults to the process gate; settable so a unit test can drive both
     /// sides of the arm in one process.
     place_t_derived: bool,
-    /// `RWM_PLACE_HOL` (Track A arm 2), same discipline.
+    /// `RWM_PLACE_HOL` (placement arm 2), same discipline.
     place_hol: bool,
-    /// `RWM_PLACE_WDIV_DERIVED` (Track A arm 3), same discipline.
+    /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3), same discipline.
     place_wdiv_derived: bool,
     /// Protocol hint — also sets Copa-lite's queue target on each path
-    /// (paper Section 12.4 / P1).
+    /// (paper §8.2).
     hint: ProtocolHint,
     /// Block-granular source affinity (see struct docs). On by default;
     /// `false` restores per-symbol greedy striping (ablation).
@@ -259,12 +244,9 @@ pub struct Scheduler {
     /// Smooth-WRR credit per path for the block-affinity pick.
     affinity_credit: HashMap<PathId, f64>,
     /// `RWM_COLD_PLACE` (anchor-hygiene rule 1 at the placement site) as a
-    /// per-scheduler VALUE rather than a hot-path env read — for the same
-    /// reason the estimator's
-    /// `force_anchor_hygiene` exists: the process-global `OnceLock` cannot
-    /// hold both arms, so an A/B that must measure BOTH directions in one
-    /// process (the SF bench's `Place` axis) would otherwise be impossible to
-    /// write.
+    /// per-scheduler value rather than a hot-path env read: the process-wide
+    /// gate resolution cannot hold both arms, so an A/B that measures both
+    /// directions in one process (the SF bench's `Place` axis) sets it here.
     /// Resolved from `cold_place_active()` at construction; `set_cold_place`
     /// overrides. See `place_costs`.
     cold_place: bool,
@@ -305,13 +287,13 @@ impl Scheduler {
 
     /// Override the cold-start placement price for this scheduler
     /// (`RWM_COLD_PLACE`; see the field docs). A/B hook: the process gate is
-    /// a cached `OnceLock`, so a battery that scores BOTH arms in one process
-    /// sets this instead of racing the environment.
+    /// resolved once, so a bench that scores both arms in one process sets
+    /// this instead of racing the environment.
     pub fn set_cold_place(&mut self, enabled: bool) {
         self.cold_place = enabled;
     }
 
-    /// `RWM_PLACE_T_DERIVED` (Track A arm 1) for this scheduler.
+    /// `RWM_PLACE_T_DERIVED` (placement arm 1) for this scheduler.
     pub fn set_place_t_derived(&mut self, enabled: bool) {
         self.place_t_derived = enabled;
     }
@@ -321,7 +303,7 @@ impl Scheduler {
         self.place_t_derived
     }
 
-    /// `RWM_PLACE_HOL` (Track A arm 2) for this scheduler.
+    /// `RWM_PLACE_HOL` (placement arm 2) for this scheduler.
     pub fn set_place_hol(&mut self, enabled: bool) {
         self.place_hol = enabled;
     }
@@ -331,7 +313,7 @@ impl Scheduler {
         self.place_hol
     }
 
-    /// `RWM_PLACE_WDIV_DERIVED` (Track A arm 3) for this scheduler.
+    /// `RWM_PLACE_WDIV_DERIVED` (placement arm 3) for this scheduler.
     pub fn set_place_wdiv_derived(&mut self, enabled: bool) {
         self.place_wdiv_derived = enabled;
     }
@@ -373,11 +355,11 @@ impl Scheduler {
 
     /// Paths that are up, regardless of remaining cwnd budget.
     ///
-    /// Use for CONTROL-PLANE traffic (reports, pings, BlockStart) and
+    /// Use for control-plane traffic (reports, pings, BlockStart) and
     /// congestion bookkeeping. `active_paths()` filters by spare capacity
-    /// (for scheduling DATA) — using it for liveness made a saturated path
-    /// invisible: no pings were sent while in_flight >= cwnd, so the peer
-    /// declared the path dead mid-transfer (L1 harness finding).
+    /// (for scheduling data); using it for liveness would make a saturated
+    /// path invisible: no pings are sent while in_flight >= cwnd, so the peer
+    /// would declare the path dead mid-transfer.
     pub fn live_paths(&self) -> Vec<PathId> {
         self.paths
             .iter()
@@ -388,8 +370,11 @@ impl Scheduler {
 
     /// Schedule symbols across paths using the interpolated objective.
     ///
-    /// Objective (paper Section 13.8):
+    /// Objective (paper §5.7):
+    ///
+    /// ```text
     ///   minimize: w_lat × SUM(x_i × E_i) + w_bw × SUM(x_i × r_i)
+    /// ```
     ///
     /// Source symbols go to paths with lowest weighted cost.
     /// Repair symbols go to paths with highest effective goodput (maximize decode probability).
@@ -430,20 +415,20 @@ impl Scheduler {
         // Distribute source symbols.
         //
         // Block-granular affinity (default; see struct docs): one call =
-        // one block = one delivery unit — ALL source symbols ride one
+        // one block = one delivery unit — all source symbols ride one
         // path, picked by smooth WRR on source-carrying capacity, so a
         // block's completion time is a single path's delivery time rather
         // than the max over every path touched. The pick may exceed the
         // path's remaining cwnd budget: in_flight is charged anyway and
         // the aggregate TUN gate + token-bucket pacing provide the
-        // backpressure (same contract as the old overflow-to-best-path).
+        // backpressure.
         if self.block_affinity && !source_symbols.is_empty() {
             let k = source_symbols.len();
             if let Some(pid) = self.pick_affinity_path(k) {
                 assignments.entry(pid).or_default().extend(source_symbols);
             }
         } else {
-            // Legacy per-symbol striping: lowest-cost paths first, up to
+            // Per-symbol striping: lowest-cost paths first, up to
             // each path's spare cwnd budget (ablation mode).
             let mut source_iter = source_symbols.into_iter();
             for &(pid, _, avail) in &path_costs {
@@ -495,10 +480,10 @@ impl Scheduler {
             }
         }
 
-        // Charge the in_flight budget at SCHEDULE time — the single charge
+        // Charge the in_flight budget at schedule time — the single charge
         // point for block-mode symbols (the paced drain in net/mod.rs must
-        // NOT charge again at send time; double-charging leaked +1 per
-        // symbol and jammed the TUN gate — L1 finding, P7 follow-up 2).
+        // not charge again at send time; double-charging leaks +1 per
+        // symbol and jams the TUN gate).
         for (path_id, syms) in &assignments {
             if let Some(path) = self.paths.get_mut(path_id) {
                 path.charge_in_flight(syms.len() as u32);
@@ -509,7 +494,7 @@ impl Scheduler {
     }
 
     /// Pick the path for a whole block's source symbols — the block-granular
-    /// solution of the Section 13.8 objective (in-order coupling refinement):
+    /// solution of the placement objective (paper §5.7):
     ///
     ///   - w_lat > 0 (Realtime/Auto): the LP solution is degenerate — the
     ///     minimum interpolated-cost path carries blocks until its cwnd
@@ -517,7 +502,7 @@ impl Scheduler {
     ///     granular spill; per-symbol spill is what striped blocks across
     ///     paths and made every block pay max_i D_i).
     ///   - w_lat == 0 (Bulk): demand saturates capacity, so the optimum is
-    ///     y_i ∝ B_eff_i (Section 13.5, with C_i = the live Copa pacing
+    ///     y_i ∝ B_eff_i (with C_i = the live Copa pacing
     ///     rate cwnd/SRTT — always defined, unlike the delivery-rate EWMA
     ///     which is cold at startup), realized by smooth WRR so consecutive
     ///     blocks alternate as evenly as the weights allow (minimal
@@ -528,7 +513,7 @@ impl Scheduler {
     ///
     /// Paths with exhausted cwnd budget are skipped while any path has
     /// budget (WRR credit keeps accruing, so a briefly-full path gets its
-    /// share back later); if ALL budgets are exhausted the pick falls back
+    /// share back later); if all budgets are exhausted the pick falls back
     /// to every active path (the TUN gate is the real backpressure —
     /// schedule() must never drop a block).
     fn pick_affinity_path(&mut self, block_symbols: usize) -> Option<PathId> {
@@ -538,31 +523,28 @@ impl Scheduler {
         /// inner-stream hole.
         const HOLD_HORIZON_SECS: f64 = 0.3;
         /// Source-eligibility threshold as a fraction of the horizon.
-        /// Eligibility must gate on the block-delivery TAIL (an expiry is
+        /// Eligibility must gate on the block-delivery tail (an expiry is
         /// a tail event), but the estimate below is a median-ish model;
-        /// ARQ rounds stack the tail to ~3-4x the median (measured C8:
-        /// median 134 ms, expiries at 301+ ms), so a median skew above
-        /// H/4 already pushes the tail past the horizon.
+        /// ARQ rounds stack the tail to ~3-4x the median, so a median skew
+        /// above H/4 already pushes the tail past the horizon. Underived
+        /// (open-constants register, paper §11.2).
         const ELIGIBLE_SKEW: f64 = HOLD_HORIZON_SECS / 4.0;
 
-        /// Expected delivery time of a WHOLE block of `k` source symbols
-        /// on this path (paper 13.8 refinement, D_i): serialization at
-        /// the Copa pacing rate + one-way propagation + an ARQ round at
-        /// THIS path's RTT weighted by the per-BLOCK loss probability
-        /// 1-(1-eps)^k. The per-symbol E_i (Section 13.5) undercounts by
-        /// ~an order of magnitude here: k*eps expected losses make a
-        /// recovery round nearly certain for realistic k (measured C8:
-        /// eps=4.8%, k=56 -> P_blk = 0.94; B-blocks p50 94 ms vs
-        /// E_B = 22 ms).
+        /// Expected delivery time of a whole block of `k` source symbols
+        /// on this path (D_i): serialization at the Copa pacing rate +
+        /// one-way propagation + an ARQ round at this path's RTT weighted by
+        /// the per-block loss probability 1-(1-eps)^k. The per-symbol E_i
+        /// undercounts by about an order of magnitude here: k*eps expected
+        /// losses make a recovery round nearly certain for realistic k
+        /// (eps = 4.8 %, k = 56 gives P_blk = 0.94).
         fn block_delivery_time(p: &PathState, k: f64) -> f64 {
             let srtt = p.srtt().as_secs_f64().max(1e-3);
             let rate = (p.cwnd as f64 / srtt).max(1.0); // symbols/sec
             // Long-run loss, not the instantaneous EWMA: under GE bursts
             // the EWMA decays to ~0 between bursts and flip-flops the
             // eligibility gate open exactly long enough for the next
-            // burst to catch a freshly admitted block (measured C8: B
-            // still carried 12% of source, mixed-block p99 1.0 s). The
-            // Beta-posterior mean spans bursts and gaps alike.
+            // burst to catch a freshly admitted block. The Beta-posterior
+            // mean spans bursts and gaps alike.
             let eps = p
                 .estimator
                 .loss_rate()
@@ -603,15 +585,14 @@ impl Scheduler {
 
         // Bulk: capacity-share WRR over hold-feasible paths (HOL-cost
         // source eligibility: a path whose per-block delivery skew
-        // threatens the in-order hold horizon carries NO source — it
+        // threatens the in-order hold horizon carries no source — it
         // keeps its repair/retransmit role, which has no ordering
         // deadline and keeps its estimators warm for re-admission).
         //
         // Eligibility is computed over ALL active paths, not just the
         // budget-filtered candidates: when the fast path's cwnd is
-        // momentarily full, the slow path used to become the only
-        // candidate and pass the skew test against itself (measured C8:
-        // B still carried 12% of source through exactly this hole). An
+        // momentarily full, the slow path would otherwise become the only
+        // candidate and pass the skew test against itself. An
         // ineligible path must not carry source even then — the pick
         // over-commits the eligible path instead (pacing keeps the wire
         // rate at cwnd/SRTT; the aggregate TUN gate closes as the
@@ -641,7 +622,7 @@ impl Scheduler {
                 let rate = p.cwnd as f64 / srtt; // symbols/sec (Copa pacing rate)
                 let r = p.correction_rate();
                 let r = if r.is_infinite() { 10.0 } else { r };
-                (p.id, rate / (1.0 + r)) // B_eff (Section 13.5)
+                (p.id, rate / (1.0 + r)) // B_eff
             })
             .collect();
         weighted.sort_unstable_by(|a, b| a.0.cmp(&b.0)); // deterministic order
@@ -728,7 +709,7 @@ impl Scheduler {
 
     /// Pick the best path for a source symbol: lowest interpolated cost.
     ///
-    /// cost_i = w_lat × E_i + w_bw × r_i (paper Section 13.8)
+    /// cost_i = w_lat × E_i + w_bw × r_i (paper §5.7)
     pub fn best_source_path(&self) -> Option<PathId> {
         self.paths
             .values()
@@ -847,29 +828,21 @@ impl Scheduler {
 #[cfg(test)]
 mod tests;
 
-// ── THE ONE-SIDED-CLAMP WITNESS, process-wide (`[LCW]`) ───────────────
+// ── The one-sided-clamp witness, process-wide (`[LCW]`) ───────────────
 //
-// Goal-gate item 3c REDIRECTED. `PathState::loss_clamp_witness` carries the
-// per-path counters; these mirror them process-wide so a battery reads ONE
-// number per run off a teardown line instead of plumbing `PathState` into the
-// diag renderer. Observation only — nothing here is read by a decision, and
-// the clamp itself (`d_received.min(d_expected)`) is untouched.
+// `PathState::loss_clamp_witness` carries the per-path counters; these mirror
+// them process-wide so a run reads one number off a teardown line instead of
+// plumbing `PathState` into the diag renderer. Observation only — nothing
+// here is read by a decision, and the clamp (`d_received.min(d_expected)`)
+// is untouched.
 //
-// THE HYPOTHESIS THEY SCORE. §16.63 measured the sender-truth loss estimator
-// reading 20× in the wrong direction, INCLUDING at N = 1 where the
-// cross-path attribution error it was built to repair cannot exist. The RFC
-// 6675 denominator explanation was refuted on the code (both operands count
-// retransmits — a matched pair). The successor hypothesis is this `min`: the
-// sender's own symbol counter and the receiver's cumulative echo are two
-// clocks, so `d_received > d_expected` whenever the receiver's cursor
-// momentarily leads, and the clamp RECTIFIES every such sample to zero loss
-// instead of to negative loss. Rectifying a zero-mean jitter is a POSITIVE
-// BIAS at ANY path count — which is exactly the shape of a result that
-// survives at N = 1.
-//
-// The scoreable statistic is `over_mass / loss_mass`: if rectification is the
-// mechanism, the rectified mass is a large fraction of the loss mass the
-// estimator was actually fed, at every cell and every path count.
+// The hypothesis they score: the sender's symbol counter and the receiver's
+// cumulative echo are two clocks, so `d_received > d_expected` whenever the
+// receiver's cursor momentarily leads, and the clamp rectifies every such
+// sample to zero loss instead of negative loss. Rectifying a zero-mean jitter
+// is a positive bias at any path count, including N = 1. The statistic is
+// `over_mass / loss_mass`: if rectification is the mechanism, the rectified
+// mass is a large fraction of the loss mass the estimator was fed.
 pub static LCW_OVER_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static LCW_OVER_MASS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub static LCW_LOSS_MASS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

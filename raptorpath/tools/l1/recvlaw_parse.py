@@ -1,60 +1,60 @@
 #!/usr/bin/env python3
-"""Per-invocation parser for THE RECEIVER-LAW BATTERY (paper 16.83, Track C).
+"""Per-invocation parser for the receiver-law battery (Track C; the request
+law is paper §7.6).
 
   usage: recvlaw_parse.py <cell> <arm> <seed> <rep> \
                           <cli.log> <srv.log> <cpusrv> <cpucli> \
                           <ping.txt[,ping-1.txt,...]> <q.txt>
 
-Prints ONE JSON object on ONE line, prefixed `RECVLAWRESULT `.
+Prints one JSON object on one line, prefixed `RECVLAWRESULT `.
 
-HELPERS: `read`, `fnum`, `inum`, `gate`, `gate_tok`, `last_with`, `field` and
+Helpers: `read`, `fnum`, `inum`, `gate`, `gate_tok`, `last_with`, `field` and
 the quantile rule come from `l1common.py` (one definition for every L1
-parser). `latt_probe.probe_stats` owns the ONE definition of censoring.
+parser). `latt_probe.probe_stats` owns the one definition of censoring.
 
-WHAT IS NEW HERE -- this battery's own independent variable, and the
-instruments that make it a MEASURED variable rather than a label:
+This battery's independent variable, and the instruments that make it a
+measured variable rather than a label:
 
-  `arm`            CTL / A / B / AB. The two gates are ORTHOGONAL levers:
-                   (A) `RWM_RECV_REQUEST_LAW` is the TIMING lever (the
+  `arm`            CTL / A / B / AB. The two gates are orthogonal levers:
+                   (A) `RWM_RECV_REQUEST_LAW` is the timing lever (the
                    receiver requests at `l >= l*_recv`, `m = 1`), (B)
-                   `RWM_RANK_FEEDBACK` is the VOCABULARY lever (`m` derived
-                   from the receiver's own `pi0`). They COMPOSE; neither
+                   `RWM_RANK_FEEDBACK` is the vocabulary lever (`m` derived
+                   from the receiver's own `pi0`). They compose; neither
                    selects a machine.
 
-  THE `[GATES]` ECHO   `gate_*`, per endpoint. What was ASKED FOR.
+  the `[GATES]` echo   `gate_*`, per endpoint. What was asked for.
 
-  `[REQ]`          the RECEIVER's own seat: how many requests it BUILT, over
+  `[REQ]`          the receiver's own seat: how many requests it built, over
                    how many spans, at what `m` and what acting `l*`. `on=` and
-                   `rank=` are the RESOLVED arms at the seat that builds.
+                   `rank=` are the resolved arms at the seat that builds.
 
-  `[REQS]`         the SENDER's serving seat: reports consumed, answers on the
-                   wire split into COPY (`m = 1`, today's bytes) and CODED
-                   (`m > 1`), and **`WA1`** -- the `Some`/`None` split of
-                   `generate_repair_range`, 16.83.3's soundness precondition
-                   COUNTED rather than assumed. `on=` here is the RESOLVED arm
-                   at the seat that serves, so producer/consumer agreement is
-                   a reading and not an assumption.
+  `[REQS]`         the sender's serving seat: reports consumed, answers on the
+                   wire split into copy (`m = 1`, today's bytes) and coded
+                   (`m > 1`), and `WA1` -- the `Some`/`None` split of
+                   `generate_repair_range`, the soundness precondition counted
+                   rather than assumed. `on=` here is the resolved arm at the
+                   seat that serves, so producer/consumer agreement is a
+                   reading and not an assumption.
 
-  `[FCAUSE]`       **THE SEAM, AS A NUMBER.** `gap_data` must go to 0 on the
-                   arms that arm the request law and must NOT be 0 on the
-                   others, or the contrast has no control. 16.83.4.
+  `[FCAUSE]`       the seam, as a number. `gap_data` must go to 0 on the arms
+                   that arm the request law and must not be 0 on the others,
+                   or the contrast has no control.
 
   `[LATE]`         `lstar_us` (WL1), `knee_bind` (WK), `sampler_bind`, `d_us`,
                    `knee_us`, `rho_heal0`, and the gauge's own `delta`/`bar`.
-                   **`knee_bind` is what decides the KNEE-BOUND verdict**, and
-                   it is a column here rather than a footnote.
+                   `knee_bind` decides the KNEE-BOUND verdict.
 
-  `[RFA]`          THE PRIMARY SCORED DIMENSION: the realized false fraction
-                   at the RECEIVER, with its binomial standard error, plus
+  `[RFA]`          the primary scored dimension: the realized false fraction
+                   at the receiver, with its binomial standard error, plus
                    `rep_redundant` (the false measurand under coded answers)
-                   and the `dup_src`/`preempt_src` class split whose MIGRATION
+                   and the `dup_src`/`preempt_src` class split whose migration
                    is arm (B)'s witness.
 
-  `[LAT]`          THE SECOND SCORED DIMENSION: delivered latency decomposed,
+  `[LAT]`          the second scored dimension: delivered latency decomposed,
                    `tot_p99` as the worst-leg reading, and the shares.
 
 Every field degrades to `null` rather than raising: a missing log, an empty log
-and a log with no `[GATES]` all produce a VALID row. A parser that dies on a
+and a log with no `[GATES]` all produce a valid row. A parser that dies on a
 dead invocation deletes the very rows the abort accounting is made of.
 """
 import json
@@ -64,7 +64,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-try:                                     # ONE definition of censoring, imported
+try:                                     # one definition of censoring, imported
     from latt_probe import PCTS, probe_stats
 except Exception:                        # never let a probe import kill a row
     PCTS, probe_stats = (), None
@@ -92,16 +92,16 @@ q_path = av[9]
 cli = read(clog)
 srv = read(slog)
 
-#: Live path count per cell -- TRANSCRIBED from `ccand_battery.sh:202-215`'s own
-#: `cell_spec`, exactly as `alpha_parse.py` transcribes it, never inferred.
+#: Live path count per cell -- transcribed from the battery's `cell_spec`,
+#: never inferred.
 CELL_PATHS = {"c1": 1, "sc2": 1, "c7": 2, "c8": 2, "c8L": 2}
 n_paths = CELL_PATHS.get(cell)
-#: 16.83.2's MUST-NOT-MOVE cells: `pi0 -> 0` there, so `l* = 0` and `m = 1` are
-#: the LAW's own limits and not a configuration. A control that moves VOIDS the
+#: The must-not-move cells: `pi0 -> 0` there, so `l* = 0` and `m = 1` are the
+#: law's own limits and not a configuration. A control that moves voids the
 #: run, so the flag rides on every row.
 control_cell = 1 if n_paths == 1 else 0
 
-# ── goodput: abort != DNF (flip_parse.py's encoded rule, verbatim) ───────
+# ── goodput: abort != DNF ─────────────────────────────────────────────────
 runs, dnf_count, dnf = [], None, False
 for ln in cli:
     i = ln.find("{")
@@ -139,13 +139,13 @@ gates_srv["RWM_GEN"] = None if gate_tok(srv, "RWM_GEN") is None else inum(gate_t
 def last_line(lines, tag):
     """The reading of a cumulative gauge (`l1common.last_with`: the last line,
     a `final=1` exit flush wins). `None` when the gauge never emitted -- which
-    is a READING (the emission site was unreached) and not a zero."""
+    is a reading (the emission site was unreached) and not a zero."""
     return last_with(lines, tag)
 
 
 def f(line, key, cast=fnum):
-    """`<key><token>` off a gauge line. `-` is the ABSENT reading and returns
-    `None` -- never 0, because 0 is a different state (16.75.8)."""
+    """`<key><token>` off a gauge line. `-` is the absent reading and returns
+    `None` -- never 0, because 0 is a different state."""
     v = _field(line, key)
     return None if v is None else cast(v)
 
@@ -154,7 +154,7 @@ def fi(line, key):
     return f(line, key, inum)
 
 
-# ── `[REQ]` -- WHAT THE RECEIVER ASKED FOR ───────────────────────────────
+# ── `[REQ]` -- what the receiver asked for ───────────────────────────────
 req = last_line(srv, "[REQ] ")
 req_on = fi(req, "on=")
 req_rank = fi(req, "rank=")
@@ -164,7 +164,7 @@ req_m_max = fi(req, "m_max=")
 req_lstar_us = fi(req, "lstar_us=")
 req_holes = fi(req, "holes=")
 
-# ── `[REQS]` -- WHAT THE SENDER DID WITH THEM ────────────────────────────
+# ── `[REQS]` -- what the sender did with them ────────────────────────────
 reqs = last_line(cli, "[REQS] ")
 reqs_on = fi(reqs, "on=")
 reqs_reports = fi(reqs, "reports=")
@@ -181,7 +181,7 @@ reqs_budget_bound = fi(reqs, "budget_bound=")
 reqs_open_wants = fi(reqs, "open_wants=")
 reqs_cause = f(reqs, "cause=", str)
 
-#: **WL2 -- THE MECHANISM EXECUTED AT BOTH SEATS.** A one-sided reading cannot
+#: WL2 -- the mechanism executed at both seats. A one-sided reading cannot
 #: tell "never built" from "never served", and the two failures have different
 #: causes and different fixes.
 wl2 = None
@@ -191,7 +191,7 @@ if req_sent is not None and reqs_served is not None:
     else:
         wl2 = 1 if (req_sent > 0 and reqs_served > 0) else 0
 
-# ── `[FCAUSE]` -- THE COLLISION SEAM, AS A NUMBER (16.83.4) ──────────────
+# ── `[FCAUSE]` -- the collision seam, as a number ────────────────────────
 fc = last_line(cli, "[FCAUSE] ")
 fc_n = fi(fc, " n=")
 fc_timer = fi(fc, "timer=")
@@ -199,7 +199,7 @@ fc_gap_data = fi(fc, "gap_data=")
 fc_gap_refresh = fi(fc, "gap_refresh=")
 fc_other = fi(fc, "other=")
 fc_fired = fi(fc, "fired=")
-#: The seam's own verdict for THIS row. On A/AB the per-seq gap producer is
+#: The seam's own verdict for this row. On A/AB the per-seq gap producer is
 #: suppressed at its source, so `gap_data` must be 0; on CTL/B it must not be,
 #: or the treatment's zero proves nothing. `None` when `[FCAUSE]` is absent.
 seam_ok = None
@@ -209,7 +209,7 @@ if fc_gap_data is not None:
     else:
         seam_ok = 1 if (fc_gap_data > 0 or cell == "c1") else 0
 
-# ── `[LATE]` -- THE THRESHOLD, ITS INGREDIENTS, AND ITS TWO BIND GAUGES ──
+# ── `[LATE]` -- the threshold, its ingredients, and its two bind gauges ──
 late = last_line(srv, "[LATE] ")
 late_n = fi(late, "n=")
 late_orig = fi(late, "orig=")
@@ -223,24 +223,24 @@ late_s_tot = f(late, "s_tot=")
 late_lstar_us = fi(late, "lstar_us=")
 late_delta = f(late, "delta=")
 late_bar = f(late, "bar=")
-#: **WK -- THE KNEE-BOUND GAUGE.** 16.83.2: if the `AND` takes the cap at
-#: essentially every readout, the request lateness is not set by the lateness
-#: distribution at all -- it is set by the store's free headroom, i.e. by
-#: `RWM_STORE_GAIN = 2.0`, which is UNPROVENANCED. THE REPAIR LAW WOULD THEN
-#: BE THE STORE-CAP LAW WEARING A CLOCK, and the verdict is a LEDGER verdict.
+#: WK -- the knee-bound gauge. If the `AND` takes the cap at essentially every
+#: readout, the request lateness is not set by the lateness distribution at
+#: all -- it is set by the store's free headroom, i.e. by `RWM_STORE_GAIN =
+#: 2.0`, an unprovenanced constant (docs/status.md §3.4). The repair law
+#: would then be the store-cap law wearing a clock.
 late_knee_bind = f(late, "knee_bind=")
 #: The refuter's own gauge: if the 2 ms `GAP_ACK_MIN_INTERVAL` sampler, not the
 #: law, set when a hole could be reported, the arm measured the sampler.
 late_sampler_bind = f(late, "sampler_bind=")
 late_reports = fi(late, "reports=")
 
-# ── `[SUCC]` -- THE INDEPENDENT HOLE WITNESS (different code, same holes) ─
+# ── `[SUCC]` -- the independent hole witness (different code, same holes) ─
 succ = last_line(srv, "[SUCC] ")
 succ_det = fi(succ, "det=")
 succ_res = fi(succ, "res=")
 succ_open = fi(succ, "open=")
 
-# ── `[RANK]` -- THE DEFICIT VOCABULARY'S OWN PAYLOAD ─────────────────────
+# ── `[RANK]` -- the deficit vocabulary's own payload ─────────────────────
 rank = last_line(srv, "[RANK] ")
 rank_holes = fi(rank, "holes=")
 rank_pivots = fi(rank, "pivots=")
@@ -248,10 +248,10 @@ rank_deficit = fi(rank, "deficit=")
 rank_max_deficit = fi(rank, "max_deficit=")
 rank_tail_over = fi(rank, "tail_overcount=")
 
-# ── `[RFA]` -- SCORED DIMENSION 1: THE REALIZED FALSE FRACTION ───────────
-# At the RECEIVER, which is the only seat that can tell a late original from a
-# retransmit -- the whole of D0's finding. The sender's `[RACK] fa=` is a
-# DIFFERENT (and biased) statistic and is carried separately, never pooled.
+# ── `[RFA]` -- scored dimension 1: the realized false fraction ───────────
+# At the receiver, which is the only seat that can tell a late original from a
+# retransmit. The sender's `[RACK] fa=` is a different (and biased) statistic
+# and is carried separately, never pooled.
 rfa = last_line(srv, "[RFA] ")
 rfa_gen = fi(rfa, "gen=")
 rfa_fires = fi(rfa, "fires=")
@@ -263,23 +263,22 @@ rfa_dup_src = fi(rfa, "dup_src=")
 rfa_preempt_src = fi(rfa, "preempt_src=")
 rfa_rep_redundant = fi(rfa, "rep_redundant=")
 rfa_late_after_aban = fi(rfa, "late_after_aban=")
-#: THE BINOMIAL STANDARD ERROR of the scored fraction. The pre-registration
-#: says this leg is POWERED at n = 3 precisely because the denominator is
-#: ~80 k holes per rep; printing the SE is what makes that claim checkable on
-#: the row rather than in the prose.
+#: The binomial standard error of the scored fraction. This leg is powered at
+#: n = 3 because the denominator is ~80 k holes per rep; printing the SE makes
+#: that claim checkable on the row.
 rfa_false_se = None
 if rfa_fires and rfa_false_frac is not None and rfa_fires > 0:
     p = rfa_false_frac
     rfa_false_se = round(math.sqrt(max(p * (1.0 - p), 0.0) / rfa_fires), 6)
-#: Arm (B)'s witness is a CLASS MIGRATION, not a level: `dup_src -> 0` BY
-#: CONSTRUCTION (a wiring witness), with the mass appearing as
+#: Arm (B)'s witness is a class migration, not a level: `dup_src -> 0` by
+#: construction (a wiring witness), with the mass appearing as
 #: `preempt_src` / `rep_redundant`. The share is what makes the migration
 #: visible without pretending it is a result.
 rfa_dup_share = None
 if rfa_false and rfa_dup_src is not None and rfa_false > 0:
     rfa_dup_share = round(rfa_dup_src / rfa_false, 6)
 
-# ── `[LAT]` -- SCORED DIMENSION 2: DELIVERED LATENCY, DECOMPOSED ─────────
+# ── `[LAT]` -- scored dimension 2: delivered latency, decomposed ─────────
 lat = last_line(srv, "[LAT] ")
 lat_n = fi(lat, "n=")
 lat_tot_p50 = fi(lat, "tot_p50=")
@@ -291,23 +290,21 @@ lat_sh_rwsp = f(lat, "sh_rwsp=")
 lat_sh_rwrep = f(lat, "sh_rwrep=")
 lat_sh_rep = f(lat, "sh_rep=")
 
-# ── `[RACK]` -- the SENDER-side false-alarm gauge, carried NOT pooled ────
+# ── `[RACK]` -- the sender-side false-alarm gauge, carried not pooled ────
 rack = last_line(cli, "[RACK] ")
 rack_fa = f(rack, "fa=", str)
 rack_fa_frac = f(rack, "fa_frac=")
 
-# ── `[DIAG] retx=` -- THE MAXIMUM, never the last line ───────────────────
-# `retx=` in the [DIAG] tail is an INTERVAL counter; reading it off the last
-# line made the plain-window primitives pass report this witness failing at
-# 5 of 15 reps whose [RACK] fired on the same run was 11-5717 (alpha_parse.py's
-# own W4' note).
+# ── `[DIAG] retx=` -- the maximum, never the last line ───────────────────
+# `retx=` in the [DIAG] tail is an interval counter; the last line can read 0
+# on a run whose retransmits all fired earlier.
 retx_max = None
 for ln in cli:
     for m in re.finditer(r"retx=(\d+)", ln):
         v = int(m.group(1))
         retx_max = v if retx_max is None else max(retx_max, v)
 
-# ── the ping probe, through the ONE definition of censoring ──────────────
+# ── the ping probe, through the one definition of censoring ──────────────
 probe = {}
 if probe_stats and ping_path:
     for path in [p for p in ping_path.split(",") if p]:
@@ -355,7 +352,7 @@ row = {
     "rank_holes": rank_holes, "rank_pivots": rank_pivots,
     "rank_deficit": rank_deficit, "rank_max_deficit": rank_max_deficit,
     "rank_tail_overcount": rank_tail_over,
-    # SCORED 1
+    # scored 1
     "rfa_gen": rfa_gen, "rfa_fires": rfa_fires, "rfa_false": rfa_false,
     "rfa_false_frac": rfa_false_frac, "rfa_false_se": rfa_false_se,
     "rfa_fill_coded": rfa_fill_coded, "rfa_fill_src": rfa_fill_src,
@@ -363,12 +360,12 @@ row = {
     "rfa_dup_share": rfa_dup_share,
     "rfa_rep_redundant": rfa_rep_redundant,
     "rfa_late_after_aban": rfa_late_after_aban,
-    # SCORED 2
+    # scored 2
     "lat_n": lat_n, "lat_tot_p50": lat_tot_p50, "lat_tot_p95": lat_tot_p95,
     "lat_tot_p99": lat_tot_p99, "lat_sh_ax": lat_sh_ax,
     "lat_sh_rwxp": lat_sh_rwxp, "lat_sh_rwsp": lat_sh_rwsp,
     "lat_sh_rwrep": lat_sh_rwrep, "lat_sh_rep": lat_sh_rep,
-    # carried, NOT pooled with the receiver truth
+    # carried, not pooled with the receiver truth
     "rack_fa": rack_fa, "rack_fa_frac": rack_fa_frac,
     "retx_max": retx_max,
     "probe": probe,

@@ -1,31 +1,25 @@
 #!/usr/bin/env python3
-"""Reader for the ABORT-CAUSE WITNESS record written by `abort_witness.sh`.
+"""Reader for the abort-cause witness record written by `abort_witness.sh`.
 
-goal-gate "Candidates Battery — RESULTS", THE ABORT CLASS row: the class was
-left NEEDS-MORE with a named instrument, and this is the parser half of it.
+A shared module rather than a copied block: batteries import it, so the
+`abort_cause=` column has one definition.
 
-WHY A SHARED MODULE AND NOT A COPIED BLOCK. `ccand_parse.py`, `ladder_parse.py`,
-`flip_parse.py` and friends are the instruments earlier verdicts were read off
-and they stay byte-identical — nothing here edits them. New batteries import
-this module, so the `abort_cause=` column has ONE definition across sessions in
-exactly the way `capbind_check.py` gives `CAPBIND` one.
-
-THE RECORD is `key=value`, one line per key, values already sanitized to a
+The record is `key=value`, one line per key, values already sanitized to a
 single line by the shell side. Unknown keys are carried through verbatim under
 `aw_raw` rather than dropped: the witness is expected to grow capture points,
 and a parser that silently discarded them would make the next capture point
 invisible until someone remembered to edit this file too.
 
-THE COLUMN CONTRACT, and the distinction that makes the column worth having:
+The column contract, and the distinction that makes the column worth having:
 
-  abort_cause   the FIRST failing instrumented step, or None when the record
+  abort_cause   the first failing instrumented step, or None when the record
                 does not name one. First-write-wins is enforced on the shell
                 side — everything downstream of the first failure is a
                 consequence, and a last-write-wins witness would attribute
                 every abort to `cli_exec`.
 
                   busy_precheck     `pgrep -x raptorpath` hit after `cleanup`'s
-                                    SIGTERM. NO log file exists on either
+                                    SIGTERM. No log file exists on either
                                     endpoint. The SIGTERM race.
                   topo_up /         `topo*.sh up` returned non-zero; `topo_step`
                   topo_step         additionally names the line and command that
@@ -60,7 +54,7 @@ THE COLUMN CONTRACT, and the distinction that makes the column worth having:
 """
 import os
 
-#: Causes that mean the invocation died BEFORE the engine could echo `[GATES]`,
+#: Causes that mean the invocation died before the engine could echo `[GATES]`,
 #: i.e. the ones that produce the abort class this witness was built for. Kept
 #: as a set rather than as a substring test so a new cause has to be classified
 #: deliberately instead of matching a prefix by accident.
@@ -130,7 +124,7 @@ def read_witness(path):
             except ValueError:
                 out[k] = None
 
-    # Every `step_<label>_rc` that is non-zero, in file order. The FIRST is the
+    # Every `step_<label>_rc` that is non-zero, in file order. The first is the
     # cause; the rest are the consequence chain, and they are kept because a
     # cause that is itself a symptom is only visible in the chain.
     fails = [k[len("step_"):-len("_rc")] for k, v in kv.items()
@@ -140,7 +134,7 @@ def read_witness(path):
     c = out["abort_cause"]
     out["abort_pre_transfer"] = (c in PRE_TRANSFER) if c else None
     # Carried verbatim so a capture point added to the shell side is visible in
-    # the ledger the day it lands, without a second edit here.
+    # the output the day it lands, without a second edit here.
     out["aw_raw"] = "; ".join(f"{k}={v}" for k, v in kv.items())
     return out
 

@@ -1,34 +1,34 @@
 //! Generation-based RLC encoder (stable per-generation coding anchor).
 //!
-//! WHY THIS EXISTS.  The coded *sliding* window (`RlcWindowEncoder` in
-//! coded-only mode) codes every symbol over the CURRENT window, whose anchor
-//! MOVES with the frontier.  A slow-path symbol arrives one path-delay after
+//! Why it exists.  The coded *sliding* window (`RlcWindowEncoder` in
+//! coded-only mode) codes every symbol over the current window, whose anchor
+//! moves with the frontier.  A slow-path symbol arrives one path-delay after
 //! its window has slid on, so it is stranded and can only be recovered by a
-//! congestion-throttled per-seq ARQ — the anti-aggregation drag L1 measured
-//! (×0.26 at C8; paper §16.3, `temporal_oracle.rs`).  The corrected oracle
-//! showed the fix is a STABLE anchor: partition the object's source symbols
-//! into FIXED generations of `gen_size ≈ W_mp` (384–512 at C8) and code coded
-//! symbols WITHIN each generation.  A generation's coding target never moves,
-//! so any coded symbol for it — from ANY path, at any time — supplies an
-//! interchangeable degree of freedom, and a lost symbol is replaced by the
-//! next coded symbol for the SAME generation from EITHER path (fungible
-//! cross-path recovery, no per-seq throttle).  Generations pipeline (`M ≥ 2`
-//! in flight) so the fast path never idles on a slow generation's tail.
+//! congestion-throttled per-seq ARQ — an anti-aggregation drag on
+//! heterogeneous paths (paper §5.8, `temporal_oracle.rs`).  A stable anchor
+//! fixes it: partition the object's source symbols into fixed generations of
+//! `gen_size ≈ W_mp` and code coded symbols within each generation.  A
+//! generation's coding target never moves, so any coded symbol for it — from
+//! any path, at any time — supplies an interchangeable degree of freedom, and
+//! a lost symbol is replaced by the next coded symbol for the same generation
+//! from either path (fungible cross-path recovery, no per-seq throttle).
+//! Generations pipeline (`M ≥ 2` in flight) so the fast path never idles on a
+//! slow generation's tail.
 //!
-//! WIRE FORMAT — IDENTICAL to the sliding-window RLC repair, by design.  A
+//! Wire format — identical to the sliding-window RLC repair, by design.  A
 //! generation-coded symbol is an RLC combination over the fixed span
 //! `[g·G, g·G + gen_len)`, so it carries exactly the same self-describing
 //! header the decoder already parses:
 //!   `data = [window_start(8 LE)][window_count(2 LE)][coded_index(4 LE)][coded]`
-//! where `window_start = g·G` (the generation anchor, STABLE — this is the
+//! where `window_start = g·G` (the generation anchor, stable — this is the
 //! only substantive difference from the sliding encoder, whose window_start
 //! moves every symbol), `window_count = gen_len` (K_G, the generation's live
 //! length), `coded_index` a per-symbol monotonic counter.  The generation id
-//! and K_G are therefore ON THE WIRE as `window_start / gen_size` and
+//! and K_G are therefore on the wire as `window_start / gen_size` and
 //! `window_count`.  Because the coefficients only ever touch seqs inside one
 //! generation, the existing `RlcWindowDecoder` solves each generation's K_G×K_G
 //! system independently the instant K_G linearly-independent symbols for that
-//! anchor arrive (decode-on-K), delivering its sources out-of-order — NO
+//! anchor arrive (decode-on-K), delivering its sources out-of-order — no
 //! decoder change is needed.
 
 use std::collections::{BTreeMap, HashSet};
@@ -46,17 +46,17 @@ pub use gf256::generate_window_coefficients;
 /// parses generation-coded symbols.
 const REPAIR_HEADER_SIZE: usize = 14;
 
-/// Marker bit set in the 4-byte wire coded-index of a FILLING-generation repair
+/// Marker bit set in the 4-byte wire coded-index of a filling-generation repair
 /// (see `code_generation_full` / the proactive pacer). When set, the decoder
 /// reads a 2-byte `coded_width` immediately after the 14-byte header (a 16-byte
 /// header total) and treats coefficient columns `[coded_width, window_count)` as
-/// ZERO — the sender only summed the retained contiguous prefix
-/// `[anchor, anchor+coded_width)`, but the MATRIX width on the wire is the full
-/// generation size `G`, so a filling-generation repair keys to the SAME
+/// zero — the sender only summed the retained contiguous prefix
+/// `[anchor, anchor+coded_width)`, but the matrix width on the wire is the full
+/// generation size `G`, so a filling-generation repair keys to the same
 /// `(anchor, G)` decoder system as the sealed repairs and the reactive deficit
-/// loop (no cross-width stranding — the refutation of the separate-grid inline
-/// repair). The real coded-index is the low 31 bits (it never reaches 2^31, so
-/// masking is lossless). Never set on the 14-byte sealed/legacy format.
+/// loop (no cross-width stranding, which a separate-grid inline repair
+/// suffers). The real coded-index is the low 31 bits (it never reaches 2^31,
+/// so masking is lossless). Never set on the 14-byte sealed format.
 const FILL_FLAG: u32 = 0x8000_0000;
 
 /// Generation-based RLC encoder.  Retains every not-yet-advanced source symbol
@@ -64,7 +64,7 @@ const FILL_FLAG: u32 = 0x8000_0000;
 /// pipeline of in-flight generations, round-robin.
 pub struct GenerationEncoder {
     symbol_size: u16,
-    /// Generation size G (source symbols per generation) — the STABLE coding
+    /// Generation size G (source symbols per generation) — the stable coding
     /// unit; a generation's anchor is `g·gen_size` and never moves.
     gen_size: u64,
     /// Pipeline depth M: how many generations ahead of the retention base the
@@ -79,18 +79,18 @@ pub struct GenerationEncoder {
     /// Lowest generation still retained (the retention frontier, in
     /// generations).  Coding never touches a generation below this.
     base_gen: u64,
-    /// Fix 3 (transport-substrate): PROACTIVE-CODING floor (in generations),
-    /// decoupled from `base_gen` (the retention floor). The proactive
-    /// round-robin codes `[code_base, code_base+pipeline)`. Defaults to
-    /// tracking `base_gen` (identical behaviour) unless `set_code_base` advances
-    /// it to follow the SEND frontier — which lets freshly-sent generations get
+    /// Proactive-coding floor (in generations), decoupled from `base_gen`
+    /// (the retention floor). The proactive round-robin codes
+    /// `[code_base, code_base+pipeline)`. Tracks `base_gen` unless
+    /// `set_code_base` advances it to follow the send frontier — which lets
+    /// freshly-sent generations get
     /// their upfront proactive budget while a stalled in-order-frontier
     /// generation is left to bounded reactive recovery (its sources stay
     /// retained). Always `>= base_gen`.
     code_base: u64,
     /// Round-robin cursor over the active generation set (a generation id).
     rr: u64,
-    /// Round-robin cursor for the FILLING-generation proactive pacer
+    /// Round-robin cursor for the filling-generation proactive pacer
     /// (`generate_repair_filling`), independent of `rr` so the two emission
     /// paths do not fight over one cursor.
     fill_rr: u64,
@@ -99,29 +99,28 @@ pub struct GenerationEncoder {
     coded_index: u32,
     /// Proactive overhead r: a generation is coded up to
     /// `ceil(current_len·(1+r))` coded symbols before it is considered
-    /// "provisioned"; beyond that it is only coded for RECOVERY (when no active
+    /// "provisioned"; beyond that it is only coded for recovery (when no active
     /// generation is still under budget). This bounds coded emission on a
-    /// still-FILLING generation to ~its current source count — the fix for the
-    /// startup stall where the whole flow-control window was spent on a
+    /// still-filling generation to ~its current source count, which prevents
+    /// a startup stall where the whole flow-control window is spent on a
     /// 2-source generation, producing rank-2 symbols that decode only 2 seqs.
     overhead: f64,
     /// Coded symbols emitted per generation (for the budget above).
     emitted: BTreeMap<u64, u32>,
-    /// Source intake is idle (object tail). When set, the final PARTIAL
+    /// Source intake is idle (object tail). When set, the final partial
     /// generation is also eligible for recovery coding (it never seals to its
     /// full gen_size, but once no more sources are coming its coded symbols do
     /// span its full — final — width, so recovery supplies useful DoF).
     intake_idle: bool,
-    /// SYSTEMATIC-repair submode (§16.3 oracle "systematic + deficit repair").
-    /// When set, the raw source symbols ride the wire as PRIMARY (delivered
-    /// out-of-order with ZERO decode) and this encoder emits ONLY REPAIR: the
-    /// per-generation proactive budget is `ceil(len·r)` — just the loss-FEC
-    /// overhead — instead of the coded-only `ceil(len·(1+r))` that had to supply
-    /// EVERY degree of freedom. The K base DoF come from the systematic source
-    /// on the wire; coded symbols only cover the holes (deficit-driven top-up
-    /// via `generate_repair_for` handles the residual). This is the change that
-    /// makes decode O(deficit) not O(G) and delivers source on arrival — the two
-    /// L1-killers of coded-only, structurally removed.
+    /// Systematic-repair submode (paper §5.8). When set, the raw source
+    /// symbols ride the wire as primary (delivered out-of-order with zero
+    /// decode) and this encoder emits only repair: the per-generation
+    /// proactive budget is `ceil(len·r)` — just the loss-FEC overhead —
+    /// instead of the coded-only `ceil(len·(1+r))` that has to supply every
+    /// degree of freedom. The K base DoF come from the systematic source on
+    /// the wire; coded symbols only cover the holes (deficit-driven top-up via
+    /// `generate_repair_for` handles the residual). Decode is O(deficit), not
+    /// O(G), and source is delivered on arrival.
     systematic: bool,
 }
 
@@ -163,7 +162,7 @@ impl GenerationEncoder {
     }
 
     /// Coded-symbol budget that "provisions" generation `g` at its current fill.
-    /// Coded-only mode must supply EVERY degree of freedom, so it provisions
+    /// Coded-only mode must supply every degree of freedom, so it provisions
     /// `ceil(len·(1+r))` coded (the K base + the r overhead). Systematic-repair
     /// mode gets the K base DoF from the raw source on the wire, so it provisions
     /// only the `ceil(len·r)` loss-FEC overhead; the residual deficit is topped
@@ -175,14 +174,14 @@ impl GenerationEncoder {
     }
 
     /// Whether generation `g` should be coded right now. A generation is coded
-    /// ONLY once it is SEALED (all `gen_size` sources present) — or, for the
-    /// final partial generation, once intake is idle. Coding a still-FILLING
+    /// only once it is sealed (all `gen_size` sources present) — or, for the
+    /// final partial generation, once intake is idle. Coding a still-filling
     /// generation is the trap: its coded span only the few sources present at
     /// emit time (rank ≈ that few), so a fast fill or an exhausted budget leaves
     /// the sealed generation with mostly low-rank symbols and it never reaches
     /// K_G. Only a sealed generation's coded span its full width, so K_G of them
     /// decode it. Within that, `g` is coded up to its proactive budget, and the
-    /// FRONTIER generation (base_gen) up to the larger recovery cap.
+    /// frontier generation (base_gen) up to the larger recovery cap.
     fn codeable(&self, g: u64) -> bool {
         if !self.sources.contains_key(&(g * self.gen_size)) {
             return false;
@@ -191,26 +190,26 @@ impl GenerationEncoder {
         if !sealed {
             return false;
         }
-        // PROACTIVE emission is capped at the per-generation provisioning budget
-        // `ceil(len·(1+r))` for EVERY generation, frontier included. Recovery
-        // BEYOND the budget (for a sealed generation that lost > r of its coded)
-        // is no longer a feedback-free fixed cap — it is driven by per-generation
-        // DEFICIT FEEDBACK (§16.3): the receiver reports each frontier
-        // generation's residual rank and the sender emits exactly that many more
-        // via `generate_repair_for`, which BYPASSES this budget. So the proactive
-        // path stays bounded (never floods a generation) and recovery is bounded
-        // AND targeted by the deficit loop — the two the feedback-free cap could
-        // not do at once (it either flooded or deadlocked the frontier).
+        // Proactive emission is capped at the per-generation provisioning budget
+        // `ceil(len·(1+r))` for every generation, frontier included. Recovery
+        // beyond the budget (for a sealed generation that lost > r of its coded)
+        // is driven by per-generation deficit feedback: the
+        // receiver reports each frontier generation's residual rank and the
+        // sender emits exactly that many more via `generate_repair_for`, which
+        // bypasses this budget. So the proactive path stays bounded (never
+        // floods a generation) and recovery is bounded and targeted by the
+        // deficit loop — which a feedback-free fixed cap cannot do at once (it
+        // either floods or deadlocks the frontier).
         let emitted = self.emitted.get(&g).copied().unwrap_or(0);
         emitted < self.gen_budget(g)
     }
 
-    /// Code one coded symbol over the STABLE span of generation `g`, advancing
+    /// Code one coded symbol over the stable span of generation `g`, advancing
     /// the monotonic coded index and the per-generation emission counter. Shared
     /// by the round-robin proactive path (`generate_repair`) and the deficit-
     /// driven recovery path (`generate_repair_for`).
     fn code_generation(&mut self, g: u64) -> WireSymbol {
-        // `enc` seam (`RWM_CPUPROF`, default OFF): the GF coding extent. The
+        // `enc` seam (`RWM_CPUPROF`, default off): the GF coding extent. The
         // wrapper is here rather than at the callers so no call site can be
         // added later that bypasses the instrument.
         crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Enc, || {
@@ -226,7 +225,7 @@ impl GenerationEncoder {
         let (gen_start, syms) = self.generation_symbols(g);
         let gen_len = syms.len() as u16;
 
-        // Coefficients over the STABLE generation span [gen_start, gen_start +
+        // Coefficients over the stable generation span [gen_start, gen_start +
         // gen_len).  Seeded by (gen_start, gen_len, coded_index) — the decoder
         // regenerates them from the wire header identically.
         let coeffs = generate_window_coefficients(gen_start, gen_len, coded_index);
@@ -281,29 +280,29 @@ impl GenerationEncoder {
         (gen_start, out)
     }
 
-    /// Pick the next generation to PROACTIVELY code for: round-robin over the
+    /// Pick the next generation to proactively code for: round-robin over the
     /// `pipeline` oldest retained generations that are still under their
     /// provisioning budget (`emitted < ceil(len·(1+r))`). This is the open-loop
     /// path that provisions each sealed generation with its baseline K_G(1+r)
     /// coded symbols so it decodes without waiting a feedback round for the
-    /// expected loss. RECOVERY beyond the budget (for a generation that lost more
-    /// than `r` of its coded) is NOT done here — it is driven by per-generation
+    /// expected loss. Recovery beyond the budget (for a generation that lost more
+    /// than `r` of its coded) is not done here — it is driven by per-generation
     /// deficit feedback via `generate_repair_for`, which the receiver bounds and
     /// targets exactly. Returns `None` when every active generation is at budget
     /// (or nothing is retained), at which point `wants_coding` is false and the
     /// sender's emission is purely deficit-driven until a generation decodes.
     fn next_active_gen(&mut self) -> Option<u64> {
         let top = self.top_gen();
-        // Fix 3: proactive coding is anchored at `code_base` (>= base_gen), the
-        // SEND-frontier-tracking coding floor, not the retention floor. Default
-        // code_base == base_gen reproduces the original in-order-anchored window.
+        // Proactive coding is anchored at `code_base` (>= base_gen), the
+        // send-frontier-tracking coding floor, not the retention floor. With
+        // code_base == base_gen this is the in-order-anchored window.
         let floor = self.code_base.max(self.base_gen);
         let hi = (floor + self.pipeline).min(top + 1);
         if hi <= floor {
             return None;
         }
         let span = hi - floor;
-        // Round-robin over CODEABLE generations (sealed/tail-idle and still under
+        // Round-robin over codeable generations (sealed/tail-idle and still under
         // their provisioning budget). Once a generation is at budget it drops out
         // of the proactive round-robin; its residual, if any, is recovered by the
         // deficit loop (fungible cross-path, no per-seq ARQ).
@@ -320,12 +319,12 @@ impl GenerationEncoder {
         None
     }
 
-    /// Whether generation `g` is eligible for FILLING-generation proactive
+    /// Whether generation `g` is eligible for filling-generation proactive
     /// coding: it has at least one retained source and is still under its
     /// per-generation provisioning budget `ceil(len·factor)` (systematic
-    /// `factor = r`). Unlike `codeable`, this does NOT require the generation to
+    /// `factor = r`). Unlike `codeable`, this does not require the generation to
     /// be sealed — the whole point of the pacer is to emit repair over the
-    /// contiguous prefix while the generation is STILL FILLING, so the covering
+    /// contiguous prefix while the generation is still filling, so the covering
     /// equation is present at the receiver ~immediately after the hole is sent
     /// (before/around when the in-order frontier detects it), not a full
     /// generation-span later once the generation finally seals.
@@ -337,16 +336,16 @@ impl GenerationEncoder {
         emitted < self.gen_budget(g)
     }
 
-    /// Code ONE proactive symbol over the retained contiguous prefix of
-    /// generation `g` at the FULL generation MATRIX width `G`. The symbol sums
+    /// Code one proactive symbol over the retained contiguous prefix of
+    /// generation `g` at the full generation matrix width `G`. The symbol sums
     /// only the present prefix `[gen_start, gen_start + w)` (w = current fill)
     /// with coefficients drawn from the full-width seed, and carries `w` as the
     /// wire `coded_width` (with `FILL_FLAG` set) so the decoder zeroes columns
     /// `[w, G)`. Because the wire `window_count` is `G` regardless of `w`, every
     /// symbol for `g` — filling or sealed, proactive or reactive — lands in the
-    /// SAME `(anchor, G)` decoder matrix and combines fungibly. This is what
-    /// makes filling-generation repair present-at-stall WITHOUT the cross-grid
-    /// stranding that refuted the separate-block inline repair.
+    /// same `(anchor, G)` decoder matrix and combines fungibly. This is what
+    /// makes filling-generation repair present-at-stall without the cross-grid
+    /// stranding a separate-block inline repair suffers.
     fn code_generation_full(&mut self, g: u64) -> WireSymbol {
         // `enc` seam — the filling variant. Same seam as `code_generation`:
         // both are the same GF work on the same symbol budget, and splitting
@@ -367,7 +366,7 @@ impl GenerationEncoder {
         let coded_width = syms.len() as u16;
         let full = self.gen_size as u16; // stable MATRIX width
 
-        // Coefficients over the FULL generation span [gen_start, gen_start+G);
+        // Coefficients over the full generation span [gen_start, gen_start+G);
         // only the first `coded_width` are actually applied (the rest map to
         // not-yet-generated seqs and are zero on both sides).
         let coeffs = generate_window_coefficients(gen_start, full, coded_index);
@@ -393,9 +392,9 @@ impl GenerationEncoder {
         }
     }
 
-    /// Pick the next generation to code via the FILLING pacer: round-robin over
+    /// Pick the next generation to code via the filling pacer: round-robin over
     /// the `pipeline` oldest retained generations that are still under budget
-    /// (filling OR sealed). The oldest retained generations are exactly the ones
+    /// (filling or sealed). The oldest retained generations are exactly the ones
     /// the receiver's in-order frontier is at (retention floor = cumulative ack),
     /// so their coded repair is what must be present when the frontier stalls.
     fn next_fill_gen(&mut self) -> Option<u64> {
@@ -423,7 +422,7 @@ impl GenerationEncoder {
 impl WindowEncoder for GenerationEncoder {
     fn add_source(&mut self, data: &[u8]) -> WireSymbol {
         // `src` seam: the pad allocation, the payload copy, and the
-        // retention-store `insert` — which is a SECOND full copy of every
+        // retention-store `insert` — which is a second full copy of every
         // source symbol, and one of the named suspects the decomposition
         // exists to size.
         crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Src, || {
@@ -472,10 +471,10 @@ impl WindowEncoder for GenerationEncoder {
     }
 
     fn generate_repair_for(&mut self, anchor: u64) -> Option<WireSymbol> {
-        // Deficit-driven recovery for a SPECIFIC generation (§16.3). Bypasses
-        // the proactive per-generation budget: the receiver's deficit already
-        // bounds how many are emitted, so there is no cap to apply here — the
-        // only gate is that the generation is retained and SEALED (its coded
+        // Deficit-driven recovery for a specific generation.
+        // Bypasses the proactive per-generation budget: the receiver's deficit
+        // already bounds how many are emitted, so there is no cap to apply
+        // here — the only gate is that the generation is retained and sealed (its coded
         // must span the full generation width, else they are low-rank and never
         // help the generation reach K_G).
         if self.gen_size == 0 || anchor % self.gen_size != 0 {
@@ -492,22 +491,22 @@ impl WindowEncoder for GenerationEncoder {
         Some(self.code_generation(g))
     }
 
-    /// Interspersed trailing-window repair (goal-gate "Repair In-Flight"). Code
-    /// ONE coded symbol over the ARBITRARY seq range `[start, start+count)` — a
-    /// small trailing BLOCK of already-sent source, distinct from (and smaller
-    /// than) the fixed generation. Unlike `generate_repair` (which round-robins
-    /// SEALED generations, so a generation's repair only flows AFTER all G of its
+    /// Interspersed trailing-window repair. Code one coded symbol over the
+    /// arbitrary seq range `[start, start+count)` — a small trailing block of
+    /// already-sent source, distinct from (and smaller than) the fixed
+    /// generation. Unlike `generate_repair` (which round-robins sealed
+    /// generations, so a generation's repair only flows after all G of its
     /// sources are sent → arrives ~1 generation-span behind), this codes over a
-    /// block whose members were ALL just sent, so the covering repair arrives
+    /// block whose members were all just sent, so the covering repair arrives
     /// ~immediately after the hole it covers — present when the receiver detects
     /// the hole → proactive decode, no reactive round-trip. The wire header
     /// carries `(start, count, coded_index)`, so the dense decoder solves it in a
     /// `(start,count)` matrix exactly like a generation of that span (with the raw
-    /// sources injected as unit pivots). Returns `None` unless the FULL range is
+    /// sources injected as unit pivots). Returns `None` unless the full range is
     /// retained — a missing source would make the coded equation inconsistent with
     /// the receiver's regenerated coefficients.
     fn generate_repair_range(&mut self, start: u64, count: u16) -> Option<WireSymbol> {
-        // `enc` seam. The retention scan below is INSIDE the extent on
+        // `enc` seam. The retention scan below is inside the extent on
         // purpose: it is a per-symbol walk of the range and it is real coding
         // cost, charged to the seam that pays it.
         crate::net::cpuprof::timed(crate::net::cpuprof::Seam::Enc, || {
@@ -531,7 +530,7 @@ impl WindowEncoder for GenerationEncoder {
             self.sources.remove(&k);
         }
         self.base_gen = self.gen_of(gen_floor);
-        // Fix 3: the coding floor never trails the retention floor.
+        // The coding floor never trails the retention floor.
         if self.code_base < self.base_gen {
             self.code_base = self.base_gen;
         }
@@ -550,7 +549,7 @@ impl WindowEncoder for GenerationEncoder {
     }
 
     fn set_code_base(&mut self, anchor_seq: u64) {
-        // Advance the proactive-coding floor toward the SEND frontier, clamped
+        // Advance the proactive-coding floor toward the send frontier, clamped
         // to [retention floor, top gen]. Monotonic (never retreats) so the
         // round-robin stays ahead of already-provisioned generations.
         let g = self.gen_of(anchor_seq);
@@ -594,7 +593,7 @@ impl WindowEncoder for GenerationEncoder {
 }
 
 /// The `RWM_CPUPROF` seam bodies for the two [`WindowEncoder`] entry points
-/// above. They live in an INHERENT block because a trait impl may only
+/// above. They live in an inherent block because a trait impl may only
 /// contain the trait's own items — the split is a language requirement, not
 /// a design choice, and the timed wrappers stay on the trait methods so no
 /// caller can reach the work without passing the instrument.
@@ -658,67 +657,63 @@ impl GenerationEncoder {
 }
 
 // ===========================================================================
-// Sparse-aware generation decoder — the FAST decode path for generation coding.
+// Sparse-aware generation decoder — the fast decode path for generation coding.
 // ===========================================================================
 //
-// WHY THIS EXISTS.  The generation *encoder* above produces RLC-repair symbols
+// Why it exists.  The generation *encoder* above produces RLC-repair symbols
 // with the identical self-describing wire header as the sliding window, so the
-// sparse `RlcWindowDecoder` CAN decode them (and does, in the unit tests).  But
+// sparse `RlcWindowDecoder` can decode them (and does, in the unit tests).  But
 // that decoder stores each pivot row's coefficients as a `BTreeMap<u64,u8>` and
 // cascades single-unknown resolutions one at a time — allocation-heavy and
-// pointer-chasing, measured ~200× below a dense GF(256) solver.  At the oracle's
-// aggregating G=384 that put decode BELOW the link rate, so heterogeneous
-// multipath had no headroom to aggregate (goal-gate "Generation Coding": C8 =
-// 10.97 Mbit/s, aggregation factor 1.00 — DECODE-BOUND, not network-bound).
+// pointer-chasing, far below a dense GF(256) solver, which at G=384 puts
+// decode below the link rate.
 //
-// THE COST MODEL (goal-gate "Decode-CPU Ceiling").  The previous dense decoder
-// (kept verbatim in `reference` below) materialized EVERY known source as a
-// full-width unit pivot row and reduced every incoming row against ALL of them
-// with fused (G+S)-byte SIMD ops: O(G·(G+S)) per row even when the row's only
-// job was to eliminate already-known sources.  In systematic mode — where G−k
-// of a generation's DoF arrive as raw source and only k ≈ ε·G repair rows carry
-// new information — that turned an O(k·G·S + k³) problem into O(G²·S)-class
-// work (~90 ms CPU per 384-symbol generation ≈ 4 000 sym/s ≈ 39 Mbit/s/core on
-// the L1 VM), which bound the whole generation transport at ~34 Mbit/s.
+// The cost model.  The dense decoder (kept verbatim in `reference` below)
+// materializes every known source as a full-width unit pivot row and reduces
+// every incoming row against all of them with fused (G+S)-byte SIMD ops:
+// O(G·(G+S)) per row even when the row's only job is to eliminate
+// already-known sources.  In systematic mode — where G−k of a generation's
+// DoF arrive as raw source and only k ≈ ε·G repair rows carry new
+// information — that turns an O(k·G·S + k³) problem into O(G²·S)-class work.
 //
-// THIS decoder is sparse-aware and per-generation:
-//   • KNOWN sources never enter the matrix.  A generation slot keeps a `known`
-//     bitmap; an incoming row's known columns are eliminated PAYLOAD-ONLY
+// This decoder is sparse-aware and per-generation:
+//   • Known sources never enter the matrix.  A generation slot keeps a `known`
+//     bitmap; an incoming row's known columns are eliminated payload-only
 //     (S bytes per known column, against `recovered`) instead of via fused
-//     (G+S)-byte unit-row ops — and slot creation stores NO payload copies.
-//   • Only CODED rows are matrix rows (`pivots`, ≤ k + deficit extras in
+//     (G+S)-byte unit-row ops — and slot creation stores no payload copies.
+//   • Only coded rows are matrix rows (`pivots`, ≤ k + deficit extras in
 //     systematic mode), kept in reduced row-echelon form over the non-known
 //     columns exactly as before, using the same fused-row SIMD elimination.
-//   • A pivot row that reduces to a UNIT row is delivered immediately and
-//     CONVERTED to a `known` column (dropped from the matrix), so the active
+//   • A pivot row that reduces to a unit row is delivered immediately and
+//     converted to a `known` column (dropped from the matrix), so the active
 //     system stays k×k.  Completion is `known_count == width` — the moment the
 //     last column is known the whole generation has been delivered, with no
 //     separate full-rank back-substitution pass (the RREF invariant makes the
 //     final sweep deliver every remaining row; see `insert_equation`).
-//   • A generation whose span is FULLY recovered before its first repair
+//   • A generation whose span is fully recovered before its first repair
 //     arrives (k = 0, the common case at low ε) never creates a matrix at all:
 //     the repair is recognized as redundant in O(G) with zero GF work.
 // Per generation the cost is O(k·G·S + k²·(G+S)): the irreducible payload-only
 // elimination of the known mass from each of ~k dense repair rows, plus the
 // k×k active elimination.  In coded-only mode (no raw source on the wire)
 // nothing is ever known, every row is a coded pivot, and the arithmetic
-// degenerates to exactly the previous dense decoder's O(G²·(G+S)) — that mode's
+// degenerates to exactly the dense reference decoder's O(G²·(G+S)) — that mode's
 // cost is information-theoretic (all G DoF arrive dense), not implementation.
 //
-// DELIVERED OUTPUT is the same (seq, payload) SET with identical bytes as the
+// Delivered output is the same (seq, payload) set with identical bytes as the
 // reference decoder on any consistent symbol stream (asserted by the
-// old-vs-new differential test below); the only observable difference is the
-// ORDER of seqs *within* one `add_symbol` return on the call that completes a
-// generation (incremental sweep order vs the old ascending full-rank sweep).
+// differential test); the only observable difference is the
+// order of seqs *within* one `add_symbol` return on the call that completes a
+// generation (incremental sweep order vs the reference's ascending full-rank sweep).
 // Every consumer keys on seq (reassembly/reorder buffers), so ordering within
 // a call is semantically inert.
 
-/// One reduced CODED pivot row of a generation's system, stored as ONE
+/// One reduced coded pivot row of a generation's system, stored as one
 /// contiguous buffer `[coeffs (width bytes) | data (symbol_size bytes)]`.
 /// Fusing the coefficient row and the payload row into a single allocation lets
-/// a single SIMD `mul_acc_slice` eliminate BOTH in one call.  After
+/// a single SIMD `mul_acc_slice` eliminate both in one call.  After
 /// normalization the pivot column holds 1 and, by the RREF invariant, every
-/// OTHER pivot column (and every `known` column) holds 0.
+/// other pivot column (and every `known` column) holds 0.
 type GenRow = Vec<u8>;
 
 /// State of one generation's decode, keyed by `(anchor, width)` — see
@@ -727,7 +722,7 @@ enum GenSlot {
     /// Still accumulating independent degrees of freedom.
     Solving {
         width: usize,
-        /// Source-KNOWN columns.  `known[c]` ⇒ the source payload for
+        /// Source-known columns.  `known[c]` ⇒ the source payload for
         /// `anchor + c` lives in `GenerationDecoder::recovered` and every
         /// matrix row is zero at column `c` (incoming rows are reduced
         /// payload-only against `recovered` before insertion).  Known columns
@@ -737,9 +732,9 @@ enum GenSlot {
         known: Vec<bool>,
         /// Number of `true` entries in `known`.
         known_count: usize,
-        /// `pivots[c]` is the reduced CODED row whose pivot column is `c`
+        /// `pivots[c]` is the reduced coded row whose pivot column is `c`
         /// (or `None`).  Only coded rows live here (≤ holes + deficit margin
-        /// in systematic mode); a row that becomes UNIT is delivered and
+        /// in systematic mode); a row that becomes unit is delivered and
         /// converted to a `known` column immediately.
         pivots: Vec<Option<GenRow>>,
         /// Number of `Some` entries in `pivots`.  The generation's rank is
@@ -754,24 +749,24 @@ enum GenSlot {
 /// generation mode in place of the sparse `RlcWindowDecoder`.
 pub struct GenerationDecoder {
     symbol_size: usize,
-    /// `(anchor, width)` → decode state.  Keying by BOTH anchor and width (not
+    /// `(anchor, width)` → decode state.  Keying by both anchor and width (not
     /// anchor alone) is load-bearing: the object stream reuses the absolute seq
-    /// space across objects, so a single anchor legitimately hosts DIFFERENT
+    /// space across objects, so a single anchor legitimately hosts different
     /// generations of different K_G at different times — the encoder's fixed
     /// generation `g` accumulates one object's short tail (coded at that partial
-    /// width once intake goes idle) AND the next object's fill (coded at the full
+    /// width once intake goes idle) and the next object's fill (coded at the full
     /// width once sealed).  Those are distinct linear systems over different
     /// source sets; keying by `(anchor, width)` lets them coexist instead of one
     /// resetting/thrashing the other's pivots at the object boundary.
     gens: BTreeMap<(u64, usize), GenSlot>,
     /// Sources already recovered: seq → payload.  Three jobs: (1) the
     /// delivered-seq set (its keys) for dedup and `rank_in`; (2) known-source
-    /// ELIMINATION — a fresh generation slot marks every already-recovered
+    /// elimination — a fresh generation slot marks every already-recovered
     /// source in its span `known`, and incoming rows are reduced against these
     /// payloads directly (payload-only, no unit pivot rows); (3) the payload
     /// store those eliminations read from — which is why `advance` never prunes
-    /// a seq still covered by a live Solving slot (the old dense decoder held
-    /// private copies in its unit rows; this one holds none).
+    /// a seq still covered by a live Solving slot (this decoder holds no
+    /// private copies in unit rows).
     recovered: BTreeMap<u64, Vec<u8>>,
     /// Wire-symbol dedup: (block_id, payload_id, is_repair).
     seen: HashSet<(u64, u32, bool)>,
@@ -809,7 +804,7 @@ impl GenerationDecoder {
         let ss = self.symbol_size;
         if !self.gens.contains_key(&(anchor, width)) {
             // Fresh generation: mark already-recovered sources in its span as
-            // KNOWN columns (flags only — no payload copies, no unit rows).
+            // known columns (flags only — no payload copies, no unit rows).
             // k = 0 fast path: a span that is already fully recovered needs no
             // matrix at all — the row is necessarily dependent (every column
             // eliminates against a known source), so skip slot creation and
@@ -844,7 +839,7 @@ impl GenerationDecoder {
             }
         };
 
-        // Forward-reduce the incoming row.  KNOWN columns are eliminated
+        // Forward-reduce the incoming row.  Known columns are eliminated
         // payload-only against `recovered` (S bytes, the sparse-aware saving);
         // coded pivot columns use the fused (width+S)-byte row op.  Because the
         // coded rows are in RREF over the non-known columns (and zero at every
@@ -880,8 +875,8 @@ impl GenerationDecoder {
 
         // Gauss–Jordan: eliminate the new pivot column from every existing
         // coded row so the RREF invariant is preserved.  Track which rows we
-        // MODIFY: only those (plus the new pivot row) can have newly become
-        // UNIT rows.
+        // modify: only those (plus the new pivot row) can have newly become
+        // unit rows.
         let mut touched: Vec<usize> = Vec::new();
         for c in 0..width {
             if c == pcol {
@@ -900,14 +895,14 @@ impl GenerationDecoder {
         *coded_rows += 1;
         touched.push(pcol);
 
-        // UNIT sweep: a touched row whose coefficient half has a single nonzero
-        // (its own pivot, normalized to 1) IS its column's source.  Deliver it,
-        // mark the column KNOWN, and DROP the row — the matrix stays k×k and the
+        // Unit sweep: a touched row whose coefficient half has a single nonzero
+        // (its own pivot, normalized to 1) is its column's source.  Deliver it,
+        // mark the column known, and drop the row — the matrix stays k×k and the
         // RREF invariant is untouched (every other row is already zero at a
         // pivot column).  When the last column turns known the generation is
-        // COMPLETE: by RREF, pivots over ALL remaining free columns force every
+        // complete: by RREF, pivots over all remaining free columns force every
         // remaining row to be unit, so this same sweep delivers the whole tail —
-        // the old dense decoder's full-rank pass, folded into the increment.
+        // the dense decoder's full-rank pass, folded into the increment.
         let mut out: Vec<(u64, Bytes)> = Vec::new();
         for &c in &touched {
             let Some(prow) = pivots[c].as_ref() else { continue };
@@ -945,21 +940,20 @@ impl GenerationDecoder {
         (true, out)
     }
 
-    /// Inject an already-received RAW source (seq → payload) as a unit equation
-    /// into EVERY existing Solving generation matrix whose fixed span covers
+    /// Inject an already-received raw source (seq → payload) as a unit equation
+    /// into every existing Solving generation matrix whose fixed span covers
     /// `seq`.
     ///
-    /// WHY THIS EXISTS (feat/fec-recovery-bug — the proactive-FEC-dead bug). A
-    /// generation's decode matrix learns the sources it already knows ONLY at
-    /// slot creation (the first repair for that generation). In production, source
-    /// and repair symbols INTERLEAVE and reorder, so a generation's own non-lost
-    /// sources routinely arrive AFTER its first repair. Without this injection
-    /// those late sources land in `recovered` but are invisible to the matrix,
-    /// which then treats them as permanent unknowns: `rank_in` reports a deficit of
-    /// `G − matrix_rank` (inflated by the late-source count, NOT the true hole
-    /// count), the sender floods `G − rank` coded repairs where only `holes` were
-    /// needed, and the surplus repairs merely re-derive already-received sources —
-    /// linearly wasted (the measured repairs_useful ≈ 7 / repairs_fed ≈ 4600). By
+    /// Why: a generation's decode matrix learns the sources it already knows
+    /// only at slot creation (the first repair for that generation). Source
+    /// and repair symbols interleave and reorder, so a generation's own
+    /// non-lost sources routinely arrive after its first repair. Without this
+    /// injection those late sources land in `recovered` but are invisible to
+    /// the matrix, which then treats them as permanent unknowns: `rank_in`
+    /// reports a deficit of `G − matrix_rank` (inflated by the late-source
+    /// count, not the true hole count), the sender floods `G − rank` coded
+    /// repairs where only `holes` were needed, and the surplus repairs merely
+    /// re-derive already-received sources. By
     /// feeding each late source into the live matrix as the unit equation
     /// `e_c · x = data` (c = seq − anchor), the unknown space shrinks to the real
     /// holes the instant the source arrives, so the reported deficit == holes and
@@ -967,9 +961,9 @@ impl GenerationDecoder {
     /// last missing degree of freedom it completes the generation and returns its
     /// remaining holes.
     ///
-    /// COST (sparse-aware): the injected unit row reduces against nothing (its
+    /// Cost (sparse-aware): the injected unit row reduces against nothing (its
     /// column is free), pivots at `c`, and the elimination touches only the ≤ k
-    /// coded rows with a nonzero at `c` — O(k·S), not the old O(k·(G+S)) plus a
+    /// coded rows with a nonzero at `c` — O(k·S), not a dense O(k·(G+S)) plus a
     /// full-width unit-row insert.  A column that is already `known` is skipped
     /// before any row is built.
     fn inject_source_into_active_gens(&mut self, seq: u64, data: &[u8]) -> Vec<(u64, Bytes)> {
@@ -977,9 +971,9 @@ impl GenerationDecoder {
         // Collect covering Solving slots first (avoid aliasing the &mut self used
         // by insert_equation). A source is covered by slot (anchor,width) iff
         // anchor ≤ seq < anchor+width. Widths are small in count, so this is cheap.
-        // Skip slots that already KNOW this column — the unit equation would be
-        // linearly dependent (the old decoder discovered that with a fused row op;
-        // the known bitmap answers it for free).
+        // Skip slots that already know this column — the unit equation would be
+        // linearly dependent (the known bitmap answers that for free, without
+        // a fused row op).
         let covering: Vec<(u64, usize)> = self
             .gens
             .iter()
@@ -1011,19 +1005,18 @@ impl GenerationDecoder {
         out
     }
 
-    /// Transitively propagate just-delivered sources into EVERY other active
+    /// Transitively propagate just-delivered sources into every other active
     /// generation matrix, returning all sources delivered along the way.
     ///
-    /// WHY (goal-gate "Repair In-Flight"). Two coding grids now coexist: the small
-    /// inline trailing-BLOCK (width W, the in-flight proactive channel) and the
-    /// wide GENERATION (width G, the reactive deficit loop's unit). A hole
-    /// recovered by a block repair lands in `recovered`, but the covering G-matrix
-    /// (created later, by a deficit repair) only learns `recovered` AT CREATION
-    /// and never after — so a hole recovered by the block AFTER the G-matrix
-    /// exists stays an unknown in it, `rank_in(G)` under-counts, the receiver
-    /// OVER-reports the generation's deficit, and the sender FLOODS redundant
-    /// reactive repair (MEASURED recovery_coded 30k→94k, pfrac collapse). Feeding
-    /// each block-recovered hole into the G-matrix (as a unit equation) keeps
+    /// Why: two coding grids coexist: the small inline trailing block (width
+    /// W, the in-flight proactive channel) and the wide generation (width G,
+    /// the reactive deficit loop's unit). A hole recovered by a block repair
+    /// lands in `recovered`, but the covering G-matrix (created later, by a
+    /// deficit repair) only learns `recovered` at creation and never after —
+    /// so a hole recovered by the block after the G-matrix exists stays an
+    /// unknown in it, `rank_in(G)` under-counts, the receiver over-reports the
+    /// generation's deficit, and the sender floods redundant reactive repair.
+    /// Feeding each block-recovered hole into the G-matrix (as a unit equation) keeps
     /// every matrix's rank consistent, so the deficit reflects the true residual
     /// and the reactive flood is eliminated. A worklist handles the transitive
     /// case (a G-matrix a block completion finishes delivers its own holes,
@@ -1068,7 +1061,7 @@ impl WindowDecoder for GenerationDecoder {
         self.total_fed += 1;
 
         if !symbol.is_repair {
-            // SYSTEMATIC mode: the raw source rides the wire as PRIMARY. Deliver it
+            // Systematic mode: the raw source rides the wire as primary. Deliver it
             // directly (zero decode) and record it so overlapping generations can
             // eliminate it.
             let seq = symbol.block_id;
@@ -1079,12 +1072,12 @@ impl WindowDecoder for GenerationDecoder {
             let copy_len = symbol.data.len().min(self.symbol_size);
             data[..copy_len].copy_from_slice(&symbol.data[..copy_len]);
             self.recovered.insert(seq, data.clone());
-            // feat/fec-recovery-bug FIX: a source that arrives AFTER a covering
-            // generation's matrix was created must be injected into that live
-            // matrix as a unit equation — otherwise the matrix keeps treating it
-            // as an unknown, inflating the reported deficit and wasting coded
-            // repair (the proactive-FEC-dead bug). Inject now; if it completes a
-            // generation, deliver that generation's remaining holes too.
+            // A source that arrives after a covering generation's matrix was
+            // created must be injected into that live matrix as a unit
+            // equation — otherwise the matrix keeps treating it as an unknown,
+            // inflating the reported deficit and wasting coded repair. Inject
+            // now; if it completes a generation, deliver that generation's
+            // remaining holes too.
             let mut out = vec![(seq, Bytes::from(data.clone()))];
             let delivered = self.inject_source_into_active_gens(seq, &data);
             out.extend(self.propagate(delivered));
@@ -1132,9 +1125,9 @@ impl WindowDecoder for GenerationDecoder {
         row[width..width + copy_len].copy_from_slice(&coded[..copy_len]);
 
         let (added_rank, recovered) = self.insert_equation(anchor, width, row);
-        // repairs_useful counts repairs that contributed a NEW degree of freedom
+        // repairs_useful counts repairs that contributed a new degree of freedom
         // (rank-add), the honest per-hole "useful" signal — not per-generation
-        // completions. With the late-source-injection fix the matrix's unknown
+        // completions. With late-source injection the matrix's unknown
         // space is the real holes, so a useful repair == a hole recovered.
         if added_rank {
             self.repairs_useful += 1;
@@ -1157,11 +1150,11 @@ impl WindowDecoder for GenerationDecoder {
         for k in drop {
             self.gens.remove(&k);
         }
-        // Prune recovered payloads below the frontier — EXCEPT the span of any
+        // Prune recovered payloads below the frontier — except the span of any
         // surviving Solving slot: its `known` columns eliminate against these
-        // payloads (the old dense decoder held private copies inside its unit
-        // pivot rows; this decoder holds none, so the store must outlive the
-        // slot).  Memory is the same order either way — one payload per known
+        // payloads (this decoder holds no private copies in unit pivot rows,
+        // so the store must outlive the slot).  Memory is the same order as
+        // the dense decoder's — one payload per known
         // column per live span — and a live slot's span is bounded (slots drop
         // above the moment their whole span passes the frontier).
         let live_floor = self
@@ -1201,12 +1194,11 @@ impl WindowDecoder for GenerationDecoder {
         // contiguous in seq space, so holes = span_len − recovered_in_span.
         // `buffered` = coded degrees of freedom already covering the span: coded
         // pivot rows in any Solving matrix whose pivot column maps to a seq in
-        // the span that is NOT yet a recovered source.  (Known columns ARE
-        // recovered sources, so — exactly as in the old dense decoder, where
-        // unit pivots were filtered by the `recovered` check — only coded rows
-        // count.)  A pivot at a hole column is a coded DoF that has advanced
-        // into hole territory and will complete the hole once enough accumulate.
-        // `buffered > 0` at a stall ⇒ proactive repair is PRESENT and the hole
+        // the span that is not yet a recovered source.  (Known columns are
+        // recovered sources, so only coded rows count.)  A pivot at a hole
+        // column is a coded DoF that has advanced into hole territory and will
+        // complete the hole once enough accumulate.
+        // `buffered > 0` at a stall ⇒ proactive repair is present and the hole
         // will decode without a reactive round-trip (the in-flight win).
         let end = horizon.saturating_add(1);
         if end <= frontier {
@@ -1247,10 +1239,10 @@ impl WindowDecoder for GenerationDecoder {
 
 
 // ===========================================================================
-// REFERENCE decoder (pre-sparse rewrite) -- differential-test oracle only.
+// Reference dense decoder -- differential-test oracle only.
 // ===========================================================================
 
-/// The pre-rewrite dense decoder, kept only as a differential-test oracle
+/// The dense decoder, kept only as a differential-test oracle
 /// (see `generation/reference.rs`). Never constructed by the engine.
 #[doc(hidden)]
 #[allow(dead_code)] // frozen byte-exact copy: kept whole, unused helpers included

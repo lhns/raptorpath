@@ -1,10 +1,8 @@
-//! The window sender's phase functions (net seam pass 3, cleanup Stage 3):
-//! blocks of `run_window_sender`'s loop body moved out VERBATIM into ordinary
-//! functions, the `emit_source` pattern. The loop locals a phase owns became
-//! the fields of that phase's state struct (a mechanical `scs.` prefix, never
-//! inside a string or a comment); the shared handles and the resolve-once
-//! policy ride in a borrowed context struct. Nothing was reordered, merged,
-//! split or re-guarded: each call site sits exactly where its block was.
+//! The window sender's phase functions: blocks of `run_window_sender`'s loop
+//! body as ordinary functions, the `emit_source` pattern. The loop locals a
+//! phase owns are the fields of that phase's state struct; the shared handles
+//! and the resolve-once policy ride in a borrowed context struct. Each call
+//! site sits exactly where its block runs in the loop.
 
 use super::*;
 use super::sender_policy::SenderPolicy;
@@ -13,33 +11,30 @@ use super::sender_policy::SenderPolicy;
 /// wrote. Other loop phases READ `dyn_store_cap` (the flow-control gate) and
 /// the DIAG report reads the pool-anchor and K_i gauges.
 pub(crate) struct StoreCapState {
-    /// Pool-anchor law state (RWM_POOL_ANCHOR, DIAG): whether the N ≥ 2
+    /// Pool-anchor law state (`RWM_POOL_ANCHOR`, DIAG): whether the N ≥ 2
     /// honest send-anchor pool computed the cap at the last refresh, and its
-    /// Σ before clamping — the mechanism gauges for the "Ship The Wins 1"
-    /// battery (the cap gauge decides; the legacy btlbw gauge may stay
-    /// inflated by design since the cwnd feed is untouched).
+    /// Σ before clamping (the cap gauge decides; the btlbw gauge may stay
+    /// inflated since the cwnd feed is untouched).
     pub pa_engaged: bool,
     pub pa_sum: f64,
-    /// Three-term law state (RWM_THREE_TERM): `Some((window, slack, span))`
-    /// at the last refresh where the law ENGAGED, `None` where it did not.
-    /// This is the mechanism gauge MEASUREMENT DISCIPLINE 15 requires — a
-    /// battery can read the three terms SEPARATELY, so a verdict never rests
-    /// on "the cap moved" alone, and the span term's N = 1 zero is
-    /// OBSERVABLE rather than merely argued.
+    /// Three-term law state (`RWM_THREE_TERM`): `Some((window, slack, span))`
+    /// at the last refresh where the law engaged, `None` where it did not. The
+    /// mechanism gauge (`docs/measurement-discipline.md` rule 15): a battery
+    /// reads the three terms separately, and the span term's N = 1 zero is
+    /// observable.
     pub tt_terms_diag: Option<(f64, f64, f64)>,
     pub tt_print_us: u64,
     /// path → windowed-min echo-ratio state (K_i), fed at the dyn-cap
     /// refresh cadence; ~10 s window = two 5 s half-buckets
-    /// (`PERCAP_K_HALF_WINDOW_US`, now module-level so every consumer of the
-    /// honest per-path cap keys on the SAME window).
+    /// (`PERCAP_K_HALF_WINDOW_US`, shared by every honest-cap consumer).
     pub percap_k: std::collections::HashMap<u32, EchoRatioMin>,
     /// Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     /// most every 5 ms; the pipe/BDP move far slower than the select loop).
     pub dyn_store_cap: usize,
     pub dyn_cap_refresh_us: u64,
-    /// `sf=` gauge print cadence (goal-gate "Store-Cap Triplication"). A
-    /// standalone INFO line, deliberately NOT part of the [DIAG] assembly:
-    /// the population it reports is the store-cap phase's own instrument.
+    /// `sf=` gauge print cadence. A standalone INFO line, not part of the
+    /// [DIAG] assembly: the population it reports is the store-cap phase's own
+    /// instrument.
     pub sf_print_us: u64,
 }
 
@@ -69,17 +64,16 @@ pub(crate) struct StoreCapCtx<'a> {
     pub ccap: &'a mut SenderTeardownGauges,
 }
 
-/// Plain-reliable delay-based window cap (paper §12), refreshed off the
-/// scheduler lock at most every 5 ms. The body is the loop block verbatim.
+/// Plain-reliable delay-based window cap (paper §6), refreshed off the
+/// scheduler lock at most every 5 ms.
 pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
     let StoreCapCtx { pol, gates, scheduler, copa_feed, sumcap, dcap, ccap } = ctx;
     if pol.plain_dyn_cap {
         let dnow = now_us();
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
             scs.dyn_cap_refresh_us = dnow;
-            // `sf=` readout every ~2 s under RWM_DIAG — the
-            // saturation-filter POPULATION at the refresh instants, the
-            // number that decides whether the documented
+            // `sf=` readout every ~2 s under RWM_DIAG — the saturation-filter
+            // population at the refresh instants, which decides whether the
             // `active_paths()` trap is live or latent at this cell.
             if gates.diag && dnow.saturating_sub(scs.sf_print_us) >= 2_000_000 {
                 scs.sf_print_us = dnow;
@@ -93,31 +87,24 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     "[SF] store-cap saturation filter: active_paths() vs live_paths() at the dyn-cap refresh"
                 );
             }
-            // Σ-cwnd store law only when the feed OWNS the operating
-            // point (Copa-sole); the sampling-only feed (RWM_PLAIN_RS)
-            // keeps the legacy anchor-sum law — now fed honest samples.
+            // Σ-cwnd store law only when the feed owns the operating point
+            // (Copa-sole); the sampling-only feed (RWM_PLAIN_RS) keeps the
+            // anchor-sum law, fed honest samples.
             if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
-                // feat/copa-sole-cc: Copa OWNS the operating point, so the
-                // outstanding window is keyed to Σ cwnd (the probe state),
-                // not the BtlBw anchor. With the honest send-interval
-                // sampler the old 2×anchor cap is CIRCULAR: samples can
-                // never read above the store-capped delivered rate, so the
-                // anchor could never grow toward the pipe (L0 MEASURED:
-                // stuck at ~3.2k of 10.4k sym/s, throughput 18 of 66
-                // Mbit/s — the legacy ack-interval over-read was
-                // accidentally load-bearing for the old cap). cwnd escapes
-                // the loop because Copa probes it upward (ramp ×1.5,
-                // +2/SRTT, anchor pull) independent of the cap; gain×cwnd
-                // keeps ~1 cwnd of recovery runway buffered above the
-                // substrate window (quinn enforces cwnd on the wire).
-                // live_paths(), NOT active_paths(): the latter filters by
-                // spare capacity (available() > 0), and a cwnd-SATURATED
-                // path — the normal state of a wire-bound sender — made
-                // cwnd_sum read 0, collapsing the cap to the 128 boot
-                // value and whiplashing the TUN gate (MEASURED at the L1
-                // c2 smoke: effective cap flapping 1024↔128 every few
-                // DIAG ticks, store swinging 400–1024, goodput dips to
-                // 20 Mbit).
+                // Copa owns the operating point (ADR-0062), so the outstanding
+                // window is keyed to Σ cwnd (the probe state), not the BtlBw
+                // anchor. With the honest send-interval sampler a 2×anchor cap
+                // is circular: samples can never read above the store-capped
+                // delivered rate, so the anchor could never grow toward the
+                // pipe. cwnd escapes the loop because Copa probes it upward
+                // independent of the cap; gain×cwnd keeps ~1 cwnd of recovery
+                // runway buffered above the substrate window (quinn enforces
+                // cwnd on the wire).
+                // live_paths(), not active_paths(): the latter filters by spare
+                // capacity (available() > 0), and a cwnd-saturated path — the
+                // normal state of a wire-bound sender — would make cwnd_sum read
+                // 0, collapsing the cap to the boot value and whiplashing the
+                // TUN gate.
                 let (cwnd_sum, n_live): (f64, usize) = {
                     let sched = scheduler.lock();
                     let live = sched.live_paths();
@@ -139,14 +126,11 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                     pol.store_path_pool,
                 ) {
-                    // `RWM_SUM_CAP` reaches the Copa-sole seat too: the
-                    // `×N` is the same defect wherever the pooled law is
-                    // evaluated, and the base here is Σ cwnd rather than
-                    // Σ anchor — still a SUM over paths, so still already
-                    // linear in the count. Leaving this seat on the
-                    // shipped multiplier would make the gate's meaning
-                    // depend on the CC family, which is the kind of split
-                    // ADR-0064 exists to refuse.
+                    // `RWM_SUM_CAP` reaches the Copa-sole seat too: the base
+                    // here is Σ cwnd rather than Σ anchor — still a sum over
+                    // paths, so still already linear in the count. Leaving
+                    // this seat on the `×N` would make the gate's meaning
+                    // depend on the CC family (ADR-0064).
                     sumcap.record(pol.sum_cap, n_live, cwnd_sum, pol.store_bdp_gain, cap);
                     dcap.record(n_live, cwnd_sum, pol.store_bdp_gain, cap);
                     cap
@@ -157,17 +141,14 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_boot_cap.min(pol.store_max)
                 };
             } else {
-                // ── THE THREE-TERM LIMIT (RWM_THREE_TERM) ────────────
-                // Goal-gate "Three-Term Law": the composed law's inputs
-                // over LIVE paths — the same set every honest-cap
-                // consumer reads, and the set whose RTprop SPREAD is the
-                // span term's own argument. There is no path-count
-                // predicate here or in the law: at N = 1 the spread is
-                // zero and the span term vanishes by arithmetic.
-                // Rate source: the per-path delivered-rate anchor
-                // (`btlbw_sym_per_s`) — the same source the legacy
-                // Σ-anchor base reads, so the A/B isolates the LAW and
-                // not the anchor.
+                // The three-term limit (`RWM_THREE_TERM`): the law's inputs
+                // over live paths — the set every honest-cap consumer reads,
+                // and the set whose RTprop spread is the span term's
+                // argument. There is no path-count predicate here or in the
+                // law: at N = 1 the spread is zero and the span term
+                // vanishes by arithmetic. Rate source: the per-path
+                // delivered-rate anchor (`btlbw_sym_per_s`), the same source
+                // the Σ-anchor base reads, so the A/B isolates the law.
                 let tt_slots: Vec<Option<ThreeTermPath>> = if pol.three_term_on {
                     let sched = scheduler.lock();
                     sched
@@ -187,40 +168,33 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     Vec::new()
                 };
                 let tt_terms = three_term_terms(&mut scs.percap_k, &tt_slots, dnow);
-                // feat/percap-honest-cap: alongside the legacy Σanchor
-                // base, accumulate the honest per-path cap sum
-                // Σ anchor_i·(K_i+gain−1) when the honest sampler is
-                // live (see `honest_store_cap`; K_i observed here at
-                // the refresh cadence). hsum = 0.0 whenever
-                // honest_cap_on is false — the legacy expressions below
-                // then run verbatim (shipped byte-identical).
+                // Alongside the Σanchor base, accumulate the honest per-path
+                // cap sum Σ anchor_i·(K_i+gain−1) when the honest sampler is
+                // live (see `honest_store_cap`; K_i observed here at the
+                // refresh cadence). hsum = 0.0 whenever honest_cap_on is
+                // false, and the expressions below then run unchanged.
                 let (bdp, hsum, n_live): (f64, f64, usize) = {
                     let sched = scheduler.lock();
                     let live = sched.live_paths();
                     let n = live.len().max(1);
-                    // ── THE PATH SET (2026-08-09 de-triplication) ─────
-                    // `active_paths()` = active AND `available() > 0`
-                    // (cwnd − in_flight). It is the DATA-SCHEDULING
-                    // filter; using it for a LAW is the documented
-                    // cwnd-saturation trap (`live_paths()` decl comment;
-                    // `RWM_RECOV_MP_LIVE` at the recovery plane; the
-                    // Copa-sole store law above, already fixed) — a
-                    // wire-bound sender is cwnd-saturated by definition,
-                    // so the filter drops exactly the paths that are
-                    // carrying the transfer, mid-transfer.
+                    // The path set. `active_paths()` = active and
+                    // `available() > 0` (cwnd − in_flight): the data-scheduling
+                    // filter. Using it for a law is the cwnd-saturation trap
+                    // (see the `live_paths()` decl): a wire-bound sender is
+                    // cwnd-saturated by definition, so the filter drops the
+                    // paths carrying the transfer, mid-transfer.
                     //
-                    // `RWM_STORE_CAP_UNIFIED` is the A/B: OFF keeps
-                    // `active_paths()` here bit-exactly (shipped
-                    // default), ON reads `live_paths()` — the same set
-                    // `n_live` below is already counted from, so the
-                    // path-scaled law's Σ-base and its ×N multiplier
-                    // finally range over the SAME paths.
+                    // `RWM_STORE_CAP_UNIFIED` is the A/B: off keeps
+                    // `active_paths()` here (the default), on reads
+                    // `live_paths()` — the set `n_live` is counted from, so
+                    // the path-scaled law's Σ-base and its ×N multiplier range
+                    // over the same paths.
                     let act = sched.active_paths();
                     store_cap_sf_record(live.len(), act.len());
                     let set: &[u32] = if pol.store_cap_unified { &live } else { &act };
                     let mut bdp = 0.0f64;
                     // Warm-anchor slots for the honest per-path cap, in
-                    // path-set order — collected here, evaluated ONCE by
+                    // path-set order — collected here, evaluated once by
                     // `honest_cap_terms` below (the law lives there).
                     let want_k = pol.honest_cap_on;
                     let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
@@ -243,9 +217,8 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     }
                     let terms =
                         honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain);
-                    // hsum = 0.0 whenever honest_cap_on is false — the
-                    // legacy expressions below then run verbatim
-                    // (shipped byte-identical).
+                    // hsum = 0.0 whenever honest_cap_on is false, and the
+                    // expressions below run unchanged.
                     let hsum: f64 = if pol.honest_cap_on {
                         terms.iter().flatten().sum()
                     } else {
@@ -253,28 +226,17 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     };
                     (bdp, hsum, n)
                 };
-                // Pool-anchor honest dual-store law (RWM_POOL_ANCHOR,
-                // goal-gate "Ship The Wins 1"): per-live-path honest
-                // caps on the SEND-interval anchor. Collected only at
-                // N ≥ 2 (N = 1 code path untouched, incl. the percap_k
-                // maps); None until that path's send anchor AND RTprop
-                // are warm — capw_store_cap then requires ALL live
-                // paths warm, else the configured fallback below runs
-                // verbatim. live_paths(), NOT active_paths(): the
-                // cwnd-saturation filter trap (documented above) must
-                // not drop a saturated path's earned share.
+                // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`):
+                // per-live-path honest caps on the send-interval anchor.
+                // Collected only at N ≥ 2 (the N = 1 code path, including the
+                // percap_k maps, is untouched); a cold send anchor or RTprop
+                // yields a None term, so capw_store_cap's all-warm requirement
+                // falls back to the configured chain below. live_paths(), not
+                // active_paths(): the cwnd-saturation filter must not drop a
+                // saturated path's earned share.
                 let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
-                    // Rate source: the hygiene-grade SEND-interval
-                    // anchor (the ratcheted send mean).
-                    // Path set: live_paths().
-                    //
-                    // PROVENANCE PRESERVED (the pre-de-triplication
-                    // comment): live_paths(), NOT active_paths() — the
-                    // cwnd-saturation filter trap must not drop a
-                    // saturated path's earned share. A cold send anchor
-                    // or RTprop yields a None TERM, exactly as the
-                    // `?`-shaped original did, so capw_store_cap's
-                    // all-warm requirement is unchanged.
+                    // Rate source: the send-interval anchor (the ratcheted
+                    // send mean). Path set: live_paths().
                     let slots: Vec<Option<HonestCapPath>> = {
                         let sched = scheduler.lock();
                         sched
@@ -282,10 +244,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                             .iter()
                             .map(|id| {
                                 sched.path(*id).and_then(|p| {
-                                    // Cold send anchor or cold RTprop →
-                                    // no slot at all: the original `?`
-                                    // returned BEFORE feeding the clock
-                                    // tracker, and that is preserved.
+                                    // Cold send anchor or cold RTprop → no
+                                    // slot at all, before feeding the clock
+                                    // tracker.
                                     let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
                                     let rtp = p
                                         .min_rtt()
@@ -323,12 +284,10 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     scs.tt_terms_diag = Some((w, sl, sp));
                     cap
                 } else if pol.honest_cap_on && hsum > 0.0 {
-                    // Honest law: the Σ is already per-path-composed
-                    // (each term carries its own K_i and runway), so no
-                    // gain× multiplier here. Principled ceilings
-                    // unchanged: the legacy store latch at N = 1, the
-                    // N×knee pool when the path-scaled pool is
-                    // configured.
+                    // Honest law: the Σ is already per-path-composed (each
+                    // term carries its own K_i and runway), so no gain×
+                    // multiplier here. Ceilings: the store latch at N = 1,
+                    // the N×knee pool when the path-scaled pool is configured.
                     let ceiling = if pol.store_paths_on && n_live >= 2 {
                         n_live.saturating_mul(pol.store_path_pool).max(pol.store_cap_floor)
                     } else {
@@ -341,14 +300,11 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                     pol.store_path_pool,
                 ) {
-                    // Pool-anchor law ENGAGED (RWM_POOL_ANCHOR, N ≥ 2,
-                    // all send anchors warm): Σ honest per-path caps on
-                    // the burst-immune send-interval rate, clamped
-                    // [floor, N·knee] — the same pure pooled law as
-                    // capw_store_cap, with the CAP's rate input honest
-                    // by construction. The explicit experiment arm
-                    // (RWM_PLAIN_RS+RWM_HONEST_CAP) takes precedence
-                    // above, unchanged.
+                    // Pool-anchor law engaged (RWM_POOL_ANCHOR, N ≥ 2, all
+                    // send anchors warm): Σ honest per-path caps on the
+                    // burst-immune send-interval rate, clamped [floor, N·knee].
+                    // The explicit experiment arm (RWM_PLAIN_RS+RWM_HONEST_CAP)
+                    // takes precedence above.
                     scs.pa_engaged = true;
                     scs.pa_sum = pa_terms.iter().flatten().sum();
                     cap
@@ -363,11 +319,10 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     pol.store_cap_floor,
                     pol.store_path_pool,
                 ) {
-                    // THE SHIPPED SEAT (ADR-0070's B6): every default dual
-                    // cell's cap is decided here. `pol.sum_cap` is the ONLY
-                    // thing that differs between the two arms, and it is a
-                    // VALUE inside one expression rather than a second law
-                    // — see `pooled_store_cap`.
+                    // The shipped seat: every default dual cell's cap is
+                    // decided here. `pol.sum_cap` and `pol.delta_cap` are
+                    // values inside one expression, not second laws — see
+                    // `pooled_store_cap`.
                     sumcap.record(pol.sum_cap, n_live, bdp, pol.store_bdp_gain, cap);
                     dcap.record(n_live, bdp, pol.store_bdp_gain, cap);
                     cap
@@ -376,24 +331,19 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 } else {
                     pol.store_boot_cap.min(pol.store_max)
                 };
-                // `[CCAP]` bind fractions, taken at the refresh that
-                // computed the cap. The UNCLAMPED law is `window + slack
-                // + span` — recorded separately from its bounds, which is
-                // MEASUREMENT DISCIPLINE 17's rule ("a clamp may never be
-                // the only thing making a law sane") applied at runtime
-                // rather than only in a property test.
+                // `[CCAP]` bind fractions, taken at the refresh that computed
+                // the cap. The unclamped law is `window + slack + span`,
+                // recorded separately from its bounds
+                // (`docs/measurement-discipline.md` rule 17).
                 if pol.composed_cap {
                     ccap.refreshes += 1;
                     ccap.cap_sum += scs.dyn_store_cap as f64;
                     if let Some((w, sl, sp)) = scs.tt_terms_diag {
                         ccap.engaged += 1;
-                        // TERM 3's geometry, folded in at the SAME refresh
-                        // that counted the engagement — the c9 contract's
-                        // C9-L1/C9-L3 field set (§16.56; goal-gate "c9 —
-                        // THE ONE GEOMETRY THAT SEPARATES THE TWO SPAN
-                        // FORMS"). `span_forms` returns `Some` on exactly
-                        // the ticks `three_term_store_cap` did, so the
-                        // means and `eng=` share one denominator.
+                        // TERM 3's geometry, folded in at the same refresh
+                        // that counted the engagement. `span_forms` returns
+                        // `Some` on exactly the ticks `three_term_store_cap`
+                        // did, so the means and `eng=` share one denominator.
                         if let Some(sf) = span_forms(&tt_terms) {
                             debug_assert!(
                                 (sf.shipped - sp).abs() <= 1e-9 * sp.abs().max(1.0),
@@ -412,14 +362,12 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     }
                 }
             }
-            // `[3T]` readout — the three-term law's MECHANISM-LIVENESS
-            // echo at the wire (MEASUREMENT DISCIPLINE 15). It prints
-            // whenever the gate is CONFIGURED, so a battery can also
-            // detect "configured but never engaged" (all-cold anchors)
-            // as a distinct state from "engaged": `eng=0` with a live
-            // `[GATES] RWM_THREE_TERM=1` is a warm-up failure, not a
-            // null result. `span` is the number the topology claim
-            // stands on — it must read 0.0 at every single-path cell.
+            // `[3T]` readout — the three-term law's mechanism-liveness echo
+            // (`docs/measurement-discipline.md` rule 15). It prints whenever
+            // the gate is configured, so "configured but never engaged"
+            // (all-cold anchors) is distinct from "engaged": `eng=0` with a
+            // live `[GATES] RWM_THREE_TERM=1` is a warm-up failure, not a null
+            // result. `span` must read 0.0 at every single-path cell.
             if pol.three_term_on && dnow.saturating_sub(scs.tt_print_us) >= 2_000_000 {
                 scs.tt_print_us = dnow;
                 let (w, sl, sp) = scs.tt_terms_diag.unwrap_or((0.0, 0.0, 0.0));
@@ -469,7 +417,9 @@ pub(crate) struct GenEmitCtx<'a> {
     pub recovery_coded_total: &'a mut u64,
 }
 
-/// The loop block, verbatim. Called from exactly where it stood.
+/// The paced generation coded-emission phase: proactive fill, the proactive
+/// pacer, and the deficit-driven recovery round-robin. Returns whether any
+/// coded symbol flowed.
 pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
     let GenEmitCtx {
         pol,
@@ -513,72 +463,55 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
         // partial generation recover; a mid-stream backpressure pause is NOT
         // idle (tx_paused), so this never floods a still-filling generation.
         st.encoder.set_intake_idle(!tx_paused && now.saturating_sub(st.gen_last_source_us) > 30_000);
-        // Fix 3: advance the PROACTIVE-CODING floor to follow the SEND
-        // frontier (the last `pipeline` sealed generations), decoupled from
-        // the stalled in-order retention floor. Under RWM_OOO_RETAIN the send
-        // frontier runs `ooo_gens` ahead of a stalled generation; without
-        // this the coder would keep re-coding the stalled generation and
-        // never provision the fresh ones — they would then need reactive
-        // recovery and re-serialize. No-op when ooo_retain is off (default).
+        // Under `RWM_OOO_RETAIN`, advance the proactive-coding floor to follow
+        // the send frontier (the last `pipeline` sealed generations), decoupled
+        // from the stalled in-order retention floor. The send frontier runs
+        // `ooo_gens` ahead of a stalled generation; without this the coder
+        // would keep re-coding the stalled generation and never provision the
+        // fresh ones, which would then need reactive recovery.
         if pol.ooo_retain {
             let (_, newest) = st.encoder.window_span();
             let code_anchor =
                 newest.saturating_sub((pol.pipeline as u64) * (pol.gen_size as u64));
             st.encoder.set_code_base(code_anchor);
         }
-        // ACK-CLOCKED WINDOW FLOW CONTROL. Emit coded symbols up to
+        // Ack-clocked window flow control. Emit coded symbols up to
         //   total_coded ≤ delivered·(1+r) + W_inflight
         // where `delivered` = cumulative ack (decoded source symbols) and
         // W_inflight is the in-flight coded allowance (≈ BDP + one
-        // generation). The delivered·(1+r) term is the steady coded budget
-        // to reconstruct what has been delivered (r covers loss + the MDS
+        // generation). The delivered·(1+r) term is the steady coded budget to
+        // reconstruct what has been delivered (r covers loss + the MDS
         // margin); W_inflight is the burst the pipe may hold ahead of the
-        // decode frontier. This self-clocks to the LINK GOODPUT (ack-driven,
-        // like a congestion window) and — crucially — BOUNDS the QUIC
-        // datagram buffer, so over-emission can't bloat it and strand fresh
-        // coded behind stale coded (the ×0.13 pathology of un-clocked
-        // emission). RWM_GEN_R (overhead r) and RWM_GEN_INFLIGHT tune it.
+        // decode frontier. This self-clocks to the link goodput and bounds the
+        // QUIC datagram buffer, so over-emission cannot strand fresh coded
+        // behind stale coded. `RWM_GEN_R` (overhead r) and `RWM_GEN_INFLIGHT`
+        // tune it.
         let ack_now = window_ack_seq.load(Ordering::Relaxed);
-        // FLOW-CONTROL bound: coded must not run more than W_inflight coded
-        // symbols ahead of the DECODE frontier (cumulative ack), which
-        // bounds the QUIC datagram buffer (no un-clocked bloat). The encoder
-        // itself caps per-generation emission to ceil(len·(1+r)) so this
-        // window is never spent producing low-rank symbols over a still-
-        // filling generation — the two together give startup-safe, recovery-
-        // capable, ack-clocked emission.
-        // The proactive budget is clocked to the DECODE frontier (cumulative
-        // ack): coded must not run more than `gen_inflight_window` ahead of
-        // what the receiver has decoded, which BOUNDS the QUIC datagram buffer
-        // (the transport-ceiling fix — loosening this to the sent frontier
-        // reintroduces datagram bufferbloat and SERIALIZES symmetric
-        // aggregation, MEASURED C7 22.4→14.9). The small-G frontier-advance
-        // deadlock is NOT closed here (that would bloat the datagram path) but
-        // by the receiver seeding a wedged generation's width so the DEFICIT
-        // loop — which is ack-clock-INDEPENDENT — always funds the frontier
-        // hole. `RWM_CODED_SRC` still offers the sent-frontier clock as an
-        // opt-in for experiments.
-        // Fix 3: under OOO retention the cumulative ack is stalled on a hole
-        // while the send frontier runs far ahead, so clock the proactive
-        // budget on the SENT frontier (like RWM_CODED_SRC) — else coded
-        // emission would freeze at the stalled ack and the fresh generations
-        // would never be provisioned.
-        // gen_pipe remedy 3: same sent-frontier clock — the intake cap
-        // (M*·G) + per-generation ceil(len·(1+r)) budgets already bound
-        // the outstanding coded, so the stalled ack must not freeze the
-        // M*−1 fresh generations' provisioning.
+        // The encoder caps per-generation emission to ceil(len·(1+r)), so
+        // this window is never spent producing low-rank symbols over a
+        // still-filling generation. Loosening the clock to the sent frontier
+        // reintroduces datagram bufferbloat and serializes symmetric
+        // aggregation. The small-G frontier-advance deadlock is closed instead
+        // by the receiver seeding a wedged generation's width so the deficit
+        // loop — which is ack-clock-independent — always funds the frontier
+        // hole. `RWM_CODED_SRC` offers the sent-frontier clock as an opt-in.
+        // Under OOO retention and under gen_pipe the proactive budget is
+        // clocked on the sent frontier: the cumulative ack is stalled on a
+        // hole while the send frontier runs ahead, and the intake cap (M*·G)
+        // plus the per-generation ceil(len·(1+r)) budgets already bound the
+        // outstanding coded.
         let target = if pol.coded_src_clock || pol.ooo_retain || pol.gen_pipe {
             let (_, wend) = st.encoder.window_span();
             (wend as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
         } else {
             (ack_now as f64) * (1.0 + pol.gen_repair_floor) + pol.gen_inflight_window
         };
-        // Clock the pacing rate to the DELIVERED goodput (ack rate): sample
-        // the ack advance over a ~20 ms window into an EWMA, and pace at
-        // 1.5× that (headroom for loss/overhead), clamped to [floor, ceiling].
-        // This keeps coded emission from outrunning the receiver's decode so
-        // the datagram intake is not overrun and bursts are not dropped
-        // (§16.3 the named failure). Before the first sample the floor primes
-        // the first generation.
+        // Clock the pacing rate to the delivered goodput (ack rate): sample
+        // the ack advance over a ~20 ms window into an EWMA, and pace at a
+        // headroom multiple of that, clamped to [floor, ceiling], so coded
+        // emission does not outrun the receiver's decode and the datagram
+        // intake is not overrun. Before the first sample the floor primes the
+        // first generation.
         {
             let dt = now.saturating_sub(gen_rate_sample_us);
             if dt >= 20_000 {
@@ -593,17 +526,14 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 gen_rate_sample_ack = ack_now;
             }
         }
-        // Fix 1: under CC-rate pacing the coded bucket shares the source's
-        // small headroom (the 1.5× overshoot itself overruns the datagram
-        // path — 50% more coded than the receiver can decode builds a queue
-        // that bursts-drops). Legacy 1.5× kept when cc_pace is off.
-        // gen_pipe remedy 4: anchor the pace to the windowed-MAX delivered
-        // rate. The decode-clocked EWMA decays toward the floor between
-        // generation acks (samples are mostly-low, §16.15), throttling
-        // emission exactly while the pipe is waiting; the windowed max is
-        // the recovery statistic. Headroom 1.25 (the BBR probe gain — the
-        // wire must fund (1+r)/(1−ε) ≈ 1.08× the delivered rate plus ramp
-        // margin) instead of the legacy 1.5 whose overshoot bursts drop.
+        // Under CC-rate pacing the coded bucket shares the source's small
+        // headroom (a 1.5× overshoot itself overruns the datagram path).
+        // Under gen_pipe the pace is anchored to the windowed-max delivered
+        // rate: the decode-clocked EWMA decays toward the floor between
+        // generation acks, throttling emission exactly while the pipe is
+        // waiting. Headroom 1.25 (the BBR probe gain — the wire must fund
+        // (1+r)/(1−ε) ≈ 1.08× the delivered rate plus ramp margin) instead
+        // of 1.5, whose overshoot bursts drop.
         let eff_factor = if pol.cc_pace {
             pol.cc_pace_headroom
         } else if pol.gen_pipe {
@@ -611,9 +541,9 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
         } else {
             1.5
         };
-        // Fix 1: under cc_pace clock coded emission on the same frontier-
-        // independent CC rate (max with the goodput EWMA) so a stalled
-        // in-order ack does not starve coded emission below the link.
+        // Under cc_pace clock coded emission on the frontier-independent CC
+        // rate (max with the goodput EWMA) so a stalled in-order ack does not
+        // starve coded emission below the link.
         let eff_base = if pol.cc_pace {
             gen_rate_ewma.max(cc_rate_cached)
         } else if pol.gen_pipe {
@@ -680,16 +610,16 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
             stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
         }
 
-        // ── PROACTIVE PACER (RWM_PROACTIVE_PACER) — present-at-stall ──────
-        // Emit filling-generation proactive repair on the generation grid,
-        // paced by the SAME CC token bucket but WITHOUT the ack-clock
-        // `target` gate (the cumulative ack is stalled exactly when the
-        // frontier needs repair) and without any source-availability gate
-        // (this block runs every loop iteration, incl. tx_paused wakeups).
-        // Bounded by each generation's ceil(len·r) budget (wants_filling_
-        // coding turns false at budget), the CC rate (gen_tokens) and
-        // congestion (cwnd_full). Supersedes the sealed batched proactive
-        // path above; the reactive deficit below remains the fallback.
+        // Proactive pacer (`RWM_PROACTIVE_PACER`) — present-at-stall. Emit
+        // filling-generation proactive repair on the generation grid, paced by
+        // the same CC token bucket but without the ack-clock `target` gate
+        // (the cumulative ack is stalled exactly when the frontier needs
+        // repair) and without any source-availability gate (this block runs
+        // every loop iteration, including tx_paused wakeups). Bounded by each
+        // generation's ceil(len·r) budget (wants_filling_coding turns false at
+        // budget), the CC rate (gen_tokens) and congestion (cwnd_full).
+        // Supersedes the sealed batched proactive path above; the reactive
+        // deficit below remains the fallback.
         if pol.proactive_pacer {
             let mut fill_emitted = 0u32;
             while fill_emitted < burst_cap
@@ -733,32 +663,27 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
             }
         }
 
-        // DEFICIT-DRIVEN RECOVERY EMISSION (§16.3, the named missing
-        // mechanism). Emit the residual coded symbols each stalled frontier
-        // generation still needs, PACED by the same token bucket, round-
-        // robin so no generation starves — but NOT gated by the ack-clocked
-        // `target`. That is the crux of the fix: the cumulative ack is
-        // stalled EXACTLY when the frontier generation needs recovery, so
-        // gating recovery on the ack (as the feedback-free proxy did) is the
-        // deadlock. The receiver's per-generation deficit BOUNDS the total
-        // (we send only the residual it reports, minus what is already in
-        // flight — tracked in gen_want), so bypassing the ack-clock here
-        // cannot flood: recovery is bounded AND funds the frontier at once.
+        // Deficit-driven recovery emission. Emit the residual coded symbols
+        // each stalled frontier generation still needs, paced by the same
+        // token bucket, round-robin so no generation starves — but not gated
+        // by the ack-clocked `target`: the cumulative ack is stalled exactly
+        // when the frontier generation needs recovery, so gating recovery on
+        // the ack is a deadlock. The receiver's per-generation deficit bounds
+        // the total (we send only the residual it reports, minus what is
+        // already in flight — tracked in gen_want), so bypassing the ack
+        // clock cannot flood.
         if !pol.no_reactive && !gen_want.is_empty() {
             let rec_burst = 256u32;
             let mut rec_emitted = 0u32;
             'recover: loop {
-                // Fix 2: reactive stops at the shared link budget (gen_tokens)
-                // and — when enabled — is NON-EXEMPT from the in-flight cap
-                // (cwnd_full), so it cannot burst the pipe past congestion
-                // control the way the old exempt loop did.
-                // Recovery is NON-EXEMPT from cwnd_full (congestion control):
-                // exempting it floods the pipe (MEASURED RTT 2.5 s
-                // bufferbloat). The frontier is funded instead by (a) the win
-                // backstop keeping the send frontier within a few generations
-                // of the in-order frontier so the stranded generation is
-                // recent, and (b) recovery running each iteration as the
-                // in-flight budget expires on the RTT timescale.
+                // Reactive stops at the shared link budget (gen_tokens) and,
+                // with `RWM_REACT_CAP`, is non-exempt from the in-flight cap
+                // (cwnd_full): exempting it floods the pipe. The frontier is
+                // funded instead by (a) the win backstop keeping the send
+                // frontier within a few generations of the in-order frontier,
+                // so the stranded generation is recent, and (b) recovery
+                // running each iteration as the in-flight budget expires on
+                // the RTT timescale.
                 if gen_tokens < 1.0 || rec_emitted >= rec_burst
                     || (pol.react_cap_on && cwnd_full) {
                     break;
@@ -788,14 +713,13 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                             continue;
                         }
                     };
-                    // SLOW-PATH COVERAGE (§16.3 intent). Deficit recovery funds
-                    // a frontier generation whose hole is the long pole — most
-                    // often a source lost on the SLOW path. Place it by the
-                    // ∝-goodput placement law (softmax over marginal cost),
-                    // which already biases the covering repair toward the FAST
-                    // path proportionally without STARVING a symmetric second
-                    // path — hard argmax concentration serializes symmetric
-                    // aggregation (MEASURED C7 regression) for no C8 gain.
+                    // Deficit recovery funds a frontier generation whose hole
+                    // is the long pole — most often a source lost on the slow
+                    // path. Place it by the ∝-goodput placement law (softmax
+                    // over marginal cost, paper §5.7), which biases the
+                    // covering repair toward the fast path proportionally
+                    // without starving a symmetric second path (hard argmax
+                    // concentration serializes symmetric aggregation).
                     let path = {
                         let sched = scheduler.lock();
                         if pol.xpath_repair {
@@ -888,7 +812,8 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub mp_evid_max: &'a mut u64,
 }
 
-/// The loop block, verbatim. Called from exactly where it stood.
+/// The NACK/gap repair phase: drain the receiver's gap reports and answer
+/// each hole under the cooldown, budget, suppression and hold-down laws.
 pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
     let ServeGapsCtx {
         pol,
@@ -923,22 +848,17 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             Some(g) => g,
             None => match nack_rx.try_recv() {
                 Ok(g) => {
-                    // feat/recovery-suppression: a gap report is a STATE
-                    // SNAPSHOT of the receiver's current holes (frontier
-                    // + inverted SACK), not a delta — so a queued
-                    // backlog is stale by construction and only the
-                    // NEWEST snapshot needs processing. Under the mp
-                    // law holes legitimately outlive their reports
-                    // (suppressed until a loss channel fires), so the
-                    // 2 ms gap-ack cadence queues snapshots faster than
-                    // they change; coalescing removes that walk tax.
-                    // Legacy path (gate off) keeps per-report
-                    // processing bit-exactly.
-                    // `[FCAUSE]`: coalescing keeps the NEWEST snapshot, so
-                    // it keeps that snapshot's cause tag with it — the
-                    // fires this batch produces are caused by the report
-                    // that actually drove them, not by the stale ones the
-                    // walk discarded.
+                    // A gap report is a state snapshot of the receiver's
+                    // current holes (frontier + inverted SACK), not a delta,
+                    // so a queued backlog is stale by construction and only
+                    // the newest snapshot needs processing. Under the mp law
+                    // holes legitimately outlive their reports (suppressed
+                    // until a loss channel fires), so the gap-ack cadence
+                    // queues snapshots faster than they change; coalescing
+                    // removes that walk tax. With the gate off every report
+                    // is processed. The newest snapshot keeps its `[FCAUSE]`
+                    // cause tag, so fires are attributed to the report that
+                    // drove them.
                     let mut g = g;
                     if pol.recov_mp_law {
                         while let Ok(n) = nack_rx.try_recv() {
@@ -960,20 +880,18 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         }
 
         // SRTT drives the per-seq retransmit cooldown and the age gate.
-        // RWM_RECOV_MP additionally snapshots PER-PATH smoothed clocks
+        // RWM_RECOV_MP additionally snapshots per-path smoothed clocks
         // (Copa srtt + estimator EWMA) for the per-flight hole law, and
-        // the live path count (N=1 ⇒ the law is inert, legacy bit-exact).
+        // the live path count (N = 1 ⇒ the law is inert).
         // Tuple is (copa/estimator srtt, estimator EWMA rtt).
         let mut mp_clocks: std::collections::HashMap<u32, (u64, u64)> =
             std::collections::HashMap::new();
         let mut mp_n_paths: usize = 1;
         let srtt_us = {
             let sched = scheduler.lock();
-            // RWM_RECOV_MP_LIVE (goal-gate "C8 Slow-Path Conversion"):
-            // the law's N + clock snapshot must not lose a cwnd-
-            // saturated path (available() == 0 collapses the law to the
-            // N=1 bypass mid-transfer). Default OFF = the shipped
-            // active_paths() arm.
+            // `RWM_RECOV_MP_LIVE`: the law's N and clock snapshot must not
+            // lose a cwnd-saturated path (available() == 0 collapses the law
+            // to the N = 1 bypass mid-transfer). Off = the active_paths() arm.
             let ids = if pol.recov_mp_live {
                 sched.live_paths()
             } else {
@@ -1004,7 +922,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 .collect();
             pooled_recovery_srtt_us(&pooled)
         };
-        // The per-seq retransmit cooldown, floored at the legacy literal.
+        // The per-seq retransmit cooldown, floored at the fixed floor.
         let retx_cooldown_us = retx_cooldown_us(srtt_us, NACK_RETX_COOLDOWN_FLOOR_US);
         // The per-flight law threshold for a path (falls back to the
         // pooled cooldown clock when the path has no snapshot).
@@ -1013,7 +931,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
          -> u64 {
             match mp_clocks.get(&p) {
                 Some(&(srtt, ewma)) => {
-                    // The kGranularity analog: the legacy literal.
+                    // The kGranularity analog: the fixed cooldown floor.
                     let floor = NACK_RETX_COOLDOWN_FLOOR_US;
                     let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
                     if pol.diag_on {
@@ -1029,10 +947,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 None => retx_cooldown_us,
             }
         };
-        // A0.2: the SAME 9/8 threshold as `mp_thr_of`, WITHOUT its `pf=`
-        // counter side effect. A read-only audit gauge may not move an
-        // existing gauge's reading, and `mp_thr_of` bumps `mpd_pf_*` on
-        // every call.
+        // The same 9/8 threshold as `mp_thr_of`, without its `pf=` counter
+        // side effect: a read-only audit gauge may not move an existing
+        // gauge's reading, and `mp_thr_of` bumps `mpd_pf_*` on every call.
         let mp_thr_pure = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
                            p: u32|
          -> u64 {
@@ -1043,8 +960,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 None => retx_cooldown_us,
             }
         };
-        // A0.2: `max(srtt, ewma)/2` per path — the closure classifier's
-        // only input, and the SAME half-RTT the legacy age gate uses.
+        // `max(srtt, ewma)/2` per path — the closure classifier's only
+        // input, and the same half-RTT the age gate uses.
         let half_srtt_of = |p: u32| -> u64 {
             match mp_clocks.get(&p) {
                 Some(&(srtt, ewma)) => srtt.max(ewma) / 2,
@@ -1076,11 +993,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             }
         }
 
-        // §16.77 THE RESOLUTION SIGNAL. Every stamped hole this report no
-        // longer lists, inside the span this report covers, is one the
-        // receiver has — feed its outstanding time. Placed HERE, before the
-        // loop below stamps this batch's own seqs, or every hole would be
-        // resolved by the report that first announced it.
+        // The hold-down resolution signal (paper §7.4). Every stamped hole
+        // this report no longer lists, inside the span this report covers, is
+        // one the receiver has — feed its outstanding time. Placed here,
+        // before the loop below stamps this batch's own seqs, or every hole
+        // would be resolved by the report that first announced it.
         hold_echo.on_report(
             &gaps,
             now_repair_us,
@@ -1110,16 +1027,15 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 if pol.diag_on {
                     dg.mpd_gap_seqs += 1;
                 }
-                // §16.77: stamp the FIRST report of this hole. Placed at
+                // Stamp the first report of this hole (paper §7.4). Placed at
                 // the loop head so the origin is "when the sender was first
                 // told", not "when the sender got as far as deciding" — a
                 // hole suppressed by cooldown was still outstanding.
-                // A0.2: the seq's LIVE flight at the moment of its FIRST
-                // report — the last retransmit if any, else the original
-                // send — against the RFC 9002 §6.1.2 threshold that would
-                // judge it. Read at the loop HEAD, before every
-                // suppression `continue`, so a hole the cooldown or the
-                // shed skips is measured too.
+                // Also record the seq's live flight at its first report — the
+                // last retransmit if any, else the original send — against
+                // the RFC 9002 §6.1.2 threshold that would judge it. Read
+                // before every suppression `continue`, so a hole the cooldown
+                // or the shed skips is measured too.
                 let ha_flight: Option<(u64, u32)> = st
                     .nack_retx_at
                     .get(&seq)
@@ -1139,13 +1055,13 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         )
                     }),
                 );
-                // δ-honest shed (fix C): a hole already shed is never
-                // served again (the receiver's own δ-horizon passes it);
-                // a past-deadline hole is shed within the ρ budget — a
-                // retransmit fired at age > D(δ) lands after the
-                // receiver's give-up, pure waste that serializes the
-                // stream. Budget-refused holes fall through to the
-                // legacy ARQ (serialize: ρ wins).
+                // δ-honest shed (paper §5.6): a hole already shed is never
+                // served again (the receiver's own δ-horizon passes it); a
+                // past-deadline hole is shed within the ρ budget — a
+                // retransmit fired at age > D(δ) lands after the receiver's
+                // give-up, pure waste that serializes the stream.
+                // Budget-refused holes fall through to ARQ (serialize: ρ
+                // wins).
                 if pol.shed_on {
                     if st.shed_seqs.contains(&seq) {
                         continue;
@@ -1180,9 +1096,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         continue;
                     }
                 }
-                // The seq's LIVE flight: the last retransmit if any
-                // (it inherits the in-flight clock of its own path),
-                // else the original send (feat/recovery-suppression).
+                // The seq's live flight: the last retransmit if any (it
+                // inherits the in-flight clock of its own path), else the
+                // original send.
                 let mp_flight: Option<(u64, u32)> = st.nack_retx_at
                     .get(&seq)
                     .copied()
@@ -1190,7 +1106,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         st.retransmit_buffer.get(&seq).map(|&(t, _, p)| (t, p))
                     });
                 if pol.recov_mp_law && mp_n_paths > 1 {
-                    // The skew-aware hole law — RFC 9002 loss detection
+                    // The skew-aware hole law (ADR-0059) — RFC 9002 loss detection
                     // generalized per path, BOTH channels:
                     //  §6.1.1 packet threshold (fast, honest): the
                     //   ORIGINAL flight on path j is lost once ≥3 later
@@ -1230,13 +1146,12 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         dg.mpd_fired_fast += 1;
                     }
                 } else if pol.recov_sp && mp_n_paths <= 1 {
-                    // RWM_RECOV_SP (goal-gate "Lossy-Single Residual"):
-                    // the same §6.1.2 time threshold applied at N=1 —
-                    // a gap seq whose LIVE flight (last retransmit, else
-                    // the original) is younger than 9/8×max(smoothed
-                    // clocks) is merely late/queued, not lost. TIME
-                    // channel only (see the gate's decl note);
-                    // suppression-only — the hole-refresh re-advertises.
+                    // `RWM_RECOV_SP`: the same §6.1.2 time threshold applied
+                    // at N = 1 — a gap seq whose live flight (last retransmit,
+                    // else the original) is younger than 9/8×max(smoothed
+                    // clocks) is merely late/queued, not lost. Time channel
+                    // only (see the gate's decl note); suppression-only — the
+                    // hole-refresh re-advertises.
                     let time_ripe = time_threshold_ripe(
                         now_repair_us,
                         mp_flight.map(|(t, _)| t),
@@ -1251,10 +1166,10 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         continue;
                     }
                 } else {
-                    // Age gate (legacy): cross-path/jitter skew can
-                    // report a seq that is merely late, not lost — only
-                    // repair symbols old enough that an in-flight copy
-                    // would already have been sacked.
+                    // Age gate: cross-path/jitter skew can report a seq that
+                    // is merely late, not lost — only repair symbols old
+                    // enough that an in-flight copy would already have been
+                    // sacked.
                     if let Some(&(send_time_us, _, _)) = st.retransmit_buffer.get(&seq) {
                         if !legacy_age_ripe(now_repair_us, send_time_us, srtt_us) {
                             if pol.diag_on {
@@ -1265,10 +1180,10 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     }
                 }
                 // Cross-path: avoid the path that originally carried this
-                // symbol. RWM Phase B (§16.3): the targeted retransmit is
+                // symbol. On the reliable seat the targeted retransmit is
                 // placed by the law with a ρ_fate penalty on the original
-                // path (best path for the exact symbol, minus its fate) —
-                // the continuous form of select_repair_path_avoiding.
+                // path (paper §5.7) — the continuous form of
+                // select_repair_path_avoiding.
                 let original_path = st.source_path_map.get(&seq).copied().unwrap_or(st.last_source_path);
                 let nack_path = {
                     let sched = scheduler.lock();
@@ -1300,38 +1215,32 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     st.encoder.get_source(seq).unwrap_or_else(|| st.encoder.generate_repair())
                 };
 
-                // DIAG (feat/recovery-suppression trace): attribute this
-                // fire — live-flight age vs the per-path law threshold
-                // (young = the law would have suppressed it = the
-                // spurious-by-law class), per-flight-path and per-retx-
-                // path emission counts.
-                // 16.67.1's FALSE-ALARM VALIDATION, fed on EVERY arm
-                // (ungated by RWM_DIAG, unlike the DIAG attribution just
-                // below): a fire whose target flight is YOUNGER than its
-                // own per-path law threshold is data that was going to
-                // arrive anyway - the spurious-by-law class, which is the
-                // measurable stand-in for RACK's DSACK-detected spurious
-                // recovery. Scored against RFC 8985 6.2.4's own budget.
-                // `[FCAUSE]` (§16.69 successor): classify THIS fire by the
-                // producer of the gap batch that drove it. Placed here —
-                // after every suppression `continue`, before the emission
-                // below — so `n` counts exactly the fires that reach the
-                // wire. Note this is OUTSIDE the `mp_flight` guard that
-                // `record_fire` sits inside, which is why `[FCAUSE] n` can
-                // exceed `[RACK] fired`; the difference is printed as
-                // `unattr=` rather than repaired, so no prior reading of
-                // `fa=` is silently re-based.
-                // §16.77 THE HOLD-DOWN GATE. The sender does not answer a
-                // reported hole until the hole has been outstanding for at
-                // least `T(q) = W_q(1−q)` on the path its original flew —
-                // §16.76's order statistic on the hole-resolution stream.
-                // Placed here, after every other suppression `continue` and
-                // before `record_fire_cause`, so `[FCAUSE] n` keeps meaning
-                // "fires that reached the wire" and `[HOLD] sup=` is the
-                // only place the difference is accounted.
+                // The hold-down gate (`RWM_HOLDDOWN_Q`, paper §7.4). The sender
+                // does not answer a reported hole until it has been outstanding
+                // for at least `T(q) = W_q(1−q)` on the path its original flew
+                // — an order statistic on the hole-resolution stream. Placed
+                // after every other suppression `continue` and before
+                // `record_fire_cause`, so `[FCAUSE] n` keeps meaning "fires
+                // that reached the wire" and `[HOLD] sup=` is the only place
+                // the difference is accounted. With the gate absent
+                // `should_hold` is always false.
                 //
-                // ABSENT ⇒ `should_hold` is `false` on every call and this
-                // is the shipped machine, byte-identically.
+                // `[FCAUSE]` then classifies this fire by the producer of the
+                // gap batch that drove it. It sits outside the `mp_flight`
+                // guard that `record_fire` sits inside, so `[FCAUSE] n` can
+                // exceed `[RACK] fired`; the difference is printed as
+                // `unattr=`.
+                //
+                // False-alarm validation (paper §7.1), fed on every arm
+                // (ungated by RWM_DIAG): a fire whose target flight is
+                // younger than its own per-path law threshold is data that was
+                // going to arrive anyway — the spurious-by-law class, the
+                // measurable stand-in for RACK's DSACK-detected spurious
+                // recovery, scored against RFC 8985 §6.2.4's budget.
+                //
+                // DIAG attribution below: live-flight age vs the per-path law
+                // threshold (young = the law would have suppressed it),
+                // per-flight-path and per-retx-path emission counts.
                 if hold_echo.should_hold(seq, now_repair_us) {
                     continue;
                 }
@@ -1355,10 +1264,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         dg.mpd_fired_ripe += 1;
                     }
                     *dg.mpd_fired_on.entry(nack_path).or_insert(0) += 1;
-                    // feat/c8-conversion DIAG: retransmit attributed to
-                    // the seq's ORIGINAL placement path (conversion-
-                    // failure candidate (d): slow-placed symbols being
-                    // re-served on the fast path).
+                    // Retransmit attributed to the seq's original placement
+                    // path (slow-placed symbols re-served on the fast path).
                     *dg.c8c_retx_orig.entry(original_path).or_insert(0) += 1;
                 }
 
@@ -1372,16 +1279,14 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     }
                 };
                 debug!(seq, nack_path, "SACK-gap retransmit");
-                // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
-                // OFF — MECHANICAL DEFECT SWEEP item 5, defect 1): BYPASS
-                // CHANNEL 1 of 2. This symbol reaches the link with no
-                // in-flight charge, no pacer debit and no `symbols_sent`
-                // increment, where every other channel meters all three at
-                // the handoff — see `send_arq_repair_batch`'s "Charge like
-                // any correction". Charging cannot deadlock recovery: this
-                // site reads neither `available()` nor `cwnd_full`; it is
-                // budgeted by `cached_nack_budget`. The pacer debit may go
-                // negative, exactly as the block-ARQ repair's does.
+                // `RWM_CHARGE_RECOVERY` (default off): bypass channel 1 of 2.
+                // Without it this symbol reaches the link with no in-flight
+                // charge, no pacer debit and no `symbols_sent` increment,
+                // where every other channel meters all three at the handoff
+                // (see `send_arq_repair_batch`). Charging cannot deadlock
+                // recovery: this site reads neither `available()` nor
+                // `cwnd_full`; it is budgeted by `cached_nack_budget`. The
+                // pacer debit may go negative, as the block-ARQ repair's does.
                 if crate::scheduler::charge_recovery_active() {
                     {
                         let mut sched = scheduler.lock();
@@ -1394,11 +1299,10 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                // feat/copa-sole-cc: a retransmit re-commits the seq to
-                // its new path and re-snapshots the rate sample, so the
-                // eventual ack is attributed to the path that actually
-                // delivered it with a truthful send-interval.
-                // (feat/window-mtu scope fix: paused feed = absent feed.)
+                // A retransmit re-commits the seq to its new path and
+                // re-snapshots the rate sample, so the eventual ack is
+                // attributed to the path that delivered it with a truthful
+                // send-interval (a paused feed is an absent feed).
                 if let Some(feed) = copa_feed.as_ref() {
                     feed.on_sent(seq, nack_path);
                     let mut sched = scheduler.lock();
@@ -1410,10 +1314,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // hole decision for this seq clocks THIS flight on ITS
                 // path (closes the re-NACK-while-flying feedback).
                 st.nack_retx_at.insert(seq, (now_repair_us, nack_path));
-                // A0.2: a copy of this seq has reached the wire. Stamped
-                // here and nowhere else, so the classifier's "was a
-                // retransmit ever emitted" is answered by the emission
-                // itself rather than by an intention.
+                // A copy of this seq has reached the wire. Stamped here and
+                // nowhere else, so the classifier's "was a retransmit ever
+                // emitted" is answered by the emission itself.
                 hold_echo.on_retx(seq, now_repair_us, nack_path);
                 stats.fec.record_correction(CorrectionKind::SourceCopy, sent);
                 nack_repairs_this_period += 1;
@@ -1434,9 +1337,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     .fold(0.0f64, f64::max)
             };
             let margin = (retransmitted as f64 * current_loss).ceil() as u64;
-            // RWM Phase B (§16.3): place the extra repair margin by the law
-            // (fungible repairs cover the whole window → fate over the
-            // window's source paths). Single path ⇒ that path.
+            // Place the extra repair margin by the law (paper §5.7): fungible
+            // repairs cover the whole window → fate over the window's source
+            // paths. Single path ⇒ that path.
             let margin_path = {
                 let sched = scheduler.lock();
                 if reliable {
@@ -1460,9 +1363,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                         false
                     }
                 };
-                // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
-                // OFF): BYPASS CHANNEL 2 of 2 — same defect, same fix, same
-                // three meters as the SACK-gap retransmit above.
+                // `RWM_CHARGE_RECOVERY`: bypass channel 2 of 2 — same three
+                // meters as the SACK-gap retransmit above.
                 if crate::scheduler::charge_recovery_active() {
                     {
                         let mut sched = scheduler.lock();
@@ -1533,7 +1435,7 @@ pub(crate) struct AckAdvanceCtx<'a> {
     pub nack_repairs_this_period: &'a mut u64,
 }
 
-/// The loop block, verbatim. Called from exactly where it stood.
+/// The cumulative-ack advance phase.
 pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     let AckAdvanceCtx {
         pol,
@@ -1564,11 +1466,10 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     let mut c8c_last_ack_adv_us = *c8c_last_ack_adv_us_cell;
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
     if ack > prev_ack {
-        // feat/c8-conversion DIAG: attribute the just-ended frontier
-        // stall (time since the previous cumulative advance, ≥ 5 ms)
-        // to the ORIGINAL placement path of the hole that was blocking
-        // (seq = prev_ack + 1) — read BEFORE the cleanup below prunes
-        // source_path_map to ack+1.
+        // DIAG: attribute the just-ended frontier stall (time since the
+        // previous cumulative advance, ≥ 5 ms) to the original placement path
+        // of the hole that was blocking (seq = prev_ack + 1) — read before the
+        // cleanup below prunes source_path_map to ack+1.
         if pol.diag_on {
             let nowa = now_us();
             if c8c_last_ack_adv_us > 0 {
@@ -1584,9 +1485,9 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         }
         // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
         let newly_acked = ack - prev_ack;
-        // Compute the repair rate AND the derived window target (paper
-        // Section 8.8) from the worst (highest-loss) active path, under a
-        // single lock acquisition.
+        // Compute the repair rate and the derived window target (paper §4.8)
+        // from the worst (highest-loss) active path, under a single lock
+        // acquisition.
         let (repair_rate, derived_window) = {
             let mut ctrl = fec_controller.lock();
             let sched = scheduler.lock();
@@ -1594,34 +1495,21 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
                 .filter_map(|id| sched.path(*id))
                 .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|p| &p.estimator);
-            // ── χ, THE COMPLETION EXPOSURE (RWM_COMPLETION_EXPOSURE) ──
-            //
-            // §14.26's glide has existed since P6 and has NEVER RUN:
-            // `set_completion_exposure` had zero engine callers, so χ ≡ 0,
-            // so δ_eff = ε̂ at the Bulk end and `controller_rate` returned
-            // exactly 0 — r* ≡ 0 forever, on every scored battery. The r
-            // leg has never operated (paper §16.82).
-            //
-            // The perf client KNOWS the remaining bytes of the object it
-            // is feeding. Under the gate it publishes them into a
+            // χ, the completion exposure (`RWM_COMPLETION_EXPOSURE`, paper
+            // §4.6). The perf client knows the remaining bytes of the object
+            // it is feeding. Under the gate it publishes them into a
             // `CompletionFeed` and this site converts them to a time —
-            // `T_rem = remaining / throughput` — and prices the exposure
-            // with the math crate's own
-            // `completion_exposure(T_rem, srtt, rttvar)`.
+            // `T_rem = remaining / throughput` — and prices the exposure with
+            // the math crate's `completion_exposure(T_rem, srtt, rttvar)`.
+            // Without it χ ≡ 0 and the Bulk-end glide never runs.
             //
-            // RTTVAR PROVENANCE, stated because it is not measured here:
-            // the engine's estimator exposes a smoothed RTT and no RTTVAR.
-            // `0.125·srtt` is RFC 6298's own STEADY-STATE relation — its
-            // initialization sets `RTTVAR = R/2` and its update mixes at
-            // β = ¼, so a link whose RTT is not moving settles near
-            // RTTVAR ≈ srtt/8. It is a STAND-IN for a quantity this engine
-            // does not estimate, it is the arm's own constant, and it is
-            // stated on the register rather than presented as derived.
-            // `completion_exposure` floors σ_ARQ at `srtt/4` regardless,
-            // so the choice only matters where 4·RTTVAR exceeds that.
+            // The engine's estimator exposes a smoothed RTT and no RTTVAR, so
+            // `0.125·srtt` stands in for it: RFC 6298's steady-state relation
+            // (β = ¼ updates settle near RTTVAR ≈ srtt/8 on a steady link). It
+            // is the arm's own constant, not a derived quantity.
+            // `completion_exposure` floors σ_ARQ at `srtt/4` regardless.
             //
-            // ABSENT BY DEFAULT ⇒ this whole block is skipped and χ stays
-            // 0, i.e. the rate is byte-identical to the engine without it.
+            // Absent by default: this block is skipped and χ stays 0.
             if let (true, Some(feed), Some(est)) =
                 (gates.completion_exposure, completion_feed.as_ref(), path_est)
             {
@@ -1647,12 +1535,12 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         let debt_reduction = newly_acked as f64 * repair_rate;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
 
-        // Keep the encoder window at the derived W* (paper 8.8), bounded by
-        // the sender's hard ceiling; fall back to MAX_WINDOW_SIZE/2 when the
+        // Keep the encoder window at the derived W* (paper §4.8), bounded by
+        // the sender's hard ceiling; fall back to win_cap/2 when the
         // estimator has no throughput/RTT sample yet (cold start).
-        // Generation mode advances by GENERATION: the cumulative ack passes
+        // Generation mode advances by generation: the cumulative ack passes
         // a seq only when its whole generation has decoded and delivered
-        // contiguously, so everything at or below `ack` is DONE — drop those
+        // contiguously, so everything at or below `ack` is done — drop those
         // generations (advance gen-aligns internally). No W*-behind retention
         // (the coding target is the generation, not a sliding W).
         if generation {
@@ -1694,17 +1582,13 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             st.encoder.advance(ack.saturating_sub(keep_behind));
         }
 
-        // PAPER 16.83 ARMS (A)/(B): the request bookkeeping's own prune,
-        // the exact parallel of the generation maps' `retain` above and
-        // for the same reason. A span anchor at or below the cumulative
-        // ack is DELIVERED -- the receiver will never ask about it again
-        // -- so its want, its emission count and its in-flight baseline
-        // are dead. Without this the three maps grow with the transfer
-        // rather than with the outstanding window, because a report's
-        // anchor is the receiver's FIRST MISSING SEQ and a long run
-        // produces a new one for every hole it ever had.
-        //
-        // Costs nothing on a disarmed run: all three are empty forever.
+        // The request bookkeeping's own prune (paper §7.6), the parallel of
+        // the generation maps' `retain` above. A span anchor at or below the
+        // cumulative ack is delivered — the receiver will never ask about it
+        // again — so its want, its emission count and its in-flight baseline
+        // are dead. Without this the three maps grow with the transfer rather
+        // than with the outstanding window, because a report's anchor is the
+        // receiver's first missing seq. Empty (and free) on a disarmed run.
         if !req_want.is_empty() || !req_emitted.is_empty() {
             req_want.retain(|&a, _| a > ack);
             req_emitted.retain(|&a, _| a > ack);
@@ -1730,34 +1614,32 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         if !st.shed_seqs.is_empty() {
             st.shed_seqs = st.shed_seqs.split_off(&(ack + 1));
         }
-        // RWM Phase A: the sent-data store is drained by acks ONLY —
-        // this is the whole retention contract.
+        // The sent-data store is drained by acks only — this is the whole
+        // retention contract.
         st.sent_store = st.sent_store.split_off(&(ack + 1));
-        // RWM_STORE_SACK_RELEASE: the released-mark set prunes on the
-        // SAME cumulative twin — at/below the frontier the slot is now
-        // FULLY freed (payload dropped above, mark dropped here); the
-        // subset-of-sent_store invariant is preserved. No-op when off.
+        // RWM_STORE_SACK_RELEASE: the released-mark set prunes on the same
+        // cumulative twin — at/below the frontier the slot is fully freed
+        // (payload dropped above, mark dropped here); the subset-of-sent_store
+        // invariant is preserved. No-op when off.
         if !sack_released.is_empty() {
             sack_release_prune(&mut sack_released, ack);
         }
-        // task #86: cumulative release of the per-path accounts (the
-        // split_off twin; seqs already SACK-released are gone from the
-        // account map, so no double-release).
+        // Cumulative release of the per-path accounts (the split_off twin;
+        // seqs already SACK-released are gone from the account map, so no
+        // double-release).
         if pol.percap_track {
             percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, ack);
         }
-        // §16.77: drop the stamped holes the frontier has passed. PRUNE
-        // ONLY — the estimator is fed off the receiver's own gap report
-        // (`on_report`), never off the cumulative frontier, because the
-        // frontier cannot pass a hole until EVERY earlier hole is filled
-        // and that sample is head-of-line lag rather than this hole's
-        // resolution. §16.77.8b, and the calibration that measured it.
+        // Hold-down (paper §7.4): drop the stamped holes the frontier has
+        // passed. Prune only — the estimator is fed off the receiver's own gap
+        // report (`on_report`), never off the cumulative frontier, because the
+        // frontier cannot pass a hole until every earlier hole is filled and
+        // that sample is head-of-line lag rather than this hole's resolution.
         hold_echo.on_retired(ack);
-        // Drop NACK-retransmit cooldown entries for delivered seqs (P10b)
+        // Drop NACK-retransmit cooldown entries for delivered seqs.
         st.nack_retx_at.retain(|&seq, _| seq > ack);
-        // feat/recovery-suppression: drop packet-threshold evidence the
-        // frontier passed (counts are only ever taken above a live gap,
-        // and gaps are above the frontier).
+        // Drop packet-threshold evidence the frontier passed (counts are only
+        // ever taken above a live gap, and gaps are above the frontier).
         if pol.recov_mp_law {
             for v in mp_delivered.values_mut() {
                 let idx = v.partition_point(|&x| x <= ack);

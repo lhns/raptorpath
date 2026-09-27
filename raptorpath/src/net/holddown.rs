@@ -1,57 +1,45 @@
-//! The §16.77 hold-down clock, its `[HOLD]` gauge, the sweep-timeout and
-//! hole-refresh laws, and the derived-round echo. Moved verbatim out of
-//! `net/mod.rs` (cleanup Stage 3).
+//! The hold-down clock (paper §7.4), its `[HOLD]` gauge, the sweep-timeout
+//! and hole-refresh laws, and the derived-round echo.
 
 use super::*;
 
-// ── §16.77 THE HOLD-DOWN CLOCK — THE EXPERIMENT ARM ─────────────────────
+// ── The hold-down clock (experiment arm, `RWM_HOLDDOWN_Q`) ───────────────
 //
-// The fire-cause pass measured that **0.59 % of 107 597 classified recovery
-// fires came from a timer and 98.99 % came from the sender answering a
-// receiver gap report** (goal-gate, "THE FIRE-CAUSE PASS — THE SCORED
-// RESULT"). Every recovery clock in this file — the shipped `[25, 100] ms`
-// clamp, `RWM_DERIVED_SWEEP` (and the removed RACK and quantile arms) — sets
-// the TIMER. The construction below sets the other one: the waiting time the
-// sender applies to a REPORTED hole before it answers with a repair.
+// Almost every recovery fire answers a receiver gap report rather than a
+// timer. The recovery clocks elsewhere set the timer; this one sets the other
+// clock: how long the sender waits on a REPORTED hole before answering it with
+// a repair.
 //
-// **It is not a new law.** `T(q) = W_q(1 − q)` is §16.76's order statistic, at
-// §16.76's cited `K = 10`, under §16.76's window law and §16.76's
-// unavailability rule — evaluated on the sender's own hole-resolution stream
-// instead of on the ack stream. Paper §16.77 is the derivation and the LEVEL's
-// provenance; this is the arm that measures it.
+// It is the quantile-native order statistic `T(q) = W_q(1 − q)` with `K = 10`,
+// under the same window law and unavailability rule, evaluated on the
+// sender's hole-resolution stream instead of the ack stream (paper §7.4).
 //
-// **Nothing may ship reading `RWM_HOLDDOWN_Q`**. A shipped hold-down would read `q*(δ, ρ, r)` from
-// §16.77.2's stationarity condition, continuous in the triangle; that is the
-// decision this measurement informs and does not take.
+// Nothing ships reading `RWM_HOLDDOWN_Q`. A shipped hold-down would read
+// `q*(δ, ρ, r)` from the stationarity condition, continuous in the triangle.
 
-/// `T(q)`'s window law — §16.76.3's, at the tail level `a = 1 − q`.
+/// The control's observation window: how many hole outstanding-time samples
+/// the gauge retains on an arm that commands no level.
+///
+/// A declared resource bound, stated outside the law: it selects nothing and
+/// no arm reads a quantile of it as a clock. It is the largest window on the
+/// arm grid (`N(0.010) = 1000`), so the control's distribution is comparable
+/// with the arms, and it costs 1000 × 4 B = 4 KiB per path.
+pub const HOLD_OBS_WINDOW: usize = 1000;
+
+/// `T(q)`'s window law at the tail level `a = 1 − q`.
 ///
 /// The hold-down commands a level `q` of the hole-resolution distribution, so
 /// the exceedance clause binds on `1 − q`: `N = max(⌈K/(1−q)⌉, 2K)`, `K = 10`.
-/// **This is a re-parameterisation and not a second law** — the same
-/// [`qnative_window_n`], reached from the other end.
+/// This is the same [`qnative_window_n`] reached from the other end, not a
+/// second law.
 ///
-/// `None` for a `q` outside the open interval `(0, 1)`: at `q ≤ 0` the
-/// hold-down is zero, which is the SHIPPED behaviour and is expressed by the
-/// gate being ABSENT rather than by an armed arm; at `q ≥ 1` the window law
-/// diverges. Garbage therefore resolves to ABSENT, visibly (§16.77.10's
-/// degenerate limits).
+/// `None` for a `q` outside `(0, 1)`: at `q ≤ 0` the hold-down is zero, which
+/// is the shipped behaviour and is expressed by the gate being absent; at
+/// `q ≥ 1` the window law diverges. Garbage therefore resolves to absent.
 ///
-/// **The floor is derived and it is 0.524.** `N` is flat at `2K = 20` for
-/// every `a ≥ 0.5`, and the level such a window commands is
-/// `1 − K/(N+1) = 1 − 10/21 = 0.5238`. No level below that is expressible by
-/// this construction — §16.76.7's `α → 1` degenerate limit read from the other
-/// end, and the reason §16.77.8's arm grid floors where it does.
-/// The CONTROL's observation window: how many hole outstanding-time samples the
-/// gauge retains on an arm that commands no level.
-///
-/// **DECLARED RESOURCE BOUND, STATED OUTSIDE THE LAW** (FORMULA-FIRST). It is
-/// not a window law and it selects nothing: no arm reads a quantile of it as a
-/// clock. It is the largest window on §16.77.8's grid (`N(0.010) = 1000`), so
-/// the control's reported distribution is directly comparable with the arm the
-/// derivation names, and it costs 1000 × 4 B = 4 KiB per path.
-pub const HOLD_OBS_WINDOW: usize = 1000;
-
+/// The floor is 0.524: `N` is flat at `2K = 20` for every `a ≥ 0.5`, and the
+/// level such a window commands is `1 − K/(N+1) = 1 − 10/21 = 0.5238`. No
+/// lower level is expressible by this construction.
 pub fn holddown_window_n(q: f64) -> Option<usize> {
     if !q.is_finite() || q <= 0.0 || q >= 1.0 {
         return None;
@@ -62,12 +50,10 @@ pub fn holddown_window_n(q: f64) -> Option<usize> {
 /// `T(q) = Y_(N−K+1)` — the hold-down, in µs, or `None` when the window law
 /// has not been satisfied.
 ///
-/// `None` is **information availability, never a mode** (§16.76.5(1)): with
-/// fewer than `N` samples the `K`-th largest is a quantile of a shorter window
-/// at a different level, i.e. a different law's output, so the caller falls
-/// through to the behaviour below it — which here is the shipped "answer the
-/// report now". An arm whose `law_n = 0` never ran its own law and its row is
-/// VOID.
+/// `None` is information availability, never a mode: with fewer than `N`
+/// samples the `K`-th largest is a quantile of a shorter window at a different
+/// level, so the caller falls through to the shipped "answer the report now".
+/// An arm whose `law_n = 0` never ran its own law and its row is void.
 pub fn holddown_us(window: &[u32], q: f64) -> Option<u64> {
     if !q.is_finite() || q <= 0.0 || q >= 1.0 {
         return None;
@@ -75,35 +61,32 @@ pub fn holddown_us(window: &[u32], q: f64) -> Option<u64> {
     qnative_recovery_round_us(window, 1.0 - q)
 }
 
-/// The `[HOLD]` gauge — **the hold-down arm's own instrument, per path.**
+/// The `[HOLD]` gauge — the hold-down arm's own instrument, per path.
 ///
-/// It carries five things the sweep cannot be scored without, and each is here
-/// because a previous battery was unreadable for the want of it:
+/// It carries:
 ///
-/// * **the live `T` estimate and its `n`, PER PATH** — §16.76's window
-///   conventions, so a row whose window never filled is READ as such rather
-///   than pooled with one that did;
-/// * **`evals` / `law_n`, the bind-fraction gauge** `CLAUDE.md`'s
-///   FORMULA-FIRST clamp rule owes any law that adds a bound;
-/// * **`sup` / `emit`**, the suppression the whole arm exists to produce —
-///   §16.77.8's clause (i), the WIRING TEST two clocks have now failed;
-/// * **the realized hold-down delay as a DISTRIBUTION**, because a mean would
-///   hide exactly the tail the level commands;
-/// * **`fed`**, the estimator's own intake, so "the window never filled" and
-///   "the window filled and the law still did not run" are distinguishable.
+/// * the live `T` estimate and its `n`, per path, so a row whose window never
+///   filled reads as such rather than pooled with one that did;
+/// * `evals` / `law_n`, the bind-fraction gauge the formula-first clamp rule
+///   owes any law that adds a bound;
+/// * `sup` / `emit`, the suppression the arm exists to produce;
+/// * the realized hold-down delay as a distribution, because a mean would
+///   hide the tail the level commands;
+/// * `fed`, the estimator's intake, so "the window never filled" and "the
+///   window filled and the law still did not run" are distinguishable.
 ///
-/// **Two-sided.** The gauge is constructed and `evals` counted on the DISARMED
-/// arm too, and its line prints `q=unset` there — MEASUREMENT DISCIPLINE 15.
-/// The disarmed arm allocates nothing and takes no branch that reaches a wire
-/// byte; `sup` is structurally zero and the engine is byte-identical.
+/// Two-sided: the gauge is constructed and `evals` counted on the disarmed
+/// arm too, and its line prints `q=unset` there (`docs/measurement-discipline.md`
+/// rule 15). The disarmed arm allocates nothing that reaches a wire byte;
+/// `sup` is structurally zero and the engine is byte-identical.
 ///
 /// Observation only apart from the one suppression the gate exists to make.
 pub(crate) struct HoldDownGauge {
     site: &'static str,
-    /// The RESOLVED level, or `None` on the shipped arm. A NUMBER, never a
+    /// The resolved level, or `None` on the shipped arm. A number, never a
     /// branch: every field below is computed identically either way, and the
     /// only thing `None` decides is that `should_hold` returns `false` — the
-    /// `T = 0` degenerate limit, which IS the shipped behaviour.
+    /// `T = 0` limit, which is the shipped behaviour.
     q: Option<f64>,
     /// `N(1−q)` — the window law's requirement, resolved once so the line, the
     /// ring's capacity and the estimator cannot drift apart. `None` on the
@@ -112,95 +95,79 @@ pub(crate) struct HoldDownGauge {
     /// The ring's capacity, which is `n_req` on a treatment arm and
     /// [`HOLD_OBS_WINDOW`] on the control.
     ///
-    /// **THE ESTIMATOR OBSERVES ON EVERY ARM AND THE CONTROL IS WHY.** The
-    /// first calibration could not tell "the outstanding-time distribution IS
-    /// long at this cell" from "the hold-down made it long", because the
-    /// control measured nothing to compare against — the arm that defines the
-    /// unforced distribution was the one arm not reading it. It now reads it.
-    /// **This is observation and nothing else**: `should_hold` still returns
-    /// `false` unconditionally when `q` is absent, so the control's wire
-    /// behaviour is the shipped machine's, byte for byte.
+    /// The estimator observes on every arm, so the control measures the
+    /// unforced outstanding-time distribution the arms are compared against.
+    /// This is observation only: `should_hold` still returns `false` when `q`
+    /// is absent, so the control's wire behaviour is the shipped machine's.
     n_obs: usize,
     /// seq → the hole's record: first report time, the path its original flew
-    /// on, and (A0.2) the retransmit this sender emitted for it if any.
+    /// on, and the retransmit this sender emitted for it if any.
     /// `BTreeMap` because retirement is a frontier range, which a hash map
     /// cannot do without scanning the whole map on every ack.
     ///
-    /// **The origin is the sender's own first report and not the receiver's
-    /// detection.** `[SUCC]` times from detection at the receiver; these two
-    /// differ by the report's propagation and by the receiver's report
-    /// cadence, and §16.77.8 states the divergence in advance. It is why the
-    /// estimator is ONLINE and self-measuring rather than seeded from
-    /// `[SUCC]`'s published quantiles.
+    /// The origin is the sender's own first report, not the receiver's
+    /// detection (which `[SUCC]` times from); the two differ by the report's
+    /// propagation and the receiver's report cadence. That is why the
+    /// estimator is online and self-measuring rather than seeded from
+    /// `[SUCC]`'s quantiles.
     pub(crate) first: std::collections::BTreeMap<u64, HoleRec>,
-    /// Per path: the freshest `N(1−q)` observed hole-resolution-by-original
-    /// times, µs, plain FIFO in arrival order. Capped AT `N`, so the ring is
-    /// exactly the window the law reads and `make_contiguous` hands the law
-    /// its own slice with no copy of a longer one — *"a longer slice would
-    /// read a different level of a longer window, i.e. a law nobody named."*
+    /// Per path: the freshest `N(1−q)` observed hole-resolution times, µs,
+    /// FIFO in arrival order. Capped at `N`, so the ring is exactly the window
+    /// the law reads and `make_contiguous` hands the law its own slice; a
+    /// longer slice would read a different level of a longer window.
     ///
-    /// **Resource bound, stated OUTSIDE the law** (FORMULA-FIRST): `N ≤ 8192`
-    /// by [`QNATIVE_WINDOW_MAX`], 4 B per sample, so ≤ 32 KiB per path, and
-    /// ≤ 4 KiB per path anywhere on §16.77.8's grid.
+    /// Resource bound, stated outside the law: `N ≤ 8192` by
+    /// [`QNATIVE_WINDOW_MAX`], 4 B per sample, so ≤ 32 KiB per path.
     pub(crate) win: std::collections::HashMap<u32, std::collections::VecDeque<u32>>,
-    /// Per path: the live `T` estimate, recomputed on the FEED path and read
-    /// `O(1)` on the EVAL path.
+    /// Per path: the live `T` estimate, recomputed on the feed path and read
+    /// `O(1)` on the eval path.
     ///
-    /// **The CPU bound is declared with it, because this one sits at a HOTTER
-    /// cadence than §16.76.3's.** §16.76 evaluates its order statistic at the
-    /// recovery-timer cadence; a hold-down is consulted once per reported hole
-    /// per report, which at `c7` is tens of thousands of times per rep. So the
-    /// `O(N)` selection is moved to the feed — strictly fewer events than the
-    /// evaluations, one per RESOLVED hole — and the eval path is a map lookup.
-    /// It is still a selection and never a sort (`select_nth_unstable`).
+    /// A hold-down is consulted once per reported hole per report, far more
+    /// often than the recovery-timer cadence, so the `O(N)` selection runs on
+    /// the feed (one per resolved hole) and the eval path is a map lookup. It
+    /// is a selection, never a sort (`select_nth_unstable`).
     pub(crate) t_us: std::collections::HashMap<u32, u64>,
     /// Per path: total samples ever fed. Distinguishes "never filled" from
     /// "filled and rolled".
     pub(crate) fed: std::collections::HashMap<u32, u64>,
     /// Per path: (evals, law_n, sup, emit).
     pub(crate) ctr: std::collections::HashMap<u32, [u64; 4]>,
-    /// Per path: the REALIZED hold-down delay — the age at which a held hole
+    /// Per path: the realized hold-down delay — the age at which a held hole
     /// finally passed the gate. Log-bucket, ~12 kB fixed, the same `Hist`
-    /// `[SUCC]` reports its own quantiles from, so the two are comparable
-    /// without a unit argument.
+    /// `[SUCC]` reports its quantiles from, so the two are comparable.
     hd: std::collections::HashMap<u32, crate::net::succ::Hist>,
-    /// **A0.2 — THE CLOSURE-CLASS SPLIT, per ORIGINAL path.**
-    /// `[heal_noretx, heal_retx_young, closed_retx]`, and their sum is
-    /// `fed` on that path by construction: exactly the resolutions this
-    /// gauge feeds are the resolutions it classifies, so the audit's identity
-    /// closes against a number the pre-A0.2 line already printed.
+    /// The closure-class split, per original path:
+    /// `[heal_noretx, heal_retx_young, closed_retx]`. Their sum is `fed` on
+    /// that path by construction: the resolutions this gauge feeds are the
+    /// resolutions it classifies.
     ///
-    /// * `heal_noretx` — resolved and NO retransmit was ever emitted for this
-    ///   hole. The TRUE self-heal class: the original arrived on its own.
-    /// * `heal_retx_young` — a retransmit WAS emitted, but the resolution came
-    ///   sooner than `srtt/2` on the retransmit's own path after it. The
-    ///   retransmit cannot plausibly have caused the fill; the original did,
-    ///   and the copy was spurious.
+    /// * `heal_noretx` — resolved and no retransmit was ever emitted for the
+    ///   hole: the true self-heal class.
+    /// * `heal_retx_young` — a retransmit was emitted, but the resolution came
+    ///   sooner than `srtt/2` on the retransmit's path after it, so the
+    ///   original filled the hole and the copy was spurious.
     /// * `closed_retx` — the resolution came at or after `srtt/2` past the
-    ///   retransmit. ATTRIBUTED to the retransmit.
+    ///   retransmit; attributed to the retransmit.
     ///
-    /// The `srtt/2` split is the SAME half-RTT the legacy age gate uses; it is
-    /// a CLASSIFIER and not a law, it gates nothing, and its arbitrariness is
-    /// disclosed rather than blessed — see the audit's open-constants note.
+    /// The `srtt/2` split is the same half-RTT the age gate uses. It is a
+    /// classifier, not a law, and gates nothing; the constant is open.
     cls: std::collections::HashMap<u32, [u64; 3]>,
     /// Per original path, per class: the resolution-time distribution. The
-    /// TRUE-heal CDF `F` the theory needs is `clsh[0]` (and `clsh[1]`), which
+    /// true-heal CDF `F` the theory needs is `clsh[0]` (and `clsh[1]`), which
     /// is why the classes carry their own histograms rather than one pooled.
     clsh: std::collections::HashMap<u32, [crate::net::succ::Hist; 3]>,
     /// Per original path: `[same_path, cross_path, unattributed]` — did the
-    /// gap report whose absence resolved the hole arrive on the SAME path the
-    /// original flew? The third slot is the SENDER'S OWN TAIL SWEEP, which
-    /// carries no ack and therefore no arrival path (`u32::MAX`); it is
-    /// counted separately rather than charged to `cross`, so the three sum to
-    /// the same denominator as `cls` and `xp_frac` is read on the reports
-    /// only. `[FCAUSE]` measured that producer at 0.59 % of fires.
+    /// gap report whose absence resolved the hole arrive on the same path the
+    /// original flew? The third slot is the sender's own tail sweep, which
+    /// carries no ack and therefore no arrival path (`u32::MAX`); it is counted
+    /// separately so the three sum to the same denominator as `cls` and
+    /// `xp_frac` is read on the reports only.
     xps: std::collections::HashMap<u32, [u64; 3]>,
-    /// **THE RECOV_MP RIPENESS QUESTION.** Per original path:
-    /// (age of the seq's LIVE FLIGHT at its FIRST report, the `9/8·max(srtt,
-    /// ewma)` threshold that would have judged it, how many were already at or
-    /// above it). A hole that is already "ripe" the first time the receiver
-    /// mentions it is a hole the RFC 9002 time threshold cannot suppress —
-    /// because the age it measures INCLUDES the sender's own queue dwell.
+    /// Per original path: (age of the seq's live flight at its first report,
+    /// the `9/8·max(srtt, ewma)` threshold that would have judged it, how many
+    /// were already at or above it). A hole already "ripe" when the receiver
+    /// first mentions it cannot be suppressed by the RFC 9002 time threshold,
+    /// because the age it measures includes the sender's own queue dwell.
     age: std::collections::HashMap<
         u32,
         (crate::net::succ::Hist, crate::net::succ::Hist, u64),
@@ -212,19 +179,16 @@ pub(crate) struct HoldDownGauge {
     gen: bool,
 }
 
-/// **A0.2 — one stamped hole.** Read-only bookkeeping: no field of this record
-/// is consulted by any decision site, and `should_hold` reads only `t0_us` and
-/// `orig_path`, exactly as it read the tuple this replaces.
+/// One stamped hole. Read-only bookkeeping: `should_hold` reads only `t0_us`
+/// and `orig_path`; no other field is consulted by any decision site.
 #[derive(Clone, Copy)]
 pub(crate) struct HoleRec {
-    /// The FIRST time the receiver reported this hole to us, µs.
+    /// The first time the receiver reported this hole to us, µs.
     t0_us: u64,
-    /// The path the hole's ORIGINAL flew on.
+    /// The path the hole's original flew on.
     orig_path: u32,
-    /// `(emission time µs, path)` of the FIRST retransmit this sender emitted
-    /// for the hole. A re-fire after the cooldown does not restart it: the
-    /// question is whether a copy was ever put on the wire, and when the first
-    /// one was.
+    /// `(emission time µs, path)` of the first retransmit this sender emitted
+    /// for the hole. A re-fire after the cooldown does not restart it.
     retx: Option<(u64, u32)>,
 }
 
@@ -253,34 +217,29 @@ impl HoldDownGauge {
         self.gen = gen;
     }
 
-    /// Is the arm live — i.e. can it SUPPRESS? `n_req` and not `q`: a `q` whose
-    /// window law does not resolve (over [`QNATIVE_WINDOW_MAX`]) is an arm that
-    /// cannot run, and it must read as disarmed rather than as armed-and-silent.
-    ///
-    /// **The ESTIMATOR does not consult this.** It observes on every arm; only
-    /// the gate reads it.
+    /// Is the arm live, i.e. can it suppress? Keyed on `n_req`, not `q`: a `q`
+    /// whose window law does not resolve (over [`QNATIVE_WINDOW_MAX`]) cannot
+    /// run and must read as disarmed rather than armed-and-silent. The
+    /// estimator does not consult this; only the gate does.
     pub(crate) fn armed(&self) -> bool {
         self.n_req.is_some()
     }
 
-    /// One reported hole. Stamps the FIRST report and never a later one: the
+    /// One reported hole. Stamps the first report and never a later one: the
     /// estimand is "how long a hole stays outstanding", and a hole re-reported
     /// every `hole_nack_refresh` would otherwise reset its own clock.
     ///
-    /// **`reported` is the estimand's ORIGIN CONDITION, and it is not a mode.**
-    /// The clock starts when the RECEIVER says the hole exists; the sender's own
-    /// tail-sweep timer is not a report and does not start it. A timer fire on a
-    /// hole the receiver HAS reported carries a stamp and is gated by the same
-    /// `T` as any other fire on that hole; a timer fire on a hole the receiver
-    /// has never reported carries none and falls through to the shipped
-    /// behaviour. That is information availability — the same rule the window
-    /// law follows — and no threshold on any dial enters it.
+    /// `reported` is the estimand's origin condition, not a mode. The clock
+    /// starts when the receiver says the hole exists; the sender's own
+    /// tail-sweep timer does not start it. A timer fire on a reported hole is
+    /// gated by the same `T` as any other fire on it; a timer fire on a hole
+    /// never reported falls through to the shipped behaviour. That is
+    /// information availability, and no threshold on any dial enters it.
     ///
-    /// **A0.2:** `flight` is `(age of the seq's live flight now, the
+    /// `flight` is `(age of the seq's live flight now, the
     /// `9/8·max(srtt, ewma)` threshold for that flight's path)` when the
-    /// sender holds a flight for the seq at all, `None` when it does not. It
-    /// is recorded ON THE FIRST REPORT ONLY — a re-report must not re-sample
-    /// the very quantity whose staleness is under study.
+    /// sender holds a flight for the seq, `None` otherwise. It is recorded on
+    /// the first report only, so a re-report does not re-sample it.
     pub(crate) fn on_reported(
         &mut self,
         seq: u64,
@@ -308,9 +267,9 @@ impl HoldDownGauge {
         }
     }
 
-    /// **A0.2 — THE RETRANSMIT STAMP.** Called beside `nack_retx_at.insert`,
-    /// i.e. exactly where a copy of this seq reaches the wire. Records the
-    /// FIRST such copy and never a later one. Observation only.
+    /// The retransmit stamp. Called beside `nack_retx_at.insert`, where a copy
+    /// of this seq reaches the wire; records the first copy only. Observation
+    /// only.
     pub(crate) fn on_retx(&mut self, seq: u64, now_us: u64, path: u32) {
         if let Some(r) = self.first.get_mut(&seq) {
             if r.retx.is_none() {
@@ -319,13 +278,13 @@ impl HoldDownGauge {
         }
     }
 
-    /// **THE GATE.** `true` ⇒ this fire is held down and suppressed.
+    /// The gate: `true` ⇒ this fire is held down and suppressed.
     ///
-    /// Returns `false` — the shipped behaviour, byte-identically — whenever
-    /// the arm is disarmed, the hole has no first-report stamp, or the window
-    /// law has not been satisfied on this path. All three are *information
-    /// availability*: no threshold on δ or ρ selects anything here, and the
-    /// only number that enters is `T`.
+    /// Returns `false` — the shipped behaviour — whenever the arm is disarmed,
+    /// the hole has no first-report stamp, or the window law is not yet
+    /// satisfied on this path. All three are information availability: no
+    /// threshold on δ or ρ selects anything here, and the only number that
+    /// enters is `T`.
     pub(crate) fn should_hold(&mut self, seq: u64, now_us: u64) -> bool {
         let Some(HoleRec { t0_us: t0, orig_path: path, .. }) =
             self.first.get(&seq).copied()
@@ -342,10 +301,9 @@ impl HoldDownGauge {
         let c = self.ctr.entry(path).or_insert([0; 4]);
         c[0] += 1;
         let Some(t) = self.t_us.get(&path).copied() else {
-            // The window law has not been satisfied on this path: the
-            // construction returns nothing and the evaluation falls through to
-            // the law below it (§16.76.5(1)). `law_n` stays put, so the row is
-            // READ as partial rather than pooled.
+            // The window law has not been satisfied on this path: fall
+            // through to the law below it. `law_n` stays put, so the row
+            // reads as partial rather than pooled.
             c[3] += 1;
             return false;
         };
@@ -362,13 +320,8 @@ impl HoldDownGauge {
     }
 
     /// Feed one sample into a path's window and re-read the order statistic.
-    ///
-    /// **The `O(N)` selection sits HERE, on the feed path, and not on the eval
-    /// path.** §16.76.3 evaluates its order statistic at the recovery-timer
-    /// cadence; a hold-down is consulted once per reported hole per report,
-    /// which at `c7` is tens of thousands of times per rep. Feeds are strictly
-    /// fewer — one per RESOLVED hole — so the linear work is moved to them and
-    /// the eval path is a map lookup. It is still a SELECTION and never a sort.
+    /// The `O(N)` selection sits here, on the feed path, so the eval path is a
+    /// map lookup (see `t_us`).
     fn feed(&mut self, path: u32, sample_us: u64) {
         let n = self.n_obs;
         let s = sample_us.min(u32::MAX as u64) as u32;
@@ -378,7 +331,7 @@ impl HoldDownGauge {
         }
         w.push_back(s);
         *self.fed.entry(path).or_insert(0) += 1;
-        // The LAW's own output, only where the law is in force.
+        // The law's own output, only where the law is in force.
         if let (Some(nr), Some(q)) = (self.n_req, self.q) {
             if w.len() >= nr {
                 if let Some(t) = holddown_us(w.make_contiguous(), q) {
@@ -388,42 +341,30 @@ impl HoldDownGauge {
         }
     }
 
-    /// **THE RESOLUTION SIGNAL, READ OFF THE RECEIVER'S OWN REPORT.** A hole
-    /// this sender stamped, which the receiver's newest gap report **no longer
-    /// lists** inside the region that report covers, has been filled at the
-    /// receiver. Feed its outstanding time and drop it.
+    /// The resolution signal, read off the receiver's own report. A hole this
+    /// sender stamped, which the receiver's newest gap report no longer lists
+    /// inside the region that report covers, has been filled at the receiver.
+    /// Feed its outstanding time and drop it.
     ///
-    /// **THIS REPLACES RETIREMENT-BY-CUMULATIVE-ACK, AND THE CALIBRATION IS WHY
-    /// (§16.77.8b).** The first implementation fed a hole's outstanding time
-    /// when the cumulative ack passed it. The cumulative frontier cannot pass a
-    /// hole until **every earlier hole** is also filled, so that sample is a
-    /// **max-statistic over the whole outstanding set** — head-of-line lag, not
-    /// this hole's resolution. The calibration measured the inflation and it is
-    /// not subtle: at `c1`, a cell whose RTT is **2 ms** and whose measured
-    /// `orig` p50 is **24.6 ms**, `T` read **429–602 ms** and the realized
-    /// hold-down delays ran to a **590 ms** maximum. **A clock two decades
-    /// wrong, on the cleanest cell, at `n = 1`.**
+    /// Resolution is not read off the cumulative ack: the frontier cannot pass
+    /// a hole until every earlier hole is also filled, so that sample is a
+    /// max-statistic over the whole outstanding set (head-of-line lag, not
+    /// this hole's resolution) and inflates `T` by orders of magnitude. The
+    /// report is per-hole and exact: a stamped seq inside the report's span
+    /// that the report does not list is one the receiver has.
     ///
-    /// The report is per-hole and exact: `gaps` IS the receiver's statement of
-    /// which seqs are still missing, and a stamped seq inside the report's own
-    /// span that the report does not list is one the receiver has. No frontier,
-    /// no max, no other hole's timing.
+    /// Must run before this batch's own seqs are stamped, or every hole would
+    /// be resolved by the report that first announced it.
     ///
-    /// **MUST run BEFORE this batch's own seqs are stamped**, or every hole
-    /// would be resolved by the report that first announced it.
+    /// `shed` is the δ-honest shed set and is the one exclusion. A shed hole
+    /// was abandoned, not resolved; feeding it would push `T` upward exactly
+    /// where the contract had already stopped caring, the one direction this
+    /// estimator must not be biased in. It is dropped and fed to nothing.
     ///
-    /// `shed` is the δ-honest shed set and is the ONE exclusion. A shed hole
-    /// was **abandoned**, not resolved: the sender stopped serving it and the
-    /// receiver's own δ-horizon eventually passes it, so it leaves the reports
-    /// having been given up on rather than delivered. Feeding it would push `T`
-    /// **upward** exactly where the contract had already stopped caring — the
-    /// only sign this estimator must not be biased in (§16.77.8a). It is
-    /// dropped from the map and fed to nothing.
-    ///
-    /// **A0.2:** `ack_path` is the path the gap report itself arrived on, and
-    /// `half_srtt_of` returns `max(srtt, ewma)/2` for a path — the classifier's
-    /// only input. Both are labels: the resolution set, the feed and every
-    /// wire byte are computed exactly as before.
+    /// `ack_path` is the path the gap report arrived on, and `half_srtt_of`
+    /// returns `max(srtt, ewma)/2` for a path — the classifier's only input.
+    /// Both are labels: the resolution set, the feed and every wire byte are
+    /// unaffected by them.
     pub(crate) fn on_report(
         &mut self,
         gaps: &[(u64, u64)],
@@ -435,9 +376,8 @@ impl HoldDownGauge {
         if self.first.is_empty() {
             return;
         }
-        // The span this report speaks about. A stamped seq ABOVE it is not
-        // covered by this report and its absence proves nothing — information
-        // availability, the same rule everywhere else in this construction.
+        // The span this report speaks about. A stamped seq above it is not
+        // covered by this report and its absence proves nothing.
         let Some(hi) = gaps.iter().map(|&(_, b)| b).max() else {
             return;
         };
@@ -453,10 +393,9 @@ impl HoldDownGauge {
                     continue;
                 }
                 let dt = now_us.saturating_sub(rec.t0_us);
-                // A0.2 THE CLOSURE CLASS. Placed on the SAME resolutions the
-                // feed sees and after the SAME shed exclusion, so
-                // `heal_noretx + heal_retx_young + closed_retx = fed` on every
-                // path — the identity the audit's tables are read against.
+                // The closure class, on the same resolutions the feed sees and
+                // after the same shed exclusion, so
+                // `heal_noretx + heal_retx_young + closed_retx = fed` per path.
                 let k = match rec.retx {
                     None => 0usize,
                     Some((tr, pr)) => {
@@ -482,11 +421,10 @@ impl HoldDownGauge {
         }
     }
 
-    /// Drop every stamped hole the cumulative ack has passed. **PRUNE ONLY —
-    /// it feeds nothing.** A hole the frontier swept without a report ever
-    /// showing it filled has a resolution time this sender never observed, and
-    /// the frontier's own arrival is not a substitute for it (§16.77.8b). The
-    /// map is bounded by the outstanding set either way.
+    /// Drop every stamped hole the cumulative ack has passed. Prune only — it
+    /// feeds nothing: a hole the frontier swept without a report showing it
+    /// filled has a resolution time this sender never observed. The map is
+    /// bounded by the outstanding set either way.
     pub(crate) fn on_retired(&mut self, ack: u64) {
         if self.first.is_empty() {
             return;
@@ -495,15 +433,12 @@ impl HoldDownGauge {
         std::mem::swap(&mut self.first, &mut above);
     }
 
-    /// A quantile of the path's OWN observation window — the outstanding-time
-    /// distribution as this sender saw it, on EVERY arm including the control.
+    /// A quantile of the path's own observation window — the outstanding-time
+    /// distribution as this sender saw it, on every arm including the control.
     ///
-    /// **This is a gauge and never a clock.** It is read only by `line`, at
-    /// teardown, over a copy. Nothing in the engine consults it, and the
-    /// hold-down `T` is `t_us` and not this: `T` is the LAW's order statistic
-    /// at the LAW's own `N(1−q)`, which is what an arm commands, while this is
-    /// a fixed-window description of the same stream and is what the control
-    /// has instead of a law.
+    /// A gauge, never a clock: read only by `line` at teardown. The hold-down
+    /// `T` is `t_us`, the law's order statistic at the law's own `N(1−q)`;
+    /// this is a fixed-window description of the same stream.
     pub(crate) fn obs_q(&self, path: u32, p: f64) -> Option<u64> {
         let w = self.win.get(&path)?;
         if w.is_empty() {
@@ -519,8 +454,8 @@ impl HoldDownGauge {
         let c = self.ctr.get(&path).copied().unwrap_or([0; 4]);
         let us = |v: Option<u64>| v.map_or("-".to_string(), |x| x.to_string());
         let hd = self.hd.get(&path);
-        // A0.2. `-` iff the denominator is zero — an absent fraction is never
-        // a measured 0, the `[SUCC]` convention.
+        // `-` iff the denominator is zero — an absent fraction is never a
+        // measured 0 (the `[SUCC]` convention).
         let cls = self.cls.get(&path).copied().unwrap_or([0; 3]);
         let clsh = self.clsh.get(&path);
         let xps = self.xps.get(&path).copied().unwrap_or([0; 3]);
@@ -566,9 +501,9 @@ impl HoldDownGauge {
             us(hd.and_then(|h| h.quantile(0.99))),
             us(hd.map(|h| h.max_us())),
             hd.map_or(0, |h| h.n()),
-            // A0.2 — THE CLOSURE-CLASS TABLE. `hn` heal_noretx, `hy`
-            // heal_retx_young, `cx` closed_retx; then the same/cross split and
-            // the ripe-at-first-report reading.
+            // The closure-class table: `hn` heal_noretx, `hy` heal_retx_young,
+            // `cx` closed_retx; then the same/cross split and the
+            // ripe-at-first-report reading.
             cls[0],
             us(clsh.and_then(|h| h[0].quantile(0.50))),
             us(clsh.and_then(|h| h[0].quantile(0.90))),
@@ -589,7 +524,7 @@ impl HoldDownGauge {
             us(age.and_then(|a| a.0.quantile(0.90))),
             us(age.and_then(|a| a.1.quantile(0.50))),
             // The sacrificial trailing constant — stderr has two writers and a
-            // `tracing` write can land inside a gauge line's LAST field.
+            // `tracing` write can land inside a gauge line's last field.
             RACK_SPURIOUS_BUDGET,
         )
     }
@@ -609,9 +544,8 @@ impl Drop for HoldDownGauge {
     }
 }
 
-/// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
-/// clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
-/// `derived` is an ENV GATE (an A/B arm), never a dial.
+/// The tail-sweep timeout supplied to the sender loop: the clamped law, or
+/// the derived round under `RWM_DERIVED_SWEEP` (an env A/B arm, not a dial).
 pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
     if derived {
         derived_recovery_round_us(srtt_us, jitter_us)
@@ -620,15 +554,12 @@ pub fn sweep_timeout_us(derived: bool, srtt_us: u64, jitter_us: u64) -> u64 {
     }
 }
 
-/// The receiver's hole-refresh cadence ACTUALLY supplied to the reliable
-/// window receiver: the legacy clamped law, or the derived round under
-/// `RWM_DERIVED_SWEEP`. With NO clock at all the legacy fallback
-/// (`HOLE_NACK_REFRESH_MAX`) is kept verbatim in BOTH arms — an
-/// information-availability fallback, not a mode.
-/// `refresh_floor` is the legacy law's clamp-band floor (paper §16.78);
-/// `HOLE_NACK_REFRESH_MIN` ⇒ the shipped cadence, byte-identically. It is
-/// read ONLY by the legacy arm: the derived round has no clamp to floor, and
-/// the no-clock fallback stays `HOLE_NACK_REFRESH_MAX` verbatim in BOTH arms.
+/// The receiver's hole-refresh cadence supplied to the reliable window
+/// receiver: the clamped law, or the derived round under `RWM_DERIVED_SWEEP`.
+/// With no clock at all both arms fall back to `HOLE_NACK_REFRESH_MAX`
+/// (information availability, not a mode). `refresh_floor` is the clamped
+/// law's band floor, read only by that arm; `HOLE_NACK_REFRESH_MIN` gives the
+/// shipped cadence.
 pub fn hole_refresh(
     derived: bool,
     srtt: Option<Duration>,
@@ -644,40 +575,32 @@ pub fn hole_refresh(
     }
 }
 
-/// MECHANISM-LIVENESS echo for the derived recovery round, one per SITE per
-/// process (MEASUREMENT DISCIPLINE 1: a battery must be able to prove that
-/// the site under test EXECUTED, and this gate had no echo of its own —
-/// only its `[GATES] RWM_DERIVED_SWEEP=` value, which proves the env var was
-/// READ and nothing more).
+/// Liveness echo for the derived recovery round, one per site per process
+/// (`docs/measurement-discipline.md` rule 1: prove the site under test
+/// executed; the `[GATES]` value only proves the env var was read).
 ///
-/// TWO claims, deliberately separated, because the law's own COINCIDENCE
-/// PROPERTY makes them different claims: `derived_recovery_round_us` returns
+/// Two claims, kept separate because `derived_recovery_round_us` returns
 /// exactly `tail_sweep_timeout_us` wherever `2·srtt` already sits inside the
-/// legacy `[25, 100] ms` clamp. So "the derived site ran" does NOT imply
-/// "the derived law bound", and an arm that only ever ran inside the clamp
-/// is bit-identical to its control — a null result that must be readable as
-/// such rather than mistaken for a null EFFECT.
+/// `[25, 100] ms` clamp — so "the derived site ran" does not imply "the
+/// derived law bound", and an arm that only ran inside the clamp is
+/// bit-identical to its control:
 ///
-///   * `ACTIVE`   — first evaluation at this site, with the clock that drove
-///                  it. Proves execution.
-///   * `DIVERGED` — first evaluation whose derived round differs from the
-///                  clamped law it replaces. Proves the law actually bound,
-///                  and carries both µs values so the size of the departure
-///                  is a measured number and not an inference.
+/// * `ACTIVE` — first evaluation at this site, with the clock that drove it.
+///   Proves execution.
+/// * `DIVERGED` — first evaluation whose derived round differs from the
+///   clamped law. Proves the law bound, and carries both µs values.
 ///
-/// Emitted ONLY on the armed arm, so a battery asserts it PRESENT on the
-/// `RWM_DERIVED_SWEEP=1` arms and ABSENT on the controls — the same
-/// present/absent discipline the other gates' `ACTIVE` echoes carry.
-/// Observation only: nothing here feeds a decision.
+/// Emitted only on the armed arm, so a battery asserts it present on
+/// `RWM_DERIVED_SWEEP=1` and absent on the controls. Observation only.
 #[derive(Default)]
 pub(crate) struct DerivedRoundEcho {
     pub(crate) ran: bool,
     pub(crate) diverged: bool,
 }
 
-/// The phrase drivers COUNT to prove the derived site executed.
+/// The phrase drivers count to prove the derived site executed.
 pub(crate) const DS_ECHO_RAN: &str = "derived recovery round ACTIVE";
-/// The phrase drivers COUNT to prove the derived law bound.
+/// The phrase drivers count to prove the derived law bound.
 pub(crate) const DS_ECHO_DIVERGED: &str = "derived recovery round DIVERGED";
 
 impl DerivedRoundEcho {
@@ -704,8 +627,8 @@ impl DerivedRoundEcho {
     }
 
     /// Record one evaluation of the derived round. `derived_us` is the value
-    /// the site is ACTUALLY using; `legacy_us` is what the clamped law it
-    /// replaces would have returned for the same clock.
+    /// the site is using; `legacy_us` is what the clamped law would return for
+    /// the same clock.
     pub(crate) fn observe(
         &mut self,
         site: &str,

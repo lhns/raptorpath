@@ -1,21 +1,21 @@
 #!/bin/bash
-# THE CROWN NO-REGRESSION SPOT ON THE MERGED REPAIRS (goal-gate "THE CROWN
-# NO-REGRESSION SPOT ON THE MERGED REPAIRS — PRE-REGISTRATION", 2026-09-08).
+# The crown no-regression spot: the realtime tail matrix on the shipped
+# defaults (result in docs/status.md §2).
 #
-#   bash crownspot8.sh          # run as `vibe`, UNPRIVILEGED; sudo is taken
-#                               # per stage, INSIDE, so the sentinels are
+#   bash crownspot8.sh          # run as `vibe`, unprivileged; sudo is taken
+#                               # per stage, inside, so the sentinels are
 #                               # written by the level that reads them.
 #
-# ONE arm — `ship` (env unset = today's defaults) — on `tail_matrix.sh`'s own
-# default seat: `--protocol-hint realtime` WITHOUT `--window-reliable`, which
+# One arm — `ship` (env unset = today's defaults) — on `tail_matrix.sh`'s own
+# default seat: `--protocol-hint realtime` without `--window-reliable`, which
 # is the rho < 1 EVICT seat. Cells c2 and c3, sizes 400 B and 1200 B, x8 reps,
 # seeds 42 and 7. The EVICT waste scrape rides along inside tail_matrix.sh.
 #
-# SENTINELS ARE EARNED, NOT ANNOUNCED. `DONE-S<seed>` is written only if that
-# seed's ledger exists, is non-empty, AND carries its own `CROWNSPOT-DONE`
-# line; `DONE-ALL` only if both seeds earned theirs. Every absolute path is
-# write+unlink probed BEFORE the first measurement (the hold-down sweep's
-# rule: writability is proven at LAUNCH, not at exit).
+# Sentinels are earned, not announced. `DONE-S<seed>` is written only if that
+# seed's log exists, is non-empty, and carries its own `CROWNSPOT-DONE` line;
+# `DONE-ALL` only if both seeds earned theirs. Every absolute path is
+# write+unlink probed before the first measurement (writability is proven at
+# launch, not at exit).
 set -uo pipefail
 
 OUT="/home/vibe/crownspot8"
@@ -60,7 +60,7 @@ for seed in $SEEDS; do
             SEED_OK=0
         fi
     done
-    # EARNED, not announced: the ledger must exist, be non-empty, and carry a
+    # Earned, not announced: the log must exist, be non-empty, and carry a
     # completed matrix for every cell before the seed's sentinel is written.
     got=$({ grep -c '^=== done' "$LEDGER" || true; })
     want=$(echo $CELLS | wc -w)

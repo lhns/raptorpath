@@ -1,12 +1,9 @@
 //! Runtime path add/remove processor, fed by the status-HTTP API.
 //!
-//! Behavior contract: the body is the former inline `async move` block from
-//! `run_impl` verbatim — same `select!` between the command channel and the
-//! shutdown broadcast, same `break` on a closed channel, same order of
-//! `add_path` on transport → scheduler → stats → `spawn_receiver_for_path`,
-//! and `remove_path` on transport → scheduler. `next_path_id` is still
-//! seeded from `config.bind_addrs.len()` at the `run_impl` call site, so the
-//! first runtime path keeps the same id it had before.
+//! Order of operations: `add_path` on transport → scheduler → stats →
+//! `spawn_receiver_for_path`, and `remove_path` on transport → scheduler.
+//! `next_path_id` is seeded from `config.bind_addrs.len()` at the
+//! `run_impl` call site, so runtime path ids follow the configured ones.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,51 +1,47 @@
 #!/bin/bash
-# THE PLACEMENT BATTERY'S 5 h ENVELOPE — the detached driver for
-# `place_battery.sh` under goal-gate "OPERATOR AMENDMENT (2026-09-08 10:49Z):
-# EVERY MEASUREMENT IS CAPPED AT 5 HOURS". Same shape as the receiver-law
-# battery's `/home/vibe/recvlaw/run_all.sh` (goal-gate "Staged and NOT run"),
-# committed here so the envelope is a file in the tree and not a VM-side
-# script that has to be re-typed.
+# The placement battery's 5 h envelope — the detached driver for
+# `place_battery.sh` under the five-hour cap (docs/measurement-discipline.md,
+# "The five-hour cap").
 #
 #   nohup bash place_run_all.sh >/home/vibe/placement/launch.out 2>&1 &
 #
-# THIS SCRIPT IS STARTED AS `vibe`, NOT AS ROOT, AND THAT IS THE POINT. It uses
-# `sudo` for the battery invocations alone (the battery needs root for the
-# rp-* namespaces) and does every sentinel operation as the UNPRIVILEGED user,
+# Started as `vibe`, not root. It uses `sudo` for the battery invocations
+# alone (the battery needs root for the rp-* namespaces) and does every
+# sentinel operation as the unprivileged user,
 # so the sentinel writability it proves at launch is the writability the exit
 # path will actually have.
 #
-# THE ENVELOPE, STATED BEFORE ANYTHING RUNS:
+# The envelope:
 #
 #   1. launch time is recorded (`PLACE-ALL start`);
-#   2. seed 42 runs at n = 4 (the amendment's n; `RWM_PLACE_REPS` overrides);
-#   3. seed 7 runs ONLY if seed 42 EARNED its DONE in under 2.5 h from launch
+#   2. seed 42 runs at n = 4 (`RWM_PLACE_REPS` overrides);
+#   3. seed 7 runs only if seed 42 earned its DONE in under 2.5 h from launch
 #      — otherwise `SKIPPED-S7-5H-BUDGET` (or `SKIPPED-S7-S42-FAILED` when
 #      seed 42 did not earn DONE at all: a second seed of a failed first is
 #      not a second seed);
-#   4. a detached BACKSTOP at 4 h 50 min TERMs the battery (its fixed trap
+#   4. a detached backstop at 4 h 50 min TERMs the battery (its trap
 #      releases both operator locks and exits 143 once the in-flight
 #      invocation returns), `sudo pkill -x raptorpath || true` ends that
 #      invocation, the rp-* namespaces are waited on to clear, and
 #      `FAILED-ALL-TRUNCATED-5H-BUDGET` is written. That sentinel name is the
-#      monitor's match pattern; it is NOT a battery failure and the scored
+#      monitor's match pattern; it is not a battery failure and the scored
 #      section must say so;
-#   5. `DONE-ALL` is written ONLY when every seed this script actually RAN
+#   5. `DONE-ALL` is written only when every seed this script actually ran
 #      earned its own DONE and the backstop never fired. A skipped seed 7 is
 #      not a failed seed 7: `DONE-ALL` beside `SKIPPED-S7-5H-BUDGET` is the
 #      expected end state at the placeholder cost (see the battery header:
-#      ~3 h 10 min per seed at n = 4, so the 2.5 h gate is NOT met).
+#      ~3 h 10 min per seed at n = 4, so the 2.5 h gate is not met).
 #
-# RUNTIME ESTIMATE (placeholders, NOT a measurement of this grid): 83
+# Runtime estimate (placeholders, not a measurement of this grid): 83
 # invocations/seed = 68 dual/single x 2.0 min + 15 quad x 3.6 min = 190 min.
 # One seed fits under the backstop with ~1 h 40 min of slack; each DNF costs
 # ~12 min of it (`timeout 700` in perf_rwm_c.sh).
 #
-# DISCIPLINE 13, RESTATED BECAUSE IT IS MEASURED AND NOT ADVISORY: polling a
-# running battery is co-tenancy on the box under measurement, and it
-# manufactures the abort signature it is looking for (121 RUN-RETRY over 171
-# polled invocations against 0 over 80 unpolled). Launch this, then WAIT.
-# Watch the SENTINELS, never the process table: `pgrep -f place_battery.sh`
-# matches the watcher's own shell whenever its command line carries the string.
+# docs/measurement-discipline.md rule 13: polling a running battery is
+# co-tenancy on the box under measurement and manufactures the abort signature
+# it is looking for. Launch this, then wait. Watch the sentinels, never the
+# process table: `pgrep -f place_battery.sh` matches the watcher's own shell
+# whenever its command line carries the string.
 set -u
 cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
 source ./lib_battery.sh
@@ -60,20 +56,18 @@ BACKSTOP_S=$(( 4 * 3600 + 50 * 60 )) # 4 h 50 min from launch
 LAUNCH_TS=$(date +%s)
 LAUNCH_ISO=$(date -u +%FT%TZ)
 
-# ── SENTINEL WRITABILITY IS PROVEN AT LAUNCH, NOT DISCOVERED AT EXIT ──────
-# THE RECORDED DEFECT THIS CLOSES: the hold-down sweep's launcher ran to
-# completion and wrote NO sentinel at all — the output directory was owned by
-# ROOT, the `touch` ran as the unprivileged user, and the script carried
-# `set -uo pipefail` WITHOUT `-e`. The fix is to PROVE the write, as the user
-# who will perform it, on the exact ABSOLUTE paths, BEFORE anything privileged
-# runs. THE RUN DIRECTORY IS CREATED UNPRIVILEGED, HERE, BEFORE `sudo` IS EVER
-# INVOKED — that is the whole point of the ordering.
+# ── Sentinel writability is proven at launch, not discovered at exit ──────
+# A root-owned output directory makes the unprivileged `touch` fail silently
+# (no `-e`), and a watcher then waits forever on a finished battery. So the
+# write is proven, as the user who will perform it, on the exact absolute
+# paths, before anything privileged runs. The run directory is created
+# unprivileged, here, before `sudo` is ever invoked.
 mkdir -p "$OUTDIR" 2>/dev/null
 
-# Probe the PATH, not the directory (lib_battery.sh `probe_sentinel`).
+# Probe the path, not the directory (lib_battery.sh `probe_sentinel`).
 
-# `all.out` (the run log) IS PROVED FIRST AND THE TEE IS OPENED ONLY
-# AFTERWARDS: opening the transcript before proving it would send the abort
+# `all.out` (the run log) is proved first and the tee is opened only
+# afterwards: opening the transcript before proving it would send the abort
 # message that explains the failure into the file the failure is about.
 probe_sentinel "$OUTDIR/all.out"
 exec > >(tee -a "$OUTDIR/all.out") 2>&1
@@ -90,9 +84,9 @@ if ! sudo -n true 2>/dev/null; then
   exit 3
 fi
 
-# A RELAUNCH MUST NOT INHERIT A PREVIOUS ERA'S SENTINELS. The battery
-# truncates its own per-seed ledger at its top (`: > "$OUT"`), so the ledgers
-# need no clearing; the sentinels and the era file do.
+# A relaunch must not inherit a previous run's sentinels. The battery
+# truncates its own per-seed log at its top (`: > "$OUT"`), so the logs need
+# no clearing; the sentinels and the era file do.
 for f in $SENTINELS; do rm -f "$OUTDIR/$f"; done
 FIN="$OUTDIR/.place-run-all-finished"
 # The in-flight battery's pid (its `sudo`, which relays TERM to the battery),
@@ -104,11 +98,11 @@ echo "PLACE-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.
 echo "PLACE-ALL grid: arms=5 cells='c7 c8L c1 c9h' reps=$REPS (c9h capped at 3) singles='sc2 sc3' => 83 invocations/seed at reps=4"
 echo "PLACE-ALL envelope: seed7_gate=${SEED7_GATE_S}s backstop=${BACKSTOP_S}s"
 
-# ── THE BACKSTOP ─────────────────────────────────────────────────────────
+# ── The backstop ─────────────────────────────────────────────────────────
 # Detached from the seed loop so it fires whatever the loop is blocked on.
-# The order is the amendment's own: TERM the driver (its trap runs when the
-# in-flight invocation returns), end the in-flight engine, let perf_rwm_c.sh
-# tear its namespaces down, THEN write the sentinel — a sentinel written while
+# The order: TERM the driver (its trap runs when the in-flight invocation
+# returns), end the in-flight engine, let perf_rwm_c.sh tear its namespaces
+# down, then write the sentinel — a sentinel written while
 # rp-* namespaces still exist would tell the next launcher the box is clear
 # when it is not.
 backstop() {
@@ -123,9 +117,9 @@ backstop() {
     echo "TRUNCATED by place_run_all.sh backstop at $now"
     echo "launched $LAUNCH_ISO; budget ${BACKSTOP_S}s; the 5 h operator cap, not a battery failure"
   } > "$OUTDIR/TRUNCATED.txt"
-  # 1. TERM the battery: the fixed INT/TERM trap releases both operator locks
+  # 1. TERM the battery: its INT/TERM trap releases both operator locks
   #    and exits 143 once the foreground invocation returns.
-  #    By the RECORDED pid, not `pkill -f 'bash place_battery.sh'`: that
+  #    By the recorded pid, not `pkill -f 'bash place_battery.sh'`: that
   #    pattern also matches the `sudo ... bash place_battery.sh` wrapper and
   #    any watcher whose command line carries the string.
   local bpid
@@ -158,15 +152,15 @@ BACKSTOP_PID=$!
 finish() { touch "$FIN" 2>/dev/null; kill "$BACKSTOP_PID" 2>/dev/null; }
 trap finish EXIT
 
-# A SENTINEL IS EARNED, NOT UNCONDITIONAL: the ledger must EXIST, be
-# NON-EMPTY, and carry the battery's own terminal line.
+# A sentinel is earned, not unconditional: the log must exist, be non-empty,
+# and carry the battery's own terminal line.
 # (lib_battery.sh `seed_done`)
 
 run_seed() {
   local s="$1" t0 rc
   t0=$(date +%s)
   echo "PLACE-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ)"
-  # `sudo` HERE AND NOWHERE ELSE: the battery needs root for the rp-*
+  # `sudo` here and nowhere else: the battery needs root for the rp-*
   # namespaces; every sentinel path above and below is touched as `vibe`.
   # Backgrounded only to learn its pid, then waited on: still one battery at
   # a time, and `wait` returns the battery's own rc (sudo passes it through).
@@ -201,7 +195,7 @@ fi
 
 echo "PLACE-ALL end $(date -u +%FT%TZ) load=$(cat /proc/loadavg) ran='$RAN'" >> "$OUTDIR/all-era.txt"
 
-# ── THE VERDICT SENTINEL: EARNED BY EVERY SEED THAT RAN ──────────────────
+# ── The verdict sentinel: earned by every seed that ran ──────────────────
 if [ -f "$OUTDIR/TRUNCATED.txt" ]; then
   # The backstop owns this outcome's sentinel; make sure it is there even if
   # the backstop was still waiting on namespaces when the loop returned.

@@ -1,25 +1,25 @@
-//! #85 taper-emission L0 battery: the local rung for "the wire consumes r*".
+//! Taper-emission L0 measurement: the local rung for "the wire consumes r*".
 //!
-//! Replays the #46 L1 c3-realtime cell IN PROCESS: real engine (perf server +
+//! Runs the c3-realtime cell in process: real engine (perf server +
 //! client over memory TUNs, real QUIC on 127.0.0.1), plain window-reliable
 //! mode, realtime hint, with the transport L0 netem shim (`RWM_L0_NETEM`,
 //! src/transport/quic.rs) shaping the datagram path. The `c3heavy` scenario
-//! carries the #46 ARM-3 heavy-tail loss (semi-Markov, Weibull k = 0.5,
-//! theta = 0.55, onset 2.3% → eps ≈ 7% — rstar_tail_validation.rs), which is
-//! the burst-tail structure netem `gemodel` (GE) CANNOT express — so this L0
-//! shim, not the netem VM, is the correct local rung for the §8.4.1
-//! heavy-tail claim.
+//! carries a heavy-tail loss (semi-Markov, Weibull k = 0.5, theta = 0.55,
+//! onset 2.3% → eps ≈ 7% — rstar_tail_validation.rs), a burst-tail
+//! structure netem `gemodel` (GE) cannot express — so this L0 shim, not the
+//! netem VM, is the local rung for the burst-tail provisioning claim
+//! (paper §4.3).
 //!
-//! Delivered-reliability observable (same as tools/l1/rstar_battery.sh):
-//! realtime's reorder horizon is far below the c3 ARQ round, so a loss not
-//! recovered IN-WINDOW is force-delivered as an app hole and the 100 KB perf
-//! object can never complete → per-object DNF fraction IS app-level delivered
-//! reliability. DNFs are an EXPECTED datum, cut short by RWM_PERF_TIMEOUT_S.
+//! Delivered-reliability observable: realtime's reorder horizon is far below
+//! the c3 ARQ round, so a loss not recovered in-window is force-delivered as
+//! an app hole and the 100 KB perf object can never complete → per-object DNF
+//! fraction is app-level delivered reliability. DNFs are an expected datum,
+//! cut short by RWM_PERF_TIMEOUT_S.
 //! Emitted overhead is read from the sender DIAG cod/src rates (RWM_DIAG=1;
 //! scrape lines with src-rate >> 0 — the reverse direction places ~none).
 //!
 //! `#[ignore]` — measurement instrument, not a CI gate. One arm per process
-//! (env is process-global). The #85 2×2 (r* arm × emission arm):
+//! (env is process-global). The 2×2 (r* arm × emission arm):
 //!
 //! ```text
 //! for TAIL in 0 1; do for TAPER in 0 1; do

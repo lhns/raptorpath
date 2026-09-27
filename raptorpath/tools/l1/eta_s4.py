@@ -68,14 +68,14 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from l1common import fnum, is_final, med, read  # noqa: E402
 
-# 16.81.1: T = (pi/sqrt(6)) * sigma/ref, so sigma/ref = (sqrt(6)/pi) * T.
+# Paper §5.7: T = (sqrt(6)/pi) * sigma/ref, so sigma/ref = (pi/sqrt(6)) * T.
 SHIPPED_T = 0.15
 K_T_TO_SIGMA = math.pi / math.sqrt(6.0)      # 1.28255
 K_SIGMA_TO_T = math.sqrt(6.0) / math.pi      # 0.779697
 TARGET_RATIO = K_SIGMA_TO_T ** -1 * SHIPPED_T  # == K_T_TO_SIGMA * 0.15
-BAND = 0.20                                    # the pre-registered +/- 20 %
+BAND = 0.20                                    # the +/- 20 % confirm band
 
-# ── PARSING ────────────────────────────────────────────────────────────
+# ── Parsing ────────────────────────────────────────────────────────────
 # `net/eta.rs` line shapes, both sites:
 #   [ETA] site=sender fhat_us=.. n=.. zero=.. ... p1:n=A/B drop=.. tau_us=..
 #         e_p50=.. .. late=.. sig_us=<us>/n<pairs>
@@ -87,22 +87,21 @@ RE_PATH = re.compile(
     r"\bp(?P<id>\d+):(?P<body>.*?)(?=\s+p\d+:|$)"
 )
 RE_FIELD = re.compile(r"(\w+)=([^\s]+)")
-# ledger context lines written by crownspot8.sh / tail_matrix.sh
+# log context lines written by crownspot8.sh / tail_matrix.sh
 RE_STAGE = re.compile(r"CROWNSPOT stage seed=(?P<seed>\S+) cell=(?P<cell>\S+)")
 RE_ARM = re.compile(r"^---\s+(?P<arm>\S+)\s+(?P<size>\d+)B\b")
 # `  SPAN ship 400B tm-s.log: [SPAN] ...` -- the scrape's own prefix shape
 RE_PREFIX = re.compile(
     r"^\s*\S+\s+(?P<arm>\S+)\s+(?P<size>\d+)B\s+(?P<endpoint>\S+?):\s*\[ETA\]"
 )
-# `final=1` -- THE EXIT-FLUSH RULE. A concurrent engine branch adds an
-# exit-flush line to the receiver's diagnostic block carrying a `final=1`
-# field (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)", the owed flush).
-# `[ETA]` is CUMULATIVE, so the flush line is the COMPLETE reading and every
-# cadence line of the same (cell, seed, endpoint, arm, size, site, path) key
-# is a partial count of the same run: the flush SUPERSEDES them rather than
-# adding one more "rep". A ledger with no `final=` field at all parses
-# exactly as before. The token is matched on its own boundaries so `final=10`
-# or `xfinal=1` is not the flag (`l1common.is_final`).
+# `final=1` -- the exit-flush rule. The receiver's diagnostic block ends with
+# an exit-flush line carrying a `final=1` field. `[ETA]` is cumulative, so the
+# flush line is the complete reading and every cadence line of the same
+# (cell, seed, endpoint, arm, size, site, path) key is a partial count of the
+# same run: the flush supersedes them rather than adding one more "rep". A
+# log with no `final=` field at all parses the same. The token is matched on
+# its own boundaries so `final=10` or `xfinal=1` is not the flag
+# (`l1common.is_final`).
 
 
 def _num(tok):
@@ -143,7 +142,7 @@ def parse_eta_line(line, ctx):
     arm = pm.group("arm") if pm else ctx.get("arm", "-")
     size = pm.group("size") if pm else ctx.get("size", "-")
 
-    # The sender line carries the engine's OWN inverted temperature as
+    # The sender line carries the engine's own inverted temperature as
     # `t_eff=`; when present it is the preferred reading (one ref, one clock)
     # and is carried alongside so the two routes can be held against each
     # other rather than averaged.
@@ -220,17 +219,12 @@ def parse_ledger(path):
     return pts
 
 
-# ── THE TRANSCRIBED RECORD ─────────────────────────────────────────────
-# Until 2026-09-08 `tail_matrix.sh:156` scraped only `[RFA]`, `[SUCC]`,
-# `[RACK]` (and `[SPAN]` above it); `[ETA]` was NOT scraped and
-# `/tmp/tm-{s,c}.log` is overwritten per arm, so NO `[ETA]` line survived into
-# any ledger committed before that date (the scrape now carries `[ETA]` and
-# `[LAT]`, last line, both endpoints -- `meas/place-prep`).  What survives from
-# the crown spot is what a human copied into goal-gate "THE CROWN
-# NO-REGRESSION SPOT" -- section
-# 6(ii) at full n and section 2 at the smoke.  Those points are recorded here
-# so the reading is reproducible; every one of them is missing `tau_us`,
-# `bind` and `t_eff`, which is why they are scored SURROGATE-REF.
+# ── The transcribed record ─────────────────────────────────────────────
+# The crown no-regression spot ran before tail_matrix.sh scraped `[ETA]`, and
+# `/tmp/tm-{s,c}.log` is overwritten per arm, so its only `[ETA]` points are
+# the ones copied by hand at the time (the full-n run and the smoke). They are
+# recorded here so the reading is reproducible; every one of them is missing
+# `tau_us`, `bind` and `t_eff`, which is why they are scored SURROGATE-REF.
 #   sigma is (sender, receiver) in us.
 TRANSCRIBED = [
     # cell, seed, arm,               endpoint, sigma_sender, sigma_recv, pairs
@@ -238,7 +232,7 @@ TRANSCRIBED = [
     ("c3", "7",  "1200B n=8",        "tm-s", 2633.0, 2242.0, (None, None)),
     ("c3", "7",  "1200B n=8",        "tm-c", 3662.0, 2250.0, (None, None)),
 ]
-# Surrogate refs: the harness's own scenario table, `tools/l1/lib.sh:186-189`
+# Surrogate refs: the harness's own scenario table, `tools/l1/lib.sh`
 # (`fields: rate one_way_ms jitter_ms ge_p ge_q`).  RTT = 2 * one_way.
 #   c1 1 ms one-way -> 2 ms ; c2 5 ms -> 10 ms ; c3 20 ms -> 40 ms.
 CELL_RTT_US = {"c1": 2000.0, "c2": 10000.0, "c3": 40000.0}
@@ -256,7 +250,7 @@ def transcribed_points():
     return pts
 
 
-# ── SCORING ────────────────────────────────────────────────────────────
+# ── Scoring ────────────────────────────────────────────────────────────
 def resolve_ref(pt, ref_override):
     """(ref_us, source_tag).  `tau_us` wins; `--ref-us`/cell table is a
     SURROGATE and says so."""
@@ -314,7 +308,7 @@ def reading(pooled, rows):
     cells = sorted({c for (c, _s) in pooled})
     if not pooled:
         return "UNREADABLE", "no `[ETA]` reading survives in the artefact"
-    # per-cell range over BOTH sites pooled, per the task's reading rule
+    # per-cell range over both sites pooled, per the reading rule
     span = {}
     for c in cells:
         vals = []
@@ -336,7 +330,7 @@ def reading(pooled, rows):
     a, b = cells[0], cells[-1]
     lo_a, hi_a = span[a]
     lo_b, hi_b = span[b]
-    # THE LEVEL RATIO, reported whatever the limb: the cells' median sigma/ref
+    # The level ratio, reported whatever the limb: the cells' median sigma/ref
     # against each other. It is the number the strike is worth if the ranges
     # are disjoint, and it is meaningless-but-harmless if they are not.
     lvl_med = {}
@@ -348,9 +342,9 @@ def reading(pooled, rows):
     lvl_note = "  median level %s %.4f vs %s %.4f = %.2fx" % (
         a, lvl_med[a], b, lvl_med[b], lvl)
 
-    # A range built from ONE reading is a point, and a point cannot contain
+    # A range built from one reading is a point, and a point cannot contain
     # another cell's range nor be honestly called disjoint from it: with no
-    # within-cell spread there is nothing to compare a between-cell gap TO.
+    # within-cell spread there is nothing to compare a between-cell gap to.
     # That is the UNREADABLE limb, not a cell-dependence finding.
     thin = [c for c in cells
             if sum(1 for pt, _rf, _s, r, _t, _w in rows

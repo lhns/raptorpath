@@ -564,8 +564,8 @@ impl WindowDecoder for RlcWindowDecoder {
         self.repairs_useful
     }
 
-    /// diag/unified-collapse (roadmap item 3): legacy-arm counterpart of the
-    /// unified decoder's snapshot (pivot rows / widest row / state sizes).
+    /// Sliding-decoder counterpart of the unified decoder's snapshot (pivot
+    /// rows / widest row / state sizes).
     fn diag_stats(&self) -> Option<String> {
         let (mut max_span, mut coeff_n) = (0usize, 0usize);
         for r in self.pivots.values() {

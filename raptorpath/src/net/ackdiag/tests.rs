@@ -34,7 +34,7 @@ fn arrival_spacing_quantiles_are_the_injected_train() {
     assert!(line.contains("acks=11/z=0(0.0%)"), "{line}");
 }
 
-/// **Readout 2, ABSOLUTE.** The zero-delta class is counted, NOT sampled:
+/// **Readout 2, ABSOLUTE.** The zero-delta class is counted, not sampled:
 /// a `(0, 0)` ack raises `z=` and must not enter the `drecv` series (it
 /// would drag every quantile toward zero and make a stale-ack storm look
 /// like a low-delivery cell).
@@ -68,7 +68,7 @@ fn realized_overread_is_the_sample_rate_over_the_windows_own_long_run_rate() {
     let g = AckCadenceGauge::new();
     // Three calls of 200 sym each are accepted; 400 more arrive on
     // rejected (sub-1 ms) calls, so `count` sums to 1000 either way —
-    // the denominator must see the delivery the SAMPLER saw, accepted or
+    // the denominator must see the delivery the sampler saw, accepted or
     // not, or the ratio is inflated by the rejection rate.
     g.note_rate_sample(0, 200, 1_000.0, true);
     g.note_rate_sample(0, 200, 5_000.0, true);
@@ -124,7 +124,7 @@ fn reconciliation_ratios_are_arithmetic_over_the_cumulative_counters() {
     }
     let mut s = snap(0);
     s.sent_total = 1_000; // every wire symbol acked ⇒ cr/s = 1.000
-    // 800 delivered SOURCE symbols against 1000 counted arrivals ⇒
+    // 800 delivered source symbols against 1000 counted arrivals ⇒
     // cr/sa = 1.250: the counters hold 200 symbols the source frontier
     // does not, which is exactly the repair/retransmit signature.
     s.src_ack = 800;
@@ -163,7 +163,7 @@ fn windows_reset_the_series_and_carry_the_totals() {
 }
 
 /// A path with nothing to report prints nothing, so a `0` on an
-/// `[ACKDIAG]` line is always a MEASURED zero (the `dgq` discipline:
+/// `[ACKDIAG]` line is always a measured zero (the `dgq` discipline:
 /// a gauge that reads 0 for two different reasons is not a gauge).
 #[test]
 fn a_silent_path_emits_no_line() {
@@ -189,30 +189,26 @@ fn the_sample_cap_is_reported_not_hidden() {
     assert!(!line.contains(" ov=0"), "the cap must be visible: {line}");
 }
 
-/// **THE BEHAVIOUR-NEUTRALITY PIN.** The gauge is observation-only, and
-/// this is asserted STRUCTURALLY rather than promised in prose: no method
-/// on this module may reach back into the engine's mutable state. The
-/// gauge's own source must contain no `&mut Scheduler` / `path_mut` /
+/// The behaviour-neutrality pin. The gauge is observation-only, asserted
+/// structurally: its source must contain no `&mut Scheduler` / `path_mut` /
 /// `set_` call and no write to any engine handle — its only writes are to
-/// its OWN fields, and its only engine reads are the four immutable
-/// snapshot values in [`PathSnapshot`].
+/// its own fields, and its only engine reads are the immutable snapshot
+/// values in [`PathSnapshot`].
 ///
-/// Why a source scrape and not a runtime assertion: the failure mode is
-/// someone LATER adding a convenient write here (the `[SF]` gauge's own
-/// history), and that omission has no runtime symptom to assert on — the
-/// same reasoning `gates::forwarding_audit` and the wait-bucket audit
-/// already use in this crate.
+/// A source scrape rather than a runtime assertion, because the failure mode
+/// is a later convenient write here, which has no runtime symptom — the same
+/// reasoning `gates::forwarding_audit` and the wait-bucket audit use.
 #[test]
 fn ackdiag_is_observation_only() {
     let src = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/ackdiag.rs"),
     )
     .expect("read src/net/ackdiag.rs");
-    // The GAUGE, not this test module — the forbidden list below is
-    // itself a set of those literals.
+    // The gauge, not this test module — the forbidden list below is itself a
+    // set of those literals.
     let src = &src[..src.find("#[cfg(test)]").expect("the test module marker")];
-    // Strip comments and doc comments: the module header NAMES these
-    // things to explain why it does not do them.
+    // Strip comments and doc comments: the module header names these things
+    // to explain why it does not do them.
     let code: String = src
         .lines()
         .filter(|l| !l.trim_start().starts_with("//"))
@@ -232,9 +228,8 @@ fn ackdiag_is_observation_only() {
             "the ack-cadence gauge must not touch engine state: found `{forbidden}`"
         );
     }
-    // And the ONE mutable engine borrow it could plausibly acquire — the
-    // scheduler lock — must be read-only: `sched.path(` , never
-    // `scheduler.lock()` results used mutably.
+    // And the one engine lock it takes — the scheduler — must be used
+    // read-only: `sched.path(`, never a mutable borrow.
     assert!(
         code.contains(".path(*id)"),
         "the snapshot must read paths through the IMMUTABLE `Scheduler::path` \
@@ -242,29 +237,26 @@ fn ackdiag_is_observation_only() {
     );
 }
 
-/// **THE WINDOW OVERRIDE, ABSOLUTE.** The default is the SHIPPED 2 s and
-/// every path into it is pinned to a number — an ordinal "smaller than
-/// the default" test would pass on a resolver that returned garbage.
+/// The window override, absolute. The default is the shipped 2 s and every
+/// path into it is pinned to a number — an ordinal "smaller than the
+/// default" test would pass on a resolver that returned garbage.
 ///
-/// The default arm is the load-bearing one: every committed `[ACKDIAG]`
-/// ledger was captured at 2 s and the window is the unit of every series
-/// read off them, so an override that shifted the DEFAULT would silently
-/// re-unit the whole era's record.
+/// The default arm is the load-bearing one: the window is the unit of every
+/// series read off `[ACKDIAG]`, so an override that shifted the default would
+/// silently re-unit every recorded ledger.
 #[test]
 fn the_window_override_resolves_to_absolute_values_and_defaults_unchanged() {
-    // ERA COMPARABILITY: unset is 2 s, exactly as before the override.
+    // Unset is 2 s.
     assert_eq!(resolve_window_us(None), 2_000_000);
     assert_eq!(resolve_window_us(None), ACKDIAG_WINDOW_US);
-    // The c9 arm's value, which is the `[DIAG]` line's own cadence and
-    // the blocking dependency C9-1..4 are written against.
+    // The `[DIAG]` line's own cadence.
     assert_eq!(resolve_window_us(Some("250000")), 250_000);
     // Whitespace is trimmed (an `env` prefix can carry it).
     assert_eq!(resolve_window_us(Some("  250000 ")), 250_000);
-    // GARBAGE FALLS BACK TO THE DEFAULT, never to 0 and never to a panic.
+    // Garbage falls back to the default, never to 0 and never to a panic.
     // A 0 window would fire a report on every sender-loop iteration; an
-    // unparseable one is a driver typo, and both must be VISIBLE in the
-    // echo as "your override did not take" rather than as a dead or
-    // screaming gauge.
+    // unparseable one is a driver typo, and both must be visible in the echo
+    // as "your override did not take".
     for bad in ["", "0", "abc", "-1", "250_000", "2e5", "250000ms"] {
         assert_eq!(
             resolve_window_us(Some(bad)),
@@ -272,7 +264,7 @@ fn the_window_override_resolves_to_absolute_values_and_defaults_unchanged() {
             "{bad:?} must fall back to the shipped default"
         );
     }
-    // THE CLAMP, at both ends and on both sides of each edge.
+    // The clamp, at both ends and on both sides of each edge.
     assert_eq!(resolve_window_us(Some("1")), ACKDIAG_WINDOW_US_MIN);
     assert_eq!(resolve_window_us(Some("49999")), ACKDIAG_WINDOW_US_MIN);
     assert_eq!(resolve_window_us(Some("50000")), ACKDIAG_WINDOW_US_MIN);
@@ -285,9 +277,9 @@ fn the_window_override_resolves_to_absolute_values_and_defaults_unchanged() {
     assert_eq!(resolve_window_us(Some("2000000")), 2_000_000);
 }
 
-/// The window is what `report_due` actually gates on — the wiring, not
-/// just the resolver (MEASUREMENT DISCIPLINE rule 1: prove the mechanism
-/// under test executes). A resolver that no caller reads is a constant.
+/// The window is what `report_due` actually gates on — the wiring, not just
+/// the resolver (`docs/measurement-discipline.md` rule 1: prove the mechanism
+/// under test executes).
 #[test]
 fn report_due_gates_on_the_active_window() {
     let g = AckCadenceGauge::new();

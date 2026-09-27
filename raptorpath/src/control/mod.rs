@@ -1,22 +1,15 @@
-//! Control plane: loss estimation, FEC rate computation, and feedback control.
+//! Control plane: loss estimation and FEC rate computation.
 //!
-//! Architecture: feedforward (statistical) + feedback (PI correction)
-//!
-//! The feedforward component uses the binomial model to compute the exact
-//! number of repair symbols needed for a target tail loss probability.
-//! The feedback component (PI controller) compensates for model mismatch
-//! (correlated losses, bursty channels, estimation lag).
+//! The rate is feedforward: a BOCD posterior quantile of the loss rate
+//! feeds the closed-form r* law (paper §4, ADR-0050); there is no PI
+//! feedback loop.
 
 pub mod anchor;
-// `backend_selector` was DELETED (refactor: dead code batch 1). Mid-stream FEC
-// backend switching was removed from the data path (paper §16.4; the live
-// `warn!` in net::run that ignores an inbound WindowSwitch is its epitaph), so
-// the threshold heuristic had no consumer and no verification.
 pub mod estimator;
 pub mod fec_rate;
 
 // The BOCD and Gilbert-Elliott estimators live once, in the shared math
-// crate (the wasm model runs the same code); re-exported at their old paths.
+// crate (the wasm model runs the same code); re-exported here.
 pub use raptorpath_math::{changepoint, gilbert_elliott};
 
 pub use anchor::{SendRateAnchor, StallWitness};

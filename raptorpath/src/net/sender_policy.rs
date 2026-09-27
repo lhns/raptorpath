@@ -1,102 +1,68 @@
-//! The window sender's RESOLVE-ONCE policy: the derived constants that fix
+//! The window sender's resolve-once policy: the derived constants that fix
 //! `run_window_sender`'s behaviour for the lifetime of a tunnel.
 //!
-//! History (net seam pass 2, 2026-08-09): `run_window_sender` opened with
-//! ~1,300 lines of setup that turned the `RuntimeGates` env surface, the
-//! protocol hint and the four pipeline booleans (`reliable`, `coded_only`,
-//! `generation`, `systematic`) into ~56 locals which are then NEVER
-//! reassigned. Because they were locals, every function extracted out of the
-//! sender had to take them as parameters — the seam map's third blocker.
-//! They are now the fields of [`SenderPolicy`], resolved once by
+//! Every field of [`SenderPolicy`] is resolved once by
 //! [`SenderPolicy::resolve`], in the `RuntimeGates::resolve()` shape
-//! (`src/gates.rs`).
+//! (`src/gates.rs`), and never reassigned. Every expression is pure — reads of
+//! `gates` fields, the caller inputs, and each other. `RuntimeGates` remains
+//! the sole env reader (nothing here calls `std::env`); the mode-dependent
+//! defaults `gates.rs` leaves at the use site (`RWM_GEN_R`, `RWM_REACT_CAP`,
+//! `RWM_INFL_BDP`) are resolved here against the pipeline booleans.
 //!
-//! BEHAVIOUR CONTRACT: this is a change of WHERE a value is computed, not of
-//! what it is. Every field's initializer is the ORIGINAL expression, moved
-//! VERBATIM with its comment, in the ORIGINAL relative order, with the
-//! original clamp / `unwrap_or` chain and the original gate composition. The
-//! immutability that licenses the move is STRUCTURAL, not a reading: all 56
-//! were `let` WITHOUT `mut`, so Rust already guaranteed they could not be
-//! reassigned. `RuntimeGates` remains the sole env reader (nothing here calls
-//! `std::env`), and the mode-dependent defaults `gates.rs` deliberately left
-//! at the use site (`RWM_GEN_R`, `RWM_REACT_CAP`, `RWM_INFL_BDP`) are
-//! resolved here against the SAME mode inputs they were resolved against
-//! inline. Every expression is PURE — reads of `gates` fields, the six
-//! caller inputs, and each other — so computing them together at the top of
-//! the sender instead of spread through its setup cannot change what any of
-//! them holds.
+//! The mechanism-liveness `info!` echoes stay in `run_window_sender`: they are
+//! startup side effects, and hoisting them would reorder the log against the
+//! `WindowStart` broadcast and the stall-witness spawn. For the same reason the
+//! span-law trace's t0 (`span_diag_start_us = now_us()`) is not resolved here:
+//! the sender rebinds `pol` with it at its point in setup.
 //!
-//! The mechanism-liveness `info!` echoes stay in `run_window_sender`: they
-//! are startup SIDE EFFECTS, not policy, and hoisting them would reorder the
-//! log against the `WindowStart` broadcast and the stall-witness spawn. The
-//! one non-pure member of the old block, the span-law trace's t0
-//! `span_diag_start_us = now_us()`, is therefore NOT resolved here — the
-//! sender rebinds `pol` with it at the exact point in setup the stamp was
-//! always taken.
-//!
-//! NOT covered here (deliberately) — everything `run_window_sender`
-//! REASSIGNS after setup, which is why it stays a local: the pacing token
-//! buckets and their refresh stamps (`gen_tokens`, `src_tokens`,
-//! `cc_rate_cached`, `cc_rate_ceiling`, …), the derived-depth and
+//! Not covered here — everything `run_window_sender` reassigns after setup:
+//! the pacing token buckets and their refresh stamps (`gen_tokens`,
+//! `src_tokens`, `cc_rate_cached`, `cc_rate_ceiling`, …), the derived-depth and
 //! dynamic-cap caches (`gen_pipe_m`, `gen_pipe_store_cap`, `dyn_store_cap`,
-//! `dyn_infl_cap`, `pa_*`), the per-path echo-ratio state (`percap_k`,
-//! refreshed at the dyn-cap cadence), `emit_batch_live` (RE-SCOPED every loop iteration
-//! on the live-path count — the one member of the `RWM_EMIT_BATCH` family
-//! that is NOT policy), the DIAG counter set, and the two DIAG t0 stamps.
-//! The mutable EMISSION state lives in
-//! [`SenderState`](super::emit_source::SenderState).
+//! `dyn_infl_cap`, `pa_*`), the per-path echo-ratio state (`percap_k`),
+//! `emit_batch_live` (re-scoped every loop iteration on the live-path count),
+//! the DIAG counter set, and the two DIAG t0 stamps. The mutable emission
+//! state lives in [`SenderState`](super::emit_source::SenderState).
 
 use super::{GEN_PIPE_MAX_GENS, MAX_WINDOW_SIZE, RELIABLE_STORE_MAX, shed_armed};
 use crate::control::fec_rate::ProtocolHint;
 use crate::gates::RuntimeGates;
 use crate::scheduler::ANCHOR_MIN_SAMPLES;
 
-/// Symbols that must be OUTSTANDING to buy ONE delivered-rate sample, at the
+/// Symbols that must be outstanding to buy one delivered-rate sample, at the
 /// shipped merged-ack cadence.
 ///
-/// MEASURED, not assumed. `PathState::on_ack` calls `record_delivery` ONCE per
-/// received ack datagram and that call is the ONLY site that pushes a
-/// `BwSample`, so "samples per round" is "acks per round". §16.42 (the
-/// ack-merge flip, `RWM_ACK_MERGE` DEFAULT ON since 2026-08-08) measured the
-/// receiver's control-datagram density with `[CTLD]` on every run: **1.96 at
-/// c1 before the merge, ≈1.0 after**, against 1.05 at c7 — i.e. at the shipped
-/// cadence the receiver emits ONE control datagram per data message. One
-/// outstanding symbol therefore buys one delivery-rate sample per round, and
-/// this factor is 1.
+/// `PathState::on_ack` calls `record_delivery` once per received ack datagram
+/// and that call is the only site that pushes a `BwSample`, so "samples per
+/// round" is "acks per round". With `RWM_ACK_MERGE` (default on) the receiver
+/// emits one control datagram per data message (`[CTLD]` ≈ 1.0), so this
+/// factor is 1.
 ///
-/// It is written as a named factor rather than elided because it is the term
-/// that would MOVE if the ack cadence ever changed (a delayed-ack or
-/// stretch-ack scheme acking every m-th symbol makes it m), and a derivation
-/// whose units are invisible is the shape ADR-0070 finding 5 is about.
+/// Written as a named factor because it is the term that would move if the
+/// ack cadence changed (a stretch-ack scheme acking every m-th symbol makes it
+/// m).
 pub const MERGED_ACK_SYMBOLS_PER_SAMPLE: usize = 1;
 
 /// RFC 6928 — "Increasing TCP's Initial Window" — raises the permitted initial
-/// window to **10** segments. CITED, not fitted: it is the standardised size
-/// of the first flight a transport may put on an unmeasured path, and it is
-/// the closest citable analog this protocol has for "the smallest burst a
-/// sender is licensed to open with".
+/// window to 10 segments. Cited, not fitted: the standardised size of the
+/// first flight a transport may put on an unmeasured path.
 pub const RFC6928_INITIAL_WINDOW: usize = 10;
 
-/// **THE BOOTSTRAP FLOOR OF THE STORE-CAP CHAIN, DERIVED FROM ITS JOB**
-/// (paper §16.59; supersedes ADR-0070 finding 5's `floor = 64`, PROVENANCE
-/// ABSENT).
+/// The bootstrap floor of the store-cap chain, derived from its job (paper
+/// §6.1).
 ///
-/// The floor's job, as its own one-line rationale has always said, is that *a
-/// transiently-tiny BDP estimate must not strangle the pipe*. Read as a
-/// requirement rather than as a mood, that is two independent lower bounds on
-/// the same quantity, and the floor must satisfy BOTH:
+/// The floor's job is that a transiently-tiny BDP estimate must not strangle
+/// the pipe. That is two independent lower bounds on the same quantity:
 ///
 /// 1. **Keep the estimators warm.** The BtlBw anchor every pooled cap law
 ///    consumes does not exist until [`ANCHOR_MIN_SAMPLES`] delivered-rate
 ///    samples are in its window (`PathState::bdp_anchor` /
-///    `effective_btlbw` both return `None` below it). A floor that funds
-///    fewer symbols than that per round cannot buy the samples that would let
-///    the LAW take over from the floor — the floor would be self-sustaining,
-///    which is the strangle it exists to prevent. At the shipped merged-ack
-///    cadence that is `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE`
-///    = 8 · 1 = **8** symbols.
+///    `effective_btlbw` both return `None` below it). A floor that funds fewer
+///    symbols than that per round cannot buy the samples that let the law take
+///    over — the floor would be self-sustaining. At the merged-ack cadence
+///    that is `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE` = 8 · 1 = 8.
 /// 2. **Never open below the standard initial burst.** [`RFC6928_INITIAL_WINDOW`]
-///    = **10**.
+///    = 10.
 ///
 /// ```text
 ///   STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
@@ -104,67 +70,36 @@ pub const RFC6928_INITIAL_WINDOW: usize = 10;
 ///                   = max( 8 · 1, 10 ) = 10
 /// ```
 ///
-/// **`max`, not `+`.** The two clauses are independent LOWER BOUNDS on one
-/// quantity, so their conjunction is the larger of them. Adding them would
-/// compose two unrelated requirements into a number neither of them asks for
-/// — an invented constant wearing a derivation's clothes, which is the exact
-/// defect being repaired here.
+/// `max`, not `+`: the two clauses are independent lower bounds on one
+/// quantity, so their conjunction is the larger of them.
 ///
-/// **Zero bare constants**: `8` is [`ANCHOR_MIN_SAMPLES`], an existing engine
-/// constant cited at its own site; `1` is measured (§16.42's `[CTLD]`); `10`
-/// is RFC 6928. Nothing here is chosen to make an answer come out — the
-/// derivation was written before the value was computed, and it lands 6.4×
-/// BELOW the constant it replaces.
-///
-/// **What this changes, bounded.** The floor only binds where the chain's
-/// unclamped ask is under it. On the shipped chain that needs `Σ(max_bw·min_rtt)`
-/// under 16 symbols at N = 2 — 46× below the smallest warm leg the wire has
-/// ever reported (ADR-0070 finding 5) — so at every named L1 cell the change
-/// is INERT and the two values are indistinguishable. Where it is not inert is
-/// the degenerate end: loopback, and `shal8`, the one cell the record has ever
-/// caught landing exactly on the floor. Bounded by
+/// The floor only binds where the chain's unclamped ask is under it (on the
+/// shipped chain, `Σ(max_bw·min_rtt)` under 16 symbols at N = 2), so in
+/// practice it moves only the degenerate end (loopback). Bounded by
 /// `derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end`.
 pub const STORE_CAP_FLOOR: usize = {
     let warm = ANCHOR_MIN_SAMPLES * MERGED_ACK_SYMBOLS_PER_SAMPLE;
     if warm > RFC6928_INITIAL_WINDOW { warm } else { RFC6928_INITIAL_WINDOW }
 };
 
-/// **THE BOOTSTRAP CAP, DERIVED FROM ITS JOB — AND FOUND TO BE THE FLOOR**
-/// (paper §16.61; ADR-0070 finding 5's second half, `boot = 128` **ARGUED,
-/// NEVER A BATTERY ARM**).
+/// The bootstrap cap, derived from its job — and equal to the floor (paper
+/// §6.2).
 ///
-/// **DERIVED, NOT SHIPPED.** `RWM_STORE_BOOT` still defaults to 128. This
-/// constant is the derivation's answer, standing beside the shipped value so
-/// the gap is a fact in the source rather than a claim in a ledger, and so the
-/// battery arm that would test it has a named quantity to set. The reason it
-/// does not ship is measured and is stated below.
+/// Derived, not shipped: `RWM_STORE_BOOT` still defaults to 128. This constant
+/// stands beside the shipped value so the gap is a fact in the source, and so
+/// an arm that tests it has a named quantity to set.
 ///
-/// ## The derivation
+/// Boot's job: cap outstanding before the BtlBw anchor warms, tight so the
+/// startup burst cannot pre-bloat the queue and inflate the min-RTT floor
+/// (which would inflate the anchor itself). As requirements:
 ///
-/// Boot's job, from its own rationale (`resolve`, unchanged since `ac3bc9d`):
-/// *"Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
-/// burst can't pre-bloat the queue and inflate the min-RTT floor (which would
-/// then inflate the anchor itself); the anchor takes over once samples land."*
-/// Read as a requirement, that is two LOWER bounds and one UPPER pressure:
-///
-/// 1. **It must buy the samples that end it.** The anchor does not exist until
-///    [`ANCHOR_MIN_SAMPLES`] delivered-rate samples are in its window, and at
-///    the shipped merged-ack cadence one outstanding symbol buys one sample per
-///    round trip ([`MERGED_ACK_SYMBOLS_PER_SAMPLE`]). A bootstrap cap that funds
-///    fewer than `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE` = **8**
-///    symbols cannot warm the anchor in one round trip, and a cap that cannot
-///    end itself is not a bootstrap — it is the strangle the floor's own
-///    derivation is about, one layer up.
-/// 2. **It must not open below the standard initial burst.**
-///    [`RFC6928_INITIAL_WINDOW`] = **10**. This clause is *literally* boot's
-///    job: RFC 6928 sizes the first flight a transport may put on an
-///    UNMEASURED path, and "before the anchor warms" is precisely the state of
-///    having no measurement.
-/// 3. **Tight, otherwise.** The upper pressure is boot's own and the floor does
-///    not have it: a startup burst that pre-bloats the queue inflates the
-///    min-RTT floor, which inflates the anchor, which is a closed loop. It
-///    selects the SMALLEST value satisfying 1 and 2 — it cannot select a
-///    number of its own.
+/// 1. **It must buy the samples that end it**: at least
+///    `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE` = 8 symbols, or it
+///    cannot warm the anchor in one round trip.
+/// 2. **It must not open below the standard initial burst**:
+///    [`RFC6928_INITIAL_WINDOW`] = 10 — RFC 6928 sizes the first flight on an
+///    unmeasured path, which is exactly the state before the anchor warms.
+/// 3. **Tight, otherwise**: select the smallest value satisfying 1 and 2.
 ///
 /// ```text
 ///   STORE_BOOT_DERIVED = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
@@ -172,56 +107,25 @@ pub const STORE_CAP_FLOOR: usize = {
 ///                      = max( 8 · 1, 10 ) = 10   ≡ STORE_CAP_FLOOR
 /// ```
 ///
-/// **The finding is the identity, not the number.** Boot and the floor turn out
-/// to be the SAME QUANTITY — *the outstanding bound that applies when the law
-/// has no measurement to offer* — reached from two different rationales, with
-/// the same two cited clauses and the same answer. Boot is therefore not an
-/// independent constant of this machine; it DISSOLVES into the floor. That is a
-/// stronger result than a new value, and it is why this is a `const` equal to
-/// [`STORE_CAP_FLOOR`] rather than an arithmetic re-statement of it.
+/// Boot and the floor are the same quantity — the outstanding bound when the
+/// law has no measurement to offer — so this is a `const` equal to
+/// [`STORE_CAP_FLOOR`] rather than a re-statement of it. 128 is a fit to one
+/// cell's link budget (≈1.5 × a 100 Mbit / 10 ms BDP), never swept.
 ///
-/// ## What 128 actually was
-///
-/// The rationale's own sizing sentence — *"~1.5× a 100 Mbit / 10 ms BDP"* —
-/// reconstructs as `1.5 × (10 400 sym/s × 8 ms) = 124.8`, rounded to 128. Every
-/// input in that is c2's CONFIGURED parameters, and the `1.5` has no provenance
-/// anywhere. So 128 is **a fit to one cell's link budget, rounded to a power of
-/// two** — and it is circular for a bootstrap cap in particular, because sizing
-/// "the cap for when you do not know the path's BDP" to a specific path's BDP
-/// assumes exactly the quantity that is missing. It is not a derivation, and
-/// ADR-0070's *"never a battery arm"* is the other half: `RWM_STORE_BOOT` has
-/// never been swept, so 128's CONSEQUENCES are measured while 128 itself is not.
-///
-/// ## Why it does NOT ship (measured, and the block is not this constant's)
-///
-/// Boot binds on the current default at exactly one cell — **c1, in 17.2–42.1 %
-/// of steady DIAG samples (mean ≈30 %), MID-TRANSFER** — and at c7/c8/sc2 its
-/// gauge reads 0.0000. That binding is not boot's job being done: it is
-/// `net/mod.rs`'s terminal `else`, reached when `active_paths()` empties and the
-/// whole pooled chain falls through — ADR-0070 finding 1's cliff, landing a
-/// steady-state sender on a cold-start constant. Replacing 128 with 10 there
-/// would deepen a cliff already priced at +15.8/+24.8 % goodput when removed, by
-/// a further **×12.8**, at the one cell where it is live.
-///
-/// So the derivation closes and the replacement is BLOCKED — on the cliff, not
-/// on itself. The order is forced and it is the right way round: the live set
-/// (`RWM_STORE_CAP_UNIFIED`) takes boot's bind population at c1 from ≈30 % to
-/// **0 %**, and only once boot is unreachable except at genuine cold start are
-/// 10 and 128 indistinguishable everywhere and the derived value free to ship.
-/// **A constant cannot be derived into correctness while it is being used for a
-/// job it was never given.**
-///
-/// Bounded by `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`.
+/// It does not ship because boot also binds mid-transfer when `active_paths()`
+/// empties and the pooled chain falls through to the boot branch; replacing
+/// 128 with 10 there would deepen that cliff. Once boot is reachable only at
+/// genuine cold start the two values are indistinguishable. Bounded by
+/// `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`.
 pub const STORE_BOOT_DERIVED: usize = STORE_CAP_FLOOR;
 
 /// Everything `run_window_sender` decides once and then only reads.
 ///
 /// Grouped as the sender itself is: the caller's pipeline selection, the
 /// generation stack, CC/pacing, the retention / flow-control laws, the
-/// per-path account family, the unified span/shed laws, the recovery plane,
-/// emission batching, and the instruments. The full rationale for each
-/// value — the measurements, the ADRs, the removed experiments — lives on
-/// its expression inside [`SenderPolicy::resolve`], where it was moved from.
+/// unified span/shed laws, the recovery plane, emission batching, and the
+/// instruments. Each value's rationale is on its expression inside
+/// [`SenderPolicy::resolve`].
 #[derive(Debug, Clone)]
 pub(crate) struct SenderPolicy {
     // ── The caller's pipeline selection ──────────────────────────────────
@@ -229,11 +133,11 @@ pub(crate) struct SenderPolicy {
     pub symbol_size: u16,
     /// The (δ, ρ, r) named point the tunnel was opened at.
     pub protocol_hint: ProtocolHint,
-    /// RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer.
+    /// Retain-until-acked retention at the ARQ layer (ρ = 1).
     pub reliable: bool,
-    /// Generation-based coding (§16.3): fixed generations, per-seq ARQ OFF.
+    /// Generation-based coding (paper §5.8): fixed generations, per-seq ARQ off.
     pub generation: bool,
-    /// Systematic + deficit-repair (§16.3 oracle): a submode of `generation`.
+    /// Systematic + deficit-repair: a submode of `generation`.
     pub systematic: bool,
 
     // ── The generation stack ─────────────────────────────────────────────
@@ -267,11 +171,11 @@ pub(crate) struct SenderPolicy {
     pub proactive_pacer: bool,
 
     // ── CC / pacing ──────────────────────────────────────────────────────
-    /// `RWM_CC_PACE`: CC-rate pacing of the systematic source (Fix 1).
+    /// `RWM_CC_PACE`: CC-rate pacing of the systematic source.
     pub cc_pace: bool,
     /// `RWM_CC_PACE_HR` headroom multiplier on the paced source rate.
     pub cc_pace_headroom: f64,
-    /// `RWM_REACT_CAP` spacing scale (Fix 2); `0` = the legacy exempt arm.
+    /// `RWM_REACT_CAP` spacing scale; `0` = the unbounded (exempt) reactive arm.
     pub react_cap_cfg: f64,
     /// `react_cap_cfg > 0.0` — the bounded-reactive gate itself.
     pub react_cap_on: bool,
@@ -281,11 +185,11 @@ pub(crate) struct SenderPolicy {
     pub infl_bdp_gain: f64,
     /// `infl_bdp_gain > 0.0` — the dynamic in-flight cap gate.
     pub infl_bdp_on: bool,
-    /// Per-path in-flight fullness (the #64 fix); rides `gen_pipe`.
+    /// Per-path in-flight fullness; rides `gen_pipe`.
     pub infl_percap: bool,
 
     // ── Retention / flow control ─────────────────────────────────────────
-    /// Coding-window / retention width (§16.5 W_mp; `RWM_WINDOW`).
+    /// Coding-window / retention width (paper §5.5 W_mp; `RWM_WINDOW`).
     pub win_cap: usize,
     /// Backpressure ceiling for the retention store (`RWM_STORE`).
     pub store_max: usize,
@@ -297,71 +201,56 @@ pub(crate) struct SenderPolicy {
     pub store_boot_cap: usize,
     /// Floor so a transiently-tiny BDP estimate cannot strangle the pipe.
     pub store_cap_floor: usize,
-    /// `RWM_STORE_PATHS` (task #84): path-scaled outstanding pool.
+    /// `RWM_STORE_PATHS`: path-scaled outstanding pool.
     pub store_paths_on: bool,
     /// `RWM_STORE_PATH_POOL`: per-live-path pool knee.
     pub store_path_pool: usize,
     /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
     pub pool_anchor_on: bool,
-    /// `RWM_STORE_CAP_UNIFIED` (goal-gate "Store-Cap Triplication"): the
-    /// plain dyn-store-cap phase's path set is `live_paths()` rather than
-    /// the saturation-filtered `active_paths()`. Scoped to the plain
-    /// dynamic cap — Copa-sole already reads `live_paths()`.
+    /// `RWM_STORE_CAP_UNIFIED`: the plain dyn-store-cap phase's path set is
+    /// `live_paths()` rather than the saturation-filtered `active_paths()`.
+    /// Scoped to the plain dynamic cap — Copa-sole already reads `live_paths()`.
     pub store_cap_unified: bool,
-    /// `RWM_THREE_TERM` (goal-gate "Three-Term Law"): the plain dynamic
-    /// store cap is the composed three-term law
-    /// (`net::three_term_store_cap`). Scoped to the plain dynamic cap, like
-    /// `store_cap_unified`. Default OFF: the shipped tree is bit-identical.
+    /// `RWM_THREE_TERM` (default off): the plain dynamic store cap is the
+    /// composed three-term law (`net::three_term_store_cap`). Scoped to the
+    /// plain dynamic cap, like `store_cap_unified`.
     pub three_term_on: bool,
-    /// `RWM_COMPOSED_CAP` (paper §16.56): the composition arm. Implies
+    /// `RWM_COMPOSED_CAP` (default off; paper §10): the composition arm. Implies
     /// [`Self::three_term_on`] (same pool law, same function) and additionally
-    /// arms the LATE-STAGE PER-PATH BRAKE with the path's own cwnd as its cap,
-    /// over `live_paths()`. See the gate's decl in `gates.rs` for why the set
-    /// is load-bearing at the brake — `active_paths()` would make the brake's
-    /// question false by construction.
+    /// arms the late-stage per-path brake with the path's own cwnd as its cap,
+    /// over `live_paths()` (with `active_paths()` the brake could never close).
     pub composed_cap: bool,
-    /// `RWM_SUM_CAP` (paper §16.60/§16.64, ADR-0070 finding 2): the `×N`
-    /// deletion — the pooled law's count multiplier is removed from the VALUE
-    /// and kept in the CEILING (`net::pooled_store_cap`'s `sum_cap` argument).
-    /// Scoped to the plain dynamic cap like its siblings; INDEPENDENT of
-    /// [`Self::store_cap_unified`], which selects the Σ's path SET — the two
-    /// are orthogonal axes of the same law and their four combinations are
-    /// four distinct formulas. **DEFAULT ON since 2026-08-19** (ladder battery
-    /// rung N DELIVERED); `RWM_SUM_CAP=0` re-runs the displaced quadratic.
+    /// `RWM_SUM_CAP` (default on; paper §6.1): the pooled law's count
+    /// multiplier is removed from the value and kept in the ceiling
+    /// (`net::pooled_store_cap`'s `sum_cap` argument). Independent of
+    /// [`Self::store_cap_unified`], which selects the Σ's path set: the four
+    /// combinations are four distinct formulas. `=0` re-runs the quadratic.
     pub sum_cap: bool,
-    /// `RWM_DELTA_CAP` (paper §16.67/§16.70/§16.71, ADR-0071 family 2): the
-    /// pooled cap's VALUE multiplier is `1 + q(δ)` — the CoDel-DERIVED
-    /// standing-queue setpoint (RFC 8289 §3.2, 5–10 % of RTT from Kleinrock
-    /// power maximisation) mapped continuously onto the δ dial — instead of
-    /// the displaced `gain = 2.0` fossil. INDEPENDENT of [`Self::sum_cap`],
-    /// which picks the COUNT multiplier: the two are separate factors of one
-    /// expression and the four combinations are four distinct formulas.
-    /// Scoped to the plain dynamic cap like its siblings. **DEFAULT ON since
-    /// 2026-08-19** (candidates battery rung D DELIVERED, D-LAT 6/6);
-    /// `RWM_DELTA_CAP=0` re-runs the displaced fossil. With
-    /// [`Self::sum_cap`] also ON, the SHIPPED pooled law is
+    /// `RWM_DELTA_CAP` (default on; paper §6.1): the pooled cap's value
+    /// multiplier is `1 + q(δ)` — the CoDel-derived standing-queue setpoint
+    /// (RFC 8289 §3.2) mapped continuously onto the δ dial — instead of
+    /// `gain = 2.0`. Independent of [`Self::sum_cap`] (the count multiplier).
+    /// With both on the pooled law is
     /// `cap = clamp((1 + q(δ))·Σᵢ bwᵢ·RTpropᵢ, floor, N·knee)`.
     pub delta_cap: bool,
-    /// `RWM_LATE_BRAKE` (paper §16.60.1, ADR-0070 finding 7): the late-stage
-    /// per-path cwnd brake, armed WITHOUT the composed pool law. Exactly
-    /// [`Self::composed_cap`]'s point 3 with its points 1 and 2 removed — same
-    /// code path, same per-path cap (the path's own cwnd), same `live_paths()`
-    /// set, and no constant in the predicate. Default OFF: `cwnd_full` stays
-    /// permanently false on the plain seat, as shipped.
+    /// `RWM_LATE_BRAKE` (default off): the late-stage per-path cwnd brake,
+    /// armed without the composed pool law — [`Self::composed_cap`]'s brake
+    /// alone: same code path, same per-path cap (the path's own cwnd), same
+    /// `live_paths()` set, no constant in the predicate. Off, `cwnd_full`
+    /// stays false on the plain seat.
     pub late_brake: bool,
     /// The δ dial's deadline budget b(δ) at this tunnel's named point
-    /// (`net::delta_budget_b`) — a NUMBER on a dial, resolved once, read by
-    /// the three-term law's stall term. Not a mode selector: the law is
-    /// continuous and monotone in it.
+    /// The δ dial's deadline budget b(δ) at this tunnel's named point
+    /// (`net::delta_budget_b`) — a number on a dial, resolved once, read by
+    /// the three-term law's stall term. The law is continuous and monotone
+    /// in it.
     pub delta_b: f64,
     /// The retention dial ρ the three-term law is evaluated at.
     ///
-    /// This is a VALUE of the (δ, ρ, r) triangle's ρ axis, not a mode
-    /// selector, and it is a constant here by SCOPE rather than by a
-    /// branch: the plain dynamic cap exists only on the RETAIN-UNTIL-ACKED
-    /// path (`plain_dyn_cap ⇒ reliable`), whose declared retention contract
-    /// IS ρ = 1. `net::contract_stall_s` is continuous over ρ ∈ [0, 1] with
-    /// both of its terms always computed, and is unit-tested at 21 points.
+    /// A value of the ρ axis, constant here by scope rather than by a branch:
+    /// the plain dynamic cap exists only on the retain-until-acked path
+    /// (`plain_dyn_cap ⇒ reliable`), whose declared retention contract is
+    /// ρ = 1. `net::contract_stall_s` is continuous over ρ ∈ [0, 1].
     pub contract_rho: f64,
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
@@ -369,20 +258,19 @@ pub(crate) struct SenderPolicy {
     /// `RWM_HONEST_CAP` (+ `RWM_PLAIN_RS`): honest floor-clock caps.
     pub honest_cap_on: bool,
     /// `diag_on && plain_dyn_cap` — under `RWM_DIAG` the per-path store
-    /// attribution maps behind `[DIAG] sout=` are maintained. A GAUGE only:
-    /// nothing reads them but the DIAG print.
+    /// attribution maps behind `[DIAG] sout=` are maintained. A gauge only.
     pub percap_track: bool,
 
-    // ── The unified span / shed laws (§16.20.3, ADR-0064) ────────────────
+    // ── The unified span / shed laws (paper §5.3, §5.6; ADR-0064) ────────
     /// `RWM_UNIFIED`: trailing solvable-span proactive-repair placement.
     pub unified_span: bool,
     /// `RWM_ASTAR_ANCHOR`: the windowed-max send-rate A* anchor.
     pub astar_anchor_on: bool,
     /// `RWM_UNIFIED_SHED`: δ-honest shedding, EVICT path only.
     pub shed_on: bool,
-    /// `RWM_TAPER_R` (#85): budget-conserving taper emission.
+    /// `RWM_TAPER_R`: budget-conserving taper emission.
     pub taper_r_budget: bool,
-    /// `RWM_MIN_R` (§16.5): experimental per-symbol repair-rate FLOOR.
+    /// `RWM_MIN_R`: experimental per-symbol repair-rate floor.
     pub repair_rate_floor: f64,
 
     // ── The recovery plane ───────────────────────────────────────────────
@@ -394,20 +282,19 @@ pub(crate) struct SenderPolicy {
     pub recov_sp: bool,
     /// `RWM_RECOV_MP_LIVE`: recovery clocks on `live_paths()`.
     pub recov_mp_live: bool,
-    /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
-    /// tail-sweep / hole-refresh ROUND on the derived law (2·SRTT floored by
-    /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
-    /// undocumented [25, 100] ms. OFF ⇒ byte-identical to the shipped law.
+    /// `RWM_DERIVED_SWEEP` (default off): the tail-sweep / hole-refresh round
+    /// on the derived law (2·SRTT floored by `patience_floor_us`, no ceiling)
+    /// instead of `2·SRTT` clamped to [25, 100] ms.
     pub derived_sweep: bool,
-    /// `RWM_HOLDDOWN_Q` as resolved by the gate — `None` on every shipped
-    /// path, where the sender answers a reported hole immediately, exactly as
-    /// before. A NUMBER, never a branch. Paper §16.77.
+    /// `RWM_HOLDDOWN_Q` as resolved by the gate — `None` by default, where the
+    /// sender answers a reported hole immediately. A number, never a branch
+    /// (paper §7.4).
     pub holddown_q: Option<f64>,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
     // ── Emission ─────────────────────────────────────────────────────────
-    /// `RWM_EMIT_BATCH` CONFIGURED (the per-iteration live scoping on the
+    /// `RWM_EMIT_BATCH` as configured (the per-iteration scoping on the
     /// live-path count is `emit_batch_live`, a local — see the module doc).
     pub emit_batch_on: bool,
     /// `RWM_EMIT_BURST` pacer-quantum burst size (symbols).
@@ -426,10 +313,9 @@ pub(crate) struct SenderPolicy {
     /// (`net/walldiag.rs`). Independent of `diag_on` for the same reason
     /// `ackdiag_on` is: it prints ONE `[WALL]` line, at teardown.
     pub walldiag_on: bool,
-    /// diag/unified-collapse: the span-law trace's own t0. NOT resolved by
-    /// [`SenderPolicy::resolve`] (a wall-clock read, not a policy): the
-    /// sender rebinds `pol` with it at the point in setup it was always
-    /// sampled, so the stamp does not drift.
+    /// The span-law trace's t0. Not resolved by [`SenderPolicy::resolve`] (a
+    /// wall-clock read, not a policy): the sender rebinds `pol` with it at its
+    /// point in setup.
     pub span_diag_start_us: u64,
 }
 
@@ -437,9 +323,8 @@ impl SenderPolicy {
     /// Resolve the sender's whole derived policy once, from the engine's
     /// `RuntimeGates` and the caller's pipeline selection.
     ///
-    /// The body below is the original setup of `run_window_sender`, moved
-    /// verbatim: same expressions, same order, same comments. `gates` keeps
-    /// its name so not one of those expressions had to change.
+    /// `gates` keeps its name so each expression reads as a plain gate
+    /// lookup.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve(
         gates: &RuntimeGates,
@@ -451,89 +336,40 @@ impl SenderPolicy {
         systematic: bool,
     ) -> Self {
         // Generation coding emits coded wire symbols exactly like coded-only; the
-        // difference is the coding UNIT (a stable generation vs the moving window)
+        // difference is the coding unit (a stable generation vs the moving window)
         // and that per-seq ARQ is disabled below.
         let coded_wire = coded_only || generation;
         let gen_size: usize = gates.gen_size;
         let pipeline: usize = gates.pipeline;
-        // Generation-coding proactive overhead r (coded per generation beyond K_G):
-        // the encoder provisions each generation to ceil(len·(1+r)) coded before it
-        // is only coded for recovery. Covers loss + the MDS margin. RWM_GEN_R env.
-        // Systematic-repair provisions only the loss-FEC overhead r (the K base DoF
-        // ride the wire as source), so its natural default is smaller than
-        // coded-only's (which must also fund the K base). r ≳ 1.5·ε keeps windowed
-        // repair ahead of loss (the oracle's provisioning floor; r < ε → DNF). At C8
-        // ε_slow ≈ 4.8 %, so 0.15 clears both paths with margin. RWM_GEN_R overrides.
-        // The DAPS chain (RWM_DAPS, _BDP, _PACE, RWM_PACE_ALL, RWM_RATE_SAMPLE,
-        // RWM_PER_PATH_EST, RWM_DAPS_DEPTH) was REMOVED 2026-07-27 per the
-        // DEPRECATION REGISTER (ADR-0065/0066): the original 2026-07-12 arc was
-        // voided by the Methodology Audit (generation-inert era), and the live
-        // re-ask ("Gen-ON Stack Ablation" 2026-07-13, generation actually ON)
-        // measured the stack itself as the sym-C7 collapse (rate-sample −22%,
-        // depth −17…−30%). Every surviving idea was re-derived better elsewhere:
-        // per-path BDP cap + derived depth → RWM_GEN_PIPE's M* law (ADR-0064),
-        // honest per-path anchors → ADR-0061 (the send-interval sampler the
-        // CopaFeed/RWM_PLAIN_RS machinery keeps IS that fix — shared, retained),
-        // per-path admission → the percap family (ADR-0058).
-        // The RWM_FMTCP(+_WIN) decode-on-total composite was REMOVED 2026-07-27
-        // per the DEPRECATION REGISTER: re-tested on the FULL clean substrate
-        // ("C8-Aware Pool Law" battery, piggybacked arm) → CONFIRMED-REFUTED
-        // (c7 18.30/18.98, c8 14.30/15.03 Mbit/s = ×0.11–0.20 of the same-session
-        // default stack, both seeds, ≫σ) — the 2026-07-08 pathology was never
-        // wall-tainted. Its forced sub-levers (RWM_REASM_BDP, RWM_OOO_RETAIN,
-        // RWM_XPATH_REPAIR) survive as independent gates; the per-path in-flight
-        // cap + derived win backstop it pioneered live on under gen_pipe/M*.
-        // feat/gen-substrate-ceiling (RWM_GEN_PIPE, DEFAULT OFF ⇒ same-binary A/B;
-        // shipped non-generation default byte-identical — every use is generation-
-        // gated). The JOB-1 diagnosis: the L1 per-path ~10 Mbit/s generation
-        // ceiling is the SUBSTRATE — quinn's loss-reactive Cubic window under the
-        // datagram path (per connection = per path), COLLAPSED further by bare
-        // generation mode's own standing queue (uncapped in-flight → RTT inflated
-        // 3–5× → Cubic throughput ∝ 1/RTT). The L0 netem-shim bench (which
-        // reproduces RTT/rate/GE-loss but hides them from quinn) measures the app
-        // machine at 34 Mbit/s on the same c2 parameters — the wall is NOT the
-        // app pipeline. This gate composes the app-side remedies so the substrate
-        // sees a queue-lean, BDP-covering pipeline:
+        // Generation-coding proactive overhead r (coded per generation beyond
+        // K_G): the encoder provisions each generation to ceil(len·(1+r)) coded
+        // before it is only coded for recovery. Systematic-repair provisions only
+        // the loss-FEC overhead (the K base DoF ride the wire as source), so its
+        // default is smaller than coded-only's (which must also fund the K base).
+        // r ≳ 1.5·ε keeps windowed repair ahead of loss (r < ε → DNF).
+        // `RWM_GEN_R` overrides.
+        //
+        // `RWM_GEN_PIPE` (generation only; paper §5.3, §5.8) composes the
+        // app-side remedies so the substrate CC sees a queue-lean, BDP-covering
+        // pipeline:
         //   1. per-path BDP in-flight cap (infl_bdp 1.5, percap) — queue ≈ 0,
-        //      RTT ≈ RTprop (the mechanism behind DAPS's accidental +44% single);
-        //   2. DERIVED pipeline depth M* (gen_pipe_depth above, #61's A*) —
-        //      generations in flight cover BDP + one deficit round, recomputed
-        //      from measured rate/SRTT (no fixed M);
-        //   3. coded-emission budget clocked on the SENT frontier (the stalled
+        //      RTT ≈ RTprop;
+        //   2. derived pipeline depth M* = ceil(rate·2·RTprop/G)+1 — generations
+        //      in flight cover BDP + one deficit round, from measured rate/SRTT;
+        //   3. coded-emission budget clocked on the sent frontier (the stalled
         //      cumulative ack must not freeze emission for the still-recovering
         //      oldest generation while M* fresh generations have budget);
-        //   4. pace anchored to the windowed-MAX delivered rate (§16.15: the
-        //      decode-clocked samples are mostly-low; the legacy decaying EWMA
-        //      under-reads between generation decodes and throttles emission);
-        //   5. once-per-SRTT deficit action (react_cap 1.0 — the known-good
-        //      bounded reactive from the FMTCP-era arm).
-        // The substrate CC itself is A/B-able independently via RWM_QUIC_CC (bbr)
-        // in transport/quic.rs.
-        // §16.20 (d): under RWM_UNIFIED the derived-depth law (M* =
-        // ceil(rate·2·RTprop/G)+1, the large-δ limit of A*) is the DEFAULT for
-        // generation mode; RWM_GEN_PIPE=0 still reproduces the fixed legacy
-        // pipeline as the same-binary A/B arm.
+        //   4. pace anchored to the windowed-max delivered rate (decode-clocked
+        //      samples are mostly low; a decaying EWMA under-reads between
+        //      generation decodes);
+        //   5. once-per-SRTT deficit action (react_cap 1.0).
+        // `RWM_GEN_PIPE=0` reproduces the fixed pipeline depth.
         let gen_pipe = gates.gen_pipe && generation;
-        // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): the M* anchor-pair repair —
-        // (a) the peer-report 50-ms pseudo-sample no longer pins the RTprop floor
-        // (PathReport arm; hygiene rules 1+3), (b) the windowed-MAX delivered-rate
-        // filter seeds from 500-ms buckets instead of 2-s ones (rule 1: the
-        // anchor is live within ~1 bucket of the first acks). (Historic rule (c),
-        // the derived (M*+2)·G replacement of the STATIC FMTCP win backstop, was
-        // removed with the FMTCP composite 2026-07-27 — the derived-depth idea
-        // ships as gen_pipe's M* law itself.)
-        // DEFAULT ON (2026-07-21, "Consolidation" battery: plain subset inert
-        // within sigma at every bulk cell on both seeds, tail crown unregressed;
-        // the generation-gated knee evidence is 16.21's).
+        // `RWM_MSTAR_ANCHOR` (ADR-0061): the M* anchor-pair repair — (a) the
+        // peer-report 50-ms pseudo-sample no longer pins the RTprop floor, (b) the
+        // windowed-max delivered-rate filter seeds from 500-ms buckets instead of
+        // 2-s ones, so the anchor is live within ~1 bucket of the first acks.
         let mstar_anchor = gates.mstar_anchor && generation;
-        // feat/source-backpressure (RWM_SRC_BP) — REMOVED 2026-07-27 per the
-        // DEPRECATION REGISTER: deferring the source into per-path pacing budgets
-        // stalls the generation-fill pipeline (the source read IS the pipeline
-        // clock — C8 −53% both seeds, "Source Backpressure" 2026-07-12; era
-        // audit-classified UNCERTAIN). The mechanism space (per-path admission of
-        // source) was re-asked BY the percap account family on live code with
-        // gauges and lost for a named structural reason (ADR-0058); any future
-        // gen-mode re-ask rides that family, not this code.
         // Generation-coding proactive overhead r.
         let gen_repair_floor: f64 = gates
             .gen_r
@@ -545,125 +381,97 @@ impl SenderPolicy {
         // startup burst can't overrun a bandwidth-limited link's datagram intake;
         // once the ack rate is known the pacing clocks to delivered goodput × 1.5.
         let gen_rate_floor: f64 = gates.gen_rate_floor;
-        // ── Fix 1 (transport-substrate): CC-RATE PACING of the SYSTEMATIC SOURCE ──
-        // PRIMARY high-RTT lever. The systematic source rides the DROPPABLE QUIC-
-        // datagram path driven only by TUN-read intake, gated by a BDP-scaled
-        // WINDOW (store_max / infl_cap) but NOT by a RATE. At high RTT the window is
-        // BDP-sized, so the source is spent as one big BURST that netem/QUIC drops
-        // faster than the receiver decodes — per-generation loss then exceeds the
-        // ceil(len·r) proactive budget and the proactive-recovery fraction
-        // COLLAPSES (0.95→0.23), forcing reactive round-trips (goal-gate "Proactive
-        // FEC vs ARQ"). This paces the source at the measured LINK rate, smoothed
-        // over the RTT with a SMALL burst, so no BDP-sized burst ever hits the wire.
+        // CC-rate pacing of the systematic source (`RWM_CC_PACE`). The systematic
+        // source rides the droppable QUIC-datagram path driven only by TUN-read
+        // intake, gated by a BDP-scaled window but not by a rate. At high RTT the
+        // window is BDP-sized, so the source is spent as one burst that the path
+        // drops faster than the receiver decodes — per-generation loss exceeds
+        // the ceil(len·r) proactive budget and recovery goes reactive. This paces
+        // the source at the measured link rate with a small burst.
         //
-        // Rate signal: the delivered-goodput EWMA (`gen_rate_ewma`) is the achieved
-        // BtlBw in generation mode — the true CC anchor. The Copa `cwnd` is NOT
-        // usable here: window-mode WindowAcks do not drive `record_delivery`, so
-        // cwnd is pinned at INITIAL_CWND and cwnd/SRTT would strangle the pipe. The
-        // ack-clocked delivered-goodput EWMA already tracks the link and is what the
-        // coded bucket uses; the source now shares it. A small headroom lets the
-        // rate ramp without the 1.5× overshoot that itself overruns the datagram
-        // path. Env-gated (RWM_CC_PACE) so the A/B baseline is byte-identical.
+        // Rate signal: the delivered-goodput EWMA (`gen_rate_ewma`), the achieved
+        // BtlBw in generation mode. The Copa `cwnd` is not usable here:
+        // window-mode WindowAcks do not drive `record_delivery`, so cwnd sits at
+        // INITIAL_CWND and cwnd/SRTT would strangle the pipe. A small headroom
+        // lets the rate ramp without overrunning the datagram path.
         //
-        // feat/copa-wire-signal: DEFAULT ON under the wire-clocked Copa signal.
-        // Copa's model assumes a PACED wire (the paper paces at 2·cwnd/RTT; our
-        // §12.5 token bucket does the same for the block path), but under
-        // RWM_QUIC_CC=passthrough quinn's own pacer derives from the engine
-        // window — at Copa's Bulk operating point (cwnd ≈ BDP + 1/δ ≈ 5×BDP at
-        // c2) that pacer never binds, the send process degrades to pure
-        // ack-clocking, and each GE loss burst's recovery micro-stall idles the
-        // bottleneck (MEASURED at the L1 c2 smoke: 55.7 → 67 Mbit/s from this
-        // default alone, store no longer pinned at the cap, wire queue p50
-        // 3–5 ms). RWM_CC_PACE=0 still forces it off (the #80 A/B arms are
-        // reproduced by RWM_COPA_WIRE=0, under which this default is false).
+        // Default on under the wire-clocked Copa signal (ADR-0062): Copa's model
+        // assumes a paced wire, but under `RWM_QUIC_CC=passthrough` quinn's pacer
+        // derives from the engine window and never binds at Copa's Bulk
+        // operating point, so the send process degrades to ack-clocking and each
+        // loss burst's recovery micro-stall idles the bottleneck. `RWM_CC_PACE=0`
+        // forces it off.
         let cc_pace = gates.cc_pace;
         let cc_pace_headroom: f64 = gates.cc_pace_headroom;
-        // ── Fix 2 (transport-substrate): BOUNDED REACTIVE under congestion control ─
-        // The deficit-driven recovery loop was EXEMPT from the in-flight congestion
-        // cap and re-emitted the reported residual on EVERY deficit report. At high
-        // RTT the reports are ~RTT stale, so it re-sends the deficit faster than an
-        // updated report can shrink it, its own recovery symbols overrun the pipe
-        // and drop, the stale deficit persists, and it re-floods — MEASURED
-        // recovery_coded 60 k–252 k symbols for a ~5 k-symbol object (up to 120×),
-        // which DNFs at RTT200. Two bounds close the loop:
-        //   (a) PER-GENERATION RTT SPACING. After emitting recovery for a
-        //       generation, do NOT emit for it again for ~1 SRTT — long enough for
-        //       those symbols to arrive and the receiver's NEXT deficit report to
-        //       reflect them. This is the "send the deficit, wait ~RTT, re-evaluate"
-        //       the design intended but never TIMED, so a stale periodic re-report
-        //       could no longer trigger an immediate re-flood.
-        //   (b) NON-EXEMPT from the in-flight cap. Reactive now also stops at
-        //       `cwnd_full` (RWM_INFL_CAP) like proactive — it may not push the pipe
-        //       past the congestion cap. The in-flight budget expires on the RTT
-        //       timescale, so the frontier is still funded within a bounded delay
-        //       (no permanent deadlock), it just cannot BURST past the cap.
-        // Enabled by RWM_REACT_CAP (any value; the value optionally scales the
-        // spacing — <1 = fraction of SRTT, >=1 = absolute µs). Unset = OFF (legacy
-        // exempt behaviour), so Fix 1 measures alone and Fix 2 stacks on top.
-        // gen_pipe defaults to once-per-RTT deficit coalescing (1.0·SRTT): "ONE
-        // deficit feedback per RTT" — the #59/#60 lesson that a sub-RTT re-flood
-        // of the fungible top-up defeats aggregation. RWM_REACT_CAP still overrides.
+        // Bounded reactive under congestion control (`RWM_REACT_CAP`). An
+        // unbounded deficit loop is exempt from the in-flight cap and re-emits
+        // the reported residual on every deficit report; at high RTT the reports
+        // are ~RTT stale, so it re-sends faster than an updated report can shrink
+        // the deficit, its own symbols overrun the pipe and drop, and it
+        // re-floods. Two bounds close the loop:
+        //   (a) per-generation RTT spacing: after emitting recovery for a
+        //       generation, wait ~1 SRTT before emitting for it again, so the
+        //       receiver's next deficit report reflects those symbols;
+        //   (b) non-exempt from the in-flight cap: reactive stops at `cwnd_full`
+        //       like proactive. The in-flight budget expires on the RTT
+        //       timescale, so the frontier is still funded within a bounded
+        //       delay (no deadlock).
+        // Any value enables it; the value scales the spacing (<1 = fraction of
+        // SRTT, >=1 = absolute µs). gen_pipe defaults to one deficit feedback per
+        // RTT (1.0·SRTT): a sub-RTT re-flood of the fungible top-up defeats
+        // aggregation.
         let react_cap_cfg: f64 = gates
             .react_cap
             .unwrap_or(if gen_pipe { 1.0 } else { 0.0 })
             .max(0.0);
         let react_cap_on = react_cap_cfg > 0.0;
-        // In-flight coded allowance W (coded symbols the pipe may hold ahead of the
-        // decode frontier). MUST be ≥ pipeline·gen_size: coded symbols are striped
-        // round-robin across the M active generations, so to let the FIRST
-        // generation accumulate its K_G (and thereby decode → advance the ack that
-        // grows the target) each of the M active generations needs ~gen_size coded
-        // in flight at once. Below M·G the first generation never reaches K_G, ack
-        // stays 0, and the target never grows — a startup deadlock. Default
-        // (M+1)·gen_size (matches the source-retention store_max) plus decode/loss
-        // slack. RWM_GEN_INFLIGHT overrides.
+        // In-flight coded allowance W (coded symbols the pipe may hold ahead of
+        // the decode frontier). Must be ≥ pipeline·gen_size: coded symbols are
+        // striped round-robin across the M active generations, so for the first
+        // generation to accumulate its K_G (and decode, advancing the ack that
+        // grows the target) each needs ~gen_size coded in flight at once. Below
+        // M·G the first generation never reaches K_G, ack stays 0, and the target
+        // never grows — a startup deadlock. Default 2·M·gen_size.
+        // `RWM_GEN_INFLIGHT` overrides.
         let gen_inflight_window: f64 = gates
             .gen_inflight
             .unwrap_or((2 * pipeline * gen_size) as f64);
-        // RWM Phase C (paper §16.5, the BANDWIDTH knob r): experimental
-        // per-symbol repair-rate FLOOR. The Bulk χ glide drives r*→0 mid-stream
-        // (§14.26), leaving the window systematic (not rateless-fungible), so a
-        // heterogeneous slow path's source symbols are fixed positions the fast
-        // path cannot decode around (the measured Phase B C8 wall). Raising r
-        // makes the pooled window fungible so completion → K/Σg. Env-gated
-        // (RWM_MIN_R, repairs per source symbol, e.g. 0.18 ≈ the slow path's
-        // symbol share at C8); 0 = production default (unchanged glide). Test
-        // instrument for the raise-r arm, not a shipped control law.
+        // `RWM_MIN_R`: experimental per-symbol repair-rate floor (repairs per
+        // source symbol). The Bulk χ glide (paper §4.6) drives r* → 0
+        // mid-stream, leaving the window systematic, so a heterogeneous slow
+        // path's source symbols are fixed positions the fast path cannot decode
+        // around. Raising r makes the pooled window fungible. 0 = the production
+        // glide. A test instrument, not a shipped control law.
         let repair_rate_floor: f64 = gates.min_r;
-        // ── Fix 3 (transport-substrate): OUT-OF-ORDER RETENTION DECOUPLE ──────────
-        // Defect #3: generation backpressure caps the send frontier at ~store_max =
-        // a few generations ahead of the CUMULATIVE (in-order) decode ack, so ONE
-        // hole stalls the whole pipeline even under out-of-order delivery — throughput
-        // ∝ generations/RTT = window/RTT, reproducing ARQ's serialization. This
-        // raises the retention/backpressure window to `ooo_gens` generations so the
-        // sender keeps sending (and proactively coding, via the send-frontier-tracking
-        // `set_code_base` below) MANY generations past a stalled in-order frontier;
-        // the stalled generation is recovered by the bounded reactive tail (Fix 2)
-        // while everything above it completes out of order. Retention still drops on
-        // the in-order ack (advance(ack+1)) so RELIABILITY IS UNCHANGED — the sources
-        // of every not-yet-in-order-acked generation stay retained for reactive
-        // recovery; memory is bounded by `ooo_gens·G`. Env RWM_OOO_RETAIN (value =
-        // generation count, default 16; unset = OFF, byte-identical legacy).
+        // Out-of-order retention decouple (`RWM_OOO_RETAIN`, generation only).
+        // Generation backpressure caps the send frontier at ~store_max = a few
+        // generations ahead of the cumulative (in-order) decode ack, so one hole
+        // stalls the whole pipeline — throughput ∝ window/RTT, ARQ's
+        // serialization. This raises the retention/backpressure window to
+        // `ooo_gens` generations so the sender keeps sending (and proactively
+        // coding, via `set_code_base`) past a stalled in-order frontier; the
+        // stalled generation is recovered by the bounded reactive tail. Retention
+        // still drops on the in-order ack, so reliability is unchanged; memory
+        // is bounded by `ooo_gens·G`. The value is the generation count
+        // (default 16).
         let ooo_retain = gates.ooo_retain && generation;
         let ooo_gens: usize = gates.ooo_gens;
-        // Fungible frontier window sizing (§16.5, the FOURTH bound W_mp). A hole
-        // at the frontier is raced by coded symbols that combine over the CURRENT
-        // window; sustained Σg aggregation needs the window to span the cross-path
-        // recovery horizon, W_mp ≳ Σg·(RTT_max+t_slack) ≈ 600 symbols at C8 — 3×
-        // the systematic pipeline's MAX_WINDOW_SIZE=200, which §16.5 states would
-        // "starve RWM at C8 by construction". Coded-only therefore widens the
-        // coding window to W_mp (default 640, RWM_WINDOW override for the sweep);
-        // the oracle (oracle_c8_fungible_wmp_window) confirms W≥384 reaches the
-        // ×1.19 ceiling while W=200 does not. Systematic modes keep 200.
+        // Fungible frontier window sizing (paper §5.5, W_mp). A hole at the
+        // frontier is raced by coded symbols that combine over the current
+        // window; sustained Σg aggregation needs the window to span the
+        // cross-path recovery horizon, W_mp ≳ Σg·(RTT_max+t_slack) ≈ 600 symbols
+        // at the heterogeneous dual — 3× the systematic MAX_WINDOW_SIZE = 200.
+        // Coded-only therefore widens the coding window to W_mp (default 640,
+        // `RWM_WINDOW` overrides); the oracle (`oracle_c8_fungible_wmp_window`)
+        // confirms W ≥ 384 reaches the ceiling while W = 200 does not.
+        // Systematic modes keep 200.
         let win_cap: usize = if generation {
             // Generation mode retains the whole in-flight pipeline: M generations
-            // of G symbols (plus one for the currently-filling head). This is the
-            // stable-anchor analogue of W_mp — every not-yet-decoded generation
-            // stays retained (and keeps getting coded symbols) until it decodes.
-            // Fix 3: RWM_OOO_RETAIN widens this to `ooo_gens` generations so the
-            // send frontier can run far past a stalled in-order frontier.
-            // gen_pipe: retention ceiling = the M* hard cap (the DYNAMIC intake
-            // cap `gen_pipe_store_cap` below is what actually bounds the queue).
+            // of G symbols (plus one for the filling head) — every not-yet-decoded
+            // generation stays retained and keeps getting coded symbols until it
+            // decodes. `RWM_OOO_RETAIN` widens this to `ooo_gens` generations;
+            // under gen_pipe the retention ceiling is the M* hard cap (the dynamic
+            // intake cap `gen_pipe_store_cap` is what bounds the queue).
             let gens = if gen_pipe {
                 GEN_PIPE_MAX_GENS + 1
             } else if ooo_retain {
@@ -680,47 +488,31 @@ impl SenderPolicy {
         } else {
             MAX_WINDOW_SIZE
         };
-        // Fungible-frontier retention bound = the coding window itself. This is
-        // the §16.5 W_mp bound doing double duty: the backpressure cap must keep
-        // the SEND frontier within ONE window of the cumulative ack, so every
-        // not-yet-decoded seq stays INSIDE the current coding window and is raced
-        // by ongoing coded symbols (fungible in-window refill) rather than aging
-        // out and forcing a congestion-throttled targeted ARQ. At the systematic
-        // RELIABLE_STORE_MAX=1024 > W the frontier runs ~1024 ahead while the
-        // window covers only the last 640, so a lost DOF at the ack ages out to
-        // slow ARQ (MEASURED ~4.7 Mbit/s, 80% idle); lifting the cap entirely
-        // decouples them and DNFs. Sizing the store to W_mp is what makes the
-        // window rateless-fungible in practice. W_mp also comfortably exceeds the
-        // BDP (~190 sym at C8), so both paths stay saturated. RWM_STORE overrides.
+        // Fungible-frontier retention bound = the coding window itself (W_mp
+        // doing double duty): the backpressure cap keeps the send frontier within
+        // one window of the cumulative ack, so every not-yet-decoded seq stays
+        // inside the current coding window and is raced by ongoing coded symbols
+        // rather than aging out to a congestion-throttled targeted ARQ. With the
+        // systematic RELIABLE_STORE_MAX = 1024 > W the frontier would run ~1024
+        // ahead while the window covers only the last 640; lifting the cap
+        // entirely decouples them and DNFs. `RWM_STORE` overrides.
         let store_max: usize = if generation {
-            // Backpressure at the pipeline bound: the send frontier may run at most
-            // ~M generations ahead of the cumulative-decode frontier, so exactly M
-            // generations are in flight. TUN reads pause here (flow control), never
-            // dropping data. Generation mode uses the encoder's retained size as the
-            // backpressure signal (no sent_store), so this matches win_cap.
+            // Backpressure at the pipeline bound: the send frontier may run at
+            // most ~M generations ahead of the cumulative-decode frontier. TUN
+            // reads pause here (flow control), never dropping data. Generation
+            // mode uses the encoder's retained size as the backpressure signal
+            // (no sent_store).
             //
-            // Transport-ceiling fix (MEASURED at L1): win_cap = G·(M+1) as the
-            // BACKPRESSURE point is 14× the BDP at C2, so the unacked pipeline is a
-            // multi-hundred-ms standing queue (RTT inflated to 0.5–1.3 s). That
-            // bufferbloat does NOT cap single-path throughput (it is window-
-            // INDEPENDENT — a per-symbol processing limit) but it (a) produces
-            // catastrophic slow-run outliers (single-path 50 MB×6 stdev 24.8 s at
-            // G·(M+1)) and (b) SERIALIZES dual-path aggregation: the fast path
-            // stalls on the bloated in-order-frontier cross-path feedback, so
-            // symmetric C7 falls BELOW single (×0.65, anti-aggregation).
-            //
-            // The send frontier needs only TWO generations outstanding to pipeline
-            // — one filling head + one sealed-and-recovering — not M+1. Backpressure
-            // at 2·G (retention stays at win_cap = G·(M+1) for decode headroom)
-            // decouples the standing queue from the retention horizon. MEASURED
-            // (G=480, 50 MB×6): single 11.2→15.6 Mbit (stdev 24.8→0.7 s), symmetric
-            // C7 9.8→22.3 (×1.43 aggregation), heterogeneous C8 9.45→14.55 — all
-            // up, tighter, 0 DNF. RWM_STORE overrides for the sweep.
-            // Fix 3: under OOO retention the backpressure window is the wide
-            // ooo_gens·G, so the send frontier decouples from the stalled in-order
-            // frontier. Otherwise the tight 2·G standing-queue bound.
-            // gen_pipe: the static cap is the M* ceiling; the DYNAMIC per-loop cap
-            // (`gen_pipe_store_cap` = M*·G) is what gates intake each iteration.
+            // Backpressure at G·(M+1) is many BDPs, so the unacked pipeline
+            // becomes a standing queue that produces slow-run outliers and
+            // serializes dual-path aggregation (the fast path stalls on the
+            // bloated in-order-frontier feedback). The send frontier needs only
+            // two generations outstanding to pipeline — one filling head + one
+            // sealed-and-recovering — so backpressure is at 2·G while retention
+            // stays at win_cap = G·(M+1) for decode headroom. Under OOO retention
+            // it is the wide ooo_gens·G; under gen_pipe the static cap is the M*
+            // ceiling and the dynamic per-loop cap (`gen_pipe_store_cap` = M*·G)
+            // gates intake each iteration.
             let default_store = if gen_pipe {
                 GEN_PIPE_MAX_GENS * gen_size
             } else if ooo_retain {
@@ -735,35 +527,26 @@ impl SenderPolicy {
         } else if coded_only {
             gates.store_override.unwrap_or(win_cap).clamp(win_cap, 1 << 20)
         } else {
-            // Plain-reliable (systematic-free, non-generation) MEMORY ceiling for
-            // the retention store. RWM_STORE forces a STATIC window (disables the
-            // dynamic BDP cap below) for the sweep; the shipped default keeps the
-            // large retention ceiling and lets the delay-based `plain_dyn_cap`
-            // bound the *outstanding* window instead.
+            // Plain-reliable (non-generation) memory ceiling for the retention
+            // store. `RWM_STORE` forces a static window (disables the dynamic BDP
+            // cap below); by default the large retention ceiling stays and the
+            // delay-based `plain_dyn_cap` bounds the outstanding window instead.
             gates.store_override.unwrap_or(RELIABLE_STORE_MAX)
         };
-        // Delay-based send-window cap for the plain-reliable path (paper §12).
-        // The fixed RELIABLE_STORE_MAX (1024) is ≈12× the BDP at C2, so the
-        // unacked store builds a multi-hundred-ms standing queue (MEASURED RTT
-        // 0.41–0.52 s vs 10 ms base). On a CLEAN link that only adds latency, but
-        // under loss every hole must traverse that bloated queue to recover, the
-        // cumulative-ack (and thus the ack-clocked pacing) freezes for a full
-        // bufferbloat-RTT, and single-path throughput COLLAPSES (MEASURED 75→14
-        // Mbit at C2). The remedy is to bound the OUTSTANDING window to a
-        // BDP-scaled cap so the queue — and hence recovery latency — stays ~1 RTT.
-        // BtlBw×RTprop is bufferbloat-robust (windowed-max rate × min-RTT floor),
-        // so it tracks the true pipe even while the live RTT is inflated. Active
-        // only for the plain-reliable path and only when RWM_STORE is NOT forcing
+        // Delay-based send-window cap for the plain-reliable path (paper §6).
+        // A fixed RELIABLE_STORE_MAX (1024) is many BDPs at a 10 ms path, so the
+        // unacked store builds a standing queue. Under loss every hole must
+        // traverse that queue to recover, the cumulative ack (and the ack-clocked
+        // pacing) freezes for a bufferbloat RTT, and single-path throughput
+        // collapses. Bounding the outstanding window to a BDP-scaled cap keeps
+        // the queue — and recovery latency — near one RTT. BtlBw×RTprop is
+        // bufferbloat-robust (windowed-max rate × min-RTT floor). Active only
+        // for the plain-reliable path and only when `RWM_STORE` is not forcing
         // a static window; generation/coded-only keep their own structural caps.
         let plain_dyn_cap =
             reliable && !generation && !coded_only && !gates.store_env_set;
-        // Window = gain × BDP, gain = 2.0. CORRECTED 2026-08-19 (literature
-        // cross-check item 3(a), docs/research/literature-crosscheck.md; paper
-        // §16.65): this comment used to argue "≥2 keeps the pipe full (≈1 BDP)
-        // while leaving ≈1 BDP of headroom to keep sending fresh data during a
-        // one-RTT recovery round" — that recovery-runway rationale appears in
-        // NO primary source and is withdrawn. The value 2 has two PUBLISHED
-        // derivations, quoted from their sources:
+        // Window = gain × BDP, gain = 2.0 (paper §6.2: unprovenanced as a
+        // derivation). Its published analogues:
         //  - RFC 6182 §5.3 recommends 2*BDP buffers: "One BDP allows
         //    supporting reordering of segments by the network. The other BDP
         //    allows the connection to continue during fast retransmit";
@@ -774,515 +557,309 @@ impl SenderPolicy {
         //    re-derives the same 2 as "the minimum gain value that allows the
         //    sending rate to double each round"). BBR handles recovery by
         //    packet conservation and prior_cwnd, never via cwnd_gain.
-        // 2.5 adds jitter/burst slack. RWM_STORE_GAIN overrides.
+        // `RWM_STORE_GAIN` overrides.
         let store_bdp_gain: f64 = gates.store_gain;
         // Cap before the BtlBw anchor warms (a few RTTs). Tight so the startup
         // burst can't pre-bloat the queue and inflate the min-RTT floor (which
         // would then inflate the anchor itself); the anchor takes over once
-        // samples land. ~1.5× a 100 Mbit / 10 ms BDP.
+        // samples land. See `STORE_BOOT_DERIVED` for the derived value.
         let store_boot_cap: usize = gates.store_boot;
-        // Floor so a transiently-tiny BDP estimate can't strangle the pipe.
-        // DERIVED, not fitted, since 2026-08-18 — see `STORE_CAP_FLOOR`.
+        // Floor so a transiently-tiny BDP estimate can't strangle the pipe;
+        // derived — see `STORE_CAP_FLOOR`.
         let store_cap_floor: usize = STORE_CAP_FLOOR;
-        // ── Path-scaled outstanding pool (task #84, env RWM_STORE_PATHS) ──────
-        // MEASURED at L1 (2026-07-14, host-passthrough E5-2650v3): the plain-
-        // reliable OUTSTANDING ceiling is a per-TRANSFER constant
-        // (RELIABLE_STORE_MAX = 1024, which the 2×Σanchor dynamic cap latches at
-        // on fast paths because the legacy ack-interval anchor over-reads), so a
-        // multipath sender is store-starved: the DIAG shows win=1024/1024 pegged
-        // while both paths idle (infl=0 spikes). Same-binary static-store sweep,
-        // C7 plain+BBR: 1024→103 Mbit, 2048→122.7, 4096→141.3, 8192→143.7
-        // (saturated); C8: 4096→71.5, 8192→31.8 (slow-path bufferbloat collapse);
-        // singles: sc2 2048→81.6 / 4096→75.6 / 8192→43.0 (collapse), sc3
-        // degrades monotonically with a static pool (the dynamic cap binds at
-        // ~684 there and is the right law). The knee is 2048 PER LIVE PATH.
-        // Under RWM_STORE_PATHS=1 and N = live_paths ≥ 2 the dynamic-cap value
-        // scales ×N and its clamp ceiling becomes N × 2048 (RWM_STORE_PATH_POOL
-        // overrides); N = 1 keeps the legacy law bit-exactly, so singles are
-        // unaffected even with the flag ON. Default OFF: shipped byte-identical.
-        // The engine sink is NOT the binder here: single-path c1 sinks 187.7
-        // Mbit/s through the same receiver task, and pinning the C7 receiver to
-        // one core costs only −8% at the default store.
-        // DEFAULT ON (2026-07-21, "Consolidation" LOO battery: removal from the
-        // composed stack re-opens the c7 collapse class (86-97 Mbit runs, both
-        // seeds) and drops the mean; no cell regressed >>sigma. The c8 sub-sigma
-        // cost vs the legacy pool under SACK-release is the register's WATCHED
-        // follow-up — see goal-gate "Consolidation".)
+        // Path-scaled outstanding pool (`RWM_STORE_PATHS`, default on; paper
+        // §6.1). A per-transfer outstanding ceiling (RELIABLE_STORE_MAX) leaves a
+        // multipath sender store-starved: the pool must fund Σ per-path
+        // (BDP + one recovery round), which grows with the path count. With
+        // N = live_paths ≥ 2 the dynamic-cap value scales with N and its ceiling
+        // becomes N × 2048 (`RWM_STORE_PATH_POOL`, the measured per-live-path
+        // knee); N = 1 keeps the single-path law bit-exactly.
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // ── Pool-anchor honest dual-store law (env RWM_POOL_ANCHOR) ──────────
-        // Goal-gate "Ship The Wins 1" (the §16.35 c7 blocker's named successor):
-        // at N ≥ 2 live paths the pooled-store cap's RATE input is the per-path
-        // hygiene-grade SEND-interval anchor (SendRateAnchor fed at
-        // charge_in_flight — burst-immune by construction: Δt spans the SEND
-        // interval, so the est-cadence ack clock's tighter ack bursts cannot
-        // inflate it; clock-gap buckets discarded) instead of the legacy
-        // ack-interval windowed-max (measured over-read ×4.6–7.4, a further
-        // ×3.4–3.7 under RWM_EST_CADENCE). Law: pool = clamp(Σ_i
+        // Pool-anchor honest dual-store law (`RWM_POOL_ANCHOR`). At N ≥ 2 live
+        // paths the pooled-store cap's rate input is the per-path send-interval
+        // anchor (`SendRateAnchor` fed at `charge_in_flight` — burst-immune by
+        // construction: Δt spans the send interval, so ack bursts cannot inflate
+        // it; clock-gap buckets discarded) instead of the ack-interval
+        // windowed-max, which over-reads. Law: pool = clamp(Σ_i
         // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
-        // the capw shape (ONE shared pool, borrowing free), engaged only with
-        // ALL live send-anchors warm; until then the configured path-scaled law
-        // runs verbatim. The Copa cwnd feed (record_delivery/on_ack) and every
-        // N = 1 law are bit-exactly untouched — no CopaFeed machinery runs at
-        // duals (the measured −22…−27 c7 RS-composition price stays
-        // unreachable; no src_inflight is charged — the §16.34 falsification-5
-        // lesson). Default rides the est-cadence resolution (OFF unset; ON
-        // under the est opt-in — the composed default flip was measured and
-        // REVERTED on its pre-set c7 clause, 2026-08-07).
+        // the capw shape (one shared pool, borrowing free), engaged only with
+        // all live send-anchors warm; until then the configured path-scaled law
+        // runs. The Copa cwnd feed and every N = 1 law are untouched. The
+        // default rides the `RWM_EST_CADENCE` resolution (off when unset).
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // ── The store-cap path set (env RWM_STORE_CAP_UNIFIED) ───────────────
-        // Goal-gate "Store-Cap Triplication" (pre-registered 2026-08-09): the
+        // The store-cap path set (`RWM_STORE_CAP_UNIFIED`, default off): the
         // dyn-cap phase's Σ-anchor base and honest per-path cap sum move off
-        // `active_paths()` (the cwnd-saturation data-scheduling filter) onto
-        // `live_paths()` — the set `n_live` is already counted from, and the
-        // set every OTHER honest-cap consumer in this phase already reads.
-        // Default OFF: the shipped tree is bit-identical.
+        // `active_paths()` (the cwnd-saturation filter) onto `live_paths()` —
+        // the set `n_live` is counted from.
         let store_cap_unified = gates.store_cap_unified && plain_dyn_cap;
-        // ── The composed THREE-TERM limit (env RWM_THREE_TERM) ────────────
-        // Goal-gate "Three-Term Law" (pre-registered 2026-08-10), paper
-        // §16.43 + §16.44: the outstanding-data limit is Σ per-path network
-        // window + Σ per-path emission slack + ONE resequencing span, each
-        // Little's law over a measured signal, no fitted coefficient. The
-        // span term is identically zero at a single path BY ARITHMETIC
-        // (max RTprop = min RTprop), which is what retires the
-        // `active_paths()`/`live_paths()` topology branch without an
-        // `if N == 1`. Scoped to the plain dynamic cap: under Copa
-        // ownership cwnd IS the operating point and that law is untouched.
-        // Default OFF: the shipped tree is bit-identical.
-        // ── THE COMPOSED CAP LAW (env RWM_COMPOSED_CAP) ───────────────────
-        // Paper §16.56, ADR-0070 Deliverable 2. The composition gate: the
-        // SAME pool law as `three_term_on` above (it IS
-        // `net::three_term_store_cap` — one implementation, nothing to
-        // drift), plus the unified live set at the BRAKE, plus the
-        // late-stage per-path brake on the path's own cwnd. Composing is all
-        // it does; it introduces no law and no constant of its own.
+        // The composed three-term limit (`RWM_THREE_TERM`, default off; paper
+        // §10): Σ per-path network window + Σ per-path emission slack + one
+        // resequencing span, each Little's law over a measured signal. The span
+        // term is identically zero at a single path by arithmetic (max RTprop =
+        // min RTprop), so there is no `if N == 1`. Scoped to the plain dynamic
+        // cap: under Copa ownership cwnd is the operating point.
         //
-        // Both this gate and `RWM_THREE_TERM` reach the pool seat, so the
-        // three-term arm remains exactly what it was — the composed arm is
-        // that arm PLUS the brake, which is the axis ADR-0070 says has never
-        // been measured in composition with a sane pool.
+        // The composed cap (`RWM_COMPOSED_CAP`, default off): the same pool law
+        // as `three_term_on` (`net::three_term_store_cap`), plus the unified live
+        // set at the brake, plus the late-stage per-path brake on the path's own
+        // cwnd. It introduces no law and no constant of its own; the three-term
+        // arm stays exactly what it was.
         let composed_cap = gates.composed_cap && plain_dyn_cap;
         let three_term_on = (gates.three_term || composed_cap) && plain_dyn_cap;
-        // ── THE `×N` DELETION (env RWM_SUM_CAP) ───────────────────────────
-        // Paper §16.60/§16.64, ADR-0070 finding 2. The pooled law's count
-        // multiplier is removed from the VALUE and kept in the CEILING:
+        // The `×N` deletion (`RWM_SUM_CAP`, default on; paper §6.1). The pooled
+        // law's count multiplier is removed from the value and kept in the
+        // ceiling:
         //
         //   `=0` arm   cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
-        //   SHIPPED    cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
+        //   shipped    cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
         //
-        // The law's own decl sentence names "Σ per-path (BDP + one recovery
-        // round of runway)", which is `Σᵢ(gain·anchorᵢ) = gain·Σ` — already
-        // linear in the path count because the Σ is. The shipped expression
-        // multiplies that already-summed base by the count a SECOND time, and
-        // the multiplier's provenance is ABSENT from this repository: not in
-        // the birth commit (`5cace52`), not in the doc comment, not at the
-        // decl site, not in the ledger. Its only cited evidence is a static-
-        // store sweep run with RWM_STORE set, which DISABLES the dynamic law
-        // entirely and therefore measures the CEILING — it is structurally
-        // incapable of seeing the multiplier.
-        //
-        // Exactly one factor changes: gain (a FOSSIL, finding 3), the knee
-        // (MEASURED BUT STALE, finding 4), the floor (DERIVED, §16.59), the
-        // Σ-set and the estimator are all carried unchanged and IDENTICAL on
-        // both arms, so they cancel out of the comparison rather than
-        // confounding it. Zero new constants; bit-identical at N = 1 by
+        // The quantity the pool must fund, Σ per-path (BDP + one recovery round
+        // of runway) = `Σᵢ(gain·anchorᵢ) = gain·Σ`, is already linear in the
+        // path count because the Σ is; the `=0` arm multiplies it by N a second
+        // time. Exactly one factor changes: gain, knee, floor, Σ-set and
+        // estimator are identical on both arms. Bit-identical at N = 1 by
         // construction (`n_live < 2` returns None before the multiplier is
-        // read). Scoped to the plain dynamic cap like its siblings, and
-        // INDEPENDENT of `store_cap_unified` — U picks the Σ's path SET, this
-        // picks the count MULTIPLIER, and the four combinations are four
-        // distinct formulas.
-        //
-        // **DEFAULT ON since 2026-08-19** — goal-gate "Ladder Battery —
-        // RESULTS" rung N, the one gate that program recommended flipping:
-        // interior at both scoreable duals (`pin` 0.000, `eng` 1.000,
-        // `chg_frac` 1.000 — the multiplier changed the computed cap on 100 %
-        // of engaged refreshes), a control that reproduced the shipped 4096
-        // pin, goodput UP at the pre-registered risk cell c8 on BOTH seeds
-        // (+9.29 / +1.34 Mbit/s), N-IDENT clean at the singles, CPU
-        // 0.937–1.005×, every guard green. The span the multiplier was
-        // accidentally funding was measured NOT load-bearing at c8 in this era
-        // — under-funded by 45.4 % and goodput rose. `RWM_SUM_CAP=0` re-runs
-        // the displaced quadratic, unchanged and with no deprecation warning.
+        // read). Independent of `store_cap_unified` (the Σ's path set).
+        // `RWM_SUM_CAP=0` re-runs the quadratic.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
-        // ── THE δ-PRICED VALUE MULTIPLIER (env RWM_DELTA_CAP) ─────
-        // Paper §16.67/§16.70/§16.71, ADR-0071 family 2. The pooled law's
-        // VALUE multiplier is off the `gain = 2.0` fossil (ADR-0070 finding 3)
-        // and on the CoDel-DERIVED setpoint band:
+        // The δ-priced value multiplier (`RWM_DELTA_CAP`, default on; paper
+        // §6.1). The pooled law's value multiplier is the CoDel-derived setpoint
+        // band instead of `gain = 2.0`:
         //
         //   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ), floor, N·knee )
         //   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)  ==  (b+1)/30
         //
         // RFC 8289 §3.2 derives 5–10 % of RTT from Kleinrock power
-        // maximisation; every point of our δ dial sits 10–40× above it, and
-        // §16.57 measured on our own wire exactly what the derivation
-        // predicts (2.4× the queue, goodput parity, 43–48 % worse latency).
-        // ONE factor changes: the Σ, its path set, the estimator, the
-        // ceiling and the floor are identical on both arms and cancel out of
-        // the A/B. INDEPENDENT of `sum_cap` (the COUNT multiplier) and of
-        // `store_cap_unified` (the Σ's SET) — three axes of one law.
-        // Bit-identical at N = 1 by construction.
-        //
-        // **DEFAULT ON since 2026-08-19** — goal-gate "Candidates Battery —
-        // RESULTS" rung D, the one gate that program recommended flipping:
-        // D-LAT SIX OF SIX (goodput parity at every dual on both seeds, no
-        // reading outside 2σ_pooled in either direction, with `q_p50` down
-        // 10–16 ms at c7, 113–117 ms at c8 and 130–200 ms at c8L); INTERIOR
-        // with the ceiling provably inert at c7 and c8 (`pin` 0.0000, `eng` =
-        // `chg` = 1.00, cap inside its ±20 % band); `eng = 0/0` at c1 and sc2,
-        // the N = 1 identity confirmed on the wire; c8's paired dead wall
-        // SHORTENED (18/23 non-zero pairs, sign test p ≈ 0.011). The pool's
-        // gain was funding DELAY, not goodput. Bounds carried, not dropped:
-        // goodput is PARITY and not a win; c8L is a PARTIAL delivery (`pin` =
-        // 0.23, in the gap between the contract's two pre-declared branches,
-        // neither claimed); the probe disagrees in sign on one of six rows;
-        // and the c8/seed-7 abort class is ARM-CORRELATED, so that cell's
-        // seed-7 exclusions are a selection on the treatment.
-        // `RWM_DELTA_CAP=0` re-runs the displaced `gain = 2.0` fossil,
-        // unchanged and with no deprecation warning.
-        //
-        // COMPOSED WITH `RWM_SUM_CAP` (also ON since 2026-08-19, §16.64) the
-        // SHIPPED pooled law is the δ-cap over the SUMMED anchors:
-        //
-        //   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ), floor, N·knee )
-        //
-        // — with the `N·knee` ceiling measured INERT at the duals rather than
-        // assumed inert, and `gain` gone from the shipped VALUE entirely. The
-        // two gates factorise on the wire as well as on paper: the battery's
-        // DR arm read D's cap to within 0.1 % (c7) and 4.5 % (c8).
+        // maximisation. One factor changes: the Σ, its path set, the estimator,
+        // the ceiling and the floor are identical on both arms. Independent of
+        // `sum_cap` (the count multiplier) and `store_cap_unified` (the Σ's
+        // set) — three axes of one law. Bit-identical at N = 1 by construction.
+        // `RWM_DELTA_CAP=0` re-runs `gain = 2.0`.
         let delta_cap = gates.delta_cap && plain_dyn_cap;
-        // ── THE EXTRACTED LATE-STAGE BRAKE (env RWM_LATE_BRAKE) ───────────
-        // Paper §16.60.1, ADR-0070 finding 7 ("the correct architecture,
-        // DISABLED WITHOUT A DECISION"). The predicate, whole:
+        // The late-stage brake alone (`RWM_LATE_BRAKE`, default off). The
+        // predicate, whole:
         //
         //   brake closes  ⟺  ∀ i ∈ live_paths() : in_flightᵢ ≥ cwndᵢ
         //
-        // This is `composed_cap`'s point 3 with its points 1 and 2 removed —
-        // the SAME code path, the SAME per-path cap (the path's own cwnd:
-        // derived, never configured, always warm), the SAME `live_paths()` set
-        // (with `capᵢ = cwndᵢ` the predicate is exactly `available()ᵢ == 0`, so
-        // an `active_paths()` brake would resolve ON and never close — §16.53's
-        // DIVERGED lesson, a null EFFECT wearing a null RESULT's clothes). No
-        // constant appears in the predicate at all.
+        // This is `composed_cap`'s brake without its pool law — the same code
+        // path, the same per-path cap (the path's own cwnd: derived, never
+        // configured, always warm), the same `live_paths()` set (with
+        // `capᵢ = cwndᵢ` the predicate is exactly `available()ᵢ == 0`, so an
+        // `active_paths()` brake would never close). No constant appears in the
+        // predicate. Without it the brake arms only with `composed_cap` (which
+        // forces the three-term pool law) or `RWM_INFL_CAP`'s global
+        // `Σ in_flight ≥ n` against an operator constant.
         //
-        // It exists because the brake was not separately armable: it arms on
-        // `eff_infl_cap > 0 || composed_cap`, and `composed_cap` also forces
-        // `three_term_on` above — so the only two pre-existing ways to get a
-        // brake give either the composed pool law §16.57 refuted on magnitude,
-        // or `RWM_INFL_CAP`'s GLOBAL `Σ in_flight ≥ n` test against an
-        // operator-invented constant (`infl_percap` rides `gen_pipe`, off on
-        // this seat). Neither of those knobs changes meaning here.
-        //
-        // NOT scoped to `plain_dyn_cap`: the brake is an EMISSION-side
-        // congestion test, not a cap law, and it is exactly the seat
-        // `composed_cap` reaches. Default OFF: `cwnd_full` stays permanently
-        // false on the plain seat and the store cap remains the sole brake on
-        // outstanding (PIPELINE VERIFICATION MATRIX row 17).
+        // Not scoped to `plain_dyn_cap`: the brake is an emission-side
+        // congestion test, not a cap law. Off, `cwnd_full` stays false on the
+        // plain seat and the store cap remains the sole brake on outstanding.
         let late_brake = gates.late_brake;
-        // b(δ) at this tunnel's named point on the dial, ONCE.
+        // b(δ) at this tunnel's named point on the dial, once.
         let delta_b = crate::net::delta_budget_b(protocol_hint);
-        // ρ, the retention dial's declared value in this scope (see the
-        // field doc): the plain dynamic cap is RETAIN-UNTIL-ACKED, so the
-        // contract's ρ is 1 here — a scope, not a branch.
+        // ρ, the retention dial's declared value in this scope (see the field
+        // doc): the plain dynamic cap is retain-until-acked, so the contract's
+        // ρ is 1 here — a scope, not a branch.
         let contract_rho: f64 = 1.0;
-        // ── SACK-clocked store release (env RWM_STORE_SACK_RELEASE) ──────────
-        // Goal-gate "SACK-Clocked Store Release" (pre-registered 2026-07-21):
-        // the retention store releases slots only on the cumulative frontier,
-        // so SACKed-but-not-cumulative symbols hold slots a full frontier round
-        // — at c7 the store recycles at frontier latency, not path rate. Under
-        // this law a SACKed seq is UNCOUNTED from the flow-control outstanding
-        // (the slot returns to the pool / per-path account, the window opens)
-        // while sent_store + retransmit_buffer + nack_retx_at + source_path_map
-        // are kept UNTOUCHED until the cumulative frontier passes it — release
-        // a STORE SLOT, never recoverability (the RWM_SACK_PRUNE lesson; see
-        // sack_release_mark). DEFAULT ON (2026-07-21, the pre-registered
-        // battery earned the flip: c7 0.96–1.05×Σ both seeds, sc2 +3–4 at
-        // N=1, dual-c1 +20–22 composed, no regression; goal-gate
-        // "SACK-Clocked Store Release"); RWM_STORE_SACK_RELEASE=0 is the
-        // legacy frontier-only-release opt-out arm, under which the released
-        // set stays empty and the gate arithmetic is exactly the legacy
-        // store_len.
+        // SACK-clocked store release (`RWM_STORE_SACK_RELEASE`, default on;
+        // paper §6.3, ADR-0060). Releasing slots only on the cumulative frontier
+        // makes SACKed-but-not-cumulative symbols hold slots a full frontier
+        // round, so the store recycles at frontier latency, not path rate. Under
+        // this law a SACKed seq is uncounted from the flow-control outstanding
+        // (the window opens) while sent_store + retransmit_buffer + nack_retx_at
+        // + source_path_map are kept until the cumulative frontier passes it —
+        // release a store slot, never recoverability (see `sack_release_mark`).
+        // `=0` is the frontier-only-release arm, under which the released set
+        // stays empty and the gate arithmetic is exactly `store_len`.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // ── Honest floor-clock store caps (feat/percap-honest-cap) ────────────
-        // GUARD-RESULTS residual (i): with the redirect channel closed, the c8
-        // parking flowed through the softmax's OWN picks under the knee-clamped
-        // slow cap — the legacy plain anchor over-reads ×4.6–7.4 ("Anchor
-        // Hygiene" battery (b)) so cap_slow latched at the 2048 knee and the
-        // derived differentiation never engaged. With the honest send-interval
-        // sampler (RWM_PLAIN_RS) the anchor reads ≈1× truth, and the cap law
-        // is re-derived on it: cap_i = anchor_i·(K_i + gain − 1) +
-        // rate_i·(gain−1)·R — residence on the measured unloaded drain clock
-        // plus runway on the RECOVERY engine's clock (R = the 100-ms hole-
-        // refresh/tail-sweep cadence bound), see `honest_store_cap`. Applies
-        // to the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
-        // over-read was accidentally load-bearing there; K supplies that
-        // headroom explicitly and honestly). Engaged only where the honest
-        // sampler is live (plain in-order, no Copa CC ownership — the Σcwnd
-        // and per-path cwnd laws are already honest and stay untouched).
-        // RWM_HONEST_CAP=0 = the floor-law control arm (reproduces the −20%);
-        // both gates default-OFF paths keep the shipped tree byte-identical
-        // (RWM_PLAIN_RS itself is default OFF).
+        // Honest floor-clock store caps (`RWM_HONEST_CAP`, with `RWM_PLAIN_RS`).
+        // The ack-interval plain anchor over-reads, so a knee-clamped slow-path
+        // cap never engages the derived per-path differentiation. With the
+        // honest send-interval sampler (`RWM_PLAIN_RS`, default off) the anchor
+        // reads ≈1× truth, and the cap law is re-derived on it:
+        // cap_i = anchor_i·(K_i + gain − 1) + rate_i·(gain−1)·R — residence on
+        // the measured unloaded drain clock plus runway on the recovery
+        // engine's clock (R = the 100-ms hole-refresh/tail-sweep bound), see
+        // `honest_store_cap`. K supplies explicitly the headroom the over-read
+        // supplied by accident. Engaged only where the honest sampler is live
+        // (plain in-order, no Copa CC ownership — the Σcwnd and per-path cwnd
+        // laws are already honest). `RWM_HONEST_CAP=0` is the floor-law arm.
         let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
-        // ── #85 budget-conserving taper (RWM_TAPER_R, default OFF) ────────────
-        // MEASURED (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13): the
-        // legacy taper accrual below sums to Σ τ(t) = r symbols PER ACK CYCLE
-        // (taper_offset resets on cumulative-ack advancement), so the emitted
-        // plain-mode proactive overhead is ~r/cycle-length — nearly independent
-        // of r's computed magnitude. Legacy r*=0.206 and corrected r*=0.255 both
-        // emitted cod/src ≈ 0.03–0.10 at c3-realtime: the whole r* control loop
-        // (incl. the §8.4.1 burst-tail correction) was INERT at the wire. With
-        // the flag ON, `TaperBudget` makes emission consume r as computed: a
-        // per-window budget (emitted ≈ r × source per coding window), the taper
-        // shape kept as a re-timing (repair still concentrated at the frontier),
-        // paced ≤ 1 repair per source send and spare-capped (existing anchors,
-        // no new constants). OFF ⇒ byte-identical legacy emission (A/B arm).
-        // L0 VERDICT (2026-07-18, goal-gate "Taper Emission Fix"): the budget
-        // law is LIVE at the wire (cod/src 0.03-0.05 → 0.21-0.34 on the
-        // c3heavy 2x2) but delivered reliability DEGRADES at realtime and the
-        // r* arms stay tied — the emitted repair codes over the LEADING sliding
-        // window (in-flight entanglement, the RWM_MIN_R defect class above), so
-        // it is recovery-inert within realtime's reorder horizon; quantity was
-        // not the only binder. Default stays OFF; flipping it is gated on the
-        // solvable-span emission follow-up, not on L1 alone.
-        // §16.20 (c): under RWM_UNIFIED the quantity law is the default (the #85
-        // fix composes with the trailing solvable-span placement below, which
-        // removes the leading-window entanglement that kept it OFF); RWM_TAPER_R=0
-        // still reproduces the legacy accrual as the same-binary A/B arm.
+        // Budget-conserving taper (`RWM_TAPER_R`, default = `RWM_UNIFIED`; paper
+        // §3.3). A per-ack-cycle taper accrual sums to Σ τ(t) = r symbols per
+        // ack cycle (taper_offset resets on cumulative-ack advancement), so the
+        // emitted proactive overhead would be ~r/cycle-length, nearly
+        // independent of r's computed magnitude — the r* control loop would be
+        // inert at the wire. With the flag on, `TaperBudget` makes emission
+        // consume r as computed: a per-window budget (emitted ≈ r × source per
+        // coding window), the taper shape kept as a re-timing (repair still
+        // concentrated at the frontier), paced ≤ 1 repair per source send and
+        // spare-capped. It composes with the trailing solvable-span placement
+        // below, which removes the leading-window entanglement that makes the
+        // quantity alone recovery-inert. `RWM_TAPER_R=0` reproduces the
+        // per-ack-cycle accrual.
         let taper_r_budget = gates.taper_r;
-        // §16.20 (c): trailing solvable-span placement for plain-mode proactive
-        // repair — span width A* = clamp(rate·D, 1, W) with D = b(hint)·RTprop
-        // (§8.8 budgets: Realtime ½, Auto 1, Bulk 2 RTT — capped at 2·RTprop, the
-        // deficit-round limit) and trailing offset Δ = ceil(rate·jitter) ≥ 1, so
-        // every covered member has LANDED when the repair does (solvable at
-        // arrival — the #85 leading-window entanglement removed structurally).
+        // Trailing solvable-span placement for plain-mode proactive repair
+        // (paper §5.3) — span width A* = clamp(rate·D, 1, W) with
+        // D = b(δ)·RTprop (Realtime ½, Auto 1, Bulk 2 RTT — capped at 2·RTprop,
+        // the deficit-round limit) and trailing offset Δ = ceil(rate·jitter) ≥ 1,
+        // so every covered member has landed when the repair does (solvable at
+        // arrival).
         let unified_span = gates.unified;
-        // feat/anchor-hygiene (`RWM_ASTAR_ANCHOR`): the A* rate anchor repaired.
-        // Legacy A* reads `est.throughput()` — a 2-s-interval α=0.125 EWMA of the
-        // report-tick send rate — which (i) pins A* = 1 for ~10 s of every stream
-        // (realtime FEC inert: ru/rf ≈ 9%) and (ii) is flood-poisonable (A* 1→38
-        // off the post-stall release burst) — goal-gate COLLAPSE ATTRIBUTION,
-        // defect designs A+B. The repair: a windowed-max send-rate anchor
-        // (SendRateAnchor) fed by the sender's OWN send events — live within ~1
-        // RTT (hygiene rule 1), with gap-spanning/flood buckets DISCARDED
-        // (rule 2). Gate off ⇒ the EWMA path byte-identical.
-        // goal-gate "Unified Shedding": DEFAULT ON under the unified machine —
-        // the span law ships with its repaired anchor (fix A gates the flip
-        // battery; without it the realtime spans pin at width 1, ru/rf ≈ 9%).
-        // `RWM_ASTAR_ANCHOR=0` / `RWM_ANCHOR_HYGIENE=0` still opt out for A/B.
+        // `RWM_ASTAR_ANCHOR` (ADR-0061, default on under the unified machine):
+        // the A* rate anchor. An EWMA of the report-tick send rate (`est.
+        // throughput()`) pins A* = 1 for the first seconds of a stream and is
+        // flood-poisonable off a post-stall release burst. The repair: a
+        // windowed-max send-rate anchor (`SendRateAnchor`) fed by the sender's
+        // own send events — live within ~1 RTT, with gap-spanning/flood buckets
+        // discarded. `RWM_ASTAR_ANCHOR=0` / `RWM_ANCHOR_HYGIENE=0` opt out.
         let astar_anchor_on = unified_span && gates.astar_anchor;
-        // ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
-        // Part of the unified machine's REALTIME semantics: armed only on the
-        // EVICT path (`!reliable` — the ρ = 1 RETAIN contract is excluded by
-        // construction) under RWM_UNIFIED; `RWM_UNIFIED_SHED=0` reproduces the
-        // serializing arm for A/B. A hole whose retransmit can no longer meet
-        // the δ deadline D = b(hint)·RTprop (the span law's own D) is DROPPED
-        // from the ARQ set instead of serializing the stream behind it — but
-        // only while cumulative shed stays within the DERIVED 1−ρ budget
-        // (`residual_loss_after_fec`: ε̂·(1−P_fec) at the live (r, A*, σ²)
-        // operating point). Budget spent ⇒ serialize (ρ wins over δ).
+        // δ-honest overload shedding (paper §5.6, ADR-0064): armed only on the
+        // EVICT path (`!reliable` — the ρ = 1 retain contract is excluded by
+        // construction) under `RWM_UNIFIED`; `RWM_UNIFIED_SHED=0` is the
+        // serializing arm. A hole whose retransmit can no longer meet the δ
+        // deadline D = b(δ)·RTprop is dropped from the ARQ set instead of
+        // serializing the stream behind it — but only while cumulative shed stays
+        // within the derived 1−ρ budget (`residual_loss_after_fec`: ε̂·(1−P_fec)
+        // at the live (r, A*, σ²) operating point). Budget spent ⇒ serialize
+        // (ρ wins over δ).
         let shed_on = shed_armed(gates.unified, reliable, gates.unified_shed);
-        // ── Removed proactive-repair experiments (DEPRECATION REGISTER) ───────
-        // RWM_FRONTIER* ("Proactive Frontier", 2026-07-07: repair anchored at the
-        // ½-RTT-stale ack frontier loses the race to its own ARQ — rf=718 emitted,
-        // ru=4 useful) and RWM_INLINE_REPAIR ("Repair In-Flight", 2026-07-08:
-        // stall-starved + cross-grid stranding — every inline config wedged or
-        // crawled) were both refuted on GEOMETRY, not substrate, and REMOVED
-        // 2026-07-27. Their goal (repair present at stall) is achieved by
-        // RWM_PROACTIVE_PACER below, whose own measured null resolved into the
-        // structural presence⊥throughput identity; the unified TRAILING span law
-        // (§16.20.3) is the derived realization of the frontier intent. The FDIAG
-        // diagnosis instrument (RWM_FDIAG, receiver loop) is retained.
-        // ── Proactive-repair pacer (RWM_PROACTIVE_PACER) — present-at-stall ───────
-        // A DEDICATED proactive-repair emission on the GENERATION grid, decoupled
-        // from BOTH source availability and the ack-clock `target`. For each
-        // in-flight generation (still FILLING or recently sealed) it emits
-        // proactive repair over the retained contiguous PREFIX at the full
-        // generation width (`generate_repair_filling` → same (anchor, G) matrix, no
-        // cross-grid stranding), paced by the shared CC token bucket. Fixes BOTH
-        // refutations of the interspersed inline repair (goal-gate "Repair
-        // In-Flight"): (1) NOT stall-starved — it runs in the main loop every
-        // iteration incl. tx_paused wakeups, so repair flows under backpressure when
-        // the frontier most needs it; (2) NOT cross-grid stranded — it codes the
-        // generation grid, so a buffered filling equation combines directly with the
-        // reactive generation deficit. The covering equation reaches the receiver
-        // EARLY (around when the hole is sent, not a generation-span later at seal),
-        // so it is PRESENT when the frontier detects the hole → proactive decode, no
-        // round-trip. Supersedes the sealed batched proactive path when on; the
-        // reactive deficit (RWM_REACT_CAP + RWM_REPAIR_WAIT) stays the bounded
-        // fallback for holes the proactive repair still misses. Systematic only;
-        // shipped path untouched.
+        // Proactive-repair pacer (`RWM_PROACTIVE_PACER`, systematic only) —
+        // present-at-stall. A dedicated proactive-repair emission on the
+        // generation grid, decoupled from both source availability and the
+        // ack-clock `target`. For each in-flight generation (still filling or
+        // recently sealed) it emits proactive repair over the retained contiguous
+        // prefix at the full generation width (`generate_repair_filling` → same
+        // (anchor, G) matrix, no cross-grid stranding), paced by the shared CC
+        // token bucket. It runs every main-loop iteration including tx_paused
+        // wakeups, so repair flows under backpressure, and it codes the
+        // generation grid, so a buffered filling equation combines directly with
+        // the reactive generation deficit. The covering equation reaches the
+        // receiver around when the hole is sent, so it is present when the
+        // frontier detects the hole → proactive decode, no round trip. Supersedes
+        // the sealed batched proactive path when on; the reactive deficit
+        // (`RWM_REACT_CAP` + `RWM_REPAIR_WAIT`) stays the bounded fallback.
         let proactive_pacer = systematic && gates.proactive_pacer;
-        // ── Cross-path repair placement (RWM_XPATH_REPAIR) — the C8 realization ────
-        // Route proactive (and deficit) REPAIR to the max-spare-capacity path (the
-        // underutilized path — the slow path once the fast path is source-saturated)
-        // instead of the marginal-cost softmax (which biases repair toward the fast
-        // path, so it competes with systematic source — the single-path
-        // presence⊥throughput tension). With this on, a fast-path loss is covered by
-        // repair already in flight on the SLOW path, WITHOUT displacing fast-path
-        // source: presence is bought from the spare path's capacity. Symmetric paths
-        // (C7) have equal spare, so `place_repair_spare_path` splits the near-tie set
-        // uniformly (no hard-argmax concentration → no C7 regression). Generation/
-        // systematic only; shipped path untouched. Default-OFF.
+        // Cross-path repair placement (`RWM_XPATH_REPAIR`, generation only,
+        // default off). Route proactive (and deficit) repair to the
+        // max-spare-capacity path instead of the marginal-cost softmax (which
+        // biases repair toward the fast path, where it competes with systematic
+        // source). A fast-path loss is then covered by repair already in flight
+        // on the slow path, without displacing fast-path source. Symmetric paths
+        // have equal spare, so `place_repair_spare_path` splits the near-tie set
+        // uniformly (no hard-argmax concentration).
         let xpath_repair = generation && gates.xpath_repair;
         // Symbol packer: accumulate small packets into packed symbols for Realtime mode
         let use_packing = protocol_hint == ProtocolHint::Realtime;
-        // RWM_DIAG (transport-ceiling diagnosis) master gate. Carried into the
-        // emission step as `SenderPolicy::diag_on` (the GLIFE fill tracking).
+        // `RWM_DIAG` master gate. Carried into the emission step as
+        // `SenderPolicy::diag_on` (the GLIFE fill tracking).
         let diag_on = gates.diag;
-        // Per-path store-attribution GAUGE (goal-gate "C8-Aware Pool Law"
-        // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG
-        // the account maps are maintained so the DIAG `sout=` field shows each
-        // path's share of the POOLED outstanding (which path is holding the
-        // unacked-frontier span). The maps feed the DIAG print alone. (The
-        // per-path account LAW built on them, RWM_STORE_PERCAP, and its guard
-        // and borrowing arms were refuted and removed.)
+        // Per-path store-attribution gauge (no behaviour): under `RWM_DIAG` the
+        // account maps are maintained so the DIAG `sout=` field shows each
+        // path's share of the pooled outstanding (which path is holding the
+        // unacked-frontier span). The maps feed the DIAG print alone.
         let percap_track = diag_on && plain_dyn_cap;
-        // ── feat/recovery-suppression: multipath recovery suppression ─────────
-        // (`RWM_RECOV_MP`, DEFAULT ON 2026-07-21 — the "Consolidation" LOO
-        // battery: removal costs −12.3/−13.9 Mbit >>sigma at c7 on both seeds
-        // (retx 18k vs 5.4k) with the dual-c1 retx flood (13-30k) re-appearing;
-        // neutral within sigma everywhere else. `=0` is the legacy global-clock
-        // opt-out arm. Plain window reliable mode only — generation mode has no
-        // per-seq ARQ to suppress).
-        // Sub-gate for trace attribution: _LAW (per-flight hole law, default ON
-        // under the umbrella). The _SERIAL per-path batch-namespace arm was
-        // REMOVED 2026-07-27 (register: refuted on the clean substrate, ×2.4
-        // sender CPU — see the module-header design note (2)).
+        // Multipath recovery suppression (`RWM_RECOV_MP`, default on; paper §7.1,
+        // ADR-0059). `=0` is the global-clock opt-out arm. Plain window reliable
+        // mode only — generation mode has no per-seq ARQ to suppress.
+        // `RWM_RECOV_MP_LAW` (per-flight hole law, default on under the
+        // umbrella) is the sub-gate for trace attribution.
         let recov_mp = gates.recov_mp && reliable && !generation;
         let recov_mp_law = recov_mp && gates.recov_mp_law;
-        // ── diag/lossy-residual: SINGLE-path hole-law suppression ─────────────
-        // (`RWM_RECOV_SP`, default OFF — the A/B arm; goal-gate "Lossy-Single
-        // Residual"). The 2026-07-27 diagnosis measured the N=1 reactive plane
-        // firing ×4.4–5.7 the realized loss (sc2-100M: fired 3313, y=2659 younger
-        // than the law's own threshold, vs ~580 netem drops; sc3: 2556 vs ~510)
-        // — the "single-path gaps are FIFO-real" premise of `mp_hole_ripe`'s
-        // N=1 bypass is REFUTED on a jittery substrate (netem delay jitter
-        // reorders tens of packets deep; the receiver's gap reports name
-        // merely-late seqs, and re-fires chase flights still queued behind the
-        // store-cap standing queue). The law: at N=1 a gap seq with a LIVE
-        // flight (original or retransmit) fires only once the flight is
-        // ≥ 9/8×max(smoothed clocks) old (RFC 9002 §6.1.2, same
-        // `mp_time_threshold_us`); TIME channel only — the §6.1.1 packet
-        // channel is excluded at N=1 (reorder depth ≫ kPacketThreshold).
+        // Single-path hole-law suppression (`RWM_RECOV_SP`, default off). The
+        // N = 1 bypass of `mp_hole_ripe` assumes single-path gaps are FIFO-real;
+        // on a jittery substrate delay jitter reorders tens of packets deep, so
+        // the receiver's gap reports name merely-late seqs and re-fires chase
+        // flights still queued behind the store-cap standing queue. The law: at
+        // N = 1 a gap seq with a live flight (original or retransmit) fires only
+        // once the flight is ≥ 9/8×max(smoothed clocks) old (RFC 9002 §6.1.2,
+        // same `mp_time_threshold_us`); time channel only — the §6.1.1 packet
+        // channel is excluded at N = 1 (reorder depth ≫ kPacketThreshold).
         // Suppression-only: the receiver's hole-refresh re-advertises until the
         // flight ripens, so real holes still recover.
         let recov_sp = gates.recov_sp && reliable && !generation;
-        // ── feat/c8-conversion: recovery clocks on LIVE paths ────────────────
-        // (`RWM_RECOV_MP_LIVE`, default OFF — the A/B arm; goal-gate "C8
-        // Slow-Path Conversion"). The hole law's N + per-path clock snapshot
-        // read `active_paths()` — the saturation-filtered set (`available() >
-        // 0`) whose cwnd-full-path trap collapses the law to the N=1 bypass
-        // (legacy age gate on a cross-path clock) mid-transfer; the same
-        // filter trap already documented at the Copa-sole store law and
-        // `capw_store_cap`. Diagnosis signature (2026-08-06): c8-pbs 412–749
-        // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
-        // threshold. Under this gate the snapshot uses `live_paths()`.
+        // Recovery clocks on live paths (`RWM_RECOV_MP_LIVE`, default off). The
+        // hole law's N and per-path clock snapshot read `active_paths()` — the
+        // saturation-filtered set (`available() > 0`), whose cwnd-full-path trap
+        // collapses the law to the N = 1 bypass (an age gate on a cross-path
+        // clock) mid-transfer. Under this gate the snapshot uses `live_paths()`.
         let recov_mp_live = gates.recov_mp_live && recov_mp_law;
-        // Goal-gate "Unlock The Default 2": `sidle_derived` is DIAG-only (the
-        // second, derived stall gauge printed beside the unchanged legacy
-        // one). Default OFF.
+        // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
+        // beside the unchanged one). Default off.
         let sidle_derived = gates.sidle_derived && diag_on;
-        // ── Emission batching (goal-gate "Emission Batching", RWM_EMIT_BATCH,
-        // DEFAULT OFF — same-binary A/B) ──────────────────────────────────────
-        // The §16.23 sender-emission service wall (~19.5–20k sym/s ≈ 190 Mbit)
-        // is per-SYMBOL loop cost, profiled 2026-07-27 on the c1 cell: taper/
-        // span control math (compute_repair_rate + predictive_loss_upper +
-        // exp/log ≈ 15–17%/core, recomputed per symbol), plus a full select!
-        // iteration (tail-deadline scan, SACK drain, pacing refresh) and the
-        // waker churn of one-datagram-per-wakeup handoff to quinn (syscall
-        // density is NOT the wall — quinn-udp GSO already batches ~7.6
-        // segments/sendmsg on this path). Under the gate the sender:
+        // Emission batching (`RWM_EMIT_BATCH`, default off). The sender-emission
+        // service wall is per-symbol loop cost: taper/span control math
+        // (compute_repair_rate + predictive_loss_upper + exp/log, recomputed per
+        // symbol), plus a full select! iteration (tail-deadline scan, SACK
+        // drain, pacing refresh) and the waker churn of one-datagram-per-wakeup
+        // handoff to quinn (syscall density is not the wall — quinn-udp GSO
+        // already batches). Under the gate the sender:
         //   1. drains TUN intake in pacer-quantum bursts (≤ emit_burst symbols
         //      per loop iteration, ~64 KB — inside the flow-control store
         //      headroom and the cc_pace token bucket, checked per symbol), so
         //      loop-iteration overhead amortizes and quinn's endpoint driver
-        //      sees a multi-datagram queue (deeper GSO transmits);
+        //      sees a multi-datagram queue;
         //   2. refreshes the derived taper/span math once per burst instead of
-        //      per symbol (the A* send-rate anchor is still FED per symbol —
-        //      only the derived-rate recomputation is amortized).
-        // OFF ⇒ per-symbol recompute, bit-identical shipped path. Plain
-        // window-reliable mode only (generation/coded emission has its own
-        // paced block; realtime packing keeps its per-packet latency path).
-        // SINGLE-LIVE-PATH ONLY (measured, 2026-07-27 battery rep 1): the
-        // emission service wall is a c1-class single-path binder (§16.23);
-        // dual cells are wire/recovery-bound and bursting there AMPLIFIES the
-        // wall-#8 striping-gap loss misread (global batch serials + longer
-        // same-path arrival runs → per-path pl read up to 0.74 at a 2.6%-loss
-        // cell, tail-recovery stretch: c7 167→115, c8 87→52). With N ≥ 2 live
-        // paths the emission path stays bit-identical (`emit_batch_live`
-        // re-checked per loop iteration — path flaps re-scope within one
-        // burst).
-        // Realtime (packed) mode is excluded outright: its per-packet latency
-        // path must never trade a wakeup for a burst, and its symbol rate is
-        // orders below the wall. The taper cache additionally carries a 50 ms
-        // staleness bound so a low-rate bulk-hint tunnel (e.g. the tail-matrix
-        // message workload riding the bulk tunnel at 50 msg/s) never runs the
-        // span/shed law on second-old anchors.
+        //      per symbol (the A* send-rate anchor is still fed per symbol).
+        // Plain window-reliable mode only (generation/coded emission has its own
+        // paced block). Single live path only: dual cells are wire/recovery-
+        // bound and bursting there lengthens same-path arrival runs, which
+        // inflates the per-path loss misread; with N ≥ 2 live paths the emission
+        // path is unchanged (`emit_batch_live` re-checked per loop iteration, so
+        // path flaps re-scope within one burst). Realtime (packed) mode is
+        // excluded outright: its per-packet latency path must never trade a
+        // wakeup for a burst. The taper cache carries a 50 ms staleness bound so
+        // a low-rate bulk-hint tunnel never runs the span/shed law on second-old
+        // anchors.
         let emit_batch_on = gates.emit_batch && reliable && !coded_wire && !use_packing;
         let emit_burst: usize = gates.emit_burst;
-        // RWM_DIAG (transport-ceiling diagnosis): once per ~250 ms emit one line
-        // isolating the binding single-connection constraint — window occupancy vs
-        // store_max, tx_paused duty cycle, cumulative-ack goodput (Mbit/s), the
-        // ack-clocked pacing rate vs the link, cwnd/in_flight vs BDP, and the
-        // source/coded send rates. Gated on the RWM_DIAG env so the hot path is
-        // untouched when off. (`diag_on` itself is resolved above.)
-        // Transport-ceiling fix (generation mode): bound the in-flight (unacked)
-        // symbols to ~BDP instead of the fixed store_max = G·(M+1). The oversized
-        // store_max is decoupled from the pipe (14× BDP at C2), so unpaced source
-        // emission builds a multi-hundred-ms standing queue (MEASURED RTT inflated
-        // to 0.5–1.3 s), which turns every hole into a ~1 s recovery stall. Cap
-        // total in-flight at a BDP-scaled bound so the queue — and thus the
-        // recovery-stall latency — stays small. 0 = off (legacy store-only
-        // backpressure). The deficit-recovery emission is EXEMPT (it must always be
-        // able to fund a frontier hole, else a full-window pipe deadlocks).
+        // Generation-mode in-flight cap (`RWM_INFL_CAP`): bound the unacked
+        // symbols to ~BDP instead of store_max = G·(M+1), which is decoupled
+        // from the pipe, so unpaced source emission would build a standing queue
+        // that turns every hole into a long recovery stall. 0 = off
+        // (store-only backpressure). The deficit-recovery emission is exempt (it
+        // must always be able to fund a frontier hole, else a full-window pipe
+        // deadlocks).
         let infl_cap: u64 = gates.infl_cap;
-        // PART 1.2 (receiver-tail): BDP-DERIVED in-flight cap. A fixed RWM_INFL_CAP
-        // must be hand-tuned per RTT; instead bound total in-flight to
-        // gain × Σ copa_bdp_anchor (BtlBw×RTprop, bufferbloat-robust) recomputed
-        // live, so the standing queue — and thus the RECOVERY-ROUND RTT — stays
-        // ~gain·BDP at ANY RTT. It gates BOTH proactive emission AND (Fix-2
-        // non-exempt) reactive/deficit recovery via `cwnd_full`, so the parallel
-        // tail flush cannot re-bloat the queue. Env RWM_INFL_BDP=gain (e.g. 2.0);
-        // 0/unset = off (legacy static RWM_INFL_CAP / store-only backpressure).
-        // gen_pipe remedy 1: the per-path BDP in-flight cap ON (gain 1.5 — the
-        // FMTCP-era oracle PART 5c finding: the bare aggregate BDP starves the
-        // recovery headroom; ~1.5× over the windowed-max — hence under-estimating —
-        // anchor gives the emergent ~1.3× BDP operating point) so the standing
-        // queue — and the RTT the SUBSTRATE CC sees — stays ≈ RTprop.
+        // BDP-derived in-flight cap (`RWM_INFL_BDP` = gain): bound total
+        // in-flight to gain × Σ copa_bdp_anchor (BtlBw×RTprop, bufferbloat-
+        // robust), recomputed live, so the standing queue — and the
+        // recovery-round RTT — stays ~gain·BDP at any RTT. It gates both
+        // proactive emission and (non-exempt) reactive recovery via `cwnd_full`,
+        // so the tail flush cannot re-bloat the queue. 0/unset = off. gen_pipe
+        // defaults it to 1.5: the bare aggregate BDP starves the recovery
+        // headroom, and ~1.5× over the (under-estimating) windowed-max anchor
+        // keeps the queue — and the RTT the substrate CC sees — near RTprop.
         let infl_bdp_gain: f64 = gates
             .infl_bdp
             .unwrap_or(if gen_pipe { 1.5 } else { 0.0 })
             .max(0.0);
         let infl_bdp_on = infl_bdp_gain > 0.0;
-        // The #64 fix (FMTCP-era, retained under gen_pipe): enforce the in-flight
-        // cap PER PATH (path i outstanding ≤ gain·BtlBw_i·RTprop_i) rather than as
-        // one fungible global Σ budget. The sender is TUN-paused only when EVERY
-        // active path is at its own cap, so the fast path keeps pulling fresh
-        // source while the slow path is full.
+        // Enforce the in-flight cap per path (path i outstanding ≤
+        // gain·BtlBw_i·RTprop_i) rather than as one fungible Σ budget, under
+        // gen_pipe. The sender is TUN-paused only when every active path is at
+        // its own cap, so the fast path keeps pulling fresh source while the slow
+        // path is full.
         let infl_percap = gen_pipe;
-        // Transport-ceiling fix (generation mode): clock the coded-emission budget
-        // to the SENT source frontier instead of the ACKED frontier. The
-        // ack-clocked `target = ack·(1+r) + W` DEADLOCKS a small generation: once
-        // the proactive budget W is spent, coded stops until the ack advances — but
-        // the ack is stalled precisely because the frontier generation is missing
-        // the coded it needs to decode (MEASURED: G=96 wedges with in_flight=0,
-        // src=0, cod=0). Sourcing the budget from the sent frontier lets the
-        // encoder's own per-generation ceil(K_g·(1+r)) cap + the M-generation
-        // retention bound govern coded emission (both already bound the datagram
-        // buffer), so proactive coverage always completes and small generations —
-        // which keep the store near BDP and avoid the bufferbloat stall — work.
+        // Generation mode: clock the coded-emission budget to the sent source
+        // frontier instead of the acked frontier (`RWM_CODED_SRC`). The
+        // ack-clocked `target = ack·(1+r) + W` deadlocks a small generation: once
+        // the proactive budget W is spent, coded stops until the ack advances —
+        // but the ack is stalled because the frontier generation is missing the
+        // coded it needs to decode. Sourcing the budget from the sent frontier
+        // lets the encoder's per-generation ceil(K_g·(1+r)) cap and the
+        // M-generation retention bound govern coded emission.
         let coded_src_clock = gates.coded_src;
-        // PURE-PROACTIVE demonstrator (proactive-FEC-vs-ARQ crossover, directive #4):
-        // when set, DISABLE the deficit-driven reactive recovery loop entirely. All
-        // recovery then comes from the UPFRONT proactive per-generation budget
-        // (ceil(len·r)) — no NACK/deficit round-trips, and (crucially) no
-        // recovery-emission path that is EXEMPT from the in-flight congestion cap, so
-        // every emitted symbol (systematic source + proactive coded) is bounded by
-        // RWM_INFL_CAP and cannot overrun the droppable datagram path. This isolates
-        // the clean question: with enough upfront repair (high r) that holes decode
-        // on arrival, does proactive FEC beat ARQ at high RTT? Requires r sized to
-        // cover the per-generation loss tail — a generation that loses more than its
-        // budget never decodes (the object DNFs), which is itself the honest result.
+        // Pure-proactive demonstrator (`RWM_NO_REACTIVE`): disable the
+        // deficit-driven reactive recovery loop entirely. All recovery then
+        // comes from the upfront proactive per-generation budget (ceil(len·r)),
+        // with no recovery-emission path exempt from the in-flight cap, so every
+        // emitted symbol is bounded by `RWM_INFL_CAP`. It isolates whether, with
+        // enough upfront repair, proactive FEC beats ARQ at high RTT; a
+        // generation that loses more than its budget never decodes (the object
+        // DNFs), which is itself the result.
         let no_reactive = gates.no_reactive;
 
         Self {

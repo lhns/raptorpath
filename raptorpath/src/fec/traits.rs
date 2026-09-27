@@ -44,7 +44,7 @@ pub trait FecEncoder: Send {
     fn max_repairs(&self) -> u32 { u32::MAX }
     /// Generate `count` repair symbols starting at repair index `start`.
     ///
-    /// Used by block-mode ARQ (P8) to mint FRESH repairs after loss: the
+    /// Used by block-mode ARQ to mint fresh repairs after loss: the
     /// initial proactive repairs occupy indices `0..repair_count`, so
     /// post-hoc corrections start at `repair_count` and never repeat an
     /// already-sent symbol. The default implementation works for any
@@ -91,10 +91,9 @@ pub enum FecBackend {
     /// Random Linear Code (RFC 8681) — GF(2^8) random combinations, ~0% overhead, truly rateless.
     /// Block + window modes. Near-MDS via Gaussian elimination. Patent-free.
     Rlc,
-    // `Streaming` (Badr/Martinian two-layer, formerly variant 4) was RETIRED
-    // 2026-07-28 — displaced by the unified span machine (ADR-0064), register
-    // clause discharged (goal-gate "Streaming Crown Re-Test"). Removing the
-    // LAST variant keeps the wire indices of the surviving variants stable.
+    // Variant 4 (`Streaming`, the Badr/Martinian two-layer code) was removed
+    // (paper §10); it was the last variant, so the surviving wire indices are
+    // unchanged.
 }
 
 impl Default for FecBackend {

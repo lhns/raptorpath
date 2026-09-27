@@ -1,34 +1,14 @@
-//! ACK-CADENCE GAUGE loopback (goal-gate "Ack-Cadence Gauge", `RWM_ACKDIAG`).
-//!
-//! The unit tests in `net::ackdiag` pin the gauge's ARITHMETIC against injected
-//! trains. This binary pins the other half — MEASUREMENT DISCIPLINE rule 1,
-//! *prove the mechanism under test executes*: that the gauge is actually WIRED
-//! into the engine's ack path, that the numbers it collects off a real
-//! transfer are SELF-CONSISTENT, and that turning it on does not change what
-//! the engine does.
-//!
-//! Three things are asserted, in the order they can fail:
-//!
-//!   1. **ROUTING.** The gate resolves ON, the process-global gauge exists,
-//!      and after a window-reliable loopback it has recorded WindowAck
-//!      arrivals, non-zero delivered-count deltas and accepted
-//!      `record_delivery` samples on at least one path. All three feed sites
-//!      (`net/control_msg.rs`'s `on_window_ack`, and both arms of
-//!      `CopaState::record_delivery`) are proven live by that.
-//!   2. **SELF-CONSISTENCY.** `Σd_received ≤ Σd_expected` (the receiver's
-//!      tracker charges `gap × received` across a batch-seq gap, so expected
-//!      can only meet or exceed received — the same invariant
-//!      `ack_merge_counter_delta_*` pins on the counters themselves, here
-//!      re-read off the gauge that transcribes them), and the accepted +
-//!      rejected sample counts add up to a non-zero total whose acceptance
-//!      fraction is a real number in [0, 1].
-//!   3. **BEHAVIOUR NEUTRALITY.** The same transfer completes with the gauge
-//!      ON. `net::ackdiag::tests::ackdiag_is_observation_only` pins the
-//!      STRUCTURAL half (the gauge owns all of its state and reaches no engine
-//!      handle mutably); this is the executed half.
-//!
-//! Own test binary and ONE test function: `RWM_ACKDIAG` is a process-global
-//! `OnceLock`, resolved once at first touch and never re-read.
+//! The ack-cadence gauge (`RWM_ACKDIAG`) is wired into the engine's ack path
+//! (`docs/measurement-discipline.md` rule 1; its arithmetic is unit-tested in
+//! `net::ackdiag`). The test proves: after a window-reliable loopback the
+//! gauge has recorded WindowAck arrivals, delivered-count deltas and accepted
+//! `record_delivery` samples, so all three feed sites (`on_window_ack` in
+//! `net/control_msg.rs` and both arms of `CopaState::record_delivery`) are
+//! live; its numbers are self-consistent (`Σd_received ≤ Σd_expected`, since
+//! the tracker charges `gap × received` across a batch-seq gap, and the
+//! acceptance fraction lies in [0, 1]); and the transfer completes with the
+//! gauge on (behaviour neutrality, executed). One test function:
+//! `RWM_ACKDIAG` is process-global, resolved once.
 
 #[path = "common/loopback.rs"]
 mod loopback;
@@ -60,7 +40,7 @@ async fn ackdiag_gauge_is_wired_self_consistent_and_behaviour_neutral() {
     let (srv, cli) = (resolve(&s), resolve(&c));
     assert!(srv.window_reliable);
 
-    // BEHAVIOUR NEUTRALITY, executed: an observation-only instrument cannot
+    // Behaviour neutrality, executed: an observation-only instrument cannot
     // stall a transfer. A gauge that took a lock in the wrong order, or that
     // dropped an ack, would time out here rather than merely print oddly.
     run(
@@ -73,7 +53,7 @@ async fn ackdiag_gauge_is_wired_self_consistent_and_behaviour_neutral() {
     )
     .await;
 
-    // ── ROUTING + SELF-CONSISTENCY ───────────────────────────────────────
+    // ── routing + self-consistency ───────────────────────────────────────
     let ids = gauge.known_paths();
     assert!(
         !ids.is_empty(),

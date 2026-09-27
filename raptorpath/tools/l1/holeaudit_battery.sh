@@ -1,6 +1,5 @@
 #!/bin/bash
-# D0 THE ATTRIBUTION AUDIT — the L1 battery.
-# Scored ONLY against "THE ATTRIBUTION AUDIT (D0) — PRE-REGISTRATION".
+# D0, the attribution audit — the L1 battery (result in docs/status.md §2).
 # One arm: shipped defaults, RWM_GEN=0, RWM_DIAG=1 RWM_FDIAG=1, seed 42.
 #   usage: holeaudit_battery.sh <reps>
 set -u
@@ -18,7 +17,7 @@ echo "# binary: $(sha256sum $BIN)" >> "$OUT"
 echo "# source: $(cat /home/vibe/raptorpath/COMMIT)" >> "$OUT"
 lscpu | grep "Model name" >> "$OUT"
 
-# Sentinel: writability PROVEN, by the unprivileged user, at LAUNCH.
+# Sentinel: writability proven, by the unprivileged user, at launch.
 SENT=$RUN/.sentinel-earned
 if ! echo "earned $(date -u +%FT%TZ)" > "$SENT"; then
   echo "ABORT-SENTINEL-UNWRITABLE" >> "$OUT"; exit 3
@@ -33,30 +32,30 @@ run_one() { # name scenA scenB mode bytes rep
     | grep -E "summary|\"dnf\"|ABORT" >> "$OUT"
   echo "RC=${PIPESTATUS[0]}" >> "$OUT"   # the engine's rc (was `|| true; $?`: always 0)
   local C=/tmp/rwm-c.log S=/tmp/rwm-s.log
-  # CONTAMINATION witnesses: every rival clock must be absent on BOTH ends.
+  # Contamination witnesses: every rival clock must be absent on both ends.
   for g in RWM_HOLDDOWN_Q RWM_DERIVED_SWEEP RWM_REFRESH_FLOOR_US; do
     echo "GATE $name r$rep $g cli=$(grep -c "$g=" $C 2>/dev/null || echo 0) srv=$(grep -c "$g=" $S 2>/dev/null || echo 0)" >> "$OUT"
   done
-  # THE SENDER GAUGE — every [HOLD] line, both ends.
+  # The sender gauge — every [HOLD] line, both ends.
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[HOLD\]' | sed "s/^/HOLD $name r$rep cli /" >> "$OUT") || true
   (sed 's/\x1b\[[0-9;]*m//g' $S | grep '\[HOLD\]' | sed "s/^/HOLD $name r$rep srv /" >> "$OUT") || true
-  # THE RECEIVER GAUGE — the LAST (cumulative) [SUCC], both ends.
+  # The receiver gauge — the last (cumulative) [SUCC], both ends.
   (sed 's/\x1b\[[0-9;]*m//g' $S | grep '\[SUCC\] ' | tail -1 | sed "s/^/SUCC $name r$rep srv /" >> "$OUT") || true
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[SUCC\] ' | tail -1 | sed "s/^/SUCC $name r$rep cli /" >> "$OUT") || true
-  # THE FIRE-CAUSE and the WASTE SPLIT.
+  # The fire cause and the waste split.
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[FCAUSE\]' | tail -1 | sed "s/^/FCAUSE $name r$rep cli /" >> "$OUT") || true
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[RFA\]' | tail -1 | sed "s/^/RFA $name r$rep cli /" >> "$OUT") || true
   (sed 's/\x1b\[[0-9;]*m//g' $S | grep '\[RFA\]' | tail -1 | sed "s/^/RFA $name r$rep srv /" >> "$OUT") || true
-  # THE DIAG TAIL: taper=, retx=, mpr[..], and the cumulative source symbols
+  # The DIAG tail: taper=, retx=, mpr[..], and the cumulative source symbols
   # (the `det <= cum source symbols` witness).
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[DIAG\]' | tail -1 \
     | grep -oE "cum=[0-9/]+|retx=[0-9]+|sweeps=[0-9]+|gapdrop=[0-9]+|mpr\[[^]]*\]" \
     | tr '\n' ' ' | sed "s/^/DIAG $name r$rep cli /" >> "$OUT") || true
   echo >> "$OUT"
-  # THE CONTROL-DATAGRAM DENSITY, both ends (the eviction arithmetic's inputs).
+  # The control-datagram density, both ends (the eviction arithmetic's inputs).
   (sed 's/\x1b\[[0-9;]*m//g' $C | grep '\[CTLD\]' | tail -1 | sed "s/^/CTLD $name r$rep cli /" >> "$OUT") || true
   (sed 's/\x1b\[[0-9;]*m//g' $S | grep '\[CTLD\]' | tail -1 | sed "s/^/CTLD $name r$rep srv /" >> "$OUT") || true
-  # GEN WITNESS FIRST, then the band.
+  # Gen witness first, then the band.
   echo "GENW $name r$rep succ_gen=$(sed 's/\x1b\[[0-9;]*m//g' $S | grep -o '\[SUCC\] gen=[01]' | tail -1) fc_gen=$(sed 's/\x1b\[[0-9;]*m//g' $C | grep -o '\[FCAUSE\] gen=[01]' | tail -1)" >> "$OUT"
   cp $C "$DDIR/${name}-r${rep}-c.log" 2>/dev/null || true
   cp $S "$DDIR/${name}-r${rep}-s.log" 2>/dev/null || true

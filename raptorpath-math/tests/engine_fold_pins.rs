@@ -1,12 +1,8 @@
-//! Bit pins for the math the engine folded onto this crate (cleanup
-//! Stage 3): `normal_quantile` (was copied in the engine's
-//! `control/changepoint.rs` and `control/estimator.rs`), and
-//! `normal_survival`, `p_fec_normal` and `p_lost` (were copied in the
-//! engine's `control/fec_rate.rs`). Before the copies were deleted they were
-//! checked bit-identical to these definitions over a dense grid (every
-//! `to_bits()` equal); the engine now calls these directly. The pins below
-//! keep the single remaining definition from drifting under either consumer
-//! (the engine or the wasm model).
+//! Bit pins for the math the engine reads from this crate:
+//! `normal_quantile` (used by the engine's changepoint detector and
+//! estimator), and `normal_survival`, `p_fec_normal` and `p_lost` (used by
+//! `control/fec_rate.rs`). The pins keep the single definition from drifting
+//! under either consumer (the engine or the wasm model).
 
 use raptorpath_math::{normal_quantile, normal_survival, p_fec_normal, p_lost};
 

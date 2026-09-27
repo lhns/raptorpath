@@ -1,36 +1,32 @@
 #!/usr/bin/env python3
-"""Scorer for THE r > 0 BATTERY (goal-gate "THE r > 0 BATTERY —
-PRE-REGISTRATION"; paper §16.82).
+"""Scorer for the r > 0 battery (the corner r* = 0 and δ_exit: paper §4.9).
 
     r_report.py --outdir /home/vibe/rbattery [--calib] [--max-rep N]
 
-Reads the per-seed `RRESULT {json}` rows out of the ledgers and applies the
-pre-registration, and NOTHING ELSE. `--max-rep N` keeps only rows with
-`rep <= N`: an operator-truncated ledger (goal-gate "OPERATOR AMENDMENT
-(2026-09-08 10:49Z)") can carry a few rows of the rep that was cut, and those
-are excluded for BALANCE -- every arm-cell-size at the same n -- rather than
-edited out of the ledger. The count of excluded rows is printed so the
-exclusion is on the record. Every threshold below is transcribed from
-that block; none is chosen here.
+Reads the per-seed `RRESULT {json}` rows out of the logs and applies the
+pre-registered rules, and nothing else. `--max-rep N` keeps only rows with
+`rep <= N`: a log truncated by the 5 h cap can carry a few rows of the rep
+that was cut, and those are excluded for balance -- every arm-cell-size at the
+same n -- rather than edited out of the log. The count of excluded rows is
+printed so the exclusion is on the record. Every threshold below is fixed in
+advance; none is chosen here.
 
-THE ORDER IS THE PRE-REGISTRATION'S ORDER, AND IT IS NOT AN ACCIDENT
---------------------------------------------------------------------
-  0. THE ABORT-CAUSE TABLE, FIRST. `ABORT != DNF != INSTRUMENT-FAIL`. An
-     aborted invocation is in NO denominator.
-  1. MECHANISM LIVENESS, READ BEFORE ANY SCORE (§16.82.7 verbatim): `W5`
-     (`cod > 0` — r reached the wire) and `W6` (`[CHI] max > 0.5` — χ reached
-     the glide). An `R-INERT` reading is ATTRIBUTED by the pre-registration's
-     rule to BUDGET-BOUND / ESTIMATOR-BOUND / WIRING and never left bare.
-  2. THE PRE-STATED FALSIFIER (§16.82.6), which OUTRANKS goodput and
-     completion alike.
+The order is fixed in advance
+-----------------------------
+  0. The abort-cause table, first. `ABORT != DNF != INSTRUMENT-FAIL`. An
+     aborted invocation is in no denominator.
+  1. Mechanism liveness, read before any score: `W5` (`cod > 0` — r reached
+     the wire) and `W6` (`[CHI] max > 0.5` — χ reached the glide). An
+     `R-INERT` reading is attributed to BUDGET-BOUND / ESTIMATOR-BOUND /
+     WIRING and never left bare.
+  2. The falsifier, which outranks goodput and completion alike.
   3. `W7`, the CC pin — adjudicated here because this is the only seat that
      has CTL's own spread to compare `MID`'s rtt against.
-  4. THE SCORE: completion p50, by the §7 bar. Goodput is a GUARD and is
-     reported as `GUARD-UNDERPOWERED` because the pre-registration declares it
-     so in advance at all three cells.
-  5. THE OUTCOME, from the six legal outcomes and from nothing else.
+  4. The score: completion p50. Goodput is a guard and is reported as
+     `GUARD-UNDERPOWERED` at all three cells.
+  5. The outcome, from the six legal outcomes and from nothing else.
 
-`--calib` runs the four smoke clauses of §10 instead of the score, and prints
+`--calib` runs the four smoke clauses instead of the score, and prints
 `NOTHING IN THE CALIBRATION IS A RESULT` on its own line, because n = 1.
 """
 import argparse
@@ -43,14 +39,14 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from l1common import med  # noqa: E402
 
-# ── EVERY CONSTANT BELOW IS TRANSCRIBED FROM THE PRE-REGISTRATION ───────
-CHI_LIVE_BAR = 0.5           # §8 W6 / §10 clause 2: `[CHI] max > 0.5`
-BULK_TAIL_BUDGET = 0.05      # raptorpath-math/src/lib.rs:124 — the glide's ceiling
-FDIAG_MIN_N = 30             # §8a: DECODE n >= 30 AND SOURCE n >= 30
-HEADROOM_BAR = 0.97          # §10 clause 1 (discipline 16)
+# ── Every constant below was fixed before the battery ran ───────────────
+CHI_LIVE_BAR = 0.5           # W6 / smoke clause 2: `[CHI] max > 0.5`
+BULK_TAIL_BUDGET = 0.05      # raptorpath-math — the glide's ceiling (paper §4.5)
+FDIAG_MIN_N = 30             # falsifier: DECODE n >= 30 and SOURCE n >= 30
+HEADROOM_BAR = 0.97          # smoke clause 1 (measurement-discipline rule 16)
 BANDS = {"sc2": (78.0, 92.0), "c8": (50.0, 100.0), "c3hg": (9.0, 18.0)}
 LINK_MBIT = {"c3hg": 20.0, "sc2": 100.0, "c8": 120.0}
-PLATEAU = (26.8, 34.1)       # §9, goal-gate ~40913
+PLATEAU = (26.8, 34.1)       # the generation plateau (r_battery.sh)
 
 
 def rows_from(outdir, max_rep=None):
@@ -130,7 +126,7 @@ def report(outdir, calib, max_rep=None):
     sizes = sorted({r["size"] for r in rows})
     arms = sorted({r["arm"] for r in rows})
 
-    # ── 0 — THE ABORT-CAUSE TABLE, FIRST ────────────────────────────────
+    # ── 0 — the abort-cause table, first ────────────────────────────────
     print("=== 0 — THE ABORT-CAUSE TABLE, FIRST (ABORT != DNF != INSTRUMENT-FAIL)")
     ab = sum(1 for r in rows if r.get("abort"))
     pl = sum(1 for r in rows if r.get("mbps") is not None
@@ -147,7 +143,7 @@ def report(outdir, calib, max_rep=None):
     print("  SCOREABLE rows=%d (aborts and plateau readings are in NO denominator)"
           % len(live))
 
-    # ── 1 — MECHANISM LIVENESS, READ BEFORE ANY SCORE ───────────────────
+    # ── 1 — mechanism liveness, read before any score ───────────────────
     print("\n=== 1 — MECHANISM LIVENESS, READ BEFORE ANY SCORE (§16.82.7 verbatim)")
     inert = {}
     for c in cells:
@@ -172,7 +168,7 @@ def report(outdir, calib, max_rep=None):
                          chi_live, len(sel),
                          ("%.4f" % max_eps) if max_eps is not None else "none", tag))
 
-    # THE ATTRIBUTION RULE, applied literally.
+    # The attribution rule, applied literally.
     print("\n  --- THE R-INERT ATTRIBUTION RULE (pre-registration §8), applied ---")
     any_inert = False
     for (c, z, a), (is_inert, max_eps, chi_ok) in sorted(inert.items()):
@@ -200,7 +196,7 @@ def report(outdir, calib, max_rep=None):
     if not any_inert:
         print("  none — r reached the wire on every funded arm-cell-size.")
 
-    # ── 2 — THE PRE-STATED FALSIFIER, WHICH OUTRANKS GOODPUT ────────────
+    # ── 2 — the falsifier, which outranks goodput ───────────────────────
     print("\n=== 2 — THE PRE-STATED FALSIFIER (§16.82.6): [FDIAG] decode-resolved vs ARQ-resolved")
     print("  REMINDER, and it is not decoration: the record's '19-32 ms decodes' were")
     print("  RESOLUTION WAITING, not compute (goal-gate ~6983 vs ~7078-7091; raw compute")
@@ -229,7 +225,7 @@ def report(outdir, calib, max_rep=None):
         print("  ENTANGLEMENT-DOMINATED fires and OUTRANKS every completion and goodput")
         print("  reading on the arms named above (§16.82.6: legal REGARDLESS OF GOODPUT).")
 
-    # ── 3 — W7, THE CC PIN ──────────────────────────────────────────────
+    # ── 3 — W7, the CC pin ──────────────────────────────────────────────
     print("\n=== 3 — W7: DID THE CC PIN HOLD? (the mechanical substitute for the Copa echo")
     print("    gates.rs:1432 claims and this tree does not have)")
     for c in cells:
@@ -255,7 +251,7 @@ def report(outdir, calib, max_rep=None):
     if calib:
         return calibration(live, cells, sizes, arms)
 
-    # ── 4 — THE SCORE: completion p50, by the §7 bar ────────────────────
+    # ── 4 — the score: completion p50, by the pre-set bar ───────────────
     print("\n=== 4 — THE SCORE: completion p50 (§16.82.7: 'the scored dimension is")
     print("    completion p50 at the two sizes, which is where the two hypotheses disagree')")
     print("    Goodput is a GUARD and is DECLARED GUARD-UNDERPOWERED in advance at all")
@@ -279,8 +275,8 @@ def report(outdir, calib, max_rep=None):
                 if not v:
                     continue
                 shift, lo, hi = hodges_lehmann(base, v)
-                # BOTH SEEDS SEPARATELY AS WELL AS POOLED. A result present at
-                # one seed only is SEED-SPLIT and scores nothing (§7).
+                # Both seeds separately as well as pooled. A result present at
+                # one seed only is SEED-SPLIT and scores nothing.
                 per_seed = {}
                 for sd in sorted({r["seed"] for r in sel}):
                     b2 = [r["completion_p50"] for r in live
@@ -326,7 +322,7 @@ def report(outdir, calib, max_rep=None):
                       % (c, z, a, med(v), lo, hi, oob, len(v),
                          ("%+.4f" % (sum(pred) / len(pred))) if pred else "n/a"))
 
-    # ── 5 — THE OUTCOME, FROM THE SIX LEGAL OUTCOMES AND FROM NOTHING ELSE
+    # ── 5 — the outcome, from the six legal outcomes and from nothing else
     print("\n=== 5 — THE OUTCOME (pre-registration §11; no verdict outside this set)")
     print("  GLIDE-Z contributes ARM-ABSENT and nothing else; no outcome may be reached")
     print("  from its absence.")
@@ -352,9 +348,9 @@ def report(outdir, calib, max_rep=None):
                 won25 = wins.get((c, "s25", a), (False, None, None))[0]
                 sh18 = wins.get((c, "s18", a), (False, None, None))[1]
                 sh25 = wins.get((c, "s25", a), (False, None, None))[1]
-                # §6's TWO-PART REQUIREMENT. (b) is the clause that stops
+                # The two-part requirement. (b) is the clause that stops
                 # "25 MB was null" from being read as size discrimination: the
-                # 25 MB leg is a DIRECTIONAL WITNESS at n = 8, never a score.
+                # 25 MB leg is a directional witness at n = 8, never a score.
                 small_only = (
                     won18
                     and sh18 is not None and sh25 is not None
@@ -382,7 +378,7 @@ def report(outdir, calib, max_rep=None):
 
 
 def calibration(live, cells, sizes, arms):
-    """§10: the four smoke clauses, in order. n = 1 and NOTHING is a result."""
+    """The four smoke clauses, in order. n = 1 and nothing is a result."""
     print("\n=== CALIBRATION (§10) — 1 rep per arm-cell-size, seed 42")
     rc = 0
 

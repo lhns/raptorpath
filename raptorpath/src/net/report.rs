@@ -1,19 +1,16 @@
 //! The recovery-plane report lines and teardown gauges: `[RACK]`, `[RFA]`,
 //! `[FCAUSE]`, `[REQS]`, the RACK clock gauge and the sender teardown set.
-//! Moved verbatim out of `net/mod.rs` (cleanup Stage 3).
 
 use super::*;
 
-/// The `[RACK]` false-alarm echo — paper §16.68.1's validation of the
-/// recovery plane against RFC 8985 §6.2 Step 4's own published spurious
-/// budget, run on the SHIPPED clamp.
+/// The `[RACK]` false-alarm echo — the recovery plane validated against RFC
+/// 8985 §6.2 Step 4's own published spurious budget (paper §7.1), run on the
+/// shipped clamp.
 ///
 /// `fa=<spurious>/<fired>` — recovery rounds that fired, and those whose
-/// target's live flight was YOUNGER than its own per-path law threshold (the
+/// target's live flight was younger than its own per-path law threshold (the
 /// data was going to arrive anyway); `fa_frac` their ratio; `fa_class` the
-/// RFC's own 1/16 bar, printed so a parser never has to know it. (The line
-/// also carried the removed `RWM_RACK_CLOCKS` arm's bind fractions; those
-/// fields left with the arm.)
+/// RFC's own 1/16 bar, printed so a parser never has to know it.
 pub fn rack_report_line(fired: u64, spurious: u64) -> String {
     let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
     format!(
@@ -26,142 +23,122 @@ pub fn rack_report_line(fired: u64, spurious: u64) -> String {
 }
 
 /// RFC 8985 §6.2 Step 4's own published spurious budget — *"approximately once
-/// every 16 recoveries (less than 7%)"*. The CLASS BAR every arm of the
-/// recovery-clock family is scored against (§16.68.1), printed beside the
-/// measurement so a parser never has to know it.
+/// every 16 recoveries (less than 7%)"*. The class bar every arm of the
+/// recovery-clock family is scored against, printed beside the measurement so
+/// a parser never has to know it.
 pub const RACK_SPURIOUS_BUDGET: f64 = 1.0 / 16.0;
 
-// ── `[RFA]`: THE REALIZED FALSE-REPAIR GAUGE, AT THE RECEIVER ────────────
+// ── `[RFA]`: the realized false-repair gauge, at the receiver ────────────
 //
-// **WHAT WAS AND WAS NOT MISSING — the premise, corrected before this was
-// written.** `RackClockGauge::record_fire` has exactly ONE call site, the
-// sender's gap-driven retransmit loop fed by `recv_nack_tx`. It is NOT dead.
-// `recv_nack_tx` is `None` under GENERATION CODING and only there (the
-// suppression a few hundred lines above: generation recovers a short
-// generation with more coded symbols, never by resending a seq), so the
-// primitives pass's `fired = 0` at 15/15 was structural to the configuration
-// it ran — generation ON — and not to the instrument. MEASURED here on a
-// `c3`-lossy loopback: plain window gives `[RACK] fa=278/1332` with
-// `[DIAG] retx=1327`; the same run with `--window-generation-coding` gives
-// `retx=0`. The α-sweep runs plain window, so the SENDER's `fa=` already
-// works there and this gauge does not replace it.
+// The sender's `fa=` is a prediction: at fire time it asks whether the
+// target's live flight is younger than its own per-path law threshold, i.e.
+// whether the data was going to arrive anyway — the commanded false-alarm
+// fraction. The realized one (the repair was emitted and the original arrived
+// anyway) is only observable where both copies land, at the receiver. The two
+// can differ by several times; that gap is the measurand.
 //
-// **WHAT IS GENUINELY MISSING, AND IS WHAT THIS ADDS.** The sender's `fa=` is
-// a PREDICTION: at fire time it asks whether the target's live flight is
-// younger than its own per-path law threshold, i.e. whether the data *was
-// going to* arrive anyway. That is the COMMANDED false-alarm fraction. The
-// α-sweep (goal #100 item 2) scores REALIZED against commanded, and
-// "realized" — the repair was emitted AND the original arrived anyway — is
-// only observable where both copies land, at the RECEIVER, which built this
-// same gauge and never called `record_fire` at all. The two numbers are not
-// close: the run above reads a commanded `fa_frac = 0.2087` against a
-// realized `false_frac = 0.7660`, 3.7×. That gap is the measurand, and
-// nothing in the tree reported it before.
+// `record_fire`'s sender call site is the gap-driven retransmit loop fed by
+// `recv_nack_tx`, which is `None` under generation coding (generation
+// recovers with more coded symbols, never by resending a seq), so the
+// sender's `fa=` is a plain-window instrument.
 //
-// **THE EVENT CLASS, STATED BECAUSE THE FIRE SITE IS GENUINELY AMBIGUOUS.**
-// A FALSE REPAIR is *a repair emitted whose original arrived anyway.* The
-// wire carries `is_repair` but no "this is a retransmit" bit, so the receiver
-// cannot label an arriving source symbol a retransmit directly — it can only
-// observe REDUNDANCY, which is the same fact and is ground truth rather than
-// a prediction. Four disjoint classes are separated, each with its own
-// counter, rather than one ambiguous total:
+// The event class. A false repair is a repair emitted whose original arrived
+// anyway. The wire carries `is_repair` but no "this is a retransmit" bit, so
+// the receiver cannot label an arriving source symbol a retransmit directly —
+// it can only observe redundancy, which is the same fact and is ground truth
+// rather than a prediction. Four disjoint classes, each with its own counter:
 //
-//   * `fill_coded`   — a seq the DECODER reconstructed from coded repair.
-//                      The repair WORKED (the source had not arrived).
-//                      TRUE repair. This is `[FDIAG]`'s DECODE class.
+//   * `fill_coded`   — a seq the decoder reconstructed from coded repair.
+//                      The repair worked (the source had not arrived).
+//                      True repair; `[FDIAG]`'s DECODE class.
 //   * `fill_src`     — a source arrival that first-resolved a seq the
-//                      receiver was already OVERDUE on (a higher seq had
-//                      already arrived). TRUE repair — or plain reordering;
+//                      receiver was already overdue on (a higher seq had
+//                      already arrived). True repair — or plain reordering;
 //                      see the contamination note below. `[FDIAG]`'s SOURCE
-//                      class, measured EMPTY on this engine at five cells.
-//   * `dup_src`      — a SECOND source copy of a seq whose source copy had
+//                      class.
+//   * `dup_src`      — a second source copy of a seq whose source copy had
 //                      already arrived. The engine transmits each source
 //                      symbol once; a second copy exists only because a
-//                      repair mechanism resent it. **FALSE**: the repair was
+//                      repair mechanism resent it. False: the repair was
 //                      emitted and the original arrived anyway. ARQ class.
-//   * `preempt_src`  — a source arrival for a seq the decoder had ALREADY
-//                      reconstructed from coded repair. **FALSE**: the coded
+//   * `preempt_src`  — a source arrival for a seq the decoder had already
+//                      reconstructed from coded repair. False: the coded
 //                      repair was unnecessary; the original arrived anyway.
 //                      FEC class.
 //
 //   fired  = fill_coded + fill_src + dup_src + preempt_src
 //   false  = dup_src + preempt_src
 //
-// so `[RACK]`'s `fa_frac` at a receiver-role gauge reads the REALIZED false-
+// so `[RACK]`'s `fa_frac` at a receiver-role gauge reads the realized false-
 // repair fraction, on the same denominator shape as the sender's predicted
 // one, and is scored against the same [`RACK_SPURIOUS_BUDGET`] class bar.
 //
-// **THE DENOMINATOR, AND THE ONE CLASS THAT IS NOT RECEIVER-OBSERVABLE.**
-// `src_n` (every source arrival) is carried beside the four classes so a
-// reader can form `ν_recv = fired / src_n` — fires per delivered source
-// symbol, the receiver-site analogue of the ledger's `fired / dgq_hand`. What
-// is NOT here: REDUNDANT CODED RANK (a repair symbol that arrives and
+// The denominator. `src_n` (every source arrival) is carried beside the four
+// classes so a reader can form `ν_recv = fired / src_n` — fires per delivered
+// source symbol, the receiver-site analogue of `fired / dgq_hand`. Not
+// receiver-observable here: redundant coded rank (a repair symbol that arrives and
 // contributes no new degree of freedom). Coded repair is fungible, so a
 // repair that recovers nothing may still have carried rank the decoder banked
 // for later; separating "carried no rank" from "carried rank nobody needed"
 // requires decoder-internal accounting this gauge deliberately does not do.
-// That class is the FEC OVERHEAD commanded by `r`, not a false alarm of the
+// That class is the FEC overhead commanded by `r`, not a false alarm of the
 // recovery clock, and it is left to `[PFRAC]`/`repairs_useful`.
 //
-// **CONTAMINATION, DISCLOSED RATHER THAN CORRECTED.** `fill_src` counts a
-// reordered ORIGINAL that arrives late as a successful repair, because the
-// receiver cannot tell it from a retransmit. This inflates `fired` and so
-// DEFLATES `fa_frac` — the realized false fraction reported here is a LOWER
-// BOUND. On this engine the bias is bounded by measurement: `[FDIAG] SOURCE
-// n = 0` at all five cells of the primitives pass, i.e. `fill_src` is empty
-// and the bias is nil there.
+// Contamination. `fill_src` counts a reordered original that arrives late as
+// a successful repair, because the receiver cannot tell it from a
+// retransmit. This inflates `fired` and so deflates `fa_frac`: the realized
+// false fraction reported here is a lower bound. `[FDIAG] SOURCE n` bounds
+// the bias.
 //
-// **THE CONFIGURATION CONTRACT, ECHOED ON THE LINE ITSELF.** This is a
-// PLAIN-WINDOW instrument, for the same reason the sender's `fa=` is. Under
-// generation coding every arrival is coded: `src_n = 0`, both FALSE classes
-// are structurally empty, and `fill_coded` counts the ORDINARY carrier rather
-// than any repair. So the line carries `gen=` and `rep_n=` and a reader never
-// has to infer which machine a row belongs to. MEASURED: the generation arm
-// of the run above emits `gen=1 … src_n=0`.
+// The configuration contract, echoed on the line. This is a plain-window
+// instrument, for the same reason the sender's `fa=` is. Under generation
+// coding every arrival is coded: `src_n = 0`, both false classes are
+// structurally empty, and `fill_coded` counts the ordinary carrier rather
+// than any repair. So the line carries `gen=` and `rep_n=`.
 //
-// **READ-ONLY.** Every counter here is fed from an `&self` probe of state the
+// Read-only. Every counter here is fed from an `&self` probe of state the
 // decoder already keeps. No control flow, no law, no default, no gate.
 
 /// One receiver-observed source arrival's repair class — see the `[RFA]`
 /// commentary above. `NotRepair` is the ordinary case (a first, in-order
-/// source arrival) and is NOT a fire.
+/// source arrival) and is not a fire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecvRepair {
     /// First resolution of this seq and it was not overdue — the ordinary
     /// forward progress of the stream. Not a repair event.
     NotRepair,
     /// First resolution of a seq the receiver was already overdue on.
-    /// A repair that WORKED (or a reordered original — see the note).
+    /// A repair that worked (or a reordered original — see the note).
     FillSource,
-    /// A second SOURCE copy of a seq already seen as source. FALSE repair.
+    /// A second source copy of a seq already seen as source. False repair.
     DupSource,
     /// A source arrival for a seq the decoder had already reconstructed from
-    /// coded repair. FALSE repair.
+    /// coded repair. False repair.
     PreemptedSource,
 }
 
 impl RecvRepair {
-    /// Is this class a FIRE (any repair-class event at all)?
+    /// Is this class a fire (any repair-class event at all)?
     pub fn is_fire(self) -> bool {
         !matches!(self, RecvRepair::NotRepair)
     }
-    /// Is this class a FALSE repair — a repair emitted whose original
+    /// Is this class a false repair — a repair emitted whose original
     /// arrived anyway?
     pub fn is_false(self) -> bool {
         matches!(self, RecvRepair::DupSource | RecvRepair::PreemptedSource)
     }
 }
 
-/// Classify ONE source-symbol arrival, from the decoder's own `seq_probe`
+/// Classify one source-symbol arrival, from the decoder's own `seq_probe`
 /// and the receiver's own frontier. Pure, total, and pinned by test.
 ///
 /// * `seen_as_source` — the decoder's dup filter has already recorded a
-///   SOURCE arrival of this seq.
+///   source arrival of this seq.
 /// * `recovered` — the decoder already holds reconstructed data for the seq.
 /// * `overdue` — a strictly higher seq had already arrived when this one
 ///   landed, so this seq was a hole rather than forward progress.
 ///
-/// The order of the arms is the semantics: `seen_as_source` DOMINATES,
+/// The order of the arms is the semantics: `seen_as_source` dominates,
 /// because a second source copy is a wasted transmission regardless of what
 /// the decoder had reconstructed in the meantime.
 pub fn classify_recv_repair(seen_as_source: bool, recovered: bool, overdue: bool) -> RecvRepair {
@@ -177,7 +154,7 @@ pub fn classify_recv_repair(seen_as_source: bool, recovered: bool, overdue: bool
 }
 
 /// The `[RFA]` line — the receiver-site class breakdown behind `[RACK]`'s
-/// `fa=`. Cumulative counters: the LAST line of a log is the reading, the
+/// `fa=`. Cumulative counters: the last line of a log is the reading, the
 /// same convention `[WIDLE]` and `[FDIAG]` use.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
@@ -216,95 +193,78 @@ pub fn rfa_report_line(
     )
 }
 
-// ── `[FCAUSE]`: WHY EACH RECOVERY FIRE FIRED ─────────────────────────────
+// ── `[FCAUSE]`: why each recovery fire fired ─────────────────────────────
 //
-// **THE QUESTION THIS ANSWERS, AND WHY IT IS OPEN.** The quantile-native
-// sweep (goal-gate, "qnative sweep SCORED") moved the realized recovery
-// clock `W` cleanly across arms — a 200× span in the contract α — and the
-// commanded false-alarm fraction `[RACK] fa_frac` did not move at 4 of 5
-// cells. `fa ⊥ W`. §16.69's measurand (the ack-arrival distribution the
-// waiting time is positioned on) is therefore WRONG: a clock that the fires
-// do not respond to cannot be the thing that decides them. Both routes'
-// shared premise — that the recovery fires are TIMER-DRIVEN, so positioning
-// the timer repositions the fires — is refuted by that independence.
+// Moving the sender's recovery clock `W` across a 200× span in the contract
+// α did not move the commanded false-alarm fraction `[RACK] fa_frac`
+// (paper §7.4): most fires are not timer-driven. This gauge classifies them.
 //
-// The only explanation the code leaves standing is that MOST FIRES ARE NOT
-// TIMER-DRIVEN. This gauge classifies them and closes the question with a
-// count instead of an argument.
-//
-// **THE CAUSAL STRUCTURE, READ OFF THE CODE.** `record_fire`'s ONE call site
-// is the sender's gap loop, and that loop's `gaps` vector has exactly two
+// The causal structure, read off the code. `record_fire`'s one call site is
+// the sender's gap loop, and that loop's `gaps` vector has exactly two
 // producers:
 //
-//   * the sender's OWN tail-sweep deadline arm — `pending_gaps =
-//     Some(vec![(seq, seq)])` — which is the arm the sender's recovery clock
-//     actually clocks (`sweep_timeout_us` → `tail_deadline`). THIS, and
-//     only this, is a timer-driven fire in the sense §16.69 assumed.
+//   * the sender's own tail-sweep deadline arm — `pending_gaps =
+//     Some(vec![(seq, seq)])` — the arm the sender's recovery clock
+//     actually clocks (`sweep_timeout_us` → `tail_deadline`). Only this is
+//     a timer-driven fire of the sender's clock.
 //   * the `nack_rx` channel, whose sole producer is the SACK→gap inversion
-//     in the WindowAck handler. These fires are clocked by the RECEIVER, not
+//     in the WindowAck handler. These fires are clocked by the receiver, not
 //     by the sender's `W` at all.
 //
-// **THE RECEIVER'S TWO ARMS ARE SEPARABLE ON THE WIRE, FOR FREE.** The
+// The receiver's two arms are separable on the wire, for free. The
 // receiver emits a SACK-bearing WindowAck from two places, and they are
 // already distinguishable in the message the sender is holding:
 //
-//   * the DATA arm (`gap_report_due`, the dupack analog) carries the real
+//   * the data arm (`gap_report_due`, the dupack analog) carries the real
 //     `echo_send_timestamp_us` of the batch that triggered it;
-//   * the timer-driven HOLE RE-ADVERTISEMENT arm broadcasts one message to
+//   * the timer-driven hole re-advertisement arm broadcasts one message to
 //     every live path and so cannot carry a per-path echo — it sets
-//     `echo_send_timestamp_us: 0`, the "no counter payload" SENTINEL that
-//     site already documents and that `on_window_ack` already branches on
-//     for its RTT update.
+//     `echo_send_timestamp_us: 0`, the "no counter payload" sentinel that
+//     `on_window_ack` already branches on for its RTT update.
 //
-// So the split costs NO wire change and NO behaviour change: it reads a
-// field the handler has in scope. That matters for the measurand question,
-// because the refresh arm is clocked by `hole_refresh` — the RECEIVER's
-// twin of the very law under test. A fire in `gap_refresh` is timer-driven
-// by the receiver's clock; a fire in `gap_data` is driven by DATA ARRIVAL
-// and by no clock at all.
+// So the split costs no wire change and no behaviour change: it reads a
+// field the handler has in scope. The refresh arm is clocked by
+// `hole_refresh`, the receiver's twin of the sender's clock. A fire in
+// `gap_refresh` is timer-driven by the receiver's clock; a fire in
+// `gap_data` is driven by data arrival and by no clock at all.
 //
 //   n = timer + gap_data + gap_refresh + other
 //
-// **THE ALIASING, DISCLOSED.** `echo == 0` is a sentinel, not a proof: a
+// Aliasing. `echo == 0` is a sentinel, not a proof: a
 // data-arm ack whose batch genuinely carried `batch_send_ts == 0` would be
 // misfiled as `gap_refresh`. The engine stamps `send_timestamp_us: now_us()`
 // on every batch, so a zero there is a wall-clock impossibility rather than
-// a rare event — but this is an inference from the producer, not from this
-// gauge, so it is named here rather than asserted away.
+// a rare event — an inference from the producer, not from this gauge.
 //
-// **WHAT CANNOT BE CLASSIFIED, NAMED RATHER THAN GUESSED.** `other` is not
-// decoration. A gap batch that reaches the loop through neither tagged
-// producer would land there, and the reachability test asserts it is EMPTY
-// on the configurations measured rather than assuming it must be. No fire is
-// attributed by inference; a fire whose cause tag is absent is counted as
-// `other` and reported as such.
+// `other`: a gap batch that reaches the loop through neither tagged producer
+// lands there, and the reachability test asserts it is empty on the
+// configurations measured. No fire is attributed by inference.
 //
-// **THE DENOMINATOR DISCREPANCY, REPORTED RATHER THAN REPAIRED.** `[RACK]`'s
-// `fired` is bumped only inside `if let Some(mp_flight)` — a fire whose
-// target has no live-flight record is EMITTED to the wire but never counted,
-// so `fa=`'s denominator undercounts. This gauge counts at the emission
-// itself, after every `continue`, so `n` is the true fire count. Both are
-// printed and `unattr = n - fired` names the gap. `fired` is NOT changed:
-// it is the number the sweep already scored, and moving it would silently
-// re-base every prior reading.
+// The denominator. `[RACK]`'s `fired` is bumped only inside
+// `if let Some(mp_flight)` — a fire whose target has no live-flight record is
+// emitted to the wire but not counted there, so `fa=`'s denominator
+// undercounts. This gauge counts at the emission itself, after every
+// `continue`, so `n` is the true fire count. Both are printed and
+// `unattr = n - fired` names the gap; `fired` keeps its definition so prior
+// readings stay comparable.
 //
-// **READ-ONLY.** A tag rides the existing gap channel and a counter is
-// bumped. No law, no threshold, no gate, no default, no control flow.
+// Read-only. A tag rides the existing gap channel and a counter is bumped.
+// No law, no threshold, no gate, no default, no control flow.
 
 /// Why one recovery fire fired — see the `[FCAUSE]` commentary above.
 ///
-/// This is a LABEL carried alongside a gap batch, never a selector: no code
+/// This is a label carried alongside a gap batch, never a selector: no code
 /// path, law, or constant anywhere branches on it. Only counters read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FireCause {
-    /// The sender's own tail-sweep deadline expired — the ONE cause the
+    /// The sender's own tail-sweep deadline expired — the one cause the
     /// quantile/Cantelli recovery clock `W` actually clocks.
     Timer,
-    /// A SACK-bearing WindowAck from the receiver's DATA arm (the dupack
+    /// A SACK-bearing WindowAck from the receiver's data arm (the dupack
     /// analog): driven by data arrival, by no clock.
     GapData,
     /// A SACK-bearing WindowAck from the receiver's timer-driven hole
-    /// re-advertisement arm: clocked by `hole_refresh` at the RECEIVER.
+    /// re-advertisement arm: clocked by `hole_refresh` at the receiver.
     GapRefresh,
     /// A gap batch that reached the fire site carrying no cause tag. Counted,
     /// never guessed at.
@@ -313,9 +273,9 @@ pub enum FireCause {
 }
 
 impl FireCause {
-    /// **THE WIRE FORM** -- the v8 `RepairRequest`'s `cause` byte. A plain
+    /// The wire form: the v8 `RepairRequest`'s `cause` byte. A plain
     /// `u8` so a future cause never renumbers a wire variant, and a total
-    /// function in BOTH directions so an unknown byte from a future peer
+    /// function in both directions so an unknown byte from a future peer
     /// reads as [`FireCause::Other`] (*a batch that reached the fire site
     /// carrying no cause this binary knows*) rather than panicking or being
     /// guessed at.
@@ -338,7 +298,7 @@ impl FireCause {
         }
     }
 
-    /// The class NAME, for the `[REQS]` echo. Same vocabulary as
+    /// The class name, for the `[REQS]` echo. Same vocabulary as
     /// `[FCAUSE]`'s own columns, so a request's cause and a fire's cause are
     /// read off one dictionary.
     pub fn as_str(self) -> &'static str {
@@ -351,18 +311,18 @@ impl FireCause {
     }
 }
 
-/// **THE `[REQS]` LINE -- WHAT THE SENDER DID WITH THE RECEIVER'S REQUESTS**
-/// (paper 16.83 arms (A)/(B)). Cumulative; the LAST line of a log is the
-/// reading, the `[RACK]`/`[RFA]`/`[FCAUSE]` convention.
+/// The `[REQS]` line: what the sender did with the receiver's repair
+/// requests (paper §7.6). Cumulative; the last line of a log is the reading,
+/// the `[RACK]`/`[RFA]`/`[FCAUSE]` convention.
 ///
-/// **TWO-SIDED.** `on=0` with every count at 0 is the CONTROL's reading and
-/// is emitted on every diagnosed run, so "the arm never reached the wire" is
-/// a reading rather than an inference from a missing line.
+/// Two-sided: `on=0` with every count at 0 is the control's reading and is
+/// emitted on every diagnosed run, so "the arm never reached the wire" is a
+/// reading rather than an inference from a missing line.
 ///
-/// `WA1` is the pair `wa1_some`/`wa1_none`: 16.83.3's soundness precondition,
-/// COUNTED. `none` means `generate_repair_range` refused the span and the
-/// answer fell back to a per-seq copy -- which is the shipped machine with
-/// extra latency, and the refuter arm (B) is scored against.
+/// `WA1` is the pair `wa1_some`/`wa1_none`: the coded answer's soundness
+/// precondition, counted. `none` means `generate_repair_range` refused the
+/// span and the answer fell back to a per-seq copy — the shipped machine
+/// with extra latency.
 ///
 /// Fractions render `-` on a zero denominator, never 0.
 #[allow(clippy::too_many_arguments)]
@@ -411,7 +371,7 @@ pub fn reqs_report_line(
 }
 
 /// The `[FCAUSE]` line — the per-cause breakdown of every recovery fire the
-/// sender emitted. Cumulative counters; the LAST line of a log is the
+/// sender emitted. Cumulative counters; the last line of a log is the
 /// reading, the same convention `[RACK]` and `[RFA]` use.
 ///
 /// Fractions render as `-` when their denominator is zero, so an absent
@@ -453,59 +413,54 @@ pub fn fcause_report_line(
 /// the sender and the receiver.
 #[derive(Default)]
 pub(crate) struct RackClockGauge {
-    /// §16.68.1's FALSE-ALARM VALIDATION, and it runs on EVERY arm including
-    /// the shipped control — the `[25, 100] ms` clamp's own false-alarm rate
-    /// has never been measured in this tree, and a cited empirical fraction
-    /// that has not been validated against the thing it is empirical ABOUT
-    /// does not clear this repository's bar.
+    /// The false-alarm validation. It runs on every arm,
+    /// including the shipped `[25, 100] ms` clamp.
     ///
     /// `fired` — recovery rounds that fired. `spurious` — those whose target's
-    /// live flight was YOUNGER than its own per-path law threshold, i.e. the
+    /// live flight was younger than its own per-path law threshold, i.e. the
     /// data was going to arrive anyway (the existing spurious-by-law class,
     /// read here ungated by `RWM_DIAG` so it is available to every arm).
     /// Scored against RFC 8985 §6.2 Step 4's own published budget,
     /// [`RACK_SPURIOUS_BUDGET`] = 1/16 = 6.25 %.
     fired: u64,
     spurious: u64,
-    /// ── THE RECEIVER-SITE CLASSES (`[RFA]`) ──────────────────────────
+    /// ── The receiver-site classes (`[RFA]`) ──────────────────────────
     /// See the `[RFA]` commentary above [`RACK_SPURIOUS_BUDGET`] for the
-    /// event-class definition each of these counts. They FEED `fired` /
+    /// event-class definition each of these counts. They feed `fired` /
     /// `spurious` above, so a receiver-role `[RACK]` line reports the
-    /// REALIZED false-repair fraction on the same two slots the sender uses
-    /// for its PREDICTED one.
+    /// realized false-repair fraction on the same two slots the sender uses
+    /// for its predicted one.
     fill_coded: u64,
     fill_src: u64,
     dup_src: u64,
     preempt_src: u64,
     /// Every source-symbol arrival. The `ν_recv` denominator.
     src_n: u64,
-    /// Every REPAIR-symbol arrival. Carried for the CONFIGURATION CONTRACT
-    /// and for nothing else: under generation coding (§16.3) every arrival is
-    /// coded, so `src_n = 0` and the two FALSE classes are structurally empty
-    /// — the same configuration fact that empties the SENDER's `fa=`. Printing
-    /// both makes that readable off one line instead of inferred.
+    /// Every repair-symbol arrival. Carried for the configuration contract
+    /// and for nothing else: under generation coding every arrival is
+    /// coded, so `src_n = 0` and the two false classes are structurally empty
+    /// — the same configuration fact that empties the sender's `fa=`.
     rep_n: u64,
     /// Is generation coding on at this receiver? Echoed as `[RFA] gen=` so
     /// the line says which machine it is a measurement of.
     recv_gen: bool,
-    /// **`rep_redundant = repairs_fed - repairs_useful`** -- THE FALSE
-    /// MEASURAND UNDER CODED ANSWERS (paper 16.83). `dup_src` / `preempt_src`
-    /// count a wasted SOURCE copy; under a coded answer "the original arrived
+    /// `rep_redundant = repairs_fed - repairs_useful`: the false-repair
+    /// measurand under coded answers (paper §7.6). `dup_src` / `preempt_src`
+    /// count a wasted source copy; under a coded answer "the original arrived
     /// anyway" is inexpressible, and the waste instead shows up as an
     /// equation that added no rank. Mirrored from the decoder's own counters
     /// at the readout, so this gauge holds no second copy of them.
     rep_redundant: u64,
-    /// **`late_after_aban`** -- a SOURCE arrival for a seq strictly below the
-    /// in-order frontier: a copy that landed after the frontier had already
-    /// moved past it. STRUCTURALLY ZERO under the reliable window (the buffer
+    /// `late_after_aban`: a source arrival for a seq strictly below the
+    /// in-order frontier — a copy that landed after the frontier had already
+    /// moved past it. Structurally zero under the reliable window (the buffer
     /// never delivers past a hole), so a nonzero reading there is a finding;
-    /// under the EVICT (rho < 1) seat it is the repair waste that seat has
-    /// never been scored on, and the counter `tools/l1/tail_matrix.sh`'s
-    /// scrape reads. **The name is part of the `[RFA]` line's contract** --
-    /// the Track B scrape greps for it.
+    /// under the EVICT (rho < 1) seat it is that seat's repair waste. The
+    /// name is part of the `[RFA]` line's contract: `tools/l1/tail_matrix.sh`
+    /// greps for it.
     late_after_aban: u64,
-    /// ── THE FIRE-CAUSE CLASSES (`[FCAUSE]`) ──────────────────────────
-    /// One counter per [`FireCause`], bumped at the EMISSION of every
+    /// ── The fire-cause classes (`[FCAUSE]`) ──────────────────────────
+    /// One counter per [`FireCause`], bumped at the emission of every
     /// recovery fire — after every suppression `continue`, so their sum is
     /// the true fire count rather than `fired`'s flight-attributed subset.
     /// See the `[FCAUSE]` commentary above [`FireCause`].
@@ -513,9 +468,9 @@ pub(crate) struct RackClockGauge {
     cause_gap_data: u64,
     cause_gap_refresh: u64,
     cause_other: u64,
-    /// Is generation coding on at this SENDER? Echoed as `[FCAUSE] gen=`:
+    /// Is generation coding on at this sender? Echoed as `[FCAUSE] gen=`:
     /// under generation the SACK→gap producer is suppressed, so both `gap_`
-    /// classes are STRUCTURALLY empty and the line must say so on its face.
+    /// classes are structurally empty and the line must say so on its face.
     send_gen: bool,
 }
 
@@ -524,8 +479,8 @@ impl RackClockGauge {
         Self::default()
     }
 
-    /// Record one recovery-round FIRE and whether it was a false alarm —
-    /// §16.68.1. Fed on every arm; observation only.
+    /// Record one recovery-round fire and whether it was a false alarm.
+    /// Fed on every arm; observation only.
     pub(crate) fn record_fire(&mut self, spurious: bool) {
         self.fired += 1;
         if spurious {
@@ -533,9 +488,9 @@ impl RackClockGauge {
         }
     }
 
-    /// Record ONE source-symbol arrival at the RECEIVER, in its repair class
-    /// (`classify_recv_repair`). Every repair-class arrival is a FIRE and the
-    /// two redundant classes are the FALSE ones, so this is the receiver's
+    /// Record one source-symbol arrival at the receiver, in its repair class
+    /// (`classify_recv_repair`). Every repair-class arrival is a fire and the
+    /// two redundant classes are the false ones, so this is the receiver's
     /// feed for the same `fa=<spurious>/<fired>` slots the sender feeds.
     /// Observation only.
     pub(crate) fn record_recv_source(&mut self, class: RecvRepair) {
@@ -556,14 +511,14 @@ impl RackClockGauge {
         self.record_fire(class.is_false());
     }
 
-    /// Record ONE repair-symbol arrival — the configuration-contract
+    /// Record one repair-symbol arrival — the configuration-contract
     /// denominator, not a fire.
     pub(crate) fn record_recv_repair_arrival(&mut self) {
         self.rep_n += 1;
     }
 
-    /// Record ONE seq reconstructed by the DECODER rather than by its own
-    /// source arrival — a repair that WORKED. A fire, never false.
+    /// Record one seq reconstructed by the decoder rather than by its own
+    /// source arrival — a repair that worked. A fire, never false.
     pub(crate) fn record_recv_coded_fill(&mut self) {
         self.fill_coded += 1;
         self.record_fire(false);
@@ -575,7 +530,7 @@ impl RackClockGauge {
         self.rep_redundant = n;
     }
 
-    /// Record ONE source arrival below the in-order frontier -- a copy that
+    /// Record one source arrival below the in-order frontier — a copy that
     /// arrived after the give-up. Observation only.
     pub(crate) fn record_late_after_aban(&mut self) {
         self.late_after_aban += 1;
@@ -586,13 +541,13 @@ impl RackClockGauge {
         self.recv_gen = gen;
     }
 
-    /// Echo which machine this SENDER is — the `[FCAUSE]` configuration
+    /// Echo which machine this sender is — the `[FCAUSE]` configuration
     /// contract. Observation only.
     pub(crate) fn set_send_generation(&mut self, gen: bool) {
         self.send_gen = gen;
     }
 
-    /// Record the CAUSE of one recovery fire that reached the wire.
+    /// Record the cause of one recovery fire that reached the wire.
     ///
     /// Called at the emission itself, so `fcause_n()` counts every fire —
     /// including the ones `record_fire` drops for want of a live-flight
@@ -611,7 +566,7 @@ impl RackClockGauge {
         self.cause_timer + self.cause_gap_data + self.cause_gap_refresh + self.cause_other
     }
 
-    /// Has this gauge classified ANY fire, i.e. does it sit at a SENDER that
+    /// Has this gauge classified any fire, i.e. does it sit at a sender that
     /// ran the gap loop? A receiver-role gauge never does and stays silent.
     pub(crate) fn is_fire_cause_site(&self) -> bool {
         self.fcause_n() > 0
@@ -629,8 +584,8 @@ impl RackClockGauge {
         )
     }
 
-    /// Has this gauge seen ANY symbol arrival, i.e. does it sit at a
-    /// RECEIVER? A sender-role gauge sees none and never emits `[RFA]`.
+    /// Has this gauge seen any symbol arrival, i.e. does it sit at a
+    /// receiver? A sender-role gauge sees none and never emits `[RFA]`.
     pub(crate) fn is_receiver_site(&self) -> bool {
         self.src_n > 0 || self.rep_n > 0
     }
@@ -658,66 +613,54 @@ impl RackClockGauge {
 
 impl Drop for RackClockGauge {
     fn drop(&mut self) {
-        // Emitted whenever a recovery round fired — §16.68.1's validation of
-        // the shipped clamp's false-alarm rate. A run that fired nothing
+        // Emitted whenever a recovery round fired. A run that fired nothing
         // stays silent.
         if self.fired > 0 {
             eprintln!("{}", self.rack_line());
         }
         // The receiver-site class breakdown behind that `fa=`. Emitted on the
-        // SAME rule and with NO gate of its own: a gauge that saw source
+        // same rule and with no gate of its own: a gauge that saw source
         // arrivals sits at a receiver and owes the breakdown; a sender-role
-        // gauge never sees one and stays silent. NOTE that the L1 harnesses
-        // SIGKILL the server, so this `Drop` is not reachable there — the
-        // receiver also emits `[RFA]` on a cadence under the EXISTING
-        // `RWM_DIAG`/`RWM_FDIAG` gates, and its last line is the reading.
+        // gauge never sees one and stays silent. The L1 harnesses SIGKILL
+        // the server, so this `Drop` is not reachable there — the receiver
+        // also emits `[RFA]` on a cadence under the `RWM_DIAG`/`RWM_FDIAG`
+        // gates, and its last line is the reading.
         if self.is_receiver_site() {
             eprintln!("{}", self.rfa_line());
         }
-        // The SENDER-site cause breakdown behind that same `fa=`. Same rule,
+        // The sender-site cause breakdown behind that same `fa=`. Same rule,
         // no gate of its own: a gauge that classified a fire ran the gap loop
-        // and owes the breakdown. Two-sided — it is emitted on the clock-OFF
-        // arm too, because "what fires when the clock is DISARMED" is the
-        // shipped machine's reading and the whole point of the question.
+        // and owes the breakdown. Two-sided — it is emitted on the clock-off
+        // arm too, because what fires when the clock is disarmed is the
+        // shipped machine's reading.
         if self.is_fire_cause_site() {
             eprintln!("{}", self.fcause_line());
         }
     }
 }
 
-/// ── THE SENDER-TEARDOWN GAUGE CARRIER (`[WALL]` + `[CCAP]`) ──────────────
+/// ── The sender-teardown gauge carrier (`[WALL]` + `[CCAP]`) ──────────────
 ///
-/// The run's ONE emission of both teardown gauges, bound to the **LIFETIME of
-/// the sender loop** rather than to any of its exit arms.
+/// The run's one emission of both teardown gauges, bound to the lifetime of
+/// the sender loop rather than to any of its exit arms.
 ///
-/// **Why this is a `Drop` and not two `eprintln!`s at a `return`.** The
-/// gauges shipped emitted from exactly two arms of `run_window_sender`'s
-/// `select!` — the `shutdown_rx` arm and the `packet == None` ("TUN closed")
-/// arm. The `perf` harness (`crate::perf`, the object benchmark every L1
-/// battery runs) takes NEITHER: `perf::client` finishes its objects, prints
-/// its summary and returns, dropping the engine `JoinHandle` without
-/// signalling shutdown and without closing the memory TUN; the sender task
-/// then lives until the runtime is dropped at the end of `main`. The
-/// pre-battery smoke measured the consequence — `window sender shut down
-/// gracefully` 0/4 and `TUN closed` 1/4, so `[CCAP]` appeared on 0 of 2 logs
-/// and `[WALL]` on 1 of 4 (goal-gate, "PRE-BATTERY SMOKE"). The renderers
-/// were pinned; REACHABILITY never was — ADR-0070's own postmortem shape, one
-/// layer down.
-///
-/// A destructor is the only site that is on EVERY exit path a sender can
-/// take: the graceful-shutdown arm, the TUN-closed arm, an early `return`,
-/// an unwind, and — the case the harness actually exercises — the task future
-/// being dropped at runtime shutdown. It also emits exactly ONCE by
-/// construction, which the two arms only achieved because each happened to
-/// `return` immediately after.
+/// Why a `Drop` and not `eprintln!`s at a `return`: the `perf` harness
+/// (`crate::perf`, the object benchmark every L1 battery runs) takes neither
+/// the `shutdown_rx` arm nor the "TUN closed" arm — `perf::client` finishes
+/// its objects and returns, dropping the engine `JoinHandle` without
+/// signalling shutdown, and the sender task lives until the runtime is
+/// dropped at the end of `main`. A destructor is the only site on every exit
+/// path a sender can take: the graceful-shutdown arm, the TUN-closed arm, an
+/// early `return`, an unwind, and the task future being dropped at runtime
+/// shutdown. It also emits exactly once by construction.
 ///
 /// It carries the `[CCAP]` tally as fields so that the counters and their
 /// emission cannot drift apart again. `[WALL]`'s own state lives in
 /// `net::walldiag`'s process-global gauge; only its emission is carried here.
 ///
-/// OBSERVATION ONLY, and on the shipped default a no-op: `RWM_WALLDIAG` ships
-/// OFF so `report_at_teardown` returns on a `None` gauge, and `composed_cap`
-/// is `RWM_COMPOSED_CAP`, also OFF. Nothing here is read by the engine.
+/// Observation only, and on the shipped default a no-op: `RWM_WALLDIAG` is
+/// off so `report_at_teardown` returns on a `None` gauge, and `composed_cap`
+/// is `RWM_COMPOSED_CAP`, also off. Nothing here is read by the engine.
 pub(crate) struct SenderTeardownGauges {
     /// `[CCAP]` tally — dyn-cap refresh ticks under the composed law.
     pub(crate) refreshes: u64,
@@ -733,20 +676,18 @@ pub(crate) struct SenderTeardownGauges {
     pub(crate) brake_ticks: u64,
     /// Late-stage cwnd brake: ticks closed.
     pub(crate) brake_closed: u64,
-    /// Σ over ENGAGED refreshes of [`SpanForms::shipped`] — C9-L1's field.
+    /// Σ over engaged refreshes of [`SpanForms::shipped`].
     pub(crate) span_sum: f64,
     /// Σ over engaged refreshes of [`SpanForms::sigma`] — the crosscheck form,
-    /// reported so C9-L3's ratio is measured. Read by nothing.
+    /// reported so its ratio to the shipped form is measured. Read by nothing.
     pub(crate) span_sigma_sum: f64,
-    /// Σ over engaged refreshes of [`SpanForms::rate_fast`] — C9-L3's ±5 %
-    /// anchor.
+    /// Σ over engaged refreshes of [`SpanForms::rate_fast`].
     pub(crate) rate_fast_sum: f64,
-    /// Σ over engaged refreshes of [`SpanForms::spread_s`] — C9-L3's ±0.4 %
-    /// anchor. Rendered as µs.
+    /// Σ over engaged refreshes of [`SpanForms::spread_s`]. Rendered as µs.
     pub(crate) spread_s_sum: f64,
     /// `RWM_COMPOSED_CAP` — whether the `[CCAP]` line is emitted at all.
     composed_cap: bool,
-    /// `store_cap_floor`, rendered as `floor_val=` (provenance, ADR-0070/5).
+    /// `store_cap_floor`, rendered as `floor_val=` (provenance, paper §6.1).
     floor: usize,
 }
 
@@ -769,8 +710,8 @@ impl SenderTeardownGauges {
         }
     }
 
-    /// Fold ONE engaged refresh's span geometry into the tally. Called at the
-    /// same refresh that fed `engaged`, so every span mean's denominator IS
+    /// Fold one engaged refresh's span geometry into the tally. Called at the
+    /// same refresh that fed `engaged`, so every span mean's denominator is
     /// `eng=`'s numerator and a parser needs no second liveness field.
     pub(crate) fn record_span(&mut self, s: SpanForms) {
         self.span_sum += s.shipped;
@@ -802,15 +743,12 @@ impl SenderTeardownGauges {
 
 impl Drop for SenderTeardownGauges {
     fn drop(&mut self) {
-        // The run's ONE `[WALL]` line (`RWM_WALLDIAG`), then the run's ONE
-        // `[CCAP]` line (`RWM_COMPOSED_CAP`) — same order the two teardown
-        // arms used, so an L1 parser written against the smoke's logs is
-        // unaffected.
+        // The run's one `[WALL]` line (`RWM_WALLDIAG`), then its one
+        // `[CCAP]` line (`RWM_COMPOSED_CAP`), in the order L1 parsers expect.
         walldiag::report_at_teardown(now_us());
-        // The run's ONE `[CPUPROF]` line (`RWM_CPUPROF`) — the sender CPU
-        // decomposition. Same site and same reason as `[WALL]`: `perf::client`
-        // takes NEITHER teardown `select!` arm, so a destructor is the only
-        // place on every exit path. Emitted unconditionally by the gauge's own
+        // The run's one `[CPUPROF]` line (`RWM_CPUPROF`) — the sender CPU
+        // decomposition. Same site and same reason as `[WALL]`: a destructor
+        // is the only place on every exit path. Emitted unconditionally by the gauge's own
         // null check, so the shipped default prints nothing.
         cpuprof::report_at_teardown();
         if self.composed_cap {

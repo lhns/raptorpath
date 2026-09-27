@@ -1,52 +1,17 @@
-//! TEMPORAL multipath aggregation oracle — the CORRECTED oracle (goal
-//! `feat/oracle-temporal`).
-//!
-//! WHY THIS FILE EXISTS.  `multipath_oracle.rs` predicted a coded fungible
-//! sliding window reaches ×1.19 aggregation at C8.  L1 REFUTED it: coded-only
-//! C8 = 3.93 Mbit/s = 0.26× fast-path-alone, and — the decisive signature —
-//! adding ANY second path made a coded window WORSE than a single path on both
-//! symmetric (5.5) and heterogeneous (3.9) paths (anti-aggregation).  The old
-//! oracle abstracted away TIME: it treated every arrived coded symbol as
-//! carrying useful rank for its whole window, with no notion that a symbol is
-//! a combination over the sender's window AS OF ITS SEND TIME and only arrives
-//! a path-delay later.  This file adds that temporal dynamic and a faithful
-//! model of the production reliability layer, and re-derives the verdict.
-//!
-//! WHAT "TEMPORAL" MEANS HERE (the correction).  A coded symbol is combined
-//! over the sender's coding window at send time; it is placed on a path and
-//! arrives one one-way-delay later.  The two designs differ in what that means
-//! for its value on arrival:
-//!
-//!   * MOVING WINDOW (naive coded sliding, the L1 build).  The coding anchor
-//!     MOVES: by the time a slow-path symbol lands, the sender/receiver
-//!     frontier has advanced (on the fast path by ≫ W), so the slow symbol
-//!     covers a window region the frontier already passed → it is stranded.
-//!     A stranded frontier position is not fungibly fillable (the live window
-//!     has moved on); the production stack recovers it per-seq via a targeted
-//!     ARQ that is CONGESTION-THROTTLED — under a datagram-loss burst the
-//!     ADR-0046 multiplier collapses toward 0 and suppresses recovery until it
-//!     re-opens (documented, goal-gate "L2 ws1" + Fungible-Frontier notes).
-//!     Because a finite store forbids the fast path from working ahead
-//!     (store ≈ W), the fast path idles through that throttled tail.  This is
-//!     the anti-aggregation drag.
-//!
-//!   * STABLE GENERATIONS (the alignment fix).  Partition the source into
-//!     fixed generations of ~W symbols and code coded symbols WITHIN each
-//!     generation.  A generation's coding target NEVER moves, so a slow-path
-//!     symbol for generation g stays useful until g decodes regardless of when
-//!     it lands.  A lost symbol is replaced by ANY later coded symbol for the
-//!     same generation from EITHER path (fungible cross-path recovery, no
-//!     per-seq throttle).  Generations pipeline (M in flight), so the fast
-//!     path never idles on a slow generation's tail.
-//!
-//! HONEST SCOPE.  This is a MODEL.  Its per-path capacity, one-way delay and
-//! GE loss are the exact C8 netem params; its fork-join, ack-RTT
-//! serialization and finite-store coupling are structural; the ONE term fit to
-//! the L1 record is the throttled-recovery collapse penalty (the ADR-0046
-//! multiplier collapse), whose magnitude is chosen to reproduce the measured
-//! ×0.26 — every other number falls out.  The verdict below does NOT depend on
-//! the exact penalty: it depends only on generations STRUCTURALLY avoiding the
-//! per-seq throttle, which is the stable-anchor claim under test.
+//! Temporal multipath aggregation oracle. `multipath_oracle.rs` treats every
+//! arrived coded symbol as useful for its whole window; this oracle adds time:
+//! a coded symbol combines the sender's window as of its send time and arrives
+//! one path delay later. It shows that a moving coding anchor strands slow-path
+//! symbols (the frontier has moved past them, so they must be recovered per
+//! sequence through a congestion-throttled ARQ while a store of about W idles
+//! the fast path), which reproduces the measured anti-aggregation, and that
+//! stable generations coded within themselves recover fungibly across paths
+//! and aggregate. Later parts check the systematic deficit-repair design, the
+//! deadline-constrained r* (paper §4.11), delay-aware placement and the span
+//! machine across δ (paper §5.3). Path capacity, delay and GE loss are the C8
+//! netem parameters; the one fitted constant is the throttled-recovery stall,
+//! chosen to reproduce the measured ×0.26, and the verdicts depend only on
+//! generations structurally avoiding that throttle.
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -100,8 +65,8 @@ enum Anchor {
     /// ARQ.  Net effect: each window's per-path shares are effectively
     /// PATH-AFFINE (the fast path cannot cover the slow path's share), and the
     /// slow path's share is recovered SAME-PATH under a congestion-throttled
-    /// (ADR-0046-collapsed) bucket.  W-insensitive, matching L1 (W=200→2.0,
-    /// W=2048→2.4).
+    /// bucket that collapses under a loss burst.  W-insensitive, matching L1
+    /// (W=200→2.0, W=2048→2.4).
     Moving,
     /// STABLE coding anchor (fixed generations).  A generation's coding target
     /// never moves, so any coded symbol for it — from ANY path, at any time —
@@ -121,8 +86,8 @@ struct Cfg {
     /// proactive repair overhead (extra coded symbols beyond the K sources).
     r: f64,
     anchor: Anchor,
-    /// throttled-recovery stall in ms per collapse event (ADR-0046). Only used
-    /// under a Moving anchor.  This is THE one L1-fit constant.
+    /// throttled-recovery stall in ms per collapse event. Only used under a
+    /// Moving anchor; the one constant fitted to L1.
     throttle_ms: u64,
 }
 
@@ -235,7 +200,7 @@ impl Oracle {
     ///     or lossy path never becomes a long pole).
     ///   * Moving: PATH-AFFINE same-path, congestion-throttled — a stranded
     ///     position can only be recovered on the path that owned it, gated by
-    ///     the collapsed ADR-0046 bucket.
+    ///     the collapsed congestion bucket.
     fn recovery_owes(&self, g: usize, i: usize, tick: u64) -> bool {
         if self.decoded[g] || self.pending[g] { return false; }
         match self.cfg.anchor {
@@ -397,7 +362,7 @@ fn factor(dual: &[Path], k: usize, cfg_of: impl Fn() -> Cfg, seed: u64) -> (u64,
 
 // Naive coded MOVING window as realized at L1: one window at a time
 // (store ≈ W ⇒ inflight_gens = 1, stop-and-wait), coded symbols stranded by
-// the moving anchor recovered per-seq through the collapsed ADR-0046 throttle.
+// the moving anchor recovered per-seq through the collapsed congestion throttle.
 fn naive_moving(w: usize, r: f64) -> Cfg {
     Cfg { gen_size: w, inflight_gens: 1, r, anchor: Anchor::Moving, throttle_ms: 190 }
 }
@@ -616,7 +581,7 @@ struct SysCfg {
     /// in-order-frontier coupling).  None = unbounded (bulk out-of-order case).
     store: Option<usize>,
     /// same-path targeted ARQ backstop for a hole that ages past the horizon
-    /// (the paper's §16.3 backstop / the shipped systematic window).  The design
+    /// (the shipped systematic window's backstop).  The design
     /// under test runs with arq=false (fungible repair ONLY, no per-seq ARQ);
     /// the contrast arm enables it to reproduce the ARQ-backstopped ~0.92.
     arq: bool,
@@ -675,7 +640,7 @@ struct Sys {
     hi_evidence: usize,
     idle_slots: u64,       // free path-slots wasted because the store gate stalled
                            // the sender with nothing else useful to send (the
-                           // in-order-frontier flow-control drag / #64 stall).
+                           // in-order-frontier flow-control drag / sender stall).
     max_outstanding: usize, // peak (next_src − ackfrontier): the sender's in-flight
                             // / receiver reassembly occupancy under the store cap.
 }
@@ -949,7 +914,7 @@ fn sys_factor(dual: &[Path], k: usize, cfg: SysCfg, seed: u64) -> (SysOut, SysOu
 fn k_for_mb(mb: f64) -> usize { ((mb * 1_000_000.0) / 1500.0).round() as usize }
 
 fn c8_wspan() -> usize {
-    // §16.5 W_mp ≈ Σg·(RTT_max + t_slack); at C8 ≈ 500–640 symbols.
+    // W_mp ≈ Σg·(RTT_max + t_slack) (paper §5.5); at C8 ≈ 500–640 symbols.
     let sum_g = c8_fast().goodput() + c8_slow().goodput();
     let rtt_max = 2.0 * c8_slow().owd as f64;
     let t_slack = 2.0 * c8_fast().owd as f64;
@@ -1121,7 +1086,7 @@ fn systematic_repair_provisioning_curve() {
 // PART 5 — THE PURE FMTCP-CLASS CONFIG: total-in-flight flow control +
 //   fountain-redundancy loss absorption (NO per-hole ARQ) + decode-on-total.
 //
-// WHY THIS TEST EXISTS (the FMTCP retry, docs/research/fmtcp-retry-design.md).
+// Why this test exists.
 // FMTCP (Cui/Wang/Wang/Wang/Wang, IEEE/ACM ToN 23(2):465–478, 2015) aggregates
 // heterogeneous paths and its abstract states our exact C8 pathology — "a subflow
 // experiencing high delay and loss becomes the bottleneck, significantly degrading
@@ -1131,12 +1096,12 @@ fn systematic_repair_provisioning_curve() {
 //         on an in-order cumulative-ack frontier;
 //   (LR)  losses ABSORBED by fountain redundancy (any-K-of-N decode, no round
 //         trip), NOT recovered per-hole by ARQ.
-// The production arc kept ONE foot in the in-order world in every attempt:
-//   * the coded/generation designs kept IN-ORDER FLOW CONTROL (store pruned on the
-//     cumulative-ack frontier → frontier serialization);  goal-gate "RWM Phase C".
-//   * the SACK designs kept PER-HOLE ARQ recovery AND a SUMMED-across-paths store
-//     cap (#64) → recovery-latency bound + bufferbloat;  goal-gate "SACK+BDP".
-// Nobody flipped BOTH (FC)+(LR) at once.  This test models that pure combination.
+// The earlier designs each kept one of the two in-order choices:
+//   * the coded/generation designs kept in-order flow control (store pruned on
+//     the cumulative-ack frontier → frontier serialization);
+//   * the SACK designs kept per-hole ARQ recovery and a summed-across-paths
+//     store cap → recovery-latency bound + bufferbloat.
+// This test models flipping both (FC)+(LR) at once.
 //
 // THE LEVERS in the Sys model map exactly:
 //   in_order = true   → flow control gated on df (the IN-ORDER delivered frontier)
@@ -1148,8 +1113,8 @@ fn systematic_repair_provisioning_curve() {
 //                                 STALLS when the gate is full (idle_slots probe).
 // =========================================================================
 
-// Aggregate BDP across the C8 path set = Σ g_i · RTT_i (per-path, NOT the summed-
-// anchor #64 bug).  This is the honest total-in-flight cap for the FMTCP config.
+// Aggregate BDP across the C8 path set = Σ g_i · RTT_i, summed per path (not
+// one summed anchor).  The total-in-flight cap for the FMTCP config.
 fn c8_agg_bdp() -> usize {
     let f = c8_fast();
     let s = c8_slow();
@@ -1217,7 +1182,7 @@ fn fmtcp_pure_flow_control_and_redundancy() {
 }
 
 // -------------------------------------------------------------------------
-// PART 5b — THE FLOW-CONTROL LEVER, ISOLATED, with the #64 sender-stall probe.
+// PART 5b — THE FLOW-CONTROL LEVER, ISOLATED, with a sender-stall probe.
 //   Hold recovery at the CAPPING setting (per-hole same-path ARQ) and a FINITE
 //   store, and flip ONLY the flow-control model in-order-frontier → total-in-
 //   flight.  This isolates the claim that the flow-control model — not the
@@ -1254,19 +1219,17 @@ fn fmtcp_flow_control_lever_isolated() {
 }
 
 // -------------------------------------------------------------------------
-// PART 5c — PRODUCTION-PARAM CONFIRM (the exact params the feat/fmtcp-aggregation
-//   build ships).  Before the L1 run the task requires confirming that the
-//   CHOSEN production parameters — NOT just the design's r=0.06 — still reach
-//   ~×1.19 with 0 idle slots and a bounded in-flight ≈ aggregate BDP.  The
-//   production build ships:
+// PART 5c — PRODUCTION-PARAM CONFIRM.  The generation build's production
+//   parameters (not just the design's r=0.06) must still reach ~×1.19 with 0
+//   idle slots and a bounded in-flight ≈ aggregate BDP.  The parameters:
 //     * ε (RWM_GEN_R) = 0.10   — ~2× the model minimum (r≥0.05 reaches the
 //       ceiling in Q4; r<0.05 DNFs).  The margin covers the real-trace finding
-//       that GE under-provisions bursty loss 2–4× (design §5 risk item).
+//       that GE under-provisions bursty loss 2–4×.
 //     * block/generation G (RWM_GEN) = 384 source symbols (stable anchor).
 //     * per-path in-flight cap: each path i capped at (gain·)BtlBw_i·RTprop_i,
-//       enforced PER PATH — the #64 fix (the summed-anchor bug over-drove the
-//       slow path because one GLOBAL 2×Σ-BDP budget was spendable on any path;
-//       per-path enforcement bounds each queue independently).  The aggregate
+//       enforced per path (one global 2×Σ-BDP budget spendable on any path
+//       over-drives the slow path; per-path enforcement bounds each queue
+//       independently).  The aggregate
 //       operating in-flight then emerges near Σ_i BtlBw_i·RTprop_i.
 //     * one deficit-feedback per RTT (fb_ms = fast-path RTT ≈ 2·OWD_fast = 10ms).
 //   MODELLING NOTE.  The Sys model's `store` is a single GLOBAL outstanding cap
@@ -1315,7 +1278,7 @@ fn fmtcp_production_params_confirm() {
     assert_eq!(du.arq_used, 0, "PROD FMTCP uses NO per-hole ARQ — fountain redundancy only");
     // … 0 idle sender slots (total-in-flight FC never stalls the sender) …
     assert_eq!(du.idle_slots, 0, "PROD FMTCP must not idle the sender: {} idle slots", du.idle_slots);
-    // … and the EMERGENT in-flight sits near the aggregate BDP (no #64 bloat):
+    // … and the EMERGENT in-flight sits near the aggregate BDP (no bufferbloat):
     //     within ~1.5× the bare aggregate BDP, and ≪ the whole object.
     assert!(du.max_outstanding <= (bdp as f64 * 1.5) as usize,
         "emergent in-flight must sit near the aggregate BDP ({bdp}, ≤1.5×): {}", du.max_outstanding);
@@ -1326,15 +1289,15 @@ fn fmtcp_production_params_confirm() {
 }
 
 // =========================================================================
-// PART 4 — UNIFIED DEADLINE-CONSTRAINED r*  (paper §8.8).
+// PART 4 — UNIFIED DEADLINE-CONSTRAINED r*  (paper §4.11).
 //
 // A DIFFERENT measured process from Parts 1–3.  Those measure THROUGHPUT
 // (object completion time under aggregation).  This one measures the
 // per-symbol LATENESS TAIL under a hard deadline D — the quantity the FEC-rate
 // controller actually budgets.  It is the arbiter for the unified r* closed
-// form and for its N=1 → §8.4 reduction.
+// form and for its N=1 → r* (paper §4.2) reduction.
 //
-// THE MODEL UNDER TEST (paper §8.8).  A symbol is LATE if its total delivery
+// The model under test.  A symbol is LATE if its total delivery
 // delay exceeds a deadline D.  The delay decomposes into three spend terms,
 // all drawing on the ONE budget D:
 //
@@ -1346,17 +1309,17 @@ fn fmtcp_production_params_confirm() {
 //
 // The controller picks the MINIMAL FEC rate r such that P(T_delay > D) ≤ δ
 // across the path set.  H (the reorder horizon) is the reorder-share of D:
-// §16.2's eligibility set E = { i : d_i − d_min ≤ H }.  A path outside E is
+// the eligibility set E = { i : d_i − d_min ≤ H }.  A path outside E is
 // force-skipped at the frontier (its symbols are reorder-late holes); a path
 // inside E delivers in order, and r must cover its within-window FEC miss so
 // that the ARQ tail e_i(1−P_fec,i) — which overflows D whenever d_i+1.5RTT_i>D
 // — stays under the budget.  N=1 ⇒ d_1−d_min ≡ 0 ⇒ E={1}, L_reorder ≡ 0, and
-// P(late) collapses to e(1−P_fec) — the §8.4 tail — so r* reduces to §8.4's.
+// P(late) collapses to e(1−P_fec) — the §4.2 tail — so r* reduces to §4.2's.
 //
-// HONEST SCOPE.  FEC is per-path windowed (each path recovers its own losses
+// Scope.  FEC is per-path windowed (each path recovers its own losses
 // to its own budget — the conservative "all symbols meet D" contract that
 // yields the max-over-paths r*); cross-path fungible repair (the THROUGHPUT
-// win of Parts 1–3, §16) is orthogonal and deliberately NOT credited here.
+// win of Parts 1–3) is orthogonal and deliberately NOT credited here.
 // Sender serialization jitter is idealized (generation paced at Σg_i) so the
 // reorder term is isolated to path-delay heterogeneity — the term the formula
 // models.  The GE chain per path is continuous (bursts persist across windows).
@@ -1382,7 +1345,7 @@ struct DlOut {
     #[allow(dead_code)]
     p_late_recovery: f64, // late because ARQ recovery overflowed D
     p_late_reorder: f64,  // late because reorder lag exceeded H (frontier hole)
-    fec_miss: f64,        // fraction lost AND window-uncovered = §8.4 tail e(1−P_fec)
+    fec_miss: f64,        // fraction lost AND window-uncovered = §4.2 tail e(1−P_fec)
 }
 
 /// Build a path with a target average loss ε and Bad→Good rate q (so the burst
@@ -1421,7 +1384,7 @@ fn run_deadline(paths: &[Path], k: usize, cfg: DlCfg, seed: u64) -> DlOut {
     let send: Vec<f64> = (0..k).map(|s| s as f64 / sumg).collect();
 
     // per path: window-by-window GE draws for sources + r·W repairs; a window
-    // is FEC-covered iff surviving repairs ≥ losses (§8.4 predicate).  An
+    // is FEC-covered iff surviving repairs ≥ losses (§4.2 predicate).  An
     // uncovered window's losses each need ARQ (+1.5·RTT_i = +3·d_i).
     let mut arrival = vec![0.0f64; k];
     let mut ge: Vec<Ge> = (0..n).map(|_| Ge { bad: false }).collect();
@@ -1507,7 +1470,7 @@ fn run_deadline(paths: &[Path], k: usize, cfg: DlCfg, seed: u64) -> DlOut {
 //   Single path, per-symbol (unordered) delivery, deadline D in the ARQ-
 //   overflow band (d < D < d+1.5·RTT): a symbol is on-time iff arrived or
 //   FEC-covered, late iff its window failed and it needs ARQ.  The oracle's
-//   lateness tail must equal the §8.4 tail e(1−P_fec), and the closed-form
+//   lateness tail must equal the §4.2 tail e(1−P_fec), and the closed-form
 //   r*(δ,ε,σ²,W) must place the tail at δ.  This is the correctness gate.
 // -------------------------------------------------------------------------
 #[test]
@@ -1530,7 +1493,7 @@ fn unified_rstar_n1_reduces_to_84() {
         let sigma2 = burst_variance_factor(p, q);
         let path = path_eps(50.0, owd, eps, q);
 
-        // §8.4 closed form with the continuous margin z = Φ⁻¹(1 − δ/ε).
+        // §4.2 closed form with the continuous margin z = Φ⁻¹(1 − δ/ε).
         let z = normal_quantile(1.0 - delta / eps);
         let r_star = compute_r_star_with_z(eps, sigma2, w as f64, z);
 
@@ -1545,17 +1508,17 @@ fn unified_rstar_n1_reduces_to_84() {
             eps, delta, out.p_late, out.fec_miss, analytic_tail, r_star, out.p_late / delta);
 
         // The N=1 reduction: with no reorder, EVERY late symbol is a recovery
-        // (ARQ) miss, and the tail IS the §8.4 miss e(1−P_fec).
+        // (ARQ) miss, and the tail IS the §4.2 miss e(1−P_fec).
         assert_eq!(out.p_late_reorder, 0.0, "N=1 has no reorder term by construction");
         assert!((out.p_late - out.fec_miss).abs() < 1e-9,
             "N=1 late tail must be exactly the window-miss (ARQ) events");
-        // (ii) the oracle process agrees with the §8.4 analytic tail (GE burst
+        // (ii) the oracle process agrees with the §4.2 analytic tail (GE burst
         //      correlation vs the normal approx: ~20% band, as in test 2.1).
         let ratio = out.p_late / analytic_tail;
         assert!((0.6..1.7).contains(&ratio),
             "oracle tail must track e(1−P_fec): eps={eps} got {:.5} vs {:.5}",
             out.p_late, analytic_tail);
-        // (iii) THE THEOREM: at r = r*(§8.4), the measured tail sits at δ.
+        // (iii) THE THEOREM: at r = r*(§4.2), the measured tail sits at δ.
         let hit = out.p_late / delta;
         assert!((0.45..2.2).contains(&hit),
             "r*(§8.4) must place the deadline-miss tail at δ={delta}: got {:.5} ({hit:.2}×δ)",
@@ -1567,7 +1530,7 @@ fn unified_rstar_n1_reduces_to_84() {
 }
 
 // -------------------------------------------------------------------------
-// PART 4b — THE REORDER TERM and the ordering flag (§16 ordering-as-policy).
+// PART 4b — THE REORDER TERM and the ordering flag (ordering as a delivery policy).
 //   Two heterogeneous paths, deadline LOOSE enough that recovery never
 //   overflows, so the ONLY lateness cause is cross-path resequencing.  The
 //   reorder-late share must (i) equal the slow-path goodput share when H <
@@ -1636,7 +1599,7 @@ fn unified_rstar_reorder_term() {
 //   (a) P(late) strictly decreasing in r (more FEC → fewer ARQ misses → fewer
 //       recovery-overflows), so the constraint set {r : P(late) ≤ δ} is an
 //       upper interval [r_min,∞) — convex — and the overhead-minimizing r* is
-//       its boundary (the KKT stationary point of §8.8).
+//       its boundary (the KKT stationary point of §4.11).
 //   (b) reorder-late share monotone NON-INCREASING in H (larger reorder budget
 //       admits more paths); (c) monotone NON-DECREASING in ε at fixed r.
 //   Also: the empirically smallest feasible r brackets the closed-form r*.
@@ -1686,7 +1649,7 @@ fn unified_rstar_monotonicity_and_optimum() {
     // r* is the correct-order FLOOR of the feasible interval, not an over-estimate:
     // the true boundary sits at/above r* (never far below), confirming the closed
     // form never dangerously over-provisions and the documented under-provisioning
-    // is bounded (~1.5×, well within the §8.7 exact-DP correction).
+    // is bounded (~1.5×, well within the §4.7 exact-DP correction).
     assert!(r_min_emp >= r_star * 0.85,
         "closed-form r* must be a floor (not an over-estimate): r_min_emp={r_min_emp:.3} r*={r_star:.4}");
     assert!(r_min_emp <= r_star * 2.5,
@@ -1804,8 +1767,8 @@ fn unified_rstar_grid_fidelity() {
 // =========================================================================
 // PART 6 — DELAY-AWARE (DAPS) SCHEDULING vs COST-BASED-CURRENT PLACEMENT.
 //
-// WHY THIS TEST EXISTS.  The FMTCP-class build (§16.9 / goal-gate "FMTCP
-// Aggregation Build") placed CURRENT coded symbols by marginal cost (§16.3).
+// Why this test exists.  The FMTCP-class build (removed; paper §10) placed
+// CURRENT coded symbols by marginal cost.
 // Slow-path symbols therefore carry data at the CURRENT stream frontier and
 // arrive one slow-path-delay LATE.  L1 measured C8 het = 0.48x fast-alone
 // (7.58 Mbit/s) — WORSE than single path — while PART 5/5c predicted x1.19.
@@ -1818,7 +1781,7 @@ fn unified_rstar_grid_fidelity() {
 //       that outruns the recovery slack).
 //
 // THE TWO SCHEDULERS UNDER TEST (published, cited):
-//   * COST-BASED-CURRENT  (the FMTCP build, §16.3 marginal-cost placement, and
+//   * COST-BASED-CURRENT  (the FMTCP build's marginal-cost placement, and
 //     MPTCP default minRTT — pick the lowest-RTT path with free cwnd for the
 //     CURRENT segment).  The slow path is handed near-frontier stream
 //     positions; they land owd_slow late with ZERO recovery slack.
@@ -1843,7 +1806,7 @@ fn unified_rstar_grid_fidelity() {
 //     FUTURE slow-path symbol has the pre-fetch slack (Delta/Sigma_g ms) to
 //     recover before df reaches it, so it never stalls completion.
 //
-// HONEST SCOPE.  A MODEL.  Per-path capacity/OWD/GE are the exact C7/C8 netem
+// Scope.  A model.  Per-path capacity/OWD/GE are the exact C7/C8 netem
 // params; the in-order frontier + bounded buffer + per-path recovery RTT are
 // structural.  Recovery folds one reactive round trip (NACK+resend ~ RTT_p)
 // into latency, as the Sys model (PART 3) does.  The verdict depends only on
@@ -2398,7 +2361,7 @@ fn daps_queue_mgmt_lifts_c8_to_ceiling() {
 
 // PART 6f — FAST-PATH SOURCE BURST + the SLOW-PATH COUPLING (the pace-all
 //   residual).  PART 6e paced the SLOW path and ABSTRACTED the fast path as the
-//   unbloated min-RTprop reference (the §16.11 caveat) — so it modelled the
+//   unbloated min-RTprop reference — so it modelled the
 //   repair-pacing win but not the LAST standing-queue residual L1 measured
 //   (C8 = 0.56x, not the ceiling).  That residual is the SOURCE: pace-all held
 //   the REPAIR when both per-path buckets were dry, but the SOURCE placement
@@ -2424,7 +2387,7 @@ fn daps_queue_mgmt_lifts_c8_to_ceiling() {
 //   the queue model — the structural floor IS the ceiling; the remaining
 //   measured gap is recovery-tail / rate-estimator warm-up, not queue).
 //
-//   HONESTY on the fast-path term.  A PURE standing queue on the fast path is a
+//   Scope of the fast-path term.  A PURE standing queue on the fast path is a
 //   LATENCY cost (RTT), not a steady-state throughput cost — the link still
 //   drains N_fast symbols at BtlBw_fast regardless of buffer occupancy.  So the
 //   fast burst degrades C8 THROUGH the coupling (repair displaced to the slow
@@ -2554,7 +2517,7 @@ fn source_backpressure_collapses_fast_queue_and_slow_coupling() {
 //   Then R → true BtlBw (×1), the bucket occupancy → one BDP, and 6e/6f's PACE
 //   regime is finally REALIZED on both paths.
 //
-//   HONESTY.  Pure queue model: a fast-path standing queue is LATENCY not
+//   Scope.  Pure queue model: a fast-path standing queue is LATENCY not
 //   throughput, so single-path THROUGHPUT floors at fast_g here.  L1's single-c2
 //   BIMODALITY (median 15.9 / mean 9.8) is the drops / RTT-driven CC instability
 //   the over-read's ~380 ms fast-path queue induces — which this model omits
@@ -2653,7 +2616,7 @@ fn rate_anchor_overread_makes_pacer_inert() {
 
 // PART 6h — SLOW-PATH READ-AHEAD DEPTH BOUND vs RATE THROTTLE (the last lever).
 //   PART 6g CLOSED the rate anchor (fast over-read ×158→×1, fast bufferbloat
-//   1573→30 ms).  But L1 (§16.13) then showed C8 does NOT rise under DAPS — it
+//   1573→30 ms).  But L1 then showed C8 does NOT rise under DAPS — it
 //   REGRESSES — and the CLEAREST signal was the SYMMETRIC C7: binding both pacers
 //   at the correct (lower) rate dropped C7 20.96→16.97 (−19%) and left the link
 //   IDLE (a POLITENESS regression), while the heterogeneous SLOW path STILL
@@ -2664,7 +2627,7 @@ fn rate_anchor_overread_makes_pacer_inert() {
 //   placed deep + repair fed by the residual slow over-read), a queue the SOURCE
 //   pacer/cap does not bound.  6e/6f/6g all scored only "queue ≤ skew"; none
 //   distinguished a link kept FULL from a link RATE-THROTTLED idle.  This part
-//   adds the UTILIZATION axis so it can reproduce BOTH §16.13 failure modes and
+//   adds the UTILIZATION axis so it can reproduce BOTH measured failure modes and
 //   show the depth bound (not a rate throttle) is the escape.
 //
 //   TWO INDEPENDENT AXES the earlier parts conflated:
@@ -2675,7 +2638,7 @@ fn rate_anchor_overread_makes_pacer_inert() {
 //       actually DRIVES.  A DEPTH bound leaves the path emitting at its natural
 //       link rate (util = 1, never idle); a RATE throttle clocks emission at the
 //       ESTIMATE and idles the link between refills / under the min-filter's
-//       conservatism (util = η < 1).  THIS is the axis §16.13's C7 regression
+//       conservatism (util = η < 1).  THIS is the axis the measured C7 regression
 //       lives on and the axis a pure queue model (6e/6f/6g) cannot see.
 //   C8 realized slow goodput = slow_g · useful(q) · util.  A regime wins ONLY if
 //   BOTH are 1 — bounded queue AND full link.
@@ -2685,8 +2648,8 @@ fn rate_anchor_overread_makes_pacer_inert() {
 //        (util=1) but commits the whole send-buffer read-ahead depth d_unb ahead
 //        of the frontier (source deep + repair on the residual slow over-read) →
 //        q = d_unb/BtlBw_slow ≫ skew → useful→0 → C8 → PARITY (the slow path's
-//        3–4 s bloat is wasted; matches §16.13 measured ~3–4 s / C8 ≈ fast-alone).
-//     B. RATE-THROTTLE (§16.13 rate-sample, pace at BtlBw): the queue IS bounded
+//        3–4 s bloat is wasted; matches the L1-measured ~3–4 s / C8 ≈ fast-alone).
+//     B. RATE-THROTTLE (rate-sample, pace at BtlBw): the queue IS bounded
 //        (q ≤ skew, useful=1) — but clocking emission at the estimate leaves the
 //        link IDLE (util = η < 1).  Realized slow goodput = η·slow_g < slow_g →
 //        C8 below ceiling; applied SYMMETRICALLY to C7 (both paths ×η) it
@@ -2699,8 +2662,8 @@ fn rate_anchor_overread_makes_pacer_inert() {
 //        The depth bound is the PRIMARY limiter; it never lowers the emission
 //        rate below BtlBw within the budget — that is what escapes trap B.
 //
-//   HONESTY.  This is a first-order queue+utilization model; the magnitudes
-//   (d_unb, η) are pinned to the §16.13 measurements (slow bloat ~3–4 s; C7
+//   Scope.  This is a first-order queue+utilization model; the magnitudes
+//   (d_unb, η) are pinned to the L1 measurements (slow bloat ~3–4 s; C7
 //   20.96→16.97).  The DIRECTION and the DISCRIMINATION (depth-bound beats BOTH
 //   traps; rate-throttle cannot, because it trades util for queue) are the point.
 //   If the depth bound did NOT beat BOTH in this model, the build would not
@@ -2720,14 +2683,14 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
     let slow_g = s.goodput();
     let ceiling = (fast_g + slow_g) / fast_g;
 
-    // §16.13 measured slow-path bloat under the CORRECT anchor + BDP cap: ~3.5 s
+    // L1 measured slow-path bloat under the CORRECT anchor + BDP cap: ~3.5 s
     // live RTT.  The unbounded read-ahead depth that produces it (source deep +
     // repair on the residual slow over-read), in symbols.
     let slow_bloat_ms = 3500.0;
     let d_unb = slow_bloat_ms * rate_s; // whole-send-buffer read-ahead depth
     // The depth budget this work imposes: exactly the skew, in symbols.
     let d_bound = skew * rate_s; // = skew·BtlBw_slow (the ECF/DAPS depth)
-    // §16.13 measured POLITENESS idle: C7 rate-throttle 20.96→16.97 ⇒ the link
+    // L1 measured POLITENESS idle: C7 rate-throttle 20.96→16.97 ⇒ the link
     // utilization the rate clock leaves = η.  A DEPTH bound does NOT incur it.
     let eta = 16.97 / 20.96; // ≈ 0.81 — the rate-throttle utilization
 
@@ -2751,7 +2714,7 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
     // ---- A. DEPTH-UNBOUNDED (current) : util=1 (full link) but q ≫ skew --------
     let q_a = q_of_depth(d_unb);
     let (util_a, f_a): (f64, f64) = (1.0, factor(q_a, 1.0));
-    // ---- B. RATE-THROTTLE (§16.13)    : q ≤ skew (bounded) but util=η (idle) ----
+    // ---- B. RATE-THROTTLE              : q ≤ skew (bounded) but util=η (idle) ----
     let q_b = q_of_depth(bdp_s); // paced to one BDP → ~0
     let (util_b, f_b) = (eta, factor(q_b, eta));
     // ---- C. DEPTH-BOUND (this work)   : q = skew (bounded) AND util=1 (full) ----
@@ -2785,7 +2748,7 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
     assert!((useful(q_b) - 1.0).abs() < 1e-9, "B: rate-throttle queue is skew-aligned (useful=1)");
     assert!(util_b < 0.95, "B: rate-throttle must under-drive the link (idle): util={util_b:.2}");
     assert!(f_b < ceiling - 0.02, "B: rate-throttle must fall below the ceiling despite a bounded queue: x{f_b:.3} vs x{ceiling:.3}");
-    // (c) B REPRODUCES the §16.13 C7 regression (the model is not too coarse).
+    // (c) B REPRODUCES the measured C7 regression (the model is not too coarse).
     assert!((c7_rate_throttle / c7_ceiling - 16.97 / 20.96).abs() < 0.01,
         "B must reproduce the measured C7 rate-throttle regression 20.96->16.97");
     // (d) C ESCAPES BOTH traps: bounded queue (useful=1) AND full link (util=1) →
@@ -2815,20 +2778,20 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
 // PART 6i — THE ANCHOR-NOISE AXIS (why the depth bound was INERT despite being
 //   the correct lever).  PART 6h proved a DEPTH bound beats both the DUMP and the
 //   rate-throttle IF the depth budget d_bound = skew·BtlBw_slow is well-defined.
-//   §16.15 (generation actually ON) measured the missing precondition: the slow
+//   L1 with generation on measured the missing precondition: the slow
 //   path's BtlBw_slow ESTABLISHES but is a decode-clocked windowed-MAX that swings
 //   ~4000× (5 .. 20 950 sym/s around a true ~2 083).  The depth budget it feeds,
 //   dbud = skew·BtlBw_slow_est, swings 0 .. 612 in lock-step — so half the time
 //   dbud≈0 (bound INERT: read-ahead UNBOUNDED → the DUMP, PART 6h regime A) and
 //   the other half dbud is many× too large (bound does not bind).  A bound cannot
 //   key on a signal that jumps 4000×/s.  This part models the anchor as a NOISY
-//   estimate and shows: (a) the swing makes the depth bound inert (C8 → parity, the
-//   §16.15 bound); (b) a STABLE (de-noised) anchor restores dbud ≈ skew·true → the
+//   estimate and shows: (a) the swing makes the depth bound inert (C8 → parity,
+//   as measured); (b) a STABLE (de-noised) anchor restores dbud ≈ skew·true → the
 //   depth bound binds → the PART 6h ×1.195 ceiling.  The de-noise (RWM_RATE_WIRE)
-//   is a robust QUANTILE that rejects the over-read latch.  HONESTY: this shows the
-//   anchor-stability fix is NECESSARY (unlocks the oracle-proven depth bound); it is
-//   not SUFFICIENT proof of L1 aggregation — L1 is the arbiter (see §16.15, which
-//   measured a residual dual-path generation-mode penalty the pure queue model omits).
+//   is a robust quantile that rejects the over-read latch.  This shows the
+//   anchor-stability fix is necessary (it unlocks the depth bound); it is not
+//   sufficient proof of L1 aggregation — L1 measured a residual dual-path
+//   generation penalty the pure queue model omits.
 #[test]
 fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
     let f = c8_fast();
@@ -2841,9 +2804,9 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
     let fast_g = f.goodput();
     let slow_g = s.goodput();
     let ceiling = (fast_g + slow_g) / fast_g;
-    let d_unb = 3500.0 * rate_s; // §16.13/16.15 unbounded read-ahead depth (~3.5 s)
+    let d_unb = 3500.0 * rate_s; // L1-measured unbounded read-ahead depth (~3.5 s)
 
-    // §16.15 slow-path BtlBw_slow_est time-series (sym/s; the sender DIAG trace):
+    // L1-measured slow-path BtlBw_slow_est time-series (sym/s; the sender DIAG trace):
     // swings 5 .. 20 950 around the true ~2 083.
     let est_series_sym_s = [
         1116.0, 5837.0, 46.0, 102.0, 780.0, 20751.0, 20950.0, 7000.0, 59.0, 592.0, 5.0,
@@ -2897,15 +2860,15 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
 }
 
 // =========================================================================
-// PART 7 — THE UNIFIED SPAN MACHINE ACROSS THE δ CONTINUUM (task #61,
-// paper §16.20).
+// PART 7 — THE UNIFIED SPAN MACHINE ACROSS THE δ CONTINUUM (paper §5.2,
+// §5.3).
 //
 // The two RLC-family production machines are two SENDER SPAN POLICIES over
-// one decode algebra (§16.20.1-2): the realtime-class sliding machine emits
+// one decode algebra: the realtime-class sliding machine emits
 // MOVING trailing spans (anchor advances with every symbol — the A*-advance
 // → 1 limit) and delivers per-arrival; the generation bulk machine emits
 // PINNED aligned spans (anchor advance = the span itself, quantized to the
-// G grid) M deep. §16.20.3 derives all parameters from one law:
+// G grid) M deep. The span law derives all parameters:
 //
 //    A* = clamp(rate·D, 1, W),  D = min(H, 2·RTprop),
 //    M* = ceil(rate·2·RTprop / A*_q) + 1
@@ -2936,11 +2899,11 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
 //       at the realtime δ multiplies the deadline-miss fraction (this is
 //       what the old profile switch protected by fiat, now by formula);
 //   (e) the M* depth term IN ITS ENGAGEMENT REGIME (BDP > G: RTT 100/200,
-//       the §16.17 unvalidated residual): throughput(m) rises to a knee at
+//       where M* is otherwise unvalidated): throughput(m) rises to a knee at
 //       m = M* and saturates — M* is sufficient (≈ the m=32 ceiling) and
 //       the legacy fixed m=2 is far below it.
 //
-// HONEST SCOPE. Same discipline as PART 1-6: structural dynamics (send
+// Scope. Same discipline as PART 1-6: structural dynamics (send
 // serialization, OWD, GE loss, ack latency, finite pipeline) are modeled;
 // decode is DoF-counting — a pinned quantum solves when its distinct
 // arrived DoF reach its width; a moving-span system solves a connected
@@ -2965,7 +2928,7 @@ struct SpanOut {
     lats: Vec<u64>, // per-symbol delivery latency (send→deliver), ms
 }
 
-/// The unified span law (paper §16.20.3): A* = clamp(rate·D, 1, W) with
+/// The unified span law (paper §5.3): A* = clamp(rate·D, 1, W) with
 /// D = min(H, 2·RTprop); M* = ceil(rate·2·RTprop/A*)+1 clamped [2, 32];
 /// pinned anchors once a deficit round fits the deadline (D ≥ 2·RTprop,
 /// i.e. H no longer binds), moving trailing spans below.
@@ -3321,9 +3284,9 @@ fn c3_path() -> Path {
 fn unified_span_continuum_delta_sweep() {
     let path = c3_path();
     let k = 20_000; // ~30 MB at 1500 B — long enough for steady state
-    let w_cap = 384; // the §16.5 W bound / production G — the A* clamp
+    let w_cap = 384; // the W bound (paper §5.5) / production G — the A* clamp
     let seeds = [42u64, 7u64];
-    // r is DERIVED, not fixed: r*(W = A*) from §8.4 with the burst variance
+    // r is DERIVED, not fixed: r*(W = A*) from §4.2 with the burst variance
     // factor — the span machine's overhead is a function of its own span
     // (small fresh spans pay a fatter 1/√W margin: the honest bandwidth
     // price of a tight δ).
@@ -3471,7 +3434,7 @@ fn unified_span_continuum_delta_sweep() {
 
 #[test]
 fn unified_span_depth_term_rtt100_200() {
-    // The §16.17 residual: M* only engages when BDP > G — RTT 100/200 at
+    // M* only engages when BDP > G — RTT 100/200 at
     // link rate. Model exactly that regime and check the SHAPE: throughput
     // rises with m to a knee at M* and saturates (M* ≈ the m=32 ceiling);
     // the legacy fixed m=2 is far below.

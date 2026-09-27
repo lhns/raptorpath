@@ -1,15 +1,9 @@
-//! `[LAT]` — DELIVERED LATENCY, DECOMPOSED.
+//! `[LAT]` — delivered latency, decomposed.
 //!
-//! **The question, and why it has never been answered.** What a user of this
-//! transport experiences is delivered latency and goodput. The record has
-//! measured holes, repairs, false repairs, stalls and shares — and has NEVER
-//! decomposed the delivered latency itself. Seed S7 of the law search says
-//! that is the wrong order: find the law governing the LARGEST term first,
-//! and the recovery-clock prize is already known to be bounded by 1.5–3.4 %
-//! at the duals and ≈ 0 at singles (§16.80).
-//!
-//! So this gauge splits every delivered source symbol's wait into three
-//! disjoint pieces, per path:
+//! What a user of this transport experiences is delivered latency and
+//! goodput. This gauge splits every delivered source symbol's wait into three
+//! disjoint pieces, per path, so the law governing the largest term can be
+//! found first:
 //!
 //! ```text
 //!     A_x  =  (t_arr − send_ts)  −  min_running(t_arr − send_ts)
@@ -17,53 +11,45 @@
 //!     P    =  the `[SUCC]` hole duration        (the REPAIR WAIT)
 //! ```
 //!
-//! `A_x` is **queueing plus sender dwell above this path's own floor**. The
-//! running-min subtraction is what makes it a measurement at all: `t_arr` and
-//! `send_ts` are two different clocks, so only DIFFERENCES of their gap mean
-//! anything, and the path's best-ever gap is the floor everything is read
-//! against.
+//! `A_x` is queueing plus sender dwell above this path's own floor. `t_arr`
+//! and `send_ts` are two different clocks, so only differences of their gap
+//! mean anything, and the path's best-ever gap is the floor everything is
+//! read against.
 //!
-//! **DISCLOSURE, because it changes what `A_x` is a measurement OF: the
-//! SENDER'S OWN DWELL RIDES INSIDE IT.** `send_timestamp_us` is stamped in
-//! `emit_source` at the placement lock — BEFORE quinn's datagram queue, its
-//! pacer and the kernel. So `A_x` is (sender reservoir dwell + wire queue +
-//! propagation) above the floor, not the network queue alone. That is the
-//! same conflation the #80 battery measured on the app-echo RTT (arm D), and
-//! it is stated here rather than left for a reader to discover: an `A_x` that
-//! dominates indicts the STORE/PACING law, which may sit on either side of
-//! the socket.
+//! The sender's own dwell rides inside `A_x`: `send_timestamp_us` is stamped
+//! in `emit_source` at the placement lock — before quinn's datagram queue,
+//! its pacer and the kernel. So `A_x` is (sender store dwell + wire queue +
+//! propagation) above the floor, not the network queue alone, and an `A_x`
+//! that dominates indicts the store/pacing law, which may sit on either side
+//! of the socket.
 //!
-//! **`R` IS CLASSED BY WHAT RELEASED IT**, read off the `[SUCC]` gauge's own
-//! resolution record rather than guessed:
+//! `R` is classed by what released it, read off the `[SUCC]` gauge's own
+//! resolution record:
 //!
-//!   * `rw_xp` — the releasing arrival landed on a DIFFERENT path from the
-//!     one that exposed the hole. A CROSS-PATH skew event: the scheduler's
-//!     own inversion. **STRUCTURALLY ZERO AT ONE PATH**, which is this
-//!     gauge's control reading.
+//!   * `rw_xp` — the releasing arrival landed on a different path from the
+//!     one that exposed the hole: a cross-path skew event. Structurally zero
+//!     at one path, which is this gauge's control reading.
 //!   * `rw_sp` — same path. In-path reordering, or a real loss on that path.
 //!   * `rw_rep` — the decoder reconstructed the releasing seq from coded
 //!     repair.
 //!
-//! **THE ACCOUNTING IDENTITY, asserted on the engine's own output:**
+//! The accounting identity, asserted on the engine's own output:
 //!
 //! ```text
 //!     n_deliv  =  n_rwxp + n_rwsp + n_rwrep + n_nowait
 //! ```
 //!
 //! Every delivered symbol either waited in the reorder buffer (in exactly one
-//! class) or did not. A gauge whose classes do not partition its own
-//! denominator is caught by its reachability test rather than in a results
-//! table.
+//! class) or did not.
 //!
-//! **The shares `sh_*`** are each class's share of the TOTAL accumulated
-//! wait, so the pre-registered first readout (PLACEMENT-INDICTED /
-//! QUEUE-DOMINATED / REPAIR-DOMINATED / MIXED) can be taken off one line.
+//! The shares `sh_*` are each class's share of the total accumulated wait,
+//! so the dominant term can be read off one line.
 //!
-//! **`-` iff `n = 0`**, `[SUCC]`'s convention verbatim: an absent reading is
-//! never a measured zero, and every value sits beside its own sample count.
-//! ALWAYS FED — no gate changes what is recorded, only whether the line is
-//! printed, and it is printed under the SAME gate and on the SAME cadence as
-//! `[SUCC]` because the two are read together.
+//! `-` iff `n = 0`, as in `[SUCC]`: an absent reading is never a measured
+//! zero, and every value sits beside its own sample count. Always fed — no
+//! gate changes what is recorded, only whether the line is printed, and it is
+//! printed under the same gate and on the same cadence as `[SUCC]` because
+//! the two are read together.
 //!
 //! Nothing here branches, decides, or is reachable from a control law.
 
@@ -74,15 +60,15 @@ use super::succ::{Hist, HoleOutcome, HoleRecord};
 /// How many arrivals may be pending delivery before the oldest record is
 /// dropped. A declared resource bound, not a timeout: a seq that arrives and
 /// is never delivered (an abandoned hole under the EVICT policy) would
-/// otherwise sit here forever. Evictions are COUNTED and printed (`over=`).
+/// otherwise sit here forever. Evictions are counted and printed (`over=`).
 const PENDING_MAX: usize = 16_384;
 
 /// Which class of reorder wait one delivery paid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RwClass {
-    /// Released by an arrival on a DIFFERENT path from the exposer.
+    /// Released by an arrival on a different path from the exposer.
     CrossPath,
-    /// Released by an arrival on the SAME path.
+    /// Released by an arrival on the same path.
     SamePath,
     /// Released by a decoder reconstruction.
     Repair,
@@ -109,12 +95,12 @@ struct PathLat {
     nowait: u64,
     /// Every delivery attributed to this path.
     deliv: u64,
-    /// The running MIN of `t_arr − send_ts`, µs (with its constant, unknown
+    /// The running min of `t_arr − send_ts`, µs (with its constant, unknown
     /// clock offset — which is why only the difference from it is printed).
     min_gap: Option<i64>,
-    /// Arrivals that RESET the floor. A warm-up witness: while the min is
-    /// still moving, `A_x` is biased HIGH, and this is the count that says so
-    /// instead of a hidden filter.
+    /// Arrivals that reset the floor. A warm-up witness: while the min is
+    /// still moving, `A_x` is biased high, and this count says so instead of
+    /// a hidden filter.
     min_resets: u64,
 }
 
@@ -129,13 +115,13 @@ impl PathLat {
     }
 }
 
-/// **THE DELIVERED-LATENCY DECOMPOSITION GAUGE.** Owned by the receiver task.
+/// The delivered-latency decomposition gauge. Owned by the receiver task.
 /// No engine handle, no shared state, nothing `&mut`-reachable from a
 /// decision site.
 #[derive(Default)]
 pub struct LatGauge {
     paths: BTreeMap<u32, PathLat>,
-    /// `seq → (path, A_x µs)` recorded at ARRIVAL and consumed at DELIVERY.
+    /// `seq → (path, A_x µs)` recorded at arrival and consumed at delivery.
     /// Bounded; `order` is the eviction FIFO.
     pending: HashMap<u64, (u32, u64)>,
     order: VecDeque<u64>,
@@ -147,13 +133,13 @@ pub struct LatGauge {
 }
 
 impl LatGauge {
-    /// **ONE SOURCE ARRIVAL.** `send_ts_us` is the batch's own sender-clock
+    /// One source arrival. `send_ts_us` is the batch's own sender-clock
     /// stamp, `arr_us` the receiver's. Computes `A_x` against this path's
     /// running floor and parks it until the seq is delivered.
     ///
-    /// Called for the seq's OWN source arrival only — a seq reconstructed by
+    /// Called for the seq's own source arrival only — a seq reconstructed by
     /// the decoder never rode a wire as itself, so it has no `A_x` and is
-    /// deliberately absent from that histogram rather than credited a zero.
+    /// absent from that histogram rather than credited a zero.
     pub fn note_arrival(&mut self, seq: u64, path_id: u32, send_ts_us: u64, arr_us: u64) {
         let p = self.paths.entry(path_id).or_default();
         let gap = arr_us as i64 - send_ts_us as i64;
@@ -178,21 +164,20 @@ impl LatGauge {
         }
     }
 
-    /// **ONE IN-ORDER DELIVERY.** `wait_us` is `t_deliv − t_buffered` (0 for a
+    /// One in-order delivery. `wait_us` is `t_deliv − t_buffered` (0 for a
     /// symbol that was never buffered); `release` is the `[SUCC]` resolution
     /// record of the arrival that triggered this drain.
     ///
-    /// The CLASS of a nonzero wait comes from that record and nowhere else. A
-    /// nonzero wait with NO record — the `[SUCC]` bounds refused to track the
+    /// The class of a nonzero wait comes from that record and nowhere else. A
+    /// nonzero wait with no record — the `[SUCC]` bounds refused to track the
     /// hole, or the frontier moved for a reason other than a resolution — is
     /// counted `rw_sp`, the conservative class: it can only make the
-    /// cross-path share, which is the reading the placement indictment rests
-    /// on, read LOW.
+    /// cross-path share read low.
     pub fn note_delivery(&mut self, seq: u64, wait_us: u64, release: Release) {
         self.n_deliv += 1;
         let Some((path_id, ax)) = self.pending.remove(&seq) else {
             // Delivered without an arrival record: a decoder reconstruction
-            // (never rode a wire as itself) or an eviction. Counted, and NOT
+            // (never rode a wire as itself) or an eviction. Counted, and not
             // given a fabricated path.
             self.over += 1;
             return;
@@ -226,7 +211,7 @@ impl LatGauge {
         }
     }
 
-    /// Has this gauge ever seen a delivery — i.e. does it sit at a RECEIVER?
+    /// Has this gauge ever seen a delivery — i.e. does it sit at a receiver?
     pub fn is_receiver_site(&self) -> bool {
         self.n_deliv > 0
     }
@@ -236,7 +221,7 @@ impl LatGauge {
         self.n_deliv
     }
 
-    /// The `[LAT]` line. Cumulative: the LAST line of a log is the reading.
+    /// The `[LAT]` line. Cumulative: the last line of a log is the reading.
     /// The whole per-path body renders `-` when the gauge has nothing.
     pub fn line(&self) -> String {
         let q = |h: &Hist, p: f64| h.quantile(p).map_or_else(|| "-".to_string(), |v| v.to_string());
@@ -293,7 +278,7 @@ impl LatGauge {
 mod tests {
     use super::*;
 
-    /// THE ACCOUNTING IDENTITY, and the three classes are DISJOINT.
+    /// The accounting identity, and the three classes are disjoint.
     #[test]
     fn the_classes_partition_the_deliveries() {
         let mut g = LatGauge::default();
@@ -321,7 +306,7 @@ mod tests {
         assert!(l.contains("rwxp_n=1"), "{l}");
         assert!(l.contains("rwsp_n=1"), "{l}");
         assert!(l.contains("rwrep_n=1"), "{l}");
-        // The repair wait is the HOLE duration, not the reorder wait.
+        // The repair wait is the hole duration, not the reorder wait.
         assert!(l.contains("rep_n=1 rep_p50=2560 rep_p95=2560 rep_sum=2700"), "{l}");
         // n_deliv = Σ_class n + n_nowait, exactly.
         assert_eq!(g.n_deliv(), 4);
@@ -342,13 +327,13 @@ mod tests {
         let a = read(0);
         assert_eq!(a, read(7_000_000), "a constant clock offset moved A_x");
         // Floor walks 30 000 → 25 000; A_x = 0, 0, 15 000 (the third is read
-        // against the LOWERED floor). Two resets.
+        // against the lowered floor). Two resets.
         assert!(a.contains("ax_sum=15000"), "{a}");
         assert!(a.contains("minrst=2"), "{a}");
     }
 
     /// A delivery whose arrival was never recorded (a decoder reconstruction)
-    /// is COUNTED as `over` and never given a fabricated path.
+    /// is counted as `over` and never given a fabricated path.
     #[test]
     fn a_delivery_without_an_arrival_record_is_counted_not_invented() {
         let mut g = LatGauge::default();

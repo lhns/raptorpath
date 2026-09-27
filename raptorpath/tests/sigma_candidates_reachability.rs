@@ -1,86 +1,39 @@
-//! THE THREE CANDIDATE DISPERSION GAUGES ARE REPORTED — the `[DIAG]` line's
-//! `rvar_us=` / `qsp_us=` / `msd_us=` fields, beside the shipped `sig_us=`.
-//!
-//! **The defect this repairs.** Goal #100 closed NEEDS-MORE with exactly one
-//! instrument named: `rtt_sigma_us()`'s own rep-to-rep dispersion (287× at
-//! `c8` at converged `n` ≈ 18 000) exceeds the dynamic range of the `k(α)` it
-//! multiplies (18.24 over the swept α range), so **50 of 50 α-sweep treatment
-//! pairs realized overlapping clocks** — the law worked and the estimator
-//! consumed the contrast. Paper §16.74.5 turned that into a REQUIREMENT OF THE
-//! MODEL and named windowed quantile dispersion and RACK-style `rttvar` as
-//! obvious candidates, while deliberately preferring neither.
-//!
-//! A successor cannot be chosen by argument, and it cannot be chosen by
-//! comparing numbers taken in different sessions on different binaries — which
-//! is how a 287× spread survived two sessions unnoticed. So all three
-//! candidates are built as READ-ONLY GAUGES that run SIMULTANEOUSLY, on the
-//! same RTT sample stream, in the same run, on the same `[DIAG]` line, beside
-//! the shipped estimator they are competing with. **That layout is the whole
-//! design**: every comparison is paired per path per interval.
-//!
-//! **They are a DECOMPOSITION and not three guesses.** The shipped `sig_us`
-//! carries three suspect properties at once and the measured spread cannot say
-//! which produced it. Each candidate moves exactly ONE axis:
+//! The `[DIAG]` line reports three candidate RTT dispersion gauges —
+//! `rvar_us=`, `qsp_us=`, `msd_us=` — beside the shipped `sig_us=`, on the
+//! same sample stream in the same run, so every comparison is paired per path
+//! per interval (paper §7.4). Each candidate moves one axis of the shipped
+//! estimator:
 //!
 //! ```text
 //!   axis              sig_us (shipped)   rvar      qsp       msd
 //!   ----------------  -----------------  --------  --------  --------
 //!   memory            7 samples          7         L = 256   L = 256
-//!   deviation enters  SQUARED            linear    rank      rank
+//!   deviation enters  squared            linear    rank      rank
 //!   reference         lagging srtt       lagging   none      none
 //! ```
 //!
-//! `rvar` vs `sig_us` isolates the SQUARE; `qsp` vs `rvar` isolates the
-//! MEMORY; `msd` vs `qsp` isolates the REFERENCE.
-//!
-//! **Why a spawned binary and not a unit test.** `[DIAG]` is an `eprintln!`
-//! from inside the sender loop on a surface gated by `RWM_DIAG`. A unit test
-//! can pin the accessors; only a run of the shipped binary shows that the
-//! fields exist in a log an L1 parser will scrape. MEASUREMENT DISCIPLINE
-//! rule 1 — prove the mechanism under test executes — and the same lesson
-//! `sigma_diag_reachability.rs` records one layer down.
-//!
-//! **What is asserted, in the order it can fail.**
+//! `rvar` vs `sig_us` isolates the square; `qsp` vs `rvar` the memory; `msd`
+//! vs `qsp` the reference. Clauses, in the order they can fail:
 //!
 //!   1. The two-sided gate echo: `RWM_DIAG=1` present, `RWM_DIAG=0` absent.
 //!   2. `[DIAG]` fires, with per-path blocks.
-//!   3. **Every per-path block carries all three candidate fields** — the
-//!      EXISTENCE clause, which is what fails on the pre-change engine, where
-//!      none of the three tokens occurs anywhere in the tree.
-//!   4. **`sig_us=` is STILL THERE, on every block, exactly once.** The
-//!      candidates are added BESIDE the shipped gauge and it is unchanged;
-//!      a change that replaced it would pass clause 3 and must not pass.
-//!   5. **The `-`-before-first-sample convention holds as a BICONDITIONAL**:
-//!      a field reads `-` if and only if its own sample count is 0. The
-//!      shipped `sig_us` cannot satisfy this (it also renders `-` for a
-//!      dispersion of exactly zero, which a parser cannot tell from "no
-//!      sample"); the candidates are built so that it can be asserted, and it
-//!      is asserted on every reading of every block.
-//!   6. **All three are FED and become positive after their own warm-up**, and
-//!      the window-class pair reaches a FULL window (`n` = 256) — the
-//!      pre-registered window-class `n_warm`. A gauge that stayed at `-`, or
-//!      stayed at a partly-full window over a multi-megabyte transfer, is an
-//!      unfed gauge and that is the failure this asserts against.
-//!   7. **SCALE.** Each is a dispersion of an RTT and cannot plausibly exceed
-//!      a second on loopback — the µs/s unit error, caught at the instrument
-//!      rather than in a results table.
+//!   3. Every per-path block carries all three candidate fields.
+//!   4. `sig_us=` is still there, exactly once per block.
+//!   5. Each candidate reads `-` iff its own sample count is 0 (`sig_us`
+//!      also renders `-` for a zero dispersion, so it is exempt).
+//!   6. All three are fed and positive, and the window-class pair reaches a
+//!      full window (`n` = 256).
+//!   7. Scale: under one second on loopback (µs/s unit error).
 //!
-//! **What this binary deliberately does NOT assert, and it is the important
-//! half.** Any ORDERING between the four gauges, and any VALUE. Loopback's
-//! dispersion is the host scheduler's, not a network's; §16.74.5 requirement 3
-//! binds — *"an estimator qualified at one seat is not qualified at the
-//! other"* — and loopback is neither of the two seats the primitives were
-//! measured at. **The acceptance bar (goal-gate "THE SIGMA ESTIMATOR — THE
-//! ACCEPTANCE BAR") is scored by a VM battery and by nothing here.** This
-//! binary prints a characterization block for the record and asserts nothing
-//! about its contents beyond reachability, feeding and scale.
+//! No ordering and no value is asserted: loopback's dispersion is the host
+//! scheduler's, and the acceptance bar is scored on the VM. The
+//! characterization block is printed only.
 
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The arm: the DIAG surface on, window-reliable, honest anchors — the same
-/// composition every L1 battery arm runs. No gate here changes a law, and the
-/// candidate gauges have no gate of their own to set.
+/// The arm: the DIAG surface on, as every L1 battery arm runs it. The
+/// candidate gauges have no gate of their own.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
@@ -135,8 +88,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     );
     let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
 
-    // 1. THE GATE, TWO-SIDED. A missing `[DIAG]` must be readable as an
-    //    unreached emission site and never as an unset gate.
+    // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
+    //    emission site, never as an unset gate.
     assert!(
         log.contains("RWM_DIAG=1"),
         "the [GATES] echo does not carry RWM_DIAG=1 — the arm did not arm:\n{log}"
@@ -146,23 +99,20 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         "the [GATES] echo carries BOTH sides of RWM_DIAG:\n{log}"
     );
 
-    // 2. THE LINE FIRES, with per-path blocks.
+    // 2. The line fires, with per-path blocks.
     let diag: Vec<&str> = log.lines().filter(|l| l.contains("[DIAG] ")).collect();
     assert!(
         !diag.is_empty(),
         "no [DIAG] line in a run with RWM_DIAG=1 — the report is unreachable:\n{log}"
     );
 
-    // 3 + 4 + 5. EXISTENCE on every block, for all four fields; and the
-    //    `-` convention as a biconditional on every reading.
-    //
-    //    Readings are collected per field for the characterization block and
-    //    for the feed assertions below.
+    // 3 + 4 + 5: existence on every block for all four fields, and the `-`
+    //    convention as a biconditional on every reading.
     let mut readings: [Vec<(Option<u64>, u64)>; 4] = Default::default();
     let mut blocks = 0usize;
     for line in &diag {
         let toks: Vec<&str> = line.split_whitespace().collect();
-        // A per-path block is identified by its OWN clock token,
+        // A per-path block is identified by its own clock token,
         // `rtt=<app>/wrtt=<wire>/rtp<floor>ms` — the aggregate `rtt=<ms>ms`
         // matches a bare `starts_with("rtt=")` and must not be counted.
         let n_rtp = toks
@@ -176,10 +126,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         for (fi, field) in FIELDS.iter().enumerate() {
             let hits: Vec<&&str> = toks.iter().filter(|t| t.starts_with(field)).collect();
             // A gauge present on some paths and not others is worse than
-            // absent: a parser would average over a biased subset. THIS IS THE
-            // CLAUSE THAT FAILS ON THE PRE-CHANGE ENGINE for the three
-            // candidates — and it is the clause that fails if a change ever
-            // REPLACES `sig_us` rather than adding beside it.
+            // absent: a parser would average over a biased subset. This also
+            // fails if a change replaces `sig_us` rather than adding beside it.
             assert_eq!(
                 hits.len(),
                 n_rtp,
@@ -189,12 +137,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
             );
             for t in hits {
                 let (v, n) = parse_gauge(field, t);
-                // 5. THE CONVENTION, BOTH WAYS. `-` iff the sample set is
-                //    empty. Asserted only for the candidates: the shipped
-                //    `sig_us` renders `-` for a zero dispersion too, which is
-                //    the ambiguity the candidates were built not to have, and
-                //    pinning the shipped gauge to a rule it does not follow
-                //    would be a test asserting a change nobody made.
+                // 5. `-` iff the sample set is empty — candidates only; the
+                //    shipped `sig_us` renders `-` for a zero dispersion too.
                 if fi > 0 {
                     assert_eq!(
                         v.is_none(),
@@ -213,10 +157,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         "no per-path [DIAG] block in the whole log — nothing to read a gauge off:\n{log}"
     );
 
-    // 6. AND THEY ARE FED. Over a multi-megabyte transfer the sender takes
-    //    thousands of RTT samples; a candidate that never became positive
-    //    would mean its feed site is not reached, which is the defect this
-    //    binary exists to catch.
+    // 6. They are fed: a candidate that never became positive over thousands
+    //    of RTT samples has an unreached feed site.
     let mut best: Vec<(u64, u64)> = Vec::new();
     for (fi, field) in FIELDS.iter().enumerate() {
         let b = readings[fi]
@@ -239,8 +181,7 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
              dispersion over a whole transfer is not a measurement, it is an \
              unfed gauge"
         );
-        // 7. SCALE — the µs/s unit error, the most likely mistake in this
-        //    change, caught here rather than in a battery's results table.
+        // 7. Scale — the µs/s unit error.
         assert!(
             v < 1_000_000,
             "`{field}` = {v} µs on loopback is not a dispersion of a loopback \
@@ -248,10 +189,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         );
     }
 
-    // 6b. THE WINDOW-CLASS PAIR REACHES A FULL WINDOW — the pre-registered
-    //     window-class `n_warm` (goal-gate "THE SIGMA ESTIMATOR — THE
-    //     ACCEPTANCE BAR" clause C1). A window that never fills means the
-    //     gauge reports a quantile of fewer order statistics than it claims.
+    // 6b. The window-class pair reaches a full window; a window that never
+    //     fills reports a quantile of fewer order statistics than it claims.
     let qsp_max_n = readings[2].iter().map(|(_, n)| *n).max().unwrap_or(0);
     let msd_max_n = readings[3].iter().map(|(_, n)| *n).max().unwrap_or(0);
     assert_eq!(
@@ -270,12 +209,9 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     );
 
     // ------------------------------------------------------------------
-    // THE CHARACTERIZATION BLOCK — printed for the record, ASSERTED ON
-    // NOWHERE. `R_local` is the acceptance bar's own functional (p95/p05 over
-    // pooled post-warm-up readings) evaluated over this run's [DIAG] time
-    // series. It is NOT `R_total`: the bar's statistic pools REPS at a shaped
-    // cell, and this pools intervals of one loopback run. It is reported so
-    // the local half of goal #101 item 2 has numbers rather than adjectives.
+    // Characterization block — printed, asserted nowhere. `R_local` is the
+    // bar's functional (p95/p05 over post-warm-up readings) over this run's
+    // [DIAG] series; it is not `R_total`, which pools reps at a shaped cell.
     // ------------------------------------------------------------------
     println!("\n[sigma-cand] {blocks} per-path [DIAG] blocks, loopback, bulk, window-reliable");
     println!(
@@ -283,8 +219,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         "field", "best(µs)/n", "p05", "p50", "p95", "R_local", "n_kept"
     );
     for (fi, field) in FIELDS.iter().enumerate() {
-        // Warm-up exclusion, exactly as pre-registered in clause C1: EWMA
-        // classes at n >= 16, window classes at a FULL window.
+        // Warm-up exclusion: EWMA classes at n >= 16, window classes at a
+        // full window.
         let n_warm: u64 = match fi {
             0 | 1 => 16,
             2 => WINDOW,

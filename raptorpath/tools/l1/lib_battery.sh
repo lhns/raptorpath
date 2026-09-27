@@ -8,9 +8,9 @@
 #
 # Knobs the caller may set before calling:
 #   LB_TAG   owner tag written into a lock file   (default: the script name)
-#   LB_LOG   a ledger file that lock / preflight messages are ALSO appended to
+#   LB_LOG   a log file that lock / preflight messages are also appended to
 
-# Echo to stdout and, when LB_LOG is set, append to the ledger too.
+# Echo to stdout and, when LB_LOG is set, append to the log too.
 _lb_say() {
   echo "$*"
   if [ -n "${LB_LOG:-}" ]; then echo "$*" >> "$LB_LOG" 2>/dev/null; fi
@@ -19,7 +19,7 @@ _lb_say() {
 
 # ── CRLF GUARD ──────────────────────────────────────────────────────────
 # A tree synced without the CRLF repair runs `$'\r'`-suffixed commands and
-# produces a ledger of garbage that looks like a result. Refuse instead.
+# produces a log of garbage that looks like a result. Refuse instead.
 crlf_guard() { # file...
   local f
   for f in "$@"; do
@@ -33,9 +33,9 @@ crlf_guard() { # file...
   return 0
 }
 
-# ── SENTINELS: writability is PROVEN at launch, not discovered at exit ──
-# Probe the PATH, not the directory, as the user who will write it: create
-# AND remove, because a sentinel that cannot be removed at the next launch
+# ── Sentinels: writability is proven at launch, not discovered at exit ──
+# Probe the path, not the directory, as the user who will write it: create
+# and remove, because a sentinel that cannot be removed at the next launch
 # reports the previous run's verdict.
 probe_sentinel() { # path
   local p="$1" d
@@ -59,9 +59,9 @@ prove_sentinels() { # dir name...
   echo "SENTINEL-PROOF-COMPLETE $(date -u +%FT%TZ) user=$(id -un) dir=$d ${LB_PROOF_EXTRA:-}"
 }
 
-# A seed's DONE sentinel is EARNED, never unconditional: the ledger must
-# exist, be non-empty and carry the battery's own terminal line. The
-# sentinels live beside the ledger; a failure is also noted in all-era.txt.
+# A seed's DONE sentinel is earned, never unconditional: the log must exist,
+# be non-empty and carry the battery's own terminal line. The sentinels live
+# beside the log; a failure is also noted in all-era.txt.
 seed_done() { # seed ledger done_mark [message-prefix]
   local s="$1" f="$2" mark="$3" pfx="${4:-BATTERY}" d
   d="$(dirname "$f")"
@@ -74,10 +74,10 @@ seed_done() { # seed ledger done_mark [message-prefix]
   return 1
 }
 
-# ── OPERATOR LOCKS ──────────────────────────────────────────────────────
+# ── Operator locks ──────────────────────────────────────────────────────
 # Co-tenancy on the box under measurement manufactures the abort signature
-# the batteries look for (MEASURED: 121 RUN-RETRY over 171 polled
-# invocations against 0 over 80 unpolled), so a second battery must refuse.
+# the batteries look for (docs/measurement-discipline.md rules 12-13), so a
+# second battery must refuse.
 LOCKS_TAKEN=""
 take_lock() { # path
   local p="$1"
@@ -100,7 +100,7 @@ release_locks() {
   LOCKS_TAKEN=""
   return 0
 }
-# INT and TERM must EXIT after releasing: a trap that only released would let
+# INT and TERM must exit after releasing: a trap that only released would let
 # the battery run on, lockless, after the operator stopped it.
 install_lock_traps() {
   trap 'release_locks' EXIT
@@ -108,9 +108,9 @@ install_lock_traps() {
   trap 'release_locks; exit 143' TERM
 }
 
-# ── PREFLIGHT: the binary exists, runs, and carries the gates the arms need ─
-# `grep -a` on the binary itself, NOT `strings | grep -q`: under `pipefail`
-# the early-exiting `grep -q` SIGPIPEs `strings` and a PRESENT gate reads as
+# ── Preflight: the binary exists, runs, and carries the gates the arms need ─
+# `grep -a` on the binary itself, not `strings | grep -q`: under `pipefail`
+# the early-exiting `grep -q` SIGPIPEs `strings` and a present gate reads as
 # absent.
 preflight_binary() { # bin gate...
   local bin="$1" g
@@ -130,13 +130,13 @@ preflight_binary() { # bin gate...
   return 0
 }
 
-# ── LOG READERS (the shell twins of l1common.py) ────────────────────────
+# ── Log readers (the shell twins of l1common.py) ────────────────────────
 # The last line of FILE matching the grep PATTERN, colour and CR stripped.
 lastline() { # file pattern
   grep -a -- "$2" "$1" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*m//g' | tail -1
   return 0
 }
-# The token after `key=` where `key` STARTS a token (so `n` never matches
+# The token after `key=` where `key` starts a token (so `n` never matches
 # inside `mean=` or `gen=`), first occurrence, up to whitespace or `|`.
 # `-` (the engine's n = 0 rendering) and an absent key both print nothing.
 field() { # text key

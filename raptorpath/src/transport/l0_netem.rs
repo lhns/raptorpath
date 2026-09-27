@@ -1,7 +1,7 @@
 //! The L0 netem shim: per-path rate/delay/jitter/Gilbert-Elliott shaping
 //! inside the transport's datagram send path, for in-process loopback tests.
-//! Moved verbatim out of `transport/quic.rs`, which keeps the one call seam
-//! (`QuicTransport`'s datagram send); the design note follows.
+//! `transport/quic.rs` keeps the one call seam (`QuicTransport`'s datagram
+//! send); the design note follows.
 
 use crate::scheduler::PathId;
 use dashmap::DashMap;
@@ -10,27 +10,26 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 // ───────────────────────────────────────────────────────────────────────────
-// L0 netem shim (env `RWM_L0_NETEM`, DEFAULT OFF ⇒ byte-identical shipped
+// L0 netem shim (env `RWM_L0_NETEM`, default off ⇒ byte-identical shipped
 // path). Emulates the L1 harness's per-path netem qdisc (rate + delay +
-// jitter + Gilbert-Elliott loss) INSIDE the transport's datagram send path so
+// jitter + Gilbert-Elliott loss) inside the transport's datagram send path so
 // the in-process loopback tests (tests/perf_loopback.rs and the gen-substrate
-// L0 bench) can reproduce the L1 window/RTT/loss dynamics locally — the JOB-1
-// diagnosis instrument for the generation-mode per-path substrate ceiling.
+// L0 bench) can reproduce the L1 window/RTT/loss dynamics locally.
 //
 //   RWM_L0_NETEM=c2        every path shaped like the L1 `c2` scenario
 //   RWM_L0_NETEM=c2,c3     path 0 = c2, path 1 = c3 (the C8 topology)
 //   RWM_L0_SEED=42         GE/jitter RNG seed (default 42)
 //
-// Semantics mirror tools/l1/topo_dual.sh: rate+delay+jitter shape BOTH
-// directions; GE loss applies only to the CLIENT egress (the bulk-data
+// Semantics mirror tools/l1/topo_dual.sh: rate+delay+jitter shape both
+// directions; GE loss applies only to the client egress (the bulk-data
 // direction — topo_dual shapes loss on the cli qdiscs only). FIFO release
 // (rate stage then delay stage, monotonic per path — netem with a rate does
 // not reorder), tail-drop at the netem default 1000-packet limit.
 //
-// NOTE the fidelity boundary: drops/delay happen BEFORE quinn, so quinn's own
+// Fidelity boundary: drops/delay happen before quinn, so quinn's own
 // congestion controller sees a clean sub-ms loopback. This shim reproduces
 // the raptorpath-layer dynamics (flow windows, pacing, deficit rounds); it
-// deliberately does NOT reproduce quinn-internal CC behaviour under loss —
+// deliberately does not reproduce quinn-internal CC behaviour under loss —
 // if L1 measures a wall the shim cannot, the residual is quinn-level.
 #[derive(Clone, Copy, Debug)]
 struct L0PathCfg {
@@ -39,12 +38,12 @@ struct L0PathCfg {
     jitter_us: u64,
     ge_p: f64, // P(good→bad) per packet (heavy-tail mode: burst-onset prob)
     ge_q: f64, // P(bad→good) per packet; bad state drops (h=1)
-    // #85 heavy-tail loss (the #46 ARM-3 semi-Markov synthetic,
+    // #85 heavy-tail loss (the semi-Markov synthetic of
     // raptorpath-math/tests/rstar_tail_validation.rs): geometric Good
     // sojourns (onset = ge_p), discrete-Weibull(theta, k) Bad sojourns by
     // inverse transform — the burst-tail structure netem `gemodel` (GE)
-    // cannot express, which is why THIS shim is the local rung for the
-    // §8.4.1 heavy-tail claim. wb_k = 0 ⇒ plain GE (byte-identical).
+    // cannot express, which is why this shim is the local rung for the
+    // heavy-tail claim (paper §4.3). wb_k = 0 ⇒ plain GE (byte-identical).
     wb_theta: f64,
     wb_k: f64,
 }
@@ -73,13 +72,13 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
     match name.trim() {
         "c2" | "wifi" => Some(f(100.0, 5, 3, 1.3, 50.0)),
         "c3" | "lte" => Some(f(20.0, 20, 5, 2.0, 40.0)),
-        // #85: c3's rate/RTT/jitter shape with the #46 documented heavy-tail
-        // burst law (Weibull k = 0.5, theta = 0.55 ⇒ E[burst] = 6.2). Onset
+        // #85: c3's rate/RTT/jitter shape with a heavy-tail burst law
+        // (Weibull k = 0.5, theta = 0.55 ⇒ E[burst] = 6.2). Onset
         // 1.0% ⇒ eps ≈ 5.8% — LTE-class average like c3's 4.8% but with the
-        // burst tail GE cannot represent. (The #46 ARM-3 synthetic's onset
-        // 2.3% ⇒ eps = 12.5% is reachable via heavy:20;20;5;2.3;0.55;0.5 —
-        // too deep for a per-object delivered-reliability observable: at
-        // 12.5% heavy-tail every 100 KB realtime object dies in EVERY arm.)
+        // burst tail GE cannot represent. (Onset 2.3% ⇒ eps = 12.5% is
+        // reachable via heavy:20;20;5;2.3;0.55;0.5 — too deep for a
+        // per-object delivered-reliability observable: at 12.5% heavy-tail
+        // every 100 KB realtime object dies in every arm.)
         "c3heavy" => Some(h(20.0, 20, 5, 1.0, 0.55, 0.5)),
         "clean" => Some(f(100.0, 5, 0, 0.0, 100.0)),
         other => {
@@ -129,7 +128,7 @@ pub(super) struct L0Netem {
     states: DashMap<PathId, parking_lot::Mutex<L0PathState>>,
     epoch: std::time::Instant,
     seed: u64,
-    // diag/unified-collapse transit counters (RWM_DIAG reads them; always-on
+    // Transit counters (RWM_DIAG reads them; always-on
     // atomics, negligible cost): where do packets die during an outage?
     enq: std::sync::atomic::AtomicU64,
     ge_drops: std::sync::atomic::AtomicU64,
@@ -200,7 +199,7 @@ impl L0Netem {
                 // #85 heavy-tail semi-Markov (see L0PathCfg): geometric Good
                 // sojourns, discrete-Weibull(theta, k) Bad sojourns drawn by
                 // inverse transform B = ceil((ln U / ln theta)^(1/k)) — the
-                // same generator as rstar_tail_validation.rs ARM 3.
+                // same generator as rstar_tail_validation.rs.
                 if st.wb_bad_left > 0 {
                     st.wb_bad_left -= 1;
                     true
@@ -257,7 +256,7 @@ impl L0Netem {
         release = release.max(st.last_release_us);
         st.last_release_us = release;
         // Lazily spawn the per-path forwarder that sleeps until each packet's
-        // release time and performs the REAL quinn send.
+        // release time and performs the real quinn send.
         if st.tx.is_none() {
             let (tx, mut rx) = mpsc::unbounded_channel::<(u64, bytes::Bytes)>();
             let conn = conn.clone();
@@ -288,7 +287,7 @@ impl L0Netem {
         let _ = st.tx.as_ref().unwrap().send((release, data));
     }
 
-    /// diag/unified-collapse: cumulative transit counters + current queue
+    /// Cumulative transit counters + current queue
     /// depth: (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
     pub(super) fn transit_stats(&self) -> (u64, u64, u64, u64, u64, usize) {
         use std::sync::atomic::Ordering::Relaxed;

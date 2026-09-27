@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dual-path L1 topology (C7/C8): TWO veth pairs between rp-cli and rp-srv,
+# Dual-path L1 topology (C7/C8): two veth pairs between rp-cli and rp-srv,
 # each shaped independently. Configures MPTCP endpoints so kernel MPTCP
 # (and raptorpath's two paths) can use both.
 #
@@ -10,21 +10,18 @@
 #        sudo bash topo_dual.sh down
 #   C7 = up c2 c2      C8 = up c2 c3
 #
-# SEEDS ARE PER LEG (2026-08-19). `--seed 42` gives leg A seed 42 and leg B
-# seed 1042 — INDEPENDENT netem realizations. `--seed 42,42` reproduces the
-# pre-2026-08-19 behaviour exactly (one seed on both legs = the SAME loss
-# realization = rho_loss +1 by construction at a symmetric cell). See the
-# HARNESS ERA note in lib.sh for the era-comparability consequence; it is
-# load-bearing for any comparison that spans the date.
+# Seeds are per leg. `--seed 42` gives leg A seed 42 and leg B seed 1042 —
+# independent netem realizations. `--seed 42,42` puts one seed on both legs
+# (the same loss realization = rho_loss +1 by construction at a symmetric
+# cell). See lib.sh `leg_seed` for why the two are not comparable.
 
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
-# THE ABORT-CAUSE WITNESS. `set -E` makes the ERR trap inherit into `up()` —
-# without it the trap is not taken inside a function and every failure in this
-# file would still be attributed to nothing. `set -E` changes NO other
-# behaviour: with no ERR trap installed it is inert, and the trap body only
-# writes to the witness record.
+# The abort-cause witness. `set -E` makes the ERR trap inherit into `up()` —
+# without it the trap is not taken inside a function. `set -E` changes no
+# other behaviour: with no ERR trap installed it is inert, and the trap body
+# only writes to the witness record.
 set -E
 source ./abort_witness.sh
 trap 'aw_err_trap "$?" "$LINENO" "$BASH_COMMAND"' ERR
@@ -71,14 +68,11 @@ up() {
 
     # Path A: loss on data direction only (matching topo.sh), delay both ways.
     #
-    # PER-LEG SEEDS. These two lines used to pass the SAME `$seed` to both
-    # legs. netem seeds its prng per qdisc, so at a symmetric cell that made
-    # the two paths' Gilbert-Elliott chains and jitter draws the SAME
-    # realization indexed by packet — rho_loss = +1 BY CONSTRUCTION, at
-    # exactly the cells where pooling wins, for the whole previous harness era
-    # (goal-gate "Eppen's Condition at c8" §2, THE SEED AUDIT; NEEDS-MORE 2).
-    # `leg_seed` derives one seed per leg from the base, and an explicit
-    # comma list still pins them equal for the rho = +1 arm.
+    # Per-leg seeds: netem seeds its prng per qdisc, so one seed on both legs
+    # of a symmetric cell makes the two paths' Gilbert-Elliott chains and
+    # jitter draws the same realization indexed by packet (rho_loss = +1 by
+    # construction). `leg_seed` derives one seed per leg from the base, and an
+    # explicit comma list still pins them equal for the rho = +1 arm.
     shape "$NS_CLI" cli0 "$scen_a" "$(leg_seed "$seed" 0)"
     shape "$NS_CLI" cli1 "$scen_b" "$(leg_seed "$seed" 1)"
     # Reverse (ACK) direction: delay/rate only — build a lossless variant by
@@ -100,34 +94,20 @@ up() {
     ip netns exec "$NS_CLI" ip mptcp endpoint add 10.78.0.1 dev cli1 subflow
     ip netns exec "$NS_SRV" ip mptcp endpoint add 10.78.0.2 dev srv1 signal
 
-    # The ACTIVE per-leg seeds, echoed: the derivation must be readable from
+    # The active per-leg seeds, echoed: the derivation must be readable from
     # the run's own output and not only from this file (the `-q.txt` capture
     # carries them too, which is what the seed audit reads).
     echo "dual topology up: pathA=$scen_a pathB=$scen_b" \
          "seeds=[$(leg_seed "$seed" 0),$(leg_seed "$seed" 1)] (spec='${seed:-unset}')"
-    # THE "TOPO-PING" — REPAIRED. These two lines are `topo_dual.sh:95` and
-    # `:96`, i.e. the exact pair the era battery's witness resolved **ALL 38 of
-    # its 204 aborts** to (goal-gate "Era Battery — THE SCORED RESULT" §1). The
-    # cause was not these lines' POSITION but the check's SHAPE: two ICMP
-    # packets, no retry, across a Gilbert-Elliott-lossy leg, aborting on the
-    # draw where both land in the bad state.
+    # The sanity pings. Two ICMP packets with no retry across a
+    # Gilbert-Elliott-lossy leg abort on the draw where both land in the bad
+    # state, and `perf_rwm_c.sh` reads this script's exit code through
+    # `aw_step topo_up`, so a lost draw aborts the invocation.
     #
-    # THE COMMENT THAT USED TO BE HERE ARGUED THE OPPOSITE, AND IT WAS WRONG.
-    # It said the abort class "cannot have been caused by them" because they are
-    # the LAST statements of `up()` and `perf_rwm_c.sh` does not read this
-    # script's exit code. Both halves are true and the conclusion still does not
-    # follow: `aw_ping` re-returns the ping's status under `set -e`, so a lost
-    # draw kills `up()` — and `perf_rwm_c.sh` runs it through `aw_step topo_up`,
-    # which DOES read the code. The association was perfect at n = 204 (38/38
-    # aborts, 0/166 non-aborts). The wrong argument is kept in view here rather
-    # than quietly deleted, because it is why three batteries carried the class
-    # as an unexplained "seed-7" footnote.
-    #
-    # The repair lives in `aw_ping` (abort_witness.sh) with its sizing
+    # So `aw_ping` (abort_witness.sh) retries, with its sizing
     # arithmetic: retry to at most `AW_PING_ATTEMPTS = 26` draws, accept the
-    # FIRST reply, which puts the false-abort probability at 2.0e-5 per leg at
-    # the worst committed GE cell (c5) against the 1.05e-1 it was. Recording
-    # semantics are unchanged and a genuinely dead leg still aborts.
+    # first reply, which puts the false-abort probability at 2.0e-5 per leg at
+    # the worst GE cell (c5). A genuinely dead leg still aborts.
     aw_ping "$NS_CLI" 10.77.0.2 pathA
     aw_ping "$NS_CLI" 10.78.0.2 pathB
 }

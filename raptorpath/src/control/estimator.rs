@@ -26,23 +26,22 @@ pub struct LossEstimator {
     /// Decay factor for Beta params to forget old data
     beta_decay: f64,
 
-    // --- RX path loss (reverse direction, from NackAck feedback) ---
+    // --- RX path loss (reverse direction; no production feed today) ---
     /// EWMA of RX loss rate
     rx_ewma_loss: f64,
 
     /// RTT estimation (EWMA)
     ewma_rtt: Duration,
     rtt_alpha: f64,
-    /// feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`): seed the RTT EWMA from the
-    /// FIRST measured sample instead of blending real samples into the 50-ms
-    /// DEFAULT_SRTT-class constructor seed (hygiene rule 1: an anchor is
-    /// seeded from measurements; the 50-ms seed surviving warm-up was the
-    /// measured M* floor-freshness FAIL — goal-gate #61 knee battery).
+    /// `RWM_MSTAR_ANCHOR`: seed the RTT EWMA from the first measured sample
+    /// instead of blending real samples into the 50-ms DEFAULT_SRTT-class
+    /// constructor seed (hygiene rule 1, ADR-0061: an anchor is seeded from
+    /// measurements; a seed surviving warm-up leaves the M* floor stale).
     rtt_seed_from_sample: bool,
     /// True once a real RTT sample has been recorded (seed consumed).
     rtt_seeded: bool,
-    /// True once ANY real RTT sample has been recorded, independent of the
-    /// hygiene seeding gate — i.e. whether `ewma_rtt` is a MEASUREMENT at all
+    /// True once any real RTT sample has been recorded, independent of the
+    /// hygiene seeding gate — i.e. whether `ewma_rtt` is a measurement at all
     /// or still the 50-ms DEFAULT_SRTT-class constructor constant. Read by
     /// `rtt_measured()`; see the hygiene rule-1 note on `rtt_seed_from_sample`.
     rtt_sampled: bool,
@@ -68,17 +67,15 @@ pub struct LossEstimator {
     /// BOCD for regime-aware prediction
     bocd: BayesianChangepoint,
 
-    /// `RWM_EST_CADENCE` (goal-gate "Receiver Per-Message Wall"): run the
-    /// BOCD heavy update at its DESIGN cadence instead of per message. The
-    /// detector's own constructor documents "regime changes every ~100
-    /// batches (200 s at 2 s intervals)" — a batch-cadence model; the window
-    /// wire was calling its O(MAX_RUN_LENGTH) exp/ln update ~22k×/s per side
-    /// (~22–26%/core at the c1 wall, STEP-1 profile). With the gate ON,
-    /// clean observations ACCUMULATE and flush every `EST_HEAVY_CADENCE`;
-    /// any call that carries a loss flushes IMMEDIATELY (every informative
-    /// observation reaches the posterior on today's clock — zero staleness
-    /// on losses). EWMA/Beta/burst/GE stay per-call. OFF = per-call BOCD,
-    /// bit-identical shipped path.
+    /// `RWM_EST_CADENCE`: run the BOCD heavy update at its design cadence
+    /// instead of per message. The detector's own constructor documents
+    /// "regime changes every ~100 batches (200 s at 2 s intervals)" — a
+    /// batch-cadence model; per message, the window wire calls its
+    /// O(MAX_RUN_LENGTH) exp/ln update ~22k×/s per side (~22–26 % of a core
+    /// at the single-path throughput wall). With the gate ON, clean
+    /// observations accumulate and flush every `EST_HEAVY_CADENCE`; any call
+    /// that carries a loss flushes immediately (zero staleness on losses).
+    /// EWMA/Beta/burst/GE stay per-call. OFF (default) = per-call BOCD.
     est_cadence: bool,
     /// Accumulated (received, lost) counts awaiting the next BOCD flush.
     bocd_acc_received: u64,
@@ -94,25 +91,16 @@ pub struct LossEstimator {
 
 /// `RWM_EST_CADENCE` heartbeat: clean evidence flushes to the BOCD at this
 /// cadence (10 ms ≪ the 100 ms recovery round; ~100 updates/s ≈ the
-/// detector's design regime). Pre-registered constant — not a tuning knob.
+/// detector's design regime). Not a tuning knob.
 const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 
-/// Resolve `RWM_EST_CADENCE` once (noted in the gates.rs header list of
-/// resolve-once sites) and echo mechanism liveness on first resolution
-/// (MEASUREMENT DISCIPLINE item 1).
+/// Whether `RWM_EST_CADENCE` is on, read from the process gate resolution.
 ///
-/// STAYS DEFAULT OFF (goal-gate "Ship The Wins 1", 2026-08-07): the
-/// composed flip (est + emit-batch + the `RWM_POOL_ANCHOR` honest dual-store
-/// law) measured c1 463–482 Mbit/s (the pre-registered ≥ 430 PRIMARY met on
-/// both seeds) but the c7 clause failed by its own pre-set rule (new-default
-/// 0.968/0.959×Σ vs ≥ 0.97; prior default 0.981/0.972) — the honest pool
-/// removes the est ack-burst over-read channel (est-only control reproduces
-/// the §16.35 blocker at 0.938/0.949) yet the pool then BECOMES the binder
-/// (send-side anchors cannot ratchet above the cap-limited carried rate:
-/// no delivery physics), re-aging holes (sweeps 10–21 vs prior 0–6).
-/// The composed OPT-IN (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR`
-/// on with it, + `RWM_EMIT_BATCH=1`) remains the documented fast
-/// single-path configuration: 446–508 Mbit/s at c1.
+/// Default OFF: at the dual-path cells the send-side pool anchor that rides
+/// this gate becomes the binding cap (send-side anchors cannot ratchet
+/// above the cap-limited carried rate). The composed opt-in
+/// (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR` on with it, +
+/// `RWM_EMIT_BATCH=1`) is the fast single-path configuration.
 pub(crate) fn est_cadence_active() -> bool {
     crate::gates::get().est_cadence
 }
@@ -142,7 +130,7 @@ impl LossEstimator {
             rx_ewma_loss: 0.0,
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
-            // DEFAULT ON (2026-07-21, "Consolidation" battery).
+            // Default ON.
             rtt_seed_from_sample: crate::gates::get().mstar_anchor,
             rtt_seeded: false,
             rtt_sampled: false,
@@ -186,7 +174,7 @@ impl LossEstimator {
         }
     }
 
-    /// Count-only update (EWMA + Beta + BOCD + burst flag) WITHOUT the
+    /// Count-only update (EWMA + Beta + BOCD + burst flag) without the
     /// lumped Gilbert-Elliott approximation. Pair with per-symbol
     /// `record_symbol` calls carrying the actual arrival pattern.
     pub fn record_counts(&mut self, sent: u32, received: u32) {
@@ -206,10 +194,9 @@ impl LossEstimator {
         self.beta_a += received as f64;
         self.beta_b += lost as f64;
 
-        // BOCD update — per-call when the cadence gate is OFF (legacy
-        // bit-identical); accumulated + flushed on loss / 10 ms heartbeat
-        // when ON (goal-gate "Receiver Per-Message Wall": the per-message
-        // O(MAX_RUN_LENGTH) update was 22–26%/core at the c1 wall).
+        // BOCD update — per-call when the cadence gate is OFF; accumulated +
+        // flushed on loss / 10 ms heartbeat when ON (the per-message
+        // O(MAX_RUN_LENGTH) update costs 22–26 % of a core at the wall).
         if self.est_cadence {
             self.bocd_acc_received += received as u64;
             self.bocd_acc_lost += lost as u64;
@@ -254,15 +241,16 @@ impl LossEstimator {
 
     /// Record one wire-symbol outcome (true = received) into the
     /// Gilbert-Elliott estimator, preserving the true loss interleaving —
-    /// e.g., reconstructed from SACK gap patterns (paper Section 7.5).
+    /// e.g., reconstructed from SACK gap patterns (paper §2.6).
     pub fn record_symbol(&mut self, received: bool) {
         self.ge.record_symbol(received);
     }
 
-    /// Update RX (reverse path) loss estimate from NackAck feedback.
+    /// Update the RX (reverse path) loss estimate from request/echo counts.
+    /// Only tests call it: the wire has no NACK-echo message.
     ///
     /// `nacks_sent`: number of NACKs the receiver sent in this period
-    /// `acks_received`: number of NackAcks received back from the sender
+    /// `acks_received`: number of those echoed back by the sender
     pub fn update_rx_loss(&mut self, nacks_sent: u32, acks_received: u32) {
         if nacks_sent == 0 {
             return;
@@ -272,8 +260,6 @@ impl LossEstimator {
 
         // EWMA update
         self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
-
-        // Beta-Binomial update with decay
     }
 
     /// RX path loss rate (point estimate).
@@ -293,9 +279,9 @@ impl LossEstimator {
     pub fn record_rtt(&mut self, rtt: Duration) {
         // Observation only (no behaviour rides on this assignment): from here
         // on `ewma_rtt` contains a measurement, so `rtt_measured()` may
-        // report it. Set BEFORE the hygiene early-return so both arms record.
+        // report it. Set before the hygiene early-return so both arms record.
         self.rtt_sampled = true;
-        // feat/anchor-hygiene rule 1: the first MEASURED sample replaces the
+        // Hygiene rule 1: the first measured sample replaces the
         // constructor seed outright (no blend with the 50-ms constant).
         if self.rtt_seed_from_sample && !self.rtt_seeded {
             self.rtt_seeded = true;
@@ -308,7 +294,7 @@ impl LossEstimator {
         self.ewma_rtt = Duration::from_secs_f64(new_secs);
     }
 
-    /// Test hook (feat/anchor-hygiene): force the seed-from-sample gate
+    /// Test hook: force the seed-from-sample gate
     /// without the process-global env (parallel unit tests must not race
     /// env vars).
     #[cfg(test)]
@@ -338,7 +324,7 @@ impl LossEstimator {
     ///
     /// This integrates over run-length uncertainty, producing a tighter
     /// bound than the Beta posterior when in steady state, and a wider
-    /// bound during regime changes. This IS the margin — no additional
+    /// bound during regime changes. This is the margin — no additional
     /// safety factor needed.
     pub fn predictive_loss_upper(&self, confidence: f64) -> f64 {
         if self.bocd.updates() < 5 {
@@ -352,12 +338,12 @@ impl LossEstimator {
         self.ewma_rtt
     }
 
-    /// The RTT estimate ONLY IF it is a measurement — `None` while
+    /// The RTT estimate only if it is a measurement — `None` while
     /// `ewma_rtt` is still the 50-ms DEFAULT_SRTT-class constructor seed.
     ///
     /// `rtt()` cannot distinguish the two, which is exactly the hygiene
     /// rule-1 hazard: a consumer that reads a seed as if it were an anchor
-    /// prices an UNMEASURED path with a constant. This accessor lets a
+    /// prices an unmeasured path with a constant. This accessor lets a
     /// consumer ask instead (see `PathState::srtt_measured`).
     pub fn rtt_measured(&self) -> Option<Duration> {
         self.rtt_sampled.then_some(self.ewma_rtt)
@@ -423,7 +409,7 @@ fn beta_quantile(a: f64, b: f64, p: f64) -> f64 {
 
 
 impl LossEstimator {
-    /// Test-only constructor with the heavy-math cadence forced ON
+    /// Test-only constructor with the heavy-math cadence forced on
     /// (the env gate is process-global; law tests need both arms).
     #[cfg(test)]
     pub fn new_with_cadence_for_test() -> Self {
@@ -432,9 +418,9 @@ impl LossEstimator {
         e
     }
 
-    /// Test-only constructor with the heavy-math cadence forced OFF — the
-    /// `RWM_EST_CADENCE=0` prior-default opt-out arm (per-call BOCD),
-    /// env-independent for the law tests.
+    /// Test-only constructor with the heavy-math cadence forced off — the
+    /// `RWM_EST_CADENCE=0` default arm (per-call BOCD), env-independent for
+    /// the law tests.
     #[cfg(test)]
     pub fn new_per_call_for_test() -> Self {
         let mut e = Self::new();
@@ -452,13 +438,9 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE default: ships OFF — the composed flip was measured
-    /// and REVERTED by its own pre-set rule (goal-gate "Ship The Wins 1",
-    /// 2026-08-07: c1 463–482 but c7 0.968/0.959×Σ vs the ≥ 0.97 clause).
-    /// The composed opt-in (`RWM_EST_CADENCE=1`, pool-anchor rides it) is
-    /// the documented fast single-path configuration. Relies on the test
-    /// env not exporting RWM_* overrides, like every engine-default test
-    /// in this crate.
+    /// RWM_EST_CADENCE default: ships OFF. Relies on the test env not
+    /// exporting RWM_* overrides, like every engine-default test in this
+    /// crate.
     #[test]
     fn test_est_cadence_default_off() {
         let est = LossEstimator::new();
@@ -468,9 +450,8 @@ mod tests {
         );
     }
 
-    /// RWM_EST_CADENCE law: with the gate OFF (`=0`, the prior-default
-    /// opt-out arm), every record_batch performs a per-call BOCD update —
-    /// the legacy path is bit-identical in call topology.
+    /// RWM_EST_CADENCE law: with the gate OFF (`=0`, the default arm), every
+    /// record_batch performs a per-call BOCD update.
     #[test]
     fn test_est_cadence_off_is_per_call() {
         let mut est = LossEstimator::new_per_call_for_test();
@@ -482,9 +463,9 @@ mod tests {
     }
 
     /// RWM_EST_CADENCE law: clean observations within the 10 ms heartbeat
-    /// ACCUMULATE (no heavy update); a loss-bearing call flushes
-    /// IMMEDIATELY — every informative observation reaches the posterior
-    /// on the legacy clock.
+    /// accumulate (no heavy update); a loss-bearing call flushes
+    /// immediately — every informative observation reaches the posterior
+    /// on the per-call clock.
     #[test]
     fn test_est_cadence_accumulates_clean_flushes_loss() {
         let mut est = LossEstimator::new_with_cadence_for_test();
@@ -573,12 +554,10 @@ mod tests {
         assert!(pred_upper < 0.25, "Predictive upper should be reasonable: {pred_upper}");
     }
 
-    // feat/anchor-hygiene (`RWM_MSTAR_ANCHOR`), hygiene rule 1: the RTT EWMA
-    // seeds from the FIRST measured sample; the 50-ms constructor constant
-    // never blends into measurements (the DEFAULT_SRTT-class seed surviving
-    // warm-up was the #61 M* floor-freshness FAIL). Control arm: the legacy
-    // law blends 0.875·50 ms + 0.125·sample — the constant leaks for ~20
-    // samples.
+    // `RWM_MSTAR_ANCHOR`, hygiene rule 1: the RTT EWMA seeds from the first
+    // measured sample; the 50-ms constructor constant never blends into
+    // measurements. Control arm: the unseeded law blends
+    // 0.875·50 ms + 0.125·sample — the constant leaks for ~20 samples.
     #[test]
     fn rtt_seeds_from_first_measured_sample_under_hygiene() {
         let mut est = LossEstimator::new();
@@ -589,12 +568,12 @@ mod tests {
             Duration::from_millis(200),
             "first measured sample IS the estimate — no 50-ms blend"
         );
-        // Subsequent samples EWMA-blend off the measured seed as before.
+        // Subsequent samples EWMA-blend off the measured seed.
         est.record_rtt(Duration::from_millis(100));
         let expected = 0.875 * 0.200 + 0.125 * 0.100;
         assert!((est.rtt().as_secs_f64() - expected).abs() < 1e-9);
 
-        // Control: the legacy path blends the constructor seed.
+        // Control: the unseeded path blends the constructor seed.
         let mut legacy = LossEstimator::new();
         legacy.force_anchor_hygiene(false);
         legacy.record_rtt(Duration::from_millis(200));

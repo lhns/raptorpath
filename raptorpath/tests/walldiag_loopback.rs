@@ -1,43 +1,14 @@
-//! DEAD-WALL ONSET/DURATION loopback (`RWM_WALLDIAG`, ADR-0070 validation
-//! path step 2).
-//!
-//! The unit tests in `net::walldiag` pin the gauge's ARITHMETIC against
-//! injected instants — a clean run, a terminal wall, scattered gaps, and the
-//! cap-paused case — so this binary pins the other half, MEASUREMENT
-//! DISCIPLINE rule 1: **prove the mechanism under test executes.**
-//!
-//! Three things are asserted, in the order they can fail:
-//!
-//!   1. **ROUTING.** The gate resolves ON, its `[GATES]` echo carries the ON
-//!      value, and the process-global gauge exists. After a loopback transfer
-//!      the gauge has been FED — a non-zero iteration count and a real
-//!      wall-clock span — which proves the single feed site in
-//!      `run_window_sender` executed with the three scalars it consumes
-//!      (`wait_arm`, `SenderState::last_source_send_us`, the retransmit
-//!      counter).
-//!   2. **THE CLEAN-RUN READING.** A loopback over 127.0.0.1 is the
-//!      lossless, latency-free end of the instrument's range, so the sender
-//!      is productive essentially up to teardown: the terminal window must be
-//!      a small fraction of the transfer and its onset must sit near 1.0.
-//!      This is the calibration the c8 arms are read against — a cell whose
-//!      wall reads like loopback has no wall.
-//!   3. **BEHAVIOUR NEUTRALITY.** The same transfer completes with the gauge
-//!      ON. `net::walldiag::tests::walldiag_is_observation_only` pins the
-//!      STRUCTURAL half (the gauge owns all its state and takes no engine
-//!      handle at all); this is the executed half.
-//!
-//! **What only the VM can validate**, stated here so the loopback is not
-//! over-read: loopback cannot produce a c3-class lossy tail, because there is
-//! no loss, no propagation delay and no bottleneck queue — so the number this
-//! binary pins is the ZERO end of the scale, not the instrument's ability to
-//! resolve a real wall. The lossy end (a measurable terminal window with
-//! retransmits inside it) needs netem, and the STABILITY claim that motivated
-//! the instrument — that onset/duration does not invert between pools minutes
-//! apart, where the tick-share statistic did — is a repeated-measures claim
-//! that can only be scored on the VM battery.
-//!
-//! Own test binary and ONE test function: `RWM_WALLDIAG` is a process-global
-//! `OnceLock`, resolved once at first touch and never re-read.
+//! The dead-wall onset/duration gauge (`RWM_WALLDIAG`) executes on a real
+//! transfer (`docs/measurement-discipline.md` rule 1; its arithmetic is
+//! unit-tested in `net::walldiag`). The test proves: the gate resolves on and
+//! is echoed, and after a loopback transfer the gauge has been fed (non-zero
+//! iterations, a real wall-clock span), so the single feed site in
+//! `run_window_sender` executed; the clean-run reading sits at the zero end
+//! of the scale (terminal window a small fraction of the run, onset near
+//! 1.0) — the calibration a lossy cell is read against; and the transfer
+//! completes with the gauge on (behaviour neutrality, executed). Loopback has
+//! no loss, delay or bottleneck, so resolving a real wall is a VM question.
+//! One test function: `RWM_WALLDIAG` is process-global, resolved once.
 
 #[path = "common/loopback.rs"]
 mod loopback;
@@ -67,10 +38,10 @@ async fn walldiag_gauge_is_wired_reads_clean_at_loopback_and_is_behaviour_neutra
     let (srv_pc, cli_pc) = (resolve(&s), resolve(&c));
     assert!(srv_pc.window_reliable);
     // The server stays up until the gauge has been read (it is aborted at
-    // the end, exactly where the original fixed-port version aborted it).
+    // the end).
     let srv = start_server(srv_pc, "walldiag loopback").await;
 
-    // BEHAVIOUR NEUTRALITY, executed: an observation-only instrument cannot
+    // Behaviour neutrality, executed: an observation-only instrument cannot
     // stall a transfer.
     tokio::time::timeout(
         Duration::from_secs(120),
@@ -80,8 +51,8 @@ async fn walldiag_gauge_is_wired_reads_clean_at_loopback_and_is_behaviour_neutra
     .expect("walldiag loopback timed out — the gauge is not observation-only")
     .expect("walldiag perf client failed");
 
-    // ── ROUTING ──────────────────────────────────────────────────────────
-    // Read the gauge WITHOUT the teardown clock: `report` takes the caller's
+    // ── routing ──────────────────────────────────────────────────────────
+    // Read the gauge without the teardown clock: `report` takes the caller's
     // end stamp, and the sender's own teardown may not have run yet (the
     // server task is still alive). `max(last_us)` inside `report` makes the
     // reading well-defined from here.
@@ -106,11 +77,11 @@ async fn walldiag_gauge_is_wired_reads_clean_at_loopback_and_is_behaviour_neutra
         r.onset
     );
 
-    // ── THE CLEAN-RUN READING ────────────────────────────────────────────
+    // ── the clean-run reading ────────────────────────────────────────────
     // Loopback is the zero end of the scale: no loss, no propagation, no
     // bottleneck. The sender is productive essentially to the end, so the
     // terminal window is a small fraction of the run and the onset is late.
-    // The bound is deliberately loose (10 %) — this pins the CLASS, and the
+    // The bound is deliberately loose (10 %) — this pins the class, and the
     // class is what a c8 reading is compared against. A lossy cell reading
     // inside this bound would mean the cell has no wall.
     assert!(

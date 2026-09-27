@@ -97,9 +97,9 @@ def main(argv):
     row = {"cell": cell, "size": size, "arm": arm,
            "seed": int(seed), "rep": int(rep)}
 
-    # ── GOODPUT AND COMPLETION, off the per-run JSON the engine prints ──
-    # ABORT != DNF: no summary AND no runs means the invocation died before the
-    # engine started and contributes NO datum and NO denominator. A summary
+    # ── Goodput and completion, off the per-run JSON the engine prints ──
+    # ABORT != DNF: no summary and no runs means the invocation died before the
+    # engine started and contributes no datum and no denominator. A summary
     # with `dnf > 0` is a DNF, which is a result.
     runs, dnf_count, saw_summary = [], None, False
     for ln in cli:
@@ -123,12 +123,12 @@ def main(argv):
     row["dnf"] = int(dnf_count or 0)
     row["mbps"] = quant(mbps, 0.5)
     row["mbps_mean"] = round(sum(mbps) / len(mbps), 6) if mbps else None
-    # THE SCORED DIMENSION.
+    # The scored dimension.
     row["completion_p50"] = quant(secs, 0.5)
     row["completion_p05"] = quant(secs, 0.05)
     row["completion_p95"] = quant(secs, 0.95)
 
-    # ── W5: DOES `r` REACH THE WIRE? ───────────────────────────────────
+    # ── W5: does `r` reach the wire? ───────────────────────────────────
     diag = last(cli, "[DIAG] t=")
     cum = ftok(diag, "cum", "") or ""
     parts = cum.split("/")
@@ -142,8 +142,8 @@ def main(argv):
     row["cum_ack"] = _i(parts[2]) if len(parts) > 2 else None
     s, c = row["cum_src"], row["cum_cod"]
     row["cod_frac"] = round(c / (c + s), 6) if (s is not None and c is not None and (c + s) > 0) else None
-    # `H_price`'s OWN prediction for this row, self-calibrating: the arm's
-    # goodput cost IS its measured wire overhead. `cod = 0` predicts exactly 0,
+    # `H_price`'s own prediction for this row, self-calibrating: the arm's
+    # goodput cost is its measured wire overhead. `cod = 0` predicts exactly 0,
     # and `H_price` is then unfalsifiable on this row — which is why `R-INERT`
     # is a legal outcome and not a refutation of the hypothesis.
     row["h_price_predicted_goodput_delta"] = (
@@ -151,7 +151,7 @@ def main(argv):
     row["diag_rtt_ms"] = fnum(diag, "rtt")
     row["diag_retx"] = fnum(diag, "retx")
 
-    # ── W6: DOES χ REACH THE GLIDE? ────────────────────────────────────
+    # ── W6: does χ reach the glide? ────────────────────────────────────
     chi = last(cli, "[CHI]")
     row["chi_present"] = chi is not None
     row["chi_n"] = fnum(chi, "n", 0)
@@ -159,7 +159,7 @@ def main(argv):
     row["chi_frac_gt_half"] = fnum(chi, "frac_gt_half", 0.0)
     row["chi_feed_echo"] = sum(1 for l in cli if "completion-exposure feed ACTIVE" in l)
 
-    # ── THE PRE-STATED FALSIFIER (§16.82.6) ────────────────────────────
+    # ── The falsifier ──────────────────────────────────────────────────
     fd = last(srv, "[FDIAG]") or last(cli, "[FDIAG]")
     row["fdiag_present"] = fd is not None
     dec = re.search(r"DECODE n=(\d+) avg=([0-9.]+)us", fd or "")
@@ -171,8 +171,8 @@ def main(argv):
     row["fdiag_present_at_stall"] = fnum(fd, "present_at_stall")
     row["fdiag_probe_holes"] = fnum(fd, "probe_holes")
     row["fdiag_probe_buffered"] = fnum(fd, "probe_buffered")
-    # THE CRITERION, evaluated per rep and adjudicated (majority, n >= 30 on
-    # BOTH classes) in r_report.py. `None` means UNREADABLE, never `False`.
+    # The criterion, evaluated per rep and adjudicated (majority, n >= 30 on
+    # both classes) in r_report.py. `None` means UNREADABLE, never `False`.
     dn, sn = row["fdiag_decode_n"], row["fdiag_source_n"]
     da, sa = row["fdiag_decode_avg_us"], row["fdiag_source_avg_us"]
     if dn is not None and sn is not None and dn >= 30 and sn >= 30 and da is not None and sa is not None:
@@ -188,11 +188,11 @@ def main(argv):
               "dup_src", "preempt_src", "rep_redundant", "late_after_aban"):
         row["rfa_" + k] = fnum(rfa, k)
 
-    # ── THE ATTRIBUTION RULE'S OWN INPUT ───────────────────────────────
+    # ── The attribution rule's own input ───────────────────────────────
     # The sender's per-path loss estimate. Below 0.05 the glide's fully-exposed
-    # target `BULK_TAIL_BUDGET = 0.05` leaves `r* = 0` BY ARITHMETIC, so an
+    # target `BULK_TAIL_BUDGET = 0.05` leaves `r* = 0` by arithmetic, so an
     # `R-INERT` reading here is `BUDGET-BOUND` (a finding about the constant)
-    # or `ESTIMATOR-BOUND` (a finding about goal-gate open item 3) and never an
+    # or `ESTIMATOR-BOUND` (a finding about the loss estimator) and never an
     # unattributed null.
     eps = None
     for ln in cli:

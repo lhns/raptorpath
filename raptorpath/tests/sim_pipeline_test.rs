@@ -1,11 +1,7 @@
-//! B6: Full pipeline integration tests with SimChannel.
+//! Full pipeline integration tests with SimChannel.
 //!
 //! Wires together Scheduler + MockClock + SimChannel + WindowEncoder/Decoder
 //! + ReorderBuffer to verify end-to-end behavior.
-//!
-//! The BackendSelector arm was dropped in the dead-code refactor (batch 1):
-//! mid-stream FEC backend switching was removed from the data path
-//! (paper §16.4), so the selector it exercised no longer exists.
 
 mod common;
 

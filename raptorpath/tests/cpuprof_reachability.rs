@@ -1,67 +1,33 @@
-//! `[CPUPROF]` IS REACHED AND FED — the sender CPU decomposition's gate.
+//! The sender CPU decomposition `[CPUPROF]` is reached and fed. It is an
+//! `eprintln!` from the destructor of a local of `run_window_sender`, so only
+//! a `perf --client` run of the shipped binary can show the line fires and
+//! the five seams sit on the path a real transfer takes (measurement-
+//! discipline rule 1; the same exit shape `gauge_reachability.rs` covers).
+//! Clauses, in the order they can fail:
 //!
-//! **The defect class this exists to prevent.** `gauge_reachability.rs`
-//! records the lesson in this tree's own words: `[CCAP]` and `[WALL]` carried
-//! always-on FORMAT pins for a month while being emitted from two `select!`
-//! arms the `perf` harness is not guaranteed to reach — *"every `[CCAP]` pin
-//! asserted the format and none asked whether the line fired."* `cpuprof.rs`
-//! has the same shape of pins, so it needs the same shape of gate, and it
-//! needs it BEFORE a battery is pre-registered against the instrument rather
-//! than after the battery comes back empty.
+//!   1. The gate echo is two-sided: `RWM_CPUPROF=1` present, `=0` absent.
+//!   2. The line fires exactly once per sender.
+//!   3. Its token set parses as `net::cpuprof::report_line` renders it.
+//!   4. Every one of the five seams is fed (`n > 0`): a seam wired into a
+//!      path the window sender does not take would report a clean `0.0000`
+//!      share that reads as "this cost nothing".
+//!   5. The shares are coherent: each in `[0, 1]`, `attr` their sum,
+//!      `unattr = 1 − attr`, and `attr ≤ 1` (the seams are disjoint).
+//!   6. The gauge ships off: without the gate no `[CPUPROF]` line prints.
 //!
-//! MEASUREMENT DISCIPLINE rule 1: prove the mechanism under test executes.
-//!
-//! **Why a spawned binary and not a unit test.** `[CPUPROF]` is an
-//! `eprintln!` from the destructor of a local of `run_window_sender`. No unit
-//! test can construct that sender, and no unit test can show that the five
-//! seams are on the path a real transfer takes. Only a run of the shipped
-//! binary can, and the run must be a `perf --client`, because `perf::client`
-//! is the exit shape that defeated the two `select!` arms.
-//!
-//! **What is asserted, in the order it can fail.**
-//!
-//!   1. The gate is TWO-SIDED in the `[GATES]` echo: `RWM_CPUPROF=1` present,
-//!      `RWM_CPUPROF=0` absent. A missing `[CPUPROF]` must be readable as an
-//!      unreached emission site and never as an unset gate.
-//!   2. The line fires AT ALL, exactly once per sender.
-//!   3. Its token set is the one `net::cpuprof::report_line` renders and an
-//!      L1 parser is written against — asserted by PARSING, not by substring.
-//!   4. **Every one of the five seams is FED** (`n > 0`). This is the
-//!      assertion with teeth: a seam wired into a code path the window sender
-//!      does not take would report a clean `0.0000` share, and a results
-//!      table would print it as "this cost nothing" rather than as "this was
-//!      never measured". A whole-program-LTO build gives no other warning.
-//!   5. The shares are ARITHMETICALLY COHERENT: each in `[0, 1]`, `attr` the
-//!      sum of them, `unattr = 1 − attr`, and `attr ≤ 1`. An `attr` above 1
-//!      would mean the seams are NOT disjoint — the one structural
-//!      assumption the decomposition rests on — and it is caught here rather
-//!      than in a battery's results table.
-//!   6. **The gauge ships OFF**: the same run without the gate prints no
-//!      `[CPUPROF]` at all. Two-sided, on the line as well as on the echo.
-//!
-//! **What this binary deliberately does NOT assert.** Any particular VALUE of
-//! any seam's share. Loopback has no netem, no shaped bottleneck and no
-//! network MTU; its decomposition is the host's, not a cell's, and no claim
-//! about c9's 68.5 ms/MB can be made from it. The measurement that decomposes
-//! the ceiling is an L1 run under `tools/l1/cpuprof_battery.sh`; this is the
-//! instrument gate that must pass before that run is worth making.
-//!
-//! It also does not assert that `cpu_ms` is available: `CLOCK_PROCESS_CPUTIME_ID`
-//! is read under `cfg(target_os = "linux")` and renders `-` elsewhere, so the
-//! share clauses are asserted CONDITIONALLY on a numeric reading and the
-//! `-` case is asserted to be consistently `-` across every derived field.
-//! The VM is Linux; a developer host may not be, and a gate that only passes
-//! on one of them is a gate nobody runs.
+//! No seam's share is asserted: loopback's decomposition is the host's. The
+//! process CPU clock is read only on Linux and renders `-` elsewhere, so the
+//! share clauses are conditional on a numeric reading and the `-` case is
+//! asserted consistent across every derived field.
 
 #[path = "common/gauge.rs"]
 mod gauge;
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The arm under test: the CPU decomposition on, nothing else changed. No
-/// gate here changes a law, and `RWM_DIAG` is deliberately ABSENT — the
-/// instrument is independent of the `[DIAG]` surface by construction and this
-/// run proves it does not need it.
+/// The arm under test: the CPU decomposition on, nothing else changed.
+/// `RWM_DIAG` is absent: the instrument is independent of the `[DIAG]`
+/// surface.
 const ARM: [(&str, &str); 2] = [("RWM_CPUPROF", "1"), ("RUST_LOG", "raptorpath=info")];
 
 /// Run one `perf --client` transfer against a fresh server and return the
@@ -73,10 +39,9 @@ fn run_transfer(env: &[(&str, &str)]) -> String {
         &["--protocol-hint", "bulk", "--window-reliable"],
     );
     let mut args = loopback::perf_args("bulk", "8000000", "1").to_vec();
-    // Generation coding ON: the `enc` seam is the coded path, and a run
-    // without it would leave the decomposition's headline column unfed
-    // for a reason that is the HARNESS's and not the engine's. This is
-    // the same flag `perf_rwm_c.sh` passes on every L1 battery arm.
+    // Generation coding on: the `enc` seam is the coded path, and without it
+    // the headline column would be unfed for a harness reason. `perf_rwm_c.sh`
+    // passes the same flag on every L1 battery arm.
     args.push("--window-generation-coding");
     loopback::run_perf_client(&srv.addrs, env, &args)
 }
@@ -131,7 +96,7 @@ fn parse_scalar(line: &str, key: &str) -> Option<f64> {
 fn the_cpuprof_line_fires_and_every_seam_is_fed() {
     let log = run_transfer(&ARM);
 
-    // 1. THE GATE, TWO-SIDED.
+    // 1. The gate, two-sided.
     assert!(
         log.contains("RWM_CPUPROF=1"),
         "the [GATES] echo does not carry RWM_CPUPROF=1 — the arm did not arm:\n{log}"
@@ -141,9 +106,8 @@ fn the_cpuprof_line_fires_and_every_seam_is_fed() {
         "the [GATES] echo carries BOTH sides of RWM_CPUPROF:\n{log}"
     );
 
-    // 2. THE LINE FIRES — and exactly once per sender. THIS IS THE ASSERTION
-    //    THAT FAILS IF THE DESTRUCTOR IS THE WRONG SITE, which is precisely
-    //    how `[CCAP]` and `[WALL]` were emitted on 0-1 of 4 runs.
+    // 2. The line fires exactly once per sender — this fails if the
+    //    destructor is the wrong site.
     let lines: Vec<&str> = log.lines().filter(|l| l.contains("[CPUPROF] ")).collect();
     assert_eq!(
         lines.len(),
@@ -155,7 +119,7 @@ fn the_cpuprof_line_fires_and_every_seam_is_fed() {
     let line = lines[0];
     println!("[cpuprof-reach] {line}");
 
-    // 3. THE SCALAR FIELDS PARSE.
+    // 3. The scalar fields parse.
     let run_ms = parse_scalar(line, "run_ms").expect("run_ms is never `-`");
     assert!(run_ms > 0.0, "a transfer has a positive wall span: {run_ms}");
     let cpu_ms = parse_scalar(line, "cpu_ms");
@@ -166,7 +130,7 @@ fn the_cpuprof_line_fires_and_every_seam_is_fed() {
         "`cores` is derived from `cpu_ms`: the two must be available together: {line}"
     );
 
-    // 4. EVERY SEAM IS FED. The teeth of this file.
+    // 4. Every seam is fed.
     let seams: Vec<SeamTok> = line
         .split_whitespace()
         .filter(|t| t.contains("/n"))
@@ -193,15 +157,14 @@ fn the_cpuprof_line_fires_and_every_seam_is_fed() {
         );
     }
 
-    // 5. ARITHMETIC COHERENCE — and in particular `attr <= 1`, which is the
-    //    DISJOINTNESS assumption the whole decomposition rests on. A nested
-    //    seam added later shows up here as an attribution above 100 %.
+    // 5. Arithmetic coherence, in particular `attr <= 1`: a nested seam added
+    //    later shows up as an attribution above 100 %.
     let attr = parse_scalar(line, "attr");
     let unattr = parse_scalar(line, "unattr");
     match cpu_ms {
         None => {
-            // The `-` case must be CONSISTENT: no derived field may quietly
-            // acquire a number when its denominator has none.
+            // The `-` case must be consistent: no derived field acquires a
+            // number when its denominator has none.
             assert!(attr.is_none() && unattr.is_none(), "inconsistent `-`: {line}");
             for s in &seams {
                 assert!(
@@ -250,10 +213,9 @@ fn the_cpuprof_line_fires_and_every_seam_is_fed() {
     }
 }
 
-/// **THE OFF SIDE.** The same transfer without the gate prints no
-/// `[CPUPROF]` at all. Asserted on the LINE and not only on the echo,
-/// because the whole claim that this instrument is free on every shipped arm
-/// rests on the gauge not existing.
+/// The off side: the same transfer without the gate prints no `[CPUPROF]`,
+/// asserted on the line and not only on the echo — the claim that the
+/// instrument is free on every shipped arm rests on the gauge not existing.
 #[test]
 fn the_gauge_is_silent_on_the_shipped_default() {
     let log = run_transfer(&[("RUST_LOG", "raptorpath=info")]);

@@ -1,39 +1,24 @@
-//! `[SUCC]` — THE SAME-FLOW SUCCESSOR-ARRIVAL DISTRIBUTION, MEASURED AT THE
-//! RECEIVER. The quantity the fire-cause pass NAMED and did not characterize.
+//! `[SUCC]` — the same-flow successor-arrival distribution, measured at the
+//! receiver.
 //!
-//! ## WHY THIS EXISTS — the one reading the spine is owed
+//! Almost all recovery fires are `gap_data` — the receiver's SACK report,
+//! emitted when a higher seq arrives while a hole is outstanding (paper
+//! §7.4). This gauge characterizes that measurand: per hole, how long the
+//! hole lives and what closes it. It derives no law, positions no waiting
+//! time, and hands nothing to any consumer.
 //!
-//! The fire-cause pass (goal-gate, "THE FIRE-CAUSE PASS — THE SCORED RESULT",
-//! 2026-08-21) classified 107 597 recovery fires and found **0.59 % of them
-//! timer-driven and 98.99 % `gap_data`** — the receiver's SACK report, emitted
-//! when *a higher seq arrives while a hole is outstanding*. It closed by naming
-//! the successor measurand and by naming, explicitly, what it had NOT done:
+//! ## The origin event: hole detection, not hole creation
 //!
-//! > *"the successor-arrival distribution has never been measured on this
-//! > engine. §16.69's measurand was wrong; this pass names its replacement but
-//! > does not characterize it. A derivation written against an uncharacterized
-//! > distribution would repeat the exact defect just corrected."*
-//!
-//! This module is that characterization, and NOTHING else. **It derives no
-//! law, positions no waiting time, and hands nothing to any consumer.** It
-//! measures, per hole, how long the hole lives and what closes it.
-//!
-//! ## THE ORIGIN EVENT — hole DETECTION, and why not hole CREATION
-//!
-//! A hole has two candidate origins and the choice is stated rather than
-//! defaulted:
-//!
-//!   * **CREATION** — the instant the sender put the symbol on the wire, or
-//!     the instant the network dropped it. **NOT RECEIVER-OBSERVABLE.** The
+//!   * Creation — the instant the sender put the symbol on the wire, or the
+//!     instant the network dropped it — is not receiver-observable: the
 //!     receiver never sees the lost symbol, so it holds no send-timestamp for
-//!     it and no arrival to subtract one from. Measuring from creation would
-//!     require the sender's clock and a wire change, and would measure a
-//!     quantity the fire site cannot condition on.
-//!   * **DETECTION** — the first arrival of a *strictly higher* seq while this
-//!     seq is unresolved. This is what this gauge uses.
+//!     it. Measuring from creation would need the sender's clock and a wire
+//!     change, and would measure a quantity the fire site cannot condition on.
+//!   * Detection — the first arrival of a strictly higher seq while this seq
+//!     is unresolved — is what this gauge uses.
 //!
-//! **DETECTION IS NOT A CONVENIENCE CHOICE; IT IS THE SAME EVENT THE MAJORITY
-//! CAUSE FIRES ON.** `gap_data`'s producer in `receiver.rs` is
+//! Detection is the same event the majority cause fires on. `gap_data`'s
+//! producer in `receiver.rs` is
 //!
 //! ```text
 //!     gap_report_due = highest_seen_seq > highest_delivered_seq
@@ -41,48 +26,45 @@
 //!                   && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL
 //! ```
 //!
-//! — a higher seq arrived while a hole was outstanding, i.e. **detection**. A
-//! waiting time positioned on a clock that starts at detection is positioned
-//! on the same origin as 99 % of the fires it is supposed to govern. A clock
-//! started at creation would be positioned on an origin the deciding site
-//! cannot observe. The gauge's own high-water mark is fed by exactly the
-//! arrivals that feed `highest_seen_seq`, so the two advance together by
-//! construction.
+//! — a higher seq arrived while a hole was outstanding, i.e. detection. A
+//! waiting time on a clock that starts at detection is positioned on the same
+//! origin as the fires it governs. The gauge's own high-water mark is fed by
+//! exactly the arrivals that feed `highest_seen_seq`, so the two advance
+//! together by construction.
 //!
-//! **The consequence, disclosed:** every duration reported here EXCLUDES the
-//! interval from creation to detection. This is a **lower bound on hole age**
-//! and an **exact measure of the conditional the fire site sees**. Those are
-//! different quantities and the second is the one under study.
+//! Every duration reported here excludes the interval from creation to
+//! detection: a lower bound on hole age, and an exact measure of the
+//! conditional the fire site sees.
 //!
-//! ## THE THREE OUTCOMES — disjoint by construction, first terminal event wins
+//! ## The three outcomes — disjoint, first terminal event wins
 //!
-//!   * `orig` — **the seq's own SOURCE symbol arrived.** A late reorder, or
+//!   * `orig` — the seq's own source symbol arrived. A late reorder, or
 //!     the sender's copy (retransmit / taper copy). The wire carries no
-//!     "this is a retransmit" bit, but every batch carries its SENDER stamp:
+//!     "this is a retransmit" bit, but every batch carries its sender stamp:
 //!     originals are stamped in seq order, so a closing copy stamped later
 //!     than the arrival that exposed the hole cannot be the original. Those
 //!     holes are the `HoleOutcome::Retransmit` subset, printed as `rtx_n=`
-//!     (still inside `orig_n`, whose meaning — own-source arrival — is
-//!     unchanged) and excluded from `[LATE]`'s self-heal estimate π̂0. The
+//!     (still inside `orig_n`, whose meaning is own-source arrival) and
+//!     excluded from `[LATE]`'s self-heal estimate π̂0. The
 //!     split is a lower bound on copies: a copy stamped before its hole's
 //!     exposer was stamped reads `orig`.
-//!   * `rep` — **the seq came out of the DECODER**, reconstructed from coded
+//!   * `rep` — the seq came out of the decoder, reconstructed from coded
 //!     repair rather than from its own source arrival. The same test the
 //!     `[RFA]` site already uses for `fill_coded`: `symbol.is_repair ||
 //!     seq != symbol.block_id`.
-//!   * `aban` — **the in-order delivery frontier moved past the hole while it
-//!     was still open.** Force-delivery / give-up. Under the reliable window
+//!   * `aban` — the in-order delivery frontier moved past the hole while it
+//!     was still open: force-delivery / give-up. Under the reliable window
 //!     (ρ = 1) `ReorderBuffer::new_reliable` never expires a hole, so this
-//!     class is STRUCTURALLY EMPTY there and a nonzero reading is a finding
-//!     about the engine, not about this gauge.
+//!     class is structurally empty there and a nonzero reading is a finding
+//!     about the engine.
 //!
-//! A hole that is still outstanding when the line is emitted is in NONE of the
-//! three: it is counted in `open`, a CENSUS and not an outcome. The gauge is
-//! read cumulatively (last line wins) at a site the harness SIGKILLs, so
-//! "still open at the last line" is the honest reading of *window close* and
-//! is reported as its own slot rather than folded into `aban`.
+//! A hole still outstanding when the line is emitted is in none of the three:
+//! it is counted in `open`, a census and not an outcome. The gauge is read
+//! cumulatively (last line wins) at a site the harness SIGKILLs, so "still
+//! open at the last line" is reported as its own slot rather than folded into
+//! `aban`.
 //!
-//! **THE ACCOUNTING IDENTITY, asserted by test rather than asserted in prose:**
+//! The accounting identity, asserted by test:
 //!
 //! ```text
 //!     det = orig_n + rep_n + aban_n + open + over
@@ -94,66 +76,55 @@
 //! holds and a truncated measurement announces itself instead of quietly
 //! shrinking its own denominator.
 //!
-//! ## WHAT IS REPORTED, AND WHY QUANTILES RATHER THAN A MEAN
+//! ## What is reported: quantiles, not a mean
 //!
-//! A waiting time is a QUANTILE decision — "wait until the successor has
-//! probably arrived" — so the mean is the wrong summary and is not reported as
-//! a headline. Per outcome: `n`, `p50`, `p90`, `p99`, `mx`, all in µs. Plus
-//! two derived readings the next step's derivation is pre-registered to need:
+//! A waiting time is a quantile decision — "wait until the successor has
+//! probably arrived" — so the mean is not reported as a headline. Per
+//! outcome: `n`, `p50`, `p90`, `p99`, `mx`, all in µs. Plus two derived
+//! readings:
 //!
-//!   * **`orig_frac`** = `orig_n / (orig_n + rep_n)` — of the holes that
-//!     resolved, the fraction the ORIGINAL closed. The false-repair boundary
-//!     in the large: a repair emitted for a hole whose original was coming was
-//!     unnecessary.
-//!   * **`cross`** — **the FALSE-REPAIR BOUNDARY IN TIME.** Defined here, in
-//!     advance, so the number is not chosen after seeing the data: `cross` is
-//!     the smallest histogram-bucket lower edge `t` at which the count of
-//!     holes closed by a REPAIR within `t` strictly exceeds the count closed
-//!     by their ORIGINAL within `t`. Below `cross`, waiting pays — most holes
+//!   * `orig_frac` = `orig_n / (orig_n + rep_n)` — of the holes that
+//!     resolved, the fraction the original closed. A repair emitted for a
+//!     hole whose original was coming was unnecessary.
+//!   * `cross` — the false-repair boundary in time: the smallest
+//!     histogram-bucket lower edge `t` at which the count of holes closed by
+//!     a repair within `t` strictly exceeds the count closed by their
+//!     original within `t`. Below `cross`, waiting pays — most holes
 //!     that close, close by themselves. Above it, waiting does not. It renders
 //!     `-` when no such `t` exists, which reads "the original is ahead at
 //!     every horizon" and is a legal outcome, not a missing value.
 //!
-//! ## THE HISTOGRAM, AND ITS DECLARED ERROR
+//! ## The histogram and its declared error
 //!
-//! Counts land in log-spaced buckets, **8 sub-buckets per octave**, exact
-//! below 8 µs. A bucket's relative width above that is `2^(1/8) − 1 ≈ 9.05 %`,
-//! and a reported quantile is the **lower edge** of the bucket the rank falls
-//! in — so every quantile here is an underestimate by at most 9.05 %. Bounded,
-//! stated, and pinned by test. Memory is [`BUCKETS`] × 8 B × 3 outcomes ≈ 12 kB
+//! Counts land in log-spaced buckets, 8 sub-buckets per octave, exact below
+//! 8 µs. A bucket's relative width above that is `2^(1/8) − 1 ≈ 9.05 %`, and a
+//! reported quantile is the lower edge of the bucket the rank falls in — so
+//! every quantile here is an underestimate by at most 9.05 % (pinned by
+//! test). Memory is [`BUCKETS`] × 8 B × 3 outcomes ≈ 12 kB
 //! for the whole run, independent of hole count: this gauge cannot grow with
 //! the transfer.
 //!
-//! ## THE RAW DUMP — default OFF, for the offline derivation only
+//! ## The raw dump (default off)
 //!
 //! `RWM_SUCC_DUMP=1` additionally emits `[SUCCDUMP]` batches of raw
-//! `(outcome, µs)` records so the next step can compute any functional over
-//! the exact samples rather than over this gauge's buckets — the `[RTTDUMP]`
-//! lesson, applied before it is needed rather than after a battery is scored
-//! against a bucket edge. It is capped ([`dump_max`], `RWM_SUCC_DUMP_MAX`) and
-//! announces its own truncation with one `[SUCCDUMP-CAP]` line. **The quantile
-//! line is emitted ALWAYS; only the dump is gated**, so no pass depends on the
-//! dump being on and no pass pays for it unless it asked.
+//! `(outcome, µs)` records, so any functional can be computed offline over
+//! the exact samples rather than over this gauge's buckets. It is capped
+//! ([`dump_max`], `RWM_SUCC_DUMP_MAX`) and announces its own truncation with
+//! one `[SUCCDUMP-CAP]` line. The quantile line is always emitted; only the
+//! dump is gated.
 //!
-//! ## ONE WINDOW PER INVOCATION — a disclosed scope, not an assumption
+//! ## One window per invocation
 //!
-//! The gauge's high-water mark and its open-hole map are per-RECEIVER-TASK, and
-//! the receiver task outlives an individual perf RUN. A multi-run invocation
-//! (`--runs N`, N > 1) restarts the window's seq space while the gauge's mark
-//! stays at the previous run's maximum, so the second run's arrivals advance no
-//! mark, expose no hole, and can make the previous run's trailing holes look
-//! abandoned when the delivery frontier resets. **MEASURED, and it is why the
-//! reachability run's `--runs 2` shows `aban_n = 1` under a reliable window
-//! that cannot abandon a hole.**
+//! The gauge's high-water mark and its open-hole map are per receiver task,
+//! and the receiver task outlives an individual perf run. A multi-run
+//! invocation (`--runs N`, N > 1) restarts the window's seq space while the
+//! gauge's mark stays at the previous run's maximum, so the second run's
+//! arrivals expose no hole, and the previous run's trailing holes can look
+//! abandoned when the delivery frontier resets (`aban_n = 1` under a reliable
+//! window). `[SUCC]` is therefore a one-run-per-invocation instrument, as the
+//! L1 batteries invoke the engine (`perf_rwm_c.sh … 1`).
 //!
-//! The consequence is stated rather than engineered around: **`[SUCC]` is a
-//! ONE-RUN-PER-INVOCATION instrument**, exactly as the L1 batteries invoke the
-//! engine (`perf_rwm_c.sh … 1`). A pass that runs more than one transfer per
-//! invocation is reading a gauge across a discontinuity its own denominator
-//! does not survive, and the pre-registration says so before the pass rather
-//! than a results table saying so after it.
-//!
-//! ## READ-ONLY
+//! ## Read-only
 //!
 //! Every counter is fed from events the receiver already produces. The gauge
 //! holds no engine handle, returns nothing any engine site reads, and no
@@ -163,16 +134,16 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-// ── DECLARED RESOURCE BOUNDS ────────────────────────────────────────────
+// ── Declared resource bounds ────────────────────────────────────────────
 
 /// Maximum simultaneously-tracked open holes. Beyond this a detection is
 /// counted in `det` and `over` and never tracked, so the accounting identity
-/// holds and the truncation is READ off the line rather than inferred.
+/// holds and the truncation is read off the line rather than inferred.
 ///
-/// At the widest cell of the pass (`c1`, 400 MB, 1400 B symbols) the in-flight
-/// span is bounded by the sender's outstanding cap, so this is ~2 orders above
-/// any reachable simultaneous-hole count. It exists so that a pathological run
-/// cannot make an observation-only gauge the reason for an OOM.
+/// The in-flight span is bounded by the sender's outstanding cap, so this is
+/// ~2 orders above any reachable simultaneous-hole count. It exists so that a
+/// pathological run cannot make an observation-only gauge the reason for an
+/// OOM.
 pub const MAX_OPEN: usize = 65_536;
 
 /// Maximum seq span one arrival may expose as holes in a single step. A jump
@@ -183,7 +154,7 @@ pub const MAX_OPEN: usize = 65_536;
 pub const MAX_SPAN: u64 = 4_096;
 
 /// Sub-buckets per octave, as a power of two. 8 ⇒ ≤ 9.05 % relative bucket
-/// width, and the reported quantile is the bucket's LOWER edge.
+/// width, and the reported quantile is the bucket's lower edge.
 const SUB_BITS: u32 = 3;
 const SUB: u64 = 1 << SUB_BITS;
 
@@ -212,9 +183,9 @@ pub(crate) fn resolve_dump_max() -> u64 {
         .unwrap_or(DUMP_MAX_DEFAULT)
 }
 
-// ── THE BUCKET MAP ──────────────────────────────────────────────────────
+// ── The bucket map ──────────────────────────────────────────────────────
 
-/// Bucket index for `v` µs. Monotone non-decreasing in `v`, and EXACT (index
+/// Bucket index for `v` µs. Monotone non-decreasing in `v`, and exact (index
 /// == value) below [`SUB`].
 pub fn bucket_of(v: u64) -> usize {
     if v < SUB {
@@ -237,13 +208,13 @@ pub fn bucket_lower_edge(i: usize) -> u64 {
     (SUB + sub) << (e - SUB_BITS as u64)
 }
 
-/// Classify a hole closed by an arrival of the seq's own SOURCE symbol.
+/// Classify a hole closed by an arrival of the seq's own source symbol.
 ///
 /// Originals are stamped in seq order by one sender clock, so the original
 /// of a hole was stamped no later than any original of a higher seq —
-/// including the arrival that exposed it. A closing copy stamped STRICTLY
-/// LATER than the exposer is therefore the sender's copy, not the original.
-/// Both stamps are the SENDER's clock (a same-clock comparison). A copy sent
+/// including the arrival that exposed it. A closing copy stamped strictly
+/// later than the exposer is therefore the sender's copy, not the original.
+/// Both stamps are the sender's clock (a same-clock comparison). A copy sent
 /// before the exposer was sent is not caught (it reads `Original`), so
 /// `Retransmit` is a lower bound. A stamp of 0 means "unknown".
 pub fn classify_source_close(closer_ts_us: u64, exposer_ts_us: u64) -> HoleOutcome {
@@ -254,21 +225,21 @@ pub fn classify_source_close(closer_ts_us: u64, exposer_ts_us: u64) -> HoleOutco
     }
 }
 
-// ── ONE OUTCOME'S DISTRIBUTION ──────────────────────────────────────────
+// ── One outcome's distribution ──────────────────────────────────────────
 
-/// Which terminal event closed a hole. A LABEL: nothing in the engine
+/// Which terminal event closed a hole. A label: nothing in the engine
 /// branches on it, only counters read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoleOutcome {
-    /// The seq's OWN source symbol arrived and it was the ORIGINAL send — a
+    /// The seq's own source symbol arrived and it was the original send — a
     /// late reorder, i.e. a genuine self-heal.
     Original,
-    /// The seq's own source symbol arrived as the SENDER'S COPY
+    /// The seq's own source symbol arrived as the sender's copy
     /// (retransmit / taper copy): its sender stamp is later than the stamp of
     /// the arrival that exposed the hole, which no original can be (see
     /// [`classify_source_close`]). Printed inside `orig_*` (an own-source
-    /// arrival, the field's historic meaning) and separately as `rtx_n=`;
-    /// NOT a self-heal for `[LATE]`'s pi0.
+    /// arrival) and separately as `rtx_n=`; not a self-heal for `[LATE]`'s
+    /// pi0.
     Retransmit,
     /// The decoder reconstructed the seq from coded repair.
     Repair,
@@ -289,11 +260,11 @@ impl HoleOutcome {
     }
 }
 
-/// **ONE HOLE'S TERMINAL RECORD**, handed back by
+/// One hole's terminal record, handed back by
 /// [`SuccGauge::resolve`] and [`SuccGauge::abandon_below`].
 ///
 /// `us` is the lower end of the lateness bracket (from the arrival that
-/// EXPOSED the hole) and `hi_us` the upper end (from the previous advance of
+/// exposed the hole) and `hi_us` the upper end (from the previous advance of
 /// the high-water mark, the earliest instant the seq could have been due).
 /// `us <= hi_us` always. Both are printed by `[LATE]`; `[LAT]` uses `us` and
 /// the class.
@@ -301,16 +272,16 @@ impl HoleOutcome {
 pub struct HoleRecord {
     /// The sequence number this record is about. `[RFA] late_after_aban`
     /// needs it: a copy that arrives after the frontier gave up is only
-    /// identifiable against the set of seqs the frontier actually SKIPPED.
+    /// identifiable against the set of seqs the frontier actually skipped.
     pub seq: u64,
     /// Which terminal event closed the hole.
     pub outcome: HoleOutcome,
-    /// The closing arrival landed on a DIFFERENT path from the exposer.
+    /// The closing arrival landed on a different path from the exposer.
     pub cross: bool,
-    /// Time from EXPOSURE to close, µs — the bracket's lower end, and the
+    /// Time from exposure to close, µs — the bracket's lower end, and the
     /// number `[SUCC]`'s own histograms carry.
     pub us: u64,
-    /// Time from the previous HIGH-WATER ADVANCE to close, µs — the bracket's
+    /// Time from the previous high-water advance to close, µs — the bracket's
     /// upper end.
     pub hi_us: u64,
 }
@@ -348,14 +319,14 @@ impl Hist {
     pub fn mean_us(&self) -> Option<u64> {
         (self.n > 0).then(|| self.sum_us / self.n)
     }
-    /// The EXACT accumulated total, us. `[LAT]`'s shares are sums and not
+    /// The exact accumulated total, us. `[LAT]`'s shares are sums and not
     /// quantiles: a share must add up across classes, and bucket lower edges
     /// do not.
     pub fn sum_us(&self) -> u64 {
         self.sum_us
     }
 
-    /// The `p`-quantile as the LOWER EDGE of the bucket the rank falls in —
+    /// The `p`-quantile as the lower edge of the bucket the rank falls in —
     /// an underestimate by at most one bucket width (≤ 9.05 %). `None` iff no
     /// sample was ever recorded, which the line renders `-`.
     pub fn quantile(&self, p: f64) -> Option<u64> {
@@ -375,39 +346,37 @@ impl Hist {
     }
 }
 
-// ── THE GAUGE ───────────────────────────────────────────────────────────
+// ── The gauge ───────────────────────────────────────────────────────────
 
 /// The receiver-site successor-arrival gauge. Owned by the receiver task; no
 /// engine handle, no shared state, no `&mut` reachable from any decision site.
 pub struct SuccGauge {
-    /// Open holes: seq → (the instant it was DETECTED, **the path whose
-    /// arrival EXPOSED it**). `BTreeMap` because the abandonment sweep is a
+    /// Open holes: seq → (the instant it was detected, the path whose
+    /// arrival exposed it, ...). `BTreeMap` because the abandonment sweep is a
     /// frontier range, which a hash map cannot do without scanning the whole
     /// map on every frontier advance.
     ///
-    /// **A0.3 — THE EXPOSER PATH IS RECORDED AT DETECTION AND NOWHERE ELSE.**
-    /// A hole is exposed by the arrival of a strictly higher seq; that arrival
-    /// landed on exactly one path, and the seq that eventually closes the hole
-    /// lands on exactly one path too. Same ⇒ a SAME-PATH ordering event
-    /// (in-path reordering, or a real loss on that path). Different ⇒ a
-    /// CROSS-PATH skew event, which at a single-path cell is STRUCTURALLY
-    /// IMPOSSIBLE — that is the control reading. Observation only; nothing in
-    /// the engine branches on it.
+    /// The exposer path is recorded at detection and nowhere else. A hole is
+    /// exposed by the arrival of a strictly higher seq on exactly one path,
+    /// and the seq that eventually closes it lands on exactly one path too.
+    /// Same ⇒ a same-path ordering event (in-path reordering, or a real loss
+    /// on that path). Different ⇒ a cross-path skew event, structurally
+    /// impossible at a single-path cell. Observation only.
     ///
-    /// The fourth element is the exposing arrival's SENDER stamp
+    /// The fourth element is the exposing arrival's sender stamp
     /// (`send_timestamp_us`, 0 = unknown), for [`classify_source_close`].
     open: BTreeMap<u64, (Instant, u32, Instant, u64)>,
     /// The gauge's own high-water seq mark. `None` until the first arrival —
     /// the flow's first symbol exposes no hole, it establishes the baseline.
     hi: Option<u64>,
-    /// **THE INSTANT `hi` LAST ADVANCED** (`[LATE]`, `net/late.rs`).
+    /// The instant `hi` last advanced (`[LATE]`, `net/late.rs`).
     ///
     /// A hole's true lateness is not observable: the receiver learns a seq is
-    /// missing only when a HIGHER one arrives, and the seq was actually due
+    /// missing only when a higher one arrives, and the seq was actually due
     /// some time between the previous advance of this mark and that arrival.
-    /// So every hole carries a BRACKET — the third element of the `open`
+    /// So every hole carries a bracket — the third element of the `open`
     /// tuple is this instant, captured at the moment the hole was exposed —
-    /// and `[LATE]` prints BOTH ends. A law positioned on a bracketed
+    /// and `[LATE]` prints both ends. A law positioned on a bracketed
     /// quantity must say which end it used.
     ///
     /// Observation only; `[SUCC]` itself still times from the exposure.
@@ -416,16 +385,16 @@ pub struct SuccGauge {
     orig: Hist,
     rep: Hist,
     aban: Hist,
-    /// **A0.3 — THE SAME/CROSS EXPOSURE SPLIT.** Resolution times of holes
-    /// whose CLOSING arrival came on the SAME path that exposed them (`sp`)
-    /// and on a DIFFERENT one (`xp`). Disjoint, and their `n`s sum to `res` by
+    /// The same/cross exposure split: resolution times of holes whose
+    /// closing arrival came on the same path that exposed them (`sp`) and on
+    /// a different one (`xp`). Disjoint, and their `n`s sum to `res` by
     /// construction: every resolution carries exactly one arrival path.
     sp: Hist,
     xp: Hist,
-    /// Of the `orig` class, the holes closed by the sender's COPY
+    /// Of the `orig` class, the holes closed by the sender's copy
     /// ([`HoleOutcome::Retransmit`]). Printed as `rtx_n=`.
     rtx_n: u64,
-    /// Every hole ever DETECTED, tracked or not — the identity's left side.
+    /// Every hole ever detected, tracked or not — the identity's left side.
     det: u64,
     /// Detections the bounds refused to track.
     over: u64,
@@ -467,26 +436,26 @@ impl SuccGauge {
         }
     }
 
-    /// **RESOLUTION.** One seq has just been resolved — by its own source
+    /// Resolution. One seq has just been resolved — by its own source
     /// arrival (`by_repair = false`) or by the decoder (`by_repair = true`).
     /// A no-op unless the seq is an open, tracked hole, which is what makes
-    /// the three outcomes disjoint: the FIRST terminal event wins and every
+    /// the three outcomes disjoint: the first terminal event wins and every
     /// later observation of the same seq falls through.
     ///
-    /// **Call this for every seq of an arrival BEFORE [`Self::observe_high`]
-    /// for any of them.** One `add_symbol` can emit several seqs in arbitrary
+    /// Call this for every seq of an arrival before [`Self::observe_high`]
+    /// for any of them. One `add_symbol` can emit several seqs in arbitrary
     /// order; resolving the whole batch first is what stops a batch that
     /// decodes `[10, 8]` from opening a hole for 8 and closing it at 0 µs.
     ///
-    /// `path_id` is the path the CLOSING arrival landed on — compared against
-    /// the path that EXPOSED the hole (A0.3). Classification only: the
-    /// comparison feeds two histograms and no decision.
-    /// **RETURNS THE RESOLUTION RECORD** ([`HoleRecord`])
-    /// -- `None` when the seq was not an open, tracked hole, which is the
-    /// ordinary in-order case. NON-BREAKING: every existing caller ignores it.
+    /// `path_id` is the path the closing arrival landed on — compared against
+    /// the path that exposed the hole. Classification only: the comparison
+    /// feeds two histograms and no decision.
+    ///
+    /// Returns the resolution record ([`HoleRecord`]), or `None` when the seq
+    /// was not an open, tracked hole (the ordinary in-order case).
     ///
     /// `[LAT]` (`net/lat.rs`) is the consumer: the class of a reorder wait is
-    /// the class of the hole whose resolution RELEASED it, and this gauge is
+    /// the class of the hole whose resolution released it, and this gauge is
     /// the only place that record exists. Handing it back beats recomputing
     /// it, which would be a second classification able to disagree with this
     /// one.
@@ -500,7 +469,7 @@ impl SuccGauge {
         self.resolve_at(seq, by_repair, now, path_id, 0)
     }
 
-    /// [`Self::resolve`] with the closing arrival's SENDER stamp
+    /// [`Self::resolve`] with the closing arrival's sender stamp
     /// (`send_timestamp_us`), which separates the sender's copy from the
     /// original ([`classify_source_close`]). The receiver calls this one.
     pub fn resolve_at(
@@ -534,15 +503,15 @@ impl SuccGauge {
         })
     }
 
-    /// **DETECTION.** One seq has arrived. Every seq strictly between the
+    /// Detection. One seq has arrived. Every seq strictly between the
     /// current high-water mark and `seq` has, by definition of a high-water
     /// mark, never been seen — so each is a hole this arrival has just
-    /// EXPOSED, and each is stamped now.
+    /// exposed, and each is stamped now.
     pub fn observe_high(&mut self, seq: u64, now: Instant, path_id: u32) {
         self.observe_high_at(seq, now, path_id, 0)
     }
 
-    /// [`Self::observe_high`] with the arrival's SENDER stamp, recorded on
+    /// [`Self::observe_high`] with the arrival's sender stamp, recorded on
     /// every hole it exposes. The receiver calls this one.
     pub fn observe_high_at(&mut self, seq: u64, now: Instant, path_id: u32, send_ts_us: u64) {
         let Some(hi) = self.hi else {
@@ -557,9 +526,9 @@ impl SuccGauge {
             return;
         }
         let span = seq - hi - 1;
-        // `[LATE]`: the PREVIOUS advance is the earliest instant the holes
+        // `[LATE]`: the previous advance is the earliest instant the holes
         // this arrival exposes could have been due, so it is stamped on each
-        // of them BEFORE the mark moves.
+        // of them before the mark moves.
         let hi_prev = self.hi_at;
         self.hi = Some(seq);
         self.hi_at = now;
@@ -581,20 +550,20 @@ impl SuccGauge {
         }
     }
 
-    /// **ABANDONMENT.** The in-order delivery frontier has advanced to
+    /// Abandonment. The in-order delivery frontier has advanced to
     /// `frontier` (the next seq that will be delivered). Every open hole
     /// strictly below it was passed over undelivered — given up.
     ///
-    /// **RETURNS the abandoned holes' records** so `[LATE]` sees the third
-    /// outcome class too. Empty — and allocating nothing — in the overwhelming
-    /// common case where the frontier passed no open hole, which is EVERY
-    /// advance under the reliable window.
+    /// Returns the abandoned holes' records so `[LATE]` sees the third
+    /// outcome class too. Empty — and allocating nothing — in the common case
+    /// where the frontier passed no open hole, which is every advance under
+    /// the reliable window.
     pub fn abandon_below(&mut self, frontier: u64, now: Instant) -> Vec<HoleRecord> {
         if self.open.is_empty() {
             return Vec::new();
         }
         // `split_off` leaves the below-frontier prefix behind and returns the
-        // rest, so the sweep costs O(k log n) in the number ABANDONED rather
+        // rest, so the sweep costs O(k log n) in the number abandoned rather
         // than O(n) in the number open.
         let keep = self.open.split_off(&frontier);
         let gone = std::mem::replace(&mut self.open, keep);
@@ -606,8 +575,8 @@ impl SuccGauge {
                 seq,
                 outcome: HoleOutcome::Abandoned,
                 // An abandoned hole was closed by no arrival at all, so it has
-                // no closing path: it is reported SAME-path, the conservative
-                // class, which can only make the cross-path share read LOW.
+                // no closing path: it is reported same-path, the conservative
+                // class, which can only make the cross-path share read low.
                 cross: false,
                 us,
                 hi_us: now.saturating_duration_since(hi_at).as_micros() as u64,
@@ -633,16 +602,17 @@ impl SuccGauge {
         }
     }
 
-    /// Has this gauge ever seen an arrival — i.e. does it sit at a RECEIVER?
+    /// Has this gauge ever seen an arrival — i.e. does it sit at a receiver?
     /// A sender-role site never calls it and must stay silent.
     pub fn is_receiver_site(&self) -> bool {
         self.hi.is_some()
     }
 
-    /// **THE OPEN HOLES, ASCENDING, THAT ARE AT LEAST `min_age_us` LATE**
-    /// -- 16.83's `REQUEST <=> l >= l*` predicate, evaluated on the ONE set
-    /// that already exists. At most `max` of them (the caller's declared wire
-    /// bound), and the age is the LOWER end of the lateness bracket -- the
+    /// The open holes, ascending, that are at least `min_age_us` late — the
+    /// request law's `REQUEST <=> l >= l*` predicate (paper §7.6), evaluated
+    /// on the one set that already exists. At most `max` of them (the
+    /// caller's declared wire bound), and the age is the lower end of the
+    /// lateness bracket — the
     /// conservative one, and the same clock `[SUCC]` times and `[LATE]` fits
     /// its density on.
     ///
@@ -661,15 +631,15 @@ impl SuccGauge {
         out
     }
 
-    /// **THE EARLIEST `A_hat`** -- the detection instant of the OLDEST open
+    /// The earliest `A_hat`: the detection instant of the oldest open
     /// hole. `None` when nothing is outstanding. This is the term the request
-    /// law's deadline is built on: a hole with NO further arrivals still has
+    /// law's deadline is built on: a hole with no further arrivals still has
     /// to become requestable, and `earliest A_hat + l*` is when it does.
     pub fn oldest_open_at(&self) -> Option<Instant> {
         self.open.values().map(|&(t0, _, _, _)| t0).min()
     }
 
-    /// Holes currently outstanding — a CENSUS, not an outcome.
+    /// Holes currently outstanding — a census, not an outcome.
     pub fn open_n(&self) -> u64 {
         self.open.len() as u64
     }
@@ -684,14 +654,14 @@ impl SuccGauge {
         self.over
     }
 
-    /// A0.3: holes closed by an arrival on the SAME path that exposed them.
+    /// Holes closed by an arrival on the same path that exposed them.
     pub fn sp_n(&self) -> u64 {
         self.sp.n()
     }
 
-    /// A0.3: holes closed by an arrival on a DIFFERENT path from the one that
-    /// exposed them — the WIRE-REORDER (scheduler-skew) class. At a
-    /// single-path cell this is STRUCTURALLY ZERO.
+    /// Holes closed by an arrival on a different path from the one that
+    /// exposed them — the wire-reorder (scheduler-skew) class. At a
+    /// single-path cell this is structurally zero.
     pub fn xp_n(&self) -> u64 {
         self.xp.n()
     }
@@ -712,10 +682,9 @@ impl SuccGauge {
         }
     }
 
-    /// **THE FALSE-REPAIR BOUNDARY IN TIME**, defined in this module's header
-    /// BEFORE any pass ran: the smallest bucket lower edge `t` at which strictly
-    /// more holes have been closed by a REPAIR within `t` than by their own
-    /// ORIGINAL within `t`. `None` — rendered `-` — when no such `t` exists,
+    /// The false-repair boundary in time (see the module header): the
+    /// smallest bucket lower edge `t` at which strictly more holes have been
+    /// closed by a repair within `t` than by their own original within `t`. `None` — rendered `-` — when no such `t` exists,
     /// which reads "the original leads at every horizon" and is a legal
     /// outcome rather than a missing value.
     pub fn crossing_us(&self) -> Option<u64> {
@@ -730,23 +699,23 @@ impl SuccGauge {
         None
     }
 
-    /// Of the holes that RESOLVED, the fraction closed by the original.
+    /// Of the holes that resolved, the fraction closed by the original.
     /// `None` — rendered `-` — when none resolved.
     pub fn orig_frac(&self) -> Option<f64> {
         let res = self.orig.n + self.rep.n;
         (res > 0).then(|| self.orig.n as f64 / res as f64)
     }
 
-    /// The `[SUCC]` line this gauge would emit right now. Cumulative: the LAST
-    /// line of a log is the reading — the `[RACK]` / `[RFA]` / `[FCAUSE]`
-    /// convention.
     /// Holes closed by the sender's copy ([`HoleOutcome::Retransmit`]).
     pub fn rtx_n(&self) -> u64 {
         self.rtx_n
     }
 
+    /// The `[SUCC]` line this gauge would emit right now. Cumulative: the last
+    /// line of a log is the reading — the `[RACK]` / `[RFA]` / `[FCAUSE]`
+    /// convention.
     pub fn line(&self) -> String {
-        // `rtx_n=` APPENDED (the additive-column rule): the subset of
+        // `rtx_n=` appended (the additive-column rule): the subset of
         // `orig_n` closed by the sender's copy rather than the original.
         let mut l = succ_report_line(
             self.gen,
@@ -799,10 +768,10 @@ impl SuccGauge {
     }
 }
 
-// ── THE LINE ────────────────────────────────────────────────────────────
+// ── The line ────────────────────────────────────────────────────────────
 
 /// Render one outcome's five slots. `-` iff `n == 0`, so an absent reading is
-/// never confusable with a measured zero — and `n` sits BESIDE every value, so
+/// never confusable with a measured zero — and `n` sits beside every value, so
 /// no quantile is ever read without its own sample count.
 fn slots(name: &str, h: &Hist) -> String {
     let q = |p: f64| h.quantile(p).map_or_else(|| "-".to_string(), |v| v.to_string());
@@ -841,7 +810,7 @@ pub fn succ_report_line(
     } else {
         format!("{:.4}", orig.n() as f64 / res as f64)
     };
-    // A0.3: the same/cross exposure split, APPENDED so every prior reader of
+    // The same/cross exposure split, appended so every prior reader of
     // this line keeps its offsets — the additive-column rule.
     let xpd = sp.n() + xp.n();
     let xf = if xpd == 0 {

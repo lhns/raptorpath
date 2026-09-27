@@ -148,7 +148,7 @@ fn ablation_p2_estimated_floor() {
     }
 }
 
-/// P4a/P6 ablation (paper 5.3/12.5/14.26): Bulk's tail target maps to the
+/// P4a/P6 ablation (paper §4.5, §4.6): Bulk's tail target maps to the
 /// completion-exposure glide δ_eff = ε̂ + (0.05 − ε̂)·χ, so the continuous
 /// r* is 0 identically in the steady state (χ = 0) — pure ARQ, volume
 /// parity with retransmission transports — and ramps only over the final
@@ -202,16 +202,15 @@ fn ablation_p4a_bulk_pure_arq() {
     }
 }
 
-/// P4b ablation (paper 14.25): end-of-stream tail FEC — a burst of
+/// P4b ablation (paper §4.6): end-of-stream tail FEC — a burst of
 /// n_tail = ceil(r_tail × W) repairs covering the final window, r_tail
-/// from the exact transfer-matrix computation (paper 8.7). Expected
+/// from the exact transfer-matrix computation (paper §4.7). Expected
 /// saving: P(≥1 tail loss) × ~1.5 RTT of completion (~10-25 ms at C2);
 /// gate is no-regression, the measured saving is reported.
 ///
-/// NOTE (P6, paper 14.26): under the default Bulk config the χ glide
-/// subsumes the burst, so tail_fec is a no-op here and both arms are
-/// identical — kept as a historical record of the pre-P6 measurement
-/// (-7.7 ms / -10.5 ms) and as a regression tripwire for the flag wiring.
+/// Under the default Bulk config the χ glide (P6) subsumes the burst, so
+/// tail_fec is a no-op here and both arms are identical; the bench remains
+/// as a regression tripwire for the flag wiring.
 #[test]
 #[ignore]
 fn ablation_p4b_tail_fec() {
@@ -252,7 +251,7 @@ fn ablation_p4b_tail_fec() {
     }
 }
 
-/// P1 ablation (paper 12.4): the protocol hint sets the Copa queue target,
+/// P1 ablation (paper §8.2): the protocol hint sets the Copa queue target,
 /// not just the FEC rate. Realtime with a tight target should cut the
 /// standing-queue median latency at C2 without giving up meaningful
 /// completion time; Bulk's deeper target must not hurt completion.
@@ -290,9 +289,8 @@ fn ablation_p1_hint_delay_target() {
     // (17.6 -> 12.8ms) came from fixing the floor. Realtime's tighter
     // target is retained for semantic correctness (and for operating
     // points where the floor estimate is loose), so the ablation gate is
-    // no-regression, not a mandated cut. P1's branch history has the
-    // sweep: pushing the target to floor+0.15ms buys ~1.5ms of p50 for
-    // +8% completion — a bad trade.
+    // no-regression, not a mandated cut (pushing the target to
+    // floor+0.15ms buys ~1.5ms of p50 for +8% completion — a bad trade).
     assert!(
         rt_on_p50.mean() <= 1.02 * rt_off_p50.mean(),
         "Realtime p50 with hint delay target ({:.2}ms) regresses vs off ({:.2}ms)",
@@ -326,7 +324,7 @@ fn ablation_p1_hint_delay_target() {
     );
 }
 
-/// P5 ablation (paper 14.21): cap r at the saturation point of the p99(r)
+/// P5 ablation (paper §4.4): cap r at the saturation point of the p99(r)
 /// tail model. Measured problem: at C4-Sat, Realtime's uncapped r (~0.49)
 /// has WORSE p99 than Auto (412ms vs 297ms) — past the saturation point,
 /// extra repairs displace source symbols and pressure the queue. With the

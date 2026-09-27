@@ -1,22 +1,23 @@
-//! #61 unified-machine L0 battery arm: the local rung for the RWM_UNIFIED A/B
-//! (paper §16.20; goal-gate "Unified Decoder").
+//! Unified-machine L0 measurement arm: the local rung for the RWM_UNIFIED A/B
+//! (paper §5.2).
 //!
 //! Runs the real engine (perf server + client over memory TUNs, real QUIC on
 //! 127.0.0.1) under the transport L0 netem shim (`RWM_L0_NETEM`,
-//! src/transport/quic.rs) — one measurement ARM per process (env is
+//! src/transport/quic.rs) — one measurement arm per process (env is
 //! process-global). The battery driver sets the arm via env and scrapes the
 //! per-run `"seconds"`/`"dnf"` lines (per-object completion time distribution
 //! = the local tail proxy) plus the sender DIAG cod/src rates (mechanism
-//! liveness) and the RWM_UNIFIED / backend echoes (MEASUREMENT DISCIPLINE).
+//! liveness) and the RWM_UNIFIED / backend echoes
+//! (`docs/measurement-discipline.md` rule 1).
 //!
 //! Env knobs (beyond every engine RWM_* knob — RWM_UNIFIED, RWM_TAPER_R,
 //! RWM_L0_SEED, RWM_DIAG, RWM_PERF_TIMEOUT_S, ...):
-//!   RWM_L0_NETEM    shim scenario (default c3heavy — the #85 heavy-tail cell)
+//!   RWM_L0_NETEM    shim scenario (default c3heavy — the heavy-tail cell)
 //!   RWM_L0_HINT     protocol hint (default realtime) — the δ dial
 //!   RWM_L0_BYTES    object size (default 100_000)
 //!   RWM_L0_RUNS     objects per arm (default 40)
 //!   RWM_L0_BACKEND  explicit fec_backend (e.g. "rlc" to pin the RLC family
-//!                   under the realtime hint in the LEGACY arms; unset = the
+//!                   under the realtime hint in the legacy arms; unset = the
 //!                   shipped auto-selection)
 //!   RWM_L0_SYSREP   "1" = generation systematic-repair mode (the bulk
 //!                   machine; window_systematic_repair)
@@ -38,7 +39,7 @@ fn env_usize(name: &str, default: usize) -> usize {
 #[ignore = "measurement instrument (#61 unified-machine L0 battery), not a CI gate"]
 async fn unified_l0_arm() {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    // MEASUREMENT DISCIPLINE: surface the engine's mechanism-liveness echoes
+    // Measurement discipline rule 1: surface the engine's mechanism-liveness echoes
     // (backend selection, "unified global decoder", "span law ACTIVE", gen
     // pipe) on stderr. RUST_LOG=info (default here) is enough.
     let _ = tracing_subscriber::fmt()

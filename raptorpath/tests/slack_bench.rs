@@ -1,8 +1,9 @@
-//! COMPONENT BENCH — the EMISSION-SLACK term and the RESEQUENCING SPAN.
-//!
-//! Goal-gate "Emission-Slack Bench" (2026-08-09), GOAL "THREE TERMS, NO
-//! CONSTANTS" phase 1.1 + 1.2. No CC, no scheduler, no transport, no tokio,
-//! no VM: deterministic, seconds.
+//! Component bench for the emission-slack term and the resequencing span of
+//! the three-term store cap (paper §6.4). It derives each term a priori from
+//! (δ, ρ) and measured signals, measures the requirement on the recovery-plane
+//! driver, reports the ratio, and pins the engine's `three_term_store_cap`
+//! against it. No CC, no scheduler, no transport, no tokio, no VM:
+//! deterministic, seconds.
 //!
 //! ```text
 //! cargo test --test slack_bench --release -- --ignored --nocapture
@@ -27,16 +28,15 @@
 //! SMALL; one knob, opposite demands, which is why results split by topology
 //! (job 3 does not exist at N = 1, where skew is 0).
 //!
-//! ## THIS BENCH DOES NOT DISCOVER A LAW — IT TRIES TO KILL ONE
+//! ## This bench tries to refute a law, not discover one
 //!
-//! The predicted numbers are written into the ledger BEFORE the bench runs
-//! (goal-gate "Emission-Slack Bench", PRE-REGISTRATION; MEASUREMENT
-//! DISCIPLINE 11 at component scale). Nothing here fits a coefficient, and
-//! nothing here scans a parameter to see which value matches. Where measured
+//! The predictions are fixed before the bench runs
+//! (`docs/measurement-discipline.md` rule 11 at component scale). Nothing
+//! here fits a coefficient or scans a parameter to see which value matches. Where measured
 //! and predicted disagree the bench reports the RATIO and names the
 //! MECHANISM that owns the gap — it never adjusts a term.
 //!
-//! ## THE CONTRACT SUPPLIES THE STALL — THERE IS NO STATISTIC TO CHOOSE
+//! ## The contract supplies the stall
 //!
 //! [`contract_stall_us`] below. The stall a hole imposes on the in-order
 //! frontier is already declared by (δ, ρ):
@@ -61,11 +61,11 @@
 //!   RWM_SB_RHO       1.0                 the retention contract
 //!   RWM_SB_DELTA_B   0.5                 b(δ); b(Realtime) = ½
 //!   RWM_SB_SKEW_MS   5                   inter-path one-way skew
-//!   RWM_SB_SPAN_SKEW 0,1,2,5,10,20,40    the §1.2 skew sweep (ms)
+//!   RWM_SB_SPAN_SKEW 0,1,2,5,10,20,40    the span skew sweep (ms)
 //!   RWM_SB_NLIST     1500,3000,6000,12000  transfer-length sweep
 //! ```
 //!
-//! ## WHAT THIS BENCH CANNOT SEE — stated up front
+//! ## What this bench cannot see
 //!
 //! * Everything `recovery_bench` cannot see, because it uses that driver
 //!   verbatim as its stall source: no congestion control (a retransmit is
@@ -117,7 +117,7 @@ pub fn network_window(rate_sym_s: f64, rtprop_us: u64) -> f64 {
 ///
 /// * The **shed-eligible share (1 − ρ)** is bounded by the span law's own
 ///   deadline `D(δ) = min(b(δ)·RTprop, 2·RTprop)` ([`shed_deadline_us`],
-///   §16.20.3): past D a hole is retired rather than served, so it cannot
+///   paper §5.3): past D a hole is retired rather than served, so it cannot
 ///   pin the frontier longer than D.
 /// * The **retained share ρ** is not sheddable by construction
 ///   (RETAIN-UNTIL-ACKED), so the hole must actually be RECOVERED:
@@ -142,8 +142,8 @@ pub fn emission_slack(rate_sym_s: f64, stall_us: u64) -> f64 {
 
 /// The FRONTIER-PINNED FRACTION κ — Little's law a THIRD time, now on the
 /// in-order frontier itself. Stall EPISODES arrive at `ε̂·rate/B` per second
-/// (a burst of mean length `B` costs ONE episode, and `B` is what §8.3's
-/// σ²_burst already estimates), and each pins the frontier for the
+/// (a burst of mean length `B` costs ONE episode, and `B` is what the
+/// σ²_burst of paper §2.4 already estimates), and each pins the frontier for the
 /// contract's own `stall(δ, ρ)`. So the frontier is pinned
 ///
 ///     κ = min(1, (ε̂·rate/B) · stall)
@@ -269,7 +269,7 @@ pub fn frontier_stalls(out: &Out, n_paths: usize) -> Vec<(Option<Chan>, u64)> {
 
 // ───────────────────────────── the axes ─────────────────────────────────
 
-/// Emission-rate classes, at the ledger's own numbers: ~1.2 KB symbols.
+/// Emission-rate classes at the evaluation cells' numbers: ~1.2 KB symbols.
 /// c2 = 10 400 sym/s (the 100 Mbit cell), c3 = 2 000 sym/s (the 20 Mbit
 /// slow path), c1 = 26 000 sym/s (the 1 Gbit single, measured 220–260
 /// Mbit/s on the shipped default). These are the same constants
@@ -689,7 +689,7 @@ fn slack_bench() {
         );
     }
 
-    // ── (6) §1.2 — THE RESEQUENCING SPAN, PREDICTED THEN MEASURED ──
+    // ── (6) THE RESEQUENCING SPAN, PREDICTED THEN MEASURED ──
     println!(
         "\n=== (6) THE RESEQUENCING SPAN — prediction first, measurement second ===\n\
          span_recv = rate_fast × (owd_slow − owd_fast). At np = 2 the driver splits the\n\
@@ -758,13 +758,11 @@ fn slack_bench() {
     println!("\n{} cells in {:.2} s", cells.len(), t0.elapsed().as_secs_f64());
 }
 
-// ═══════════ PHASE 1.3 — IS THE COVERAGE DERIVABLE? (goal-gate
-// "Coverage: derivable or not") ══════════════════════════════════════════
+// ═══════════ IS THE COVERAGE DERIVABLE? ══════════════════════════════════
 //
-// §16.43 left a split verdict: the stall TIME is derived from (δ, ρ), the
-// COVERAGE — where on a ~3-octave slope to sit — was asserted NOT derivable
-// and was offered as evidence for a FOURTH contract term. This section is
-// the adversarial attack on that assertion. Nothing below fits a
+// The stall TIME is derived from (δ, ρ); the COVERAGE — where on a ~3-octave
+// slope to sit — was asserted not derivable and offered as evidence for a
+// fourth contract term. This section attacks that assertion. Nothing below fits a
 // coefficient; every quantity is either measured or arithmetic.
 
 /// The mean SENDER-STORE OCCUPANCY of the UNCONSTRAINED run, in symbols:
@@ -772,7 +770,7 @@ fn slack_bench() {
 ///
 /// `Σ residence ÷ (N · g)` — the time-average number of symbols resident
 /// while the source emits one symbol every `g`. This is `S*`, and the claim
-/// of phase 1.3 is that it is the RIGHT ENDPOINT of the idle slope: the
+/// of this section is that it is the RIGHT ENDPOINT of the idle slope: the
 /// open-loop idle curve is the hyperbola `1 − S/S*`, so the "which point on
 /// the slope" question has an arithmetic answer and not a policy one.
 pub fn mean_occupancy(d: &[u64], g: u64) -> f64 {
@@ -843,7 +841,7 @@ struct CovRow {
     hyp_dev: f64,
     /// The smallest backlog reaching each of [`IDLE_TARGETS`].
     st: Vec<Option<usize>>,
-    /// Measured wire idle AT S* and AT the §16.43 a-priori prediction.
+    /// Measured wire idle AT S* and AT the a-priori prediction.
     idle_star: f64,
     idle_pred: f64,
     /// Mean store residence — the quantity `s_star` is Little's law over.
@@ -918,12 +916,12 @@ fn run_cov_cell(
 
 // ── ROUTE B: CLOSING THE LOOP ───────────────────────────────────────────
 //
-// §16.43's largest stated boundary is that the bench is OPEN LOOP: it
+// The bench's largest stated boundary is that it is OPEN LOOP: it
 // replays the store residences of an UNCONSTRAINED run against a
 // constrained backlog. But the residence is not an exogenous property of
 // the plane — it is what the store DOES, and the estimator's app-echo RTT
 // reads it back as the store DWELL (`Calib::dwell_us`, an INPUT at 144 ms
-// in phase 1.1/1.2). That is a loop:
+// in the open-loop sections). That is a loop:
 //
 //   backlog S ──> store dwell ──> app-echo srtt ──> §6.1.2 patience
 //        ^                                               │
@@ -1069,8 +1067,7 @@ fn coverage_bench() {
         );
     }
 
-    // The index of the 1 % target inside IDLE_TARGETS — the reference point
-    // §16.43 reported against.
+    // The index of the 1 % target inside IDLE_TARGETS — the reference point.
     const I1: usize = 3;
 
     // ── SUMMARY (1): the hyperbola identity ──
@@ -1205,7 +1202,7 @@ fn coverage_bench() {
                                 arm: ARMS[0],
                                 seed,
                             };
-                            // OPEN loop: phase 1.1's curve — the dwell is an
+                            // OPEN loop: the open-loop curve — the dwell is an
                             // INPUT fixed at the calibration's 144 ms.
                             let out0 = run_cell(cell, ccal);
                             let d0 = residences(&out0);
@@ -1296,8 +1293,8 @@ fn coverage_bench() {
         quant(&mut op_oct, 0.5),
         quant(&mut cl_oct, 0.5),
     );
-    // (4c) THE CLOCK ARGUMENT, priced open-loop and closed-loop. §16.43's
-    // whole tail failure was app ÷ wire; if the loop is what produced it,
+    // (4c) THE CLOCK ARGUMENT, priced open-loop and closed-loop. The open-loop
+    // tail failure was app ÷ wire; if the loop is what produced it,
     // this ratio must collapse toward 1 when the loop is closed.
     let mut ao: Vec<f64> = Vec::new();
     let mut ac: Vec<f64> = Vec::new();
@@ -1353,7 +1350,7 @@ fn coverage_bench() {
                         let pred_s = window + emission_slack(rate, stall);
                         // The ε̂-composed candidate. `MEAN_BURST` is the GE
                         // chain's own mean bad run — the driver's declared
-                        // loss model, the quantity §8.3's σ²_burst estimates
+                        // loss model, the quantity σ²_burst (paper §2.4) estimates
                         // in production — not a coefficient chosen here.
                         let kappa = frontier_pinned_fraction(rate, loss, MEAN_BURST, stall);
                         let pred_k = window + emission_slack(rate, stall) * kappa;
@@ -1469,7 +1466,7 @@ fn coverage_bench() {
 
 /// ABSOLUTE assertions on the three DERIVED terms and on the emission
 /// simulator, plus the liveness proof that the mechanism under test actually
-/// executes (CLAUDE.md testing discipline / MEASUREMENT DISCIPLINE rule 1).
+/// executes (CLAUDE.md testing discipline / docs/measurement-discipline.md rule 1).
 #[test]
 fn slack_bench_terms_are_arithmetic_with_no_constants() {
     // TERM 1 — Little's law on the wire, exactly.
@@ -1536,7 +1533,7 @@ fn slack_bench_emission_sim_is_exact_on_hand_computable_inputs() {
     }
 }
 
-/// PHASE 1.3 — the coverage instrument's own arithmetic. Every assertion is
+/// The coverage instrument's own arithmetic. Every assertion is
 /// ABSOLUTE and hand-computable; nothing here is ordinal (CLAUDE.md).
 #[test]
 fn coverage_terms_are_arithmetic_with_no_constants() {
@@ -1697,7 +1694,7 @@ fn coverage_closed_loop_converges_and_prices_the_clock() {
 /// LIVENESS + the pinned component result at the c7-class operating point:
 /// the recovery plane really is driven, the stall really is measured, and
 /// the measured stall really does exceed the contract's own by the factor
-/// the ledger's cadence audit predicts. These are bench OUTPUTS, pinned.
+/// the recovery-cadence audit predicts. These are bench OUTPUTS, pinned.
 #[test]
 fn slack_bench_fixtures_pin_the_slack_term() {
     let mut cal = Calib::fixture();
@@ -1754,10 +1751,10 @@ fn slack_bench_fixtures_pin_the_slack_term() {
     );
 }
 
-// ══════════ PHASE 1.3 — COMPONENT VALIDATION OF THE SHIPPED LAW ══════════
+// ══════════ COMPONENT VALIDATION OF THE ENGINE'S LAW ══════════════════════
 //
-// MEASUREMENT DISCIPLINE 14: before any L1 battery, the ENGINE's composed
-// arithmetic is evaluated against the requirement THIS bench measured. What
+// `docs/measurement-discipline.md` rule 14: before any L1 battery, the
+// ENGINE's composed arithmetic is evaluated against the requirement THIS bench measured. What
 // runs below is not a re-derivation — it is `raptorpath::net::
 // three_term_store_cap`, the exact function `run_window_sender` calls under
 // `RWM_THREE_TERM`, driven on the bench's own cells.
@@ -1774,14 +1771,14 @@ fn slack_bench_fixtures_pin_the_slack_term() {
 //     `three_term_engine_law_is_the_bench_terms_at_the_anchors` asserts the
 //     identity rather than asserting a tolerance around it.
 //  2. THE SPAN TERM EXISTS IN THE ENGINE AND NOT IN THE BENCH'S `pred_s`.
-//     §16.43/§16.44 measured the span separately (PS5/PS6) and never folded
-//     it into the composite. So at np = 2 the engine's limit is LARGER than
+//     The bench measures the span separately and never folds it into the
+//     composite. So at np = 2 the engine's limit is LARGER than
 //     `pred_s` by exactly `rate_total × Δowd`, and at np = 1 the two agree
 //     to the ceil quantum. That is a difference in WHAT IS BEING PREDICTED,
 //     not a disagreement about a value, and section (A) reports it as such.
 //
 // The requirement the ratios are taken against is the CLOSED-loop one
-// (§16.44 route B) — the open-loop curve is the one whose ×13.5 tail was an
+// (route B) — the open-loop curve is the one whose ×13.5 tail was an
 // artifact of running the store at 3× its own derived size.
 
 /// The ENGINE's law on one bench cell. The driver places symbol `seq` on
@@ -2014,7 +2011,7 @@ fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
     assert!(w2 > w && sl2 > sl);
 
     // ── The c8 geometry: c2 fast + c3 slow at their OWN rates. The span
-    // reads §16.43 PS6's 541 (independently measured good pin 508, +6.5 %).
+    // reads 541 (an independently measured good pin read 508, +6.5 %).
     let c8 = [
         Some(ThreeTermTerm { rate: 10_400.0, rtprop_s: 0.008, k: 12.0 / 8.0 }),
         Some(ThreeTermTerm { rate: 2_000.0, rtprop_s: 0.060, k: 64.0 / 60.0 }),
@@ -2028,10 +2025,10 @@ fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// THE SLACK CLOCK, REFUTED — paper §16.58 (2026-08-18, `fix/cap-law-cluster`)
+// THE QUEUE-FREE SLACK CLOCK, REFUTED — paper §10
 // ─────────────────────────────────────────────────────────────────────────
 
-/// **THE EXECUTABLE RECORD OF §16.58's REFUTATION.**
+/// The executable record of the queue-free slack clock's refutation.
 ///
 /// The charge: term 2's clock is `srtt = K·RTprop` with `K` a windowed MIN of
 /// `echoSRTT/RTprop`, so the clock carries whatever standing WIRE queue
@@ -2044,10 +2041,9 @@ fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
 ///   candidate slack = Σ rate·stall(δ, ρ,   RTprop)   ⇒ at ρ = 1, 2.125·window/K
 /// ```
 ///
-/// Scored on §16.57's own `[3T]` decomposition (833 wire evaluations), which
-/// is why this is a record and not a new claim: every input below is
-/// TRANSCRIBED from the ledger's table, and the candidate's value follows by
-/// arithmetic from numbers already published.
+/// Scored on the composed-cap battery's `[3T]` decomposition (833 wire
+/// evaluations): every input below is transcribed from that table, and the
+/// candidate's value follows by arithmetic.
 ///
 /// **The refutation, asserted in both directions.** The isolated criterion was
 /// that the memory-bound pinning goes INTERIOR at the c8 geometry that read
@@ -2062,8 +2058,8 @@ fn three_term_engine_law_is_the_bench_terms_at_the_anchors() {
 /// evaluated as the closed form its own formula gives.
 #[test]
 fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
-    // §16.57 / goal-gate "Composed-Cap Battery — RESULTS", the `[3T]`
-    // decomposition over 833 evaluations, plus the per-cell `K`.
+    // The composed-cap battery's `[3T]` decomposition over 833 evaluations,
+    // plus the per-cell `K`.
     // (cell, mean window, mean slack, mean span, K)
     const WIRE: &[(&str, f64, f64, f64, f64)] = &[
         ("c1", 201.0, 428.0, 0.0, 1.15),
@@ -2079,7 +2075,7 @@ fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
     // `net::WIN_STORE_MAX`, the memory bound stated OUTSIDE the law.
     const MEM: f64 = 4096.0;
 
-    // MEASUREMENT DISCIPLINE rule 1 at closed-form scale: if
+    // `docs/measurement-discipline.md` rule 1 at closed-form scale: if
     // `contract_stall_s` ever stops being 17/8·srtt at ρ = 1, every number
     // below is void, and this fires before any of them is read.
     for &(_, _, _, _, k) in WIRE {
@@ -2095,7 +2091,7 @@ fn the_queue_free_slack_clock_is_refuted_on_the_wire_measured_inputs() {
     let mut ratios: Vec<f64> = Vec::new();
     let mut still_pinning = 0usize;
     for &(cell, window, slack, span, k) in WIRE {
-        // (a) THE DEGENERACY, reproduced from the ledger's own numbers: the
+        // (a) THE DEGENERACY, reproduced from the battery's own numbers: the
         // shipped slack is the window times 17/8 — an identity of the code, so
         // the "three-term" law is a TWO-term law at the shipped scope.
         let shipped_ratio = slack / window;

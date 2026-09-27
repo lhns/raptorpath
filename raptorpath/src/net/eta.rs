@@ -1,105 +1,93 @@
-//! `[ETA]` — THE SENDER'S OWN PREDICTION, READ AT BOTH ENDS.
+//! `[ETA]` — the sender's own delivery prediction, read at both ends.
 //!
-//! **The measurand, and why it is owed.** The placement law (`place_costs`,
-//! paper §16.3) already computes, for every candidate path, the time a symbol
-//! handed to that path now takes to reach the receiver — `E_i` =
-//! [`crate::scheduler::PathState::expected_delivery_load`]. It uses that
-//! number to CHOOSE, and then throws it away. The receiver, at the other end
-//! of the same symbol, detects holes by SEQUENCE ALONE: it has never been told
-//! what the sender expected, so "late" is a guess it makes from ordering.
+//! The placement law (`place_costs`, paper §5.7) computes, for every
+//! candidate path, the time a symbol handed to that path now takes to reach
+//! the receiver — `E_i` =
+//! [`crate::scheduler::PathState::expected_delivery_load`] — uses it to
+//! choose, and discards it. The receiver detects holes by sequence alone.
+//! Putting the sender's ETA on the wire (v8 `SymbolBatch::eta_rel_us`) lets
+//! the receiver read "late against the sender's prediction" — the lateness
+//! measurand of paper §7.2.
 //!
-//! Two ends, one model, never shared. Seed S1 of the search plan says: put the
-//! sender's own ETA on the wire (wire v8 `SymbolBatch::eta_rel_us`) and the
-//! receiver's hole test becomes *"late against the sender's prediction"* — the
-//! lateness measurand §16.80 named and bracketed but never built.
-//!
-//! **This module is the INSTRUMENT for that, and only the instrument.** It
-//! contains no law, no threshold, no gate that changes a decision. Two gauges:
+//! This module is the instrument only: no law, no threshold, no gate that
+//! changes a decision. Two gauges:
 //!
 //!   * [`SenderEta`] — owned by the `Scheduler`, because both the placement
 //!     site (`net/emit_source.rs`) and the ack site (`net/control_msg.rs`)
-//!     already hold that lock and neither would otherwise see the other.
-//!     It carries `F̂` (the running max of stamped arrival times — the
-//!     sender's own expected frontier, which Track A's HOL term will price
-//!     against in Stage 2 and which NOTHING reads today), a bounded per-path
-//!     `send_ts → eta_rel` map, and the PREDICTION ERROR
+//!     already hold that lock. It carries `F̂` (the running max of stamped
+//!     arrival times — the sender's own expected frontier, read by no decision
+//!     today), a bounded per-path `send_ts → eta_rel` map, and the prediction
+//!     error
 //!
 //!     ```text
 //!         e  =  rtt_us  −  (eta_rel  +  RTprop/2)
 //!     ```
 //!
-//!     evaluated when the ack for that exact batch comes back. The subtracted
-//!     `RTprop/2` is the return leg: `rtt_us` is a round trip and `eta_rel`
-//!     predicts the forward one, so `e` is what the forward prediction missed
-//!     by. Its dispersion `σ̂_e` is the §16.75 τ-lag estimator, at `τ =
-//!     RTprop`, over the SAME pairing rule the shipped `tlag_us=` gauge uses.
+//!     evaluated when the ack for that exact batch comes back. `rtt_us` is a
+//!     round trip and `eta_rel` predicts the forward leg, so subtracting
+//!     `RTprop/2` leaves what the forward prediction missed by. Its
+//!     dispersion `σ̂_e` is the τ-lag estimator (paper §7.4) at `τ = RTprop`,
+//!     with the same pairing rule the `tlag_us=` gauge uses.
 //!
 //!   * [`RecvEta`] — owned by the receiver task. Per path it reads
 //!
 //!     ```text
 //!         d  =  (t_arr − send_ts) − eta_rel          (sender clock domain)
-//!         ℓ  =  d − min_running(d)                   (the LATENESS)
+//!         ℓ  =  d − min_running(d)                   (the lateness)
 //!     ```
 //!
-//!     The subtraction of the path's running minimum is what makes this a
-//!     measurement at all: `t_arr` and `send_ts` are two different clocks, so
-//!     `d` carries an unknown constant offset, and only DIFFERENCES of `d` are
-//!     meaningful. The running min is the best-case realization seen so far,
-//!     so `ℓ ≥ 0` by construction and `ℓ = 0` reads "as early as this path has
-//!     ever delivered relative to the sender's prediction".
+//!     `t_arr` and `send_ts` are different clocks, so `d` carries an unknown
+//!     constant offset and only differences of `d` are meaningful. The running
+//!     min is the best case seen so far, so `ℓ ≥ 0` by construction and
+//!     `ℓ = 0` reads "as early as this path has ever delivered relative to the
+//!     sender's prediction".
 //!
-//! **THE PRE-STATED WITNESS, written before either gauge was fed:**
+//! Expected witness:
 //!
 //! ```text
 //!         σ̂_sender  ≥  σ̂_recv
 //! ```
 //!
-//! The sender's error rides a ROUND TRIP (forward queue + return queue + ack
-//! scheduling) and the receiver's lateness rides only the FORWARD leg, so the
+//! The sender's error rides a round trip (forward queue + return queue + ack
+//! scheduling) and the receiver's lateness only the forward leg, so the
 //! sender's dispersion contains the receiver's plus the return path's. A run
-//! where the sender reads STEADIER than the receiver is evidence that one of
-//! the two is not measuring what this header says it is — which is why both
-//! lines print `sig_us=` in the same units on the same cadence, and why the
-//! reachability test reads them as a PAIR rather than one at a time.
+//! where the sender reads steadier than the receiver means one of the two is
+//! not measuring what this header says — which is why both lines print
+//! `sig_us=` in the same units on the same cadence, and the reachability test
+//! reads them as a pair.
 //!
-//! **The `-`-iff-`n = 0` convention** is `[SUCC]`'s verbatim: an absent
-//! reading is never a measured zero, and every value sits beside its own
-//! sample count. **No threshold gates any field** — `diag.rs`'s standing
-//! reason: a field that disappears below a threshold cannot be told apart from
-//! a path that was never sampled.
+//! `-` iff `n = 0`, as in `[SUCC]`: an absent reading is never a measured
+//! zero, and every value sits beside its own sample count. No threshold
+//! gates any field.
 //!
-//! **The BIND GAUGES.** `eta = 0` is the wire's "no prediction" sentinel, and
-//! the fraction of arrivals carrying it is printed on BOTH lines rather than
-//! filtered away: today only the window source path stamps a prediction, so
-//! that fraction IS the instrument's coverage and a reader must be able to see
-//! it. `cold_r` and `cold_ge` count the placement law's two COLD PRICES (a
-//! path whose correction rate is `∞`, pinned at the 10.0 literal; a path with
-//! no burst-model estimate yet) — every clamp gets a bind-fraction gauge.
+//! Bind gauges. `eta = 0` is the wire's "no prediction" sentinel, and the
+//! fraction of arrivals carrying it is printed on both lines: only the window
+//! source path stamps a prediction, so that fraction is the instrument's
+//! coverage. `cold_r` and `cold_ge` count the placement law's two cold prices
+//! (a path whose correction rate is `∞`, pinned at the 10.0 literal; a path
+//! with no burst-model estimate yet).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use super::succ::Hist;
 
-// ── THE τ-LAG DISPERSION, OVER AN ARBITRARY SERIES ──────────────────────
+// ── The τ-lag dispersion, over an arbitrary series ───────────────────────
 
 /// Ring capacity. The shipped `tlag_us=` gauge's `SIGMA_CAND_WINDOW`.
 const TLAG_RING: usize = 256;
-/// Band width `c`: a pair is admitted iff `τ ≤ lag ≤ c·τ` (§16.75.0).
+/// Band width `c`: a pair is admitted iff `τ ≤ lag ≤ c·τ`.
 const TLAG_BAND_C: u32 = 2;
 /// Decimation: at most one sample admitted per `τ / m`, so the ring spans
-/// `32·τ` at every sample rate (the shipped gauge's arithmetic verbatim).
+/// `32·τ` at every sample rate (the `tlag_us=` gauge's arithmetic).
 const TLAG_DECIM_M: u32 = 8;
 
-/// **THE §16.75 τ-LAG DISPERSION over any timestamped µs series.**
+/// The τ-lag dispersion (paper §7.4) over any timestamped µs series.
 ///
-/// The shipped `PathState::rtt_tlag_us` implements exactly this pairing rule
-/// over the RTT series and is not reusable here: it is welded to
-/// `copa.rtt_tlag` and to `copa.min_rtt` as `τ`. This is the same rule with
-/// the series and `τ` supplied by the caller, so the ETA error, the receiver
-/// lateness and the shipped RTT gauge are all the SAME estimand read on three
-/// processes rather than three different statistics that happen to share a
-/// name.
+/// `PathState::rtt_tlag_us` implements the same pairing rule over the RTT
+/// series but is tied to `copa.rtt_tlag` and to `copa.min_rtt` as `τ`. This
+/// takes the series and `τ` from the caller, so the ETA error, the receiver
+/// lateness and the RTT gauge are the same estimand read on three processes.
 ///
 /// ```text
 ///     P(τ) = { (i, j(i)) : j(i) = argmax { t_j : t_i − t_j ≥ τ }, j < i
@@ -117,8 +105,7 @@ pub struct Tlag {
 
 impl Tlag {
     /// Offer one sample. Admitted at most once per `τ / m`; `τ = 0` (no
-    /// reference yet) admits nothing, which is the honest reading rather than
-    /// a patched one.
+    /// reference yet) admits nothing.
     pub fn push(&mut self, t: Instant, v: u64, tau: Duration) {
         if tau.is_zero() {
             return;
@@ -167,13 +154,13 @@ impl Tlag {
             return None;
         }
         d.sort_unstable();
-        // Median as the LOWER order statistic — the shipped gauge's
+        // Median as the lower order statistic — the `tlag_us=` gauge's
         // `cand_quantile(.., 0.50)` convention, no interpolation.
         let rank = (d.len() - 1) / 2;
         Some(d[rank])
     }
 
-    /// `|P(τ)|` — the PAIR count, which is what the median is taken over.
+    /// `|P(τ)|` — the pair count, which is what the median is taken over.
     pub fn pairs(&self, tau: Duration) -> u64 {
         self.diffs(tau).len() as u64
     }
@@ -198,7 +185,7 @@ fn optf(n: u64, d: u64) -> String {
     }
 }
 
-// ── THE SENDER SIDE ─────────────────────────────────────────────────────
+// ── The sender side ──────────────────────────────────────────────────────
 
 /// How many outstanding `send_ts → eta_rel` records one path keeps. A hard
 /// bound, not a timeout: the map is a lookup for an ack that may never come,
@@ -218,14 +205,14 @@ struct PathEta {
     stamped: u64,
     /// Acks that matched a stamped batch — the `e` sample count.
     matched: u64,
-    /// `|e|`, µs. A magnitude histogram: the SIGN is carried separately
+    /// `|e|`, µs. A magnitude histogram: the sign is carried separately
     /// because "the prediction was optimistic" and "pessimistic" are
     /// different findings and averaging them would hide both.
     err_abs: Hist,
-    /// Acks whose realized RTT EXCEEDED the prediction (`e > 0`) — the
+    /// Acks whose realized RTT exceeded the prediction (`e > 0`) — the
     /// optimistic direction.
     late_n: u64,
-    /// `σ̂_e` over the SIGNED error, offset into `u64` at [`ERR_BIAS`] so the
+    /// `σ̂_e` over the signed error, offset into `u64` at [`ERR_BIAS`] so the
     /// τ-lag differences are differences of the signed series.
     err_sig: Tlag,
     /// `τ` for this path's τ-lag, µs — RTprop when measured.
@@ -237,43 +224,41 @@ struct PathEta {
 /// printed value.
 const ERR_BIAS: i64 = 1 << 40;
 
-/// **THE SENDER-SITE ETA GAUGE.** Owned by the `Scheduler`. Read by nothing
-/// in the data plane; every method is observation only.
+/// The sender-site ETA gauge. Owned by the `Scheduler`. Read by nothing in
+/// the data plane; every method is observation only.
 #[derive(Default)]
 pub struct SenderEta {
-    /// **`F̂` — the sender's own expected frontier**: the running max over
-    /// every stamped placement of `now + E_picked`, µs on the sender clock.
-    /// Track A's HOL term (`s_i = [(now + E_i) − F̂]⁺`) is priced against
-    /// exactly this, in Stage 2. NOTHING READS IT TODAY.
+    /// `F̂` — the sender's own expected frontier: the running max over every
+    /// stamped placement of `now + E_picked`, µs on the sender clock. The
+    /// placement frontier term (`s_i = [(now + E_i) − F̂]⁺`) is priced against
+    /// it; no decision reads this field.
     frontier_eta_us: u64,
     /// Every placement offered to the gauge, and how many carried the 0
-    /// sentinel. The BIND FRACTION of the wire field.
+    /// sentinel: the bind fraction of the wire field.
     stamped_n: u64,
     stamped_zero: u64,
-    /// The placement law's two COLD PRICES, counted at `place_costs`:
+    /// The placement law's two cold prices, counted at `place_costs`:
     /// `cold_r` — a path whose correction rate was `∞` and was priced at the
     /// 10.0 literal; `cold_ge` — a path with no burst-model estimate.
     /// `place_n` is the denominator (per-path cost evaluations).
     cold_r: u64,
     cold_ge: u64,
     place_n: u64,
-    /// **TRACK A ARM 1 (`RWM_PLACE_T_DERIVED`).** `t_eff` is the temperature
-    /// the placement softmax LAST resolved - a LEVEL, so the last value is the
-    /// reading and it is printed rather than averaged. `t_cold` counts the
-    /// resolutions in which NO active path had a dispersion sample and the
-    /// law therefore fell back to the shipped `place_temperature()`, out of
-    /// `t_n`: the cold rule is READ off the line, never assumed. With the arm
-    /// absent `t_n` stays 0 and all three print `-`.
+    /// Placement arm `RWM_PLACE_T_DERIVED`. `t_eff` is the temperature the
+    /// placement softmax last resolved — a level, so the last value is printed
+    /// rather than averaged. `t_cold` counts the resolutions in which no active
+    /// path had a dispersion sample and the law fell back to
+    /// `place_temperature()`, out of `t_n`. With the arm absent `t_n` stays 0
+    /// and all three print `-`.
     t_eff: f64,
     t_cold: u64,
     t_n: u64,
-    /// **TRACK A ARM 2 (`RWM_PLACE_HOL`).** `hol_sh` / `hol_n`: the
-    /// `s_i > H` BIND FRACTION - how often `kappa`, a declared upper bound
-    /// 15x-200x above D0's measured non-overlap, was reachable at all.
-    /// `hol_moved` / `hol_calls`: THE EXECUTION WITNESS - how many placements
-    /// the frontier term actually changed the argmin of. `hol_w`: `W`, the
-    /// (a2) wire price, at its last live value. A term with `hol_moved = 0`
-    /// has been computed, not measured.
+    /// Placement arm `RWM_PLACE_HOL`. `hol_sh` / `hol_n`: the `s_i > H` bind
+    /// fraction — how often `kappa`, a declared upper bound, was reachable at
+    /// all. `hol_moved` / `hol_calls`: the execution witness — how many
+    /// placements the frontier term changed the argmin of. `hol_w`: `W`, the
+    /// wire price, at its last live value. A term with `hol_moved = 0` has
+    /// been computed, not measured.
     hol_sh: u64,
     hol_n: u64,
     hol_moved: u64,
@@ -283,12 +268,12 @@ pub struct SenderEta {
 }
 
 impl SenderEta {
-    /// **THE PLACEMENT STAMP.** `eta_rel_us` is the `E_picked` of the path the
+    /// The placement stamp. `eta_rel_us` is the `E_picked` of the path the
     /// law just chose, µs; `send_ts_us` is the batch's own
     /// `send_timestamp_us`, so the ack's echo keys this record exactly.
     ///
-    /// Updates `F̂` in the same call — one site, so the frontier can never
-    /// describe a different set of placements from the book.
+    /// Updates `F̂` in the same call, so the frontier can never describe a
+    /// different set of placements from the book.
     pub fn stamp(&mut self, path_id: u32, send_ts_us: u64, eta_rel_us: u64) {
         self.stamped_n += 1;
         if eta_rel_us == 0 {
@@ -309,27 +294,25 @@ impl SenderEta {
         }
     }
 
-    /// **THE ACK.** `echo_send_ts_us` is the ack's echoed sender timestamp,
+    /// The ack. `echo_send_ts_us` is the ack's echoed sender timestamp,
     /// `rtt_us` the realized round trip, `rtprop_us` the path's RTprop (0 when
     /// it has none yet — the sample is still taken, the τ-lag simply admits
     /// nothing until `τ` exists).
     ///
-    /// A no-op unless the echo keys a stamped batch, which is what keeps the
-    /// error distribution about PREDICTED placements only: repairs, the tail
-    /// sweep and every other emitter stamp the 0 sentinel and are matched
-    /// here as `e = rtt − rtprop/2` — a reading about the wire, not about a
-    /// prediction — so they are DELIBERATELY excluded by the `eta == 0` test.
+    /// A no-op unless the echo keys a stamped batch, which keeps the error
+    /// distribution about predicted placements only: repairs, the tail sweep
+    /// and every other emitter stamp the 0 sentinel, which would read as
+    /// `e = rtt − rtprop/2` — a reading about the wire, not a prediction — so
+    /// the `eta == 0` test excludes them.
     pub fn on_ack(&mut self, path_id: u32, echo_send_ts_us: u64, rtt_us: u64, rtprop_us: u64) {
         self.on_ack_at(path_id, echo_send_ts_us, rtt_us, rtprop_us, Instant::now());
     }
 
     /// [`SenderEta::on_ack`] with the arrival instant supplied by the caller.
     ///
-    /// The tau-lag admits a pair only inside `[tau, 2*tau]` of REAL time, so a
-    /// test that cannot say when a sample arrived cannot produce a `sigma_e`
-    /// at all - and a `sigma_e` nobody can produce cannot be asserted on.
-    /// `Tlag::push` already takes its instant; this is the same seam one level
-    /// up, and `on_ack` is `on_ack_at(.., Instant::now())` verbatim.
+    /// The τ-lag admits a pair only inside `[τ, 2τ]` of real time, so a test
+    /// that cannot say when a sample arrived cannot produce a `σ_e` to assert
+    /// on. `on_ack` is `on_ack_at(.., Instant::now())`.
     pub(crate) fn on_ack_at(
         &mut self,
         path_id: u32,
@@ -367,7 +350,7 @@ impl SenderEta {
         self.place_n += n;
     }
 
-    /// Fold in Track A arm 1's temperature reading: the `T_eff` last
+    /// Fold in the `RWM_PLACE_T_DERIVED` temperature reading: the `T_eff` last
     /// resolved, the cold-rule count and its denominator. Observation only.
     /// A drain with `n == 0` (the arm absent, or no placement since the last
     /// report) leaves the level untouched rather than zeroing it.
@@ -379,7 +362,7 @@ impl SenderEta {
         self.t_n += n;
     }
 
-    /// Fold in Track A arm 2's frontier-term gauges: the `s_i > H` binds out
+    /// Fold in the `RWM_PLACE_HOL` frontier-term gauges: the `s_i > H` binds out
     /// of `n` source cost evaluations, the argmin-moved witness out of
     /// `calls` placements, and `W` at its live value. Observation only.
     pub fn add_place_hol(&mut self, sh: u64, n: u64, moved: u64, calls: u64, w: f64) {
@@ -403,7 +386,7 @@ impl SenderEta {
         (self.hol_sh, self.hol_n, self.hol_moved, self.hol_calls, self.hol_w)
     }
 
-    /// `F̂`, µs on the sender clock. Read by nothing today.
+    /// `F̂`, µs on the sender clock. No decision reads it.
     pub fn frontier_eta_us(&self) -> u64 {
         self.frontier_eta_us
     }
@@ -420,13 +403,12 @@ impl SenderEta {
         p.err_sig.sigma_us(Duration::from_micros(p.tau_us))
     }
 
-    /// The `[ETA] site=sender` line. Cumulative: the LAST line is the
+    /// The `[ETA] site=sender` line. Cumulative: the last line is the
     /// reading — the `[SUCC]` / `[RFA]` convention.
     pub fn line(&self) -> String {
-        // THE ARM READINGS RIDE THE SAME LINE, and they are `-` iff their own
-        // denominator is 0 - so "the arm is absent" and "the arm ran and
-        // measured zero" are different characters on the page, which is the
-        // whole point of a two-sided echo.
+        // The arm readings ride the same line, `-` iff their own denominator
+        // is 0, so "the arm is absent" and "the arm ran and measured zero"
+        // read differently.
         let lvl = |v: f64, n: u64| if n == 0 { "-".to_string() } else { format!("{v:.6}") };
         let mut s = format!(
             "[ETA] site=sender fhat_us={} n={} zero={} place_n={} cold_r={} cold_ge={} \
@@ -470,12 +452,12 @@ impl SenderEta {
     }
 }
 
-// ── THE RECEIVER SIDE ───────────────────────────────────────────────────
+// ── The receiver side ────────────────────────────────────────────────────
 
 /// Which clock the path's SRTT came from. Printed because the τ-lag's `τ` is
-/// read off it and because the Copa wire-RTT and the app echo are known to
-/// disagree by the sender's own reservoir dwell (the #80 battery, arm D) —
-/// a reading whose reference is unstated is not a reading.
+/// read off it and because the Copa wire-RTT and the app echo differ by the
+/// sender's own store dwell — a reading whose reference is unstated is not a
+/// reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SrttSource {
     /// Copa's wire-clocked RTT (`RWM_COPA_WIRE` active).
@@ -499,9 +481,9 @@ struct RecvPathEta {
     n: u64,
     /// Arrivals carrying the 0 "no prediction" sentinel.
     zero_n: u64,
-    /// The running MIN of `d = (t_arr − send_ts) − eta_rel`. `None` until the
+    /// The running min of `d = (t_arr − send_ts) − eta_rel`. `None` until the
     /// first predicted arrival. Carries the (constant, unknown) clock offset,
-    /// which is exactly why only `d − min` is ever printed.
+    /// which is why only `d − min` is ever printed.
     min_d: Option<i64>,
     /// `ℓ = d − min_d`, µs.
     lat: Hist,
@@ -510,13 +492,13 @@ struct RecvPathEta {
     /// `τ` for this path, µs, and where its SRTT came from.
     tau_us: u64,
     srtt_src: Option<SrttSource>,
-    /// How many arrivals RESET the running minimum — a warm-up witness. A
-    /// path whose min is still moving has an `ℓ` distribution biased HIGH,
-    /// and this is the count that says so rather than a hidden filter.
+    /// How many arrivals reset the running minimum — a warm-up witness. A
+    /// path whose min is still moving has an `ℓ` distribution biased high,
+    /// and this count says so rather than a hidden filter.
     min_resets: u64,
 }
 
-/// **THE RECEIVER-SITE ETA GAUGE.** Owned by the receiver task; no engine
+/// The receiver-site ETA gauge. Owned by the receiver task; no engine
 /// handle, no shared state, nothing reachable from a decision site.
 #[derive(Default)]
 pub struct RecvEta {
@@ -530,9 +512,9 @@ impl RecvEta {
     /// reference lag (RTprop when the receiver has one, its SRTT otherwise)
     /// and `srtt_src` says which clock produced it.
     ///
-    /// ALWAYS FED — including the `eta_rel = 0` sentinel, which is counted and
+    /// Always fed — including the `eta_rel = 0` sentinel, which is counted and
     /// then skipped, so the printed bind fraction is the instrument's own
-    /// coverage rather than a number a filter already decided.
+    /// coverage.
     pub fn observe(
         &mut self,
         path_id: u32,
@@ -565,7 +547,7 @@ impl RecvEta {
         p.lat_sig.push(Instant::now(), l, Duration::from_micros(tau_us));
     }
 
-    /// Has this gauge seen ANY arrival — i.e. does it sit at a RECEIVER?
+    /// Has this gauge seen any arrival — i.e. does it sit at a receiver?
     pub fn is_receiver_site(&self) -> bool {
         self.total_n > 0
     }
@@ -610,7 +592,7 @@ mod tests {
     use super::*;
 
     /// The τ-lag admits a pair only inside `[τ, 2τ]`, and value/count come
-    /// from ONE pair-set function so `-` iff `n = 0` holds by construction.
+    /// from one pair-set function so `-` iff `n = 0` holds by construction.
     #[test]
     fn tlag_pairs_only_inside_the_band_and_the_biconditional_holds() {
         let tau = Duration::from_millis(10);
@@ -649,14 +631,14 @@ mod tests {
         assert!(t.ring_len() <= 12, "decimation did not bind: {}", t.ring_len());
     }
 
-    /// The sender's `F̂` is the running MAX of stamped arrival times, and the
+    /// The sender's `F̂` is the running max of stamped arrival times, and the
     /// zero-sentinel bind fraction is reported rather than filtered.
     #[test]
     fn sender_frontier_is_a_running_max_and_the_sentinel_is_counted() {
         let mut g = SenderEta::default();
         assert!(!g.is_sender_site());
         g.stamp(1, 1_000, 500); // arrival 1500
-        g.stamp(1, 1_100, 200); // arrival 1300 — does NOT lower F̂
+        g.stamp(1, 1_100, 200); // arrival 1300 — does not lower F̂
         g.stamp(2, 1_050, 900); // arrival 1950
         g.stamp(2, 1_060, 0); // the sentinel
         assert!(g.is_sender_site());
@@ -713,7 +695,7 @@ mod tests {
         assert!(a.contains("p1:n=3 bind=0.0000"), "{a}");
     }
 
-    /// The 0 sentinel is COUNTED and skipped — an absent prediction and a
+    /// The 0 sentinel is counted and skipped — an absent prediction and a
     /// zero lateness are different readings.
     #[test]
     fn receiver_counts_the_sentinel_as_bind_and_never_as_a_sample() {

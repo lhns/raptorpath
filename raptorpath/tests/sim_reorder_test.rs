@@ -1,4 +1,4 @@
-//! B4: Reorder buffer tests with SimChannel.
+//! Reorder buffer tests with SimChannel.
 //!
 //! Verifies that the extracted ReorderBuffer correctly handles
 //! out-of-order delivery from jittery network channels.

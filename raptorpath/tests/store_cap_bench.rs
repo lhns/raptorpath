@@ -1,15 +1,14 @@
-//! Store-cap component bench (MEASUREMENT DISCIPLINE 14) — goal-gate
-//! "Store-Cap Triplication", 2026-08-09.
+//! Store-cap component bench (`docs/measurement-discipline.md` rule 14).
 //!
-//! Drives the SHIPPED store-cap laws alone — no transport, no tokio, no VM —
-//! and answers the two questions a battery cannot discover for itself:
+//! Drives the shipped store-cap laws alone — no transport, no tokio, no VM —
+//! and answers two questions a battery cannot discover for itself:
 //!
 //!   (A) LAW: by how much does the dyn-cap phase's Σ-anchor base / honest
 //!       per-path cap sum differ when it iterates `active_paths()` (cwnd −
 //!       in_flight > 0) instead of `live_paths()`, as a function of how many
 //!       paths are cwnd-saturated? Deterministic, closed form, seconds.
 //!
-//!   (B) POPULATION: at the dyn-cap refresh INSTANTS of a real transfer, how
+//!   (B) POPULATION: at the dyn-cap refresh instants of a real transfer, how
 //!       often is `active_paths()` actually short of `live_paths()`? The
 //!       `sf=` gauge (`net::store_cap_sf_gauge`) counts it. A law delta of
 //!       −50% on a population of 0% is latent-but-inert; the same delta on a
@@ -41,7 +40,7 @@ use raptorpath::net::{
 //   60 ms ⇒ anchor 120 symbols ("c8-slow → ~2k·(K·60ms + 160ms)").
 //
 // c7 = dual c2 (symmetric), c8 = c2 + c3 (heterogeneous), sc2/sc3 = the
-// singles. Σ_c7 = 2×sc2, Σ_c8 = sc2 + sc3 (goal-gate).
+// singles. Σ_c7 = 2×sc2, Σ_c8 = sc2 + sc3.
 const C2_RATE: f64 = 10_400.0;
 const C2_RTPROP_S: f64 = 0.008;
 const C3_RATE: f64 = 2_000.0;
@@ -49,66 +48,54 @@ const C3_RTPROP_S: f64 = 0.060;
 
 // Shipped policy constants (sender_policy::resolve / gates defaults).
 const GAIN: f64 = 2.0;
-/// The shipped bootstrap floor, CITED rather than transcribed since it became
-/// a derived quantity (paper §16.59): a bench that models shipped policy must
-/// track it, and a copy would silently model a policy the engine no longer
-/// has. Inert at every geometry here — asserted by
+/// The shipped bootstrap floor, cited rather than transcribed because it is a
+/// derived quantity (paper §6.1): a copy would silently model a policy the
+/// engine no longer has. Inert at every geometry here — asserted by
 /// `derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end`.
 const FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
 const KNEE: usize = 2048;
 const STORE_MAX: usize = 1024;
 const BOOT: usize = 128;
 
-/// The LEGACY plain anchor over-reads the honest one by ×4.6–7.4 ("Anchor
-/// Hygiene" battery (b)); the shipped default runs on the over-read. Both
-/// levels are reported because the RATIO under test is anchor-invariant
-/// until a clamp bites — and showing that is half the point.
-///
-/// **MEASURED, AND WRONG AT EVERY DUAL CELL** (goal-gate "Ack-Cadence
-/// Measurement (VM)", READOUT 3, 2026-08-11). The wire's realized `xanchor`
-/// is **5.94** at the single cell (in the ×4.6–7.4 band this constant came
-/// from), **9.80–10.11** at c7 and **13.29–13.82** at c8 — so 5.0 is right at
-/// ONE cell and **2.0–2.8× low at the duals**. "Exactly the shape CLAUDE.md
-/// forbids: a constant standing in for a cell-dependent quantity."
-///
-/// It is kept, not deleted, because it is the LEGACY ASSUMPTION and the
-/// comparison against it is the finding: `the_overread_error_decides_whether
-/// _the_knee_ceiling_binds` shows that this constant is the difference
-/// between a store cap that is proportional to the anchor and one that is
-/// SATURATED at its ceiling. The sweep below runs at the MEASURED per-cell
-/// scale as well.
+/// The plain anchor's assumed over-read of the honest one (the ×4.6–7.4 band,
+/// paper §6.6); the shipped default runs on the over-read. Both levels are
+/// reported because the ratio under test is anchor-invariant until a clamp
+/// bites. The realized `xanchor` is cell-dependent (5.94 single, 9.80–10.11
+/// at c7, 13.29–13.82 at c8), so this constant is right at one cell and
+/// 2.0–2.8× low at the duals. It is kept as the assumption under comparison:
+/// `the_overread_error_decides_whether_the_knee_ceiling_binds` shows it is
+/// the difference between a cap proportional to the anchor and one saturated
+/// at its ceiling. The sweep also runs at the measured per-cell scale.
 const OVERREAD: f64 = 5.0;
 
 #[derive(Clone, Copy)]
 struct Cell {
     name: &'static str,
-    /// (rate sym/s, RTprop s, MEASURED `xanchor`) per path — the third term
-    /// is READOUT 3's per-path median at the cell the VM ran, replacing the
-    /// single `OVERREAD` constant with the per-path measurement it stood in
-    /// for. `None` = the VM never ran this geometry, and this bench will not
-    /// invent an over-read for it.
+    /// (rate sym/s, RTprop s, measured `xanchor`) per path — the third term
+    /// is the per-path median the VM measured at that cell. `None` = the VM
+    /// never ran this geometry, and this bench will not invent an over-read.
     paths: &'static [(f64, f64, Option<f64>)],
 }
 
 const CELLS: &[Cell] = &[
-    // c7 legs: READOUT 3 rows `c7/p0` 9.80 and `c7/p1` 10.11.
+    // c7 legs: measured `c7/p0` 9.80 and `c7/p1` 10.11.
     Cell {
         name: "c7  (c2+c2)",
         paths: &[(C2_RATE, C2_RTPROP_S, Some(9.80)), (C2_RATE, C2_RTPROP_S, Some(10.11))],
     },
-    // c8 legs: READOUT 3 rows `c8/p0` 13.29 (fast) and `c8/p1` 13.82 (slow).
+    // c8 legs: measured `c8/p0` 13.29 (fast) and `c8/p1` 13.82 (slow).
     Cell {
         name: "c8  (c2+c3)",
         paths: &[(C2_RATE, C2_RTPROP_S, Some(13.29)), (C3_RATE, C3_RTPROP_S, Some(13.82))],
     },
-    // sc2: the VM's single cell is c2r100 — READOUT 3 row 1, 5.94.
+    // sc2: the VM's single cell is c2r100, measured 5.94.
     Cell { name: "sc2 (c2)    ", paths: &[(C2_RATE, C2_RTPROP_S, Some(5.94))] },
-    // sc3: no single SLOW cell was ever measured. Left unmeasured on purpose.
+    // sc3: no single slow cell was measured; left unmeasured on purpose.
     Cell { name: "sc3 (c3)    ", paths: &[(C3_RATE, C3_RTPROP_S, None)] },
 ];
 
 /// The per-path anchor scale to run a sweep row at: `1.0` honest, `OVERREAD`
-/// the legacy constant, or the cell's own MEASURED per-path `xanchor`.
+/// the assumed constant, or the cell's own measured per-path `xanchor`.
 #[derive(Clone, Copy, PartialEq)]
 enum Scale {
     Fixed(f64),
@@ -144,10 +131,10 @@ fn slots(cell: &Cell, keep: &[bool], anchor_scale: Scale) -> Vec<Option<HonestCa
         .collect()
 }
 
-/// The SHIPPED DEFAULT pooled law, exactly as the sender composes it:
-/// `path_scaled_store_cap(on, n_live, Σ_set anchor, …)` else the legacy
-/// `gain·Σ` else the boot cap. `n_live` is ALWAYS the live count — that is
-/// the defect's whole shape: the ×N and the Σ range over different sets.
+/// The shipped default pooled law, exactly as the sender composes it:
+/// `path_scaled_store_cap(on, n_live, Σ_set anchor, …)` else `gain·Σ` else
+/// the boot cap. `n_live` is always the live count — that is the defect's
+/// whole shape: the ×N and the Σ range over different sets.
 fn shipped_pool_cap(bdp_over_set: f64, n_live: usize) -> usize {
     if let Some(c) = path_scaled_store_cap(true, n_live, bdp_over_set, GAIN, FLOOR, KNEE) {
         c
@@ -174,7 +161,7 @@ fn pct(new: f64, base: f64) -> f64 {
     if base <= 0.0 { f64::NAN } else { (new - base) / base * 100.0 }
 }
 
-/// (A) THE LAW SWEEP — cap(active) vs cap(live) as paths saturate.
+/// (A) The law sweep — cap(active) vs cap(live) as paths saturate.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn store_cap_pathset_sweep() {
@@ -192,9 +179,8 @@ fn store_cap_pathset_sweep() {
             let n = cell.paths.len();
             let n_live = n.max(1);
             // Baseline: nothing filtered (what live_paths() always gives).
-            // THREE anchor levels, not two: honest, the LEGACY CONSTANT, and
-            // the wire's own per-path measurement. The third row is the one
-            // this bench had no way to run until the VM measured it.
+            // Three anchor levels: honest, the assumed constant, and the
+            // wire's own per-path measurement.
             for (label, scale) in [
                 ("honest anchor", Scale::Fixed(1.0)),
                 ("legacy anchor x5", Scale::Fixed(OVERREAD)),
@@ -252,7 +238,7 @@ fn store_cap_pathset_sweep() {
                     let shipped = shipped_pool_cap(bdp, n_live);
                     let mut honest = honest_pool_cap(&terms, n_live);
                     let honest_note = if honest == 0 {
-                        // hsum = 0 ⇒ the honest law DISENGAGES and the
+                        // hsum = 0 ⇒ the honest law disengages and the
                         // caller falls through to the shipped pooled law.
                         honest = shipped;
                         " (law disengaged -> fallback)"
@@ -278,12 +264,12 @@ fn store_cap_pathset_sweep() {
     }
 }
 
-/// (B) THE POPULATION — the `sf=` gauge over a real dual-path L0 transfer.
+/// (B) The population — the `sf=` gauge over a real dual-path L0 transfer.
 ///
 /// In-process loopback over two 127.0.0.1 path pairs, the REAL engine, plain
 /// window-reliable mode: the same sender loop, the same 5 ms dyn-cap refresh
 /// cadence, the same `active_paths()` filter. Loopback has no netem, so the
-/// SATURATION this measures is the sender's own cwnd/in-flight bookkeeping —
+/// saturation this measures is the sender's own cwnd/in-flight bookkeeping —
 /// which is precisely the mechanism `active_paths()` filters on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "component bench; run with --ignored --nocapture"]
@@ -320,10 +306,9 @@ async fn store_cap_saturation_population_dual_l0() {
     assert!(ticks > 0, "the sf= gauge saw no dyn-cap refresh ticks — the mechanism under test did not execute (MEASUREMENT DISCIPLINE 1)");
 }
 
-/// (B2) THE POPULATION AT N = 1 — `active_paths()` can return the EMPTY set
+/// (B2) The population at N = 1 — `active_paths()` can return the empty set
 /// on a single saturated path, and then the shipped cap is `store_boot_cap`
-/// (128), not `gain·anchor`. The tasking's expectation that "N = 1 must be
-/// inert" to the path set is refuted by the code, so it is measured here.
+/// (128), not `gain·anchor`, so N = 1 is not inert to the path set.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "component bench; run with --ignored --nocapture"]
 async fn store_cap_saturation_population_single_l0() {
@@ -351,7 +336,7 @@ async fn store_cap_saturation_population_single_l0() {
 
 // ── Guards (always run) ───────────────────────────────────────────────────
 
-/// The collector IS the law: `honest_cap_terms` must equal a hand-rolled
+/// The collector is the law: `honest_cap_terms` must equal a hand-rolled
 /// `EchoRatioMin` + `honest_store_cap` transcription, term for term. This is
 /// the bound on the de-triplication.
 #[test]
@@ -406,13 +391,13 @@ fn honest_cap_terms_equals_the_transcription() {
             _ => panic!("term shape diverged: {g:?} vs {w:?}"),
         }
     }
-    // A None slot observes NO clock sample.
+    // A None slot observes no clock sample.
     assert!(!ks.contains_key(&0));
     // A cold anchor still observes the clock (it is a clock statistic).
     assert!(ks.contains_key(&3));
 }
 
-/// N = 1 must be INERT to the path set at the law level: with one path,
+/// N = 1 must be inert to the path set at the law level: with one path,
 /// live and active differ only in whether that path is saturated, and the
 /// shipped single-path law is `gain·Σanchor` either way.
 #[test]
@@ -424,10 +409,9 @@ fn single_path_pool_law_is_pathset_inert_when_unsaturated() {
     assert_eq!(shipped_pool_cap(bdp, 1), 167);
 }
 
-/// The claim the pre-registration rests on, asserted as an invariant rather
-/// than left as prose: for the shipped pooled law the cap is EXACTLY
-/// proportional to the anchor mass the path set retains (until a clamp
-/// bites), so filtering half the anchor mass halves the cap.
+/// For the shipped pooled law the cap is exactly proportional to the anchor
+/// mass the path set retains (until a clamp bites), so filtering half the
+/// anchor mass halves the cap.
 #[test]
 fn shipped_pool_cap_is_proportional_to_retained_anchor_mass() {
     let full = 2.0 * 83.2;
@@ -440,53 +424,47 @@ fn shipped_pool_cap_is_proportional_to_retained_anchor_mass() {
         ((c_half as f64) / (c_full as f64) - 0.5).abs() < 0.01,
         "symmetric dual, one path saturated ⇒ exactly −50% of the pooled cap"
     );
-    // And the terminal case: BOTH saturated ⇒ the boot cap, a ×5.2 collapse
-    // at honest anchors and ×26 at the measured legacy over-read.
+    // The terminal case: both saturated ⇒ the boot cap, a ×5.2 collapse at
+    // honest anchors and ×26 at the assumed over-read.
     assert_eq!(shipped_pool_cap(0.0, 2), BOOT);
     let c_over = shipped_pool_cap(OVERREAD * full, 2);
     assert_eq!(c_over, 3328);
     assert!((c_over as f64 / BOOT as f64) > 25.0);
 }
 
-/// **THE BOOTSTRAP CAP'S DERIVATION, AND THE BOUND ON WHAT REPLACING IT
-/// MOVES** — paper §16.61, ADR-0070 finding 5's second half (`boot = 128`,
-/// ARGUED, NEVER A BATTERY ARM).
+/// The bootstrap cap's derivation, and the bound on what replacing it moves
+/// (paper §6.2).
 ///
 /// `net::sender_policy::STORE_BOOT_DERIVED` derives boot from its own stated
 /// job and lands on `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW) = 10` — the
-/// SAME two clauses, the same inputs and the same answer as the floor, because
-/// boot and the floor turn out to be one quantity: *the outstanding bound that
-/// applies when the law has no measurement*. The derived constant is
-/// **NOT SHIPPED**; `RWM_STORE_BOOT` still defaults to 128.
+/// same two clauses, inputs and answer as the floor, because boot and the
+/// floor are one quantity: *the outstanding bound that applies when the law
+/// has no measurement*. The derived constant is not shipped;
+/// `RWM_STORE_BOOT` still defaults to 128.
 ///
-/// This test asserts four things, and the fourth is the one that matters:
+/// This test asserts four things:
 ///
-/// 1. **The identity is real, not a coincidence of rounding** — the derived
-///    boot IS `STORE_CAP_FLOOR`, computed from the same cited inputs.
-/// 2. **128 is a fit, and the test says what to** — `1.5 × (c2 rate × c2
-///    RTprop)` reconstructs the shipped value to within the rounding to a power
-///    of two, from c2's CONFIGURED parameters. A bootstrap cap sized to one
-///    path's BDP is circular, since the whole premise is that no BDP is known.
-/// 3. **At boot's LEGITIMATE job the two values are indistinguishable** — cold
-///    start, where either value warms the anchor inside one round trip, because
-///    both clear `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE`.
-/// 4. **At boot's ILLEGITIMATE reachability they are NOT** — the terminal
-///    `else` of the pooled chain, reached mid-transfer when the Σ-set empties
-///    (ADR-0070 finding 1's cliff, measured binding at c1 in 17.2–42.1 % of
-///    steady samples). There the swap is a ×12.8 tightening, and this test
-///    PINS that ratio rather than describing it. That is the whole reason the
-///    derived value does not ship, and it is a bound on a defect that belongs
-///    to the Σ-set, not to boot.
+/// 1. **The identity** — the derived boot is `STORE_CAP_FLOOR`, computed from
+///    the same cited inputs.
+/// 2. **128 is a fit** — `1.5 × (c2 rate × c2 RTprop)` reconstructs the
+///    shipped value to within the rounding to a power of two. A bootstrap cap
+///    sized to one path's BDP is circular, since no BDP is known yet.
+/// 3. **At boot's legitimate job the two values are indistinguishable** —
+///    cold start, where either value warms the anchor inside one round trip,
+///    because both clear `ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE`.
+/// 4. **At the empty-Σ cliff they are not** — the terminal `else` of the
+///    pooled chain, reached mid-transfer when the Σ-set empties. There the
+///    swap is a ×12.8 tightening, and this test pins that ratio. That is why
+///    the derived value does not ship; the defect belongs to the Σ-set, not
+///    to boot.
 ///
-/// CLAUDE.md: *every documented model-vs-engine divergence must carry a test
-/// that BOUNDS it, not prose that describes it.* The divergence here is
-/// between a derived constant and a shipped one, and the bound is the exact
-/// condition under which they differ.
+/// The divergence between the derived and the shipped constant is bounded
+/// by the exact condition under which they differ.
 #[test]
 fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() {
     use raptorpath::net::sender_policy::{STORE_BOOT_DERIVED, STORE_CAP_FLOOR};
 
-    // 1. THE IDENTITY. Boot's derivation and the floor's are the same two
+    // 1. The identity. Boot's derivation and the floor's are the same two
     //    clauses over the same cited inputs, so they cannot disagree — and if a
     //    future cadence change moves one it must move the other.
     assert_eq!(
@@ -499,7 +477,7 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
         "this bench must model the shipped floor, not a copy of it"
     );
 
-    // 2. WHAT 128 WAS: 1.5 × c2's own configured BDP, rounded to a power of
+    // 2. What 128 is: 1.5 × c2's own configured BDP, rounded to a power of
     //    two. Reconstructed rather than asserted, so the claim "it is a fit to
     //    one cell" is checked instead of repeated.
     let c2_bdp = C2_RATE * C2_RTPROP_S; // 83.2 symbols
@@ -513,9 +491,9 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
         "128 is not 1.5x the c2 BDP rounded — the fit this test names has moved"
     );
 
-    // 3. BOOT'S REAL JOB: both values warm the anchor inside ONE round trip,
+    // 3. Boot's real job: both values warm the anchor inside one round trip,
     //    because both clear the sample requirement. At cold start the two are
-    //    therefore indistinguishable in the only respect boot is FOR.
+    //    indistinguishable in the only respect boot is for.
     let samples_needed = 8 * 1; // ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE
     for boot in [BOOT, STORE_BOOT_DERIVED] {
         assert!(
@@ -525,7 +503,7 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
         );
     }
 
-    // 4. THE CLIFF, WHERE THEY ARE NOT INDISTINGUISHABLE. `shipped_pool_cap`
+    // 4. The cliff, where they differ. `shipped_pool_cap`
     //    with an empty Σ is exactly the terminal `else` the cliff reaches, at
     //    any live count. The swap's effect there is pinned as a ratio.
     for n in [1usize, 2, 3] {
@@ -541,9 +519,8 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
         "the cliff deepening the derived boot would cause is {deepening}, not 12.8"
     );
 
-    // And the ORDER that follows, asserted as arithmetic: once the Σ-set is
-    // non-empty — which is what the live set guarantees whenever the transfer
-    // is running — the boot branch is UNREACHABLE, and at that point the two
+    // Once the Σ-set is non-empty — which the live set guarantees whenever
+    // the transfer is running — the boot branch is unreachable, and the two
     // values are indistinguishable everywhere because neither is ever read.
     for n in [1usize, 2, 3] {
         let smallest_warm_leg = 1.0; // any positive Σ at all
@@ -555,27 +532,25 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
     }
 }
 
-/// WHAT THE `OVERREAD = 5.0` ERROR AFFECTS — goal-gate "Ack-Cadence
-/// Measurement (VM)", READOUT 3, answered as an assertion rather than as
-/// prose.
+/// What the `OVERREAD = 5.0` error affects (paper §6.6).
 ///
 /// The shipped pooled law is `clamp(gain·N·Σ, floor, N·knee)`, which is
-/// DEGREE-1 HOMOGENEOUS in the anchor below the ceiling and constant above it
+/// degree-1 homogeneous in the anchor below the ceiling and constant above it
 /// (proved on the real law by `store_cap_sf_bench`'s
 /// `store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`). So a
-/// wrong anchor scale is INERT for every ratio this bench reports — until it
+/// wrong anchor scale is inert for every ratio this bench reports — until it
 /// pushes the cap into `N·knee`, the law's only non-homogeneous term. That is
 /// the whole of what the constant's error can affect, and the measurement puts
-/// the two levels on OPPOSITE SIDES of it:
+/// the two levels on opposite sides of it:
 ///
-/// | cell | Σ anchor at ×5.0 | cap | Σ at the MEASURED xanchor | cap |
+/// | cell | Σ anchor at ×5.0 | cap | Σ at the measured xanchor | cap |
 /// |---|---|---|---|---|
 /// | c7 | 832  | 3328 (below the 4096 ceiling) | 1656.6 | **4096, SATURATED** |
 /// | c8 | 1016 | 4064 (below it by **0.8%**)   | 2764.1 | **4096, SATURATED** |
 ///
-/// So at the assumed ×5.0 BOTH dual cells sit just under the ceiling and the
-/// pooled cap tracks the anchor proportionally; at the measured over-read BOTH
-/// are 1.6× and 2.7× ABOVE it and the cap is PINNED at `N·knee`, where it no
+/// So at the assumed ×5.0 both dual cells sit just under the ceiling and the
+/// pooled cap tracks the anchor proportionally; at the measured over-read they
+/// are 1.6× and 2.7× above it and the cap is pinned at `N·knee`, where it no
 /// longer responds to the anchor at all. c8 clears the ceiling at ×5.0 by
 /// 32 symbols out of 4096 — the constant is not merely 2.7× low, it is 2.7×
 /// low across a knee, and it is the knee that the store-cap ratio arguments
@@ -583,7 +558,7 @@ fn derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed() 
 ///
 /// At N = 1 the ceiling is `RELIABLE_STORE_MAX` instead, and the measured
 /// single-cell over-read (5.94) stays under it — so the error is confined to
-/// the DUAL cells, which is exactly where the `[SF]` question lives.
+/// the dual cells, which is exactly where the `[SF]` question lives.
 #[test]
 fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     let ceiling_n2 = (2 * KNEE) as f64; // 4096
@@ -597,7 +572,7 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     let c8 = &CELLS[1];
     let sc2 = &CELLS[2];
 
-    // THE LEGACY CONSTANT: both duals below the ceiling, proportional.
+    // The assumed constant: both duals below the ceiling, proportional.
     for cell in [c7, c8] {
         let s = sigma(cell, Scale::Fixed(OVERREAD));
         let cap = shipped_pool_cap(s, 2);
@@ -617,7 +592,7 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
         c8_legacy / ceiling_n2
     );
 
-    // THE MEASURED OVER-READ: both duals PINNED at the ceiling.
+    // The measured over-read: both duals pinned at the ceiling.
     for cell in [c7, c8] {
         let s = sigma(cell, Scale::Measured);
         assert_eq!(
@@ -635,7 +610,7 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
         );
     }
 
-    // THE SIZE OF THE ERROR, per cell, as the ledger states it: 2.0-2.8x.
+    // The size of the error, per cell: 2.0-2.8x.
     for (cell, lo, hi) in [(c7, 1.9, 2.1), (c8, 2.6, 2.8)] {
         let ratio = sigma(cell, Scale::Measured) / sigma(cell, Scale::Fixed(OVERREAD));
         assert!(
@@ -646,8 +621,8 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
         );
     }
 
-    // N = 1 IS UNAFFECTED: the single cell's measured over-read (5.94) leaves
-    // the cap below RELIABLE_STORE_MAX, so the error is a DUAL-cell error.
+    // N = 1 is unaffected: the single cell's measured over-read (5.94) leaves
+    // the cap below RELIABLE_STORE_MAX, so the error is a dual-cell error.
     let s1 = sigma(sc2, Scale::Measured);
     let cap1 = shipped_pool_cap(s1, 1);
     assert!(cap1 < STORE_MAX, "sc2 at the measured x5.94 already clamps: {cap1}");
@@ -657,16 +632,13 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
     assert!(shipped_pool_cap(83.2 * 9.28, 1) >= STORE_MAX);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// THE BOOTSTRAP FLOOR, DERIVED — paper §16.59 (2026-08-18)
-// ─────────────────────────────────────────────────────────────────────────
+// ── The bootstrap floor, derived (paper §6.1) ────────────────────────────
 
-/// **THE FLOOR'S DERIVATION, AND THE BOUND ON WHAT CHANGING IT MOVES.**
+/// The floor's derivation, and the bound on what changing it moves.
 ///
-/// ADR-0070 finding 5 recorded `floor = 64` as PROVENANCE ABSENT. §16.59
-/// derives it from the floor's own stated job — *a transiently-tiny BDP
-/// estimate must not strangle the pipe* — read as two independent LOWER
-/// BOUNDS on one quantity:
+/// The floor is derived from its own stated job — *a transiently-tiny BDP
+/// estimate must not strangle the pipe* — read as two independent lower
+/// bounds on one quantity:
 ///
 /// ```text
 ///   STORE_CAP_FLOOR = max( ANCHOR_MIN_SAMPLES · MERGED_ACK_SYMBOLS_PER_SAMPLE,
@@ -674,21 +646,20 @@ fn the_overread_error_decides_whether_the_knee_ceiling_binds() {
 ///                   = max( 8 · 1, 10 ) = 10
 /// ```
 ///
-/// This test asserts three things and nothing else:
+/// This test asserts three things:
 ///
 /// 1. **The arithmetic is the derivation's**, computed from the three cited
 ///    inputs rather than transcribed — so the value cannot be edited without
 ///    editing an input that has a citation attached to it.
-/// 2. **`max`, not `+`, and both clauses are LIVE.** The conjunction is
+/// 2. **`max`, not `+`, and both clauses are live.** The conjunction is
 ///    asserted to be the larger clause, and each clause is asserted to be
 ///    capable of being the binding one, so neither is decoration. (Today RFC
 ///    6928 binds; if the ack cadence ever became 2 symbols per sample, the
 ///    warm clause would, and this test says so rather than silently agreeing.)
-/// 3. **The behaviour delta is BOUNDED to the degenerate end** — CLAUDE.md's
-///    rule that a documented divergence carries a test that bounds it. The
-///    floor only binds where the chain's unclamped ask is beneath it, so at
-///    every cell geometry this bench carries the old and new floors are
-///    INDISTINGUISHABLE, and that is asserted cell by cell rather than argued.
+/// 3. **The behaviour delta is bounded to the degenerate end.** The floor
+///    only binds where the chain's unclamped ask is beneath it, so at every
+///    cell geometry this bench carries the old (64) and new floors are
+///    indistinguishable, asserted cell by cell.
 #[test]
 fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end() {
     use raptorpath::net::sender_policy::{
@@ -696,7 +667,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
     };
     use raptorpath::scheduler::ANCHOR_MIN_SAMPLES;
 
-    // (1) THE ARITHMETIC IS THE DERIVATION'S.
+    // (1) The arithmetic is the derivation's.
     let warm_clause = ANCHOR_MIN_SAMPLES * MERGED_ACK_SYMBOLS_PER_SAMPLE;
     let burst_clause = RFC6928_INITIAL_WINDOW;
     assert_eq!(
@@ -707,7 +678,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
     );
     assert_eq!(STORE_CAP_FLOOR, 10, "the derivation evaluates to 10 today");
 
-    // (2) BOTH CLAUSES ARE LIVE, and the conjunction is `max`.
+    // (2) Both clauses are live, and the conjunction is `max`.
     assert!(
         warm_clause > 0 && burst_clause > 0,
         "a clause that can never bind is decoration, not a derivation"
@@ -729,7 +700,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
          cadence; if this fires, the cadence moved and §16.59 must be re-read"
     );
 
-    // (3) THE DELTA IS BOUNDED TO THE DEGENERATE END. `sigma` here is the
+    // (3) The delta is bounded to the degenerate end. `sigma` here is the
     // cell's Σ(max_bw·min_rtt) and the shipped pooled law is `clamp(2·N·Σ,
     // floor, N·knee)`; the floor can only be the answer where `2·N·Σ` is
     // beneath it. Asserted at every cell this bench carries, at BOTH the
@@ -768,7 +739,7 @@ fn derived_floor_is_the_max_of_its_two_clauses_and_only_moves_the_degenerate_end
 
     // And the other side of the bound, so "inert" is not mistaken for "dead":
     // the derived floor IS reachable, at an ask beneath it. A floor that could
-    // never bind would be decorative and §16.59 would be describing nothing.
+    // never bind would be decorative.
     let tiny = 1e-6;
     assert_eq!(
         path_scaled_store_cap(true, 2, tiny, 2.0, STORE_CAP_FLOOR, 2048),

@@ -1,39 +1,18 @@
-//! **TRACK A's THREE PLACEMENT ARMS REACH THE WIRE, AND SAY SO TWO-SIDED.**
+//! The three placement-law experiment arms `RWM_PLACE_T_DERIVED`,
+//! `RWM_PLACE_HOL` and `RWM_PLACE_WDIV_DERIVED` (paper §5.7, all
+//! default-absent) reach the wire and echo two-sided. Clauses:
 //!
-//! **What this binary is for.** `RWM_PLACE_T_DERIVED`, `RWM_PLACE_HOL` and
-//! `RWM_PLACE_WDIV_DERIVED` (paper §16.81) are DEFAULT-ABSENT experiment arms
-//! on the placement law. A battery that runs them is worth nothing unless
-//! three things are true of every invocation, and none of them is provable
-//! from a diff:
+//!   1. `[GATES]` names each arm with its resolved value on both endpoints,
+//!      so an absent arm is as readable off a control log as a present one.
+//!   2. The arm executed (measurement-discipline rule 1): for the derived
+//!      temperature, `T_eff` printed, finite and different from the shipped
+//!      `0.15`; for the frontier term, `hol_calls > 0` and `hol_mv > 0` (the
+//!      term moved an argmin — computed is not the same as decided).
+//!   3. With every arm absent the same gauges read `-` / `0`.
 //!
-//!   1. **THE ARM IS ECHOED TWO-SIDED.** `[GATES]` names each of the three
-//!      with its resolved value on BOTH endpoints, so "the arm was absent" is
-//!      as readable off a control log as "the arm was present" is off a
-//!      challenger's. A run whose configuration axis has no echo is the
-//!      failure mode that produced the 31 Mbit/s anomaly.
-//!   2. **THE ARM EXECUTED.** MEASUREMENT DISCIPLINE rule 1: prove the
-//!      mechanism under test runs. For arm 1 that is `T_eff` printed, finite
-//!      and DIFFERENT from the shipped `0.15`; for arm 2 it is `hol_calls > 0`
-//!      AND — the WB1-style execution witness — `hol_mv > 0`, the count of
-//!      placements whose argmin the frontier term actually MOVED. A term that
-//!      is computed but never decides has not been measured.
-//!   3. **THE CONTROL IS SILENT.** With every arm absent the same gauges read
-//!      `-` / `0` on the same run shape. That is what makes a difference
-//!      between arms attributable to the arm.
-//!
-//! **IT FAILS ON THE OLD ENGINE, WHICH IS THE POINT.** Before this branch
-//! there is no `RWM_PLACE_*` in `[GATES]` and no `t_eff=` / `hol_*=` on the
-//! `[ETA]` line, so every assertion below is unsatisfiable — a reachability
-//! test that passes on the engine it is supposed to gate is not a gate.
-//!
-//! **What it deliberately does NOT assert.** Any VALUE of `T_eff`, of the
-//! `s_i > H` bind fraction, or of `W`. Loopback's queueing is the host's and
-//! its loss is the shim's Gilbert–Elliott process; the numbers come off an L1
-//! run scored against a pre-registration. This is the INSTRUMENT gate.
-//!
-//! Own test binary, for `eta_reachability.rs`'s reason: `RWM_L0_NETEM` is
-//! process-global in the child and the spawned pair must not contend with the
-//! in-process loopback tests.
+//! No value of `T_eff`, the `s_i > H` bind fraction or `W` is asserted;
+//! loopback's queueing is the host's. Own test binary: `RWM_L0_NETEM` is
+//! process-global in the child.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -42,9 +21,8 @@ mod loopback;
 
 use gauge::{field, opt_f64_field as f64_field, u64_field};
 
-/// The environment every arm shares. `RWM_DIAG=1` is what makes `[ETA]` fire
-/// at all; it is asserted present in the `[GATES]` echo below rather than
-/// assumed.
+/// The environment every arm shares. `RWM_DIAG=1` makes `[ETA]` fire; it is
+/// asserted present in the `[GATES]` echo.
 const BASE: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
@@ -57,10 +35,9 @@ const ARM_GATES: [&str; 3] =
 
 /// One loopback transfer under one arm. Returns `(sender log, receiver log)`.
 ///
-/// THE ARM RIDES BOTH ENDPOINTS. The receiver runs a scheduler too, and an
-/// arm that is present at one end only is a configuration split nobody could
-/// read off a log. The receiver log is read only for its startup `[GATES]`
-/// echo, so it is snapshotted without waiting.
+/// The arm rides both endpoints: the receiver runs a scheduler too. The
+/// receiver log is read only for its startup `[GATES]` echo, so it is
+/// snapshotted without waiting.
 fn run(paths: usize, netem: Option<&str>, bytes: &str, arm: &[(&str, &str)]) -> (String, String) {
     let mut env = BASE.to_vec();
     env.extend_from_slice(arm);
@@ -73,17 +50,15 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str, arm: &[(&str, &str)]) -> 
     })
 }
 
-// ── READERS ─────────────────────────────────────────────────────────────
+// ── Readers ─────────────────────────────────────────────────────────────
 
 fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
     gauge::require(log, pat, "the gauge is unreachable")
 }
 
-/// **THE TWO-SIDED ECHO ASSERTION.** Every arm gate is NAMED on the `[GATES]`
-/// line of BOTH endpoints, with the value this run was configured for. Scoped
-/// to the `[GATES]` line on purpose: the resolve-time liveness echoes contain
-/// the gate NAMES in their prose, and an unscoped grep would read the
-/// documentation instead of the resolved value.
+/// The two-sided echo: every arm gate is named on the `[GATES]` line of both
+/// endpoints with this run's value. Scoped to the `[GATES]` line because the
+/// resolve-time liveness echoes contain the gate names in their prose.
 fn assert_arm_echo(cli: &str, srv: &str, want: &[(&str, &str)]) {
     for (log, side) in [(cli, "sender"), (srv, "receiver")] {
         let g = last_with(log, "[GATES]");
@@ -105,12 +80,10 @@ fn assert_arm_echo(cli: &str, srv: &str, want: &[(&str, &str)]) {
     }
 }
 
-// ── THE RUNS ────────────────────────────────────────────────────────────
+// ── The runs ────────────────────────────────────────────────────────────
 
-/// **CTL — every arm absent.** The gauges exist on the line (so their absence
-/// on a challenger would be a wiring failure and not a missing field) and read
-/// `-` / `0`: nothing armed, nothing counted. This is the row every other
-/// reading is a difference from.
+/// Control — every arm absent. The gauges exist on the line and read
+/// `-` / `0`; every other reading is a difference from this row.
 #[test]
 fn the_control_arm_echoes_absent_and_every_arm_gauge_is_silent() {
     let (cli, srv) = run(2, Some("c2,c3"), "16000000", &[]);
@@ -133,16 +106,12 @@ fn the_control_arm_echoes_absent_and_every_arm_gauge_is_silent() {
     assert_eq!(field(s, "hol_w="), "-", "{s}");
 }
 
-/// **Tσ — `RWM_PLACE_T_DERIVED`.** The temperature is resolved from the
-/// sender's own ETA-error dispersion on every placement: `t_n > 0`, `T_eff`
-/// printed and FINITE, and — the reading the whole arm exists for — DIFFERENT
-/// from the shipped `0.15`, which is the falsifiable claim
-/// `σ̂_e = 0.19238·ref` being falsified or confirmed on this cell.
-///
-/// The cold count is REPORTED, not asserted: whether the τ-lag has found a
-/// pair by the time a placement is priced is a property of the cell's own
-/// sample rate, and the point of printing `t_cold` is that a reader never has
-/// to guess.
+/// `RWM_PLACE_T_DERIVED`: the temperature is resolved from the sender's own
+/// ETA-error dispersion on every placement — `t_n > 0`, `T_eff` finite, and
+/// different from the shipped `0.15` (the shipped constant's claim is
+/// `σ̂_e = 0.19238·ref`). The cold count is printed, not asserted: whether
+/// the τ-lag has a pair when a placement is priced depends on the cell's
+/// sample rate.
 #[test]
 fn the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual() {
     let arm = [("RWM_PLACE_T_DERIVED", "1")];
@@ -169,9 +138,9 @@ fn the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual() {
         t / (6.0_f64).sqrt() * std::f64::consts::PI,
         cold * 100.0
     );
-    // The gauge must not be a constant echo of the shipped dial: with the
-    // cold rule NOT firing everywhere, at least one resolution used a measured
-    // dispersion, and reporting 0.15 back would mean the pooling never ran.
+    // Unless the cold rule fired everywhere, at least one resolution used a
+    // measured dispersion; reporting 0.15 back would mean the pooling never
+    // ran.
     if cold < 1.0 {
         assert!(
             (t - 0.15).abs() > 1e-9,
@@ -181,12 +150,10 @@ fn the_derived_temperature_arm_resolves_a_finite_t_eff_on_the_dual() {
     }
 }
 
-/// **HOL — `RWM_PLACE_HOL`.** The frontier term runs on every source
-/// placement (`hol_n > 0`), its `κ` bind is a fraction, `W` prints at a live
-/// value — and the EXECUTION WITNESS fires: `hol_mv > 0`, the term changed the
-/// argmin on at least one placement of a lossy asymmetric dual. That last
-/// assertion is the one that separates "the term was computed" from "the term
-/// decided", and it is the reason this arm is scoreable at all.
+/// `RWM_PLACE_HOL`: the frontier term runs on every source placement
+/// (`hol_n > 0`), its `κ` bind is a fraction, `W` prints at a live value, and
+/// the execution witness fires: `hol_mv > 0`, the term changed the argmin on
+/// at least one placement of a lossy asymmetric dual.
 #[test]
 fn the_frontier_arm_runs_and_moves_the_argmin_on_the_dual() {
     let arm = [("RWM_PLACE_HOL", "1")];
@@ -223,11 +190,9 @@ fn the_frontier_arm_runs_and_moves_the_argmin_on_the_dual() {
     );
 }
 
-/// **THE `N = 1` CONTROL, ON THE WIRE.** With one path the softmax over a
-/// singleton is 1 at every temperature and every cost, so NO arm can change a
-/// placement — `hol_mv` must be exactly 0 even with the frontier term armed.
-/// A movement here VOIDS a battery run, which is why it is asserted on the
-/// engine's own output and not argued.
+/// The `N = 1` control on the wire: a softmax over a singleton is 1 at every
+/// temperature and cost, so no arm can change a placement — `hol_mv` must be
+/// exactly 0 even with the frontier term armed.
 #[test]
 fn no_arm_can_move_a_single_path_placement_on_the_wire() {
     let arm = [

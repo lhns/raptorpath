@@ -10,8 +10,8 @@ fn make_symbol(id: u32, repair: bool) -> WireSymbol {
     }
 }
 
-/// `active_paths()` and `live_paths()` are NOT interchangeable: the
-/// active set additionally filters on spare capacity, so a SATURATED
+/// `active_paths()` and `live_paths()` are not interchangeable: the
+/// active set additionally filters on spare capacity, so a saturated
 /// path (in_flight ≥ cwnd) is live but not active. Every sender phase
 /// that aggregates over paths picks one of the two deliberately, and
 /// swapping them silently changes the law — the CC pace rate uses
@@ -20,12 +20,9 @@ fn make_symbol(id: u32, repair: bool) -> WireSymbol {
 /// while the M* RTprop / in-flight-cap / tail-sweep phases use
 /// `active_paths()`.
 ///
-/// This test exists because the deleted `RWM_SCHED_SNAPSHOT` seam
-/// (2026-08-10, ADR-0066) carried a unit test that CLAIMED to catch a
-/// path-set swap and could not: its fixture only ever added fresh paths,
-/// where `in_flight = 0 < cwnd` makes the two sets IDENTICAL, so
-/// substituting either for the other passed. Assert the divergence
-/// itself, at the only state that exhibits it.
+/// A fixture of only fresh paths cannot catch a path-set swap: there
+/// `in_flight = 0 < cwnd` makes the two sets identical. Assert the
+/// divergence itself, at the only state that exhibits it.
 #[test]
 fn saturated_path_is_live_but_not_active() {
     let mut sched = Scheduler::new(Arc::new(WallClock));
@@ -50,10 +47,9 @@ fn saturated_path_is_live_but_not_active() {
         assert_eq!(p.available(), 0);
     }
 
-    // Both accessors iterate a HashMap, so the RETURNED ORDER is
+    // Both accessors iterate a HashMap, so the returned order is
     // arbitrary and re-seeded per process — sort before comparing, or
-    // this asserts the hasher instead of the path sets (it did: the
-    // first version of this test was a coin flip on two paths).
+    // this asserts the hasher instead of the path sets.
     assert_eq!(sched.active_paths(), vec![0], "saturated path 1 is NOT active");
     let mut live = sched.live_paths();
     live.sort_unstable();
@@ -64,7 +60,7 @@ fn saturated_path_is_live_but_not_active() {
          aggregate must still see it"
     );
 
-    // And the other direction: a DOWN path with spare capacity is in
+    // And the other direction: a down path with spare capacity is in
     // neither set, so `live_paths()` is not merely "all paths".
     sched.path_mut(0).unwrap().active = false;
     assert!(sched.active_paths().is_empty());
@@ -231,7 +227,7 @@ fn test_best_repair_path_avoiding_falls_back_single_path() {
 }
 
 // -----------------------------------------------------------------------
-// Correction deficit tests (paper Section 13.4)
+// Correction deficit tests (paper §5.9)
 // -----------------------------------------------------------------------
 
 #[test]
@@ -281,7 +277,7 @@ fn test_deficit_per_path() {
 }
 
 // -----------------------------------------------------------------------
-// Effective delivery time tests (paper Section 13.5)
+// Effective delivery time tests
 // -----------------------------------------------------------------------
 
 #[test]
@@ -323,7 +319,7 @@ fn test_correction_rate() {
 }
 
 // -----------------------------------------------------------------------
-// Interpolated objective tests (paper Section 13.8)
+// Interpolated objective tests (paper §5.7)
 // -----------------------------------------------------------------------
 
 #[test]
@@ -402,7 +398,7 @@ fn test_schedule_uses_objective_weights() {
 }
 
 // -----------------------------------------------------------------------
-// P7: Copa-lite production port (paper Sections 12.4-12.5, gate P1+P2)
+// Copa-lite congestion control (paper §8.2)
 // -----------------------------------------------------------------------
 
 fn millis(ms: u64) -> Duration {
@@ -441,8 +437,8 @@ fn test_copa_lite_cwnd_never_below_floor() {
 
 #[test]
 fn test_burst_rtt_spike_does_not_collapse_cwnd() {
-    // The pre-P7 failure mode: the initial burst inflates its own RTT
-    // samples, dq explodes, and the rate-formula target collapses cwnd
+    // The failure mode this guards: the initial burst inflates its own RTT
+    // samples, dq explodes, and a rate-formula target collapses cwnd
     // to the floor. With the windowed-min filter remembering the
     // propagation floor, a burst costs one gentle ×0.92 backoff.
     let clock = Arc::new(MockClock::new());
@@ -536,7 +532,7 @@ fn test_ramp_multiplicative_until_backoff_then_additive() {
 
 #[test]
 fn test_hint_changes_backoff_threshold() {
-    // P1 (paper 12.4): the protocol hint sets the queue target.
+    // The protocol hint sets the queue target (paper §8.2).
     // floor = 100ms, windowed min = 118ms → dq = 18ms. The 100→118
     // step also charges the jitter estimator (18/8 = 2.25ms decaying
     // to ~1.72ms over the three samples → ~3.4ms threshold widening):
@@ -572,13 +568,12 @@ fn test_hint_changes_backoff_threshold() {
 
 #[test]
 fn test_jitter_widens_backoff_threshold_c2() {
-    // Jitter-adjusted queue target (paper 12.4). C2-like link: 10ms
-    // floor with ±6ms RTT jitter (netem 3ms/direction). Bulk's raw P1
-    // threshold is 2.5ms — smaller than the jitter — so the pre-fix
-    // windowed-min signal read jitter as a standing queue and backed
-    // off nearly every update (measured at L1: cwnd pinned at the
-    // floor for 60% of ACKs, 16x throughput gap vs quinn). With the
-    // k×jitter_est widening, a jittery-but-queue-free link must ramp.
+    // Jitter-adjusted queue target. C2-like link: 10ms floor with ±6ms
+    // RTT jitter (netem 3ms/direction). Bulk's raw queue-target threshold
+    // is 2.5ms — smaller than the jitter — so a plain windowed-min signal
+    // reads jitter as a standing queue and backs off nearly every update,
+    // pinning cwnd at the floor. With the k×jitter_est widening, a
+    // jittery-but-queue-free link must ramp.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new_with_hint(clock.clone(), ProtocolHint::Bulk);
     sched.add_path(0);
@@ -591,7 +586,7 @@ fn test_jitter_widens_backoff_threshold_c2() {
     for round in 0..40 {
         // 4 ACK batches per SRTT window, one RTT sample each; skip
         // the true-floor sample in most windows (the windowed min
-        // usually does NOT reach the floor — that is the trap).
+        // usually does not reach the floor — that is the trap).
         for k in 0..4 {
             let idx = (round * 4 + k) % pattern_ms.len();
             let ms = if round == 0 && k == 0 { 10 } else { pattern_ms[idx].max(12) };
@@ -607,7 +602,7 @@ fn test_jitter_widens_backoff_threshold_c2() {
         "jittery queue-free C2 link must ramp past 100 symbols, got {final_cwnd} (track: {cwnd_track:?})"
     );
 
-    // Sanity: a genuine standing queue on the SAME jittery link still
+    // Sanity: a genuine standing queue on the same jittery link still
     // triggers backoff within a few updates — the queue shifts every
     // sample up by 12ms, while the consecutive-difference jitter
     // estimate stays at jitter scale.
@@ -700,13 +695,12 @@ fn test_copa_target_cwnd_units() {
 
 #[test]
 fn test_paced_ramp_reaches_block_scale_without_spurious_backoff() {
-    // P7 follow-up regression: with SYMBOL-paced sends the standing
-    // queue stays near zero, so at C2-like parameters (10ms floor, no
-    // competing traffic) the ramp must sail past one 64KB block
-    // (~56 symbols) within 15 SRTTs and never back off. The first L1
-    // run of batch-granular pacing failed exactly this: every block
-    // burst self-queued ~5.4ms > Bulk's 2.5ms threshold and cwnd
-    // pinned at ~34, just under one block.
+    // With symbol-paced sends the standing queue stays near zero, so at
+    // C2-like parameters (10ms floor, no competing traffic) the ramp must
+    // sail past one 64KB block (~56 symbols) within 15 SRTTs and never
+    // back off. Batch-granular pacing fails exactly this: every block
+    // burst self-queues above Bulk's 2.5ms threshold and cwnd pins just
+    // under one block.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone()); // Auto: 1.125 target
     sched.add_path(0);
@@ -746,11 +740,10 @@ fn test_paced_ramp_reaches_block_scale_without_spurious_backoff() {
 
 #[test]
 fn test_schedule_ack_roundtrip_conserves_in_flight() {
-    // The in_flight budget is charged ONCE, at schedule time. The L1
-    // stall (P7 follow-up 2) was a double charge: schedule() charged,
-    // then the paced drain charged the same symbols again at send
-    // time — +1 leak per symbol, TUN gate jammed shut, throughput
-    // throttled to the 2s leak-guard decay (~30 KB/s at C2).
+    // The in_flight budget is charged once, at schedule time. A double
+    // charge (schedule() and then the paced drain at send time) leaks +1
+    // per symbol, jams the TUN gate shut and throttles throughput to the
+    // leak-guard decay.
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock);
     sched.add_path(0);
@@ -761,8 +754,8 @@ fn test_schedule_ack_roundtrip_conserves_in_flight() {
     assert_eq!(scheduled, 8);
     assert_eq!(sched.path(0).unwrap().in_flight, 8);
 
-    // The paced drain charges TOKENS only — in_flight must not move
-    // between schedule and ack (this is what net/mod.rs does now).
+    // The paced drain charges tokens only — in_flight must not move
+    // between schedule and ack (as in net/mod.rs).
     sched.path_mut(0).unwrap().consume_pace_tokens(8);
     assert_eq!(sched.path(0).unwrap().in_flight, 8);
 
@@ -814,7 +807,7 @@ fn test_in_flight_expiry_releases_stranded_budget() {
 fn test_c2_loop_cwnd_grows_past_200_within_5s() {
     // Full C2 loop at the scheduler level (100 Mbit / 10ms RTT / Bulk),
     // mirroring the production wiring: schedule-time budget charge,
-    // token-paced sends stamped at WIRE time (echo-timestamp RTT
+    // token-paced sends stamped at wire time (echo-timestamp RTT
     // therefore excludes pacing-queue delay — verified hypothesis:
     // batches are built at send time from the carry), per-datagram
     // ACKs with ~1.3% of them lost (stranding releases), and
@@ -847,7 +840,7 @@ fn test_c2_loop_cwnd_grows_past_200_within_5s() {
         }
 
         // Pacer: send from the carry under tokens; the batch timestamp
-        // is stamped HERE (wire time), as in send_interleaved_batches.
+        // is stamped here (wire time), as in send_interleaved_batches.
         {
             let p = sched.path_mut(0).unwrap();
             p.pace_refill();
@@ -889,8 +882,8 @@ fn test_c2_loop_cwnd_grows_past_200_within_5s() {
         cwnd > 200,
         "C2 loop must ramp cwnd past 200 symbols within 5s, got {cwnd}"
     );
-    // Ack-clocked throughput, not the 2s leak-guard trickle (the L1
-    // stall sent ~450 symbols in 15s; here 5s must move far more).
+    // Ack-clocked throughput, not the leak-guard trickle (a jammed gate
+    // moves ~450 symbols in 15s; here 5s must move far more).
     assert!(
         total_sent > 20_000,
         "sender must be ack-clocked, not gate-starved: sent {total_sent}"
@@ -900,7 +893,7 @@ fn test_c2_loop_cwnd_grows_past_200_within_5s() {
 #[test]
 fn test_low_floor_clamp_no_spurious_backoff() {
     // LAN-class floor (200us): the backoff threshold clamps at 0.1ms
-    // and dq clamps at the SAME 0.1ms, so sub-clamp jitter (raw dq
+    // and dq clamps at the same 0.1ms, so sub-clamp jitter (raw dq
     // 80us) can never back off — while a genuine standing queue
     // (raw dq 200us > clamp) still does.
     let clock = Arc::new(MockClock::new());
@@ -925,7 +918,7 @@ fn test_low_floor_clamp_no_spurious_backoff() {
         "LAN ramp should have grown"
     );
 
-    // Sanity: a real standing queue above the clamp DOES back off.
+    // Sanity: a real standing queue above the clamp does back off.
     let p = sched.path_mut(0).unwrap();
     p.record_rtt_sample(Duration::from_micros(400)); // raw dq 200us
     clock.advance(millis(1));
@@ -938,7 +931,7 @@ fn test_low_floor_clamp_no_spurious_backoff() {
 }
 
 // ===================================================================
-// RWM Phase B — per-symbol placement law (paper §16.3). The cost is
+// Per-symbol placement law (paper §5.7). The cost is
 //   in_flight/cwnd + w_lat·(E_prop/ref_srtt) + w_bw·r + w_div·fate,
 // sampled as P(i) ∝ exp(−cost/T).
 // ===================================================================
@@ -975,7 +968,7 @@ fn place_idle_concentrates_on_cheapest() {
     assert!(p0 > p1);
 }
 
-/// (b) As the chosen path's in_flight rises, placement shifts CONTINUOUSLY
+/// (b) As the chosen path's in_flight rises, placement shifts continuously
 /// to the other path — no threshold jump. Assert strict monotonic shift.
 #[test]
 fn place_shifts_monotonically_with_load() {
@@ -989,7 +982,7 @@ fn place_shifts_monotonically_with_load() {
     let mut prev_p0 = f64::INFINITY;
     // Sweep in_flight from empty to 2× cwnd (into overdraft) — the path is
     // never removed from the distribution (no capacity filter), so the
-    // shift is continuous THROUGH saturation, not a jump at cwnd.
+    // shift is continuous through saturation, not a jump at cwnd.
     for infl in 0..=(2 * cwnd) {
         sched.path_mut(0).unwrap().in_flight = infl;
         let dist = sched.place_probs(false, &[]);
@@ -1009,7 +1002,7 @@ fn place_shifts_monotonically_with_load() {
 
 /// (c) Water-filling equilibrium: the fixed point of marginal-cost
 /// equalisation is `in_flight/cwnd` equal across paths, i.e. in_flight ∝
-/// cwnd ∝ capacity. At that stock ratio placement is BALANCED (both paths
+/// cwnd ∝ capacity. At that stock ratio placement is balanced (both paths
 /// used equally) — the signature that the law fills proportional to
 /// capacity rather than concentrating.
 #[test]
@@ -1032,17 +1025,17 @@ fn place_backlog_waterfills_proportional_to_capacity() {
     assert!((p0 - p1).abs() < 0.05, "balanced at the capacity-proportional fixed point");
 
     // And off-equilibrium (equal stock, unequal capacity) the law pushes
-    // MORE toward the higher-capacity (lower-fill) path.
+    // more toward the higher-capacity (lower-fill) path.
     sched.path_mut(0).unwrap().in_flight = 6;
     sched.path_mut(1).unwrap().in_flight = 6;
     let dist2 = sched.place_probs(false, &[]);
     assert!(prob_of(&dist2, 0) > prob_of(&dist2, 1));
 }
 
-/// Cross-path repair placement (RWM_XPATH_REPAIR, §16.3 C8 realization).
-/// When the FAST path is source-saturated (spare≈0) and the SLOW path is
+/// Cross-path repair placement (RWM_XPATH_REPAIR).
+/// When the fast path is source-saturated (spare≈0) and the slow path is
 /// underutilized (high spare), `place_repair_spare_path` routes repair to the
-/// SLOW path — so proactive repair rides the spare path instead of displacing
+/// slow path — so proactive repair rides the spare path instead of displacing
 /// fast-path source. Symmetric spare → uniform split (no concentration).
 #[test]
 fn place_repair_spare_routes_to_underutilized_path() {
@@ -1057,7 +1050,7 @@ fn place_repair_spare_routes_to_underutilized_path() {
     sched.path_mut(0).unwrap().in_flight = 40; // spare 0
     sched.path_mut(1).unwrap().cwnd = 16;
     sched.path_mut(1).unwrap().in_flight = 4; // spare 3.0
-    // Every repair should ride the SLOW (spare) path 1.
+    // Every repair should ride the slow (spare) path 1.
     let mut to_slow = 0;
     for _ in 0..200 {
         if sched.place_repair_spare_path() == Some(1) {
@@ -1083,7 +1076,7 @@ fn place_repair_spare_routes_to_underutilized_path() {
     );
 }
 
-/// (d) Repair fate steers a repair OFF the path that carried the window
+/// (d) Repair fate steers a repair off the path that carried the window
 /// symbols it covers; source placement ignores fate.
 #[test]
 fn place_repair_fate_steers_off_covered_path() {
@@ -1124,8 +1117,7 @@ fn place_temperature_zero_is_argmin() {
     assert!(prob_of(&dist, 1) < 1e-3);
 }
 
-/// Single path ⇒ that path always (byte-identical to the pre-RWM
-/// single-path sender — the law with N=1 is a no-op).
+/// Single path ⇒ that path always (the law with N=1 is a no-op).
 #[test]
 fn place_single_path_is_identity() {
     let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
@@ -1140,31 +1132,25 @@ fn place_single_path_is_identity() {
     assert_eq!(sched.place_symbol(false, &[]), Some(0));
 }
 
-// ── THE COLD-START PLACEMENT PRICE (`RWM_COLD_PLACE`) ─────────────────
+// ── The cold-start placement price (`RWM_COLD_PLACE`) ─────────────────
 //
-// Provenance of these tests, stated because it is the honest part: the
-// defect they bound was FIRST claimed at the SF bench's `c7x4` symmetric
-// quad, and that claim was RETRACTED — the quad's per-path gauges were
-// truncated at `pid < 2`, so the "lock-in" was an instrument artifact and
-// the quad in fact spreads evenly over all four legs (see
+// The regime these bound is a leg that joins a set whose incumbents are
+// already warm (a symmetric quad that starts cold spreads evenly; see
 // `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm`).
-// The ARITHMETIC in that claim was nevertheless correct, and it binds in a
-// regime the bench has no geometry for: a leg that joins a set whose
-// incumbents are ALREADY warm. Nothing here is measured on a wire; these
-// bound the LAW, at absolute values, and the wire question is listed
-// rather than answered.
+// Nothing here is measured on a wire; these bound the law, at absolute
+// values.
 
-/// A leg that joins a set of ALREADY-WARM incumbents is priced at the
+/// A leg that joins a set of already-warm incumbents is priced at the
 /// 50-ms `DEFAULT_SRTT`-class seed and cannot win the placement argmin
 /// until the incumbents are >2× overdrawn — and because it wins nothing
-/// it is never measured, so the state is a FIXED POINT. Under
+/// it is never measured, so the state is a fixed point. Under
 /// `RWM_COLD_PLACE` the same leg is priced at the set's own fastest
-/// MEASURED srtt and is admitted immediately.
+/// measured srtt and is admitted immediately.
 ///
 /// Absolute, not ordinal: at T → 0 the placement is an argmin, so the
 /// cold leg's probability is exactly 0.0 or exactly 1.0 and there is
 /// nothing to tune. The incumbents' fill fraction is swept so the result
-/// is a PRICE with a crossing, not an exclusion — the OFF arm does admit
+/// is a price with a crossing, not an exclusion — the off arm does admit
 /// the cold leg, but only past a fill the shipped law has no reason to
 /// reach, which is what makes the fixed point stick.
 #[test]
@@ -1190,7 +1176,7 @@ fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() 
         sched.place_probs_with_temperature(false, &[], f64::MIN_POSITIVE)
     };
 
-    // (1) THE LOCK-OUT. At any fill the shipped stack actually operates
+    // (1) The lock-out. At any fill the shipped stack actually operates
     // at, the cold leg's mass is exactly zero.
     for fill in [0.25_f64, 0.5, 1.0, 2.0] {
         let d = build(fill, false);
@@ -1206,15 +1192,15 @@ fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() 
         );
     }
 
-    // (2) IT IS A PRICE, NOT AN EXCLUSION — the crossing exists, and it
-    // sits ABOVE a 2× overdraft. `E_cold = 25 ms` against
+    // (2) It is a price, not an exclusion — the crossing exists, and it
+    // sits above a 2× overdraft. `E_cold = 25 ms` against
     // `E_warm = fill·8 + 4 + eps·8 ms`, so the cold leg wins at
     // `fill > (25 − 4)/8 ≈ 2.6`. A law whose exploration price is only
     // paid by a path already 2.6× past its window is a law that never
     // explores.
     assert_eq!(prob_of(&build(4.0, false), 2), 1.0, "the crossing does not exist");
 
-    // (3) THE FIXED POINT. Under the lock-out the leg draws no symbol, so
+    // (3) The fixed point. Under the lock-out the leg draws no symbol, so
     // it takes no sample, so it stays cold: sampling the shipped
     // placement is stationary, not merely improbable.
     {
@@ -1237,7 +1223,7 @@ fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() 
         }
     }
 
-    // (4) THE REPAIR. Same states, gate ON: the cold leg is priced at the
+    // (4) The repair. Same states, gate on: the cold leg is priced at the
     // set's own fastest measured srtt (8 ms ⇒ E = 4 ms) and wins outright
     // the moment the incumbents carry anything at all.
     for fill in [0.25_f64, 0.5, 1.0, 2.0, 4.0] {
@@ -1250,9 +1236,9 @@ fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() 
         );
     }
 
-    // (5) AND IT IS SELF-LIMITING WITHOUT A THRESHOLD. The repaired price
+    // (5) And it is self-limiting without a threshold. The repaired price
     // buys exploration, not a monopoly: once the explored leg carries its
-    // own backlog the SAME formula hands the placement back. No counter,
+    // own backlog the same formula hands the placement back. No counter,
     // no warm-up phase, no `if cold` beyond the estimator's `None`.
     {
         let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Auto);
@@ -1278,31 +1264,30 @@ fn a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it() 
     }
 }
 
-/// **OFF IS BIT-IDENTICAL, AND SO IS ON ONCE EVERY LEG IS MEASURED.**
+/// Off is bit-identical, and so is on once every leg is measured.
 ///
 /// The two halves of the gate's safety claim, as exact `f64` equality
 /// rather than a tolerance:
 ///
-///   - gate OFF at ANY state ⇒ the shipped expression verbatim (the cold
-///     price IS `p.srtt()`), so no arm of any battery can move because
-///     this landed;
-///   - gate ON with every active leg measured ⇒ `srtt_of == p.srtt()` at
-///     every leg, so the repair is INERT in the warm regime and the §13.8
-///     objective it minimizes is untouched there. Only the COLD regime
-///     changes, which is the whole design claim.
+///   - gate off at any state ⇒ the shipped expression verbatim (the cold
+///     price is `p.srtt()`);
+///   - gate on with every active leg measured ⇒ `srtt_of == p.srtt()` at
+///     every leg, so the repair is inert in the warm regime and the
+///     placement objective is untouched there. Only the cold regime
+///     changes.
 #[test]
 fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
     // A state generator covering both regimes: `cold` = how many of the
     // four legs have never had a sample.
     //
-    // BOTH ARMS FROM ONE SCHEDULER (the eighth HashMap-order lesson):
-    // `place_probs` normalizes by summing over the paths in the MAP'S
+    // Both arms from one scheduler: `place_probs` normalizes by summing
+    // over the paths in the map's
     // iteration order, and float addition is not associative — two
     // separately-built schedulers hash differently, so their inert-arm
     // probabilities can differ at the ULP even when the gate provably
-    // changes nothing. Sorting the OUTPUT (below) fixes the zip pairing
+    // changes nothing. Sorting the output (below) fixes the zip pairing
     // but not the internal summation order. One instance, flag toggled,
-    // makes bit-equality a claim about the GATE instead of the hasher.
+    // makes bit-equality a claim about the gate instead of the hasher.
     let build = |cold: usize| -> (Vec<(PathId, f64)>, Vec<(PathId, f64)>) {
         let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
         for id in 0..4u32 {
@@ -1314,7 +1299,7 @@ fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
             p.cwnd = 16 + 4 * id;
             p.in_flight = 3 * id + 1;
         }
-        // SORTED by path id: `place_probs` yields `HashMap` order, so an
+        // Sorted by path id: `place_probs` yields `HashMap` order, so an
         // unsorted zip would compare path 3 against path 1 and "find" a
         // difference that is only the map's.
         sched.set_cold_place(false);
@@ -1328,7 +1313,7 @@ fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
 
     for cold in 0..=4 {
         let (off, on) = build(cold);
-        // MECHANISM LIVENESS: the arms must actually DIFFER somewhere, or
+        // Mechanism liveness: the arms must actually differ somewhere, or
         // the equalities below are vacuous. They differ exactly when some
         // leg is cold and some leg is measured.
         let differs = off
@@ -1356,7 +1341,7 @@ fn the_cold_price_is_inert_off_and_inert_once_every_leg_is_measured() {
     }
 }
 
-/// The gate is an anchor-hygiene family member and ships OFF, so a
+/// The gate is an anchor-hygiene family member and ships off, so a
 /// freshly constructed `Scheduler` must carry the shipped price unless
 /// the environment says otherwise. Reads the same cached resolution
 /// `RuntimeGates` echoes, so the echo and the behaviour cannot disagree.
@@ -1371,13 +1356,13 @@ fn a_fresh_scheduler_carries_the_resolved_cold_place_setting() {
     );
 }
 
-// feat/btlbw-rate-sample: the BBR send-interval anchor must read the TRUE
-// bottleneck rate under (a) ack-aggregation (batched acks) and (b) a deep
-// standing queue — the exact conditions that made the legacy ack-interval
-// anchor over-read ~145× at L1.  Driven by a bottleneck-link simulation: we
-// SEND 3× the link rate (a standing queue builds without bound) and the link
-// FIFO-drains at the true rate R; acks are processed in BATCHES (aggregation).
-// The measured BtlBw must track R, NOT the send rate and NOT queue/interval.
+// The BBR send-interval anchor must read the true bottleneck rate under
+// (a) ack-aggregation (batched acks) and (b) a deep standing queue — the
+// conditions under which an ack-interval anchor over-reads by orders of
+// magnitude. Driven by a bottleneck-link simulation: we send 3× the link
+// rate (a standing queue builds without bound) and the link FIFO-drains at
+// the true rate R; acks are processed in batches (aggregation). The
+// measured BtlBw must track R, not the send rate and not queue/interval.
 #[test]
 fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
     use std::collections::{BTreeMap, VecDeque};
@@ -1400,13 +1385,13 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
     let us = |c: &MockClock| c.now().duration_since(start).as_micros() as u64;
 
     for step in 0..300u64 {
-        // SEND send_s symbols this ms (overload).
+        // Send send_s symbols this ms (overload).
         for _ in 0..send_s {
             sched.path_mut(0).unwrap().on_src_sent(seq, false);
             link_fifo.push_back(seq);
             seq += 1;
         }
-        // The LINK serves link_r symbols this ms (the bottleneck); each served
+        // The link serves link_r symbols this ms (the bottleneck); each served
         // symbol arrives one propagation delay later.
         let arrival = us(&clock) + prop.as_micros() as u64;
         for _ in 0..link_r {
@@ -1414,8 +1399,8 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
                 deliver_due.entry(arrival).or_default().push(s);
             }
         }
-        // ACK AGGREGATION: only "process acks" every 3 ms, delivering ALL due
-        // symbols at the SAME clock instant (a batched ack → tiny ack Δt).
+        // Ack aggregation: only "process acks" every 3 ms, delivering all due
+        // symbols at the same clock instant (a batched ack → tiny ack Δt).
         if step % 3 == 0 {
             let nowu = us(&clock);
             let due: Vec<u64> = deliver_due
@@ -1436,7 +1421,7 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
         .btlbw_sym_per_s()
         .expect("anchor must establish");
     let true_rate = (link_r * 1000) as f64; // 8000 sym/s
-    // The standing queue is DEEP (send 3× drain for 300ms): outstanding is far
+    // The standing queue is deep (send 3× drain for 300ms): outstanding is far
     // above one BDP.  A queue/ack-interval anchor would read many× the link;
     // the send-interval anchor must track the true bottleneck within ~2×.
     assert!(
@@ -1446,16 +1431,16 @@ fn rate_sample_anchor_reads_true_btlbw_under_aggregation_and_queue() {
          {} sym/s)",
         send_s * 1000
     );
-    // Crucially, NOT the ~145× over-read the legacy ack-interval anchor gave.
+    // Crucially, not the orders-of-magnitude ack-interval over-read.
     assert!(
         btlbw < 10.0 * true_rate,
         "must NOT exhibit the legacy aggregation over-read: {btlbw:.0} vs true {true_rate:.0}"
     );
 }
 
-// feat/btlbw-rate-sample: an APP-LIMITED (starved) sample that reads below the
-// running max must NOT enter the max-filter (BBR: app-limited samples may only
-// RAISE the anchor, never be read as bw dropping / corrupt a starved interval).
+// An app-limited (starved) sample that reads below the running max must not
+// enter the max-filter (BBR: app-limited samples may only raise the anchor,
+// never be read as bw dropping / corrupt a starved interval).
 #[test]
 fn rate_sample_excludes_app_limited_samples_below_the_max() {
     let clock = Arc::new(MockClock::new());
@@ -1472,8 +1457,8 @@ fn rate_sample_excludes_app_limited_samples_below_the_max() {
     let samples_before = copa.bw_samples.len();
     assert!(max_before > 0.0, "baseline max must establish: {max_before}");
 
-    // An APP-LIMITED sample reading BELOW the max must be EXCLUDED: send
-    // seq1 app-limited, deliver ONE symbol one RTprop-plus later (low rate,
+    // An app-limited sample reading below the max must be excluded: send
+    // seq1 app-limited, deliver one symbol one RTprop-plus later (low rate,
     // interval ≥ RTprop so the MinRTT guard passes and only app-limited
     // gates it out).
     copa.rs_on_sent(1, true);
@@ -1490,7 +1475,7 @@ fn rate_sample_excludes_app_limited_samples_below_the_max() {
         copa.max_bw
     );
 
-    // A non-app-limited sample at a genuinely HIGHER rate (interval ≥ RTprop)
+    // A non-app-limited sample at a genuinely higher rate (interval ≥ RTprop)
     // is still admitted and raises the max.
     copa.rs_on_sent(2, false);
     copa.rs_delivered += 100;
@@ -1503,7 +1488,7 @@ fn rate_sample_excludes_app_limited_samples_below_the_max() {
         copa.max_bw
     );
 
-    // A sub-RTprop burst (interval < RTprop) is REJECTED by the MinRTT guard —
+    // A sub-RTprop burst (interval < RTprop) is rejected by the MinRTT guard —
     // this is the ack-aggregation / send-burst over-read defence.
     let max_after = copa.max_bw;
     copa.rs_on_sent(3, false);
@@ -1517,18 +1502,16 @@ fn rate_sample_excludes_app_limited_samples_below_the_max() {
     );
 }
 
-// ----- Honest Inputs (RWM_HONEST_ANCHOR / RWM_HONEST_K, goal-gate --------
-// ----- "Honest Inputs") --------------------------------------------------
+// ----- Honest inputs (RWM_HONEST_ANCHOR / RWM_HONEST_K) --------------------
 
-/// THE equivalence pin for `RWM_HONEST_ANCHOR` (its OFF-value property
-/// and its ON-value property are the SAME property): the monotonic
-/// max-deque's front equals the legacy full-window fold over
-/// `bw_samples` after EVERY push and EVERY eviction, across both feed
+/// The equivalence pin for `RWM_HONEST_ANCHOR` (its off-value property
+/// and its on-value property are the same property): the monotonic
+/// max-deque's front equals the full-window fold over
+/// `bw_samples` after every push and every eviction, across both feed
 /// paths (per-ack `record_delivery` and per-symbol `rs_on_delivered`),
 /// across window-length changes (min_rtt moving the ≈10·RTprop cutoff)
 /// and across long idle gaps (mass evictions). The gate may therefore
-/// select COST only, never a value — which is what makes this fix
-/// zero-constant by construction.
+/// select cost only, never a value.
 #[test]
 fn bw_mono_front_equals_full_window_fold() {
     let clock = Arc::new(MockClock::new());
@@ -1560,7 +1543,7 @@ fn bw_mono_front_equals_full_window_fold() {
                 o1.rs_on_delivered(seq);
                 seq += 1;
             }
-            // Per-ack samples (the legacy Copa feed path).
+            // Per-ack samples (the ack-interval Copa feed path).
             2 => {
                 clock.advance(Duration::from_millis(2 + (r >> 8) as u64 % 20));
                 legacy.record_delivery(1 + r % 100);
@@ -1594,27 +1577,26 @@ fn bw_mono_front_equals_full_window_fold() {
     assert!(legacy.max_bw > 0.0, "the stream must have produced samples");
 }
 
-/// `RWM_HONEST_K` law + OFF-value property, at the engine feed site
-/// (`record_rtt`), on a jittered series: RTprop (min over RAW samples)
-/// reads the distribution FLOOR, the smoothed srtt reads near the MEAN
-/// — so the legacy K (windowed-min of the SMOOTHED series over the
-/// floor) reads HIGH by ≈ mean/floor, which is the measured jit25
-/// ×1.34-class inversion. The raw-fed tracker reads the floor ratio
-/// ≈ 1. Gate OFF ⇒ `k_raw_ratio()` is None (nothing is fed, nothing
-/// can consume it).
+/// `RWM_HONEST_K` law + off-value property, at the engine feed site
+/// (`record_rtt`), on a jittered series: RTprop (min over raw samples)
+/// reads the distribution floor, the smoothed srtt reads near the mean
+/// — so the smoothed K (windowed-min of the smoothed series over the
+/// floor) reads high by ≈ mean/floor. The raw-fed tracker reads the
+/// floor ratio ≈ 1. Gate off ⇒ `k_raw_ratio()` is None (nothing is fed,
+/// nothing can consume it).
 #[test]
 fn k_raw_reads_the_jitter_floor_where_the_smoothed_min_reads_high() {
     let clock = Arc::new(MockClock::new());
-    // OFF: byte-identical legacy — no ratio exists.
+    // Off: no ratio exists.
     let mut off = CopaState::new(clock.clone(), ProtocolHint::Bulk);
     off.record_rtt(Duration::from_millis(40));
     assert_eq!(off.k_raw_ratio(), None, "gate OFF ⇒ no raw K");
 
-    // ON: the raw-fed windowed min under ±25 ms uniform jitter around a
+    // On: the raw-fed windowed min under ±25 ms uniform jitter around a
     // 40 ms base (the jit25 shape).
     let mut on = CopaState::new(clock.clone(), ProtocolHint::Bulk);
     on.force_k_raw();
-    // The net-side legacy tracker, fed the SMOOTHED series at the 5 ms
+    // The net-side smoothed tracker, fed the smoothed series at the 5 ms
     // refresh clock — exactly the engine's shipped K feed.
     let mut legacy_k = crate::net::EchoRatioMin::new(crate::net::PERCAP_K_HALF_WINDOW_US);
     let mut lcg: u64 = 42;
@@ -1634,7 +1616,7 @@ fn k_raw_reads_the_jitter_floor_where_the_smoothed_min_reads_high() {
     }
     let k_raw = on.k_raw_ratio().expect("gate ON ⇒ raw K live");
     let k_legacy = legacy_k.k();
-    // Direction + class, both ways (reproduce THEN remove): the smoothed
+    // Direction + class, both ways: the smoothed
     // min sits near mean/floor ≈ 40/15 territory, far above 1; the raw
     // min reads the floor.
     assert!(
@@ -1654,26 +1636,27 @@ fn k_raw_reads_the_jitter_floor_where_the_smoothed_min_reads_high() {
 }
 
 /// Formula agreement for the Copa SRTT estimator (`CopaState::record_rtt`)
-/// against RFC 6298 computed INDEPENDENTLY in the test — the estimator
-/// analogue of `tests/formula_agreement.rs` (pipeline-verification matrix
-/// row 13: the srtt was previously modelled as an oracle, never asserted).
+/// against RFC 6298 computed independently in the test — the estimator
+/// analogue of `tests/formula_agreement.rs`.
 ///
 /// RFC 6298 §2.2/§2.3, srtt terms only (rttvar/RTO are not part of this
 /// estimator):
 ///
+/// ```text
 ///   first measurement R:   SRTT ← R
 ///   subsequent R':         SRTT ← (1 − α)·SRTT + α·R',  α = 1/8
+/// ```
 ///
 /// Three absolute cases:
-///   1. SEED — the first sample IS the srtt, exactly (and before any
+///   1. Seed — the first sample is the srtt, exactly (and before any
 ///      sample there is no measured srtt at all).
-///   2. STEADY — 7/8·s + 1/8·r over a known mixed sequence agrees with
+///   2. Steady — 7/8·s + 1/8·r over a known mixed sequence agrees with
 ///      the recursion computed here in f64, within Duration's
 ///      per-step nanosecond rounding (≪ 1 µs over the whole sequence).
-///   3. FIXED POINT — a constant input is a fixed point (seeded at the
-///      constant, the EWMA holds it BIT-EXACTLY: 7/8·c + 1/8·c has no
+///   3. Fixed point — a constant input is a fixed point (seeded at the
+///      constant, the EWMA holds it bit-exactly: 7/8·c + 1/8·c has no
 ///      rounding at whole-millisecond c), and from a perturbed history
-///      the estimator CONVERGES to the constant at the (7/8)^n rate.
+///      the estimator converges to the constant at the (7/8)^n rate.
 #[test]
 fn copa_srtt_agrees_with_rfc6298_ewma() {
     let clock = Arc::new(MockClock::new());
@@ -1739,44 +1722,42 @@ fn copa_srtt_agrees_with_rfc6298_ewma() {
     );
 }
 
-/// GOAL "HONEST INPUTS" phase 3 — PROBE 2: jit25's RTprop honesty under
-/// netem's clamped jitter, at component level, with the REAL estimator
-/// stack. Run explicitly:
+/// RTprop honesty under netem's clamped jitter (the `jit25` cell), at
+/// component level, with the real estimator stack. Run explicitly:
 ///
+/// ```text
 ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture jit25_rtprop
+/// ```
 ///
-/// THE CELL'S ACTUAL CONFIG (tools/l1/adv_cells.sh `jit25`): each
+/// The cell's config (tools/l1/adv_cells.sh `jit25`): each
 /// direction is `netem delay 20ms 25ms 25% rate 100mbit`, i.e. one-way
 /// delay = clamp(20 ms + x·25 ms, 0) + ~108 µs serialization (1350 B at
 /// 100 Mbit), x the 25%-autoregressively-correlated uniform variate on
 /// [−1, 1] (netem get_crandom's linear form x_n = ρ·x_{n−1} + (1−ρ)·u_n,
 /// identical in distribution class; approximation disclosed). An RTT
-/// sample sums two independent directions. NOTE the AR(ρ=0.25) marginal
-/// is NARROWER than uniform (sd ≈ 0.45 vs 0.58), so the clamp mass is
+/// sample sums two independent directions. The AR(ρ=0.25) marginal
+/// is narrower than uniform (sd ≈ 0.45 vs 0.58), so the clamp mass is
 /// ~4%/direction, not the naive 10% — the model computes it rather than
 /// assuming it.
 ///
-/// INSTRUMENT: `CopaState::record_rtt` on a MockClock — the shipped
+/// Instrument: `CopaState::record_rtt` on a MockClock — the shipped
 /// srtt EWMA (α = 1/8), the shipped 10 s min-window RTprop deque, and
 /// the `RWM_HONEST_K` raw-fed `EchoRatioMin` (forced on) — at swept
 /// RTT-sample cadences; plus direct windowed-min curves over the same
-/// series for the pre-registered window sweep.
+/// series for a window sweep.
 ///
-/// The three pre-registered curves ([P3-JIT] lines): (1) floor-sighting
-/// rate vs window length, (2) windowed-min RTprop vs the distribution's
-/// true floor, (3) the implied K elevation vs window.
+/// Three curves (`[P3-JIT]` lines): (1) floor-sighting rate vs window
+/// length, (2) windowed-min RTprop vs the distribution's true floor,
+/// (3) the implied K elevation vs window.
 ///
-/// WHAT IT ADJUDICATES: under the UNLOADED jit25 distribution the clamp
-/// floor is NOT rare at dense cadences — every 10 s window re-sights the
-/// floor class, RTprop reads ≪ the 40 ms base, K_raw → 1, and the law's
-/// window term would COLLAPSE (the pre-registration's falsified-LOW
-/// branch, quantified). In the rare-floor regime (sparse cadence) the
-/// fingerprint inverts: RTprop keeps a once-seen deep min and the
-/// windowed K reads ≫ 1.5. The battery measured NEITHER collapse NOR
-/// K ≫ 1.5 (khr ≈ kraw ≈ 1.0–1.5 with an elevated limit): the in-cell
-/// series therefore rides a floor the window genuinely RE-ACHIEVES,
-/// far above the unloaded floor — the loaded link's standing queue.
-/// Real residence, not estimator bias and not floor rarity.
+/// Under the unloaded distribution the clamp floor is not rare at dense
+/// cadences — every 10 s window re-sights the floor class, RTprop reads
+/// ≪ the 40 ms base, K_raw → 1, and the law's window term would collapse.
+/// In the rare-floor regime (sparse cadence) the fingerprint inverts:
+/// RTprop keeps a once-seen deep min and the windowed K reads ≫ 1.5. An
+/// in-cell K between those (≈ 1.0–1.5) therefore rides a floor the window
+/// genuinely re-achieves — the loaded link's standing queue, not estimator
+/// bias and not floor rarity.
 #[test]
 #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
 fn jit25_rtprop_floor_sighting_under_netem_clamped_jitter() {
@@ -1872,7 +1853,7 @@ fn jit25_rtprop_floor_sighting_under_netem_clamped_jitter() {
                 100.0 * sighted as f64 / mins.len() as f64,
                 mean / global_min,
             );
-            // A longer horizon can only read LOWER (min over a superset)
+            // A longer horizon can only read lower (min over a superset)
             // — "a derivable better floor" does not exist in the upward
             // direction the elevated limit would need.
             assert!(
@@ -1881,10 +1862,9 @@ fn jit25_rtprop_floor_sighting_under_netem_clamped_jitter() {
             );
             prev_mean = mean;
         }
-        // The dense regime (any cadence ≥ ~1000/s): the floor is NOT
+        // The dense regime (any cadence ≥ ~1000/s): the floor is not
         // rare — RTprop reads the floor class, K_raw reads ≈ 1, and the
-        // law's window term collapses to the sym class (the
-        // falsified-LOW branch the cell did NOT show).
+        // law's window term collapses to the sym class.
         if cad >= 1000.0 {
             assert!(
                 rtprop < 0.005,
@@ -1912,14 +1892,16 @@ fn jit25_rtprop_floor_sighting_under_netem_clamped_jitter() {
     );
 }
 
-/// The `RWM_HONEST_ANCHOR` cost curve, in one process (MEASUREMENT
-/// DISCIPLINE 14 — the component instrument for the c1 −35%): the
-/// legacy per-sample full-window fold's cost per delivered symbol GROWS
-/// with the symbol rate (window holds ≈ rate × 1 s samples ⇒ O(rate²)
-/// per second — the measured rate-dependence: D/A 1.00 at 5–9.9 k,
-/// 0.88 at 19 k, 0.64 at 24 k), while the mono-deque read is flat.
-/// `#[ignore]`d: it is a measurement with wall-clock timing; run
+/// The `RWM_HONEST_ANCHOR` cost curve, in one process (the component
+/// instrument, docs/measurement-discipline.md rule 14): the per-sample
+/// full-window fold's cost per delivered symbol grows with the symbol rate
+/// (the window holds ≈ rate × 1 s samples ⇒ O(rate²) per second), while
+/// the mono-deque read is flat. `#[ignore]`d: it is a measurement with
+/// wall-clock timing; run
+///
+/// ```text
 ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture bw_filter_cost
+/// ```
 #[test]
 #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
 fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
@@ -1966,7 +1948,7 @@ fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
         );
         ns
     }
-    // The battery's parity band (9.6 k) and c1's rate class (24 k).
+    // A mid rate (9.6 k) and a high single-path rate class (24 k).
     let legacy_lo = per_delivery_ns(9_600, false);
     let legacy_hi = per_delivery_ns(24_000, false);
     let o1_lo = per_delivery_ns(9_600, true);
@@ -1993,17 +1975,15 @@ fn bw_filter_cost_is_quadratic_legacy_and_linear_fixed() {
     );
 }
 
-// ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR, goal-gate -----
-// ----- "Ship The Wins 1") ------------------------------------------------
+// ----- Pool-anchor store law (RWM_POOL_ANCHOR) ------------------------------
 
-/// THE burst-immunity + anchor-consumer-separation law (the §16.35 c7
-/// blocker, at the unit level): a steady send process with the acks
-/// arriving in est-cadence-class BURSTS must (a) drive the LEGACY
+/// The burst-immunity + anchor-consumer-separation law: a steady send
+/// process with the acks arriving in bursts must (a) drive the
 /// ack-interval windowed-max (`record_delivery` via `on_ack` — the Copa
-/// cwnd feed, deliberately UNCHANGED) to a burst-peak over-read, while
+/// cwnd feed, deliberately unchanged) to a burst-peak over-read, while
 /// (b) the pool-anchor send-interval rate — the N ≥ 2 store-cap law's
 /// input — keeps reading ≈ the true send rate. One PathState, both
-/// consumers, same clock: the separation IS the fix.
+/// consumers, same clock.
 #[test]
 fn pool_anchor_send_rate_is_burst_immune_while_the_copa_feed_over_reads() {
     let clock = Arc::new(MockClock::new());
@@ -2027,14 +2007,12 @@ fn pool_anchor_send_rate_is_burst_immune_while_the_copa_feed_over_reads() {
     );
 
     // est-cadence ack clock: every ~100 ms a tight burst — a 1-ms-spaced
-    // clump whose Δdelivered/Δt spikes ~200× the true rate. The legacy
-    // windowed-MAX latches the spike (the measured ×3.4–3.7 further
-    // over-read channel); the send anchor must not move. AND the send
-    // side bursts too (the amendment's measured defect): each ack burst
-    // frees store slots and the admission-gated sender REFILLS at
-    // emission speed — a ~5 ms bucket at ~40k sym/s. The windowed-max
-    // latches that refill burst (sr=53k-vs-8.9k smoke); the MEAN the
-    // law reads must stay ≈ the true carried rate.
+    // clump whose Δdelivered/Δt spikes ~200× the true rate. The ack-interval
+    // windowed max latches the spike; the send anchor must not move. And
+    // the send side bursts too: each ack burst frees store slots and the
+    // admission-gated sender refills at emission speed — a ~5 ms bucket at
+    // ~40k sym/s. A windowed max would latch that refill burst; the mean
+    // the law reads must stay ≈ the true carried rate.
     for _ in 0..10 {
         // Steady send process between ack bursts.
         for _ in 0..93 {
@@ -2069,9 +2047,9 @@ fn pool_anchor_send_rate_is_burst_immune_while_the_copa_feed_over_reads() {
         (sr_after - truth).abs() / truth < 0.35,
         "the pool anchor must be burst-immune: got {sr_after} vs carried truth {truth}"
     );
-    // And the honest pool term derived from it stays in the truth class
-    // while the legacy term reads the spike: the store-cap consumer is
-    // the one being fixed, the cwnd consumer the one left alone.
+    // And the pool term derived from it stays in the truth class while the
+    // ack-interval term reads the spike: the store-cap consumer reads the
+    // send anchor, the cwnd consumer is left alone.
     let rtp = path.min_rtt().unwrap().as_secs_f64();
     let honest = crate::net::honest_store_cap(Some(sr_after * rtp), Some(sr_after), 1.0, 2.0)
         .unwrap();
@@ -2087,9 +2065,8 @@ fn pool_anchor_send_rate_is_burst_immune_while_the_copa_feed_over_reads() {
     );
 }
 
-/// `RWM_POOL_ANCHOR=0` (the est-only decomposition arm) and N = 1 cost
-/// honesty: with the feed off, `charge_in_flight` does no anchor work
-/// and the anchor reads None — the prior-default path.
+/// `RWM_POOL_ANCHOR=0` and N = 1 cost honesty: with the feed off,
+/// `charge_in_flight` does no anchor work and the anchor reads None.
 #[test]
 fn pool_anchor_feed_off_is_inert() {
     let clock = Arc::new(MockClock::new());
@@ -2107,28 +2084,28 @@ fn pool_anchor_feed_off_is_inert() {
     );
 }
 
-// ----- Wire-clocked Copa signal + hint→δ mapping (feat/copa-wire-signal) -----
+// ----- Wire-clocked Copa signal + hint→δ mapping (ADR-0062) -----------------
 
 #[test]
 fn copa_wire_gate_from_env() {
-    // Default ON exactly when the engine owns/feeds the substrate window.
+    // Default on exactly when the engine owns/feeds the substrate window.
     assert!(copa_wire_from_env(Some("passthrough"), false, None));
     assert!(copa_wire_from_env(Some(" Passthrough "), false, None));
     assert!(copa_wire_from_env(None, true, None)); // RWM_COPA_FEED=1 A/B
-    // Shipped default: everything unset ⇒ OFF (byte-identical).
+    // Shipped default: everything unset ⇒ off.
     assert!(!copa_wire_from_env(None, false, None));
     assert!(!copa_wire_from_env(Some("bbr"), false, None));
     assert!(!copa_wire_from_env(Some("cubic"), false, None));
-    // RWM_COPA_WIRE=0 reproduces the #80 app-echo arm even under passthrough.
+    // RWM_COPA_WIRE=0 keeps the app-echo law even under passthrough.
     assert!(!copa_wire_from_env(Some("passthrough"), false, Some("0")));
     assert!(!copa_wire_from_env(Some("passthrough"), true, Some("false")));
     // RWM_COPA_WIRE=1 forces on (e.g. RWM_COPA_FEED-less diagnostics).
     assert!(copa_wire_from_env(None, false, Some("1")));
 }
 
-/// **THE PLACEMENT WEIGHTS ARE A DIAL, NOT A MODE** (§16.81).
-/// Bit-exact at the three presets — the condition this repair shipped
-/// under — plus continuity and monotonicity through every named point.
+/// The placement weights are a dial, not a mode (paper §5.7).
+/// Bit-exact at the three presets, plus continuity and monotonicity
+/// through every named point.
 #[test]
 fn scheduling_weights_are_the_dial_not_a_mode() {
     for (h, lat, bw) in [
@@ -2140,11 +2117,11 @@ fn scheduling_weights_are_the_dial_not_a_mode() {
         assert_eq!(w.w_lat, lat, "{h:?}: w_lat");
         assert_eq!(w.w_bw, bw, "{h:?}: w_bw");
         assert_eq!(w.w_div, 1.0, "{h:?}: w_div is hint-independent");
-        // The two weights are a PARTITION at every point, exactly.
+        // The two weights are a partition at every point, exactly.
         assert_eq!(w.w_lat + w.w_bw, 1.0, "{h:?}: the weights must sum to 1");
     }
-    // Auto is the EXACT log-midpoint of the dial — which is the fact that
-    // licensed the affine form rather than a fit.
+    // Auto is the exact log-midpoint of the dial — which is what makes the
+    // form affine rather than a fit.
     let (r, a, b) = (
         hint_delta_price(ProtocolHint::Realtime).log10(),
         hint_delta_price(ProtocolHint::Auto).log10(),
@@ -2180,9 +2157,9 @@ fn scheduling_weights_are_the_dial_not_a_mode() {
 
 #[test]
 fn copa_delta_hint_mapping() {
-    // δ(hint) = COPA_DELTA / ζ(hint): the hint's ONE declared price
+    // δ(hint) = COPA_DELTA / ζ(hint): the hint's one declared price
     // ratio (tail_loss_scale ζ = 0.01/1/100) is the latency price, δ
-    // (paper §12.4). No constants beyond the Copa-paper δ=0.5 anchor.
+    // (paper §4.1). No constants beyond the Copa-paper δ=0.5 anchor.
     assert_eq!(copa_delta(ProtocolHint::Auto, None), COPA_DELTA);
     assert_eq!(copa_delta(ProtocolHint::Bulk, None), COPA_DELTA / 100.0);
     assert_eq!(copa_delta(ProtocolHint::Realtime, None), COPA_DELTA * 100.0);
@@ -2199,10 +2176,10 @@ fn copa_delta_hint_mapping() {
 
 #[test]
 fn wire_dq_keys_on_wire_clock_not_app_echo() {
-    // The #80 named mechanism: the app-layer echo RTT includes the
-    // sender's OWN store/reservoir dwell, so Copa backed off against
-    // self-inflicted delay. Under the wire signal the CC delay term
-    // comes ONLY from record_rtt_sample (the packet-timed wire feed);
+    // The app-layer echo RTT includes the sender's own store/reservoir
+    // dwell, so Copa on the echo backs off against self-inflicted delay.
+    // Under the wire signal the CC delay term comes only from
+    // record_rtt_sample (the packet-timed wire feed);
     // the estimator's app-echo RTT — dwell included — must have zero
     // influence on the cwnd dynamics.
     let clock = Arc::new(MockClock::new());
@@ -2210,7 +2187,7 @@ fn wire_dq_keys_on_wire_clock_not_app_echo() {
     path.force_wire_for_test(COPA_DELTA);
 
     // App echo reads a huge 500 ms (store dwell); the wire reads a clean
-    // 10 ms floor. Copa must RAMP — the dwell is not network queue.
+    // 10 ms floor. Copa must ramp — the dwell is not network queue.
     let mut prev = path.cwnd;
     for _ in 0..5 {
         path.estimator.record_rtt(millis(500)); // app echo incl. dwell
@@ -2225,7 +2202,7 @@ fn wire_dq_keys_on_wire_clock_not_app_echo() {
         prev = cur;
     }
 
-    // Inverse direction: the wire clock now shows a REAL standing queue
+    // Inverse direction: the wire clock now shows a real standing queue
     // (60 ms over the 10 ms floor) while the app echo is quiet — Copa
     // must back off on the wire evidence alone.
     for _ in 0..4 {
@@ -2244,7 +2221,7 @@ fn wire_dq_keys_on_wire_clock_not_app_echo() {
 
 #[test]
 fn wire_velocity_law_doubles_step_and_caps_drain() {
-    // Copa's actual update law (paper §12.4 wire addendum): step v/δ per
+    // Copa's actual update law (paper §8.2): step v/δ per
     // SRTT, v doubling while the direction persists. δ = 0.005 (Bulk) ⇒
     // base step 200 symbols — the small-δ/high-BDP exploitation the +2
     // additive probe could never provide.
@@ -2252,7 +2229,7 @@ fn wire_velocity_law_doubles_step_and_caps_drain() {
     let mut path = PathState::new(0, clock.clone());
     path.force_wire_for_test(0.005);
 
-    // Drive the PURE law via on_delivery_signal (no delivery samples ⇒
+    // Drive the pure law via on_delivery_signal (no delivery samples ⇒
     // no BtlBw anchor ⇒ the coupling cap stays out of the picture —
     // covered by its own test below). Ramp on a clean 10 ms floor, then
     // exit the ramp with a moderate standing queue (40 ms — well above
@@ -2317,8 +2294,8 @@ fn wire_velocity_law_doubles_step_and_caps_drain() {
 #[test]
 fn wire_coupling_cap_bounds_cwnd_at_bdp_plus_two_over_delta() {
     // Once cwnd exceeds the sender's outstanding store, the delay signal
-    // is decoupled and a jitter-clamped d_q votes "up" forever (measured
-    // v1/v2 ratchet to MAX_CWND). The coupling cap bounds cwnd at the
+    // is decoupled and a jitter-clamped d_q votes "up" forever (cwnd
+    // ratchets to MAX_CWND). The coupling cap bounds cwnd at the
     // Copa fixed point plus one dither amplitude: BDP + 2/δ.
     let clock = Arc::new(MockClock::new());
     let mut path = PathState::new(0, clock.clone());
@@ -2344,7 +2321,7 @@ fn wire_coupling_cap_bounds_cwnd_at_bdp_plus_two_over_delta() {
     );
 }
 
-// --- Copa §2.2 TCP-competitive mode (feat/copa-compete) -----------------
+// --- Copa §2.2 TCP-competitive mode ------------------------------------------
 
 /// Establish a clean 10 ms wire floor and exit the ramp so the per-SRTT
 /// velocity law (and with it `compete_update`) is live.
@@ -2363,7 +2340,7 @@ fn compete_warmup(path: &mut PathState, clock: &Arc<MockClock>) {
     assert!(!path.in_slow_start, "warmup must end the ramp");
 }
 
-/// One per-SRTT update under a NEVER-draining standing queue (60 ms over
+/// One per-SRTT update under a never-draining standing queue (60 ms over
 /// the 10 ms floor — a buffer-filling competitor's signature).
 fn queue_update(path: &mut PathState, clock: &Arc<MockClock>) {
     for _ in 0..4 {
@@ -2400,7 +2377,7 @@ fn compete_detection_fires_under_never_draining_queue() {
 #[test]
 fn compete_detection_quiet_under_draining_queue() {
     // The queue drains to ~the floor every 3rd update (≤ 5 RTTs apart):
-    // Copa's own dynamics look like this — mode switching must NOT fire.
+    // Copa's own dynamics look like this — mode switching must not fire.
     let clock = Arc::new(MockClock::new());
     let mut path = PathState::new(0, clock.clone());
     path.force_wire_for_test(0.005);
@@ -2460,7 +2437,7 @@ fn compete_delta_follows_aimd_on_inverse_delta() {
     queue_update(&mut path, &clock);
     let d = path.copa_compete_diag().3;
     assert!((d - 0.25).abs() < 1e-12, "AI must continue: δ={d}");
-    // A STALE counter read (no advance) is NOT a loss.
+    // A stale counter read (no advance) is not a loss.
     path.on_wire_congestion_events(1);
     queue_update(&mut path, &clock);
     let d = path.copa_compete_diag().3;
@@ -2503,7 +2480,7 @@ fn compete_switches_back_on_drain_and_resets_delta() {
 #[test]
 fn compete_gate_off_never_switches() {
     // RWM_COPA_COMPETE unset (the shipped default): the identical
-    // never-draining queue must NOT flip modes or touch δ.
+    // never-draining queue must not flip modes or touch δ.
     let clock = Arc::new(MockClock::new());
     let mut path = PathState::new(0, clock.clone());
     path.force_wire_for_test(0.005);
@@ -2527,8 +2504,8 @@ fn compete_env_gate_requires_wire() {
 
 #[test]
 fn wire_mode_off_is_byte_identical_legacy() {
-    // Env fully unset in the test process ⇒ wire mode off ⇒ the legacy
-    // dynamics: steady state is the additive +2, exactly as before.
+    // Env fully unset in the test process ⇒ wire mode off ⇒ the
+    // application-echo dynamics: steady state is the additive +2.
     let clock = Arc::new(MockClock::new());
     let mut path = PathState::new(0, clock.clone());
     for _ in 0..4 {
@@ -2554,11 +2531,11 @@ fn wire_mode_off_is_byte_identical_legacy() {
     );
 }
 
-// ── ack-merge counter re-homing (goal-gate "Unlock The Default 1") ──
+// ── ack-merge counter re-homing (`RWM_ACK_MERGE`) ──
 
 /// A tiny model of the receiver's `PathBatchTracker`: the source of the
-/// v6 cumulative counters, and the source of the legacy per-batch `Ack`
-/// payload. Both come from the SAME accumulator, which is what makes the
+/// cumulative counters, and the source of the per-batch `Ack`
+/// payload. Both come from the same accumulator, which is what makes the
 /// equivalence law below a statement about the wire and not about
 /// arithmetic.
 #[derive(Default)]
@@ -2567,7 +2544,7 @@ struct TrackerModel {
     cum_received: u64,
 }
 impl TrackerModel {
-    /// Returns the legacy Ack's `(expected_count, received_count)`.
+    /// Returns the per-batch Ack's `(expected_count, received_count)`.
     fn record_batch(&mut self, expected: u32, received: u32) -> (u32, u32) {
         self.cum_expected += expected as u64;
         self.cum_received += received as u64;
@@ -2575,18 +2552,17 @@ impl TrackerModel {
     }
 }
 
-/// THE consumer-equivalence law (pre-registered): over a randomized
-/// ack/loss trace in which an arbitrary subset of control datagrams is
-/// DROPPED, the totals the re-homed consumers see from the merged
-/// WindowAck's cumulative counters are EXACTLY the totals they saw from
-/// the per-batch legacy `Ack`.
+/// The consumer-equivalence law: over a randomized ack/loss trace in which
+/// an arbitrary subset of control datagrams is dropped, the totals the
+/// re-homed consumers see from the merged WindowAck's cumulative counters
+/// are exactly the totals the per-batch `Ack` would deliver.
 ///
 /// This is the property the merge is safe on: the loss feed
 /// (`record_batch`), the in-flight release (delivered + lost) and the
-/// pool-delivery feed are all COUNT-based, so carrying running sums and
-/// diffing them loses nothing an event stream carried — and unlike an
+/// pool-delivery feed are all count-based, so carrying running sums and
+/// diffing them loses nothing an event stream carries — and unlike an
 /// event stream it is robust to ack loss, which a merged ack path must
-/// be (there are now half as many chances to deliver the same counts).
+/// be (it has half as many chances to deliver the same counts).
 #[test]
 fn ack_merge_counter_delta_matches_the_legacy_ack_totals_under_ack_loss() {
     let clock = Arc::new(MockClock::new());
@@ -2611,11 +2587,11 @@ fn ack_merge_counter_delta_matches_the_legacy_ack_totals_under_ack_loss() {
         let gap = (next() % 4) as u32 + 1;
         let expected = received * gap;
         let (e, r) = tracker.record_batch(expected, received);
-        // What the LEGACY per-batch Ack delivered (it is sent for every
-        // batch, so every batch counts).
+        // What the per-batch Ack delivers (it is sent for every batch, so
+        // every batch counts).
         legacy_expected += e as u64;
         legacy_received += r as u64;
-        // What the MERGED ack delivers — but only when this control
+        // What the merged ack delivers — but only when this control
         // datagram survives the wire (~25% dropped).
         if next() % 4 != 0 {
             delivered_acks += 1;
@@ -2649,7 +2625,7 @@ fn ack_merge_counter_delta_matches_the_legacy_ack_totals_under_ack_loss() {
 
 /// `cum_received == 0` is the "no counter payload" sentinel used by the
 /// two timer-driven WindowAck sites (hole re-advertisement, hold-expiry
-/// unwedge), which broadcast ONE message to every live path and so cannot
+/// unwedge), which broadcast one message to every live path and so cannot
 /// carry a per-path counter. It must be a total no-op — including on the
 /// cursor, so the next real ack still reports the whole outstanding delta.
 #[test]
@@ -2658,7 +2634,7 @@ fn ack_merge_timer_ack_sentinel_is_inert_and_loses_no_counts() {
     let mut path = PathState::new(0, clock.clone());
     assert_eq!(path.ack_merge_counter_delta(0, 0), (0, 0));
     assert_eq!(path.ack_merge_counter_delta(100, 80), (100, 80));
-    // A timer ack lands mid-stream: inert, and the cursor does NOT move.
+    // A timer ack lands mid-stream: inert, and the cursor does not move.
     assert_eq!(path.ack_merge_counter_delta(0, 0), (0, 0));
     assert_eq!(
         path.ack_merge_counter_delta(150, 130),
@@ -2667,7 +2643,7 @@ fn ack_merge_timer_ack_sentinel_is_inert_and_loses_no_counts() {
     );
 }
 
-/// Duplicated and REORDERED acks are idempotent: the cursor only moves
+/// Duplicated and reordered acks are idempotent: the cursor only moves
 /// forward, so a stale ack contributes nothing and cannot double-charge
 /// the loss feed or double-release in-flight budget.
 #[test]
@@ -2693,7 +2669,7 @@ fn ack_merge_counter_delta_is_idempotent_under_duplication_and_reorder() {
 }
 
 /// The derived loss count is `expected - received`, so `received` may
-/// never exceed `expected` however the receiver's batch-gap ESTIMATE
+/// never exceed `expected` however the receiver's batch-gap estimate
 /// moves. (The estimate is approximate by construction — see
 /// `PathBatchTracker` — and an underflow here would feed the loss
 /// estimator garbage.)
@@ -2708,32 +2684,20 @@ fn ack_merge_counter_delta_never_lets_received_exceed_expected() {
 }
 
 // ===================================================================
-// THE PINNED PLACEMENT COST TABLE
+// The pinned placement cost table
 //
-// **Why this exists, and why it is captured BEFORE anything else in
-// the scheduler moves.** Track A of the law search rewrites the
-// placement cost: the softmax temperature becomes `T = (sqrt6/pi)
-// sigma_e/ref`, a HOL term joins the objective, `w_div` gets a
-// derived form. Every one of those arms is DEFAULT-ABSENT, and the
-// claim that has to hold for the battery to mean anything is that
-// with the arms off the engine is BYTE-IDENTICAL to today's.
-//
-// "Byte-identical" is not provable from prose about a diff. It is
-// provable from a table of hand-built states and the cost vectors
-// the CURRENT engine returns for them, to 1e-12. That table is
-// below. It was captured from this engine, at this commit, with
-// every gate absent -- so a Stage-2 edit that moves any number in it
-// has changed the shipped law and says so here rather than in a
-// results table three batteries later.
-//
-// `place_costs` was made `pub(crate)` for exactly this: the law was
-// private and therefore untested in its operating region (the
-// exploration's finding). Nothing else reads it.
+// The placement arms (derived temperature `T = (sqrt6/pi) sigma_e/ref`,
+// the HOL term, the derived `w_div`) are absent by default, and with the
+// arms off the shipped law must be unchanged. That is provable from a
+// table of hand-built states and the cost vectors the engine returns for
+// them, to 1e-12, captured with every gate absent: an edit that moves any
+// number in it has changed the shipped law. `place_costs` is `pub(crate)`
+// for this pin; nothing else reads it.
 // ===================================================================
 
 /// Build one hand-specified scheduler state. `paths` is
 /// `(id, rtt_ms, cwnd, in_flight)`; an `rtt_ms` of `None` leaves the
-/// path COLD (no RTT sample ever), which is the state the two cold
+/// path cold (no RTT sample ever), which is the state the two cold
 /// prices bind in.
 fn cost_state(
     hint: ProtocolHint,
@@ -2757,7 +2721,7 @@ fn cost_state(
 #[allow(clippy::type_complexity)]
 fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
     vec![
-        // 1. The single-path collapse -- the pre-RWM sender.
+        // 1. The single-path collapse.
         ("single-idle", cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]), false, vec![]),
         // 2. Two symmetric idle paths: the load term alone, equal.
         (
@@ -2780,7 +2744,7 @@ fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
             false,
             vec![],
         ),
-        // 5. OVERDRAFT: in_flight past cwnd. The term climbs past 1.0
+        // 5. Overdraft: in_flight past cwnd. The term climbs past 1.0
         //    continuously; no path is ever removed.
         (
             "dual-overdraft",
@@ -2788,22 +2752,22 @@ fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
             false,
             vec![],
         ),
-        // 6. A REPAIR with the fate-diversity term live.
+        // 6. A repair with the fate-diversity term live.
         (
             "repair-fate",
             cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, Some(10), 10, 0)]),
             true,
             vec![0, 0, 0, 1],
         ),
-        // 7. THE COLD PATH: no RTT sample ever, so `srtt()` hands back
-        //    the seed and BOTH cold prices bind.
+        // 7. The cold path: no RTT sample ever, so `srtt()` hands back
+        //    the seed and both cold prices bind.
         (
             "cold-path",
             cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0), (1, None, 10, 0)]),
             false,
             vec![],
         ),
-        // 8. THREE paths ADDED OUT OF ID ORDER -- the deterministic
+        // 8. Three paths added out of id order -- the deterministic
         //    tie-break's own witness.
         (
             "triple-out-of-order",
@@ -2817,10 +2781,10 @@ fn cost_table_states() -> Vec<(&'static str, Scheduler, bool, Vec<PathId>)> {
     ]
 }
 
-/// **THE CAPTURE HARNESS.** Ignored by default -- run it with
+/// The capture harness. Ignored by default -- run it with
 /// `cargo test -p raptorpath --release -- --ignored capture_place_cost_table
 /// --nocapture` to print the table in the exact literal form the pin
-/// below expects. It is the ONLY blessed way to move the table, and
+/// below expects. It is the only sanctioned way to move the table, and
 /// moving it is a declaration that the shipped law changed.
 #[test]
 #[ignore]
@@ -2836,8 +2800,8 @@ fn capture_place_cost_table() {
     }
 }
 
-/// **THE PIN.** The current engine's `place_costs`, to 1e-12, over the
-/// eight states above -- and the ORDER, which the deterministic
+/// The pin: the engine's `place_costs`, to 1e-12, over the
+/// eight states above -- and the order, which the deterministic
 /// tie-break makes reproducible (state 8 adds its paths 2, 0, 1 and
 /// must still return 0, 1, 2).
 #[test]
@@ -2882,7 +2846,7 @@ fn place_costs_match_the_pinned_table() {
     }
 }
 
-/// The tie-break is ASCENDING BY ID and touches no probability: the
+/// The tie-break is ascending by id and touches no probability: the
 /// distribution over a symmetric pair is still exactly 1/2 each, and
 /// the candidate list is sorted whatever order the paths were added
 /// in. (A `HashMap`'s iteration order is the hasher's, so without the
@@ -2904,20 +2868,20 @@ fn place_costs_are_sorted_by_id_and_the_probabilities_are_untouched() {
 }
 
 // ===================================================================
-// TRACK A -- THE PLACEMENT ARMS (paper 16.81, all three DEFAULT-ABSENT)
+// The placement arms (paper §5.7, all three absent by default)
 //
 // The order of these tests is the order of the claims they defend:
-// (1) with every arm absent the shipped law is byte-identical, in COSTS
-// and in PROBABILITIES; (2) each arm's own limits are the ones the
+// (1) with every arm absent the shipped law is byte-identical, in costs
+// and in probabilities; (2) each arm's own limits are the ones the
 // derivation states; (3) the shape checks -- knee continuity,
 // monotonicity, dial continuity -- hold on the law itself; (4) the
 // controls (N = 1, the tie-break) still hold with everything armed.
 // ===================================================================
 
-/// **GATE-OFF BYTE-IDENTITY, THE PROBABILITY SIDE.** The pinned table
-/// asserts the COSTS; this asserts that the softmax over them is
+/// Gate-off byte-identity, the probability side. The pinned table
+/// asserts the costs; this asserts that the softmax over them is
 /// untouched too, to 1e-12 -- because the arms enter through the
-/// TEMPERATURE as well as through the cost, and a temperature change
+/// temperature as well as through the cost, and a temperature change
 /// leaves every cost fixed while moving every probability.
 #[test]
 fn every_arm_absent_leaves_the_probabilities_bit_identical() {
@@ -2949,8 +2913,8 @@ fn a_garbage_arm_value_is_an_error_naming_the_gate() {
     let _ = place_arm_flag("RWM_TEST_PLACE_ARM_GARBAGE");
 }
 
-/// **THE ARMS ARE ABSENT BY DEFAULT.** A fresh scheduler in a clean
-/// environment carries all three OFF, which is what makes the pinned
+/// The arms are absent by default. A fresh scheduler in a clean
+/// environment carries all three off, which is what makes the pinned
 /// table an oracle for every other test in this file.
 #[test]
 fn the_placement_arms_are_absent_by_default() {
@@ -2960,9 +2924,9 @@ fn the_placement_arms_are_absent_by_default() {
     assert!(!sched.place_wdiv_derived(), "RWM_PLACE_WDIV_DERIVED ships ABSENT");
 }
 
-/// **ARM 1, THE `sigma -> 0` LIMIT.** A candidate set whose ETA-error
+/// Arm 1, the `sigma -> 0` limit. A candidate set whose ETA-error
 /// dispersion is zero has `T = 0`, and the derived law must then be
-/// EXACTLY the argmin -- the shipped degenerate branch, reached with
+/// exactly the argmin -- the shipped degenerate branch, reached with
 /// `place_probs_with_temperature(.., 0.0)`. Same distribution, element by
 /// element.
 #[test]
@@ -2993,7 +2957,7 @@ fn the_derived_temperature_at_zero_dispersion_is_the_argmin() {
     let got = sched.place_probs(false, &[]);
     let want = sched.place_probs_with_temperature(false, &[], 0.0);
     assert_eq!(got, want, "sigma = 0 must resolve to the argmin exactly");
-    // And the gauge says the cold rule did NOT fire -- a measured zero and
+    // And the gauge says the cold rule did not fire -- a measured zero and
     // an absent measurement are different findings.
     sched.drain_place_bind();
     let l = sched.eta().line();
@@ -3001,9 +2965,9 @@ fn the_derived_temperature_at_zero_dispersion_is_the_argmin() {
     assert!(l.contains("t_eff=0.000000"), "{l}");
 }
 
-/// **ARM 1's COLD RULE IS STATED AND GAUGED, NEVER A HIDDEN CONSTANT.**
-/// With NO path carrying a dispersion sample the temperature is the
-/// SHIPPED one and `t_cold` says so, so a reader can tell "the derived
+/// Arm 1's cold rule is stated and gauged, never a hidden constant.
+/// With no path carrying a dispersion sample the temperature is the
+/// shipped one and `t_cold` says so, so a reader can tell "the derived
 /// law ran" from "the derived law had nothing to run on".
 #[test]
 fn the_derived_temperature_falls_back_to_the_shipped_one_and_counts_it() {
@@ -3019,15 +2983,15 @@ fn the_derived_temperature_falls_back_to_the_shipped_one_and_counts_it() {
     assert!(l.contains("t_n=1"), "{l}");
 }
 
-/// **ARM 1's OWN ARITHMETIC**, asserted absolutely and not ordinally: with
+/// Arm 1's own arithmetic, asserted absolutely and not ordinally: with
 /// one measured dispersion of `sigma` microseconds and a reference SRTT of
 /// `ref`, `T = (sqrt6/pi)*sigma/ref` to floating precision. The inverse is
-/// the section's falsifiable claim: `T = 0.15 <=> sigma = 0.19238*ref`.
+/// the falsifiable claim: `T = 0.15 <=> sigma = 0.19238*ref`.
 #[test]
 fn the_derived_temperature_is_the_gumbel_variance_match() {
     let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 0)]);
     sched.set_place_t_derived(true);
-    // A RAMP, so a tau-lag pair spans a real difference: the error rises
+    // A ramp, so a tau-lag pair spans a real difference: the error rises
     // 100 us per sample at 1.25 ms spacing, tau = 10 ms, exactly the
     // fixture `net::eta`'s own band test uses.
     let t0 = std::time::Instant::now();
@@ -3058,26 +3022,26 @@ fn the_derived_temperature_is_the_gumbel_variance_match() {
     );
 }
 
-/// **ARM 2's OWN LIMIT: A PLACEMENT BEHIND THE FRONTIER IS FREE.**
-/// `now + E_i <= F_hat` gives `push = 0` and therefore `X_i = 0` EXACTLY
+/// Arm 2's own limit: a placement behind the frontier is free.
+/// `now + E_i <= F_hat` gives `push = 0` and therefore `X_i = 0` exactly
 /// -- not "small", zero -- which is the property that makes the term a
-/// water-filling incentive rather than a slow-path penalty. Only the (a2)
+/// water-filling incentive rather than a slow-path penalty. Only the
 /// wire price, three orders of magnitude down, remains.
 #[test]
 fn the_frontier_term_is_exactly_zero_behind_the_frontier() {
     assert_eq!(place_frontier_cost(0.5, 0.0, 0.0, 0.010, 0.0, 0.010), 0.0);
-    // Any distance BEHIND the frontier leaves the priced and the stall
+    // Any distance behind the frontier leaves the priced and the stall
     // legs both at zero; the wire price is all that is left.
     let only_wire = place_frontier_cost(50.0, 0.0, 0.030, 0.010, 1.12e-2, 0.010);
     assert!((only_wire - 1.12e-2 * 0.030 / 0.010).abs() < 1e-15);
     assert!(only_wire < 0.04, "the (a2) price is PREDICTED INERT against an O(1) load term");
 }
 
-/// **ARM 2's KNEE IS `C0` AT `push = H`.** The `(push - H)+` kink is a
+/// Arm 2's knee is `C0` at `push = H`. The `(push - H)+` kink is a
 /// corner, not a step: nudging `push` by +/-eps around `H` moves the cost
 /// by O(eps), and the one-sided limits agree at the knee itself. A step
 /// here would be exactly the behaviour-across-a-point defect the
-/// NO-MODE-SWITCH invariant forbids.
+/// no-mode-switch invariant forbids.
 #[test]
 fn the_frontier_knee_is_continuous_at_the_headroom() {
     let (delta, h, w, refs) = (0.5_f64, 0.010_f64, 0.0_f64, 0.010_f64);
@@ -3093,10 +3057,9 @@ fn the_frontier_knee_is_continuous_at_the_headroom() {
     }
 }
 
-/// **ARM 2 IS MONOTONE IN THE PUSH.** A bigger frontier push costs more,
-/// everywhere, on both sides of the knee -- the shape check 16.81.4
-/// states. (And the slope BEYOND the knee is the steeper one, which is
-/// what `kappa` is for.)
+/// Arm 2 is monotone in the push. A bigger frontier push costs more,
+/// everywhere, on both sides of the knee. (And the slope beyond the knee
+/// is the steeper one, which is what `kappa` is for.)
 #[test]
 fn the_frontier_term_is_monotone_in_the_push() {
     let (delta, h, refs) = (0.5_f64, 0.010_f64, 0.010_f64);
@@ -3116,9 +3079,9 @@ fn the_frontier_term_is_monotone_in_the_push() {
     );
 }
 
-/// **THE DIAL-CONTINUITY GATE (CLAUDE.md).** `delta` enters `X_i` as a
+/// The dial-continuity gate (CLAUDE.md). `delta` enters `X_i` as a
 /// multiplier and nothing else, so the term is continuous and
-/// non-decreasing in `delta` THROUGH each of the three named points --
+/// non-decreasing in `delta` through each of the three named points --
 /// checked at +/-2 % around every one of them, plus a dense sweep of the
 /// whole dial. A behaviour step across a preset is a defect even if each
 /// side is individually correct.
@@ -3149,9 +3112,9 @@ fn the_frontier_term_is_continuous_through_every_named_point_on_the_dial() {
     }
 }
 
-/// **ARM 2, END TO END: the term reaches `place_costs` and its gauges
-/// fire.** A pure-function test proves the FORM; this proves the WIRING
-/// -- MEASUREMENT DISCIPLINE rule 1. With `F_hat` set far in the past
+/// Arm 2, end to end: the term reaches `place_costs` and its gauges
+/// fire. A pure-function test proves the form; this proves the wiring
+/// (docs/measurement-discipline.md rule 1). With `F_hat` set far in the past
 /// every candidate pushes the frontier hard, so the `s_i > H` bind is
 /// taken and the costs are strictly above the shipped ones.
 #[test]
@@ -3176,11 +3139,11 @@ fn the_frontier_term_reaches_place_costs_and_gauges_its_bind() {
     assert!(!l.contains("hol_w=-"), "W must print at its live value: {l}");
 }
 
-/// **THE EXECUTION WITNESS ITSELF.** The `hol_mv` counter is what
+/// The execution witness itself. The `hol_mv` counter is what
 /// distinguishes "the term was computed" from "the term decided". It is
 /// zero for a symmetric pair (nothing to move) and nonzero when the
 /// frontier term genuinely reverses the argmin -- built here by giving the
-/// SHIPPED-cheaper path a backlog large enough that its arrival, and only
+/// shipped-cheaper path a backlog large enough that its arrival, and only
 /// its arrival, clears the frontier.
 #[test]
 fn the_argmin_witness_counts_only_real_reversals() {
@@ -3197,7 +3160,7 @@ fn the_argmin_witness_counts_only_real_reversals() {
     assert_eq!((moved, calls), (0, 1), "a symmetric pair has no argmin to move");
 
     // Asymmetric, with `F_hat` between the two arrivals: path 0 is the
-    // shipped argmin and lands AHEAD of the frontier; path 1 is dearer by
+    // shipped argmin and lands ahead of the frontier; path 1 is dearer by
     // the shipped law but lands behind it. The stall leg is worth more
     // than the load gap, so the term reverses the pick.
     let mut sched = cost_state(
@@ -3206,7 +3169,7 @@ fn the_argmin_witness_counts_only_real_reversals() {
     );
     let base = sched.place_costs(false, &[]);
     let base_arg = if base[0].1 <= base[1].1 { 0 } else { 1 };
-    // `F_hat` a hair AHEAD of the cheaper path's arrival: path 0's own
+    // `F_hat` a hair ahead of the cheaper path's arrival: path 0's own
     // backlog pushes it past the frontier, path 1's idle propagation does
     // not.
     let now_us = place_wall_now_us();
@@ -3225,10 +3188,10 @@ fn the_argmin_witness_counts_only_real_reversals() {
     );
 }
 
-/// **ARM 3 CANNOT MOVE A SOURCE PLACEMENT**, by construction: `fate_i` is
+/// Arm 3 cannot move a source placement, by construction: `fate_i` is
 /// identically zero for source symbols, so the derived diversity weight
 /// multiplies zero. Every source row of the pinned table therefore stands
-/// with the arm ARMED -- which is what makes the arm attributable to
+/// with the arm armed -- which is what makes the arm attributable to
 /// repairs alone.
 #[test]
 fn the_derived_diversity_weight_leaves_every_source_placement_alone() {
@@ -3243,11 +3206,11 @@ fn the_derived_diversity_weight_leaves_every_source_placement_alone() {
     }
 }
 
-/// **ARM 3's OWN LIMIT, ASSERTED ABSOLUTELY.** On a MEMORYLESS channel the
+/// Arm 3's own limit, asserted absolutely. On a memoryless channel the
 /// bad->bad persistence equals the marginal loss, so the excess
 /// `(p_BB - eps)+` -- and with it the whole diversity charge -- collapses,
 /// which the shipped `w_div = 1.0` does not do. The assertion is on the
-/// TERM'S OWN ARITHMETIC read off the path's estimator, not on an ordinal
+/// term's own arithmetic read off the path's estimator, not on an ordinal
 /// comparison, and it is checked against the shipped charge it replaces.
 #[test]
 fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
@@ -3273,7 +3236,7 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
     sched.set_place_wdiv_derived(true);
     let armed = sched.place_costs(true, &[0, 0, 0, 0]);
     // Path 0 carries all four covered symbols (fate = 1), path 1 none.
-    // The DERIVED charge is the excess, priced at srtt/ref; the SHIPPED
+    // The derived charge is the excess, priced at srtt/ref; the shipped
     // one is a flat w_div = 1.0.
     let derived_gap = armed[0].1 - armed[1].1;
     assert!(
@@ -3288,10 +3251,10 @@ fn the_derived_diversity_weight_collapses_on_a_memoryless_channel() {
     );
 }
 
-/// **THE `N = 1` CONTROL, WITH EVERY ARM ON.** A softmax over a singleton
+/// The `N = 1` control, with every arm on. A softmax over a singleton
 /// is 1 at every temperature and every cost, so the law is the identity on
-/// a single path -- which is why `c1` and `sc2` are controls in every
-/// placement arm and a movement at either VOIDS the run.
+/// a single path -- which is why single-path cells are controls for every
+/// placement arm.
 #[test]
 fn a_single_path_is_the_identity_with_every_arm_armed() {
     let mut sched = cost_state(ProtocolHint::Auto, &[(0, Some(10), 10, 3)]);
@@ -3306,8 +3269,8 @@ fn a_single_path_is_the_identity_with_every_arm_armed() {
     assert_eq!(sched.place_symbol(false, &[]), Some(0));
 }
 
-/// **THE DETERMINISTIC TIE-BREAK SURVIVES EVERY ARM.** The arms add terms
-/// to the cost and change the temperature; neither may touch the ASCENDING
+/// The deterministic tie-break survives every arm. The arms add terms
+/// to the cost and change the temperature; neither may touch the ascending
 /// candidate order the pinned table rests on.
 #[test]
 fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
@@ -3327,7 +3290,7 @@ fn the_tie_break_is_still_ascending_by_id_with_every_arm_armed() {
     assert_eq!(dist.iter().map(|(i, _)| *i).collect::<Vec<_>>(), vec![1, 3, 5, 7, 9]);
 }
 
-/// The COLD-PRICE BIND GAUGES count and never decide. State 7 has one
+/// The cold-price bind gauges count and never decide. State 7 has one
 /// cold path, so one of its two cost evaluations pays both cold prices
 /// -- and the costs themselves are the pinned ones either way.
 #[test]

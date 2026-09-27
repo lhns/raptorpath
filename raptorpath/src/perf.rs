@@ -1,6 +1,6 @@
 //! rp-native object benchmark (`raptorpath perf`).
 //!
-//! Drives fixed-size objects over the REAL multipath engine through a
+//! Drives fixed-size objects over the real multipath engine through a
 //! memory-backed TUN ([`TunInterface::memory`]): no inner TCP stack, no
 //! kernel TUN device. This is the fair-geometry counterpart to
 //! quinn-perf's warm-connection object benchmark (L2 claim table): the
@@ -10,7 +10,7 @@
 //! deliver) plus block ARQ, with an application-level ack closing the
 //! loop — the same delivery semantics as `transfer_bench.py`.
 //!
-//! Object protocol (opaque to the engine — it rides INSIDE the "TUN
+//! Object protocol (opaque to the engine — it rides inside the "TUN
 //! packets" the engine treats as payload):
 //!   data packet: [magic u16][obj_id u32][chunk_idx u32][total_chunks u32][payload]
 //!   ack  packet: [magic u16][obj_id u32][ACK_IDX u32][0 u32]
@@ -31,10 +31,9 @@ const HDR_LEN: usize = 14; // magic(2) + obj_id(4) + chunk_idx(4) + total_chunks
 const ACK_IDX: u32 = u32::MAX;
 /// Per-run completion timeout; a run exceeding this is recorded as DNF.
 /// RWM_PERF_TIMEOUT_S overrides (harness knob for reliability batteries
-/// where a DNF is an EXPECTED datum — e.g. the realtime profile, where a
+/// where a DNF is an expected datum — e.g. the realtime profile, where a
 /// hole force-delivered past the reorder horizon can never complete the
-/// object and burning 300 s per expected miss makes x8 batteries
-/// impractical; task #46 L1 spot check).
+/// object, and 300 s per expected miss is impractical).
 fn run_timeout() -> Duration {
     crate::gates::get()
         .perf_timeout_raw
@@ -46,14 +45,14 @@ fn run_timeout() -> Duration {
 
 /// Max payload bytes per chunk for a protocol hint.
 ///
-/// Bulk/auto under `--window-reliable` (RWM Phase A) ride the sliding-
-/// window pipeline, which carries at most ONE packet per symbol and
-/// silently TRUNCATES larger packets (see the TUN MTU clamp in net::run —
+/// Bulk/auto under `--window-reliable` ride the sliding-window pipeline,
+/// which carries at most one packet per symbol and silently truncates
+/// larger packets (see the TUN MTU clamp in net::run —
 /// a memory TUN skips the clamp, so perf must size its own packets).
 /// Bulk/auto use symbol_size=1200 → chunks must fit 1196 B total. The
 /// same size is used for the block-mode arm (which length-prefixes any
 /// MTU-ish packet into 64 KB blocks) so both A/B arms share identical
-/// chunk geometry — the flag is the ONLY difference.
+/// chunk geometry — the flag is the only difference.
 /// Realtime uses symbol_size=512 → 508 B total.
 fn chunk_payload_len(hint: ProtocolHint) -> usize {
     match hint {
@@ -178,11 +177,10 @@ async fn run_object(
     nbytes: usize,
     payload_len: usize,
     deadline: Duration,
-    // §14.26/§16.82: the ONE driver in this tree that KNOWS how
-    // much of the transfer is left. `None` unless `RWM_COMPLETION_EXPOSURE`
-    // armed the feed, in which case the engine's rate site reads it as
-    // `T_rem` and the completion-exposure glide runs for the first time since
-    // P6 shipped it inert.
+    // Paper §4.6: the one driver in this tree that knows how much of the
+    // transfer is left. `None` unless `RWM_COMPLETION_EXPOSURE` armed the
+    // feed, in which case the engine's rate site reads it as `T_rem` and
+    // runs the completion-exposure glide.
     feed: Option<&std::sync::Arc<net::CompletionFeed>>,
 ) -> anyhow::Result<RunOutcome> {
     let total = (nbytes.max(1)).div_ceil(payload_len) as u32;
@@ -197,8 +195,8 @@ async fn run_object(
         let k = left.min(payload_len);
         left -= k;
         // Decremented as each chunk is handed to the engine, so `T_rem` tracks
-        // what is still to be SENT rather than what is still unacked — the
-        // quantity §14.26's glide is defined over.
+        // what is still to be sent rather than what is still unacked — the
+        // quantity the glide is defined over.
         if let Some(f) = feed {
             f.consume(k as u64);
         }
@@ -246,13 +244,13 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     let hint = config.protocol_hint;
     let hint_str = format!("{hint:?}").to_lowercase();
     let payload_len = chunk_payload_len(hint);
-    // §14.26/§16.82: publish the completion feed ONLY when the arm
+    // Paper §4.6: publish the completion feed only when the arm
     // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
     // the engine's rate site never reads it — byte-identical.
     let feed = if crate::gates::get().completion_exposure {
         let f = std::sync::Arc::new(net::CompletionFeed::new());
         config.completion_feed = Some(f.clone());
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        // Mechanism-liveness echo (docs/measurement-discipline.md rule 1).
         tracing::info!(
             "completion-exposure feed ACTIVE (RWM_COMPLETION_EXPOSURE: the perf client \
              publishes remaining bytes; the 14.26 glide is fed for the first time)"
