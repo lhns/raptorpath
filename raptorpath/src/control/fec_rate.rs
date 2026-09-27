@@ -256,7 +256,6 @@ impl FecRateController {
     /// with `raptorpath_math::completion_exposure(t_rem, srtt, rttvar)`.
     /// The production tunnel never calls this (endless stream ⇒ χ = 0).
     // Test-only consumer: tests/gate_suite.rs drives the χ arm through it.
-    #[allow(dead_code)]
     pub fn set_completion_exposure(&mut self, chi: f64) {
         self.completion_exposure = chi.clamp(0.0, 1.0);
     }
@@ -480,7 +479,6 @@ pub struct TaperFunction {
     pub decay: f64,
     /// Total correction rate: A / q = r*.
     // Test-only reader: the taper geometric-sum law tests below.
-    #[allow(dead_code)]
     pub total_rate: f64,
     /// The GE parameter q (for reference).
     pub q: f64,
@@ -790,7 +788,6 @@ impl BudgetAllocator {
     }
 
     // Test-only consumers: the BudgetAllocator conservation tests below.
-    #[allow(dead_code)]
     pub fn proactive_rate(&self) -> f64 {
         self.proactive_budget
     }
@@ -799,7 +796,6 @@ impl BudgetAllocator {
         self.nack_cap
     }
 
-    #[allow(dead_code)]
     pub fn total_budget(&self) -> f64 {
         self.total_budget
     }

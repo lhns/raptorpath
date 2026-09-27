@@ -469,13 +469,11 @@ impl BlockArq {
     }
 
     /// Number of un-acked batches currently tracked (tests/diagnostics).
-    #[allow(dead_code)] // used by tests and external diagnostics (bin target compiles modules privately)
     pub fn ledger_len(&self) -> usize {
         self.ledger.len()
     }
 
     /// Retained blocks / bytes (tests/diagnostics).
-    #[allow(dead_code)]
     pub fn retained_stats(&self) -> (usize, usize) {
         (self.retained.len(), self.retained_bytes)
     }

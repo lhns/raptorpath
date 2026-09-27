@@ -3570,7 +3570,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let ctrl_decoders = active_decoders.clone();
     let ctrl_transport = transport_arc.clone();
     let ctrl_stats = stats.clone();
-    let ctrl_fec_backend = effective_fec_backend;
     let ctrl_forward_tx = msg_tx.clone();
     let ctrl_mstar_anchor = gates.mstar_anchor;
     let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
@@ -3580,7 +3579,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         ctrl_decoders,
         ctrl_sent_counts,
         ctrl_transport,
-        ctrl_fec_backend,
         ctrl_stats,
         ctrl_forward_tx,
         ctrl_mstar_anchor,

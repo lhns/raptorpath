@@ -17,7 +17,7 @@ use tracing::warn;
 
 use super::super::control_msg::{ControlCtx, handle_control_message};
 use crate::control::FecRateController;
-use crate::fec::{FecBackend, FecDecoder};
+use crate::fec::FecDecoder;
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
@@ -33,7 +33,6 @@ pub(crate) async fn run_control_fastpath(
     ctrl_decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>>,
     ctrl_sent_counts: Arc<DashMap<(u64, u32), u32>>,
     ctrl_transport: Arc<QuicTransport>,
-    ctrl_fec_backend: FecBackend,
     ctrl_stats: Arc<SharedStats>,
     ctrl_forward_tx: mpsc::Sender<(u32, WireMessage)>,
     ctrl_mstar_anchor: bool,
@@ -54,7 +53,6 @@ pub(crate) async fn run_control_fastpath(
                         decoders: &ctrl_decoders,
                         sent_counts: &ctrl_sent_counts,
                         transport: &ctrl_transport,
-                        fec_backend: ctrl_fec_backend,
                         stats: &ctrl_stats,
                         // The fast path only handles PathReport/Ping/Pong;
                         // Acks (which drive block ARQ) and WindowAcks go

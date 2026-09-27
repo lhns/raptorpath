@@ -1,15 +1,4 @@
-mod config;
-mod control;
-mod fec;
-mod gates;
-mod monitor;
-mod net;
-mod perf;
-mod preflight;
-mod routing;
-mod scheduler;
-mod transport;
-mod tun;
+use raptorpath::{config, gates, net, perf, preflight};
 
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;

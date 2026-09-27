@@ -1166,7 +1166,6 @@ pub struct CorrectionDeficit {
 // on_ack / deficit / pending_count / path_deficit have only #[cfg(test)]
 // consumers (the deficit-chain law tests in this file); the live path uses
 // on_send + on_ack_cumulative.
-#[allow(dead_code)]
 impl CorrectionDeficit {
     pub fn new() -> Self {
         Self {

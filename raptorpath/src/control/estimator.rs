@@ -468,8 +468,6 @@ impl LossEstimator {
     }
 
     /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
-    // Test-only consumer: the `RWM_EST_CADENCE` law tests in this file.
-    #[allow(dead_code)]
     pub fn bocd_updates(&self) -> u64 {
         self.bocd.updates()
     }

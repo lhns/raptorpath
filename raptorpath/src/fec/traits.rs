@@ -67,7 +67,6 @@ pub trait FecDecoder: Send + Sync {
     /// Whether all source symbols arrived intact (fast path).
     // Test-only consumer (tests/fec_backend_switching_test.rs + the backends'
     // own unit tests); the block path decides on `is_decoded`.
-    #[allow(dead_code)]
     fn is_complete_source(&self) -> bool;
     /// Whether decoding has completed (by any means).
     fn is_decoded(&self) -> bool;

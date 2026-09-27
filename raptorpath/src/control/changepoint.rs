@@ -237,9 +237,6 @@ impl BayesianChangepoint {
     }
 
     /// Point estimate: expected loss rate (mixture mean).
-    // Test-only consumer: the BOCD law tests in this file's `mod tests` assert
-    // the mixture mean tracks a regime change. Not on the data path.
-    #[allow(dead_code)]
     pub fn predictive_mean(&self) -> f64 {
         let mut weighted_mean = 0.0;
         let mut total_weight = 0.0;

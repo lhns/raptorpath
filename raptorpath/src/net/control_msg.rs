@@ -56,14 +56,6 @@ pub(crate) struct ControlCtx<'a> {
     pub decoders: &'a Arc<DashMap<u64, Box<dyn FecDecoder>>>,
     pub sent_counts: &'a Arc<DashMap<(u64, u32), u32>>,
     pub transport: &'a Arc<QuicTransport>,
-    /// DEAD as of this extraction and kept deliberately: the former
-    /// `fec_backend` parameter is read by NO arm — `BlockStart` builds its
-    /// decoder from the backend carried ON THE WIRE (ADR-0030), which is the
-    /// whole point of that field, and mid-stream switching was removed
-    /// (§16.4). Dropping it would be behaviour-neutral but is a signature
-    /// change beyond this refactor's remit, so the seam keeps it verbatim.
-    #[allow(dead_code)]
-    pub fec_backend: FecBackend,
     pub stats: &'a Arc<SharedStats>,
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
     /// tag so the sender's `[FCAUSE]` gauge can say WHICH receiver arm
