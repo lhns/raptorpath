@@ -26,17 +26,29 @@ Pinned by `default_config_routes_bulk_and_auto_to_the_block_pipeline` (ADR-0069)
 are off unless `RWM_QUIC_CC=passthrough`, `RWM_COPA_FEED` or `RWM_COPA_WIRE`
 is set.
 
-**Gates on by default** (`gates.rs` `RuntimeGates::resolve`, plus the
-resolve-once sites it names): `RWM_UNIFIED`, `RWM_UNIFIED_SHED`,
-`RWM_TAPER_R`, `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_HONEST_ANCHOR`,
-`RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
-`RWM_HONEST_CAP`, `RWM_GEN_PIPE` (only reached when generation is on),
-`RWM_RS_ATTR`, `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`,
-`RWM_DELTA_CAP`, `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`.
+**Gates on by default** (`gates.rs` `RuntimeGates::resolve`, resolved once
+and read everywhere through `gates::get()`; the default `[GATES]` echo is
+byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
+`RWM_UNIFIED_SHED`, `RWM_TAPER_R`, `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`,
+`RWM_HONEST_ANCHOR`, `RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
+`RWM_GEN_PIPE` (only reached when generation is on), `RWM_RS_ATTR`,
+`RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`, `RWM_DELTA_CAP`,
+`RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`. `RWM_HONEST_CAP` resolves on but is inert
+without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
+
+The recovery clocks (tail sweep, refresh, per-sequence cooldown) and the repair
+margin pool over the live paths (`recovery_clock_paths`), not the
+cwnd-saturation-filtered `active_paths()`. Boolean gates take one strict
+dialect (`config::parse_bool`); an unrecognised value is a startup error.
 
 Every other `RWM_*` gate is off by default (an experiment arm or an
-instrument). Store gain 2.0, store boot 128 and the per-path pool 2048 are the
-shipped store constants (§3.4).
+instrument). The refuted arms `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
+`RWM_PATIENCE_DERIVED`, `RWM_STORE_CAPW`, `RWM_STORE_PERCAP`,
+`RWM_PERCAP_GUARD`, `RWM_STORE_BORROW`, `RWM_WIN_DECOUPLE`, `RWM_PLACE_SLACK`,
+`RWM_RACK_CLOCKS`, `RWM_RACK_REO_MULT`, `RWM_QUANTILE_CLOCKS`, `RWM_W_FORM`
+and `RWM_ALPHA_OVERRIDE` are removed; set in the environment they are ignored
+(paper §10). `RWM_RECOV_SP` is kept as an off arm. Store gain 2.0, store
+boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 ## 2. Most recent verdicts
 
@@ -58,13 +70,18 @@ blessed.
 
 ### 3.1 Instrument and substrate findings owed from the law-search batteries
 
-1. The receiver's self-heal estimator (`succ.rs`) counts the sender's retransmit as a self-heal, so π̂0 ≈ 1; fix before any receiver-side law is re-tested.
-2. sc2 (clean 100 Mbit single path) did not finish 100 MB in 300 s on the shipped window machine (6/6, 8/8; ~2 Mbit/s once); bisect against the crown era.
+1. **Fixed.** The receiver's self-heal estimator (`succ.rs`) counted the sender's retransmit as a self-heal, so π̂0 ≈ 1. A hole closed by a source copy stamped later than its exposer is now `HoleOutcome::Retransmit` (`rtx_n=` in `[SUCC]`, `rtx=` in `[LATE]`) and is excluded from π̂0; a lower bound on copies, no wire change. The receiver-law battery has not been re-run on the fix.
+2. sc2 (clean 100 Mbit single path) did not finish 100 MB in 300 s on the shipped window machine (6/6, 8/8; ~2 Mbit/s once); bisect against the crown era. Open; see 3.5 (paper §11.1 open question 0).
 3. The sender `[ETA]` has no exit flush; `eta_s4.py` uses RTprop where the law uses SRTT (routes disagree 3–4×); the σ̂ witness fails at c7/sc3.
 4. c8 control shows a bimodal fast-path-alone collapse (4/8 reps), outside every pre-registered set; the likely source of c8's 75 % CV.
 5. `RWM_COPA_DELTA` has no engine echo, so MID cannot be scored again.
 6. `tracing` interleaves records onto readout lines; the diagnostic writer needs a newline discipline.
 7. `r_report.py` does not propagate a W7 `VOID`, and its R-FUNDED-NEGATIVE branch fires on any null.
+
+Also fixed with the cleanup: `[DIAG] cod=` counted source copies (gap
+retransmits, request copies, taper copies) as coded repair. It now counts coded
+symbols actually sent; copies go to `total_copy_symbols` and `retx=`. The r > 0
+battery's "coded symbols are 86–90 % retransmits" was read on the old meaning.
 
 ### 3.2 Generation-coding stack: no disposition
 
@@ -80,8 +97,8 @@ Each is a behaviour step at a preset point, which CLAUDE.md forbids.
 | `net/mod.rs` `is_window_mode` | the block/window pipeline fork (Bulk/Auto vs Realtime); §4 decides it |
 | `net/emit_source.rs` (`protocol_hint == Realtime`) | Realtime duplicate source send, a redundancy decision priced by nothing |
 | `net/sender_policy.rs` `use_packing` | symbol packing on Realtime only |
-| `scheduler/mod.rs` `queue_target_mult` | Copa queue target 1.08 / 1.125 / 1.25 by hint |
-| `scheduler/mod.rs` `copa_compete_active` (`RWM_COPA_COMPETE`) | Copa's TCP-competitive mode switching |
+| `scheduler/copa.rs` `queue_target_mult` | Copa queue target 1.08 / 1.125 / 1.25 by hint |
+| `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`) | Copa's TCP-competitive mode switching |
 | `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ |
 
 ### 3.4 Open-constants register
@@ -90,26 +107,46 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 
 | constant | value | where | why unprovenanced |
 |---|---|---|---|
-| tail-sweep / refresh clamp | `(2·srtt).clamp(25, 100) ms` | `net/mod.rs` `hole_nack_refresh` | undefeated, not derived; derivable from true-heal F only at duals |
-| legacy age gate | `srtt/2` | `net/mod.rs` `legacy_age_ripe` | pre-RFC; compares flight age with a dwell-inclusive srtt; inert at c1 |
-| RECOV_MP thresholds | `9/8·max(srtt, ewma)`, 3 packets | `net/mod.rs` `mp_time_threshold_split` | RFC 9002 values applied to an age that includes sender dwell |
+| tail-sweep / refresh clamp | `(2·srtt).clamp(25, 100) ms` | `net/recovery_laws.rs` `hole_nack_refresh` | undefeated, not derived; derivable from true-heal F only at duals |
+| legacy age gate | `srtt/2` | `net/recovery_laws.rs` `legacy_age_ripe` | pre-RFC; compares flight age with a dwell-inclusive srtt; inert at c1 |
+| RECOV_MP thresholds | `9/8·max(srtt, ewma)`, 3 packets | `net/recovery_laws.rs` `mp_time_threshold_split` | RFC 9002 values applied to an age that includes sender dwell |
 | `GAP_ACK_MIN_INTERVAL` | 2 ms | `net/mod.rs` | a rate limit that is also the hole sampler; not derived |
 | `NACK_RETX_COOLDOWN_FLOOR_US` | 10 ms | `net/mod.rs` | 10× kGranularity by choice; moves W by 6.8× across its range |
 | `ELIGIBLE_SKEW` | 75 ms | `scheduler/mod.rs` | a threshold that selects a code path |
 | taper copy `p_lost` | model-derived | `net/emit_source.rs` | measured waste is zero; why it never fires is undecided |
-| store gain / recovery round | 2.0 / 100 ms | `gates.rs`, `net/mod.rs` | the headroom H is proportional to gain − 1; κ is a fit |
-| heal/closed classifier | `srtt/2` | D0 instrument | biases π0 upward; gates nothing |
-| `PLACE_TEMPERATURE` | 0.15 | `scheduler/mod.rs` | argmax of a four-point sweep whose verdict failed |
-| `w_div` | 1.0 | `SchedulingWeights::from_hint` | derived GE form gives 0.475 (c2) / 0.552 (c3) |
-| unmeasured-path price | 10.0 | `scheduler/mod.rs` `place_costs` | a hard exclusion (e^−66 odds) in a continuous costume |
+| store gain / recovery round | 2.0 / 100 ms | `gates.rs`, `net/store_cap.rs` `HONEST_RECOVERY_ROUND_S` | the headroom H is proportional to gain − 1; κ is a fit |
+| heal/closed classifier | `srtt/2` | D0 instrument (offline) | biases π0 upward; gates nothing; the engine's `[LATE]` π̂0 uses sender-stamp order instead |
+| `PLACE_TEMPERATURE` | 0.15 | `scheduler/place.rs` | argmax of a four-point sweep whose verdict failed |
+| `w_div` | 1.0 | `scheduler/mod.rs` `SchedulingWeights::from_hint` | derived GE form gives 0.475 (c2) / 0.552 (c3) |
+| unmeasured-path price | 10.0 | `scheduler/place.rs` `place_costs` | a hard exclusion (e^−66 odds) in a continuous costume |
 | near-tie band / floor | 0.8 / 0.25 | `place_repair_spare_path` | a relative band plus an absolute floor: a missing scale |
 | stall fraction κ in placement | 1 | `place_costs` | declared upper bound; measured 0.005–0.067 |
 | `BULK_TAIL_BUDGET` | 0.05 | `raptorpath-math` | an "e.g." in the derivation promoted to a const |
-| `queue_target_mult` | 1.08 / 1.125 / 1.25 | `scheduler/mod.rs` | declared corner; no continuous form fits the three points |
+| `queue_target_mult` | 1.08 / 1.125 / 1.25 | `scheduler/copa.rs` | declared corner; no continuous form fits the three points |
 | block shape by hint | `BlockProfile::from_hint`, interleave 2/1/3 | `net/mod.rs`, `config.rs` | declared corners; interleave is non-monotone in δ |
 | Realtime duplicate send | on at Realtime | `net/emit_source.rs` | a rate decision taken by a hint equality |
 | `use_packing` | on at Realtime | `net/sender_policy.rs` | declared corner |
-| receiver hold | `(4·srtt).clamp(60, 300) ms`; armed arm `srtt/2` | `net/mod.rs` `shed_recv_hold` | three constants; `srtt/2` equals b(δ_Realtime) by seat, not by evaluation |
+| receiver hold | `(4·srtt).clamp(60, 300) ms`; armed arm `srtt/2` | `net/shed.rs` `shed_recv_hold` | three constants; `srtt/2` equals b(δ_Realtime) by seat, not by evaluation |
+
+### 3.5 Known issues from the cleanup
+
+1. **Throughput regression on the current binary line.** sc2, sc3 and c7 run
+   far below their earlier readings (item 3.1.2; paper §11.1 open question 0).
+   Undiagnosed; a bisect against the competitive-baseline binary would decide it.
+2. **seq 0 delivered but never pruned.** A lost seq 0 is now SACK-reported, but
+   the sender cannot prune a delivered seq 0 until the cumulative ack reaches
+   1, and a receiver that delivered only seq 0 advertises nothing new. Fixing
+   it needs a wire change.
+3. **Same-class `active_paths()` sites not changed.** The recovery clocks moved
+   to the live set; these still read the cwnd-saturation-filtered set, which is
+   empty when every path is cwnd-full: the react-cap SRTT, the
+   NACK-budget and `repair_rate` worst-loss picks, the taper's ε at send
+   (`emit_source`), and the Shutdown broadcast (sent only on active paths).
+4. **`[DIAG] rtp` prints whole milliseconds.** At sub-millisecond RTprop
+   (loopback) it prints `rtp0ms`, which cannot be told from an unset anchor,
+   and at c1's 2 ms the rounding is coarse.
+5. The recovery-clock bind fractions in paper §7.1 / §9.7 were measured on the
+   saturation-filtered set and are not re-measured.
 
 ## 4. Block default re-test — pre-registration
 

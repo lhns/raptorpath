@@ -34,7 +34,10 @@ stack, the most recent verdicts and the open debts. In short:
 - The QUIC congestion controller underneath is quinn BBR (`RWM_QUIC_CC`
   overrides it).
 - Experiment arms and instruments are `RWM_*` environment gates, resolved once
-  at start (`src/gates.rs`). Most are off by default.
+  at start (`src/gates.rs`) and echoed with their effective values on the
+  `[GATES]` line. Most are off by default. Booleans take `1/0`, `true/false`,
+  `on/off`, `yes/no`; anything else is a startup error naming the variable.
+  Gates of refuted arms have been removed and are ignored if set.
 
 ## Prerequisites
 
