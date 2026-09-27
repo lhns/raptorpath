@@ -380,7 +380,9 @@ run_topo() { # cell arm
       RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 RWM_LATPROBE=1 \
     bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" 2>&1 \
     | tee /tmp/rwm-perf-out.txt \
-    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|LATPROBE" >> "$OUT" || true
+    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|LATPROBE" >> "$OUT"
+  # No `|| true` here: it would run whenever the pipeline failed and replace
+  # PIPESTATUS with true's 0, so a failed engine read rc=0.
   RC=${PIPESTATUS[0]}
   echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s rc=$RC" >> "$OUT"
 
