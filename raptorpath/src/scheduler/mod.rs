@@ -446,38 +446,12 @@ pub fn honest_anchor_active() -> bool {
 ///
 /// OFF is bit-identical by construction: with the gate off the cold price IS
 /// `p.srtt()`, i.e. the shipped expression verbatim at every leg.
-/// **THE ARM FLAG, WITH GARBAGE RESOLVING TO ABSENT — VISIBLY.**
-///
-/// `config::env_flag` reads anything outside `{"", "0", "false"}` as ON, which
-/// is the right convention for a gate whose value a human types once. It is
-/// the WRONG one for a battery arm: `RWM_PLACE_HOL=of` is a typo that would
-/// arm the challenger in the control row, and the row would look valid. So a
-/// value that is not a recognised boolean resolves the arm to ABSENT and says
-/// so at `warn` level, with the `[GATES]` echo then printing the honest `0`.
-/// **"My arm did not take" is READ off the run rather than inferred** — the
-/// `RWM_ALPHA_OVERRIDE` precedent, and for its reason: a configuration axis
-/// that cannot be read off its own run produced the 31 Mbit/s anomaly.
-///
-/// On every RECOGNISED value this agrees with `env_flag` exactly, so the arms
-/// have no dialect of their own.
+/// A placement arm's flag: [`crate::config::env_flag`], default ABSENT. A
+/// value outside the strict boolean dialect (`RWM_PLACE_HOL=of`) is a startup
+/// error naming the gate, so a typo can never run a control row labelled as
+/// a challenger.
 fn place_arm_flag(name: &str) -> bool {
-    match std::env::var(name) {
-        Err(_) => false,
-        Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
-            "" | "0" | "false" => false,
-            "1" | "true" => true,
-            other => {
-                tracing::warn!(
-                    gate = name,
-                    value = other,
-                    "unrecognised value for a placement arm gate — resolving it \
-                     ABSENT. The [GATES] echo prints 0, so this run is a CONTROL \
-                     row and must not be read as a challenger."
-                );
-                false
-            }
-        },
-    }
+    crate::config::env_flag(name, false)
 }
 
 /// **`RWM_PLACE_T_DERIVED`** (Track A arm 1, ABSENT by default) - the
@@ -8828,39 +8802,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    /// **GARBAGE RESOLVES TO ABSENT, VISIBLY.** A typo in an arm's value must
-    /// produce a CONTROL row that says it is a control row — not a challenger
-    /// that silently is not one. On every recognised boolean the arm flag
-    /// agrees with `config::env_flag` exactly, so the arms have no dialect of
-    /// their own. (Unique var names: the test threads share one environment.)
-    #[test]
-    fn an_unrecognised_arm_value_resolves_absent_and_agrees_elsewhere() {
-        let var = "RWM_TEST_PLACE_ARM_FLAG";
-        for bad in ["of", "yes", "on", "2", "-1", "trve"] {
-            std::env::set_var(var, bad);
-            assert!(!place_arm_flag(var), "`{bad}` must resolve the arm ABSENT");
-        }
-        for (v, want) in [
-            ("1", true),
-            ("true", true),
-            ("TRUE", true),
-            (" 1 ", true),
-            ("0", false),
-            ("false", false),
-            ("", false),
-        ] {
-            std::env::set_var(var, v);
-            assert_eq!(place_arm_flag(var), want, "value `{v}`");
-            assert_eq!(
-                place_arm_flag(var),
-                crate::config::env_flag(var, false),
-                "the arm flag must agree with env_flag on the recognised value `{v}`"
-            );
-        }
-        std::env::remove_var(var);
-        assert!(!place_arm_flag(var), "unset is ABSENT");
     }
 
     /// A placement arm reads the one strict boolean dialect: a typo is a

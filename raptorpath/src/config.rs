@@ -369,17 +369,6 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
     Ok((peer_config, status_addr))
 }
 
-/// Boolean `RWM_*` env gate parser — the ONE way to read an on/off experiment
-/// gate.
-///
-/// Semantics (fixes the historic `.is_ok()` footgun where `RWM_FMTCP=0`
-/// counted as ON):
-///   - unset → `default` (shipped default preserved)
-///   - set to "" / "0" / "false" (case-insensitive, trimmed) → OFF
-///   - set to "1" / anything else → ON
-///
-/// Numeric-VALUE knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do NOT use
-/// this — they parse their value, and 0 may be a legitimate value there.
 /// feat/anchor-hygiene: per-fix gate with the `RWM_ANCHOR_HYGIENE` umbrella
 /// as its default — `RWM_ANCHOR_HYGIENE=1` turns the whole anchor-repair
 /// family on for a battery, while each fix stays individually A/B-able
@@ -422,13 +411,36 @@ pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool 
     on
 }
 
+/// THE boolean dialect for every env gate (trimmed, case-insensitive):
+/// `1`/`true`/`on`/`yes` → ON; `0`/`false`/`off`/`no`/empty → OFF; anything
+/// else → `None`.
+pub fn parse_bool(v: &str) -> Option<bool> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "on" | "yes" => Some(true),
+        "" | "0" | "false" | "off" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+/// Boolean `RWM_*` env gate parser — the ONE way to read an on/off gate.
+///
+///   - unset → `default` (shipped default preserved)
+///   - set → [`parse_bool`]; an unrecognised value (a typo such as `of`, or
+///     a number) is a hard error naming the variable, never a silent ON or
+///     OFF. The engine resolves its gates at startup (`RuntimeGates::resolve`
+///     from `main`), so the error surfaces before any transfer.
+///
+/// Numeric-VALUE knobs (e.g. `RWM_GEN_R=0.03`, `RWM_STORE=..`) do NOT use
+/// this — they parse their value, and 0 may be a legitimate value there.
 pub fn env_flag(name: &str, default: bool) -> bool {
     match std::env::var(name) {
         Err(_) => default,
-        Ok(v) => {
-            let v = v.trim();
-            !(v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false"))
-        }
+        Ok(v) => parse_bool(&v).unwrap_or_else(|| {
+            panic!(
+                "invalid boolean {v:?} for env gate {name}: expected one of \
+                 1/0/true/false/on/off/yes/no (case-insensitive)"
+            )
+        }),
     }
 }
 
@@ -494,12 +506,11 @@ mod env_flag_tests {
     }
 
     #[test]
-    fn one_and_anything_else_are_on_even_when_default_off() {
+    fn one_true_and_yes_are_on_even_when_default_off() {
         for (var, val) in [
             ("RWM_TEST_EF_ONE", "1"),
             ("RWM_TEST_EF_TRUE", "true"),
             ("RWM_TEST_EF_YES", "yes"),
-            ("RWM_TEST_EF_NUM", "16"),
         ] {
             std::env::set_var(var, val);
             assert!(env_flag(var, false), "{var}={val:?} must be ON");

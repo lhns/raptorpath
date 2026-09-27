@@ -41,20 +41,49 @@
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};
 
-fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
-    std::env::var(name).ok().and_then(|s| s.parse::<T>().ok())
+/// A numeric env value, or `None` when unset or unparseable. Non-finite
+/// floats (`NaN`, `inf`, an overflowing `1e400`) are rejected: every float
+/// knob is a rate, gain or bound, and a NaN would poison each law it reaches.
+fn env_parse<T: std::str::FromStr + EnvFinite>(name: &str) -> Option<T> {
+    std::env::var(name)
+        .ok()
+        .and_then(|s| s.parse::<T>().ok())
+        .filter(|v| v.is_finite_value())
 }
+
+/// Finiteness for [`env_parse`]; integers are always finite.
+trait EnvFinite {
+    fn is_finite_value(&self) -> bool {
+        true
+    }
+}
+impl EnvFinite for f64 {
+    fn is_finite_value(&self) -> bool {
+        self.is_finite()
+    }
+}
+impl EnvFinite for u16 {}
+impl EnvFinite for u32 {}
+impl EnvFinite for u64 {}
+impl EnvFinite for usize {}
 
 /// `RWM_GEN_RATE_FLOOR` resolved against the pace ceiling `gen_rate`
 /// (default 2000, bounded to `[1, gen_rate]`).
 fn gen_rate_floor(raw: Option<f64>, gen_rate: f64) -> f64 {
-    raw.unwrap_or(2000.0).clamp(1.0, gen_rate)
+    // `f64::max` returns the non-NaN operand, so the upper bound is always a
+    // number >= the lower one and `clamp` cannot panic.
+    let ceil = gen_rate.max(1.0);
+    let floor = raw.unwrap_or(2000.0);
+    if floor.is_nan() { 1.0 } else { floor.clamp(1.0, ceil) }
 }
 
 /// `RWM_OOO_RETAIN`'s flag half: the variable doubles as the retention depth
 /// (`RWM_OOO_RETAIN=16`), so a depth value also arms the decouple.
 fn flag_or_depth(name: &str) -> bool {
-    env_flag(name, false)
+    match std::env::var(name).ok().and_then(|v| v.trim().parse::<u64>().ok()) {
+        Some(depth) => depth > 0,
+        None => env_flag(name, false),
+    }
 }
 
 /// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
