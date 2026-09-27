@@ -128,7 +128,7 @@ if grep -qE '\bens18\b|dev (ens|eth|enp|wlan)' "$LOG"; then
 else
     echo "ok    no command names ens18 or any host NIC"
 fi
-if grep -E 'netns (add|del|exec)' "$LOG" | grep -qvE 'netns (add|del|exec) rp-(cli|srv)\b'; then
+if [ "$(grep -E 'netns (add|del|exec)' "$LOG" | grep -cvE 'netns (add|del|exec) rp-(cli|srv)\b')" -gt 0 ]; then
     echo "FAIL  a namespace operation targets a non-rp-* namespace:"
     grep -E 'netns (add|del|exec)' "$LOG" | grep -vE 'netns (add|del|exec) rp-(cli|srv)\b'
     FAIL=1
@@ -136,7 +136,7 @@ else
     echo "ok    every netns operation targets rp-cli or rp-srv only"
 fi
 # `qdisc add` may only ever land on a cli*/srv* veth.
-if grep -E 'qdisc add' "$LOG" | grep -qvE 'dev (cli|srv)[0-3] '; then
+if [ "$(grep -E 'qdisc add' "$LOG" | grep -cvE 'dev (cli|srv)[0-3] ')" -gt 0 ]; then
     echo "FAIL  a qdisc lands on a device that is not a cli*/srv* veth:"
     grep -E 'qdisc add' "$LOG" | grep -vE 'dev (cli|srv)[0-3] '
     FAIL=1
@@ -171,7 +171,7 @@ ck "leg 3 data seed = 3042"                 1 'qdisc add dev cli3 .* seed 3042$'
 ck "FOUR DISTINCT data seeds (not one)"     4 'qdisc add dev cli[0-3] .* seed (42|1042|2042|3042)$'
 # The reverse direction takes NO seed — the kernel draws its own. That is the
 # seed audit's own control and must survive the widening.
-if grep -E 'qdisc add dev srv[0-3] ' "$LOG" | grep -q 'seed '; then
+if [ "$(grep -E 'qdisc add dev srv[0-3] ' "$LOG" | grep -c 'seed ')" -gt 0 ]; then
     echo "FAIL  an ACK-direction qdisc carries a seed (it must not — that is the audit's control)"
     FAIL=1
 else
@@ -227,7 +227,7 @@ else
     echo "ok    the two dual legs carry DIFFERENT seeds (the defect stays fixed)"
 fi
 # The ACK direction still takes no seed — the audit's own control.
-if grep -E 'qdisc add dev srv[01] ' "$LOG" | grep -q 'seed '; then
+if [ "$(grep -E 'qdisc add dev srv[01] ' "$LOG" | grep -c 'seed ')" -gt 0 ]; then
     echo "FAIL  a dual ACK-direction qdisc carries a seed"
     FAIL=1
 else

@@ -128,13 +128,13 @@ backstop() {
   # 3. Wait for the rp-* namespaces to clear (perf_rwm_c.sh's own teardown).
   local i
   for i in $(seq 1 36); do
-    if ! sudo ip netns list 2>/dev/null | grep -q '^rp-'; then
+    if [ "$(sudo ip netns list 2>/dev/null | grep -c '^rp-')" -eq 0 ]; then
       echo "PLACE-ALL namespaces clear after $(( i * 5 ))s"
       break
     fi
     sleep 5
   done
-  if sudo ip netns list 2>/dev/null | grep -q '^rp-'; then
+  if [ "$(sudo ip netns list 2>/dev/null | grep -c '^rp-')" -gt 0 ]; then
     echo "PLACE-ALL NS-STILL-PRESENT after 180s: $(sudo ip netns list 2>/dev/null | grep '^rp-' | tr '\n' ' ')"
   fi
   # 4. The sentinel, last.

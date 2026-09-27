@@ -211,7 +211,9 @@ aw_kv srv_pid "$SRV_PID"
 SRV_WAITS=0
 SRV_BOUND=0
 for _ in $(seq 1 20); do
-    if ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -q ':7000'; then SRV_BOUND=1; break; fi
+    # `grep -c`, not `grep -q`: under pipefail an early-exiting `grep -q` can
+    # SIGPIPE `ss`, and the failed pipeline would read a BOUND server as unbound.
+    if [ "$(ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -c ':7000')" -gt 0 ]; then SRV_BOUND=1; break; fi
     SRV_WAITS=$((SRV_WAITS + 1))
     sleep 0.3
 done

@@ -157,7 +157,7 @@ up() {
 status() {
     ip netns list | grep '^rp-' || echo "(no rp-* namespaces)"
     for ns in "$NS_CLI" "$NS_SRV"; do
-        if ip netns list | grep -q "^$ns"; then
+        if [ "$(ip netns list | grep -c "^$ns")" -gt 0 ]; then
             echo "--- $ns"
             ip -n "$ns" -br addr
             ip netns exec "$ns" tc qdisc show 2>/dev/null | grep -v noqueue || true
