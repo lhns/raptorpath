@@ -30,7 +30,7 @@ is set.
 **Gates on by default** (`gates.rs` `RuntimeGates::resolve`, plus the
 resolve-once sites it names): `RWM_UNIFIED`, `RWM_UNIFIED_SHED`,
 `RWM_TAPER_R`, `RWM_ASTAR_ANCHOR`, `RWM_MSTAR_ANCHOR`, `RWM_HONEST_ANCHOR`,
-`RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`, `RWM_PERCAP_GUARD`,
+`RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
 `RWM_HONEST_CAP`, `RWM_GEN_PIPE` (only reached when generation is on),
 `RWM_RS_ATTR`, `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`,
 `RWM_DELTA_CAP`, `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`.
@@ -104,7 +104,6 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §16.80
 | `w_div` | 1.0 | `SchedulingWeights::from_hint` | derived GE form gives 0.475 (c2) / 0.552 (c3) |
 | unmeasured-path price | 10.0 | `scheduler/mod.rs` `place_costs` | a hard exclusion (e^−66 odds) in a continuous costume |
 | near-tie band / floor | 0.8 / 0.25 | `place_repair_spare_path` | a relative band plus an absolute floor: a missing scale |
-| `PLACE_SLACK_RECOV_PATIENCE` | 9/8 | `scheduler/mod.rs` | cannot execute: the slack budget defaults to 0 |
 | stall fraction κ in placement | 1 | `place_costs` | declared upper bound; measured 0.005–0.067 |
 | `BULK_TAIL_BUDGET` | 0.05 | `raptorpath-math` | an "e.g." in the derivation promoted to a const |
 | `queue_target_mult` | 1.08 / 1.125 / 1.25 | `scheduler/mod.rs` | declared corner; no continuous form fits the three points |

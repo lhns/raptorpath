@@ -21,8 +21,8 @@
 //!     (serialisation at the path rate + a standing queue + RTprop), so a
 //!     cwnd-saturating sender builds its own delay signal,
 //!   * the SHIPPED dyn-cap chain at the battery's arms (A/AU/AL/ALU are all
-//!     `store_paths_on = true`, `percap = capw = pool_anchor = three_term =
-//!     honest_cap = off`), i.e. `path_scaled_store_cap` over the path set the
+//!     `store_paths_on = true`, `pool_anchor = three_term = honest_cap =
+//!     off`), i.e. `path_scaled_store_cap` over the path set the
 //!     flag selects, refreshed on the shipped 5 ms cadence.
 //!
 //! No wall clock, no sockets, no tokio, no netem: same numbers every run —

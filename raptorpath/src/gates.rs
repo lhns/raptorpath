@@ -171,15 +171,6 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw
     /// anchor warms.
     pub store_boot: usize,
-    /// `RWM_STORE_PERCAP` (default OFF): per-path outstanding accounts
-    /// (task #86; symmetric-cell tool, c8 successor named — ADR-0058).
-    pub store_percap: bool,
-    /// `RWM_PERCAP_GUARD` (default ON under percap): delay-aware redirect
-    /// bound; `=0` = the measured c8-regression control arm.
-    pub percap_guard: bool,
-    /// `RWM_STORE_BORROW` (default OFF): bounded account borrowing
-    /// (§16.22; loans ≡ 0 at symmetric cells by theorem).
-    pub store_borrow: bool,
     /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live; the `[GATES]`
     /// echo prints the effective `honest_cap && plain_rs`): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
@@ -1084,9 +1075,6 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            store_percap: env_flag("RWM_STORE_PERCAP", false),
-            percap_guard: env_flag("RWM_PERCAP_GUARD", true),
-            store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
             pool_anchor: crate::scheduler::pool_anchor_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
@@ -1231,7 +1219,6 @@ impl RuntimeGates {
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
-             RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
@@ -1262,7 +1249,6 @@ impl RuntimeGates {
             ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
-            b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             // EFFECTIVE value: the honest-cap law only runs with plain_rs.
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
@@ -1798,7 +1784,7 @@ mod tests {
             "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
         );
         // Experiments / instruments (default OFF)
-        assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
+        assert!(!g.plain_rs);
         // "Honest Inputs" (2026-08-10): both fixes ship default OFF (A/B
         // arms; anchor-hygiene umbrella members). The OFF-VALUE PROPERTY,
         // two-sided on the echo (MEASUREMENT DISCIPLINE 15): a battery must

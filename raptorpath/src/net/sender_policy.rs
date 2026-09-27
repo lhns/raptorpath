@@ -39,9 +39,8 @@
 //! buckets and their refresh stamps (`gen_tokens`, `src_tokens`,
 //! `cc_rate_cached`, `cc_rate_ceiling`, …), the derived-depth and
 //! dynamic-cap caches (`gen_pipe_m`, `gen_pipe_store_cap`, `dyn_store_cap`,
-//! `dyn_infl_cap`, `wd_*`, `pa_*`, `ps_*`), the per-path account caps
-//! (`percap_caps` / `percap_bounds` / `percap_rr` / `percap_k`, refreshed at
-//! the dyn-cap cadence), `emit_batch_live` (RE-SCOPED every loop iteration
+//! `dyn_infl_cap`, `pa_*`), the per-path echo-ratio state (`percap_k`,
+//! refreshed at the dyn-cap cadence), `emit_batch_live` (RE-SCOPED every loop iteration
 //! on the live-path count — the one member of the `RWM_EMIT_BATCH` family
 //! that is NOT policy), the DIAG counter set, and the two DIAG t0 stamps.
 //! The mutable EMISSION state lives in
@@ -367,19 +366,11 @@ pub(crate) struct SenderPolicy {
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
 
-    // ── Per-path outstanding accounting (task #86, ADR-0058) ─────────────
-    /// `RWM_STORE_PERCAP`: per-path accounts.
-    pub percap_on: bool,
-    /// `RWM_PERCAP_GUARD`: the delay-aware redirect guard.
-    pub percap_guard_on: bool,
-    /// `RWM_STORE_BORROW` (§16.22): bounded account borrowing.
-    pub percap_borrow_on: bool,
     /// `RWM_HONEST_CAP` (+ `RWM_PLAIN_RS`): honest floor-clock caps.
     pub honest_cap_on: bool,
-    /// `percap_on || (diag_on && plain_dyn_cap)` — under `RWM_DIAG` the
-    /// account maps are maintained as a GAUGE even when the law is off.
-    /// Behavior-inert by construction: every percap DECISION site keys on
-    /// `percap_caps` NON-EMPTY (the "law engaged" signal).
+    /// `diag_on && plain_dyn_cap` — under `RWM_DIAG` the per-path store
+    /// attribution maps behind `[DIAG] sout=` are maintained. A GAUGE only:
+    /// nothing reads them but the DIAG print.
     pub percap_track: bool,
 
     // ── The unified span / shed laws (§16.20.3, ADR-0064) ────────────────
@@ -1012,39 +1003,6 @@ impl SenderPolicy {
         // store_len.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
-        // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
-        // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
-        // 0.79–0.80 of Σ; raising the shared cap to 8192 collapsed the slow
-        // path to 31.8 Mbit/s). Here each path gets its OWN account sized to
-        // ITS pipe (percap_store_cap: gain·rate_i·echoRTT_i, clamped to
-        // [floor, pool]); a symbol placed on path i draws path i's account and
-        // is released on the ack that removes it from the retention store
-        // (SACK/OOO or cumulative). Admission pauses only when NO live path
-        // has account headroom (percap_store_full — the infl_percap_full
-        // pattern), and the plain-reliable placement redirects a cap-full pick
-        // to the path with headroom (percap_place_path). Engaged only for
-        // N ≥ 2 live paths — N = 1 keeps the legacy pooled law bit-exactly.
-        // Default OFF: shipped byte-identical. Supersedes RWM_STORE_PATHS'
-        // pooled GATE when both are set (the warm-up share still inherits from
-        // whichever pooled law is configured, so STORE_PATHS composes as the
-        // warm-up baseline rather than conflicting).
-        let percap_on = gates.store_percap && plain_dyn_cap;
-        // Roadmap item 1 (the #86 c8 follow-up): the delay-aware redirect guard.
-        // Default ON whenever percap is on (RWM_PERCAP_GUARD=0 restores the
-        // unguarded redirect — the measured c8-regression control arm). The
-        // shipped default is untouched: percap itself is default OFF.
-        let percap_guard_on = percap_on && gates.percap_guard;
-        // Bounded account borrowing (feat/store-borrowing, paper §16.22): a
-        // pick landing on a cap-full account may FLY on that pipe while being
-        // CHARGED to a sibling account, bounded by
-        //   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j)),
-        //   T_return(j) = fly_j/rate_j + RTprop_j (floor clock)
-        // — lend only headroom the lender cannot use within the loan's return
-        // latency. Requires the percap stack (accounts, guard, honest caps
-        // under RWM_PLAIN_RS). Default OFF: shipped byte-identical; the
-        // no-borrow percap arm is the same-binary control.
-        let percap_borrow_on = percap_on && gates.store_borrow;
         // ── Honest floor-clock store caps (feat/percap-honest-cap) ────────────
         // GUARD-RESULTS residual (i): with the redirect channel closed, the c8
         // parking flowed through the softmax's OWN picks under the knee-clamped
@@ -1056,8 +1014,7 @@ impl SenderPolicy {
         // rate_i·(gain−1)·R — residence on the measured unloaded drain clock
         // plus runway on the RECOVERY engine's clock (R = the 100-ms hole-
         // refresh/tail-sweep cadence bound), see `honest_store_cap`. Applies
-        // to the per-account
-        // percap caps AND the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
+        // to the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
         // over-read was accidentally load-bearing there; K supplies that
         // headroom explicitly and honestly). Engaged only where the honest
         // sampler is live (plain in-order, no Copa CC ownership — the Σcwnd
@@ -1173,15 +1130,13 @@ impl SenderPolicy {
         // emission step as `SenderPolicy::diag_on` (the GLIFE fill tracking).
         let diag_on = gates.diag;
         // Per-path store-attribution GAUGE (goal-gate "C8-Aware Pool Law"
-        // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG the
-        // percap account maps are maintained even when the percap LAW is off, so
-        // the DIAG `sout=` field shows each path's share of the POOLED
-        // outstanding (which path is holding the unacked-frontier span — the c8
-        // pool-arm diagnosis gauge). Behavior-inert by construction: every percap
-        // decision site keys on `percap_caps` NON-EMPTY (the "law engaged"
-        // signal), and caps are only computed under percap_on — with the law off
-        // the maps feed the DIAG print alone.
-        let percap_track = percap_on || (diag_on && plain_dyn_cap);
+        // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG
+        // the account maps are maintained so the DIAG `sout=` field shows each
+        // path's share of the POOLED outstanding (which path is holding the
+        // unacked-frontier span). The maps feed the DIAG print alone. (The
+        // per-path account LAW built on them, RWM_STORE_PERCAP, and its guard
+        // and borrowing arms were refuted and removed.)
+        let percap_track = diag_on && plain_dyn_cap;
         // ── feat/recovery-suppression: multipath recovery suppression ─────────
         // (`RWM_RECOV_MP`, DEFAULT ON 2026-07-21 — the "Consolidation" LOO
         // battery: removal costs −12.3/−13.9 Mbit >>sigma at c7 on both seeds
@@ -1376,9 +1331,6 @@ impl SenderPolicy {
             delta_b,
             contract_rho,
             store_sack_release_on,
-            percap_on,
-            percap_guard_on,
-            percap_borrow_on,
             honest_cap_on,
             percap_track,
             unified_span,

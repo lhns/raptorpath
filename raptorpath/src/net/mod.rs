@@ -2199,8 +2199,7 @@ fn gen_pipe_depth(rate_sym_per_s: f64, rtt_s: f64, gen_size: usize) -> usize {
 /// cap bounds ONLY the slow path, and the fast path keeps pulling source while the
 /// slow path is full. The summed-anchor #64 bug was a single GLOBAL budget
 /// gain·Σ_i BtlBw_i·RTprop_i that the fast path stalled behind (and that let the
-/// slow path's inflated term over-drive its own queue into bufferbloat). The
-/// retention-store mirror is [`percap_store_full`]. Extracted pure for unit
+/// slow path's inflated term over-drive its own queue into bufferbloat). Extracted pure for unit
 /// testing.
 fn infl_percap_full(per_path: &[(u64, u64)]) -> bool {
     !per_path.iter().any(|&(in_flight, cap)| in_flight < cap.max(1))
@@ -4032,103 +4031,6 @@ pub fn capw_store_cap(
     let sum: f64 = terms.iter().map(|t| t.unwrap_or(0.0)).sum();
     let ceiling = n.saturating_mul(pool).max(floor);
     Some((sum.ceil() as usize).clamp(floor, ceiling))
-}
-
-/// Per-path outstanding-account cap (task #86, env `RWM_STORE_PERCAP`).
-///
-/// The #84 residual, named at L1: ONE shared pool cannot be sized for a
-/// c2-deep (fast) and a c3-shallow (slow) path at once — the slow path's
-/// recovery latency scales with pool dwell (static 8192 collapsed it to
-/// 31.8 Mbit/s) while the fast path wants the depth. So each path gets its
-/// OWN account, sized to ITS pipe by Little's law on the store itself:
-///
-///   cap_i = clamp(gain × rate_i × echoRTT_i, floor, pool)
-///
-/// where `pipe_i` = rate_i × echoRTT_i is passed in by the caller —
-/// BtlBw_i (the per-path delivered-rate anchor) × that path's smoothed
-/// ack-ECHO RTT (NOT RTprop: the store drains at the ack clock, so the
-/// account's residence time includes the queue + ack path; the `pool`
-/// ceiling — the measured 2048-per-path knee — bounds the echo-RTT
-/// positive feedback). Under the Copa-sole feed the caller passes cwnd_i
-/// (Copa's operating point IS the per-path pipe, mirroring the pooled
-/// Σcwnd law).
-///
-/// Warm-up (`pipe_i` = None / non-positive, the anchor not yet
-/// established): inherit an equal share of the LEGACY pooled cap
-/// (`legacy_cap` / n_live, bounded to [floor, pool]) — converges to the
-/// derived cap as the anchor warms. The per-path in-flight cap
-/// (`infl_percap_full`, the FMTCP-era #64 fix) is the structural pattern,
-/// generalized here to the plain-reliable retention store.
-///
-/// N = 1 bit-exactness is CALLER-side: the percap law is only engaged for
-/// N ≥ 2 live paths (this function is never consulted at N = 1), so
-/// singles keep the legacy pooled law even with the flag ON.
-pub fn percap_store_cap(
-    pipe_i: Option<f64>,
-    legacy_cap: usize,
-    n_live: usize,
-    gain: f64,
-    floor: usize,
-    pool: usize,
-) -> usize {
-    let ceiling = pool.max(floor);
-    match pipe_i {
-        Some(p) if p > 0.0 => ((gain * p).ceil() as usize).clamp(floor, ceiling),
-        _ => (legacy_cap / n_live.max(1)).clamp(floor, ceiling),
-    }
-}
-
-/// Per-path admission gate (task #86): TUN intake is paused only when NO
-/// path's outstanding account has headroom below its own cap — one path's
-/// full (or recovery-stalled) account never starves another path's
-/// admission. `accounts` = (outstanding_i, cap_i) per live path. The exact
-/// mirror of [`infl_percap_full`] for the retention store.
-///
-/// KEPT despite having no production call site (dead-code batch 2 audit): it
-/// is the UNGUARDED CONTROL LAW that [`percap_store_full_guarded`] — the law
-/// the sender actually runs — is bounded against. Its real consumers are the
-/// degeneracy and c8-miniature tests (`percap_store_full_guarded` with
-/// bound = cap must equal it exactly; the guarded gate must read FULL exactly
-/// where this one still admits). Deleting it would delete the bound, not
-/// dead code.
-pub fn percap_store_full(accounts: &[(usize, usize)]) -> bool {
-    !accounts.iter().any(|&(out, cap)| out < cap.max(1))
-}
-
-/// Delay-aware redirect bound (roadmap item 1, the #86 c8 fix): the maximum
-/// outstanding a cap-full redirect may find on target path j before the
-/// redirect is refused and the store reads FULL for the placement instead.
-///
-/// Derivation (not tuned). The projected dwell of account j is Little's law
-/// on the store, D_j = out_j / rate_j (the store drains at the ack clock).
-/// The guard law is D_j ≤ κ·echoRTT_j — "j can drain its current account
-/// within one echo round". But the app-echo clock is store-dwell-INCLUSIVE:
-/// echoRTT_j ≈ RTprop_j + D_j, so on the LOADED echo clock κ = 1 is vacuous
-/// (D ≤ RTprop + D holds for every D — exactly the measured c8 feedback,
-/// where slow-path echo inflation to 214–811 ms held the account open).
-/// Solving D ≤ κ·(RTprop_j + D) for κ < 1 gives D ≤ (κ/(1−κ))·RTprop_j;
-/// κ = 1/2 (the redirected symbol must still clear within one round AFTER
-/// its own dwell has inflated the echo) gives D ≤ RTprop_j — equivalently
-/// κ = 1 on the FLOOR clock:
-///
-///   bound_j = rate_j × RTprop_j  (the path's honest BDP in symbols)
-///
-/// i.e. a redirect may never park more than one un-queued pipe on the
-/// target. Since cap_j = gain·rate_j·echoSRTT_j (gain 2 = pipe + recovery
-/// runway), the guard reserves the runway term AND any knee-clamp headroom
-/// (the plain-anchor over-read case) for the path's OWN traffic — redirects
-/// consume only the floor-clocked pipe term. Under the Copa-sole feed the
-/// caller passes cwnd_j (Copa's operating point IS the bounded-queue pipe).
-/// Warm-up (no anchor): cap_j/gain — the same "pipe term only" law applied
-/// to the inherited share. Clamped to [1, cap_j]: a one-symbol quantum so a
-/// cold account is never permanently redirect-closed, and never above the
-/// account's own cap.
-pub fn percap_redirect_bound(floor_pipe: Option<f64>, cap_i: usize, gain: f64) -> usize {
-    let ceiling = cap_i.max(1);
-    match floor_pipe {
-        Some(p) if p > 0.0 => (p.ceil() as usize).clamp(1, ceiling),
-        _ => ((cap_i as f64 / gain.max(1.0)).ceil() as usize).clamp(1, ceiling),
-    }
 }
 
 /// Windowed-MIN echo-ratio tracker (feat/percap-honest-cap): K_i = the
@@ -6148,221 +6050,12 @@ pub fn store_cap_sf_reset() {
 /// the bound survives as the memory clamp of the composed/three-term laws).
 pub const WIN_STORE_MAX: usize = 4096;
 
-/// Guard-aware admission gate (roadmap item 1). `accounts` = (outstanding_i,
-/// cap_i, redirect_bound_i) per live path. Three regimes:
-///
-/// - every account cap-full → FULL (the unguarded law, unchanged);
-/// - no account cap-full → admit (every pick places on its own account);
-/// - SOME account cap-full → a pick landing there must redirect, so
-///   admission stays open only while a guard-eligible target exists
-///   (out_j < min(cap_j, bound_j)) — otherwise the store reads FULL and the
-///   existing admission pause engages: backpressure, don't park. (The #73
-///   lesson does NOT recur here: the pause path is the battery-proven
-///   percap admission gate, not a new deferral mechanism.)
-///
-/// With bound_j = cap_j (guard off) this degenerates exactly to
-/// [`percap_store_full`].
-pub fn percap_store_full_guarded(accounts: &[(usize, usize, usize)]) -> bool {
-    let any_open = accounts.iter().any(|&(out, cap, _)| out < cap.max(1));
-    if !any_open {
-        return true;
-    }
-    let any_capfull = accounts.iter().any(|&(out, cap, _)| out >= cap.max(1));
-    if !any_capfull {
-        return false;
-    }
-    !accounts
-        .iter()
-        .any(|&(out, cap, bound)| out < cap.min(bound).max(1))
-}
-
-/// Per-path placement redirect (task #86 + roadmap item 1): the admission
-/// gate only admits while a placement is possible — make it land there.
-/// Keeps `chosen` when its OWN account is below its cap (the guard gates
-/// redirects only, never a path's own picks); otherwise redirects to the
-/// guard-eligible path (out < min(cap, redirect_bound) — see
-/// [`percap_redirect_bound`]: the target must be able to drain its account
-/// within one floor-clock echo round, so a redirect never parks symbols
-/// behind a standing queue) with the most RELATIVE headroom. No eligible
-/// target (all-full, or every open account past its dwell bound — racing
-/// the guarded gate): keep `chosen` (the gate reads FULL and pauses intake
-/// next iteration; the slop is one placement). `accounts` =
-/// (path, outstanding_i, cap_i, redirect_bound_i); bound = cap is the
-/// unguarded legacy redirect.
-pub fn percap_place_path(
-    chosen: crate::scheduler::PathId,
-    accounts: &[(crate::scheduler::PathId, usize, usize, usize)],
-) -> crate::scheduler::PathId {
-    if accounts
-        .iter()
-        .any(|&(p, out, cap, _)| p == chosen && out < cap.max(1))
-    {
-        return chosen;
-    }
-    accounts
-        .iter()
-        .filter(|&&(_, out, cap, bound)| out < cap.min(bound).max(1))
-        .max_by(|a, b| {
-            let h = |&(_, out, cap, bound): &(crate::scheduler::PathId, usize, usize, usize)| {
-                1.0 - out as f64 / cap.min(bound).max(1) as f64
-            };
-            h(a).partial_cmp(&h(b)).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|&(p, _, _, _)| p)
-        .unwrap_or(chosen)
-}
-
-/// One live path's account state as the bounded-borrowing law sees it
-/// (feat/store-borrowing, paper §16.22).
-#[derive(Clone, Copy, Debug)]
-pub struct BorrowAccount {
-    pub path: u32,
-    /// Account occupancy: symbols CHARGED to this path (own + lent-out).
-    pub out: usize,
-    /// The account's derived cap (honest law / legacy percap law).
-    pub cap: usize,
-    /// Pipe occupancy: symbols FLYING on this path
-    /// (= out − lent + borrowed, corrected by the loan ledger).
-    pub fly: usize,
-    /// Honest drain rate, sym/s (BtlBw_i under RWM_PLAIN_RS;
-    /// cwnd_i/RTprop_i under the Copa-sole feed). None = warm-up.
-    pub rate: Option<f64>,
-    /// RTprop_i (windowed-min floor clock), seconds. None = warm-up.
-    pub rtprop_s: Option<f64>,
-}
-
-/// The loan's return latency (paper §16.22.2): the borrowed symbol's
-/// expected residence on the BORROWER's pipe, on the floor clock —
-/// queue drain plus one flight: T_return(j) = fly_j/rate_j + RTprop_j.
-/// None on warm-up (an unmeasured borrower admits no loans).
-pub fn percap_t_return(borrower: &BorrowAccount) -> Option<f64> {
-    match (borrower.rate, borrower.rtprop_s) {
-        (Some(r), Some(rtp)) if r > 0.0 && rtp >= 0.0 => {
-            Some(borrower.fly as f64 / r + rtp)
-        }
-        _ => None,
-    }
-}
-
-/// The bounded-borrowing law (paper §16.22.2, derived not tuned):
-///
-///   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j))
-///
-/// — lend only headroom the lender cannot use within the loan's return
-/// latency (the lender's intake is bounded by its own drain rate, so
-/// rate_i·T_return is everything it could possibly place while the loan
-/// is out; reserving it yields the post-loan solvency invariant
-/// cap_i − out_i ≥ rate_i·T_return). Warm-up on EITHER side lends
-/// nothing — the degenerate is isolation, not the pool. The reservation
-/// term is what separates this from the pooled law (T_return := 0 ⇒
-/// lend up to cap_i − out_i ⇒ pooled Σcap sharing), and it makes lending
-/// one-directional at asymmetric cells: a fast lender's reservation
-/// toward a slow pipe exceeds its whole cap (rate_i·T_return(slow) ≫
-/// cap_i), so the #86 parking direction is unrepresentable.
-pub fn percap_lend_room(lender: &BorrowAccount, borrower: &BorrowAccount) -> usize {
-    let Some(t_return) = percap_t_return(borrower) else {
-        return 0;
-    };
-    let Some(rate_i) = lender.rate.filter(|r| *r > 0.0) else {
-        return 0;
-    };
-    let reservation = (rate_i * t_return).ceil() as usize;
-    lender
-        .cap
-        .saturating_sub(lender.out)
-        .saturating_sub(reservation)
-}
-
-/// Pick the lender for a pick landing on cap-full borrower `borrower`:
-/// the live sibling with the largest lend room (> 0). None = no loan
-/// admissible (the caller falls through to the guarded redirect, then to
-/// backpressure).
-pub fn percap_borrow_lender(borrower: u32, accounts: &[BorrowAccount]) -> Option<u32> {
-    let b = accounts.iter().find(|a| a.path == borrower)?;
-    accounts
-        .iter()
-        .filter(|a| a.path != borrower)
-        .map(|a| (a.path, percap_lend_room(a, b)))
-        .filter(|&(_, room)| room > 0)
-        .max_by_key(|&(_, room)| room)
-        .map(|(p, _)| p)
-}
-
-/// True when some cap-full borrower j has an open lend edge from some
-/// lender i (the admission-gate extension: the store is FULL only when
-/// the guarded gate reads full AND no loan is admissible — paper
-/// §16.22.4).
-pub fn percap_lend_edge_exists(accounts: &[BorrowAccount]) -> bool {
-    accounts
-        .iter()
-        .filter(|b| b.out >= b.cap.max(1))
-        .any(|b| {
-            accounts
-                .iter()
-                .filter(|a| a.path != b.path)
-                .any(|a| percap_lend_room(a, b) > 0)
-        })
-}
-
-/// Record one loan in the ledger: `seq` flies on `flyer`, is charged to
-/// `lender` (the caller performs the actual `percap_charge` to the
-/// lender). Gauges: `lent[lender]` and `borrowed[flyer]` correct the
-/// account occupancy into pipe occupancy (fly = out − lent + borrowed).
-pub fn percap_loan_charge(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    seq: u64,
-    lender: u32,
-    flyer: u32,
-) {
-    if loans.insert(seq, (lender, flyer)).is_none() {
-        *lent.entry(lender).or_insert(0) += 1;
-        *borrowed.entry(flyer).or_insert(0) += 1;
-    }
-}
-
-/// Repay one loan on the ack that releases `seq` (SACK/OOO twin of
-/// [`percap_release_seq`]; idempotent the same way).
-pub fn percap_loan_release(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    seq: u64,
-) {
-    if let Some((lender, flyer)) = loans.remove(&seq) {
-        if let Some(l) = lent.get_mut(&lender) {
-            *l = l.saturating_sub(1);
-        }
-        if let Some(b) = borrowed.get_mut(&flyer) {
-            *b = b.saturating_sub(1);
-        }
-    }
-}
-
-/// Repay every loan at or below the cumulative ack (the
-/// [`percap_release_cumulative`] twin).
-pub fn percap_loan_release_cumulative(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    ack: u64,
-) {
-    let keep = loans.split_off(&(ack + 1));
-    for (lender, flyer) in loans.values() {
-        if let Some(l) = lent.get_mut(lender) {
-            *l = l.saturating_sub(1);
-        }
-        if let Some(b) = borrowed.get_mut(flyer) {
-            *b = b.saturating_sub(1);
-        }
-    }
-    *loans = keep;
-}
-
-/// Charge one retained seq to its placement path's outstanding account
-/// (task #86). Called in lockstep with the `sent_store` insert; paired
-/// with [`percap_release_seq`] (SACK/OOO removal) and
+/// Charge one retained seq to its placement path's outstanding account —
+/// the per-path store-attribution GAUGE behind `[DIAG] sout=` (task #86's
+/// account bookkeeping; its admission law, `RWM_STORE_PERCAP`, and the
+/// guard/borrowing laws built on it were refuted and removed). Called in
+/// lockstep with the `sent_store` insert; paired with
+/// [`percap_release_seq`] (SACK/OOO removal) and
 /// [`percap_release_cumulative`] (frontier advance) — release is by ack
 /// ONLY, exactly the retention contract.
 pub fn percap_charge(
@@ -6884,30 +6577,6 @@ async fn run_window_sender(
              the cumulative frontier — slot release, never recoverability)"
         );
     }
-    if pol.percap_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
-        info!(
-            pool_per_path = pol.store_path_pool,
-            gain = pol.store_bdp_gain,
-            floor = pol.store_cap_floor,
-            "per-path outstanding accounting ACTIVE (RWM_STORE_PERCAP: cap_i = clamp(gain*rate_i*echoRTT_i, floor, pool) per live path for N>=2, warm-up = legacy-pool/N; supersedes RWM_STORE_PATHS' pooled gate; N=1 legacy)"
-        );
-    }
-    if pol.percap_guard_on {
-        // Guard mechanism-liveness echo (asserted PRESENT on guarded arms,
-        // ABSENT on the RWM_PERCAP_GUARD=0 regression-control arm).
-        info!(
-            "percap delay-aware redirect guard ACTIVE (roadmap-1: redirect to j only while out_j < bound_j = rate_j*RTprop_j — kappa=1 on the floor clock; Copa feed: cwnd_j; warm-up: cap_j/gain — else the store reads FULL for the placement and admission pauses; RWM_PERCAP_GUARD=0 = unguarded legacy redirect)"
-        );
-    }
-    if pol.percap_borrow_on {
-        // Borrowing mechanism-liveness echo (MEASUREMENT DISCIPLINE):
-        // asserted PRESENT on PBP-B/C1P-B arms, ABSENT on every no-borrow
-        // arm.
-        info!(
-            "bounded store borrowing ACTIVE (RWM_STORE_BORROW, paper 16.22: a cap-full pick flies on its picked pipe, charged to the lender with max lend_i->j = cap_i - out_i - rate_i*T_return(j), T_return(j) = fly_j/rate_j + RTprop_j; loans repay on ack; symmetric cells lend 0 by theorem; warm-up lends 0)"
-        );
-    }
     if pol.store_cap_unified {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE 1): asserted
         // PRESENT on the unified arm, ABSENT on the default arm.
@@ -6939,7 +6608,7 @@ async fn run_window_sender(
             gain = pol.store_bdp_gain,
             floor = pol.store_cap_floor,
             pool_per_path = pol.store_path_pool,
-            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
+            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
         );
     }
     // Pool-anchor law state (RWM_POOL_ANCHOR, DIAG): whether the N ≥ 2
@@ -6962,19 +6631,6 @@ async fn run_window_sender(
     // (`PERCAP_K_HALF_WINDOW_US`, now module-level so every consumer of the
     // honest per-path cap keys on the SAME window).
     let mut percap_k: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    // path → cap_i, refreshed with the dynamic-cap throttle. NON-EMPTY is
-    // the "percap law engaged" signal (flag on AND N ≥ 2 live paths).
-    let mut percap_caps: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    // path → redirect_bound_i (roadmap item 1: rate_i×RTprop_i, the
-    // floor-clock dwell bound a cap-full redirect may fill the account to).
-    // Mirrors cap_i (guard degenerate) when RWM_PERCAP_GUARD=0.
-    let mut percap_bounds: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    // path → (rate sym/s, RTprop s) snapshot for the borrow law, refreshed
-    // with the caps (same cadence, same honest sources).
-    let mut percap_rr: std::collections::HashMap<u32, (Option<f64>, Option<f64>)> =
         std::collections::HashMap::new();
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
@@ -7330,14 +6986,6 @@ async fn run_window_sender(
                             // later finds the seq already gone — the
                             // documented no-double-release contract).
                             percap_release_seq(&mut st.percap_acct, &mut st.percap_out, k);
-                            if pol.percap_borrow_on {
-                                percap_loan_release(
-                                    &mut st.percap_loans,
-                                    &mut st.percap_lent,
-                                    &mut st.percap_borrowed,
-                                    k,
-                                );
-                            }
                         }
                     }
                 }
@@ -7895,152 +7543,6 @@ async fn run_window_sender(
                         "[3T] three-term outstanding limit: window + slack + span (RWM_THREE_TERM)"
                     );
                 }
-                // ── task #86: per-path account caps (RWM_STORE_PERCAP) ────
-                // Computed AFTER the pooled laws above so (a) the shipped /
-                // STORE_PATHS expressions stay verbatim (default byte-
-                // identical), and (b) the warm-up share inherits the pooled
-                // cap in force (`dyn_store_cap` as just computed). Engaged
-                // only for N ≥ 2 live paths: percap_caps stays EMPTY at
-                // N = 1, so singles run the legacy gate bit-exactly even
-                // with the flag ON. pipe_i = Copa cwnd_i under the feed
-                // (Copa's operating point is the per-path pipe), else
-                // BtlBw_i × echo-SRTT_i — the delivered-rate anchor times
-                // the ACK-clock residence time (Little's law on the store;
-                // the per-path pool knee bounds the echo-RTT feedback).
-                percap_caps.clear();
-                percap_bounds.clear();
-                if pol.percap_on {
-                    // (pipe_i for the cap law, floor_pipe_i for the redirect
-                    // guard). Plain: pipe = rate×echoSRTT (loaded clock, the
-                    // cap's Little's-law residence time), floor_pipe =
-                    // rate×RTprop (the guard's un-inflatable clock — see
-                    // percap_redirect_bound: the loaded echo clock is
-                    // self-referential and made the c8 redirect bound
-                    // vacuous). Copa feed: cwnd_i is both (Copa's operating
-                    // point is the bounded-queue pipe).
-                    let pipes: Vec<(u32, Option<f64>, Option<f64>, Option<f64>)> = {
-                        let sched = scheduler.lock();
-                        let live = sched.live_paths();
-                        let mut v = Vec::with_capacity(live.len());
-                        // feat/store-borrowing: refresh the borrow law's
-                        // (rate, RTprop) snapshot at the same cadence from
-                        // the same honest sources (Copa feed: cwnd/RTprop
-                        // as the drain rate; plain: the send-interval
-                        // BtlBw anchor). Empty map when borrowing is off.
-                        if pol.percap_borrow_on {
-                            percap_rr.clear();
-                            for id in live.iter() {
-                                if let Some(p) = sched.path(*id) {
-                                    let rtp = p.min_rtt().map(|d| d.as_secs_f64());
-                                    let rate = if copa_feed
-                                        .as_ref()
-                                        .is_some_and(|f| f.owns_cc())
-                                    {
-                                        rtp.filter(|r| *r > 0.0)
-                                            .map(|r| p.cwnd as f64 / r)
-                                    } else {
-                                        p.btlbw_sym_per_s()
-                                    };
-                                    percap_rr.insert(*id, (rate, rtp));
-                                }
-                            }
-                        }
-                        for id in live.iter() {
-                            let (pipe, floor_pipe, honest) = match sched.path(*id) {
-                                Some(p) => {
-                                    if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
-                                        // Copa-sole: cwnd_i IS the honest
-                                        // bounded-queue pipe — unchanged.
-                                        (Some(p.cwnd as f64), Some(p.cwnd as f64), None)
-                                    } else {
-                                        let rate = p.btlbw_sym_per_s();
-                                        let pipe = rate
-                                            .map(|r| r * p.srtt().as_secs_f64());
-                                        let floor_pipe = match (rate, p.min_rtt()) {
-                                            (Some(r), Some(rtp)) => {
-                                                Some(r * rtp.as_secs_f64())
-                                            }
-                                            _ => None,
-                                        };
-                                        // feat/percap-honest-cap: cap_i on
-                                        // the honest anchors — residence
-                                        // K·RTprop + recovery-clock runway;
-                                        // no loaded-echo term (see
-                                        // `honest_store_cap`).
-                                        // Rate source: the floor-clock BDP
-                                        // (rate_i·RTprop_i) with BtlBw_i —
-                                        // NOT the loaded echo pipe above.
-                                        // Path set: live_paths() (this loop).
-                                        let honest = if pol.honest_cap_on {
-                                            honest_cap_term(
-                                                &mut percap_k,
-                                                *id,
-                                                p.srtt(),
-                                                p.min_rtt(),
-                                                dnow,
-                                                floor_pipe,
-                                                rate,
-                                                pol.store_bdp_gain,
-                                                p.k_raw(),
-                                            )
-                                        } else {
-                                            None
-                                        };
-                                        (pipe, floor_pipe, honest)
-                                    }
-                                }
-                                None => (None, None, None),
-                            };
-                            v.push((*id, pipe, floor_pipe, honest));
-                        }
-                        v
-                    };
-                    if pipes.len() >= 2 {
-                        let legacy_cap = dyn_store_cap;
-                        let n = pipes.len();
-                        for (pid, pipe, floor_pipe, honest) in pipes {
-                            // Honest law when derived (warm anchors under
-                            // RWM_PLAIN_RS+RWM_HONEST_CAP); else the legacy
-                            // percap law — echo-clock caps (the PBP-G-old
-                            // control arm) and the warm-up legacy share
-                            // (warm-up unchanged: honest = None before the
-                            // anchor warms, exactly when pipe = None too).
-                            let cap_i = match honest {
-                                Some(h) => (h.ceil() as usize).clamp(
-                                    pol.store_cap_floor,
-                                    pol.store_path_pool.max(pol.store_cap_floor),
-                                ),
-                                None => percap_store_cap(
-                                    pipe,
-                                    legacy_cap,
-                                    n,
-                                    pol.store_bdp_gain,
-                                    pol.store_cap_floor,
-                                    pol.store_path_pool,
-                                ),
-                            };
-                            percap_caps.insert(pid, cap_i);
-                            // Roadmap item 1: the delay-aware redirect bound;
-                            // bound = cap (guard degenerate) when unguarded.
-                            percap_bounds.insert(
-                                pid,
-                                if pol.percap_guard_on {
-                                    percap_redirect_bound(
-                                        floor_pipe,
-                                        cap_i,
-                                        pol.store_bdp_gain,
-                                    )
-                                } else {
-                                    cap_i
-                                },
-                            );
-                        }
-                        // Σ cap_i becomes the pooled MEMORY backstop (binds
-                        // only via stranded accounts, e.g. a path that died
-                        // with symbols still retained).
-                        dyn_store_cap = percap_caps.values().sum();
-                    }
-                }
             }
         }
         let effective_store_cap = if pol.plain_dyn_cap {
@@ -8052,66 +7554,7 @@ async fn run_window_sender(
         } else {
             pol.store_max
         };
-        let tx_paused = if !percap_caps.is_empty() {
-            // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
-            // only when NO live path's account has headroom below its own
-            // cap, EXCEPT (roadmap item 1) that when some account is
-            // cap-full a pick landing there must redirect, so admission
-            // stays open only while a guard-eligible target exists
-            // (out < min(cap, redirect_bound)) — otherwise the store reads
-            // FULL: backpressure, don't park (percap_store_full_guarded;
-            // bound = cap when the guard is off, degenerating to the
-            // unguarded gate). The pooled store_len test is retained as the
-            // Σcap_i memory backstop (effective_store_cap = Σcap_i while
-            // percap is engaged): it binds only through stranded accounts.
-            let accounts: Vec<(usize, usize, usize)> = percap_caps
-                .iter()
-                .map(|(pid, &cap)| {
-                    (
-                        st.percap_out.get(pid).copied().unwrap_or(0),
-                        cap,
-                        percap_bounds.get(pid).copied().unwrap_or(cap),
-                    )
-                })
-                .collect();
-            // feat/store-borrowing (§16.22.4): the guarded gate plus the
-            // loan edges — the store reads FULL only when the guarded gate
-            // reads full AND no loan is admissible (a cap-full borrower
-            // with a lender inside its lend bound keeps admission open;
-            // the placement then borrows instead of redirecting).
-            let guarded_full = percap_store_full_guarded(&accounts)
-                && !(pol.percap_borrow_on && {
-                    let baccts: Vec<BorrowAccount> = percap_caps
-                        .iter()
-                        .map(|(&pid, &cap)| {
-                            let out = st.percap_out.get(&pid).copied().unwrap_or(0);
-                            let (rate, rtprop_s) =
-                                percap_rr.get(&pid).copied().unwrap_or((None, None));
-                            BorrowAccount {
-                                path: pid,
-                                out,
-                                cap,
-                                fly: out
-                                    .saturating_sub(
-                                        st.percap_lent.get(&pid).copied().unwrap_or(0),
-                                    )
-                                    .saturating_add(
-                                        st.percap_borrowed.get(&pid).copied().unwrap_or(0),
-                                    ),
-                                rate,
-                                rtprop_s,
-                            }
-                        })
-                        .collect();
-                    percap_lend_edge_exists(&baccts)
-                });
-            reliable
-                && (guarded_full
-                    || store_len >= effective_store_cap
-                    || cwnd_full)
-        } else {
-            reliable && (store_len >= effective_store_cap || cwnd_full)
-        };
+        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full);
 
         // feat/window-mtu wnd2/relgap tracking (see decls): the release
         // frontier is max(highest SACK-released seq, cumulative ack) —
@@ -8152,8 +7595,6 @@ async fn run_window_sender(
                     tx_paused,
                     store_len,
                     effective_store_cap,
-                    percap_caps: &percap_caps,
-                    percap_bounds: &percap_bounds,
                     percap_k: &percap_k,
                     sack_released: &sack_released,
                     sack_released_total,
@@ -8945,9 +8386,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                     }
@@ -8974,9 +8412,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 }
@@ -9028,9 +8463,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                         }
@@ -9050,9 +8482,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 }
@@ -9064,9 +8493,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 // ── RWM_EMIT_BATCH pacer-quantum burst intake ─────────────
@@ -9101,9 +8527,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                                 burst += 1;
@@ -10164,17 +9587,6 @@ async fn run_window_sender(
             // account map, so no double-release).
             if pol.percap_track {
                 percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, ack);
-                // feat/store-borrowing: repay every loan the frontier
-                // advance just released (the split_off twin — SACK-repaid
-                // loans are gone from the ledger, no double-repayment).
-                if pol.percap_borrow_on {
-                    percap_loan_release_cumulative(
-                        &mut st.percap_loans,
-                        &mut st.percap_lent,
-                        &mut st.percap_borrowed,
-                        ack,
-                    );
-                }
             }
             // §16.77: drop the stamped holes the frontier has passed. PRUNE
             // ONLY — the estimator is fed off the receiver's own gap report
@@ -14116,45 +13528,6 @@ mod tests {
         assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
     }
 
-    // ----- Per-path outstanding accounting (task #86, RWM_STORE_PERCAP) -------
-
-    #[test]
-    fn percap_store_cap_is_rate_x_echo_rtt_with_floor_and_ceiling() {
-        // Derived, not tuned: cap_i = gain × rate_i × echoRTT_i. A c2-like
-        // fast path (BtlBw ≈ 10 400 sym/s, echo RTT ≈ 80 ms): pipe = 832,
-        // gain 2 → 1664 — inside [64, 2048].
-        assert_eq!(
-            percap_store_cap(Some(10_400.0 * 0.080), 1024, 2, 2.0, 64, 2048),
-            1664
-        );
-        // A c3-like slow path (BtlBw ≈ 2000 sym/s, echo RTT ≈ 60 ms): pipe
-        // = 120, gain 2 → 240 — its OWN shallow cap, independent of the
-        // fast path's.
-        assert_eq!(
-            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
-            240
-        );
-        // Ceiling: the measured 2048-per-path knee bounds a deep pipe (and
-        // the echo-RTT positive feedback).
-        assert_eq!(percap_store_cap(Some(4000.0), 1024, 2, 2.0, 64, 2048), 2048);
-        // Floor: a transiently-tiny anchor cannot strangle the account.
-        assert_eq!(percap_store_cap(Some(3.0), 1024, 2, 2.0, 64, 2048), 64);
-    }
-
-    #[test]
-    fn percap_store_cap_warmup_inherits_equal_legacy_share() {
-        // Anchor not established (None): equal share of the legacy pooled
-        // cap, bounded — converges to the derived cap once the anchor warms.
-        assert_eq!(percap_store_cap(None, 1024, 2, 2.0, 64, 2048), 512);
-        assert_eq!(percap_store_cap(None, 1024, 4, 2.0, 64, 2048), 256);
-        // Non-positive pipe is warm-up too (cold Copa cwnd cannot happen,
-        // but the law must not divide into nonsense).
-        assert_eq!(percap_store_cap(Some(0.0), 1024, 2, 2.0, 64, 2048), 512);
-        // Share is bounded by the same [floor, pool] clamp.
-        assert_eq!(percap_store_cap(None, 100, 2, 2.0, 64, 2048), 64);
-        assert_eq!(percap_store_cap(None, 100_000, 2, 2.0, 64, 2048), 2048);
-    }
-
     // ----- Honest floor-clock caps (feat/percap-honest-cap) -------------------
 
     #[test]
@@ -14705,517 +14078,6 @@ mod tests {
                 .clamp(64, store_max);
             assert!(c > floor_law);
         }
-    }
-
-    #[test]
-    fn percap_store_full_pauses_only_when_no_account_has_headroom() {
-        // One account below its cap ⇒ admit (the infl_percap_full pattern:
-        // the slow path's full account never starves the fast path).
-        assert!(!percap_store_full(&[(240, 240), (100, 1664)]));
-        // Every account at/over its cap ⇒ paused.
-        assert!(percap_store_full(&[(240, 240), (1664, 1664)]));
-        assert!(percap_store_full(&[(300, 240), (1700, 1664)]));
-        // A zero cap counts as cap 1 (never a permanently-closed account).
-        assert!(!percap_store_full(&[(0, 0)]));
-        assert!(percap_store_full(&[(1, 0)]));
-    }
-
-    #[test]
-    fn percap_place_redirects_capfull_pick_to_headroom_path() {
-        // bound = cap in these cases: the unguarded legacy redirect law
-        // (RWM_PERCAP_GUARD=0), preserved exactly.
-        let accounts = [
-            (0u32, 240usize, 240usize, 240usize),
-            (1u32, 100usize, 1664usize, 1664usize),
-        ];
-        // Slow path (p0) at ITS cap: a p0 pick redirects to the deep path.
-        assert_eq!(percap_place_path(0, &accounts), 1);
-        // A pick with its own headroom stays.
-        assert_eq!(percap_place_path(1, &accounts), 1);
-        // All full (racing the gate): keep the pick — the gate pauses next
-        // iteration; the slop is one placement.
-        assert_eq!(
-            percap_place_path(0, &[(0, 240, 240, 240), (1, 1664, 1664, 1664)]),
-            0
-        );
-        // Redirect goes to the MOST relative headroom.
-        assert_eq!(
-            percap_place_path(
-                2,
-                &[(0, 200, 240, 240), (1, 100, 1664, 1664), (2, 50, 50, 50)]
-            ),
-            1
-        );
-    }
-
-    #[test]
-    fn percap_redirect_bound_is_floor_clock_bdp() {
-        // Derived, not tuned: bound_j = rate_j × RTprop_j — κ=1 on the FLOOR
-        // clock (κ=1 on the loaded echo clock is vacuous: echoRTT ≈ RTprop +
-        // out/rate, the measured c8 feedback). A c3-like slow path (rate ≈
-        // 1534 sym/s ≈ 15.7 Mbit of 1279-B symbols, RTprop 60 ms): bound =
-        // 93 symbols ≈ one un-queued pipe — vs the knee-adjacent cap 1531
-        // the unguarded redirect filled (≈1.3 s dwell).
-        assert_eq!(percap_redirect_bound(Some(1534.0 * 0.060), 1531, 2.0), 93);
-        // Never above the account's own cap.
-        assert_eq!(percap_redirect_bound(Some(5000.0), 2048, 2.0), 2048);
-        // Warm-up (no anchor): the share's pipe term, cap/gain.
-        assert_eq!(percap_redirect_bound(None, 512, 2.0), 256);
-        // One-symbol quantum: a cold/tiny account is never permanently
-        // redirect-closed, and degenerate inputs cannot divide into nonsense.
-        assert_eq!(percap_redirect_bound(Some(0.5), 240, 2.0), 1);
-        assert_eq!(percap_redirect_bound(Some(-1.0), 0, 2.0), 1);
-    }
-
-    #[test]
-    fn percap_store_full_guarded_backpressures_instead_of_parking() {
-        // No account cap-full → admit (every pick lands on its own account).
-        assert!(!percap_store_full_guarded(&[(100, 240, 93), (500, 1664, 800)]));
-        // Fast cap-full + slow WITHIN its dwell bound → admit (a guard-
-        // eligible redirect target exists).
-        assert!(!percap_store_full_guarded(&[(50, 240, 93), (1664, 1664, 800)]));
-        // Fast cap-full + slow past its dwell bound (though under cap) →
-        // FULL: the redirect would park symbols behind the slow path's
-        // standing queue — backpressure instead. THE c8 fix.
-        assert!(percap_store_full_guarded(&[(120, 240, 93), (1664, 1664, 800)]));
-        // All cap-full → FULL (the unguarded law, unchanged).
-        assert!(percap_store_full_guarded(&[(240, 240, 93), (1664, 1664, 800)]));
-        // bound = cap degenerates exactly to the unguarded gate.
-        assert_eq!(
-            percap_store_full_guarded(&[(120, 240, 240), (1664, 1664, 1664)]),
-            percap_store_full(&[(120, 240), (1664, 1664)])
-        );
-        assert_eq!(
-            percap_store_full_guarded(&[(240, 240, 240), (1664, 1664, 1664)]),
-            percap_store_full(&[(240, 240), (1664, 1664)])
-        );
-    }
-
-    /// The c8 regression in miniature, guarded (roadmap item 1): the fast
-    /// account pegs at its cap; overflow redirects fill the slow account
-    /// only to its FLOOR-CLOCK dwell bound (rate×RTprop), then redirect
-    /// STOPS and the guarded gate reads FULL — admission pauses instead of
-    /// parking ~cap symbols (≈1.3 s dwell at L1) on the slow path. Deep-path
-    /// redirects within bound are unaffected; the slow path's OWN picks are
-    /// never guard-gated.
-    #[test]
-    fn percap_redirect_guard_stops_at_dwell_bound_and_pauses_admission() {
-        const SLOW: u32 = 0;
-        const FAST: u32 = 1;
-        // Slow: rate 2000 sym/s, echoSRTT 60 ms, RTprop 30 ms → cap 240,
-        // bound 60. Fast: rate 10 000, echoSRTT 80 ms, RTprop 40 ms →
-        // cap 1600, bound 400.
-        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
-        let fast_cap = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        let slow_bound = percap_redirect_bound(Some(2000.0 * 0.030), slow_cap, 2.0);
-        let fast_bound = percap_redirect_bound(Some(10_000.0 * 0.040), fast_cap, 2.0);
-        assert_eq!((slow_cap, fast_cap), (240, 1600));
-        assert_eq!((slow_bound, fast_bound), (60, 400));
-
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> =
-            std::collections::HashMap::new();
-        let accounts4 = |out: &std::collections::HashMap<u32, usize>| {
-            [
-                (SLOW, out.get(&SLOW).copied().unwrap_or(0), slow_cap, slow_bound),
-                (FAST, out.get(&FAST).copied().unwrap_or(0), fast_cap, fast_bound),
-            ]
-        };
-        let accounts3 = |out: &std::collections::HashMap<u32, usize>| {
-            accounts4(out).map(|(_, o, c, b)| (o, c, b))
-        };
-        // The c8 shape: the softmax favors the fast path — every pick FAST.
-        let mut seq = 0u64;
-        while !percap_store_full_guarded(&accounts3(&out)) {
-            let placed = percap_place_path(FAST, &accounts4(&out));
-            percap_charge(&mut acct, &mut out, seq, placed);
-            seq += 1;
-            assert!(seq < 10_000, "guarded gate must close");
-        }
-        // Fast filled to ITS cap (own picks are never guard-gated); the
-        // overflow parked on slow stopped at the DWELL BOUND — 60 symbols
-        // (30 ms of dwell at slow's rate), not the 240 cap (120 ms), and
-        // nothing like the L1 ~2048 (1.3 s).
-        assert_eq!(out[&FAST], fast_cap, "fast account pegs at its own cap");
-        assert_eq!(
-            out[&SLOW], slow_bound,
-            "redirect STOPS at the floor-clock dwell bound, far below the cap"
-        );
-        // The unguarded gate would still admit here (slow has cap headroom)
-        // — that admission IS the measured c8 parking regression; the
-        // guarded gate reads FULL instead: backpressure, don't park.
-        assert!(!percap_store_full(
-            &accounts3(&out).map(|(o, c, _)| (o, c))
-        ));
-        assert!(percap_store_full_guarded(&accounts3(&out)));
-        // Racing the closed gate, a further fast pick finds no eligible
-        // target and keeps the pick (one-placement slop, gate closes).
-        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
-        // The slow path's OWN picks are not guard-gated: with the gate open
-        // (fast drained below cap) a slow pick with cap headroom places
-        // directly even though slow is past its redirect bound.
-        let fast_seqs: Vec<u64> = acct
-            .iter()
-            .filter(|&(_, &p)| p == FAST)
-            .map(|(&s, _)| s)
-            .take(200)
-            .collect();
-        for s in &fast_seqs {
-            percap_release_seq(&mut acct, &mut out, *s);
-        }
-        assert!(!percap_store_full_guarded(&accounts3(&out)), "gate reopens on drain");
-        assert_eq!(
-            percap_place_path(SLOW, &accounts4(&out)),
-            SLOW,
-            "own-pick placement is never guard-gated below the cap"
-        );
-        // And a fast pick now redirects nowhere (slow still ≥ bound) — it
-        // has its own headroom back, so it just places on fast.
-        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
-        // Gauges stay Σ-consistent (the charge/release lockstep invariant).
-        assert_eq!(out.values().sum::<usize>(), acct.len());
-    }
-
-    /// The C8 conflict in miniature (the #84 residual this feature exists
-    /// for): a deep c2-like account and a shallow c3-like account coexist —
-    /// the shallow path's cap does NOT inflate when the deep path's does,
-    /// its outstanding never exceeds its own cap (placements past it
-    /// redirect to the deep account), and out-of-order acks release the
-    /// right account.
-    #[test]
-    fn percap_deep_and_shallow_accounts_coexist_without_coupling() {
-        // Caps from the derivation itself: fast pipe deepens ×2 mid-run,
-        // the slow cap must not move (per-path independence — the exact
-        // failure of the SHARED pool, where raising the cap for the fast
-        // path collapsed the slow one).
-        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
-        let fast_cap0 = percap_store_cap(Some(5000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        let fast_cap1 = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        assert_eq!(slow_cap, 240);
-        assert_eq!(fast_cap0, 800);
-        assert_eq!(fast_cap1, 1600);
-        assert_eq!(
-            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
-            slow_cap,
-            "shallow cap must not inflate when the deep path's pipe grows"
-        );
-
-        // Draw/release accounting: stripe placements 50/50 (the scheduler's
-        // pick), with the redirect enforcing the accounts.
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> =
-            std::collections::HashMap::new();
-        const SLOW: u32 = 0;
-        const FAST: u32 = 1;
-        // bound = cap: this test documents the UNGUARDED accounting law
-        // (RWM_PERCAP_GUARD=0); the guarded law has its own miniature below.
-        let caps = |out: &std::collections::HashMap<u32, usize>| {
-            [
-                (SLOW, out.get(&SLOW).copied().unwrap_or(0), 240usize, 240usize),
-                (FAST, out.get(&FAST).copied().unwrap_or(0), 1600usize, 1600usize),
-            ]
-        };
-        let mut seq = 0u64;
-        // Admit while ANY account has headroom (the gate), place round-robin
-        // through the redirect (the placement law).
-        loop {
-            let accounts: Vec<(usize, usize)> =
-                caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
-            if percap_store_full(&accounts) {
-                break;
-            }
-            let pick = if seq % 2 == 0 { SLOW } else { FAST };
-            let placed = percap_place_path(pick, &caps(&out));
-            percap_charge(&mut acct, &mut out, seq, placed);
-            seq += 1;
-        }
-        // The shallow account sits exactly at ITS pipe-derived cap; the deep
-        // account filled to ITS OWN cap — the overflow went to the deep
-        // path, the shallow path was never over-committed.
-        assert_eq!(out[&SLOW], 240, "slow outstanding pinned at its own cap");
-        assert_eq!(out[&FAST], 1600, "fast account absorbed the redirect");
-        assert_eq!(acct.len(), 240 + 1600);
-
-        // Out-of-order acks (SACK ranges land fast-path seqs first): only
-        // the fast account drains; the slow account is untouched.
-        let fast_seqs: Vec<u64> = acct
-            .iter()
-            .filter(|&(_, &p)| p == FAST)
-            .map(|(&s, _)| s)
-            .take(600)
-            .collect();
-        for s in &fast_seqs {
-            percap_release_seq(&mut acct, &mut out, *s);
-        }
-        assert_eq!(out[&FAST], 1000);
-        assert_eq!(out[&SLOW], 240, "OOO fast acks must not drain the slow account");
-        // Idempotence: re-releasing a SACKed seq is a no-op (no
-        // double-release when the cumulative frontier passes it later).
-        percap_release_seq(&mut acct, &mut out, fast_seqs[0]);
-        assert_eq!(out[&FAST], 1000);
-
-        // Cumulative frontier passes the first 300 seqs: each releases its
-        // OWN account (already-SACKed ones release nothing).
-        let below: (usize, usize) = acct.range(..=299u64).fold((0, 0), |m, (_, &p)| {
-            if p == SLOW { (m.0 + 1, m.1) } else { (m.0, m.1 + 1) }
-        });
-        percap_release_cumulative(&mut acct, &mut out, 299);
-        assert_eq!(out[&SLOW], 240 - below.0);
-        assert_eq!(out[&FAST], 1000 - below.1);
-        // Gauges stay Σ-consistent with the account map (the invariant the
-        // sender loop's charge/release lockstep preserves).
-        assert_eq!(out.values().sum::<usize>(), acct.len());
-        // With headroom restored, admission resumes.
-        let accounts: Vec<(usize, usize)> =
-            caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
-        assert!(!percap_store_full(&accounts));
-    }
-
-    /// N = 1 identity: the percap law is engaged only for N ≥ 2 live paths
-    /// (caller gates on `pipes.len() >= 2`, so `percap_caps` stays empty and
-    /// the tx_paused expression is the legacy branch verbatim). What CAN be
-    /// asserted purely: warm-up at N = 1 would be the full legacy cap — the
-    /// share degenerates to the pool itself, no behavior cliff on a 2→1
-    /// live-path flap while accounts drain.
-    #[test]
-    fn percap_warmup_share_degenerates_to_legacy_at_n1() {
-        assert_eq!(percap_store_cap(None, 1024, 1, 2.0, 64, 2048), 1024);
-        assert_eq!(percap_store_cap(None, 0, 1, 2.0, 64, 2048), 64);
-    }
-
-    // ----- Bounded account borrowing (feat/store-borrowing, §16.22) --------
-
-    /// The c8 honest miniature (paper §16.22.3(b)): the slow lender lends
-    /// exactly its headroom beyond its own reserved intake for the loan's
-    /// return latency — and lending toward a slow pipe is IMPOSSIBLE (the
-    /// #86 parking direction is unrepresentable, not merely guarded).
-    #[test]
-    fn borrow_lend_room_reserves_lender_intake_and_is_one_directional() {
-        // Honest c8 anchors: slow 2000 sym/s @ 60 ms (cap ≈ 500), fast
-        // 10 400 sym/s @ 8 ms (cap ≈ 1230, cap-full and asking).
-        let slow = BorrowAccount {
-            path: 1,
-            out: 150,
-            cap: 500,
-            fly: 150,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        let fast = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 1230,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.008),
-        };
-        // T_return(fast) = 1230/10400 + 0.008 ≈ 0.1263 s → reservation =
-        // ceil(2000·0.1263) = 253 → room = 500 − 150 − 253 = 97: the slow
-        // account lends its unused runway, NOT its own short-horizon need.
-        assert_eq!(percap_lend_room(&slow, &fast), 97);
-        // Post-loan solvency invariant: after lending the full room, the
-        // lender still holds ≥ its reserved intake (cap − out − room =
-        // reservation).
-        assert_eq!(slow.cap - slow.out - percap_lend_room(&slow, &fast), 253);
-        // fast → slow (the parking direction): a cap-full slow borrower
-        // has T_return = 500/2000 + 0.06 = 0.31 s → the fast lender's
-        // reservation = ceil(10400·0.31) = 3224 ≫ cap 1230 → room ≡ 0
-        // even with a completely EMPTY fast account.
-        let slow_full = BorrowAccount {
-            out: 500,
-            fly: 500,
-            ..slow
-        };
-        let fast_empty = BorrowAccount {
-            out: 0,
-            fly: 0,
-            ..fast
-        };
-        assert_eq!(percap_lend_room(&fast_empty, &slow_full), 0);
-        // Warm-up on either side lends nothing (isolation, not the pool).
-        let cold = BorrowAccount {
-            rate: None,
-            ..slow
-        };
-        assert_eq!(percap_lend_room(&cold, &fast), 0);
-        let cold_borrower = BorrowAccount {
-            rtprop_s: None,
-            ..fast
-        };
-        assert_eq!(percap_lend_room(&slow, &cold_borrower), 0);
-        // The lender pick: with a second lender offering less room, the
-        // max-room lender wins; with none, no loan.
-        let slow2 = BorrowAccount {
-            path: 2,
-            out: 400,
-            ..slow
-        };
-        assert_eq!(
-            percap_borrow_lender(0, &[fast, slow, slow2]),
-            Some(1),
-            "max lend room (97 vs 0) picks the slack lender"
-        );
-        assert_eq!(percap_borrow_lender(1, &[fast_empty, slow_full]), None);
-    }
-
-    /// The symmetric-neutrality THEOREM (paper §16.22.3(c)): at a
-    /// rate/RTprop-symmetric cell a cap-full borrower forces the lender's
-    /// reservation above the lender's whole cap (reservation − cap =
-    /// anchor > 0), so loans are identically zero for EVERY lender state —
-    /// the c7 percap win is preserved by proof, not tuning.
-    #[test]
-    fn borrow_is_identically_zero_at_symmetric_cells() {
-        let mk = |path: u32, out: usize| BorrowAccount {
-            path,
-            out,
-            cap: 1000,
-            fly: out,
-            rate: Some(5_000.0),
-            rtprop_s: Some(0.020),
-        };
-        // Borrower cap-full (the only time it asks): T_return = 1000/5000
-        // + 0.02 = 0.22 s → reservation = 1100 > cap = 1000.
-        let borrower = mk(0, 1000);
-        for lender_out in [0usize, 100, 500, 999] {
-            assert_eq!(
-                percap_lend_room(&mk(1, lender_out), &borrower),
-                0,
-                "symmetric lender (out={lender_out}) must lend 0"
-            );
-        }
-        assert_eq!(percap_borrow_lender(0, &[borrower, mk(1, 0)]), None);
-        assert!(!percap_lend_edge_exists(&[borrower, mk(1, 0)]));
-    }
-
-    /// The degenerate cases frame the design space (paper §16.22.3(d)):
-    /// dropping the reservation (T_return → 0) is the POOLED Σcap law —
-    /// lend up to cap − out; the all-cap-full state has no lend edge, so
-    /// the borrowed admission gate degenerates to the unguarded FULL.
-    #[test]
-    fn borrow_degenerates_to_pool_without_reservation_and_to_percap_when_closed() {
-        // T_return = 0 (empty pipe, zero RTprop — the reservation term
-        // vanishes): room = cap − out, i.e. any account's slack is
-        // anyone's — the pooled law. The reservation term is the whole
-        // difference between the principled point and the pool.
-        let lender = BorrowAccount {
-            path: 1,
-            out: 300,
-            cap: 500,
-            fly: 300,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        let degenerate_borrower = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 0,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.0),
-        };
-        assert_eq!(
-            percap_lend_room(&lender, &degenerate_borrower),
-            lender.cap - lender.out
-        );
-        // All accounts cap-full → every lender's own headroom is 0 → no
-        // edge: the gate reads FULL exactly like the no-borrow gate
-        // (aggregate law: borrowing can move headroom, never mint it).
-        let full = |path: u32| BorrowAccount {
-            path,
-            out: 1000,
-            cap: 1000,
-            fly: 1000,
-            rate: Some(5_000.0),
-            rtprop_s: Some(0.010),
-        };
-        assert!(!percap_lend_edge_exists(&[full(0), full(1)]));
-    }
-
-    /// The loan ledger lifecycle (the c8 miniature end-to-end): a loan
-    /// charges the LENDER's account while flying on the borrower's pipe,
-    /// the gauges correct account→pipe occupancy, and the SAME acks that
-    /// release the store repay the loan — idempotently, SACK or cumulative.
-    #[test]
-    fn borrow_loans_charge_lender_fly_on_borrower_and_repay_on_ack() {
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> = Default::default();
-        let mut loans: BTreeMap<u64, (u32, u32)> = BTreeMap::new();
-        let mut lent: std::collections::HashMap<u32, usize> = Default::default();
-        let mut borrowed: std::collections::HashMap<u32, usize> = Default::default();
-        // Fast (path 0) cap-full; three picks borrow from slow (path 1):
-        // the symbols FLY on 0, are CHARGED to 1.
-        for seq in [100u64, 101, 102] {
-            percap_charge(&mut acct, &mut out, seq, 1);
-            percap_loan_charge(&mut loans, &mut lent, &mut borrowed, seq, 1, 0);
-        }
-        assert_eq!(out.get(&1), Some(&3), "loans charge the LENDER's account");
-        assert_eq!(out.get(&0), None, "the borrower's account is untouched");
-        assert_eq!(lent.get(&1), Some(&3));
-        assert_eq!(borrowed.get(&0), Some(&3));
-        // Pipe gauges: fly_0 = out_0 − lent_0 + borrowed_0 = 0 − 0 + 3;
-        // fly_1 = 3 − 3 + 0 = 0 — the slow PIPE carries none of the loan.
-        // (Computed by the caller; asserted here from the gauge parts.)
-        assert_eq!(0 + borrowed.get(&0).copied().unwrap_or(0), 3);
-        assert_eq!(
-            out.get(&1).copied().unwrap_or(0) - lent.get(&1).copied().unwrap_or(0),
-            0
-        );
-        // SACK (OOO) repayment of 101: account + ledger release together.
-        percap_release_seq(&mut acct, &mut out, 101);
-        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
-        assert_eq!(out.get(&1), Some(&2));
-        assert_eq!(lent.get(&1), Some(&2));
-        assert_eq!(borrowed.get(&0), Some(&2));
-        // Idempotent re-release (SACK re-advertisement).
-        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
-        assert_eq!(lent.get(&1), Some(&2));
-        // Cumulative frontier advance repays the rest (split_off twin).
-        percap_release_cumulative(&mut acct, &mut out, 102);
-        percap_loan_release_cumulative(&mut loans, &mut lent, &mut borrowed, 102);
-        assert_eq!(out.get(&1), Some(&0));
-        assert_eq!(lent.get(&1), Some(&0));
-        assert_eq!(borrowed.get(&0), Some(&0));
-        assert!(loans.is_empty(), "every loan self-liquidated on ack");
-    }
-
-    /// The admission-gate composition (paper §16.22.4): the borrowed gate
-    /// opens the guarded-FULL state exactly when a lend edge exists, and
-    /// only then.
-    #[test]
-    fn borrow_admission_gate_opens_only_on_a_real_lend_edge() {
-        // Guarded gate reads FULL: fast (path 0) cap-full, slow (path 1)
-        // open but past its redirect bound (out 200 ≥ bound 117).
-        let accounts = [(1230usize, 1230usize, 1230usize), (200, 500, 117)];
-        assert!(percap_store_full_guarded(&accounts));
-        // Borrow edge: slow can lend to the cap-full fast borrower
-        // (T_return(fast) ≈ 0.126 s, reservation 253, room = 500 − 200 −
-        // 253 = 47 > 0) → admission stays open.
-        let fast = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 1230,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.008),
-        };
-        let slow = BorrowAccount {
-            path: 1,
-            out: 200,
-            cap: 500,
-            fly: 200,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        assert!(percap_lend_edge_exists(&[fast, slow]));
-        // The edge closes when the lender's slack is inside its
-        // reservation (out 300: room = 500 − 300 − 253 < 0) — the gate
-        // then reads FULL exactly like the no-borrow arm: backpressure.
-        let slow_reserved = BorrowAccount {
-            out: 300,
-            fly: 300,
-            ..slow
-        };
-        assert!(!percap_lend_edge_exists(&[fast, slow_reserved]));
     }
 
     /// feat/gen-substrate-ceiling: the derived pipeline depth M* =

@@ -32,9 +32,6 @@
 //!     the taper block and both are still released at the end of that block;
 //!   * the `RWM_EMIT_BATCH` taper cache still short-circuits the derived
 //!     recomputation while still feeding the A* send-rate anchor per symbol;
-//!   * `borrow_lender` still decides the CHARGE path only, never the flight
-//!     path (§16.22.1), and the loan ledger is still written in lockstep with
-//!     the account charge;
 //!   * the δ-honest shed decision still runs inside the `P_lost` retransmit
 //!     branch, after the coin flip, and the ρ-budget-refused arm still
 //!     increments `shed_denied` and serializes.
@@ -55,9 +52,8 @@ use tracing::warn;
 
 use super::sender_policy::SenderPolicy;
 use super::{
-    BorrowAccount, CopaFeed, create_window_encoder, now_us, percap_borrow_lender, percap_charge,
-    percap_loan_charge, percap_place_path, select_repair_path, select_source_path, shed_allowed,
-    shed_deadline_us, window_source_paths,
+    CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
+    select_source_path, shed_allowed, shed_deadline_us, window_source_paths,
 };
 use crate::control::{FecRateController, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
@@ -140,22 +136,12 @@ pub(crate) struct SenderState {
     /// loop iteration; one token is consumed per source symbol on the wire.
     pub src_tokens: f64,
 
-    // ── Per-path outstanding accounting (task #86, RWM_STORE_PERCAP) ─────
+    // ── Per-path store attribution (the `[DIAG] sout=` gauge) ────────────
     /// seq → account path, in lockstep with `sent_store` (charge on insert,
     /// release on ack-removal ONLY — the retention contract).
     pub percap_acct: BTreeMap<u64, u32>,
     /// path → outstanding gauge (Σ over `percap_acct`; DIAG `sout=`).
     pub percap_out: std::collections::HashMap<u32, usize>,
-    /// Bounded-borrowing loan ledger (feat/store-borrowing, §16.22):
-    /// seq → (lender, flyer) for BORROWED seqs only (sparse; empty when the
-    /// gate is off). Repaid by the same acks that release the account.
-    pub percap_loans: BTreeMap<u64, (u32, u32)>,
-    /// path → loans lent out (charged here, flying elsewhere) / borrowed in
-    /// (flying here, charged elsewhere): fly_i = out_i − lent_i + borrowed_i.
-    pub percap_lent: std::collections::HashMap<u32, usize>,
-    pub percap_borrowed: std::collections::HashMap<u32, usize>,
-    /// DIAG: cumulative loans granted (mechanism liveness at the gauge).
-    pub percap_loans_total: u64,
 
     // ── Proactive-repair emission state ──────────────────────────────────
     /// Fractional repair accumulator: tracks sub-symbol repair debt.
@@ -252,10 +238,6 @@ impl SenderState {
             src_tokens: 0.0,
             percap_acct: BTreeMap::new(),
             percap_out: std::collections::HashMap::new(),
-            percap_loans: BTreeMap::new(),
-            percap_lent: std::collections::HashMap::new(),
-            percap_borrowed: std::collections::HashMap::new(),
-            percap_loans_total: 0,
             repair_debt: 0.0,
             taper_offset: 0,
             taper_budget: TaperBudget::new(),
@@ -279,20 +261,16 @@ impl SenderState {
 /// Feed one framed packet to the encoder, place it on the wire, account for
 /// it, and emit the proactive repair its taper budget owes.
 ///
-/// The former `send_source_symbol!($framed)`. `percap_caps` / `percap_bounds`
-/// / `percap_rr` / `emit_batch_live` are per-ITERATION inputs (refreshed by
-/// the dynamic-cap throttle in the main loop, read-only here), so they stay
-/// locals of `run_window_sender` and are passed in rather than living in
-/// [`SenderState`].
+/// The former `send_source_symbol!($framed)`. `emit_batch_live` is a
+/// per-ITERATION input (re-scoped in the main loop, read-only here), so it
+/// stays a local of `run_window_sender` and is passed in rather than living
+/// in [`SenderState`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_source(
     framed: &[u8],
     st: &mut SenderState,
     pol: &SenderPolicy,
     ctx: &SenderCtx<'_>,
-    percap_caps: &std::collections::HashMap<u32, usize>,
-    percap_bounds: &std::collections::HashMap<u32, usize>,
-    percap_rr: &std::collections::HashMap<u32, (Option<f64>, Option<f64>)>,
     emit_batch_live: bool,
 ) {
     let wire_sym = st.encoder.add_source(framed);
@@ -327,88 +305,10 @@ pub(crate) fn emit_source(
     // marginal cost); single path collapses to that path (byte-
     // identical to Phase A). Non-reliable (realtime/EVICT) mode keeps
     // the single best-path pick + redundant duplicate, unchanged.
-    // feat/store-borrowing: when this placement is a LOAN, the
-    // account charged (the lender) differs from the flight path.
-    // None = charge the flight path (the non-borrow default).
-    let mut borrow_lender: Option<u32> = None;
     let source_path = {
         if pol.reliable {
-            let picked = {
-                let sched = ctx.scheduler.lock();
-                sched.place_symbol(false, &[]).unwrap_or(0)
-            };
-            // task #86 (RWM_STORE_PERCAP): the admission gate only
-            // admits while SOME path's account has headroom — land
-            // the symbol there. A cap-full pick is redirected to the
-            // live path with the most relative account headroom, so
-            // the shallow path is never over-committed past its own
-            // pipe while the deep path keeps deepening.
-            if !percap_caps.is_empty() {
-                let accounts: Vec<(crate::scheduler::PathId, usize, usize, usize)> =
-                    percap_caps
-                        .iter()
-                        .map(|(&pid, &cap)| {
-                            (
-                                pid,
-                                st.percap_out.get(&pid).copied().unwrap_or(0),
-                                cap,
-                                // Roadmap item 1: the delay-aware
-                                // redirect bound (= cap when the
-                                // guard is off).
-                                percap_bounds.get(&pid).copied().unwrap_or(cap),
-                            )
-                        })
-                        .collect();
-                // feat/store-borrowing (§16.22.4): BORROW FIRST —
-                // a pick landing on a cap-full account stays on
-                // its picked PIPE, charged to the lender with the
-                // most lend room; else the guarded redirect; else
-                // keep-chosen (the gate reads FULL next
-                // iteration: backpressure, don't park). Own picks
-                // below cap are never touched.
-                let own_open = accounts
-                    .iter()
-                    .any(|&(p, out, cap, _)| p == picked && out < cap.max(1));
-                if pol.percap_borrow_on && !own_open {
-                    let baccts: Vec<BorrowAccount> = accounts
-                        .iter()
-                        .map(|&(p, out, cap, _)| {
-                            let (rate, rtprop_s) = percap_rr
-                                .get(&p)
-                                .copied()
-                                .unwrap_or((None, None));
-                            BorrowAccount {
-                                path: p,
-                                out,
-                                cap,
-                                fly: out
-                                    .saturating_sub(
-                                        st.percap_lent.get(&p).copied().unwrap_or(0),
-                                    )
-                                    .saturating_add(
-                                        st.percap_borrowed
-                                            .get(&p)
-                                            .copied()
-                                            .unwrap_or(0),
-                                    ),
-                                rate,
-                                rtprop_s,
-                            }
-                        })
-                        .collect();
-                    match percap_borrow_lender(picked, &baccts) {
-                        Some(lender) => {
-                            borrow_lender = Some(lender);
-                            picked
-                        }
-                        None => percap_place_path(picked, &accounts),
-                    }
-                } else {
-                    percap_place_path(picked, &accounts)
-                }
-            } else {
-                picked
-            }
+            let sched = ctx.scheduler.lock();
+            sched.place_symbol(false, &[]).unwrap_or(0)
         } else {
             let sched = ctx.scheduler.lock();
             select_source_path(&sched)
@@ -531,34 +431,13 @@ pub(crate) fn emit_source(
         *st.c8c_src_placed.entry(source_path).or_insert(0) += 1;
     }
 
-    // task #86: charge this seq to its placement path's outstanding
-    // account, in lockstep with the sent_store insert above (percap_on
-    // ⊆ plain_dyn_cap ⊆ the reliable && !generation retention mode).
-    // Released only by the ack that removes it from the store. A
-    // cross-path retransmit does NOT re-attribute: the account bounds
-    // the pipe the symbol was ADMITTED against (its dwell there ends
-    // at the same ack either way. percap_track ⊇ percap_on: under
-    // RWM_DIAG the maps are maintained as a gauge only — see decl).
+    // The `[DIAG] sout=` gauge: charge this seq to its placement path's
+    // outstanding account, in lockstep with the sent_store insert above
+    // (percap_track ⊆ plain_dyn_cap ⊆ the reliable && !generation retention
+    // mode, under RWM_DIAG only). Released only by the ack that removes it
+    // from the store. A cross-path retransmit does NOT re-attribute.
     if pol.percap_track {
-        // feat/store-borrowing: a LOAN charges the LENDER's account
-        // while the symbol flies on `source_path` (§16.22.1 — the
-        // ledger moves, the wire placement does not). The loan
-        // ledger corrects the pipe gauge (fly = out − lent +
-        // borrowed) and repays on the same ack that releases the
-        // account entry.
-        let charge_path = borrow_lender.unwrap_or(source_path);
-        percap_charge(&mut st.percap_acct, &mut st.percap_out, wire_sym.block_id, charge_path);
-        if let Some(lender) = borrow_lender {
-            percap_loan_charge(
-                &mut st.percap_loans,
-                &mut st.percap_lent,
-                &mut st.percap_borrowed,
-                wire_sym.block_id,
-                lender,
-                source_path,
-            );
-            st.percap_loans_total += 1;
-        }
+        percap_charge(&mut st.percap_acct, &mut st.percap_out, wire_sym.block_id, source_path);
     }
 
     // Add to retransmit buffer for P_lost-based retransmit decisions.
