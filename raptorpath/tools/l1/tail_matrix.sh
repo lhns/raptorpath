@@ -215,11 +215,9 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
             # feat/window-mtu (goal-gate "Window Decoupling + MTU Scaling"):
-            # the crown-gate arms — part 2 compact framing (mandatory spot),
-            # part 1 decoupled window, and the composed pair.
+            # the crown-gate arm — part 2 compact framing (mandatory spot);
+            # the part-1 decoupled-window arms were removed with their gate.
             mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
-            wdfix)   AENV="RWM_WIN_DECOUPLE=1"; AFLAGS="" ;;
-            wdmtu)   AENV="RWM_WIN_DECOUPLE=1 RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
             # feat/recv-permsg (goal-gate "Receiver Per-Message Wall"): the
             # crown-gate arm — estimator heavy-math cadence (delivery path
             # touched at the estimator only; the spot is mandatory).

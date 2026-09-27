@@ -505,7 +505,7 @@ pub(crate) fn emit_source(
                 // attribution to release them leaked src_inflight
                 // ~165k and starved the anchor at duals (measured:
                 // c7-fix 64 Mbit, cap collapsed to boot 128).
-                if let Some(feed) = ctx.copa_feed.as_ref().filter(|f| !f.n1_paused()) {
+                if let Some(feed) = ctx.copa_feed.as_ref() {
                     feed.on_sent(wire_sym.block_id, source_path);
                     p.charge_src(1);
                     p.on_src_sent(wire_sym.block_id, false);

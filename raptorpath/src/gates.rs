@@ -213,7 +213,7 @@ pub struct RuntimeGates {
     /// `Ack`'s payload in the v6 cumulative `cum_expected`/`cum_received`
     /// counters — TWO control datagrams per data message become ONE.
     /// Every `Ack`-arm consumer is re-homed onto the counter diff with its
-    /// own guard preserved (`gap_q`, the `copa_feed`/`n1_paused` three-way
+    /// own guard preserved (`gap_q`, the `copa_feed` three-way
     /// branch, the `expected > 0` guard). Block mode keeps the legacy `Ack`
     /// bit-exactly. Changes the datagram COUNT only: the delivery statistic,
     /// its cadence and its counts are unperturbed. Resolved via
@@ -264,20 +264,6 @@ pub struct RuntimeGates {
     /// §16.39's stall evidence was a fixed-threshold artifact of a batched
     /// emitter — measured on every arm, controls included.
     pub sidle_derived: bool,
-    /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
-    /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
-    /// N = 1 plain reliable window. The 1024-latch's three roles split:
-    /// wire budget = the live HEAD SPAN (last_sent − SACK/cum frontier;
-    /// recovery-stalled holes excluded) gated at
-    /// allow = anchor·(K + gain − 1) + rate·min(stall_age, R) — the
-    /// stall-insurance term explicit and continuous (grows at the anchor
-    /// rate during any frontier freeze, resets on advance); hole/retention
-    /// capacity = cap_ret (residence + R_ins + one recovery round),
-    /// memory-clamped at 4096. Under Copa-sole the residence term is
-    /// gain·Σcwnd and the 1024 clamp ceiling lifts to cap_ret (the B1
-    /// jitter-cell dwell-ceiling release). N ≥ 2 keeps the configured
-    /// pooled laws bit-exactly; the N1-scoped sampling anchor pauses.
-    pub win_decouple: bool,
 
     // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
     /// `RWM_PLACE_SLACK` (default OFF — the A/B arm): frontier-slack
@@ -1237,7 +1223,6 @@ impl RuntimeGates {
             release_1to1: crate::scheduler::release_1to1_active(),
             charge_recovery: crate::scheduler::charge_recovery_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
-            win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
             place_slack: env_flag("RWM_PLACE_SLACK", false),
             cold_place: crate::scheduler::cold_place_active(),
             place_t_derived: crate::scheduler::place_t_derived_active(),
@@ -1399,7 +1384,7 @@ impl RuntimeGates {
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
-             RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
+             RWM_SIDLE_DERIVED={} RWM_PLACE_SLACK={} \
              RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
@@ -1432,7 +1417,7 @@ impl RuntimeGates {
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
-            b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
+            b(self.sidle_derived), b(self.place_slack),
             b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
@@ -2081,7 +2066,6 @@ mod tests {
         );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
-        assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");
         assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
         assert!(
             !g.cold_place,

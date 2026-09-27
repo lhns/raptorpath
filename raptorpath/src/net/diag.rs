@@ -47,10 +47,10 @@
 //!     across the recovery block, which also increments `dg.mpd_*` — a
 //!     borrow conflict, not a behaviour question. They stay locals and are
 //!     passed in by reference.
-//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` are NOT DIAG-only:
-//!     the LIVE `RWM_WIN_DECOUPLE` admission gate reads both to compute the
-//!     head span and the stall meter. Only their derived `wnd2_relgap_max_us`
-//!     is instrumentation. They stay locals and are passed in by value.
+//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` stay locals of
+//!     `run_window_sender` and are passed in by value. (They were read by
+//!     the removed `RWM_WIN_DECOUPLE` admission gate; today they feed only
+//!     the `wnd2=`/`relgap=` gauge.)
 //!
 //! NOT covered here: the receiver-side `[RCV]` / `[RDIAG]` / `[FDIAG]` /
 //! `[C8CONV-R]` gauges (still in `run_impl`'s receiver task), the span-law
@@ -247,7 +247,7 @@ pub(crate) struct DiagState {
     /// frontier (max of SACK-release max and cum ack) last advanced, max per
     /// DIAG window: the release-clumping gauge (D2). The frontier itself
     /// (`wnd2_frontier_last` / `wnd2_frontier_change_us`) stays a local of
-    /// `run_window_sender` because the LIVE decoupled-admission law reads it.
+    /// `run_window_sender`.
     pub wnd2_relgap_max_us: u64,
 }
 
@@ -336,14 +336,9 @@ pub(crate) struct DiagInputs<'a> {
     /// RWM_POOL_ANCHOR: honest dual-store engagement + Σ honest caps.
     pub pa_engaged: bool,
     pub pa_sum: f64,
-    /// RWM_WIN_DECOUPLE: the live release frontier (read by the ADMISSION
-    /// law, hence still a local) and the law's engagement gauges.
+    /// The live release frontier (the `wnd2=`/`relgap=` gauge's input).
     pub wnd2_frontier_last: u64,
     pub wnd2_frontier_change_us: u64,
-    pub wd_engaged: bool,
-    pub wd_allow_base: f64,
-    pub wd_rate: f64,
-    pub wd_cap_ret: usize,
     /// The live NACK repair budget and the generation-mode pacing EWMA.
     pub cached_nack_budget: u64,
     pub gen_rate_ewma: f64,
@@ -408,10 +403,6 @@ pub(crate) fn report(
         pa_sum,
         wnd2_frontier_last,
         wnd2_frontier_change_us,
-        wd_engaged,
-        wd_allow_base,
-        wd_rate,
-        wd_cap_ret,
         cached_nack_budget,
         gen_rate_ewma,
         ps_slack_gauge,
@@ -849,21 +840,13 @@ pub(crate) fn report(
             let hole = store_len.saturating_sub(head);
             let relgap_cur =
                 dnow.saturating_sub(wnd2_frontier_change_us) / 1000;
-            let mut s = format!(
+            let s = format!(
                 " wnd2={}/{} relgap={}ms/mx{}ms",
                 head.min(store_len),
                 hole,
                 relgap_cur,
                 dg.wnd2_relgap_max_us / 1000,
             );
-            // RWM_WIN_DECOUPLE engagement gauge: base allowance /
-            // honest rate / retention backstop (mechanism liveness).
-            if wd_engaged {
-                s.push_str(&format!(
-                    " wd=al{:.0}/r{:.0}/ret{}",
-                    wd_allow_base, wd_rate, wd_cap_ret
-                ));
-            }
             dg.wnd2_relgap_max_us = 0;
             s
         } else {

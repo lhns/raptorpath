@@ -368,8 +368,6 @@ pub(crate) struct SenderPolicy {
     pub store_sack_release_on: bool,
     /// `RWM_PLACE_SLACK`: frontier-slack placement cost.
     pub place_slack_on: bool,
-    /// `RWM_WIN_DECOUPLE`: window/inflight decoupling at N = 1.
-    pub win_decouple_on: bool,
 
     // ── Per-path outstanding accounting (task #86, ADR-0058) ─────────────
     /// `RWM_STORE_PERCAP`: per-path accounts.
@@ -1117,18 +1115,6 @@ impl SenderPolicy {
         // both gates default-OFF paths keep the shipped tree byte-identical
         // (RWM_PLAIN_RS itself is default OFF).
         let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
-        // ── Window/inflight decoupling (env RWM_WIN_DECOUPLE) ────────────────
-        // Goal-gate "Window Decoupling + MTU Scaling" part 1 (pre-registered
-        // 2026-08-06 + diagnosis amendment): at N = 1 the admission gate moves
-        // from the un-SACKed total vs the anchor-sum latch to the live HEAD
-        // SPAN (last_sent − SACK/cum frontier — recovery-stalled holes
-        // excluded) vs the stall-metered allowance `win_decouple_allow`; the
-        // un-SACKed total keeps a retention backstop `win_decouple_cap_ret`
-        // (memory clamp 4096). Under Copa-sole the residence term is
-        // gain·Σcwnd (the 1024 ceiling truncation — the B1 jitter-cell dwell
-        // binder — is released). N ≥ 2 and warm-up keep the configured laws
-        // bit-exactly. Default OFF: shipped byte-identical.
-        let win_decouple_on = gates.win_decouple && plain_dyn_cap;
         // ── #85 budget-conserving taper (RWM_TAPER_R, default OFF) ────────────
         // MEASURED (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13): the
         // legacy taper accrual below sums to Σ τ(t) = r symbols PER ACK CYCLE
@@ -1440,7 +1426,6 @@ impl SenderPolicy {
             contract_rho,
             store_sack_release_on,
             place_slack_on,
-            win_decouple_on,
             percap_on,
             percap_guard_on,
             percap_borrow_on,

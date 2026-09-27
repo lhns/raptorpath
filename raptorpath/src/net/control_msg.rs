@@ -294,7 +294,7 @@ fn on_ack(
     // `record_delivery` anchor feed while the paused feed supplies no
     // samples either, and the anchor never establishes (measured at
     // duals: btlbw=0/est=n on both paths, dyn cap stuck at boot 128).
-    if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
+    if let Some(feed) = copa_feed {
         if let Some(p) = sched.path_mut(path_id) {
             p.release_in_flight(received_ids.len() as u32);
             // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode
@@ -686,7 +686,7 @@ fn on_window_ack(
         }
         let am_live = d_expected > 0 || d_received > 0;
         if am_live {
-            if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
+            if let Some(feed) = copa_feed {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(d_received);
                     if !feed.owns_cc() {
@@ -751,7 +751,7 @@ fn on_window_ack(
                 // config in practice, so this branch is the
                 // belt-and-braces one.)
                 if crate::scheduler::copa_compete_active()
-                    && copa_feed.filter(|f| !f.n1_paused()).is_none()
+                    && copa_feed.is_none()
                 {
                     if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
                         path.on_wire_congestion_events(ev);
