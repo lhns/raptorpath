@@ -172,6 +172,13 @@ abort. An absent gauge is printed `-` if and only if n = 0.
 
 - **Locks.** Take both `/tmp/rwm-vm.lock` and `/home/vibe/rp.lock` for the
   whole session (build, smoke and battery), and release both at exit.
+  A lock is held while its file exists: create it with noclobber
+  (`set -o noclobber; : > /tmp/rwm-vm.lock`, which fails if it is held),
+  write your owner token into it, then keep `flock` on an fd opened without
+  truncation (`exec {fd}<>/tmp/rwm-vm.lock; flock -n $fd`); release by
+  removing the file. `take_lock` in `tools/l1/lib_battery.sh` does exactly
+  this. Never `>` an existing lock file (`exec 8>PATH` truncates the owner's
+  token) and never treat `flock` alone as the lock.
 - **Build and binary.** Build fresh on the VM from the committed branch;
   record the `sha256` and re-verify it before the smoke and before the battery.
 - **CR check.** `tools/l1/lib.sh` holds 0 CR bytes after sync (rule 10).

@@ -82,6 +82,42 @@ ckeq "TERM exits 143" "143" "$RC"
 [ ! -e "$L" ] && ok "TERM releases the lock" || bad "TERM left the lock"
 grep -q RESUMED "$TD/term.out" && bad "TERM resumed the script" || ok "TERM does not resume the script"
 
+# ── locks: the one convention -- noclobber file AND flock(2) on an fd opened <> ──
+if command -v flock >/dev/null 2>&1; then
+  rm -f "$L"
+  (
+    LB_TAG=t2
+    take_lock "$L" >/dev/null
+    case "$(cat "$L")" in *" t2 "*) ok "take_lock writes the owner token through its fd" ;; *) bad "no token: '$(cat "$L")'" ;; esac
+    if flock -n "$L" true; then bad "a flock(1) user got a held lock"; else ok "a flock(1) user finds the lock held"; fi
+    # The ad-hoc convention the library must defeat: `exec 8>PATH; flock -n 8`.
+    if bash -c "exec 8>'$L'; flock -n 8"; then bad "an 'exec 8>; flock -n 8' user got a held lock"; else ok "an 'exec 8>; flock -n 8' user finds the lock held"; fi
+    ( set -o noclobber; : > "$L" ) 2>/dev/null && bad "a noclobber creator got a held lock" || ok "a noclobber creator finds the lock held"
+    ( take_lock "$L" >/dev/null ); ckeq "a second take_lock is refused (exit 4)" "4" "$?"
+    release_locks >/dev/null
+    [ ! -e "$L" ] && ok "release removes the file" || bad "release left the file"
+    ckeq "release closes the flock fd" "0" "${#LB_LOCK_FD[@]}"
+    : > "$L"
+    if flock -n "$L" true; then ok "after release the path's flock is free"; else bad "flock still held after release"; fi
+    rm -f "$L"
+  )
+  # A foreign flock(2) holder on an EXISTING file is refused by the noclobber
+  # witness alone; its file is left as it was.
+  printf 'foreign\n' > "$L"
+  ( exec 7<>"$L"; flock -n 7; ( take_lock "$L" >/dev/null ); echo "rc=$?" ) > "$TD/foreign.out"
+  ckeq "a file held by a foreign flock is refused (exit 4)" "rc=4" "$(cat "$TD/foreign.out")"
+  ckeq "the foreign holder's file is untouched" "foreign" "$(cat "$L")"
+  rm -f "$L"
+  # Two lock paths at once, as the batteries take them.
+  ( take_lock "$TD/l1" >/dev/null; take_lock "$TD/l2" >/dev/null
+    ckeq "two locks hold two fds" "2" "${#LB_LOCK_FD[@]}"
+    release_locks >/dev/null
+    [ ! -e "$TD/l1" ] && [ ! -e "$TD/l2" ] && ok "both released" || bad "a lock was left" )
+else
+  bad "flock(1) is not installed: the lock convention cannot be tested here"
+  ( take_lock "$L" >/dev/null 2>&1 ); ckeq "take_lock refuses without flock(1) (exit 4)" "4" "$?"
+fi
+
 # ── preflight_binary ──
 printf '#!/bin/sh\n# RWM_PLACE_HOL\nexit 0\n' > "$TD/bin"; chmod +x "$TD/bin"
 ( preflight_binary "$TD/bin" RWM_PLACE_HOL >/dev/null 2>&1 ) && ok "preflight passes a binary carrying the gate" || bad "preflight refused a good binary"
