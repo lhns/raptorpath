@@ -25,7 +25,7 @@ Additionally the engine's own per-path Copa-lite can BE quinn's window
    `RWM_QUIC_CC=cubic` opt-out arm. Unrecognized values warn and keep
    BBR. Cubic is retained (dead as a performance choice; alive as the
    fairness-conservative and control arm).
-3. **The endstate policy** (paper §17.2): the hint's declared price
+3. **The endstate policy** (paper §8.4): the hint's declared price
    chooses the controller — bulk → bbr-under; latency-priced →
    passthrough+Copa. Policy, not a mode switch.
 
@@ -51,7 +51,7 @@ motivation (a rate-model feed-forward is exactly what would let a
 
 ## Consequences
 
-- Every measured best arm since §16.17 already set `bbr` explicitly; the
+- Every measured best arm since the substrate-chain battery (paper §8.6) already set `bbr` explicitly; the
   flip fixes the shipped binary and the local suites, which were still
   exercising the condemned Cubic path. L1 identity check passed (the
   default binary reproduces the measured bbr arms; sc2 ~80, sc3 ~15.5).
@@ -77,7 +77,7 @@ motivation (a rate-model feed-forward is exactly what would let a
   identity check), "Copa-Sole on Clean Substrate (2026-07-22)" (the
   no-flip tradeoff verdict, both seeds), "CONSOLIDATED VERDICT" wall #1
   row.
-- Paper (§ as of ac1aed1): §12.11, §16.17, §17.2.
+- Paper: §8.4, §8.6.
 - Commits: 0d9f26e (`RWM_QUIC_CC` lever + wall diagnosis), 519467e
   (default flip), 7145fcc (identity-check binary).
 
@@ -108,4 +108,4 @@ gated reference arm with law tests); the honest fix is upstream
 quinn-proto work or engine-owned pacing via the existing passthrough
 surface under a rate-model law — ADR-0068's fusion, whose shal8 bar is
 now kernel-BBR's 93. Evidence: ledger "Ship The Wins 2: shal8
-anchor"; paper §16.38.
+anchor"; paper §9.6.

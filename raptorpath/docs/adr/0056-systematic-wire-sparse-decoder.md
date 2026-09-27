@@ -23,7 +23,7 @@ late-source injection.
    ride raw (unit rows, O(S) delivery); only ~⌈G·r⌉+deficit repair rows
    are dense — the O(k·G·S + k³) machine. The coded-only wire is retained
    as an explicit experiment arm, not the measured default; the harness
-   gen-arm recommendation is the systematic wire (§16.18).
+   gen-arm recommendation is the systematic wire (paper §5.8).
 2. **Sparse-aware decoding, unconditionally.** GenerationDecoder rewrite:
    per-slot `known` bitmap — known sources never enter the matrix
    (payload-only elimination), k=0 generations skip decode entirely.
@@ -50,7 +50,7 @@ late-source injection.
 
 - Ledger at ac1aed1: "Decode-CPU Ceiling (2026-07-13)" (profile,
   rewrite, L1 re-measure); "CONSOLIDATED VERDICT" walls #3–#4 rows.
-- Paper (§ as of ac1aed1): §16.18.
+- Paper: §5.8.
 - Commits: da926a5 (sparse-aware decoder + differential oracle), 2122481
   (wire-mode verdict + L1 numbers).
 

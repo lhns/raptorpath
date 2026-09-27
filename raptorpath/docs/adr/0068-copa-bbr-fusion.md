@@ -24,7 +24,7 @@ incidental:
   giving a continuous throughput↔queue dial (measured: the δ frontier's
   knee sits AT the hint-mapped value, ledger "Copa Wire-Signal") and
   the natural ~5-RTT queue drain that needs no ProbeRTT-class forced
-  stall (no FEC protection gap, paper §12.3) and no ProbeBW-class
+  stall (no FEC protection gap, paper §8.2) and no ProbeBW-class
   overshoot (the measured ×18–25 tighter C8 slow-path queue).
 
 Today these live as TWO controllers behind `RWM_QUIC_CC`, selected by
@@ -41,7 +41,7 @@ switch:
 
 1. **Copa's δ-priced delay control** stays the outer law: the target rate
    1/(δ·d_q), the velocity dynamics, the wire-clocked d_q
-   (paper §12.4 addendum), δ(hint) = 0.5/ζ with `RWM_COPA_DELTA` as the
+   (paper §8.2), δ(hint) = 0.5/ζ (§4.1) with `RWM_COPA_DELTA` as the
    continuous override. δ remains the ONLY latency knob.
 2. **A BBR-style rate model as the feed-forward baseline**: cwnd is
    anchored on measured BtlBw·RTprop (the per-path send-interval anchors
@@ -59,7 +59,7 @@ switch:
    10-round cycle approximates with a constant.
 4. **ε̂-referenced loss discrimination** (the card generic CCs lack: this
    transport carries a live channel-loss estimator): measured loss ≤ ε̂
-   is channel noise — FEC's job, no rate response (paper §12.1); measured
+   is channel noise — FEC's job, no rate response (paper §8.1); measured
    PERSISTENT loss > ε̂ is congestion or a policer — respond with a
    bounded-inflight regime, BBRv2-style. The channel estimator turns
    BBRv2's fixed loss-threshold constant into a measured reference.
@@ -103,7 +103,7 @@ switch:
   wireQ ×18–25), "Copa Competitive Mode + Cross-Traffic" (clean-cell
   contention starvation is CC-independent), "Copa-Sole on Clean
   Substrate".
-- Paper (§ as of ac1aed1): §12.4 (+ wire addendum), §12.11, §17.2.
+- Paper: §8.2, §8.4.
 - BBR-side structural claims are the deployed-BBR literature's; they are
   design rationale here, to be source-verified at build time (above).
 
@@ -171,7 +171,7 @@ BBR-under across the dose-response without the standing queue; shal8
 target until the burst-loss recovery prerequisite is fixed. The
 realtime crown survives jit15 (p99 medians 92–96 ms vs 36–39 clean,
 wire-class inflation only) — the fusion inherits that bar too.
-Evidence: ledger "Adversarial Cells (B1)", paper §16.33.
+Evidence: ledger "Adversarial Cells (B1)", paper §9.6.
 
 ## Addendum 2 — the fusion's substrate constraint and its sharpened bars
 
@@ -192,4 +192,4 @@ burst-robust estimator strips the over-read's standing queue and gives
 back −4…−14% at GE cells until the recovery-latency story is
 queue-independent — the store-dwell binder of the MEASURED BASELINE
 addendum, same family). Evidence: ledger "Ship The Wins 2: shal8
-anchor"; paper §16.38.
+anchor"; paper §9.6.

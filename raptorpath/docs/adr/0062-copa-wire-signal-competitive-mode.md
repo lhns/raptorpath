@@ -55,7 +55,7 @@ cross-traffic cell had ever been measured — gating any CC default flip
 - Ledger at ac1aed1: "Copa-Sole Substrate CC (2026-07-13)", "Copa
   Wire-Signal (2026-07-13)", "Copa Competitive Mode + Cross-Traffic
   (2026-07-19)"; CONSOLIDATED VERDICT §2.
-- Paper (§ as of ac1aed1): §12.11 (+ §12.4 addendum), §17.2.
+- Paper: §8.2 (wire signal, competitive mode), §8.4.
 - Commits: a895205 (passthrough shim + feed), f203d6e…386979d (wire-signal
   chain + measurement), 0f9bb2b + 0f0828b (competitive mode + battery).
 

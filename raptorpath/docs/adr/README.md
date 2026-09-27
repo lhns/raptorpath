@@ -1,16 +1,15 @@
 # Architecture Decision Records
 
 One row per retained ADR. Numbers are stable: gaps are ADRs that were superseded
-or that only narrated experiments. They were deleted, and git history keeps them
-(for example `git show ac1aed1:raptorpath/docs/adr/0066-deprecation-register.md`).
+or that only narrated experiments. They were deleted in 94bf58d; git history
+keeps them.
 ADR-0071 moved to [`../research/successor-candidates.md`](../research/successor-candidates.md).
 
 Conventions in the ADRs below:
 
 - "Ledger" citations refer to the measurement ledger that `docs/status.md` and
-  `docs/measurement-discipline.md` replaced. Read it with
-  `git show ac1aed1:raptorpath/docs/goal-gate.md`.
-- `§` numbers refer to the paper as it stood at ac1aed1.
+  `docs/measurement-discipline.md` replaced (in git history; ledger at ac1aed1).
+- `§` numbers refer to the current paper, `docs/fec-arq-model.md`.
 - For what ships today, [`../status.md`](../status.md) is authoritative.
 
 | # | title | status | summary |
