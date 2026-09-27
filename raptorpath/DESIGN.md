@@ -1,434 +1,151 @@
-# RaptorPath: Multipath Transport with Fountain Code FEC
+# RaptorPath design
 
-## Architecture
+RaptorPath is a multipath FEC + ARQ transport. It carries IP packets from a TUN
+interface (or objects, in `raptorpath perf`) over one QUIC connection per path,
+protecting them with a sliding-window random linear code (RLC) and repairing
+what the code does not cover with SACK-driven retransmission.
 
-```
-┌─────────────┐
-│ Application │
-│  (IP pkts)  │
-└──────┬──────┘
-       │ TUN interface
-┌──────▼──────┐
-│   Block     │  Accumulate packets into ~64KB blocks
-│  Assembly   │
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│ FEC Encode  │  1. Emit source symbols (zero latency)
-│ (5 backends)│  2. Stream repair symbols (fountain)
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│  Scheduler  │  Route symbols to paths by RTT/goodput
-└──┬───┬───┬──┘
-   │   │   │   QUIC DATAGRAM per path
-┌──▼┐┌─▼─┐┌▼──┐
-│WiFi││LTE││Eth│  Independent QUIC connections
-└──┬┘└─┬─┘└┬──┘
-   │   │   │
-   └───┼───┘
-       │
-┌──────▼──────┐
-│ FEC Decode  │  Decode from any k(1+ε) of n symbols
-│ (5 backends)│
-└──────┬──────┘
-       │ TUN interface
-┌──────▼──────┐
-│ Application │
-└─────────────┘
-```
+The theory lives in the paper, [`docs/fec-arq-model.md`](docs/fec-arq-model.md).
+This file maps it onto the code. What ships by default, and the open debts, are
+in [`docs/status.md`](docs/status.md), which is authoritative where the two
+differ.
 
-## Key Design Decisions
+## One machine, three dials
 
-### Source-First Transmission
-Original (unencoded) symbols are sent first. This lets the receiver:
-- Process data immediately without waiting for decoding
-- Only invoke the fountain decoder when packets are actually lost
-- Achieve near-zero added latency on good links
+The architecture's central claim is **one machine parameterized by the
+(δ, ρ, r) triangle on measured anchors**: continuous in δ, with no mode bit.
+The protocol hints (`realtime`, `auto`, `bulk`) are named points on the dials,
+never modes (see the root `CLAUDE.md`).
 
-### FEC Rate Control (BOCD + r*, ADR-0050)
+| dial | meaning | where it is computed |
+|---|---|---|
+| δ | latency price: how much delay the flow will trade for throughput | `net/mod.rs` `delta_price` (hint → δ via `scheduler::hint_delta_price`; `RWM_DELTA` sets a number); `delta_budget_b_of` → `raptorpath_math::span_horizon_b` |
+| ρ | retention contract: the fraction of data that must eventually arrive | ρ = 1 retain-until-acked (`--window-reliable`); ρ < 1 EVICT retention with δ-honest shedding (`shed_allowed`, `shed_deadline_us`, `shed_recv_budget_ok` in `net/mod.rs`) |
+| r | proactive repair rate | `control/fec_rate.rs`: r* from the BOCD loss quantile and the window loss-mass tail; the rate mix r(β) = (1−β)·r_anchor + β·r_late-is-fine with β = `bulkness_of_delta(δ)`; `TaperBudget` spends it on the wire |
 
-The rate controller (`src/control/fec_rate.rs`) uses:
+The shared closed forms (`compute_r_star`, `r_star_mass`, `span_horizon_b`,
+`bulkness_of_delta`, `zeta_of_delta`, `p_lost`, ...) live in the
+`raptorpath-math` crate, which the engine and the visualizer
+(`raptorpath-wasm`, `raptorpath-visualizer/`) both call, so the model and the
+engine evaluate the same law.
 
-**Loss estimate**: BOCD (Bayesian Online Changepoint Detection) posterior
-upper quantile at 95% confidence — the quantile widens automatically at
-regime changes, providing the estimation-uncertainty margin. There is no
-PI controller (removed by ADR-0050; `feedback_update*()` are no-ops).
-
-**Rate formula** (paper Section 8.4, shared with `raptorpath-math`):
+## Data path (window pipeline)
 
 ```
-r = max( p/(1-p) + z_δ·√(p·σ²_burst/(W·(1-p))) + codec_eff,  B/T )
+TUN / perf object
+  └─ run_window_sender (net/mod.rs)
+       └─ emit_source (net/emit_source.rs)         one packet → one source symbol
+            ├─ encoder intake (fec/rlc_window.rs)   sliding-window RLC over GF(256)
+            ├─ Scheduler::place_symbol → place_costs (scheduler/mod.rs)
+            ├─ retention store + store-cap gate     (flow control, net/mod.rs)
+            └─ proactive repair (TaperBudget, control/fec_rate.rs)
+  └─ QuicTransport (transport/quic.rs)              QUIC DATAGRAM per path
+                                                    wire format: transport/protocol.rs
+peer ─ run_receiver (net/receiver.rs)
+       ├─ UnifiedDecoder (fec/unified.rs)           one decoder for every RLC wire
+       ├─ ReorderBuffer (net/reorder.rs)            in-order frontier / hold-at-hole
+       └─ WindowAck (SACK) back to the sender
+sender ─ on_window_ack (net/control_msg.rs)         store release, hole detection, retransmit
 ```
 
-where `z_δ = normal_quantile(1 - target_tail_loss)` (the protocol hint
-enters here), `σ²_burst = 1 + 2(1-p-q)/(p+q)` from the GE estimator,
-`codec_eff` is codec overhead weighted by `P(decoder invoked) =
-1-(1-p)^W`, and `B/T` is the burst term (mean burst length over
-symbols-per-RTT).
-
-**Spare-capacity gate**: repair rate is clamped to `(cwnd − in_flight) /
-in_flight` so FEC never causes congestion ("never hurts" guarantee).
-
-Note: the visualizer (`raptorpath-wasm`) currently drives the
-triangle-solver controller from `raptorpath-math` (EWMA mean + δ/ρ
-modes), which is NOT the production controller above — treat visualizer
-results as illustrating the model, not validating production behavior.
-
-### Multipath Scheduling
-- Source symbols → lowest-RTT paths (minimize latency)
-- Repair symbols → highest-goodput paths (maximize reliability)
-- Proportional to available capacity (respects congestion)
-
-### Loss Estimation
-- Bayesian Beta-Binomial with EWMA decay
-- Uses upper confidence bound (95th percentile) for FEC computation
-- Burst detection with adaptive response
-
-## Research: Optimal FEC/ARQ Architecture
-
-This section documents research findings on how to evolve raptorpath's FEC layer. These are
-design notes for future work, not a description of the current implementation.
-
-### Current Architecture and Its Tradeoffs
-
-RaptorPath uses **block-based RaptorQ** FEC: accumulate ~64KB of IP packets into a block (~50
-source symbols), then generate repair symbols on demand. Key properties:
-
-- **Rateless (fountain)**: can generate an unbounded number of repair symbols from any block.
-- **Systematic**: source symbols are sent first, unmodified — zero decode cost on lossless links.
-- **Near-optimal erasure recovery**: any k(1+ε) symbols suffice to decode k source symbols.
-- **Limitation**: block assembly delay — repair symbols are only available after a full block is
-  assembled. On slow links, block fill time adds latency before any FEC protection is active.
-- **Rateless property is valuable proactively**: before feedback arrives, the encoder can generate
-  repair symbols at the estimated loss rate and send them alongside source symbols. The receiver
-  doesn't need all of them — any subset helps. This is where rateless codes shine.
-- **Rateless property is less valuable reactively**: after ACK/NACK feedback (~1 RTT), the sender
-  knows *exactly* which symbols are missing. Targeted retransmission of those specific symbols is
-  more efficient than sending random fountain repair.
-
-### Block Codes vs Sliding Window Codes
-
-The fundamental architectural question for FEC in low-latency transport is **block-based vs
-sliding-window coding**, not which specific code to use within a block.
-
-**Block codes** (RaptorQ, Reed-Solomon): encode a fixed block of k source symbols into n coded
-symbols. The block boundary is the problem — no protection until the block is full, and a block
-boundary forces the decoder to wait for block completion before recovering symbols.
-
-**Sliding window codes**: repair symbols continuously protect a sliding window of the most recent
-W source symbols. No block boundary, no assembly delay — every repair symbol sent protects
-everything currently in the window.
-
-**Why sliding window codes are strictly better for low-latency transport:**
-
-- Badr et al. (2017) proved the streaming capacity `C(T,B) = T/(T+B)` for channels with burst
-  erasures of length B and delay constraint T. Block codes cannot match this within the same delay
-  constraint because the block boundary wastes part of the delay budget.
-- Roca's IETF NWCRG work on sliding window FEC for QUIC demonstrates the inherent latency and
-  protection advantage of windowed codes over block codes in QUIC-like transports.
-- rQUIC (Garrido et al., 2019) showed up to **60% latency reduction** on WiFi by integrating
-  sliding window FEC into QUIC, compared to retransmission-only QUIC.
-
-**The rateless property is not exclusive to block codes.** Bogino et al. (2007) proved that
-rateless codes can operate over a sliding window instead of a fixed block, demonstrating that
-"rateless/fountain" and "sliding window" are not mutually exclusive. However, Bogino's specific
-LT-based construction was a research prototype with no production implementation — the theoretical
-point stands, but no practical sliding window fountain code exists today.
-
-### Streaming Codes
-
-Streaming codes (Martinian & Sundberg 2004, Badr et al. 2017) are the theoretical foundation for
-sliding window erasure coding:
-
-- **Burst erasure correction with delay guarantees**: Martinian & Sundberg (2004) showed how to
-  construct codes that recover from burst erasures of length B within a fixed delay T.
-- **Rate-optimal layered constructions**: Badr et al. (2017) proved rate-optimal constructions for
-  channels with both burst and random loss — layered codes that simultaneously handle both loss
-  patterns within the delay constraint.
-- **Systematic**: source symbols are sent first, same as RaptorQ — no decode cost on lossless links.
-- **Fixed-rate variants have proven delay-optimal properties**: for a given channel model, these
-  codes provably minimize recovery delay.
-- **Sliding window fountain variants demonstrated in theory**: Bogino et al. (2007) showed
-  rateless sliding window codes are possible as a proof of concept, removing the fixed-rate
-  limitation in principle. No production implementation exists; the fixed-rate variants
-  (Badr/Martinian) are better understood theoretically.
-
-The real advantage of streaming codes is **continuous protection without block boundaries** and
-**proven burst recovery within a delay constraint** — properties that block codes fundamentally
-cannot provide regardless of block size.
-
-### When the Block-Based Approach Still Works
-
-RaptorQ is already implemented and working in raptorpath. It remains appropriate when:
-
-- **Block assembly delay is acceptable**: bulk transfer, non-realtime traffic, or links fast enough
-  that blocks fill quickly.
-- **Loss is low and retransmission handles the rest**: when most blocks decode from source symbols
-  alone and the occasional missing symbol is retransmitted, block boundaries don't matter.
-- **Proactive FEC before feedback**: the rateless property is useful here — send repair symbols at
-  the estimated loss rate alongside source symbols. Any subset the receiver gets helps, and the
-  encoder doesn't need to commit to a fixed rate.
-
-### Hybrid Proactive/Reactive Approach (Short-Term Improvement)
-
-The pragmatic short-term improvement requires **no new FEC code** — just changing *when* repair
-symbols are generated:
-
-**Proactive phase** (before feedback, covers the first RTT):
-- Generate RaptorQ repair symbols alongside source symbols at the estimated loss rate.
-- The encoder already exists — this is a scheduling change, not a coding change.
-- Rateless property is genuinely useful here: send repair at estimated rate, and any symbols the
-  receiver gets help with decoding.
-
-**Reactive phase** (after ACK feedback):
-- Retransmit specific missing symbols — no FEC needed, exact knowledge of what's lost.
-- **Cross-path retransmission**: if path A lost it, retransmit on path B.
-- This is strictly more efficient than blind fountain repair.
-
-The **optimal proactive/reactive split** depends on the `RTT × loss_rate` product:
-- **High RTT or high loss** → more proactive FEC (long feedback-blind window, more symbols at risk)
-- **Low RTT, low loss** → mostly reactive retransmission (feedback arrives quickly, few losses)
-
-```
-Phase 1: Proactive RaptorQ repair (before feedback)
-├── Send source symbols + repair symbols at estimated loss rate
-├── Uses existing RaptorQ encoder — scheduling change only
-└── Rateless property means any repair symbols help
-
-Phase 2: Reactive retransmission (after ACK feedback)
-├── Targeted resend of specific missing symbols
-├── Cross-path retransmit: if path A lost it, resend on path B
-└── Most bandwidth-efficient — uses exact loss information
-```
-
-### Future: Sliding Window Coding (Medium-Term Evolution)
-
-The real architectural evolution is replacing block-based RaptorQ with **sliding window erasure
-coding**:
-
-- **Eliminates block assembly delay entirely** — repair symbols protect a continuously advancing
-  window of source symbols.
-- **Better burst recovery within delay constraints** — proven optimal by Badr et al. (2017).
-- **Sliding window RLC (RFC 8681)**: the only standardized sliding window FEC today. Reference C
-  implementation exists (irtf-nwcrg/swif-codec, research prototype quality). Decoding is GF(2^8)
-  Gaussian elimination — O(n³), but at raptorpath's window sizes (~50 symbols) this is fast.
-  Steinwurf's RLNC benchmarks show 56 Gbps decode at K=16, 3.68 Gbps at K=500.
-- **Bogino sliding window fountain codes**: proof of concept only — no implementation exists.
-- **Realistic path**: implement sliding window RLC (the GF(2^8) math is straightforward) for our
-  small window sizes.
-- **Largest architectural change** in the FEC pipeline: replaces the block assembly → RaptorQ
-  encode → block decode pipeline with a continuous window encoder/decoder.
-- **Consider when**: latency requirements exceed what block-based proactive/reactive can deliver,
-  or when burst patterns consistently defeat block-sized FEC.
-
-### Key References
-
-- **Badr et al.** — "Layered Constructions for Low-Delay Streaming Codes," IEEE Trans. IT, 2017.
-  Rate-optimal streaming codes for burst+random erasure channels with delay constraints. Proves
-  the streaming capacity `C(T,B) = T/(T+B)` that block codes cannot match.
-- **Martinian & Sundberg** — "Burst Erasure Correction Codes with Low Decoding Delay," IEEE
-  Trans. IT, 2004. Original streaming erasure codes with delay guarantees.
-- **Roca et al.** — IETF NWCRG work on sliding window FEC for QUIC. Demonstrates latency and
-  protection advantages of windowed codes over block codes in QUIC transports.
-- **Bogino et al.** — "Sliding Window Digital Fountain Codes," 2007. Proof-of-concept rateless
-  sliding window code. Demonstrated the theoretical compatibility of rateless + sliding window,
-  but no production implementation exists.
-- **RFC 8681** — Roca et al., "Sliding Window Random Linear Code (RLC) FEC Schemes for
-  FECFRAME," 2020. Standardized sliding window FEC; reference implementation at
-  github.com/irtf-nwcrg/swif-codec.
-- **rQUIC** — Garrido et al., "rQUIC: Integrating FEC with QUIC for Robust Wireless
-  Communications," 2019. Up to 60% latency reduction on WiFi with FEC in QUIC.
-- **DMTP** — IETF draft, multipath QUIC with deadline-aware streaming codes. Combines multipath
-  scheduling with delay-constrained FEC.
-- **MPLOT** — Sharma et al., "MPLOT: Multipath Loss-Tolerant Transport," INFOCOM 2008.
-  Foundational multipath transport with proactive/reactive FEC split.
-- **QUIC-FEC** — Michel et al., "QUIC-FEC: Bringing the benefits of FEC to QUIC," 2019.
-  FEC plugin for QUIC; validated on real wireless links.
-- **Cloud et al.** — "Multi-Path TCP with Network Coding," IEEE INFOCOM, 2013.
-  Cross-path network coding for multipath transport.
-
-## Protocol Hints
-
-| Mode     | Effect (ADR-0050)                          | Use Case           |
-|----------|--------------------------------------------|-------------------|
-| Realtime | target_tail_loss × 0.01 (100× tighter z_δ) | VoIP, gaming      |
-| Bulk     | target_tail_loss × 100 (100× looser z_δ)   | File transfer     |
-| Auto     | target_tail_loss unchanged                 | General traffic   |
-
-## Platforms
-
-- **Linux**: `tun` crate (kernel TUN/TAP driver)
-- **Windows**: `wintun` crate (WinTUN userspace driver)
-
-## Future Work
-
-### High Priority
-
-- [x] **Block interleaving** — Spread symbols from multiple blocks across time so a single burst
-  doesn't wipe out one block. Interleave N blocks' symbols in round-robin before scheduling.
-  Dramatically improves burst resilience without extra FEC overhead.
-
-- [x] **Path MTU discovery** — Use `quinn::Connection::max_datagram_size()` (already queried in
-  RTCP reports) to dynamically size symbols per path. Avoids fragmentation on constrained links
-  and maximizes goodput on fat pipes. Requires per-path symbol sizing or padding strategy.
-
-- [x] **Connection migration** — Add/remove paths at runtime without tearing down the session.
-  Hot-add a new WiFi or LTE path when it becomes available, gracefully drain a dying path.
-  Requires a control message to announce new paths and a handshake extension.
-
-### Medium Priority
-
-- [x] **BBR-style congestion control** — Replace AIMD (loss-based) with a delay-based algorithm.
-  AIMD interprets wireless loss as congestion, causing unnecessary cwnd reduction. BBR uses
-  RTT gradient to distinguish congestion from random loss — much better for mixed wireless paths.
-
-- [x] **TLS cert pinning** — Current QUIC setup uses self-signed certs with insecure client
-  validation. Add certificate pinning or a pre-shared key exchange for production deployments.
-
-- [x] **Correlated loss modeling (Gilbert-Elliott HMM)** — Two-state HMM implemented
-  (ADR-0023). Feeds burst_factor into FEC rate controller and mean_burst_length into
-  streaming code params.
-
-### Congestion Control & Scheduling Improvements
-
-- [x] **ProbeRTT phase** — Implemented (ADR-0024). 10s interval, 200ms hold at cwnd=4.
-  Prevents min_rtt drift from standing queues.
-
-- [x] **Pacing / burst smoothing** — Implemented (P7, paper 12.4 implementation notes).
-  Token-bucket pacer at `cwnd/SRTT` symbols per second with burst allowance
-  `max(10, cwnd/8)`, gating the interleaver drain in `net/mod.rs` at SYMBOL
-  granularity: drained symbols land in a per-path carry queue and each pace tick
-  sends only floor(tokens) symbols (carried symbols count toward the TUN-read
-  gate). Ported together with the gate-proven Copa-lite window dynamics
-  (windowed-min queue signal, hint-coupled queue target, two-speed ramp,
-  cwnd floor 8).
-
-- [ ] **BLEST-style receive-side reordering awareness** — The scheduler sends source symbols to
-  the lowest-RTT path, but when path RTTs differ significantly (e.g. 10ms WiFi vs 80ms LTE),
-  symbols arrive wildly out of order at the receiver, causing head-of-line blocking during
-  reassembly. BLEST (BLocking ESTimation, Ferlin et al. 2016) estimates whether sending on a
-  slow path will stall the receiver and skips it if so. Implementation: before scheduling to a
-  path, compute the expected arrival time relative to symbols already in flight on faster paths;
-  skip the slow path if the gap exceeds a threshold.
-  *Reference: Ferlin et al., "BLEST: Blocking Estimation-based MPTCP Scheduler," IFIP Networking 2016.*
-
-- [ ] **ACK aggregation compensation** — WiFi access points and cellular base stations aggregate
-  ACKs, adding jitter to RTT measurements that BBR can misinterpret as congestion (3 consecutive
-  >10% increases). Filtering aggregation effects — e.g. tracking the minimum of recent RTT
-  samples within each ACK cluster rather than raw samples — would make congestion detection more
-  robust on wireless links. Implementation: add a short-window (50ms) min-filter before feeding
-  RTT samples into `BbrState::record_rtt()`.
-
-### FEC Architecture Improvements
-
-The FEC layer uses a **swappable backend** architecture (see [ADR-0021](docs/adr/0021-swappable-fec-backend.md)).
-The `FecEncoder`/`FecDecoder` traits abstract the erasure code, and `FecBackend` enum selects
-the implementation at runtime. Currently supported backends:
-
-- **RaptorQ** (default) — RFC 6330 rateless fountain code.
-- **Reed-Solomon** — MDS erasure code with zero overhead.
-- **RLC** — RFC 8681 sliding window random linear code (block + window mode).
-- **Streaming** — Badr/Martinian delay-optimal two-layer code (ADR-0027).
-
-Select via `--fec-backend <name>` (CLI) or `fec_backend = "<name>"` (TOML config).
-
-For detailed evaluation, see [algorithm-competitive-analysis.md](docs/algorithm-competitive-analysis.md).
-
-- [x] **WindowNack sender repair** — ADR-0025
-- [x] **Multipath window scheduling** — ADR-0026
-- [x] **Tapered repair interleaving** — ADR-0029
-- [x] **Runtime backend switching** — ADR-0030
-
-- [x] **Hybrid proactive/reactive FEC** — Fractional repair accumulator replaces burst and
-  interval repairs (ADR-0037). *The original `loss_rate × 4.0` debt heuristic has since been
-  superseded by ADR-0050:* the debt increment now comes from
-  `compute_repair_rate_capped()` (BOCD + r*) shaped by the `TaperFunction`. ACK feedback and
-  NACKs still reduce debt, so proactive overhead approaches zero at low loss. NACK handler
-  retransmits exact source symbols (via `get_source()`) instead of random repairs.
-
-- [x] **Sliding window FEC (streaming codes)** — Implemented window backends: RLC (ADR-0022)
-  and Streaming codes (ADR-0027). The streaming backend uses Badr/Martinian's
-  layered construction (burst XOR + random GF(256)). Parameters derived from GE HMM estimator.
-  *References: Badr et al. 2017, RFC 8681, ADR-0022, ADR-0027.*
-
-- [x] **Cross-path retransmission** — When symbols are detected lost on path A, retransmit them on
-  path B via `best_repair_path_avoiding()`. Falls back to any available path for single-path
-  setups. Part of the hybrid proactive/reactive approach (ADR-0037).
-  *Reference: Cloud et al., "Multi-Path TCP with Network Coding," IEEE INFOCOM, 2013.*
-
-- [ ] **Proactive retransmission (speculative repair)** — When a symbol's expected ACK deadline
-  passes on path A, immediately send a fresh repair symbol on path B *before* the block times
-  out. This trades bandwidth for latency — cheaper than waiting for full block decode failure.
-  The scheduler already knows per-path RTT, so the deadline is `send_time + path_rtt + margin`.
-  After the deadline, generate one repair symbol and schedule it on the best alternative path.
-  This is particularly effective for tail latency reduction: most blocks decode fine, but the
-  rare blocks missing 1-2 symbols benefit enormously from a proactive repair on a different path.
-  *Reference: MPTCP "redundant scheduling" literature; Barre et al., "Multipath TCP: From Theory to Practice," 2011.*
-
-- [ ] **Priority-aware / unequal error protection** — Different traffic gets different FEC levels.
-  Since we have raw IP packets from the TUN interface, we can inspect IP/TCP headers to classify
-  traffic: TCP SYN/SYN-ACK, DNS queries, and video I-frames get stronger FEC protection, while
-  bulk data gets standard or reduced FEC. Requires a lightweight DPI classifier in the block
-  assembly stage that tags blocks with a priority level, and a modified `compute_repair_count`
-  that scales repair symbols by priority.
-
-### Benchmark Interpretation
-
-The transport comparison benchmark ([ADR-0036](docs/adr/0036-transport-comparison-benchmark.md)) compares
-raptorpath's FEC-based recovery against retransmission-based QUIC/MPTCP across 6 network scenarios. The
-`overhead_pct` column measures **FEC repair symbol overhead only** — it does not include wire protocol
-overhead (padding, headers, metadata serialization). QUIC retransmissions are internal to the channel
-model and appear as increased latency, not explicit overhead.
-
-The benchmark uses a **fractional repair accumulator** aligned with the production send loop.
-(Historical note: at the time of ADR-0040 this was `repair_debt += batch * loss_rate * 4.0`;
-production now derives the debt increment from the ADR-0050 controller — BOCD + r* via
-`compute_repair_rate_capped()` — so benchmark numbers predating that change reflect the old
-heuristic.) See [ADR-0040](docs/adr/0040-benchmark-repair-alignment.md) for the repair alignment fix.
-
-**Multi-backend comparison** (ADR-0040): the benchmark tests the FEC backends across all scenarios:
-- **RLC** (window mode) — GF(2^8) Gaussian elimination, ~0% coding overhead, O(k^3) decode
-- **RaptorQ** (block mode) — fountain code, ~1% coding overhead, block-granularity delivery
-
-The meaningful comparison is in the latency and recovery columns: raptorpath trades bandwidth (higher
-overhead) for lower tail latency (p95/p99), especially on lossy and bursty links.
-
-See [ADR-0038](docs/adr/0038-benchmark-overhead-taxonomy.md) for the full overhead taxonomy (five layers)
-and metric definitions.
-
-### Symbol Packing
-
-Window-mode framing maps 1 IP packet → 1 FEC symbol, padding with zeros to `symbol_size`. For small
-packets (VoIP 160B, DNS 60B, TCP ACK 52B) in a 512B symbol, 60-90% of each symbol is wasted.
-
-`SymbolPacker` (in `net/framing.rs`) accumulates multiple small packets into one symbol using block-mode
-length-prefix framing (`[u16 BE len][data]...[u16 0x0000 sentinel]`). This reuses the existing
-`extract_packets()` function — no new parser needed.
-
-- **Enabled for:** `ProtocolHint::Realtime` (VoIP, gaming)
-- **Flush timeout:** 1ms (configurable) — partial buffers are emitted before the deadline
-- **Protocol negotiation:** `packed: bool` in `ControlMessage::WindowStart` tells the receiver which
-  extraction path to use
-- **Impact:** 2-3x better symbol utilization for small packets; fewer symbols → fewer repairs → less
-  FEC overhead
-
-See [ADR-0039](docs/adr/0039-overhead-reduction.md) for details and trade-offs.
-
-### Lower Priority
-
-- [ ] **Reinforcement learning for scheduling** — Use RL to learn scheduling policies that
-  outperform hand-tuned heuristics. State space: per-path (RTT, loss, cwnd, queue depth, recent
-  throughput). Action: which path gets the next symbol. The reward signal is block decode
-  success rate weighted by latency. Requires training data from real-world multipath deployments
-  or a realistic simulator. Interesting but hard to validate without large-scale deployment.
-  *Reference: Wu et al., "ReMP: Learning Multipath Scheduling," NSDI, 2020.*
-
-- [ ] **UDP passthrough mode** — Wrap raw UDP streams without TUN, for applications that want
-  multipath FEC without a virtual network interface.
-
-- [ ] **Layer 2 / Ethernet frame transport** — Currently Layer 3 (IP only). L2 mode would
-  support non-IP protocols and bridging use cases.
-
-- [ ] **Application-layer encryption** — Additional encryption beyond QUIC TLS for
-  defense-in-depth or post-quantum considerations.
+**Emission.** Source symbols go out first and unencoded, so a loss-free path
+never decodes. Repair symbols are random linear combinations over the trailing
+span. The span law (ADR-0064) sets width A*, depth M* and trailing offset from
+(δ, ρ, r) and measured anchors (`control/anchor.rs`, ADR-0061).
+
+**Placement.** `Scheduler::place_symbol` samples a path from a softmax over
+`place_costs`: expected delivery time under the path's current load
+(normalized by the fastest SRTT), its loss burden, and, for repair symbols,
+how much of the covered data the path already carried. There is no hard
+capacity cutoff; a saturated path's weight falls continuously. Each path keeps
+engine-side state (`PathState`, with a Copa-lite `CopaState`) whose samples feed
+the anchors. The congestion controller under each QUIC connection is quinn BBR
+by default (`RWM_QUIC_CC`, ADR-0054).
+
+**Flow control.** Sent symbols live in a retention store until the cumulative
+ACK passes them. SACKed symbols release their store slot at once but keep their
+payload for recovery (ADR-0060). The store cap is a derived law over path count,
+per-path pipe and the δ price (`path_scaled_store_cap`, `pooled_store_cap`,
+`pool_value_multiplier` and the honest-cap terms in `net/mod.rs`). The paper
+section "Flow control: the store/δ-cap law" derives it.
+
+**Recovery.** The receiver acknowledges with SACK ranges (`WindowAck`). The
+sender turns gaps into holes (`sack_to_gaps`) and decides per hole, on that
+flight's own path clock (RFC 9002 time and packet thresholds generalized per
+path, `mp_hole_ripe`, ADR-0059), whether to retransmit. At ρ < 1 a hole whose
+projected delivery misses the δ deadline may be shed, within the 1 − ρ budget.
+`RepairRequest` exists on the wire for future receiver-driven repair and is not
+sent in v8.
+
+**Decoding.** `UnifiedDecoder` is the global sparse-aware closure (ADR-0056,
+ADR-0064): known source columns stay payload-only, coded rows reduce only over
+their spans, and unit rows deliver per arrival. `RWM_UNIFIED=0` falls back to the
+legacy `RlcWindowDecoder`.
+
+## The block pipeline (legacy, still the Bulk/Auto default)
+
+`net/mod.rs` `is_window_mode` routes by
+`(hint == Realtime || window_reliable) && backend.is_streaming()`. With the
+defaults (`window_reliable = false`, backend RaptorQ) **Bulk and Auto still run
+the block pipeline**: `run_block_sender` (`net/block_sender.rs`) assembles
+packets into blocks, encodes them with RaptorQ / Reed-Solomon / block RLC
+(`fec/*_backend.rs`), interleaves them (`net/interleave.rs`), and repairs with
+block ARQ (`net/block_arq.rs`, `net/tasks/arq_sweep.rs`). Realtime, and any hint
+with `--window-reliable`, runs the window pipeline above.
+
+This fork is the last architectural mode bit and violates the no-mode-switch
+invariant. ADR-0069 records it as legacy and pins the routing with a test.
+Flipping the default and deleting block mode wait on the pre-registered re-test
+in `docs/status.md` §4.
+
+## Module map (`raptorpath/src`)
+
+| module | role |
+|---|---|
+| `main.rs` | CLI: `run`, `check`, `status`, `perf`, `setup` |
+| `config.rs` | TOML + profile + CLI layering; `resolve` → `PeerConfig` |
+| `gates.rs` | the `RWM_*` environment surface, resolved once (`RuntimeGates::resolve`) |
+| `perf.rs` | `raptorpath perf`: objects over the real engine through a memory TUN |
+| `preflight.rs`, `routing.rs` | environment checks; route and DNS setup and cleanup |
+| `net/mod.rs` | orchestration (`run_impl`), window sender, recovery and store laws |
+| `net/emit_source.rs`, `net/sender_policy.rs` | the per-symbol emission step and its resolve-once policy |
+| `net/receiver.rs`, `net/control_msg.rs`, `net/reorder.rs` | receiver task, control-message dispatch, in-order frontier |
+| `net/framing.rs` | length-prefix packet framing and symbol packing |
+| `net/block_sender.rs`, `block_arq.rs`, `interleave.rs` | block pipeline (legacy) |
+| `net/tasks/` | background tasks: decoder GC, block ARQ sweep, path add/remove, periodic report, control fast path |
+| `net/{diag,ackdiag,cpuprof,eta,lat,late,succ,walldiag,rttdump,recv_block}.rs` | measurement instruments (`[DIAG]`, `[ETA]`, `[LAT]`, ...), mostly off by default |
+| `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding), block backends, traits |
+| `control/` | `estimator.rs` (Beta + BOCD loss estimate), `changepoint.rs`, `gilbert_elliott.rs`, `fec_rate.rs` (r*, rate mix, taper), `anchor.rs` (anchor hygiene) |
+| `scheduler/` | per-path state, Copa-lite, placement (`place_costs`), injectable clock |
+| `transport/` | `quic.rs` (quinn, per-path connections, substrate CC choice), `protocol.rs` (wire, `PROTOCOL_VERSION = 8`), `bbr_rs.rs` (gated reference BBR) |
+| `monitor/` | `SharedStats` and the axum endpoint (`/status`, `/health`, `/paths`) |
+| `tun/` | Linux TUN and Windows wintun |
+
+The workspace also holds `gf256/` (SIMD GF(2^8) arithmetic, ADR-0041),
+`raptorpath-math/` (the shared laws) and the L0 model (`raptorpath-wasm/`,
+`raptorpath-visualizer/`).
+
+## Default stack
+
+`docs/status.md` §1 lists the defaults as the code resolves them: routing per
+hint, wire v8 with compact DATA framing, quinn BBR underneath, and the `RWM_*`
+gates that are on by default (unified machine and shedding, taper, anchor
+hygiene, SACK-clocked release, path-scaled and δ-priced store caps, per-path
+recovery clocks, ACK merge). Every other gate is an experiment arm or an
+instrument and is off.
+
+## Where to read more
+
+The paper sections (named, since the paper is being renumbered):
+
+- **System and channel model**: the Gilbert-Elliott channel and the (δ, ρ, r) contract.
+- **Recovery fundamentals**: FEC versus ARQ, P_lost, the taper.
+- **The rate law**: r*, the window loss-mass tail, r(β), b(δ).
+- **The sliding-window span machine and multipath**: the unified decoder, the span law, placement.
+- **Flow control: the store/δ-cap law**.
+- **The recovery decision**: the hole law and the receiver seat.
+- **Congestion control and substrate**: Copa-lite, quinn BBR, `RWM_QUIC_CC`.
+- **Refuted and superseded designs**: what was tried and removed, and why.
+
+Decisions are indexed in [`docs/adr/README.md`](docs/adr/README.md). Measurement
+rules are in [`docs/measurement-discipline.md`](docs/measurement-discipline.md).
