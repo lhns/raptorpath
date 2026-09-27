@@ -8,7 +8,8 @@ store release).
 
 > **Honesty note.** This document is DESCRIPTIVE: hand-drawn diagrams of the
 > mechanisms as shipped, refreshed 2026-07-28 against main `7a3aff6`. It is
-> not a measurement record (that is `goal-gate.md`) and not normative (that
+> not a measurement record (see `status.md`; the full ledger is
+> `goal-gate.md` in git history at `ac1aed1`) and not normative (that
 > is the paper, `fec-arq-model.md` §16.20/§16.26, and the code). The
 > interactive companion is `raptorpath-visualizer/interactive-visualizer.html`
 > — an L0 model of the same laws, with its own model-vs-engine table.

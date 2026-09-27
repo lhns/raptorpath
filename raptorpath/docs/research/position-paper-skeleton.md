@@ -10,6 +10,9 @@ ERA LEDGER item 6.
   marked **[NOT ON THE RECORD]** with what it would take to put it there.
 - **Every number is citable.** Where a number is load-bearing and its
   provenance is weak, §7 says so by name rather than leaving it to a reviewer.
+- **Ledger citations** (`goal-gate …`, `dead-wall-mitigations.md`) refer to
+  files removed after commit `ac1aed1`; read them with
+  `git show ac1aed1:raptorpath/docs/<path>`.
 
 **Date**: 2026-08-19. **Branch**: `docs/mitigations-and-skeleton` from
 main@`b98d537`. **DOCS ONLY** — no VM, no L1 number re-derived, no engine line.
@@ -371,9 +374,9 @@ one that quietly reverts them.**
 **The section's job:** describe the machine that produced §3, in enough detail
 that another group could run it. Five layers, bottom-up.
 
-**4.1 MEASUREMENT DISCIPLINE — 18 numbered rules** (`goal-gate.md:15-338`;
-ADR-0052), each dated and each traceable to the battery that forced it. Origin
-(`:19-23`): *"six mechanism verdicts were merged on measurements in which the
+**4.1 MEASUREMENT DISCIPLINE — 18 numbered rules** (`measurement-discipline.md`;
+ADR-0052), each traceable to the battery that forced it (the ledger at
+`ac1aed1` dates them). Origin (ledger `:19-23`): *"six mechanism verdicts were merged on measurements in which the
 mechanism under test never executed, because nobody checked."* Rule 1 is
 **mechanism-liveness proof** — *"Dead code measures noise."* Rules 17 and 18
 were both added on 2026-08-12 by the N² postmortem. **The rules are not a style
@@ -386,7 +389,7 @@ order in N, units, monotonicity — before any number. Every clamp gets a
 bind-fraction gauge. Sections that did this before their code existed: §16.56,
 §16.58, §16.59, §16.62, §16.67, §16.68, §16.69.
 
-**4.3 PRE-REGISTRATION** (MEASUREMENT DISCIPLINE 11, `goal-gate.md:74-81`).
+**4.3 PRE-REGISTRATION** (MEASUREMENT DISCIPLINE 11, `measurement-discipline.md`).
 The contract — mechanism, predicted effect size and cells, falsification
 condition — is committed **in its own commit, before the drivers exist and
 before any VM contact**; results are then *"stated against the criteria
