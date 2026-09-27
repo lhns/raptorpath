@@ -1482,10 +1482,10 @@ fn unified_rstar_n1_reduces_to_84() {
     // deadline in the ARQ-overflow band: d=10 < D=20 < d+1.5·RTT=10+30=40.
     let deadline = 2.0 * owd as f64;
 
-    println!("\n=== PART 4a: UNIFIED r* — N=1 REDUCTION TO §8.4 (K={k}, W={w}) ===");
+    println!("\n=== PART 4a: UNIFIED r* — N=1 REDUCTION TO §4.2 (K={k}, W={w}) ===");
     println!("single path, unordered per-symbol delivery, D={deadline}ms (ARQ overflows)\n");
     println!("  {:>6} {:>6} | {:>10} {:>10} {:>12} | {:>10} {:>10}",
-        "eps", "delta", "oracle late", "fec_miss", "e(1-Pfec)", "r*(§8.4)", "late@r*/δ");
+        "eps", "delta", "oracle late", "fec_miss", "e(1-Pfec)", "r*(§4.2)", "late@r*/δ");
 
     let scenarios = [(0.05f64, 0.02f64), (0.05, 0.03), (0.10, 0.04), (0.10, 0.06), (0.08, 0.03)];
     for &(eps, delta) in &scenarios {
@@ -1521,11 +1521,11 @@ fn unified_rstar_n1_reduces_to_84() {
         // (iii) THE THEOREM: at r = r*(§4.2), the measured tail sits at δ.
         let hit = out.p_late / delta;
         assert!((0.45..2.2).contains(&hit),
-            "r*(§8.4) must place the deadline-miss tail at δ={delta}: got {:.5} ({hit:.2}×δ)",
+            "r*(§4.2) must place the deadline-miss tail at δ={delta}: got {:.5} ({hit:.2}×δ)",
             out.p_late);
     }
-    println!("\n  VERDICT: N=1 unified r* ≡ §8.4 r* — the reorder term vanishes,");
-    println!("  the deadline collapses to within-window-or-ARQ, and r*(§8.4)");
+    println!("\n  VERDICT: N=1 unified r* ≡ §4.2 r* — the reorder term vanishes,");
+    println!("  the deadline collapses to within-window-or-ARQ, and r*(§4.2)");
     println!("  places the measured lateness tail at δ.  Reduction CONFIRMED.");
 }
 
@@ -1618,7 +1618,7 @@ fn unified_rstar_monotonicity_and_optimum() {
     let r_star = compute_r_star_with_z(eps, sigma2, w as f64, normal_quantile(1.0 - delta / eps));
 
     println!("\n=== PART 4c: MONOTONICITY & OVERHEAD-MINIMIZING r* (eps={eps}, δ={delta}) ===");
-    println!("closed-form r*(§8.4/§8.8) = {r_star:.4}\n");
+    println!("closed-form r*(§4.2/§4.8) = {r_star:.4}\n");
     println!("  {:>7} | {:>10}", "r", "P(late)");
 
     // (a) sweep r: P(late) must be monotone non-increasing, and cross δ near r*.
@@ -1640,11 +1640,11 @@ fn unified_rstar_monotonicity_and_optimum() {
     }
     let under = r_min_emp / r_star;
     println!("\n  smallest feasible r on the grid = {r_min_emp:.3}; closed-form r* = {r_star:.4}");
-    println!("  oracle boundary / closed-form r* = {under:.2}×  (the §8.7 under-provisioning gap)");
-    println!("  HONEST: the §8.4/§8.8 closed form is a FIRST-ORDER floor — its Gaussian");
+    println!("  oracle boundary / closed-form r* = {under:.2}×  (the §4.7 under-provisioning gap)");
+    println!("  HONEST: the §4.2/§4.8 closed form is a FIRST-ORDER floor — its Gaussian");
     println!("  tail + ignored loss/repair correlation under-provision the true GE tail, so");
     println!("  the oracle needs ~{under:.1}× r* to actually hit δ.  The controller uses r* as");
-    println!("  the analytic floor and the exact DP (§8.7 / compute_min_rate_exact) to close");
+    println!("  the analytic floor and the exact DP (§4.7 / compute_min_rate_exact) to close");
     println!("  the gap; the oracle CONFIRMS the sign and size of that documented gap.");
     // r* is the correct-order FLOOR of the feasible interval, not an over-estimate:
     // the true boundary sits at/above r* (never far below), confirming the closed
@@ -1653,7 +1653,7 @@ fn unified_rstar_monotonicity_and_optimum() {
     assert!(r_min_emp >= r_star * 0.85,
         "closed-form r* must be a floor (not an over-estimate): r_min_emp={r_min_emp:.3} r*={r_star:.4}");
     assert!(r_min_emp <= r_star * 2.5,
-        "the under-provisioning gap must stay bounded (~§8.7 scale): {under:.2}×");
+        "the under-provisioning gap must stay bounded (~§4.7 scale): {under:.2}×");
 
     // (b) reorder-late share monotone non-increasing in H.
     let fast = path_eps(60.0, 5, 0.02, 0.5);
@@ -1688,7 +1688,7 @@ fn unified_rstar_monotonicity_and_optimum() {
         prev_eps = out.p_late;
     }
     println!("\n  VERDICT: P(late) ↓ in r (feasible set convex ⇒ r* is its boundary),");
-    println!("  reorder-late ↓ in H, P(late) ↑ in ε — all §8.8 monotonicities hold.");
+    println!("  reorder-late ↓ in H, P(late) ↑ in ε — all §4.8 monotonicities hold.");
 }
 
 // -------------------------------------------------------------------------
@@ -2769,7 +2769,7 @@ fn daps_depth_bound_beats_both_dump_and_rate_throttle() {
 
     println!("\n  VERDICT: the last residual is the READ-AHEAD DEPTH, and the escape is a DEPTH");
     println!("  bound, NOT a rate throttle.  DEPTH-UNBOUNDED dumps (x{f_a:.3}, the 3–4 s bloat wasted);");
-    println!("  RATE-THROTTLE bounds the queue but idles the link (x{f_b:.3}, util η={eta:.2} — the §16.13");
+    println!("  RATE-THROTTLE bounds the queue but idles the link (x{f_b:.3}, util η={eta:.2} — the §10");
     println!("  politeness trap, C7 20.96→16.97).  DEPTH-BOUND keeps the link FULL (util=1) AND the");
     println!("  read-ahead within the skew (useful=1) → C8 x{f_c:.3} (ceiling), C7 restored.  If L1");
     println!("  confirms, the estimator→correct-anchor→depth-bound stack LANDS heterogeneous aggregation.");
@@ -2842,7 +2842,7 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
     let est_max = est_series_sym_s.iter().cloned().fold(0.0, f64::max);
     println!("\n=== PART 6i: ANCHOR NOISE makes the depth bound INERT; a STABLE anchor restores it ===");
     println!("  TRUE BtlBw_slow={true_sym_s:.0} sym/s  skew={skew:.0}ms  ceiling x{ceiling:.3}");
-    println!("  NOISY est swings {est_min:.0}..{est_max:.0} sym/s (~{:.0}x) -> depth-bound INERT -> C8 x{noisy_factor:.3} (~parity, the §16.15 bound)", est_max / est_min);
+    println!("  NOISY est swings {est_min:.0}..{est_max:.0} sym/s (~{:.0}x) -> depth-bound INERT -> C8 x{noisy_factor:.3} (~parity, the §10 bound)", est_max / est_min);
     println!("  STABLE est≈true -> dbud=skew·true steady -> depth-bound BINDS -> C8 x{stable_factor:.3} (ceiling)");
 
     // (a) the noisy anchor collapses C8 toward parity (the depth bound is inert).
@@ -2853,7 +2853,7 @@ fn anchor_noise_makes_depth_bound_inert_stable_anchor_restores_it() {
     //     oracle-proven) depth bound — a signal-STABILITY fix, not a new mechanism.
     assert!(stable_factor > noisy_factor + 0.15, "the stable anchor must beat the noisy one decisively: x{stable_factor:.3} vs x{noisy_factor:.3}");
 
-    println!("\n  VERDICT: the §16.14 CONSOLIDATE rested on a MISSING anchor; §16.15 shows the anchor is");
+    println!("\n  VERDICT: the §10 CONSOLIDATE rested on a MISSING anchor; §10 shows the anchor is");
     println!("  PRESENT but decode-clock NOISY (~4000x swing) -> dbud through 0 -> the correct depth bound");
     println!("  is inert.  De-noising BtlBw_slow (robust quantile) is the NECESSARY signal-stability fix");
     println!("  that lets the oracle-proven depth bound bind toward x{stable_factor:.3}; L1 is the arbiter.");

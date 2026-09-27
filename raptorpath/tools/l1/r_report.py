@@ -144,7 +144,7 @@ def report(outdir, calib, max_rep=None):
           % len(live))
 
     # ── 1 — mechanism liveness, read before any score ───────────────────
-    print("\n=== 1 — MECHANISM LIVENESS, READ BEFORE ANY SCORE (§16.82.7 verbatim)")
+    print("\n=== 1 — MECHANISM LIVENESS, READ BEFORE ANY SCORE (pre-registered; the battery is §9.8)")
     inert = {}
     for c in cells:
         for z in sizes:
@@ -183,10 +183,10 @@ def report(outdir, calib, max_rep=None):
             else:
                 att = ("BUDGET-BOUND — delta_eff(chi=1) = BULK_TAIL_BUDGET = %.2f "
                        ">= eps_hat=%.4f leaves r* = 0 BY ARITHMETIC. A finding "
-                       "about the CONSTANT (register row, §16.80.12), NOT about r."
+                       "about the CONSTANT (register row, §11.2), NOT about r."
                        % (BULK_TAIL_BUDGET, max_eps))
         else:
-            att = ("WIRING — a wiring failure, not a result (§16.82.7's own words): "
+            att = ("WIRING — a wiring failure, not a result (the pre-registration's own words): "
                    "eps_hat=%s does not explain it."
                    % (("%.4f" % max_eps) if max_eps is not None else "unreadable"))
         print("  R-INERT %-5s %-4s %-8s  => %s" % (c, z, a, att))
@@ -197,7 +197,7 @@ def report(outdir, calib, max_rep=None):
         print("  none — r reached the wire on every funded arm-cell-size.")
 
     # ── 2 — the falsifier, which outranks goodput ───────────────────────
-    print("\n=== 2 — THE PRE-STATED FALSIFIER (§16.82.6): [FDIAG] decode-resolved vs ARQ-resolved")
+    print("\n=== 2 — THE PRE-STATED FALSIFIER (§9.8): [FDIAG] decode-resolved vs ARQ-resolved")
     print("  REMINDER, and it is not decoration: the record's '19-32 ms decodes' were")
     print("  RESOLUTION WAITING, not compute (the pre-registration record; raw compute")
     print("  6-10 us/call, 33-54 ms TOTAL over a 1.8 MB transfer). A DECODE avg quoted")
@@ -223,7 +223,7 @@ def report(outdir, calib, max_rep=None):
                          "ENTANGLEMENT-DOMINATED" if fired else "-"))
     if entangled:
         print("  ENTANGLEMENT-DOMINATED fires and OUTRANKS every completion and goodput")
-        print("  reading on the arms named above (§16.82.6: legal REGARDLESS OF GOODPUT).")
+        print("  reading on the arms named above (pre-registered: legal REGARDLESS OF GOODPUT).")
 
     # ── 3 — W7, the CC pin ──────────────────────────────────────────────
     print("\n=== 3 — W7: DID THE CC PIN HOLD? (the mechanical substitute for the Copa echo")
@@ -252,10 +252,10 @@ def report(outdir, calib, max_rep=None):
         return calibration(live, cells, sizes, arms)
 
     # ── 4 — the score: completion p50, by the pre-set bar ───────────────
-    print("\n=== 4 — THE SCORE: completion p50 (§16.82.7: 'the scored dimension is")
+    print("\n=== 4 — THE SCORE: completion p50 (pre-registered: 'the scored dimension is")
     print("    completion p50 at the two sizes, which is where the two hypotheses disagree')")
     print("    Goodput is a GUARD and is DECLARED GUARD-UNDERPOWERED in advance at all")
-    print("    three cells (§16.82.7 verbatim: 'THE GOODPUT LEG IS A GUARD AND NOT A")
+    print("    three cells (pre-registered verbatim: 'THE GOODPUT LEG IS A GUARD AND NOT A")
     print("    SCORE AT n = 8').")
     wins = {}
     for c in cells:
@@ -372,7 +372,7 @@ def report(outdir, calib, max_rep=None):
 
     print("\n  RULING: nothing here flips a default. A CTL win does NOT bless")
     print("  BULK_TAIL_BUDGET = 0.05 — it stays in the open-constants register of")
-    print("  §16.80.12, arbitrary and UNCORRECTED, and the one arm that would have")
+    print("  §11.2, arbitrary and UNCORRECTED, and the one arm that would have")
     print("  contested it (GLIDE-Z) cannot run on this binary.")
     return 0
 
