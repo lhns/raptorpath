@@ -1,7 +1,8 @@
 # ADR-0011: TUN and Message Channels Can Stall Under Load
 
-## Status
-**Resolved** — Channel capacities increased from 256/512 to 4096. TUN inject path uses `try_send` to drop packets instead of blocking the receiver.
+## Status: Accepted
+
+Implemented: Channel capacities increased from 256/512 to 4096. TUN inject path uses `try_send` to drop packets instead of blocking the receiver.
 
 ## Context
 The system uses bounded mpsc channels at several points:

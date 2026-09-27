@@ -1,12 +1,11 @@
 # ADR-0059: Per-Path Recovery Clocks — RFC 9002 loss detection generalized per path
 
-## Status: Accepted (`RWM_RECOV_MP` default ON since 2026-07-21; per-path SERIAL namespaces refuted as runtime, retained as diagnostic)
-
-**Date**: 2026-07-21
+## Status: Accepted (`RWM_RECOV_MP` default ON; per-path SERIAL namespaces refuted as runtime and deleted)
 
 ## Context
 
-Wall #8: with the pool fixed (ADR-0058) and threading refuted (ADR-0057),
+Wall #8: with the outstanding pool path-scaled (`RWM_STORE_PATHS`) and
+receiver threading refuted by profiling,
 the c7 wire was measured SATURATED by the recovery plane itself — retx
 share ×1.8 and repair share ×2.2–2.5 the same-config single-path level ≈
 exactly the Σ-gap, and dual-c1 sank BELOW single (retx 9.3% of source at
@@ -28,9 +27,8 @@ their own flight clock. Default ON since the consolidation battery.
 The companion per-path SERIAL-namespace fix (`RWM_RECOV_MP_SERIAL`) is
 **vindicated as diagnosis, refuted as runtime**: honest per-path signals
 re-heat every SRTT/loss-scaled cadence and cost ×2.4 sender CPU. Default
-OFF, retained as the diagnostic probe arm; the honest-signal cadence
-re-derivation is the named follow-up (register: no re-test owed — refuted
-on the clean substrate itself).
+OFF, later deleted (no re-test owed — refuted on the clean substrate
+itself); the honest-signal cadence re-derivation is the named follow-up.
 
 ## Consequences
 
@@ -49,16 +47,15 @@ on the clean substrate itself).
 
 ## Evidence
 
-- Ledger: goal-gate.md "Multipath Recovery Suppression (2026-07-21)"
+- Ledger at ac1aed1: "Multipath Recovery Suppression (2026-07-21)"
   (per-NACK trace, law, both batteries, serial-fix verdict);
   "Consolidation (2026-07-21)" (LOO flip); "CONSOLIDATED VERDICT" wall
   #8 row.
-- Paper: §16.24.
+- Paper (§ as of ac1aed1): §16.24.
 - Commits: 8a34520 (per-flight hole law + serials), a0dbd98 (packet-
   threshold fast channel), 2c632c0 (snapshot coalescing; SERIAL default
   OFF), 6a95193 (ledger verdict), 5ebbcda (default flip).
 
 ## References
 
-- ADR-0057 (the profile that named this successor), ADR-0060 (the
-  composing successor), RFC 9002 §6.1.
+- ADR-0060 (the composing successor), RFC 9002 §6.1.

@@ -1,7 +1,10 @@
 # ADR-0042: Consolidate Benchmarks into Actionable Suite
 
-**Status:** Accepted
-**Date:** 2026-03-19
+## Status: Accepted
+
+> **Note:** Tables 3–5 below were later folded into one matrix, and the
+> window backends other than RLC and the matching Criterion benches were
+> removed. The current suite is described in `docs/benchmark-methodology.md`.
 
 ## Context
 
@@ -20,7 +23,7 @@ Root causes:
 4. **No confidence intervals** — impossible to distinguish signal from noise.
 5. **Duplicated infrastructure** — `ablation_bench.rs` reimplemented its own
    `GilbertElliottChannel` instead of using `common/mod.rs`.
-6. **5 overhead layers but only 1 measured** (ADR-0038) — reported "overhead" was
+6. **5 overhead layers but only 1 measured** — reported "overhead" was
    just FEC repair symbols, not true wire cost.
 7. **Too many tables with no narrative** — 8 transports × 6 scenarios × 8 metrics
    produced a wall of numbers.
@@ -45,14 +48,14 @@ Criterion benchmarks unchanged (they measure encode/decode latency well).
 
 Sweeps uniform loss from 1% to 25%. For each loss rate × backend, runs 30 trials
 measuring recovery rate with 95% CI. Block backends (RaptorQ, RS) use block-mode
-encode/decode with BLOCK_SIZE=200. Window backends (RLC, Mettle, Streaming) use
+encode/decode with BLOCK_SIZE=200. Window backends (RLC) use
 interleaved streaming with repair per batch.
 
 Replaces `ablation_bench::backend_comparison_benchmark`.
 
 ### Table 2: Wire Overhead Breakdown — "How much does FEC actually cost?"
 
-Computes all 5 overhead layers from ADR-0038 for 3 representative loss scenarios
+Computes all 5 overhead layers (see `docs/benchmark-methodology.md`) for 3 representative loss scenarios
 (datacenter 0.1%, WiFi 2.5%, congested 12%). Pure arithmetic using
 `FecRateController::compute_repair_rate` for layer 1 and serialization constants
 for layers 2–5.
@@ -76,11 +79,11 @@ The retransmit model is explicitly labeled as simplified — not real QUIC.
 
 Replaces `transport_comparison_bench` — drops the 8×6 matrix to 2×3.
 
-### Table 5: Transport Comparison — "QUIC vs MPTCP vs FEC" (added post-ADR-0043)
+### Table 5: Transport Comparison — "QUIC vs MPTCP vs FEC" (added later)
 
 Five transport configurations: QUIC single-path, MPTCP round-robin, MPTCP min-RTT,
 FEC single-path, FEC dual-path. Three scenarios: WiFi, LTE, Satellite.
-Implements the full ADR-0036 comparison within the consolidated bench suite.
+Carries the former transport comparison into the consolidated bench suite.
 
 ## Changes
 
@@ -100,8 +103,7 @@ Implements the full ADR-0036 comparison within the consolidated bench suite.
 - `tests/ablation_bench.rs`
 
 ### Unchanged
-- All 4 Criterion benchmarks (`gf256_bench`, `fec_bench`, `fec_realworld_bench`,
-  `mettle_bench`) — fine for timing
+- The Criterion benchmarks — fine for timing
 
 ## Runtime
 
@@ -118,5 +120,3 @@ Implements the full ADR-0036 comparison within the consolidated bench suite.
 - 1200B symbols make results directly comparable with Criterion benchmarks
 - 20% FEC cap reveals real differences between configs
 - `TrialStats` and `UniformChannel` in `common/mod.rs` are reusable by future tests
-- Old ADR references (0033, 0034, 0036) still apply to the underlying features;
-  this ADR replaces only the benchmark methodology

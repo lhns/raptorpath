@@ -1,10 +1,9 @@
 # ADR-0031: Network Simulation Harness
 
-## Status
-Accepted
+## Status: Accepted
 
 ## Context
-Raptorpath has several network-dependent features (BBR/ProbeRTT, reorder buffer, NACK repair, backend auto-switching) that only had isolated unit tests. There was no test harness exercising them with realistic network behavior (delay, jitter, bursty loss, reordering). The existing `multipath_simulation_test.rs` manually feeds synthetic data but doesn't use an actual channel model.
+Raptorpath has several network-dependent features (engine congestion control, reorder buffer, NACK repair) that only had isolated unit tests. There was no test harness exercising them with realistic network behavior (delay, jitter, bursty loss, reordering). The existing `multipath_simulation_test.rs` manually feeds synthetic data but doesn't use an actual channel model.
 
 ## Decision
 
@@ -24,7 +23,6 @@ Raptorpath has several network-dependent features (BBR/ProbeRTT, reorder buffer,
 | File | Tests | Exercises |
 |------|-------|-----------|
 | `sim_copa_test.rs` | 4 | Copa convergence, delay-based cwnd, wireless-vs-congestion, RTT-weighted scheduling |
-| `sim_backend_test.rs` | 4 | Low→high loss switch, SimChannel-driven switch, burst→streaming, hysteresis |
 | `sim_reorder_test.rs` | 4 | Jittery delivery reordering, timeout expiry, over-capacity drain, bursty gaps |
 | `sim_nack_test.rs` | 4 | Gap detection accuracy, RLC repair recovery, cooldown rate limiting, gap bounds |
 | `sim_pipeline_test.rs` | 3 | Full pipeline datacenter/WiFi/multipath-failover integration |
@@ -32,7 +30,6 @@ Raptorpath has several network-dependent features (BBR/ProbeRTT, reorder buffer,
 ## Key Design Choices
 - Test infrastructure lives in `tests/common/` (idiomatic Rust integration test helpers), not `src/sim/`
 - SimChannel uses `BinaryHeap + MockClock` for deterministic, reproducible packet delivery ordering
-- BackendSelector timer bypassed via `switch_interval_secs=0` (existing pattern)
 - All tests are deterministic via seeded `ChaCha8Rng` + `MockClock`
 
 ## Consequences

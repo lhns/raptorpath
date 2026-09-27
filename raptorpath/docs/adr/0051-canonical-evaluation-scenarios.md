@@ -25,15 +25,13 @@ What exists today (survey of `tests/bench_suite.rs`, `tests/common/mod.rs`,
   deadline-driven traffic.
 - No scenario has competing traffic, congestion-dominant loss, or AQM. There
   is no scenario designed for raptorpath to lose.
-- Doc drift: methodology says 8% FEC budget; code uses
-  `MATRIX_FEC_OVERHEAD = 0.12` (`tests/bench_suite.rs:40`).
 
 ## Decision
 
 ### 1. Scenario axes
 
 A scenario is a point in (channel × path-set × traffic). Channels reuse the
-paper's Section 2.4 GE parameterization so model, simulator, and benchmarks
+paper's GE channel parameterization so model, simulator, and benchmarks
 share one vocabulary.
 
 **Channels** (single path unless noted):
@@ -61,7 +59,7 @@ adaptation, not raw redundancy.
 | T1 | Bulk transfer, 100 MB | Bulk | Completion time; goodput ratio = goodput / (fair-share capacity × (1−ε)) |
 | T2 | Request/response, 32 KB RPCs, closed loop | Auto | p50 / p99 response time |
 | T3 | CBR stream 2 Mbps, 33 ms deadline, ρ = 99.9% | Realtime | Deadline-miss rate, p99/p999 delivery latency |
-| T4 | Mixed: T3 + T1 concurrently | both | T3's deadline-miss rate must hold while T1 saturates (QoS cascade, paper §13.9) |
+| T4 | Mixed: T3 + T1 concurrently | both | T3's deadline-miss rate must hold while T1 saturates (QoS cascade, see the paper) |
 
 The full matrix is 9 × 4 = 36 cells minus non-sensical combinations (e.g.
 T4 on C1) — approximately 30 cells. Every cell runs ≥ 30 trials with fixed
@@ -97,7 +95,7 @@ gate — no averaging across cells (averaging hides losses).
 
 ### 4. Immediate corrections to the existing suite
 
-1. Fix methodology doc drift (FEC budget 8% → 12%; re-derive cell counts).
+1. (Done) Methodology doc aligned with the code's 12% matrix budget.
 2. Relabel L0 baseline output "SimRetx" (not QUIC/TCP).
 3. Add `completion_time` and `goodput_ratio` to `TrialResult` (currently
    only `throughput_mbps`), counting retransmission volume for the baseline
@@ -127,6 +125,5 @@ gate — no averaging across cells (averaging hides losses).
 ## References
 
 - `docs/benchmark-methodology.md` (to be updated per §4)
-- ADR-0036 (transport comparison — historical), ADR-0044 (methodology),
-  ADR-0046 (sim realism), ADR-0050 (rate control)
-- Paper §2.4 (channel parameters), §11 (verification), §13.9 (QoS cascade)
+- ADR-0050 (rate control)
+- Paper: the channel model (GE parameters), verification, and QoS cascade sections

@@ -1,6 +1,6 @@
 # ADR-0017: MTU-Aware Symbol Sizing
 
-## Status: Resolved
+## Status: Accepted
 
 ## Context
 

@@ -1,8 +1,6 @@
 # ADR-0061: Anchor Hygiene — three laws for a measured anchor
 
-## Status: Accepted (M*-pair + clock-gap members default ON since 2026-07-21; A* anchor default ON under `RWM_UNIFIED`; `RWM_PLAIN_RS` retained gated)
-
-**Date**: 2026-07-19
+## Status: Accepted (M* pair and clock-gap default ON; A* anchor default ON under `RWM_UNIFIED`; `RWM_PLAIN_RS` retained gated, default OFF)
 
 ## Context
 
@@ -30,7 +28,7 @@ broken anchors silently convert derived laws into constants.
    ack-arrival-clock detector design was built first and REFUTED by
    measurement — ack silences of 0.5–3 s are normal protocol behavior).
 3. **Expiring floors**: floors/backstops expire — a floor that outlives
-   its min-window is a constant wearing a floor's clothes (the FMTCP win
+   its min-window is a constant wearing a floor's clothes (the static win
    backstop becomes the derived `(M*+2)·G` once anchors are live).
 
 **The four fixes** (env-gated, `RWM_ANCHOR_HYGIENE` umbrella):
@@ -52,21 +50,21 @@ generalized to plain mode, sampling-only CopaFeed), `RWM_CLOCK_GAP`
   `RWM_UNIFIED` (ADR-0064 — its liveness was a flip-gate). `RWM_PLAIN_RS`
   stays gated: its honest anchor is load-bearingly ENTANGLED with the
   legacy store-cap circularity (sc2 −20% as a cwnd anchor; resolved as a
-  cap input), a named flip candidate riding the c8-aware pool follow-up.
+  cap input); a named flip candidate, not yet measured under the full
+  leave-one-out rule.
 - Anchor-defect classes now have named laws and unit injections
   (flood-poison, seeding, witness quarantine); new anchors must satisfy
   the three laws or say why not.
 
 ## Evidence
 
-- Ledger: goal-gate.md "Anchor Hygiene (2026-07-19)" (principle, fixes,
+- Ledger at ac1aed1: "Anchor Hygiene (2026-07-19)" (principle, fixes,
   L0 + L1 batteries, gate-readiness); "Unified Decoder" → COLLAPSE
   ATTRIBUTION (the A* defects); "Consolidation (2026-07-21)" (LOO flips).
-- Paper: §16.21.
+- Paper (§ as of ac1aed1): §16.21.
 - Commits: 988960c (fixes 1–4), d6bed88 (knee verdict), 5ebbcda (default
   flips), 6568822 (A* default ON under RWM_UNIFIED).
 
 ## References
 
-- ADR-0064 (the span law these anchors feed), ADR-0058 (the cap laws),
-  ADR-0052 (the discipline that caught the arrival-clock refutation).
+- ADR-0064 (the span law these anchors feed), ADR-0052 (the discipline that caught the arrival-clock refutation).

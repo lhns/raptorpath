@@ -1,7 +1,8 @@
 # ADR-0003: Loss Estimation Is Currently Broken
 
-## Status
-**Resolved** — receiver tracks batch sequence gaps via `PathBatchTracker`, feeds actual sent/received to estimator. ACK echo enables sender-side tracking.
+## Status: Accepted
+
+Implemented: receiver tracks batch sequence gaps via `PathBatchTracker`, feeds actual sent/received to estimator. ACK echo enables sender-side tracking.
 
 ## Context
 The FEC rate controller depends on accurate per-path loss estimates to compute the right amount of repair symbols. The `LossEstimator` is well-designed, but it's fed incorrect data.

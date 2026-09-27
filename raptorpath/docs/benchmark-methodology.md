@@ -133,8 +133,8 @@ Key question: "How much bandwidth does FEC actually cost?"
 
 ### Matrix: Comprehensive FEC Comparison (replaces Tables 3/4/5)
 
-A single unified matrix (ADR-0045) crossing four dimensions replaces the
-former Tables 3, 4, and 5:
+A single matrix crossing four dimensions (it replaced the former Tables 3,
+4 and 5):
 
 **Backends (4)**: RaptorQ, ReedSolomon, RLC, Retransmit
 
@@ -181,9 +181,8 @@ Metrics per cell (10, stable — never changes):
 | in_order_rate       | Fraction of consecutive deliveries in ascending order (%)  |
 | tail_drops          | Packets dropped by bottleneck link queue                   |
 
-All cells use **12% FEC budget** (`MATRIX_FEC_OVERHEAD = 0.12` in
-`tests/bench_suite.rs`). (Earlier revisions of this doc said 8% — the code
-has since changed; the code is authoritative.)
+All cells use a **12% FEC budget** (`MATRIX_FEC_OVERHEAD = 0.12` in
+`tests/bench_suite.rs`; the code is authoritative).
 
 Key questions answered by the matrix:
 - "Which backend should I use for this scenario?"
@@ -191,9 +190,9 @@ Key questions answered by the matrix:
 - "Is FEC worth the overhead vs retransmit?"
 - "How much does multipath help?"
 
-**Output files**: Each run writes timestamped markdown and JSON files to
-`docs/benchmark-results-YYYY-MM-DD-HHMMSS.{md,json}` with git commit info.
-Markdown shows means only; JSON includes full stats (mean/stddev/ci95).
+**Output files**: each run writes a timestamped Markdown and JSON file into
+`docs/` with git commit info (means only in Markdown; mean/stddev/ci95 in
+JSON). They are run artefacts: do not commit them.
 
 ---
 
@@ -209,7 +208,8 @@ All tables use the same trial framework:
 - **Symbol size**: 1200 bytes (`SYMBOL_SIZE = 1200`)
 - **Batch size**: 10 symbols per batch (`BATCH_SIZE = 10`)
 - **Block size**: 200 symbols for block backends (RS requires `k + repair <= 255`)
-- **Max FEC overhead**: 20% for Tables 1, 1b, 2; **8%** for the matrix
+- **Max FEC overhead**: 20% for Tables 1, 1b, 2 (`MAX_FEC_OVERHEAD`); 12%
+  for the matrix
 
 ---
 
@@ -280,7 +280,7 @@ latency resolution without excessive simulation steps.
 
 ### Loss estimator
 
-Tables 1, 1b, 2, 4, and 5 use `make_estimator_for_loss(rate)`, which feeds
+Tables 1, 1b, 2 and the matrix use `make_estimator_for_loss(rate)`, which feeds
 50 synthetic batches into the `LossEstimator` before the trial begins:
 
 ```rust
@@ -295,11 +295,6 @@ This ensures the estimator's Beta posterior has converged to the target loss
 rate, so the FEC rate controller starts at a stable operating point from the
 first batch. Without pre-warming, the Beta(1,1) prior takes 10-20 batches to
 converge, adding noise to early batches.
-
-### Table 3 estimator
-
-Table 3 pre-warms the estimator to WiFi steady-state (2.5% loss) with 20
-batches per path in the scheduler, plus explicit `record_batch(100, 98)` calls.
 
 ### PI controller
 
@@ -369,9 +364,43 @@ cargo test --test bench_suite -p raptorpath --release -- --nocapture
 ```
 
 This executes Tables 1/1b/2 and the comprehensive matrix sequentially.
-Output is printed to stdout and written to timestamped files in `docs/`:
-- `docs/benchmark-results-YYYY-MM-DD-HHMMSS.md` (human-readable)
-- `docs/benchmark-results-YYYY-MM-DD-HHMMSS.json` (machine-readable)
+Output is printed to stdout and written to the timestamped Markdown/JSON
+files in `docs/` described in §2 (not committed).
 
 Results are deterministic for a given code version: the `ChaCha8Rng` seeding
 ensures identical random sequences across runs and platforms.
+
+---
+
+## 9. Standing methodology rules
+
+Lessons from the benchmark audits (formerly ADR-0038 and ADR-0044; see git
+history). Each one fixed a defect that had made earlier tables misleading.
+
+- **Overhead is strategy cost, not wire waste.** `overhead_pct` counts extra
+  transmissions over the source symbols. FEC pays in explicit repair symbols;
+  the `Retransmit` baseline pays in latency (a re-enqueued packet with an RTT
+  penalty), so its overhead column stays low. Compare the latency and recovery
+  columns, not overhead alone. Wire bytes (padding, per-symbol and per-batch
+  headers, repair metadata) are counted only by Table 2.
+- **No repair floor.** A `.max(1)` on a per-batch repair count creates an
+  overhead floor at 0% loss that the production sender (fractional repair
+  accumulator) does not have. Repair counts may be zero.
+- **Pre-warm every estimator and controller** (§6). A cold Beta(1,1) prior or
+  an unwound controller blends start-up transient into steady-state numbers.
+- **The tick must be finer than every timeout under test.** At a 50 ms tick
+  the 25 ms reorder timeout always expired inside one step and latencies were
+  quantized to 50 ms; hence the 2 ms tick (§5).
+- **Sweep bursty loss alongside uniform loss** (Table 1b). A uniform-only
+  sweep cannot separate backends that differ on correlated loss.
+- **One preset per channel, shared by every channel type.** `SimChannel` and
+  `ReliableSimChannel` once disagreed on the satellite preset, making
+  cross-table comparisons invalid.
+- **Model a finite bottleneck when redundancy is priced.** With infinite
+  capacity FEC overhead can never cause queueing or tail-drop; the congested
+  presets (`LinkModel`) and `CorrelatedFading` exist for this.
+- **Multipath baselines must track smoothed RTT.** A min-RTT scheduler that
+  compares constants sends everything down one path and silently equals the
+  single-path baseline.
+- **A degenerate GE preset is Bernoulli loss.** `p_gb = 0` (Datacenter) never
+  enters the Bad state; do not cite it as a burst-loss result.

@@ -1,8 +1,6 @@
-# ADR-0063: r* Window-Mass Provisioning (§8.4.1) and the Wire-Realization Chain
+# ADR-0063: r* Window-Mass Provisioning and the Wire-Realization Chain
 
-## Status: Accepted (`RWM_RSTAR_TAIL` default ON since 2026-07-13; wire realization closed 2026-07-21 via the unified machine)
-
-**Date**: 2026-07-13 (solver), 2026-07-18/19 (taper + entanglement), 2026-07-21 (realized)
+## Status: Accepted (`RWM_RSTAR_TAIL` default ON; realized at the wire through the unified machine)
 
 ## Context
 
@@ -37,7 +35,7 @@ quantile passed the synthetic but still missed on real traces.
    both rungs): the leading-window (unsolvable-span) entanglement, plus
    spare-cap compression. The flip stayed closed until the unified
    machine's trailing solvable span (ADR-0064) provided the span that
-   decodes: at the 2026-07-21 flip battery cod/src 0.38–0.50 is consumed
+   decodes: at the unified flip battery cod/src 0.38–0.50 is consumed
    at the realtime wire and BUYS measured 100% delivery. `RWM_TAPER_R`
    now rides the unified umbrella.
 
@@ -55,11 +53,11 @@ quantile passed the synthetic but still missed on real traces.
 
 ## Evidence
 
-- Ledger: goal-gate.md "r* Bursty-Loss Provisioning (2026-07-13)"
+- Ledger at ac1aed1: "r* Bursty-Loss Provisioning (2026-07-13)"
   (derivation, trace tables, L1 spot check), "Taper Emission Fix
   (2026-07-18)" (budget law, 2×2, entanglement L0+L1), "Unified Shedding
   + Flip Battery (2026-07-21)" battery 2 (r* realized).
-- Paper: §8.4.1, §16.20.3–.4, §16.26.
+- Paper (§ as of ac1aed1): §8.4.1, §16.20.3–.4, §16.26.
 - Commits: fc104b6 (mass-quantile solver), 4538a9b (level rescale),
   88f94eb (L1 dilution attribution), 33b29f8 (TaperBudget), b317983 +
   4b8e538 (L1 2×2), b849acb (realization at the unified default).

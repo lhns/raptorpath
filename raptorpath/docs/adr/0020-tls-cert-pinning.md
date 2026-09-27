@@ -1,6 +1,6 @@
 # ADR-0020: Optional TLS Certificate Pinning
 
-## Status: Resolved
+## Status: Accepted
 
 ## Context
 
