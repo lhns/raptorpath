@@ -10400,11 +10400,13 @@ async fn run_window_sender(
                                 p.on_src_sent(seq, false);
                             }
                         }
+                        // `[DIAG] retx=` counts source retransmits only; a
+                        // coded answer is `cod=`.
+                        dg.diag_retx += 1;
                     } else {
                         reqs_coded += 1;
                     }
                     recovery_coded_total += 1;
-                    dg.diag_retx += 1;
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                     served += 1;

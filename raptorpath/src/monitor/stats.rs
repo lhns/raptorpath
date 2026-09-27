@@ -180,11 +180,19 @@ pub enum CorrectionKind {
 }
 
 impl FecStats {
-    /// Meter one correction-slot handoff. `sent` is whether the transport
-    /// accepted it.
+    /// Meter one correction-slot handoff: CODED symbols into
+    /// `total_repair_symbols` (`[DIAG] cod=`), source COPIES into
+    /// `total_copy_symbols`. `sent` is whether the transport accepted it; a
+    /// refused handoff never reached the wire and is not counted.
     pub fn record_correction(&self, kind: CorrectionKind, sent: bool) {
-        let _ = (kind, sent);
-        self.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+        if !sent {
+            return;
+        }
+        let ctr = match kind {
+            CorrectionKind::Coded => &self.total_repair_symbols,
+            CorrectionKind::SourceCopy => &self.total_copy_symbols,
+        };
+        ctr.fetch_add(1, Ordering::Relaxed);
     }
 }
 
