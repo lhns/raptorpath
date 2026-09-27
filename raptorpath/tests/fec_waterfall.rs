@@ -2,16 +2,16 @@
 //!
 //! Run with: cargo test -p raptorpath --test fec_waterfall -- --nocapture
 //!
-//! The printed waterfall table is a characterization; the ASSERTED content
-//! (this file previously asserted nothing and could never fail) is the set of
-//! absolute laws every cell must obey, checked inside every trial:
+//! The printed waterfall table is a characterization; the asserted content
+//! is the set of absolute laws every cell must obey, checked inside every
+//! trial:
 //!
-//! 1. INTEGRITY — a decode that reports success must reproduce the source
+//! 1. Integrity — a decode that reports success must reproduce the source
 //!    block byte-for-byte (every backend).
-//! 2. INFORMATION BOUND — fewer than ceil(data_len/symbol_size) received
+//! 2. Information bound — fewer than ceil(data_len/symbol_size) received
 //!    symbols can never decode data_len bytes (every backend; here the data
 //!    fills k symbols exactly, so the bound equals k).
-//! 3. MDS — Reed-Solomon succeeds IF AND ONLY IF at least k distinct
+//! 3. MDS — Reed-Solomon succeeds if and only if at least k distinct
 //!    symbols (source + repair) arrive.
 //!
 //! plus the table's own headline claim, per cell: at ≥100% overhead the
@@ -89,7 +89,7 @@ fn trial(
     }
     let ok = decoded_payload.is_some() || decoder.is_decoded();
 
-    // Law 1 — INTEGRITY: success must reproduce the source block exactly.
+    // Law 1 — integrity: success must reproduce the source block exactly.
     if let Some(payload) = &decoded_payload {
         assert_eq!(
             &payload[..],
@@ -100,7 +100,7 @@ fn trial(
     }
 
     let received = available_source.len() + available_repair.len();
-    // Law 2 — INFORMATION BOUND, computed from the DATA (RaptorQ partitions
+    // Law 2 — information bound, computed from the DATA (RaptorQ partitions
     // by transfer length; here data_len == k·symbol_size, so this equals k).
     let k_info = data.len().div_ceil(SYMBOL_SIZE as usize);
     if received < k_info {
@@ -204,7 +204,7 @@ fn waterfall_comparison_small_block() {
 
 /// The table's headline claim, asserted: at ≥100% overhead the repair
 /// budget alone is ≥ k, so the received set is ≥ k regardless of source
-/// loss and EVERY backend must decode EVERY trial in that column.
+/// loss and every backend must decode every trial in that column.
 fn assert_full_budget_column(results: &[BackendResult], overhead_pct: f64, loss_rate: f64) {
     if overhead_pct >= 100.0 {
         for r in results {

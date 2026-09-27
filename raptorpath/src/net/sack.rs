@@ -1,5 +1,8 @@
 //! SACK plumbing: the repair-request batch, gap computation from SACK
-//! ranges, per-path store accounts, the SACK-clocked release and the
+//! ranges, the per-path outstanding accounts (the `[DIAG] sout=`
+//! attribution of the pooled outstanding to placement paths, kept under
+//! `RWM_DIAG`; the `RWM_STORE_PATHS` cap itself scales by the live-path
+//! count and does not read them), the SACK-clocked release and the
 //! window-ack emission.
 
 use super::*;

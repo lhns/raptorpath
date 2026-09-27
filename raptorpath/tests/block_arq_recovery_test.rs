@@ -1,10 +1,9 @@
-//! Block-mode ARQ recovery (P8): symbol loss → Ack diff → fresh repair →
-//! block decodes WITHOUT proactive FEC and without decoder eviction.
+//! Block-mode ARQ recovery: symbol loss → Ack diff → fresh repair → block
+//! decodes without proactive FEC and without decoder eviction.
 //!
-//! This is the exact regime the L1 harness measured failing: Bulk's
-//! completion-exposure glide sets mid-stream r* = 0 (no proactive repairs),
-//! so any lost symbol previously stalled the block until the receiver
-//! evicted it. There is no in-process two-Net harness, so the wire is
+//! Bulk's completion-exposure glide sets mid-stream r* = 0 (no proactive
+//! repairs), so every lost symbol must be recovered reactively or the block
+//! stalls until the receiver evicts it. The wire is
 //! simulated at the batch level: every symbol travels as its own
 //! SymbolBatch (matching MTU-sized batches in production), the receiver
 //! acks each batch it receives, and lost batches are revealed by later

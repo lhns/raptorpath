@@ -2,19 +2,17 @@
 //!
 //! Run with: cargo test --test fec_realworld_recovery_test -- --nocapture
 //!
-//! The printed tables are the characterization (they fed ADR-0028/0029 and
-//! the benchmark-realworld docs); the ASSERTED content (this file previously
-//! asserted nothing and could never fail) is:
+//! The printed tables are a characterization; the asserted content is:
 //!
 //! Per decode attempt, in every part (`decode_and_check_laws`):
-//!   1. INTEGRITY — a successful decode must reproduce the source block
+//!   1. Integrity — a successful decode must reproduce the source block
 //!      byte-for-byte (every backend).
-//!   2. INFORMATION BOUND — fewer than ceil(data_len/symbol_size) received
+//!   2. Information bound — fewer than ceil(data_len/symbol_size) received
 //!      symbols can never decode data_len bytes (every backend; the bound is
-//!      data-based, NOT params.source_symbols — RaptorQ re-partitions from
+//!      data-based, not params.source_symbols — RaptorQ re-partitions from
 //!      the transfer length, so a padded header k overstates the true k).
 //!   3. MDS — Reed-Solomon shards by the header k exactly (padding to k),
-//!      so it succeeds IF AND ONLY IF ≥ k symbols arrived.
+//!      so it succeeds if and only if ≥ k symbols arrived.
 //!
 //! Per part, the table's own benign-channel claim: on the Datacenter
 //! scenario (0.1% i.i.d. loss, no bad state) a 25%-or-better repair budget
@@ -22,7 +20,7 @@
 //! recover 100% of lost packets.
 //!
 //! Plus conservation through the interleaver: `InterleavingBuffer` must
-//! emit every pushed symbol exactly once (flat AND tapered).
+//! emit every pushed symbol exactly once (flat and tapered).
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -136,8 +134,8 @@ const NUM_TRIALS: u64 = 10;
 const SYMBOL_SIZE: u16 = 1200;
 
 /// Feed symbols until decode and enforce the three absolute laws on every
-/// attempt: INTEGRITY (success reproduces the source data exactly), the
-/// INFORMATION BOUND (< k received symbols can never decode), and RS's MDS
+/// attempt: integrity (success reproduces the source data exactly), the
+/// information bound (< k received symbols can never decode), and RS's MDS
 /// property (success iff ≥ k symbols arrived). Returns decode success.
 fn decode_and_check_laws(
     backend: FecBackend,
@@ -596,7 +594,7 @@ fn cross_block_recovery_interleaved(
             .flat_map(|(_, syms)| syms)
             .collect();
 
-        // CONSERVATION: interleaving (flat or tapered) reorders symbols —
+        // Conservation: interleaving (flat or tapered) reorders symbols —
         // it must never drop or duplicate one.
         assert_eq!(
             interleaved_syms.len(),

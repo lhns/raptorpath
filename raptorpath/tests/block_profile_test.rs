@@ -1,4 +1,6 @@
-//! ADR-0006: Protocol hint influences block size and timing.
+//! Wire framing: the `RPTQ` magic and `PROTOCOL_VERSION` header on every
+//! message and on the handshake; a wrong magic, version or length is rejected
+//! (ADR-0010).
 
 use raptorpath::transport::{ControlMessage, WireMessage, PROTOCOL_VERSION, WIRE_MAGIC, Handshake};
 

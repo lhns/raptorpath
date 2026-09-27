@@ -1,26 +1,16 @@
-//! The BLOCK-mode sender loop: TUN → framing → block assembly → FEC encode
+//! The block-mode sender loop: TUN → framing → block assembly → FEC encode
 //! → interleaver → paced batch sends. The sibling of `block_arq`, and the
-//! other half of the sender task from `run_window_sender`.
+//! other half of the sender task from `run_window_sender`; the two halves
+//! share no local state.
 //!
-//! History (net seam pass, 2026-08-08): `run_impl`'s single sender spawn was
-//! two disjoint programs behind one `if sender_window_mode { … return; }`.
-//! The window half was already a free function (`run_window_sender`); this
-//! is the block half, extracted at exactly that `return` so the spawn body
-//! is now the branch and nothing else. The two halves never shared a local:
-//! every binding below is declared AFTER the early return.
+//! Loop shape: the interleaver is tapered iff depth ≥ 2; each iteration
+//! takes one Copa backpressure sample under one scheduler guard dropped
+//! before the `select!`; the `select!` arms are gated by `tx_paused`; the
+//! shutdown flush is frame_end → encode → forced drain → Shutdown control
+//! datagram on every active path → break. `tun` is moved in by value and
+//! dropped when this future completes.
 //!
-//! Behavior contract: the loop is the former tail of the sender `async move`
-//! block VERBATIM — same `ileave` construction (tapered iff depth ≥ 2), same
-//! per-iteration Copa backpressure sample under ONE scheduler guard dropped
-//! before the `select!`, the same six `select!` arms in the same order with
-//! the same guards (`if tx_paused` / `if !tx_paused`), the same
-//! shutdown-flush sequence (frame_end → encode → FORCED drain → Shutdown
-//! control datagram on every active path → break), and the same
-//! full-block / flush-timeout / TUN-closed arms. `tun` is now moved in by
-//! value rather than captured; it is still dropped when this future
-//! completes, which is where the `async move` block dropped it.
-//!
-//! NOT covered here: the window-mode sender (`run_window_sender`, still in
+//! Not covered here: the window-mode sender (`run_window_sender`, in
 //! `net::mod`), the block-ARQ ledger and sweeper (`net::block_arq`,
 //! `net::tasks::arq_sweep`), and the encode/drain helpers themselves
 //! (`encode_to_interleave_buf`, `send_interleaved_batches`) — those are
@@ -63,16 +53,16 @@ pub(crate) async fn run_block_sender(
     sender_interleave_timeout: std::time::Duration,
     mut sender_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) {
-    // ----- Block-mode sender (existing) -----
+    // ----- Block-mode sender -----
     let mut block_buf = Vec::with_capacity(sender_profile_max_block);
     let mut last_tx_paused = false;
     let mut flush_deadline: Option<tokio::time::Instant> = None;
     // Pacing retry: set when the token bucket left symbols in the
-    // carry (P7); the select loop resumes the paced drain when it fires.
+    // carry; the select loop resumes the paced drain when it fires.
     let mut pace_deadline: Option<tokio::time::Instant> = None;
     // Symbol-level pacing carry: drained-but-not-yet-sendable symbols
-    // wait here between pace ticks (P7 follow-up — the interleaver
-    // drain is all-or-nothing, so partial sends need their own queue).
+    // wait here between pace ticks (the interleaver drain is
+    // all-or-nothing, so partial sends need their own queue).
     let mut pace_carry: PaceCarry = PaceCarry::new();
     let mut shutting_down = false;
     let mut ileave = if sender_interleave_depth >= 2 {
@@ -96,12 +86,12 @@ pub(crate) async fn run_block_sender(
             tokio::time::Instant::now() + remaining
         });
 
-        // Copa backpressure (paper 12 / ADR-0050): stop reading the
-        // TUN while the wire budget is exhausted — the inner flow's own
-        // CC sees the growing TUN queue and slows down. Without this
-        // the encoder ran at TUN speed, saturated the runtime, starved
-        // QUIC timers/liveness, and any bulk transfer killed the
-        // tunnel within DEAD_PATH_TIMEOUT (L1 harness finding).
+        // Copa backpressure (paper §8.7): stop reading the TUN while the
+        // wire budget is exhausted — the inner flow's own CC sees the
+        // growing TUN queue and slows down. Without this the encoder runs
+        // at TUN speed, saturates the runtime, starves QUIC
+        // timers/liveness, and a bulk transfer kills the tunnel within
+        // DEAD_PATH_TIMEOUT.
         let (tx_paused, dbg_fl, dbg_cw) = {
             let mut sched = sender_scheduler.lock();
             let mut fl = 0u64;
@@ -111,13 +101,13 @@ pub(crate) async fn run_block_sender(
                     // Time-based budget release first: stranded charges
                     // (lost best-effort ACK datagrams) must reopen the
                     // gate at RTT timescale, not the 2s leak-guard
-                    // cadence (P7 follow-up 2, L1 finding).
+                    // cadence.
                     p.expire_in_flight();
                     fl += p.in_flight as u64;
                     cw += p.cwnd as u64;
                 }
             }
-            // in_flight is charged once at SCHEDULE time, so it already
+            // in_flight is charged once at schedule time, so it already
             // covers interleaver + pacing carry + wire — the whole
             // committed pipeline.
             (fl >= cw.max(4), fl, cw)
@@ -127,7 +117,7 @@ pub(crate) async fn run_block_sender(
             last_tx_paused = tx_paused;
         }
 
-        // ADR-0001: select between packet arrival, flush timeout, interleave drain, and shutdown
+        // Select between packet arrival, flush timeout, interleave drain, and shutdown
         let packet = {
             let flush_sleep = async {
                 match flush_deadline {
@@ -284,7 +274,7 @@ pub(crate) async fn run_block_sender(
             }
             None => {
                 if flush_deadline.is_some() && !block_buf.is_empty() {
-                    // ADR-0001: flush partial block on timeout
+                    // Flush partial block on timeout
                     framing::frame_end(&mut block_buf);
                     encode_to_interleave_buf(
                         &mut block_buf,
