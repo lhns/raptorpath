@@ -1,4 +1,4 @@
-# ADR-0071: The two conceptual successors to the cap law, written FORMULA-FIRST as CANDIDATES — the slack magnitude (what replaces `17/8`-as-permanent) and the δ-priced queue bound (what replaces `knee`/`N·2048` and `WIN_STORE_MAX`-as-law)
+# Successor candidates to the cap law (research memo, formerly ADR-0071): The two conceptual successors to the cap law, written FORMULA-FIRST as CANDIDATES — the slack magnitude (what replaces `17/8`-as-permanent) and the δ-priced queue bound (what replaces `knee`/`N·2048` and `WIN_STORE_MAX`-as-law)
 
 ## Status: **PROPOSED — NO DECISION TAKEN, AND NONE IS SOUGHT HERE.**
 
