@@ -23,6 +23,7 @@
 //!    (cwnd - in_flight) to ensure FEC never causes congestion.
 
 use super::estimator::LossEstimator;
+use raptorpath_math::p_fec_normal;
 use crate::fec::FecBackend;
 use serde::{Deserialize, Serialize};
 
@@ -611,71 +612,9 @@ impl TaperBudget {
     }
 }
 
-/// Compute P_lost(t): probability a symbol was lost given no ACK after time t.
-///
-/// Uses Bayes' theorem with the channel loss rate as prior:
-///   P_lost(t) = ε / [ε + (1-ε) × P(RTT > t)]
-///
-/// where P(RTT > t) is the normal survival function.
-///
-/// Returns a value in [ε, 1.0] that smoothly transitions from "probably fine"
-/// (t << SRTT) to "certainly lost" (t >> SRTT).
-///
-/// See paper Section 3.4 (Recovery Latency and the P_lost(t) Model).
-pub fn p_lost(age_secs: f64, epsilon: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
-    if epsilon >= 1.0 {
-        return 1.0;
-    }
-    if epsilon <= 0.0 {
-        return 0.0;
-    }
-
-    // P(RTT > t) using normal survival function
-    let rttvar = rttvar_secs.max(0.001); // avoid division by zero
-    let z = (age_secs - srtt_secs) / rttvar;
-    // Phi(-z) = P(RTT > t) for normal distribution
-    let p_rtt_exceeds = normal_survival(z);
-
-    // Bayes: P(lost | no ACK at t) = ε / [ε + (1-ε) × P(RTT > t)]
-    let denom = epsilon + (1.0 - epsilon) * p_rtt_exceeds;
-    if denom < 1e-300 {
-        return 1.0;
-    }
-    (epsilon / denom).clamp(0.0, 1.0)
-}
-
-/// Standard normal survival function: P(Z > z) = 1 - Φ(z).
-/// Uses the same rational approximation as normal_quantile.
-fn normal_survival(z: f64) -> f64 {
-    // For large positive z, survival is tiny
-    if z > 8.0 {
-        return 0.0;
-    }
-    if z < -8.0 {
-        return 1.0;
-    }
-
-    // Use the error function approximation
-    // Φ(z) ≈ 0.5 × (1 + erf(z/√2))
-    // P(Z > z) = 1 - Φ(z) = 0.5 × erfc(z/√2)
-    //
-    // Abramowitz & Stegun approximation for erfc:
-    let x = z / std::f64::consts::SQRT_2;
-    let ax = x.abs();
-    let t = 1.0 / (1.0 + 0.3275911 * ax);
-    let poly = t * (0.254829592
-        + t * (-0.284496736
-            + t * (1.421413741
-                + t * (-1.453152027
-                    + t * 1.061405429))));
-    let erfc_ax = poly * (-ax * ax).exp();
-
-    if x >= 0.0 {
-        0.5 * erfc_ax
-    } else {
-        1.0 - 0.5 * erfc_ax
-    }
-}
+/// P_lost(t) (paper §3.4), the shared math crate's single definition —
+/// re-exported so `control::fec_rate::p_lost` keeps its path.
+pub use raptorpath_math::p_lost;
 
 /// Burst variance inflation factor σ²_burst for the GE channel.
 ///
@@ -705,25 +644,6 @@ pub fn burst_variance_factor(estimator: &LossEstimator) -> f64 {
     }
     let factor = 1.0 + 2.0 * (1.0 - p - q) / sum;
     factor.max(1.0) // σ²_burst ≥ 1 (iid is the minimum)
-}
-
-/// P_fec using normal approximation (paper Section 8.1).
-///
-/// P_fec = Φ(√W × (r(1-ε)-ε) / √(ε(1-ε)(r+σ²_burst)))
-fn p_fec_normal(r: f64, epsilon: f64, window_size: f64, sigma2_burst: f64) -> f64 {
-    if window_size <= 0.0 || epsilon <= 0.0 || epsilon >= 1.0 || r <= 0.0 {
-        return 0.0;
-    }
-    let numerator = r * (1.0 - epsilon) - epsilon;
-    if numerator <= 0.0 {
-        return 0.0; // r too low to overcome loss
-    }
-    let denominator = (epsilon * (1.0 - epsilon) * (r + sigma2_burst)).sqrt();
-    if denominator < 1e-300 {
-        return 1.0;
-    }
-    let z = window_size.sqrt() * numerator / denominator;
-    1.0 - normal_survival(z)
 }
 
 /// The (δ, ρ, r) residual-loss allowance 1−ρ at the operating point (the

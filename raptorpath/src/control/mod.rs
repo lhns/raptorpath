@@ -12,10 +12,12 @@ pub mod anchor;
 // backend switching was removed from the data path (paper §16.4; the live
 // `warn!` in net::run that ignores an inbound WindowSwitch is its epitaph), so
 // the threshold heuristic had no consumer and no verification.
-pub mod changepoint;
 pub mod estimator;
 pub mod fec_rate;
-pub mod gilbert_elliott;
+
+// The BOCD and Gilbert-Elliott estimators live once, in the shared math
+// crate (the wasm model runs the same code); re-exported at their old paths.
+pub use raptorpath_math::{changepoint, gilbert_elliott};
 
 pub use anchor::{SendRateAnchor, StallWitness};
 pub use estimator::LossEstimator;

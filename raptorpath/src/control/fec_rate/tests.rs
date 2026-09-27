@@ -1,4 +1,5 @@
 use super::*;
+use raptorpath_math::normal_survival;
 use crate::control::estimator::LossEstimator;
 
 const W: usize = 50; // typical window size for tests

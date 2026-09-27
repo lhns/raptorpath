@@ -9,6 +9,7 @@
 
 use super::changepoint::BayesianChangepoint;
 use super::gilbert_elliott::GilbertElliottEstimator;
+use raptorpath_math::normal_quantile;
 use std::time::{Duration, Instant};
 
 /// Per-path loss estimator.
@@ -418,34 +419,6 @@ fn beta_quantile(a: f64, b: f64, p: f64) -> f64 {
     (mean + z * std).clamp(0.0, 1.0)
 }
 
-/// Standard normal quantile (rational approximation, Abramowitz & Stegun).
-fn normal_quantile(p: f64) -> f64 {
-    if p <= 0.0 {
-        return f64::NEG_INFINITY;
-    }
-    if p >= 1.0 {
-        return f64::INFINITY;
-    }
-    if (p - 0.5).abs() < 1e-12 {
-        return 0.0;
-    }
-
-    // Rational approximation
-    let (sign, q) = if p < 0.5 { (-1.0, p) } else { (1.0, 1.0 - p) };
-    let t = (-2.0 * q.ln()).sqrt();
-
-    let c0 = 2.515517;
-    let c1 = 0.802853;
-    let c2 = 0.010328;
-    let d1 = 1.432788;
-    let d2 = 0.189269;
-    let d3 = 0.001308;
-
-    let num = c0 + c1 * t + c2 * t * t;
-    let den = 1.0 + d1 * t + d2 * t * t + d3 * t * t * t;
-
-    sign * (t - num / den)
-}
 
 impl LossEstimator {
     /// Test-only constructor with the heavy-math cadence forced ON
