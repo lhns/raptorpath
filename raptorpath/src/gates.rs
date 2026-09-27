@@ -1513,6 +1513,49 @@ mod forwarding_audit {
 mod tests {
     use super::*;
 
+    /// The gates removed as refuted experiment arms (cleanup Stage 2) are
+    /// UNKNOWN names now: an operator or a stale battery script that still
+    /// exports one — even with a value the strict boolean parser would
+    /// reject for a known gate — must be ignored, never panic, and never
+    /// reappear on the `[GATES]` echo. Every name below is read by nothing,
+    /// so setting it cannot race another test's resolve.
+    #[test]
+    fn removed_gates_in_the_environment_are_ignored() {
+        // Suffixes, not quoted full-name literals: `forwarding_audit` scrapes
+        // every quoted RWM_ literal in `src/` as an engine read, and these
+        // are not.
+        const REMOVED: [&str; 15] = [
+            "POOL_DELIV",
+            "FLOOR_BOUND",
+            "PATIENCE_DERIVED",
+            "STORE_CAPW",
+            "STORE_PERCAP",
+            "PERCAP_GUARD",
+            "STORE_BORROW",
+            "WIN_DECOUPLE",
+            "PLACE_SLACK",
+            "RACK_CLOCKS",
+            "RACK_REO_MULT",
+            "QUANTILE_CLOCKS",
+            "W_FORM",
+            "ALPHA_OVERRIDE",
+            // Not a removed gate: a name no version of the engine ever read.
+            "NEVER_A_GATE",
+        ];
+        for suffix in REMOVED {
+            // `maybe` is malformed for every boolean gate the parser knows.
+            std::env::set_var(format!("RWM_{suffix}"), "maybe");
+        }
+        let line = RuntimeGates::resolve().echo_line();
+        for suffix in REMOVED {
+            let name = format!("RWM_{suffix}");
+            assert!(
+                !line.contains(&format!("{name}=")),
+                "{name} is no longer a gate but is still echoed: {line}"
+            );
+        }
+    }
+
     /// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
     /// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
     #[test]
