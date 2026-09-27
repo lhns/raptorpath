@@ -290,7 +290,7 @@ impl CpuProfGauge {
 pub fn gauge() -> Option<&'static CpuProfGauge> {
     static G: std::sync::OnceLock<Option<CpuProfGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
-        if crate::config::env_flag("RWM_CPUPROF", false) {
+        if crate::gates::get().cpuprof {
             Some(CpuProfGauge::new())
         } else {
             None

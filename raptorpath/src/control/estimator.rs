@@ -9,6 +9,7 @@
 
 use super::changepoint::BayesianChangepoint;
 use super::gilbert_elliott::GilbertElliottEstimator;
+use raptorpath_math::normal_quantile;
 use std::time::{Duration, Instant};
 
 /// Per-path loss estimator.
@@ -113,17 +114,19 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 /// on with it, + `RWM_EMIT_BATCH=1`) remains the documented fast
 /// single-path configuration: 446–508 Mbit/s at c1.
 pub(crate) fn est_cadence_active() -> bool {
-    use std::sync::OnceLock;
-    static GATE: OnceLock<bool> = OnceLock::new();
-    *GATE.get_or_init(|| {
-        let on = crate::config::env_flag("RWM_EST_CADENCE", false);
-        if on {
-            tracing::info!(
-                "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
-            );
-        }
-        on
-    })
+    crate::gates::get().est_cadence
+}
+
+/// The resolve-time read behind [`est_cadence_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_est_cadence() -> bool {
+    let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+    if on {
+        tracing::info!(
+            "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
+        );
+    }
+    on
 }
 
 impl LossEstimator {
@@ -140,7 +143,7 @@ impl LossEstimator {
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
             // DEFAULT ON (2026-07-21, "Consolidation" battery).
-            rtt_seed_from_sample: crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true),
+            rtt_seed_from_sample: crate::gates::get().mstar_anchor,
             rtt_seeded: false,
             rtt_sampled: false,
             ewma_throughput: 0.0,
@@ -418,34 +421,6 @@ fn beta_quantile(a: f64, b: f64, p: f64) -> f64 {
     (mean + z * std).clamp(0.0, 1.0)
 }
 
-/// Standard normal quantile (rational approximation, Abramowitz & Stegun).
-fn normal_quantile(p: f64) -> f64 {
-    if p <= 0.0 {
-        return f64::NEG_INFINITY;
-    }
-    if p >= 1.0 {
-        return f64::INFINITY;
-    }
-    if (p - 0.5).abs() < 1e-12 {
-        return 0.0;
-    }
-
-    // Rational approximation
-    let (sign, q) = if p < 0.5 { (-1.0, p) } else { (1.0, 1.0 - p) };
-    let t = (-2.0 * q.ln()).sqrt();
-
-    let c0 = 2.515517;
-    let c1 = 0.802853;
-    let c2 = 0.010328;
-    let d1 = 1.432788;
-    let d2 = 0.189269;
-    let d3 = 0.001308;
-
-    let num = c0 + c1 * t + c2 * t * t;
-    let den = 1.0 + d1 * t + d2 * t * t + d3 * t * t * t;
-
-    sign * (t - num / den)
-}
 
 impl LossEstimator {
     /// Test-only constructor with the heavy-math cadence forced ON
@@ -468,8 +443,6 @@ impl LossEstimator {
     }
 
     /// Test/diag: BOCD updates processed (the cadence mechanism gauge).
-    // Test-only consumer: the `RWM_EST_CADENCE` law tests in this file.
-    #[allow(dead_code)]
     pub fn bocd_updates(&self) -> u64 {
         self.bocd.updates()
     }

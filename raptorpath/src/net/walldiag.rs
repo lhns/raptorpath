@@ -233,7 +233,7 @@ impl DeadWallGauge {
 pub fn gauge() -> Option<&'static DeadWallGauge> {
     static G: std::sync::OnceLock<Option<DeadWallGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
-        if crate::config::env_flag("RWM_WALLDIAG", false) {
+        if crate::gates::get().walldiag {
             Some(DeadWallGauge::new())
         } else {
             None

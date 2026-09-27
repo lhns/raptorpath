@@ -131,14 +131,16 @@ const DUMP_MAX_MAX: usize = 20_000_000;
 /// override resolves back to the default and is echoed as its RESOLVED value,
 /// so "my arm did not take" is read rather than inferred.
 pub fn dump_max() -> usize {
-    static M: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *M.get_or_init(|| {
-        std::env::var("RWM_RTT_DUMP_MAX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .map(|v| v.clamp(DUMP_MAX_MIN, DUMP_MAX_MAX))
-            .unwrap_or(DUMP_MAX_DEFAULT)
-    })
+    crate::gates::get().rtt_dump_max
+}
+
+/// The resolve-time read behind [`dump_max`].
+pub(crate) fn resolve_dump_max() -> usize {
+    std::env::var("RWM_RTT_DUMP_MAX")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .map(|v| v.clamp(DUMP_MAX_MIN, DUMP_MAX_MAX))
+        .unwrap_or(DUMP_MAX_DEFAULT)
 }
 
 /// Per-path dump state. Nothing here is read by any engine decision.
@@ -245,7 +247,7 @@ impl RttDump {
 pub fn gauge() -> Option<&'static RttDump> {
     static G: std::sync::OnceLock<Option<RttDump>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
-        if crate::config::env_flag("RWM_RTT_DUMP", false) {
+        if crate::gates::get().rtt_dump {
             Some(RttDump::new())
         } else {
             None

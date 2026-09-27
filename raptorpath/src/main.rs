@@ -1,15 +1,4 @@
-mod config;
-mod control;
-mod fec;
-mod gates;
-mod monitor;
-mod net;
-mod perf;
-mod preflight;
-mod routing;
-mod scheduler;
-mod transport;
-mod tun;
+use raptorpath::{config, gates, net, perf, preflight};
 
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
@@ -234,7 +223,7 @@ async fn main() -> anyhow::Result<()> {
     // (`config::env_flag`) is then a startup error naming the variable
     // rather than a panic at first use mid-transfer.
     if matches!(cli.command, None | Some(Commands::Run(_)) | Some(Commands::Perf(_))) {
-        let _ = gates::RuntimeGates::resolve();
+        let _ = gates::get();
     }
 
     match cli.command.unwrap_or(Commands::Run(RunArgs {

@@ -5,6 +5,7 @@
 //! A control stream handles ACKs, loss reports, and path management.
 
 mod bbr_rs;
+mod l0_netem;
 mod protocol;
 mod quic;
 

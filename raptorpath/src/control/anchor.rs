@@ -161,7 +161,7 @@ pub fn stall_witness() -> Option<&'static StallWitness> {
         // DEFAULT ON (2026-07-21, "Consolidation" battery: bulk cells inert
         // within sigma on both seeds, tail crown unregressed, the post-stall
         // poisoning fix wins at the realtime family — goal-gate).
-        if crate::config::anchor_gate_default("RWM_CLOCK_GAP", true) {
+        if crate::gates::get().clock_gap {
             Some(StallWitness::new())
         } else {
             None

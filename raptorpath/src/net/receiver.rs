@@ -2486,7 +2486,6 @@ pub(crate) async fn run_receiver(
                         decoders: &recv_decoders,
                         sent_counts: &sent_counts,
                         transport: &recv_transport,
-                        fec_backend: recv_fec_backend,
                         stats: &recv_stats,
                         nack_tx: recv_nack_tx.as_ref(),
                         block_arq: if recv_window_mode { None } else { Some(&recv_block_arq) },

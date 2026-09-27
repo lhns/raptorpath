@@ -851,15 +851,6 @@ pub struct BbrRsConfig {
     initial_window: u64,
 }
 
-impl BbrRsConfig {
-    /// Default limit on the amount of outstanding data in bytes.
-    #[allow(dead_code)]
-    pub fn initial_window(&mut self, value: u64) -> &mut Self {
-        self.initial_window = value;
-        self
-    }
-}
-
 impl Default for BbrRsConfig {
     fn default() -> Self {
         Self {

@@ -11,9 +11,11 @@
 //! So this gauge splits every delivered source symbol's wait into three
 //! disjoint pieces, per path:
 //!
+//! ```text
 //!     A_x  =  (t_arr − send_ts)  −  min_running(t_arr − send_ts)
 //!     R    =  t_deliv − t_buffered              (the REORDER WAIT)
 //!     P    =  the `[SUCC]` hole duration        (the REPAIR WAIT)
+//! ```
 //!
 //! `A_x` is **queueing plus sender dwell above this path's own floor**. The
 //! running-min subtraction is what makes it a measurement at all: `t_arr` and
@@ -44,7 +46,9 @@
 //!
 //! **THE ACCOUNTING IDENTITY, asserted on the engine's own output:**
 //!
+//! ```text
 //!     n_deliv  =  n_rwxp + n_rwsp + n_rwrep + n_nowait
+//! ```
 //!
 //! Every delivered symbol either waited in the reorder buffer (in exactly one
 //! class) or did not. A gauge whose classes do not partition its own
