@@ -172,6 +172,27 @@ reps" counts completed plus DNF rows. (v) Smoke cost `c` is the smoke's
 mean wall time per invocation; the envelope's soft deadline (hard cap −
 10 min) stops the battery at a rep boundary.
 
+*Amendment 3 (committed after the first launch aborted and BEFORE any
+battery row or crown-spot number was read; no change to arms, cells or
+outcomes):* the first envelope launch (15:55Z, session start 15:31Z, hard
+cap 20:31Z) ran the crown spot and then fired `ABORT-LOCK` at the start of
+seed 42 — nothing of the battery ran. Cause: a co-tenant session locked the
+same paths with `exec 8>PATH; flock -n 8`, which truncated our lock files
+and, with no flock(2) holder, succeeded; its cargo build/test ran
+15:58–16:24Z (through the whole crown spot) and its test suite until
+~17:10Z. (i) The first crown spot is VOID (co-tenancy) and is not scored;
+its ledgers stay on the VM. (ii) The relaunch holds flock(2) on both lock
+paths for the session as well as the token files, re-writes the token
+before each stage and logs `LOCK-TRUNCATED-BY-FOREIGN` if it finds it
+emptied. (iii) A new void class `VOID-COTENANT`: an invocation with any
+`cargo`/`rustc` process on the box immediately before or after it is void
+(excluded from every denominator; not a witness failure). (iv) The smoke's
+measured cost is `c` = 339 s / 4 = 84.75 s; relaunching at ~17:15Z leaves
+~196 min to the cap, ~163 min after the ~33 min crown spot, below `120·c`
+= 169.5 min, so by the pre-registered cut **n = floor(163 min / (40·c)) = 2
+per seed** (the minimum): 80 invocations. The crown spot is re-run in the
+relaunched session.
+
 **Hints**: `bulk`, `auto`. **Seeds**: 42, 7. **Cells** (`lib.sh
 scenario_params`; duals as in `perf_rwm_c.sh`):
 

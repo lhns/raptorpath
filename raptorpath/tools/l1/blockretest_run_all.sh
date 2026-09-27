@@ -75,9 +75,38 @@ LB_TAG="blockretest_run_all:$$"
 LB_LOG="$OUTDIR/all-era.txt"
 echo "BR-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.txt"
 install_lock_traps
-take_lock "${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
-take_lock "${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
+RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
+take_lock "$VM_LOCK"
+take_lock "$RP_LOCK"
 export BR_LOCK_OWNER="blockretest_run_all:$$"
+# THE SECOND LOCK PROTOCOL (found live, 2026-09-27, first launch): some
+# co-tenant scripts lock these same paths with `exec 8>PATH; flock -n 8`. The
+# `>` TRUNCATES our lock file and, with nobody holding flock(2), their flock
+# succeeds -- a cargo build then ran through the crown spot and the battery
+# met an empty lock file (ABORT-LOCK). So the envelope ALSO holds flock(2) on
+# both paths for the session (opened `<>`, which does not truncate): a flock
+# user now gets HELD and runs nothing. The truncation itself cannot be
+# prevented, so `refresh_locks` re-writes our token before every stage and
+# records `LOCK-TRUNCATED-BY-FOREIGN` if it finds the file emptied.
+exec 8<>"$VM_LOCK" 9<>"$RP_LOCK"
+if ! flock -n 8 || ! flock -n 9; then
+  echo "ABORT-LOCK a foreign flock(2) holder on $VM_LOCK / $RP_LOCK" | tee -a "$OUTDIR/all-era.txt"
+  touch "$OUTDIR/FAILED-ALL"
+  exit 4
+fi
+echo "FLOCK-HELD $VM_LOCK $RP_LOCK (fd 8/9)" | tee -a "$OUTDIR/all-era.txt"
+refresh_locks() { # stage-name
+  local l
+  for l in "$VM_LOCK" "$RP_LOCK"; do
+    if ! grep -qF -- "$BR_LOCK_OWNER" "$l" 2>/dev/null; then
+      echo "LOCK-TRUNCATED-BY-FOREIGN $l before $1: '$(cat "$l" 2>/dev/null)' $(date -u +%FT%TZ)" | tee -a "$OUTDIR/all-era.txt"
+    fi
+    echo "$$ $LB_TAG $(date -u +%FT%TZ)" > "$l"
+  done
+}
+# Co-tenancy witness: non-battery build/test processes on the box.
+cotenants() { echo "cargo=$(pgrep -xc cargo) rustc=$(pgrep -xc rustc) load=$(cut -d' ' -f1-3 /proc/loadavg)"; }
 
 SHA_NOW="$(sha256sum "$BIN" | cut -d' ' -f1)"
 if [ "$SHA_NOW" != "$BR_SHA" ]; then
@@ -115,18 +144,20 @@ trap finish EXIT
 
 # ── 1. THE CROWN SPOT ────────────────────────────────────────────────────
 T0=$(date +%s)
-echo "BR-ALL crown spot start $(date -u +%FT%TZ)"
+refresh_locks crown
+echo "BR-ALL crown spot start $(date -u +%FT%TZ) cotenants: $(cotenants)"
 CROWNSPOT_OUT="$OUTDIR/crown" RWM_BIN="$BIN" bash ./crownspot8.sh > "$OUTDIR/crown/run.out" 2>&1 &
 echo $! > "$STAGE_PIDFILE"
 wait "$(cat "$STAGE_PIDFILE")"
-echo "BR-ALL crown spot rc=$? wall=$(( $(date +%s) - T0 ))s done=$([ -f "$OUTDIR/crown/DONE-ALL" ] && echo 1 || echo 0) $(date -u +%FT%TZ)" | tee -a "$OUTDIR/all-era.txt"
+echo "BR-ALL crown spot rc=$? cotenants_at_end: $(cotenants) wall=$(( $(date +%s) - T0 ))s done=$([ -f "$OUTDIR/crown/DONE-ALL" ] && echo 1 || echo 0) $(date -u +%FT%TZ)" | tee -a "$OUTDIR/all-era.txt"
 rm -f "$STAGE_PIDFILE"
 
 # ── 2. THE SEEDS ─────────────────────────────────────────────────────────
 run_seed() {
   local s="$1" t0 rc
   t0=$(date +%s)
-  echo "BR-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ)"
+  refresh_locks "seed-$s"
+  echo "BR-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ) cotenants: $(cotenants)"
   sudo -n env BR_SHA="$BR_SHA" BR_LOCK_OWNER="$BR_LOCK_OWNER" BR_OUTDIR="$OUTDIR" \
       BR_SOFT_DEADLINE="$SOFT_DEADLINE" BR_REP_EST_S="$REP_EST_S" RWM_BIN="$BIN" \
       bash ./blockretest_battery.sh "$s" "$REPS" &

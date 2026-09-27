@@ -2,7 +2,7 @@
 """Parser and scorer for the BLOCK DEFAULT RE-TEST (docs/status.md §4,
 "Block default re-test — pre-registration", and its amendments).
 
-    blockretest_parse.py row   <cell> <arm> <hint> <seed> <rep> <rc> <drv_out> <cli_log> <srv_log>
+    blockretest_parse.py row   <cell> <arm> <hint> <seed> <rep> <rc> <drv_out> <cli_log> <srv_log> [cotenant]
     blockretest_parse.py check <ledger>
     blockretest_parse.py smoke <ledger>
     blockretest_parse.py score <ledger>...
@@ -13,6 +13,9 @@ exactly one of, in priority order:
 
   VOID-RC       the driver (perf_rwm_c.sh) exited non-zero: ABORT-RC, the
                 invocation's rows are void, the battery goes on.
+  VOID-COTENANT a cargo/rustc process was on the box before or after the
+                invocation (amendment 3): void, excluded from every
+                denominator, not a witness failure.
   NO_DATA       no `"summary"` line on the client: a skipped datum, not a zero
                 and not an abort (ABORT-BRINGUP when the retries ran out).
   CONTAMINATED  a `[PIPE]` echo (either endpoint) or the `pipeline=` header
@@ -99,7 +102,7 @@ def header_pipeline(lines):
     return None
 
 
-def make_row(cell, arm, hint, seed, rep, rc, drv, cli, srv):
+def make_row(cell, arm, hint, seed, rep, rc, drv, cli, srv, cotenant=0):
     want_pipe, want_backend = ARM_PIPE[arm]
     objs = _jsons(cli)
     summ = [o for o in objs if o.get("summary") is True]
@@ -161,8 +164,11 @@ def make_row(cell, arm, hint, seed, rep, rc, drv, cli, srv):
     if genguard:
         other.append("generation-guard-present")
     p.extend(other)
+    row["cotenant"] = int(cotenant)
     if int(rc) != 0:
         row["status"] = "VOID-RC"
+    elif int(cotenant):
+        row["status"] = "VOID-COTENANT"
     elif not summ:
         row["status"] = "NO_DATA"
     elif contaminated:
@@ -231,7 +237,7 @@ def score(paths, out=print):
             reasons.append(f"{t} fired")
     # Void / status table.
     out("STATUS-TABLE (every invocation row)")
-    for st in ("LIVE", "NO_DATA", "VOID-RC", "CONTAMINATED", "WITNESS-FAIL"):
+    for st in ("LIVE", "NO_DATA", "VOID-RC", "VOID-COTENANT", "CONTAMINATED", "WITNESS-FAIL"):
         out(f"  {st:<13} {sum(1 for r in rows if r['status'] == st)}")
     for r in rows:
         if r["status"] != "LIVE":
@@ -415,7 +421,8 @@ def main(argv):
     cmd, a = argv[0], argv[1:]
     if cmd == "row":
         cell, arm, hint, seed, rep, rc, drv, cli, srv = a[:9]
-        row = make_row(cell, arm, hint, seed, rep, rc, lc.read(drv), lc.read(cli), lc.read(srv))
+        cot = a[9] if len(a) > 9 else 0
+        row = make_row(cell, arm, hint, seed, rep, rc, lc.read(drv), lc.read(cli), lc.read(srv), cot)
         print("BRROW " + json.dumps(row, sort_keys=True))
         return 0
     if cmd == "check":

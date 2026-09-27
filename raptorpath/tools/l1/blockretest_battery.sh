@@ -113,7 +113,7 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
 arm_pipe() { case "$1" in BLK) echo block ;; WIN) echo window ;; esac; }
 
 run_one() { # cell hint arm
-  local cell="$1" hint="$2" arm="$3" ca cb mode bytes pipe t0 rc attempt sha
+  local cell="$1" hint="$2" arm="$3" ca cb mode bytes pipe t0 rc attempt sha cot_b=0 cot_a=0 cot=0
   read -r ca cb mode bytes <<< "$(cell_spec "$cell")"
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
   pipe="$(arm_pipe "$arm")"
@@ -126,11 +126,16 @@ run_one() { # cell hint arm
     fi
     echo "=== rep=$REP arm=$arm cell=$cell hint=$hint seed=$SEED_ARG attempt=$attempt pipeline=$pipe spec=$ca/$cb/$mode bytes=$bytes $(date -u +%T)" >> "$OUT"
     rm -f /tmp/rwm-c.log /tmp/rwm-s.log /tmp/br-drv.out
+    # Co-tenancy witness (amendment 3): a cargo/rustc process on the box
+    # before or after the invocation voids its row (VOID-COTENANT).
+    cot_b=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     t0=$(date +%s)
     env SEED="$SEED_ARG" RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 \
         RWM_C_PIPELINE="$pipe" RWM_BIN="$BIN" \
       bash perf_rwm_c.sh "$ca" "$cb" "$hint" "$bytes" 1 "$mode" > /tmp/br-drv.out 2>&1
     rc=$?
+    cot_a=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
+    echo "COTENANT $name rep=$REP before=$cot_b after=$cot_a load=$(cut -d" " -f1-3 /proc/loadavg)" >> "$OUT"
     grep -aE "summary|\"dnf\"|CPU:|GUARD|--- RWM-C perf" /tmp/br-drv.out >> "$OUT" || true
     echo "RUNTIME $name rep=$REP attempt=$attempt $(( $(date +%s) - t0 ))s rc=$rc" >> "$OUT"
     [ "$rc" = "0" ] || echo "ABORT-RC $name rep=$REP rc=$rc (row void, battery goes on)" >> "$OUT"
@@ -150,8 +155,9 @@ run_one() { # cell hint arm
   if [ "$rc" = "0" ] && ! grep -aq '"summary"' /tmp/rwm-c.log 2>/dev/null; then
     echo "ABORT-BRINGUP $name rep=$REP after $TRIES attempts: NO_DATA" >> "$OUT"
   fi
+  [ $(( cot_b + cot_a )) -gt 0 ] && cot=1
   python3 ./blockretest_parse.py row "$cell" "$arm" "$hint" "$SEED_ARG" "$REP" "$rc" \
-      /tmp/br-drv.out /tmp/rwm-c.log /tmp/rwm-s.log >> "$OUT" 2>&1 \
+      /tmp/br-drv.out /tmp/rwm-c.log /tmp/rwm-s.log "$cot" >> "$OUT" 2>&1 \
     || echo "BRROW-PARSE-FAIL $name rep=$REP" >> "$OUT"
 }
 
