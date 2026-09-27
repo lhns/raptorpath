@@ -177,8 +177,12 @@ run_one() { # cell arm
   # shellcheck disable=SC2086
   env SEED=$SEED_ARG RWM_GEN=0 $envs RWM_DIAG=1 \
     bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" 2>&1 \
-    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
-  echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
+    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT"
+  # The ENGINE's rc, not the grep's: `PIPESTATUS` is copied on the first line
+  # after the pipeline (an `|| true` there would replace it with true's 0).
+  local rc="${PIPESTATUS[0]}"
+  echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s rc=$rc" >> "$OUT"
+  [ "$rc" = "0" ] || echo "ENGINE-RC $name rep=$REP rc=$rc" >> "$OUT"
 
   python3 ./place_parse.py "$cell" "$arm" "$SEED_ARG" "$REP" \
       /tmp/rwm-c.log /tmp/rwm-s.log \
@@ -245,9 +249,13 @@ for REP in $(seq 1 "$REPS"); do
     esac)"
     echo "=== rep=$REP arm=$S-SINGLE seed=$SEED_ARG env=\"\" cell=$sa/$sb/$smode bytes=$sbytes $(date -u +%T)" >> "$OUT"
     rm -f /tmp/rwm-c.log /tmp/rwm-s.log
+    t0=$(date +%s)
     env SEED=$SEED_ARG RWM_GEN=0 RWM_DIAG=1 \
       bash perf_rwm_c.sh "$sa" "$sb" bulk "$sbytes" 1 "$smode" 2>&1 \
-      | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
+      | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT"
+    src="${PIPESTATUS[0]}"
+    echo "RUNTIME $S-SINGLE rep=$REP $(( $(date +%s) - t0 ))s rc=$src" >> "$OUT"
+    [ "$src" = "0" ] || echo "ENGINE-RC $S-SINGLE rep=$REP rc=$src" >> "$OUT"
     python3 ./place_parse.py "$S" SINGLE "$SEED_ARG" "$REP" \
         /tmp/rwm-c.log /tmp/rwm-s.log >> "$OUT" 2>&1 \
       || echo "PLACERESULT-PARSE-FAIL $S-SINGLE rep=$REP" >> "$OUT"
