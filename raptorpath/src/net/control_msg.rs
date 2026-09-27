@@ -294,7 +294,7 @@ fn on_ack(
     // `record_delivery` anchor feed while the paused feed supplies no
     // samples either, and the anchor never establishes (measured at
     // duals: btlbw=0/est=n on both paths, dyn cap stuck at boot 128).
-    if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
+    if let Some(feed) = copa_feed {
         if let Some(p) = sched.path_mut(path_id) {
             p.release_in_flight(received_ids.len() as u32);
             // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode
@@ -408,23 +408,6 @@ fn on_ack(
         if !crate::scheduler::release_1to1_active() && expected_count > 0 {
             path.release_in_flight(expected_count.saturating_sub(received_count));
         }
-
-        // Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate
-        // "Ship The Wins 1b" arm A): THE delivery event for this
-        // path's shadow rate sampler. Delivered advances the rate
-        // numerator; LOST advances the accounted cursor only (a lost
-        // symbol left the wire too — that alignment is what lets an
-        // aggregate cursor resolve send spacing without a per-seq
-        // key). Placed here so it sees exactly the counts the legacy
-        // anchor sees: this build changes the Δt STATISTIC, not the
-        // per-path attribution. `gap_q` drops a stall-poisoned event
-        // exactly as the RTT/rate feeds above drop it. Feeds nothing
-        // but the N ≥ 2 pool law; no-op with the gate off.
-        path.on_pool_delivery(
-            received_ids.len() as u32,
-            expected_count.saturating_sub(received_count),
-            gap_q,
-        );
 
         // ADR-0013: update path monitoring stats
         if let Some(ps) = stats.path(path_id) {
@@ -703,7 +686,7 @@ fn on_window_ack(
         }
         let am_live = d_expected > 0 || d_received > 0;
         if am_live {
-            if let Some(feed) = copa_feed.filter(|f| !f.n1_paused()) {
+            if let Some(feed) = copa_feed {
                 if let Some(p) = sched.path_mut(path_id) {
                     p.release_in_flight(d_received);
                     if !feed.owns_cc() {
@@ -768,7 +751,7 @@ fn on_window_ack(
                 // config in practice, so this branch is the
                 // belt-and-braces one.)
                 if crate::scheduler::copa_compete_active()
-                    && copa_feed.filter(|f| !f.n1_paused()).is_none()
+                    && copa_feed.is_none()
                 {
                     if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
                         path.on_wire_congestion_events(ev);
@@ -814,13 +797,6 @@ fn on_window_ack(
                 if !crate::scheduler::release_1to1_active() && d_expected > 0 {
                     path.release_in_flight(d_expected.saturating_sub(d_received));
                 }
-                // Delivery-clocked pool anchor (RWM_POOL_DELIV): the
-                // same delivery event the legacy arm fed it.
-                path.on_pool_delivery(
-                    d_received,
-                    d_expected.saturating_sub(d_received),
-                    gap_q,
-                );
                 // ADR-0013: path monitoring stats.
                 if let Some(ps) = stats.path(path_id) {
                     ps.loss_rate_e6.store(

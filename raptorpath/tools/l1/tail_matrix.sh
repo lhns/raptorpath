@@ -215,11 +215,9 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             default) AENV="";              AFLAGS="" ;;
             copa)    AENV="RWM_QUIC_CC=passthrough"; AFLAGS="" ;;
             # feat/window-mtu (goal-gate "Window Decoupling + MTU Scaling"):
-            # the crown-gate arms — part 2 compact framing (mandatory spot),
-            # part 1 decoupled window, and the composed pair.
+            # the crown-gate arm — part 2 compact framing (mandatory spot);
+            # the part-1 decoupled-window arms were removed with their gate.
             mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
-            wdfix)   AENV="RWM_WIN_DECOUPLE=1"; AFLAGS="" ;;
-            wdmtu)   AENV="RWM_WIN_DECOUPLE=1 RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
             # feat/recv-permsg (goal-gate "Receiver Per-Message Wall"): the
             # crown-gate arm — estimator heavy-math cadence (delivery path
             # touched at the estimator only; the spot is mandatory).
@@ -243,22 +241,6 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # composed pool-anchor default off with it; eb=0 restores the
             # per-symbol sender).
             prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
-            # feat/pool-delivery-anchor (goal-gate "Ship The Wins 1b"): the
-            # attempt-2 crown spot. Defaults were REVERTED at the end of
-            # attempt 1, so `ship`/env-unset is now the PRIOR default and the
-            # candidates are explicit: `deliv` = est+eb+pool-anchor+the
-            # delivery-clocked rate term (arm A), `floorb` = attempt 1's pool
-            # + the honest anchor-floor bound (arm B).
-            deliv)   AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1"; AFLAGS="" ;;
-            floorb)  AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=1"; AFLAGS="" ;;
-            # feat/derived-patience (goal-gate "Unlock The Default 2"): the
-            # crown spot for THE candidate. `pat` = est+eb+the derived
-            # recovery-patience floor; the tail cell is exactly where a
-            # patience change could hurt (a floor that fires too eagerly buys
-            # throughput with p99), so this arm is a gate, not a formality.
-            # Compare against `ship` (env unset = today's default) and
-            # `deliv` (est+eb, the same composition WITHOUT the derived floor).
-            pat)     AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_PATIENCE_DERIVED=1"; AFLAGS="" ;;
             # feat/ack-merge-flip (goal-gate "Ack-Merge Flip"): the crown
             # NO-REGRESSION spot for the single-knob candidate. `am` =
             # RWM_ACK_MERGE=1 alone against `ship` (env unset = today's

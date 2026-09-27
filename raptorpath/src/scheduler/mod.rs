@@ -288,72 +288,6 @@ pub fn pool_anchor_active() -> bool {
     })
 }
 
-/// Whether the DELIVERY-CLOCKED pool rate anchor is active for this process
-/// (`RWM_POOL_DELIV`, goal-gate "Ship The Wins 1b" arm A): the N ≥ 2 pool
-/// law's rate input gains a per-path [`crate::control::DeliveryRateAnchor`]
-/// term — the BBR `GenerateRateSample` statistic as a SHADOW estimator no
-/// cwnd consumer can read. The law reads
-/// `max(delivery_max_bw, send_ratcheted_mean)`: both are honest LOWER BOUNDS
-/// on the bottleneck rate, so the max is the estimator (ONE formula, no
-/// branch), and the delivery term is the only one that can ratchet ABOVE the
-/// cap-limited carried rate — attempt 1's measured binder (paper §16.36:
-/// "a send-derived rate cannot ratchet above the cap-limited carried rate").
-///
-/// Default = the `pool_anchor_active()` resolution (which rides
-/// `RWM_EST_CADENCE`), so everything-unset ⇒ OFF and the est opt-in carries
-/// it; `RWM_POOL_DELIV=0` under the est opt-in is exactly attempt 1's arm.
-/// Read once and cached (consulted on the send hot path).
-///
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): the arm failed its ≥0.97 c7 clause on both
-/// seeds while the mechanism landed completely, and the anchor's own doc
-/// comment certifies it can reach no cwnd/pacing consumer. Activation now
-/// warns via [`crate::config::deprecated_env_flag`]; the sampler stays only
-/// as the negative datum's reproduction path until the recovery-plane
-/// battery the refutation NAMES has run.
-pub fn pool_deliv_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_POOL_DELIV",
-            pool_anchor_active(),
-            "Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07)",
-        )
-    })
-}
-
-/// Whether the honest ANCHOR-FLOOR BOUND is active (`RWM_FLOOR_BOUND`,
-/// goal-gate "Ship The Wins 1b" arm B, default OFF — a pure A/B arm).
-///
-/// The BtlBw anchor floor (`CopaState::anchor_floor` = gain·max_bw·RTprop)
-/// rides the LEGACY ack-interval `max_bw`, which over-reads ×10-class under
-/// ack bunching (339–500k sym/s measured at c7 under the est clock vs ≈8–12k
-/// truth) and inflated cwnd to 5860 vs the prior default's 1779. This bounds
-/// the FLOOR — never cwnd itself — by the honest send-anchor rate the engine
-/// already measures: `floor := min(legacy_floor, gain·sr·RTprop)`. With the
-/// send anchor cold it is the legacy value verbatim, so it can only remove
-/// inflation the over-read injected. Its purpose (attempt 1's second named
-/// successor): make the prior default's ACCIDENTAL escape — Σcwnd floating
-/// the store below the pool — a DERIVED one.
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): the bound cut the c7 over-read exactly as
-/// designed and failed BOTH clauses — c7 0.969/0.969×Σ and c1 396.4/398.0
-/// under the 430 PRIMARY (−14% vs unbounded). The refutation is a positive
-/// structural finding: the ack-interval over-read is LOAD-BEARING at N = 1.
-/// Activation warns via [`crate::config::deprecated_env_flag`].
-pub fn floor_bound_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_FLOOR_BOUND",
-            false,
-            "Ship The Wins 1b (2026-08-07)",
-        )
-    })
-}
-
 /// Whether the O(1) windowed-max rate filter is active for this process
 /// (`RWM_HONEST_ANCHOR`, goal-gate "Honest Inputs" — anchor-hygiene family
 /// member, **DEFAULT ON since 2026-08-11** per the flip battery's F7 and
@@ -900,48 +834,16 @@ pub fn charge_recovery_active() -> bool {
     *F.get_or_init(|| crate::config::env_flag("RWM_CHARGE_RECOVERY", false))
 }
 
-/// `RWM_PATIENCE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2:
-/// derived patience". Replaces the `NACK_RETX_COOLDOWN_FLOOR_US` = 10 ms
-/// literal at its two BEHAVIOURAL sites (the RFC 9002 §6.1.2 kGranularity
-/// analog inside `mp_time_threshold_split`, and the per-seq retransmit
-/// cooldown) with `net::patience_floor_us` = timer granularity + the path's
-/// own measured RTT jitter. RFC 9002's 9/8 and packet-threshold 3 untouched.
-/// Cached so every read site resolves identically within a process.
-///
-/// Not a dial: it selects no law and no constructor argument on (δ, ρ, r).
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): eliminated on BOTH population and response
-/// — the literal it replaces wins 0 of 177 543 §6.1.2 evaluations at c7, and
-/// where it does bind (c1) collapsing it moves nothing ≫σ. The goal closed as
-/// a documented STRUCTURAL BOUND. Activation warns via
-/// [`crate::config::deprecated_env_flag`]. NOTE: the schedule deletes the LAW
-/// only — the `pf=<floor>/<clock>/<mean>` gauge is explicitly excluded, the
-/// named successor (a store-dwell-inclusive recovery RTT) needs it verbatim.
-pub fn patience_derived_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_PATIENCE_DERIVED",
-            false,
-            "Unlock The Default 2: derived patience (2026-08-07)",
-        )
-    })
-}
-
 /// `RWM_SIDLE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2".
 /// DIAG-ONLY and behaviour-inert: the legacy `sidle=`/`[WIDLE] idle=` fields
 /// are printed UNCHANGED; this gate adds a SECOND field (`sidle2=`,
 /// `idle2=`) computed by `net::stall_threshold_us` over the same event
 /// stream, so the fixed-3 ms-threshold artifact question is answered on the
 /// SAME runs in every arm, controls included.
-/// Deliberately NOT wired to `deprecated_env_flag` even though it was built
-/// and closed in the same session as its three deprecated mates: this is an
-/// INSTRUMENT whose verdict is a STANDING INSTRUCTION the register issues to
-/// future sessions (*where `evt ≫ LOOP_WAKE_US`, read `sidle2`, not
-/// `sidle`*). Warning "deprecated, removal scheduled" on a gauge the ledger
-/// tells you to switch on would contradict the register. See goal-gate
-/// "Batch-2 removal schedule".
+/// An INSTRUMENT whose verdict is a STANDING INSTRUCTION (*where
+/// `evt ≫ LOOP_WAKE_US`, read `sidle2`, not `sidle`*), retained after its
+/// three session-mates (`RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
+/// `RWM_PATIENCE_DERIVED`) were removed as refuted arms.
 pub fn sidle_derived_active() -> bool {
     use std::sync::OnceLock;
     static F: OnceLock<bool> = OnceLock::new();
@@ -1190,15 +1092,6 @@ fn place_temperature() -> f64 {
 /// window, NOT a tuning knob (any positive value cancels once real RTTs land).
 pub(crate) const PLACE_REF_FLOOR_SECS: f64 = 0.001;
 
-/// Recovery-patience bound on the frontier-slack placement deadline
-/// (goal-gate "C8 Slow-Path Conversion"): D_i = min(S, 9/8·srtt_i). 9/8 is
-/// RFC 9002's kTimeThreshold — the SAME constant the `RWM_RECOV_MP` hole
-/// law's `mp_time_threshold_split` uses — NOT a new tuning dial: a placement
-/// later than the hole law's patience is re-served cross-path no matter
-/// what the frontier needs, so the placement plane must never budget past
-/// it (the 2026-08-06 smoke falsification of the unbounded-S form).
-pub(crate) const PLACE_SLACK_RECOV_PATIENCE: f64 = 1.125;
-
 /// Controls the latency vs bandwidth trade-off in the interpolated objective.
 /// See paper Section 13.8.
 #[derive(Debug, Clone, Copy)]
@@ -1444,7 +1337,7 @@ pub struct CopaState {
     /// a distribution, which would turn the derived clock's one
     /// distribution-free guarantee into a fitted coefficient — §16.69.
     ///
-    /// Observation only: nothing outside `RWM_QUANTILE_CLOCKS` reads it.
+    /// Observation only: read by the `[DIAG] sig_us=` and `[QCLK]` gauges.
     rtt_var_sq: f64,
     /// How many samples have been folded into `rtt_var_sq` — the EWMA's own
     /// warm-up denominator, and the honest half of the `sig_us=` gauge.
@@ -1520,28 +1413,6 @@ pub struct CopaState {
     /// the ring spans `32 · RTprop` at every sample rate (see the const doc).
     /// Fed unconditionally; read by nothing but `[DIAG]`.
     rtt_tlag: VecDeque<(Instant, u32)>,
-    /// **THE QUANTILE-NATIVE CLOCK's SAMPLE WINDOW** (paper §16.76): the raw
-    /// RTT series, µs, FIFO, last [`crate::net::QNATIVE_WINDOW_MAX`].
-    ///
-    /// **This cannot reuse `rtt_win`.** That FIFO is capped at
-    /// `SIGMA_CAND_WINDOW = 256`, and 256 is LOAD-BEARING for `qsp_us`'s and
-    /// `msd_us`'s estimands — it is 36× the shipped EWMA's memory and it is
-    /// what makes their `P90` rest on 25.6 order statistics. The clock's
-    /// window is a DIFFERENT quantity: `N(α) = ⌈K/α⌉`, which is 5 000 at the
-    /// α-sweep's smallest arm. Widening `rtt_win` to serve both would change
-    /// two committed estimands to serve a third.
-    ///
-    /// **And it cannot reuse `rtt_samples`** for the reason `rtt_win` cannot:
-    /// that deque is a MONOTONIC min-deque and holds a lower envelope of the
-    /// series, not the series. §16.69 reason 2 named exactly this — *"the Copa
-    /// RTT store is a MIN-DEQUE … it does not retain the upper tail at all, by
-    /// construction"* — and an upper quantile read off an envelope is the
-    /// extrapolation that refutation was about.
-    ///
-    /// **Resource bound, stated OUTSIDE the law**: 8192 × 4 B = 32 KiB per
-    /// path. Fed unconditionally at O(1); read by nothing unless
-    /// `RWM_W_FORM=quantile` is armed inside `RWM_QUANTILE_CLOCKS`.
-    rtt_qwin: VecDeque<u32>,
     /// Previous raw RTT sample (for the consecutive difference).
     prev_rtt_sample: Option<Duration>,
     /// Per-update window-min history over the sliding window: the queue
@@ -1707,7 +1578,6 @@ impl CopaState {
             rtt_mdev_n: 0,
             rtt_win: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_tlag: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
-            rtt_qwin: VecDeque::with_capacity(SIGMA_CAND_WINDOW),
             rtt_samples: VecDeque::new(),
             window_duration: Duration::from_secs(10),
             min_rtt: None,
@@ -2080,16 +1950,6 @@ impl CopaState {
             self.rtt_win.pop_front();
         }
         self.rtt_win
-            .push_back((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
-        // THE QUANTILE-NATIVE CLOCK's WINDOW (paper §16.76): the same raw
-        // series, same site, same order, held to a DIFFERENT depth because the
-        // clock's window length is `N(α) = ⌈K/α⌉` and not 256. Fed
-        // unconditionally so the default arm is byte-identical with the gate
-        // absent; O(1), one push and at most one pop.
-        if self.rtt_qwin.len() == crate::net::QNATIVE_WINDOW_MAX {
-            self.rtt_qwin.pop_front();
-        }
-        self.rtt_qwin
             .push_back((rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         while self.rtt_samples.back().is_some_and(|s| s.rtt >= rtt) {
             self.rtt_samples.pop_back();
@@ -2795,24 +2655,6 @@ pub struct PathState {
     /// is byte-identical to the prior-default path (no clock read, no
     /// bucket work) — the A/B decomposition arm stays cost-honest.
     pool_anchor_feed: bool,
-    /// Delivery-clocked pool rate anchor (`RWM_POOL_DELIV`, goal-gate "Ship
-    /// The Wins 1b" arm A): the BBR `GenerateRateSample` statistic on this
-    /// path's aggregate send/delivery cursors, as a SHADOW estimator. Fed at
-    /// `charge_in_flight` (sends) and at the ack arm (`on_pool_delivery`).
-    /// Its ONLY consumer is `pool_rate_anchor()` → the N ≥ 2 pool law: the
-    /// Copa cwnd feed, `max_bw`, `bdp_anchor`/`anchor_floor`, pacing and
-    /// `src_inflight` are all structurally unreachable from here. It is the
-    /// one rate source bounded by delivered-packet PHYSICS rather than by the
-    /// sender's own admission gate — attempt 1's measured binder.
-    deliv_anchor: crate::control::DeliveryRateAnchor,
-    /// Whether the delivery-anchor feed is on (resolved once at construction
-    /// from `pool_deliv_active()`; test-forcible). OFF ⇒ both feed sites do
-    /// no work at all (cost-honest A/B, the `pool_anchor_feed` precedent).
-    pool_deliv_feed: bool,
-    /// Whether the honest anchor-floor bound is on (`RWM_FLOOR_BOUND`, arm B;
-    /// resolved once at construction, test-forcible). OFF ⇒
-    /// `clamp_cwnd_with_anchor` is byte-identical to the shipped path.
-    floor_bound: bool,
     /// ack-merge (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1"): the
     /// sender-side CURSOR for the v6 `WindowAck` cumulative counters. The
     /// merged ack carries the receiver's per-path running
@@ -2901,9 +2743,6 @@ impl PathState {
             in_flight_log: VecDeque::new(),
             send_anchor: crate::control::SendRateAnchor::new(),
             pool_anchor_feed: pool_anchor_active(),
-            deliv_anchor: crate::control::DeliveryRateAnchor::new(),
-            pool_deliv_feed: pool_deliv_active(),
-            floor_bound: floor_bound_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
@@ -3508,45 +3347,6 @@ impl PathState {
         Some((self.copa.rtt_var_sq.sqrt() * 1e6) as u64)
     }
 
-    /// **THE QUANTILE-NATIVE RECOVERY CLOCK's INPUT** — `W_q(α)` in µs, paper
-    /// §16.76. The `K`-th largest of this path's most recent `N(α)` raw RTT
-    /// samples, computed through the ONE law function
-    /// [`crate::net::qnative_recovery_round_us`] so the clock and this reader
-    /// can never disagree.
-    ///
-    /// **`None` is the UNSCOREABLE rule and it is the whole safety property**
-    /// (§16.76.5(1)): fewer than `N(α)` samples in the window, or an α at
-    /// which `N(α)` exceeds the declared cap, means the arm's own law did not
-    /// run and the caller falls through to the law below it — information
-    /// availability, never a mode, and counted by `[QCLK]`'s `win_ok/evals`.
-    /// Reading a SHORTER window would silently return a quantile at a
-    /// different level, which is a different law's output.
-    ///
-    /// **COST, DECLARED**: one `N(α)`-element copy plus an `O(N)` selection
-    /// (never a sort — see [`crate::net::qnative_recovery_round_us`]), at the
-    /// recovery-timer cadence only; the feed site stays `O(1)`. At the
-    /// battery's deepest arm that is 5 000 × 4 B copied and one selection
-    /// pass. **This sits on the SENDER's own path and sender-side cost is
-    /// what the τ-lag battery ran a separate pass to keep out of its
-    /// measurement**, which is why the bound is stated rather than assumed
-    /// negligible. Read by nothing unless `RWM_W_FORM=quantile` is armed
-    /// inside `RWM_QUANTILE_CLOCKS` — both default OFF.
-    pub fn rtt_tail_quantile_us(&self, alpha: f64) -> Option<u64> {
-        let n = crate::net::qnative_window_n(alpha)?;
-        if self.copa.rtt_qwin.len() < n {
-            return None;
-        }
-        let w: Vec<u32> = self.copa.rtt_qwin.iter().copied().collect();
-        crate::net::qnative_recovery_round_us(&w, alpha)
-    }
-
-    /// Samples in the quantile-native window RIGHT NOW — the window FILL,
-    /// reported beside `W_q` so an UNSCOREABLE row states how far short it
-    /// was rather than only that it fell short.
-    pub fn rtt_qwin_samples(&self) -> u64 {
-        self.copa.rtt_qwin.len() as u64
-    }
-
     /// How many RTT samples have been folded into [`rtt_sigma_us`]'s EWMA —
     /// the σ gauge's WARM-UP EVIDENCE, reported beside it as
     /// `sig_us=<µs>/n<count>` in the `[DIAG]` line.
@@ -4011,24 +3811,6 @@ impl PathState {
     fn clamp_cwnd_with_anchor(&mut self) {
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
         if let Some(floor) = self.copa.anchor_floor() {
-            // Honest anchor-floor BOUND (RWM_FLOOR_BOUND, goal-gate "Ship The
-            // Wins 1b" arm B): the legacy floor rides the ack-interval
-            // `max_bw`, which over-reads ×10-class under ack bunching (339–500k
-            // measured vs ≈8–12k truth ⇒ cwnd 5860 vs 1779). Bound it by the
-            // honest send-anchor rate the engine already measures. Still a
-            // FLOOR, never a cap: `cwnd.max(...)` below is unchanged, and with
-            // the send anchor cold the bound is the legacy value verbatim.
-            let floor = if self.floor_bound {
-                match (self.send_rate_anchor(), self.copa.min_rtt()) {
-                    (Some(sr), Some(rtp)) => {
-                        let honest = ANCHOR_FLOOR_GAIN * sr * rtp.as_secs_f64();
-                        floor.min(honest.round().max(0.0) as u32)
-                    }
-                    _ => floor,
-                }
-            } else {
-                floor
-            };
             self.cwnd = self.cwnd.max(floor.min(Self::MAX_CWND));
         }
     }
@@ -4099,12 +3881,6 @@ impl PathState {
             let srtt = self.srtt();
             self.send_anchor.on_send(now, n as u64, srtt);
         }
-        // Delivery-anchor SEND cursor (RWM_POOL_DELIV, arm A): the same wire
-        // sends, recorded as (instant, cumulative count) so a later delivery
-        // event can resolve its send spacing without a per-seq key.
-        if self.pool_deliv_feed {
-            self.deliv_anchor.on_send(now, n as u64);
-        }
         self.in_flight_log.push_back((now, n));
     }
 
@@ -4128,91 +3904,12 @@ impl PathState {
         self.send_anchor.stats()
     }
 
-    /// One DELIVERY event for the shadow delivery-clocked anchor
-    /// (`RWM_POOL_DELIV`, arm A): `delivered` symbols confirmed received and
-    /// `lost` symbols confirmed gone on this path. Both advance the accounted
-    /// cursor (a lost symbol left the wire too — that is what keeps the
-    /// delivery cursor aligned with the send cursor); only `delivered` enters
-    /// the rate numerator. Feeds NOTHING but `pool_rate_anchor()`: no cwnd,
-    /// no `max_bw`, no pacing, no `src_inflight`.
-    ///
-    /// `gap_quarantined` is the process-clock stall verdict already computed
-    /// at the ack site (ADR-0061): a poisoned event is dropped here exactly as
-    /// the RTT/rate feeds beside it drop it.
-    pub fn on_pool_delivery(&mut self, delivered: u32, lost: u32, gap_quarantined: bool) {
-        if !self.pool_deliv_feed || gap_quarantined {
-            return;
-        }
-        let now = self.clock.now();
-        let (rtprop, srtt) = (self.copa.min_rtt(), self.srtt());
-        self.deliv_anchor
-            .on_delivery(now, delivered as u64, lost as u64, rtprop, srtt);
-    }
-
-    /// THE POOL LAW'S RATE INPUT (goal-gate "Ship The Wins 1b"):
-    /// `max(delivery-clocked windowed-max, send-interval ratcheted mean)`.
-    ///
-    /// ONE formula, no branch, no mode bit: both terms are honest LOWER
-    /// BOUNDS on this path's bottleneck rate (the delivery term because its
-    /// Δt is `max(send_elapsed, ack_elapsed)` with a ≥ RTprop floor; the send
-    /// term because a time-normalized mean of real sends cannot exceed what
-    /// flowed), and the pool law wants the bottleneck rate — so the max of
-    /// two lower bounds is the estimator, and adding the delivery term can
-    /// only raise the pool, never lower it. That ordering is deliberate: it
-    /// makes arm A ≥ arm (attempt 1) at every instant, so a measured c7
-    /// difference is attributable to exactly the delivery term.
-    ///
-    /// With `RWM_POOL_DELIV` off this is byte-identical to
-    /// `send_rate_anchor()` (attempt 1's law); with `RWM_POOL_ANCHOR` off it
-    /// is None (the legacy law runs).
-    pub fn pool_rate_anchor(&self) -> Option<f64> {
-        let send = self.send_rate_anchor();
-        let deliv = if self.pool_deliv_feed {
-            self.deliv_anchor.rate(self.clock.now(), self.copa.min_rtt())
-        } else {
-            None
-        };
-        match (send, deliv) {
-            (Some(s), Some(d)) => Some(s.max(d)),
-            (Some(s), None) => Some(s),
-            (None, Some(d)) => Some(d),
-            (None, None) => None,
-        }
-    }
-
-    /// The DELIVERY-clocked term alone (DIAG gauge `dr=`): the mechanism
-    /// witness that separates arm A from attempt 1 in the logs.
-    pub fn deliv_rate_anchor(&self) -> Option<f64> {
-        if !self.pool_deliv_feed {
-            return None;
-        }
-        self.deliv_anchor.rate(self.clock.now(), self.copa.min_rtt())
-    }
-
-    /// (accepted, short-rejected, gaps, discarded) for the delivery anchor —
-    /// DIAG gauges proving the mechanism executed and how its guards fired.
-    pub fn deliv_anchor_stats(&self) -> (u64, u64, u64, u64) {
-        self.deliv_anchor.stats()
-    }
-
     /// Test hook: force the pool-anchor feed regardless of the process-global
     /// env cache (unit tests must not depend on it — the `force_wire`
     /// pattern).
     #[cfg(test)]
     pub fn force_pool_anchor_feed(&mut self, on: bool) {
         self.pool_anchor_feed = on;
-    }
-
-    /// Test hook: force the delivery-anchor feed (`RWM_POOL_DELIV`).
-    #[cfg(test)]
-    pub fn force_pool_deliv_feed(&mut self, on: bool) {
-        self.pool_deliv_feed = on;
-    }
-
-    /// Test hook: force the honest anchor-floor bound (`RWM_FLOOR_BOUND`).
-    #[cfg(test)]
-    pub fn force_floor_bound(&mut self, on: bool) {
-        self.floor_bound = on;
     }
 
     /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must
@@ -4357,20 +4054,9 @@ pub struct Scheduler {
     block_affinity: bool,
     /// Smooth-WRR credit per path for the block-affinity pick.
     affinity_credit: HashMap<PathId, f64>,
-    /// Frontier slack S (seconds) for the placement cost (goal-gate "C8
-    /// Slow-Path Conversion", env `RWM_PLACE_SLACK`): the load term becomes
-    /// max(0, Ê_i − S)/ref_srtt — a path whose expected delivery fits
-    /// inside the in-order frontier's need-time costs nothing extra, so
-    /// placement deadline-aware water-fills (backlog_i ≈ rate_i·(S−owd_i),
-    /// capacity-proportional) instead of starving the slow path on the
-    /// propagation term. 0.0 (the default, and whenever the gate is OFF or
-    /// N = 1 or the ack-rate EWMA is cold) reproduces the shipped cost
-    /// BIT-EXACTLY (max(0, x − 0) = x). Set by the plain reliable window
-    /// sender on its 5 ms refresh cadence.
-    place_slack_secs: f64,
     /// `RWM_COLD_PLACE` (anchor-hygiene rule 1 at the placement site) as a
-    /// per-scheduler VALUE rather than a hot-path env read — the same shape
-    /// `place_slack_secs` uses, and for the same reason the estimator's
+    /// per-scheduler VALUE rather than a hot-path env read — for the same
+    /// reason the estimator's
     /// `force_anchor_hygiene` exists: the process-global `OnceLock` cannot
     /// hold both arms, so an A/B that must measure BOTH directions in one
     /// process (the SF bench's `Place` axis) would otherwise be impossible to
@@ -4403,7 +4089,6 @@ impl Scheduler {
             hint,
             block_affinity: true,
             affinity_credit: HashMap::new(),
-            place_slack_secs: 0.0,
             cold_place: cold_place_active(),
         }
     }
@@ -4455,18 +4140,6 @@ impl Scheduler {
     /// The cold-start placement price setting in force for this scheduler.
     pub fn cold_place(&self) -> bool {
         self.cold_place
-    }
-
-    /// Set the frontier slack S (seconds) for the placement cost (goal-gate
-    /// "C8 Slow-Path Conversion", `RWM_PLACE_SLACK`). Non-finite / negative
-    /// input is treated as 0 (the shipped-identical operating point).
-    pub fn set_place_slack(&mut self, secs: f64) {
-        self.place_slack_secs = if secs.is_finite() { secs.max(0.0) } else { 0.0 };
-    }
-
-    /// Current frontier slack S (seconds) — gauge accessor.
-    pub fn place_slack(&self) -> f64 {
-        self.place_slack_secs
     }
 
     pub fn add_path(&mut self, id: PathId) {
@@ -5291,30 +4964,12 @@ impl Scheduler {
             // TIME it is capacity-aware, so it water-fills by capacity rather
             // than over-loading the slow path.
             //
-            // Frontier-slack generalization (goal-gate "C8 Slow-Path
-            // Conversion", `RWM_PLACE_SLACK`): only the LATENESS beyond the
-            // per-path deadline D_i = min(S, 9/8·srtt_i) is charged —
-            // max(0, Ê_i − D_i). S = the frontier slack (need-time budget);
-            // the 9/8·srtt_i term is the RECOVERY plane's patience for a
-            // flight on this path (RFC 9002 kTimeThreshold — the SAME
-            // constant `mp_time_threshold_split` uses): a placement later than
-            // that gets re-served cross-path regardless of frontier need,
-            // so budgeting past it makes the planes fight (MEASURED, the
-            // 2026-08-06 smoke falsification of the unbounded-S form: c8
-            // 66.2 Mbit with retxo_p1 = 49%). S = 0 (gate off / N = 1 /
-            // cold ack-rate) is bit-exactly the shipped term. With S > 0 a
-            // path is free until its backlog's completion time reaches its
-            // deadline (deadline-aware water-filling: equilibrium
-            // backlog_i ≈ rate_i·(D_i − owd_i)), which ends the
-            // Bulk-softmax starvation of the slow path (its idle srtt_i/2
-            // propagation term alone was worth e^10:1 odds at T = 0.15)
-            // while bounding each placement's lateness continuously — no
-            // threshold, no mode, no per-topology branch.
+            // (The frontier-slack generalization `max(0, Ê_i − D_i)`,
+            // `RWM_PLACE_SLACK`, was refuted — goal-gate "C8 Slow-Path
+            // Conversion" — and removed; D = 0 is the shipped term, kept
+            // verbatim below.)
             let srtt_i = srtt_of(p);
-            let deadline = self
-                .place_slack_secs
-                .min(PLACE_SLACK_RECOV_PATIENCE * srtt_i);
-            let load = (p.expected_delivery_load_at(srtt_i) - deadline).max(0.0) / ref_srtt;
+            let load = p.expected_delivery_load_at(srtt_i).max(0.0) / ref_srtt;
             // Bandwidth/correction burden (loss/wire waste); the hint's w_bw
             // dial. w_lat does NOT gate placement: on a reliable in-order stream
             // latency-to-frontier is the completion cost itself, already carried
@@ -6666,129 +6321,6 @@ mod tests {
         assert_eq!(sched.place_symbol(false, &[]), Some(0));
     }
 
-    // ── Frontier-slack placement (goal-gate "C8 Slow-Path Conversion",
-    //    `RWM_PLACE_SLACK`) — the law is a STRICT continuous generalization
-    //    of the shipped cost: S = 0 bit-identical, S > 0 un-starves the
-    //    slow path up to exactly its deadline-feasible backlog. ───────────
-
-    /// S = 0 (the default, and any non-finite/negative setter input)
-    /// reproduces the shipped placement distribution bit-exactly.
-    #[test]
-    fn place_slack_zero_is_bit_identical() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_rtt(&mut sched, 0, 10);
-        set_rtt(&mut sched, 1, 50);
-        sched.path_mut(0).unwrap().in_flight = 7;
-        let base = sched.place_probs(false, &[]);
-        sched.set_place_slack(0.0);
-        assert_eq!(base, sched.place_probs(false, &[]));
-        sched.set_place_slack(-3.0);
-        assert_eq!(base, sched.place_probs(false, &[]));
-        sched.set_place_slack(f64::NAN);
-        assert_eq!(base, sched.place_probs(false, &[]));
-        assert_eq!(sched.place_slack(), 0.0);
-    }
-
-    /// Rising S monotonically feeds the slow path: the Bulk softmax's
-    /// idle-propagation starvation (p1 ~ e^-10 at S = 0) relaxes toward the
-    /// uniform clamp as S covers the slow path's delivery time — no
-    /// threshold, strictly non-decreasing in S.
-    #[test]
-    fn place_slack_monotonically_feeds_the_slow_path() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_rtt(&mut sched, 0, 10);
-        set_rtt(&mut sched, 1, 50); // 5× slower — the c8 shape
-        let mut prev_p1 = -1.0;
-        for slack_ms in [0u64, 5, 10, 20, 30, 50, 100] {
-            sched.set_place_slack(slack_ms as f64 / 1000.0);
-            let p1 = prob_of(&sched.place_probs(false, &[]), 1);
-            assert!(
-                p1 >= prev_p1 - 1e-12,
-                "p1 must be non-decreasing in S: S={slack_ms}ms p1={p1} prev={prev_p1}"
-            );
-            prev_p1 = p1;
-        }
-        // Starved at S = 0 …
-        sched.set_place_slack(0.0);
-        assert!(prob_of(&sched.place_probs(false, &[]), 1) < 0.01);
-        // … equal-cost (uniform clamp) once S covers both idle delivery times.
-        sched.set_place_slack(0.1);
-        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
-        assert!((p1 - 0.5).abs() < 0.05, "clamped region ⇒ ~uniform, got p1={p1}");
-    }
-
-    /// The law still prices LATENESS: a slow path whose backlog's completion
-    /// time exceeds S is choked continuously (the c8-pbs unbounded-queue
-    /// failure cannot form).
-    #[test]
-    fn place_slack_still_chokes_beyond_the_deadline() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_rtt(&mut sched, 0, 10);
-        set_rtt(&mut sched, 1, 50);
-        sched.set_place_slack(0.05); // S = 50 ms
-        // Backlog the slow path to ~2× cwnd: Ê_1 ≈ 2·50 + 25 = 125 ms ≫ S.
-        let cwnd1 = sched.path(1).unwrap().cwnd;
-        sched.path_mut(1).unwrap().in_flight = 2 * cwnd1;
-        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
-        assert!(p1 < 0.01, "deadline-exceeded slow path must be choked, got p1={p1}");
-    }
-
-    /// The lateness budget never exceeds the recovery plane's patience:
-    /// even with S at its 250 ms ceiling, a slow-path backlog whose
-    /// completion time exceeds 9/8·srtt_i is charged — the unbounded-S
-    /// smoke failure (placement tolerating 250 ms while the hole law
-    /// re-serves at ~9/8·srtt: retxo_p1 = 49%) cannot form.
-    #[test]
-    fn place_slack_deadline_capped_by_recovery_patience() {
-        let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-        sched.add_path(0);
-        sched.add_path(1);
-        set_rtt(&mut sched, 0, 10);
-        set_rtt(&mut sched, 1, 50); // patience for p1 ≈ 56 ms
-        sched.set_place_slack(0.25); // S at the ceiling
-        // Backlog p1 so Ê_1 ≈ (8/10)·50 + 25 = 65 ms: inside S, but PAST
-        // the 9/8·srtt_1 = 56 ms recovery patience → must be charged.
-        sched.path_mut(1).unwrap().in_flight = 8;
-        let p1 = prob_of(&sched.place_probs(false, &[]), 1);
-        assert!(
-            p1 < 0.4,
-            "beyond-patience backlog must lose mass even at max S, got p1={p1}"
-        );
-        // And the charge grows with the backlog (continuous choke).
-        sched.path_mut(1).unwrap().in_flight = 20;
-        let p1_deep = prob_of(&sched.place_probs(false, &[]), 1);
-        assert!(p1_deep < p1, "deeper backlog ⇒ smaller mass ({p1_deep} < {p1})");
-    }
-
-    /// Symmetric paths split 50/50 with or without slack — the c7 cell's
-    /// placement is untouched by the law (any symmetric cost ⇒ 50/50).
-    #[test]
-    fn place_slack_symmetric_split_unchanged() {
-        for slack in [0.0, 0.08, 0.25] {
-            let mut sched =
-                Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
-            sched.add_path(0);
-            sched.add_path(1);
-            set_rtt(&mut sched, 0, 20);
-            set_rtt(&mut sched, 1, 20);
-            sched.path_mut(0).unwrap().in_flight = 5;
-            sched.path_mut(1).unwrap().in_flight = 5;
-            sched.set_place_slack(slack);
-            let dist = sched.place_probs(false, &[]);
-            let p0 = prob_of(&dist, 0);
-            assert!(
-                (p0 - 0.5).abs() < 1e-9,
-                "symmetric split must stay 50/50 at S={slack}, got p0={p0}"
-            );
-        }
-    }
-
     // ── THE COLD-START PLACEMENT PRICE (`RWM_COLD_PLACE`) ─────────────────
     //
     // Provenance of these tests, stated because it is the honest part: the
@@ -7753,217 +7285,6 @@ mod tests {
         assert!(
             path.send_rate_anchor().is_none(),
             "feed off ⇒ no send-anchor samples (byte-identical prior path)"
-        );
-    }
-
-    // ----- Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate ----------
-    // ----- "Ship The Wins 1b" arm A) ----------------------------------------
-
-    /// THE arm-A law at the PathState level: with the delivery feed on, the
-    /// pool law's rate input (`pool_rate_anchor`) reads the BOTTLENECK a
-    /// cap-limited sender's own send mean cannot see — while every cwnd-side
-    /// consumer is byte-identical to the arm-1 path. That is attempt 2's
-    /// whole claim, wired: the sampler is a SHADOW, and it ratchets.
-    #[test]
-    fn pool_deliv_rate_ratchets_above_the_send_mean_and_touches_no_cwnd_consumer() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(true);
-        path.record_rtt_sample(millis(10)); // RTprop/SRTT warm
-
-        // An admission-gated sender: 400 symbols emitted (and carried) in a
-        // 20 ms burst at ≈20 000 sym/s, then 80 ms idle — long-run mean
-        // 4 000 sym/s. This is the measured c7 shape (store refill on SACK
-        // release), at unit scale.
-        for _ in 0..25 {
-            for _ in 0..4 {
-                path.charge_in_flight(100);
-                clock.advance(millis(5));
-                path.on_pool_delivery(100, 0, false);
-                path.release_in_flight(100);
-            }
-            clock.advance(millis(80));
-        }
-        let sr = path.send_rate_anchor().expect("send anchor warm");
-        let dr = path.deliv_rate_anchor().expect("delivery anchor live");
-        let pool = path.pool_rate_anchor().expect("pool rate live");
-        let mean = 400.0 / 0.1; // 4 000 sym/s carried mean
-        assert!(
-            sr < mean * 2.0,
-            "the SEND term reads the cap-limited mean (attempt 1's binder): {sr}"
-        );
-        assert!(
-            dr > sr * 1.5,
-            "THE arm-A claim: the DELIVERY term ratchets above it — dr={dr} sr={sr}"
-        );
-        assert_eq!(
-            pool,
-            sr.max(dr),
-            "the law reads max(deliv, send) — ONE formula, no branch"
-        );
-        // SHADOW: no cwnd-side consumer may have moved. The delivery feed
-        // never calls record_delivery/on_ack, so the legacy anchor has no
-        // samples at all, cwnd is untouched, and src_inflight is zero
-        // (falsification-5: no scoped feed may leak it).
-        assert!(
-            path.btlbw_sym_per_s().is_none(),
-            "the delivery feed must NOT feed the legacy/Copa max_bw filter"
-        );
-        assert!(
-            path.copa_bdp_anchor().is_none(),
-            "…nor the BDP anchor the cwnd floor rides"
-        );
-        assert_eq!(
-            path.cwnd,
-            PathState::INITIAL_CWND,
-            "…nor cwnd itself (no delivery signal, no dynamics)"
-        );
-        assert_eq!(path.src_inflight, 0, "…nor src_inflight (falsification-5)");
-    }
-
-    /// `RWM_POOL_DELIV=0` is attempt 1 EXACTLY: no delivery work at either
-    /// feed site, and `pool_rate_anchor()` is byte-identical to
-    /// `send_rate_anchor()` (the arms are one knob apart — cost-honest A/B).
-    #[test]
-    fn pool_deliv_feed_off_is_inert_and_equals_attempt_one() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(false);
-        path.record_rtt_sample(millis(10));
-        for _ in 0..400 {
-            path.charge_in_flight(10);
-            clock.advance(millis(1));
-            path.on_pool_delivery(10, 0, false);
-            path.release_in_flight(10);
-        }
-        assert!(
-            path.deliv_rate_anchor().is_none(),
-            "feed off ⇒ no delivery samples exist"
-        );
-        assert_eq!(
-            path.pool_rate_anchor(),
-            path.send_rate_anchor(),
-            "the pool law reads exactly attempt 1's anchor with the gate off"
-        );
-        let (ok, short, gaps, disc) = path.deliv_anchor_stats();
-        assert_eq!((ok, short, gaps, disc), (0, 0, 0, 0), "no sampler work at all");
-    }
-
-    /// A quarantined (stall-poisoned) ack must not reach the delivery
-    /// sampler — the same hygiene verdict the RTT/rate feeds beside it obey
-    /// (ADR-0061 / `RWM_CLOCK_GAP`).
-    #[test]
-    fn pool_deliv_drops_quarantined_delivery_events() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(true);
-        path.record_rtt_sample(millis(10));
-        for _ in 0..50 {
-            path.charge_in_flight(100);
-            clock.advance(millis(5));
-            path.on_pool_delivery(100, 0, true); // quarantined at the ack site
-        }
-        assert!(
-            path.deliv_rate_anchor().is_none(),
-            "quarantined events must produce no samples"
-        );
-        let (ok, ..) = path.deliv_anchor_stats();
-        assert_eq!(ok, 0, "…and no accepted sample");
-    }
-
-    // ----- Honest anchor-floor bound (RWM_FLOOR_BOUND, arm B) ---------------
-
-    /// THE arm-B law: an ack-interval over-read inflates the BtlBw anchor
-    /// floor (the measured cwnd 5860 vs 1779); the bound must cut the floor
-    /// to the honest send-rate pipe — and must stay a FLOOR (cwnd is never
-    /// lowered below where the dynamics put it) and legacy-verbatim while
-    /// the send anchor is cold.
-    #[test]
-    fn floor_bound_cuts_the_over_read_floor_but_stays_a_floor() {
-        let clock = Arc::new(MockClock::new());
-        // Baseline (bound OFF): the over-read floor ratchets cwnd up.
-        let mut a = PathState::new(0, clock.clone());
-        a.force_pool_anchor_feed(true);
-        a.force_floor_bound(false);
-        let mut b = PathState::new(0, clock.clone());
-        b.force_pool_anchor_feed(true);
-        b.force_floor_bound(true);
-        for p in [&mut a, &mut b] {
-            p.record_rtt_sample(millis(10));
-        }
-        // Steady honest send process ≈1000 sym/s for 2 s on both.
-        for _ in 0..2000 {
-            for p in [&mut a, &mut b] {
-                p.charge_in_flight(1);
-                p.release_in_flight(1);
-            }
-            clock.advance(millis(1));
-        }
-        // …and an ack-BURST clock that over-reads the legacy anchor ×100,
-        // while the honest send process keeps running underneath it (that is
-        // the measured c7 shape: the sender is steady, the ACK CLOCK bunches).
-        for _ in 0..20 {
-            for _ in 0..98 {
-                for p in [&mut a, &mut b] {
-                    p.charge_in_flight(1);
-                    p.release_in_flight(1);
-                }
-                clock.advance(millis(1));
-            }
-            for p in [&mut a, &mut b] {
-                p.on_ack(1);
-            }
-            clock.advance(millis(2));
-            for p in [&mut a, &mut b] {
-                p.on_ack(400); // 400 / 2 ms = 200k sym/s
-            }
-        }
-        let legacy_bdp = a.copa_bdp_anchor().expect("legacy anchor established");
-        let sr = b.send_rate_anchor().expect("send anchor warm");
-        let rtp = b.min_rtt().unwrap().as_secs_f64();
-        assert!(
-            legacy_bdp > 10.0 * sr * rtp,
-            "the over-read must be present to bound: legacy={legacy_bdp} honest={}",
-            sr * rtp
-        );
-        assert!(
-            b.cwnd < a.cwnd,
-            "the bound must cut the inflated floor: bounded={} unbounded={}",
-            b.cwnd,
-            a.cwnd
-        );
-        assert!(
-            b.cwnd >= PathState::MIN_CWND,
-            "…and never below the hard floor: {}",
-            b.cwnd
-        );
-        // Still a FLOOR: with the send anchor COLD the bound is the legacy
-        // value verbatim (no path may be throttled by an absent measurement).
-        let mut c = PathState::new(0, clock.clone());
-        c.force_pool_anchor_feed(false); // no send anchor ⇒ cold
-        c.force_floor_bound(true);
-        let mut d = PathState::new(0, clock.clone());
-        d.force_pool_anchor_feed(false);
-        d.force_floor_bound(false);
-        for p in [&mut c, &mut d] {
-            p.record_rtt_sample(millis(10));
-        }
-        for _ in 0..20 {
-            for p in [&mut c, &mut d] {
-                p.on_ack(1);
-            }
-            clock.advance(millis(2));
-            for p in [&mut c, &mut d] {
-                p.on_ack(400);
-            }
-            clock.advance(millis(98));
-        }
-        assert_eq!(
-            c.cwnd, d.cwnd,
-            "cold send anchor ⇒ the bound is the legacy floor verbatim"
         );
     }
 

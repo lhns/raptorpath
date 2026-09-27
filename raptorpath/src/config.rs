@@ -387,30 +387,6 @@ pub fn anchor_gate_default(name: &str, default: bool) -> bool {
     env_flag(name, env_flag("RWM_ANCHOR_HYGIENE", default))
 }
 
-/// Class-C (refuted) experiment gate: reads exactly like `env_flag`, but an
-/// ACTIVATION (the gate evaluating ON) warns that the mechanism is deprecated,
-/// naming the refuting ledger section. Two-stage deprecation per goal-gate
-/// "DEPRECATION REGISTER": the gate stays reproducible (the negative result
-/// must remain re-runnable), removal is scheduled and gated on the register's
-/// re-test clause — a refutation measured behind a since-removed wall (Cubic
-/// substrate, MTU wedge, 1024-pool law, phantom retx, generation-inert
-/// harness, pre-hardware-divide) must be re-earned on the clean substrate
-/// before deletion. Call once at engine/experiment setup, not per packet.
-// ADR-0066 / goal-gate "DEPRECATION REGISTER": this IS the register's
-// enforcement mechanism. Live consumers since 2026-08-09 (goal-gate
-// "Batch-2 removal schedule"): `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
-// `RWM_PATIENCE_DERIVED`.
-pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool {
-    let on = env_flag(name, default);
-    if on {
-        tracing::warn!(
-            "{name} is deprecated: refuted in goal-gate \"{refuted_in}\"; \
-             removal scheduled pending the DEPRECATION REGISTER re-test clause"
-        );
-    }
-    on
-}
-
 /// THE boolean dialect for every env gate (trimmed, case-insensitive):
 /// `1`/`true`/`on`/`yes` → ON; `0`/`false`/`off`/`no`/empty → OFF; anything
 /// else → `None`.

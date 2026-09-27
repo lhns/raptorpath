@@ -240,10 +240,13 @@ pub const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 // literals sat in the plane §16.37/§16.39 named as the c7 blocker's owner —
 // the recovery plane's patience and the gauge that measures its stalls — in
 // a project whose own rules say a clock must be DERIVED from the operating
-// point. Both are re-expressed here as laws over measured inputs; both are
-// env-gated (`RWM_PATIENCE_DERIVED`, `RWM_SIDLE_DERIVED`) default OFF so the
-// battery attributes them independently, and both reproduce their literal
-// EXACTLY at the operating point where the literal's own assumption holds.
+// point. Both are re-expressed here as laws over measured inputs, and both
+// reproduce their literal EXACTLY at the operating point where the literal's
+// own assumption holds. The patience floor's own A/B arm
+// (`RWM_PATIENCE_DERIVED`) was refuted and removed; the floor survives as
+// the no-ceiling derived round's floor (`derived_recovery_round_us`,
+// `RWM_DERIVED_SWEEP`), and the stall threshold as the `RWM_SIDLE_DERIVED`
+// gauge.
 //
 // Neither is a dial: neither selects a law, a code path or a constructor
 // argument on (δ, ρ, r), and nothing keys on a threshold in the triangle
@@ -415,10 +418,8 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 /// `max(smoothed_rtt, latest_rtt)`), floored at the existing per-seq
 /// retransmit cooldown floor (the kGranularity analog). No new constants.
 ///
-/// `floor_us` is the kGranularity analog, supplied by the caller: the legacy
-/// `NACK_RETX_COOLDOWN_FLOOR_US` when `RWM_PATIENCE_DERIVED` is off (⇒ this
-/// function is bit-identical to its pre-2026-08-07 form), and
-/// `patience_floor_us(jitter, srtt)` when it is on. kTimeThreshold (9/8) is
+/// `floor_us` is the kGranularity analog, supplied by the caller: the
+/// engine passes `NACK_RETX_COOLDOWN_FLOOR_US`. kTimeThreshold (9/8) is
 /// untouched — cited as RFC 9002's empirical recommendation ("works well";
 /// RACK uses 5/4 — corrected 2026-08-19, cross-check item 6(d)); only the
 /// floor is derived.
@@ -572,9 +573,7 @@ pub fn pooled_recovery_srtt_of(sched: &Scheduler) -> u64 {
 }
 
 /// The per-seq retransmit cooldown clock (µs): the pooled smoothed RTT,
-/// floored. `floor_us` is `NACK_RETX_COOLDOWN_FLOOR_US` with
-/// `RWM_PATIENCE_DERIVED` off and `patience_floor_us(jitter, srtt)` with it
-/// on — see `recovery_floor_us`.
+/// floored. The engine passes `NACK_RETX_COOLDOWN_FLOOR_US` as `floor_us`.
 pub fn retx_cooldown_us(srtt_us: u64, floor_us: u64) -> u64 {
     srtt_us.max(floor_us)
 }
@@ -583,18 +582,6 @@ pub fn retx_cooldown_us(srtt_us: u64, floor_us: u64) -> u64 {
 /// is suppressed by the cooldown channel.)
 pub fn cooldown_elapsed(now_us: u64, last_retx_us: u64, cooldown_us: u64) -> bool {
     now_us.saturating_sub(last_retx_us) >= cooldown_us
-}
-
-/// The kGranularity analog actually supplied to `mp_time_threshold_split`
-/// and to `retx_cooldown_us`: the legacy literal, or the derived floor when
-/// `RWM_PATIENCE_DERIVED` is armed. `patience_derived` is an ENV GATE (an
-/// A/B arm for attribution), never a dial on the (δ, ρ, r) triangle.
-pub fn recovery_floor_us(patience_derived: bool, jitter_us: u64, srtt_us: u64) -> u64 {
-    if patience_derived {
-        patience_floor_us(jitter_us, srtt_us)
-    } else {
-        NACK_RETX_COOLDOWN_FLOOR_US
-    }
 }
 
 /// P10b tail-sweep timeout (µs): 2×SRTT clamped to
@@ -710,325 +697,19 @@ pub fn derived_recovery_round_us(srtt_us: u64, jitter_us: u64) -> u64 {
     srtt_us.saturating_mul(2).max(patience_floor_us(jitter_us, srtt_us))
 }
 
-// ── The RACK-SHAPED recovery round (`RWM_RACK_CLOCKS`, default OFF) ───────
-//
-// Paper §16.68. RFC 8985 §6.2 Step 4, transplanted VERBATIM, with its own
-// constants and no others:
-//
-//     RACK.reo_wnd = min(RACK.reo_wnd_mult * RACK.min_RTT / 4, SRTT)
-//     "The RACK reordering window MUST be bounded, and this bound SHOULD be
-//      SRTT."
-//     reo_wnd_mult = N+1 after N DSACK-detected spurious recoveries, persisted
-//      for up to 16 loss recoveries — "to bound such spurious recoveries to
-//      approximately once every 16 recoveries (less than 7%)."
-//
-// THE SPECIFICATION FAILURE THIS LAW EXISTS TO RECORD. Our two clocks are
-// RE-PROBE cadences: the tail sweep synthesizes a gap report for an
-// already-known cumulative blocker, and the hole refresh re-advertises an
-// already-known hole. Neither decides that a symbol is lost. Their RFC 8985
-// counterpart is therefore §7.2's TLP PTO — `2*SRTT`, bounded ONLY by
-// `TCP_RTO_expiration()`, whose RFC 6298 definition carries a 1-SECOND
-// minimum. **RFC 8985 publishes NO RTT-relative ceiling for a re-probe
-// cadence.** The one relatively-bounded expression it does publish (above) is
-// bounded by SRTT precisely because its base is `min_RTT/4`, a much smaller
-// quantity; grafting that ceiling onto a `2*SRTT` base is arithmetically
-// vacuous, since `min(2*srtt, srtt) == srtt` identically.
-//
-// So `2*SRTT` with no ceiling IS RFC 8985's answer for these two sites — and
-// that law already exists as `RWM_DERIVED_SWEEP` above, built 2026-08-12 and
-// measured INERT as a lever (§16.53, −23 %/−28 % goodput across two sessions).
-// The cross-check's Tier-2 item 2.1 asked for a construction its own cited
-// source does not contain. §16.68 records that as a backlog specification
-// error rather than closing it, and this function is the faithful transplant
-// that makes the finding MEASURABLE instead of asserted.
-//
-// THE ADAPTIVE HALF IS STRUCTURALLY INERT ON THIS STACK, and that is a DEFECT
-// FINDING under CLAUDE.md's clamp rule, not a footnote. `reo_wnd_mult`
-// advances on DSACK-detected spurious recoveries; this transport has no DSACK
-// and no spurious-recovery detector. At `mult = 1` the SRTT ceiling CANNOT
-// bind, because `min_rtt <= srtt` implies `min_rtt/4 < srtt` identically —
-// and a bound that provably never binds turns its law into
-// `max(min_rtt/4, G)` and hides the law's shape from every measurement taken
-// through it. `RWM_RACK_REO_MULT` therefore exposes RACK's own multiplier
-// over RACK's own range [1, 17] so the ceiling is REACHABLE by a battery;
-// exposing a cited parameter over its cited range invents nothing, leaving a
-// bound unreachable would.
-//
-// This is an ENV GATE (an A/B attribution arm), never a dial on the
-// (δ, ρ, r) triangle: nothing here keys on δ, on ρ, or on a hint.
+// (The rival recovery-clock arms that used to follow here — the RACK round,
+// `RWM_RACK_CLOCKS`/`RWM_RACK_REO_MULT`, paper §16.68, and the Cantelli
+// quantile round with its α seat, `RWM_QUANTILE_CLOCKS`/`RWM_ALPHA_OVERRIDE`,
+// §16.69 — were refuted and removed. The shipped clamp and
+// `RWM_DERIVED_SWEEP` above are the two recovery rounds the engine computes.)
 
-/// RFC 8985 §6.2 Step 4's initial `RACK.reo_wnd_mult`.
-pub const RACK_REO_WND_MULT_INIT: u64 = 1;
-/// RFC 8985 §6.2 Step 4's maximum `RACK.reo_wnd_mult` — `N+1` at the RFC's own
-/// persistence bound of `N = 16` loss recoveries (*"less than 7%"* spurious).
-pub const RACK_REO_WND_MULT_MAX: u64 = 17;
-/// RFC 8985 §6.2 Step 4's divisor on `RACK.min_RTT`. CITED, and cited as NOT
-/// derived: the RFC's own note says Linux TCP used the same factor and
-/// *"experience showed this worked reasonably well"* — inherited practice.
-pub const RACK_MIN_RTT_DIVISOR: u64 = 4;
-
-/// The RACK-shaped recovery round (µs) — RFC 8985 §6.2 Step 4 verbatim,
-/// floored at the timer granularity RFC 9002 §6.1.2 puts in the same position
-/// (`max(kTimeThreshold * max(smoothed_rtt, latest_rtt), kGranularity)`).
-///
-/// ```text
-///   round_RACK(srtt, min_rtt, mult)
-///       = max( min( mult · min_rtt / 4,  srtt ),  TIMER_GRANULARITY_US )
-/// ```
-///
-/// **Zero invented constants**: `4`, the `SRTT` ceiling and `mult`'s range are
-/// all RFC 8985 §6.2 Step 4's; `TIMER_GRANULARITY_US` is the tree's own,
-/// already declared as RFC 9002's kGranularity analogue at
-/// [`patience_floor_us`].
-///
-/// With NO min-RTT sample yet there is nothing to derive from and the caller
-/// keeps its legacy fallback verbatim — an information-availability fallback,
-/// not a mode.
-///
-/// Shape and bind-reachability pinned by
-/// `tests/recovery_bench.rs::the_rack_round_transplants_rfc8985_and_its_ceiling_is_unreachable_at_the_measured_cells`.
-pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
-    let mult = mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
-    let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
-    // "MUST be bounded, and this bound SHOULD be SRTT" — RFC 8985 §6.2 Step 4.
-    base.min(srtt_us).max(TIMER_GRANULARITY_US)
-}
-
-// ── The DERIVED QUANTILE recovery round (`RWM_QUANTILE_CLOCKS`, OFF) ──────
+// ── The quantile-native window law (paper §16.76) ─────────────────────
 //
-// Paper §16.69, and §16.65's named novelty gap: *no published application of
-// sequential change detection to transport timeouts.* A recovery clock's whole
-// job is to wait long enough that an ack which was going to arrive HAS
-// arrived, so the clock IS a quantile of the ack-arrival distribution, and the
-// fraction every published law puts in front of SRTT is standing in for it.
-// RFC 8985 §7.2 says so in its own prose: *"delay variance can cause an ACK to
-// be delayed beyond the SRTT. Hence, the PTO is conservatively chosen to be
-// the next integral multiple of SRTT."*
-//
-//     W(α) = srtt + k(α)·σ_rtt ,   k(α) = √((1 − α)/α)    ← CANTELLI (1929),
-//                                    the one-sided Chebyshev inequality:
-//                                    P(X − μ ≥ k·σ) ≤ 1/(1 + k²)
-//
-// Distribution-free, closed form, ZERO fitted coefficients — and REFUTED THREE
-// WAYS on this stack at the contract's own α (§16.69), which is why the gate
-// exists to make the refutation reproducible rather than asserted:
-//
-//   1. LOOSE. `α = target_tail_loss × ζ(hint)` is 1e-5 at Auto, so k = 316 and
-//      the clock is 3.24 s at c8 against a 100 ms clamp. Tightening it means
-//      assuming a distribution, whose coefficient is a fitted constant.
-//   2. UNESTIMABLE. The empirical route needs ~1e5 samples for a 1−1e-5
-//      quantile, and the Copa RTT store is a MIN-DEQUE that discards the upper
-//      tail by construction. Both routes fail on the same number.
-//   3. A CATEGORY ERROR, and this is the one that matters. `target_tail_loss`
-//      is P(symbol never delivered); α is P(retransmit wasted). Pricing the
-//      rate of the second from the tolerated rate of the first asserts they
-//      cost the same. The honest mapping needs the RATIO of those two costs —
-//      which exists nowhere in this repository and has no published value.
-//
-// ENV GATE, never a dial: α is read from the CONTRACT (the r leg's declared
-// failure probability, continuous in the hint through ζ), and nothing here
-// keys on a threshold in the (δ, ρ, r) triangle.
-
-/// The contract's DEFAULT base tail-loss target — `config.rs`'s own
-/// `unwrap_or(1e-5)`, named here so the two cannot drift silently.
-///
-/// It was a MIRROR until 2026-09-08 (§16.81): the seat read this
-/// constant because "the config does not reach this seat", so a tunnel
-/// configured at 1e-4 or 1e-6 priced its α at 1e-5 anyway. Both ends now take
-/// the base as an ARGUMENT (`config.target_tail_loss`, plumbed to the sender
-/// policy and to the receiver task), and this constant is what an unconfigured
-/// tunnel resolves to — a default, not a mirror.
-pub const CONTRACT_TAIL_LOSS_BASE: f64 = 1e-5;
-
-/// The contract-declared false-alarm rate α on the r leg — paper §16.69.
-/// `target_tail_loss × ζ(δ)`, where ζ is the ONE declared price ratio of the
-/// contract's own δ (`raptorpath_math::zeta_of_delta(delta_price(hint))`).
-/// Continuous in the dial: no threshold, no mode bit, the same ζ the Copa δ
-/// mapping consumes, and — since §16.81 — the same δ, so `RWM_DELTA` reaches
-/// α along with b and β instead of α alone staying pinned to a preset.
-pub fn contract_alpha(base_tail_loss: f64, hint: ProtocolHint) -> f64 {
-    (base_tail_loss * raptorpath_math::zeta_of_delta(delta_price(hint)))
-        .clamp(f64::MIN_POSITIVE, 1.0)
-}
-
-/// The α ACTUALLY supplied to the quantile law — the contract's own, unless
-/// the EXPERIMENT knob `RWM_ALPHA_OVERRIDE` replaces it (`gates.rs`).
-///
-/// **This is the seat §16.69 refuted, and the refutation is of what FEEDS α.**
-/// Reason 3 is a CATEGORY ERROR in the mapping `α = target_tail_loss × ζ`, not
-/// in the Cantelli construction `W(α) = srtt + √((1−α)/α)·σ`, which was never
-/// the defective part. The cost-ratio memo (`docs/research/cost-ratio-memo.md`)
-/// lays out four candidate mappings, recommends none, and shows they are three
-/// points on one curve — so the measurement that adjudicates them is a SWEEP of
-/// α with everything else held fixed. This function is the one place that sweep
-/// enters the engine.
-///
-/// **It is an OVERRIDE, not a law.** `None` is byte-identical to the engine
-/// before this existed. Nothing continuous in (δ, ρ, r) is expressed here and
-/// nothing may ship reading the override: a shipped α must be DERIVED from the
-/// triangle, which is the decision this sweep informs and does not take.
-pub fn resolved_alpha(base_tail_loss: f64, hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
-    match override_alpha {
-        Some(a) if a.is_finite() && a > 0.0 && a <= 1.0 => a,
-        // Garbage that survived the gate's own filter, or absent: the contract.
-        _ => contract_alpha(base_tail_loss, hint),
-    }
-}
-
-/// The RESOLVED-α echo — one line, two-sided, emitted once per site that owns
-/// a quantile clock.
-///
-/// `[GATES] RWM_ALPHA_OVERRIDE=` says what was ASKED FOR. This says what the
-/// law is EVALUATING, at the site that evaluates it, together with the `k(α)`
-/// it produces — because α and k are the sweep's independent variable and a
-/// row that cannot state its own α off its own log is not a row. Printed on
-/// EVERY arm including the control (`quantile=0`), so "quantile clocks off"
-/// is as checkable as "quantile clocks on", per MEASUREMENT DISCIPLINE 15.
-#[allow(clippy::too_many_arguments)]
-pub fn qalpha_report_line(
-    site: &str,
-    quantile: bool,
-    form: WForm,
-    contract: f64,
-    override_alpha: Option<f64>,
-    resolved: f64,
-) -> String {
-    // §16.76: `form=` and the RESOLVED window length `N(α)` sit here, on the
-    // same line as the α they are derived from, for the reason `alpha=` does —
-    // `[GATES]` can only say what was ASKED FOR. `win_n=unavail` is the honest
-    // rendering at an α where `N(α)` exceeds `QNATIVE_WINDOW_MAX`, i.e. where
-    // §16.69 reason 2 still binds; it is never a number the law did not use.
-    let win_n = qnative_window_n(resolved)
-        .map_or_else(|| "unavail".to_string(), |n| n.to_string());
-    format!(
-        // `fa_class` LAST, and not only because it is useful there. Both
-        // `[RACK]` and `[RFA]` end on this same constant, and a run of this
-        // gauge showed why that convention earns its keep: an interleaved
-        // `tracing` write landed inside the final field, so `k=2.1059` parsed
-        // as `k=2.1059<ansi><timestamp>`. **The last field of a gauge line is
-        // the one a concurrent writer corrupts**, so the last field is a
-        // CONSTANT the parser already knows and can lose without losing a
-        // datum. Every load-bearing number sits ahead of it.
-        "[QALPHA] site={} quantile={} form={} win_n={} contract_alpha={:.6e} override={} \
-         alpha={:.6e} k={:.4} fa_class={:.4}",
-        site,
-        quantile as u8,
-        form.as_str(),
-        win_n,
-        contract,
-        override_alpha.map_or("unset".to_string(), |a| format!("{a:.6e}")),
-        resolved,
-        cantelli_k(resolved),
-        RACK_SPURIOUS_BUDGET,
-    )
-}
-
-/// Cantelli's one-sided Chebyshev multiplier — `k(α) = √((1 − α)/α)`.
-///
-/// DERIVED, distribution-free, no fitted coefficient: for ANY distribution
-/// with mean μ and standard deviation σ, `P(X − μ ≥ k·σ) ≤ 1/(1 + k²)`, so
-/// setting `1/(1 + k²) = α` gives this closed form. At the contract's own α it
-/// reads 3 162 / 316 / 31.6 at Realtime / Auto / Bulk — which is §16.69's
-/// refutation reason 1, computed rather than argued.
-pub fn cantelli_k(alpha: f64) -> f64 {
-    let a = alpha.clamp(f64::MIN_POSITIVE, 1.0);
-    ((1.0 - a) / a).max(0.0).sqrt()
-}
-
-/// The DERIVED quantile recovery round (µs) — paper §16.69.
-/// `W(α) = srtt + k(α)·σ`, floored at the timer granularity for the same
-/// information-availability reason the RACK law is.
-pub fn quantile_recovery_round_us(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
-    let w = srtt_us as f64 + cantelli_k(alpha) * sigma_us as f64;
-    (w.max(0.0) as u64).max(TIMER_GRANULARITY_US)
-}
-
-// ── The QUANTILE-NATIVE recovery round (`RWM_W_FORM=quantile`, OFF) ───────
-//
-// Paper §16.76. §16.69 wrote the clock's job and then could not evaluate the
-// quantity it named:
-//
-//     W(α) = F⁻¹_X(1 − α)      ← the construction
-//     W(α) = srtt + k(α)·σ     ← what it had to settle for, because a
-//                                1 − 1e-5 quantile needs ~1e5 samples
-//
-// The bound exists to buy a tail quantile WITHOUT samples, and it is paid for
-// in looseness (k = 316 at the contract's own α). **That trade is priced by α
-// and by nothing else, and the α-sweep does not run where it favours the
-// bound**: on `[0.002, 0.40]` the direct route needs 25–5 000 samples and the
-// cells supply 684–20 158 ack samples per second on the sender legs. So:
-//
-//     W_q(α) = X_(N−K+1)                 the K-th LARGEST of the window's N
-//                                        most recent raw ack-arrival samples
-//     N(α)   = max( ⌈K/α⌉ , 2K ) ,  K = 10
-//
-// NO σ, NO k(α), NO srtt, NO smoothing gain, NO assumed distribution and NO
-// reference series. `K = 10` is the standard order-statistic exceedance
-// requirement, CITED — the same "≥ 10" `SIGMA_CAND_WINDOW`'s own derivation
-// cites for its `P90`.
-//
-// WHY THIS IS NOT AN IMPROVEMENT ON THE ESTIMATOR — IT REMOVES THE TERM THE
-// ESTIMATOR WAS FOR. The τ-lag battery's rebuilt clause `B` measured the
-// shipped `sig_us` at a median β of 0.039 against its own functional, and read
-// the gap: the Cantelli form wants the ack-arrival distribution's MARGINAL
-// dispersion and a tracking EWMA supplies a CONDITIONAL one — 20–300× at seven
-// of eight sender legs. `W_q` never forms a deviation against a reference, so
-// the category error cannot occur; and a rank statistic at level `1 − α` does
-// not move when the far tail wanders, which is the second failure family (one
-// rep in eighty moved `sig`'s pooled `R_total` by 33×; the two rank gauges on
-// the same row moved 4 % and 21 %).
-//
-// AND `W_q ≤ max(window)` STRUCTURALLY. §16.69 reason 1 — the clock waiting
-// 316 standard deviations — is removed by construction rather than by choosing
-// α to avoid it: this clock cannot exceed an RTT the path actually realized.
-//
-// EXPERIMENT ARM, never a dial. `RWM_W_FORM` lives INSIDE `RWM_QUANTILE_CLOCKS`
-// (both default OFF) and selects between two RIVAL LAWS FOR ONE QUANTITY — the
-// same shape the `quantile / rack / derived` precedence chain below already
-// has, and the same reason its precedence is written down rather than left to
-// evaluation order. Nothing keys on a threshold in the (δ, ρ, r) triangle, and
-// nothing may ship reading it: a shipped α must be DERIVED from the triangle.
-
-/// **WHICH `W` LAW THE ARMED QUANTILE CLOCK EVALUATES** — `RWM_W_FORM`, paper
-/// §16.76. Two RIVAL LAWS FOR ONE QUANTITY, exactly like the
-/// `quantile / rack / derived` chain, and the selection is an A/B EXPERIMENT
-/// ARM behind a default-OFF gate — never a dial of the (δ, ρ, r) triangle.
-///
-/// [`WForm::Cantelli`] is the DEFAULT and is byte-identical to the engine
-/// before this existed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum WForm {
-    /// `W(α) = srtt + √((1−α)/α)·σ` — §16.69's distribution-free bound.
-    /// **The default**: absent, empty or unparseable `RWM_W_FORM` lands here.
-    #[default]
-    Cantelli,
-    /// `W_q(α) = X_(N(α)−K+1)` — §16.76's direct empirical quantile.
-    Quantile,
-}
-
-impl WForm {
-    /// The RESOLVED token, for the two-sided echo. A row that cannot state
-    /// which law it evaluated off its own log is not a row.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WForm::Cantelli => "cantelli",
-            WForm::Quantile => "quantile",
-        }
-    }
-
-    /// Parse `RWM_W_FORM`. **Garbage resolves back to ABSENT** — the
-    /// `RWM_ALPHA_OVERRIDE` rule, and for the same reason: a mistyped arm must
-    /// be READ off the run's own output rather than inferred. Case- and
-    /// whitespace-insensitive; everything else is `None`, and the gate turns
-    /// `None` into [`WForm::Cantelli`] **and says so on the echo**.
-    pub fn parse(raw: &str) -> Option<Self> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "cantelli" => Some(WForm::Cantelli),
-            "quantile" => Some(WForm::Quantile),
-            _ => None,
-        }
-    }
-}
+// `W_q(a) = X_(N(a)−K+1)`, `N(a) = max(⌈K/a⌉, 2K)`, `K = 10`: the order
+// statistic the HOLD-DOWN clock (§16.77, `RWM_HOLDDOWN_Q`) evaluates on the
+// hole-resolution stream at `a = 1 − q`. It was built as a recovery-clock
+// arm (`RWM_W_FORM=quantile` inside `RWM_QUANTILE_CLOCKS`); that arm was
+// refuted and removed, and the window law stays as the hold-down's.
 
 /// The order-statistic EXCEEDANCE COUNT `K` of the quantile-native window law
 /// — **CITED, not fitted** (paper §16.76.3).
@@ -1100,7 +781,7 @@ pub fn qnative_window_n(alpha: f64) -> Option<usize> {
 /// falls through rather than truncating (§16.76.5(1), the UNSCOREABLE rule).
 ///
 /// Floored at the timer granularity for the same information-availability
-/// reason [`quantile_recovery_round_us`] and the RACK law are.
+/// reason the derived recovery round is.
 pub fn qnative_recovery_round_us(window: &[u32], alpha: f64) -> Option<u64> {
     let n = qnative_window_n(alpha)?;
     if window.len() < n {
@@ -1134,42 +815,17 @@ pub const QCLK_SAMPLE_CAP: usize = 4096;
 
 /// The `[QCLK]` gauge — **the REALIZED recovery clock, as a DISTRIBUTION.**
 ///
-/// **The defect this repairs, stated as the measurement that forced it.**
-/// `W(α) = srtt + k(α)·σ` is commanded by α and realized through σ, and σ is
-/// not a constant: the plain-window primitives pass measured `σ(c8)` at
-/// **0.191 / 3.140 / 54.836 ms across three reps at n ≈ 18 000** — a **287×
-/// spread at converged sample count** (goal-gate, "THE PASSIVE PRIMITIVES —
-/// PLAIN WINDOW, THE SCORED RESULT" §4, recorded there as the pass's largest
-/// open item). A clock proportional to σ inherits that spread, so **W is a
-/// distribution and an α-sweep that reads only the commanded α is reading a
-/// label, not the treatment.** Two arms commanded at different α can realize
-/// overlapping W and are then not two arms.
-///
-/// **And today the quantile arm records NOTHING.** `[RACK]`'s `round=` is a
-/// mean over evaluations and is fed only under `RWM_RACK_CLOCKS`; neither
-/// clock call site has a `quantile_clocks` gauge branch at all. So this gauge
-/// is what the sweep's own scoring rule requires to exist before it can run.
+/// The tail-sweep timeout and the receiver's hole-refresh cadence are what
+/// the engine WILL wait, per evaluation; this records them as a distribution
+/// (mean, p05/p50/p95, min/max) beside the mean srtt and the mean measured σ
+/// that fed the evaluations. It was built for the quantile-clock arm's
+/// α-sweep (paper §16.69/§16.76, since removed) and is kept because it is the
+/// one per-run readout of the shipped clamp's own realized cadence (the
+/// `RWM_REFRESH_FLOOR_US` reachability reads it).
 ///
 /// Observation only: no gate of its own, no control flow, no wire byte.
-/// Emitted on EVERY arm that evaluated a recovery clock, control included —
-/// the control's realized W is the comparison every arm is read against.
 pub(crate) struct QuantileClockGauge {
     site: &'static str,
-    on: bool,
-    /// Which of the two rival `W` laws this arm evaluated — §16.76. On the
-    /// line so realized-`W` provenance is PER INVOCATION and never inferred
-    /// from the driver's env table.
-    form: WForm,
-    /// The COMMANDED window length `N(α)` for this arm, or `None` where the
-    /// window law asks for more than [`QNATIVE_WINDOW_MAX`]. Constant for the
-    /// invocation because α is; printed so a row can state its own window.
-    win_n: Option<usize>,
-    /// Evaluations at which the quantile-native law actually had its `N(α)`
-    /// samples. **This is the §16.76.5(1) UNSCOREABLE counter**: on the
-    /// quantile form `win_ok / evals` is the fill fraction, and it is the
-    /// quantity that says whether `c8`-`Q002` was measurable at all.
-    win_ok: u64,
-    alpha: f64,
     evals: u64,
     w_sum: f64,
     w_min: u64,
@@ -1177,25 +833,8 @@ pub(crate) struct QuantileClockGauge {
     srtt_sum: f64,
     sigma_sum: f64,
     sigma_n: u64,
-    /// Evaluations where the ARM'S OWN law produced the number. On the
-    /// control every evaluation qualifies (the clamped law always runs); on a
-    /// quantile arm an evaluation with NO σ sample yet falls through to the
-    /// legacy law by design — information availability, never a mode — and
-    /// that fall-through is a DIFFERENT law's output.
-    ///
-    /// **This is a bind-fraction gauge and it is here because the reachability
-    /// test caught its absence.** Pooling the fall-throughs into the
-    /// distribution made a run at α = 0.002 report a `W` p50 of exactly
-    /// 25 000 µs — `TAIL_SWEEP_MIN_US`, the legacy floor — while a run at
-    /// α = 0.9 on the same cell reported 128 ms, i.e. **the sweep's own
-    /// independent variable appeared INVERTED** because the two arms' medians
-    /// were drawn from two different laws. `law_n / evals` makes that visible
-    /// instead of silently wrong (CLAUDE.md FORMULA-FIRST: every clamp gets a
-    /// bind-fraction gauge, reported).
-    law_n: u64,
-    /// Uniformly decimated `W` samples, µs, **from the `law_n` population
-    /// only**. DETERMINISTIC — no RNG, so two runs of one binary on one log
-    /// produce the same quantiles.
+    /// Uniformly decimated `W` samples, µs. DETERMINISTIC — no RNG, so two
+    /// runs of one binary on one log produce the same quantiles.
     samples: Vec<u32>,
     /// Keep every `stride`-th evaluation; doubles each time the store fills,
     /// halving what is held. Uniform over the whole run rather than biased to
@@ -1205,14 +844,9 @@ pub(crate) struct QuantileClockGauge {
 }
 
 impl QuantileClockGauge {
-    pub(crate) fn new(site: &'static str, on: bool, form: WForm, alpha: f64) -> Self {
+    pub(crate) fn new(site: &'static str) -> Self {
         Self {
             site,
-            on,
-            form,
-            win_n: qnative_window_n(alpha),
-            win_ok: 0,
-            alpha,
             evals: 0,
             w_sum: 0.0,
             w_min: u64::MAX,
@@ -1220,7 +854,6 @@ impl QuantileClockGauge {
             srtt_sum: 0.0,
             sigma_sum: 0.0,
             sigma_n: 0,
-            law_n: 0,
             samples: Vec::new(),
             stride: 1,
             seen: 0,
@@ -1231,40 +864,12 @@ impl QuantileClockGauge {
     /// actually use, computed by the caller through the same function the
     /// engine uses — never recomputed here, so this can never report a clock
     /// the engine did not run.
-    /// `w_q_us` is `Some` **iff** the quantile-native law had its full `N(α)`
-    /// window at this evaluation — the one input that decides whether the
-    /// §16.76 arm's own law ran, and the same role `sigma_us` plays for the
-    /// Cantelli arm.
-    pub(crate) fn record(
-        &mut self,
-        w_us: u64,
-        srtt_us: u64,
-        sigma_us: Option<u64>,
-        w_q_us: Option<u64>,
-    ) {
+    pub(crate) fn record(&mut self, w_us: u64, srtt_us: u64, sigma_us: Option<u64>) {
         self.evals += 1;
         if let Some(sg) = sigma_us {
             self.sigma_sum += sg as f64;
             self.sigma_n += 1;
         }
-        if w_q_us.is_some() {
-            self.win_ok += 1;
-        }
-        // The armed law needs its OWN input; without it the caller fell
-        // through to the law below, and that number belongs to a different
-        // law. Cantelli needs a σ sample; the quantile-native form needs
-        // `N(α)` samples in the window (§16.76.5(1)). The control has no such
-        // requirement — its clamped law always runs.
-        let law_ran = match (self.on, self.form) {
-            (false, _) => true,
-            (true, WForm::Cantelli) => sigma_us.is_some_and(|s| s > 0),
-            (true, WForm::Quantile) => w_q_us.is_some(),
-        };
-        if !law_ran {
-            self.seen += 1;
-            return;
-        }
-        self.law_n += 1;
         self.w_sum += w_us as f64;
         self.w_min = self.w_min.min(w_us);
         self.w_max = self.w_max.max(w_us);
@@ -1304,32 +909,25 @@ impl QuantileClockGauge {
         s.sort_unstable();
         let mean = |sum: f64, n: u64| if n == 0 { 0.0 } else { sum / n as f64 };
         format!(
-            "[QCLK] site={} on={} form={} win_n={} win_ok={} alpha={:.6e} k={:.4} \
-             evals={} law_n={} kept={} \
+            "[QCLK] site={} evals={} kept={} \
              w_us_mean={:.1} w_us_p05={} w_us_p50={} w_us_p95={} \
              w_us_min={} w_us_max={} srtt_us_mean={:.1} sigma_us_mean={:.1}/n{} \
              fa_class={:.4}",
             self.site,
-            self.on as u8,
-            self.form.as_str(),
-            self.win_n
-                .map_or_else(|| "unavail".to_string(), |n| n.to_string()),
-            self.win_ok,
-            self.alpha,
-            cantelli_k(self.alpha),
             self.evals,
-            self.law_n,
             s.len(),
-            mean(self.w_sum, self.law_n),
+            mean(self.w_sum, self.evals),
             Self::quantile(&s, 0.05),
             Self::quantile(&s, 0.50),
             Self::quantile(&s, 0.95),
             if self.w_min == u64::MAX { 0 } else { self.w_min },
             self.w_max,
-            mean(self.srtt_sum, self.law_n),
+            mean(self.srtt_sum, self.evals),
             mean(self.sigma_sum, self.sigma_n),
             self.sigma_n,
-            // The sacrificial trailing constant — see `qalpha_report_line`.
+            // The sacrificial trailing constant: stderr has two writers and a
+            // `tracing` write can land inside a gauge line's LAST field, so
+            // the last field is a constant the parser can lose.
             RACK_SPURIOUS_BUDGET,
         )
     }
@@ -1352,7 +950,7 @@ impl Drop for QuantileClockGauge {
 // fires came from a timer and 98.99 % came from the sender answering a
 // receiver gap report** (goal-gate, "THE FIRE-CAUSE PASS — THE SCORED
 // RESULT"). Every recovery clock in this file — the shipped `[25, 100] ms`
-// clamp, `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS`, `RWM_QUANTILE_CLOCKS` — sets
+// clamp, `RWM_DERIVED_SWEEP` (and the removed RACK and quantile arms) — sets
 // the TIMER. The construction below sets the other one: the waiting time the
 // sender applies to a REPORTED hole before it answers with a repair.
 //
@@ -1362,8 +960,7 @@ impl Drop for QuantileClockGauge {
 // instead of on the ack stream. Paper §16.77 is the derivation and the LEVEL's
 // provenance; this is the arm that measures it.
 //
-// **Nothing may ship reading `RWM_HOLDDOWN_Q`**, any more than
-// `RWM_ALPHA_OVERRIDE`. A shipped hold-down would read `q*(δ, ρ, r)` from
+// **Nothing may ship reading `RWM_HOLDDOWN_Q`**. A shipped hold-down would read `q*(δ, ρ, r)` from
 // §16.77.2's stationarity condition, continuous in the triangle; that is the
 // decision this measurement informs and does not take.
 
@@ -1949,123 +1546,6 @@ impl Drop for HoldDownGauge {
         for p in paths {
             eprintln!("{}", self.line(p));
         }
-    }
-}
-
-/// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
-/// clamped law, the derived round under `RWM_DERIVED_SWEEP`, or the RACK
-/// round under `RWM_RACK_CLOCKS`. All three are ENV GATES (A/B arms), never
-/// dials.
-///
-/// **`RWM_RACK_CLOCKS` REPLACES `RWM_DERIVED_SWEEP` when both are set** — the
-/// two are RIVAL LAWS FOR ONE QUANTITY, not composable axes, and the
-/// precedence is made explicit here rather than left to evaluation order.
-/// With no min-RTT sample the RACK arm falls back to whichever of the other
-/// two laws is armed, verbatim.
-pub fn sweep_timeout_us_rack(
-    rack: bool,
-    derived: bool,
-    srtt_us: u64,
-    jitter_us: u64,
-    min_rtt_us: Option<u64>,
-    reo_mult: u64,
-) -> u64 {
-    match (rack, min_rtt_us) {
-        (true, Some(m)) if m > 0 => rack_recovery_round_us(srtt_us, m, reo_mult),
-        _ => sweep_timeout_us(derived, srtt_us, jitter_us),
-    }
-}
-
-/// The tail-sweep timeout under ALL FOUR laws, with the precedence made
-/// explicit — paper §16.68/§16.69. `RWM_QUANTILE_CLOCKS` outranks
-/// `RWM_RACK_CLOCKS` outranks `RWM_DERIVED_SWEEP`: the four are RIVAL LAWS FOR
-/// ONE QUANTITY, not composable axes, and leaving the precedence to evaluation
-/// order is how an arm ends up measuring a law nobody named. Each falls back
-/// to the next when its own input is unavailable — information availability,
-/// never a mode.
-#[allow(clippy::too_many_arguments)]
-pub fn sweep_timeout_us_all(
-    form: WForm,
-    quantile: bool,
-    rack: bool,
-    derived: bool,
-    srtt_us: u64,
-    jitter_us: u64,
-    min_rtt_us: Option<u64>,
-    sigma_us: Option<u64>,
-    w_q_us: Option<u64>,
-    reo_mult: u64,
-    alpha: f64,
-) -> u64 {
-    match (quantile, form) {
-        // §16.76: the DIRECT empirical quantile. `w_q_us` is `None` whenever
-        // the window is shorter than `N(α)` — the UNSCOREABLE rule — and the
-        // evaluation then falls through to the law below, information
-        // availability and never a mode, exactly as the σ arm does.
-        (true, WForm::Quantile) => w_q_us.unwrap_or_else(|| {
-            sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult)
-        }),
-        // §16.69: Cantelli. THE DEFAULT, byte-identical to before `WForm`.
-        (true, WForm::Cantelli) if sigma_us.is_some_and(|s| s > 0) => {
-            quantile_recovery_round_us(srtt_us, sigma_us.unwrap_or(0), alpha)
-        }
-        _ => sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult),
-    }
-}
-
-/// The hole-refresh cadence under ALL FOUR laws. Same precedence and same
-/// fallback chain as [`sweep_timeout_us_all`].
-#[allow(clippy::too_many_arguments)]
-pub fn hole_refresh_all(
-    form: WForm,
-    quantile: bool,
-    rack: bool,
-    derived: bool,
-    srtt: Option<Duration>,
-    jitter_us: u64,
-    min_rtt: Option<Duration>,
-    sigma_us: Option<u64>,
-    w_q_us: Option<u64>,
-    reo_mult: u64,
-    alpha: f64,
-    refresh_floor: Duration,
-) -> Duration {
-    match (quantile, form) {
-        // §16.76. Note the quantile-native form needs NO `srtt` — it is the
-        // one law in this chain whose input is the sample window alone.
-        (true, WForm::Quantile) => w_q_us.map_or_else(
-            || hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-            Duration::from_micros,
-        ),
-        (true, WForm::Cantelli) => match (srtt, sigma_us) {
-            (Some(sv), Some(sg)) if sg > 0 => Duration::from_micros(quantile_recovery_round_us(
-                sv.as_micros() as u64,
-                sg,
-                alpha,
-            )),
-            _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-        },
-        _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-    }
-}
-
-/// The hole-refresh cadence ACTUALLY supplied to the reliable window receiver
-/// under all three laws. Same precedence and same fallback as
-/// [`sweep_timeout_us_rack`].
-pub fn hole_refresh_rack(
-    rack: bool,
-    derived: bool,
-    srtt: Option<Duration>,
-    jitter_us: u64,
-    min_rtt: Option<Duration>,
-    reo_mult: u64,
-    refresh_floor: Duration,
-) -> Duration {
-    match (rack, srtt, min_rtt) {
-        (true, Some(s), Some(m)) if m.as_micros() > 0 => Duration::from_micros(
-            rack_recovery_round_us(s.as_micros() as u64, m.as_micros() as u64, reo_mult),
-        ),
-        _ => hole_refresh(derived, srtt, jitter_us, refresh_floor),
     }
 }
 
@@ -2719,8 +2199,7 @@ fn gen_pipe_depth(rate_sym_per_s: f64, rtt_s: f64, gen_size: usize) -> usize {
 /// cap bounds ONLY the slow path, and the fast path keeps pulling source while the
 /// slow path is full. The summed-anchor #64 bug was a single GLOBAL budget
 /// gain·Σ_i BtlBw_i·RTprop_i that the fast path stalled behind (and that let the
-/// slow path's inflated term over-drive its own queue into bufferbloat). The
-/// retention-store mirror is [`percap_store_full`]. Extracted pure for unit
+/// slow path's inflated term over-drive its own queue into bufferbloat). Extracted pure for unit
 /// testing.
 fn infl_percap_full(per_path: &[(u64, u64)]) -> bool {
     !per_path.iter().any(|&(in_flight, cap)| in_flight < cap.max(1))
@@ -2784,15 +2263,6 @@ pub(crate) struct CopaFeed {
     /// commitment (the spurious-retransmit class — the last flight was
     /// younger than its path's RTprop at ack time).
     attr_witness_prev: AtomicU64,
-    /// feat/window-mtu (`RWM_WIN_DECOUPLE`): the N1-scoped sampler pause.
-    /// The RS sampling composition carries a measured −22…−27 Mbit cost at
-    /// the symmetric dual cell ("C8-Aware Pool Law" ATTRIBUTION), so a
-    /// sampling-only feed constructed for the N = 1 window law must go
-    /// fully inert while ≥ 2 paths are live: `on_sent` records nothing and
-    /// attribution only fast-forwards the cursor. Set by the sender loop at
-    /// the dyn-cap refresh cadence. Always false for `RWM_PLAIN_RS` and the
-    /// full Copa-sole feed (their semantics are unchanged).
-    n1_pause: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Default)]
@@ -2862,16 +2332,7 @@ impl CopaFeed {
             attr_witness: false,
             attr_cross: AtomicU64::new(0),
             attr_witness_prev: AtomicU64::new(0),
-            n1_pause: std::sync::atomic::AtomicBool::new(false),
         }
-    }
-
-    /// feat/window-mtu: pause/resume the N1-scoped sampler (see `n1_pause`).
-    fn set_n1_paused(&self, paused: bool) {
-        self.n1_pause.store(paused, Ordering::Relaxed);
-    }
-    fn n1_paused(&self) -> bool {
-        self.n1_pause.load(Ordering::Relaxed)
     }
 
     /// feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only construction.
@@ -2907,10 +2368,6 @@ impl CopaFeed {
     /// fallback (residual (iii)); a same-path resend just refreshes the
     /// send time (its rate sample is re-snapshotted by `on_src_sent`).
     fn on_sent(&self, seq: u64, path: u32) {
-        // N1-scoped sampler pause: record nothing while ≥ 2 paths are live.
-        if self.n1_paused() {
-            return;
-        }
         let now = now_us();
         match self.seq_path.entry(seq) {
             dashmap::mapref::entry::Entry::Occupied(mut e) => {
@@ -2985,21 +2442,6 @@ fn copa_feed_attribute(
     transport: &Arc<QuicTransport>,
     stats: &Arc<SharedStats>,
 ) {
-    // feat/window-mtu: paused N1-scoped sampler — no samples, no cwnd work;
-    // only fast-forward the attribution cursor so a later resume (paths
-    // dropping back to 1) starts clean at the live frontier. Send records
-    // from before the pause are dropped un-attributed (bounded by the
-    // outstanding store at pause time; the battery topologies never flap).
-    if feed.n1_paused() {
-        let mut c = feed.cursor.lock();
-        if received_up_to >= c.next {
-            c.next = received_up_to + 1;
-        }
-        c.sacked.retain(|&s| s > received_up_to);
-        drop(c);
-        feed.seq_path.retain(|&s, _| s > received_up_to);
-        return;
-    }
     let newly = feed.newly_delivered(received_up_to, sack_ranges);
     if newly.is_empty() {
         return;
@@ -3602,31 +3044,17 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // honest per-path BtlBw anchor (the WindowAck attribution machinery
         // reused sampling-only). The full feed (`wanted`) takes precedence.
         let plain_rs = gates.plain_rs;
-        if !wanted && (plain_rs || gates.win_decouple) && plain_inorder {
+        if !wanted && plain_rs && plain_inorder {
             let feed = CopaFeed::new_sampling_only(gates.rs_attr);
-            if plain_rs {
-                info!(
-                    "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
-                     WindowAck frontier/SACK -> per-path send-interval rate samples; \
-                     CC ownership unchanged; flight-witness attribution={} \
-                     [residual (iii): cross-path retransmit acks younger than the \
-                     retransmit path's RTprop credit the ORIGINAL flight; \
-                     RWM_RS_ATTR=0 = legacy last-sent control])",
-                    feed.attr_witness
-                );
-            } else {
-                // feat/window-mtu: the N1-scoped anchor for the decoupled
-                // window law — same sampling-only machinery, dynamically
-                // PAUSED while >= 2 paths are live (the measured RS dual-cell
-                // composition cost stays structurally unreachable). Starts
-                // PAUSED: the first dyn-cap refresh (~5 ms) unpauses at
-                // N = 1, so a dual bring-up never charges a single symbol.
-                feed.set_n1_paused(true);
-                info!(
-                    "win-decouple N1 sampler ACTIVE (RWM_WIN_DECOUPLE: sampling-only \
-                     send-interval anchor at N=1 only; inert while >=2 paths live)"
-                );
-            }
+            info!(
+                "plain-mode send-interval SAMPLER ACTIVE (RWM_PLAIN_RS sampling-only: \
+                 WindowAck frontier/SACK -> per-path send-interval rate samples; \
+                 CC ownership unchanged; flight-witness attribution={} \
+                 [residual (iii): cross-path retransmit acks younger than the \
+                 retransmit path's RTprop credit the ORIGINAL flight; \
+                 RWM_RS_ATTR=0 = legacy last-sent control])",
+                feed.attr_witness
+            );
             Some(Arc::new(feed))
         } else if wanted && plain_inorder {
             info!(
@@ -3702,25 +3130,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         );
     }
 
-    // ── Derived patience / derived stall gauge (goal-gate "Unlock The
-    //    Default 2") — mechanism-liveness echoes (MEASUREMENT DISCIPLINE
-    //    item 1). Emitted in `run_impl` so both roles echo: the patience
-    //    floor is a SENDER law, the derived stall gauge has a sender arm
-    //    (`sidle2=`) and a receiver arm (`idle2=`), and the battery asserts
-    //    the echo on both logs.
-    if gates.patience_derived {
-        info!(
-            timer_granularity_us = TIMER_GRANULARITY_US,
-            legacy_floor_us = NACK_RETX_COOLDOWN_FLOOR_US,
-            "derived patience ACTIVE (RWM_PATIENCE_DERIVED: the recovery \
-             patience floor becomes timer granularity + the path's own \
-             measured RTT jitter, replacing the 10 ms literal at the RFC \
-             9002 §6.1.2 kGranularity analog and the per-seq retransmit \
-             cooldown; kTimeThreshold 9/8 and kPacketThreshold 3 untouched; \
-             the tail-sweep fallback is inert under its 25–100 ms clamp and \
-             is left alone)"
-        );
-    }
+    // ── Derived stall gauge (goal-gate "Unlock The Default 2") —
+    //    mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). Emitted in
+    //    `run_impl` so both roles echo: the gauge has a sender arm
+    //    (`sidle2=`) and a receiver arm (`idle2=`).
     if gates.sidle_derived {
         info!(
             loop_wake_us = LOOP_WAKE_US,
@@ -3772,9 +3185,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_sack_rx = sack_rx;
     let mut sender_request_rx = request_rx;
     let sender_protocol_hint = config.protocol_hint;
-    // The contract's BASE tail-loss target, sampled beside the hint it prices
-    // alpha with (paper 16.81).
-    let sender_target_tail_loss = config.target_tail_loss;
     // §14.26/§16.82: the completion feed, if a driver published
     // one. `None` on every shipped path.
     let sender_completion_feed = config.completion_feed.clone();
@@ -3799,7 +3209,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_request_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
-                sender_target_tail_loss,
                 sender_window_reliable,
                 sender_window_coded_only,
                 sender_window_generation,
@@ -4074,9 +3483,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         config.reorder_timeout_ms,
         config.reorder_max_size,
         // The contract's own dial position at the RECEIVER (§16.81, in
-        // flight): the same two `config` fields the sender's policy reads.
+        // flight): the same `config` field the sender's policy reads.
         config.protocol_hint,
-        config.target_tail_loss,
     ));
 
     // ADR-0004: periodic cleanup of stale decoders
@@ -4574,8 +3982,11 @@ pub fn pooled_store_cap_unclamped(
     value_multiplier * count_multiplier * pipe_sum
 }
 
-/// Capacity-weighted SHARED outstanding pool (env `RWM_STORE_CAPW`) — the
-/// ADR-0058 "c8 WATCH" follow-up: the c8-aware pool law.
+/// Capacity-weighted SHARED outstanding pool — the pure pooled clamp the
+/// `RWM_POOL_ANCHOR` law evaluates. (Its own A/B arm, `RWM_STORE_CAPW`, the
+/// ADR-0058 "c8 WATCH" follow-up, was refuted as a sizing answer — goal-gate
+/// "C8-Aware Pool Law" — and removed; the function survives as the
+/// pool-anchor seat's clamp.)
 ///
 /// The path-scaled pool (`RWM_STORE_PATHS`) scales by path COUNT:
 /// cap = clamp(gain·N·Σpipe, floor, N·knee), which at asymmetric cells
@@ -4620,103 +4031,6 @@ pub fn capw_store_cap(
     let sum: f64 = terms.iter().map(|t| t.unwrap_or(0.0)).sum();
     let ceiling = n.saturating_mul(pool).max(floor);
     Some((sum.ceil() as usize).clamp(floor, ceiling))
-}
-
-/// Per-path outstanding-account cap (task #86, env `RWM_STORE_PERCAP`).
-///
-/// The #84 residual, named at L1: ONE shared pool cannot be sized for a
-/// c2-deep (fast) and a c3-shallow (slow) path at once — the slow path's
-/// recovery latency scales with pool dwell (static 8192 collapsed it to
-/// 31.8 Mbit/s) while the fast path wants the depth. So each path gets its
-/// OWN account, sized to ITS pipe by Little's law on the store itself:
-///
-///   cap_i = clamp(gain × rate_i × echoRTT_i, floor, pool)
-///
-/// where `pipe_i` = rate_i × echoRTT_i is passed in by the caller —
-/// BtlBw_i (the per-path delivered-rate anchor) × that path's smoothed
-/// ack-ECHO RTT (NOT RTprop: the store drains at the ack clock, so the
-/// account's residence time includes the queue + ack path; the `pool`
-/// ceiling — the measured 2048-per-path knee — bounds the echo-RTT
-/// positive feedback). Under the Copa-sole feed the caller passes cwnd_i
-/// (Copa's operating point IS the per-path pipe, mirroring the pooled
-/// Σcwnd law).
-///
-/// Warm-up (`pipe_i` = None / non-positive, the anchor not yet
-/// established): inherit an equal share of the LEGACY pooled cap
-/// (`legacy_cap` / n_live, bounded to [floor, pool]) — converges to the
-/// derived cap as the anchor warms. The per-path in-flight cap
-/// (`infl_percap_full`, the FMTCP-era #64 fix) is the structural pattern,
-/// generalized here to the plain-reliable retention store.
-///
-/// N = 1 bit-exactness is CALLER-side: the percap law is only engaged for
-/// N ≥ 2 live paths (this function is never consulted at N = 1), so
-/// singles keep the legacy pooled law even with the flag ON.
-pub fn percap_store_cap(
-    pipe_i: Option<f64>,
-    legacy_cap: usize,
-    n_live: usize,
-    gain: f64,
-    floor: usize,
-    pool: usize,
-) -> usize {
-    let ceiling = pool.max(floor);
-    match pipe_i {
-        Some(p) if p > 0.0 => ((gain * p).ceil() as usize).clamp(floor, ceiling),
-        _ => (legacy_cap / n_live.max(1)).clamp(floor, ceiling),
-    }
-}
-
-/// Per-path admission gate (task #86): TUN intake is paused only when NO
-/// path's outstanding account has headroom below its own cap — one path's
-/// full (or recovery-stalled) account never starves another path's
-/// admission. `accounts` = (outstanding_i, cap_i) per live path. The exact
-/// mirror of [`infl_percap_full`] for the retention store.
-///
-/// KEPT despite having no production call site (dead-code batch 2 audit): it
-/// is the UNGUARDED CONTROL LAW that [`percap_store_full_guarded`] — the law
-/// the sender actually runs — is bounded against. Its real consumers are the
-/// degeneracy and c8-miniature tests (`percap_store_full_guarded` with
-/// bound = cap must equal it exactly; the guarded gate must read FULL exactly
-/// where this one still admits). Deleting it would delete the bound, not
-/// dead code.
-pub fn percap_store_full(accounts: &[(usize, usize)]) -> bool {
-    !accounts.iter().any(|&(out, cap)| out < cap.max(1))
-}
-
-/// Delay-aware redirect bound (roadmap item 1, the #86 c8 fix): the maximum
-/// outstanding a cap-full redirect may find on target path j before the
-/// redirect is refused and the store reads FULL for the placement instead.
-///
-/// Derivation (not tuned). The projected dwell of account j is Little's law
-/// on the store, D_j = out_j / rate_j (the store drains at the ack clock).
-/// The guard law is D_j ≤ κ·echoRTT_j — "j can drain its current account
-/// within one echo round". But the app-echo clock is store-dwell-INCLUSIVE:
-/// echoRTT_j ≈ RTprop_j + D_j, so on the LOADED echo clock κ = 1 is vacuous
-/// (D ≤ RTprop + D holds for every D — exactly the measured c8 feedback,
-/// where slow-path echo inflation to 214–811 ms held the account open).
-/// Solving D ≤ κ·(RTprop_j + D) for κ < 1 gives D ≤ (κ/(1−κ))·RTprop_j;
-/// κ = 1/2 (the redirected symbol must still clear within one round AFTER
-/// its own dwell has inflated the echo) gives D ≤ RTprop_j — equivalently
-/// κ = 1 on the FLOOR clock:
-///
-///   bound_j = rate_j × RTprop_j  (the path's honest BDP in symbols)
-///
-/// i.e. a redirect may never park more than one un-queued pipe on the
-/// target. Since cap_j = gain·rate_j·echoSRTT_j (gain 2 = pipe + recovery
-/// runway), the guard reserves the runway term AND any knee-clamp headroom
-/// (the plain-anchor over-read case) for the path's OWN traffic — redirects
-/// consume only the floor-clocked pipe term. Under the Copa-sole feed the
-/// caller passes cwnd_j (Copa's operating point IS the bounded-queue pipe).
-/// Warm-up (no anchor): cap_j/gain — the same "pipe term only" law applied
-/// to the inherited share. Clamped to [1, cap_j]: a one-symbol quantum so a
-/// cold account is never permanently redirect-closed, and never above the
-/// account's own cap.
-pub fn percap_redirect_bound(floor_pipe: Option<f64>, cap_i: usize, gain: f64) -> usize {
-    let ceiling = cap_i.max(1);
-    match floor_pipe {
-        Some(p) if p > 0.0 => (p.ceil() as usize).clamp(1, ceiling),
-        _ => ((cap_i as f64 / gain.max(1.0)).ceil() as usize).clamp(1, ceiling),
-    }
 }
 
 /// Windowed-MIN echo-ratio tracker (feat/percap-honest-cap): K_i = the
@@ -4943,8 +4257,8 @@ pub struct HonestCapPath {
 
 /// ONE collector for the honest per-path cap terms over a path set.
 ///
-/// The three pooled store-cap laws (`RWM_STORE_CAPW`, `RWM_PLAIN_RS` +
-/// `RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`) differ ONLY in (a) which rate
+/// The pooled store-cap laws (`RWM_PLAIN_RS` + `RWM_HONEST_CAP`,
+/// `RWM_POOL_ANCHOR`; formerly also the removed `RWM_STORE_CAPW`) differ ONLY in (a) which rate
 /// source fills [`HonestCapPath`] and (b) which path set the caller
 /// enumerates. Both are the caller's choice; the loop is not.
 ///
@@ -5285,7 +4599,7 @@ pub fn three_term_terms(
 /// ## The clamp
 ///
 /// `[floor, WIN_STORE_MAX]`. The ceiling is the MEMORY bound (4096 × ~1.2 KB
-/// ≈ 5 MB — [`WIN_STORE_MAX`], the same clamp [`win_decouple_cap_ret`]
+/// ≈ 5 MB — [`WIN_STORE_MAX`], the same clamp the removed `win_decouple_cap_ret`
 /// uses), NOT part of the law: the per-path 2048 knee the pooled laws clamp
 /// to is an empirical fit, and the whole point of this law is to DERIVE what
 /// that knee was approximating.
@@ -5854,51 +5168,20 @@ impl Drop for DeltaCapGauge {
     }
 }
 
-/// The `[RACK]` bind-fraction echo for the RACK-shaped recovery round — paper
-/// §16.68, gate `RWM_RACK_CLOCKS`.
+/// The `[RACK]` false-alarm echo — paper §16.68.1's validation of the
+/// recovery plane against RFC 8985 §6.2 Step 4's own published spurious
+/// budget, run on the SHIPPED clamp.
 ///
-/// CLAUDE.md FORMULA-FIRST: *every clamp gets a bind-fraction gauge,
-/// reported.* Neither shipped recovery clock has ever had one — the
-/// `[25, 100] ms` clamp's bind fraction is unmeasured to this day — so this
-/// gauge is the instrument the RACK law owes AND the instrument its
-/// predecessor never had.
-///
-/// * `ceil=` — the fraction of evaluations where RFC 8985 §6.2 Step 4's `SRTT`
-///   ceiling bound. **§16.68 predicts 0.0000 at every measured cell at the
-///   shipped `mult = 1`**, because `min_rtt ≤ srtt` makes `min_rtt/4 < srtt`
-///   identically. A zero here is the DEFECT FINDING, not a clean bill.
-/// * `gran=` — the fraction where the `TIMER_GRANULARITY_US` floor bound.
-/// * `legacy_pin=` — the fraction where the law it REPLACES would have been at
-///   one of its two absolute literals, so the counterfactual's own clamp
-///   behaviour is on the record beside this one.
-/// * `round=` / `legacy=` — the two cadences' means, in µs.
-#[allow(clippy::too_many_arguments)]
-pub fn rack_report_line(
-    evals: u64,
-    at_ceiling: u64,
-    at_gran: u64,
-    legacy_pinned: u64,
-    round_sum: f64,
-    legacy_sum: f64,
-    mult: u64,
-    fired: u64,
-    spurious: u64,
-    on: bool,
-) -> String {
+/// `fa=<spurious>/<fired>` — recovery rounds that fired, and those whose
+/// target's live flight was YOUNGER than its own per-path law threshold (the
+/// data was going to arrive anyway); `fa_frac` their ratio; `fa_class` the
+/// RFC's own 1/16 bar, printed so a parser never has to know it. (The line
+/// also carried the removed `RWM_RACK_CLOCKS` arm's bind fractions; those
+/// fields left with the arm.)
+pub fn rack_report_line(fired: u64, spurious: u64) -> String {
     let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
-    let mean = |s: f64, d: u64| if d == 0 { 0.0 } else { s / d as f64 };
     format!(
-        "[RACK] on={} evals={} ceil={:.4} gran={:.4} legacy_pin={:.4} \
-         round={:.1} legacy={:.1} mult={} fa={}/{} fa_frac={:.4} \
-         fa_class={:.4}",
-        on as u8,
-        evals,
-        frac(at_ceiling, evals),
-        frac(at_gran, evals),
-        frac(legacy_pinned, evals),
-        mean(round_sum, evals),
-        mean(legacy_sum, evals),
-        mult,
+        "[RACK] fa={}/{} fa_frac={:.4} fa_class={:.4}",
         spurious,
         fired,
         frac(spurious, fired),
@@ -6118,8 +5401,8 @@ pub fn rfa_report_line(
 // producers:
 //
 //   * the sender's OWN tail-sweep deadline arm — `pending_gaps =
-//     Some(vec![(seq, seq)])` — which is the arm the quantile/Cantelli `W`
-//     actually clocks (`sweep_timeout_us_all` → `tail_deadline`). THIS, and
+//     Some(vec![(seq, seq)])` — which is the arm the sender's recovery clock
+//     actually clocks (`sweep_timeout_us` → `tail_deadline`). THIS, and
 //     only this, is a timer-driven fire in the sense §16.69 assumed.
 //   * the `nack_rx` channel, whose sole producer is the SACK→gap inversion
 //     in the WindowAck handler. These fires are clocked by the RECEIVER, not
@@ -6139,7 +5422,7 @@ pub fn rfa_report_line(
 //
 // So the split costs NO wire change and NO behaviour change: it reads a
 // field the handler has in scope. That matters for the measurand question,
-// because the refresh arm is clocked by `hole_refresh_all` — the RECEIVER's
+// because the refresh arm is clocked by `hole_refresh` — the RECEIVER's
 // twin of the very law under test. A fire in `gap_refresh` is timer-driven
 // by the receiver's clock; a fire in `gap_data` is driven by DATA ARRIVAL
 // and by no clock at all.
@@ -6185,7 +5468,7 @@ pub enum FireCause {
     /// analog): driven by data arrival, by no clock.
     GapData,
     /// A SACK-bearing WindowAck from the receiver's timer-driven hole
-    /// re-advertisement arm: clocked by `hole_refresh_all` at the RECEIVER.
+    /// re-advertisement arm: clocked by `hole_refresh` at the RECEIVER.
     GapRefresh,
     /// A gap batch that reached the fire site carrying no cause tag. Counted,
     /// never guessed at.
@@ -6330,17 +5613,10 @@ pub fn fcause_report_line(
     )
 }
 
-/// The `[RACK]` tally, fed at every recovery-clock evaluation on the ON arm.
+/// The `[RACK]` / `[RFA]` / `[FCAUSE]` tally: recovery-fire accounting at
+/// the sender and the receiver.
 #[derive(Default)]
 pub(crate) struct RackClockGauge {
-    evals: u64,
-    at_ceiling: u64,
-    at_gran: u64,
-    legacy_pinned: u64,
-    round_sum: f64,
-    legacy_sum: f64,
-    on: bool,
-    mult: u64,
     /// §16.68.1's FALSE-ALARM VALIDATION, and it runs on EVERY arm including
     /// the shipped control — the `[25, 100] ms` clamp's own false-alarm rate
     /// has never been measured in this tree, and a cited empirical fraction
@@ -6408,28 +5684,8 @@ pub(crate) struct RackClockGauge {
 }
 
 impl RackClockGauge {
-    pub(crate) fn new(on: bool, mult: u64) -> Self {
-        Self { on, mult, ..Default::default() }
-    }
-
-    /// Record one evaluation. `round_us` is the realized RACK cadence and
-    /// `legacy_us` the clamped law it replaces, both computed by the caller
-    /// through the same functions the engine uses.
-    pub(crate) fn record(&mut self, srtt_us: u64, min_rtt_us: u64, round_us: u64, legacy_us: u64) {
-        self.evals += 1;
-        self.round_sum += round_us as f64;
-        self.legacy_sum += legacy_us as f64;
-        let mult = self.mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
-        let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
-        if base >= srtt_us && srtt_us > TIMER_GRANULARITY_US {
-            self.at_ceiling += 1;
-        }
-        if round_us == TIMER_GRANULARITY_US && base.min(srtt_us) <= TIMER_GRANULARITY_US {
-            self.at_gran += 1;
-        }
-        if legacy_us == TAIL_SWEEP_MIN_US || legacy_us == TAIL_SWEEP_MAX_US {
-            self.legacy_pinned += 1;
-        }
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
     /// Record one recovery-round FIRE and whether it was a false alarm —
@@ -6560,28 +5816,16 @@ impl RackClockGauge {
 
     /// The `[RACK]` line this gauge would emit right now.
     pub(crate) fn rack_line(&self) -> String {
-        rack_report_line(
-            self.evals,
-            self.at_ceiling,
-            self.at_gran,
-            self.legacy_pinned,
-            self.round_sum,
-            self.legacy_sum,
-            self.mult,
-            self.fired,
-            self.spurious,
-            self.on,
-        )
+        rack_report_line(self.fired, self.spurious)
     }
 }
 
 impl Drop for RackClockGauge {
     fn drop(&mut self) {
-        // Emitted on EVERY arm that fired a recovery round, not only the ON
-        // arm — §16.68.1's validation is about the CONTROL as much as the
-        // successors, and the shipped clamp's false-alarm rate is the number
-        // this tree has never had. A run that fired nothing stays silent.
-        if self.on || self.fired > 0 {
+        // Emitted whenever a recovery round fired — §16.68.1's validation of
+        // the shipped clamp's false-alarm rate. A run that fired nothing
+        // stays silent.
+        if self.fired > 0 {
             eprintln!("{}", self.rack_line());
         }
         // The receiver-site class breakdown behind that `fa=`. Emitted on the
@@ -6800,263 +6044,18 @@ pub fn store_cap_sf_reset() {
     }
 }
 
-/// feat/window-mtu part 1 (`RWM_WIN_DECOUPLE`, goal-gate "Window Decoupling
-/// + MTU Scaling"): the retention/memory ceiling once the window and the
-/// inflight are decoupled — 4096 × ~1.2 KB ≈ 5 MB. The legacy 1024 latch's
-/// memory role only; the wire budget is `win_decouple_allow`.
+/// The retention/memory ceiling of the outstanding store — 4096 × ~1.2 KB
+/// ≈ 5 MB (introduced by feat/window-mtu part 1, goal-gate "Window
+/// Decoupling + MTU Scaling", whose decoupled law was refuted and removed;
+/// the bound survives as the memory clamp of the composed/three-term laws).
 pub const WIN_STORE_MAX: usize = 4096;
 
-/// The stall-insurance meter's ceiling: one recovery-engine round on the
-/// sweep-cadence clamp — the SAME named constant the honest cap's runway
-/// uses ([`HONEST_RECOVERY_ROUND_S`]). Fixed by the 2026-08-06 diagnosis
-/// amendment (R_ins = R).
-pub const WIN_STALL_INS_S: f64 = HONEST_RECOVERY_ROUND_S;
-
-/// The decoupled WIRE budget (part 1 law; diagnosis-amended constants):
-///
-///   allow = base + rate·min(stall_age, R_ins)
-///
-/// where `base` = anchor·(K + gain − 1) (residence on the measured unloaded
-/// clock + probe headroom; under Copa-sole the caller passes gain·Σcwnd)
-/// and the metered term is the stall insurance made EXPLICIT and
-/// CONTINUOUS: the 2026-08-06 diagnosis refuted all three pre-registered
-/// insurance channels (holes ≤ 7% of any window; release gaps 2–12 ms;
-/// no multi-round tail) and named SUB-SWEEP ACK-GRANULARITY COVER — a
-/// right-sized static window is consumed by its own queue (Little's law:
-/// zero slack), so every frontier micro-freeze idles the wire. Here the
-/// allowance grows at exactly the anchor rate while the frontier is
-/// frozen (micro or sweep scale alike, no threshold, no mode bit) and
-/// falls back to `base` when it advances.
-pub fn win_decouple_allow(base: f64, rate: f64, stall_age_s: f64) -> f64 {
-    base + rate.max(0.0) * stall_age_s.clamp(0.0, WIN_STALL_INS_S)
-}
-
-/// The decoupled RETENTION backstop (part 1 law): the un-SACKed total —
-/// head span PLUS recovery-stalled holes — may reach the full metered
-/// allowance plus one recovery round of hole capacity (N_hole = 1, from
-/// the diagnosis: hole population ≤ 70 everywhere), memory-clamped.
-pub fn win_decouple_cap_ret(base: f64, rate: f64, rtprop_s: f64, floor: usize) -> usize {
-    let r = rate.max(0.0);
-    ((base + r * (WIN_STALL_INS_S + HONEST_RECOVERY_ROUND_S + rtprop_s.max(0.0))).ceil()
-        as usize)
-        .clamp(floor.min(WIN_STORE_MAX), WIN_STORE_MAX)
-}
-
-/// Guard-aware admission gate (roadmap item 1). `accounts` = (outstanding_i,
-/// cap_i, redirect_bound_i) per live path. Three regimes:
-///
-/// - every account cap-full → FULL (the unguarded law, unchanged);
-/// - no account cap-full → admit (every pick places on its own account);
-/// - SOME account cap-full → a pick landing there must redirect, so
-///   admission stays open only while a guard-eligible target exists
-///   (out_j < min(cap_j, bound_j)) — otherwise the store reads FULL and the
-///   existing admission pause engages: backpressure, don't park. (The #73
-///   lesson does NOT recur here: the pause path is the battery-proven
-///   percap admission gate, not a new deferral mechanism.)
-///
-/// With bound_j = cap_j (guard off) this degenerates exactly to
-/// [`percap_store_full`].
-pub fn percap_store_full_guarded(accounts: &[(usize, usize, usize)]) -> bool {
-    let any_open = accounts.iter().any(|&(out, cap, _)| out < cap.max(1));
-    if !any_open {
-        return true;
-    }
-    let any_capfull = accounts.iter().any(|&(out, cap, _)| out >= cap.max(1));
-    if !any_capfull {
-        return false;
-    }
-    !accounts
-        .iter()
-        .any(|&(out, cap, bound)| out < cap.min(bound).max(1))
-}
-
-/// Per-path placement redirect (task #86 + roadmap item 1): the admission
-/// gate only admits while a placement is possible — make it land there.
-/// Keeps `chosen` when its OWN account is below its cap (the guard gates
-/// redirects only, never a path's own picks); otherwise redirects to the
-/// guard-eligible path (out < min(cap, redirect_bound) — see
-/// [`percap_redirect_bound`]: the target must be able to drain its account
-/// within one floor-clock echo round, so a redirect never parks symbols
-/// behind a standing queue) with the most RELATIVE headroom. No eligible
-/// target (all-full, or every open account past its dwell bound — racing
-/// the guarded gate): keep `chosen` (the gate reads FULL and pauses intake
-/// next iteration; the slop is one placement). `accounts` =
-/// (path, outstanding_i, cap_i, redirect_bound_i); bound = cap is the
-/// unguarded legacy redirect.
-pub fn percap_place_path(
-    chosen: crate::scheduler::PathId,
-    accounts: &[(crate::scheduler::PathId, usize, usize, usize)],
-) -> crate::scheduler::PathId {
-    if accounts
-        .iter()
-        .any(|&(p, out, cap, _)| p == chosen && out < cap.max(1))
-    {
-        return chosen;
-    }
-    accounts
-        .iter()
-        .filter(|&&(_, out, cap, bound)| out < cap.min(bound).max(1))
-        .max_by(|a, b| {
-            let h = |&(_, out, cap, bound): &(crate::scheduler::PathId, usize, usize, usize)| {
-                1.0 - out as f64 / cap.min(bound).max(1) as f64
-            };
-            h(a).partial_cmp(&h(b)).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|&(p, _, _, _)| p)
-        .unwrap_or(chosen)
-}
-
-/// One live path's account state as the bounded-borrowing law sees it
-/// (feat/store-borrowing, paper §16.22).
-#[derive(Clone, Copy, Debug)]
-pub struct BorrowAccount {
-    pub path: u32,
-    /// Account occupancy: symbols CHARGED to this path (own + lent-out).
-    pub out: usize,
-    /// The account's derived cap (honest law / legacy percap law).
-    pub cap: usize,
-    /// Pipe occupancy: symbols FLYING on this path
-    /// (= out − lent + borrowed, corrected by the loan ledger).
-    pub fly: usize,
-    /// Honest drain rate, sym/s (BtlBw_i under RWM_PLAIN_RS;
-    /// cwnd_i/RTprop_i under the Copa-sole feed). None = warm-up.
-    pub rate: Option<f64>,
-    /// RTprop_i (windowed-min floor clock), seconds. None = warm-up.
-    pub rtprop_s: Option<f64>,
-}
-
-/// The loan's return latency (paper §16.22.2): the borrowed symbol's
-/// expected residence on the BORROWER's pipe, on the floor clock —
-/// queue drain plus one flight: T_return(j) = fly_j/rate_j + RTprop_j.
-/// None on warm-up (an unmeasured borrower admits no loans).
-pub fn percap_t_return(borrower: &BorrowAccount) -> Option<f64> {
-    match (borrower.rate, borrower.rtprop_s) {
-        (Some(r), Some(rtp)) if r > 0.0 && rtp >= 0.0 => {
-            Some(borrower.fly as f64 / r + rtp)
-        }
-        _ => None,
-    }
-}
-
-/// The bounded-borrowing law (paper §16.22.2, derived not tuned):
-///
-///   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j))
-///
-/// — lend only headroom the lender cannot use within the loan's return
-/// latency (the lender's intake is bounded by its own drain rate, so
-/// rate_i·T_return is everything it could possibly place while the loan
-/// is out; reserving it yields the post-loan solvency invariant
-/// cap_i − out_i ≥ rate_i·T_return). Warm-up on EITHER side lends
-/// nothing — the degenerate is isolation, not the pool. The reservation
-/// term is what separates this from the pooled law (T_return := 0 ⇒
-/// lend up to cap_i − out_i ⇒ pooled Σcap sharing), and it makes lending
-/// one-directional at asymmetric cells: a fast lender's reservation
-/// toward a slow pipe exceeds its whole cap (rate_i·T_return(slow) ≫
-/// cap_i), so the #86 parking direction is unrepresentable.
-pub fn percap_lend_room(lender: &BorrowAccount, borrower: &BorrowAccount) -> usize {
-    let Some(t_return) = percap_t_return(borrower) else {
-        return 0;
-    };
-    let Some(rate_i) = lender.rate.filter(|r| *r > 0.0) else {
-        return 0;
-    };
-    let reservation = (rate_i * t_return).ceil() as usize;
-    lender
-        .cap
-        .saturating_sub(lender.out)
-        .saturating_sub(reservation)
-}
-
-/// Pick the lender for a pick landing on cap-full borrower `borrower`:
-/// the live sibling with the largest lend room (> 0). None = no loan
-/// admissible (the caller falls through to the guarded redirect, then to
-/// backpressure).
-pub fn percap_borrow_lender(borrower: u32, accounts: &[BorrowAccount]) -> Option<u32> {
-    let b = accounts.iter().find(|a| a.path == borrower)?;
-    accounts
-        .iter()
-        .filter(|a| a.path != borrower)
-        .map(|a| (a.path, percap_lend_room(a, b)))
-        .filter(|&(_, room)| room > 0)
-        .max_by_key(|&(_, room)| room)
-        .map(|(p, _)| p)
-}
-
-/// True when some cap-full borrower j has an open lend edge from some
-/// lender i (the admission-gate extension: the store is FULL only when
-/// the guarded gate reads full AND no loan is admissible — paper
-/// §16.22.4).
-pub fn percap_lend_edge_exists(accounts: &[BorrowAccount]) -> bool {
-    accounts
-        .iter()
-        .filter(|b| b.out >= b.cap.max(1))
-        .any(|b| {
-            accounts
-                .iter()
-                .filter(|a| a.path != b.path)
-                .any(|a| percap_lend_room(a, b) > 0)
-        })
-}
-
-/// Record one loan in the ledger: `seq` flies on `flyer`, is charged to
-/// `lender` (the caller performs the actual `percap_charge` to the
-/// lender). Gauges: `lent[lender]` and `borrowed[flyer]` correct the
-/// account occupancy into pipe occupancy (fly = out − lent + borrowed).
-pub fn percap_loan_charge(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    seq: u64,
-    lender: u32,
-    flyer: u32,
-) {
-    if loans.insert(seq, (lender, flyer)).is_none() {
-        *lent.entry(lender).or_insert(0) += 1;
-        *borrowed.entry(flyer).or_insert(0) += 1;
-    }
-}
-
-/// Repay one loan on the ack that releases `seq` (SACK/OOO twin of
-/// [`percap_release_seq`]; idempotent the same way).
-pub fn percap_loan_release(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    seq: u64,
-) {
-    if let Some((lender, flyer)) = loans.remove(&seq) {
-        if let Some(l) = lent.get_mut(&lender) {
-            *l = l.saturating_sub(1);
-        }
-        if let Some(b) = borrowed.get_mut(&flyer) {
-            *b = b.saturating_sub(1);
-        }
-    }
-}
-
-/// Repay every loan at or below the cumulative ack (the
-/// [`percap_release_cumulative`] twin).
-pub fn percap_loan_release_cumulative(
-    loans: &mut BTreeMap<u64, (u32, u32)>,
-    lent: &mut std::collections::HashMap<u32, usize>,
-    borrowed: &mut std::collections::HashMap<u32, usize>,
-    ack: u64,
-) {
-    let keep = loans.split_off(&(ack + 1));
-    for (lender, flyer) in loans.values() {
-        if let Some(l) = lent.get_mut(lender) {
-            *l = l.saturating_sub(1);
-        }
-        if let Some(b) = borrowed.get_mut(flyer) {
-            *b = b.saturating_sub(1);
-        }
-    }
-    *loans = keep;
-}
-
-/// Charge one retained seq to its placement path's outstanding account
-/// (task #86). Called in lockstep with the `sent_store` insert; paired
-/// with [`percap_release_seq`] (SACK/OOO removal) and
+/// Charge one retained seq to its placement path's outstanding account —
+/// the per-path store-attribution GAUGE behind `[DIAG] sout=` (task #86's
+/// account bookkeeping; its admission law, `RWM_STORE_PERCAP`, and the
+/// guard/borrowing laws built on it were refuted and removed). Called in
+/// lockstep with the `sent_store` insert; paired with
+/// [`percap_release_seq`] (SACK/OOO removal) and
 /// [`percap_release_cumulative`] (frontier advance) — release is by ack
 /// ONLY, exactly the retention contract.
 pub fn percap_charge(
@@ -7310,9 +6309,6 @@ async fn run_window_sender(
     request_rx: &mut tokio::sync::mpsc::Receiver<RepairRequestBatch>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
-    // The contract's BASE tail-loss target (config.target_tail_loss), the
-    // alpha seat's own base since it stopped mirroring a constant (16.81).
-    target_tail_loss: f64,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
     // policy block above RELIABLE_STORE_MAX).
     reliable: bool,
@@ -7369,7 +6365,6 @@ async fn run_window_sender(
         &gates,
         symbol_size,
         protocol_hint,
-        target_tail_loss,
         reliable,
         coded_only,
         generation,
@@ -7566,14 +6561,6 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
-    if pol.capw_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
-        info!(
-            pool_per_path = pol.store_path_pool,
-            gain = pol.store_bdp_gain,
-            "capacity-weighted outstanding pool ACTIVE (RWM_STORE_CAPW: pool = sum_i anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R over live paths, clamp [floor, N*knee], N>=2 all-warm; fallback = configured pooled law until anchors warm; N=1 legacy)"
-        );
-    }
     if pol.pool_anchor_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -7582,77 +6569,12 @@ async fn run_window_sender(
             "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: N>=2 pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched; N=1 legacy)"
         );
     }
-    // ── Delivery-clocked pool rate anchor (env RWM_POOL_DELIV) ───────────
-    // Goal-gate "Ship The Wins 1b" arm A: attempt 1's send-interval anchor
-    // removed the over-read but BECAME THE BINDER — a send-derived rate can
-    // never ratchet above the cap-limited carried rate, so the pool sat AT
-    // the operating point (win pinned at cap, sweeps 8-21) and c7 landed
-    // 0.968/0.959 vs the required 0.97. The delivery clock is the one rate
-    // source bounded by delivered-packet PHYSICS instead of by the sender's
-    // own admission gate: during a store-refill burst the wire delivers at
-    // the BOTTLENECK rate and the max filter holds it, while
-    // max(send_elapsed, ack_elapsed) + the >= RTprop reject-and-accumulate
-    // guard keep the sample from reading an ack burst. The law reads
-    // max(delivery, send_mean) — ONE formula, no branch, both terms honest
-    // lower bounds, so the pool can only rise relative to attempt 1.
-    if pol.pool_anchor_on && gates.pool_deliv {
-        info!(
-            "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
-        );
-    }
-    if gates.floor_bound {
-        info!(
-            "honest anchor-floor BOUND ACTIVE (RWM_FLOOR_BOUND: cwnd floor = min(gain*max_bw*RTprop, gain*sr*RTprop) - the ack-interval over-read can no longer inflate the floor; still a floor, never a cap; legacy verbatim while the send anchor is cold)"
-        );
-    }
     if pol.store_sack_release_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
             "SACK-clocked store release ACTIVE (RWM_STORE_SACK_RELEASE: SACKed seqs \
              uncounted from the outstanding gate, payload + ARQ maps retained until \
              the cumulative frontier — slot release, never recoverability)"
-        );
-    }
-    if pol.place_slack_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). The INFO
-        // prints whenever the gate is CONFIGURED; the law itself engages
-        // only at N ≥ 2 with a warm ack-rate (the harness expects the echo
-        // per ENV — the c8pool harness-note lesson).
-        info!(
-            "frontier-slack placement ACTIVE (RWM_PLACE_SLACK: cost_i = \
-             max(0, E_i - S)/ref, S = span/R_ack clamped <= 250 ms; S = 0 \
-             cold / N = 1 = shipped-identical)"
-        );
-    }
-    // Slack-law state: refresh timer (5 ms cadence), ack-rate sample
-    // anchor (>= 50 ms windows), EWMA, and the live S gauge for DIAG.
-    let mut ps_refresh_us: u64 = 0;
-    let mut ps_rate_last_us: u64 = 0;
-    let mut ps_rate_last_ack: u64 = 0;
-    let mut ps_rate_ewma: f64 = 0.0;
-    let mut ps_slack_gauge: f64 = 0.0;
-    if pol.percap_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
-        info!(
-            pool_per_path = pol.store_path_pool,
-            gain = pol.store_bdp_gain,
-            floor = pol.store_cap_floor,
-            "per-path outstanding accounting ACTIVE (RWM_STORE_PERCAP: cap_i = clamp(gain*rate_i*echoRTT_i, floor, pool) per live path for N>=2, warm-up = legacy-pool/N; supersedes RWM_STORE_PATHS' pooled gate; N=1 legacy)"
-        );
-    }
-    if pol.percap_guard_on {
-        // Guard mechanism-liveness echo (asserted PRESENT on guarded arms,
-        // ABSENT on the RWM_PERCAP_GUARD=0 regression-control arm).
-        info!(
-            "percap delay-aware redirect guard ACTIVE (roadmap-1: redirect to j only while out_j < bound_j = rate_j*RTprop_j — kappa=1 on the floor clock; Copa feed: cwnd_j; warm-up: cap_j/gain — else the store reads FULL for the placement and admission pauses; RWM_PERCAP_GUARD=0 = unguarded legacy redirect)"
-        );
-    }
-    if pol.percap_borrow_on {
-        // Borrowing mechanism-liveness echo (MEASUREMENT DISCIPLINE):
-        // asserted PRESENT on PBP-B/C1P-B arms, ABSENT on every no-borrow
-        // arm.
-        info!(
-            "bounded store borrowing ACTIVE (RWM_STORE_BORROW, paper 16.22: a cap-full pick flies on its picked pipe, charged to the lender with max lend_i->j = cap_i - out_i - rate_i*T_return(j), T_return(j) = fly_j/rate_j + RTprop_j; loans repay on ack; symmetric cells lend 0 by theorem; warm-up lends 0)"
         );
     }
     if pol.store_cap_unified {
@@ -7686,26 +6608,9 @@ async fn run_window_sender(
             gain = pol.store_bdp_gain,
             floor = pol.store_cap_floor,
             pool_per_path = pol.store_path_pool,
-            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; per-account under RWM_STORE_PERCAP, anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
+            "honest floor-clock store caps ACTIVE (RWM_PLAIN_RS+RWM_HONEST_CAP: cap_i = anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R, K_i = windowed-min echoSRTT/RTprop, R = 100ms recovery-round bound; anchor-sum at N=1; RWM_HONEST_CAP=0 = floor-law control)"
         );
     }
-    if pol.win_decouple_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). Prints
-        // when CONFIGURED; the law engages at N = 1 with a warm anchor
-        // (the harness expects the echo per ENV).
-        info!(
-            gain = pol.store_bdp_gain,
-            "window/inflight decoupling ACTIVE (RWM_WIN_DECOUPLE: wire gate = head \
-             span vs anchor*(K+gain-1) + rate*min(stall_age, 100ms); holes to \
-             retention cap_ret, clamp 4096; N=1 only; Copa-sole ceiling released)"
-        );
-    }
-    // Law state, refreshed with the dyn-cap throttle; wd_engaged gates the
-    // decoupled admission test each iteration.
-    let mut wd_engaged: bool = false;
-    let mut wd_allow_base: f64 = 0.0;
-    let mut wd_rate: f64 = 0.0;
-    let mut wd_cap_ret: usize = 0;
     // Pool-anchor law state (RWM_POOL_ANCHOR, DIAG): whether the N ≥ 2
     // honest send-anchor pool computed the cap at the last refresh, and its
     // Σ before clamping — the mechanism gauges for the "Ship The Wins 1"
@@ -7726,19 +6631,6 @@ async fn run_window_sender(
     // (`PERCAP_K_HALF_WINDOW_US`, now module-level so every consumer of the
     // honest per-path cap keys on the SAME window).
     let mut percap_k: std::collections::HashMap<u32, EchoRatioMin> =
-        std::collections::HashMap::new();
-    // path → cap_i, refreshed with the dynamic-cap throttle. NON-EMPTY is
-    // the "percap law engaged" signal (flag on AND N ≥ 2 live paths).
-    let mut percap_caps: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    // path → redirect_bound_i (roadmap item 1: rate_i×RTprop_i, the
-    // floor-clock dwell bound a cap-full redirect may fill the account to).
-    // Mirrors cap_i (guard degenerate) when RWM_PERCAP_GUARD=0.
-    let mut percap_bounds: std::collections::HashMap<u32, usize> =
-        std::collections::HashMap::new();
-    // path → (rate sym/s, RTprop s) snapshot for the borrow law, refreshed
-    // with the caps (same cadence, same honest sources).
-    let mut percap_rr: std::collections::HashMap<u32, (Option<f64>, Option<f64>)> =
         std::collections::HashMap::new();
     // Throttled cache of the dynamic cap (recomputed off the scheduler lock at
     // most every 5 ms; the pipe/BDP move far slower than the select loop).
@@ -7817,36 +6709,17 @@ async fn run_window_sender(
     /// goal-gate "The Derived Recovery Clamp": the sender site's one-shot
     /// mechanism-liveness echo (ACTIVE + DIVERGED). Observation only.
     let mut derived_round_echo = DerivedRoundEcho::default();
-    // `[RACK]` (paper §16.68): the bind-fraction gauge the shipped
-    // `[25, 100] ms` clamp has never had, and the one CLAUDE.md's
-    // FORMULA-FIRST clamp rule owes any law that adds two new bounds.
-    let mut rack_echo = RackClockGauge::new(pol.rack_clocks, pol.rack_reo_mult);
+    // `[RACK]` (paper §16.68.1): the shipped clamp's recovery-fire
+    // false-alarm accounting.
+    let mut rack_echo = RackClockGauge::new();
     // `[FCAUSE]`'s configuration contract: under generation coding the
     // SACK→gap producer is suppressed (`recv_nack_tx = None`), so both
     // `gap_` classes are structurally empty and only the sender's own
     // tail-sweep timer can fire. The line says which machine it measured.
     rack_echo.set_send_generation(pol.generation);
-    // `[QALPHA]` — the RESOLVED α at THIS site, printed once, two-sided
-    // (`quantile=0` on the control arm as loudly as `quantile=1` on the
-    // treatment). α is the α-sweep's one independent variable and the
-    // `[GATES]` line can only say what was ASKED FOR; this says what the law
-    // evaluates. Emitted on every arm — MEASUREMENT DISCIPLINE 15.
-    eprintln!(
-        "{}",
-        qalpha_report_line(
-            "sender",
-            pol.quantile_clocks,
-            pol.w_form,
-            pol.contract_alpha_base,
-            pol.alpha_override,
-            pol.contract_alpha,
-        )
-    );
     // `[QCLK]` — the REALIZED recovery clock as a DISTRIBUTION, at the site
-    // that runs it. σ moves 287× between reps at c8 and `W ∝ σ`, so a sweep
-    // scored on commanded α alone is scored on a label; see the gauge's decl.
-    let mut qclk_echo =
-        QuantileClockGauge::new("sender", pol.quantile_clocks, pol.w_form, pol.contract_alpha);
+    // that runs it; see the gauge's decl.
+    let mut qclk_echo = QuantileClockGauge::new("sender");
     // `[HOLD]` (paper §16.77) — THE HOLD-DOWN ARM, on the path the fire-cause
     // pass measured at 98.99 % of the fires. Constructed on EVERY arm, control
     // included: with `RWM_HOLDDOWN_Q` absent it stamps nothing, allocates
@@ -8113,62 +6986,9 @@ async fn run_window_sender(
                             // later finds the seq already gone — the
                             // documented no-double-release contract).
                             percap_release_seq(&mut st.percap_acct, &mut st.percap_out, k);
-                            if pol.percap_borrow_on {
-                                percap_loan_release(
-                                    &mut st.percap_loans,
-                                    &mut st.percap_lent,
-                                    &mut st.percap_borrowed,
-                                    k,
-                                );
-                            }
                         }
                     }
                 }
-            }
-        }
-
-        // ── Frontier-slack refresh (RWM_PLACE_SLACK, 5 ms cadence) ────────
-        // S = clamp(span/R_ack, 0, 250 ms); R_ack sampled on >= 50 ms
-        // windows of cumulative-ack advance (delivery truth). S stays 0 —
-        // the shipped-identical operating point — until R_ack warms or
-        // while N < 2 live paths.
-        if pol.place_slack_on {
-            let pnow = now_us();
-            if pnow.saturating_sub(ps_refresh_us) >= 5_000 {
-                ps_refresh_us = pnow;
-                let ack_now = window_ack_seq.load(Ordering::Relaxed);
-                if ps_rate_last_us == 0 {
-                    ps_rate_last_us = pnow;
-                    ps_rate_last_ack = ack_now;
-                } else if pnow.saturating_sub(ps_rate_last_us) >= 50_000 {
-                    let dt = pnow.saturating_sub(ps_rate_last_us) as f64 / 1e6;
-                    let inst = ack_now.saturating_sub(ps_rate_last_ack) as f64 / dt;
-                    ps_rate_ewma = if ps_rate_ewma > 0.0 {
-                        0.8 * ps_rate_ewma + 0.2 * inst
-                    } else {
-                        inst
-                    };
-                    ps_rate_last_us = pnow;
-                    ps_rate_last_ack = ack_now;
-                }
-                // span = the live stream span (max retained seq − cum ack);
-                // the retention store's last key IS the sent edge (removal
-                // is by cumulative ack only).
-                let span = st.sent_store
-                    .keys()
-                    .next_back()
-                    .copied()
-                    .unwrap_or(ack_now)
-                    .saturating_sub(ack_now) as f64;
-                let mut slack = 0.0;
-                {
-                    let mut sched = scheduler.lock();
-                    if ps_rate_ewma > 1.0 && sched.live_paths().len() >= 2 {
-                        slack = (span / ps_rate_ewma).clamp(0.0, 0.25);
-                    }
-                    sched.set_place_slack(slack);
-                }
-                ps_slack_gauge = slack;
             }
         }
 
@@ -8407,54 +7227,17 @@ async fn run_window_sender(
                     // c2 smoke: effective cap flapping 1024↔128 every few
                     // DIAG ticks, store swinging 400–1024, goodput dips to
                     // 20 Mbit).
-                    let (cwnd_sum, n_live, wd_terms): (f64, usize, Option<(f64, f64)>) = {
+                    let (cwnd_sum, n_live): (f64, usize) = {
                         let sched = scheduler.lock();
                         let live = sched.live_paths();
                         let cs: f64 = live
                             .iter()
                             .filter_map(|id| sched.path(*id).map(|p| p.cwnd as f64))
                             .sum();
-                        // feat/window-mtu: (rate, RTprop) for the stall meter
-                        // and the retention backstop at N = 1 — the feed's
-                        // delivered-rate anchor when warm, else Copa's own
-                        // cwnd/RTprop (both honest under Copa-sole).
-                        let wd = if pol.win_decouple_on && live.len() == 1 {
-                            live.first().and_then(|id| sched.path(*id)).and_then(|p| {
-                                let rtp = p.min_rtt().map(|d| d.as_secs_f64())?;
-                                if rtp <= 0.0 {
-                                    return None;
-                                }
-                                let rate = p
-                                    .btlbw_sym_per_s()
-                                    .filter(|r| *r > 0.0)
-                                    .unwrap_or(p.cwnd as f64 / rtp);
-                                Some((rate, rtp))
-                            })
-                        } else {
-                            None
-                        };
-                        (cs, live.len().max(1), wd)
+                        (cs, live.len().max(1))
                     };
-                    wd_engaged = false;
                     pa_engaged = false; // Copa-sole owns the store law (Σcwnd)
-                    dyn_store_cap = if let (true, Some((rate, rtp))) =
-                        (pol.win_decouple_on && cwnd_sum > 0.0, wd_terms)
-                    {
-                        // Decoupled law under Copa-sole: residence = Copa's
-                        // own gain*cwnd (un-truncated — the B1 dwell-ceiling
-                        // release); stall meter + retention backstop per the
-                        // amended constants.
-                        wd_allow_base = pol.store_bdp_gain * cwnd_sum;
-                        wd_rate = rate;
-                        wd_cap_ret = win_decouple_cap_ret(
-                            wd_allow_base,
-                            rate,
-                            rtp,
-                            pol.store_cap_floor,
-                        );
-                        wd_engaged = true;
-                        wd_cap_ret
-                    } else if let Some(cap) = pooled_store_cap(
+                    dyn_store_cap = if let Some(cap) = pooled_store_cap(
                         pol.store_paths_on,
                         pol.sum_cap,
                         pol.delta_cap,
@@ -8483,38 +7266,6 @@ async fn run_window_sender(
                         pol.store_boot_cap.min(pol.store_max)
                     };
                 } else {
-                    // RWM_STORE_CAPW (goal-gate "C8-Aware Pool Law"): the
-                    // capacity-weighted shared pool's per-path terms, over
-                    // LIVE paths (live_paths(), NOT active_paths() — the
-                    // documented cwnd-saturation filter trap above: a
-                    // saturated path must keep its earned share). None until
-                    // that path's anchor warms; capw_store_cap requires ALL
-                    // live paths warm, else the configured fallback below.
-                    let capw_terms: Vec<Option<f64>> = if pol.capw_on {
-                        // Rate source: the Copa/BtlBw anchor pair
-                        // (copa_bdp_anchor, btlbw_sym_per_s). Path set:
-                        // live_paths().
-                        let slots: Vec<Option<HonestCapPath>> = {
-                            let sched = scheduler.lock();
-                            sched
-                                .live_paths()
-                                .iter()
-                                .map(|id| {
-                                    sched.path(*id).map(|p| HonestCapPath {
-                                        id: *id,
-                                        anchor: p.copa_bdp_anchor(),
-                                        rate: p.btlbw_sym_per_s(),
-                                        srtt: p.srtt(),
-                                        rtprop: p.min_rtt(),
-                                        k_raw: p.k_raw(),
-                                    })
-                                })
-                                .collect()
-                        };
-                        honest_cap_terms(&mut percap_k, &slots, dnow, pol.store_bdp_gain)
-                    } else {
-                        Vec::new()
-                    };
                     // ── THE THREE-TERM LIMIT (RWM_THREE_TERM) ────────────
                     // Goal-gate "Three-Term Law": the composed law's inputs
                     // over LIVE paths — the same set every honest-cap
@@ -8524,8 +7275,8 @@ async fn run_window_sender(
                     // zero and the span term vanishes by arithmetic.
                     // Rate source: the per-path delivered-rate anchor
                     // (`btlbw_sym_per_s`) — the same source the legacy
-                    // Σ-anchor base and the capw law read, so the A/B
-                    // isolates the LAW and not the anchor.
+                    // Σ-anchor base reads, so the A/B isolates the LAW and
+                    // not the anchor.
                     let tt_slots: Vec<Option<ThreeTermPath>> = if pol.three_term_on {
                         let sched = scheduler.lock();
                         sched
@@ -8552,12 +7303,7 @@ async fn run_window_sender(
                     // the refresh cadence). hsum = 0.0 whenever
                     // honest_cap_on is false — the legacy expressions below
                     // then run verbatim (shipped byte-identical).
-                    let (bdp, hsum, n_live, wd_terms): (
-                        f64,
-                        f64,
-                        usize,
-                        Option<(f64, f64, f64, f64)>,
-                    ) = {
+                    let (bdp, hsum, n_live): (f64, f64, usize) = {
                         let sched = scheduler.lock();
                         let live = sched.live_paths();
                         let n = live.len().max(1);
@@ -8585,7 +7331,7 @@ async fn run_window_sender(
                         // Warm-anchor slots for the honest per-path cap, in
                         // path-set order — collected here, evaluated ONCE by
                         // `honest_cap_terms` below (the law lives there).
-                        let want_k = pol.honest_cap_on || (pol.win_decouple_on && n == 1);
+                        let want_k = pol.honest_cap_on;
                         let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
                         for id in set.iter() {
                             if let Some(p) = sched.path(*id) {
@@ -8614,41 +7360,8 @@ async fn run_window_sender(
                         } else {
                             0.0
                         };
-                        // feat/window-mtu: (anchor, rate, K, RTprop) for the
-                        // decoupled law at N = 1 (anchor honest via the
-                        // N1-scoped sampling feed). K is read back from the
-                        // tracker the collector just fed — `k()` returns
-                        // exactly what `observe_srtt_over_rtprop` returned.
-                        let mut wd: Option<(f64, f64, f64, f64)> = None;
-                        if pol.win_decouple_on && n == 1 {
-                            for slot in slots.iter().flatten() {
-                                if let (Some(a), Some(r), Some(rtp)) = (
-                                    slot.anchor,
-                                    slot.rate.filter(|r| *r > 0.0),
-                                    slot.rtprop.map(|d| d.as_secs_f64()),
-                                ) {
-                                    // "Honest Inputs": the raw-sample floor
-                                    // when RWM_HONEST_K supplies one.
-                                    let k = slot.k_raw.unwrap_or_else(|| {
-                                        percap_k.get(&slot.id).map_or(1.0, |e| e.k())
-                                    });
-                                    wd = Some((a, r, k, rtp));
-                                }
-                            }
-                        }
-                        (bdp, hsum, n, wd)
+                        (bdp, hsum, n)
                     };
-                    // feat/window-mtu: the N1-scoped sampler pause (see
-                    // CopaFeed::n1_pause) — refreshed here at the dyn-cap
-                    // cadence. Never touches RWM_PLAIN_RS or Copa-sole
-                    // feeds (their semantics are unchanged).
-                    if pol.win_decouple_on && !gates.plain_rs {
-                        if let Some(f) = &copa_feed {
-                            if !f.owns_cc() {
-                                f.set_n1_paused(n_live >= 2);
-                            }
-                        }
-                    }
                     // Pool-anchor honest dual-store law (RWM_POOL_ANCHOR,
                     // goal-gate "Ship The Wins 1"): per-live-path honest
                     // caps on the SEND-interval anchor. Collected only at
@@ -8661,9 +7374,7 @@ async fn run_window_sender(
                     // not drop a saturated path's earned share.
                     let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
                         // Rate source: the hygiene-grade SEND-interval
-                        // anchor — "Ship The Wins 1b" max(delivery-clocked
-                        // windowed-max, send ratcheted mean), ONE formula;
-                        // identical to attempt 1 with RWM_POOL_DELIV off.
+                        // anchor (the ratcheted send mean).
                         // Path set: live_paths().
                         //
                         // PROVENANCE PRESERVED (the pre-de-triplication
@@ -8684,7 +7395,7 @@ async fn run_window_sender(
                                         // no slot at all: the original `?`
                                         // returned BEFORE feeding the clock
                                         // tracker, and that is preserved.
-                                        let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
+                                        let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
                                         let rtp = p
                                             .min_rtt()
                                             .map(|d| d.as_secs_f64())
@@ -8705,7 +7416,6 @@ async fn run_window_sender(
                     } else {
                         Vec::new()
                     };
-                    wd_engaged = false;
                     pa_engaged = false;
                     tt_terms_diag = None;
                     dyn_store_cap = if let Some((cap, w, sl, sp)) = three_term_store_cap(
@@ -8720,34 +7430,6 @@ async fn run_window_sender(
                         // for its own arm. Warm-up (any live path cold) ⇒
                         // `None` ⇒ the configured chain below runs verbatim.
                         tt_terms_diag = Some((w, sl, sp));
-                        cap
-                    } else if let (true, Some((a, r, k, rtp))) =
-                        (pol.win_decouple_on && n_live == 1, wd_terms)
-                    {
-                        // Decoupled law (part 1, plain/BBR seat): residence
-                        // on the honest anchor + probe headroom; the stall
-                        // meter and hole capacity live in the gate below and
-                        // the retention backstop respectively.
-                        wd_allow_base = a * (k.max(1.0) + pol.store_bdp_gain - 1.0);
-                        wd_rate = r;
-                        wd_cap_ret = win_decouple_cap_ret(
-                            wd_allow_base,
-                            r,
-                            rtp,
-                            pol.store_cap_floor,
-                        );
-                        wd_engaged = true;
-                        wd_cap_ret
-                    } else if let Some(cap) = capw_store_cap(
-                        pol.capw_on,
-                        &capw_terms,
-                        pol.store_cap_floor,
-                        pol.store_path_pool,
-                    ) {
-                        // Capacity-weighted shared pool ENGAGED (N ≥ 2, all
-                        // anchors warm): Σ honest per-path caps, clamped to
-                        // [floor, N×knee]. Takes precedence over the hsum /
-                        // path-scaled laws — this IS the pool law under test.
                         cap
                     } else if pol.honest_cap_on && hsum > 0.0 {
                         // Honest law: the Σ is already per-path-composed
@@ -8773,9 +7455,9 @@ async fn run_window_sender(
                         // the burst-immune send-interval rate, clamped
                         // [floor, N·knee] — the same pure pooled law as
                         // capw_store_cap, with the CAP's rate input honest
-                        // by construction. Explicit experiment arms
-                        // (RWM_STORE_CAPW / RWM_PLAIN_RS+RWM_HONEST_CAP)
-                        // take precedence above, unchanged.
+                        // by construction. The explicit experiment arm
+                        // (RWM_PLAIN_RS+RWM_HONEST_CAP) takes precedence
+                        // above, unchanged.
                         pa_engaged = true;
                         pa_sum = pa_terms.iter().flatten().sum();
                         cap
@@ -8861,152 +7543,6 @@ async fn run_window_sender(
                         "[3T] three-term outstanding limit: window + slack + span (RWM_THREE_TERM)"
                     );
                 }
-                // ── task #86: per-path account caps (RWM_STORE_PERCAP) ────
-                // Computed AFTER the pooled laws above so (a) the shipped /
-                // STORE_PATHS expressions stay verbatim (default byte-
-                // identical), and (b) the warm-up share inherits the pooled
-                // cap in force (`dyn_store_cap` as just computed). Engaged
-                // only for N ≥ 2 live paths: percap_caps stays EMPTY at
-                // N = 1, so singles run the legacy gate bit-exactly even
-                // with the flag ON. pipe_i = Copa cwnd_i under the feed
-                // (Copa's operating point is the per-path pipe), else
-                // BtlBw_i × echo-SRTT_i — the delivered-rate anchor times
-                // the ACK-clock residence time (Little's law on the store;
-                // the per-path pool knee bounds the echo-RTT feedback).
-                percap_caps.clear();
-                percap_bounds.clear();
-                if pol.percap_on {
-                    // (pipe_i for the cap law, floor_pipe_i for the redirect
-                    // guard). Plain: pipe = rate×echoSRTT (loaded clock, the
-                    // cap's Little's-law residence time), floor_pipe =
-                    // rate×RTprop (the guard's un-inflatable clock — see
-                    // percap_redirect_bound: the loaded echo clock is
-                    // self-referential and made the c8 redirect bound
-                    // vacuous). Copa feed: cwnd_i is both (Copa's operating
-                    // point is the bounded-queue pipe).
-                    let pipes: Vec<(u32, Option<f64>, Option<f64>, Option<f64>)> = {
-                        let sched = scheduler.lock();
-                        let live = sched.live_paths();
-                        let mut v = Vec::with_capacity(live.len());
-                        // feat/store-borrowing: refresh the borrow law's
-                        // (rate, RTprop) snapshot at the same cadence from
-                        // the same honest sources (Copa feed: cwnd/RTprop
-                        // as the drain rate; plain: the send-interval
-                        // BtlBw anchor). Empty map when borrowing is off.
-                        if pol.percap_borrow_on {
-                            percap_rr.clear();
-                            for id in live.iter() {
-                                if let Some(p) = sched.path(*id) {
-                                    let rtp = p.min_rtt().map(|d| d.as_secs_f64());
-                                    let rate = if copa_feed
-                                        .as_ref()
-                                        .is_some_and(|f| f.owns_cc())
-                                    {
-                                        rtp.filter(|r| *r > 0.0)
-                                            .map(|r| p.cwnd as f64 / r)
-                                    } else {
-                                        p.btlbw_sym_per_s()
-                                    };
-                                    percap_rr.insert(*id, (rate, rtp));
-                                }
-                            }
-                        }
-                        for id in live.iter() {
-                            let (pipe, floor_pipe, honest) = match sched.path(*id) {
-                                Some(p) => {
-                                    if copa_feed.as_ref().is_some_and(|f| f.owns_cc()) {
-                                        // Copa-sole: cwnd_i IS the honest
-                                        // bounded-queue pipe — unchanged.
-                                        (Some(p.cwnd as f64), Some(p.cwnd as f64), None)
-                                    } else {
-                                        let rate = p.btlbw_sym_per_s();
-                                        let pipe = rate
-                                            .map(|r| r * p.srtt().as_secs_f64());
-                                        let floor_pipe = match (rate, p.min_rtt()) {
-                                            (Some(r), Some(rtp)) => {
-                                                Some(r * rtp.as_secs_f64())
-                                            }
-                                            _ => None,
-                                        };
-                                        // feat/percap-honest-cap: cap_i on
-                                        // the honest anchors — residence
-                                        // K·RTprop + recovery-clock runway;
-                                        // no loaded-echo term (see
-                                        // `honest_store_cap`).
-                                        // Rate source: the floor-clock BDP
-                                        // (rate_i·RTprop_i) with BtlBw_i —
-                                        // NOT the loaded echo pipe above.
-                                        // Path set: live_paths() (this loop).
-                                        let honest = if pol.honest_cap_on {
-                                            honest_cap_term(
-                                                &mut percap_k,
-                                                *id,
-                                                p.srtt(),
-                                                p.min_rtt(),
-                                                dnow,
-                                                floor_pipe,
-                                                rate,
-                                                pol.store_bdp_gain,
-                                                p.k_raw(),
-                                            )
-                                        } else {
-                                            None
-                                        };
-                                        (pipe, floor_pipe, honest)
-                                    }
-                                }
-                                None => (None, None, None),
-                            };
-                            v.push((*id, pipe, floor_pipe, honest));
-                        }
-                        v
-                    };
-                    if pipes.len() >= 2 {
-                        let legacy_cap = dyn_store_cap;
-                        let n = pipes.len();
-                        for (pid, pipe, floor_pipe, honest) in pipes {
-                            // Honest law when derived (warm anchors under
-                            // RWM_PLAIN_RS+RWM_HONEST_CAP); else the legacy
-                            // percap law — echo-clock caps (the PBP-G-old
-                            // control arm) and the warm-up legacy share
-                            // (warm-up unchanged: honest = None before the
-                            // anchor warms, exactly when pipe = None too).
-                            let cap_i = match honest {
-                                Some(h) => (h.ceil() as usize).clamp(
-                                    pol.store_cap_floor,
-                                    pol.store_path_pool.max(pol.store_cap_floor),
-                                ),
-                                None => percap_store_cap(
-                                    pipe,
-                                    legacy_cap,
-                                    n,
-                                    pol.store_bdp_gain,
-                                    pol.store_cap_floor,
-                                    pol.store_path_pool,
-                                ),
-                            };
-                            percap_caps.insert(pid, cap_i);
-                            // Roadmap item 1: the delay-aware redirect bound;
-                            // bound = cap (guard degenerate) when unguarded.
-                            percap_bounds.insert(
-                                pid,
-                                if pol.percap_guard_on {
-                                    percap_redirect_bound(
-                                        floor_pipe,
-                                        cap_i,
-                                        pol.store_bdp_gain,
-                                    )
-                                } else {
-                                    cap_i
-                                },
-                            );
-                        }
-                        // Σ cap_i becomes the pooled MEMORY backstop (binds
-                        // only via stranded accounts, e.g. a path that died
-                        // with symbols still retained).
-                        dyn_store_cap = percap_caps.values().sum();
-                    }
-                }
             }
         }
         let effective_store_cap = if pol.plain_dyn_cap {
@@ -9018,89 +7554,12 @@ async fn run_window_sender(
         } else {
             pol.store_max
         };
-        let tx_paused = if !percap_caps.is_empty() {
-            // task #86 (RWM_STORE_PERCAP, N ≥ 2): per-path admission — pause
-            // only when NO live path's account has headroom below its own
-            // cap, EXCEPT (roadmap item 1) that when some account is
-            // cap-full a pick landing there must redirect, so admission
-            // stays open only while a guard-eligible target exists
-            // (out < min(cap, redirect_bound)) — otherwise the store reads
-            // FULL: backpressure, don't park (percap_store_full_guarded;
-            // bound = cap when the guard is off, degenerating to the
-            // unguarded gate). The pooled store_len test is retained as the
-            // Σcap_i memory backstop (effective_store_cap = Σcap_i while
-            // percap is engaged): it binds only through stranded accounts.
-            let accounts: Vec<(usize, usize, usize)> = percap_caps
-                .iter()
-                .map(|(pid, &cap)| {
-                    (
-                        st.percap_out.get(pid).copied().unwrap_or(0),
-                        cap,
-                        percap_bounds.get(pid).copied().unwrap_or(cap),
-                    )
-                })
-                .collect();
-            // feat/store-borrowing (§16.22.4): the guarded gate plus the
-            // loan edges — the store reads FULL only when the guarded gate
-            // reads full AND no loan is admissible (a cap-full borrower
-            // with a lender inside its lend bound keeps admission open;
-            // the placement then borrows instead of redirecting).
-            let guarded_full = percap_store_full_guarded(&accounts)
-                && !(pol.percap_borrow_on && {
-                    let baccts: Vec<BorrowAccount> = percap_caps
-                        .iter()
-                        .map(|(&pid, &cap)| {
-                            let out = st.percap_out.get(&pid).copied().unwrap_or(0);
-                            let (rate, rtprop_s) =
-                                percap_rr.get(&pid).copied().unwrap_or((None, None));
-                            BorrowAccount {
-                                path: pid,
-                                out,
-                                cap,
-                                fly: out
-                                    .saturating_sub(
-                                        st.percap_lent.get(&pid).copied().unwrap_or(0),
-                                    )
-                                    .saturating_add(
-                                        st.percap_borrowed.get(&pid).copied().unwrap_or(0),
-                                    ),
-                                rate,
-                                rtprop_s,
-                            }
-                        })
-                        .collect();
-                    percap_lend_edge_exists(&baccts)
-                });
-            reliable
-                && (guarded_full
-                    || store_len >= effective_store_cap
-                    || cwnd_full)
-        } else if wd_engaged {
-            // feat/window-mtu (RWM_WIN_DECOUPLE, N = 1): the decoupled gate.
-            // Fresh admission tests the live HEAD SPAN against the
-            // stall-metered allowance — recovery-stalled holes (below the
-            // SACK/cum frontier) never consume the wire budget; they are
-            // bounded by the retention backstop instead. During a frontier
-            // freeze the allowance grows at the anchor rate (the explicit
-            // stall-insurance term), capped at one recovery round.
-            let last_sent = st.sent_store.keys().next_back().copied().unwrap_or(0);
-            let wire_out = last_sent.saturating_sub(wnd2_frontier_last) as usize;
-            let stall_s =
-                now_us().saturating_sub(wnd2_frontier_change_us) as f64 / 1e6;
-            let allow = win_decouple_allow(wd_allow_base, wd_rate, stall_s);
-            reliable
-                && (wire_out >= allow as usize
-                    || store_len >= wd_cap_ret
-                    || cwnd_full)
-        } else {
-            reliable && (store_len >= effective_store_cap || cwnd_full)
-        };
+        let tx_paused = reliable && (store_len >= effective_store_cap || cwnd_full);
 
         // feat/window-mtu wnd2/relgap tracking (see decls): the release
         // frontier is max(highest SACK-released seq, cumulative ack) —
-        // O(log n) per iteration. Runs for the DIAG gauge AND for the
-        // decoupled law's stall meter (RWM_WIN_DECOUPLE).
-        if (pol.diag_on || pol.win_decouple_on) && reliable && !generation {
+        // O(log n) per iteration. Runs for the DIAG gauge only.
+        if pol.diag_on && reliable && !generation {
             let tnow = now_us();
             let frontier = sack_released
                 .iter()
@@ -9136,8 +7595,6 @@ async fn run_window_sender(
                     tx_paused,
                     store_len,
                     effective_store_cap,
-                    percap_caps: &percap_caps,
-                    percap_bounds: &percap_bounds,
                     percap_k: &percap_k,
                     sack_released: &sack_released,
                     sack_released_total,
@@ -9145,14 +7602,8 @@ async fn run_window_sender(
                     pa_sum,
                     wnd2_frontier_last,
                     wnd2_frontier_change_us,
-                    wd_engaged,
-                    wd_allow_base,
-                    wd_rate,
-                    wd_cap_ret,
                     cached_nack_budget,
                     gen_rate_ewma,
-                    ps_slack_gauge,
-                    ps_rate_ewma,
                     mpd_pf_floor: &mpd_pf_floor,
                     mpd_pf_clock: &mpd_pf_clock,
                     mpd_pf_sum: &mpd_pf_sum,
@@ -9717,7 +8168,7 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let (srtt_us, jitter_us, min_rtt_us, sigma_us, w_q_us) = {
+                let (srtt_us, jitter_us, sigma_us) = {
                     let sched = scheduler.lock();
                     let paths: Vec<_> = recovery_clock_paths(&sched)
                         .iter()
@@ -9729,60 +8180,16 @@ async fn run_window_sender(
                     // way the clock is (max over the same path set), so floor
                     // and clock can never come from different paths.
                     let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
-                    // RFC 8985 §6.2 Step 4's `RACK.min_RTT`, read off the SAME
-                    // path set as the clock and the jitter so no two terms of
-                    // one law can come from different paths. The MIN over the
-                    // set is the queue-free floor the RACK law is built on.
-                    let mrtt = paths
-                        .iter()
-                        .filter_map(|p| p.min_rtt())
-                        .map(|d| d.as_micros() as u64)
-                        .min();
-                    // §16.69's second moment, MAX over the same set: the
-                    // quantile law's margin must cover the widest dispersion
-                    // any live path presents, not the narrowest.
+                    // The measured σ, MAX over the same set — read only by the
+                    // `[QCLK]` readout below.
                     let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
-                    // §16.76's `W_q`, MAX over the SAME path set, for the same
-                    // reason σ is: the recovery clock's margin must cover the
-                    // widest delay any live path presents, not the narrowest.
-                    // `None` at every path (window short of `N(α)`) ⇒ the
-                    // quantile arm falls through — the UNSCOREABLE rule.
-                    let wq = paths
-                        .iter()
-                        .filter_map(|p| p.rtt_tail_quantile_us(pol.contract_alpha))
-                        .max();
-                    (pooled_recovery_srtt_us(&pooled), jit, mrtt, sg, wq)
+                    (pooled_recovery_srtt_us(&pooled), jit, sg)
                 };
-                let timeout_us = sweep_timeout_us_all(
-                    pol.w_form,
-                    pol.quantile_clocks,
-                    pol.rack_clocks,
-                    pol.derived_sweep,
-                    srtt_us,
-                    jitter_us,
-                    min_rtt_us,
-                    sigma_us,
-                    w_q_us,
-                    pol.rack_reo_mult,
-                    pol.contract_alpha,
-                );
-                // EVERY arm, control included: the realized clock is the
-                // quantity the cost curve is read against, and the control's
-                // realized clock is what every treatment arm is compared to.
+                let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
                 // `timeout_us` is what the engine WILL use — never recomputed
                 // here, so this gauge cannot report a clock that did not run.
-                qclk_echo.record(timeout_us, srtt_us, sigma_us, w_q_us);
-                if pol.rack_clocks {
-                    if let Some(m) = min_rtt_us.filter(|m| *m > 0) {
-                        rack_echo.record(
-                            srtt_us,
-                            m,
-                            timeout_us,
-                            tail_sweep_timeout_us(srtt_us),
-                        );
-                    }
-                }
-                if pol.derived_sweep && !pol.rack_clocks {
+                qclk_echo.record(timeout_us, srtt_us, sigma_us);
+                if pol.derived_sweep {
                     derived_round_echo.observe(
                         "sender-tail-sweep",
                         srtt_us,
@@ -9831,9 +8238,9 @@ async fn run_window_sender(
                 None
             }
             // NOTE (`[FCAUSE]`): the tail-sweep arm below is the ONLY producer
-            // the quantile/Cantelli recovery clock `W` clocks — `tail_deadline`
-            // is computed from `sweep_timeout_us_all`. Every other fire in this
-            // loop is clocked by the RECEIVER or by data arrival.
+            // the sender's recovery clock clocks — `tail_deadline` is computed
+            // from `sweep_timeout_us`. Every other fire in this loop is clocked
+            // by the RECEIVER or by data arrival.
             // Generation-deficit feedback (§16.3): the receiver reports how many
             // MORE coded symbols each frontier generation still needs. Rebuild
             // the per-generation want from the report, subtracting what is
@@ -9979,9 +8386,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                     }
@@ -10008,9 +8412,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 }
@@ -10062,9 +8463,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                         }
@@ -10084,9 +8482,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 }
@@ -10098,9 +8493,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                 // ── RWM_EMIT_BATCH pacer-quantum burst intake ─────────────
@@ -10135,9 +8527,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    &percap_caps,
-                    &percap_bounds,
-                    &percap_rr,
                     emit_batch_live,
                 );
                                 burst += 1;
@@ -10402,7 +8791,7 @@ async fn run_window_sender(
                         // apart where it should not.
                         st.nack_retx_at.insert(seq, (now_r, path));
                         hold_echo.on_retx(seq, now_r, path);
-                        if let Some(feed) = copa_feed.as_ref().filter(|f| !f.n1_paused()) {
+                        if let Some(feed) = copa_feed.as_ref() {
                             feed.on_sent(seq, path);
                             let mut sched = scheduler.lock();
                             if let Some(p) = sched.path_mut(path) {
@@ -10479,16 +8868,10 @@ async fn run_window_sender(
             // RWM_RECOV_MP additionally snapshots PER-PATH smoothed clocks
             // (Copa srtt + estimator EWMA) for the per-flight hole law, and
             // the live path count (N=1 ⇒ the law is inert, legacy bit-exact).
-            // Goal-gate "Unlock The Default 2": the snapshot gains the path's
-            // OWN measured RTT jitter — the derived patience floor's second
-            // term. Tuple is (copa/estimator srtt, estimator EWMA rtt,
-            // measured jitter); the jitter slot is read only under
-            // `RWM_PATIENCE_DERIVED`, and with the gate OFF every floor below
-            // resolves to `NACK_RETX_COOLDOWN_FLOOR_US` verbatim.
-            let mut mp_clocks: std::collections::HashMap<u32, (u64, u64, u64)> =
+            // Tuple is (copa/estimator srtt, estimator EWMA rtt).
+            let mut mp_clocks: std::collections::HashMap<u32, (u64, u64)> =
                 std::collections::HashMap::new();
             let mut mp_n_paths: usize = 1;
-            let mut pooled_jitter_us: u64 = 0;
             let srtt_us = {
                 let sched = scheduler.lock();
                 // RWM_RECOV_MP_LIVE (goal-gate "C8 Slow-Path Conversion"):
@@ -10510,23 +8893,15 @@ async fn run_window_sender(
                                 (
                                     p.srtt().as_micros() as u64,
                                     p.estimator.rtt().as_micros() as u64,
-                                    p.rtt_jitter_us(),
                                 ),
                             );
                         }
                     }
                 }
-                // The pooled jitter for the pooled cooldown clock below: the
-                // MAX over live paths, matching the pooled srtt's own max.
-                // Both read `recovery_clock_paths` (live paths) whatever
-                // `RWM_RECOV_MP_LIVE` selects for the hole law's snapshot.
+                // The pooled clock reads `recovery_clock_paths` (live paths)
+                // whatever `RWM_RECOV_MP_LIVE` selects for the hole law's
+                // snapshot.
                 let clock_ids = recovery_clock_paths(&sched);
-                pooled_jitter_us = clock_ids
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .map(|p| p.rtt_jitter_us())
-                    .max()
-                    .unwrap_or(0);
                 let pooled: Vec<u64> = clock_ids
                     .iter()
                     .filter_map(|id| sched.path(*id))
@@ -10534,23 +8909,17 @@ async fn run_window_sender(
                     .collect();
                 pooled_recovery_srtt_us(&pooled)
             };
-            // Goal-gate "Unlock The Default 2": the per-seq retransmit
-            // cooldown's floor. Gate OFF ⇒ the legacy literal, bit-exact.
-            let pooled_floor_us =
-                recovery_floor_us(pol.patience_derived, pooled_jitter_us, srtt_us);
-            let retx_cooldown_us = retx_cooldown_us(srtt_us, pooled_floor_us);
+            // The per-seq retransmit cooldown, floored at the legacy literal.
+            let retx_cooldown_us = retx_cooldown_us(srtt_us, NACK_RETX_COOLDOWN_FLOOR_US);
             // The per-flight law threshold for a path (falls back to the
             // pooled cooldown clock when the path has no snapshot).
-            let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64, u64)>,
+            let mp_thr_of = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
                              p: u32|
              -> u64 {
                 match mp_clocks.get(&p) {
-                    Some(&(srtt, ewma, jit)) => {
-                        // Goal-gate "Unlock The Default 2": the kGranularity
-                        // analog. Gate OFF ⇒ the legacy literal ⇒ this call
-                        // is bit-identical to its pre-2026-08-07 form.
-                        let floor =
-                            recovery_floor_us(pol.patience_derived, jit, srtt.max(ewma));
+                    Some(&(srtt, ewma)) => {
+                        // The kGranularity analog: the legacy literal.
+                        let floor = NACK_RETX_COOLDOWN_FLOOR_US;
                         let (thr, floor_won) = mp_time_threshold_split(srtt, ewma, floor);
                         if pol.diag_on {
                             if floor_won {
@@ -10569,17 +8938,12 @@ async fn run_window_sender(
             // counter side effect. A read-only audit gauge may not move an
             // existing gauge's reading, and `mp_thr_of` bumps `mpd_pf_*` on
             // every call.
-            let mp_thr_pure = |mp_clocks: &std::collections::HashMap<
-                u32,
-                (u64, u64, u64),
-            >,
+            let mp_thr_pure = |mp_clocks: &std::collections::HashMap<u32, (u64, u64)>,
                                p: u32|
              -> u64 {
                 match mp_clocks.get(&p) {
-                    Some(&(srtt, ewma, jit)) => {
-                        let floor =
-                            recovery_floor_us(pol.patience_derived, jit, srtt.max(ewma));
-                        mp_time_threshold_split(srtt, ewma, floor).0
+                    Some(&(srtt, ewma)) => {
+                        mp_time_threshold_split(srtt, ewma, NACK_RETX_COOLDOWN_FLOOR_US).0
                     }
                     None => retx_cooldown_us,
                 }
@@ -10588,7 +8952,7 @@ async fn run_window_sender(
             // only input, and the SAME half-RTT the legacy age gate uses.
             let half_srtt_of = |p: u32| -> u64 {
                 match mp_clocks.get(&p) {
-                    Some(&(srtt, ewma, _)) => srtt.max(ewma) / 2,
+                    Some(&(srtt, ewma)) => srtt.max(ewma) / 2,
                     None => srtt_us / 2,
                 }
             };
@@ -10940,7 +9304,7 @@ async fn run_window_sender(
                     // eventual ack is attributed to the path that actually
                     // delivered it with a truthful send-interval.
                     // (feat/window-mtu scope fix: paused feed = absent feed.)
-                    if let Some(feed) = copa_feed.as_ref().filter(|f| !f.n1_paused()) {
+                    if let Some(feed) = copa_feed.as_ref() {
                         feed.on_sent(seq, nack_path);
                         let mut sched = scheduler.lock();
                         if let Some(p) = sched.path_mut(nack_path) {
@@ -11223,17 +9587,6 @@ async fn run_window_sender(
             // account map, so no double-release).
             if pol.percap_track {
                 percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, ack);
-                // feat/store-borrowing: repay every loan the frontier
-                // advance just released (the split_off twin — SACK-repaid
-                // loans are gone from the ledger, no double-repayment).
-                if pol.percap_borrow_on {
-                    percap_loan_release_cumulative(
-                        &mut st.percap_loans,
-                        &mut st.percap_lent,
-                        &mut st.percap_borrowed,
-                        ack,
-                    );
-                }
             }
             // §16.77: drop the stamped holes the frontier has passed. PRUNE
             // ONLY — the estimator is fed off the receiver's own gap report
@@ -12544,104 +10897,6 @@ mod tests {
         assert_eq!(prefix, 24);
     }
 
-    /// feat/window-mtu part 1: the stall-metered allowance is continuous —
-    /// base at zero stall, grows at exactly the anchor rate through a
-    /// frontier freeze, and caps at one recovery round (R_ins = 100 ms).
-    /// No threshold, no mode bit: allow(g) is piecewise-linear in g alone.
-    #[test]
-    fn win_decouple_allow_is_stall_metered_and_capped() {
-        let base = 190.0; // sc2-class residence: anchor 83 * (K 1.3 + 1)
-        let rate = 10_400.0;
-        assert_eq!(win_decouple_allow(base, rate, 0.0), base);
-        // 3 ms micro-freeze: +rate*3ms ≈ 31 symbols — the sub-sweep
-        // ack-granularity cover the diagnosis named.
-        let a3 = win_decouple_allow(base, rate, 0.003);
-        assert!((a3 - (base + rate * 0.003)).abs() < 1e-9);
-        // Linear through the sweep scale...
-        let a80 = win_decouple_allow(base, rate, 0.080);
-        assert!((a80 - (base + rate * 0.080)).abs() < 1e-9);
-        // ...and capped at R_ins: a 5 s wedge cannot mint an unbounded
-        // window (backpressure resumes, bounded).
-        let acap = win_decouple_allow(base, rate, 5.0);
-        assert!((acap - (base + rate * WIN_STALL_INS_S)).abs() < 1e-9);
-        // Negative clock skew clamps to base, never below.
-        assert_eq!(win_decouple_allow(base, rate, -1.0), base);
-    }
-
-    /// feat/window-mtu part 1: the retention backstop = full metered
-    /// allowance + one recovery round of hole capacity (N_hole = 1, from
-    /// the diagnosis), memory-clamped at WIN_STORE_MAX and floored.
-    #[test]
-    fn win_decouple_cap_ret_bounds_holes_and_memory() {
-        // sc3-class: anchor 81*(K1.3+1)=186, rate 1.8k, RTprop 45 ms:
-        // 186 + 1800*(0.1 + 0.1 + 0.045) = 627 — between the honest cap
-        // (~355) and the legacy latch (1024), and every term derived.
-        let c = win_decouple_cap_ret(186.0, 1800.0, 0.045, 64);
-        assert_eq!(c, 627); // 186 + 1800*(0.1 + 0.1 + 0.045)
-        assert!(c > 355 && c < 1024);
-        // A jitter-cell Copa seat (base = 2*cwnd ≈ 1100 at 40 ms RTprop,
-        // rate ~10.4k) must be allowed ABOVE the legacy 1024 latch — the
-        // B1 dwell-ceiling release — and below the memory clamp.
-        let copa = win_decouple_cap_ret(1100.0, 10_400.0, 0.040, 64);
-        assert!(copa > RELIABLE_STORE_MAX && copa <= WIN_STORE_MAX);
-        // Memory clamp binds for an absurd rate; floor binds when cold.
-        assert_eq!(win_decouple_cap_ret(1e9, 1e9, 1.0, 64), WIN_STORE_MAX);
-        assert_eq!(win_decouple_cap_ret(0.0, 0.0, 0.0, 64), 64);
-    }
-
-    /// feat/window-mtu part 1: the decoupled gate excludes recovery-stalled
-    /// holes from the wire budget — the head-span arithmetic. A store full
-    /// of below-frontier holes must not consume fresh-admission budget;
-    /// the SAME totals under the legacy gate would read paused.
-    #[test]
-    fn win_decouple_head_span_excludes_holes() {
-        // 300 un-SACKed total; frontier at 950 of 1000 sent ⇒ head span =
-        // 50 (live wire), holes = 250 (below-frontier recovery seats).
-        let last_sent: u64 = 1000;
-        let frontier: u64 = 950;
-        let outstanding: usize = 300;
-        let head = last_sent.saturating_sub(frontier) as usize;
-        let hole = outstanding.saturating_sub(head);
-        assert_eq!(head, 50);
-        assert_eq!(hole, 250);
-        let allow = win_decouple_allow(190.0, 10_400.0, 0.0);
-        // Decoupled: 50 < 190 ⇒ wire keeps feeding. Legacy on the same
-        // state: 300 >= 190-class cap ⇒ paused (the D1 channel closed
-        // structurally even though the diagnosis measured it small).
-        assert!(head < allow as usize);
-        assert!(outstanding >= allow as usize);
-    }
-
-    /// feat/window-mtu: the N1-scoped sampler pause — a paused feed records
-    /// no send commitments and attribution only fast-forwards the cursor
-    /// (no samples, no stale-record attribution after resume).
-    #[test]
-    fn copa_feed_n1_pause_is_fully_inert() {
-        let feed = CopaFeed::new_sampling_only(true);
-        assert!(!feed.owns_cc());
-        feed.set_n1_paused(true);
-        feed.on_sent(10, 0);
-        assert!(feed.seq_path.is_empty(), "paused on_sent must record nothing");
-        // Pre-pause leftovers below the frontier are pruned by the paused
-        // attribution path's fast-forward (simulated here directly).
-        feed.set_n1_paused(false);
-        feed.on_sent(11, 0);
-        feed.set_n1_paused(true);
-        {
-            let mut c = feed.cursor.lock();
-            if 20 >= c.next {
-                c.next = 21;
-            }
-            c.sacked.retain(|&s| s > 20);
-        }
-        feed.seq_path.retain(|&s, _| s > 20);
-        assert!(feed.seq_path.is_empty());
-        // Resume: the cursor starts at the live frontier — an old ack
-        // yields no attributions.
-        feed.set_n1_paused(false);
-        assert!(feed.newly_delivered(15, &[]).is_empty());
-    }
-
     // ── GOAL "HONEST INPUTS" phase 3 — PROBE 1: the c1 DH −13% residual ──
     //
     // The battery (goal-gate "Honest Inputs — BATTERY") left c1-DH at
@@ -13358,43 +11613,6 @@ mod tests {
         }
     }
 
-    /// 3b, the composition that matters at c2/c7, with the CROSSOVER stated
-    /// exactly rather than asserted loosely.
-    ///
-    /// The legacy floor wins whenever `9/8 · srtt < 10 ms`, i.e. for every
-    /// smoothed clock **below 8 889 µs**. c2/c7 sit at RTprop ≈ 8–10 ms, so
-    /// the literal straddles the operating point: on the low side of 8.889 ms
-    /// patience is a CONSTANT and the path clock is discarded; on the high
-    /// side the clock already governs and the derived floor changes nothing.
-    /// That is precisely why this has to be MEASURED per run (`pf=`) rather
-    /// than argued — and why the pre-registration makes the gauge, not the
-    /// prose, the mechanism evidence.
-    #[test]
-    fn derived_patience_hands_the_clock_back_to_the_path_below_the_crossover() {
-        const F: u64 = NACK_RETX_COOLDOWN_FLOOR_US;
-        // The crossover, to the microsecond: 8 888 floor-bound, 8 889 not.
-        assert_eq!(mp_time_threshold_split(8_888, 0, F), (F, true));
-        assert_eq!(mp_time_threshold_split(8_889, 0, F), (10_000, false));
-        assert_eq!(mp_time_threshold_split(8_890, 0, F), (10_001, false));
-
-        // BELOW the crossover (an 8 ms path, 400 µs measured jitter): the
-        // legacy literal discards the path's own clock, the derived floor
-        // hands it back — and the recovered patience is 1 ms, not 10 ms.
-        let (srtt, jit) = (8_000u64, 400u64);
-        assert_eq!(mp_time_threshold_split(srtt, 0, F), (F, true));
-        let floor = patience_floor_us(jit, srtt);
-        assert_eq!(floor, 1_400);
-        assert_eq!(mp_time_threshold_split(srtt, 0, floor), (9_000, false));
-
-        // ABOVE the crossover the derived floor is INERT: the clock already
-        // won, so the two agree exactly. The law is a floor, never a cap.
-        for srtt in [9_000u64, 12_000, 40_000] {
-            let legacy = mp_time_threshold_split(srtt, 0, F).0;
-            let derived = mp_time_threshold_split(srtt, 0, patience_floor_us(400, srtt)).0;
-            assert_eq!(legacy, derived, "srtt={srtt} must be unaffected");
-        }
-    }
-
     /// 3b, the deliberate non-change, asserted rather than claimed: the
     /// tail-sweep SRTT fallback is INERT with respect to this constant.
     /// Every fallback value ≤ 12.5 ms — the legacy 10 ms and any derived
@@ -13467,8 +11685,6 @@ mod tests {
             for &f in &clocks {
                 assert_eq!(retx_cooldown_us(s, f), s.max(f));
             }
-            assert_eq!(recovery_floor_us(false, 400, s), NACK_RETX_COOLDOWN_FLOOR_US);
-            assert_eq!(recovery_floor_us(true, 400, s), patience_floor_us(400, s));
         }
 
         // Receiver hole-refresh cadence.
@@ -13511,11 +11727,6 @@ mod tests {
         // The ratios, stated as the claim: ×17.8 vs ×1.6 RTprop.
         assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0 / RTPROP_US, 17);
         assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0 / RTPROP_US, 1);
-        // And the derived floor changes NEITHER — it is not the binder.
-        assert_eq!(
-            mp_time_threshold_split(0, APP_ECHO_US, patience_floor_us(400, APP_ECHO_US)).0,
-            mp_time_threshold_split(0, APP_ECHO_US, f).0
-        );
     }
 
     /// 3a, THE COINCIDENCE PROPERTY — the pre-registered test. Wherever the
@@ -14070,7 +12281,7 @@ mod tests {
         // The plain-reliable window sender: the seat every cap-law finding in
         // ADR-0070 is about.
         let resolve = |g: &RuntimeGates| {
-            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
         };
 
         // ── THE CONTROL ARM ───────────────────────────────────────────────
@@ -14229,9 +12440,8 @@ mod tests {
         );
     }
 
-    /// **THE ROUTING GATE for the derived-setpoint laws** — paper §16.67 /
-    /// §16.68 / §16.69, gates `RWM_DELTA_CAP`, `RWM_RACK_CLOCKS`,
-    /// `RWM_RACK_REO_MULT`, `RWM_QUANTILE_CLOCKS`.
+    /// **THE ROUTING GATE for the derived-setpoint law** — paper §16.67,
+    /// gate `RWM_DELTA_CAP`.
     ///
     /// MEASUREMENT DISCIPLINE 1: a gate that RESOLVES is not a gate that
     /// ROUTES, and every one of the three no-mode-switch defects CLAUDE.md
@@ -14251,9 +12461,7 @@ mod tests {
         use crate::gates::RuntimeGates;
         use crate::net::sender_policy::SenderPolicy;
         use crate::net::{
-            codel_setpoint_q, contract_alpha, pooled_store_cap, CONTRACT_TAIL_LOSS_BASE,
-            RACK_REO_WND_MULT_INIT,
-            RACK_REO_WND_MULT_MAX,
+            codel_setpoint_q, pooled_store_cap,
         };
 
         // THE ANTI-DRIFT PIN, read before anything is neutralised: since
@@ -14273,16 +12481,13 @@ mod tests {
             // asserts the LAW's routing and not the machine it runs on. The
             // control is the `=0` arm EXPLICITLY, not the default.
             g.delta_cap = false;
-            g.rack_clocks = false;
-            g.quantile_clocks = false;
             g.derived_sweep = false;
             g.store_env_set = false;
             g.store_override = None;
-            g.rack_reo_mult = RACK_REO_WND_MULT_INIT;
             g
         };
         let resolve = |g: &RuntimeGates, h: ProtocolHint| {
-            SenderPolicy::resolve(g, 1200, h, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, h, true, false, false, false)
         };
 
         // ── §16.67: the δ-cap reaches the pooled seat at every dial point ──
@@ -14337,53 +12542,13 @@ mod tests {
             "the pooled law engaged at N = 1"
         );
 
-        // ── §16.68 / §16.69: the recovery gates route ──────────────────
-        let ctl = resolve(&base(), ProtocolHint::Auto);
-        assert!(!ctl.rack_clocks && !ctl.quantile_clocks && !ctl.derived_sweep);
-        assert_eq!(ctl.rack_reo_mult, RACK_REO_WND_MULT_INIT);
-
-        let mut r = base();
-        r.rack_clocks = true;
-        let rack = resolve(&r, ProtocolHint::Auto);
-        assert!(rack.rack_clocks && !rack.quantile_clocks, "the RACK gate did not route");
-        let mut q = base();
-        q.quantile_clocks = true;
-        let quant = resolve(&q, ProtocolHint::Auto);
-        assert!(quant.quantile_clocks && !quant.rack_clocks, "the quantile gate did not route");
-
-        // The recovery laws are CLOCKS, not cap laws, so they must arm on a
-        // coded seat too — unlike the δ-cap, which is scoped to `plain_dyn_cap`.
-        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
-        assert!(coded.rack_clocks, "the RACK gate is wrongly scoped to the plain seat");
+        // The δ-cap is a CAP law, scoped to `plain_dyn_cap`: it must not arm
+        // on a coded seat.
         let mut d = base();
         d.delta_cap = true;
         let coded_cap =
-            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
+            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, true, true, false, false);
         assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
-
-        // RACK's own bound on RACK's own parameter, at both ends.
-        let mut m = base();
-        m.rack_clocks = true;
-        m.rack_reo_mult = RACK_REO_WND_MULT_MAX;
-        assert_eq!(
-            resolve(&m, ProtocolHint::Auto).rack_reo_mult,
-            RACK_REO_WND_MULT_MAX,
-            "RACK's maximum multiplier did not reach the policy"
-        );
-
-        // §16.69's α rides the contract's own ζ, resolved onto the policy and
-        // strictly monotone across the dial's named points — a NUMBER on the
-        // contract, never a branch.
-        let mut last = 0.0f64;
-        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-            let p = resolve(&q, hint);
-            assert!(
-                (p.contract_alpha - contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint)).abs() < f64::EPSILON,
-                "{hint:?}: α did not reach the policy from the contract"
-            );
-            assert!(p.contract_alpha > last, "{hint:?}: α is not monotone across the dial");
-            last = p.contract_alpha;
-        }
     }
 
     /// **THE ECHO FORMAT PINS.** `[DCAP]`, `[RACK]` and `[LCW]` are what an L1
@@ -14406,15 +12571,14 @@ mod tests {
         assert!(dcap_report_line(0, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/0"));
         assert!(dcap_report_line(9, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/9"));
 
-        // [RACK] — the two bind fractions plus §16.68.1's false-alarm
-        // validation, with RACK's own class bar printed beside it.
+        // [RACK] — §16.68.1's false-alarm validation, with RACK's own class
+        // bar printed beside it.
         assert_eq!(
-            rack_report_line(4, 0, 1, 4, 4.0 * 9_500.0, 4.0 * 100_000.0, 1, 40, 39, false),
-            "[RACK] on=0 evals=4 ceil=0.0000 gran=0.2500 legacy_pin=1.0000 round=9500.0 legacy=100000.0 mult=1 fa=39/40 fa_frac=0.9750 fa_class=0.0625"
+            rack_report_line(40, 39),
+            "[RACK] fa=39/40 fa_frac=0.9750 fa_class=0.0625"
         );
-        // The ceiling's bind fraction is the DEFECT FINDING §16.68 predicts at
-        // mult = 1; it must be readable as an explicit 0.0000, never absent.
-        assert!(rack_report_line(4, 0, 0, 0, 1.0, 1.0, 1, 0, 0, true).contains("ceil=0.0000"));
+        // A gauge that never fired reads an explicit zero fraction.
+        assert!(rack_report_line(0, 0).contains("fa=0/0 fa_frac=0.0000"));
 
         // [FCAUSE] — the per-cause breakdown of `fa=`'s numerator population.
         // Full contract in `tests/fcause_reachability.rs`; pinned HERE too
@@ -15364,45 +13528,6 @@ mod tests {
         assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
     }
 
-    // ----- Per-path outstanding accounting (task #86, RWM_STORE_PERCAP) -------
-
-    #[test]
-    fn percap_store_cap_is_rate_x_echo_rtt_with_floor_and_ceiling() {
-        // Derived, not tuned: cap_i = gain × rate_i × echoRTT_i. A c2-like
-        // fast path (BtlBw ≈ 10 400 sym/s, echo RTT ≈ 80 ms): pipe = 832,
-        // gain 2 → 1664 — inside [64, 2048].
-        assert_eq!(
-            percap_store_cap(Some(10_400.0 * 0.080), 1024, 2, 2.0, 64, 2048),
-            1664
-        );
-        // A c3-like slow path (BtlBw ≈ 2000 sym/s, echo RTT ≈ 60 ms): pipe
-        // = 120, gain 2 → 240 — its OWN shallow cap, independent of the
-        // fast path's.
-        assert_eq!(
-            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
-            240
-        );
-        // Ceiling: the measured 2048-per-path knee bounds a deep pipe (and
-        // the echo-RTT positive feedback).
-        assert_eq!(percap_store_cap(Some(4000.0), 1024, 2, 2.0, 64, 2048), 2048);
-        // Floor: a transiently-tiny anchor cannot strangle the account.
-        assert_eq!(percap_store_cap(Some(3.0), 1024, 2, 2.0, 64, 2048), 64);
-    }
-
-    #[test]
-    fn percap_store_cap_warmup_inherits_equal_legacy_share() {
-        // Anchor not established (None): equal share of the legacy pooled
-        // cap, bounded — converges to the derived cap once the anchor warms.
-        assert_eq!(percap_store_cap(None, 1024, 2, 2.0, 64, 2048), 512);
-        assert_eq!(percap_store_cap(None, 1024, 4, 2.0, 64, 2048), 256);
-        // Non-positive pipe is warm-up too (cold Copa cwnd cannot happen,
-        // but the law must not divide into nonsense).
-        assert_eq!(percap_store_cap(Some(0.0), 1024, 2, 2.0, 64, 2048), 512);
-        // Share is bounded by the same [floor, pool] clamp.
-        assert_eq!(percap_store_cap(None, 100, 2, 2.0, 64, 2048), 64);
-        assert_eq!(percap_store_cap(None, 100_000, 2, 2.0, 64, 2048), 2048);
-    }
-
     // ----- Honest floor-clock caps (feat/percap-honest-cap) -------------------
 
     #[test]
@@ -15596,8 +13721,8 @@ mod tests {
     }
 
     /// **ζ AND δ ARE ONE INVOLUTION, BIT-EXACTLY.** The rate controller's
-    /// effective tail target and the contract's α both read
-    /// `ζ(δ(hint))` where they read `hint.tail_loss_scale()` before §16.81.
+    /// effective tail target reads `ζ(δ(hint))` where it read
+    /// `hint.tail_loss_scale()` before §16.81.
     /// That substitution is byte-identical only if the round trip
     /// `ζ → δ = 0.5/ζ → ζ = 0.5/δ` is exact at all three preset ζ. It is
     /// (0.01, 1, 100 are all exactly representable ratios of 0.5), and this
@@ -15610,30 +13735,6 @@ mod tests {
                 h.tail_loss_scale(),
                 "{h:?}: ζ(δ(hint)) is not the hint's own declared price ratio"
             );
-        }
-        // And the contract's α is unchanged at every preset, BIT-EXACTLY, on
-        // the base an unconfigured tunnel resolves to.
-        //
-        // The reference is the PRODUCT the pre-repair code computed, not the
-        // decimal it prints as: `1e-5 * 0.01` is `1.0000000000000001e-7` and
-        // the literal `1e-7` is one ulp below it. Comparing against the
-        // literal would be asserting a DIFFERENT number from the one that
-        // shipped — which is the whole reason these pins are `assert_eq!`.
-        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-            assert_eq!(
-                contract_alpha(CONTRACT_TAIL_LOSS_BASE, h),
-                (CONTRACT_TAIL_LOSS_BASE * h.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0),
-                "{h:?}: α is not the pre-repair product"
-            );
-        }
-        // …and it is the number §16.69 publishes, to reading precision.
-        for (h, alpha) in [
-            (ProtocolHint::Realtime, 1e-7f64),
-            (ProtocolHint::Auto, 1e-5),
-            (ProtocolHint::Bulk, 1e-3),
-        ] {
-            let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, h);
-            assert!((a - alpha).abs() <= alpha * 1e-12, "{h:?}: α = {a}");
         }
         // β, the rate mix's weight: 0 at BOTH the Realtime and Auto ends
         // (the clamp) and 1 at Bulk (x/x) — all three exactly, which is what
@@ -15977,517 +14078,6 @@ mod tests {
                 .clamp(64, store_max);
             assert!(c > floor_law);
         }
-    }
-
-    #[test]
-    fn percap_store_full_pauses_only_when_no_account_has_headroom() {
-        // One account below its cap ⇒ admit (the infl_percap_full pattern:
-        // the slow path's full account never starves the fast path).
-        assert!(!percap_store_full(&[(240, 240), (100, 1664)]));
-        // Every account at/over its cap ⇒ paused.
-        assert!(percap_store_full(&[(240, 240), (1664, 1664)]));
-        assert!(percap_store_full(&[(300, 240), (1700, 1664)]));
-        // A zero cap counts as cap 1 (never a permanently-closed account).
-        assert!(!percap_store_full(&[(0, 0)]));
-        assert!(percap_store_full(&[(1, 0)]));
-    }
-
-    #[test]
-    fn percap_place_redirects_capfull_pick_to_headroom_path() {
-        // bound = cap in these cases: the unguarded legacy redirect law
-        // (RWM_PERCAP_GUARD=0), preserved exactly.
-        let accounts = [
-            (0u32, 240usize, 240usize, 240usize),
-            (1u32, 100usize, 1664usize, 1664usize),
-        ];
-        // Slow path (p0) at ITS cap: a p0 pick redirects to the deep path.
-        assert_eq!(percap_place_path(0, &accounts), 1);
-        // A pick with its own headroom stays.
-        assert_eq!(percap_place_path(1, &accounts), 1);
-        // All full (racing the gate): keep the pick — the gate pauses next
-        // iteration; the slop is one placement.
-        assert_eq!(
-            percap_place_path(0, &[(0, 240, 240, 240), (1, 1664, 1664, 1664)]),
-            0
-        );
-        // Redirect goes to the MOST relative headroom.
-        assert_eq!(
-            percap_place_path(
-                2,
-                &[(0, 200, 240, 240), (1, 100, 1664, 1664), (2, 50, 50, 50)]
-            ),
-            1
-        );
-    }
-
-    #[test]
-    fn percap_redirect_bound_is_floor_clock_bdp() {
-        // Derived, not tuned: bound_j = rate_j × RTprop_j — κ=1 on the FLOOR
-        // clock (κ=1 on the loaded echo clock is vacuous: echoRTT ≈ RTprop +
-        // out/rate, the measured c8 feedback). A c3-like slow path (rate ≈
-        // 1534 sym/s ≈ 15.7 Mbit of 1279-B symbols, RTprop 60 ms): bound =
-        // 93 symbols ≈ one un-queued pipe — vs the knee-adjacent cap 1531
-        // the unguarded redirect filled (≈1.3 s dwell).
-        assert_eq!(percap_redirect_bound(Some(1534.0 * 0.060), 1531, 2.0), 93);
-        // Never above the account's own cap.
-        assert_eq!(percap_redirect_bound(Some(5000.0), 2048, 2.0), 2048);
-        // Warm-up (no anchor): the share's pipe term, cap/gain.
-        assert_eq!(percap_redirect_bound(None, 512, 2.0), 256);
-        // One-symbol quantum: a cold/tiny account is never permanently
-        // redirect-closed, and degenerate inputs cannot divide into nonsense.
-        assert_eq!(percap_redirect_bound(Some(0.5), 240, 2.0), 1);
-        assert_eq!(percap_redirect_bound(Some(-1.0), 0, 2.0), 1);
-    }
-
-    #[test]
-    fn percap_store_full_guarded_backpressures_instead_of_parking() {
-        // No account cap-full → admit (every pick lands on its own account).
-        assert!(!percap_store_full_guarded(&[(100, 240, 93), (500, 1664, 800)]));
-        // Fast cap-full + slow WITHIN its dwell bound → admit (a guard-
-        // eligible redirect target exists).
-        assert!(!percap_store_full_guarded(&[(50, 240, 93), (1664, 1664, 800)]));
-        // Fast cap-full + slow past its dwell bound (though under cap) →
-        // FULL: the redirect would park symbols behind the slow path's
-        // standing queue — backpressure instead. THE c8 fix.
-        assert!(percap_store_full_guarded(&[(120, 240, 93), (1664, 1664, 800)]));
-        // All cap-full → FULL (the unguarded law, unchanged).
-        assert!(percap_store_full_guarded(&[(240, 240, 93), (1664, 1664, 800)]));
-        // bound = cap degenerates exactly to the unguarded gate.
-        assert_eq!(
-            percap_store_full_guarded(&[(120, 240, 240), (1664, 1664, 1664)]),
-            percap_store_full(&[(120, 240), (1664, 1664)])
-        );
-        assert_eq!(
-            percap_store_full_guarded(&[(240, 240, 240), (1664, 1664, 1664)]),
-            percap_store_full(&[(240, 240), (1664, 1664)])
-        );
-    }
-
-    /// The c8 regression in miniature, guarded (roadmap item 1): the fast
-    /// account pegs at its cap; overflow redirects fill the slow account
-    /// only to its FLOOR-CLOCK dwell bound (rate×RTprop), then redirect
-    /// STOPS and the guarded gate reads FULL — admission pauses instead of
-    /// parking ~cap symbols (≈1.3 s dwell at L1) on the slow path. Deep-path
-    /// redirects within bound are unaffected; the slow path's OWN picks are
-    /// never guard-gated.
-    #[test]
-    fn percap_redirect_guard_stops_at_dwell_bound_and_pauses_admission() {
-        const SLOW: u32 = 0;
-        const FAST: u32 = 1;
-        // Slow: rate 2000 sym/s, echoSRTT 60 ms, RTprop 30 ms → cap 240,
-        // bound 60. Fast: rate 10 000, echoSRTT 80 ms, RTprop 40 ms →
-        // cap 1600, bound 400.
-        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
-        let fast_cap = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        let slow_bound = percap_redirect_bound(Some(2000.0 * 0.030), slow_cap, 2.0);
-        let fast_bound = percap_redirect_bound(Some(10_000.0 * 0.040), fast_cap, 2.0);
-        assert_eq!((slow_cap, fast_cap), (240, 1600));
-        assert_eq!((slow_bound, fast_bound), (60, 400));
-
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> =
-            std::collections::HashMap::new();
-        let accounts4 = |out: &std::collections::HashMap<u32, usize>| {
-            [
-                (SLOW, out.get(&SLOW).copied().unwrap_or(0), slow_cap, slow_bound),
-                (FAST, out.get(&FAST).copied().unwrap_or(0), fast_cap, fast_bound),
-            ]
-        };
-        let accounts3 = |out: &std::collections::HashMap<u32, usize>| {
-            accounts4(out).map(|(_, o, c, b)| (o, c, b))
-        };
-        // The c8 shape: the softmax favors the fast path — every pick FAST.
-        let mut seq = 0u64;
-        while !percap_store_full_guarded(&accounts3(&out)) {
-            let placed = percap_place_path(FAST, &accounts4(&out));
-            percap_charge(&mut acct, &mut out, seq, placed);
-            seq += 1;
-            assert!(seq < 10_000, "guarded gate must close");
-        }
-        // Fast filled to ITS cap (own picks are never guard-gated); the
-        // overflow parked on slow stopped at the DWELL BOUND — 60 symbols
-        // (30 ms of dwell at slow's rate), not the 240 cap (120 ms), and
-        // nothing like the L1 ~2048 (1.3 s).
-        assert_eq!(out[&FAST], fast_cap, "fast account pegs at its own cap");
-        assert_eq!(
-            out[&SLOW], slow_bound,
-            "redirect STOPS at the floor-clock dwell bound, far below the cap"
-        );
-        // The unguarded gate would still admit here (slow has cap headroom)
-        // — that admission IS the measured c8 parking regression; the
-        // guarded gate reads FULL instead: backpressure, don't park.
-        assert!(!percap_store_full(
-            &accounts3(&out).map(|(o, c, _)| (o, c))
-        ));
-        assert!(percap_store_full_guarded(&accounts3(&out)));
-        // Racing the closed gate, a further fast pick finds no eligible
-        // target and keeps the pick (one-placement slop, gate closes).
-        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
-        // The slow path's OWN picks are not guard-gated: with the gate open
-        // (fast drained below cap) a slow pick with cap headroom places
-        // directly even though slow is past its redirect bound.
-        let fast_seqs: Vec<u64> = acct
-            .iter()
-            .filter(|&(_, &p)| p == FAST)
-            .map(|(&s, _)| s)
-            .take(200)
-            .collect();
-        for s in &fast_seqs {
-            percap_release_seq(&mut acct, &mut out, *s);
-        }
-        assert!(!percap_store_full_guarded(&accounts3(&out)), "gate reopens on drain");
-        assert_eq!(
-            percap_place_path(SLOW, &accounts4(&out)),
-            SLOW,
-            "own-pick placement is never guard-gated below the cap"
-        );
-        // And a fast pick now redirects nowhere (slow still ≥ bound) — it
-        // has its own headroom back, so it just places on fast.
-        assert_eq!(percap_place_path(FAST, &accounts4(&out)), FAST);
-        // Gauges stay Σ-consistent (the charge/release lockstep invariant).
-        assert_eq!(out.values().sum::<usize>(), acct.len());
-    }
-
-    /// The C8 conflict in miniature (the #84 residual this feature exists
-    /// for): a deep c2-like account and a shallow c3-like account coexist —
-    /// the shallow path's cap does NOT inflate when the deep path's does,
-    /// its outstanding never exceeds its own cap (placements past it
-    /// redirect to the deep account), and out-of-order acks release the
-    /// right account.
-    #[test]
-    fn percap_deep_and_shallow_accounts_coexist_without_coupling() {
-        // Caps from the derivation itself: fast pipe deepens ×2 mid-run,
-        // the slow cap must not move (per-path independence — the exact
-        // failure of the SHARED pool, where raising the cap for the fast
-        // path collapsed the slow one).
-        let slow_cap = percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048);
-        let fast_cap0 = percap_store_cap(Some(5000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        let fast_cap1 = percap_store_cap(Some(10_000.0 * 0.080), 1024, 2, 2.0, 64, 2048);
-        assert_eq!(slow_cap, 240);
-        assert_eq!(fast_cap0, 800);
-        assert_eq!(fast_cap1, 1600);
-        assert_eq!(
-            percap_store_cap(Some(2000.0 * 0.060), 1024, 2, 2.0, 64, 2048),
-            slow_cap,
-            "shallow cap must not inflate when the deep path's pipe grows"
-        );
-
-        // Draw/release accounting: stripe placements 50/50 (the scheduler's
-        // pick), with the redirect enforcing the accounts.
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> =
-            std::collections::HashMap::new();
-        const SLOW: u32 = 0;
-        const FAST: u32 = 1;
-        // bound = cap: this test documents the UNGUARDED accounting law
-        // (RWM_PERCAP_GUARD=0); the guarded law has its own miniature below.
-        let caps = |out: &std::collections::HashMap<u32, usize>| {
-            [
-                (SLOW, out.get(&SLOW).copied().unwrap_or(0), 240usize, 240usize),
-                (FAST, out.get(&FAST).copied().unwrap_or(0), 1600usize, 1600usize),
-            ]
-        };
-        let mut seq = 0u64;
-        // Admit while ANY account has headroom (the gate), place round-robin
-        // through the redirect (the placement law).
-        loop {
-            let accounts: Vec<(usize, usize)> =
-                caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
-            if percap_store_full(&accounts) {
-                break;
-            }
-            let pick = if seq % 2 == 0 { SLOW } else { FAST };
-            let placed = percap_place_path(pick, &caps(&out));
-            percap_charge(&mut acct, &mut out, seq, placed);
-            seq += 1;
-        }
-        // The shallow account sits exactly at ITS pipe-derived cap; the deep
-        // account filled to ITS OWN cap — the overflow went to the deep
-        // path, the shallow path was never over-committed.
-        assert_eq!(out[&SLOW], 240, "slow outstanding pinned at its own cap");
-        assert_eq!(out[&FAST], 1600, "fast account absorbed the redirect");
-        assert_eq!(acct.len(), 240 + 1600);
-
-        // Out-of-order acks (SACK ranges land fast-path seqs first): only
-        // the fast account drains; the slow account is untouched.
-        let fast_seqs: Vec<u64> = acct
-            .iter()
-            .filter(|&(_, &p)| p == FAST)
-            .map(|(&s, _)| s)
-            .take(600)
-            .collect();
-        for s in &fast_seqs {
-            percap_release_seq(&mut acct, &mut out, *s);
-        }
-        assert_eq!(out[&FAST], 1000);
-        assert_eq!(out[&SLOW], 240, "OOO fast acks must not drain the slow account");
-        // Idempotence: re-releasing a SACKed seq is a no-op (no
-        // double-release when the cumulative frontier passes it later).
-        percap_release_seq(&mut acct, &mut out, fast_seqs[0]);
-        assert_eq!(out[&FAST], 1000);
-
-        // Cumulative frontier passes the first 300 seqs: each releases its
-        // OWN account (already-SACKed ones release nothing).
-        let below: (usize, usize) = acct.range(..=299u64).fold((0, 0), |m, (_, &p)| {
-            if p == SLOW { (m.0 + 1, m.1) } else { (m.0, m.1 + 1) }
-        });
-        percap_release_cumulative(&mut acct, &mut out, 299);
-        assert_eq!(out[&SLOW], 240 - below.0);
-        assert_eq!(out[&FAST], 1000 - below.1);
-        // Gauges stay Σ-consistent with the account map (the invariant the
-        // sender loop's charge/release lockstep preserves).
-        assert_eq!(out.values().sum::<usize>(), acct.len());
-        // With headroom restored, admission resumes.
-        let accounts: Vec<(usize, usize)> =
-            caps(&out).iter().map(|&(_, o, c, _)| (o, c)).collect();
-        assert!(!percap_store_full(&accounts));
-    }
-
-    /// N = 1 identity: the percap law is engaged only for N ≥ 2 live paths
-    /// (caller gates on `pipes.len() >= 2`, so `percap_caps` stays empty and
-    /// the tx_paused expression is the legacy branch verbatim). What CAN be
-    /// asserted purely: warm-up at N = 1 would be the full legacy cap — the
-    /// share degenerates to the pool itself, no behavior cliff on a 2→1
-    /// live-path flap while accounts drain.
-    #[test]
-    fn percap_warmup_share_degenerates_to_legacy_at_n1() {
-        assert_eq!(percap_store_cap(None, 1024, 1, 2.0, 64, 2048), 1024);
-        assert_eq!(percap_store_cap(None, 0, 1, 2.0, 64, 2048), 64);
-    }
-
-    // ----- Bounded account borrowing (feat/store-borrowing, §16.22) --------
-
-    /// The c8 honest miniature (paper §16.22.3(b)): the slow lender lends
-    /// exactly its headroom beyond its own reserved intake for the loan's
-    /// return latency — and lending toward a slow pipe is IMPOSSIBLE (the
-    /// #86 parking direction is unrepresentable, not merely guarded).
-    #[test]
-    fn borrow_lend_room_reserves_lender_intake_and_is_one_directional() {
-        // Honest c8 anchors: slow 2000 sym/s @ 60 ms (cap ≈ 500), fast
-        // 10 400 sym/s @ 8 ms (cap ≈ 1230, cap-full and asking).
-        let slow = BorrowAccount {
-            path: 1,
-            out: 150,
-            cap: 500,
-            fly: 150,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        let fast = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 1230,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.008),
-        };
-        // T_return(fast) = 1230/10400 + 0.008 ≈ 0.1263 s → reservation =
-        // ceil(2000·0.1263) = 253 → room = 500 − 150 − 253 = 97: the slow
-        // account lends its unused runway, NOT its own short-horizon need.
-        assert_eq!(percap_lend_room(&slow, &fast), 97);
-        // Post-loan solvency invariant: after lending the full room, the
-        // lender still holds ≥ its reserved intake (cap − out − room =
-        // reservation).
-        assert_eq!(slow.cap - slow.out - percap_lend_room(&slow, &fast), 253);
-        // fast → slow (the parking direction): a cap-full slow borrower
-        // has T_return = 500/2000 + 0.06 = 0.31 s → the fast lender's
-        // reservation = ceil(10400·0.31) = 3224 ≫ cap 1230 → room ≡ 0
-        // even with a completely EMPTY fast account.
-        let slow_full = BorrowAccount {
-            out: 500,
-            fly: 500,
-            ..slow
-        };
-        let fast_empty = BorrowAccount {
-            out: 0,
-            fly: 0,
-            ..fast
-        };
-        assert_eq!(percap_lend_room(&fast_empty, &slow_full), 0);
-        // Warm-up on either side lends nothing (isolation, not the pool).
-        let cold = BorrowAccount {
-            rate: None,
-            ..slow
-        };
-        assert_eq!(percap_lend_room(&cold, &fast), 0);
-        let cold_borrower = BorrowAccount {
-            rtprop_s: None,
-            ..fast
-        };
-        assert_eq!(percap_lend_room(&slow, &cold_borrower), 0);
-        // The lender pick: with a second lender offering less room, the
-        // max-room lender wins; with none, no loan.
-        let slow2 = BorrowAccount {
-            path: 2,
-            out: 400,
-            ..slow
-        };
-        assert_eq!(
-            percap_borrow_lender(0, &[fast, slow, slow2]),
-            Some(1),
-            "max lend room (97 vs 0) picks the slack lender"
-        );
-        assert_eq!(percap_borrow_lender(1, &[fast_empty, slow_full]), None);
-    }
-
-    /// The symmetric-neutrality THEOREM (paper §16.22.3(c)): at a
-    /// rate/RTprop-symmetric cell a cap-full borrower forces the lender's
-    /// reservation above the lender's whole cap (reservation − cap =
-    /// anchor > 0), so loans are identically zero for EVERY lender state —
-    /// the c7 percap win is preserved by proof, not tuning.
-    #[test]
-    fn borrow_is_identically_zero_at_symmetric_cells() {
-        let mk = |path: u32, out: usize| BorrowAccount {
-            path,
-            out,
-            cap: 1000,
-            fly: out,
-            rate: Some(5_000.0),
-            rtprop_s: Some(0.020),
-        };
-        // Borrower cap-full (the only time it asks): T_return = 1000/5000
-        // + 0.02 = 0.22 s → reservation = 1100 > cap = 1000.
-        let borrower = mk(0, 1000);
-        for lender_out in [0usize, 100, 500, 999] {
-            assert_eq!(
-                percap_lend_room(&mk(1, lender_out), &borrower),
-                0,
-                "symmetric lender (out={lender_out}) must lend 0"
-            );
-        }
-        assert_eq!(percap_borrow_lender(0, &[borrower, mk(1, 0)]), None);
-        assert!(!percap_lend_edge_exists(&[borrower, mk(1, 0)]));
-    }
-
-    /// The degenerate cases frame the design space (paper §16.22.3(d)):
-    /// dropping the reservation (T_return → 0) is the POOLED Σcap law —
-    /// lend up to cap − out; the all-cap-full state has no lend edge, so
-    /// the borrowed admission gate degenerates to the unguarded FULL.
-    #[test]
-    fn borrow_degenerates_to_pool_without_reservation_and_to_percap_when_closed() {
-        // T_return = 0 (empty pipe, zero RTprop — the reservation term
-        // vanishes): room = cap − out, i.e. any account's slack is
-        // anyone's — the pooled law. The reservation term is the whole
-        // difference between the principled point and the pool.
-        let lender = BorrowAccount {
-            path: 1,
-            out: 300,
-            cap: 500,
-            fly: 300,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        let degenerate_borrower = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 0,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.0),
-        };
-        assert_eq!(
-            percap_lend_room(&lender, &degenerate_borrower),
-            lender.cap - lender.out
-        );
-        // All accounts cap-full → every lender's own headroom is 0 → no
-        // edge: the gate reads FULL exactly like the no-borrow gate
-        // (aggregate law: borrowing can move headroom, never mint it).
-        let full = |path: u32| BorrowAccount {
-            path,
-            out: 1000,
-            cap: 1000,
-            fly: 1000,
-            rate: Some(5_000.0),
-            rtprop_s: Some(0.010),
-        };
-        assert!(!percap_lend_edge_exists(&[full(0), full(1)]));
-    }
-
-    /// The loan ledger lifecycle (the c8 miniature end-to-end): a loan
-    /// charges the LENDER's account while flying on the borrower's pipe,
-    /// the gauges correct account→pipe occupancy, and the SAME acks that
-    /// release the store repay the loan — idempotently, SACK or cumulative.
-    #[test]
-    fn borrow_loans_charge_lender_fly_on_borrower_and_repay_on_ack() {
-        let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut out: std::collections::HashMap<u32, usize> = Default::default();
-        let mut loans: BTreeMap<u64, (u32, u32)> = BTreeMap::new();
-        let mut lent: std::collections::HashMap<u32, usize> = Default::default();
-        let mut borrowed: std::collections::HashMap<u32, usize> = Default::default();
-        // Fast (path 0) cap-full; three picks borrow from slow (path 1):
-        // the symbols FLY on 0, are CHARGED to 1.
-        for seq in [100u64, 101, 102] {
-            percap_charge(&mut acct, &mut out, seq, 1);
-            percap_loan_charge(&mut loans, &mut lent, &mut borrowed, seq, 1, 0);
-        }
-        assert_eq!(out.get(&1), Some(&3), "loans charge the LENDER's account");
-        assert_eq!(out.get(&0), None, "the borrower's account is untouched");
-        assert_eq!(lent.get(&1), Some(&3));
-        assert_eq!(borrowed.get(&0), Some(&3));
-        // Pipe gauges: fly_0 = out_0 − lent_0 + borrowed_0 = 0 − 0 + 3;
-        // fly_1 = 3 − 3 + 0 = 0 — the slow PIPE carries none of the loan.
-        // (Computed by the caller; asserted here from the gauge parts.)
-        assert_eq!(0 + borrowed.get(&0).copied().unwrap_or(0), 3);
-        assert_eq!(
-            out.get(&1).copied().unwrap_or(0) - lent.get(&1).copied().unwrap_or(0),
-            0
-        );
-        // SACK (OOO) repayment of 101: account + ledger release together.
-        percap_release_seq(&mut acct, &mut out, 101);
-        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
-        assert_eq!(out.get(&1), Some(&2));
-        assert_eq!(lent.get(&1), Some(&2));
-        assert_eq!(borrowed.get(&0), Some(&2));
-        // Idempotent re-release (SACK re-advertisement).
-        percap_loan_release(&mut loans, &mut lent, &mut borrowed, 101);
-        assert_eq!(lent.get(&1), Some(&2));
-        // Cumulative frontier advance repays the rest (split_off twin).
-        percap_release_cumulative(&mut acct, &mut out, 102);
-        percap_loan_release_cumulative(&mut loans, &mut lent, &mut borrowed, 102);
-        assert_eq!(out.get(&1), Some(&0));
-        assert_eq!(lent.get(&1), Some(&0));
-        assert_eq!(borrowed.get(&0), Some(&0));
-        assert!(loans.is_empty(), "every loan self-liquidated on ack");
-    }
-
-    /// The admission-gate composition (paper §16.22.4): the borrowed gate
-    /// opens the guarded-FULL state exactly when a lend edge exists, and
-    /// only then.
-    #[test]
-    fn borrow_admission_gate_opens_only_on_a_real_lend_edge() {
-        // Guarded gate reads FULL: fast (path 0) cap-full, slow (path 1)
-        // open but past its redirect bound (out 200 ≥ bound 117).
-        let accounts = [(1230usize, 1230usize, 1230usize), (200, 500, 117)];
-        assert!(percap_store_full_guarded(&accounts));
-        // Borrow edge: slow can lend to the cap-full fast borrower
-        // (T_return(fast) ≈ 0.126 s, reservation 253, room = 500 − 200 −
-        // 253 = 47 > 0) → admission stays open.
-        let fast = BorrowAccount {
-            path: 0,
-            out: 1230,
-            cap: 1230,
-            fly: 1230,
-            rate: Some(10_400.0),
-            rtprop_s: Some(0.008),
-        };
-        let slow = BorrowAccount {
-            path: 1,
-            out: 200,
-            cap: 500,
-            fly: 200,
-            rate: Some(2_000.0),
-            rtprop_s: Some(0.060),
-        };
-        assert!(percap_lend_edge_exists(&[fast, slow]));
-        // The edge closes when the lender's slack is inside its
-        // reservation (out 300: room = 500 − 300 − 253 < 0) — the gate
-        // then reads FULL exactly like the no-borrow arm: backpressure.
-        let slow_reserved = BorrowAccount {
-            out: 300,
-            fly: 300,
-            ..slow
-        };
-        assert!(!percap_lend_edge_exists(&[fast, slow_reserved]));
     }
 
     /// feat/gen-substrate-ceiling: the derived pipeline depth M* =

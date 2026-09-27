@@ -23,8 +23,8 @@
 //! that loop's `gaps` vector has exactly two producers:
 //!
 //!   * `timer` — the sender's own tail-sweep deadline arm. This is the ONLY
-//!     cause the quantile/Cantelli `W` clocks: `tail_deadline` is computed
-//!     from `sweep_timeout_us_all`, and nothing else in the loop reads it.
+//!     cause the sender's recovery clock clocks: `tail_deadline` is computed
+//!     from `sweep_timeout_us`, and nothing else in the loop reads it.
 //!   * the `nack_rx` channel, fed solely by the SACK→gap inversion in the
 //!     WindowAck handler — clocked by the RECEIVER, never by the sender's `W`.
 //!     Its two receiver arms are separable for free, because the timer-driven
@@ -40,7 +40,7 @@
 //!      the `-`-iff-no-denominator rule, so an absent reading can never be
 //!      read as a measured zero.
 //!   2. **THE LINE FIRES AND ITS CAUSES ARE POPULATED**, over a `c3`-lossy
-//!      plain-window loopback with the quantile clock ARMED. THIS IS THE
+//!      plain-window loopback. THIS IS THE
 //!      ASSERTION THAT FAILS ON THE OLD ENGINE: `[FCAUSE]` does not exist
 //!      there and no fire was ever attributed to a cause.
 //!   3. The line is INTERNALLY CONSISTENT: the four classes sum to `n`,
@@ -132,17 +132,14 @@ fn the_fcause_line_format_is_pinned() {
 
 // ── 2-6: THE REACHABILITY RUN ───────────────────────────────────────────
 
-/// The arm. The quantile clock is ARMED at the sweep's `Q009` probe point, so
-/// the timer whose fires this test is counting is the one the sweep measured.
-/// `RWM_DIAG` carries `[DIAG] retx=`, the independent witness. No gate here
-/// changes a law: `RWM_QUANTILE_CLOCKS` selects which recovery cadence the
-/// sender computes, and the sweep already scored both sides of it.
-const ARM: [(&str, &str); 5] = [
+/// The arm. `RWM_DIAG` carries `[DIAG] retx=`, the independent witness. No
+/// gate here changes a law: the sender runs the shipped recovery clock. (The
+/// run used to arm the quantile clock at the α-sweep's `Q009` probe point;
+/// that arm was removed, and the classification does not depend on which
+/// clock times the `timer` class.)
+const ARM: [(&str, &str); 2] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
-    ("RWM_QUANTILE_CLOCKS", "1"),
-    ("RWM_W_FORM", "quantile"),
-    ("RWM_ALPHA_OVERRIDE", "0.009"),
 ];
 
 fn free_port() -> u16 {
@@ -323,13 +320,6 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
         "the client's [GATES] echo does not carry RWM_DIAG=1 — the arm did \
          not arm:\n{cli}"
     );
-    // The clock under test is ARMED, so the `timer` class is the sweep's own
-    // timer and a zero there is a finding rather than a disarmed dial.
-    assert!(
-        cli.contains("RWM_QUANTILE_CLOCKS=1"),
-        "the quantile clock did not arm — the `timer` class would not be the \
-         clock the sweep measured:\n{cli}"
-    );
 
     // 2. THE LINE FIRES. This is what fails on the old engine.
     let last = cli
@@ -423,17 +413,24 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
         "[FCAUSE] unattr must be exactly n - fired: {last}"
     );
 
-    // And the `[RACK]` line it sits beside must agree about `fired`.
-    if let Some(rack) = cli.lines().rev().find(|l| l.contains("[RACK] ")) {
-        let fa = field(rack, "fa=");
-        let (_sp, fd) = fa
-            .split_once('/')
-            .unwrap_or_else(|| panic!("fa= must render `<spurious>/<fired>`: {rack}"));
-        assert_eq!(
-            fd.parse::<u64>().expect("fired parses"),
-            fired,
-            "[FCAUSE] fired={fired} disagrees with [RACK] fa=.../{fd} — the \
-             two lines read the same counter:\n{rack}\n{last}"
+    // And the SENDER's `[RACK]` line must agree about `fired`. The client
+    // process runs a receiver task too, whose receiver-site gauge prints its
+    // own `[RACK]` (its `fa=` counts repair-class ARRIVALS, not the sender's
+    // fires), and the two tasks' teardown order is not fixed — so the
+    // sender's line is found by its value, never by its position.
+    let racks: Vec<&str> = cli.lines().filter(|l| l.contains("[RACK] ")).collect();
+    if !racks.is_empty() {
+        let fired_of = |rack: &str| -> u64 {
+            let fa = field(rack, "fa=");
+            let (_sp, fd) = fa
+                .split_once('/')
+                .unwrap_or_else(|| panic!("fa= must render `<spurious>/<fired>`: {rack}"));
+            fd.parse::<u64>().expect("fired parses")
+        };
+        assert!(
+            racks.iter().any(|r| fired_of(r) == fired),
+            "[FCAUSE] fired={fired} matches no [RACK] fa=.../<fired> line — the \
+             sender's two lines read the same counter:\n{racks:#?}\n{last}"
         );
     }
 }

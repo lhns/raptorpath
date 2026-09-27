@@ -39,9 +39,8 @@
 //! buckets and their refresh stamps (`gen_tokens`, `src_tokens`,
 //! `cc_rate_cached`, `cc_rate_ceiling`, …), the derived-depth and
 //! dynamic-cap caches (`gen_pipe_m`, `gen_pipe_store_cap`, `dyn_store_cap`,
-//! `dyn_infl_cap`, `wd_*`, `pa_*`, `ps_*`), the per-path account caps
-//! (`percap_caps` / `percap_bounds` / `percap_rr` / `percap_k`, refreshed at
-//! the dyn-cap cadence), `emit_batch_live` (RE-SCOPED every loop iteration
+//! `dyn_infl_cap`, `pa_*`), the per-path echo-ratio state (`percap_k`,
+//! refreshed at the dyn-cap cadence), `emit_batch_live` (RE-SCOPED every loop iteration
 //! on the live-path count — the one member of the `RWM_EMIT_BATCH` family
 //! that is NOT policy), the DIAG counter set, and the two DIAG t0 stamps.
 //! The mutable EMISSION state lives in
@@ -302,8 +301,6 @@ pub(crate) struct SenderPolicy {
     pub store_paths_on: bool,
     /// `RWM_STORE_PATH_POOL`: per-live-path pool knee.
     pub store_path_pool: usize,
-    /// `RWM_STORE_CAPW`: capacity-weighted outstanding pool.
-    pub capw_on: bool,
     /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
     pub pool_anchor_on: bool,
     /// `RWM_STORE_CAP_UNIFIED` (goal-gate "Store-Cap Triplication"): the
@@ -368,24 +365,12 @@ pub(crate) struct SenderPolicy {
     pub contract_rho: f64,
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
-    /// `RWM_PLACE_SLACK`: frontier-slack placement cost.
-    pub place_slack_on: bool,
-    /// `RWM_WIN_DECOUPLE`: window/inflight decoupling at N = 1.
-    pub win_decouple_on: bool,
 
-    // ── Per-path outstanding accounting (task #86, ADR-0058) ─────────────
-    /// `RWM_STORE_PERCAP`: per-path accounts.
-    pub percap_on: bool,
-    /// `RWM_PERCAP_GUARD`: the delay-aware redirect guard.
-    pub percap_guard_on: bool,
-    /// `RWM_STORE_BORROW` (§16.22): bounded account borrowing.
-    pub percap_borrow_on: bool,
     /// `RWM_HONEST_CAP` (+ `RWM_PLAIN_RS`): honest floor-clock caps.
     pub honest_cap_on: bool,
-    /// `percap_on || (diag_on && plain_dyn_cap)` — under `RWM_DIAG` the
-    /// account maps are maintained as a GAUGE even when the law is off.
-    /// Behavior-inert by construction: every percap DECISION site keys on
-    /// `percap_caps` NON-EMPTY (the "law engaged" signal).
+    /// `diag_on && plain_dyn_cap` — under `RWM_DIAG` the per-path store
+    /// attribution maps behind `[DIAG] sout=` are maintained. A GAUGE only:
+    /// nothing reads them but the DIAG print.
     pub percap_track: bool,
 
     // ── The unified span / shed laws (§16.20.3, ADR-0064) ────────────────
@@ -409,48 +394,15 @@ pub(crate) struct SenderPolicy {
     pub recov_sp: bool,
     /// `RWM_RECOV_MP_LIVE`: recovery clocks on `live_paths()`.
     pub recov_mp_live: bool,
-    /// `RWM_PATIENCE_DERIVED`: the derived recovery-patience floor.
-    pub patience_derived: bool,
     /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
     /// tail-sweep / hole-refresh ROUND on the derived law (2·SRTT floored by
     /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
     /// undocumented [25, 100] ms. OFF ⇒ byte-identical to the shipped law.
     pub derived_sweep: bool,
-    /// `RWM_RACK_CLOCKS` (paper §16.68): both recovery clocks read RFC 8985
-    /// §6.2 Step 4's reordering window verbatim. REPLACES
-    /// [`Self::derived_sweep`] when both are set — rival laws for one
-    /// quantity, not composable axes. Default OFF.
-    pub rack_clocks: bool,
-    /// `RWM_RACK_REO_MULT` — RACK's own `reo_wnd_mult`, default 1, range
-    /// [1, 17]. Exposed so the law's `SRTT` ceiling is REACHABLE by a
-    /// battery; see the gate's decl for why it is otherwise inert.
-    pub rack_reo_mult: u64,
-    /// `RWM_QUANTILE_CLOCKS` (paper §16.69): the DERIVED quantile recovery
-    /// round. OUTRANKS `rack_clocks` and `derived_sweep`. Default OFF.
-    pub quantile_clocks: bool,
-    /// The false-alarm rate α ACTUALLY supplied to the quantile law, resolved
-    /// ONCE — `net::resolved_alpha(hint, gates.alpha_override)`. Read only by
-    /// the quantile law; a NUMBER, never a branch.
-    pub contract_alpha: f64,
-    /// What the CONTRACT alone would have said — `net::contract_alpha(hint)`,
-    /// `target_tail_loss × ζ(hint)`. Carried beside the resolved value so the
-    /// `[QALPHA]` echo is two-sided: an override is readable as a DIFFERENCE
-    /// from the contract rather than as a bare number nobody can place.
-    pub contract_alpha_base: f64,
-    /// `RWM_ALPHA_OVERRIDE` as resolved by the gate — `None` on every shipped
-    /// arm. EXPERIMENT ONLY; see the gate's declaration for why nothing may
-    /// ship reading it.
-    pub alpha_override: Option<f64>,
     /// `RWM_HOLDDOWN_Q` as resolved by the gate — `None` on every shipped
     /// path, where the sender answers a reported hole immediately, exactly as
     /// before. A NUMBER, never a branch. Paper §16.77.
     pub holddown_q: Option<f64>,
-    /// `RWM_W_FORM` as resolved by the gate — `cantelli` on every shipped arm
-    /// (paper §16.76). WHICH of the two rival `W` laws the armed quantile
-    /// clock evaluates; a SELECTED LAW on an A/B experiment axis, read only
-    /// when [`Self::quantile_clocks`] is armed. EXPERIMENT ONLY; nothing
-    /// shipped may read it.
-    pub w_form: crate::net::WForm,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -493,12 +445,6 @@ impl SenderPolicy {
         gates: &RuntimeGates,
         symbol_size: u16,
         protocol_hint: ProtocolHint,
-        // The contract's BASE tail-loss target (config.target_tail_loss).
-        // Plumbed 2026-09-08 (paper 16.81): the alpha seat used to
-        // mirror config.rs's own unwrap_or(1e-5) as a constant, so a tunnel
-        // configured at 1e-4 priced alpha at 1e-5 anyway - and the RECEIVER
-        // read the same constant at a hard-coded Auto. Both ends now take it.
-        target_tail_loss: f64,
         reliable: bool,
         coded_only: bool,
         generation: bool,
@@ -864,18 +810,6 @@ impl SenderPolicy {
         // follow-up — see goal-gate "Consolidation".)
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // ── Capacity-weighted outstanding pool (env RWM_STORE_CAPW) ──────────
-        // The ADR-0058 "c8 WATCH" follow-up (goal-gate "C8-Aware Pool Law"):
-        // pool = Σ_i honest per-path cap over LIVE paths (capw_store_cap) — each
-        // path earns unacked-frontier depth for its OWN pipe + recovery round,
-        // summed as ONE shared pool (borrowing stays free, only the sizing law
-        // changes vs RWM_STORE_PATHS' count-scaled clamp). Engaged N ≥ 2 with
-        // every live anchor warm; until then the configured pooled law
-        // (path-scaled / legacy) is the warm-up fallback. Default OFF: shipped
-        // byte-identical; the battery arm composes RWM_PLAIN_RS=1 so the anchor
-        // terms read ≈1× truth (the legacy over-read clamps this law to the
-        // N×knee ceiling ≡ path-scaled — documented at capw_store_cap).
-        let capw_on = gates.store_capw && plain_dyn_cap;
         // ── Pool-anchor honest dual-store law (env RWM_POOL_ANCHOR) ──────────
         // Goal-gate "Ship The Wins 1" (the §16.35 c7 blocker's named successor):
         // at N ≥ 2 live paths the pooled-store cap's RATE input is the per-path
@@ -1069,49 +1003,6 @@ impl SenderPolicy {
         // store_len.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // ── Frontier-slack placement (env RWM_PLACE_SLACK) ───────────────────
-        // Goal-gate "C8 Slow-Path Conversion" (pre-registered 2026-08-06): the
-        // §16.3 placement cost's load term becomes max(0, Ê_i − S)/ref with
-        // S = clamp(span/R_ack, 0, 250 ms) — span = sent_edge − cum_ack,
-        // R_ack = EWMA of the cumulative-ack advance rate (delivery truth,
-        // immune to the plain anchor's over-read). S = 0 until R_ack warms and
-        // whenever N < 2 (shipped cost bit-exact — the law is a strict
-        // continuous generalization; see Scheduler::set_place_slack /
-        // place_costs). Plain reliable window only. Default OFF.
-        let place_slack_on = gates.place_slack && reliable && !generation;
-        // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
-        // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
-        // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
-        // 0.79–0.80 of Σ; raising the shared cap to 8192 collapsed the slow
-        // path to 31.8 Mbit/s). Here each path gets its OWN account sized to
-        // ITS pipe (percap_store_cap: gain·rate_i·echoRTT_i, clamped to
-        // [floor, pool]); a symbol placed on path i draws path i's account and
-        // is released on the ack that removes it from the retention store
-        // (SACK/OOO or cumulative). Admission pauses only when NO live path
-        // has account headroom (percap_store_full — the infl_percap_full
-        // pattern), and the plain-reliable placement redirects a cap-full pick
-        // to the path with headroom (percap_place_path). Engaged only for
-        // N ≥ 2 live paths — N = 1 keeps the legacy pooled law bit-exactly.
-        // Default OFF: shipped byte-identical. Supersedes RWM_STORE_PATHS'
-        // pooled GATE when both are set (the warm-up share still inherits from
-        // whichever pooled law is configured, so STORE_PATHS composes as the
-        // warm-up baseline rather than conflicting).
-        let percap_on = gates.store_percap && plain_dyn_cap;
-        // Roadmap item 1 (the #86 c8 follow-up): the delay-aware redirect guard.
-        // Default ON whenever percap is on (RWM_PERCAP_GUARD=0 restores the
-        // unguarded redirect — the measured c8-regression control arm). The
-        // shipped default is untouched: percap itself is default OFF.
-        let percap_guard_on = percap_on && gates.percap_guard;
-        // Bounded account borrowing (feat/store-borrowing, paper §16.22): a
-        // pick landing on a cap-full account may FLY on that pipe while being
-        // CHARGED to a sibling account, bounded by
-        //   lend_i→j ≤ max(0, cap_i − out_i − rate_i·T_return(j)),
-        //   T_return(j) = fly_j/rate_j + RTprop_j (floor clock)
-        // — lend only headroom the lender cannot use within the loan's return
-        // latency. Requires the percap stack (accounts, guard, honest caps
-        // under RWM_PLAIN_RS). Default OFF: shipped byte-identical; the
-        // no-borrow percap arm is the same-binary control.
-        let percap_borrow_on = percap_on && gates.store_borrow;
         // ── Honest floor-clock store caps (feat/percap-honest-cap) ────────────
         // GUARD-RESULTS residual (i): with the redirect channel closed, the c8
         // parking flowed through the softmax's OWN picks under the knee-clamped
@@ -1123,8 +1014,7 @@ impl SenderPolicy {
         // rate_i·(gain−1)·R — residence on the measured unloaded drain clock
         // plus runway on the RECOVERY engine's clock (R = the 100-ms hole-
         // refresh/tail-sweep cadence bound), see `honest_store_cap`. Applies
-        // to the per-account
-        // percap caps AND the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
+        // to the N=1/anchor-sum pooled cap (the sc2 −20% fix: the
         // over-read was accidentally load-bearing there; K supplies that
         // headroom explicitly and honestly). Engaged only where the honest
         // sampler is live (plain in-order, no Copa CC ownership — the Σcwnd
@@ -1133,18 +1023,6 @@ impl SenderPolicy {
         // both gates default-OFF paths keep the shipped tree byte-identical
         // (RWM_PLAIN_RS itself is default OFF).
         let honest_cap_on = plain_dyn_cap && gates.plain_rs && gates.honest_cap;
-        // ── Window/inflight decoupling (env RWM_WIN_DECOUPLE) ────────────────
-        // Goal-gate "Window Decoupling + MTU Scaling" part 1 (pre-registered
-        // 2026-08-06 + diagnosis amendment): at N = 1 the admission gate moves
-        // from the un-SACKed total vs the anchor-sum latch to the live HEAD
-        // SPAN (last_sent − SACK/cum frontier — recovery-stalled holes
-        // excluded) vs the stall-metered allowance `win_decouple_allow`; the
-        // un-SACKed total keeps a retention backstop `win_decouple_cap_ret`
-        // (memory clamp 4096). Under Copa-sole the residence term is
-        // gain·Σcwnd (the 1024 ceiling truncation — the B1 jitter-cell dwell
-        // binder — is released). N ≥ 2 and warm-up keep the configured laws
-        // bit-exactly. Default OFF: shipped byte-identical.
-        let win_decouple_on = gates.win_decouple && plain_dyn_cap;
         // ── #85 budget-conserving taper (RWM_TAPER_R, default OFF) ────────────
         // MEASURED (goal-gate "r* Bursty-Loss Provisioning", L1 2026-07-13): the
         // legacy taper accrual below sums to Σ τ(t) = r symbols PER ACK CYCLE
@@ -1252,15 +1130,13 @@ impl SenderPolicy {
         // emission step as `SenderPolicy::diag_on` (the GLIFE fill tracking).
         let diag_on = gates.diag;
         // Per-path store-attribution GAUGE (goal-gate "C8-Aware Pool Law"
-        // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG the
-        // percap account maps are maintained even when the percap LAW is off, so
-        // the DIAG `sout=` field shows each path's share of the POOLED
-        // outstanding (which path is holding the unacked-frontier span — the c8
-        // pool-arm diagnosis gauge). Behavior-inert by construction: every percap
-        // decision site keys on `percap_caps` NON-EMPTY (the "law engaged"
-        // signal), and caps are only computed under percap_on — with the law off
-        // the maps feed the DIAG print alone.
-        let percap_track = percap_on || (diag_on && plain_dyn_cap);
+        // diagnosis instrument, ADR-0052 class — no behavior): under RWM_DIAG
+        // the account maps are maintained so the DIAG `sout=` field shows each
+        // path's share of the POOLED outstanding (which path is holding the
+        // unacked-frontier span). The maps feed the DIAG print alone. (The
+        // per-path account LAW built on them, RWM_STORE_PERCAP, and its guard
+        // and borrowing arms were refuted and removed.)
+        let percap_track = diag_on && plain_dyn_cap;
         // ── feat/recovery-suppression: multipath recovery suppression ─────────
         // (`RWM_RECOV_MP`, DEFAULT ON 2026-07-21 — the "Consolidation" LOO
         // battery: removal costs −12.3/−13.9 Mbit >>sigma at c7 on both seeds
@@ -1302,11 +1178,9 @@ impl SenderPolicy {
         // of ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
         // threshold. Under this gate the snapshot uses `live_paths()`.
         let recov_mp_live = gates.recov_mp_live && recov_mp_law;
-        // Goal-gate "Unlock The Default 2: derived patience" — the two gates.
-        // `patience_derived` is BEHAVIOURAL (the recovery-patience floor);
-        // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
-        // beside the unchanged legacy one). Both default OFF.
-        let patience_derived = gates.patience_derived;
+        // Goal-gate "Unlock The Default 2": `sidle_derived` is DIAG-only (the
+        // second, derived stall gauge printed beside the unchanged legacy
+        // one). Default OFF.
         let sidle_derived = gates.sidle_derived && diag_on;
         // ── Emission batching (goal-gate "Emission Batching", RWM_EMIT_BATCH,
         // DEFAULT OFF — same-binary A/B) ──────────────────────────────────────
@@ -1447,7 +1321,6 @@ impl SenderPolicy {
             store_cap_floor,
             store_paths_on,
             store_path_pool,
-            capw_on,
             pool_anchor_on,
             store_cap_unified,
             three_term_on,
@@ -1458,11 +1331,6 @@ impl SenderPolicy {
             delta_b,
             contract_rho,
             store_sack_release_on,
-            place_slack_on,
-            win_decouple_on,
-            percap_on,
-            percap_guard_on,
-            percap_borrow_on,
             honest_cap_on,
             percap_track,
             unified_span,
@@ -1474,20 +1342,8 @@ impl SenderPolicy {
             recov_mp_law,
             recov_sp,
             recov_mp_live,
-            patience_derived,
             derived_sweep: gates.derived_sweep,
-            rack_clocks: gates.rack_clocks,
-            rack_reo_mult: gates.rack_reo_mult,
-            quantile_clocks: gates.quantile_clocks,
-            contract_alpha: crate::net::resolved_alpha(
-                target_tail_loss,
-                protocol_hint,
-                gates.alpha_override,
-            ),
-            contract_alpha_base: crate::net::contract_alpha(target_tail_loss, protocol_hint),
-            alpha_override: gates.alpha_override,
             holddown_q: gates.holddown_q,
-            w_form: gates.w_form,
             sidle_derived,
             emit_batch_on,
             emit_burst,

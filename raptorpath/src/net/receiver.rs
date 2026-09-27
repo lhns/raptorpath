@@ -81,7 +81,7 @@ use super::{
     BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
-    hole_nack_refresh_floored, hole_refresh_all, horizon_gate_deficits, now_us, received_sack_ranges,
+    hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::control::FecRateController;
@@ -143,13 +143,9 @@ pub(crate) async fn run_receiver(
     recv_reorder_timeout_ms: u64,
     recv_reorder_max_size: usize,
     // THE CONTRACT'S OWN DIAL POSITION, plumbed 2026-09-08 (paper 16.81, in
-    // flight). `config.protocol_hint` and `config.target_tail_loss`, the same
-    // two values `SenderPolicy::resolve` reads, so the two ends price alpha
-    // off the same contract instead of the receiver assuming `Auto` and 1e-5.
-    // Read ONLY under `RWM_QUANTILE_CLOCKS` (default OFF) plus the `[QALPHA]`
-    // echo, so a shipped default arm is byte-identical.
+    // flight): `config.protocol_hint`, the same value `SenderPolicy::resolve`
+    // reads.
     recv_protocol_hint: crate::control::fec_rate::ProtocolHint,
-    recv_target_tail_loss: f64,
 ) {
     // Window decoder: created once, long-lived (only used in window
     // mode; codec pinned at startup, §16.4 — never rebuilt).
@@ -222,67 +218,23 @@ pub(crate) async fn run_receiver(
     // goal-gate "The Derived Recovery Clamp" (`RWM_DERIVED_SWEEP`, default
     // OFF): the stalled-hole refresh cadence on the derived round.
     let recv_derived_sweep = recv_gates.derived_sweep;
-    let recv_rack_clocks = recv_gates.rack_clocks;
-    let recv_rack_reo_mult = recv_gates.rack_reo_mult;
     // Paper §16.78 — the hole-refresh clamp band's FLOOR, resolved ONCE.
     // ABSENT ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` verbatim and the
     // shipped cadence, byte-identically. Echoed on `[GATES]` at BOTH endpoints.
     let recv_refresh_floor = recv_gates
         .refresh_floor_us
         .map_or(crate::net::HOLE_NACK_REFRESH_MIN, Duration::from_micros);
-    let recv_quantile_clocks = recv_gates.quantile_clocks;
-    // Paper §16.76: WHICH of the two rival `W` laws the armed clock evaluates.
-    // `cantelli` on every shipped arm; read only when the quantile gate is on.
-    let recv_w_form = recv_gates.w_form;
-    // The contract's alpha at the RECEIVER. THE HINT IS NOW PLUMBED
-    // (2026-09-08, paper 16.81): this seat read a hard-coded `Auto`
-    // and the constant `CONTRACT_TAIL_LOSS_BASE` because neither the hint nor
-    // the config reached the task, so the sender and the receiver DISAGREED
-    // about alpha at two of the three presets and the arm could not be scored
-    // across hints at all. Both now arrive as parameters, from the same
-    // `config` fields the sender's policy reads, so the two sites evaluate the
-    // SAME number at every point of the dial - asserted per hint by
-    // `tests/alpha_override_reachability.rs`.
-    let recv_contract_alpha_base =
-        crate::net::contract_alpha(recv_target_tail_loss, recv_protocol_hint);
-    // `RWM_ALPHA_OVERRIDE` (EXPERIMENT, absent by default) replaces it when
-    // set. It is a NUMBER and not a hint mapping, so it always reached BOTH
-    // sites identically; since the plumb above, so does the CONTRACT's α, and
-    // the swept arm is no longer better defined across sites than the control
-    // it is compared against.
-    let recv_contract_alpha = crate::net::resolved_alpha(
-        recv_target_tail_loss,
-        recv_protocol_hint,
-        recv_gates.alpha_override,
-    );
-    eprintln!(
-        "{}",
-        crate::net::qalpha_report_line(
-            "receiver",
-            recv_quantile_clocks,
-            recv_w_form,
-            recv_contract_alpha_base,
-            recv_gates.alpha_override,
-            recv_contract_alpha,
-        )
-    );
     // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
     // NOTE the harness SIGKILLs the server, so a `Drop` never reaches a server
     // log (the `[RFA]` lesson); this gauge is therefore ALSO emitted on the
     // same 1 s cadence, last line wins.
-    let mut recv_qclk_echo = crate::net::QuantileClockGauge::new(
-        "receiver",
-        recv_quantile_clocks,
-        recv_w_form,
-        recv_contract_alpha,
-    );
+    let mut recv_qclk_echo = crate::net::QuantileClockGauge::new("receiver");
     let mut qclk_report_at = Instant::now();
     // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
     // DIVERGED). Observation only; emitted on the armed arm alone.
     let mut recv_derived_echo = DerivedRoundEcho::default();
-    // `[RACK]` bind-fraction gauge at the receiver site (paper §16.68).
-    let mut recv_rack_echo =
-        crate::net::RackClockGauge::new(recv_rack_clocks, recv_rack_reo_mult);
+    // `[RACK]` / `[RFA]` fire accounting at the receiver site (§16.68.1).
+    let mut recv_rack_echo = crate::net::RackClockGauge::new();
     // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
     // sender's `fa=` has — `recv_nack_tx` is None under generation). The line
     // echoes which machine it measured so no row is ever read out of scope.
@@ -1009,27 +961,20 @@ pub(crate) async fn run_receiver(
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
             if pending {
-                let (srtt, srtt_jitter_us, min_rtt, sigma_us, w_q_us) = {
+                let (srtt, srtt_jitter_us, sigma_us) = {
                     let sched = recv_scheduler.lock();
                     let live: Vec<_> = sched
                         .live_paths()
                         .into_iter()
                         .filter_map(|pid| sched.path(pid))
                         .collect();
-                    // Same path set for all three, so the DERIVED floor, the
-                    // RACK law's `min_RTT` and their clock can never come from
-                    // different paths.
+                    // Same path set for the clock and the DERIVED floor, so
+                    // the two can never come from different paths. σ feeds
+                    // only the `[QCLK]` readout.
                     (
                         live.iter().map(|p| p.srtt()).max(),
                         live.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0),
-                        live.iter().filter_map(|p| p.min_rtt()).min(),
                         live.iter().filter_map(|p| p.rtt_sigma_us()).max(),
-                        // §16.76's `W_q`, MAX over the SAME path set, for the
-                        // same reason σ is. `None` (window short of `N(α)`)
-                        // ⇒ the quantile arm falls through — UNSCOREABLE.
-                        live.iter()
-                            .filter_map(|p| p.rtt_tail_quantile_us(recv_contract_alpha))
-                            .max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
@@ -1039,20 +984,10 @@ pub(crate) async fn run_receiver(
                     // goal-gate "The Derived Recovery Clamp": under
                     // `RWM_DERIVED_SWEEP` the cadence is the DERIVED round
                     // (no ceiling); OFF ⇒ `hole_nack_refresh` verbatim.
-                    // Paper §16.68: `RWM_RACK_CLOCKS` REPLACES
-                    // `RWM_DERIVED_SWEEP` here — rival laws for one quantity.
-                    let refresh = hole_refresh_all(
-                        recv_w_form,
-                        recv_quantile_clocks,
-                        recv_rack_clocks,
+                    let refresh = hole_refresh(
                         recv_derived_sweep,
                         srtt,
                         srtt_jitter_us,
-                        min_rtt,
-                        sigma_us,
-                        w_q_us,
-                        recv_rack_reo_mult,
-                        recv_contract_alpha,
                         recv_refresh_floor,
                     );
                     // Every arm, control included — see the sender's twin.
@@ -1060,19 +995,8 @@ pub(crate) async fn run_receiver(
                         refresh.as_micros() as u64,
                         srtt.map_or(0, |s| s.as_micros() as u64),
                         sigma_us,
-                        w_q_us,
                     );
-                    if recv_rack_clocks {
-                        if let (Some(sv), Some(mv)) = (srtt, min_rtt) {
-                            recv_rack_echo.record(
-                                sv.as_micros() as u64,
-                                mv.as_micros() as u64,
-                                refresh.as_micros() as u64,
-                                hole_nack_refresh_floored(srtt, recv_refresh_floor).as_micros() as u64,
-                            );
-                        }
-                    }
-                    if recv_derived_sweep && !recv_rack_clocks {
+                    if recv_derived_sweep {
                         if let Some(s) = srtt {
                             recv_derived_echo.observe(
                                 "receiver-hole-refresh",

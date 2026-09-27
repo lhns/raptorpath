@@ -65,10 +65,8 @@ use raptorpath::net::{
 };
 use raptorpath::control::fec_rate::ProtocolHint;
 use raptorpath::net::{
-    cantelli_k, codel_setpoint_q, contract_alpha, delta_budget_b_of, delta_price,
-    pool_value_multiplier, CONTRACT_TAIL_LOSS_BASE,
-    quantile_recovery_round_us, rack_recovery_round_us, CODEL_TARGET_HI, CODEL_TARGET_LO,
-    RACK_MIN_RTT_DIVISOR, RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX, TIMER_GRANULARITY_US,
+    codel_setpoint_q, delta_budget_b_of, delta_price, pool_value_multiplier, CODEL_TARGET_HI,
+    CODEL_TARGET_LO,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -564,21 +562,6 @@ fn published_codel_q(b: f64) -> f64 {
     q_lo + (q_hi - q_lo) * ((b.clamp(b_lo, b_hi) - b_lo) / (b_hi - b_lo))
 }
 
-/// **PUBLISHED**: paper §16.67 — RFC 8985 §6.2 Step 4 with RFC 9002 §6.1.2's
-/// granularity floor: `max(min(mult·min_rtt/4, srtt), G)`. Transcribed
-/// 2026-08-19.
-fn published_rack_round(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
-    let m = mult.clamp(1, 17);
-    ((m * min_rtt_us) / 4).min(srtt_us).max(TIMER_GRANULARITY_US)
-}
-
-/// **PUBLISHED**: paper §16.68 — `W(α) = srtt + √((1−α)/α)·σ`, Cantelli.
-/// Transcribed 2026-08-19.
-fn published_quantile_round(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
-    let k = ((1.0 - alpha) / alpha).sqrt();
-    ((srtt_us as f64 + k * sigma_us as f64) as u64).max(TIMER_GRANULARITY_US)
-}
-
 /// **LAW: `b(δ)`, paper §16.26 / §16.81.** The engine's span
 /// horizon against the paper's own continuous form, over the WHOLE dial.
 ///
@@ -829,126 +812,4 @@ fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
     assert!(2 * KNEE < 4_976, "c8L's exclusion arithmetic no longer holds");
     assert_eq!(cap(4_976.1, rt), 2 * KNEE, "c8L must PIN on the secondary anchors");
     assert_eq!(cap(4_976.1, bu), 2 * KNEE, "c8L must PIN at every dial point");
-}
-
-/// **LAW: the RACK round, paper §16.67**, and the two findings that refute the
-/// backlog item, asserted as arithmetic rather than described.
-#[test]
-fn published_rack_round_equals_the_engine_and_its_ceiling_is_unreachable() {
-    // 1. AGREEMENT with the paper, over the measured geometries and both ends
-    //    of RACK's own multiplier range.
-    for &(srtt, mrtt) in &[
-        (9_000u64, 2_000u64),
-        (87_000, 11_000),
-        (104_000, 13_000),
-        (376_000, 38_000),
-        (464_000, 40_000),
-        (150, 100), // loopback
-    ] {
-        for mult in [1u64, 2, 9, 17, 100] {
-            assert_eq!(
-                rack_recovery_round_us(srtt, mrtt, mult),
-                published_rack_round(srtt, mrtt, mult),
-                "srtt={srtt} min_rtt={mrtt} mult={mult}"
-            );
-        }
-        // 2. RACK's `mult` is clamped to RACK's OWN range, both ends.
-        assert_eq!(
-            rack_recovery_round_us(srtt, mrtt, 0),
-            rack_recovery_round_us(srtt, mrtt, RACK_REO_WND_MULT_INIT)
-        );
-        assert_eq!(
-            rack_recovery_round_us(srtt, mrtt, 10_000),
-            rack_recovery_round_us(srtt, mrtt, RACK_REO_WND_MULT_MAX)
-        );
-    }
-
-    // 3. THE DEFECT FINDING, PINNED: at RACK's own initial mult the SRTT
-    //    ceiling CANNOT bind, because min_rtt ≤ srtt implies min_rtt/4 < srtt
-    //    identically. A bound that provably never binds turns its law into a
-    //    constant — CLAUDE.md's bind-fraction rule, asserted here in advance
-    //    of any measurement.
-    for &(srtt, mrtt) in &[(9_000u64, 2_000u64), (87_000, 11_000), (376_000, 38_000)] {
-        let base = RACK_REO_WND_MULT_INIT * mrtt / RACK_MIN_RTT_DIVISOR;
-        assert!(base < srtt, "the ceiling became reachable at mult=1 — §16.67 needs rewriting");
-    }
-
-    // 4. THE UNREACHABILITY ARITHMETIC §16.67 publishes: the mult at which the
-    //    ceiling binds is ⌈4·srtt/min_rtt⌉, and at four of five sender-site
-    //    cells it exceeds RACK's own maximum of 17.
-    let need = |srtt: u64, mrtt: u64| (4 * srtt).div_ceil(mrtt);
-    for &(name, srtt, mrtt, want) in &[
-        ("c1", 9_000u64, 2_000u64, 18u64),
-        ("c7", 87_000, 11_000, 32),
-        ("sc2", 104_000, 13_000, 32),
-        ("c8", 376_000, 38_000, 40),
-        ("c8-AU", 464_000, 40_000, 47),
-    ] {
-        assert_eq!(need(srtt, mrtt), want, "{name}: the published ceiling-mult changed");
-        assert!(want > RACK_REO_WND_MULT_MAX, "{name}: §16.67 claims this is unreachable");
-    }
-    // The receiver site, where it IS reachable at exactly two cells.
-    assert_eq!(need(77_000, 38_000), 9, "c8 receiver");
-    assert_eq!(need(82_000, 40_000), 9, "c8-AU receiver");
-    assert!(9 <= RACK_REO_WND_MULT_MAX, "the one reachable row is no longer reachable");
-}
-
-/// **LAW: the derived quantile round, paper §16.68**, and its REFUTATION,
-/// pinned at the tree's own contract numbers so it cannot be quietly tuned
-/// into passing.
-#[test]
-fn published_quantile_round_equals_the_engine_and_the_refutation_is_arithmetic() {
-    // 1. Cantelli's closed form, at the contract's own α per hint.
-    for &(hint, want_alpha, want_k) in &[
-        (ProtocolHint::Realtime, 1e-7, 3_162.0f64),
-        (ProtocolHint::Auto, 1e-5, 316.0),
-        (ProtocolHint::Bulk, 1e-3, 31.6),
-    ] {
-        let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint);
-        assert!((a - want_alpha).abs() < want_alpha * 1e-9, "{hint:?}: α = {a}");
-        let k = cantelli_k(a);
-        assert!(
-            (k - want_k).abs() / want_k < 0.01,
-            "{hint:?}: k(α) = {k}, §16.68 publishes {want_k}"
-        );
-        // Cantelli's guarantee, checked as the identity it is: 1/(1+k²) = α.
-        assert!((1.0 / (1.0 + k * k) - a).abs() < a * 1e-6, "{hint:?}: not Cantelli");
-    }
-
-    // 2. AGREEMENT with the paper's transcription.
-    for &(srtt, sigma) in &[(77_000u64, 10_000u64), (2_000, 500), (150, 50)] {
-        for &a in &[1e-7, 1e-5, 1e-3, 0.0625, 0.5] {
-            assert_eq!(
-                quantile_recovery_round_us(srtt, sigma, a),
-                published_quantile_round(srtt, sigma, a),
-                "srtt={srtt} σ={sigma} α={a}"
-            );
-        }
-    }
-
-    // 3. THE REFUTATION, REASON 1, as arithmetic. At c8's measured srtt and a
-    //    10 ms σ the derived clock is SECONDS at the contract's own α — 32×
-    //    the 100 ms clamp it would replace, and 4× RWM_DERIVED_SWEEP's already
-    //    slow 752 ms. If this ever passes, §16.68's verdict must be revisited
-    //    rather than the number quietly adjusted.
-    let w_auto = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Auto));
-    assert!(
-        (3_200_000..3_300_000).contains(&w_auto),
-        "§16.68 publishes 3.24 s at c8/Auto; the law computes {w_auto} µs"
-    );
-    assert!(w_auto > 32 * 100_000, "the refutation's 32× statement no longer holds");
-    let w_rt = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Realtime));
-    assert!((31_000_000..32_500_000).contains(&w_rt), "§16.68 publishes 31.7 s at Realtime");
-    let w_bulk = quantile_recovery_round_us(77_000, 10_000, contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Bulk));
-    assert!((380_000..400_000).contains(&w_bulk), "§16.68 publishes 393 ms at Bulk");
-
-    // 4. α is CONTINUOUS in the dial — it rides ζ, the hint's one declared
-    //    price ratio, and nothing keys on a threshold. Monotone in the same
-    //    direction as the latency price, at every named point.
-    let (r, a, b) = (
-        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Realtime),
-        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Auto),
-        contract_alpha(CONTRACT_TAIL_LOSS_BASE, ProtocolHint::Bulk),
-    );
-    assert!(r < a && a < b, "α is not monotone across the dial's named points");
 }

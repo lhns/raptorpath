@@ -7,10 +7,8 @@
 //! resolution: every gate is read exactly once per engine start
 //! (`RuntimeGates::resolve()`), documented in one place with its default and
 //! its decision record (ADR / goal-gate section), and the resolved struct is
-//! passed to the tasks that consume it. When a register Class-C gate exists,
-//! its deprecation warning (`config::deprecated_env_flag`) fires here, once
-//! (none currently — the 2026-07-27 consolidation passes executed the whole
-//! DEPRECATION REGISTER).
+//! passed to the tasks that consume it. Refuted experiment arms are removed
+//! outright rather than kept behind a deprecation warning.
 //!
 //! Behavior contract: `resolve()` reproduces the exact per-site semantics the
 //! scattered reads had (same defaults, same parse/clamp rules, same chaining
@@ -173,25 +171,6 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw
     /// anchor warms.
     pub store_boot: usize,
-    /// `RWM_STORE_CAPW` (default OFF): capacity-weighted SHARED outstanding
-    /// pool — pool = Σ_i honest per-path cap over live paths (each path earns
-    /// depth for its OWN pipe + recovery round; one pool, so borrowing stays
-    /// free — ADR-0058's pooled verdict kept). The c8-aware pool law
-    /// (the ADR-0058 "c8 WATCH" follow-up). Engaged N ≥ 2 with warm anchors;
-    /// falls back to the configured pooled law until anchors live. Reads
-    /// honestly only with the `RWM_PLAIN_RS` sampler (the battery arm
-    /// composes it); with the over-reading legacy anchor it clamps to the
-    /// N×knee ceiling ≡ the path-scaled law.
-    pub store_capw: bool,
-    /// `RWM_STORE_PERCAP` (default OFF): per-path outstanding accounts
-    /// (task #86; symmetric-cell tool, c8 successor named — ADR-0058).
-    pub store_percap: bool,
-    /// `RWM_PERCAP_GUARD` (default ON under percap): delay-aware redirect
-    /// bound; `=0` = the measured c8-regression control arm.
-    pub percap_guard: bool,
-    /// `RWM_STORE_BORROW` (default OFF): bounded account borrowing
-    /// (§16.22; loans ≡ 0 at symmetric cells by theorem).
-    pub store_borrow: bool,
     /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live; the `[GATES]`
     /// echo prints the effective `honest_cap && plain_rs`): honest
     /// floor-clock store caps on the send-interval anchor (§16.23).
@@ -215,25 +194,6 @@ pub struct RuntimeGates {
     /// resolved via `scheduler::pool_anchor_active()` (cached — the
     /// send-path feed reads the same resolution).
     pub pool_anchor: bool,
-    /// `RWM_POOL_DELIV` (default = the `pool_anchor` resolution ⇒ OFF with
-    /// everything unset; goal-gate "Ship The Wins 1b" arm A): the N ≥ 2 pool
-    /// law's rate input gains a per-path DELIVERY-CLOCKED term
-    /// (`DeliveryRateAnchor` — BBR `GenerateRateSample`: delivered /
-    /// max(send_elapsed, ack_elapsed), windowed-max ≈10·RTprop, sub-RTprop
-    /// samples rejected-and-accumulated, ADR-0061 clock-gap discard), read as
-    /// `max(delivery, send_mean)` — ONE formula, no branch. It exists to test
-    /// attempt 1's named binder: a send-derived rate cannot ratchet above the
-    /// cap-limited carried rate, but a delivery clock is bounded by
-    /// delivered-packet PHYSICS and CAN. Shadow-only: no cwnd/`max_bw`/
-    /// pacing/`src_inflight` consumer can reach it; N = 1 untouched.
-    pub pool_deliv: bool,
-    /// `RWM_FLOOR_BOUND` (default OFF — a pure A/B arm; goal-gate "Ship The
-    /// Wins 1b" arm B): bound the BtlBw anchor FLOOR by the honest
-    /// send-anchor rate (`min(gain·max_bw·RTprop, gain·sr·RTprop)`) so the
-    /// ack-interval over-read cannot inflate cwnd (measured 5860 vs 1779) —
-    /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
-    /// Still a floor, never a cap; legacy verbatim with the anchor cold.
-    pub floor_bound: bool,
     /// `RWM_ACK_MERGE` (**default ON since 2026-08-08**; `=0` is the opt-out
     /// A/B arm. Goal-gate "Unlock The Default 1: ack-merge" built it and
     /// "Ack-Merge Flip" shipped it; paper §16.42): in WINDOW MODE ONLY,
@@ -244,7 +204,7 @@ pub struct RuntimeGates {
     /// `Ack`'s payload in the v6 cumulative `cum_expected`/`cum_received`
     /// counters — TWO control datagrams per data message become ONE.
     /// Every `Ack`-arm consumer is re-homed onto the counter diff with its
-    /// own guard preserved (`gap_q`, the `copa_feed`/`n1_paused` three-way
+    /// own guard preserved (`gap_q`, the `copa_feed` three-way
     /// branch, the `expected > 0` guard). Block mode keeps the legacy `Ack`
     /// bit-exactly. Changes the datagram COUNT only: the delivery statistic,
     /// its cadence and its counts are unperturbed. Resolved via
@@ -286,21 +246,6 @@ pub struct RuntimeGates {
     /// the divergence is PIPELINE VERIFICATION MATRIX rows 2 + 6 and is
     /// bounded by `pacer_debit_bounds_only_the_source_arm_not_the_wire`.
     pub charge_recovery: bool,
-    /// `RWM_PATIENCE_DERIVED` (default OFF — the A/B arm; goal-gate "Unlock
-    /// The Default 2: derived patience"): the `NACK_RETX_COOLDOWN_FLOOR_US`
-    /// = 10 ms literal — 10× RFC 9002's kGranularity, and at c2/c7 at or
-    /// ABOVE the 9/8·srtt term it was meant to floor — becomes
-    /// `net::patience_floor_us` = the engine's timer granularity (the sender
-    /// loop's 1 ms wake, coinciding with RFC 9002's RECOMMENDED value) + the
-    /// path's OWN measured RTT jitter (`PathState::rtt_jitter_us`), clamped
-    /// at one srtt, with the legacy floor kept verbatim before the first
-    /// clock sample. Applied at the two BEHAVIOURAL sites only: the
-    /// kGranularity analog inside `mp_time_threshold_split` and the per-seq
-    /// retransmit cooldown. The tail-sweep fallback is left alone (it feeds
-    /// `(srtt·2).clamp(25 ms, 100 ms)`, so every value ≤ 12.5 ms is
-    /// identical — INERT, unit-tested). RFC 9002's kTimeThreshold 9/8 and
-    /// kPacketThreshold 3 are UNTOUCHED.
-    pub patience_derived: bool,
     /// `RWM_SIDLE_DERIVED` (default OFF — DIAG-only and behaviour-inert;
     /// goal-gate "Unlock The Default 2"): print `sidle2=`/`idle2=` beside
     /// the UNCHANGED legacy `sidle=`/`idle=` gauges, computed by
@@ -310,32 +255,8 @@ pub struct RuntimeGates {
     /// §16.39's stall evidence was a fixed-threshold artifact of a batched
     /// emitter — measured on every arm, controls included.
     pub sidle_derived: bool,
-    /// `RWM_WIN_DECOUPLE` (default OFF — the A/B arm; goal-gate "Window
-    /// Decoupling + MTU Scaling" part 1): window/inflight decoupling at
-    /// N = 1 plain reliable window. The 1024-latch's three roles split:
-    /// wire budget = the live HEAD SPAN (last_sent − SACK/cum frontier;
-    /// recovery-stalled holes excluded) gated at
-    /// allow = anchor·(K + gain − 1) + rate·min(stall_age, R) — the
-    /// stall-insurance term explicit and continuous (grows at the anchor
-    /// rate during any frontier freeze, resets on advance); hole/retention
-    /// capacity = cap_ret (residence + R_ins + one recovery round),
-    /// memory-clamped at 4096. Under Copa-sole the residence term is
-    /// gain·Σcwnd and the 1024 clamp ceiling lifts to cap_ret (the B1
-    /// jitter-cell dwell-ceiling release). N ≥ 2 keeps the configured
-    /// pooled laws bit-exactly; the N1-scoped sampling anchor pauses.
-    pub win_decouple: bool,
 
     // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
-    /// `RWM_PLACE_SLACK` (default OFF — the A/B arm): frontier-slack
-    /// placement — the §16.3 marginal cost's load term becomes
-    /// max(0, Ê_i − S)/ref with S = the measured frontier slack
-    /// (stream span / cumulative-ack rate, clamped ≤ 250 ms; 0 until the
-    /// ack-rate EWMA has a sample, 0 at N = 1). S = 0 reproduces the
-    /// shipped cost bit-exactly — a strict continuous generalization
-    /// (deadline-aware water-filling: the slow path earns placements up to
-    /// the backlog it can deliver by frontier need-time). Plain reliable
-    /// window only.
-    pub place_slack: bool,
     /// `RWM_COLD_PLACE` (anchor-hygiene family member, default OFF): price an
     /// UNMEASURED leg's latency anchor at the active set's fastest MEASURED
     /// srtt instead of the 50-ms `DEFAULT_SRTT`-class seed that
@@ -813,90 +734,6 @@ pub struct RuntimeGates {
     /// substitution's shape stays pinned two-sidedly by
     /// `formula_agreement::the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d`.
     pub delta_cap: bool,
-    /// `RWM_RACK_CLOCKS` (default OFF — the A/B arm; paper §16.68): both
-    /// recovery clocks read RFC 8985 §6.2 Step 4's reordering window,
-    /// transplanted VERBATIM, instead of `2·SRTT` clamped to [25 ms, 100 ms].
-    ///
-    /// ```text
-    ///   round = max( min( mult · min_rtt / 4,  srtt ),  TIMER_GRANULARITY_US )
-    /// ```
-    ///
-    /// **Every constant is RACK's own** (`/4`; the `SRTT` ceiling's *"MUST be
-    /// bounded … SHOULD be SRTT"*; `mult ∈ [1, 17]`), and the floor is the
-    /// tree's existing kGranularity analogue. **REPLACES**
-    /// [`Self::derived_sweep`] when both are set — the two are rival laws for
-    /// one quantity, not composable axes. With no min-RTT sample the armed
-    /// fallback runs verbatim (information availability, not a mode).
-    ///
-    /// §16.68 records what writing this down established: RFC 8985 publishes
-    /// **no RTT-relative ceiling for a re-probe cadence** (§7.2's PTO is
-    /// bounded only by `TCP_RTO_expiration()`, a 1-second-minimum absolute),
-    /// so the cross-check's Tier-2 item 2.1 asked for a construction its own
-    /// source does not contain. Component-verified at recovery_bench: at the
-    /// shipped `mult = 1` this law is 8–46× TIGHTER than the clamp it replaces
-    /// and its `SRTT` ceiling is UNREACHABLE within RACK's own `mult ≤ 17` at
-    /// four of five cells. `=0`/unset is byte-identical at both sites.
-    pub rack_clocks: bool,
-    /// `RWM_RACK_REO_MULT` (default **1** — RFC 8985 §6.2 Step 4's own initial
-    /// `RACK.reo_wnd_mult`; clamped to RACK's own `[1, 17]`).
-    ///
-    /// RACK advances this on **DSACK-detected spurious recoveries**, and this
-    /// transport has no DSACK and no spurious-recovery detector — so the
-    /// adaptive half of RFC 8985 §6.2 Step 4 is STRUCTURALLY INERT here and the
-    /// law's `SRTT` ceiling can never bind at `mult = 1`
-    /// (`min_rtt ≤ srtt ⇒ min_rtt/4 < srtt` identically). A bound that provably
-    /// never binds turns its law into a constant and hides its shape from every
-    /// measurement taken through it, which is the defect CLAUDE.md's
-    /// bind-fraction rule exists to catch. This knob therefore exists so a
-    /// battery can drive the cited parameter over its CITED RANGE and make the
-    /// bound REACHABLE (gauge reachability); exposing a published parameter is
-    /// not inventing a constant, and leaving the ceiling unreachable would be
-    /// the defect. Read only when [`Self::rack_clocks`] is on.
-    pub rack_reo_mult: u64,
-    /// `RWM_QUANTILE_CLOCKS` (default OFF — the A/B arm; paper §16.69): both
-    /// recovery clocks read the DERIVED quantile round
-    /// `W(α) = srtt + √((1−α)/α)·σ` — Cantelli's distribution-free
-    /// one-sided bound at the false-alarm rate α the CONTRACT declares on the
-    /// r leg (`target_tail_loss × ζ(hint)`, continuous in the dial).
-    ///
-    /// **Zero fitted coefficients, and REFUTED-WITH-RECORD.** §16.69 records
-    /// three independent reasons it does not close on this stack — the bound
-    /// needs k = 316 at the contract's own `α = 1e-5`; the empirical route
-    /// needs ~1e5 samples the Copa min-deque discards by construction; and
-    /// pricing α off `target_tail_loss` equates P(symbol never delivered)
-    /// with P(retransmit wasted), whose repair needs a cost ratio that exists
-    /// nowhere in this repository. Shipped OFF so the refutation is
-    /// REPRODUCIBLE rather than asserted. OUTRANKS [`Self::rack_clocks`] and
-    /// [`Self::derived_sweep`] when set — rival laws for one quantity.
-    pub quantile_clocks: bool,
-    /// `RWM_ALPHA_OVERRIDE` (**ABSENT by default**) — the EXPERIMENT knob that
-    /// sets the quantile law's α **directly**, replacing the contract's
-    /// `target_tail_loss × ζ(hint)` at the seat [`crate::net::contract_alpha`]
-    /// occupies. Read ONLY when [`Self::quantile_clocks`] is armed; on the
-    /// default arm it is inert and the engine is byte-identical without it.
-    ///
-    /// **Why it exists, and why it is not a law.** §16.69 refuted the quantile
-    /// clock three ways. Two of the three are consequences of α = 1e-5 alone,
-    /// and the third is a CATEGORY ERROR in *what feeds α* — not in the
-    /// Cantelli construction `W(α) = srtt + √((1−α)/α)·σ`, which was never the
-    /// defective part (`docs/research/cost-ratio-memo.md`, §5 step 3: *"the
-    /// change is what feeds α, not the Cantelli construction"*). The cost-ratio
-    /// memo lays out four candidate mappings and **recommends none**; each
-    /// picks a different α at the same cell. This knob makes α the ONE free
-    /// variable of a sweep so the cost curve can be measured before any mapping
-    /// is written into a law. **It is not a mapping, it is not continuous in
-    /// any dial, and nothing may ship reading it** — a shipped law must derive
-    /// α from the (δ, ρ, r) triangle, which is the decision the sweep informs.
-    ///
-    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
-    /// Unset, empty, unparseable, non-finite, or outside the open-closed range
-    /// `(0, 1]` on which `k(α) = √((1−α)/α)` is finite and non-negative ⇒
-    /// `None` ⇒ the contract's own α, exactly as before. The `[GATES]` echo
-    /// prints the RESOLVED value (`unset` or the number), so "my override did
-    /// not take" is READ off the run's own output rather than inferred — the
-    /// `RWM_ACKDIAG_WINDOW_US` precedent, whose echo is its resolved µs and not
-    /// a flag.
-    pub alpha_override: Option<f64>,
     /// `RWM_HOLDDOWN_Q` (**ABSENT by default**; paper §16.77) — the EXPERIMENT
     /// knob that sets the level `q` of the SENDER'S HOLD-DOWN on a reported
     /// hole: the sender does not answer a receiver gap report with a repair
@@ -906,8 +743,8 @@ pub struct RuntimeGates {
     /// **Why it exists.** The fire-cause pass counted **0.59 % of 107 597
     /// classified recovery fires from a timer and 98.99 % from the sender
     /// answering a gap report**. Every clock this tree has written — the
-    /// shipped `[25, 100] ms` clamp, [`Self::derived_sweep`],
-    /// [`Self::rack_clocks`], [`Self::quantile_clocks`] — sets the TIMER, and
+    /// shipped `[25, 100] ms` clamp, [`Self::derived_sweep`] (and the removed
+    /// RACK and quantile arms) — sets the TIMER, and
     /// `fa ⊥ W` is the measured consequence. This is the first knob pointed at
     /// the other 99 %. It is NOT a rival law for the timer's quantity and it
     /// does not sit in that precedence chain: it is a different decision, at a
@@ -967,41 +804,6 @@ pub struct RuntimeGates {
     /// **Nothing may ship reading it.** A shipped cadence must be DERIVED;
     /// this makes a censored region readable and takes no decision.
     pub refresh_floor_us: Option<u64>,
-    /// `RWM_W_FORM` (**`cantelli` by default**; paper §16.76) — WHICH of the
-    /// two rival `W` laws the armed quantile clock evaluates. Read ONLY when
-    /// [`Self::quantile_clocks`] is armed; on the default arm it is inert and
-    /// the engine is byte-identical without it.
-    ///
-    /// ```text
-    ///   cantelli   W(α)   = srtt + √((1−α)/α)·σ           §16.69  (default)
-    ///   quantile   W_q(α) = X_(N(α)−K+1),  N = ⌈K/α⌉      §16.76
-    /// ```
-    ///
-    /// **Why it exists.** §16.74.5 made `σ̂` a precondition of the whole
-    /// `mean + k(α)·σ̂` family, and two batteries failed to find an estimator
-    /// meeting it. The τ-lag battery's clause `B` then measured why the search
-    /// was misdirected: the shipped estimator supplies a **conditional**
-    /// spread at 3–5 % of the **marginal** dispersion the Cantelli form
-    /// requires (20–300× at seven of eight sender legs), and the marginal
-    /// quantity is itself regime-dominated — one rep in eighty moved pooled
-    /// `R_total` by 33×. **`quantile` removes the `σ̂` term rather than
-    /// estimating it**, which is available on `[0.002, 0.40]` for the reason
-    /// §16.69's own reason 2 gives and unavailable at the contract's own α for
-    /// the same reason — where it says so on its echo instead of
-    /// extrapolating.
-    ///
-    /// **It is an A/B EXPERIMENT ARM and it is not a mode switch.** The two
-    /// values are RIVAL LAWS FOR ONE QUANTITY, in the same precedence chain
-    /// `quantile / rack / derived` already occupies; nothing keys on a
-    /// threshold in the (δ, ρ, r) triangle, and **nothing may ship reading
-    /// it** — the same rule [`Self::alpha_override`] carries.
-    ///
-    /// **Garbage resolves back to ABSENT VISIBLY.** Unset, empty or
-    /// unparseable ⇒ `cantelli` ⇒ today's behaviour, and the `[GATES]` echo
-    /// prints the RESOLVED token so *"my arm did not take"* is READ off the
-    /// run's own output rather than inferred — the `RWM_ALPHA_OVERRIDE`
-    /// precedent, and the failure mode that produced the 31 Mbit/s anomaly.
-    pub w_form: crate::net::WForm,
     /// `RWM_DELTA` (**ABSENT by default**; paper §16.81/§16.82) —
     /// THE CONTRACT'S δ, set directly as a NUMBER instead of by naming one of
     /// the three preset points on the dial.
@@ -1083,7 +885,7 @@ pub struct RuntimeGates {
     ///
     /// **ABSENT ⇒ no `RepairRequest` is ever constructed, the seam is the
     /// shipped predicate verbatim, and the reliable reorder deadline reduces
-    /// to `hole_refresh_all` exactly** -- asserted, not described, by
+    /// to `hole_refresh` exactly** -- asserted, not described, by
     /// `tests/recvlaw_reachability.rs`'s control arm and by the disarmed-inert
     /// unit test beside the hold-down gate's.
     pub recv_request_law: bool,
@@ -1273,22 +1075,13 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            store_capw: env_flag("RWM_STORE_CAPW", false),
-            store_percap: env_flag("RWM_STORE_PERCAP", false),
-            percap_guard: env_flag("RWM_PERCAP_GUARD", true),
-            store_borrow: env_flag("RWM_STORE_BORROW", false),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
             pool_anchor: crate::scheduler::pool_anchor_active(),
-            pool_deliv: crate::scheduler::pool_deliv_active(),
-            floor_bound: crate::scheduler::floor_bound_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
             loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
             release_1to1: crate::scheduler::release_1to1_active(),
             charge_recovery: crate::scheduler::charge_recovery_active(),
-            patience_derived: crate::scheduler::patience_derived_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
-            win_decouple: env_flag("RWM_WIN_DECOUPLE", false),
-            place_slack: env_flag("RWM_PLACE_SLACK", false),
             cold_place: crate::scheduler::cold_place_active(),
             place_t_derived: crate::scheduler::place_t_derived_active(),
             place_hol: crate::scheduler::place_hol_active(),
@@ -1350,14 +1143,6 @@ impl RuntimeGates {
             // shipped `gain = 2.0` fossil, kept with its provenance per the
             // deprecation register, no deprecation warning.
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            rack_clocks: env_flag("RWM_RACK_CLOCKS", false),
-            quantile_clocks: env_flag("RWM_QUANTILE_CLOCKS", false),
-            // ABSENT by default; garbage resolves back to ABSENT and the echo
-            // prints `unset`, so a mistyped arm is READ rather than inferred.
-            // The range is the law's own domain, not a taste: `k(α)` is
-            // undefined at α ≤ 0 and negative-radicand above 1.
-            alpha_override: env_parse::<f64>("RWM_ALPHA_OVERRIDE")
-                .filter(|a| a.is_finite() && *a > 0.0 && *a <= 1.0),
             // ABSENT by default; garbage resolves back to ABSENT and the echo
             // prints `unset`. The range is the law's own domain, not a taste:
             // `q ≤ 0` IS the shipped machine (expressed by absence) and the
@@ -1373,13 +1158,6 @@ impl RuntimeGates {
                 *f >= crate::net::LOOP_WAKE_US
                     && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
             }),
-            // ABSENT by default; garbage resolves back to `cantelli` — today's
-            // law — and the echo prints the RESOLVED token, so a mistyped arm
-            // is READ rather than inferred. Paper §16.76.
-            w_form: std::env::var("RWM_W_FORM")
-                .ok()
-                .and_then(|v| crate::net::WForm::parse(&v))
-                .unwrap_or_default(),
             // ABSENT by default; garbage resolves back to ABSENT and the echo
             // prints `unset`. The range is the law's own domain, not a taste:
             // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
@@ -1393,10 +1171,6 @@ impl RuntimeGates {
             // off the run's own output rather than inferred. Paper 16.83.6.
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
-            // RFC 8985 §6.2 Step 4's own initial value, over RACK's own range.
-            rack_reo_mult: env_parse::<u64>("RWM_RACK_REO_MULT")
-                .unwrap_or(crate::net::RACK_REO_WND_MULT_INIT)
-                .clamp(crate::net::RACK_REO_WND_MULT_INIT, crate::net::RACK_REO_WND_MULT_MAX),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
@@ -1442,15 +1216,13 @@ impl RuntimeGates {
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
              RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
-             RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
+             RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
-             RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
-             RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
-             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
+             RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
+             RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
-             RWM_PATIENCE_DERIVED={} \
-             RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
+             RWM_SIDLE_DERIVED={} \
              RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
@@ -1462,8 +1234,7 @@ impl RuntimeGates {
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
-             RWM_DERIVED_SWEEP={} RWM_RACK_CLOCKS={} RWM_RACK_REO_MULT={} RWM_QUANTILE_CLOCKS={} \
-             RWM_ALPHA_OVERRIDE={} RWM_W_FORM={} RWM_HOLDDOWN_Q={} \
+             RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
              RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
@@ -1475,16 +1246,14 @@ impl RuntimeGates {
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
             b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
-            ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
+            ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
-            b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             // EFFECTIVE value: the honest-cap law only runs with plain_rs.
-            b(self.honest_cap && self.plain_rs), b(self.pool_anchor), b(self.pool_deliv),
-            b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
+            b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
+            b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
-            b(self.patience_derived),
-            b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
+            b(self.sidle_derived),
             b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
@@ -1498,26 +1267,10 @@ impl RuntimeGates {
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
-            b(self.derived_sweep), b(self.rack_clocks), self.rack_reo_mult, b(self.quantile_clocks),
-            // THE EXPERIMENT α, echoed as its RESOLVED value and never as a
-            // flag — the `RWM_ACKDIAG_WINDOW_US` precedent one line below,
-            // and for the same reason. α is the ONE variable of the sweep
-            // this knob exists for, so a row whose α is not readable off its
-            // own run is not a row. `unset` means the contract's own
-            // `target_tail_loss × ζ(hint)` is in force; a number means it is
-            // not. A mistyped or out-of-domain override resolves back to
-            // `unset` and prints as `unset`, so "my arm did not take" is READ
-            // rather than inferred — the failure mode that produced the
-            // 31 Mbit/s anomaly, where a configuration axis had no echo at all.
-            o(&self.alpha_override),
-            // THE `W` LAW, echoed as its RESOLVED TOKEN and never as a flag —
-            // same precedent, same reason. `cantelli` means today's law is in
-            // force; `quantile` means §16.76's is. A mistyped or unknown value
-            // resolves back to `cantelli` and prints as `cantelli`, so an arm
-            // that did not take is READ rather than inferred. Paper §16.76.
-            self.w_form.as_str(),
+            b(self.derived_sweep),
             // THE HOLD-DOWN LEVEL, echoed as its RESOLVED value and never as a
-            // flag — same precedent, same reason. `unset` means no hold-down
+            // flag — the `RWM_ACKDIAG_WINDOW_US` precedent: a row whose level
+            // is not readable off its own run is not a row. `unset` means no hold-down
             // and today's machine; a number means the sender is waiting before
             // it answers a gap report. Paper §16.77.
             o(&self.holddown_q),
@@ -1760,6 +1513,49 @@ mod forwarding_audit {
 mod tests {
     use super::*;
 
+    /// The gates removed as refuted experiment arms (cleanup Stage 2) are
+    /// UNKNOWN names now: an operator or a stale battery script that still
+    /// exports one — even with a value the strict boolean parser would
+    /// reject for a known gate — must be ignored, never panic, and never
+    /// reappear on the `[GATES]` echo. Every name below is read by nothing,
+    /// so setting it cannot race another test's resolve.
+    #[test]
+    fn removed_gates_in_the_environment_are_ignored() {
+        // Suffixes, not quoted full-name literals: `forwarding_audit` scrapes
+        // every quoted RWM_ literal in `src/` as an engine read, and these
+        // are not.
+        const REMOVED: [&str; 15] = [
+            "POOL_DELIV",
+            "FLOOR_BOUND",
+            "PATIENCE_DERIVED",
+            "STORE_CAPW",
+            "STORE_PERCAP",
+            "PERCAP_GUARD",
+            "STORE_BORROW",
+            "WIN_DECOUPLE",
+            "PLACE_SLACK",
+            "RACK_CLOCKS",
+            "RACK_REO_MULT",
+            "QUANTILE_CLOCKS",
+            "W_FORM",
+            "ALPHA_OVERRIDE",
+            // Not a removed gate: a name no version of the engine ever read.
+            "NEVER_A_GATE",
+        ];
+        for suffix in REMOVED {
+            // `maybe` is malformed for every boolean gate the parser knows.
+            std::env::set_var(format!("RWM_{suffix}"), "maybe");
+        }
+        let line = RuntimeGates::resolve().echo_line();
+        for suffix in REMOVED {
+            let name = format!("RWM_{suffix}");
+            assert!(
+                !line.contains(&format!("{name}=")),
+                "{name} is no longer a gate but is still echoed: {line}"
+            );
+        }
+    }
+
     /// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
     /// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
     #[test]
@@ -1863,11 +1659,6 @@ mod tests {
             !g.rank_feedback,
             "RWM_RANK_FEEDBACK ships ABSENT (16.83.6 arm B)"
         );
-        // The three laws added 2026-08-19 (paper 16.67 / 16.68 / 16.69).
-        // RWM_RACK_REO_MULT defaults to RFC 8985 6.2 Step 4's own initial
-        // reo_wnd_mult of 1, so an unset run is RACK's own starting point and
-        // not an operator-chosen number.
-        //
         // THE CoDel-DERIVED SETPOINT (paper 16.67/16.70/16.71, ADR-0071
         // family 2) - FLIPPED DEFAULT ON 2026-08-19. The battery that scored
         // it (goal-gate "Candidates Battery - RESULTS", rung D) measured
@@ -1885,22 +1676,6 @@ mod tests {
              dual both seeds with q_p50 down 10-200 ms; interior with the \
              ceiling inert at c7/c8; bit-identical at N = 1). `=0` remains \
              the re-runnable A/B arm - the displaced gain = 2.0 fossil."
-        );
-        assert!(
-            !g.rack_clocks,
-            "RWM_RACK_CLOCKS ships default OFF (A/B arm - paper 16.68; the \
-             candidates battery scored it REFUTED-WITH-RECORD on RACK's own \
-             false-alarm bar at every arm and every cell, so the SAME program \
-             that flipped RWM_DELTA_CAP does not flip this)"
-        );
-        assert!(
-            !g.quantile_clocks,
-            "RWM_QUANTILE_CLOCKS ships default OFF (A/B arm - paper 16.69,              REFUTED-WITH-RECORD and shipped only so the refutation is              reproducible)"
-        );
-        assert_eq!(
-            g.rack_reo_mult,
-            crate::net::RACK_REO_WND_MULT_INIT,
-            "RWM_RACK_REO_MULT must default to RACK's OWN initial value"
         );
         // THE REFRESH-BAND FLOOR IS ABSENT BY DEFAULT, AND ABSENT IS THE
         // SHIPPED 25 ms (paper 16.78). Both halves asserted: the resolved
@@ -1959,15 +1734,6 @@ mod tests {
         for tok in [
             // Flipped 2026-08-19: the echo must name the SHIPPED value.
             "RWM_DELTA_CAP=1",
-            "RWM_RACK_CLOCKS=0",
-            "RWM_QUANTILE_CLOCKS=0",
-            "RWM_RACK_REO_MULT=1",
-            // The EXPERIMENT α knob is ABSENT on every shipped arm, and its
-            // echo says so in the same line every battery already scrapes.
-            "RWM_ALPHA_OVERRIDE=unset",
-            // The `W` law's RESOLVED token. `cantelli` is today's behaviour
-            // and is what the default arm must echo (paper 16.76).
-            "RWM_W_FORM=cantelli",
             // THE CONTRACT'S δ is ABSENT on every shipped arm: the hint names
             // the point on the dial, and the echo says so (§16.81).
             "RWM_DELTA=unset",
@@ -1994,52 +1760,6 @@ mod tests {
             "the armed arm's echo must NAME the RESOLVED δ, not a flag: {}",
             dialed.echo_line()
         );
-        assert!(
-            g.alpha_override.is_none(),
-            "RWM_ALPHA_OVERRIDE is an EXPERIMENT knob and is ABSENT by default \
-             - it is not a mapping, it is not continuous in any dial, and \
-             nothing shipped may read it (paper 16.69; \
-             docs/research/cost-ratio-memo.md)"
-        );
-        // THE ARMED ARM'S ECHO, two-sided: a swept row must be able to state
-        // its own alpha off its own log. Set by FIELD rather than through the
-        // environment - env mutation is process-global in a parallel runner.
-        let mut swept = g.clone();
-        swept.alpha_override = Some(0.184);
-        assert!(
-            swept.echo_line().contains("RWM_ALPHA_OVERRIDE=0.184"),
-            "the armed arm's echo must NAME the RESOLVED alpha, not a flag - \
-             the RWM_ACKDIAG_WINDOW_US precedent: {}",
-            swept.echo_line()
-        );
-        // THE `W` FORM SHIPS AS `cantelli` AND THE ARMED ARM ECHOES ITS OWN
-        // RESOLVED TOKEN (paper 16.76). Both sides asserted: an arm that did
-        // not take must be readable, not inferred.
-        assert_eq!(
-            g.w_form,
-            crate::net::WForm::Cantelli,
-            "RWM_W_FORM ships as `cantelli` - the quantile-native law is an \
-             A/B arm inside RWM_QUANTILE_CLOCKS (itself default OFF and \
-             REFUTED-STANDING) and nothing shipped may read it (paper 16.76)"
-        );
-        let mut qform = g.clone();
-        qform.w_form = crate::net::WForm::Quantile;
-        assert!(
-            qform.echo_line().contains("RWM_W_FORM=quantile"),
-            "the armed arm's echo must NAME the RESOLVED W law: {}",
-            qform.echo_line()
-        );
-        // GARBAGE RESOLVES BACK TO ABSENT, and `absent` is `cantelli`. Parsed
-        // by FIELD rather than through the environment - env mutation is
-        // process-global in a parallel runner.
-        for junk in ["", " ", "quantle", "1", "CANTELLI-ish", "true"] {
-            assert!(
-                crate::net::WForm::parse(junk).is_none(),
-                "RWM_W_FORM={junk:?} must resolve back to ABSENT, not to an arm"
-            );
-        }
-        assert_eq!(crate::net::WForm::parse(" Quantile ").unwrap(), crate::net::WForm::Quantile);
-        assert_eq!(crate::net::WForm::parse("cantelli").unwrap(), crate::net::WForm::Cantelli);
         // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
         // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
         // re-running the displaced `gain = 2.0` fossil must be able to assert
@@ -2067,17 +1787,6 @@ mod tests {
         assert!(
             !g.pool_anchor,
             "RWM_POOL_ANCHOR default rides the RWM_EST_CADENCE resolution (OFF unset)"
-        );
-        // "Ship The Wins 1b" (2026-08-07): arm A rides the pool-anchor
-        // resolution (⇒ OFF unset), arm B is a pure A/B arm (always OFF
-        // unset). Neither may reach the shipped default stack.
-        assert!(
-            !g.pool_deliv,
-            "RWM_POOL_DELIV default rides the RWM_POOL_ANCHOR resolution (OFF unset)"
-        );
-        assert!(
-            !g.floor_bound,
-            "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
         );
         // "Ack-Merge Flip" (2026-08-08): the window-mode control-datagram
         // merge PASSED its own pre-registered gate set at full scope (×8,
@@ -2114,15 +1823,11 @@ mod tests {
         // shipped default stack until its pre-registered gate set passes;
         // the derived stall gauge is DIAG-only and also ships OFF.
         assert!(
-            !g.patience_derived,
-            "RWM_PATIENCE_DERIVED ships default OFF (A/B arm)"
-        );
-        assert!(
             !g.sidle_derived,
             "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
         );
         // Experiments / instruments (default OFF)
-        assert!(!g.store_percap && !g.store_borrow && !g.plain_rs);
+        assert!(!g.plain_rs);
         // "Honest Inputs" (2026-08-10): both fixes ship default OFF (A/B
         // arms; anchor-hygiene umbrella members). The OFF-VALUE PROPERTY,
         // two-sided on the echo (MEASUREMENT DISCIPLINE 15): a battery must
@@ -2148,9 +1853,6 @@ mod tests {
         );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
-        assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
-        assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");
-        assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
         assert!(
             !g.cold_place,
             "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \

@@ -21,8 +21,8 @@
 //!     (serialisation at the path rate + a standing queue + RTprop), so a
 //!     cwnd-saturating sender builds its own delay signal,
 //!   * the SHIPPED dyn-cap chain at the battery's arms (A/AU/AL/ALU are all
-//!     `store_paths_on = true`, `percap = capw = pool_anchor = three_term =
-//!     honest_cap = off`), i.e. `path_scaled_store_cap` over the path set the
+//!     `store_paths_on = true`, `pool_anchor = three_term = honest_cap =
+//!     off`), i.e. `path_scaled_store_cap` over the path set the
 //!     flag selects, refreshed on the shipped 5 ms cadence.
 //!
 //! No wall clock, no sockets, no tokio, no netem: same numbers every run —
@@ -2346,7 +2346,7 @@ fn simulate_place(
         // ── ack/delivery half + the recovery plane ───────────────────────
         // Acked symbols leave the store and release their path's budget.
         // Dropped ones are retransmitted once RFC 9002's time threshold
-        // (9/8·SRTT — the same `PLACE_SLACK_RECOV_PATIENCE` the placement
+        // (9/8·SRTT — RFC 9002's kTimeThreshold, which the placement
         // objective uses) has passed, and are RE-CHARGED to their new path.
         let acks: Vec<(u32, f64, u64)> = store
             .iter()

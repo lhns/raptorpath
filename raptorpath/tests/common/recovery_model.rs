@@ -25,9 +25,9 @@ use std::time::Duration;
 
 use raptorpath::net::{
     cooldown_elapsed, hole_refresh, legacy_age_ripe, mp_delivered_intervals, mp_fast_lost,
-    mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us, recovery_floor_us,
+    mp_hole_ripe, mp_time_threshold_split, pooled_recovery_srtt_us,
     retx_cooldown_us, shed_allowed, shed_deadline_us, sweep_timeout_us, time_threshold_ripe,
-    MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK,
+    MAX_NACK_GAPS, MAX_NACK_REPAIRS_PER_NACK, NACK_RETX_COOLDOWN_FLOOR_US,
 };
 
 // ───────────────────────────── env plumbing ─────────────────────────────
@@ -116,7 +116,6 @@ pub struct Arm {
     pub name: &'static str,
     pub recov_mp: bool,
     pub recov_sp: bool,
-    pub patience_derived: bool,
     /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
     /// tail sweep + hole refresh on `derived_recovery_round_us` instead of
     /// the [25, 100] ms clamped law. `false` on every pre-existing arm, so
@@ -129,7 +128,6 @@ pub const ARMS: &[Arm] = &[
         name: "shipped",
         recov_mp: true,
         recov_sp: false,
-        patience_derived: false,
         derived_sweep: false,
     },
     // Neither RFC channel: the pre-2026-07 legacy `srtt/2` age gate.
@@ -137,7 +135,6 @@ pub const ARMS: &[Arm] = &[
         name: "legacy",
         recov_mp: false,
         recov_sp: false,
-        patience_derived: false,
         derived_sweep: false,
     },
     // `RWM_RECOV_SP`: the §6.1.2 time threshold at N = 1 too.
@@ -145,15 +142,6 @@ pub const ARMS: &[Arm] = &[
         name: "sp",
         recov_mp: true,
         recov_sp: true,
-        patience_derived: false,
-        derived_sweep: false,
-    },
-    // `RWM_PATIENCE_DERIVED` on top of the shipped stack.
-    Arm {
-        name: "pd",
-        recov_mp: true,
-        recov_sp: false,
-        patience_derived: true,
         derived_sweep: false,
     },
     // `RWM_DERIVED_SWEEP` on top of the shipped stack — the arm this
@@ -162,7 +150,6 @@ pub const ARMS: &[Arm] = &[
         name: "ds",
         recov_mp: true,
         recov_sp: false,
-        patience_derived: false,
         derived_sweep: true,
     },
 ];
@@ -375,12 +362,10 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
 
     // The pooled recovery clock — the SHIPPED reduction, verbatim.
     let pooled_us = pooled_recovery_srtt_us(&ewma);
-    let pooled_floor = recovery_floor_us(cell.arm.patience_derived, cal.jitter_us, pooled_us);
-    let cooldown_us = retx_cooldown_us(pooled_us, pooled_floor);
+    let cooldown_us = retx_cooldown_us(pooled_us, NACK_RETX_COOLDOWN_FLOOR_US);
     let thr_of = |p: u32| -> u64 {
         let (c, e) = (copa[p as usize], ewma[p as usize]);
-        let floor = recovery_floor_us(cell.arm.patience_derived, cal.jitter_us, c.max(e));
-        mp_time_threshold_split(c, e, floor).0
+        mp_time_threshold_split(c, e, NACK_RETX_COOLDOWN_FLOOR_US).0
     };
     let patience_us = thr_of(0);
     // The receiver's refresh cadence reads the COPA clock (`PathState::srtt`),

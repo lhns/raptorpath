@@ -47,10 +47,10 @@
 //!     across the recovery block, which also increments `dg.mpd_*` — a
 //!     borrow conflict, not a behaviour question. They stay locals and are
 //!     passed in by reference.
-//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` are NOT DIAG-only:
-//!     the LIVE `RWM_WIN_DECOUPLE` admission gate reads both to compute the
-//!     head span and the stall meter. Only their derived `wnd2_relgap_max_us`
-//!     is instrumentation. They stay locals and are passed in by value.
+//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` stay locals of
+//!     `run_window_sender` and are passed in by value. (They were read by
+//!     the removed `RWM_WIN_DECOUPLE` admission gate; today they feed only
+//!     the `wnd2=`/`relgap=` gauge.)
 //!
 //! NOT covered here: the receiver-side `[RCV]` / `[RDIAG]` / `[FDIAG]` /
 //! `[C8CONV-R]` gauges (still in `run_impl`'s receiver task), the span-law
@@ -247,7 +247,7 @@ pub(crate) struct DiagState {
     /// frontier (max of SACK-release max and cum ack) last advanced, max per
     /// DIAG window: the release-clumping gauge (D2). The frontier itself
     /// (`wnd2_frontier_last` / `wnd2_frontier_change_us`) stays a local of
-    /// `run_window_sender` because the LIVE decoupled-admission law reads it.
+    /// `run_window_sender`.
     pub wnd2_relgap_max_us: u64,
 }
 
@@ -325,10 +325,7 @@ pub(crate) struct DiagInputs<'a> {
     pub tx_paused: bool,
     pub store_len: usize,
     pub effective_store_cap: usize,
-    /// Per-path store caps / delay-aware redirect bounds / echo-ratio state,
-    /// refreshed by the dyn-cap throttle.
-    pub percap_caps: &'a HashMap<u32, usize>,
-    pub percap_bounds: &'a HashMap<u32, usize>,
+    /// Per-path echo-ratio state (K_i), refreshed by the dyn-cap throttle.
     pub percap_k: &'a HashMap<u32, EchoRatioMin>,
     /// RWM_STORE_SACK_RELEASE: currently released / cumulative slots.
     pub sack_released: &'a BTreeSet<u64>,
@@ -336,20 +333,12 @@ pub(crate) struct DiagInputs<'a> {
     /// RWM_POOL_ANCHOR: honest dual-store engagement + Σ honest caps.
     pub pa_engaged: bool,
     pub pa_sum: f64,
-    /// RWM_WIN_DECOUPLE: the live release frontier (read by the ADMISSION
-    /// law, hence still a local) and the law's engagement gauges.
+    /// The live release frontier (the `wnd2=`/`relgap=` gauge's input).
     pub wnd2_frontier_last: u64,
     pub wnd2_frontier_change_us: u64,
-    pub wd_engaged: bool,
-    pub wd_allow_base: f64,
-    pub wd_rate: f64,
-    pub wd_cap_ret: usize,
     /// The live NACK repair budget and the generation-mode pacing EWMA.
     pub cached_nack_budget: u64,
     pub gen_rate_ewma: f64,
-    /// RWM_PLACE_SLACK gauges.
-    pub ps_slack_gauge: f64,
-    pub ps_rate_ewma: f64,
     /// The patience-floor split counters. `Cell` because the evaluation
     /// happens inside a shared closure in the recovery phase — see the
     /// module header.
@@ -399,8 +388,6 @@ pub(crate) fn report(
         tx_paused,
         store_len,
         effective_store_cap,
-        percap_caps,
-        percap_bounds,
         percap_k,
         sack_released,
         sack_released_total,
@@ -408,14 +395,8 @@ pub(crate) fn report(
         pa_sum,
         wnd2_frontier_last,
         wnd2_frontier_change_us,
-        wd_engaged,
-        wd_allow_base,
-        wd_rate,
-        wd_cap_ret,
         cached_nack_budget,
         gen_rate_ewma,
-        ps_slack_gauge,
-        ps_rate_ewma,
         mpd_pf_floor,
         mpd_pf_clock,
         mpd_pf_sum,
@@ -569,16 +550,10 @@ pub(crate) fn report(
                     let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
                         .quinn_path_stats(*id)
                         .unwrap_or((0, 0, 0, 0));
-                    // task #86 DIAG: the per-path outstanding ACCOUNT
-                    // (store symbols charged to this path / its cap_i)
-                    // — the mechanism gauge for RWM_STORE_PERCAP
-                    // (zeros when the percap law is not engaged).
+                    // task #86 DIAG: the per-path outstanding ACCOUNT —
+                    // retained store symbols charged to this path (its
+                    // share of the POOLED outstanding).
                     let sout_i = st.percap_out.get(id).copied().unwrap_or(0);
-                    let scap_i = percap_caps.get(id).copied().unwrap_or(0);
-                    // Roadmap item 1: the delay-aware redirect bound
-                    // (sbnd) — the guard's mechanism gauge (dwell_i
-                    // is sout_i/btlbw_i, computable offline).
-                    let sbnd_i = percap_bounds.get(id).copied().unwrap_or(0);
                     // feat/copa-compete DIAG: cmp=<mode><switches>/<δ>
                     // — mode C (competitive) or D (default), the
                     // cumulative competitive entries, and the LIVE δ
@@ -605,7 +580,7 @@ pub(crate) fn report(
                         .unwrap_or((0, 0));
                     // feat/percap-honest-cap DIAG: khr = the
                     // windowed-min echoSRTT/RTprop ratio K_i feeding
-                    // the honest cap law (1.00 when not engaged).
+                    // the honest cap laws (1.00 when not engaged).
                     let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
                     // goal-gate "Honest Inputs" DIAG (`RWM_HONEST_K`):
                     // kraw = the RAW-sample windowed-min ratio the K
@@ -703,12 +678,6 @@ pub(crate) fn report(
                     // count come from one pair-set function. READ BY NOTHING.
                     let tlag_s = cand(p.rtt_tlag_us());
                     let tlag_n = p.rtt_tlag_samples();
-                    // feat/store-borrowing DIAG: this path's loan
-                    // gauges — symbols LENT out (charged here,
-                    // flying elsewhere) / BORROWED in (flying
-                    // here, charged elsewhere). Zeros when off.
-                    let lent_i = st.percap_lent.get(id).copied().unwrap_or(0);
-                    let bor_i = st.percap_borrowed.get(id).copied().unwrap_or(0);
                     // feat/recovery-suppression DIAG: the per-path
                     // LOSS ESTIMATE the recovery plane actually keys
                     // on (repair_debt, P_lost, NACK budgets) — the
@@ -723,16 +692,9 @@ pub(crate) fn report(
                     // deliberately left feeding cwnd only).
                     let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                     let (sa_g, sa_d) = p.send_anchor_stats();
-                    // RWM_POOL_DELIV DIAG (arm A): the DELIVERY-clocked
-                    // term alone (0 = no accepted sample / gate off) and
-                    // its guard counters — the mechanism witness that
-                    // separates arm A from attempt 1 in the logs.
-                    // dr vs sr IS the pre-registered prediction 1.
-                    let dr_i = p.deliv_rate_anchor().unwrap_or(0.0);
-                    let (da_ok, da_sh, da_g, da_d) = p.deliv_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={}/{}/b{} ln={}/{} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} dr={:.0}/a{}s{}g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, scap_i, sbnd_i, lent_i, bor_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, dr_i, da_ok, da_sh, da_g, da_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }
@@ -856,21 +818,13 @@ pub(crate) fn report(
             let hole = store_len.saturating_sub(head);
             let relgap_cur =
                 dnow.saturating_sub(wnd2_frontier_change_us) / 1000;
-            let mut s = format!(
+            let s = format!(
                 " wnd2={}/{} relgap={}ms/mx{}ms",
                 head.min(store_len),
                 hole,
                 relgap_cur,
                 dg.wnd2_relgap_max_us / 1000,
             );
-            // RWM_WIN_DECOUPLE engagement gauge: base allowance /
-            // honest rate / retention backstop (mechanism liveness).
-            if wd_engaged {
-                s.push_str(&format!(
-                    " wd=al{:.0}/r{:.0}/ret{}",
-                    wd_allow_base, wd_rate, wd_cap_ret
-                ));
-            }
             dg.wnd2_relgap_max_us = 0;
             s
         } else {
@@ -970,7 +924,7 @@ pub(crate) fn report(
             String::new()
         };
         eprintln!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{} loan={}/{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -988,7 +942,6 @@ pub(crate) fn report(
             bdp_100m,
             dg.diag_sweeps, dg.diag_retx, dg.diag_gaps_dropped, cached_nack_budget,
             xat_c, xat_w,
-            st.percap_loans.len(), st.percap_loans_total,
             mpr,
             sd2,
             wnd2diag,
@@ -1044,15 +997,6 @@ pub(crate) fn report(
                         dg.c8c_retx_orig.get(&k).copied().unwrap_or(0),
                         dg.c8c_stall_ms.get(&k).copied().unwrap_or(0),
                         dg.c8c_stall_n.get(&k).copied().unwrap_or(0),
-                    ));
-                }
-                // RWM_PLACE_SLACK gauge: the live S (ms) + ack-rate
-                // EWMA (sym/s) — engagement magnitude for the law.
-                if pol.place_slack_on {
-                    s.push_str(&format!(
-                        " slk={:.0}ms/r{:.0}",
-                        ps_slack_gauge * 1000.0,
-                        ps_rate_ewma
                     ));
                 }
                 eprintln!("[C8CONV-S]{}", s);
