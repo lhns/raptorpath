@@ -61,13 +61,14 @@ pub(crate) fn copa_delta_for_hint(hint: ProtocolHint) -> f64 {
         ECHOED.get_or_init(|| {
             tracing::info!(
                 copa_delta_override =
-                    std::env::var("RWM_COPA_DELTA").as_deref().unwrap_or("unset"),
+                    crate::gates::get().copa_delta_raw.as_deref().unwrap_or("unset"),
                 "Copa δ override (RWM_COPA_DELTA; unset = the hint→δ mapping)"
             );
         });
     }
-    let over = std::env::var("RWM_COPA_DELTA")
-        .ok()
+    let over = crate::gates::get()
+        .copa_delta_raw
+        .as_deref()
         .and_then(|s| s.parse::<f64>().ok());
     copa_delta(hint, over)
 }
@@ -722,10 +723,7 @@ impl CopaState {
             rs_rej_zero: 0,
             rs_rej_applimited: 0,
             rs_generated: 0,
-            rs_trace_thresh: std::env::var("RWM_RS_TRACE")
-                .ok()
-                .and_then(|s| s.parse::<f64>().ok())
-                .unwrap_or(0.0),
+            rs_trace_thresh: crate::gates::get().rs_trace,
             rs_trace_path: u32::MAX,
             last_cwnd_update: now,
             clock,

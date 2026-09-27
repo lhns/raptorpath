@@ -200,6 +200,11 @@ pub const DUMP_MAX_DEFAULT: u64 = 200_000;
 /// The resolved raw-dump cap — echoed on the `[GATES]` line so a truncated
 /// dump is readable off the run's own output rather than inferred.
 pub fn dump_max() -> u64 {
+    crate::gates::get().succ_dump_max
+}
+
+/// The resolve-time read behind [`dump_max`].
+pub(crate) fn resolve_dump_max() -> u64 {
     std::env::var("RWM_SUCC_DUMP_MAX")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())

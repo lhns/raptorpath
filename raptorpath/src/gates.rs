@@ -90,17 +90,29 @@ fn flag_or_depth(name: &str) -> bool {
 /// §16.81/§16.82). See [`RuntimeGates::delta`] for what it means
 /// and the precedence against `RWM_COPA_DELTA`.
 ///
-/// Resolved through a `OnceLock` rather than only inside
-/// [`RuntimeGates::resolve`] because [`crate::net::delta_price`] is a FREE
-/// function on hot paths (`delta_budget_b`, the rate site) with no `gates`
-/// in scope — the `copa_delta_for_hint` precedent, one layer tidier: the
-/// gates struct reads THIS function too, so there is exactly one resolve and
-/// the `[GATES]` echo cannot disagree with the number the laws used.
+/// A free function because [`crate::net::delta_price`] is one, on hot paths
+/// (`delta_budget_b`, the rate site) with no `gates` in scope. It reads the
+/// ONE process resolution ([`get`]), so the `[GATES]` echo cannot disagree
+/// with the number the laws used.
 pub fn delta_override() -> Option<f64> {
-    static RESOLVED: std::sync::OnceLock<Option<f64>> = std::sync::OnceLock::new();
-    *RESOLVED.get_or_init(|| {
-        env_parse::<f64>("RWM_DELTA").filter(|d| d.is_finite() && *d > 0.0)
-    })
+    get().delta
+}
+
+/// The resolve-time read behind [`delta_override`].
+fn resolve_delta() -> Option<f64> {
+    env_parse::<f64>("RWM_DELTA").filter(|d| d.is_finite() && *d > 0.0)
+}
+
+/// THE ONE GATE RESOLUTION: the process's [`RuntimeGates`], resolved from the
+/// environment on first use and read by every gate consumer thereafter (the
+/// engine, the scheduler's `*_active()` accessors, the instruments, the
+/// transport). There is no second cache of any gate: a consumer that needs a
+/// gate reads it here, so what the `[GATES]` echo prints is what behaviour
+/// read. [`RuntimeGates::resolve`] stays a pure environment read (tests and
+/// harnesses call it directly to inspect an arm).
+pub fn get() -> &'static RuntimeGates {
+    static GATES: std::sync::OnceLock<RuntimeGates> = std::sync::OnceLock::new();
+    GATES.get_or_init(RuntimeGates::resolve)
 }
 
 /// The engine's env-gate surface, resolved once at engine start.
@@ -1051,14 +1063,66 @@ pub struct RuntimeGates {
     pub trace: bool,
     /// `RWM_PFRAC` (default OFF): proactive-vs-reactive recovery fraction.
     pub pfrac: bool,
+
+    // ── Resolved here, NOT on the `[GATES]` line ─────────────────────────
+    // These were separate per-site caches or raw env reads before the one
+    // resolution; each keeps its own echo where it had one (see
+    // `EXTERNALLY_ECHOED`), and the `[GATES]` line is unchanged byte for byte.
+    /// `RWM_COPA_WIRE` / `RWM_QUIC_CC` / `RWM_COPA_FEED`: the wire-clocked
+    /// Copa signal (`scheduler::copa_wire_active`).
+    pub copa_wire: bool,
+    /// `RWM_COPA_COMPETE` (requires `copa_wire`; `scheduler::copa_compete_active`).
+    pub copa_compete: bool,
+    /// `RWM_EST_CADENCE` (`control::estimator::est_cadence_active`).
+    pub est_cadence: bool,
+    /// `RWM_WIRE_COMPACT` (`transport::wire_compact_active`).
+    pub wire_compact: bool,
+    /// `RWM_COPA_DELTA`, raw (the CC's own δ override; parsed at its site).
+    pub copa_delta_raw: Option<String>,
+    /// `RWM_PLACE_T`: the effective placement temperature.
+    pub place_t: f64,
+    /// `RWM_CLOCK_GAP`: the process stall witness (`control::anchor`).
+    pub clock_gap: bool,
+    /// `RWM_RSTAR_TAIL`: r* tail provisioning (`FecRateController`).
+    pub rstar_tail: bool,
+    /// `RWM_RS_TRACE`: the Copa rate-sample trace threshold (0 = off).
+    pub rs_trace: f64,
+    /// `RWM_QUIC_CC`, raw (the substrate controller choice; parsed in quic.rs).
+    pub quic_cc: Option<String>,
+    /// `RWM_MTU_FLOOR`, raw (parsed in quic.rs).
+    pub mtu_floor_raw: Option<String>,
+    /// `RWM_L0_NETEM`, raw (the L0 shim's scenario list).
+    pub l0_netem: Option<String>,
+    /// `RWM_L0_SEED`, raw (the L0 shim's RNG seed).
+    pub l0_seed_raw: Option<String>,
+    /// `RWM_PERF_TIMEOUT_S`, raw (the perf harness's per-run timeout).
+    pub perf_timeout_raw: Option<String>,
+    /// `RWM_ACKDIAG_WINDOW_US`, resolved (echoed on the `[GATES]` line).
+    pub ackdiag_window_us: u64,
+    /// `RWM_RTT_DUMP_MAX`, resolved (echoed on the `[GATES]` line).
+    pub rtt_dump_max: usize,
+    /// `RWM_SUCC_DUMP_MAX`, resolved (echoed on the `[GATES]` line).
+    pub succ_dump_max: u64,
 }
 
 impl RuntimeGates {
     /// Read the whole gate surface from the environment — call once at engine
     /// start.
     pub fn resolve() -> Self {
-        let unified = crate::net::unified_active();
+        let unified = crate::config::env_flag("RWM_UNIFIED", true);
         let gen_rate: f64 = env_parse::<f64>("RWM_GEN_RATE").unwrap_or(9000.0);
+        // The gates that print their own liveness echo at resolve time, in
+        // the order the echoes have always come out.
+        let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
+        let honest_k = crate::gates::scheduler_gates::resolve_honest_k();
+        let est_cadence = crate::control::estimator::resolve_est_cadence();
+        let pool_anchor = crate::gates::scheduler_gates::resolve_pool_anchor(est_cadence);
+        let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
+        let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
+        let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
+        let place_wdiv_derived = crate::gates::scheduler_gates::resolve_place_wdiv_derived();
+        let copa_wire = crate::gates::scheduler_gates::resolve_copa_wire();
+        let copa_compete = crate::gates::scheduler_gates::resolve_copa_compete(copa_wire);
         RuntimeGates {
             unified,
             unified_shed: env_flag("RWM_UNIFIED_SHED", true),
@@ -1066,8 +1130,8 @@ impl RuntimeGates {
             astar_anchor: anchor_gate_default("RWM_ASTAR_ANCHOR", true),
             mstar_anchor: anchor_gate_default("RWM_MSTAR_ANCHOR", true),
             plain_rs: anchor_gate("RWM_PLAIN_RS"),
-            honest_anchor: crate::scheduler::honest_anchor_active(),
-            honest_k: crate::scheduler::honest_k_active(),
+            honest_anchor,
+            honest_k,
             store_sack_release: env_flag("RWM_STORE_SACK_RELEASE", true),
             store_paths: env_flag("RWM_STORE_PATHS", true),
             store_path_pool: env_parse::<usize>("RWM_STORE_PATH_POOL").unwrap_or(2048),
@@ -1078,16 +1142,16 @@ impl RuntimeGates {
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
             honest_cap: env_flag("RWM_HONEST_CAP", true),
-            pool_anchor: crate::scheduler::pool_anchor_active(),
-            ack_merge: crate::scheduler::ack_merge_active(),
-            loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
-            release_1to1: crate::scheduler::release_1to1_active(),
-            charge_recovery: crate::scheduler::charge_recovery_active(),
-            sidle_derived: crate::scheduler::sidle_derived_active(),
-            cold_place: crate::scheduler::cold_place_active(),
-            place_t_derived: crate::scheduler::place_t_derived_active(),
-            place_hol: crate::scheduler::place_hol_active(),
-            place_wdiv_derived: crate::scheduler::place_wdiv_derived_active(),
+            pool_anchor,
+            ack_merge: crate::gates::scheduler_gates::resolve_ack_merge(),
+            loss_sent_truth: crate::gates::scheduler_gates::resolve_loss_sent_truth(),
+            release_1to1: crate::gates::scheduler_gates::resolve_release_1to1(),
+            charge_recovery: crate::gates::scheduler_gates::resolve_charge_recovery(),
+            sidle_derived: crate::gates::scheduler_gates::resolve_sidle_derived(),
+            cold_place,
+            place_t_derived,
+            place_hol,
+            place_wdiv_derived,
             gen_size: env_parse::<usize>("RWM_GEN").unwrap_or(384).max(1),
             pipeline: env_parse::<usize>("RWM_PIPELINE").unwrap_or(2).max(1),
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
@@ -1108,7 +1172,7 @@ impl RuntimeGates {
             proactive_pacer: env_flag("RWM_PROACTIVE_PACER", false),
             reasm_bdp: env_flag("RWM_REASM_BDP", false),
             min_r: env_parse::<f64>("RWM_MIN_R").unwrap_or(0.0).clamp(0.0, 2.0),
-            cc_pace: env_flag("RWM_CC_PACE", crate::scheduler::copa_wire_active()),
+            cc_pace: env_flag("RWM_CC_PACE", copa_wire),
             cc_pace_headroom: env_parse::<f64>("RWM_CC_PACE_HR")
                 .unwrap_or(1.1)
                 .clamp(1.0, 2.0),
@@ -1164,7 +1228,7 @@ impl RuntimeGates {
             // prints `unset`. The range is the law's own domain, not a taste:
             // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
             // undefined at δ ≤ 0. Paper §16.81/§16.82.
-            delta: delta_override(),
+            delta: resolve_delta(),
             // ABSENT by default. The glide it arms has shipped inert since P6;
             // arming it is an EXPERIMENT, not a default in waiting.
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
@@ -1183,6 +1247,28 @@ impl RuntimeGates {
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
             pfrac: env_flag("RWM_PFRAC", false),
+            copa_wire,
+            copa_compete,
+            est_cadence,
+            wire_compact: env_flag("RWM_WIRE_COMPACT", true),
+            copa_delta_raw: std::env::var("RWM_COPA_DELTA").ok(),
+            place_t: crate::scheduler::place::resolve_place_temperature(),
+            clock_gap: anchor_gate_default("RWM_CLOCK_GAP", true),
+            rstar_tail: env_flag("RWM_RSTAR_TAIL", true),
+            rs_trace: std::env::var("RWM_RS_TRACE")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0),
+            quic_cc: std::env::var("RWM_QUIC_CC").ok(),
+            mtu_floor_raw: std::env::var("RWM_MTU_FLOOR").ok(),
+            l0_netem: std::env::var("RWM_L0_NETEM").ok(),
+            l0_seed_raw: std::env::var("RWM_L0_SEED").ok(),
+            perf_timeout_raw: std::env::var("RWM_PERF_TIMEOUT_S").ok(),
+            ackdiag_window_us: crate::net::ackdiag::resolve_window_us(
+                std::env::var("RWM_ACKDIAG_WINDOW_US").ok().as_deref(),
+            ),
+            rtt_dump_max: crate::net::rttdump::resolve_dump_max(),
+            succ_dump_max: crate::net::succ::resolve_dump_max(),
         }
     }
 
@@ -1312,19 +1398,19 @@ impl RuntimeGates {
             // to be readable from the run's own output. A mistyped override
             // resolves back to the default and this prints 2000000, so "my arm
             // did not take" is visible rather than inferred.
-            b(self.diag), b(self.ackdiag), crate::net::ackdiag::window_us(),
+            b(self.diag), b(self.ackdiag), self.ackdiag_window_us,
             // The raw-sample dump's CAP is echoed as its RESOLVED value, for
             // the reason `RWM_ACKDIAG_WINDOW_US` two lines above is: a leg
             // whose dump was truncated at 400 000 samples and one that was not
             // are different measurements of clause `B`, and the difference has
             // to be readable off the run's own output rather than inferred.
-            b(self.rtt_dump), crate::net::rttdump::dump_max(),
+            b(self.rtt_dump), self.rtt_dump_max,
             // The successor dump's CAP, echoed as its RESOLVED value for the
             // reason `RWM_RTT_DUMP_MAX` one line above is: a receiver whose
             // raw record stream was truncated and one that was not are
             // different inputs to the derivation that reads them, and the
             // difference has to be readable off the run's own output.
-            b(self.succ_dump), crate::net::succ::dump_max(),
+            b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )

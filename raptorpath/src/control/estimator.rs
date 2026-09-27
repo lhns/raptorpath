@@ -114,17 +114,19 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 /// on with it, + `RWM_EMIT_BATCH=1`) remains the documented fast
 /// single-path configuration: 446–508 Mbit/s at c1.
 pub(crate) fn est_cadence_active() -> bool {
-    use std::sync::OnceLock;
-    static GATE: OnceLock<bool> = OnceLock::new();
-    *GATE.get_or_init(|| {
-        let on = crate::config::env_flag("RWM_EST_CADENCE", false);
-        if on {
-            tracing::info!(
-                "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
-            );
-        }
-        on
-    })
+    crate::gates::get().est_cadence
+}
+
+/// The resolve-time read behind [`est_cadence_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_est_cadence() -> bool {
+    let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+    if on {
+        tracing::info!(
+            "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
+        );
+    }
+    on
 }
 
 impl LossEstimator {
@@ -141,7 +143,7 @@ impl LossEstimator {
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
             // DEFAULT ON (2026-07-21, "Consolidation" battery).
-            rtt_seed_from_sample: crate::config::anchor_gate_default("RWM_MSTAR_ANCHOR", true),
+            rtt_seed_from_sample: crate::gates::get().mstar_anchor,
             rtt_seeded: false,
             rtt_sampled: false,
             ewma_throughput: 0.0,

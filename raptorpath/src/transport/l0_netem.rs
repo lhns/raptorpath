@@ -140,7 +140,7 @@ pub(super) struct L0Netem {
 
 impl L0Netem {
     pub(super) fn from_env() -> Option<Arc<Self>> {
-        let spec = std::env::var("RWM_L0_NETEM").ok()?;
+        let spec = crate::gates::get().l0_netem.clone()?;
         if spec.trim().is_empty() {
             return None;
         }
@@ -149,8 +149,9 @@ impl L0Netem {
             warn!(%spec, "RWM_L0_NETEM set but no scenario parsed — shim OFF");
             return None;
         }
-        let seed: u64 = std::env::var("RWM_L0_SEED")
-            .ok()
+        let seed: u64 = crate::gates::get()
+            .l0_seed_raw
+            .as_deref()
             .and_then(|s| s.parse().ok())
             .unwrap_or(42);
         info!(?cfgs, seed, "L0 netem shim ACTIVE on the datagram path");

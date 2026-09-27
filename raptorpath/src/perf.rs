@@ -36,8 +36,9 @@ const ACK_IDX: u32 = u32::MAX;
 /// object and burning 300 s per expected miss makes x8 batteries
 /// impractical; task #46 L1 spot check).
 fn run_timeout() -> Duration {
-    std::env::var("RWM_PERF_TIMEOUT_S")
-        .ok()
+    crate::gates::get()
+        .perf_timeout_raw
+        .as_deref()
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(300))
@@ -248,7 +249,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     // §14.26/§16.82: publish the completion feed ONLY when the arm
     // is set. Absent by default ⇒ `config.completion_feed` stays `None` and
     // the engine's rate site never reads it — byte-identical.
-    let feed = if crate::config::env_flag("RWM_COMPLETION_EXPOSURE", false) {
+    let feed = if crate::gates::get().completion_exposure {
         let f = std::sync::Arc::new(net::CompletionFeed::new());
         config.completion_feed = Some(f.clone());
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).

@@ -414,7 +414,7 @@ const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 /// the retirement it selected the streaming two-layer code. The legacy-RLC
 /// machines stay (their own retirement clause, §17.5, was never re-argued).
 pub(crate) fn unified_active() -> bool {
-    crate::config::env_flag("RWM_UNIFIED", true)
+    crate::gates::get().unified
 }
 
 /// Realtime rides the window pipeline; `window_reliable` (RWM Phase A) opts
@@ -655,7 +655,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // The RWM_* env-gate surface, resolved ONCE for this engine (src/gates.rs
     // — the consolidation-pass extraction of the former inline gate block).
     // Deprecation warnings (register Class-C gates) fire inside resolve().
-    let gates = crate::gates::RuntimeGates::resolve();
+    let gates = crate::gates::get().clone();
     // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09;
     // MEASUREMENT DISCIPLINE item 15): one `[GATES]` line naming every gate
     // resolved above and its RESOLVED value, on BOTH endpoints, once per

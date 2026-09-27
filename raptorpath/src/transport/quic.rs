@@ -80,7 +80,7 @@ enum QuicCcMode {
 }
 
 fn quic_cc_mode() -> QuicCcMode {
-    let Ok(name) = std::env::var("RWM_QUIC_CC") else {
+    let Some(name) = crate::gates::get().quic_cc.clone() else {
         return QuicCcMode::Bbr;
     };
     match name.trim().to_ascii_lowercase().as_str() {
@@ -382,7 +382,7 @@ impl QuicTransport {
             // must not exist on the shipped path. `RWM_DIAG` is an existing
             // gate — already in `RWM_FORWARD`, already in the `[GATES]` echo
             // — so this adds no name to the gate surface.
-            dg_audit: crate::config::env_flag("RWM_DIAG", false),
+            dg_audit: crate::gates::get().diag,
             dg_stats: DashMap::new(),
         })
     }
@@ -971,8 +971,9 @@ impl QuicTransport {
         // DATAGRAM frame header) = ~1312 minimum UDP payload; 1350 leaves
         // margin for CID/PN-length variation.
         const MTU_FLOOR: u16 = 1350;
-        let floor: u16 = std::env::var("RWM_MTU_FLOOR")
-            .ok()
+        let floor: u16 = crate::gates::get()
+            .mtu_floor_raw
+            .as_deref()
             .and_then(|s| s.parse().ok())
             .unwrap_or(MTU_FLOOR);
         if floor == 0 {

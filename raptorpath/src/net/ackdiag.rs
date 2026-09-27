@@ -142,8 +142,7 @@ pub fn resolve_window_us(raw: Option<&str>) -> u64 {
 /// Observation-only, exactly like the rest of this module: the window governs
 /// when a line is PRINTED and nothing else.
 pub fn window_us() -> u64 {
-    static W: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *W.get_or_init(|| resolve_window_us(std::env::var("RWM_ACKDIAG_WINDOW_US").ok().as_deref()))
+    crate::gates::get().ackdiag_window_us
 }
 
 /// Per-window sample cap, per path, per series. At the loopback ceiling
@@ -559,7 +558,7 @@ impl AckCadenceGauge {
 pub fn gauge() -> Option<&'static AckCadenceGauge> {
     static G: std::sync::OnceLock<Option<AckCadenceGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
-        if crate::config::env_flag("RWM_ACKDIAG", false) {
+        if crate::gates::get().ackdiag {
             Some(AckCadenceGauge::new())
         } else {
             None

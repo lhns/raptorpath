@@ -215,7 +215,7 @@ impl FecRateController {
             saturation_cap_enabled: true,
             bulk_pure_arq: true,
             completion_exposure: 0.0,
-            tail_provision: crate::config::env_flag("RWM_RSTAR_TAIL", true),
+            tail_provision: crate::gates::get().rstar_tail,
             inner_feedback: 0.0,
         }
     }

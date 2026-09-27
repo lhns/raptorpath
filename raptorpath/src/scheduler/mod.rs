@@ -34,7 +34,7 @@ pub use clock::*;
 pub use crate::gates::scheduler_gates::*;
 mod copa;
 pub use copa::*;
-mod place;
+pub(crate) mod place;
 // Placement items are crate-internal; only the unit tests name them from here.
 #[cfg(test)]
 use place::*;

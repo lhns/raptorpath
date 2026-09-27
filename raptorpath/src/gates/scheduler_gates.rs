@@ -44,28 +44,30 @@ pub(crate) fn copa_wire_from_env(qcc: Option<&str>, feed: bool, wire: Option<&st
 /// active for this process. Read once and cached — consulted on the ack hot
 /// path.
 pub fn copa_wire_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let qcc = std::env::var("RWM_QUIC_CC").ok();
-        let wire = std::env::var("RWM_COPA_WIRE").ok();
-        let on = copa_wire_from_env(
-            qcc.as_deref(),
-            crate::config::env_flag("RWM_COPA_FEED", false),
-            wire.as_deref(),
-        );
-        // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09):
-        // two-sided and composed — this gate's value is DERIVED from three
-        // knobs, so the echo prints the inputs beside the result. Resolved
-        // once, cached; never on the hot path despite the hot-path readers.
-        tracing::info!(
-            copa_wire = on,
-            quic_cc = qcc.as_deref().unwrap_or("unset"),
-            copa_wire_env = wire.as_deref().unwrap_or("unset"),
-            "Copa wire-clocked signal (RWM_COPA_WIRE / RWM_QUIC_CC / RWM_COPA_FEED)"
-        );
-        on
-    })
+    crate::gates::get().copa_wire
+}
+
+/// The resolve-time read behind [`copa_wire_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_copa_wire() -> bool {
+    let qcc = std::env::var("RWM_QUIC_CC").ok();
+    let wire = std::env::var("RWM_COPA_WIRE").ok();
+    let on = copa_wire_from_env(
+        qcc.as_deref(),
+        crate::config::env_flag("RWM_COPA_FEED", false),
+        wire.as_deref(),
+    );
+    // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09):
+    // two-sided and composed — this gate's value is DERIVED from three
+    // knobs, so the echo prints the inputs beside the result. Resolved
+    // once, cached; never on the hot path despite the hot-path readers.
+    tracing::info!(
+        copa_wire = on,
+        quic_cc = qcc.as_deref().unwrap_or("unset"),
+        copa_wire_env = wire.as_deref().unwrap_or("unset"),
+        "Copa wire-clocked signal (RWM_COPA_WIRE / RWM_QUIC_CC / RWM_COPA_FEED)"
+    );
+    on
 }
 
 /// Pure decision function for the competitive-mode gate: requires BOTH the
@@ -78,24 +80,26 @@ pub(crate) fn copa_compete_from_env(compete_flag: bool, wire_active: bool) -> bo
 /// Whether Copa's TCP-competitive mode switching is active for this process.
 /// Read once and cached (consulted at CopaState construction).
 pub fn copa_compete_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let on = copa_compete_from_env(
-            crate::config::env_flag("RWM_COPA_COMPETE", false),
-            copa_wire_active(),
-        );
-        // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09).
-        // Two-sided: the "Copa Competitive Mode + Cross-Traffic" battery's
-        // arms differ ONLY in this gate, and it composes with copa_wire —
-        // so the echo must fire on the OFF arm too, or the control cannot
-        // be shown to have been a control.
-        tracing::info!(
-            copa_compete = on,
-            "Copa TCP-competitive mode (RWM_COPA_COMPETE, requires the wire signal)"
-        );
-        on
-    })
+    crate::gates::get().copa_compete
+}
+
+/// The resolve-time read behind [`copa_compete_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_copa_compete(wire_active: bool) -> bool {
+    let on = copa_compete_from_env(
+        crate::config::env_flag("RWM_COPA_COMPETE", false),
+        wire_active,
+    );
+    // LIVENESS ECHO (goal-gate "Gate-Forwarding Audit", 2026-08-09).
+    // Two-sided: the "Copa Competitive Mode + Cross-Traffic" battery's
+    // arms differ ONLY in this gate, and it composes with copa_wire —
+    // so the echo must fire on the OFF arm too, or the control cannot
+    // be shown to have been a control.
+    tracing::info!(
+        copa_compete = on,
+        "Copa TCP-competitive mode (RWM_COPA_COMPETE, requires the wire signal)"
+    );
+    on
 }
 
 /// Whether the pool-anchor honest dual-store law is active for this process
@@ -115,14 +119,16 @@ pub fn copa_compete_active() -> bool {
 /// UNTOUCHED — the measured −22…−27 c7 RS-composition price stays
 /// unreachable. Read once and cached (consulted on the send hot path).
 pub fn pool_anchor_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::env_flag(
-            "RWM_POOL_ANCHOR",
-            crate::control::estimator::est_cadence_active(),
-        )
-    })
+    crate::gates::get().pool_anchor
+}
+
+/// The resolve-time read behind [`pool_anchor_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_pool_anchor(est_cadence: bool) -> bool {
+    crate::config::env_flag(
+        "RWM_POOL_ANCHOR",
+        est_cadence,
+    )
 }
 
 /// Whether the O(1) windowed-max rate filter is active for this process
@@ -163,9 +169,13 @@ pub fn pool_anchor_active() -> bool {
 /// legacy fold remains reachable as `RWM_HONEST_ANCHOR=0` — the A/B arm
 /// stays re-runnable per the deprecation register.
 pub fn honest_anchor_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::anchor_gate_default("RWM_HONEST_ANCHOR", true))
+    crate::gates::get().honest_anchor
+}
+
+/// The resolve-time read behind [`honest_anchor_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_honest_anchor() -> bool {
+    crate::config::anchor_gate_default("RWM_HONEST_ANCHOR", true)
 }
 
 /// **`RWM_COLD_PLACE`** (anchor-hygiene family member, default OFF) — hygiene
@@ -248,20 +258,22 @@ pub(crate) fn place_arm_flag(name: &str) -> bool {
 /// OFF is byte-identical by construction: `place_temperature()` verbatim, which
 /// the pinned cost/probability table asserts.
 pub fn place_t_derived_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let on = place_arm_flag("RWM_PLACE_T_DERIVED");
-        // LIVENESS ECHO, TWO-SIDED (MEASUREMENT DISCIPLINE item 1): the OFF
-        // value prints too, so "gate absent" is as checkable as "gate present".
-        tracing::info!(
-            place_t_derived = on,
-            "placement temperature (RWM_PLACE_T_DERIVED, paper 16.81.1): \
-             T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
-             dispersion when ON; the shipped place_temperature() when OFF"
-        );
-        on
-    })
+    crate::gates::get().place_t_derived
+}
+
+/// The resolve-time read behind [`place_t_derived_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_place_t_derived() -> bool {
+    let on = place_arm_flag("RWM_PLACE_T_DERIVED");
+    // LIVENESS ECHO, TWO-SIDED (MEASUREMENT DISCIPLINE item 1): the OFF
+    // value prints too, so "gate absent" is as checkable as "gate present".
+    tracing::info!(
+        place_t_derived = on,
+        "placement temperature (RWM_PLACE_T_DERIVED, paper 16.81.1): \
+         T = (sqrt6/pi)*sigma_e/ref from the sender's own ETA-error \
+         dispersion when ON; the shipped place_temperature() when OFF"
+    );
+    on
 }
 
 /// **`RWM_PLACE_HOL`** (Track A arm 2, ABSENT by default) - the frontier
@@ -294,19 +306,21 @@ pub fn place_t_derived_active() -> bool {
 /// OFF is byte-identical by construction: the term is not merely zero, the
 /// whole frontier read is skipped and the shipped sum is returned unchanged.
 pub fn place_hol_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let on = place_arm_flag("RWM_PLACE_HOL");
-        tracing::info!(
-            place_hol = on,
-            "placement frontier term (RWM_PLACE_HOL, paper 16.81.2): \
-             X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
-             against the sender's own F_hat, plus the (a2) wire-price ordering \
-             term at its derived W; ABSENT leaves the shipped cost untouched"
-        );
-        on
-    })
+    crate::gates::get().place_hol
+}
+
+/// The resolve-time read behind [`place_hol_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_place_hol() -> bool {
+    let on = place_arm_flag("RWM_PLACE_HOL");
+    tracing::info!(
+        place_hol = on,
+        "placement frontier term (RWM_PLACE_HOL, paper 16.81.2): \
+         X_i = [delta*s_i + kappa*(s_i-H)+]/ref with s_i the frontier push \
+         against the sender's own F_hat, plus the (a2) wire-price ordering \
+         term at its derived W; ABSENT leaves the shipped cost untouched"
+    );
+    on
 }
 
 /// **`RWM_PLACE_WDIV_DERIVED`** (Track A arm 3, ABSENT by default) - the
@@ -328,37 +342,41 @@ pub fn place_hol_active() -> bool {
 /// shipped `w_div * fate_i` and is already counted by the `cold_ge` bind
 /// gauge.
 pub fn place_wdiv_derived_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let on = place_arm_flag("RWM_PLACE_WDIV_DERIVED");
-        tracing::info!(
-            place_wdiv_derived = on,
-            "placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper 16.81.3): \
-             fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott \
-             burst persistence when ON; the shipped w_div*fate when OFF"
-        );
-        on
-    })
+    crate::gates::get().place_wdiv_derived
+}
+
+/// The resolve-time read behind [`place_wdiv_derived_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_place_wdiv_derived() -> bool {
+    let on = place_arm_flag("RWM_PLACE_WDIV_DERIVED");
+    tracing::info!(
+        place_wdiv_derived = on,
+        "placement diversity weight (RWM_PLACE_WDIV_DERIVED, paper 16.81.3): \
+         fate*(p_BB - eps)+ * srtt/ref from the path's Gilbert-Elliott \
+         burst persistence when ON; the shipped w_div*fate when OFF"
+    );
+    on
 }
 
 pub fn cold_place_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        let on = crate::config::anchor_gate("RWM_COLD_PLACE");
-        // LIVENESS ECHO (MEASUREMENT DISCIPLINE item 1/15), two-sided: it
-        // prints the OFF value too, so "gate absent" is as checkable as
-        // "gate present". Resolved once and cached.
-        tracing::info!(
-            cold_place = on,
-            "cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): \
-             an unmeasured leg's SRTT_i in the §16.3 cost is the active set's \
-             fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed \
-             when OFF (shipped, bit-identical)"
-        );
-        on
-    })
+    crate::gates::get().cold_place
+}
+
+/// The resolve-time read behind [`cold_place_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_cold_place() -> bool {
+    let on = crate::config::anchor_gate("RWM_COLD_PLACE");
+    // LIVENESS ECHO (MEASUREMENT DISCIPLINE item 1/15), two-sided: it
+    // prints the OFF value too, so "gate absent" is as checkable as
+    // "gate present". Resolved once and cached.
+    tracing::info!(
+        cold_place = on,
+        "cold-start placement price (RWM_COLD_PLACE, anchor-hygiene rule 1): \
+         an unmeasured leg's SRTT_i in the §16.3 cost is the active set's \
+         fastest MEASURED srtt when ON, the 50-ms DEFAULT_SRTT-class seed \
+         when OFF (shipped, bit-identical)"
+    );
+    on
 }
 
 /// Whether the RAW-sample echo-ratio floor is active for this process
@@ -388,9 +406,13 @@ pub fn cold_place_active() -> bool {
 /// refresh-clock feed runs verbatim. Read once and cached (consulted at
 /// CopaState construction).
 pub fn honest_k_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::anchor_gate("RWM_HONEST_K"))
+    crate::gates::get().honest_k
+}
+
+/// The resolve-time read behind [`honest_k_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_honest_k() -> bool {
+    crate::config::anchor_gate("RWM_HONEST_K")
 }
 
 /// Whether the WINDOW-mode control-datagram MERGE is active for this process
@@ -445,9 +467,13 @@ pub fn honest_k_active() -> bool {
 /// no-mode-switch invariant). The machine is bit-identical under both
 /// settings; only the number of control frames differs.
 pub fn ack_merge_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_ACK_MERGE", true))
+    crate::gates::get().ack_merge
+}
+
+/// The resolve-time read behind [`ack_merge_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_ack_merge() -> bool {
+    crate::config::env_flag("RWM_ACK_MERGE", true)
 }
 
 /// `RWM_LOSS_SENT_TRUTH` (**default OFF**) — feed the per-path loss estimator
@@ -485,9 +511,13 @@ pub fn ack_merge_active() -> bool {
 /// changes which MEASUREMENT feeds one estimator; the laws downstream are
 /// the same laws, evaluated at an honest argument.
 pub fn loss_sent_truth_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_LOSS_SENT_TRUTH", false))
+    crate::gates::get().loss_sent_truth
+}
+
+/// The resolve-time read behind [`loss_sent_truth_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_loss_sent_truth() -> bool {
+    crate::config::env_flag("RWM_LOSS_SENT_TRUTH", false)
 }
 
 /// `RWM_RELEASE_1TO1` (**default OFF**) — MAKE THE RELEASE 1:1 WITH THE
@@ -557,9 +587,13 @@ pub fn loss_sent_truth_active() -> bool {
 /// Not a dial: it selects no law on (delta, rho, r) and keys on no threshold
 /// in the triangle (CLAUDE.md's no-mode-switch invariant).
 pub fn release_1to1_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_RELEASE_1TO1", false))
+    crate::gates::get().release_1to1
+}
+
+/// The resolve-time read behind [`release_1to1_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_release_1to1() -> bool {
+    crate::config::env_flag("RWM_RELEASE_1TO1", false)
 }
 
 /// `RWM_CHARGE_RECOVERY` (**default OFF**) — METER THE TWO RECOVERY CHANNELS
@@ -599,9 +633,13 @@ pub fn release_1to1_active() -> bool {
 /// r) is selected and no threshold is keyed. It adds two counter increments on
 /// a path that already exists.
 pub fn charge_recovery_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_CHARGE_RECOVERY", false))
+    crate::gates::get().charge_recovery
+}
+
+/// The resolve-time read behind [`charge_recovery_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_charge_recovery() -> bool {
+    crate::config::env_flag("RWM_CHARGE_RECOVERY", false)
 }
 
 /// `RWM_SIDLE_DERIVED` (default OFF) — goal-gate "Unlock The Default 2".
@@ -615,7 +653,11 @@ pub fn charge_recovery_active() -> bool {
 /// three session-mates (`RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
 /// `RWM_PATIENCE_DERIVED`) were removed as refuted arms.
 pub fn sidle_derived_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| crate::config::env_flag("RWM_SIDLE_DERIVED", false))
+    crate::gates::get().sidle_derived
+}
+
+/// The resolve-time read behind [`sidle_derived_active`] (called once, from
+/// [`crate::gates::RuntimeGates::resolve`]).
+pub(crate) fn resolve_sidle_derived() -> bool {
+    crate::config::env_flag("RWM_SIDLE_DERIVED", false)
 }

@@ -102,8 +102,7 @@ pub const COMPACT_DATA_TAG: u8 = 0xC1;
 /// arm): sender-side compact DATA framing. Resolved once per process
 /// (transport-layer knob, like `RWM_MTU_FLOOR`/`RWM_QUIC_CC`).
 pub fn wire_compact_active() -> bool {
-    static ACTIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ACTIVE.get_or_init(|| crate::config::env_flag("RWM_WIRE_COMPACT", true))
+    crate::gates::get().wire_compact
 }
 
 // ── LEB128 varints for the compact frame ────────────────────────────────

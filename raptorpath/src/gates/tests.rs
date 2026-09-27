@@ -585,3 +585,42 @@ fn default_env_resolves_the_shipped_stack() {
     assert!((g.cc_pace_headroom - 1.1).abs() < 1e-12);
     assert!(g.store_override.is_none());
 }
+
+/// ONE GATE RESOLUTION (cleanup Stage 3): every accessor that used to own a
+/// private cache now reads the process's single [`get`] resolution, so the
+/// value behaviour reads and the value the `[GATES]` line prints cannot
+/// diverge. Asserted as identity at every accessor, not as an ordering.
+#[test]
+fn every_gate_accessor_reads_the_one_resolution() {
+    let g = get();
+    assert!(std::ptr::eq(g, get()), "one resolution per process");
+    assert_eq!(crate::scheduler::copa_wire_active(), g.copa_wire);
+    assert_eq!(crate::scheduler::copa_compete_active(), g.copa_compete);
+    assert_eq!(crate::scheduler::pool_anchor_active(), g.pool_anchor);
+    assert_eq!(crate::scheduler::honest_anchor_active(), g.honest_anchor);
+    assert_eq!(crate::scheduler::honest_k_active(), g.honest_k);
+    assert_eq!(crate::scheduler::cold_place_active(), g.cold_place);
+    assert_eq!(crate::scheduler::place_t_derived_active(), g.place_t_derived);
+    assert_eq!(crate::scheduler::place_hol_active(), g.place_hol);
+    assert_eq!(crate::scheduler::place_wdiv_derived_active(), g.place_wdiv_derived);
+    assert_eq!(crate::scheduler::ack_merge_active(), g.ack_merge);
+    assert_eq!(crate::scheduler::loss_sent_truth_active(), g.loss_sent_truth);
+    assert_eq!(crate::scheduler::release_1to1_active(), g.release_1to1);
+    assert_eq!(crate::scheduler::charge_recovery_active(), g.charge_recovery);
+    assert_eq!(crate::scheduler::sidle_derived_active(), g.sidle_derived);
+    assert_eq!(crate::control::estimator::est_cadence_active(), g.est_cadence);
+    assert_eq!(crate::transport::wire_compact_active(), g.wire_compact);
+    assert_eq!(crate::net::unified_active(), g.unified);
+    assert_eq!(delta_override(), g.delta);
+    assert_eq!(crate::net::ackdiag::window_us(), g.ackdiag_window_us);
+    assert_eq!(crate::net::rttdump::dump_max(), g.rtt_dump_max);
+    assert_eq!(crate::net::succ::dump_max(), g.succ_dump_max);
+    assert_eq!(
+        crate::scheduler::place::place_temperature().to_bits(),
+        g.place_t.to_bits()
+    );
+    // The process resolution IS a resolve of the same environment: its echo
+    // is the pinned default line.
+    assert_eq!(g.echo_line(), RuntimeGates::resolve().echo_line());
+    assert_eq!(g.echo_line(), PINNED_DEFAULT_GATES_ECHO);
+}

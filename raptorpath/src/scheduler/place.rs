@@ -57,12 +57,8 @@ pub(crate) fn place_gumbel_scale() -> f64 {
 /// never disagree about which cap is live. `RuntimeGates::resolve()` walks the
 /// whole environment, which is far too expensive per placement.
 pub(crate) fn place_store_terms() -> (f64, bool) {
-    use std::sync::OnceLock;
-    static G: OnceLock<(f64, bool)> = OnceLock::new();
-    *G.get_or_init(|| {
-        let g = crate::gates::RuntimeGates::resolve();
-        (g.store_gain, g.three_term)
-    })
+    let g = crate::gates::get();
+    (g.store_gain, g.three_term)
 }
 
 /// The engine clock (`net::now_us`, µs) - the SAME clock `net::emit_source`
@@ -88,15 +84,16 @@ pub(crate) const PLACE_TEMPERATURE: f64 = 0.15;
 /// per process via the `RWM_PLACE_T` env var (the §16.3 dial exposed for L1
 /// tuning without a rebuild). Read once and cached.
 pub(crate) fn place_temperature() -> f64 {
-    use std::sync::OnceLock;
-    static T: OnceLock<f64> = OnceLock::new();
-    *T.get_or_init(|| {
-        std::env::var("RWM_PLACE_T")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .filter(|t| *t > 0.0 && t.is_finite())
-            .unwrap_or(PLACE_TEMPERATURE)
-    })
+    crate::gates::get().place_t
+}
+
+/// The resolve-time read behind [`place_temperature`].
+pub(crate) fn resolve_place_temperature() -> f64 {
+    std::env::var("RWM_PLACE_T")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|t| *t > 0.0 && t.is_finite())
+        .unwrap_or(PLACE_TEMPERATURE)
 }
 
 /// Floor (seconds) for the SRTT reference that de-dimensionalises the
