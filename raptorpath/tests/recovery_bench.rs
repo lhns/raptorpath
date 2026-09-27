@@ -1072,11 +1072,13 @@ fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// THE R AXIS, COMPONENT-VERIFIED — paper §16.67, §16.67.1, §16.68
+// THE R AXIS, COMPONENT-VERIFIED — paper §16.67, §16.67.1
 //
-// Four rival laws for ONE quantity, scored at the same five MEASURED
+// The shipped clamp and `RWM_DERIVED_SWEEP`, scored at the same five MEASURED
 // geometries on the same arithmetic, plus the FALSE-ALARM RATE each is
 // predicted to produce against RFC 8985 §6.2 Step 4's own published budget.
+// (The two rival arms this axis also scored — `RWM_RACK_CLOCKS`, §16.68, and
+// `RWM_QUANTILE_CLOCKS`, §16.69 — were refuted and removed with their gates.)
 //
 // The headline is about the CONTROL, not the successors: the shipped
 // `[25, 100] ms` clamp is predicted to violate RACK's own spurious budget by
@@ -1084,11 +1086,7 @@ fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
 // this tree.
 // ════════════════════════════════════════════════════════════════════════
 
-use raptorpath::net::{
-    contract_alpha, derived_recovery_round_us, quantile_recovery_round_us,
-    rack_recovery_round_us, tail_sweep_timeout_us, RACK_REO_WND_MULT_MAX,
-    RACK_SPURIOUS_BUDGET,
-};
+use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
 
 /// The predicted false-alarm FRACTION from the component model: a cadence that
 /// fires `n` extra times per ack round trip wastes `n` of the `n+1` fires.
@@ -1097,10 +1095,9 @@ fn false_alarm_frac(srtt_us: u64, cadence_us: u64) -> f64 {
     sp as f64 / (sp + 1) as f64
 }
 
-/// **§16.67 + §16.67.1, PINNED.** The whole R axis at the five measured
+/// **§16.67 + §16.67.1, PINNED.** The R axis at the five measured
 /// geometries: cadence, spurious rounds and the predicted false-alarm rate for
-/// the shipped clamp, `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS` at both ends of
-/// RACK's own multiplier range, and `RWM_QUANTILE_CLOCKS`.
+/// the shipped clamp and `RWM_DERIVED_SWEEP`.
 ///
 /// Every number here is published in §16.67/§16.67.1 BEFORE this test existed.
 /// The test's job is to make the publication falsifiable: if a law changes,
@@ -1108,44 +1105,28 @@ fn false_alarm_frac(srtt_us: u64, cadence_us: u64) -> f64 {
 #[test]
 fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     // ── The SENDER site (app-echo clock). §16.67's first table. ────────
-    // (cell, srtt_app, min_rtt, shipped sp, derived sp, rack mult=1 sp,
-    //  rack mult=17 sp)
-    for &(name, srtt, mrtt, ship_sp, ds_sp, r1_sp, r17_sp) in &[
-        ("c1-A", 9_000u64, 2_000u64, 0u64, 0u64, 8u64, 1u64),
-        ("c7-A", 87_000, 11_000, 0, 0, 31, 1),
-        ("sc2-A", 104_000, 13_000, 1, 0, 31, 1),
-        ("c8-A", 376_000, 38_000, 3, 0, 39, 2),
-        ("c8-AU", 464_000, 40_000, 4, 0, 46, 2),
+    // (cell, srtt_app, shipped sp, derived sp)
+    for &(name, srtt, ship_sp, ds_sp) in &[
+        ("c1-A", 9_000u64, 0u64, 0u64),
+        ("c7-A", 87_000, 0, 0),
+        ("sc2-A", 104_000, 1, 0),
+        ("c8-A", 376_000, 3, 0),
+        ("c8-AU", 464_000, 4, 0),
     ] {
         let ship = tail_sweep_timeout_us(srtt);
         let ds = derived_recovery_round_us(srtt, JITTER_US);
-        let r1 = rack_recovery_round_us(srtt, mrtt, 1);
-        let r17 = rack_recovery_round_us(srtt, mrtt, RACK_REO_WND_MULT_MAX);
         assert_eq!(spurious_rounds(srtt, ship), ship_sp, "{name}: shipped clamp");
         assert_eq!(spurious_rounds(srtt, ds), ds_sp, "{name}: RWM_DERIVED_SWEEP");
-        assert_eq!(spurious_rounds(srtt, r1), r1_sp, "{name}: RACK mult=1");
-        assert_eq!(spurious_rounds(srtt, r17), r17_sp, "{name}: RACK mult=17");
-
-        // §16.67 result 1: the faithful transplant is TIGHTER than the clamp
-        // it replaces at every measured cell, by 8–46× in spurious rounds.
-        assert!(r1 < ship, "{name}: RACK mult=1 is not tighter than the shipped clamp");
-        // §16.67 result 2: RACK's own ceiling is unreachable within its own
-        // multiplier range at the sender site — mult=17 still does not bind it.
-        assert!(
-            r17 < srtt,
-            "{name}: the SRTT ceiling became reachable at RACK's own maximum — \
-             §16.67's central finding no longer holds"
-        );
     }
 
     // ── §16.67.1's FALSE-ALARM table, and the finding about the CONTROL. ──
     let mut control_violations = 0;
-    for &(name, srtt, mrtt, want_ship_fa) in &[
-        ("c1-A", 9_000u64, 2_000u64, 0.00f64),
-        ("c7-A", 87_000, 11_000, 0.00),
-        ("sc2-A", 104_000, 13_000, 0.50),
-        ("c8-A", 376_000, 38_000, 0.75),
-        ("c8-AU", 464_000, 40_000, 0.80),
+    for &(name, srtt, want_ship_fa) in &[
+        ("c1-A", 9_000u64, 0.00f64),
+        ("c7-A", 87_000, 0.00),
+        ("sc2-A", 104_000, 0.50),
+        ("c8-A", 376_000, 0.75),
+        ("c8-AU", 464_000, 0.80),
     ] {
         let fa_ship = false_alarm_frac(srtt, tail_sweep_timeout_us(srtt));
         assert!((fa_ship - want_ship_fa).abs() < 1e-9, "{name}: shipped fa = {fa_ship}");
@@ -1156,166 +1137,11 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
         // trade §16.53 measured is visible in the arithmetic, not only in prose.
         let fa_ds = false_alarm_frac(srtt, derived_recovery_round_us(srtt, JITTER_US));
         assert!(fa_ds <= RACK_SPURIOUS_BUDGET, "{name}: DERIVED_SWEEP no longer clears the budget");
-        // The RACK arm violates it everywhere at its own initial multiplier.
-        let fa_r1 = false_alarm_frac(srtt, rack_recovery_round_us(srtt, mrtt, 1));
-        assert!(
-            fa_r1 > RACK_SPURIOUS_BUDGET,
-            "{name}: RACK mult=1 now clears its own budget — §16.67.1 needs rewriting"
-        );
     }
     assert_eq!(
         control_violations, 3,
         "§16.67.1 publishes THREE cells where the SHIPPED clamp violates RFC 8985's \
          own <7 % spurious budget; the arithmetic now says {control_violations}"
-    );
-
-    // ── The RECEIVER site (wire clock). §16.67's second table, and the ONE
-    // row that behaves as the cross-check's backlog item predicted. ───────
-    for &(name, srtt_w, mrtt, r17_cadence, r17_sp) in &[
-        ("c8-A", 77_000u64, 38_000u64, 77_000u64, 0u64),
-        ("c8-AU", 82_000, 40_000, 82_000, 0),
-    ] {
-        let r17 = rack_recovery_round_us(srtt_w, mrtt, RACK_REO_WND_MULT_MAX);
-        assert_eq!(r17, r17_cadence, "{name}: the ceiling row's cadence");
-        assert_eq!(r17, srtt_w, "{name}: the SRTT ceiling is not the binder");
-        assert_eq!(spurious_rounds(srtt_w, r17), r17_sp, "{name}: the ceiling row is not clean");
-        // "tracking the cadence without the unbounded growth" — the shape the
-        // cross-check described, asserted against the unbounded law it replaces.
-        assert!(
-            r17 < derived_recovery_round_us(srtt_w, JITTER_US),
-            "{name}: the bounded law is not below the unbounded one"
-        );
-    }
-
-    // ── §16.68's REFUTATION, in the same arithmetic. ─────────────────
-    // The derived quantile clock at the contract's own α is SLOWER than the
-    // already-slow unbounded arm at every cell, which is reason 1 stated as a
-    // comparison rather than as a number.
-    let alpha = contract_alpha(raptorpath::net::CONTRACT_TAIL_LOSS_BASE, raptorpath::control::fec_rate::ProtocolHint::Auto);
-    for &(name, srtt, sigma) in &[
-        ("c1-A", 9_000u64, 1_000u64),
-        ("c8-A", 376_000, 10_000),
-    ] {
-        let w = quantile_recovery_round_us(srtt, sigma, alpha);
-        assert!(
-            w > derived_recovery_round_us(srtt, JITTER_US),
-            "{name}: §16.68's reason 1 (the bound is unusably loose) no longer holds"
-        );
-        assert_eq!(spurious_rounds(srtt, w), 0, "{name}: the derived clock should never false-alarm");
-    }
-}
-
-/// **§16.67, ROUTING.** The four laws are RIVALS and the precedence is the
-/// published one — quantile ≻ RACK ≻ derived ≻ shipped — at BOTH sites, with
-/// each falling back to the next when its own input is unavailable.
-#[test]
-fn the_r_axis_precedence_is_explicit_and_falls_back_on_information_not_on_a_mode() {
-    use raptorpath::net::{hole_refresh_all, sweep_timeout_us_all, hole_nack_refresh, HOLE_NACK_REFRESH_MIN, WForm};
-    use std::time::Duration;
-    let (srtt, mrtt, sigma) = (376_000u64, 38_000u64, 10_000u64);
-    let a = contract_alpha(raptorpath::net::CONTRACT_TAIL_LOSS_BASE, raptorpath::control::fec_rate::ProtocolHint::Auto);
-    // `WForm::Cantelli` is the DEFAULT arm and the whole precedence chain below
-    // is asserted on it - i.e. this test pins that 16.76's addition changed
-    // NOTHING on the shipped form. The quantile form's own routing is asserted
-    // separately, below, so a regression in either is attributable.
-    let sw = |q, r, d, m, sg| {
-        sweep_timeout_us_all(WForm::Cantelli, q, r, d, srtt, JITTER_US, m, sg, None, 1, a)
-    };
-
-    // All OFF is the shipped law, byte-identically.
-    assert_eq!(sw(false, false, false, Some(mrtt), Some(sigma)), tail_sweep_timeout_us(srtt));
-    // Each law wins over the ones below it, with every input available.
-    assert_eq!(sw(false, false, true, Some(mrtt), Some(sigma)), derived_recovery_round_us(srtt, JITTER_US));
-    assert_eq!(sw(false, true, true, Some(mrtt), Some(sigma)), rack_recovery_round_us(srtt, mrtt, 1));
-    assert_eq!(sw(true, true, true, Some(mrtt), Some(sigma)), quantile_recovery_round_us(srtt, sigma, a));
-    // FALLBACK IS ON INFORMATION, NOT ON A MODE: with the law's own input
-    // missing it drops to the next armed law, never to an unarmed one.
-    assert_eq!(sw(true, true, true, Some(mrtt), None), rack_recovery_round_us(srtt, mrtt, 1));
-    assert_eq!(sw(true, true, true, None, None), derived_recovery_round_us(srtt, JITTER_US));
-    assert_eq!(sw(true, false, false, None, None), tail_sweep_timeout_us(srtt));
-
-    // The receiver router, same property.
-    let sd = Some(Duration::from_micros(srtt));
-    let md = Some(Duration::from_micros(mrtt));
-    let hr = |q, r, d, m, sg| {
-        hole_refresh_all(WForm::Cantelli, q, r, d, sd, JITTER_US, m, sg, None, 1, a, HOLE_NACK_REFRESH_MIN)
-    };
-    assert_eq!(hr(false, false, false, md, Some(sigma)), hole_nack_refresh(sd));
-    assert_eq!(
-        hr(true, true, true, md, Some(sigma)),
-        Duration::from_micros(quantile_recovery_round_us(srtt, sigma, a))
-    );
-    assert_eq!(
-        hr(false, true, true, md, Some(sigma)),
-        Duration::from_micros(rack_recovery_round_us(srtt, mrtt, 1))
-    );
-    assert_eq!(hr(true, false, false, None, None), hole_nack_refresh(sd));
-
-    // ── §16.76: THE QUANTILE-NATIVE FORM'S OWN ROUTING, SAME PROPERTY ────
-    //
-    // `RWM_W_FORM` selects between two RIVAL LAWS FOR ONE QUANTITY inside the
-    // armed quantile gate. Asserted here, beside the chain it joins, so the
-    // two forms are never confused with two MODES: each has ONE input, each
-    // falls back on INFORMATION AVAILABILITY when that input is missing, and
-    // neither keys on any threshold in the (δ, ρ, r) triangle.
-    let a_q = 0.05_f64; // N(0.05) = 200 — inside the declared cap
-    let w_q = 123_456u64;
-    // The quantile form reads `w_q_us` and NOTHING ELSE — not σ, not srtt.
-    assert_eq!(
-        sweep_timeout_us_all(
-            WForm::Quantile, true, true, true, srtt, JITTER_US, Some(mrtt), Some(sigma),
-            Some(w_q), 1, a_q
-        ),
-        w_q,
-        "the quantile-native form must return the window's own order statistic"
-    );
-    // ... and with its window short of `N(α)` it falls through to the next
-    // ARMED law, never to an unarmed one — the UNSCOREABLE rule (§16.76.5(1)).
-    assert_eq!(
-        sweep_timeout_us_all(
-            WForm::Quantile, true, true, true, srtt, JITTER_US, Some(mrtt), Some(sigma),
-            None, 1, a_q
-        ),
-        rack_recovery_round_us(srtt, mrtt, 1),
-        "a short window must fall through on INFORMATION, not select a mode"
-    );
-    assert_eq!(
-        sweep_timeout_us_all(
-            WForm::Quantile, true, false, false, srtt, JITTER_US, None, None, None, 1, a_q
-        ),
-        tail_sweep_timeout_us(srtt),
-        "with every armed law starved the SHIPPED law stands, byte-identically"
-    );
-    // THE FORM IS INERT WITH THE QUANTILE GATE OFF. `RWM_W_FORM` lives INSIDE
-    // `RWM_QUANTILE_CLOCKS`; with the outer gate absent the two forms must be
-    // indistinguishable, or the default arm would not be byte-identical.
-    for form in [WForm::Cantelli, WForm::Quantile] {
-        assert_eq!(
-            sweep_timeout_us_all(
-                form, false, false, false, srtt, JITTER_US, Some(mrtt), Some(sigma),
-                Some(w_q), 1, a_q
-            ),
-            tail_sweep_timeout_us(srtt),
-            "{form:?}: the W form must be INERT with RWM_QUANTILE_CLOCKS off"
-        );
-    }
-    // The receiver router, same three properties. Note the quantile-native
-    // form needs NO srtt — it is the one law in the chain whose only input is
-    // the sample window.
-    assert_eq!(
-        hole_refresh_all(
-            WForm::Quantile, true, true, true, None, JITTER_US, md, Some(sigma),
-            Some(w_q), 1, a_q, HOLE_NACK_REFRESH_MIN
-        ),
-        Duration::from_micros(w_q),
-        "the quantile-native hole refresh must not require an srtt it does not use"
-    );
-    assert_eq!(
-        hole_refresh_all(
-            WForm::Quantile, true, true, true, sd, JITTER_US, md, Some(sigma), None, 1, a_q,
-            HOLE_NACK_REFRESH_MIN
-        ),
-        Duration::from_micros(rack_recovery_round_us(srtt, mrtt, 1))
     );
 }
 

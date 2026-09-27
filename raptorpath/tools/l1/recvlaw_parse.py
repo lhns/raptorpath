@@ -128,7 +128,7 @@ if not runs and dnf_count is None:
 # ── liveness: [GATES] resolved values, both endpoints ────────────────────
 ARM_GATES = ["RWM_RECV_REQUEST_LAW", "RWM_RANK_FEEDBACK",
              "RWM_DELTA_CAP", "RWM_SUM_CAP", "RWM_STORE_SACK_RELEASE",
-             "RWM_QUANTILE_CLOCKS", "RWM_RACK_CLOCKS", "RWM_DERIVED_SWEEP",
+             "RWM_DERIVED_SWEEP",
              "RWM_GEN"]
 gates_cli = {g: gate(cli, g) for g in ARM_GATES}
 gates_srv = {g: gate(srv, g) for g in ARM_GATES}

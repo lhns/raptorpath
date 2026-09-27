@@ -697,325 +697,19 @@ pub fn derived_recovery_round_us(srtt_us: u64, jitter_us: u64) -> u64 {
     srtt_us.saturating_mul(2).max(patience_floor_us(jitter_us, srtt_us))
 }
 
-// ── The RACK-SHAPED recovery round (`RWM_RACK_CLOCKS`, default OFF) ───────
-//
-// Paper §16.68. RFC 8985 §6.2 Step 4, transplanted VERBATIM, with its own
-// constants and no others:
-//
-//     RACK.reo_wnd = min(RACK.reo_wnd_mult * RACK.min_RTT / 4, SRTT)
-//     "The RACK reordering window MUST be bounded, and this bound SHOULD be
-//      SRTT."
-//     reo_wnd_mult = N+1 after N DSACK-detected spurious recoveries, persisted
-//      for up to 16 loss recoveries — "to bound such spurious recoveries to
-//      approximately once every 16 recoveries (less than 7%)."
-//
-// THE SPECIFICATION FAILURE THIS LAW EXISTS TO RECORD. Our two clocks are
-// RE-PROBE cadences: the tail sweep synthesizes a gap report for an
-// already-known cumulative blocker, and the hole refresh re-advertises an
-// already-known hole. Neither decides that a symbol is lost. Their RFC 8985
-// counterpart is therefore §7.2's TLP PTO — `2*SRTT`, bounded ONLY by
-// `TCP_RTO_expiration()`, whose RFC 6298 definition carries a 1-SECOND
-// minimum. **RFC 8985 publishes NO RTT-relative ceiling for a re-probe
-// cadence.** The one relatively-bounded expression it does publish (above) is
-// bounded by SRTT precisely because its base is `min_RTT/4`, a much smaller
-// quantity; grafting that ceiling onto a `2*SRTT` base is arithmetically
-// vacuous, since `min(2*srtt, srtt) == srtt` identically.
-//
-// So `2*SRTT` with no ceiling IS RFC 8985's answer for these two sites — and
-// that law already exists as `RWM_DERIVED_SWEEP` above, built 2026-08-12 and
-// measured INERT as a lever (§16.53, −23 %/−28 % goodput across two sessions).
-// The cross-check's Tier-2 item 2.1 asked for a construction its own cited
-// source does not contain. §16.68 records that as a backlog specification
-// error rather than closing it, and this function is the faithful transplant
-// that makes the finding MEASURABLE instead of asserted.
-//
-// THE ADAPTIVE HALF IS STRUCTURALLY INERT ON THIS STACK, and that is a DEFECT
-// FINDING under CLAUDE.md's clamp rule, not a footnote. `reo_wnd_mult`
-// advances on DSACK-detected spurious recoveries; this transport has no DSACK
-// and no spurious-recovery detector. At `mult = 1` the SRTT ceiling CANNOT
-// bind, because `min_rtt <= srtt` implies `min_rtt/4 < srtt` identically —
-// and a bound that provably never binds turns its law into
-// `max(min_rtt/4, G)` and hides the law's shape from every measurement taken
-// through it. `RWM_RACK_REO_MULT` therefore exposes RACK's own multiplier
-// over RACK's own range [1, 17] so the ceiling is REACHABLE by a battery;
-// exposing a cited parameter over its cited range invents nothing, leaving a
-// bound unreachable would.
-//
-// This is an ENV GATE (an A/B attribution arm), never a dial on the
-// (δ, ρ, r) triangle: nothing here keys on δ, on ρ, or on a hint.
+// (The rival recovery-clock arms that used to follow here — the RACK round,
+// `RWM_RACK_CLOCKS`/`RWM_RACK_REO_MULT`, paper §16.68, and the Cantelli
+// quantile round with its α seat, `RWM_QUANTILE_CLOCKS`/`RWM_ALPHA_OVERRIDE`,
+// §16.69 — were refuted and removed. The shipped clamp and
+// `RWM_DERIVED_SWEEP` above are the two recovery rounds the engine computes.)
 
-/// RFC 8985 §6.2 Step 4's initial `RACK.reo_wnd_mult`.
-pub const RACK_REO_WND_MULT_INIT: u64 = 1;
-/// RFC 8985 §6.2 Step 4's maximum `RACK.reo_wnd_mult` — `N+1` at the RFC's own
-/// persistence bound of `N = 16` loss recoveries (*"less than 7%"* spurious).
-pub const RACK_REO_WND_MULT_MAX: u64 = 17;
-/// RFC 8985 §6.2 Step 4's divisor on `RACK.min_RTT`. CITED, and cited as NOT
-/// derived: the RFC's own note says Linux TCP used the same factor and
-/// *"experience showed this worked reasonably well"* — inherited practice.
-pub const RACK_MIN_RTT_DIVISOR: u64 = 4;
-
-/// The RACK-shaped recovery round (µs) — RFC 8985 §6.2 Step 4 verbatim,
-/// floored at the timer granularity RFC 9002 §6.1.2 puts in the same position
-/// (`max(kTimeThreshold * max(smoothed_rtt, latest_rtt), kGranularity)`).
-///
-/// ```text
-///   round_RACK(srtt, min_rtt, mult)
-///       = max( min( mult · min_rtt / 4,  srtt ),  TIMER_GRANULARITY_US )
-/// ```
-///
-/// **Zero invented constants**: `4`, the `SRTT` ceiling and `mult`'s range are
-/// all RFC 8985 §6.2 Step 4's; `TIMER_GRANULARITY_US` is the tree's own,
-/// already declared as RFC 9002's kGranularity analogue at
-/// [`patience_floor_us`].
-///
-/// With NO min-RTT sample yet there is nothing to derive from and the caller
-/// keeps its legacy fallback verbatim — an information-availability fallback,
-/// not a mode.
-///
-/// Shape and bind-reachability pinned by
-/// `tests/recovery_bench.rs::the_rack_round_transplants_rfc8985_and_its_ceiling_is_unreachable_at_the_measured_cells`.
-pub fn rack_recovery_round_us(srtt_us: u64, min_rtt_us: u64, mult: u64) -> u64 {
-    let mult = mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
-    let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
-    // "MUST be bounded, and this bound SHOULD be SRTT" — RFC 8985 §6.2 Step 4.
-    base.min(srtt_us).max(TIMER_GRANULARITY_US)
-}
-
-// ── The DERIVED QUANTILE recovery round (`RWM_QUANTILE_CLOCKS`, OFF) ──────
+// ── The quantile-native window law (paper §16.76) ─────────────────────
 //
-// Paper §16.69, and §16.65's named novelty gap: *no published application of
-// sequential change detection to transport timeouts.* A recovery clock's whole
-// job is to wait long enough that an ack which was going to arrive HAS
-// arrived, so the clock IS a quantile of the ack-arrival distribution, and the
-// fraction every published law puts in front of SRTT is standing in for it.
-// RFC 8985 §7.2 says so in its own prose: *"delay variance can cause an ACK to
-// be delayed beyond the SRTT. Hence, the PTO is conservatively chosen to be
-// the next integral multiple of SRTT."*
-//
-//     W(α) = srtt + k(α)·σ_rtt ,   k(α) = √((1 − α)/α)    ← CANTELLI (1929),
-//                                    the one-sided Chebyshev inequality:
-//                                    P(X − μ ≥ k·σ) ≤ 1/(1 + k²)
-//
-// Distribution-free, closed form, ZERO fitted coefficients — and REFUTED THREE
-// WAYS on this stack at the contract's own α (§16.69), which is why the gate
-// exists to make the refutation reproducible rather than asserted:
-//
-//   1. LOOSE. `α = target_tail_loss × ζ(hint)` is 1e-5 at Auto, so k = 316 and
-//      the clock is 3.24 s at c8 against a 100 ms clamp. Tightening it means
-//      assuming a distribution, whose coefficient is a fitted constant.
-//   2. UNESTIMABLE. The empirical route needs ~1e5 samples for a 1−1e-5
-//      quantile, and the Copa RTT store is a MIN-DEQUE that discards the upper
-//      tail by construction. Both routes fail on the same number.
-//   3. A CATEGORY ERROR, and this is the one that matters. `target_tail_loss`
-//      is P(symbol never delivered); α is P(retransmit wasted). Pricing the
-//      rate of the second from the tolerated rate of the first asserts they
-//      cost the same. The honest mapping needs the RATIO of those two costs —
-//      which exists nowhere in this repository and has no published value.
-//
-// ENV GATE, never a dial: α is read from the CONTRACT (the r leg's declared
-// failure probability, continuous in the hint through ζ), and nothing here
-// keys on a threshold in the (δ, ρ, r) triangle.
-
-/// The contract's DEFAULT base tail-loss target — `config.rs`'s own
-/// `unwrap_or(1e-5)`, named here so the two cannot drift silently.
-///
-/// It was a MIRROR until 2026-09-08 (§16.81): the seat read this
-/// constant because "the config does not reach this seat", so a tunnel
-/// configured at 1e-4 or 1e-6 priced its α at 1e-5 anyway. Both ends now take
-/// the base as an ARGUMENT (`config.target_tail_loss`, plumbed to the sender
-/// policy and to the receiver task), and this constant is what an unconfigured
-/// tunnel resolves to — a default, not a mirror.
-pub const CONTRACT_TAIL_LOSS_BASE: f64 = 1e-5;
-
-/// The contract-declared false-alarm rate α on the r leg — paper §16.69.
-/// `target_tail_loss × ζ(δ)`, where ζ is the ONE declared price ratio of the
-/// contract's own δ (`raptorpath_math::zeta_of_delta(delta_price(hint))`).
-/// Continuous in the dial: no threshold, no mode bit, the same ζ the Copa δ
-/// mapping consumes, and — since §16.81 — the same δ, so `RWM_DELTA` reaches
-/// α along with b and β instead of α alone staying pinned to a preset.
-pub fn contract_alpha(base_tail_loss: f64, hint: ProtocolHint) -> f64 {
-    (base_tail_loss * raptorpath_math::zeta_of_delta(delta_price(hint)))
-        .clamp(f64::MIN_POSITIVE, 1.0)
-}
-
-/// The α ACTUALLY supplied to the quantile law — the contract's own, unless
-/// the EXPERIMENT knob `RWM_ALPHA_OVERRIDE` replaces it (`gates.rs`).
-///
-/// **This is the seat §16.69 refuted, and the refutation is of what FEEDS α.**
-/// Reason 3 is a CATEGORY ERROR in the mapping `α = target_tail_loss × ζ`, not
-/// in the Cantelli construction `W(α) = srtt + √((1−α)/α)·σ`, which was never
-/// the defective part. The cost-ratio memo (`docs/research/cost-ratio-memo.md`)
-/// lays out four candidate mappings, recommends none, and shows they are three
-/// points on one curve — so the measurement that adjudicates them is a SWEEP of
-/// α with everything else held fixed. This function is the one place that sweep
-/// enters the engine.
-///
-/// **It is an OVERRIDE, not a law.** `None` is byte-identical to the engine
-/// before this existed. Nothing continuous in (δ, ρ, r) is expressed here and
-/// nothing may ship reading the override: a shipped α must be DERIVED from the
-/// triangle, which is the decision this sweep informs and does not take.
-pub fn resolved_alpha(base_tail_loss: f64, hint: ProtocolHint, override_alpha: Option<f64>) -> f64 {
-    match override_alpha {
-        Some(a) if a.is_finite() && a > 0.0 && a <= 1.0 => a,
-        // Garbage that survived the gate's own filter, or absent: the contract.
-        _ => contract_alpha(base_tail_loss, hint),
-    }
-}
-
-/// The RESOLVED-α echo — one line, two-sided, emitted once per site that owns
-/// a quantile clock.
-///
-/// `[GATES] RWM_ALPHA_OVERRIDE=` says what was ASKED FOR. This says what the
-/// law is EVALUATING, at the site that evaluates it, together with the `k(α)`
-/// it produces — because α and k are the sweep's independent variable and a
-/// row that cannot state its own α off its own log is not a row. Printed on
-/// EVERY arm including the control (`quantile=0`), so "quantile clocks off"
-/// is as checkable as "quantile clocks on", per MEASUREMENT DISCIPLINE 15.
-#[allow(clippy::too_many_arguments)]
-pub fn qalpha_report_line(
-    site: &str,
-    quantile: bool,
-    form: WForm,
-    contract: f64,
-    override_alpha: Option<f64>,
-    resolved: f64,
-) -> String {
-    // §16.76: `form=` and the RESOLVED window length `N(α)` sit here, on the
-    // same line as the α they are derived from, for the reason `alpha=` does —
-    // `[GATES]` can only say what was ASKED FOR. `win_n=unavail` is the honest
-    // rendering at an α where `N(α)` exceeds `QNATIVE_WINDOW_MAX`, i.e. where
-    // §16.69 reason 2 still binds; it is never a number the law did not use.
-    let win_n = qnative_window_n(resolved)
-        .map_or_else(|| "unavail".to_string(), |n| n.to_string());
-    format!(
-        // `fa_class` LAST, and not only because it is useful there. Both
-        // `[RACK]` and `[RFA]` end on this same constant, and a run of this
-        // gauge showed why that convention earns its keep: an interleaved
-        // `tracing` write landed inside the final field, so `k=2.1059` parsed
-        // as `k=2.1059<ansi><timestamp>`. **The last field of a gauge line is
-        // the one a concurrent writer corrupts**, so the last field is a
-        // CONSTANT the parser already knows and can lose without losing a
-        // datum. Every load-bearing number sits ahead of it.
-        "[QALPHA] site={} quantile={} form={} win_n={} contract_alpha={:.6e} override={} \
-         alpha={:.6e} k={:.4} fa_class={:.4}",
-        site,
-        quantile as u8,
-        form.as_str(),
-        win_n,
-        contract,
-        override_alpha.map_or("unset".to_string(), |a| format!("{a:.6e}")),
-        resolved,
-        cantelli_k(resolved),
-        RACK_SPURIOUS_BUDGET,
-    )
-}
-
-/// Cantelli's one-sided Chebyshev multiplier — `k(α) = √((1 − α)/α)`.
-///
-/// DERIVED, distribution-free, no fitted coefficient: for ANY distribution
-/// with mean μ and standard deviation σ, `P(X − μ ≥ k·σ) ≤ 1/(1 + k²)`, so
-/// setting `1/(1 + k²) = α` gives this closed form. At the contract's own α it
-/// reads 3 162 / 316 / 31.6 at Realtime / Auto / Bulk — which is §16.69's
-/// refutation reason 1, computed rather than argued.
-pub fn cantelli_k(alpha: f64) -> f64 {
-    let a = alpha.clamp(f64::MIN_POSITIVE, 1.0);
-    ((1.0 - a) / a).max(0.0).sqrt()
-}
-
-/// The DERIVED quantile recovery round (µs) — paper §16.69.
-/// `W(α) = srtt + k(α)·σ`, floored at the timer granularity for the same
-/// information-availability reason the RACK law is.
-pub fn quantile_recovery_round_us(srtt_us: u64, sigma_us: u64, alpha: f64) -> u64 {
-    let w = srtt_us as f64 + cantelli_k(alpha) * sigma_us as f64;
-    (w.max(0.0) as u64).max(TIMER_GRANULARITY_US)
-}
-
-// ── The QUANTILE-NATIVE recovery round (`RWM_W_FORM=quantile`, OFF) ───────
-//
-// Paper §16.76. §16.69 wrote the clock's job and then could not evaluate the
-// quantity it named:
-//
-//     W(α) = F⁻¹_X(1 − α)      ← the construction
-//     W(α) = srtt + k(α)·σ     ← what it had to settle for, because a
-//                                1 − 1e-5 quantile needs ~1e5 samples
-//
-// The bound exists to buy a tail quantile WITHOUT samples, and it is paid for
-// in looseness (k = 316 at the contract's own α). **That trade is priced by α
-// and by nothing else, and the α-sweep does not run where it favours the
-// bound**: on `[0.002, 0.40]` the direct route needs 25–5 000 samples and the
-// cells supply 684–20 158 ack samples per second on the sender legs. So:
-//
-//     W_q(α) = X_(N−K+1)                 the K-th LARGEST of the window's N
-//                                        most recent raw ack-arrival samples
-//     N(α)   = max( ⌈K/α⌉ , 2K ) ,  K = 10
-//
-// NO σ, NO k(α), NO srtt, NO smoothing gain, NO assumed distribution and NO
-// reference series. `K = 10` is the standard order-statistic exceedance
-// requirement, CITED — the same "≥ 10" `SIGMA_CAND_WINDOW`'s own derivation
-// cites for its `P90`.
-//
-// WHY THIS IS NOT AN IMPROVEMENT ON THE ESTIMATOR — IT REMOVES THE TERM THE
-// ESTIMATOR WAS FOR. The τ-lag battery's rebuilt clause `B` measured the
-// shipped `sig_us` at a median β of 0.039 against its own functional, and read
-// the gap: the Cantelli form wants the ack-arrival distribution's MARGINAL
-// dispersion and a tracking EWMA supplies a CONDITIONAL one — 20–300× at seven
-// of eight sender legs. `W_q` never forms a deviation against a reference, so
-// the category error cannot occur; and a rank statistic at level `1 − α` does
-// not move when the far tail wanders, which is the second failure family (one
-// rep in eighty moved `sig`'s pooled `R_total` by 33×; the two rank gauges on
-// the same row moved 4 % and 21 %).
-//
-// AND `W_q ≤ max(window)` STRUCTURALLY. §16.69 reason 1 — the clock waiting
-// 316 standard deviations — is removed by construction rather than by choosing
-// α to avoid it: this clock cannot exceed an RTT the path actually realized.
-//
-// EXPERIMENT ARM, never a dial. `RWM_W_FORM` lives INSIDE `RWM_QUANTILE_CLOCKS`
-// (both default OFF) and selects between two RIVAL LAWS FOR ONE QUANTITY — the
-// same shape the `quantile / rack / derived` precedence chain below already
-// has, and the same reason its precedence is written down rather than left to
-// evaluation order. Nothing keys on a threshold in the (δ, ρ, r) triangle, and
-// nothing may ship reading it: a shipped α must be DERIVED from the triangle.
-
-/// **WHICH `W` LAW THE ARMED QUANTILE CLOCK EVALUATES** — `RWM_W_FORM`, paper
-/// §16.76. Two RIVAL LAWS FOR ONE QUANTITY, exactly like the
-/// `quantile / rack / derived` chain, and the selection is an A/B EXPERIMENT
-/// ARM behind a default-OFF gate — never a dial of the (δ, ρ, r) triangle.
-///
-/// [`WForm::Cantelli`] is the DEFAULT and is byte-identical to the engine
-/// before this existed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum WForm {
-    /// `W(α) = srtt + √((1−α)/α)·σ` — §16.69's distribution-free bound.
-    /// **The default**: absent, empty or unparseable `RWM_W_FORM` lands here.
-    #[default]
-    Cantelli,
-    /// `W_q(α) = X_(N(α)−K+1)` — §16.76's direct empirical quantile.
-    Quantile,
-}
-
-impl WForm {
-    /// The RESOLVED token, for the two-sided echo. A row that cannot state
-    /// which law it evaluated off its own log is not a row.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            WForm::Cantelli => "cantelli",
-            WForm::Quantile => "quantile",
-        }
-    }
-
-    /// Parse `RWM_W_FORM`. **Garbage resolves back to ABSENT** — the
-    /// `RWM_ALPHA_OVERRIDE` rule, and for the same reason: a mistyped arm must
-    /// be READ off the run's own output rather than inferred. Case- and
-    /// whitespace-insensitive; everything else is `None`, and the gate turns
-    /// `None` into [`WForm::Cantelli`] **and says so on the echo**.
-    pub fn parse(raw: &str) -> Option<Self> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "cantelli" => Some(WForm::Cantelli),
-            "quantile" => Some(WForm::Quantile),
-            _ => None,
-        }
-    }
-}
+// `W_q(a) = X_(N(a)−K+1)`, `N(a) = max(⌈K/a⌉, 2K)`, `K = 10`: the order
+// statistic the HOLD-DOWN clock (§16.77, `RWM_HOLDDOWN_Q`) evaluates on the
+// hole-resolution stream at `a = 1 − q`. It was built as a recovery-clock
+// arm (`RWM_W_FORM=quantile` inside `RWM_QUANTILE_CLOCKS`); that arm was
+// refuted and removed, and the window law stays as the hold-down's.
 
 /// The order-statistic EXCEEDANCE COUNT `K` of the quantile-native window law
 /// — **CITED, not fitted** (paper §16.76.3).
@@ -1087,7 +781,7 @@ pub fn qnative_window_n(alpha: f64) -> Option<usize> {
 /// falls through rather than truncating (§16.76.5(1), the UNSCOREABLE rule).
 ///
 /// Floored at the timer granularity for the same information-availability
-/// reason [`quantile_recovery_round_us`] and the RACK law are.
+/// reason the derived recovery round is.
 pub fn qnative_recovery_round_us(window: &[u32], alpha: f64) -> Option<u64> {
     let n = qnative_window_n(alpha)?;
     if window.len() < n {
@@ -1121,42 +815,17 @@ pub const QCLK_SAMPLE_CAP: usize = 4096;
 
 /// The `[QCLK]` gauge — **the REALIZED recovery clock, as a DISTRIBUTION.**
 ///
-/// **The defect this repairs, stated as the measurement that forced it.**
-/// `W(α) = srtt + k(α)·σ` is commanded by α and realized through σ, and σ is
-/// not a constant: the plain-window primitives pass measured `σ(c8)` at
-/// **0.191 / 3.140 / 54.836 ms across three reps at n ≈ 18 000** — a **287×
-/// spread at converged sample count** (goal-gate, "THE PASSIVE PRIMITIVES —
-/// PLAIN WINDOW, THE SCORED RESULT" §4, recorded there as the pass's largest
-/// open item). A clock proportional to σ inherits that spread, so **W is a
-/// distribution and an α-sweep that reads only the commanded α is reading a
-/// label, not the treatment.** Two arms commanded at different α can realize
-/// overlapping W and are then not two arms.
-///
-/// **And today the quantile arm records NOTHING.** `[RACK]`'s `round=` is a
-/// mean over evaluations and is fed only under `RWM_RACK_CLOCKS`; neither
-/// clock call site has a `quantile_clocks` gauge branch at all. So this gauge
-/// is what the sweep's own scoring rule requires to exist before it can run.
+/// The tail-sweep timeout and the receiver's hole-refresh cadence are what
+/// the engine WILL wait, per evaluation; this records them as a distribution
+/// (mean, p05/p50/p95, min/max) beside the mean srtt and the mean measured σ
+/// that fed the evaluations. It was built for the quantile-clock arm's
+/// α-sweep (paper §16.69/§16.76, since removed) and is kept because it is the
+/// one per-run readout of the shipped clamp's own realized cadence (the
+/// `RWM_REFRESH_FLOOR_US` reachability reads it).
 ///
 /// Observation only: no gate of its own, no control flow, no wire byte.
-/// Emitted on EVERY arm that evaluated a recovery clock, control included —
-/// the control's realized W is the comparison every arm is read against.
 pub(crate) struct QuantileClockGauge {
     site: &'static str,
-    on: bool,
-    /// Which of the two rival `W` laws this arm evaluated — §16.76. On the
-    /// line so realized-`W` provenance is PER INVOCATION and never inferred
-    /// from the driver's env table.
-    form: WForm,
-    /// The COMMANDED window length `N(α)` for this arm, or `None` where the
-    /// window law asks for more than [`QNATIVE_WINDOW_MAX`]. Constant for the
-    /// invocation because α is; printed so a row can state its own window.
-    win_n: Option<usize>,
-    /// Evaluations at which the quantile-native law actually had its `N(α)`
-    /// samples. **This is the §16.76.5(1) UNSCOREABLE counter**: on the
-    /// quantile form `win_ok / evals` is the fill fraction, and it is the
-    /// quantity that says whether `c8`-`Q002` was measurable at all.
-    win_ok: u64,
-    alpha: f64,
     evals: u64,
     w_sum: f64,
     w_min: u64,
@@ -1164,25 +833,8 @@ pub(crate) struct QuantileClockGauge {
     srtt_sum: f64,
     sigma_sum: f64,
     sigma_n: u64,
-    /// Evaluations where the ARM'S OWN law produced the number. On the
-    /// control every evaluation qualifies (the clamped law always runs); on a
-    /// quantile arm an evaluation with NO σ sample yet falls through to the
-    /// legacy law by design — information availability, never a mode — and
-    /// that fall-through is a DIFFERENT law's output.
-    ///
-    /// **This is a bind-fraction gauge and it is here because the reachability
-    /// test caught its absence.** Pooling the fall-throughs into the
-    /// distribution made a run at α = 0.002 report a `W` p50 of exactly
-    /// 25 000 µs — `TAIL_SWEEP_MIN_US`, the legacy floor — while a run at
-    /// α = 0.9 on the same cell reported 128 ms, i.e. **the sweep's own
-    /// independent variable appeared INVERTED** because the two arms' medians
-    /// were drawn from two different laws. `law_n / evals` makes that visible
-    /// instead of silently wrong (CLAUDE.md FORMULA-FIRST: every clamp gets a
-    /// bind-fraction gauge, reported).
-    law_n: u64,
-    /// Uniformly decimated `W` samples, µs, **from the `law_n` population
-    /// only**. DETERMINISTIC — no RNG, so two runs of one binary on one log
-    /// produce the same quantiles.
+    /// Uniformly decimated `W` samples, µs. DETERMINISTIC — no RNG, so two
+    /// runs of one binary on one log produce the same quantiles.
     samples: Vec<u32>,
     /// Keep every `stride`-th evaluation; doubles each time the store fills,
     /// halving what is held. Uniform over the whole run rather than biased to
@@ -1192,14 +844,9 @@ pub(crate) struct QuantileClockGauge {
 }
 
 impl QuantileClockGauge {
-    pub(crate) fn new(site: &'static str, on: bool, form: WForm, alpha: f64) -> Self {
+    pub(crate) fn new(site: &'static str) -> Self {
         Self {
             site,
-            on,
-            form,
-            win_n: qnative_window_n(alpha),
-            win_ok: 0,
-            alpha,
             evals: 0,
             w_sum: 0.0,
             w_min: u64::MAX,
@@ -1207,7 +854,6 @@ impl QuantileClockGauge {
             srtt_sum: 0.0,
             sigma_sum: 0.0,
             sigma_n: 0,
-            law_n: 0,
             samples: Vec::new(),
             stride: 1,
             seen: 0,
@@ -1218,40 +864,12 @@ impl QuantileClockGauge {
     /// actually use, computed by the caller through the same function the
     /// engine uses — never recomputed here, so this can never report a clock
     /// the engine did not run.
-    /// `w_q_us` is `Some` **iff** the quantile-native law had its full `N(α)`
-    /// window at this evaluation — the one input that decides whether the
-    /// §16.76 arm's own law ran, and the same role `sigma_us` plays for the
-    /// Cantelli arm.
-    pub(crate) fn record(
-        &mut self,
-        w_us: u64,
-        srtt_us: u64,
-        sigma_us: Option<u64>,
-        w_q_us: Option<u64>,
-    ) {
+    pub(crate) fn record(&mut self, w_us: u64, srtt_us: u64, sigma_us: Option<u64>) {
         self.evals += 1;
         if let Some(sg) = sigma_us {
             self.sigma_sum += sg as f64;
             self.sigma_n += 1;
         }
-        if w_q_us.is_some() {
-            self.win_ok += 1;
-        }
-        // The armed law needs its OWN input; without it the caller fell
-        // through to the law below, and that number belongs to a different
-        // law. Cantelli needs a σ sample; the quantile-native form needs
-        // `N(α)` samples in the window (§16.76.5(1)). The control has no such
-        // requirement — its clamped law always runs.
-        let law_ran = match (self.on, self.form) {
-            (false, _) => true,
-            (true, WForm::Cantelli) => sigma_us.is_some_and(|s| s > 0),
-            (true, WForm::Quantile) => w_q_us.is_some(),
-        };
-        if !law_ran {
-            self.seen += 1;
-            return;
-        }
-        self.law_n += 1;
         self.w_sum += w_us as f64;
         self.w_min = self.w_min.min(w_us);
         self.w_max = self.w_max.max(w_us);
@@ -1291,32 +909,25 @@ impl QuantileClockGauge {
         s.sort_unstable();
         let mean = |sum: f64, n: u64| if n == 0 { 0.0 } else { sum / n as f64 };
         format!(
-            "[QCLK] site={} on={} form={} win_n={} win_ok={} alpha={:.6e} k={:.4} \
-             evals={} law_n={} kept={} \
+            "[QCLK] site={} evals={} kept={} \
              w_us_mean={:.1} w_us_p05={} w_us_p50={} w_us_p95={} \
              w_us_min={} w_us_max={} srtt_us_mean={:.1} sigma_us_mean={:.1}/n{} \
              fa_class={:.4}",
             self.site,
-            self.on as u8,
-            self.form.as_str(),
-            self.win_n
-                .map_or_else(|| "unavail".to_string(), |n| n.to_string()),
-            self.win_ok,
-            self.alpha,
-            cantelli_k(self.alpha),
             self.evals,
-            self.law_n,
             s.len(),
-            mean(self.w_sum, self.law_n),
+            mean(self.w_sum, self.evals),
             Self::quantile(&s, 0.05),
             Self::quantile(&s, 0.50),
             Self::quantile(&s, 0.95),
             if self.w_min == u64::MAX { 0 } else { self.w_min },
             self.w_max,
-            mean(self.srtt_sum, self.law_n),
+            mean(self.srtt_sum, self.evals),
             mean(self.sigma_sum, self.sigma_n),
             self.sigma_n,
-            // The sacrificial trailing constant — see `qalpha_report_line`.
+            // The sacrificial trailing constant: stderr has two writers and a
+            // `tracing` write can land inside a gauge line's LAST field, so
+            // the last field is a constant the parser can lose.
             RACK_SPURIOUS_BUDGET,
         )
     }
@@ -1339,7 +950,7 @@ impl Drop for QuantileClockGauge {
 // fires came from a timer and 98.99 % came from the sender answering a
 // receiver gap report** (goal-gate, "THE FIRE-CAUSE PASS — THE SCORED
 // RESULT"). Every recovery clock in this file — the shipped `[25, 100] ms`
-// clamp, `RWM_DERIVED_SWEEP`, `RWM_RACK_CLOCKS`, `RWM_QUANTILE_CLOCKS` — sets
+// clamp, `RWM_DERIVED_SWEEP` (and the removed RACK and quantile arms) — sets
 // the TIMER. The construction below sets the other one: the waiting time the
 // sender applies to a REPORTED hole before it answers with a repair.
 //
@@ -1349,8 +960,7 @@ impl Drop for QuantileClockGauge {
 // instead of on the ack stream. Paper §16.77 is the derivation and the LEVEL's
 // provenance; this is the arm that measures it.
 //
-// **Nothing may ship reading `RWM_HOLDDOWN_Q`**, any more than
-// `RWM_ALPHA_OVERRIDE`. A shipped hold-down would read `q*(δ, ρ, r)` from
+// **Nothing may ship reading `RWM_HOLDDOWN_Q`**. A shipped hold-down would read `q*(δ, ρ, r)` from
 // §16.77.2's stationarity condition, continuous in the triangle; that is the
 // decision this measurement informs and does not take.
 
@@ -1936,123 +1546,6 @@ impl Drop for HoldDownGauge {
         for p in paths {
             eprintln!("{}", self.line(p));
         }
-    }
-}
-
-/// The tail-sweep timeout ACTUALLY supplied to the sender loop: the legacy
-/// clamped law, the derived round under `RWM_DERIVED_SWEEP`, or the RACK
-/// round under `RWM_RACK_CLOCKS`. All three are ENV GATES (A/B arms), never
-/// dials.
-///
-/// **`RWM_RACK_CLOCKS` REPLACES `RWM_DERIVED_SWEEP` when both are set** — the
-/// two are RIVAL LAWS FOR ONE QUANTITY, not composable axes, and the
-/// precedence is made explicit here rather than left to evaluation order.
-/// With no min-RTT sample the RACK arm falls back to whichever of the other
-/// two laws is armed, verbatim.
-pub fn sweep_timeout_us_rack(
-    rack: bool,
-    derived: bool,
-    srtt_us: u64,
-    jitter_us: u64,
-    min_rtt_us: Option<u64>,
-    reo_mult: u64,
-) -> u64 {
-    match (rack, min_rtt_us) {
-        (true, Some(m)) if m > 0 => rack_recovery_round_us(srtt_us, m, reo_mult),
-        _ => sweep_timeout_us(derived, srtt_us, jitter_us),
-    }
-}
-
-/// The tail-sweep timeout under ALL FOUR laws, with the precedence made
-/// explicit — paper §16.68/§16.69. `RWM_QUANTILE_CLOCKS` outranks
-/// `RWM_RACK_CLOCKS` outranks `RWM_DERIVED_SWEEP`: the four are RIVAL LAWS FOR
-/// ONE QUANTITY, not composable axes, and leaving the precedence to evaluation
-/// order is how an arm ends up measuring a law nobody named. Each falls back
-/// to the next when its own input is unavailable — information availability,
-/// never a mode.
-#[allow(clippy::too_many_arguments)]
-pub fn sweep_timeout_us_all(
-    form: WForm,
-    quantile: bool,
-    rack: bool,
-    derived: bool,
-    srtt_us: u64,
-    jitter_us: u64,
-    min_rtt_us: Option<u64>,
-    sigma_us: Option<u64>,
-    w_q_us: Option<u64>,
-    reo_mult: u64,
-    alpha: f64,
-) -> u64 {
-    match (quantile, form) {
-        // §16.76: the DIRECT empirical quantile. `w_q_us` is `None` whenever
-        // the window is shorter than `N(α)` — the UNSCOREABLE rule — and the
-        // evaluation then falls through to the law below, information
-        // availability and never a mode, exactly as the σ arm does.
-        (true, WForm::Quantile) => w_q_us.unwrap_or_else(|| {
-            sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult)
-        }),
-        // §16.69: Cantelli. THE DEFAULT, byte-identical to before `WForm`.
-        (true, WForm::Cantelli) if sigma_us.is_some_and(|s| s > 0) => {
-            quantile_recovery_round_us(srtt_us, sigma_us.unwrap_or(0), alpha)
-        }
-        _ => sweep_timeout_us_rack(rack, derived, srtt_us, jitter_us, min_rtt_us, reo_mult),
-    }
-}
-
-/// The hole-refresh cadence under ALL FOUR laws. Same precedence and same
-/// fallback chain as [`sweep_timeout_us_all`].
-#[allow(clippy::too_many_arguments)]
-pub fn hole_refresh_all(
-    form: WForm,
-    quantile: bool,
-    rack: bool,
-    derived: bool,
-    srtt: Option<Duration>,
-    jitter_us: u64,
-    min_rtt: Option<Duration>,
-    sigma_us: Option<u64>,
-    w_q_us: Option<u64>,
-    reo_mult: u64,
-    alpha: f64,
-    refresh_floor: Duration,
-) -> Duration {
-    match (quantile, form) {
-        // §16.76. Note the quantile-native form needs NO `srtt` — it is the
-        // one law in this chain whose input is the sample window alone.
-        (true, WForm::Quantile) => w_q_us.map_or_else(
-            || hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-            Duration::from_micros,
-        ),
-        (true, WForm::Cantelli) => match (srtt, sigma_us) {
-            (Some(sv), Some(sg)) if sg > 0 => Duration::from_micros(quantile_recovery_round_us(
-                sv.as_micros() as u64,
-                sg,
-                alpha,
-            )),
-            _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-        },
-        _ => hole_refresh_rack(rack, derived, srtt, jitter_us, min_rtt, reo_mult, refresh_floor),
-    }
-}
-
-/// The hole-refresh cadence ACTUALLY supplied to the reliable window receiver
-/// under all three laws. Same precedence and same fallback as
-/// [`sweep_timeout_us_rack`].
-pub fn hole_refresh_rack(
-    rack: bool,
-    derived: bool,
-    srtt: Option<Duration>,
-    jitter_us: u64,
-    min_rtt: Option<Duration>,
-    reo_mult: u64,
-    refresh_floor: Duration,
-) -> Duration {
-    match (rack, srtt, min_rtt) {
-        (true, Some(s), Some(m)) if m.as_micros() > 0 => Duration::from_micros(
-            rack_recovery_round_us(s.as_micros() as u64, m.as_micros() as u64, reo_mult),
-        ),
-        _ => hole_refresh(derived, srtt, jitter_us, refresh_floor),
     }
 }
 
@@ -3693,9 +3186,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let mut sender_sack_rx = sack_rx;
     let mut sender_request_rx = request_rx;
     let sender_protocol_hint = config.protocol_hint;
-    // The contract's BASE tail-loss target, sampled beside the hint it prices
-    // alpha with (paper 16.81).
-    let sender_target_tail_loss = config.target_tail_loss;
     // §14.26/§16.82: the completion feed, if a driver published
     // one. `None` on every shipped path.
     let sender_completion_feed = config.completion_feed.clone();
@@ -3720,7 +3210,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
                 &mut sender_request_rx,
                 &mut sender_shutdown_rx,
                 sender_protocol_hint,
-                sender_target_tail_loss,
                 sender_window_reliable,
                 sender_window_coded_only,
                 sender_window_generation,
@@ -3995,9 +3484,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         config.reorder_timeout_ms,
         config.reorder_max_size,
         // The contract's own dial position at the RECEIVER (§16.81, in
-        // flight): the same two `config` fields the sender's policy reads.
+        // flight): the same `config` field the sender's policy reads.
         config.protocol_hint,
-        config.target_tail_loss,
     ));
 
     // ADR-0004: periodic cleanup of stale decoders
@@ -5778,51 +5266,20 @@ impl Drop for DeltaCapGauge {
     }
 }
 
-/// The `[RACK]` bind-fraction echo for the RACK-shaped recovery round — paper
-/// §16.68, gate `RWM_RACK_CLOCKS`.
+/// The `[RACK]` false-alarm echo — paper §16.68.1's validation of the
+/// recovery plane against RFC 8985 §6.2 Step 4's own published spurious
+/// budget, run on the SHIPPED clamp.
 ///
-/// CLAUDE.md FORMULA-FIRST: *every clamp gets a bind-fraction gauge,
-/// reported.* Neither shipped recovery clock has ever had one — the
-/// `[25, 100] ms` clamp's bind fraction is unmeasured to this day — so this
-/// gauge is the instrument the RACK law owes AND the instrument its
-/// predecessor never had.
-///
-/// * `ceil=` — the fraction of evaluations where RFC 8985 §6.2 Step 4's `SRTT`
-///   ceiling bound. **§16.68 predicts 0.0000 at every measured cell at the
-///   shipped `mult = 1`**, because `min_rtt ≤ srtt` makes `min_rtt/4 < srtt`
-///   identically. A zero here is the DEFECT FINDING, not a clean bill.
-/// * `gran=` — the fraction where the `TIMER_GRANULARITY_US` floor bound.
-/// * `legacy_pin=` — the fraction where the law it REPLACES would have been at
-///   one of its two absolute literals, so the counterfactual's own clamp
-///   behaviour is on the record beside this one.
-/// * `round=` / `legacy=` — the two cadences' means, in µs.
-#[allow(clippy::too_many_arguments)]
-pub fn rack_report_line(
-    evals: u64,
-    at_ceiling: u64,
-    at_gran: u64,
-    legacy_pinned: u64,
-    round_sum: f64,
-    legacy_sum: f64,
-    mult: u64,
-    fired: u64,
-    spurious: u64,
-    on: bool,
-) -> String {
+/// `fa=<spurious>/<fired>` — recovery rounds that fired, and those whose
+/// target's live flight was YOUNGER than its own per-path law threshold (the
+/// data was going to arrive anyway); `fa_frac` their ratio; `fa_class` the
+/// RFC's own 1/16 bar, printed so a parser never has to know it. (The line
+/// also carried the removed `RWM_RACK_CLOCKS` arm's bind fractions; those
+/// fields left with the arm.)
+pub fn rack_report_line(fired: u64, spurious: u64) -> String {
     let frac = |n: u64, d: u64| if d == 0 { 0.0 } else { n as f64 / d as f64 };
-    let mean = |s: f64, d: u64| if d == 0 { 0.0 } else { s / d as f64 };
     format!(
-        "[RACK] on={} evals={} ceil={:.4} gran={:.4} legacy_pin={:.4} \
-         round={:.1} legacy={:.1} mult={} fa={}/{} fa_frac={:.4} \
-         fa_class={:.4}",
-        on as u8,
-        evals,
-        frac(at_ceiling, evals),
-        frac(at_gran, evals),
-        frac(legacy_pinned, evals),
-        mean(round_sum, evals),
-        mean(legacy_sum, evals),
-        mult,
+        "[RACK] fa={}/{} fa_frac={:.4} fa_class={:.4}",
         spurious,
         fired,
         frac(spurious, fired),
@@ -6042,8 +5499,8 @@ pub fn rfa_report_line(
 // producers:
 //
 //   * the sender's OWN tail-sweep deadline arm — `pending_gaps =
-//     Some(vec![(seq, seq)])` — which is the arm the quantile/Cantelli `W`
-//     actually clocks (`sweep_timeout_us_all` → `tail_deadline`). THIS, and
+//     Some(vec![(seq, seq)])` — which is the arm the sender's recovery clock
+//     actually clocks (`sweep_timeout_us` → `tail_deadline`). THIS, and
 //     only this, is a timer-driven fire in the sense §16.69 assumed.
 //   * the `nack_rx` channel, whose sole producer is the SACK→gap inversion
 //     in the WindowAck handler. These fires are clocked by the RECEIVER, not
@@ -6063,7 +5520,7 @@ pub fn rfa_report_line(
 //
 // So the split costs NO wire change and NO behaviour change: it reads a
 // field the handler has in scope. That matters for the measurand question,
-// because the refresh arm is clocked by `hole_refresh_all` — the RECEIVER's
+// because the refresh arm is clocked by `hole_refresh` — the RECEIVER's
 // twin of the very law under test. A fire in `gap_refresh` is timer-driven
 // by the receiver's clock; a fire in `gap_data` is driven by DATA ARRIVAL
 // and by no clock at all.
@@ -6109,7 +5566,7 @@ pub enum FireCause {
     /// analog): driven by data arrival, by no clock.
     GapData,
     /// A SACK-bearing WindowAck from the receiver's timer-driven hole
-    /// re-advertisement arm: clocked by `hole_refresh_all` at the RECEIVER.
+    /// re-advertisement arm: clocked by `hole_refresh` at the RECEIVER.
     GapRefresh,
     /// A gap batch that reached the fire site carrying no cause tag. Counted,
     /// never guessed at.
@@ -6254,17 +5711,10 @@ pub fn fcause_report_line(
     )
 }
 
-/// The `[RACK]` tally, fed at every recovery-clock evaluation on the ON arm.
+/// The `[RACK]` / `[RFA]` / `[FCAUSE]` tally: recovery-fire accounting at
+/// the sender and the receiver.
 #[derive(Default)]
 pub(crate) struct RackClockGauge {
-    evals: u64,
-    at_ceiling: u64,
-    at_gran: u64,
-    legacy_pinned: u64,
-    round_sum: f64,
-    legacy_sum: f64,
-    on: bool,
-    mult: u64,
     /// §16.68.1's FALSE-ALARM VALIDATION, and it runs on EVERY arm including
     /// the shipped control — the `[25, 100] ms` clamp's own false-alarm rate
     /// has never been measured in this tree, and a cited empirical fraction
@@ -6332,28 +5782,8 @@ pub(crate) struct RackClockGauge {
 }
 
 impl RackClockGauge {
-    pub(crate) fn new(on: bool, mult: u64) -> Self {
-        Self { on, mult, ..Default::default() }
-    }
-
-    /// Record one evaluation. `round_us` is the realized RACK cadence and
-    /// `legacy_us` the clamped law it replaces, both computed by the caller
-    /// through the same functions the engine uses.
-    pub(crate) fn record(&mut self, srtt_us: u64, min_rtt_us: u64, round_us: u64, legacy_us: u64) {
-        self.evals += 1;
-        self.round_sum += round_us as f64;
-        self.legacy_sum += legacy_us as f64;
-        let mult = self.mult.clamp(RACK_REO_WND_MULT_INIT, RACK_REO_WND_MULT_MAX);
-        let base = mult.saturating_mul(min_rtt_us) / RACK_MIN_RTT_DIVISOR;
-        if base >= srtt_us && srtt_us > TIMER_GRANULARITY_US {
-            self.at_ceiling += 1;
-        }
-        if round_us == TIMER_GRANULARITY_US && base.min(srtt_us) <= TIMER_GRANULARITY_US {
-            self.at_gran += 1;
-        }
-        if legacy_us == TAIL_SWEEP_MIN_US || legacy_us == TAIL_SWEEP_MAX_US {
-            self.legacy_pinned += 1;
-        }
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
     /// Record one recovery-round FIRE and whether it was a false alarm —
@@ -6484,28 +5914,16 @@ impl RackClockGauge {
 
     /// The `[RACK]` line this gauge would emit right now.
     pub(crate) fn rack_line(&self) -> String {
-        rack_report_line(
-            self.evals,
-            self.at_ceiling,
-            self.at_gran,
-            self.legacy_pinned,
-            self.round_sum,
-            self.legacy_sum,
-            self.mult,
-            self.fired,
-            self.spurious,
-            self.on,
-        )
+        rack_report_line(self.fired, self.spurious)
     }
 }
 
 impl Drop for RackClockGauge {
     fn drop(&mut self) {
-        // Emitted on EVERY arm that fired a recovery round, not only the ON
-        // arm — §16.68.1's validation is about the CONTROL as much as the
-        // successors, and the shipped clamp's false-alarm rate is the number
-        // this tree has never had. A run that fired nothing stays silent.
-        if self.on || self.fired > 0 {
+        // Emitted whenever a recovery round fired — §16.68.1's validation of
+        // the shipped clamp's false-alarm rate. A run that fired nothing
+        // stays silent.
+        if self.fired > 0 {
             eprintln!("{}", self.rack_line());
         }
         // The receiver-site class breakdown behind that `fa=`. Emitted on the
@@ -7198,9 +6616,6 @@ async fn run_window_sender(
     request_rx: &mut tokio::sync::mpsc::Receiver<RepairRequestBatch>,
     shutdown_rx: &mut tokio::sync::broadcast::Receiver<()>,
     protocol_hint: ProtocolHint,
-    // The contract's BASE tail-loss target (config.target_tail_loss), the
-    // alpha seat's own base since it stopped mirroring a constant (16.81).
-    target_tail_loss: f64,
     // RWM Phase A: RETAIN-UNTIL-ACKED retention at the ARQ layer (see the
     // policy block above RELIABLE_STORE_MAX).
     reliable: bool,
@@ -7257,7 +6672,6 @@ async fn run_window_sender(
         &gates,
         symbol_size,
         protocol_hint,
-        target_tail_loss,
         reliable,
         coded_only,
         generation,
@@ -7639,36 +7053,17 @@ async fn run_window_sender(
     /// goal-gate "The Derived Recovery Clamp": the sender site's one-shot
     /// mechanism-liveness echo (ACTIVE + DIVERGED). Observation only.
     let mut derived_round_echo = DerivedRoundEcho::default();
-    // `[RACK]` (paper §16.68): the bind-fraction gauge the shipped
-    // `[25, 100] ms` clamp has never had, and the one CLAUDE.md's
-    // FORMULA-FIRST clamp rule owes any law that adds two new bounds.
-    let mut rack_echo = RackClockGauge::new(pol.rack_clocks, pol.rack_reo_mult);
+    // `[RACK]` (paper §16.68.1): the shipped clamp's recovery-fire
+    // false-alarm accounting.
+    let mut rack_echo = RackClockGauge::new();
     // `[FCAUSE]`'s configuration contract: under generation coding the
     // SACK→gap producer is suppressed (`recv_nack_tx = None`), so both
     // `gap_` classes are structurally empty and only the sender's own
     // tail-sweep timer can fire. The line says which machine it measured.
     rack_echo.set_send_generation(pol.generation);
-    // `[QALPHA]` — the RESOLVED α at THIS site, printed once, two-sided
-    // (`quantile=0` on the control arm as loudly as `quantile=1` on the
-    // treatment). α is the α-sweep's one independent variable and the
-    // `[GATES]` line can only say what was ASKED FOR; this says what the law
-    // evaluates. Emitted on every arm — MEASUREMENT DISCIPLINE 15.
-    eprintln!(
-        "{}",
-        qalpha_report_line(
-            "sender",
-            pol.quantile_clocks,
-            pol.w_form,
-            pol.contract_alpha_base,
-            pol.alpha_override,
-            pol.contract_alpha,
-        )
-    );
     // `[QCLK]` — the REALIZED recovery clock as a DISTRIBUTION, at the site
-    // that runs it. σ moves 287× between reps at c8 and `W ∝ σ`, so a sweep
-    // scored on commanded α alone is scored on a label; see the gauge's decl.
-    let mut qclk_echo =
-        QuantileClockGauge::new("sender", pol.quantile_clocks, pol.w_form, pol.contract_alpha);
+    // that runs it; see the gauge's decl.
+    let mut qclk_echo = QuantileClockGauge::new("sender");
     // `[HOLD]` (paper §16.77) — THE HOLD-DOWN ARM, on the path the fire-cause
     // pass measured at 98.99 % of the fires. Constructed on EVERY arm, control
     // included: with `RWM_HOLDDOWN_Q` absent it stamps nothing, allocates
@@ -9332,7 +8727,7 @@ async fn run_window_sender(
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
-                let (srtt_us, jitter_us, min_rtt_us, sigma_us, w_q_us) = {
+                let (srtt_us, jitter_us, sigma_us) = {
                     let sched = scheduler.lock();
                     let paths: Vec<_> = recovery_clock_paths(&sched)
                         .iter()
@@ -9344,60 +8739,16 @@ async fn run_window_sender(
                     // way the clock is (max over the same path set), so floor
                     // and clock can never come from different paths.
                     let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
-                    // RFC 8985 §6.2 Step 4's `RACK.min_RTT`, read off the SAME
-                    // path set as the clock and the jitter so no two terms of
-                    // one law can come from different paths. The MIN over the
-                    // set is the queue-free floor the RACK law is built on.
-                    let mrtt = paths
-                        .iter()
-                        .filter_map(|p| p.min_rtt())
-                        .map(|d| d.as_micros() as u64)
-                        .min();
-                    // §16.69's second moment, MAX over the same set: the
-                    // quantile law's margin must cover the widest dispersion
-                    // any live path presents, not the narrowest.
+                    // The measured σ, MAX over the same set — read only by the
+                    // `[QCLK]` readout below.
                     let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
-                    // §16.76's `W_q`, MAX over the SAME path set, for the same
-                    // reason σ is: the recovery clock's margin must cover the
-                    // widest delay any live path presents, not the narrowest.
-                    // `None` at every path (window short of `N(α)`) ⇒ the
-                    // quantile arm falls through — the UNSCOREABLE rule.
-                    let wq = paths
-                        .iter()
-                        .filter_map(|p| p.rtt_tail_quantile_us(pol.contract_alpha))
-                        .max();
-                    (pooled_recovery_srtt_us(&pooled), jit, mrtt, sg, wq)
+                    (pooled_recovery_srtt_us(&pooled), jit, sg)
                 };
-                let timeout_us = sweep_timeout_us_all(
-                    pol.w_form,
-                    pol.quantile_clocks,
-                    pol.rack_clocks,
-                    pol.derived_sweep,
-                    srtt_us,
-                    jitter_us,
-                    min_rtt_us,
-                    sigma_us,
-                    w_q_us,
-                    pol.rack_reo_mult,
-                    pol.contract_alpha,
-                );
-                // EVERY arm, control included: the realized clock is the
-                // quantity the cost curve is read against, and the control's
-                // realized clock is what every treatment arm is compared to.
+                let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
                 // `timeout_us` is what the engine WILL use — never recomputed
                 // here, so this gauge cannot report a clock that did not run.
-                qclk_echo.record(timeout_us, srtt_us, sigma_us, w_q_us);
-                if pol.rack_clocks {
-                    if let Some(m) = min_rtt_us.filter(|m| *m > 0) {
-                        rack_echo.record(
-                            srtt_us,
-                            m,
-                            timeout_us,
-                            tail_sweep_timeout_us(srtt_us),
-                        );
-                    }
-                }
-                if pol.derived_sweep && !pol.rack_clocks {
+                qclk_echo.record(timeout_us, srtt_us, sigma_us);
+                if pol.derived_sweep {
                     derived_round_echo.observe(
                         "sender-tail-sweep",
                         srtt_us,
@@ -9446,9 +8797,9 @@ async fn run_window_sender(
                 None
             }
             // NOTE (`[FCAUSE]`): the tail-sweep arm below is the ONLY producer
-            // the quantile/Cantelli recovery clock `W` clocks — `tail_deadline`
-            // is computed from `sweep_timeout_us_all`. Every other fire in this
-            // loop is clocked by the RECEIVER or by data arrival.
+            // the sender's recovery clock clocks — `tail_deadline` is computed
+            // from `sweep_timeout_us`. Every other fire in this loop is clocked
+            // by the RECEIVER or by data arrival.
             // Generation-deficit feedback (§16.3): the receiver reports how many
             // MORE coded symbols each frontier generation still needs. Rebuild
             // the per-generation want from the report, subtracting what is
@@ -13518,7 +12869,7 @@ mod tests {
         // The plain-reliable window sender: the seat every cap-law finding in
         // ADR-0070 is about.
         let resolve = |g: &RuntimeGates| {
-            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
         };
 
         // ── THE CONTROL ARM ───────────────────────────────────────────────
@@ -13677,9 +13028,8 @@ mod tests {
         );
     }
 
-    /// **THE ROUTING GATE for the derived-setpoint laws** — paper §16.67 /
-    /// §16.68 / §16.69, gates `RWM_DELTA_CAP`, `RWM_RACK_CLOCKS`,
-    /// `RWM_RACK_REO_MULT`, `RWM_QUANTILE_CLOCKS`.
+    /// **THE ROUTING GATE for the derived-setpoint law** — paper §16.67,
+    /// gate `RWM_DELTA_CAP`.
     ///
     /// MEASUREMENT DISCIPLINE 1: a gate that RESOLVES is not a gate that
     /// ROUTES, and every one of the three no-mode-switch defects CLAUDE.md
@@ -13699,9 +13049,7 @@ mod tests {
         use crate::gates::RuntimeGates;
         use crate::net::sender_policy::SenderPolicy;
         use crate::net::{
-            codel_setpoint_q, contract_alpha, pooled_store_cap, CONTRACT_TAIL_LOSS_BASE,
-            RACK_REO_WND_MULT_INIT,
-            RACK_REO_WND_MULT_MAX,
+            codel_setpoint_q, pooled_store_cap,
         };
 
         // THE ANTI-DRIFT PIN, read before anything is neutralised: since
@@ -13721,16 +13069,13 @@ mod tests {
             // asserts the LAW's routing and not the machine it runs on. The
             // control is the `=0` arm EXPLICITLY, not the default.
             g.delta_cap = false;
-            g.rack_clocks = false;
-            g.quantile_clocks = false;
             g.derived_sweep = false;
             g.store_env_set = false;
             g.store_override = None;
-            g.rack_reo_mult = RACK_REO_WND_MULT_INIT;
             g
         };
         let resolve = |g: &RuntimeGates, h: ProtocolHint| {
-            SenderPolicy::resolve(g, 1200, h, CONTRACT_TAIL_LOSS_BASE, true, false, false, false)
+            SenderPolicy::resolve(g, 1200, h, true, false, false, false)
         };
 
         // ── §16.67: the δ-cap reaches the pooled seat at every dial point ──
@@ -13785,53 +13130,13 @@ mod tests {
             "the pooled law engaged at N = 1"
         );
 
-        // ── §16.68 / §16.69: the recovery gates route ──────────────────
-        let ctl = resolve(&base(), ProtocolHint::Auto);
-        assert!(!ctl.rack_clocks && !ctl.quantile_clocks && !ctl.derived_sweep);
-        assert_eq!(ctl.rack_reo_mult, RACK_REO_WND_MULT_INIT);
-
-        let mut r = base();
-        r.rack_clocks = true;
-        let rack = resolve(&r, ProtocolHint::Auto);
-        assert!(rack.rack_clocks && !rack.quantile_clocks, "the RACK gate did not route");
-        let mut q = base();
-        q.quantile_clocks = true;
-        let quant = resolve(&q, ProtocolHint::Auto);
-        assert!(quant.quantile_clocks && !quant.rack_clocks, "the quantile gate did not route");
-
-        // The recovery laws are CLOCKS, not cap laws, so they must arm on a
-        // coded seat too — unlike the δ-cap, which is scoped to `plain_dyn_cap`.
-        let coded = SenderPolicy::resolve(&r, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
-        assert!(coded.rack_clocks, "the RACK gate is wrongly scoped to the plain seat");
+        // The δ-cap is a CAP law, scoped to `plain_dyn_cap`: it must not arm
+        // on a coded seat.
         let mut d = base();
         d.delta_cap = true;
         let coded_cap =
-            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, CONTRACT_TAIL_LOSS_BASE, true, true, false, false);
+            SenderPolicy::resolve(&d, 1200, ProtocolHint::Auto, true, true, false, false);
         assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
-
-        // RACK's own bound on RACK's own parameter, at both ends.
-        let mut m = base();
-        m.rack_clocks = true;
-        m.rack_reo_mult = RACK_REO_WND_MULT_MAX;
-        assert_eq!(
-            resolve(&m, ProtocolHint::Auto).rack_reo_mult,
-            RACK_REO_WND_MULT_MAX,
-            "RACK's maximum multiplier did not reach the policy"
-        );
-
-        // §16.69's α rides the contract's own ζ, resolved onto the policy and
-        // strictly monotone across the dial's named points — a NUMBER on the
-        // contract, never a branch.
-        let mut last = 0.0f64;
-        for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-            let p = resolve(&q, hint);
-            assert!(
-                (p.contract_alpha - contract_alpha(CONTRACT_TAIL_LOSS_BASE, hint)).abs() < f64::EPSILON,
-                "{hint:?}: α did not reach the policy from the contract"
-            );
-            assert!(p.contract_alpha > last, "{hint:?}: α is not monotone across the dial");
-            last = p.contract_alpha;
-        }
     }
 
     /// **THE ECHO FORMAT PINS.** `[DCAP]`, `[RACK]` and `[LCW]` are what an L1
@@ -13854,15 +13159,14 @@ mod tests {
         assert!(dcap_report_line(0, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/0"));
         assert!(dcap_report_line(9, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/9"));
 
-        // [RACK] — the two bind fractions plus §16.68.1's false-alarm
-        // validation, with RACK's own class bar printed beside it.
+        // [RACK] — §16.68.1's false-alarm validation, with RACK's own class
+        // bar printed beside it.
         assert_eq!(
-            rack_report_line(4, 0, 1, 4, 4.0 * 9_500.0, 4.0 * 100_000.0, 1, 40, 39, false),
-            "[RACK] on=0 evals=4 ceil=0.0000 gran=0.2500 legacy_pin=1.0000 round=9500.0 legacy=100000.0 mult=1 fa=39/40 fa_frac=0.9750 fa_class=0.0625"
+            rack_report_line(40, 39),
+            "[RACK] fa=39/40 fa_frac=0.9750 fa_class=0.0625"
         );
-        // The ceiling's bind fraction is the DEFECT FINDING §16.68 predicts at
-        // mult = 1; it must be readable as an explicit 0.0000, never absent.
-        assert!(rack_report_line(4, 0, 0, 0, 1.0, 1.0, 1, 0, 0, true).contains("ceil=0.0000"));
+        // A gauge that never fired reads an explicit zero fraction.
+        assert!(rack_report_line(0, 0).contains("fa=0/0 fa_frac=0.0000"));
 
         // [FCAUSE] — the per-cause breakdown of `fa=`'s numerator population.
         // Full contract in `tests/fcause_reachability.rs`; pinned HERE too
@@ -15044,8 +14348,8 @@ mod tests {
     }
 
     /// **ζ AND δ ARE ONE INVOLUTION, BIT-EXACTLY.** The rate controller's
-    /// effective tail target and the contract's α both read
-    /// `ζ(δ(hint))` where they read `hint.tail_loss_scale()` before §16.81.
+    /// effective tail target reads `ζ(δ(hint))` where it read
+    /// `hint.tail_loss_scale()` before §16.81.
     /// That substitution is byte-identical only if the round trip
     /// `ζ → δ = 0.5/ζ → ζ = 0.5/δ` is exact at all three preset ζ. It is
     /// (0.01, 1, 100 are all exactly representable ratios of 0.5), and this
@@ -15058,30 +14362,6 @@ mod tests {
                 h.tail_loss_scale(),
                 "{h:?}: ζ(δ(hint)) is not the hint's own declared price ratio"
             );
-        }
-        // And the contract's α is unchanged at every preset, BIT-EXACTLY, on
-        // the base an unconfigured tunnel resolves to.
-        //
-        // The reference is the PRODUCT the pre-repair code computed, not the
-        // decimal it prints as: `1e-5 * 0.01` is `1.0000000000000001e-7` and
-        // the literal `1e-7` is one ulp below it. Comparing against the
-        // literal would be asserting a DIFFERENT number from the one that
-        // shipped — which is the whole reason these pins are `assert_eq!`.
-        for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-            assert_eq!(
-                contract_alpha(CONTRACT_TAIL_LOSS_BASE, h),
-                (CONTRACT_TAIL_LOSS_BASE * h.tail_loss_scale()).clamp(f64::MIN_POSITIVE, 1.0),
-                "{h:?}: α is not the pre-repair product"
-            );
-        }
-        // …and it is the number §16.69 publishes, to reading precision.
-        for (h, alpha) in [
-            (ProtocolHint::Realtime, 1e-7f64),
-            (ProtocolHint::Auto, 1e-5),
-            (ProtocolHint::Bulk, 1e-3),
-        ] {
-            let a = contract_alpha(CONTRACT_TAIL_LOSS_BASE, h);
-            assert!((a - alpha).abs() <= alpha * 1e-12, "{h:?}: α = {a}");
         }
         // β, the rate mix's weight: 0 at BOTH the Realtime and Auto ends
         // (the clamp) and 1 at Bulk (x/x) — all three exactly, which is what

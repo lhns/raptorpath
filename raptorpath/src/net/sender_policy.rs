@@ -408,41 +408,10 @@ pub(crate) struct SenderPolicy {
     /// `patience_floor_us`, no ceiling) instead of `2·SRTT` clamped to the
     /// undocumented [25, 100] ms. OFF ⇒ byte-identical to the shipped law.
     pub derived_sweep: bool,
-    /// `RWM_RACK_CLOCKS` (paper §16.68): both recovery clocks read RFC 8985
-    /// §6.2 Step 4's reordering window verbatim. REPLACES
-    /// [`Self::derived_sweep`] when both are set — rival laws for one
-    /// quantity, not composable axes. Default OFF.
-    pub rack_clocks: bool,
-    /// `RWM_RACK_REO_MULT` — RACK's own `reo_wnd_mult`, default 1, range
-    /// [1, 17]. Exposed so the law's `SRTT` ceiling is REACHABLE by a
-    /// battery; see the gate's decl for why it is otherwise inert.
-    pub rack_reo_mult: u64,
-    /// `RWM_QUANTILE_CLOCKS` (paper §16.69): the DERIVED quantile recovery
-    /// round. OUTRANKS `rack_clocks` and `derived_sweep`. Default OFF.
-    pub quantile_clocks: bool,
-    /// The false-alarm rate α ACTUALLY supplied to the quantile law, resolved
-    /// ONCE — `net::resolved_alpha(hint, gates.alpha_override)`. Read only by
-    /// the quantile law; a NUMBER, never a branch.
-    pub contract_alpha: f64,
-    /// What the CONTRACT alone would have said — `net::contract_alpha(hint)`,
-    /// `target_tail_loss × ζ(hint)`. Carried beside the resolved value so the
-    /// `[QALPHA]` echo is two-sided: an override is readable as a DIFFERENCE
-    /// from the contract rather than as a bare number nobody can place.
-    pub contract_alpha_base: f64,
-    /// `RWM_ALPHA_OVERRIDE` as resolved by the gate — `None` on every shipped
-    /// arm. EXPERIMENT ONLY; see the gate's declaration for why nothing may
-    /// ship reading it.
-    pub alpha_override: Option<f64>,
     /// `RWM_HOLDDOWN_Q` as resolved by the gate — `None` on every shipped
     /// path, where the sender answers a reported hole immediately, exactly as
     /// before. A NUMBER, never a branch. Paper §16.77.
     pub holddown_q: Option<f64>,
-    /// `RWM_W_FORM` as resolved by the gate — `cantelli` on every shipped arm
-    /// (paper §16.76). WHICH of the two rival `W` laws the armed quantile
-    /// clock evaluates; a SELECTED LAW on an A/B experiment axis, read only
-    /// when [`Self::quantile_clocks`] is armed. EXPERIMENT ONLY; nothing
-    /// shipped may read it.
-    pub w_form: crate::net::WForm,
     /// `RWM_SIDLE_DERIVED` ∧ diag: the second, derived stall gauge.
     pub sidle_derived: bool,
 
@@ -485,12 +454,6 @@ impl SenderPolicy {
         gates: &RuntimeGates,
         symbol_size: u16,
         protocol_hint: ProtocolHint,
-        // The contract's BASE tail-loss target (config.target_tail_loss).
-        // Plumbed 2026-09-08 (paper 16.81): the alpha seat used to
-        // mirror config.rs's own unwrap_or(1e-5) as a constant, so a tunnel
-        // configured at 1e-4 priced alpha at 1e-5 anyway - and the RECEIVER
-        // read the same constant at a hard-coded Auto. Both ends now take it.
-        target_tail_loss: f64,
         reliable: bool,
         coded_only: bool,
         generation: bool,
@@ -1428,18 +1391,7 @@ impl SenderPolicy {
             recov_sp,
             recov_mp_live,
             derived_sweep: gates.derived_sweep,
-            rack_clocks: gates.rack_clocks,
-            rack_reo_mult: gates.rack_reo_mult,
-            quantile_clocks: gates.quantile_clocks,
-            contract_alpha: crate::net::resolved_alpha(
-                target_tail_loss,
-                protocol_hint,
-                gates.alpha_override,
-            ),
-            contract_alpha_base: crate::net::contract_alpha(target_tail_loss, protocol_hint),
-            alpha_override: gates.alpha_override,
             holddown_q: gates.holddown_q,
-            w_form: gates.w_form,
             sidle_derived,
             emit_batch_on,
             emit_burst,

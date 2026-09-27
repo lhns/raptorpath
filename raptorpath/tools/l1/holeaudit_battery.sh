@@ -34,8 +34,7 @@ run_one() { # name scenA scenB mode bytes rep
   echo "RC=${PIPESTATUS[0]}" >> "$OUT"   # the engine's rc (was `|| true; $?`: always 0)
   local C=/tmp/rwm-c.log S=/tmp/rwm-s.log
   # CONTAMINATION witnesses: every rival clock must be absent on BOTH ends.
-  for g in RWM_HOLDDOWN_Q RWM_QUANTILE_CLOCKS RWM_RACK_CLOCKS RWM_DERIVED_SWEEP \
-           RWM_ALPHA_OVERRIDE RWM_W_FORM RWM_REFRESH_FLOOR_US; do
+  for g in RWM_HOLDDOWN_Q RWM_DERIVED_SWEEP RWM_REFRESH_FLOOR_US; do
     echo "GATE $name r$rep $g cli=$(grep -c "$g=" $C 2>/dev/null || echo 0) srv=$(grep -c "$g=" $S 2>/dev/null || echo 0)" >> "$OUT"
   done
   # THE SENDER GAUGE — every [HOLD] line, both ends.
