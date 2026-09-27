@@ -65,8 +65,8 @@ ckeq "clean leg: recv"            "100"   "$(echo "$J" | python3 -c 'import json
 ckeq "clean leg: censor_frac"     "0.0"   "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
 ckeq "clean leg: p99 scoreable"   "True"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p99_scoreable"])')"
 ckeq "clean leg: leg_unscoreable" "False" "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["leg_unscoreable"])')"
-# Nearest-rank on 1..100 ms: p50 -> index int(0.5*100)=50 -> the 51st value.
-ckeq "clean leg: p50 = nearest-rank, era-battery estimator" "51.0" \
+# l1common.q (linear interpolation) on 1..100 ms: h = 99*0.5 = 49.5 -> 50.5.
+ckeq "clean leg: p50 = l1common.q (linear interpolation)" "50.5" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p50"])')"
 
 # (b) 5 % CENSORING — the c8 leg-B GE floor (2/42 = 4.76 %), rounded up. 95 of
@@ -90,7 +90,7 @@ J=$(python3 ./latt_probe.py --json "$STUB/p-bad.txt")
 ckeq "25% censored: censor_frac"       "0.25"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
 ckeq "25% censored: leg_unscoreable"   "True"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["leg_unscoreable"])')"
 ckeq "25% censored: p50 NOT scoreable" "False" "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p50_scoreable"])')"
-if python3 ./latt_probe.py "$STUB/p-bad.txt" | grep -q 'UNSCOREABLE(contract'; then
+if [ "$(python3 ./latt_probe.py "$STUB/p-bad.txt" | grep -c 'UNSCOREABLE(contract')" -gt 0 ]; then
     ok "25% censored: the printed line SAYS UNSCOREABLE beside the percentile"
 else
     bad "25% censored: the printed line does not carry the contract verdict"
@@ -105,7 +105,7 @@ ckeq "no summary: sent_source flagged as a lower bound" "max_icmp_seq(LOWER BOUN
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["sent_source"])')"
 ckeq "no summary: summary_tx is None (the era battery's silent column)" "None" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["summary_tx"])')"
-if python3 ./latt_probe.py "$STUB/p-nosum.txt" | grep -q 'sent_source=max_icmp_seq'; then
+if [ "$(python3 ./latt_probe.py "$STUB/p-nosum.txt" | grep -c 'sent_source=max_icmp_seq')" -gt 0 ]; then
     ok "no summary: the printed line discloses the fallback denominator"
 else
     bad "no summary: the fallback denominator is not disclosed on the line"
@@ -136,7 +136,7 @@ ckeq "seq gaps, no summary: censoring FOUND but UNDERSTATED (9/99 vs true 10%)" 
 #     NO-PROBE-DATA line, never a silent zero-length sample that a scorer could
 #     average into a verdict.
 : > "$STUB/p-empty.txt"
-if python3 ./latt_probe.py "$STUB/p-empty.txt" | grep -q 'NO-PROBE-DATA'; then
+if [ "$(python3 ./latt_probe.py "$STUB/p-empty.txt" | grep -c 'NO-PROBE-DATA')" -gt 0 ]; then
     ok "empty probe file: reported as NO-PROBE-DATA"
 else
     bad "empty probe file: not reported"

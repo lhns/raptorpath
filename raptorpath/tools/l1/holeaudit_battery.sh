@@ -30,8 +30,8 @@ run_one() { # name scenA scenB mode bytes rep
   echo "=== cell=$name rep=$rep seed=$SEED cells=$a/$b/$mode bytes=$bytes $(date -u +%T)" >> "$OUT"
   sudo env SEED=$SEED RWM_GEN=0 RWM_DIAG=1 RWM_FDIAG=1 \
       bash perf_rwm_c.sh "$a" "$b" bulk "$bytes" 1 "$mode" 2>&1 \
-    | grep -E "summary|\"dnf\"|ABORT" >> "$OUT" || true
-  echo "RC=$?" >> "$OUT"
+    | grep -E "summary|\"dnf\"|ABORT" >> "$OUT"
+  echo "RC=${PIPESTATUS[0]}" >> "$OUT"   # the engine's rc (was `|| true; $?`: always 0)
   local C=/tmp/rwm-c.log S=/tmp/rwm-s.log
   # CONTAMINATION witnesses: every rival clock must be absent on BOTH ends.
   for g in RWM_HOLDDOWN_Q RWM_QUANTILE_CLOCKS RWM_RACK_CLOCKS RWM_DERIVED_SWEEP \

@@ -104,6 +104,16 @@ check(len(pts) == 1 and pts[0].final and pts[0].sigma_us == 3430.0, "final=1 in 
 pts = parse_text(receiver(3430, 13) + " final=10\n" + receiver(3430, 13) + " xfinal=1\n")
 check(len(pts) == 2 and not any(p.final for p in pts), "final=10 / xfinal=1 are not the flag")
 
+# A `tracing` record glued onto the flush (the interleave defect): the
+# timestamp's first digit sits right after `final=1`, so without the split the
+# flush is not recognised and the cadence line survives as a second reading.
+glued = (receiver(1000, 5, total=500) + "\n"
+         + receiver(3430, 13, total=2000) + " final=1"
+         + "\x1b[2m2026-09-08T18:54:50.1Z\x1b[0m  INFO raptorpath: cleaning up TUN interface\n")
+pts = parse_text(glued)
+check(len(pts) == 1 and pts[0].final and pts[0].sigma_us == 3430.0,
+      "a tracing record glued onto the flush is split off (got %d points)" % len(pts))
+
 # ── 3. THE RULE IS PER KEY: another arm's cadence points are untouched ────
 text = (ledger([("tm-s.log", receiver(1000, 5)),
                 ("tm-s.log", receiver(3430, 13) + " final=1")], arm="ship")

@@ -237,7 +237,7 @@ aw_state() { # label
     local l="$1" ns
     aw_kv "state_${l}_netns" "$(ip netns list 2>&1 | tr '\n' ' ')"
     for ns in rp-cli rp-srv; do
-        if ip netns list 2>/dev/null | grep -q "^$ns"; then
+        if [ "$(ip netns list 2>/dev/null | grep -c "^$ns")" -gt 0 ]; then
             aw_kv "state_${l}_${ns}_links" "$(ip -n "$ns" -br addr 2>&1 | tr '\n' ' ')"
             aw_kv "state_${l}_${ns}_qdisc" "$(ip netns exec "$ns" tc qdisc show 2>&1 | grep -v noqueue | tr '\n' ' ')"
             aw_kv "state_${l}_${ns}_sock" "$(ip netns exec "$ns" ss -uln 2>&1 | tr '\n' ' ')"

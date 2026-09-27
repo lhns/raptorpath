@@ -90,13 +90,11 @@ set -uo pipefail
 # reads, so a CRLF-tainted log is a parse problem and never a silent zero.
 SELF="${BASH_SOURCE[0]}"
 cd "$(dirname "$SELF")" || { echo "ABORT-CD $(dirname "$SELF")"; exit 3; }
-for f in "$(basename "$SELF")" lib.sh; do
-  if [ -f "$f" ] && LC_ALL=C grep -q $'\r' "$f" 2>/dev/null; then
-    echo "ABORT-CRLF $f carries CR bytes -- the tree was synced without the CRLF repair."
-    echo "NOTHING WAS RUN. Repair the tree (dos2unix) and relaunch."
-    exit 3
-  fi
-done
+# lib_battery.sh is sourced FIRST so its guard can check it too; a CR-tainted
+# library would fail to define crlf_guard, which the next line catches.
+source ./lib_battery.sh
+declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
+crlf_guard "$(basename "$SELF")" lib.sh lib_battery.sh
 source ./lib.sh
 set +e            # per-arm abort tolerance (discipline 7)
 
@@ -143,29 +141,16 @@ unset RWM_DELTA RWM_COPA_DELTA RWM_COMPLETION_EXPOSURE RWM_TAIL_BUDGET $R_CONTAM
 # INVOKED — that is the whole point of the ordering.
 mkdir -p "$OUTDIR" "$DDIR" 2>/dev/null
 
-probe() {
-  local p="$1"
-  if : > "$p.probe" 2>/dev/null && rm -f "$p.probe" 2>/dev/null; then
-    echo "SENTINEL-WRITABLE $p (probed as $(id -un), write+unlink)"
-    return 0
-  fi
-  echo "ABORT-SENTINEL-UNWRITABLE $p"
-  echo "ABORT-SENTINEL-UNWRITABLE dir=$OUTDIR owner=$(stat -c '%U:%G %a' "$OUTDIR" 2>/dev/null) user=$(id -un)"
-  echo "NOTHING WAS RUN. Fix the ownership of $OUTDIR and relaunch: a pass whose sentinel cannot be written is a pass whose completion cannot be observed."
-  exit 3
-}
-
 # `all.out` IS PROVED FIRST AND THE TEE IS OPENED ONLY AFTERWARDS: opening the
 # transcript before proving it would send the abort message that explains the
 # failure into the file the failure is about.
-probe "$OUTDIR/all.out"
+probe_sentinel "$OUTDIR/all.out"
 exec > >(tee -a "$OUTDIR/all.out") 2>&1
 
-for s in $SEEDS; do probe "$OUTDIR/DONE-S$s"; probe "$OUTDIR/FAILED-S$s"; done
-probe "$OUTDIR/DONE-ALL"
-probe "$OUTDIR/FAILED-ALL"
-probe "$OUTDIR/all-era.txt"
-echo "SENTINEL-PROOF-COMPLETE $(date -u +%FT%TZ) user=$(id -un) dir=$OUTDIR calib=$CALIB"
+SENTINELS="DONE-ALL FAILED-ALL all-era.txt"
+for s in $SEEDS; do SENTINELS="$SENTINELS DONE-S$s FAILED-S$s"; done
+# shellcheck disable=SC2086
+LB_PROOF_EXTRA="calib=$CALIB" prove_sentinels "$OUTDIR" $SENTINELS
 
 # ── BOTH LOCKS ──────────────────────────────────────────────────────────
 # The VM protocol's two locks (goal-gate "THE VM PROTOCOL"): `/tmp/rwm-vm.lock`
@@ -176,31 +161,11 @@ echo "SENTINEL-PROOF-COMPLETE $(date -u +%FT%TZ) user=$(id -un) dir=$OUTDIR cali
 # the create-or-fail atomic against a second launcher.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
 RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
-LOCKS_TAKEN=""
-take_lock() {
-  local p="$1"
-  if (set -o noclobber; : > "$p") 2>/dev/null; then
-    echo "$$ r_battery $(date -u +%FT%TZ)" > "$p" 2>/dev/null
-    LOCKS_TAKEN="$LOCKS_TAKEN $p"
-    echo "LOCK-TAKEN $p"
-    return 0
-  fi
-  echo "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)"
-  echo "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for (MEASURED: 121 RUN-RETRY over 171 polled invocations against 0 over 80 unpolled)."
-  release_locks
-  exit 4
-}
-release_locks() {
-  local p
-  for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p"; done
-  LOCKS_TAKEN=""
-}
+LB_TAG=r_battery
 # On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
 # body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
 # on for hours after TERM with both locks already cleared).
-trap 'release_locks' EXIT
-trap 'release_locks; exit 130' INT
-trap 'release_locks; exit 143' TERM
+install_lock_traps
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 
@@ -286,13 +251,8 @@ cell_link() { case "$1" in c3hg) echo 20 ;; sc2) echo 100 ;; c8) echo 120 ;; *) 
 # below are CUMULATIVE (the `[RFA]` convention, net/mod.rs:2402), so the last
 # line is the run's accounting, and a MISSING gauge must produce an empty
 # string that the witness reports — never a shell failure that kills the rep.
-lastline() { # file pattern
-  grep -a "$2" "$1" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*m//g' | tail -1 || true
-}
-field() {    # text key   ->  the token after key= up to whitespace
-  printf '%s' "$1" | grep -o "$2=[^ |]*" | tail -1 | sed "s/^$2=//" || true
-}
-countlines() { grep -ac "$2" "$1" 2>/dev/null || true; }
+# lastline / field / countlines: lib_battery.sh. `field` is token-anchored
+# and first-occurrence (it used to match `n=` inside `mean=`).
 
 REP=0
 FAILS=""
@@ -594,17 +554,6 @@ run_seed() {
 # A SENTINEL IS EARNED, NOT UNCONDITIONAL. An unconditional `touch` converts a
 # total failure into a clean-looking success; the ledger must EXIST, be
 # NON-EMPTY, and carry the battery's own terminal line.
-seed_done() {
-  local s="$1" f="$OUTDIR/r-s$1.log"
-  if [ -s "$f" ] && grep -q "R-BATTERY-DONE seed=$s" "$f"; then
-    touch "$OUTDIR/DONE-S$s"
-    return 0
-  fi
-  echo "R-ALL seed $s DID NOT COMPLETE -- no R-BATTERY-DONE in $f" | tee -a "$OUTDIR/all-era.txt"
-  touch "$OUTDIR/FAILED-S$s"
-  return 1
-}
-
 rm -f "$OUTDIR/DONE-ALL" "$OUTDIR/FAILED-ALL"
 for s in $SEEDS; do rm -f "$OUTDIR/DONE-S$s" "$OUTDIR/FAILED-S$s"; done
 
@@ -617,7 +566,7 @@ echo "R-ALL grid: arms=$NARMS cells=$NCELLS sizes=$NSIZES reps=$REPS seeds=$NSEE
 
 for s in $SEEDS; do
   run_seed "$s"
-  seed_done "$s"
+  seed_done "$s" "$OUTDIR/r-s$s.log" "R-BATTERY-DONE seed=$s" R-ALL
 done
 echo "R-ALL end $(date -u +%FT%TZ) load=$(cat /proc/loadavg 2>/dev/null)" >> "$OUTDIR/all-era.txt"
 
@@ -635,11 +584,15 @@ RC_REPORT="${PIPESTATUS[0]}"
 ALL_OK=1
 for s in $SEEDS; do [ -f "$OUTDIR/DONE-S$s" ] || ALL_OK=0; done
 
-if [ "$ALL_OK" -eq 1 ]; then
+# DONE-ALL needs EVERY seed's earned DONE *and* a report that exited 0: a
+# report that crashed, or a `--calib` that fired ABORT-SMOKE (rc 6), is a
+# FAILED-ALL carrying that rc, never a DONE-ALL beside a failure line.
+if [ "$ALL_OK" -eq 1 ] && [ "$RC_REPORT" -eq 0 ]; then
   touch "$OUTDIR/DONE-ALL"
   echo "R-ALL-DONE report_rc=$RC_REPORT"
 else
-  touch "$OUTDIR/FAILED-ALL"
-  echo "R-ALL-FAILED report_rc=$RC_REPORT"
-  exit 5
+  echo "report_rc=$RC_REPORT seeds_done=$ALL_OK $(date -u +%FT%TZ)" > "$OUTDIR/FAILED-ALL"
+  echo "R-ALL-FAILED report_rc=$RC_REPORT seeds_done=$ALL_OK"
+  [ "$ALL_OK" -eq 1 ] || exit 5
+  exit "$RC_REPORT"
 fi

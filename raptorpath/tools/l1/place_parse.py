@@ -84,7 +84,7 @@ them, which is NOT the order of interest:
        `hol_w=`     the derived W of 16.80.6(a2), PREDICTED INERT.
 
   4. `[SUCC] xp_n/det` -- the cross-path resolution fraction D0 measured. It
-     must FALL at c8/c9h under a working placement arm and be identically 0 at
+     must FALL at c8L/c9h under a working placement arm and be identically 0 at
      c1. **A MOVING c1 VOIDS THE RUN**, which is why `xp_n` is carried on every
      row and not only on the duals.
 
@@ -98,63 +98,18 @@ with a default, because "the gauge read zero" and "the gauge never ran" are
 different findings and this battery's whole point is telling them apart.
 """
 import json
+import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# `read` splits a `tracing` record glued onto a readout line before matching
+# (MEASURED on the placement battery's first row: the receiver's `[LAT] ...
+# final=1` flush was followed on one line by "cleaning up TUN interface").
+from l1common import field, fnum, is_final, last_with, read, split_interleaved  # noqa: E402,F401
+
 SHIPPED_SIGMA_OVER_REF = 0.19238  # T = 0.15 <=> sigma_e = 0.19238*ref (16.81.1)
 SQRT6_OVER_PI = 6.0 ** 0.5 / 3.141592653589793
-
-# `final=1` as its OWN token: `xfinal=1` or `final=10` are not the flag.
-_FINAL_RE = re.compile(r"(?:^|\s)final=1(?:\s|$)")
-
-
-def is_final(line):
-    """True iff the line carries the exit-flush `final=1` field."""
-    return bool(line) and _FINAL_RE.search(line) is not None
-
-
-# A `tracing` record (ANSI-dimmed ISO timestamp + level) can be interleaved
-# onto the SAME physical line as a gauge readout -- MEASURED on the placement
-# battery's first row (2026-09-08 18:54Z): the receiver's `[LAT] ... final=1`
-# flush was followed on one line by "cleaning up TUN interface", so the
-# `final=1` token match failed (`final=1` + the timestamp's leading digit).
-# Split every physical line at the start of each embedded tracing record
-# BEFORE stripping colour codes, so each readout is matched on its own.
-_TRACE_SPLIT = re.compile(
-    r"(?<!^)(?=(?:\x1b\[[0-9;]*m)?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
-    r"(?:\.\d+)?Z?(?:\x1b\[[0-9;]*m)?\s+(?:\x1b\[[0-9;]*m)?\s*"
-    r"(?:TRACE|DEBUG|INFO|WARN|ERROR))"
-)
-
-
-def split_interleaved(ln):
-    """One physical log line -> the readout(s) it carries, colour stripped."""
-    # The optional colour code lets the lookahead fire twice at one record
-    # (before and after the code), leaving an empty piece: drop those.
-    pieces = [re.sub(r"\x1b\[[0-9;]*m", "", p) for p in _TRACE_SPLIT.split(ln)]
-    return [p for p in pieces if p != ""] or [""]
-
-
-def read(path):
-    try:
-        with open(path, errors="replace") as f:
-            return [piece for ln in f for piece in split_interleaved(ln)]
-    except OSError:
-        return []
-
-
-def last_with(lines, pat):
-    """The reading of a CUMULATIVE gauge: its last line -- and a `final=1`
-    exit-flush line of that kind wins wherever it sits, because it is by
-    definition the complete count."""
-    last = None
-    for ln in reversed(lines):
-        if pat in ln:
-            if is_final(ln):
-                return ln.strip()
-            if last is None:
-                last = ln.strip()
-    return last
 
 
 def count_kind(lines, pat):
@@ -163,26 +118,10 @@ def count_kind(lines, pat):
     return sum(1 for ln in lines if pat in ln and not is_final(ln))
 
 
-def field(line, key):
-    """The token following `key` on a gauge line, or None if absent."""
-    if not line:
-        return None
-    for t in line.split():
-        if t.startswith(key):
-            return t[len(key):]
-    return None
-
-
 def num(line, key):
     """A numeric gauge field. `-` (the engine's `n = 0` rendering) is None,
     and so is an absent key -- which is what an OLD ENGINE looks like."""
-    v = field(line, key)
-    if v is None or v == "-":
-        return None
-    try:
-        return float(v)
-    except ValueError:
-        return None
+    return fnum(field(line, key))
 
 
 def slots(line):

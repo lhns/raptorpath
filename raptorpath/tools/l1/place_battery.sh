@@ -32,7 +32,9 @@
 # pre-registration and is restated here because it is the one result this
 # battery is most likely to produce.
 #
-# CELLS: c7 (symmetric dual), c8 (het dual — the aggregation seat), c1 (SINGLE
+# CELLS: c7 (symmetric dual), c8L (het dual c2 || c3 at 100 MB — the aggregation
+# seat; named c8L because every other battery's `c8` is the same geometry at
+# 25 MB, and one name must mean one cell), c1 (SINGLE
 # PATH, the must-not-move CONTROL: N = 1 collapses the softmax to an identity,
 # so ANY movement at c1 VOIDS the run), c9h (n = 3 quad, WITNESS ONLY —
 # `ABORT-QUAD` is pre-declared).
@@ -50,7 +52,7 @@
 # INVOCATION COUNT AT n = 4, PER SEED (arms x cells x reps + singles):
 #
 #     c7   5 arms x 4 reps = 20   200 MB dual        placeholder 2.0 min each
-#     c8   5 arms x 4 reps = 20   100 MB dual        placeholder 2.0 min each
+#     c8L  5 arms x 4 reps = 20   100 MB dual        placeholder 2.0 min each
 #     c1   5 arms x 4 reps = 20   400 MB single      placeholder 2.0 min each
 #     c9h  5 arms x 3 reps = 15   100 MB quad        placeholder 3.6 min each
 #     sc2  4 reps          =  4   100 MB single      placeholder 2.0 min each
@@ -72,10 +74,13 @@
 # AMENDMENT DETAIL", NOT applied here.
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/raptorpath/tools/l1
+cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+source ./lib_battery.sh
+declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
+crlf_guard place_battery.sh lib_battery.sh
 
 SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h amendment
-PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8 c1 c9h}"
+PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8L c1 c9h}"
 PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0 TSIG HOL HOLTSIG}"
 TAG="${RWM_PLACE_TAG:-place}"
 # The run directory is `place_run_all.sh`'s (`RWM_PLACE_OUTDIR`, passed
@@ -92,26 +97,14 @@ mkdir -p "$(dirname "$OUT")" "$DDIR"
 # hours in with a half-filled table.
 : > "$OUT" 2>/dev/null || { echo "REFUSED: cannot write $OUT" >&2; exit 4; }
 BIN=/home/vibe/raptorpath/target/release/raptorpath
-[ -x "$BIN" ] || { echo "REFUSED: no engine binary at $BIN" >&2; exit 4; }
+LB_TAG=place_battery
+LB_LOG="$OUT"
 # EARNED: the arms must EXIST in this binary. A run whose gate names are not
 # in the engine's own echo would silently score five copies of CTL — which is
 # exactly what an absent-by-default arm looks like from the outside.
-if ! "$BIN" --help >/dev/null 2>&1; then
-  echo "REFUSED: engine binary will not run" >&2; exit 4
-fi
-# `grep -a` on the binary itself, NOT `strings | grep -q`: under `pipefail`
-# `grep -q` exits at its first match, `strings` takes SIGPIPE (141), the
-# pipeline is non-zero and `if !` reads a PRESENT gate as absent — which is
-# how the placement smoke of 2026-09-08 18:37Z was REFUSED on the right binary.
-for G in RWM_PLACE_T_DERIVED RWM_PLACE_HOL; do
-  if ! grep -aq "$G" "$BIN" 2>/dev/null; then
-    echo "REFUSED: $G is not present in the binary — this is the OLD ENGINE" \
-      | tee -a "$OUT" >&2
-    exit 5
-  fi
-done
-# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; the block is r_battery.sh's,
-#    verbatim, with the INT/TERM handlers that EXIT) ────────────────────────
+preflight_binary "$BIN" RWM_PLACE_T_DERIVED RWM_PLACE_HOL
+# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; lib_battery.sh's, with the
+#    INT/TERM handlers that EXIT) ────────────────────────────────────────────
 # `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
 # They are OPERATOR locks — this script does not invent a third mechanism —
 # but it REFUSES to run without them and it releases exactly what it took, so
@@ -120,33 +113,12 @@ done
 # is also what keeps a second place_battery from starting.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
 RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
-LOCKS_TAKEN=""
-take_lock() {
-  local p="$1"
-  if (set -o noclobber; : > "$p") 2>/dev/null; then
-    echo "$$ place_battery $(date -u +%FT%TZ)" > "$p" 2>/dev/null
-    LOCKS_TAKEN="$LOCKS_TAKEN $p"
-    echo "LOCK-TAKEN $p" | tee -a "$OUT"
-    return 0
-  fi
-  echo "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)" | tee -a "$OUT"
-  echo "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for." | tee -a "$OUT"
-  release_locks
-  exit 4
-}
-release_locks() {
-  local p
-  for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p" | tee -a "$OUT"; done
-  LOCKS_TAKEN=""
-}
 # On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
 # body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
 # on for hours after TERM with both locks already cleared). Bash runs the
 # handler only once the in-flight foreground invocation returns — which is why
 # `place_run_all.sh`'s backstop follows its TERM with `pkill -x raptorpath`.
-trap 'release_locks' EXIT
-trap 'release_locks; exit 130' INT
-trap 'release_locks; exit 143' TERM
+install_lock_traps
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 
@@ -174,7 +146,7 @@ arm_hl() { case "$1" in HOL|HOLTSIG)  echo 1 ;; *) echo 0 ;; esac; }
 cell_spec() {
   case "$1" in
     c7)  echo "c2 c2 dual 200000000" ;;
-    c8)  echo "c2 c3 dual 100000000" ;;
+    c8L) echo "c2 c3 dual 100000000" ;;
     c1)  echo "c1 c1 single 400000000" ;;
     c9h) echo "c2 c3 quad 100000000" ;;
     *) echo "" ;;
@@ -205,8 +177,12 @@ run_one() { # cell arm
   # shellcheck disable=SC2086
   env SEED=$SEED_ARG RWM_GEN=0 $envs RWM_DIAG=1 \
     bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" 2>&1 \
-    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
-  echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s" >> "$OUT"
+    | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT"
+  # The ENGINE's rc, not the grep's: `PIPESTATUS` is copied on the first line
+  # after the pipeline (an `|| true` there would replace it with true's 0).
+  local rc="${PIPESTATUS[0]}"
+  echo "RUNTIME $name rep=$REP $(( $(date +%s) - t0 ))s rc=$rc" >> "$OUT"
+  [ "$rc" = "0" ] || echo "ENGINE-RC $name rep=$REP rc=$rc" >> "$OUT"
 
   python3 ./place_parse.py "$cell" "$arm" "$SEED_ARG" "$REP" \
       /tmp/rwm-c.log /tmp/rwm-s.log \
@@ -216,20 +192,25 @@ run_one() { # cell arm
   # Scoped to the `[GATES]` line: the resolve-time liveness echoes carry the
   # gate NAMES in their prose, and an unscoped grep reads the documentation
   # instead of the resolved value.
-  local gtc gts ghc ghs etan lat succ nfin
+  local gtc gts ghc ghs etan lat succ nfin sfin
   gtc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   gts=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   ghc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
   ghs=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
-  etan=$(grep -c "\[ETA\] site=sender" /tmp/rwm-c.log 2>/dev/null || true)
-  lat=$(grep -c "\[LAT\] site=receiver" /tmp/rwm-s.log 2>/dev/null || true)
-  succ=$(grep -c "\[SUCC\]" /tmp/rwm-s.log 2>/dev/null || true)
+  # `countlines` prints 0 for a missing log (a bare `grep -c ... || true`
+  # printed nothing, and `[ "" -eq 0 ]` then errored silently instead of
+  # emitting the INSTRUMENT-FAIL line below).
+  etan=$(countlines /tmp/rwm-c.log "\[ETA\] site=sender")
+  lat=$(countlines /tmp/rwm-s.log "\[LAT\] site=receiver")
+  succ=$(countlines /tmp/rwm-s.log "\[SUCC\]")
   # The counts above INCLUDE a `final=1` exit-flush line when the engine emits
   # one (a flushed-only short run is still a live instrument); the flush is
-  # counted separately so "complete counts" is readable off the ledger.
-  # place_parse.py applies the cadence rule (final skipped) on its own fields.
-  nfin=$(grep -cE "^\[(LAT|SUCC|ETA)\] .*(^| )final=1( |$)" /tmp/rwm-s.log 2>/dev/null || true)
-  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin (expect td=$etd hol=$ehl)" >> "$OUT"
+  # counted separately so "complete counts" is readable off the ledger:
+  # the receiver's block on the server log, the sender's `[ETA]` on the
+  # client log. place_parse.py applies the cadence rule (final skipped).
+  nfin=$(count_final /tmp/rwm-s.log '\[(LAT\] site=receiver|SUCC\]|ETA\] site=receiver)')
+  sfin=$(count_final /tmp/rwm-c.log '\[ETA\] site=sender')
+  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin send_final_lines=$sfin (expect td=$etd hol=$ehl)" >> "$OUT"
   [ "$gtc" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-CLI $name rep=$REP got='$gtc'" >> "$OUT"
   [ "$gts" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-SRV $name rep=$REP got='$gts'" >> "$OUT"
   [ "$ghc" != "RWM_PLACE_HOL=$ehl" ] && echo "ARM-LIVENESS-FAIL-HOL-CLI $name rep=$REP got='$ghc'" >> "$OUT"
@@ -260,22 +241,26 @@ for REP in $(seq 1 "$REPS"); do
 done
 
 # ── THE AGGREGATION SINGLES (the guard's denominator) ────────────────────
-# `c7 >= 0.97*sum` and `c8 >= 0.87*sum` are read against SAME-SESSION singles,
+# `c7 >= 0.97*sum` and `c8L >= 0.87*sum` are read against SAME-SESSION singles,
 # never against a number from another run: the shaper, the host and the kernel
 # all move between sessions and an aggregation ratio against a stale
 # denominator is not a ratio.
 for REP in $(seq 1 "$REPS"); do
   for S in sc2 sc3; do
-    case " $PLACE_CELLS " in *" c7 "*|*" c8 "*) ;; *) continue ;; esac
+    case " $PLACE_CELLS " in *" c7 "*|*" c8L "*) ;; *) continue ;; esac
     read -r sa sb smode sbytes <<< "$(case "$S" in
       sc2) echo "c2 c2 single 100000000" ;;
       sc3) echo "c3 c3 single 25000000" ;;
     esac)"
     echo "=== rep=$REP arm=$S-SINGLE seed=$SEED_ARG env=\"\" cell=$sa/$sb/$smode bytes=$sbytes $(date -u +%T)" >> "$OUT"
     rm -f /tmp/rwm-c.log /tmp/rwm-s.log
+    t0=$(date +%s)
     env SEED=$SEED_ARG RWM_GEN=0 RWM_DIAG=1 \
       bash perf_rwm_c.sh "$sa" "$sb" bulk "$sbytes" 1 "$smode" 2>&1 \
-      | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT" || true
+      | grep -E "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP" >> "$OUT"
+    src="${PIPESTATUS[0]}"
+    echo "RUNTIME $S-SINGLE rep=$REP $(( $(date +%s) - t0 ))s rc=$src" >> "$OUT"
+    [ "$src" = "0" ] || echo "ENGINE-RC $S-SINGLE rep=$REP rc=$src" >> "$OUT"
     python3 ./place_parse.py "$S" SINGLE "$SEED_ARG" "$REP" \
         /tmp/rwm-c.log /tmp/rwm-s.log >> "$OUT" 2>&1 \
       || echo "PLACERESULT-PARSE-FAIL $S-SINGLE rep=$REP" >> "$OUT"

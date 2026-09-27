@@ -52,59 +52,36 @@ NO ENGINE IS NEEDED TO EXERCISE THIS. `test_r_parse.py` beside it runs the
 whole parser over a synthetic ledger.
 """
 import json
+import os
 import re
 import sys
 
-
-def strip(line):
-    return re.sub(r"\x1b\[[0-9;]*m", "", line).replace("\r", "")
-
-
-def read(path):
-    try:
-        with open(path, errors="replace") as f:
-            return [strip(ln) for ln in f]
-    except OSError:
-        return []
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import last_with, numeric_prefix, q, read  # noqa: E402
+from l1common import field as ftok_  # noqa: E402
 
 
 def quant(vals, p):
-    if not vals:
-        return None
-    v = sorted(vals)
-    return round(v[min(len(v) - 1, int(round(p * (len(v) - 1))))], 6)
+    return q(vals, p, 6)
 
 
 def last(lines, needle):
-    """Last line containing `needle`. Every gauge this battery reads is
-    CUMULATIVE (the `[RFA]` convention, net/mod.rs:2402), so the last line is
-    the run's accounting and an earlier one is a snapshot of a partial run."""
-    hit = None
-    for ln in lines:
-        if needle in ln:
-            hit = ln
-    return hit
+    """The run's accounting off a CUMULATIVE gauge (the `[RFA]` convention):
+    the last line, or the `final=1` exit flush wherever it sits."""
+    return last_with(lines, needle)
 
 
 def fnum(text, key, default=None):
-    """`key=<number>` out of a gauge line. Returns `default` when the key or
-    the line is absent, so a MISSING gauge is a null in the row and never a
-    zero that scores."""
-    if not text:
-        return default
-    m = None
-    for m2 in re.finditer(re.escape(key) + r"=(-?[0-9]+(?:\.[0-9]+)?)", text):
-        m = m2
-    return float(m.group(1)) if m else default
+    """`key=<number>` out of a gauge line (numeric prefix, so `41.0ms` reads
+    41.0). Returns `default` when the key or the line is absent, so a MISSING
+    gauge is a null in the row and never a zero that scores."""
+    v = numeric_prefix(ftok_(text, key))
+    return default if v is None else v
 
 
 def ftok(text, key, default=None):
-    if not text:
-        return default
-    m = None
-    for m2 in re.finditer(re.escape(key) + r"=([^\s|]+)", text):
-        m = m2
-    return m.group(1) if m else default
+    v = ftok_(text, key)
+    return default if v is None else v
 
 
 def main(argv):

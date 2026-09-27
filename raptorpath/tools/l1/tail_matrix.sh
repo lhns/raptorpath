@@ -16,9 +16,12 @@
 # are scraped from both endpoint logs per arm.  SEED env forwards to topo.sh
 # (default 42).  Unset RWM_TM_ARMS = legacy behavior, byte-identical.
 set -uo pipefail
-trap 'echo "EXIT rc=$? ($(date +%T))"' EXIT
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || { echo "ABORT-CD $(dirname "$0")"; exit 3; }
 source ./lib.sh
+# lib.sh runs `set -euo pipefail` for its topology callers; this matrix runs
+# per-arm abort tolerance (a failed arm is a BRINGUP_FAIL/NO_DATA line, never
+# a matrix kill), so errexit is turned back off here.
+set +e
 BIN="/home/vibe/raptorpath/target/release/raptorpath"
 CELL="${1:-c2}"; REPS="${2:-5}"
 SEED="${SEED:-42}"
@@ -42,7 +45,15 @@ hard_cleanup() {
     ip netns del "$NS_CLI" 2>/dev/null || true
     ip netns del "$NS_SRV" 2>/dev/null || true
 }
-trap hard_cleanup EXIT
+# ONE EXIT handler: a second `trap ... EXIT` REPLACES the first, which is how
+# the "EXIT rc=" line was lost behind hard_cleanup. The rc is captured first
+# and the handler does not `exit`, so the script's own status is unchanged.
+on_exit() {
+    local rc=$?
+    hard_cleanup
+    echo "EXIT rc=$rc ($(date +%T))"
+}
+trap on_exit EXIT
 
 run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream measurements
     local hint="$1" size="$2" label="${3:-$1}" armenv="${4:-}" armflags="${5:-}"

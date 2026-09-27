@@ -8,6 +8,9 @@
 #   env RWM_OOO=1     -> add --window-out-of-order (H->inf, decode-on-total)
 #   env RWM_EXTRA=".." -> extra CLI args appended to server+client (raise-r arm)
 #   env RWM_PLACE_T=.. -> placement-temperature override (via 7th arg too)
+#   env RWM_C_PIPELINE=block|window (default window) -> which reliable pipeline
+#                        the engine runs; `block` drops --window-reliable and
+#                        the generation flag (the block re-test's BLK arm)
 #
 #   C7 = c2 c2   C8 = c2 c3
 #
@@ -98,6 +101,29 @@ GEN_FLAG="--window-generation-coding"
 # reach the binary as a 1-symbol generation size, so the GATE meaning must be
 # read from the saved copy.
 [[ "$GEN_GATE" == "0" ]] && GEN_FLAG=""
+
+# THE PIPELINE ARM (docs/status.md §4, the block-default re-test). NOT named
+# RWM_PIPELINE: that is an engine gate (gates.rs, the legacy pipeline depth M)
+# and the binary inherits this script's environment. `window` (the default)
+# passes --window-reliable exactly as before, so the default argv is
+# byte-identical. `block` omits --window-reliable AND the generation flag
+# (generation requires the window pipeline, main.rs), which leaves the engine
+# on its block pipeline (RaptorQ + block ARQ) with the backend unset; the
+# cod>0 guard below is skipped with the generation flag. Echoed on the
+# `--- RWM-C perf` line.
+PIPELINE="${RWM_C_PIPELINE:-window}"
+case "$PIPELINE" in
+    window) WR_FLAG="--window-reliable" ;;
+    block)
+        WR_FLAG=""
+        GEN_FLAG=""
+        if [[ -n "$OOO_FLAG" ]]; then
+            echo "RWM_C_PIPELINE=block with RWM_OOO=1: --window-out-of-order needs the window pipeline" >&2
+            exit 2
+        fi
+        ;;
+    *) echo "unknown RWM_C_PIPELINE '$PIPELINE' (want block|window)" >&2; exit 2 ;;
+esac
 # Force the cumulative coded-emission counter on so the HARD SANITY GUARD (below)
 # can assert cod>0 on the SENDER.  RWM_PFRAC makes run_window_sender print
 # "[PFRAC] ... total_coded=N ..." every 500 ms (generation-gated, cheap).
@@ -204,14 +230,16 @@ PEERS="$SRV_BIND"
 # coded-emission counters all live here -> /tmp/rwm-c.log.  Sender-side DIAG (btlbw,
 # dbud, cod, eff_pace, ANCHOR ...) MUST be scraped from /tmp/rwm-c.log.
 ip netns exec "$NS_SRV" env $TENV "$BIN" perf --server --bind "$SRV_BIND" \
-    --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" >/tmp/rwm-s.log 2>&1 &
+    $WR_FLAG $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" >/tmp/rwm-s.log 2>&1 &
 SRV_PID=$!
 aw_kv srv_pid "$SRV_PID"
 
 SRV_WAITS=0
 SRV_BOUND=0
 for _ in $(seq 1 20); do
-    if ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -q ':7000'; then SRV_BOUND=1; break; fi
+    # `grep -c`, not `grep -q`: under pipefail an early-exiting `grep -q` can
+    # SIGPIPE `ss`, and the failed pipeline would read a BOUND server as unbound.
+    if [ "$(ip netns exec "$NS_SRV" ss -uln 2>/dev/null | grep -c ':7000')" -gt 0 ]; then SRV_BOUND=1; break; fi
     SRV_WAITS=$((SRV_WAITS + 1))
     sleep 0.3
 done
@@ -231,7 +259,7 @@ if [ "$SRV_BOUND" -eq 0 ]; then
 fi
 sleep 1
 
-echo "--- RWM-C perf mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
+echo "--- RWM-C perf pipeline=$PIPELINE mode=$MODE hint=$HINT A=$SCENA B=$SCENB ooo=${RWM_OOO:-0} extra='$EXTRA' T=${PLACE_T:-default} ($BYTES x $RUNS) start=$(date +%T)"
 # CPU accounting (goal-gate "Decode-CPU Ceiling"): the CLIENT (bulk sender /
 # encoder) is wrapped in /usr/bin/time -v; the SERVER's (receiver / decoder)
 # cumulative CPU is read from /proc/<pid>/stat right after the transfer, before
@@ -321,7 +349,7 @@ if [[ "${RWM_LATPROBE:-0}" != "0" ]]; then
 fi
 timeout 700 ip netns exec "$NS_CLI" /usr/bin/time -v -o /tmp/rwm-cli-time env $TENV "$BIN" perf --client \
     --peer "$PEERS" --bind "$CLI_BIND" \
-    --window-reliable $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
+    $WR_FLAG $GEN_FLAG $OOO_FLAG $EXTRA --protocol-hint "$HINT" \
     --bytes "$BYTES" --runs "$RUNS" 2>&1 | tee /tmp/rwm-c.log \
     | grep -E "summary|warmup|dnf|PFRAC" | tail -8
 # THE THIRD PRE-TRANSFER CAUSE, and the `|| echo` it replaces is REPRODUCED

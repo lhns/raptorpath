@@ -60,9 +60,13 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import re
 import sys
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import fnum, is_final, med, read  # noqa: E402
 
 # 16.81.1: T = (pi/sqrt(6)) * sigma/ref, so sigma/ref = (sqrt(6)/pi) * T.
 SHIPPED_T = 0.15
@@ -98,22 +102,12 @@ RE_PREFIX = re.compile(
 # is a partial count of the same run: the flush SUPERSEDES them rather than
 # adding one more "rep". A ledger with no `final=` field at all parses
 # exactly as before. The token is matched on its own boundaries so `final=10`
-# or `xfinal=1` is not the flag.
-RE_FINAL = re.compile(r"(?:^|\s)final=1(?:\s|$)")
-
-
-def is_final(line):
-    return bool(line) and RE_FINAL.search(line) is not None
+# or `xfinal=1` is not the flag (`l1common.is_final`).
 
 
 def _num(tok):
     """`-` (n=0) -> None; otherwise a float."""
-    if tok in ("-", "", None):
-        return None
-    try:
-        return float(tok)
-    except ValueError:
-        return None
+    return fnum(tok)
 
 
 class Point:
@@ -205,20 +199,24 @@ def merge_points(pts, new):
 
 
 def parse_ledger(path):
+    """`[ETA]` points off a ledger. Lines are read through `l1common.read`, so
+    a `tracing` record glued onto an `[ETA] ... final=1` line is split off
+    before the exit-flush token is matched (the interleave defect)."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
     ctx = {}
     pts = []
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            sm = RE_STAGE.search(line)
-            if sm:
-                ctx["cell"] = sm.group("cell")
-                ctx["seed"] = sm.group("seed")
-            am = RE_ARM.match(line)
-            if am:
-                ctx["arm"] = am.group("arm")
-                ctx["size"] = am.group("size")
-            if "[ETA]" in line:
-                merge_points(pts, parse_eta_line(line, ctx))
+    for line in read(path):
+        sm = RE_STAGE.search(line)
+        if sm:
+            ctx["cell"] = sm.group("cell")
+            ctx["seed"] = sm.group("seed")
+        am = RE_ARM.match(line)
+        if am:
+            ctx["arm"] = am.group("arm")
+            ctx["size"] = am.group("size")
+        if "[ETA]" in line:
+            merge_points(pts, parse_eta_line(line, ctx))
     return pts
 
 
@@ -306,10 +304,7 @@ def pool(rows):
             by[(pt.cell, pt.site)].append(ratio)
     out = {}
     for k, vals in by.items():
-        vals.sort()
-        n = len(vals)
-        med = vals[n // 2] if n % 2 else 0.5 * (vals[n // 2 - 1] + vals[n // 2])
-        out[k] = (min(vals), med, max(vals), n)
+        out[k] = (min(vals), med(vals), max(vals), len(vals))
     return out
 
 
@@ -344,15 +339,14 @@ def reading(pooled, rows):
     # THE LEVEL RATIO, reported whatever the limb: the cells' median sigma/ref
     # against each other. It is the number the strike is worth if the ranges
     # are disjoint, and it is meaningless-but-harmless if they are not.
-    med = {}
+    lvl_med = {}
     for c in cells:
-        vs = sorted(r for pt, _rf, _s, r, _t, _w in rows
-                    if r is not None and pt.cell == c)
-        med[c] = vs[len(vs) // 2] if len(vs) % 2 else \
-            0.5 * (vs[len(vs) // 2 - 1] + vs[len(vs) // 2])
-    lvl = max(med[a], med[b]) / min(med[a], med[b]) if min(med.values()) else 0.0
+        lvl_med[c] = med([r for pt, _rf, _s, r, _t, _w in rows
+                          if r is not None and pt.cell == c])
+    lvl = (max(lvl_med[a], lvl_med[b]) / min(lvl_med[a], lvl_med[b])
+           if min(lvl_med.values()) else 0.0)
     lvl_note = "  median level %s %.4f vs %s %.4f = %.2fx" % (
-        a, med[a], b, med[b], lvl)
+        a, lvl_med[a], b, lvl_med[b], lvl)
 
     # A range built from ONE reading is a point, and a point cannot contain
     # another cell's range nor be honestly called disjoint from it: with no
@@ -450,9 +444,9 @@ def main(argv=None):
     pooled = pool(rows)
     print("POOLED sigma/ref per cell x site (min / median / max, n reps):")
     for (cell, site) in sorted(pooled):
-        lo, med, hi, n = pooled[(cell, site)]
+        lo, mid, hi, n = pooled[(cell, site)]
         print("  %-3s %-8s  %.4f / %.4f / %.4f   (n=%d)   T_eff %.4f-%.4f"
-              % (cell, site, lo, med, hi, n,
+              % (cell, site, lo, mid, hi, n,
                  K_SIGMA_TO_T * lo, K_SIGMA_TO_T * hi))
     print()
     verdict, note = reading(pooled, rows)

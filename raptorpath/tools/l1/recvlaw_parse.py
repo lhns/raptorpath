@@ -5,18 +5,11 @@
                           <cli.log> <srv.log> <cpusrv> <cpucli> \
                           <ping.txt[,ping-1.txt,...]> <q.txt>
 
-Prints ONE JSON object on ONE line, prefixed `RECVLAWRESULT `, exactly the way
-`alpha_parse.py` prints `ALPHARESULT ` and `ccand_parse.py` prints
-`CCANDRESULT `.
+Prints ONE JSON object on ONE line, prefixed `RECVLAWRESULT `.
 
-HELPER PROVENANCE, stated because the rule is "reuse or copy verbatim and say
-so": `alpha_parse.py` and `ccand_parse.py` are TOP-LEVEL SCRIPTS -- they read
-`sys.argv` and print at import time -- so neither is importable. `q`, `med`,
-`read`, `fnum`, `inum`, `gate`, `gate_tok` and the goodput block are therefore
-COPIED VERBATIM from `alpha_parse.py` (which copied them from
-`ccand_parse.py`), so rows POOL across sessions without a second dialect.
-`latt_probe.probe_stats` IS imported, because it is a module and owns the ONE
-definition of censoring.
+HELPERS: `read`, `fnum`, `inum`, `gate`, `gate_tok`, `last_with`, `field` and
+the quantile rule come from `l1common.py` (one definition for every L1
+parser). `latt_probe.probe_stats` owns the ONE definition of censoring.
 
 WHAT IS NEW HERE -- this battery's own independent variable, and the
 instruments that make it a MEASURED variable rather than a label:
@@ -76,44 +69,17 @@ try:                                     # ONE definition of censoring, imported
 except Exception:                        # never let a probe import kill a row
     PCTS, probe_stats = (), None
 
+from l1common import fnum, gate, gate_tok, inum, last_with, read  # noqa: E402
+from l1common import field as _field  # noqa: E402
+from l1common import q as _q  # noqa: E402
 
-# ── helpers, COPIED VERBATIM from alpha_parse.py (see the docstring) ──────
+
 def q(v, p):
-    if not v:
-        return None
-    v = sorted(v)
-    return round(v[min(len(v) - 1, int(round(p * (len(v) - 1))))], 4)
+    return _q(v, p, 4)
 
 
 def med(v):
     return q(v, 0.5)
-
-
-def read(path):
-    if not path:
-        return []
-    try:
-        with open(path, errors="replace") as f:
-            return [re.sub(r"\x1b\[[0-9;]*m", "", ln) for ln in f]
-    except OSError:
-        return []
-
-
-def fnum(s):
-    """Any numeric token -> float, or None. NOTHING in this parser may raise on
-    a malformed log: the row still has to exist so the abort accounting can
-    count it."""
-    try:
-        return float(s)
-    except (TypeError, ValueError):
-        return None
-
-
-def inum(s):
-    try:
-        return int(s)
-    except (TypeError, ValueError):
-        return None
 
 
 # ── CLI, padded so a short argv can never IndexError ─────────────────────
@@ -160,22 +126,6 @@ if not runs and dnf_count is None:
 
 
 # ── liveness: [GATES] resolved values, both endpoints ────────────────────
-def gate(lines, name):
-    g = [l for l in lines if "[GATES]" in l]
-    if not g:
-        return None
-    m = re.search(name + r"=([01])", g[-1])
-    return int(m.group(1)) if m else None
-
-
-def gate_tok(lines, name):
-    g = [l for l in lines if "[GATES]" in l]
-    if not g:
-        return None
-    m = re.search(name + r"=(\S+)", g[-1])
-    return m.group(1) if m else None
-
-
 ARM_GATES = ["RWM_RECV_REQUEST_LAW", "RWM_RANK_FEEDBACK",
              "RWM_DELTA_CAP", "RWM_SUM_CAP", "RWM_STORE_SACK_RELEASE",
              "RWM_QUANTILE_CLOCKS", "RWM_RACK_CLOCKS", "RWM_DERIVED_SWEEP",
@@ -187,23 +137,17 @@ gates_srv["RWM_GEN"] = None if gate_tok(srv, "RWM_GEN") is None else inum(gate_t
 
 
 def last_line(lines, tag):
-    """The LAST line carrying `tag`. Cumulative gauges use the
-    last-line-wins convention (`[RACK]`/`[RFA]`/`[FCAUSE]`), so this is their
-    reading. `None` when the gauge never emitted -- which is a READING (the
-    emission site was unreached) and not a zero."""
-    hit = [l for l in lines if tag in l]
-    return hit[-1] if hit else None
+    """The reading of a cumulative gauge (`l1common.last_with`: the last line,
+    a `final=1` exit flush wins). `None` when the gauge never emitted -- which
+    is a READING (the emission site was unreached) and not a zero."""
+    return last_with(lines, tag)
 
 
 def f(line, key, cast=fnum):
     """`<key><token>` off a gauge line. `-` is the ABSENT reading and returns
     `None` -- never 0, because 0 is a different state (16.75.8)."""
-    if not line:
-        return None
-    m = re.search(re.escape(key) + r"([^\s]+)", line)
-    if not m or m.group(1) == "-":
-        return None
-    return cast(m.group(1))
+    v = _field(line, key)
+    return None if v is None else cast(v)
 
 
 def fi(line, key):

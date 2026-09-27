@@ -82,8 +82,12 @@ lat-truth battery answers with both instruments beside each other, never
 averaged.
 """
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import q as _q, read  # noqa: E402
 
 #: `ping -D` per-reply line. The `-D` timestamp prefix is optional in this
 #: regex on purpose: a reader must not silently return zero samples because a
@@ -93,14 +97,10 @@ REPLY = re.compile(r"icmp_seq=(\d+).*?\btime=([0-9.]+)\s*ms")
 #: `+N errors` may appear between the two counts.
 SUMMARY = re.compile(r"(\d+) packets transmitted, (\d+) (?:packets )?received")
 
-#: The percentile estimator, TRANSCRIBED from `era_parse.py:q` and NOT
-#: reinvented, so a per-leg percentile pools with the era ledger's `ping_p50`
-#: without a second dialect. Nearest-rank on the sorted survivors, clamped.
+#: The percentile estimator is `l1common.q` (the ONE quantile rule: linear
+#: interpolation between closest ranks), rounded to 4 places.
 def q(v, p):
-    if not v:
-        return None
-    s = sorted(v)
-    return round(s[min(len(s) - 1, int(p * len(s)))], 4)
+    return _q(v, p, 4)
 
 
 #: The percentiles every leg reports. `p50` is here so the censoring verdict is
@@ -109,14 +109,6 @@ PCTS = (("p50", 0.50), ("p95", 0.95), ("p99", 0.99))
 
 #: The coarse pre-registered bar. Above this, every percentile on the leg dies.
 CONTRACT_BAR = 0.20
-
-
-def read(path):
-    try:
-        with open(path, "r", errors="replace") as f:
-            return [re.sub(r"\x1b\[[0-9;]*m", "", l) for l in f]
-    except OSError:
-        return []
 
 
 def probe_stats(path, leg=None):

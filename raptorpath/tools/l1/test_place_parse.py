@@ -158,8 +158,8 @@ def srv_log(lat=LAT_DUAL, succ=None, eta_r=ETA_R, extra=()):
 
 
 # ── 1. THE FULL ROW, NO `final=` ANYWHERE (the pre-flush engine) ─────────
-row = pp.parse("c8", "HOLTSIG", "42", "1", cli_log(), srv_log())
-check(row["cell"] == "c8" and row["arm"] == "HOLTSIG", "cell/arm carried")
+row = pp.parse("c8L", "HOLTSIG", "42", "1", cli_log(), srv_log())
+check(row["cell"] == "c8L" and row["arm"] == "HOLTSIG", "cell/arm carried")
 check(list(row)[:2] == ["cell", "arm"], "cell then arm FIRST: ARMCOUNT greps on that shape")
 check(row["mbps"] == 93.023 and row["seconds"] == 8.6 and row["dnf"] is False,
       "goodput off the acked summary")
@@ -221,15 +221,15 @@ check(approx(row["s4_sigma_over_ref"], row["sig_ref_sender_tau"], 1e-9),
       "S4 falls back to the tau_us route before [DIAG]")
 
 # ── 3. THE READING TABLE ─────────────────────────────────────────────────
-row = pp.parse("c8", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_QUEUE))
+row = pp.parse("c8L", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_QUEUE))
 check(row["lat_reading"] == "QUEUE-DOMINATED", "sh_ax 0.875, sh_xp 0.025 -> QUEUE-DOMINATED")
-row = pp.parse("c8", "CTL", "7", "1", cli_log(),
+row = pp.parse("c8L", "CTL", "7", "1", cli_log(),
                srv_log(lat=lat_line(1000, (100, 3000, 100, 0, 800, 50))))
 check(row["lat_reading"] == "PLACEMENT-INDICTED", "sh_xp 0.75 -> PLACEMENT-INDICTED")
-row = pp.parse("c8", "CTL", "7", "1", cli_log(),
+row = pp.parse("c8L", "CTL", "7", "1", cli_log(),
                srv_log(lat=lat_line(1000, (500, 100, 100, 1500, 1800, 5))))
 check(row["lat_reading"] == "REPAIR-DOMINATED", "rwrep+rep 0.825 -> REPAIR-DOMINATED")
-row = pp.parse("c8", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_EMPTY))
+row = pp.parse("c8L", "CTL", "7", "1", cli_log(), srv_log(lat=LAT_EMPTY))
 check(row["lat_present"] and row["lat_paths"] == [] and "lat_reading" not in row
       and row["rwxp_p95_worst"] is None, "the empty `-` body parses to nothing")
 
@@ -242,13 +242,13 @@ row = pp.parse("sc2", "SINGLE", "42", "1", cli_log(), srv_log(lat=LAT_QUEUE, suc
 check(row.get("control_violated") is True, "single with [LAT] rwxp_n>0 VOIDS")
 
 # ── 5. ABORT != DNF ──────────────────────────────────────────────────────
-row = pp.parse("c8", "CTL", "42", "1", cli_log(summaries=()), srv_log())
+row = pp.parse("c8L", "CTL", "42", "1", cli_log(summaries=()), srv_log())
 check(row.get("abort") is True and "mbps" not in row, "no summary at all -> ABORT")
-row = pp.parse("c8", "CTL", "42", "1", cli_log(summaries=(DNF,)), srv_log())
+row = pp.parse("c8L", "CTL", "42", "1", cli_log(summaries=(DNF,)), srv_log())
 check("abort" not in row and row["dnf"] is True and row["mbps"] is None
       and row["runs_n"] == 1 and row["acked_n"] == 0,
       "a DNF-only invocation (perf.rs:296, no `mbps`) is a DNF, not an ABORT")
-row = pp.parse("c8", "CTL", "42", "1", cli_log(summaries=(DNF, ACKED)), srv_log())
+row = pp.parse("c8L", "CTL", "42", "1", cli_log(summaries=(DNF, ACKED)), srv_log())
 check(row["dnf"] is True and row["mbps"] == 93.023 and row["runs_n"] == 2 and row["acked_n"] == 1,
       "mixed DNF + acked: dnf flagged, goodput off the acked object")
 
@@ -269,7 +269,7 @@ check(_pieces[0].rstrip().endswith("final=1"), "readout piece ends at the marker
 check("cleaning up TUN" in _pieces[1] and "\x1b" not in _pieces[1], "tracing piece colour-stripped")
 _plain = "[SUCC] gen=0 det=7 final=1 2026-09-08T18:54:50Z  INFO raptorpath: bye\n"
 check(pp.is_final(pp.split_interleaved(_plain)[0]), "plain (no ANSI) interleave also split")
-check(pp.split_interleaved("[LAT] site=receiver n=5 final=1\n") == ["[LAT] site=receiver n=5 final=1\n"],
+check(pp.split_interleaved("[LAT] site=receiver n=5 final=1\n") == ["[LAT] site=receiver n=5 final=1"],
       "unglued line untouched")
 check(pp.split_interleaved("2026-09-08T18:54:50Z INFO start\n")[0].startswith("2026"),
       "a line that IS a tracing record is not split at column 0")
@@ -282,7 +282,7 @@ final_succ = succ_line(det=9, xp_n=3) + " final=1"
 final_eta_r = "[ETA] site=receiver n=2500 final=1 " + ETA_R.split(" ", 3)[3]
 srv = srv_log(lat=partial_lat, succ=succ_line(det=5, xp_n=1),
               extra=(final_succ, final_eta_r, final_lat, "[RFA] gen=0 dup_src=3"))
-row = pp.parse("c8", "HOL", "42", "3", cli_log(), srv)
+row = pp.parse("c8L", "HOL", "42", "3", cli_log(), srv)
 check(row["recv_final"] is True and row["lat_final"] and row["succ_final"] and row["eta_recv_final"],
       "the flush is seen on all three receiver gauges")
 check(row["lat_n"] == 2000.0 and row["lat_rwxp_n"] == 260.0, "last-line scraper takes the flush's counts")
@@ -298,22 +298,22 @@ check(approx(row["sh_xp"], 0.475), "shares computed on the flushed line")
 # (a log captured mid-teardown, or two lines racing on stderr) must not
 # displace the complete count.
 srv = srv_log(lat=partial_lat, extra=(final_lat, partial_lat))
-row = pp.parse("c8", "HOL", "42", "3", cli_log(), srv)
+row = pp.parse("c8L", "HOL", "42", "3", cli_log(), srv)
 check(row["lat_n"] == 2000.0 and row["lat_final"] is True, "final line beats a later cadence line")
 check(row["lat_lines"] == 3, "the three cadence lines are counted, the flush is not")
 
 # Sender-side flush, should the sender ever emit one: same rule, same code.
 srv = srv_log()
 cli = cli_log() + [ETA_S_CTL + " final=1\n"]
-row = pp.parse("c8", "HOLTSIG", "42", "3", cli, srv)
+row = pp.parse("c8L", "HOLTSIG", "42", "3", cli, srv)
 check(row["eta_final"] is True and row["t_n"] == 0.0, "a sender flush is the sender reading")
 check(row["eta_sender_lines"] == 2, "sender cadence count skips the flush")
 
 # ── 7. SWAPPED LOGS ARE A PARSE, NOT A SILENT ZERO ───────────────────────
-row = pp.parse("c8", "CTL", "42", "1", cli_log() + srv_log(), cli_log(summaries=()))
+row = pp.parse("c8L", "CTL", "42", "1", cli_log() + srv_log(), cli_log(summaries=()))
 check(row["lat_present"] and row["succ_present"] and row["eta_recv_present"],
       "receiver lines found in the other log")
-row = pp.parse("c8", "CTL", "42", "1", [ACKED + "\n"], srv_log() + [ETA_S_CTL + "\n"])
+row = pp.parse("c8L", "CTL", "42", "1", [ACKED + "\n"], srv_log() + [ETA_S_CTL + "\n"])
 check(row["eta_present"] and row["fhat_us"] == 1950.0, "sender line found in the other log")
 
 # ── 8. THE CLI CONTRACT the battery greps on ─────────────────────────────
