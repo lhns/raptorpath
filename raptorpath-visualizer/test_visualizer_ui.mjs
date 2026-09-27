@@ -3,11 +3,11 @@
 // test_visualizer.mjs gates the ENGINE block (wasm + SimWrapper); this file
 // gates the WIRING above it — the dial → hint → sim routing, readout
 // rendering, the span-machine law panel, the ρ contract paths, and UI
-// responsiveness. It exists because of a measured coverage hole (2026-07-28):
-// the Bulk preset silently stopped routing to the engine's late-is-fine law
-// while both endpoints' own tests stayed green — the wire between them was
-// untested (the visualizer-scale instance of MEASUREMENT DISCIPLINE rule 1:
-// prove the mechanism under test actually executes). Run by
+// responsiveness. Engine tests and UI tests can each stay green while the
+// wire between them is broken (e.g. the Bulk preset not routing to the
+// engine's late-is-fine law), so the routing itself is gated here (the
+// visualizer-scale instance of MEASUREMENT DISCIPLINE rule 1: prove the
+// mechanism under test actually executes). Run by
 // build_visualizer.sh after the engine gates; a failure fails the build.
 //
 // Usage: node raptorpath-visualizer/test_visualizer_ui.mjs
@@ -140,8 +140,8 @@ listeners["btn-d-rt"].click();
 check("Realtime preset sets the dial",
   Math.abs(parseFloat(getEl("sl-dprice").value) - Math.log10(50)) < 1e-6);
 
-// ROUTING (the gap this file exists for) — THE NO-MODE-SWITCH INVARIANT:
-// ONE hint string at EVERY dial position (presets, between them, and with
+// Routing (the gap this file exists for) — the no-mode-switch invariant:
+// one hint string at every dial position (presets, between them, and with
 // ρ < 1). Any position constructing a different hint is a mode switch.
 {
   const positions = [-2.30103, -1.5, -0.30103, 0.7, 1.69897];
@@ -184,9 +184,9 @@ check("morph: Bulk end RETAIN + r* = 0, Realtime end r* > 0",
 check("morph: deadline D shrinks toward Realtime",
   lawRt.D < lawBulk.D, `rt D=${lawRt.D.toFixed(0)}ms, bulk D=${lawBulk.D.toFixed(0)}ms`);
 
-// Span cartoon runs at both ends; the §16.20.8 stall transients make the
-// shed law's decision points reachable (shed within an explicit ρ < 1
-// budget at the realtime end — at ρ = 1 they are rare BY DESIGN, §16.26).
+// Span cartoon runs at both ends; the stall transients make the shed
+// law's decision points reachable (shed within an explicit ρ < 1 budget at
+// the realtime end — at ρ = 1 they are rare by design, §5.6).
 for (const preset of ["btn-d-bulk", "btn-d-rt"]) {
   listeners[preset].click();
   const law = api.spanLaw();
@@ -207,7 +207,7 @@ for (const preset of ["btn-d-bulk", "btn-d-rt"]) {
     counters.replace(/<[^>]*>/g, "").slice(0, 100));
 }
 
-// ρ dial: contract morphs; the sim honors §6.1 T_cut give-up.
+// ρ dial: contract morphs; the sim honors §3.5 T_cut give-up.
 getEl("sel-npaths").value = "1";
 listeners["sel-npaths"].change();
 getEl("sl-eps").value = "0.10"; getEl("sl-q").value = "0.3"; getEl("sl-rtt").value = "80";
@@ -217,8 +217,8 @@ listeners["sl-rhoc"].input();
 check("ρ dial: contract line shows T_cut give-up",
   getEl("delta-derived").innerHTML.includes("T_cut give-up"),
   getEl("delta-derived").innerHTML.replace(/<[^>]*>/g, ""));
-// ρ must COMPOSE with the Bulk price — touching ρ may not change the law
-// (the hidden-mode-switch-keyed-on-ρ defect, user-caught 2026-07-28).
+// ρ must compose with the Bulk price — touching ρ may not change the law
+// (a law change keyed on ρ is a hidden mode switch).
 listeners["sl-rhoc"].change(); // resetSim at Bulk preset with ρ = 0.95
 {
   const s = api.sim();
@@ -250,10 +250,10 @@ check("ρ dial back to 1: ρ = 1 contract restored",
   getEl("delta-derived").innerHTML.replace(/<[^>]*>/g, ""));
 listeners["sl-rhoc"].change();
 
-// 2-path topology: RESPONSIVENESS regression gate (the 10-second hang:
-// the §16.6 baseline runs were synchronous full transfers with ~W²
-// decode cost; they are now chunked+cached). The change handler itself
-// must return promptly.
+// 2-path topology: responsiveness regression gate. The single-path
+// baseline runs are full transfers with ~W² decode cost, so they must run
+// chunked and cached off the change handler, which itself must return
+// promptly.
 getEl("sl-eps").value = "0.05"; getEl("sl-q").value = "0.5"; getEl("sl-rtt").value = "50";
 listeners["btn-d-auto"].click();
 getEl("sel-npaths").value = "2";

@@ -67,13 +67,13 @@ function solveRhoFromRDelta(eps,q,W,s2,r,delta) {
 // --- Simulation wrapper ---
 // The inner Simulation runs the SAME rate-controller code as the production
 // transport (shared raptorpath-math::controller_rate), fed by an honest
-// RTT-delayed estimator (BOCD p-hat, GE sigma2-hat). MULTIPATH (paper §16,
+// RTT-delayed estimator (BOCD p-hat, GE sigma2-hat). Multipath (§5.5,
 // RWM at L0): params.paths = [{eps,q,rttMs,cap}, ...] builds N independent
 // GE channels pouring into ONE shared reliable window; a single-entry array
 // (or legacy flat params) reproduces the classic single-path sim exactly.
 const SMOOTH_WINDOW = 6;
 
-// §16.6 P1 baseline memo: the hidden single-path baseline runs are pure
+// Single-path baseline memo: the hidden single-path baseline runs are pure
 // functions of (path cfgs, hint, W, r/δ/ρ params) — cached so repeated
 // Resets and topology flips never recompute them.
 const BASELINE_CACHE = new Map();
@@ -102,20 +102,19 @@ class SimWrapper {
     this.hint = params.hint;
     this.sigma2True = this.inner.get_sigma2();
     this.srcDoneTick = null;  // tick of the last source symbol (tail FEC starts here)
-    // §16.6 P1 baseline, measured-vs-measured: run each path ALONE through
+    // Single-path baseline (§5.5), measured-vs-measured: run each path alone through
     // the same engine (same hint, same W, that path's own channel) and take
     // the best completion goodput. The aggregation factor compares the
     // multipath run against this — what a single-path transfer would
     // actually achieve, not the loss-free theoretical ceiling (which no
     // real run reaches: overhead, ramp and drain are paid on both sides).
     //
-    // ASYNC + CHUNKED + CACHED (the topology-change hang fix): these are
-    // FULL hidden transfers, one per path, with ~W²-scaling decode cost —
-    // run synchronously they froze the page for seconds per topology
-    // change (measured 1.7 s at W* = 90, extrapolating to ~10+ s at the
-    // realtime-end W*). They now run in ~40 ms slices off the
-    // construction path; `baselineReady` flips when done (the UI shows
-    // “measuring…” until then), and results are memoized per config.
+    // Async, chunked and cached: these are full hidden transfers, one per
+    // path, with ~W²-scaling decode cost — run synchronously they would
+    // freeze the page for seconds per topology change. They run in ~40 ms
+    // slices off the construction path; baselineReady flips when done
+    // (the UI shows “measuring…” until then), and results are memoized per
+    // config.
     this.bestSingleMeasured = 0;
     this.baselineReady = paths.length <= 1;
     this.onBaselineReady = null;
@@ -163,11 +162,11 @@ class SimWrapper {
     setTimeout(slice, 0);
   }
   // measured aggregate goodput vs the best MEASURED single-path run (>1 =
-  // the §16.2 per-path-affine ceiling is broken in like-for-like terms)
+  // the §5.5 per-path-affine ceiling is broken in like-for-like terms)
   get aggregationFactorMeasured() {
     return this.bestSingleMeasured > 0 ? this.aggGoodput / this.bestSingleMeasured : 0;
   }
-  // --- Retention store + recovery clocks (walls #7/#8/#9; §16.19/24/25) ---
+  // --- Retention store + recovery clocks (walls #7/#8/#9; §6.1, §7.1, §6.3) ---
   get poolCap()                { return this.inner.get_pool_cap(); }
   get storeOccupancy()         { return this.inner.get_store_occupancy(); }
   get storeOccupancyFrontier() { return this.inner.get_store_occupancy_frontier(); }
@@ -175,7 +174,7 @@ class SimWrapper {
   get frontier()               { return this.inner.get_frontier(); }
   get phantomHeld()            { return this.inner.get_phantom_held(); }
   get phantomAvoided()         { return this.inner.get_phantom_avoided(); }
-  // --- Multipath accessors (paper §16) ---
+  // --- Multipath accessors (§5.5) ---
   get numPaths() { return this.inner.get_num_paths(); }
   pathCapacity(i)   { return this.inner.get_path_capacity(i); }
   pathRttMs(i)      { return this.inner.get_path_rtt_ms(i); }
@@ -187,7 +186,7 @@ class SimWrapper {
   pathArq(i)  { return this.inner.get_path_arq(i); }
   pathLost(i) { return this.inner.get_path_lost(i); }
   // aggregate delivery goodput (decoded/tick) vs the best single path's
-  // TRUE goodput — the §16.6 P1 readout (>1 breaks the §16.2 ceiling)
+  // true goodput — the §5.5 readout (>1 breaks the resequencing ceiling)
   get aggGoodput()        { return this.inner.get_agg_goodput(); }
   get bestSingleGoodput() { return this.inner.get_best_single_goodput(); }
   get aggregationFactor() { return this.inner.get_aggregation_factor(); }
@@ -206,10 +205,10 @@ class SimWrapper {
   get sigma2Est() { return this.inner.get_sigma2_est(); }
   get deltaEff()  { return this.inner.get_delta_eff(); }
   get rSat()      { return this.inner.get_r_sat(); }
-  // derived window W* (paper 8.8) from the LIVE estimator state
+  // derived window W* (§4.8) from the live estimator state
   get derivedW()  { return this.inner.get_derived_w(); }
 
-  // saturation pressure in [0,1] (paper 14.21.1), shown as the continuous
+  // saturation pressure in [0,1] (§4.4), shown as the continuous
   // saturation-pressure gauge. 0 = cap slack, 0.5 = at r_sat, ->1 = held.
   get satPressure() { return this.inner.get_saturation_pressure(); }
   // custom triangle mode (rho < 1 enables T_cut give-up eviction)

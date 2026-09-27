@@ -25,7 +25,7 @@ pub fn compute_r_star(epsilon: f64, sigma2: f64, window_size: f64) -> f64 {
     math::compute_r_star(epsilon, sigma2, window_size)
 }
 
-/// Continuous r* (paper 8.4): quantile at 1 - delta/eps; glides to 0.
+/// Continuous r* (§4.2): quantile at 1 - delta/eps; glides to 0.
 #[wasm_bindgen]
 pub fn compute_r_star_continuous(epsilon: f64, sigma2: f64, window_size: f64, delta: f64) -> f64 {
     math::compute_r_star_with_z(epsilon, sigma2, window_size, math::z_for_tail_target(delta, epsilon))
@@ -41,7 +41,7 @@ pub fn r_saturation(epsilon: f64, sigma2: f64, window: f64, srtt: f64, t_sym: f6
     math::r_saturation(epsilon, sigma2, window, srtt, t_sym)
 }
 
-/// Derived encoder window W* (paper 8.8): balances overhead (1/sqrt(W)
+/// Derived encoder window W* (§4.8): balances overhead (1/sqrt(W)
 /// margin), recovery latency (W/send_rate within budget), and burst
 /// absorbency. Clamped to [16, 512]. See `math::derive_window`.
 #[wasm_bindgen]
@@ -51,15 +51,14 @@ pub fn derive_window(
     math::derive_window(delta, epsilon, sigma2, srtt, send_rate, latency_budget)
 }
 
-/// Soft saturation cap (paper 14.21.1): kink-free approach to r_sat.
+/// Soft saturation cap (§4.4): kink-free approach to r_sat.
 #[wasm_bindgen]
 pub fn soft_saturate(rate: f64, r_sat: f64) -> f64 {
     math::soft_saturate(rate, r_sat)
 }
 
-/// Saturation pressure in [0,1] (paper 14.21.1): the continuous indicator
-/// that supersedes the binary CAP BINDING badge. `rate_requested` is the
-/// UNCAPPED controller output.
+/// Saturation pressure in [0,1] (§4.4): a continuous indicator of how hard
+/// the soft cap binds. `rate_requested` is the uncapped controller output.
 #[wasm_bindgen]
 pub fn saturation_pressure(rate_requested: f64, r_sat: f64) -> f64 {
     math::saturation_pressure(rate_requested, r_sat)
@@ -100,10 +99,10 @@ pub fn b_max(q: f64) -> u64 {
     math::b_max(q)
 }
 
-/// The SHARED production rate formula (raptorpath-math::controller_rate) —
+/// The shared production rate formula (raptorpath-math::controller_rate) —
 /// the exact code path the real transport runs. Flat-args wrapper for JS.
-/// `completion_exposure` is the P6 chi in [0,1] (paper 14.26); pass 0 for
-/// mid-stream / unknown T_rem.
+/// `completion_exposure` is χ in [0,1] (§4.6); pass 0 for mid-stream /
+/// unknown T_rem.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn controller_rate(
@@ -115,21 +114,21 @@ pub fn controller_rate(
     math::controller_rate(&math::RateInputs {
         p_upper, sigma2, mean_burst, window, t_symbols, srtt, t_sym,
         codec_overhead, tail_target, bulk_late_is_fine, completion_exposure,
-        // #46 (paper 8.4.1): the flat JS wrapper carries no measured
-        // window-mass statistics; the tail term is inert without them
-        // (identical to production cold start).
+        // Burst-tail provisioning (§4.3): the flat JS wrapper carries no
+        // measured window-mass statistics; the tail term is inert without
+        // them (identical to production cold start).
         mass: math::MassStats::default(),
         tail_provision: true,
-        // Paper 14.28: the visualizer models a raw transfer (file-transfer
+        // §4.4: the visualizer models a raw transfer (file-transfer
         // semantics — no latency-feedback payload inside), so the
-        // inner-feedback repair floor stays off (as does production by
-        // default after the negative L1 C2/C3 ablation).
+        // inner-feedback repair floor stays off (production defaults to 0
+        // too).
         inner_feedback: 0.0,
         saturation_cap, max_overhead,
     })
 }
 
-/// Completion-exposure kernel chi(T_rem) (paper 14.26): the probability a
+/// Completion-exposure kernel chi(T_rem) (§4.6): the probability a
 /// loss NOW can no longer hide behind ongoing sends.
 #[wasm_bindgen]
 pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) -> f64 {
@@ -137,51 +136,43 @@ pub fn completion_exposure(t_rem_secs: f64, srtt_secs: f64, rttvar_secs: f64) ->
 }
 
 // =========================================================================
-// THE UNIFIED SPAN MACHINE — the (δ, ρ, r) span law, ported verbatim from
-// the paper (§16.20.3 sender span law, §16.26 δ-honest shedding, §12.4
-// δ(hint) = 0.5/ζ; ADR-0064). These are the LAW formulas the visualizer's
-// centerpiece animates; they are pure functions of measured anchors and
-// carry no mode bit — Realtime and Bulk are the two ends of ONE continuum.
+// The unified span machine — the (δ, ρ, r) span law, ported verbatim from
+// the paper (§5.3 sender span law, §5.4 horizon coefficient, §5.6 δ-honest
+// shedding, §4.1 δ(hint) = 0.5/ζ; ADR-0064). These are the law formulas the
+// visualizer's centerpiece animates; they are pure functions of measured
+// anchors and carry no mode bit — Realtime and Bulk are the two ends of one
+// continuum.
 //
-// Convention: `delta_price` is the HINT's declared latency price
-// δ(hint) = 0.5/ζ (§12.4): Realtime 50, Auto 0.5, Bulk 0.005. It is NOT
+// Convention: `delta_price` is the hint's declared latency price
+// δ(hint) = 0.5/ζ (§4.1): Realtime 50, Auto 0.5, Bulk 0.005. It is not
 // the (δ, ρ, r) triangle's tail target (`tail target δ` below maps one to
 // the other along the same continuum).
 // =========================================================================
 
-/// §12.4: δ(hint) = 0.5/ζ ⇔ ζ = 0.5/δ. ζ is the hint's tail-loss scale
+/// §4.1: δ(hint) = 0.5/ζ ⇔ ζ = 0.5/δ. ζ is the hint's tail-loss scale
 /// {0.01 Realtime, 1 Auto, 100 Bulk} ⇒ δ ∈ {50, 0.5, 0.005}. Involution.
 ///
-/// RE-EXPORT (2026-09-08, §16.81): the body moved DOWN into
-/// `raptorpath-math::zeta_of_delta`, which the ENGINE now reads too — the
-/// dial has exactly one implementation for the L0 model and the L1 machine.
-/// Numerically identical (`0.5 / d.max(1e-12)`, same expression, same
-/// anchor constant), so no golden fingerprint moves.
+/// Re-export of `raptorpath-math::zeta_of_delta`, which the engine reads
+/// too: the dial has one implementation for the L0 model and the engine.
 #[wasm_bindgen]
 pub fn zeta_of_delta(delta_price: f64) -> f64 {
     math::zeta_of_delta(delta_price)
 }
 
-/// §16.26: the horizon coefficient b of the span law's own deadline,
-/// b(hint) = ½/1/2 at Realtime/Auto/Bulk. §12.4 fixes only the three hint
-/// presets; the visualizer's continuum log-interpolates b through those
-/// anchors — b(δ) = 2^(−log₁₀(2δ)/2), clamped to [½, 2] — which is EXACT
-/// at all three presets (δ = 50 → ½, 0.5 → 1, 0.005 → 2). Documented as a
-/// visualizer interpolation, not a paper formula, in the model-vs-engine
-/// table.
+/// §5.4: the horizon coefficient b of the span law's own deadline,
+/// b = ½/1/2 at Realtime/Auto/Bulk, log-linear between them:
+/// b(δ) = 2^(−log₁₀(2δ)/2), clamped to [½, 2] — exact at all three presets
+/// (δ = 50 → ½, 0.5 → 1, 0.005 → 2).
 ///
-/// RE-EXPORT (2026-09-08, §16.81): the body moved DOWN into
-/// `raptorpath-math::span_horizon_b`, and `raptorpath::net::delta_budget_b`
-/// — which was a three-arm `match` on the hint — now reads THAT function of
-/// `delta_price(hint)`. The engine and the visualizer are one law again, and
-/// this is no longer "a visualizer interpolation": it is the shipped b.
-/// `d/0.5` and `2.0*d` are the same f64 scaling, so no golden moves.
+/// Re-export of `raptorpath-math::span_horizon_b`, the same function the
+/// engine reads through `net::delta_budget_b_of`: the engine and the
+/// visualizer share one b.
 #[wasm_bindgen]
 pub fn span_horizon_b(delta_price: f64) -> f64 {
     math::span_horizon_b(delta_price)
 }
 
-/// §16.26/§16.20.3: the recovery deadline D(δ) = min(b(δ)·RTprop, 2·RTprop)
+/// §5.3/§5.6: the recovery deadline D(δ) = min(b(δ)·RTprop, 2·RTprop)
 /// — past D, recovery belongs to ARQ/deficit anyway; a repair or retransmit
 /// fired at age > D lands after the receiver's own δ-horizon give-up.
 #[wasm_bindgen]
@@ -189,38 +180,38 @@ pub fn span_deadline_d(delta_price: f64, rtprop: f64) -> f64 {
     (span_horizon_b(delta_price) * rtprop).min(2.0 * rtprop)
 }
 
-/// §16.20.3: the coding quantum / span width A* = clamp(rate·D, 1, W) —
+/// §5.3: the coding quantum / span width A* = clamp(rate·D, 1, W) —
 /// the recovery budget in symbols N_δ = rate·D, clamped into the window.
 #[wasm_bindgen]
 pub fn span_width_a_star(rate: f64, d: f64, w: f64) -> f64 {
     (rate * d).clamp(1.0, w.max(1.0))
 }
 
-/// §16.20.3: pipeline depth M* = ceil(rate·2·RTprop / A*_q) + 1 (A*_q =
-/// A* quantized to the retained grid), clamped to [2, 32] — the cold-start
-/// floor / memory ceiling named in the §16.20.5 constants audit
-/// (GEN_PIPE_MAX_GENS). Bulk's §16.17 derived depth is the large-δ limit.
+/// §5.3: pipeline depth M* = ceil(rate·2·RTprop / A*_q) + 1 (A*_q =
+/// A* quantized to the retained grid), clamped to [2, 32] — the declared
+/// cold-start floor / memory ceiling (GEN_PIPE_MAX_GENS). Bulk's derived
+/// depth is the large-δ limit.
 #[wasm_bindgen]
 pub fn pipeline_depth_m_star(rate: f64, rtprop: f64, a_star_q: f64) -> f64 {
     ((rate * 2.0 * rtprop / a_star_q.max(1.0)).ceil() + 1.0).clamp(2.0, 32.0)
 }
 
-/// §16.20.3 / ADR-0064: the trailing offset Δ = clamp(⌈rate·J⌉, 1, 64)
-/// (J = jitter anchor): the span must END Δ behind the send frontier so
-/// every member has LANDED when the repair does — a repair is solvable AT
-/// ARRIVAL iff it trails the frontier by Δ (the leading-window emission was
-/// the measured −22 pp defect). Floor 1 = the FIFO-per-path minimum.
+/// §5.3 / ADR-0064: the trailing offset Δ = clamp(⌈rate·J⌉, 1, 64)
+/// (J = jitter anchor): the span must end Δ behind the send frontier so
+/// every member has landed when the repair does — a repair is solvable at
+/// arrival iff it trails the frontier by Δ (a leading-window emission is
+/// not). Floor 1 = the FIFO-per-path minimum.
 #[wasm_bindgen]
 pub fn trailing_offset_delta(rate: f64, jitter: f64) -> f64 {
     (rate * jitter.max(0.0)).ceil().clamp(1.0, 64.0)
 }
 
-/// §16.26: the derived shed budget — the residual the design already
+/// §5.6: the derived shed budget — the residual the design already
 /// concedes past in-window FEC at the live operating point:
 ///   1−ρ = ε̂ · (1 − P_fec(r_live, ε̂, A*, σ²_burst)).
-/// A hole is SHEDDABLE iff its projected delivery exceeds D(δ) AND
+/// A hole is sheddable iff its projected delivery exceeds D(δ) and
 /// cumulative shed stays within this budget; past-budget candidates are
-/// SERVED — ρ wins over δ. On the ρ = 1 RETAIN contract the law is
+/// served — ρ wins over δ. On the ρ = 1 retain contract the law is
 /// compiled out entirely.
 #[wasm_bindgen]
 pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst: f64) -> f64 {
@@ -229,25 +220,24 @@ pub fn shed_budget_residual(eps_hat: f64, r_live: f64, a_star: f64, sigma2_burst
 }
 
 /// The visualizer's δ-continuum → r*-margin tail-target mapping: a
-/// monotone log-log interpolation through the paper's three hint anchor
-/// points (δ_price, tail target): Realtime (50, 1e-7), Auto (0.5, 1e-5),
-/// Bulk (0.005, 0.05 — the late-is-fine class, §14.26's BULK tail budget;
-/// tail ≥ ε ⇒ the §8.4 continuous glide takes r* to 0 = pure ARQ, the
-/// Bulk limit reached with no mode bit). §12.4 fixes only the presets;
-/// the interpolation between them is the visualizer's documented choice.
-/// Bulkness β(δ) ∈ [0, 1]: the log-position of the δ price between the
-/// Auto (β = 0) and Bulk (β = 1) anchors. This is the continuum's ONLY
+/// monotone log-log interpolation through three hint anchor points
+/// (δ_price, tail target): Realtime (50, 1e-7), Auto (0.5, 1e-5),
+/// Bulk (0.005, 0.05 — the late-is-fine class, BULK_TAIL_BUDGET of §4.5;
+/// tail ≥ ε ⇒ the §4.2 continuous glide takes r* to 0 = pure ARQ, the
+/// Bulk limit reached with no mode bit). §4.1 fixes only the presets;
+/// the interpolation between them is the visualizer's documented choice,
+/// and its Bulk anchor differs from the engine's t_tail (§11.3; bounded by
+/// `test_sim_engine_tail_anchor_divergence_is_bounded`).
+/// Bulkness β(δ) ∈ [0, 1] (§4.5): the log-position of the δ price between
+/// the Auto (β = 0) and Bulk (β = 1) anchors. This is the continuum's only
 /// shaping parameter: the sim's effective tail target cross-fades
-/// (log-blend) from the interpolated anchor into §14.26's late-is-fine
-/// form (target tracks p̂ with the χ-glide) as β → 1 — one continuous
+/// (log-blend) from the interpolated anchor into §4.5's late-is-fine
+/// form (target tracks p̂ with the §4.6 χ-glide) as β → 1 — one continuous
 /// law, no hint branch, exact at all three presets.
 ///
-/// RE-EXPORT (2026-09-08, §16.81/§16.82): the body moved DOWN into
-/// `raptorpath-math::bulkness_of_delta`, which the ENGINE's rate law now
-/// reads as the mixing weight of `r(β) = (1−β)·r_anchor + β·r_late-is-fine`
-/// — the same formula this sim has carried since the continuum landed, now
-/// shipped in `control/fec_rate.rs` in place of the `hint == Bulk` swap.
-/// Same expression, same anchors, so no golden moves.
+/// Re-export of `raptorpath-math::bulkness_of_delta`, which the engine's
+/// rate law reads as the mixing weight of
+/// `r(β) = (1−β)·r_anchor + β·r_late-is-fine` (`control/fec_rate.rs`).
 #[wasm_bindgen]
 pub fn bulkness_of_delta(delta_price: f64) -> f64 {
     math::bulkness_of_delta(delta_price)
@@ -293,20 +283,21 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 }
 
 // =========================================================================
-// Simulation engine — runs the REAL improved algorithm:
-//   - rate from the SHARED production formula (math::controller_rate):
+// Simulation engine — runs the real algorithm:
+//   - rate from the shared production formula (math::controller_rate):
 //     continuous z_{delta/eps} margin, hint tail targets, Bulk pure-ARQ,
-//     burst B/T term, saturation cap (paper 8.4 / 12.5 / 14.21)
-//   - correction preemption over new source (paper C.1)
-//   - per-slot repair/retransmit mix by P_lost (paper 5.4)
+//     burst B/T term, saturation cap (§4.2 / §4.4 / §4.5)
+//   - correction preemption over new source
+//   - per-slot repair/retransmit mix by P_lost (§3.2, §3.4)
 //   - honest feedback: the estimator learns outcomes one RTT after send,
-//     fed with the TRUE loss pattern (record_counts + record_symbol)
+//     fed with the true loss pattern (record_counts + record_symbol)
 //   - completion-tail FEC: for Bulk, the continuous completion-exposure
-//     ramp (paper 14.26 — the sim KNOWS T_rem, so chi is fed per tick);
-//     for the other hints, the one-shot end-of-stream burst (paper 14.25,
-//     exact 8.7 DP), which the chi ramp subsumes as its limiting case
+//     ramp (§4.6 — the sim knows T_rem, so chi is fed per tick); for the
+//     other hints, a source-position completion ramp over the final window
+//     (§3.3 end-of-stream truncation; budget from the exact §4.7 DP), of
+//     which the one-shot end-of-stream burst is the limiting case
 //
-// MULTIPATH (paper Section 16, Reliable Windowed Multipath — L0 prototype):
+// Multipath (§5.5, Reliable Windowed Multipath — L0 prototype):
 // the Simulation carries N independent GE channels (own calibrated state
 // array, own seed, own capacity, own RTT/feedback delay, own estimator)
 // POURING INTO ONE shared reliable window (one RlcEncoder/RlcDecoder).
@@ -314,28 +305,28 @@ pub fn solve_rho_from_r_delta(epsilon: f64, q: f64, window_size: f64, sigma2_bur
 // per-path goodput g_i = capacity_i * (1 - eps_hat_i) (estimated, not true —
 // the sender cannot see the channel; smooth weighted round-robin);
 // repairs/retransmits go preferentially to the highest-goodput path with a
-// spare slot (the Section 13.8 preference), and a symbol lost on path i may
+// spare slot (a simplification of the §5.7 placement law), and a symbol lost on path i may
 // be repaired via ANY path — the in-order frontier advances when the window
-// prefix decodes from any combination of arrivals (Section 16.3: frontier
+// prefix decodes from any combination of arrivals (§5.5: frontier
 // rate -> sum of g_i). Controller inputs (p_upper, sigma2, SRTT, ...) are
 // capacity-weighted aggregates of the per-path estimators: the window sees
 // a mixture channel. N = 1 reduces exactly to the single-path simulation
 // (bit-identical: same seed derivation, same RNG stream, same slot order).
 //
-// CURRENT-ERA LAWS modeled (visualizer refresh 2026-07-28, main 7a3aff6):
-//   - per-path recovery clocks (wall #8, §16.24): RFC 9002 loss detection
+// Laws modeled:
+//   - per-path recovery clocks (wall #8, §7.1): RFC 9002 loss detection
 //     generalized per path — a hole's retransmit clock is its OWN path's
 //     RTT from send (no speculative pre-report firing); retransmits inherit
 //     the clock of the path they ride; the phantom_held/phantom_avoided
 //     counters show the spurious candidates a global clock would have fired
-//   - the path-scaled outstanding pool (wall #7, §16.19): the retention
+//   - the path-scaled outstanding pool (wall #7, §6.1): the retention
 //     store is STORE_PER_PATH × n_paths; a full pool stalls new source
 //     (the Little's-law wall, visible when cap·RTT is cranked past it)
-//   - SACK-clocked store release (wall #9, §16.25): slots free on the
+//   - SACK-clocked store release (wall #9, §6.3): slots free on the
 //     selective ack (or on recovery of a loss), NOT on the cumulative
 //     frontier — the frontier-clocked occupancy is kept as a live
 //     counterfactual readout
-//   - the δ continuum (§16.20.3/§16.26/§12.4): the span-law formulas
+//   - the δ continuum (§5.3/§5.6/§4.1): the span-law formulas
 //     (A*, M*, D, Δ, shed budget) are exported above as pure functions;
 //     the sim itself is driven along the continuum via the "custom" hint
 //     with sim_tail_target_of_delta(δ) — no mode bit anywhere
@@ -352,7 +343,7 @@ const BASE_TAIL_TARGET: f64 = 1e-5;
 const CODEC_OVERHEAD_RLC: f64 = 0.004;
 const MAX_OVERHEAD: f64 = 0.5;
 const TICK_SECS: f64 = 0.001;
-/// Path-scaled retention-store pool (wall #7, §16.19/§16.29): the
+/// Path-scaled retention-store pool (wall #7, §6.1): the
 /// outstanding pool is a Little's-law wall when it is a per-TRANSFER
 /// constant; the shipped law scales it per path (production knee ≈ 2048
 /// symbols/path). Sim scale: 512/path against the 2000-symbol transfer —
@@ -360,7 +351,7 @@ const TICK_SECS: f64 = 0.001;
 /// cranked past it (the wall made visible on the RTT slider).
 const STORE_PER_PATH: u32 = 512;
 
-/// Per-path state (paper Section 16): an independent GE channel with its own
+/// Per-path state (§5.5): an independent GE channel with its own
 /// capacity, RTT (feedback delay), estimator feed and traffic counters.
 struct PathState {
     eps: f64,
@@ -376,7 +367,7 @@ struct PathState {
     /// Wire outcomes awaiting THIS path's ACK round-trip:
     /// (send_tick, arrived, holds_store_slot). The third flag marks SOURCE
     /// sends, whose retention-store slot is released when this entry pops
-    /// with arrived = true — the SACK-clocked release (§16.25): the slot
+    /// with arrived = true — the SACK-clocked release (§6.3): the slot
     /// frees on the selective ack, NOT on the cumulative frontier.
     feedback_queue: std::collections::VecDeque<(u32, bool, bool)>,
     last_flush_tick: u32,
@@ -416,23 +407,23 @@ pub struct Simulation {
     tail_target: f64,
     /// Continuum bulkness β ∈ [0, 1] (0 for every non-"continuum" hint):
     /// the per-tick effective tail target log-blends from `tail_target`
-    /// (β = 0) into §14.26's late-is-fine form p̂ + (0.05 − p̂)·χ (β = 1)
-    /// — see `continuum_tail`. ONE law, continuous in δ, no mode bit.
+    /// (β = 0) into §4.5's late-is-fine form p̂ + (0.05 − p̂)·χ (β = 1)
+    /// — see `continuum_tail`. One law, continuous in δ, no mode bit.
     bulkness: f64,
     fixed_r: Option<f64>,
-    /// Ablation-only: revert Bulk to the pre-P6 mapping (delta_eff =
+    /// Ablation-only: revert Bulk to the earlier mapping (delta_eff =
     /// min(0.1, p_hat) + one-shot tail burst). Never exposed to JS; set
     /// directly by native tests to isolate the completion-exposure change.
     legacy_bulk_delta: bool,
-    /// Ablation-only (paper 14.29): revert NON-Bulk hints to the pre-14.29
-    /// one-shot end-of-stream burst (disabling the continuous completion
-    /// ramp), to isolate the taper-truncation fix. Never exposed to JS.
+    /// Ablation-only (§4.6): revert non-Bulk hints to the one-shot
+    /// end-of-stream burst (disabling the continuous completion ramp), to
+    /// isolate the taper-truncation remedy. Never exposed to JS.
     legacy_tail_burst: bool,
     /// Reliability target (rho). Below 1.0, losses older than T_cut are
-    /// given up (paper 6.1 age eviction) — the third triangle corner.
+    /// given up (§3.5 age-based give-up) — the third triangle corner.
     rho: f64,
     given_up: u32,
-    /// Seqs the receiver has pruned (paper 6.2): late data for them is
+    /// Seqs the receiver has pruned: late data for them is
     /// discarded, not delivered.
     given_up_seqs: std::collections::BTreeSet<u64>,
     /// Send tick per source seq (for delivery-latency measurement).
@@ -441,8 +432,8 @@ pub struct Simulation {
     /// (recovery_tick - send_tick) + one-way propagation.
     delivered_lat_ms: Vec<f64>,
     /// Delivery latency (ms) indexed BY SOURCE SEQ (NaN until delivered).
-    /// Used to compare last-window vs mid-stream tail latency (paper 14.29:
-    /// the end-of-stream reliability cliff must vanish).
+    /// Used to compare last-window vs mid-stream tail latency (§3.3: the
+    /// end-of-stream reliability cliff must vanish).
     lat_by_seq: Vec<f64>,
     /// RFC 3550-style smoothed jitter over successive delivery latencies:
     /// J += (|D| - J) / 16.
@@ -469,7 +460,7 @@ pub struct Simulation {
     // Rate state
     rate: f64,
     debt: f64,
-    /// Last completion-exposure chi (paper 14.29): the Stieltjes metering of
+    /// Last completion-exposure chi (§4.6): the Stieltjes metering of
     /// the completion-tail budget accrues B_tail x (chi - prev_chi).
     prev_completion_chi: f64,
 
@@ -479,11 +470,11 @@ pub struct Simulation {
     lost_pending: u32,
     last_src: u32, last_fec: u32, last_arq: u32, last_lost: u32,
 
-    // --- Retention-store model (walls #7/#9; §16.19, §16.25) ---
+    // --- Retention-store model (walls #7/#9; §6.1, §6.3) ---
     /// Slots held by source symbols: taken at send, released on SACK
     /// (arrival ack pops one path-RTT later) or on recovery/give-up of a
-    /// lost symbol. This is the SACK-clocked law (§16.25, shipped
-    /// DEFAULT ON): SACKed-but-not-cumulative symbols do NOT hold slots.
+    /// lost symbol. This is the SACK-clocked law (§6.3, the shipped
+    /// default): SACKed-but-not-cumulative symbols do not hold slots.
     store_occupancy: u32,
     /// Source slots skipped because the path-scaled pool was full
     /// (STORE_PER_PATH × n_paths) — the wall-#7 Little's-law stall,
@@ -493,13 +484,13 @@ pub struct Simulation {
     /// source seq) — the cumulative frontier.
     frontier: u32,
     /// The frontier as the SENDER knows it (one aggregate RTT late):
-    /// what a frontier-clocked store (wall #9, the legacy law) would
-    /// release against. occupancy_frontier = next_seq − frontier_acked
-    /// is the counterfactual the §16.25 gauge compares against.
+    /// what a frontier-clocked store (wall #9) would release against.
+    /// occupancy_frontier = next_seq − frontier_acked is the
+    /// counterfactual the §6.3 gauge compares against.
     frontier_acked: u32,
     frontier_hist: std::collections::VecDeque<(u32, u32)>,
 
-    // --- Per-path recovery clocks (wall #8; §16.24, RFC 9002 per path) ---
+    // --- Per-path recovery clocks (wall #8; §7.1, RFC 9002 per path) ---
     /// Holes currently held by their OWN path's RTT clock although the
     /// aggregate (global) clock has already expired — the retransmits a
     /// global-clock recovery plane would have fired spuriously.
@@ -577,7 +568,7 @@ impl Simulation {
         lost
     }
 
-    // --- Capacity-weighted aggregates over paths (paper 16.3: the shared
+    // --- Capacity-weighted aggregates over paths (§5.5: the shared
     // window sees a mixture channel; each path contributes in proportion to
     // its share of the wire). For N = 1 every aggregate reduces EXACTLY to
     // the single path's value (weight = 1.0, x * 1.0 == x in IEEE754).
@@ -611,8 +602,9 @@ impl Simulation {
     }
 
     /// Highest-estimated-goodput path with a spare slot this tick: repairs
-    /// and retransmits prefer the best path (the Section 13.8 preference —
-    /// corrections ride the path most likely to deliver them).
+    /// and retransmits prefer the best path (a simplification of the §5.7
+    /// placement law — corrections ride the path most likely to deliver
+    /// them).
     fn best_correction_path(&self, free: &[u32]) -> usize {
         let mut best = 0usize;
         let mut bg = f64::NEG_INFINITY;
@@ -657,7 +649,7 @@ impl Simulation {
         best
     }
 
-    /// Completion exposure chi (paper 14.26): the sim KNOWS the transfer
+    /// Completion exposure chi (§4.6): the sim knows the transfer
     /// length, so T_rem = remaining source symbols / send rate. The send
     /// rate is approximated by the wire capacity (Bulk mid-stream is
     /// nearly all source). Computed for EVERY hint — mid-stream it is 0, and
@@ -668,7 +660,7 @@ impl Simulation {
         math::completion_exposure(t_rem_secs, self.agg_srtt(), self.agg_rttvar())
     }
 
-    /// Bulk's chi for the delta glide (paper 14.26): only Bulk maps chi into
+    /// Bulk's chi for the delta glide (§4.6): only Bulk maps chi into
     /// delta_eff. The legacy-ablation arm keeps chi = 0 (old one-shot burst).
     fn completion_chi(&self) -> f64 {
         if !self.hint_bulk || self.legacy_bulk_delta {
@@ -677,15 +669,15 @@ impl Simulation {
         self.completion_chi_raw()
     }
 
-    /// Completion-tail debt increment for NON-Bulk hints (paper Section
-    /// 14.29: the taper-truncation completion term). Near a known
-    /// end-of-stream the final window's symbols never receive their FUTURE
-    /// repairs — the taper integral is truncated (Section 4.2 note) — so
-    /// their late-window coverage is cut and tail losses fall to serial ARQ.
+    /// Completion-tail debt increment for non-Bulk hints (the
+    /// taper-truncation completion term, §3.3 / §4.6). Near a known
+    /// end-of-stream the final window's symbols never receive their future
+    /// repairs — the taper integral is truncated (§3.3) — so their
+    /// late-window coverage is cut and tail losses fall to serial ARQ.
     ///
-    /// The fix delivers the SAME budget as the 14.25 one-shot burst,
+    /// The remedy delivers the same budget as the one-shot burst,
     /// B_tail = r_tail x W repairs (r_tail = the exact-DP rate meeting
-    /// delta_hint on the final window, Section 8.7), but METERED OUT
+    /// delta_hint on the final window, §4.7), but metered out
     /// continuously as a Stieltjes measure over a completion kernel chi_trunc:
     /// each source symbol accrues B_tail x d(chi_trunc). Since chi_trunc rises
     /// monotonically 0 -> 1 as the window empties, the total accrued is
@@ -725,16 +717,16 @@ impl Simulation {
         let (pg, qg) = self.agg_ge_params();
         let r_tail = math::compute_r_star_exact(pg, qg, self.w as usize, self.tail_target);
         // On the continuum the two completion mechanisms cross-fade
-        // continuously: the 14.29 ramp (the FEC side's completion law)
-        // scales by (1 − β) as the 14.26 χ-glide — which lives inside the
-        // blended tail target — takes over toward the Bulk end. At β = 1
-        // the glide alone covers the tail (no double-pay); at β = 0 the
-        // ramp is whole, exactly as before.
+        // continuously: the source-position ramp (the FEC side's completion
+        // law) scales by (1 − β) as the §4.6 χ-glide — which lives inside
+        // the blended tail target — takes over toward the Bulk end. At
+        // β = 1 the glide alone covers the tail (no double-pay); at β = 0
+        // the ramp is whole.
         r_tail * w * dchi * (1.0 - self.bulkness)
     }
 
     /// The continuum's effective tail target — ONE law, no branch:
-    /// log-blend of the anchor tail with §14.26's late-is-fine form
+    /// log-blend of the anchor tail with §4.5's late-is-fine form
     /// p̂ + (BULK_TAIL_BUDGET − p̂)·χ, weighted by β. β = 0 ⇒ the anchor
     /// exactly (the Auto/Realtime side); β = 1 ⇒ tracks p̂ exactly
     /// (r = 0 mid-stream at ANY ε, the χ-glide covering the stream
@@ -841,7 +833,7 @@ impl Simulation {
             p_upper,
             sigma2,
             mean_burst,
-            // #46 (paper 8.4.1): the sim aggregates several per-path
+            // Burst-tail provisioning (§4.3): the sim aggregates several per-path
             // estimators and a capacity-weighted mixture of mass QUANTILES
             // is not defined (unlike the moment aggregates above), so the
             // sim does not feed the window-mass tail term yet — it stays
@@ -857,18 +849,18 @@ impl Simulation {
             tail_target,
             bulk_late_is_fine,
             completion_exposure,
-            // Paper 14.28: the sim's payload IS the transfer (file-transfer
+            // §4.4: the sim's payload is the transfer (file-transfer
             // semantics) — its delivery latency does not feed back into its
             // own throughput, so the inner-feedback repair floor stays off
             // and mid-stream Bulk remains pure ARQ (production defaults to
-            // 0 too after the negative L1 C2/C3 ablation).
+            // 0 too).
             inner_feedback: 0.0,
             saturation_cap,
             max_overhead: MAX_OVERHEAD,
         }
     }
 
-    /// Rate from the SHARED production formula — identical code to the
+    /// Rate from the shared production formula — identical code to the
     /// real transport's FecRateController (via raptorpath-math).
     fn controller_rate_now(&self) -> f64 {
         if let Some(r) = self.fixed_r {
@@ -878,15 +870,15 @@ impl Simulation {
     }
 
     /// The rate law, one path for every hint. For the continuum (β > 0)
-    /// the rate is a CONVEX MIX of the two laws' outputs — BOTH terms
-    /// computed every tick at every dial position, no branch, no mode
-    /// bit:  r(β) = (1−β)·r_anchor + β·r_late-is-fine.
+    /// the rate is a convex mix of the two laws' outputs (§4.5) — both
+    /// terms computed every tick at every dial position, no branch, no
+    /// mode bit:  r(β) = (1−β)·r_anchor + β·r_late-is-fine.
     /// β = 0 is exactly the custom/anchor arm; β = 1 exactly the bulk
     /// late-is-fine arm (χ-gated, r = 0 mid-stream at any ε — including
     /// the cold start, which the anchor side pays and the mix therefore
-    /// fades out CONTINUOUSLY toward Bulk). A tail-domain blend was tried
-    /// first and rejected: r*(δ) is near-binary in δ vs the cold-start
-    /// ε̂, so it stepped at the preset — the seam this design removes.
+    /// fades out continuously toward Bulk). A tail-domain blend would step
+    /// at the preset instead: r*(δ) is near-binary in δ against the
+    /// cold-start ε̂.
     fn rate_now(&self, saturation_cap: bool) -> f64 {
         if self.bulkness > 0.0 {
             let anchor = math::controller_rate(&self.rate_inputs_for(
@@ -975,7 +967,7 @@ impl Simulation {
                     self.lost_pending = self.lost_pending.saturating_sub(1);
                     // A lost symbol's store slot is released on recovery
                     // (its SACK never came — the slot was held for exactly
-                    // the recovery span; §16.25 semantics).
+                    // the recovery span; §6.3 semantics).
                     self.store_occupancy = self.store_occupancy.saturating_sub(1);
                 }
             }
@@ -1000,7 +992,7 @@ impl Simulation {
         )
     }
 
-    /// Multipath constructor (paper Section 16, RWM at L0): N independent GE
+    /// Multipath constructor (§5.5, RWM at L0): N independent GE
     /// channels (per-path eps / q / RTT / capacity in slots-per-tick) pouring
     /// into ONE shared reliable window. `Simulation::new(e,q,rtt,w,...)` is
     /// exactly `multipath([e],[q],[rtt],[4],w,...)` — the single-path
@@ -1023,10 +1015,10 @@ impl Simulation {
         // "continuum" is the visualizer dial's ONE code path for the whole
         // δ range: `custom_delta` carries the δ PRICE (0.005..50), the base
         // tail is the anchor interpolation, and β = bulkness_of_delta(δ)
-        // cross-fades the EFFECTIVE tail per tick into §14.26's
+        // cross-fades the effective tail per tick into §4.5's
         // late-is-fine form (`continuum_tail`). No hint branch exists
-        // downstream of construction — a threshold-keyed hint flip at a
-        // preset was a (user-caught) hidden mode switch, twice.
+        // downstream of construction: a threshold-keyed hint flip at a
+        // preset would be a hidden mode switch.
         let (tail_target, hint_bulk, bulkness) = match hint.as_str() {
             "bulk" => ((BASE_TAIL_TARGET * 100.0).clamp(1e-9, 0.1), true, 0.0),
             "realtime" => ((BASE_TAIL_TARGET * 0.01).clamp(1e-9, 0.1), false, 0.0),
@@ -1043,9 +1035,9 @@ impl Simulation {
         };
         let fixed_r = if hint == "fixed" { Some(fixed_r.unwrap_or(0.1)) } else { None };
         // The ρ dial composes with the δ price — the triangle's two dials
-        // are INDEPENDENT (§1.4): 'bulk' honors custom_rho exactly like
+        // are independent (§1.2): 'bulk' honors custom_rho exactly like
         // 'custom', so a Bulk-priced transfer may still declare ρ < 1
-        // (§6.1 T_cut give-up) with the late-is-fine controller unchanged.
+        // (§3.5 T_cut give-up) with the late-is-fine controller unchanged.
         // Gating ρ on the hint would be a hidden mode switch keyed on ρ.
         // None defaults to 1.0 — behavior-identical for every existing
         // caller (the shipped engine Bulk hint carries ρ = 1).
@@ -1062,7 +1054,7 @@ impl Simulation {
             let rtt = rtt_ms[i];
             let cap = capacity[i].clamp(1, 16);
             let p = if e < 1.0 { e * qq / (1.0 - e) } else { qq };
-            // Path 0 keeps EXACTLY the historical seed (i * salt == 0);
+            // Path 0 keeps exactly the single-path seed (i * salt == 0);
             // sibling paths get decorrelated streams even with identical
             // channel parameters (the symmetric 2-path case).
             let seed = e.to_bits() ^ qq.to_bits().rotate_left(32)
@@ -1155,7 +1147,7 @@ impl Simulation {
 
         // --- Feedback path: outcomes become known one RTT after send, PER
         // PATH (each path has its own ACK delay and its own estimator). Fed
-        // with the TRUE per-symbol pattern (paper 7.5); flushed once per
+        // with the true per-symbol pattern (§2.6); flushed once per
         // that path's RTT — each estimator honestly lags its own path.
         let mut sack_released = 0u32;
         for pi in 0..self.paths.len() {
@@ -1170,7 +1162,7 @@ impl Simulation {
                 p.pending_sent += 1;
                 if ok {
                     p.pending_ok += 1;
-                    // SACK-clocked store release (§16.25, wall #9): the
+                    // SACK-clocked store release (§6.3, wall #9): the
                     // slot frees the moment THIS path's selective ack
                     // lands — not when the cumulative frontier passes it.
                     if src_slot {
@@ -1191,7 +1183,7 @@ impl Simulation {
         self.rate = self.controller_rate_now();
 
         // --- Wire slots ---
-        // Per-slot priority (paper C.1 + 5.4): (1) a P_lost-confirmed
+        // Per-slot priority (§3.4): (1) a P_lost-confirmed
         // retransmit — ARQ is driven by loss confidence, INDEPENDENT of the
         // FEC budget (Bulk's r ~ 0 must not delay recovery to end of
         // stream); (2) a repair when the taper debt says one is due;
@@ -1199,14 +1191,14 @@ impl Simulation {
         // single symbol waiting out its retry timer cannot head-of-line
         // stall the drain.
         //
-        // MULTIPATH (paper 16.3): the tick's slot budget is the union of all
+        // Multipath (§5.5): the tick's slot budget is the union of all
         // paths' capacities. Each action then picks its carrying path:
         // corrections (repairs AND retransmits — a symbol lost on path i may
         // be resent on any path j) ride the highest-goodput path with a
-        // spare slot (13.8 preference); source symbols are striped across
-        // spare-slot paths proportional to ESTIMATED goodput g_i (smooth
-        // WRR). With N = 1 every choice is path 0 and the loop is exactly
-        // the historical single-path loop.
+        // spare slot (cf. the §5.7 placement law); source symbols are
+        // striped across spare-slot paths proportional to estimated goodput
+        // g_i (smooth WRR). With N = 1 every choice is path 0 and the loop
+        // is exactly the single-path loop.
         let mut free: Vec<u32> = self.paths.iter().map(|p| p.capacity).collect();
         let total_slots: u32 = free.iter().sum();
         for _ in 0..total_slots {
@@ -1304,11 +1296,10 @@ impl Simulation {
                     lost_n += 1;
                 }
             } else if !self.source_done {
-                // Path-scaled outstanding pool (wall #7, §16.19): a new
+                // Path-scaled outstanding pool (wall #7, §6.1): a new
                 // source symbol needs a retention-store slot; the pool is
                 // STORE_PER_PATH × n_paths. When cap·RTT outgrows it the
-                // slot idles — the Little's-law stall the per-transfer
-                // constant pool inflicted on multipath, made visible.
+                // slot idles — the Little's-law stall, made visible.
                 if self.store_occupancy >= STORE_PER_PATH * self.paths.len() as u32 {
                     self.pool_stalls += 1;
                     continue;
@@ -1326,7 +1317,7 @@ impl Simulation {
                 }
                 let lost = self.wire_lost(dest);
                 free[dest] -= 1;
-                self.store_occupancy += 1; // slot taken at send (§16.25)
+                self.store_occupancy += 1; // slot taken at send (§6.3)
                 {
                     let p = &mut self.paths[dest];
                     p.sent += 1;
@@ -1343,13 +1334,13 @@ impl Simulation {
                     seq,
                     lost,
                     recovered: false,
-                    // Per-path recovery clock (wall #8, §16.24 / RFC 9002
+                    // Per-path recovery clock (wall #8, §7.1 / RFC 9002
                     // generalized per path): a hole may not fire before its
-                    // OWN path's RTT clock has run from the send — the loss
+                    // own path's RTT clock has run from the send — the loss
                     // report cannot exist earlier. Seeding the retx clock at
                     // the send tick makes first eligibility send + own-RTT
-                    // (the pre-§16.24 model allowed immediate, P_lost-gated
-                    // firing — the phantom-retransmit defect).
+                    // (immediate P_lost-gated firing would produce phantom
+                    // retransmits).
                     last_retx_tick: self.tick as i64,
                     path: dest,
                 });
@@ -1358,7 +1349,7 @@ impl Simulation {
                 self.cum_sent += 1;
                 // Steady-state debt accrual: r per SOURCE symbol — the
                 // aggregate correction rate is taper-shape-invariant
-                // (paper 4.2). Plus the completion-tail term (paper 14.29):
+                // (§3.3). Plus the completion-tail term (§4.6):
                 // near a known end-of-stream, B_tail x dchi extra debt refills
                 // the truncated taper integral, metering one window's worth of
                 // repairs across the exposed span (non-Bulk hints; 0
@@ -1383,14 +1374,14 @@ impl Simulation {
                 self.next_seq += 1;
                 if self.next_seq >= self.num_source {
                     self.source_done = true;
-                    // Legacy one-shot completion-tail burst (paper 14.25):
-                    // kept ONLY for the ablation arms (legacy Bulk delta, or
-                    // legacy non-Bulk tail burst) that reproduce the pre-14.29
-                    // behavior for A/B comparison. Every live hint now uses
-                    // the continuous chi-driven completion term instead — Bulk
-                    // via its delta glide (14.26), the others via the
+                    // One-shot completion-tail burst (the limiting case of
+                    // §4.6's ramp): kept only for the ablation arms (legacy
+                    // Bulk delta, or legacy non-Bulk tail burst) used for A/B
+                    // comparison. Every live hint uses the continuous
+                    // chi-driven completion term instead — Bulk via its delta
+                    // glide (§4.6), the others via the
                     // `completion_debt_increment` folded into the debt accrual
-                    // above (14.29). Firing the burst on top of either would
+                    // above (§3.3). Firing the burst on top of either would
                     // double-pay the tail budget.
                     let legacy_burst = (self.legacy_bulk_delta && self.hint_bulk)
                         || (self.legacy_tail_burst && !self.hint_bulk);
@@ -1405,7 +1396,7 @@ impl Simulation {
             }
         }
 
-        // T_cut age eviction (paper 6.1): for rho < 1.0, losses older than
+        // T_cut age eviction (§3.5, §4.10): for rho < 1.0, losses older than
         // T_cut are given up — reliability bends instead of latency.
         if self.rho < 1.0 {
             let p_up = self.agg_loss_est().clamp(1e-4, 0.99);
@@ -1423,7 +1414,7 @@ impl Simulation {
                         self.given_up += 1;
                         self.given_up_seqs.insert(sym.seq);
                         self.lost_pending = self.lost_pending.saturating_sub(1);
-                        // Give-up resolves the slot too (§16.25 semantics).
+                        // Give-up resolves the slot too (§6.3 semantics).
                         self.store_occupancy = self.store_occupancy.saturating_sub(1);
                     }
                 }
@@ -1460,10 +1451,10 @@ impl Simulation {
             self.finished = true;
         }
 
-        // --- Per-path recovery clocks (wall #8, §16.24): RFC 9002 loss
+        // --- Per-path recovery clocks (wall #8, §7.1): RFC 9002 loss
         // detection generalized per path. A hole's retransmit clock is its
-        // OWN path's RTT; a GLOBAL clock (the aggregate RTT — what the
-        // pre-fix recovery plane effectively ran) would already have fired
+        // own path's RTT; a global clock (the aggregate RTT) would already
+        // have fired
         // for slow-path holes the moment the aggregate clock expired. Count
         // the holes currently HELD by their own clock past the global one
         // (a striping gap not firing while the other path's clock runs),
@@ -1497,10 +1488,10 @@ impl Simulation {
 
         // --- Cumulative delivery frontier + its RTT-delayed acked view.
         // frontier = next undelivered source seq; frontier_acked = the
-        // frontier as the SENDER knows it (one aggregate-RTT-old), i.e.
-        // what the legacy FRONTIER-CLOCKED store (wall #9) would release
-        // against. next_seq − frontier_acked is the counterfactual
-        // occupancy the SACK-clocked gauge (§16.25) is compared with.
+        // frontier as the sender knows it (one aggregate-RTT-old), i.e.
+        // what a frontier-clocked store (wall #9) would release against.
+        // next_seq − frontier_acked is the counterfactual occupancy the
+        // SACK-clocked gauge (§6.3) is compared with.
         while (self.frontier as usize) < self.lat_by_seq.len()
             && (!self.lat_by_seq[self.frontier as usize].is_nan()
                 || self.given_up_seqs.contains(&(self.frontier as u64)))
@@ -1542,7 +1533,7 @@ impl Simulation {
         !p.channel_states.get(p.wire_idx.saturating_sub(1)).copied().unwrap_or(false)
     }
 
-    // --- Multipath accessors (paper Section 16 — RWM at L0) ---
+    // --- Multipath accessors (§5.5 — RWM at L0) ---
     pub fn get_num_paths(&self) -> usize { self.paths.len() }
     pub fn get_path_capacity(&self, i: usize) -> u32 {
         self.paths.get(i).map_or(0, |p| p.capacity)
@@ -1585,16 +1576,16 @@ impl Simulation {
 
     // --- Retention store + recovery clocks (walls #7/#8/#9) ---
     /// Path-scaled pool capacity STORE_PER_PATH × n_paths (wall #7,
-    /// §16.19: the pool scales with paths — the per-transfer constant was
-    /// the Little's-law multipath binder).
+    /// §6.1: the pool scales with paths; a per-transfer constant is a
+    /// Little's-law wall under multipath).
     pub fn get_pool_cap(&self) -> u32 {
         STORE_PER_PATH * self.paths.len() as u32
     }
-    /// Live SACK-clocked store occupancy (§16.25, the shipped law): slots
+    /// Live SACK-clocked store occupancy (§6.3, the shipped law): slots
     /// held by un-SACKed sends plus unrecovered losses only.
     pub fn get_store_occupancy(&self) -> u32 { self.store_occupancy }
-    /// Counterfactual FRONTIER-CLOCKED occupancy (wall #9, the legacy
-    /// law): everything above the sender-known cumulative frontier —
+    /// Counterfactual frontier-clocked occupancy (wall #9): everything
+    /// above the sender-known cumulative frontier —
     /// next_seq − frontier_acked. Always ≥ the SACK-clocked occupancy.
     pub fn get_store_occupancy_frontier(&self) -> u32 {
         self.next_seq.saturating_sub(self.frontier_acked)
@@ -1604,9 +1595,9 @@ impl Simulation {
     /// Receiver's contiguous delivered/given-up prefix.
     pub fn get_frontier(&self) -> u32 { self.frontier }
     /// Holes currently held by their own path's RTT clock past the global
-    /// (aggregate) clock — §16.24's suppressed spurious candidates, live.
+    /// (aggregate) clock — §7.1's suppressed spurious candidates, live.
     pub fn get_phantom_held(&self) -> u32 { self.phantom_held }
-    /// Cumulative phantom retransmits avoided by per-path clocks (§16.24).
+    /// Cumulative phantom retransmits avoided by per-path clocks (§7.1).
     pub fn get_phantom_avoided(&self) -> u32 { self.phantom_avoided }
     /// Measured AGGREGATE delivery goodput so far: decoded source symbols
     /// per tick. After completion this is the completion goodput
@@ -1616,12 +1607,12 @@ impl Simulation {
         self.cum_decoded as f64 / self.tick as f64
     }
     /// The BEST single path's TRUE goodput max_i capacity_i * (1 - eps_i)
-    /// (symbols/tick): the Section 16.2 resequencing ceiling for every
+    /// (symbols/tick): the §5.5 resequencing ceiling for every
     /// per-path-affine in-order transport on this path set.
     pub fn get_best_single_goodput(&self) -> f64 {
         self.paths.iter().map(|p| p.goodput_true()).fold(0.0, f64::max)
     }
-    /// THE Section 16 readout: measured aggregate goodput over the best
+    /// The §5.5 readout: measured aggregate goodput over the best
     /// single path's true goodput. > 1 means the shared window is
     /// delivering in-order faster than ANY single path could — the
     /// order-statistic aggregation (frontier rate -> sum g_i) made visible.
@@ -1675,9 +1666,9 @@ impl Simulation {
             }
         })
     }
-    /// Effective tail target after the hint mapping. Bulk (paper 14.26):
+    /// Effective tail target after the hint mapping. Bulk (§4.5, §4.6):
     /// the completion-exposure glide p̂ + (0.05 − p̂)·χ — equals p̂
-    /// mid-stream (pure ARQ) and the 14.25 tail budget as χ → 1.
+    /// mid-stream (pure ARQ) and BULK_TAIL_BUDGET as χ → 1.
     pub fn get_delta_eff(&self) -> f64 {
         if self.hint_bulk {
             let p = self.get_p_upper();
@@ -1689,10 +1680,10 @@ impl Simulation {
             self.tail_target
         }
     }
-    /// Live completion exposure chi (paper 14.26): 0 mid-stream, ramps to 1
+    /// Live completion exposure chi (§4.6): 0 mid-stream, ramps to 1
     /// over the final ~1.5 SRTT of the transfer. This is Bulk's wall-time
     /// glide kernel (delta_eff); non-Bulk hints refill the truncated taper
-    /// via the SOURCE-POSITION completion term (paper 14.29), a separate
+    /// via the source-position completion term (§3.3), a separate
     /// metering, so this display stays 0 for them.
     pub fn get_completion_exposure(&self) -> f64 {
         if self.bulkness > 0.0 {
@@ -1701,7 +1692,7 @@ impl Simulation {
         }
         self.completion_chi()
     }
-    /// Saturation cap for the current estimator state (paper 14.21).
+    /// Saturation cap for the current estimator state (§4.4).
     pub fn get_r_sat(&self) -> f64 {
         math::r_saturation(
             self.get_p_upper(),
@@ -1711,7 +1702,7 @@ impl Simulation {
             TICK_SECS / self.total_capacity() as f64,
         )
     }
-    /// Derived encoder window W* (paper 8.8) for the current estimator state
+    /// Derived encoder window W* (§4.8) for the current estimator state
     /// and hint tail target — the window the controller WOULD choose. The UI
     /// shows this next to the user's slider W so the tradeoff is visible:
     /// larger W thins the r* overhead margin (1/sqrt(W)) but stretches
@@ -1727,8 +1718,8 @@ impl Simulation {
         )
     }
 
-    /// Saturation pressure in [0, 1] (paper 14.21.1): the continuous
-    /// indicator that supersedes the binary CAP BINDING badge. 0 = far below
+    /// Saturation pressure in [0, 1] (§4.4): a continuous indicator of
+    /// how hard the soft cap binds. 0 = far below
     /// the cap (more FEC still helps), 0.5 = exactly at r_sat, ->1 = the cap
     /// is holding r near r_sat. Computed from the UNCAPPED request (what the
     /// hint asked for before the soft cap) vs r_sat.
@@ -1808,7 +1799,7 @@ impl Simulation {
     }
     /// Total overhead over ALL sends (steady stream AND post-stream drain):
     /// (FEC + ARQ) / source symbols, in percent. Counting only the steady
-    /// phase (as an earlier version did) undercounts, because corrections
+    /// phase would undercount, because corrections
     /// fired during the drain -- the tail-FEC burst and the final ARQ
     /// retransmits -- are real bandwidth and can push realized loss recovery
     /// below the floor's whole-transfer semantics.
@@ -1833,13 +1824,11 @@ mod tests {
     use super::*;
 
     /// N = 1 identical-behavior regression: golden fingerprints pin the
-    /// CURRENT model era. Both the legacy constructor and the multipath
-    /// constructor with one path must reproduce them EXACTLY — a refactor
+    /// current model era. Both the legacy constructor and the multipath
+    /// constructor with one path must reproduce them exactly — a refactor
     /// may not perturb single-path behavior by one tick or one symbol.
-    /// Re-captured 2026-07-28 (visualizer refresh) when the retransmit
-    /// clock moved to the per-path RFC 9002 law (§16.24: first
-    /// eligibility = send + own-path RTT; the pre-refresh model allowed
-    /// immediate P_lost-gated firing). To re-capture after a deliberate
+    /// The retransmit clock is the per-path RFC 9002 law (§7.1: first
+    /// eligibility = send + own-path RTT). To re-capture after a deliberate
     /// model change: `GOLDEN_CAPTURE=1 cargo test -p raptorpath-wasm
     /// test_multipath_n1_identical_golden -- --nocapture`.
     #[test]
@@ -1879,7 +1868,7 @@ mod tests {
         }
     }
 
-    /// Section 16 P2-analog at L0: two SYMMETRIC paths through ONE shared
+    /// §5.5 at L0: two symmetric paths through one shared
     /// window must complete ~2x faster than one path (minus the drain tail,
     /// which is RTT-bound, not capacity-bound).
     #[test]
@@ -1902,11 +1891,10 @@ mod tests {
                  (agg factor accessor: x{:.2})",
                 single.get_tick(), dual.get_tick(), factor, dual.get_aggregation_factor()
             );
-            // Gate 1.6–2.1: the drain tail is RTT-bound, and since the
-            // per-path RFC 9002 retransmit clock (§16.24 model, 2026-07-28)
-            // a drain straggler honestly costs a full own-RTT detection
-            // round — the dual run pays it on a shorter total, so the
-            // ratio sits slightly below the pre-refresh ~1.8 floor.
+            // Gate 1.6–2.1: the drain tail is RTT-bound, and under the
+            // per-path RFC 9002 retransmit clock (§7.1) a drain straggler
+            // costs a full own-RTT detection round — the dual run pays it
+            // on a shorter total, so the ratio sits somewhat below 2.
             assert!(
                 factor > 1.6 && factor <= 2.1,
                 "[{hint}] symmetric aggregation x{factor:.2} outside ~1.6-2x"
@@ -1923,7 +1911,7 @@ mod tests {
     }
 
     /// The reliability contract is CONFIGURABLE via rho on multipath too
-    /// (paper 6.1/6.2): rho < 1 gives up losses older than T_cut (counted,
+    /// (§3.5): rho < 1 gives up losses older than T_cut (counted,
     /// receiver-pruned), rho = 1 retains until acked — same triangle
     /// semantics as single-path, now across N paths.
     #[test]
@@ -1954,10 +1942,10 @@ mod tests {
         assert_eq!(full.get_cum_decoded(), full.get_num_source());
     }
 
-    /// Section 16.6 P1 at L0 (C8-like heterogeneity, scaled to sim units:
-    /// 100 Mbit/10 ms/2.6% -> cap 5, and 20 Mbit/40 ms/4.8% -> cap 1):
-    /// aggregate goodput of the shared window over BOTH paths must be
-    /// STRICTLY greater than the fast path alone — the (16.2) resequencing
+    /// §5.5 heterogeneous-cell claim at L0 (c8-like heterogeneity, scaled
+    /// to sim units: 100 Mbit/10 ms/2.6% -> cap 5, and 20 Mbit/40 ms/4.8%
+    /// -> cap 1): aggregate goodput of the shared window over both paths
+    /// must be strictly greater than the fast path alone — the §5.5 resequencing
     /// ceiling of every per-path-affine in-order transport. The expected
     /// factor is ~(g_A+g_B)/g_A ~ 1.20 at this heterogeneity.
     #[test]
@@ -2013,7 +2001,7 @@ mod tests {
         assert!(sim.get_total_fec() > 0, "Auto must send repairs");
     }
 
-    // Paper 8.8 quality check: derived W vs a fixed W = 64 across the three
+    // §4.8 quality check: derived W vs a fixed W = 64 across the three
     // reference channels. Runs the SAME simulator both ways and reports
     // overhead (FEC/source) and p99 delivery latency. Prints a table with
     // `--nocapture`; asserts the derived window never loses on overhead where
@@ -2081,8 +2069,8 @@ mod tests {
     fn test_bulk_completes_faster_than_realtime() {
         // Bulk sends ~no FEC (wire budget goes to source) and recovers via
         // P_lost-driven ARQ in parallel with the stream + tail FEC — its
-        // completion must BEAT Realtime's (which pays r ~ 20%+ of the wire
-        // for corrections). Mirrors the L0 gate result (0.163s vs 0.187s).
+        // completion must beat Realtime's (which pays r ~ 20%+ of the wire
+        // for corrections).
         let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
         let mut rt = Simulation::new(0.05, 0.5, 50, 64, "realtime".into(), None, None, None);
         while !bulk.is_finished() && bulk.get_tick() < 20_000 { bulk.step(); }
@@ -2136,12 +2124,12 @@ mod tests {
         );
     }
 
-    /// The "continuum" hint: ONE law across the whole dial, no mode bit.
+    /// The "continuum" hint: one law across the whole dial, no mode bit.
     /// The Bulk end (β = 1) reproduces late-is-fine (r = 0 mid-stream at
     /// any ε); the Realtime end (β = 0) is bit-identical to the custom
     /// arm at the same tail; ρ composes at every position; and the law is
-    /// continuous ACROSS the Bulk preset (no behavior step at δ = 0.005
-    /// vs δ just above it — the seam that was twice reintroduced).
+    /// continuous across the Bulk preset (no behavior step at δ = 0.005
+    /// vs δ just above it).
     #[test]
     fn test_continuum_one_law_across_the_dial() {
         // Bulk end: pure ARQ in the settled mid-stream at ε = 5% AND 10%
@@ -2198,9 +2186,9 @@ mod tests {
         }
         let (fec_at, fec_off) = (at.get_total_fec(), off.get_total_fec());
         // The off-preset point mixes Δβ ≈ 1.1% of the anchor law back in,
-        // so its early FEC must scale with Δβ (a few symbols), NOT step to
-        // the anchor arm's full cold-start emission (the ~115-symbol jump
-        // the tail-domain blend produced — the rejected seam).
+        // so its early FEC must scale with Δβ (a few symbols), not step to
+        // the anchor arm's full cold-start emission (the step a tail-domain
+        // blend would produce).
         assert!(
             (fec_at as i64 - fec_off as i64).abs() <= 10,
             "behavior step across the Bulk preset: fec {fec_at} vs {fec_off}"
@@ -2214,33 +2202,29 @@ mod tests {
         assert!(br.get_reliability() >= 0.90);
     }
 
-    /// **THE SIM/ENGINE TAIL-ANCHOR DIVERGENCE, BOUNDED** (CLAUDE.md: every
-    /// documented model-vs-engine divergence carries a test that BOUNDS it,
-    /// not prose that describes it). §16.82.
+    /// The sim/engine tail-anchor divergence, bounded (CLAUDE.md: every
+    /// documented model-vs-engine divergence carries a test that bounds it,
+    /// not prose that describes it). §11.3.
     ///
-    /// Three Bulk tail targets existed in three places. Two of them are
-    /// reconciled by §16.81's dial: the ENGINE's effective tail target is
-    /// now `BASE·ζ(δ)` for `BASE = 1e-5` at every point of the dial, which
-    /// is exactly what `contract_alpha`/`FecRateController` compute. The
-    /// third is this sim's own log-log interpolation through the anchor
-    /// (0.005, 0.05) — §14.26's late-is-fine budget — where the engine's
-    /// ζ-map says 1e-3. That is a DELIBERATE between-preset divergence of
-    /// the L0 model, and it is bounded here rather than unified: unifying
-    /// it would move the golden fingerprints, which is a separate,
-    /// deliberate model change (CLAUDE.md scope rule).
+    /// The engine's effective tail target is `BASE·ζ(δ)` for `BASE = 1e-5`
+    /// at every point of the dial (§4.1), which is what
+    /// `contract_alpha`/`FecRateController` compute. This sim uses its own
+    /// log-log interpolation through the anchor (0.005, 0.05) — §4.5's
+    /// late-is-fine budget — where the engine's ζ-map says 1e-3. That is a
+    /// deliberate between-preset divergence of the L0 model, bounded here
+    /// rather than unified: unifying it would move the golden fingerprints,
+    /// which is a separate, deliberate model change (CLAUDE.md scope rule).
     ///
-    /// The bound is TIGHT and stated three ways, so the divergence cannot
+    /// The bound is tight and stated three ways, so the divergence cannot
     /// grow silently:
-    ///   1. IDENTICAL (exactly 0) on the whole Realtime–Auto half:
+    ///   1. Identical (exactly 0) on the whole Realtime–Auto half:
     ///      both are slope −1 in log₁₀δ and agree at both anchors.
     ///   2. ≤ log₁₀(50) over the dial between its named points.
-    ///   3. ATTAINED at the Bulk anchor, where it IS log₁₀(0.05/1e-3).
+    ///   3. Attained at the Bulk anchor, where it is log₁₀(0.05/1e-3).
     ///
-    /// NOTE (reported, not weakened): the pre-registration named the bound
-    /// `log₁₀(50)/2`. That bound is FALSE at the Bulk anchor by
-    /// construction — the anchors differ by exactly 50×, so the smallest
-    /// true bound is log₁₀(50). Shipped with the true bound plus the two
-    /// stronger clauses above.
+    /// log₁₀(50) is the smallest true bound: the anchors differ by exactly
+    /// 50× at Bulk, so a tighter bound such as log₁₀(50)/2 is false there
+    /// by construction.
     #[test]
     fn test_sim_engine_tail_anchor_divergence_is_bounded() {
         /// The engine's `target_tail_loss` default (`config.rs`,
@@ -2288,10 +2272,10 @@ mod tests {
         );
     }
 
-    /// The math-crate port is a RE-EXPORT and not a re-derivation: the three
-    /// dial functions must reproduce the exact f64 the sim shipped before
-    /// §16.81 moved their bodies down into `raptorpath-math`. Bit-exact,
-    /// because an ulp here moves a golden fingerprint.
+    /// The three dial functions are re-exports of `raptorpath-math`, not
+    /// re-derivations: they must reproduce the exact f64 of the sim's own
+    /// closed forms below. Bit-exact, because an ulp here moves a golden
+    /// fingerprint.
     #[test]
     fn test_dial_reexports_are_bit_identical_to_the_shipped_sim_forms() {
         for i in 0..=600 {
@@ -2325,7 +2309,7 @@ mod tests {
 
     /// The ρ dial composes with the Bulk price (no hidden mode switch
     /// keyed on ρ): 'bulk' + ρ < 1 keeps the late-is-fine controller
-    /// (r = 0 mid-stream) AND the §6.1 T_cut give-up semantics.
+    /// (r = 0 mid-stream) and the §3.5 T_cut give-up semantics.
     #[test]
     fn test_bulk_composes_with_rho() {
         let mut sim = Simulation::new(
@@ -2409,11 +2393,9 @@ mod tests {
 
     #[test]
     fn test_bulk_beats_fixed_001() {
-        // P6 acceptance (paper 14.26): the old min(0.1, p_hat) mapping lost
-        // to a fixed r = 0.01 floor on completion in 20/24 grid cells
-        // (median +5%) and on overhead in 24/24 (excess overhead 2-14% vs
-        // ~0-1%) — the M1 cold-start pin at max_overhead plus the M2
-        // permanent-FEC leak. With the completion-exposure glide, Bulk must
+        // Bulk vs a fixed r = 0.01 floor (§4.6). A min(0.1, p_hat) Bulk
+        // mapping pins the cold-start rate at max_overhead (M1) and leaks
+        // permanent FEC (M2). With the completion-exposure glide, Bulk must
         // match fixed(0.01) on completion (within 5%) and beat it on
         // overhead at the representative cell.
         let mut bulk = Simulation::new(0.05, 0.5, 50, 64, "bulk".into(), None, None, None);
@@ -2436,9 +2418,9 @@ mod tests {
             bulk.get_overhead(), fixed.get_overhead()
         );
 
-        // M2 cell (eps = 0.10 >= the old 0.1 clamp): the old mapping paid
-        // permanent FEC ~ the IT floor on top of ARQ (excess overhead
-        // 8-14%); the chi glide must keep excess overhead under 2%.
+        // M2 cell (eps = 0.10 >= the min(0.1, p_hat) clamp, where that
+        // mapping pays permanent FEC ~ the IT floor on top of ARQ): the chi
+        // glide must keep excess overhead under 2%.
         let mut bulk10 = Simulation::new(0.10, 0.5, 50, 64, "bulk".into(), None, None, None);
         run_to_end(&mut bulk10);
         assert_eq!(bulk10.get_cum_decoded(), bulk10.get_num_source());
@@ -2480,10 +2462,10 @@ mod tests {
     #[test]
     fn test_ablation_p6_completion_exposure() {
         // Old mapping (delta_eff = min(0.1, p_hat) + one-shot tail burst)
-        // vs the P6 chi glide, same seeds (the channel seed derives from
+        // vs the chi glide, same seeds (the channel seed derives from
         // eps/q/rtt only). Run with --nocapture to record the deltas.
         //
-        // The rtt=150 cell is the documented horizon caveat (paper 14.26):
+        // The rtt=150 cell is the documented horizon caveat (§4.6):
         // a 2000-symbol transfer (~0.5 s) fits entirely inside the chi
         // exposure horizon (~5.5 x SRTT at 150 ms), so chi > 0 from the
         // first tick and the cold-start estimator still pins the early
@@ -2561,14 +2543,14 @@ mod tests {
 
     #[test]
     fn test_overhead_never_below_realized_floor() {
-        // The reported user bug: "overhead below the channel floor
-        // (theoretically impossible)". Two confirmed causes: (a) overhead
-        // was measured over the steady phase only, dropping the drain-phase
-        // corrections; (b) the nominal floor uses eps, but a finite run
-        // samples only a prefix of the expectation-calibrated channel, so
-        // realized loss can sit below eps. Fix: overhead counts ALL sends,
-        // and the invariant is stated against the REALIZED floor -- which is
-        // exact: decoding N source symbols requires >= N arrived symbols.
+        // Overhead never drops below the channel floor. Two ways a metric
+        // could show it doing so: (a) measuring overhead over the steady
+        // phase only drops the drain-phase corrections; (b) the nominal
+        // floor uses eps, but a finite run samples only a prefix of the
+        // expectation-calibrated channel, so realized loss can sit below
+        // eps. Hence overhead counts all sends, and the invariant is stated
+        // against the realized floor -- which is exact: decoding N source
+        // symbols requires >= N arrived symbols.
         for hint in ["bulk", "auto", "realtime", "fixed"] {
             for &eps in &[0.02f64, 0.05, 0.10, 0.15] {
                 for &q in &[0.3f64, 0.5] {
@@ -2626,7 +2608,7 @@ mod tests {
 
     #[test]
     fn test_no_end_of_stream_cliff_auto_realtime() {
-        // Paper 14.29: the taper integral is truncated for the final window's
+        // §3.3 / §4.6: the taper integral is truncated for the final window's
         // symbols (no future source symbols -> no future repair coverage), so
         // WITHOUT a completion term the last-window symbols suffer a latency
         // cliff (serial ARQ). The continuous chi-driven completion ramp
@@ -2651,10 +2633,10 @@ mod tests {
                 "{hint}: mid p99={mid_p99:.1}ms tail p99={tail_p99:.1}ms | mid mean={mid_mean:.1} tail mean={tail_mean:.1}"
             );
             // No cliff: the last window's tail must stay within ONE honest
-            // ARQ round of the mid-stream tail. Since the per-path RFC 9002
-            // retransmit clock (§16.24 model, 2026-07-28) a residual
-            // straggler costs a full own-RTT detection round — the cliff
-            // this test guards against is SERIAL multi-round ARQ (several
+            // ARQ round of the mid-stream tail. Under the per-path RFC 9002
+            // retransmit clock (§7.1) a residual straggler costs a full
+            // own-RTT detection round — the cliff this test guards against
+            // is serial multi-round ARQ (several
             // chained RTTs), which the completion ramp must prevent.
             assert!(
                 tail_p99 <= mid_p99 + 50.0 + 10.0,
@@ -2664,7 +2646,7 @@ mod tests {
         }
     }
 
-    /// §12.4 δ(hint) = 0.5/ζ: the three preset anchors, exactly.
+    /// §4.1 δ(hint) = 0.5/ζ: the three preset anchors, exactly.
     #[test]
     fn test_span_law_zeta_mapping() {
         assert!((zeta_of_delta(50.0) - 0.01).abs() < 1e-12, "Realtime ζ");
@@ -2672,7 +2654,7 @@ mod tests {
         assert!((zeta_of_delta(0.005) - 100.0).abs() < 1e-9, "Bulk ζ");
     }
 
-    /// §16.26 D(δ) = min(b·RTprop, 2·RTprop), b = ½/1/2 at the presets.
+    /// §5.3/§5.4 D(δ) = min(b·RTprop, 2·RTprop), b = ½/1/2 at the presets.
     #[test]
     fn test_span_law_deadline() {
         assert!((span_horizon_b(50.0) - 0.5).abs() < 1e-12);
@@ -2687,7 +2669,7 @@ mod tests {
         assert!((span_deadline_d(0.005, 0.1) - 0.2).abs() < 1e-9);
     }
 
-    /// §16.20.3 A* = clamp(rate·D, 1, W): the paper's voice example
+    /// §5.3 A* = clamp(rate·D, 1, W): a voice-like example
     /// (200 sym/s × 20 ms = 4), the W clamp, and the floor.
     #[test]
     fn test_span_law_a_star() {
@@ -2696,8 +2678,8 @@ mod tests {
         assert!((span_width_a_star(10.0, 0.002, 512.0) - 1.0).abs() < 1e-12, "floor 1");
     }
 
-    /// §16.20.3 M* = ceil(rate·2·RTprop/A*_q)+1, clamp [2, 32]
-    /// (§16.20.5 constants audit).
+    /// §5.3 M* = ceil(rate·2·RTprop/A*_q)+1, clamp [2, 32]
+    /// (declared constants, §5.3).
     #[test]
     fn test_span_law_m_star() {
         // bulk-like: 5000 sym/s, RTprop 100 ms, grid quantum 128:
@@ -2709,7 +2691,7 @@ mod tests {
         assert!((pipeline_depth_m_star(1e6, 0.1, 1.0) - 32.0).abs() < 1e-12);
     }
 
-    /// §16.20.3/ADR-0064 Δ = clamp(⌈rate·J⌉, 1, 64).
+    /// §5.3/ADR-0064 Δ = clamp(⌈rate·J⌉, 1, 64).
     #[test]
     fn test_span_law_trailing_offset() {
         assert!((trailing_offset_delta(200.0, 0.005) - 1.0).abs() < 1e-12);
@@ -2718,7 +2700,7 @@ mod tests {
         assert!((trailing_offset_delta(10.0, 0.0) - 1.0).abs() < 1e-12, "FIFO floor");
     }
 
-    /// §16.26 shed budget 1−ρ = ε̂·(1−P_fec): bounds and monotonicity in r.
+    /// §5.6 shed budget 1−ρ = ε̂·(1−P_fec): bounds and monotonicity in r.
     #[test]
     fn test_span_law_shed_budget() {
         assert_eq!(shed_budget_residual(0.0, 0.1, 64.0, 2.0), 0.0);
@@ -2729,7 +2711,7 @@ mod tests {
         assert!(b_hi < 0.01, "realtime-class r concedes ~nothing: {b_hi}");
     }
 
-    /// The δ-continuum tail-target interpolation hits the three §12.4
+    /// The δ-continuum tail-target interpolation hits the three §4.1
     /// preset anchors and is monotone (smaller δ price ⇒ looser tail).
     #[test]
     fn test_sim_tail_target_of_delta_anchors() {
@@ -2821,8 +2803,8 @@ mod tests {
 
     #[test]
     fn test_ablation_completion_ramp_vs_burst() {
-        // Paper 14.29: the continuous chi-driven completion ramp REPLACES the
-        // pre-14.29 one-shot end-of-stream burst for non-Bulk hints. At high
+        // §4.6: the continuous chi-driven completion ramp replaces the
+        // one-shot end-of-stream burst for non-Bulk hints. At high
         // RTT the in-flight span (symbols per RTT) exceeds W, so the burst
         // (which only covers the final window W) leaves late-stream losses
         // OUTSIDE the final window but inside the serial-recovery horizon
@@ -2848,10 +2830,10 @@ mod tests {
                 );
                 // The ramp meters the same budget continuously, so a couple
                 // of stragglers can land in ARQ where the one-shot burst
-                // heals instantly — and since the per-path RFC 9002 clock
-                // (§16.24 model, 2026-07-28) one ARQ round costs a full
-                // own-RTT. Gate: within one ARQ round of the burst arm
-                // (the 14.29 claim is "no serial multi-round cliff", not
+                // heals instantly — and under the per-path RFC 9002 clock
+                // (§7.1) one ARQ round costs a full own-RTT. Gate: within
+                // one ARQ round of the burst arm (the claim is "no serial
+                // multi-round cliff", not
                 // "beats the burst at p99 of a 64-sample window").
                 assert!(
                     ramp_tail <= burst_tail + rtt as f64 + 5.0,

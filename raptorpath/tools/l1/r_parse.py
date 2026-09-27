@@ -11,12 +11,12 @@ output is what those verdicts were read off, so they are left byte-identical.
 WHAT IT READS, AND WHY EACH FIELD IS HERE
 -----------------------------------------
 `completion_p50` — THE SCORED DIMENSION. The median of the per-run `seconds`
-    within THIS invocation. §16.82.7: *"The scored dimension is completion p50
+    within THIS invocation. The pre-registration (battery: §9.8): *"The scored dimension is completion p50
     at the two sizes, which is where the two hypotheses disagree."* The unit is
     the INVOCATION's p50 over its own objects (40 at 1.8 MB, 4 at 25 MB),
     because `H_object` is a PER-OBJECT effect at the stream tail.
 
-`mbps` / `dnf`  — THE GUARD, not the score. §16.82.7 declares the goodput leg
+`mbps` / `dnf`  — THE GUARD, not the score. The pre-registration declares the goodput leg
     `GUARD-UNDERPOWERED` at n = 8 in advance. `dnf` is counted from the summary
     object; ABORT (no summary at all) is DISTINCT from DNF and is reported as
     such — conflating them once reported `dnf = 111`.
@@ -33,7 +33,7 @@ WHAT IT READS, AND WHY EACH FIELD IS HERE
     read on BOTH arms: the control's `n=0 max=0.0000` is the two-sided half of
     the reachability claim.
 
-`fdiag_*`       — THE PRE-STATED FALSIFIER (§16.82.6). `DECODE avg` is
+`fdiag_*`       — THE PRE-STATED FALSIFIER (§9.8). `DECODE avg` is
     decode-resolved wall time and `SOURCE avg` is ARQ-resolved wall time, per
     hole (`receiver.rs:1899`). `present_at_stall`, `probe_holes` and
     `probe_buffered` ride BESIDE them because the record's "19–32 ms decodes"

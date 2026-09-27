@@ -132,7 +132,7 @@ const fixed = runSim("fixed", { fixedR: 0.15 });
 check("fixed-r completes fully", fixed.finished && fixed.decoded === fixed.numSource,
   `overhead=${fixed.overhead.toFixed(1)}%`);
 
-// --- 6. Continuous r* glides to 0 as delta -> eps (paper 8.4) ---
+// --- 6. Continuous r* glides to 0 as delta -> eps (§4.2) ---
 const rTight = api.compute_r_star_continuous(0.025, 2.9, 64, 1e-6);
 const rLoose = api.compute_r_star_continuous(0.025, 2.9, 64, 0.03);
 check("continuous r*: tight delta -> positive rate", rTight > 0.05,
@@ -141,7 +141,7 @@ check("continuous r*: delta >= eps -> 0 (pure ARQ)", rLoose === 0,
   `r(0.03)=${rLoose}`);
 
 // --- 7. Shared controller + saturation are callable and sane ---
-// (args: ..., tail_target, bulk_late_is_fine, completion_exposure (P6 chi),
+// (args: ..., tail_target, bulk_late_is_fine, completion_exposure (χ, §4.6),
 //  saturation_cap, max_overhead)
 const rate = api.controller_rate(
   0.09, 5.1, 3.3, 64, 400, 0.2, 5e-4, 0.004, 1e-7, false, 0, true, 0.5
@@ -150,9 +150,9 @@ const rsat = api.r_saturation(0.09, 5.1, 64, 0.2, 5e-4);
 check("controller_rate finite and capped", rate > 0 && rate <= rsat + 1e-12,
   `rate=${rate.toFixed(3)}, r_sat=${rsat.toFixed(3)}`);
 
-// --- 7b. Soft saturation + pressure (paper 14.21.1) ---
+// --- 7b. Soft saturation + pressure (§4.4) ---
 // soft_saturate never exceeds min(rate, r_sat); pressure is 0.5 at r_sat and
-// monotone. This is the continuous cap the CAP badge now reflects.
+// monotone. This is the continuous cap the CAP badge reflects.
 check("soft_saturate never exceeds r_sat",
   api.soft_saturate(5.0, rsat) <= rsat + 1e-12
     && api.soft_saturate(0.02, rsat) <= 0.02 + 1e-9,
@@ -174,20 +174,20 @@ check("saturation_pressure monotone (low < high)",
 const pfx = api.p_fec_exact(0.013, 0.5, 0.1, 64);
 check("exact P_fec sane", pfx > 0.9 && pfx <= 1.0, `p_fec_exact=${pfx.toFixed(4)}`);
 
-// --- 7c. THE UNIFIED SPAN LAW (paper §16.20.3, §16.26, §12.4; ADR-0064) —
+// --- 7c. The unified span law (§5.3, §5.4, §5.6, §4.1; ADR-0064) —
 // formula fidelity against the paper's stated formulas, ≥3 spot values per
 // formula, hand-computed. These are the quantities the centerpiece panel
 // animates; a drift here is a lie on screen and fails the build.
 function near(a, b, rel = 1e-9) {
   return Math.abs(a - b) <= rel * Math.max(1, Math.abs(b));
 }
-// §12.4: δ(hint) = 0.5/ζ ⇒ ζ = 0.5/δ; the three preset anchors.
+// §4.1: δ(hint) = 0.5/ζ ⇒ ζ = 0.5/δ; the three preset anchors.
 check("§12.4 ζ(δ) at the three presets",
   near(api.zeta_of_delta(50), 0.01) &&
   near(api.zeta_of_delta(0.5), 1) &&
   near(api.zeta_of_delta(0.005), 100),
   `ζ(50)=${api.zeta_of_delta(50)}, ζ(0.5)=${api.zeta_of_delta(0.5)}, ζ(0.005)=${api.zeta_of_delta(0.005)}`);
-// §16.26: b(hint) = ½/1/2 at Realtime/Auto/Bulk; D = min(b·RTprop, 2·RTprop).
+// §5.4: b(hint) = ½/1/2 at Realtime/Auto/Bulk; D = min(b·RTprop, 2·RTprop).
 check("§16.26 b(δ) anchors ½/1/2",
   near(api.span_horizon_b(50), 0.5) &&
   near(api.span_horizon_b(0.5), 1) &&
@@ -199,27 +199,27 @@ check("§16.26 D(δ) = min(b·RTprop, 2·RTprop) at RTprop=100ms",
   near(api.span_deadline_d(0.005, 0.1), 0.2) &&
   near(api.span_deadline_d(1e-6, 0.1), 0.2), // 2·RTprop cap holds below Bulk
   `D=[${api.span_deadline_d(50,0.1)}, ${api.span_deadline_d(0.5,0.1)}, ${api.span_deadline_d(0.005,0.1)}]`);
-// §16.20.3: A* = clamp(rate·D, 1, W) — incl. the paper's 200 sym/s × 20 ms
-// voice example (= 4).
+// §5.3: A* = clamp(rate·D, 1, W) — incl. a 200 sym/s × 20 ms voice-like
+// example (= 4).
 check("§16.20.3 A* = clamp(rate·D, 1, W)",
   near(api.span_width_a_star(200, 0.02, 512), 4) &&
   near(api.span_width_a_star(1000, 0.2, 64), 64) &&   // W clamp
   near(api.span_width_a_star(10, 0.002, 512), 1),     // floor 1
   `A*=[${api.span_width_a_star(200,0.02,512)}, ${api.span_width_a_star(1000,0.2,64)}, ${api.span_width_a_star(10,0.002,512)}]`);
-// §16.20.3/§16.20.5: M* = ceil(rate·2·RTprop/A*_q)+1, clamped [2, 32].
+// §5.3: M* = ceil(rate·2·RTprop/A*_q)+1, clamped [2, 32].
 check("§16.20.3 M* = ceil(rate·2RTprop/A*q)+1 clamp [2,32]",
   near(api.pipeline_depth_m_star(5000, 0.1, 128), 9) && // ceil(1000/128)+1
   near(api.pipeline_depth_m_star(200, 0.01, 4), 2) &&   // floor (depth inert)
   near(api.pipeline_depth_m_star(1e6, 0.1, 1), 32),     // memory ceiling
   `M*=[${api.pipeline_depth_m_star(5000,0.1,128)}, ${api.pipeline_depth_m_star(200,0.01,4)}, ${api.pipeline_depth_m_star(1e6,0.1,1)}]`);
-// §16.20.3/ADR-0064: Δ = clamp(⌈rate·J⌉, 1, 64).
+// §5.3/ADR-0064: Δ = clamp(⌈rate·J⌉, 1, 64).
 check("§16.20.3 Δ = clamp(⌈rate·J⌉, 1, 64)",
   near(api.trailing_offset_delta(200, 0.005), 1) &&
   near(api.trailing_offset_delta(5000, 0.003), 15) &&
   near(api.trailing_offset_delta(1e6, 1), 64) &&
   near(api.trailing_offset_delta(10, 0), 1),
   `Δ=[${api.trailing_offset_delta(200,0.005)}, ${api.trailing_offset_delta(5000,0.003)}, ${api.trailing_offset_delta(1e6,1)}]`);
-// §16.26: 1−ρ = ε̂·(1−P_fec) — bounds, ε̂=0 zero, monotone-decreasing in r.
+// §5.6: 1−ρ = ε̂·(1−P_fec) — bounds, ε̂=0 zero, monotone-decreasing in r.
 {
   const b0 = api.shed_budget_residual(0.0, 0.1, 64, 2.0);
   const bLo = api.shed_budget_residual(0.05, 0.0, 64, 2.9);
@@ -228,7 +228,7 @@ check("§16.20.3 Δ = clamp(⌈rate·J⌉, 1, 64)",
     b0 === 0 && bLo > 0 && bLo <= 0.05 + 1e-12 && bHi < bLo && bHi < 0.01,
     `budget(ε̂=0)=${b0}, budget(r=0)=${bLo.toFixed(4)}, budget(r=.3)=${bHi.toExponential(2)}`);
 }
-// The δ-continuum tail-target mapping: the three §12.4 anchors, exact.
+// The δ-continuum tail-target mapping: the three §4.1 anchors, exact.
 check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→0.05)",
   near(api.sim_tail_target_of_delta(50), 1e-7, 1e-9) &&
   near(api.sim_tail_target_of_delta(0.5), 1e-5, 1e-9) &&
@@ -254,7 +254,7 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     bulkEnd.ticks < rtEnd.ticks,
     `bulk-end=${bulkEnd.ticks} ticks, rt-end=${rtEnd.ticks} ticks`);
   // The ρ dial stays a thing (the triangle's second corner): the UI path
-  // with ρ < 1 gives up cleanly via §6.1 T_cut toward the declared target.
+  // with ρ < 1 gives up cleanly via §3.5 T_cut toward the declared target.
   const lossyRho = new api.Simulation(
     0.10, 0.3, 80, 64, "custom",
     undefined, api.sim_tail_target_of_delta(0.5), 0.95);
@@ -266,7 +266,7 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     `decoded=${lossyRho.get_cum_decoded()}, givenUp=${lossyRho.get_given_up()}, rel=${lossyRho.get_reliability().toFixed(4)}`);
 }
 
-// --- 7d2. The Bulk preset runs the engine's late-is-fine law (§14.26):
+// --- 7d2. The Bulk preset runs the engine's late-is-fine law (§4.5, §4.6):
 // pure ARQ mid-stream at ε = 5% (r = 0 identically, cold start included),
 // the χ completion glide intact at the stream tail; at ε = 10% (p̂ above
 // the 0.05 tail budget) the glide actually EMITS tail FEC.
@@ -292,7 +292,7 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   // ρ composes with the Bulk price (no hidden mode switch keyed on ρ):
   // continuum@0.005 + ρ = 0.95 keeps the settled mid-stream pure-ARQ
   // (parity with the ρ = 1 bulk reference arm, which itself has a brief
-  // estimator warm-up spike at this cell) AND honors §6.1 T_cut give-up.
+  // estimator warm-up spike at this cell) and honors §3.5 T_cut give-up.
   const brho = new api.Simulation(0.10, 0.3, 80, 64, "continuum", undefined, 0.005, 0.95);
   const bref = new api.Simulation(0.10, 0.3, 80, 64, "bulk", undefined, undefined, undefined);
   let brhoMidR = 0, brefMidR = 0;
@@ -311,9 +311,9 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     `settled r=${brhoMidR.toExponential(1)} (ref ${brefMidR.toExponential(1)}), givenUp=${brho.get_given_up()}, rel=${brho.get_reliability().toFixed(4)}`);
 }
 
-// --- 7d3. THE NO-MODE-SWITCH INVARIANT (executable, the build gate for a
-// twice-reintroduced defect class): every law the dial feeds the sim must
-// be CONTINUOUS and monotone THROUGH each preset point — a step at a
+// --- 7d3. The no-mode-switch invariant (executable; the build gate for
+// this defect class): every law the dial feeds the sim must be
+// continuous and monotone through each preset point — a step at a
 // preset is a mode switch and fails the build. Checked on the pure law
 // functions (which are exactly what the sim and the panel consume) with a
 // ±2% dial nudge around Bulk/Auto/Realtime.
@@ -333,8 +333,8 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
   check("NO-MODE-SWITCH invariant: all dial laws continuous+monotone through every preset",
     ok, worst || "±2% nudges around all three presets");
   // And the SIM's behavior across the Bulk preset: a 5% dial nudge must
-  // not step the early emission (the tail-domain blend stepped ~115 FEC
-  // symbols here before the rate-mix law).
+  // not step the early emission (a tail-domain blend instead of the
+  // rate-mix law steps here).
   const atP = new api.Simulation(0.05, 0.5, 50, 64, "continuum", undefined, 0.005, undefined);
   const offP = new api.Simulation(0.05, 0.5, 50, 64, "continuum", undefined, 0.00525, undefined);
   for (let i = 0; i < 300; i++) { atP.step(); offP.step(); }
@@ -367,7 +367,7 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     `stalls=${big.get_pool_stalls()}`);
 }
 
-// --- 7f. Per-path recovery clocks (wall #8, §16.24): heterogeneous RTTs
+// --- 7f. Per-path recovery clocks (wall #8, §7.1): heterogeneous RTTs
 // hold slow-path holes past the aggregate clock (phantom retx avoided);
 // homogeneous paths produce none.
 {
@@ -386,7 +386,7 @@ check("δ-continuum tail targets at the presets (50→1e-7, 0.5→1e-5, 0.005→
     `het avoided=${het.get_phantom_avoided()}, homo=${homo.get_phantom_avoided()}`);
 }
 
-// --- 8. Multipath (paper §16, Reliable Windowed Multipath at L0) ---
+// --- 8. Multipath (§5.5, Reliable Windowed Multipath at L0) ---
 function runInner(sim) {
   let ticks = 0;
   while (!sim.is_finished() && ticks < 20000) {
@@ -415,7 +415,7 @@ function runInner(sim) {
   );
 }
 // 8b. Symmetric 2-path: one shared window over two equal paths completes
-// ~2x faster than one path (order-statistic aggregation, §16.3), and the
+// ~2x faster than one path (order-statistic aggregation, §5.5), and the
 // per-path accessors are live.
 {
   const single = new api.Simulation(0.05, 0.5, 50, 64, "bulk", undefined, undefined, undefined);
@@ -425,9 +425,9 @@ function runInner(sim) {
   );
   const ts = runInner(single), td = runInner(dual);
   const factor = ts / td;
-  // Gate 1.6–2.1 (was 1.7): under the per-path RFC 9002 retransmit clock
-  // (§16.24 model, 2026-07-28) a drain straggler honestly costs a full
-  // own-RTT detection round, paid on the dual run's shorter total.
+  // Gate 1.6–2.1: under the per-path RFC 9002 retransmit clock (§7.1) a
+  // drain straggler costs a full own-RTT detection round, paid on the dual
+  // run's shorter total.
   check(
     "2-path symmetric aggregation ~2x",
     dual.get_cum_decoded() === dual.get_num_source() && factor > 1.6 && factor <= 2.1,
@@ -446,8 +446,8 @@ function runInner(sim) {
     `src split ${s0}/${s1}`
   );
 }
-// 8c. Heterogeneous C8-like (§16.6 P1 at L0): the shared window over
-// fast+slow must STRICTLY beat the fast path alone — the §16.2 ceiling of
+// 8c. Heterogeneous C8-like (the §5.5 claim at L0): the shared window over
+// fast+slow must strictly beat the fast path alone — the §5.5 ceiling of
 // every per-path-affine in-order transport. Measured vs measured, same
 // engine, same hint/W.
 {

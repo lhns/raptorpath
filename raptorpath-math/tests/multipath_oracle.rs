@@ -434,7 +434,7 @@ fn oracle_c8_fungible_wmp_window() {
     let t_slack = c8_fast().rtt() as f64;                  // 10 ms
     let w_mp = sum_g * (rtt_max + t_slack);
     println!("\n=== C8 FUNGIBLE W_mp WINDOW (K={k}) ===");
-    println!("goodput ceiling x{g_ceiling:.3} ; §16.5 W_mp = {:.0} sym (Σg={:.2} sym/ms × {:.0} ms)",
+    println!("goodput ceiling x{g_ceiling:.3} ; §5.5 W_mp = {:.0} sym (Σg={:.2} sym/ms × {:.0} ms)",
         w_mp, sum_g, rtt_max + t_slack);
     println!("  {:>6} | {:>8} {:>8} {:>8} {:>8}", "W", "r=0.00", "r=0.05", "r=0.10", "r=0.18");
     let rs = [0.00, 0.05, 0.10, 0.18];
