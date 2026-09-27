@@ -4,14 +4,18 @@
 //! **The measurand, and why it is bracketed rather than exact.** §16.83's
 //! request law is stated on the LATENESS of a hole:
 //!
+//! ```text
 //!     ℓ* = min{ ℓ : w·π₀·f(ℓ) ≤ π₁·c_L(ℓ) } ∧ (H − d)⁺,   REQUEST ⇔ ℓ ≥ ℓ*
+//! ```
 //!
 //! and the receiver cannot observe a hole's lateness exactly. What it knows
 //! is that the missing seq was due some time between the last advance of its
 //! own high-water mark and the arrival that exposed the hole — so every hole
 //! carries a BRACKET
 //!
+//! ```text
 //!     ℓ ∈ [ now − t_exposed ,  now − t_hi_prev ]
+//! ```
 //!
 //! whose lower end is what `[SUCC]` already times and whose upper end needs
 //! one new field (`hi_at` beside `hi` in `SuccGauge`). Both ends are printed.
@@ -26,7 +30,9 @@
 //! bounds `π₁` from above. Substituting an upper bound for `π₁` makes the
 //! inequality bind LATER, so
 //!
+//! ```text
 //!     ℓ*_recv  ≤  ℓ*
+//! ```
 //!
 //! and the estimate is biased toward the SHIPPED machine (request sooner),
 //! never away from it. That direction is the reason this is safe to compute
@@ -75,14 +81,18 @@ const W_COST_RATIO: f64 = 1.0;
 ///
 /// 16.83.0's inequality, in the receiver's coordinate, is
 ///
+/// ```text
 ///     w * pi0 * f(l)  <=  pi1 * c_L(l) ,   c_L = P_arq(rho, r) * delta / d
+/// ```
 ///
 /// and 16.83.0 shows the indicator in `c_L` NEVER fires inside the domain, so
 /// `c_L` is CONSTANT in `l` on the whole evaluation interval and the price is
 /// a pure MULTIPLIER of the cost side. On the receiver's own evidence
 /// `pi0*f(l) = rho_heal(l)` and `pi1 = 1 - rho_heal(l)`, so the inequality is
 ///
+/// ```text
 ///     w * rho_heal(l)  <=  (1 - rho_heal(l)) * c   ==>   rho_heal(l) <= c/(w+c)
+/// ```
 ///
 /// with `c = delta / DELTA_AUTO` the contract's price RELATIVE TO ITS OWN
 /// ANCHOR -- a pure ratio, and NOT a new constant: `DELTA_AUTO = 0.5` is the

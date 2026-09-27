@@ -24,7 +24,9 @@
 //!     against in Stage 2 and which NOTHING reads today), a bounded per-path
 //!     `send_ts → eta_rel` map, and the PREDICTION ERROR
 //!
+//!     ```text
 //!         e  =  rtt_us  −  (eta_rel  +  RTprop/2)
+//!     ```
 //!
 //!     evaluated when the ack for that exact batch comes back. The subtracted
 //!     `RTprop/2` is the return leg: `rtt_us` is a round trip and `eta_rel`
@@ -34,8 +36,10 @@
 //!
 //!   * [`RecvEta`] — owned by the receiver task. Per path it reads
 //!
+//!     ```text
 //!         d  =  (t_arr − send_ts) − eta_rel          (sender clock domain)
 //!         ℓ  =  d − min_running(d)                   (the LATENESS)
+//!     ```
 //!
 //!     The subtraction of the path's running minimum is what makes this a
 //!     measurement at all: `t_arr` and `send_ts` are two different clocks, so
@@ -46,7 +50,9 @@
 //!
 //! **THE PRE-STATED WITNESS, written before either gauge was fed:**
 //!
+//! ```text
 //!         σ̂_sender  ≥  σ̂_recv
+//! ```
 //!
 //! The sender's error rides a ROUND TRIP (forward queue + return queue + ack
 //! scheduling) and the receiver's lateness rides only the FORWARD leg, so the
@@ -95,9 +101,11 @@ const TLAG_DECIM_M: u32 = 8;
 /// processes rather than three different statistics that happen to share a
 /// name.
 ///
+/// ```text
 ///     P(τ) = { (i, j(i)) : j(i) = argmax { t_j : t_i − t_j ≥ τ }, j < i
 ///                          admitted iff t_i − t_{j(i)} ≤ c·τ }
 ///     σ̂_Δ(τ) = median { |v_i − v_j| : (i, j) ∈ P(τ) }
+/// ```
 ///
 /// `None` — rendered `-` — **iff** [`Tlag::pairs`] is 0, by construction:
 /// value and count come from one pair-set function.

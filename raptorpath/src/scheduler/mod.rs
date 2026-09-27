@@ -1116,7 +1116,9 @@ impl SchedulingWeights {
     /// The placement weights at an ARBITRARY point on the δ dial — the law,
     /// with no hint in sight (§16.81).
     ///
+    /// ```text
     ///     w_bw(δ) = clamp(½ − ¼·log₁₀(δ/δ_Auto), 0, 1),  w_lat = 1 − w_bw
+    /// ```
     ///
     /// **THE THREE-ARM MATCH IS GONE, AND IT WAS ALREADY AFFINE.** The shipped
     /// weights were `1/0`, `0.5/0.5`, `0/1` at Realtime / Auto / Bulk — the

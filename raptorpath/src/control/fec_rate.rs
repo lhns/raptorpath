@@ -99,7 +99,9 @@ pub struct FecRateController {
     /// violation left in the engine, and the mechanism by which the r leg sat
     /// at the corner `r* = 0` on every scored battery. The rate is now the mix
     ///
+    /// ```text
     ///     r(β) = (1 − β)·r_anchor + β·r_late-is-fine
+    /// ```
     ///
     /// with BOTH terms always computed. β = 0 at Realtime AND Auto (the
     /// clamp) and 1 at Bulk (x/x), all three exactly, so the shipped presets
