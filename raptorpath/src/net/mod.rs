@@ -40,7 +40,7 @@ use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
 use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
 use crate::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
-use crate::monitor::stats::SharedStats;
+use crate::monitor::stats::{CorrectionKind, SharedStats};
 use crate::routing::{self, ManagedDns, ManagedRoute};
 use crate::scheduler::{Scheduler, WallClock};
 use crate::transport::{ControlMessage, QuicTransport, SymbolBatch, WireMessage};
@@ -10354,9 +10354,13 @@ async fn run_window_sender(
                     let now_r = now_us();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![sym], now_r, batch_seq, path);
-                    if let Err(e) = transport.send_symbols(path, batch) {
-                        warn!(path, ?e, "failed to send requested repair");
-                    }
+                    let sent = match transport.send_symbols(path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(path, ?e, "failed to send requested repair");
+                            false
+                        }
+                    };
                     // The three meters, at the handoff, exactly as every other
                     // correction channel meters them (the accounting-ledger
                     // finding: the gap loop's two BYPASS channels are the
@@ -10372,7 +10376,14 @@ async fn run_window_sender(
                     if let Some(ps) = stats.path(path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(
+                        if copy_seq.is_some() {
+                            CorrectionKind::SourceCopy
+                        } else {
+                            CorrectionKind::Coded
+                        },
+                        sent,
+                    );
                     if let Some(seq) = copy_seq {
                         reqs_copy += 1;
                         // The retransmit inherits the in-flight state and the
@@ -10883,9 +10894,13 @@ async fn run_window_sender(
 
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, nack_path);
-                    if let Err(e) = transport.send_symbols(nack_path, batch) {
-                        warn!(nack_path, ?e, "failed to send NACK retransmission");
-                    }
+                    let sent = match transport.send_symbols(nack_path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(nack_path, ?e, "failed to send NACK retransmission");
+                            false
+                        }
+                    };
                     debug!(seq, nack_path, "SACK-gap retransmit");
                     // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
                     // OFF — MECHANICAL DEFECT SWEEP item 5, defect 1): BYPASS
@@ -10930,7 +10945,7 @@ async fn run_window_sender(
                     // retransmit ever emitted" is answered by the emission
                     // itself rather than by an intention.
                     hold_echo.on_retx(seq, now_repair_us, nack_path);
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(CorrectionKind::SourceCopy, sent);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                     dg.diag_retx += 1;
@@ -10968,9 +10983,13 @@ async fn run_window_sender(
                     let repair_sym = st.encoder.generate_repair();
                     let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
                     let batch = SymbolBatch::new(vec![repair_sym], now_us(), batch_seq, margin_path);
-                    if let Err(e) = transport.send_symbols(margin_path, batch) {
-                        warn!(margin_path, ?e, "failed to send NACK repair margin");
-                    }
+                    let sent = match transport.send_symbols(margin_path, batch) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            warn!(margin_path, ?e, "failed to send NACK repair margin");
+                            false
+                        }
+                    };
                     // fix/accounting-ledger (`RWM_CHARGE_RECOVERY`, default
                     // OFF): BYPASS CHANNEL 2 of 2 — same defect, same fix, same
                     // three meters as the SACK-gap retransmit above.
@@ -10986,7 +11005,7 @@ async fn run_window_sender(
                             ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
+                    stats.fec.record_correction(CorrectionKind::Coded, sent);
                     nack_repairs_this_period += 1;
                     cached_nack_budget = cached_nack_budget.saturating_sub(1);
                 }
