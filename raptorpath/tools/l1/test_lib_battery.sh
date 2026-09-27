@@ -33,6 +33,21 @@ ckeq "lastline on a missing file is empty" "" "$(lastline "$TD/none" '\[RFA\]')"
 ckeq "countlines" "2" "$(countlines "$TD/log" '\[RFA\]')"
 ckeq "countlines on a missing file is 0, not empty" "0" "$(countlines "$TD/none" x)"
 
+# ── count_final: the exit-flush count ──
+{
+  printf '[LAT] site=receiver n=5\n'
+  printf '[LAT] site=receiver n=9 final=1\n'
+  printf '\033[2m2026-09-08T18:54:50Z\033[0m INFO x [SUCC] det=7 final=1\r\n'
+  printf '[ETA] site=receiver n=3 final=1\033[2m2026-09-08T18:54:50.1Z\033[0m  INFO cleaning up TUN interface\n'
+  printf '[SUCC] det=7 final=10\n'
+  printf '[SUCC] det=7 xfinal=1\n'
+  printf '[ETA] site=sender n=3 final=1\n'
+} > "$TD/srv.log"
+ckeq "count_final: plain, prefixed, glued-timestamp flushes; not final=10/xfinal=1" "3" \
+  "$(count_final "$TD/srv.log" '\[(LAT\] site=receiver|SUCC\]|ETA\] site=receiver)')"
+ckeq "count_final: the sender's [ETA] is its own kind" "1" "$(count_final "$TD/srv.log" '\[ETA\] site=sender')"
+ckeq "count_final on a missing file is 0" "0" "$(count_final "$TD/none" '\[LAT\]')"
+
 # ── crlf_guard ──
 printf 'echo hi\r\n' > "$TD/crlf.sh"; printf 'echo hi\n' > "$TD/lf.sh"
 ( crlf_guard "$TD/lf.sh" >/dev/null ) && ok "crlf_guard passes an LF file" || bad "crlf_guard refused an LF file"

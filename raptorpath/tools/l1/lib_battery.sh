@@ -153,3 +153,14 @@ countlines() { # file pattern
   n=$(grep -ac -- "$2" "$1" 2>/dev/null)
   echo "${n:-0}"
 }
+# How many exit-flush lines (`final=1`) of the kind TAG_ERE FILE carries; 0
+# for a missing file. Colour and CR are stripped first, the tag need not
+# start the line (a tracing prefix may precede it), and `final=1` counts when
+# a tracing record's timestamp is glued onto it (`final=12026-09-08T...`) --
+# `final=10` / `xfinal=1` do not.
+count_final() { # file tag_ere
+  local n
+  n=$(sed 's/\x1b\[[0-9;]*m//g; s/\r//g' "$1" 2>/dev/null | grep -aE -- "$2" \
+      | grep -acE '(^|[[:space:]])final=1([[:space:]]|$|[0-9]{4}-[0-9]{2}-[0-9]{2}T)')
+  echo "${n:-0}"
+}

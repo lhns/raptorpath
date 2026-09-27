@@ -192,20 +192,25 @@ run_one() { # cell arm
   # Scoped to the `[GATES]` line: the resolve-time liveness echoes carry the
   # gate NAMES in their prose, and an unscoped grep reads the documentation
   # instead of the resolved value.
-  local gtc gts ghc ghs etan lat succ nfin
+  local gtc gts ghc ghs etan lat succ nfin sfin
   gtc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   gts=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_T_DERIVED=[01]")
   ghc=$(grep "\[GATES\]" /tmp/rwm-c.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
   ghs=$(grep "\[GATES\]" /tmp/rwm-s.log 2>/dev/null | tail -1 | grep -o "RWM_PLACE_HOL=[01]")
-  etan=$(grep -c "\[ETA\] site=sender" /tmp/rwm-c.log 2>/dev/null || true)
-  lat=$(grep -c "\[LAT\] site=receiver" /tmp/rwm-s.log 2>/dev/null || true)
-  succ=$(grep -c "\[SUCC\]" /tmp/rwm-s.log 2>/dev/null || true)
+  # `countlines` prints 0 for a missing log (a bare `grep -c ... || true`
+  # printed nothing, and `[ "" -eq 0 ]` then errored silently instead of
+  # emitting the INSTRUMENT-FAIL line below).
+  etan=$(countlines /tmp/rwm-c.log "\[ETA\] site=sender")
+  lat=$(countlines /tmp/rwm-s.log "\[LAT\] site=receiver")
+  succ=$(countlines /tmp/rwm-s.log "\[SUCC\]")
   # The counts above INCLUDE a `final=1` exit-flush line when the engine emits
   # one (a flushed-only short run is still a live instrument); the flush is
-  # counted separately so "complete counts" is readable off the ledger.
-  # place_parse.py applies the cadence rule (final skipped) on its own fields.
-  nfin=$(grep -cE "^\[(LAT|SUCC|ETA)\] .*(^| )final=1( |$)" /tmp/rwm-s.log 2>/dev/null || true)
-  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin (expect td=$etd hol=$ehl)" >> "$OUT"
+  # counted separately so "complete counts" is readable off the ledger:
+  # the receiver's block on the server log, the sender's `[ETA]` on the
+  # client log. place_parse.py applies the cadence rule (final skipped).
+  nfin=$(count_final /tmp/rwm-s.log '\[(LAT\] site=receiver|SUCC\]|ETA\] site=receiver)')
+  sfin=$(count_final /tmp/rwm-c.log '\[ETA\] site=sender')
+  echo "LIVENESS $name rep=$REP cli=[$gtc $ghc] srv=[$gts $ghs] eta_lines=$etan lat_lines=$lat succ_lines=$succ recv_final_lines=$nfin send_final_lines=$sfin (expect td=$etd hol=$ehl)" >> "$OUT"
   [ "$gtc" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-CLI $name rep=$REP got='$gtc'" >> "$OUT"
   [ "$gts" != "RWM_PLACE_T_DERIVED=$etd" ] && echo "ARM-LIVENESS-FAIL-TD-SRV $name rep=$REP got='$gts'" >> "$OUT"
   [ "$ghc" != "RWM_PLACE_HOL=$ehl" ] && echo "ARM-LIVENESS-FAIL-HOL-CLI $name rep=$REP got='$ghc'" >> "$OUT"
