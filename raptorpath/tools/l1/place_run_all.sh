@@ -95,7 +95,10 @@ fi
 # need no clearing; the sentinels and the era file do.
 for f in $SENTINELS; do rm -f "$OUTDIR/$f"; done
 FIN="$OUTDIR/.place-run-all-finished"
-rm -f "$FIN"
+# The in-flight battery's pid (its `sudo`, which relays TERM to the battery),
+# written by run_seed and read by the backstop, which is a separate process.
+BATTERY_PIDFILE="$OUTDIR/.place-battery.pid"
+rm -f "$FIN" "$BATTERY_PIDFILE"
 
 echo "PLACE-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.txt"
 echo "PLACE-ALL grid: arms=5 cells='c7 c8L c1 c9h' reps=$REPS (c9h capped at 3) singles='sc2 sc3' => 83 invocations/seed at reps=4"
@@ -122,7 +125,16 @@ backstop() {
   } > "$OUTDIR/TRUNCATED.txt"
   # 1. TERM the battery: the fixed INT/TERM trap releases both operator locks
   #    and exits 143 once the foreground invocation returns.
-  sudo pkill -TERM -f 'bash place_battery.sh' 2>/dev/null || true
+  #    By the RECORDED pid, not `pkill -f 'bash place_battery.sh'`: that
+  #    pattern also matches the `sudo ... bash place_battery.sh` wrapper and
+  #    any watcher whose command line carries the string.
+  local bpid
+  bpid=$(cat "$BATTERY_PIDFILE" 2>/dev/null)
+  if [ -n "$bpid" ]; then
+    sudo kill -TERM "$bpid" 2>/dev/null || true
+  else
+    echo "PLACE-ALL BACKSTOP no battery pid recorded (between seeds?)"
+  fi
   # 2. End the in-flight invocation so that return happens now.
   sudo pkill -x raptorpath 2>/dev/null || true
   # 3. Wait for the rp-* namespaces to clear (perf_rwm_c.sh's own teardown).
@@ -156,8 +168,14 @@ run_seed() {
   echo "PLACE-ALL invoke seed=$s reps=$REPS $(date -u +%FT%TZ)"
   # `sudo` HERE AND NOWHERE ELSE: the battery needs root for the rp-*
   # namespaces; every sentinel path above and below is touched as `vibe`.
-  sudo env RWM_PLACE_TAG="$TAG" RWM_PLACE_OUTDIR="$OUTDIR" bash place_battery.sh "$s" "$REPS"
+  # Backgrounded only to learn its pid, then waited on: still one battery at
+  # a time, and `wait` returns the battery's own rc (sudo passes it through).
+  sudo env RWM_PLACE_TAG="$TAG" RWM_PLACE_OUTDIR="$OUTDIR" bash place_battery.sh "$s" "$REPS" &
+  local bpid=$!
+  echo "$bpid" > "$BATTERY_PIDFILE"
+  wait "$bpid"
   rc=$?
+  rm -f "$BATTERY_PIDFILE"
   echo "PLACE-ALL seed=$s rc=$rc wall=$(( $(date +%s) - t0 ))s elapsed_since_launch=$(( $(date +%s) - LAUNCH_TS ))s $(date -u +%FT%TZ)" \
     | tee -a "$OUTDIR/all-era.txt"
   seed_done "$s" "$OUTDIR/$TAG-s$s.log" "PLACE-BATTERY-DONE seed=$s" PLACE-ALL
