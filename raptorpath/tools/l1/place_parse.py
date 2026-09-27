@@ -84,7 +84,7 @@ them, which is NOT the order of interest:
        `hol_w=`     the derived W of 16.80.6(a2), PREDICTED INERT.
 
   4. `[SUCC] xp_n/det` -- the cross-path resolution fraction D0 measured. It
-     must FALL at c8/c9h under a working placement arm and be identically 0 at
+     must FALL at c8L/c9h under a working placement arm and be identically 0 at
      c1. **A MOVING c1 VOIDS THE RUN**, which is why `xp_n` is carried on every
      row and not only on the duals.
 

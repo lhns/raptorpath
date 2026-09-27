@@ -32,7 +32,9 @@
 # pre-registration and is restated here because it is the one result this
 # battery is most likely to produce.
 #
-# CELLS: c7 (symmetric dual), c8 (het dual — the aggregation seat), c1 (SINGLE
+# CELLS: c7 (symmetric dual), c8L (het dual c2 || c3 at 100 MB — the aggregation
+# seat; named c8L because every other battery's `c8` is the same geometry at
+# 25 MB, and one name must mean one cell), c1 (SINGLE
 # PATH, the must-not-move CONTROL: N = 1 collapses the softmax to an identity,
 # so ANY movement at c1 VOIDS the run), c9h (n = 3 quad, WITNESS ONLY —
 # `ABORT-QUAD` is pre-declared).
@@ -50,7 +52,7 @@
 # INVOCATION COUNT AT n = 4, PER SEED (arms x cells x reps + singles):
 #
 #     c7   5 arms x 4 reps = 20   200 MB dual        placeholder 2.0 min each
-#     c8   5 arms x 4 reps = 20   100 MB dual        placeholder 2.0 min each
+#     c8L  5 arms x 4 reps = 20   100 MB dual        placeholder 2.0 min each
 #     c1   5 arms x 4 reps = 20   400 MB single      placeholder 2.0 min each
 #     c9h  5 arms x 3 reps = 15   100 MB quad        placeholder 3.6 min each
 #     sc2  4 reps          =  4   100 MB single      placeholder 2.0 min each
@@ -78,7 +80,7 @@ declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not loa
 crlf_guard place_battery.sh lib_battery.sh
 
 SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h amendment
-PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8 c1 c9h}"
+PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8L c1 c9h}"
 PLACE_ARMS="${RWM_PLACE_ARMS:-CTL T0 TSIG HOL HOLTSIG}"
 TAG="${RWM_PLACE_TAG:-place}"
 # The run directory is `place_run_all.sh`'s (`RWM_PLACE_OUTDIR`, passed
@@ -144,7 +146,7 @@ arm_hl() { case "$1" in HOL|HOLTSIG)  echo 1 ;; *) echo 0 ;; esac; }
 cell_spec() {
   case "$1" in
     c7)  echo "c2 c2 dual 200000000" ;;
-    c8)  echo "c2 c3 dual 100000000" ;;
+    c8L) echo "c2 c3 dual 100000000" ;;
     c1)  echo "c1 c1 single 400000000" ;;
     c9h) echo "c2 c3 quad 100000000" ;;
     *) echo "" ;;
@@ -230,13 +232,13 @@ for REP in $(seq 1 "$REPS"); do
 done
 
 # ── THE AGGREGATION SINGLES (the guard's denominator) ────────────────────
-# `c7 >= 0.97*sum` and `c8 >= 0.87*sum` are read against SAME-SESSION singles,
+# `c7 >= 0.97*sum` and `c8L >= 0.87*sum` are read against SAME-SESSION singles,
 # never against a number from another run: the shaper, the host and the kernel
 # all move between sessions and an aggregation ratio against a stale
 # denominator is not a ratio.
 for REP in $(seq 1 "$REPS"); do
   for S in sc2 sc3; do
-    case " $PLACE_CELLS " in *" c7 "*|*" c8 "*) ;; *) continue ;; esac
+    case " $PLACE_CELLS " in *" c7 "*|*" c8L "*) ;; *) continue ;; esac
     read -r sa sb smode sbytes <<< "$(case "$S" in
       sc2) echo "c2 c2 single 100000000" ;;
       sc3) echo "c3 c3 single 25000000" ;;

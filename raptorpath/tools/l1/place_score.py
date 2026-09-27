@@ -33,11 +33,11 @@ from l1common import med  # noqa: E402
 
 SHIPPED_SIGMA_OVER_REF = 0.19238
 SQRT6_OVER_PI = 6.0 ** 0.5 / 3.141592653589793
-DUALS = ("c7", "c8")
-CELLS = ("c7", "c8", "c1", "c9h")
+DUALS = ("c7", "c8L")
+CELLS = ("c7", "c8L", "c1", "c9h")
 ARMS = ("CTL", "T0", "TSIG", "HOL", "HOLTSIG")
 CLIENT_TIMEOUT_S = 300.0  # the engine-side DNF cutoff read off RUNTIME 302-303 s
-CELL_BYTES = {"c7": 200e6, "c8": 100e6, "c1": 400e6, "c9h": 100e6, "sc2": 100e6, "sc3": 25e6}
+CELL_BYTES = {"c7": 200e6, "c8L": 100e6, "c1": 400e6, "c9h": 100e6, "sc2": 100e6, "sc3": 25e6}
 
 
 def load(path):
@@ -177,7 +177,7 @@ def main(argv=None):
 
     # ── 1. FIRST READOUT ────────────────────────────────────────────────
     section("1 -- THE FIRST READOUT: CTL [LAT] DECOMPOSITION (read before any arm)")
-    for cell in ("c7", "c8", "c9h", "c1"):
+    for cell in ("c7", "c8L", "c9h", "c1"):
         rr = sel(cell, "CTL")
         print(f"\n### {cell} CTL (n={len(rr)})")
         print("| seed | rep | line | dnf | lat_n | sh_ax | sh_xp | sh_sp | sh_rep | reading | p95(rw_xp) worst | p95(A_x) worst | tot_p50 worst | tot_p95 worst | tot_p99 worst | rw_xp n | xp_n/det |")
@@ -198,7 +198,7 @@ def main(argv=None):
     section("2 -- THE S4 OFFLINE SCORE: sigma_hat_e / ref off [ETA] (before any arm verdict)")
     print(f"shipped claim: sigma/ref = {SHIPPED_SIGMA_OVER_REF} at every cell; band +/-20% = [{0.8*SHIPPED_SIGMA_OVER_REF:.5f}, {1.2*SHIPPED_SIGMA_OVER_REF:.5f}]")
     print("routes: (a) engine t_eff inversion, TSIG/HOLTSIG rows only, ref = the law's own min SRTT; (b) sender RMS sig_us / min tau_us (tau_us = RTprop when known); (c) sender RMS sig_us / min [DIAG] rtt (SRTT surrogate); (r) receiver max sig_us / [DIAG] rtt")
-    for cell in ("c7", "c8", "c9h", "c1", "sc2", "sc3"):
+    for cell in ("c7", "c8L", "c9h", "c1", "sc2", "sc3"):
         arms = ("CTL",) if cell in CELLS else ("SINGLE",)
         print(f"\n### {cell}")
         for arm in arms + (("TSIG", "HOLTSIG") if cell in CELLS else ()):
@@ -274,8 +274,8 @@ def main(argv=None):
         sc2, sc2dnf = single_bound("sc2", s)
         sc3, sc3dnf = single_bound("sc3", s)
         print(f"seed {s}: sc2 max {sc2:.3f}{' (UPPER BOUND, DNF)' if sc2dnf else ''}; sc3 max {sc3:.3f}{' (UPPER BOUND, DNF)' if sc3dnf else ''}")
-        print(f"  c7 guard 0.97 x 2 x sc2 = {0.97*2*sc2:.3f}; c8 guard 0.87 x (sc2+sc3) = {0.87*(sc2+sc3):.3f}")
-        for cell, thr in (("c7", 0.97 * 2 * sc2), ("c8", 0.87 * (sc2 + sc3))):
+        print(f"  c7 guard 0.97 x 2 x sc2 = {0.97*2*sc2:.3f}; c8L guard 0.87 x (sc2+sc3) = {0.87*(sc2+sc3):.3f}")
+        for cell, thr in (("c7", 0.97 * 2 * sc2), ("c8L", 0.87 * (sc2 + sc3))):
             for arm in ARMS:
                 rr = sel(cell, arm, s)
                 vals = [r.get("mbps") for r in rr if r.get("mbps") is not None]

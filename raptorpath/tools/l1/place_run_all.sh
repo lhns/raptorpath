@@ -98,7 +98,7 @@ FIN="$OUTDIR/.place-run-all-finished"
 rm -f "$FIN"
 
 echo "PLACE-ALL start $LAUNCH_ISO load=$(cat /proc/loadavg)" > "$OUTDIR/all-era.txt"
-echo "PLACE-ALL grid: arms=5 cells='c7 c8 c1 c9h' reps=$REPS (c9h capped at 3) singles='sc2 sc3' => 83 invocations/seed at reps=4"
+echo "PLACE-ALL grid: arms=5 cells='c7 c8L c1 c9h' reps=$REPS (c9h capped at 3) singles='sc2 sc3' => 83 invocations/seed at reps=4"
 echo "PLACE-ALL envelope: seed7_gate=${SEED7_GATE_S}s backstop=${BACKSTOP_S}s"
 
 # ── THE BACKSTOP ─────────────────────────────────────────────────────────
