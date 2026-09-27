@@ -423,6 +423,16 @@ fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool
     (hint == ProtocolHint::Realtime || window_reliable) && backend.is_streaming()
 }
 
+/// The `[PIPE]` echo (block re-test pre-registration, docs/status.md §4;
+/// MEASUREMENT DISCIPLINE rules 1 and 15b): the pipeline the engine ACTUALLY
+/// selected and the FEC backend it pinned, one line per engine start on both
+/// endpoints. An instrument only — it reads the decision, it takes none.
+fn pipe_echo_line(hint: ProtocolHint, backend: FecBackend, window_mode: bool) -> String {
+    let pipeline = if window_mode { "window" } else { "block" };
+    let hint = format!("{hint:?}").to_lowercase();
+    format!("[PIPE] pipeline={pipeline} backend={backend:?} hint={hint}")
+}
+
 // ---------------------------------------------------------------------------
 // RWM Phase A retention policy (paper §15.7/§16.3), unit-tested below.
 //
@@ -710,6 +720,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // ADR-0006: derive block assembly profile from protocol hint
     let profile = BlockProfile::from_hint(config.protocol_hint);
     let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend, config.window_reliable);
+    info!("{}", pipe_echo_line(config.protocol_hint, effective_fec_backend, window_mode));
     // The retention policy is per-stream/per-config, NOT global: Realtime
     // keeps its lossy EVICT window unless explicitly opted in.
     let window_reliable = window_mode && config.window_reliable;

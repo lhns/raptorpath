@@ -1,0 +1,31 @@
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-ALL-TRUNCATED-5H-BUDGET (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/TRUNCATED.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/all-era.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-S42 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-S42 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-S7 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-S7 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/SKIPPED-S7-5H-BUDGET (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/SKIPPED-S7-S42-FAILED (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/br-s42.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/br-s7.log (probed as vibe, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-09-27T18:10:03Z user=vibe dir=/home/vibe/blockretest/run launch=2026-09-27T18:10:03Z reps=2 sha=780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003 hard=1790541079
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+FLOCK-HELD /tmp/rwm-vm.lock /home/vibe/rp.lock (fd 8/9)
+BR-ALL binary /home/vibe/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003 reps=2 rep_est=1800s soft=1790540479 hard=1790541079 (now 1790532603)
+BR-ALL crown spot start 2026-09-27T18:10:03Z cotenants: cargo=0 rustc=0 load=1.98 2.10 2.22
+BR-ALL crown spot rc=0 cotenants_at_end: cargo=0 rustc=0 load=0.67 0.24 0.47 wall=1959s done=1 2026-09-27T18:42:42Z
+BR-ALL invoke seed=42 reps=2 2026-09-27T18:42:42Z cotenants: cargo=0 rustc=0 load=0.67 0.24 0.47
+LOCKS-HELD-BY-ENVELOPE blockretest_run_all:72761
+BR-ALL seed=42 rc=0 wall=2168s since_launch=4127s 2026-09-27T19:18:50Z
+CHECK-OK /home/vibe/blockretest/run/br-s42.log rows=40 live=40
+BR-ALL invoke seed=7 reps=2 2026-09-27T19:18:50Z cotenants: cargo=0 rustc=0 load=0.11 0.50 0.74
+LOCKS-HELD-BY-ENVELOPE blockretest_run_all:72761
+BR-ALL seed=7 rc=0 wall=2426s since_launch=6553s 2026-09-27T19:59:16Z
+CHECK-OK /home/vibe/blockretest/run/br-s7.log rows=40 live=40
+BR-ALL-DONE ran='42 7'
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

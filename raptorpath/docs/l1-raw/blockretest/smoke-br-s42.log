@@ -1,0 +1,40 @@
+LOCKS-HELD-BY-ENVELOPE a4-blockretest-session
+=== BLOCKRETEST BATTERY seed=42 reps=1 cells='c2 c8' hints='bulk' arms='BLK WIN' 2026-09-27T15:48:33Z
+=== binary /home/vibe/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003
+=== source 7ea7319 cleanup/a4-block-retest (binary built from c2ab337; 7ea7319 changes tools/l1 only)
+=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=block|window runs=1 soft_deadline=none rep_est=none
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm arch_perfmon rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault pti ssbd ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt arat vnmi umip md_clear flush_l1d arch_capabilities
+=== rep=1 arm=BLK cell=c2 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c2/single bytes=100000000 15:48:33
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=17:48:35
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.6661,"mean_mbps":82.764,"mean_s":9.6661,"median_s":9.6661,"min_s":9.6661,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=5.15s CPUCLI=9.41s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-BLK rep=1 attempt=1 12s rc=0
+BRROW {"arm": "BLK", "cell": "c2", "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 82.764, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 9.666078, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c2 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c2/single bytes=100000000 15:48:45
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=17:48:46
+{"bytes":100000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":100000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=4.19s CPUCLI=149.74s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-WIN rep=1 attempt=1 152s rc=0
+BRROW {"arm": "WIN", "cell": "c2", "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": null, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c8 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c3/dual bytes=25000000 15:51:17
+--- RWM-C perf pipeline=block mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=17:51:19
+{"bytes":25000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":25000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=2.19s CPUCLI=3.17s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-BLK rep=1 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c8", "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": null, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c8 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c3/dual bytes=25000000 15:53:49
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=17:53:51
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":20.2731,"mean_mbps":9.865,"mean_s":20.2731,"median_s":20.2731,"min_s":20.2731,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.20s CPUCLI=20.66s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-WIN rep=1 attempt=1 22s rc=0
+BRROW {"arm": "WIN", "cell": "c8", "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 9.865, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 20.273067, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+REP-COMPLETE seed=42 rep=1 2026-09-27T15:54:11Z
+=== ARMCOUNTS 2026-09-27T15:54:11Z
+ARMCOUNT c2-bulk-BLK n=1
+ARMCOUNT c2-bulk-WIN n=1
+ARMCOUNT c8-bulk-BLK n=1
+ARMCOUNT c8-bulk-WIN n=1
+BLOCKRETEST-BATTERY-DONE seed=42 2026-09-27T15:54:11Z

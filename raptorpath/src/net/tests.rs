@@ -5091,3 +5091,23 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
         );
     }
 }
+
+/// The `[PIPE]` echo names BOTH routes by the same predicate the engine
+/// routes on: the shipped default config prints `pipeline=block
+/// backend=RaptorQ`, the `--window-reliable` arm (run_impl auto-selects
+/// RLC) prints `pipeline=window backend=Rlc`. The battery greps exactly
+/// these tokens, so the format is pinned here.
+#[test]
+fn pipe_echo_names_the_route_the_engine_takes() {
+    let (pc, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default())
+        .expect("the empty default config resolves");
+    for (hint, h) in [(ProtocolHint::Bulk, "bulk"), (ProtocolHint::Auto, "auto")] {
+        let blk_mode = is_window_mode(hint, pc.fec_backend, pc.window_reliable);
+        let blk = pipe_echo_line(hint, pc.fec_backend, blk_mode);
+        assert_eq!(blk, format!("[PIPE] pipeline=block backend=RaptorQ hint={h}"));
+        let win_mode = is_window_mode(hint, FecBackend::Rlc, true);
+        let win = pipe_echo_line(hint, FecBackend::Rlc, win_mode);
+        assert_eq!(win, format!("[PIPE] pipeline=window backend=Rlc hint={h}"));
+    }
+}
+

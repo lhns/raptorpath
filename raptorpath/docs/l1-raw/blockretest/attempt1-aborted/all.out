@@ -1,0 +1,26 @@
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-ALL (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-ALL-TRUNCATED-5H-BUDGET (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/TRUNCATED.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/all-era.txt (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-S42 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-S42 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/DONE-S7 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/FAILED-S7 (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/SKIPPED-S7-5H-BUDGET (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/SKIPPED-S7-S42-FAILED (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/br-s42.log (probed as vibe, create+unlink)
+SENTINEL-WRITABLE /home/vibe/blockretest/run/br-s7.log (probed as vibe, create+unlink)
+SENTINEL-PROOF-COMPLETE 2026-09-27T15:55:07Z user=vibe dir=/home/vibe/blockretest/run launch=2026-09-27T15:55:07Z reps=3 sha=780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003 hard=1790541079
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+BR-ALL binary /home/vibe/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003 reps=3 rep_est=2400s soft=1790540479 hard=1790541079 (now 1790524507)
+BR-ALL crown spot start 2026-09-27T15:55:07Z
+BR-ALL crown spot rc=0 wall=1960s done=1 2026-09-27T16:27:47Z
+BR-ALL invoke seed=42 reps=3 2026-09-27T16:27:47Z
+ABORT-LOCK /tmp/rwm-vm.lock is not held by the envelope (blockretest_run_all:32140): 
+BR-ALL seed=42 rc=4 wall=0s since_launch=1960s 2026-09-27T16:27:47Z
+BR-ALL seed 42 NOT EARNED: rc=4 or parser check failed
+BR-ALL-FAILED ran='42'
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
