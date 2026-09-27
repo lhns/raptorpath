@@ -486,8 +486,9 @@ fn the_raw_dump_is_absent_by_default_and_emits_records_when_armed() {
             .split_once(',')
             .unwrap_or_else(|| panic!("[SUCCDUMP] record `{r}` is not `<tag>,<us>`: {first}"));
         assert!(
-            matches!(tag, "o" | "r" | "a"),
-            "[SUCCDUMP] record tag `{tag}` is not one of the three outcomes: {first}"
+            // `x` = closed by the sender's copy (HoleOutcome::Retransmit).
+            matches!(tag, "o" | "x" | "r" | "a"),
+            "[SUCCDUMP] record tag `{tag}` is not one of the four outcomes: {first}"
         );
         us.parse::<u64>()
             .unwrap_or_else(|e| panic!("[SUCCDUMP] `{us}` is not µs: {e} in {first}"));

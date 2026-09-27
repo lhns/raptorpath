@@ -56,11 +56,16 @@
 //!
 //! ## THE THREE OUTCOMES — disjoint by construction, first terminal event wins
 //!
-//!   * `orig` — **the seq's own SOURCE symbol arrived.** A late reorder, or a
-//!     retransmit; the receiver cannot tell them apart (the wire carries
-//!     `is_repair` but no "this is a retransmit" bit — the same contamination
-//!     `[RFA]`'s `fill_src` discloses, restated here rather than assumed
-//!     inherited).
+//!   * `orig` — **the seq's own SOURCE symbol arrived.** A late reorder, or
+//!     the sender's copy (retransmit / taper copy). The wire carries no
+//!     "this is a retransmit" bit, but every batch carries its SENDER stamp:
+//!     originals are stamped in seq order, so a closing copy stamped later
+//!     than the arrival that exposed the hole cannot be the original. Those
+//!     holes are the `HoleOutcome::Retransmit` subset, printed as `rtx_n=`
+//!     (still inside `orig_n`, whose meaning — own-source arrival — is
+//!     unchanged) and excluded from `[LATE]`'s self-heal estimate π̂0. The
+//!     split is a lower bound on copies: a copy stamped before its hole's
+//!     exposer was stamped reads `orig`.
 //!   * `rep` — **the seq came out of the DECODER**, reconstructed from coded
 //!     repair rather than from its own source arrival. The same test the
 //!     `[RFA]` site already uses for `fill_coded`: `symbol.is_repair ||
@@ -237,8 +242,11 @@ pub fn bucket_lower_edge(i: usize) -> u64 {
 /// before the exposer was sent is not caught (it reads `Original`), so
 /// `Retransmit` is a lower bound. A stamp of 0 means "unknown".
 pub fn classify_source_close(closer_ts_us: u64, exposer_ts_us: u64) -> HoleOutcome {
-    let _ = (closer_ts_us, exposer_ts_us);
-    HoleOutcome::Original
+    if exposer_ts_us > 0 && closer_ts_us > exposer_ts_us {
+        HoleOutcome::Retransmit
+    } else {
+        HoleOutcome::Original
+    }
 }
 
 // ── ONE OUTCOME'S DISTRIBUTION ──────────────────────────────────────────
