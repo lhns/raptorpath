@@ -39,6 +39,8 @@
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};
 
+pub mod scheduler_gates;
+
 /// A numeric env value, or `None` when unset or unparseable. Non-finite
 /// floats (`NaN`, `inf`, an overflowing `1e400`) are rejected: every float
 /// knob is a rate, gain or bound, and a NaN would poison each law it reaches.
