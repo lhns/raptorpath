@@ -413,17 +413,24 @@ fn every_recovery_fire_is_attributed_to_a_named_cause() {
         "[FCAUSE] unattr must be exactly n - fired: {last}"
     );
 
-    // And the `[RACK]` line it sits beside must agree about `fired`.
-    if let Some(rack) = cli.lines().rev().find(|l| l.contains("[RACK] ")) {
-        let fa = field(rack, "fa=");
-        let (_sp, fd) = fa
-            .split_once('/')
-            .unwrap_or_else(|| panic!("fa= must render `<spurious>/<fired>`: {rack}"));
-        assert_eq!(
-            fd.parse::<u64>().expect("fired parses"),
-            fired,
-            "[FCAUSE] fired={fired} disagrees with [RACK] fa=.../{fd} — the \
-             two lines read the same counter:\n{rack}\n{last}"
+    // And the SENDER's `[RACK]` line must agree about `fired`. The client
+    // process runs a receiver task too, whose receiver-site gauge prints its
+    // own `[RACK]` (its `fa=` counts repair-class ARRIVALS, not the sender's
+    // fires), and the two tasks' teardown order is not fixed — so the
+    // sender's line is found by its value, never by its position.
+    let racks: Vec<&str> = cli.lines().filter(|l| l.contains("[RACK] ")).collect();
+    if !racks.is_empty() {
+        let fired_of = |rack: &str| -> u64 {
+            let fa = field(rack, "fa=");
+            let (_sp, fd) = fa
+                .split_once('/')
+                .unwrap_or_else(|| panic!("fa= must render `<spurious>/<fired>`: {rack}"));
+            fd.parse::<u64>().expect("fired parses")
+        };
+        assert!(
+            racks.iter().any(|r| fired_of(r) == fired),
+            "[FCAUSE] fired={fired} matches no [RACK] fa=.../<fired> line — the \
+             sender's two lines read the same counter:\n{racks:#?}\n{last}"
         );
     }
 }
