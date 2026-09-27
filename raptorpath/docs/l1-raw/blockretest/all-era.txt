@@ -1,0 +1,10 @@
+BR-ALL start 2026-09-27T18:10:03Z load=1.98 2.10 2.22 1/329 72837
+LOCK-TAKEN /tmp/rwm-vm.lock
+LOCK-TAKEN /home/vibe/rp.lock
+FLOCK-HELD /tmp/rwm-vm.lock /home/vibe/rp.lock (fd 8/9)
+BR-ALL crown spot rc=0 cotenants_at_end: cargo=0 rustc=0 load=0.67 0.24 0.47 wall=1959s done=1 2026-09-27T18:42:42Z
+BR-ALL seed=42 rc=0 wall=2168s since_launch=4127s 2026-09-27T19:18:50Z
+BR-ALL seed=7 rc=0 wall=2426s since_launch=6553s 2026-09-27T19:59:16Z
+BR-ALL end 2026-09-27T19:59:16Z load=0.10 0.55 0.79 1/330 116447 ran='42 7'
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

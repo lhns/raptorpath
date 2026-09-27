@@ -272,4 +272,107 @@ and `count = 1000` in ≥ 62 of 64 reps with none below 995. Otherwise
 moved. Fewer than 6 of 8 reps with a summary at any cell-size-seed is
 `SPOT-UNSCOREABLE`.
 
-**Result**: not yet run. The scored result is recorded here.
+**Result** (scored 2026-09-27 against the pre-registration and amendments
+1–3, literally): **`BLOCK-BETTER-AT-c1,c2,c3,c7,c8`**; crown spot
+**`REPAIRS-INERT-ON-CROWN`**. Block stays the default; nothing is flipped.
+
+*Binary and session.* Branch `cleanup/a4-block-retest` (engine at c2ab337
+= `main` 5474e9f + the `[PIPE]` echo d58feab; later commits touch
+`tools/l1` and docs only), built fresh on the benchmark VM (Xeon E5-2650 v3
+era), `sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003`,
+re-verified after the targeted tests (lib 509 passed incl.
+`pipe_echo_names_the_route_the_engine_takes`; `protocol_test` 8,
+`perf_loopback` 13 passed) and before every invocation. Session start
+15:31Z, cap 20:31Z. Scored run: envelope 18:10–19:59Z (crown spot 1959 s,
+seed 42 2168 s, seed 7 2426 s), mean 57 s per invocation.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | **attempt 1 only** (15:55Z launch): at seed 42 start, after a co-tenant's `exec 8>PATH` truncated the lock files (amendment 3); no battery row existed. Attempt 2: no. |
+| `ABORT-CRLF` | no (`lib.sh` 0 CR bytes) |
+| `ABORT-SHA` | no (checked at start and before each of 80 invocations) |
+| `ABORT-SENTINEL-UNWRITABLE` | no (all paths probed at launch) |
+| `ABORT-SMOKE` | no: `SMOKE-PASS` (see below) |
+| `ABORT-RC` | 0 of 80 |
+| `ABORT-BRINGUP` | 0 (0 `RUN-RETRY`, 0 `NO_DATA`) |
+| `VOID-COTENANT` (amendment 3) | 0 of 80; no `LOCK-TRUNCATED-BY-FOREIGN` |
+
+Reading of the attempt-1 `ABORT-LOCK`: it refused before any battery row
+existed and the relaunch (amendment 3) was committed before any number was
+read, so attempt 2 is the scored battery. Under the stricter reading (any
+firing makes the whole re-test `UNSCOREABLE`) the verdict would be
+`UNSCOREABLE`; neither reading licenses the flip.
+
+*Smoke* (15:48–15:54Z, before any co-tenant; one invocation per arm at c2
+and c8, bulk, seed 42): every row `LIVE`; `pipeline=` header and `[PIPE]`
+matched the arm on both endpoints (`pipeline=block backend=RaptorQ` /
+`pipeline=window backend=Rlc`); `[GATES]` on both endpoints; the RLC
+auto-select line absent on BLK and present on both WIN endpoints. Measured
+cost `c` = 84.75 s/invocation, which set n = 2 per seed (amendment 3).
+
+*What ran.* n = 2 per seed × 2 seeds × 5 cells × 2 hints × 2 arms = 80
+invocations, all `LIVE` (witnesses held on every row; 0 contaminated).
+Ledgers: `docs/l1-raw/blockretest/` (`br-s42.log` sha256 b93679f3…,
+`br-s7.log` af011eb3…, `crown-s42.log` f3cd299f…, `crown-s7.log`
+819165ad…, plus the smoke and attempt-1 envelope logs); per-invocation
+endpoint logs (26 MB) stay on the VM under `/home/vibe/blockretest/run/diag`.
+
+*Per cell, pooled over seeds* (n = 4 per arm-cell-hint; goodput Mbit/s median
+[min–max] over completed reps; completion p50 s; DNF = past 150 s):
+
+| cell | hint | BLK goodput | BLK p50 | BLK DNF | WIN goodput | WIN p50 | WIN DNF | failed clauses |
+|---|---|---|---|---|---|---|---|---|
+| c1 | bulk | 250.1 [245.5–261.0] | 12.80 | 0/4 | 192.1 [187.1–211.1] | 16.67 | 0/4 | goodput, completion |
+| c1 | auto | 162.0 [159.7–172.4] | 19.75 | 0/4 | 168.2 [164.8–171.0] | 19.03 | 0/4 | — |
+| c2 | bulk | 86.3 [83.5–87.8] | 9.27 | 0/4 | — | — | **4/4** | goodput, completion, DNF |
+| c2 | auto | 58.4 [58.2–58.7] | 13.69 | 2/4 | 18.4 [13.9–23.5] | 43.64 | 0/4 | goodput, completion (pooled, s42) |
+| c3 | bulk | 16.4 [15.5–16.8] | 12.23 | 0/4 | 3.3 [2.8–3.4] | 61.26 | 0/4 | goodput, completion |
+| c3 | auto | — | — | **4/4** | 3.8 [3.3–4.8] | 53.16 | 0/4 | — (BLK completed none) |
+| c7 | bulk | 119.6 [119.2–120.8] | 13.38 | 1/4 | 79.0 [76.4–86.4] | 20.26 | 0/4 | goodput, completion |
+| c7 | auto | — | — | **4/4** | 83.2 [81.5–85.1] | 19.24 | 0/4 | — (BLK completed none) |
+| c8 | bulk | 82.4 [74.1–83.4] | 2.43 | 1/4 | 19.4 [5.6–59.2] | 12.46 | 0/4 | goodput, completion |
+| c8 | auto | — | — | **4/4** | 5.6 [4.2–63.4] | 37.35 | 0/4 | — (BLK completed none) |
+
+Every bulk failure above also fails on each seed separately (n = 2 per seed;
+per-rep values in the ledgers and the scorer's `REPS` lines). Shaped
+capacities for MEASUREMENT DISCIPLINE 16: c1 1000, c2 100, c3 20, c7 200,
+c8 120 Mbit; the block arm's bulk goodput is 25 %, 86 %, 82 %, 60 % and 69 %
+of them, so the not-worse clauses were not ceiling-bound anywhere.
+
+*Verdict.* `BLOCK-BETTER-AT-c1,c2,c3,c7,c8`: at the **bulk** hint the window
+pipeline is worse than block at every cell, on both seeds, by goodput and
+completion time (and by DNF at c2); at c2 it is also worse at auto on seed
+42. The stated-in-advance reading fired: `WIN` DNF'd 100 MB at c2 in 4 of 4
+reps, so finding 3.1.2 moves from "substrate" to "the window pipeline" at c2.
+
+*Crown spot* (same session, 18:10–18:43Z, `ship` arm, realtime, 64 reps):
+`REPAIRS-INERT-ON-CROWN`. p99 median / p50 median per cell-size-seed, all
+inside their bands: c2·400B 37.6/8.03 (s42), 36.8/7.90 (s7); c2·1200B
+40.2/8.32, 41.3/8.32; c3·400B 114.7/24.10, 113.4/24.03; c3·1200B 93.8/25.68,
+100.3/25.85 ms. `count = 1000` in 64 of 64 reps. Single-rep outliers
+(inside the median rule): c2·400B s7 one rep p99 134 ms; c3·1200B s7 one rep
+p99 1004.7 ms. The attempt-1 crown spot (15:55–16:27Z) ran under a
+co-tenant cargo build and is VOID (amendment 3), not scored.
+
+*Outside the pre-registered set (findings, no verdict).*
+1. **The shipped default path fails at Auto.** `BLK` at the auto hint — the
+   shipped default config (hint Auto, block pipeline, RaptorQ) — did not
+   finish in 150 s in 14 of 20 invocations: c3, c7, c8 4/4 each, c2 2/4
+   (both seed-7 reps); only c1 completed. `WIN` completed all 20 auto
+   invocations. One inspected DNF (c3 auto s42 rep 1) shows the server
+   repeatedly logging `evicted timed-out decoders (block decode failures)`
+   (count 15–54 per sweep). The not-worse rule is one-sided, so this does not
+   enter the verdict, but it means neither pipeline is acceptable at Auto
+   today: block stalls, window runs far below capacity (c3 3.8 Mbit, c8 5.6).
+2. `WIN` at bulk is 3–5× slower than `BLK` at c3 (3.3 vs 16.4 Mbit) and c8,
+   and highly variable at c8 (5.6–59.2 Mbit).
+
+*What it means.* The window pipeline is not a safe default for Bulk: at the
+bulk hint the legacy block pipeline wins everywhere this battery looked, so
+ADR-0069's flip and the block deletion are not licensed, and the
+one-machine claim must name the exception (Bulk/Auto default stays on the
+block pipeline). The same run also shows the block default stalling at the
+Auto hint on four of five cells, which is a defect on the path users get
+with no flags.

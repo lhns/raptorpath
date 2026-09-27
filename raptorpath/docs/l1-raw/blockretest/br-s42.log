@@ -1,0 +1,320 @@
+LOCKS-HELD-BY-ENVELOPE blockretest_run_all:72761
+=== BLOCKRETEST BATTERY seed=42 reps=2 cells='c1 c2 c3 c7 c8' hints='bulk auto' arms='BLK WIN' 2026-09-27T18:42:42Z
+=== binary /home/vibe/blockretest/src/target/release/raptorpath sha256 780616883fc5a242ab7b439dcd63d33d357f1d3d0c13141c1f546a3300713003
+=== source fa1f497 cleanup/a4-block-retest (binary built from c2ab337; later commits change tools/l1 + docs only)
+=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=block|window runs=1 soft_deadline=1790540479 rep_est=1800
+Model name:                              Intel(R) Xeon(R) CPU E5-2650 v3 @ 2.30GHz
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm arch_perfmon rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm cpuid_fault pti ssbd ibrs ibpb stibp tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid xsaveopt arat vnmi umip md_clear flush_l1d arch_capabilities
+=== rep=1 arm=BLK cell=c1 hint=bulk seed=42 attempt=1 pipeline=block spec=c1/c1/single bytes=400000000 18:42:42
+COTENANT c1-bulk-BLK rep=1 before=0 after=0 load=1.18 0.38 0.51
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:42:44
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":13.0336,"mean_mbps":245.519,"mean_s":13.0336,"median_s":13.0336,"min_s":13.0336,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=13.85s CPUCLI=14.02s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-bulk-BLK rep=1 attempt=1 14s rc=0
+BRROW {"arm": "BLK", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 245.519, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 13.033603, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c1 hint=bulk seed=42 attempt=1 pipeline=window spec=c1/c1/single bytes=400000000 18:42:58
+COTENANT c1-bulk-WIN rep=1 before=0 after=0 load=1.72 0.54 0.56
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:42:59
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":16.3007,"mean_mbps":196.31,"mean_s":16.3007,"median_s":16.3007,"min_s":16.3007,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=17.66s CPUCLI=18.33s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-bulk-WIN rep=1 attempt=1 18s rc=0
+BRROW {"arm": "WIN", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 196.31, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 16.300726, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c1 hint=auto seed=42 attempt=1 pipeline=block spec=c1/c1/single bytes=400000000 18:43:16
+COTENANT c1-auto-BLK rep=1 before=0 after=0 load=1.93 0.69 0.61
+--- RWM-C perf pipeline=block mode=single hint=auto A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:43:17
+{"bytes":400000000,"dnf":0,"hint":"auto","max_s":19.5464,"mean_mbps":163.713,"mean_s":19.5464,"median_s":19.5464,"min_s":19.5464,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=20.04s CPUCLI=21.54s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-auto-BLK rep=1 attempt=1 21s rc=0
+BRROW {"arm": "BLK", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": 163.713, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 19.546416, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c1 hint=auto seed=42 attempt=1 pipeline=window spec=c1/c1/single bytes=400000000 18:43:37
+COTENANT c1-auto-WIN rep=1 before=0 after=0 load=2.73 0.95 0.70
+--- RWM-C perf pipeline=window mode=single hint=auto A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:43:39
+{"bytes":400000000,"dnf":0,"hint":"auto","max_s":18.7092,"mean_mbps":171.039,"mean_s":18.7092,"median_s":18.7092,"min_s":18.7092,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=18.55s CPUCLI=21.41s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-auto-WIN rep=1 attempt=1 21s rc=0
+BRROW {"arm": "WIN", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 171.039, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 18.709231, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c2 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c2/single bytes=100000000 18:43:58
+COTENANT c2-bulk-BLK rep=1 before=0 after=0 load=2.61 0.98 0.71
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=20:44:00
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.4054,"mean_mbps":85.058,"mean_s":9.4054,"median_s":9.4054,"min_s":9.4054,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=5.16s CPUCLI=9.20s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-BLK rep=1 attempt=1 11s rc=0
+BRROW {"arm": "BLK", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 85.058, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 9.405356, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c2 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c2/single bytes=100000000 18:44:10
+COTENANT c2-bulk-WIN rep=1 before=0 after=0 load=1.19 1.04 0.78
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=20:44:11
+{"bytes":100000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":100000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=4.48s CPUCLI=149.58s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-WIN rep=1 attempt=1 151s rc=0
+BRROW {"arm": "WIN", "cell": "c2", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": null, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c2 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c2/single bytes=100000000 18:46:42
+COTENANT c2-auto-BLK rep=1 before=0 after=0 load=1.15 1.04 0.79
+--- RWM-C perf pipeline=block mode=single hint=auto A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=20:46:43
+{"bytes":100000000,"dnf":0,"hint":"auto","max_s":13.7563,"mean_mbps":58.155,"mean_s":13.7563,"median_s":13.7563,"min_s":13.7563,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.95s CPUCLI=6.34s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-auto-BLK rep=1 attempt=1 16s rc=0
+BRROW {"arm": "BLK", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": 58.155, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 13.756274, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c2 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c2/single bytes=100000000 18:46:58
+COTENANT c2-auto-WIN rep=1 before=0 after=0 load=1.20 1.06 0.81
+--- RWM-C perf pipeline=window mode=single hint=auto A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=20:46:59
+{"bytes":100000000,"dnf":0,"hint":"auto","max_s":34.0205,"mean_mbps":23.515,"mean_s":34.0205,"median_s":34.0205,"min_s":34.0205,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=8.97s CPUCLI=34.80s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-auto-WIN rep=1 attempt=1 36s rc=0
+BRROW {"arm": "WIN", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 23.515, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 34.020454, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c3 hint=bulk seed=42 attempt=1 pipeline=block spec=c3/c3/single bytes=25000000 18:47:34
+COTENANT c3-bulk-BLK rep=1 before=0 after=0 load=1.07 1.04 0.81
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:47:35
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.9444,"mean_mbps":15.451,"mean_s":12.9444,"median_s":12.9444,"min_s":12.9444,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.36s CPUCLI=3.27s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-bulk-BLK rep=1 attempt=1 15s rc=0
+BRROW {"arm": "BLK", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 15.451, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 12.944359, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c3 hint=bulk seed=42 attempt=1 pipeline=window spec=c3/c3/single bytes=25000000 18:47:49
+COTENANT c3-bulk-WIN rep=1 before=0 after=0 load=1.05 1.05 0.83
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:47:51
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":62.4244,"mean_mbps":3.204,"mean_s":62.4244,"median_s":62.4244,"min_s":62.4244,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.39s CPUCLI=60.21s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-bulk-WIN rep=1 attempt=1 65s rc=0
+BRROW {"arm": "WIN", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 3.204, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 62.424449, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c3 hint=auto seed=42 attempt=1 pipeline=block spec=c3/c3/single bytes=25000000 18:48:54
+COTENANT c3-auto-BLK rep=1 before=0 after=0 load=0.11 0.65 0.71
+--- RWM-C perf pipeline=block mode=single hint=auto A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:48:55
+{"bytes":25000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":25000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=3.99s CPUCLI=4.22s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-auto-BLK rep=1 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c3", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c3 hint=auto seed=42 attempt=1 pipeline=window spec=c3/c3/single bytes=25000000 18:51:26
+COTENANT c3-auto-WIN rep=1 before=0 after=0 load=2.34 1.10 0.85
+--- RWM-C perf pipeline=window mode=single hint=auto A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:51:28
+{"bytes":25000000,"dnf":0,"hint":"auto","max_s":47.5792,"mean_mbps":4.204,"mean_s":47.5792,"median_s":47.5792,"min_s":47.5792,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.60s CPUCLI=44.07s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-auto-WIN rep=1 attempt=1 50s rc=0
+BRROW {"arm": "WIN", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 4.204, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 47.579203, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c7 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c2/dual bytes=200000000 18:52:16
+COTENANT c7-bulk-BLK rep=1 before=0 after=0 load=3.93 1.50 0.99
+--- RWM-C perf pipeline=block mode=dual hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=20:52:18
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":13.4196,"mean_mbps":119.229,"mean_s":13.4196,"median_s":13.4196,"min_s":13.4196,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=10.37s CPUCLI=17.33s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-bulk-BLK rep=1 attempt=1 15s rc=0
+BRROW {"arm": "BLK", "cell": "c7", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 119.229, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 13.419606, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c7 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c2/dual bytes=200000000 18:52:31
+COTENANT c7-bulk-WIN rep=1 before=0 after=0 load=4.48 1.85 1.12
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=20:52:33
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":20.6942,"mean_mbps":77.317,"mean_s":20.6942,"median_s":20.6942,"min_s":20.6942,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.06s CPUCLI=25.15s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-bulk-WIN rep=1 attempt=1 22s rc=0
+BRROW {"arm": "WIN", "cell": "c7", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 77.317, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 20.694158, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c7 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c2/dual bytes=200000000 18:52:54
+COTENANT c7-auto-BLK rep=1 before=0 after=0 load=0.49 1.27 1.02
+--- RWM-C perf pipeline=block mode=dual hint=auto A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=20:52:56
+{"bytes":200000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":200000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=16.80s CPUCLI=17.76s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-auto-BLK rep=1 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c7", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c7 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c2/dual bytes=200000000 18:55:26
+COTENANT c7-auto-WIN rep=1 before=0 after=0 load=1.22 1.38 1.06
+--- RWM-C perf pipeline=window mode=dual hint=auto A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=20:55:28
+{"bytes":200000000,"dnf":0,"hint":"auto","max_s":19.3837,"mean_mbps":82.544,"mean_s":19.3837,"median_s":19.3837,"min_s":19.3837,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=20.07s CPUCLI=26.92s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-auto-WIN rep=1 attempt=1 21s rc=0
+BRROW {"arm": "WIN", "cell": "c7", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 82.544, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 19.383701, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c8 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c3/dual bytes=25000000 18:55:48
+COTENANT c8-bulk-BLK rep=1 before=0 after=0 load=1.20 1.37 1.06
+--- RWM-C perf pipeline=block mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:55:50
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.399,"mean_mbps":83.369,"mean_s":2.399,"median_s":2.399,"min_s":2.399,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=1.53s CPUCLI=2.45s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-BLK rep=1 attempt=1 4s rc=0
+BRROW {"arm": "BLK", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 83.369, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 2.398965, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c8 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c3/dual bytes=25000000 18:55:53
+COTENANT c8-bulk-WIN rep=1 before=0 after=0 load=1.27 1.38 1.06
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:55:54
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":7.3002,"mean_mbps":27.396,"mean_s":7.3002,"median_s":7.3002,"min_s":7.3002,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.22s CPUCLI=6.59s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-WIN rep=1 attempt=1 9s rc=0
+BRROW {"arm": "WIN", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 27.396, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 1, "seconds": 7.300245, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=1 arm=BLK cell=c8 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c3/dual bytes=25000000 18:56:02
+COTENANT c8-auto-BLK rep=1 before=0 after=0 load=0.11 0.85 0.91
+--- RWM-C perf pipeline=block mode=dual hint=auto A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:56:04
+{"bytes":25000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":25000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=3.24s CPUCLI=3.15s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-auto-BLK rep=1 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c8", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=1 arm=WIN cell=c8 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c3/dual bytes=25000000 18:58:34
+COTENANT c8-auto-WIN rep=1 before=0 after=0 load=0.65 0.89 0.92
+--- RWM-C perf pipeline=window mode=dual hint=auto A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=20:58:36
+{"bytes":25000000,"dnf":0,"hint":"auto","max_s":47.5356,"mean_mbps":4.207,"mean_s":47.5356,"median_s":47.5356,"min_s":47.5356,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=3.05s CPUCLI=48.13s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-auto-WIN rep=1 attempt=1 50s rc=0
+BRROW {"arm": "WIN", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 4.207, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 1, "seconds": 47.535596, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+REP-COMPLETE seed=42 rep=1 2026-09-27T18:59:24Z
+=== rep=2 arm=WIN cell=c1 hint=bulk seed=42 attempt=1 pipeline=window spec=c1/c1/single bytes=400000000 18:59:24
+COTENANT c1-bulk-WIN rep=2 before=0 after=0 load=1.24 1.01 0.96
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:59:26
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":15.1557,"mean_mbps":211.142,"mean_s":15.1557,"median_s":15.1557,"min_s":15.1557,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=16.78s CPUCLI=17.42s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-bulk-WIN rep=2 attempt=1 17s rc=0
+BRROW {"arm": "WIN", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 211.142, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 15.155682, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c1 hint=bulk seed=42 attempt=1 pipeline=block spec=c1/c1/single bytes=400000000 18:59:41
+COTENANT c1-bulk-BLK rep=2 before=0 after=0 load=1.35 1.04 0.97
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:59:43
+{"bytes":400000000,"dnf":0,"hint":"bulk","max_s":12.6216,"mean_mbps":253.534,"mean_s":12.6216,"median_s":12.6216,"min_s":12.6216,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=13.50s CPUCLI=14.21s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-bulk-BLK rep=2 attempt=1 15s rc=0
+BRROW {"arm": "BLK", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 253.534, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 12.621566, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c1 hint=auto seed=42 attempt=1 pipeline=window spec=c1/c1/single bytes=400000000 18:59:56
+COTENANT c1-auto-WIN rep=2 before=0 after=0 load=1.62 1.12 1.00
+--- RWM-C perf pipeline=window mode=single hint=auto A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=20:59:57
+{"bytes":400000000,"dnf":0,"hint":"auto","max_s":19.0724,"mean_mbps":167.781,"mean_s":19.0724,"median_s":19.0724,"min_s":19.0724,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=19.00s CPUCLI=22.05s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-auto-WIN rep=2 attempt=1 21s rc=0
+BRROW {"arm": "WIN", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 167.781, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 19.072428, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c1 hint=auto seed=42 attempt=1 pipeline=block spec=c1/c1/single bytes=400000000 19:00:17
+COTENANT c1-auto-BLK rep=2 before=0 after=0 load=2.12 1.27 1.05
+--- RWM-C perf pipeline=block mode=single hint=auto A=c1 B=c1 ooo=0 extra='' T=default (400000000 x 1) start=21:00:19
+{"bytes":400000000,"dnf":0,"hint":"auto","max_s":19.9601,"mean_mbps":160.32,"mean_s":19.9601,"median_s":19.9601,"min_s":19.9601,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=20.18s CPUCLI=22.44s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c1-auto-BLK rep=2 attempt=1 22s rc=0
+BRROW {"arm": "BLK", "cell": "c1", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": 160.32, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 19.960106, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c2 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c2/single bytes=100000000 19:00:39
+COTENANT c2-bulk-WIN rep=2 before=0 after=0 load=1.09 1.16 1.04
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=21:00:41
+{"bytes":100000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":100000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=4.41s CPUCLI=149.85s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-WIN rep=2 attempt=1 152s rc=0
+BRROW {"arm": "WIN", "cell": "c2", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": null, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": null, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c2 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c2/single bytes=100000000 19:03:11
+COTENANT c2-bulk-BLK rep=2 before=0 after=0 load=1.00 1.14 1.03
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=21:03:13
+{"bytes":100000000,"dnf":0,"hint":"bulk","max_s":9.5812,"mean_mbps":83.497,"mean_s":9.5812,"median_s":9.5812,"min_s":9.5812,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=5.51s CPUCLI=9.52s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-bulk-BLK rep=2 attempt=1 12s rc=0
+BRROW {"arm": "BLK", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 83.497, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 9.58116, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c2 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c2/single bytes=100000000 19:03:23
+COTENANT c2-auto-WIN rep=2 before=0 after=0 load=1.07 1.13 1.03
+--- RWM-C perf pipeline=window mode=single hint=auto A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=21:03:25
+{"bytes":100000000,"dnf":0,"hint":"auto","max_s":57.4361,"mean_mbps":13.929,"mean_s":57.4361,"median_s":57.4361,"min_s":57.4361,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=9.71s CPUCLI=58.60s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-auto-WIN rep=2 attempt=1 59s rc=0
+BRROW {"arm": "WIN", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 13.929, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 57.436119, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c2 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c2/single bytes=100000000 19:04:23
+COTENANT c2-auto-BLK rep=2 before=0 after=0 load=0.90 1.08 1.02
+--- RWM-C perf pipeline=block mode=single hint=auto A=c2 B=c2 ooo=0 extra='' T=default (100000000 x 1) start=21:04:24
+{"bytes":100000000,"dnf":0,"hint":"auto","max_s":13.6321,"mean_mbps":58.685,"mean_s":13.6321,"median_s":13.6321,"min_s":13.6321,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=7.90s CPUCLI=6.34s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c2-auto-BLK rep=2 attempt=1 15s rc=0
+BRROW {"arm": "BLK", "cell": "c2", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": 58.685, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 13.632063, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c3 hint=bulk seed=42 attempt=1 pipeline=window spec=c3/c3/single bytes=25000000 19:04:38
+COTENANT c3-bulk-WIN rep=2 before=0 after=0 load=1.05 1.08 1.02
+--- RWM-C perf pipeline=window mode=single hint=bulk A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:04:40
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":71.3759,"mean_mbps":2.802,"mean_s":71.3759,"median_s":71.3759,"min_s":71.3759,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.34s CPUCLI=68.11s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-bulk-WIN rep=2 attempt=1 74s rc=0
+BRROW {"arm": "WIN", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 2.802, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 71.375908, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c3 hint=bulk seed=42 attempt=1 pipeline=block spec=c3/c3/single bytes=25000000 19:05:52
+COTENANT c3-bulk-BLK rep=2 before=0 after=0 load=0.97 1.06 1.01
+--- RWM-C perf pipeline=block mode=single hint=bulk A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:05:54
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":12.1083,"mean_mbps":16.518,"mean_s":12.1083,"median_s":12.1083,"min_s":12.1083,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.12s CPUCLI=3.25s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-bulk-BLK rep=2 attempt=1 14s rc=0
+BRROW {"arm": "BLK", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 16.518, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 12.108346, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c3 hint=auto seed=42 attempt=1 pipeline=window spec=c3/c3/single bytes=25000000 19:06:06
+COTENANT c3-auto-WIN rep=2 before=0 after=0 load=1.27 1.11 1.03
+--- RWM-C perf pipeline=window mode=single hint=auto A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:06:08
+{"bytes":25000000,"dnf":0,"hint":"auto","max_s":60.0438,"mean_mbps":3.331,"mean_s":60.0438,"median_s":60.0438,"min_s":60.0438,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.72s CPUCLI=56.85s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-auto-WIN rep=2 attempt=1 63s rc=0
+BRROW {"arm": "WIN", "cell": "c3", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 3.331, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 60.043756, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c3 hint=auto seed=42 attempt=1 pipeline=block spec=c3/c3/single bytes=25000000 19:07:09
+COTENANT c3-auto-BLK rep=2 before=0 after=0 load=0.16 0.74 0.90
+--- RWM-C perf pipeline=block mode=single hint=auto A=c3 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:07:10
+{"bytes":25000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":25000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=4.15s CPUCLI=4.30s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c3-auto-BLK rep=2 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c3", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c7 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c2/dual bytes=200000000 19:09:41
+COTENANT c7-bulk-WIN rep=2 before=0 after=0 load=0.68 0.81 0.92
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=21:09:43
+{"bytes":200000000,"dnf":0,"hint":"bulk","max_s":19.8294,"mean_mbps":80.688,"mean_s":19.8294,"median_s":19.8294,"min_s":19.8294,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=15.19s CPUCLI=24.02s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-bulk-WIN rep=2 attempt=1 22s rc=0
+BRROW {"arm": "WIN", "cell": "c7", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 80.688, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 19.829429, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c7 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c2/dual bytes=200000000 19:10:03
+COTENANT c7-bulk-BLK rep=2 before=0 after=0 load=0.16 0.59 0.82
+--- RWM-C perf pipeline=block mode=dual hint=bulk A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=21:10:05
+{"bytes":200000000,"dnf":true,"hint":"bulk","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":200000000,"dnf":1,"hint":"bulk","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=11.04s CPUCLI=17.53s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-bulk-BLK rep=2 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c7", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": null, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c7 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c2/dual bytes=200000000 19:12:35
+COTENANT c7-auto-WIN rep=2 before=0 after=0 load=1.35 0.83 0.89
+--- RWM-C perf pipeline=window mode=dual hint=auto A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=21:12:37
+{"bytes":200000000,"dnf":0,"hint":"auto","max_s":19.6306,"mean_mbps":81.505,"mean_s":19.6306,"median_s":19.6306,"min_s":19.6306,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=19.90s CPUCLI=27.27s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-auto-WIN rep=2 attempt=1 22s rc=0
+BRROW {"arm": "WIN", "cell": "c7", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 81.505, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 19.630595, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c7 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c2/dual bytes=200000000 19:12:57
+COTENANT c7-auto-BLK rep=2 before=0 after=0 load=0.40 0.69 0.83
+--- RWM-C perf pipeline=block mode=dual hint=auto A=c2 B=c2 ooo=0 extra='' T=default (200000000 x 1) start=21:12:58
+{"bytes":200000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":200000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=17.14s CPUCLI=18.07s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c7-auto-BLK rep=2 attempt=1 152s rc=0
+BRROW {"arm": "BLK", "cell": "c7", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c8 hint=bulk seed=42 attempt=1 pipeline=window spec=c2/c3/dual bytes=25000000 19:15:29
+COTENANT c8-bulk-WIN rep=2 before=0 after=0 load=0.85 0.77 0.86
+--- RWM-C perf pipeline=window mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:15:31
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":35.7012,"mean_mbps":5.602,"mean_s":35.7012,"median_s":35.7012,"min_s":35.7012,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.38s CPUCLI=35.95s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-WIN rep=2 attempt=1 38s rc=0
+BRROW {"arm": "WIN", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "bulk", "mbps": 5.602, "pipe_cli": ["window", "Rlc", "bulk"], "pipe_srv": ["window", "Rlc", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 35.701189, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c8 hint=bulk seed=42 attempt=1 pipeline=block spec=c2/c3/dual bytes=25000000 19:16:07
+COTENANT c8-bulk-BLK rep=2 before=0 after=0 load=0.86 0.77 0.86
+--- RWM-C perf pipeline=block mode=dual hint=bulk A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:16:09
+{"bytes":25000000,"dnf":0,"hint":"bulk","max_s":2.7008,"mean_mbps":74.051,"mean_s":2.7008,"median_s":2.7008,"min_s":2.7008,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=1.53s CPUCLI=2.46s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-bulk-BLK rep=2 attempt=1 5s rc=0
+BRROW {"arm": "BLK", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "bulk", "mbps": 74.051, "pipe_cli": ["block", "RaptorQ", "bulk"], "pipe_srv": ["block", "RaptorQ", "bulk"], "problems": [], "rc": 0, "rep": 2, "seconds": 2.700845, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+=== rep=2 arm=WIN cell=c8 hint=auto seed=42 attempt=1 pipeline=window spec=c2/c3/dual bytes=25000000 19:16:12
+COTENANT c8-auto-WIN rep=2 before=0 after=0 load=0.96 0.79 0.86
+--- RWM-C perf pipeline=window mode=dual hint=auto A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:16:14
+{"bytes":25000000,"dnf":0,"hint":"auto","max_s":3.1552,"mean_mbps":63.387,"mean_s":3.1552,"median_s":3.1552,"min_s":3.1552,"proto":"rp-native","runs":1,"stdev_s":0.0,"summary":true}
+    CPU: CPUSRV=2.58s CPUCLI=3.83s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-auto-WIN rep=2 attempt=1 5s rc=0
+BRROW {"arm": "WIN", "cell": "c8", "cotenant": 0, "dnf": false, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "window", "hint": "auto", "mbps": 63.387, "pipe_cli": ["window", "Rlc", "auto"], "pipe_srv": ["window", "Rlc", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": 3.15521, "seed": "42", "srv_generation_false": true, "status": "LIVE", "summary": true, "winline_cli": true, "winline_srv": true}
+=== rep=2 arm=BLK cell=c8 hint=auto seed=42 attempt=1 pipeline=block spec=c2/c3/dual bytes=25000000 19:16:17
+COTENANT c8-auto-BLK rep=2 before=0 after=0 load=0.11 0.50 0.74
+--- RWM-C perf pipeline=block mode=dual hint=auto A=c2 B=c3 ooo=0 extra='' T=default (25000000 x 1) start=21:16:19
+{"bytes":25000000,"dnf":true,"hint":"auto","proto":"rp-native","run":1,"timeout_s":150}
+{"bytes":25000000,"dnf":1,"hint":"auto","proto":"rp-native","runs":1,"summary":true}
+    CPU: CPUSRV=3.11s CPUCLI=3.11s (srv=decoder cli=sender; whole-invocation incl warmup)
+RUNTIME c8-auto-BLK rep=2 attempt=1 153s rc=0
+BRROW {"arm": "BLK", "cell": "c8", "cotenant": 0, "dnf": true, "gates_cli": true, "gates_srv": true, "gen_guard": false, "header": "block", "hint": "auto", "mbps": null, "pipe_cli": ["block", "RaptorQ", "auto"], "pipe_srv": ["block", "RaptorQ", "auto"], "problems": [], "rc": 0, "rep": 2, "seconds": null, "seed": "42", "srv_generation_false": false, "status": "LIVE", "summary": true, "winline_cli": false, "winline_srv": false}
+REP-COMPLETE seed=42 rep=2 2026-09-27T19:18:50Z
+=== ARMCOUNTS 2026-09-27T19:18:50Z
+ARMCOUNT c1-bulk-BLK n=2
+ARMCOUNT c1-bulk-WIN n=2
+ARMCOUNT c1-auto-BLK n=2
+ARMCOUNT c1-auto-WIN n=2
+ARMCOUNT c2-bulk-BLK n=2
+ARMCOUNT c2-bulk-WIN n=2
+ARMCOUNT c2-auto-BLK n=2
+ARMCOUNT c2-auto-WIN n=2
+ARMCOUNT c3-bulk-BLK n=2
+ARMCOUNT c3-bulk-WIN n=2
+ARMCOUNT c3-auto-BLK n=2
+ARMCOUNT c3-auto-WIN n=2
+ARMCOUNT c7-bulk-BLK n=2
+ARMCOUNT c7-bulk-WIN n=2
+ARMCOUNT c7-auto-BLK n=2
+ARMCOUNT c7-auto-WIN n=2
+ARMCOUNT c8-bulk-BLK n=2
+ARMCOUNT c8-bulk-WIN n=2
+ARMCOUNT c8-auto-BLK n=2
+ARMCOUNT c8-auto-WIN n=2
+BLOCKRETEST-BATTERY-DONE seed=42 2026-09-27T19:18:50Z
