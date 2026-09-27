@@ -88,7 +88,7 @@ fi
 # ── BINARY ───────────────────────────────────────────────────────────────
 # preflight: the binary runs and carries the [PIPE] echo (else it is the old
 # engine and the arms cannot be witnessed two-sided).
-preflight_binary "$BIN" "[PIPE] pipeline="
+preflight_binary "$BIN" "PIPE] pipeline="   # grep BRE: a leading "[" would open a bracket expression
 SHA_NOW="$(sha256sum "$BIN" | cut -d' ' -f1)"
 if [ -z "${BR_SHA:-}" ] || [ "$SHA_NOW" != "$BR_SHA" ]; then
   _lb_say "ABORT-SHA start: binary $SHA_NOW != BR_SHA '${BR_SHA:-unset}'"
