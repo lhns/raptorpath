@@ -10,3 +10,9 @@ __pycache__/
 
 # Battery artifacts pulled from the VM for scoring — evidence, never source.
 .scratch/
+
+# Generated artifacts — rebuilt on demand, never source.
+raptorpath-visualizer/wasm/
+raptorpath/docs/*.pdf
+raptorpath/docs/benchmark-results-*
+raptorpath/docs/benchmark-dashboard.html

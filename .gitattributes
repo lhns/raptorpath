@@ -1,0 +1,6 @@
+# Scripts that run on Linux (VM batteries, build) or under node must keep LF
+# line endings regardless of the checkout's core.autocrlf. A CRLF shebang/line
+# breaks bash ("$'\r': command not found") and python on the VM.
+*.sh  text eol=lf
+*.py  text eol=lf
+*.mjs text eol=lf
