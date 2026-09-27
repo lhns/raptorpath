@@ -8863,6 +8863,15 @@ mod tests {
         assert!(!place_arm_flag(var), "unset is ABSENT");
     }
 
+    /// A placement arm reads the one strict boolean dialect: a typo is a
+    /// startup error naming the gate, never a silently different row.
+    #[test]
+    #[should_panic(expected = "RWM_TEST_PLACE_ARM_GARBAGE")]
+    fn a_garbage_arm_value_is_an_error_naming_the_gate() {
+        std::env::set_var("RWM_TEST_PLACE_ARM_GARBAGE", "of");
+        let _ = place_arm_flag("RWM_TEST_PLACE_ARM_GARBAGE");
+    }
+
     /// **THE ARMS ARE ABSENT BY DEFAULT.** A fresh scheduler in a clean
     /// environment carries all three OFF, which is what makes the pinned
     /// table an oracle for every other test in this file.

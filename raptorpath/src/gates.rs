@@ -45,6 +45,18 @@ fn env_parse<T: std::str::FromStr>(name: &str) -> Option<T> {
     std::env::var(name).ok().and_then(|s| s.parse::<T>().ok())
 }
 
+/// `RWM_GEN_RATE_FLOOR` resolved against the pace ceiling `gen_rate`
+/// (default 2000, bounded to `[1, gen_rate]`).
+fn gen_rate_floor(raw: Option<f64>, gen_rate: f64) -> f64 {
+    raw.unwrap_or(2000.0).clamp(1.0, gen_rate)
+}
+
+/// `RWM_OOO_RETAIN`'s flag half: the variable doubles as the retention depth
+/// (`RWM_OOO_RETAIN=16`), so a depth value also arms the decouple.
+fn flag_or_depth(name: &str) -> bool {
+    env_flag(name, false)
+}
+
 /// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
 /// §16.81/§16.82). See [`RuntimeGates::delta`] for what it means
 /// and the precedence against `RWM_COPA_DELTA`.
@@ -1256,11 +1268,9 @@ impl RuntimeGates {
             gen_pipe: env_flag("RWM_GEN_PIPE", unified),
             gen_r: env_parse::<f64>("RWM_GEN_R"),
             gen_rate,
-            gen_rate_floor: env_parse::<f64>("RWM_GEN_RATE_FLOOR")
-                .unwrap_or(2000.0)
-                .clamp(1.0, gen_rate),
+            gen_rate_floor: gen_rate_floor(env_parse::<f64>("RWM_GEN_RATE_FLOOR"), gen_rate),
             gen_inflight: env_parse::<f64>("RWM_GEN_INFLIGHT"),
-            ooo_retain: env_flag("RWM_OOO_RETAIN", false),
+            ooo_retain: flag_or_depth("RWM_OOO_RETAIN"),
             ooo_gens: env_parse::<usize>("RWM_OOO_RETAIN")
                 .filter(|&n| n >= 2)
                 .unwrap_or(16),
@@ -1718,6 +1728,58 @@ mod forwarding_audit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Unique env var names per test: test threads share one environment.
+
+    #[test]
+    fn env_parse_rejects_non_finite_floats() {
+        for (var, val) in [
+            ("RWM_TEST_EP_NAN", "NaN"),
+            ("RWM_TEST_EP_INF", "inf"),
+            ("RWM_TEST_EP_NINF", "-inf"),
+            ("RWM_TEST_EP_OVF", "1e400"),
+        ] {
+            std::env::set_var(var, val);
+            assert_eq!(env_parse::<f64>(var), None, "{var}={val:?} must be rejected");
+            std::env::remove_var(var);
+        }
+        std::env::set_var("RWM_TEST_EP_OK", "2.5");
+        assert_eq!(env_parse::<f64>("RWM_TEST_EP_OK"), Some(2.5));
+        std::env::remove_var("RWM_TEST_EP_OK");
+    }
+
+    #[test]
+    fn gen_rate_floor_cannot_panic_on_a_small_or_nan_ceiling() {
+        for (raw, ceil) in [
+            (None, 0.5),
+            (Some(5.0), 0.0),
+            (Some(5.0), -3.0),
+            (None, f64::NAN),
+            (Some(f64::NAN), 100.0),
+        ] {
+            let f = std::panic::catch_unwind(|| gen_rate_floor(raw, ceil));
+            let f = f.unwrap_or_else(|_| panic!("gen_rate_floor({raw:?}, {ceil}) panicked"));
+            assert!(f >= 1.0 && f.is_finite(), "floor {f} out of range for ({raw:?}, {ceil})");
+        }
+        assert_eq!(gen_rate_floor(None, 9000.0), 2000.0, "default unchanged");
+        assert_eq!(gen_rate_floor(Some(50_000.0), 9000.0), 9000.0, "bounded by the ceiling");
+        assert_eq!(gen_rate_floor(Some(0.1), 9000.0), 1.0, "bounded below by 1");
+    }
+
+    #[test]
+    fn ooo_retain_accepts_a_depth_and_the_strict_booleans() {
+        for (var, val, want) in [
+            ("RWM_TEST_OOO_DEPTH", "16", true),
+            ("RWM_TEST_OOO_ONE", "1", true),
+            ("RWM_TEST_OOO_ZERO", "0", false),
+            ("RWM_TEST_OOO_OFF", "off", false),
+            ("RWM_TEST_OOO_NO", "no", false),
+        ] {
+            std::env::set_var(var, val);
+            assert_eq!(flag_or_depth(var), want, "{var}={val:?}");
+            std::env::remove_var(var);
+        }
+    }
 
     /// Default-env resolution reproduces the shipped defaults (the ADR-0067
     /// consolidated stack): the CORE laws ON, every experiment gate OFF.

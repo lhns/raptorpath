@@ -463,6 +463,37 @@ mod env_flag_tests {
     }
 
     #[test]
+    fn off_and_no_are_off_on_and_yes_are_on_case_insensitive() {
+        for (var, val, want) in [
+            ("RWM_TEST_EF_OFF", "off", false),
+            ("RWM_TEST_EF_OFF_UC", "OFF", false),
+            ("RWM_TEST_EF_NO", "no", false),
+            ("RWM_TEST_EF_NO_MC", "No", false),
+            ("RWM_TEST_EF_ON", "on", true),
+            ("RWM_TEST_EF_YES_UC", "YES", true),
+            ("RWM_TEST_EF_TRUE_WS", " true ", true),
+        ] {
+            std::env::set_var(var, val);
+            assert_eq!(env_flag(var, !want), want, "{var}={val:?}");
+            std::env::remove_var(var);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "RWM_TEST_EF_GARBAGE")]
+    fn an_unrecognised_boolean_is_an_error_naming_the_variable() {
+        std::env::set_var("RWM_TEST_EF_GARBAGE", "of");
+        let _ = env_flag("RWM_TEST_EF_GARBAGE", false);
+    }
+
+    #[test]
+    #[should_panic(expected = "RWM_TEST_EF_NUMBER")]
+    fn a_number_is_not_a_boolean() {
+        std::env::set_var("RWM_TEST_EF_NUMBER", "16");
+        let _ = env_flag("RWM_TEST_EF_NUMBER", false);
+    }
+
+    #[test]
     fn one_and_anything_else_are_on_even_when_default_off() {
         for (var, val) in [
             ("RWM_TEST_EF_ONE", "1"),
