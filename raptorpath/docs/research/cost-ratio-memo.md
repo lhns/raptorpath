@@ -83,7 +83,7 @@ anywhere in the chain.
 ## 2. WHAT THE MEASURED RECORD ALREADY SAYS
 
 Everything in this section is transcribed from the Candidates Battery RESULTS
-(`goal-gate.md`, "Candidates Battery — RESULTS", 596 L1 invocations / 452
+(`goal-gate.md` at commit `ac1aed1`, "Candidates Battery — RESULTS", 596 L1 invocations / 452
 live, one binary `0f6069da…9dd395e7`) and from §16.68's component bench
 (`raptorpath/tests/recovery_bench.rs:535-542`). Nothing here is new
 measurement.

@@ -2,7 +2,7 @@
 
 Upgrades the claim from "surpasses SimRetx/SimQuic models" (L0, in-process)
 to "surpasses real TCP CUBIC / BBR / QUIC / MPTCP" — the same win
-conditions as `docs/goal-gate.md`, measured on real kernel stacks over
+conditions as the L0 gate suite (`tests/gate_suite.rs`), measured on real kernel stacks over
 emulated links.
 
 ## Test host
@@ -72,14 +72,14 @@ model. A `--symmetric` flag adds loss both ways for sensitivity checks.)
 **Phase 3: raptorpath itself.**
 - Build the raptorpath binary on the VM (Linux TUN backend), run
   sender/receiver in rp-cli/rp-srv namespaces over the same links, same
-  transfer sizes. Gate conditions from docs/goal-gate.md apply unchanged:
+  transfer sizes. The gate suite's conditions apply unchanged:
   lossy cells completion <= 0.9x / p99 <= 0.7x best baseline; C1 tie;
   multipath beats best single + MPTCP.
 
 **Phase 4: automation.**
 - One driver script sweeping cells x baselines x N runs, seeds via netem
-  `seed` option for reproducibility, results as JSON + a table appended to
-  docs/goal-gate.md ("L1 results").
+  `seed` option for reproducibility, results as JSON, scored under
+  docs/measurement-discipline.md (latest verdicts in docs/status.md).
 
 ## Metrics
 

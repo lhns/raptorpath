@@ -1,9 +1,14 @@
 # Formula Cross-Check — every load-bearing formula against the published literature
 
-**A desk-research review, not a decision record.** Companion to
-`literature-map.md`, which did this for the arc's *findings*; this document does
-it for the *expressions*. Nothing here is an ADR: no decision is taken, no
-default moves, no ADR-0071 candidate is picked, ranked or recommended.
+**A desk-research review, not a decision record.** Part 0 checks the arc's
+*findings* against the literature (it absorbs the former `literature-map.md`);
+Parts I–III do the same for the *expressions*. Nothing here is an ADR: no
+decision is taken, no default moves, no ADR-0071 candidate is picked, ranked or
+recommended.
+
+Ledger citations below (`goal-gate …`) refer to `raptorpath/docs/goal-gate.md`,
+removed after commit `ac1aed1`; read it with
+`git show ac1aed1:raptorpath/docs/goal-gate.md`.
 
 For each load-bearing formula in the tree — the shipped laws, the refuted ones,
 and the ADR-0071 candidates — this puts **our expression** next to **the
@@ -94,6 +99,45 @@ named at the point of use.
 **Nine places where the commonly-repeated version of a published constant is
 NOT what the primary source says** are collected in "Folklore corrected"
 below. Three of them touch our own record.
+
+---
+
+# PART 0 — THE FINDINGS CROSS-CHECK
+
+Every headline finding of the FEC/ARQ arc is established in the literature;
+none is a new bound. The most consequential prior result is **RFC 9265 §3–4**:
+on a congestion-limited reliable transfer, repair competes with source for the
+same window and "mainly reduce[s] goodput" — our presence⊥throughput identity,
+verbatim. The most important under-weighted solution is **FMTCP** (Cui et al.,
+ToN 2015), which aggregates heterogeneous paths with per-block fountains and an
+expected-arrival allocation rule.
+
+| # | finding | verdict | literature anchors | missed solution / note |
+|---|---|---|---|---|
+| 1 | Reliable throughput is recovery-latency-bound; FEC's round-trip saving needs spare bandwidth (presence⊥throughput) | KNOWN | Mathis 1997, Padhye 1998 (1/√p law); RFC 9265 §3–4; QUIC XOR-FEC removal (Langley 2017) | Taking RFC 9265 as an axiom answers "can spare-less FEC beat ARQ on a saturated link?" with no a priori |
+| 2 | On a saturated single path FEC = ARQ; FEC wins tail latency and predictability, not throughput | KNOWN | TCP/NC (Sundararajan 2011), CTCP (Kim 2012), Tambur (NSDI 2023), Zeng 2021, Mehrotra–Li 2009 | Tambur's loss-prediction rate adaptation is prior art for the Realtime r* controller |
+| 3 | The in-order cumulative-ack frontier caps heterogeneous multipath aggregation at parity | KNOWN | Xia–Tse 2003 (resequencing); BLEST, DAPS, ECF; bounded-receive-buffer MPTCP (2014); MPTCP meets FEC (2018) | **FMTCP**: fountain symbols fungible across subflows, decode-on-total per block |
+| 4 | Block and sliding-window FEC are one continuum (advance-by-W vs advance-by-1) | KNOWN, mild expository novelty | CRLNC / sliding-window RLNC (Wunderlich 2017); Martinian–Sundberg 2004; Badr 2017; Fong 2019; Karzand–Leith 2014/2017; Cloud–Médard 2014; RFC 8681 / RFC 6330 | Karzand–Leith's in-window redundancy placement is the lever the advance-step parameter abstracts |
+| 5 | Gilbert-Elliott is inadequate for cellular loss (long memory, heavy bursts, non-stationarity); r* under-provisions | KNOWN | Hasslinger–Hohlfeld 2008 (GE fine on wired backbone); 802.11 HMM loss models (2009); Sprout / Mahimahi (NSDI 2013); Vajha 2020 | HMM / semi-Markov burst models and empirical-quantile provisioning are the standard answer |
+| 6 | Multipath completion as order statistics (fork-join E[max] vs K-of-N) | KNOWN, correct import | Nelson–Tantawi 1988; Joshi–Liu–Soljanin 2014; Joshi–Soljanin–Wornell 2017; coded-multipath preemption (arXiv 2302.07562) | FMTCP and Joshi's coded download already apply order statistics to coded multipath |
+
+**Known escapes from the in-order frontier bound.** None breaks it for
+tight-δ, in-order, incremental delivery on a saturated path. Each escape moves
+one of the two knobs of the (H, r) surface (paper §16.7): relax ordering to
+decode-on-total (FMTCP; SCDP; fountain-multipath streaming such as AeroMTP /
+HMTP / JDAFC), or spend spare bandwidth on repair (MPTCP meets FEC; Cloud–Médard
+multipath low-delay codes, GLOBECOM 2016 / TMC 2017; CTCP's "seen" packets
+shrink the in-order wait but still pay recovery where there is no spare). QUIC
+XOR-FEC is the negative data point.
+
+**What is plausibly our own.** (1) The (H, r) fungibility duality — H buys
+fungibility in latency, r in bandwidth, δ picks the point — as a unifying
+exposition (mild novelty). (2) The moving-anchor negative result: a send-time
+windowed coded sliding window aggregates negatively on per-path-timed multipath
+(×0.26 at C8), fixed by a stable per-generation anchor — a crisp isolation of
+the failure, and a rediscovery of why FMTCP uses per-block fountains. (3) The
+presence⊥throughput identity as a named invariant (a restatement of RFC 9265).
+The value of the arc is rigour, not novelty.
 
 ---
 
@@ -2752,6 +2796,40 @@ notes.
 - J. Bentley, "Programming Pearls: The Envelope Is Back," *CACM* 29(3):176–182, 1986.
 - C. J. Roy, "Review of code and solution verification procedures for computational simulation," *J. Computational Physics* 205:131–156, 2005.
 - G. Pólya, *How to Solve It*, Princeton UP, 1945 ("Test by Dimension").
+
+**Part 0 — findings-level references** (verified by title, authors and venue
+unless noted; where the author list could not be confirmed the work is cited by
+title and venue only)
+
+- M. Mathis, J. Semke, J. Mahdavi, T. Ott, "The Macroscopic Behavior of the TCP Congestion Avoidance Algorithm," ACM SIGCOMM CCR 27(3), 1997.
+- J. Padhye, V. Firoiu, D. Towsley, J. Kurose, "Modeling TCP Throughput: A Simple Model and its Empirical Validation," ACM SIGCOMM 1998, pp. 303–314.
+- N. Kuhn, E. Lochin, F. Michel, M. Welzl, "Forward Erasure Correction (FEC) Coding and Congestion Control in Transport," RFC 9265 (IRTF NWCRG), July 2022; companion draft-irtf-nwcrg-coding-and-congestion.
+- A. Langley et al., "The QUIC Transport Protocol: Design and Internet-Scale Deployment," ACM SIGCOMM 2017 (documents the removal of QUIC's XOR-FEC).
+- J.K. Sundararajan, D. Shah, M. Médard, S. Jakubczak, M. Mitzenmacher, J. Barros, "Network Coding Meets TCP: Theory and Implementation," Proc. IEEE 99(3), 2011.
+- M. Kim, J. Cloud, A. ParandehGheibi, L. Urbina, K. Fouli, D. Leith, M. Médard, "Network Coded TCP (CTCP)," arXiv:1212.2291, 2012.
+- M. Rudow et al., "Tambur: Efficient loss recovery for videoconferencing via streaming codes," USENIX NSDI 2023.
+- G. Zeng, L. Chen, B. Yi, K. Chen, "Optimizing Tail Latency in Commodity Datacenters using Forward Error Correction," arXiv:2110.15157, 2021.
+- S. Mehrotra, J. Li, "A hybrid FEC-ARQ protocol for low-delay lossless sequential data streaming," IEEE MMSP 2009.
+- Y. Xia, D.N.C. Tse, "Analysis on Packet Resequencing for Reliable Network Protocols," IEEE INFOCOM 2003, pp. 990–1000.
+- S. Ferlin et al., "MPTCP meets FEC: Supporting Latency-Sensitive Applications over Heterogeneous Networks," IEEE/ACM Trans. Networking 26(5), 2018.
+- Y. Cui, L. Wang, X. Wang, H. Wang, Y. Wang, "FMTCP: A Fountain Code-Based Multipath Transmission Control Protocol," IEEE/ACM Trans. Networking 23(2), pp. 465–478, 2015.
+- J. Cloud, M. Médard, "Multi-Path Low Delay Network Codes," IEEE GLOBECOM 2016.
+- J. Cloud, D. Leith, M. Médard, "In-Order Delivery Delay of Transport Layer Coding," arXiv:1408.1440, 2014.
+- E. Martinian, C.-E.W. Sundberg, "Burst erasure correction codes with low decoding delay," IEEE Trans. Information Theory, 2004.
+- A. Badr, P. Patil, A. Tan, A. Dey, "Layered Constructions for Low-Delay Streaming Codes," IEEE Trans. Information Theory, 2017.
+- S.L. Fong, A. Khisti, B. Li, A. Tan, "Optimal Streaming Codes for Channels with Burst and Arbitrary Erasures," IEEE Trans. Information Theory 65(7), 2019.
+- M. Karzand, D.J. Leith, "Low delay random linear coding over a stream," Allerton 2014.
+- M. Karzand, D.J. Leith, J. Cloud, M. Médard, "Design of FEC for Low Delay in 5G," IEEE JSAC 35(8), pp. 1783–1793, 2017.
+- S. Wunderlich, J.A. Cabrera, F.H.P. Fitzek et al., "Caterpillar RLNC (CRLNC): A Practical Finite Sliding Window RLNC Approach," 2017; and "We don't need no generation — a practical approach to sliding window RLNC," 2017.
+- RFC 8681 (sliding-window RLC FEC, 2020); RFC 6330 (RaptorQ, 2012).
+- G. Hasslinger, O. Hohlfeld, "The Gilbert-Elliott Model for Packet Loss in Real Time Services on the Internet," GI/ITG MMB 2008, pp. 269–283.
+- "Accurate hidden Markov modeling of packet losses in indoor 802.11 networks," IEEE Communications Letters, 2009 (authors unconfirmed).
+- K. Winstein, A. Sivaraman, H. Balakrishnan, "Stochastic Forecasts Achieve High Throughput and Low Delay over Cellular Networks" (Sprout), USENIX NSDI 2013; the Mahimahi trace toolset.
+- M. Vajha, V. Ramkumar, M. Jhamtani, P.V. Kumar, "On the Performance Analysis of Streaming Codes over the Gilbert-Elliott Channel," arXiv:2005.06921, 2020.
+- R. Nelson, A.N. Tantawi, "Approximate Analysis of Fork/Join Synchronization in Parallel Queues," IEEE Trans. Computers 37(6), pp. 739–743, 1988.
+- G. Joshi, Y. Liu, E. Soljanin, "On the Delay-Storage Trade-off in Content Download from Coded Distributed Storage Systems," IEEE JSAC 32(5), 2014.
+- G. Joshi, E. Soljanin, G.W. Wornell, "Efficient Redundancy Techniques for Latency Reduction in Cloud Systems," ACM ToMPECS 2(2), 2017 (arXiv:1508.03599).
+- "On the Role of Preemption for Timing Metrics in Coded Multipath Communication," arXiv:2302.07562, 2023 (authors unconfirmed).
 
 ---
 
