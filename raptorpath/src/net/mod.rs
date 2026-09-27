@@ -552,9 +552,12 @@ pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
 
 /// The path set the sender's recovery clocks pool over: the tail-sweep
 /// clock, the per-seq retransmit cooldown's pooled SRTT/jitter, and the
-/// repair margin's loss rate.
+/// repair margin's loss rate. LIVE paths, as the receiver's recovery timer
+/// uses (`receiver.rs`, `live_paths()`): the saturation-filtered
+/// `active_paths()` (`available() > 0`) is empty exactly when every path is
+/// cwnd-full, which collapsed the clocks to the 10 ms floor / zero margin.
 pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> {
-    sched.active_paths()
+    sched.live_paths()
 }
 
 /// [`pooled_recovery_srtt_us`] over [`recovery_clock_paths`]: the pooled
@@ -9685,8 +9688,7 @@ async fn run_window_sender(
                     .max(last_tail_sweep_us);
                 let (srtt_us, jitter_us, min_rtt_us, sigma_us, w_q_us) = {
                     let sched = scheduler.lock();
-                    let paths: Vec<_> = sched
-                        .active_paths()
+                    let paths: Vec<_> = recovery_clock_paths(&sched)
                         .iter()
                         .filter_map(|id| sched.path(*id))
                         .collect();
@@ -10472,13 +10474,16 @@ async fn run_window_sender(
                 }
                 // The pooled jitter for the pooled cooldown clock below: the
                 // MAX over live paths, matching the pooled srtt's own max.
-                pooled_jitter_us = ids
+                // Both read `recovery_clock_paths` (live paths) whatever
+                // `RWM_RECOV_MP_LIVE` selects for the hole law's snapshot.
+                let clock_ids = recovery_clock_paths(&sched);
+                pooled_jitter_us = clock_ids
                     .iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.rtt_jitter_us())
                     .max()
                     .unwrap_or(0);
-                let pooled: Vec<u64> = ids
+                let pooled: Vec<u64> = clock_ids
                     .iter()
                     .filter_map(|id| sched.path(*id))
                     .map(|p| p.estimator.rtt().as_micros() as u64)
@@ -10915,8 +10920,7 @@ async fn run_window_sender(
             if retransmitted > 0 {
                 let current_loss = {
                     let sched = scheduler.lock();
-                    sched
-                        .active_paths()
+                    recovery_clock_paths(&sched)
                         .iter()
                         .filter_map(|id| sched.path(*id))
                         .map(|p| p.estimator.loss_rate())
