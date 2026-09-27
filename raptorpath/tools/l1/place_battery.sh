@@ -72,7 +72,10 @@
 # AMENDMENT DETAIL", NOT applied here.
 set -uo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "must be root"; exit 1; }
-cd /home/vibe/raptorpath/raptorpath/tools/l1
+cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+source ./lib_battery.sh
+declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
+crlf_guard place_battery.sh lib_battery.sh
 
 SEED_ARG="${1:?seed}"; REPS="${2:-4}"   # n = 4: the 5 h amendment
 PLACE_CELLS="${RWM_PLACE_CELLS:-c7 c8 c1 c9h}"
@@ -92,26 +95,14 @@ mkdir -p "$(dirname "$OUT")" "$DDIR"
 # hours in with a half-filled table.
 : > "$OUT" 2>/dev/null || { echo "REFUSED: cannot write $OUT" >&2; exit 4; }
 BIN=/home/vibe/raptorpath/target/release/raptorpath
-[ -x "$BIN" ] || { echo "REFUSED: no engine binary at $BIN" >&2; exit 4; }
+LB_TAG=place_battery
+LB_LOG="$OUT"
 # EARNED: the arms must EXIST in this binary. A run whose gate names are not
 # in the engine's own echo would silently score five copies of CTL — which is
 # exactly what an absent-by-default arm looks like from the outside.
-if ! "$BIN" --help >/dev/null 2>&1; then
-  echo "REFUSED: engine binary will not run" >&2; exit 4
-fi
-# `grep -a` on the binary itself, NOT `strings | grep -q`: under `pipefail`
-# `grep -q` exits at its first match, `strings` takes SIGPIPE (141), the
-# pipeline is non-zero and `if !` reads a PRESENT gate as absent — which is
-# how the placement smoke of 2026-09-08 18:37Z was REFUSED on the right binary.
-for G in RWM_PLACE_T_DERIVED RWM_PLACE_HOL; do
-  if ! grep -aq "$G" "$BIN" 2>/dev/null; then
-    echo "REFUSED: $G is not present in the binary — this is the OLD ENGINE" \
-      | tee -a "$OUT" >&2
-    exit 5
-  fi
-done
-# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; the block is r_battery.sh's,
-#    verbatim, with the INT/TERM handlers that EXIT) ────────────────────────
+preflight_binary "$BIN" RWM_PLACE_T_DERIVED RWM_PLACE_HOL
+# ── BOTH LOCKS (goal-gate "THE VM PROTOCOL"; lib_battery.sh's, with the
+#    INT/TERM handlers that EXIT) ────────────────────────────────────────────
 # `/tmp/rwm-vm.lock` is the box lock and `/home/vibe/rp.lock` the tree lock.
 # They are OPERATOR locks — this script does not invent a third mechanism —
 # but it REFUSES to run without them and it releases exactly what it took, so
@@ -120,33 +111,12 @@ done
 # is also what keeps a second place_battery from starting.
 VM_LOCK="${RWM_VM_LOCK:-/tmp/rwm-vm.lock}"
 RP_LOCK="${RWM_RP_LOCK:-/home/vibe/rp.lock}"
-LOCKS_TAKEN=""
-take_lock() {
-  local p="$1"
-  if (set -o noclobber; : > "$p") 2>/dev/null; then
-    echo "$$ place_battery $(date -u +%FT%TZ)" > "$p" 2>/dev/null
-    LOCKS_TAKEN="$LOCKS_TAKEN $p"
-    echo "LOCK-TAKEN $p" | tee -a "$OUT"
-    return 0
-  fi
-  echo "ABORT-LOCK $p is held: $(cat "$p" 2>/dev/null)" | tee -a "$OUT"
-  echo "NOTHING WAS RUN. Co-tenancy on the box under measurement manufactures the abort signature it looks for." | tee -a "$OUT"
-  release_locks
-  exit 4
-}
-release_locks() {
-  local p
-  for p in $LOCKS_TAKEN; do rm -f "$p" 2>/dev/null && echo "LOCK-RELEASED $p" | tee -a "$OUT"; done
-  LOCKS_TAKEN=""
-}
 # On INT/TERM the handler must EXIT after releasing: a `trap 'f' INT TERM`
 # body that does not `exit` RESUMES the script (the r-battery of 2026-09-08 ran
 # on for hours after TERM with both locks already cleared). Bash runs the
 # handler only once the in-flight foreground invocation returns — which is why
 # `place_run_all.sh`'s backstop follows its TERM with `pkill -x raptorpath`.
-trap 'release_locks' EXIT
-trap 'release_locks; exit 130' INT
-trap 'release_locks; exit 143' TERM
+install_lock_traps
 take_lock "$VM_LOCK"
 take_lock "$RP_LOCK"
 

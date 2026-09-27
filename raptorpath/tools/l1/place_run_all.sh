@@ -48,6 +48,9 @@
 # matches the watcher's own shell whenever its command line carries the string.
 set -u
 cd /home/vibe/raptorpath/raptorpath/tools/l1 || { echo "ABORT-CD tools/l1"; exit 3; }
+source ./lib_battery.sh
+declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
+crlf_guard place_run_all.sh place_battery.sh lib_battery.sh
 OUTDIR="${RWM_PLACE_OUTDIR:-/home/vibe/placement}"
 TAG="${RWM_PLACE_TAG:-place}"
 REPS="${RWM_PLACE_REPS:-4}"
@@ -67,30 +70,18 @@ LAUNCH_ISO=$(date -u +%FT%TZ)
 # INVOKED — that is the whole point of the ordering.
 mkdir -p "$OUTDIR" 2>/dev/null
 
-# Probe the PATH, not the directory: touch AND rm, because a sentinel that
-# cannot be REMOVED at the next launch reports the PREVIOUS run's verdict.
-probe() {
-  local p="$1"
-  if touch "$p.probe" 2>/dev/null && rm -f "$p.probe" 2>/dev/null; then
-    echo "SENTINEL-WRITABLE $p (probed as $(id -un), touch+rm)"
-    return 0
-  fi
-  echo "ABORT-SENTINEL-UNWRITABLE $p"
-  echo "ABORT-SENTINEL-UNWRITABLE dir=$OUTDIR owner=$(stat -c '%U:%G %a' "$OUTDIR" 2>/dev/null) user=$(id -un)"
-  echo "NOTHING WAS RUN. Fix the ownership of $OUTDIR and relaunch: a pass whose sentinel cannot be written is a pass whose completion cannot be observed."
-  exit 3
-}
+# Probe the PATH, not the directory (lib_battery.sh `probe_sentinel`).
 
 # `all.out` (the run log) IS PROVED FIRST AND THE TEE IS OPENED ONLY
 # AFTERWARDS: opening the transcript before proving it would send the abort
 # message that explains the failure into the file the failure is about.
-probe "$OUTDIR/all.out"
+probe_sentinel "$OUTDIR/all.out"
 exec > >(tee -a "$OUTDIR/all.out") 2>&1
 
 SENTINELS="DONE-ALL FAILED-ALL FAILED-ALL-TRUNCATED-5H-BUDGET TRUNCATED.txt all-era.txt \
 DONE-S42 FAILED-S42 DONE-S7 FAILED-S7 SKIPPED-S7-5H-BUDGET SKIPPED-S7-S42-FAILED"
-for f in $SENTINELS; do probe "$OUTDIR/$f"; done
-echo "SENTINEL-PROOF-COMPLETE $LAUNCH_ISO user=$(id -un) dir=$OUTDIR reps=$REPS seeds='$SEEDS'"
+# shellcheck disable=SC2086
+LB_PROOF_EXTRA="launch=$LAUNCH_ISO reps=$REPS seeds='$SEEDS'" prove_sentinels "$OUTDIR" $SENTINELS
 
 # Only now anything that needs privilege — and `sudo` must not prompt under
 # nohup, or the battery hangs at a password prompt nobody can see.
@@ -157,17 +148,7 @@ trap finish EXIT
 
 # A SENTINEL IS EARNED, NOT UNCONDITIONAL: the ledger must EXIST, be
 # NON-EMPTY, and carry the battery's own terminal line.
-seed_done() {
-  local s="$1" f="$OUTDIR/$TAG-s$1.log"
-  if [ -s "$f" ] && grep -q "PLACE-BATTERY-DONE seed=$s" "$f"; then
-    touch "$OUTDIR/DONE-S$s"
-    return 0
-  fi
-  echo "PLACE-ALL seed $s DID NOT COMPLETE — no PLACE-BATTERY-DONE in $f" \
-    | tee -a "$OUTDIR/all-era.txt"
-  touch "$OUTDIR/FAILED-S$s"
-  return 1
-}
+# (lib_battery.sh `seed_done`)
 
 run_seed() {
   local s="$1" t0 rc
@@ -179,7 +160,7 @@ run_seed() {
   rc=$?
   echo "PLACE-ALL seed=$s rc=$rc wall=$(( $(date +%s) - t0 ))s elapsed_since_launch=$(( $(date +%s) - LAUNCH_TS ))s $(date -u +%FT%TZ)" \
     | tee -a "$OUTDIR/all-era.txt"
-  seed_done "$s"
+  seed_done "$s" "$OUTDIR/$TAG-s$s.log" "PLACE-BATTERY-DONE seed=$s" PLACE-ALL
 }
 
 RAN=""
