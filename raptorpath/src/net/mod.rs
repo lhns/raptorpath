@@ -4286,7 +4286,16 @@ pub fn compute_gap_ranges(
 /// are NOT reported — they may simply still be in flight.)
 pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
     let mut gaps = Vec::new();
-    let mut expected = received_up_to + 1;
+    // Seq 0: `received_up_to = 0` is advertised both after seq 0 was
+    // delivered and while NOTHING is delivered (the receiver's frontier
+    // starts at 0). Under prefix delivery a received-but-undelivered seq 1
+    // (a SACK range starting at 1) is only possible if seq 0 is missing, so
+    // that report also names seq 0 — no wire change. (Seq 0 lost together
+    // with seq 1 is reported one round later, once seq 1 arrives; the tail
+    // sweep still backstops it.)
+    let seq0_missing =
+        received_up_to == 0 && sack_ranges.first().is_some_and(|&(start, _)| start == 1);
+    let mut expected = if seq0_missing { 0 } else { received_up_to + 1 };
     for &(start, end) in sack_ranges {
         if start > expected {
             gaps.push((expected, start - 1));
