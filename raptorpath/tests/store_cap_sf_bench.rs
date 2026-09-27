@@ -2346,7 +2346,7 @@ fn simulate_place(
         // ── ack/delivery half + the recovery plane ───────────────────────
         // Acked symbols leave the store and release their path's budget.
         // Dropped ones are retransmitted once RFC 9002's time threshold
-        // (9/8·SRTT — the same `PLACE_SLACK_RECOV_PATIENCE` the placement
+        // (9/8·SRTT — RFC 9002's kTimeThreshold, which the placement
         // objective uses) has passed, and are RE-CHARGED to their new path.
         let acks: Vec<(u32, f64, u64)> = store
             .iter()

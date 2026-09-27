@@ -366,8 +366,6 @@ pub(crate) struct SenderPolicy {
     pub contract_rho: f64,
     /// `RWM_STORE_SACK_RELEASE`: SACK-clocked store release.
     pub store_sack_release_on: bool,
-    /// `RWM_PLACE_SLACK`: frontier-slack placement cost.
-    pub place_slack_on: bool,
 
     // ── Per-path outstanding accounting (task #86, ADR-0058) ─────────────
     /// `RWM_STORE_PERCAP`: per-path accounts.
@@ -1051,16 +1049,6 @@ impl SenderPolicy {
         // store_len.
         let store_sack_release_on =
             reliable && !generation && !coded_only && gates.store_sack_release;
-        // ── Frontier-slack placement (env RWM_PLACE_SLACK) ───────────────────
-        // Goal-gate "C8 Slow-Path Conversion" (pre-registered 2026-08-06): the
-        // §16.3 placement cost's load term becomes max(0, Ê_i − S)/ref with
-        // S = clamp(span/R_ack, 0, 250 ms) — span = sent_edge − cum_ack,
-        // R_ack = EWMA of the cumulative-ack advance rate (delivery truth,
-        // immune to the plain anchor's over-read). S = 0 until R_ack warms and
-        // whenever N < 2 (shipped cost bit-exact — the law is a strict
-        // continuous generalization; see Scheduler::set_place_slack /
-        // place_costs). Plain reliable window only. Default OFF.
-        let place_slack_on = gates.place_slack && reliable && !generation;
         // ── Per-path outstanding accounting (task #86, env RWM_STORE_PERCAP) ──
         // The #84 residual: the PATH-SCALED pool is still ONE pool — it cannot
         // fit a c2-deep and a c3-shallow path simultaneously (C8 stuck at
@@ -1425,7 +1413,6 @@ impl SenderPolicy {
             delta_b,
             contract_rho,
             store_sack_release_on,
-            place_slack_on,
             percap_on,
             percap_guard_on,
             percap_borrow_on,

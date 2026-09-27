@@ -342,9 +342,6 @@ pub(crate) struct DiagInputs<'a> {
     /// The live NACK repair budget and the generation-mode pacing EWMA.
     pub cached_nack_budget: u64,
     pub gen_rate_ewma: f64,
-    /// RWM_PLACE_SLACK gauges.
-    pub ps_slack_gauge: f64,
-    pub ps_rate_ewma: f64,
     /// The patience-floor split counters. `Cell` because the evaluation
     /// happens inside a shared closure in the recovery phase — see the
     /// module header.
@@ -405,8 +402,6 @@ pub(crate) fn report(
         wnd2_frontier_change_us,
         cached_nack_budget,
         gen_rate_ewma,
-        ps_slack_gauge,
-        ps_rate_ewma,
         mpd_pf_floor,
         mpd_pf_clock,
         mpd_pf_sum,
@@ -1020,15 +1015,6 @@ pub(crate) fn report(
                         dg.c8c_retx_orig.get(&k).copied().unwrap_or(0),
                         dg.c8c_stall_ms.get(&k).copied().unwrap_or(0),
                         dg.c8c_stall_n.get(&k).copied().unwrap_or(0),
-                    ));
-                }
-                // RWM_PLACE_SLACK gauge: the live S (ms) + ack-rate
-                // EWMA (sym/s) — engagement magnitude for the law.
-                if pol.place_slack_on {
-                    s.push_str(&format!(
-                        " slk={:.0}ms/r{:.0}",
-                        ps_slack_gauge * 1000.0,
-                        ps_rate_ewma
                     ));
                 }
                 eprintln!("[C8CONV-S]{}", s);

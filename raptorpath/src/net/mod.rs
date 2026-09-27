@@ -7470,24 +7470,6 @@ async fn run_window_sender(
              the cumulative frontier — slot release, never recoverability)"
         );
     }
-    if pol.place_slack_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1). The INFO
-        // prints whenever the gate is CONFIGURED; the law itself engages
-        // only at N ≥ 2 with a warm ack-rate (the harness expects the echo
-        // per ENV — the c8pool harness-note lesson).
-        info!(
-            "frontier-slack placement ACTIVE (RWM_PLACE_SLACK: cost_i = \
-             max(0, E_i - S)/ref, S = span/R_ack clamped <= 250 ms; S = 0 \
-             cold / N = 1 = shipped-identical)"
-        );
-    }
-    // Slack-law state: refresh timer (5 ms cadence), ack-rate sample
-    // anchor (>= 50 ms windows), EWMA, and the live S gauge for DIAG.
-    let mut ps_refresh_us: u64 = 0;
-    let mut ps_rate_last_us: u64 = 0;
-    let mut ps_rate_last_ack: u64 = 0;
-    let mut ps_rate_ewma: f64 = 0.0;
-    let mut ps_slack_gauge: f64 = 0.0;
     if pol.percap_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE).
         info!(
@@ -7964,51 +7946,6 @@ async fn run_window_sender(
                         }
                     }
                 }
-            }
-        }
-
-        // ── Frontier-slack refresh (RWM_PLACE_SLACK, 5 ms cadence) ────────
-        // S = clamp(span/R_ack, 0, 250 ms); R_ack sampled on >= 50 ms
-        // windows of cumulative-ack advance (delivery truth). S stays 0 —
-        // the shipped-identical operating point — until R_ack warms or
-        // while N < 2 live paths.
-        if pol.place_slack_on {
-            let pnow = now_us();
-            if pnow.saturating_sub(ps_refresh_us) >= 5_000 {
-                ps_refresh_us = pnow;
-                let ack_now = window_ack_seq.load(Ordering::Relaxed);
-                if ps_rate_last_us == 0 {
-                    ps_rate_last_us = pnow;
-                    ps_rate_last_ack = ack_now;
-                } else if pnow.saturating_sub(ps_rate_last_us) >= 50_000 {
-                    let dt = pnow.saturating_sub(ps_rate_last_us) as f64 / 1e6;
-                    let inst = ack_now.saturating_sub(ps_rate_last_ack) as f64 / dt;
-                    ps_rate_ewma = if ps_rate_ewma > 0.0 {
-                        0.8 * ps_rate_ewma + 0.2 * inst
-                    } else {
-                        inst
-                    };
-                    ps_rate_last_us = pnow;
-                    ps_rate_last_ack = ack_now;
-                }
-                // span = the live stream span (max retained seq − cum ack);
-                // the retention store's last key IS the sent edge (removal
-                // is by cumulative ack only).
-                let span = st.sent_store
-                    .keys()
-                    .next_back()
-                    .copied()
-                    .unwrap_or(ack_now)
-                    .saturating_sub(ack_now) as f64;
-                let mut slack = 0.0;
-                {
-                    let mut sched = scheduler.lock();
-                    if ps_rate_ewma > 1.0 && sched.live_paths().len() >= 2 {
-                        slack = (span / ps_rate_ewma).clamp(0.0, 0.25);
-                    }
-                    sched.set_place_slack(slack);
-                }
-                ps_slack_gauge = slack;
             }
         }
 
@@ -8831,8 +8768,6 @@ async fn run_window_sender(
                     wnd2_frontier_change_us,
                     cached_nack_budget,
                     gen_rate_ewma,
-                    ps_slack_gauge,
-                    ps_rate_ewma,
                     mpd_pf_floor: &mpd_pf_floor,
                     mpd_pf_clock: &mpd_pf_clock,
                     mpd_pf_sum: &mpd_pf_sum,

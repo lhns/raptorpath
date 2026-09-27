@@ -266,16 +266,6 @@ pub struct RuntimeGates {
     pub sidle_derived: bool,
 
     // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
-    /// `RWM_PLACE_SLACK` (default OFF — the A/B arm): frontier-slack
-    /// placement — the §16.3 marginal cost's load term becomes
-    /// max(0, Ê_i − S)/ref with S = the measured frontier slack
-    /// (stream span / cumulative-ack rate, clamped ≤ 250 ms; 0 until the
-    /// ack-rate EWMA has a sample, 0 at N = 1). S = 0 reproduces the
-    /// shipped cost bit-exactly — a strict continuous generalization
-    /// (deadline-aware water-filling: the slow path earns placements up to
-    /// the backlog it can deliver by frontier need-time). Plain reliable
-    /// window only.
-    pub place_slack: bool,
     /// `RWM_COLD_PLACE` (anchor-hygiene family member, default OFF): price an
     /// UNMEASURED leg's latency anchor at the active set's fastest MEASURED
     /// srtt instead of the 50-ms `DEFAULT_SRTT`-class seed that
@@ -1223,7 +1213,6 @@ impl RuntimeGates {
             release_1to1: crate::scheduler::release_1to1_active(),
             charge_recovery: crate::scheduler::charge_recovery_active(),
             sidle_derived: crate::scheduler::sidle_derived_active(),
-            place_slack: env_flag("RWM_PLACE_SLACK", false),
             cold_place: crate::scheduler::cold_place_active(),
             place_t_derived: crate::scheduler::place_t_derived_active(),
             place_hol: crate::scheduler::place_hol_active(),
@@ -1384,7 +1373,7 @@ impl RuntimeGates {
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
-             RWM_SIDLE_DERIVED={} RWM_PLACE_SLACK={} \
+             RWM_SIDLE_DERIVED={} \
              RWM_COLD_PLACE={} RWM_PLACE_T_DERIVED={} RWM_PLACE_HOL={} \
              RWM_PLACE_WDIV_DERIVED={} \
              RWM_GEN={} RWM_PIPELINE={} RWM_GEN_PIPE={} RWM_GEN_R={} \
@@ -1417,7 +1406,7 @@ impl RuntimeGates {
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
             b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
-            b(self.sidle_derived), b(self.place_slack),
+            b(self.sidle_derived),
             b(self.cold_place), b(self.place_t_derived), b(self.place_hol),
             b(self.place_wdiv_derived),
             self.gen_size, self.pipeline, b(self.gen_pipe), o(&self.gen_r),
@@ -2066,7 +2055,6 @@ mod tests {
         );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
-        assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
         assert!(
             !g.cold_place,
             "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
