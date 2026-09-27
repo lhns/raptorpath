@@ -13,13 +13,13 @@ quantile passed the synthetic but still missed on real traces.
 
 ## Decision
 
-1. **Provision the window loss-MASS quantile** (paper §8.4.1): a window
+1. **Provision the window loss-MASS quantile** (paper §4.3): a window
    of N slots fails iff total losses K_N > R, so the estimator tracks
    sliding m-block mass tails at the window's own scale (m = 1..8 × 64
    slots), extends beyond observation with a discrete-Weibull fit whose
    k=1 IS the geometric law (a GE channel measures itself back — no new
    contract parameters), and the solver takes the least r with
-   F(r) ≤ δ/ε; production emits max(r*_§8.4, r*_mass). Level-rescale ties
+   F(r) ≤ δ/ε; production emits max(r*_§4.2, r*_mass). Level-rescale ties
    the tail to the current BOCD level estimate (shape keeps long memory,
    level adapts at estimator speed). Infeasible contracts return the
    ceiling — DECLARED, not silently missed.
@@ -42,7 +42,7 @@ quantile passed the synthetic but still missed on real traces.
 ## Consequences
 
 - Oracle validation: feasible real-trace cells worst residual 2.88× →
-  1.41×; GE control tracks §8.7 exact (×0.92–1.11); heavy-tail synthetic
+  1.41×; GE control tracks §4.7 exact (×0.92–1.11); heavy-tail synthetic
   5.1×-miss → 0.99×-hit; 6/10 infeasible cells now DECLARED (feasibility
   needs W growth or ARQ — a contract renegotiation, not a solver fix).
 - One principled gate recalibration (C8-dual-asym bound 1.1 → 1.15 — the
@@ -57,7 +57,7 @@ quantile passed the synthetic but still missed on real traces.
   (derivation, trace tables, L1 spot check), "Taper Emission Fix
   (2026-07-18)" (budget law, 2×2, entanglement L0+L1), "Unified Shedding
   + Flip Battery (2026-07-21)" battery 2 (r* realized).
-- Paper (§ as of ac1aed1): §8.4.1, §16.20.3–.4, §16.26.
+- Paper: §4.3, §5.3, §5.6.
 - Commits: fc104b6 (mass-quantile solver), 4538a9b (level rescale),
   88f94eb (L1 dilution attribution), 33b29f8 (TaperBudget), b317983 +
   4b8e538 (L1 2×2), b849acb (realization at the unified default).

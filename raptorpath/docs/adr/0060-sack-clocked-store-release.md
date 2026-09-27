@@ -4,7 +4,7 @@
 
 ## Context
 
-Wall #9, the §16.24 residual: the retention store freed slots only on the
+Wall #9, the per-path-clock residual (paper §7.1): the retention store freed slots only on the
 CUMULATIVE frontier (`sent_store.split_off(&(ack+1))`), so
 SACKed-but-not-cumulative symbols held flow-control slots a full frontier
 round — at c7 the store recycled at frontier latency, not path rate
@@ -55,7 +55,7 @@ structural, and no substrate wall excuses destroying recoverability.
   verdict); "SACK Flow Control (2026-07-07)" and "SACK+BDP Reassembly
   (2026-07-08)" (the refuted precursor era); "CONSOLIDATED VERDICT" wall
   #9 row.
-- Paper (§ as of ac1aed1): §16.25.
+- Paper: §6.3.
 - Commits: 7145fcc (pre-registration), ff7acb4 (build), a52105d (flip +
   battery).
 

@@ -4,7 +4,7 @@
 
 ## Context
 
-The principle debt (paper §16.4 "One Pipeline, Not Mode Switching"):
+The principle debt (paper §5.10 "One pipeline, not mode switching"):
 the transport shipped THREE receive machines — the streaming
 two-layer code (Realtime), `RlcWindowDecoder` (plain window), and
 `GenerationDecoder` (gen wire) — selected by a hint-keyed mode switch.
@@ -19,7 +19,7 @@ split was an emission-SPAN policy wearing a machine switch's clothes.
 1. **One decoder** (`fec/unified.rs`): the full global closure WITH the
    sparse-aware cost model (ADR-0056) — known columns payload-only, coded
    rows dense over interval spans, unit rows deliver per-arrival,
-   O(k·L·S + k²·(L+S)), block-diagonalizing to the §16.18 bound on
+   O(k·L·S + k²·(L+S)), block-diagonalizing to the §5.8 bound on
    aligned wires. Differential-proven per-call against all three legacy
    decoders (and it FIXES the legacy rank-loss defect).
 2. **One continuous law, no mode switch**: span width
@@ -67,7 +67,7 @@ split was an emission-SPAN policy wearing a machine switch's clothes.
   differential + oracle PART 7, L0/L1 batteries, the honest #85-VOID
   finding, COLLAPSE ATTRIBUTION), "Unified Shedding + Flip Battery
   (2026-07-21)" (pre-registration, shed law, L0/L1 results, flip).
-- Paper (§ as of ac1aed1): §16.20 (machine), §16.26 (shedding + flip), §17.5 (superseded
+- Paper: §5.2–§5.3 (machine), §5.6 (shedding), §10 (superseded
   three-machine map).
 - Commits: 206b90c (derivation), 1eec34d (UnifiedDecoder), 28138b9
   (gate), a54cbf5 (oracle PART 7), eb9fae4 (first flip NO), 326db4f

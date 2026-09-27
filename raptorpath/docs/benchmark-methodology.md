@@ -374,8 +374,8 @@ ensures identical random sequences across runs and platforms.
 
 ## 9. Standing methodology rules
 
-Lessons from the benchmark audits (formerly ADR-0038 and ADR-0044; see git
-history). Each one fixed a defect that had made earlier tables misleading.
+Lessons from the benchmark audits (formerly ADR-0038 and ADR-0044, merged here
+and deleted in 94bf58d). Each one fixed a defect that had made earlier tables misleading.
 
 - **Overhead is strategy cost, not wire waste.** `overhead_pct` counts extra
   transmissions over the source symbols. FEC pays in explicit repair symbols;

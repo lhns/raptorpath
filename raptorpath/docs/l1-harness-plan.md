@@ -37,7 +37,7 @@ netem on BOTH veth egresses: delay <one_way> [jitter], rate <capacity>,
 loss gemodel <p>% <q>%      (defaults 1-h=100%, 1-k=0% == paper h_B=1, h_G=0)
 ```
 
-netem's Gilbert-Elliott IS the paper §2.4 model — parameters map verbatim.
+netem's Gilbert-Elliott IS the paper §2.3 model — parameters map verbatim.
 Loss is applied on the data direction (srv-bound egress from cli0 carries
 ACKs; apply GE loss on srv0→cli0? no: DATA flows cli→srv for upload tests;
 we run iperf3 with the server in rp-srv, so data egress = cli0. Loss on

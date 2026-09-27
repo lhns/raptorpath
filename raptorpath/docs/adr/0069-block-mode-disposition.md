@@ -37,7 +37,7 @@ shipped default resolves to `window_reliable = false` (`config.rs:328`), hint
 
 One correction to the loose phrasing "the transport ships block mode": **Realtime
 already rides the window pipeline at the default** — it auto-selects the RLC span
-machine (`net/mod.rs:1390`, §16.20) — but with the lossy EVICT retention, ρ < 1,
+machine (`net/mod.rs:1390`, paper §5.2) — but with the lossy EVICT retention, ρ < 1,
 not the reliable window. The block default is a **Bulk/Auto fact only**.
 
 There is also a soft edge: setting `window_reliable` with a non-streaming backend
@@ -46,7 +46,7 @@ does not error, it warns and falls back to block (`net/mod.rs:1429-1435`).
 ### The contradiction
 
 The standing rule (from the consolidated-default-stack decision, formerly
-ADR-0067): *the shipped default IS the best-measured configuration*, because "users of the default were running the condemned arms"
+ADR-0067, deleted in 94bf58d): *the shipped default IS the best-measured configuration*, because "users of the default were running the condemned arms"
 is a scandal this project already had once. Against that rule:
 
 - **Last battery in which block mode was the arm under test: 2026-07-08**
@@ -100,10 +100,10 @@ only as good as its substrate too.
 The block/window fork is a `bool` in a config struct that selects a different
 code path, a different codec, a different sender, a different receiver, and a
 different ARQ. That is **the last architectural mode bit in the tree** — exactly
-the defect CLAUDE.md's no-mode-switch invariant and §16.20 exist to forbid. And
+the defect CLAUDE.md's no-mode-switch invariant and paper §5.10 exist to forbid. And
 the paper already says it should not be a separate machine at all: "Block mode is
 therefore not a different mechanism; it is streaming with the repair kernel's
-width taken to zero and its period set to W" (§15.3, fec-arq-model.md:5899-5901).
+width taken to zero and its period set to W" (paper at ac1aed1, §15.3; the current paper's §5.10 names the block default as the remaining instance).
 The tree nevertheless carries **~3,530 lines of block-only production code and
 ~3,500 lines of block-only tests** implementing that degenerate case separately.
 
@@ -140,8 +140,9 @@ alive solely to be re-tested. Five binding parts:
    with its stated deviations from this part, is `docs/status.md` §4). Frozen means:
    bug fixes only; no new features on the block path; no block-mode number is
    admissible as evidence for a shipped claim. Restoring a runnable block control
-   arm is part of the battery's setup cost — `tools/l1/perf_native.sh` is the
-   surviving driver and takes no env, so the arm is glue, not new machinery.
+   arm is part of the battery's setup cost — `tools/l1/perf_native.sh` was then the
+   surviving driver (deleted in 639929c; `perf_rwm_c.sh` with
+   `RWM_C_PIPELINE=block` replaces it).
 
    **Cells** (deliberately the 2026-07-08 cells, so the result is
    apples-to-apples with the last block datum): C1, C2, C3, C4, C5, single-path
@@ -166,12 +167,12 @@ alive solely to be re-tested. Five binding parts:
      block mode is DELETED per Appendix A, register row closed
      `REMOVED <commit> (<date>)`.
    - **Block wins any cell ≫σ on both seeds** ⇒ block mode is RETAINED, gains a
-     PERMANENT control arm in every bulk battery, and §16.20's one-machine claim
+     PERMANENT control arm in every bulk battery, and the paper's one-machine claim (§5.10)
      is amended to name the exception with its cell and number. The exception
      gets said out loud, not buried in a default.
    - **Mixed / within noise** ⇒ the default does NOT move, the row stays open
      with the per-cell split recorded, and the next consolidation pass decides on
-     the structural argument (§15.3) with the split in hand.
+     the structural argument (§5.10) with the split in hand.
 
 5. **The deletion is NOT executed here.** Appendix A is the reviewable removal
    list; executing it is a separate task, and only after part 4. Whoever executes
@@ -230,16 +231,15 @@ require its own ADR with the mechanism argued, not the history cited.
   (the C2 1.23× loss and "Default remains block mode");
   "Windowed-RLC-all-profiles" (window bulk 0/10 DNF); "Streaming Crown
   Re-Test" cell S; DEPRECATION REGISTER (no block row).
-- Paper (§ as of ac1aed1): §15.3 (block as degenerate streaming); §16.20.6;
-  §17.5.
+- Paper: §5.10 (one pipeline; the block default as the remaining instance), §1.5, §10.
 - Harness: `tools/l1/perf_rwm_c.sh:112,128` (window hardcoded);
-  `tools/l1/perf_native.sh:22,27` (the surviving block driver);
+  `tools/l1/perf_native.sh:22,27` (the block driver at writing; deleted in 639929c);
   `tools/l1/tail_matrix.sh:228-230` (the retired partner arm).
 
 ## References
 
 - ADR-0052 (pre-registration shape of the battery and the two-stage
-  retirement rule), ADR-0064 (§16.20 one machine), `docs/status.md` §4
+  retirement rule), ADR-0064 (paper §5.2 one machine), `docs/status.md` §4
   (the binding re-test pre-registration).
 - CLAUDE.md, THE NO-MODE-SWITCH INVARIANT.
 

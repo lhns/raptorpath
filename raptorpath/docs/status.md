@@ -2,9 +2,8 @@
 
 What ships today, the most recent verdicts, the open debts, and the next
 pre-registered measurement. Rules for measuring are in
-[measurement-discipline.md](measurement-discipline.md). The measurement ledger
-this replaces (`goal-gate.md`) is in git history:
-`git show ac1aed1:raptorpath/docs/goal-gate.md`.
+[measurement-discipline.md](measurement-discipline.md). The full measurement
+ledger this replaces is in git history (ledger at ac1aed1).
 
 ## 1. The default stack (as the code resolves it)
 
@@ -87,7 +86,7 @@ Each is a behaviour step at a preset point, which CLAUDE.md forbids.
 
 ### 3.4 Open-constants register
 
-All unprovenanced and uncorrected (correct value unknown). Source: paper §16.80.12.
+All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 
 | constant | value | where | why unprovenanced |
 |---|---|---|---|
@@ -137,6 +136,14 @@ engine echo of the resolved pipeline and backend on both endpoints
 (`pipeline=block backend=RaptorQ` / `pipeline=window backend=Rlc`) with a unit
 test. Without (b) the witness is the presence/absence of the "reliable window
 mode … auto-selecting RLC" line, which is one-sided and is recorded as weaker.
+
+*Amendment (harness facts, no change to arms, cells or outcomes):* the switch
+in (a) is implemented as `RWM_C_PIPELINE=block|window` on `perf_rwm_c.sh`
+(default `window`); `block` drops `--window-reliable` and the generation flag,
+and the `--- RWM-C perf` header line prints `pipeline=<arm>`. `c8` below always
+means the 25 MB dual; the placement battery's 100 MB dual of the same geometry
+is named `c8L`. `perf_native.sh`, named in the deviations above, was deleted
+in 639929c; `RWM_C_PIPELINE=block` is the block driver.
 
 **Hints**: `bulk`, `auto`. **Seeds**: 42, 7. **Cells** (`lib.sh
 scenario_params`; duals as in `perf_rwm_c.sh`):

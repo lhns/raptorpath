@@ -51,7 +51,7 @@ itself); the honest-signal cadence re-derivation is the named follow-up.
   (per-NACK trace, law, both batteries, serial-fix verdict);
   "Consolidation (2026-07-21)" (LOO flip); "CONSOLIDATED VERDICT" wall
   #8 row.
-- Paper (§ as of ac1aed1): §16.24.
+- Paper: §7.1.
 - Commits: 8a34520 (per-flight hole law + serials), a0dbd98 (packet-
   threshold fast channel), 2c632c0 (snapshot coalescing; SERIAL default
   OFF), 6a95193 (ledger verdict), 5ebbcda (default flip).

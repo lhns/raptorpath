@@ -61,7 +61,7 @@ generalized to plain mode, sampling-only CopaFeed), `RWM_CLOCK_GAP`
 - Ledger at ac1aed1: "Anchor Hygiene (2026-07-19)" (principle, fixes,
   L0 + L1 batteries, gate-readiness); "Unified Decoder" → COLLAPSE
   ATTRIBUTION (the A* defects); "Consolidation (2026-07-21)" (LOO flips).
-- Paper (§ as of ac1aed1): §16.21.
+- Paper: §2.6 (hygiene laws), §5.3.
 - Commits: 988960c (fixes 1–4), d6bed88 (knee verdict), 5ebbcda (default
   flips), 6568822 (A* default ON under RWM_UNIFIED).
 

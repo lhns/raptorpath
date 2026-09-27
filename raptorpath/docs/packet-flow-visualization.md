@@ -9,17 +9,17 @@ store release).
 > **Honesty note.** This document is DESCRIPTIVE: hand-drawn diagrams of the
 > mechanisms as shipped, refreshed 2026-07-28 against main `7a3aff6`. It is
 > not a measurement record (see `status.md`; the full ledger is
-> `goal-gate.md` in git history at `ac1aed1`) and not normative (that
-> is the paper, `fec-arq-model.md` §16.20/§16.26, and the code). The
+> in git history, ledger at ac1aed1) and not normative (that
+> is the paper, `fec-arq-model.md` §5.2/§5.6/§5.10, and the code). The
 > interactive companion is `raptorpath-visualizer/interactive-visualizer.html`
 > — an L0 model of the same laws, with its own model-vs-engine table.
 
 ---
 
-## 1. One Pipeline, No Mode Switch (§16.20)
+## 1. One Pipeline, No Mode Switch (§5.2, §5.10)
 
 There is ONE receive machine and ONE emission law, parameterized by the
-hint's declared latency price δ(hint) = 0.5/ζ (§12.4: Bulk 0.005 / Auto 0.5
+hint's declared latency price δ(hint) = 0.5/ζ (§4.1: Bulk 0.005 / Auto 0.5
 / Realtime 50). Realtime and Bulk are the two ends of a continuum, not two
 machines. (The legacy three-machine stack is the `RWM_UNIFIED=0` opt-out;
 the streaming two-layer code was deleted 2026-07-27 after its crown re-test.)
@@ -36,9 +36,9 @@ the streaming two-layer code was deleted 2026-07-27 after its crown re-test.)
                │                                       in the clear; only
                ▼                                       repairs are coded
   ┌──────────────────────────────────────────────────────────────┐
-  │ Sender span machine (§16.20.3) — per source symbol:          │
+  │ Sender span machine (§5.3) — per source symbol:               │
   │   owed += r        (the TaperBudget quantity law: the wire   │
-  │                     consumes r* exactly as computed, §8.4)   │
+  │                     consumes r* exactly as computed, §4.2)   │
   │   if owed ≥ 1: emit ONE repair over the TRAILING span        │
   │                                                              │
   │        [F ────────── F+A* ]──Δ──▶ send frontier              │
@@ -54,7 +54,7 @@ the streaming two-layer code was deleted 2026-07-27 after its crown re-test.)
 
 ```
   D  = min(b·RTprop, 2·RTprop)     recovery deadline;  b(hint) = ½ / 1 / 2
-                                   (Realtime / Auto / Bulk, §16.26)
+                                   (Realtime / Auto / Bulk, §5.4)
   A* = clamp(rate·D, 1, W)         span width (coding quantum)
   M* = ceil(rate·2·RTprop/A*_q)+1  quanta in flight, clamped [2, 32]
                                    (A*_q = A* quantized to the retained grid)
@@ -62,12 +62,12 @@ the streaming two-layer code was deleted 2026-07-27 after its crown re-test.)
 ```
 
 `rate` is the windowed-MAX delivered rate and `RTprop` the min-filtered RTT —
-measured anchors (§16.21 anchor hygiene), never live-SRTT. The two limits:
+measured anchors (§2.6 anchor hygiene), never live-SRTT. The two limits:
 
 - **Realtime (δ = 50):** small fresh spans trailing the frontier, solvable
   at arrival, per-arrival incremental decode; depth term inert.
 - **Bulk (δ = 0.005):** A* = 2·BDP clamped by W → the retained-grid quantum;
-  M* = the §16.17 generation-pipeline depth; ρ = 1 RETAIN.
+  M* = the §5.3 generation-pipeline depth; ρ = 1 RETAIN.
 
 Between them δ moves everything smoothly — the oracle's continuity sweep
 checks that no cliff appears at any δ.
@@ -117,7 +117,7 @@ All multi-byte integers **little-endian** unless noted.
 
 ---
 
-## 3. Receiver: the Unified Decoder (§16.20.2, `src/fec/unified.rs`)
+## 3. Receiver: the Unified Decoder (§5.2, `src/fec/unified.rs`)
 
 One decoder for every span policy the sender may derive — sliding spans and
 pinned generations are the SAME input language.
@@ -142,7 +142,7 @@ pinned generations are the SAME input language.
                     │ 4. unit rows deliver immediately               │
                     │                                                │
                     │ Cost: O(k·L·S + k²·(L+S)); block-diagonalizes  │
-                    │ to the §16.18 bound on aligned (gen) wires     │
+                    │ to the §5.8 bound on aligned (gen) wires       │
                     └───────────────────────────────────────────────┘
       │
       ▼
@@ -151,7 +151,7 @@ pinned generations are the SAME input language.
   late sources; differential-tested against all legacy machines.)
 ```
 
-Measured at the realtime cell (§16.20.8): the matrix is ~EMPTY at every
+Measured at the realtime cell (§5.2): the matrix is ~EMPTY at every
 sample — trailing spans arrive solvable (k = 0 or deliver-now), per-arrival
 decode 6–11 µs. Span freshness is what keeps the global closure cheap.
 
@@ -161,7 +161,7 @@ decode 6–11 µs. Span freshness is what keeps the global closure cheap.
   ρ = 1 (RETAIN, Bulk default) ──▶ reliable in-order delivery; the shed
                                    law is compiled out by construction
   EVICT (Realtime)             ──▶ in-order hold = the δ dial b·SRTT;
-                                   δ-honest shedding (§16.26):
+                                   δ-honest shedding (§5.6): 
                                      shed a hole  iff  projected delivery
                                      exceeds D(δ)  AND  cumulative shed ≤
                                      1−ρ = ε̂·(1−P_fec(r, ε̂, A*, σ²))
@@ -171,16 +171,16 @@ decode 6–11 µs. Span freshness is what keeps the global closure cheap.
 
 ---
 
-## 4. Multipath (§16, the consolidated laws)
+## 4. Multipath (§5.5, the consolidated laws)
 
 One shared reliable window poured across N paths; a loss on path i may be
 healed by an arrival on any path — the in-order frontier advances at ≈ Σgᵢ,
-beating the per-path-affine E[max] ceiling (§16.2).
+beating the per-path-affine E[max] ceiling (§5.5).
 
 ```
   ┌─ path A (e.g. 100 Mbit / 10 ms / 2.6%) ─────────────────────────┐
   │  sources striped ∝ estimated goodput gᵢ = capᵢ·(1−ε̂ᵢ)          │
-  │  repairs/retransmits prefer the best available path (§13.8)     │
+  │  repairs/retransmits prefer the best available path (§5.7)      │
   └─────────────────────────────────────────────────────────────────┘
   ┌─ path B (e.g. 20 Mbit / 40 ms / 4.8%) ──────────────────────────┐
   │  its own RFC 9002 recovery clock, its own loss estimator        │
@@ -189,7 +189,7 @@ beating the per-path-affine E[max] ceiling (§16.2).
 
 The three walls this configuration exposed, and their shipped laws:
 
-1. **Per-path recovery clocks** (wall #8, §16.24, `RWM_RECOV_MP` default ON).
+1. **Per-path recovery clocks** (wall #8, §7.1, `RWM_RECOV_MP` default ON).
    Loss detection is RFC 9002 generalized per path: 9/8 time threshold on
    the LIVE flight + kPacketThreshold = 3 same-path fast channel;
    retransmits inherit their own clock. A cross-path striping gap does NOT
@@ -204,14 +204,14 @@ The three walls this configuration exposed, and their shipped laws:
                                them; a global clock would retransmit both
    ```
 
-2. **The path-scaled pool** (wall #7, §16.19, `RWM_STORE_PATHS` default ON).
+2. **The path-scaled pool** (wall #7, §8.6, `RWM_STORE_PATHS` default ON).
    The outstanding pool was a per-TRANSFER constant (1024 symbols) — a
    Little's-law ~100–128 Mbit wall, CPU-invariant. The shipped pool scales
    per path (knee ≈ 2048/path); removal re-opens the c7 collapse class.
    (The c8-aware refinement was derived, built and REFUTED 2026-07-27 —
-   §16.29: the c8 binder is slow-path conversion, not pool sizing.)
+   §10: the c8 binder is slow-path conversion, not pool sizing.)
 
-3. **SACK-clocked store release** (wall #9, §16.25, `RWM_STORE_SACK_RELEASE`
+3. **SACK-clocked store release** (wall #9, §6.3, `RWM_STORE_SACK_RELEASE`
    default ON). Retention-store slots free on the SELECTIVE ack — a
    SACKed-but-not-cumulative symbol no longer holds a flow-control slot a
    full frontier round. Payload + ARQ maps are retained until the frontier
@@ -220,12 +220,12 @@ The three walls this configuration exposed, and their shipped laws:
 
 ---
 
-## 5. The Block Pipeline (§15 — unchanged by the unification)
+## 5. The Block Pipeline (§5.10 — unchanged by the unification)
 
 Bulk without `--window-reliable` still uses the block path: packets are
 length-prefixed into blocks, sliced into k source symbols, encoded by a
 block FEC backend (RaptorQ-class), and decoded per block_id at the
-receiver. This is §15's other knob; the RLC-family unification (§16.20)
+receiver. This is the block knob; the RLC-family unification (§5.2)
 does not touch it.
 
 ---
@@ -273,6 +273,6 @@ it, and no ledger section cited it. `RWM_TRACE` still drives the receiver's
   │ TUN │◀──│ Extract │◀──│ ρ=1: in-order    │◀──│ UnifiedDecoder │◀─────────┘
   │ out │   │ packet  │   │ EVICT: b·SRTT    │   │ global sparse  │  (receiver)
   └─────┘   └─────────┘   │ hold + δ-honest  │   │ RREF, k=0 fast │
-                          │ shedding (§16.26)│   │ path (§16.20.2)│
+                          │ shedding (§5.6)  │   │ path (§5.2)    │
                           └──────────────────┘   └────────────────┘
 ```
