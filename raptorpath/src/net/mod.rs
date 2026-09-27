@@ -7582,24 +7582,6 @@ async fn run_window_sender(
             "pool-anchor honest dual-store law ACTIVE (RWM_POOL_ANCHOR: N>=2 pooled cap = sum_i honest_store_cap(sr_i*RTprop_i, sr_i, K_i, gain) on the per-path send-interval anchor, clamp [floor, N*knee]; all-warm else path-scaled fallback; Copa cwnd feed untouched; N=1 legacy)"
         );
     }
-    // ── Delivery-clocked pool rate anchor (env RWM_POOL_DELIV) ───────────
-    // Goal-gate "Ship The Wins 1b" arm A: attempt 1's send-interval anchor
-    // removed the over-read but BECAME THE BINDER — a send-derived rate can
-    // never ratchet above the cap-limited carried rate, so the pool sat AT
-    // the operating point (win pinned at cap, sweeps 8-21) and c7 landed
-    // 0.968/0.959 vs the required 0.97. The delivery clock is the one rate
-    // source bounded by delivered-packet PHYSICS instead of by the sender's
-    // own admission gate: during a store-refill burst the wire delivers at
-    // the BOTTLENECK rate and the max filter holds it, while
-    // max(send_elapsed, ack_elapsed) + the >= RTprop reject-and-accumulate
-    // guard keep the sample from reading an ack burst. The law reads
-    // max(delivery, send_mean) — ONE formula, no branch, both terms honest
-    // lower bounds, so the pool can only rise relative to attempt 1.
-    if pol.pool_anchor_on && gates.pool_deliv {
-        info!(
-            "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
-        );
-    }
     if pol.store_sack_release_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -8656,9 +8638,7 @@ async fn run_window_sender(
                     // not drop a saturated path's earned share.
                     let pa_terms: Vec<Option<f64>> = if pol.pool_anchor_on && n_live >= 2 {
                         // Rate source: the hygiene-grade SEND-interval
-                        // anchor — "Ship The Wins 1b" max(delivery-clocked
-                        // windowed-max, send ratcheted mean), ONE formula;
-                        // identical to attempt 1 with RWM_POOL_DELIV off.
+                        // anchor (the ratcheted send mean).
                         // Path set: live_paths().
                         //
                         // PROVENANCE PRESERVED (the pre-de-triplication
@@ -8679,7 +8659,7 @@ async fn run_window_sender(
                                         // no slot at all: the original `?`
                                         // returned BEFORE feeding the clock
                                         // tracker, and that is preserved.
-                                        let sr = p.pool_rate_anchor().filter(|r| *r > 0.0)?;
+                                        let sr = p.send_rate_anchor().filter(|r| *r > 0.0)?;
                                         let rtp = p
                                             .min_rtt()
                                             .map(|d| d.as_secs_f64())

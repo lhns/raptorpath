@@ -409,23 +409,6 @@ fn on_ack(
             path.release_in_flight(expected_count.saturating_sub(received_count));
         }
 
-        // Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate
-        // "Ship The Wins 1b" arm A): THE delivery event for this
-        // path's shadow rate sampler. Delivered advances the rate
-        // numerator; LOST advances the accounted cursor only (a lost
-        // symbol left the wire too — that alignment is what lets an
-        // aggregate cursor resolve send spacing without a per-seq
-        // key). Placed here so it sees exactly the counts the legacy
-        // anchor sees: this build changes the Δt STATISTIC, not the
-        // per-path attribution. `gap_q` drops a stall-poisoned event
-        // exactly as the RTT/rate feeds above drop it. Feeds nothing
-        // but the N ≥ 2 pool law; no-op with the gate off.
-        path.on_pool_delivery(
-            received_ids.len() as u32,
-            expected_count.saturating_sub(received_count),
-            gap_q,
-        );
-
         // ADR-0013: update path monitoring stats
         if let Some(ps) = stats.path(path_id) {
             ps.rtt_us.store(rtt_us, Ordering::Relaxed);
@@ -814,13 +797,6 @@ fn on_window_ack(
                 if !crate::scheduler::release_1to1_active() && d_expected > 0 {
                     path.release_in_flight(d_expected.saturating_sub(d_received));
                 }
-                // Delivery-clocked pool anchor (RWM_POOL_DELIV): the
-                // same delivery event the legacy arm fed it.
-                path.on_pool_delivery(
-                    d_received,
-                    d_expected.saturating_sub(d_received),
-                    gap_q,
-                );
                 // ADR-0013: path monitoring stats.
                 if let Some(ps) = stats.path(path_id) {
                     ps.loss_rate_e6.store(

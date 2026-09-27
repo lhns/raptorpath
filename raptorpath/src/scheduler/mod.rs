@@ -288,41 +288,6 @@ pub fn pool_anchor_active() -> bool {
     })
 }
 
-/// Whether the DELIVERY-CLOCKED pool rate anchor is active for this process
-/// (`RWM_POOL_DELIV`, goal-gate "Ship The Wins 1b" arm A): the N ≥ 2 pool
-/// law's rate input gains a per-path [`crate::control::DeliveryRateAnchor`]
-/// term — the BBR `GenerateRateSample` statistic as a SHADOW estimator no
-/// cwnd consumer can read. The law reads
-/// `max(delivery_max_bw, send_ratcheted_mean)`: both are honest LOWER BOUNDS
-/// on the bottleneck rate, so the max is the estimator (ONE formula, no
-/// branch), and the delivery term is the only one that can ratchet ABOVE the
-/// cap-limited carried rate — attempt 1's measured binder (paper §16.36:
-/// "a send-derived rate cannot ratchet above the cap-limited carried rate").
-///
-/// Default = the `pool_anchor_active()` resolution (which rides
-/// `RWM_EST_CADENCE`), so everything-unset ⇒ OFF and the est opt-in carries
-/// it; `RWM_POOL_DELIV=0` under the est opt-in is exactly attempt 1's arm.
-/// Read once and cached (consulted on the send hot path).
-///
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): the arm failed its ≥0.97 c7 clause on both
-/// seeds while the mechanism landed completely, and the anchor's own doc
-/// comment certifies it can reach no cwnd/pacing consumer. Activation now
-/// warns via [`crate::config::deprecated_env_flag`]; the sampler stays only
-/// as the negative datum's reproduction path until the recovery-plane
-/// battery the refutation NAMES has run.
-pub fn pool_deliv_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_POOL_DELIV",
-            pool_anchor_active(),
-            "Ship The Wins 1b: the delivery-clocked pool anchor (2026-08-07)",
-        )
-    })
-}
-
 /// Whether the O(1) windowed-max rate filter is active for this process
 /// (`RWM_HONEST_ANCHOR`, goal-gate "Honest Inputs" — anchor-hygiene family
 /// member, **DEFAULT ON since 2026-08-11** per the flip battery's F7 and
@@ -2764,20 +2729,6 @@ pub struct PathState {
     /// is byte-identical to the prior-default path (no clock read, no
     /// bucket work) — the A/B decomposition arm stays cost-honest.
     pool_anchor_feed: bool,
-    /// Delivery-clocked pool rate anchor (`RWM_POOL_DELIV`, goal-gate "Ship
-    /// The Wins 1b" arm A): the BBR `GenerateRateSample` statistic on this
-    /// path's aggregate send/delivery cursors, as a SHADOW estimator. Fed at
-    /// `charge_in_flight` (sends) and at the ack arm (`on_pool_delivery`).
-    /// Its ONLY consumer is `pool_rate_anchor()` → the N ≥ 2 pool law: the
-    /// Copa cwnd feed, `max_bw`, `bdp_anchor`/`anchor_floor`, pacing and
-    /// `src_inflight` are all structurally unreachable from here. It is the
-    /// one rate source bounded by delivered-packet PHYSICS rather than by the
-    /// sender's own admission gate — attempt 1's measured binder.
-    deliv_anchor: crate::control::DeliveryRateAnchor,
-    /// Whether the delivery-anchor feed is on (resolved once at construction
-    /// from `pool_deliv_active()`; test-forcible). OFF ⇒ both feed sites do
-    /// no work at all (cost-honest A/B, the `pool_anchor_feed` precedent).
-    pool_deliv_feed: bool,
     /// ack-merge (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1"): the
     /// sender-side CURSOR for the v6 `WindowAck` cumulative counters. The
     /// merged ack carries the receiver's per-path running
@@ -2866,8 +2817,6 @@ impl PathState {
             in_flight_log: VecDeque::new(),
             send_anchor: crate::control::SendRateAnchor::new(),
             pool_anchor_feed: pool_anchor_active(),
-            deliv_anchor: crate::control::DeliveryRateAnchor::new(),
-            pool_deliv_feed: pool_deliv_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
@@ -4045,12 +3994,6 @@ impl PathState {
             let srtt = self.srtt();
             self.send_anchor.on_send(now, n as u64, srtt);
         }
-        // Delivery-anchor SEND cursor (RWM_POOL_DELIV, arm A): the same wire
-        // sends, recorded as (instant, cumulative count) so a later delivery
-        // event can resolve its send spacing without a per-seq key.
-        if self.pool_deliv_feed {
-            self.deliv_anchor.on_send(now, n as u64);
-        }
         self.in_flight_log.push_back((now, n));
     }
 
@@ -4074,85 +4017,12 @@ impl PathState {
         self.send_anchor.stats()
     }
 
-    /// One DELIVERY event for the shadow delivery-clocked anchor
-    /// (`RWM_POOL_DELIV`, arm A): `delivered` symbols confirmed received and
-    /// `lost` symbols confirmed gone on this path. Both advance the accounted
-    /// cursor (a lost symbol left the wire too — that is what keeps the
-    /// delivery cursor aligned with the send cursor); only `delivered` enters
-    /// the rate numerator. Feeds NOTHING but `pool_rate_anchor()`: no cwnd,
-    /// no `max_bw`, no pacing, no `src_inflight`.
-    ///
-    /// `gap_quarantined` is the process-clock stall verdict already computed
-    /// at the ack site (ADR-0061): a poisoned event is dropped here exactly as
-    /// the RTT/rate feeds beside it drop it.
-    pub fn on_pool_delivery(&mut self, delivered: u32, lost: u32, gap_quarantined: bool) {
-        if !self.pool_deliv_feed || gap_quarantined {
-            return;
-        }
-        let now = self.clock.now();
-        let (rtprop, srtt) = (self.copa.min_rtt(), self.srtt());
-        self.deliv_anchor
-            .on_delivery(now, delivered as u64, lost as u64, rtprop, srtt);
-    }
-
-    /// THE POOL LAW'S RATE INPUT (goal-gate "Ship The Wins 1b"):
-    /// `max(delivery-clocked windowed-max, send-interval ratcheted mean)`.
-    ///
-    /// ONE formula, no branch, no mode bit: both terms are honest LOWER
-    /// BOUNDS on this path's bottleneck rate (the delivery term because its
-    /// Δt is `max(send_elapsed, ack_elapsed)` with a ≥ RTprop floor; the send
-    /// term because a time-normalized mean of real sends cannot exceed what
-    /// flowed), and the pool law wants the bottleneck rate — so the max of
-    /// two lower bounds is the estimator, and adding the delivery term can
-    /// only raise the pool, never lower it. That ordering is deliberate: it
-    /// makes arm A ≥ arm (attempt 1) at every instant, so a measured c7
-    /// difference is attributable to exactly the delivery term.
-    ///
-    /// With `RWM_POOL_DELIV` off this is byte-identical to
-    /// `send_rate_anchor()` (attempt 1's law); with `RWM_POOL_ANCHOR` off it
-    /// is None (the legacy law runs).
-    pub fn pool_rate_anchor(&self) -> Option<f64> {
-        let send = self.send_rate_anchor();
-        let deliv = if self.pool_deliv_feed {
-            self.deliv_anchor.rate(self.clock.now(), self.copa.min_rtt())
-        } else {
-            None
-        };
-        match (send, deliv) {
-            (Some(s), Some(d)) => Some(s.max(d)),
-            (Some(s), None) => Some(s),
-            (None, Some(d)) => Some(d),
-            (None, None) => None,
-        }
-    }
-
-    /// The DELIVERY-clocked term alone (DIAG gauge `dr=`): the mechanism
-    /// witness that separates arm A from attempt 1 in the logs.
-    pub fn deliv_rate_anchor(&self) -> Option<f64> {
-        if !self.pool_deliv_feed {
-            return None;
-        }
-        self.deliv_anchor.rate(self.clock.now(), self.copa.min_rtt())
-    }
-
-    /// (accepted, short-rejected, gaps, discarded) for the delivery anchor —
-    /// DIAG gauges proving the mechanism executed and how its guards fired.
-    pub fn deliv_anchor_stats(&self) -> (u64, u64, u64, u64) {
-        self.deliv_anchor.stats()
-    }
-
     /// Test hook: force the pool-anchor feed regardless of the process-global
     /// env cache (unit tests must not depend on it — the `force_wire`
     /// pattern).
     #[cfg(test)]
     pub fn force_pool_anchor_feed(&mut self, on: bool) {
         self.pool_anchor_feed = on;
-    }
-
-    /// Test hook: force the delivery-anchor feed (`RWM_POOL_DELIV`).
-    #[cfg(test)]
-    pub fn force_pool_deliv_feed(&mut self, on: bool) {
-        self.pool_deliv_feed = on;
     }
 
     /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must
@@ -7694,124 +7564,6 @@ mod tests {
             path.send_rate_anchor().is_none(),
             "feed off ⇒ no send-anchor samples (byte-identical prior path)"
         );
-    }
-
-    // ----- Delivery-clocked pool anchor (RWM_POOL_DELIV, goal-gate ----------
-    // ----- "Ship The Wins 1b" arm A) ----------------------------------------
-
-    /// THE arm-A law at the PathState level: with the delivery feed on, the
-    /// pool law's rate input (`pool_rate_anchor`) reads the BOTTLENECK a
-    /// cap-limited sender's own send mean cannot see — while every cwnd-side
-    /// consumer is byte-identical to the arm-1 path. That is attempt 2's
-    /// whole claim, wired: the sampler is a SHADOW, and it ratchets.
-    #[test]
-    fn pool_deliv_rate_ratchets_above_the_send_mean_and_touches_no_cwnd_consumer() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(true);
-        path.record_rtt_sample(millis(10)); // RTprop/SRTT warm
-
-        // An admission-gated sender: 400 symbols emitted (and carried) in a
-        // 20 ms burst at ≈20 000 sym/s, then 80 ms idle — long-run mean
-        // 4 000 sym/s. This is the measured c7 shape (store refill on SACK
-        // release), at unit scale.
-        for _ in 0..25 {
-            for _ in 0..4 {
-                path.charge_in_flight(100);
-                clock.advance(millis(5));
-                path.on_pool_delivery(100, 0, false);
-                path.release_in_flight(100);
-            }
-            clock.advance(millis(80));
-        }
-        let sr = path.send_rate_anchor().expect("send anchor warm");
-        let dr = path.deliv_rate_anchor().expect("delivery anchor live");
-        let pool = path.pool_rate_anchor().expect("pool rate live");
-        let mean = 400.0 / 0.1; // 4 000 sym/s carried mean
-        assert!(
-            sr < mean * 2.0,
-            "the SEND term reads the cap-limited mean (attempt 1's binder): {sr}"
-        );
-        assert!(
-            dr > sr * 1.5,
-            "THE arm-A claim: the DELIVERY term ratchets above it — dr={dr} sr={sr}"
-        );
-        assert_eq!(
-            pool,
-            sr.max(dr),
-            "the law reads max(deliv, send) — ONE formula, no branch"
-        );
-        // SHADOW: no cwnd-side consumer may have moved. The delivery feed
-        // never calls record_delivery/on_ack, so the legacy anchor has no
-        // samples at all, cwnd is untouched, and src_inflight is zero
-        // (falsification-5: no scoped feed may leak it).
-        assert!(
-            path.btlbw_sym_per_s().is_none(),
-            "the delivery feed must NOT feed the legacy/Copa max_bw filter"
-        );
-        assert!(
-            path.copa_bdp_anchor().is_none(),
-            "…nor the BDP anchor the cwnd floor rides"
-        );
-        assert_eq!(
-            path.cwnd,
-            PathState::INITIAL_CWND,
-            "…nor cwnd itself (no delivery signal, no dynamics)"
-        );
-        assert_eq!(path.src_inflight, 0, "…nor src_inflight (falsification-5)");
-    }
-
-    /// `RWM_POOL_DELIV=0` is attempt 1 EXACTLY: no delivery work at either
-    /// feed site, and `pool_rate_anchor()` is byte-identical to
-    /// `send_rate_anchor()` (the arms are one knob apart — cost-honest A/B).
-    #[test]
-    fn pool_deliv_feed_off_is_inert_and_equals_attempt_one() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(false);
-        path.record_rtt_sample(millis(10));
-        for _ in 0..400 {
-            path.charge_in_flight(10);
-            clock.advance(millis(1));
-            path.on_pool_delivery(10, 0, false);
-            path.release_in_flight(10);
-        }
-        assert!(
-            path.deliv_rate_anchor().is_none(),
-            "feed off ⇒ no delivery samples exist"
-        );
-        assert_eq!(
-            path.pool_rate_anchor(),
-            path.send_rate_anchor(),
-            "the pool law reads exactly attempt 1's anchor with the gate off"
-        );
-        let (ok, short, gaps, disc) = path.deliv_anchor_stats();
-        assert_eq!((ok, short, gaps, disc), (0, 0, 0, 0), "no sampler work at all");
-    }
-
-    /// A quarantined (stall-poisoned) ack must not reach the delivery
-    /// sampler — the same hygiene verdict the RTT/rate feeds beside it obey
-    /// (ADR-0061 / `RWM_CLOCK_GAP`).
-    #[test]
-    fn pool_deliv_drops_quarantined_delivery_events() {
-        let clock = Arc::new(MockClock::new());
-        let mut path = PathState::new(0, clock.clone());
-        path.force_pool_anchor_feed(true);
-        path.force_pool_deliv_feed(true);
-        path.record_rtt_sample(millis(10));
-        for _ in 0..50 {
-            path.charge_in_flight(100);
-            clock.advance(millis(5));
-            path.on_pool_delivery(100, 0, true); // quarantined at the ack site
-        }
-        assert!(
-            path.deliv_rate_anchor().is_none(),
-            "quarantined events must produce no samples"
-        );
-        let (ok, ..) = path.deliv_anchor_stats();
-        assert_eq!(ok, 0, "…and no accepted sample");
     }
 
     // ----- Wire-clocked Copa signal + hint→δ mapping (feat/copa-wire-signal) -----
