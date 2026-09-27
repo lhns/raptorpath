@@ -59,10 +59,13 @@
 //! bug, where the two asserted paths were DISJOINT from the one the harness
 //! took.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 /// Env var by which this binary re-executes itself as the deterministic
 /// runtime-drop child (see the second test).
@@ -79,79 +82,28 @@ const ARM: [(&str, &str); 4] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-/// A port nothing else in the suite binds. Taken from the OS so parallel test
-/// binaries cannot collide, then released — the engine binds UDP and the probe
-/// binds TCP, so the reservation is advisory but the number is unique.
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-/// Kill a child and reap it — a leaked perf server would hold its port.
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// Spawn the shipped binary as a `perf` server on a fresh port and block until
-/// it reports ready. Returns the address and the reaper.
-fn spawn_perf_server() -> (SocketAddr, Reaper) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    // The child must NOT inherit the re-exec marker.
-    cmd.env_remove(CHILD_PEER);
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
+/// Spawn the shipped binary as a `perf` server on a fresh port (ready and
+/// bound). The re-exec marker is never inherited: it is only ever set on the
+/// child-fixture process, which spawns no server — asserted, not assumed.
+fn spawn_perf_server() -> loopback::PerfServer {
     assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
+        std::env::var_os(CHILD_PEER).is_none(),
+        "the re-exec marker must not reach a spawned perf endpoint"
     );
-    // Drain the rest so a full pipe buffer cannot wedge the server mid-run.
-    std::thread::spawn(move || {
-        let mut sink = Vec::new();
-        let _ = out.read_to_end(&mut sink);
-    });
-    (addr, srv)
+    loopback::spawn_perf_server(
+        &[loopback::free_addr()],
+        &ARM,
+        &["--protocol-hint", "bulk", "--window-reliable"],
+    )
 }
 
 fn count(hay: &str, needle: &str) -> usize {
     hay.matches(needle).count()
 }
 
-/// Pull `key=<f64>` out of a gauge line.
+/// Pull `key=<f64>` out of a gauge line (numeric prefix applied).
 fn field(line: &str, key: &str) -> Option<f64> {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .and_then(|v| v.parse::<f64>().ok())
+    gauge::raw_field(line, key).and_then(|v| gauge::numeric_prefix(v).parse::<f64>().ok())
 }
 
 /// THE REACHABILITY ASSERTION, shared by both tests: in a log produced by ONE
@@ -315,30 +267,12 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
 
 #[test]
 fn the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness() {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv) = spawn_perf_server();
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "4000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    cli.env_remove(CHILD_PEER);
-    let out = cli.output().expect("run perf client");
+    let srv = spawn_perf_server();
+    let out = loopback::perf_client_output(
+        &srv.addrs,
+        &ARM,
+        &loopback::perf_args("bulk", "4000000", "2"),
+    );
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     let log = format!("{stdout}\n{stderr}");
@@ -373,7 +307,7 @@ fn the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness() {
 
 #[test]
 fn the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown() {
-    let (addr, _srv) = spawn_perf_server();
+    let srv = spawn_perf_server();
 
     // Re-execute THIS test binary as the child fixture below. A child process
     // is needed because the emission is an `eprintln!` from an engine task and
@@ -394,7 +328,7 @@ fn the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown(
     for (k, v) in ARM {
         child.env(k, v);
     }
-    child.env(CHILD_PEER, addr.to_string());
+    child.env(CHILD_PEER, srv.addr().to_string());
     let out = child.output().expect("re-exec the runtime-drop child fixture");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();

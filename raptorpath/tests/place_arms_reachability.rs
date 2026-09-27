@@ -35,11 +35,12 @@
 //! process-global in the child and the spawned pair must not contend with the
 //! in-process loopback tests.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{field, opt_f64_field as f64_field, u64_field};
 
 /// The environment every arm shares. `RWM_DIAG=1` is what makes `[ETA]` fire
 /// at all; it is asserted present in the `[GATES]` echo below rather than
@@ -54,175 +55,28 @@ const BASE: [(&str, &str); 3] = [
 const ARM_GATES: [&str; 3] =
     ["RWM_PLACE_T_DERIVED", "RWM_PLACE_HOL", "RWM_PLACE_WDIV_DERIVED"];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-fn spawn_perf_server(binds: &[SocketAddr], arm: &[(&str, &str)]) -> (Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in BASE {
-        cmd.env(k, v);
-    }
-    // THE ARM RIDES BOTH ENDPOINTS. The receiver runs a scheduler too, and an
-    // arm that is present at one end only is a configuration split nobody
-    // could read off a log.
-    for (k, v) in arm {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (srv, log)
-}
-
 /// One loopback transfer under one arm. Returns `(sender log, receiver log)`.
+///
+/// THE ARM RIDES BOTH ENDPOINTS. The receiver runs a scheduler too, and an
+/// arm that is present at one end only is a configuration split nobody could
+/// read off a log. The receiver log is read only for its startup `[GATES]`
+/// echo, so it is snapshotted without waiting.
 fn run(paths: usize, netem: Option<&str>, bytes: &str, arm: &[(&str, &str)]) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds, arm);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
+    let mut env = BASE.to_vec();
+    env.extend_from_slice(arm);
+    loopback::transfer(loopback::Transfer {
+        paths,
+        env: &env,
+        client_env: &loopback::shaped(netem),
         bytes,
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in BASE {
-        cli.env(k, v);
-    }
-    for (k, v) in arm {
-        cli.env(k, v);
-    }
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, arm={arm:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
+        ..Default::default()
+    })
 }
 
 // ── READERS ─────────────────────────────────────────────────────────────
 
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line — THIS IS THE OLD-ENGINE FAILURE: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-/// A gauge slot that is `-` iff its own denominator is zero.
-fn f64_field(line: &str, key: &str) -> Option<f64> {
-    let v = field(line, key);
-    if v == "-" {
-        return None;
-    }
-    Some(v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e}")))
-}
-
 fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
-    log.lines()
-        .rev()
-        .find(|l| l.contains(pat))
-        .unwrap_or_else(|| panic!("no line containing `{pat}`:\n{log}"))
+    gauge::require(log, pat, "the gauge is unreachable")
 }
 
 /// **THE TWO-SIDED ECHO ASSERTION.** Every arm gate is NAMED on the `[GATES]`

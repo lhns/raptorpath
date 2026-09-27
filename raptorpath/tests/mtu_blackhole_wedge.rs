@@ -34,13 +34,27 @@
 //! quinn never sees the large-packet loss pattern; that is why the wedge
 //! never reproduced at L0).
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, start_server};
+use raptorpath::perf;
 use tokio::net::UdpSocket;
+
+/// The two tests in this binary share process-global env: the wedge test's
+/// control arm WRITES `RWM_MTU_FLOOR`, and the serialization test reads the
+/// wire-format gates. Each test holds this lock for its whole body, so no env
+/// read ever races an env write.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// UDP payload size (bytes) at/above which the proxy drops packets during
 /// the black-hole window. Symbol datagrams are ~1275 bytes of QUIC payload
@@ -96,12 +110,14 @@ impl ProxyState {
     }
 }
 
-/// Start a UDP proxy on `listen`: forwards client⇄`server`, dropping big
-/// packets while the black hole is open. Returns the join handles (detached
-/// — the test process ends them).
-async fn spawn_proxy(listen: SocketAddr, server: SocketAddr) -> Arc<ProxyState> {
+/// Start a UDP proxy: forwards client⇄`server`, dropping big
+/// packets while the black hole is open. Binds an OS-chosen loopback port and
+/// returns it with the shared state; the relay tasks are detached — the test
+/// process ends them.
+async fn spawn_proxy(server: SocketAddr) -> (SocketAddr, Arc<ProxyState>) {
     let state = Arc::new(ProxyState::new());
-    let client_side = Arc::new(UdpSocket::bind(listen).await.expect("proxy bind"));
+    let client_side = Arc::new(UdpSocket::bind("127.0.0.1:0").await.expect("proxy bind"));
+    let listen = client_side.local_addr().expect("proxy addr");
     let server_side = Arc::new(UdpSocket::bind("127.0.0.1:0").await.expect("proxy bind 2"));
     server_side.connect(server).await.expect("proxy connect");
 
@@ -144,35 +160,19 @@ async fn spawn_proxy(listen: SocketAddr, server: SocketAddr) -> Arc<ProxyState> 
             }
         });
     }
-    state
+    (listen, state)
 }
 
-async fn run_transfer(server_port: u16, proxy_port: u16, bytes: usize) -> Duration {
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec![format!("127.0.0.1:{server_port}")]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-    tokio::time::sleep(Duration::from_millis(500)).await;
+async fn run_transfer(bytes: usize) -> Duration {
+    let (s, mut c) = cfgs(&ports(1), "bulk", true);
+    let srv_pc = resolve(&s);
+    let server = srv_pc.bind_addrs[0];
+    let srv = start_server(srv_pc, "mtu black-hole transfer").await;
 
-    let _proxy = spawn_proxy(
-        format!("127.0.0.1:{proxy_port}").parse().unwrap(),
-        format!("127.0.0.1:{server_port}").parse().unwrap(),
-    )
-    .await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec![format!("127.0.0.1:{proxy_port}")]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    // The client talks to the PROXY, never to the server directly.
+    let (proxy, _state) = spawn_proxy(server).await;
+    c.peer = Some(vec![proxy.to_string()]);
+    let cli_pc = resolve(&c);
 
     let t0 = Instant::now();
     tokio::time::timeout(Duration::from_secs(150), perf::client(cli_pc, bytes, 1))
@@ -196,14 +196,17 @@ async fn run_transfer(server_port: u16, proxy_port: u16, bytes: usize) -> Durati
 /// 60 s cooldown expires — asserted as elapsed > 45 s. Run it with:
 ///   RWM_WEDGE_CONTROL=1 cargo test --test mtu_blackhole_wedge --release -- --nocapture
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+// The env lock is held for the whole transfer ON PURPOSE (see `ENV_LOCK`).
+#[allow(clippy::await_holding_lock)]
 async fn mtu_black_hole_does_not_wedge_transfer() {
+    let _env = env_lock();
     let _ = rustls::crypto::ring::default_provider().install_default();
     let control = std::env::var("RWM_WEDGE_CONTROL").map(|v| v == "1").unwrap_or(false);
 
     if control {
         // Wedge-reproduction arm: stock quinn MTU state machine.
         std::env::set_var("RWM_MTU_FLOOR", "0");
-        let elapsed = run_transfer(47881, 47882, 8_000_000).await;
+        let elapsed = run_transfer(8_000_000).await;
         eprintln!("[control arm] elapsed = {elapsed:?}");
         assert!(
             elapsed > Duration::from_secs(45),
@@ -215,8 +218,12 @@ async fn mtu_black_hole_does_not_wedge_transfer() {
     }
 
     // Fix arm: MTU floor active (default).
-    let elapsed = run_transfer(47883, 47884, 8_000_000).await;
+    let elapsed = run_transfer(8_000_000).await;
     eprintln!("[fix arm] elapsed = {elapsed:?}");
+    // A REAL requirement, not a speed bound: the wedge this gates is quinn's
+    // 60 s black-hole cooldown, so a regressed engine takes ≥ 60 s whatever
+    // the host; the fixed one takes a few seconds. 40 s splits the two with
+    // margin on either side.
     assert!(
         elapsed < Duration::from_secs(40),
         "transfer took {elapsed:?} despite the MTU floor — the 60 s black-hole \
@@ -231,6 +238,7 @@ async fn mtu_black_hole_does_not_wedge_transfer() {
 /// tag + DATAGRAM frame-header overhead — quinn's own budget is ~33).
 #[test]
 fn mtu_floor_covers_symbol_batch() {
+    let _env = env_lock();
     use raptorpath::fec::{FecBackend, WireSymbol};
     use raptorpath::transport::{SymbolBatch, WireMessage};
 

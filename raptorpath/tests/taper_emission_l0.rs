@@ -33,9 +33,12 @@
 //! RWM_L0_RUNS (default 20), RWM_L0_HINT (default realtime), plus every
 //! engine RWM_* knob (RWM_RSTAR_TAIL, RWM_TAPER_R, RWM_L0_SEED, ...).
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
@@ -68,32 +71,7 @@ async fn taper_emission_l0_battery() {
         std::env::var("RWM_PERF_TIMEOUT_S").ok(),
     );
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47921".into()]),
-        protocol_hint: Some(hint.clone()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47921".into()]),
-        protocol_hint: Some(hint),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    // Generous overall bound; each run has the perf RUN_TIMEOUT (5 s here).
-    tokio::time::timeout(Duration::from_secs(900), perf::client(cli_pc, bytes, runs))
-        .await
-        .expect("taper_emission_l0 battery timed out")
-        .expect("taper_emission_l0 perf client failed");
-
-    srv.abort();
+    let (s, c) = cfgs(&ports(1), &hint, true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    run(srv, cli, bytes, runs, Duration::from_secs(900), "taper_emission_l0 battery").await;
 }

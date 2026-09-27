@@ -3,7 +3,7 @@
 use raptorpath::control::LossEstimator;
 use raptorpath::scheduler::{PathState, Scheduler};
 use raptorpath::transport::{ControlMessage, WireMessage};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[test]
 fn test_jitter_calculation_stable_transit() {
@@ -82,11 +82,21 @@ fn test_touch_path_updates_last_report() {
     let mut sched = Scheduler::default();
     sched.add_path(0);
 
-    // Touch the path
+    // Age the stamp first so an un-updated field cannot pass by accident,
+    // then bracket the touch: the new stamp is the scheduler's (wall) clock
+    // read DURING the call — an absolute invariant, not a host-speed bound.
+    let stale = Instant::now()
+        .checked_sub(Duration::from_secs(60))
+        .expect("the monotonic clock is older than 60 s");
+    sched.path_mut(0).unwrap().last_report = stale;
+    let before = Instant::now();
     sched.touch_path(0);
+    let after = Instant::now();
     let path = sched.path(0).unwrap();
-    // last_report should be very recent
-    assert!(path.last_report.elapsed() < Duration::from_millis(100));
+    assert!(
+        before <= path.last_report && path.last_report <= after,
+        "touch_path must stamp last_report with the current instant"
+    );
 }
 
 #[test]

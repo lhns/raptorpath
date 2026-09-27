@@ -62,11 +62,12 @@
 //! process-global in the child and the spawned pair must not contend with the
 //! in-process loopback tests.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{opt_f64_field as opt_field_f64, opt_field, str_field, u64_field};
 
 use raptorpath::net::succ::{succ_report_line, Hist};
 
@@ -138,169 +139,25 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// Spawn the perf SERVER — the receiver of the bulk direction, and the site
-/// whose `[SUCC]` this test is about. Its stdout AND stderr land in one sink so
-/// a missing `[SUCC]` can never be confused with an unset gate.
-fn spawn_perf_server(dump: bool) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    // THE DUMP'S BOTH SIDES. Absent by default (7); set only on the dump arm,
-    // and unset explicitly so an inherited value cannot arm the control.
-    cmd.env_remove("RWM_SUCC_DUMP");
-    cmd.env_remove("RWM_SUCC_DUMP_MAX");
-    if dump {
-        cmd.env("RWM_SUCC_DUMP", "1");
-        cmd.env("RWM_SUCC_DUMP_MAX", "5000");
-    }
-    // The shim shapes the CLIENT's egress; the server's own datagram path (the
-    // ack direction) is left clean so acks are not the thing under test.
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (addr, srv, log)
-}
-
 /// One lossy PLAIN-WINDOW loopback. Returns `(client log, server log)`.
+///
+/// THE DUMP'S BOTH SIDES. Absent by default (7); set only on the dump arm
+/// (server side), and never inherited: the harness clears every inherited
+/// `RWM_*` var so an exported value cannot arm the control. The L1 `c3` cell
+/// (LTE-class: 20 Mbit, 20 ms one-way, 5 ms jitter, GE p = 2 % / q = 40 % ⇒
+/// ε ≈ 4.8 %) shapes client egress, seeded. LOSS IS WHAT MAKES HOLES EXIST AT
+/// ALL — with no loss this gauge has nothing to time and `det = 0` would be a
+/// configuration fact rather than a dead gauge. The server log is taken once
+/// the receiver's periodic `[SUCC]` readout post-dating the transfer landed.
 fn lossy_run(dump: bool) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv, srv_log) = spawn_perf_server(dump);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "4000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    // The L1 `c3` cell (LTE-class: 20 Mbit, 20 ms one-way, 5 ms jitter,
-    // GE p = 2 % / q = 40 % ⇒ ε ≈ 4.8 %) on client egress, seeded. LOSS IS WHAT
-    // MAKES HOLES EXIST AT ALL — with no loss this gauge has nothing to time
-    // and `det = 0` would be a configuration fact rather than a dead gauge.
-    cli.env("RWM_L0_NETEM", "c3");
-    cli.env("RWM_L0_SEED", "42");
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (dump={dump}, {:?})\n--- stdout ---\n{cli_stdout}\n\
-         --- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    // Let the receiver's last periodic readout land.
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
-}
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-/// A `-`-or-number slot. `None` is the ABSENT reading and is never 0.
-fn opt_field(line: &str, key: &str) -> Option<u64> {
-    let v = field(line, key);
-    if v == "-" {
-        return None;
-    }
-    Some(
-        v.parse()
-            .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}")),
-    )
+    let dump_env: &[(&str, &str)] =
+        if dump { &[("RWM_SUCC_DUMP", "1"), ("RWM_SUCC_DUMP_MAX", "5000")] } else { &[] };
+    loopback::transfer(loopback::Transfer {
+        env: &ARM,
+        server_env: dump_env,
+        srv_tag: Some("[SUCC] "),
+        ..Default::default()
+    })
 }
 
 /// 2-6: THE GAUGE FIRES, PARTITIONS ITS OWN DENOMINATOR, AND AGREES WITH AN
@@ -450,14 +307,6 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
     );
 }
 
-fn opt_field_f64(line: &str, key: &str) -> Option<f64> {
-    let v = field(line, key);
-    if v == "-" {
-        return None;
-    }
-    Some(v.parse().unwrap_or_else(|e| panic!("`{key}` `{v}` does not parse: {e}")))
-}
-
 /// 7b: THE DUMP'S OTHER SIDE. Armed, it emits raw records in the pinned batch
 /// format, and its cap binds LOUDLY rather than silently truncating the stream
 /// the next derivation will read.
@@ -478,7 +327,7 @@ fn the_raw_dump_is_absent_by_default_and_emits_records_when_armed() {
     let first = dumps[0];
     let n = u64_field(first, "n=");
     assert!(n > 0, "[SUCCDUMP] n=0: {first}");
-    let d = field(first, "d=");
+    let d = str_field(first, "d=");
     let recs: Vec<&str> = d.split(';').collect();
     assert_eq!(recs.len(), n as usize, "[SUCCDUMP] n= disagrees with its records: {first}");
     for r in &recs {

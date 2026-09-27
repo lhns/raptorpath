@@ -57,10 +57,12 @@
 //!      A count above it means the pair set is not the pair set the formula
 //!      names.
 //!   8. **τ WAS ESTABLISHED WHERE THE GAUGE READ.** Every block carrying a
-//!      positive `tlag_us` also carries a positive `rtp…ms` — the very RTprop
-//!      the band is built on. This separates a real reading from §16.75.6 F2's
-//!      "τ unavailable" path, which is the one other way the gauge can be
-//!      silent.
+//!      valued `tlag_us` carries a parseable `rtp…ms` — the very RTprop the
+//!      band is built on — and, wherever that token can resolve it, a positive
+//!      one. This separates a real reading from §16.75.6 F2's "τ unavailable"
+//!      path, which is the one other way the gauge can be silent. The token is
+//!      WHOLE ms, so a sub-0.5 ms loopback RTprop prints `rtp0ms`; that print
+//!      is counted as undecidable, never read as τ = 0 (see `parse_rtp`).
 //!   9. **SCALE.** A dispersion of a loopback RTT cannot plausibly exceed a
 //!      second — the µs/s unit error, caught at the instrument rather than in a
 //!      results table.
@@ -75,10 +77,8 @@
 //! it. This binary prints a characterization block for the record and asserts
 //! nothing about its contents beyond reachability, feeding and scale.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+#[path = "common/loopback.rs"]
+mod loopback;
 
 /// The arm: the DIAG surface on, window-reliable — the same composition every
 /// L1 battery arm runs. The gauge has no gate of its own to set.
@@ -104,61 +104,6 @@ const CONTROLS: [&str; 4] = ["sig_us=", "rvar_us=", "qsp_us=", "msd_us="];
 
 /// The successor under test.
 const TLAG: &str = "tlag_us=";
-
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn spawn_perf_server() -> (SocketAddr, Reaper) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    std::thread::spawn(move || {
-        let mut sink = Vec::new();
-        let _ = out.read_to_end(&mut sink);
-    });
-    (addr, srv)
-}
 
 /// Parse one `<name>=<µs|->/n<count>` token into (value µs, n). `None` is the
 /// `-` reading — a legitimate value and not a parse failure.
@@ -192,48 +137,36 @@ fn quantile(sorted: &[u64], q: f64) -> u64 {
 
 /// The per-path block's own RTprop, the `rtp<floor>ms` TAIL of the block's
 /// clock token `rtt=<app>/wrtt=<wire>/rtp<floor>ms`. This is the τ the gauge's
-/// band is built on.
-fn parse_rtp(toks: &[&str]) -> Option<f64> {
+/// band is built on. Returns the printed text and its value.
+///
+/// **THE PRINT IS WHOLE MILLISECONDS** (`rtp{:.0}ms`, `net/diag.rs`), and an
+/// unset RTprop prints `0` too. On release-build loopback the RTprop is
+/// routinely BELOW 0.5 ms, so `rtp0ms` there means "τ < 0.5 ms", not "τ = 0" —
+/// reading it as τ = 0 made clause 8 fail 3 runs in 5 while the gauge held a
+/// real, positive τ.
+fn parse_rtp<'a>(toks: &[&'a str]) -> Option<(&'a str, f64)> {
     toks.iter()
         .find(|t| t.starts_with("rtt=") && t.contains("/rtp"))
         .and_then(|t| t.rsplit_once("/rtp"))
         .and_then(|(_, r)| r.strip_suffix("ms"))
-        .and_then(|r| r.parse::<f64>().ok())
+        .and_then(|r| r.parse::<f64>().ok().map(|v| (r, v)))
+}
+
+/// Is `txt` a whole-ms `0` — the one rendering whose τ the token cannot
+/// decide (τ ∈ [0, 0.5) ms)? A print with a fractional part (a finer engine
+/// format) is decidable, and then clause 8 is asserted on it in full.
+fn rtp_rounds_away(txt: &str) -> bool {
+    !txt.contains('.') && txt.parse::<u64>() == Ok(0)
 }
 
 #[test]
 fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls() {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv) = spawn_perf_server();
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "8000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    let out = cli.output().expect("run perf client");
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    let log = format!("{stdout}\n{stderr}");
-    assert!(
-        out.status.success(),
-        "perf client failed ({:?})\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
-        out.status
+    let srv = loopback::spawn_perf_server(
+        &[loopback::free_addr()],
+        &ARM,
+        &["--protocol-hint", "bulk", "--window-reliable"],
     );
+    let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
 
     // 1. THE GATE, TWO-SIDED. A missing `[DIAG]` must be readable as an
     //    unreached emission site and never as an unset gate.
@@ -258,6 +191,9 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     //    wherever the gauge read a value.
     let mut readings: Vec<(Option<u64>, u64)> = Vec::new();
     let mut blocks = 0usize;
+    // Clause-8 readings whose τ the whole-ms token cannot decide (see
+    // `parse_rtp`). Counted and printed, never silently passed.
+    let mut tau_undecidable = 0usize;
     for line in &diag {
         let toks: Vec<&str> = line.split_whitespace().collect();
         // A per-path block is identified by its OWN clock token,
@@ -321,18 +257,35 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
             );
             // 8. τ WAS ESTABLISHED WHERE THE GAUGE READ. Separates a real
             //    reading from §16.75.6 F2's "RTprop unavailable" silence.
+            //
+            //    The token is WHOLE ms, so the clause is decidable only where
+            //    the print is not a rounded-away `0` (`rtp_rounds_away`). There
+            //    it is asserted exactly as before: the token must exist, and a
+            //    value read at a printed τ of 0 with sub-ms resolution is the
+            //    degenerate band. At a whole-ms `0` (τ < 0.5 ms — release-build
+            //    loopback) the token witnesses only that the block carries its
+            //    RTprop field; the τ > 0 half is the engine's own construction
+            //    (`tlag_diffs` returns no pair when `min_rtt` is unset or zero,
+            //    so `-`-iff-`n = 0` above covers it) and is NOT re-derived
+            //    from a rounding. A finer print (`rtp` in µs or with decimals)
+            //    makes every reading decidable with no change here.
             if v.is_some() {
-                let r = rtp_ms.unwrap_or_else(|| {
+                let (txt, r) = rtp_ms.unwrap_or_else(|| {
                     panic!(
                         "`{TLAG}` read a value on a block with no parseable \
                          `rtp<floor>ms` token — the band's τ has no witness: {line}"
                     )
                 });
-                assert!(
-                    r > 0.0,
-                    "`{TLAG}` read a value at rtp={r}ms — the band [τ, 2τ] is \
-                     degenerate at τ = 0 and cannot have admitted a pair: {line}"
-                );
+                assert!(r.is_finite() && r >= 0.0, "rtp={txt}ms is not an RTprop: {line}");
+                if rtp_rounds_away(txt) {
+                    tau_undecidable += 1;
+                } else {
+                    assert!(
+                        r > 0.0,
+                        "`{TLAG}` read a value at rtp={txt}ms — the band [τ, 2τ] is \
+                         degenerate at τ = 0 and cannot have admitted a pair: {line}"
+                    );
+                }
             }
             readings.push((v, n));
         }
@@ -424,5 +377,9 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     println!(
         "[tlag] readings kept at n >= K_THIN = {K_THIN}; NOTHING HERE IS SCORED \
          — the bar is scored on the VM or it is not scored"
+    );
+    println!(
+        "[tlag] clause 8: {tau_undecidable} valued readings at a whole-ms rtp0ms \
+         (τ < 0.5 ms, undecidable from the token; see `parse_rtp`)"
     );
 }

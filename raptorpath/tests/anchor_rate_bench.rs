@@ -37,9 +37,13 @@
 //! `#[ignore]`d: it is a measurement, it takes seconds to tens of seconds,
 //! and it asserts no threshold. It is in no gate and weakens none.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::{Duration, Instant};
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, start_server};
+use raptorpath::perf;
 
 /// Bytes pushed through the reliable window. Large enough that the
 /// steady state dominates the connect/warm-up transient.
@@ -53,26 +57,9 @@ async fn anchor_rate_loopback_ceiling() {
 
     let plain_rs = std::env::var("RWM_PLAIN_RS").unwrap_or_else(|_| "unset".into());
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47871".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47871".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv_pc, cli_pc) = (resolve(&s), resolve(&c));
+    let srv = start_server(srv_pc, "anchor-rate bench").await;
 
     let t0 = Instant::now();
     let out = tokio::time::timeout(

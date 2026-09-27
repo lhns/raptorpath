@@ -6,9 +6,12 @@
 //! check on live traffic (source + repair + retransmits). Own test binary:
 //! the gate is process-global env, resolved once.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn wire_compact_reliable_window_loopback_completes() {
@@ -20,31 +23,16 @@ async fn wire_compact_reliable_window_loopback_completes() {
         "gate must resolve ON for this test"
     );
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47858".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47858".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(Duration::from_secs(60), perf::client(cli_pc, 200_000, 2))
-        .await
-        .expect("wire-compact loopback timed out")
-        .expect("wire-compact perf client failed");
-
-    srv.abort();
+    run(
+        srv,
+        cli,
+        200_000,
+        2,
+        Duration::from_secs(60),
+        "wire-compact loopback timed out",
+    )
+    .await;
 }
