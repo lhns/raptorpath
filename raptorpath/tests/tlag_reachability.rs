@@ -1,18 +1,6 @@
-//! THE RATE-INVARIANT DISPERSION GAUGE IS REPORTED — the `[DIAG]` line's
-//! `tlag_us=` field, beside the four gauges the scored battery measured.
-//!
-//! **The defect this repairs.** The scored VM battery (goal-gate, "THE SIGMA
-//! ESTIMATOR — THE SCORED RESULT") closed goal #101 item 2 `NEEDS-MORE` with
-//! all four estimators failing clause `S`, and named the nearest miss and its
-//! cause together: `msd_us` reaches `R_total = 8.667` on the bar's own most
-//! generous domain against an accept bar of `6.0`, **and every one of its
-//! failures is a sparse leg** — `rho = −0.548` between `R_total` and sample
-//! rate across the eight sender legs, with the two thinnest legs (581 and
-//! 1 762 samples/s) the two worst readings in the whole battery. The closing
-//! line names the successor in as many words: *"a fixed-TIME lag rather than a
-//! fixed-SAMPLE lag is the obvious candidate and is not built here."*
-//!
-//! Paper §16.75 builds it, formula first:
+//! The `[DIAG]` line reports the fixed-time-lag RTT dispersion gauge
+//! `tlag_us=` on every per-path block, beside the four older gauges it is
+//! scored against (paper §7.4):
 //!
 //! ```text
 //!     σ̂_Δ(τ) = median { |rtt(tᵢ) − rtt(tⱼ)| : (i, j) ∈ P(τ) }
@@ -20,68 +8,38 @@
 //!     P(τ) = { (i, j(i)) : j(i) = the most recent sample with tᵢ − tⱼ ≥ τ,
 //!                          admitted iff tᵢ − t_{j(i)} ≤ c·τ }
 //!
-//!     τ = RTprop (MEASURED),   c = 2
+//!     τ = RTprop (measured),   c = 2
 //! ```
 //!
-//! **Why a spawned binary and not a unit test.** `[DIAG]` is an `eprintln!`
-//! from inside the sender loop on a surface gated by `RWM_DIAG`. A unit test
-//! can pin the accessor; only a run of the shipped binary shows the field
-//! exists in a log an L1 parser will scrape. MEASUREMENT DISCIPLINE rule 1 —
-//! prove the mechanism under test executes.
-//!
-//! **What is asserted, in the order it can fail.**
+//! `[DIAG]` is an `eprintln!` inside the sender loop, so only a run of the
+//! shipped binary shows the field reaches a log. Clauses, in the order they
+//! can fail:
 //!
 //!   1. The two-sided gate echo: `RWM_DIAG=1` present, `RWM_DIAG=0` absent.
 //!   2. `[DIAG]` fires, with per-path blocks.
-//!   3. **Every per-path block carries `tlag_us=`** — the EXISTENCE clause,
-//!      which is what fails on the pre-change engine, where the token occurs
-//!      nowhere in the tree.
-//!   4. **All FOUR older gauges are STILL THERE**, on every block, exactly
-//!      once each. The successor is added BESIDE its controls, and the re-run
-//!      battery scores it against them from one sample stream in one run; a
-//!      change that replaced any of them would pass clause 3 and must not pass.
-//!   5. **The `-`-iff-`n == 0` convention as a BICONDITIONAL**, on every
-//!      reading of every block. It holds by construction — value and count come
-//!      from the one `tlag_diffs()` pair set — and this asserts that.
-//!   6. **THE DECIMATION ACTUALLY EXECUTED**, and this is the clause that makes
-//!      the test a routing gate rather than a spelling check. This runs on
-//!      loopback, where the sender takes RTT samples at tens of kHz. **Without
-//!      the `τ/m` admission spacing, a 256-entry ring would span well under one
-//!      `RTprop` at that rate, the band `[τ, 2τ]` would contain no pairs at
-//!      all, and `n` would be 0 on every block.** So `n ≥ 32` here is direct
-//!      evidence that the time-decimation ran and that the τ-band found
-//!      partners — not merely that a field was formatted. 32 is `L/8`, the
-//!      `UNSCOREABLE-THIN` floor §16.75.6 F1 pre-registers for the parser.
-//!   7. **THE RING BOUND HOLDS**: `n ≤ L − 1`. One anchor contributes at most
-//!      one pair, so the pair count can never exceed the ring depth minus one.
-//!      A count above it means the pair set is not the pair set the formula
-//!      names.
-//!   8. **τ WAS ESTABLISHED WHERE THE GAUGE READ.** Every block carrying a
-//!      valued `tlag_us` carries a parseable `rtp…ms` — the very RTprop the
-//!      band is built on — and, wherever that token can resolve it, a positive
-//!      one. This separates a real reading from §16.75.6 F2's "τ unavailable"
-//!      path, which is the one other way the gauge can be silent. The token is
-//!      WHOLE ms, so a sub-0.5 ms loopback RTprop prints `rtp0ms`; that print
-//!      is counted as undecidable, never read as τ = 0 (see `parse_rtp`).
-//!   9. **SCALE.** A dispersion of a loopback RTT cannot plausibly exceed a
-//!      second — the µs/s unit error, caught at the instrument rather than in a
-//!      results table.
+//!   3. Every per-path block carries `tlag_us=`.
+//!   4. The four older gauges are still there, exactly once per block.
+//!   5. `-` iff `n == 0`, on every reading (value and count come from one
+//!      `tlag_diffs()` pair set).
+//!   6. The time decimation executed: on loopback the sender samples RTT at
+//!      tens of kHz, so without the `τ/m` admission spacing a 256-entry ring
+//!      would span under one RTprop and `n` would be 0 everywhere. `n ≥ L/8`
+//!      is the parser's thin floor.
+//!   7. The ring bound: `n ≤ L − 1` (one anchor contributes at most one pair).
+//!   8. τ was established where the gauge read: every valued block carries a
+//!      parseable `rtp…ms`, positive wherever the whole-ms token can resolve
+//!      it (see `parse_rtp`).
+//!   9. Scale: a loopback RTT dispersion is under one second (µs/s unit error).
 //!
-//! **What this binary deliberately does NOT assert, and it is the important
-//! half.** Any ORDERING between `tlag_us` and any other gauge, and any VALUE.
-//! Loopback's dispersion is the host scheduler's, not a network's; §16.74.5
-//! requirement 3 binds, and loopback is neither of the two seats. **Rate
-//! invariance itself is not testable here** — one host at one sample rate
-//! cannot show a quantity is invariant across rates. That is what the re-run
-//! VM battery is for, and §16.75.7's prediction `P4` is pre-registered against
-//! it. This binary prints a characterization block for the record and asserts
-//! nothing about its contents beyond reachability, feeding and scale.
+//! No ordering between gauges and no value is asserted: loopback's
+//! dispersion is the host scheduler's, and one host at one sample rate
+//! cannot show rate invariance. The characterization block is printed only.
 
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The arm: the DIAG surface on, window-reliable — the same composition every
-/// L1 battery arm runs. The gauge has no gate of its own to set.
+/// The arm: the DIAG surface on, as every L1 battery arm runs it. The gauge
+/// has no gate of its own.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
@@ -93,13 +51,11 @@ const ARM: [(&str, &str); 3] = [
 /// assertions fail loudly rather than silently weakening.
 const WINDOW: u64 = 256;
 
-/// The `UNSCOREABLE-THIN` floor `K = L/8` that paper §16.75.6 F1 pre-registers
-/// as a PARSER rule. It is not a threshold in the engine and this test is the
-/// only place in the tree it appears as a number.
+/// The thin floor `K = L/8` the battery parser applies. Not an engine
+/// threshold.
 const K_THIN: u64 = WINDOW / 8;
 
-/// The four gauges the scored battery measured. They stay, unchanged, as the
-/// re-run's controls and as its regression check.
+/// The four older gauges, kept unchanged as controls.
 const CONTROLS: [&str; 4] = ["sig_us=", "rvar_us=", "qsp_us=", "msd_us="];
 
 /// The successor under test.
@@ -139,11 +95,9 @@ fn quantile(sorted: &[u64], q: f64) -> u64 {
 /// clock token `rtt=<app>/wrtt=<wire>/rtp<floor>ms`. This is the τ the gauge's
 /// band is built on. Returns the printed text and its value.
 ///
-/// **THE PRINT IS WHOLE MILLISECONDS** (`rtp{:.0}ms`, `net/diag.rs`), and an
-/// unset RTprop prints `0` too. On release-build loopback the RTprop is
-/// routinely BELOW 0.5 ms, so `rtp0ms` there means "τ < 0.5 ms", not "τ = 0" —
-/// reading it as τ = 0 made clause 8 fail 3 runs in 5 while the gauge held a
-/// real, positive τ.
+/// The print is whole milliseconds (`rtp{:.0}ms`, `net/diag.rs`), and an
+/// unset RTprop prints `0` too. Release-build loopback RTprop is routinely
+/// below 0.5 ms, so `rtp0ms` means "τ < 0.5 ms", not "τ = 0".
 fn parse_rtp<'a>(toks: &[&'a str]) -> Option<(&'a str, f64)> {
     toks.iter()
         .find(|t| t.starts_with("rtt=") && t.contains("/rtp"))
@@ -168,8 +122,8 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     );
     let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
 
-    // 1. THE GATE, TWO-SIDED. A missing `[DIAG]` must be readable as an
-    //    unreached emission site and never as an unset gate.
+    // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
+    //    emission site, never as an unset gate.
     assert!(
         log.contains("RWM_DIAG=1"),
         "the [GATES] echo does not carry RWM_DIAG=1 — the arm did not arm:\n{log}"
@@ -179,16 +133,16 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
         "the [GATES] echo carries BOTH sides of RWM_DIAG:\n{log}"
     );
 
-    // 2. THE LINE FIRES, with per-path blocks.
+    // 2. The line fires, with per-path blocks.
     let diag: Vec<&str> = log.lines().filter(|l| l.contains("[DIAG] ")).collect();
     assert!(
         !diag.is_empty(),
         "no [DIAG] line in a run with RWM_DIAG=1 — the report is unreachable:\n{log}"
     );
 
-    // 3 + 4 + 5 + 8. EXISTENCE on every block; the four controls unchanged
-    //    beside it; the `-` convention as a biconditional; and τ established
-    //    wherever the gauge read a value.
+    // 3 + 4 + 5 + 8: existence on every block; the four controls beside it;
+    //    the `-` convention as a biconditional; τ established wherever the
+    //    gauge read a value.
     let mut readings: Vec<(Option<u64>, u64)> = Vec::new();
     let mut blocks = 0usize;
     // Clause-8 readings whose τ the whole-ms token cannot decide (see
@@ -196,7 +150,7 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     let mut tau_undecidable = 0usize;
     for line in &diag {
         let toks: Vec<&str> = line.split_whitespace().collect();
-        // A per-path block is identified by its OWN clock token,
+        // A per-path block is identified by its own clock token,
         // `rtt=<app>/wrtt=<wire>/rtp<floor>ms` — the aggregate `rtt=<ms>ms`
         // matches a bare `starts_with("rtt=")` and must not be counted.
         let n_rtp = toks
@@ -208,10 +162,8 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
         }
         blocks += n_rtp;
 
-        // 4. THE CONTROLS SURVIVE. The re-run battery scores six estimators
-        //    side by side and reads NO verdict from the successor's column if
-        //    the four controls do not reproduce their committed verdicts
-        //    (§16.75.7). That is only possible if they are all still emitted.
+        // 4. The controls survive: the battery reads no verdict from the
+        //    successor's column unless they are all still emitted.
         for field in CONTROLS {
             let hits = toks.iter().filter(|t| t.starts_with(field)).count();
             assert_eq!(
@@ -222,10 +174,9 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
             );
         }
 
-        // 3. THE SUCCESSOR EXISTS, on every block. THIS IS THE CLAUSE THAT
-        //    FAILS ON THE PRE-CHANGE ENGINE: `tlag_us=` occurs nowhere in the
-        //    tree at `6cf2328`. A gauge present on some paths and not others is
-        //    worse than absent — a parser would average over a biased subset.
+        // 3. The successor exists on every block. A gauge present on some
+        //    paths and not others is worse than absent: a parser would average
+        //    over a biased subset.
         let hits: Vec<&&str> = toks.iter().filter(|t| t.starts_with(TLAG)).collect();
         assert_eq!(
             hits.len(),
@@ -238,9 +189,8 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
         let rtp_ms = parse_rtp(&toks);
         for t in hits {
             let (v, n) = parse_gauge(TLAG, t);
-            // 5. THE CONVENTION, BOTH WAYS. Value and count come from one pair
-            //    set, so this holds by construction; asserting it is what makes
-            //    "by construction" checkable from outside the crate.
+            // 5. The convention, both ways — by construction, checked from
+            //    outside the crate.
             assert_eq!(
                 v.is_none(),
                 n == 0,
@@ -248,27 +198,19 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
                  n={n} — a parser cannot tell a suppressed gauge from a leg too \
                  thin to hold a τ-lag pair: {line}"
             );
-            // 7. THE RING BOUND. One anchor contributes at most one pair.
+            // 7. The ring bound: one anchor contributes at most one pair.
             assert!(
                 n < WINDOW,
                 "`{TLAG}` reports n={n} pairs from a ring of at most {WINDOW} \
                  entries — one anchor may contribute at most one pair, so a \
                  count of {n} is not the pair set |P(τ)| the formula names: {line}"
             );
-            // 8. τ WAS ESTABLISHED WHERE THE GAUGE READ. Separates a real
-            //    reading from §16.75.6 F2's "RTprop unavailable" silence.
-            //
-            //    The token is WHOLE ms, so the clause is decidable only where
-            //    the print is not a rounded-away `0` (`rtp_rounds_away`). There
-            //    it is asserted exactly as before: the token must exist, and a
-            //    value read at a printed τ of 0 with sub-ms resolution is the
-            //    degenerate band. At a whole-ms `0` (τ < 0.5 ms — release-build
-            //    loopback) the token witnesses only that the block carries its
-            //    RTprop field; the τ > 0 half is the engine's own construction
-            //    (`tlag_diffs` returns no pair when `min_rtt` is unset or zero,
-            //    so `-`-iff-`n = 0` above covers it) and is NOT re-derived
-            //    from a rounding. A finer print (`rtp` in µs or with decimals)
-            //    makes every reading decidable with no change here.
+            // 8. τ was established where the gauge read, separating a real
+            //    reading from the "RTprop unavailable" silence. Decidable only
+            //    where the print is not a rounded-away `0`
+            //    (`rtp_rounds_away`); at `rtp0ms` the τ > 0 half is the
+            //    engine's own construction (`tlag_diffs` returns no pair when
+            //    `min_rtt` is unset or zero, covered by clause 5).
             if v.is_some() {
                 let (txt, r) = rtp_ms.unwrap_or_else(|| {
                     panic!(
@@ -295,14 +237,9 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
         "no per-path [DIAG] block in the whole log — nothing to read a gauge off:\n{log}"
     );
 
-    // 6. AND IT IS FED — AND THE DECIMATION EXECUTED.
-    //
-    //    This is the routing clause. On loopback the sender takes RTT samples
-    //    at tens of kHz. A 256-entry ring holding EVERY sample would span well
-    //    under one RTprop at that rate, so the band [τ, 2τ] would contain no
-    //    admissible partner anywhere and every reading would be `-` at n = 0.
-    //    A positive count here is therefore direct evidence that the `τ/m`
-    //    admission spacing ran and that the τ-band found partners.
+    // 6. The gauge is fed and the decimation executed: a positive count is
+    //    direct evidence that the `τ/m` admission spacing ran and the τ-band
+    //    found partners.
     let best = readings
         .iter()
         .filter_map(|(v, n)| v.map(|v| (v, *n)))
@@ -331,7 +268,7 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
          dispersion at a lag of one RTprop over a whole transfer is not a \
          measurement, it is an unfed gauge"
     );
-    // 9. SCALE — the µs/s unit error, the most likely mistake in this change.
+    // 9. Scale — the µs/s unit error.
     assert!(
         v < 1_000_000,
         "`{TLAG}` = {v} µs on loopback is not a dispersion of a loopback RTT \
@@ -339,12 +276,10 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     );
 
     // ------------------------------------------------------------------
-    // THE CHARACTERIZATION BLOCK — printed for the record, ASSERTED ON
-    // NOWHERE. `R_local` is the acceptance bar's own functional (p95/p05 over
-    // pooled post-warm-up readings) evaluated over this run's [DIAG] time
-    // series. It is NOT `R_total`: the bar's statistic pools REPS at a shaped
-    // cell, and this pools intervals of one loopback run. AND IT ESTABLISHES
-    // NOTHING ABOUT RATE INVARIANCE — one host at one sample rate cannot.
+    // Characterization block — printed, asserted nowhere. `R_local` is the
+    // bar's functional (p95/p05 over post-warm-up readings) over this run's
+    // [DIAG] series; it is not `R_total` (which pools reps at a shaped cell)
+    // and says nothing about rate invariance.
     // ------------------------------------------------------------------
     let mut kept: Vec<u64> = readings
         .iter()

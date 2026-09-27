@@ -1,10 +1,10 @@
-//! Compact-wire-framing loopback (goal-gate "Window Decoupling + MTU
-//! Scaling" part 2, `RWM_WIRE_COMPACT`): the reliable-window perf loopback
-//! with compact DATA framing ON — every window-mode symbol datagram rides
-//! the v5 tag+varint frame end-to-end. The perf object protocol acks only
-//! when every chunk is present, so completion IS the codec-correctness
-//! check on live traffic (source + repair + retransmits). Own test binary:
-//! the gate is process-global env, resolved once.
+//! Compact-wire-framing loopback (`RWM_WIRE_COMPACT`, default on; paper
+//! §9.5): the reliable-window perf loopback with compact DATA framing on —
+//! every window-mode symbol datagram rides the tag+varint frame end-to-end.
+//! The perf object protocol acks only when every chunk is present, so
+//! completion is the codec-correctness check on live traffic (source +
+//! repair + retransmits). Own test binary: the gate is process-global env,
+//! resolved once.
 
 #[path = "common/loopback.rs"]
 mod loopback;

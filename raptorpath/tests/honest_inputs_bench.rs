@@ -1,27 +1,25 @@
-//! goal-gate "Honest Inputs" — component validation (MEASUREMENT DISCIPLINE
-//! 14) for the TWO dishonest measured inputs the three-term arc left
-//! standing, at the pub-API level (no transport, no tokio, no VM):
+//! Component validation (`docs/measurement-discipline.md` rule 14) of the
+//! honest measured inputs, at the pub-API level (no transport, no tokio, no
+//! VM):
 //!
 //!   (K) `EchoRatioMin` under jitter: the shipped K feed observes the
-//!       SMOOTHED srtt at the 5 ms refresh clock, and the minimum of a
-//!       smoothed series sits near the distribution's MEAN, not its floor —
-//!       the measured jit25 inversion (`[3T]` window ×1.34/1.38 its
-//!       pre-registered value, the OPPOSITE of the pre-registered "min
-//!       reads the low end"). This bench generates a deterministic jittered
-//!       echo series in the jit25 shape (40 ms base ± 25 ms uniform),
-//!       reproduces the bias in the shipped feeding, and shows the
-//!       `RWM_HONEST_K` feeding (RAW ratio at the sample clock, same
-//!       tracker/window/clamp/guard) reads the floor.
+//!       smoothed srtt at the 5 ms refresh clock, and the minimum of a
+//!       smoothed series sits near the distribution's mean, not its floor.
+//!       This bench generates a deterministic jittered echo series in the
+//!       jit25 shape (40 ms base ± 25 ms uniform), reproduces the bias in
+//!       the shipped feeding, and shows the `RWM_HONEST_K` feeding (raw
+//!       ratio at the sample clock, same tracker/window/clamp/guard) reads
+//!       the floor.
 //!
 //!   (engine wiring) `PathState::k_raw()` — proves the mechanism executes
 //!       at the real feed site (`record_rtt_sample`), two-sided: with
-//!       `RWM_HONEST_K` unset it must be `None` (the OFF-value property
+//!       `RWM_HONEST_K` unset it must be `None` (the off-value property
 //!       through the pub API); under `RWM_HONEST_K=1` (a separate
 //!       invocation — the gate resolves once per process) it must read the
 //!       jittered stream's floor.
 //!
-//! The RATE-ANCHOR fix's cost curve (`RWM_HONEST_ANCHOR` — the c1 −35%
-//! mechanism) is measured by the in-crate bench
+//! The rate-anchor cost curve (`RWM_HONEST_ANCHOR`, the O(1) windowed max)
+//! is measured by the in-crate bench
 //! `scheduler::tests::bw_filter_cost_is_quadratic_legacy_and_linear_fixed`
 //! (both arms in ONE process via the test hooks):
 //!
@@ -33,7 +31,7 @@
 //! `bw_mono_front_equals_full_window_fold` (runs in every `cargo test`).
 //!
 //! Run this file's tests (they are deterministic and fast — they run in the
-//! normal suite; the ON-arm wiring check needs its own invocation):
+//! normal suite; the on-arm wiring check needs its own invocation):
 //!
 //! ```text
 //!   cargo test -p raptorpath --test honest_inputs_bench -- --nocapture
@@ -65,9 +63,9 @@ fn jittered_rtt(u: &mut Lcg) -> Duration {
     Duration::from_secs_f64((0.040 + jitter_ms / 1e3).max(0.000_07))
 }
 
-/// (K) The bias, REPRODUCED then REMOVED, on the pure estimator: both
-/// estimators are the SAME `EchoRatioMin` (same window, same ≥ 1 clamp,
-/// same seed-identity guard); the ONLY difference is the fed series —
+/// (K) The bias, reproduced then removed, on the pure estimator: both
+/// estimators are the same `EchoRatioMin` (same window, same ≥ 1 clamp,
+/// same seed-identity guard); the only difference is the fed series —
 /// smoothed-at-refresh (shipped) vs raw-at-sample (`RWM_HONEST_K`). That
 /// isolation is the fix's zero-constant claim in executable form.
 #[test]
@@ -90,18 +88,18 @@ fn k_jitter_bias_reproduced_and_removed() {
         });
         rtprop = Some(rtprop.map_or(raw, |m: f64| m.min(raw)));
         let rtp = Duration::from_secs_f64(rtprop.unwrap());
-        // Shipped feed: the SMOOTHED series at the refresh clock.
+        // Shipped feed: the smoothed series at the refresh clock.
         smoothed_fed.observe_srtt_over_rtprop(
             Duration::from_secs_f64(srtt.unwrap()),
             Some(rtp),
             now_us,
         );
-        // RWM_HONEST_K feed: the RAW sample at the sample clock.
+        // RWM_HONEST_K feed: the raw sample at the sample clock.
         raw_fed.observe_srtt_over_rtprop(Duration::from_secs_f64(raw), Some(rtp), now_us);
     }
     let k_smoothed = smoothed_fed.k();
     let k_raw = raw_fed.k();
-    // The three-term window term is LINEAR in K, so K's inflation IS the
+    // The three-term window term is linear in K, so K's inflation is the
     // jit25 limit inflation class.
     println!(
         "[HONEST-K-BENCH] jit25 shape (40ms ± 25ms): K_smoothed = {k_smoothed:.3} \
@@ -124,7 +122,7 @@ fn k_jitter_bias_reproduced_and_removed() {
     );
 }
 
-/// (K, jitterless control) Where the delay distribution is NARROW the two
+/// (K, jitterless control) Where the delay distribution is narrow the two
 /// feedings must agree — the fix may not disturb the cells that were
 /// already reading honestly (the 5–9.9 k band's K, sc2-class). A standing
 /// +4 ms wire queue on an 8 ms floor: both estimators read ≈ 1.5.
@@ -160,9 +158,10 @@ fn k_agrees_with_the_smoothed_feed_where_there_is_no_jitter() {
     );
 }
 
-/// (engine wiring) `PathState::k_raw()` at the REAL feed site, two-sided on
-/// the process's own gate resolution (MEASUREMENT DISCIPLINE 1: prove the
-/// mechanism under test executes — or provably does not, on the control).
+/// (engine wiring) `PathState::k_raw()` at the real feed site, two-sided on
+/// the process's own gate resolution (`docs/measurement-discipline.md`
+/// rule 1: prove the mechanism under test executes — or provably does not,
+/// on the control).
 #[test]
 fn k_raw_engine_wiring_follows_the_gate() {
     let gate_on = std::env::var("RWM_HONEST_K").map_or(false, |v| {

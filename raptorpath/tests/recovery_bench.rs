@@ -1,17 +1,13 @@
-//! COMPONENT BENCH — the RECOVERY PLANE ALONE.
-//!
-//! Goal-gate "Component Benches" (2026-08-08). No CC, no scheduler, no
-//! multipath placement, no transport, no tokio: a deterministic
-//! discrete-event driver that feeds synthetic arrival/loss patterns to the
-//! SHIPPED recovery laws (`raptorpath::net::*`, extracted in the commit
-//! before this one) and records, per hole, WHEN and WHY it was served.
-//!
-//! The standing rule this instrument exists to serve: **no L1 battery until
-//! the mechanism is characterized at component level and the component
-//! result predicts a number L1 can confirm or refute.** Two consecutive
-//! goal-gate attempts (ack-merge, derived patience) were falsified because
-//! their PREMISE was mis-measured — facts that cost hours of L1 time and
-//! that this file answers in seconds.
+//! Component bench for the recovery plane alone (paper §7.1). No CC, no
+//! scheduler, no multipath placement, no transport, no tokio: a deterministic
+//! discrete-event driver feeds synthetic arrival/loss patterns to the shipped
+//! recovery laws (`raptorpath::net::*`) and records, per hole, when and why it
+//! was served. It pins the plane's clock laws and measured behaviour at the
+//! c7 operating point, and the recovery-clock laws (the derived clamp, the
+//! quantile-native window law and the hold-down, paper §7.4) at their
+//! published anchor points. It serves `docs/measurement-discipline.md`
+//! rule 14: characterize the mechanism at component level before any L1
+//! battery.
 //!
 //! ```text
 //! cargo test --test recovery_bench --release -- --ignored --nocapture
@@ -35,16 +31,15 @@
 //!   RWM_RB_JITTER_MS  1                    measured RTT jitter (pd arm)
 //!   RWM_RB_SHED       0                    arm the δ-honest shed law
 //!
-//! THE CLOCK ARGUMENT (the first question, §16.40's named successor):
+//! THE CLOCK ARGUMENT:
 //! every recovery clock in the plane is fed by `pooled_recovery_srtt_us` and
 //! by the per-path `(copa_srtt, estimator_rtt)` pair. The estimator's
 //! app-echo RTT is STORE-DWELL INCLUSIVE — measured 158 ms at c7 against an
-//! 8–10 ms RTprop — while `QuicTransport::wire_rtt` (ADR-0062 / §16.34)
+//! 8–10 ms RTprop — while `QuicTransport::wire_rtt` (ADR-0062)
 //! excludes the dwell. `RWM_RB_CLOCK=app` feeds the dwell-inclusive clock,
 //! `wire` the dwell-free one. NOTHING else differs between the arms.
 //!
-//! WHAT THIS BENCH CANNOT SEE — stated up front, because that boundary is
-//! what keeps L1 honest:
+//! WHAT THIS BENCH CANNOT SEE:
 //!   * congestion control. No cwnd, no pacing gate, no Copa backoff: a
 //!     retransmit here is never rate-limited or queued behind source data,
 //!     so measured hole→service latency is a LOWER BOUND on the real one.
@@ -61,12 +56,9 @@
 //!   * scheduler placement, per-path CC coupling, path failover.
 //!   * control-plane loss and the real ack/emission interleave.
 
-// The driver, the axes, the loss model and the shipped-law calls now live in
+// The driver, the axes, the loss model and the shipped-law calls live in
 // `tests/common/recovery_model.rs` so that `tests/slack_bench.rs` can take
-// this plane's STALL DISTRIBUTION as its input rather than invent one
-// (goal-gate "Emission-Slack Bench", 2026-08-09). The move was VERBATIM;
-// `recovery_bench_fixtures_pin_the_plane` below is unchanged and is the
-// proof of that.
+// this plane's STALL DISTRIBUTION as its input rather than invent one.
 #[path = "common/recovery_model.rs"]
 mod recovery_model;
 
@@ -455,21 +447,9 @@ fn recovery_bench_fixtures_pin_the_plane() {
 // The measured fixture values (bench outputs, `Calib::fixture`, seed 42,
 // RTprop 10 ms / uniform 2.6 % / np = 2 / arm `shipped`).
 //
-// RE-PINNED 2026-08-10 (goal-gate "Coverage: derivable or not", the driver's
-// COLD-START ACK CORRECTION). The receiver's ack timer is armed at
-// `GAP_ACK_MIN_US` = 2 ms, one owd before the first symbol can arrive; the
-// "nothing arrived" branch then deferred the next advertisement by the full
-// hole-refresh cadence even though no hole had ever been NACKed, holding
-// every symbol emitted inside that window in the sender's store. That is a
-// startup transient with no counterpart in the shipped receiver (which acks
-// ON ARRIVAL subject to the 2 ms floor), and at the fast rate classes it
-// SET the measured backlog requirement outright. The correction moves these
-// six pins and nothing else — the channel LAWS (fixture 1), the N ≤ 1
-// bit-exact bypass (fixture 3) and the SP asymmetry (fixture 4) are
-// unchanged:
-//   app  p50 16 600 → 14 776 µs        (−11.0 %)
-//   wire p50 16 600 → 14 328 µs        (−13.7 %)
-//   wire mix [75, 79] → [70, 84]  ·  retx 157 → 156  ·  sweeps 3 → 2
+// The driver acks on arrival subject to the 2 ms `GAP_ACK_MIN_US` floor, as
+// the shipped receiver does; it does not defer the first advertisement by the
+// hole-refresh cadence before any hole was NACKed.
 const FIX_HOLES: usize = 154;
 /// 100 % FAST: on the app-echo clock the §6.1.2 channel (177.75 ms) never
 /// ripens inside a hole's life, so the packet-threshold channel serves
@@ -486,26 +466,24 @@ const FIX_WIRE_SWEEPS: u64 = 2;
 const FIX_WIRE_P50_US: u64 = 14_328;
 
 // ═════════════════════════════════════════════════════════════════════════
-//  THE DERIVED RECOVERY CLAMP (goal-gate "The Derived Recovery Clamp",
-//  2026-08-12) — the two recovery clocks' [25 ms, 100 ms] clamp on trial.
+//  THE DERIVED RECOVERY CLAMP — the two recovery clocks' [25 ms, 100 ms]
+//  clamp on trial (paper §7.1).
 // ═════════════════════════════════════════════════════════════════════════
 //
-// THE FINDING BEING ACTED ON: goal-gate "The Latency-Feedback Source"
-// re-attributed c8's collapse mode to an APPENDED DEAD WALL — ~30 % of a
+// THE FINDING BEING ACTED ON: L1 attributed c8's collapse mode to an APPENDED DEAD WALL — ~30 % of a
 // collapse rep's wall with the sender neither reading source, nor blocked on
 // its store cap, nor sending — and named its quantum as the recovery clocks:
 // `tail_sweep_timeout_us` and `hole_nack_refresh` are both `2·SRTT` clamped
 // to [25, 100] ms, and c8's measured SRTT overshoots the ceiling 7.5×.
 //
-// THE QUESTION, put the way §16.40 requires (the ARGUMENT before the
-// constant): is the CEILING wrong, or is the ARGUMENT wrong? Both repairs
+// THE QUESTION, argument before constant: is the CEILING wrong, or is the ARGUMENT wrong? Both repairs
 // are evaluated here SEPARATELY and then composed:
 //
 //   REPAIR A — derive the clamp away.  `derived_recovery_round_us`:
 //              max(2·srtt, patience_floor_us(jitter, srtt)), no ceiling.
 //   REPAIR B — change the argument.    Feed the clock the WIRE RTT (Copa /
 //              `QuicTransport::wire_rtt`) instead of the store-dwell-
-//              inclusive app-echo RTT, exactly as §16.40's successor asked.
+//              inclusive app-echo RTT.
 //
 // THE ARITHMETIC THAT DECIDES IT, and why it is arithmetic and not taste.
 // The sender arms the sweep at `last_activity + timeout`, where
@@ -524,14 +502,10 @@ const FIX_WIRE_P50_US: u64 = 14_328;
 // expression is ZERO for every srtt > 0 — a theorem about the law, pinned
 // below rather than measured.
 //
-// WHAT THE COMMITTED WIRE SAYS, transcribed (medians over the summary
-// records in `docs/l1-raw`; the same rows "The Queue Fix" and "The
-// Latency-Feedback Source" read). `srtt_app = rtp_med + q_p50` is those
-// sections' own decomposition, re-composed. The fourth column is the
-// `ping_p50` LOADED ICMP probe those records also carry and no section had
-// read — the only wire-clock evidence in the committed tree, since the DIAG
-// line's `wrtt=` field is parsed by `tools/l1/flip_parse.py` and then
-// DISCARDED (it reaches no summary record).
+// WHAT THE WIRE SAYS, transcribed (medians over the L1 summary records).
+// `srtt_app = rtp_med + q_p50`, the records' own decomposition, re-composed.
+// The fourth column is the `ping_p50` loaded ICMP probe those records also
+// carry — the only wire-clock evidence in them.
 const MEASURED: &[(&str, u64, u64, u64)] = &[
     // (cell/arm, RTprop ms, standing queue ms, loaded ICMP p50 ms)
     ("c1-A", 2, 7, 2),
@@ -542,8 +516,8 @@ const MEASURED: &[(&str, u64, u64, u64)] = &[
 ];
 
 /// The measured RTT jitter fed to the derived floor: `RWM_RB_JITTER_MS`'s
-/// own default (1 ms), i.e. the same number the `pd` arm has used since
-/// 2026-08-08 — NOT a constant introduced here.
+/// own default (1 ms), the same number the `pd` arm uses — not a constant
+/// introduced here.
 const JITTER_US: u64 = 1_000;
 
 fn measured(tag: &str) -> (u64, u64) {
@@ -934,8 +908,7 @@ fn the_shipped_ceiling_generates_the_spurious_rounds_and_c1_is_the_control() {
     }
 }
 
-/// PIN 3 — **REPAIR B IS REFUTED AT THIS CLOCK, and that is the §16.40
-/// discipline paying off in the other direction.** Feeding the tail sweep
+/// PIN 3 — **REPAIR B IS REFUTED AT THIS CLOCK.** Feeding the tail sweep
 /// the WIRE RTT does not remove the spurious rounds, because the event the
 /// sweep waits for is the APP-ECHO ack — the same instant-to-instant
 /// difference `estimator.rtt()` measures. Wire-clocking under the shipped
@@ -1072,18 +1045,17 @@ fn the_derived_sweep_arm_executes_and_moves_both_cadences_at_c8() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// THE R AXIS, COMPONENT-VERIFIED — paper §16.67, §16.67.1
+// THE R AXIS, COMPONENT-VERIFIED — paper §7.1
 //
 // The shipped clamp and `RWM_DERIVED_SWEEP`, scored at the same five MEASURED
 // geometries on the same arithmetic, plus the FALSE-ALARM RATE each is
 // predicted to produce against RFC 8985 §6.2 Step 4's own published budget.
-// (The two rival arms this axis also scored — `RWM_RACK_CLOCKS`, §16.68, and
-// `RWM_QUANTILE_CLOCKS`, §16.69 — were refuted and removed with their gates.)
+// (The two rival arms this axis also scored — `RWM_RACK_CLOCKS` and
+// `RWM_QUANTILE_CLOCKS` — were refuted and removed with their gates; paper §10.)
 //
 // The headline is about the CONTROL, not the successors: the shipped
 // `[25, 100] ms` clamp is predicted to violate RACK's own spurious budget by
-// 8–13× at three of five cells, and that number has never been measured in
-// this tree.
+// 8–13× at three of five cells.
 // ════════════════════════════════════════════════════════════════════════
 
 use raptorpath::net::{derived_recovery_round_us, tail_sweep_timeout_us, RACK_SPURIOUS_BUDGET};
@@ -1095,16 +1067,13 @@ fn false_alarm_frac(srtt_us: u64, cadence_us: u64) -> f64 {
     sp as f64 / (sp + 1) as f64
 }
 
-/// **§16.67 + §16.67.1, PINNED.** The R axis at the five measured
-/// geometries: cadence, spurious rounds and the predicted false-alarm rate for
-/// the shipped clamp and `RWM_DERIVED_SWEEP`.
-///
-/// Every number here is published in §16.67/§16.67.1 BEFORE this test existed.
-/// The test's job is to make the publication falsifiable: if a law changes,
-/// the paper's table goes red rather than stale.
+/// The R axis at the five measured geometries, pinned: cadence, spurious
+/// rounds and the predicted false-alarm rate for the shipped clamp and
+/// `RWM_DERIVED_SWEEP`. If a law changes, the published numbers go red rather
+/// than stale.
 #[test]
 fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
-    // ── The SENDER site (app-echo clock). §16.67's first table. ────────
+    // ── The SENDER site (app-echo clock). ──────────────────────────────
     // (cell, srtt_app, shipped sp, derived sp)
     for &(name, srtt, ship_sp, ds_sp) in &[
         ("c1-A", 9_000u64, 0u64, 0u64),
@@ -1119,7 +1088,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
         assert_eq!(spurious_rounds(srtt, ds), ds_sp, "{name}: RWM_DERIVED_SWEEP");
     }
 
-    // ── §16.67.1's FALSE-ALARM table, and the finding about the CONTROL. ──
+    // ── The FALSE-ALARM table, and the finding about the CONTROL. ──────
     let mut control_violations = 0;
     for &(name, srtt, want_ship_fa) in &[
         ("c1-A", 9_000u64, 0.00f64),
@@ -1134,7 +1103,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
             control_violations += 1;
         }
         // The derived arm clears the budget BY BEING SLOW — recorded so the
-        // trade §16.53 measured is visible in the arithmetic, not only in prose.
+        // trade L1 measured is visible in the arithmetic, not only in prose.
         let fa_ds = false_alarm_frac(srtt, derived_recovery_round_us(srtt, JITTER_US));
         assert!(fa_ds <= RACK_SPURIOUS_BUDGET, "{name}: DERIVED_SWEEP no longer clears the budget");
     }
@@ -1145,7 +1114,7 @@ fn the_r_axis_component_arithmetic_is_what_the_paper_publishes() {
     );
 }
 
-/// **§16.76, THE WINDOW LAW AND THE ORDER STATISTIC — ABSOLUTE PINS.**
+/// **THE WINDOW LAW AND THE ORDER STATISTIC — ABSOLUTE PINS** (paper §7.4).
 ///
 /// The paper publishes `N(α)` and the exact `Beta(K, N−K+1)` CIs at the
 /// α-sweep's own grid, and the UNSEPARATED-BY-CONSTRUCTION set is DERIVED from
@@ -1160,7 +1129,7 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
         TIMER_GRANULARITY_US,
     };
 
-    // §16.76.3's table, transcribed. `N(α) = max(⌈K/α⌉, 2K)`, K = 10.
+    // `N(α) = max(⌈K/α⌉, 2K)`, K = 10, at the α-sweep's grid.
     for &(alpha, want) in &[
         (0.002_f64, 5000usize),
         (0.009, 1112),
@@ -1188,7 +1157,7 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
         "at alpha = 1 the floor IS the law"
     );
 
-    // THE CAP IS THE HONEST UNAVAILABILITY, AND IT IS §16.69 REASON 2. At the
+    // THE CAP IS THE HONEST UNAVAILABILITY. At the
     // contract's own alpha the direct route needs 1e6 samples and must decline
     // rather than extrapolate off a short window.
     assert_eq!(
@@ -1237,14 +1206,14 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
         "W_q floors at the timer granularity - information availability, not a mode"
     );
 
-    // MONOTONE IN alpha (§16.76.7): larger alpha => a lower quantile => a
+    // MONOTONE IN alpha: larger alpha => a lower quantile => a
     // faster clock.
     //
     // THE FIXTURE IS STATIONARY AND NOT A RAMP, AND THAT IS THE POINT. On a
     // monotonically increasing series the K-th largest of the LAST n samples is
     // the same value for every n, so a ramp would report the three arms
     // IDENTICAL and the monotonicity clause would be satisfied by nothing --
-    // the A7 pathology, in a unit test. This is a deterministic stationary
+    // the degenerate-arm pathology, in a unit test. This is a deterministic stationary
     // series (a full-period multiplicative walk over 1..=1000, scaled to us),
     // so the three arms read three different quantiles of ONE distribution,
     // which is what the law claims to do.
@@ -1258,23 +1227,22 @@ fn the_quantile_native_window_law_matches_the_papers_published_grid() {
         w002 > w050 && w050 > w400,
         "W_q must be strictly decreasing in alpha: {w002} {w050} {w400}"
     );
-    // BOUNDED ABOVE BY THE WINDOW'S OWN MAX - §16.69 REASON 1 REMOVED
-    // STRUCTURALLY. This clock cannot exceed an RTT the path actually realized,
+    // BOUNDED ABOVE BY THE WINDOW'S OWN MAX, structurally. This clock cannot exceed an RTT the path actually realized,
     // which is the property the Cantelli form does not have at any alpha: at
     // alpha = 1e-5 Cantelli asks for srtt + 316*sigma with no ceiling at all.
     let wmax = *long.iter().max().expect("non-empty") as u64;
     assert!(w002 <= wmax, "W_q must never exceed max(window): {w002} > {wmax}");
 }
 
-// ── §16.77 THE HOLD-DOWN CLOCK — THE LAW, PINNED ABSOLUTELY ─────────────
+// ── THE HOLD-DOWN CLOCK (paper §7.4) — THE LAW, PINNED ABSOLUTELY ───────
 //
 // Ordinal tests do not catch routing bugs. These assert the law's ABSOLUTE
 // values at the arm grid's own points; `holddown_reachability.rs` asserts that
 // the ENGINE routes to them. Neither is sufficient alone — CLAUDE.md's testing
 // discipline, and the reason both exist.
 
-/// The hold-down's window law IS §16.76's, at the tail level `1 − q`. Pinned as
-/// an IDENTITY over the whole domain and then at §16.77.8's grid by absolute
+/// The hold-down's window law IS the quantile-native one, at the tail level
+/// `1 − q`. Pinned as an IDENTITY over the whole domain and then at the arm grid by absolute
 /// value, so a re-parameterisation cannot silently become a second law.
 #[test]
 fn the_holddown_window_law_is_the_qnative_window_law_at_one_minus_q() {
@@ -1287,7 +1255,7 @@ fn the_holddown_window_law_is_the_qnative_window_law_at_one_minus_q() {
             "N(q) must be N_qnative(1-q) at q={q}"
         );
     }
-    // §16.77.8's arm grid, absolutely. These four numbers ARE the
+    // The arm grid, absolutely. These four numbers ARE the
     // pre-registration's `n_req` column; a change here is a change to the
     // battery's own arms.
     assert_eq!(holddown_window_n(0.990), Some(1000), "H010");
@@ -1296,9 +1264,9 @@ fn the_holddown_window_law_is_the_qnative_window_law_at_one_minus_q() {
     assert_eq!(holddown_window_n(0.500), Some(20), "H500");
 }
 
-/// §16.77.8's FLOOR IS DERIVED AND IT IS 0.5238 — the window law is flat at
+/// THE ARM GRID'S FLOOR IS DERIVED AND IT IS 0.5238 — the window law is flat at
 /// `2K = 20` for every `q ≤ 0.5`, so no level below `1 − K/(N+1) = 1 − 10/21` is
-/// expressible. §16.76.7's `α → 1` degenerate limit read from the other end, and
+/// expressible. The window law's `α → 1` degenerate limit read from the other end, and
 /// the reason the arm grid floors where it does.
 #[test]
 fn the_holddown_level_floor_is_derived_and_it_is_0_5238() {
@@ -1350,9 +1318,9 @@ fn an_out_of_domain_holddown_level_resolves_to_absent() {
     );
     // THE CEILING IS THE DECLARED RESOURCE BOUND AND IT IS 0.998779, STATED
     // OUTSIDE THE LAW. `N <= QNATIVE_WINDOW_MAX = 8192` ⇒ `1 - q >= 10/8192`.
-    // The cap does NOT bind anywhere on §16.77.8's grid (the derived arm needs
+    // The cap does NOT bind anywhere on the arm grid (the derived arm needs
     // 1 000), and past it the law declares itself unavailable rather than
-    // truncating — §16.76.3's cap, inherited unchanged.
+    // truncating — the window law's cap, inherited unchanged.
     assert!(
         holddown_window_n(0.9987).is_some(),
         "q just inside the resource bound must resolve"
@@ -1404,7 +1372,7 @@ fn the_holddown_reads_the_kth_largest_and_is_monotone_in_the_level() {
 
 /// THE UNSCOREABLE RULE: a window shorter than `N(1−q)` is a DIFFERENT LAW'S
 /// OUTPUT, so the construction returns nothing and the caller falls through to
-/// the shipped behaviour — information availability, never a mode (§16.76.5(1)).
+/// the shipped behaviour — information availability, never a mode.
 /// Pinned at the exact boundary, both sides.
 #[test]
 fn a_short_holddown_window_declares_itself_unavailable_rather_than_extrapolating() {

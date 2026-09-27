@@ -1,41 +1,18 @@
-//! REAL-TRACE validation of the Gilbert-Elliott channel assumption.
-//!
-//! WHY THIS FILE EXISTS.  The whole r*/oracle result set is proven "for a GE
-//! world": every prior rung of the validation ladder (formula ← oracle ← netem)
-//! draws loss from a 2-state Gilbert-Elliott Markov chain.  This file tests the
-//! bottom-most modelling assumption itself — is GE an ADEQUATE model of REAL
-//! link loss w.r.t. our correction-rate r*?  It replays REAL cellular capacity
-//! traces, derives a loss process from them honestly, and asks two questions:
-//!
-//!   (P2) SINGLE-PATH FIDELITY.  Fit GE the way production does, compute r* the
-//!        way production does, and run the trace's ACTUAL loss sequence through
-//!        the FEC/ARQ window process.  Does the achieved residual hit the target
-//!        δ, or does real burst structure make r* UNDER-provision?  And what does
-//!        GE MISS (burst-length tail vs geometric; autocorrelation beyond lag-1;
-//!        non-stationarity)?
-//!
-//!   (P3) MULTIPATH DYNAMICS.  Feed two DIFFERENT real traces as two independent
-//!        paths into the validated stable-generation coding design and measure
-//!        the aggregation factor on real per-path dynamics vs the GE-based ×1.19.
-//!
-//! TRACE PROVENANCE.  `tests/data/traces/*.down` are real U.S. cellular capacity
-//! traces (Verizon/AT&T/T-Mobile LTE/UMTS) recorded with the Saturator tool,
-//! Winstein et al., USENIX NSDI 2013, via the mahimahi repo.  Each line is a ms
-//! timestamp of a 1500-byte (12 kbit) packet delivery opportunity.  See
-//! tests/data/traces/PROVENANCE.md.  These are CAPACITY traces, not loss traces
-//! — the loss process is DERIVED (below) by a standard drop-tail queue at the
-//! trace's instantaneous capacity, which is the honest way to turn a real
-//! capacity fade into a real loss burst.
-//!
-//! HONEST SCOPE — CORRELATION GAP.  Public single-path traces are INDEPENDENT by
-//! construction, so P3 tests real per-path DYNAMICS but NOT path CORRELATION
-//! (shared-bottleneck WiFi+LTE losing together).  True correlated-path
-//! validation needs simultaneous dual-link capture or a dual-radio hardware
-//! testbed; that remains the open milestone (documented in goal-gate.md).
-//!
-//! NO PRODUCTION CODE CHANGES: everything here is analysis over the public
-//! raptorpath_math API (compute_r_star_with_z, compute_r_star_exact,
-//! burst_variance_factor, normal_quantile, p_fec_exact).
+//! Real-trace validation of the Gilbert-Elliott channel assumption (paper
+//! §2.5). Every formula and oracle result is proven for a GE world; this file
+//! replays real cellular capacity traces, derives a loss process from them with
+//! a drop-tail queue at the trace's instantaneous capacity, and asks (P2)
+//! whether production's GE fit and r* meet the target δ on the trace's actual
+//! loss sequence, and what GE misses (burst-length tail, autocorrelation beyond
+//! lag 1, non-stationarity); and (P3) what aggregation factor the
+//! stable-generation design reaches on two different real traces as two paths,
+//! against the GE-based ×1.19. The traces (`tests/data/traces/*.down`, see
+//! `PROVENANCE.md`) are Verizon/AT&T/T-Mobile LTE/UMTS captures recorded with
+//! the Saturator tool (Winstein et al., NSDI 2013) via the mahimahi repo; each
+//! line is the ms timestamp of a 1500-byte delivery opportunity. The traces
+//! are independent, so P3 tests per-path dynamics but not cross-path
+//! correlation (paper §11.1). Analysis only, over the public `raptorpath_math`
+//! API.
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -194,7 +171,7 @@ fn real_window_fail(loss: &[bool], r: f64) -> (f64, usize) {
 }
 
 // The GE-ideal window-failure at the SAME r is exactly 1 - P_fec_exact(p,q,r,W)
-// (the exact transfer-matrix DP for the interleaved GE process, paper §8.7).
+// (the exact transfer-matrix DP for the interleaved GE process, paper §4.7).
 // Comparing real_window_fail against this isolates the pure CHANNEL-MODEL
 // mismatch: same optimizer, same r, GE-distributed vs real-distributed loss.
 fn ge_ideal_window_fail(p: f64, q: f64, r: f64) -> f64 {
@@ -380,7 +357,7 @@ fn real_trace_r_star_fidelity() {
             let z = normal_quantile(1.0 - tgt);
             // production's closed-form r* (normal approx, σ²_burst margin)
             let r_norm = compute_r_star_with_z(eps, s2, W as f64, z);
-            // the model's BEST GE-optimal r* (exact transfer-matrix DP, §8.7)
+            // the model's BEST GE-optimal r* (exact transfer-matrix DP, paper §4.7)
             let r_exact = compute_r_star_exact(p, q, W, tgt);
 
             // achieved window-failure of the closed-form r* on REAL loss ...

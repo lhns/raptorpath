@@ -14,15 +14,15 @@
 //! harness, and the sim-only binaries must not compile process-spawning code.
 //! Include it with `#[path = "common/loopback.rs"] mod loopback;`.
 //!
-//! Harness rules this module enforces (each was a real flake):
+//! Harness rules this module enforces (each prevents a real flake):
 //!
 //! * **Ports come from the OS, over UDP** ([`free_port`]) — the server binds
-//!   UDP, so probing a TCP port proved nothing, and hard-coded shared ports
-//!   (47861/47871/47881) collided across test binaries run in parallel.
-//! * **The server log is ONE merged, LINE-buffered stream** ([`ServerLog`]):
+//!   UDP, so probing a TCP port proves nothing, and hard-coded shared ports
+//!   collide across test binaries run in parallel.
+//! * **The server log is one merged, line-buffered stream** ([`ServerLog`]):
 //!   stdout and stderr are read line by line into one `Vec<String>` in
-//!   arrival order. The old 4 KB chunk readers could split a gauge line
-//!   between the two streams' chunks.
+//!   arrival order. Chunked readers could split a gauge line between the two
+//!   streams' chunks.
 //! * **Every wait has a real deadline.** Readiness is polled (log line, then
 //!   the UDP port actually bound), never a blocking `read` that can outlive
 //!   its deadline, and never a fixed sleep.

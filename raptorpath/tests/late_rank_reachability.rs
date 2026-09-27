@@ -1,59 +1,27 @@
-//! THE RECEIVER'S OWN SEAT IS INSTRUMENTED — `[LATE]`, `[RANK]`, AND THE TWO
-//! NEW `[RFA]` COUNTERS.
+//! The receiver-seat gauges `[LATE]`, `[RANK]` and the `[RFA]` counters
+//! `rep_redundant` and `late_after_aban` fire. The request law (paper §7.6)
+//! decides at the receiver, which needs: the hole's lateness, bracketed
+//! (`[LATE] lo_*`/`hi_*`); the rank deficit `holes − pivots` over the
+//! frontier span (`[RANK]`); and the false measurand under coded answers,
+//! `repairs_fed − repairs_useful` (`rep_redundant`), plus a copy that landed
+//! after the frontier gave up (`late_after_aban`). Clauses:
 //!
-//! **What is being made measurable, and why.** §16.83 puts the repair
-//! decision at the RECEIVER, where the information is: the frontier, the
-//! lateness distribution and the rank all live there, and every clock in the
-//! record lives at the sender. Three quantities that decision needs have
-//! never had a producer:
+//!   1. The fields exist and the lines fire.
+//!   2. `[LATE] n > 0` over a lossy transfer, with `[SUCC] det > 0` as an
+//!      independent witness.
+//!   3. `[LATE] n = orig + rep + aban` and `n = xp_n + sp_n`.
+//!   4. `xp_frac ≡ 0` on one path, `> 0` on two.
+//!   5. `knee_us` is non-null on two paths: `H` is observed as the
+//!      arrival-stall onset during a frontier freeze, and caps `ℓ*_recv`.
+//!   6. `[RANK]`'s `deficit = holes − pivots` holds, with the tail over-count
+//!      reported beside it.
+//!   7. `[RFA]` carries both counters by name (`tools/l1/tail_matrix.sh`
+//!      greps `late_after_aban`), and under the reliable window
+//!      `late_after_aban` reads 0: the reorder buffer never delivers past a
+//!      hole.
 //!
-//!   * **the hole's LATENESS**, which the receiver cannot observe exactly and
-//!     must BRACKET (`[LATE] lo_*` / `hi_*`);
-//!   * **the RANK DEFICIT** `holes − pivots` over the frontier span, which
-//!     `frontier_probe` has always been able to compute and which NOTHING has
-//!     ever read outside `RWM_FDIAG`'s block (`[RANK]`);
-//!   * **the false measurand under CODED answers** — `repairs_fed −
-//!     repairs_useful`, because "the original arrived anyway" is
-//!     inexpressible once the answer is an equation (`[RFA] rep_redundant`),
-//!     and the EVICT seat's own waste, a copy that landed after the frontier
-//!     gave up (`[RFA] late_after_aban`).
-//!
-//! **What is asserted, in the order it can fail.**
-//!
-//!   1. **THE FIELDS EXIST AND THE LINES FIRE.** THE DEAD-GAUGE READING this
-//!      binary exists to fail on: none of these lines or fields exists on the
-//!      shipped-before engine.
-//!   2. **`[LATE] n > 0` OVER A LOSSY TRANSFER**, with `det > 0` on the
-//!      independent `[SUCC]` witness — two gauges, different code, same
-//!      holes.
-//!   3. **THE IDENTITIES CLOSE**: `[LATE] n = orig + rep + aban` and
-//!      `n = xp_n + sp_n`, on the engine's own output. A gauge whose classes
-//!      do not partition its own denominator is caught here.
-//!   4. **`xp_frac ≡ 0` ON ONE PATH, `> 0` ON TWO.** Cross-path is
-//!      STRUCTURALLY impossible at a single path; the pair is what makes the
-//!      class an instrument rather than a counter.
-//!   5. **`knee_us` IS NON-NULL ON TWO PATHS.** `H` is observed as the
-//!      arrival-stall onset during a frontier freeze, and the dual topology
-//!      is where the frontier actually freezes. An absent `H` would make
-//!      `ℓ*_recv`'s cap unmeasurable, which is the whole KNEE-BOUND question.
-//!   6. **`[RANK]` REPORTS A DEFICIT** and its identity `deficit =
-//!      holes − pivots` holds, with the tail over-count reported beside it
-//!      rather than subtracted from it.
-//!   7. **`[RFA]` CARRIES BOTH NEW COUNTERS BY NAME.** `late_after_aban`'s
-//!      NAME is part of the line's contract — Track B's `tail_matrix.sh`
-//!      scrape greps for it — and under the RELIABLE window it must read 0,
-//!      because the reorder buffer never delivers past a hole. A nonzero
-//!      reading there is a finding about the engine, and this is where it
-//!      would be caught.
-//!
-//! **What this deliberately does NOT assert.** Any VALUE of `ℓ*_recv`, of the
-//! knee, or of either bind fraction — and in particular NOT whether the knee
-//! binds. That is the KNEE-BOUND ledger verdict, and it is read off an L1 run
-//! against a pre-registration. This is the INSTRUMENT gate.
-//!
-//! **No new gate.** All three readouts ride the EXISTING `RWM_DIAG` surface
-//! beside `[SUCC]`, so a missing line can only be read as an unreached
-//! emission site.
+//! No value of `ℓ*_recv`, the knee or either bind fraction is asserted, in
+//! particular not whether the knee binds. The readouts ride `RWM_DIAG`.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -68,8 +36,8 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-/// One loopback transfer. Returns the SERVER (receiver) log.
-/// The log is taken once a `[LATE]` readout post-dating the transfer arrived.
+/// One loopback transfer. Returns the server (receiver) log, taken once a
+/// `[LATE]` readout post-dating the transfer arrived.
 fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
     let (_cli, srv) = loopback::transfer(loopback::Transfer {
         paths,
@@ -82,7 +50,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
     srv
 }
 
-// ── READERS ─────────────────────────────────────────────────────────────
+// ── Readers ─────────────────────────────────────────────────────────────
 
 fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
     gauge::require(
@@ -93,13 +61,13 @@ fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
     )
 }
 
-/// 1, 3, 6, 7 — everything that must hold on ANY topology.
+/// Clauses 1, 3, 6, 7 — everything that must hold on any topology.
 fn assert_common(log: &str) -> (String, String, String) {
     let late = last_with(log, "[LATE] ").to_string();
     let rank = last_with(log, "[RANK] ").to_string();
     let rfa = last_with(log, "[RFA] ").to_string();
 
-    // 3. THE `[LATE]` IDENTITIES, ON THE ENGINE'S OWN OUTPUT.
+    // 3. The `[LATE]` identities, on the engine's own output.
     let n = u64_field(&late, "n=");
     assert_eq!(
         n,
@@ -112,7 +80,7 @@ fn assert_common(log: &str) -> (String, String, String) {
         "[LATE] n is not the sum of the same/cross split: {late}"
     );
     // Both ends of the bracket exist, and the upper never sits below the
-    // lower — a bracket that inverts is not a bracket.
+    // lower.
     for p in ["p50", "p90", "p99"] {
         if let (Some(lo), Some(hi)) =
             (opt_field(&late, &format!("lo_{p}=")), opt_field(&late, &format!("hi_{p}=")))
@@ -120,8 +88,8 @@ fn assert_common(log: &str) -> (String, String, String) {
             assert!(hi >= lo, "[LATE] hi_{p} < lo_{p} — the bracket inverted: {late}");
         }
     }
-    // The declared cost ratio is ON the line, so a different one is a rescale
-    // of a printed number rather than a hidden constant.
+    // The declared cost ratio is on the line, so a different one is a
+    // rescale of a printed number rather than a hidden constant.
     assert!(late.contains("w=1.00"), "[LATE] must print its declared ratio: {late}");
     // Both bind fractions are present and are fractions.
     for k in ["knee_bind=", "sampler_bind="] {
@@ -141,7 +109,7 @@ fn assert_common(log: &str) -> (String, String, String) {
     assert!(u64_field(&rank, "reports=") > 0, "[RANK] never took a reading: {rank}");
     assert!(rank.contains("tail_overcount="), "[RANK] must report its tail correction: {rank}");
 
-    // 7. BOTH NEW `[RFA]` COUNTERS, BY NAME.
+    // 7. Both `[RFA]` counters, by name.
     for k in ["rep_redundant=", "late_after_aban="] {
         assert!(
             rfa.contains(k),
@@ -149,7 +117,7 @@ fn assert_common(log: &str) -> (String, String, String) {
              contract the Track B scrape greps for: {rfa}"
         );
     }
-    // Under the RELIABLE window the reorder buffer never delivers past a
+    // Under the reliable window the reorder buffer never delivers past a
     // hole, so a copy can never land below the frontier.
     assert_eq!(
         u64_field(&rfa, "late_after_aban="),
@@ -161,9 +129,9 @@ fn assert_common(log: &str) -> (String, String, String) {
     (late, rank, rfa)
 }
 
-// ── THE TWO TOPOLOGIES ──────────────────────────────────────────────────
+// ── The two topologies ──────────────────────────────────────────────────
 
-/// 1-4, 6, 7 at ONE PATH: everything fires, and `xp_frac ≡ 0`.
+/// Clauses 1-4, 6, 7 at one path: everything fires, and `xp_frac ≡ 0`.
 #[test]
 fn the_receiver_seat_gauges_fire_and_cross_path_is_zero_on_one_path() {
     let log = run(1, Some("c3"), "12000000");
@@ -172,7 +140,7 @@ fn the_receiver_seat_gauges_fire_and_cross_path_is_zero_on_one_path() {
     println!("[late-reach] N=1 {late}");
     println!("[late-reach] N=1 {rank}");
 
-    // 2. THE GAUGE FIRES, AND AN INDEPENDENT WITNESS AGREES THERE WERE HOLES.
+    // 2. The gauge fires, and an independent witness agrees there were holes.
     let n = u64_field(&late, "n=");
     assert!(
         n > 0,
@@ -187,7 +155,7 @@ fn the_receiver_seat_gauges_fire_and_cross_path_is_zero_on_one_path() {
          two gauges disagree about whether this transfer had holes:\n{succ}"
     );
 
-    // 4. THE CONTROL. Cross-path is structurally impossible at one path.
+    // 4. The control: cross-path is structurally impossible at one path.
     assert_eq!(
         u64_field(&late, "xp_n="),
         0,
@@ -199,8 +167,8 @@ fn the_receiver_seat_gauges_fire_and_cross_path_is_zero_on_one_path() {
     let _ = rfa;
 }
 
-/// 4, 5 at TWO PATHS: the cross-path class is populated and the knee is
-/// observable.
+/// Clauses 4, 5 at two paths: the cross-path class is populated and the knee
+/// is observable.
 #[test]
 fn cross_path_and_the_knee_are_populated_on_two_paths() {
     let log = run(2, Some("c2,c3"), "24000000");
@@ -217,8 +185,7 @@ fn cross_path_and_the_knee_are_populated_on_two_paths() {
     let xf: f64 = field(&late, "xp_frac=").parse().expect("fraction");
     assert!(xf > 0.0 && xf <= 1.0, "xp_frac out of range: {late}");
 
-    // 5. THE KNEE IS OBSERVABLE — `H` is what caps `ℓ*_recv`, so an absent
-    //    one makes the whole KNEE-BOUND question unmeasurable.
+    // 5. The knee is observable: `H` caps `ℓ*_recv`.
     let knee = opt_field(&late, "knee_us=");
     println!(
         "[late-reach] knee_us={knee:?} knee_n={} d_us={:?} lstar_us={:?} \
@@ -240,9 +207,8 @@ fn cross_path_and_the_knee_are_populated_on_two_paths() {
         u64_field(&late, "knee_n=") == 0,
         "`knee_us` must render `-` IFF `knee_n = 0`: {late}"
     );
-    // `ℓ*_recv` exists once either term does — and is `-`, never 0, when
-    // neither does (0 would read "request immediately", the shipped corner,
-    // and be indistinguishable from a genuine π₀ → 0 finding).
+    // `ℓ*_recv` exists once either term does, and is `-`, never 0, when
+    // neither does (0 would read "request immediately", the shipped corner).
     assert!(
         opt_field(&late, "lstar_us=").is_some(),
         "[LATE] lstar_us=- with a knee present — the hypothetical threshold is \

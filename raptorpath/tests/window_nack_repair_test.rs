@@ -1,4 +1,4 @@
-//! ADR-0025: WindowNack sender-side repair integration tests.
+//! WindowNack sender-side repair integration tests (paper §7.1).
 //!
 //! Verifies that targeted repair symbols generated from NACK gap ranges
 //! can recover lost source symbols at the decoder.

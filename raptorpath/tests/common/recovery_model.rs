@@ -1,19 +1,15 @@
-//! THE RECOVERY-PLANE MODEL, shared by the two component benches that need
+//! The recovery-plane model, shared by the two component benches that need
 //! it: `tests/recovery_bench.rs` (which characterizes the plane itself) and
-//! `tests/slack_bench.rs` (which needs the plane's STALL DISTRIBUTION as an
+//! `tests/slack_bench.rs` (which needs the plane's stall distribution as an
 //! input and must not invent one).
-//!
-//! Extracted VERBATIM from `recovery_bench.rs` on 2026-08-09 (goal-gate
-//! "Emission-Slack Bench"). The only additions are OBSERVATIONS - per-seq
-//! send/arrive/release timestamps and the receiver's resequencing-span
-//! samples - which are recorded, never read, by the driver itself.
-//! `recovery_bench_fixtures_pin_the_plane` is the proof that the move was
-//! behaviour-identical: it is unchanged and still passes.
 //!
 //! A deterministic discrete-event driver: no CC, no scheduler, no multipath
 //! placement, no transport, no tokio. It feeds synthetic arrival/loss
-//! patterns to the SHIPPED recovery laws (`raptorpath::net::*`) and records,
-//! per hole, WHEN and WHY it was served.
+//! patterns to the shipped recovery laws (`raptorpath::net::*`) and records,
+//! per hole, when and why it was served. Beyond the decisions it also records
+//! observations — per-seq send/arrive/release timestamps and the receiver's
+//! resequencing-span samples — which the driver itself never reads;
+//! `recovery_bench_fixtures_pin_the_plane` pins the decisions.
 //!
 //! See `recovery_bench.rs`'s header for the clock argument and for the
 //! full "what this cannot see" boundary.
@@ -95,7 +91,7 @@ impl Pattern {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Clock {
-    /// The estimator's app-echo RTT: RTprop + wire queue + STORE DWELL.
+    /// The estimator's app-echo RTT: RTprop + wire queue + store dwell.
     App,
     /// `QuicTransport::wire_rtt`: RTprop + wire queue, dwell excluded.
     Wire,
@@ -109,43 +105,40 @@ impl Clock {
     }
 }
 
-/// A gate arm. These are ENV GATES (A/B attribution arms), NOT dials on the
+/// A gate arm. These are env gates (A/B attribution arms), not dials on the
 /// (δ, ρ, r) triangle — nothing here keys a law on δ or ρ.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Arm {
     pub name: &'static str,
     pub recov_mp: bool,
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (goal-gate "The Derived Recovery Clamp"): the
-    /// tail sweep + hole refresh on `derived_recovery_round_us` instead of
-    /// the [25, 100] ms clamped law. `false` on every pre-existing arm, so
-    /// every pre-existing cell is bit-identical.
+    /// `RWM_DERIVED_SWEEP`: the tail sweep + hole refresh on
+    /// `derived_recovery_round_us` instead of the [25, 100] ms clamped law.
     pub derived_sweep: bool,
 }
 pub const ARMS: &[Arm] = &[
-    // `RWM_RECOV_MP` default ON since 2026-07-21 — the shipped stack.
+    // `RWM_RECOV_MP` default ON — the shipped stack.
     Arm {
         name: "shipped",
         recov_mp: true,
         recov_sp: false,
         derived_sweep: false,
     },
-    // Neither RFC channel: the pre-2026-07 legacy `srtt/2` age gate.
+    // Neither RFC channel: the legacy `srtt/2` age gate.
     Arm {
         name: "legacy",
         recov_mp: false,
         recov_sp: false,
         derived_sweep: false,
     },
-    // `RWM_RECOV_SP`: the §6.1.2 time threshold at N = 1 too.
+    // `RWM_RECOV_SP`: the RFC 9002 §6.1.2 time threshold at N = 1 too.
     Arm {
         name: "sp",
         recov_mp: true,
         recov_sp: true,
         derived_sweep: false,
     },
-    // `RWM_DERIVED_SWEEP` on top of the shipped stack — the arm this
-    // branch adds (goal-gate "The Derived Recovery Clamp").
+    // `RWM_DERIVED_SWEEP` on top of the shipped stack.
     Arm {
         name: "ds",
         recov_mp: true,
@@ -154,12 +147,12 @@ pub const ARMS: &[Arm] = &[
     },
 ];
 
-/// Which channel ADMITTED a hole's first service.
+/// Which channel admitted a hole's first service.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum Chan {
     /// RFC 9002 §6.1.2 time threshold (the MP or SP arm).
     Time,
-    /// RFC 9002 §6.1.1 packet threshold — the FAST channel (MP arm, N > 1).
+    /// RFC 9002 §6.1.1 packet threshold — the fast channel (MP arm, N > 1).
     Fast,
     /// The legacy `srtt/2` age gate.
     LegacyAge,
@@ -235,10 +228,10 @@ impl Calib {
 // ─────────────────────────── the loss model ─────────────────────────────
 
 /// Per-path wire loss. Uniform = iid Bernoulli. GE = the two-state
-/// Gilbert-Elliott chain the L1 profiles use (`netem loss gemodel`): the BAD
+/// Gilbert-Elliott chain the L1 profiles use (`netem loss gemodel`): the bad
 /// state drops everything, the mean bad run is `MEAN_BURST` symbols, and
 /// `p_gb` is solved so the stationary bad fraction equals the cell's nominal
-/// loss — the same loss RATE as the uniform arm, redistributed.
+/// loss — the same loss rate as the uniform arm, redistributed.
 pub const MEAN_BURST: f64 = 8.0;
 pub struct LossChain {
     pub pattern: Pattern,
@@ -286,7 +279,7 @@ pub enum Ev {
     Sweep,
 }
 
-/// One hole's life: an ORIGINAL flight that died on the wire.
+/// One hole's life: an original flight that died on the wire.
 #[derive(Clone, Copy)]
 pub struct Hole {
     pub lost_at_us: u64,
@@ -310,7 +303,7 @@ pub struct Counts {
 pub struct Out {
     pub holes: Vec<Hole>,
     pub counts: Counts,
-    /// The §6.1.2 threshold on path 0 (µs) — the arm's PATIENCE.
+    /// The RFC 9002 §6.1.2 threshold on path 0 (µs) — the arm's patience.
     pub patience_us: u64,
     /// The pooled clock the legacy gate / cooldown / sweep all read (µs).
     pub pooled_us: u64,
@@ -320,21 +313,21 @@ pub struct Out {
     pub tx_gap_us: u64,
     /// Per-path one-way delay (µs); path i carries i × skew.
     pub owd_us: Vec<u64>,
-    // ── OBSERVATIONS (recorded, never read, by this driver; added for
+    // ── Observations (recorded, never read, by this driver; used by
     //    `slack_bench`. Nothing below feeds a decision here.) ──
-    /// Per-seq ORIGINAL send time (µs).
+    /// Per-seq original send time (µs).
     pub send_us: Vec<u64>,
-    /// Per-seq SENDER-STORE release time (µs): the instant the seq left
+    /// Per-seq sender-store release time (µs): the instant the seq left
     /// `retransmit_buffer` — by the cumulative frontier, by a SACK-implied
     /// delivered interval, or by the shed law. `None` ⇒ never released
     /// inside the horizon.
     pub store_release_us: Vec<Option<u64>>,
-    /// Per-seq RECEIVER arrival time (µs), original flight or repair.
+    /// Per-seq receiver arrival time (µs), original flight or repair.
     pub recv_us: Vec<Option<u64>>,
     /// `(time, frontier)` at every non-sweep gap report the sender
-    /// processed — the CUMULATIVE release timeline.
+    /// processed — the cumulative release timeline.
     pub frontier_events: Vec<(u64, u64)>,
-    /// The receiver's RESEQUENCING SPAN, sampled at every ack instant:
+    /// The receiver's resequencing span, sampled at every ack instant:
     /// `highest_seen + 1 − cumulative_frontier`, i.e. how many seqs the
     /// receiver is holding above its in-order frontier.
     pub span_samples: Vec<u64>,
@@ -349,7 +342,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
 
     // Per-path clocks. `owd` is the one-way delay; path 1 carries the skew.
     // `copa` is the wire-timed Copa clock (RWM_COPA_WIRE, the default);
-    // `ewma` is the ESTIMATOR clock — the axis under test.
+    // `ewma` is the estimator clock — the axis under test.
     let owd: Vec<u64> = (0..n_paths).map(|i| cell.rtprop_us / 2 + i as u64 * cal.skew_us).collect();
     let copa: Vec<u64> = owd.iter().map(|o| 2 * o + cal.wireq_us).collect();
     let ewma: Vec<u64> = copa
@@ -360,7 +353,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
         })
         .collect();
 
-    // The pooled recovery clock — the SHIPPED reduction, verbatim.
+    // The pooled recovery clock — the shipped reduction, verbatim.
     let pooled_us = pooled_recovery_srtt_us(&ewma);
     let cooldown_us = retx_cooldown_us(pooled_us, NACK_RETX_COOLDOWN_FLOOR_US);
     let thr_of = |p: u32| -> u64 {
@@ -368,9 +361,9 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
         mp_time_threshold_split(c, e, NACK_RETX_COOLDOWN_FLOOR_US).0
     };
     let patience_us = thr_of(0);
-    // The receiver's refresh cadence reads the COPA clock (`PathState::srtt`),
-    // NOT the estimator — so the clock argument does not move it. That
-    // asymmetry is a FINDING, not an accident: keep it faithful.
+    // The receiver's refresh cadence reads the Copa clock (`PathState::srtt`),
+    // not the estimator — so the clock argument does not move it. The engine
+    // has the same asymmetry; keep it faithful.
     let refresh_us = hole_refresh(
         cell.arm.derived_sweep,
         Some(Duration::from_micros(copa.iter().copied().max().unwrap_or(0))),
@@ -378,7 +371,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
         raptorpath::net::HOLE_NACK_REFRESH_MIN,
     )
     .as_micros() as u64;
-    // The SENDER's tail-sweep round: the pooled ESTIMATOR clock (the
+    // The sender's tail-sweep round: the pooled estimator clock (the
     // argument under test on the `clock` axis), through the shipped
     // `sweep_timeout_us` — the legacy clamp with `derived_sweep` off.
     let sweep_us = sweep_timeout_us(cell.arm.derived_sweep, pooled_us, cal.jitter_us);
@@ -387,8 +380,8 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     // as the cell's own loss class (there is no FEC in the recovery plane).
     let shed_budget_frac = cell.loss;
 
-    // The ORIGINAL loss pattern is precomputed in seq order, so it is
-    // IDENTICAL across every arm and clock of a cell — the A/B is over the
+    // The original loss pattern is precomputed in seq order, so it is
+    // identical across every arm and clock of a cell — the A/B is over the
     // laws, never over the wire. Retransmit loss is drawn from an
     // independent stream for the same reason.
     let mut rng = Rng(cell.seed.wrapping_mul(0x9E37_79B9).wrapping_add(0xABCD));
@@ -421,7 +414,7 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
     let mut holes: HashMap<u64, Hole> = HashMap::new();
     let mut counts = Counts::default();
 
-    // ── OBSERVATION ONLY (nothing below is read by a decision here) ──
+    // ── Observation only (nothing below is read by a decision here) ──
     let n = cal.n_src as usize;
     let mut obs_send: Vec<u64> = vec![0; n];
     let mut obs_release: Vec<Option<u64>> = vec![None; n];
@@ -544,24 +537,20 @@ pub fn run_cell(cell: Cell, cal: Calib) -> Out {
                     );
                 }
                 let next = if arrived_since_ack > 0 || last_hole_nack_at == 0 {
-                    // COLD START (`last_hole_nack_at == 0`): the ack timer is
+                    // Cold start (`last_hole_nack_at == 0`): the ack timer is
                     // armed at `GAP_ACK_MIN_US`, before the first symbol can
                     // possibly have arrived (one owd away). There is no
                     // stalled hole to refresh yet, so the ordinary gap-ack
-                    // floor owns the cadence — the shipped receiver acks ON
-                    // ARRIVAL subject to that floor. Deferring the first
+                    // floor owns the cadence — the shipped receiver acks on
+                    // arrival subject to that floor. Deferring the first
                     // advertisement by the full refresh cadence instead would
-                    // hold EVERY symbol emitted inside that window in the
+                    // hold every symbol emitted inside that window in the
                     // sender's store, a startup transient with no counterpart
-                    // in the engine. Measured (goal-gate "Coverage: derivable
-                    // or not"): at c1/20 ms that transient alone SET the
-                    // required backlog — S(0.1 %) = 1521 against a
-                    // 58 ms/38.46 µs = 1508-symbol cold-start hold — and made
-                    // it independent of the loss rate, which is exactly the
-                    // signature of an artifact rather than of a term.
+                    // in the engine (at c1/20 ms it alone would set the
+                    // required backlog, independent of the loss rate).
                     now + GAP_ACK_MIN_US
                 } else {
-                    // Nothing arrived and a hole IS outstanding: the
+                    // Nothing arrived and a hole is outstanding: the
                     // stalled-hole refresh cadence owns the next
                     // advertisement.
                     (last_hole_nack_at + refresh_us).max(now + GAP_ACK_MIN_US)

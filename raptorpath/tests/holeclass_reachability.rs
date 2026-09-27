@@ -1,66 +1,30 @@
-//! **THE ATTRIBUTION AUDIT (D0) — THE REACHABILITY GATE.**
+//! The hole-attribution classes reach the engine. `[SUCC] orig_frac` cannot
+//! separate a late original from a resent one (the wire carries no
+//! retransmit bit), so it only bounds the false-repair fraction; the sender,
+//! which knows whether and when it put a copy on the wire, decomposes it.
+//! Clauses, in the order they can fail:
 //!
-//! The successor-arrival pass measured **`orig_frac` = 0.97858 pooled over
-//! 374 120 resolved holes** and disclosed, in its own words, that the number
-//! is a BOUND and not a fraction:
-//!
-//! > *"Reorder vs retransmit. `orig` cannot separate a late original from a
-//! > resent one — the wire carries no retransmit bit. So `orig_frac` bounds the
-//! > false-repair fraction from one side and does not decompose it."*
-//!
-//! D0 decomposes it, at the only site that CAN: the SENDER, which knows
-//! whether it ever put a copy of the seq on the wire and when. This binary is
-//! the gate that must pass before the audit pass is worth making, and it
-//! asserts, in the order it can fail:
-//!
-//! 1. **THE CLASS FIELDS EXIST, ON BOTH GAUGES.** `[HOLD]` carries
+//! 1. The class fields exist on both gauges: `[HOLD]` carries
 //!    `hn_n`/`hy_n`/`cx_n` (heal_noretx / heal_retx_young / closed_retx),
-//!    `sp_n`/`xp_n`/`up_n`, and the ripeness slots `age_n`/`age_ripe`/
+//!    `sp_n`/`xp_n`/`up_n` and the ripeness slots `age_n`/`age_ripe`/
 //!    `ripe_frac`/`thr_p50_us`; `[SUCC]` carries `sp_n`/`xp_n`/`xp_frac`.
-//! 2. **THE SITES EXECUTED** — MEASUREMENT DISCIPLINE rule 1: `[HOLD] evals>0`
-//!    and `[SUCC] det>0` before any produced number is read.
-//! 3. **THE SUM IDENTITIES CLOSE.** On every `[HOLD]` line
-//!    `hn_n + hy_n + cx_n = fed` and `sp_n + xp_n + up_n = fed` — the classes
-//!    partition exactly the resolutions the pre-audit line already counted, so
-//!    no reading is re-based. On `[SUCC]`, `det = orig+rep+aban+open+over` (the
-//!    inherited identity) AND `sp_n + xp_n = res` (the new one).
-//! 4. **`xp_n ≡ 0` ON A SINGLE PATH.** A one-path flow cannot close a hole with
-//!    an arrival on another path. This is the CONTROL READING the audit's `c1`
-//!    row rests on, and it is a property of the wire rather than of the sample.
-//! 5. **`xp_n > 0` ON TWO PATHS** (`RWM_L0_NETEM=c2,c3`, the C8 topology) — the
-//!    same field, same binary, moved by the topology alone. Without clause 5,
-//!    clause 4 could be an unreached code path rather than a measured zero.
-//! 6. **THE TAPER COPY IS COUNTED, AND THE TWO COUNTERS OF ITS BRANCH
-//!    AGREE.** The proactive emission's `P_lost` branch spends a correction
-//!    slot on a COPY of the oldest un-acked seq; those copies land as
-//!    `[RFA] dup_src` and are NOT gap fires, so realized waste cannot be
-//!    attributed to the reactive loop without this number. `[DIAG] … taper=`
-//!    (the new, UNGATED counter) must equal `plost=` (the pre-existing
-//!    DIAG-gated one) on every line — two independently placed counters of one
-//!    branch, which disagree the moment either is mis-wired.
+//! 2. The sites executed (measurement-discipline rule 1): `[HOLD] evals > 0`
+//!    and `[SUCC] det > 0`.
+//! 3. The sum identities close: on `[HOLD]`, `hn_n + hy_n + cx_n = fed` and
+//!    `sp_n + xp_n + up_n = fed`; on `[SUCC]`,
+//!    `det = orig+rep+aban+open+over` and `sp_n + xp_n = res`.
+//! 4. `xp_n ≡ 0` on a single path, a property of the wire.
+//! 5. `xp_n > 0` on two paths (`c2,c3`) — the same field moved by topology
+//!    alone, so clause 4 is a measured zero, not an unreached path.
+//! 6. The proactive taper copy (a correction slot spent on a copy of the
+//!    oldest un-acked seq, landing as `[RFA] dup_src`) is counted: the
+//!    ungated `[DIAG] taper=` equals the DIAG-gated `plost=` on every line.
+//!    Its value is printed, not asserted: over the `c3` loopback it is zero.
+//! 7. The audit suppresses nothing: with `RWM_HOLDDOWN_Q` absent every
+//!    `[HOLD]` line reads `sup=0`.
 //!
-//!    **DISCLOSED IN ADVANCE, because it is a reading and not a defect:** over
-//!    the `c3`-shaped loopback this branch reads **ZERO** — the oldest un-acked
-//!    seq is never old enough, at the loss estimate carried on it, for
-//!    `P_lost` to select a copy. The value is PRINTED by this binary rather
-//!    than asserted positive, so a cell where the branch does fire is a
-//!    measurement and not a gate failure. On this configuration realized
-//!    repair waste has only two sources: the gap-fire copy and the margin.
-//! 7. **THE AUDIT SUPPRESSES NOTHING.** With `RWM_HOLDDOWN_Q` absent — the
-//!    shipped arm — every `[HOLD]` line still reads `sup=0` and
-//!    `evals = sup + emit`. The audit is read-only: it adds fields to two
-//!    gauge lines and takes no branch that reaches a wire byte.
-//!
-//! **THIS BINARY FAILS ON THE PRE-AUDIT ENGINE**: none of `hn_n=`, `cx_n=`,
-//! `up_n=`, `ripe_frac=`, `taper=` or `[SUCC] xp_frac=` exists there, so every
-//! clause above reads a missing field.
-//!
-//! **What this binary deliberately does NOT assert.** Any FIELD value of any
-//! class fraction, of the ripeness fraction, or of goodput. Loopback's
-//! reordering is the host scheduler's and its loss is the shim's GE process; no
-//! claim about any L1 cell can be made from it.
-//!
-//! **Nothing here flips a default, adds a gate, or edits a law.**
+//! No class fraction, ripeness fraction or goodput value is asserted. The
+//! audit adds no gate and edits no law.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -79,11 +43,9 @@ const ARM: [(&str, &str); 3] = [
 ];
 
 /// One loopback transfer. `netem` is the `RWM_L0_NETEM` spec (`None` ⇒ the
-/// shim is OFF and the wire is the host's own loopback — the A0.1 FLOOR).
-/// Returns `(client/sender log, server/receiver log)`.
-///
-/// The server (receiver) log is taken once a `[SUCC]` readout post-dating the
-/// transfer arrived — the receiver's cadence line the tests read.
+/// shim is off and the wire is the host's own loopback). Returns
+/// `(client/sender log, server/receiver log)`; the server log is taken once a
+/// `[SUCC]` readout post-dating the transfer arrived.
 fn run(paths: usize, netem: Option<&str>, bytes: &str, runs: &str) -> (String, String) {
     loopback::transfer(loopback::Transfer {
         paths,
@@ -96,7 +58,7 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str, runs: &str) -> (String, S
     })
 }
 
-// ── READERS ─────────────────────────────────────────────────────────────
+// ── Readers ─────────────────────────────────────────────────────────────
 
 fn hold_lines(log: &str) -> Vec<&str> {
     log.lines().filter(|l| l.contains("[HOLD] site=sender")).collect()
@@ -109,9 +71,8 @@ fn last_succ(log: &str) -> &str {
         .unwrap_or_else(|| panic!("no `[SUCC]` line — the receiver gauge never ran:\n{log}"))
 }
 
-/// The MAXIMUM `taper=<n>` printed. Read as a max over lines and never off the
-/// last one — the `[DIAG]` tail is emitted per interval, and the counter is
-/// cumulative but the last line may be truncated by the SIGKILL.
+/// The maximum `taper=<n>` printed, read as a max over lines: the last
+/// `[DIAG]` line may be truncated by the SIGKILL.
 fn max_field(log: &str, key: &str) -> u64 {
     log.split_whitespace()
         .filter_map(|t| t.strip_prefix(key))
@@ -120,9 +81,8 @@ fn max_field(log: &str, key: &str) -> u64 {
         .unwrap_or_else(|| panic!("`{key}` never appeared in the log"))
 }
 
-/// **THE FIELD CENSUS.** Every slot the audit adds, asserted PRESENT by name
-/// rather than inferred from a value — a missing field must read as an
-/// unreached emission site and never as a measured zero.
+/// Every slot the audit adds, asserted present by name — a missing field
+/// must read as an unreached emission site, never as a measured zero.
 const HOLD_FIELDS: [&str; 19] = [
     "hn_n=", "hn_p50_us=", "hn_p90_us=", "hy_n=", "hy_p50_us=", "hy_p90_us=",
     "cx_n=", "cx_p50_us=", "cx_p90_us=", "sp_n=", "xp_n=", "up_n=", "xp_frac=",
@@ -142,11 +102,11 @@ fn assert_hold_lines(lines: &[&str]) {
         for k in HOLD_FIELDS {
             assert!(l.contains(k), "`{k}` missing — pre-audit engine? {l}");
         }
-        // The inherited identity, unchanged by the audit.
+        // The inherited identity.
         let (evals, sup, emit) =
             (u64_field(l, "evals="), u64_field(l, "sup="), u64_field(l, "emit="));
         assert_eq!(evals, sup + emit, "evals must equal sup + emit: {l}");
-        // Clause 7: the shipped arm holds NOTHING. The audit is read-only.
+        // Clause 7: the shipped arm holds nothing.
         assert_eq!(sup, 0, "the audit must suppress no fire on the shipped arm: {l}");
         // Clause 3: the classes partition exactly the fed resolutions.
         let fed = u64_field(l, "fed=");
@@ -160,8 +120,8 @@ fn assert_hold_lines(lines: &[&str]) {
         let (sp, xp, up) =
             (u64_field(l, "sp_n="), u64_field(l, "xp_n="), u64_field(l, "up_n="));
         assert_eq!(sp + xp + up, fed, "the same/cross/unattributed split must close: {l}");
-        // A ripeness reading is taken at every FIRST report, of which there are
-        // at least as many as there are resolutions.
+        // A ripeness reading is taken at every first report, of which there
+        // are at least as many as resolutions.
         assert!(
             u64_field(l, "age_n=") >= fed,
             "a resolution cannot precede its own first report: {l}"
@@ -191,9 +151,9 @@ fn assert_succ_line(l: &str) {
     );
 }
 
-// ── THE GATES ───────────────────────────────────────────────────────────
+// ── The gates ───────────────────────────────────────────────────────────
 
-/// Clauses 1–4, 6, 7 on ONE path over a lossy wire.
+/// Clauses 1–4, 6, 7 on one path over a lossy wire.
 #[test]
 fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
     let (cli, srv) = run(1, Some("c3"), "4000000", "2");
@@ -217,7 +177,7 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
     );
     assert_succ_line(succ);
 
-    // Clause 4: THE CONTROL READING.
+    // Clause 4: the control reading.
     assert_eq!(
         u64_field(succ, "xp_n="),
         0,
@@ -232,8 +192,8 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
         );
     }
 
-    // Clause 6: the taper counter is present, ungated, and AGREES with the
-    // DIAG-gated counter of the same branch on every line.
+    // Clause 6: the taper counter is present, ungated, and agrees with the
+    // DIAG-gated counter of the same branch.
     let taper = max_field(&cli, "taper=");
     let plost = max_field(&cli, "plost=");
     println!("[holeclass] single-path c3: taper_copy={taper} plost={plost}");
@@ -248,7 +208,7 @@ fn the_audit_classes_reach_the_engine_and_cross_path_is_zero_on_one_path() {
     }
 }
 
-/// Clause 5: the SAME field moves when the topology does.
+/// Clause 5: the same field moves when the topology does.
 #[test]
 fn the_cross_path_class_is_populated_on_two_paths() {
     let (cli, srv) = run(2, Some("c2,c3"), "24000000", "2");
@@ -277,12 +237,10 @@ fn the_cross_path_class_is_populated_on_two_paths() {
     );
 }
 
-/// **A0.1 — THE LOOPBACK FLOOR.** One path, shim OFF: the wire is the host's
-/// own loopback, which is lossless and FIFO, so **every `[SUCC] det` here is an
-/// artifact by construction** — the 2 ms gap-ack sampler, receive-buffer
-/// eviction, or the gauge itself. The NUMBER is a measurement and is printed
-/// rather than asserted; what is asserted is that the identities close and that
-/// the cross-path class is structurally empty.
+/// The loopback floor: one path, shim off. The wire is lossless and FIFO, so
+/// every `[SUCC] det` here is an artifact (the 2 ms gap-ack sampler,
+/// receive-buffer eviction, or the gauge itself). The number is printed; the
+/// identities and the empty cross-path class are asserted.
 #[test]
 fn the_lossless_single_path_floor_is_measured_and_its_identities_close() {
     let (cli, srv) = run(1, None, "50000000", "2");

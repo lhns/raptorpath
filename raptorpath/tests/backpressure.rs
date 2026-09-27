@@ -75,7 +75,7 @@ async fn test_drain_and_resend() {
 }
 
 /// Simulate receiver dropping packets when TUN write channel is full
-/// (mirrors behavior in net/mod.rs receiver task).
+/// (mirrors behavior in the `net/receiver.rs` receiver task).
 #[tokio::test]
 async fn test_packet_drop_on_full_channel() {
     let (tx, _rx) = mpsc::channel::<Bytes>(8);
@@ -96,7 +96,7 @@ async fn test_packet_drop_on_full_channel() {
     assert_eq!(dropped, 92, "remaining packets should be dropped");
 }
 
-/// Verify that the pattern used in net/mod.rs works correctly.
+/// Verify that the pattern used in `net/receiver.rs` works correctly.
 #[tokio::test]
 async fn test_net_mod_pattern() {
     let (tx, mut rx) = mpsc::channel::<Bytes>(16);
@@ -111,7 +111,7 @@ async fn test_net_mod_pattern() {
         match tx.try_send(Bytes::from(pkt_data.clone())) {
             Ok(()) => injected += 1,
             Err(mpsc::error::TrySendError::Full(_)) => {
-                // This is what net/mod.rs does: warn and continue
+                // This is what `net/receiver.rs` does: warn and continue
                 dropped += 1;
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {

@@ -1,66 +1,26 @@
-//! THE SUCCESSOR-ARRIVAL GAUGE FIRES — `[SUCC]` — AND ITS THREE OUTCOMES ARE
-//! A PARTITION OF THE HOLES THE ENGINE ACTUALLY OPENS.
+//! The receiver's successor-arrival gauge `[SUCC]` fires, and its three
+//! outcomes (closed by the original, by a repair, abandoned) partition the
+//! holes the engine opens. It times each hole from detection to resolution,
+//! the distribution a recovery clock positioned on gap-driven fires would be
+//! derived from. Clauses, in the order they can fail:
 //!
-//! **The measurand, and why it is owed.** The fire-cause pass (goal-gate, "THE
-//! FIRE-CAUSE PASS — THE SCORED RESULT") measured **0.59 % of 107 597 recovery
-//! fires timer-driven and 98.99 % `gap_data`** — the receiver's SACK report,
-//! emitted when a higher seq arrives while a hole is outstanding. It named the
-//! successor measurand from that count and then named, in its own closing
-//! paragraph, the reading it had NOT taken:
+//!   1. `succ_report_line`'s format and the `-`-iff-none convention.
+//!   2. The line fires from the receiver over a lossy plain-window transfer,
+//!      with `det > 0`.
+//!   3. The accounting identity on the engine's output:
+//!      `det = orig_n + rep_n + aban_n + open + over`.
+//!   4. The holes are real against an independent witness: `[RFA] fires > 0`
+//!      (`[RFA]` classifies arrivals, `[SUCC]` times holes).
+//!   5. At least one hole closes, quantiles are ordered
+//!      `p50 ≤ p90 ≤ p99 ≤ mx`, and `orig_frac` is a fraction.
+//!   6. The line echoes `gen=`, reading `gen=0` on plain window.
+//!   7. The raw dump is off by default and on when asked (a default-on dump
+//!      would be a receiver cost on every scored arm).
 //!
-//! > *"the successor-arrival distribution has never been measured on this
-//! > engine … A derivation written against an uncharacterized distribution
-//! > would repeat the exact defect just corrected."*
-//!
-//! `[SUCC]` is that reading's instrument. **This binary is the gate that must
-//! pass before the measurement pass is worth making**, and it is the assertion
-//! that FAILS on the shipped-before engine: no `[SUCC]` line exists there, no
-//! hole was ever timed, and the quantity the next derivation is supposed to be
-//! positioned on had no producer at all.
-//!
-//! **What is asserted, in the order it can fail.**
-//!
-//!   1. `succ_report_line`'s FORMAT and the `-`-iff-none convention, so an L1
-//!      parser has a pin and a measured zero is never confusable with an
-//!      absent reading. Pure, fails locally.
-//!   2. The line FIRES from the receiver over a lossy plain-window transfer,
-//!      with `det > 0`. THE DEAD-GAUGE READING this test exists to fail on.
-//!   3. **THE ACCOUNTING IDENTITY, ON THE WIRE**: `det = orig_n + rep_n +
-//!      aban_n + open + over`, checked on the engine's own output and not only
-//!      in the unit test's synthetic feed. A gauge whose classes do not
-//!      partition its own denominator is caught here rather than in a results
-//!      table.
-//!   4. **THE HOLES ARE REAL, against an INDEPENDENT witness.** `[SUCC] det`
-//!      must be > 0 exactly where `[RFA] fires` is, and the two are bumped by
-//!      different code from different events (`[RFA]` classifies ARRIVALS,
-//!      `[SUCC]` times HOLES). A `det` that moves while `[RFA]` reads zero
-//!      would mean this gauge is inventing its own denominator.
-//!   5. **THE OUTCOMES ARE POPULATED AND IN RANGE.** At least one hole closes,
-//!      every quantile is ordered `p50 ≤ p90 ≤ p99 ≤ mx`, and `orig_frac` is a
-//!      fraction. A histogram that reports an unordered quantile triple is
-//!      reporting a bucketing bug.
-//!   6. **THE CONFIGURATION CONTRACT**, the `[RFA]` convention: the line
-//!      echoes `gen=` so no row is ever read out of its scope, and it reads
-//!      `gen=0` on the plain window this pass measures.
-//!   7. **THE RAW DUMP IS OFF BY DEFAULT AND ON WHEN ASKED** — both sides,
-//!      measured. A default-ON dump would be a receiver-side cost on every
-//!      scored arm, which is the `[RTTDUMP]` defect this design copied the fix
-//!      for.
-//!
-//! **What this deliberately does NOT assert.** Any particular VALUE of any
-//! quantile, of `orig_frac`, or of the crossing point. Loopback's redundancy is
-//! the shim's Gilbert-Elliott process and the host scheduler's, not a network's;
-//! the numbers that characterize the measurand come off an L1 run scored against
-//! a pre-registration. This is the INSTRUMENT gate, not the measurement.
-//!
-//! **No new gate on the readout.** The periodic `[SUCC]` line rides the
-//! EXISTING `RWM_DIAG` / `RWM_FDIAG` gates, exactly as `[RFA]` and `[QCLK]` do,
-//! so a missing line can only be read as an unreached emission site.
-//! `RWM_DIAG=1` IS asserted present in the `[GATES]` echo below.
-//!
-//! Own test binary, for `rfa_reachability.rs`'s reason: `RWM_L0_NETEM` is
-//! process-global in the child and the spawned pair must not contend with the
-//! in-process loopback tests.
+//! No quantile value, `orig_frac` or crossing point is asserted: loopback's
+//! redundancy is the shim's and the host scheduler's. The readout rides
+//! `RWM_DIAG`/`RWM_FDIAG`. Own test binary: `RWM_L0_NETEM` is process-global
+//! in the child.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -71,7 +31,7 @@ use gauge::{opt_f64_field as opt_field_f64, opt_field, str_field, u64_field};
 
 use raptorpath::net::succ::{succ_report_line, Hist};
 
-// ── 1: THE PURE PIN ─────────────────────────────────────────────────────
+// ── 1: the pure pin ─────────────────────────────────────────────────────
 
 #[test]
 fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
@@ -82,8 +42,8 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
     rep.add(40_000);
     let empty = Hist::default();
 
-    // A0.3 (ADDITIVE): the same/cross exposure split occupies the END of the
-    // line, so every assertion below keeps its meaning unchanged.
+    // The same/cross exposure split occupies the end of the line, so every
+    // assertion below keeps its meaning.
     let mut sp = Hist::default();
     sp.add(700);
     let xp = Hist::default();
@@ -91,8 +51,8 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
         false, 7, &orig, &rep, &empty, &sp, &xp, 3, 1, Some(2048), false, 0,
     );
     assert!(l.starts_with("[SUCC] gen=0 det=7 res=3 "), "{l}");
-    // n BESIDE every value — no quantile is ever readable without its own
-    // sample count.
+    // `n` beside every value: no quantile is readable without its sample
+    // count.
     for (k, v) in [
         ("orig_n=", "2"),
         ("rep_n=", "1"),
@@ -104,23 +64,23 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
     ] {
         assert!(l.contains(&format!("{k}{v}")), "`{k}{v}` missing from {l}");
     }
-    // `-` IFF NONE, on every slot of the empty outcome — and NOT a 0, which a
+    // `-` iff none on every slot of the empty outcome — not a 0, which a
     // parser would read as a measured zero microseconds.
     for k in ["aban_p50_us", "aban_p90_us", "aban_p99_us", "aban_mx_us", "aban_mean_us"] {
         assert!(l.contains(&format!("{k}=-")), "`{k}` must render `-` when n=0: {l}");
     }
-    // A quantile is its bucket's LOWER edge, so it never exceeds the exact
+    // A quantile is its bucket's lower edge, so it never exceeds the exact
     // maximum printed beside it.
     assert!(l.contains("orig_mx_us=2000"), "{l}");
     assert!(l.contains("rep_mx_us=40000"), "{l}");
 
-    // THE OTHER SIDE of every convention on one line: nothing measured at all.
+    // The other side of every convention on one line: nothing measured.
     let e =
         succ_report_line(true, 0, &empty, &empty, &empty, &empty, &empty, 0, 0, None, true, 12);
     assert!(e.starts_with("[SUCC] gen=1 det=0 res=0 "), "{e}");
     assert!(e.contains("orig_frac=- cross_us=- dump=1/12"), "{e}");
     assert!(!e.contains("orig_frac=0"), "an absent fraction is `-`, never 0: {e}");
-    // A0.3, pinned on the SAME two sides: a populated split and an absent one.
+    // The split, pinned on the same two sides: populated and absent.
     assert!(l.contains("sp_n=1 xp_n=0 xp_frac=0.0000"), "{l}");
     assert!(
         e.ends_with("sp_n=0 xp_n=0 xp_frac=- sp_p50_us=- sp_p90_us=- xp_p50_us=- xp_p90_us=-"),
@@ -128,27 +88,24 @@ fn the_succ_line_format_and_the_dash_iff_none_convention_are_pinned() {
     );
 }
 
-// ── THE REACHABILITY RUN ────────────────────────────────────────────────
+// ── The reachability run ────────────────────────────────────────────────
 
-/// The arm. `RWM_DIAG` carries the periodic `[SUCC]` readout (the L1 harnesses
-/// SIGKILL the server, so a `Drop`-only emission is unreachable there and this
-/// test must not depend on one either). No gate here changes a law.
+/// The arm. `RWM_DIAG` carries the periodic `[SUCC]` readout (the L1
+/// harnesses SIGKILL the server, so a `Drop`-only emission is unreachable
+/// there). No gate here changes a law.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-/// One lossy PLAIN-WINDOW loopback. Returns `(client log, server log)`.
+/// One lossy plain-window loopback. Returns `(client log, server log)`.
 ///
-/// THE DUMP'S BOTH SIDES. Absent by default (7); set only on the dump arm
-/// (server side), and never inherited: the harness clears every inherited
-/// `RWM_*` var so an exported value cannot arm the control. The L1 `c3` cell
-/// (LTE-class: 20 Mbit, 20 ms one-way, 5 ms jitter, GE p = 2 % / q = 40 % ⇒
-/// ε ≈ 4.8 %) shapes client egress, seeded. LOSS IS WHAT MAKES HOLES EXIST AT
-/// ALL — with no loss this gauge has nothing to time and `det = 0` would be a
-/// configuration fact rather than a dead gauge. The server log is taken once
-/// the receiver's periodic `[SUCC]` readout post-dating the transfer landed.
+/// The dump is absent by default (clause 7) and set only on the dump arm
+/// (server side); the harness clears inherited `RWM_*` vars. The `c3` cell
+/// (20 Mbit, 20 ms one-way, 5 ms jitter, GE p = 2 % / q = 40 % ⇒ ε ≈ 4.8 %)
+/// shapes client egress, seeded; loss is what makes holes exist. The server
+/// log is taken once a `[SUCC]` readout post-dating the transfer landed.
 fn lossy_run(dump: bool) -> (String, String) {
     let dump_env: &[(&str, &str)] =
         if dump { &[("RWM_SUCC_DUMP", "1"), ("RWM_SUCC_DUMP_MAX", "5000")] } else { &[] };
@@ -160,14 +117,14 @@ fn lossy_run(dump: bool) -> (String, String) {
     })
 }
 
-/// 2-6: THE GAUGE FIRES, PARTITIONS ITS OWN DENOMINATOR, AND AGREES WITH AN
-/// INDEPENDENT WITNESS.
+/// Clauses 2-6: the gauge fires, partitions its own denominator, and agrees
+/// with an independent witness.
 #[test]
 fn the_receiver_reports_the_successor_arrival_distribution() {
     let (_cli, log) = lossy_run(false);
 
-    // THE GATE. A missing `[SUCC]` must be readable as an unreached emission
-    // site and never as an unset gate.
+    // The gate: a missing `[SUCC]` must read as an unreached emission site,
+    // never as an unset gate.
     assert!(
         log.contains("RWM_DIAG=1"),
         "the server's [GATES] echo does not carry RWM_DIAG=1 — the arm did not \
@@ -177,7 +134,7 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
         !log.contains("RWM_DIAG=0"),
         "the server's [GATES] echo carries BOTH sides of RWM_DIAG:\n{log}"
     );
-    // 7a: THE DUMP IS OFF BY DEFAULT, and the echo says so on its own line.
+    // 7a: the dump is off by default, and the echo says so.
     assert!(
         log.contains("RWM_SUCC_DUMP=0"),
         "the [GATES] echo must carry RWM_SUCC_DUMP=0 on an unarmed run — a \
@@ -189,8 +146,7 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
         "the dump CAP must be echoed as its RESOLVED value:\n{log}"
     );
 
-    // 2. THE LINE FIRES, AND IT FIRES NONZERO. This is what fails on the
-    //    shipped-before engine: no [SUCC] at all, and no hole was ever timed.
+    // 2. The line fires, nonzero.
     let succ: Vec<&str> = log.lines().filter(|l| l.contains("[SUCC] ")).collect();
     assert!(
         !succ.is_empty(),
@@ -198,11 +154,11 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
          successor-arrival gauge is unreachable, and the measurand the \
          fire-cause pass named still has no producer:\n{log}"
     );
-    // Cumulative counters: the LAST line is the reading.
+    // Cumulative counters: the last line is the reading.
     let last = *succ.last().expect("non-empty");
     println!("[succ-reach] {} lines; last: {last}", succ.len());
 
-    // 6. THE CONFIGURATION CONTRACT.
+    // 6. The configuration contract.
     assert!(
         last.contains("gen=0"),
         "this run is PLAIN WINDOW — the configuration the fire-cause pass \
@@ -224,7 +180,7 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
          exists to fail on:\n{last}"
     );
 
-    // 3. THE ACCOUNTING IDENTITY, ON THE ENGINE'S OWN OUTPUT.
+    // 3. The accounting identity, on the engine's own output.
     assert_eq!(
         det,
         orig_n + rep_n + aban_n + open + over,
@@ -234,10 +190,8 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
     );
     assert_eq!(res, orig_n + rep_n, "[SUCC] res must be orig_n + rep_n: {last}");
 
-    // 4. THE INDEPENDENT WITNESS. `[RFA]` classifies ARRIVALS; `[SUCC]` times
-    //    HOLES. Different code, different events, same underlying loss — so a
-    //    `det` that moves while `[RFA]` reads zero means this gauge is
-    //    inventing its own denominator.
+    // 4. The independent witness: different code, different events, same
+    //    underlying loss.
     let rfa = log
         .lines()
         .rev()
@@ -252,7 +206,7 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
          holes at all:\n{rfa}\n{last}"
     );
 
-    // 5. THE OUTCOMES ARE POPULATED AND IN RANGE.
+    // 5. The outcomes are populated and in range.
     assert!(
         res > 0,
         "[SUCC] res=0 with det={det} — every hole the receiver detected is \
@@ -292,13 +246,13 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
         (of - orig_n as f64 / res as f64).abs() < 1e-3,
         "[SUCC] orig_frac={of} disagrees with {orig_n}/{res}: {last}"
     );
-    // The crossing point is a LEGAL `-`: it reads "the original leads at every
-    // horizon". Asserted as in-range when present, never asserted to exist.
+    // The crossing point may legally read `-` ("the original leads at every
+    // horizon"); asserted in range when present.
     if let Some(c) = opt_field(last, "cross_us=") {
         println!("[succ-reach] crossing point {c} us");
         assert!(c <= 3_600_000_000, "[SUCC] cross_us={c} is not a plausible age");
     }
-    // The dump is OFF on this arm, so it must have written nothing.
+    // The dump is off on this arm, so it must have written nothing.
     assert!(last.contains("dump=0/0"), "an unarmed dump must be 0/0: {last}");
     assert!(
         !log.contains("[SUCCDUMP]"),
@@ -307,9 +261,8 @@ fn the_receiver_reports_the_successor_arrival_distribution() {
     );
 }
 
-/// 7b: THE DUMP'S OTHER SIDE. Armed, it emits raw records in the pinned batch
-/// format, and its cap binds LOUDLY rather than silently truncating the stream
-/// the next derivation will read.
+/// Clause 7b: armed, the dump emits raw records in the pinned batch format,
+/// and its cap binds loudly rather than silently truncating the stream.
 #[test]
 fn the_raw_dump_is_absent_by_default_and_emits_records_when_armed() {
     let (_cli, log) = lossy_run(true);

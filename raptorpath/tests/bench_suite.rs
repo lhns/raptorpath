@@ -1,4 +1,4 @@
-//! Consolidated benchmark suite (ADR-0042, ADR-0045).
+//! Consolidated benchmark suite (ADR-0042; `docs/benchmark-methodology.md`).
 //!
 //! Tables 1/1b (codec recovery sweep) and Table 2 (overhead breakdown) remain unchanged.
 //! Tables 3/4/5 replaced by unified matrix: 4 backends × 4 configs × 2 paths × 5 scenarios.
@@ -47,7 +47,6 @@ enum BackendChoice {
     RaptorQ,
     ReedSolomon,
     Rlc,
-    // Streaming: RETIRED 2026-07-28 with the streaming machine (register).
     Retransmit,
 }
 
@@ -1008,14 +1007,14 @@ fn run_matrix_trial_window(
     let mut reorder_buf = ReorderBuffer::new(config.reorder_timeout_ms, 500);
     let mut live_estimator = make_estimator_for_loss(scenario.pre_warm_loss);
 
-    // Scheduler/Copa integration (ADR-0046: 2c)
+    // Scheduler/Copa integration
     let mut scheduler = Scheduler::new_with_hint(clock.clone() as Arc<dyn Clock>, ProtocolHint::Realtime);
     scheduler.add_path(0);
     if num_paths >= 2 {
         scheduler.add_path(1);
     }
 
-    // Cwnd pacing (ADR-0046: 2b)
+    // Cwnd pacing
     let (primary_cwnd, secondary_cwnd) = scenario_cwnd(scenario);
 
     // NACK congestion tracking: production-style exponential backoff
@@ -1466,7 +1465,7 @@ fn run_matrix_trial_block(
         fec_ctrl.feedback_update(true);
     }
 
-    // Cwnd pacing (ADR-0046: 2b)
+    // Cwnd pacing
     let (primary_cwnd, _secondary_cwnd) = scenario_cwnd(scenario);
 
     let num_blocks = NUM_SYMBOLS / BLOCK_SIZE;
@@ -1484,7 +1483,7 @@ fn run_matrix_trial_block(
 
     let tick = Duration::from_micros(500);
 
-    // Helper: process deliveries for block mode with early source delivery (ADR-0046)
+    // Helper: process deliveries for block mode with early source delivery
     macro_rules! process_block_deliveries {
         ($now:expr, $delivered:expr) => {
             for pkt in $delivered {
@@ -1756,7 +1755,7 @@ fn run_matrix_trial_retransmit(
     let mut delivery_order: Vec<u64> = Vec::new();
     let mut reorder_buf = ReorderBuffer::new(25, 500);
 
-    // Cwnd pacing (ADR-0046: 2b)
+    // Cwnd pacing
     let (primary_cwnd, secondary_cwnd) = scenario_cwnd(scenario);
 
     let tick = Duration::from_micros(500);

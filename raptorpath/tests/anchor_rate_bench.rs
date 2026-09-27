@@ -1,30 +1,19 @@
-//! goal-gate "What Binds Throughput" — the L0 probe for the anchor tax.
+//! L0 probe for the `RWM_PLAIN_RS` anchor tax: a symbol-rate cost that
+//! appears only above ~10 k sym/s and grows with the sender's own rate, not
+//! with how hard the store binds. This bench is the component-level
+//! discriminator (`docs/measurement-discipline.md` rule 14): loopback has no
+//! shaped bottleneck, no propagation delay and no loss, so the only ceiling
+//! is the sender itself.
 //!
-//! THE CLAIM UNDER TEST. In the three-term battery, `RWM_PLAIN_RS` alone
-//! (arm D) costs 0.635/0.654 of arm A's symbol rate at c1 (23.5-24.1 k
-//! sym/s) and 0.877/0.884 at c7 (19.1 k sym/s), and costs EXACTLY NOTHING —
-//! D/A = 0.996 to 1.002 — at all six cell-seeds in the 5.0-9.9 k sym/s band,
-//! which between them span RTT 10-525 ms, GE loss 0-2.5 %, jitter 0-25 ms
-//! and link utilisation 51-100 %. The tax's only argument is arm A's own
-//! SYMBOL RATE, and it is anti-correlated with how hard the store binds
-//! (the zero-tax cells all sit at occupancy/cap 0.99-1.00 and paused
-//! 5-25 %; c1, the maximum-tax cell, sits at 0.43 and 0.8 %).
+//!   * if a loopback run reproduces a plain-rs/baseline rate ratio well below
+//!     1 at a comparable symbol rate, the cost is local to the sender and
+//!     needs no network;
+//!   * if it reproduces a ratio ~ 1.00 at that rate, the loss requires the
+//!     network and the per-symbol-cost reading is refuted.
 //!
-//! That shape says the tax is a per-symbol cost local to the SENDER, not a
-//! store-sizing effect. This bench is the component-level discriminator
-//! (discipline 14): loopback has no shaped bottleneck, no propagation delay
-//! and no loss, so the only ceiling is the sender itself.
-//!
-//!   * if a loopback run reproduces D/A well below 1 at a comparable symbol
-//!     rate, the cost is local to the sender and needs no network;
-//!   * if it reproduces D/A ~ 1.00 at that rate, the c1/c7 loss REQUIRES the
-//!     network and the "per-symbol cost" reading is refuted.
-//!
-//! IT ONLY DISCRIMINATES IF IT REACHES THE RATE. The tax is invisible below
-//! ~10 k sym/s in the battery, so a substrate that cannot drive the sender
-//! past that cannot settle anything, and the bench says so rather than
-//! quoting a ratio measured where no ratio is expected. Run it and read the
-//! printed `sym/s` FIRST.
+//! It only discriminates if it reaches the rate: a substrate that cannot
+//! drive the sender past ~10 k sym/s cannot settle anything. Read the
+//! printed `sym/s` first.
 //!
 //! `RWM_PLAIN_RS` is resolved once per process, so the two conditions are
 //! two separate invocations, not two cases in one:
@@ -72,7 +61,7 @@ async fn anchor_rate_loopback_ceiling() {
 
     let ok = matches!(&out, Ok(Ok(())));
     // The warm-up object and the connect handshake are inside `dt`, so the
-    // rate below is a LOWER bound on the steady-state rate. That direction
+    // rate below is a lower bound on the steady-state rate. That direction
     // is the safe one: it can only make the substrate look less capable
     // than it is, never more.
     let sym_s = NBYTES as f64 / SYMBOL_BYTES / dt;

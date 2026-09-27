@@ -1,34 +1,14 @@
-//! c8 SF-MECHANISM component bench (MEASUREMENT DISCIPLINE 14) — goal-gate
-//! "c8 SF Mechanism", 2026-08-11.
-//!
-//! `store_cap_bench.rs` answers the STATIC question (by how much does the cap
-//! differ when the Σ-base is filtered?). It cannot answer the measured one,
-//! because the measured effect is a LOOP: goal-gate "Store-Cap Unification —
-//! RESULTS" found that `RWM_STORE_CAP_UNIFIED` raises the `[SF]` zero-fraction
-//! — `active_paths()` EMPTY at a dyn-cap refresh — from ≈4% to ≈30% at c8, past
-//! 2σ on both seeds and in both anchor eras, while c1/c7/sc2 do not move.
-//!
-//! The gauge is recorded from `active_paths()` UNCONDITIONALLY (see
-//! `store_cap_sf_record`'s call site in `net/mod.rs`: `act` is computed on both
-//! arms). So U cannot move the gauge directly — it can only move it through the
-//! loop cap → admission → in_flight → `available()` → `active_paths()` → cap.
-//! Reproducing that requires CLOSING the loop, which is what this bench does:
-//!
-//!   * the REAL `Scheduler` / `PathState` (real Copa-lite cwnd dynamics,
-//!     real `copa_bdp_anchor()`, the real `active_paths()` / `live_paths()`
-//!     predicates, the real `best_source_path()` placement objective),
-//!   * a `MockClock` and a deterministic bottleneck-link model per path
-//!     (serialisation at the path rate + a standing queue + RTprop), so a
-//!     cwnd-saturating sender builds its own delay signal,
-//!   * the SHIPPED dyn-cap chain at the battery's arms (A/AU/AL/ALU are all
-//!     `store_paths_on = true`, `pool_anchor = three_term = honest_cap =
-//!     off`), i.e. `path_scaled_store_cap` over the path set the
-//!     flag selects, refreshed on the shipped 5 ms cadence.
-//!
-//! No wall clock, no sockets, no tokio, no netem: same numbers every run —
-//! but only since `place_min_cost` began breaking exact-cost TIES by path id
-//! (see its comment). `Scheduler` holds paths in a `HashMap`, so before that
-//! the SYMMETRIC cell alone was reproducible only within a process.
+//! Closed-loop component bench for the store cap and the `[SF]` gauge (the
+//! fraction of dyn-cap refreshes that see `active_paths()` empty), per
+//! `docs/measurement-discipline.md` rule 14. A static cap comparison
+//! (`store_cap_bench.rs`) cannot reproduce the gauge, because the effect is a
+//! loop: cap → admission → in_flight → `available()` → `active_paths()` → cap.
+//! This bench closes that loop with the real `Scheduler` / `PathState` (Copa-lite
+//! cwnd, `copa_bdp_anchor()`, `active_paths()` / `live_paths()`,
+//! `best_source_path()`), a `MockClock`, a deterministic bottleneck-link model
+//! per path, and the shipped dyn-cap chain refreshed on its 5 ms cadence. It
+//! pins the candidate cap laws (paper §6.1) against that loop. No wall clock,
+//! sockets or tokio: the same numbers every run.
 //!
 //! Run:
 //!   cargo test --test store_cap_sf_bench --release -- --ignored --nocapture
@@ -45,37 +25,28 @@ use raptorpath::net::{
 };
 use raptorpath::scheduler::{MockClock, Scheduler};
 
-/// `sender_policy.rs:658` — `let contract_rho: f64 = 1.0;`, the resolved
-/// default at every arm in this ledger.
+/// The resolved `contract_rho` default at every arm (`sender_policy`).
 const TT_RHO: f64 = 1.0;
 
 // ── Shipped policy constants at the battery's arms (sender_policy::resolve) ──
 const GAIN: f64 = 2.0;
-/// CITED, not transcribed, since the floor became a derived quantity (paper
-/// §16.59, `max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10): a bench that
-/// models shipped policy must track the shipped value, and a private copy
-/// would silently model a policy the engine no longer has. Inert at every
-/// geometry in this file — the 46 always-on pins are bit-identical across the
-/// change, which is the bound §16.59 claims.
+/// Cited, not transcribed: the floor is a derived quantity
+/// (`max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW)` = 10, paper §6.1), so the
+/// bench tracks the shipped value.
 const FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
 const KNEE: usize = 2048; // RWM_STORE_PATH_POOL
 const STORE_MAX: usize = 1024; // RELIABLE_STORE_MAX
 const BOOT: usize = 128; // RWM_STORE_BOOT
 const REFRESH_S: f64 = 0.005; // the dyn-cap refresh throttle
 
-// ── Shipped FEC-controller constants (config::resolve + net/mod.rs:1570) ────
-// These are the resolved DEFAULTS the battery's arms run at, quoted by site,
-// in exactly the way GAIN/FLOOR/KNEE above are quoted. Nothing here is
-// chosen to make an answer come out: `target_tail_loss` and
-// `max_fec_overhead` are `config.rs:317-318`'s `unwrap_or`s, the hint is the
-// battery's (Auto), the backend is `config.rs:286`'s `None => RaptorQ`, and
-// the symbol size is the bulk profile's (`net/mod.rs:158`).
+// ── Shipped FEC-controller constants ────────────────────────────────────────
+// The resolved defaults the arms run at (`config::resolve`): tail loss, max
+// overhead, the Auto hint, the RaptorQ backend, the bulk profile's symbol size.
 const TAIL_LOSS: f64 = 1e-5;
 const MAX_OVERHEAD: f64 = 0.5;
 const SYMBOL_SIZE: u16 = 1200;
-/// `net/mod.rs:178` — the report task's cadence, which is the ONLY site that
-/// feeds `LossEstimator::record_throughput` in production
-/// (`net/tasks/report.rs:84`), gated on its own `dt > 0.2`.
+/// The report task's cadence — the only production feed of
+/// `LossEstimator::record_throughput`, gated on its own `dt > 0.2`.
 const REPORT_S: f64 = 2.0;
 
 // ── The cells, at the parameters store_cap_bench.rs already quotes ──────────
@@ -84,33 +55,19 @@ const REPORT_S: f64 = 2.0;
 const C2: Spec = (10_400.0, 0.008, 0.013, 0.50);
 const C3: Spec = (2_000.0, 0.060, 0.020, 0.40);
 
-/// The widest geometry this bench's per-path gauges are sized for.
-///
-/// It was 2 until ADR-0070's prevention kit (item 3): the ENTIRE test universe
-/// had N ∈ {1, 2}, which is exactly the axis on which the pooled law's N² value
-/// and its N ceiling are indistinguishable as a ratio. Raising it to 4 costs
-/// nothing at the ≤ 2-path cells (the arrays are fixed-size and every index is
-/// `< np`) and gives `C7X4` somewhere to record.
+/// The widest geometry this bench's per-path gauges are sized for. N = 4 is
+/// the axis on which the pooled law's N² value and its N ceiling separate.
 const MAX_PATHS: usize = 4;
 
-/// **`c7x4` — the SYMMETRIC QUAD.** c7's legs (`C2`) at N = 4: same per-path
-/// rate, RTprop and GE loss process, four of them. It is not a wire cell — it
-/// is the N ≥ 3 COVERAGE the store-cap laws never had, on the bench's own
-/// machinery, and it is deliberately SYMMETRIC so the law's own path-count
-/// scaling is the only thing that changes between it and `c7`.
+/// `c7x4` — the symmetric quad: c7's legs (`C2`) at N = 4. Not a wire cell;
+/// it gives the store-cap laws N ≥ 3 coverage, and it is symmetric so the
+/// law's own path-count scaling is the only thing that changes against `c7`.
 ///
-/// Deterministic like every other geometry here, and for the same three
-/// reasons that each cost a bug: `place_min_cost` breaks the exact-cost
-/// placement tie by path id, `worst_loss_path` sorts before `max_by`, and the
-/// per-path link seeds are derived from the path INDEX rather than from
-/// `HashMap` order. A four-way symmetric cell ties in all three at once, which
-/// is why it is the strongest determinism probe in the file
+/// A four-way symmetric cell ties at once in the three places determinism
+/// depends on (`place_min_cost`'s path-id tie-break, `worst_loss_path`'s sort
+/// before `max_by`, per-path link seeds derived from the path index), which
+/// makes it the strongest determinism probe in the file
 /// (`the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm`).
-///
-/// It is also the geometry whose PER-PATH GAUGES were truncated at `pid < 2`
-/// until 2026-08-18 — the arrays were widened to `MAX_PATHS` for this cell
-/// and three of the writes into them were not, so legs 2 and 3 read zero at
-/// every arm. See the retraction on the test named above.
 fn c7x4() -> Vec<Spec> {
     vec![C2, C2, C2, C2]
 }
@@ -124,51 +81,30 @@ enum Arm {
     Legacy,
     /// `RWM_STORE_CAP_UNIFIED=1`: Σ over `live_paths()`, ×N pooled law.
     Unified,
-    /// The pre-named successor: the POOLED CEILING composed with the UNIFIED
-    /// set — Σ over `live_paths()` with the ×N COUNT multiplier dropped, the
-    /// N·knee ceiling kept. `cap = clamp(gain·Σ_live, floor, N·knee)`. No new
-    /// constant: it deletes the multiplier that made the Σ and the ×N range
-    /// over different sets in the first place.
+    /// The pooled ceiling composed with the unified set: Σ over
+    /// `live_paths()` without the ×N count multiplier, the N·knee ceiling
+    /// kept. `cap = clamp(gain·Σ_live, floor, N·knee)`. No new constant.
     PooledUnified,
-    /// THE THREE-TERM LAW AS THE DUAL-CELL CAP (`RWM_THREE_TERM`): the
-    /// SHIPPED `net::three_term_store_cap` over `live_paths()`, at the
-    /// engine's own precedence — the law when every live path is warm, the
-    /// configured pooled chain verbatim when it is not (`net/mod.rs:4715-4726`,
-    /// "Warm-up (any live path cold) ⇒ `None` ⇒ the configured chain below
-    /// runs verbatim"). Inputs are the engine's collector's, unchanged:
-    /// `tt_slots` from `btlbw_sym_per_s` / `srtt` / `min_rtt` / `k_raw`
-    /// (`net/mod.rs:4533-4547`) through `three_term_terms`, and the resolved
-    /// `contract_rho = 1.0` (`sender_policy.rs:658`) and
-    /// `delta_b = delta_budget_b(hint)` (`sender_policy.rs:654`).
-    ///
-    /// It is a CANDIDATE here because its TERM 3 is the quantity the coupling
-    /// axis makes the bench produce: `2·rate_fast·skew`, "while one slow-path
-    /// symbol is unacked the fast path's symbols pile into the same unacked
-    /// span" (`net/mod.rs:2917-2930`).
+    /// The three-term law as the dual-cell cap (`RWM_THREE_TERM`): the shipped
+    /// `net::three_term_store_cap` over `live_paths()`, at the engine's
+    /// precedence — the law when every live path is warm, the configured
+    /// pooled chain verbatim when any is cold. Inputs are the engine
+    /// collector's (`btlbw_sym_per_s` / `srtt` / `min_rtt` / `k_raw` through
+    /// `three_term_terms`), with `contract_rho = 1.0` and
+    /// `delta_b = delta_budget_b(hint)`. Its term 3, `2·rate_fast·skew`, is
+    /// the quantity the coupling axis makes the bench produce.
     ThreeTermCell,
-    /// **THE COMPOSED CAP LAW** (`RWM_COMPOSED_CAP`, paper §16.56, ADR-0070
-    /// Deliverable 2) — the composition that ADR-0070 says *has never been
-    /// measured as one arm, anywhere*.
+    /// The composed cap law (`RWM_COMPOSED_CAP`, paper §10): the pool is
+    /// [`Arm::ThreeTermCell`]'s, bit-identically; the only addition is the
+    /// late-stage per-path brake `cwnd_full`, whose per-path cap is the path's
+    /// own cwnd. The difference from `3T` is therefore a pure brake
+    /// measurement.
     ///
-    /// Its POOL is bit-identically [`Arm::ThreeTermCell`]'s: the composed law
-    /// IS `net::three_term_store_cap` on honest inputs, one implementation,
-    /// nothing to drift. What this arm adds — and the ONLY thing it adds — is
-    /// the **late-stage per-path brake**, `cwnd_full`, with its per-path cap
-    /// equal to the path's OWN cwnd. No new constant: the cap is the
-    /// congestion controller's own window.
-    ///
-    /// **The set is load-bearing at the brake**, and this bench is where that
-    /// is most visible. Its own admission comment records that the reliable
-    /// source path has no `available() > 0` filter, so `in_flight_i` may
-    /// exceed `cwnd_i` without bound and `available()` reads 0 and STAYS 0 —
-    /// which is exactly why iterating `active_paths()` here would ask a
-    /// question whose answer is false by construction (§16.56's trap). The
-    /// brake reads `live_paths()`, so it means: EVERY LIVE PATH is at or
-    /// above its own congestion window.
-    ///
-    /// The difference from `3T` is therefore a pure BRAKE measurement, which
-    /// is the axis ADR-0070 finding 7 says was never measured in composition
-    /// with a sane pool.
+    /// The set is load-bearing at the brake. The reliable source path has no
+    /// `available() > 0` filter, so `in_flight_i` may exceed `cwnd_i` and
+    /// `available()` stays 0; iterating `active_paths()` would ask a question
+    /// false by construction. The brake reads `live_paths()`: every live path
+    /// is at or above its own congestion window.
     Composed,
 }
 
@@ -188,7 +124,7 @@ impl Arm {
     }
 }
 
-/// `cwnd_full` at the composed arm: EVERY LIVE path is at or above its own
+/// `cwnd_full` at the composed arm: every live path is at or above its own
 /// congestion window (`available() == 0`). The engine's own predicate
 /// (`net::infl_percap_full` over `live_paths()` with `cap_i = cwnd_i`),
 /// evaluated on the bench's real `Scheduler`.
@@ -220,8 +156,8 @@ fn shipped_chain(bdp: f64, n_live: usize) -> usize {
 fn cap_for(arm: Arm, bdp_over_set: f64, bdp_over_live: f64, n_live: usize, tt: Option<usize>) -> usize {
     match arm {
         Arm::Legacy | Arm::Unified => shipped_chain(bdp_over_set, n_live),
-        // The engine's own precedence: the law wins when it returns `Some`,
-        // otherwise the configured chain runs verbatim (`net/mod.rs:4722-4725`).
+        // The engine's precedence: the law wins when it returns `Some`,
+        // otherwise the configured chain runs verbatim.
         // The composed arm's POOL is bit-identically the three-term arm's —
         // one law, one implementation; the composition it adds is the BRAKE,
         // applied at admission rather than here.
@@ -257,12 +193,10 @@ impl Rng {
 }
 
 /// One path's bottleneck: serialisation at `rate` sym/s into an unbounded
-/// queue, then a fixed one-way `rtprop`, with a Gilbert–Elliott loss process —
-/// the cells are DEFINED with GE loss (c2 1.3%/50%, c3 2%/40%) and the L1
-/// battery's own gauges show retx riding U (+801/+797), so a lossless link
-/// cannot be the vehicle for this question. A symbol sent while the queue is
-/// backed up waits — which is how a cwnd-saturating sender manufactures the
-/// delay signal Copa backs off on.
+/// queue, then a fixed one-way `rtprop`, with a Gilbert–Elliott loss process
+/// (the cells are defined with GE loss, and retransmits ride the cap). A
+/// symbol sent while the queue is backed up waits — which is how a
+/// cwnd-saturating sender manufactures the delay signal Copa backs off on.
 struct Link {
     rate: f64,
     rtprop: f64,
@@ -287,12 +221,11 @@ impl Link {
         Self { rate, rtprop, busy_until: 0.0, bad: false, persist, to_bad, rng: Rng::new(seed) }
     }
     /// Serialise one symbol. Returns `(resolve_time, rtt, delivered)` —
-    /// `resolve_time` is when the SENDER learns this symbol's fate, which is
-    /// the ack instant whether or not the symbol survived: a lost symbol is
-    /// reported by the same feedback message (the receiver's expected/received
-    /// counters), which is exactly what the engine's counter-delta release
-    /// reads (`control_msg.rs:341`, `:685`). Dropped symbols still consume the
-    /// bottleneck.
+    /// `resolve_time` is when the sender learns this symbol's fate, the ack
+    /// instant whether or not it survived: a loss is reported by the same
+    /// feedback message (the receiver's expected/received counters), which is
+    /// what the engine's counter-delta release reads. Dropped symbols still
+    /// consume the bottleneck.
     fn send_resolved(&mut self, now: f64) -> (f64, f64, bool) {
         let dep = self.busy_until.max(now) + 1.0 / self.rate;
         self.busy_until = dep;
@@ -317,7 +250,7 @@ struct Sym {
     ack_at: Option<f64>,
     rtt: f64,
     /// The reliable stream sequence number, assigned once at first admission
-    /// and CARRIED across retransmits — the number the receiver's cumulative
+    /// and carried across retransmits — the number the receiver's cumulative
     /// frontier is expressed in (`Feed::Cumulative` only).
     seq: u64,
     /// When the SENDER learns this flight's fate (delivered OR lost). Equal to
@@ -329,52 +262,39 @@ struct Sym {
     resolved: bool,
 }
 
-// ── THE IN-FLIGHT ACCOUNTING AXIS ──────────────────────────────────────────
+// ── The in-flight accounting axis ──────────────────────────────────────────
 //
-// goal-gate "PIPELINE VERIFICATION MATRIX" rows 2 + 6, suspect rank 1: the
-// engine's recovery traffic is partially UN-METERED and its in-flight ledger
-// does not balance by construction. Three documented divergences, none of
-// which the bench modelled:
+// The engine's recovery traffic is partly un-metered and its in-flight ledger
+// does not balance by construction. Three divergences:
 //
-//   (a) REPAIR RIDES TOKEN-FREE. `emit_source.rs:493-497` debits the CC token
-//       bucket inside the SOURCE arm only (`if pol.cc_pace { st.src_tokens -=
-//       1.0 }`); the taper correction symbol at `emit_source.rs:929` consumes
-//       the wire and no token, so the realized wire rate is src·(1+r). It IS
-//       charged to in_flight. (On the shipped default `RWM_CC_PACE=0` — 1 116
-//       of 1 116 logs, goal-gate "What Binds Throughput" — so the bucket does
-//       not run at all and the divergence is about WIRE OCCUPANCY, not about
-//       spacing. The token counter is carried here to BOUND that, row 3 below.)
-//   (b) TWO CHANNELS BYPASS THE CHARGE ENTIRELY. The SACK-gap retransmit
-//       (`net/mod.rs:6374-6383`) builds a `SymbolBatch` and calls
-//       `transport.send_symbols` directly — no `charge_in_flight`; and the
-//       NACK repair margin (`net/mod.rs:6420-6448`), `margin = ceil(
-//       retransmitted × max_active_loss)`, likewise.
-//   (c) RELEASE IS COUNTER-DELTA DRIVEN, NOT 1:1 WITH CHARGES.
-//       `control_msg.rs:341` / `:685` release `expected − received` on the
-//       path the FEEDBACK arrived on. `receiver.rs:1754` builds those counters
-//       from the per-batch symbol counts, so EVERY wire symbol — source,
-//       taper repair, retransmit, margin repair — enters them, whether or not
-//       it was ever charged. `release_in_flight` saturates at zero, so the
-//       ledger can neither go negative nor recover a release it wasted.
+//   (a) Repair rides token-free. `emit_source` debits the CC token bucket in
+//       the source arm only; the taper correction symbol consumes the wire and
+//       no token, so the realized wire rate is src·(1+r). It is charged to
+//       in_flight. (With `RWM_CC_PACE=0`, the default, the bucket does not run,
+//       so the divergence is wire occupancy, not spacing; the token counter is
+//       carried here to bound that.)
+//   (b) Two channels bypass the charge: the SACK-gap retransmit and the NACK
+//       repair margin (`margin = ceil(retransmitted × max_active_loss)`) call
+//       `transport.send_symbols` without `charge_in_flight`.
+//   (c) Release is counter-delta driven, not 1:1 with charges. `control_msg`
+//       releases `expected − received` on the path the feedback arrived on;
+//       the receiver builds those counters from per-batch symbol counts, so
+//       every wire symbol enters them whether or not it was charged.
+//       `release_in_flight` saturates at zero, so a wasted release is lost.
 //
-// The axis has THREE levels on purpose, so the two things (b)+(c) bundle are
-// not confounded: the recovery traffic EXISTING (wire + queue occupancy,
-// placed by the ρ_fate repair objective onto the leg that is recovering) is a
-// different claim from the ledger NOT BALANCING.
+// Three levels, so that the recovery traffic existing (wire and queue
+// occupancy) is not confounded with the ledger not balancing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Acct {
     /// The published bench: source + retransmit only, every wire symbol
-    /// charged once and released once on its OWN path, no estimator feed.
-    /// Bit-identical to every number in goal-gate "c8 SF Mechanism" and
-    /// "SF Anchor Suspect".
+    /// charged once and released once on its own path, no estimator feed.
     Off,
-    /// The recovery TRAFFIC exists — taper repair at the shipped r*, the NACK
+    /// The recovery traffic exists — taper repair at the shipped r*, the NACK
     /// repair margin, and the loss estimator/throughput feeds that produce
-    /// them — but the ledger still BALANCES: every wire symbol is charged
-    /// once, on the path it flies, and released once, on the same path.
-    /// This is the counterfactual engine that obeys §12.
+    /// them — but the ledger balances: every wire symbol is charged once, on
+    /// the path it flies, and released once, on the same path.
     Traffic,
-    /// The ENGINE. As `Traffic`, plus (b) and (c): retransmits and margin
+    /// The engine: as `Traffic`, plus (b) and (c) — retransmits and margin
     /// repairs are never charged, and release is a counter delta on the path
     /// the feedback arrived on rather than a match to a charge.
     Engine,
@@ -393,65 +313,45 @@ impl Acct {
     }
 }
 
-// ── THE COUPLING AXIS: WHAT `store_len` ACTUALLY COUNTS ────────────────────
+// ── The coupling axis: what `store_len` counts ─────────────────────────────
 //
-// goal-gate "Cap-Refresh Warmth" RANK 1: the one quantity that diverges is
-// what a DEEPER RETENTION POOL does to `available()`. The wire says +16% of
-// mean pool depth buys 6.5× the `active_paths()`-empty rate at c8; the bench
-// says 1.3×. The bench's store is `sent − acked`, a per-symbol quantity that
-// drains at PATH latency. The engine's is a FRONTIER SPAN that drains at
-// CUMULATIVE-FRONTIER latency, minus whatever the receiver has managed to
-// SACK-advertise. Every semantic below is transplanted by file:line.
+// What a deeper retention pool does to `available()` depends on what the store
+// counts. The bench's `Unacked` store is `sent − acked`, draining at path
+// latency. The engine's is a frontier span that drains at cumulative-frontier
+// latency, minus what the receiver has SACK-advertised (ADR-0060, paper §6.3):
 //
-//   (1) THE STORE IS A DENSE SPAN. `emit_source.rs:321-323` inserts EVERY
-//       reliable source symbol into `st.sent_store` keyed by its stream seq,
-//       and `net/mod.rs:6591-6593` is the ONLY removal —
-//       `st.sent_store = st.sent_store.split_off(&(ack + 1))`, clocked by the
-//       CUMULATIVE ack alone. The engine states the identity itself at
-//       `net/mod.rs:4222-4230`: "the retention store's last key IS the sent
-//       edge (removal is by cumulative ack only)". So
-//       `|sent_store| = last_sent − ack`.
-//   (2) THE CUMULATIVE ACK IS THE RECEIVER'S IN-ORDER DELIVERY POINT.
-//       `receiver.rs:1554` sends `received_up_to: highest_delivered_seq`;
-//       `control_msg.rs:566` folds it into the sender's `window_ack_seq` with
-//       `fetch_max` ("acks arrive on multiple paths, out of order"). It
-//       advances only when in-order delivery passes a hole.
-//   (3) SACK RELEASE UNCOUNTS, IT DOES NOT REMOVE. `net/mod.rs:3368-3381`
-//       marks every seq of an arriving SACK range that is CURRENTLY RETAINED;
-//       `net/mod.rs:3394-3396` is the whole law,
-//       `sack_release_outstanding(store_len, released) =
-//       store_len.saturating_sub(released)`; `net/mod.rs:4267-4271` is the
-//       site that produces the flow-control `store_len` from it;
-//       `net/mod.rs:6594-6600` prunes the mark set on the same cumulative
-//       twin. (ADR-0060; `RWM_STORE_SACK_RELEASE=1` in 1 522 of 1 522
-//       `[GATES]` echoes in `docs/l1-raw`.)
-//   (4) THE MARKS ARRIVE ON A RATE-LIMITED CLOCK, NOT ON THE ACK STREAM.
-//       `receiver.rs:1517-1544`: SACK ranges ride only an ACK for which
-//       `advertise = cumulative_advanced || gap_report_due`
-//       (`net/mod.rs:3417-3424`), and `gap_report_due` requires
-//       `last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL` — **2 ms**,
-//       `net/mod.rs:213`. While the frontier is stalled behind a hole the
-//       cumulative leg is false, so the sender learns what the receiver has
-//       above the hole at most every 2 ms, plus the return flight.
-//   (5) THE RANGES ARE A COMPLETE SNAPSHOT. `received_sack_ranges`
-//       (`net/mod.rs:3430-3447`) encodes everything the receiver HAS in
-//       `(highest_delivered, highest_seen]` — so a later report SUBSUMES an
-//       earlier one above the later report's own cumulative point, which is
-//       why the sender's union of snapshots is exactly the newest snapshot it
-//       has received. (The engine unions; the identity is asserted by
-//       `sack_snapshots_subsume_and_the_union_is_the_newest`.)
+// (1) The store is a dense span. Every reliable source symbol enters
+//     `sent_store` keyed by its stream seq; the only removal is
+//     `split_off(&(ack + 1))`, clocked by the cumulative ack. So
+//     `|sent_store| = last_sent − ack`.
+// (2) The cumulative ack is the receiver's in-order delivery point
+//     (`received_up_to: highest_delivered_seq`), folded into the sender's
+//     `window_ack_seq` with `fetch_max`. It advances only when in-order
+//     delivery passes a hole.
+// (3) SACK release uncounts, it does not remove:
+//     `sack_release_outstanding(store_len, released) =
+//     store_len.saturating_sub(released)` over the marks of currently
+//     retained seqs, pruned at the cumulative twin.
+// (4) The marks arrive on a rate-limited clock. SACK ranges ride only an ACK
+//     with `advertise = cumulative_advanced || gap_report_due`, and
+//     `gap_report_due` requires `GAP_ACK_MIN_INTERVAL` (2 ms) since the last
+//     one. While the frontier is stalled the sender learns what lies above
+//     the hole at most every 2 ms, plus the return flight.
+// (5) The ranges are a complete snapshot of `(highest_delivered,
+//     highest_seen]`, so a later report subsumes an earlier one and the
+//     sender's union of snapshots is the newest snapshot
+//     (`sack_snapshots_subsume_and_the_union_is_the_newest`).
 //
-// The admission gate reads (3), not the unacked count: `net/mod.rs:5054-5056`,
+// The admission gate reads (3):
 // `reliable && (store_len >= effective_store_cap || cwnd_full)`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Store {
-    /// The published bench: `store_len` = admitted − acked, each symbol
-    /// leaving at its OWN ack instant. Bit-identical to every number in
-    /// goal-gate "c8 SF Mechanism" … "Cap-Refresh Warmth".
+    /// `store_len` = admitted − acked, each symbol leaving at its own ack
+    /// instant.
     Unacked,
-    /// THE ENGINE: `store_len = (last_sent − cum_frontier) − |SACK marks|`,
-    /// the frontier span of ADR-0060 with the marks arriving on the receiver's
-    /// gap-report clock.
+    /// The engine: `store_len = (last_sent − cum_frontier) − |SACK marks|`,
+    /// the frontier span of ADR-0060 with the marks arriving on the
+    /// receiver's gap-report clock.
     Span,
 }
 
@@ -464,51 +364,38 @@ impl Store {
     }
 }
 
-// ── THE SOURCE AXIS: WHAT OFFERS THE LOAD ──────────────────────────────────
+// ── The source axis: what offers the load ──────────────────────────────────
 //
-// goal-gate "The Queue Fix" RANK 1: "a bench whose source is 'always data to
-// send' cannot model c7 or c8 … that is the last un-fixed input in the loop."
+// An "always data to send" source is not the only load. The L1 wire's source
+// is: `perf --client` drives a memory-backed TUN and `perf.rs::run_object` is
+// an open loop bounded only by the mpsc channel's capacity (pinned by
+// `the_wires_offered_load_has_no_congestion_control`). The `Src::Reno` arm
+// therefore models a deployed tunnel (a user's TCP over the TUN), not the L1
+// battery.
 //
-// THE WIRE'S SOURCE IS NOT THIS. `raptorpath perf --client` drives a
-// MEMORY-BACKED TUN "without a kernel TUN or an inner TCP stack"
-// (`tun/mod.rs`), and `perf.rs::run_object` is a bare `for idx in 0..total`
-// over `mem.feed.send(pkt)` — an OPEN loop bounded only by the mpsc channel's
-// capacity. That is measured, pinned by
-// `the_wires_offered_load_has_no_congestion_control`, and it means the
-// `Src::Reno` arm below models a DEPLOYED tunnel (a real user's TCP over the
-// TUN), NOT the L1 battery. Every number this axis produces is scoped that
-// way and no L1 verdict is re-scored against it.
+// The model is Reno-class; every constant is a cited standard:
 //
-// THE MODEL is Reno-class, and every constant in it is a cited standard —
-// there is no quantity here chosen to make an answer come out:
-//
-//   * ONE SEGMENT = ONE TUNNEL SYMBOL. `perf.rs:48-50` — the window pipeline
-//     "carries at most ONE packet per symbol" — so the inner flow's MSS and
-//     the bench's symbol are the same unit and no conversion constant exists.
-//   * IW = 10 segments (RFC 6928 §1, the standard initial window).
-//   * ssthresh starts arbitrarily high (RFC 5681 §3.1: "IW … ssthresh MAY be
-//     arbitrarily high"), i.e. the flow starts in slow start.
-//   * SLOW START `cwnd += 1` per acked segment; CONGESTION AVOIDANCE
+//   * One segment = one tunnel symbol (the window pipeline carries at most
+//     one packet per symbol), so no conversion constant exists.
+//   * IW = 10 segments (RFC 6928 §1).
+//   * ssthresh starts arbitrarily high (RFC 5681 §3.1): slow start first.
+//   * Slow start `cwnd += 1` per acked segment; congestion avoidance
 //     `cwnd += 1/cwnd` per acked segment (RFC 5681 §3.1).
-//   * MULTIPLICATIVE DECREASE `ssthresh = max(FlightSize/2, 2)` — the 0.5 is
-//     RFC 5681 §3.1 equation (4), the standard the dispatch names.
-//   * RTO from RFC 6298: SRTT/RTTVAR with α = 1/8, β = 1/4, K = 4 (§2.3);
-//     first sample SRTT = R, RTTVAR = R/2 (§2.2); `RTO = max(SRTT + 4·RTTVAR,
-//     1 s)` (§2.4's 1-second minimum) capped at 60 s (§2.5); doubled on each
-//     expiry (§5.5). On expiry `cwnd = 1` (RFC 5681 §3.1).
+//   * Multiplicative decrease `ssthresh = max(FlightSize/2, 2)` (RFC 5681
+//     §3.1 eq. 4).
+//   * RTO from RFC 6298: α = 1/8, β = 1/4, K = 4 (§2.3); first sample
+//     SRTT = R, RTTVAR = R/2 (§2.2); `RTO = max(SRTT + 4·RTTVAR, 1 s)` (§2.4)
+//     capped at 60 s (§2.5); doubled on each expiry (§5.5). On expiry
+//     `cwnd = 1` (RFC 5681 §3.1).
 //
-// THE FEEDBACK PATH IS THE TUNNEL'S OWN LATENCY, and it is not injected: the
-// inner flow's in-flight is `next_seq − snd_frontier`, the sender's own
-// knowledge of the receiver's CUMULATIVE in-order delivery point (the same
-// `snd_frontier` the coupling axis maintains, `control_msg.rs:566`), and the
-// inner RTT sample is the wall between a segment's admission and the frontier
-// passing it. So the inner flow's throughput is `w / (RTprop + tunnel queue +
-// recovery stall)` — every delay the bench's own link and recovery plane
-// build is in the denominator, which is exactly the loop the hypothesis names.
+// The feedback path is the tunnel's own latency, not injected: the inner
+// flow's in-flight is `next_seq − snd_frontier` (the receiver's cumulative
+// in-order point), and its RTT sample is the wall between a segment's
+// admission and the frontier passing it. Its throughput is therefore
+// `w / (RTprop + tunnel queue + recovery stall)`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Src {
-    /// THE PUBLISHED BENCH: an infinite offered load. Bit-identical to every
-    /// number in goal-gate "c8 SF Mechanism" … "The Queue Fix".
+    /// An infinite offered load (the published bench).
     Bulk,
     /// A Reno-class inner flow over the tunnel, RTT-clocked on the tunnel's
     /// own delivered latency.
@@ -537,7 +424,7 @@ const RFC6298_K: f64 = 4.0;
 const RFC6298_RTO_MIN_S: f64 = 1.0;
 const RFC6298_RTO_MAX_S: f64 = 60.0;
 
-/// One Reno-class inner flow, clocked by the TUNNEL's delivered latency.
+/// One Reno-class inner flow, clocked by the tunnel's delivered latency.
 #[derive(Debug, Clone)]
 struct RenoSource {
     /// Congestion window, in segments (= tunnel symbols).
@@ -549,18 +436,18 @@ struct RenoSource {
     have_sample: bool,
     /// `(seq, admission instant)` for every segment handed to the tunnel and
     /// not yet passed by the cumulative frontier — FIFO, because the frontier
-    /// is by construction monotone and in order.
+    /// is monotone and in order.
     outstanding: std::collections::VecDeque<(u64, f64)>,
-    /// Gauges. `rto_events` is the count of timeouts; `rtt_sum`/`rtt_n` is the
-    /// DELIVERED LATENCY the inner flow actually experienced (the user-visible
-    /// cost); `w_sum`/`w_n` is the window's time average over admission ticks.
+    /// Gauges. `rto_events` counts timeouts; `rtt_sum`/`rtt_n` is the
+    /// delivered latency the inner flow experienced (the user-visible cost);
+    /// `w_sum`/`w_n` is the window's time average over admission ticks.
     rto_events: u64,
     rtt_sum: f64,
     rtt_n: u64,
     w_sum: f64,
     w_n: u64,
-    /// Admission opportunities at which the INNER WINDOW was the binder (the
-    /// bench's `wait_tun` analogue) and at which the STORE CAP was
+    /// Admission opportunities at which the inner window was the binder (the
+    /// bench's `wait_tun` analogue) and at which the store cap was
     /// (`wait_paused`). Sampled once per tick, before any admission.
     src_bound: u64,
     cap_bound: u64,
@@ -604,7 +491,7 @@ impl RenoSource {
 
     /// The cumulative frontier advanced to `frontier`: retire every segment it
     /// passed, take their RTT samples, and grow the window one ACK at a time —
-    /// RFC 5681 §3.1, slow start then congestion avoidance, with NO branch on
+    /// RFC 5681 §3.1, slow start then congestion avoidance, with no branch on
     /// anything but `cwnd < ssthresh`.
     fn on_frontier(&mut self, frontier: u64, now: f64) {
         while let Some(&(seq, sent)) = self.outstanding.front() {
@@ -622,10 +509,10 @@ impl RenoSource {
     }
 
     /// RFC 6298 §5.5 + RFC 5681 §3.1 — the retransmission timer expired on the
-    /// oldest outstanding segment. The tunnel is RELIABLE, so there is nothing
-    /// for the inner flow to retransmit that the tunnel is not already
-    /// retransmitting; what the timeout does to the TUNNEL is collapse the
-    /// offered load, which is the whole mechanism under test.
+    /// oldest outstanding segment. The tunnel is reliable, so the inner flow
+    /// has nothing to retransmit that the tunnel is not already
+    /// retransmitting; what the timeout does is collapse the offered load,
+    /// which is the mechanism under test.
     fn check_rto(&mut self, now: f64) {
         let Some(&(_, sent)) = self.outstanding.front() else {
             return;
@@ -657,16 +544,16 @@ impl RenoSource {
     }
 }
 
-/// `net/mod.rs:213` — `GAP_ACK_MIN_INTERVAL`, the receiver's gap-report rate
-/// limit and therefore the SACK-release clock while the frontier is stalled.
+/// `GAP_ACK_MIN_INTERVAL` — the receiver's gap-report rate limit and
+/// therefore the SACK-release clock while the frontier is stalled.
 const GAP_ACK_MIN_S: f64 = 0.002;
 
 /// One receiver→sender feedback message carrying a cumulative point and a
-/// SACK snapshot (`receiver.rs:1553-1555`), in flight for the return half of
-/// the path it was emitted on.
+/// SACK snapshot, in flight for the return half of the path it was emitted
+/// on.
 struct Report {
     arrive_at: f64,
-    /// The receiver instant it was BUILT at — the snapshot order (5).
+    /// The receiver instant it was built at — the snapshot order (5).
     built_at: f64,
     /// `received_up_to + 1`: the count of contiguously delivered seqs.
     frontier: u64,
@@ -674,15 +561,15 @@ struct Report {
     ranges: Vec<(u64, u64)>,
 }
 
-/// `received_sack_ranges` (`net/mod.rs:3430-3447`) on the bench's receiver
-/// set: the inclusive ascending disjoint ranges of seqs the receiver HAS in
-/// `(delivered, seen]`. `frontier` is the count of contiguously delivered
-/// seqs, so `delivered = frontier − 1` and the scan starts at `frontier`.
+/// `received_sack_ranges` on the bench's receiver set: the inclusive
+/// ascending disjoint ranges of seqs the receiver has in `(delivered, seen]`.
+/// `frontier` is the count of contiguously delivered seqs, so
+/// `delivered = frontier − 1` and the scan starts at `frontier`.
 fn sack_snapshot(seen: &std::collections::BTreeSet<u64>, frontier: u64, highest: u64) -> Vec<(u64, u64)> {
     let mut out: Vec<(u64, u64)> = Vec::new();
     if highest < frontier {
         // Nothing above the cumulative point: the receiver has no hole and
-        // the ack carries an empty SACK list (`receiver.rs:1543`).
+        // the ack carries an empty SACK list.
         return out;
     }
     for &s in seen.range(frontier..=highest) {
@@ -694,10 +581,9 @@ fn sack_snapshot(seen: &std::collections::BTreeSet<u64>, frontier: u64, highest:
     out
 }
 
-/// `|ranges ∩ [frontier, next_seq)|` — the released-mark COUNT the release law
-/// subtracts. The marks are only ever created for seqs currently retained
-/// (`net/mod.rs:3376`, `sent_store.range(start..=end)`) and pruned at the
-/// cumulative twin (`net/mod.rs:3387-3389`), which is exactly this clamp.
+/// `|ranges ∩ [frontier, next_seq)|` — the released-mark count the release
+/// law subtracts. Marks exist only for currently retained seqs and are
+/// pruned at the cumulative twin, which is exactly this clamp.
 fn released_count(ranges: &[(u64, u64)], frontier: u64, next_seq: u64) -> usize {
     let mut n = 0usize;
     for &(a, b) in ranges {
@@ -712,8 +598,7 @@ fn released_count(ranges: &[(u64, u64)], frontier: u64, next_seq: u64) -> usize 
 
 /// One un-stored recovery flight: a taper repair or a NACK margin repair. It
 /// occupies the wire and (for the taper repair) the in-flight ledger, but
-/// never the retention store — which is why the store cap, the loop's only
-/// brake, cannot see it.
+/// never the retention store — so the store cap cannot see it.
 struct WireSym {
     path: u32,
     resolve_at: f64,
@@ -721,17 +606,16 @@ struct WireSym {
 }
 
 /// The per-channel emission ledger, reported with every ON run so the
-/// attribution is a measurement and not a guess (MEASUREMENT DISCIPLINE
-/// 14(b)).
+/// attribution is measured (`docs/measurement-discipline.md` rule 14).
 #[derive(Debug, Clone, Copy, Default)]
 struct Ledger {
-    /// Source admissions — the ONLY arm the pacer's token debit runs on.
+    /// Source admissions — the only arm the pacer's token debit runs on.
     src: u64,
-    /// Taper corrections (`emit_source.rs:929`): wire + charge, no token.
+    /// Taper corrections: wire + charge, no token.
     taper: u64,
-    /// SACK-gap retransmits (`net/mod.rs:6374`): wire only under `Engine`.
+    /// SACK-gap retransmits: wire only under `Engine`.
     retx: u64,
-    /// NACK repair margin (`net/mod.rs:6420`): wire only under `Engine`.
+    /// NACK repair margin: wire only under `Engine`.
     margin: u64,
     /// `charge_in_flight(1)` calls.
     charges: u64,
@@ -740,8 +624,7 @@ struct Ledger {
     /// Releases that landed on a path already at `in_flight == 0` — the
     /// budget the saturating subtraction threw away.
     releases_wasted: u64,
-    /// The pacer's debit count (source arm only), i.e. what §12 claims paces
-    /// the wire.
+    /// The pacer's debit count (source arm only).
     tokens: u64,
 }
 
@@ -752,53 +635,40 @@ impl Ledger {
     }
 }
 
-// ── THE ANCHOR-ERA AXIS (goal-gate "SF Anchor Suspect") ────────────────────
+// ── The anchor-era axis ────────────────────────────────────────────────────
 //
-// FINDING 3 of the "c8 SF Mechanism" section reproduced U's direction but not
-// its CELL SPECIFICITY, and named one suspect: *the bench's Copa reads an
-// HONEST anchor and the engine's legacy one does not.* The bench acks
-// per-symbol at the true delivery instant, so `CopaState::record_delivery`'s
-// Δdelivered/Δt can only read the truth; the engine's legacy ack-interval
-// sampler over-reads ×4.6–7.4 (goal-gate "Anchor Hygiene" (b)) because acks
-// arrive BATCHED and the cumulative frontier JUMPS. That anchor is not just
-// the store-cap Σ — via `clamp_cwnd_with_anchor` it is also the cwnd FLOOR,
-// so an over-reading anchor PROPS `available() > 0` and can keep the fast
-// symmetric cells out of the empty-`active_paths()` state entirely.
+// The bench acks per symbol at the true delivery instant, so
+// `CopaState::record_delivery`'s Δdelivered/Δt reads the truth; the legacy
+// ack-interval sampler over-reads because acks arrive batched and the
+// cumulative frontier jumps. That anchor is the store-cap Σ and, via
+// `clamp_cwnd_with_anchor`, the cwnd floor, so an over-reading anchor props
+// `available() > 0` and can keep fast symmetric cells out of the
+// empty-`active_paths()` state. The era is a bench variable, two ways:
 //
-// This axis makes the era a bench variable, two ways, because neither alone
-// would be honest:
-//
-//   * `Overread(f)` — the era as a PURE SCALE on the ack-interval sampler's
-//     input, SWEPT. `record_delivery` uses its `count` argument for nothing
-//     but Δdelivered, so feeding `f·count` scales every rate sample — and
-//     hence `max_bw`, `bdp_anchor()`, the anchor floor and the store-cap Σ —
-//     by exactly `f`, with the call cadence, the cwnd update cadence and the
-//     RTT feed bit-identical to the honest arm. `f = 1.0` IS the honest arm.
-//     No single f is privileged: the sweep reports the whole curve and the
-//     matrix quotes the wire's measured 4.6–7.4 band as a BAND.
-//   * `Cumulative { ack_period_s }` — the era DERIVED from the bench's own
-//     ack batching, with no injected number at all: a receiver that reports a
-//     CUMULATIVE frontier on a feedback cadence. A GE drop stalls the
-//     frontier; when the retransmit lands the frontier jumps by the whole
-//     run, and the sampler sees that jump over one feedback interval. The
-//     realized over-read is then MEASURED (`anchor / true BtlBw·RTprop`) and
-//     compared against the wire's band, rather than assumed.
+//   * `Overread(f)` — a pure scale on the sampler's input, swept.
+//     `record_delivery` uses `count` only for Δdelivered, so `f·count` scales
+//     every rate sample (and `max_bw`, `bdp_anchor()`, the anchor floor, the
+//     store-cap Σ) by exactly `f`, with every cadence unchanged. `f = 1.0` is
+//     the honest arm.
+//   * `Cumulative { ack_period_s }` — derived from the bench's own ack
+//     batching: a receiver reporting a cumulative frontier on a feedback
+//     cadence. A GE drop stalls the frontier; the retransmit makes it jump,
+//     and the sampler sees the jump over one interval. The realized
+//     over-read (`anchor / true BtlBw·RTprop`) is measured, not assumed.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Feed {
-    /// Per-symbol `on_ack(1)` at the true delivery instant — the SHIPPED
-    /// honest-anchor era (default since 9f6e56b), and bit-identical to the
-    /// original bench.
+    /// Per-symbol `on_ack(1)` at the true delivery instant — the shipped
+    /// honest-anchor era.
     Honest,
     /// The legacy ack-interval era as a swept scale on the sampler input.
     Overread(f64),
     /// The legacy era derived from cumulative-frontier acks at a feedback
     /// cadence (seconds).
     Cumulative { ack_period_s: f64 },
-    /// THE MEASURED WIRE ERA — the ack stream as goal-gate "Ack-Cadence
-    /// Measurement (VM)" recorded it, one `AckShape` per path of the cell.
-    /// Nothing about the anchor is injected: `record_delivery` is fed ONE
-    /// delivered symbol per ack at measured arrival instants and the shipped
-    /// 1 ms `elapsed` floor (`scheduler/mod.rs:1178`) does the folding.
+    /// The measured wire ack stream, one `AckShape` per path of the cell.
+    /// Nothing about the anchor is injected: `record_delivery` is fed one
+    /// delivered symbol per ack at modelled arrival instants and the shipped
+    /// 1 ms `elapsed` floor does the folding.
     Measured(&'static [AckShape]),
 }
 
@@ -814,124 +684,100 @@ impl Feed {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  THE MEASURED ACK STREAM — goal-gate "Ack-Cadence Measurement (VM)"
-//  (2026-08-11, `feat/ackdiag-measurement` from main@c0d9305)
+// The measured ack stream
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// Every prior SF-bench result had to INVENT its ack stream, and the ledger
-// scored all three inventions as wrong by one to three orders of magnitude
-// ("WHAT THIS MEANS FOR THE SF BENCH'S INPUTS"). They are replaced here by the
-// wire's own numbers, transcribed row by row from the measurement and NOTHING
-// else. The four inputs the ledger names, and where each one lands:
+// The ack stream is transcribed from a VM measurement of the wire (the
+// `ackdiag` instrument), not invented. Four inputs:
 //
-//   (1) DELIVERED COUNT PER ACK = 1. "p50 = p90 = 1 in all 60 report windows,
-//       857 400 acks, every cell and every path. There is no ack aggregation."
-//       ⇒ `record_delivery(1)`, once per delivered symbol. NOT swept.
-//   (2) ARRIVAL SPACING — heavy-tailed, per cell and per path (READOUT 1+2's
-//       gap columns). "A single assumed period cannot represent this and
-//       should not be attempted." ⇒ the quantiles below, as a DISTRIBUTION.
-//   (3) THE 1 ms FLOOR IS THE CLOCK. "The sampler is FLOOR-CLOCKED — model the
-//       floor, not the acks. Feed `record_delivery` at ack cadence and let the
-//       1 ms `elapsed` floor do the work." ⇒ the bench advances the MockClock
-//       to each ack's own arrival instant and calls the REAL `on_ack(1)`; the
-//       real `elapsed < 0.001` branch (`scheduler/mod.rs:1178`) rejects. The
-//       bench asserts NOTHING about the sample period — it MEASURES the
-//       realized rejection rate and scores it against READOUT 3b.
-//   (4) `xanchor` IS NOT AN INPUT. It is the CHECK. READOUT 3's medians
-//       (5.94 / 9.80–10.11 / 13.29–13.82) are targets the loop must PRODUCE.
+// (1) Delivered count per ack = 1 (no ack aggregation at any cell or path)
+//     ⇒ `record_delivery(1)` once per delivered symbol.
+// (2) Arrival spacing is heavy-tailed, per cell and per path ⇒ the gap
+//     quantiles below, as a distribution.
+// (3) The 1 ms `elapsed` floor is the sampler's clock ⇒ the bench advances the
+//     MockClock to each ack's arrival instant and calls the real `on_ack(1)`;
+//     the real `elapsed < 0.001` branch rejects. The realized rejection rate
+//     is measured and scored, not asserted.
+// (4) `xanchor` is not an input but the check: the loop must produce it.
 //
-// THE ONE STRUCTURAL CHOICE, STATED RATHER THAN BURIED. The gauge measured the
-// MARGINAL gap distribution (p50/p90/p99), not its correlation structure, and
-// the marginal ALONE cannot produce the measured over-read: an i.i.d. renewal
-// stream with these quantiles puts ~1000 µs / mean_gap ≈ 10 acks in any 1 ms
-// window, so `Δdelivered/Δt` reads ×1 and the max filter has nothing to latch.
-// A ×8 sample needs ~74 CONSECUTIVE sub-p50 gaps, which i.i.d. draws never
-// deliver. The over-read therefore lives in the stream's RUN structure, and
-// the model of it here is the one every measured number is already consistent
-// with — a work-conserving observer:
+// The one structural choice. The measurement gives the marginal gap
+// distribution, not its correlation, and the marginal alone cannot produce the
+// over-read: an i.i.d. renewal stream puts ~10 acks in any 1 ms window, so
+// `Δdelivered/Δt` reads ×1. A ×8 sample needs ~74 consecutive sub-p50 gaps.
+// The over-read lives in the stream's run structure, modelled as a
+// work-conserving observer:
 //
-//     the sender observes acks one at a time, spaced at the MEASURED p50 gap,
-//     while it has un-observed acks; when it runs out it goes SILENT for a
-//     draw from the MEASURED upper tail, and the acks that arrive during the
+//     the sender observes acks one at a time, spaced at the measured p50 gap,
+//     while it has un-observed acks; when it runs out it goes silent for a
+//     draw from the measured upper tail, and the acks that arrive during the
 //     silence are observed in the burst that follows.
 //
-// This is not a free-parameter fit. It has exactly ZERO knobs, because
-// conservation closes it: an observer that drains at spacing `s` has duty
-// cycle `s/ḡ = q50` by arithmetic, so the silence fraction is pinned at the
-// value that makes the model's own marginal REPRODUCE the measured p50, p90
-// and p99 exactly (`u_c` below, solved, not chosen). What the model then
-// PREDICTS, and what this bench scores, is everything the ledger measured but
-// did not feed in: the floor-rejection rate, the accepted-sample rate, the
-// acks folded per sample, and `xanchor`.
+// It has no knobs: an observer draining at spacing `s` has duty cycle
+// `s/ḡ = q50`, so the silence fraction is pinned at the value that makes the
+// model's marginal reproduce the measured p50, p90 and p99 (`u_c` below,
+// solved). What the model predicts, and the bench scores, is what was measured
+// but not fed in: the floor-rejection rate, the accepted-sample rate, the acks
+// folded per sample, and `xanchor`.
 
-/// One measured path's ack stream, transcribed from goal-gate "Ack-Cadence
-/// Measurement (VM)". The `(lo, hi)` pairs are the ledger's own per-window
-/// RANGES over its 12 report windows — the measurement's uncertainty, carried
-/// rather than averaged away. Micro-seconds; `rate_lr` is symbols/s.
+/// One measured path's ack stream. The `(lo, hi)` pairs are per-window ranges
+/// over the measurement's 12 report windows — its uncertainty, carried rather
+/// than averaged away. Microseconds; `rate_lr` is symbols/s.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct AckShape {
-    /// The ledger row this is, verbatim.
+    /// The measurement row this is.
     row: &'static str,
-    /// READOUT 3, `rate_lr` column — the window's own long-run delivered rate,
-    /// i.e. the mean ack gap is `1e6/rate_lr` µs.
+    /// The window's long-run delivered rate, i.e. the mean ack gap is
+    /// `1e6/rate_lr` µs.
     rate_lr: f64,
-    /// READOUT 1+2, `gap µs p50` column.
+    /// Gap p50, µs.
     p50: (f64, f64),
-    /// READOUT 1+2, `p90` column.
+    /// Gap p90, µs.
     p90: (f64, f64),
-    /// READOUT 1+2, `p99` column.
+    /// Gap p99, µs.
     p99: (f64, f64),
-    // ── the CHECKS: measured, never fed in ──
-    /// READOUT 3b, `rejected %` — what the 1 ms floor did on the wire.
+    // ── the checks: measured, never fed in ──
+    /// Floor-rejected samples, % — what the 1 ms floor did on the wire.
     rej_pct: f64,
-    /// READOUT 3b, `accepted samples/s`.
+    /// Accepted samples/s.
     samples_s: f64,
-    /// READOUT 3, `xanchor med` — the quantity the store-cap Σ and the cwnd
-    /// anchor floor consume, and the one this bench must PRODUCE.
+    /// Median `xanchor` — the quantity the store-cap Σ and the cwnd anchor
+    /// floor consume, and the one this bench must produce.
     xanchor: f64,
-    /// READOUT 3, `xanchor` min/max over the 12 windows.
+    /// `xanchor` min/max over the 12 windows.
     xanchor_range: (f64, f64),
-    /// READOUT 3, `RTprop ms` column — **the anchor's own `min_rtt`**, i.e.
-    /// exactly the `min_rtt` `copa_bdp_anchor()` multiplied by (goal-gate
-    /// "SF Bench on Measured Inputs", definitional correction (a)). Seconds.
-    ///
-    /// Added by goal-gate "Cap-Refresh Warmth": with it the wire's anchor is
-    /// RECONSTRUCTIBLE in symbols rather than only as a dimensionless ratio —
-    /// `xanchor := copa_bdp_anchor()/(rate_lr·RTprop)` inverts EXACTLY to
-    /// `anchor = xanchor · rate_lr · RTprop` ([`AckShape::anchor_sym`]), which
-    /// is the term the store-cap Σ actually adds up.
+    /// Measured RTprop — the anchor's own `min_rtt`, i.e. exactly the
+    /// `min_rtt` `copa_bdp_anchor()` multiplies by. Seconds. With it the
+    /// wire's anchor is reconstructible in symbols:
+    /// `xanchor := copa_bdp_anchor()/(rate_lr·RTprop)` inverts to
+    /// `anchor = xanchor · rate_lr · RTprop` ([`AckShape::anchor_sym`]), the
+    /// term the store-cap Σ adds up.
     rtprop_s: f64,
 }
 
 impl AckShape {
-    /// The wire's own `copa_bdp_anchor()` for this path, IN SYMBOLS — the
-    /// store-cap Σ's per-path term, reconstructed from READOUT 3 by inverting
-    /// the definition of `xanchor`. No modelling and no fitting: three
-    /// measured columns multiplied.
+    /// The wire's own `copa_bdp_anchor()` for this path, in symbols — the
+    /// store-cap Σ's per-path term, reconstructed by inverting the definition
+    /// of `xanchor`: three measured columns multiplied.
     ///
-    /// This is NOT `rate_configured · RTT_configured · xanchor`. The wire's
-    /// realized `rate_lr` is 0.67–0.69× the cells' nominal symbol rates and
-    /// its RTprop is 0.64–1.05× their configured RTTs, so the two differ by
-    /// **1.4–2.3× per path** — the same "scale by the path's REALIZED ack
-    /// rate, not its link capacity" caveat the measured-inputs section stated
-    /// for the ack MODEL and did not apply to the Σ.
+    /// This is not `rate_configured · RTT_configured · xanchor`: the realized
+    /// `rate_lr` is 0.67–0.69× the cells' nominal symbol rates and RTprop is
+    /// 0.64–1.05× their configured RTTs, so the two differ by 1.4–2.3× per
+    /// path.
     fn anchor_sym(&self) -> f64 {
         self.xanchor * self.rate_lr * self.rtprop_s
     }
 }
 
-/// The Σ at which the shipped pooled law STOPS responding to the anchor.
+/// The Σ at which the shipped pooled law stops responding to the anchor.
 ///
 /// `cap = clamp(gain·N·Σ, floor, N·knee)` is ceiling-pinned exactly when
-/// `gain·N·Σ ≥ N·knee`, i.e. when `Σ ≥ knee/gain` — **the `N` cancels**. The
-/// pin threshold on the anchor SUM is a per-path constant, identical at every
-/// path count, and at the shipped `knee = 2048`, `gain = 2` it is 1024
-/// symbols. Pinned by
+/// `gain·N·Σ ≥ N·knee`, i.e. when `Σ ≥ knee/gain` — the `N` cancels, so the
+/// pin threshold on the anchor sum is path-count free: 1024 symbols at
+/// `knee = 2048`, `gain = 2`. Pinned by
 /// `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`.
 const SIGMA_PIN: f64 = KNEE as f64 / GAIN;
 
-/// `c2r100/p0` — single 100 MB, the reference cell. READOUT 1+2 row 1,
-/// READOUT 3 row 1, READOUT 3b row 1.
+/// `c2r100/p0` — single 100 MB, the reference cell.
 const ACK_C2R100_P0: AckShape = AckShape {
     row: "c2r100/p0",
     rate_lr: 9_316.0,
@@ -942,10 +788,10 @@ const ACK_C2R100_P0: AckShape = AckShape {
     samples_s: 744.0,
     xanchor: 5.94,
     xanchor_range: (4.04, 9.28),
-    rtprop_s: 0.1004, // READOUT 3, `RTprop ms` = 100.4
+    rtprop_s: 0.1004, // measured RTprop 100.4 ms
 };
 
-/// `c7/p0` — c2/c2 dual 200 MB, leg 0. READOUT 1+2 row 2 / 3 row 2 / 3b row 2.
+/// `c7/p0` — c2/c2 dual 200 MB, leg 0.
 const ACK_C7_P0: AckShape = AckShape {
     row: "c7/p0",
     rate_lr: 9_432.0,
@@ -956,10 +802,10 @@ const ACK_C7_P0: AckShape = AckShape {
     samples_s: 536.0,
     xanchor: 9.80,
     xanchor_range: (8.14, 11.95),
-    rtprop_s: 0.0077, // READOUT 3, `RTprop ms` = 7.7
+    rtprop_s: 0.0077, // measured RTprop 7.7 ms
 };
 
-/// `c7/p1` — the symmetric dual's other leg. Rows 3 / 3 / 3.
+/// `c7/p1` — the symmetric dual's other leg.
 const ACK_C7_P1: AckShape = AckShape {
     row: "c7/p1",
     rate_lr: 9_418.0,
@@ -970,10 +816,10 @@ const ACK_C7_P1: AckShape = AckShape {
     samples_s: 536.0,
     xanchor: 10.11,
     xanchor_range: (8.06, 10.57),
-    rtprop_s: 0.0097, // READOUT 3, `RTprop ms` = 9.7
+    rtprop_s: 0.0097, // measured RTprop 9.7 ms
 };
 
-/// `c8/p0` — the asymmetric dual's FAST (c2) leg. Rows 4 / 4 / 4.
+/// `c8/p0` — the asymmetric dual's fast (c2) leg.
 const ACK_C8_P0: AckShape = AckShape {
     row: "c8/p0 fast",
     rate_lr: 6_948.0,
@@ -984,11 +830,11 @@ const ACK_C8_P0: AckShape = AckShape {
     samples_s: 415.0,
     xanchor: 13.29,
     xanchor_range: (7.79, 27.34),
-    rtprop_s: 0.0084, // READOUT 3, `RTprop ms` = 8.4
+    rtprop_s: 0.0084, // measured RTprop 8.4 ms
 };
 
-/// `c8/p1` — the asymmetric dual's SLOW (c3) leg, the one that stalls to
-/// 18.2 ms and the only path the floor rejects less than 90% of. Rows 5/5/5.
+/// `c8/p1` — the asymmetric dual's slow (c3) leg, which stalls to 18.2 ms
+/// and is the only path the floor rejects less than 90 % of.
 const ACK_C8_P1: AckShape = AckShape {
     row: "c8/p1 slow",
     rate_lr: 1_376.0,
@@ -999,7 +845,7 @@ const ACK_C8_P1: AckShape = AckShape {
     samples_s: 258.0,
     xanchor: 13.82,
     xanchor_range: (7.35, 27.56),
-    rtprop_s: 0.0386, // READOUT 3, `RTprop ms` = 38.6
+    rtprop_s: 0.0386, // measured RTprop 38.6 ms
 };
 
 /// The measured cells, path by path. `sc2` is the bench's single-fast cell and
@@ -1008,32 +854,22 @@ static ACK_SC2: [AckShape; 1] = [ACK_C2R100_P0];
 static ACK_C7: [AckShape; 2] = [ACK_C7_P0, ACK_C7_P1];
 static ACK_C8: [AckShape; 2] = [ACK_C8_P0, ACK_C8_P1];
 
-// ── WHICH BRAKE BINDS ON THE WIRE, AND HOW MUCH QUEUE IT BUILDS ─────────────
+// ── Which brake binds on the wire, and how much queue it builds ────────────
 //
-// Three columns every L1 per-rep ledger in `docs/l1-raw` already carries, and
-// which no section of goal-gate has read. They are the wire's answer to the two
-// questions this bench's whole loop is built on top of — "is the store cap the
-// brake?" and "how much standing queue is there?" — and they are MEASURED, over
-// 26–101 reps per cell/arm, on the same arms every `[SF]` number in this ledger
-// was taken on.
+// Three columns every L1 per-rep summary record carries, measured over 26–101
+// reps per cell/arm on the same arms as the `[SF]` numbers:
 //
-//   * `occ_p50 / occcap_p50` — the store-cap DIAG print `win={store_len}/{cap}`
-//     (`net/diag.rs:845`), parsed at `tools/l1/flip_parse.py:182,202-203`.
-//     `store_len` is the GATE'S OWN OPERAND (`net/mod.rs:5055`), post-SACK
-//     release, so `occ/cap` is literally "how close is the gate to closing".
-//   * `wait_paused` — the `select!` wait-arm attribution
-//     (`net/mod.rs:5663`, `wait_arm = 1`), i.e. the share of sender-loop
-//     wakeups spent in the STORE-CAP BACKPRESSURE poll. It is the share of the
-//     loop's time the store cap was the brake, directly.
-//   * `q_p50` — `rtt − rtp` off the per-path DIAG field
-//     `rtt={}/wrtt={}/rtp{}ms` (`net/diag.rs:617`), parsed at
-//     `flip_parse.py:183,206`: SRTT minus Copa's windowed-min RTT, both on the
-//     same app-echo clock. That is the STANDING QUEUE, in milliseconds, and
-//     `rtp_med` beside it is the RTprop it stands on top of.
+//   * `occ_p50 / occcap_p50` — the store-cap DIAG print `win={store_len}/{cap}`.
+//     `store_len` is the admission gate's own operand, post-SACK release, so
+//     `occ/cap` is how close the gate is to closing.
+//   * `wait_paused` — the share of sender-loop wakeups spent in the store-cap
+//     backpressure poll, i.e. the share of time the store cap was the brake.
+//   * `q_p50` — `rtt − rtp` off the per-path DIAG field: SRTT minus Copa's
+//     windowed-min RTT on the same app-echo clock, the standing queue in ms;
+//     `rtp_med` is the RTprop it stands on.
 //
-// These refute the premise this branch was dispatched on ("the bench's link
-// builds a 2.4–5.7× RTprop standing queue the wire does not"). See the ledger
-// section "The Queue Fix".
+// They refute the premise that the bench's link builds a 2.4–5.7× RTprop
+// standing queue the wire does not.
 #[derive(Clone, Copy, Debug)]
 struct WireBrake {
     cell: &'static str,
@@ -1044,7 +880,7 @@ struct WireBrake {
     occ: f64,
     /// `occcap_p50` median over reps.
     cap: f64,
-    /// `wait_paused` MEAN over reps, in percent of sender-loop wakeups.
+    /// `wait_paused` mean over reps, in percent of sender-loop wakeups.
     paused_pct: f64,
     /// `q_p50` median over reps, in milliseconds.
     q_ms: f64,
@@ -1055,8 +891,7 @@ struct WireBrake {
 }
 
 impl WireBrake {
-    /// The standing queue in units of the path's OWN RTprop — the quantity the
-    /// dispatch asserted reads "≈1×" on the wire.
+    /// The standing queue in units of the path's own RTprop.
     fn queue_over_rtprop(&self) -> f64 {
         self.q_ms / self.rtprop_ms
     }
@@ -1065,9 +900,9 @@ impl WireBrake {
     }
 }
 
-/// THE TRANSCRIPTION. Medians over reps (means for `wait_paused`, which is
-/// already a percentage per rep), extracted from every `docs/l1-raw/*.log`
-/// summary record carrying `occ_p50`.
+/// The wire transcription: medians over reps (means for `wait_paused`, which
+/// is already a percentage per rep) from every L1 summary record carrying
+/// `occ_p50`.
 const WIRE_BRAKE: &[WireBrake] = &[
     WireBrake {
         cell: "sc2", arm: "A", reps: 77,
@@ -1108,65 +943,46 @@ fn wire_brake(cell: &str, arm: &str) -> &'static WireBrake {
         .expect("every cell/arm this bench scores must have a transcribed wire row")
 }
 
-// ── THE PRE-REGISTRATION (written and committed BEFORE the measured era was
-//    ever run; the ON arm is the NEXT commit) ────────────────────────────────
+// ── The pre-registration ───────────────────────────────────────────────────
 //
-// THE QUESTION the dispatch asks: with the ack stream measured instead of
-// invented, and with the in-flight accounting axis at `Acct::Engine`, does the
-// bench's geography match the wire at BOTH cells?
+// Question: with the ack stream measured and the in-flight accounting axis at
+// `Acct::Engine`, does the bench's geography match the wire at both cells?
 //
-//   * the legacy (A) arm is a ≈4% `[SF]` zero-fraction class at c7 AND c8
-//     (3.7–7.4% at c8, "c1/sc2/c7 do not move"), and
+//   * the legacy (A) arm is a ≈4 % `[SF]` zero-fraction class at c7 and c8,
 //   * the U-fold is keyed to c8 (≈7.5×) and null at c7.
 //
-// That is the SAME G1/G2 pair the accounting axis pre-registered and the same
-// statistic (§16.52's mode rate), unchanged, so the two runs are comparable:
-//   G1 (LEVEL)       A-arm ensemble mean < 10% AND caught ≥ 50% at BOTH cells.
-//   G2 (CELL-KEYING) fold(c8) ≥ 3.0 AND fold(c7) ≤ 2.0.
+// The same G1/G2 pair and statistic as the accounting axis:
+//   G1 (level)       A-arm ensemble mean < 10 % and caught ≥ 50 % at both cells.
+//   G2 (cell-keying) fold(c8) ≥ 3.0 and fold(c7) ≤ 2.0.
 //
-// AND — new here, because the inputs are now measured and therefore SCORABLE —
-// three VALIDATION targets that must hold before the geography verdict may be
-// read at all. A loop whose ack stream lands nowhere near the wire's cannot
-// be asked whether its geography matches; these gate the question.
+// Three validation targets gate the question — a loop whose ack stream lands
+// nowhere near the wire's cannot be asked whether its geography matches:
 //
-//   V1 `xanchor`. The bench's realized per-path `copa_bdp_anchor()/(rate·
-//      RTprop)` must land within ±30% of the ledger's measured median at each
-//      measured path (5.94 / 9.80 / 10.11 / 13.29 / 13.82). Why ±30% and not
-//      tighter: the measured quantity's OWN spread is far wider — 4.04–9.28 at
-//      c2r100 and 7.35–27.56 at c8, i.e. a 2.3×–3.8× range across windows of
-//      the same run, "2.5× between windows of the SAME run" — so a ±30% band
-//      on the median is already tight against the measurement's own noise, and
-//      it is 10–300× tighter than the ×3–100 by which the three invented
-//      inputs missed. Scored per path, not per cell, because READOUT 3 is a
-//      per-path table.
-//   V2 FLOOR REJECTION. The realized `elapsed < 1 ms` rejection rate must land
-//      within ±5 POINTS of READOUT 3b (91.5 / 94.3 / 94.3 / 94.0 / 81.5%).
-//      ±5 points because the wire's own per-window spread is ±0.5 pt at three
-//      of five paths but the paths themselves span 81.5–94.3, and because this
-//      is a PREDICTION of the model, not an input to it.
-//   V3 THE MARGINAL. The realized ack-gap p50/p90/p99 must lie inside the
-//      ledger's own reported per-window ranges. (The observer model
-//      reproduces these BY CONSTRUCTION, so V3 is a wiring check — it fails
-//      only if the era is mis-plumbed, which is exactly what it is for.)
+//   V1 `xanchor`. The realized per-path `copa_bdp_anchor()/(rate·RTprop)` is
+//      within ±30 % of the measured median at each path (5.94 / 9.80 / 10.11 /
+//      13.29 / 13.82). The measured quantity's own spread across windows of
+//      one run is 2.3×–3.8×, so ±30 % on the median is already tight.
+//   V2 Floor rejection. The realized `elapsed < 1 ms` rejection rate is within
+//      ±5 points of the measured rate (91.5 / 94.3 / 94.3 / 94.0 / 81.5 %).
+//      It is a prediction of the model, not an input.
+//   V3 The marginal. The realized ack-gap p50/p90/p99 lie inside the measured
+//      per-window ranges. The observer reproduces these by construction, so
+//      V3 is a wiring check.
 //
-// VERDICT = (V1 ∧ V2 ∧ V3) gating (G1 ∧ G2). If the validation gate fails the
-// geography question is NOT ASKED and the run reports which produced quantity
-// diverged first. If it passes and G1 ∧ G2 fails, the loop is wrong somewhere
-// the measured inputs do not reach, and the run reports which quantity — the
-// dispatch's own named NO-MATCH outcome.
+// Verdict = (V1 ∧ V2 ∧ V3) gating (G1 ∧ G2). If validation fails, the
+// geography question is not asked and the run reports which produced quantity
+// diverged first; if it passes and G1 ∧ G2 fails, the loop is wrong where the
+// measured inputs do not reach.
 //
-// FOURTH, and not a criterion because the axis is supposed to produce it
-// rather than be scored on it: REPAIRS-IN-COUNTERS. READOUT 4 settles
-// Σ`crecv`/`srcack` at 1.01–1.04 at c2r100/c7 and 1.21–1.34 at c8. Under
-// `Acct::Engine` every wire symbol enters the bench's `ack_expected` /
-// `ack_received` counters, so the same ratio is `wire()/src` — already
-// printed. It is checked as an EMERGENT property and reported either way.
+// Repairs-in-counters is reported, not scored: the wire's Σ`crecv`/`srcack`
+// is 1.01–1.04 at c2r100/c7 and 1.21–1.34 at c8. Under `Acct::Engine` every
+// wire symbol enters the bench's counters, so the same ratio is `wire()/src`.
 
 /// V1 — the fraction by which the bench's realized `xanchor` may differ from
-/// the ledger's measured per-path median.
+/// the measured per-path median.
 const V1_XANCHOR_TOL: f64 = 0.30;
 /// V2 — the points by which the realized floor-rejection rate may differ from
-/// READOUT 3b's measured per-path percentage.
+/// the measured per-path percentage.
 const V2_REJECT_TOL_PTS: f64 = 5.0;
 
 /// Every measured path the bench consumes, for the transcription pin and the
@@ -1174,24 +990,17 @@ const V2_REJECT_TOL_PTS: f64 = 5.0;
 const ACK_ALL: &[&AckShape] =
     &[&ACK_C2R100_P0, &ACK_C7_P0, &ACK_C7_P1, &ACK_C8_P0, &ACK_C8_P1];
 
-/// THE TRANSCRIPTION PIN. Not a model test — a check that the numbers this
-/// bench now runs on are the ones the ledger recorded, in the shape it
-/// recorded them, and that the CHECKS were not quietly turned into inputs.
+/// The transcription pin: the numbers this bench runs on are the recorded
+/// ones, in the recorded shape, and the checks were not turned into inputs.
+/// It asserts the measurement's internal identities, so a typo in any row
+/// fails here:
 ///
-/// It asserts the ledger's own internal identities, so a typo in any row
-/// fails here rather than surviving as a plausible-looking input:
-///
-///  * each quantile range is ordered and strictly increasing p50 < p90 < p99
-///    (READOUT 1+2 is a quantile table);
-///  * the measured `xanchor` median lies inside its own measured min/max
-///    (READOUT 3);
-///  * the measured accepted-sample rate, the rejection rate and `rate_lr` are
-///    the SAME measurement three ways — READOUT 3b's "acks folded per sample"
-///    column is `rate_lr/samples_s` and its rejection rate is
-///    `1 − samples_s/rate_lr`, so the three columns must agree;
-///  * every path's p50 gap is FAR below its own mean gap `1e6/rate_lr` — the
-///    heavy tail is the whole finding, and a row where it is absent would be
-///    a transcription error.
+///   * each quantile range is ordered and p50 < p90 < p99;
+///   * the median `xanchor` lies inside its own min/max;
+///   * accepted-sample rate, rejection rate and `rate_lr` are one measurement
+///     three ways (`rejection = 1 − samples_s/rate_lr`), so they must agree;
+///   * every path's p50 gap is far below its mean gap `1e6/rate_lr` — the heavy
+///     tail is the finding, and a row without it is a transcription error.
 #[test]
 fn measured_ack_inputs_are_the_ledger_transcription() {
     for s in ACK_ALL {
@@ -1209,9 +1018,8 @@ fn measured_ack_inputs_are_the_ledger_transcription() {
             s.xanchor,
             s.xanchor_range
         );
-        // READOUT 3b's three columns are one measurement: rejection %,
-        // accepted samples/s and rate_lr. The ledger prints all three; they
-        // must close on each other.
+        // Rejection %, accepted samples/s and rate_lr are one measurement;
+        // they must close on each other.
         let implied_rej = (1.0 - s.samples_s / s.rate_lr) * 100.0;
         assert!(
             (implied_rej - s.rej_pct).abs() < 1.5,
@@ -1223,78 +1031,69 @@ fn measured_ack_inputs_are_the_ledger_transcription() {
             s.rate_lr,
             s.samples_s
         );
-        // THE FINDING ITSELF: the stream is heavy-tailed, i.e. the median gap
-        // is a small fraction of the mean gap. If this ever reads ≈1 the row
-        // is not the wire's.
+        // The stream is heavy-tailed: the median gap is a small fraction of
+        // the mean gap. If this ever reads ≈1 the row is not the wire's.
         assert!(
             q50 < 0.25 * mean_gap_us,
             "{}: p50 gap {q50:.1} µs is not far below the mean gap {mean_gap_us:.1} µs — \
              the measured stream is heavy-tailed and this row is not",
             s.row
         );
-        // And the tail really is a tail: p99 is at least 5× the MEAN gap.
+        // And the tail is a tail: p99 is at least 5× the mean gap.
         assert!(
             q99 > 5.0 * mean_gap_us,
             "{}: p99 gap {q99:.1} µs against mean {mean_gap_us:.1} µs",
             s.row
         );
     }
-    // The two tolerances are pre-registered, not discovered: pin them so a
-    // successor that loosens them has to do it in a diff that says so.
+        // The tolerances are pre-registered: pin them so loosening one takes
+        // a diff that says so.
     assert_eq!(V1_XANCHOR_TOL, 0.30);
     assert_eq!(V2_REJECT_TOL_PTS, 5.0);
 }
 
-/// The midpoint of a ledger range — the point estimate, with the range itself
-/// kept so the model can back off inside it when the measurement's own
-/// quantiles and its own mean do not close (see `AckGaps::new`).
+/// The midpoint of a measured range — the point estimate, with the range kept
+/// so the model can back off inside it when the quantiles and the mean do not
+/// close (see `AckGaps::new`).
 fn mid((lo, hi): (f64, f64)) -> f64 {
     0.5 * (lo + hi)
 }
 
-// ── THE GAP DISTRIBUTION, built from the measured quantiles ────────────────
+// ── The gap distribution, built from the measured quantiles ────────────────
 //
-// `Q(u)` is the DIMENSIONLESS gap quantile function — gap divided by the
-// path's own mean gap — interpolated through the ledger's measured points:
+// `Q(u)` is the dimensionless gap quantile function (gap / the path's mean
+// gap), interpolated through the measured points:
 //
-//   u ∈ [0,   0.5 ]  linear   0   → q50   (the sub-median body; the gauge
-//                                          reports no quantile below p50)
-//   u ∈ [0.5, 0.9 ]  log-linear q50 → q90
-//   u ∈ [0.9, 0.99]  log-linear q90 → q99
-//   u ∈ [0.99, 1  ]  Pareto,  Q = q99·((1−u)/0.01)^(−1/α)
+//     u ∈ [0, 0.5 ]    linear       0 → q50  (no quantile is reported below p50)
+//     u ∈ [0.5, 0.9 ]  log-linear   q50 → q90
+//     u ∈ [0.9, 0.99]  log-linear   q90 → q99
+//     u ∈ [0.99, 1 ]   Pareto,      Q = q99·((1−u)/0.01)^(−1/α)
 //
-// α is NOT chosen. It is SOLVED from the one thing the measurement pins that
-// the quantiles do not: the mean gap is `1/rate_lr` (READOUT 3), so the top
-// 1% must carry exactly the mass the body leaves, and `E[G | G > p99] =
-// q99·α/(α−1)` fixes α. The measurement therefore determines its own tail.
+// α is solved, not chosen: the mean gap is `1/rate_lr`, so the top 1 % carries
+// exactly the mass the body leaves, and `E[G | G > p99] = q99·α/(α−1)` fixes α.
 //
-// TWO PLACES WHERE THE MEASUREMENT DOES NOT CLOSE ON ITSELF, both handled by
-// backing off INSIDE the ledger's own reported ranges rather than by inventing:
+// Two places where the measurement does not close on itself, both handled by
+// backing off inside the measured ranges:
 //
-//  (a) at c2r100 and at c8's slow leg the quantile MIDPOINTS already imply a
-//      mean gap ABOVE `1/rate_lr` (by ~10% and ~0.5%), leaving the tail
-//      negative mass. `θ` — the position inside the ledger's own p90/p99
-//      per-window ranges — is bisected DOWN from the midpoint until the two
-//      measurements close with `E[G|G>p99] ≥ 1.5·p99`. p50 is never moved: it
-//      is the headline number and the tightest-measured of the three.
-//  (b) the Pareto tail, unbounded, generates silences of hundreds of ms at the
-//      lightest α the mean allows. It is TRUNCATED at 18.2 ms — the largest
-//      inter-ack gap the instrument reported anywhere (READOUT 1+2, c8/p1's
-//      p99 upper range; the ledger's "tailing to 18 ms on a stalling leg").
-//      Truncation is safe by construction: the observer is work-conserving, so
-//      a lighter tail costs it silences, not acks.
+// (a) At c2r100 and c8's slow leg the quantile midpoints already imply a mean
+//     gap above `1/rate_lr` (by ~10 % and ~0.5 %), leaving the tail negative
+//     mass. `θ` — the position inside the p90/p99 per-window ranges — is
+//     bisected down from the midpoint until `E[G|G>p99] ≥ 1.5·p99`. p50, the
+//     tightest-measured, is never moved.
+// (b) The unbounded Pareto tail generates silences of hundreds of ms at the
+//     lightest α the mean allows. It is truncated at 18.2 ms, the largest
+//     inter-ack gap measured anywhere. The observer is work-conserving, so a
+//     lighter tail costs it silences, not acks.
 
-/// The floor on the tail's own mass: the top 1% of gaps must average at least
-/// this multiple of the measured p99 (α = 3 at 1.5 — the LIGHTEST tail this
-/// model will still call a tail). It binds only at the two paths where the
-/// ledger's quantile midpoints and its mean gap do not close, and it binds in
-/// the CONSERVATIVE direction: a lighter tail means fewer long silences and a
-/// SMALLER predicted over-read.
+/// The floor on the tail's own mass: the top 1 % of gaps average at least this
+/// multiple of the measured p99 (α = 3 at 1.5 — the lightest tail the model
+/// still calls a tail). It binds only where the quantile midpoints and the
+/// mean gap do not close, and in the conservative direction: a lighter tail
+/// means fewer long silences and a smaller predicted over-read.
 const ACK_TAIL_R_MIN: f64 = 1.5;
 
-/// The largest inter-ack gap the instrument reported at any cell or path
-/// (READOUT 1+2, `c8/p1` p99 = 5354–**18229** µs). The silence draw is
-/// truncated here: the model never asserts a silence the gauge never saw.
+/// The largest inter-ack gap measured at any cell or path (`c8/p1` p99 upper
+/// range, 18229 µs). The silence draw is truncated here.
 const ACK_GAP_MAX_S: f64 = 18_229e-6;
 
 /// One path's measured ack-gap law, resolved against the bench path that
@@ -1305,14 +1104,14 @@ struct AckGaps {
     q50: f64,
     q90: f64,
     q99: f64,
-    /// The Pareto tail exponent, SOLVED from the measured mean gap.
+    /// The Pareto tail exponent, solved from the measured mean gap.
     alpha: f64,
-    /// The silence threshold, SOLVED from the drain/duty identity below.
+    /// The silence threshold, solved from the drain/duty identity below.
     u_c: f64,
-    /// Where inside the ledger's p90/p99 ranges the model had to sit for the
-    /// measurement to close (0.5 = the midpoint, i.e. it closed there).
+    /// Where inside the measured p90/p99 ranges the model had to sit for the
+    /// measurement to close (0.5 = the midpoint).
     theta: f64,
-    /// The NOMINAL mean ack gap, seconds — `1/rate` — used only until the
+    /// The nominal mean ack gap, seconds — `1/rate` — used only until the
     /// path has measured its own. The live value is `AckObs::mean_gap_s`.
     mean_gap_s: f64,
 }
@@ -1377,18 +1176,17 @@ impl AckGaps {
         assert!(r > 1.0, "{}: tail ratio {r}", sh.row);
         let alpha = r / (r - 1.0);
 
-        // THE SILENCE THRESHOLD, solved not chosen. A work-conserving observer
-        // that drains at spacing `s = q50·ḡ` has, per cycle, a silence `S`,
-        // a drain `D = S·q50/(1−q50)` and `S/(1−q50)` acks — so the silence
-        // FRACTION of gaps is `φ = (1−q50)/E[S]`. For the model's own marginal
-        // to reproduce the measured one, the silences must be exactly `Q`'s
-        // upper tail, i.e. `φ = 1 − u_c` and `E[S] = ∫_{u_c}^1 Q / (1−u_c)`.
-        // The two together give ONE equation with ONE unknown:
+        // The silence threshold, solved. A work-conserving observer that
+        // drains at spacing `s = q50·ḡ` has, per cycle, a silence `S`, a drain
+        // `D = S·q50/(1−q50)` and `S/(1−q50)` acks — so the silence fraction of
+        // gaps is `φ = (1−q50)/E[S]`. For the model's marginal to reproduce the
+        // measured one, the silences are `Q`'s upper tail: `φ = 1 − u_c` and
+        // `E[S] = ∫_{u_c}^1 Q / (1−u_c)`. Together, one equation in one
+        // unknown:
         //
         //     ∫_0^{u_c} Q(u) du = q50
         //
-        // and its root is `u_c`. Nothing here is fitted: q50 is measured, Q is
-        // the measured quantile curve, and conservation supplies the rest.
+        // whose root is `u_c`.
         let mut g = AckGaps {
             q50,
             q90,
@@ -1448,8 +1246,8 @@ impl AckGaps {
     }
 
     /// One silence, seconds: a draw from `Q`'s upper tail above `u_c`, scaled
-    /// by the path's own measured mean gap, truncated at the largest gap the
-    /// instrument ever reported.
+    /// by the path's own measured mean gap, truncated at the largest gap ever
+    /// measured.
     fn silence(&self, rng: &mut Rng, mean_gap_s: f64) -> f64 {
         let u = self.u_c + (1.0 - self.u_c) * rng.f64();
         (self.q(u) * mean_gap_s).min(ACK_GAP_MAX_S)
@@ -1457,8 +1255,8 @@ impl AckGaps {
 }
 
 /// Log-spaced buckets for the realized ack-gap distribution: 1 µs → 100 ms
-/// over 5 decades. The bench MEASURES its own marginal and scores it against
-/// the ledger's (V3) rather than asserting it holds by construction.
+/// over 5 decades. The bench measures its own marginal and scores it (V3)
+/// rather than assuming it holds by construction.
 const GAP_BUCKETS: usize = 250;
 
 fn gap_bucket(g_s: f64) -> usize {
@@ -1484,7 +1282,7 @@ fn gap_quantile(hist: &[u32; GAP_BUCKETS], q: f64) -> f64 {
     f64::NAN
 }
 
-/// One path's ack-observation state under the MEASURED era.
+/// One path's ack-observation state under the measured era.
 struct AckObs {
     g: AckGaps,
     /// Delivered but not yet observed by the sender's rate sampler.
@@ -1493,19 +1291,16 @@ struct AckObs {
     next_obs: f64,
     rng: Rng,
     /// Arrival instants inside the last `REPORT_S` — the path's own measured
-    /// mean ack gap, which is the unit the ledger's shape is expressed in.
+    /// mean ack gap, the unit the measured shape is expressed in.
     ///
-    /// THE SHAPE IS DIMENSIONLESS AND MUST BE SCALED BY THE REALIZED RATE, NOT
-    /// THE NOMINAL ONE. READOUT 1+2's gaps are quoted against READOUT 3's
-    /// `rate_lr`, "the window's own long-run rate" — an OUTPUT of the wire, not
-    /// a link capacity. A bench path the scheduler under-fills (c8's slow leg
-    /// runs at ~60% of its link) has a correspondingly wider mean gap, and
-    /// scaling the shape by `1/link_rate` there quietly asserts a denser ack
-    /// stream than the path actually produced. The window is `REPORT_S` = 2 s
-    /// because that is the gauge's own report cadence — the interval every
-    /// measured number in the ledger is a statistic over.
+    /// The shape is dimensionless and must be scaled by the realized rate,
+    /// not the nominal one: the measured gaps are quoted against the window's
+    /// own long-run delivered rate, an output of the wire. A path the
+    /// scheduler under-fills (c8's slow leg runs at ~60 % of its link) has a
+    /// wider mean gap, and scaling by `1/link_rate` would assert a denser ack
+    /// stream than it produced. The window is the gauge's 2 s report cadence.
     arrivals: std::collections::VecDeque<f64>,
-    // ── gauges: everything the ledger measured and this model PREDICTS ──
+    // ── gauges: everything measured on the wire that this model predicts ──
     n_obs: u64,
     n_accept: u64,
     n_reject: u64,
@@ -1563,7 +1358,7 @@ impl AckObs {
     }
 
     /// Consume the observation at `t` and schedule the next: another drain
-    /// step if work remains, a SILENCE if the sender has caught up.
+    /// step if work remains, a silence if the sender has caught up.
     fn take(&mut self, t: f64) {
         self.backlog -= 1;
         let mg = self.mean_gap_s();
@@ -1571,11 +1366,11 @@ impl AckObs {
             + if self.backlog == 0 {
                 self.g.silence(&mut self.rng, mg)
             } else {
-                // The drain spacing IS the measured p50 gap.
+                // The drain spacing is the measured p50 gap.
                 self.g.q50 * mg
             };
-        // Gauges. The accept/reject mirror is `scheduler/mod.rs:1178`'s rule
-        // (`elapsed < 0.001` ⇒ rejected) transcribed for INSTRUMENTATION only;
+        // Gauges. The accept/reject mirror is the scheduler's rule
+        // (`elapsed < 0.001` ⇒ rejected) transcribed for instrumentation only;
         // the real floor still runs inside `CopaState::record_delivery`, which
         // returns nothing that distinguishes the two.
         if self.n_obs > 0 {
@@ -1638,7 +1433,7 @@ struct Run {
     horizon_s: f64,
     mean_cap: f64,
     /// Σ over refresh ticks and paths of `copa_bdp_anchor() / (rate·RTprop)`
-    /// — the REALIZED anchor over-read against the cell's own ground truth.
+    /// — the realized anchor over-read against the cell's own ground truth.
     anchor_ratio_sum: f64,
     anchor_ratio_n: u64,
     /// Σ over refresh ticks and paths of `cwnd` (the anchor floor's visible
@@ -1648,83 +1443,70 @@ struct Run {
     /// The accounting axis's per-channel ledger (all zero but `src`/`charges`/
     /// `releases`/`tokens` under `Acct::Off`).
     led: Ledger,
-    /// PER PATH: Σ and n of `copa_bdp_anchor()/(rate·RTprop)` over refresh
-    /// ticks. READOUT 3 is a per-PATH table, so V1 is scored per path — a
-    /// cell mean would hide the c8 legs, which the wire reports separately.
-    /// (Sized `MAX_PATHS`; every WIRE cell has ≤ 2 paths, `c7x4` has 4.)
+    /// Per path: Σ and n of `copa_bdp_anchor()/(rate·RTprop)` over refresh
+    /// ticks. V1 is scored per path; a cell mean would hide the c8 legs.
     xa_sum: [f64; MAX_PATHS],
     xa_n: [u64; MAX_PATHS],
-    /// PER PATH: what the measured ack observer actually did. All zero on
-    /// every era but `Feed::Measured`.
+    /// Per path: what the measured ack observer did. All zero on every era
+    /// but `Feed::Measured`.
     obs: [ObsStat; MAX_PATHS],
-    /// PER PATH: Σ/n of `btlbw_sym_per_s()` and of `min_rtt()` over refresh
+    /// Per path: Σ/n of `btlbw_sym_per_s()` and of `min_rtt()` over refresh
     /// ticks, plus the path's own delivered count.
     ///
-    /// THE LEDGER'S `xanchor` IS NOT THIS BENCH'S `x`, and the difference is
-    /// load-bearing. READOUT 3 defines it as `copa_bdp_anchor()/(rate_lr·
-    /// RTprop)` where RTprop is the ANCHOR'S OWN `min_rtt` — the same
-    /// `min_rtt` the anchor multiplied by — so the RTT cancels and `xanchor`
-    /// is a pure RATE over-read, `max_bw/rate_lr`. The bench's pre-existing
-    /// `overread()` divides by the CONFIGURED `rate·rtprop` instead, so it
-    /// also carries whatever standing queue the link built. Both are kept:
-    /// `overread()` unchanged (three ledger sections are scored on it) and
-    /// `xanchor_lr()` as the ledger's own quantity.
+    /// The measured `xanchor` is not this bench's `x`. It is
+    /// `copa_bdp_anchor()/(rate_lr·RTprop)` with RTprop the anchor's own
+    /// `min_rtt`, so the RTT cancels and `xanchor` is a pure rate over-read,
+    /// `max_bw/rate_lr`. `overread()` divides by the configured
+    /// `rate·rtprop` instead, so it also carries whatever standing queue the
+    /// link built. Both are kept: `overread()` and `xanchor_lr()`.
     bw_sum: [f64; MAX_PATHS],
     bw_n: [u64; MAX_PATHS],
     mrtt_sum: [f64; MAX_PATHS],
     delivered_p: [u64; MAX_PATHS],
-    /// PER PATH: the MEDIAN of `max_bw / rate_lr` over the dyn-cap refresh
-    /// ticks, where `rate_lr` is the path's delivered rate over the PRECEDING
-    /// `REPORT_S` — READOUT 3's statistic, computed the way READOUT 3 computes
-    /// it ("Medians over the 12 windows"). A whole-run divisor is not the same
-    /// number at a duty-cycled path: c8's slow leg runs at its link rate while
-    /// it runs and idles between, so its 2 s windows read ~1.6× the run mean.
+    /// Per path: the median of `max_bw / rate_lr` over the dyn-cap refresh
+    /// ticks, `rate_lr` being the path's delivered rate over the preceding
+    /// `REPORT_S` — the wire statistic, computed as the wire computes it. A
+    /// whole-run divisor differs at a duty-cycled path: c8's slow leg runs at
+    /// its link rate while it runs and idles between, so its 2 s windows read
+    /// ~1.6× the run mean.
     xlr_med: [f64; MAX_PATHS],
-    /// THE COUPLING AXIS's produced quantities (zero under `Store::Unacked`):
-    /// the mean frontier SPAN `last_sent − cum_ack`, the mean released-mark
+    /// The coupling axis's produced quantities (zero under `Store::Unacked`):
+    /// the mean frontier span `last_sent − cum_ack`, the mean released-mark
     /// count the SACK law subtracts from it, and the fraction of ticks whose
-    /// receiver frontier sat behind a hole. All three are OUTPUTS — nothing
-    /// about them is configured.
+    /// receiver frontier sat behind a hole. All three are outputs.
     span_mean: f64,
     released_mean: f64,
     stall_frac: f64,
-    /// AT THE REFRESH TICK, the three quantities the `available()` predicate is
-    /// made of, so "which produced quantity diverges first" is a measurement
-    /// and not an argument: the flow-control operand the gate actually read
-    /// (`store_len`), the UNACKED count beside it (what the published bench
-    /// used to read), and Σ`in_flight` / Σ`cwnd` over live paths.
+    /// At the refresh tick, the quantities the `available()` predicate is
+    /// made of: the flow-control operand the gate read (`store_len`), the
+    /// unacked count beside it, and Σ`in_flight` / Σ`cwnd` over live paths.
     store_len_mean: f64,
     unacked_mean: f64,
     infl_mean: f64,
     cwnd_live_mean: f64,
-    /// PER PATH: Σ of `srtt()` over the same refresh ticks `mrtt_sum` is taken
-    /// on, so the bench produces the WIRE'S OWN queue statistic rather than a
-    /// bench-only one. The L1 ledgers' `q_p50` is `rtt − rtp` off the per-path
-    /// `[DIAG]` field `rtt={}/wrtt={}/rtp{}ms` (`net/diag.rs:617`, parsed at
-    /// `tools/l1/flip_parse.py:183,206`) — i.e. SRTT minus Copa's windowed-min
-    /// RTT, both on the same app-echo clock. `srtt_sum/bw_n − mrtt_sum/bw_n` is
-    /// that quantity, in the same units, on the same accessors.
+    /// Per path: Σ of `srtt()` over the same refresh ticks as `mrtt_sum`, so
+    /// the bench produces the wire's own queue statistic `q_p50 = rtt − rtp`
+    /// (SRTT minus Copa's windowed-min RTT, same app-echo clock):
+    /// `srtt_sum/bw_n − mrtt_sum/bw_n`.
     srtt_sum: [f64; MAX_PATHS],
-    /// The fraction of ADMISSION opportunities at which the store-cap gate was
-    /// already closed (`store_len >= cap`) — the bench's analogue of the
-    /// engine's `paused` wait-arm share (`net/mod.rs:5663`, reported as
-    /// `wait[... paused=N% ...]`). It answers "is the store cap the brake?"
-    /// directly, and it is the quantity the wire reads 0.0% on at c7.
+    /// The fraction of admission opportunities at which the store-cap gate
+    /// was already closed (`store_len >= cap`) — the bench's analogue of the
+    /// engine's `paused` wait-arm share. It answers "is the store cap the
+    /// brake?" directly; the wire reads 0.0 % at c7.
     gate_closed: u64,
     gate_ticks: u64,
-    /// THE COMPOSED ARM'S LATE-STAGE BRAKE (`Arm::Composed` only; 0/0 at every
+    /// The composed arm's late-stage brake (`Arm::Composed` only; 0/0 at every
     /// other arm): admission opportunities at which `cwnd_full` was already
-    /// closed — every LIVE path at or above its own cwnd. This is the
-    /// engagement gauge the DIVERGED lesson requires: an arm bit-identical to
-    /// control must read as a NULL RESULT (`brake_closed_pct` = 0 with the
-    /// brake armed) and never as a null effect (the brake was never armed).
+    /// closed. The engagement gauge: an arm bit-identical to control must read
+    /// as a null result (`brake_closed_pct` = 0 with the brake armed), never
+    /// as a null effect (the brake never armed).
     brake_closed: u64,
     brake_ticks: u64,
-    /// THE SOURCE AXIS's produced quantities (all zero under `Src::Bulk`):
-    /// the inner flow's mean congestion window in segments, its mean DELIVERED
-    /// latency in seconds (admission → cumulative frontier, the user-visible
-    /// cost), its RTO count, and the split of admission opportunities between
-    /// "the inner window was the binder" and "the store cap was".
+    /// The source axis's produced quantities (all zero under `Src::Bulk`): the
+    /// inner flow's mean congestion window in segments, its mean delivered
+    /// latency in seconds (admission → cumulative frontier), its RTO count,
+    /// and the split of admission opportunities between "the inner window was
+    /// the binder" and "the store cap was".
     src_w_mean: f64,
     src_rtt_mean: f64,
     src_rto: u64,
@@ -1751,39 +1533,37 @@ impl Run {
     fn overread(&self) -> f64 {
         self.anchor_ratio_sum / self.anchor_ratio_n.max(1) as f64
     }
-    /// The realized over-read on ONE path, on the BENCH's definition
+    /// The realized over-read on one path, on the bench's definition
     /// (`anchor / (configured rate·RTprop)`).
     fn overread_path(&self, pid: usize) -> f64 {
         self.xa_sum[pid] / self.xa_n[pid].max(1) as f64
     }
-    /// The realized `xanchor` on ONE path on THE LEDGER'S definition
-    /// (READOUT 3): `max_bw / rate_lr`, the path's windowed-max rate estimate
-    /// over its own realized long-run delivered rate. The RTT divides out, as
-    /// it does on the wire.
+    /// The realized `xanchor` on one path on the wire's definition:
+    /// `max_bw / rate_lr`, the windowed-max rate estimate over the path's own
+    /// realized long-run delivered rate. The RTT divides out.
     fn xanchor_lr(&self, pid: usize) -> f64 {
         self.xlr_med[pid]
     }
-    /// The same quantity on a WHOLE-RUN divisor, kept beside it so the
-    /// duty-cycle effect is visible rather than chosen.
+    /// The same quantity on a whole-run divisor, kept beside it so the
+    /// duty-cycle effect is visible.
     fn xanchor_runmean(&self, pid: usize) -> f64 {
         let bw = self.bw_sum[pid] / self.bw_n[pid].max(1) as f64;
         let lr = self.delivered_p[pid] as f64 / self.horizon_s;
         if lr > 0.0 { bw / lr } else { f64::NAN }
     }
     /// How much standing queue the bench's link built: mean `min_rtt` over the
-    /// path's configured RTprop. On the wire this reads ≈1 (READOUT 3's RTprop
-    /// column is the cell's own RTT); anything else is a bench artifact and is
-    /// reported rather than absorbed.
+    /// path's configured RTprop. On the wire this reads ≈1; anything else is
+    /// a bench artifact and is reported rather than absorbed.
     fn rtt_inflation(&self, pid: usize, rtprop: f64) -> f64 {
         self.mrtt_sum[pid] / self.bw_n[pid].max(1) as f64 / rtprop
     }
-    /// THE WIRE'S OWN QUEUE STATISTIC, produced by the bench: `srtt − min_rtt`
-    /// in MILLISECONDS, per path — the `q_p50` column every L1 ledger carries.
+    /// The wire's queue statistic, produced by the bench: `srtt − min_rtt` in
+    /// milliseconds, per path (the L1 `q_p50` column).
     fn queue_ms(&self, pid: usize) -> f64 {
         let n = self.bw_n[pid].max(1) as f64;
         (self.srtt_sum[pid] - self.mrtt_sum[pid]) / n * 1e3
     }
-    /// `min_rtt` in MILLISECONDS, per path — the ledgers' `rtp_med` column.
+    /// `min_rtt` in milliseconds, per path (the L1 `rtp_med` column).
     fn min_rtt_ms(&self, pid: usize) -> f64 {
         self.mrtt_sum[pid] / self.bw_n[pid].max(1) as f64 * 1e3
     }
@@ -1802,52 +1582,43 @@ impl Run {
         self.cwnd_sum / self.cwnd_n.max(1) as f64
     }
     /// The bench's `wait_tun` analogue: the share of admission opportunities at
-    /// which the OFFERED LOAD was the binder (inner window full, store cap
-    /// not). Zero by construction under `Src::Bulk`, which is the point.
+    /// which the offered load was the binder (inner window full, store cap
+    /// not). Zero by construction under `Src::Bulk`.
     fn src_bound_pct(&self) -> f64 {
         self.src_bound as f64 / self.src_opps.max(1) as f64 * 100.0
     }
     /// The bench's `wait_paused` analogue under the source axis: the share at
-    /// which the STORE CAP was the binder.
+    /// which the store cap was the binder.
     fn cap_bound_pct(&self) -> f64 {
         self.cap_bound as f64 / self.src_opps.max(1) as f64 * 100.0
     }
-    /// The inner flow's delivered latency in MILLISECONDS — the user-visible
-    /// cost of whatever the tunnel does, and the quantity a latency budget on
-    /// the pool would exist to protect.
+    /// The inner flow's delivered latency in milliseconds — the user-visible
+    /// cost of whatever the tunnel does.
     fn src_rtt_ms(&self) -> f64 {
         self.src_rtt_mean * 1e3
     }
 }
 
-/// The REAL reliable-source placement objective (`Scheduler::place_costs` via
-/// `place_probs_with_temperature`), taken at T → 0 — the strict-best-path limit
-/// the scheduler exposes for exactly this purpose. Deterministic (the shipped
-/// `place_symbol` draws a uniform), same candidate set (`p.active`, no
-/// availability filter), same cost.
+/// The real reliable-source placement objective (`Scheduler::place_costs` via
+/// `place_probs_with_temperature`) at T → 0, the strict-best-path limit.
+/// Deterministic (the shipped `place_symbol` draws a uniform), same candidate
+/// set (`p.active`, no availability filter), same cost.
 fn place_min_cost(sched: &Scheduler) -> u32 {
     place_min_cost_of(sched, false, &[])
 }
 
-/// As `place_min_cost`, for the REPAIR objective: `is_repair = true` with the
-/// covered-path multiset, which is what both engine repair sites use
-/// (`emit_source.rs:907` and `net/mod.rs:6428`, each
-/// `sched.place_symbol(true, &covered)` over `window_source_paths`). The
-/// ρ_fate diversity term is what pushes a correction AWAY from the paths that
-/// carried the window it covers — the reason recovery traffic concentrates on
-/// the leg that is not carrying the source.
+/// As `place_min_cost`, for the repair objective: `is_repair = true` with the
+/// covered-path multiset, as both engine repair sites call
+/// `sched.place_symbol(true, &covered)`. The ρ_fate diversity term pushes a
+/// correction away from the paths that carried the window it covers, which
+/// is why recovery traffic concentrates on the leg not carrying the source.
 fn place_min_cost_of(sched: &Scheduler, is_repair: bool, covered: &[u32]) -> u32 {
     let mut cands = sched.place_probs_with_temperature(is_repair, covered, f64::MIN_POSITIVE);
-    // DETERMINISM, and it is NOT free: `Scheduler` holds its paths in a
-    // `HashMap<PathId, PathState>`, whose iteration order is randomised per
-    // PROCESS. At an ASYMMETRIC cell the placement objective separates the
-    // paths and the order cannot matter; at the SYMMETRIC cell (c7, and the
-    // d = 1.0 point of the diagonal sweep) the two costs are bit-equal and the
-    // winner was whatever the map yielded last — so c7 was the one cell whose
-    // numbers moved run to run, which is exactly why goal-gate "c8 SF
-    // Mechanism" carries 9.0% for c7 in FINDING 3 and 9.3% for the SAME
-    // geometry in FINDING 4. Sorting by path id first makes the tie-break
-    // lowest-id-wins and the whole bench reproducible.
+        // Determinism: `Scheduler` holds its paths in a `HashMap`, whose
+        // iteration order is randomised per process. At a symmetric cell the
+        // two costs are bit-equal and the winner would be whatever the map
+        // yielded last. Sorting by path id makes the tie-break lowest-id-wins
+        // and the bench reproducible.
     cands.sort_by_key(|(pid, _)| *pid);
     let mut best: Option<(u32, f64)> = None;
     for (pid, w) in cands {
@@ -1858,37 +1629,33 @@ fn place_min_cost_of(sched: &Scheduler, is_repair: bool, covered: &[u32]) -> u32
     best.map(|(pid, _)| pid).unwrap_or(0)
 }
 
-/// Close the loop at the SHIPPED honest-anchor era (bit-identical to the
-/// bench's original behaviour — `Feed::Honest` is a per-symbol `on_ack(1)`).
+/// Close the loop at the shipped honest-anchor era (`Feed::Honest`, a
+/// per-symbol `on_ack(1)`).
 fn simulate(paths: &[Spec], arm: Arm, horizon_s: f64) -> Run {
     simulate_era(paths, arm, Feed::Honest, horizon_s)
 }
 
 /// Close the loop. `paths` is the cell geometry; `arm` selects the path set /
-/// pooled ceiling; `feed` selects the ANCHOR ERA (what the legacy ack-interval
-/// rate sampler sees); `horizon_s` is simulated seconds.
+/// pooled ceiling; `feed` selects the anchor era (what the ack-interval rate
+/// sampler sees); `horizon_s` is simulated seconds.
 fn simulate_era(paths: &[Spec], arm: Arm, feed: Feed, horizon_s: f64) -> Run {
     simulate_seeded(paths, arm, feed, horizon_s, 0)
 }
 
-/// As `simulate_era`, with the GE link seeds SALTED. FINDING 4 established
-/// that this loop is BISTABLE, so a single run is a draw from a mode, not a
-/// measurement of one — every claim below is scored over a seed ensemble and
-/// reported as a MODE RATE, which is what that finding asked a successor to do.
+/// As `simulate_era`, with the GE link seeds salted. The loop is bistable, so
+/// a single run is a draw from a mode, not a measurement of one: claims are
+/// scored over a seed ensemble and reported as a mode rate.
 fn simulate_seeded(paths: &[Spec], arm: Arm, feed: Feed, horizon_s: f64, salt: u64) -> Run {
     simulate_acct(paths, arm, feed, horizon_s, salt, Acct::Off)
 }
 
 /// The engine's `active_paths().max_by(loss_rate)` pick — the estimator the
-/// taper block reads for r\* (`emit_source.rs:613-620`) — with the SAME
-/// determinism fix `place_min_cost` needed and for the same reason:
-/// `active_paths()` returns `HashMap` order, so `max_by`'s last-wins tie-break
-/// is randomised per PROCESS. Losses tie exactly whenever both estimators are
-/// still at 0.0 (every cold start) and at the symmetric cell in general, so
-/// without the sort the bench's r\* — hence its whole repair channel — is not
-/// reproducible. Pinned by `worst_loss_path_tie_is_broken_deterministically`.
-/// The ENGINE has the same tie and does not break it; that divergence is
-/// recorded in the block, not silently modelled away.
+/// taper block reads for r\* — with the same determinism fix as
+/// `place_min_cost`: `active_paths()` returns `HashMap` order, so `max_by`'s
+/// last-wins tie-break is randomised per process, and losses tie at every cold
+/// start and at the symmetric cell. Pinned by
+/// `worst_loss_path_tie_is_broken_deterministically`. The engine has the same
+/// tie and does not break it.
 fn worst_loss_path(sched: &Scheduler) -> Option<u32> {
     let mut ids = sched.active_paths();
     ids.sort_unstable();
@@ -1913,7 +1680,7 @@ fn chg(sched: &mut Scheduler, pid: u32, led: &mut Ledger) {
 }
 
 /// Release one symbol from `pid`'s in-flight account, recording whether the
-/// saturating subtraction threw it away (the ledger's un-recoverable loss).
+/// saturating subtraction threw it away.
 fn rel(sched: &mut Scheduler, pid: u32, led: &mut Ledger) {
     if let Some(p) = sched.path_mut(pid) {
         if p.in_flight == 0 {
@@ -1924,7 +1691,7 @@ fn rel(sched: &mut Scheduler, pid: u32, led: &mut Ledger) {
     led.releases += 1;
 }
 
-/// As `simulate_seeded`, with the IN-FLIGHT ACCOUNTING axis. `Acct::Off` is
+/// As `simulate_seeded`, with the in-flight accounting axis. `Acct::Off` is
 /// bit-identical to `simulate_seeded` — every branch the axis adds is behind
 /// `acct.on()`, and the link's RNG consumption is unchanged.
 fn simulate_acct(
@@ -1938,7 +1705,7 @@ fn simulate_acct(
     simulate_full(paths, arm, feed, horizon_s, salt, acct, Store::Unacked)
 }
 
-/// As `simulate_acct`, with the COUPLING axis. `Store::Unacked` is
+/// As `simulate_acct`, with the coupling axis. `Store::Unacked` is
 /// bit-identical to `simulate_acct` — every branch the axis adds is behind
 /// `store_mode == Store::Span`, and it consumes no RNG.
 #[allow(clippy::too_many_arguments)]
@@ -1954,7 +1721,7 @@ fn simulate_full(
     simulate_src(paths, arm, feed, horizon_s, salt, acct, store_mode, Src::Bulk)
 }
 
-/// As `simulate_full`, with the SOURCE axis. `Src::Bulk` is bit-identical to
+/// As `simulate_full`, with the source axis. `Src::Bulk` is bit-identical to
 /// `simulate_full` — every branch the axis adds is behind `src == Src::Reno`,
 /// and it consumes no RNG (the inner flow is deterministic given the tunnel).
 #[allow(clippy::too_many_arguments)]
@@ -1971,19 +1738,15 @@ fn simulate_src(
     simulate_place(paths, arm, feed, horizon_s, salt, acct, store_mode, src, Place::Shipped)
 }
 
-/// **THE PLACEMENT AXIS** — what an UNMEASURED leg's SRTT is worth in
+/// The placement axis — what an unmeasured leg's SRTT is worth in
 /// `Scheduler::place_costs` (`RWM_COLD_PLACE`; see
 /// `scheduler::cold_place_active`). `Place::Shipped` is bit-identical to
-/// `simulate_src`: the scheduler is pinned to the shipped
-/// `DEFAULT_SRTT`-class price rather than left to read the process env, so
-/// no arm of this bench can be perturbed by the environment it runs in.
+/// `simulate_src`: the scheduler is pinned to the shipped price rather than
+/// left to read the process env, so no arm can be perturbed by the
+/// environment it runs in.
 ///
-/// It is an AXIS rather than a member of `Arm` on purpose. `Arm` selects a
-/// STORE-CAP law; this selects a PLACEMENT price, in a different layer, and
-/// the two compose — `the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold`
-/// scores the placement axis at `Arm::Legacy` while
-/// `the_composed_law_does_not_starve_a_leg_of_the_quad` keeps scoring the cap
-/// axis at `Place::Shipped`.
+/// An axis rather than a member of `Arm`: `Arm` selects a store-cap law, this
+/// selects a placement price in a different layer, and the two compose.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Place {
     /// The shipped price: `PathState::srtt()` on a leg with no sample, i.e.
@@ -2005,9 +1768,9 @@ fn simulate_place(
     src: Src,
     place: Place,
 ) -> Run {
-    // The inner flow's ack is the SENDER'S OWN cumulative frontier, which only
-    // the coupling axis maintains. Asking for a closed-loop source without it
-    // would silently run an open loop, so it is refused rather than degraded.
+    // The inner flow's ack is the sender's own cumulative frontier, which only
+    // the coupling axis maintains. A closed-loop source without it would
+    // silently run an open loop, so it is refused.
     assert!(
         src == Src::Bulk || store_mode == Store::Span,
         "Src::Reno needs Store::Span: the inner flow's ack IS the sender's \
@@ -2016,9 +1779,8 @@ fn simulate_place(
     let tick = 0.000_25_f64; // 250 µs — 20 ticks per dyn-cap refresh
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
-    // PIN the placement axis explicitly — never inherit the process env, or
-    // an `RWM_COLD_PLACE=1` in the shell silently moves every arm of this
-    // bench at once (the confound the gate-forwarding audit exists to stop).
+    // Pin the placement axis explicitly — never inherit the process env, or
+    // an `RWM_COLD_PLACE=1` in the shell silently moves every arm at once.
     sched.set_cold_place(place == Place::ColdMeasured);
     assert_eq!(
         sched.cold_place(),
@@ -2070,14 +1832,14 @@ fn simulate_place(
     let mut brake_ticks = 0u64;
     let mut gate_ticks = 0u64;
     // Delivery instants inside the trailing `REPORT_S`, per path — the
-    // denominator of READOUT 3's `xanchor`, measured over the gauge's own
-    // report window rather than over the whole run.
+    // denominator of the wire's `xanchor`, over the gauge's own report window
+    // rather than the whole run.
     let mut deliv_win: Vec<std::collections::VecDeque<f64>> =
         (0..np).map(|_| std::collections::VecDeque::new()).collect();
     let mut xlr_s: [Vec<f64>; MAX_PATHS] = std::array::from_fn(|_| Vec::new());
 
     // `Feed::Overread` — per-path fractional carry, so a non-integer scale is
-    // exact in the LONG RUN instead of rounded per call.
+    // exact in the long run instead of rounded per call.
     let mut scale_carry = vec![0.0_f64; np];
     // `Feed::Cumulative` — the receiver's per-seq delivery flags, the carrying
     // path of each seq, the cumulative frontier, and the feedback clock.
@@ -2087,11 +1849,10 @@ fn simulate_place(
     let mut frontier: u64 = 0;
     let mut next_feedback = 0.0_f64;
 
-    // ── THE COUPLING AXIS's state (`Store::Span` only) ──────────────────
-    // RECEIVER side: `received_seqs` / `highest_delivered_seq` /
-    // `highest_seen_seq` and the gap-report rate limit, all
-    // connection-wide locals of the single receiver task
-    // (`receiver.rs:132`, `:201`, `:300`, `:304-305`).
+    // ── The coupling axis's state (`Store::Span` only) ──────────────────
+    // Receiver side: `received_seqs` / `highest_delivered_seq` /
+    // `highest_seen_seq` and the gap-report rate limit, all connection-wide
+    // locals of the single receiver task.
     let mut recv_seen: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     let mut recv_frontier: u64 = 0; // = highest_delivered_seq + 1
     let mut recv_highest: u64 = 0;
@@ -2099,14 +1860,13 @@ fn simulate_place(
     let mut last_gap_ack_s: f64 = -GAP_ACK_MIN_S; // `Instant::now() - GAP_ACK_MIN_INTERVAL`
     let mut last_advertised_ack: u64 = 0;
     let mut reports: Vec<Report> = Vec::new();
-    // SENDER side: `window_ack_seq` (`net/mod.rs:1623`, `fetch_max` at
-    // `control_msg.rs:566`) and the `sack_released` mark set
-    // (`net/mod.rs:3974-3983`), the latter held as the newest SNAPSHOT it
-    // has received — identical content by (5), and O(#ranges) to count.
+    // Sender side: `window_ack_seq` (folded with `fetch_max`) and the
+    // `sack_released` mark set, held as the newest snapshot received —
+    // identical content by (5), and O(#ranges) to count.
     let mut snd_frontier: u64 = 0;
     let mut snd_marks: Vec<(u64, u64)> = Vec::new();
     let mut snd_marks_built: f64 = -1.0;
-    // ── THE SOURCE AXIS's state (`Src::Reno` only) ──────────────────────
+    // ── The source axis's state (`Src::Reno` only) ──────────────────────
     let mut reno = RenoSource::new();
     // Gauges: the span the model produces, and what the marks release.
     let mut span_sum = 0.0_f64;
@@ -2121,10 +1881,10 @@ fn simulate_place(
     let mut dec_n = 0u64;
 
     // ── the accounting axis's state ─────────────────────────────────────
-    // The SHIPPED FEC rate controller, constructed at the resolved defaults
-    // (`net/mod.rs:1570`). r* is therefore whatever the shipped law returns on
-    // the bench's OWN measured loss/RTT/throughput — no repair rate is injected
-    // anywhere. `set_inner_feedback(0.0)` is `config::resolve`'s default.
+    // The shipped FEC rate controller at the resolved defaults: r* is whatever
+    // the shipped law returns on the bench's own measured loss/RTT/throughput
+    // — no repair rate is injected. `set_inner_feedback(0.0)` is
+    // `config::resolve`'s default.
     let mut ctrl = FecRateController::new_with_toggles(
         TAIL_LOSS,
         MAX_OVERHEAD,
@@ -2135,30 +1895,29 @@ fn simulate_place(
     );
     ctrl.set_inner_feedback(0.0);
     // The three-term candidate's K tracker and δ-budget, both the engine's:
-    // `percap_k` is the SAME `EchoRatioMin` map every honest cap uses
-    // (`net/mod.rs:4551`), and `b` is `delta_budget_b(hint)` at the bench's
-    // own hint (`sender_policy.rs:654`).
+    // `percap_k` is the same `EchoRatioMin` map every honest cap uses, and
+    // `b` is `delta_budget_b(hint)` at the bench's hint.
     let mut percap_k: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
     let tt_b = delta_budget_b(ProtocolHint::Auto);
     let mut led = Ledger::default();
     let mut wire: Vec<WireSym> = Vec::new();
-    // `st.repair_debt` (`emit_source.rs:787`) and the taper cache's r*.
+    // `st.repair_debt` and the taper cache's r*.
     let mut repair_debt = 0.0_f64;
     let mut repair_rate = 0.0_f64;
     // Per-path ack counters, drained each tick into `record_batch` — the
-    // engine's `expected_count` / `received_count` (`receiver.rs:1754`).
+    // engine's `expected_count` / `received_count`.
     let mut ack_expected = vec![0u32; np];
     let mut ack_received = vec![0u32; np];
-    // The report task's throughput feed (`net/tasks/report.rs:84`).
+    // The report task's throughput feed.
     let mut sent_since_report = vec![0u64; np];
     let mut next_report = REPORT_S;
 
-    // ── THE MEASURED ACK ERA's per-path observer ─────────────────────────
-    // One per path, its law resolved against THAT path's own rate (the
-    // measured shape is dimensionless), and its RNG kept strictly apart from
-    // the links' so `Feed::Measured` cannot perturb the GE realizations that
-    // every other era runs on.
+    // ── The measured ack era's per-path observer ─────────────────────────
+    // One per path, its law resolved against that path's own rate (the
+    // measured shape is dimensionless), and its RNG kept apart from the
+    // links' so `Feed::Measured` cannot perturb the GE realizations every
+    // other era runs on.
     let mut obs: Vec<AckObs> = Vec::new();
     if let Feed::Measured(shapes) = feed {
         assert_eq!(
@@ -2178,7 +1937,7 @@ fn simulate_place(
         }
     }
     /// The sub-tick clock cursor, in whole nanoseconds so the MockClock
-    /// advances monotonically and lands EXACTLY on each tick boundary — the
+    /// advances monotonically and lands exactly on each tick boundary — the
     /// non-measured eras advance once per tick and must stay bit-identical.
     fn advance_to(clock: &MockClock, cursor: &mut u128, t_s: f64) {
         let target = (t_s * 1e9).round() as u128;
@@ -2191,12 +1950,9 @@ fn simulate_place(
 
     let steps = (horizon_s / tick).round() as u64;
     // The repair objective's `covered` multiset and the path it selects,
-    // computed at most ONCE PER TICK and reused by every correction emitted in
-    // that tick. This is the engine's own cache granularity, not a new idea:
-    // `RWM_EMIT_BATCH` (`emit_source.rs:597-609`) refreshes the derived taper
-    // math at BURST granularity rather than per symbol. A 250 µs tick is finer
-    // than the engine's burst. Recorded in the block's "what this still cannot
-    // see" list all the same.
+    // computed at most once per tick and reused by every correction emitted in
+    // that tick — the engine refreshes the derived taper math at burst
+    // granularity (`RWM_EMIT_BATCH`), and a 250 µs tick is finer than a burst.
     let mut covered_cache: Option<Vec<u32>>;
     let mut repair_path_cache: Option<u32>;
     for step in 1..=steps {
@@ -2205,18 +1961,15 @@ fn simulate_place(
         repair_path_cache = None;
 
         if let Feed::Measured(_) = feed {
-            // ── THE MEASURED ACK STREAM, SUB-TICK ────────────────────────
-            // The whole point of the era: `record_delivery` must be called at
-            // each ack's OWN arrival instant, with `count = 1`, and the
-            // SHIPPED 1 ms `elapsed` floor (`scheduler/mod.rs:1178`) must be
-            // the thing that decides which of them becomes a rate sample.
-            // Feeding the sampler on the 250 µs tick — as every other era
-            // does — quantizes `elapsed` to a multiple of the tick and
-            // bypasses exactly the mechanism the wire measured.
+            // ── The measured ack stream, sub-tick ────────────────────────
+            // `record_delivery` is called at each ack's own arrival instant
+            // with `count = 1`, and the shipped 1 ms `elapsed` floor decides
+            // which becomes a rate sample. Feeding the sampler on the 250 µs
+            // tick would quantize `elapsed` and bypass that mechanism.
             //
             // Deliveries enter each path's observer at their link arrival
-            // time; observations come back out at the measured cadence, in
-            // TIME ORDER across paths, with the clock walked to each one.
+            // time; observations come out at the measured cadence, in time
+            // order across paths, with the clock walked to each one.
             let t_prev = (step - 1) as f64 * tick;
             let mut arrivals: Vec<(u32, f64)> = store
                 .iter()
@@ -2244,8 +1997,7 @@ fn simulate_place(
                     advance_to(&clock, &mut clock_ns, tob);
                     obs[pid as usize].take(tob);
                     if let Some(p) = sched.path_mut(pid) {
-                        // drecv = 1: "p50 = p90 = 1 in all 60 report windows,
-                        // 857 400 acks" — never a batch.
+                        // drecv = 1: the wire never batches acks.
                         p.on_ack(1);
                     }
                 } else if let Some((pid, tar)) = next_ar {
@@ -2260,14 +2012,13 @@ fn simulate_place(
             clock.advance(Duration::from_secs_f64(tick));
         }
 
-        // ── THE COUPLING AXIS: the receiver's frontier and its SACK clock ──
+        // ── The coupling axis: the receiver's frontier and its SACK clock ──
         if store_mode == Store::Span {
             let t_prev = (step - 1) as f64 * tick;
-            // (a) SENDER: apply every feedback message that has landed.
-            // `window_ack_seq.fetch_max` (`control_msg.rs:566`) and the
-            // mark set's snapshot union (5). The mark set prunes on the
-            // cumulative twin (`net/mod.rs:6594-6600`), which is what
-            // `released_count`'s `frontier` clamp performs.
+            // (a) Sender: apply every feedback message that has landed —
+            //     `window_ack_seq.fetch_max` and the snapshot union (5). The
+            //     mark set prunes on the cumulative twin, which is
+            //     `released_count`'s `frontier` clamp.
             let mut i = 0;
             while i < reports.len() {
                 if reports[i].arrive_at <= now {
@@ -2283,23 +2034,22 @@ fn simulate_place(
                     i += 1;
                 }
             }
-            // (a2) THE INNER FLOW's ack clock. The sender's cumulative
-            // frontier is the ONLY thing that retires an inner segment, and
-            // the RTT it measures is the tunnel's whole delivered latency —
-            // RTprop, the standing queue, and any recovery stall. Both calls
-            // are no-ops under `Src::Bulk` because nothing was ever admitted
-            // into `reno.outstanding`.
+            // (a2) The inner flow's ack clock. The sender's cumulative
+            //      frontier is the only thing that retires an inner segment,
+            //      and the RTT it measures is the tunnel's whole delivered
+            //      latency — RTprop, standing queue and any recovery stall.
+            //      No-ops under `Src::Bulk` (nothing was ever admitted into
+            //      `reno.outstanding`).
             if src == Src::Reno {
                 reno.on_frontier(snd_frontier, now);
                 reno.check_rto(now);
             }
-            // (b) RECEIVER: in-order delivery, in TIME ORDER, and the
-            // gap-report clock evaluated per arrival — the engine
-            // evaluates `window_ack_emission` once per received data
-            // message (`receiver.rs:1517`, inside the data arm).
-            // A symbol reaches the RECEIVER half a round trip before its
-            // ack reaches the sender; the ack flies back on the arm it
-            // arrived on, so the return leg is that path's own RTprop/2.
+            // (b) Receiver: in-order delivery, in time order, with the
+            //     gap-report clock evaluated per arrival (the engine evaluates
+            //     `window_ack_emission` once per received data message). A
+            //     symbol reaches the receiver half a round trip before its ack
+            //     reaches the sender; the ack returns on the arm it arrived
+            //     on, so the return leg is that path's RTprop/2.
             let mut recvs: Vec<(f64, u32, u64)> = store
                 .iter()
                 .filter_map(|s| {
@@ -2316,7 +2066,7 @@ fn simulate_place(
                 while recv_seen.contains(&recv_frontier) {
                     recv_frontier += 1;
                 }
-                // `receiver.rs:1502-1521`, verbatim in structure.
+                // The receiver's ack-emission rule, in the same structure.
                 let cumulative_advanced = recv_frontier > last_advertised_ack;
                 let gap_report_due = recv_highest >= recv_frontier
                     && recv_highest > last_gap_ack_seen
@@ -2336,8 +2086,7 @@ fn simulate_place(
                 }
             }
             // The receiver's own retention: seqs at or below the delivered
-            // frontier are gone from `received_seqs`'s useful range
-            // (`net/mod.rs:1156-1158` retains `> received_up_to`).
+            // frontier are gone (it retains `> received_up_to`).
             if recv_frontier > 0 {
                 recv_seen = recv_seen.split_off(&recv_frontier);
             }
@@ -2345,9 +2094,9 @@ fn simulate_place(
 
         // ── ack/delivery half + the recovery plane ───────────────────────
         // Acked symbols leave the store and release their path's budget.
-        // Dropped ones are retransmitted once RFC 9002's time threshold
-        // (9/8·SRTT — RFC 9002's kTimeThreshold, which the placement
-        // objective uses) has passed, and are RE-CHARGED to their new path.
+        // Dropped ones are retransmitted once the time threshold (9/8·SRTT,
+        // RFC 9002 kTimeThreshold) has passed, and are re-charged to their
+        // new path.
         let acks: Vec<(u32, f64, u64)> = store
             .iter()
             .filter(|s| matches!(s.ack_at, Some(t) if t <= now))
@@ -2357,8 +2106,7 @@ fn simulate_place(
             if let Some(p) = sched.path_mut(*pid) {
                 p.record_rtt_sample(Duration::from_secs_f64(*rtt));
             }
-            // `release_in_flight(1)`, verbatim, plus the axis's counters —
-            // the call site, its order and its argument are unchanged.
+            // `release_in_flight(1)`, verbatim, plus the axis's counters.
             rel(&mut sched, *pid, &mut led);
             if acct.on() {
                 ack_expected[*pid as usize] += 1;
@@ -2368,9 +2116,9 @@ fn simulate_place(
                 }
             }
             if let Some(p) = sched.path_mut(*pid) {
-                // THE ERA AXIS. The transport-level accounting above is
-                // identical in every era; only what the ack-interval RATE
-                // SAMPLER is shown differs.
+                // The era axis: the transport-level accounting above is
+                // identical in every era; only what the rate sampler is
+                // shown differs.
                 match feed {
                     Feed::Honest => p.on_ack(1),
                     Feed::Overread(f) => {
@@ -2380,14 +2128,12 @@ fn simulate_place(
                         *acc -= k;
                         p.on_ack(k as u32)
                     }
-                    // The cwnd-dynamics half runs on the SAME per-symbol
-                    // cadence as the honest arm (`on_delivery_signal` is the
-                    // shipped honest-feed entry point, `feat/copa-sole-cc`);
-                    // the rate sample is deferred to the frontier report.
+                    // The cwnd-dynamics half runs on the same per-symbol
+                    // cadence as the honest arm (`on_delivery_signal`); the
+                    // rate sample is deferred to the frontier report.
                     Feed::Cumulative { .. } => p.on_delivery_signal(),
-                    // The MEASURED era drives `on_ack(1)` from the sub-tick
-                    // observation loop at the top of the step, at each ack's
-                    // own measured arrival instant — nothing to do here.
+                    // The measured era drives `on_ack(1)` from the sub-tick
+                    // observation loop at the top of the step.
                     Feed::Measured(_) => {}
                 }
             }
@@ -2398,13 +2144,10 @@ fn simulate_place(
         }
         delivered += acks.len() as u64;
         for (pid, _, _) in &acks {
-            // `np`, NOT a hard-coded 2. THE GAUGE-TRUNCATION DEFECT, repaired:
-            // these guards were written when `MAX_PATHS` was 2, and when the
-            // quad raised it to 4 the ARRAYS were widened while the guards
-            // were not — so `delivered_p[2..4]` and `bw_n[2..4]` read 0 at
-            // c7x4 NO MATTER WHAT PLACEMENT DID, and the assertion built on
-            // them could not fail (MEASUREMENT DISCIPLINE rule 1). See
-            // `the_quad_spreads_across_all_four_legs_and_all_four_warm`.
+            // `np`, not a hard-coded 2: with fixed-size `MAX_PATHS` arrays a
+            // narrower guard would leave legs ≥ 2 reading 0 at `c7x4` whatever
+            // placement did (see
+            // `the_quad_spreads_across_all_four_legs_and_all_four_warm`).
             if (*pid as usize) < np {
                 delivered_p[*pid as usize] += 1;
             }
@@ -2417,14 +2160,12 @@ fn simulate_place(
         }
         store.retain(|s| !matches!(s.ack_at, Some(t) if t <= now));
 
-        // ── THE COUNTER-DELTA RELEASE, for the flights that did NOT land ──
-        // `control_msg.rs:341` / `:685`: the feedback message carries
-        // `expected − received`, and the sender releases that difference on
-        // the path the FEEDBACK arrived on. So a LOST symbol's budget comes
-        // back at the ack instant, not at the retransmit — the store still
-        // holds it, but the in-flight ledger has already let it go. The
-        // published bench released it at the retransmit instead, which is
-        // the 1:1 discipline the engine does not have.
+        // ── The counter-delta release, for the flights that did not land ──
+        // The feedback message carries `expected − received`, and the
+        // sender releases that difference on the path the feedback arrived
+        // on. So a lost symbol's budget comes back at the ack instant, not at
+        // the retransmit — the store still holds it, but the in-flight ledger
+        // has let it go.
         if acct.on() {
             for s in store.iter_mut() {
                 if s.ack_at.is_none() && !s.resolved && s.resolve_at <= now {
@@ -2439,14 +2180,11 @@ fn simulate_place(
                     led.releases += 1;
                 }
             }
-            // The un-stored recovery flights resolve the same way. EVERY wire
-            // symbol enters the receiver's per-batch counters
-            // (`receiver.rs:1754` builds them from `batch.symbols`), so each
-            // one releases 1 on the path it flew — INCLUDING the ones that
-            // were never charged. That is the whole of "release is not 1:1
-            // with charge", and `release_in_flight`'s saturating subtraction
-            // means the excess is not stored anywhere: it is spent against
-            // whatever else that path had outstanding.
+            // The un-stored recovery flights resolve the same way. Every wire
+            // symbol enters the receiver's per-batch counters, so each one
+            // releases 1 on the path it flew — including the ones never
+            // charged. `release_in_flight` saturates, so the excess is spent
+            // against whatever else that path had outstanding.
             let mut i = 0;
             while i < wire.len() {
                 if wire[i].resolve_at <= now {
@@ -2460,11 +2198,10 @@ fn simulate_place(
                     i += 1;
                 }
             }
-            // Drain the per-path counters into the loss estimator — the
-            // engine's `path.estimator.record_batch(expected, received)`
-            // (`control_msg.rs:337`, `:686`). This is the estimator the
-            // repair rate, the NACK margin and the placement objective's
-            // ρ term all read, and the published bench never fed it.
+            // Drain the per-path counters into the loss estimator (the
+            // engine's `path.estimator.record_batch(expected, received)`),
+            // which the repair rate, the NACK margin and the placement
+            // objective's ρ term all read.
             for pid in 0..np {
                 if ack_expected[pid] > 0 {
                     if let Some(p) = sched.path_mut(pid as u32) {
@@ -2474,10 +2211,9 @@ fn simulate_place(
                     ack_received[pid] = 0;
                 }
             }
-            // The report task's LOCAL throughput feed: achieved send rate
-            // over the report interval, bytes/s (`net/tasks/report.rs:84`,
-            // its own `dt > 0.2` gate). Feeds `t_sym` and the burst B/T term
-            // of the shipped r* law.
+            // The report task's local throughput feed: achieved send rate
+            // over the report interval, bytes/s (its own `dt > 0.2` gate).
+            // Feeds `t_sym` and the burst B/T term of the shipped r* law.
             if now >= next_report {
                 next_report = now + REPORT_S;
                 for pid in 0..np {
@@ -2492,12 +2228,11 @@ fn simulate_place(
             }
         }
 
-        // ── the receiver's CUMULATIVE frontier report (legacy era) ───────
+        // ── the receiver's cumulative frontier report (legacy era) ───────
         // A GE drop stalls the frontier; the retransmit's delivery releases
-        // the whole accumulated run in ONE feedback message, which is the
-        // engine's Δdelivered spike over one ack interval. No number is
-        // injected here — the batch size is whatever the bench's own loss and
-        // reordering produce.
+        // the whole accumulated run in one feedback message — the engine's
+        // Δdelivered spike over one ack interval. The batch size is whatever
+        // the bench's own loss and reordering produce.
         if let Feed::Cumulative { ack_period_s } = feed {
             if now >= next_feedback {
                 next_feedback = now + ack_period_s;
@@ -2528,20 +2263,18 @@ fn simulate_place(
                 continue;
             }
             if !acct.on() {
-                // The published bench's 1:1 discipline: the old flight's
-                // charge comes back HERE. Under the axis it already came
-                // back at the counter delta above.
+                // The 1:1 discipline: the old flight's charge comes back
+                // here. Under the axis it already came back at the counter
+                // delta above.
                 if let Some(p) = sched.path_mut(store[i].path) {
                     p.release_in_flight(1);
                 }
                 led.releases += 1;
             }
             let pid = place_min_cost(&sched);
-            // THE FIRST BYPASS CHANNEL (`net/mod.rs:6374-6383`): the SACK-gap
-            // retransmit builds a `SymbolBatch` and hands it straight to
-            // `transport.send_symbols`. It calls `feed.on_sent` and
-            // `p.on_src_sent` — and NOT `charge_in_flight`. It consumes the
-            // wire and the ledger never learns.
+            // First bypass channel: the SACK-gap retransmit hands its
+            // `SymbolBatch` straight to `transport.send_symbols`, calling
+            // `feed.on_sent` and `p.on_src_sent` but not `charge_in_flight`.
             if acct != Acct::Engine {
                 chg(&mut sched, pid, &mut led);
             }
@@ -2558,14 +2291,11 @@ fn simulate_place(
             sent_since_report[pid as usize] += 1;
         }
 
-        // ── THE SECOND BYPASS CHANNEL: the NACK repair margin ─────────────
-        // `net/mod.rs:6420-6448`, verbatim in structure and with no constant
-        // of its own: `margin = ceil(retransmitted × current_loss)` where
-        // `current_loss` is the MAX `estimator.loss_rate()` over
-        // `active_paths()`, placed by `place_symbol(true, &covered)`, and sent
-        // with neither a token nor a charge. Both inputs are the bench's own
-        // realizations: the retransmit count its GE drops produced and the
-        // loss its estimator measured.
+        // ── Second bypass channel: the NACK repair margin ─────────────────
+        // `margin = ceil(retransmitted × current_loss)`, `current_loss` being
+        // the max `estimator.loss_rate()` over `active_paths()`, placed by
+        // `place_symbol(true, &covered)`, sent with neither a token nor a
+        // charge. Both inputs are the bench's own realizations.
         if acct.on() && retx_this_tick > 0 {
             let current_loss = sched
                 .active_paths()
@@ -2600,7 +2330,7 @@ fn simulate_place(
             next_refresh = now + REFRESH_S;
             let live = sched.live_paths();
             let act = sched.active_paths();
-            // The SHIPPED gauge predicate, on the shipped inputs
+            // The shipped gauge predicate on the shipped inputs
             // (`store_cap_sf_record(live.len(), act.len())`).
             ticks += 1;
             sum_live += live.len() as u64;
@@ -2611,10 +2341,9 @@ fn simulate_place(
             if act.is_empty() && !live.is_empty() {
                 zero += 1;
             }
-            // THE `available()` DECOMPOSITION at the tick the gauge is
-            // recorded on. `store_len` is whatever the axis says the gate
-            // reads; `unacked` is the published bench's operand, carried
-            // beside it so the two are comparable at every tick.
+            // The `available()` decomposition at the tick the gauge is
+            // recorded on. `store_len` is what the axis says the gate reads;
+            // `unacked` is carried beside it so the two are comparable.
             dec_n += 1;
             un_sum += store.len() as f64;
             sl_sum += match store_mode {
@@ -2634,13 +2363,11 @@ fn simulate_place(
                     .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
                     .sum()
             };
-            // The taper block's r* recompute (`emit_source.rs:610-640`), on
-            // the engine's own selection: the max-loss estimator among
-            // `active_paths()`, `sched.spare_capacity()` as the cap, and the
-            // encoder window — here the retention store, which is the
-            // reliable window the corrections code over. `None` (an empty
-            // active set) ⇒ r = 0, exactly as the engine's `match`. Refreshed
-            // on the same throttle the taper cache uses.
+            // The taper block's r* recompute, on the engine's own selection:
+            // the max-loss estimator among `active_paths()`,
+            // `sched.spare_capacity()` as the cap, and the retention store as
+            // the encoder window. An empty active set ⇒ r = 0, as in the
+            // engine. Refreshed on the taper cache's throttle.
             if acct.on() {
                 let spare = sched.spare_capacity();
                 repair_rate = worst_loss_path(&sched)
@@ -2650,12 +2377,10 @@ fn simulate_place(
             }
             let bdp_live = sum_over(&live);
             let bdp_set = if arm == Arm::Legacy { sum_over(&act) } else { bdp_live };
-            // THE THREE-TERM CANDIDATE's inputs, collected the way
-            // `net/mod.rs:4533-4551` collects them: over `live_paths()`, off
-            // the SAME `PathState` accessors, through the SHIPPED
-            // `three_term_terms` and the SHIPPED `three_term_store_cap`. No
-            // number is introduced here — `rho` and `b` are the resolved
-            // defaults and the floor is the bench's own FLOOR.
+            // The three-term candidate's inputs, collected as the engine
+            // collects them: over `live_paths()`, off the same `PathState`
+            // accessors, through the shipped `three_term_terms` and
+            // `three_term_store_cap`. `rho` and `b` are the resolved defaults.
             let tt: Option<usize> = if matches!(arm, Arm::ThreeTermCell | Arm::Composed) {
                 let slots: Vec<Option<ThreeTermPath>> = live
                     .iter()
@@ -2677,13 +2402,13 @@ fn simulate_place(
             cap = cap_for(arm, bdp_set, bdp_live, n_live, tt);
             cap_sum += cap as f64;
             // The realized anchor over-read and the cwnd it floors, per path,
-            // against the cell's OWN ground truth (rate·RTprop).
+            // against the cell's own ground truth (rate·RTprop).
             for pid in 0..np {
                 if let Some(p) = sched.path(pid as u32) {
                     cwnd_sum += p.cwnd as f64;
                     cwnd_n += 1;
-                    // THE LEDGER'S OWN PAIR: the windowed-max rate estimate
-                    // and the min-RTT the anchor multiplies it by.
+                    // The wire statistic's pair: the windowed-max rate
+                    // estimate and the min-RTT the anchor multiplies it by.
                     if pid < np {
                         if let (Some(bw), Some(mr)) = (p.btlbw_sym_per_s(), p.min_rtt()) {
                             bw_sum[pid] += bw;
@@ -2714,22 +2439,19 @@ fn simulate_place(
         }
 
         // ── admission (bulk source: always data to send) ─────────────────
-        // THE GATE, exactly as the shipped plain-reliable sender writes it
-        // (`net/mod.rs`: `reliable && (store_len >= effective_store_cap ||
-        // cwnd_full)`, with `cwnd_full == false` at the battery's arms because
-        // `RWM_INFL_CAP` defaults to 0): the STORE CAP IS THE ONLY BRAKE.
+        // The gate, as the shipped plain-reliable sender writes it:
+        // `reliable && (store_len >= effective_store_cap || cwnd_full)`, with
+        // `cwnd_full == false` at the battery's arms (`RWM_INFL_CAP` = 0):
+        // the store cap is the only brake.
         //
-        // Placement does NOT gate it. `emit_source.rs` picks with
+        // Placement does not gate it. `emit_source` picks with
         // `Scheduler::place_symbol(false, &[])`, whose `place_costs` filters on
-        // `p.active` ALONE — there is no `available() > 0` filter on the
-        // reliable source path (unlike `best_source_path` / `schedule`, which
-        // the reliable emitter does not use). So `in_flight_i` may exceed
-        // `cwnd_i` without bound, `available()` reads 0 and STAYS 0, and
-        // `active_paths()` is a pure OBSERVABLE of the saturation the store cap
-        // itself produced. That is the loop this bench closes.
-        // THE COUPLING AXIS reads the gate's operand from the RELEASE LAW
-        // (`net/mod.rs:4267-4271`) instead of from the unacked count. Under
-        // `Store::Unacked` this is `store.len()` and the branch is inert.
+        // `p.active` alone — no `available() > 0` filter on the reliable
+        // source path. So `in_flight_i` may exceed `cwnd_i`, `available()`
+        // stays 0, and `active_paths()` is a pure observable of the saturation
+        // the store cap produced. That is the loop this bench closes.
+        // The coupling axis reads the gate's operand from the release law
+        // instead of the unacked count; under `Store::Unacked` it is inert.
         let mut store_len = match store_mode {
             Store::Unacked => store.len(),
             Store::Span => (next_seq - snd_frontier) as usize
@@ -2743,31 +2465,27 @@ fn simulate_place(
                 stall_ticks += 1;
             }
         }
-        // THE `paused` ANALOGUE, sampled BEFORE admission: was the store-cap
-        // gate already closed at this tick? On the wire this is the `paused`
-        // wait-arm share and it reads 0.0% at c7-A over 69 reps.
+        // The `paused` analogue, sampled before admission: was the store-cap
+        // gate already closed at this tick? (The wire reads 0.0 % at c7-A.)
         gate_ticks += 1;
         if store_len >= cap {
             gate_closed += 1;
         }
-        // THE COMPOSED ARM'S LATE-STAGE BRAKE, sampled at the same instant as
-        // the store-cap gate above so the two brakes are comparable per tick.
-        // Zero by construction at every other arm (`Arm::brake_on`), which is
-        // what keeps the 43 always-on pins bit-identical.
+        // The composed arm's late-stage brake, sampled at the same instant as
+        // the store-cap gate so the two brakes are comparable per tick. Zero
+        // by construction at every other arm (`Arm::brake_on`).
         if arm.brake_on() {
             brake_ticks += 1;
             if composed_brake_closed(&sched, arm) {
                 brake_closed += 1;
             }
         }
-        // ── THE SOURCE AXIS: what the OFFERED LOAD will allow ─────────────
+        // ── The source axis: what the offered load allows ─────────────────
         // Under `Src::Bulk` this is `u64::MAX` and every branch below is
-        // inert, so the published bench is bit-identical. Under `Src::Reno`
-        // it is the inner flow's congestion window over the tunnel's own
-        // delivered latency, and the sender is offered-load-bound exactly
-        // when the window is full and the cap is not — the bench's analogue
-        // of the wire's `wait_tun` / `wait_paused` split, sampled here so it
-        // is attributed once per tick and BEFORE any admission.
+        // inert. Under `Src::Reno` it is the inner flow's congestion window,
+        // and the sender is offered-load-bound exactly when the window is full
+        // and the cap is not — the analogue of the wire's `wait_tun` /
+        // `wait_paused` split, attributed once per tick before admission.
         let src_room: u64 = match src {
             Src::Bulk => u64::MAX,
             Src::Reno => reno.window().saturating_sub(next_seq - snd_frontier),
@@ -2782,12 +2500,11 @@ fn simulate_place(
             }
         }
         let mut src_left = src_room;
-        // THE ADMISSION GATE, with the composed arm's second disjunct live:
-        // the engine writes `reliable && (store_len >= cap || cwnd_full)`, and
-        // at every arm but the composed one `cwnd_full` is false (RWM_INFL_CAP
-        // = 0), so the store cap is the sole brake. Re-evaluated per symbol
-        // because each placement moves `in_flight` on the path it chose, which
-        // is the whole point of a LATE-STAGE, PER-PLACEMENT brake.
+        // The admission gate with the composed arm's second disjunct live:
+        // `reliable && (store_len >= cap || cwnd_full)`, `cwnd_full` false at
+        // every other arm. Re-evaluated per symbol because each placement
+        // moves `in_flight` on the path it chose — a late-stage,
+        // per-placement brake.
         while store_len < cap && src_left > 0 && !composed_brake_closed(&sched, arm) {
             src_left -= 1;
             store_len += 1;
@@ -2814,22 +2531,19 @@ fn simulate_place(
             });
             led.src += 1;
             sent_since_report[pid as usize] += 1;
-            // THE PACER'S DEBIT, transcribed from `emit_source.rs:493-497`:
-            // `if pol.cc_pace { st.src_tokens -= 1.0 }` sits INSIDE the source
-            // arm. This counter is what §12 claims paces the wire; every other
-            // channel below increments `led.wire()` without touching it, and
-            // `pacer_debit_bounds_only_the_source_arm_not_the_wire` bounds the
-            // gap.
+            // The pacer's debit: `if pol.cc_pace { st.src_tokens -= 1.0 }`
+            // sits inside the source arm only. Every other channel increments
+            // `led.wire()` without touching it;
+            // `pacer_debit_bounds_only_the_source_arm_not_the_wire` bounds
+            // the gap.
             led.tokens += 1;
 
-            // ── CHANNEL (a): the taper correction, token-free ─────────────
-            // `emit_source.rs:787-931`: `st.repair_debt += repair_rate` per
-            // SOURCE symbol, and while the debt clears 1.0 a correction symbol
-            // is generated and sent on the ρ_fate repair placement. It IS
-            // charged to in_flight (`:929`) — what it is not is PACED, and it
-            // is not in the retention store, so the store cap (the loop's only
-            // brake) cannot see it. Guarded by the engine's own
-            // `st.encoder.window_size() > 1` / `> 0`.
+            // ── Channel (a): the taper correction, token-free ─────────────
+            // `st.repair_debt += repair_rate` per source symbol; while the
+            // debt clears 1.0 a correction is sent on the ρ_fate repair
+            // placement. It is charged to in_flight but not paced, and it is
+            // not in the retention store, so the store cap cannot see it.
+            // Guarded by the engine's `encoder.window_size() > 1`.
             if acct.on() && store.len() > 1 {
                 repair_debt += repair_rate;
                 while repair_debt >= 1.0 && !store.is_empty() {
@@ -2932,7 +2646,7 @@ fn cells() -> Vec<(&'static str, Vec<Spec>)> {
     ]
 }
 
-/// (1) THE REPRODUCTION — the `[SF]` zero-fraction under U on/off, per cell.
+/// (1) The reproduction — the `[SF]` zero-fraction under U on/off, per cell.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_zero_fraction_closed_loop_by_cell() {
@@ -2967,7 +2681,7 @@ fn sf_zero_fraction_closed_loop_by_cell() {
     }
 }
 
-/// (2) THE AXIS SWEEP — which geometry axis drives the fold. Rate ratio and
+/// (2) The axis sweep — which geometry axis drives the fold. Rate ratio and
 /// RTT ratio swept independently against the same fast path.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
@@ -3037,13 +2751,11 @@ fn era_cells() -> Vec<(&'static str, Vec<Spec>)> {
     ]
 }
 
-/// (3) THE ANCHOR-ERA SWEEP — the suspect, as a CURVE and not a point.
+/// (3) The anchor-era sweep, as a curve and not a point.
 ///
-/// The engine's legacy ack-interval anchor over-reads ×4.6–7.4 (goal-gate
-/// "Anchor Hygiene" (b)); the shipped honest anchor reads ×1. No single value
-/// is privileged here: the scale is swept THROUGH that band and past it, and
-/// the reader is shown the whole curve, so a conclusion that depends on
-/// picking 4.6 is visibly not available.
+/// The legacy ack-interval anchor over-reads ×4.6–7.4 on the wire; the
+/// shipped honest anchor reads ×1. The scale is swept through that band and
+/// past it, so no conclusion can depend on picking one value.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_zero_fraction_vs_anchor_overread() {
@@ -3091,15 +2803,15 @@ fn sf_zero_fraction_vs_anchor_overread() {
     }
 }
 
-/// The seed ensemble size. FINDING 4: the loop is bistable, so the statistic
-/// that resolves it is the MODE RATE over an ensemble, not one run's mean.
+/// The seed ensemble size. The loop is bistable, so the statistic that
+/// resolves it is the mode rate over an ensemble, not one run's mean.
 const SEEDS: u64 = 8;
 
-/// The CAUGHT class, pre-declared before the matrix is read: a run whose
-/// `[SF]` zero-fraction is below 10%. The wire's legacy arms sit in a ≈4%
-/// class and the bench's caught regime (FINDING 4, d = 5.2–7.5) sits at
-/// 0.2–0.3%; 10% separates those from the 40–100% saturated mode with a wide
-/// margin on both sides. `min`/`max` are printed so the cut can be re-drawn.
+/// The caught class, declared before the matrix is read: a run whose `[SF]`
+/// zero-fraction is below 10 %. The wire's legacy arms sit in a ≈4 % class
+/// and the bench's caught regime at 0.2–0.3 %; 10 % separates those from the
+/// 40–100 % saturated mode with a wide margin. `min`/`max` are printed so the
+/// cut can be re-drawn.
 const CAUGHT_PCT: f64 = 10.0;
 
 struct Ens {
@@ -3138,10 +2850,9 @@ impl Ens {
     }
 }
 
-/// (4) THE MATRIX the question asks for: {c7, c8, c8r, c8t} × {A, AU, P} ×
-/// {honest, over-read band}, scored over the seed ensemble. The over-read
-/// column is shown at BOTH ends of the wire's measured band, never at a
-/// single chosen value.
+/// (4) The matrix: {c7, c8, c8r, c8t} × {A, AU, P} × {honest, over-read
+/// band}, scored over the seed ensemble. The over-read column is shown at
+/// both ends of the wire's measured band.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_anchor_era_matrix() {
@@ -3176,11 +2887,11 @@ fn sf_anchor_era_matrix() {
     }
 }
 
-/// (5) THE DERIVED ERA — no injected number at all. A cumulative-frontier
-/// receiver on a feedback cadence; the batch sizes, and hence the over-read,
-/// are whatever the bench's own GE loss and retransmit timing produce. The
-/// realized over-read is MEASURED against `rate·RTprop` and can be compared
-/// with the wire's 4.6–7.4 band on its own terms.
+/// (5) The derived era — no injected number. A cumulative-frontier receiver on
+/// a feedback cadence; the batch sizes, and hence the over-read, are whatever
+/// the bench's own GE loss and retransmit timing produce. The realized
+/// over-read is measured against `rate·RTprop` and compared with the wire's
+/// 4.6–7.4 band.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_derived_overread_from_ack_batching() {
@@ -3222,41 +2933,33 @@ fn sf_derived_overread_from_ack_batching() {
     }
 }
 
-// ── THE ACCOUNTING-AXIS MATRIX, AND ITS PRE-REGISTERED VERDICT ────────────
+// ── The accounting-axis matrix and its pre-registered verdict ─────────────
 //
-// PRE-REGISTERED 2026-08-11, in the commit BEFORE the ON arm was ever run.
+// The wire's geography:
 //
-// THE WIRE'S GEOGRAPHY, quoted from goal-gate "Store-Cap Unification —
-// RESULTS" and §16.52 (no L1 number is re-derived here):
+//   * the legacy (A) arm sits in a ≈4 % `[SF]` zero-fraction class (3.7–7.4 %
+//     at c8, both seeds, both anchor eras) and is in the same low class at c7;
+//   * U raises c8 from ≈4 % to ≈30 % past 2σ on both seeds (≈7.5× fold) and
+//     does not do so at c7.
 //
-//   * the legacy (A) arm sits in a ≈4% `[SF]` zero-fraction class — 3.7–7.4%
-//     at c8, on both seeds and in BOTH anchor eras — and c1/sc2/c7 "do not
-//     move", i.e. A is in that same low class at c7 as well;
-//   * U raises c8 from ≈4% to ≈30% past 2σ on both seeds (a ≈7.5× fold) and
-//     does NOT do so at c7.
+// With the axis off the bench reproduces neither: A sits at 9.0 % at c7 and
+// 40.9 % at c8, and the U-fold is 11.0× at c7 against 2.4× at c8 — keyed to
+// the wrong cell.
 //
-// The bench with the axis OFF reproduces NEITHER: its A arm sits at 9.0% at
-// c7 and 40.9% at c8 (×10 above the wire's operating point), and its U-fold
-// is 11.0× at c7 against 2.4× at c8 — the fold keyed to the WRONG cell.
+// Hypothesis: the un-metered, slow-leg-concentrated recovery flow keys the
+// collapse to c8 on the wire.
 //
-// THE HYPOTHESIS UNDER TEST: the un-metered, slow-leg-concentrated recovery
-// flow is what keys the collapse to c8 on the wire.
+// Pass criteria, both required:
 //
-// PASS CRITERIA, both required, stated before the measurement:
+//   G1 (level). With `Acct::Engine`, the A arm's ensemble-mean zero-fraction
+//      is below `CAUGHT_PCT` (10 %) at both c7 and c8, and its caught mode
+//      rate is ≥ 50 % at both.
+//   G2 (cell-keying). fold = mean(AU zero%) / mean(A zero%). Require
+//      fold(c8) ≥ 3.0 and fold(c7) ≤ 2.0 — well inside the wire's ≈7.5×
+//      against null.
 //
-//   G1 (LEVEL). With `Acct::Engine`, the A arm's ensemble-mean zero-fraction
-//       is below `CAUGHT_PCT` (10%) at BOTH c7 and c8, and its CAUGHT mode
-//       rate is ≥ 50% at both. This is the wire's "A is a ≈4% class at both
-//       cells", scored on the statistic §16.52 requires.
-//   G2 (CELL-KEYING). fold = mean(AU zero%) / mean(A zero%). Require
-//       fold(c8) ≥ 3.0 AND fold(c7) ≤ 2.0. The wire's own separation is
-//       ≈7.5× against null, so this band is well inside it and leaves a clean
-//       gap between the two cells.
-//
-// VERDICT = G1 ∧ G2. Anything else is NOT REPRODUCED and triggers the named
-// fallback (goal-gate "PIPELINE VERIFICATION MATRIX": rank 2, the L0
-// WindowAck-cadence gauge). c8r/c8t are reported for completeness; the
-// verdict rests on c7 + c8, which is the contrast the dispatch names.
+// Verdict = G1 ∧ G2. c8r/c8t are reported for completeness; the verdict rests
+// on the c7 + c8 contrast.
 const G1_LEVEL_PCT: f64 = CAUGHT_PCT;
 const G1_CAUGHT_MIN: f64 = 0.50;
 const G2_FOLD_C8_MIN: f64 = 3.0;
@@ -3302,10 +3005,9 @@ impl AcctEns {
     }
 }
 
-/// (6) THE ACCOUNTING-AXIS MATRIX — {c7, c8, c8r, c8t} × {A, AU} × {OFF,
-/// TRAFFIC, ENGINE}, 8 seeds × 20 s, scored on the MODE RATE. The verdict
-/// against G1/G2 is printed, and it is printed for c7 and c8 only, which are
-/// the cells the pre-registration names.
+/// (6) The accounting-axis matrix — {c7, c8, c8r, c8t} × {A, AU} × {OFF,
+/// TRAFFIC, ENGINE}, 8 seeds × 20 s, scored on the mode rate. The G1/G2
+/// verdict is printed for c7 and c8 only.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_accounting_axis_matrix() {
@@ -3393,10 +3095,8 @@ fn sf_accounting_axis_matrix() {
     );
 }
 
-/// (7) THE CANDIDATE, re-scored on the corrected bench. Whatever the verdict
-/// above, the pooled-ceiling successor's standing was measured on a bench
-/// with no recovery accounting at all, so it is re-run here on every level of
-/// the axis.
+/// (7) The pooled-ceiling candidate, re-run on every level of the accounting
+/// axis.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_pooled_candidate_on_the_accounting_axis() {
@@ -3429,36 +3129,28 @@ fn sf_pooled_candidate_on_the_accounting_axis() {
 
 // ── The accounting axis's always-on pins ──────────────────────────────────
 
-/// THE BOUNDING TEST FOR §12 — goal-gate "PIPELINE VERIFICATION MATRIX" row
-/// 2, the KNOWN-DIVERGENT row that carried no bounding test, which CLAUDE.md
-/// forbids outright ("every documented model-vs-engine divergence must carry
-/// a test that BOUNDS it, not prose that describes it").
+/// Bounds the pacing divergence (CLAUDE.md: every documented model-vs-engine
+/// divergence carries a test that bounds it). The token bucket is debited
+/// inside the source arm alone, so the realized wire rate is `src·(1+r)` —
+/// every repair, retransmit and margin symbol reaches the link having debited
+/// nothing.
 ///
-/// **The paper (§12, the amendment) claims the token bucket paces SOURCE AND
-/// REPAIR at the CC rate.** The code debits the bucket inside the source arm
-/// alone (`emit_source.rs:493-497`), so the realized wire rate is
-/// `src·(1+r)` — every repair, retransmit and margin symbol reaches the link
-/// having debited nothing.
-///
-/// This asserts what the IMPLEMENTATION does, absolutely and by identity, not
-/// what it ought to do: the debit count equals the SOURCE count exactly, and
-/// the wire count exceeds it by exactly the three unpaced channels. The
-/// residual `wire/src − 1` is the realized `r` — computed from the bench's own
-/// loss realizations through the shipped r\* law, never fitted.
-///
-/// If a successor ever paces repair, this test fails loudly and the ledger row
-/// gets re-scored rather than silently drifting back into agreement.
+/// This asserts what the implementation does, by identity: the debit count
+/// equals the source count exactly, and the wire count exceeds it by exactly
+/// the three unpaced channels. The residual `wire/src − 1` is the realized
+/// `r`, from the bench's own loss realizations through the shipped r\* law.
+/// If repair is ever paced, this test fails loudly.
 #[test]
 fn pacer_debit_bounds_only_the_source_arm_not_the_wire() {
     let r = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Engine);
     let l = r.led;
-    // MEASUREMENT DISCIPLINE 1 — the divergence must actually be reachable:
-    // all three unpaced channels must have fired, or this proves nothing.
+    // Measurement discipline rule 1: all three unpaced channels must have
+    // fired, or this proves nothing.
     assert!(l.src > 10_000, "no source traffic: {}", l.src);
     assert!(l.taper > 0, "the taper repair channel never fired");
     assert!(l.retx > 0, "the SACK-gap retransmit channel never fired");
     assert!(l.margin > 0, "the NACK repair margin channel never fired");
-    // THE DIVERGENCE, as an exact identity in both directions.
+    // The divergence, as an exact identity in both directions.
     assert_eq!(
         l.tokens, l.src,
         "the pacer debit must be the SOURCE arm exactly (emit_source.rs:493-497)"
@@ -3474,9 +3166,9 @@ fn pacer_debit_bounds_only_the_source_arm_not_the_wire() {
         l.wire(),
         l.tokens
     );
-    // And the size of the divergence, bounded rather than described: the
-    // unpaced excess is the realized repair overhead r, which the shipped law
-    // caps at `max_fec_overhead` (0.5) per source symbol on the taper channel.
+    // The size of the divergence, bounded: the unpaced excess is the realized
+    // repair overhead r, which the shipped law caps at `max_fec_overhead`
+    // (0.5) per source symbol on the taper channel.
     let excess = (l.wire() - l.tokens) as f64 / l.src as f64;
     assert!(
         excess > 0.0 && excess < 1.0,
@@ -3484,21 +3176,16 @@ fn pacer_debit_bounds_only_the_source_arm_not_the_wire() {
     );
 }
 
-/// The FIRST HALF of matrix row 6's unverified property: `Σ charges` does NOT
-/// count every wire symbol. It under-counts by exactly the two bypass
-/// channels — the SACK-gap retransmit (`net/mod.rs:6374-6383`) and the NACK
-/// repair margin (`net/mod.rs:6420-6448`), each of which builds a
-/// `SymbolBatch` and calls `transport.send_symbols` with no
-/// `charge_in_flight` anywhere on the path. The taper correction
-/// (`emit_source.rs:929`) IS charged, and that asymmetry is asserted too, so
-/// the test names which channels bypass and which do not.
-///
-/// The ratio is computed from the run's own channel counts, not fitted.
+/// `Σ charges` does not count every wire symbol: it under-counts by exactly
+/// the two bypass channels — the SACK-gap retransmit and the NACK repair
+/// margin, each of which calls `transport.send_symbols` with no
+/// `charge_in_flight`. The taper correction is charged, and that asymmetry is
+/// asserted too. The ratio comes from the run's own channel counts.
 #[test]
 fn unmetered_recovery_flow_is_not_charged_to_in_flight() {
     let e = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Engine);
     let t = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Traffic);
-    // Under the ENGINE ledger the charge deficit is EXACTLY the two bypass
+    // Under the engine ledger the charge deficit is exactly the two bypass
     // channels — an equality, not a bound.
     assert_eq!(
         e.led.wire() - e.led.charges,
@@ -3510,16 +3197,15 @@ fn unmetered_recovery_flow_is_not_charged_to_in_flight() {
         e.led.retx,
         e.led.margin
     );
-    // The taper correction is on the OTHER side of that line: charged.
+    // The taper correction is on the other side of that line: charged.
     assert!(e.led.taper > 0, "the taper channel never fired");
     assert_eq!(
         e.led.charges,
         e.led.src + e.led.taper,
         "only source and taper corrections are charged under the engine ledger"
     );
-    // The counterfactual engine that obeys §12's accounting charges every
-    // wire symbol — which is what makes the comparison in the matrix a test
-    // of the LEDGER and not of the traffic.
+    // The balanced counterfactual charges every wire symbol, which makes the
+    // matrix comparison a test of the ledger and not of the traffic.
     assert_eq!(
         t.led.charges,
         t.led.wire(),
@@ -3527,18 +3213,16 @@ fn unmetered_recovery_flow_is_not_charged_to_in_flight() {
     );
 }
 
-/// The SECOND HALF of row 6: release is COUNTER-DELTA driven
-/// (`control_msg.rs:341`, `:685` — `expected − received` on the path the
-/// feedback arrived on, over counters `receiver.rs:1754` builds from every
-/// symbol in the batch), so it is not 1:1 with charge and the ledger does not
-/// balance by construction.
+/// Release is counter-delta driven (`expected − received` on the path the
+/// feedback arrived on, over counters built from every symbol in the batch),
+/// so it is not 1:1 with charge and the ledger does not balance by
+/// construction.
 ///
-/// Asserted absolutely: under the ENGINE ledger releases strictly EXCEED
-/// charges, the excess is bounded by the un-charged wire, and some of it is
-/// provably thrown away by `release_in_flight`'s saturating subtraction —
-/// budget the path can never get back. Under the balanced TRAFFIC control the
-/// same run conserves. This is the four `ack_merge_counter_delta_*`
-/// invariants extended to the un-metered case, which none of them exercises.
+/// Under the engine ledger releases strictly exceed charges, the excess is
+/// bounded by the un-charged wire, and some of it is thrown away by
+/// `release_in_flight`'s saturating subtraction. Under the balanced `Traffic`
+/// control the same run conserves. This extends the
+/// `ack_merge_counter_delta_*` invariants to the un-metered case.
 #[test]
 fn counter_delta_release_is_conservative_under_loss() {
     for geom in [vec![C2, C2], vec![C2, C3]] {
@@ -3563,7 +3247,7 @@ fn counter_delta_release_is_conservative_under_loss() {
             "no release ever hit a zero in_flight — the saturation the engine's \
              counter-delta release runs into was never exercised"
         );
-        // The balanced control conserves EXACTLY over the same traffic.
+        // The balanced control conserves exactly over the same traffic.
         assert_eq!(
             t.led.releases_wasted, 0,
             "the balanced ledger must never waste a release"
@@ -3577,29 +3261,19 @@ fn counter_delta_release_is_conservative_under_loss() {
     }
 }
 
-/// THE MEASURED RESULT, BOUNDED — goal-gate "SF Accounting Axis", FINDING 1.
+/// The metering axis moves which cell the U-fold keys to, onto the cell the
+/// wire folds at. Regression bound at 3 seeds × 6 s (the 8-seed × 20 s
+/// ensemble is the evidence), both directions asserted:
 ///
-/// The metering axis MOVES WHICH CELL THE U-FOLD KEYS TO, and it moves it onto
-/// the cell the wire folds at. This is the one thing three prior sections
-/// could not reproduce and explicitly left unexplained ("c8 SF Mechanism"
-/// FINDING 3, "SF Anchor Suspect" DELIBERATELY NOT CONCLUDED, and the matrix's
-/// anomaly A2).
+///   * with the ledger balanced (`Acct::Off`) the fold is larger at the
+///     symmetric cell than at c8 — the wrong-cell keying;
+///   * with the engine's ledger it is larger at c8 by > 3× and null at c7
+///     (< 2×), the wire's own separation;
+///   * the c8 A-arm's level falls by more than half, from a > 25 % class to a
+///     < 15 % class.
 ///
-/// Absolute, at 3 seeds × 6 s, both directions asserted so the swap cannot be
-/// half-read (the 8-seed × 20 s ensemble that established it is in the
-/// ledger; this is the regression bound, not the evidence):
-///
-///   * with the ledger balanced (`Acct::Off`, the published bench) the fold is
-///     LARGER at the symmetric cell than at c8 — the wrong-cell keying;
-///   * with the ENGINE's ledger it is larger at c8 by > 3× and NULL at c7
-///     (< 2×), which is the wire's own separation (≈7.5× against null);
-///   * and the c8 A-arm's LEVEL falls by more than half, from a > 25% class to
-///     a < 15% class.
-///
-/// What is NOT asserted here, because it did not hold: the c7 A-arm's level.
-/// The pre-registered G1 FAILED at c7 and the verdict stands as NOT
-/// REPRODUCED; see the ledger block. This test bounds exactly what was
-/// measured and no more.
+/// Not asserted, because it did not hold: the c7 A-arm's level (G1 failed at
+/// c7; the verdict is not reproduced).
 #[test]
 fn sf_zero_fraction_moves_with_the_metering_axis() {
     let mean = |geom: &[Spec], arm: Arm, acct: Acct| -> f64 {
@@ -3611,7 +3285,7 @@ fn sf_zero_fraction_moves_with_the_metering_axis() {
     let c7 = vec![C2, C2];
     let c8 = vec![C2, C3];
 
-    // MEASUREMENT DISCIPLINE 1: the axis must have run.
+    // Measurement discipline rule 1: the axis must have run.
     let probe = simulate_acct(&c8, Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Engine);
     assert!(probe.led.taper > 0 && probe.led.margin > 0 && probe.led.retx > 0);
     assert!(probe.led.releases > probe.led.charges, "the un-metered ledger never ran");
@@ -3625,7 +3299,7 @@ fn sf_zero_fraction_moves_with_the_metering_axis() {
     let en_a8 = mean(&c8, Arm::Legacy, Acct::Engine);
     let en_u8 = mean(&c8, Arm::Unified, Acct::Engine);
 
-    // THE PUBLISHED BENCH keys the fold to the WRONG cell.
+    // The balanced ledger keys the fold to the wrong cell.
     let off_f7 = off_u7 / off_a7;
     let off_f8 = off_u8 / off_a8;
     assert!(
@@ -3634,7 +3308,7 @@ fn sf_zero_fraction_moves_with_the_metering_axis() {
          defect): c7 {off_f7:.2}x vs c8 {off_f8:.2}x"
     );
 
-    // THE ENGINE'S LEDGER keys it to c8 and nulls c7.
+    // The engine's ledger keys it to c8 and nulls c7.
     let en_f7 = en_u7 / en_a7;
     let en_f8 = en_u8 / en_a8;
     assert!(
@@ -3648,7 +3322,7 @@ fn sf_zero_fraction_moves_with_the_metering_axis() {
          (A {en_a7:.1}% AU {en_u7:.1}%)"
     );
 
-    // And the c8 A-arm's LEVEL, absolutely on both sides of the axis.
+    // And the c8 A-arm's level, absolutely on both sides of the axis.
     assert!(off_a8 > 25.0, "the published c8 A arm must be the high class: {off_a8:.1}%");
     assert!(en_a8 < 15.0, "the engine c8 A arm must be the low class: {en_a8:.1}%");
     assert!(
@@ -3657,16 +3331,13 @@ fn sf_zero_fraction_moves_with_the_metering_axis() {
     );
 }
 
-/// THE ATTRIBUTION, bounded — goal-gate "SF Accounting Axis", FINDING 2: it is
-/// the LEDGER, not the extra recovery traffic, that moves c8.
+/// It is the ledger, not the extra recovery traffic, that moves c8.
 ///
-/// The `Traffic` level emits exactly the same taper corrections and NACK margin
-/// repairs onto exactly the same repair placements, feeds exactly the same
-/// estimators, and consumes exactly the same wire — and changes the c8 A arm's
-/// zero-fraction by only a few points, leaving the fold on the wrong cell.
+/// The `Traffic` level emits the same taper corrections and NACK margin
+/// repairs onto the same placements, feeds the same estimators and consumes
+/// the same wire — and leaves the c8 A arm's zero-fraction in its high class.
 /// Only `Engine`, which adds the two un-charged channels and the counter-delta
-/// release, moves it. Without this pin the result would be attributable to
-/// "more traffic", which is the reading the measurement excludes.
+/// release, moves it. This pin excludes the "more traffic" reading.
 #[test]
 fn the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction() {
     let c8 = vec![C2, C3];
@@ -3676,8 +3347,8 @@ fn the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction() {
             .sum::<f64>()
             / 3.0
     };
-    // The traffic is REAL and identical in both ON levels — else this proves
-    // nothing (MEASUREMENT DISCIPLINE 1).
+    // The traffic is real and identical in both ON levels, else this proves
+    // nothing (measurement discipline rule 1).
     let t = simulate_acct(&c8, Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Traffic);
     assert!(t.led.taper > 0 && t.led.margin > 0, "the traffic level emitted no recovery");
     assert_eq!(t.led.charges, t.led.wire(), "the traffic level must balance");
@@ -3685,12 +3356,11 @@ fn the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction() {
     let off_a = mean(Arm::Legacy, Acct::Off);
     let tr_a = mean(Arm::Legacy, Acct::Traffic);
     let en_a = mean(Arm::Legacy, Acct::Engine);
-    // The two levels move the arm in OPPOSITE directions, which is the whole
-    // point: balanced recovery traffic leaves c8 in — or pushes it further
-    // into — its published high class, and only the un-metered LEDGER brings
-    // it down to the wire's low class. Asserted as absolute classes on both
-    // sides, not as a ratio, because the levels are draws from a bistable
-    // loop and only the class membership is stable.
+    // The two levels move the arm in opposite directions: balanced recovery
+    // traffic leaves c8 in (or pushes it further into) its high class, and
+    // only the un-metered ledger brings it down to the wire's low class.
+    // Asserted as absolute classes, not a ratio, because the levels are draws
+    // from a bistable loop and only class membership is stable.
     assert!(off_a > 25.0, "the published c8 A arm must be the high class: {off_a:.1}%");
     assert!(
         tr_a > 20.0 && tr_a > off_a - 5.0,
@@ -3704,16 +3374,13 @@ fn the_ledger_not_the_recovery_traffic_moves_the_c8_zero_fraction() {
     );
 }
 
-/// THE AXIS'S OWN REPRODUCIBILITY, pinned in the shape the bench already
-/// learned once (`symmetric_cell_placement_tie_is_broken_deterministically`).
+/// The axis's own reproducibility.
 ///
-/// The repair channel's rate comes from ONE path's estimator — the max-loss
-/// path among `active_paths()` (`emit_source.rs:613-620`). `active_paths()`
-/// returns `HashMap` iteration order, and `max_by` keeps the LAST maximum, so
-/// on a tie the winner is a per-PROCESS coin flip. Losses tie exactly at every
-/// cold start (both estimators at 0.0) and routinely at the symmetric cell.
-/// Without the sort in `worst_loss_path` the whole ON arm is unreproducible —
-/// the same instrument fault, in the same instrument, that made c7 drift.
+/// The repair channel's rate comes from one path's estimator — the max-loss
+/// path among `active_paths()`. That returns `HashMap` iteration order and
+/// `max_by` keeps the last maximum, so a tie would be a per-process coin flip.
+/// Losses tie at every cold start and routinely at the symmetric cell;
+/// without the sort in `worst_loss_path` the ON arm is unreproducible.
 #[test]
 fn worst_loss_path_tie_is_broken_deterministically() {
     let clock = Arc::new(MockClock::new());
@@ -3734,10 +3401,9 @@ fn worst_loss_path_tie_is_broken_deterministically() {
     assert_eq!(worst_loss_path(&sched), Some(2), "the strict max must win");
 }
 
-/// MEASUREMENT DISCIPLINE 1 for the axis itself: every mechanism the axis
-/// claims to transplant must EXECUTE, and the OFF level must be the published
-/// bench untouched. Without this the matrix could report "no effect" from an
-/// axis that never ran.
+/// Measurement discipline rule 1 for the axis: every mechanism it transplants
+/// executes, and the OFF level is the published bench untouched. Without this
+/// the matrix could report "no effect" from an axis that never ran.
 #[test]
 fn accounting_axis_executes_and_off_is_the_published_bench() {
     let off = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Off);
@@ -3750,21 +3416,20 @@ fn accounting_axis_executes_and_off_is_the_published_bench() {
     assert_eq!(off.led.taper, 0);
     assert_eq!(off.led.margin, 0);
     assert_eq!(off.led.charges, off.led.src + off.led.retx);
-    // ON has all of them, and the shipped r* law produced a NON-ZERO repair
-    // rate from the bench's own measured loss — if r* read 0 the taper channel
-    // would be a no-op and the axis would be testing two channels, not three.
+    // ON has all of them, and the shipped r* law produced a non-zero repair
+    // rate from the bench's own measured loss — if r* read 0 the axis would
+    // test two channels, not three.
     let on = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Engine);
     assert!(on.led.taper > 0, "r* never cleared the repair debt");
     assert!(on.led.margin > 0, "the NACK margin never fired");
     assert!(on.led.retx > 0, "the retransmit channel never fired");
 }
 
-// ── THE MEASURED ERA'S READOUTS ────────────────────────────────────────────
+// ── The measured era's readouts ────────────────────────────────────────────
 
-/// The cells the wire MEASURED an ack stream at, and only those. `c8r`/`c8t`
-/// are absent on purpose: they are half-axis geometries the VM never ran, so
-/// there is no measured shape for their paths and this bench will not invent
-/// one. That is the whole reason this branch exists.
+/// The cells the wire measured an ack stream at, and only those. `c8r`/`c8t`
+/// are half-axis geometries the VM never ran, so there is no measured shape
+/// for their paths and this bench will not invent one.
 fn measured_cells() -> Vec<(&'static str, Vec<Spec>, &'static [AckShape])> {
     vec![
         ("sc2  single fast (c2r100)", vec![C2], &ACK_SC2[..]),
@@ -3773,47 +3438,35 @@ fn measured_cells() -> Vec<(&'static str, Vec<Spec>, &'static [AckShape])> {
     ]
 }
 
-// ── THE COUPLING MODEL'S PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11) ──────
+// ── The coupling model's pre-registration (measurement discipline rule 11) ─
 //
-// Written and committed BEFORE `sf_geography_on_the_coupling_model` was ever
-// run. Every number below is a WIRE number, cited to the ledger line that
-// measured it, and every tolerance is stated here rather than after the fact.
+// Every number below is a wire number and every tolerance is stated before
+// `sf_geography_on_the_coupling_model` ran. The wire (`[SF]` fractions pooled
+// over every L1 rep carrying the gauge):
 //
-// THE WIRE, from goal-gate "Cap-Refresh Warmth"'s regime table (the `[SF]`
-// fractions pooled over every rep in `docs/l1-raw` that carries the gauge):
+//     | cell | arm | zero% | short% |
+//     |------|-----|-------|--------|
+//     | c7   | A   |   0.3 |    3.7 |
+//     | c7   | AU  |   1.2 |    6.3 |
+//     | c8   | A   |   4.6 |   40.8 |
+//     | c8   | AU  |  29.9 |   51.1 |
 //
-//   | cell | arm | zero% | short% |
-//   |------|-----|-------|--------|
-//   | c7   | A   |  0.3  |   3.7  |
-//   | c7   | AU  |  1.2  |   6.3  |
-//   | c8   | A   |  4.6  |  40.8  |
-//   | c8   | AU  | 29.9  |  51.1  |
+// All four criteria must hold; the test prints the verdict.
 //
-// THE CRITERIA. All four must hold; the verdict is their conjunction and it is
-// printed by the test itself, not by prose.
+//   C1 (the c8 contrast): fold(c8) = mean(AU zero%) / mean(A zero%) >= 3.0
+//      and mean(c8 AU zero%) >= 20.0 points.  [wire: fold 6.5x, AU 29.9%]
+//   C2 (the c8 level): mean(c8 A zero%) <= 10.0 and caught >= 50 % of seeds.
+//      [wire: 4.6 %, class 3.7–7.4]
+//   C3 (c7 quiet): mean(c7 A zero%) <= 10.0 and fold(c7) <= 2.0.
+//      [wire: 0.3 % and 4.0x on a 0.3 → 1.2 base, both arms in the noise]
+//   C4 (the short-set fractions, the regime mixture the cap arithmetic is
+//      expressed in): mean(c8 A short%) >= 25.0 and mean(c7 A short%) <= 15.0.
+//      [wire: 40.8 % and 3.7 %]
 //
-//   C1 (the c8 CONTRAST — the thing "Cap-Refresh Warmth" handed over):
-//       fold(c8) = mean(AU zero%) / mean(A zero%) >= 3.0
-//       AND mean(c8 AU zero%) >= 20.0 points.
-//       [wire: fold 6.5x, AU 29.9%]
-//   C2 (the c8 LEVEL, unchanged from the predecessor's G1 so the two runs are
-//       comparable): mean(c8 A zero%) <= 10.0 AND caught >= 50% of seeds.
-//       [wire: 4.6%, class 3.7-7.4]
-//   C3 (c7 QUIET — the cell the wire says does not move):
-//       mean(c7 A zero%) <= 10.0 AND fold(c7) <= 2.0.
-//       [wire: 0.3% and 4.0x on a 0.3->1.2 base, i.e. both arms in the noise;
-//        the fold bound is the predecessor's G2 bound, kept verbatim]
-//   C4 (the SHORT-SET fractions, which no prior section scored at all —
-//       the regime mixture the cap arithmetic is expressed in):
-//       mean(c8 A short%) >= 25.0 AND mean(c7 A short%) <= 15.0.
-//       [wire: 40.8% and 3.7%]
-//
-// VERDICT = C1 & C2 & C3 & C4. If it holds, the bench corresponds to the wire
-// END TO END at the duals and the brake candidates are scored on it by the
-// rule pre-stated at `coupling_candidate_rule`. If it does not, the deliverable
-// is WHICH PRODUCED QUANTITY DIVERGES FIRST along
-// `span -> released -> store_len -> in_flight -> available()`, and no design
-// conclusion is drawn.
+// Verdict = C1 & C2 & C3 & C4. If it holds, the brake candidates are scored by
+// `coupling_candidate_rule`. If not, the deliverable is which produced quantity
+// diverges first along `span -> released -> store_len -> in_flight ->
+// available()`, and no design conclusion is drawn.
 const K1_FOLD_C8_MIN: f64 = 3.0;
 const K1_AU_C8_MIN: f64 = 20.0;
 const K2_LEVEL_C8_MAX: f64 = 10.0;
@@ -3823,57 +3476,55 @@ const K3_FOLD_C7_MAX: f64 = 2.0;
 const K4_SHORT_C8_MIN: f64 = 25.0;
 const K4_SHORT_C7_MAX: f64 = 15.0;
 
-/// THE CANDIDATE SCORING RULE, pre-stated (dispatch item 3). Scored ONLY if
-/// the verdict above holds. Three candidates, one control:
+/// The candidate scoring rule, pre-stated; scored only if the verdict above
+/// holds. Three candidates, one control:
 ///
 ///   (a) `Arm::PooledUnified` — the pooled-ceiling successor.
-///   (b) `Arm::ThreeTermCell` — the three-term law as the DUAL-CELL CAP.
-///   (c) `Arm::Unified` — U alone, the CONTROL that must reproduce the harm.
+///   (b) `Arm::ThreeTermCell` — the three-term law as the dual-cell cap.
+///   (c) `Arm::Unified` — U alone, the control that must reproduce the harm.
 ///
-/// A candidate WINS iff, against the shipped `Arm::Legacy` baseline on the
-/// validated bench:
-///   * c8 stays STABLE at U's depth: its mean cap is within 10% of the U
-///     arm's, AND its c8 zero% is <= the shipped arm's + 2.0 points;
-///   * c1-class geometry keeps its throughput: goodput >= 0.98x the shipped
+/// A candidate wins iff, against the shipped `Arm::Legacy` baseline:
+///   * c8 stays stable at U's depth: mean cap within 10 % of the U arm's, and
+///     c8 zero% <= the shipped arm's + 2.0 points;
+///   * c1-class geometry keeps its throughput: goodput >= 0.98× the shipped
 ///     arm's at the c1-class cell;
-///   * and the control (c) must FAIL the first clause, or the bench has not
-///     reproduced the harm it is being scored against.
+///   * and the control (c) fails the first clause, or the bench has not
+///     reproduced the harm it is scored against.
 const CAND_CAP_TOL: f64 = 0.10;
 const CAND_ZERO_TOL_PTS: f64 = 2.0;
 const CAND_GP_MIN: f64 = 0.98;
 
-// ── THE COUPLING MODEL's ALWAYS-ON PINS ────────────────────────────────────
+// ── The coupling model's always-on pins ────────────────────────────────────
 
-/// The release law's two pure helpers, against the engine's own definitions.
-/// `sack_snapshot` is `received_sack_ranges` (`net/mod.rs:3430-3447`) and
-/// `released_count` is the cardinality the mark set contributes to
-/// `sack_release_outstanding` (`net/mod.rs:3394-3396`) after the cumulative
-/// prune (`net/mod.rs:3387-3389`).
+/// The release law's two pure helpers against the engine's definitions:
+/// `sack_snapshot` is `received_sack_ranges` and `released_count` is the
+/// cardinality the mark set contributes to `sack_release_outstanding` after
+/// the cumulative prune.
 #[test]
 fn sack_snapshots_subsume_and_the_union_is_the_newest() {
     use std::collections::BTreeSet;
-    // The engine's own unit fixture (`net/mod.rs:8758-8771`): delivered = 10,
-    // seen = 20, received {11,12,15,18,19,20} ⇒ [(11,12),(15,15),(18,20)].
+    // The engine's own unit fixture: delivered = 10, seen = 20,
+    // received {11,12,15,18,19,20} ⇒ [(11,12),(15,15),(18,20)].
     let seen: BTreeSet<u64> = [11u64, 12, 15, 18, 19, 20].into_iter().collect();
     assert_eq!(
         sack_snapshot(&seen, 11, 20),
         vec![(11, 12), (15, 15), (18, 20)],
         "the snapshot must be received_sack_ranges' own encoding"
     );
-    // Empty above the cumulative point ⇒ no ranges (`receiver.rs:1543`).
+    // Empty above the cumulative point ⇒ no ranges.
     assert!(sack_snapshot(&seen, 21, 20).is_empty());
 
-    // The mark set only covers RETAINED seqs: below the frontier and at or
-    // above the sent edge are both excluded, which is what makes the count a
-    // subset of `sent_store` (`net/mod.rs:3376`, `:10181`).
+    // The mark set only covers retained seqs: below the frontier and at or
+    // above the sent edge are both excluded, which makes the count a subset
+    // of `sent_store`.
     let r = sack_snapshot(&seen, 11, 20);
     assert_eq!(released_count(&r, 11, 21), 6, "all six retained marks count");
     assert_eq!(released_count(&r, 16, 21), 3, "the prune drops 11,12,15");
     assert_eq!(released_count(&r, 11, 19), 4, "the sent edge clips 19,20");
     assert_eq!(released_count(&r, 25, 30), 0, "a passed frontier releases nothing");
 
-    // SUBSUMPTION (semantic 5): a later snapshot over a superset of arrivals
-    // covers every seq an earlier one did, ABOVE the later cumulative point.
+    // Subsumption (5): a later snapshot over a superset of arrivals covers
+    // every seq an earlier one did, above the later cumulative point.
     let later: BTreeSet<u64> = [11u64, 12, 13, 14, 15, 18, 19, 20, 21].into_iter().collect();
     let a = sack_snapshot(&seen, 11, 20);
     let b = sack_snapshot(&later, 11, 21);
@@ -3891,7 +3542,7 @@ fn sack_snapshots_subsume_and_the_union_is_the_newest() {
     );
 }
 
-/// MEASUREMENT DISCIPLINE 1: the axis EXECUTES, `Store::Unacked` is the
+/// Measurement discipline rule 1: the axis executes, `Store::Unacked` is the
 /// published bench bit-for-bit, and `Store::Span` produces the three
 /// quantities the model exists to produce.
 #[test]
@@ -3925,17 +3576,16 @@ fn coupling_axis_executes_and_unacked_is_the_published_bench() {
     assert!(on.delivered > 0 && on.retx > 0, "the loop must still run");
 }
 
-/// The model's CELL-KEYED claim, BOUNDED rather than described (CLAUDE.md):
-/// the frontier span is what a SKEWED cell parks and a symmetric one does not.
-/// The asymmetric cell's span must exceed its released marks by more, relative
-/// to its own span, than the symmetric cell's — because the c8 legs differ by
-/// 4.6× in RTprop and the c7 legs do not.
+/// The model's cell-keyed claim, bounded: the frontier span is what a skewed
+/// cell parks and a symmetric one does not. The c8 legs differ by 4.6× in
+/// RTprop and the c7 legs do not, so the skewed cell's frontier stalls at
+/// least as often.
 #[test]
 fn the_frontier_span_is_parked_at_the_skewed_cell_and_not_at_the_symmetric_one() {
     let sym = simulate_full(&[C2, C2], Arm::Legacy, Feed::Measured(&ACK_C7[..]), 4.0, 0, Acct::Engine, Store::Span);
     let asym = simulate_full(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8[..]), 4.0, 0, Acct::Engine, Store::Span);
     assert!(sym.span_mean > 0.0 && asym.span_mean > 0.0);
-    // The fraction of the span the release law has NOT yet uncounted.
+    // The fraction of the span the release law has not yet uncounted.
     let held_sym = 1.0 - sym.released_mean / sym.span_mean;
     let held_asym = 1.0 - asym.released_mean / asym.span_mean;
     assert!(
@@ -3951,9 +3601,9 @@ fn the_frontier_span_is_parked_at_the_skewed_cell_and_not_at_the_symmetric_one()
     );
 }
 
-/// The three-term candidate is the SHIPPED law and introduces no constant of
-/// its own: same function, same resolved arguments, and the span term is
-/// identically zero at N = 1 by arithmetic (no path-count predicate anywhere).
+/// The three-term candidate is the shipped law and introduces no constant:
+/// same function, same resolved arguments, and the span term is identically
+/// zero at N = 1 by arithmetic (no path-count predicate).
 #[test]
 fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
     let tt = |rate: f64, rtp_ms: f64, k: f64| ThreeTermTerm { rate, rtprop_s: rtp_ms / 1e3, k };
@@ -3962,8 +3612,8 @@ fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
     let (_, _, _, sp1) =
         three_term_store_cap(true, &[Some(tt(10_400.0, 8.0, 1.5))], TT_RHO, b, FLOOR).unwrap();
     assert_eq!(sp1, 0.0, "one path has zero RTprop spread");
-    // The bench's own c8 geometry: the span term is 2·rate_fast·skew with
-    // skew = (60−8)/2 ms, i.e. rate_fast × the ROUND-TRIP difference.
+    // The bench's c8 geometry: the span term is 2·rate_fast·skew with
+    // skew = (60−8)/2 ms, i.e. rate_fast × the round-trip difference.
     let c8 = [Some(tt(C2.0, C2.1 * 1e3, 1.5)), Some(tt(C3.0, C3.1 * 1e3, 1.5))];
     let (_, _, _, sp2) = three_term_store_cap(true, &c8, TT_RHO, b, FLOOR).unwrap();
     let want = C2.0 * (C3.1 - C2.1);
@@ -3971,8 +3621,8 @@ fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
         (sp2 - want).abs() < 1e-6,
         "term 3 must be rate_fast × (RTprop_max − RTprop_min): {sp2} vs {want}"
     );
-    // Cold ⇒ None ⇒ the arm falls back to the configured chain verbatim
-    // (`net/mod.rs:4722-4725`), which is what `cap_for` does.
+    // Cold ⇒ None ⇒ the arm falls back to the configured chain verbatim,
+    // which is what `cap_for` does.
     assert!(three_term_store_cap(true, &[None, Some(tt(C2.0, 8.0, 1.5))], TT_RHO, b, FLOOR).is_none());
     assert_eq!(
         cap_for(Arm::ThreeTermCell, 0.0, 900.0, 2, None),
@@ -3981,8 +3631,8 @@ fn the_three_term_cell_cap_is_the_shipped_law_and_introduces_no_constant() {
     );
 }
 
-/// The seed ensemble over the COUPLING axis, carrying the short-set fraction
-/// (C4) and the model's own produced span/release gauges beside the `[SF]`
+/// The seed ensemble over the coupling axis, carrying the short-set fraction
+/// (C4) and the model's produced span/release gauges beside the `[SF]`
 /// zero-fraction.
 struct CoupEns {
     zero: Vec<f64>,
@@ -4023,8 +3673,8 @@ impl CoupEns {
     }
 }
 
-/// (11) THE COUPLING MODEL — the pre-registered C1..C4 verdict, and the
-/// candidate scoring rule that is unlocked only by it.
+/// (11) The coupling model — the pre-registered C1..C4 verdict, and the
+/// candidate scoring rule it unlocks.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_geography_on_the_coupling_model() {
@@ -4155,9 +3805,9 @@ fn sf_geography_on_the_coupling_model() {
     }
 }
 
-/// (12) WHICH PRODUCED QUANTITY DIVERGES FIRST — the NOT-VALIDATED branch's
-/// deliverable, walked along `span → released → store_len → in_flight →
-/// available()` with every column a produced number.
+/// (12) Which produced quantity diverges first, walked along
+/// `span → released → store_len → in_flight → available()` with every column
+/// a produced number.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn the_coupling_chain_walked_quantity_by_quantity() {
@@ -4208,29 +3858,27 @@ fn the_coupling_chain_walked_quantity_by_quantity() {
     );
 }
 
-/// THE REFUTATION, BOUNDED (CLAUDE.md: every documented model-vs-engine
-/// divergence carries a test that BOUNDS it). The frontier-span store does not
-/// change what the admission gate sees, because the SACK release law uncounts
-/// precisely the delivered part of the span — so `store_len` returns to the
-/// unacked count up to the gap-report lag. This asserts the identity with a
-/// number rather than describing it, at the ASYMMETRIC cell where the span is
-/// largest (3.5x the cap), so a successor who changes the release clock,
-/// `GAP_ACK_MIN_INTERVAL`, or the placement re-scores this row.
+/// The frontier-span store does not change what the admission gate sees: the
+/// SACK release law uncounts precisely the delivered part of the span, so
+/// `store_len` returns to the unacked count up to the gap-report lag. Asserted
+/// at the asymmetric cell, where the span is largest (3.5× the cap), so a
+/// change to the release clock, `GAP_ACK_MIN_INTERVAL` or placement re-scores
+/// this row.
 #[test]
 fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
     let geom = [C2, C3];
     let feed = Feed::Measured(&ACK_C8[..]);
     let r = simulate_full(&geom, Arm::Unified, feed, 8.0, 0, Acct::Engine, Store::Span);
-    // The span is MUCH larger than the gate's operand: this is the quantity
-    // ADR-0058's coda calls "the un-SACKed frontier span the fast path parks".
+    // The span is much larger than the gate's operand: the un-SACKed frontier
+    // span the fast path parks (paper §6.3).
     assert!(
         r.span_mean > 2.0 * r.store_len_mean,
         "the span must dwarf the flow-control operand: span {:.0} vs store_len {:.0}",
         r.span_mean,
         r.store_len_mean
     );
-    // …and yet the operand is the unacked count back again, within a few
-    // percent — the release law's whole job.
+    // …and yet the operand is the unacked count again, within a few percent —
+    // the release law's job.
     let rel_err = (r.store_len_mean - r.unacked_mean).abs() / r.unacked_mean.max(1.0);
     assert!(
         rel_err < 0.10,
@@ -4240,8 +3888,8 @@ fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
         r.unacked_mean,
         rel_err * 100.0
     );
-    // The gate pins the operand at the cap, which is why the +16% pool depth
-    // arrives as +16% of in-flight and no more.
+    // The gate pins the operand at the cap, which is why extra pool depth
+    // arrives as the same extra in-flight and no more.
     assert!(
         (r.store_len_mean - r.mean_cap).abs() < 0.15 * r.mean_cap,
         "the bulk source pins store_len at the cap: {:.0} vs cap {:.0}",
@@ -4250,21 +3898,16 @@ fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
     );
 }
 
-/// THE FIRST DIVERGENCE, BOUNDED — and it is not the store law, it is Σ`cwnd`.
+/// The first divergence is not the store law, it is Σ`cwnd`.
 ///
-/// `available() = cwnd − in_flight` (`scheduler/mod.rs:2268-2271`), and the
-/// coupling chain shows Σ`in_flight` tracking the cap in BOTH store models. So
-/// what decides whether `active_paths()` empties is the OTHER operand. The
-/// bench's Σ`cwnd` over live paths at the duals is a large MULTIPLE of the
-/// wire's own measured Σ-anchor — the quantity that is the cwnd FLOOR — which
-/// means the bench's `available()` has structural headroom the wire's does
-/// not. The owner is this bench's known link artifact: 2.4–5.7× RTprop of
-/// standing queue at every fast path (goal-gate "SF Bench on Measured
-/// Inputs", "WHAT THIS BENCH STILL CANNOT SEE"), which is in `min_rtt`, hence
-/// in the anchor, hence in the cwnd floor.
-///
-/// Bounded rather than described, so a successor who fixes the link model
-/// re-scores this row instead of inheriting prose.
+/// `available() = cwnd − in_flight`, and Σ`in_flight` tracks the cap in both
+/// store models, so what decides whether `active_paths()` empties is the other
+/// operand. The bench's Σ`cwnd` over live paths at the duals is a large
+/// multiple of the wire's measured Σ-anchor (the cwnd floor), so the bench's
+/// `available()` has structural headroom the wire's does not. The owner is
+/// the bench's link artifact: 2.4–5.7× RTprop of standing queue at every fast
+/// path, which lands in `min_rtt`, hence in the anchor and the cwnd floor.
+/// Bounded so a fix to the link model re-scores this row.
 #[test]
 fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals() {
     for (cell, geom, shapes) in [
@@ -4272,10 +3915,10 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
         ("c8", vec![C2, C3], &ACK_C8[..]),
     ] {
         let sigma_wire: f64 = shapes.iter().map(|s| s.anchor_sym()).sum();
-        // The SAME 20 s horizon the readout uses, on purpose: Copa is still
-        // ramping at 8 s (c7 reads Sigma cwnd 1100 there, below the wire's own
-        // anchor sum), so a shorter horizon would assert the warm-up and not
-        // the steady state this attribution is about.
+            // The same 20 s horizon as the readout: Copa is still ramping at
+            // 8 s (c7 reads Σ cwnd 1100 there, below the wire's anchor sum),
+            // so a shorter horizon would assert the warm-up, not the steady
+            // state.
         let r = simulate_full(
             &geom,
             Arm::Unified,
@@ -4301,8 +3944,8 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
              {sigma_wire:.0}, outside the band this section measured",
             r.cwnd_live_mean
         );
-        // …and the headroom it buys is what keeps `available()` open: the
-        // in-flight the store cap can produce is a fraction of it.
+            // …and the headroom is what keeps `available()` open: the
+            // in-flight the store cap can produce is a fraction of it.
         assert!(
             r.infl_mean < r.cwnd_live_mean,
             "{cell}: Sigma in_flight {:.0} must sit under Sigma cwnd {:.0} on \
@@ -4313,33 +3956,22 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
     }
 }
 
-/// THE Σ`cwnd` QUESTION, ASKED OF THE LEDGER — goal-gate "The Accounting
-/// Ledger" (MECHANICAL DEFECT SWEEP item 5).
+/// Does the balanced ledger move Σ`cwnd`/Σ-anchor toward 1?
 ///
-/// "Cross-Path Loss Contamination" named the counter-delta over-release as a
-/// candidate owner of FINDING 4's Σ`cwnd` 3.6–6.6× the wire's measured
-/// Σ-anchor, on the argument that an over-release keeps `available() > 0`.
-/// The engine fix — `RWM_CHARGE_RECOVERY` + `RWM_RELEASE_1TO1` composed — IS
-/// this bench's `Acct::Traffic` level by construction (every wire symbol
-/// charged once on the path it flies, released once on the same path), so the
-/// question can be asked here without inventing an arm: **does the balanced
-/// ledger move Σ`cwnd`/Σ-anchor toward 1?**
+/// The counter-delta over-release was a candidate owner of the bench's Σ`cwnd`
+/// at 3.6–6.6× the wire's measured Σ-anchor, on the argument that an
+/// over-release keeps `available() > 0`. The engine fix (`RWM_CHARGE_RECOVERY`
+/// + `RWM_RELEASE_1TO1`) is this bench's `Acct::Traffic` level by construction,
+/// so the question needs no new arm.
 ///
-/// **MEASURED ANSWER: NO — and at c8 the sign is the OPPOSITE of the
-/// candidate's.** Balancing the ledger moves Σ`cwnd`/Σ-anchor
-/// **4.59× → 4.33× (−5.6%) at c7** and **4.99× → 6.25× (+25.3%) at c8**, i.e.
-/// AWAY from 1 at the very cell the candidate was proposed for. The mechanism
-/// is visible in the same rows: charging the recovery channels and releasing
-/// 1:1 raises Σ`in_flight` (2 884 → 4 181 at c7, 3 050 → 4 237 at c8) — an
-/// HONEST gauge is a FULLER gauge — and Copa's own dynamics answer the tighter
-/// `available()` by growing `cwnd`, not by shrinking it. The over-release was
-/// suppressing the window at c8, not inflating it.
-///
-/// So the ownership of FINDING 4 stays where "The Queue Fix" put it (the bench
-/// HORIZON: 3.55×/6.72× → 0.67×/1.28× by correcting the horizon alone), and
-/// this branch claims nothing about it. Bounded rather than described, in both
-/// directions and by sign, so a successor re-scores the row instead of
-/// inheriting the prose.
+/// The answer is no, and at c8 the sign is the opposite: balancing moves the
+/// ratio 4.59× → 4.33× (−5.6 %) at c7 and 4.99× → 6.25× (+25.3 %) at c8.
+/// Charging the recovery channels and releasing 1:1 raises Σ`in_flight`
+/// (2 884 → 4 181 at c7, 3 050 → 4 237 at c8) — an honest gauge is a fuller
+/// gauge — and Copa answers the tighter `available()` by growing `cwnd`. The
+/// divergence belongs to the bench horizon (see
+/// `the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it`).
+/// Bounded in both directions and by sign.
 #[test]
 fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
     for (cell, geom, shapes) in [
@@ -4360,7 +3992,7 @@ fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
         };
         let e = run(Acct::Engine);
         let t = run(Acct::Traffic);
-        // MEASUREMENT DISCIPLINE 1: the axis must actually have run — the
+        // Measurement discipline rule 1: the axis must have run — the
         // un-metered ledger over-releases and the balanced one does not.
         assert!(
             e.led.releases > e.led.charges && t.led.charges == t.led.wire(),
@@ -4381,9 +4013,8 @@ fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
             re > 0.0 && rt > 0.0,
             "{cell}: the loop must run in both arms"
         );
-        // THE ANSWER: the balanced ledger does NOT bring the ratio near 1 at
-        // either dual. It stays in the same multiple-of-the-anchor class the
-        // ENGINE arm is in.
+        // The balanced ledger does not bring the ratio near 1 at either dual;
+        // it stays in the engine arm's multiple-of-the-anchor class.
         assert!(
             rt > 3.0,
             "{cell}: the balanced ledger left Sigma cwnd at {rt:.2}x the wire's \
@@ -4391,8 +4022,8 @@ fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
              'The Coupling Model' FINDING 4 and that must be claimed, not \
              assumed away"
         );
-        // An HONEST gauge is a FULLER gauge, at both cells — the mechanism
-        // behind the sign, asserted rather than argued.
+        // An honest gauge is a fuller gauge, at both cells — the mechanism
+        // behind the sign.
         assert!(
             t.infl_mean > e.infl_mean,
             "{cell}: balancing the ledger must RAISE Sigma in_flight ({:.0} vs \
@@ -4400,7 +4031,7 @@ fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
             t.infl_mean,
             e.infl_mean
         );
-        // And the sign, per cell, which is the finding.
+        // And the sign, per cell.
         let move_pct = (rt / re - 1.0) * 100.0;
         let band = if cell == "c7" { (-20.0, 0.0) } else { (10.0, 45.0) };
         assert!(
@@ -4414,31 +4045,27 @@ fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
     }
 }
 
-/// THE TRANSCRIPTION PIN for the wire's brake/queue columns, and THE
-/// REFUTATION, BOUNDED.
+/// Transcription pin for the wire's brake/queue columns, and the bound on the
+/// claim that the bench's link builds a 2.4–5.7× RTprop standing queue the
+/// wire does not.
 ///
-/// The dispatch that opened this branch, and the handover it executes, both
-/// assert that "the bench's link builds a 2.4–5.7× RTprop standing queue the
-/// wire does not — the wire's cells read ≈1×". **The wire's own columns say
-/// otherwise, and this test is where that is scored rather than described.**
-///
-/// The "≈1×" reading came from READOUT 3's `RTprop` column, which IS the wire's
-/// `min_rtt` — so comparing a bench `min_rtt`-inflation against it compares a
-/// quantity with itself and can only ever return 1.0. The wire's STANDING QUEUE
-/// is a different column, `q_p50 = rtt − rtp`, and it reads **5.8–10.5×** the
-/// same `rtp`. The wire queues MORE than the bench, not less.
+/// A "≈1×" wire reading comes from its RTprop column, which is the wire's
+/// `min_rtt` — comparing a bench `min_rtt` inflation against it compares a
+/// quantity with itself. The wire's standing queue is the `q_p50 = rtt − rtp`
+/// column, and it reads 5.8–10.5× the same `rtp`: the wire queues more than
+/// the bench, not less.
 #[test]
 fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_brake() {
     for w in WIRE_BRAKE {
         let tag = format!("{}/{}", w.cell, w.arm);
-        // Ledger-internal identities: a typo fails here rather than surviving.
+        // Internal identities: a typo fails here rather than surviving.
         assert!(w.reps >= 26, "{tag}: too few reps behind the transcription");
         assert!(w.occ <= w.cap, "{tag}: occupancy above its own cap");
         assert!(w.q99_ms >= w.q_ms, "{tag}: p99 below p50");
         assert!(w.rtprop_ms > 0.0 && w.q_ms > 0.0, "{tag}: degenerate row");
 
-        // THE REFUTATION. Every transcribed row — single cell and both duals,
-        // both arms — carries a standing queue of MANY RTprops.
+        // Every transcribed row — single cell and both duals, both arms —
+        // carries a standing queue of many RTprops.
         assert!(
             w.queue_over_rtprop() > 5.0,
             "{tag}: the wire's standing queue is {:.1} ms on a {:.1} ms RTprop \
@@ -4451,11 +4078,10 @@ fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_br
         );
     }
 
-    // AND WHICH BRAKE BINDS IS CELL-KEYED, which is the second half of the
-    // finding: at the SINGLE cell the store cap is the brake (occupancy at its
-    // ceiling, the backpressure arm taking 40% of the sender loop's wakeups);
-    // at BOTH DUALS it is not (occupancy at a third to a half of a cap that is
-    // 4x larger, and the backpressure arm at 0.0–7.8%).
+    // Which brake binds is cell-keyed: at the single cell the store cap is the
+    // brake (occupancy at its ceiling, the backpressure arm taking 40 % of the
+    // sender loop's wakeups); at both duals it is not (occupancy at a third
+    // to a half of a 4× larger cap, backpressure 0.0–7.8 %).
     for w in WIRE_BRAKE.iter().filter(|w| w.cell == "sc2") {
         assert!(
             w.occ_over_cap() > 0.95 && w.paused_pct > 30.0,
@@ -4476,7 +4102,7 @@ fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_br
             w.paused_pct
         );
     }
-    // c7, specifically: the store-cap backpressure arm NEVER fires, over 69 reps.
+    // c7: the store-cap backpressure arm never fires, over 69 reps.
     assert_eq!(
         wire_brake("c7", "A").paused_pct,
         0.0,
@@ -4484,26 +4110,23 @@ fn the_wires_own_columns_say_the_queue_is_many_rtprops_and_the_cap_is_not_the_br
     );
 }
 
-/// THE MECHANISM, PROVEN TO EXECUTE (MEASUREMENT DISCIPLINE 1) — the engine's
-/// windowed extremes expire at 10 s, and every wire transfer is shorter.
+/// The engine's windowed extremes expire at 10 s, and every wire transfer is
+/// shorter (measurement discipline rule 1: the mechanism executes).
 ///
-/// `CopaState::window_duration = Duration::from_secs(10)`
-/// (`scheduler/mod.rs:1063`) is the cutoff for BOTH deques the BDP anchor is
-/// built from: the `min_rtt` sample deque (`expire_old_samples`, `:1914-1919`)
-/// and the `max_bw` max-filter (`bw_evict_before`, `:1136-1143`, called with the
-/// same cutoff). Inside that window neither expires anything, so `min_rtt` and
-/// `max_bw` are WHOLE-TRANSFER extrema.
+/// `CopaState::window_duration` (10 s) is the cutoff for both deques the BDP
+/// anchor is built from: the `min_rtt` sample deque (`expire_old_samples`) and
+/// the `max_bw` max-filter (`bw_evict_before`, same cutoff). Inside that
+/// window nothing expires, so `min_rtt` and `max_bw` are whole-transfer
+/// extrema.
 ///
-/// This test drives the REAL `PathState` on a `MockClock` and shows the switch:
-/// a low RTT sample taken at t=0 still floors `min_rtt` at t = 9 s and no longer
-/// does at t = 11 s. The bench's published horizon is 20 s; the wire's transfers
-/// are 2.4–9.7 s. That is the regime difference goal-gate "The Queue Fix"
-/// attributes the Σ`cwnd` divergence to.
+/// Drives the real `PathState` on a `MockClock`: a low RTT sample taken at t=0
+/// still floors `min_rtt` at t = 9 s and no longer does at t = 11 s. The
+/// bench's published horizon is 20 s; the wire's transfers are 2.4–9.7 s. That
+/// regime difference owns the Σ`cwnd` divergence.
 #[test]
 fn the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it() {
-    // Every cell this bench is scored against, with the MEDIAN transfer
-    // duration its L1 ledgers recorded (`seconds`, docs/l1-raw summaries).
-    // 100% of the reps at all four are under the window.
+    // Every cell this bench is scored against, with the median L1 transfer
+    // duration. All reps at all four are under the window.
     const WIRE_SECONDS: &[(&str, f64)] =
         &[("sc2", 9.06), ("c2r100", 9.64), ("c7", 9.23), ("c8", 2.44)];
     for (cell, secs) in WIRE_SECONDS {
@@ -4513,20 +4136,20 @@ fn the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reache
              filter window for this attribution to hold"
         );
     }
-    // …and the bench's published horizon does NOT.
+    // …and the bench's published horizon is not.
     assert!(
         20.0 > 10.0,
         "the published readouts run 20 s — twice the window — which is the point"
     );
 
-    // THE SWITCH, on the real PathState.
+    // The switch, on the real PathState.
     for (label, elapsed_s, still_floored) in
         [("inside the window", 9.0_f64, true), ("outside it", 11.0_f64, false)]
     {
         let clock = Arc::new(MockClock::new());
         let mut sched = Scheduler::new(clock.clone());
         sched.add_path(0);
-        // One SHORT rtt sample at t = 0 — the pre-queue floor.
+        // One short rtt sample at t = 0 — the pre-queue floor.
         let low = Duration::from_millis(10);
         if let Some(p) = sched.path_mut(0) {
             p.record_rtt_sample(low);
@@ -4561,12 +4184,9 @@ fn the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reache
     }
 }
 
-/// THE QUEUE READOUT — the bench's own standing queue and brake share against
-/// the wire's, in the wire's own units and off the wire's own columns.
-///
-/// This is the instrument for the ledger section "The Queue Fix". It answers
-/// the dispatch's question 1 ("find WHY the bench's loop builds the queue the
-/// wire doesn't") by discovering that the ordering is the other way round.
+/// The queue readout — the bench's own standing queue and brake share against
+/// the wire's, in the wire's units and off the wire's columns. It shows the
+/// ordering is the other way round: the wire queues more than the bench.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_queue_and_brake_against_the_wire() {
@@ -4624,22 +4244,16 @@ fn sf_queue_and_brake_against_the_wire() {
     }
 }
 
-/// THE DIVERGENCE, RELOCATED AND BOUNDED — it is in `min_rtt`, not in the
-/// queue, and the bench's brake is not the wire's.
+/// The divergence is in `min_rtt`, not in the queue, and the bench's brake is
+/// not the wire's. Scored at c7 on `Arm::Legacy` (the arm the wire's A-arm
+/// columns were taken on), at 20 s like the Σ`cwnd` pin, so the two rows read
+/// together:
 ///
-/// Scored at c7, at the SAME configuration the Σ`cwnd` pin uses (20 s,
-/// `Arm::Unified` era aside — here `Arm::Legacy`, the shipped arm the wire's
-/// A-arm columns were taken on), so the two rows are read together.
-///
-/// Three claims, each bounded rather than described:
-///
-///  1. **The bench's standing queue, in RTprops, is SMALLER than the wire's.**
-///     That is the inverse of what goal-gate "The Coupling Model"'s handover
-///     and this branch's dispatch both assumed.
-///  2. **The bench's `min_rtt` is a large multiple of the wire's** — and THAT
-///     is what reaches the anchor, the cwnd floor and `available()`.
-///  3. **The bench's admission gate is closed most of the time and the wire's
-///     is never closed at this cell** (`wait_paused` = 0.0% over 69 reps).
+///   1. The bench's standing queue, in RTprops, is smaller than the wire's.
+///   2. The bench's `min_rtt` is a large multiple of the wire's — and that is
+///      what reaches the anchor, the cwnd floor and `available()`.
+///   3. The bench's admission gate is closed most of the time and the wire's
+///      is never closed at this cell (`wait_paused` = 0.0 % over 69 reps).
 #[test]
 fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_is() {
     let w = wire_brake("c7", "A");
@@ -4651,7 +4265,7 @@ fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_i
     let rtp: f64 = (r.min_rtt_ms(0) + r.min_rtt_ms(1)) / 2.0;
     assert!(q > 0.0 && rtp > 0.0, "the loop must run and produce both columns");
 
-    // (1) THE PREMISE INVERSION.
+    // (1) The bench queues less than the wire.
     assert!(
         q / rtp < w.queue_over_rtprop(),
         "c7: the bench's standing queue is {:.1}x RTprop and the wire's is \
@@ -4661,8 +4275,8 @@ fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_i
         w.queue_over_rtprop()
     );
 
-    // (2) WHERE THE GAP ACTUALLY IS. The bench's windowed-min RTT sits at a
-    // large multiple of the wire's, because the bench's 20 s horizon is twice
+    // (2) Where the gap is: the bench's windowed-min RTT sits at a large
+    // multiple of the wire's, because the bench's 20 s horizon is twice
     // `CopaState::window_duration` and the wire's 9.23 s transfer is inside it.
     let mrtt_x = rtp / w.rtprop_ms;
     assert!(
@@ -4677,7 +4291,7 @@ fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_i
          measured"
     );
 
-    // (3) AND THE BRAKE IS NOT THE SAME BRAKE.
+    // (3) And the brake is not the same brake.
     assert!(
         r.gate_closed_pct() > 50.0,
         "c7: the bench's store-cap gate is closed {:.1}% of admission \
@@ -4690,23 +4304,22 @@ fn the_benchs_queue_is_smaller_than_the_wires_and_its_min_rtt_is_where_the_gap_i
     );
 }
 
-/// THE FIX, BOUNDED — running the bench inside the engine's own filter window
-/// puts `min_rtt` back on the floor and Σ`cwnd` back on the wire's anchor.
+/// Running the bench inside the engine's own filter window puts `min_rtt` back
+/// on the floor and Σ`cwnd` back on the wire's anchor.
 ///
-/// The predecessor's Σ`cwnd` divergence (3.6× at c7, 6.6× at c8) is produced by
-/// the bench's 20 s horizon, which is twice `CopaState::window_duration`. Run
-/// each cell at the duration the WIRE's own transfers ran for — c8 **2.44 s**,
-/// c7 **9.23 s** (`seconds`, docs/l1-raw, 100% of reps under 10 s) — and:
+/// The Σ`cwnd` divergence (3.6× at c7, 6.6× at c8) comes from the bench's 20 s
+/// horizon, twice `CopaState::window_duration`. At the wire's own median
+/// transfer durations (c8 2.44 s, c7 9.23 s; all reps under 10 s):
 ///
-///  * `min_rtt` returns to the configured RTprop (×1.01, both cells), because
-///    the t≈0 floor sample never expires;
-///  * Σ`cwnd`/Σ-anchor moves from **3.55× → 0.67×** at c7 and, at c8, lands at
-///    **1.28×** — inside the ±0.3 band this branch stated in advance;
-///  * and at c8 the standing queue lands on the wire's to within 2%
-///    (343.9 ms modelled vs **338 ms** measured, on a 34.3 vs 38 ms RTprop).
+///   * `min_rtt` returns to the configured RTprop (×1.01, both cells), because
+///     the t≈0 floor sample never expires;
+///   * Σ`cwnd`/Σ-anchor moves from 3.55× → 0.67× at c7 and lands at 1.28× at
+///     c8, inside the ±0.3 band stated in advance;
+///   * at c8 the standing queue lands on the wire's within 2 % (343.9 ms
+///     modelled vs 338 ms measured, on a 34.3 vs 38 ms RTprop).
 ///
-/// The RESIDUAL is at c7, and it is FINDING 2's brake regime, not the queue:
-/// the bench is store-cap-bound there and the wire is measured never to be.
+/// The residual is at c7 and is the brake regime, not the queue: the bench is
+/// store-cap-bound there and the wire is measured never to be.
 #[test]
 fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_anchor() {
     for (cell, geom, shapes, horizon, lo, hi) in [
@@ -4737,8 +4350,8 @@ fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_a
         let infl_x = infl_x / seeds as f64;
         let ratio = cwnd / sigma_wire;
 
-        // (a) THE ANCHOR'S OWN RTprop IS HONEST INSIDE THE WINDOW. This is the
-        // mechanism; the Sigma below is its consequence.
+        // (a) The anchor's own RTprop is honest inside the window — the
+        // mechanism; the Σ below is its consequence.
         assert!(
             infl_x < 1.15,
             "{cell}: min_rtt is {infl_x:.2}x the configured RTprop at a \
@@ -4746,7 +4359,7 @@ fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_a
              still win, or the attribution in goal-gate \"The Queue Fix\" \
              FINDING 3 is wrong"
         );
-        // (b) AND Sigma cwnd LANDS ON THE WIRE'S MEASURED ANCHOR SUM.
+        // (b) And Σ cwnd lands on the wire's measured anchor sum.
         assert!(
             ratio > lo && ratio < hi,
             "{cell}: Sigma cwnd {cwnd:.0} is {ratio:.2}x the wire's measured \
@@ -4757,25 +4370,21 @@ fn matching_the_horizon_to_the_wires_own_transfer_puts_sigma_cwnd_on_the_wires_a
     }
 }
 
-/// THE HORIZON AXIS — the single-axis experiment that isolates the first
+/// The horizon axis — the single-axis experiment that isolates the first
 /// diverging quantity.
 ///
-/// `CopaState::window_duration` is **10 s** (`scheduler/mod.rs:1063`), and it
-/// governs BOTH windowed extremes the anchor is built from: the `min_rtt`
-/// sample deque (`:1914-1919`) and the `max_bw` max-filter (`bw_evict_before`,
-/// same cutoff). Every wire transfer this bench is scored against is SHORTER
-/// than that window — c7 **9.23 s**, sc2 **9.11 s**, c2r100 **9.66 s**, c8
-/// **2.56 s** (the `seconds` column of every `docs/l1-raw` summary record). So
-/// on the wire NEITHER filter ever expires a sample: `min_rtt` and `max_bw` are
-/// WHOLE-TRANSFER extrema, latched before the standing queue builds.
+/// `CopaState::window_duration` (10 s) governs both windowed extremes the
+/// anchor is built from: the `min_rtt` sample deque and the `max_bw`
+/// max-filter (`bw_evict_before`, same cutoff). Every wire transfer this bench
+/// is scored against is shorter than that (c7 9.23 s, sc2 9.11 s, c2r100
+/// 9.66 s, c8 2.56 s), so on the wire neither filter expires a sample:
+/// `min_rtt` and `max_bw` are whole-transfer extrema, latched before the
+/// standing queue builds.
 ///
-/// The bench runs **20 s** — twice the window — so both filters roll, `min_rtt`
-/// climbs off the floor onto the standing queue, and the anchor
-/// (`max_bw · min_rtt`) climbs with it. The anchor is the cwnd FLOOR
-/// (`clamp_cwnd_with_anchor`), so Σ`cwnd` climbs too.
-///
-/// This sweep reports, per horizon, the quantities the attribution chain is
-/// made of. It is a MEASUREMENT of the instrument, not a tuning knob.
+/// The bench runs 20 s, so both filters roll, `min_rtt` climbs onto the
+/// standing queue, and the anchor (`max_bw · min_rtt`) — the cwnd floor via
+/// `clamp_cwnd_with_anchor` — climbs with it, and Σ`cwnd` too. This sweep
+/// reports, per horizon, the quantities the attribution chain is made of.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_horizon_against_the_engines_own_filter_window() {
@@ -4831,8 +4440,8 @@ fn sf_horizon_against_the_engines_own_filter_window() {
     }
 }
 
-/// (8) THE VALIDATION GATE — V1/V2/V3, scored per path against the ledger
-/// before the geography question may be asked at all.
+/// (8) The validation gate — V1/V2/V3, scored per path before the geography
+/// question may be asked.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_measured_ack_era_fidelity() {
@@ -4857,8 +4466,8 @@ fn sf_measured_ack_era_fidelity() {
             let x = r.xanchor_lr(i);
             let ok1 = (x - sh.xanchor).abs() <= V1_XANCHOR_TOL * sh.xanchor;
             let ok2 = (o.reject_pct() - sh.rej_pct).abs() <= V2_REJECT_TOL_PTS;
-            // V3 is scored against the ledger's own per-window ranges, scaled
-            // to THIS bench path's mean gap (the shape is dimensionless).
+                // V3 is scored against the measured per-window ranges, scaled
+                // to this bench path's mean gap (the shape is dimensionless).
             let scale = (1e6 / sh.rate_lr) / o.mean_gap_us.max(1e-9);
             let inband = |v: f64, (lo, hi): (f64, f64)| v * scale >= lo * 0.5 && v * scale <= hi * 2.0;
             let ok3 = inband(o.p50_us, sh.p50) && inband(o.p90_us, sh.p90) && inband(o.p99_us, sh.p99);
@@ -4921,9 +4530,9 @@ fn sf_measured_ack_era_fidelity() {
     );
 }
 
-/// (9) THE GEOGRAPHY, on measured inputs + the accounting axis. The same
-/// G1/G2 the accounting axis pre-registered, on the same statistic, so the two
-/// runs differ in exactly one thing: the ack stream.
+/// (9) The geography, on measured inputs + the accounting axis. The same
+/// G1/G2 and statistic as the accounting axis, so the two runs differ in
+/// exactly one thing: the ack stream.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_geography_on_measured_inputs() {
@@ -4960,9 +4569,9 @@ fn sf_geography_on_measured_inputs() {
                 );
                 if acct == Acct::Engine && arm == Arm::Legacy {
                     let l = e.led;
-                    // READOUT 4, as an EMERGENT property: under the engine's
-                    // ledger every wire symbol enters the receiver's
-                    // expected/received counters, so Σcrecv/srcack IS
+                    // Repairs-in-counters, as an emergent property: under the
+                    // engine's ledger every wire symbol enters the receiver's
+                    // expected/received counters, so Σcrecv/srcack is
                     // wire()/src. The wire settles at 1.01–1.04 (c2r100, c7)
                     // and 1.21–1.34 (c8).
                     println!(
@@ -5073,25 +4682,22 @@ impl MeasEns {
     }
 }
 
-/// **(17) THE COMPOSED CAP LAW, scored as one arm** (paper §16.56, ADR-0070
-/// Deliverable 2 — *"this composition has NEVER been measured as one arm.
-/// Not at L1, not at the SF bench, not at L0."*).
+/// (17) The composed cap law, scored as one arm (paper §10).
 ///
-/// Reports, per geometry, against the SHIPPED arm and against the pool law
+/// Reports, per geometry, against the shipped arm and against the pool law
 /// alone, so the brake's contribution is separable from the pool's:
 ///
-/// * **cap** — and whether it is INTERIOR. The predecessor operated AT its
-///   ceiling (121/126 dual reps at exactly 4096), so every measurement taken
-///   through it measured a constant; the composed law's only remaining bound
-///   is a MEMORY bound stated outside the law, and §16.56 calls a composed cap
-///   landing on it a STOP rather than a result. `mem%`/`floor%` are the
-///   FORMULA-FIRST bind-fraction gauges for the two surviving bounds.
-/// * **zero%** — the `[SF]` zero-fraction, the quantity this bench exists for.
-/// * **gp** — the goodput class, with the fold against the shipped arm.
-/// * **brake%** — the late-stage brake's own liveness. Read it beside the
-///   3T column: where the two arms' goodput agrees AND `brake%` is non-zero,
-///   the brake bound and changed nothing (a NULL RESULT); where `brake%` is
-///   zero, the brake never bound and the arms are the same law.
+///   * cap — and whether it is interior. The predecessor operated at its
+///     ceiling (121/126 dual reps at exactly 4096), so every measurement
+///     through it measured a constant; the composed law's only remaining
+///     bound is a memory bound outside the law, and a composed cap landing
+///     on it is a stop, not a result.
+///   * zero% — the `[SF]` zero-fraction.
+///   * gp — the goodput class, with the fold against the shipped arm.
+///   * brake% — the late-stage brake's liveness. Read it beside the 3T
+///     column: where goodput agrees and `brake%` is non-zero, the brake bound
+///     and changed nothing (a null result); where `brake%` is zero, the brake
+///     never bound and the arms are the same law.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_composed_cap_law_as_one_arm() {
@@ -5143,9 +4749,8 @@ fn sf_composed_cap_law_as_one_arm() {
     );
 }
 
-/// (10) THE CANDIDATE, re-scored on the measured era — the dispatch's MATCH
-/// outcome asks for exactly this, and it is printed either way so a NO-MATCH
-/// still leaves the number on the record rather than losing it.
+/// (10) The pooled-ceiling candidate, re-scored on the measured era and
+/// printed either way so the number stays on the record.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_pooled_candidate_on_measured_inputs() {
@@ -5179,45 +4784,44 @@ fn sf_pooled_candidate_on_measured_inputs() {
 
 // ── The measured era's always-on pins ─────────────────────────────────────
 
-/// THE LAW IS SOLVED, NOT CHOSEN — the two quantities the model needs beyond
-/// the measured quantiles are both roots of measured identities, and this
-/// asserts they are, at every measured path:
+/// The law is solved, not chosen: the two quantities the model needs beyond
+/// the measured quantiles are roots of measured identities, at every path:
 ///
-///  * `alpha` is the root of "the distribution's mean is `1/rate_lr`", so
-///    reconstructing the mean from the model's own pieces must return 1;
-///  * `u_c` is the root of "the silence fraction equals the drain duty cycle",
-///    i.e. `∫_0^{u_c} Q = q50`;
-///  * and the model's marginal must reproduce the LEDGER's own quantiles: `Q`
-///    evaluated at 0.5/0.9/0.99 must be the transcribed p50/p90/p99 (at the
-///    range position `theta` the mean constraint left it).
+///   * `alpha` is the root of "the distribution's mean is `1/rate_lr`", so
+///     reconstructing the mean from the model's pieces returns 1;
+///   * `u_c` is the root of "the silence fraction equals the drain duty
+///     cycle", i.e. `∫_0^{u_c} Q = q50`;
+///   * the model's marginal reproduces the measured quantiles: `Q` at
+///     0.5/0.9/0.99 is the transcribed p50/p90/p99 (at the range position
+///     `theta` the mean constraint left it).
 ///
-/// If a successor edits the interpolation, the tail or the duty identity, this
-/// fails on the identity rather than drifting silently into a fitted curve.
+/// An edit to the interpolation, the tail or the duty identity fails on the
+/// identity rather than drifting into a fitted curve.
 #[test]
 fn measured_ack_law_is_solved_from_the_measurement() {
     for sh in ACK_ALL {
-        // Resolved against the wire's OWN rate, so the reconstruction can be
-        // checked in the wire's own units.
+        // Resolved against the wire's own rate, so the reconstruction can be
+        // checked in the wire's units.
         let g = AckGaps::new(sh, sh.rate_lr);
         assert!(g.alpha > 1.0, "{}: alpha {} would give an infinite mean gap", sh.row, g.alpha);
         assert!(g.theta >= 0.0 && g.theta <= 0.5, "{}: theta {}", sh.row, g.theta);
         assert!(g.u_c > 0.5 && g.u_c < 1.0, "{}: u_c {}", sh.row, g.u_c);
-        // (1) THE MEAN CONSTRAINT: ∫_0^1 Q du = 1, i.e. the model's mean gap
-        // IS `1/rate_lr`. This is what `alpha` was solved for.
+        // (1) The mean constraint: ∫_0^1 Q du = 1, i.e. the model's mean gap
+        // is `1/rate_lr`. This is what `alpha` was solved for.
         let m = g.cdf_mean_to(1.0);
         assert!(
             (m - 1.0).abs() < 1e-6,
             "{}: the model's mean gap is {m:.6}x the measured one — alpha did not solve",
             sh.row
         );
-        // (2) THE DUTY IDENTITY: ∫_0^{u_c} Q du = q50.
+        // (2) The duty identity: ∫_0^{u_c} Q du = q50.
         assert!(
             (g.cdf_mean_to(g.u_c) - g.q50).abs() < 1e-9,
             "{}: the silence threshold does not satisfy the drain duty identity",
             sh.row
         );
-        // (3) THE MARGINAL IS THE LEDGER'S. Q at the three measured quantiles
-        // must BE the transcribed numbers, in µs, at this path's own scale.
+        // (3) The marginal is the measurement's: Q at the three measured
+        // quantiles is the transcribed numbers, in µs, at this path's scale.
         let mean_us = 1e6 / sh.rate_lr;
         let (want50, want90, want99) = AckGaps::quantiles(sh, g.theta);
         for (u, want, range, what) in [
@@ -5238,7 +4842,7 @@ fn measured_ack_law_is_solved_from_the_measurement() {
                 sh.row
             );
         }
-        // (4) THE TAIL IS TRUNCATED AT SOMETHING THE INSTRUMENT SAW.
+        // (4) The tail is truncated at a gap the instrument saw.
         let mut rng = Rng::new(1);
         let mut hi = 0.0_f64;
         for _ in 0..100_000 {
@@ -5250,32 +4854,30 @@ fn measured_ack_law_is_solved_from_the_measurement() {
             sh.row,
             hi * 1e3
         );
-        // And the drain rate really is faster than arrivals — otherwise the
-        // observer is not an observer and the whole era is inert.
+        // And the drain is faster than arrivals — otherwise the observer is
+        // not an observer and the era is inert.
         assert!(g.q50 < 1.0, "{}: p50 gap is not below the mean gap", sh.row);
     }
 }
 
-/// MEASUREMENT DISCIPLINE 1 for the measured era: the mechanism under test
-/// must EXECUTE, and it must execute as the wire describes it.
+/// Measurement discipline rule 1 for the measured era: the mechanism executes,
+/// as the wire describes it.
 ///
-///  * every ack reaches `record_delivery` with `count = 1` — asserted as an
-///    identity between the observer's count and the run's delivered count, so
-///    a batching bug cannot hide;
-///  * the SHIPPED 1 ms floor really does the folding: most calls are rejected,
-///    and the accepted ones fold many acks each;
-///  * the sub-tick clock walk is monotone and lands on the tick grid (the
-///    refresh count is unchanged from every other era).
+///   * every ack reaches `record_delivery` with `count = 1` — an identity
+///     between the observer's count and the delivered count, so a batching
+///     bug cannot hide;
+///   * the shipped 1 ms floor does the folding: most calls are rejected, and
+///     the accepted ones fold many acks each;
+///   * the sub-tick clock walk is monotone and lands on the tick grid (the
+///     refresh count is unchanged from every other era).
 #[test]
 fn measured_era_feeds_the_shipped_floor_one_ack_at_a_time() {
     let m = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8), 6.0, 0, Acct::Off);
     let h = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Honest, 6.0, 0, Acct::Off);
-    // drecv = 1: one observation per delivered symbol, no aggregation. The
-    // observer is work-conserving, so the identity is exact ONCE the acks
-    // still inside it at the horizon are counted — and that residual is
-    // asserted small, because a large one would mean the observer is running
-    // slower than the link and the era is throttling the loop rather than
-    // re-timing it.
+    // drecv = 1: one observation per delivered symbol. The observer is
+    // work-conserving, so the identity is exact once the acks still inside it
+    // at the horizon are counted; that residual must be small, or the observer
+    // is throttling the loop rather than re-timing it.
     let obs: u64 = m.obs.iter().map(|o| o.n_obs).sum();
     let residual: u64 = m.obs.iter().map(|o| o.backlog_end).sum();
     assert_eq!(
@@ -5290,7 +4892,7 @@ fn measured_era_feeds_the_shipped_floor_one_ack_at_a_time() {
          not re-timing",
         m.delivered
     );
-    // The floor is the clock, and it rejects the way READOUT 3b says.
+    // The floor is the clock, and it rejects as measured.
     for (i, o) in m.obs.iter().enumerate().take(2) {
         assert!(o.n_obs > 10_000, "path {i}: only {} acks observed", o.n_obs);
         assert!(
@@ -5304,15 +4906,15 @@ fn measured_era_feeds_the_shipped_floor_one_ack_at_a_time() {
             o.folded()
         );
     }
-    // The tick grid is untouched: the sub-tick walk must not add or lose a
-    // dyn-cap refresh.
+    // The tick grid is untouched: the sub-tick walk adds or loses no dyn-cap
+    // refresh.
     assert_eq!(m.ticks, h.ticks, "the sub-tick clock walk moved the refresh grid");
 }
 
-/// THE MEASURED ERA IS AN ERA, NOT A REWRITE: `Feed::Measured` must leave
-/// every other feed bit-identical. The era axis is only a claim about the
-/// SAMPLER, so the transport half — deliveries, retransmits, the ledger — must
-/// come out of `Feed::Honest` exactly as it did before this branch.
+/// The measured era is an era, not a rewrite: `Feed::Measured` leaves every
+/// other feed bit-identical. The era axis is a claim about the sampler only,
+/// so the transport half — deliveries, retransmits, the ledger — must come out
+/// of `Feed::Honest` unchanged.
 #[test]
 fn measured_era_does_not_disturb_the_other_eras() {
     for acct in [Acct::Off, Acct::Traffic, Acct::Engine] {
@@ -5329,12 +4931,9 @@ fn measured_era_does_not_disturb_the_other_eras() {
     }
 }
 
-/// THE VALIDATION GATE, bounded — V1 and V2 as always-on assertions at the
-/// two cells the dispatch's question is about, on the tolerances that were
-/// pre-registered in the previous commit rather than discovered here.
-///
-/// Scored at 3 seeds × 8 s rather than the ledger's 8 × 20 s: this is the
-/// regression bound, not the evidence.
+/// The validation gate, bounded — V1 and V2 as always-on assertions at c7 and
+/// c8, on the pre-registered tolerances. 3 seeds × 8 s: the regression bound,
+/// not the evidence.
 #[test]
 fn measured_era_reproduces_the_wires_floor_and_anchor() {
     for (geom, shapes) in [(vec![C2, C2], &ACK_C7), (vec![C2, C3], &ACK_C8)] {
@@ -5342,7 +4941,7 @@ fn measured_era_reproduces_the_wires_floor_and_anchor() {
         for s in 0..3u64 {
             let r = simulate_acct(&geom, Arm::Legacy, feed, 8.0, s, Acct::Off);
             for (i, sh) in shapes.iter().enumerate() {
-                // V2 — the floor's rejection rate, a PREDICTION of the model.
+                // V2 — the floor's rejection rate, a prediction of the model.
                 let rej = r.obs[i].reject_pct();
                 assert!(
                     (rej - sh.rej_pct).abs() <= V2_REJECT_TOL_PTS,
@@ -5351,10 +4950,10 @@ fn measured_era_reproduces_the_wires_floor_and_anchor() {
                     sh.rej_pct,
                     V2_REJECT_TOL_PTS
                 );
-                // V1 — the realized anchor over-read on THE LEDGER'S
-                // definition (READOUT 3: `max_bw/rate_lr`, the RTT divided
-                // out), which is the quantity the store-cap Σ and the cwnd
-                // anchor floor consume once the path's own RTprop is put back.
+                // V1 — the realized anchor over-read on the wire's definition
+                // (`max_bw/rate_lr`, the RTT divided out), the quantity the
+                // store-cap Σ and the cwnd anchor floor consume once the
+                // path's own RTprop is put back.
                 let x = r.xanchor_lr(i);
                 assert!(
                     (x - sh.xanchor).abs() <= V1_XANCHOR_TOL * sh.xanchor,
@@ -5369,35 +4968,29 @@ fn measured_era_reproduces_the_wires_floor_and_anchor() {
     }
 }
 
-/// THE NO-MATCH RESULT, BOUNDED — goal-gate "SF Bench on Measured Inputs".
+/// With the ack stream measured, the pre-registered geography fails, for an
+/// arithmetic reason: the measured over-read saturates the store-cap law's
+/// `N·knee` ceiling, and a saturated cap cannot express the U-fold.
 ///
-/// With the ack stream measured instead of invented, the pre-registered
-/// geography FAILS, and it fails for a reason that is arithmetic rather than
-/// stochastic: **the measured over-read saturates the store-cap law's `N·knee`
-/// ceiling, and a saturated cap cannot express the U-fold at all.**
+/// The shipped law is `clamp(gain·N·Σ_set, floor, N·knee)`; U changes only
+/// which set the Σ ranges over. At the measured `xanchor` the unclamped law
+/// asks for 2.7× the ceiling at c8, so both arms clamp to 4096 and the set is
+/// unobservable — dropping a path from Σ removes 40 % of the anchor mass, far
+/// short of the 2.7× the clamp swallows.
 ///
-/// The shipped law is `clamp(gain·N·Σ_set, floor, N·knee)`. U changes only
-/// WHICH SET the Σ ranges over. At the measured `xanchor` the unclamped law
-/// asks for 2.7× the ceiling at c8, so BOTH arms clamp to the same 4096 and
-/// the set becomes unobservable — dropping a path from Σ at c8 removes 40% of
-/// the anchor mass, far short of the 2.7× of headroom the clamp swallows.
+/// Both halves, at 3 seeds × 8 s (regression bound):
 ///
-/// Asserted here in both halves, at 3 seeds × 8 s (the ledger's evidence is
-/// the 8 × 20 s matrix; this is the regression bound):
+///   * the arithmetic, on the real law: `gain·N·Σ` at the measured per-path
+///     `xanchor` exceeds `N·knee` by more than the mass U can remove;
+///   * the consequence, in the loop: the mean cap sits near the ceiling on
+///     both arms at c8, and the U-fold the engine's ledger produced on the
+///     honest era (7.1×) collapses below 2×.
 ///
-///  * THE ARITHMETIC, on the real law: `gain·N·Σ` at the measured per-path
-///    `xanchor` exceeds `N·knee` by more than the anchor mass U can remove;
-///  * THE CONSEQUENCE, in the loop: under the measured era the mean cap sits
-///    within a few percent of the ceiling on BOTH arms at c8, and the U-fold
-///    that the engine's ledger produced on the honest era (7.1×, goal-gate
-///    "SF Accounting Axis" FINDING 1) collapses below 2×.
-///
-/// If a successor raises `RWM_STORE_PATH_POOL`, fixes the anchor era, or
-/// changes the ceiling, this test fails and the diagnosis gets re-scored
-/// rather than being inherited as prose.
+/// Raising `RWM_STORE_PATH_POOL`, fixing the anchor era or changing the
+/// ceiling fails this test and re-scores the diagnosis.
 #[test]
 fn measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold() {
-    // (1) THE ARITHMETIC, on the shipped law itself.
+    // (1) The arithmetic, on the shipped law.
     let ceiling = (2 * KNEE) as f64; // 4096
     let sigma_full = C2.0 * C2.1 * ACK_C8_P0.xanchor + C3.0 * C3.1 * ACK_C8_P1.xanchor;
     let sigma_fast = C2.0 * C2.1 * ACK_C8_P0.xanchor; // what U's set change can remove
@@ -5407,15 +5000,15 @@ fn measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold() {
         GAIN * 2.0 * sigma_full
     );
     assert_eq!(shipped_chain(sigma_full, 2), ceiling as usize);
-    // The set change U makes is SMALLER than the headroom the clamp eats, so
-    // both arms land on the same number — this is the fold's grave.
+    // The set change U makes is smaller than the headroom the clamp eats, so
+    // both arms land on the same number.
     assert_eq!(
         shipped_chain(sigma_fast, 2),
         shipped_chain(sigma_full, 2),
         "dropping the slow leg from Sigma must still clamp — otherwise the fold survives"
     );
 
-    // (2) THE CONSEQUENCE, in the closed loop.
+    // (2) The consequence, in the closed loop.
     let mean = |arm: Arm, acct: Acct| -> (f64, f64) {
         let (mut z, mut c) = (0.0, 0.0);
         for s in 0..3u64 {
@@ -5427,15 +5020,15 @@ fn measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold() {
     };
     let (a_zero, a_cap) = mean(Arm::Legacy, Acct::Engine);
     let (u_zero, u_cap) = mean(Arm::Unified, Acct::Engine);
-    // MEASUREMENT DISCIPLINE 1 — the era must have run, or this proves nothing.
+    // Measurement discipline rule 1: the era must have run.
     let probe = simulate_acct(&[C2, C3], Arm::Legacy, Feed::Measured(&ACK_C8), 8.0, 0, Acct::Engine);
     assert!(probe.obs[0].n_obs > 10_000 && probe.obs[1].n_obs > 1_000);
     assert!(probe.led.taper > 0 && probe.led.margin > 0 && probe.led.retx > 0);
 
-    // Both arms ride the ceiling — the means carry the warm-up ramp from the
-    // 128 boot cap, so they are scored against 0.7× rather than 1.0×, and the
-    // load-bearing half is that the two arms CONVERGE: on the honest era they
-    // differ by 5.8× (379 vs 2192, goal-gate "SF Accounting Axis" FINDING 1).
+    // Both arms ride the ceiling. The means carry the warm-up ramp from the
+    // 128 boot cap, so they are scored against 0.7× rather than 1.0×; the
+    // load-bearing half is that the two arms converge (on the honest era they
+    // differ by 5.8×, 379 vs 2192).
     for (label, cap) in [("A", a_cap), ("AU", u_cap)] {
         assert!(
             cap > 0.7 * ceiling,
@@ -5454,12 +5047,10 @@ fn measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold() {
         "the U-fold survived the ceiling at c8: {fold:.2}x (A {a_zero:.1}% AU {u_zero:.1}%) \
          — the engine's ledger produced 7.1x on the honest era"
     );
-    // And the c8 A arm is NOT what fails — it stays out of the published
-    // bench's 37% class. Its full-horizon level (7.2%, caught on 88% of
-    // seeds, i.e. inside the wire's ≈4% class) is the ledger's number and is
-    // deliberately NOT asserted here: at 8 s the mean cap is still climbing
-    // off the 128 boot value and the zero-fraction has not settled. This
-    // bounds the class, which is stable; the level is evidence, not a bound.
+    // The c8 A arm stays out of the published bench's 37 % class. Its
+    // full-horizon level (7.2 %, caught on 88 % of seeds, inside the wire's
+    // ≈4 % class) is deliberately not asserted: at 8 s the mean cap is still
+    // climbing off the boot value. This bounds the class, which is stable.
     assert!(
         a_zero < 25.0,
         "the c8 A arm fell back into the published bench's high class: {a_zero:.1}%"
@@ -5472,10 +5063,9 @@ fn fold_str(a: f64, u: f64) -> String {
 
 // ── Guards (always run) ───────────────────────────────────────────────────
 
-/// MEASUREMENT DISCIPLINE 1: the loop under test must EXECUTE. The bench's
-/// simulated sender must actually refresh the cap, actually saturate paths,
-/// and actually deliver — a bench that never saturates would report 0% on both
-/// arms and prove nothing.
+/// Measurement discipline rule 1: the loop executes. The simulated sender
+/// refreshes the cap, saturates paths and delivers — a bench that never
+/// saturates would report 0 % on both arms and prove nothing.
 #[test]
 fn bench_loop_executes() {
     let r = simulate(&[C2, C3], Arm::Legacy, 4.0);
@@ -5485,28 +5075,24 @@ fn bench_loop_executes() {
     assert!(r.mean_cap > BOOT as f64, "the cap never left the boot value: {}", r.mean_cap);
 }
 
-/// THE LOAD-BEARING CODE FACT, pinned against the REAL scheduler.
+/// The load-bearing code fact, pinned against the real scheduler.
 ///
-/// The whole question rests on it: `active_paths()` (`p.active && available()
-/// > 0`) is NOT a gate on the reliable data path. `emit_source.rs` places with
+/// `active_paths()` (`p.active && available() > 0`) is not a gate on the
+/// reliable data path. `emit_source` places with
 /// `Scheduler::place_symbol(false, &[])` → `place_costs`, which filters on
-/// `p.active` ALONE. So a cwnd-saturated path keeps receiving source symbols,
-/// `in_flight` may exceed `cwnd` without bound, and `available()` reads 0 and
-/// STAYS 0 until acks drain it. `active_paths()` at the dyn-cap phase is
-/// therefore a pure OBSERVABLE of saturation, never a brake on it — and the
-/// only brake at the battery's arms is `store_len >= effective_store_cap`
-/// (`cwnd_full` is off: `RWM_INFL_CAP` defaults to 0).
-///
-/// If this ever changes, the `[SF]` gauge stops meaning what this bench and
-/// the goal-gate "c8 SF Mechanism" section read it to mean.
+/// `p.active` alone. So a cwnd-saturated path keeps receiving source symbols,
+/// `in_flight` may exceed `cwnd`, and `available()` stays 0 until acks drain
+/// it. `active_paths()` at the dyn-cap phase is a pure observable of
+/// saturation, never a brake on it; the only brake at the battery's arms is
+/// `store_len >= effective_store_cap` (`cwnd_full` is off: `RWM_INFL_CAP`
+/// defaults to 0). If this changes, the `[SF]` gauge changes meaning.
 #[test]
 fn reliable_placement_does_not_filter_on_cwnd_headroom() {
     let clock = Arc::new(MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
     sched.add_path(1);
-    // Saturate BOTH paths past their cwnd, exactly as an unbraked store cap
-    // does: charge more in_flight than cwnd.
+    // Saturate both paths past their cwnd, as an unbraked store cap does.
     for id in [0u32, 1u32] {
         let cw = sched.path(id).map(|p| p.cwnd).unwrap_or(0);
         assert!(cw > 0);
@@ -5514,18 +5100,17 @@ fn reliable_placement_does_not_filter_on_cwnd_headroom() {
             p.charge_in_flight(cw + 1);
         }
     }
-    // The saturation filter now reads EMPTY...
+    // The saturation filter now reads empty...
     assert!(
         sched.active_paths().is_empty(),
         "both paths were charged past cwnd; active_paths() must be empty"
     );
     assert_eq!(sched.live_paths().len(), 2, "both paths are still live");
-    // ...and `best_source_path` / `schedule`, which DO filter, correctly stall.
+    // ...and `best_source_path` / `schedule`, which do filter, stall.
     assert!(sched.best_source_path().is_none());
     assert!(sched.schedule(Vec::new(), Vec::new()).is_empty());
-    // But the RELIABLE source emitter's placement does not: it still returns a
-    // full candidate set over the LIVE paths. This is the asymmetry the whole
-    // mechanism turns on.
+    // But the reliable source emitter's placement does not: it still returns
+    // a full candidate set over the live paths.
     let probs = sched.place_probs(false, &[]);
     assert_eq!(
         probs.len(),
@@ -5536,17 +5121,16 @@ fn reliable_placement_does_not_filter_on_cwnd_headroom() {
     assert!(probs.iter().any(|(_, w)| *w > 0.0), "placement must still pick a path");
 }
 
-/// THE MECHANISM'S ARITHMETIC CORE: an EMPTY `active_paths()` is not a taper
-/// under the shipped law — it is a CLIFF to the boot cap, because
-/// `path_scaled_store_cap` returns `None` at `pipe_sum <= 0` and the chain
-/// falls all the way through to `store_boot_cap`.
+/// An empty `active_paths()` is not a taper under the shipped law but a cliff
+/// to the boot cap: `path_scaled_store_cap` returns `None` at `pipe_sum <= 0`
+/// and the chain falls through to `store_boot_cap`.
 ///
-/// That cliff is the negative feedback the legacy arm gets for free: the moment
-/// every path is cwnd-saturated, the store cap drops ≥6× and admission stops
-/// until the paths drain. `RWM_STORE_CAP_UNIFIED` deletes it — under U the Σ
-/// ranges over `live_paths()`, which is never empty while the transfer is up,
-/// so the empty state carries NO consequence and persists. This is the whole
-/// of what U changes about the gauge.
+/// That cliff is the negative feedback the legacy arm gets for free: the
+/// moment every path is cwnd-saturated, the store cap drops ≥6× and admission
+/// stops until the paths drain. Under `RWM_STORE_CAP_UNIFIED` the Σ ranges
+/// over `live_paths()`, never empty while the transfer is up, so the empty
+/// state has no consequence and persists. That is all U changes about the
+/// gauge.
 #[test]
 fn empty_active_set_is_a_cliff_not_a_taper() {
     let a_fast = C2.0 * C2.1; // 83.2
@@ -5565,8 +5149,7 @@ fn empty_active_set_is_a_cliff_not_a_taper() {
         both as f64 / BOOT as f64
     );
 
-    // N = 1 (c1/sc2): the same cliff, and it is the MEASURED c1 payoff
-    // mechanism (goal-gate: capboot 30% → 0% under U, +13% goodput).
+    // N = 1 (c1/sc2): the same cliff.
     let single = shipped_chain(a_fast * 5.0, 1); // legacy anchor over-read ×5
     assert_eq!(single, 832);
     assert!(single <= STORE_MAX, "the N = 1 law is bounded by RELIABLE_STORE_MAX");
@@ -5576,17 +5159,15 @@ fn empty_active_set_is_a_cliff_not_a_taper() {
         single as f64 / BOOT as f64
     );
 
-    // The unified arm has NO cliff at all: `live_paths()` is non-empty
-    // whenever the transfer is up, so the Σ never reaches 0.
+    // The unified arm has no cliff: `live_paths()` is non-empty whenever the
+    // transfer is up, so the Σ never reaches 0.
     assert!(cap_for(Arm::Unified, both as f64, a_fast + a_slow, 2, None) > BOOT);
 }
 
-/// THE REPRODUCED DIRECTION, bounded: at every DUAL cell the unified set
-/// raises the `[SF]` zero-fraction and raises the mean store cap. This is what
-/// the closed loop reproduces deterministically; the CELL SPECIFICITY of the
-/// L1 result (c8 only) is NOT reproduced by this model and is recorded as an
-/// open item in goal-gate "c8 SF Mechanism" — do not read this test as
-/// evidence for it.
+/// The reproduced direction, bounded: at every dual cell the unified set
+/// raises the `[SF]` zero-fraction and the mean store cap. The cell
+/// specificity of the L1 result (c8 only) is not reproduced by this model;
+/// do not read this test as evidence for it.
 #[test]
 fn unified_raises_the_sf_zero_fraction_at_every_dual() {
     for geom in [vec![C2, C2], vec![C2, C3]] {
@@ -5607,13 +5188,10 @@ fn unified_raises_the_sf_zero_fraction_at_every_dual() {
     }
 }
 
-/// THE BENCH'S OWN REPRODUCIBILITY, pinned. `Scheduler` holds its paths in a
-/// `HashMap<PathId, PathState>`, so at the SYMMETRIC cell — where the
-/// placement objective's costs are bit-equal — the winner used to be whatever
-/// the map happened to yield last, i.e. a per-PROCESS random choice. This
-/// asserts the tie goes to the LOWEST path id, which is what makes c7's
-/// numbers the same on every run and every host. Without the tie-break this
-/// test fails in roughly half of all processes.
+/// The bench's own reproducibility. `Scheduler` holds its paths in a
+/// `HashMap`, so at the symmetric cell (bit-equal placement costs) the winner
+/// would be a per-process random choice. The tie goes to the lowest path id,
+/// which makes c7's numbers the same on every run and host.
 #[test]
 fn symmetric_cell_placement_tie_is_broken_deterministically() {
     let clock = Arc::new(MockClock::new());
@@ -5632,35 +5210,30 @@ fn symmetric_cell_placement_tie_is_broken_deterministically() {
     assert_eq!(place_min_cost(&sched), 0, "the tie must go to the lowest path id");
 }
 
-/// THE ARITHMETIC REASON THE ANCHOR-ERA SUSPECT CANNOT BE THE PROP.
+/// Why the over-reading anchor cannot be the prop.
 ///
-/// The suspect (goal-gate "c8 SF Mechanism", FINDING 3) was that a ×5-class
-/// over-reading anchor props the cwnd FLOOR (`clamp_cwnd_with_anchor`), keeps
-/// `available() > 0`, and so keeps the fast cells out of the empty-
-/// `active_paths()` state. What that argument misses is that **the SAME anchor
-/// is on both sides of the loop**:
+/// The suspect was that a ×5-class over-reading anchor props the cwnd floor
+/// (`clamp_cwnd_with_anchor`), keeps `available() > 0`, and keeps fast cells
+/// out of the empty-`active_paths()` state. But the same anchor is on both
+/// sides of the loop:
 ///
-/// * the cwnd floor is `ANCHOR_FLOOR_GAIN · anchor` — LINEAR in the anchor,
-/// * the store cap is `gain · N · Σ anchor` — ALSO linear in the anchor.
+///   * the cwnd floor is `ANCHOR_FLOOR_GAIN · anchor` — linear in the anchor,
+///   * the store cap is `gain · N · Σ anchor` — also linear.
 ///
 /// Saturation is decided by `store_cap` vs `Σ_paths cwnd`, and a common scale
-/// `f` on the anchor cancels in that RATIO. So the era cannot move the
-/// saturation state at all while both terms are in their linear regime — the
-/// only thing that can is a term that is NOT homogeneous: the `N·knee`
-/// CEILING (and `FLOOR`/`MAX_CWND`). This test pins exactly that on the real
-/// `path_scaled_store_cap`: degree-1 homogeneity below the ceiling, and
-/// saturation at `N·knee` above it. The measured consequence — a large enough
-/// over-read helps only by driving the cap INTO its ceiling, and it reaches
-/// the ceiling first at the cell with the biggest anchor (c8t, RTT-asymmetric)
-/// rather than at the fast symmetric one — is what the era matrix shows.
+/// `f` cancels in that ratio. The era cannot move the saturation state while
+/// both terms are linear; only a non-homogeneous term can — the `N·knee`
+/// ceiling (and `FLOOR`/`MAX_CWND`). Pinned on the real
+/// `path_scaled_store_cap`: degree-1 homogeneity below the ceiling,
+/// saturation at `N·knee` above it.
 #[test]
 fn store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling() {
     let sigma = C2.0 * C2.1 + C3.0 * C3.1; // c8's Σ = 203.2
     let n = 2usize;
     let ceiling = (n * KNEE) as f64; // 4096
 
-    // Below the ceiling: cap(f·Σ) == f·cap(Σ), for any scale — the anchor era
-    // divides out. (`ceil` gives at most a 1-symbol residue.)
+    // Below the ceiling: cap(f·Σ) == f·cap(Σ) — the anchor era divides out.
+    // (`ceil` gives at most a 1-symbol residue.)
     let base = shipped_chain(sigma, n) as f64;
     for f in [1.0_f64, 2.0, 4.6, 7.4] {
         let scaled = shipped_chain(f * sigma, n) as f64;
@@ -5674,9 +5247,8 @@ fn store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling() {
         );
     }
 
-    // Above it the law SATURATES — this is the only non-homogeneous term, and
-    // therefore the only route by which an anchor era can change the loop's
-    // saturation state at all.
+    // Above it the law saturates — the only non-homogeneous term, and so the
+    // only route by which an anchor era can change the saturation state.
     let huge = shipped_chain(1_000.0 * sigma, n) as f64;
     assert_eq!(huge, ceiling, "the N*knee ceiling must bind");
     let f_needed = ceiling / base;
@@ -5687,16 +5259,14 @@ fn store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling() {
     );
 }
 
-/// THE MEASURED REFUTATION, bounded: the over-reading (legacy-era) anchor does
-/// NOT make the fast symmetric cell immune. The suspect predicted c7 would
-/// stop folding because a propped cwnd floor keeps `available() > 0`; measured
-/// over the seed ensemble, the legacy era leaves c7's shipped arm STRICTLY
-/// WORSE than the honest era does, in the direction opposite to the prediction.
+/// The over-reading (legacy-era) anchor does not make the fast symmetric cell
+/// immune: over the seed ensemble the legacy era leaves c7's shipped arm
+/// strictly worse than the honest era, opposite to the prediction.
 ///
-/// Kept ordinal-with-a-margin ON PURPOSE: the absolute levels are mode draws
-/// from a bistable loop (FINDING 4), but the SIGN of this gap is not — it is
-/// the store-cap side of the anchor (gain·N = 4× per path) outrunning the cwnd
-/// side (ANCHOR_FLOOR_GAIN = 0.85×), which is arithmetic.
+/// Ordinal with a margin on purpose: the absolute levels are mode draws from
+/// a bistable loop, but the sign is arithmetic — the store-cap side of the
+/// anchor (gain·N = 4× per path) outruns the cwnd side
+/// (ANCHOR_FLOOR_GAIN = 0.85×).
 #[test]
 fn overreading_anchor_does_not_protect_the_fast_symmetric_cell() {
     let c7 = vec![C2, C2];
@@ -5710,10 +5280,10 @@ fn overreading_anchor_does_not_protect_the_fast_symmetric_cell() {
             honest.zero_pct(),
             legacy.zero_pct()
         );
-        // MEASUREMENT DISCIPLINE 1 — the mechanism under test must EXECUTE.
-        // The prop is REAL: the over-reading anchor really does raise the cwnd
-        // floor, by a wide margin. It simply does not buy immunity, because
-        // the same anchor raises the admission the cwnd has to absorb.
+        // Measurement discipline rule 1: the prop is real — the over-reading
+        // anchor raises the cwnd floor by a wide margin. It does not buy
+        // immunity, because the same anchor raises the admission the cwnd
+        // has to absorb.
         assert!(
             legacy.mean_cwnd() > 1.5 * honest.mean_cwnd(),
             "seed {s}: the over-read anchor never propped cwnd, so this test proved nothing: \
@@ -5721,8 +5291,8 @@ fn overreading_anchor_does_not_protect_the_fast_symmetric_cell() {
             honest.mean_cwnd(),
             legacy.mean_cwnd()
         );
-        // And the realized over-read must actually be in/above the wire's band
-        // — otherwise the era was not reached.
+        // And the realized over-read must reach the wire's band, or the era
+        // was not reached.
         assert!(
             legacy.overread() > 4.6,
             "seed {s}: realized over-read x{:.2} never reached the legacy band",
@@ -5731,10 +5301,10 @@ fn overreading_anchor_does_not_protect_the_fast_symmetric_cell() {
     }
 }
 
-/// The candidate successor is a pure DELETION of the count multiplier, not a
-/// new constant: at the unified set it is exactly `gain·Σ_live` under the same
-/// N·knee ceiling, so it is bounded above by the shipped ×N law at every N ≥ 1
-/// and equals it at N = 1.
+/// The candidate successor is a pure deletion of the count multiplier: at the
+/// unified set it is exactly `gain·Σ_live` under the same N·knee ceiling, so
+/// it is bounded above by the shipped ×N law at every N ≥ 1 and equals it at
+/// N = 1.
 #[test]
 fn pooled_unified_candidate_introduces_no_constant() {
     for geom in [vec![C2], vec![C2, C2], vec![C2, C3]] {
@@ -5756,46 +5326,32 @@ fn pooled_unified_candidate_introduces_no_constant() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  goal-gate "Cap-Refresh Warmth" — WHICH REFRESH REGIME THE WIRE IS IN
+// Which refresh regime the wire is in
 //
-//  The preceding section handed over a CONTRADICTION: its arithmetic said the
-//  wire's store cap must be pinned at `N·knee`, and it believed the wire said
-//  it could not be, "because U demonstrably moves c8's zero-fraction 4% → 30%
-//  there and a pinned cap forbids that".
+// The arithmetic says the wire's store cap is pinned at `N·knee`. Two readings
+// confirm it:
 //
-//  The contradiction dissolves, and it dissolves against the WIRE PREMISE.
-//  Two independent readings, both already on disk before this section
-//  existed:
+// 1. The realized cap. `win=occ/cap`'s `cap` field is `dyn_store_cap`
+//    whenever `plain_dyn_cap`, and L1 records its median per rep as
+//    `occcap_p50`. Over 178 dual-cell reps from five sessions it reads exactly
+//    4096 = 2·knee in 69/69 c7-A reps and 52/57 c8-A reps, with
+//    `capboot_frac` (cap ≤ boot = 128) 0.0000 in every one.
 //
-//   1. THE REALIZED CAP. `win=occ/cap`'s `cap` field IS `dyn_store_cap`
-//      (`net/mod.rs:4971` — `effective_store_cap = dyn_store_cap` whenever
-//      `plain_dyn_cap`), and the L1 batteries record its median per rep as
-//      `occcap_p50`. Over **178 dual-cell reps from five independent
-//      sessions** it reads **exactly 4096 = 2·knee** in 69/69 c7-A reps and
-//      52/57 c8-A reps, with `capboot_frac` (cap ≤ boot = 128) **0.0000 in
-//      every single one**. The wire IS at its ceiling.
+// 2. The 7.5× "U-fold" is not a fold in the cap. `fold` is
+//    `mean(AU zero%)/mean(A zero%)`, a ratio of the `[SF]` gauge, whose
+//    `store_cap_sf_record(live, act)` runs on both arms and under U is
+//    consumed by neither: the Σ ranges over `live`, so an empty
+//    `active_paths()` cannot reach the cap. A pinned cap forbids nothing.
 //
-//   2. THE 7.5× "U-FOLD" IS NOT A FOLD IN THE CAP. `fold` is
-//      `mean(AU zero%)/mean(A zero%)` — a ratio of the `[SF]` gauge, whose
-//      `store_cap_sf_record(live, act)` call (`net/mod.rs:4586`) runs on BOTH
-//      arms and is CONSUMED on neither under U: with `RWM_STORE_CAP_UNIFIED`
-//      the Σ ranges over `live`, so an empty `active_paths()` cannot reach
-//      the cap at all. Under U the zero-fraction is a pure OBSERVATION.
-//      A pinned cap therefore forbids nothing, and no unsaturated cap was
-//      ever required.
-//
-//  What U really does at c8 is smaller and measurable: it converts the ~36%
-//  of refreshes the `active_paths()` filter leaves with ONE leg in the Σ
-//  (interior cap ≈2936–3102) and the ~4.6% it leaves EMPTY (boot cap 128)
-//  into the 4096 ceiling — the MEDIAN is unchanged, the MEAN moves ≈3520 →
-//  4096. The tests below pin the arithmetic that makes that the whole story.
+// What U does at c8 is smaller: it converts the ~36 % of refreshes the
+// `active_paths()` filter leaves with one leg in the Σ (interior cap
+// ≈2936–3102) and the ~4.6 % it leaves empty (boot cap 128) into the 4096
+// ceiling — the median is unchanged, the mean moves ≈3520 → 4096.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// The wire's realized store cap at the dual cells, transcribed from the L1
-/// per-rep ledgers (`docs/l1-raw/*.log`, the `FLIPRESULT`/`HIRESULT`/
-/// `LATRESULT` JSON rows, field `occcap_p50` = median of `win=occ/cap`'s cap
-/// over that rep's steady `[DIAG]` samples; `capboot_frac` = the share of the
-/// same samples with cap ≤ 128).
+/// The wire's realized store cap at the dual cells, from the L1 per-rep
+/// result rows: `occcap_p50` = median of `win=occ/cap`'s cap over the rep's
+/// steady `[DIAG]` samples; `capboot_frac` = the share with cap ≤ 128.
 struct WireCap {
     cell: &'static str,
     arm: &'static str,
@@ -5803,16 +5359,14 @@ struct WireCap {
     reps: usize,
     /// Of those, how many read a median cap of exactly `2·KNEE` = 4096.
     at_ceiling: usize,
-    /// The WORST `capboot_frac` over those reps.
+    /// The worst `capboot_frac` over those reps.
     max_capboot: f64,
 }
 
-/// Five independent sessions (`flip`, `flip-topup`, `honestinputs`,
-/// `latlever`, `uniflip`, `uniflip-topup`), two seeds, pooled ONLY for the
-/// count of reps whose median cap is the ceiling — no goodput statistic is
-/// pooled here and none is claimed (the documented 2.3× same-config drift
-/// forbids that; a cap that reads the same integer in every session does not
-/// care).
+/// Five independent sessions, two seeds, pooled only for the count of reps
+/// whose median cap is the ceiling — no goodput statistic is pooled (the
+/// documented 2.3× same-config drift forbids that; a cap that reads the same
+/// integer in every session does not care).
 const WIRE_CAPS: &[WireCap] = &[
     WireCap { cell: "c7", arm: "A", reps: 69, at_ceiling: 69, max_capboot: 0.0 },
     WireCap { cell: "c7", arm: "AU", reps: 26, at_ceiling: 26, max_capboot: 0.0 },
@@ -5820,13 +5374,12 @@ const WIRE_CAPS: &[WireCap] = &[
     WireCap { cell: "c8", arm: "AU", reps: 26, at_ceiling: 26, max_capboot: 0.0 },
 ];
 
-/// THE PIN THRESHOLD IS PATH-COUNT-FREE, and it is `knee/gain`.
+/// The pin threshold is path-count free, and it is `knee/gain`.
 ///
 /// `clamp(gain·N·Σ, floor, N·knee)` saturates iff `gain·N·Σ ≥ N·knee` iff
-/// `Σ ≥ knee/gain`. The `N` cancels — so "does the anchor still steer the
-/// cap?" is a question about the anchor SUM alone, answerable without knowing
-/// the geometry, and at the shipped constants the answer flips at **1024
-/// symbols**. Every regime claim in this section rests on this one line.
+/// `Σ ≥ knee/gain`. The `N` cancels, so "does the anchor still steer the
+/// cap?" is a question about the anchor sum alone, and at the shipped
+/// constants the answer flips at 1024 symbols.
 #[test]
 fn the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free() {
     assert_eq!(SIGMA_PIN, 1024.0);
@@ -5836,34 +5389,27 @@ fn the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free() {
         let below = shipped_chain(SIGMA_PIN * 0.99, n);
         assert!(below < ceiling, "N={n}: Sigma just under the threshold pinned at {below}");
         assert_eq!(below, (GAIN * n as f64 * SIGMA_PIN * 0.99).ceil() as usize);
-        // At and above: pinned, and INSENSITIVE to the anchor.
+        // At and above: pinned, and insensitive to the anchor.
         assert_eq!(shipped_chain(SIGMA_PIN, n), ceiling, "N={n}");
         assert_eq!(shipped_chain(SIGMA_PIN * 100.0, n), ceiling, "N={n}");
     }
 }
 
-/// **N ≥ 3 COVERAGE — the symmetric QUAD against the symmetric DUAL, and the
-/// VALUE-vs-CEILING distinction that hid a quadratic.** ADR-0070 prevention
-/// kit item 3.
+/// N ≥ 3 coverage: the symmetric quad against the symmetric dual, and the
+/// value-vs-ceiling distinction that hid a quadratic (paper §6.1).
 ///
 /// The shipped law is `clamp(gain·N·Σ, floor, N·knee)`, and its two halves
-/// scale DIFFERENTLY in the path count. At a symmetric cell `Σ = N·A`, so:
+/// scale differently in the path count. At a symmetric cell `Σ = N·A`, so:
 ///
-///  * the VALUE `gain·N·Σ = gain·A·N²` is **quadratic** — c7x4 gets 4× c7's
-///    pool where the summed derivation `Σᵢ gain·anchorᵢ` asks for 2×;
-///  * the CEILING `N·knee` is **linear** — c7x4's ceiling is exactly 2× c7's.
+///   * the value `gain·N·Σ = gain·A·N²` is quadratic — c7x4 gets 4× c7's pool
+///     where the summed derivation `Σᵢ gain·anchorᵢ` asks for 2×;
+///   * the ceiling `N·knee` is linear — c7x4's ceiling is exactly 2× c7's.
 ///
-/// Which one a measurement reads depends only on whether `Σ ≥ knee/gain`
-/// (`the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`), and
-/// on the wire — where the legacy anchor over-reads ×4.6–7.4 — **every dual-cell
-/// rep read the ceiling** (`WIRE_CAPS`: 4096 in 69/69 c7-A reps). So every
-/// measurement of the shipped law ever taken reports the ratio 2 of a linear
-/// ceiling, and none of them can see the ratio 4 underneath. That is the whole
-/// mechanism by which the N² survived, stated as an assertion instead of as a
-/// postmortem.
-///
-/// Both regimes are asserted here, on the SAME two geometries, so the
-/// distinction cannot be lost again.
+/// Which one a measurement reads depends only on whether `Σ ≥ knee/gain`, and
+/// on the wire, where the legacy anchor over-reads ×4.6–7.4, every dual-cell
+/// rep read the ceiling (`WIRE_CAPS`). So every measurement of the shipped law
+/// reports the linear ceiling's ratio 2 and cannot see the ratio 4 underneath.
+/// Both regimes are asserted here, on the same two geometries.
 #[test]
 fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadratic_value() {
     // One c7 leg's honest anchor-BDP; the quad is the same leg, four times.
@@ -5872,13 +5418,13 @@ fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadr
     assert!(c7x4().iter().all(|s| *s == C2), "the quad must be c7's leg, verbatim");
     let sigma = |n: usize| n as f64 * a;
 
-    // ── REGIME 1: HONEST anchors ⇒ Σ < knee/gain ⇒ the VALUE rules ────────
+    // ── Regime 1: honest anchors ⇒ Σ < knee/gain ⇒ the value rules ────────
     assert!(sigma(4) < SIGMA_PIN, "the quad must be INTERIOR at honest anchors");
     let v2 = shipped_chain(sigma(2), 2);
     let v4 = shipped_chain(sigma(4), 4);
     assert_eq!(v2, 666, "c7 interior value = ceil(2·2·166.4)");
     assert_eq!(v4, 2_663, "c7x4 interior value = ceil(2·4·332.8)");
-    // The clamp is provably inert on both, so this is a reading of the LAW.
+    // The clamp is provably inert on both, so this is a reading of the law.
     assert!(v2 < 2 * KNEE && v4 < 4 * KNEE, "a ceiling bound: {v2} / {v4}");
     let r_value = v4 as f64 / v2 as f64;
     assert!(
@@ -5887,8 +5433,8 @@ fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadr
          derivation would read 2.0"
     );
 
-    // ── REGIME 2: the wire's own OVER-READ era ⇒ pinned ⇒ the CEILING rules ─
-    // ×7.4 is the top of the measured legacy band this file already uses
+    // ── Regime 2: the over-read era ⇒ pinned ⇒ the ceiling rules ─────────
+    // ×7.4 is the top of the measured legacy band
     // (`store_cap_law_is_degree_one_in_the_anchor_until_the_knee_ceiling`).
     const OVERREAD_HI: f64 = 7.4;
     let sig = |n: usize| OVERREAD_HI * sigma(n);
@@ -5904,53 +5450,29 @@ fn the_shipped_cap_at_the_symmetric_quad_separates_a_linear_ceiling_from_a_quadr
          value underneath is doing — this is the reading the wire took"
     );
 
-    // And the two regimes disagree, which is the point: the same pair of
-    // geometries reports 4 or 2 depending only on the anchor era.
+    // The two regimes disagree: the same pair of geometries reports 4 or 2
+    // depending only on the anchor era.
     assert_ne!(r_value.round(), c4_ as f64 / c2_ as f64);
 }
 
-/// THE QUAD'S DETERMINISM, pinned before anything is measured on it — and
-/// **THE RETRACTION OF THE COLD-START LOCK-IN THIS TEST USED TO ASSERT.**
+/// The quad's determinism, and that all four legs carry and warm.
 ///
-/// A four-way symmetric cell ties every tie this bench has ever had a bug in
-/// at once — the placement objective's exact-cost tie (`place_min_cost`), the
-/// worst-loss pick's 0.0-vs-0.0 tie (`worst_loss_path`), and the per-path link
-/// seeding — and `Scheduler` holds its paths in a `HashMap`, so any one of them
-/// resolving by map order would make c7x4's numbers a per-process draw. Same
-/// lesson as `symmetric_cell_placement_tie_is_broken_deterministically`, at the
-/// path count that makes it hardest.
+/// A four-way symmetric cell ties in every place this bench's determinism
+/// depends on at once — the placement objective's exact-cost tie
+/// (`place_min_cost`), the worst-loss pick's 0.0-vs-0.0 tie
+/// (`worst_loss_path`), and the per-path link seeding — and `Scheduler` holds
+/// its paths in a `HashMap`, so any of them resolving by map order would make
+/// c7x4's numbers a per-process draw.
 ///
-/// ── WHAT THIS TEST ASSERTED UNTIL 2026-08-18, AND WHY IT WAS WRONG ───────
-/// It was named `..._and_its_placement_locks_onto_two_legs` and asserted
-/// `delivered_p[2] == delivered_p[3] == 0` and `bw_n[2] == bw_n[3] == 0`,
-/// with a long comment attributing it to `Scheduler::place_costs` pricing an
-/// unmeasured leg at `DEFAULT_SRTT`/2 = 25 ms against a warm c2 leg's 4 ms.
-///
-/// **The arithmetic was right and the measurement was an artifact.** Three
-/// per-path gauge writes in the simulation loop were guarded by a hard-coded
-/// `pid < 2`, written when `MAX_PATHS` was 2. Raising `MAX_PATHS` to 4 for
-/// this very geometry widened the ARRAYS and left the GUARDS — so legs 2 and
-/// 3 recorded nothing WHATEVER PLACEMENT DID, and the two `assert_eq!(.., 0)`
-/// could not fail. An assertion that cannot fail proves nothing about the
-/// mechanism it names (MEASUREMENT DISCIPLINE rule 1), and this one had been
-/// read as a MEASURED divergence by
-/// `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`
-/// and by ADR-0070's quad coverage.
-///
-/// With the guards repaired (`pid < np`) the quad MEASURES the opposite: all
-/// four legs carry within 3% of each other, all four warm on the same tick
-/// count, and the cell delivers 2.1× c7 rather than 1×. The 25-ms cold price
-/// is real arithmetic, but it never binds HERE — every leg is unmeasured at
-/// once, so the first admission burst (which runs before any ack returns)
-/// ties all four at the seed price and the `in_flight` term round-robins
-/// them; one sample later every leg is warm forever. The regime where the
-/// cold price CAN close into a fixed point is a leg joining a set whose
-/// incumbents are ALREADY warm — a LATE JOIN, which no geometry in this
-/// bench contains, and which the scheduler bounds directly
+/// All four legs carry within 3 % of each other, all four warm on the same
+/// tick count, and the cell delivers 2.1× c7. The cold-start placement price
+/// (an unmeasured leg priced at `DEFAULT_SRTT`/2 = 25 ms against a warm c2
+/// leg's 4 ms) never binds here: every leg is unmeasured at once, so the first
+/// admission burst ties all four at the seed price and the `in_flight` term
+/// round-robins them; one sample later every leg is warm. The cold price can
+/// only close into a fixed point on a late join to already-warm incumbents,
+/// which no geometry here contains and which the scheduler bounds directly
 /// (`a_late_joining_leg_is_locked_out_by_the_cold_price_and_admitted_without_it`).
-///
-/// The gauge repair is provably inert at every other cell: `np` is 2 there,
-/// so `pid < np` IS `pid < 2`.
 #[test]
 fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
     let g = c7x4();
@@ -5962,20 +5484,18 @@ fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
     assert_eq!(a.sum_active, b.sum_active);
     assert_eq!(a.delivered_p, b.delivered_p, "the per-leg split is not reproducible");
 
-    // MEASUREMENT DISCIPLINE 1 — the geometry under test must EXECUTE at N = 4:
-    // the dyn-cap refresh must really see FOUR live paths, since `n_live` is the
-    // multiplier the whole law-shape question is about.
+    // Measurement discipline rule 1: the dyn-cap refresh really sees four live
+    // paths, since `n_live` is the multiplier the law-shape question is about.
     assert!(a.ticks > 0 && a.delivered > 0, "the quad never ran");
     assert_eq!(a.sum_live, 4 * a.ticks, "the refresh never saw four live paths");
     assert!(a.mean_cap <= (4 * KNEE) as f64, "the realized cap exceeded N·knee");
 
-    // ── ALL FOUR LEGS CARRY, AND THE SPLIT IS EVEN ───────────────────────
-    // Absolute, not ordinal: at a cell whose four legs are the SAME `C2` spec
-    // an even split is the placement objective's own prediction (§13.8
-    // water-fills by capacity, and the capacities are equal). The 10% band is
-    // loose enough for the four GE realizations to differ and tight enough
-    // that any re-truncation of the gauges, or any placement change that
-    // starves a leg, fails here.
+    // ── All four legs carry, and the split is even ────────────────────────
+    // Absolute, not ordinal: with four identical `C2` legs an even split is
+    // the placement objective's own prediction (paper §5.7 water-fills by
+    // capacity, and the capacities are equal). The 10 % band is loose enough
+    // for the four GE realizations to differ and tight enough that a gauge
+    // truncation or a placement change that starves a leg fails here.
     for pid in 0..4 {
         assert!(
             a.delivered_p[pid] > 0,
@@ -5991,9 +5511,8 @@ fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
          whose four legs are the same spec is a placement defect, not noise",
         a.delivered_p
     );
-    // The whole point of the quad: N = 4 really moves N× the traffic. Had the
-    // legs locked onto two, this would read like c7's total — so this is the
-    // retracted claim's own falsifier, stated as a number.
+    // N = 4 really moves N× the traffic: had the legs locked onto two, this
+    // would read like c7's total.
     let c7_total = simulate(&[C2, C2], Arm::Legacy, 4.0).delivered as f64;
     assert!(
         a.delivered as f64 > 1.8 * c7_total,
@@ -6002,11 +5521,10 @@ fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
         a.delivered
     );
 
-    // ── AND ALL FOUR WARM ────────────────────────────────────────────────
-    // `bw_n[pid]` counts refresh ticks at which leg `pid` had BOTH a BtlBw
-    // estimate and a min-RTT — a warm anchor. Every leg must reach it, and
-    // reach it as often as any other, or "carries traffic" and "has an
-    // anchor" have come apart.
+    // ── And all four warm ─────────────────────────────────────────────────
+    // `bw_n[pid]` counts refresh ticks at which leg `pid` had both a BtlBw
+    // estimate and a min-RTT — a warm anchor. Every leg must reach it as often
+    // as any other, or "carries traffic" and "has an anchor" have come apart.
     for pid in 0..4 {
         assert!(a.bw_n[pid] > 0, "leg {pid} carried traffic but never warmed an anchor");
     }
@@ -6020,24 +5538,16 @@ fn the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm() {
     );
 }
 
-/// **THE PLACEMENT AXIS IS INERT AT EVERY GEOMETRY THIS BENCH HAS**, and that
-/// is a RESULT rather than a null effect — the axis is proven live first
-/// (`simulate_place` asserts `sched.cold_place()` took, at construction, and
-/// refuses to run otherwise).
+/// The placement axis is inert at every geometry this bench has — a result,
+/// not a null effect: the axis is proven live first (`simulate_place` asserts
+/// `sched.cold_place()` took and refuses to run otherwise).
 ///
-/// `RWM_COLD_PLACE` changes what an UNMEASURED leg's SRTT_i is worth in
-/// `place_costs` (`scheduler::cold_place_active`). Every cell here starts with
-/// all its legs unmeasured AT ONCE, so the first admission burst places on all
-/// of them before any ack returns; from the second tick on there is no
-/// unmeasured leg for the price to apply to, and the two arms are the same law
-/// on the same inputs. Bit-identity is therefore the PREDICTION, and it is
-/// asserted as one — including at `c7x4`, where the retracted lock-in claim
-/// would have predicted a large difference.
-///
-/// This doubles as the **N = 2 INERTNESS** pin the repair was required to
-/// carry: c7 and c8 must be bit-for-bit unmoved, because the cold-price
-/// pessimism cannot bind where no leg is ever cold-while-another-is-warm, and
-/// a repair that moved the duals would be changing something else.
+/// `RWM_COLD_PLACE` changes what an unmeasured leg's SRTT_i is worth in
+/// `place_costs`. Every cell here starts with all legs unmeasured at once, so
+/// the first admission burst places on all of them before any ack returns;
+/// from the second tick on there is no unmeasured leg for the price to apply
+/// to, and the two arms are the same law on the same inputs. Bit-identity is
+/// the prediction, asserted as one — including at `c7x4` and at the duals.
 #[test]
 fn the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold() {
     for (name, g) in [
@@ -6071,15 +5581,13 @@ fn the_cold_start_placement_price_is_inert_wherever_every_leg_starts_cold() {
     }
 }
 
-// ── THE COMPOSED CAP LAW (paper §16.56, ADR-0070 Deliverable 2) ───────────
+// ── The composed cap law (paper §10) ───────────────────────────────────────
 
-/// The geometries the composed arm is scored at. `c1`-class is DELIBERATELY
-/// ABSENT and its absence is stated rather than faked: the L1 `c1` cell is a
-/// 1 Gbit single, and this bench has never had a transcription of it — its
-/// fast single is `C2` (100 Mbit / 10 ms). Inventing a 1 Gbit spec here would
-/// be manufacturing a wire number to satisfy a column, which is the failure
-/// ADR-0070 finding 4 records about the knee. The fast single below is the
-/// SINGLE-PATH class; the 1 Gbit cell stays a VM question.
+/// The geometries the composed arm is scored at. `c1`-class is deliberately
+/// absent: the L1 `c1` cell is a 1 Gbit single this bench has no
+/// transcription of, and inventing one would manufacture a wire number. The
+/// fast single below (`C2`, 100 Mbit / 10 ms) is the single-path class; the
+/// 1 Gbit cell stays a VM question.
 fn composed_geometries() -> Vec<(&'static str, Vec<Spec>)> {
     vec![
         ("sc2  single fast (c1-class)", vec![C2]),
@@ -6090,36 +5598,32 @@ fn composed_geometries() -> Vec<(&'static str, Vec<Spec>)> {
     ]
 }
 
-/// **THE COMPOSED LAW IS THE THREE-TERM LAW PLUS A BRAKE, AND NOTHING ELSE.**
+/// The composed law is the three-term law plus a brake, and nothing else.
 ///
-/// The composition's honesty rests on one claim that is cheap to assert and
-/// expensive to discover broken: the composed arm's POOL is bit-identically
-/// the three-term arm's, because the composed law IS
-/// `net::three_term_store_cap` (paper §16.56 — one implementation, nothing to
-/// drift). If a second cap expression ever appeared for the composed arm, the
-/// A/B would stop isolating the BRAKE and would silently become a two-factor
-/// experiment — which is how §16.53/§16.54's confounds happened.
+/// The composed arm's pool is bit-identically the three-term arm's, because
+/// the composed law is `net::three_term_store_cap` (paper §10 — one
+/// implementation). A second cap expression for the composed arm would turn
+/// the A/B from a brake measurement into a two-factor experiment.
 ///
-/// So: at a geometry where the brake NEVER closes, the two arms must agree in
-/// every produced quantity. A single path whose cwnd is never saturated is
-/// that geometry, and the test asserts the precondition rather than assuming
-/// it (`brake_closed` = 0 with `brake_ticks` > 0 — armed, and null).
+/// So at a geometry where the brake never closes, the two arms agree in every
+/// produced quantity. A single path whose cwnd is never saturated is that
+/// geometry, and the precondition is asserted (`brake_closed` = 0 with
+/// `brake_ticks` > 0 — armed, and null).
 #[test]
 fn the_composed_arm_is_the_three_term_pool_plus_a_brake_and_nothing_else() {
-    // Pick the geometry by its MEASURED brake behaviour, not by assumption.
+    // Pick the geometry by its measured brake behaviour, not by assumption.
     for geom in [vec![C2], vec![C3]] {
         let t = simulate(&geom, Arm::ThreeTermCell, 4.0);
         let c = simulate(&geom, Arm::Composed, 4.0);
 
-        // MECHANISM LIVENESS (rule 1): the brake must be ARMED at the composed
-        // arm and never armed at the three-term one, or the comparison below
-        // proves nothing.
+        // Mechanism liveness (rule 1): the brake is armed at the composed arm
+        // and never at the three-term one, or the comparison proves nothing.
         assert!(c.brake_ticks > 0, "the composed arm never armed its brake");
         assert_eq!(t.brake_ticks, 0, "the three-term arm must not arm the brake");
 
         if c.brake_closed == 0 {
             // The brake was armed and never bound ⇒ the arms are the same law,
-            // and every produced quantity must agree EXACTLY.
+            // and every produced quantity must agree exactly.
             assert_eq!(
                 (c.delivered, c.retx, c.ticks, c.zero, c.short),
                 (t.delivered, t.retx, t.ticks, t.zero, t.short),
@@ -6135,21 +5639,15 @@ fn the_composed_arm_is_the_three_term_pool_plus_a_brake_and_nothing_else() {
     }
 }
 
-/// **THE COMPOSED CAP LANDS INTERIOR AT THE DUALS** — §16.56's stated
-/// prediction, and its STOP condition, as an always-on absolute pin.
+/// The composed cap lands interior at the duals — the law's prediction and
+/// its stop condition, as an absolute pin (paper §10).
 ///
-/// The predecessor's defining defect is that it operated AT its ceiling
-/// (`occcap_p50` = exactly 4096 in 121 of 126 dual reps), so every
-/// measurement taken through it measured a constant. The composed law's only
-/// remaining bound above it is `WIN_STORE_MAX`, a MEMORY bound stated outside
-/// the law — and §16.56 says in terms that *a composed cap landing ON 4096
-/// would mean the memory bound has become the law, which is the predecessor's
-/// exact defect reproduced, and is a STOP rather than a result*.
-///
-/// This is that STOP, wired as a test rather than left as prose. It also pins
-/// the other side: above the paroled floor, whose provenance ADR-0070 finding
-/// 5 records as ABSENT and which the three-term pre-registration wrongly
-/// declared unreachable before measuring it bind at shal8.
+/// The predecessor operated at its ceiling (`occcap_p50` = exactly 4096 in 121
+/// of 126 dual reps), so every measurement through it measured a constant.
+/// The composed law's only remaining bound above is `WIN_STORE_MAX`, a memory
+/// bound outside the law; a composed cap landing on it would mean the memory
+/// bound has become the law — the predecessor's defect reproduced, and a stop
+/// rather than a result. The other side is pinned too: above the floor.
 #[test]
 fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() {
     let mut caps: Vec<(&str, f64)> = Vec::new();
@@ -6172,7 +5670,7 @@ fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() 
              the law's operating range is a constant with no provenance",
             r.mean_cap
         );
-        // And NOT the boot cliff either: `store_boot_cap` is where BOTH cap
+        // And not the boot cliff either: `store_boot_cap` is where both cap
         // chains terminate, so a law that fell through would read here.
         assert!(
             (r.mean_cap - BOOT as f64).abs() > 1.0,
@@ -6183,23 +5681,18 @@ fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() 
         caps.push((name, r.mean_cap));
     }
 
-    // **THE LAW HAS AN OPERATING RANGE** — MEASUREMENT DISCIPLINE 18, as a
-    // pin rather than a hope. The predecessor's defect was not that its
-    // ceiling was wrong; it was that the ceiling was the ONLY value the law
-    // ever took, so the law was a constant and every measurement through it
-    // measured that constant. A successor that read the same number at three
-    // structurally different geometries would have reproduced the defect with
-    // better prose. It must not.
+    // The law has an operating range (measurement discipline rule 18). The
+    // predecessor's defect was that its ceiling was the only value the law
+    // ever took, so every measurement through it measured a constant. A
+    // successor reading the same number at three structurally different
+    // geometries would reproduce the defect.
     //
-    // NOTE ON WHAT IS *NOT* ASSERTED HERE: no comparison against the shipped
-    // arm's MEAN cap. Measured, the shipped mean at c7 is ~352, far below its
-    // own 4096 ceiling — not because the law is interior but because the
-    // `active_paths()` cliff drops it to `store_boot_cap` on a large share of
-    // refreshes (ADR-0070 finding 1, "an empty active set is a cliff, not a
-    // taper"). A mean-vs-mean ordinal between a pinned-with-cliffs law and an
-    // interior one is not a meaningful comparison in either direction, and
-    // CLAUDE.md's testing discipline rejects ordinal pins anyway. The shipped
-    // numbers are REPORTED by `sf_composed_cap_law_as_one_arm`, not asserted.
+    // Not asserted: a comparison against the shipped arm's mean cap. The
+    // shipped mean at c7 is ~352, far below its 4096 ceiling, because the
+    // `active_paths()` cliff drops it to `store_boot_cap` on many refreshes. A
+    // mean-vs-mean ordinal between a pinned-with-cliffs law and an interior
+    // one is meaningless; the shipped numbers are reported by
+    // `sf_composed_cap_law_as_one_arm`.
     for i in 0..caps.len() {
         for j in (i + 1)..caps.len() {
             assert!(
@@ -6216,23 +5709,12 @@ fn the_composed_cap_lands_interior_at_both_duals_and_neither_bound_is_the_law() 
     }
 }
 
-/// **THE COMPOSED LAW MUST NOT STARVE A LEG OF THE QUAD.**
+/// The composed law must not starve a leg of the quad.
 ///
-/// This test used to be
-/// `the_composed_law_neither_fixes_nor_worsens_the_quads_cold_start_lock_in`,
-/// and it asserted that the composed arm left legs 2 and 3 at zero — reading
-/// the truncated-gauge artifact described on
-/// `the_symmetric_quad_is_deterministic_and_all_four_legs_carry_and_warm` as a
-/// measured lock-in. With the `pid < 2` guards repaired the quad spreads
-/// evenly, so the old assertion was pinning a constant and the "null RESULT"
-/// it claimed was a null INSTRUMENT.
-///
-/// The QUESTION it was asking is still the right one and is now asked of the
-/// real quantity: the composed arm adds a per-path brake, and a brake is
-/// exactly the kind of mechanism that can starve a leg by holding the others
-/// saturated. So this pins that the four-way split SURVIVES the composition,
-/// against the shipped arm's own split as the baseline, with the brake proven
-/// armed — a null that is now falsifiable.
+/// The composed arm adds a per-path brake, and a brake can starve a leg by
+/// holding the others saturated. This pins that the four-way split survives
+/// the composition, against the shipped arm's own split as the baseline, with
+/// the brake proven armed — a falsifiable null.
 #[test]
 fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
     let g = c7x4();
@@ -6247,14 +5729,14 @@ fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
         "the composed arm is not reproducible at the quad"
     );
 
-    // MECHANISM LIVENESS: the brake was armed, so a null below is a RESULT.
+    // Mechanism liveness: the brake was armed, so a null below is a result.
     assert!(c.brake_ticks > 0, "the composed arm never armed its brake at the quad");
-    // The refresh really saw four live paths — `n_live` is the axis.
+    // The refresh saw four live paths — `n_live` is the axis.
     assert_eq!(c.sum_live, 4 * c.ticks, "the refresh never saw four live paths");
 
-    // THE BASELINE IS MEASURED, NOT ASSUMED: the shipped arm spreads over all
-    // four legs. If that ever stops being true the comparison below is
-    // meaningless, so it is asserted before it is used.
+    // The baseline is measured, not assumed: the shipped arm spreads over all
+    // four legs. If that stops being true the comparison below is
+    // meaningless, so it is asserted first.
     for pid in 0..4 {
         assert!(
             base.delivered_p[pid] > 0,
@@ -6263,10 +5745,10 @@ fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
         );
     }
 
-    // THE SPLIT SURVIVES THE BRAKE. Every leg still carries and still warms,
-    // and no leg's share collapses relative to the shipped arm's own share of
-    // its own total (a ratio, so the brake is free to move the TOTAL — which
-    // is what it is for — without that reading as starvation).
+    // The split survives the brake. Every leg still carries and warms, and no
+    // leg's share collapses relative to the shipped arm's share of its own
+    // total (a ratio, so the brake may move the total without that reading as
+    // starvation).
     let (bt, ct) = (base.delivered as f64, c.delivered as f64);
     assert!(bt > 0.0 && ct > 0.0, "a zero-delivery arm at the quad");
     for pid in 0..4 {
@@ -6291,43 +5773,34 @@ fn the_composed_law_does_not_starve_a_leg_of_the_quad() {
     }
 }
 
-/// THE ONLY THREE REACHABLE REGIMES AT A DUAL, and the two that are not.
+/// The only three reachable regimes at a dual, and the two that are not.
 ///
-/// Enumerated by reading the refresh block (`net/mod.rs:4382-4799`) at the
-/// batteries' resolved arms — every experiment gate off, so the chain is
-/// `path_scaled_store_cap` → legacy `gain·Σ` → `store_boot_cap`:
+/// At the batteries' resolved arms (every experiment gate off) the refresh
+/// chain is `path_scaled_store_cap` → legacy `gain·Σ` → `store_boot_cap`:
 ///
-///  * **ceiling-pinned** — `Σ ≥ 1024`;
-///  * **interior** — `0 < Σ < 1024`, the only regime in which the anchor (and
-///    therefore U's choice of path set) can move the cap at all;
-///  * **boot fallback (128)** — `Σ == 0`, i.e. the summed set contributed no
-///    warm anchor. Under U the set is `live_paths()`, which is non-empty
-///    whenever the transfer is running, so this regime is UNREACHABLE on a
-///    U arm by construction.
+///   * ceiling-pinned — `Σ ≥ 1024`;
+///   * interior — `0 < Σ < 1024`, the only regime in which the anchor (and so
+///     U's choice of path set) can move the cap;
+///   * boot fallback (128) — `Σ == 0`, the summed set contributed no warm
+///     anchor. Under U the set is `live_paths()`, non-empty whenever the
+///     transfer runs, so this regime is unreachable on a U arm.
 ///
-/// NOT reachable at the duals, and each killed by arithmetic rather than by
-/// measurement:
+/// Not reachable at the duals, each by arithmetic:
 ///
-///  * **the `floor` clamp** would need `gain·N·Σ < floor`, i.e. `Σ` below
-///    `floor/(gain·N)` — 16 symbols at N = 2 under the legacy bare 64, and
-///    2.5 under the derived 10 (§16.59). Either way it is far below the
-///    smallest single-leg anchor the wire ever reported, and the derivation
-///    moved it FURTHER out of reach. The crossover is computed from `FLOOR`
-///    below rather than transcribed, so this enumeration tracks the shipped
-///    constant instead of pinning a number that used to be it.
-///  * **the `store_max` (1024) latch** is the `n_live < 2` law, so it cannot
-///    be seen at a cell where both legs are up; it is what `sc2`/`c2r100`
-///    read, and they read exactly 1024 in every session.
+///   * the `floor` clamp would need `Σ < floor/(gain·N)` — 2.5 symbols at
+///     N = 2 under the derived floor of 10 (paper §6.1), far below the
+///     smallest single-leg anchor the wire reported. The crossover is computed
+///     from `FLOOR`, so this tracks the shipped constant.
+///   * the `store_max` (1024) latch is the `n_live < 2` law, so it cannot be
+///     seen with both legs up; it is what `sc2`/`c2r100` read (exactly 1024 in
+///     every session).
 #[test]
 fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
     // Boot: the empty set, at any live count.
     assert_eq!(shipped_chain(0.0, 2), BOOT);
-    // The floor is a REAL branch of the law, just an unreachable one here: it
-    // binds for Sigma at or below `floor/(gain·N)` and nowhere above. The
-    // crossover is COMPUTED from the shipped floor, not transcribed, so this
-    // regime enumeration survives the floor becoming a derived quantity
-    // (§16.59) — what it asserts is the SHAPE of the branch, which is what
-    // "three reachable regimes" means.
+    // The floor is a real branch of the law, just unreachable here: it binds
+    // for Σ at or below `floor/(gain·N)`. The crossover is computed from the
+    // shipped floor, so what this asserts is the shape of the branch.
     let floor_sigma_n2 = FLOOR as f64 / (GAIN * 2.0);
     assert_eq!(shipped_chain(floor_sigma_n2 * 0.5, 2), FLOOR);
     assert_eq!(shipped_chain(floor_sigma_n2, 2), FLOOR);
@@ -6338,9 +5811,9 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
         assert!(cap > FLOOR && cap < 2 * KNEE, "Sigma {sigma}: cap {cap} not interior");
         assert_eq!(cap, (GAIN * 2.0 * sigma).ceil() as usize);
     }
-    // The floor is unreachable from ANY warm single-leg anchor the wire
-    // measured — the smallest is c7/p0's, and it clears the floor's Sigma by
-    // more than an order of magnitude.
+    // The floor is unreachable from any warm single-leg anchor the wire
+    // measured — the smallest is c7/p0's, and it clears the floor's Σ by more
+    // than an order of magnitude.
     let smallest = ACK_ALL
         .iter()
         .skip(1) // c2r100 is the N = 1 cell, whose law is the store_max latch
@@ -6353,27 +5826,25 @@ fn the_shipped_dual_refresh_has_exactly_three_reachable_regimes() {
         "the floor clamp is within reach of a warm anchor: smallest leg {smallest:.0} \
          vs the floor's Sigma {floor_sigma:.0}"
     );
-    // N = 1 is the store_max latch, not the pooled ceiling — and it is what
-    // the single cells measure (occcap_p50 = 1024 at both sc2 and c2r100).
+    // N = 1 is the store_max latch, not the pooled ceiling — what the single
+    // cells measure (occcap_p50 = 1024 at both sc2 and c2r100).
     assert_eq!(shipped_chain(ACK_C2R100_P0.anchor_sym(), 1), STORE_MAX);
 }
 
-/// THE WIRE'S OWN ANCHORS PIN THE LAW WITH BOTH LEGS AND FREE IT WITH ONE.
+/// The wire's own anchors pin the law with both legs and free it with one.
 ///
-/// Reconstructed from READOUT 3 by inverting `xanchor` — three measured
-/// columns multiplied, nothing modelled. The result is the section's central
-/// number and it is not close to the threshold in either direction:
+/// Reconstructed by inverting `xanchor` — three measured columns multiplied,
+/// nothing modelled — and not close to the threshold in either direction:
 ///
 /// | cell | Σ both legs | ×`SIGMA_PIN` | one leg | ×`SIGMA_PIN` |
 /// |---|---|---|---|---|
 /// | c7 | 1635 | 1.60 | 712 / 924 | 0.70 / 0.90 |
 /// | c8 | 1510 | 1.47 | 776 / 734 | 0.76 / 0.72 |
 ///
-/// So at BOTH duals the shipped law is **pinned whenever both legs are in the
-/// Σ and interior whenever exactly one is** — which makes the `[SF]` gauge's
-/// short-tick fraction the cap's regime mixture directly, and makes the
-/// realized median cap 4096 an arithmetic PREDICTION rather than a surprise.
-/// It is confirmed by 121/126 dual reps reading exactly that integer.
+/// At both duals the shipped law is pinned whenever both legs are in the Σ
+/// and interior whenever exactly one is — so the `[SF]` gauge's short-tick
+/// fraction is the cap's regime mixture, and the realized median cap 4096 is
+/// an arithmetic prediction (confirmed by 121/126 dual reps).
 #[test]
 fn the_wires_measured_anchors_pin_both_legs_and_free_one_leg_at_both_duals() {
     for (cell, legs) in [("c7", &ACK_C7), ("c8", &ACK_C8)] {
@@ -6403,35 +5874,30 @@ fn the_wires_measured_anchors_pin_both_legs_and_free_one_leg_at_both_duals() {
     }
 }
 
-/// **THE CORRECTION TO THE PREDECESSOR.** Its Σ is 1.8× the wire's, because
-/// it multiplies the measured `xanchor` by the cells' CONFIGURED rate and RTT
-/// (10 400 / 2 000 sym/s at 8 / 60 ms) instead of the wire's own measured
-/// `rate_lr` and `RTprop` (6 948 / 1 376 sym/s at 8.4 / 38.6 ms) — the same
-/// "scale by the path's REALIZED ack rate, not its link capacity" caveat its
-/// own section (b) stated for the ack MODEL and did not carry into the Σ.
+/// A Σ built from configured rates is 1.8× the wire's: multiplying the
+/// measured `xanchor` by the cells' configured rate and RTT (10 400 / 2 000
+/// sym/s at 8 / 60 ms) instead of the wire's measured `rate_lr` and RTprop
+/// (6 948 / 1 376 sym/s at 8.4 / 38.6 ms).
 ///
-/// The inflation is not cosmetic: it lands on the OTHER SIDE of the pin
-/// threshold for the single-leg Σ, and that single comparison is what its
-/// FINDING 1 rests on.
+/// The inflation lands on the other side of the pin threshold for the
+/// single-leg Σ:
 ///
-///  * on the bench's Σ, dropping the slow leg still clamps (4423 > 4096) ⇒
-///    "the shipped law is arithmetically INCAPABLE of expressing the U-fold";
-///  * on the WIRE's Σ, dropping either leg does NOT clamp (2936 / 3102) ⇒ U
-///    moves the cap on every short tick, which the `[SF]` gauge measures at
-///    **≈36% of c8 refreshes**.
+///   * on the configured Σ, dropping the slow leg still clamps (4423 > 4096),
+///     so the shipped law could not express the U-fold;
+///   * on the wire's Σ, dropping either leg does not clamp (2936 / 3102), so U
+///     moves the cap on every short tick — ≈36 % of c8 refreshes.
 ///
-/// The predecessor's `measured_over_read_saturates_the_knee_ceiling_and_
-/// collapses_the_u_fold` is left standing and unmodified — it is a true
-/// statement about the bench's own inputs, and it is the reason its AU arm
-/// cannot move. This test bounds the gap between those inputs and the wire's.
+/// `measured_over_read_saturates_the_knee_ceiling_and_collapses_the_u_fold`
+/// stays as a true statement about the bench's own inputs; this test bounds
+/// the gap between those inputs and the wire's.
 #[test]
 fn the_predecessors_sigma_is_inflated_by_configured_rates_not_the_wires_realized_ones() {
     let bench_fast = C2.0 * C2.1 * ACK_C8_P0.xanchor;
     let bench_slow = C3.0 * C3.1 * ACK_C8_P1.xanchor;
     let wire_fast = ACK_C8_P0.anchor_sym();
     let wire_slow = ACK_C8_P1.anchor_sym();
-    // The predecessor's own printed numbers, re-derived here so a successor
-    // sees they are the same quantity and not a different definition.
+    // The configured-rate numbers, re-derived so they are visibly the same
+    // quantity and not a different definition.
     assert!((bench_fast - 1105.7).abs() < 1.0 && (bench_slow - 1658.4).abs() < 1.0);
     let ratio = (bench_fast + bench_slow) / (wire_fast + wire_slow);
     assert!(
@@ -6440,7 +5906,7 @@ fn the_predecessors_sigma_is_inflated_by_configured_rates_not_the_wires_realized
         bench_fast + bench_slow,
         wire_fast + wire_slow
     );
-    // THE FLIP, stated as the two opposite verdicts on the same question.
+    // The flip: two opposite verdicts on the same question.
     assert_eq!(shipped_chain(bench_fast, 2), shipped_chain(bench_fast + bench_slow, 2));
     assert_ne!(
         shipped_chain(wire_fast, 2),
@@ -6451,14 +5917,10 @@ fn the_predecessors_sigma_is_inflated_by_configured_rates_not_the_wires_realized
     assert_ne!(shipped_chain(wire_slow, 2), shipped_chain(wire_fast + wire_slow, 2));
 }
 
-/// THE WIRE'S REALIZED CAP, as the L1 ledgers already recorded it — the
-/// reading that settles the handover without a VM run.
-///
-/// This is a transcription gate, not a simulation: it asserts that the
-/// numbers this section's verdict quotes are the numbers in
-/// `docs/l1-raw/*.log`, and that they say "ceiling" rather than "boot". If a
-/// successor re-measures and gets something else, this is the row to change,
-/// and changing it re-scores the verdict instead of inheriting it as prose.
+/// The wire's realized cap, as the L1 per-rep records report it — a
+/// transcription gate, not a simulation: the numbers the verdict quotes say
+/// "ceiling" rather than "boot". A re-measurement that disagrees changes this
+/// row and re-scores the verdict.
 #[test]
 fn the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff() {
     for w in WIRE_CAPS {
@@ -6476,46 +5938,33 @@ fn the_wires_realized_dual_cap_is_the_ceiling_and_never_the_boot_cliff() {
             w.cell, w.arm, w.max_capboot
         );
     }
-    // The U arms are pinned in EVERY rep, which is what "the Sigma ranges over
+    // The U arms are pinned in every rep, as "the Σ ranges over
     // live_paths()" predicts: the interior and boot regimes are unreachable
-    // there, so there is no dispersion left to have.
+    // there, so there is no dispersion left.
     for w in WIRE_CAPS.iter().filter(|w| w.arm == "AU") {
         assert_eq!(w.at_ceiling, w.reps, "{}-AU is not uniformly pinned", w.cell);
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// THE LATENCY-FEEDBACK SOURCE — goal-gate "The Latency-Feedback Source",
-// executing "The Queue Fix"'s RANK 1 handover ("THE DUAL-CELL BRAKE, which is
-// not in the engine … What is missing is the OFFERED LOAD beside it").
+// The latency-feedback source
 //
-// The handover's hypothesis was that the offered load is an inner TCP whose
-// congestion control reacts to the tunnel's own inflated RTT. Everything in
-// this block is what the ALREADY-COMMITTED evidence says about that, taken
-// BEFORE any model was built, because two independent readings settle it and
-// neither needed a VM.
+// Hypothesis: the offered load is an inner TCP whose congestion control reacts
+// to the tunnel's own inflated RTT. Two readings of existing evidence settle
+// what the L1 wire's source is, before any model is built.
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// THE FIRST REFUTATION, PROVEN TO EXECUTE (MEASUREMENT DISCIPLINE 1).
+/// The wire's offered load has no congestion control (measurement discipline
+/// rule 1: asserted against the source text).
 ///
-/// The offered load at every L1 arm in this ledger is `raptorpath perf
-/// --client`, which drives a MEMORY-BACKED TUN. `tun/mod.rs`'s own doc for
-/// `MemTun` says what it is: "Used by `raptorpath perf` to drive objects over
-/// the real transport **without a kernel TUN or an inner TCP stack**". And
-/// `perf.rs::run_object` is the whole source: a bare `for idx in 0..total`
-/// over `mem.feed.send(pkt)`. There is NO window, no cwnd, no RTT estimator,
-/// no retransmit timer and no loss signal anywhere on the app side — the ONLY
-/// backpressure is the bounded mpsc channel.
-///
-/// So the wire's offered load has NO CONGESTION CONTROL, and cannot be
-/// reacting to the tunnel's latency. The hypothesis is refuted at its source
-/// before any bench runs.
-///
-/// This is asserted against the source text rather than described, on the
-/// precedent already in the tree (`net/diag.rs:990` counts
-/// `tun.read_packet()` occurrences in its own body to keep an attribution
-/// claim honest). A successor who adds an inner stack to `perf` fails here
-/// and re-scores this section rather than inheriting its prose.
+/// The offered load at every L1 arm is `raptorpath perf --client`, which
+/// drives a memory-backed TUN — `MemTun` runs the real transport "without a
+/// kernel TUN or an inner TCP stack" — and `perf.rs::run_object` is a bare
+/// `for idx in 0..total` over `mem.feed.send(pkt)`. No window, cwnd, RTT
+/// estimator, retransmit timer or loss signal exists on the app side; the
+/// only backpressure is the bounded mpsc channel. So the offered load cannot
+/// be reacting to the tunnel's latency. Adding an inner stack to `perf` fails
+/// this test.
 #[test]
 fn the_wires_offered_load_has_no_congestion_control() {
     let perf = include_str!("../src/perf.rs");
@@ -6534,7 +5983,7 @@ fn the_wires_offered_load_has_no_congestion_control() {
         "perf.rs::run_object's open feed loop is gone; re-read the source model"
     );
     // Nothing that could implement a congestion response exists on the app
-    // side. Each name is checked separately so a failure says WHICH appeared.
+    // side. Each name is checked separately so a failure says which appeared.
     let lower = perf.to_ascii_lowercase();
     for banned in [
         "cwnd", "ssthresh", "congestion", "rto", "retransmit", "sack", "in_flight",
@@ -6549,15 +5998,10 @@ fn the_wires_offered_load_has_no_congestion_control() {
     }
 }
 
-/// THE WIRE'S SENDER-LOOP WAIT ATTRIBUTION, per cell and arm.
-///
-/// `net/mod.rs:5824-5829` charges every sender-loop iteration's wall time to
-/// the `select!` arm that woke it; `hi_parse.py:160-167` takes the MEDIAN over
-/// the rep's DIAG windows and every per-rep summary record in `docs/l1-raw`
-/// carries all eight buckets. No section of the ledger had read them per rep.
-///
-/// Medians over reps, extracted by `tools/l1/waitarm_analyze.py`. Nothing here
-/// is modelled or fitted; it is transcription.
+/// The wire's sender-loop wait attribution, per cell and arm: each
+/// sender-loop iteration's wall time is charged to the `select!` arm that woke
+/// it, and every L1 per-rep summary carries the median over the rep's DIAG
+/// windows for all eight buckets. Medians over reps; transcription only.
 #[derive(Debug, Clone, Copy)]
 struct WireWait {
     cell: &'static str,
@@ -6586,14 +6030,11 @@ fn wire_wait(cell: &str, arm: &str) -> &'static WireWait {
         .unwrap_or_else(|| panic!("no transcribed wait row for {cell}-{arm}"))
 }
 
-/// THE SECOND REFUTATION, BOUNDED: "at c7/c8 the sender is offered-load-bound
-/// (`wait_tun` 97.7%, `wait_paused` ~0)" is TRUE AT c7 AND FALSE AT c8.
-///
-/// "The Queue Fix"'s handover stated the 97.7% figure at c7 only; the c8 half
-/// was an extrapolation and the wire had already contradicted it. At c8 the
-/// productive-intake arm is a MINORITY of the loop's wall (34%) and the single
-/// largest bucket beside it is the GAP-REPORT arm at 31% — the recovery plane,
-/// not the source and not the store cap.
+/// "At c7/c8 the sender is offered-load-bound (`wait_tun` 97.7 %,
+/// `wait_paused` ~0)" is true at c7 and false at c8. At c8 the
+/// productive-intake arm is a minority of the loop's wall (34 %) and the
+/// largest bucket beside it is the gap-report arm at 31 % — the recovery
+/// plane, not the source and not the store cap.
 #[test]
 fn the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8() {
     // Internal identity: no bucket is a percentage outside [0, 100].
@@ -6607,14 +6048,14 @@ fn the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8() {
         }
         assert!(w.reps >= 20, "{}-{}: n = {} is too thin to transcribe", w.cell, w.arm, w.reps);
     }
-    // c7 IS offered-load-bound and its store cap is inert, on BOTH arms.
+    // c7 is offered-load-bound and its store cap is inert, on both arms.
     for arm in ["A", "AU"] {
         let w = wire_wait("c7", arm);
         assert!(w.tun >= 95.0, "c7-{arm}: tun = {} — c7 is no longer tun-bound", w.tun);
         assert_eq!(w.paused, 0.0, "c7-{arm}: the store-cap arm is no longer exactly 0%");
         assert!(w.nack <= 5.0, "c7-{arm}: the recovery arm has grown to {}%", w.nack);
     }
-    // c8 IS NOT. This is the refutation, and it is stated as a bound.
+    // c8 is not.
     for arm in ["A", "AU"] {
         let w = wire_wait("c8", arm);
         assert!(
@@ -6635,28 +6076,21 @@ fn the_wire_is_tun_bound_at_c7_and_recovery_bound_at_c8() {
             w.nack, w.tun
         );
     }
-    // And the store cap IS the brake at the single cells, which is why the
-    // published bench's `while store_len < cap` models sc2/sc3 and not the
-    // duals ("The Queue Fix" FINDING 2, independently re-derived here from a
-    // different column of the same records).
+    // And the store cap is the brake at the single cells, which is why the
+    // bench's `while store_len < cap` models sc2/sc3 and not the duals.
     assert!(wire_wait("sc2", "A").paused >= 30.0);
     assert!(wire_wait("sc3", "A").paused >= 60.0);
     assert!(wire_wait("c7", "A").paused < 1.0);
 }
 
-/// THE c8 COLLAPSE MODE, PER REP — the class the uniflip battery printed
-/// (reps at 18.8 / 34.7 / 49.5 beside 80–83) has a SENDER-LOOP SIGNATURE, and
-/// it is a perfect separator.
+/// The c8 collapse mode has a sender-loop signature, and it is a perfect
+/// separator.
 ///
 /// Over the 131 c8 reps of the A/AU/AL/ALU arms that carry the gauge, sorted
-/// SLOWEST first, the 19 slowest reps ALL read `wait_tun` = 0% AND
-/// `wait_paused` = 0% — an unbroken prefix — against 5 such reps in the whole
-/// remaining 112. Every one of the 13 reps below the battery's own 60 Mbit/s
-/// collapse threshold is in it.
-///
-/// Transcribed from `tools/l1/waitarm_analyze.py`, whose input is the
-/// committed `docs/l1-raw` tree. The 60 Mbit/s threshold is the uniflip
-/// battery's own, not one chosen here.
+/// slowest first, the 19 slowest all read `wait_tun` = 0 % and
+/// `wait_paused` = 0 % — an unbroken prefix — against 5 such reps in the
+/// remaining 112. All 13 reps below the battery's own 60 Mbit/s collapse
+/// threshold are in it.
 #[derive(Debug, Clone, Copy)]
 struct C8Class {
     label: &'static str,
@@ -6710,9 +6144,8 @@ const C8_REPS: usize = 131;
 /// How many of the remaining reps carry it.
 const C8_DEAD_ELSEWHERE: usize = 5;
 
-/// Each dual's own WIRE transfer duration — the horizon "The Queue Fix"
-/// established is the only one at which the bench's anchor is the wire's
-/// (`seconds`, docs/l1-raw, 100% of reps under `CopaState::window_duration`).
+/// Each dual's own wire transfer duration — the horizon at which the bench's
+/// anchor is the wire's (all reps under `CopaState::window_duration`).
 const WIRE_HORIZON: &[(&str, f64)] = &[("c7", 9.23), ("c8", 2.44)];
 
 fn wire_horizon(cell: &str) -> f64 {
@@ -6723,11 +6156,10 @@ fn wire_horizon(cell: &str) -> f64 {
         .unwrap_or_else(|| panic!("no wire horizon for {cell}"))
 }
 
-// ── THE SOURCE AXIS'S PRE-REGISTRATION (MEASUREMENT DISCIPLINE 11) ─────────
+// ── The source axis's pre-registration (measurement discipline rule 11) ───
 //
-// Written and committed at `2b14cc6`, BEFORE the scored run. Every tolerance
-// is here rather than after the fact, and every WIRE number it is stated
-// against is already published in this file.
+// Every tolerance is fixed here, before the scored run, against wire numbers
+// already published in this file.
 //
 // V1 — the standing queue, mean over legs, against the wire's `q_p50`.
 const V_Q_WIRE_MS: &[(&str, f64)] = &[("c7", 76.0), ("c8", 338.0)];
@@ -6743,25 +6175,21 @@ const V_OCC_TOL: f64 = 0.20;
 // V4 — goodput class against the `Src::Bulk` arm at the same cell.
 const V_GP_LO: f64 = 0.5;
 const V_GP_HI: f64 = 2.0;
-/// The matrix's collapse threshold, TRANSCRIBED: the uniflip battery's own
-/// 60 Mbit/s over its own normal-class median of 81.1 Mbit/s. Not chosen here.
+/// The matrix's collapse threshold, transcribed: the battery's own 60 Mbit/s
+/// over its own normal-class median of 81.1 Mbit/s.
 const MATRIX_COLLAPSE_RATIO: f64 = 60.0 / 81.1;
-/// Seeds per arm per cell (the dispatch asks >= 5).
+/// Seeds per arm per cell (at least 5).
 const MATRIX_SEEDS: u64 = 8;
 
-/// THE VALIDATION GATE, SCORED — V1–V4 against the pre-registration at
-/// `2b14cc6`, and the STOP RULE the dispatch fixed.
+/// The validation gate, scored — V1–V4 against the pre-registration, with its
+/// stop rule.
 ///
-/// **VERDICT: THE GATE FAILS, at c7, on V2 and V3, and the failure is the
-/// result.** A Reno-class flow over a RELIABLE tunnel has no congestion signal
-/// at all: the tunnel hides every loss, so the flow never leaves slow start,
-/// its window runs away, and it re-becomes the bulk source the bench already
-/// had. The offered load is therefore NOT a latency control — which is the
-/// same conclusion the reading reached about the wire, arrived at from the
-/// opposite direction.
-///
-/// This test PINS the failure rather than describing it, so a successor who
-/// changes the source model re-scores the gate instead of inheriting prose.
+/// The gate fails, at c7, on V2 and V3, and the failure is the result. A
+/// Reno-class flow over a reliable tunnel has no congestion signal: the
+/// tunnel hides every loss, so the flow never leaves slow start, its window
+/// runs away, and it becomes the bulk source again. The offered load is not a
+/// latency control — the same conclusion as for the wire, from the opposite
+/// direction. Pinned so a change to the source model re-scores the gate.
 #[test]
 fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_reliable_tunnel() {
     let mut c7_cap_bound = f64::NAN;
@@ -6782,9 +6210,9 @@ fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_relia
         assert!(r.src_opps > 0, "{cell}: the source axis never sampled an admission tick");
         assert!(r.goodput_sym_s() > 0.0, "{cell}: the closed loop delivered nothing");
 
-        // V4 — the closed loop must not have destroyed the transfer. This one
-        // PASSES at both duals, which is what makes the V2/V3 failure a
-        // statement about the REGIME and not about a broken instrument.
+        // V4 — the closed loop must not have destroyed the transfer. It passes
+        // at both duals, which makes the V2/V3 failure a statement about the
+        // regime and not about a broken instrument.
         let gp = r.goodput_sym_s() / bulk.goodput_sym_s();
         assert!(
             (V_GP_LO..=V_GP_HI).contains(&gp),
@@ -6793,10 +6221,8 @@ fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_relia
              is broken and nothing else here can be read"
         );
 
-        // Every criterion is PRODUCED at both duals and printed, so the gate's
-        // scorecard is a table and not a sentence. Only c7's are asserted on
-        // below, because c7 is where the gate fails and the failure is what
-        // this test exists to bound.
+        // Every criterion is produced at both duals and printed. Only c7's are
+        // asserted below, because c7 is where the gate fails.
         let n = specs.len() as f64;
         let q: f64 = (0..specs.len()).map(|p| r.queue_ms(p)).sum::<f64>() / n;
         let occ = r.store_len_mean / r.mean_cap.max(1e-9);
@@ -6832,8 +6258,8 @@ fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_relia
         }
     }
 
-    // V2a/V2b FAIL AT c7, AND THEY FAIL IN THE SAME DIRECTION: the model puts
-    // the store cap in charge where the wire measures it never to fire.
+    // V2a/V2b fail at c7, in the same direction: the model puts the store cap
+    // in charge where the wire measures it never to fire.
     assert!(
         c7_src_bound < V_SRC_BOUND_C7_MIN,
         "c7: V2a now PASSES ({c7_src_bound:.1}% >= {V_SRC_BOUND_C7_MIN}%) — the \
@@ -6863,10 +6289,8 @@ fn the_closed_loop_source_cannot_reproduce_the_a_arm_and_the_reason_is_the_relia
     );
 }
 
-/// THE MATRIX, RUN BUT **NOT SCORED** — the pre-registration's STOP RULE fired
-/// at the validation gate, so nothing here decides anything. It is produced so
-/// a successor inherits numbers rather than a description, and every row is
-/// labelled UNSCORED for exactly that reason.
+/// The matrix, run but not scored — the pre-registration's stop rule fired at
+/// the validation gate, so every row is labelled UNSCORED.
 ///
 /// {A, AU, U+3T, P} × {c7, c8} × 8 seeds, at each cell's own wire horizon.
 #[test]
@@ -6936,9 +6360,9 @@ fn sf_source_matrix_unscored() {
     }
 }
 
-/// THE SOURCE AXIS'S SMOKE — one seed, both duals, both source arms, printed
+/// The source axis's smoke — one seed, both duals, both source arms, printed
 /// so the instrument's behaviour is visible before anything is scored against
-/// it. `#[ignore]`d: it is a READOUT, not a pin.
+/// it. A readout, not a pin.
 #[test]
 #[ignore = "component bench; run with --ignored --nocapture"]
 fn sf_source_axis_smoke() {
@@ -6989,25 +6413,21 @@ fn sf_source_axis_smoke() {
     }
 }
 
-/// THE THIRD FINDING, AND IT IS POSITIVE: the c8 collapse is APPENDED DEAD
-/// WALL, not a degraded transfer.
+/// The c8 collapse is appended dead wall, not a degraded transfer.
 ///
-/// Three of the wire's own columns say so together, and none of them is a
-/// goodput statistic:
+/// Three of the wire's columns say so together, none a goodput statistic:
 ///
-///  * `tc_pkts` — packets the SHAPER counted, i.e. what actually reached the
-///    wire — is 1.02× between the classes. The collapse rep sends the same
-///    traffic.
-///  * `sf_ticks` — the sender's own dyn-cap refresh count, which only
-///    increments inside the emission path — is 1.03×. The emission work is
-///    the same too.
-///  * `seconds` is 1.49×. So ~30% of a collapse rep's wall is time in which
-///    the sender is neither taking source in (`wait_tun` = 0) nor blocked on
-///    its store cap (`wait_paused` = 0) nor putting packets on the wire.
+///   * `tc_pkts` — packets the shaper counted, i.e. what reached the wire — is
+///     1.02× between the classes: the collapse rep sends the same traffic.
+///   * `sf_ticks` — the dyn-cap refresh count, which only increments inside
+///     the emission path — is 1.03×: the emission work is the same.
+///   * `seconds` is 1.49×. So ~30 % of a collapse rep's wall is time in which
+///     the sender is neither taking source in (`wait_tun` = 0), nor blocked on
+///     its store cap (`wait_paused` = 0), nor putting packets on the wire.
 ///
-/// A store-sizing law cannot reach this. `wait_paused` = 0 in 13 of 13
-/// collapse reps means the gate a cap acts on is NEVER CLOSED while the
-/// collapse is happening.
+/// A store-sizing law cannot reach this: `wait_paused` = 0 in 13 of 13
+/// collapse reps, so the gate a cap acts on is never closed during the
+/// collapse.
 #[test]
 fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed() {
     let (c, n) = (C8_COLLAPSE, C8_NORMAL);
@@ -7016,7 +6436,7 @@ fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed(
     assert!(c.wait_nack > n.wait_nack, "{}: the recovery arm did not grow", c.label);
     assert!(c.wait_tail >= 2.0 * n.wait_tail, "{}: the tail-sweep arm did not grow", c.label);
 
-    // (a) THE SEPARATOR. Both loop-attribution buckets are EXACTLY zero in the
+    // (a) The separator. Both loop-attribution buckets are exactly zero in the
     // collapse class and neither is in the normal class.
     assert_eq!(c.wait_tun, 0.0, "{}: the intake arm is no longer dead", c.label);
     assert_eq!(c.wait_paused, 0.0, "{}: the store-cap arm is no longer dead", c.label);
@@ -7027,7 +6447,7 @@ fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed(
          ({C8_DEAD_PREFIX} prefix vs {C8_DEAD_ELSEWHERE} elsewhere)"
     );
 
-    // (b) THE WIRE VOLUME AND THE EMISSION WORK ARE UNCHANGED.
+    // (b) The wire volume and the emission work are unchanged.
     let pkts = c.tc_pkts / n.tc_pkts;
     let ticks = c.sf_ticks / n.sf_ticks;
     let drop = c.tc_drop / n.tc_drop;
@@ -7039,7 +6459,7 @@ fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed(
     assert!((0.95..=1.10).contains(&ticks), "sf_ticks moved {ticks:.3}x");
     assert!((0.90..=1.15).contains(&drop), "tc_drop moved {drop:.3}x — link loss is not equal");
 
-    // (c) SO THE WALL IS WHERE IT ALL WENT, and the residual is real.
+    // (c) So the wall is where it went, and the residual is real.
     let wall = c.seconds / n.seconds;
     assert!(
         wall >= 1.35,
@@ -7061,13 +6481,13 @@ fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed(
     let dead_n = (n.seconds - n.sf_ticks / duty) / n.seconds;
     assert!(dead_n.abs() < 0.05, "the normal class shows {:.1}% dead wall too", dead_n * 100.0);
 
-    // (d) AND THE STORE IS EMPTY WHILE IT HAPPENS. The median DIAG window of a
-    // collapse rep holds NOTHING in the retention store.
+    // (d) And the store is empty while it happens: the median DIAG window of
+    // a collapse rep holds nothing in the retention store.
     assert_eq!(c.occ_p50, 0.0, "the collapse class's median occupancy is no longer 0");
     assert!(n.occ_p50 > 1000.0, "the normal class's occupancy contrast is gone");
 
-    // (e) The extra work that IS there is RECOVERY, and it is spurious: 1.41x
-    // the retransmits on 1.06x the link drops.
+    // (e) The extra work that is there is recovery, and it is spurious: 1.41×
+    // the retransmits on 1.06× the link drops.
     let spurious = (c.retx / n.retx) / (c.tc_drop / n.tc_drop);
     assert!(
         spurious >= 1.20,
@@ -7076,19 +6496,16 @@ fn the_c8_collapse_is_appended_dead_wall_and_the_store_cap_gate_is_never_closed(
     );
 }
 
-/// THE DEAD TIME'S QUANTUM, on the SHIPPED laws and the wire's own SRTT.
+/// The dead time's quantum, on the shipped laws and the wire's own SRTT.
 ///
-/// Both timers that can end a c8 recovery stall are `2·SRTT` CLAMPED to a
-/// 100 ms ceiling — `net::tail_sweep_timeout_us` (`[25 ms, 100 ms]`) and
-/// `net::hole_nack_refresh` (`[25 ms, 100 ms]`). At c8 the wire's own SRTT is
-/// `rtp_med + q_p50` = 38 + 338 = 376 ms, so `2·SRTT` = 752 ms and BOTH timers
-/// sit at their ceiling, a factor of 7.5 below the round trip they are meant
-/// to be a multiple of. Each recovery round therefore costs 100 ms of wall
-/// whatever the path does, and ~1.1 s of dead wall is ~11 of them.
-///
-/// This is arithmetic on shipped functions, not a fit. It is recorded because
-/// it is what the dead time is MADE of; it is NOT a claim that changing the
-/// clamp would help, which nothing here measures.
+/// Both timers that can end a c8 recovery stall are `2·SRTT` clamped to a
+/// 100 ms ceiling — `net::tail_sweep_timeout_us` and `net::hole_nack_refresh`
+/// (both `[25 ms, 100 ms]`). At c8 the wire's SRTT is `rtp_med + q_p50` =
+/// 38 + 338 = 376 ms, so `2·SRTT` = 752 ms and both timers sit at their
+/// ceiling, 7.5× below the round trip they are meant to be a multiple of.
+/// Each recovery round costs 100 ms of wall whatever the path does, and
+/// ~1.1 s of dead wall is ~11 of them. Arithmetic on shipped functions; not a
+/// claim that changing the clamp would help.
 #[test]
 fn the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells() {
     use raptorpath::net::{hole_nack_refresh, tail_sweep_timeout_us};
@@ -7117,9 +6534,9 @@ fn the_recovery_timers_are_clamp_bound_at_c8_and_free_at_the_single_cells() {
         }
     }
     assert_eq!(clamped, 3, "a transcribed cell stopped reaching the 100 ms clamp");
-    // c1, the cell with no queue, is NOT clamp-bound at the ceiling — the
-    // FLOOR holds it instead, which is the control that says the ceiling
-    // reading is about c8's queue and not about the law.
+    // c1, the cell with no queue, is not clamp-bound at the ceiling — the
+    // floor holds it instead, the control that says the ceiling reading is
+    // about c8's queue and not about the law.
     assert_eq!(
         tail_sweep_timeout_us(9 * 1000),
         25_000,

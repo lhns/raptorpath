@@ -1,63 +1,36 @@
-//! # THE AGREEMENT-TEST CLASS — code vs the PUBLISHED formula
+//! Agreement tests: the shipped code computes the published formula.
 //!
-//! CLAUDE.md **FORMULA-FIRST LAWS** requires that no law ships without its
-//! formula and its per-symbol derivation in the paper. It did not, until now,
-//! require anything to check that the shipped code still computes THE
-//! PUBLISHED EXPRESSION — and the first law the rule governed diverged from
-//! its own publication inside one commit. §16.57 measured it: §16.56
-//! published term 1 of the composed cap as `rateᵢ·RTpropᵢ` while
-//! `net::three_term_store_cap` had always computed `rateᵢ·Kᵢ·RTpropᵢ`, so the
-//! window term ran 4–50 % above the paper on the wire (`K` = 1.04–1.505) and
-//! **no test could see it**, because every existing pin asserts a property OF
-//! the code (linearity in N, continuity in ρ, the clamp's reachability)
-//! rather than EQUALITY WITH THE PAPER.
+//! Every other pin asserts a property of the code (linearity in N, continuity
+//! in ρ, a clamp's reachability); none asserts equality with the paper, so a
+//! law can drift from its publication unseen. Each test here transcribes a
+//! formula-first law from `docs/fec-arq-model.md` and asserts the engine
+//! function equals it.
 //!
-//! That divergence is adjudicated in §16.56's dated amendment of 2026-08-18
-//! (in favour of the code: term 1 funds ONE ACK ROUND TRIP, and the round
-//! trip an ack actually takes is `K·RTprop`). This file is the other half of
-//! what §16.57 said was owed — the standing instrument that makes the next
-//! such divergence a red test rather than a battery finding.
+//! ## Template for adding a law
 //!
-//! ## THE TEMPLATE — how to add a law to this class
-//!
-//! One test per formula-first law, each with exactly these four parts. Copy
-//! the shape; the value of the class is that it is mechanical.
-//!
-//! 1. **TRANSCRIBE.** A local `fn published_*` that is the paper's expression
-//!    and NOTHING ELSE — written from the paper, in the paper's own symbols
-//!    and order, with the section and date it was transcribed FROM in a
-//!    comment. It must not call the engine function it is checking, must not
-//!    import the engine's helpers for the parts it is transcribing, and must
-//!    not be "simplified": an algebraically-equal rewrite silently re-derives
-//!    the thing under test.
-//! 2. **DRIVE BOTH** on the same inputs, over a grid that includes the dials'
-//!    named points, the WIRE-MEASURED range of every measured symbol, and the
+//! 1. **Transcribe.** A local `fn published_*` that is the paper's expression
+//!    and nothing else — in the paper's symbols and order, with its section in
+//!    a comment. It must not call the engine function it checks, import the
+//!    engine's helpers for the parts it transcribes, or be "simplified": an
+//!    algebraically equal rewrite re-derives the thing under test.
+//! 2. **Drive both** on the same inputs, over a grid that includes the dials'
+//!    named points, the wire-measured range of every measured symbol, and the
 //!    degenerate ends (N = 1, zero skew, the clamp's two sides).
-//! 3. **ASSERT EQUALITY, and BOUND every deliberate divergence.** Where the
-//!    engine quantizes (integer µs, `ceil` to whole symbols) the paper's real
-//!    arithmetic, the residual is asserted against an explicit bound derived
-//!    from the quantization — never hidden by a loose tolerance and never
-//!    described in prose. CLAUDE.md: *every documented model-vs-engine
-//!    divergence must carry a test that BOUNDS it.*
-//! 4. **PROVE THE CLAMP IS NOT ANSWERING.** A law compared to its paper
-//!    THROUGH a bound that always binds is a comparison of two constants.
-//!    Every agreement assertion states, in the same test, that the value is
-//!    interior — or, where the clamp is the thing under test, that it is the
-//!    clamp and says so.
+//! 3. **Assert equality, and bound every deliberate divergence.** Where the
+//!    engine quantizes (integer µs, `ceil` to whole symbols), the residual is
+//!    asserted against an explicit bound derived from the quantization, never
+//!    hidden by a loose tolerance.
+//! 4. **Prove the clamp is not answering.** A law compared to its paper
+//!    through a bound that always binds is a comparison of two constants.
+//!    Every agreement assertion states that the value is interior — or, where
+//!    the clamp is under test, that it is the clamp.
 //!
-//! Laws in the class today: the composed / three-term store cap (§16.56 as
-//! amended), its contract stall (§16.56), and the δ deadline `D(δ)` (§16.20.3)
-//! that the stall is built on.
-//!
-//! **Joined 2026-08-18**: the pooled store cap, BOTH forms — §16.60 publishes
-//! `clamp(gain·Σ, floor, N·knee)` with a provenance line per symbol, so the
-//! corrected form now has a derivation to agree WITH. The shipped form's `×N`
-//! still has none (ADR-0070 finding 2 records it as PROVENANCE ABSENT), and
-//! this file does NOT manufacture one: what it transcribes for the shipped arm
-//! is §16.60's statement OF the defect — the expression the code runs, labelled
-//! as the thing under review — which is a different act from publishing a
-//! derivation for it. The agreement test's job here is to guarantee that the
-//! arm a battery scores is the arm the paper describes, on both sides.
+//! Laws in the class: the δ deadline `D(δ)` (paper §5.6), the contract stall
+//! (§6.4), the three-term / composed store cap (§10), the pooled store cap in
+//! both forms (§6.1), the span horizon `b(δ)` (§5.4), and the δ-cap setpoint
+//! `q(δ)` (§6.1). For the pooled cap's shipped `×N` form, what is transcribed
+//! is the paper's statement of the expression the code runs, labelled as the
+//! thing under review — not a derivation for it.
 
 use raptorpath::net::{
     contract_stall_s, delta_budget_b, pooled_store_cap, pooled_store_cap_unclamped,
@@ -70,38 +43,36 @@ use raptorpath::net::{
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// 1. TRANSCRIPTIONS — the paper, and nothing but the paper
+// 1. Transcriptions — the paper, and nothing but the paper
 // ─────────────────────────────────────────────────────────────────────────
 
-/// **PUBLISHED**: paper §16.20.3 / §16.56 — `D(δ) = min(b(δ)·RTprop, 2·RTprop)`.
-/// Transcribed 2026-08-18. Real-valued, in SECONDS: the paper states a time,
-/// not a microsecond count.
+/// Paper §5.6 — `D(δ) = min(b(δ)·RTprop, 2·RTprop)`. Real-valued, in
+/// seconds: the paper states a time, not a microsecond count.
 fn published_d_of_delta(b: f64, rtprop_s: f64) -> f64 {
     (b * rtprop_s).min(2.0 * rtprop_s)
 }
 
-/// **PUBLISHED**: paper §16.56 —
-/// `stall(δ, ρ, srtt) = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)`.
-/// Transcribed 2026-08-18. Both terms always computed; no branch on ρ, which
-/// is the CLAUDE.md no-mode-switch invariant read off the formula itself.
+/// Paper §6.4 — `stall(δ, ρ, srtt) = (1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)`.
+/// Both terms always computed; no branch on ρ (the no-mode-switch invariant
+/// read off the formula).
 fn published_stall_s(rho: f64, b: f64, rtprop_s: f64, srtt_s: f64) -> f64 {
     (1.0 - rho) * published_d_of_delta(b, rtprop_s) + rho * ((9.0 / 8.0) * srtt_s + srtt_s)
 }
 
-/// **PUBLISHED**: paper §16.56 as AMENDED 2026-08-18 —
+/// The three-term / composed store cap (paper §10), with term 1 funding one
+/// ack round trip `Kᵢ·RTpropᵢ`:
 ///
 /// ```text
 /// cap = Σᵢ over live_paths [ rateᵢ·srttᵢ + rateᵢ·stall(δ, ρ, srttᵢ) ]  +  2·rate_fast·skew
 ///   srttᵢ     = Kᵢ·RTpropᵢ
 ///   skew      = (maxᵢ RTpropᵢ − minᵢ RTpropᵢ) / 2
-///   rate_fast = the rate of the LEAST-RTprop path
-///   clamp: [floor, WIN_STORE_MAX] — the memory bound stated OUTSIDE the law
+///   rate_fast = the rate of the least-RTprop path
+///   clamp: [floor, WIN_STORE_MAX] — the memory bound stated outside the law
 /// ```
 ///
-/// Returned UNCLAMPED and real-valued, so the caller can assert the law and
-/// its bound separately (template part 4). The engine's `ceil`-to-whole-
-/// symbols is a realization of "the cap is a symbol count" and is applied by
-/// the caller, where it is visible.
+/// Returned unclamped and real-valued, so the caller asserts the law and its
+/// bound separately (template part 4). The engine's `ceil` to whole symbols
+/// is applied by the caller, where it is visible.
 fn published_composed_cap_unclamped(paths: &[(f64, f64, f64)], rho: f64, b: f64) -> f64 {
     let srtt = |k: f64, rtprop_s: f64| k * rtprop_s;
     let mut sum = 0.0;
@@ -121,45 +92,39 @@ fn published_composed_cap_unclamped(paths: &[(f64, f64, f64)], rho: f64, b: f64)
     sum + 2.0 * rate_fast * skew
 }
 
-/// **PUBLISHED**: paper §16.60 — the pooled outstanding cap, both forms.
+/// Paper §6.1 — the pooled outstanding cap, both forms.
 ///
 /// ```text
 ///   shipped    cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
 ///   corrected  cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
 /// ```
 ///
-/// Transcribed 2026-08-18. Written in the paper's own order and symbols, with
-/// the multiplier as the single differing factor because that is how §16.60
-/// states it. Returned UNCLAMPED and real-valued so the law and its bounds are
-/// asserted separately (template part 4); the caller applies the `ceil` and the
-/// clamp where they are visible.
+/// In the paper's order and symbols, with the multiplier as the single
+/// differing factor. Returned unclamped and real-valued (template part 4);
+/// the caller applies the `ceil` and the clamp.
 ///
-/// It takes the per-path anchors rather than a pre-summed Σ on purpose: the
-/// claim under test is that the Σ *is* the path-count scaling, and handing the
-/// transcription an already-summed number would assume exactly that.
+/// It takes per-path anchors rather than a pre-summed Σ on purpose: the claim
+/// under test is that the Σ is the path-count scaling, and a pre-summed number
+/// would assume it.
 fn published_pooled_cap_unclamped(anchors: &[f64], gain: f64, sum_cap: bool) -> f64 {
     let n = anchors.len() as f64;
     let sigma: f64 = anchors.iter().sum();
     if sum_cap { gain * sigma } else { gain * n * sigma }
 }
 
-/// **PUBLISHED**: paper §16.60's ceiling — `max(N·knee, floor)`.
-///
-/// Transcribed 2026-08-18. ADR-0070's own correction to the shorthand used
-/// everywhere else in the tree: the upper clamp is `max(N·knee, floor)`, not
-/// bare `N·knee`. At the shipped `knee = 2048` the two coincide and no cell has
-/// ever reached the difference — which is exactly why it must be transcribed
-/// from the paper rather than from memory.
+/// Paper §6.1's ceiling — `max(N·knee, floor)`, not bare `N·knee`. At the
+/// shipped `knee = 2048` the two coincide and no cell reaches the difference,
+/// which is why it is transcribed from the paper rather than from memory.
 fn published_pooled_ceiling(n: usize, knee: usize, floor: usize) -> usize {
     (n * knee).max(floor)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 2. THE GRID — dials at their named points, measured symbols at their
-//    WIRE-MEASURED range, and both degenerate ends
+// 2. The grid — dials at their named points, measured symbols at their
+//    wire-measured range, and both degenerate ends
 // ─────────────────────────────────────────────────────────────────────────
 
-/// `K` at the values §16.57 measured over 833 `[3T]` evaluations, plus the
+/// `K` at its wire-measured values over 833 `[3T]` evaluations, plus the
 /// synthetic ends. 1.04 = c8, 1.14 = c7/sc2, 1.15 = c1, 1.505 = c8L.
 const K_WIRE: &[f64] = &[1.0, 1.04, 1.14, 1.15, 1.505, 2.0];
 
@@ -167,26 +132,18 @@ const K_WIRE: &[f64] = &[1.0, 1.04, 1.14, 1.15, 1.505, 2.0];
 /// below 1, and ρ = 1 is the shipped retain-until-acked scope.
 const RHO_GRID: &[f64] = &[0.0, 0.25, 0.5, 0.75, 0.9, 1.0];
 
-/// **PUBLISHED**: paper §16.26 / §16.81 —
-/// `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)`, δ_Auto = 0.5.
-/// Transcribed 2026-09-08.
+/// Paper §5.4 — `b(δ) = clamp(2^(−½·log₁₀(δ/δ_Auto)), ½, 2)`, δ_Auto = 0.5.
 ///
-/// This row exists because the engine had NO function of δ until §16.81: `b`
-/// was a three-arm `match` on the protocol hint, so the paper's continuous
-/// law had nothing to be compared against and the agreement suite could only
-/// pin the three values. It is now a formula on both sides, and this is the
-/// transcription — written from the paper's own expression, deliberately in a
-/// DIFFERENT algebraic arrangement from the engine's (`2^x` via `powf` on the
-/// ratio, against the engine's identical ratio form), so the two agreeing is
+/// Written from the paper's expression in a different algebraic arrangement
+/// from the engine's (`2^x` via `powf` on the ratio), so the two agreeing is
 /// evidence rather than a tautology of shared code.
 fn published_span_horizon_b(delta: f64) -> f64 {
     let raw = (-0.5 * (delta / 0.5).log10()).exp2();
     raw.clamp(0.5, 2.0)
 }
 
-/// b(δ) at the protocol's NAMED POINTS, plus two off-point values, because
-/// they are points on a dial and not modes: the law must agree with the paper
-/// BETWEEN them too.
+/// b(δ) at the protocol's named points, plus two off-point values: they are
+/// points on a dial, not modes, so the law must agree between them too.
 fn b_grid() -> Vec<f64> {
     vec![
         delta_budget_b(ProtocolHint::Realtime),
@@ -206,25 +163,25 @@ const LEG_C3: (f64, f64) = (2_000.0, 0.060);
 /// The µs quantization the engine applies to `D(δ)` and the paper does not.
 ///
 /// `contract_stall_s` computes `shed_deadline_us(b, (rtprop_s·1e6) as u64)`,
-/// which truncates TWICE toward zero: seconds→µs (< 1 µs) and then the
-/// product `b·rtprop_us`→u64 (< 1 µs). So the engine's `D` is below the
-/// paper's by strictly less than 2 µs, never above, and the stall carries
-/// that residual weighted by `(1 − ρ)`. Stated as an ABSOLUTE bound in
-/// seconds rather than a relative tolerance, so it cannot silently absorb a
-/// real divergence: at the grid's smallest RTprop it is already 0.02 % of D.
+/// which truncates twice toward zero: seconds→µs (< 1 µs) and the product
+/// `b·rtprop_us`→u64 (< 1 µs). So the engine's `D` is below the paper's by
+/// strictly less than 2 µs, never above, and the stall carries that residual
+/// weighted by `(1 − ρ)`. An absolute bound in seconds rather than a relative
+/// tolerance, so it cannot absorb a real divergence: at the grid's smallest
+/// RTprop it is 0.02 % of D.
 const D_QUANT_BOUND_S: f64 = 2e-6;
 
 // ─────────────────────────────────────────────────────────────────────────
-// 3. THE TESTS
+// 3. The tests
 // ─────────────────────────────────────────────────────────────────────────
 
-/// **LAW: `D(δ)`, paper §16.20.3.** The engine's `shed_deadline_us` against
-/// the published `min(b·RTprop, 2·RTprop)`.
+/// Law: `D(δ)`, paper §5.6. The engine's `shed_deadline_us` against the
+/// published `min(b·RTprop, 2·RTprop)`.
 ///
 /// The engine returns integer µs; the paper returns a time. The divergence is
-/// a floor-toward-zero of at most [`D_QUANT_BOUND_S`] and it is asserted
-/// SIGNED (the engine is never ABOVE the paper), because an unsigned band
-/// would pass on a law that had drifted upward by a µs for a different reason.
+/// a floor toward zero of at most [`D_QUANT_BOUND_S`], asserted signed (the
+/// engine is never above the paper), because an unsigned band would pass a
+/// law that had drifted upward by a µs for another reason.
 #[test]
 fn published_delta_deadline_equals_the_engine_shed_deadline() {
     for &b in &b_grid() {
@@ -234,10 +191,9 @@ fn published_delta_deadline_equals_the_engine_shed_deadline() {
             let paper_s = published_d_of_delta(b, rtprop_s);
             let err = paper_s - engine_s;
             // The lower end is `-f64::EPSILON`, not `0.0`: where the µs
-            // truncation happens to be exact the two sides still differ by one
-            // ULP of double rounding (`0.75·38 ms` reads 0.0284999…97 against
-            // 0.0285). That is a representation artefact of the comparison, not
-            // a divergence of the law, and it is the ONLY slack on this side.
+            // truncation is exact the two sides still differ by one ULP of
+            // double rounding (`0.75·38 ms` reads 0.0284999…97 against 0.0285).
+            // A representation artefact, and the only slack on this side.
             assert!(
                 (-f64::EPSILON..D_QUANT_BOUND_S).contains(&err),
                 "D(δ) diverges from §16.20.3 beyond the µs quantization: \
@@ -247,14 +203,14 @@ fn published_delta_deadline_equals_the_engine_shed_deadline() {
     }
 }
 
-/// **LAW: the contract stall, paper §16.56.** `contract_stall_s` against the
+/// Law: the contract stall, paper §6.4. `contract_stall_s` against the
 /// published `(1 − ρ)·D(δ) + ρ·(9/8·srtt + srtt)`.
 ///
-/// At ρ = 1 — the SHIPPED scope — the shed term is multiplied by zero, so the
-/// agreement is EXACT and is asserted exactly. Below ρ = 1 it carries the
-/// `D` quantization, weighted by `(1 − ρ)`, and that weighting is asserted
-/// rather than assumed: a residual that did NOT shrink with ρ would mean the
-/// divergence is in the retained term, which is a different bug.
+/// At ρ = 1 (the shipped scope) the shed term is multiplied by zero, so the
+/// agreement is exact and asserted exactly. Below ρ = 1 it carries the `D`
+/// quantization weighted by `(1 − ρ)`, and that weighting is asserted: a
+/// residual that did not shrink with ρ would mean the divergence is in the
+/// retained term.
 #[test]
 fn published_contract_stall_equals_the_engine_stall() {
     for &rho in RHO_GRID {
@@ -286,19 +242,15 @@ fn published_contract_stall_equals_the_engine_stall() {
     }
 }
 
-/// **LAW: the composed / three-term store cap, paper §16.56 AS AMENDED
-/// 2026-08-18.** `net::three_term_store_cap` against the published Σ.
+/// Law: the three-term / composed store cap (paper §10).
+/// `net::three_term_store_cap` against the published Σ.
 ///
-/// This is the test that would have caught the §16.57 divergence on the
-/// commit that introduced it: transcribe the paper's term 1 as `rateᵢ·RTpropᵢ`
-/// (its pre-amendment form) and this test fails at every `K > 1` in the grid,
-/// which is every wire value ever measured.
+/// Transcribing term 1 as `rateᵢ·RTpropᵢ` instead of `rateᵢ·Kᵢ·RTpropᵢ` fails
+/// this test at every `K > 1` in the grid — every wire value ever measured.
 ///
-/// Template part 4 is explicit here: the composed law's ONLY remaining bound
-/// is the memory bound, and ADR-0070's entire postmortem is about a clamp
-/// that ate its law's evidence. Every geometry in the grid is asserted
-/// INTERIOR before its value is compared, so this can never quietly become an
-/// assertion that two constants are both 4096.
+/// Template part 4: the law's only remaining bound is the memory bound, so
+/// every geometry is asserted interior before its value is compared; this can
+/// never become an assertion that two constants are both 4096.
 #[test]
 fn published_composed_cap_equals_the_engine_three_term_law() {
     const FLOOR: usize = 0; // inert by construction; the clamp is asserted below
@@ -306,11 +258,10 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
     for &rho in RHO_GRID {
         for &b in &b_grid() {
             for &k in K_WIRE {
-                // The geometries: the single path (span zero BY ARITHMETIC),
-                // the symmetric dual (span zero for the other reason — max ==
-                // min), the ASYMMETRIC dual that is the only one with a live
-                // span term, and the symmetric quad ADR-0070's prevention kit
-                // added as the N ≥ 3 axis the tree never had.
+                // The geometries: the single path (span zero by arithmetic),
+                // the symmetric dual (span zero because max == min), the
+                // asymmetric dual (the only one with a live span term), and
+                // the symmetric quad as the N ≥ 3 axis.
                 let geoms: Vec<Vec<(f64, f64, f64)>> = vec![
                     vec![(LEG_C2.0, LEG_C2.1, k)],
                     vec![(LEG_C2.0, LEG_C2.1, k), (LEG_C2.0, LEG_C2.1, k)],
@@ -328,7 +279,7 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
 
                     let paper = published_composed_cap_unclamped(&g, rho, b);
 
-                    // (4) THE CLAMP IS NOT ANSWERING.
+                    // (4) The clamp is not answering.
                     assert!(
                         limit < WIN_STORE_MAX && limit > FLOOR,
                         "the memory bound is answering instead of the law \
@@ -337,9 +288,9 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
                         g.len()
                     );
 
-                    // (3) EQUALITY. The engine's total is the same real number
-                    // the paper's is, before its `ceil` to whole symbols; the
-                    // per-ρ residual is the SAME (1−ρ)·quantization the stall
+                    // (3) Equality. The engine's total is the same real number
+                    // as the paper's before its `ceil` to whole symbols; the
+                    // per-ρ residual is the same (1−ρ)·quantization the stall
                     // carries, scaled by Σ rate.
                     let engine_total = window + slack + span;
                     let rate_sum: f64 = g.iter().map(|p| p.0).sum();
@@ -362,8 +313,8 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
             }
         }
     }
-    // MECHANISM LIVENESS (MEASUREMENT DISCIPLINE rule 1): a grid that silently
-    // became empty would pass this test while asserting nothing.
+    // Mechanism liveness (measurement discipline rule 1): a grid that became
+    // empty would pass this test while asserting nothing.
     assert_eq!(
         checked,
         RHO_GRID.len() * b_grid().len() * K_WIRE.len() * 4,
@@ -371,25 +322,21 @@ fn published_composed_cap_equals_the_engine_three_term_law() {
     );
 }
 
-/// **THE AMENDMENT ITSELF, PINNED.** §16.56's pre-amendment term 1
-/// (`rateᵢ·RTpropᵢ`) is NOT what the engine computes, and the ratio between
-/// them is exactly `K` on the window term.
-///
-/// This exists so the adjudication cannot be silently reversed in either
-/// direction: it states the size of what was adjudicated, at the wire's own
-/// `K` values, as a number rather than as the §16.57 sentence "4–50 %".
+/// Term 1 as `rateᵢ·RTpropᵢ` is not what the engine computes; the ratio
+/// between them is exactly `K` on the window term. Pinned at the wire's own
+/// `K` values so the choice cannot be silently reversed.
 #[test]
 fn the_amended_term_one_is_k_times_the_pre_amendment_term_one() {
     for &k in &[1.04f64, 1.14, 1.15, 1.505] {
         let g = [(LEG_C2.0, LEG_C2.1, k)];
         let terms = [Some(ThreeTermTerm { rate: g[0].0, rtprop_s: g[0].1, k })];
         let (_, window, ..) = three_term_store_cap(true, &terms, 1.0, 1.0, 0).expect("warm");
-        let pre_amendment_window = g[0].0 * g[0].1; // rate·RTprop, §16.56 as first published
+        let pre_amendment_window = g[0].0 * g[0].1; // rate·RTprop, term 1 without K
         assert!(
             (window / pre_amendment_window - k).abs() < 1e-12,
             "the window term is not K× the pre-amendment published term: K={k}"
         );
-        // And the §16.57 headline, recomputed rather than quoted: 4–50 % high.
+        // And the size of it, recomputed: 4–50 % high.
         let pct = 100.0 * (k - 1.0);
         assert!(
             (4.0..=50.5).contains(&pct),
@@ -399,14 +346,13 @@ fn the_amended_term_one_is_k_times_the_pre_amendment_term_one() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 4. THE POOLED STORE CAP (paper §16.60) — joined 2026-08-18
+// 4. The pooled store cap (paper §6.1)
 // ─────────────────────────────────────────────────────────────────────────
 
-/// The wire's own per-path anchors in symbols, reconstructed the way
-/// `store_cap_sf_bench::AckShape::anchor_sym` does it (READOUT 3's three
-/// measured columns multiplied: `xanchor · rate_lr · RTprop`). Transcribed here
-/// so the agreement is driven over the range the law actually operates in —
-/// template part 2 — and not only over round synthetic numbers.
+/// The wire's own per-path anchors in symbols, reconstructed as
+/// `store_cap_sf_bench::AckShape::anchor_sym` does (three measured columns
+/// multiplied: `xanchor · rate_lr · RTprop`), so the agreement is driven over
+/// the range the law operates in (template part 2).
 const WIRE_C7: [f64; 2] = [9.80 * 9_432.0 * 0.0077, 10.11 * 9_418.0 * 0.0097];
 const WIRE_C8: [f64; 2] = [13.29 * 6_948.0 * 0.0084, 13.82 * 1_376.0 * 0.0386];
 
@@ -415,20 +361,19 @@ const POOL_GAIN: f64 = 2.0;
 const KNEE: usize = 2048;
 const POOL_FLOOR: usize = raptorpath::net::sender_policy::STORE_CAP_FLOOR;
 
-/// **LAW: the pooled store cap, paper §16.60, BOTH ARMS.**
-/// `net::pooled_store_cap` against the published expressions.
+/// Law: the pooled store cap, paper §6.1, both arms. `net::pooled_store_cap`
+/// against the published expressions.
 ///
-/// Driven over the wire's own measured anchors, a symmetric synthetic sweep to
-/// N = 8 (the axis no cell reaches, and the only one on which the two arms'
-/// shapes are distinguishable), and an asymmetric geometry so nothing here
-/// depends on the legs being equal. The engine's `ceil`-to-whole-symbols is the
-/// sole deliberate divergence and it is BOUNDED rather than absorbed: the
-/// realized value is the published one rounded up by strictly less than one
-/// symbol, asserted SIGNED.
+/// Driven over the wire's measured anchors, a symmetric synthetic sweep to
+/// N = 8 (the only axis on which the two arms' shapes are distinguishable),
+/// and an asymmetric geometry. The engine's `ceil` to whole symbols is the
+/// sole deliberate divergence and it is bounded: the realized value is the
+/// published one rounded up by strictly less than one symbol, asserted
+/// signed.
 #[test]
 fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
     // A pool large enough that the ceiling is provably inert, so what follows
-    // is an assertion about the LAW (template part 4 / DISCIPLINE 17b).
+    // is an assertion about the law (template part 4).
     const POOL_INERT: usize = 1 << 20;
 
     let mut cases: Vec<Vec<f64>> = vec![WIRE_C7.to_vec(), WIRE_C8.to_vec()];
@@ -443,7 +388,7 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
         for sum_cap in [false, true] {
             let paper = published_pooled_cap_unclamped(anchors, POOL_GAIN, sum_cap);
 
-            // (i) The UNCLAMPED law, exactly — no quantization on this side.
+            // (i) The unclamped law, exactly — no quantization on this side.
             let engine_raw = pooled_store_cap_unclamped(sum_cap, false, 1.0, n, sigma, POOL_GAIN);
             assert!(
                 (engine_raw - paper).abs() < 1e-9,
@@ -459,7 +404,7 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
                 "N={n} sum_cap={sum_cap}: realized {engine} is not paper {paper} ceil'd (err {err})"
             );
 
-            // (iii) PROVE THE CLAMP IS NOT ANSWERING.
+            // (iii) The clamp is not answering.
             let ceiling = published_pooled_ceiling(n, POOL_INERT, POOL_FLOOR);
             assert!(
                 engine < ceiling && engine > POOL_FLOOR,
@@ -470,17 +415,14 @@ fn published_pooled_cap_equals_the_engine_pooled_cap_on_both_arms() {
     }
 }
 
-/// **THE CEILING, agreed separately** — `max(N·knee, floor)`, not bare
-/// `N·knee`, and it is the same expression on both arms.
-///
-/// Asserted on its own because the whole ADR-0070 postmortem is that a law and
-/// its clamp were never asserted apart, and because the `max(·, floor)` half is
-/// exactly the piece the tree's own shorthand keeps dropping.
+/// The ceiling, agreed separately — `max(N·knee, floor)`, not bare `N·knee`,
+/// and the same expression on both arms. A law and its clamp are asserted
+/// apart, and the `max(·, floor)` half is the piece shorthand keeps dropping.
 #[test]
 fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
     for n in 2..=8usize {
-        // A base so large the value cannot be interior: what comes back IS the
-        // ceiling, which is what makes this an assertion about the bound.
+        // A base so large the value cannot be interior: what comes back is the
+        // ceiling, which makes this an assertion about the bound.
         for sum_cap in [false, true] {
             let engine =
                 pooled_store_cap(true, sum_cap, false, 1.0, n, 1.0e12, POOL_GAIN, POOL_FLOOR, KNEE).expect("on");
@@ -490,9 +432,8 @@ fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
                 "N={n} sum_cap={sum_cap}: the ceiling is not max(N·knee, floor)"
             );
         }
-        // The `max(·, floor)` clause exercised where it actually differs: a knee
-        // below the floor. No shipped cell reaches this, which is precisely why
-        // the shorthand lost it and why it is pinned here.
+        // The `max(·, floor)` clause exercised where it differs: a knee below
+        // the floor. No shipped cell reaches this, which is why it is pinned.
         assert_eq!(
             pooled_store_cap(true, true, false, 1.0, n, 1.0e12, POOL_GAIN, POOL_FLOOR, 1),
             Some(POOL_FLOOR),
@@ -501,14 +442,11 @@ fn published_pooled_ceiling_equals_the_engine_ceiling_on_both_arms() {
     }
 }
 
-/// **THE PUBLISHED PREDICTIONS, PINNED** — §16.60's table, RECOMPUTED from the
-/// wire's measured anchors rather than transcribed from the table.
-///
-/// These are the numbers the battery's pre-registration is scored against, so
-/// they must be a CONSEQUENCE of the published formula and the measured inputs.
-/// If an anchor input is ever corrected this test fails and the paper's table is
-/// wrong — which is the intended coupling, and the reason the predictions live
-/// in a test at all rather than only in prose.
+/// The published predictions, recomputed from the wire's measured anchors
+/// rather than copied from the paper's table. They are what a pre-registration
+/// is scored against, so they must be a consequence of the formula and the
+/// measured inputs: correcting an anchor input fails this test and flags the
+/// paper's table.
 #[test]
 fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
     for (cell, anchors, expect_corrected) in
@@ -517,14 +455,14 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
         let sigma: f64 = anchors.iter().sum();
         let n = anchors.len();
 
-        // The SHIPPED arm: pinned at the ceiling, 2·knee at a dual. This is the
-        // 121/126-reps observation, as arithmetic.
+        // The shipped arm: pinned at the ceiling, 2·knee at a dual (the
+        // 121/126-reps observation, as arithmetic).
         let shipped = pooled_store_cap(true, false, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
             .expect("on");
         assert_eq!(shipped, 2 * KNEE, "{cell}: the shipped arm is not pinned at 2·knee");
         assert_eq!(shipped, 4_096);
 
-        // The CORRECTED arm: interior, and exactly the published integer.
+        // The corrected arm: interior, and exactly the published integer.
         let corrected = pooled_store_cap(true, true, false, 1.0, n, sigma, POOL_GAIN, POOL_FLOOR, KNEE)
             .expect("on");
         assert_eq!(
@@ -536,7 +474,7 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
             "{cell}: the correction is not interior — the prediction would be a clamp"
         );
 
-        // The ratios §16.60 states, recomputed: c7 0.799, c8 0.737.
+        // The published ratios, recomputed: c7 0.799, c8 0.737.
         let ratio = corrected as f64 / shipped as f64;
         assert!(
             (0.70..0.81).contains(&ratio),
@@ -546,36 +484,28 @@ fn the_published_predictions_are_what_the_law_computes_at_the_wires_anchors() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// JOINED 2026-08-19 — the δ-cap (§16.66), the RACK round (§16.67) and the
-// derived quantile round (§16.68). Same four-part template: TRANSCRIBE from
-// the paper, DRIVE BOTH on one grid, ASSERT EQUALITY with every deliberate
-// divergence BOUNDED, and PROVE THE CLAMP IS NOT ANSWERING.
+// 5. The δ-dial laws: the span horizon b(δ) (paper §5.4) and the δ-cap
+//    setpoint q(δ) (paper §6.1), on the same four-part template.
 // ════════════════════════════════════════════════════════════════════════
 
-/// **PUBLISHED**: paper §16.66 —
-/// `q(δ) = q_lo + (q_hi − q_lo)·(clamp(b, b_lo, b_hi) − b_lo)/(b_hi − b_lo)`.
-/// Transcribed 2026-08-19, in the paper's own symbols and order. The band
-/// endpoints are RFC 8289 §3.2's; the dial endpoints are the dial's.
+/// Paper §6.1 —
+/// `q(δ) = q_lo + (q_hi − q_lo)·(clamp(b, b_lo, b_hi) − b_lo)/(b_hi − b_lo)`,
+/// in the paper's symbols and order. The band endpoints are RFC 8289 §3.2's;
+/// the dial endpoints are the dial's.
 fn published_codel_q(b: f64) -> f64 {
     let (q_lo, q_hi) = (0.05, 0.10);
     let (b_lo, b_hi) = (0.5, 2.0);
     q_lo + (q_hi - q_lo) * ((b.clamp(b_lo, b_hi) - b_lo) / (b_hi - b_lo))
 }
 
-/// **LAW: `b(δ)`, paper §16.26 / §16.81.** The engine's span
-/// horizon against the paper's own continuous form, over the WHOLE dial.
-///
-/// Until 2026-09-08 there was nothing to put in this file for `b`: the engine
-/// held a three-arm `match` on the protocol hint and the paper held a formula,
-/// so "agreement" could only ever mean "the three numbers coincide" — which is
-/// exactly the failure mode ADR-0070 names, a law that is pinned and never
-/// READ. The engine now evaluates `span_horizon_b(delta_price(hint))`, and
-/// this row reads the paper's expression against it everywhere, including
-/// BETWEEN the presets and at both ends of the clamp.
+/// Law: `b(δ)`, paper §5.4. The engine's span horizon
+/// (`span_horizon_b(delta_price(hint))`) against the paper's continuous form
+/// over the whole dial — including between the presets and at both ends of
+/// the clamp, so the law is read, not only pinned at three values.
 #[test]
 fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
-    // 1. The named points, ABSOLUTELY and BIT-EXACTLY — the numbers §16.26
-    //    publishes, and the numbers the deleted three-arm map returned.
+    // 1. The named points, absolutely and bit-exactly — the numbers the paper
+    //    publishes.
     assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Realtime)), 0.5);
     assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Auto)), 1.0);
     assert_eq!(delta_budget_b_of(delta_price(ProtocolHint::Bulk)), 2.0);
@@ -583,9 +513,9 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
     assert_eq!(published_span_horizon_b(0.5), 1.0);
     assert_eq!(published_span_horizon_b(0.005), 2.0);
 
-    // 2. AGREEMENT with the paper's transcription over a log-uniform sweep of
-    //    the dial's own span, and two decades PAST each end so the clamp — the
-    //    law's RANGE, not a mode — is exercised on both sides.
+    // 2. Agreement with the paper's transcription over a log-uniform sweep of
+    //    the dial's span, and two decades past each end so the clamp — the
+    //    law's range, not a mode — is exercised on both sides.
     let (lo, hi) = (0.005f64 / 100.0, 50.0f64 * 100.0);
     const N: usize = 600;
     for i in 0..=N {
@@ -597,11 +527,10 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
         );
     }
 
-    // 3. THE OFF-POINTS `b_grid()` ALREADY SWEEPS. The store-cap rows are
-    //    evaluated at b = 0.75 and b = 1.5, which are not preset values —
-    //    before §16.81 no δ could be named for them at all. Invert the law
-    //    (δ = δ_Auto·10^(−2·log₂ b)) and check that those b really are points
-    //    ON this dial rather than free parameters of the cap benches.
+    // 3. The off-points `b_grid()` sweeps. The store-cap rows are evaluated at
+    //    b = 0.75 and b = 1.5, which are not preset values. Invert the law
+    //    (δ = δ_Auto·10^(−2·log₂ b)) and check those b are points on this dial
+    //    rather than free parameters of the cap benches.
     for b in b_grid() {
         let d = 0.5 * 10f64.powf(-2.0 * b.log2());
         let back = delta_budget_b_of(d);
@@ -615,18 +544,15 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
         );
     }
 
-    // 4. THE NO-MODE-SWITCH PROPERTY, asserted rather than described: ±2 %
-    //    nudges either side of every named point move b by less than 0.01 and
-    //    never move it UP. A behaviour STEP across a preset is a defect even
-    //    if each side is individually correct (CLAUDE.md).
+    // 4. The no-mode-switch property: ±2 % nudges either side of every named
+    //    point move b by less than 0.01 and never move it up. A behaviour step
+    //    across a preset is a defect even if each side is correct (CLAUDE.md).
     //
-    //    THE CLAMP'S BIND, RECORDED (ADR-0070: every clamp gets a bind
-    //    gauge). Realtime and Bulk ARE the clamp's two endpoints — b(50) = ½
-    //    and b(0.005) = 2 are exactly where `clamp(½, 2)` starts binding — so
-    //    the OUTWARD nudge at those two presets is flat by construction, not
-    //    by a mode. Strictness is therefore asserted where the law is
-    //    unclamped (the open interval, clause 2's sweep and clause 5) and
-    //    non-strictness at the two endpoints, which is the honest statement.
+    //    Realtime and Bulk are the clamp's two endpoints — b(50) = ½ and
+    //    b(0.005) = 2 are where `clamp(½, 2)` starts binding — so the outward
+    //    nudge at those presets is flat by construction, not by a mode.
+    //    Strictness is asserted where the law is unclamped (the open interval,
+    //    clause 2's sweep and clause 5) and non-strictness at the endpoints.
     for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
         let d0 = delta_price(h);
         let (lo_b, mid, hi_b) = (
@@ -643,7 +569,7 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
             "{h:?}: a 2 % nudge of δ stepped b: {lo_b} / {mid} / {hi_b}"
         );
     }
-    // 5. STRICT decrease on the dial's INTERIOR, where the clamp is inert.
+    // 5. Strict decrease on the dial's interior, where the clamp is inert.
     let mut prev = f64::INFINITY;
     for i in 0..=200 {
         let d = 0.0051 * (49.0f64 / 0.0051).powf(i as f64 / 200.0);
@@ -651,7 +577,7 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
         assert!(b < prev, "δ={d}: b({d}) = {b} did not fall below {prev}");
         prev = b;
     }
-    // The Auto preset is INTERIOR: both nudges move, in the right direction.
+    // The Auto preset is interior: both nudges move, in the right direction.
     let a = delta_price(ProtocolHint::Auto);
     assert!(
         delta_budget_b_of(a * 1.02) < delta_budget_b_of(a)
@@ -660,12 +586,12 @@ fn published_span_horizon_b_equals_the_engine_over_the_whole_delta_dial() {
     );
 }
 
-/// **LAW: `q(δ)`, paper §16.66.** The engine against the published map, over
-/// the whole dial including BETWEEN the named points — they are points on a
-/// dial, not modes, so the law must agree off them too.
+/// Law: `q(δ)`, paper §6.1. The engine against the published map over the
+/// whole dial, including between the named points — they are points on a
+/// dial, not modes.
 #[test]
 fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
-    // 1. The named points, ABSOLUTELY. These are the numbers §16.66 publishes.
+    // 1. The named points, absolutely: the numbers the paper publishes.
     let rt = delta_budget_b(ProtocolHint::Realtime);
     let au = delta_budget_b(ProtocolHint::Auto);
     let bu = delta_budget_b(ProtocolHint::Bulk);
@@ -676,7 +602,7 @@ fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
         "Auto is not the band's affine midpoint (1/15 = 6.667 %)"
     );
 
-    // 2. The closed form §16.66 states as an algebraic consequence, not a
+    // 2. The closed form the paper states as an algebraic consequence, not a
     //    fifth constant: q(b) = (b+1)/30 on the dial's own interval.
     for i in 0..=150 {
         let b = 0.5 + 1.5 * (i as f64 / 150.0);
@@ -684,7 +610,7 @@ fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
             (codel_setpoint_q(b) - (b + 1.0) / 30.0).abs() < 1e-12,
             "b={b}: the engine is not (b+1)/30"
         );
-        // 3. AGREEMENT with the paper's transcription, everywhere.
+        // 3. Agreement with the paper's transcription, everywhere.
         assert!(
             (codel_setpoint_q(b) - published_codel_q(b)).abs() < 1e-12,
             "b={b}: engine {} vs paper {}",
@@ -693,20 +619,19 @@ fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
         );
     }
 
-    // 4. THE NO-MODE-SWITCH PROPERTY, asserted rather than described:
-    //    continuous and strictly monotone through every named point, with
-    //    ±2 % nudges either side. A behaviour STEP across a preset is a defect
-    //    even if each side is individually correct (CLAUDE.md).
+    // 4. The no-mode-switch property: continuous and strictly monotone through
+    //    every named point, with ±2 % nudges either side. A behaviour step
+    //    across a preset is a defect even if each side is correct (CLAUDE.md).
     for &b in &[rt, au, bu] {
         let (lo, hi) = (b * 0.98, b * 1.02);
         let (qlo, q0, qhi) = (codel_setpoint_q(lo), codel_setpoint_q(b), codel_setpoint_q(hi));
-        // Bulk saturates at the dial's own b_hi = 2 (the shipped D(δ)'s own
-        // `min`), so above it the map is FLAT — continuous, never a step.
+        // Bulk saturates at the dial's b_hi = 2 (the shipped D(δ)'s own
+        // `min`), so above it the map is flat — continuous, never a step.
         assert!(qlo <= q0 && q0 <= qhi, "b={b}: not monotone through the preset");
         assert!((q0 - qlo).abs() < 0.01 && (qhi - q0).abs() < 0.01, "b={b}: a STEP at the preset");
     }
 
-    // 5. THE BAND IS NEVER LEFT — the design decision §16.66 records, asserted.
+    // 5. The band is never left.
     for i in 0..=400 {
         let b = -1.0 + 5.0 * (i as f64 / 400.0);
         let q = codel_setpoint_q(b);
@@ -717,24 +642,24 @@ fn published_codel_setpoint_equals_the_engine_map_and_spans_the_derived_band() {
     }
 }
 
-/// **LAW: the δ-cap's value multiplier, paper §16.66.** The substitution is
-/// ONE FACTOR, and the reduction to ADR-0071 candidate (d) is asserted as a
-/// limit rather than described in prose.
+/// Law: the δ-cap's value multiplier, paper §6.1. The substitution is one
+/// factor, and its reduction to one BDP per path (candidate (d) in
+/// `docs/research/successor-candidates.md`) is asserted as a limit.
 #[test]
 fn the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d() {
     const GAIN: f64 = 2.0;
     // OFF is the shipped fossil, exactly.
     for &b in &b_grid() {
         assert!((pool_value_multiplier(false, b, GAIN) - GAIN).abs() < 1e-12);
-        // ON is 1 + q, at every dial point, and it is strictly BELOW the
-        // fossil everywhere — the δ-cap can only ever shrink the pool.
+        // ON is 1 + q, at every dial point, and strictly below the fossil
+        // everywhere — the δ-cap can only shrink the pool.
         let m = pool_value_multiplier(true, b, GAIN);
         assert!((m - (1.0 + codel_setpoint_q(b))).abs() < 1e-12);
         assert!(m < GAIN, "b={b}: the derived multiplier is not below the fossil");
         assert!((1.05..=1.10).contains(&m), "b={b}: multiplier {m} left the derived band");
     }
-    // THE REDUCTION: q → 0 is exactly one BDP per path, which IS candidate
-    // (d) ZERO. Asserted at the limit, through the same expression.
+    // The reduction: q → 0 is exactly one BDP per path, candidate (d) at
+    // zero. Asserted at the limit, through the same expression.
     let sigma = 1_234.5f64;
     let zero_slack = sigma; // Σᵢ bwᵢ·RTpropᵢ, no standing queue at all
     let realtime = pool_value_multiplier(true, 0.5, GAIN) * sigma;
@@ -743,8 +668,8 @@ fn the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d() {
         "the derived band is not (d) PLUS the power-point allowance"
     );
 
-    // The two axes FACTORISE — the count multiplier and the value multiplier
-    // are independent, which is what makes the four combinations four laws.
+    // The two axes factorise — the count multiplier and the value multiplier
+    // are independent, which makes the four combinations four laws.
     for &sum_cap in &[false, true] {
         for &delta in &[false, true] {
             for n in 2..=6usize {
@@ -760,8 +685,8 @@ fn the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d() {
     }
 }
 
-/// **THE PUBLISHED PREDICTIONS ARE WHAT THE LAW COMPUTES**, at BOTH anchor
-/// eras §16.66 carries, driven through the engine's own function.
+/// The published predictions are what the law computes, at both anchor eras,
+/// driven through the engine's own function.
 #[test]
 fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
     const GAIN: f64 = 2.0;
@@ -772,7 +697,7 @@ fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
     };
     let (rt, au, bu) = (0.5, 1.0, 2.0);
 
-    // (A) PRIMARY — the ladder battery's own measured Σ (Σ = cap/gain).
+    // (A) Primary — the ladder battery's measured Σ (Σ = cap/gain).
     for &(name, sigma, e_rt, e_au, e_bu) in &[
         ("c7", 1_571.2f64, 1650usize, 1676usize, 1729usize),
         ("c8", 1_154.3, 1213, 1232, 1270),
@@ -781,16 +706,16 @@ fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
         assert_eq!(cap(sigma, rt), e_rt, "{name} Realtime");
         assert_eq!(cap(sigma, au), e_au, "{name} Auto");
         assert_eq!(cap(sigma, bu), e_bu, "{name} Bulk");
-        // INTERIOR at every dial point on these anchors — the clamp is
-        // provably not answering, which is template part 4.
+        // Interior at every dial point on these anchors — the clamp is not
+        // answering (template part 4).
         assert!(cap(sigma, bu) < 2 * KNEE, "{name}: the ceiling bound on the primary anchors");
         assert!(cap(sigma, rt) > FLOOR, "{name}: the floor bound");
     }
 
-    // (B) SECONDARY — ADR-0071's BDP = W/K, the cross-check's CoDel rung.
-    // §16.65 published these as "c1 ≈ 184, sc2 ≈ 344, c7 ≈ 1161, c8 ≈ 1685,
-    // c8L ≈ 5225"; the engine ceils to whole symbols, so the pins are the
-    // ceilings of those reals and the divergence is BOUNDED at < 1 symbol.
+    // (B) Secondary — BDP = W/K, the cross-check's CoDel rung, published as
+    // "c1 ≈ 184, sc2 ≈ 344, c7 ≈ 1161, c8 ≈ 1685, c8L ≈ 5225"; the engine
+    // ceils to whole symbols, so the pins are the ceilings of those reals and
+    // the divergence is bounded at < 1 symbol.
     for &(name, bdp, rung) in &[
         ("c1", 174.8f64, 184usize),
         ("sc2", 328.1, 345),
@@ -806,9 +731,9 @@ fn the_delta_cap_predictions_are_what_the_law_computes_at_both_anchor_eras() {
         );
     }
 
-    // c8L IS PRE-DECLARED UNREACHABLE ON THE SECONDARY ANCHORS, BY
-    // CONSTRUCTION: N·knee < BDP, so the ceiling sits below one network
-    // window before any setpoint is added and NO value of q can be interior.
+    // c8L is pre-declared unreachable on the secondary anchors, by
+    // construction: N·knee < BDP, so the ceiling sits below one network
+    // window before any setpoint is added and no value of q can be interior.
     assert!(2 * KNEE < 4_976, "c8L's exclusion arithmetic no longer holds");
     assert_eq!(cap(4_976.1, rt), 2 * KNEE, "c8L must PIN on the secondary anchors");
     assert_eq!(cap(4_976.1, bu), 2 * KNEE, "c8L must PIN at every dial point");

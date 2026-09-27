@@ -1,11 +1,11 @@
 //! FORMULA- AND WASM-SIM-INDEPENDENT Monte-Carlo oracle for heterogeneous
-//! multipath aggregation (paper Section 16, RWM at L1; goal Phase 2/3).
+//! multipath aggregation (paper §5.5).
 //!
 //! This is GROUND TRUTH: it does NOT call compute_r_star, controller_rate,
 //! p_fec_*, or the wasm `Simulation`. It models the real per-symbol process
 //! from scratch:
 //!   - N paths, each with capacity (symbols/ms), one-way delay, GE(p,q) loss.
-//!   - a striped placement (work-conserving pull == the §16.3 marginal-cost
+//!   - a striped placement (work-conserving pull == the marginal-cost
 //!     fixed point under backlog; plus an explicit goodput-proportional
 //!     variant),
 //!   - fungible repairs over a sliding coding HORIZON h (eviction: a hole
@@ -178,7 +178,7 @@ impl Oracle {
             let overdue = tick >= st + self.paths[op].rtt();
             if !overdue { return false; }
             // Confirmed hole: race a pooled fungible repair (instant fill,
-            // §16.2) against a targeted cross-path ARQ (one more RTT).
+            // paper §5.5) against a targeted cross-path ARQ (one more RTT).
             if !self.atomic && self.take_covering_repair(f) {
                 self.frontier += 1;
                 continue;
@@ -239,7 +239,7 @@ impl Oracle {
             if self.advance_frontier(tick) { return Some(tick); }
 
             // 3) Per-path sending this tick (best path first so ARQ/repairs
-            //    ride the fastest available path — §13.8 preference).
+            //    ride the fastest available path — paper §5.7).
             let mut free: Vec<u32> = vec![0; self.paths.len()];
             for i in 0..self.paths.len() {
                 self.credit[i] += self.paths[i].rate;
@@ -259,7 +259,7 @@ impl Oracle {
                 let path = match self.best_path_now(&free) { Some(p) => p, None => break };
 
                 // (a) ARQ retransmit that is due. Cross-path -> best available
-                //     path (§13.8); same-path -> the losing path (models a
+                //     path (paper §5.7); same-path -> the losing path (models a
                 //     transport that recovers a symbol only where it was lost).
                 if let Some(&Reverse((ready, seq))) = self.arq_ready.peek() {
                     if ready <= tick {
@@ -414,9 +414,9 @@ fn oracle_symmetric_two_path_aggregates() {
 }
 
 // =========================================================================
-// FUNGIBLE FRONTIER (goal /goal): confirm the SPECIFIC production config —
-// a coded fungible sliding window of size W_mp (the §16.5 lower bound, ~600
-// symbols at C8) — reaches ~x1.19, BEFORE building it. The §16.7 r-sweep
+// FUNGIBLE FRONTIER: confirm the specific production config — a coded
+// fungible sliding window of size W_mp (the paper §5.5 lower bound, ~600
+// symbols at C8) — reaches ~x1.19. The r-sweep
 // already showed H=256 caps at ~0.99 while H>=1024 hits ~1.19; W_mp lands in
 // that gap, so we must pin the exact window that suffices.
 // =========================================================================
@@ -426,7 +426,7 @@ fn oracle_c8_fungible_wmp_window() {
     let dual = [c8_fast(), c8_slow()];
     let g_ceiling = (c8_fast().goodput() + c8_slow().goodput()) / c8_fast().goodput();
 
-    // §16.5 worked bound with THIS oracle's params (1500 B symbols):
+    // Paper §5.5 worked bound with this oracle's params (1500 B symbols):
     // W_mp ≈ Σ g_i · (RTT_max + t_slack).  Σ g_i in sym/ms; RTT_max = 40 ms,
     // t_slack ≈ RTT_fast = 10 ms.
     let sum_g = c8_fast().goodput() + c8_slow().goodput(); // sym/ms
@@ -461,7 +461,7 @@ fn oracle_c8_fungible_wmp_window() {
     }
     println!("W_mp≈{:.0} (use 640) at r=0.10 -> x{best_at_wmp:.3}", w_mp);
 
-    // VERDICT: a window at/above the §16.5 W_mp bound (~600, we test 640)
+    // VERDICT: a window at/above the W_mp bound (~600, we test 640)
     // reaches the aggregation ceiling — the production target IS reachable by
     // THIS finite-window design, not only by the H→∞ whole-object horizon.
     let (_a, _b, at_wmp) = factor(&dual, k, 0.05, 640, false, Place::WorkConserving);

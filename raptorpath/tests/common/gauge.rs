@@ -4,8 +4,8 @@
 //!
 //! **Every numeric reader applies [`numeric_prefix`]** — a process has two
 //! writers (stdout, stderr) and a concurrent write can land inside a gauge
-//! line's LAST field (the `alpha_override_reachability` lesson). Reading
-//! `42` out of `42[GATES] …` is right; failing to parse it was a flake.
+//! line's last field. Reading `42` out of `42[GATES] …` is right; failing
+//! to parse it is a flake.
 #![allow(dead_code)]
 
 /// The raw text after `key` in the first whitespace token starting with it.

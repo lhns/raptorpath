@@ -89,7 +89,7 @@ fn test_p_fec_monte_carlo() {
         let analytical_p_fec = p_fec_normal(r, *eps, w as f64, sigma2);
 
         println!("{name}: empirical P_fec={empirical_p_fec:.3}, analytical={analytical_p_fec:.3}");
-        // NOTE: The normal approximation (Section 8.2) can diverge from
+        // NOTE: The normal approximation (paper §4.2) can diverge from
         // empirical GE simulation, especially at higher loss rates where
         // burst correlation is stronger. This is a known limitation.
         // We use wider tolerance (15%) and flag large discrepancies.
@@ -395,13 +395,13 @@ fn test_ambient_fec_pipeline() {
 }
 
 // =========================================================================
-// 2.4 P_fec model consistency (Section 8.2 vs 14.3)
+// 2.4 P_fec model consistency (normal approximation vs Poisson timing model)
 // =========================================================================
 
 #[test]
 fn test_p_fec_model_consistency() {
-    // Section 8.2: P_fec = Φ(√W × (r(1-ε)-ε) / √(ε(1-ε)(r+σ²)))
-    // Section 14.3: P(t_fec ≤ T | m) = Q(m, λ(T)) where λ(T) → r(1-ε) as T → ∞
+    // paper §4.2: P_fec = Φ(√W × (r(1-ε)-ε) / √(ε(1-ε)(r+σ²)))
+    // Timing model: P(t_fec ≤ T | m) = Q(m, λ(T)) where λ(T) → r(1-ε) as T → ∞
     //
     // At T → ∞: both should give similar recovery probability.
 
@@ -412,10 +412,10 @@ fn test_p_fec_model_consistency() {
     let sigma2 = burst_variance_factor(p_gb, q);
     let r = compute_r_star(eps, sigma2, w);
 
-    // Section 8.2 P_fec
+    // paper §4.2 P_fec
     let p_fec_82 = p_fec_normal(r, eps, w, sigma2);
 
-    // Section 14.3: λ(∞) = r × (1-ε). Expected losses = W × ε.
+    // Timing model: λ(∞) = r × (1-ε). Expected losses = W × ε.
     // P(Poisson(r(1-ε)×W) ≥ W×ε) approximation
     let lambda_inf = r * (1.0 - eps) * w;
     let m = (w * eps).round() as u32;
@@ -437,7 +437,7 @@ fn test_p_fec_model_consistency() {
 }
 
 // =========================================================================
-// 2.10 FEC vs ARQ break-even (Section 14.7)
+// 2.10 FEC vs ARQ break-even (paper §3.7)
 // =========================================================================
 
 #[test]
@@ -648,12 +648,12 @@ fn test_solve_r_from_time_budget() {
 }
 
 // =========================================================================
-// 2.19 Exact P_fec (Section 8.7) vs Monte Carlo of the same process
+// 2.19 Exact P_fec (paper §4.7) vs Monte Carlo of the same process
 // =========================================================================
 
 #[test]
 fn test_p_fec_exact_matches_monte_carlo() {
-    // Simulate exactly the process Section 8.7 describes: one GE chain
+    // Simulate exactly the process paper §4.7 describes: one GE chain
     // walking the interleaved wire sequence; success iff surviving
     // repairs >= source losses. The DP should match to sampling error —
     // much tighter than the 0.20 tolerance the normal approximation needs.
@@ -927,7 +927,7 @@ fn test_r_star_structural_properties() {
 #[test]
 fn test_p_fec_exact_vs_normal_divergence() {
     // Document the normal approximation's error against the exact DP
-    // (Section 8.7 table: 1.7–2.8% at these operating points).
+    // (1.7–2.8% at these operating points; paper §4.7).
     let scenarios: Vec<(&str, f64, f64, f64)> = vec![
         ("WiFi", 0.013, 0.5, 0.10),
         ("LTE", 0.02, 0.4, 0.12),

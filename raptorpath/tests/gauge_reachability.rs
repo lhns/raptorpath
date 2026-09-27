@@ -1,63 +1,15 @@
-//! THE TEARDOWN GAUGES ARE REACHABLE UNDER A `perf`-SHAPED EXIT.
-//!
-//! This binary exists because of a measured defect, and it asserts the one
-//! thing the defect's own test suite never asserted.
-//!
-//! **The defect.** `[CCAP]` (`RWM_COMPOSED_CAP`) and `[WALL]`
-//! (`RWM_WALLDIAG`) shipped emitting from exactly two arms of
-//! `run_window_sender`'s `select!`: the `shutdown_rx` arm and the
-//! `packet == None` "TUN closed" arm. The `perf` harness — `crate::perf`, the
-//! object benchmark **every L1 battery runs** — is not guaranteed to reach
-//! either. `perf::client` finishes its objects, prints its summary and
-//! returns; nothing signals shutdown, and the memory TUN closes only as a
-//! side effect of the `MemTun` handle dropping, which RACES the process
-//! teardown that is already under way. Whoever wins decides whether the run
-//! has a gauge. The composed-cap battery's pre-launch smoke measured the
-//! outcome on the VM: `window sender shut down gracefully` 0/4, `TUN closed`
-//! 1/4, and therefore `[CCAP]` on 0 of 2 logs and `[WALL]` on 1 of 4
-//! (goal-gate, "PRE-BATTERY SMOKE"). ~192 invocations were about to be spent
-//! producing five UNSCORED predictions for want of a gauge.
-//!
-//! **Why every existing test passed.** The unit pins assert
-//! `ccap_report_line` / `walldiag::report_line`'s FORMAT — the string an L1
-//! parser scrapes. `composed_cap_loopback` and `walldiag_loopback` drive a
-//! real `perf::client` transfer and assert the gate echo, the in-process
-//! gauge state and behaviour neutrality. Not one of them asked whether the
-//! LINE FIRES. That is ADR-0070's postmortem shape one layer down: every pin
-//! asserting that the code computes the model, none asking whether the model
-//! is reached.
-//!
-//! **The fix under test.** Both gauges are now emitted by the destructor of
-//! `net::SenderTeardownGauges`, a local of `run_window_sender`. A destructor
-//! is on EVERY exit of a scope — both teardown arms, any early return, an
-//! unwind, and the case the harness actually exercises, the task future being
-//! dropped at runtime shutdown — and it runs exactly once.
-//!
-//! **The two tests, and why both are needed.**
-//!
-//! * `the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness`
-//!   runs the SHIPPED binary through the SHIPPED `perf` subcommand — literally
-//!   what the L1 driver invokes — and asserts exactly one `[CCAP]` and one
-//!   `[WALL]`, fed with real numbers. It cannot by itself discriminate the
-//!   fix, because it cannot choose which side of the teardown race it lands
-//!   on; it prints the side it took.
-//!
-//! * `the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown`
-//!   removes the race and IS the discriminator. A child process holds the
-//!   `MemTun` alive across the runtime's drop, so the sender reaches NEITHER
-//!   teardown arm and ends only by having its future dropped — the losing
-//!   side of the race, made deterministic. On the shipped-before code this
-//!   run emits nothing at all.
-//!
-//! **Residual gap, stated rather than papered over.** The graceful-shutdown
-//! arm is driven by Ctrl+C in the shipped binary, which is not portably
-//! deliverable to a child on both Linux and Windows, and the real TUN-closed
-//! arm needs a TUN device (root). Neither is asserted directly here. Both are
-//! covered by construction: they are exits of `run_window_sender`, and a
-//! destructor is on every exit of a scope — so the paths not asserted are a
-//! SUBSET of the paths asserted. That is the exact inversion of the shipped
-//! bug, where the two asserted paths were DISJOINT from the one the harness
-//! took.
+//! The teardown gauges `[CCAP]` (`RWM_COMPOSED_CAP`) and `[WALL]`
+//! (`RWM_WALLDIAG`) fire exactly once, fed with real numbers, under a
+//! `perf`-shaped exit. `perf::client` returns without signalling shutdown,
+//! and the memory TUN closes only when its handle drops, racing process
+//! teardown; so the gauges are emitted by the destructor of
+//! `net::SenderTeardownGauges`, which runs once on every exit of
+//! `run_window_sender`. The first test runs the shipped `perf` subcommand end
+//! to end and prints which side of the race it took; the second removes the
+//! race: a child process holds the `MemTun` alive across the runtime's drop,
+//! so the sender ends only by having its future dropped. The graceful
+//! (Ctrl+C) and real-TUN-closed arms are not driven here; they are exits of
+//! the same scope, so the destructor covers them by construction.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -71,9 +23,9 @@ use std::time::Duration;
 /// runtime-drop child (see the second test).
 const CHILD_PEER: &str = "RWM_GAUGE_CHILD_PEER";
 
-/// The composed arm exactly as the battery configures it: the composed pool
-/// law + its late-stage brake, on honest anchors, with both gauges' gates ON.
-/// `RWM_THREE_TERM` stays OFF — the composed gate reaches the pool seat on its
+/// The composed arm as the battery configures it: the composed pool law and
+/// its late-stage brake, on honest anchors, with both gauges' gates on.
+/// `RWM_THREE_TERM` stays off — the composed gate reaches the pool seat on its
 /// own (see `composed_cap_loopback`).
 const ARM: [(&str, &str); 4] = [
     ("RWM_COMPOSED_CAP", "1"),
@@ -106,11 +58,10 @@ fn field(line: &str, key: &str) -> Option<f64> {
     gauge::raw_field(line, key).and_then(|v| gauge::numeric_prefix(v).parse::<f64>().ok())
 }
 
-/// THE REACHABILITY ASSERTION, shared by both tests: in a log produced by ONE
-/// window sender, `[CCAP]` and `[WALL]` each appear EXACTLY once — not "at
-/// least once", because the battery parsers read a per-run scalar and two
-/// lines is as wrong as none — and each carries a real measurement rather
-/// than an empty struct rendered at the right moment.
+/// The shared reachability assertion: in a log produced by one window
+/// sender, `[CCAP]` and `[WALL]` each appear exactly once (the battery
+/// parsers read a per-run scalar, so two lines is as wrong as none) and each
+/// carries a real measurement rather than an empty struct.
 fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
     // Mechanism liveness first: a missing line must be readable as an
     // unreachable emission site and never as an unset gate.
@@ -118,15 +69,11 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
         log.contains("RWM_COMPOSED_CAP=1"),
         "{what}: the [GATES] echo does not carry RWM_COMPOSED_CAP=1:\n{log}"
     );
-    // TWO-SIDED (MEASUREMENT DISCIPLINE 15). The default echo naming the gate
-    // with its 0 value is pinned in `gates.rs`
-    // (`gate_defaults_are_the_shipped_values`); this is the ON side, and it
-    // asserts the ABSENCE of the OFF string as well. A gate that echoed both
-    // values, or whose ON echo were a substring of some other key's, would
-    // make every battery arm's control/treatment split unreadable — and the
-    // c9 battery's own headline finding was that `[CCAP]` never appeared
-    // because NO ARM SET THIS GATE, which is precisely the failure a
-    // two-sided echo lets a driver catch before it spends invocations.
+    // Two-sided echo (measurement-discipline rule 15): the default echo with
+    // the 0 value is pinned in `gates.rs`
+    // (`gate_defaults_are_the_shipped_values`); this is the on side, and it
+    // asserts the absence of the off string as well, so an arm's
+    // control/treatment split stays readable from its log.
     assert!(
         !log.contains("RWM_COMPOSED_CAP=0"),
         "{what}: the [GATES] echo carries BOTH sides of RWM_COMPOSED_CAP — an \
@@ -181,22 +128,13 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
         );
     }
 
-    // ── THE SPAN BLOCK — the c9 battery's SPECIFICATION FAILURE, repaired ──
+    // ── The span block ──
     //
-    // c9 was scored with C9-L1 and C9-L3 both UNSCOREABLE, and the cited
-    // reason was not a bad reading but an ABSENT FIELD: the engine computed
-    // TERM 3 at every dyn-cap refresh and `[CCAP]` reported seven numbers,
-    // none of them the span. A format pin cannot catch that — the pinned
-    // string was correct for the fields it had. Only a REACHABILITY assertion
-    // over a log the harness actually produces can, which is this binary's
-    // whole thesis applied to the field set rather than to the line.
-    //
-    // ON THE SHIPPED-BEFORE ENGINE THIS LOOP FAILS on the first key. That is
-    // the point: it is written to fail on the engine that produced the
-    // unscoreable battery, and the four keys are the ones C9-L1 and C9-L3 are
-    // scored on (see `net::SpanForms`) — the shipped span, the crosscheck's
-    // Σ form, and the two anchors that make an out-of-band reading
-    // attributable to the anchors instead of to either formula.
+    // `[CCAP]` must carry the resequencing span, its Σ crosscheck form, and
+    // the two anchors that make an out-of-band reading attributable to the
+    // anchors rather than to either formula (see `net::SpanForms`). A format
+    // pin cannot catch an absent field; only a reachability assertion over a
+    // log the harness produces can.
     for key in ["span=", "span_sigma=", "span_ratio=", "rate_fast=", "spread_us="] {
         assert!(
             ccap.contains(key),
@@ -209,11 +147,10 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
     let span_sigma = field(ccap, "span_sigma=").expect("span_sigma= parses");
     let spread_us = field(ccap, "spread_us=").expect("spread_us= parses");
     let rate_fast = field(ccap, "rate_fast=").expect("rate_fast= parses");
-    // LOOPBACK IS A SYMMETRIC ONE-PATH CELL, so this is C9-L1's own prediction
-    // evaluated where it is cheap: `RTprop_max == RTprop_min` ⇒ span 0 by
-    // arithmetic, under BOTH forms, with no path-count predicate anywhere.
-    // A non-zero reading here would mean a topology branch had entered the
-    // law — the exact defect C9-L1 exists to detect.
+    // Loopback is a symmetric one-path cell: `RTprop_max == RTprop_min` ⇒
+    // span 0 by arithmetic under both forms, with no path-count predicate
+    // anywhere. A non-zero reading would mean a topology branch entered the
+    // law.
     assert_eq!(
         span, 0.0,
         "{what}: [CCAP] reports a non-zero resequencing span on a ONE-PATH \
@@ -227,11 +164,9 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
         spread_us, 0.0,
         "{what}: one path cannot have an RTprop spread: {ccap}"
     );
-    // …and the anchor that is NOT structurally zero must be fed, whenever the
-    // law engaged at all. `rate_fast` is a delivered-rate anchor: zero here
-    // with `eng > 0` would mean the span block is a rendered empty struct
-    // rather than a measurement, which is the failure mode this whole binary
-    // was written for.
+    // …and the anchor that is not structurally zero must be fed whenever the
+    // law engaged: `rate_fast = 0` with `eng > 0` would mean the span block is
+    // a rendered empty struct rather than a measurement.
     if engaged > 0 {
         assert!(
             rate_fast > 0.0,
@@ -262,7 +197,7 @@ fn assert_one_fed_gauge_of_each(log: &str, what: &str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 1. THE SHIPPED HARNESS, END TO END
+// 1. The shipped harness, end to end
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -286,11 +221,9 @@ fn the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness() {
         "perf client produced no summary line — the transfer did not complete:\n{stdout}"
     );
 
-    // Which side of the teardown race this run landed on. NOT asserted: it is
-    // genuinely nondeterministic (the VM smoke saw `TUN closed` on 1 run of 4),
-    // and that nondeterminism is the whole defect. It is PRINTED so a reader of
-    // a failing run can tell the two cases apart, and so a future change that
-    // makes the harness deterministic is visible here.
+    // Which side of the teardown race this run landed on. Not asserted — it
+    // is nondeterministic, which is the defect — but printed so a failing run
+    // can be read, and a future deterministic harness is visible here.
     println!(
         "[gauge-reachability/shipped-harness] exit arms taken: \
          graceful={} tun_closed={}",
@@ -302,17 +235,17 @@ fn the_teardown_gauges_fire_exactly_once_under_the_shipped_perf_harness() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 2. THE DISCRIMINATOR: NEITHER TEARDOWN ARM IS TAKEN
+// 2. The discriminator: neither teardown arm is taken
 // ─────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown() {
     let srv = spawn_perf_server();
 
-    // Re-execute THIS test binary as the child fixture below. A child process
-    // is needed because the emission is an `eprintln!` from an engine task and
-    // the whole point is that it happens AFTER the runtime is dropped — i.e.
-    // after any in-process test body has already returned.
+    // Re-execute this test binary as the child fixture below. A child process
+    // is needed because the emission is an `eprintln!` from an engine task
+    // and must happen after the runtime is dropped, i.e. after any in-process
+    // test body has returned.
     let mut child = Command::new(std::env::current_exe().expect("current_exe"));
     child
         .args([
@@ -345,11 +278,9 @@ fn the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown(
          reachability:\n{log}"
     );
 
-    // THE DEFECT, ASSERTED. The child holds its `MemTun` alive across the
-    // runtime's drop, so the sender's `select!` never sees a closed TUN and
-    // nothing ever signals shutdown: NEITHER of the two arms the gauges used
-    // to live on is taken. On the shipped-before code this run emitted
-    // nothing; the assertions below then fail on a count of 0.
+    // The child holds its `MemTun` alive across the runtime's drop, so the
+    // sender's `select!` never sees a closed TUN and nothing signals shutdown:
+    // neither teardown arm is taken, and only the destructor can emit.
     assert_eq!(
         count(&log, "window sender shut down gracefully"),
         0,
@@ -368,21 +299,17 @@ fn the_teardown_gauges_fire_when_the_sender_task_is_dropped_at_runtime_shutdown(
     assert_one_fed_gauge_of_each(&log, "runtime-drop");
 }
 
-/// THE CHILD FIXTURE for the test above. `#[ignore]`d so the ordinary suite
+/// The child fixture for the test above. `#[ignore]`d so the ordinary suite
 /// skips it; the parent runs it by name with `--ignored`, and without
-/// `RWM_GAUGE_CHILD_PEER` it is a no-op even then.
+/// `RWM_GAUGE_CHILD_PEER` it is a no-op.
 ///
-/// It is deliberately NOT a `#[tokio::test]`: it builds the runtime by hand so
-/// that it can DROP it while holding the `MemTun` — which is the whole point.
-/// `block_on` returns the `MemTun` into this scope, so the engine's TUN read
-/// side stays open past `drop(rt)`; the sender task therefore ends by having
-/// its future dropped at runtime shutdown and by nothing else. That is exactly
-/// how the sender ends under `perf` whenever it loses the teardown race, and
-/// exactly how it ends under `#[tokio::main]` returning from `main`.
-///
-/// The payload is raw filler, not the perf object protocol: the peer will
-/// discard it, and the sender loop — the only thing under test — runs
-/// identically either way.
+/// Not a `#[tokio::test]`: it builds the runtime by hand so it can drop it
+/// while holding the `MemTun`. `block_on` returns the `MemTun` into this
+/// scope, so the engine's TUN read side stays open past `drop(rt)` and the
+/// sender task ends only by having its future dropped — how it ends under
+/// `perf` when it loses the teardown race, and under `#[tokio::main]`
+/// returning from `main`. The payload is raw filler, not the perf object
+/// protocol; the sender loop runs identically either way.
 #[test]
 #[ignore = "child fixture, re-executed by the runtime-drop reachability test"]
 fn runtime_drop_child_fixture() {
@@ -391,11 +318,9 @@ fn runtime_drop_child_fixture() {
     };
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    // The `[GATES]` echo. The engine emits it through `tracing`, and this
-    // fixture installs no subscriber, so it prints the SAME string from the
-    // SAME process-global resolution — mechanism liveness for the parent's
-    // "the arm was armed" check, which is what separates an unreachable
-    // emission site from an unset gate.
+    // The `[GATES]` echo: the engine emits it through `tracing` and this
+    // fixture installs no subscriber, so it prints the same string from the
+    // same resolution, giving the parent its mechanism-liveness check.
     let g = raptorpath::gates::RuntimeGates::resolve();
     println!("{}", g.echo_line());
     assert!(g.composed_cap && g.walldiag, "the child's arm must be armed");
@@ -416,7 +341,7 @@ fn runtime_drop_child_fixture() {
         .build()
         .expect("child runtime");
 
-    // NOTE the binding: `mem` OUTLIVES `rt`.
+    // `mem` outlives `rt`.
     let mem = rt.block_on(async {
         let (tun, mem) = raptorpath::tun::TunInterface::memory(1500);
         let _engine = tokio::spawn(raptorpath::net::run_with_tun(pc, tun));
@@ -439,9 +364,8 @@ fn runtime_drop_child_fixture() {
         mem
     });
 
-    // THE EXIT UNDER TEST: the runtime goes away and takes the sender task's
-    // future with it, while the TUN is still open and nothing has signalled
-    // shutdown.
+    // The exit under test: the runtime drops the sender task's future while
+    // the TUN is still open and nothing has signalled shutdown.
     drop(rt);
     drop(mem);
 }

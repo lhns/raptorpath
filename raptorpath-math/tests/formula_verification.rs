@@ -12,7 +12,7 @@ fn assert_close(actual: f64, expected: f64, tolerance: f64) {
 }
 
 // =========================================================================
-// 1.1 P_lost concrete examples (Paper Section 3.4)
+// 1.1 P_lost concrete examples (paper §3.2)
 // =========================================================================
 
 #[test]
@@ -36,7 +36,7 @@ fn test_p_lost_paper_examples() {
 }
 
 // =========================================================================
-// 1.3 σ²_burst table (Paper Section 8.3)
+// 1.3 σ²_burst table (paper §2.4)
 // =========================================================================
 
 #[test]
@@ -56,12 +56,12 @@ fn test_sigma2_burst_table() {
 }
 
 // =========================================================================
-// 1.4 r* worked examples (Paper Section 8.5)
+// 1.4 r* worked examples (paper §4.2)
 // =========================================================================
 
 #[test]
 fn test_r_star_worked_examples() {
-    // Paper Section 8.5 (continuous z_{δ/ε} convention): the quantile is
+    // paper §4.2 (continuous z_{δ/ε} convention): the quantile is
     // taken at 1 - δ/ε, so the margin responds to the ratio δ/ε and the
     // rate decreases continuously to 0 when δ ≥ ε.
     let w = 50.0;
@@ -88,7 +88,7 @@ fn test_r_star_worked_examples() {
     assert_close(wifi_rt, 0.178, 0.005);   // paper: 17.8%
     assert!(wifi_rt > wifi_auto && wifi_auto > wifi_bulk, "Monotone in tail tightness");
 
-    // Satellite: ε=0.09, (p, q) = (0.03, 0.3) from paper Section 2.4.
+    // Satellite: ε=0.09, (p, q) = (0.03, 0.3) from paper §2.3.
     // σ² = 1 + 2(1-p-q)/(p+q) = 1 + 2(0.67)/0.33 ≈ 5.06 ≈ paper's 5.1.
     let e = 0.09;
     let s_sat = burst_variance_factor(0.03, 0.3);
@@ -128,7 +128,7 @@ fn test_z_delta_values() {
 }
 
 // =========================================================================
-// 1.6 P_fec boundary conditions (Paper Section 8.2)
+// 1.6 P_fec boundary conditions (paper §4.2)
 // =========================================================================
 
 #[test]
@@ -303,14 +303,14 @@ fn test_find_t_cut_monotone_in_rho() {
 }
 
 // =========================================================================
-// 1.12 W_min table (Paper Section 14.5)
+// 1.12 W_min table
 // =========================================================================
 
 #[test]
 fn test_w_min_table() {
     // W_min ≈ 1 / (q × ε) for mean burst with r = ε/(1-ε)
     // (exact: 1/(q·ε·(1-ε)); the paper table drops the (1-ε) correction).
-    // Section 2.4 scenario parameters (paper Section 14.5 table):
+    // Scenario parameters (paper §2.3):
     // WiFi: ε=2.5%, q=0.5 → W_min=80
     assert_close(1.0 / (0.5 * 0.025), 80.0, 1.0);
     // LTE: ε=5%, q=0.4 → W_min=50
@@ -328,7 +328,7 @@ fn test_w_min_table() {
 }
 
 // =========================================================================
-// 1.13 Exact P_fec via transfer-matrix DP (Paper Section 8.7)
+// 1.13 Exact P_fec via transfer-matrix DP (paper §4.7)
 // =========================================================================
 
 #[test]
@@ -383,7 +383,7 @@ fn test_p_fec_exact_iid_matches_binomial() {
 
 #[test]
 fn test_p_fec_exact_paper_table() {
-    // Section 8.7 table values (W=50)
+    // Exact P_fec (paper §4.7) at W=50
     assert_close(p_fec_exact(0.013, 0.5, 0.10, 50), 0.9522, 0.001);
     assert_close(p_fec_exact(0.02, 0.4, 0.12, 50), 0.8868, 0.001);
     // Sat: R = round(0.25 × 50) = 13 (half rounds away from zero)
@@ -392,7 +392,7 @@ fn test_p_fec_exact_paper_table() {
 
 #[test]
 fn test_r_star_exact_exceeds_normal_on_bursty() {
-    // Section 8.7: the closed-form r* under-provisions the tail on bursty
+    // paper §4.7: the closed-form r* under-provisions the tail on bursty
     // channels (Gaussian tail + ignored loss/repair correlation).
     for (p, q) in [(0.013, 0.5), (0.02, 0.4), (0.03, 0.3)] {
         let eps = p / (p + q);
@@ -404,7 +404,7 @@ fn test_r_star_exact_exceeds_normal_on_bursty() {
             "exact r* should exceed the closed form: exact={r_exact}, normal={r_normal}"
         );
     }
-    // Specific values from the Section 8.7 table (resolved in 1/W steps)
+    // The exact r* values quoted in paper §4.7 (resolved in 1/W steps)
     assert_close(compute_r_star_exact(0.013, 0.5, 50, 0.01), 0.170, 0.005);
     assert_close(compute_r_star_exact(0.02, 0.4, 50, 0.01), 0.270, 0.005);
     assert_close(compute_r_star_exact(0.03, 0.3, 50, 0.01), 0.450, 0.005);

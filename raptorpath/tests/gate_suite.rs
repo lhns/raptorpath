@@ -2,8 +2,8 @@
 //!
 //! Encodes the session goal as executable assertions:
 //!   G1 (surpass): raptorpath beats the SimRetx baseline per the ADR-0051
-//!       win conditions on the paper Section 2.4 channels, with 95%-CI
-//!       separation. The baseline is labeled SimRetx (NOT "real TCP"):
+//!       win conditions on the paper §2.3 channels, with 95%-CI
+//!       separation. The baseline is labeled SimRetx (not "real TCP"):
 //!       an AIMD-windowed reliable ARQ transport model with min-RTT
 //!       multipath scheduling and TCP in-order delivery semantics.
 //!   G2 (model reacts correctly): estimator convergence, regime-change
@@ -14,7 +14,7 @@
 //!   congestion windows; the baseline additionally runs AIMD (halve on
 //!   loss event, +1/cwnd per delivery) because a TCP-like transport
 //!   without AIMD is not TCP-like.
-//! - Baseline latency is measured at IN-ORDER delivery (TCP semantics);
+//! - Baseline latency is measured at in-order delivery (TCP semantics);
 //!   raptorpath latency at reorder-buffer release (tunnel semantics with
 //!   bounded reordering). This asymmetry is the head-of-line-blocking
 //!   difference the model claims — it is the thing under test.
@@ -316,20 +316,14 @@ fn gate_vs_simquic_multipath() {
     // vs ~0.172 s measured), so the achievable ratio is bounded by physics:
     //   C7 (2x C2, 25 MB/s): floor ratio ~0.5, measured 0.66x -> 0.75.
     //   C8 (C2+C3, 15 MB/s): the LTE path adds only 20% capacity and FEC
-    //   overhead eats most of it — 0.6x is IMPOSSIBLE (floor ratio ~0.85)
-    //   and measured is parity (1.01x). Loosened to a no-regression bound:
-    //   aggregation must not LOSE to the best single path (1.1x with CI).
-    //   #46 RECALIBRATION (r* burst-tail provisioning, paper 8.4.1): the
-    //   corrected Auto r* tracks the Section 8.7 EXACT GE requirement
-    //   (~0.22-0.26 on these cells) instead of the under-provisioning
-    //   closed form (~0.12-0.17) — the old bound was calibrated on a rate
-    //   that missed its own delivered-reliability target 2x+. The dual
-    //   source capacity with corrected overhead is 15/1.24 ~ 12.1 MB/s vs
-    //   the FEC-free single-path 12.5 MB/s, a floor ratio ~1.03x (measured
-    //   1.04x; legacy arm RWM_RSTAR_TAIL=0 still passes 1.1). The declared
-    //   overhead price of the honest Auto contract moves the C8
-    //   no-regression bound 1.1 -> 1.15 (goal-gate "r* Bursty-Loss
-    //   Provisioning").
+    //   overhead eats most of it — 0.6x is impossible (floor ratio ~0.85).
+    //   So the bound is no-regression: aggregation must not lose to the
+    //   best single path. With burst-tail r* provisioning (paper §4.3) the
+    //   Auto r* tracks the exact GE requirement (paper §4.7, ~0.22-0.26 on
+    //   these cells), so the dual source capacity after overhead is
+    //   15/1.24 ~ 12.1 MB/s vs the FEC-free single-path 12.5 MB/s, a floor
+    //   ratio ~1.03x. That overhead price of the Auto contract sets the C8
+    //   bound at 1.15.
     let cells: &[(&str, [GateChannel; 2], u64, f64)] = &[
         ("C7-dual-sym", [C2_WIFI, C2_WIFI], 27, 0.75),
         ("C8-dual-asym", [C2_WIFI, C3_LTE], 28, 1.15),

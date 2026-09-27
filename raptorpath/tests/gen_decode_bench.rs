@@ -16,12 +16,12 @@
 //!   RWM_B_EPS   iid loss rate on the wire stream (default 0.026 ≈ c2)
 //!   RWM_B_R     proactive overhead r (default 0.03)
 //!   RWM_B_LATE  fraction of surviving sources arriving AFTER the repairs
-//!               (reorder/lateness → the #59 injection path; default 0.10)
+//!               (reorder/lateness → the late-injection path; default 0.10)
 //!   RWM_B_IMPL  new | ref | both (default both)
 //!
 //! Buckets (decode-side attribution):
 //!   src      source symbol, its generation has NO matrix yet (unit delivery)
-//!   src+mat  source symbol AFTER its generation's matrix exists (#59 injection)
+//!   src+mat  source symbol AFTER its generation's matrix exists (late injection)
 //!   rep0     FIRST repair of a generation (slot creation + first elimination)
 //!   rep      subsequent repairs (dense-row elimination)
 

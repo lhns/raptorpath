@@ -1,41 +1,20 @@
-//! **χ IS REACHABLE, AND WITHOUT THE ARM THE RATE IS BYTE-IDENTICAL.**
+//! The completion exposure χ (paper §4.6, §4.9) is reachable through
+//! `RWM_COMPLETION_EXPOSURE`, and without the arm the rate is byte-identical.
+//! The production tunnel is an endless stream, so nothing sets χ by default;
+//! with χ ≡ 0 the Bulk end of the dial has `δ_eff = ε̂`, `z_for_tail_target`
+//! returns `−∞` and `controller_rate` returns exactly 0 — the r leg sits at
+//! its corner. Clauses:
 //!
-//! Paper §14.26 / §16.82.
+//!   1. The gate echo, two-sided: `RWM_COMPLETION_EXPOSURE=1` on the armed
+//!      arm and `=0` on the control.
+//!   2. The mechanism executed (measurement-discipline rule 1): `[CHI]`
+//!      reaches `max > 0.5` — χ is a survival function of
+//!      `(T_rem − 1.5·srtt)/σ_ARQ`, so `max > ½` means `δ_eff` has left `ε̂`.
+//!   3. The law reached the wire: coded output `cod > 0` on the armed arm.
+//!   4. The control is inert and says so: `[CHI] n=0 max=0.0000`.
+//!   5. Byte-identity disarmed, asserted directly against `controller_rate`.
 //!
-//! **The thing this binary exists to prevent has already happened once.**
-//! `FecRateController::set_completion_exposure` shipped with P6 and had
-//! **zero engine callers** — the production tunnel is an endless stream, so
-//! χ was left at 0 "for now" and nothing ever set it. The consequence was not
-//! a missing feature, it was a silently degenerate law: with χ ≡ 0 the Bulk
-//! end of the dial has `δ_eff = ε̂`, `z_for_tail_target` returns `−∞`, and
-//! `controller_rate` returns **exactly 0**. Every scored L1 battery in this
-//! tree ran the bulk hint. **The r leg — the FEC/ARQ trade-off this project is
-//! named for — has therefore only ever been measured at its corner, and no
-//! test said so.** The function carried an `#[allow(dead_code)]` instead.
-//!
-//! `RWM_COMPLETION_EXPOSURE` is the wire that makes the interior reachable,
-//! and this is the gate that proves the wire conducts:
-//!
-//!   1. **The gate echo, two-sided.** `RWM_COMPLETION_EXPOSURE=1` on the armed
-//!      arm and `=0` on the control, on the run's own `[GATES]` line.
-//!   2. **THE MECHANISM EXECUTED** (MEASUREMENT DISCIPLINE rule 1): `[CHI]`
-//!      reaches `max > 0.5` on the armed arm — χ is a survival function of
-//!      `(T_rem − 1.5·srtt)/σ_ARQ`, so `max > ½` means the glide entered the
-//!      region where `δ_eff` has genuinely left `ε̂`, not merely that a
-//!      counter moved.
-//!   3. **THE LAW ACTUALLY MOVED**: the transfer's coded output `cod > 0` on
-//!      the armed arm. χ that never reaches the wire is a gauge, not an arm.
-//!   4. **THE CONTROL IS INERT AND SAYS SO**: `[CHI] n=0 max=0.0000` with the
-//!      gate off — the feed is not merely unset, it is never READ. `n=0` and
-//!      `max=0` are different failures and both are asserted.
-//!   5. **BYTE-IDENTITY, disarmed.** The rate site's arithmetic with the gate
-//!      off is the arithmetic without this commit, asserted directly against
-//!      `controller_rate` rather than inferred from a passing battery.
-//!
-//! **It fails on the old engine** at clause 2: `[CHI]` does not exist there.
-//!
-//! **Nothing here flips a default.** `RWM_COMPLETION_EXPOSURE` is ABSENT on
-//! every shipped arm and the tunnel path has no feed to give it.
+//! `RWM_COMPLETION_EXPOSURE` is absent on every shipped arm.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -53,24 +32,17 @@ const ARM: [(&str, &str); 3] = [
 
 /// One object loopback run.
 ///
-/// **THE SIZE IS SET BY THE GAUGE'S CADENCE, NOT BY THE PHYSICS.** `[CHI]` is
-/// emitted on the engine's 1 s gauge cadence with LAST LINE WINS, so a run
-/// that finishes inside one second produces exactly ONE line — the one emitted
-/// at `t = 0` before a single ack has arrived, which reads `n=0` whatever the
-/// arm did. That is a HARNESS artefact and it is recorded here because it read
-/// exactly like the failure the binary exists to detect. Three 3 MB objects at
-/// the `c3` cell's 20 Mbit/s run ≈ 1.2 s each, so every arm gets several
-/// emissions and the last one carries the transfer's own totals.
+/// The size is set by the gauge's cadence: `[CHI]` is emitted every 1 s,
+/// last line wins, so a run shorter than a second yields only the `t = 0`
+/// line (read `n=0` whatever the arm did). Three 3 MB objects at the `c3`
+/// cell's 20 Mbit/s take ≈ 1.2 s each, so every arm gets several emissions.
 fn run(extra: &[(&str, &str)]) -> String {
     let mut env = ARM.to_vec();
     env.extend_from_slice(extra);
-    // A lossy cell, so the rate law has something to price at all.
-    // `c3heavy` and not `c3`, for a reason that IS the arm's own finding: the
-    // glide's fully-exposed target is `BULK_TAIL_BUDGET = 0.05`, so on any
-    // channel cleaner than 5 % the corner survives full exposure and `r*` is
-    // 0 whatever χ does (asserted directly in clause 5 below). `c3`'s ε ≈ 4.8 %
-    // sits just BELOW that line; `c3heavy` (ε ≈ 5.8 %) sits just above it. A
-    // reachability gate must run where the mechanism can act.
+    // A lossy cell, so the rate law has something to price. `c3heavy`
+    // (ε ≈ 5.8 %), not `c3` (ε ≈ 4.8 %): the glide's fully-exposed target is
+    // `BULK_TAIL_BUDGET = 0.05`, so below 5 % loss the corner survives full
+    // exposure and `r* = 0` whatever χ does (clause 5).
     let netem = [("RWM_L0_NETEM", "c3heavy"), ("RWM_L0_SEED", "42")];
     // Every assertion reads the client (sender) log; the server log is unused.
     let (cli, _srv) = loopback::transfer(loopback::Transfer {
@@ -83,13 +55,13 @@ fn run(extra: &[(&str, &str)]) -> String {
     cli
 }
 
-// ── 1 — THE ARMED ARM: χ is fed, reaches the glide, and reaches the wire ──
+// ── 1 — The armed arm: χ is fed, reaches the glide, and reaches the wire ──
 
 #[test]
 fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
     let cli = run(&[("RWM_COMPLETION_EXPOSURE", "1")]);
 
-    // (1) THE GATE ECHO. A missing gauge below can then only be read as an
+    // (1) The gate echo: a missing gauge below can only be read as an
     // unreached emission site, never as an unset gate.
     let gates = require(&cli, "[GATES]", "the engine never echoed its gates");
     assert!(
@@ -102,8 +74,7 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
         "the perf client never published a feed, so the gate armed nothing"
     );
 
-    // (2) THE MECHANISM EXECUTED. χ > ½ means the glide entered the region
-    // where δ_eff has genuinely left ε̂ — not merely that a counter moved.
+    // (2) The mechanism executed: χ > ½ means δ_eff has left ε̂.
     let chi = require(&cli, "[CHI] ", "the χ gauge is unreached — old engine?");
     assert!(
         f64_field(chi, "n=") > 0.0,
@@ -119,7 +90,7 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
         "no evaluation reached χ > ½: {chi}"
     );
 
-    // (3) THE LAW REACHED THE WIRE. A χ that moves the controller but emits
+    // (3) The law reached the wire: a χ that moves the controller but emits
     // no coded symbol is a gauge, not an arm.
     assert!(
         max_u64_token(&cli, "cod=") > 0,
@@ -127,7 +98,7 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
     );
 }
 
-// ── 2 — THE CONTROL: absent means never READ, and it says so ─────────────
+// ── 2 — The control: absent means never read, and it says so ─────────────
 
 #[test]
 fn without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so() {
@@ -143,10 +114,9 @@ fn without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so() {
         "the control arm must publish NO feed"
     );
 
-    // The gauge fires on EVERY arm (MEASUREMENT DISCIPLINE 15), and on this
-    // one it must read zero on BOTH fields: `n=0` says the site was never
-    // evaluated, `max=0` says no value was ever produced. They are different
-    // failures and a control that only pinned one would miss the other.
+    // The gauge fires on every arm (measurement-discipline rule 15); here
+    // both fields must read zero: `n=0` (never evaluated) and `max=0` (no
+    // value produced) are different failures.
     let chi = require(
         &cli,
         "[CHI] ",
@@ -157,11 +127,10 @@ fn without_the_arm_chi_is_never_evaluated_and_the_gauge_says_so() {
     assert_eq!(f64_field(chi, "frac_gt_half="), 0.0, "{chi}");
 }
 
-// ── 3 — DISARMED BYTE-IDENTITY, asserted directly ────────────────────────
+// ── 3 — Disarmed byte-identity, asserted directly ────────────────────────
 
-/// With χ = 0 the rate is EXACTLY what it was before this commit existed —
-/// asserted against `controller_rate` itself rather than inferred from a
-/// battery that happened not to move. `assert_eq!`, not a tolerance.
+/// With χ = 0 the rate is exactly the corner, asserted against
+/// `controller_rate` itself with `assert_eq!`, not a tolerance.
 #[test]
 fn with_chi_zero_the_bulk_rate_is_exactly_the_corner_it_always_was() {
     use raptorpath_math::{controller_rate, MassStats, RateInputs};
@@ -183,26 +152,19 @@ fn with_chi_zero_the_bulk_rate_is_exactly_the_corner_it_always_was() {
         saturation_cap: true,
         max_overhead: 0.5,
     };
-    // The corner, exactly: δ_eff = p ⇒ z = −∞ ⇒ r* = 0 identically. This is
-    // the number every scored bulk battery in this tree actually ran at.
+    // The corner, exactly: δ_eff = p ⇒ z = −∞ ⇒ r* = 0 identically.
     assert_eq!(controller_rate(&base), 0.0);
-    // And it is the corner across the whole estimator range, not at one point.
+    // The corner holds across the estimator range, not at one point.
     for p in [0.001f64, 0.01, 0.05, 0.2, 0.5] {
         let mut i = RateInputs { p_upper: p, ..base };
         i.completion_exposure = 0.0;
         assert_eq!(controller_rate(&i), 0.0, "p={p}: the χ = 0 corner moved");
     }
-    // χ > 0 LEAVES the corner — the property the arm exists to reach. Stated
-    // here so "the gate is inert" and "the gate does nothing" stay distinct.
-    //
-    // **AND IT ONLY LEAVES IT WHERE `ε̂ > BULK_TAIL_BUDGET`.** The glide's
-    // fully-exposed target is `δ_eff = 0.05`, so at any channel cleaner than
-    // 5 % the ratio `δ_eff/p ≥ 1`, `z = −∞`, and `r* = 0` — **the corner
-    // survives full exposure**. This is not a defect of the arm; it is
-    // §16.82's own finding about `BULK_TAIL_BUDGET` (register: *"an `e.g.`
-    // promoted to a `const`"*) reproduced as arithmetic, and it is asserted in
-    // BOTH directions here so an `R-INERT` battery verdict can be attributed
-    // to the budget rather than to the wiring.
+    // χ > 0 leaves the corner, but only where `ε̂ > BULK_TAIL_BUDGET`: the
+    // fully-exposed target is `δ_eff = 0.05`, so on a cleaner channel
+    // `δ_eff/p ≥ 1`, `z = −∞` and `r* = 0` (paper §4.9). Asserted in both
+    // directions so an inert battery verdict can be attributed to the budget
+    // rather than to the wiring.
     for p in [0.001f64, 0.01, 0.048] {
         let armed = RateInputs { p_upper: p, completion_exposure: 1.0, ..base };
         assert_eq!(
@@ -220,7 +182,7 @@ fn with_chi_zero_the_bulk_rate_is_exactly_the_corner_it_always_was() {
              has nothing to measure"
         );
     }
-    // The crossing is the budget itself and nothing else — a THRESHOLD in the
-    // arithmetic of one continuous law, not a branch in the code.
+    // The crossing is the budget itself — a threshold in the arithmetic of
+    // one continuous law, not a branch in the code.
     assert_eq!(raptorpath_math::BULK_TAIL_BUDGET, 0.05);
 }

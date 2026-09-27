@@ -1,77 +1,35 @@
-//! σ IS REPORTED — the `[DIAG]` line's `sig_us=<µs>/n<count>` field.
-//!
-//! **The defect this repairs.** `Path::rtt_sigma_us()` — §16.69's second
-//! moment, `√(EWMA[(rtt − srtt)²])` at RFC 6298's own β = 1/4 — has been
-//! computed on every arm since it was written, and the engine's own comment
-//! next to the feed site says what became of it: *"Fed unconditionally; read
-//! by nothing on the default arm."* Its only consumers sit behind
-//! `RWM_QUANTILE_CLOCKS`, default OFF and REFUTED-STANDING.
-//!
-//! The cost of that is on the record. §16.69 derived `W(α) = srtt + k(α)·σ`
-//! against a **working value** `σ ≈ 10 ms` at c8, because no measured σ
-//! existed to use. The cost-ratio memo's §2.3 then had to *invert Cantelli*
-//! against the shipped `fa_frac` to estimate σ — pairing a receiver-site
-//! clock with a sender-site statistic, inverting an inequality, and reporting
-//! a lower bound as a point value — and got ≈ 18.1 ms at c8, about 1.8× the
-//! assumed figure. Every option in that memo takes σ as an input. The repair
-//! is one print statement, and this binary asserts that the print statement
-//! is REACHED and FED.
-//!
-//! **Why a spawned binary and not a unit test.** `[DIAG]` is an `eprintln!`
-//! from inside the sender loop, on a surface gated by `RWM_DIAG`. A unit test
-//! can pin the accessor and does (`scheduler`'s own tests); only a run of the
-//! shipped binary can show that the field exists in a log an L1 parser will
-//! scrape. That is MEASUREMENT DISCIPLINE rule 1 — prove the mechanism under
-//! test executes — and it is the same lesson `gauge_reachability.rs` records
-//! one layer up: every `[CCAP]` pin asserted the format and none asked whether
-//! the line fired.
-//!
-//! **What is asserted, in the order it can fail.**
+//! The `[DIAG]` line reports the RTT dispersion σ as `sig_us=<µs>/n<count>`.
+//! `Path::rtt_sigma_us()` is the second moment `√(EWMA[(rtt − srtt)²])` at
+//! RFC 6298's β = 1/4, the σ in the recovery clock `W(α) = srtt + k(α)·σ`
+//! (paper §7.4). `[DIAG]` is an `eprintln!` inside the sender loop, so only a
+//! run of the shipped binary shows the field reaches a log. Clauses, in the
+//! order they can fail:
 //!
 //!   1. The two-sided gate echo: `RWM_DIAG=1` present, `RWM_DIAG=0` absent.
-//!   2. `[DIAG]` fires at all, with a per-path block.
-//!   3. Every per-path block carries `sig_us=<µs|->/n<count>` — the field's
-//!      EXISTENCE, which is what fails on the shipped-before engine.
-//!   4. At least one late block reports a σ that is **parsed, positive, and
-//!      finite**, fed by a sample count that is not the EWMA's seed. This is
-//!      the "nonzero on a loopback transfer with jitter" clause: loopback has
-//!      no netem, but an app-echo RTT over a real scheduler, a real store and
-//!      a real ack path is not constant, and `rtt_var_sq` is the variance of
-//!      exactly that series. A σ that read 0 over thousands of samples would
-//!      mean the EWMA is not being fed, which is the failure this asserts
-//!      against.
-//!   5. σ is BOUNDED by the RTT it is a dispersion of — a gauge printing a
-//!      wildly out-of-scale number (a unit error between µs and s, the most
-//!      likely mistake in this change) is caught here rather than in a
-//!      battery's results table.
-//!   6. (3b, 2026-09-08) `np=` counts REGISTERED paths and the per-path
-//!      block — `sig_us=` with it — prints on a cwnd-full path. `np` used to
-//!      be the saturation-filtered `active_paths()` count, so a saturated
-//!      single path read `np=0` and lost its block exactly when it was
-//!      busiest; on the VM that was every tick, and clause 3 found no block
-//!      at all (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)"). The old
-//!      count survives as `np_act=`.
+//!   2. `[DIAG]` fires, with a per-path block.
+//!   3. Every per-path block carries `sig_us=<µs|->/n<count>`.
+//!   3b. `np=` counts registered paths, and the per-path block prints on a
+//!       cwnd-full path (`np_act=` is the saturation-filtered count).
+//!   4. At least one block reports a parsed, positive σ fed by more than the
+//!      EWMA's seed: an app-echo RTT over a real scheduler, store and ack path
+//!      is not constant even without netem.
+//!   5. σ is under one second on loopback (µs/s unit error).
 //!
-//! **What this binary deliberately does NOT assert.** Any particular VALUE of
-//! σ. Loopback's dispersion is the host scheduler's, not a network's, and no
-//! claim about c8's σ can be made from it. The measurement that supersedes
-//! §16.69's assumed 10 ms is an L1 run; this is the instrument gate that must
-//! pass before that run is worth making.
+//! No value of σ is asserted: loopback's dispersion is the host scheduler's.
 
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The arm: the DIAG surface on, window-reliable, honest anchors — the same
-/// composition every L1 battery arm runs. No gate here changes a law.
+/// The arm: the DIAG surface on, as every L1 battery arm runs it. No gate
+/// here changes a law.
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-/// Parse ONE per-path `sig_us=<µs|->/n<count>` token into (σ µs, n).
-/// `None` for the `-` (no sample yet) case, which is a legitimate reading and
-/// not a parse failure.
+/// Parse one per-path `sig_us=<µs|->/n<count>` token into (σ µs, n). `None`
+/// is the `-` (no sample yet) reading, not a parse failure.
 fn parse_sig(tok: &str) -> (Option<u64>, u64) {
     let v = tok.strip_prefix("sig_us=").expect("caller filters on the prefix");
     let (sig, n) = v.split_once("/n").unwrap_or_else(|| {
@@ -98,8 +56,8 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
     );
     let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
 
-    // 1. THE GATE, TWO-SIDED. A missing `[DIAG]` must be readable as an
-    //    unreached emission site and never as an unset gate.
+    // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
+    //    emission site, never as an unset gate.
     assert!(
         log.contains("RWM_DIAG=1"),
         "the [GATES] echo does not carry RWM_DIAG=1 — the arm did not arm:\n{log}"
@@ -109,28 +67,23 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
         "the [GATES] echo carries BOTH sides of RWM_DIAG:\n{log}"
     );
 
-    // 2. THE LINE FIRES, with per-path blocks.
+    // 2. The line fires, with per-path blocks.
     let diag: Vec<&str> = log.lines().filter(|l| l.contains("[DIAG] ")).collect();
     assert!(
         !diag.is_empty(),
         "no [DIAG] line in a run with RWM_DIAG=1 — the report is unreachable:\n{log}"
     );
 
-    // 3. THE FIELD EXISTS on every per-path block. THIS IS THE ASSERTION THAT
-    //    FAILS ON THE SHIPPED-BEFORE ENGINE: σ was computed and discarded.
+    // 3. The field exists on every per-path block.
     let mut sigs: Vec<(Option<u64>, u64)> = Vec::new();
     let mut blocks = 0usize;
     for line in &diag {
         let toks: Vec<&str> = line.split_whitespace().collect();
-        // A per-path block is identified by its OWN clock token,
-        // `rtt=<app>/wrtt=<wire>/rtp<floor>ms`. The `/wrtt=` is what
-        // distinguishes it from the line's AGGREGATE `rtt=<ms>ms` field —
-        // a `starts_with("rtt=")` test matches both, and a `[DIAG]` line
-        // emitted with `np=0` (no path REGISTERED — since 2026-09-08 `np`
-        // counts registered paths, not the saturation-filtered set) has the
-        // aggregate and no block at all, which is a legitimate reading and
-        // not a missing gauge. Clause 3b below pins that this never happens
-        // on a single-path run.
+        // A per-path block is identified by its own clock token,
+        // `rtt=<app>/wrtt=<wire>/rtp<floor>ms`; the `/wrtt=` distinguishes it
+        // from the line's aggregate `rtt=<ms>ms`. A line with `np=0` (no path
+        // registered) has the aggregate and no block, a legitimate reading;
+        // clause 3b pins that this never happens on a single-path run.
         let n_sig = toks.iter().filter(|t| t.starts_with("sig_us=")).count();
         let n_rtp = toks
             .iter()
@@ -140,9 +93,8 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
             continue;
         }
         blocks += n_rtp;
-        // Every per-path block must carry the field. A gauge present on some
-        // paths and not others is worse than absent: a parser would average
-        // over a biased subset without knowing it.
+        // A gauge present on some paths and not others is worse than absent:
+        // a parser would average over a biased subset.
         assert_eq!(
             n_sig, n_rtp,
             "[DIAG] carries {n_rtp} per-path RTT blocks but {n_sig} sig_us= \
@@ -157,18 +109,11 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
         "no per-path [DIAG] block in the whole log — nothing to read σ off:\n{log}"
     );
 
-    // 3b. `np=` COUNTS REGISTERED PATHS AND THE BLOCK PRINTS ON A SATURATED
-    //     ONE (goal-gate "OPERATOR SANCTION (2026-09-08 ~14:00Z)", defect
-    //     (b)). Until then `np` and the per-path blocks were taken over the
-    //     saturation-filtered `active_paths()`, so a cwnd-full single path
-    //     read `np=0` with NO block — and on the VM, where the loopback path
-    //     is cwnd-full at every 250 ms tick, clause 3 above found no block in
-    //     the whole log. The path is registered before the sender loop
-    //     starts (`run_impl` adds every configured path up front), so on a
-    //     single-path run EVERY `[DIAG]` line owes `np=1`, `np_act=` (the
-    //     old count under its new name) with `np_act <= np`, and exactly `np`
-    //     per-path blocks. Fails on the shipped-before engine: `np_act=` does
-    //     not exist there, and `np=0` lines carry no block.
+    // 3b. `np=` counts registered paths and the block prints on a saturated
+    //     one. The path is registered before the sender loop starts
+    //     (`run_impl` adds every configured path up front), so on a
+    //     single-path run every `[DIAG]` line owes `np=1`, `np_act <= np`, and
+    //     exactly `np` per-path blocks.
     let mut saturated_ticks = 0usize;
     for line in &diag {
         let toks: Vec<&str> = line.split_whitespace().collect();
@@ -212,9 +157,8 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
         diag.join("\n")
     );
 
-    // 4. AND IT IS FED. Over a multi-megabyte transfer the sender takes
-    //    thousands of RTT samples; a σ that never became positive would mean
-    //    the EWMA is not reached, which is exactly the defect being repaired.
+    // 4. It is fed: over thousands of RTT samples a σ that never became
+    //    positive would mean the EWMA is not reached.
     let best = sigs
         .iter()
         .filter_map(|(s, n)| s.map(|s| (s, *n)))
@@ -240,9 +184,8 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
          is barely reached"
     );
 
-    // 5. SCALE. σ is a dispersion of the RTT, so it cannot plausibly exceed a
-    //    second on loopback; this catches the µs/s unit error the change is
-    //    most likely to make, at the instrument rather than in a results table.
+    // 5. Scale: σ cannot plausibly exceed a second on loopback (µs/s unit
+    //    error).
     assert!(
         sigma_us < 1_000_000,
         "σ = {sigma_us} µs on loopback is not a dispersion of a loopback RTT — \

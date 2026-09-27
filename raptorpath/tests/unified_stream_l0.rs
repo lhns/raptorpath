@@ -1,16 +1,13 @@
-//! Roadmap item 3 (diag/unified-collapse): L0 sustained-stream rung for the
-//! unified-realtime c3-1200B STREAM-COLLAPSE class (goal-gate "Unified
-//! Decoder" L1 RESULTS battery 1: 3/10 unified reps with p50 in SECONDS at
-//! the c3-1200B tail_matrix cell; absent in the stream arm, and legacy-rlc's
-//! completed reps).
+//! L0 sustained-stream rung for the unified-realtime c3-1200B stream-collapse
+//! class (reps whose p50 latency runs to seconds at the c3-1200B
+//! `tail_matrix` cell).
 //!
-//! The existing L0 arm (tests/unified_l0.rs) is OBJECT mode — sequential
-//! objects with an app-level completion ack — and it never showed the class
-//! (20/20 delivered, medians ≤ 0.55 s at the same cell). The L1 collapse is a
-//! SUSTAINED-STREAM phenomenon: tools/l1/tail_matrix.sh drives 50 msg/s ×
+//! `tests/unified_l0.rs` is object mode — sequential objects with an
+//! app-level completion ack — which cannot show the class. The collapse is a
+//! sustained-stream phenomenon: tools/l1/tail_matrix.sh drives 50 msg/s ×
 //! 20 s of 1200-B messages through the tunnel and measures per-message
-//! latency; a collapse rep backlogs the WHOLE stream (p50 seconds). This
-//! harness reproduces that shape locally: a fixed-rate message stream over
+//! latency; a collapse rep backlogs the whole stream. This harness
+//! reproduces that shape locally: a fixed-rate message stream over
 //! the real engine (memory TUNs, real QUIC on 127.0.0.1) under the transport
 //! L0 netem shim (`RWM_L0_NETEM`, default c3 — the L1 collapse cell's
 //! params), one arm per process.
@@ -18,11 +15,11 @@
 //! Message = RWM_SL_MSG bytes (default 1200) split into chunks that fit one
 //! realtime symbol (512 − 4 framing ⇒ ≤ 508 B packets — mirrors the L1 TUN
 //! MTU clamp segmenting the inner TCP stream). Per-message latency = embedded
-//! send timestamp → LAST chunk delivered in order at the server (the engine's
+//! send timestamp → last chunk delivered in order at the server (the engine's
 //! in-order frontier is the delivery point, as for the inner TCP byte
 //! stream). The server acks each completed message (reverse-direction load ≈
 //! the inner TCP ack stream). No app-level retransmit: a chunk the engine
-//! force-delivers past the reorder horizon and never repairs is a LOST
+//! force-delivers past the reorder horizon and never repairs is a lost
 //! message (counted; the L1 inner TCP would have retransmitted it — at L0 it
 //! is a datum, not a stall).
 //!
@@ -34,7 +31,7 @@
 //!   RWM_L0_BACKEND  explicit fec_backend ("rlc" = the legacy-RLC arm;
 //!                   unset = shipped auto-selection: the unified RLC span
 //!                   machine; RWM_UNIFIED=0 = the legacy-RLC windowed
-//!                   machine (streaming retired 2026-07-28))
+//!                   machine)
 //!   RWM_SL_RATE     messages per second (default 50)
 //!   RWM_SL_DUR     stream duration seconds (default 20)
 //!   RWM_SL_MSG      message size bytes (default 1200)

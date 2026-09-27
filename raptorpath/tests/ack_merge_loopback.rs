@@ -1,28 +1,15 @@
-//! ack-merge loopback (goal-gate "Unlock The Default 1: ack-merge",
-//! `RWM_ACK_MERGE`): the reliable-window perf loopback with the WINDOW-mode
-//! control-datagram merge ON, plus the BLOCK-mode scope guard in the same
-//! process.
-//!
-//! Why this is the right gate for this build. Under the merge the receiver
-//! stops sending the legacy per-batch `ControlMessage::Ack` in window mode
-//! and the sender re-homes EVERY consumer of that arm onto the diff of the
-//! v6 cumulative `cum_expected`/`cum_received` counters — including the
-//! in-flight release, without which the Copa/flow-control gate simply jams
-//! and the transfer never completes. The perf object protocol acks only when
-//! every chunk is present (`st.got.len() == total`), so COMPLETION IS the
-//! delivered-set check and, because the store releases only on that
-//! accounting, it is simultaneously the re-homing's liveness proof. A merge
-//! that lost counts would stall here, not merely run slower.
-//!
-//! The second transfer is the SCOPE guard: block mode keeps the legacy `Ack`
-//! in full (it has no `WindowAck` to merge into, and `block_arq` — whose
-//! dup-ack `LATER_ACK_LOSS_THRESHOLD` channel is built on that message — is
-//! live only there). It must be unaffected by the gate. Asserted rather than
-//! reasoned about, per the pre-registration.
-//!
-//! Own test binary and ONE test function: the gate is process-global env
-//! resolved once at engine start, and the two transfers must not race for
-//! ports.
+//! The window-mode ack merge (`RWM_ACK_MERGE`, paper §9.5) carries the whole
+//! delivery accounting, and block mode is untouched by it. Under the merge
+//! the receiver stops sending the per-batch `ControlMessage::Ack` in window
+//! mode and the sender re-homes every consumer of it — including the
+//! in-flight release — onto the diff of the cumulative
+//! `cum_expected`/`cum_received` counters. The perf object protocol acks only
+//! when every chunk is present, so completion is both the delivered-set check
+//! and the re-homing's liveness proof: a merge that lost counts would stall.
+//! The second transfer is the scope guard: block mode keeps the per-batch
+//! `Ack` (its `block_arq` dup-ack channel is built on it) and must run
+//! unchanged with the gate on. One test function: the gate is process-global
+//! and the two transfers must not race for ports.
 
 #[path = "common/loopback.rs"]
 mod loopback;
@@ -43,12 +30,12 @@ async fn ack_merge_window_loopback_and_block_mode_scope() {
         "the cached resolution the receiver and sender arms both read must agree"
     );
 
-    // ── 1. WINDOW mode: the merged path carries the whole accounting ─────
+    // ── 1. Window mode: the merged path carries the whole accounting ─────
     let (s, c) = cfgs(&ports(1), "bulk", true);
     let (srv, cli) = (resolve(&s), resolve(&c));
     assert!(srv.window_reliable);
 
-    // Completion == every chunk delivered, reassembled and acked with ONE
+    // Completion == every chunk delivered, reassembled and acked with one
     // control datagram per data message instead of two (2 runs + warm-up).
     run(
         srv,
@@ -60,7 +47,7 @@ async fn ack_merge_window_loopback_and_block_mode_scope() {
     )
     .await;
 
-    // ── 2. BLOCK mode: out of scope, must be untouched ───────────────────
+    // ── 2. Block mode: out of scope, must be untouched ───────────────────
     // A fresh port pair, so the first pair's teardown is not waited on.
     let (s, c) = cfgs(&ports(1), "bulk", false);
     let (bsrv, bcli) = (resolve(&s), resolve(&c));
@@ -70,7 +57,7 @@ async fn ack_merge_window_loopback_and_block_mode_scope() {
     );
 
     // Block mode still runs its per-batch Ack → BlockArq loss channel. With
-    // the gate ON this must be exactly as it is with the gate OFF.
+    // the gate on this must be exactly as it is with the gate off.
     run(
         bsrv,
         bcli,

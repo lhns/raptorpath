@@ -1,77 +1,23 @@
-//! **THE RECEIVER-SEAT REQUEST LAW IS REACHABLE, THE COLLISION SEAM CLOSES,
-//! AND THE ABSENT ARM IS THE SHIPPED MACHINE.**
+//! The receiver-seat request law (paper §7.6) is reachable at both
+//! endpoints, closes the collision seam, and its absent arm is the shipped
+//! machine. Arm (A) `RWM_RECV_REQUEST_LAW` moves the repair request to the
+//! receiver; arm (B) `RWM_RANK_FEEDBACK` widens it to a span of
+//! `m = clamp(⌈k_½(π̂₀)⌉, 1, A*)`, `k_½ = ln 2 / (−ln π₀)`. Clauses:
+//! 1. the gates echo at both seats;
+//! 2. the control builds and serves nothing, and the per-seq SACK→gap
+//!    producer recovers holes (`[FCAUSE] gap_data > 0`);
+//! 3. (A) builds (`[REQ] sent > 0`) and serves (`[REQS] served > 0`);
+//! 4. (A) suppresses the gap producer — the identifiability condition that
+//!    no copy flies inside `[0, ℓ*)`;
+//! 5. SACK-clocked release is untouched (the transfer completes);
+//! 6. (A) alone keeps `m ≡ 1`;
+//! 7. (B) obeys `π̂₀ > ½ ⇒ m ≥ 2` against the same run's `rho_heal0`;
+//! 8. `[LATE]` echoes `lstar_us` and `knee_bind`;
+//! 9. at one path the acting threshold is 0.
 //!
-//! Paper §16.83, arms **(A)** `RWM_RECV_REQUEST_LAW` and **(B)**
-//! `RWM_RANK_FEEDBACK`. Every recovery clock this tree has written lived at
-//! the SENDER, which cannot observe the quantity the decision needs. These
-//! arms move the decision to the RECEIVER — which holds the frontier, the
-//! lateness distribution and the rank — and make `α` a thing to READ
-//! (`α = S(ℓ*)`) rather than a thing to declare.
-//!
-//! **What is asserted, in the order it can fail.**
-//!
-//!   1. **THE GATES ECHO, TWO-SIDED, AT BOTH ENDPOINTS.** The request law is
-//!      consumed at the receiver (which builds the message) AND at the sender
-//!      (which serves it, and whose gap producer the seam suppresses), so the
-//!      CONTROL's absence must be as mechanically assertable as the arm's
-//!      presence. A row whose gates are not readable off its own log is VOID.
-//!   2. **THE CONTROL IS THE SHIPPED MACHINE.** `[REQ] on=0 sent=0`,
-//!      `[REQS] on=0 served=0`, and `[FCAUSE] gap_data > 0` — the per-seq
-//!      SACK→gap producer is what recovers holes today, and this is the
-//!      reading the treatment is contrasted against.
-//!   3. **ARM (A) REACHES THE WIRE AT BOTH ENDS.** `[REQ] sent > 0` at the
-//!      receiver (**WL2's producer half**) and `[REQS] served > 0` at the
-//!      sender (**WL2**) — MEASUREMENT DISCIPLINE rule 1: prove the mechanism
-//!      under test executes, at every seat it has to execute at.
-//!   4. **THE COLLISION SEAM CLOSED, AND `[FCAUSE] gap_data → 0` IS THE
-//!      PROOF.** §16.83.4's identifiability argument is CONDITIONAL on the
-//!      receiver being the single authority: `ρ̂_heal(ℓ) = π₀·f(ℓ)` holds
-//!      exactly on `[0, ℓ*)` only because no copy has flown there. If the gap
-//!      producer kept firing, the estimate would be censored in §16.77.8a's
-//!      own direction and the arm would be measuring a different law. This is
-//!      the clause that makes the seam a fact rather than an intention.
-//!   5. **`sack_tx` WAS NOT TOUCHED.** The SACK still flows: store release is
-//!      ADR-0060's, pruning `sent_store` on SACK was refuted structurally
-//!      UNSAFE on 2026-07-07, and a request law that touched it would be
-//!      re-running a refuted experiment. Asserted as *the transfer completes
-//!      under arm (A)* — a broken release wedges it.
-//!   6. **`m ≡ 1` UNDER (A) ALONE.** Arm (A) isolates the TIMING lever: the
-//!      bytes on the wire are today's per-seq copy (`[REQS] copy > 0`,
-//!      `coded = 0`), which is what keeps `[RFA] dup_src` comparable to CTL.
-//!   7. **(B) CHANGES THE VOCABULARY, AND THE `m` LAW IS CHECKED AGAINST THE
-//!      RECEIVER'S OWN `π̂₀`.** `m = clamp(⌈k_½(π̂₀)⌉, 1, A*)` with
-//!      `k_½ = ln 2 / (−ln π₀)`, so `π̂₀ > ½ ⇒ m ≥ 2` — an implication of the
-//!      law itself, checked against the `rho_heal0` the same run printed. A
-//!      hard `m > 1` assertion would be a claim about LOOPBACK's heal share,
-//!      which no cell reading may be taken from.
-//!   8. **`[LATE]` ECHOES `lstar_us` AND `knee_bind`** (**WL1 / WK**), and
-//!      `[RFA] rep_redundant` is present under (B).
-//!   9. **THE SINGLE-PATH CORNER.** At `N = 1` the acting threshold is 0 —
-//!      request immediately, which IS the shipped machine — and with (B)
-//!      absent `m ≡ 1`. **The `m = 1` half of §16.83.2's corner is a claim
-//!      about `π₀`, and LOOPBACK'S `π₀` IS NOT `c1`'s** (this shim measures
-//!      `rho_heal0 = 0.5`; D0 measured 0.0077 at `c1`), so that control
-//!      belongs to the L1 battery and is deliberately not asserted here.
-//!
-//! **THIS BINARY FAILS ON THE PRE-CHANGE ENGINE.** `RWM_RECV_REQUEST_LAW`,
-//! `RWM_RANK_FEEDBACK`, `[REQ]` and `[REQS]` do not exist there, so clauses 1
-//! and 3 read missing fields.
-//!
-//! **THE LOOPBACK FINDING THIS TEST IS WRITTEN AROUND, AND DOES NOT HIDE.**
-//! `[LATE]` on L0 loopback reports `lstar_us = 0` with `knee_bind = 1.0` on
-//! BOTH topologies, because `d` (the mean ARQ resolution) exceeds the observed
-//! knee `H` there, so `(H − d)⁺ = 0`. That is a property of the loopback shim
-//! and NOT of any cell. **WL1 (`lstar_us > 2000` at the duals) is therefore an
-//! L1 witness and is NOT asserted here** — this binary asserts only that the
-//! field EXISTS and is echoed, which is what the pre-registration needs to be
-//! able to read.
-//!
-//! **What this deliberately does NOT assert.** Any VALUE of the realized false
-//! fraction, of goodput, of `ℓ*`, or of the knee. Loopback's dispersion is the
-//! host scheduler's and its loss is the shim's GE process. This is the
-//! INSTRUMENT gate that must pass before the L1 battery is worth running.
-//!
-//! **Nothing here flips a default.** Both gates ship ABSENT.
+//! No value of ℓ*, the knee or goodput is asserted: on loopback `d` exceeds
+//! the observed knee, so `lstar_us = 0`, and loopback's `π₀` is not a cell's.
+//! Both gates default off.
 
 #[path = "common/gauge.rs"]
 mod gauge;
@@ -88,17 +34,12 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-/// One loopback transfer under `extra`. Returns `(sender log, receiver log)` —
-/// BOTH, because the arm has a seat at each end and a one-sided reading cannot
-/// tell "never built" from "never served".
-///
-/// Both arms ride BOTH endpoints; the harness clears every inherited `RWM_*`
-/// var, so an absent arm is absent rather than inherited. CLAUSE 5, in its
-/// operational form, is `run_perf_client`'s success assertion: the SACK still
-/// clocks store release, so the transfer completes — a request law that
-/// touched `sack_tx` would wedge the sender's flow control and show there.
-/// The receiver log is taken once a `[REQ]` readout post-dating the transfer
-/// landed (with its cadence siblings `[LATE]`/`[RFA]`).
+/// One loopback transfer under `extra`. Returns `(sender log, receiver log)`:
+/// the arm has a seat at each end, and a one-sided reading cannot tell
+/// "never built" from "never served". Clause 5 is `run_perf_client`'s
+/// success assertion — a request law that touched `sack_tx` would wedge the
+/// sender's flow control. The receiver log is taken once a `[REQ]` readout
+/// post-dating the transfer landed.
 fn run(paths: usize, netem: Option<&str>, bytes: &str, extra: &[(&str, &str)]) -> (String, String) {
     let mut env = ARM.to_vec();
     env.extend_from_slice(extra);
@@ -123,18 +64,10 @@ fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
     )
 }
 
-/// CLAUSE 1: the arm's own axis, READ AT BOTH SEATS.
-///
-/// **WHY THE TWO SEATS ARE READ OFF DIFFERENT LINES HERE.** `[GATES]` is a
-/// `tracing` record, and the perf CLIENT in this harness installs no
-/// subscriber — its stderr carries the `eprintln!` gauges and nothing
-/// else. (On the L1 driver both endpoint logs carry `[GATES]`, and
-/// `recvlaw_battery.sh` checks both.) So the RECEIVER's arm is read off
-/// `[GATES]` — what was ASKED FOR — and the SENDER's off
-/// `[REQS] on=`, the RESOLVED arm at the seat that consumes it. That is the
-/// STRONGER reading of the two, not a weaker substitute: `on=` IS the
-/// predicate the serving loop is gated on, so the producer and the consumer
-/// are asserted to AGREE about whether the arm is live.
+/// Clause 1: the arm read at both seats. The perf client installs no
+/// `tracing` subscriber, so the receiver's arm is read off `[GATES]` (what
+/// was asked for) and the sender's off `[REQS] on=` (the predicate the
+/// serving loop is gated on), asserting producer and consumer agree.
 fn assert_gates(cli: &str, srv: &str, law: u8, rank: u8) {
     let g = last_with(srv, "[GATES] ");
     assert!(
@@ -156,10 +89,10 @@ fn assert_gates(cli: &str, srv: &str, law: u8, rank: u8) {
     );
 }
 
-// ── THE CONTROL ─────────────────────────────────────────────────────────
+// ── The control ─────────────────────────────────────────────────────────
 
-/// CLAUSES 1, 2: with both arms absent nothing is built, nothing is served,
-/// and the shipped gap machinery is what recovers holes.
+/// Clauses 1, 2: with both arms absent nothing is built, nothing is served,
+/// and the shipped gap machinery recovers holes.
 #[test]
 fn the_control_builds_no_request_and_the_gap_producer_is_what_recovers() {
     let (cli, srv) = run(2, Some("c2,c3"), "24000000", &[]);
@@ -190,9 +123,8 @@ fn the_control_builds_no_request_and_the_gap_producer_is_what_recovers() {
         "an absent fraction renders `-`, never 0: {reqs}"
     );
 
-    // CLAUSE 2: the per-seq SACK→gap producer IS the shipped recovery path,
-    // and this is the reading the treatment's `gap_data = 0` is contrasted
-    // against. A control with `gap_data = 0` would make clause 4 vacuous.
+    // Clause 2: the per-seq SACK→gap producer is the shipped recovery path;
+    // a control with `gap_data = 0` would make clause 4 vacuous.
     let fc = last_with(&cli, "[FCAUSE] ");
     println!("[recvlaw-reach] CTL {fc}");
     assert!(
@@ -203,16 +135,16 @@ fn the_control_builds_no_request_and_the_gap_producer_is_what_recovers() {
     );
 }
 
-// ── ARM (A): THE TIMING LEVER ───────────────────────────────────────────
+// ── Arm (A): the timing lever ───────────────────────────────────────────
 
-/// CLAUSES 1, 3, 4, 5, 6, 8: arm (A) builds, serves, closes the seam, keeps
+/// Clauses 1, 3, 4, 5, 6, 8: arm (A) builds, serves, closes the seam, keeps
 /// the copy, and completes the transfer.
 #[test]
 fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
     let (cli, srv) = run(2, Some("c2,c3"), "24000000", &[("RWM_RECV_REQUEST_LAW", "1")]);
     assert_gates(&cli, &srv, 1, 0);
 
-    // The mechanism-liveness echo. A `tracing` record, so it is read at the
+    // Mechanism-liveness echo (measurement-discipline rule 1), read at the
     // seat whose subscriber exists in this harness — see `assert_gates`.
     assert!(
         srv.contains("receiver-seat repair request ACTIVE"),
@@ -220,7 +152,7 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
          rule 1"
     );
 
-    // CLAUSE 3, producer half.
+    // Clause 3, producer half.
     let req = last_with(&srv, "[REQ] ");
     println!("[recvlaw-reach] A receiver {req}");
     assert_eq!(field(req, "on="), "1", "{req}");
@@ -233,7 +165,7 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
     );
     assert!(u64_field(req, "spans=") > 0, "{req}");
 
-    // CLAUSE 6: (A) ALONE IS THE COPY. `m ≡ 1` isolates the TIMING lever.
+    // Clause 6: (A) alone serves the copy; `m ≡ 1` isolates the timing lever.
     assert_eq!(
         u64_field(req, "m_max="),
         1,
@@ -242,7 +174,7 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
          and neither is measurable:\n{req}"
     );
 
-    // CLAUSE 3, server half — WL2.
+    // Clause 3, server half.
     let reqs = last_with(&cli, "[REQS] ");
     println!("[recvlaw-reach] A sender {reqs}");
     assert_eq!(field(reqs, "on="), "1", "{reqs}");
@@ -261,22 +193,12 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
     );
     assert_eq!(u64_field(reqs, "coded="), 0, "{reqs}");
 
-    // CLAUSE 4: THE SEAM. This is the whole identifiability argument.
-    //
-    // `[FCAUSE]` is emitted at the sender gauge's teardown IFF the gap loop
-    // classified at least one fire (`is_fire_cause_site`: `n > 0`). Under (A)
-    // the SACK→gap producer is suppressed, so the only producer left is the
-    // tail sweep (`timer`/`other`), which can legitimately fire ZERO times on
-    // a loopback run — and then there is no line at all. That absence is not
-    // a dead gauge: the emission site's reachability in this harness is
-    // proven by the CONTROL (`[FCAUSE] gap_data > 0` there), and this run's
-    // sender diag surface is live (`[REQS] on=1 served > 0` above). So the
-    // two readings are:
+    // Clause 4: the seam. `[FCAUSE]` is emitted only if the gap loop
+    // classified at least one fire. Under (A) the SACK→gap producer is
+    // suppressed and the tail sweep may fire zero times, so the line may be
+    // absent; the control proves the emission site is reachable. Either way:
     //   * line present ⇒ `gap_data = gap_refresh = 0` on the line itself;
     //   * line absent  ⇒ `n = 0` ⇒ `gap_data = gap_refresh = 0` exactly.
-    // Either way the seam claim is asserted, and the repair traffic this
-    // lossy transfer needed provably went through the request path
-    // (`served > 0`), not through a silent third producer.
     match gauge::last_line(&cli, "[FCAUSE] ") {
         Some(fc) => {
             println!("[recvlaw-reach] A {fc}");
@@ -308,9 +230,8 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
         }
     }
 
-    // CLAUSE 8: the threshold and the bind gauge are echoed, so the
-    // pre-registration can read them. NO VALUE is asserted — see the header's
-    // loopback finding.
+    // Clause 8: the threshold and the bind gauge are echoed; no value is
+    // asserted (see the header).
     let late = last_with(&srv, "[LATE] ");
     println!("[recvlaw-reach] A {late}");
     assert!(late.contains("lstar_us="), "[LATE] must echo the threshold: {late}");
@@ -319,9 +240,9 @@ fn arm_a_requests_are_built_served_and_the_gap_producer_is_suppressed() {
     let _ = opt_field(late, "lstar_us=");
 }
 
-// ── ARM (B): THE VOCABULARY LEVER ───────────────────────────────────────
+// ── Arm (B): the vocabulary lever ───────────────────────────────────────
 
-/// CLAUSES 1, 3, 7, 8: (A)+(B) composes, the `m` law agrees with the
+/// Clauses 1, 3, 7, 8: (A)+(B) composes, the `m` law agrees with the
 /// receiver's own `π̂₀`, and `rep_redundant` is present.
 #[test]
 fn arm_b_composes_and_the_m_law_agrees_with_the_receivers_own_pi0() {
@@ -344,10 +265,9 @@ fn arm_b_composes_and_the_m_law_agrees_with_the_receivers_own_pi0() {
     assert!(u64_field(req, "sent=") > 0, "the composed arm built nothing: {req}");
     assert!(u64_field(reqs, "served=") > 0, "the composed arm served nothing: {reqs}");
 
-    // CLAUSE 7: THE `m` LAW, CHECKED AGAINST THE SAME RUN'S OWN `π̂₀`.
-    // `k_½ = ln 2 / (−ln π₀)`, so `π₀ > ½ ⇒ k_½ > 1 ⇒ ⌈k_½⌉ ≥ 2`. This is an
-    // implication of the law, not a claim about loopback's heal share — which
-    // is why it is written as an implication.
+    // Clause 7: `π₀ > ½ ⇒ k_½ > 1 ⇒ ⌈k_½⌉ ≥ 2`, checked against the same
+    // run's `π̂₀` — an implication of the law, not a claim about loopback's
+    // heal share.
     let rho0 = field(late, "rho_heal0=");
     let m_max = u64_field(req, "m_max=");
     println!("[recvlaw-reach] A+B rho_heal0={rho0} m_max={m_max}");
@@ -363,10 +283,8 @@ fn arm_b_composes_and_the_m_law_agrees_with_the_receivers_own_pi0() {
             );
         }
     }
-    // Whenever a span WAS wider than one seq, the sender's `WA1` split must
-    // account for it: every `m > 1` answer is either a coded equation or a
-    // COUNTED refusal that fell back to a copy. A silent third outcome is what
-    // this pins out.
+    // Every `m > 1` answer is either a coded equation or a counted refusal
+    // that fell back to a copy (the sender's `WA1` split); no third outcome.
     if m_max > 1 {
         let some = u64_field(reqs, "wa1_some=");
         let none = u64_field(reqs, "wa1_none=");
@@ -384,7 +302,7 @@ fn arm_b_composes_and_the_m_law_agrees_with_the_receivers_own_pi0() {
         );
     }
 
-    // CLAUSE 8: the false measurand under coded answers is present by NAME.
+    // Clause 8: the false measurand under coded answers is present by name.
     let rfa = last_with(&srv, "[RFA] ");
     assert!(
         rfa.contains("rep_redundant="),
@@ -393,13 +311,11 @@ fn arm_b_composes_and_the_m_law_agrees_with_the_receivers_own_pi0() {
     );
 }
 
-// ── ARM (B) ALONE: THE VOCABULARY-ONLY WIRING TEST ──────────────────────
+// ── Arm (B) alone: the vocabulary-only wiring test ──────────────────────
 
-/// (B) without (A) is the shipped 2 ms trigger spoken in the deficit
-/// vocabulary: the gap producer stays ARMED (the seam keys on (A) alone), so
-/// `[FCAUSE] gap_data` must NOT go to zero. This is what makes the battery's
-/// four arms separable — without it, (B)'s effect and the seam's are one
-/// treatment.
+/// (B) without (A) speaks the deficit vocabulary with the shipped trigger:
+/// the seam keys on (A) alone, so `[FCAUSE] gap_data` must stay above zero.
+/// This keeps the four arms {CTL, A, B, A+B} separable.
 #[test]
 fn arm_b_alone_changes_the_vocabulary_and_leaves_the_seam_open() {
     let (cli, srv) = run(2, Some("c2,c3"), "24000000", &[("RWM_RANK_FEEDBACK", "1")]);
@@ -426,26 +342,16 @@ fn arm_b_alone_changes_the_vocabulary_and_leaves_the_seam_open() {
     );
 }
 
-// ── THE SINGLE-PATH CONTROL ─────────────────────────────────────────────
+// ── The single-path control ─────────────────────────────────────────────
 
-/// CLAUSE 9: at `N = 1` the law's own corner is the SHIPPED MACHINE -- the
-/// acting threshold is 0, i.e. request immediately. 16.83.2: the corner is
-/// not an approximation of the law, it IS the law at those inputs.
+/// Clause 9: at `N = 1` the law's corner is the shipped machine — the acting
+/// threshold is 0, request immediately (paper §7.6).
 ///
-/// **WHAT THIS RUNS, AND WHY IT IS ARM (A) ALONE.** The `m = 1` half of the
-/// corner is a claim about `pi0`, and **LOOPBACK'S `pi0` IS NOT `c1`'s.** D0
-/// measured `pi0 = 0.0077` at `c1`; this shim's single-path topology measures
-/// `rho_heal0 = 0.5000` (485 of 970 holes closed by their own original),
-/// which by the law's own arithmetic gives `k_half = ln2/(-ln 0.5) = 1.0` at
-/// the readout and ABOVE 1 earlier in the run. **So `m > 1` at one path on
-/// loopback is the `m` law reading its input CORRECTLY, not a defect** -- and
-/// asserting `m = 1` here would be taking a cell reading off a shim, which
-/// this file's header forbids. The `m = 1` control at `c1`/`sc2` belongs to
-/// the L1 battery's MUST-NOT-MOVE clause, where `pi0` is the cell's own.
-///
-/// What IS mechanical at one path, and is asserted here: with (B) ABSENT
-/// `request_m` returns 1 unconditionally, cross-path resolution is
-/// structurally impossible, and the acting threshold is the shipped corner.
+/// Arm (A) alone: the `m = 1` half of the corner is a claim about `π₀`, and
+/// loopback's single path measures `rho_heal0 ≈ 0.5`, where `m > 1` is the
+/// law reading its input correctly. That control belongs at L1. What is
+/// mechanical here: with (B) absent `request_m` returns 1, cross-path
+/// resolution is impossible, and the threshold is the shipped corner.
 #[test]
 fn the_single_path_corner_is_todays_machine() {
     let (cli, srv) = run(1, Some("c3"), "12000000", &[("RWM_RECV_REQUEST_LAW", "1")]);
@@ -456,32 +362,30 @@ fn the_single_path_corner_is_todays_machine() {
     println!("[recvlaw-reach] N=1 {req}");
     println!("[recvlaw-reach] N=1 {late}");
 
-    // THE ACTING THRESHOLD IS THE SHIPPED CORNER. On this shim it is the KNEE
-    // that takes it there (`d` exceeds the observed `H`, so `(H - d)+ = 0`)
-    // rather than `pi0 -> 0`; the law reaches the same answer from either
-    // limit -- which is the whole content of 16.83.2 -- and `knee_bind` on the
-    // same line says WHICH term bound.
+    // On this shim the knee takes the threshold to 0 (`d` exceeds the
+    // observed `H`, so `(H − d)⁺ = 0`) rather than `π₀ → 0`; `knee_bind`
+    // says which term bound.
     assert_eq!(
         u64_field(req, "lstar_us="),
         0,
         "the acting threshold is not 0 at ONE PATH -- the shipped machine \
          requests immediately there:\n{req}\n{late}"
     );
-    // (B) ABSENT ==> `request_m` returns 1 at every input. MECHANICAL.
+    // (B) absent ⇒ `request_m` returns 1 at every input.
     assert_eq!(
         u64_field(req, "m_max="),
         1,
         "m > 1 with RWM_RANK_FEEDBACK ABSENT -- arm (A) changed the VOCABULARY \
          as well as the timing, so the two levers are confounded:\n{req}"
     );
-    // The request law still REACHED THE WIRE at one path: the corner is the
+    // The request law still reaches the wire at one path: the corner is the
     // law running, not the arm going silent.
     assert!(
         u64_field(req, "sent=") > 0,
         "[REQ] sent=0 at ONE PATH -- the corner must be the law RUNNING, not \
          the arm falling silent:\n{req}"
     );
-    // Cross-path resolution is STRUCTURALLY impossible at one path.
+    // Cross-path resolution is impossible at one path.
     assert_eq!(field(late, "xp_frac="), "0.0000", "{late}");
     // Both bind gauges are on the line, so WHICH term bound is a reading.
     assert!(late.contains("knee_bind="), "{late}");
