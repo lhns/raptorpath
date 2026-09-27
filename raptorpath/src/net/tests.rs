@@ -1957,12 +1957,12 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     // Set by field rather than through the environment on purpose: an
     // env-mutating test is process-global state in a parallel runner.
     let mut full = RuntimeGates::resolve();
-    full.sum_cap = true; // the ×N deletion            (§16.62)
+    full.sum_cap = true; // the ×N deletion            (paper §6.1)
     full.delta_cap = false; // the value multiplier, FIXED OFF — see the
                             // control arm's note: this pair varies the
                             // count multiplier and nothing else.
-    full.store_cap_unified = true; // the LIVE SET     (ADR-0070 finding 1)
-    full.late_brake = true; // the LATE-STAGE BRAKE    (§16.60.1)
+    full.store_cap_unified = true; // the live set
+    full.late_brake = true; // the late-stage brake
     full.loss_sent_truth = true; // ── the ledger/loss trio ──
     full.release_1to1 = true;
     full.charge_recovery = true;
@@ -2495,7 +2495,7 @@ mod law_shape {
     fn the_correction_makes_the_pin_threshold_per_path_instead_of_path_count_free() {
         use crate::net::pooled_store_cap;
         const KNEE: usize = 2048;
-        const FLOOR: usize = 10; // the derived floor (§16.59); inert here
+        const FLOOR: usize = 10; // the derived floor (paper §6.1); inert here
 
         for n in 2..=8usize {
             let ceiling = n * KNEE;
