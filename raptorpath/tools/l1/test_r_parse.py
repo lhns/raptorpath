@@ -114,7 +114,7 @@ def main():
     check("ARMCOUNT's grep key is present verbatim",
           '"cell": "sc2", "size": "s18", "arm": "CTL"' in line, line[:80])
     check("completion_p50 is the MEDIAN of the run seconds",
-          abs(r["completion_p50"] - 0.191) < 1e-9, str(r["completion_p50"]))
+          abs(r["completion_p50"] - 0.1905) < 1e-9, str(r["completion_p50"]))
     check("runs_n counts the per-run objects, not the summary", r["runs_n"] == 40)
     check("abort is False when a summary was seen", r["abort"] is False)
     check("W5: cum= is read off the LAST [DIAG], not the first",

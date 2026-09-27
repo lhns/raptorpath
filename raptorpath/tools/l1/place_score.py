@@ -23,10 +23,13 @@ min-max range. A range that overlaps CTL's is WITHIN.
 """
 import argparse
 import json
+import os
 import re
-import statistics
 import sys
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import med  # noqa: E402
 
 SHIPPED_SIGMA_OVER_REF = 0.19238
 SQRT6_OVER_PI = 6.0 ** 0.5 / 3.141592653589793
@@ -87,7 +90,7 @@ def rng(vals, d=4):
         return "-"
     if len(vals) == 1:
         return fmt(vals[0], d)
-    return f"{fmt(min(vals), d)}..{fmt(max(vals), d)} (med {fmt(statistics.median(vals), d)})"
+    return f"{fmt(min(vals), d)}..{fmt(max(vals), d)} (med {fmt(med(vals), d)})"
 
 
 def worst_path(r, key):
@@ -222,7 +225,7 @@ def main(argv=None):
                         v = [x for x in vals if x is not None]
                         if v:
                             inband = sum(1 for x in v if abs(x - SHIPPED_SIGMA_OVER_REF) <= 0.2 * SHIPPED_SIGMA_OVER_REF)
-                            print(f"    {lab} in the 0.19238+/-20% band: {inband}/{len(v)}; median/0.19238 = {statistics.median(v)/SHIPPED_SIGMA_OVER_REF:.2f}x; T_eff = {rng([SQRT6_OVER_PI*x for x in v])}")
+                            print(f"    {lab} in the 0.19238+/-20% band: {inband}/{len(v)}; median/0.19238 = {med(v)/SHIPPED_SIGMA_OVER_REF:.2f}x; T_eff = {rng([SQRT6_OVER_PI*x for x in v])}")
 
     # ── 3. ARMS ─────────────────────────────────────────────────────────
     section("3 -- THE ARMS AGAINST THE CTL SPREAD (min..max over the CTL reps, pooled over seeds)")
@@ -249,7 +252,7 @@ def main(argv=None):
                     a_s = [r.get(key) for r in sel(cell, arm, s) if r.get(key) is not None]
                     c_s = [r.get(key) for r in sel(cell, "CTL", s) if r.get(key) is not None]
                     if a_s and c_s:
-                        per_seed.append(f"s{s} {beyond(a_s, c_s)} (med {fmt(statistics.median(a_s),d)} vs CTL {fmt(statistics.median(c_s),d)})")
+                        per_seed.append(f"s{s} {beyond(a_s, c_s)} (med {fmt(med(a_s),d)} vs CTL {fmt(med(c_s),d)})")
                 print(f"    {lab}: {rng(av, d)} vs CTL {rng(cv_, d)} => {beyond(av, cv_)}; " + "; ".join(per_seed))
 
     # ── 4. AGGREGATION GUARD ────────────────────────────────────────────

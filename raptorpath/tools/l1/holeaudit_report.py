@@ -1,18 +1,19 @@
-import re, sys, json, math, collections
+import collections
+import json
+import math
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import field, med  # noqa: E402
 
 LOG = sys.argv[1]
 CELLS = ['c1', 'c7', 'sc2', 'c8']
 
 def f(line, key, default=None):
-    for t in line.split():
-        if t.startswith(key):
-            v = t[len(key):]
-            m = re.match(r'^[-+0-9.eE]*', v)
-            v = m.group(0)
-            if v in ('', '-'):
-                return default
-            return v
-    return default
+    v = re.match(r'^[-+0-9.eE]*', field(line, key) or '').group(0)
+    return default if v in ('', '-') else v
 
 def i(line, key, default=0):
     v = f(line, key, None)
@@ -42,13 +43,6 @@ def wilson(k, n, z=1.96):
     c = (p + z * z / (2 * n)) / d
     h = z / d * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
     return (max(0.0, c - h), min(1.0, c + h))
-
-def med(v):
-    v = sorted(x for x in v if x is not None)
-    if not v:
-        return None
-    n = len(v)
-    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
 
 hold = collections.defaultdict(list)     # cell -> [line]
 succ = collections.defaultdict(list)

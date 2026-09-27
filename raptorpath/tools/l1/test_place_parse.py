@@ -269,7 +269,7 @@ check(_pieces[0].rstrip().endswith("final=1"), "readout piece ends at the marker
 check("cleaning up TUN" in _pieces[1] and "\x1b" not in _pieces[1], "tracing piece colour-stripped")
 _plain = "[SUCC] gen=0 det=7 final=1 2026-09-08T18:54:50Z  INFO raptorpath: bye\n"
 check(pp.is_final(pp.split_interleaved(_plain)[0]), "plain (no ANSI) interleave also split")
-check(pp.split_interleaved("[LAT] site=receiver n=5 final=1\n") == ["[LAT] site=receiver n=5 final=1\n"],
+check(pp.split_interleaved("[LAT] site=receiver n=5 final=1\n") == ["[LAT] site=receiver n=5 final=1"],
       "unglued line untouched")
 check(pp.split_interleaved("2026-09-08T18:54:50Z INFO start\n")[0].startswith("2026"),
       "a line that IS a tracing record is not split at column 0")

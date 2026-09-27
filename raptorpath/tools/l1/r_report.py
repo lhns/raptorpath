@@ -40,6 +40,9 @@ import math
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from l1common import med  # noqa: E402
+
 # ── EVERY CONSTANT BELOW IS TRANSCRIBED FROM THE PRE-REGISTRATION ───────
 CHI_LIVE_BAR = 0.5           # §8 W6 / §10 clause 2: `[CHI] max > 0.5`
 BULK_TAIL_BUDGET = 0.05      # raptorpath-math/src/lib.rs:124 — the glide's ceiling
@@ -101,7 +104,7 @@ def hodges_lehmann(a, b):
         return (None, None, None)
     d = sorted(y - x for x in a for y in b)
     n = len(d)
-    shift = d[n // 2] if n % 2 else (d[n // 2 - 1] + d[n // 2]) / 2.0
+    shift = med(d)
     m, k = len(a), len(b)
     mu = m * k / 2.0
     sd = math.sqrt(m * k * (m + k + 1) / 12.0)
@@ -266,7 +269,7 @@ def report(outdir, calib, max_rep=None):
             if not base:
                 print("  %-5s %-4s  UNSCOREABLE-NO-CTL" % (c, z))
                 continue
-            bm = sorted(base)[len(base) // 2]
+            bm = med(base)
             for a in arms:
                 if a == "CTL":
                     continue
@@ -320,7 +323,7 @@ def report(outdir, calib, max_rep=None):
                         and r.get("h_price_predicted_goodput_delta") is not None]
                 print("    %-5s %-4s %-8s median=%.2f Mbit/s  band=[%g,%g]  "
                       "OUT-OF-BAND-RESULT=%d/%d  H_price predicted delta=%s"
-                      % (c, z, a, sorted(v)[len(v) // 2], lo, hi, oob, len(v),
+                      % (c, z, a, med(v), lo, hi, oob, len(v),
                          ("%+.4f" % (sum(pred) / len(pred))) if pred else "n/a"))
 
     # ── 5 — THE OUTCOME, FROM THE SIX LEGAL OUTCOMES AND FROM NOTHING ELSE

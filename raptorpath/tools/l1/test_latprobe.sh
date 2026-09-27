@@ -65,8 +65,8 @@ ckeq "clean leg: recv"            "100"   "$(echo "$J" | python3 -c 'import json
 ckeq "clean leg: censor_frac"     "0.0"   "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["censor_frac"])')"
 ckeq "clean leg: p99 scoreable"   "True"  "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p99_scoreable"])')"
 ckeq "clean leg: leg_unscoreable" "False" "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["leg_unscoreable"])')"
-# Nearest-rank on 1..100 ms: p50 -> index int(0.5*100)=50 -> the 51st value.
-ckeq "clean leg: p50 = nearest-rank, era-battery estimator" "51.0" \
+# l1common.q (linear interpolation) on 1..100 ms: h = 99*0.5 = 49.5 -> 50.5.
+ckeq "clean leg: p50 = l1common.q (linear interpolation)" "50.5" \
     "$(echo "$J" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["p50"])')"
 
 # (b) 5 % CENSORING — the c8 leg-B GE floor (2/42 = 4.76 %), rounded up. 95 of
