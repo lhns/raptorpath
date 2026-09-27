@@ -40,7 +40,7 @@ Both mjs gates run in `build_visualizer.sh`; a failure fails the build.
 Ordinal tests ("A more than B") do not catch routing bugs — assert
 ABSOLUTE law invariants at the anchor points, and assert that the wiring
 between layers actually routes there (MEASUREMENT DISCIPLINE rule 1 in
-`raptorpath/docs/goal-gate.md`: prove the mechanism under test executes).
+`raptorpath/docs/measurement-discipline.md`: prove the mechanism under test executes).
 Every documented model-vs-engine divergence must carry a test that BOUNDS
 it, not prose that describes it.
 
@@ -69,7 +69,7 @@ the model; none asked whether the model was right.
 - **A law measured pinned or degenerate over its operating range is a
   DEFECT FINDING requiring a ledger verdict — never an explanatory
   footnote.** See MEASUREMENT DISCIPLINE 17 and 18 in
-  `raptorpath/docs/goal-gate.md`.
+  `raptorpath/docs/measurement-discipline.md`.
 
 ## Scope rules
 
