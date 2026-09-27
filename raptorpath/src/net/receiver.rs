@@ -1,67 +1,38 @@
-//! The engine's RECEIVER task: one datagram/stream message in, decode →
+//! The engine's receiver task: one datagram/stream message in, decode →
 //! reassemble → in-order (or unordered) delivery to the TUN, plus every
 //! control message the peer sends back.
 //!
-//! History (net seam pass 3, 2026-08-09): this was a 1,735-line
-//! `tokio::spawn(async move { … })` block inline in `run_impl` — the last
-//! large inline task after seam pass 1 lifted the five background tasks
-//! (`arq_sweep`, `control_fastpath`, `decoder_gc`, `path_cmd`, `report`) into
-//! `net/tasks/`. It is 545 lines of receiver-local state followed by ONE
-//! `loop` around a `tokio::select!` over the message channel, the in-order
-//! hold deadline, the deficit deadline and shutdown. `run_impl` now keeps
-//! setup + spawns.
+//! One `loop` around a `tokio::select!` over the message channel, the in-order
+//! hold deadline, the deficit deadline and shutdown, preceded by the
+//! receiver-local state. `run_impl` keeps setup and spawns; the captures are
+//! cloned in `run_impl` and passed at the spawn
+//! (`tokio::spawn(receiver::run_receiver(…))` builds the future on the
+//! caller's thread; the body runs when the runtime first polls it).
 //!
-//! BEHAVIOUR CONTRACT: the body is VERBATIM. It was moved by a mechanical
-//! transform that only dedents one level; re-indenting the 1,735 lines
-//! reproduces the original block byte-for-byte, with ONE exception, listed
-//! here because it is the only textual edit in the move:
-//!   * the four reads of `config.reorder_timeout_ms` / `config.reorder_max_size`
-//!     (three lines) become the parameters `recv_reorder_timeout_ms` /
-//!     `recv_reorder_max_size`. Rust 2021 disjoint capture already copied
-//!     exactly those two `u64`/`usize` fields into the spawned block — which
-//!     is why `run_impl` can still read `config.status_addr` afterwards — so
-//!     passing the two values is the same two copies, taken at the same
-//!     point.
-//!
-//! Everything else about the spawn is unchanged. The captures were CLONED in
-//! `run_impl` at their original lines and MOVED into the block at the spawn;
-//! they are now cloned at the same lines and PASSED at the same spawn, in the
-//! same order — `tokio::spawn(receiver::run_receiver(…))` builds the future
-//! on the caller's thread (an `async fn` runs no body until polled), so the
-//! task still starts executing exactly when the spawn hands it to the
-//! runtime. In particular:
-//!   * the `select!` still has the same four arms in the same order, and the
-//!     `rdiag` idle stopwatch still brackets exactly that `select!`;
+//! Ordering constraints:
+//!   * the `rdiag` idle stopwatch brackets exactly the `select!`;
 //!   * every `recv_scheduler` / `recv_fec` / `recv_decoders` lock is taken and
-//!     released at the same statement, with the same scope — nothing was
-//!     hoisted out of or into a guard's lifetime;
-//!   * all FOUR early exits (two TUN-inject failures on the window
-//!     delivery paths, and the two `feed_block_symbol` failures — the live
-//!     one and the BlockStart replay) still end the TASK, not a helper:
-//!     since 2026-09-08 they are `break 'recv` out of the same loop (they
-//!     were `return`s) so that they fall through the ONE exit-flush site at
-//!     the loop's end and then the function ends — nothing else runs after
-//!     the loop — and `feed_block_symbol` is still a closure returning
-//!     `bool` rather than a function that could swallow them.
+//!     released within one statement's scope;
+//!   * all four fatal exits (two TUN-inject failures on the window delivery
+//!     paths, and the two `feed_block_symbol` failures — the live one and the
+//!     BlockStart replay) `break 'recv` out of the loop, so they fall through
+//!     the one exit-flush site at the loop's end and then the function ends.
+//!     `feed_block_symbol` is a closure returning `bool` so a helper cannot
+//!     swallow them.
 //!
-//! Exit flush (2026-09-08, goal-gate "OPERATOR SANCTION (2026-09-08
-//! ~14:00Z)"): the `[SUCC]`/`[ETA]`/`[LAT]`/`[LATE]`/`[REQ]`/`[RANK]` block
-//! printed only on a 1 s cadence, so an object that completes in under a
-//! second never printed it and every run lost its last partial second. The
-//! five gauges and the `[REQ]` counters now live in ONE `RecvDiagBlock`
-//! (`net/recv_block.rs`) whose destructor prints the block a last time
-//! marked `final=1`; the loop's exit site calls the same exactly-once flush
-//! first, while the decoder is still in scope for a fresh `[RANK]` probe.
-//! Diagnostic only: the gauges are fed at the same statements as before.
+//! Exit flush: the `[SUCC]`/`[ETA]`/`[LAT]`/`[LATE]`/`[REQ]`/`[RANK]` gauges
+//! live in one `RecvDiagBlock` (`net/recv_block.rs`) whose destructor prints
+//! the block a last time marked `final=1`, so an object that completes in
+//! under a second still reports; the loop's exit site calls the same
+//! exactly-once flush first, while the decoder is still in scope for a fresh
+//! `[RANK]` probe. Diagnostic only.
 //!
-//! NOT covered here: `spawn_receiver_for_path` (the per-path datagram/stream
-//! readers that FEED this task's channel) and the control fast-path task,
-//! both still in `run_impl` / `net/tasks/control_fastpath.rs`.
+//! Not covered here: `spawn_receiver_for_path` (the per-path datagram/stream
+//! readers that feed this task's channel) and the control fast-path task
+//! (`net/tasks/control_fastpath.rs`).
 //!
-//! The receiver's ~90 locals stay LOCALS. Unlike the sender's, they are not
-//! read by any other phase — the whole task is one function now, so there is
-//! nothing for a `ReceiverState` struct to unblock. Introducing one would add
-//! a `st.` prefix to ~400 lines and buy nothing.
+//! The receiver's locals stay locals: no other phase reads them, so a
+//! `ReceiverState` struct would add a `st.` prefix everywhere and buy nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -93,8 +64,8 @@ use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 /// The engine's receiver task. Consumes `(path_id, WireMessage)` from the
 /// shared inbound channel until the channel closes or shutdown fires.
 ///
-/// Parameters are the block's former captures, in the order `run_impl`
-/// declares them: same clones, same values, moved at the same spawn.
+/// Parameters are the task's captures, in the order `run_impl` declares
+/// them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_receiver(
     mut recv_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
@@ -121,16 +92,16 @@ pub(crate) async fn run_receiver(
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
     recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
-    // **PAPER 16.83 ARMS (A)/(B).** `Some(..)` iff a request arm is live on a
-    // plain reliable window; the local sender's own consumer sits on the far
-    // end. `None` on every shipped path, where an arriving `RepairRequest` is
-    // counted and dropped exactly as it is in v8.
+    // Request arms (A)/(B) (paper §7.6). `Some(..)` iff a request arm is live
+    // on a plain reliable window; the local sender's own consumer sits on the
+    // far end. `None` by default, where an arriving `RepairRequest` is counted
+    // and dropped.
     recv_request_tx: Option<tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
-    // Arm (A): the receiver REQUESTS at `l >= l*_recv`, and the per-seq
+    // Arm (A): the receiver requests at `l >= l*_recv`, and the per-seq
     // SACK->gap producer is suppressed by the collision seam. Resolved in
     // `run_impl` beside that seam so the two can never disagree.
     recv_request_law: bool,
-    // Arm (B): the request carries the DERIVED `m` instead of `m = 1`.
+    // Arm (B): the request carries the derived `m` instead of `m = 1`.
     // Composes with (A); alone it is the vocabulary-only wiring test.
     recv_rank_feedback: bool,
     reasm_bdp_on: bool,
@@ -138,17 +109,15 @@ pub(crate) async fn run_receiver(
     recv_diag_on: bool,
     rdiag_probe: tokio::sync::mpsc::WeakSender<(u32, WireMessage)>,
     recv_gates: crate::gates::RuntimeGates,
-    // The two `config` fields Rust 2021's disjoint capture copied into the
-    // spawned block (see the module header).
+    // `config.reorder_timeout_ms` / `config.reorder_max_size`.
     recv_reorder_timeout_ms: u64,
     recv_reorder_max_size: usize,
-    // THE CONTRACT'S OWN DIAL POSITION, plumbed 2026-09-08 (paper 16.81, in
-    // flight): `config.protocol_hint`, the same value `SenderPolicy::resolve`
-    // reads.
+    // The contract's dial position (`config.protocol_hint`), the same value
+    // `SenderPolicy::resolve` reads.
     recv_protocol_hint: crate::control::fec_rate::ProtocolHint,
 ) {
-    // Window decoder: created once, long-lived (only used in window
-    // mode; codec pinned at startup, §16.4 — never rebuilt).
+    // Window decoder: created once, long-lived (only used in window mode;
+    // codec pinned at startup — never rebuilt).
     let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
         Some(create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation))
     } else {
@@ -163,21 +132,19 @@ pub(crate) async fn run_receiver(
     // acks for the local sender and must not be conflated with this).
     let mut last_advertised_ack: u64 = 0;
     // Reorder buffer for window mode — delivers packets in sequence order.
-    // Reliable policy (RWM Phase A): holes are held until recovered,
-    // never force-delivered past (the buffer is mandatory — in-order
-    // delivery IS the reliability contract at the receiver).
+    // Reliable policy (ρ = 1): holes are held until recovered, never
+    // force-delivered past (in-order delivery is the reliability contract at
+    // the receiver).
     //
-    // ORDERING is a per-stream delivery POLICY, independent of the codec
-    // triangle (paper §16.2). Two limits of the reorder horizon H:
+    // Ordering is a per-stream delivery policy, independent of the codec
+    // triangle. Two limits of the reorder horizon H:
     //   - in-order (H = ∞): hold at holes → the reorder buffer.
-    //   - unordered (H = 0): emit each decoded unit the instant it
-    //     decodes → NO reorder buffer at all (RWM Phase C). Correct and
-    //     lowest-latency for any consumer that does not need byte-stream
-    //     order (objects reassembled by offset, datagrams, RPC/telemetry)
-    //     — the object/perf path is just one such consumer.
-    // Unordered is the SIMPLER implementation: the buffer is removed, not
-    // added to. The in-order RECEIVED prefix (for retention/ack) is
-    // tracked by a lightweight frontier over `received_seqs` instead.
+    //   - unordered (H = 0): emit each decoded unit the instant it decodes →
+    //     no reorder buffer at all. Correct and lowest-latency for any
+    //     consumer that does not need byte-stream order (objects reassembled
+    //     by offset, datagrams, RPC/telemetry).
+    // The in-order received prefix (for retention/ack) is then tracked by a
+    // lightweight frontier over `received_seqs`.
     let mut reorder_buf = if recv_window_ooo {
         None
     } else if recv_window_mode && recv_window_reliable {
@@ -187,25 +154,23 @@ pub(crate) async fn run_receiver(
     } else {
         None
     };
-    // ── δ-honest overload shedding, receiver arm (fix C, goal-gate
-    // "Unified Shedding") ── the in-order hold for the window EVICT path
-    // becomes the δ-derived H = b·SRTT (§16.20.3: "the reorder_timeout
-    // IS the δ dial"; b(Realtime) = ½ — this path exists only for the
-    // Realtime hint) instead of the bulk-shaped 4×SRTT ∈ [60, 300] ms
-    // clamp, WHILE the give-up budget holds: holes given up ≤ ε̂_recv ×
-    // frontier (the loss-class bound — give-up is intrinsically
-    // holes-only, so the realized fraction stays in the FEC-residual
-    // class). Budget spent ⇒ the hold reverts to legacy (serialize:
-    // ρ wins over δ). Armed only on the EVICT in-order path under
-    // RWM_UNIFIED (the ρ = 1 reliable buffer never gives up, unchanged);
-    // `RWM_UNIFIED_SHED=0` = the serializing control arm.
+    // δ-honest overload shedding, receiver arm (paper §5.6): the in-order hold
+    // for the window EVICT path becomes the δ-derived H = b·SRTT (the reorder
+    // timeout is the δ dial; b(Realtime) = ½ — this path exists only for the
+    // Realtime hint) instead of the bulk-shaped 4×SRTT ∈ [60, 300] ms clamp,
+    // while the give-up budget holds: holes given up ≤ ε̂_recv × frontier
+    // (give-up is holes-only, so the realized fraction stays in the
+    // FEC-residual class). Budget spent ⇒ the hold reverts to the 4×SRTT clamp
+    // (serialize: ρ wins over δ). Armed only on the EVICT in-order path under
+    // RWM_UNIFIED (the ρ = 1 reliable buffer never gives up);
+    // `RWM_UNIFIED_SHED=0` = the serializing arm.
     let recv_shed_on = recv_window_mode
         && !recv_window_reliable
         && !recv_window_ooo
         && reorder_buf.is_some()
         && shed_armed(recv_gates.unified, false, recv_gates.unified_shed);
     if recv_shed_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
+        // Mechanism-liveness echo (`docs/measurement-discipline.md` rule 1).
         info!(
             "unified overload shedding ACTIVE at receiver (RWM_UNIFIED_SHED: in-order hold = delta-derived b*SRTT within the eps-class give-up budget)"
         );
@@ -215,25 +180,25 @@ pub(crate) async fn run_receiver(
     let mut recv_shed_holes: u64 = 0;
     let mut recv_shed_budget_open = true;
     let recv_shed_diag = recv_gates.diag;
-    // goal-gate "The Derived Recovery Clamp" (`RWM_DERIVED_SWEEP`, default
-    // OFF): the stalled-hole refresh cadence on the derived round.
+    // `RWM_DERIVED_SWEEP` (default off): the stalled-hole refresh cadence on
+    // the derived round.
     let recv_derived_sweep = recv_gates.derived_sweep;
-    // Paper §16.78 — the hole-refresh clamp band's FLOOR, resolved ONCE.
-    // ABSENT ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` verbatim and the
-    // shipped cadence, byte-identically. Echoed on `[GATES]` at BOTH endpoints.
+    // The hole-refresh clamp band's floor (`RWM_REFRESH_FLOOR_US`), resolved
+    // once. Absent ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ `hole_nack_refresh` unchanged.
+    // Echoed on `[GATES]` at both endpoints.
     let recv_refresh_floor = recv_gates
         .refresh_floor_us
         .map_or(crate::net::HOLE_NACK_REFRESH_MIN, Duration::from_micros);
     // `[QCLK]` at the receiver — the hole-refresh cadence this site realizes.
-    // NOTE the harness SIGKILLs the server, so a `Drop` never reaches a server
-    // log (the `[RFA]` lesson); this gauge is therefore ALSO emitted on the
-    // same 1 s cadence, last line wins.
+    // The harness SIGKILLs the server, so a `Drop` never reaches a server log;
+    // this gauge is therefore also emitted on the same 1 s cadence, last line
+    // wins.
     let mut recv_qclk_echo = crate::net::QuantileClockGauge::new("receiver");
     let mut qclk_report_at = Instant::now();
     // The receiver site's one-shot mechanism-liveness echo (ACTIVE +
     // DIVERGED). Observation only; emitted on the armed arm alone.
     let mut recv_derived_echo = DerivedRoundEcho::default();
-    // `[RACK]` / `[RFA]` fire accounting at the receiver site (§16.68.1).
+    // `[RACK]` / `[RFA]` fire accounting at the receiver site (paper §7.1).
     let mut recv_rack_echo = crate::net::RackClockGauge::new();
     // `[RFA]` is a PLAIN-WINDOW instrument (the same configuration scope the
     // sender's `fa=` has — `recv_nack_tx` is None under generation). The line
@@ -241,78 +206,64 @@ pub(crate) async fn run_receiver(
     recv_rack_echo.set_recv_generation(recv_window_generation);
     // `[RFA]` cadence — see the readout site. Cumulative, 1 s, last line wins.
     let mut rfa_report_at = Instant::now();
-    // ── `[SUCC]`: THE SAME-FLOW SUCCESSOR-ARRIVAL DISTRIBUTION ────────────
-    // The measurand the fire-cause pass NAMED (98.99 % of recovery fires are
-    // `gap_data` — a higher seq arriving while a hole is outstanding) and
-    // explicitly did not characterize. Per hole: detection → resolution, in
-    // three disjoint outcomes. See `net/succ.rs` for the measurand, the origin
-    // event, and why it is DETECTION rather than hole creation.
+    // `[SUCC]`: the same-flow successor-arrival distribution — per hole,
+    // detection → resolution, in three disjoint outcomes. See `net/succ.rs`
+    // for the measurand, the origin event, and why it is detection rather
+    // than hole creation. Always fed, on every arm: the datum must exist
+    // wherever `gap_data` fires do. Only the raw dump is gated.
     //
-    // ALWAYS FED, on every arm, for the `[RFA]` reason: the datum must exist
-    // wherever `gap_data` fires do. Only the RAW dump is gated.
-    // ── wire v8 `[ETA]`, RECEIVER SIDE (`net/eta.rs`) ──────────────────
-    // Per path, how late each arrival was against the SENDER'S OWN
-    // prediction, relative to that path's running best. ALWAYS FED --
-    // including the `eta_rel = 0` sentinel, which is counted as the bind
-    // fraction rather than filtered, so the printed coverage is the
-    // instrument's own and not a number a filter already decided.
-    // Read-only; no engine handle, nothing branches on it.
+    // `[ETA]` (`net/eta.rs`): per path, how late each arrival was against the
+    // sender's own prediction, relative to that path's running best. Always
+    // fed — including the `eta_rel = 0` sentinel, which is counted as the
+    // bind fraction rather than filtered. Read-only; nothing branches on it.
     //
-    // OWNERSHIP (2026-09-08, the exit flush): this gauge and the four below
-    // it (`[LAT]`, `[LATE]`, `[RANK]`, `[SUCC]`) plus the `[REQ]` counters
-    // live in ONE `RecvDiagBlock` (`net/recv_block.rs`) so that one
-    // destructor can print the block a last time, marked `final=1`, when the
-    // task ends — the 1 s cadence below was the block's only emission site,
-    // and an object that completes in under a second never printed it. They
-    // are still fed exactly where they were, through `blk.<gauge>`.
+    // This gauge and the four below it (`[LAT]`, `[LATE]`, `[RANK]`,
+    // `[SUCC]`) plus the `[REQ]` counters live in one `RecvDiagBlock`
+    // (`net/recv_block.rs`), whose destructor prints the block a last time,
+    // marked `final=1`, when the task ends. They are fed through
+    // `blk.<gauge>`.
     let recv_eta = crate::net::eta::RecvEta::default();
-    // ── `[LAT]` (`net/lat.rs`): DELIVERED LATENCY, DECOMPOSED ──────────
-    // Per delivered source symbol on the in-order window path: `A_x` (queue +
-    // SENDER DWELL above this path's floor -- the dwell rides inside it, see
-    // the module header), the reorder wait `R` CLASSED by the `[SUCC]`
+    // `[LAT]` (`net/lat.rs`): delivered latency, decomposed. Per delivered
+    // source symbol on the in-order window path: `A_x` (queue + sender dwell
+    // above this path's floor), the reorder wait `R` classed by the `[SUCC]`
     // resolution record of the hole that released it, and the repair wait
-    // `P`. Always fed; read-only; nothing branches on it.
+    // `P`. Always fed; read-only.
     let recv_lat = crate::net::lat::LatGauge::default();
-    // ── `[LATE]` / `[RANK]` (`net/late.rs`): THE RECEIVER'S OWN SEAT ────
-    // `[LATE]` brackets every hole's lateness, classes it, and computes the
-    // 16.83 request law's HYPOTHETICAL threshold `l*_recv` read-only from the
-    // receiver's own heal density -- with both its clamps' bind fractions.
+    // `[LATE]` / `[RANK]` (`net/late.rs`): the receiver's own seat. `[LATE]`
+    // brackets every hole's lateness, classes it, and computes the request
+    // law's hypothetical threshold `l*_recv` (paper §7.6) read-only from the
+    // receiver's own heal density, with both its clamps' bind fractions.
     // `[RANK]` re-reads `frontier_probe` as (holes, pivots, deficit,
-    // tail_overcount) UNCONDITIONALLY: it exists today only inside
-    // `RWM_FDIAG`'s block, so the rank picture 16.83's vocabulary is built on
-    // has never been on an ordinary diagnosed run. Neither decides anything.
-    // THE CONTRACT'S OWN PRICE AT THIS SEAT (16.81's plumb, 16.83's use):
-    // `delta_price` is the ONE surface a hint names a delta on, and
-    // `RWM_DELTA` stands between the presets on it. It enters `[LATE]`
-    // through the request bar and nowhere else; `DELTA_AUTO` reproduces the
-    // pre-plumb reading exactly.
+    // tail_overcount) unconditionally. Neither decides anything.
+    // The contract's price at this seat: `delta_price` is the one surface a
+    // hint names a δ on, and `RWM_DELTA` stands between the presets on it.
+    // It enters `[LATE]` through the request bar and nowhere else.
     let recv_delta = crate::net::delta_price(recv_protocol_hint);
     let recv_late = crate::net::late::LateGauge::new(recv_delta);
-    // `[RANK]`: the highest seq seen at the PREVIOUS readout. The span above
+    // `[RANK]`: the highest seq seen at the previous readout. The span above
     // it arrived within this interval and is legitimately still in flight
-    // rather than missing -- the honest `tail_overcount` correction, REPORTED
-    // and never silently subtracted.
+    // rather than missing — the `tail_overcount` correction, reported and
+    // never silently subtracted.
     let mut rank_prev_seen: u64 = 0;
-    // `[LATE]`: the observed knee `H`. An arrival gap taken WHILE THE FRONTIER
-    // IS FROZEN is the store-cap headroom running out -- the `[WIDLE]`
-    // measurand, read here ungated so `H` exists on every diagnosed run.
+    // `[LATE]`: the observed knee `H`. An arrival gap taken while the
+    // frontier is frozen is the store-cap headroom running out — the
+    // `[WIDLE]` measurand, read here ungated so `H` exists on every
+    // diagnosed run.
     let mut late_last_arrival_us: u64 = 0;
-    // `[LATE]`: did the 2 ms `GAP_ACK_MIN_INTERVAL` floor, rather than the
-    // lateness, decide when a hole could be reported at all? The
-    // `sampler_bind` fraction — `blk.late_sampler_bound`.
-    // ── `[REQ]` (paper 16.83 arms (A)/(B)): WHAT THIS RECEIVER ASKED FOR ──
-    // Reports built and put on the wire, spans in them, the widest `m` and
-    // the acting threshold at the last build. Cumulative, printed on the
-    // `[LATE]` cadence, LAST LINE WINS -- and on BOTH arms, so `on=0 sent=0`
-    // is the control's own reading rather than a missing line. The five
-    // counters are `blk.req_*`.
+    // `[LATE]`: whether the 2 ms `GAP_ACK_MIN_INTERVAL` floor, rather than
+    // the lateness, decided when a hole could be reported at all — the
+    // `sampler_bind` fraction, `blk.late_sampler_bound`.
+    // `[REQ]` (paper §7.6 arms (A)/(B)): what this receiver asked for.
+    // Reports built and put on the wire, spans in them, the widest `m` and the
+    // acting threshold at the last build. Cumulative, printed on the `[LATE]`
+    // cadence, last line wins — on both arms, so `on=0 sent=0` is the
+    // control's own reading rather than a missing line. The counters are
+    // `blk.req_*`.
     // `[RFA] late_after_aban`'s exact denominator: the seqs the in-order
-    // frontier moved PAST WITHOUT DELIVERING — read off `[SUCC]`'s own
-    // abandonment sweep, which is the one place that set exists. A later
-    // source copy for one of these is the EVICT seat's repair waste; a copy
-    // for a seq that WAS delivered is an ordinary duplicate and is NOT this.
-    // Bounded (a declared resource bound, oldest-first) so a run that
-    // abandons forever cannot grow it without limit.
+    // frontier moved past without delivering — read off `[SUCC]`'s own
+    // abandonment sweep. A later source copy for one of these is the EVICT
+    // seat's repair waste; a copy for a seq that was delivered is an ordinary
+    // duplicate. Bounded (a declared resource bound, oldest-first).
     const ABANDONED_TRACK_MAX: usize = 65_536;
     let mut abandoned_seqs: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
     let recv_succ = crate::net::succ::SuccGauge::new(
@@ -320,9 +271,9 @@ pub(crate) async fn run_receiver(
         recv_gates.succ_dump,
         crate::net::succ::dump_max(),
     );
-    // THE BLOCK. Gate = the cadence site's own (`RWM_DIAG || RWM_FDIAG`,
-    // `fdiag_on` below is `recv_gates.fdiag`), captured once so the
-    // destructor keys on the same predicate the cadence does.
+    // The block. Gate = the cadence site's own (`RWM_DIAG || RWM_FDIAG`),
+    // captured once so the destructor keys on the same predicate the cadence
+    // does.
     let mut blk = crate::net::recv_block::RecvDiagBlock::new(
         recv_gates.diag || recv_gates.fdiag,
         recv_succ,
@@ -334,9 +285,9 @@ pub(crate) async fn run_receiver(
     );
     let mut succ_report_at = Instant::now();
     let mut recv_shed_diag_at = Instant::now();
-    // RWM Phase C unordered delivery: next in-order seq NOT yet received
-    // (the frontier). Walks `received_seqs` to drive the cumulative
-    // WindowAck (retention pruning) while delivery itself is unordered.
+    // Unordered delivery: next in-order seq not yet received (the frontier).
+    // Walks `received_seqs` to drive the cumulative WindowAck (retention
+    // pruning) while delivery itself is unordered.
     let mut ooo_frontier: u64 = 0;
     // Reliable mode: when delivery is stalled on a hole, periodically
     // re-advertise the gap (SACK-bearing WindowAck) — acks are
@@ -345,47 +296,36 @@ pub(crate) async fn run_receiver(
     let mut last_hole_nack_at = Instant::now();
     // Track received seqs for WindowNack gap reporting
     let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
-    // RWM_REASM_BDP occupancy probe (feat/sack-bdp-reassembly): the maximum
-    // reassembly buffer occupancy observed = received-but-not-yet-delivered
-    // symbols held behind the in-order frontier. This is the quantity the
-    // reliability invariant bounds — it must stay ~BDP (the sender's
-    // outstanding cap), never grow to the whole object. `reasm_max_pending`
-    // = peak held symbols; `reasm_max_span` = peak (highest_seen − frontier)
-    // seq gap. Reported via `[REASM]` under RWM_REASM_BDP.
+    // `RWM_REASM_BDP` occupancy probe: the maximum reassembly buffer
+    // occupancy observed = received-but-not-yet-delivered symbols held behind
+    // the in-order frontier. The reliability invariant bounds it — it must
+    // stay ~BDP (the sender's outstanding cap), never grow to the whole
+    // object. `reasm_max_pending` = peak held symbols; `reasm_max_span` = peak
+    // (highest_seen − frontier) seq gap. Reported via `[REASM]`.
     let mut reasm_max_pending: usize = 0;
     let mut reasm_max_span: u64 = 0;
     let mut reasm_last_report = Instant::now();
-    // ack-merge CONTROL-DATAGRAM DENSITY gauge (goal-gate "Unlock The
-    // Default 1", RWM_DIAG only — behavior-inert). `[CTLD] p<id>
-    // tx=<n> rx=<n>` = quinn's own `frame_tx.datagram` / `frame_rx.datagram`
-    // for the path, read at the receiver: since a window-mode RECEIVER
-    // sends nothing but control datagrams, `tx` IS the control-frame count
-    // and `tx / MB` IS the density prediction 1 is about.
-    //
-    // THE INSTRUMENT LESSON, recorded where the instrument lives: the
-    // pre-registration proposed measuring this off the ACK-direction
-    // qdisc PACKET counters (`QDISC srv0/srv1`). The pre-battery smoke
-    // showed that cannot work — those packets are dominated by quinn's own
-    // transport-level ACK cadence (~1 per 2 data packets: 55–57k ack-side
-    // packets against 89k data packets), and our control datagrams ride
-    // COALESCED inside them. Merging two datagram frames into one changes
-    // the frame count, not the packet count. Frames are the quantity the
-    // mechanism is about, so frames are what this counts.
+    // Ack-merge control-datagram density gauge (RWM_DIAG only). `[CTLD]
+    // p<id> tx=<n> rx=<n>` = quinn's own `frame_tx.datagram` /
+    // `frame_rx.datagram` for the path, read at the receiver: a window-mode
+    // receiver sends nothing but control datagrams, so `tx` is the
+    // control-frame count. Frames, not packets: the ack-direction packet
+    // counters are dominated by quinn's own transport-level ACK cadence, and
+    // control datagrams ride coalesced inside those packets, so merging two
+    // datagram frames changes the frame count, not the packet count.
     let mut ctld_last_report = Instant::now();
-    // feat/c8-conversion DIAGNOSIS gauges (goal-gate "C8 Slow-Path
-    // Conversion", RWM_DIAG only — behavior-inert): the RECEIVER-side
-    // view of slow-path conversion, per arrival path:
-    //  * first[p]  — seqs whose FIRST copy this path delivered (source
+    // Slow-path conversion gauges (RWM_DIAG only): the receiver-side view of
+    // conversion, per arrival path:
+    //  * first[p]  — seqs whose first copy this path delivered (source
     //    arrival or repair-decode output) = the path's real conversion.
     //  * dup[p]    — source arrivals for an already-received seq =
-    //    displacement-only deliveries (candidate (b): a cross-path
-    //    retransmit or the outrun original got there first).
-    //  * lead[p]   — Σ (seq − in-order frontier) at first-copy arrival,
-    //    in symbols (candidate (d) arrival-alignment: lead 0 = the
-    //    stream was already WAITING on this symbol when it arrived).
-    //  * unb_n/ms[p] — frontier unblocks credited to this path: an
-    //    arrival that advanced the stalled (≥ 5 ms) in-order frontier,
-    //    with the stall time it ended (candidate (c) resolution side).
+    //    displacement-only deliveries (a cross-path retransmit or the
+    //    outrun original got there first).
+    //  * lead[p]   — Σ (seq − in-order frontier) at first-copy arrival, in
+    //    symbols (lead 0 = the stream was already waiting on this symbol).
+    //  * unb_n/ms[p] — frontier unblocks credited to this path: an arrival
+    //    that advanced the stalled (≥ 5 ms) in-order frontier, with the stall
+    //    time it ended.
     let c8r_on = recv_gates.diag;
     let mut c8r_first: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let mut c8r_dup: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
@@ -394,46 +334,39 @@ pub(crate) async fn run_receiver(
     let mut c8r_unb_ms: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let mut c8r_last_adv = Instant::now();
     let mut c8r_last_print = Instant::now();
-    // Generation-deficit feedback (§16.3), receiver arm. `gen_widths[anchor]`
-    // = the generation's K_g, learned self-describingly from the wire header
-    // (`window_count`) of any coded symbol for that anchor. Deficit_g =
-    // K_g − rank_in(anchor, K_g). `last_deficit_send` paces the reports to
-    // ~once per SRTT (plus an immediate report on decode progress).
+    // Generation-deficit feedback, receiver arm (paper §5.8).
+    // `gen_widths[anchor]` = the generation's K_g, learned from the wire
+    // header (`window_count`) of any coded symbol for that anchor.
+    // Deficit_g = K_g − rank_in(anchor, K_g). `last_deficit_send` paces the
+    // reports to ~once per SRTT (plus an immediate report on decode progress).
     let mut gen_widths: BTreeMap<u64, u16> = BTreeMap::new();
     // Generation size G (mirrors the sender's RWM_GEN default). Lets the
-    // receiver SEED a provably-full generation's width (G) from the primary
+    // receiver seed a provably-full generation's width (G) from the primary
     // seqs alone — see the seeding in `send_gen_deficits`. This closes the
-    // small-G frontier-advance DEADLOCK: a generation whose ENTIRE proactive
-    // repair budget was lost on the wire otherwise never enters `gen_widths`
-    // (which learned widths only from repair headers), so the receiver
-    // reported ZERO deficit for it while the in-order frontier wedged on its
-    // hole — the sender was never told to recover it (MEASURED at G=96:
-    // in_flight=0/src=0/cod=0). At large G the whole ceil(G·r) budget is
-    // never fully lost, which is why only small G wedged.
+    // small-G frontier-advance deadlock: a generation whose entire proactive
+    // repair budget was lost on the wire would otherwise never enter
+    // `gen_widths` (learned only from repair headers), so the receiver would
+    // report zero deficit for it while the in-order frontier wedged on its
+    // hole. At large G the whole ceil(G·r) budget is never fully lost.
     let recv_gen_size: u64 = recv_gates.gen_size as u64;
-    // Receiver-tail parallelization (PART 1). Number of outstanding
-    // generations whose deficit is reported (and anti-wedge-seeded) per
-    // round. Legacy = 6 (frontier-first serial tail); env RWM_REPORT_GENS
-    // lifts it to cover the whole in-flight range so EVERY hole is repaired
-    // in ONE round-trip (parallel tail flush). Unset = byte-identical
-    // shipped path. Clamped to the wire cap (MAX_ACK_IDS = 2000).
-    // feat/gen-substrate-ceiling: under the derived-depth pipeline the
-    // whole M*-generation in-flight range must be reportable in ONE round
-    // (a 6-generation frontier-first report would re-serialize the deeper
-    // pipeline's recovery — the PART-1 receiver-tail lesson).
+    // Number of outstanding generations whose deficit is reported (and
+    // anti-wedge-seeded) per round. Default 6 (frontier-first serial tail);
+    // `RWM_REPORT_GENS` lifts it to cover the whole in-flight range so every
+    // hole is repaired in one round trip. Clamped to the wire cap
+    // (MAX_ACK_IDS = 2000). Under the derived-depth pipeline (gen_pipe) the
+    // whole M*-generation in-flight range must be reportable in one round, or
+    // a frontier-first report re-serializes the deeper pipeline's recovery.
     let report_gens: usize = recv_gates
         .report_gens
         .unwrap_or(if recv_gates.gen_pipe { GEN_PIPE_MAX_GENS + 1 } else { 6 })
         .clamp(1, 2000);
-    // Repair-coverage horizon (branch `feat/nack-timing`). Base wait, in
-    // MILLISECONDS, before a frontier hole's deficit is allowed to fire a
-    // reactive NACK — the time for the in-flight proactive repair covering
-    // it to arrive + decode (~a generation-span at the send rate, NOT an
-    // RTT). Unset / 0 = byte-identical shipped path (report immediately).
-    // Small and bounded: a few ms at 100 Mbit buys the whole round-trip an
-    // ARQ pull would have cost. Made δ-aware at use: clamped to ≤ ½·SRTT so
-    // low-RTT / latency-tight (Realtime) paths never over-wait, and it can
-    // never exceed the round-trip it is trying to save.
+    // Repair-coverage horizon (`RWM_REPAIR_WAIT`). Base wait, in
+    // milliseconds, before a frontier hole's deficit may fire a reactive
+    // NACK — the time for the in-flight proactive repair covering it to
+    // arrive + decode (~a generation-span at the send rate, not an RTT).
+    // Unset / 0 = report immediately. Made δ-aware at use: clamped to
+    // ≤ ½·SRTT so low-RTT / latency-tight paths never over-wait, and it can
+    // never exceed the round trip it is trying to save.
     let repair_wait_base: Duration = recv_gates
         .repair_wait_ms
         .map(Duration::from_millis)
@@ -445,22 +378,21 @@ pub(crate) async fn run_receiver(
     let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
     let mut highest_seen_seq: u64 = 0;
     let mut last_nack_time = Instant::now();
-    // P10b dupack analog: highest_seen at the last gap-advertising ack,
-    // and when it was sent (rate limit) — see GAP_ACK_MIN_INTERVAL.
+    // Dupack analog: highest_seen at the last gap-advertising ack, and when
+    // it was sent (rate limit) — see GAP_ACK_MIN_INTERVAL.
     let mut last_gap_ack_seen: u64 = 0;
     let mut last_gap_ack_time = Instant::now() - GAP_ACK_MIN_INTERVAL;
-    // ADR-0035: PI feedback tracking for window mode
+    // Controller feedback tracking for window mode (repairs fed / useful).
     let mut last_pi_repairs_fed: u64 = 0;
     let mut last_pi_repairs_useful: u64 = 0;
 
     // ── Proactive-frontier diagnosis (RWM_FDIAG) ──────────────────────
-    // Answers PART 1: when the in-order frontier stalls on a hole p, is
-    // there already buffered proactive repair covering p (→ the receiver
-    // should decode NOW), or is it absent (→ the hole waits on a reactive
-    // ARQ source retransmit)? For each stall we record how long the
-    // frontier sat on p and how p was ultimately resolved: DECODE (a repair
-    // solved it, no round-trip) vs SOURCE (a retransmitted source symbol
-    // arrived, a ~1-RTT ARQ round). Off unless RWM_FDIAG is set.
+    // When the in-order frontier stalls on a hole p, is there already
+    // buffered proactive repair covering p (→ the receiver should decode
+    // now), or is it absent (→ the hole waits on a reactive ARQ source
+    // retransmit)? For each stall we record how long the frontier sat on p
+    // and how p was resolved: DECODE (a repair solved it, no round trip) vs
+    // SOURCE (a retransmitted source symbol arrived, a ~1-RTT ARQ round).
     let fdiag_on = recv_gates.fdiag;
     // Current frontier hole being tracked: (seq, stall_start, saw_buffered_
     // equation_during_stall, source_arrived_for_it). None = not stalled.
@@ -472,27 +404,26 @@ pub(crate) async fn run_receiver(
     let mut fdiag_decode_us: u64 = 0;
     let mut fdiag_source_us: u64 = 0;
     // Of the DECODE resolutions, how many had a buffered equation covering p
-    // ALREADY present when the stall began (present-but-waiting-for-rank)
+    // already present when the stall began (present-but-waiting-for-rank)
     // vs the covering repair only arrived mid-stall.
     let mut fdiag_present_at_stall: u64 = 0;
-    // H2 probe: RAW decoder-call wall-time. `fdiag_addsym_us` accumulates the
-    // time spent INSIDE `win_dec.add_symbol()` (GF(256) GE compute) across the
-    // whole transfer; `fdiag_addsym_n` is the call count. Compared against the
-    // per-hole RESOLUTION wall-time (fdiag_decode_us, which spans hole-armed →
-    // frontier-passes and thus includes symbol-arrival WAITING), this isolates
-    // whether the "~25-67 ms decode" is compute or waiting-for-rank.
+    // Raw decoder-call wall-time: `fdiag_addsym_us` accumulates the time
+    // spent inside `win_dec.add_symbol()` (GF(256) GE compute) across the
+    // whole transfer; `fdiag_addsym_n` is the call count. Compared against
+    // the per-hole resolution wall-time (fdiag_decode_us, which spans
+    // hole-armed → frontier-passes and includes symbol-arrival waiting), this
+    // separates compute from waiting-for-rank.
     let mut fdiag_addsym_us: u64 = 0;
     let mut fdiag_addsym_n: u64 = 0;
-    // diag/unified-collapse: worst single add_symbol call in the current
-    // FDIAG report interval (a mean hides a per-arrival cost blowup).
+    // Worst single add_symbol call in the current FDIAG report interval (a
+    // mean hides a per-arrival cost blowup).
     let mut fdiag_addsym_max_us: u64 = 0;
 
-    // ── Receiver wedge forensics (fix/frontier-wedge, RWM_DIAG) ────────
+    // ── Receiver wedge forensics (RWM_DIAG) ──────────────────────────────
     // Names the mechanism when the in-order frontier freezes while the
-    // sender demonstrably keeps retransmitting the blocker (the historic
-    // c3/C8 ~60 s collapse run). Reported from the reliable hole-refresh
-    // timer arm (which fires every 25–100 ms during any stall), once per
-    // second after the frontier has been frozen > 1 s:
+    // sender keeps retransmitting the blocker. Reported from the reliable
+    // hole-refresh timer arm (which fires every 25–100 ms during any stall),
+    // once per second after the frontier has been frozen > 1 s:
     //   * blocker seq + its decoder state (seen-as-source / recovered /
     //     output) + received_seqs membership → dup-filter wedge if
     //     seen && hole persists;
@@ -509,14 +440,13 @@ pub(crate) async fn run_receiver(
     let mut wdiag_syms: u64 = 0; // symbols fed (total)
     let mut wdiag_batches_last: u64 = 0;
     let mut wdiag_syms_last: u64 = 0;
-    // diag/lossy-residual (goal-gate "Lossy-Single Residual", RWM_DIAG
-    // only): receiver INTER-ARRIVAL gap gauge — cumulative time in Data
-    // arrival gaps ≥ 3 ms. This is the wire-truth idle gauge for
-    // accounting term (b): a GE loss burst pauses arrivals for ≪ 3 ms at
-    // c2/c3 packet rates, so stall-class gaps here are genuine wire idle
-    // (sender/CC-caused), not loss shadows. Printed once per second as
+    // Receiver inter-arrival gap gauge (RWM_DIAG only): cumulative time in
+    // Data arrival gaps ≥ 3 ms. The wire-truth idle gauge: a loss burst
+    // pauses arrivals for ≪ 3 ms at these packet rates, so stall-class gaps
+    // here are genuine wire idle (sender/CC-caused), not loss shadows.
+    // Printed once per second as
     // `[WIDLE] idle=<cum ms>/<n>/mx<max ms> arr=<cum Data messages>`; the
-    // end-of-run accounting reads the LAST line (cumulative counters).
+    // counters are cumulative, so the last line is the run's total.
     const WIDLE_GAP_MIN_US: u64 = 3_000;
     let mut widle_last_arrival_us: u64 = 0;
     let mut widle_us: u64 = 0;
@@ -524,12 +454,11 @@ pub(crate) async fn run_receiver(
     let mut widle_max_us: u64 = 0;
     let mut widle_arrivals: u64 = 0;
     let mut widle_last_print_us: u64 = 0;
-    // Goal-gate "Unlock The Default 2", part 3a — the receiver twin of
-    // the derived stall gauge (`RWM_SIDLE_DERIVED`, DIAG-only). Same law
-    // (`stall_threshold_us`) over the Data-ARRIVAL event stream: the
-    // legacy 3 ms is 3 × an ASSUMED nominal inter-arrival interval, and
-    // the measured one is what the law substitutes. `idle=` is printed
-    // unchanged; `idle2=` is added beside it. Recomputed once per 1 s
+    // The receiver twin of the derived stall gauge (`RWM_SIDLE_DERIVED`,
+    // DIAG-only). Same law (`stall_threshold_us`) over the Data-arrival
+    // event stream: the fixed 3 ms is 3 × an assumed nominal inter-arrival
+    // interval, and the measured one is what the law substitutes. `idle=` is
+    // printed unchanged; `idle2=` is added beside it. Recomputed once per 1 s
     // print window from that window's own arrival count.
     let widle_derived = crate::scheduler::sidle_derived_active();
     let mut widle_evt_us: u64 = LOOP_WAKE_US;
@@ -539,45 +468,41 @@ pub(crate) async fn run_receiver(
     let mut widle2_n: u64 = 0;
     let mut widle2_max_us: u64 = 0;
 
-    // Block-mode symbols that arrive BEFORE their BlockStart (datagrams
+    // Block-mode symbols that arrive before their BlockStart (datagrams
     // routinely outrace the reliable control stream). A decoder created
-    // without the real params can never decode -- its OTI transfer
-    // length is wrong and its source array is empty -- so such symbols
-    // are buffered here and replayed when BlockStart arrives. L1
-    // harness finding: on a real link every small block lost this race
-    // and timed out; the tunnel never carried a single packet.
+    // without the real params can never decode — its OTI transfer length is
+    // wrong and its source array is empty — so such symbols are buffered
+    // here and replayed when BlockStart arrives.
     // Bounds: 32 blocks x 128 symbols x ~1.2 KB ~ 5 MB worst case.
     let mut pre_start_symbols: std::collections::HashMap<u64, Vec<crate::fec::WireSymbol>> =
         std::collections::HashMap::new();
 
-    // Recently decoded block ids (P8): late ARQ repairs — or spurious
-    // ones after a lost Ack — arrive AFTER the decoder was removed and
-    // would otherwise be buffered as "pre-BlockStart" symbols, wasting
-    // pre_start_symbols slots on blocks that are already done.
+    // Recently decoded block ids: late ARQ repairs — or spurious ones after a
+    // lost Ack — arrive after the decoder was removed and would otherwise be
+    // buffered as "pre-BlockStart" symbols, wasting pre_start_symbols slots
+    // on blocks that are already done.
     // (parking_lot::Mutex, not RefCell: the spawned future must be Send.
     // Single-task access — never contended.)
     let completed_blocks: parking_lot::Mutex<(std::collections::VecDeque<u64>, std::collections::HashSet<u64>)> =
         parking_lot::Mutex::new((std::collections::VecDeque::new(), std::collections::HashSet::new()));
     const COMPLETED_RING_CAP: usize = 512;
 
-    // Block-mode IN-ORDER delivery (L1 C2 finding): block ids are
-    // strictly sequential per peer, but blocks decode out of order —
-    // a block waiting on an ARQ repair round (~2×SRTT) was overtaken
-    // by later blocks and the inner TCP saw a 64KB hole: measured
-    // 879 spurious fast-retransmits / 733 SACK-reorder events per
-    // 3×1.8MB at C2, halving the inner cwnd repeatedly. Decoded
-    // payloads therefore pass through a reorder buffer keyed by
-    // block_id (SRTT-adaptive hold, force-delivery on expiry — the
-    // same delivery contract window mode already had).
+    // Block-mode in-order delivery: block ids are strictly sequential per
+    // peer, but blocks decode out of order — a block waiting on an ARQ repair
+    // round (~2×SRTT) is overtaken by later blocks and the inner TCP sees a
+    // hole (spurious fast-retransmits, halving its cwnd). Decoded payloads
+    // therefore pass through a reorder buffer keyed by block_id
+    // (SRTT-adaptive hold, force-delivery on expiry — the same delivery
+    // contract window mode has).
     // (parking_lot::Mutex for the same Send reason as above.)
     let block_inorder_enabled = !recv_window_mode && recv_reorder_timeout_ms > 0;
     let block_reorder: parking_lot::Mutex<ReorderBuffer> = parking_lot::Mutex::new(
         ReorderBuffer::new(BLOCK_REORDER_MIN_HOLD.as_millis() as u64, BLOCK_REORDER_MAX_BLOCKS),
     );
 
-    // Instrumentation (L2 ws1, temp): per-block arrival tracking —
-    // first-symbol instant + per-path symbol counts — and in-order
-    // hold timestamps. Emitted as debug logs on decode/release.
+    // Instrumentation: per-block arrival tracking — first-symbol instant +
+    // per-path symbol counts — and in-order hold timestamps. Emitted as debug
+    // logs on decode/release.
     let block_arrival: parking_lot::Mutex<
         std::collections::HashMap<u64, (Instant, std::collections::HashMap<u32, u32>)>,
     > = parking_lot::Mutex::new(std::collections::HashMap::new());
@@ -605,8 +530,8 @@ pub(crate) async fn run_receiver(
                 decode_us = feed_start.elapsed().as_micros() as u64,
                 "block decoded"
             );
-            // Instrumentation (L2 ws1): block completion time from
-            // first symbol arrival + per-path arrival composition.
+            // Instrumentation: block completion time from first symbol
+            // arrival + per-path arrival composition.
             if let Some((first, counts)) = block_arrival.lock().remove(&block_id) {
                 let mut per_path: Vec<(u32, u32)> = counts.into_iter().collect();
                 per_path.sort_unstable();
@@ -637,7 +562,7 @@ pub(crate) async fn run_receiver(
             } else {
                 vec![(block_id, data, Instant::now())]
             };
-            // Instrumentation (L2 ws1): who waits on whom, for how long.
+            // Instrumentation: who waits on whom, for how long.
             if block_inorder_enabled {
                 if deliverable.is_empty() {
                     let waiting_on = block_reorder.lock().next_deliver_seq();
@@ -693,37 +618,34 @@ pub(crate) async fn run_receiver(
         true
     };
 
-    // GENERATION-DEFICIT report (§16.3). Compute each frontier generation's
-    // residual deficit from the decoder's current rank and send it to the
-    // sender. `$force` sends even an empty vector (used on decode progress so
-    // the sender clears wants for just-completed generations, and on the
-    // periodic timer so a stalled/silent sender is re-pulled). Shared by the
-    // data-arm (progress) and the timer arm (liveness) so a sender that has
-    // gone quiet keeps being told the true deficit until every generation
-    // decodes — the loop that makes deficit-driven recovery robust.
+    // Generation-deficit report (paper §5.8). Compute each frontier
+    // generation's residual deficit from the decoder's current rank and send
+    // it to the sender. `$force` sends even an empty vector (used on decode
+    // progress so the sender clears wants for just-completed generations, and
+    // on the periodic timer so a stalled/silent sender is re-pulled). Shared
+    // by the data arm (progress) and the timer arm (liveness), so a sender
+    // that has gone quiet keeps being told the true deficit until every
+    // generation decodes.
     macro_rules! send_gen_deficits {
         ($dec:expr, $force:expr) => {{
             if recv_window_generation {
-                // ANTI-WEDGE SEEDING (small-G frontier-advance deadlock). Seed
-                // the width (= G) of every generation that is PROVABLY FULL —
+                // Anti-wedge seeding (small-G frontier-advance deadlock). Seed
+                // the width (= G) of every generation that is provably full —
                 // one whose end lies at or below the highest seq seen, so its
                 // G source symbols certainly exist — starting at the frontier
                 // generation (where `ooo_frontier` is stuck on a hole). The
                 // deficit for such a generation is then computable from the
                 // primary seqs alone (`rank_in`'s recovered-count branch),
-                // WITHOUT ever having seen a repair for it. Without this, a
+                // without ever having seen a repair for it. Without this, a
                 // generation whose entire ceil(G·r) proactive repair was lost
-                // never entered `gen_widths`, so the receiver reported zero
-                // deficit while its hole wedged the frontier forever. The final
-                // (possibly partial) generation is intentionally left to
-                // repair-header learning (its true width is not yet known to be
-                // G). Bounded to a few generations past the frontier (only the
-                // first MAX_REPORTED_GENS are ever sent anyway).
+                // would never enter `gen_widths`, so the receiver would report
+                // zero deficit while its hole wedged the frontier. The final
+                // (possibly partial) generation is left to repair-header
+                // learning (its true width is not yet known to be G). Seeds
+                // the whole reportable range, so a generation whose proactive
+                // budget was lost is NACKed in the same round as the frontier.
                 let g_front = ooo_frontier / recv_gen_size;
                 let g_top = highest_seen_seq / recv_gen_size;
-                // PART 1: seed the whole reportable range (not just +7) so a
-                // generation whose entire proactive budget was lost is
-                // NACKed in the SAME round as the frontier, not serially.
                 let g_hi = g_top.min(g_front + report_gens as u64);
                 let mut g = g_front;
                 while g <= g_hi {
@@ -736,18 +658,18 @@ pub(crate) async fn run_receiver(
             }
             if recv_window_generation && !gen_widths.is_empty() {
                 gen_widths.retain(|&a, &mut k| a + k as u64 > ooo_frontier);
-                // PART 1: report EVERY outstanding generation's deficit (up
-                // to report_gens = the whole in-flight range) in one report,
-                // so the sender repairs all holes in a single round-trip
-                // (parallel tail flush) rather than frontier-first serially.
+                // Report every outstanding generation's deficit (up to
+                // report_gens = the whole in-flight range) in one report, so
+                // the sender repairs all holes in a single round trip rather
+                // than frontier-first serially.
                 let raw_deficits = collect_gen_deficits(&gen_widths, report_gens, |anchor, k| {
                     $dec.rank_in(anchor, k)
                 });
-                // Repair-coverage horizon (branch `feat/nack-timing`): give
-                // the in-flight proactive repair a chance to decode each hole
-                // before its deficit fires a reactive NACK. δ-aware — clamped
-                // to ≤ ½·SRTT so low-RTT / latency-tight paths never over-wait
-                // and the wait can never exceed the round-trip it would save.
+                // Repair-coverage horizon: give the in-flight proactive repair
+                // a chance to decode each hole before its deficit fires a
+                // reactive NACK. δ-aware — clamped to ≤ ½·SRTT so low-RTT /
+                // latency-tight paths never over-wait and the wait can never
+                // exceed the round trip it would save.
                 let horizon = if repair_wait_base.is_zero() {
                     Duration::ZERO
                 } else {
@@ -791,40 +713,38 @@ pub(crate) async fn run_receiver(
     }
 
 
-    // ── PAPER 16.83 ARMS (A)/(B): THE RECEIVER-SEAT REPAIR REQUEST ───────
+    // ── Request arms (A)/(B): the receiver-seat repair request (paper §7.6)
     //
-    // `REQUEST <=> l >= l*_recv`. `l*_recv` is `[LATE]`'s own threshold --
-    // the ACTING name and the HYPOTHETICAL name are one function, so the
-    // number this arm requests at and the number the gauge prints can never
-    // be two laws -- and the hole set is `[SUCC]`'s own open map, which is
-    // the only place the receiver's holes and their exposure instants exist.
+    // `REQUEST <=> l >= l*_recv`. `l*_recv` is `[LATE]`'s own threshold — the
+    // acting name and the hypothetical name are one function, so the number
+    // this arm requests at and the number the gauge prints can never be two
+    // laws — and the hole set is `[SUCC]`'s own open map, the only place the
+    // receiver's holes and their exposure instants exist.
     //
-    // **AN UNESTIMABLE `l*` ACTS AS 0, AND `[LATE]` STILL PRINTS `-`.** The
-    // two states stay distinguishable on the line; the DECISION takes the
-    // conservative limit, which is 16.83.1's own bias direction: with no
-    // evidence at all, request immediately -- the machine that ships. The
-    // alternative (request nothing until the first hole closes) would make
-    // the arm's bootstrap depend on the very backstop it is measuring.
+    // An unestimable `l*` acts as 0, and `[LATE]` still prints `-`: the two
+    // states stay distinguishable on the line; the decision takes the
+    // conservative limit — with no evidence at all, request immediately.
+    // Requesting nothing until the first hole closes would make the arm's
+    // bootstrap depend on the very backstop it is measuring.
     //
-    // **ONE PATH, NOT A BROADCAST.** A request is a STATE SNAPSHOT of the
+    // One path, not a broadcast. A request is a state snapshot of the
     // receiver's open holes and is re-built on every report; broadcasting it
     // would hand the sender N identical snapshots whose in-flight baselines
     // have not moved between them, and it would serve each one. A dropped
-    // datagram costs one cadence, which is the same contract the SACK gap
-    // report already runs under.
+    // datagram costs one cadence, the same contract the SACK gap report runs
+    // under.
     //
     // `$dec` is the window decoder (for `frontier_probe`'s rank deficit),
     // `$pid` the path to send on, `$cause` the `[FCAUSE]` class of the arm
-    // that built it -- the DATA arm or the timer-driven REFRESH arm. The tag
+    // that built it — the DATA arm or the timer-driven REFRESH arm. The tag
     // is carried, not acted on.
     macro_rules! send_repair_request {
         ($dec:expr, $pid:expr, $cause:expr) => {{
-            // THE ARM, read off the two resolved predicates rather than off
-            // `recv_request_tx`: that channel is the LOCAL SENDER's seat (it
-            // rides in `ControlCtx` so an INBOUND request reaches this
+            // The arm, read off the two resolved predicates rather than off
+            // `recv_request_tx`: that channel is the local sender's seat (it
+            // rides in `ControlCtx` so an inbound request reaches this
             // process's own window sender), and the request this macro builds
-            // goes on the WIRE to the peer. The two are the same predicate by
-            // construction; naming the predicate says which one is meant.
+            // goes on the wire to the peer.
             if recv_request_law || recv_rank_feedback {
                 let (lstar_opt, _knee_bound) = blk.late.request_lateness();
                 let lstar = lstar_opt.unwrap_or(0);
@@ -837,16 +757,14 @@ pub(crate) async fn run_receiver(
                 );
                 blk.req_holes_n = holes.len() as u64;
                 if !holes.is_empty() {
-                    // `A*` AT THE RECEIVER -- A DECLARED RESOURCE BOUND, and
-                    // the honest one. The SENDER's retained trailing span is
-                    // not observable from here, so `m` is bounded by the two
-                    // quantities that ARE: the receiver's own outstanding
-                    // span (asking about seqs it has not seen is meaningless)
-                    // and the RETAINED WINDOW both ends share
-                    // (`generate_repair_range` refuses beyond what the
-                    // encoder holds, so a wider ask is a guaranteed refusal).
-                    // The refusal is still COUNTED (`[REQS] wa1_none`) and
-                    // never predicted away -- that is `WA1`'s whole job.
+                    // `A*` at the receiver — a declared resource bound. The
+                    // sender's retained trailing span is not observable from
+                    // here, so `m` is bounded by the two quantities that are:
+                    // the receiver's own outstanding span (asking about seqs
+                    // it has not seen is meaningless) and the retained window
+                    // both ends share (`generate_repair_range` refuses beyond
+                    // what the encoder holds). The refusal is still counted
+                    // (`[REQS] wa1_none`).
                     let a_star = highest_seen_seq
                         .saturating_sub(highest_delivered_seq)
                         .min(recv_win_cap);
@@ -857,18 +775,17 @@ pub(crate) async fn run_receiver(
                     );
                     let mut spans: Vec<(u64, u16, u32)> = Vec::new();
                     if m <= 1 {
-                        // THE COPY -- `(s, 1, 1)` is 'resend seq s' exactly,
-                        // so arm (A) puts today's bytes on the wire and only
-                        // the TIMING has changed.
+                        // The copy — `(s, 1, 1)` is 'resend seq s' exactly, so
+                        // arm (A) changes only the timing of the bytes on the
+                        // wire.
                         for &h in &holes {
                             spans.push((h, 1, 1));
                         }
                     } else {
-                        // THE SPAN. `k = holes - pivots` over `[a, a+m)` from
-                        // `frontier_probe` -- the quantity that has existed
-                        // since the decoder was written and that nothing has
-                        // ever read. Spans do not overlap: a hole already
-                        // covered by the previous span is already asked for.
+                        // The span. `k = holes - pivots` over `[a, a+m)` from
+                        // `frontier_probe`. Spans do not overlap: a hole
+                        // already covered by the previous span is already
+                        // asked for.
                         let mut cursor = 0u64;
                         for &h in &holes {
                             if h < cursor {
@@ -904,21 +821,11 @@ pub(crate) async fn run_receiver(
     let mut rdiag_qn: u64 = 0;
     let mut rdiag_last = Instant::now();
 
-    // Emission batching, receiver arm — BUILT AND REFUTED 2026-07-27
-    // (goal-gate "Emission Batching"): a bounded burst drain of this
-    // loop's inbound queue (± per-burst cumulative-ack coalescing, any
-    // burst size) collapsed c1 227.6 → 136–144 Mbit/s with an echo-RTT
-    // inflation → dynamic-store-cap growth → spurious sweep/retx flood
-    // (retx ×3–6, paused 60%+). The engine receiver stays one-message-
-    // per-wake; its ~20–23k msgs/s service wall is the named residual
-    // binder. Code removed per the DEPRECATION REGISTER discipline —
-    // commits 97bc6ea/47b04ed preserve the refuted mechanism.
-
     'recv: loop {
-        // Periodic generation-deficit report deadline (§16.3): re-report the
-        // frontier deficit ~once per SRTT even absent new data, so a sender
-        // that emitted its budget and went quiet is always re-pulled and a
-        // lost report is retransmitted. Only armed once a generation is known.
+        // Periodic generation-deficit report deadline: re-report the frontier
+        // deficit ~once per SRTT even absent new data, so a sender that
+        // emitted its budget and went quiet is always re-pulled and a lost
+        // report is retransmitted. Only armed once a generation is known.
         let deficit_deadline: Option<tokio::time::Instant> =
             if recv_window_generation && !gen_widths.is_empty() {
                 let srtt = {
@@ -939,14 +846,12 @@ pub(crate) async fn run_receiver(
                 None
             };
 
-        // In-order hold drain timer (BOTH modes): refresh the
-        // SRTT-adaptive timeout and compute the oldest-entry expiry.
-        // Only when entries are pending — the common case skips the
-        // locks. Window mode MUST have this timer too: its drain used
-        // to run only on symbol arrival, and a hole could deadlock the
-        // whole tunnel (hole → no delivery advance → no WindowAck →
-        // sender window full → no sends → no arrivals → no drain;
-        // measured at L1 realtime C2: inner TCP wedged for minutes).
+        // In-order hold drain timer (both modes): refresh the SRTT-adaptive
+        // timeout and compute the oldest-entry expiry. Only when entries are
+        // pending — the common case skips the locks. Window mode needs this
+        // timer too: a drain that ran only on symbol arrival lets a hole
+        // deadlock the whole tunnel (hole → no delivery advance → no
+        // WindowAck → sender window full → no sends → no arrivals → no drain).
         let reorder_deadline: Option<tokio::time::Instant> = {
             let pending = if block_inorder_enabled {
                 block_reorder.lock().pending_count() > 0
@@ -978,12 +883,11 @@ pub(crate) async fn run_receiver(
                     )
                 };
                 let deadline = if recv_window_reliable {
-                    // Reliable policy: the hole is never given up on —
-                    // this timer instead re-advertises the gap (SACK
-                    // WindowAck) at 2×SRTT cadence until recovered.
-                    // goal-gate "The Derived Recovery Clamp": under
-                    // `RWM_DERIVED_SWEEP` the cadence is the DERIVED round
-                    // (no ceiling); OFF ⇒ `hole_nack_refresh` verbatim.
+                    // Reliable policy: the hole is never given up on — this
+                    // timer instead re-advertises the gap (SACK WindowAck) at
+                    // 2×SRTT cadence until recovered. Under
+                    // `RWM_DERIVED_SWEEP` the cadence is the derived round (no
+                    // ceiling); off ⇒ `hole_nack_refresh` unchanged.
                     let refresh = hole_refresh(
                         recv_derived_sweep,
                         srtt,
@@ -1007,23 +911,21 @@ pub(crate) async fn run_receiver(
                             );
                         }
                     }
-                    // ── PAPER 16.83 ARM (A): THE DEADLINE TERM ─────────
+                    // ── Request arm (A): the deadline term (paper §7.6) ──
                     //
                     //     deadline = min( refresh ,  earliest A_hat + l* )
                     //
-                    // The refresh cadence is clocked by the LAST REPORT, so a
-                    // hole that gets no further arrivals -- exactly the case
+                    // The refresh cadence is clocked by the last report, so a
+                    // hole that gets no further arrivals — exactly the case
                     // the request law exists for, since an arrival is what
-                    // exposes a hole and nothing says another is coming -- has
-                    // to wait a whole refresh before it can be asked for.
-                    // `earliest A_hat + l*` is the instant the OLDEST open
-                    // hole becomes requestable, and taking the `min` is what
-                    // makes `l >= l*` the binding condition rather than an
-                    // upper bound on it.
+                    // exposes a hole — would wait a whole refresh before it
+                    // could be asked for. `earliest A_hat + l*` is the instant
+                    // the oldest open hole becomes requestable, and taking the
+                    // `min` makes `l >= l*` the binding condition rather than
+                    // an upper bound on it.
                     //
-                    // ABSENT ⇒ this reduces to `last_hole_nack_at + refresh`,
-                    // the shipped expression, with no allocation and no clock
-                    // read: the whole term is behind the arm's own `if`.
+                    // Arm absent ⇒ this reduces to `last_hole_nack_at +
+                    // refresh`, with no allocation and no clock read.
                     let mut hole_deadline = last_hole_nack_at + refresh;
                     if recv_request_law {
                         if let Some(a_hat) = blk.succ.oldest_open_at() {
@@ -1038,11 +940,10 @@ pub(crate) async fn run_receiver(
                     }
                     Some(hole_deadline)
                 } else {
-                    // δ-honest shed (fix C): under the unified realtime
-                    // machine the EVICT hold is the δ dial b·SRTT while
-                    // the ε̂-class give-up budget is open; legacy 4×SRTT
-                    // clamp otherwise (incl. always for block mode and
-                    // with the law off — bit-exact legacy).
+                    // δ-honest shed (paper §5.6): under the unified realtime
+                    // machine the EVICT hold is the δ dial b·SRTT while the
+                    // ε̂-class give-up budget is open; the 4×SRTT clamp
+                    // otherwise (always for block mode and with the law off).
                     if recv_shed_on {
                         let eps_recv = {
                             let sched = recv_scheduler.lock();
@@ -1118,18 +1019,16 @@ pub(crate) async fn run_receiver(
                     None => std::future::pending().await,
                 }
             } => {
-                // Reliable window (RWM Phase A): never give up on a
-                // hole. Re-advertise the gap with a SACK-bearing
-                // WindowAck so the sender's targeted-retransmit /
-                // repair machinery races it until recovered — the
-                // hold-expiry force-delivery below is the EVICT
-                // policy's move and is structurally skipped here.
+                // Reliable window (ρ = 1): never give up on a hole.
+                // Re-advertise the gap with a SACK-bearing WindowAck so the
+                // sender's targeted-retransmit / repair machinery races it
+                // until recovered — the hold-expiry force-delivery below is
+                // the EVICT policy's move and is structurally skipped here.
                 if recv_window_reliable {
                     last_hole_nack_at = Instant::now();
-                    // Wedge forensics (fix/frontier-wedge): the frontier
-                    // is stalled (this arm only fires with a pending
-                    // hole). Once frozen > 1 s, name the blocker's
-                    // receiver-side state once per second.
+                    // Wedge forensics: the frontier is stalled (this arm only
+                    // fires with a pending hole). Once frozen > 1 s, name the
+                    // blocker's receiver-side state once per second.
                     if wdiag_on {
                         if highest_delivered_seq != wdiag_frontier_val {
                             wdiag_frontier_val = highest_delivered_seq;
@@ -1215,12 +1114,12 @@ pub(crate) async fn run_receiver(
                     for pid in recv_scheduler.lock().live_paths() {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                     }
-                    // PAPER 16.83 ARMS (A)/(B): the TIMER arm's request. This
-                    // is the arm the deadline term above pulls forward to
-                    // `earliest A_hat + l*`, and it is the ONLY producer for a
-                    // hole that gets no further arrivals -- which is the case
-                    // the whole law exists for. Cause tag: the receiver's
-                    // timer-driven refresh, in `[FCAUSE]`'s own vocabulary.
+                    // Request arms (A)/(B): the timer arm's request. This is
+                    // the arm the deadline term above pulls forward to
+                    // `earliest A_hat + l*`, and it is the only producer for a
+                    // hole that gets no further arrivals. Cause tag: the
+                    // receiver's timer-driven refresh, in `[FCAUSE]`'s own
+                    // vocabulary.
                     if recv_request_law || recv_rank_feedback {
                         let pid_rq = recv_scheduler.lock().live_paths().first().copied();
                         if let (Some(pid), Some(ref dec)) = (pid_rq, window_decoder.as_ref()) {
@@ -1377,7 +1276,7 @@ pub(crate) async fn run_receiver(
                 if wdiag_on {
                     wdiag_batches += 1;
                     wdiag_syms += symbol_count as u64;
-                    // diag/lossy-residual [WIDLE] gauge (see decls).
+                    // `[WIDLE]` gauge (see decls).
                     let wnow = now_us();
                     widle_arrivals += 1;
                     if widle_last_arrival_us > 0 {
@@ -1388,7 +1287,7 @@ pub(crate) async fn run_receiver(
                             widle_max_us = widle_max_us.max(gap);
                         }
                     }
-                    // 3a: the SAME gap against the DERIVED threshold.
+                    // The same gap against the derived threshold.
                     if widle_derived {
                         widle_evt_n += 1;
                         if widle_last_arrival_us > 0 {
@@ -1405,7 +1304,7 @@ pub(crate) async fn run_receiver(
                         let wdt = wnow.saturating_sub(widle_last_print_us);
                         widle_last_print_us = wnow;
                         let w2 = if widle_derived {
-                            // Re-derive from THIS window's measured
+                            // Re-derive from this window's measured
                             // arrival rate (see the decls).
                             if widle_evt_n > 0 {
                                 widle_evt_us = wdt / widle_evt_n;
@@ -1444,10 +1343,10 @@ pub(crate) async fn run_receiver(
                     // `[ETA]`'s reference lag, read in the borrow that is
                     // already open so the gauge costs no second acquisition:
                     // RTprop when this receiver has one, its SRTT otherwise,
-                    // and the SOURCE of that SRTT (Copa's wire clock vs the
-                    // app echo -- the #80 battery proved they disagree by the
-                    // sender's own reservoir dwell). Both are PRINTED; the
-                    // gauge never picks silently.
+                    // and the source of that SRTT (Copa's wire clock vs the
+                    // app echo, which differ by the sender's own reservoir
+                    // dwell). Both are printed; the gauge never picks
+                    // silently.
                     let (eta_tau_us, eta_src) = match sched.path(path_id) {
                         Some(p) => (
                             p.min_rtt()
@@ -1477,23 +1376,22 @@ pub(crate) async fn run_receiver(
                         eta_tau_us,
                         eta_src,
                     );
-                    // `[LAT]`'s `A_x`, on the SAME instant and the SAME two
-                    // clock readings the `[ETA]` gauge just used -- one
+                    // `[LAT]`'s `A_x`, on the same instant and the same two
+                    // clock readings the `[ETA]` gauge just used — one
                     // arrival, one pair of timestamps, so the two gauges can
-                    // never describe different events. SOURCE symbols only: a
-                    // seq the decoder reconstructs never rode a wire as
-                    // itself and has no queueing time of its own, so it is
-                    // ABSENT from `ax` rather than credited a zero.
+                    // never describe different events. Source symbols only: a
+                    // seq the decoder reconstructs never rode a wire as itself
+                    // and has no queueing time of its own, so it is absent
+                    // from `ax` rather than credited a zero.
                     for sym in &lat_arrivals {
                         blk.lat.note_arrival(*sym, path_id, batch_send_ts, arrival_us);
                     }
                     // `[LATE]`'s knee: the gap since the previous arrival,
-                    // counted ONLY while the in-order frontier is behind the
+                    // counted only while the in-order frontier is behind the
                     // highest seq seen. A gap with the frontier caught up is
                     // the application idling; a gap with the frontier frozen
                     // is the store running out of headroom, which is what `H`
-                    // is. Ungated -- the `[WIDLE]` machinery's own 3 ms floor,
-                    // reused rather than re-derived.
+                    // is. Ungated — the `[WIDLE]` machinery's own 3 ms floor.
                     if late_last_arrival_us > 0 && highest_seen_seq > highest_delivered_seq {
                         let gap = arrival_us.saturating_sub(late_last_arrival_us);
                         if gap >= WIDLE_GAP_MIN_US {
@@ -1503,13 +1401,12 @@ pub(crate) async fn run_receiver(
                     late_last_arrival_us = arrival_us;
                 }
 
-                // Track batch sequences for loss detection (ADR-0003)
-                // ack-merge (RWM_ACK_MERGE): read the tracker's CUMULATIVE
-                // totals in the same borrow — they are the v6 WindowAck
-                // counter payload, i.e. the legacy Ack's (expected,
-                // received) pair carried as running sums so the sender can
-                // diff them. Cumulative, not per-ack: a dropped control
-                // datagram then costs nothing.
+                // Track batch sequences for loss detection (ADR-0003).
+                // Ack-merge (RWM_ACK_MERGE): read the tracker's cumulative
+                // totals in the same borrow — they are the WindowAck counter
+                // payload, the (expected, received) pair carried as running
+                // sums so the sender can diff them. Cumulative, not per-ack:
+                // a dropped control datagram then costs nothing.
                 let (expected, _received_total, cum_expected, cum_received) = {
                     let mut tracker = recv_path_tracking
                         .entry(path_id)
@@ -1530,20 +1427,20 @@ pub(crate) async fn run_receiver(
                     if recv_window_generation {
                         for symbol in &batch.symbols {
                             if symbol.is_repair && symbol.data.len() >= 10 {
-                                // FILLING-generation repair (proactive pacer):
-                                // its wire `window_count` is the FULL generation
+                                // Filling-generation repair (proactive pacer):
+                                // its wire `window_count` is the full generation
                                 // width G even though the generation is only
-                                // partially sent, so it MUST NOT teach
+                                // partially sent, so it must not teach
                                 // `gen_widths` — that would make the receiver
                                 // report a K_g−rank deficit of (G − current fill)
                                 // and flood reactive recovery for a generation
-                                // that is not even fully sent yet. The FILL_FLAG
-                                // is bit 31 of the 4-byte coded-index. A filling
+                                // that is not fully sent yet. The FILL_FLAG is
+                                // bit 31 of the 4-byte coded-index. A filling
                                 // generation enters `gen_widths` only once it is
-                                // PROVABLY FULL (anti-wedge seeding) or a
-                                // sealed/deficit repair arrives — the honest
-                                // deficit path. Present-at-stall recovery of its
-                                // holes is proactive (no deficit needed).
+                                // provably full (anti-wedge seeding) or a
+                                // sealed/deficit repair arrives. Present-at-stall
+                                // recovery of its holes is proactive (no deficit
+                                // needed).
                                 let is_fill = symbol.data.len() >= 14
                                     && (u32::from_le_bytes(
                                         symbol.data[10..14].try_into().unwrap(),
@@ -1568,24 +1465,22 @@ pub(crate) async fn run_receiver(
                         }
                     }
                     for symbol in &batch.symbols {
-                        // feat/c8-conversion DIAG: a source arrival for a
-                        // seq already received = a displacement-only
-                        // delivery on this path (its goodput was already
-                        // banked by the other copy).
+                        // Conversion DIAG: a source arrival for a seq already
+                        // received = a displacement-only delivery on this path
+                        // (its goodput was already banked by the other copy).
                         if c8r_on
                             && !symbol.is_repair
                             && received_seqs.contains(&symbol.block_id)
                         {
                             *c8r_dup.entry(path_id).or_insert(0) += 1;
                         }
-                        // ── `[RFA]`: THE REALIZED FALSE-REPAIR CLASS, read
-                        // BEFORE the symbol is fed (the probe is about the
-                        // state this arrival is ABOUT to change). See the
-                        // event-class definition in `net/mod.rs` beside
-                        // `RACK_SPURIOUS_BUDGET`. `seq_probe` is `&self` and
-                        // the counters feed nothing but the gauge: READ-ONLY,
-                        // no control flow, no gate, always fed so the datum
-                        // exists on every arm exactly as `fa=` does.
+                        // `[RFA]`: the realized false-repair class, read before
+                        // the symbol is fed (the probe is about the state this
+                        // arrival is about to change). See the event-class
+                        // definition in `net/mod.rs` beside
+                        // `RACK_SPURIOUS_BUDGET`. `seq_probe` is `&self` and the
+                        // counters feed nothing but the gauge: read-only, no
+                        // gate, always fed so the datum exists on every arm.
                         let rfa_class = (!symbol.is_repair).then(|| {
                             let (seen_src, rec, _out) = win_dec.seq_probe(symbol.block_id);
                             crate::net::classify_recv_repair(
@@ -1612,31 +1507,29 @@ pub(crate) async fn run_receiver(
                             Some(c) => recv_rack_echo.record_recv_source(c),
                             None => recv_rack_echo.record_recv_repair_arrival(),
                         }
-                        // ── `[SUCC]`, IN TWO PASSES, AND THE ORDER IS THE
-                        // SEMANTICS. One `add_symbol` can emit SEVERAL seqs in
+                        // `[SUCC]`, in two passes, and the order is the
+                        // semantics. One `add_symbol` can emit several seqs in
                         // arbitrary order; if the batch's high-water mark were
                         // raised while some of its own seqs were still
-                        // unresolved, the gauge would OPEN a hole for a seq
+                        // unresolved, the gauge would open a hole for a seq
                         // this very batch is closing and then close it at 0 µs
                         // — a manufactured sample at the bottom of the
-                        // histogram, exactly where a waiting time is read.
-                        // So: RESOLVE the whole batch first, THEN advance the
-                        // mark. Read-only; see `net/succ.rs`.
+                        // histogram. So: resolve the whole batch first, then
+                        // advance the mark. Read-only; see `net/succ.rs`.
                         let mut lat_release: crate::net::lat::Release = None;
                         {
                             let succ_now = Instant::now();
-                            // A0.3: `path_id` is the path THIS arrival landed
-                            // on — the exposer at `observe_high`, the closer at
-                            // `resolve`. Read off the `(path_id, msg)` select
-                            // already in scope; nothing branches on it.
+                            // `path_id` is the path this arrival landed on —
+                            // the exposer at `observe_high`, the closer at
+                            // `resolve`. Nothing branches on it.
                             for (seq, _) in &recovered {
-                                // `[LAT]`: the record of the hole THIS arrival
-                                // closed is what classes every reorder wait
-                                // the arrival releases. The LAST resolution of
-                                // the batch is the releasing one (the
-                                // deliverable prefix starts at the frontier),
-                                // and `None` -- the ordinary in-order case --
-                                // classes as no wait at all.
+                                // `[LAT]`: the record of the hole this arrival
+                                // closed classes every reorder wait the
+                                // arrival releases. The last resolution of the
+                                // batch is the releasing one (the deliverable
+                                // prefix starts at the frontier), and `None` —
+                                // the ordinary in-order case — classes as no
+                                // wait at all.
                                 if let Some(rec) = blk.succ.resolve_at(
                                     *seq,
                                     symbol.is_repair || *seq != symbol.block_id,
@@ -1651,8 +1544,8 @@ pub(crate) async fn run_receiver(
                                         rec.us,
                                         rec.hi_us,
                                     );
-                                    // `d` -- the `[FDIAG]` SOURCE class: a
-                                    // hole closed by its OWN source symbol
+                                    // `d` — the `[FDIAG]` SOURCE class: a hole
+                                    // closed by its own source symbol
                                     // (original or the sender's copy) is the
                                     // ARQ/late-reorder resolution whose mean
                                     // time the knee cap subtracts.
@@ -1676,9 +1569,9 @@ pub(crate) async fn run_receiver(
                         }
                         for (seq, sym_data) in recovered {
                             // A seq that came out of the decoder rather than
-                            // off its OWN source arrival was reconstructed
+                            // off its own source arrival was reconstructed
                             // from coded repair — `[RFA]`'s `fill_coded`, a
-                            // repair that WORKED. (A source arrival can
+                            // repair that worked. (A source arrival can
                             // cascade other seqs out of the row space; those
                             // are coded fills too, hence the seq test rather
                             // than `symbol.is_repair` alone.)
@@ -1689,9 +1582,9 @@ pub(crate) async fn run_receiver(
                             if seq > highest_seen_seq {
                                 highest_seen_seq = seq;
                             }
-                            // feat/c8-conversion DIAG: FIRST copy of this
-                            // seq, credited to the arrival path, with its
-                            // lead over the in-order frontier (symbols).
+                            // Conversion DIAG: first copy of this seq,
+                            // credited to the arrival path, with its lead
+                            // over the in-order frontier (symbols).
                             if c8r_on {
                                 let frontier = reorder_buf
                                     .as_ref()
@@ -1702,23 +1595,19 @@ pub(crate) async fn run_receiver(
                                     seq.saturating_sub(frontier);
                             }
 
-                            // RWM Phase C (paper §16.2, H→∞ corner):
-                            // out-of-order OBJECT delivery. Hand each
-                            // decoded symbol to the consumer the instant
-                            // it decodes — in ANY order. The native object
-                            // API reassembles by offset and completes on
+                            // Unordered delivery (the H = 0 corner): hand each
+                            // decoded symbol to the consumer the instant it
+                            // decodes, in any order. The native object API
+                            // reassembles by offset and completes on
                             // total-decoded, so no in-order frontier gates
-                            // delivery. Reliability is unchanged: the
-                            // reorder buffer still tracks the in-order
-                            // RECEIVED prefix (holes held as seq-only
-                            // placeholders) that drives the cumulative
+                            // delivery. Reliability is unchanged: the in-order
+                            // received prefix still drives the cumulative
                             // WindowAck, so the sender keeps retaining +
-                            // retransmitting every hole until acked.
-                            // Equivalence (§16.2): identical in completion
-                            // time to an in-order buffer deep enough to
-                            // hold to completion — the frontier only costs
-                            // an INCREMENTAL, low-latency consumer (inner
-                            // TCP), never a file.
+                            // retransmitting every hole until acked. The
+                            // completion time equals an in-order buffer deep
+                            // enough to hold to completion — the frontier
+                            // only costs an incremental, low-latency consumer
+                            // (inner TCP), never a file.
                             if recv_window_ooo {
                                 for pkt_data in extract_window_packets(&sym_data, window_packed) {
                                     // Deliver immediately (any order). Full
@@ -1726,13 +1615,11 @@ pub(crate) async fn run_receiver(
                                     // object/native consumer drains far
                                     // faster than the wire, so the bounded
                                     // (8192) channel only fills under a
-                                    // pathological burst; blocking here
-                                    // instead would wedge the loopback's
-                                    // client-feeds-and-drains feedback loop
-                                    // (MEASURED deadlock). A rare drop is
-                                    // recovered by the sender's retransmit
-                                    // (the reliability floor keeps recovery
-                                    // from ever being fully suppressed).
+                                    // pathological burst; blocking here would
+                                    // deadlock the loopback's
+                                    // client-feeds-and-drains feedback loop.
+                                    // A rare drop is recovered by the
+                                    // sender's retransmit.
                                     if deliver_packet(&recv_tun_tx, Bytes::from(pkt_data), false)
                                         .await
                                         .is_err()
@@ -1741,14 +1628,14 @@ pub(crate) async fn run_receiver(
                                         break 'recv;
                                     }
                                 }
-                                // Advance the in-order RECEIVED prefix for
-                                // the cumulative WindowAck (retention
-                                // pruning) — no reorder buffer: the
-                                // frontier walks `received_seqs` (seq was
-                                // inserted just above). Delivery already
-                                // happened, out of order; this only tells
-                                // the sender what it may prune, so holes
-                                // stay retained + retransmitted.
+                                // Advance the in-order received prefix for the
+                                // cumulative WindowAck (retention pruning) —
+                                // no reorder buffer: the frontier walks
+                                // `received_seqs` (seq was inserted just
+                                // above). Delivery already happened, out of
+                                // order; this only tells the sender what it
+                                // may prune, so holes stay retained +
+                                // retransmitted.
                                 while received_seqs.contains(&ooo_frontier) {
                                     ooo_frontier += 1;
                                 }
@@ -1761,18 +1648,17 @@ pub(crate) async fn run_receiver(
                             let deliverable = if let Some(ref mut reorder) = reorder_buf {
                                 // `[RFA] late_after_aban`: this seq's copy
                                 // arrived for a seq the frontier had already
-                                // moved past WITHOUT DELIVERING -- the EVICT
-                                // seat's repair waste, the counter Track B's
-                                // `tail_matrix.sh` scrape reads BY NAME.
+                                // moved past without delivering — the EVICT
+                                // seat's repair waste, a counter
+                                // `tail_matrix.sh` scrapes by name.
                                 //
                                 // The `abandoned_seqs` test is what makes it
-                                // that and not something else: a copy for a
-                                // seq that WAS delivered is an ordinary
-                                // duplicate (already `[RFA] dup_src`), and
-                                // conflating the two would report waste on
-                                // the reliable window, where the reorder
-                                // buffer never delivers past a hole and the
-                                // count is STRUCTURALLY zero.
+                                // that: a copy for a seq that was delivered is
+                                // an ordinary duplicate (already `[RFA]
+                                // dup_src`), and conflating the two would
+                                // report waste on the reliable window, where
+                                // the reorder buffer never delivers past a
+                                // hole and the count is structurally zero.
                                 if abandoned_seqs.remove(&seq) {
                                     recv_rack_echo.record_late_after_aban();
                                 }
@@ -1784,10 +1670,10 @@ pub(crate) async fn run_receiver(
                                 vec![(seq, sym_data, Instant::now())]
                             };
 
-                            // feat/c8-conversion DIAG: this arrival
-                            // advanced the in-order frontier — if it had
-                            // been stalled ≥ 5 ms, credit the unblock
-                            // (and the stall it ended) to this path.
+                            // Conversion DIAG: this arrival advanced the
+                            // in-order frontier — if it had been stalled
+                            // ≥ 5 ms, credit the unblock (and the stall it
+                            // ended) to this path.
                             if c8r_on && !deliverable.is_empty() {
                                 let gap = c8r_last_adv.elapsed();
                                 if gap >= Duration::from_millis(5) {
@@ -1802,7 +1688,7 @@ pub(crate) async fn run_receiver(
                             for (dseq, ddata, dbuf) in deliverable {
                                 // `[LAT]`: the reorder wait is
                                 // `t_deliver - buffered_at`, which only the
-                                // buffer ever held; its CLASS is the release
+                                // buffer ever held; its class is the release
                                 // record above. Fed before the packet leaves,
                                 // so a full TUN channel cannot lose the datum.
                                 blk.lat.note_delivery(
@@ -1827,14 +1713,14 @@ pub(crate) async fn run_receiver(
                                 }
                             }
 
-                            // `[SUCC]` ABANDONMENT, read off the frontier
+                            // `[SUCC]` abandonment, read off the frontier
                             // itself rather than off any give-up decision: a
-                            // hole the in-order frontier has moved PAST was
+                            // hole the in-order frontier has moved past was
                             // given up, whatever moved it. Under the reliable
                             // window this is structurally unreachable
                             // (`ReorderBuffer::new_reliable` never delivers
                             // past a hole) — so `aban_n = 0` there is a
-                            // CONFIGURATION fact, and a nonzero reading is a
+                            // configuration fact, and a nonzero reading is a
                             // finding about the engine. Read-only.
                             if let Some(ref reorder) = reorder_buf {
                                 for rec in blk.succ.abandon_below(
@@ -1858,12 +1744,11 @@ pub(crate) async fn run_receiver(
                         }
                     }
 
-                    // feat/c8-conversion DIAG: the receiver-side
-                    // conversion gauges, cumulative, ~1/s (keys sorted
-                    // for stable scraping). fst/dup = first-copy vs
-                    // displacement deliveries; lead = mean first-copy
-                    // frontier lead (symbols); unb = frontier unblocks
-                    // credited / stall ms ended.
+                    // Conversion DIAG: the receiver-side conversion gauges,
+                    // cumulative, ~1/s (keys sorted for stable scraping).
+                    // fst/dup = first-copy vs displacement deliveries; lead =
+                    // mean first-copy frontier lead (symbols); unb = frontier
+                    // unblocks credited / stall ms ended.
                     if c8r_on && c8r_last_print.elapsed() >= Duration::from_secs(1) {
                         c8r_last_print = Instant::now();
                         let mut keys: Vec<u32> = c8r_first
@@ -1893,27 +1778,22 @@ pub(crate) async fn run_receiver(
                         }
                     }
 
-                    // GENERATION-DEFICIT FEEDBACK (§16.3, receiver arm): on
-                    // decode progress, report each frontier generation's
-                    // residual deficit immediately (progress → the deficit
-                    // shrank → tell the sender promptly so it stops over-
-                    // sending). The periodic timer arm below drives it
-                    // otherwise — crucially even when NO data is arriving, so
-                    // a sender that emitted its budget and went quiet is still
-                    // re-pulled (the measured silent-sender deadlock).
+                    // Generation-deficit feedback (paper §5.8, receiver arm):
+                    // on decode progress, report each frontier generation's
+                    // residual deficit immediately (the deficit shrank → tell
+                    // the sender promptly so it stops over-sending). The
+                    // periodic timer arm drives it otherwise — even when no
+                    // data is arriving, so a sender that emitted its budget
+                    // and went quiet is still re-pulled.
                     if recv_window_generation && recovered_any {
                         send_gen_deficits!(win_dec, true);
                     }
 
-                    // Drain expired reorder buffer entries.
-                    // SRTT-adaptive hold (same delivery contract as
-                    // block mode): the static 20ms default sat below
-                    // one C2 NACK/repair round, so holes were force-
-                    // delivered just before their repair arrived and
-                    // the inner TCP retransmitted them (measured:
-                    // realtime C2 502 retransmits / 44 SACK recoveries
-                    // / 8 RTOs per 5×1.8MB vs bulk's ~66/3/0 with the
-                    // 4×SRTT hold).
+                    // Drain expired reorder buffer entries. SRTT-adaptive hold
+                    // (same delivery contract as block mode): a static 20 ms
+                    // hold sits below one NACK/repair round, so holes would be
+                    // force-delivered just before their repair arrived and the
+                    // inner TCP would retransmit them.
                     if let Some(ref mut reorder) = reorder_buf {
                         let (srtt, eps_recv) = {
                             let sched = recv_scheduler.lock();
@@ -2023,9 +1903,9 @@ pub(crate) async fn run_receiver(
                             } else {
                                 0
                             };
-                            // H2: mean RAW decode-call compute time (µs) and
-                            // TOTAL compute over the transfer — contrast with
-                            // the per-hole DECODE resolution wall-time above.
+                            // Mean raw decode-call compute time (µs) and total
+                            // compute over the transfer — contrast with the
+                            // per-hole DECODE resolution wall-time above.
                             let addsym_avg = if fdiag_addsym_n > 0 {
                                 fdiag_addsym_us / fdiag_addsym_n
                             } else {
@@ -2042,8 +1922,8 @@ pub(crate) async fn run_receiver(
                                 std::mem::take(&mut fdiag_addsym_max_us),
                                 fdiag_addsym_us / 1000,
                                 win_dec.repairs_fed(), win_dec.repairs_useful(),
-                                // diag/unified-collapse: decoder-internal
-                                // cost drivers (active rows L, span, memory)
+                                // Decoder-internal cost drivers (active rows
+                                // L, span, memory).
                                 win_dec
                                     .diag_stats()
                                     .map(|s| format!(" | {s}"))
@@ -2052,16 +1932,13 @@ pub(crate) async fn run_receiver(
                         }
                     }
 
-                    // ── `[RFA]` PERIODIC READOUT ──────────────────────────
+                    // ── `[RFA]` periodic readout ──────────────────────────
                     // The gauge's `Drop` is the authoritative emission, but
-                    // every L1 harness in `tools/l1` SIGKILLs the server, so
-                    // a receiver-site `Drop` is not reachable there — which
-                    // is why the server log has never carried a `[RACK]`
-                    // line on ANY arm. Cumulative counters on a 1 s cadence
-                    // under the EXISTING diagnosis gates (no new gate; both
-                    // already ride the two-sided `[GATES]` echo), so the
-                    // LAST line is the reading whatever kills the process.
-                    // A run with no repair-class event stays silent.
+                    // the L1 harnesses SIGKILL the server, so a receiver-site
+                    // `Drop` is not reachable there. Cumulative counters on a
+                    // 1 s cadence under the existing diagnosis gates, so the
+                    // last line is the reading whatever kills the process. A
+                    // run with no repair-class event stays silent.
                     if (recv_gates.diag || fdiag_on)
                         && recv_rack_echo.is_receiver_site()
                         && rfa_report_at.elapsed() >= Duration::from_secs(1)
@@ -2070,12 +1947,11 @@ pub(crate) async fn run_receiver(
                         eprintln!("{}", recv_rack_echo.rfa_line());
                     }
 
-                    // ── `[QCLK]` PERIODIC READOUT ─────────────────────────
-                    // Same SIGKILL reason, same 1 s cadence, same existing
-                    // gates, same last-line-wins convention. A run that never
-                    // evaluated a recovery clock stays silent, so an absent
-                    // line reads as an unreached evaluation site and never as
-                    // an unset gate.
+                    // ── `[QCLK]` periodic readout ─────────────────────────
+                    // Same SIGKILL reason, same 1 s cadence, same gates, same
+                    // last-line-wins convention. A run that never evaluated a
+                    // recovery clock stays silent, so an absent line reads as
+                    // an unreached evaluation site and never as an unset gate.
                     if (recv_gates.diag || fdiag_on)
                         && recv_qclk_echo.evals() > 0
                         && qclk_report_at.elapsed() >= Duration::from_secs(1)
@@ -2084,36 +1960,32 @@ pub(crate) async fn run_receiver(
                         eprintln!("{}", recv_qclk_echo.line());
                     }
 
-                    // ── `[SUCC]` PERIODIC READOUT ─────────────────────────
-                    // Same SIGKILL reason, same 1 s cadence, same existing
-                    // gates, same last-line-wins convention as `[RFA]` and
-                    // `[QCLK]` above. `is_receiver_site()` keeps a site that
-                    // saw no arrival silent, so an absent line reads as an
-                    // unreached feed and never as an unset gate.
+                    // ── `[SUCC]` periodic readout ─────────────────────────
+                    // Same SIGKILL reason, same 1 s cadence, same gates, same
+                    // last-line-wins convention as `[RFA]` and `[QCLK]` above.
+                    // `is_receiver_site()` keeps a site that saw no arrival
+                    // silent, so an absent line reads as an unreached feed and
+                    // never as an unset gate.
                     //
-                    // THE BLOCK (`net/recv_block.rs`): `[SUCC]`, then `[ETA]`
-                    // / `[LAT]` / `[LATE]` beside it under its gate, `[REQ]`,
-                    // and `[RANK]` off a fresh `frontier_probe` — the same
-                    // lines, in the same order, byte-identical to what this
-                    // site printed inline until 2026-09-08. The block ALSO
+                    // The block (`net/recv_block.rs`): `[SUCC]`, then `[ETA]` /
+                    // `[LAT]` / `[LATE]` beside it under its gate, `[REQ]`, and
+                    // `[RANK]` off a fresh `frontier_probe`. The block also
                     // prints once more at the task's exit, marked `final=1`
                     // (see the end of the loop), so a transfer shorter than
-                    // this cadence and the last partial second of a longer
-                    // one are no longer lost. The RAW dump is flushed with
-                    // it so no recorded sample is ever left in a partial
-                    // batch — the `[RTTDUMP]` tail-loss caveat, designed out
-                    // rather than disclosed.
+                    // this cadence and the last partial second of a longer one
+                    // are not lost. The raw dump is flushed with it so no
+                    // recorded sample is left in a partial batch.
                     if (recv_gates.diag || fdiag_on)
                         && blk.succ.is_receiver_site()
                         && succ_report_at.elapsed() >= Duration::from_secs(1)
                     {
                         succ_report_at = Instant::now();
-                        // `[RANK]`: `frontier_probe` re-read UNCONDITIONALLY
+                        // `[RANK]`: `frontier_probe` re-read unconditionally
                         // (it is otherwise reachable only under `RWM_FDIAG`),
-                        // plus the honest tail correction: the span that
-                        // arrived since the previous readout is still in
-                        // flight rather than missing, and is REPORTED beside
-                        // the deficit rather than subtracted from it.
+                        // plus the tail correction: the span that arrived
+                        // since the previous readout is still in flight rather
+                        // than missing, and is reported beside the deficit
+                        // rather than subtracted from it.
                         let probe = rank_probe(
                             &**win_dec,
                             highest_delivered_seq,
@@ -2123,24 +1995,23 @@ pub(crate) async fn run_receiver(
                         for l in blk.render_cadence(Some(probe)) {
                             eprintln!("{l}");
                         }
-                        // `[RFA] rep_redundant`: repairs FED minus repairs
-                        // that RECOVERED anything -- the false measurand
-                        // under coded answers, where "the original arrived
-                        // anyway" is inexpressible and waste shows up as an
-                        // equation that added no rank. Read off the decoder
-                        // at the readout so the gauge holds no second copy.
+                        // `[RFA] rep_redundant`: repairs fed minus repairs that
+                        // recovered anything — the false measurand under coded
+                        // answers, where "the original arrived anyway" is
+                        // inexpressible and waste shows up as an equation that
+                        // added no rank. Read off the decoder at the readout so
+                        // the gauge holds no second copy.
                         recv_rack_echo.set_rep_redundant(
                             win_dec.repairs_fed().saturating_sub(win_dec.repairs_useful()),
                         );
                     }
 
-                    // Send SACK-extended WindowAck to sender.
-                    // P10b: ALSO send while the cumulative point is
-                    // stalled on a hole but new (higher) seqs keep
-                    // arriving — the dupack analog. The SACK ranges are
-                    // the sender's only gap signal; without them a hole
-                    // was repaired solely by proactive FEC or the
-                    // hold-expiry force-delivery.
+                    // Send SACK-extended WindowAck to sender. Also send while
+                    // the cumulative point is stalled on a hole but new
+                    // (higher) seqs keep arriving — the dupack analog. The
+                    // SACK ranges are the sender's only gap signal; without
+                    // them a hole would be repaired solely by proactive FEC or
+                    // the hold-expiry force-delivery.
                     let cumulative_advanced =
                         highest_delivered_seq > last_advertised_ack;
                     let gap_pending = highest_seen_seq > highest_delivered_seq
@@ -2148,20 +2019,20 @@ pub(crate) async fn run_receiver(
                     let gap_report_due =
                         gap_pending && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
                     // `[LATE] sampler_bind`: a hole was ready to be reported
-                    // and the 2 ms floor -- not its lateness -- is what held
-                    // the report back. A threshold that always binds turns the
-                    // law it gates into a constant, so it is COUNTED.
+                    // and the 2 ms floor — not its lateness — is what held the
+                    // report back. A threshold that always binds turns the law
+                    // it gates into a constant, so it is counted.
                     blk.late_sampler_bound |= gap_pending && !gap_report_due;
-                    // ack-merge (RWM_ACK_MERGE): what the ack ADVERTISES
-                    // (the cumulative point + SACK ranges) is unchanged —
-                    // `advertise` is the shipped predicate verbatim, so
-                    // GAP_ACK_MIN_INTERVAL still rate-limits gap reports
-                    // and the depth-16 nack/sack channels see no new
-                    // pressure. What changes is only WHETHER A DATAGRAM
-                    // IS SENT: under the merge this ack also carries the
-                    // suppressed legacy Ack's payload, so it must go out
-                    // once per data message — exactly the cadence the Ack
-                    // had. Gate off ⇒ `emit == advertise` ⇒ byte-identical.
+                    // Ack-merge (RWM_ACK_MERGE): what the ack advertises (the
+                    // cumulative point + SACK ranges) is unchanged —
+                    // `advertise` is the gap-report predicate, so
+                    // GAP_ACK_MIN_INTERVAL still rate-limits gap reports and
+                    // the depth-16 nack/sack channels see no new pressure.
+                    // What changes is only whether a datagram is sent: under
+                    // the merge this ack also carries the suppressed per-batch
+                    // Ack's payload, so it must go out once per data message —
+                    // the per-batch Ack's cadence. Gate off ⇒
+                    // `emit == advertise`.
                     let (emit_ack, advertise) = window_ack_emission(
                         cumulative_advanced,
                         gap_report_due,
@@ -2171,15 +2042,15 @@ pub(crate) async fn run_receiver(
                         if cumulative_advanced {
                             last_advertised_ack = highest_delivered_seq;
                         }
-                        // SACK ranges: what WAS received beyond the
-                        // cumulative point (not what's missing). Only on
-                        // an advertising ack — a merge-only ack carries
-                        // the counters and the echo, never a gap report
-                        // (that is what preserves the gap rate limit).
+                        // SACK ranges: what was received beyond the cumulative
+                        // point (not what's missing). Only on an advertising
+                        // ack — a merge-only ack carries the counters and the
+                        // echo, never a gap report (that is what preserves the
+                        // gap rate limit).
                         let sack_ranges = if advertise {
                             last_gap_ack_seen = highest_seen_seq;
                             last_gap_ack_time = Instant::now();
-                            // A gap-bearing ack IS a hole re-advertisement:
+                            // A gap-bearing ack is a hole re-advertisement:
                             // push the reliable-mode refresh timer out.
                             last_hole_nack_at = last_gap_ack_time;
                             received_sack_ranges(
@@ -2203,15 +2074,14 @@ pub(crate) async fn run_receiver(
                             sack_ranges,
                             echo_send_timestamp_us: batch_send_ts,
                             jitter_us: jitter,
-                            // In OOO / generation mode carry the TOTAL count
-                            // of decoded source symbols across ALL generations
+                            // In OOO / generation mode carry the total count
+                            // of decoded source symbols across all generations
                             // (out of order) — the peer's total decode progress
                             // `d`. received_seqs holds every delivered seq
-                            // (decode-on-total), so its length IS d. Legacy
-                            // (in-order) modes keep the per-path received count.
-                            // (FMTCP-era wire field; its sender-side FC consumer
-                            // was removed with RWM_FMTCP 2026-07-27 — the field
-                            // stays as the wire-format/debug-trace datum.)
+                            // (decode-on-total), so its length is d. In-order
+                            // modes keep the per-path received count. A
+                            // wire-format/debug-trace datum; no sender-side
+                            // flow control consumes it.
                             cumulative_received: if recv_window_ooo {
                                 received_seqs.len() as u64
                             } else {
@@ -2219,25 +2089,24 @@ pub(crate) async fn run_receiver(
                                     .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
                                     .unwrap_or(0)
                             },
-                            // v6 ack-merge counters: the legacy Ack's
+                            // Ack-merge counters: the per-batch Ack's
                             // (expected, received) pair as per-path running
-                            // sums. Always populated on a data-triggered
-                            // ack (gate or no gate — one wire format per
-                            // binary); the sender only CONSUMES them under
-                            // RWM_ACK_MERGE.
+                            // sums. Always populated on a data-triggered ack
+                            // (one wire format per binary); the sender only
+                            // consumes them under RWM_ACK_MERGE.
                             cum_expected,
                             cum_received,
                         };
                         if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
                             debug!(?e, path_id, "failed to send WindowAck");
                         }
-                        // PAPER 16.83 ARMS (A)/(B): the DATA arm's request,
-                        // on exactly the cadence the gap report it replaces
-                        // runs on. `advertise` is the shipped predicate
-                        // verbatim, so `GAP_ACK_MIN_INTERVAL` still rate-limits
-                        // this -- 16.83.10 leaves that 2 ms literal STANDING,
-                        // uncorrected, and `[LATE] sampler_bind` is what says
-                        // whether it, rather than `l*`, set the time.
+                        // Request arms (A)/(B) (paper §7.6): the data arm's
+                        // request, on exactly the cadence the gap report it
+                        // replaces runs on. `advertise` is the gap-report
+                        // predicate, so `GAP_ACK_MIN_INTERVAL` still
+                        // rate-limits this — the 2 ms literal stands, and
+                        // `[LATE] sampler_bind` says whether it, rather than
+                        // `l*`, set the time.
                         if advertise {
                             send_repair_request!(
                                 win_dec,
@@ -2247,10 +2116,9 @@ pub(crate) async fn run_receiver(
                         }
                     }
 
-                    // ack-merge CONTROL-DATAGRAM DENSITY gauge (prediction
-                    // 1's instrument — see the declaration of
-                    // `ctld_last_report` for why this and not the qdisc
-                    // packet counters). Cumulative per path, 1 Hz.
+                    // Ack-merge control-datagram density gauge (see the
+                    // declaration of `ctld_last_report` for why frames and not
+                    // the qdisc packet counters). Cumulative per path, 1 Hz.
                     if recv_diag_on
                         && ctld_last_report.elapsed() >= Duration::from_secs(1)
                     {
@@ -2274,7 +2142,7 @@ pub(crate) async fn run_receiver(
                     {
                         last_nack_time = now;
 
-                        // ADR-0035: PI feedback for window mode
+                        // Controller feedback for window mode.
                         if let Some(ref win_dec) = window_decoder {
                             let fed = win_dec.repairs_fed();
                             let useful = win_dec.repairs_useful();
@@ -2287,25 +2155,24 @@ pub(crate) async fn run_receiver(
                             last_pi_repairs_useful = useful;
                         }
 
-                        // Prune old entries from received_seqs tracking
-                        // AND the window decoder's recovered/pivot/seen
-                        // state (it was never advanced before — an
-                        // unbounded leak over long streams). Everything
-                        // below the delivered prefix minus two windows
-                        // is decode-inert: repairs only reference the
-                        // sender's current window, which sits at or
-                        // above its ack (= our delivered point).
+                        // Prune old entries from received_seqs tracking and
+                        // the window decoder's recovered/pivot/seen state
+                        // (unbounded otherwise over long streams). Everything
+                        // below the delivered prefix minus two windows is
+                        // decode-inert: repairs only reference the sender's
+                        // current window, which sits at or above its ack
+                        // (= our delivered point).
                         let mut prune_before = highest_delivered_seq.saturating_sub(recv_win_cap * 2);
-                        // RELIABILITY INVARIANT (RWM_REASM_BDP): never evict a
+                        // Reliability invariant (RWM_REASM_BDP): never evict a
                         // received symbol before it is delivered. Under SACK the
                         // sender races ahead of the frozen in-order frontier, so
                         // `highest_seen_seq` runs far above `highest_delivered_seq`
-                        // (the hole). The prune is keyed on the DELIVERED frontier
+                        // (the hole). The prune is keyed on the delivered frontier
                         // (so `prune_before ≤ highest_delivered_seq` already), but
-                        // clamp it explicitly so the composed decoupling can never
-                        // drop a received-above-hole symbol the sender has pruned.
-                        // The reorder buffer is separately non-evicting (usize::MAX),
-                        // so held source symbols survive to delivery regardless.
+                        // clamp it explicitly so a received-above-hole symbol the
+                        // sender has pruned is never dropped. The reorder buffer is
+                        // separately non-evicting (usize::MAX), so held source
+                        // symbols survive to delivery regardless.
                         if reasm_bdp_on {
                             prune_before = prune_before.min(highest_delivered_seq);
                         }
@@ -2337,9 +2204,9 @@ pub(crate) async fn run_receiver(
                         }
                     }
                 } else {
-                    // ----- Block-mode receive path (existing) -----
+                    // ----- Block-mode receive path -----
                     for symbol in &batch.symbols {
-                        // Instrumentation (L2 ws1): per-path arrival counts.
+                        // Instrumentation: per-path arrival counts.
                         // Debug-gated: the map update stays off the hot
                         // path unless composition logging is wanted.
                         if tracing::enabled!(tracing::Level::DEBUG)
@@ -2356,7 +2223,7 @@ pub(crate) async fn run_receiver(
                         }
                         if !recv_decoders.contains_key(&symbol.block_id) {
                             // Late/spurious ARQ repair for a block that
-                            // already decoded: drop, don't buffer (P8).
+                            // already decoded: drop, don't buffer.
                             if completed_blocks.lock().1.contains(&symbol.block_id) {
                                 continue;
                             }
@@ -2382,21 +2249,17 @@ pub(crate) async fn run_receiver(
                     }
                 }
 
-                // ADR-0005: send ACK with echo timestamp for RTT
+                // ADR-0005: send ACK with echo timestamp for RTT.
                 //
-                // ack-merge (RWM_ACK_MERGE, goal-gate "Unlock The Default
-                // 1"): THIS is the second control datagram per data
-                // message. Its send site sits after the window/block
-                // branch closes, so it has always fired in WINDOW mode too
-                // (the recorded correction in the sender's Ack arm) — one
-                // legacy Ack for every SACK WindowAck, against quinn-perf's
-                // ~1 ack per ~24 packets. Under the merge, window mode
-                // suppresses it entirely: its payload rides the WindowAck's
-                // v6 cumulative counters and its consumers are re-homed
-                // onto the counter diff. BLOCK MODE IS UNTOUCHED — it has
-                // no WindowAck to merge into, `block_arq` is live only
-                // there, and its dup-ack loss channel keeps the per-batch
-                // Ack it is built on.
+                // Ack-merge (RWM_ACK_MERGE): this is the second control
+                // datagram per data message. Its send site sits after the
+                // window/block branch closes, so it fires in window mode too —
+                // one per-batch Ack for every SACK WindowAck. Under the merge,
+                // window mode suppresses it entirely: its payload rides the
+                // WindowAck's cumulative counters and its consumers use the
+                // counter diff. Block mode is untouched — it has no WindowAck
+                // to merge into, `block_arq` is live only there, and its
+                // dup-ack loss channel keeps the per-batch Ack it is built on.
                 let suppress_legacy_ack = ack_merge_recv;
                 // Collect received_ids for symbols in this batch
                 let received_ids: Vec<u32> = batch
@@ -2437,11 +2300,10 @@ pub(crate) async fn run_receiver(
                     window_packed = *packed;
                 }
 
-                // Mid-stream backend switching was REMOVED (paper §16.4):
-                // no peer running this code sends WindowSwitch anymore,
-                // and acting on one (rebuilding the decoder mid-stream)
-                // is exactly the seq-space/state hazard that got the
-                // switch pinned off in P9a. Ignore it, loudly.
+                // Mid-stream backend switching is not supported (paper §5.10):
+                // no peer running this code sends WindowSwitch, and acting on
+                // one (rebuilding the decoder mid-stream) is a
+                // seq-space/state hazard. Ignore it, loudly.
                 if let ControlMessage::WindowSwitch { flush_seq, new_backend, .. } = &ctrl_msg {
                     warn!(
                         flush_seq,
@@ -2459,10 +2321,10 @@ pub(crate) async fn run_receiver(
                 // Re-announced BlockStart for a block we already delivered:
                 // the sender's success BlockResult was lost (best-effort
                 // datagram) so its idle re-announce keeps probing this
-                // block. Re-ack (idempotent) so it stops, and do NOT let
+                // block. Re-ack (idempotent) so it stops, and do not let
                 // handle_control_message re-create a zombie decoder for a
                 // done block (which the re-announce spares would then feed
-                // forever until the 30 s eviction). P8 idle-recovery.
+                // forever until the 30 s eviction).
                 if let Some(bid) = started_block {
                     if completed_blocks.lock().1.contains(&bid) {
                         let reack = ControlMessage::BlockResult {
@@ -2517,16 +2379,16 @@ pub(crate) async fn run_receiver(
         }
     }
 
-    // ── THE EXIT FLUSH ────────────────────────────────────────────────────
-    // Every way out of the loop lands here: the channel closing, the
-    // shutdown broadcast, and the four failure exits (`break 'recv` above:
-    // two TUN-inject closures and the two `feed_block_symbol` failures) —
-    // they all still end the TASK, at this one site, and nothing runs after
-    // it. The block prints once more, marked `final=1`, off a FRESH
-    // `[RANK]` probe while the decoder is still in scope. A task whose
-    // future is DROPPED instead (runtime teardown) never reaches this line;
-    // `RecvDiagBlock`'s destructor flushes it then, without a probe. The two
-    // share one flag, so exactly one final block is ever printed.
+    // ── The exit flush ────────────────────────────────────────────────────
+    // Every way out of the loop lands here: the channel closing, the shutdown
+    // broadcast, and the four failure exits (`break 'recv` above: two
+    // TUN-inject closures and the two `feed_block_symbol` failures) — they
+    // all end the task at this one site, and nothing runs after it. The block
+    // prints once more, marked `final=1`, off a fresh `[RANK]` probe while the
+    // decoder is still in scope. A task whose future is dropped instead
+    // (runtime teardown) never reaches this line; `RecvDiagBlock`'s destructor
+    // flushes it then, without a probe. The two share one flag, so exactly one
+    // final block is ever printed.
     let probe = window_decoder.as_deref().map(|wd| {
         rank_probe(wd, highest_delivered_seq, highest_seen_seq, &mut rank_prev_seen)
     });
@@ -2534,8 +2396,8 @@ pub(crate) async fn run_receiver(
 }
 
 /// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the
-/// span `[frontier + 1, highest_seen]`, with the honest tail correction: the
-/// span that arrived since the PREVIOUS readout is still in flight rather than
+/// span `[frontier + 1, highest_seen]`, with the tail correction: the span
+/// that arrived since the previous readout is still in flight rather than
 /// missing, and is reported beside the deficit rather than subtracted from
 /// it. Shared by the cadence readout and the exit flush so the two can never
 /// disagree on what a probe is. Advances `rank_prev_seen`.

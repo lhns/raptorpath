@@ -1,47 +1,31 @@
-//! The window sender's SOURCE-SYMBOL emission step: one framed packet in,
+//! The window sender's source-symbol emission step: one framed packet in,
 //! encoder intake + wire placement + accounting + proactive repair out.
 //!
-//! History (net seam pass 2, 2026-08-09): this was `macro_rules!
-//! send_source_symbol!`, 645 lines defined inline in `run_window_sender` and
-//! expanded at six call sites (packer flush ×3, packer push, the plain
-//! one-packet-per-symbol path, and the `RWM_EMIT_BATCH` burst drain). It was
-//! a macro only because it mutates ~30 captured locals — encoder, retention
-//! store, per-path account/loan ledgers, the taper/span cache, the shed
-//! ledger and the DIAG gauges — which no ordinary function could reach. Those
-//! locals are now the fields of [`SenderState`]; the resolve-once
-//! configuration it reads is [`SenderPolicy`](super::sender_policy::
-//! SenderPolicy); the shared engine handles are [`SenderCtx`]. The six
-//! expansions became six calls to [`emit_source`].
+//! The mutable sender locals live in [`SenderState`], the resolve-once
+//! configuration in [`SenderPolicy`](super::sender_policy::SenderPolicy),
+//! and the shared engine handles in [`SenderCtx`]; `run_window_sender` calls
+//! [`emit_source`] from each of its source-emission sites.
 //!
-//! BEHAVIOUR CONTRACT: the body is VERBATIM. It was moved by a mechanical
-//! transform that only inserts a `st.` / `pol.` / `ctx.` prefix in front of a
-//! captured name (never inside a string literal or a comment, never after a
-//! `.`); stripping those prefixes reproduces the macro body byte-for-byte
-//! modulo one dedent level. Nothing was reordered, merged, split or
-//! re-guarded. In particular:
-//!   * all ELEVEN scheduler acquisitions are the same eleven, in the same
-//!     order, with the same scopes — `place_symbol` for the source pick, the
-//!     `select_source_path` non-reliable pick, the `charge_in_flight` +
-//!     Copa `on_sent`/`charge_src`/`on_src_sent` block, the redundant-source
-//!     pick and its charge, the worst-loss ε read, the `deficit.on_send`
-//!     write, the taper `spare_capacity`/estimator read (taken WITH the
-//!     fec-controller lock, controller FIRST — unchanged), the per-correction
-//!     worst-loss read, the correction placement pick, and the correction
-//!     `charge_in_flight`;
-//!   * the fec-controller lock is still acquired before the scheduler lock in
-//!     the taper block and both are still released at the end of that block;
-//!   * the `RWM_EMIT_BATCH` taper cache still short-circuits the derived
-//!     recomputation while still feeding the A* send-rate anchor per symbol;
-//!   * the δ-honest shed decision still runs inside the `P_lost` retransmit
-//!     branch, after the coin flip, and the ρ-budget-refused arm still
-//!     increments `shed_denied` and serializes.
+//! Ordering constraints:
+//!   * the scheduler is locked in short, separate acquisitions, in this
+//!     order: the source placement pick, the ETA stamp, the
+//!     `charge_in_flight` + Copa `on_sent`/`charge_src`/`on_src_sent` block,
+//!     the redundant-source pick and its charge, the worst-loss ε read, the
+//!     `deficit.on_send` write, the taper `spare_capacity`/estimator read, the
+//!     per-correction worst-loss read, the correction placement pick, and the
+//!     correction `charge_in_flight`;
+//!   * in the taper block the fec-controller lock is taken before the
+//!     scheduler lock, and both are released at the end of that block;
+//!   * the `RWM_EMIT_BATCH` taper cache short-circuits the derived
+//!     recomputation but still feeds the A* send-rate anchor per symbol;
+//!   * the δ-honest shed decision runs inside the `P_lost` retransmit branch,
+//!     after the coin flip, and the ρ-budget-refused arm increments
+//!     `shed_denied` and serializes.
 //!
-//! NOT covered here: the paced GENERATION coded-emission block, the deficit
-//! recovery loop, the NACK/gap repair dispatch, the tail ARQ sweep, the
-//! ack/SACK drains and the dynamic store-cap refresh — all still inline in
-//! `run_window_sender`, all still reading the same `SenderState` fields
-//! through the struct. The state fields are `pub(crate)` for exactly that
-//! reason: this module owns the emission step, not the state's lifetime.
+//! The paced generation coded-emission block, the deficit recovery loop, the
+//! NACK/gap repair dispatch, the tail ARQ sweep, the ack/SACK drains and the
+//! dynamic store-cap refresh live elsewhere in the sender and read the same
+//! `SenderState` fields, which is why they are `pub(crate)`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -66,10 +50,9 @@ use crate::control::fec_rate::ProtocolHint;
 /// the service wall is ~3 ms; 50 ms only binds on low-rate paths.
 const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 
-/// The shared engine handles the emission step needs. Built ONCE per
-/// `run_window_sender` invocation from that function's own parameters — the
-/// `ControlCtx` shape from net seam pass 1. Taken by SHARED reference: no
-/// field is reassigned, all mutation goes through the `Mutex`/atomic handles.
+/// The shared engine handles the emission step needs, built once per
+/// `run_window_sender` invocation. Taken by shared reference: all mutation
+/// goes through the `Mutex`/atomic handles.
 pub(crate) struct SenderCtx<'a> {
     pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
@@ -77,56 +60,52 @@ pub(crate) struct SenderCtx<'a> {
     pub stats: &'a Arc<SharedStats>,
     pub batch_counter: &'a AtomicU64,
     pub window_ack_seq: &'a Arc<AtomicU64>,
-    /// feat/copa-sole-cc: `Some(..)` in plain in-order mode when the Copa
-    /// delivery feed is on. `None` = shipped path.
+    /// `Some(..)` in plain in-order mode when the Copa delivery feed is on.
+    /// `None` = shipped path.
     pub copa_feed: Option<&'a Arc<CopaFeed>>,
 }
 
-/// The window sender's MUTABLE state — every local the old
-/// `send_source_symbol!` macro wrote, plus the encoder it drives.
+/// The window sender's mutable state — the encoder and every local the
+/// emission step writes.
 ///
-/// These fields are still read and written by the rest of `run_window_sender`
-/// (the ack/SACK drains, the NACK repair dispatch, the DIAG print, the tail
-/// sweep); the struct exists so the emission step can be an ordinary function
-/// instead of a macro, NOT to hide the state. Field docs are the originals,
-/// moved here with their code.
+/// The rest of `run_window_sender` (the ack/SACK drains, the NACK repair
+/// dispatch, the DIAG print, the tail sweep) reads and writes these fields
+/// too; the struct lets the emission step be an ordinary function.
 pub(crate) struct SenderState {
-    /// Codec pinned at startup (§16.4) — created once, never rebuilt.
+    /// Codec pinned at startup — created once, never rebuilt.
     pub encoder: Box<dyn WindowEncoder>,
 
-    /// RWM Phase A sent-data store (reliable mode only): seq → the exact
-    /// source WireSymbol as sent. This is the retention contract — bytes
-    /// retained until the peer's cumulative ack passes them (removal by ack
-    /// ONLY), so an aged SACK-confirmed hole that slid out of the coding
-    /// window is recovered by a targeted retransmit of exactly this symbol.
-    /// Bounded by RELIABLE_STORE_MAX via TUN-read backpressure, never by
-    /// eviction.
+    /// Sent-data store (reliable mode only): seq → the exact source
+    /// WireSymbol as sent. This is the retention contract — bytes retained
+    /// until the peer's cumulative ack passes them (removal by ack only), so
+    /// an aged SACK-confirmed hole that slid out of the coding window is
+    /// recovered by a targeted retransmit of exactly this symbol. Bounded by
+    /// RELIABLE_STORE_MAX via TUN-read backpressure, never by eviction.
     pub sent_store: BTreeMap<u64, WireSymbol>,
     /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
     /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
-    /// METADATA only — under EVICT the source bytes die with window eviction.
+    /// Metadata only — under EVICT the source bytes die with window eviction.
     pub retransmit_buffer: BTreeMap<u64, (u64, f64, u32)>,
     /// Maps source seq → path it was sent on (for cross-path retransmission).
     /// BTreeMap (not HashMap) so the per-path ack attribution can range-query
-    /// the seqs in a SACK / cumulative-ack span efficiently (feat/per-path-
-    /// estimator); all other uses (insert/get/remove/retain) are unaffected.
+    /// the seqs in a SACK / cumulative-ack span.
     pub source_path_map: BTreeMap<u64, u32>,
-    /// P10b: seq → last NACK-retransmit time (µs). Repeated gap acks for the
-    /// same hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists)
-    /// must not resend the symbol more than once per SRTT — but MAY resend
-    /// after an SRTT, which escalates naturally if the retransmit itself dies.
+    /// seq → last NACK-retransmit time (µs). Repeated gap acks for the same
+    /// hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists) must
+    /// not resend the symbol more than once per SRTT — but may resend after
+    /// an SRTT, which escalates naturally if the retransmit itself dies.
     /// Value = (last retransmit time µs, path the retransmit flew on). The
-    /// path is the RWM_RECOV_MP live-flight input (the retransmit inherits
-    /// the in-flight clock of its own path — feat/recovery-suppression);
-    /// with the gate off only the time is read (byte-identical behavior).
+    /// path is the `RWM_RECOV_MP` live-flight input (the retransmit inherits
+    /// the in-flight clock of its own path); with the gate off only the time
+    /// is read.
     pub nack_retx_at: std::collections::HashMap<u64, (u64, u32)>,
 
     /// Last source path used (for NACK repair path selection outside the
     /// emission step).
     pub last_source_path: u32,
-    /// Wall-clock (us) of the last NEW source-symbol send (ADR-0046
-    /// idle-triggered recovery). Initialized to "now" so a transfer that
-    /// stalls before sending anything is treated as active until it idles.
+    /// Wall-clock (µs) of the last new source-symbol send (idle-triggered
+    /// recovery). Initialized to "now" so a transfer that stalls before
+    /// sending anything is treated as active until it idles.
     pub last_source_send_us: u64,
     /// Last source-intake time (generation-mode pacing input).
     pub gen_last_source_us: u64,
@@ -138,7 +117,7 @@ pub(crate) struct SenderState {
 
     // ── Per-path store attribution (the `[DIAG] sout=` gauge) ────────────
     /// seq → account path, in lockstep with `sent_store` (charge on insert,
-    /// release on ack-removal ONLY — the retention contract).
+    /// release on ack-removal only — the retention contract).
     pub percap_acct: BTreeMap<u64, u32>,
     /// path → outstanding gauge (Σ over `percap_acct`; DIAG `sout=`).
     pub percap_out: std::collections::HashMap<u32, usize>,
@@ -151,12 +130,11 @@ pub(crate) struct SenderState {
     /// Source symbol counter for taper time offset (symbols since window
     /// start).
     pub taper_offset: u64,
-    /// #85 budget-conserving taper (RWM_TAPER_R): emission consumes r as
+    /// Budget-conserving taper (`RWM_TAPER_R`): emission consumes r as
     /// computed (a per-window budget) instead of r per ack cycle.
     pub taper_budget: TaperBudget,
-    /// feat/anchor-hygiene (RWM_ASTAR_ANCHOR): windowed-max send-rate anchor
-    /// fed by the sender's OWN send events, with gap-spanning buckets
-    /// discarded.
+    /// Windowed-max send-rate anchor (`RWM_ASTAR_ANCHOR`), fed by the
+    /// sender's own send events, with gap-spanning buckets discarded.
     pub astar_anchor: SendRateAnchor,
     /// RWM_EMIT_BATCH per-burst cache: (repair_rate, span_params, estimator
     /// RTT at refresh).
@@ -164,12 +142,12 @@ pub(crate) struct SenderState {
     pub taper_cache_syms: usize,
     pub taper_cache_at_us: u64,
 
-    // ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
+    // ── δ-honest overload shedding ──────────────────────────────────────
     /// Seqs shed by the δ law (never served again; pruned at the cumulative
     /// frontier — the split_off twin).
     pub shed_seqs: BTreeSet<u64>,
     pub shed_total: u64,
-    /// Past-deadline candidates the ρ budget REFUSED (the serialize arm of
+    /// Past-deadline candidates the ρ budget refused (the serialize arm of
     /// the law — visible in DIAG so the budget's bite is measurable).
     pub shed_denied: u64,
     /// The live derived 1−ρ budget fraction and δ deadline (µs), refreshed
@@ -181,20 +159,19 @@ pub(crate) struct SenderState {
     /// GLIFE per-generation lifecycle: anchor → (first_src, sealed,
     /// last_emit) µs.
     pub gl: std::collections::HashMap<u64, (u64, u64, u64)>,
-    /// feat/c8-conversion: cumulative FIRST source placements per path.
+    /// Cumulative first source placements per path.
     pub c8c_src_placed: std::collections::HashMap<u32, u64>,
-    /// diag/unified-collapse: last ~500 ms span-law trace stamp.
+    /// Last ~500 ms span-law trace stamp.
     pub span_diag_last_us: u64,
-    /// feat/recovery-suppression trace: the P_lost-branch retransmit channel.
+    /// Recovery-suppression trace: the P_lost-branch retransmit channel.
     pub mpd_plost_retx: u64,
 }
 
 impl SenderState {
-    /// Build the sender's mutable state. Every initializer here is the one it
-    /// had inline in `run_window_sender` and every one of them is PURE
-    /// (empty collections, zeroed counters, and the startup-pinned encoder) —
-    /// the two wall-clock stamps are passed IN so they keep being sampled at
-    /// the exact point in setup they were sampled at before.
+    /// Build the sender's mutable state. Every initializer is pure (empty
+    /// collections, zeroed counters, and the startup-pinned encoder); the two
+    /// wall-clock stamps are passed in so the caller controls when in setup
+    /// they are sampled.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         fec_backend: FecBackend,
@@ -207,7 +184,7 @@ impl SenderState {
         gen_last_source_us: u64,
         last_source_send_us: u64,
     ) -> Self {
-        // Codec pinned at startup (§16.4) — created once, never rebuilt.
+        // Codec pinned at startup — created once, never rebuilt.
         let encoder: Box<dyn WindowEncoder> = if systematic {
             Box::new(crate::fec::GenerationEncoder::new_systematic(
                 symbol_size,
@@ -261,10 +238,8 @@ impl SenderState {
 /// Feed one framed packet to the encoder, place it on the wire, account for
 /// it, and emit the proactive repair its taper budget owes.
 ///
-/// The former `send_source_symbol!($framed)`. `emit_batch_live` is a
-/// per-ITERATION input (re-scoped in the main loop, read-only here), so it
-/// stays a local of `run_window_sender` and is passed in rather than living
-/// in [`SenderState`].
+/// `emit_batch_live` is a per-iteration input (re-scoped in the main loop,
+/// read-only here), so it is passed in rather than living in [`SenderState`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_source(
     framed: &[u8],
@@ -289,22 +264,20 @@ pub(crate) fn emit_source(
     }
     st.gen_last_source_us = now_us();
 
-    // RWM Phase A retention: the store keeps the sent bytes until
-    // the peer acks them — the coding window may slide past this
-    // symbol, but the data can no longer be destroyed by eviction.
-    // Generation coding turns per-seq ARQ OFF, so it needs NO sent
-    // store (recovery is more coded symbols for the generation, never
-    // an exact-seq resend); backpressure uses the encoder's retained
-    // size instead. The GenerationEncoder itself retains the sources.
+    // Retention: the store keeps the sent bytes until the peer acks them —
+    // the coding window may slide past this symbol, but the data can no
+    // longer be destroyed by eviction. Generation coding turns per-seq ARQ
+    // off, so it needs no sent store (recovery is more coded symbols for the
+    // generation, never an exact-seq resend); backpressure uses the
+    // encoder's retained size instead.
     if pol.reliable && !pol.generation {
         st.sent_store.insert(wire_sym.block_id, wire_sym.clone());
     }
 
-    // Send source symbol. RWM Phase B (§16.3): in reliable multipath
-    // mode, stripe by the per-symbol placement law (softmax over
-    // marginal cost); single path collapses to that path (byte-
-    // identical to Phase A). Non-reliable (realtime/EVICT) mode keeps
-    // the single best-path pick + redundant duplicate, unchanged.
+    // Send the source symbol. In reliable multipath mode, stripe by the
+    // per-symbol placement law (softmax over marginal cost, paper §5.7);
+    // a single path collapses to that path. Non-reliable (realtime/EVICT)
+    // mode keeps the single best-path pick + redundant duplicate.
     let source_path = {
         if pol.reliable {
             let sched = ctx.scheduler.lock();
@@ -315,21 +288,19 @@ pub(crate) fn emit_source(
         }
     };
     st.last_source_path = source_path;
-    // ── wire v8 `[ETA]`: STAMP THE SENDER'S OWN PREDICTION ─────────────
+    // ── `[ETA]`: stamp the sender's own prediction ───────────────────────
     // `E_picked` is the `expected_delivery_load()` of the path the placement
-    // law JUST CHOSE -- read AFTER the per-cap redirect above, so it is the
-    // FINAL path's number and not the pre-redirect pick's. This is the same
-    // quantity the law's `load` term is built from (there de-dimensionalised
-    // by `ref_srtt` and offset by the deadline; here in raw seconds), so the
-    // receiver is being told the sender's own model rather than a second one.
+    // law just chose. It is the same quantity the law's `load` term is built
+    // from (there de-dimensionalised by `ref_srtt` and offset by the
+    // deadline; here in raw seconds), so the receiver is told the sender's
+    // own model rather than a second one.
     //
-    // READ BEFORE `charge_in_flight` below, which is why it is its own short
+    // Read before `charge_in_flight` below, which is why it is its own short
     // acquisition: charging first would price this symbol's own backlog into
     // its own prediction.
     //
     // The same call updates `F-hat` (the running max of stamped arrival
-    // times). NOTHING READS EITHER -- the wire field feeds two gauges and the
-    // frontier feeds Track A's Stage-2 HOL term, which does not exist yet.
+    // times). Neither feeds a decision: the wire field feeds two gauges.
     let src_send_ts_us = now_us();
     let eta_rel_us = {
         let mut sched = ctx.scheduler.lock();
@@ -337,41 +308,37 @@ pub(crate) fn emit_source(
             .path(source_path)
             .map(|p| p.expected_delivery_load())
             .unwrap_or(0.0);
-        // Non-finite (a path with no cwnd yet) reads as NO PREDICTION -- the
-        // 0 sentinel -- rather than as a fabricated number.
+        // Non-finite (a path with no cwnd yet) reads as no prediction — the
+        // 0 sentinel — rather than as a fabricated number.
         let us = if e.is_finite() && e > 0.0 { (e * 1e6) as u64 } else { 0 };
         sched.eta_mut().stamp(source_path, src_send_ts_us, us);
         us
     };
-    // ADR-0046 idle-triggered recovery: stamp the last NEW-source send
-    // so the NACK throttle can tell "actively pushing data" (repairs
-    // would load a congested path) from "idle except for a hole"
-    // (targeted recovery is free).
+    // Idle-triggered recovery: stamp the last new-source send so the NACK
+    // throttle can tell "actively pushing data" (repairs would load a
+    // congested path) from "idle except for a hole" (targeted recovery is
+    // free).
     st.last_source_send_us = now_us();
-    // Fungible frontier (§16.3): in coded-only mode the wire carries a
-    // fresh random linear combination over the CURRENT window (which
-    // now includes this just-added source) instead of the raw
-    // systematic symbol. Any K independent such combinations, from any
-    // path, reconstruct the K window sources — so a coded symbol lost
-    // on the slow path is one interchangeable degree of freedom, not a
-    // fixed in-order position (removing the §16.7 long-pole cap). The
-    // systematic bytes remain in the encoder window + retention store
-    // for the targeted-ARQ backstop on aged holes.
+    // Fungible frontier (paper §5.2): in coded-only mode the wire carries a
+    // fresh random linear combination over the current window (which now
+    // includes this source) instead of the raw systematic symbol. Any K
+    // independent such combinations, from any path, reconstruct the K window
+    // sources — so a coded symbol lost on the slow path is one
+    // interchangeable degree of freedom, not a fixed in-order position. The
+    // systematic bytes remain in the encoder window + retention store for the
+    // targeted-ARQ backstop on aged holes.
+    //
     // Generation coding decouples coded emission from source intake:
-    // add_source only FILLS the generation here; the paced token-bucket
-    // block in the main loop does ALL wire sends (so coded keeps flowing
-    // to complete buffered generations even while TUN reads are paused by
-    // backpressure — the source-driven emission alone serializes and
-    // stalls). So skip the per-source wire send entirely in this mode.
-    // Systematic-repair (§16.3 oracle): the RAW source rides the wire as
-    // PRIMARY here (striped ∝-goodput via the place_symbol pick above,
-    // delivered out-of-order with ZERO decode). Coded repair is emitted
-    // separately in the paced generation block (only ceil(len·r) per
-    // generation + deficit top-up). Coded-only generation mode SKIPS the
-    // per-source send (all its emission is the paced coded block). Both
-    // generation submodes keep per-seq ARQ / sent_store / taper repair
-    // OFF (gated on `!generation` below), so systematic adds only the
-    // source wire-send, nothing else.
+    // add_source only fills the generation here, and the paced token-bucket
+    // block in the main loop does all wire sends (so coded symbols keep
+    // flowing to complete buffered generations even while TUN reads are
+    // paused by backpressure). Systematic-repair: the raw source rides the
+    // wire as primary here (striped by the place_symbol pick above, delivered
+    // out of order with zero decode); coded repair is emitted in the paced
+    // generation block (ceil(len·r) per generation + deficit top-up).
+    // Coded-only generation mode skips the per-source send. Both generation
+    // submodes keep per-seq ARQ / sent_store / taper repair off (gated on
+    // `!generation` below).
     if pol.systematic || !pol.generation {
         let on_wire = if pol.systematic {
             wire_sym.clone() // raw systematic source is the primary
@@ -381,8 +348,8 @@ pub(crate) fn emit_source(
             wire_sym.clone()
         };
         let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-        // v8: the batch's `send_timestamp_us` IS the key the ack's echo will
-        // carry, so it must be the same instant the stamp above registered --
+        // The batch's `send_timestamp_us` is the key the ack's echo will
+        // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.
         let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, batch_seq, source_path)
             .with_eta(eta_rel_us);
@@ -393,18 +360,14 @@ pub(crate) fn emit_source(
             let mut sched = ctx.scheduler.lock();
             if let Some(p) = sched.path_mut(source_path) {
                 p.charge_in_flight(1);
-                // feat/copa-sole-cc: record the seq→path commitment +
-                // the BBR rate-sample send snapshot so this seq's
-                // eventual WindowAck attribution yields a clean
-                // SEND-interval delivery-rate sample on this path.
-                // (Bulk back-to-back sends: app_limited = false; an
-                // under-read sample can never lower the max filter.)
-                // feat/window-mtu scope fix: a PAUSED N1-scoped feed
-                // must behave as ABSENT — charging src_inflight /
-                // snapshotting rate samples without the (paused)
-                // attribution to release them leaked src_inflight
-                // ~165k and starved the anchor at duals (measured:
-                // c7-fix 64 Mbit, cap collapsed to boot 128).
+                // Record the seq→path commitment + the BBR rate-sample send
+                // snapshot so this seq's eventual WindowAck attribution
+                // yields a clean send-interval delivery-rate sample on this
+                // path. (Bulk back-to-back sends: app_limited = false; an
+                // under-read sample can never lower the max filter.) A
+                // paused feed must behave as absent: charging src_inflight
+                // without the attribution to release it leaks src_inflight
+                // and starves the anchor.
                 if let Some(feed) = ctx.copa_feed.as_ref() {
                     feed.on_sent(wire_sym.block_id, source_path);
                     p.charge_src(1);
@@ -417,8 +380,8 @@ pub(crate) fn emit_source(
         }
         ctx.stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
         st.source_symbols_this_period += 1;
-        // Fix 1: charge the paced source send against the link-rate
-        // token bucket (the TUN-read gate refills + admits it).
+        // Charge the paced source send against the link-rate token bucket
+        // (the TUN-read gate refills + admits it).
         if pol.cc_pace {
             st.src_tokens -= 1.0;
         }
@@ -426,7 +389,7 @@ pub(crate) fn emit_source(
 
     // Track which path this source was sent on (for cross-path retransmission)
     st.source_path_map.insert(wire_sym.block_id, source_path);
-    // feat/c8-conversion DIAG: per-path FIRST source placement count.
+    // DIAG: per-path first source placement count.
     if pol.diag_on {
         *st.c8c_src_placed.entry(source_path).or_insert(0) += 1;
     }
@@ -435,7 +398,7 @@ pub(crate) fn emit_source(
     // outstanding account, in lockstep with the sent_store insert above
     // (percap_track ⊆ plain_dyn_cap ⊆ the reliable && !generation retention
     // mode, under RWM_DIAG only). Released only by the ack that removes it
-    // from the store. A cross-path retransmit does NOT re-attribute.
+    // from the store. A cross-path retransmit does not re-attribute.
     if pol.percap_track {
         percap_charge(&mut st.percap_acct, &mut st.percap_out, wire_sym.block_id, source_path);
     }
@@ -484,10 +447,11 @@ pub(crate) fn emit_source(
         }
     }
 
-    // Taper-driven repair accumulator with cwnd budget gate (ADR-0050).
+    // Taper-driven repair accumulator with cwnd budget gate (ADR-0050,
+    // paper §3.3).
     // Uses TaperFunction density τ(t) = A×(1-q)^t when GE data is available,
     // capped by spare capacity. Falls back to flat rate otherwise.
-    // Generation coding does ALL coded emission in the ack-clocked
+    // Generation coding does all coded emission in the ack-clocked
     // flow-control block in the main loop, so the per-source taper repair
     // is disabled here (it would double-emit and fight the flow control).
     if !pol.generation && st.encoder.window_size() > 1 {
@@ -523,9 +487,9 @@ pub(crate) fn emit_source(
                     let flat_rate = ctrl.compute_repair_rate_capped(est, spare, st.encoder.window_size());
                     let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
                     let rr = if pol.taper_r_budget {
-                        // #85 budget law (see TaperBudget decl above):
-                        // emission tracks r × source per coding window
-                        // — the computed r* is consumed at the wire.
+                        // Budget law (see `TaperBudget`): emission tracks
+                        // r × source per coding window — the computed r* is
+                        // consumed at the wire.
                         st.taper_budget.accrue(
                             flat_rate,
                             st.taper_offset,
@@ -534,23 +498,21 @@ pub(crate) fn emit_source(
                             spare,
                         )
                     } else {
-                        // LEGACY (measured-inert): taper density at the
-                        // current offset; Σ over an ack cycle = r once.
+                        // `RWM_TAPER_R=0`: taper density at the current
+                        // offset; Σ over an ack cycle = r once.
                         let density = taper.density(st.taper_offset as f64);
                         // Cap by spare capacity (never exceed link headroom)
                         density.min(spare.max(0.0))
                     };
-                    // §16.20.3 span parameters (A*, Δ) from the same
-                    // measured anchors — see the unified_span decl.
+                    // Span parameters (A*, Δ) from the same measured anchors
+                    // (paper §5.3).
                     let span = if pol.unified_span {
                         let rate_sym = if pol.astar_anchor_on {
-                            // feat/anchor-hygiene: this block runs
-                            // once per SOURCE symbol send — feed the
-                            // windowed-max send-rate anchor here and
-                            // read it back (sym/s directly; no
-                            // byte/EWMA detour). None before the
-                            // first measured bucket ⇒ A* clamps to 1
-                            // — the honest cold-start, ~SRTT/2 long.
+                            // This block runs once per source symbol send —
+                            // feed the windowed-max send-rate anchor here and
+                            // read it back (sym/s directly). None before the
+                            // first measured bucket ⇒ A* clamps to 1, the
+                            // cold start, ~SRTT/2 long.
                             let now_i = Instant::now();
                             st.astar_anchor.on_send(now_i, 1, est.rtt());
                             st.astar_anchor.rate(now_i, est.rtt()).unwrap_or(0.0)
@@ -558,10 +520,9 @@ pub(crate) fn emit_source(
                             (est.throughput() / pol.symbol_size.max(1) as f64).max(0.0)
                         };
                         let rtprop = est.rtt().as_secs_f64();
-                        // The δ dial's named points, ONCE (see
-                        // `net::delta_budget_b`): the same three-arm map is
-                        // now also read by the three-term store law, and two
-                        // transcriptions of a dial is how they drift apart.
+                        // The δ dial's named points, once (see
+                        // `net::delta_budget_b`): the three-term store law
+                        // reads the same map.
                         let b = super::delta_budget_b(pol.protocol_hint);
                         let d = (b * rtprop).min(2.0 * rtprop);
                         let a_star = ((rate_sym * d).ceil() as u64)
@@ -600,7 +561,7 @@ pub(crate) fn emit_source(
         st.taper_cache_at_us = now_us();
         (repair_rate, span_params)
         };
-        // diag/unified-collapse: span-law sender trace (RWM_DIAG only).
+        // Span-law sender trace (RWM_DIAG only).
         if pol.diag_on && pol.unified_span {
             let dnow = now_us();
             if dnow.saturating_sub(st.span_diag_last_us) > 500_000 {
@@ -619,8 +580,8 @@ pub(crate) fn emit_source(
                     .datagram_frame_stats(source_path)
                     .map(|(rx, tx)| format!(" dg_rx={rx} dg_tx={tx}"))
                     .unwrap_or_default();
-                // feat/anchor-hygiene: the A* anchor gauge (windowed-
-                // max send rate + gap-discard counters) when active.
+                // The A* anchor gauge (windowed-max send rate + gap-discard
+                // counters) when active.
                 let ah = if pol.astar_anchor_on {
                     let (g, d) = st.astar_anchor.stats();
                     format!(
@@ -634,9 +595,9 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
-                // δ-honest shed gauge (fix C): cumulative shed /
-                // budget-refused counts, the live 1−ρ fraction and
-                // deadline — the law's liveness at the sender.
+                // δ-honest shed gauge: cumulative shed / budget-refused
+                // counts, the live 1−ρ fraction and deadline — the law's
+                // liveness at the sender.
                 let shg = if pol.shed_on {
                     format!(
                         " shed={}/{} bud={:.4} D={}ms",
@@ -668,17 +629,15 @@ pub(crate) fn emit_source(
                 );
             }
         }
-        // RWM Phase C raise-r arm (§16.5): floor the per-symbol
-        // repair rate to make the window rateless-fungible. Applied
-        // AFTER the spare cap on purpose — the experiment forces the
-        // bandwidth spend to test aggregation, on links with headroom.
+        // `repair_rate_floor` (`RWM_MIN_R`): floor the per-symbol
+        // repair rate. Applied after the spare cap on purpose — the arm
+        // forces the bandwidth spend.
         let repair_rate = repair_rate.max(pol.repair_rate_floor);
-        // Generation coding: a small proactive overhead per generation
-        // (the oracle's r ≈ 0.10) so a generation carries K_G(1+r) coded
-        // symbols and decodes without waiting on a recovery round for
-        // the expected loss. Beyond this, the frontier-retention keeps
-        // coding any still-short generation until it decodes (fungible,
-        // no per-seq ARQ). RWM_GEN_R overrides.
+        // Generation coding: a small proactive overhead per generation so a
+        // generation carries K_G(1+r) coded symbols and decodes without
+        // waiting on a recovery round for the expected loss. Beyond this, the
+        // frontier retention keeps coding any still-short generation until it
+        // decodes. RWM_GEN_R overrides.
         let repair_rate = if pol.generation {
             repair_rate.max(pol.gen_repair_floor)
         } else {
@@ -717,15 +676,14 @@ pub(crate) fn emit_source(
                 if let Some((seq, (send_time_us, eps_at_send, _path))) = oldest {
                     let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
                     let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
-                    // Paper Section 3.4: P(retransmit) = P_lost(t_k).
-                    // Probabilistic — smooth transition from FEC to ARQ.
+                    // P(retransmit) = P_lost(t_k) (paper §3.2):
+                    // probabilistic — a smooth transition from FEC to ARQ.
                     if rand::random::<f64>() < p {
-                        // δ-honest shed (fix C): a candidate older
-                        // than D(δ) arrives after the receiver's
-                        // δ-horizon give-up — retransmitting it only
-                        // serializes the stream behind a missed
-                        // deadline. Shed it (within the ρ budget)
-                        // and let this correction slot do fresh
+                        // δ-honest shed: a candidate older than D(δ) arrives
+                        // after the receiver's δ-horizon give-up —
+                        // retransmitting it only serializes the stream
+                        // behind a missed deadline. Shed it (within the ρ
+                        // budget) and let this correction slot do fresh
                         // span-repair work instead.
                         let age_us_c = now.saturating_sub(send_time_us);
                         if pol.shed_on
@@ -746,8 +704,8 @@ pub(crate) fn emit_source(
                                 && st.shed_deadline_us_live > 0
                                 && age_us_c > st.shed_deadline_us_live
                             {
-                                // Past deadline but ρ-budget-refused:
-                                // the serialize arm (visible in DIAG).
+                                // Past deadline but ρ-budget-refused: the
+                                // serialize arm (visible in DIAG).
                                 st.shed_denied += 1;
                             }
                             use_retransmit = true;
@@ -757,16 +715,14 @@ pub(crate) fn emit_source(
                 }
 
                 if use_retransmit {
-                    // A0.4 THE TAPER COPY, counted on EVERY arm: this
-                    // correction slot is about to carry a COPY of an
-                    // already-sent seq rather than a fresh coded symbol.
-                    // It is the second source of realized repair waste and
-                    // the reactive gap loop is not it.
+                    // The taper copy, counted on every arm: this correction
+                    // slot carries a copy of an already-sent seq rather than
+                    // a fresh coded symbol.
                     ctx.stats.fec.taper_copy.fetch_add(1, Ordering::Relaxed);
                 }
                 if use_retransmit && pol.diag_on {
-                    // feat/recovery-suppression trace: the P_lost-
-                    // branch retransmit channel (fed by eps_at_send).
+                    // Recovery-suppression trace: the P_lost-branch
+                    // retransmit channel (fed by eps_at_send).
                     st.mpd_plost_retx += 1;
                 }
                 // A taper copy (`use_retransmit`) is a source COPY, not coded.
@@ -776,24 +732,23 @@ pub(crate) fn emit_source(
                     crate::monitor::stats::CorrectionKind::Coded
                 };
                 let sym = if use_retransmit {
-                    // Retransmit: exact source symbol — from the
-                    // sent-data store (reliable: survives window
-                    // eviction) or the encoder window (EVICT).
+                    // Retransmit: exact source symbol — from the sent-data
+                    // store (reliable: survives window eviction) or the
+                    // encoder window (EVICT).
                     st.sent_store
                         .get(&retransmit_seq)
                         .cloned()
                         .or_else(|| st.encoder.get_source(retransmit_seq))
                         .unwrap_or_else(|| st.encoder.generate_repair())
                 } else if let Some((a_star, delta)) = span_params {
-                    // §16.20.3 trailing solvable-span placement: code
-                    // over [max(ws, end−A*), end) with end = newest+1−Δ
-                    // — every member already landed when the repair
-                    // does (FIFO + jitter guard), so the receiver's
-                    // incremental GE solves a covered hole AT ARRIVAL
-                    // instead of entangling it with in-flight symbols
-                    // (the #85 leading-window defect, removed
-                    // structurally). Falls back to the leading-window
-                    // repair when the window is too young to trail.
+                    // Trailing solvable-span placement (paper §5.3): code
+                    // over [max(ws, end−A*), end) with end = newest+1−Δ —
+                    // every member has already landed when the repair does
+                    // (FIFO + jitter guard), so the receiver's incremental GE
+                    // solves a covered hole at arrival instead of entangling
+                    // it with in-flight symbols. Falls back to the
+                    // leading-window repair when the window is too young to
+                    // trail.
                     let (ws, we) = st.encoder.window_span();
                     let end = (we + 1).saturating_sub(delta);
                     let start = end.saturating_sub(a_star).max(ws);
@@ -808,18 +763,17 @@ pub(crate) fn emit_source(
                         st.encoder.generate_repair()
                     }
                 } else {
-                    // Repair: generate a new FEC symbol (legacy
-                    // leading-window emission)
+                    // Repair: a new FEC symbol over the leading window.
                     st.encoder.generate_repair()
                 };
                 (sym, kind)
             };
 
-            // RWM Phase B (§16.3): reliable multipath places the
-            // correction by the law with the ρ_fate penalty against the
-            // paths that carried the window symbols it covers (the
-            // continuous form of best_repair_path_avoiding). Single path
-            // ⇒ that path. Non-reliable keeps the best-goodput pick.
+            // Reliable multipath places the correction by the law with the
+            // ρ_fate penalty against the paths that carried the window
+            // symbols it covers (the continuous form of
+            // best_repair_path_avoiding). Single path ⇒ that path.
+            // Non-reliable keeps the best-goodput pick.
             let correction_path = {
                 let sched = ctx.scheduler.lock();
                 if pol.reliable {

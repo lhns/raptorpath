@@ -1,18 +1,15 @@
 use super::*;
 
-// ── §16.77 THE HOLD-DOWN GAUGE — DISARMED IS INERT, ARMED SUPPRESSES ──
+// ── The hold-down gauge (paper §7.4) — disarmed is inert, armed suppresses ──
 
-/// **DISARMED IS BYTE-IDENTICAL AND THIS ASSERTS IT AT THE GATE ITSELF.**
-/// With `RWM_HOLDDOWN_Q` absent, `should_hold` is `false` on every call at
-/// every age, so every fire reaches `record_fire_cause` exactly as it does
-/// today. **No suppression, no `T`, no law.**
+/// Disarmed is inert, asserted at the gate itself. With `RWM_HOLDDOWN_Q`
+/// absent, `should_hold` is `false` on every call at every age, so every
+/// fire reaches `record_fire_cause`. No suppression, no `T`, no law.
 ///
-/// **The ESTIMATOR nevertheless OBSERVES, and that is the point of the
-/// control.** The first calibration could not tell "the outstanding-time
-/// distribution IS long at this cell" from "the hold-down made it long",
-/// because the one arm that defines the unforced distribution was the one
-/// arm not reading it. The control now reports `obs_p50/p90/p99` over its
-/// own window while commanding nothing — observation, never a clock.
+/// The estimator nevertheless observes: the control reports
+/// `obs_p50/p90/p99` over its own window while commanding nothing, so the
+/// unforced outstanding-time distribution is measured on the arm that
+/// defines it.
 #[test]
 fn disarmed_the_holddown_gate_is_inert_at_every_age() {
     let mut g = HoldDownGauge::new("sender", None);
@@ -31,14 +28,14 @@ fn disarmed_the_holddown_gate_is_inert_at_every_age() {
         g.on_report(&[(seq + 1, 1_000)], 1_000_000 + (seq + 1) * 1_000, &Default::default(), 0, &|_| 0);
     }
     let l = g.line(0);
-    // THE LAW IS ABSENT AND THE LINE SAYS SO.
+    // The law is absent and the line says so.
     assert!(l.contains("q=unset"), "the disarmed line must say so: {l}");
     assert!(l.contains("n_req=-"), "no window law is in force: {l}");
     assert!(l.contains("t_us=-"), "and therefore no T: {l}");
     assert!(l.contains("sup=0"), "disarmed must suppress nothing: {l}");
     assert!(l.contains("law_n=0"), "disarmed runs no law: {l}");
     assert!(l.contains("hd_n=0"), "and holds nothing, so no realized delay: {l}");
-    // THE OBSERVATION IS LIVE AND IT IS THE CONTROL'S WHOLE JOB.
+    // The observation is live.
     assert!(l.contains("n_obs=1000"), "the control's declared window: {l}");
     assert_eq!(g.fed.get(&0).copied().unwrap_or(0), 64, "the control must OBSERVE");
     assert!(!l.contains("obs_p50_us=-"), "the control must report a distribution: {l}");
@@ -52,29 +49,26 @@ fn disarmed_the_holddown_gate_is_inert_at_every_age() {
 }
 
 
-// ── 16.83's ARMS — DISARMED IS INERT, AND THE SEAM IS ONE `&&` ────
+// ── The request law's arms (paper §7.6) — disarmed is inert, the seam is one `&&` ──
 
-/// **DISARMED, NOTHING IN THE REQUEST LAW EXISTS, AND THIS ASSERTS IT AT
-/// THE SEAM ITSELF** — the twin of
-/// [`disarmed_the_holddown_gate_is_inert_at_every_age`], and for the same
-/// reason: an arm whose ABSENCE is only described is an arm nobody can
-/// prove was absent.
+/// Disarmed, nothing in the request law exists, asserted at the seam
+/// itself — the twin of [`disarmed_the_holddown_gate_is_inert_at_every_age`].
 ///
 /// Three things are pinned, in the order they could break:
 ///
-///   1. **THE SEAM.** With the gate absent `request_law_armed` is `false`
-///      at EVERY configuration, so `recv_nack_tx` keeps its shipped
+///   1. The seam. With the gate absent `request_law_armed` is `false`
+///      at every configuration, so `recv_nack_tx` keeps its shipped
 ///      arming and the per-seq SACK->gap producer is untouched.
-///   2. **THE VOCABULARY.** With arm (B) absent `m = 1` at EVERY `pi0`
-///      and every resource bound — the COPY, so arm (A) alone cannot
-///      accidentally change the bytes as well as the timing.
-///   3. **THE ECHO IS TWO-SIDED.** `[REQS] on=0` renders every counter at
+///   2. The vocabulary. With arm (B) absent `m = 1` at every `pi0`
+///      and every resource bound — the copy, so arm (A) alone cannot
+///      change the bytes as well as the timing.
+///   3. The echo is two-sided. `[REQS] on=0` renders every counter at
 ///      zero and its fraction as `-`, never `0`, so "the arm never
-///      reached the wire" is a READING and not an inference from a
+///      reached the wire" is a reading and not an inference from a
 ///      missing line.
 #[test]
 fn disarmed_the_request_law_is_inert_at_every_configuration() {
-    // 1. THE SEAM. The gate is the LAST conjunct, so with it absent no
+    // 1. The seam. The gate is the last conjunct, so with it absent no
     //    combination of the other three can arm anything.
     for wm in [false, true] {
         for rel in [false, true] {
@@ -86,14 +80,13 @@ fn disarmed_the_request_law_is_inert_at_every_configuration() {
             }
         }
     }
-    // And ARMED it is the plain reliable window and nothing else — the
-    // configuration scope, asserted rather than commented.
+    // And armed it is the plain reliable window and nothing else.
     assert!(request_law_armed(true, true, false, true));
     assert!(!request_law_armed(true, true, true, true), "generation has no per-seq layer");
     assert!(!request_law_armed(true, false, false, true), "the EVICT seat is out of scope");
     assert!(!request_law_armed(false, true, false, true), "block mode has no window");
 
-    // 2. THE VOCABULARY. `m = 1` at every input while (B) is absent.
+    // 2. The vocabulary. `m = 1` at every input while (B) is absent.
     for p in [None, Some(0.0), Some(0.006), Some(0.5), Some(0.96), Some(1.0)] {
         for a in [0u64, 1, 2, 64, 100_000] {
             assert_eq!(
@@ -103,18 +96,18 @@ fn disarmed_the_request_law_is_inert_at_every_configuration() {
             );
         }
     }
-    // ARMED, the same law reaches m = 1 BY ITSELF at the single-path
-    // inputs D0 measured (pi0 = 0.0077 / 0.0054), which is 16.83.3's
-    // whole point: the copy is the law's own limit, not a special case.
+    // Armed, the same law reaches m = 1 by itself at single-path inputs
+    // (pi0 = 0.0077 / 0.0054): the copy is the law's own limit, not a
+    // special case.
     assert_eq!(crate::net::late::request_m(Some(0.0077), true, 4096), 1);
     assert_eq!(crate::net::late::request_m(Some(0.0054), true, 4096), 1);
     // ... and rises continuously with pi0 at the duals (0.9606 / 0.9233).
     assert_eq!(crate::net::late::request_m(Some(0.9606), true, 4096), 18);
     assert_eq!(crate::net::late::request_m(Some(0.9233), true, 4096), 9);
-    // The clamp is a RESOURCE BOUND and it binds visibly.
+    // The clamp is a resource bound and it binds visibly.
     assert_eq!(crate::net::late::request_m(Some(0.9606), true, 4), 4);
 
-    // 3. THE TWO-SIDED ECHO.
+    // 3. The two-sided echo.
     let ctl = reqs_report_line(false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, FireCause::Other);
     assert!(ctl.starts_with("[REQS] on=0 "), "{ctl}");
     assert!(ctl.contains("served=0 copy=0 coded=0"), "{ctl}");
@@ -123,22 +116,22 @@ fn disarmed_the_request_law_is_inert_at_every_configuration() {
         "an absent fraction is `-`, never 0: {ctl}"
     );
     assert!(ctl.contains("cause=other"), "{ctl}");
-    // ARMED and serving, the same line reads its counts and its WA1 split.
+    // Armed and serving, the same line reads its counts and its WA1 split.
     let arm = reqs_report_line(true, 9, 40, 18, 30, 7, 7, 3, 2, 1, 5, FireCause::GapData);
     assert!(arm.starts_with("[REQS] on=1 reports=9 spans=40 m_max=18 "), "{arm}");
     assert!(arm.contains("served=37 copy=30 coded=7"), "{arm}");
     assert!(arm.contains("wa1_some=7 wa1_none=3 wa1_none_frac=0.3000"), "{arm}");
     assert!(arm.contains("stale=2 budget_bound=1 open_wants=5 cause=gap_data"), "{arm}");
 
-    // THE WIRE FORM IS TOTAL IN BOTH DIRECTIONS, so an unknown cause byte
+    // The wire form is total in both directions, so an unknown cause byte
     // from a future peer reads as `other` rather than panicking.
     for c in [FireCause::Timer, FireCause::GapData, FireCause::GapRefresh, FireCause::Other] {
         assert_eq!(FireCause::from_u8(c.as_u8()), c, "{c:?}");
     }
     assert_eq!(FireCause::from_u8(200), FireCause::Other);
 }
-/// **ARMED, THE GATE SUPPRESSES EXACTLY THE HOLES YOUNGER THAN `T`, AND
-/// THE ACCOUNTING CLOSES.** `evals = sup + emit` at every path, always —
+/// Armed, the gate suppresses exactly the holes younger than `T`, and
+/// the accounting closes: `evals = sup + emit` at every path, always —
 /// without which `[HOLD] sup=` is a number nobody can place.
 #[test]
 fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
@@ -149,7 +142,7 @@ fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
     assert!(g.armed());
 
     // Fill the estimator on path 0 with 20 known resolutions: 1..=20 ms.
-    // Every one retires WITHOUT a repair having flown, so every one is an
+    // Every one retires without a repair having flown, so every one is an
     // original resolution and the window is exactly 1_000..=20_000 µs.
     let empty_shed = std::collections::BTreeSet::new();
     for i in 1..=20u64 {
@@ -160,7 +153,7 @@ fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
     let t = g.t_us.get(&0).copied().expect("the law ran once the window filled");
     assert_eq!(t, 11_000, "T must be the K-th largest of the window: {t}");
 
-    // A hole younger than `T` is HELD; one older is EMITTED. No threshold on
+    // A hole younger than `T` is held; one older is emitted. No threshold on
     // any dial enters — the only number is `T`.
     g.on_reported(100, 0, 0, true, None);
     assert!(g.should_hold(100, t - 1), "younger than T must be held");
@@ -180,11 +173,10 @@ fn armed_the_holddown_gate_holds_below_t_and_the_accounting_closes() {
     assert!(l.contains("samp_n=20") && l.contains("fed=20"), "{l}");
 }
 
-/// **A SHED HOLE WAS ABANDONED, NOT RESOLVED, AND MUST NOT FEED THE
-/// ESTIMATOR.** It is the ONE exclusion, and it is the one direction this
-/// estimator must not be biased in: feeding a shed hole would push `T`
-/// UPWARD exactly where the contract had already given up. A REPAIRED hole
-/// IS fed — see `on_retired` for why "no repair flew" is a fixed point at
+/// A shed hole was abandoned, not resolved, and must not feed the
+/// estimator. It is the one exclusion: feeding a shed hole would push `T`
+/// upward exactly where the contract had already given up. A repaired hole
+/// is fed — see `on_retired` for why "no repair flew" is a fixed point at
 /// zero on this machine, and for the sign of the bias that buys.
 #[test]
 fn the_holddown_estimator_excludes_only_the_shed() {
@@ -201,7 +193,7 @@ fn the_holddown_estimator_excludes_only_the_shed() {
         28,
         "30 retired minus two shed - and NOTHING else is excluded"
     );
-    // And the frontier is exclusive above: a hole the ack has NOT passed is
+    // And the frontier is exclusive above: a hole the ack has not passed is
     // still outstanding and is not retired.
     let mut g2 = HoldDownGauge::new("sender", Some(0.5));
     for i in 1..=30u64 {
@@ -212,12 +204,11 @@ fn the_holddown_estimator_excludes_only_the_shed() {
     assert_eq!(g2.first.len(), 20, "11..=30 are still outstanding");
 }
 
-/// **THE ESTIMATOR BOOTSTRAPS FROM A COLD START WITH NO WARM-UP BRANCH.**
-/// This is the clause the reachability test earned: the first design fed
-/// only holes for which no repair had flown, and with `T` unavailable the
-/// sender answers every report immediately, so that set is EMPTY, the
-/// window never fills and `T` is a fixed point at zero. **One rule, applied
-/// identically at every window occupancy**, must reach an armed `T` from a
+/// The estimator bootstraps from a cold start with no warm-up branch. Fed
+/// only holes for which no repair had flown, the window would never fill:
+/// with `T` unavailable the sender answers every report immediately, so
+/// that set is empty and `T` is a fixed point at zero. One rule, applied
+/// identically at every window occupancy, must reach an armed `T` from a
 /// completely cold gauge.
 #[test]
 fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
@@ -228,7 +219,7 @@ fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
     g.on_reported(1, 0, 0, true, None);
     assert!(!g.should_hold(1, 10_000_000), "cold, the gate must fall through");
     assert!(g.t_us.get(&0).is_none());
-    // Feed exactly N retirements, ALL of which would have been repaired on
+    // Feed exactly N retirements, all of which would have been repaired on
     // the shipped machine. The window fills and the law arms itself.
     for i in 2..=(n as u64 + 1) {
         g.on_reported(i, 0, 0, true, None);
@@ -240,22 +231,20 @@ fn the_holddown_estimator_bootstraps_from_cold_with_no_warmup_branch() {
     );
 }
 
-/// **THE HEAD-OF-LINE DEFECT IS BOUNDED BY A TEST AND NOT BY PROSE.** The
-/// estimator must NEVER take a sample whose length is another hole's
-/// timing. Two clauses, and the second is the one the calibration earned:
+/// The head-of-line defect, bounded by a test. The estimator must never
+/// take a sample whose length is another hole's timing:
 ///
-/// 1. `on_retired` — the cumulative-frontier sweep — **feeds nothing, ever**,
+/// 1. `on_retired` — the cumulative-frontier sweep — feeds nothing, ever,
 ///    at any ack, on any path. It is a prune.
-/// 2. `on_report` resolves a hole **per hole**, even while an EARLIER hole
+/// 2. `on_report` resolves a hole per hole, even while an earlier hole
 ///    is still open and therefore still pinning the frontier far below it.
 ///
 /// Without (2) the sample for a late hole is a max-statistic over the whole
-/// outstanding set. The calibration measured that inflation at `c1`, a cell
-/// whose RTT is 2 ms: `T` read 429–602 ms with hold-down delays to 590 ms.
+/// outstanding set, and `T` inflates by orders of magnitude over the RTT.
 #[test]
 fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
     let empty = std::collections::BTreeSet::new();
-    // (1) THE FRONTIER SWEEP FEEDS NOTHING.
+    // (1) The frontier sweep feeds nothing.
     let mut g = HoldDownGauge::new("sender", Some(0.5));
     for i in 1..=50u64 {
         g.on_reported(i, 0, 0, true, None);
@@ -265,7 +254,7 @@ fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
     assert!(g.t_us.get(&0).is_none(), "and therefore must never arm a T");
     assert!(g.first.is_empty(), "but it must still bound the map");
 
-    // (2) A HOLE RESOLVES WHILE AN EARLIER ONE IS STILL OPEN. seq 1 stays
+    // (2) A hole resolves while an earlier one is still open. seq 1 stays
     // missing for the whole test — the cumulative frontier can never pass
     // seq 2 — and seq 2..=21 must nevertheless be timed on their own.
     let mut g2 = HoldDownGauge::new("sender", Some(0.5));
@@ -273,7 +262,7 @@ fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
         g2.on_reported(i, 0, 0, true, None);
     }
     for i in 2..=21u64 {
-        // seq 1 is STILL REPORTED MISSING; seq `i` is not.
+        // seq 1 is still reported missing; seq `i` is not.
         g2.on_report(&[(1, 1), (i + 1, 30)], (i - 1) * 1_000, &empty, 0, &|_| 0);
     }
     assert_eq!(
@@ -290,7 +279,7 @@ fn the_holddown_estimator_never_takes_a_head_of_line_gated_sample() {
     );
 }
 
-/// **THE WINDOW IS PER PATH AND THE PATHS DO NOT POOL.** Two paths with
+/// The window is per path and the paths do not pool. Two paths with
 /// different reordering distributions must command different `T`, or the
 /// estimator is measuring a mixture nobody named.
 #[test]
@@ -312,9 +301,9 @@ fn the_holddown_estimator_is_per_path_and_paths_do_not_pool() {
     assert_eq!(g.win.get(&1).map(|w| w.len()), Some(20));
 }
 
-/// **AN UNFILLED WINDOW FALLS THROUGH TO THE SHIPPED BEHAVIOUR AND SAYS SO
-/// IN `law_n`.** Information availability, never a mode (§16.76.5(1)): the
-/// arm's row is then READ as partial rather than pooled with a full one.
+/// An unfilled window falls through to the shipped behaviour and says so
+/// in `law_n`. Information availability, never a mode: the arm's row is
+/// then read as partial rather than pooled with a full one.
 #[test]
 fn an_unfilled_holddown_window_falls_through_and_law_n_says_so() {
     let mut g = HoldDownGauge::new("sender", Some(0.5));
@@ -334,14 +323,12 @@ fn an_unfilled_holddown_window_falls_through_and_law_n_says_so() {
     assert_eq!((c[0], c[1], c[2], c[3]), (1, 0, 0, 1), "evals=1 law_n=0 sup=0 emit=1");
     assert!(g.line(0).contains("t_us=-"), "an unavailable T renders `-`");
 }
-// The reorder buffer moved to `net/reorder.rs` (seam pass 1) and its last
-// NON-test consumer moved to `net/receiver.rs` (seam pass 3), so this
-// import is test-only now.
+// The reorder buffer lives in `net/reorder.rs`.
 use super::reorder::ReorderBuffer;
 
-// ── δ-honest overload shedding (fix C, goal-gate "Unified Shedding") ──
+// ── δ-honest overload shedding (paper §5.6) ──
 
-/// Pre-registered invariant 1: shed ONLY past-deadline AND within the
+/// Invariant 1: shed only past-deadline and within the
 /// ρ budget. Fresh data is never shed however large the budget; stale
 /// data is never shed past the budget; a cold (0) deadline sheds
 /// nothing.
@@ -362,23 +349,23 @@ fn shed_only_past_deadline_and_within_rho_budget() {
     assert!(!shed_allowed(30_000, d, 0, 0, 0.5), "no sources ⇒ no budget");
 }
 
-/// Pre-registered invariant 2: the reliable-transfer contract (ρ = 1,
-/// RETAIN-UNTIL-ACKED) is NEVER shed — the law is compiled out on the
+/// Invariant 2: the reliable-transfer contract (ρ = 1,
+/// retain-until-acked) is never shed — the law is compiled out on the
 /// reliable path by construction, and it never arms outside the
 /// unified machine or against the explicit =0 opt-out.
 #[test]
 fn shed_never_arms_on_reliable_contract() {
     // The only armed combination: unified + EVICT + gate on.
     assert!(shed_armed(true, false, true));
-    // Reliable (bulk/auto window_reliable) NEVER sheds.
+    // Reliable (bulk/auto window_reliable) never sheds.
     assert!(!shed_armed(true, true, true));
-    // Legacy machines (unified off) never shed.
+    // Unified off never sheds.
     assert!(!shed_armed(false, false, true));
     // RWM_UNIFIED_SHED=0 = the serializing control arm.
     assert!(!shed_armed(true, false, false));
 }
 
-/// The shed deadline IS the span law's D (§16.20.3): b·RTprop, capped
+/// The shed deadline is the span law's D (paper §5.3): b·RTprop, capped
 /// at the 2·RTprop deficit-round limit — no new constants.
 #[test]
 fn shed_deadline_is_the_span_law_d() {
@@ -393,8 +380,8 @@ fn shed_deadline_is_the_span_law_d() {
 
 /// Receiver arm: the in-order hold is the δ dial (b·SRTT, b = ½ on the
 /// realtime-only EVICT path) while the give-up budget is open, and
-/// reverts to the LEGACY 4×SRTT ∈ [60, 300] ms clamp when the law is
-/// off or the budget is spent — bit-exact legacy in both fallbacks.
+/// reverts to the 4×SRTT ∈ [60, 300] ms clamp when the law is off or the
+/// budget is spent.
 #[test]
 fn shed_recv_hold_delta_dial_and_legacy_fallback() {
     let srtt = Duration::from_millis(80);
@@ -402,7 +389,7 @@ fn shed_recv_hold_delta_dial_and_legacy_fallback() {
     let legacy = (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD);
     assert_eq!(shed_recv_hold(srtt, true, false), legacy, "budget spent ⇒ serialize");
     assert_eq!(shed_recv_hold(srtt, false, true), legacy, "law off ⇒ legacy");
-    // Legacy clamps still bind in the fallback (60 ms floor / 300 ms cap).
+    // The clamps still bind in the fallback (60 ms floor / 300 ms cap).
     assert_eq!(
         shed_recv_hold(Duration::from_millis(10), false, false),
         Duration::from_millis(60)
@@ -413,10 +400,9 @@ fn shed_recv_hold_delta_dial_and_legacy_fallback() {
     );
 }
 
-/// **`[SHEDH]` PARTITIONS EVERY EVALUATION** — ADR-0070's "every clamp
-/// gets a bind-fraction gauge", asserted as arithmetic rather than
-/// described. A gauge whose classes do not sum to its own denominator is
-/// not a bind fraction, it is a ratio of two unrelated counters.
+/// `[SHEDH]` partitions every evaluation — "every clamp gets a
+/// bind-fraction gauge", asserted as arithmetic. A gauge whose classes do
+/// not sum to its own denominator is not a bind fraction.
 ///
 /// The counters are process-global and every test in this module that
 /// calls `shed_recv_hold` feeds them, so this reads the DELTAS it causes
@@ -476,13 +462,12 @@ fn shed_recv_budget_is_loss_class() {
     assert!(!shed_recv_budget_ok(0, 1_000, 0.0), "clean channel ⇒ closed");
 }
 
-/// PART 1 (receiver-tail parallelization). With the legacy bound (6) a
-/// lossy bulk transfer reports only the first 6 outstanding generations'
-/// deficits per round, so holes are repaired frontier-first — one round-
-/// trip per ~6 generations (serial tail). Lifting `report_gens` to cover
-/// the whole in-flight range reports EVERY outstanding generation's deficit
-/// in ONE report, so the sender repairs all holes in a single round-trip.
-/// This is the "all deficits recover in one round" invariant.
+/// Receiver-tail parallelization. With a bound of 6 a lossy bulk transfer
+/// reports only the first 6 outstanding generations' deficits per round,
+/// so holes are repaired frontier-first — one round-trip per ~6
+/// generations (serial tail). Lifting `report_gens` to cover the whole
+/// in-flight range reports every outstanding generation's deficit in one
+/// report, so the sender repairs all holes in a single round-trip.
 #[test]
 fn receiver_tail_reports_all_deficits_in_one_round() {
     // 50 outstanding generations, each K=384, each 3 DoF short (rank 381).
@@ -492,12 +477,12 @@ fn receiver_tail_reports_all_deficits_in_one_round() {
     }
     let rank_of = |_anchor: u64, k: u64| k - 3; // deficit 3 in every gen
 
-    // Legacy bound: only the frontier-first 6 generations are reported —
+    // Bound 6: only the frontier-first 6 generations are reported —
     // the tail is serialized (the remaining 44 wait for future rounds).
     let d6 = collect_gen_deficits(&gen_widths, 6, rank_of);
     assert_eq!(d6.len(), 6, "legacy bound reports only 6 generations");
 
-    // Parallel tail flush: ALL 50 holes reported in a single round.
+    // Parallel tail flush: all 50 holes reported in a single round.
     let all = collect_gen_deficits(&gen_widths, 256, rank_of);
     assert_eq!(all.len(), 50, "every outstanding generation reported at once");
     assert!(all.iter().all(|&(_, d)| d == 3));
@@ -509,9 +494,9 @@ fn receiver_tail_reports_all_deficits_in_one_round() {
     assert!(none.is_empty(), "decoded generations report no deficit");
 }
 
-/// Repair-coverage horizon (branch `feat/nack-timing`): a hole covered by
-/// the in-flight proactive repair WITHIN the horizon fires NO reactive NACK;
-/// a hole still uncovered when the horizon EXPIRES falls back to the NACK.
+/// Repair-coverage horizon: a hole covered by the in-flight proactive
+/// repair within the horizon fires no reactive NACK; a hole still uncovered
+/// when the horizon expires falls back to the NACK.
 #[test]
 fn horizon_withholds_nack_until_repair_window_then_falls_back() {
     use std::time::{Duration, Instant};
@@ -519,21 +504,21 @@ fn horizon_withholds_nack_until_repair_window_then_falls_back() {
     let mut armed: BTreeMap<u64, Instant> = BTreeMap::new();
     let t0 = Instant::now();
 
-    // A frontier generation just went deficient. First sight → ARMED and
-    // WITHHELD: no reactive NACK yet (give the proactive repair its horizon).
+    // A frontier generation just went deficient. First sight → armed and
+    // withheld: no reactive NACK yet (give the proactive repair its horizon).
     let d = vec![(0u64, 3u32)];
     let ready = horizon_gate_deficits(&d, &mut armed, horizon, t0);
     assert!(ready.is_empty(), "a fresh hole is withheld, not NACKed immediately");
     assert_eq!(armed.len(), 1, "the fresh hole is armed");
 
     // The proactive repair decodes it within the horizon → it drops out of
-    // the deficit set → disarmed, and NO NACK ever fired (the proactive win).
+    // the deficit set → disarmed, and no NACK ever fired (the proactive win).
     let none: Vec<(u64, u32)> = vec![];
     let ready = horizon_gate_deficits(&none, &mut armed, horizon, t0 + Duration::from_millis(2));
     assert!(ready.is_empty());
     assert!(armed.is_empty(), "decoded-within-horizon hole is disarmed with no NACK");
 
-    // A hole that proactive repair does NOT cover: still deficient after the
+    // A hole that proactive repair does not cover: still deficient after the
     // horizon expires → the reactive NACK fires (the reliability fallback).
     let d2 = vec![(384u64, 2u32)];
     let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0);
@@ -541,16 +526,15 @@ fn horizon_withholds_nack_until_repair_window_then_falls_back() {
     let ready = horizon_gate_deficits(&d2, &mut armed, horizon, t0 + Duration::from_millis(6));
     assert_eq!(ready, vec![(384, 2)], "horizon expired uncovered → reactive fallback fires");
 
-    // horizon == 0 restores the immediate (byte-identical) shipped path.
+    // horizon == 0 restores the immediate shipped path.
     let mut armed0: BTreeMap<u64, Instant> = BTreeMap::new();
     let ready = horizon_gate_deficits(&d, &mut armed0, Duration::ZERO, t0);
     assert_eq!(ready, d, "horizon 0 reports immediately (shipped path)");
 }
 
-/// Lossy stream (EVICT / datagram): a full inject channel must DROP and
+/// Lossy stream (EVICT / datagram): a full inject channel must drop and
 /// return immediately — delivery must never block a lossy stream on a
-/// slow consumer (the user requirement: "if loss is allowed it doesn't
-/// actually block").
+/// slow consumer.
 #[tokio::test]
 async fn deliver_packet_lossy_drops_never_blocks() {
     let (tx, mut rx) = mpsc::channel::<Bytes>(1);
@@ -567,9 +551,9 @@ async fn deliver_packet_lossy_drops_never_blocks() {
     assert!(rx.try_recv().is_err());
 }
 
-/// Reliable stream: a full inject channel must BACKPRESSURE (await), not
+/// Reliable stream: a full inject channel must backpressure (await), not
 /// drop — otherwise the frontier/ack advances past an undelivered symbol
-/// and leaves a permanent hole (the flaky-loopback bug this fixes).
+/// and leaves a permanent hole.
 #[tokio::test]
 async fn deliver_packet_reliable_backpressures_then_delivers() {
     let (tx, mut rx) = mpsc::channel::<Bytes>(1);
@@ -606,32 +590,24 @@ fn test_parse_cidr() {
     assert_eq!(prefix, 24);
 }
 
-// ── GOAL "HONEST INPUTS" phase 3 — PROBE 1: the c1 DH −13% residual ──
+// ── The honest-anchor (DH) arm's paused-sender residual at c1 ──
 //
-// The battery (goal-gate "Honest Inputs — BATTERY") left c1-DH at
-// 0.857/0.874 of A at EXACT sender-CPU parity, with the wait gauge
-// naming the shape: wait[paused] 48–53% vs A's 32%, store at 27%
-// occupancy. The named hypothesis was "attribution blocking under the
-// scheduler lock". The two tests + one bench below adjudicate it at
-// component level:
-//   1. the bench measures the named lock blocking DIRECTLY (two
-//      threads, production lock, production attribution seam);
+// Two hypotheses for why the honest-input arm (`RWM_PLAIN_RS` +
+// `RWM_HONEST_ANCHOR`, "DH") pauses more than the no-feed arm ("A"),
+// adjudicated at component level:
+//   1. the bench measures sender blocking on the scheduler lock directly
+//      (two threads, production lock, production attribution seam);
 //   2. `dh_store_cap_falls_to_boot_on_the_saturation_filter…` pins the
-//      rival mechanism the ledger itself surfaced (c1-DH `occcap_p50`
-//      BIMODAL 128 ↔ 1024 across reps, both seeds; A ~540 steady; D
-//      1024 steady): the DH arm's honest-cap law falls out to the
-//      128-symbol BOOT cap whenever `active_paths()` returns empty —
-//      the SAME `sf=` zero-tick cliff the store-cap-triplication
-//      battery measured at 30–33% of c1-A ticks and priced at
-//      +15.8/+24.8% goodput under `RWM_STORE_CAP_UNIFIED=1`;
-//   3. `honest_anchor_floor_sits_at_true_bdp…` pins WHY the fixed
-//      (fast) DH sender hits that cliff harder than A: the honest
-//      send-interval anchor floors cwnd at the TRUE BDP class while
-//      the legacy ack-interval feed floors it at the burst-peak
-//      over-read, so the same outstanding level saturates
-//      (`available() == 0`) only the honest arm.
+//      rival mechanism: the DH arm's honest-cap law falls out to the
+//      128-symbol boot cap whenever `active_paths()` returns empty — the
+//      `sf=` zero-tick cliff that `RWM_STORE_CAP_UNIFIED=1` removes;
+//   3. `honest_anchor_floor_sits_at_true_bdp…` pins why the DH sender
+//      hits that cliff harder than A: the honest send-interval anchor
+//      floors cwnd at the true BDP class while the ack-interval feed
+//      floors it at the burst-peak over-read, so the same outstanding
+//      level saturates (`available() == 0`) only the honest arm.
 
-/// PROBE 1, measurement (run explicitly, --release):
+/// Lock-blocking measurement (run explicitly, --release):
 ///
 ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture c1_attribution_lock
 ///
@@ -641,8 +617,8 @@ fn test_parse_cidr() {
 ///     work (per-seq `on_src_sent` + `charge_src`/`charge_in_flight` at
 ///     placement, then the backpressure poll: `expire_in_flight` +
 ///     in_flight/cwnd read — `run_block_sender`/`run_window_sender`'s
-///     poll body), measuring every lock ACQUISITION WAIT.
-///   - ACK thread at the swept cadence: arm A = the legacy no-feed arm
+///     poll body), measuring every lock acquisition wait.
+///   - ACK thread at the swept cadence: arm A = the no-feed arm
 ///     (`sched.ack` + RTT sample under one acquisition); arm DH = the
 ///     `RWM_PLAIN_RS`+`RWM_HONEST_ANCHOR` arm — the Ack-arm section
 ///     (release_in_flight + on_delivery_signal + RTT sample), drop,
@@ -652,10 +628,9 @@ fn test_parse_cidr() {
 /// A third config replays the c1 recovery shape (85 ms ack stall, then
 /// the SACK catch-up burst) to bound the worst-case hold.
 ///
-/// PRE-STATED verdict rule: the battery hypothesis needs the DH−A sender
-/// lock-wait share to be ~13 points of wall; < 5 points at the realistic
-/// cadences REFUTES "sender blocks on lock acquisition" as the residual's
-/// mechanism (the numbers are printed either way, [P3-LOCK] lines).
+/// Verdict rule: a DH−A sender lock-wait share under 5 points of wall at
+/// the realistic cadences refutes "sender blocks on lock acquisition" as
+/// the mechanism (the numbers are printed either way, `[P3-LOCK]` lines).
 #[test]
 #[ignore = "measurement: run explicitly with --release --ignored --nocapture"]
 fn c1_attribution_lock_blocking_bench() {
@@ -829,7 +804,7 @@ fn c1_attribution_lock_blocking_bench() {
             attributed = a;
         });
 
-        // LIVENESS (discipline rule 1): the mechanism under test ran.
+        // Liveness (measurement-discipline rule 1): the mechanism under test ran.
         let sent = frontier.load(Ordering::Acquire);
         if dh {
             assert!(
@@ -904,24 +879,16 @@ fn c1_attribution_lock_blocking_bench() {
     }
 }
 
-/// PROBE 1, mechanism side (always-on, deterministic): the DH arm's own
-/// store-cap law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1`, the exact
-/// battery configuration — evaluated over the SHIPPED path set
-/// (`active_paths()`, `RWM_STORE_CAP_UNIFIED=0`) vs the unified set
-/// (`live_paths()`), at the same warm, saturated single-path state.
+/// Mechanism side (always-on, deterministic): the DH arm's own store-cap
+/// law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1` — evaluated over the
+/// shipped path set (`active_paths()`, `RWM_STORE_CAP_UNIFIED=0`) vs the
+/// unified set (`live_paths()`), at the same warm, saturated single-path
+/// state.
 ///
 /// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
-/// `honest_cap_on` branch and its fallbacks; see the `set`/`slots`/
-/// `hsum` collection and the `dyn_store_cap` chain in this file). The
-/// L1 wiring end-to-end is already proven by the store-cap-triplication
-/// battery's own engine print (`win=278/128` at c1-def); what THIS test
-/// pins is that the DH law inherits the identical cliff: the honest law
-/// never computes a small cap — the PATH SET erases its inputs.
-///
-/// Ledger anchors (goal-gate "Honest Inputs — BATTERY", c1): DH
-/// `occcap_p50` bimodal 128 ↔ 1024 across reps on both seeds with
-/// occupancy ~165–217 — i.e. the measured pause state (store ≥ cap) is
-/// exactly this cliff's 128 phase, store nowhere near the warm 1024.
+/// `honest_cap_on` branch and its fallbacks). The DH law inherits the
+/// boot-cap cliff: the honest law never computes a small cap — the path
+/// set erases its inputs.
 #[test]
 fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
     let clock = Arc::new(crate::scheduler::MockClock::new());
@@ -980,9 +947,8 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
         }
     };
 
-    // UNSATURATED: both path sets agree; the honest law computes its
-    // warm cap (runway term ≈ rate·0.1 ⇒ the 1024 latch at c1 rates —
-    // the ledger's DH warm phase).
+    // Unsaturated: both path sets agree; the honest law computes its
+    // warm cap (runway term ≈ rate·0.1 ⇒ the 1024 latch at c1 rates).
     let active = sched.active_paths();
     let live = sched.live_paths();
     assert_eq!(active, live, "unsaturated: the filter is inert");
@@ -992,9 +958,8 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
         "c1-class honest cap latches the store max (ledger: DH occcap 1024 phases)"
     );
 
-    // SATURATED (the wire-bound sender state: in_flight ≥ cwnd — c1's
-    // normal state per the sf= gauge, 30–33% of def-arm ticks): the
-    // spare-capacity filter empties the DATA-scheduling set while the
+    // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
+    // spare-capacity filter empties the data-scheduling set while the
     // path is alive and its anchor is warm.
     {
         let p = sched.path_mut(0).unwrap();
@@ -1007,15 +972,15 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
     assert!(active.is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
     assert_eq!(live, vec![0], "…while the path is fully live");
     // Shipped set (RWM_STORE_CAP_UNIFIED=0): the law's inputs vanish and
-    // the cap falls out to the boot value — BELOW the c1-DH measured
-    // occupancy class (~190), i.e. instant tx_paused.
+    // the cap falls out to the boot value — below a c1 store occupancy,
+    // i.e. instant tx_paused.
     assert_eq!(
         cap_over(&sched, &active),
         128,
         "the cliff: an empty active set forfeits the warm anchor entirely"
     );
     // Unified set (RWM_STORE_CAP_UNIFIED=1): same instant, same law,
-    // warm cap — the fix that already exists prices this exact defect.
+    // warm cap.
     assert_eq!(
         cap_over(&sched, &live),
         RELIABLE_STORE_MAX,
@@ -1023,23 +988,19 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
     );
 }
 
-/// PROBE 1, coupling side (always-on, deterministic): WHY the fixed DH
-/// sender falls off the cliff harder than A. One delivery process, two
-/// feeds:
-///   - HONEST (`RWM_PLAIN_RS` send-interval sampler): the windowed-max
-///     anchor reads ≈ the true rate, so the cwnd anchor FLOOR sits at
+/// Coupling side (always-on, deterministic): why the DH sender falls off
+/// the cliff harder than A. One delivery process, two feeds:
+///   - honest (`RWM_PLAIN_RS` send-interval sampler): the windowed-max
+///     anchor reads ≈ the true rate, so the cwnd anchor floor sits at
 ///     the true-BDP class;
-///   - LEGACY (no-feed `sched.ack` ack-interval sampler) under c1-class
-///     ack bunching: the windowed-max latches the bunch peak (the
-///     documented ×4.6–7.4 over-read), so the floor sits far above.
+///   - ack-interval (no-feed `sched.ack` sampler) under c1-class ack
+///     bunching: the windowed-max latches the bunch peak, so the floor
+///     sits far above.
 /// `available() = cwnd − in_flight` with cwnd ≥ floor: an outstanding
-/// level between the two floors can saturate ONLY the honest arm — the
-/// legacy arm cannot even reach `available() == 0` there. The A arm's
-/// own 30–33% zero-tick population (storecap battery) rode transient
-/// cwnd states; the honest floor makes the saturated state the RESTING
-/// state of a wire-bound sender. This is the c1/c7 asymmetry's shape:
-/// where the sender has intake headroom (c7), in_flight sits below even
-/// the honest floor and no cliff fires.
+/// level between the two floors can saturate only the honest arm. The
+/// honest floor makes the saturated state the resting state of a
+/// wire-bound sender; where the sender has intake headroom, in_flight
+/// sits below even the honest floor and no cliff fires.
 #[test]
 fn honest_anchor_floor_sits_at_true_bdp_where_the_legacy_ack_feed_floors_high() {
     let clock = Arc::new(crate::scheduler::MockClock::new());
@@ -1054,7 +1015,7 @@ fn honest_anchor_floor_sits_at_true_bdp_where_the_legacy_ack_feed_floors_high() 
     }
     // One true process: 24 k sym/s for 2 s. Path 0 sees it per
     // delivered seq (send-interval Δt); path 1 sees the same totals as
-    // c1-class BUNCHED acks: per 10 ms cycle, a straggler ack after
+    // c1-class bunched acks: per 10 ms cycle, a straggler ack after
     // 8.9 ms then the 216-symbol bunch 1.1 ms later — Δdelivered/Δt
     // ≈ 196 k sym/s at the same 24 k carried rate.
     for cycle in 0..200u64 {
@@ -1102,7 +1063,7 @@ fn honest_anchor_floor_sits_at_true_bdp_where_the_legacy_ack_feed_floors_high() 
     );
     // The consequence, as arithmetic on the real predicate: outstanding
     // between the floors saturates only the honest arm. cwnd ≥ floor
-    // always (the floor only ratchets UP), so the legacy arm CANNOT
+    // always (the floor only ratchets up), so the ack-interval arm cannot
     // read available() == 0 at this level; the honest arm at its
     // wire-bound lower bound (cwnd == floor) reads exactly 0.
     let mid = 2 * f_honest;
@@ -1172,7 +1133,7 @@ fn test_path_batch_tracker_with_gap() {
     assert_eq!(received, 10);
 }
 
-// ----- CopaFeed attribution cursor (feat/copa-sole-cc) -----
+// ----- CopaFeed attribution cursor -----
 
 /// Frontier advance attributes each seq exactly once, in order.
 #[test]
@@ -1185,7 +1146,7 @@ fn copa_feed_frontier_attributes_once() {
     assert_eq!(feed.newly_delivered(4, &[]), vec![3, 4]);
 }
 
-/// SACKed seqs above the frontier are attributed immediately and NOT
+/// SACKed seqs above the frontier are attributed immediately and not
 /// re-attributed when the frontier later passes them.
 #[test]
 fn copa_feed_sack_dedupes_against_frontier() {
@@ -1202,7 +1163,7 @@ fn copa_feed_sack_dedupes_against_frontier() {
 /// seq→path attribution: the seq is charged to the path it was (last)
 /// sent on; unknown seqs fall back to the ack path. A cross-path
 /// retransmit keeps the previous commitment as the flight-witness
-/// fallback (residual (iii)).
+/// fallback.
 #[test]
 fn copa_feed_seq_path_last_send_wins() {
     let feed = CopaFeed::new();
@@ -1214,12 +1175,12 @@ fn copa_feed_seq_path_last_send_wins() {
     assert!(feed.seq_path.remove(&10).is_none());
 }
 
-/// Residual (iii): the flight-time witness. An ack younger than the
-/// retransmit path's RTprop proves the ORIGINAL flight delivered the
+/// The flight-time witness. An ack younger than the
+/// retransmit path's RTprop proves the original flight delivered the
 /// seq — the retransmit path's delivered counter must not advance. An
 /// ack older than RTprop credits the retransmit path (a genuine
 /// retransmit delivery). Unknown RTprop / single-path history keep
-/// legacy attribution.
+/// last-sent attribution.
 #[test]
 fn flight_witness_credits_original_path_for_spurious_retransmit() {
     // Original on fast (path 0) at t=0, retransmitted on slow (path 1,
@@ -1236,7 +1197,7 @@ fn flight_witness_credits_original_path_for_spurious_retransmit() {
     assert_eq!(resolve_flight_path(&commit, 1_080_000, rtprop), 1);
     // Exactly RTprop old: qualifies (>=).
     assert_eq!(resolve_flight_path(&commit, 1_060_000, rtprop), 1);
-    // Warm-up (no RTprop yet): legacy last-sent attribution.
+    // Warm-up (no RTprop yet): last-sent attribution.
     assert_eq!(resolve_flight_path(&commit, 1_005_000, |_| None), 1);
     // Single-path history: always the last (= only) commitment.
     let single = SendCommit {
@@ -1244,7 +1205,7 @@ fn flight_witness_credits_original_path_for_spurious_retransmit() {
         prev: None,
     };
     assert_eq!(resolve_flight_path(&single, 1_000_001, rtprop), 1);
-    // A→B→A bounce: prev is the previous DISTINCT path (B), and a
+    // A→B→A bounce: prev is the previous distinct path (B), and a
     // young ack after the same-path resend credits B's older flight.
     let feed = CopaFeed::new();
     feed.on_sent(7, 0);
@@ -1255,7 +1216,7 @@ fn flight_witness_credits_original_path_for_spurious_retransmit() {
     assert_eq!(c.prev.map(|(p, _)| p), Some(1));
 }
 
-// ----- feat/recovery-suppression: the skew-aware hole law -----
+// ----- The skew-aware hole law (paper §7.1) -----
 
 /// The per-flight time threshold is the RFC 9002 §6.1.2 shape: 9/8 of
 /// the larger smoothed clock, floored at the per-seq cooldown floor
@@ -1272,10 +1233,10 @@ fn mp_time_threshold_is_nine_eighths_of_max_clock_with_floor() {
     assert_eq!(mp_time_threshold_split(0, 0, F).0, F);
 }
 
-// ----- goal-gate "Unlock The Default 2: derived patience" -----
+// ----- Derived patience -----
 
-/// 3b, the gate-OFF contract: passing the legacy literal reproduces the
-/// pre-2026-08-07 function EXACTLY, and RFC 9002's kTimeThreshold (9/8)
+/// The gate-off contract: passing the 10 ms literal reproduces the
+/// fixed-floor function exactly, and RFC 9002's kTimeThreshold (9/8)
 /// and kPacketThreshold (3) are untouched by any of this.
 #[test]
 fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
@@ -1295,19 +1256,19 @@ fn derived_patience_off_is_bit_identical_to_the_legacy_threshold() {
     assert_eq!(mp_time_threshold_split(80_000, 0, 0).0, 90_000); // 9/8 exactly
 }
 
-/// 3b, the law: timer granularity + the path's OWN measured jitter,
-/// clamped at one srtt, with the legacy floor kept verbatim when there
-/// is no clock at all to derive from.
+/// The law: timer granularity + the path's own measured jitter,
+/// clamped at one srtt, with the fixed floor kept when there is no
+/// clock at all to derive from.
 #[test]
 fn patience_floor_is_granularity_plus_measured_jitter() {
-    // No clock yet ⇒ nothing to derive ⇒ legacy patience, verbatim.
+    // No clock yet ⇒ nothing to derive ⇒ the fixed floor.
     assert_eq!(patience_floor_us(0, 0), NACK_RETX_COOLDOWN_FLOOR_US);
     assert_eq!(patience_floor_us(5_000, 0), NACK_RETX_COOLDOWN_FLOOR_US);
     // Zero measured jitter ⇒ pure timer granularity (RFC 9002's
-    // RECOMMENDED kGranularity, and this engine's own 1 ms loop wake).
+    // recommended kGranularity, and this engine's own 1 ms loop wake).
     assert_eq!(patience_floor_us(0, 9_000), TIMER_GRANULARITY_US);
-    // The jitter term is ADDITIVE and MEASURED — it scales with the
-    // link, which is the whole point of deriving it.
+    // The jitter term is additive and measured — it scales with the
+    // link.
     assert_eq!(patience_floor_us(300, 9_000), 1_300);
     assert_eq!(patience_floor_us(2_500, 9_000), 3_500);
     // …and is clamped at one srtt so a pathological estimate cannot
@@ -1322,12 +1283,10 @@ fn patience_floor_is_granularity_plus_measured_jitter() {
     }
 }
 
-/// 3b, the deliberate non-change, asserted rather than claimed: the
-/// tail-sweep SRTT fallback is INERT with respect to this constant.
-/// Every fallback value ≤ 12.5 ms — the legacy 10 ms and any derived
-/// floor alike — yields exactly `TAIL_SWEEP_MIN_US` after the
-/// `(srtt·2).clamp(25 ms, 100 ms)` the site applies. Changing it would
-/// be a cosmetic edit dressed as a derivation.
+/// The tail-sweep SRTT fallback is inert with respect to this constant:
+/// every fallback value ≤ 12.5 ms — the fixed 10 ms and any derived floor
+/// alike — yields exactly `TAIL_SWEEP_MIN_US` after the
+/// `(srtt·2).clamp(25 ms, 100 ms)` the site applies.
 #[test]
 fn tail_sweep_srtt_fallback_is_inert_to_the_patience_floor() {
     let sweep = tail_sweep_timeout_us;
@@ -1336,15 +1295,13 @@ fn tail_sweep_srtt_fallback_is_inert_to_the_patience_floor() {
     for f in [0u64, 1, 1_000, 1_400, 5_000, 10_000, 12_500] {
         assert_eq!(sweep(f), TAIL_SWEEP_MIN_US, "fallback {f} must be inert");
     }
-    // The first value that is NOT inert, recorded so the bound is exact.
+    // The first value that is not inert, recorded so the bound is exact.
     assert!(sweep(12_501) > TAIL_SWEEP_MIN_US);
 }
 
-// ----- goal-gate "Component Benches" (2026-08-08): the EXTRACTED laws.
-// Each test below re-evaluates the expression that used to be INLINE in
-// `run_impl` and asserts the extracted function is identical to it over
-// a dense grid. These are equivalence proofs for a pure refactor, not
-// new behaviour claims.
+// ----- The extracted recovery laws.
+// Each test below re-evaluates the inline form of an extracted law and
+// asserts the extracted function is identical to it over a dense grid.
 
 #[test]
 fn extracted_laws_are_identical_to_the_inline_expressions_they_replaced() {
@@ -1368,7 +1325,7 @@ fn extracted_laws_are_identical_to_the_inline_expressions_they_replaced() {
                 );
             }
             for &srtt in &clocks {
-                // Legacy age gate: `now - send < srtt/2 ⇒ suppress`.
+                // Age gate: `now - send < srtt/2 ⇒ suppress`.
                 assert_eq!(
                     legacy_age_ripe(now, t, srtt),
                     !(now.saturating_sub(t) < srtt / 2),
@@ -1407,12 +1364,10 @@ fn extracted_laws_are_identical_to_the_inline_expressions_they_replaced() {
     }
 }
 
-/// THE ASYMMETRY the component bench exists to expose, pinned as a law
-/// fact rather than prose: at the c7 operating point (RTprop ≈ 10 ms)
-/// the recovery clock's ARGUMENT — not its constants — sets patience.
-/// Fed the store-dwell-inclusive app-echo RTT (measured 158 ms at c7,
-/// goal-gate "Unlock The Default 2") every channel's patience is ~×16–18
-/// RTprop; fed the dwell-free wire clock it is ~×1.1–1.4.
+/// At a c7-like operating point (RTprop ≈ 10 ms) the recovery clock's
+/// argument — not its constants — sets patience. Fed the
+/// store-dwell-inclusive app-echo RTT (~158 ms) every channel's patience
+/// is ~×16–18 RTprop; fed the dwell-free wire clock it is ~×1.1–1.4.
 #[test]
 fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
     const RTPROP_US: u64 = 10_000;
@@ -1423,7 +1378,7 @@ fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
     // §6.1.2 time threshold (the RECOV_MP / RECOV_SP channel).
     assert_eq!(mp_time_threshold_split(0, APP_ECHO_US, f).0, 177_750);
     assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0, 15_750);
-    // Legacy age gate (the shipped default channel) = srtt/2.
+    // Age gate (the shipped default channel) = srtt/2.
     assert_eq!(APP_ECHO_US / 2, 79_000);
     assert_eq!(WIRE_US / 2, 7_000);
     // Per-seq cooldown.
@@ -1438,10 +1393,10 @@ fn patience_is_set_by_the_clock_argument_not_by_the_constants() {
     assert_eq!(mp_time_threshold_split(0, WIRE_US, f).0 / RTPROP_US, 1);
 }
 
-/// 3a, THE COINCIDENCE PROPERTY — the pre-registered test. Wherever the
-/// legacy gauge's own stated assumption holds (emission events at least
-/// as frequent as the 1 ms loop wake), the derived threshold reproduces
-/// the legacy 3 000 µs to the microsecond.
+/// The coincidence property. Wherever the fixed gauge's own stated
+/// assumption holds (emission events at least as frequent as the 1 ms
+/// loop wake), the derived threshold reproduces 3 000 µs to the
+/// microsecond.
 #[test]
 fn derived_stall_threshold_reproduces_the_legacy_3ms_where_they_coincide() {
     for evt in [0u64, 1, 10, 100, 500, 999, 1_000] {
@@ -1453,17 +1408,15 @@ fn derived_stall_threshold_reproduces_the_legacy_3ms_where_they_coincide() {
     }
 }
 
-/// The derived round's MECHANISM-LIVENESS echo separates "the site ran"
+/// The derived round's mechanism-liveness echo separates "the site ran"
 /// from "the law bound", and it must, because the coincidence property
 /// makes those different claims: an arm that only ever evaluates inside
-/// the legacy `[25, 100] ms` band is bit-identical to its control, and a
-/// battery that read `ACTIVE` as proof of effect would score a null
-/// RESULT as a null EFFECT. Both echoes are also ONE-SHOT — the two call
-/// sites sit in per-iteration hot loops, so a re-arming echo would flood
-/// the log the battery parses.
+/// the `[25, 100] ms` band is bit-identical to its control. Both echoes
+/// are one-shot — the two call sites sit in per-iteration hot loops, so a
+/// re-arming echo would flood the log.
 #[test]
 fn the_derived_round_echo_fires_once_per_claim_and_separates_ran_from_bound() {
-    // Inside the band: the site RAN, the law did NOT bind.
+    // Inside the band: the site ran, the law did not bind.
     let mut e = DerivedRoundEcho::default();
     e.observe("t", 20_000, 100, tail_sweep_timeout_us(20_000), tail_sweep_timeout_us(20_000));
     assert!(e.ran, "an evaluation inside the band must still prove execution");
@@ -1484,21 +1437,17 @@ fn the_derived_round_echo_fires_once_per_claim_and_separates_ran_from_bound() {
     }
     assert_eq!((e.ran, e.diverged), before, "both echoes are one-shot");
 
-    // A site that diverges on its FIRST evaluation latches both at once.
+    // A site that diverges on its first evaluation latches both at once.
     let mut f = DerivedRoundEcho::default();
     f.observe("t", srtt, 100, derived, legacy);
     assert!(f.ran && f.diverged);
 }
 
-/// NEITHER echo's PROSE may contain the phrase the OTHER echo is counted
+/// Neither echo's prose may contain the phrase the other echo is counted
 /// on, and neither may contain a bare `RWM_DERIVED_SWEEP=<n>` that a
-/// `[GATES]`-scoped grep could pick up. This is not style: the flip
-/// battery's amendment 1 was forced by exactly this class of bug — an
-/// ACTIVE echo whose own explanatory text matched the pattern a driver
-/// counted — and the dead-wall battery reads BOTH phrases per rep to
-/// separate "the site ran" from "the law bound". A wording change that
-/// silently re-merged them would corrupt that separation with no other
-/// symptom.
+/// `[GATES]`-scoped grep could pick up: an echo whose own explanatory text
+/// matches the pattern a driver counts corrupts the separation of "the
+/// site ran" from "the law bound" with no other symptom.
 #[test]
 fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
     let ran = DerivedRoundEcho::ran_msg("s", 1, 2, 3, 4);
@@ -1514,9 +1463,8 @@ fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
         !ran.contains(DS_ECHO_DIVERGED),
         "the ACTIVE echo must not match the binding grep: {ran}"
     );
-    // The gate's own name may be NAMED, but never with a resolved value:
-    // that is the `[GATES]` line's job and a stray `=0`/`=1` in prose is
-    // what the amendment-1 lesson is actually about.
+    // The gate's own name may appear, but never with a resolved value:
+    // that is the `[GATES]` line's job.
     for m in [&ran, &div] {
         assert!(
             !m.contains("RWM_DERIVED_SWEEP=1"),
@@ -1531,12 +1479,12 @@ fn the_derived_round_echoes_do_not_match_each_others_grep_patterns() {
     }
 }
 
-/// 3a, the law: monotone in the measured interval, both clamps, and the
-/// departure only where the legacy assumption fails.
+/// The law: monotone in the measured interval, both clamps, and the
+/// departure only where the fixed gauge's assumption fails.
 #[test]
 fn derived_stall_threshold_scales_with_the_measured_event_interval() {
     // Above the loop wake it tracks 3 × the measured interval — this is
-    // the batched-emitter regime the legacy constant mis-reads.
+    // the batched-emitter regime the 3 ms constant mis-reads.
     assert_eq!(stall_threshold_us(2_000), 6_000);
     assert_eq!(stall_threshold_us(4_000), 12_000);
     // …up to the engine's own hole-refresh cadence, then it stops.
@@ -1545,7 +1493,7 @@ fn derived_stall_threshold_scales_with_the_measured_event_interval() {
         HOLE_NACK_REFRESH_MIN.as_micros() as u64
     );
     assert_eq!(stall_threshold_us(u64::MAX), HOLE_NACK_REFRESH_MIN.as_micros() as u64);
-    // Monotone non-decreasing, and never below the legacy constant.
+    // Monotone non-decreasing, and never below the 3 ms constant.
     let mut prev = 0;
     for evt in (0..60_000).step_by(97) {
         let t = stall_threshold_us(evt);
@@ -1554,9 +1502,9 @@ fn derived_stall_threshold_scales_with_the_measured_event_interval() {
     }
 }
 
-/// 3a, the one-directionality the artifact verdict rests on: over any
-/// gap trace, the DERIVED stall total can never exceed the LEGACY one,
-/// because the derived threshold is never below the legacy constant.
+/// One-directionality: over any gap trace, the derived stall total can
+/// never exceed the fixed one, because the derived threshold is never
+/// below the 3 ms constant.
 /// So a shrink in `sidle2` is evidence of over-counting and can never be
 /// an artifact of the new gauge itself.
 #[test]
@@ -1590,32 +1538,32 @@ fn derived_stall_gauge_can_only_ever_report_less_than_the_legacy_one() {
 }
 
 /// The skew-aware hole law: a gap on path A while the seq's flight is
-/// still inside path B's expected-arrival clock is NOT a hole; once
-/// B's clock expires it IS. Single path (N=1) keeps legacy behavior
-/// bit-exactly (the law never suppresses), and an unknown flight is
+/// still inside path B's expected-arrival clock is not a hole; once
+/// B's clock expires it is. Single path (N=1): the law never
+/// suppresses, and an unknown flight is
 /// never suppressed (reliability backstop).
 #[test]
 fn mp_hole_law_suppresses_young_cross_path_flights_only() {
     let thr = 45_000u64; // path B's 9/8×srtt clock
     // Dual path, flight sent at t=1_000_000 on B.
-    // t = +10 ms: inside B's clock → NOT a hole.
+    // t = +10 ms: inside B's clock → not a hole.
     assert!(!mp_hole_ripe(2, 1_010_000, Some(1_000_000), thr));
     // t = +45 ms: B's clock expired → a hole (retransmit eligible).
     assert!(mp_hole_ripe(2, 1_045_000, Some(1_000_000), thr));
     // t = +44.999 ms: still inside (strict).
     assert!(!mp_hole_ripe(2, 1_044_999, Some(1_000_000), thr));
-    // N=1: the law is INERT — always ripe regardless of age (the
-    // legacy gates own the decision; sc2/sc3 bit-exact).
+    // N=1: the law is inert — always ripe regardless of age (the
+    // single-path gates own the decision).
     assert!(mp_hole_ripe(1, 1_010_000, Some(1_000_000), thr));
     assert!(mp_hole_ripe(0, 1_010_000, Some(1_000_000), thr));
     // Unknown flight: never suppress (a seq we cannot clock must stay
-    // recoverable — the legacy path decides).
+    // recoverable — the single-path gates decide).
     assert!(mp_hole_ripe(2, 1_010_000, None, thr));
 }
 
 /// The law composes with retransmit flight inheritance: after a
-/// retransmit the LIVE flight is the retransmit on ITS path, so the
-/// seq is suppressed until the NEW flight's clock expires (closes the
+/// retransmit the live flight is the retransmit on its path, so the
+/// seq is suppressed until the new flight's clock expires (closes the
 /// re-NACK-while-flying feedback), then ripe again.
 #[test]
 fn mp_hole_law_clocks_the_live_flight_after_retransmit() {
@@ -1657,23 +1605,23 @@ fn mp_packet_threshold_evidence_and_decision() {
     assert!(!mp_fast_lost(&ev, 20), "none above 20");
     assert!(!mp_fast_lost(&[], 0), "no evidence, never lost-fast");
     // The cross-path skew shape: path A delivered 100..102 while s=50
-    // flies on B with NO delivered B successors — B's evidence list is
+    // flies on B with no delivered B successors — B's evidence list is
     // empty, so the fast channel never fires for B's flight.
     let b_ev: Vec<u64> = vec![];
     assert!(!mp_fast_lost(&b_ev, 50));
 }
 
-// ----- feat/recovery-suppression: per-path batch serial namespaces -----
+// ----- Per-path batch serial namespaces -----
 
-/// The loss-serial defect, reproduced at the unit: a GLOBAL batch_seq
-/// striped across two paths makes each path's tracker read the OTHER
+/// The loss-serial defect, reproduced at the unit: a global batch_seq
+/// striped across two paths makes each path's tracker read the other
 /// path's run as loss (expected ≈ 2×received at round-robin — ~50%
 /// phantom loss with zero real loss). Per-path serial namespaces
 /// (each path's stream sequential) read exactly 0% loss on the same
 /// arrival pattern.
 #[test]
 fn per_path_batch_serials_kill_striping_phantom_loss() {
-    // GLOBAL counter, round-robin striping, NO loss: path 0 gets
+    // Global counter, round-robin striping, no loss: path 0 gets
     // even serials, path 1 odd.
     let mut t0 = PathBatchTracker::new();
     let mut t1 = PathBatchTracker::new();
@@ -1688,7 +1636,7 @@ fn per_path_batch_serials_kill_striping_phantom_loss() {
     assert!(t0.total_expected >= t0.total_received * 2 - 2);
     assert!(t1.total_expected >= t1.total_received * 2 - 2);
 
-    // PER-PATH serials, same striping, no loss: sequential per path.
+    // Per-path serials, same striping, no loss: sequential per path.
     let mut p0 = PathBatchTracker::new();
     let mut p1 = PathBatchTracker::new();
     for s in 0..100u64 {
@@ -1698,7 +1646,7 @@ fn per_path_batch_serials_kill_striping_phantom_loss() {
     assert_eq!(p0.total_expected, p0.total_received, "no phantom loss");
     assert_eq!(p1.total_expected, p1.total_received, "no phantom loss");
 
-    // Per-path serials still see REAL loss: drop serials 10..=14.
+    // Per-path serials still see real loss: drop serials 10..=14.
     let mut pl = PathBatchTracker::new();
     for s in 0..100u64 {
         if (10..=14).contains(&s) {
@@ -1720,8 +1668,8 @@ fn copa_feed_per_ack_work_is_bounded() {
 /// The recovery clocks must not lose a path because its cwnd is full.
 /// `active_paths()` drops every path with `available() == 0`, so on a
 /// sender whose paths are all cwnd-saturated (the normal state of a
-/// wire-bound bulk transfer) the pooled clock fell to the 10 ms floor
-/// instead of the paths' measured RTT.
+/// wire-bound bulk transfer) the pooled clock must not fall to the 10 ms
+/// floor instead of the paths' measured RTT.
 #[test]
 fn recovery_clocks_keep_cwnd_saturated_paths() {
     let clock = Arc::new(crate::scheduler::MockClock::new());
@@ -1755,7 +1703,7 @@ fn recovery_clocks_keep_cwnd_saturated_paths() {
 }
 
 /// The engine clock is monotonic, non-zero and never panics. (A wall-
-/// clock STEP cannot be injected from a unit test; the guarantee against
+/// clock step cannot be injected from a unit test; the guarantee against
 /// it is structural — the value is `base + Instant::elapsed()`.)
 #[test]
 fn now_us_is_monotonic_and_nonzero() {
@@ -1770,7 +1718,7 @@ fn now_us_is_monotonic_and_nonzero() {
     assert!(now_us() > prev, "now_us advances with real time");
 }
 
-// ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
+// ----- sack_to_gaps (SACK-driven reactive repair) -----
 
 #[test]
 fn test_sack_to_gaps_single_hole() {
@@ -1787,7 +1735,7 @@ fn test_sack_to_gaps_multiple_holes() {
 #[test]
 fn test_sack_to_gaps_adjacent_range_no_gap() {
     // Sack range starts right after the cumulative point → nothing
-    // missing below it, and seqs above it are NOT reported (may be
+    // missing below it, and seqs above it are not reported (may be
     // in flight).
     assert!(sack_to_gaps(4, &[(5, 9)]).is_empty());
 }
@@ -1820,11 +1768,11 @@ fn test_sack_to_gaps_round_trips_receiver_encoding() {
     assert_eq!(sack_to_gaps(highest_delivered, &sack_ranges), vec![(13, 14), (16, 17)]);
 }
 
-/// SEQ 0 LOST. The receiver starts at `highest_delivered_seq = 0`, so a
-/// receiver that has delivered NOTHING advertises `received_up_to = 0` —
+/// Seq 0 lost. The receiver starts at `highest_delivered_seq = 0`, so a
+/// receiver that has delivered nothing advertises `received_up_to = 0` —
 /// the same value as "seq 0 delivered". Driven through the receiver's own
 /// encoding (`received_sack_ranges`) and the sender's inversion: seq 0
-/// must be reported as a gap, and when seq 0 WAS delivered it must not.
+/// must be reported as a gap, and when seq 0 was delivered it must not.
 #[test]
 fn a_lost_seq_zero_is_sack_reported() {
     // Seq 0 dropped; 1..=10 received, none deliverable in order.
@@ -1853,8 +1801,8 @@ fn test_sack_to_gaps_caps_at_max_gaps() {
 
 #[test]
 fn test_received_sack_ranges_inverts_to_gaps() {
-    // The extracted helper must produce exactly what the data-arm
-    // WindowAck used to compute inline, and round-trip via sack_to_gaps.
+    // The extracted helper must produce exactly the data-arm WindowAck's
+    // ranges, and round-trip via sack_to_gaps.
     let mut received = BTreeSet::new();
     for seq in [3u64, 4, 7] {
         received.insert(seq);
@@ -1864,26 +1812,22 @@ fn test_received_sack_ranges_inverts_to_gaps() {
     assert_eq!(sack_to_gaps(2, &ranges), vec![(5, 6)]);
 }
 
-// ----- RWM Phase A: RETAIN-UNTIL-ACKED retention (paper §15.7/§16.3) -----
-
-// ----- Path-scaled outstanding pool (task #84, RWM_STORE_PATHS) -----------
+// ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
 
 #[test]
 fn path_scaled_store_cap_is_legacy_for_singles_and_off() {
-    // Flag OFF: always legacy, regardless of path count.
+    // Flag off: always the single-path law, regardless of path count.
     assert_eq!(path_scaled_store_cap(false, 2, 1000.0, 2.0, 64, 2048), None);
-    // Flag ON but a single live path: legacy law bit-exactly (the
-    // property that keeps singles byte-identical with the flag set).
+    // Flag on but a single live path: the single-path law bit-exactly.
     assert_eq!(path_scaled_store_cap(true, 1, 1000.0, 2.0, 64, 2048), None);
-    // No dynamic base yet (anchor cold): legacy boot-cap path decides.
+    // No dynamic base yet (anchor cold): the boot cap decides.
     assert_eq!(path_scaled_store_cap(true, 2, 0.0, 2.0, 64, 2048), None);
 }
 
 #[test]
 fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
     // C7-shaped: Σ anchor-BDP ≈ 1076, gain 2, N = 2 → 2·2·1076 = 4304,
-    // clamped at the N×2048 = 4096 ceiling (the measured knee: C7
-    // 4096 → 141.3 Mbit vs 1024 → 103; deeper pools saturate/collapse).
+    // clamped at the N×2048 = 4096 ceiling (the per-path knee).
     assert_eq!(
         path_scaled_store_cap(true, 2, 1076.0, 2.0, 64, 2048),
         Some(4096)
@@ -1902,35 +1846,29 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
     );
 }
 
-// ----- LAW-SHAPE TESTS (ADR-0070 prevention kit, item 1) -----------------
+// ----- Law-shape tests (measurement-discipline rule 17) ------------------
 
-/// THE LAW-SHAPE TEMPLATE — the instrument the N² defect needed and did
-/// not have. Documented here rather than in prose so the next law can be
-/// covered by copying a test instead of by remembering a lesson.
+/// The law-shape template, so the next law can be covered by copying a
+/// test.
 ///
-/// **What went wrong.** `path_scaled_store_cap`'s value is
-/// `gain·N·Σᵢ anchorᵢ`, and at symmetric inputs `Σ` is itself ∝ N — so the
-/// VALUE is quadratic in the path count while every derivation says the
-/// pool is a sum over paths, i.e. LINEAR. The whole existing test suite
-/// missed it, and each reason is a hole this template closes:
+/// `path_scaled_store_cap`'s value is `gain·N·Σᵢ anchorᵢ`, and at
+/// symmetric inputs `Σ` is itself ∝ N — so the value is quadratic in the
+/// path count while the pool is a sum over paths, i.e. linear (paper
+/// §6.1). Three test habits hide such a defect:
 ///
-///  1. **The clamp ate the evidence.** `clamp(·, floor, N·knee)` is pinned
-///     at the ceiling for every Σ ≥ knee/gain = 1024, which is every
-///     measured dual cell. A test that reads the law THROUGH its clamp
-///     measures the ceiling, not the law. ⇒ Test the UNCLAMPED value and
-///     the CLAMP SEPARATELY: pick inputs that make the clamp provably
-///     inert (huge pool, floor ≈ 0) for the value, and inputs that make it
-///     provably binding for the ceiling.
-///  2. **The axes the cells never exercise.** The entire test universe had
-///     N ∈ {1, 2}; N² and N are indistinguishable from a RATIO at two
-///     points unless the ratio is asserted against an absolute form, and
-///     the exponent only becomes visible as a ratio at N ≥ 3. ⇒ Sweep the
-///     structural axis SYNTHETICALLY (here N = 1..8), well past whatever
-///     the deployment cells happen to contain.
-///  3. **Nobody asserted a SHAPE.** Every prior assertion was a point
-///     (`cap(2, 1076) == 4096`), and a point is satisfied by any law that
-///     passes through it. ⇒ Assert the exponent/closed form itself, on
-///     synthetic inputs chosen so the closed form is hand-computable.
+///  1. The clamp eats the evidence. `clamp(·, floor, N·knee)` is pinned at
+///     the ceiling for every Σ ≥ knee/gain = 1024. A test that reads the
+///     law through its clamp measures the ceiling, not the law. ⇒ Test the
+///     unclamped value and the clamp separately: pick inputs that make the
+///     clamp provably inert (huge pool, floor ≈ 0) for the value, and
+///     inputs that make it provably binding for the ceiling.
+///  2. Axes the cells never exercise. With N ∈ {1, 2}, N² and N are
+///     indistinguishable as a ratio unless asserted against an absolute
+///     form. ⇒ Sweep the structural axis synthetically (here N = 1..8).
+///  3. Points instead of shapes. A point (`cap(2, 1076) == 4096`) is
+///     satisfied by any law that passes through it. ⇒ Assert the
+///     exponent/closed form itself, on synthetic inputs chosen so the
+///     closed form is hand-computable.
 ///
 /// The template, applied to any new law `f(N, x…)`:
 ///
@@ -1943,63 +1881,53 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 ///      a change of a test name and therefore a reviewed decision.
 /// ```
 ///
-/// The two `path_scaled_store_cap` tests below PIN the defect rather than
-/// fix it (CLAUDE.md: "every documented divergence must carry a test that
-/// BOUNDS it") — the law is under review as ADR-0070 "The store-cap law on
-/// trial" and its behaviour is unchanged on this branch. The third test
-/// applies the same template to the candidate successor's core,
-/// [`three_term_store_cap`], which is linear in N as derived.
-/// **THE FULL ARM, RESOLVED — does the composition actually COMPOSE?**
+/// The two `path_scaled_store_cap` tests below pin the quadratic law
+/// (the `RWM_SUM_CAP=0` arm) rather than fix it (CLAUDE.md: "every
+/// documented divergence must carry a test that bounds it"). The third
+/// applies the same template to [`three_term_store_cap`], which is linear
+/// in N as derived.
+/// The full arm, resolved: does the composition actually compose?
 ///
-/// The AUP lesson, applied BEFORE a pre-registration rather than after it:
-/// §16.53 and §16.54 both fired pre-registered STOP RULES on compositions
-/// whose members turned out not to compose, and the sharpest instance is on
-/// the record — `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a
-/// **no-op wherever capw engages**, because `capw_store_cap` sits ABOVE
+/// Compositions whose members do not compose are the failure mode: e.g.
+/// `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a no-op wherever
+/// capw engages, because `capw_store_cap` sits above
 /// `path_scaled_store_cap` in the chain and reads `live_paths()`
-/// unconditionally. Nobody asserted that until it had cost two batteries.
+/// unconditionally.
 ///
-/// This test asserts the FULL arm's gate set resolves to the machine it is
-/// supposed to be, at the POLICY layer where the collapses actually happen:
+/// This test asserts the full arm's gate set resolves to the machine it is
+/// supposed to be, at the policy layer where the collapses happen:
 ///
 /// * every one of the six bits survives resolution (none is silently
 ///   ANDed away by a scope it does not satisfy);
-/// * the pool law reached is the POOLED one, NOT the three-term law — i.e.
-///   `three_term_on` and `composed_cap` stay OFF, because the composed pool
-///   law's magnitude was REFUTED by §16.57 and the FULL arm deliberately
-///   does not carry it;
-/// * the brake is armed WITHOUT it (the whole point of the extraction);
-/// * and the CONTROL arm — every bit off, `RWM_SUM_CAP` included, which
-///   since the 2026-08-19 flip means EXPLICITLY off rather than merely
-///   default — still resolves to the quadratic chain and its 4096 pin,
-///   which is what makes the pair an A/B rather than two experiments and
-///   is what keeps the displaced arm re-runnable.
+/// * the pool law reached is the pooled one, not the three-term law — i.e.
+///   `three_term_on` and `composed_cap` stay off (the composed pool law's
+///   magnitude is refuted, paper §10);
+/// * the brake is armed without it;
+/// * and the control arm — every bit off, `RWM_SUM_CAP` explicitly off
+///   (it defaults on) — still resolves to the quadratic chain and its 4096
+///   pin, which makes the pair an A/B and keeps the displaced arm
+///   re-runnable.
 ///
-/// **`RWM_DELTA_CAP` is a FIXED CONTROL here, on BOTH arms** (its own
-/// 2026-08-19 flip, §16.71): this pair's two published c8 values are the
-/// `gain = 2.0` pool's, and the value multiplier is not the factor under
-/// test. It is set OFF explicitly rather than left to a default that now
-/// resolves ON, and the shipped default is ASSERTED first so the flip
-/// cannot drift back behind this test's back.
+/// `RWM_DELTA_CAP` (default on) is a fixed control here, off on both arms:
+/// this pair's values are the `gain = 2.0` pool's, and the value
+/// multiplier is not the factor under test. The shipped default is
+/// asserted first.
 #[test]
 fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     use crate::control::fec_rate::ProtocolHint;
     use crate::gates::RuntimeGates;
     use crate::net::sender_policy::SenderPolicy;
 
-    // The plain-reliable window sender: the seat every cap-law finding in
-    // ADR-0070 is about.
+    // The plain-reliable window sender: the seat the cap law governs.
     let resolve = |g: &RuntimeGates| {
         SenderPolicy::resolve(g, 1200, ProtocolHint::Auto, true, false, false, false)
     };
 
-    // ── THE CONTROL ARM ───────────────────────────────────────────────
-    // Arm A is the LADDER's control — the quadratic law — which since the
-    // 2026-08-19 flip (§16.64) is no longer the default: `RWM_SUM_CAP` now
-    // resolves ON. The control is therefore constructed EXPLICITLY as the
-    // `=0` arm, which is exactly what keeps this test an A/B rather than a
-    // comparison against a moving default. Set by field, not through the
-    // environment (see the FULL arm's note below).
+    // ── The control arm ───────────────────────────────────────────────
+    // Arm A is the quadratic law, which is not the default (`RWM_SUM_CAP`
+    // resolves on), so the control is constructed explicitly as the `=0`
+    // arm. Set by field, not through the environment (see the full arm's
+    // note below).
     let mut base = RuntimeGates::resolve();
     assert!(
         base.sum_cap,
@@ -2012,14 +1940,10 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
          — if this fails the flip drifted back (gates.rs pins it too)"
     );
     base.sum_cap = false; // the DISPLACED quadratic, still re-runnable
-    // THE VALUE MULTIPLIER IS FIXED OFF ON BOTH ARMS OF THIS PAIR. This
-    // test is the LADDER's A/B — the COUNT multiplier — pre-registered
-    // against the `gain = 2.0` pool, and its two published c8 values
-    // (4096 and 3020) are that law's. The δ-cap flipped ON after it was
-    // written, so the value multiplier is now pinned to the `=0` fossil
-    // EXPLICITLY on both arms: it cancels out of the contrast rather than
-    // moving one side of it, which is what keeps the pair an A/B in one
-    // factor instead of a comparison against a moving default.
+    // The value multiplier is fixed off on both arms of this pair. This
+    // test varies the count multiplier against the `gain = 2.0` pool, and
+    // its two c8 values (4096 and 3020) are that law's. The δ-cap is pinned
+    // to `=0` on both arms so it cancels out of the contrast.
     base.delta_cap = false;
     let ctl = resolve(&base);
     assert!(!ctl.delta_cap, "control: the δ-cap must be fixed OFF for this pair");
@@ -2029,15 +1953,14 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert!(!ctl.late_brake, "control: the brake must be OFF");
     assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
 
-    // ── THE FULL ARM ──────────────────────────────────────────────────
+    // ── The full arm ──────────────────────────────────────────────────
     // Set by field rather than through the environment on purpose: an
-    // env-mutating test is process-global state in a parallel runner, which
-    // is the shape of eight HashMap-order flakes already on this record.
+    // env-mutating test is process-global state in a parallel runner.
     let mut full = RuntimeGates::resolve();
     full.sum_cap = true; // the ×N deletion            (§16.62)
     full.delta_cap = false; // the value multiplier, FIXED OFF — see the
                             // control arm's note: this pair varies the
-                            // COUNT multiplier and nothing else.
+                            // count multiplier and nothing else.
     full.store_cap_unified = true; // the LIVE SET     (ADR-0070 finding 1)
     full.late_brake = true; // the LATE-STAGE BRAKE    (§16.60.1)
     full.loss_sent_truth = true; // ── the ledger/loss trio ──
@@ -2051,22 +1974,19 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
          with it would make the two published c8 values a different law's"
     );
 
-    // 1. EVERY BIT SURVIVES RESOLUTION. This is the assertion the capw
-    //    no-op needed: a gate that resolves OFF because of a scope it does
-    //    not satisfy is a null EFFECT, and it would be scored as a null
-    //    RESULT by any battery that only reads the `[GATES]` echo.
+    // 1. Every bit survives resolution. A gate that resolves off because
+    //    of a scope it does not satisfy is a null effect, and would be
+    //    scored as a null result by anything that reads only the
+    //    `[GATES]` echo.
     assert!(arm.sum_cap, "FULL: RWM_SUM_CAP was ANDed away by resolution");
     assert!(arm.store_cap_unified, "FULL: the live set was ANDed away");
     assert!(arm.late_brake, "FULL: the brake was ANDed away");
-    // The ledger/loss trio is NOT resolved through `SenderPolicy`: those
-    // three bits are read by the SCHEDULER, through its own cached
-    // process-global helpers (`scheduler::loss_sent_truth_active` and
-    // siblings), because they govern the per-path estimator and the
-    // in-flight ledger rather than the sender's policy. That is a genuine
-    // composition FACT and not a gap: having no shared resolution step with
-    // the cap gates, they have nothing to be ANDed away BY — the failure
-    // mode assertion 1 is guarding against cannot arise for them. Asserted
-    // at the gate surface, which is the layer they actually live on.
+    // The ledger/loss trio is not resolved through `SenderPolicy`: those
+    // three bits are read by the scheduler (`scheduler::loss_sent_truth_active`
+    // and siblings), because they govern the per-path estimator and the
+    // in-flight ledger rather than the sender's policy. Having no shared
+    // resolution step with the cap gates, they cannot be ANDed away by
+    // them. Asserted at the gate surface, the layer they live on.
     assert!(full.loss_sent_truth, "FULL: the loss truth bit is not set");
     assert!(full.release_1to1, "FULL: the 1:1 release bit is not set");
     assert!(full.charge_recovery, "FULL: the recovery charge bit is not set");
@@ -2078,28 +1998,24 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
         full.echo_line()
     );
 
-    // 2. THE POOL LAW IS THE POOLED ONE. §16.57 refuted the composed pool
-    //    law's MAGNITUDE (WIN_STORE_MAX becomes the law at every dual), so
-    //    the FULL arm carries the ×N deletion INSTEAD of it, not as well.
-    //    If this ever flips, the arm is measuring a different law than the
-    //    one it is pre-registered against.
+    // 2. The pool law is the pooled one. The composed pool law's magnitude
+    //    is refuted (WIN_STORE_MAX becomes the law at every dual), so the
+    //    full arm carries the ×N deletion instead of it, not as well.
     assert!(
         !arm.three_term_on && !arm.composed_cap,
         "FULL: the composed/three-term pool law engaged — the arm is not \
          the ×N deletion any more"
     );
 
-    // 3. THE BRAKE IS ARMED WITHOUT THE COMPOSED LAW — the extraction's
-    //    entire reason to exist. Before `RWM_LATE_BRAKE` this combination
-    //    was NOT EXPRESSIBLE: the only door to the cwnd brake also forced
-    //    `three_term_on`, and assertion 2 would fail here.
+    // 3. The brake is armed without the composed law: `RWM_LATE_BRAKE`
+    //    arms the cwnd brake without forcing `three_term_on`.
     assert!(
         arm.late_brake && !arm.composed_cap,
         "FULL: the brake is only reachable through the composed law — the \
          extraction did not take"
     );
 
-    // 4. THE CAP LAW UNDER THIS POLICY IS THE CORRECTED FORMULA, evaluated
+    // 4. The cap law under this policy is the corrected formula, evaluated
     //    through the same function the engine calls, at the wire's own c8 Σ.
     const SIGMA_C8: f64 = 1_509.677;
     let corrected = pooled_store_cap(
@@ -2134,14 +2050,13 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert_eq!(corrected, 3_020, "the FULL arm is not §16.60's published c8 value");
     assert!(corrected < shipped, "the FULL arm did not free the law from its ceiling");
 
-    // 5. THE ONE REAL CROSS-LAYER INTERACTION, NAMED. The trio is not inert
-    //    with respect to the brake: `RWM_RELEASE_1TO1` changes how the
-    //    in-flight ledger is RELEASED, and the brake's predicate is
+    // 5. The one real cross-layer interaction. The trio is not inert with
+    //    respect to the brake: `RWM_RELEASE_1TO1` changes how the in-flight
+    //    ledger is released, and the brake's predicate is
     //    `in_flightᵢ ≥ cwndᵢ` — so the trio moves the brake's operand while
-    //    the brake moves nothing the trio reads. That is a one-way
-    //    dependency, and the arm must be scored knowing which direction it
-    //    runs in. Asserted as the structural fact it is: both bits live in
-    //    the same resolved policy and neither disables the other.
+    //    the brake moves nothing the trio reads (a one-way dependency).
+    //    Asserted structurally: both bits live in the same resolved policy
+    //    and neither disables the other.
     assert!(
         full.release_1to1 && arm.late_brake,
         "the trio and the brake must coexist — the brake reads the ledger \
@@ -2149,22 +2064,18 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     );
 }
 
-/// **THE ROUTING GATE for the derived-setpoint law** — paper §16.67,
-/// gate `RWM_DELTA_CAP`.
+/// The routing gate for the derived-setpoint law — paper §6.1, gate
+/// `RWM_DELTA_CAP`.
 ///
-/// MEASUREMENT DISCIPLINE 1: a gate that RESOLVES is not a gate that
-/// ROUTES, and every one of the three no-mode-switch defects CLAUDE.md
-/// records was a routing bug that every value pin passed through. This
-/// asserts, on the policy the engine actually runs, that each law reaches
-/// its seat, that its siblings stay where they were, and — the clause
-/// ADR-0070's postmortem asks for — that **no new constant reached any
-/// mechanism**: gain, knee, floor and boot are all at their shipped values
-/// on every arm, so an arm differs from its control in exactly the one
-/// factor the paper says it does.
+/// Measurement-discipline rule 1: a gate that resolves is not a gate that
+/// routes. This asserts, on the policy the engine actually runs, that each
+/// law reaches its seat, that its siblings stay where they were, and that
+/// no new constant reached any mechanism: gain, knee, floor and boot are
+/// all at their shipped values on every arm, so an arm differs from its
+/// control in exactly one factor.
 ///
-/// Set by FIELD rather than through the environment: an env-mutating test
-/// is process-global state in a parallel runner, which is the shape of the
-/// eight HashMap-order flakes already on this record.
+/// Set by field rather than through the environment: an env-mutating test
+/// is process-global state in a parallel runner.
 #[test]
 fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
     use crate::gates::RuntimeGates;
@@ -2173,12 +2084,10 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         codel_setpoint_q, pooled_store_cap,
     };
 
-    // THE ANTI-DRIFT PIN, read before anything is neutralised: since
-    // 2026-08-19 (§16.71) `RWM_DELTA_CAP` resolves ON by default, and this
-    // test's arms are EXPLICIT on both sides precisely so the flip cannot
-    // silently turn its control into its arm. Asserting the default here
-    // as well means a drift back to OFF fails at the routing gate too, not
-    // only in `gates.rs`.
+    // The anti-drift pin, read before anything is neutralised:
+    // `RWM_DELTA_CAP` resolves on by default, and this test's arms are
+    // explicit on both sides so the default cannot silently turn its
+    // control into its arm.
     assert!(
         RuntimeGates::resolve().delta_cap,
         "RWM_DELTA_CAP must resolve ON by default since 2026-08-19 \
@@ -2187,8 +2096,8 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
     let base = || {
         let mut g = RuntimeGates::resolve();
         // Neutralise whatever the ambient environment carries, so this
-        // asserts the LAW's routing and not the machine it runs on. The
-        // control is the `=0` arm EXPLICITLY, not the default.
+        // asserts the law's routing and not the machine it runs on. The
+        // control is the `=0` arm explicitly, not the default.
         g.delta_cap = false;
         g.derived_sweep = false;
         g.store_env_set = false;
@@ -2199,7 +2108,7 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         SenderPolicy::resolve(g, 1200, h, true, false, false, false)
     };
 
-    // ── §16.67: the δ-cap reaches the pooled seat at every dial point ──
+    // ── The δ-cap reaches the pooled seat at every dial point ──
     for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
         let ctl = resolve(&base(), hint);
         let mut on = base();
@@ -2209,9 +2118,9 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert!(!ctl.delta_cap, "{hint:?}: the control resolved the gate ON");
         assert!(arm.delta_cap, "{hint:?}: RWM_DELTA_CAP did not reach the seat");
 
-        // The siblings are untouched: this gate picks the VALUE multiplier
-        // and nothing else. The COUNT multiplier (`RWM_SUM_CAP`), the Σ's
-        // SET (`RWM_STORE_CAP_UNIFIED`) and the brake are independent axes.
+        // The siblings are untouched: this gate picks the value multiplier
+        // and nothing else. The count multiplier (`RWM_SUM_CAP`), the Σ's
+        // set (`RWM_STORE_CAP_UNIFIED`) and the brake are independent axes.
         assert_eq!(arm.sum_cap, ctl.sum_cap, "{hint:?}: the count multiplier moved");
         assert_eq!(
             arm.store_cap_unified, ctl.store_cap_unified,
@@ -2220,7 +2129,7 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert_eq!(arm.late_brake, ctl.late_brake, "{hint:?}: the brake armed itself");
         assert_eq!(arm.three_term_on, ctl.three_term_on, "{hint:?}: the pool law changed");
 
-        // NO NEW CONSTANT REACHED THE MECHANISM.
+        // No new constant reached the mechanism.
         assert!((arm.store_bdp_gain - 2.0).abs() < 1e-12, "{hint:?}: the gain moved");
         assert_eq!(arm.store_path_pool, 2048, "{hint:?}: the knee moved");
         assert_eq!(arm.store_cap_floor, ctl.store_cap_floor, "{hint:?}: the floor moved");
@@ -2244,7 +2153,7 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert!(a < c, "{hint:?}: the derived multiplier did not shrink the pool");
     }
 
-    // BIT-IDENTICAL AT N = 1, by construction rather than by measurement.
+    // Bit-identical at N = 1, by construction.
     assert_eq!(
         pooled_store_cap(true, true, true, 1.0, 1, 1_200.0, 2.0, 10, 2048),
         None,
@@ -2260,7 +2169,7 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
     assert!(!coded_cap.delta_cap, "the δ-cap escaped the plain dyn-cap scope");
 }
 
-/// **THE ECHO FORMAT PINS.** `[DCAP]`, `[RACK]` and `[LCW]` are what an L1
+/// The echo format pins. `[DCAP]`, `[RACK]` and `[LCW]` are what an L1
 /// driver greps and what a report parser regexes; a silent format change
 /// makes a battery read zeros and call them a null result. Pinned as whole
 /// strings, the way `[SUMCAP]`'s own contract is.
@@ -2275,12 +2184,12 @@ fn the_new_echo_lines_are_format_pinned_for_the_parsers() {
         dcap_report_line(10, 8, 8, 0, 0, 1_213.0 * 8.0, 1_212.0 * 8.0, 0.05, 0.5, true),
         "[DCAP] on=1 eng=8/10 chg=8/8 chg_frac=1.0000 pin=0.0000 floor=0.0000 cap=1213.0 ask=1212.0 q=0.050000 b=0.5000"
     );
-    // NEVER ARMED reads as eng=0/0 and must stay distinguishable from
+    // Never armed reads as eng=0/0 and must stay distinguishable from
     // armed-and-inert (eng=0/N) — both numerator and denominator print.
     assert!(dcap_report_line(0, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/0"));
     assert!(dcap_report_line(9, 0, 0, 0, 0, 0.0, 0.0, 0.05, 0.5, true).contains("eng=0/9"));
 
-    // [RACK] — §16.68.1's false-alarm validation, with RACK's own class
+    // [RACK] — the false-alarm validation, with RACK's own class
     // bar printed beside it.
     assert_eq!(
         rack_report_line(40, 39),
@@ -2290,14 +2199,14 @@ fn the_new_echo_lines_are_format_pinned_for_the_parsers() {
     assert!(rack_report_line(0, 0).contains("fa=0/0 fa_frac=0.0000"));
 
     // [FCAUSE] — the per-cause breakdown of `fa=`'s numerator population.
-    // Full contract in `tests/fcause_reachability.rs`; pinned HERE too
+    // Full contract in `tests/fcause_reachability.rs`; pinned here too
     // because this is the one test an L1 parser change is checked against.
     assert_eq!(
         crate::net::fcause_report_line(12, 430, 58, 0, 494, false),
         "[FCAUSE] gen=0 n=500 timer=12 gap_data=430 gap_refresh=58 other=0 \
          timer_frac=0.0240 gap_frac=0.9760 fired=494 unattr=6 fa_class=0.0625"
     );
-    // NEVER FIRED renders `-`, so an absent reading is never poolable with
+    // Never fired renders `-`, so an absent reading is never poolable with
     // a measured zero.
     assert!(
         crate::net::fcause_report_line(0, 0, 0, 0, 0, false).contains("timer_frac=-"),
@@ -2326,34 +2235,26 @@ mod law_shape {
     const GAIN: f64 = 2.0;
     /// A pool so large that `N·pool` cannot bind for any N ≤ 8 at these
     /// inputs — this is what makes the assertion below a statement about
-    /// the LAW rather than about its ceiling.
+    /// the law rather than about its ceiling.
     const POOL_INERT: usize = 1 << 20;
     /// Floor ≈ 0 (the law clamps to `[floor, ceiling]`, and `floor = 0`
     /// would still be a clamp; 1 is the smallest value that cannot bind).
     const FLOOR_INERT: usize = 1;
 
-    /// THE DOCUMENTED DEFECT, PINNED: the UNCLAMPED value is QUADRATIC in
-    /// the live-path count at symmetric inputs.
+    /// The quadratic arm, pinned: the unclamped value is quadratic in the
+    /// live-path count at symmetric inputs.
     ///
     /// `cap = gain·N·Σᵢ anchorᵢ`, and at a symmetric cell `Σ = N·A`, so
     /// `cap = gain·A·N²`. The derivation the law generalises
-    /// (`Σᵢ gain·anchorᵢ`) is LINEAR in N; the shipped multiplier is
-    /// applied to an already-summed quantity. See ADR-0070 "The store-cap
-    /// law on trial" §×N.
+    /// (`Σᵢ gain·anchorᵢ`) is linear in N; the multiplier is applied to an
+    /// already-summed quantity.
     ///
-    /// **THIS PIN NOW BELONGS TO THE `RWM_SUM_CAP=0` ARM, not to the
-    /// default** (the 2026-08-19 flip, paper §16.64). It reads the law
-    /// through `path_scaled_store_cap`, which IS the `sum_cap = false`
-    /// face of `pooled_store_cap` — so the arm under test here is explicit
-    /// in the call, not inherited from a default, and the flip does not
-    /// move a single number below. It stays exactly as it was written,
-    /// because the displaced quadratic stays re-runnable and its shape must
-    /// remain pinned for as long as it is reachable: a `RWM_SUM_CAP=0`
-    /// battery is entitled to the same guarantee the default used to have.
-    /// The SHIPPED shape is pinned by its sibling
+    /// This pins the `RWM_SUM_CAP=0` arm, not the default. It reads the law
+    /// through `path_scaled_store_cap`, which is the `sum_cap = false` face
+    /// of `pooled_store_cap`, so the arm under test is explicit in the call.
+    /// The arm stays re-runnable, so its shape stays pinned. The shipped
+    /// shape is pinned by its sibling
     /// (`sum_store_cap_value_is_linear_in_n_the_template_applied`).
-    ///
-    /// It is the test that would have failed on day one.
     #[test]
     fn path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect() {
         let cap = |n: usize| {
@@ -2366,7 +2267,7 @@ mod law_shape {
             let expected = (GAIN * A * (n * n) as f64) as usize;
             assert_eq!(cap(n), expected, "N={n}: the law is not gain·A·N²");
             // The clamp is provably inert here — otherwise this test would
-            // be measuring the ceiling again (hole 1).
+            // be measuring the ceiling (hole 1).
             assert!(cap(n) < n * POOL_INERT, "N={n}: the ceiling bound");
             assert!(cap(n) > FLOOR_INERT, "N={n}: the floor bound");
         }
@@ -2391,22 +2292,15 @@ mod law_shape {
         assert_eq!(cap(8) / cap(2), 16, "linear would be 4");
     }
 
-    /// THE TEMPLATE APPLIED TO THE CORRECTION — and **since 2026-08-19
-    /// (paper §16.64) this is the pin on the SHIPPED DEFAULT**: under
-    /// `RWM_SUM_CAP` (now default ON) the UNCLAMPED value is **LINEAR** in
-    /// the live-path count at symmetric inputs — `gain·Σ` with `Σ = N·A`,
-    /// i.e. `gain·A·N`.
+    /// The template applied to the shipped default: under `RWM_SUM_CAP`
+    /// (default on) the unclamped value is linear in the live-path count at
+    /// symmetric inputs — `gain·Σ` with `Σ = N·A`, i.e. `gain·A·N`.
     ///
-    /// The two pins swapped roles at the flip and NEITHER moved: the
-    /// quadratic sibling above still pins the `=0` arm, which stays
-    /// re-runnable, and this one now describes what the engine computes
-    /// unset. Between them they assert that the gate selects between a
-    /// quadratic and a linear law and nothing else — which is the property
-    /// the flip is entitled to rest on, since the gate is the only thing
-    /// that changed.
+    /// With the quadratic sibling above, this asserts that the gate selects
+    /// between a quadratic and a linear law and nothing else.
     ///
     /// Same three holes closed as the template requires: the clamps are
-    /// neutralised and their inertness ASSERTED rather than assumed, N is
+    /// neutralised and their inertness asserted rather than assumed, N is
     /// swept 1..8 (the axis no cell reaches, and the only place the two
     /// exponents are distinguishable), and the closed form is asserted
     /// absolutely rather than as a point.
@@ -2427,10 +2321,9 @@ mod law_shape {
             assert!(cap(n) > FLOOR_INERT, "N={n}: the floor bound");
         }
 
-        // (a/c) The ratio that names the exponent. THIS is the assertion the
-        // whole defect turned on: the shipped law reads 4 at a doubling and
-        // the corrected law reads 2, and at N ∈ {1, 2} — the entire
-        // deployment test universe — the two are indistinguishable.
+        // (a/c) The ratio that names the exponent: the quadratic law reads 4
+        // at a doubling and the linear law reads 2; at N ∈ {1, 2} alone the
+        // two are indistinguishable.
         for n in [2usize, 3, 4] {
             let r = cap(2 * n) as f64 / cap(n) as f64;
             assert!(
@@ -2447,8 +2340,8 @@ mod law_shape {
         assert_eq!(cap(8), 1_600); // shipped: 12_800
         assert_eq!(cap(8) / cap(2), 4, "quadratic would be 16");
 
-        // THE EXACT RELATIONSHIP BETWEEN THE ARMS, asserted rather than
-        // described: the deleted factor is exactly N, at every N, on the
+        // The exact relationship between the arms: the deleted factor is
+        // exactly N, at every N, on the
         // unclamped value. If this ever fails the gate is doing something
         // other than deleting one multiplication.
         for n in 2..=8usize {
@@ -2462,11 +2355,10 @@ mod law_shape {
             );
         }
 
-        // N = 1 IS NOT A CASE — the guard returns before the multiplier is
-        // read, so both arms are `None` and the caller keeps the legacy
-        // single-path law bit-exactly. Asserted, because "bit-identical at
-        // N = 1" is a claim the paper makes BY CONSTRUCTION and a
-        // construction claim is exactly the kind that rots silently.
+        // N = 1 is not a case — the guard returns before the multiplier is
+        // read, so both arms are `None` and the caller keeps the
+        // single-path law bit-exactly. Asserted, because a by-construction
+        // claim rots silently.
         for on in [false, true] {
             assert_eq!(
                 pooled_store_cap(true, on, false, 1.0, 1, A, GAIN, FLOOR_INERT, POOL_INERT),
@@ -2476,30 +2368,23 @@ mod law_shape {
         }
     }
 
-    /// THE COMPOSITION, AS FOUR FORMULAS: `RWM_SUM_CAP` (the count
-    /// MULTIPLIER) and `RWM_STORE_CAP_UNIFIED` (the Σ's path SET) are
-    /// INDEPENDENT AXES of one law, and their four combinations are four
-    /// distinct expressions.
+    /// The composition, as four formulas: `RWM_SUM_CAP` (the count
+    /// multiplier) and `RWM_STORE_CAP_UNIFIED` (the Σ's path set) are
+    /// independent axes of one law, and their four combinations are four
+    /// distinct expressions. The set decides `pipe_sum`, the gate decides
+    /// the multiplier, and neither reads the other.
     ///
-    /// This is the assertion a composed battery needs before it is
-    /// pre-registered, not after — §16.53/§16.54 both fired STOP RULES on
-    /// compositions whose members turned out not to compose (`capw` makes
-    /// the U bit a no-op wherever it engages, which is a fact nobody
-    /// asserted until it had cost two batteries). Here the independence is
-    /// structural and provable: the set decides `pipe_sum`, the gate
-    /// decides the multiplier, and neither reads the other.
-    ///
-    /// The test states independence as a FACTORISATION rather than as four
+    /// The test states independence as a factorisation rather than as four
     /// inequalities: the multiplier ratio is `N` whichever set is used, and
     /// the set ratio is `Σ_live/Σ_active` whichever multiplier is used. Two
     /// ratios that hold across the other axis is what "independent dials"
     /// means, and it is stronger than "the four numbers differ".
     ///
-    /// Note the asymmetry the composition inherits and does NOT fix
-    /// (ADR-0070 finding 1): `N` is `live_paths().len()` in BOTH arms,
+    /// Note the asymmetry the composition inherits and does not fix:
+    /// `N` is `live_paths().len()` in both arms,
     /// including where the Σ ranges over `active_paths()` only. The count
     /// and the sum range over different sets on the shipped default, and
-    /// deleting the multiplier from the VALUE removes that mismatch from
+    /// deleting the multiplier from the value removes that mismatch from
     /// the value while leaving it in the ceiling — which is the correct
     /// scope for this gate and is asserted here so it stays deliberate.
     #[test]
@@ -2524,8 +2409,8 @@ mod law_shape {
         assert_eq!(f(true, true), 2_000); // gain·Σ_live     = 2·1000
 
         // All four distinct — the weak statement, kept because a
-        // composition that collapses two arms into one number is exactly
-        // how `capw`'s no-op went unnoticed.
+        // composition that collapses two arms into one number is how a
+        // gate becomes a silent no-op.
         let vals = [f(false, false), f(false, true), f(true, false), f(true, true)];
         for i in 0..vals.len() {
             for j in (i + 1)..vals.len() {
@@ -2533,7 +2418,7 @@ mod law_shape {
             }
         }
 
-        // THE FACTORISATION — the actual independence claim.
+        // The factorisation — the actual independence claim.
         // 1. The multiplier's effect is ×N, whichever set is selected.
         for unified in [false, true] {
             assert_eq!(
@@ -2553,9 +2438,9 @@ mod law_shape {
         }
     }
 
-    /// (c) THE CLAMP, TESTED ON ITS OWN: the CEILING is `N·knee`, i.e.
-    /// LINEAR in N — which is precisely why the defect above was invisible
-    /// on every measured cell. Once `Σ ≥ knee/gain` the realized cap is the
+    /// (c) The clamp, tested on its own: the ceiling is `N·knee`, i.e.
+    /// linear in N — which is why the quadratic value is invisible on every
+    /// measured cell. Once `Σ ≥ knee/gain` the realized cap is the
     /// ceiling and carries no information about the value at all, so the
     /// two must never be asserted through one another.
     #[test]
@@ -2570,13 +2455,13 @@ mod law_shape {
         for n in 2..=8usize {
             assert_eq!(cap(n), n * KNEE, "N={n}: the ceiling is not N·knee");
         }
-        // Linear, so a doubling reads exactly 2 — and this is the ONLY
+        // Linear, so a doubling reads exactly 2 — and this is the only
         // ratio a measurement of a pinned cap can report, whatever the
         // value underneath is doing.
         for n in [2usize, 3, 4] {
             assert_eq!(cap(2 * n) as f64 / cap(n) as f64, 2.0);
         }
-        // The floor is the other clamp, and it is a CONSTANT in N.
+        // The floor is the other clamp, and it is a constant in N.
         for n in 2..=8usize {
             assert_eq!(
                 path_scaled_store_cap(true, n, 1e-6, GAIN, FLOOR, KNEE),
@@ -2586,25 +2471,25 @@ mod law_shape {
         }
     }
 
-    /// (c) THE CLAMP UNDER THE CORRECTION: the pin threshold stops being
-    /// path-count-FREE and becomes **PER PATH** — which is the property
-    /// that gives the law back an operating range.
+    /// (c) The clamp under the correction: the pin threshold stops being
+    /// path-count-free and becomes per path — which gives the law back an
+    /// operating range.
     ///
     /// ```text
-    ///   shipped    gain·N·Σ ≥ N·knee  ⟺  Σ ≥ knee/gain        (N CANCELS)
-    ///   corrected  gain·Σ   ≥ N·knee  ⟺  Σ ≥ N·knee/gain      (per path)
+    ///   quadratic  gain·N·Σ ≥ N·knee  ⟺  Σ ≥ knee/gain        (N cancels)
+    ///   linear     gain·Σ   ≥ N·knee  ⟺  Σ ≥ N·knee/gain      (per path)
     /// ```
     ///
-    /// The shipped threshold's path-count-freeness is exactly why the law
-    /// degenerated: `Σ` grows with N (it is a sum over paths) while the
+    /// The quadratic threshold's path-count-freeness is why that law
+    /// degenerates: `Σ` grows with N (it is a sum over paths) while the
     /// threshold does not, so past two paths the ceiling is guaranteed and
     /// the measured, derived, per-path term never appears in any output.
-    /// Pinned here as an ABSOLUTE pair of crossovers rather than as a
+    /// Pinned here as an absolute pair of crossovers rather than as a
     /// ratio, and swept over N = 2..8 so the "N cancels / N does not
     /// cancel" difference is asserted on the axis it lives on.
     ///
     /// Companion to `the_pin_threshold_on_sigma_is_knee_over_gain_and_is_path_count_free`
-    /// in `store_cap_sf_bench`, which pins the shipped half on the bench's
+    /// in `store_cap_sf_bench`, which pins the quadratic half on the bench's
     /// own constants; this asserts both halves against each other.
     #[test]
     fn the_correction_makes_the_pin_threshold_per_path_instead_of_path_count_free() {
@@ -2614,19 +2499,19 @@ mod law_shape {
 
         for n in 2..=8usize {
             let ceiling = n * KNEE;
-            // The SHIPPED threshold: knee/gain, identical at every N.
+            // The quadratic threshold: knee/gain, identical at every N.
             let shipped_pin = KNEE as f64 / GAIN;
             assert!(
                 (shipped_pin - 1024.0).abs() < 1e-9,
                 "N={n}: the shipped threshold moved off the path-count-free 1024"
             );
-            // Just below it the shipped law is interior; at it, pinned.
+            // Just below it the quadratic law is interior; at it, pinned.
             let below = path_scaled_store_cap(true, n, shipped_pin - 1.0, GAIN, FLOOR, KNEE);
             let at = path_scaled_store_cap(true, n, shipped_pin, GAIN, FLOOR, KNEE);
             assert!(below.unwrap() < ceiling, "N={n}: shipped not interior below");
             assert_eq!(at, Some(ceiling), "N={n}: shipped not pinned at knee/gain");
 
-            // The CORRECTED threshold: N·knee/gain, i.e. 1024 PER PATH.
+            // The linear threshold: N·knee/gain, i.e. 1024 per path.
             let corrected_pin = n as f64 * KNEE as f64 / GAIN;
             assert!(
                 (corrected_pin - 1024.0 * n as f64).abs() < 1e-9,
@@ -2637,10 +2522,9 @@ mod law_shape {
             assert!(below.unwrap() < ceiling, "N={n}: corrected not interior below");
             assert_eq!(at, Some(ceiling), "N={n}: corrected not pinned at N·knee/gain");
 
-            // AND THE CONSEQUENCE, stated as the arithmetic it is: at the
-            // shipped threshold — the Σ every measured dual EXCEEDS — the
-            // shipped law is pinned while the corrected law is still
-            // interior, for every path count above one.
+            // The consequence: at the quadratic threshold — a Σ every
+            // measured dual exceeds — the quadratic law is pinned while the
+            // linear law is still interior, for every path count above one.
             assert_eq!(
                 path_scaled_store_cap(true, n, shipped_pin, GAIN, FLOOR, KNEE),
                 Some(ceiling)
@@ -2653,9 +2537,9 @@ mod law_shape {
         }
     }
 
-    /// THE TEMPLATE APPLIED TO THE SUCCESSOR: `three_term_store_cap`'s
-    /// value is LINEAR in N at symmetric inputs — it is a Σ over paths with
-    /// no count multiplier, and its TERM 3 (`2·rate_fast·skew`) vanishes
+    /// The template applied to `three_term_store_cap`: its value is linear
+    /// in N at symmetric inputs — a Σ over paths with no count multiplier,
+    /// and its term 3 (`2·rate_fast·skew`) vanishes
     /// identically over a symmetric set because `rtp_max == rtp_min`.
     ///
     /// Same three holes closed: the `[floor, WIN_STORE_MAX]` clamp is kept
@@ -2678,7 +2562,7 @@ mod law_shape {
         };
 
         // The per-path term, from the law's own pieces (window + slack;
-        // span = 0 at a symmetric set). ABSOLUTE, hand-computable:
+        // span = 0 at a symmetric set). Absolute, hand-computable:
         // window = 1000·1·0.05 = 50; stall(ρ=1) = (9/8 + 1)·srtt =
         // 2.125·0.05 = 0.10625 s; slack = 106.25.
         let srtt_s = K * RTPROP_S;
@@ -2693,7 +2577,7 @@ mod law_shape {
                 (n as f64 * single).ceil() as usize,
                 "N={n}: the three-term law is not Σ-linear in N"
             );
-            // Every term individually linear, and TERM 3 identically 0 at
+            // Every term individually linear, and term 3 identically 0 at
             // a symmetric set (no path-count predicate anywhere).
             assert!((window - n as f64 * RATE * srtt_s).abs() < 1e-9, "N={n} window");
             assert!((slack - n as f64 * (single - RATE * srtt_s)).abs() < 1e-9, "N={n} slack");
@@ -2703,23 +2587,20 @@ mod law_shape {
             assert!(limit > FLOOR && limit < WIN_STORE_MAX, "N={n}: a clamp bound at {limit}");
         }
 
-        // The ratio that names the exponent, against the shipped law's 16.
+        // The ratio that names the exponent, against the quadratic law's 16.
         assert_eq!(cap(8).0 as f64 / cap(1).0 as f64, 1_250.0 / 157.0);
         let r = cap(8).0 as f64 / cap(1).0 as f64;
         assert!((r - 8.0).abs() < 0.1, "N=8 vs N=1 reads {r}, not linear-8");
     }
 
-    /// **THE COMPOSED LAW'S UNCLAMPED VALUE, SEPARATED FROM ITS MEMORY
-    /// BOUND** — step (c) of the template, and the one that matters most
-    /// for this law because `WIN_STORE_MAX` is the ONLY bound left above
-    /// it. ADR-0070's whole postmortem is mechanism 1: *a clamp that
-    /// always binds converts a law into a constant and hides its shape
-    /// from every measurement taken through it*. If the composed law's
-    /// memory bound ever became its operating point, the predecessor's
-    /// exact defect would have been reproduced with a nicer formula.
+    /// The composed law's unclamped value, separated from its memory
+    /// bound — step (c) of the template. `WIN_STORE_MAX` is the only bound
+    /// left above this law, and a clamp that always binds converts a law
+    /// into a constant and hides its shape from every measurement taken
+    /// through it (measurement-discipline rule 18).
     ///
-    /// So: the bound is shown to be REACHABLE (it is not decorative), and
-    /// shown to be a CONSTANT in N once reached (it is a resource limit,
+    /// So: the bound is shown to be reachable (it is not decorative), and
+    /// shown to be a constant in N once reached (it is a resource limit,
     /// not a term — a term would scale with the Σ). Both directions,
     /// because "never binds" and "always binds" are both defects here.
     #[test]
@@ -2735,8 +2616,8 @@ mod law_shape {
         };
 
         // The per-path term at rate 1000 is 156.25 (the test above).
-        // INTERIOR: at N = 1..8 the law is nowhere near the memory bound,
-        // so the shape assertions above are statements about the LAW.
+        // Interior: at N = 1..8 the law is nowhere near the memory bound,
+        // so the shape assertions above are statements about the law.
         for n in 1..=8usize {
             assert!(
                 cap_at(1_000.0, n) < WIN_STORE_MAX,
@@ -2744,7 +2625,7 @@ mod law_shape {
             );
         }
 
-        // REACHABLE: drive the rate up and the bound engages. A bound that
+        // Reachable: drive the rate up and the bound engages. A bound that
         // could never bind would be decorative, and stating it as a
         // resource limit would be a fiction.
         assert_eq!(
@@ -2753,7 +2634,7 @@ mod law_shape {
             "the memory bound is unreachable — it is not the resource limit it claims to be"
         );
 
-        // A CONSTANT IN N once reached. This is the whole distinction
+        // A constant in N once reached. This is the whole distinction
         // between a resource limit and a term: the law's own value is
         // Σ-linear in N (asserted above), so if this bound scaled with N
         // it would be part of the law. It does not.
@@ -2766,10 +2647,8 @@ mod law_shape {
         }
 
         // And the paroled floor, from the other side: it is the law's
-        // lower bound, also a constant in N. ADR-0070 finding 5 records
-        // its provenance as ABSENT and the three-term pre-registration
-        // MISSED it binding at shal8, so it is pinned here rather than
-        // assumed unreachable.
+        // lower bound, also a constant in N, and it can bind, so it is
+        // pinned here rather than assumed unreachable.
         for n in 1..=8usize {
             assert_eq!(
                 cap_at(1e-9, n),
@@ -2780,20 +2659,19 @@ mod law_shape {
     }
 }
 
-// ----- The composed cap law's report line (paper §16.56) -----------------
+// ----- The composed cap law's report line --------------------------------
 
-/// The `[CCAP]` line's SHAPE, pinned absolutely. An L1 parser and the
-/// pre-registered battery are written against these keys, and the two that
-/// carry the argument are `eng=` (mechanism liveness — MEASUREMENT
-/// DISCIPLINE rule 1) and `mem=` (the bind fraction of the only bound left
-/// above the law). A silent rename would leave the battery reading zeros
-/// and calling a warm-up failure a null result, which is exactly the
-/// confusion ADR-0070's postmortem is about.
+/// The `[CCAP]` line's shape, pinned absolutely. An L1 parser is written
+/// against these keys, and the two that carry the argument are `eng=`
+/// (mechanism liveness — measurement-discipline rule 1) and `mem=` (the
+/// bind fraction of the only bound left above the law). A silent rename
+/// would leave a battery reading zeros and calling a warm-up failure a
+/// null result.
 #[test]
 fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
     // Engaged everywhere, nothing bound, brake closed a quarter of the
-    // time: the reading the composed arm is PREDICTED to produce.
-    // A SYMMETRIC cell: span 0 at every refresh, so C9-L1's field reads
+    // time: the reading the composed arm is predicted to produce.
+    // A symmetric cell: span 0 at every refresh, so the span field reads
     // exactly 0 and the ratio is the well-defined 0.000 that says
     // "undefined — read `span=` first", never a NaN.
     let line = ccap_report_line(
@@ -2817,7 +2695,7 @@ fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
          span_ratio=0.000 rate_fast=9400.0 spread_us=0.0"
     );
 
-    // CONFIGURED BUT NEVER ENGAGED — a warm-up failure, and it must be
+    // Configured but never engaged — a warm-up failure, and it must be
     // distinguishable from a null result. `eng=0/200` is that signature;
     // the bind fractions are 0/0 = 0.0 rather than NaN, so a parser reads
     // "undefined" from `eng` and never from a poisoned float.
@@ -2831,7 +2709,7 @@ fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
         "{cold}"
     );
 
-    // THE STOP CONDITION of §16.56: the memory bound has become the law.
+    // The stop condition: the memory bound has become the law.
     let pinned = ccap_report_line(
         100,
         100,
@@ -2853,17 +2731,16 @@ fn the_ccap_line_reports_engagement_and_both_bind_fractions() {
     assert!(ccap_report_line(0, 0, 0, 0, 0.0, 0, 0, 64, 0.0, 0.0, 0.0, 0.0).contains("cap=0.0"));
 }
 
-/// **THE c9h READING, RENDERED** — the shape C9-L3 is scored on, pinned as
-/// a STRING so the L1 parser and the clause agree before a single VM
-/// invocation is spent. The numbers are the contract's own anchors
-/// (`rate_fast` 9 400 sym/s, spread 29.88 ms ⇒ shipped ≈ 281 sym), and the
-/// Σ form at c9h's TWO min-RTprop legs is twice that.
+/// The c9h reading (two fast legs, two slow), rendered and pinned as a
+/// string so the L1 parser and the renderer agree. The numbers are the
+/// cell's anchors (`rate_fast` 9 400 sym/s, spread 29.88 ms ⇒ shipped
+/// ≈ 281 sym), and the Σ form at c9h's two min-RTprop legs is twice that.
 ///
-/// This test is the reason the field set is four numbers and not one: it
-/// shows that from this line alone a reader can (a) score C9-L3's
-/// anchor-free 2.000, (b) check the 281 against the `[265, 315]` band, and
-/// (c) if it lands outside BOTH bands, attribute that to the ANCHORS,
-/// because `rate_fast=` and `spread_us=` are right there.
+/// This is why the field set is four numbers and not one: from this line
+/// alone a reader can (a) read the anchor-free ratio 2.000, (b) check the
+/// 281 against the `[265, 315]` band, and (c) if it lands outside both
+/// bands, attribute that to the anchors, because `rate_fast=` and
+/// `spread_us=` are right there.
 #[test]
 fn the_ccap_span_block_renders_the_c9h_discriminator() {
     let n = 40u64;
@@ -2885,12 +2762,12 @@ fn the_ccap_span_block_renders_the_c9h_discriminator() {
     );
     assert!(line.contains("span=280.9"), "{line}");
     assert!(line.contains("span_sigma=561.7"), "{line}");
-    // THE SCORED QUANTITY — anchor-free, predicted exactly 2.000.
+    // The ratio — anchor-free, predicted exactly 2.000.
     assert!(line.contains("span_ratio=2.000"), "{line}");
-    // THE ANCHORS, so a both-bands miss is attributable.
+    // The anchors, so a both-bands miss is attributable.
     assert!(line.contains("rate_fast=9400.0"), "{line}");
     assert!(line.contains("spread_us=29880.0"), "{line}");
-    // And the contract's absolute band is readable off `span=` directly.
+    // And the absolute band is readable off `span=` directly.
     let span: f64 = line
         .split_whitespace()
         .find_map(|t| t.strip_prefix("span="))
@@ -2902,10 +2779,10 @@ fn the_ccap_span_block_renders_the_c9h_discriminator() {
     );
 }
 
-/// The two span forms, computed by ONE function, over the three geometries
-/// the c9 contract distinguishes. This is the arithmetic half of C9-L1 and
-/// C9-L3; the gauge half is the rendered line above and the reachability
-/// half is `tests/gauge_reachability.rs`.
+/// The two span forms, computed by one function, over the geometries that
+/// distinguish them. This is the arithmetic half; the gauge half is the
+/// rendered line above and the reachability half is
+/// `tests/gauge_reachability.rs`.
 #[test]
 fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says() {
     let tt = |rate: f64, rtprop_ms: f64| {
@@ -2916,14 +2793,14 @@ fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says()
         })
     };
 
-    // 1. ONE PATH — both forms identically 0 by arithmetic, no predicate.
+    // 1. One path — both forms identically 0 by arithmetic, no predicate.
     let one = span_forms(&[tt(9_400.0, 8.45)]).expect("warm");
     assert_eq!(one.shipped, 0.0);
     assert_eq!(one.sigma, 0.0);
     assert_eq!(one.spread_s, 0.0);
     assert_eq!(one.rate_fast, 9_400.0);
 
-    // 2. SYMMETRIC N = 4 (the c9 cell) — C9-L1's prediction, exactly 0.
+    // 2. Symmetric N = 4 (the c9 cell) — exactly 0.
     let sym = span_forms(&[
         tt(9_400.0, 8.45),
         tt(9_400.0, 8.45),
@@ -2934,12 +2811,12 @@ fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says()
     assert_eq!(sym.shipped, 0.0, "C9-L1: span must be 0 at a symmetric cell");
     assert_eq!(sym.sigma, 0.0);
 
-    // 3. THE DUAL (N = 2, one fast leg) — the two forms AGREE, which is
-    //    precisely why no geometry before c9h could tell them apart.
+    // 3. The dual (N = 2, one fast leg) — the two forms agree, so a dual
+    //    cannot tell them apart.
     let dual = span_forms(&[tt(9_400.0, 8.45), tt(9_400.0, 38.33)]).expect("warm");
     assert!((dual.sigma / dual.shipped - 1.0).abs() < 1e-9, "{dual:?}");
 
-    // 4. c9h — TWO fast legs, TWO slow. The ratio is the COUNT of
+    // 4. c9h — two fast legs, two slow. The ratio is the count of
     //    min-RTprop legs: exactly 2.000, and anchor-free.
     let c9h = span_forms(&[
         tt(9_400.0, 8.45),
@@ -2952,7 +2829,7 @@ fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says()
         (c9h.sigma / c9h.shipped - 2.000).abs() < 1e-9,
         "C9-L3's anchor-free ratio: {c9h:?}"
     );
-    // The absolute anchor, in the contract's own band.
+    // The absolute anchor, in its band.
     assert!(
         (265.0..=315.0).contains(&c9h.shipped),
         "C9-L3's absolute band [265, 315]: {c9h:?}"
@@ -2960,7 +2837,7 @@ fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says()
     assert_eq!(c9h.rate_fast, 9_400.0);
     assert!((c9h.spread_s - 0.029_88).abs() < 1e-9, "{c9h:?}");
 
-    // 5. NO TIE PREDICATE: nudge one "fast" leg by a microsecond — the
+    // 5. No tie predicate: nudge one "fast" leg by a microsecond — the
     //    kind of inexactness every wire measurement has — and the ratio
     //    still reads 2.000 to three decimals. A leg-counting gauge would
     //    have collapsed to 1.000 here.
@@ -2981,11 +2858,9 @@ fn span_forms_separate_the_shipped_and_sigma_laws_only_where_the_contract_says()
     assert_eq!(span_forms(&[tt(9_400.0, 8.45), None]), None);
 }
 
-/// THE LAW AND ITS GAUGE ARE ONE COMPUTATION. `three_term_store_cap`'s
-/// TERM 3 and `span_forms().shipped` are the same number at every geometry
-/// — asserted rather than described, because the previous shape (the span
-/// computed inline and thrown away) is exactly what left C9-L1/C9-L3
-/// unscoreable.
+/// The law and its gauge are one computation. `three_term_store_cap`'s
+/// term 3 and `span_forms().shipped` are the same number at every
+/// geometry.
 #[test]
 fn the_span_gauge_is_the_laws_own_term_3() {
     let tt = |rate: f64, rtprop_ms: f64| {
@@ -3015,16 +2890,14 @@ fn the_span_gauge_is_the_laws_own_term_3() {
     }
 }
 
-/// THE CARRIER AND THE RENDERER CANNOT DRIFT APART.
+/// The carrier and the renderer cannot drift apart.
 ///
-/// `[CCAP]`'s tally moved into `SenderTeardownGauges` so that the counters
-/// and their emission site are one object (the counters used to be seven
-/// loose locals passed positionally to `ccap_report_line` at two
-/// call sites — a shape in which a mis-ordered argument is invisible).
-/// This pins that the carrier renders EXACTLY what the pinned renderer
-/// renders for the same tally, field for field and in the same order.
+/// `[CCAP]`'s tally lives in `SenderTeardownGauges` so that the counters
+/// and their emission site are one object. This pins that the carrier
+/// renders exactly what the pinned renderer renders for the same tally,
+/// field for field and in the same order.
 ///
-/// REACHABILITY — that the destructor actually fires under the harness's
+/// Reachability — that the destructor actually fires under the harness's
 /// exit path — is asserted by `tests/gauge_reachability.rs`, which is the
 /// half no unit test can see.
 #[test]
@@ -3076,22 +2949,20 @@ fn the_teardown_carrier_renders_exactly_the_pinned_ccap_line() {
         .contains("eng=0/0"));
 }
 
-/// **THE BRAKE'S SET IS LOAD-BEARING**, and this pins the trap §16.56
-/// wrote down before it could be walked into rather than describing it in
-/// prose (CLAUDE.md: every documented divergence carries a test that
-/// BOUNDS it).
+/// The brake's set is load-bearing (CLAUDE.md: every documented
+/// divergence carries a test that bounds it).
 ///
-/// With the composed arm's derived per-path cap — the path's OWN cwnd —
+/// With the composed arm's derived per-path cap — the path's own cwnd —
 /// "path i is full" is `in_flight_i >= cwnd_i`, which is exactly
 /// `available()_i == 0`. `active_paths()` is *active AND available() > 0*,
-/// so every member of that set has `in_flight < cwnd` BY CONSTRUCTION and
+/// so every member of that set has `in_flight < cwnd` by construction and
 /// `infl_percap_full` over it can only ever return false. A brake wired to
-/// that set would resolve ON, take a lock every iteration, and never
-/// brake: a null EFFECT wearing a null RESULT's clothes.
+/// that set would resolve on, take a lock every iteration, and never
+/// brake.
 #[test]
 fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
     // What `active_paths()` can yield under the derived cap: membership
-    // REQUIRES available() > 0, i.e. in_flight < cwnd, for every member.
+    // requires available() > 0, i.e. in_flight < cwnd, for every member.
     // Any such vector is un-full, whatever the values are.
     for &(infl, cwnd) in &[(0u64, 100u64), (99, 100), (1, 2), (500, 501)] {
         assert!(
@@ -3104,7 +2975,7 @@ fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
         "no member of the active set can be full under cap_i = cwnd_i"
     );
 
-    // Over `live_paths()` the same predicate is a REAL question, because
+    // Over `live_paths()` the same predicate is a real question, because
     // a live path may be saturated (available() == 0) and still live.
     assert!(
         infl_percap_full(&[(100, 100), (40, 40)]),
@@ -3114,25 +2985,25 @@ fn the_composed_brake_over_the_active_set_would_be_false_by_construction() {
         !infl_percap_full(&[(100, 100), (39, 40)]),
         "one live path below its own cwnd ⇒ the brake stays open"
     );
-    // Saturated BEYOND the window (a retransmit can overshoot) still
+    // Saturated beyond the window (a retransmit can overshoot) still
     // reads full — the predicate is `>=`, not `==`.
     assert!(infl_percap_full(&[(120, 100), (41, 40)]));
 }
 
-// ----- Capacity-weighted pool (RWM_STORE_CAPW, "C8-Aware Pool Law") -------
+// ----- Capacity-weighted pool (RWM_STORE_CAPW) -----------------------------
 
 #[test]
 fn capw_store_cap_not_engaged_off_single_or_unwarm() {
-    // Flag OFF: never engaged.
+    // Flag off: never engaged.
     assert_eq!(
         capw_store_cap(false, &[Some(1000.0), Some(400.0)], 64, 2048),
         None
     );
-    // N = 1: not engaged — the caller keeps the legacy law bit-exactly
-    // (the same singles contract as RWM_STORE_PATHS).
+    // N = 1: not engaged — the caller keeps the single-path law
+    // bit-exactly (the same singles contract as RWM_STORE_PATHS).
     assert_eq!(capw_store_cap(true, &[Some(1000.0)], 64, 2048), None);
-    // Anchors-not-warm fallback: ANY unwarm live path → None → the
-    // caller keeps the CONFIGURED pooled law (path-scaled / legacy)
+    // Anchors-not-warm fallback: any unwarm live path → None → the
+    // caller keeps the configured pooled law (path-scaled / single-path)
     // until every anchor is live — a partial sum would under-provision
     // the unwarm path's share of the shared pool.
     assert_eq!(capw_store_cap(true, &[Some(1000.0), None], 64, 2048), None);
@@ -3166,17 +3037,17 @@ fn capw_store_cap_symmetric_is_n_times_single() {
 fn capw_store_cap_asymmetric_weights_by_capacity_not_path_count() {
     // The c8 shape (the law's target cell): a c2-class fast path
     // (10 400 sym/s, RTprop 8 ms → anchor 83.2) + a c3-class slow path
-    // (2000 sym/s, RTprop 40 ms → anchor 80). Each earns its OWN pipe +
+    // (2000 sym/s, RTprop 40 ms → anchor 80). Each earns its own pipe +
     // recovery round — the slow path's 1/5 rate earns ~1/3 of the fast
-    // term (its longer RTprop partially offsets), NOT the equal ×knee
+    // term (its longer RTprop partially offsets), not the equal ×knee
     // share the path-count law grants.
     let fast = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 2.0).unwrap(); // 1248
     let slow = honest_store_cap(Some(80.0), Some(2_000.0), 1.5, 2.0).unwrap(); // 200+200=400
     assert!((slow - 400.0).abs() < 1e-6);
     let pool = capw_store_cap(true, &[Some(fast), Some(slow)], 64, 2048).unwrap();
     assert_eq!(pool, 1648);
-    // The verdict shape the diagnosis predicts: strictly between the
-    // legacy 1024 latch (fast path under-provisioned) and the
+    // Strictly between the single-path 1024 latch (fast path
+    // under-provisioned) and the
     // path-scaled N×2048 = 4096 (slow path over-provisioned).
     assert!(pool > 1024 && pool < 4096);
     // Capacity weighting: the slow path's contribution is its own term,
@@ -3186,11 +3057,10 @@ fn capw_store_cap_asymmetric_weights_by_capacity_not_path_count() {
 
 #[test]
 fn capw_store_cap_overread_anchors_clamp_to_the_path_scaled_ceiling() {
-    // The legacy plain anchor over-reads ×4.6–7.4 ("Anchor Hygiene"
-    // battery (b)): inflated terms clamp at the N×knee ceiling — the
-    // path-scaled degenerate (which is why the battery arm composes
-    // RWM_PLAIN_RS=1; without honest anchors the law cannot
-    // differentiate). Floor guards transiently-tiny terms.
+    // The ack-interval anchor over-reads several-fold: inflated terms
+    // clamp at the N×knee ceiling — the path-scaled degenerate (without
+    // honest anchors, `RWM_PLAIN_RS=1`, the law cannot differentiate).
+    // Floor guards transiently-tiny terms.
     assert_eq!(
         capw_store_cap(true, &[Some(6.0 * 1248.0), Some(6.0 * 400.0)], 64, 2048),
         Some(4096)
@@ -3201,28 +3071,24 @@ fn capw_store_cap_overread_anchors_clamp_to_the_path_scaled_ceiling() {
     );
 }
 
-// ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR, goal-gate ------
-// ----- "Ship The Wins 1") --------------------------------------------------
+// ----- Pool-anchor honest dual-store law (RWM_POOL_ANCHOR) -----------------
 
-/// The §16.35 c7 blocker, at the law level: with the c7-class TRUE send
-/// rate (≈ 8.9k sym/s/path, RTprop 8 ms, K ≈ 2) the honest send-anchor
-/// pool sizes to the ~2.2k residence+runway class, while the est-arm's
-/// inflated legacy anchor (btlbw 304–349k, the measured burst-peak
-/// over-read) drives the path-scaled law to its 4096 clamp — the
-/// standing-queue headroom the pooled store converted into echo-265 ms /
-/// sweeps-×7. Same pure functions the engine branch calls
+/// At the law level: with a c7-class true send rate (≈ 8.9k sym/s/path,
+/// RTprop 8 ms, K ≈ 2) the honest send-anchor pool sizes to the ~2.2k
+/// residence+runway class, while an inflated ack-interval anchor (the
+/// burst-peak over-read) drives the path-scaled law to its 4096 clamp —
+/// standing-queue headroom. Same pure functions the engine branch calls
 /// (honest_store_cap terms → capw_store_cap pool).
 #[test]
 fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
     let sr = 8_900.0; // true per-path send rate, sym/s (c7 ≈ 85 Mbit @1200B)
     let rtp = 0.008; // c2-class RTprop
     let term = honest_store_cap(Some(sr * rtp), Some(sr), 2.0, 2.0).unwrap();
-    // cap_i = 71.2·(2+1) + 8900·1·0.1 ≈ 1104 — the legacy-1024-per-path
-    // good class the c8 attribution named.
+    // cap_i = 71.2·(2+1) + 8900·1·0.1 ≈ 1104 — the 1024-per-path class.
     assert!((1000.0..1300.0).contains(&term), "cap_i class, got {term}");
     let pool = capw_store_cap(true, &[Some(term), Some(term)], 64, 2048).unwrap();
     assert!((1500..3000).contains(&pool), "Σ pool class, got {pool}");
-    // The est-arm legacy anchor: Σ bdp ≈ 2 × 330k × 8 ms ⇒ the
+    // An inflated ack-interval anchor: Σ bdp ≈ 2 × 330k × 8 ms ⇒ the
     // path-scaled law rails at the N×knee ceiling.
     let inflated_bdp_sum = 2.0 * 330_000.0 * rtp;
     assert_eq!(
@@ -3231,13 +3097,13 @@ fn pool_anchor_honest_terms_bound_the_dual_pool_where_the_legacy_law_clamps() {
     );
     assert!(pool < 4096, "the honest pool removes the clamp headroom");
     // N = 1 bit-exactness: one term never engages the pooled law — the
-    // caller's legacy single-path law runs verbatim.
+    // caller's single-path law runs verbatim.
     assert_eq!(capw_store_cap(true, &[Some(term)], 64, 2048), None);
     // Warm-up: any unwarm live path defers to the configured fallback.
     assert_eq!(capw_store_cap(true, &[Some(term), None], 64, 2048), None);
 }
 
-// ----- Honest floor-clock caps (feat/percap-honest-cap) -------------------
+// ----- Honest floor-clock caps --------------------------------------------
 
 #[test]
 fn echo_ratio_min_is_self_queue_proof_and_window_expires() {
@@ -3246,7 +3112,7 @@ fn echo_ratio_min_is_self_queue_proof_and_window_expires() {
     assert_eq!(e.k(), 1.0);
     // Early unloaded samples set the honest drain-clock ratio.
     assert!((e.observe(1.5, 1_000_000) - 1.5).abs() < 1e-9);
-    // Self-queue inflation (dwell → echo → ratio) CANNOT raise the min —
+    // Self-queue inflation (dwell → echo → ratio) cannot raise the min —
     // the c8 parking spiral has no handle on this statistic.
     assert!((e.observe(4.0, 2_000_000) - 1.5).abs() < 1e-9);
     assert!((e.observe(8.0, 3_000_000) - 1.5).abs() < 1e-9);
@@ -3255,7 +3121,7 @@ fn echo_ratio_min_is_self_queue_proof_and_window_expires() {
     assert!((e.observe(f64::NAN, 3_500_000) - 1.5).abs() < 1e-9);
     let mut e2 = EchoRatioMin::new(5_000_000);
     assert_eq!(e2.observe(0.8, 1_000_000), 1.0);
-    // Anchor-hygiene rule 3 — the window EXPIRES: a stale unloaded read
+    // Anchor-hygiene rule 3 (ADR-0061) — the window expires: a stale unloaded read
     // rolls out after two half-windows and the ratio re-measures.
     assert!((e.observe(3.0, 6_500_000) - 1.5).abs() < 1e-9); // prev bucket holds 1.5
     assert!((e.observe(3.5, 11_600_000) - 3.0).abs() < 1e-9); // 1.5 expired
@@ -3263,14 +3129,13 @@ fn echo_ratio_min_is_self_queue_proof_and_window_expires() {
 
 #[test]
 fn echo_ratio_seed_identity_sample_is_discarded_not_latched() {
-    // The measured L1-smoke defect: at the estimator seed instant
-    // srtt ≡ min_rtt (shared seeding), ratio ≡ 1.0 — feeding it latches
-    // the windowed min at 1.0 for a whole window (khr pinned 1.00 while
-    // rtt/rtp read 16/8 ms). The seed-identity sample must be DISCARDED.
+    // At the estimator seed instant srtt ≡ min_rtt (shared seeding), so
+    // ratio ≡ 1.0 — feeding it would latch the windowed min at 1.0 for a
+    // whole window. The seed-identity sample must be discarded.
     let mut e = EchoRatioMin::new(5_000_000);
     let ms = |m: u64| std::time::Duration::from_millis(m);
     // Seed instant: srtt == RTprop bit-equal → no sample, K stays 1.0
-    // as the DEFAULT (not as a latched measurement).
+    // as the default (not as a latched measurement).
     assert_eq!(e.observe_srtt_over_rtprop(ms(8), Some(ms(8)), 1_000_000), 1.0);
     // A real measurement then sets the min — it was not latched at 1.0.
     assert!(
@@ -3287,10 +3152,10 @@ fn echo_ratio_seed_identity_sample_is_discarded_not_latched() {
 fn honest_store_cap_is_residence_plus_recovery_runway() {
     // Derived, not tuned: cap_i = anchor_i·(K_i + gain − 1) +
     // rate_i·(gain−1)·R — residence (Little's law on the unloaded
-    // drain clock) + (gain−1) recovery rounds on the RECOVERY engine's
+    // drain clock) + (gain−1) recovery rounds on the recovery engine's
     // clock (R = 100 ms, the hole-refresh/tail-sweep cadence bound)
     // plus the retransmit flight (the anchor term's second round).
-    // c2-like at the MEASURED cell clocks (rate 10 400 sym/s, RTprop
+    // c2-like at the measured cell clocks (rate 10 400 sym/s, RTprop
     // 8 ms → anchor 83.2; K = 2): 83.2×3 + 10 400×0.1 = 1289.6.
     let c = honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 2.0, 2.0)
         .unwrap();
@@ -3306,14 +3171,14 @@ fn honest_store_cap_is_residence_plus_recovery_runway() {
     assert!((g1 - 83.2 * 1.5).abs() < 1e-9);
     let g05 = honest_store_cap(Some(83.2), Some(10_400.0), 1.5, 0.5).unwrap();
     assert!((g05 - 83.2 * 1.5).abs() < 1e-9);
-    // Warm-up (no anchor / no rate): None — the caller keeps the
-    // legacy warm-up share (warm-up unchanged).
+    // Warm-up (no anchor / no rate): None — the caller keeps its
+    // warm-up share.
     assert_eq!(honest_store_cap(None, Some(10_400.0), 2.0, 2.0), None);
     assert_eq!(honest_store_cap(Some(83.2), None, 2.0, 2.0), None);
     assert_eq!(honest_store_cap(Some(0.0), Some(10_400.0), 2.0, 2.0), None);
 }
 
-// ── THE THREE-TERM LAW (goal-gate "Three-Term Law") ──────────────────
+// ── The three-term law ────────────────────────────────────────────────
 
 /// A warm term at the bench's own axes: `k = srtt/RTprop` exactly, so
 /// these numbers are the ones `tests/slack_bench.rs` computes.
@@ -3325,35 +3190,34 @@ fn tt(rate: f64, rtprop_ms: f64, srtt_ms: f64) -> Option<ThreeTermTerm> {
     })
 }
 
-/// The δ dial's named points — a DIAL, read once, in one place.
+/// The δ dial's named points — a dial, read once, in one place (paper
+/// §5.4).
 ///
-/// **BIT-EXACT, not approximate** (the user's condition on the §16.81
-/// repair): `b` stopped being a three-arm `match` on the hint and became
-/// `span_horizon_b(delta_price(hint))`, so the three shipped numbers are
-/// now the output of `2^(−½·log₁₀(δ/0.5))` on a libm. If that composition
-/// misses ½ / 1 / 2 by ONE ULP on some target, this assertion FAILS the
-/// build rather than letting a step ship — and the recorded fallback is
-/// the exact-by-construction `b = exp2(½·log₁₀ ζ)` over the enum's own ζ
-/// literals. (SHIPPED FORM as of 2026-09-08: the `log₁₀(δ/δ_Auto)` form.
-/// It is exact here because δ ∈ {50, 0.5, 0.005} are themselves the exact
-/// f64 quotients `0.5/ζ`, `δ/0.5` is an exact power-of-two scaling, and
-/// `log₁₀` of {100, 1, 0.01} returns exactly {2, 0, −2}.)
+/// Bit-exact, not approximate: `b` is `span_horizon_b(delta_price(hint))`,
+/// so the three shipped numbers are the output of `2^(−½·log₁₀(δ/0.5))` on
+/// a libm. If that composition misses ½ / 1 / 2 by one ULP on some target,
+/// this assertion fails the build rather than letting a step ship; the
+/// fallback is the exact-by-construction `b = exp2(½·log₁₀ ζ)` over the
+/// enum's own ζ literals. The `log₁₀(δ/δ_Auto)` form is exact here because
+/// δ ∈ {50, 0.5, 0.005} are themselves the exact f64 quotients `0.5/ζ`,
+/// `δ/0.5` is an exact power-of-two scaling, and `log₁₀` of {100, 1, 0.01}
+/// returns exactly {2, 0, −2}.
 #[test]
 fn delta_budget_b_is_the_dial_not_a_mode() {
     assert_eq!(delta_budget_b(ProtocolHint::Realtime), 0.5);
     assert_eq!(delta_budget_b(ProtocolHint::Auto), 1.0);
     assert_eq!(delta_budget_b(ProtocolHint::Bulk), 2.0);
-    // THE HINT NAMES A δ, and it names the SAME δ the Copa mapping does —
+    // The hint names a δ, and it names the same δ the Copa mapping does —
     // one map, one seat. The dial's three named points, bit-exactly.
     assert_eq!(delta_price(ProtocolHint::Realtime), 50.0);
     assert_eq!(delta_price(ProtocolHint::Auto), 0.5);
     assert_eq!(delta_price(ProtocolHint::Bulk), 0.005);
-    // `b(hint)` IS `b_of(δ(hint))` — the composition, not a coincidence.
+    // `b(hint)` is `b_of(δ(hint))` — the composition, not a coincidence.
     for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
         assert_eq!(delta_budget_b(h), delta_budget_b_of(delta_price(h)));
     }
 
-    // The only law b enters is continuous and MONOTONE in it, through
+    // The only law b enters is continuous and monotone in it, through
     // every named point — no step at a preset (CLAUDE.md).
     let mut prev = 0u64;
     for i in 0..=200 {
@@ -3365,12 +3229,9 @@ fn delta_budget_b_is_the_dial_not_a_mode() {
     assert_eq!(shed_deadline_us(0.5, 20_000), 10_000);
     assert_eq!(shed_deadline_us(2.0, 20_000), 40_000);
 
-    // ── THE CONTINUITY GATE ON δ ITSELF ──────────────────────────────
-    // Before §16.81 there was no function of δ to sweep: b was defined at
-    // three points and nowhere else, so "continuous in the dial" could
-    // only be asserted of `b`, never of δ. Sweep the dial log-uniformly
-    // over its own span [δ_Bulk, δ_Realtime] and assert the two shape
-    // properties the paper's b(δ) claims.
+    // ── The continuity gate on δ itself ──────────────────────────────
+    // Sweep the dial log-uniformly over its own span [δ_Bulk, δ_Realtime]
+    // and assert the two shape properties the paper's b(δ) claims.
     let (lo, hi) = (0.005f64, 50.0f64);
     const N: usize = 500;
     let mut prev_b = f64::INFINITY;
@@ -3392,9 +3253,9 @@ fn delta_budget_b_is_the_dial_not_a_mode() {
         prev_b = b;
         prev_d = dl;
     }
-    // ±2 % NUDGES AT EVERY PRESET. A behaviour step across a preset is a
+    // ±2 % nudges at every preset. A behaviour step across a preset is a
     // defect even if each side is individually correct (CLAUDE.md), and
-    // the bound is ABSOLUTE in b, not a ratio that a small b could hide
+    // the bound is absolute in b, not a ratio that a small b could hide
     // inside: a 2 % move in δ is a 0.0043-decade move in log δ, so
     // |Δb| < 0.01 for every b on this dial.
     for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
@@ -3408,9 +3269,9 @@ fn delta_budget_b_is_the_dial_not_a_mode() {
             );
         }
     }
-    // AND THE SHED DEADLINE ITSELF IS UNCHANGED at every preset over the
-    // bench's own RTprop grid — the c2/c3 legs plus the range between and
-    // around them. Bit-exact against the numbers the three-arm map gave.
+    // And the shed deadline at every preset, over the bench's own RTprop
+    // grid — the c2/c3 legs plus the range between and around them —
+    // bit-exact against b ∈ {½, 1, 2}.
     for (h, b_old) in [
         (ProtocolHint::Realtime, 0.5f64),
         (ProtocolHint::Auto, 1.0),
@@ -3429,13 +3290,11 @@ fn delta_budget_b_is_the_dial_not_a_mode() {
     }
 }
 
-/// **ζ AND δ ARE ONE INVOLUTION, BIT-EXACTLY.** The rate controller's
-/// effective tail target reads `ζ(δ(hint))` where it read
-/// `hint.tail_loss_scale()` before §16.81.
-/// That substitution is byte-identical only if the round trip
+/// ζ and δ are one involution, bit-exactly. The rate controller's
+/// effective tail target reads `ζ(δ(hint))`, which equals
+/// `hint.tail_loss_scale()` only if the round trip
 /// `ζ → δ = 0.5/ζ → ζ = 0.5/δ` is exact at all three preset ζ. It is
-/// (0.01, 1, 100 are all exactly representable ratios of 0.5), and this
-/// is the pin that says so rather than the comment that assumes it.
+/// (0.01, 1, 100 are all exactly representable ratios of 0.5).
 #[test]
 fn zeta_of_the_hints_delta_is_the_hints_own_scale() {
     for h in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
@@ -3445,7 +3304,7 @@ fn zeta_of_the_hints_delta_is_the_hints_own_scale() {
             "{h:?}: ζ(δ(hint)) is not the hint's own declared price ratio"
         );
     }
-    // β, the rate mix's weight: 0 at BOTH the Realtime and Auto ends
+    // β, the rate mix's weight: 0 at both the Realtime and Auto ends
     // (the clamp) and 1 at Bulk (x/x) — all three exactly, which is what
     // makes the mix byte-identical at the presets.
     assert_eq!(
@@ -3462,13 +3321,13 @@ fn zeta_of_the_hints_delta_is_the_hints_own_scale() {
     );
 }
 
-/// ABSOLUTE arithmetic on the composed law — every number hand-computable
-/// from a rate and a time, and CONTINUOUS in ρ with both stall terms
+/// Absolute arithmetic on the composed law — every number hand-computable
+/// from a rate and a time, and continuous in ρ with both stall terms
 /// always evaluated (CLAUDE.md: no mode bit, no threshold that selects a
 /// formula).
 #[test]
 fn three_term_law_is_arithmetic_and_continuous() {
-    // ── The c2 SINGLE, ρ = 1, b = ½: RTprop 8 ms, wireQ 4 ms ⇒ K = 1.5.
+    // ── The c2 single, ρ = 1, b = ½: RTprop 8 ms, wireQ 4 ms ⇒ K = 1.5.
     //   window = 10 400 × 12 ms                     = 124.8
     //   slack  = 10 400 × 17/8 × 12 ms              = 265.2
     //   span   = 2 × 10 400 × 0                     =   0
@@ -3488,7 +3347,7 @@ fn three_term_law_is_arithmetic_and_continuous() {
         three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], 0.0, 0.5, 64).unwrap();
     assert!((w0 - 124.8).abs() < 1e-9, "the window term does not move with ρ");
     assert!((sl0 - 41.6).abs() < 1e-9, "10 400 × 4 ms = 41.6, got {sl0}");
-    // A STRAIGHT LINE in ρ through 21 points — both terms always
+    // A straight line in ρ through 21 points — both terms always
     // computed, nothing switches at any value of the dial.
     let mid =
         three_term_store_cap(true, &[tt(10_400.0, 8.0, 12.0)], 0.5, 0.5, 64).unwrap().2;
@@ -3504,7 +3363,7 @@ fn three_term_law_is_arithmetic_and_continuous() {
         prev = s;
     }
 
-    // ── The c8 GEOMETRY, both paths: c2 (10 400 sym/s, RTprop 8 ms,
+    // ── The c8 geometry, both paths: c2 (10 400 sym/s, RTprop 8 ms,
     // srtt 12 ms) + c3 (2 000 sym/s, RTprop 60 ms, srtt 64 ms).
     //   window = 10 400×12 ms + 2 000×64 ms          = 124.8 + 128.0
     //   slack  = 10 400×25.5 ms + 2 000×136 ms       = 265.2 + 272.0
@@ -3513,17 +3372,16 @@ fn three_term_law_is_arithmetic_and_continuous() {
     let (cap8, w8, sl8, sp8) = three_term_store_cap(true, &c8, 1.0, 0.5, 64).unwrap();
     assert!((w8 - 252.8).abs() < 1e-9, "window {w8}");
     assert!((sl8 - 537.2).abs() < 1e-9, "slack {sl8}");
-    // §16.43 PS6's sender-retention span, reproduced by the SHIPPED
-    // arithmetic: 541 against the independently measured good pin of
-    // 508 (+6.5 %), and ×7.57 below the 4096 arm that read −19.6 %.
+    // The sender-retention span: 541, against an independently measured
+    // good pin of 508 (+6.5 %), and ×7.57 below the 4096 path-scaled cap.
     assert!((sp8 - 540.8).abs() < 1e-9, "span {sp8} must be PS6's 540.8");
     assert_eq!(cap8, 1331, "252.8 + 537.2 + 540.8 = 1330.8 ⇒ 1331");
-    // Path ORDER is not a parameter: the law is a sum plus a spread.
+    // Path order is not a parameter: the law is a sum plus a spread.
     let rev = [c8[1], c8[0]];
     assert_eq!(three_term_store_cap(true, &rev, 1.0, 0.5, 64).unwrap().0, cap8);
 
-    // OFF, and warm-up, both return None — the caller's existing chain
-    // then runs verbatim (the gate's OFF-value property, in the law).
+    // Off, and warm-up, both return None — the caller's existing chain
+    // then runs verbatim (the gate's off-value property, in the law).
     assert_eq!(three_term_store_cap(false, &c8, 1.0, 0.5, 64), None);
     assert_eq!(three_term_store_cap(true, &[], 1.0, 0.5, 64), None);
     assert_eq!(
@@ -3531,17 +3389,17 @@ fn three_term_law_is_arithmetic_and_continuous() {
         None,
         "one cold path ⇒ no partial sum (the capw rule)"
     );
-    // The clamp is MEMORY, not law: an absurd pipe stops at WIN_STORE_MAX.
+    // The clamp is memory, not law: an absurd pipe stops at WIN_STORE_MAX.
     assert_eq!(
         three_term_store_cap(true, &[tt(10_000_000.0, 8.0, 12.0)], 1.0, 0.5, 64).unwrap().0,
         WIN_STORE_MAX
     );
 }
 
-/// **THE TOPOLOGY BRANCH, DELETED — the property this whole law exists
-/// for.** Sweep the path COUNT and the skew, and assert there is no step
-/// anywhere: the span term is identically 0 at one path AND at any
-/// number of paths with equal RTprop, and it approaches 0 CONTINUOUSLY
+/// No topology branch. Sweep the path count and the skew, and assert
+/// there is no step anywhere: the span term is identically 0 at one path
+/// and at any number of paths with equal RTprop, and it approaches 0
+/// continuously
 /// as the skew shrinks. No `if n == 1` produces this — the arithmetic
 /// does, because `max − min` over one element is zero.
 #[test]
@@ -3549,8 +3407,8 @@ fn three_term_span_vanishes_continuously_as_skew_goes_to_zero() {
     let base_ms = 8.0;
     let k = 1.5;
     let mk = |n: usize, skew_ms: f64| -> (usize, f64, f64, f64) {
-        // n paths, all at the same rate; ONE of them lagging by the
-        // skew. n = 1 ⇒ the lagging path IS the only path.
+        // n paths, all at the same rate; one of them lagging by the
+        // skew. n = 1 ⇒ the lagging path is the only path.
         let terms: Vec<Option<ThreeTermTerm>> = (0..n)
             .map(|i| {
                 let rtp = if i + 1 == n { base_ms + 2.0 * skew_ms } else { base_ms };
@@ -3560,25 +3418,25 @@ fn three_term_span_vanishes_continuously_as_skew_goes_to_zero() {
         three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap()
     };
 
-    // (a) PATH-COUNT SWEEP at ZERO skew: the span term is 0 at EVERY
+    // (a) Path-count sweep at zero skew: the span term is 0 at every
     // path count, so nothing about the limit keys on topology.
     for n in 1..=6 {
         let (_, _, _, span) = mk(n, 0.0);
         assert_eq!(span, 0.0, "n={n}: zero skew must give a zero span term");
     }
-    // A single path is the n = 1 case of the SAME expression — not a
+    // A single path is the n = 1 case of the same expression — not a
     // special case, and not reachable by any branch.
     assert_eq!(mk(1, 40.0).3, 0.0, "one path has no skew to be skewed BY");
 
-    // (b) SKEW → 0 at N = 2: linear, zero intercept, NO STEP. The span
-    // is `2 · rate_fast · skew` exactly at every point, and the LIMIT's
+    // (b) Skew → 0 at N = 2: linear, zero intercept, no step. The span
+    // is `2 · rate_fast · skew` exactly at every point, and the limit's
     // difference from the zero-skew limit vanishes with the skew.
     let (_, w0, sl0, _) = mk(2, 0.0);
     let zero_limit = (w0 + sl0).ceil() as usize;
     assert_eq!(mk(2, 0.0).0, zero_limit);
-    // 20 ms of skew down to 0 in 50 µs steps. A step at ANY of these is
+    // 20 ms of skew down to 0 in 50 µs steps. A step at any of these is
     // a defect even if both sides are individually correct, so the test
-    // walks the whole sweep and bounds EVERY adjacent difference. (The
+    // walks the whole sweep and bounds every adjacent difference. (The
     // lagging path's own window and slack terms move with its RTprop
     // too — that is a real dependence on a real signal, and it is
     // included in the bound rather than excluded from the sweep.)
@@ -3593,9 +3451,9 @@ fn three_term_span_vanishes_continuously_as_skew_goes_to_zero() {
         );
         assert!(span >= 0.0 && (prev_span < 0.0 || span <= prev_span + 1e-9));
         prev_span = span;
-        // NO STEP: 50 µs of skew is 1.04 symbols of span plus 4.9 of
+        // No step: 50 µs of skew is 1.04 symbols of span plus 4.9 of
         // window+slack on the lagging path's own clock — under 8, at
-        // every one of the 400 positions, including the last one INTO
+        // every one of the 400 positions, including the last one into
         // zero skew where a topology branch would have shown up.
         if let Some(p) = prev_limit {
             assert!(
@@ -3608,18 +3466,18 @@ fn three_term_span_vanishes_continuously_as_skew_goes_to_zero() {
     // The sweep ended AT zero skew, and it arrived there continuously.
     assert_eq!(prev_limit, Some(zero_limit));
     assert_eq!(mk(2, 0.0).3, 0.0);
-    // And the FIRST nudge off zero moves the limit by a handful of
+    // And the first nudge off zero moves the limit by a handful of
     // symbols, not by a cliff: 50 µs of skew is 1.04 symbols of span
     // plus 4.9 of the lagging path's own window + slack.
     assert!(mk(2, 0.05).0.abs_diff(zero_limit) <= 8);
     assert!((mk(2, 0.05).3 - 1.04).abs() < 1e-9, "the span's own first step");
 }
 
-/// ROUTE B (§16.44) IN THE ENGINE: the store dwell cannot walk back into
-/// the law's own argument, so the closed loop's fixed point is reached in
-/// ONE evaluation. BOUNDED, not described: an inflated echo sample can
-/// only raise a windowed MIN's members, never the min itself, while one
-/// honest sample is in window — and the bound on "in window" is stated.
+/// The store dwell cannot walk back into the law's own argument, so the
+/// closed loop's fixed point is reached in one evaluation. Bounded, not
+/// described: an inflated echo sample can only raise a windowed min's
+/// members, never the min itself, while one honest sample is in window —
+/// and the bound on "in window" is stated.
 #[test]
 fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
     let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
@@ -3637,9 +3495,9 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
     assert!((first[0].unwrap().k - 1.5).abs() < 1e-12, "K = 12/8");
     assert_eq!(cap0.0, 391);
 
-    // Now the store fills and the APP-ECHO RTT balloons to 200 ms — the
-    // §16.43 open-loop argument, the one worth ×13.5 in required
-    // backlog. The law does not move, at any point over the window.
+    // Now the store fills and the app-echo RTT balloons to 200 ms (the
+    // open-loop argument). The law does not move, at any point over the
+    // window.
     let dwelled = ThreeTermPath { srtt: Duration::from_millis(200), ..honest };
     for t in 1..=9u64 {
         let now = t0 + t * 1_000_000;
@@ -3647,16 +3505,15 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
         let cap = three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap();
         assert_eq!(cap, cap0, "the dwell re-entered the law at t+{t}s");
     }
-    // THE RESIDUAL, BOUNDED rather than waved at: K's memory is two
-    // `PERCAP_K_HALF_WINDOW_US` half-buckets. A dwell sustained past
-    // that DOES move the law — and the bound on how far is the dwell
-    // ratio itself, which is why this is stated as the law's stated
-    // limitation and not as an invariant.
+    // The residual, bounded: K's memory is two `PERCAP_K_HALF_WINDOW_US`
+    // half-buckets. A dwell sustained past that does move the law — and
+    // the bound on how far is the dwell ratio itself, so this is the
+    // law's stated limitation and not an invariant.
     let far = t0 + 3 * 2 * PERCAP_K_HALF_WINDOW_US;
     let terms = three_term_terms(&mut ks, &[Some(dwelled)], far);
     let k_far = terms[0].unwrap().k;
     assert!((k_far - 25.0).abs() < 1e-9, "200/8 = 25, got {k_far}");
-    // …and even then the MEMORY clamp bounds the damage, which is the
+    // …and even then the memory clamp bounds the damage, which is the
     // second reason the loop cannot run away in the engine.
     assert_eq!(
         three_term_store_cap(true, &terms, 1.0, 0.5, 64).unwrap().0,
@@ -3664,13 +3521,13 @@ fn three_term_law_closes_the_dwell_loop_in_one_evaluation() {
     );
 }
 
-/// goal-gate "Honest Inputs" (`RWM_HONEST_K`): the K override is ONE
-/// formula — `k_raw.unwrap_or(legacy)` — so (a) `k_raw = None` (the
-/// shipped default: the gate resolves OFF and `PathState::k_raw()`
-/// returns None) is byte-identical to the legacy law, (b) `Some(k)`
-/// substitutes the raw-fed floor into the UNCHANGED law, and (c) the
-/// legacy tracker's window state is observed identically either way
-/// (the A/B isolates the K source, nothing else).
+/// `RWM_HONEST_K`: the K override is one formula —
+/// `k_raw.unwrap_or(smoothed)` — so (a) `k_raw = None` (the shipped
+/// default: the gate resolves off and `PathState::k_raw()` returns None)
+/// is byte-identical to the smoothed law, (b) `Some(k)` substitutes the
+/// raw-fed floor into the unchanged law, and (c) the smoothed tracker's
+/// window state is observed identically either way (the A/B isolates the
+/// K source, nothing else).
 #[test]
 fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
     let mk = |k_raw: Option<f64>| HonestCapPath {
@@ -3681,7 +3538,7 @@ fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
         rtprop: Some(Duration::from_millis(8)),
         k_raw,
     };
-    // (a) OFF ⇒ byte-identical to the pre-gate law.
+    // (a) Off ⇒ byte-identical to the smoothed law.
     let mut ks_off: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
     let off = honest_cap_terms(&mut ks_off, &[Some(mk(None))], 1_000_000, 2.0);
@@ -3689,7 +3546,7 @@ fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
     let expect_legacy = honest_store_cap(Some(83.2), Some(10_400.0), legacy_k, 2.0);
     assert_eq!(off[0], expect_legacy, "None ⇒ the legacy K, bit-exactly");
 
-    // (b) ON ⇒ the same law at the raw floor.
+    // (b) On ⇒ the same law at the raw floor.
     let mut ks_on: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
     let on = honest_cap_terms(&mut ks_on, &[Some(mk(Some(1.0)))], 1_000_000, 2.0);
@@ -3697,7 +3554,7 @@ fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
     assert_eq!(on[0], expect_raw, "Some(k) ⇒ the same law at the raw K");
     assert!(on[0].unwrap() < off[0].unwrap(), "the floor is below the smoothed read");
 
-    // (c) The legacy tracker was fed identically on both arms.
+    // (c) The smoothed tracker was fed identically on both arms.
     assert_eq!(ks_off.get(&1).map(|e| e.k()), ks_on.get(&1).map(|e| e.k()));
 
     // Same law through the three-term collector: the window term's K.
@@ -3718,10 +3575,9 @@ fn honest_inputs_k_raw_override_is_one_formula_and_off_is_byte_identical() {
 
 #[test]
 fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
-    // The GUARD-RESULTS residual (i) in miniature, on HONEST anchors.
-    // Deep c2-like path (rate 10 400, RTprop 8 ms, K 1.5): cap = 1248
-    // — DIFFERENTIATED, inside the knee (the over-read arm read btlbw
-    // 8–10× truth and knee-clamped to 2048).
+    // On honest anchors. Deep c2-like path (rate 10 400, RTprop 8 ms,
+    // K 1.5): cap = 1248 — differentiated, inside the knee (an over-read
+    // anchor knee-clamps to 2048).
     let fast = (honest_store_cap(Some(10_400.0 * 0.008), Some(10_400.0), 1.5, 2.0)
         .unwrap()
         .ceil() as usize)
@@ -3729,10 +3585,9 @@ fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
     assert_eq!(fast, 1248);
     assert!(fast < 2048, "fast cap must be derived, not knee-clamped");
     // Shallow c8-slow-class path (rate 1 954, RTprop 60 ms → anchor
-    // 117.2; K 1.3): cap = 466 ≈ the guard session's MEASURED good pin
-    // (508 outstanding, 0.26 s dwell) — its recovery budget, NOT the
-    // 2048 knee (≈1 s parked dwell) the over-read held it at. The
-    // own-pick parking channel is closed by construction.
+    // 117.2; K 1.3): cap = 466 ≈ a measured good pin (508 outstanding,
+    // 0.26 s dwell) — its recovery budget, not the 2048 knee (≈1 s parked
+    // dwell). The own-pick parking channel is closed by construction.
     let slow = (honest_store_cap(Some(1_954.0 * 0.060), Some(1_954.0), 1.3, 2.0)
         .unwrap()
         .ceil() as usize)
@@ -3757,28 +3612,27 @@ fn honest_caps_shallow_account_sits_at_recovery_budget_not_knee() {
 
 #[test]
 fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
-    // The −20% resolution at the law level ("Anchor Hygiene" battery
-    // (b): sc2 P 79.9 → PRS 61.7 because the cap fell from the 1024
-    // latch to gain·anchor_honest ≈ 150–170 at the cell's true 8-ms
-    // RTprop — a 100-Mbit pipe whose RECOVERY round is ~12× its wire
-    // round trip).
+    // At the law level: on honest anchors the floor law's cap falls from
+    // the 1024 latch to gain·anchor_honest ≈ 150–170 at a true 8-ms
+    // RTprop — a 100-Mbit pipe whose recovery round is ~12× its wire
+    // round trip.
     let rate: f64 = 10_400.0;
     let anchor: f64 = rate * 0.008;
     let store_max = 1024usize;
-    // The legacy floor law on honest anchors (the RWM_HONEST_CAP=0
-    // control arm): gain·anchor = 167 ≪ 1024 — the measured −20% arm.
+    // The floor law on honest anchors (the RWM_HONEST_CAP=0 control
+    // arm): gain·anchor = 167 ≪ 1024.
     let floor_law = ((2.0 * anchor).ceil() as usize).clamp(64, store_max);
     assert_eq!(floor_law, 167);
-    // The honest law at the measured drain clocks (K ≈ 2): 1290 →
-    // latches the legacy-proven 1024 store — the over-read's accidental
-    // headroom re-supplied from the engine's own recovery cadence.
+    // The honest law at measured drain clocks (K ≈ 2): 1290 → latches
+    // the 1024 store — headroom supplied by the engine's own recovery
+    // cadence.
     let honest = (honest_store_cap(Some(anchor), Some(rate), 2.0, 2.0)
         .unwrap()
         .ceil() as usize)
         .clamp(64, store_max);
     assert_eq!(honest, store_max);
-    // Monotone: for ANY measured K ≥ 1 the honest cap strictly exceeds
-    // the legacy floor law — honest anchors can widen but never shrink
+    // Monotone: for any measured K ≥ 1 the honest cap strictly exceeds
+    // the floor law — honest anchors can widen but never shrink
     // the single-path window relative to the control.
     for k in [1.0, 1.2, 1.7, 2.5, 4.0] {
         let c = (honest_store_cap(Some(anchor), Some(rate), k, 2.0)
@@ -3789,13 +3643,13 @@ fn honest_anchor_sum_cap_preserves_sc2_throughput_headroom() {
     }
 }
 
-/// feat/gen-substrate-ceiling: the derived pipeline depth M* =
-/// ceil(rate·2·SRTT/G)+1 — #61's A* = clamp(D·rate, 1, W) quantized to
-/// generations — covers BDP + one deficit round, clamps to the legacy 2 on
-/// cold start, and to GEN_PIPE_MAX_GENS at the top.
+/// The derived pipeline depth M* = ceil(rate·2·SRTT/G)+1 — A* =
+/// clamp(D·rate, 1, W) quantized to generations (paper §5.3) — covers
+/// BDP + one deficit round, clamps to the fixed 2 on cold start, and to
+/// GEN_PIPE_MAX_GENS at the top.
 #[test]
 fn gen_pipe_depth_covers_bdp_plus_one_deficit_round() {
-    // Cold start (no rate / no srtt sample) → the legacy fixed depth 2.
+    // Cold start (no rate / no srtt sample) → the fixed depth 2.
     assert_eq!(gen_pipe_depth(0.0, 0.016, 384), 2);
     assert_eq!(gen_pipe_depth(1500.0, 0.0, 384), 2);
     // c2-class: rate 1500 sym/s, SRTT 16 ms → D·rate = 48 sym ≪ G ⇒
@@ -3811,8 +3665,8 @@ fn gen_pipe_depth_covers_bdp_plus_one_deficit_round() {
     assert_eq!(gen_pipe_depth(1e9, 1.0, 384), GEN_PIPE_MAX_GENS);
 }
 
-// feat/anchor-hygiene (`RWM_PLAIN_RS`): the sampling-only feed must
-// declare that it does NOT own the CC operating point — everything the
+// `RWM_PLAIN_RS`: the sampling-only feed must declare that it does not
+// own the CC operating point — everything the
 // Copa-sole feed switches (store-cap law, percap pipes, cwnd-dynamics
 // call site, pass-through window writes) keys on `owns_cc()`.
 #[test]
@@ -3821,15 +3675,14 @@ fn sampling_only_feed_does_not_own_cc() {
     assert!(!CopaFeed::new_sampling_only(true).owns_cc());
 }
 
-/// Per-path BDP in-flight cap (the #64 fix, gen_pipe remedy 1). The sender
-/// is "full" only when NO path is below its OWN cap (gain·BtlBw_i·RTprop_i).
-/// The slow path's RTT-inflated cap bounds only the slow path; the fast path
-/// with room keeps the pipe moving — unlike the summed-anchor #64 global
-/// budget the fast path stalled behind.
+/// Per-path BDP in-flight cap. The sender is "full" only when no path is
+/// below its own cap (gain·BtlBw_i·RTprop_i). The slow path's RTT-inflated
+/// cap bounds only the slow path; the fast path with room keeps the pipe
+/// moving — a summed global budget would stall it behind the slow path.
 #[test]
 fn infl_percap_bounds_each_path_independently() {
     // Fast path (cap 100) has room at 40; slow path (RTT-inflated cap 60) is
-    // at its cap. NOT full — the fast path keeps pulling source.
+    // at its cap. Not full — the fast path keeps pulling source.
     assert!(
         !infl_percap_full(&[(40, 100), (60, 60)]),
         "fast path with room ⇒ not full even when the slow path is at its cap"
@@ -3853,9 +3706,9 @@ fn infl_percap_bounds_each_path_independently() {
 #[test]
 fn test_sent_store_retention_survives_window_eviction() {
     // The sender-loop invariant: the coding window slides freely (cap
-    // eviction), but the sent-data store still serves the EXACT bytes
+    // eviction), but the sent-data store still serves the exact bytes
     // of any un-acked symbol for targeted retransmit — and entries
-    // leave the store by ack ONLY (the same split_off the loop runs).
+    // leave the store by ack only (the same split_off the loop runs).
     use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
     let mut encoder = RlcWindowEncoder::new(64);
     let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
@@ -3871,8 +3724,7 @@ fn test_sent_store_retention_survives_window_eviction() {
         }
     }
 
-    // Seq 10 slid out of the coding window (EVICT would have lost it —
-    // the measured F2 failure)…
+    // Seq 10 slid out of the coding window (EVICT would have lost it)…
     assert!(encoder.get_source(10).is_none(), "seq 10 must be past the FEC horizon");
     // …but the store still holds the exact sent bytes for targeted ARQ.
     let held = sent_store.get(&10).expect("store retains un-acked symbol bytes");
@@ -3880,7 +3732,7 @@ fn test_sent_store_retention_survives_window_eviction() {
     assert!(!held.is_repair);
     assert_eq!(&held.data[..32], &[10u8; 32]);
 
-    // Removal by ack ONLY: pruning at ack=49 drops exactly seqs 0..=49.
+    // Removal by ack only: pruning at ack=49 drops exactly seqs 0..=49.
     let ack = 49u64;
     sent_store = sent_store.split_off(&(ack + 1));
     assert!(sent_store.get(&ack).is_none());
@@ -3888,16 +3740,15 @@ fn test_sent_store_retention_survives_window_eviction() {
     assert_eq!(sent_store.len(), (MAX_WINDOW_SIZE + 100) - 50);
 }
 
-// ----- SACK-clocked store release (RWM_STORE_SACK_RELEASE) --------------
-// Pre-registered invariants (goal-gate "SACK-Clocked Store Release"):
-// SACKed → released → retransmit-still-possible → cumulative-ack →
+// ----- SACK-clocked store release (RWM_STORE_SACK_RELEASE, ADR-0060) -----
+// Invariants: SACKed → released → retransmit-still-possible → cumulative-ack →
 // fully freed; window opens on SACK; no double-release; released slots
 // return to the pool; released seqs keep their per-flight loss clocks.
 
 #[test]
 fn test_sack_release_every_unacked_symbol_stays_recoverable() {
-    // The chain the RWM_SACK_PRUNE refutation forbids breaking: a
-    // SACKed symbol leaves the OUTSTANDING COUNT but its payload and
+    // The chain that must not break: a SACKed symbol leaves the
+    // outstanding count but its payload and
     // ARQ state survive until the cumulative frontier passes it.
     use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
     let n = 100u64;
@@ -3914,8 +3765,8 @@ fn test_sack_release_every_unacked_symbol_stays_recoverable() {
     sack_release_prune(&mut released, ack);
     let newly = sack_release_mark(&sent_store, &mut released, 11, 99);
     assert_eq!(newly.len(), 89, "11..=99 newly released");
-    // RELEASED, not removed: outstanding drops to the hole + frontier
-    // successor set, but EVERY entry is still in the store.
+    // Released, not removed: outstanding drops to the hole + frontier
+    // successor set, but every entry is still in the store.
     assert_eq!(sent_store.len(), 90, "nothing was removed from the store");
     assert_eq!(sack_release_outstanding(sent_store.len(), released.len()), 1);
     // Retransmit still possible for a released symbol (the NACK path
@@ -3951,7 +3802,7 @@ fn test_sack_release_opens_window_and_returns_slots_to_pool() {
     let outstanding = sack_release_outstanding(sent_store.len(), released.len());
     assert_eq!(outstanding, 1, "window opens: only the hole still counts");
     assert!(outstanding < cap, "gate re-opens while the frontier is frozen");
-    // The frontier is NOT advanced — retention intact (reliability).
+    // The frontier is not advanced — retention intact (reliability).
     assert_eq!(sent_store.len(), 1024);
 }
 
@@ -3979,7 +3830,7 @@ fn test_sack_release_no_double_release_and_percap_composes() {
     }
     assert_eq!(out[&0], 3);
     assert_eq!(out[&1], 3);
-    // Same snapshot again (plus overlap): NOTHING newly released.
+    // Same snapshot again (plus overlap): nothing newly released.
     let again = sack_release_mark(&mut sent_store, &mut released, 2, 5);
     assert!(again.is_empty(), "idempotent under re-advertised snapshots");
     assert_eq!(released.len(), 4);
@@ -3996,8 +3847,7 @@ fn test_sack_release_keeps_arq_state_and_flight_clocks() {
     // per-flight state — nack_retx_at (the live-flight clock the
     // per-path law times), retransmit_buffer (tail-sweep metadata),
     // source_path_map (seq→path evidence for the packet-threshold
-    // channel). The release law takes NONE of them as inputs; this
-    // pins the contract the prune arm violates.
+    // channel). The release law takes none of them as inputs.
     let mut sent_store: BTreeMap<u64, u8> = BTreeMap::new();
     let mut released: BTreeSet<u64> = BTreeSet::new();
     let mut nack_retx_at: std::collections::HashMap<u64, (u64, u32)> =
@@ -4037,19 +3887,18 @@ fn test_sack_release_mark_skips_seqs_not_retained() {
     assert_eq!(sack_release_outstanding(sent_store.len(), released.len()), 0);
 }
 
-/// SACK + BDP reassembly end-to-end reliability invariant
-/// (feat/sack-bdp-reassembly): the sender advances PAST a hole (SACK-prunes
-/// every out-of-order-received symbol from its store), the receiver HOLDS the
+/// SACK + BDP reassembly end-to-end reliability invariant: the sender
+/// advances past a hole (SACK-prunes every out-of-order-received symbol
+/// from its store), the receiver holds the
 /// out-of-order symbols in its non-evicting reassembly (bounded by the BDP
 /// the sender's outstanding cap enforces), the receiver prune never evicts a
 /// received-but-undelivered symbol, the hole recovers by retransmit from the
-/// sender's retained store, and EVERY byte is delivered in order. This is the
-/// exact invariant that the prior SACK attempt (#52) violated by evicting a
-/// pruned-but-unconsumed symbol at the receiver.
+/// sender's retained store, and every byte is delivered in order. Evicting
+/// a pruned-but-unconsumed symbol at the receiver violates it.
 #[test]
 fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
     use crate::fec::{RlcWindowEncoder, WindowEncoder, WireSymbol};
-    // ---- SENDER: send 300 source symbols, all retained in the store. ----
+    // ---- Sender: send 300 source symbols, all retained in the store. ----
     let n = 300u64;
     let mut encoder = RlcWindowEncoder::new(64);
     let mut sent_store: BTreeMap<u64, WireSymbol> = BTreeMap::new();
@@ -4058,7 +3907,7 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
         sent_store.insert(sym.block_id, sym);
     }
 
-    // ---- RECEIVER: reliable, non-evicting reassembly (the BDP buffer). ----
+    // ---- Receiver: reliable, non-evicting reassembly (the BDP buffer). ----
     let mut reorder = ReorderBuffer::new_reliable();
     let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
     let mut highest_delivered_seq: u64 = 0; // -1 sentinel via next_deliver_seq
@@ -4066,8 +3915,8 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
     let recv_win_cap: u64 = MAX_WINDOW_SIZE as u64;
     let mut delivered: Vec<u64> = Vec::new();
 
-    // The receiver gets seq 0..=9 in order, then a HOLE at seq 10, then
-    // EVERYTHING above (11..=299) out of order. Deliver in wire arrival order.
+    // The receiver gets seq 0..=9 in order, then a hole at seq 10, then
+    // everything above (11..=299) out of order. Deliver in wire arrival order.
     let hole = 10u64;
     let arrival: Vec<u64> = (0..=9).chain(11..n).collect();
     for &seq in &arrival {
@@ -4078,8 +3927,8 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
             highest_delivered_seq = highest_delivered_seq.max(dseq);
         }
         // The receiver periodically prunes its decoder/received-seq state.
-        // INVARIANT (RWM_REASM_BDP clamp): prune_before never exceeds the
-        // DELIVERED frontier, so no received-above-hole symbol is evicted.
+        // Invariant (RWM_REASM_BDP clamp): prune_before never exceeds the
+        // delivered frontier, so no received-above-hole symbol is evicted.
         let prune_before = highest_delivered_seq
             .saturating_sub(recv_win_cap * 2)
             .min(highest_delivered_seq);
@@ -4088,14 +3937,14 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
 
     // Delivery is frozen at the hole: only 0..=9 delivered so far.
     assert_eq!(delivered, (0..=9).collect::<Vec<_>>(), "in-order stalls at the hole");
-    // 11..=299 are HELD (received but not delivered) — the reassembly holds
+    // 11..=299 are held (received but not delivered) — the reassembly holds
     // them all, none evicted (non-evicting reliable buffer + clamped prune).
     assert_eq!(reorder.pending_count(), (n - 11) as usize, "all OOO symbols held");
     for seq in 11..n {
         assert!(received_seqs.contains(&seq), "seq {seq} must survive prune until delivered");
     }
 
-    // ---- SENDER: SACK-prune the received (out-of-order) symbols. ----
+    // ---- Sender: SACK-prune the received (out-of-order) symbols. ----
     // The cumulative ack is 9; everything 11..=299 was SACKed.
     let ack = 9u64;
     sent_store = sent_store.split_off(&(ack + 1));
@@ -4109,26 +3958,26 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
     assert_eq!(sent_store.len(), 1, "sender retains ONLY the unfilled hole");
     assert!(sent_store.contains_key(&hole), "the hole survives for ARQ retransmit");
 
-    // ---- RECOVERY: the hole is retransmitted from the retained store. ----
+    // ---- Recovery: the hole is retransmitted from the retained store. ----
     let hole_sym = sent_store.get(&hole).expect("hole retained").clone();
     for (dseq, _, _) in reorder.push(hole, Bytes::copy_from_slice(&hole_sym.data[..32])) {
         delivered.push(dseq);
         highest_delivered_seq = highest_delivered_seq.max(dseq);
     }
 
-    // EVERY byte delivered, in order, exactly once — the reliability invariant.
+    // Every byte delivered, in order, exactly once — the reliability invariant.
     assert_eq!(delivered, (0..n).collect::<Vec<_>>(), "every symbol delivered in order");
     assert_eq!(reorder.pending_count(), 0, "reassembly fully drained — nothing stranded");
 }
 
-/// ADR-0046 idle-triggered recovery (Phase 4 fix). The congestion
-/// multiplier may fully suppress NACK repairs (correct on a congested
-/// straggler), but must NEVER stay suppressed when the sender is idle
+/// Idle-triggered recovery. The congestion multiplier may fully suppress
+/// NACK repairs (correct on a congested straggler), but must never stay
+/// suppressed when the sender is idle
 /// except for a confirmed hole — that wedges a reliable transfer.
 #[test]
 fn test_idle_triggered_recovery_floor() {
     let mut st = NackCongestionState::new();
-    // Drive congestion: both loss AND RTT rising for >= threshold periods.
+    // Drive congestion: both loss and RTT rising for >= threshold periods.
     let mut rtt = Duration::from_millis(20);
     let mut loss = 0.02;
     for _ in 0..8 {
@@ -4139,14 +3988,14 @@ fn test_idle_triggered_recovery_floor() {
     // Multiplier has collapsed toward 0 (full suppression).
     assert!(st.repair_multiplier < 0.05, "congestion must suppress: {}", st.repair_multiplier);
 
-    // ACTIVE sender: suppression stands — congestion safety wins, so a
-    // retransmit would NOT be forced onto the straggler.
+    // Active sender: suppression stands — congestion safety wins, so a
+    // retransmit would not be forced onto the straggler.
     let active = st.effective_multiplier(false);
     assert_eq!(active, st.repair_multiplier, "active transfer keeps raw multiplier");
     assert_eq!((MAX_NACK_REPAIRS_PER_NACK as f64 * active).round() as u64, 0,
         "active + suppressed => 0 forced repairs");
 
-    // IDLE sender (no new source in flight): recovery is never fully
+    // Idle sender (no new source in flight): recovery is never fully
     // suppressed — the floor yields >= 1 targeted retransmit per round so
     // the confirmed hole is recovered and the transfer un-wedges.
     let idle = st.effective_multiplier(true);
@@ -4154,7 +4003,7 @@ fn test_idle_triggered_recovery_floor() {
     assert!((MAX_NACK_REPAIRS_PER_NACK as f64 * idle).round() as u64 >= 1,
         "idle floor must permit >= 1 retransmit/round");
 
-    // Continuity: on a clean/uncongested channel the idle floor is a NO-OP
+    // Continuity: on a clean/uncongested channel the idle floor is a no-op
     // (raw multiplier already >= floor), so behavior is unchanged.
     let mut clean = NackCongestionState::new();
     for _ in 0..5 { clean.update(0.0, Some(Duration::from_millis(20))); }
@@ -4164,11 +4013,10 @@ fn test_idle_triggered_recovery_floor() {
 }
 
 
-// ── ack-merge emission decision (goal-gate "Unlock The Default 1") ──
+// ── Ack-merge emission decision (`RWM_ACK_MERGE`, default on) ──
 
-/// With `RWM_ACK_MERGE` OFF the receiver's data arm is byte-identical to
-/// the shipped path: a datagram goes out on exactly the shipped predicate
-/// and never otherwise.
+/// With `RWM_ACK_MERGE` off, a datagram goes out on exactly the unmerged
+/// predicate and never otherwise.
 #[test]
 fn ack_merge_off_emits_on_exactly_the_shipped_predicate() {
     for &adv in &[false, true] {
@@ -4184,8 +4032,8 @@ fn ack_merge_off_emits_on_exactly_the_shipped_predicate() {
     }
 }
 
-/// With the gate ON the ack is UNCONDITIONAL — it now carries the
-/// suppressed legacy `Ack`'s payload, so it must keep that message's
+/// With the gate on the ack is unconditional — it carries the suppressed
+/// per-batch `Ack`'s payload, so it must keep that message's
 /// once-per-data-message cadence. Two control datagrams become one; zero
 /// is never correct.
 #[test]
@@ -4198,8 +4046,8 @@ fn ack_merge_on_emits_once_per_data_message() {
     }
 }
 
-/// THE safety law of the merge: the gate changes only WHETHER A DATAGRAM
-/// IS SENT, never WHAT IT ADVERTISES. `advertise` is invariant under the
+/// The safety law of the merge: the gate changes only whether a datagram
+/// is sent, never what it advertises. `advertise` is invariant under the
 /// gate, so `GAP_ACK_MIN_INTERVAL` still rate-limits gap reports at its
 /// shipped cadence and the depth-16 nack/sack `try_send` channels see no
 /// new pressure — a merge-only ack carries counters and an echo, never a
@@ -4218,7 +4066,7 @@ fn ack_merge_never_changes_what_the_ack_advertises() {
             );
         }
     }
-    // Concretely: frontier stalled on a hole, gap report NOT yet due.
+    // Concretely: frontier stalled on a hole, gap report not yet due.
     let (emit, advertise) = window_ack_emission(false, false, true);
     assert!(emit, "the merged ack still goes out (it carries the counters)");
     assert!(!advertise, "but it advertises no gap — the rate limit holds");
@@ -4226,19 +4074,17 @@ fn ack_merge_never_changes_what_the_ack_advertises() {
 
 // ── The block/window default pin (ADR-0069) ──
 
-/// PINS THE CONTRADICTION, it does not endorse it: with no config and no
-/// flags, a Bulk/Auto peer routes to the BLOCK pipeline, while every L1
-/// battery since 2026-07-12 has measured the WINDOW pipeline. ADR-0069
-/// declares block mode legacy and pre-registers the flip battery; until
-/// that battery discharges the re-test clause the default must not move
-/// silently in either direction — a change here is a DELIBERATE default
-/// flip and must land with its measurement.
+/// Pins the default routing, without endorsing it: with no config and no
+/// flags, a Bulk/Auto peer routes to the block pipeline, while the L1
+/// batteries measure the window pipeline. ADR-0069 declares block mode
+/// legacy; until its re-test (`docs/status.md` §4) the default must not
+/// move silently in either direction — a change here is a deliberate
+/// default flip and must land with its measurement.
 ///
-/// The pin asserts the ROUTING consequence, not just the flag (CLAUDE.md
-/// testing discipline / goal-gate MEASUREMENT DISCIPLINE rule 1):
-/// `config.rs`'s `test_window_reliable_default_off_and_opt_in` already
-/// pins the field; what was unpinned — `is_window_mode` had no test at
-/// all — is which PIPELINE that field selects.
+/// The pin asserts the routing consequence, not just the flag
+/// (measurement-discipline rule 1): `config.rs`'s
+/// `test_window_reliable_default_off_and_opt_in` pins the field; this pins
+/// which pipeline that field selects.
 #[test]
 fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
     // Resolve the shipped default: empty TOML, no CLI overlay.
@@ -4252,8 +4098,8 @@ fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
         "unset in TOML ⇒ run_impl's auto-selection is live for this config"
     );
 
-    // run_impl's effective-backend selection (mod.rs ~1370-1393): with the
-    // backend unset and the hint NOT Realtime, `window_reliable == false`
+    // run_impl's effective-backend selection: with the
+    // backend unset and the hint not Realtime, `window_reliable == false`
     // leaves the configured RaptorQ in place — and RaptorQ is block-only.
     assert!(
         !FecBackend::RaptorQ.is_streaming(),
@@ -4266,7 +4112,7 @@ fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
         );
     }
 
-    // Opting in is the ONLY way Bulk/Auto reach the window pipeline today
+    // Opting in is the only way Bulk/Auto reach the window pipeline
     // (run_impl then auto-selects RLC — the arm every battery measures).
     for hint in [ProtocolHint::Auto, ProtocolHint::Bulk] {
         assert!(
@@ -4275,9 +4121,9 @@ fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
         );
     }
 
-    // Realtime is ALREADY window mode at the default — it auto-selects the
-    // RLC span machine (§16.20) — but with the lossy EVICT retention, i.e.
-    // ρ < 1, NOT the reliable window. The block default is a Bulk/Auto
+    // Realtime is already window mode at the default — it auto-selects the
+    // RLC span machine (paper §5.2) — but with the lossy EVICT retention,
+    // i.e. ρ < 1, not the reliable window. The block default is a Bulk/Auto
     // fact only; do not restate it as "the transport ships block mode".
     assert!(
         is_window_mode(ProtocolHint::Realtime, FecBackend::Rlc, false),
@@ -4285,36 +4131,35 @@ fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
     );
 }
 
-// ── fix/loss-crosspath: the cross-path loss contamination, BOUNDED ──
+// ── The cross-path loss contamination (`RWM_LOSS_SENT_TRUTH`), bounded ──
 //
-// MECHANICAL DEFECT SWEEP item 3. A deterministic two-path model of
-// exactly the wire geometry the ackdiag battery measured: ONE global
+// A deterministic two-path model of the wire geometry: one global
 // `batch_seq` counter (the shipped `batch_counter`), batches striped
-// across two paths, per-path datagram loss injected at a KNOWN rate,
-// and the REAL `PathBatchTracker` on the receiver side. Both estimator
-// feeds are then driven from it and read back through the REAL
+// across two paths, per-path datagram loss injected at a known rate,
+// and the real `PathBatchTracker` on the receiver side. Both estimator
+// feeds are driven from it and read back through the real
 // `LossEstimator`, so the assertions bound the shipped mechanism, not a
-// re-implementation of it (MEASUREMENT DISCIPLINE rule 1).
+// re-implementation of it (measurement-discipline rule 1).
 
 /// What one path read, per arm, in one run of the two-path model.
 #[derive(Debug, Clone, Copy)]
 struct XpathRead {
     /// The realized per-path datagram loss actually injected.
     eps_true: f64,
-    /// THE LAW ITSELF, count-weighted: `1 − Σreceived / Σexpected` over
-    /// everything the arm fed the estimator. This is the quantity the
-    /// fix defines; everything below is an estimator READ of it.
+    /// The law itself, count-weighted: `1 − Σreceived / Σexpected` over
+    /// everything the arm fed the estimator. Everything below is an
+    /// estimator read of it.
     fed_old: f64,
     fed_new: f64,
     /// `LossEstimator::loss_rate()` — `tx_ewma_loss`, the EWMA of the
-    /// PER-CALL ratio. THE shipped consumer read (NACK margin, placement
+    /// per-call ratio. The shipped consumer read (NACK margin, placement
     /// costs, …). Sampled as the run mean, because at a low-loss cell the
     /// instantaneous EWMA sits near 0 between rare loss events.
     ewma_old: f64,
     ewma_new: f64,
     /// `LossEstimator::loss_rate_mean()` — the Beta posterior mean, which
-    /// IS count-weighted (a shipped consumer: `scheduler/mod.rs:3111`
-    /// reads `loss_rate().max(loss_rate_mean())`).
+    /// is count-weighted (a shipped consumer: the scheduler reads
+    /// `loss_rate().max(loss_rate_mean())`).
     beta_old: f64,
     beta_new: f64,
 }
@@ -4322,7 +4167,7 @@ struct XpathRead {
 /// One deterministic run of the two-path model.
 ///
 /// `share` is the striping period: 1 => single path (the N = 1 control),
-/// 2 => 50/50 alternation (c7), 6 => 5:1 (c8's measured split).
+/// 2 => 50/50 alternation (c7), 6 => 5:1 (c8's split).
 fn xpath_loss_model(
     batches: u32,
     syms: u32,
@@ -4351,7 +4196,7 @@ fn xpath_loss_model(
         PathState::new(0, clock.clone()),
         PathState::new(1, clock.clone()),
     ];
-    // The SENDER's own per-path wire-handoff counter (`PathStats::
+    // The sender's own per-path wire-handoff counter (`PathStats::
     // symbols_sent`), and its lagged view: an ack is processed when the
     // sender has already dispatched `lag` further batches on that path.
     // That lag is the in-flight offset the law's doc comment names.
@@ -4361,7 +4206,7 @@ fn xpath_loss_model(
     let mut dropped = [0u64; 2];
     // Arrivals, in wire order, as (path, batch_seq, symbols, dispatch
     // index on that path — the cursor into `sent_hist`, which must be
-    // keyed by DISPATCHES, not by arrivals: a dropped batch still
+    // keyed by dispatches, not by arrivals: a dropped batch still
     // advanced the sender's counter, and that is the whole signal).
     let mut arrivals: Vec<(usize, u64, u32, usize)> = Vec::new();
 
@@ -4393,17 +4238,17 @@ fn xpath_loss_model(
     let mut ewma_new = [(0.0f64, 0u64); 2];
 
     for (p, seq, n, disp_idx) in arrivals {
-        // Receiver: the REAL tracker, fed the REAL global batch_seq.
+        // Receiver: the real tracker, fed the real global batch_seq.
         let (expected, received) = tracker[p].record_batch(seq, n);
-        // ARM A (shipped): the receiver's gap estimate.
+        // Arm A (shipped): the receiver's gap estimate.
         legacy[p].record_batch(expected, received);
         fed_old[p].0 += expected as u64;
         fed_old[p].1 += received as u64;
         ewma_old[p].0 += legacy[p].loss_rate();
         ewma_old[p].1 += 1;
-        // ARM B (`RWM_LOSS_SENT_TRUTH`): the sender's own count against
+        // Arm B (`RWM_LOSS_SENT_TRUTH`): the sender's own count against
         // the receiver's clean cumulative arrival count, paired through
-        // the REAL cursor law.
+        // the real cursor law.
         let idx = (disp_idx + lag).min(sent_hist[p].len().saturating_sub(1));
         let (le, lr) = path_state[p]
             .sender_truth_loss_delta(sent_hist[p][idx], tracker[p].total_received);
@@ -4430,11 +4275,10 @@ fn xpath_loss_model(
     })
 }
 
-/// DIRECTION 1 — the OLD code MUST reproduce the contamination. At 50/50
-/// striping every path sees a batch-seq gap of exactly 2 on every batch,
-/// so the legacy pair charges `2 × received` and reads ε̂ ≈ 0.5 against a
-/// realized 0.55%: the c7 geometry, and the c7 reading (measured ce/cr
-/// 2.05 ⇒ ε̂ 0.51 — goal-gate "Ack-Cadence Measurement (VM)" READOUT 4).
+/// Direction 1 — the gap-estimate arm must reproduce the contamination.
+/// At 50/50 striping every path sees a batch-seq gap of exactly 2 on every
+/// batch, so the gap pair charges `2 × received` and reads ε̂ ≈ 0.5
+/// against a realized 0.55% (the c7 geometry; the wire read ce/cr 2.05).
 #[test]
 fn legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2() {
     let r = xpath_loss_model(60_000, 8, 2, [0.0055, 0.0055], 4);
@@ -4459,7 +4303,7 @@ fn legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2() {
         }
     }
     // And the single-path control: N = 1 has no other path in its
-    // sequence, so the SAME legacy code is already honest there. The
+    // sequence, so the same gap estimate is already honest there. The
     // defect is multipath-only, which is why this fix cannot regress N=1.
     let s = xpath_loss_model(60_000, 8, 1, [0.0055, 0.0055], 4);
     assert!(
@@ -4470,38 +4314,36 @@ fn legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2() {
     );
 }
 
-/// DIRECTION 2 — under the fix each path reads ITS OWN realized loss.
+/// Direction 2 — under the gate each path reads its own realized loss.
 /// Absolute bounds, not ordinal ones, at both the symmetric (c7) and the
-/// 5:1 asymmetric (c8) geometry, with the c8 legs carrying DIFFERENT loss
-/// (0.55% / 1.96%) so the test bounds ATTRIBUTION, not just magnitude.
+/// 5:1 asymmetric (c8) geometry, with the c8 legs carrying different loss
+/// (0.55% / 1.96%) so the test bounds attribution, not just magnitude.
 ///
 /// Three quantities are bounded, because they answer different questions:
-/// the LAW (`Σreceived/Σexpected`, exact), the count-weighted estimator
+/// the law (`Σreceived/Σexpected`, exact), the count-weighted estimator
 /// read (`loss_rate_mean`, the Beta posterior), and the shipped
-/// `loss_rate()` EWMA. The EWMA carries a KNOWN ≈½ under-read at a
-/// rare-loss cell that is a property of the estimator, not of this fix:
-/// a dropped datagram folds its loss into the NEXT ack's doubled delta,
+/// `loss_rate()` EWMA. The EWMA carries a known ≈½ under-read at a
+/// rare-loss cell that is a property of the estimator, not of this gate:
+/// a dropped datagram folds its loss into the next ack's doubled delta,
 /// so the per-call ratio it averages reads `0.5` on ~ε of the calls
-/// instead of `ε` on all of them. It is BOUNDED here (`[0.3ε, 1.5ε]`)
-/// rather than described, and named in the branch record as a successor.
+/// instead of `ε` on all of them. It is bounded here (`[0.3ε, 1.5ε]`).
 #[test]
 fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
     // c7 geometry: symmetric 50/50, both legs 0.55%.
-    // c8 geometry: 5:1 split, ASYMMETRIC loss — p0 = fast leg 0.55%,
-    // p1 = slow leg 1.96% (the leg whose legacy read was ce/cr 5.59).
+    // c8 geometry: 5:1 split, asymmetric loss — p0 = fast leg 0.55%,
+    // p1 = slow leg 1.96%.
     for (cell, share, eps) in [
         ("c7", 2u32, [0.0055f64, 0.0055]),
         ("c8", 6, [0.0055, 0.0196]),
     ] {
         let r = xpath_loss_model(60_000, 8, share, eps, 4);
         for (p, x) in r.iter().enumerate() {
-            // Measured by this model (60 000 batches, 8 sym/batch, lag 4),
-            // against the wire's own readings at the same geometry:
-            //   c7 p0/p1  ε_true 0.0055  fed_old 0.503/0.503 (wire 0.514)
+            // What this model reads (60 000 batches, 8 sym/batch, lag 4):
+            //   c7 p0/p1  ε_true 0.0055  fed_old 0.503/0.503
             //                            fed_new 0.0056/0.0055
-            //   c8 p0     ε_true 0.0054  fed_old 0.171 (wire 0.205)
+            //   c8 p0     ε_true 0.0054  fed_old 0.171
             //                            fed_new 0.0055
-            //   c8 p1     ε_true 0.0195  fed_old 0.837 (wire 0.825)
+            //   c8 p1     ε_true 0.0195  fed_old 0.837
             //                            fed_new 0.0199
             assert!(
                 (x.fed_new - x.eps_true).abs() <= 5e-4,
@@ -4511,9 +4353,8 @@ fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
                 x.eps_true
             );
             // The Beta posterior decays at 0.995/call, so it is a
-            // ~200-call WINDOW mean, not the run mean — bounded
-            // multiplicatively (its sampling spread at these loss rates),
-            // where the legacy arm misses by 37–93×.
+            // ~200-call window mean, not the run mean — bounded
+            // multiplicatively (its sampling spread at these loss rates).
             assert!(
                 (0.5 * x.eps_true..2.0 * x.eps_true).contains(&x.beta_new),
                 "{cell} p{p}: loss_rate_mean must read this path's own ε — \
@@ -4536,9 +4377,8 @@ fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
                 x.ewma_new
             );
         }
-        // Attribution: at c8 the slow leg's honest ε must be the LARGER
-        // of the two by ≈ the injected ratio — the legacy pair got this
-        // ordering right by accident and its MAGNITUDE wrong by 42×.
+        // Attribution: at c8 the slow leg's honest ε must be the larger
+        // of the two by ≈ the injected ratio.
         if cell == "c8" {
             assert!(
                 r[1].fed_new / r[0].fed_new > 2.5,
@@ -4557,9 +4397,9 @@ fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
     }
 }
 
-/// The law's NAMED RESIDUAL, bounded rather than described: the sent
-/// cursor leads the received cursor by ≈ in_flight, so a run's opening
-/// over-reads by about one BDP and thereafter the DELTAS are unbiased.
+/// The law's named residual, bounded: the sent cursor leads the received
+/// cursor by ≈ in_flight, so a run's opening over-reads by about one BDP
+/// and thereafter the deltas are unbiased.
 /// Sweep the lag over two orders and require the settled read to stay
 /// inside the same absolute tolerance.
 #[test]
@@ -4567,9 +4407,9 @@ fn sender_truth_loss_delta_is_unbiased_under_a_constant_in_flight_lag() {
     for lag in [0usize, 1, 4, 16, 64, 256] {
         let r = xpath_loss_model(60_000, 8, 2, [0.0055, 0.0055], lag);
         let per_path = 60_000.0 / 2.0;
-        // THE BOUND, as a formula rather than a tuned number: a constant
-        // lag biases NOTHING in steady state (the offset cancels in the
-        // delta), and the only residual is the TAIL — the last `lag`
+        // The bound, as a formula rather than a tuned number: a constant
+        // lag biases nothing in steady state (the offset cancels in the
+        // delta), and the only residual is the tail — the last `lag`
         // batches on each path are charged as expected with no arrival
         // left to match them. That is `lag / batches_per_path`, plus the
         // 5e-4 sampling floor the zero-lag run already carries.
@@ -4616,7 +4456,7 @@ fn sender_truth_loss_delta_is_idempotent_and_never_underflows() {
     assert_eq!(q.sender_truth_loss_delta(100, 400), (100, 100));
 }
 
-/// The RELEASE law's own invariants, the mirror of the pair above.
+/// The release law's own invariants, the mirror of the pair above.
 #[test]
 fn sender_truth_release_delta_is_idempotent_and_never_underflows() {
     use crate::scheduler::MockClock;
@@ -4637,12 +4477,12 @@ fn sender_truth_release_delta_is_idempotent_and_never_underflows() {
     );
     assert_eq!(p.sender_truth_release_delta(700, 660), 20);
     // Receiver ahead of the sampled sender counter (the tail direction):
-    // the honest lost count is ZERO, never a negative that would wrap into
+    // the honest lost count is zero, never a negative that would wrap into
     // a huge release. This is the direction that decides whether the law
     // can leak the gauge open, and it cannot.
     let mut q = PathState::new(0, clock.clone());
     assert_eq!(q.sender_truth_release_delta(100, 400), 0);
-    // The two gates' cursors are INDEPENDENT — flipping one must not
+    // The two gates' cursors are independent — flipping one must not
     // consume the other's delta. Same path, both laws, same operands:
     // each sees the full delta.
     let mut r = PathState::new(0, clock);
@@ -4654,17 +4494,15 @@ fn sender_truth_release_delta_is_idempotent_and_never_underflows() {
     );
 }
 
-// ── THE ACCOUNTING LEDGER, DETERMINISTICALLY (fix/accounting-ledger,
-//    MECHANICAL DEFECT SWEEP item 5) ─────────────────────────────────
+// ── The in-flight accounting ledger, deterministically ───────────────
 //
-// The sibling of `xpath_loss_model`, and built the same way: ONE global
-// `batch_seq`, the REAL `PathBatchTracker` on the receiver, and the REAL
-// `PathState` in-flight ledger driven through the REAL `charge_in_flight`
+// The sibling of `xpath_loss_model`, and built the same way: one global
+// `batch_seq`, the real `PathBatchTracker` on the receiver, and the real
+// `PathState` in-flight ledger driven through the real `charge_in_flight`
 // / `release_in_flight` / cursor laws on the sender. The two un-metered
 // recovery channels are modelled as what they are — a wire handoff with
-// no charge — so the CHARGE defect and the RELEASE defect can be moved
-// one at a time (MEASUREMENT DISCIPLINE: a battery that flips both at
-// once cannot attribute).
+// no charge — so the charge defect (`RWM_CHARGE_RECOVERY`) and the release
+// defect (`RWM_RELEASE_1TO1`) can be moved one at a time.
 
 /// What one path's ledger read, in one run of the two-path model.
 #[derive(Debug, Clone, Copy)]
@@ -4673,7 +4511,7 @@ struct LedgerRead {
     wire: u64,
     /// Symbols `charge_in_flight` was called for.
     charges: u64,
-    /// Σ`n` the release law ASKED for.
+    /// Σ`n` the release law asked for.
     releases_req: u64,
     /// Of that, what `release_in_flight`'s saturating subtraction threw
     /// away because `in_flight` was already zero — budget the path can
@@ -4681,16 +4519,15 @@ struct LedgerRead {
     releases_wasted: u64,
     /// Symbols the receiver actually took delivery of on this path.
     delivered: u64,
-    /// `(releases_req − charges) / delivered` — THE LEAK, in the units the
-    /// branch record states it in: extra budget slots released per
-    /// delivered symbol.
+    /// `(releases_req − charges) / delivered` — the leak: extra budget
+    /// slots released per delivered symbol.
     leak_per_delivered: f64,
     /// Fraction of post-ack samples at which the gauge read `in_flight ==
     /// 0` while the path genuinely had symbols outstanding. This is the
-    /// defect's BEHAVIOURAL face: `available() = cwnd − in_flight` is then
+    /// defect's behavioural face: `available() = cwnd − in_flight` is then
     /// wide open on evidence the path does not have.
     false_empty_frac: f64,
-    /// Mean gauge reading, and the mean TRUTH beside it.
+    /// Mean gauge reading, and the mean truth beside it.
     infl_mean: f64,
     outstanding_mean: f64,
     /// The gauge after the last ack — zero iff the ledger balanced.
@@ -4700,10 +4537,10 @@ struct LedgerRead {
 /// Which lost-symbol release law the run drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Release {
-    /// SHIPPED: `expected − received` off the global-`batch_seq` gap
+    /// Shipped: `expected − received` off the global-`batch_seq` gap
     /// estimate, plus the 250 ms-floored expiry as a backstop.
     Legacy,
-    /// THE REFUTED CANDIDATE: `d(symbols_sent) − d(cum_received)`.
+    /// The refuted candidate: `d(symbols_sent) − d(cum_received)`.
     SentTruth,
     /// `RWM_RELEASE_1TO1`: no ack-arm term at all — the RFC 9002
     /// time-threshold sweep of the charge log is the whole answer.
@@ -4713,8 +4550,8 @@ enum Release {
 /// One deterministic run of the two-path ledger model.
 ///
 /// `share`: 1 = single path (the N = 1 control), 2 = 50/50 (c7), 6 = 5:1
-/// (c8's measured split). `lag` = how many of this path's own dispatches
-/// fit in one RTT, so `lag × syms` IS the true outstanding and `rtt_us /
+/// (c8's split). `lag` = how many of this path's own dispatches
+/// fit in one RTT, so `lag × syms` is the true outstanding and `rtt_us /
 /// lag` is the dispatch interval — the model's clock, which
 /// `expire_in_flight` reads.
 ///
@@ -4745,9 +4582,9 @@ fn xpath_ledger_model(
         ((rng >> 11) as f64) / ((1u64 << 53) as f64)
     };
 
-    // ONE CLOCK PER PATH. The two paths' ledgers are independent in this
+    // One clock per path. The two paths' ledgers are independent in this
     // model, and a per-path clock lets each one's in-flight window be
-    // stated physically: `lag` dispatches IS one RTT, so the true
+    // stated physically: `lag` dispatches is one RTT, so the true
     // outstanding is `lag x syms` and the dispatch interval is
     // `RTT / lag`. Time is what `expire_in_flight` reads, so it cannot be
     // left implicit.
@@ -4762,14 +4599,14 @@ fn xpath_ledger_model(
     for p in 0..2usize {
         path_state[p].force_release_1to1(release == Release::OneToOne);
         // The path's own smoothed RTT — the operand of the RFC 9002
-        // horizon. Fed through the REAL sampler, not written.
+        // horizon. Fed through the real sampler, not written.
         for _ in 0..64 {
             path_state[p].record_rtt_sample(rtt);
         }
     }
 
-    // ── DISPATCH PHASE: build each path's wire history ────────────────
-    // Per dispatch: (batch_seq, symbols, arrived, symbols CHARGED). The
+    // ── Dispatch phase: build each path's wire history ────────────────
+    // Per dispatch: (batch_seq, symbols, arrived, symbols charged). The
     // recovery channel's entries carry `charged = 0` unless the gate is
     // on — that is the whole of defect 1, expressed as data.
     let mut disp: [Vec<(u64, u32, bool, u32)>; 2] = [Vec::new(), Vec::new()];
@@ -4801,9 +4638,9 @@ fn xpath_ledger_model(
             continue;
         }
         dropped[p] += 1;
-        // The recovery plane answers the drop on the SAME path. It takes
+        // The recovery plane answers the drop on the same path. It takes
         // its own `batch_seq` (`batch_counter.fetch_add`) and it reaches
-        // the link — it is only the SENDER'S BOOKS it is missing from.
+        // the link — it is only the sender's books it is missing from.
         for _ in 0..recov_per_drop {
             let rseq = seq_ctr;
             seq_ctr += 1;
@@ -4815,7 +4652,7 @@ fn xpath_ledger_model(
         }
     }
 
-    // ── ACK PHASE ─────────────────────────────────────────────────────
+    // ── Ack phase ─────────────────────────────────────────────────────
     let mut charge_cursor = [0usize; 2];
     let mut wire = [0u64; 2];
     let mut charges = [0u64; 2];
@@ -4845,10 +4682,10 @@ fn xpath_ledger_model(
                 charge_cursor[p] += 1;
             }
             // The engine sweeps the charge log on the sender loop's own
-            // cadence (`net/mod.rs`'s backpressure poll, the report task,
-            // `block_sender`). Driven at every ack here, in EVERY arm —
+            // cadence (the backpressure poll, the report task,
+            // `block_sender`). Driven at every ack here, in every arm —
             // it is an always-on mechanism, and leaving it out of the
-            // legacy arm would flatter the fix.
+            // shipped arm would flatter the gate.
             let before_exp = path_state[p].in_flight;
             path_state[p].expire_in_flight();
             releases_req[p] += (before_exp - path_state[p].in_flight) as u64;
@@ -4856,7 +4693,7 @@ fn xpath_ledger_model(
             if !arrived {
                 continue;
             }
-            // Receiver: the REAL tracker on the REAL global `batch_seq`.
+            // Receiver: the real tracker on the real global `batch_seq`.
             let (expected, received) = tracker[p].record_batch(seq, n);
             delivered[p] += received as u64;
             // Sender, delivery arm (identical in both arms).
@@ -4867,8 +4704,8 @@ fn xpath_ledger_model(
                 releases_wasted[p] += (want as u64).saturating_sub((before - ps.in_flight) as u64);
             };
             rel(&mut path_state[p], received);
-            // Sender, LOST arm — the defect, the refuted candidate, and
-            // the fix.
+            // Sender, lost arm — the shipped term, the refuted candidate,
+            // and the 1:1 gate.
             let lost = match release {
                 Release::Legacy => expected.saturating_sub(received),
                 Release::SentTruth => {
@@ -4876,7 +4713,7 @@ fn xpath_ledger_model(
                     path_state[p]
                         .sender_truth_release_delta(sent, tracker[p].total_received)
                 }
-                // No ack-arm term: `expire_in_flight` above IS the release.
+                // No ack-arm term: `expire_in_flight` above is the release.
                 Release::OneToOne => 0,
             };
             rel(&mut path_state[p], lost);
@@ -4892,7 +4729,7 @@ fn xpath_ledger_model(
         }
     }
 
-    // QUIESCE: the flow stops, and the sender loop keeps sweeping. This is
+    // Quiesce: the flow stops, and the sender loop keeps sweeping. This is
     // where "does the ledger close?" is actually asked — a gauge that only
     // reads zero because it saturated is not a closed ledger, which is why
     // `releases_wasted` is reported beside `infl_final`.
@@ -4919,21 +4756,20 @@ fn xpath_ledger_model(
     })
 }
 
-/// DIRECTION 1 — the OLD release MUST leak, and by the measured class.
+/// Direction 1 — the shipped release must leak, and by the predicted class.
 ///
 /// At 50/50 striping every path's batch-seq gap is exactly 2, so
 /// `expected = 2 × received` and the lost arm releases `received` on top
-/// of the delivery arm's `received`: **≈1 extra budget slot per delivered
-/// symbol**, which is what goal-gate "Cross-Path Loss Contamination"
-/// recorded at c7 (`ce/cr` 2.05). At the 5:1 split the slow leg's gap is 6
-/// and the same arithmetic gives **≈5**, its `ce/cr` 5.59.
+/// of the delivery arm's `received`: ≈1 extra budget slot per delivered
+/// symbol (the c7 geometry). At the 5:1 split the slow leg's gap is 6
+/// and the same arithmetic gives ≈5.
 ///
-/// And the leak's BEHAVIOURAL face, asserted rather than argued: the gauge
+/// And the leak's behavioural face: the gauge
 /// reads `in_flight == 0` on nearly every ack at which the path genuinely
 /// has a full in-flight window outstanding, so `available() = cwnd −
 /// in_flight` is held wide open on evidence the path does not have. Plus
 /// the N = 1 control — a single path has no other path in its sequence, so
-/// the SAME legacy code does not leak there and no fix may regress it.
+/// the same code does not leak there and no fix may regress it.
 #[test]
 fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
     let leg = |share, eps| {
@@ -4949,7 +4785,7 @@ fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
             x.leak_per_delivered
         );
     }
-    // c8: 5:1 split — p1 is the SLOW leg, gap 6.
+    // c8: 5:1 split — p1 is the slow leg, gap 6.
     let c8 = leg(6, [0.0055, 0.0196]);
     assert!(
         (4.5..5.5).contains(&c8[1].leak_per_delivered),
@@ -4957,7 +4793,7 @@ fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
          delivered symbol (the wire's ce/cr 5.59), read {:.3}",
         c8[1].leak_per_delivered
     );
-    // The excess is SPENT, not stored, and the gauge is pinned open.
+    // The excess is spent, not stored, and the gauge is pinned open.
     for (cell, r) in [("c7", &c7[0]), ("c8slow", &c8[1])] {
         assert!(
             r.releases_wasted > 0,
@@ -4979,7 +4815,7 @@ fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
             r.outstanding_mean
         );
     }
-    // N = 1 CONTROL: the legacy code is already 1:1 at a single path, so
+    // N = 1 control: the shipped term is already 1:1 at a single path, so
     // its gauge is honest there and this defect is multipath-only.
     let n1 = leg(1, [0.0055, 0.0]);
     assert!(
@@ -4994,9 +4830,8 @@ fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
     );
 }
 
-/// THE READOUT the ledger section's tables are transcribed from. Not a
-/// gate — every number it prints is bounded by one of the four tests
-/// around it. `cargo test -p raptorpath --lib -- --ignored ledger_readout
+/// The ledger readout. Not a gate — every number it prints is bounded by
+/// one of the four tests around it. `cargo test -p raptorpath --lib -- --ignored ledger_readout
 /// --nocapture`.
 #[test]
 #[ignore = "readout, not a gate"]
@@ -5045,23 +4880,23 @@ fn ledger_readout() {
     }
 }
 
-/// THE REFUTED CANDIDATE, REPRODUCED — goal-gate "The Accounting Ledger".
+/// The refuted candidate, reproduced.
 ///
-/// The `fix/accounting-ledger` dispatch proposed sourcing the lost-symbol
-/// release from the same clean pair `RWM_LOSS_SENT_TRUTH` gave the loss
-/// estimator. It does not work, and the refutation is ARITHMETIC: with
+/// Sourcing the lost-symbol release from the same clean pair
+/// `RWM_LOSS_SENT_TRUTH` gives the loss estimator does not work, and the
+/// refutation is arithmetic: with
 /// every send charged, releasing `d_received + (d_sent − d_received)`
 /// telescopes to `in_flight == outstanding_at_cursor_init`, a constant —
 /// zero, for cursors that start at zero. `d_sent − d_received` is
 /// `loss + Δ(outstanding)`, so releasing on it releases the in-flight
 /// window itself.
 ///
-/// This test is the negative datum's reproduction path and it asserts the
-/// refutation ABSOLUTELY: the candidate reproduces the legacy defect's own
-/// signature (gauge pinned on the floor while the path is loaded), at both
-/// multipath geometries AND at the N = 1 control — where the legacy code
-/// is honest, so the candidate would REGRESS a cell that has no defect.
-/// Item 3's trick works for a RATIO and does not transfer to a LEDGER.
+/// This test asserts the refutation absolutely: the candidate reproduces
+/// the shipped defect's own signature (gauge pinned on the floor while the
+/// path is loaded), at both multipath geometries and at the N = 1 control
+/// — where the shipped term is honest, so the candidate would regress a
+/// cell that has no defect. The clean pair works for a ratio and does not
+/// transfer to a ledger.
 #[test]
 fn sender_truth_release_pins_the_gauge_on_the_floor() {
     for (cell, share, eps) in [
@@ -5098,22 +4933,22 @@ fn sender_truth_release_pins_the_gauge_on_the_floor() {
     }
 }
 
-/// DIRECTION 2 — under `RWM_RELEASE_1TO1` the gauge reads the IN-FLIGHT
-/// WINDOW, and the ledger closes at quiesce.
+/// Direction 2 — under `RWM_RELEASE_1TO1` the gauge reads the in-flight
+/// window, and the ledger closes at quiesce.
 ///
 /// The contaminated ack-arm term is deleted and the whole lost-symbol
 /// release is `expire_in_flight`'s sweep of the charge log at RFC 9002
 /// §6.1.2's kTimeThreshold, `9/8 × SRTT`. Because that sweep pops the very
 /// entries `charge_in_flight` pushed, the release is 1:1 with the charge by
 /// construction however the paths are striped — and because the horizon is
-/// the RTT scale rather than the legacy `max(4×SRTT, 250 ms)`, the gauge
+/// the RTT scale rather than `max(4×SRTT, 250 ms)`, the gauge
 /// settles at the in-flight window instead of a quarter-second of send
 /// rate.
 ///
-/// THE BOUND IS THE LAW'S OWN SHAPE, not a tuned number. The equilibrium
+/// The bound is the law's own shape, not a tuned number. The equilibrium
 /// occupancy is `horizon × rate`, the truth is `RTT × rate`, so the gauge
 /// must read `9/8 ×` the truth — asserted as `[1.0, 1.3]×`, one-sided in
-/// the CONSERVATIVE direction (it may over-read the wire's occupancy, which
+/// the conservative direction (it may over-read the wire's occupancy, which
 /// narrows `available()`; it may never under-read it, which is the leak).
 /// Asserted at both multipath geometries and at the N = 1 control.
 #[test]
@@ -5130,7 +4965,7 @@ fn release_1to1_makes_the_gauge_read_the_in_flight_window() {
         for &p in legs {
             let x = r[p];
             assert!(x.delivered > 10_000, "{cell} p{p}: the model must run");
-            // 1:1 — an EQUALITY, and it is what the other two arms fail.
+            // 1:1 — an equality, and it is what the other two arms fail.
             assert_eq!(
                 x.releases_req, x.charges,
                 "{cell} p{p}: every slot charged must be released exactly \
@@ -5164,29 +4999,29 @@ fn release_1to1_makes_the_gauge_read_the_in_flight_window() {
     }
 }
 
-/// DEFECT 1, BOTH DIRECTIONS — the two recovery channels reach the wire
-/// un-metered, and `RWM_CHARGE_RECOVERY` is exactly the difference.
+/// The charge defect, both directions — the two recovery channels reach
+/// the wire un-metered, and `RWM_CHARGE_RECOVERY` is exactly the
+/// difference.
 ///
 /// Asserted as separate facts so a flip of either gate alone is bounded
 /// rather than guessed:
 ///
-///   * charge OFF: `charges < wire`, and the deficit IS the recovery
+///   * charge off: `charges < wire`, and the deficit is the recovery
 ///     channel — an equality by construction of the model;
-///   * charge ON: `charges == wire`, so the gauge counts what flew;
-///   * release 1:1 + charge OFF: the ledger is still 1:1 against what was
-///     CHARGED, and under-counts the WIRE by exactly the un-metered
+///   * charge on: `charges == wire`, so the gauge counts what flew;
+///   * release 1:1 + charge off: the ledger is still 1:1 against what was
+///     charged, and under-counts the wire by exactly the un-metered
 ///     recovery — bounded, and in the conservative direction, where the
-///     legacy release's error is an over-release unbounded in the path
+///     shipped release's error is an over-release unbounded in the path
 ///     count;
-///   * both ON: `charges == wire == releases`, and `in_flight` returns to
+///   * both on: `charges == wire == releases`, and `in_flight` returns to
 ///     zero at quiesce. That is the SF bench's `Acct::Traffic`
-///     configuration — the counterfactual engine that obeys paper §12.
+///     configuration.
 #[test]
 fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
     // 5 recovery symbols per drop: the SACK-gap retransmit plus a NACK
-    // repair margin of 4, which is the margin the CONTAMINATED loss
-    // estimate buys (`ceil(retransmitted × ε̂)` at ε̂ ≈ 0.5 — the record
-    // measured 52 repair symbols per 100 retransmitted at c7).
+    // repair margin of 4, which is the margin the contaminated loss
+    // estimate buys (`ceil(retransmitted × ε̂)` at ε̂ ≈ 0.5).
     let recov = 5u32;
     let run = |release: Release, charge: bool| {
         xpath_ledger_model(
@@ -5199,7 +5034,7 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
     let both = run(Release::OneToOne, true);
 
     for p in 0..2usize {
-        // MEASUREMENT DISCIPLINE 1: the channel must have fired.
+        // Measurement-discipline rule 1: the channel must have fired.
         assert!(
             off[p].wire > off[p].charges,
             "p{p}: the recovery channel never reached the wire"
@@ -5209,7 +5044,7 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
             recov_syms > 500,
             "p{p}: too little recovery traffic to bound ({recov_syms})"
         );
-        // DIRECTION 2: with the gate on, every wire symbol is charged.
+        // Direction 2: with the gate on, every wire symbol is charged.
         assert_eq!(
             charged[p].charges, charged[p].wire,
             "p{p}: under RWM_CHARGE_RECOVERY the charge must equal the wire \
@@ -5217,10 +5052,10 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
             charged[p].charges, charged[p].wire
         );
         // Release alone: the ack arm's contaminated term is gone, but the
-        // DELIVERY arm still releases the arrival of every recovery symbol
+        // delivery arm still releases the arrival of every recovery symbol
         // the sender never charged for — so the residual imbalance is
-        // BOUNDED BY THE UN-METERED RECOVERY and by nothing else. That
-        // residual is defect 1's, not the release law's, and it is why the
+        // bounded by the un-metered recovery and by nothing else. That
+        // residual is the charge defect's, not the release law's, and it is why the
         // two gates are stated as a composition rather than a choice.
         assert!(
             rel_only[p].releases_req >= rel_only[p].charges
@@ -5235,7 +5070,7 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
             "p{p}: release-only must under-count the wire by at most the \
              un-metered recovery"
         );
-        // BOTH: charges == wire == releases, and the ledger closes.
+        // Both: charges == wire == releases, and the ledger closes.
         assert_eq!(both[p].charges, both[p].wire);
         assert_eq!(
             both[p].releases_req, both[p].wire,
@@ -5246,7 +5081,7 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
             both[p].infl_final, 0,
             "p{p}: in_flight must return to ZERO at quiesce"
         );
-        // And the legacy arm, for contrast, leaks by MORE than the c7
+        // And the shipped arm, for contrast, leaks by more than the c7
         // source-only ≈1 once the un-charged recovery is added.
         assert!(
             off[p].leak_per_delivered > 1.0,

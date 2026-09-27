@@ -1,63 +1,49 @@
-//! The quantile-native window law (paper §16.76) and the `[QCLK]` gauge.
-//! Moved verbatim out of `net/mod.rs` (cleanup Stage 3).
+//! The quantile-native window law (paper §7.4) and the `[QCLK]` gauge.
 
 use super::*;
 
-// ── The quantile-native window law (paper §16.76) ─────────────────────
+// ── The quantile-native window law (paper §7.4) ─────────────────────────
 //
 // `W_q(a) = X_(N(a)−K+1)`, `N(a) = max(⌈K/a⌉, 2K)`, `K = 10`: the order
-// statistic the HOLD-DOWN clock (§16.77, `RWM_HOLDDOWN_Q`) evaluates on the
-// hole-resolution stream at `a = 1 − q`. It was built as a recovery-clock
-// arm (`RWM_W_FORM=quantile` inside `RWM_QUANTILE_CLOCKS`); that arm was
-// refuted and removed, and the window law stays as the hold-down's.
+// statistic the hold-down clock (`RWM_HOLDDOWN_Q`) evaluates on the
+// hole-resolution stream at `a = 1 − q`.
 
-/// The order-statistic EXCEEDANCE COUNT `K` of the quantile-native window law
-/// — **CITED, not fitted** (paper §16.76.3).
+/// The order-statistic exceedance count `K` of the quantile-native window
+/// law — cited, not fitted.
 ///
-/// To read the `1 − α` quantile from a window the window must hold enough
+/// To read the `1 − α` quantile from a window, the window must hold enough
 /// samples above it that the reading rests on real order statistics; the
-/// classical requirement is `N·min(α, 1−α) ≥ 10`. **That constant is already
-/// cited in this tree for exactly this job**: `SIGMA_CAND_WINDOW`'s own
-/// declaration derives `L = 256` in part because *"the `P90` these gauges take
-/// needs its tail to rest on real order statistics — `L·(1 − 0.90) = 25.6`
-/// clears the standard ≥ 10 requirement by 2.6×."* `K = 10` is that
-/// requirement taken as an EQUALITY rather than exceeded by an unstated
-/// factor.
+/// classical requirement is `N·min(α, 1−α) ≥ 10` (the same requirement
+/// `SIGMA_CAND_WINDOW` cites). `K = 10` takes it as an equality.
 ///
-/// **Fixing the exceedance count rather than the window is the whole design.**
-/// The realized tail level of `X_(N−K+1)` is exactly `Beta(K, N−K+1)` — the
-/// probability-integral transform, valid for ANY continuous `F` and therefore
-/// as distribution-free as Cantelli was — with relative sampling SD `≈ 1/√K`.
-/// **That is `0.24–0.32` at every arm across a 200× span of α**, where a fixed
-/// window would have made the tail arm's precision 200× worse than the head
-/// arm's. Raising `K` narrows every CI as `1/√K` and lengthens every window as
-/// `K`; this takes the cited floor so nothing is bought with an unstated
-/// constant.
+/// Fixing the exceedance count rather than the window is the design. The
+/// realized tail level of `X_(N−K+1)` is exactly `Beta(K, N−K+1)` — the
+/// probability-integral transform, valid for any continuous `F` — with
+/// relative sampling SD `≈ 1/√K`, so precision is the same at every α, where
+/// a fixed window would make the tail's precision far worse than the head's.
+/// Raising `K` narrows every CI as `1/√K` and lengthens every window as `K`.
 pub const QNATIVE_EXCEEDANCE_K: usize = 10;
 
-/// **DECLARED RESOURCE BOUND, stated OUTSIDE the law** (CLAUDE.md
-/// FORMULA-FIRST): the deepest window the quantile-native ring will hold.
-/// 8192 × 4 B = **32 KiB per path**.
+/// Declared resource bound, stated outside the law: the deepest window the
+/// quantile-native ring will hold. 8192 × 4 B = 32 KiB per path.
 ///
-/// It is `≥ N(0.002) = 5 000`, so it does **not bind anywhere on the α-sweep's
-/// grid**. It binds hard below `α ≈ 1.2e-3`, and at the contract's own
-/// `α = 1e-5` the law simply declares itself unavailable and the evaluation
-/// falls through — **which is §16.69 reason 2 made VISIBLE through the
-/// existing `law_n` bind-fraction gauge instead of silently extrapolated.**
+/// It is `≥ N(0.002) = 5 000`. It binds below `α ≈ 1.2e-3`; at a contract
+/// tail of `α = 1e-5` the law declares itself unavailable and the evaluation
+/// falls through, which the `law_n` bind-fraction gauge makes visible
+/// instead of extrapolating.
 pub const QNATIVE_WINDOW_MAX: usize = 8192;
 
-/// **THE WINDOW LAW** — `N(α) = max(⌈K/α⌉, 2K)`, paper §16.76.3.
+/// The window law: `N(α) = max(⌈K/α⌉, 2K)`.
 ///
-/// * `⌈K/α⌉` is the EXCEEDANCE clause: the window must carry `K` samples above
-///   the quantile for the reading to be an order statistic.
+/// * `⌈K/α⌉` is the exceedance clause: the window must carry `K` samples
+///   above the quantile for the reading to be an order statistic.
 /// * `2K` is the symmetric clause `N·(1−α) ≥ K` made explicit. It is implied
-///   for `α ≤ ½` and **does not bind anywhere on the swept grid**
-///   (`N(0.40) = 25`), which is stated so a floor that never binds is never
+///   for `α ≤ ½` (`N(0.40) = 25`), stated so a floor that rarely binds is not
 ///   mistaken for a tuned one.
 ///
-/// Returns `None` when the law asks for more than [`QNATIVE_WINDOW_MAX`] — the
-/// α at which the direct route is UNAVAILABLE, which is a property of α and
-/// the declared bound and never a mode.
+/// Returns `None` when the law asks for more than [`QNATIVE_WINDOW_MAX`] —
+/// the α at which the direct route is unavailable, a property of α and the
+/// declared bound and never a mode.
 pub fn qnative_window_n(alpha: f64) -> Option<usize> {
     if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
         return None;
@@ -70,15 +56,14 @@ pub fn qnative_window_n(alpha: f64) -> Option<usize> {
     (n <= QNATIVE_WINDOW_MAX).then_some(n)
 }
 
-/// **THE QUANTILE-NATIVE RECOVERY ROUND** (µs) — `W_q(α) = X_(N−K+1)`, paper
-/// §16.76.0. One index into a sorted window; there is no arithmetic in the law
-/// beyond the index.
+/// The quantile-native recovery round (µs): `W_q(α) = X_(N−K+1)`. One index
+/// into a sorted window; no arithmetic beyond the index.
 ///
-/// `window` is the most recent `N(α)` raw ack-arrival samples in ARRIVAL
-/// order — the caller supplies exactly `N(α)` of them or nothing at all, so
-/// this function cannot silently read a shorter window at a different level.
-/// **A short window is a DIFFERENT LAW's output**, which is why the caller
-/// falls through rather than truncating (§16.76.5(1), the UNSCOREABLE rule).
+/// `window` is the most recent `N(α)` raw samples in arrival order — the
+/// caller supplies exactly `N(α)` of them or nothing, so this function cannot
+/// silently read a shorter window at a different level. A short window is a
+/// different law's output, which is why the caller falls through rather than
+/// truncating.
 ///
 /// Floored at the timer granularity for the same information-availability
 /// reason the derived recovery round is.
@@ -88,21 +73,17 @@ pub fn qnative_recovery_round_us(window: &[u32], alpha: f64) -> Option<u64> {
         return None;
     }
     // Only the freshest `n` count — a longer slice would read a different
-    // level of a longer window, i.e. a law nobody named.
+    // level of a longer window.
     let mut s: Vec<u32> = window[window.len() - n..].to_vec();
     // `X_(n−K+1)` with 1-based order statistics ⇒ index `n − K` 0-based:
     // exactly `K − 1` samples lie strictly above it and it is the K-th from
     // the top. Chosen over `X_(n−K)` so `E[τ] = K/(n+1) ≈ α` rather than
-    // `≈ 1.1·α` (§16.76.3).
+    // `≈ 1.1·α`.
     let idx = n.saturating_sub(QNATIVE_EXCEEDANCE_K).min(n - 1);
-    // **SELECTION, NOT A SORT — a DECLARED COST BOUND and the reason it is
-    // stated here** (§16.76.3's resource paragraph). This runs at the
-    // recovery-timer cadence on the SENDER, and sender-side cost is exactly
-    // what the τ-lag battery had to run a separate `B` pass to keep out of its
-    // own measurement. A full sort is `O(N log N)` ≈ 12× the work at
-    // `N(0.002) = 5 000`; `select_nth_unstable` is `O(N)` average, one pass,
-    // and returns the SAME order statistic. **The estimand is unchanged; only
-    // the cost is.**
+    // Selection, not a sort: a declared cost bound on the sender. A full
+    // sort is `O(N log N)` ≈ 12× the work at `N(0.002) = 5 000`;
+    // `select_nth_unstable` is `O(N)` average and returns the same order
+    // statistic.
     let (_, nth, _) = s.select_nth_unstable(idx);
     Some((*nth as u64).max(TIMER_GRANULARITY_US))
 }
@@ -113,15 +94,14 @@ pub fn qnative_recovery_round_us(window: &[u32], alpha: f64) -> Option<u64> {
 /// spread this gauge exists to report.
 pub const QCLK_SAMPLE_CAP: usize = 4096;
 
-/// The `[QCLK]` gauge — **the REALIZED recovery clock, as a DISTRIBUTION.**
+/// The `[QCLK]` gauge — the realized recovery clock, as a distribution.
 ///
 /// The tail-sweep timeout and the receiver's hole-refresh cadence are what
-/// the engine WILL wait, per evaluation; this records them as a distribution
+/// the engine will wait, per evaluation; this records them as a distribution
 /// (mean, p05/p50/p95, min/max) beside the mean srtt and the mean measured σ
-/// that fed the evaluations. It was built for the quantile-clock arm's
-/// α-sweep (paper §16.69/§16.76, since removed) and is kept because it is the
-/// one per-run readout of the shipped clamp's own realized cadence (the
-/// `RWM_REFRESH_FLOOR_US` reachability reads it).
+/// that fed the evaluations. It is the one per-run readout of the shipped
+/// clamp's realized cadence (the `RWM_REFRESH_FLOOR_US` reachability reads
+/// it).
 ///
 /// Observation only: no gate of its own, no control flow, no wire byte.
 pub(crate) struct QuantileClockGauge {
@@ -133,7 +113,7 @@ pub(crate) struct QuantileClockGauge {
     srtt_sum: f64,
     sigma_sum: f64,
     sigma_n: u64,
-    /// Uniformly decimated `W` samples, µs. DETERMINISTIC — no RNG, so two
+    /// Uniformly decimated `W` samples, µs. Deterministic — no RNG, so two
     /// runs of one binary on one log produce the same quantiles.
     samples: Vec<u32>,
     /// Keep every `stride`-th evaluation; doubles each time the store fills,
@@ -222,7 +202,7 @@ impl QuantileClockGauge {
             mean(self.sigma_sum, self.sigma_n),
             self.sigma_n,
             // The sacrificial trailing constant: stderr has two writers and a
-            // `tracing` write can land inside a gauge line's LAST field, so
+            // `tracing` write can land inside a gauge line's last field, so
             // the last field is a constant the parser can lose.
             RACK_SPURIOUS_BUDGET,
         )

@@ -1,8 +1,8 @@
 use super::*;
 use std::time::Duration;
 
-/// A hole closed by the SENDER'S COPY is not a self-heal: `[LATE]`'s
-/// pi0 must not count it, while a late ORIGINAL (stamped before the
+/// A hole closed by the sender's copy is not a self-heal: `[LATE]`'s
+/// pi0 must not count it, while a late original (stamped before the
 /// arrival that exposed the hole) still is one.
 #[test]
 fn a_retransmit_resolved_hole_is_not_counted_as_self_heal() {
@@ -22,7 +22,7 @@ fn a_retransmit_resolved_hole_is_not_counted_as_self_heal() {
         Some(0.0),
         "a retransmit-resolved hole must not be counted in pi0"
     );
-    // Control: seq 3's ORIGINAL (stamped before its exposer) heals it.
+    // Control: seq 3's original (stamped before its exposer) heals it.
     g.observe_high_at(4, t, 0, 1_060); // exposes seq 3
     let rec = g
         .resolve_at(3, false, t + Duration::from_millis(5), 1, 1_040)
@@ -34,7 +34,7 @@ fn a_retransmit_resolved_hole_is_not_counted_as_self_heal() {
     assert_eq!(g.hist(HoleOutcome::Original).n(), 2);
     assert_eq!(g.rtx_n(), 1);
     assert!(g.line().ends_with(" rtx_n=1"), "{}", g.line());
-    // Unknown stamps (0) keep the historic class.
+    // Unknown stamps (0) read as `Original`.
     assert_eq!(classify_source_close(5, 0), HoleOutcome::Original);
     assert_eq!(classify_source_close(0, 5), HoleOutcome::Original);
 }
@@ -43,7 +43,7 @@ fn at(base: Instant, us: u64) -> Instant {
     base + Duration::from_micros(us)
 }
 
-// ── THE BUCKET MAP ──────────────────────────────────────────────────
+// ── The bucket map ──────────────────────────────────────────────────
 
 #[test]
 fn buckets_are_monotone_contiguous_and_bounded_in_width() {
@@ -63,7 +63,7 @@ fn buckets_are_monotone_contiguous_and_bounded_in_width() {
         let lo = bucket_lower_edge(b);
         assert!(lo <= v, "bucket {b} lower edge {lo} exceeds its member {v}");
         assert_eq!(bucket_of(lo), b, "edge {lo} must map back to bucket {b}");
-        // THE DECLARED ERROR: a reported quantile is the lower edge, so
+        // The declared error: a reported quantile is the lower edge, so
         // the underestimate is bounded by the bucket's relative width.
         if v >= SUB {
             let hi_edge = bucket_lower_edge(b + 1);
@@ -97,14 +97,14 @@ fn quantiles_are_lower_edges_and_absent_reads_as_none() {
     assert!(h.quantile(0.0).expect("nonempty") <= p50);
 }
 
-// ── THE EVENT SEMANTICS ─────────────────────────────────────────────
+// ── The event semantics ─────────────────────────────────────────────
 
 #[test]
 fn the_first_arrival_exposes_nothing_and_the_second_exposes_the_gap() {
     let t = Instant::now();
     let mut g = SuccGauge::new(false, false, 0);
     assert!(!g.is_receiver_site(), "a gauge with no arrival is not a receiver");
-    // The flow's first symbol is seq 7 — that is a BASELINE, not seven
+    // The flow's first symbol is seq 7 — that is a baseline, not seven
     // holes. A gauge that opened holes below its first-ever arrival would
     // manufacture its own denominator.
     g.observe_high(7, t, 0);
@@ -140,7 +140,7 @@ fn the_three_outcomes_are_disjoint_and_the_first_terminal_event_wins() {
     assert_eq!(g.hist(HoleOutcome::Repair).max_us(), 1500);
     assert_eq!(g.hist(HoleOutcome::Abandoned).max_us(), 9000);
 
-    // A LATE ARRIVAL OF AN ABANDONED SEQ IS NOT A SECOND OUTCOME. This is
+    // A late arrival of an abandoned seq is not a second outcome. This is
     // the property that makes the three classes a partition rather than
     // three overlapping counts.
     g.resolve(3, false, at(t, 20_000), 0);
@@ -178,7 +178,7 @@ fn the_accounting_identity_holds_including_at_the_declared_bounds() {
     g.abandon_below(200, at(t, 999_999));
     identity(&g);
 
-    // MAX_SPAN: a jump wider than the bound is counted WHOLE and tracked
+    // MAX_SPAN: a jump wider than the bound is counted whole and tracked
     // not at all, so the identity survives the truncation that protects
     // the gauge's memory.
     let mut g2 = SuccGauge::new(false, false, 0);
@@ -204,7 +204,7 @@ fn the_accounting_identity_holds_including_at_the_declared_bounds() {
     identity(&g3);
 }
 
-// ── THE DERIVED READINGS ────────────────────────────────────────────
+// ── The derived readings ────────────────────────────────────────────
 
 #[test]
 fn the_crossing_point_is_where_repair_overtakes_original() {
@@ -214,7 +214,7 @@ fn the_crossing_point_is_where_repair_overtakes_original() {
     for s in 1..=200u64 {
         g.observe_high(s * 2, t, 0);
     }
-    // Originals: fast (≈1 ms). Repairs: slow (≈50 ms), and MORE numerous,
+    // Originals: fast (≈1 ms). Repairs: slow (≈50 ms), and more numerous,
     // so the repair CDF must overtake somewhere between the two clusters.
     for s in 1..=50u64 {
         g.resolve(s * 2 - 1, false, at(t, 1_000 + s), 0);
@@ -232,7 +232,7 @@ fn the_crossing_point_is_where_repair_overtakes_original() {
         "50 of 200 resolved holes closed by their original"
     );
 
-    // NO CROSSING IS A LEGAL OUTCOME, not a missing value: when the
+    // No crossing is a legal outcome, not a missing value: when the
     // original leads at every horizon there is no `t` to report.
     let mut h = SuccGauge::new(false, false, 0);
     h.observe_high(0, t, 0);
@@ -249,7 +249,7 @@ fn the_crossing_point_is_where_repair_overtakes_original() {
     assert_eq!(e.orig_frac(), None);
 }
 
-// ── THE LINE ────────────────────────────────────────────────────────
+// ── The line ────────────────────────────────────────────────────────
 
 #[test]
 fn the_succ_line_format_is_pinned() {
@@ -269,9 +269,9 @@ fn the_succ_line_format_is_pinned() {
     assert_eq!(
         l,
         // 1000 µs ⇒ bucket [960, 1024); 2000 ⇒ [1920, 2048); 40 000 ⇒
-        // [36864, 40960). Every quantile is its bucket's LOWER edge, so
+        // [36864, 40960). Every quantile is its bucket's lower edge, so
         // each reads at or below the sample it summarises and never above
-        // it — and `mx` carries the EXACT maximum beside it, so the
+        // it — and `mx` carries the exact maximum beside it, so the
         // bucketing's direction is checkable off the line itself.
         "[SUCC] gen=0 det=7 res=3 orig_n=2 orig_p50_us=960 orig_p90_us=1920 \
          orig_p99_us=1920 orig_mx_us=2000 orig_mean_us=1500 rep_n=1 \
@@ -281,10 +281,10 @@ fn the_succ_line_format_is_pinned() {
          cross_us=2048 dump=0/0 sp_n=2 xp_n=1 xp_frac=0.3333 \
          sp_p50_us=640 sp_p90_us=896 xp_p50_us=28672 xp_p90_us=28672"
     );
-    // `-` IFF NONE, on every slot of an empty outcome, and never a 0 that
+    // `-` iff none, on every slot of an empty outcome, and never a 0 that
     // a parser would read as a measured zero.
     assert!(l.contains("aban_n=0 aban_p50_us=-"));
-    // THE GENERATION ROW: the line says which machine it measured.
+    // The generation row: the line says which machine it measured.
     let e = Hist::default();
     let g = succ_report_line(true, 0, &e, &e, &e, &e, &e, 0, 0, None, true, 12);
     assert!(g.starts_with("[SUCC] gen=1 det=0 res=0 "), "{g}");
@@ -301,7 +301,7 @@ fn the_succ_line_format_is_pinned() {
 #[test]
 fn the_raw_dump_is_off_by_default_batched_and_announces_its_own_cap() {
     let t = Instant::now();
-    // OFF: not one line, whatever happens.
+    // Off: not one line, whatever happens.
     let mut off = SuccGauge::new(false, false, 0);
     off.observe_high(0, t, 0);
     off.observe_high(100, t, 0);
@@ -310,7 +310,7 @@ fn the_raw_dump_is_off_by_default_batched_and_announces_its_own_cap() {
     }
     assert!(off.take_dump_lines(true).is_empty(), "the dump ships OFF");
 
-    // ON: full batches only until flushed, then the tail.
+    // On: full batches only until flushed, then the tail.
     let mut on = SuccGauge::new(false, true, 1_000);
     on.observe_high(0, t, 0);
     on.observe_high(1_000, t, 0);
@@ -327,7 +327,7 @@ fn the_raw_dump_is_off_by_default_batched_and_announces_its_own_cap() {
     assert!(tail[0].starts_with("[SUCCDUMP] n=5 d="));
     assert!(on.take_dump_lines(true).is_empty(), "nothing left after a flush");
 
-    // THE CAP BINDS ONCE, LOUDLY, and stops recording raw records — while
+    // The cap binds once, loudly, and stops recording raw records — while
     // the histograms keep counting, so a capped dump never truncates the
     // quantile line it rides beside.
     let mut cap = SuccGauge::new(false, true, 4);
@@ -350,16 +350,16 @@ fn the_raw_dump_is_off_by_default_batched_and_announces_its_own_cap() {
     );
 }
 
-// ── THE DISCIPLINE ──────────────────────────────────────────────────
+// ── Observation only ────────────────────────────────────────────────
 
-/// MEASUREMENT DISCIPLINE: this gauge is READ-ONLY, and that is a property
-/// of the SOURCE, not of a comment. Nothing in the engine may branch on
+/// This gauge is read-only, and that is a property of the source, not of
+/// a comment. Nothing in the engine may branch on
 /// anything it computes, so it holds no engine handle and no site outside
 /// this module and the receiver's feed/readout may name its readers.
 #[test]
 fn succ_is_observation_only() {
     let src = include_str!("../succ.rs");
-    // Spelled in halves so this test's OWN source is not the match it is
+    // Spelled in halves so this test's own source is not the match it is
     // looking for — the scraper reads the whole file, itself included.
     for forbidden in [
         concat!("Sched", "uler"),
@@ -373,8 +373,8 @@ fn succ_is_observation_only() {
              an engine handle and can no longer be read as read-only"
         );
     }
-    // The engine-wide half of the same claim: the receiver may FEED and
-    // PRINT this gauge and may not TEST it. `crossing_us`, `orig_frac` and
+    // The engine-wide half of the same claim: the receiver may feed and
+    // print this gauge and may not test it. `crossing_us`, `orig_frac` and
     // `quantile` are the three readers a law could plausibly be built on,
     // so they are the three whose call sites are pinned to `line()`.
     let recv = include_str!("../receiver.rs");
@@ -388,11 +388,10 @@ fn succ_is_observation_only() {
         );
     }
 }
-// ── A0.3 THE SAME/CROSS EXPOSURE SPLIT ──────────────────────────────
+// ── The same/cross exposure split ───────────────────────────────────
 
-/// The split is DISJOINT, CLOSES against `res`, and is STRUCTURALLY ZERO
-/// on a single path. The last clause is the control reading the audit's
-/// `c1` row rests on: at a one-path cell no hole can be closed by an
+/// The split is disjoint, closes against `res`, and is structurally zero
+/// on a single path: at a one-path cell no hole can be closed by an
 /// arrival on another path, so `xp_n = 0` is a property of the wire and
 /// not a property of the sample.
 #[test]
@@ -417,7 +416,7 @@ fn the_same_cross_exposure_split_is_disjoint_closes_and_is_zero_on_one_path() {
     assert!(one.line().contains("xp_n=0"), "{}", one.line());
 
     // Two paths: a hole exposed by a path-1 arrival and closed by a
-    // path-0 one is CROSS-PATH; closed by a path-1 one is SAME-PATH.
+    // path-0 one is cross-path; closed by a path-1 one is same-path.
     let mut two = SuccGauge::new(false, false, 0);
     two.observe_high(0, t, 0);
     two.observe_high(3, t, 1); // path 1 exposes 1 and 2

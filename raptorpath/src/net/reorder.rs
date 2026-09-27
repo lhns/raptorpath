@@ -18,8 +18,8 @@ pub struct ReorderBuffer {
     timeout: Duration,
     /// Maximum entries to buffer before force-draining
     max_buffered: usize,
-    /// RWM Phase A (paper 15.7/16.3 RETAIN-UNTIL-ACKED): when true, the
-    /// buffer NEVER delivers past a hole — no expiry force-delivery, no
+    /// Retain-until-acked (ρ = 1, paper §5.1): when true, the buffer never
+    /// delivers past a hole — no expiry force-delivery, no
     /// capacity force-drain. Holes are recovered by NACK/repair (the sender
     /// retains sent bytes in its ARQ store and retransmits until
     /// delivered); memory stays bounded by that store's backpressure cap
@@ -38,7 +38,7 @@ impl ReorderBuffer {
         }
     }
 
-    /// Reliable-policy buffer (RWM Phase A): in-order delivery with holes
+    /// Reliable-policy buffer: in-order delivery with holes
     /// held until recovered — never force-delivered, never force-drained.
     pub fn new_reliable() -> Self {
         Self {
@@ -53,14 +53,13 @@ impl ReorderBuffer {
     /// Push a recovered symbol. Returns a contiguous prefix of deliverable
     /// entries as `(seq, data, buffered_at)`.
     ///
-    /// **`buffered_at` is the third element on EVERY return path of this
-    /// type** (`[LAT]`, `net/lat.rs`): the REORDER WAIT is
-    /// `t_deliver - buffered_at`, and the receiver cannot reconstruct it
-    /// afterwards because the buffer is the only place that instant was ever
-    /// held. A symbol that was never buffered -- the in-order case, and the
-    /// below-frontier late fill -- reports the delivery instant itself, so its
-    /// wait is exactly 0 rather than a fabricated one. Read by the gauge and
-    /// by nothing else.
+    /// `buffered_at` is the third element on every return path (`[LAT]`,
+    /// `net/lat.rs`): the reorder wait is `t_deliver - buffered_at`, and the
+    /// receiver cannot reconstruct it afterwards because the buffer is the
+    /// only place that instant is held. A symbol that was never buffered —
+    /// the in-order case, and the below-frontier late fill — reports the
+    /// delivery instant itself, so its wait is exactly 0. Read by the gauge
+    /// and by nothing else.
     pub fn push(&mut self, seq: u64, data: Bytes) -> Vec<(u64, Bytes, Instant)> {
         self.push_with_time(seq, data, Instant::now())
     }
@@ -106,10 +105,10 @@ impl ReorderBuffer {
     /// Deliver entries held longer than `timeout`, plus any contiguous prefix.
     ///
     /// Expiring seq k means giving up on the holes before it — so every
-    /// pending entry up to k is released too, in order. (Advancing
+    /// pending entry up to k is released too, in order. Advancing
     /// `next_deliver_seq` past k while younger entries were still pending
-    /// used to STRAND them: a hole filled by FEC/retransmit just after a
-    /// later entry expired would sit for a full extra timeout.)
+    /// would strand them: a hole filled just after a later entry expired
+    /// would sit for a full extra timeout.
     pub fn drain_expired(&mut self, now: Instant) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
 
@@ -203,7 +202,7 @@ mod tests {
         Bytes::from(vec![x])
     }
 
-    /// RWM Phase A: the reliable receiver holds delivery at a hole until the
+    /// The reliable receiver holds delivery at a hole until the
     /// hole is recovered — expiry never force-delivers past it.
     #[test]
     fn reliable_holds_past_hole_until_recovered() {
@@ -225,7 +224,7 @@ mod tests {
         assert_eq!(rb.next_deliver_seq(), 6);
     }
 
-    /// RWM Phase A: the reliable receiver never force-drains on capacity —
+    /// The reliable receiver never force-drains on capacity —
     /// buffering is bounded by the sender's ack-gated window, not evicted here.
     #[test]
     fn reliable_never_force_drains_at_capacity() {
@@ -240,20 +239,20 @@ mod tests {
         assert_eq!(out.len(), 801, "recovering the hole releases the whole prefix");
     }
 
-    /// **THE `buffered_at` CONTRACT** (`[LAT]`): a symbol that WAITED reports
-    /// the instant it entered the buffer, and one that never waited reports
-    /// the delivery instant -- so `t_deliver - buffered_at` is the reorder
-    /// wait exactly, and is exactly 0 for an in-order arrival.
+    /// The `buffered_at` contract (`[LAT]`): a symbol that waited reports the
+    /// instant it entered the buffer, and one that never waited reports the
+    /// delivery instant — so `t_deliver - buffered_at` is the reorder wait
+    /// exactly, and is exactly 0 for an in-order arrival.
     #[test]
     fn every_delivery_carries_the_instant_it_was_buffered() {
         let mut rb = ReorderBuffer::new_reliable();
         let t0 = Instant::now();
-        // In order: never buffered, so its stamp IS the delivery instant.
+        // In order: never buffered, so its stamp is the delivery instant.
         let out = rb.push_with_time(0, b(0), t0);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].2, t0, "an in-order symbol must report zero wait");
         // Held behind a hole, then released 30 ms later: each entry keeps its
-        // OWN arrival stamp, not the releasing one's.
+        // own arrival stamp, not the releasing one's.
         let t1 = t0 + Duration::from_millis(10);
         let t2 = t0 + Duration::from_millis(20);
         assert!(rb.push_with_time(2, b(2), t1).is_empty());

@@ -1,78 +1,54 @@
-//! The ACK-CADENCE GAUGE (`RWM_ACKDIAG`, default OFF, observation only).
+//! The ack-cadence gauge (`RWM_ACKDIAG`, default OFF, observation only).
 //!
-//! WHY IT EXISTS — the matrix row it discharges.
+//! It measures the shape of the ack stream under ack-merge. Without it every
+//! consumer of that shape had to invent it — the component benches swept
+//! assumed ack periods (`store_cap_sf_bench`, `honest_inputs_bench`, the 2 ms
+//! periodic `Ev::Ack` in `tests/common/recovery_model.rs`), and the inventions
+//! disagree with the wire by orders of magnitude.
 //!
-//! `docs/goal-gate.md`'s PIPELINE VERIFICATION MATRIX, row 21 ("Receiver —
-//! ack/echo generation and cadence UNDER ACK-MERGE"), records the state of
-//! the art as: *the ack-emission PREDICATE is pinned three ways and the
-//! counter-diff re-homing four ways, but **the STREAM SHAPE has no instrument
-//! of any kind, anywhere**.* Every consumer of that shape therefore had to
-//! INVENT it, and the inventions disagree with the wire by one to three
-//! orders of magnitude:
-//!
-//!   * `store_cap_sf_bench::sf_derived_overread_from_ack_batching` sweeps an
-//!     ack period of 0.25–10 ms and lands at a realized over-read of ×24–2400,
-//!     against the wire's measured ×4.6–7.4 band;
-//!   * `honest_inputs_bench` assumes 5 ms;
-//!   * `tests/common/recovery_model.rs:319` models a 2 ms periodic `Ev::Ack`
-//!     — the PRE-merge cadence.
-//!
-//! The "SF Accounting Axis" investigation (2026-08-11) failed its level gate
-//! at c7 and named this gauge as its own fallback, for exactly that reason:
-//! *before a component branch is opened to chase a suspect, check whether the
-//! input it depends on has ever been measured.* This module measures it.
-//!
-//! WHAT IT RECORDS — four readouts, all sender-side, all per path.
+//! Four readouts, all sender-side, all per path:
 //!
 //!   1. **WindowAck arrival spacing.** The inter-arrival Δt of `WindowAck`
-//!      control datagrams as the SENDER sees them, in µs: p50/p90/p99 and the
-//!      count. This is the cadence every one of the three benches above
-//!      invented.
+//!      control datagrams as the sender sees them, in µs: p50/p90/p99 and the
+//!      count.
 //!   2. **Delivered-count deltas.** `d_received` per ack — the `(cum_received
-//!      − cursor)` diff `PathState::ack_merge_counter_delta` returns, i.e.
-//!      literally the `count` the rate sampler is fed — as p50/p90/max, plus
-//!      the ZERO-DELTA fraction. A zero delta is the sentinel/stale class
-//!      (`cum_received == 0`, or a duplicate/reordered ack whose counters have
-//!      not advanced); it costs a datagram and moves no estimator.
-//!   3. **The realized rate-sampler input.** For every ACCEPTED
-//!      `CopaState::record_delivery` sample (the ones that clear its 1 ms
-//!      `elapsed` floor), the sample rate `Δdelivered/Δt_ack`, normalized at
-//!      print time by the window's OWN long-run delivered rate
-//!      `Σcount / Δt_window` — that ratio IS the over-read x, per sample,
-//!      with no invented input anywhere in it. Beside it the ledger's own
-//!      formula, `x_anchor = copa_bdp_anchor() / (rate_lr · RTprop)`, which
-//!      reduces to `max_bw / rate_lr` and is the number the store-cap Σ and
-//!      the cwnd anchor floor actually consume.
+//!      − cursor)` diff `PathState::ack_merge_counter_delta` returns, i.e. the
+//!      `count` the rate sampler is fed — as p50/p90/max, plus the zero-delta
+//!      fraction. A zero delta is the sentinel/stale class (`cum_received ==
+//!      0`, or a duplicate/reordered ack whose counters have not advanced); it
+//!      costs a datagram and moves no estimator.
+//!   3. **The realized rate-sampler input.** For every accepted
+//!      `CopaState::record_delivery` sample (those clearing its 1 ms `elapsed`
+//!      floor), the sample rate `Δdelivered/Δt_ack`, normalized at print time
+//!      by the window's own long-run delivered rate `Σcount / Δt_window` —
+//!      that ratio is the over-read x, per sample. Beside it
+//!      `x_anchor = copa_bdp_anchor() / (rate_lr · RTprop)`, which reduces to
+//!      `max_bw / rate_lr` and is the number the store-cap Σ and the cwnd
+//!      anchor floor consume.
 //!   4. **The repair-counting reconciliation.** Whether repair/retransmit
-//!      symbols enter the receiver's expected/received counters. The engine's
-//!      counters come from `PathBatchTracker::record_batch(batch_seq,
-//!      batch.symbols.len())` (`net/mod.rs:7129`, fed at `receiver.rs:1109`),
-//!      which counts SYMBOLS IN AN ARRIVING BATCH without ever looking at
-//!      `symbol.is_repair` — so the READ says repairs are counted. The gauge
-//!      MEASURES it instead of reading it: `recon[…]` prints, per path,
-//!      `sent` (the always-on `PathStats::symbols_sent`, incremented at every
-//!      wire handoff — source, repair and retransmit alike), `crecv`
-//!      (Σ `d_received`) and `cexp` (Σ `d_expected`), with the two ratios.
-//!      `crecv/sent ≈ 1` is repairs-ARE-counted; `crecv/sent ≈ src/(src+rep)`
-//!      would be repairs-are-NOT-counted. `cexp/crecv` is the gap-estimator's
-//!      inflation (`record_batch` charges `gap × received` across a
-//!      batch-seq gap).
+//!      symbols enter the receiver's expected/received counters. Those come
+//!      from `PathBatchTracker::record_batch(batch_seq, batch.symbols.len())`,
+//!      which counts symbols in an arriving batch without looking at
+//!      `symbol.is_repair`. `recon[…]` prints, per path, `sent` (the always-on
+//!      `PathStats::symbols_sent`, incremented at every wire handoff — source,
+//!      repair and retransmit alike), `crecv` (Σ `d_received`) and `cexp`
+//!      (Σ `d_expected`), with the ratios. `crecv/sent ≈ 1` means repairs are
+//!      counted; `crecv/sent ≈ src/(src+rep)` means they are not. `cexp/crecv`
+//!      is the gap estimator's inflation (`record_batch` charges
+//!      `gap × received` across a batch-seq gap).
 //!
-//! COST AND BEHAVIOUR.
-//!
-//! Zero cost with the gate off: [`gauge`] is a `OnceLock<Option<…>>` resolved
-//! once at first touch (the `stall_witness` pattern), so every feed site is a
-//! null check that never allocates, never locks and never reads the clock.
-//! Behaviour-neutral with the gate on: the gauge OWNS all of its state — it
+//! Cost and behaviour. Zero cost with the gate off: [`gauge`] is a
+//! `OnceLock<Option<…>>` resolved once at first touch, so every feed site is
+//! a null check that never allocates, locks or reads the clock.
+//! Behaviour-neutral with the gate on: the gauge owns all of its state — it
 //! reads no engine state on the feed paths and writes none anywhere — so no
 //! emission, admission, pacing, recovery or estimator decision can observe
 //! it. `ackdiag_is_observation_only` pins that structurally.
 //!
-//! LOCK ORDER. The feed sites are called while the caller holds the scheduler
-//! lock, so the gauge lock is INNER: `scheduler → gauge`. The report keeps
-//! that order by taking its scheduler snapshot and RELEASING it before it
-//! touches the gauge, so the gauge lock is never held while acquiring the
-//! scheduler lock and no cycle exists.
+//! Lock order. The feed sites are called while the caller holds the
+//! scheduler lock, so the gauge lock is inner: `scheduler → gauge`. The
+//! report takes its scheduler snapshot and releases it before it touches the
+//! gauge, so the gauge lock is never held while acquiring the scheduler lock.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -82,17 +58,14 @@ use std::time::Instant;
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 
-/// Print cadence, DEFAULT — the ~2 s the dispatch specified, ~8× the `[DIAG]`
-/// line's 250 ms. Longer windows are deliberate here: these readouts are
-/// DISTRIBUTIONS, and a p99 over a 250 ms window of a few hundred acks is
-/// noise.
+/// Default print cadence, ~2 s (~8× the `[DIAG]` line's 250 ms). These
+/// readouts are distributions, and a p99 over a 250 ms window of a few
+/// hundred acks is noise.
 ///
-/// **THE DEFAULT IS UNCHANGED AND THAT IS LOAD-BEARING.** Every committed
-/// `[ACKDIAG]` ledger in `docs/l1-raw/` was captured at 2 s, and the window is
-/// the unit of every series read off them (the c7/c8 correlation estimates are
-/// correlations OF 2 s WINDOWS). A driver that changes it is changing the
-/// measurand, so it must say so explicitly — hence an override rather than a
-/// new default. See [`window_us`].
+/// The window is the unit of every series read off the gauge (correlations
+/// are correlations of windows), so a driver that changes it changes the
+/// measurand and must say so — hence an override rather than a new default.
+/// See [`window_us`].
 pub const ACKDIAG_WINDOW_US: u64 = 2_000_000;
 
 /// `RWM_ACKDIAG_WINDOW_US` clamp, low end. 50 ms. Below this the window
@@ -104,7 +77,7 @@ pub const ACKDIAG_WINDOW_US_MIN: u64 = 50_000;
 
 /// `RWM_ACKDIAG_WINDOW_US` clamp, high end. 60 s — longer than any invocation
 /// this harness runs, so a value above it can only be a typo, and a typo that
-/// silently produced ZERO reports would look exactly like a dead gauge.
+/// silently produced zero reports would look exactly like a dead gauge.
 pub const ACKDIAG_WINDOW_US_MAX: u64 = 60_000_000;
 
 /// Resolve the window from a raw env string. Pure, so the clamp and the
@@ -112,9 +85,9 @@ pub const ACKDIAG_WINDOW_US_MAX: u64 = 60_000_000;
 /// (`window_us` caches, and a cached `OnceLock` cannot be re-resolved by a
 /// second test in the same binary).
 ///
-/// Returns the DEFAULT for: unset, empty, unparseable, or zero. A garbage
+/// Returns the default for: unset, empty, unparseable, or zero. A garbage
 /// value must not be able to silently disable the instrument — the caller
-/// echoes the RESOLVED number, so a driver that mistyped the override reads
+/// echoes the resolved number, so a driver that mistyped the override reads
 /// `2000000` in the `[GATES]` line and knows its arm did not take.
 pub fn resolve_window_us(raw: Option<&str>) -> u64 {
     match raw.map(str::trim) {
@@ -128,19 +101,13 @@ pub fn resolve_window_us(raw: Option<&str>) -> u64 {
 
 /// The ACTIVE print cadence, µs — [`ACKDIAG_WINDOW_US`] unless
 /// `RWM_ACKDIAG_WINDOW_US` overrides it.
+/// The override exists because a 2 s window against a ~10 s invocation
+/// yields only a handful of windows per rep, too few for pairwise
+/// correlations across paths.
 ///
-/// WHY THE OVERRIDE EXISTS. goal-gate "Eppen's Condition at c8" NEEDS-MORE 1:
-/// the 2 s window against a 9–11 s invocation yields FOUR window pairs per
-/// rep, which supports an ordering test between two cells and nothing finer.
-/// The c9 pre-registration (C9-1 … C9-4) needs SIX pairwise correlations at a
-/// quad, and four windows per rep cannot carry them — the 250 ms window is
-/// recorded there as a BLOCKING DEPENDENCY, not a nice-to-have. This is that
-/// dependency, and it is one env read.
-///
-/// Resolved ONCE (the gauge's own `OnceLock` discipline) so the cadence cannot
-/// change mid-run and split a ledger's windows into two populations.
-/// Observation-only, exactly like the rest of this module: the window governs
-/// when a line is PRINTED and nothing else.
+/// Resolved once so the cadence cannot change mid-run and split a ledger's
+/// windows into two populations. Observation-only: the window governs when a
+/// line is printed and nothing else.
 pub fn window_us() -> u64 {
     crate::gates::get().ackdiag_window_us
 }
@@ -148,7 +115,7 @@ pub fn window_us() -> u64 {
 /// Per-window sample cap, per path, per series. At the loopback ceiling
 /// (~11–12 k sym/s, one ack per data message) a 2 s window can produce ~20 k
 /// acks; the cap bounds the gauge's memory at ~3 × 128 KB per path and the
-/// overflow count is PRINTED (`ov=`) so a truncated window is never mistaken
+/// overflow count is printed (`ov=`) so a truncated window is never mistaken
 /// for a complete one.
 const SAMPLE_CAP: usize = 32_768;
 
@@ -186,7 +153,7 @@ struct PathAck {
     rd_rej_win: u64,
     rd_acc_total: u64,
     rd_rej_total: u64,
-    /// Σ of the `count` argument over ALL `record_delivery` calls this window
+    /// Σ of the `count` argument over all `record_delivery` calls this window
     /// — the delivered quantity the sampler itself saw. Used as the over-read
     /// DENOMINATOR, so the normalizer and the numerator count the same thing
     /// whichever ack arm drove the sampler.
@@ -222,7 +189,7 @@ fn push_capped<T>(v: &mut Vec<T>, x: T, overflow: &mut u64) {
 // confusable with a measured zero).
 use crate::monitor::quantile::nearest_rank;
 
-/// What one path's report line needs from the ENGINE, snapshotted under the
+/// What one path's report line needs from the engine, snapshotted under the
 /// scheduler lock and passed in after it is released (see the lock-order note
 /// in the module header).
 #[derive(Debug, Clone, Copy)]
@@ -236,12 +203,12 @@ pub struct PathSnapshot {
     /// `PathStats::symbols_sent` — every wire handoff on this path (source,
     /// repair and retransmit alike). The reconciliation's `sent`.
     pub sent_total: u64,
-    /// The cumulative WindowAck frontier — DELIVERED SOURCE symbols, the same
+    /// The cumulative WindowAck frontier — delivered source symbols, the same
     /// `window_ack_seq` the `[DIAG]` line computes its goodput from. The
-    /// reconciliation's `srcack`, and the DISCRIMINATOR of readout 4: it
-    /// counts source symbols ONLY, so `crecv ≈ srcack` would mean the
+    /// reconciliation's `srcack`, and the discriminator of readout 4: it
+    /// counts source symbols only, so `crecv ≈ srcack` would mean the
     /// receiver's counters exclude repair/retransmit symbols and
-    /// `crecv > srcack` means they do not. CONNECTION-wide, not per-path (the
+    /// `crecv > srcack` means they do not. Connection-wide, not per-path (the
     /// frontier is one sequence space), so at N ≥ 2 it is comparable against
     /// Σ`crecv` rather than against one path's.
     pub src_ack: u64,
@@ -271,17 +238,17 @@ pub struct AckCadenceGauge {
     epoch: Instant,
     /// Last report stamp, µs on `epoch` (0 = never).
     last_report_us: AtomicU64,
-    /// The delivered-SOURCE frontier as of the last report — readout 4's
+    /// The delivered-source frontier as of the last report — readout 4's
     /// discriminator, kept so a test can assert on it without scraping the
     /// gauge's own stderr. 0 = no report has fired yet.
     last_src_ack: AtomicU64,
-    /// Σ`d_received` over all paths, sampled at the SAME instant as
+    /// Σ`d_received` over all paths, sampled at the same instant as
     /// [`Self::last_src_ack`]. The pair must be read together: the frontier
     /// keeps advancing after the last report, so an end-of-run `crecv` paired
     /// with a mid-run `srcack` inflates the ratio.
     last_crecv: AtomicU64,
-    /// The highest delivered-SOURCE frontier any engine in this process has
-    /// presented — the SINGLE-ENGINE SCOPE latch (see [`maybe_report`]).
+    /// The highest delivered-source frontier any engine in this process has
+    /// presented — the single-engine scope latch (see [`maybe_report`]).
     frontier_hi: AtomicU64,
     paths: parking_lot::Mutex<HashMap<u32, PathAck>>,
 }
@@ -311,7 +278,7 @@ impl AckCadenceGauge {
     }
 
     /// **Readouts 1 + 2 + 4's feed.** One inbound `WindowAck` on `path_id`,
-    /// with the counter diff the sender derived from it. Call for EVERY
+    /// with the counter diff the sender derived from it. Call for every
     /// WindowAck arrival, including the ones whose diff is `(0, 0)` — that
     /// class is readout 2's zero-delta fraction and dropping it would make
     /// the gauge report a cadence the sender does not have.
@@ -377,7 +344,7 @@ impl AckCadenceGauge {
         true
     }
 
-    /// Render one path's line and RESET its window series. `None` when the
+    /// Render one path's line and reset its window series. `None` when the
     /// path produced no ack and no rate sample this window — a path that has
     /// nothing to say prints nothing, so a zero on the line always means a
     /// measured zero.
@@ -386,7 +353,7 @@ impl AckCadenceGauge {
     ///   * `acks=<n>/z=<n>(<pct>%)` — WindowAcks this window / of which
     ///     zero-delta (sentinel or stale), and that fraction.
     ///   * `gap_us[p50 p90 p99 n]` — inter-arrival Δt, MICROSECONDS.
-    ///   * `drecv[p50 p90 max n]` — `d_received` per NON-ZERO ack, SYMBOLS.
+    ///   * `drecv[p50 p90 max n]` — `d_received` per non-zero ack, SYMBOLS.
     ///   * `rd[acc rej cnt]` — `record_delivery` calls accepted / rejected
     ///     (sub-1 ms) and Σ`count` offered, SYMBOLS for the last.
     ///   * `rate_lr` — Σ`count`/window, SYM/S: the long-run delivered rate the
@@ -418,7 +385,7 @@ impl AckCadenceGauge {
         let mut rates = std::mem::take(&mut p.rates);
         rates.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        // The over-read denominator: the delivered rate the SAMPLER saw, over
+        // The over-read denominator: the delivered rate the sampler saw, over
         // this window. Zero (no delivery, or the window has no duration) makes
         // every x undefined, and the line says so rather than dividing.
         let rate_lr = if win_s > 0.0 {
@@ -493,7 +460,7 @@ impl AckCadenceGauge {
             cr_over_sa,
             p.overflow,
         );
-        // Reset the WINDOW series only. The cumulative totals and the
+        // Reset the window series only. The cumulative totals and the
         // arrival cursor survive, so the next window's first gap is measured
         // against this window's last ack rather than being lost.
         p.acks_win = 0;
@@ -507,7 +474,7 @@ impl AckCadenceGauge {
         Some(line)
     }
 
-    /// One path's RUN-CUMULATIVE totals — the same numbers the `recon[…]`
+    /// One path's run-cumulative totals — the same numbers the `recon[…]`
     /// and `rd[…]` fields print, in machine-readable form so a loopback can
     /// ASSERT on the gauge instead of scraping its own stderr.
     pub fn totals(&self, path_id: u32) -> Option<AckTotals> {
@@ -523,8 +490,8 @@ impl AckCadenceGauge {
         })
     }
 
-    /// Readout 4's CONTEMPORANEOUS pair as of the last `[ACKDIAG]` report:
-    /// `(Σ d_received over all paths, delivered-SOURCE frontier)`. `(0, 0)`
+    /// Readout 4's contemporaneous pair as of the last `[ACKDIAG]` report:
+    /// `(Σ d_received over all paths, delivered-source frontier)`. `(0, 0)`
     /// when no report has fired. Sampled together on purpose — the frontier
     /// advances after a report, so pairing an end-of-run `crecv` with a
     /// mid-run `srcack` inflates the ratio and would let the discriminator
@@ -550,11 +517,9 @@ impl AckCadenceGauge {
 /// no state, no lock and no clock read at any feed site — unless
 /// `RWM_ACKDIAG=1`.
 ///
-/// `RWM_ACKDIAG` (default OFF, DIAG-surface, ADR-0052 class): the ack-cadence
-/// gauge of matrix row 21. Independent of `RWM_DIAG` on purpose — this
-/// instrument is meant to be runnable on an arm that is NOT paying for the
-/// 250 ms `[DIAG]` report, and its own `[ACKDIAG]` line is separately
-/// scrapeable.
+/// `RWM_ACKDIAG` (default OFF, instrument): independent of `RWM_DIAG` on
+/// purpose, so it can run on an arm that is not paying for the 250 ms
+/// `[DIAG]` report, and its `[ACKDIAG]` line is separately scrapeable.
 pub fn gauge() -> Option<&'static AckCadenceGauge> {
     static G: std::sync::OnceLock<Option<AckCadenceGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
@@ -571,22 +536,21 @@ pub fn gauge() -> Option<&'static AckCadenceGauge> {
 /// sender-loop iteration under the caller's `if pol.ackdiag_on` guard, so the
 /// shipped path pays nothing.
 ///
-/// Takes the scheduler lock for the SNAPSHOT ONLY and releases it before
+/// Takes the scheduler lock for the snapshot only and releases it before
 /// touching the gauge — the lock order the feed sites establish (see the
 /// module header).
 ///
-/// SINGLE-ENGINE SCOPE. The gauge is process-global (its feed sites are
+/// Single-engine scope. The gauge is process-global (its feed sites are
 /// static functions on the ack path and in `CopaState`), but `stats` and
-/// `window_ack_seq` are per-ENGINE handles. The shipped binary and every L1
-/// driver run one engine per process, where that distinction does not exist.
-/// The in-process loopback tests run TWO — a bulk sender and its peer, whose
-/// own reverse stream is a trickle — and pairing the merged per-path series
-/// with the TRICKLE engine's `sent`/`srcack` would produce a nonsense
-/// reconciliation. So the report binds to the engine with the LEADING source
-/// frontier: an engine whose frontier is behind the highest seen returns
-/// without consuming the window. In a single-engine process this is a no-op
-/// (`src_ack` is always the max), so it costs the shipped configuration one
-/// relaxed `fetch_max`.
+/// `window_ack_seq` are per-engine handles. The shipped binary and every L1
+/// driver run one engine per process. The in-process loopback tests run two
+/// — a bulk sender and its peer, whose reverse stream is a trickle — and
+/// pairing the merged per-path series with the trickle engine's
+/// `sent`/`srcack` would produce a nonsense reconciliation. So the report
+/// binds to the engine with the leading source frontier: an engine whose
+/// frontier is behind the highest seen returns without consuming the window.
+/// In a single-engine process this is a no-op, costing one relaxed
+/// `fetch_max`.
 pub(crate) fn maybe_report(
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,

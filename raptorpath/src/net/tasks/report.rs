@@ -1,16 +1,13 @@
 //! RTCP-style periodic PathReport + keepalive, and the local send-rate feed
-//! that keeps the estimator's throughput term non-sentinel (P10a).
+//! that keeps the estimator's throughput term non-sentinel.
 //!
-//! Behavior contract: the body is the former inline `async move` block from
-//! `run_impl` verbatim. The lock discipline is the load-bearing part and is
-//! preserved exactly: the whole per-tick scheduler work (send-rate feed,
+//! Lock discipline: the whole per-tick scheduler work (send-rate feed,
 //! dead-path check, MTU query, in_flight expiry/decay, report build) happens
-//! inside ONE `report_scheduler.lock()` guard whose scope ends before the
+//! inside one `report_scheduler.lock()` guard whose scope ends before the
 //! `for (pid, report)` await loop — the report sends await on the reliable
-//! stream and must not hold the scheduler lock. The two 500 ms `timeout`
-//! wrappers around `send_control` (PathReport then Ping) and their three-way
-//! match arms are unchanged; this task also runs the dead-path checker, so it
-//! must never wedge. `sent_prev` / `sent_prev_t` remain task-local state that
+//! stream and must not hold the scheduler lock. Control sends are wrapped in
+//! 500 ms timeouts because this task also runs the dead-path checker and
+//! must never wedge. `sent_prev` / `sent_prev_t` are task-local state that
 //! survives across ticks.
 
 use std::sync::Arc;
@@ -33,8 +30,8 @@ pub(crate) async fn run_report(
     mut report_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) {
     let mut interval = tokio::time::interval(REPORT_INTERVAL);
-    // P10a: local send-rate measurement state (per path): previous
-    // symbols_sent counter and the last sample instant.
+    // Local send-rate measurement state (per path): previous symbols_sent
+    // counter and the last sample instant.
     let mut sent_prev: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
     let mut sent_prev_t = tokio::time::Instant::now();
     loop {
@@ -47,17 +44,14 @@ pub(crate) async fn run_report(
         let reports: Vec<_> = {
         let mut sched = report_scheduler.lock();
 
-        // P10a (paper 14.28): feed the estimator a LOCAL throughput
-        // measurement — the achieved send rate over the report
-        // interval. Production previously had NO local feed: the only
-        // record_throughput call took the peer's PathReport value,
-        // which is the peer's estimator.throughput() — circular, so
-        // both sides sat at 0.0 forever and every throughput-gated
-        // model term (t_sym: the 14.28 inner-feedback floor, the
-        // 14.21 saturation cap, the 8.4 burst B/T term) was silently
-        // sentinel-disabled on real links. The send rate is the right
-        // t_sym semantics anyway: T_arq counts wire slots of the send
-        // process the repairs are interleaved into.
+        // Feed the estimator a local throughput measurement — the achieved
+        // send rate over the report interval. The peer's PathReport value is
+        // the peer's own estimator.throughput(), which is circular (both
+        // sides would sit at 0.0), and every throughput-gated rate term
+        // (t_sym: the inner-feedback floor, the saturation cap and the burst
+        // B/T term, paper §4.4) would be sentinel-disabled. The send rate is
+        // the right t_sym semantics anyway: T_arq counts wire slots of the
+        // send process the repairs are interleaved into.
         {
             let now_t = tokio::time::Instant::now();
             let dt = now_t.duration_since(sent_prev_t).as_secs_f64();
@@ -72,10 +66,10 @@ pub(crate) async fn run_report(
                     // Only feed while actually sending: an idle tunnel
                     // must not decay the operating-rate estimate to 0
                     // (t_sym would blow up and re-disable the floor).
-                    // feat/anchor-hygiene (`RWM_CLOCK_GAP`): a report
-                    // tick inside a stall quarantine measures the
-                    // release flood — skip the sample (the next tick's
-                    // Δ/dt spans the disturbance and averages it out).
+                    // `RWM_CLOCK_GAP`: a report tick inside a stall
+                    // quarantine measures the release flood — skip the
+                    // sample (the next tick's Δ/dt spans the disturbance
+                    // and averages it out).
                     let gap_q = crate::control::anchor::stall_witness()
                         .is_some_and(|w| w.quarantined_now());
                     if delta > 0 && !gap_q {
@@ -143,14 +137,13 @@ pub(crate) async fn run_report(
 
         for (pid, report) in reports {
             // Liveness must not share fate with the data flood: under
-            // load the datagram queue is saturated by symbol batches
-            // and report datagrams get dropped, so the peer declares
-            // the path dead after DEAD_PATH_TIMEOUT and QUIC idles out
-            // (L1 finding: every bulk transfer killed the tunnel in
-            // ~6 s). The reliable control stream has its own flow
-            // control, so reports and pings survive saturation.
+            // load the datagram queue is saturated by symbol batches and
+            // report datagrams get dropped, so the peer would declare the
+            // path dead after DEAD_PATH_TIMEOUT and QUIC would idle out.
+            // The reliable control stream has its own flow control, so
+            // reports and pings survive saturation.
             // Hard deadline on control sends: this task also runs the
-            // dead-path checker, so it must NEVER wedge (open_uni can
+            // dead-path checker, so it must never wedge (open_uni can
             // block indefinitely once stream credit is exhausted).
             match tokio::time::timeout(
                 Duration::from_millis(500),

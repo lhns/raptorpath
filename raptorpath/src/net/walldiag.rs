@@ -1,32 +1,18 @@
-//! The DEAD-WALL ONSET/DURATION instrument (`RWM_WALLDIAG`), 2026-08-12.
+//! The dead-wall onset/duration instrument (`RWM_WALLDIAG`).
 //!
-//! ## Why this exists: a statistic that inverted between pools minutes apart
+//! It measures the sender's terminal dead wall by its onset and duration,
+//! not by a tick-share. A tick-share (the fraction of sender-loop wakeups on
+//! the TUN or paused arm) is unstable: the loop's wakeup rate is an output of
+//! the mechanism under test, so two runs with the same 400 ms terminal wall
+//! read very different shares if one woke 50× more often before the wall
+//! began. And a median over the whole run cannot distinguish one long
+//! terminal wall from a hundred scattered micro-gaps totalling the same time.
 //!
-//! The mode-hunt battery's dead-wall statistic was a PER-REP FLAG built from
-//! two tick-share medians — a rep was "walled" when `wait_tun` = 0 % AND
-//! `wait_paused` = 0 % (`tools/l1/deadwall_battery.sh`, and the bench's
-//! `V_*_BOUND_*` transcription in `tests/store_cap_sf_bench.rs`). It proved
-//! UNSTABLE: arm orderings INVERTED between pools collected minutes apart.
-//! The recorded requirement at the close of that work (#93) names the fix
-//! exactly, and it is a change of MEASURAND, not of estimator:
+//! Onset and duration have neither defect: they are wall-clock quantities of
+//! one named event (the contiguous terminal window), defined per run rather
+//! than per tick, and a run with no wall reports duration ≈ 0.
 //!
-//! > measure the wall's ONSET and DURATION, not its tick-share.
-//!
-//! A tick-share is a fraction of the sender loop's WAKEUPS, and the sender
-//! loop's wakeup rate is not a constant of the cell — it is an output of the
-//! very mechanism under test. Two runs with the SAME 400 ms terminal wall
-//! read wildly different `wait_tun` shares if one of them woke 50× more often
-//! before the wall began. Worse, the statistic is a CONJUNCTION of two
-//! medians over the whole run, so it cannot distinguish "one long terminal
-//! wall" from "a hundred scattered micro-gaps totalling the same wall time" —
-//! and only the first is the dead wall the c8 story is about.
-//!
-//! Onset and duration have neither defect. They are wall-clock quantities of
-//! ONE named event (the CONTIGUOUS TERMINAL window), they are defined per
-//! run rather than per tick, and a run with no wall reports duration ≈ 0
-//! rather than a share that depends on how busy the run was.
-//!
-//! ## The measurand, stated before the code (CLAUDE.md FORMULA-FIRST)
+//! ## The measurand
 //!
 //! Let `T_start` be the first sender-loop iteration and `T_end` the sender's
 //! teardown. Call an instant PRODUCTIVE when the sender is doing any of the
@@ -46,50 +32,44 @@
 //!   retx        = retransmits fired in [T_prod, T_end]
 //! ```
 //!
-//! `onset` is a FRACTION OF THE TRANSFER WALL on purpose: it is comparable
-//! across cells whose absolute durations differ by an order of magnitude,
-//! which the tick-share statistic never was. `duration_ms` is absolute
-//! because that is the quantity the c8 decision is about — a wall is bad in
-//! milliseconds, not in percent.
+//! `onset` is a fraction of the transfer wall so it is comparable across
+//! cells whose absolute durations differ by an order of magnitude.
+//! `duration_ms` is absolute because a wall is bad in milliseconds, not in
+//! percent.
 //!
-//! **The third disjunct is NEW source only.** A retransmit is not new data;
-//! that is the whole point of counting retransmits INSIDE the window. A
-//! sender that spends its last 400 ms serving holes and nothing else is
-//! WALLED by this definition, and the `retx` field is what tells you the
-//! wall is a recovery tail rather than a hang.
+//! The third disjunct is new source only. A retransmit is not new data, which
+//! is why retransmits are counted inside the window: a sender that spends its
+//! last 400 ms serving holes and nothing else is walled by this definition,
+//! and `retx` tells a recovery tail from a hang.
 //!
-//! **Contiguity is free.** `T_prod` is a running maximum, so the reported
-//! window is by construction the maximal contiguous suffix containing no
-//! productive instant. No histogram, no threshold, no scan.
+//! Contiguity is free: `T_prod` is a running maximum, so the reported window
+//! is by construction the maximal contiguous suffix containing no productive
+//! instant. No histogram, no threshold, no scan.
 //!
-//! ## Resolution, stated as a bound rather than promised
+//! ## Resolution
 //!
 //! The instrument samples once per sender-loop iteration, so `T_prod` is
 //! quantized to the loop's wakeup granularity. The two poll arms that can
 //! idle the loop (`paused`, `pace`) both sleep 1 ms, so a reported duration
-//! over-states the true wall by at most one loop period — and any wall long
-//! enough to matter to the c8 decision is two orders of magnitude above it.
-//! The `it_ms` field of the report carries the observed mean iteration
-//! period so that bound is READ OFF EVERY RUN rather than assumed.
+//! over-states the true wall by at most one loop period. The `it_ms` field
+//! carries the observed mean iteration period so that bound is read off every
+//! run.
 //!
 //! ## Observation only
 //!
-//! Structurally, not by promise: this module owns all of its state, and the
-//! pin `walldiag_is_observation_only` scrapes this source for any write to an
-//! engine handle. Same discipline (and same forbidden list) as
-//! `net::ackdiag::tests::ackdiag_is_observation_only`, for the same reason —
-//! the failure mode is someone LATER adding a convenient write here, and that
-//! has no runtime symptom to assert on.
+//! This module owns all of its state, and `walldiag_is_observation_only`
+//! scrapes this source for any write to an engine handle (the same forbidden
+//! list as `net::ackdiag::tests::ackdiag_is_observation_only`).
 //!
 //! Zero cost with the gate off: [`gauge`] is a `OnceLock<Option<…>>` that
 //! resolves to `None`, so the single feed site is a null check.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The sender-loop wait arm that carries PRODUCTIVE SOURCE INTAKE
+/// The sender-loop wait arm that carries productive source intake
 /// (`net/mod.rs`: `wait_arm = 0`, the `tun.read_packet()` arm).
 pub const ARM_TUN: usize = 0;
-/// The sender-loop wait arm that carries STORE-CAP BACKPRESSURE
+/// The sender-loop wait arm that carries store-cap backpressure
 /// (`net/mod.rs`: `wait_arm = 1`, the 1 ms `tx_paused` poll).
 pub const ARM_PAUSED: usize = 1;
 
@@ -100,10 +80,10 @@ pub const ARM_PAUSED: usize = 1;
 pub struct WallReading {
     /// Whole-transfer wall time, ms (`T_end − T_start`).
     pub total_ms: f64,
-    /// The terminal window's ONSET as a fraction of the transfer wall.
+    /// The terminal window's onset as a fraction of the transfer wall.
     /// 1.0 = the sender was productive right up to teardown (no wall).
     pub onset: f64,
-    /// The terminal window's DURATION, ms.
+    /// The terminal window's duration, ms.
     pub duration_ms: f64,
     /// Retransmits fired inside the terminal window.
     pub retx: u64,
@@ -119,7 +99,7 @@ pub struct WallReading {
 pub struct DeadWallGauge {
     /// First observed iteration (µs). 0 = the gauge has never been fed.
     start_us: AtomicU64,
-    /// Last PRODUCTIVE instant (µs) — the running maximum of the definition.
+    /// Last productive instant (µs) — the running maximum of the definition.
     last_prod_us: AtomicU64,
     /// The retransmit total as of `last_prod_us`.
     retx_at_prod: AtomicU64,
@@ -155,10 +135,10 @@ impl DeadWallGauge {
 
     /// Feed one sender-loop iteration. `wait_arm` is the arm that woke the
     /// loop (`usize::MAX` when no arm did), `last_source_send_us` is
-    /// `SenderState::last_source_send_us` (the wall clock of the last NEW
+    /// `SenderState::last_source_send_us` (the wall clock of the last new
     /// source symbol), `retx_total` the engine's monotone retransmit counter.
     ///
-    /// The FIRST call establishes `T_start` and seeds the productive stamp:
+    /// The first call establishes `T_start` and seeds the productive stamp:
     /// a transfer is productive at its own start by definition, so a run that
     /// never sends anything reports a wall covering the whole run rather than
     /// a division by zero.
@@ -193,9 +173,8 @@ impl DeadWallGauge {
     }
 
     /// The run's reading. `end_us` is teardown's own clock read; `None`
-    /// before the gauge has been fed, or when the run is too short to have a
-    /// wall-clock span at all (`T_end == T_start`), which is the honest
-    /// answer rather than a 0/0.
+    /// before the gauge has been fed, or when the run has no wall-clock span
+    /// (`T_end == T_start`), rather than a 0/0.
     pub fn report(&self, end_us: u64) -> Option<WallReading> {
         let start = self.start_us.load(Ordering::Relaxed);
         if start == 0 {
@@ -225,11 +204,9 @@ impl DeadWallGauge {
 /// no state, no atomic and no clock read at the feed site — unless
 /// `RWM_WALLDIAG=1`.
 ///
-/// `RWM_WALLDIAG` (default OFF, DIAG-surface, ADR-0052 class): the dead-wall
-/// onset/duration instrument. Independent of `RWM_DIAG` on purpose, exactly
-/// as `RWM_ACKDIAG` is — the c8 arms whose statistic this stabilises are the
-/// arms that cannot afford the 250 ms `[DIAG]` report, and the `[WALL]` line
-/// is separately scrapeable.
+/// `RWM_WALLDIAG` (default OFF, instrument): independent of `RWM_DIAG`, as
+/// `RWM_ACKDIAG` is, so it can run on arms that cannot afford the 250 ms
+/// `[DIAG]` report; the `[WALL]` line is separately scrapeable.
 pub fn gauge() -> Option<&'static DeadWallGauge> {
     static G: std::sync::OnceLock<Option<DeadWallGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
@@ -242,8 +219,8 @@ pub fn gauge() -> Option<&'static DeadWallGauge> {
     .as_ref()
 }
 
-/// Render the run's ONE `[WALL]` line. Split from the emitter so the unit
-/// pins assert the STRING an L1 parser will scrape, not a side effect.
+/// Render the run's one `[WALL]` line. Split from the emitter so the unit
+/// pins assert the string an L1 parser will scrape, not a side effect.
 pub fn report_line(r: WallReading) -> String {
     format!(
         "[WALL] onset={:.4} dur_ms={:.1} retx={} total_ms={:.1} it_ms={:.3}",
@@ -251,7 +228,7 @@ pub fn report_line(r: WallReading) -> String {
     )
 }
 
-/// Emit the run's ONE `[WALL]` line, at sender teardown. Idempotent by the
+/// Emit the run's one `[WALL]` line, at sender teardown. Idempotent by the
 /// caller's construction (each teardown arm returns immediately after).
 ///
 /// `eprintln!` rather than `tracing::info!`, matching the `[ACKDIAG]` sibling:
@@ -283,7 +260,7 @@ mod tests {
         );
     }
 
-    /// The scrapeable line's SHAPE, pinned absolutely: an L1 parser is written
+    /// The scrapeable line's shape, pinned absolutely: an L1 parser is written
     /// against these five keys and their formats, and a silent rename here
     /// would leave the parser reading zeros.
     #[test]
@@ -301,11 +278,10 @@ mod tests {
         );
     }
 
-    /// **THE BEHAVIOUR-NEUTRALITY PIN**, structural rather than promised —
-    /// the same scrape, and the same forbidden list, as
+    /// The behaviour-neutrality pin, structural rather than promised — the
+    /// same scrape, and the same forbidden list, as
     /// `net::ackdiag::tests::ackdiag_is_observation_only`. The failure mode is
-    /// someone LATER adding a convenient write here, and it has no runtime
-    /// symptom to assert on.
+    /// a later convenient write here, which has no runtime symptom.
     #[test]
     fn walldiag_is_observation_only() {
         let src = std::fs::read_to_string(
@@ -333,7 +309,7 @@ mod tests {
                 "the dead-wall gauge must not touch engine state: found `{forbidden}`"
             );
         }
-        // Stronger than ackdiag's pin: this gauge takes NO engine handle at
+        // Stronger than ackdiag's pin: this gauge takes no engine handle at
         // all — its whole input is four scalars passed by value.
         assert!(
             !code.contains("Arc<"),
@@ -341,9 +317,9 @@ mod tests {
         );
     }
 
-    /// A CLEAN run — productive right up to teardown — reports duration ≈ 0
-    /// and onset ≈ 1. This is the reading the loopback must produce, pinned
-    /// here on injected instants so the loopback's job is ROUTING only.
+    /// A clean run — productive right up to teardown — reports duration ≈ 0
+    /// and onset ≈ 1. Pinned on injected instants so the loopback's job is
+    /// routing only.
     #[test]
     fn a_clean_run_reports_no_terminal_wall() {
         let g = DeadWallGauge::new();
@@ -360,7 +336,7 @@ mod tests {
         assert!((r.it_ms - 1.0).abs() < 0.05, "iteration period ≈ 1 ms: {}", r.it_ms);
     }
 
-    /// A TERMINAL WALL: productive for the first half, then 500 ms of arms
+    /// A terminal wall: productive for the first half, then 500 ms of arms
     /// that are neither intake nor cap-pause, with no new source and four
     /// retransmits fired inside the window.
     #[test]
@@ -372,7 +348,7 @@ mod tests {
             src = t;
             g.observe(t, ARM_TUN, src, 0);
         }
-        let frozen = 1_000_000 + 499_000; // last NEW source send
+        let frozen = 1_000_000 + 499_000; // last new source send
         for i in 500..1_000u64 {
             let t = 1_000_000 + i * 1_000;
             // arm 4 = a gap report arrived: not intake, not cap-pause.
@@ -395,10 +371,10 @@ mod tests {
         assert!((r.total_ms - 999.0).abs() < 1.5);
     }
 
-    /// CONTIGUITY: scattered micro-gaps are NOT a terminal wall, and this is
-    /// exactly the discrimination the tick-share statistic could not make.
-    /// The same total non-productive time as the test above, chopped into
-    /// 1-iteration gaps, must report duration ≈ 0.
+    /// Contiguity: scattered micro-gaps are not a terminal wall — the
+    /// discrimination a tick-share statistic cannot make. The same total
+    /// non-productive time as the test above, chopped into 1-iteration gaps,
+    /// must report duration ≈ 0.
     #[test]
     fn scattered_gaps_are_not_a_terminal_wall() {
         let g = DeadWallGauge::new();
@@ -419,9 +395,8 @@ mod tests {
         assert!(r.onset > 0.99, "onset ≈ 1: {}", r.onset);
     }
 
-    /// The CAP-PAUSED arm is productive by definition — a sender blocked on
-    /// its own store cap is not walled, it is CAPPED, and conflating the two
-    /// is what the c8 arms need kept apart.
+    /// The cap-paused arm is productive by definition — a sender blocked on
+    /// its own store cap is capped, not walled, and the two are kept apart.
     #[test]
     fn cap_paused_is_not_a_wall() {
         let g = DeadWallGauge::new();
@@ -432,8 +407,8 @@ mod tests {
         assert_eq!(r.duration_ms, 0.0, "cap-paused is not the dead wall");
     }
 
-    /// An UNFED gauge has no reading, and a zero-span run has none either —
-    /// the honest answer rather than a 0/0.
+    /// An unfed gauge has no reading, and a zero-span run has none either,
+    /// rather than a 0/0.
     #[test]
     fn an_unfed_or_zero_span_gauge_reports_nothing() {
         let g = DeadWallGauge::new();

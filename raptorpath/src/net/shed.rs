@@ -1,31 +1,31 @@
 //! δ-honest overload shedding, the completion feed, and the `[CHI]` /
-//! `[SHEDH]` gauges. Moved verbatim out of `net/mod.rs` (cleanup Stage 3).
+//! `[SHEDH]` gauges.
 
 use super::*;
 
-// ── δ-honest overload shedding (goal-gate "Unified Shedding", fix C;
-//    part of the unified machine's realtime semantics under `RWM_UNIFIED`,
-//    sub-gate `RWM_UNIFIED_SHED=0` = the serializing control arm) ─────────
+// ── δ-honest overload shedding (paper §5.6) ──────────────────────────────
 //
-// The (δ, ρ) semantics, operationally (paper §16.20.8 / §16.26): at small δ
-// overload must be SHED, not serialized. A symbol is sheddable iff BOTH
-// (1) its projected delivery exceeds the deadline D(δ) — a retransmit fired
-// at age > D arrives after the receiver's own δ-horizon give-up; a hole
-// held past D only serializes successors past THEIR deadlines — and
-// (2) its loss stays within the 1−ρ budget (`residual_loss_after_fec`,
-// the ε̂·(1−P_fec) allowance the (δ,ρ,r) design already concedes). Beyond
-// the budget the machine SERIALIZES (ρ wins over δ). The reliable-transfer
-// contract (RETAIN-UNTIL-ACKED, ρ=1) is excluded BY CONSTRUCTION: the law
-// is armed only on the EVICT path (`!reliable`).
+// Part of the unified machine's realtime semantics under `RWM_UNIFIED`;
+// `RWM_UNIFIED_SHED=0` is the serializing control arm.
+//
+// At small δ overload must be shed, not serialized. A symbol is sheddable
+// iff both (1) its projected delivery exceeds the deadline D(δ) — a
+// retransmit fired at age > D arrives after the receiver's own δ-horizon
+// give-up, and a hole held past D only serializes successors past their
+// deadlines — and (2) its loss stays within the 1−ρ budget
+// (`residual_loss_after_fec`, the ε̂·(1−P_fec) allowance the (δ, ρ, r) design
+// already concedes). Beyond the budget the machine serializes (ρ wins over
+// δ). The reliable-transfer contract (retain-until-acked, ρ = 1) is excluded
+// by construction: the law is armed only on the EVICT path (`!reliable`).
 
 /// Is the shed law armed at all? Realtime-EVICT under the unified machine
-/// only — NEVER the reliable (ρ = 1) contract, never the legacy machines.
+/// only — never the reliable (ρ = 1) contract.
 pub(crate) fn shed_armed(unified_on: bool, reliable: bool, gate: bool) -> bool {
     unified_on && !reliable && gate
 }
 
 /// The δ deadline D in µs: min(b(hint)·RTprop, 2·RTprop) — the span law's
-/// own D (§16.20.3), measured from the symbol's original send. b(Realtime)
+/// own D (paper §5.3), measured from the symbol's original send. b(Realtime)
 /// = ½, so on the realtime path D = RTprop/2: a retransmit older than that
 /// lands after the receiver's δ-horizon give-up (send + owd + D) — waste.
 pub fn shed_deadline_us(b_hint: f64, rtprop_us: u64) -> u64 {
@@ -48,14 +48,13 @@ pub fn shed_allowed(
         && ((shed_total + 1) as f64) <= budget_frac * (src_total as f64)
 }
 
-/// Receiver-side in-order hold for the window EVICT path. Legacy: 4×SRTT
-/// clamped [60, 300] ms (two ARQ repair rounds — the bulk-shaped hold).
-/// Under the shed law (unified realtime, budget open): the δ-derived
-/// H = b·SRTT with b(Realtime) = ½ — §16.20.3's "the reorder_timeout IS
-/// the δ dial" made honest (the EVICT in-order window path exists only for
-/// the Realtime hint, so b = ½ structurally). When the receiver's give-up
-/// budget (holes ≤ ε̂_recv × frontier — the loss-class bound) is spent, the
-/// hold reverts to legacy: serialize, don't shed below ρ.
+/// Receiver-side in-order hold for the window EVICT path. Default: 4×SRTT
+/// clamped [60, 300] ms (two ARQ repair rounds). Under the shed law (unified
+/// realtime, budget open): the δ-derived H = b·SRTT with b(Realtime) = ½ —
+/// the reorder timeout is the δ dial (the EVICT in-order window path exists
+/// only for the Realtime hint, so b = ½ structurally). When the receiver's
+/// give-up budget (holes ≤ ε̂_recv × frontier — the loss-class bound) is
+/// spent, the hold reverts to the clamped form: serialize, don't shed below ρ.
 pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> Duration {
     let h = if shed_on && budget_ok {
         SHEDH.evals.fetch_add(1, Ordering::Relaxed);
@@ -78,17 +77,14 @@ pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> 
     h
 }
 
-/// **THE COMPLETION FEED** — `RWM_COMPLETION_EXPOSURE`, ABSENT by default
-/// (paper §14.26 / §16.82).
+/// The completion feed — `RWM_COMPLETION_EXPOSURE`, absent by default
+/// (paper §4.6).
 ///
-/// The one input §14.26's completion-exposure glide always needed and never
-/// had: **how much of this transfer is left**. The production tunnel is an
-/// endless stream and genuinely has no `T_rem`, which is why χ was left at 0
-/// — but that "temporary" 0 made `set_completion_exposure` a function with
-/// zero engine callers, δ_eff = ε̂ at the Bulk end, and therefore `r* ≡ 0`
-/// identically on every battery this tree has ever scored. The r leg has
-/// never operated. A driver that DOES know the remaining bytes (the perf
-/// client, feeding a sized object) publishes them here.
+/// The input the completion-exposure glide needs: how much of this transfer
+/// is left. The production tunnel is an endless stream with no `T_rem`, so χ
+/// stays 0 there (and with it δ_eff = ε̂ at the Bulk end). A driver that does
+/// know the remaining bytes (the perf client, feeding a sized object)
+/// publishes them here.
 ///
 /// One `AtomicU64` and nothing else: the writer is the object feeder, the
 /// reader is the rate site, and a stale read is a slightly stale χ — never a
@@ -130,16 +126,15 @@ impl CompletionFeed {
     }
 }
 
-/// **`[CHI]` — the completion-exposure gauge** (paper §16.82).
+/// `[CHI]` — the completion-exposure gauge (paper §4.6).
 ///
-/// MEASUREMENT DISCIPLINE rule 1: prove the mechanism under test EXECUTES.
-/// An arm whose χ never left 0 is an arm that ran the shipped machine under a
-/// different label, and that has happened on this tree before. `max` and
-/// `frac_gt_half` are the two numbers that distinguish "the glide ramped" from
-/// "the gate was set and nothing happened", and both are readable off the
-/// run's own output. Reported on the 1 s cadence, cumulative, LAST LINE WINS.
+/// `docs/measurement-discipline.md` rule 1: prove the mechanism under test
+/// executes. An arm whose χ never left 0 ran the shipped machine under a
+/// different label. `max` and `frac_gt_half` distinguish "the glide ramped"
+/// from "the gate was set and nothing happened". Reported on the 1 s
+/// cadence, cumulative, last line wins.
 ///
-/// Two-sided: the line is printed on the CONTROL arm too (where it must read
+/// Two-sided: the line is printed on the control arm too (where it must read
 /// `max=0.0000 n=0`), so gate-off is as mechanically assertable as gate-on.
 pub(crate) struct ChiGauge {
     n: AtomicU64,
@@ -189,43 +184,37 @@ pub(crate) fn chi_report_line() -> String {
     )
 }
 
-/// **`[SHEDH]` — THE RECEIVER HOLD'S BIND GAUGE** (ADR-0070: *every clamp gets
-/// a bind-fraction gauge, reported*; paper §16.81 ρ leg).
+/// `[SHEDH]` — the receiver hold's bind gauge (every clamp gets a
+/// bind-fraction gauge, reported).
 ///
-/// `shed_recv_hold` is TWO laws behind one signature and BOTH of them are
-/// unmeasured. The legacy branch is `(4·SRTT).clamp(60 ms, 300 ms)`, and 60,
-/// 300 and the 4 have no provenance anywhere in this repository. **A clamp
-/// that always binds turns its law into a constant and hides the law's shape
-/// from every measurement taken through it** — and the pre-stated expectation
-/// here is exactly that: the 60 ms FLOOR binds at `c2` (SRTT ≈ 13 ms ⇒
-/// 4·SRTT ≈ 52 ms) and the 300 ms CAP binds at `c3` under the inflated
-/// stalled-block SRTT, so "the 4·SRTT law" would be a CONSTANT at both main
-/// cells. If the gauge confirms it, that is a DEFECT FINDING with a ledger
-/// verdict, not an explanatory footnote (CLAUDE.md).
+/// `shed_recv_hold` is two laws behind one signature. The clamped branch is
+/// `(4·SRTT).clamp(60 ms, 300 ms)`, and 60, 300 and the 4 have no
+/// provenance. A clamp that always binds turns its law into a constant: at a
+/// 13 ms SRTT the 60 ms floor binds (4·SRTT ≈ 52 ms), and under an inflated
+/// stalled SRTT the 300 ms cap binds.
 ///
-/// **OBSERVATION ONLY.** Nothing reads these counters; they are fed inside
-/// `shed_recv_hold` itself rather than at its call sites, so the receiver
-/// task is untouched and every branch is counted exactly once by construction
-/// (a call site added later cannot forget to feed the gauge).
+/// Observation only. Nothing reads these counters; they are fed inside
+/// `shed_recv_hold` itself rather than at its call sites, so every branch is
+/// counted exactly once by construction.
 ///
 /// `dial + legacy = evals` and `at_floor + at_cap + interior = legacy`, both
 /// asserted by `shedh_partitions_every_evaluation`.
 pub(crate) struct ShedHoldGauge {
     /// Every evaluation of the hold, on both branches.
     pub(crate) evals: AtomicU64,
-    /// The δ-DERIVED branch (`b·SRTT`, shed law armed and budget open).
+    /// The δ-derived branch (`b·SRTT`, shed law armed and budget open).
     pub(crate) dial: AtomicU64,
-    /// The LEGACY branch — the law with the three unprovenanced constants.
+    /// The clamped `4·SRTT` branch.
     pub(crate) legacy: AtomicU64,
     /// Legacy evaluations pinned at the 60 ms floor.
     pub(crate) at_floor: AtomicU64,
     /// Legacy evaluations pinned at the 300 ms cap.
     pub(crate) at_cap: AtomicU64,
-    /// Legacy evaluations where `4·SRTT` actually decided the hold — the only
-    /// regime in which there IS a "4·SRTT law" to speak of.
+    /// Legacy evaluations where `4·SRTT` decided the hold — the only regime
+    /// in which there is a "4·SRTT law" to speak of.
     pub(crate) interior: AtomicU64,
-    /// Σ of the holds returned, µs, so the gauge reports the MEAN hold beside
-    /// the bind fractions (a bind fraction with no scale is not a reading).
+    /// Σ of the holds returned, µs, so the gauge reports the mean hold beside
+    /// the bind fractions.
     hold_us_sum: AtomicU64,
 }
 
@@ -241,8 +230,8 @@ pub(crate) static SHEDH: ShedHoldGauge = ShedHoldGauge {
 
 /// The `[SHEDH]` line. Cumulative, last line wins — the `[RFA]` convention,
 /// because the harness SIGKILLs the server and a `Drop` never reaches its log.
-/// `mean_us` is `-` when `n = 0` (MEASUREMENT DISCIPLINE: a dash iff there is
-/// no datum, never a zero standing in for one).
+/// `mean_us` is `-` when `n = 0`: a dash iff there is no datum, never a zero
+/// standing in for one.
 pub(crate) fn shedh_report_line() -> String {
     let g = &SHEDH;
     let (evals, legacy) = (
@@ -276,9 +265,9 @@ pub(crate) fn shedh_report_line() -> String {
 }
 
 /// Receiver give-up budget: holes given up so far vs ε̂_recv × frontier.
-/// (The receiver owns no r/A*, so its bound is the loss CLASS, not the
-/// FEC residual; give-up is intrinsically holes-only, which keeps the
-/// realized fraction in the residual class anyway.)
+/// (The receiver owns no r/A*, so its bound is the loss class, not the FEC
+/// residual; give-up is holes-only, which keeps the realized fraction in the
+/// residual class anyway.)
 pub(crate) fn shed_recv_budget_ok(holes_given_up: u64, frontier_seqs: u64, eps_recv: f64) -> bool {
     (holes_given_up as f64) < eps_recv * (frontier_seqs as f64)
 }

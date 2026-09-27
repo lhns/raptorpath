@@ -1,10 +1,9 @@
-//! The plain-mode Copa delivery feed (feat/copa-sole-cc): send commitments,
-//! per-path delivery attribution. Moved verbatim out of `net/mod.rs`
-//! (cleanup Stage 3).
+//! The plain-mode Copa delivery feed: send commitments and per-path delivery
+//! attribution (ADR-0062).
 
 use super::*;
 
-/// feat/copa-sole-cc: symbols→bytes conversion for the pass-through substrate
+/// Symbols→bytes conversion for the pass-through substrate
 /// window (`RWM_QUIC_CC=passthrough`). Copa-lite's cwnd is in SYMBOLS; quinn's
 /// congestion window is in BYTES of packet payload. Plain window mode puts one
 /// ~1200-byte symbol per datagram plus wire framing (~30–50 B), so 1250 B per
@@ -13,15 +12,14 @@ use super::*;
 /// and is backed off; a slightly tight one only shaves the probe overshoot).
 pub(crate) const COPA_SOLE_BYTES_PER_SYMBOL: u64 = 1250;
 
-/// feat/copa-sole-cc: plain-mode Copa delivery-feed state (see the creation
-/// site in `run_impl` for the full design note). Sender-side only: seq→path
-/// recorded at send, newly-delivered seqs derived from each WindowAck's
-/// cumulative frontier + SACK ranges, attributed per path into the
-/// BBR-correct send-interval rate sampler + the Copa cwnd dynamics.
+/// Plain-mode Copa delivery-feed state. Sender-side only: seq→path recorded
+/// at send, newly-delivered seqs derived from each WindowAck's cumulative
+/// frontier + SACK ranges, attributed per path into the send-interval rate
+/// sampler + the Copa cwnd dynamics.
 pub(crate) struct CopaFeed {
-    /// seq → its send commitments: the LAST (re)send's path + timestamp,
-    /// plus the previous DISTINCT-path commitment when the seq was
-    /// retransmitted cross-path (the flight-witness input, residual (iii)).
+    /// seq → its send commitments: the last (re)send's path + timestamp,
+    /// plus the previous distinct-path commitment when the seq was
+    /// retransmitted cross-path (the flight-witness input).
     /// Written at source send and at targeted retransmit (a retransmit
     /// re-snapshots the rate sample, so the eventual ack yields a truthful
     /// send-interval). Removed on attribution; entries for seqs the
@@ -31,25 +29,22 @@ pub(crate) struct CopaFeed {
     /// set of above-frontier seqs already attributed via SACK (so a seq is
     /// attributed exactly once). Bounded by the sender's outstanding store.
     cursor: parking_lot::Mutex<CopaFeedCursor>,
-    /// feat/anchor-hygiene (`RWM_PLAIN_RS`): SAMPLING-ONLY mode — the #79
-    /// send-interval rate sampler generalized to plain window-reliable mode
-    /// under ANY substrate CC. The WindowAck frontier/SACK attribution and
-    /// the per-seq BBR rate samples run (so the per-path BtlBw/BDP anchor is
-    /// fed CLEAN send-interval Δt instead of the ack-interval over-read that
-    /// knee-clamps the percap/store caps — goal-gate "Per-Path Outstanding
-    /// Accounting" GUARD RESULTS residual (i)), but Copa does NOT own the
-    /// substrate window: no pass-through window writes, and the cwnd
-    /// dynamics keep their legacy per-batch-Ack call site/cadence.
+    /// Sampling-only mode (`RWM_PLAIN_RS`): the send-interval rate sampler in
+    /// plain window-reliable mode under any substrate CC. The WindowAck
+    /// frontier/SACK attribution and the per-seq rate samples run (so the
+    /// per-path BtlBw/BDP anchor is fed clean send-interval Δt instead of the
+    /// ack-interval over-read that knee-clamps the store caps), but Copa does
+    /// not own the substrate window: no pass-through window writes, and the
+    /// cwnd dynamics keep their per-batch-Ack call site and cadence.
     sampling_only: bool,
-    /// Residual (iii) fix live: apply the flight-time witness
-    /// ([`resolve_flight_path`]) at attribution. Follows `RWM_PLAIN_RS`
-    /// (sampling-only feed; `RWM_RS_ATTR=0` = the same-binary legacy
-    /// last-sent-path control). The full Copa-sole feed keeps legacy
-    /// attribution (its arms are study baselines).
+    /// Apply the flight-time witness ([`resolve_flight_path`]) at
+    /// attribution. Follows `RWM_PLAIN_RS` (sampling-only feed;
+    /// `RWM_RS_ATTR=0` is the last-sent-path control). The full Copa-sole
+    /// feed keeps last-sent-path attribution.
     pub(crate) attr_witness: bool,
     /// DIAG: attributed seqs whose commit history crossed paths.
     attr_cross: AtomicU64,
-    /// DIAG: of those, attributions the witness credited to the PREVIOUS
+    /// DIAG: of those, attributions the witness credited to the previous
     /// commitment (the spurious-retransmit class — the last flight was
     /// younger than its path's RTprop at ack time).
     attr_witness_prev: AtomicU64,
@@ -61,39 +56,35 @@ pub(crate) struct CopaFeedCursor {
     sacked: std::collections::BTreeSet<u64>,
 }
 
-/// One seq's send-commitment history for delivery attribution (residual
-/// (iii), branch `feat/store-borrowing`): the LAST (re)send plus the
-/// previous DISTINCT-path commitment, so the attribution site can apply
-/// the flight-time witness ([`resolve_flight_path`]) instead of blindly
-/// crediting the last-sent path.
+/// One seq's send-commitment history for delivery attribution: the last
+/// (re)send plus the previous distinct-path commitment, so the attribution
+/// site can apply the flight-time witness ([`resolve_flight_path`]) instead
+/// of crediting the last-sent path.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SendCommit {
     /// Path + send time (µs) of the most recent (re)send.
     pub(crate) last: (u32, u64),
     /// Path + send time of the previous distinct-path commitment, when the
-    /// seq was retransmitted CROSS-path (None = single-path history).
+    /// seq was retransmitted cross-path (None = single-path history).
     pub(crate) prev: Option<(u32, u64)>,
 }
 
-/// The flight-time witness (residual (iii) fix): which path's flight
-/// actually delivered an attributed seq.
+/// The flight-time witness: which path's flight actually delivered an
+/// attributed seq.
 ///
-/// The defect it closes: a seq lost (or presumed lost) on path A and
-/// retransmitted on path B is attributed to B when its ack arrives — but
-/// if the ack arrives SOONER after the retransmit than B's propagation
-/// floor, the retransmitted copy cannot have completed the round trip; the
-/// delivering flight was the ORIGINAL copy on A (a spurious retransmit —
-/// the gap was ack latency, not loss). Blindly crediting B advances B's
-/// per-path delivered counter for a symbol that flew on A, and at an
-/// asymmetric cell the fast→slow retransmit stream inflates the SLOW
-/// path's Δdelivered — the measured ×3–5 slow-path BtlBw over-read under
-/// multipath placement (goal-gate HONEST-CAP RESULTS sub-residual (iii)).
+/// A seq lost (or presumed lost) on path A and retransmitted on path B would
+/// be attributed to B when its ack arrives — but if the ack arrives sooner
+/// after the retransmit than B's propagation floor, the retransmitted copy
+/// cannot have completed the round trip; the delivering flight was the
+/// original copy on A (a spurious retransmit — the gap was ack latency, not
+/// loss). Crediting B advances B's delivered counter for a symbol that flew
+/// on A, and at an asymmetric cell the fast→slow retransmit stream inflates
+/// the slow path's Δdelivered and its BtlBw estimate.
 ///
-/// The witness is a pure floor-clock test, no new constants: credit the
-/// LAST commitment only if its flight is at least RTprop(last.path) old at
-/// ack time; otherwise credit the previous commitment (whose flight is
-/// older by construction). An unknown RTprop (warm-up) counts as
-/// qualified — legacy attribution, no behavior cliff.
+/// A pure floor-clock test, no new constants: credit the last commitment
+/// only if its flight is at least RTprop(last.path) old at ack time;
+/// otherwise credit the previous commitment (whose flight is older by
+/// construction). An unknown RTprop (warm-up) counts as qualified.
 pub(crate) fn resolve_flight_path(
     commit: &SendCommit,
     now_us: u64,
@@ -125,10 +116,9 @@ impl CopaFeed {
         }
     }
 
-    /// feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only construction.
-    /// The flight-time witness (residual (iii)) defaults ON here —
-    /// `RWM_RS_ATTR=0` restores legacy last-sent-path attribution as the
-    /// same-binary control arm.
+    /// Sampling-only construction (`RWM_PLAIN_RS`). `attr_witness` is the
+    /// flight-time witness gate; `RWM_RS_ATTR=0` restores last-sent-path
+    /// attribution as the control arm.
     pub(crate) fn new_sampling_only(attr_witness: bool) -> Self {
         Self {
             sampling_only: true,
@@ -137,14 +127,14 @@ impl CopaFeed {
         }
     }
 
-    /// True when this feed also OWNS the CC operating point (the Copa-sole
-    /// pass-through mode). Sampling-only mode leaves cwnd dynamics, store-cap
-    /// law, and percap pipe derivation on their legacy branches.
+    /// True when this feed also owns the CC operating point (the Copa-sole
+    /// pass-through mode). Sampling-only mode leaves the cwnd dynamics, the
+    /// store-cap law and the percap pipe derivation on their own paths.
     pub(crate) fn owns_cc(&self) -> bool {
         !self.sampling_only
     }
 
-    /// DIAG (residual (iii)): (cross-path-history attributions, of which
+    /// DIAG: (cross-path-history attributions, of which
     /// witness-credited-to-previous-flight). Read only at the DIAG print.
     pub(crate) fn attr_diag(&self) -> (u64, u64) {
         (
@@ -155,8 +145,8 @@ impl CopaFeed {
 
     /// Record a (re)send of source seq `seq` on `path`. A cross-path
     /// retransmit keeps the previous commitment as the flight-witness
-    /// fallback (residual (iii)); a same-path resend just refreshes the
-    /// send time (its rate sample is re-snapshotted by `on_src_sent`).
+    /// fallback; a same-path resend just refreshes the send time (its rate
+    /// sample is re-snapshotted by `on_src_sent`).
     pub(crate) fn on_sent(&self, seq: u64, path: u32) {
         let now = now_us();
         match self.seq_path.entry(seq) {
@@ -181,7 +171,7 @@ impl CopaFeed {
     }
 
     /// Diff one WindowAck against the cursor: returns the seqs this ack
-    /// NEWLY proves delivered (frontier advance up to `received_up_to`,
+    /// newly proves delivered (frontier advance up to `received_up_to`,
     /// inclusive, plus never-before-seen SACKed seqs above it), each exactly
     /// once across the whole ack stream. Out-of-order/duplicate acks yield
     /// an empty diff — never a double attribution.
@@ -216,12 +206,12 @@ impl CopaFeed {
     }
 }
 
-/// feat/copa-sole-cc: attribute one WindowAck's newly-delivered seqs to their
-/// paths and run the per-path Copa machinery on them: send-interval rate
-/// sample per seq (`on_src_delivered_seq` — feeds the windowed-max BtlBw with
-/// clean Δt), in-flight release, the per-SRTT cwnd update/backoff
+/// Attribute one WindowAck's newly-delivered seqs to their paths and run the
+/// per-path Copa machinery on them: send-interval rate sample per seq
+/// (`on_src_delivered_seq` — feeds the windowed-max BtlBw with clean Δt),
+/// in-flight release, the per-SRTT cwnd update/backoff
 /// (`on_delivery_signal`), and finally the pass-through substrate window
-/// write (no-op unless RWM_QUIC_CC=passthrough). Call AFTER recording the
+/// write (no-op unless RWM_QUIC_CC=passthrough). Call after recording the
 /// ack's RTT sample so the update sees the freshest queue signal.
 pub(crate) fn copa_feed_attribute(
     feed: &CopaFeed,
@@ -239,27 +229,25 @@ pub(crate) fn copa_feed_attribute(
     let now = now_us();
     let mut sched = scheduler.lock();
     let per_path = copa_attribute_newly(feed, ack_path, now, &newly, &mut sched);
-    // feat/anchor-hygiene (`RWM_PLAIN_RS`): sampling-only mode stops here —
-    // the rate samples above are the whole job. The cwnd dynamics keep their
-    // legacy per-batch-Ack call site, and the substrate window is whatever
-    // RWM_QUIC_CC says (this feed does not own the operating point).
+    // Sampling-only mode (`RWM_PLAIN_RS`) stops here — the rate samples above
+    // are the whole job. The cwnd dynamics keep their per-batch-Ack call
+    // site, and the substrate window is whatever RWM_QUIC_CC says.
     if !feed.owns_cc() {
         return;
     }
     for (p, _n) in per_path {
         if let Some(ps) = sched.path_mut(p) {
-            // feat/copa-compete: feed the wire-level loss evidence (the
-            // pass-through shim's recorded congestion-event counter) into the
-            // competitive AIMD before the update consumes it. No-op unless
-            // RWM_COPA_COMPETE is active.
+            // Feed the wire-level loss evidence (the pass-through shim's
+            // congestion-event counter) into the competitive AIMD before the
+            // update consumes it. No-op unless RWM_COPA_COMPETE is active.
             if crate::scheduler::copa_compete_active() {
                 if let Some((ev, _, _)) = transport.cc_passthrough_stats(p) {
                     ps.on_wire_congestion_events(ev);
                 }
             }
-            // NOT release_in_flight here: the per-batch Ack arm keeps doing
-            // the wire-level in-flight release (it covers repairs too);
-            // releasing again per attributed source seq would double-count.
+            // Not release_in_flight here: the per-batch Ack arm does the
+            // wire-level in-flight release (it covers repairs too); releasing
+            // again per attributed source seq would double-count.
             ps.on_delivery_signal();
             transport.set_cc_window_bytes(p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
             if let Some(st) = stats.path(p) {
@@ -271,18 +259,15 @@ pub(crate) fn copa_feed_attribute(
 }
 
 /// The per-seq attribution loop of [`copa_feed_attribute`], under the
-/// scheduler lock the CALLER holds: resolve each newly-delivered seq's
+/// scheduler lock the caller holds: resolve each newly-delivered seq's
 /// carrying path (send record → flight-time witness → ack-path fallback) and
 /// run that path's send-interval rate sampler (`on_src_delivered_seq`).
 /// Returns the per-path attribution counts for the (Copa-sole only) cwnd
 /// pass that follows.
 ///
-/// Extracted 2026-08-11 (GOAL "HONEST INPUTS" phase 3, probe 1) so the c1
-/// lock-blocking bench can drive the EXACT production attribution body under
-/// the production lock from a two-thread component bench (MEASUREMENT
-/// DISCIPLINE rule 1: prove the mechanism under test executes). Sole
-/// non-test caller is `copa_feed_attribute`; behavior identical to the
-/// pre-extraction inline loop.
+/// Separate so a component bench can drive the production attribution body
+/// under the production lock (`docs/measurement-discipline.md` rule 1).
+/// Sole non-test caller is `copa_feed_attribute`.
 pub(crate) fn copa_attribute_newly(
     feed: &CopaFeed,
     ack_path: u32,
@@ -292,16 +277,11 @@ pub(crate) fn copa_attribute_newly(
 ) -> std::collections::HashMap<u32, u32> {
     let mut per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
     for &seq in newly {
-        // Attribute to the path whose FLIGHT delivered the seq. Default:
-        // the path it was last sent on; a seq without a send record
-        // (pre-feed traffic, evicted record) falls back to the path the
-        // ack arrived on — plain in-order acks ride the arrival path.
-        // Residual (iii): when the commit history crossed paths, the
-        // flight-time witness decides — an ack arriving sooner after a
-        // cross-path retransmit than that path's RTprop proves the
-        // delivering copy was the ORIGINAL flight, so the retransmit path's
-        // delivered counter must NOT advance (the ×3–5 slow-path BtlBw
-        // over-read under multipath placement; `resolve_flight_path`).
+        // Attribute to the path whose flight delivered the seq. Default: the
+        // path it was last sent on; a seq without a send record (pre-feed
+        // traffic, evicted record) falls back to the path the ack arrived on.
+        // When the commit history crossed paths, the flight-time witness
+        // decides (`resolve_flight_path`).
         let p = match feed.seq_path.remove(&seq) {
             Some((_, commit)) => {
                 if commit.prev.is_some() {

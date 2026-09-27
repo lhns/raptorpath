@@ -1,23 +1,8 @@
-//! The SENDER CPU DECOMPOSITION instrument (`RWM_CPUPROF`), 2026-08-19.
+//! The sender CPU decomposition instrument (`RWM_CPUPROF`).
 //!
-//! ## Why this exists: a ceiling that is measured and unexplained
-//!
-//! The c9 scored battery closed with a sender ceiling it established three
-//! independent ways and then could not take apart:
-//!
-//! > CPU-per-payload-byte is INVARIANT across two very different cells: c9
-//! > `CPUCLI` 27.38 s / 400 MB = **68.5 ms/MB**; c9h 10.38 s / 150 MB =
-//! > **69.2 ms/MB** … 1.51 cores ÷ 68.5 ms/MB = 22.0 MB/s = **176.3 Mbit/s**,
-//! > against the **176.4 Mbit/s measured**.
-//!
-//! The prediction lands within 1 %, so the ceiling is real and the sender's
-//! CPU is the binding constraint at a 400 Mbit cell. **What no instrument in
-//! this tree can say is where the 68.5 ms/MB GOES.** Every negative result at
-//! c9 is confounded by it, and the named successor is "re-run c9 on a sender
-//! that can fill four legs" — which nobody can build without knowing which
-//! term to attack first.
-//!
-//! ## The measurand, stated before the code (CLAUDE.md FORMULA-FIRST)
+//! At a sender-CPU-bound cell the ceiling follows from CPU per payload byte
+//! (cores ÷ ms/MB), but nothing else in the tree says where that CPU goes.
+//! This gauge attributes it to named seams.
 //!
 //! The quantity under decomposition is the one the ceiling is computed from:
 //!
@@ -26,8 +11,7 @@
 //! ```
 //!
 //! `CPUCLI` is `/usr/bin/time -v`'s user+sys for the whole client process.
-//! This gauge attributes part of it to named SEAMS. For each seam `s`, over
-//! the gauge's own lifetime `[T_arm, T_end]`:
+//! For each seam `s`, over the gauge's own lifetime `[T_arm, T_end]`:
 //!
 //! ```text
 //!   ns[s]     = Σ over entries of (t_exit − t_enter)      MONOTONIC WALL
@@ -38,68 +22,52 @@
 //!   unattr    = 1 − attr
 //! ```
 //!
-//! **`unattr` IS A FIRST-CLASS READING, NOT AN ERROR TERM.** It is the CPU
-//! this process burned outside every instrumented seam, and at this engine
-//! that is a NAMED place: quinn's endpoint driver task, where the actual
-//! `sendmsg` happens and where rustls/ring applies AEAD packet protection to
-//! every datagram. See "what this gauge structurally cannot see" below. A
-//! decomposition that reported only the seams would be claiming the residual
-//! is small, which is exactly the thing that has never been measured.
+//! `unattr` is a reading, not an error term: the CPU this process burned
+//! outside every instrumented seam, chiefly quinn's endpoint driver task
+//! (see "what this gauge cannot see" below).
 //!
-//! ## THE THREE HONESTY CLAUSES, stated here rather than discovered later
+//! ## Three caveats
 //!
-//! **1. THE SEAMS ARE WALL, THE DENOMINATOR IS CPU.** `Instant::now()` is a
+//! **1. The seams are wall, the denominator is CPU.** `Instant::now()` is a
 //! ~20 ns vDSO read; `clock_gettime(CLOCK_THREAD_CPUTIME_ID)` is a real
-//! syscall at ~0.5–1 µs, and at this engine's symbol rate (≈18 000 sym/s at
-//! 176 Mbit/s with MTU-class symbols) two of those per seam per symbol would
-//! cost 10–18 % of a core — the instrument would move the number it exists to
-//! measure. So the seams are timed with the monotonic clock and the
-//! denominator is process CPU. **`share[s]` is therefore "wall spent inside
-//! seam s as a fraction of process CPU", and it is only a CPU share to the
-//! extent the seam neither blocks nor sleeps.** All five seams are pure
-//! compute or a non-blocking handoff; none of them awaits. The `cores` field
-//! (`cpu_ns / run_ns`) is printed so a reader can see how far from 1.0 the
-//! process is and judge the approximation instead of inheriting it.
+//! syscall at ~0.5–1 µs, and at ~18 000 sym/s two of those per seam per
+//! symbol would cost 10–18 % of a core — the instrument would move the number
+//! it measures. So `share[s]` is "wall spent inside seam s as a fraction of
+//! process CPU", a CPU share only to the extent the seam neither blocks nor
+//! sleeps. All five seams are pure compute or a non-blocking handoff. The
+//! `cores` field (`cpu_ns / run_ns`) is printed so a reader can judge the
+//! approximation.
 //!
-//! **2. THE GAUGE'S SPAN IS NOT THE PROCESS'S.** `T_arm` is the first
-//! instrumented operation, not process start, so `cpu_ms` EXCLUDES startup
-//! (cert generation, TLS setup, the `perf` warm-up object) and any teardown
-//! after the sender loop's destructor. `cpu_ms ≤ CPUCLI` always, and the
-//! difference is reported by subtraction at the parser rather than hidden:
-//! the ledger carries both.
+//! **2. The gauge's span is not the process's.** `T_arm` is the first
+//! instrumented operation, so `cpu_ms` excludes startup (cert generation, TLS
+//! setup, the `perf` warm-up object) and any teardown after the sender loop's
+//! destructor. `cpu_ms ≤ CPUCLI` always; the parser reports the difference.
 //!
-//! **3. TOKIO CAN MIGRATE THE SENDER TASK.** That is why the denominator is
-//! `CLOCK_PROCESS_CPUTIME_ID` and not `CLOCK_THREAD_CPUTIME_ID` — a
-//! per-thread denominator would silently lose whatever fraction of the task
-//! ran on another worker. Process CPU is also exactly what `CPUCLI` measures,
-//! so the two are the same quantity and can be compared without a conversion.
+//! **3. Tokio can migrate the sender task.** Hence
+//! `CLOCK_PROCESS_CPUTIME_ID`, not `CLOCK_THREAD_CPUTIME_ID`: a per-thread
+//! denominator would lose whatever fraction of the task ran on another
+//! worker. Process CPU is also what `CPUCLI` measures.
 //!
-//! ## What this gauge structurally CANNOT see, named before the run
+//! ## What this gauge cannot see
 //!
 //! The seams are all on the sender task. The following sender-side CPU is
-//! REAL, is inside `CPUCLI`, and lands in `unattr` by construction:
+//! inside `CPUCLI` and lands in `unattr` by construction:
 //!
-//!   * **rustls/ring AEAD packet protection** — every datagram is encrypted
-//!     and authenticated, in quinn's driver, not here.
-//!   * **the actual `sendmsg`/`sendmmsg` syscalls** — `send_datagram` hands a
-//!     `Bytes` to quinn's queue and returns; the write to the socket happens
-//!     on the endpoint driver task. **`hand` is the HANDOFF, not the
-//!     syscall**, and calling it "the send syscall cost" would be wrong.
-//!   * **quinn's own framing, pacing, loss detection and ack processing.**
-//!   * **tokio's scheduler, and the receiver-side work of the reverse path.**
+//!   * rustls/ring AEAD packet protection, in quinn's driver;
+//!   * the `sendmsg`/`sendmmsg` syscalls — `send_datagram` hands a `Bytes` to
+//!     quinn's queue and returns, so `hand` is the handoff, not the syscall;
+//!   * quinn's own framing, pacing, loss detection and ack processing;
+//!   * tokio's scheduler, and the receiver-side work of the reverse path.
 //!
-//! **This is the reason the instrument pair exists.** `perf` sees all of it
-//! and this gauge sees none of it; this gauge attributes exactly, and `perf`
-//! attributes by sampling into symbols that whole-program LTO has inlined
-//! together. Neither subsumes the other, and the pre-registration scores the
-//! two against each other rather than promoting one.
+//! `perf` sees all of it by sampling (into symbols LTO has inlined together);
+//! this gauge attributes exactly but sees none of it. The two are read
+//! against each other.
 //!
 //! ## Observation only
 //!
-//! Structurally, not by promise: this module owns all of its state, its whole
-//! input is a seam index and a duration, and the pin
-//! `cpuprof_is_observation_only` scrapes this source for any write to an
-//! engine handle — the same discipline, and the same forbidden list, as
+//! This module owns all of its state, its whole input is a seam index and a
+//! duration, and `cpuprof_is_observation_only` scrapes this source for any
+//! write to an engine handle — the same forbidden list as
 //! `net::walldiag::tests::walldiag_is_observation_only`.
 //!
 //! Zero cost with the gate off: [`gauge`] is a `OnceLock<Option<…>>` that
@@ -112,7 +80,7 @@ use std::time::Instant;
 
 /// The instrumented seams, in the order they appear on the `[CPUPROF]` line.
 ///
-/// **They are DISJOINT by construction** — no seam's extent contains
+/// They are disjoint by construction — no seam's extent contains
 /// another's — which is what makes `attr = Σ share[s]` a sum rather than an
 /// over-count. `enc` wraps the three GF coding entry points, which do not
 /// call each other; `src` and `frm` are leaf copies; `ser` and `hand` are the
@@ -126,7 +94,7 @@ pub enum Seam {
     Enc = 0,
     /// Source admission: `GenerationEncoder::add_source` — the pad
     /// allocation, the payload copy, and the retention-store `insert` (which
-    /// is a SECOND full copy of every source symbol).
+    /// is a second full copy of every source symbol).
     Src = 1,
     /// Framing: `framing::frame_window_packet` — the TUN packet's copy into a
     /// `symbol_size` buffer with its 2-byte length prefix.
@@ -134,8 +102,8 @@ pub enum Seam {
     /// Wire serialization inside `send_symbols`: `serialize_data_compact`
     /// (the shipped compact v5 path) or `WireMessage::serialize` (bincode).
     Ser = 3,
-    /// The datagram HANDOFF to quinn: `send_datagram_shaped`. **Not the send
-    /// syscall** — see the module docs.
+    /// The datagram handoff to quinn: `send_datagram_shaped`. Not the send
+    /// syscall — see the module docs.
     Hand = 4,
 }
 
@@ -177,7 +145,6 @@ pub struct CpuProfReading {
     /// has no process-CPU clock.
     pub cpu_ms: Option<f64>,
     /// `cpu_ms / run_ms` — the process's mean core occupancy over the span.
-    /// The number the ceiling arithmetic calls "1.51 cores".
     pub cores: Option<f64>,
     /// Per-seam accumulated wall, ms.
     pub seam_ms: [f64; SEAMS],
@@ -191,7 +158,7 @@ pub struct CpuProfReading {
 
 impl CpuProfReading {
     /// `1 − attr`: the process CPU spent outside every instrumented seam.
-    /// **A reading, not an error term** — see the module docs.
+    /// A reading, not an error term — see the module docs.
     pub fn unattr(&self) -> Option<f64> {
         self.attr.map(|a| 1.0 - a)
     }
@@ -229,7 +196,7 @@ impl CpuProfGauge {
         }
     }
 
-    /// Charge one completed seam entry. The ONLY mutation this module offers.
+    /// Charge one completed seam entry. The only mutation this module offers.
     pub fn charge(&self, seam: Seam, ns: u64) {
         let i = seam as usize;
         self.ns[i].fetch_add(ns, Ordering::Relaxed);
@@ -237,7 +204,7 @@ impl CpuProfGauge {
     }
 
     /// The run's reading. `None` when the gauge has no wall-clock span at all
-    /// — the honest answer rather than a 0/0.
+    /// (rather than a 0/0).
     pub fn report(&self) -> Option<CpuProfReading> {
         let run_ns = self.armed_at.elapsed().as_nanos() as u64;
         if run_ns == 0 {
@@ -282,11 +249,10 @@ impl CpuProfGauge {
 /// no state, no atomic and no clock read at any seam — unless
 /// `RWM_CPUPROF=1`.
 ///
-/// `RWM_CPUPROF` (default OFF, DIAG-surface, ADR-0052 class): the sender CPU
-/// decomposition. Independent of `RWM_DIAG`, exactly as `RWM_WALLDIAG` and
-/// `RWM_ACKDIAG` are — the cell whose ceiling this takes apart (c9, the
-/// symmetric quad) is sender-CPU-bound, and adding the 250 ms `[DIAG]` report
-/// to the arm under measurement would change the quantity being measured.
+/// `RWM_CPUPROF` (default OFF, instrument): independent of `RWM_DIAG`, as
+/// `RWM_WALLDIAG` and `RWM_ACKDIAG` are — the arm it measures is
+/// sender-CPU-bound, and adding the 250 ms `[DIAG]` report would change the
+/// quantity being measured.
 pub fn gauge() -> Option<&'static CpuProfGauge> {
     static G: std::sync::OnceLock<Option<CpuProfGauge>> = std::sync::OnceLock::new();
     G.get_or_init(|| {
@@ -299,11 +265,11 @@ pub fn gauge() -> Option<&'static CpuProfGauge> {
     .as_ref()
 }
 
-/// Time `f` into `seam`. **This is the only feed site shape in the tree**, so
+/// Time `f` into `seam`. This is the only feed site shape in the tree, so
 /// a seam cannot be half-instrumented (an enter with no exit) by
 /// construction: the extent is the closure's.
 ///
-/// With the gate OFF this is `f()` behind one null check — no clock read, no
+/// With the gate off this is `f()` behind one null check — no clock read, no
 /// atomic, and `#[inline]` lets the branch fold at every call site.
 #[inline]
 pub fn timed<T>(seam: Seam, f: impl FnOnce() -> T) -> T {
@@ -318,8 +284,8 @@ pub fn timed<T>(seam: Seam, f: impl FnOnce() -> T) -> T {
     }
 }
 
-/// Render the run's ONE `[CPUPROF]` line. Split from the emitter so the unit
-/// pins assert the STRING an L1 parser will scrape, not a side effect.
+/// Render the run's one `[CPUPROF]` line. Split from the emitter so the unit
+/// pins assert the string an L1 parser will scrape, not a side effect.
 ///
 /// Seam tokens are `<name>=<ms>/n<count>/<share>`, following the `sig_us=`
 /// convention — the value, then the evidence about it. An unavailable share
@@ -348,7 +314,7 @@ pub fn report_line(r: &CpuProfReading) -> String {
     s
 }
 
-/// Emit the run's ONE `[CPUPROF]` line, at sender teardown.
+/// Emit the run's one `[CPUPROF]` line, at sender teardown.
 ///
 /// `eprintln!` rather than `tracing::info!`, matching the `[WALL]` and
 /// `[ACKDIAG]` siblings: an instrument's line must not be filterable away by
@@ -393,7 +359,7 @@ mod tests {
         assert_eq!(side, 1, "the closure runs exactly once");
     }
 
-    /// The scrapeable line's SHAPE, pinned absolutely: an L1 parser is
+    /// The scrapeable line's shape, pinned absolutely: an L1 parser is
     /// written against these tokens and their formats, and a silent rename
     /// here would leave the parser reading zeros.
     #[test]
@@ -416,7 +382,7 @@ mod tests {
         );
     }
 
-    /// **THE `-` CLAUSE.** A platform with no process-CPU clock must render
+    /// The `-` clause. A platform with no process-CPU clock must render
     /// `-` for every derived share — never `0.0000`, which a parser would
     /// average into a results table as "this seam is free".
     #[test]
@@ -442,7 +408,7 @@ mod tests {
         );
     }
 
-    /// The accumulator is a SUM over entries and the count is its own
+    /// The accumulator is a sum over entries and the count is its own
     /// denominator, so a mean ns/call is computable from the line alone.
     #[test]
     fn charges_accumulate_per_seam_with_their_own_counts() {
@@ -463,13 +429,12 @@ mod tests {
         assert_eq!(r.seam_n[Seam::Src as usize], 0, "an unfed seam reads zero");
     }
 
-    /// **THE DISJOINTNESS INVARIANT, as arithmetic.** `attr` is the SUM of
-    /// the five shares, so a reader can add the printed columns and get the
-    /// printed total. If a future seam were nested inside another this
-    /// identity would still hold numerically while the shares over-counted —
-    /// which is why disjointness is argued at [`Seam`] and pinned at the
-    /// feed sites, not asserted here. What IS asserted here is that the
-    /// printed `attr` is not independently computed.
+    /// The disjointness invariant, as arithmetic. `attr` is the sum of the
+    /// five shares, so a reader can add the printed columns and get the
+    /// printed total. A nested seam would keep this identity while the shares
+    /// over-counted, which is why disjointness is argued at [`Seam`] and
+    /// pinned at the feed sites. What is asserted here is that the printed
+    /// `attr` is not independently computed.
     #[test]
     fn attr_is_exactly_the_sum_of_the_printed_shares() {
         let r = CpuProfReading {
@@ -486,7 +451,7 @@ mod tests {
         assert!((r.unattr().unwrap() - 0.60).abs() < 1e-12);
     }
 
-    /// Shares are computed against PROCESS CPU, not against the wall span —
+    /// Shares are computed against process CPU, not against the wall span —
     /// the distinction the module docs turn on. A gauge whose seams consumed
     /// half the CPU over a span twice as long must report share 0.5, not
     /// 0.25.
@@ -516,11 +481,10 @@ mod tests {
         assert_eq!(r.unattr(), Some(1.0));
     }
 
-    /// **THE BEHAVIOUR-NEUTRALITY PIN**, structural rather than promised —
-    /// the same scrape, and the same forbidden list, as
+    /// The behaviour-neutrality pin, structural rather than promised — the
+    /// same scrape, and the same forbidden list, as
     /// `net::walldiag::tests::walldiag_is_observation_only`. The failure mode
-    /// is someone LATER adding a convenient write here, and it has no runtime
-    /// symptom to assert on.
+    /// is a later convenient write here, which has no runtime symptom.
     #[test]
     fn cpuprof_is_observation_only() {
         let src = std::fs::read_to_string(

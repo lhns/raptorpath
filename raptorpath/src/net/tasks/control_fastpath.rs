@@ -1,13 +1,11 @@
 //! Control fast path: liveness-critical messages handled off the reliable
 //! stream without queueing behind the data loop.
 //!
-//! Behavior contract: the body is the former inline `async move` block from
-//! `run_impl` verbatim — the same three-variant match (`PathReport`, `Ping`,
-//! `Pong`) into `handle_control_message` with the same eleven `None`s (the
-//! fast path never touches the ARQ ledger, the peer-ack atomic or the Copa
-//! feed), and the same `try_send` — NEVER an awaited send — for everything
-//! else, with the drop-and-warn on a full data channel. The loop ends when
-//! the control channel closes, exactly as before.
+//! `PathReport`, `Ping` and `Pong` go to `handle_control_message` with the
+//! ARQ ledger, the peer-ack atomic and the Copa feed all `None` (the fast
+//! path never touches them); everything else is forwarded with `try_send` —
+//! never an awaited send — and dropped with a warning on a full data
+//! channel. The loop ends when the control channel closes.
 
 use std::sync::Arc;
 
@@ -72,7 +70,7 @@ pub(crate) async fn run_control_fastpath(
                 );
             }
             other => {
-                // NEVER await into the data channel: under a symbol
+                // Never await into the data channel: under a symbol
                 // flood it is full, an awaited send here stalls the
                 // uni-stream accept loop, stream credit (100) runs
                 // out, and the report task wedges inside

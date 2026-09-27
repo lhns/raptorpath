@@ -1,62 +1,32 @@
 //! The window sender's PERIODIC DIAG REPORT: the `[DIAG]` / `[C8CONV-S]`
 //! lines and the counters that feed them.
 //!
-//! History (net seam pass 3, 2026-08-09): `run_window_sender` carried a
-//! 439-line report phase at the bottom of its loop that read ~30 locals from
-//! every OTHER phase — the emission step's `SenderState`, the resolve-once
-//! `SenderPolicy`, the dynamic store-cap block's `tx_paused` /
-//! `effective_store_cap` / per-path cap maps, the decoupled-admission law's
-//! `wd_*` gauges, the recovery plane's suppression counters — and wrote
-//! NOTHING that any other phase reads. That asymmetry is what licenses the
-//! move: the report is read-only with respect to the data plane, so it can
-//! become an ordinary function taking `&SenderState` / `&SenderPolicy` and
-//! shared references to the engine handles.
-//!
-//! BEHAVIOUR CONTRACT: the body is VERBATIM. It was moved by a mechanical
-//! transform that only dedents one level and inserts a `dg.` prefix in front
-//! of a captured counter name (never inside a string literal, never inside a
-//! comment, never after a `.`); stripping those 82 prefixes and re-indenting
-//! reproduces the original 439 lines byte-for-byte. Nothing was reordered,
-//! merged, split or re-guarded. In particular:
-//!   * the `if pol.diag_on` guard stays at the CALL SITE, so the report's
-//!     cost is still zero on the shipped path and the call still happens at
-//!     the same point of the loop, after the `wnd2`/relgap tracker and
-//!     before the paced generation-coding block;
-//!   * the ONE scheduler acquisition is the same one, in the same scope —
-//!     `scheduler.lock()` for the per-path `pp` string, released with the
-//!     `let (cw, fl, np, min_rtt_us, pp) = { … };` block, still holding
+//! The report reads locals of every other phase of the sender loop and writes
+//! nothing any of them reads, so it is read-only with respect to the data
+//! plane. Ordering constraints it keeps:
+//!   * the `if pol.diag_on` guard is at the call site, so the report costs
+//!     nothing on the shipped path;
+//!   * it takes one scheduler lock, scoped to the per-path `pp` string, with
 //!     `expire_in_flight()` inside it;
-//!   * the two atomics (`window_ack_seq`, the `stats.fec` symbol totals) are
-//!     still read with `Ordering::Relaxed`, the same number of times, in the
-//!     same order — including the per-iteration `sidle` handoff probe that
-//!     runs BEFORE the 250 ms window test;
-//!   * the 250 ms window test, the per-window resets (`gd_us`, `gl_sum`,
-//!     `wnd2_relgap_max_us`, `sidle_evt_n`, the paused-iteration counters)
-//!     and the `diag_last_*` roll-forward all happen where they did.
+//!   * the atomics (`window_ack_seq`, the `stats.fec` symbol totals) are read
+//!     with `Ordering::Relaxed`, and the per-iteration `sidle` handoff probe
+//!     runs before the 250 ms window test.
 //!
-//! State: [`DiagState`] is the 40 counters whose ONLY consumer is this
-//! report. Most are accumulated by other phases of the sender loop (the
-//! recovery plane's `mpd_*`, the c8-conversion `c8c_*`, the GDIAG stall
-//! attribution) and read/reset here, so they genuinely must be mutable from
-//! both sides — hence one struct threaded as `&mut` rather than 40
-//! parameters. THREE counters that belong to this family did NOT move, and
-//! the reasons are findings about the state split, not oversights:
+//! State: [`DiagState`] holds the counters whose only consumer is this
+//! report. Most are accumulated by other phases (the recovery plane's
+//! `mpd_*`, the conversion `c8c_*`, the GDIAG stall attribution) and
+//! read/reset here, hence one struct threaded as `&mut`. Two families stay
+//! locals of `run_window_sender`:
 //!   * `mpd_pf_floor` / `mpd_pf_clock` / `mpd_pf_sum` are `Cell`s captured by
-//!     the `mp_thr_of` CLOSURE in the recovery phase. Moving them into
-//!     `DiagState` would make that closure hold a shared borrow of `dg`
-//!     across the recovery block, which also increments `dg.mpd_*` — a
-//!     borrow conflict, not a behaviour question. They stay locals and are
-//!     passed in by reference.
-//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` stay locals of
-//!     `run_window_sender` and are passed in by value. (They were read by
-//!     the removed `RWM_WIN_DECOUPLE` admission gate; today they feed only
-//!     the `wnd2=`/`relgap=` gauge.)
+//!     the `mp_thr_of` closure in the recovery phase; moving them into
+//!     `DiagState` would make that closure borrow `dg` across a block that
+//!     also increments `dg.mpd_*`. They are passed in by reference.
+//!   * `wnd2_frontier_last` / `wnd2_frontier_change_us` feed only the
+//!     `wnd2=`/`relgap=` gauge and are passed in by value.
 //!
-//! NOT covered here: the receiver-side `[RCV]` / `[RDIAG]` / `[FDIAG]` /
-//! `[C8CONV-R]` gauges (still in `run_impl`'s receiver task), the span-law
-//! `[SPAN]` trace, `[GPIPE]`, `[PFRAC]` and the generation-lifecycle
-//! bookkeeping that FEEDS `gl_sum` — all still inline in `run_window_sender`,
-//! all still writing these fields through the struct.
+//! Not covered here: the receiver-side `[RCV]` / `[RDIAG]` / `[FDIAG]` /
+//! `[C8CONV-R]` gauges, the span-law `[SPAN]` trace, `[GPIPE]`, `[PFRAC]`
+//! and the generation-lifecycle bookkeeping that feeds `gl_sum`.
 
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
@@ -70,8 +40,7 @@ use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
 
-/// diag/lossy-residual (goal-gate "Lossy-Single Residual", RWM_DIAG only):
-/// sender EMISSION-GAP gauge — cumulative time in inter-emission gaps
+/// Sender emission-gap gauge (`RWM_DIAG` only) — cumulative time in inter-emission gaps
 /// ≥ 3 ms (src+cod handoffs to the transport observed per loop iteration;
 /// the loop wakes ≥ every 1 ms, so gap edges are observed within ~1 ms).
 /// Prices accounting term (b): engine-caused wire idle during recovery
@@ -79,21 +48,20 @@ use crate::transport::QuicTransport;
 /// [WIDLE] inter-arrival gauge is the wire-truth counterpart.
 const SIDLE_GAP_MIN_US: u64 = 3_000;
 
-/// Every counter whose ONLY consumer is the periodic DIAG report.
+/// Every counter whose only consumer is the periodic DIAG report.
 ///
 /// Behaviour-inert by construction: nothing here is read by an emission,
-/// admission, pacing or recovery decision. Field docs are the originals,
-/// moved here with their code.
+/// admission, pacing or recovery decision.
 pub(crate) struct DiagState {
-    // ── GDIAG (feat/gen-substrate-ceiling JOB 1) ─────────────────────────
+    // ── GDIAG ─────────────────────────────────────────────────────────────
     // Time-weighted attribution of the generation-mode sender loop to the
-    // gate that is BINDING its wire emission each instant. In coded-wire
-    // generation mode the paced coded block IS the data plane, so whichever
+    // gate that is binding its wire emission each instant. In coded-wire
+    // generation mode the paced coded block is the data plane, so whichever
     // gate stops it is the throughput binder. States (post-emission):
     //   emit    — emitted ≥1 coded this iteration (link-flowing)
     //   budget  — wants_coding=false with sealed gens retained: every active
     //             generation is at its ceil(len·(1+r)) proactive budget and
-    //             the sender is WAITING ON THE ACK/deficit round (the
+    //             the sender is waiting on the ACK/deficit round (the
     //             window-advance serialization)
     //   fill    — wants_coding=false because the head generation has not
     //             sealed yet (waiting on TUN intake / store backpressure)
@@ -102,36 +70,26 @@ pub(crate) struct DiagState {
     //   cwnd    — in-flight congestion cap
     // Also per-generation lifecycle (GLIFE): anchor → (first_src, sealed,
     // last_emit) µs; on the ack passing a generation its fill/code/ack-wait
-    // phases are accumulated. All gated on RWM_DIAG (shipped path untouched).
+    // phases are accumulated. All gated on RWM_DIAG.
     pub gd_last_us: u64,
     /// [emit, budget, fill, target, tokens, cwnd]
     pub gd_us: [u64; 6],
     /// (fill_us, code_us, wait_us, n) accumulated over completed generations.
     pub gl_sum: (u64, u64, u64, u64),
 
-    // ── The WINDOW sender's wait-reason histogram (`wait[..]`, RWM_DIAG) ──
+    // ── The window sender's wait-reason histogram (`wait[..]`, RWM_DIAG) ──
     //
-    // goal-gate "What Binds Throughput", instrument 2. `gd_us` above answers
-    // "which gate binds wire emission" for the GENERATION plane only: its
-    // accumulator is `if pol.diag_on && generation` and its six buckets
-    // (budget / fill / target / tokens / cwnd) are generation-plane concepts
-    // that do not exist under `RWM_GEN=0`. Every arm of the three-term
-    // battery ran `RWM_GEN=0`, so `stall[` appeared in 0 of 1 116 logs and
-    // `sidle` — 34.3 % of wall at c2r100-B, 72.7 % at c2r200-B — was one
-    // undifferentiated bucket attributed to nothing.
-    //
-    // This is the window sender's own attribution, and it is a DIFFERENT
-    // measurement, not the same one printed twice: it times the sender
-    // loop's `select!` await and charges the elapsed wall time to the arm
-    // that WOKE it. That is the direct answer to "when the sender is not
-    // sending, what is it waiting on?", it is defined whether or not
-    // generation coding is on, and its buckets sum to the whole loop.
+    // `gd_us` above attributes the generation plane only (its buckets do not
+    // exist under `RWM_GEN=0`). This one times the sender loop's `select!`
+    // await and charges the elapsed wall time to the arm that woke it: "when
+    // the sender is not sending, what is it waiting on?". It is defined
+    // whether or not generation coding is on, and its buckets sum to the
+    // whole loop.
     //
     //   tun     — `tun.read_packet()` produced a packet: PRODUCTIVE intake.
     //             The only arm that carries new source data.
-    //   paused  — the 1 ms backpressure poll: the store is FULL (`tx_paused`).
-    //             This is the outstanding-data limit binding, and it is the
-    //             one the three-term law moves.
+    //   paused  — the 1 ms backpressure poll: the store is full (`tx_paused`),
+    //             i.e. the outstanding-data limit binds.
     //   pace    — the 1 ms pacing poll: the `RWM_CC_PACE` source token
     //             bucket is dry. Zero whenever `RWM_CC_PACE=0`.
     //   gen     — the 1 ms generation emission poll.
@@ -142,8 +100,7 @@ pub(crate) struct DiagState {
     //
     // `wait_n` counts loop iterations so the mean await is readable, and
     // `wait_tun_us` is split out so "productive" and "waiting" are separable
-    // without re-deriving them from percentages. All gated on RWM_DIAG; the
-    // shipped path is untouched.
+    // without re-deriving them from percentages. All gated on RWM_DIAG.
     pub wait_last_us: u64,
     /// [tun, paused, pace, gen, nack, defc, tail, flush]
     pub wait_us: [u64; 8],
@@ -170,19 +127,18 @@ pub(crate) struct DiagState {
     pub mpd_fired_flight: HashMap<u32, u64>,
     pub mpd_fired_on: HashMap<u32, u64>,
 
-    // ── feat/c8-conversion DIAGNOSIS gauges ──────────────────────────────
-    // (goal-gate "C8 Slow-Path Conversion", RWM_DIAG only — behavior-inert):
-    // why don't slow-path symbols CONVERT to delivered goodput at the
-    // heterogeneous dual cell?
-    //  * c8c_src_placed[p]  — cumulative FIRST source placements per path
+    // ── Slow-path conversion gauges (RWM_DIAG only) ───────────────────────
+    // Why do slow-path symbols not convert to delivered goodput on a
+    // heterogeneous dual-path cell?
+    //  * c8c_src_placed[p]  — cumulative first source placements per path
     //    (candidate (a), placement starvation: compare against the path's
     //    capacity share from btlbw/qdisc truth). Lives in `SenderState`.
-    //  * c8c_retx_orig[p]   — cumulative targeted retransmits whose ORIGINAL
+    //  * c8c_retx_orig[p]   — cumulative targeted retransmits whose original
     //    placement path was p (candidate (d), arrival-misalignment: slow-
     //    placed symbols being re-served spuriously shows up as
     //    retx_orig[slow]/src_placed[slow] ≫ the path's realized loss rate).
     //  * c8c_stall_ms/n[p]  — cumulative frontier-stall wall time (ack
-    //    advance gaps ≥ 5 ms) attributed to the OWNER path of the blocking
+    //    advance gaps ≥ 5 ms) attributed to the owner path of the blocking
     //    hole seq = prev_ack+1 at resolution (candidate (c), HoL coupling:
     //    which path's holes serialize the cumulative frontier).
     //    The receiver-side [C8CONV-R] gauge carries the arrival-side view
@@ -201,7 +157,7 @@ pub(crate) struct DiagState {
     pub diag_paused_iters: u64,
     pub diag_total_iters: u64,
 
-    // ── feat/copa-wire-signal wedge forensics (RWM_DIAG only) ────────────
+    // ── Wedge forensics (RWM_DIAG only) ───────────────────────────────────
     // Cumulative tail ARQ sweeps fired, SACK-gap retransmits actually sent,
     // gaps discarded for exhausted budget, and the live effective rate — the
     // wedge shows good=0 with in_flight=0 for tens of seconds and these name
@@ -222,20 +178,17 @@ pub(crate) struct DiagState {
     pub sidle_n: u64,
     pub sidle_max_us: u64,
 
-    // ── Its DERIVED twin ─────────────────────────────────────────────────
-    // Goal-gate "Unlock The Default 2: derived patience", part 3a
-    // (`RWM_SIDLE_DERIVED`, DIAG-only, behaviour-inert). The gauge above is
-    // UNCHANGED and keeps printing `sidle=`. These accumulate the SAME event
-    // stream against `stall_threshold_us(evt_us)` — the legacy 3 ms
-    // re-expressed as 3 × the MEASURED mean inter-emission-EVENT interval,
-    // floored at the legacy value and capped at the hole-refresh cadence —
-    // and print as `sidle2=` beside it, plus `evt=<µs>` (the measured
-    // interval) and `sthr=<µs>` (the live threshold) so the verdict can be
-    // read off the same line. `sidle2 ≤ sidle` by construction.
+    // ── Its derived twin (`RWM_SIDLE_DERIVED`, DIAG-only) ─────────────────
+    // The same event stream accumulated against `stall_threshold_us(evt_us)`
+    // — the 3 ms constant re-expressed as 3 × the measured mean
+    // inter-emission-event interval, floored at 3 ms and capped at the
+    // hole-refresh cadence. Printed as `sidle2=` beside `sidle=`, with
+    // `evt=<µs>` (the measured interval) and `sthr=<µs>` (the live
+    // threshold). `sidle2 ≤ sidle` by construction.
     //
-    // `sidle_evt_us` is recomputed ONCE PER DIAG WINDOW from the events that
-    // window observed — zero hot-loop cost. It starts at the loop wake, so
-    // before the first window the derived threshold IS the legacy constant.
+    // `sidle_evt_us` is recomputed once per DIAG window from the events that
+    // window observed (zero hot-loop cost). It starts at the loop wake, so
+    // before the first window the derived threshold is the 3 ms constant.
     pub sidle_evt_us: u64,
     pub sidle_thr_us: u64,
     pub sidle_evt_n: u64,
@@ -243,20 +196,19 @@ pub(crate) struct DiagState {
     pub sidle2_n: u64,
     pub sidle2_max_us: u64,
 
-    /// feat/window-mtu: `relgap=<cur>/mx<max>ms` — time since the release
+    /// `relgap=<cur>/mx<max>ms` — time since the release
     /// frontier (max of SACK-release max and cum ack) last advanced, max per
-    /// DIAG window: the release-clumping gauge (D2). The frontier itself
+    /// DIAG window: the release-clumping gauge. The frontier itself
     /// (`wnd2_frontier_last` / `wnd2_frontier_change_us`) stays a local of
     /// `run_window_sender`.
     pub wnd2_relgap_max_us: u64,
 }
 
 impl DiagState {
-    /// Build the report's counters. Every initializer here is the one it had
-    /// inline in `run_window_sender` and every one of them is PURE (zeroed
-    /// counters, empty maps, and `stall_threshold_us(LOOP_WAKE_US)`) — the
-    /// FOUR wall-clock stamps are passed IN so they keep being sampled at the
-    /// exact points in setup they were sampled at before, in the same order.
+    /// Build the report's counters. Every initializer is pure (zeroed
+    /// counters, empty maps, and `stall_threshold_us(LOOP_WAKE_US)`); the four
+    /// wall-clock stamps are passed in so the caller samples them at its own
+    /// points in setup.
     pub fn new(
         gd_last_us: u64,
         diag_start_us: u64,
@@ -348,7 +300,7 @@ pub(crate) struct DiagInputs<'a> {
 }
 
 /// The shared engine handles the report reads. All by shared reference: the
-/// report takes ONE scheduler lock (scoped to the per-path `pp` string) and
+/// report takes one scheduler lock (scoped to the per-path `pp` string) and
 /// otherwise only reads atomics and transport gauges.
 pub(crate) struct DiagCtx<'a> {
     pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
@@ -360,7 +312,7 @@ pub(crate) struct DiagCtx<'a> {
 
 /// Emit the periodic `[DIAG]` / `[C8CONV-S]` report.
 ///
-/// Called ONCE PER SENDER-LOOP ITERATION under the caller's `if pol.diag_on`
+/// Called once per sender-loop iteration under the caller's `if pol.diag_on`
 /// guard: the per-iteration part (paused-iteration accounting and the
 /// emission-gap probe) runs every time, the printed report every 250 ms.
 #[allow(clippy::too_many_arguments)]
@@ -374,9 +326,7 @@ pub(crate) fn report(
     reliable: bool,
     generation: bool,
 ) {
-    // The report body below is the ORIGINAL 439 lines, VERBATIM. These
-    // bindings re-establish the names it read as locals of
-    // `run_window_sender` so that nothing inside it had to be rewritten.
+    // Re-bind the inputs under the names the body reads.
     let DiagCtx {
         scheduler,
         transport,
@@ -402,15 +352,12 @@ pub(crate) fn report(
         mpd_pf_sum,
     } = inp;
 
-    // ─────────────────────────────────────────────────────────────────────
-    // BODY (verbatim; `dg.` prefixes only)
-    // ─────────────────────────────────────────────────────────────────────
     dg.diag_total_iters += 1;
     if tx_paused {
         dg.diag_paused_iters += 1;
     }
     let dnow = now_us();
-    // diag/lossy-residual emission-gap gauge (see decls): observe the
+    // Emission-gap gauge (see `SIDLE_GAP_MIN_US`): observe the
     // cumulative wire handoff count (src + coded + source copies) once per
     // iteration; a change closes the current gap — accumulate it when
     // it is a stall-class gap (≥ 3 ms), not a pacing interval.
@@ -425,10 +372,9 @@ pub(crate) fn report(
                 dg.sidle_n += 1;
                 dg.sidle_max_us = dg.sidle_max_us.max(gap);
             }
-            // 3a: the SAME gap against the DERIVED threshold. One
-            // extra compare per emission event, only under
-            // RWM_SIDLE_DERIVED; the legacy accumulation above is
-            // untouched, so both numbers come off the same run.
+            // The same gap against the derived threshold (one extra
+            // compare per emission event, only under RWM_SIDLE_DERIVED),
+            // so both numbers come off the same run.
             if pol.sidle_derived {
                 dg.sidle_evt_n += 1;
                 if dg.sidle_last_total > 0 && gap >= dg.sidle_thr_us {
@@ -453,7 +399,7 @@ pub(crate) fn report(
         let src_rate = src_now.saturating_sub(dg.diag_last_src) as f64 / secs;
         let cod_rate = cod_now.saturating_sub(dg.diag_last_cod) as f64 / secs;
         let paused_frac = dg.diag_paused_iters as f64 / dg.diag_total_iters.max(1) as f64;
-        // 3a: re-derive the stall threshold from THIS window's
+        // Re-derive the stall threshold from this window's
         // measured emission-event rate (window duration / events
         // observed). A window with no events keeps the previous
         // interval rather than inventing one. Once per 250 ms.
@@ -470,33 +416,24 @@ pub(crate) fn report(
             let mut fl = 0u64;
             let mut np = 0u64;
             let mut rtt = 0u64;
-            // PART 1 instrumentation: per-path in-flight vs its own BDP
+            // Per-path in-flight vs its own BDP
             // cap + live RTT vs RTprop — the slow-path bufferbloat probe
             // (is the slow path over its BDP? is its RTT inflated above
             // RTprop?).  Cap gain = the BDP in-flight gain.
             let cap_gain = pol.infl_bdp_gain;
             let mut pp = String::new();
-            // `np=` COUNTS REGISTERED PATHS (2026-09-08, goal-gate "OPERATOR
-            // SANCTION (2026-09-08 ~14:00Z)" defect (b)). Until then the
-            // per-path blocks — and `np` — were taken over `active_paths()`,
-            // the SATURATION-FILTERED set (`cwnd − in_flight > 0`), so a
-            // cwnd-full single path counted as `np=0` and its whole block,
-            // `sig_us=` included, vanished from the line exactly when the
-            // path was busiest. The `live_paths()` doc comment records the
-            // same trap one layer down. Every registered path now gets its
-            // block (`all_path_ids()`, sorted so the blocks are stable to
-            // scrape), `np` is their count, and the old count is kept
-            // beside it under a NEW name, `np_act=`, so no existing meaning
-            // changes silently: `np_act < np` is a tick with a saturated
-            // path, `np_act = 0 < np` a tick where every path was cwnd-full.
+            // `np=` counts registered paths (`all_path_ids()`, sorted so the
+            // blocks are stable to scrape). `active_paths()` is the
+            // saturation-filtered set (`cwnd − in_flight > 0`): taking the
+            // blocks over it would drop a cwnd-full path's block exactly when
+            // the path is busiest. That count is printed as `np_act=`:
+            // `np_act < np` is a tick with a saturated path.
             //
-            // BEHAVIOUR-INERT: `expire_in_flight()` is still called on
-            // exactly the paths it was called on (the active set). The
-            // report task expires every path on its own 2 s cadence; calling
-            // it here on a saturated path would release stranded budget up
-            // to ~1.75 s earlier under `RWM_DIAG`, which is a behaviour
-            // change under a diagnosis gate, so a saturated path's
-            // `in_flight` is READ here, not expired.
+            // `expire_in_flight()` is called on the active set only. The
+            // report task expires every path on its own 2 s cadence; expiring
+            // a saturated path here would release stranded budget earlier
+            // under `RWM_DIAG` — a behaviour change under a diagnosis gate —
+            // so a saturated path's `in_flight` is only read.
             let act = sched.active_paths();
             let np_act = act.len() as u64;
             let mut ids = sched.all_path_ids();
@@ -523,25 +460,24 @@ pub(crate) fn report(
                     let sinfl_i = p.src_inflight() as u64;
                     let btlbw_i = p.btlbw_sym_per_s().unwrap_or(0.0);
                     let est_i = if p.anchor_established() { "Y" } else { "n" };
-                    // diag/slow-path-anchor: the rate-sample anchor trace
+                    // The rate-sample anchor trace
                     // (snapshotted-at-send / of-which-app-limited / acks-
                     // attributed / no-record / rej[interval/zero/applim] /
                     // generated / windowed-max-fill).  Cumulative counters.
                     let (rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill) =
                         p.rs_diag();
-                    // feat/copa-wire-signal: the wire clock next to the
+                    // The wire clock next to the
                     // app-echo clock — wrtt = quinn packet-timed path RTT
                     // (what Copa's queue term reads under RWM_COPA_WIRE),
                     // rtt = app-layer echo (store-dwell inclusive), rtp =
                     // Copa's floor (wire-clocked when the gate is on; its
                     // distance from the known netem base per path is the
-                    // FLOOR-FRESHNESS check).
+                    // floor-freshness check).
                     let wrtt_i = transport
                         .wire_rtt(*id)
                         .map(|d| d.as_secs_f64() * 1000.0)
                         .unwrap_or(0.0);
-                    // goal-gate "Ship The Wins 2: shal8 anchor" DIAG
-                    // (P-D1 gauge, behavior-inert): quinn's OWN
+                    // Quinn's own
                     // congestion state for this path — qcwnd bytes
                     // (= 2 × quinn-internal BtlBŵ × RTprop under the
                     // BBR default, so qcwnd ≫ true BDP·MTU is the
@@ -550,13 +486,13 @@ pub(crate) fn report(
                     let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
                         .quinn_path_stats(*id)
                         .unwrap_or((0, 0, 0, 0));
-                    // task #86 DIAG: the per-path outstanding ACCOUNT —
+                    // The per-path outstanding account —
                     // retained store symbols charged to this path (its
-                    // share of the POOLED outstanding).
+                    // share of the pooled outstanding).
                     let sout_i = st.percap_out.get(id).copied().unwrap_or(0);
-                    // feat/copa-compete DIAG: cmp=<mode><switches>/<δ>
+                    // cmp=<mode><switches>/<δ>
                     // — mode C (competitive) or D (default), the
-                    // cumulative competitive entries, and the LIVE δ
+                    // cumulative competitive entries, and the live δ
                     // the update law is running (== the hint base
                     // unless competing). "-" when switching disabled.
                     let (cmp_on, cmp_in, cmp_sw, cmp_delta, _) =
@@ -571,45 +507,34 @@ pub(crate) fn report(
                     } else {
                         "-".to_string()
                     };
-                    // feat/anchor-hygiene DIAG: process-clock stall
+                    // Process-clock stall
                     // witness gauges (stalls detected / samples
-                    // discarded, PROCESS-global) — zeros when
+                    // discarded, process-global) — zeros when
                     // RWM_CLOCK_GAP is off.
                     let (gap_g, gap_d) = crate::control::anchor::stall_witness()
                         .map(|w| w.stats())
                         .unwrap_or((0, 0));
-                    // feat/percap-honest-cap DIAG: khr = the
+                    // khr = the
                     // windowed-min echoSRTT/RTprop ratio K_i feeding
                     // the honest cap laws (1.00 when not engaged).
                     let khr_i = percap_k.get(id).map(|e| e.k()).unwrap_or(1.0);
-                    // goal-gate "Honest Inputs" DIAG (`RWM_HONEST_K`):
-                    // kraw = the RAW-sample windowed-min ratio the K
-                    // consumers substitute under the gate ("-" when the
-                    // gate is off). khr stays the legacy smoothed read
-                    // either way, so khr − kraw IS the smoothing bias,
-                    // measured in-cell — the jit25 decomposition gauge.
+                    // `RWM_HONEST_K`: kraw = the raw-sample windowed-min
+                    // ratio the K consumers substitute under the gate ("-"
+                    // when the gate is off). khr stays the smoothed read
+                    // either way, so khr − kraw is the smoothing bias.
                     let kraw_s = p
                         .k_raw()
                         .map(|k| format!("{k:.2}"))
                         .unwrap_or_else(|| "-".to_string());
-                    // §16.69's SECOND MOMENT, reported at last — the RTT
-                    // standard-deviation estimate `√(EWMA[(rtt−srtt)²])`
+                    // The RTT second moment (paper §7.4): the standard-
+                    // deviation estimate `√(EWMA[(rtt−srtt)²])`
                     // (`Path::rtt_sigma_us`) and the number of samples folded
-                    // into it. The cost-ratio memo's FINDING B is that this
-                    // quantity is "computed on every arm and reported on
-                    // none": the engine's own comment reads *"Fed
-                    // unconditionally; read by nothing on the default arm"*,
-                    // and every construction the memo puts to the user needs
-                    // σ as a MEASURED input. §16.69's working `σ ≈ 10 ms` at
-                    // c8 was an assumption, and the memo's §2.3 had to invert
-                    // Cantelli against a cross-site statistic to estimate it
-                    // ~1.8× higher. This field is the print statement that
-                    // ends that: per path, on the sender's own `[DIAG]`
-                    // surface, at the same site as `rtt`/`wrtt`/`rtp`.
+                    // into it, per path, beside `rtt`/`wrtt`/`rtp`. The
+                    // clock family needs σ as a measured input.
                     //
-                    // FORMAT — `sig_us=<µs>/n<count>`, `-` for σ before the
-                    // first (rtt, srtt) pair, exactly the `kraw` convention.
-                    // The count is EVIDENCE, not a gate: the EWMA is seeded at
+                    // Format: `sig_us=<µs>/n<count>`, `-` for σ before the
+                    // first (rtt, srtt) pair, the `kraw` convention.
+                    // The count is evidence, not a gate: the EWMA is seeded at
                     // 0 and runs at β = 1/4, so it retains 0.75^n of that seed
                     // and a σ read at n = 2 is biased low by about half. A
                     // parser that wants a trustworthy σ discards small n
@@ -617,9 +542,8 @@ pub(crate) fn report(
                     // field that disappears below a threshold cannot be told
                     // apart from a path that was never sampled.
                     //
-                    // NOT `ANCHOR_MIN_SAMPLES`-gated, and that is the honest
-                    // answer to "is σ valid before 8 samples?": the 8-sample
-                    // rule governs the DELIVERED-RATE anchor (`bw_samples`)
+                    // Not `ANCHOR_MIN_SAMPLES`-gated: the 8-sample
+                    // rule governs the delivered-rate anchor (`bw_samples`)
                     // and touches nothing here. σ's warm-up is the EWMA's own,
                     // it is reported, and it is a different clock.
                     let sig_s = p
@@ -627,37 +551,24 @@ pub(crate) fn report(
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "-".to_string());
                     let sig_n = p.rtt_sigma_samples();
-                    // goal #101 item 2 — THE THREE CANDIDATE DISPERSION
-                    // GAUGES, beside the shipped one and READ BY NOTHING.
+                    // The three candidate dispersion gauges, beside the
+                    // shipped one and read by nothing. Every clock in the
+                    // family is `W = mean + k(α)·σ̂`, so a clock
+                    // is only as good as its σ estimator. All three run on
+                    // the same sample stream and print on the same line, so
+                    // they compare paired, per path per interval.
                     //
-                    // §16.74.5 made the estimator a REQUIREMENT OF THE MODEL:
-                    // every clock in the family is `W = mean + k(α)·σ̂`, and a
-                    // clock is only as good as the ratio between the dial's
-                    // authority (k-ratio 18.24 over the swept range) and the
-                    // estimator's own dispersion (measured 287× at c8). The
-                    // successor cannot be chosen by argument, so all three
-                    // candidates run SIMULTANEOUSLY, on the same sample stream,
-                    // in the same run, on the same line — a paired comparison
-                    // per path per interval, which is the only layout in which
-                    // "candidate A is steadier than the shipped one" is a
-                    // measurement rather than a comparison across sessions.
+                    // They decompose over three axes (memory, deviation
+                    // power, reference) — see the block comment above
+                    // `Path::cand_quantile`.
                     //
-                    // They form a DECOMPOSITION over three axes (memory,
-                    // deviation power, reference) — see the block comment above
-                    // `Path::cand_quantile`. The differences BETWEEN them are
-                    // the finding; no one of them alone identifies a cause.
-                    //
-                    // FORMAT — the `sig_us` convention exactly:
+                    // Format — the `sig_us` convention exactly:
                     // `<µs|->/n<count>`, `-` before the first sample, the count
                     // describing that value's OWN sample set (window fill for
                     // the two window-class gauges, difference count for `msd`,
                     // lifetime EWMA count for `rvar`). No threshold gates any
-                    // of them; the warm-up exclusions are pre-registered as
-                    // PARSER rules in goal-gate "THE SIGMA ESTIMATOR — THE
-                    // ACCEPTANCE BAR" clause C3.
-                    //
-                    // NO CONSUMER, NO GATE, NO DEFAULT. `sig_us` is unchanged
-                    // and still feeds exactly what it fed before.
+                    // of them; warm-up exclusions are parser rules.
+                    // No consumer, no gate, no default.
                     let cand = |v: Option<u64>| {
                         v.map(|x| x.to_string()).unwrap_or_else(|| "-".to_string())
                     };
@@ -667,29 +578,26 @@ pub(crate) fn report(
                     let qsp_n = p.rtt_qspread_samples();
                     let msd_s = cand(p.rtt_msd_us());
                     let msd_n = p.rtt_msd_samples();
-                    // CANDIDATE 4 (`tlag_us=`, paper §16.75): the same
-                    // functional as `msd_us` at a fixed TIME lag `τ = RTprop`
-                    // instead of a fixed SAMPLE lag — the successor the scored
-                    // battery named when it found `msd`'s `R_total` tracking
-                    // the sample rate at `rho = −0.548` and both of its
-                    // failures at the two thinnest sender legs. Its count is
-                    // the PAIR count `|P(τ)|`, and `-` iff that count is 0 —
-                    // the biconditional holds by construction because value and
-                    // count come from one pair-set function. READ BY NOTHING.
+                    // Candidate 4 (`tlag_us=`, paper §7.4): the same
+                    // functional as `msd_us` at a fixed time lag `τ = RTprop`
+                    // instead of a fixed sample lag, so it does not track the
+                    // sample rate. Its count is the pair count `|P(τ)|`, and
+                    // `-` iff that count is 0 (value and count come from one
+                    // pair-set function). Read by nothing.
                     let tlag_s = cand(p.rtt_tlag_us());
                     let tlag_n = p.rtt_tlag_samples();
-                    // feat/recovery-suppression DIAG: the per-path
-                    // LOSS ESTIMATE the recovery plane actually keys
+                    // The per-path
+                    // loss estimate the recovery plane actually keys
                     // on (repair_debt, P_lost, NACK budgets) — the
                     // gauge that names the batch-serial poisoning
                     // (global batch_seq gaps read as per-path loss
                     // under striping).
                     let pl_i = p.estimator.loss_rate();
-                    // RWM_POOL_ANCHOR DIAG: the per-path send-
+                    // RWM_POOL_ANCHOR: the per-path send-
                     // interval anchor rate (0 = no surviving bucket
                     // / feed off) + its gap/discard hygiene gauges
-                    // — vs btlbw (the legacy ack-interval read,
-                    // deliberately left feeding cwnd only).
+                    // — vs btlbw (the ack-interval read, which
+                    // feeds cwnd only).
                     let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                     let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
@@ -730,11 +638,9 @@ pub(crate) fn report(
         dg.gd_us = [0; 6];
         dg.gl_sum = (0, 0, 0, 0);
         // WAIT: the window sender's select!-arm wait-reason attribution.
-        // UNCONDITIONAL on the RWM_DIAG surface — every battery arm sets it,
-        // and this is the gauge whose ABSENCE (`stall[` in 0 of 1 116 logs)
-        // left `sidle` unattributed for the whole three-term battery. It is
-        // printed even when every bucket is zero: a gauge that disappears
-        // when it has nothing to say is a gauge you cannot prove ran.
+        // Unconditional on the RWM_DIAG surface, and printed even when every
+        // bucket is zero: a gauge that disappears when it has nothing to say
+        // is a gauge you cannot prove ran.
         let w_tot: u64 = dg.wait_us.iter().sum::<u64>().max(1);
         let wpct = |i: usize| dg.wait_us[i] as f64 * 100.0 / w_tot as f64;
         let waitdiag = format!(
@@ -746,16 +652,16 @@ pub(crate) fn report(
         );
         dg.wait_us = [0; 8];
         dg.wait_n = 0;
-        // DGQ: the datagram send-queue audit (instrument 3). CUMULATIVE, not
+        // DGQ: the datagram send-queue audit. Cumulative, not
         // per-window — eviction is a whole-run accounting question and the
         // end-of-run reading is the one that matters, exactly like the
         // `cum=` totals above. Per LIVE path, so a dual cell shows both.
         //
-        //   hand — handoffs quinn ACCEPTED
-        //   tx   — DATAGRAM frames quinn TRANSMITTED (its own stats)
+        //   hand — handoffs quinn accepted
+        //   tx   — DATAGRAM frames quinn transmitted (its own stats)
         //   full — handoffs that entered with a byte-full send queue: the
         //          eviction predicate (see `DatagramQueueAudit`)
-        //   err  — handoffs quinn REJECTED
+        //   err  — handoffs quinn rejected
         //   sp   — send-buffer space, bytes, at the last handoff
         //
         // `hand − tx` is the eviction estimate that does not rest on the
@@ -765,9 +671,8 @@ pub(crate) fn report(
         // gauge.
         let dgq = {
             // Registered paths, like `np=` above: a byte-full send queue is
-            // the SATURATED case, which `active_paths()` filtered out of the
-            // one gauge that measures it. Read-only stats; sorted for stable
-            // scraping.
+            // the saturated case, which `active_paths()` would filter out.
+            // Read-only stats; sorted for stable scraping.
             let ids: Vec<u32> = {
                 let mut v = scheduler.lock().all_path_ids();
                 v.sort_unstable();
@@ -783,14 +688,14 @@ pub(crate) fn report(
             }
             s
         };
-        // Residual (iii) DIAG: cross-path-history attributions and
+        // Cross-path-history attributions and
         // how many the flight witness credited to the previous
         // flight (spurious-retransmit class). Zeros without a feed.
         let (xat_c, xat_w) = copa_feed
             .as_ref()
             .map(|f| f.attr_diag())
             .unwrap_or((0, 0));
-        // RWM_STORE_SACK_RELEASE DIAG: currently released (retained
+        // RWM_STORE_SACK_RELEASE: currently released (retained
         // but uncounted) / cumulative slots released — the store-
         // dwell mechanism gauge (win= already shows the uncounted
         // outstanding; retained = win + srel_cur). Empty when off.
@@ -799,7 +704,7 @@ pub(crate) fn report(
         } else {
             String::new()
         };
-        // RWM_POOL_ANCHOR DIAG: the honest dual-store law's
+        // RWM_POOL_ANCHOR: the honest dual-store law's
         // engagement + its Σ honest caps before clamping (the
         // mechanism gauge — win=/cap shows the clamped result).
         // Empty when not engaged (N = 1, warm-up, or gate off).
@@ -808,7 +713,7 @@ pub(crate) fn report(
         } else {
             String::new()
         };
-        // feat/window-mtu part-1 diagnosis gauge (see decls): the
+        // The
         // outstanding split + release-clumping. head = live head
         // span above the release frontier; hole = unSACKed below it.
         let wnd2diag = if reliable && !generation {
@@ -830,7 +735,7 @@ pub(crate) fn report(
         } else {
             String::new()
         };
-        // δ-honest shed DIAG (fix C): cumulative shed / budget-
+        // δ-honest shed: cumulative shed / budget-
         // refused, live 1−ρ fraction and deadline. Empty when off.
         let sheddiag = if pol.shed_on {
             format!(
@@ -843,11 +748,11 @@ pub(crate) fn report(
         } else {
             String::new()
         };
-        // feat/recovery-suppression DIAG: the recovery-plane trace.
+        // The recovery-plane trace.
         // rep/seqs = gap reports processed / gap seqs walked;
         // fired y/r = retransmits whose live flight was YOUNGER than
         // its path's law threshold (the spurious-by-law class) vs
-        // ripe; supp c/a/l = suppressed by cooldown / legacy age
+        // ripe; supp c/a/l = suppressed by cooldown / age
         // gate / the mp law; stale = gap seqs already acked;
         // plost = P_lost-branch retransmits; age = mean flight age
         // at fire (ms); fp/on = per-path fired-flight / sent-on.
@@ -868,11 +773,10 @@ pub(crate) fn report(
                 dg.mpd_fired_on.get(&k).copied().unwrap_or(0)
             ));
         }
-        // Goal-gate "Unlock The Default 2": the patience-floor split.
+        // The patience-floor split.
         // `pf=<floor-bound>/<clock-bound>/<mean floor µs>` — how many
         // §6.1.2 threshold evaluations were pinned by the
-        // kGranularity FLOOR versus governed by the 9/8·srtt CLOCK.
-        // "Patience is derived" means the floor term stops winning.
+        // kGranularity floor versus governed by the 9/8·srtt clock.
         let pf = format!(
             " pf={}/{}/{}",
             mpd_pf_floor.get(),
@@ -896,7 +800,7 @@ pub(crate) fn report(
             dg.mpd_supp_law,
             dg.mpd_stale,
             st.mpd_plost_retx,
-            // A0.4: the ungated taper-copy count, so the waste split is
+            // The ungated taper-copy count, so the waste split is
             // readable on an arm that never set RWM_DIAG's own counters.
             stats.fec.taper_copy.load(Ordering::Relaxed),
             if mpd_fired > 0 {
@@ -907,8 +811,7 @@ pub(crate) fn report(
             pf,
             mp_pp,
         );
-        // Goal-gate "Unlock The Default 2", part 3a: the DERIVED
-        // stall gauge printed beside the untouched legacy one.
+        // The derived stall gauge printed beside the 3 ms one.
         // `sidle2=<cum ms>/<n>/mx<max ms> evt=<µs> sthr=<µs>`.
         // Empty (and nothing computed) unless RWM_SIDLE_DERIVED.
         let sd2 = if pol.sidle_derived {
@@ -932,7 +835,7 @@ pub(crate) fn report(
             if generation { gen_rate_ewma } else { 0.0 },
             eff,
             src_rate, cod_rate,
-            // diag/lossy-residual: cumulative src/cod/ack totals (the
+            // Cumulative src/cod/ack totals (the
             // end-of-run accounting reads the LAST line) + the
             // emission-gap gauge (cum stall-gap ms / count / max).
             src_now, cod_now, ack_now,
@@ -953,10 +856,10 @@ pub(crate) fn report(
             gdiag,
             pp,
         );
-        // ── `[ETA]` SENDER READOUT ────────────────────────────────
+        // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
         // 250 ms cadence, same `RWM_DIAG` gate, same cumulative
-        // last-line-wins convention as `[DIAG]` itself. The COLD-PRICE binds
+        // last-line-wins convention as `[DIAG]` itself. The cold-price binds
         // accumulated by `place_costs` are drained here and nowhere else --
         // `place_costs` itself only bumps a `Cell`. A sender that never
         // stamped a placement stays silent, so an absent line reads as an
@@ -973,7 +876,7 @@ pub(crate) fn report(
                 eprintln!("{}", sched.eta().line());
             }
         }
-        // feat/c8-conversion DIAG: the sender-side conversion gauges
+        // The sender-side conversion gauges
         // (cumulative; keys sorted for stable scraping). splace =
         // first source placements; retxo = targeted retransmits by
         // ORIGINAL placement path; stallo = frontier-stall ms/count
@@ -1013,20 +916,18 @@ pub(crate) fn report(
 
 #[cfg(test)]
 mod wait_attribution_tests {
-    /// **The instrument's real failure mode, gated at `cargo test`.**
+    /// The wait-reason histogram's silent failure mode, gated at `cargo test`.
     ///
-    /// The window sender's wait-reason histogram (goal-gate "What Binds
-    /// Throughput", instrument 2) charges each loop iteration's elapsed wall
-    /// time to the `select!` arm that woke it. If someone later adds a
-    /// `select!` arm and forgets its `wait_arm = N`, that arm's time is
-    /// SILENTLY charged to whichever arm ran last — the histogram keeps
-    /// summing to 100 %, keeps looking healthy, and lies. No runtime
-    /// assertion can catch that, because the omission has no runtime symptom.
+    /// The histogram charges each loop iteration's elapsed wall time to the
+    /// `select!` arm that woke it. A new `select!` arm without its
+    /// `wait_arm = N` would be silently charged to whichever arm ran last —
+    /// the histogram keeps summing to 100 % and lies. No runtime assertion
+    /// can catch that, because the omission has no runtime symptom.
     ///
     /// So this scrapes the source, the same test-only reflection technique
     /// `gates::forwarding_audit` uses on the `RWM_*` surface, and asserts:
     ///
-    ///   * every bucket index 0..8 is assigned EXACTLY once, so no two arms
+    ///   * every bucket index 0..8 is assigned exactly once, so no two arms
     ///     share a bucket and no bucket is dead;
     ///   * the number of `select!` arms in `run_window_sender`'s sender loop
     ///     equals the number of attributions plus the one arm that `return`s
@@ -1102,10 +1003,9 @@ mod wait_attribution_tests {
             src.contains("pub wait_us: [u64; 8],"),
             "wait_us must be sized 8 — the bucket count the sender assigns"
         );
-        // And it must be printed UNCONDITIONALLY: the whole point is that
-        // `stall[` was gated on `generation` and so appeared in 0 of the
-        // battery's 1 116 logs. A `if generation` around `waitdiag` would
-        // reintroduce exactly that defect.
+        // And it must be printed unconditionally: an `if generation` around
+        // `waitdiag` would hide it on every `RWM_GEN=0` run, as happened to
+        // `stall[`.
         let w = src
             .find("let waitdiag = ")
             .expect("the waitdiag gauge must exist");
