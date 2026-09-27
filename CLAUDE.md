@@ -44,7 +44,7 @@ between layers actually routes there (MEASUREMENT DISCIPLINE rule 1 in
 Every documented model-vs-engine divergence must carry a test that BOUNDS
 it, not prose that describes it.
 
-## FORMULA-FIRST LAWS (ADR-0070)
+## FORMULA-FIRST LAWS (from the store-cap review, ADR-0070, in git history at ac1aed1)
 
 A law that is measured exhaustively but never READ as a formula is not
 verified — it is only pinned. The store-cap law carried nine always-on
