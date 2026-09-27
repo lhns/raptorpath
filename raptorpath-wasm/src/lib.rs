@@ -2243,8 +2243,8 @@ mod tests {
     /// stronger clauses above.
     #[test]
     fn test_sim_engine_tail_anchor_divergence_is_bounded() {
-        /// The engine's `CONTRACT_TAIL_LOSS_BASE` / `config.target_tail_loss`
-        /// default (`raptorpath::net::CONTRACT_TAIL_LOSS_BASE`).
+        /// The engine's `target_tail_loss` default (`config.rs`,
+        /// `target_tail_loss.unwrap_or(1e-5)`).
         const BASE: f64 = 1e-5;
         let engine = |d: f64| BASE * zeta_of_delta(d);
         let bound = 50.0f64.log10();

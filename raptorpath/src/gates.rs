@@ -1,49 +1,15 @@
-//! Runtime experiment/feature gates — the `RWM_*` environment surface of the
-//! window/generation engine, resolved ONCE at engine start.
-//!
-//! History (code-consolidation pass, 2026-07-27): `net/mod.rs` grew a
-//! ~70-env-var gate block read inline mid-function across `run_impl`, the
-//! receiver task and `run_window_sender`. This module centralizes the ENV
-//! resolution: every gate is read exactly once per engine start
-//! (`RuntimeGates::resolve()`), documented in one place with its default and
-//! its decision record (ADR / goal-gate section), and the resolved struct is
-//! passed to the tasks that consume it. Refuted experiment arms are removed
-//! outright rather than kept behind a deprecation warning.
-//!
-//! Behavior contract: `resolve()` reproduces the exact per-site semantics the
-//! scattered reads had (same defaults, same parse/clamp rules, same chaining
-//! through `unified_active()` / `copa_wire_active()` / the
-//! `RWM_ANCHOR_HYGIENE` umbrella). Fields whose EFFECTIVE default depends on
-//! the runtime MODE (generation / systematic — e.g. `RWM_GEN_R`,
-//! `RWM_REACT_CAP`, `RWM_INFL_BDP`, `RWM_REPORT_GENS`) store the raw override
-//! (`Option<_>`) and the mode-dependent default stays at the use site.
-//!
-//! NOT covered here (deliberately — each is already a resolve-once site in
-//! its own module): the substrate-CC policy `RWM_QUIC_CC` (transport/quic.rs,
-//! ADR-0054), the MTU floor `RWM_MTU_FLOOR` (transport, ADR-0055), the
-//! compact v5 DATA framing `RWM_WIRE_COMPACT` (transport/protocol.rs,
-//! default ON since 2026-08-06 — goal-gate "Window Decoupling + MTU
-//! Scaling"), the Copa
-//! wire/δ family `RWM_COPA_WIRE`/`RWM_COPA_DELTA`/`RWM_COPA_COMPETE`
-//! (scheduler, cached `OnceLock`, ADR-0062), the stall-witness umbrella
-//! member `RWM_CLOCK_GAP` (control/anchor.rs, ADR-0061), the RS trace knob
-//! `RWM_RS_TRACE` (scheduler CopaState), the estimator heavy-math cadence
-//! `RWM_EST_CADENCE` (control/estimator.rs `OnceLock`, default OFF —
-//! goal-gate "Receiver Per-Message Wall" + "Ship The Wins 1": BOCD at its
-//! design cadence instead of per message; the composed default flip with
-//! `RWM_POOL_ANCHOR`/`RWM_EMIT_BATCH` was measured 2026-08-07 and REVERTED
-//! by its pre-set c7 clause — the `pool_anchor` field below reads the same
-//! `scheduler::pool_anchor_active()` resolution the send-path feed
-//! consults, riding the est resolution), and the harness/bench-only knobs
-//! (`RWM_L0_*`, `RWM_B_*`, `RWM_SL_*`, `RWM_PERF_TIMEOUT_S`, …).
+//! The `RWM_*` environment surface, resolved once per process by [`get`] and
+//! read by every consumer; `[GATES]` ([`RuntimeGates::echo_line`]) prints it.
+//! Each gate is shipped behaviour, an experiment arm or an instrument; the
+//! shipped stack is in `docs/status.md` §1. Fields whose default depends on the
+//! generation configuration hold the raw override; the use site applies it.
 
 use crate::config::{anchor_gate, anchor_gate_default, env_flag};
 
 pub mod scheduler_gates;
 
-/// A numeric env value, or `None` when unset or unparseable. Non-finite
-/// floats (`NaN`, `inf`, an overflowing `1e400`) are rejected: every float
-/// knob is a rate, gain or bound, and a NaN would poison each law it reaches.
+/// A numeric env value, or `None` when unset, unparseable or non-finite (a NaN
+/// would poison every law it reaches).
 fn env_parse<T: std::str::FromStr + EnvFinite>(name: &str) -> Option<T> {
     std::env::var(name)
         .ok()
@@ -86,14 +52,9 @@ fn flag_or_depth(name: &str) -> bool {
     }
 }
 
-/// `RWM_DELTA` — THE CONTRACT'S δ, resolved ONCE per process (paper
-/// §16.81/§16.82). See [`RuntimeGates::delta`] for what it means
-/// and the precedence against `RWM_COPA_DELTA`.
-///
-/// A free function because [`crate::net::delta_price`] is one, on hot paths
-/// (`delta_budget_b`, the rate site) with no `gates` in scope. It reads the
-/// ONE process resolution ([`get`]), so the `[GATES]` echo cannot disagree
-/// with the number the laws used.
+/// `RWM_DELTA`, the contract's δ override (paper §4.1); see
+/// [`RuntimeGates::delta`]. A free function for [`crate::net::delta_price`]'s
+/// hot-path callers, which have no `gates` in scope; it reads [`get`].
 pub fn delta_override() -> Option<f64> {
     get().delta
 }
@@ -103,971 +64,204 @@ fn resolve_delta() -> Option<f64> {
     env_parse::<f64>("RWM_DELTA").filter(|d| d.is_finite() && *d > 0.0)
 }
 
-/// THE ONE GATE RESOLUTION: the process's [`RuntimeGates`], resolved from the
-/// environment on first use and read by every gate consumer thereafter (the
-/// engine, the scheduler's `*_active()` accessors, the instruments, the
-/// transport). There is no second cache of any gate: a consumer that needs a
-/// gate reads it here, so what the `[GATES]` echo prints is what behaviour
-/// read. [`RuntimeGates::resolve`] stays a pure environment read (tests and
-/// harnesses call it directly to inspect an arm).
+/// The process's [`RuntimeGates`], resolved on first use; the only gate cache,
+/// so `[GATES]` prints what behaviour read.
 pub fn get() -> &'static RuntimeGates {
     static GATES: std::sync::OnceLock<RuntimeGates> = std::sync::OnceLock::new();
     GATES.get_or_init(RuntimeGates::resolve)
 }
 
-/// The engine's env-gate surface, resolved once at engine start.
-///
-/// Grouping mirrors the regime map: the unified machine, anchor hygiene,
-/// store/flow-control laws, the generation stack, CC/pacing, the recovery
-/// plane, and the instruments.
+/// The engine's env-gate surface, grouped by the part of the machine it gates.
 #[derive(Debug, Clone)]
 pub struct RuntimeGates {
-    // ── The unified machine (ADR-0064) ───────────────────────────────────
-    /// `RWM_UNIFIED` (default ON): the one-span-machine default; `=0` is the
-    /// legacy opt-out arm. OPT-OUT SEMANTICS since 2026-07-28 (streaming
-    /// machine DELETED, register RE-TESTED/CLEARED via the crown re-test):
-    /// `=0` + Realtime selects the LEGACY-RLC windowed machine — it can no
-    /// longer select the streaming two-layer code.
+    // ── The unified machine (ADR-0064) ──
+    /// `RWM_UNIFIED` (on, shipped): the unified span machine; `=0` + Realtime = legacy RLC.
     pub unified: bool,
-    /// `RWM_UNIFIED_SHED` (default ON): δ-honest overload shedding on the
-    /// EVICT path within the derived 1−ρ budget; `=0` = serializing arm.
+    /// `RWM_UNIFIED_SHED` (on, shipped): δ-honest EVICT shedding within 1 − ρ (paper §5.6).
     pub unified_shed: bool,
-    /// `RWM_TAPER_R` (default = `unified`): budget-conserving taper emission
-    /// (#85 quantity fix); `=0` = legacy per-ack-cycle accrual (ADR-0063/64).
+    /// `RWM_TAPER_R` (= `unified`, shipped): budget-conserving taper emission (paper §3.3).
     pub taper_r: bool,
 
-    // ── Anchor hygiene (ADR-0061; `RWM_ANCHOR_HYGIENE` umbrella) ─────────
-    /// `RWM_ASTAR_ANCHOR` (umbrella default ON): windowed-max send-rate A*
-    /// anchor with clock-gap discard; engages only under the unified span.
+    // ── Anchor hygiene (ADR-0061; `RWM_ANCHOR_HYGIENE` umbrella) ──
+    /// `RWM_ASTAR_ANCHOR` (on, shipped): windowed-max send-rate A* anchor, clock-gap discard.
     pub astar_anchor: bool,
-    /// `RWM_MSTAR_ANCHOR` (umbrella default ON): measured RTprop floor +
-    /// fast-seed rate filter + derived (M*+2)·G win backstop; the plain-live
-    /// subset (peer-report RTT-feed suppression) is not generation-gated.
+    /// `RWM_MSTAR_ANCHOR` (on, shipped): measured RTprop floor, fast-seed filter, (M*+2)·G
+    /// backstop.
     pub mstar_anchor: bool,
-    /// `RWM_PLAIN_RS` (umbrella default OFF): plain-mode BBR send-interval
-    /// sampler (sampling-only CopaFeed); the honest-cap law's anchor input.
+    /// `RWM_PLAIN_RS` (off, arm): plain-mode BBR send-interval sampler (paper §8.3).
     pub plain_rs: bool,
-    /// `RWM_HONEST_ANCHOR` (**DEFAULT ON since 2026-08-11**, flip-battery
-    /// F7; `=0` = the legacy full-window fold, kept re-runnable): the BtlBw
-    /// windowed-max read off a monotonic max-deque — value-identical
-    /// statistic, O(1) amortized instead of the per-sample full-window fold
-    /// whose O(window·rate) cost under `RWM_PLAIN_RS` is the measured c1
-    /// −35% (sender CPU/byte +61…64%, latlever CPU gauge).
-    /// Resolved via `scheduler::honest_anchor_active()` (cached — CopaState
-    /// construction reads the same resolution).
+    /// `RWM_HONEST_ANCHOR` (on, shipped): BtlBw windowed max on an O(1) max-deque; `=0` is the same
+    /// statistic by an O(window·rate) full fold.
     pub honest_anchor: bool,
-    /// `RWM_HONEST_K` (umbrella default OFF; goal-gate "Honest Inputs"):
-    /// `EchoRatioMin` fed the RAW per-sample echo/RTprop ratio at the
-    /// sample clock instead of the smoothed SRTT at the refresh clock —
-    /// the windowed MIN reads the delay distribution's floor (the measured
-    /// jit25 ×1.34 inversion removed). Resolved via
-    /// `scheduler::honest_k_active()` (cached).
+    /// `RWM_HONEST_K` (off, arm): `EchoRatioMin` fed the raw echo/RTprop ratio, not SRTT.
     pub honest_k: bool,
 
-    // ── Store / flow-control laws ─────────────────────────────────────────
-    /// `RWM_STORE_SACK_RELEASE` (default ON): SACK-clocked slot release —
-    /// slot uncounted, recoverability retained (ADR-0060; supersedes the
-    /// removed `RWM_SACK_PRUNE`).
+    // ── Store / flow control (paper §6) ──
+    /// `RWM_STORE_SACK_RELEASE` (on, shipped): SACK frees the slot, keeps the payload (ADR-0060).
     pub store_sack_release: bool,
-    /// `RWM_STORE_PATHS` (default ON): path-scaled outstanding pool for
-    /// N ≥ 2 live paths; N = 1 keeps the legacy law bit-exactly (ADR-0058).
+    /// `RWM_STORE_PATHS` (on, shipped): path-scaled outstanding pool at N ≥ 2 live paths.
     pub store_paths: bool,
     /// `RWM_STORE_PATH_POOL` (default 2048): per-live-path pool knee.
     pub store_path_pool: usize,
-    /// `RWM_STORE` (unset = mode default): STATIC store/retention override —
-    /// setting it disables the plain-mode dynamic BDP cap (the sweep knob).
+    /// `RWM_STORE`: static store override; setting it disables the plain dynamic cap.
     pub store_override: Option<usize>,
-    /// Whether `RWM_STORE` was SET at all (even unparsable) — the dynamic-cap
-    /// disable keys on presence, the value on parse (legacy semantics kept).
+    /// Whether `RWM_STORE` is set at all (the dynamic-cap disable keys on presence).
     pub store_env_set: bool,
     /// `RWM_STORE_GAIN` (default 2.0, clamped [1, 64]): window = gain × BDP.
     pub store_gain: f64,
-    /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw
-    /// anchor warms.
+    /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw anchor warms.
     pub store_boot: usize,
-    /// `RWM_HONEST_CAP` (default ON where `plain_rs` is live; the `[GATES]`
-    /// echo prints the effective `honest_cap && plain_rs`): honest
-    /// floor-clock store caps on the send-interval anchor (§16.23).
+    /// `RWM_HONEST_CAP` (on, shipped; needs `plain_rs`): floor-clock caps on the send anchor.
     pub honest_cap: bool,
-    /// `RWM_POOL_ANCHOR` (default = the `RWM_EST_CADENCE` resolution — OFF
-    /// with everything unset, ON with the est opt-in; goal-gate "Ship The
-    /// Wins 1"): at N ≥ 2 live paths the pooled-store cap is Σ_i
-    /// honest_store_cap on the per-path hygiene-grade SEND-interval anchor
-    /// (`SendRateAnchor` fed at `charge_in_flight`; ratcheted half-window
-    /// mean — burst-immune, clock-gap discard) clamped [floor, N·knee] —
-    /// replacing the legacy ack-interval windowed-max as the CAP's rate
-    /// input (the §16.35 c7 blocker: the est-cadence ack clock's burst
-    /// peaks inflated it a further ×3.4–3.7). The Copa cwnd feed and all
-    /// N = 1 laws are bit-exactly untouched; no CopaFeed machinery runs
-    /// (the −22…−27 c7 RS price unreachable). MEASURED 2026-08-07: it
-    /// recovers most of est's c7 deficit (est-only 0.938/0.949×Σ →
-    /// est+pa 0.968/0.959) but the honest pool becomes the binder (the
-    /// send side has no un-self-referential uncapped rate source) — the
-    /// composed default flip failed its pre-set c7 ≥ 0.97 clause and
-    /// REVERTED. `=0` under the est opt-in = the blocker-reproduction arm;
-    /// resolved via `scheduler::pool_anchor_active()` (cached — the
-    /// send-path feed reads the same resolution).
+    /// `RWM_POOL_ANCHOR` (= `est_cadence`, arm): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
+    /// each path's send-interval anchor, not the ack-interval max.
     pub pool_anchor: bool,
-    /// `RWM_ACK_MERGE` (**default ON since 2026-08-08**; `=0` is the opt-out
-    /// A/B arm. Goal-gate "Unlock The Default 1: ack-merge" built it and
-    /// "Ack-Merge Flip" shipped it; paper §16.42): in WINDOW MODE ONLY,
-    /// suppress the legacy
-    /// per-batch `ControlMessage::Ack` (whose send site sits after the
-    /// window/block branch and so fires in window mode too), make the SACK
-    /// `WindowAck` unconditional at exactly that cadence, and carry the
-    /// `Ack`'s payload in the v6 cumulative `cum_expected`/`cum_received`
-    /// counters — TWO control datagrams per data message become ONE.
-    /// Every `Ack`-arm consumer is re-homed onto the counter diff with its
-    /// own guard preserved (`gap_q`, the `copa_feed` three-way
-    /// branch, the `expected > 0` guard). Block mode keeps the legacy `Ack`
-    /// bit-exactly. Changes the datagram COUNT only: the delivery statistic,
-    /// its cadence and its counts are unperturbed. Resolved via
-    /// `scheduler::ack_merge_active()` (cached — the receiver arm and the
-    /// sender arm read the same resolution).
-    ///
-    /// FLIPPED ON by its own pre-registered gate set (2026-08-08, ×8 both
-    /// seeds, full scope + sustained + crown): c1 +12.7% / +13.0% with
-    /// receiver CPU per bit −9.1% / −8.4%, every no-regression gate held
-    /// (c7/c8/sc2/sc3 within σ of their own same-session controls, crown
-    /// 1000/1000 in 32/32 reps, dnf 0/164). With the gate ON by default the
-    /// window-mode `!suppress_legacy_ack` branch in `net/mod.rs` is DEAD
-    /// unless the operator sets `RWM_ACK_MERGE=0`; it is scheduled for
-    /// deletion in refactor seam **B2**. BLOCK MODE KEEPS IT — `block_arq`'s
-    /// dup-ack loss channel (`LATER_ACK_LOSS_THRESHOLD`) is built on the
-    /// legacy `Ack`'s 1:1 per-batch cadence, and the gate is scoped
-    /// `gates.ack_merge && recv_window_mode` precisely so that stays true.
+    /// `RWM_ACK_MERGE` (on, shipped): window mode drops the per-batch `Ack`; its payload rides
+    /// `WindowAck`'s cumulative counters. Block mode keeps it for `block_arq`'s dup-ack channel.
     pub ack_merge: bool,
-    /// `RWM_LOSS_SENT_TRUTH` (**default OFF**) — feed the per-path loss
-    /// estimator the sender's own `symbols_sent` delta instead of the
-    /// receiver's global-`batch_seq` gap estimate. See
-    /// `scheduler::loss_sent_truth_active()` and
-    /// `PathState::sender_truth_loss_delta` for the law and its provenance;
-    /// the defect is measured in goal-gate "Ack-Cadence Measurement (VM)"
-    /// READOUT 4 (apparent/realized 37-93x at every multipath cell).
+    /// `RWM_LOSS_SENT_TRUTH` (off, arm): loss estimator fed the sender's `symbols_sent` delta.
     pub loss_sent_truth: bool,
-    /// `RWM_RELEASE_1TO1` (**default OFF**) — release the in-flight
-    /// budget by the sender's own `d(symbols_sent) - d(cum_received)` instead
-    /// of the contaminated `expected - received` counter delta. SIBLING of
-    /// [`Self::loss_sent_truth`]: same clean operand pair, independent
-    /// cursors, one gate per quantity (that one feeds the ESTIMATOR, this one
-    /// feeds the LEDGER). See `scheduler::release_1to1_active()` and
-    /// `PathState::sender_truth_release_delta`.
+    /// `RWM_RELEASE_1TO1` (off, arm): lost charges expire at 9/8·SRTT, not by `expected − received`.
     pub release_1to1: bool,
-    /// `RWM_CHARGE_RECOVERY` (**default OFF**) — meter the SACK-gap
-    /// retransmit and the NACK repair margin at their wire handoff
-    /// (`charge_in_flight` + `consume_pace_tokens` + `symbols_sent`), as every
-    /// other channel already does. See `scheduler::charge_recovery_active()`;
-    /// the divergence is PIPELINE VERIFICATION MATRIX rows 2 + 6 and is
-    /// bounded by `pacer_debit_bounds_only_the_source_arm_not_the_wire`.
+    /// `RWM_CHARGE_RECOVERY` (off, arm): meter SACK-gap retx and NACK repair at wire handoff.
     pub charge_recovery: bool,
-    /// `RWM_SIDLE_DERIVED` (default OFF — DIAG-only and behaviour-inert;
-    /// goal-gate "Unlock The Default 2"): print `sidle2=`/`idle2=` beside
-    /// the UNCHANGED legacy `sidle=`/`idle=` gauges, computed by
-    /// `net::stall_threshold_us` (the legacy 3 ms re-expressed as 3 × the
-    /// MEASURED inter-emission-event interval, floored at the legacy value
-    /// and capped at the hole-refresh cadence). Answers whether §16.37's and
-    /// §16.39's stall evidence was a fixed-threshold artifact of a batched
-    /// emitter — measured on every arm, controls included.
+    /// `RWM_SIDLE_DERIVED` (off, instrument): `sidle2=`/`idle2=` at `net::stall_threshold_us`.
     pub sidle_derived: bool,
 
-    // ── Placement (goal-gate "C8 Slow-Path Conversion") ──────────────────
-    /// `RWM_COLD_PLACE` (anchor-hygiene family member, default OFF): price an
-    /// UNMEASURED leg's latency anchor at the active set's fastest MEASURED
-    /// srtt instead of the 50-ms `DEFAULT_SRTT`-class seed that
-    /// `PathState::srtt()` hands back before the first sample. Zero constants
-    /// — the cold price is another leg's measurement — and OFF is
-    /// bit-identical (the cold price IS `p.srtt()` with the gate off).
-    ///
-    /// It binds only where a leg is cold WHILE another is warm, i.e. a LATE
-    /// JOIN; it is measured INERT at every SF-bench geometry, where all legs
-    /// start cold together. `scheduler::cold_place_active` carries the law,
-    /// the retraction of the `c7x4` "lock-in" that motivated it, and the
-    /// tests that bound both directions.
+    // ── Placement (paper §5.7) ──
+    /// `RWM_COLD_PLACE` (off, arm): price an unmeasured leg at the fastest measured srtt.
     pub cold_place: bool,
-
-    /// **`RWM_PLACE_T_DERIVED`** (Track A arm 1, ABSENT by default) - the
-    /// placement softmax temperature read as the Luce/Gumbel scale of the
-    /// scheduler's OWN prediction error instead of the `0.15` literal
-    /// (paper 16.81.1):
-    ///
-    ///   `T = (sqrt(6)/pi) * sigma_e / ref_srtt`
-    ///
-    /// `sigma_e` is the pooled RMS, over the ACTIVE candidate set, of the
-    /// per-path tau-lag dispersion of the ETA prediction error already
-    /// maintained on the sender's `[ETA]` gauge
-    /// (`net::eta::SenderEta::sigma_us`). ABSENT => `place_temperature()`
-    /// verbatim (`0.15`, or `RWM_PLACE_T`), which the pinned cost/probability
-    /// table asserts byte-identically.
-    ///
-    /// THE COLD RULE IS STATED AND GAUGED, NEVER HIDDEN: the pool is taken
-    /// over the paths that HAVE a dispersion sample; if NO active path has
-    /// one, `T_eff` is the shipped `T` and the `t_cold` bind counter is
-    /// bumped (`[ETA] site=sender t_cold=`). The `sigma -> 0` degenerate case
-    /// needs no branch of its own - `place_probs_with_temperature`'s existing
-    /// `z <= 0` arm resolves it to the argmin, which IS the law's `T -> 0`
-    /// limit.
+    /// `RWM_PLACE_T_DERIVED` (absent, arm): temperature `T = (√6/π)·σ_e/ref_srtt`.
     pub place_t_derived: bool,
-    /// **`RWM_PLACE_HOL`** (Track A arm 2, ABSENT by default) - the frontier
-    /// (head-of-line) term the placement law is missing, 16.81.2's `Phi`
-    /// physics read at the sender, added to `cost_i` for SOURCE symbols:
-    ///
-    ///   `X_i = [ delta*s_i + kappa*(s_i - H)+ ] / ref`,
-    ///   `s_i = [(now + E_i) - F_hat]+`
-    ///
-    /// with `F_hat` the sender's running max of stamped ETAs (`SenderEta`),
-    /// `delta` the contract's own price (`net::delta_price`, continuous - no
-    /// hint read), `kappa = 1` a DECLARED UPPER BOUND (register row +
-    /// `s_i > H` bind gauge), and `H` the store headroom of the LIVE
-    /// store-cap law. The 16.80.6(a2) wire-price ordering term rides the same
-    /// gate at its DERIVED `W` (computed from live scheduler quantities, no
-    /// literal), pricing the opposite sign of the same difference.
-    /// ABSENT => the term is absent and the cost is the shipped one, byte for
-    /// byte.
+    /// `RWM_PLACE_HOL` (absent, arm): source head-of-line cost `[δ·s_i + κ·(s_i − H)+]/ref`.
     pub place_hol: bool,
-    /// **`RWM_PLACE_WDIV_DERIVED`** (Track A arm 3, ABSENT by default) - the
-    /// diversity weight read off the channel's own burst persistence instead
-    /// of the `1.0` literal (paper 16.81.3):
-    ///
-    ///   `V_i = fate_i * (p_BB,i - eps_i)+ * srtt_i / ref`
-    ///
-    /// in place of `w_div * fate_i`. `p_BB = 1 - p_bg` from the path's
-    /// Gilbert-Elliott estimator, `eps` its marginal loss rate. Vanishes
-    /// identically on a memoryless channel, which the shipped `1.0` does not.
-    /// REPAIRS ONLY - `fate_i == 0` for source, so the arm cannot move a
-    /// source placement. Cold rule (no valid GE estimate on the path): the
-    /// shipped `w_div * fate_i`, counted by the existing `cold_ge` bind gauge.
+    /// `RWM_PLACE_WDIV_DERIVED` (absent, arm): repair weight `fate_i·(p_BB,i − ε_i)+·srtt_i/ref`.
     pub place_wdiv_derived: bool,
 
-    // ── Generation stack ──────────────────────────────────────────────────
+    // ── Generation stack (paper §5.8) ──
     /// `RWM_GEN` (default 384, min 1): generation size G.
     pub gen_size: usize,
-    /// `RWM_PIPELINE` (default 2, min 1): legacy fixed pipeline depth M.
+    /// `RWM_PIPELINE` (default 2, min 1): fixed pipeline depth M.
     pub pipeline: usize,
-    /// `RWM_GEN_PIPE` (default = `unified`): derived pipeline depth M* +
-    /// dynamic intake cap (ADR-0064 §16.20(d)); `=0` = fixed legacy M arm.
-    ///
-    /// The `RWM_FMTCP`(+`_WIN`) decode-on-total composite that used to sit
-    /// beside this gate was REMOVED 2026-07-27 (register: RE-TESTED on the
-    /// clean substrate by the "C8-Aware Pool Law" battery → CONFIRMED-REFUTED,
-    /// c7/c8 ×0.11–0.20 of the default stack; ADR-0066). Its surviving ideas
-    /// live on derived: per-path in-flight cap + M* depth here, honest
-    /// anchors in ADR-0061, per-path admission in the percap family.
+    /// `RWM_GEN_PIPE` (= `unified`, shipped): derived depth M* and dynamic intake cap.
     pub gen_pipe: bool,
-    /// `RWM_GEN_R` (unset = mode default 0.15 systematic / 0.20 coded-only;
-    /// clamped [0, 2] at the use site): proactive overhead r.
+    /// `RWM_GEN_R` (unset = 0.15 systematic / 0.20 coded-only): proactive overhead r.
     pub gen_r: Option<f64>,
     /// `RWM_GEN_RATE` (default 9000 sym/s): coded-emission pace ceiling.
     pub gen_rate: f64,
-    /// `RWM_GEN_RATE_FLOOR` (default 2000, clamped [1, gen_rate]): bootstrap
-    /// pacing floor before the ack-rate estimator has a sample.
+    /// `RWM_GEN_RATE_FLOOR` (default 2000): pacing floor before the first ack-rate sample.
     pub gen_rate_floor: f64,
     /// `RWM_GEN_INFLIGHT` (unset = 2·M·G): in-flight coded allowance W.
     pub gen_inflight: Option<f64>,
-    /// `RWM_OOO_RETAIN` set at all (flag semantics): out-of-order retention
-    /// decouple (Fix 3).
+    /// `RWM_OOO_RETAIN` set at all: the out-of-order retention decouple.
     pub ooo_retain: bool,
-    /// `RWM_OOO_RETAIN` numeric value (≥ 2, default 16): retention depth in
-    /// generations for the decouple.
+    /// `RWM_OOO_RETAIN` value (≥ 2, default 16): retention depth in generations.
     pub ooo_gens: usize,
-    /// `RWM_WINDOW` (default 640, clamped [MAX_WINDOW_SIZE, 4096] at use):
-    /// coded-only W_mp coding-window override (§16.5).
+    /// `RWM_WINDOW` (default 640): coded-only multipath coding window.
     pub window_override: Option<usize>,
-    /// `RWM_REPORT_GENS` (unset = M*+1 under gen_pipe, else 6; clamped
-    /// [1, 2000] at use): generations reported per deficit round.
+    /// `RWM_REPORT_GENS` (unset = M*+1 under gen_pipe, else 6): generations per report.
     pub report_gens: Option<usize>,
-    /// `RWM_REPAIR_WAIT` (ms; unset/0 = report immediately): repair-coverage
-    /// horizon before a frontier hole may fire a reactive NACK.
+    /// `RWM_REPAIR_WAIT` (ms, unset = 0): wait before a frontier hole fires a NACK.
     pub repair_wait_ms: Option<u64>,
-    /// `RWM_CODED_SRC` (default OFF): clock the coded budget on the SENT
-    /// frontier instead of the acked frontier (small-G wedge demonstrator).
+    /// `RWM_CODED_SRC` (off, arm): clock the coded budget on the sent frontier.
     pub coded_src: bool,
-    /// `RWM_NO_REACTIVE` (default OFF): pure-proactive demonstrator — the
-    /// deficit-driven reactive loop disabled entirely.
+    /// `RWM_NO_REACTIVE` (off, arm): disable the reactive loop.
     pub no_reactive: bool,
-    /// `RWM_XPATH_REPAIR` (default OFF): route repair to the
-    /// max-spare-capacity path (the C8 fungibility realization).
+    /// `RWM_XPATH_REPAIR` (off, arm): route repair to the path with most spare capacity.
     pub xpath_repair: bool,
-    /// `RWM_PROACTIVE_PACER` (default OFF): present-at-stall filling-repair
-    /// pacer — the documented resolution of the removed frontier/inline
-    /// family (presence⊥throughput evidence arm; ADR-0066).
+    /// `RWM_PROACTIVE_PACER` (off, arm): present-at-stall filling-repair pacer.
     pub proactive_pacer: bool,
-    /// `RWM_REASM_BDP` (default OFF): receiver reassembly clamp — never
-    /// evict an undelivered above-frontier symbol.
+    /// `RWM_REASM_BDP` (off, arm): never evict an undelivered above-frontier symbol.
     pub reasm_bdp: bool,
-    /// `RWM_MIN_R` (default 0, clamped [0, 2]): per-symbol repair-rate floor
-    /// (raise-r test instrument, not a shipped control law).
+    /// `RWM_MIN_R` (default 0, clamped [0, 2]): repair-rate floor (test instrument).
     pub min_r: f64,
 
-    // ── CC / pacing ───────────────────────────────────────────────────────
-    /// `RWM_CC_PACE` (default = `copa_wire_active()`): CC-rate pacing of the
-    /// systematic source (paced wire assumption of the Copa model).
+    // ── CC / pacing ──
+    /// `RWM_CC_PACE` (= `copa_wire`): CC-rate pacing of the systematic source.
     pub cc_pace: bool,
     /// `RWM_CC_PACE_HR` (default 1.1, clamped [1, 2]): pace headroom.
     pub cc_pace_headroom: f64,
-    /// `RWM_REACT_CAP` (unset = 1.0 under gen_pipe else OFF; <1 =
-    /// fraction of SRTT, ≥1 = absolute µs): bounded-reactive spacing.
+    /// `RWM_REACT_CAP` (unset = 1.0 under gen_pipe; < 1 SRTT fraction, ≥ 1 µs): reactive spacing.
     pub react_cap: Option<f64>,
     /// `RWM_INFL_CAP` (default 0 = off): static total in-flight cap.
     pub infl_cap: u64,
-    /// `RWM_INFL_BDP` (unset = 1.5 under gen_pipe else off): BDP-derived
-    /// in-flight cap gain.
+    /// `RWM_INFL_BDP` (unset = 1.5 under gen_pipe): BDP in-flight cap gain.
     pub infl_bdp: Option<f64>,
-    /// `RWM_COPA_FEED` (default OFF): standalone plain-mode Copa delivery
-    /// feed (also implied by `RWM_QUIC_CC=passthrough`) — ADR-0062.
+    /// `RWM_COPA_FEED` (off, arm; implied by `RWM_QUIC_CC=passthrough`): Copa feed (ADR-0062).
     pub copa_feed: bool,
-    /// `RWM_RS_ATTR` (default ON): flight-time witness for cross-path ack
-    /// attribution in the sampling-only feed; `=0` = last-sent-path arm.
+    /// `RWM_RS_ATTR` (on, shipped): flight-time witness for cross-path ack attribution.
     pub rs_attr: bool,
 
-    // ── Emission (goal-gate "Emission Batching", 2026-07-27) ──────────────
-    /// `RWM_EMIT_BATCH` (default OFF — the A/B arm; the "Ship The Wins 1"
-    /// composed flip measured c1 463–482 with est+pool-anchor but was
-    /// REVERTED by the pre-set c7 clause, 2026-08-07): pacer-quantum
-    /// emission batching on the plain window-reliable sender. Burst TUN
-    /// intake (≤ `emit_burst` symbols per loop iteration, inside the
-    /// flow-control store headroom and the pacing bucket) + per-burst
-    /// taper/span-math refresh (per-symbol when OFF — bit-identical shipped
-    /// path). Perf-only: ordering/pacing contracts and the delivered set
-    /// unchanged. Single-live-path scope only; Realtime packing excluded
-    /// (§16.28). Part of the documented fast single-path opt-in
-    /// (`RWM_EMIT_BATCH=1 RWM_EST_CADENCE=1`: 446–508 Mbit/s at c1).
+    // ── Emission ──
+    /// `RWM_EMIT_BATCH` (off, arm): pacer-quantum emission batching, single live path only.
     pub emit_batch: bool,
-    /// `RWM_EMIT_BURST` (default 64 symbols ≈ 64 KB payload — the BBR-style
-    /// pacer quantum; clamped [2, 512]): emission burst quantum.
-    ///
-    /// SENDER-ONLY by measurement: the receiver-arm variants (engine-loop
-    /// burst drain ± per-burst ack coalescing, gates `RWM_EMIT_BATCH_RECV`/
-    /// `RWM_EMIT_ACK`) were built and REFUTED 2026-07-27 — any engine-
-    /// receiver drain collapsed c1 227.6 → 136–144 Mbit/s (echo-RTT
-    /// inflation → store-cap growth → spurious retx flood); removed, see
-    /// goal-gate "Emission Batching".
+    /// `RWM_EMIT_BURST` (default 64, clamped [2, 512]): burst quantum in symbols.
     pub emit_burst: usize,
 
-    // ── Recovery plane (ADR-0059) ─────────────────────────────────────────
-    /// `RWM_RECOV_MP` (default ON): multipath recovery suppression — per-
-    /// flight RFC 9002-style hole law on the flight path's smoothed clocks.
+    // ── Recovery plane and store-cap arms (ADR-0059, paper §7) ──
+    /// `RWM_RECOV_MP` (on, shipped): per-flight hole law on the flight path's clocks (paper §7.1).
     pub recov_mp: bool,
-    /// `RWM_RECOV_MP_LAW` (default ON under the umbrella): the per-flight
-    /// hole-law sub-gate (trace attribution).
+    /// `RWM_RECOV_MP_LAW` (on, shipped): the per-flight hole-law sub-gate.
     pub recov_mp_law: bool,
-    /// `RWM_RECOV_MP_LIVE` (default OFF — the A/B arm; goal-gate "C8
-    /// Slow-Path Conversion"): the hole law's `mp_n_paths` + per-path
-    /// clock snapshot read `live_paths()` instead of the
-    /// saturation-filtered `active_paths()` (`available() > 0`), whose
-    /// cwnd-full-path trap collapses the law to the N = 1 bypass (legacy
-    /// age gate, cross-path clock) mid-transfer — the same filter trap
-    /// already fixed at the Copa-sole store law and `capw_store_cap`, here
-    /// at the recovery plane. Diagnosis signature: c8-pbs 412–749 of
-    /// ~1.2–1.5k retransmits fired YOUNG vs their own flight-path law
-    /// threshold (2026-08-06).
+    /// `RWM_RECOV_MP_LIVE` (off, arm): the hole law reads `live_paths()`, so cwnd-full paths no
+    /// longer collapse it to the N = 1 bypass.
     pub recov_mp_live: bool,
-    /// `RWM_STORE_CAP_UNIFIED` (default OFF — the A/B arm; goal-gate
-    /// "Store-Cap Triplication", 2026-08-09): the plain (non-Copa-sole)
-    /// dynamic store cap's Σ-anchor base and honest per-path cap sum read
-    /// `live_paths()` instead of the saturation-filtered `active_paths()`
-    /// (`available() > 0`). This is the SAME filter trap already fixed at
-    /// the Copa-sole store law (`cwnd_sum`) and at `capw_store_cap`/
-    /// `RWM_POOL_ANCHOR`, and armed at the recovery plane as
-    /// `RWM_RECOV_MP_LIVE` — here at the law that is actually SHIPPED ON:
-    /// `path_scaled_store_cap` multiplies its Σ-base by `n_live`, counted
-    /// from `live_paths()`, while the base itself was summed over
-    /// `active_paths()`, so a cwnd-saturated path is counted in the ×N and
-    /// omitted from the Σ. A wire-bound sender is cwnd-saturated by
-    /// definition; when the filter empties the set the cap falls to
-    /// `store_boot_cap` (128). Population measured by the `sf=` gauge
-    /// (`net::store_cap_sf_gauge`). `=0`/unset is the shipped default,
-    /// bit-exactly.
+    /// `RWM_STORE_CAP_UNIFIED` (off, arm): the plain cap's Σ-base reads `live_paths()`, as its ×N
+    /// does.
     pub store_cap_unified: bool,
-    /// `RWM_THREE_TERM` (default OFF — the A/B arm; goal-gate "Three-Term
-    /// Law", 2026-08-10): the plain (non-Copa-sole) dynamic store cap is
-    /// computed as the composed THREE-TERM law
-    ///
-    /// ```text
-    ///   limit = Σ_i rate_i·K_i·RTprop_i            (network window)
-    ///         + Σ_i rate_i·stall(δ, ρ, i)          (emission slack)
-    ///         + 2·rate_fast·skew                   (resequencing span)
-    /// ```
-    ///
-    /// — paper §16.43/§16.44, `net::three_term_store_cap`. Every term is
-    /// Little's law over a signal the engine already measures and NONE of
-    /// them contains a fitted coefficient. The point of the gate is the
-    /// THIRD term: it is identically zero at a single path because
-    /// `skew = (max RTprop − min RTprop)/2` over a one-element set is zero
-    /// BY ARITHMETIC — which is how the `active_paths()` / `live_paths()`
-    /// topology branch dies without an `if N == 1`. `=0`/unset is the
-    /// shipped default, bit-exactly: the existing law chain runs verbatim.
+    /// `RWM_THREE_TERM` (off, arm; paper §10): `net::three_term_store_cap` as the plain cap.
     pub three_term: bool,
-    /// `RWM_COMPOSED_CAP` (default OFF — the A/B arm; paper §16.56, ADR-0070
-    /// Deliverable 2): THE COMPOSED CAP LAW, as ONE arm. The formula and
-    /// every symbol's provenance are in the paper, written BEFORE this gate
-    /// existed (CLAUDE.md FORMULA-FIRST):
-    ///
-    /// ```text
-    ///   cap = Σᵢ over live_paths [ rateᵢ·RTpropᵢ + rateᵢ·stall(δ,ρ,srttᵢ) ]
-    ///       + 2·rate_fast·skew
-    /// ```
-    ///
-    /// **It IS [`crate::net::three_term_store_cap`]** on honest inputs — not
-    /// a resemblance and not a second implementation, so there is nothing to
-    /// drift. What this gate adds over `RWM_THREE_TERM` is the COMPOSITION
-    /// ADR-0070 says has never been measured anywhere: the pool law, the
-    /// unified live set at BOTH seats, and the late-stage per-path brake.
-    /// Exactly three things, and no fourth:
-    ///
-    /// 1. **The pool law** in the plain dyn-cap chain — what `RWM_THREE_TERM`
-    ///    already selects; this gate reaches the same seat.
-    /// 2. **The unified live set.** The pool law already reads `live_paths()`
-    ///    unconditionally, so the pool needs nothing. The BRAKE does — see 3.
-    /// 3. **The late-stage per-path brake** (`cwnd_full`, ADR-0070 finding 7:
-    ///    "the correct architecture, DISABLED WITHOUT A DECISION"), with its
-    ///    per-path cap equal to **the path's OWN cwnd**. NO NEW CONSTANT: the
-    ///    cap is the congestion controller's own window, which is what a
-    ///    congestion brake ought to be made of. Neither `RWM_INFL_CAP`'s
-    ///    static total nor `RWM_INFL_BDP`'s `gain·BDP` is used, and neither
-    ///    changes meaning.
-    ///
-    /// **The trap that makes point 2 load-bearing** (§16.56, written down
-    /// before it could be walked into): with the per-path cap set to the
-    /// path's own cwnd, "path i is full" is `in_flightᵢ ≥ cwndᵢ`, i.e.
-    /// exactly `available()ᵢ == 0` — and `active_paths()` is *active AND
-    /// `available() > 0`*. A brake iterating `active_paths()` would ask a
-    /// question whose answer is FALSE BY CONSTRUCTION on every tick, forever:
-    /// it would resolve ON, cost a lock, and never brake. That is a null
-    /// EFFECT wearing a null RESULT's clothes — §16.53's DIVERGED lesson. The
-    /// composed brake reads `live_paths()`, so `cwnd_full` here means **every
-    /// LIVE path is at or above its own congestion window**.
-    ///
-    /// **No ceiling of its own.** No `N·knee`, no swept pool, no arbitrary
-    /// clamp: δ prices the queue as a latency budget (§16.47 measured the cap
-    /// doing exactly that, 12/12). `WIN_STORE_MAX` survives beside the law as
-    /// a MEMORY bound — a resource limit that may abort, never a term that
-    /// shapes — and the one paroled constant, `store_cap_floor` = 64 (whose
-    /// provenance ADR-0070 finding 5 records as ABSENT), stays. Both are
-    /// NAMED with their bind fractions in the `[CCAP]` echo, per the
-    /// FORMULA-FIRST clamp rule, so neither can bind silently again.
-    ///
-    /// `=0`/unset is the shipped default, bit-exactly.
+    /// `RWM_COMPOSED_CAP` (off, arm; paper §10): three-term cap plus the per-path cwnd brake.
     pub composed_cap: bool,
-    /// `RWM_SUM_CAP` (**DEFAULT ON since 2026-08-19**, ladder battery rung N;
-    /// `=0` = the displaced quadratic, kept re-runnable; paper §16.60/§16.64,
-    /// ADR-0070 finding 2): **THE `×N` DELETION.** The pooled law's count
-    /// multiplier is removed from the VALUE and kept in the CEILING:
-    ///
-    /// ```text
-    ///   `=0` arm   cap = clamp( gain · N · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
-    ///   SHIPPED    cap = clamp( gain     · Σᵢ(max_bwᵢ·min_rttᵢ), floor, N·knee )
-    /// ```
-    ///
-    /// The quantity the law's own decl comment names — *"Σ per-path (BDP + one
-    /// recovery round of runway)"* — is `Σᵢ(gain·anchorᵢ) = gain·Σ`, which is
-    /// ALREADY linear in the path count because the Σ is. The shipped
-    /// expression multiplies that already-summed base by the count a second
-    /// time, making the value QUADRATIC in N where its own sentence is LINEAR.
-    /// ADR-0070 finding 2 records the multiplier's provenance as **ABSENT** —
-    /// not in the birth commit message, not in the doc comment, not at the
-    /// decl site, not in the ledger — and contradicted by name in three places
-    /// in this repository. This gate is the arm that finally ran the A/B that
-    /// had never been run, and **it delivered**: goal-gate "Ladder Battery —
-    /// RESULTS" measured the corrected law INTERIOR at both scoreable duals
-    /// (`pin` 0.000, `eng` 1.000, `chg_frac` 1.000, no CAPBIND WARN) against a
-    /// control reproducing the shipped 4096 pin, with goodput UP at the
-    /// pre-registered risk cell (c8) on BOTH seeds. Hence the flip.
-    ///
-    /// **Exactly one factor changes.** Gain, floor, ceiling, Σ-set and
-    /// estimator are untouched, and no constant is introduced — so `gain`'s
-    /// fossil status (finding 3) and the knee's staleness (finding 4) are
-    /// carried, identical on both arms, and cancel out of the comparison.
-    /// [`crate::net::pooled_store_cap`] carries both forms in ONE expression
-    /// with the multiplier as a VALUE, so there is no second implementation to
-    /// drift from the paper.
-    ///
-    /// **It composes with [`Self::store_cap_unified`], and the four
-    /// combinations are four distinct formulas** — U selects the Σ's path SET,
-    /// this gate selects the count MULTIPLIER, and they are independent axes of
-    /// the same law (asserted by `net::tests::law_shape`).
-    ///
-    /// **Reading a null.** At `N = 1` the law is not engaged at all
-    /// (`n_live < 2` ⇒ `None`), so singles are byte-identical BY CONSTRUCTION.
-    /// At `N ≥ 2` the correction is only VISIBLE where the value is interior:
-    /// the `=0` form pins at `Σ ≥ knee/gain` (path-count-FREE, 1024), the
-    /// shipped form at `Σ ≥ N·knee/gain` (1024 PER PATH). An arm whose
-    /// `[SUMCAP]` echo reads a high `pin=` fraction measured the CLAMP, not the
-    /// law, and MEASUREMENT DISCIPLINE 18 requires that be reported as the
-    /// finding rather than filed as a null — which is why the echo carries
-    /// `eng=`, `pin=` and `chg=` and not a mean.
-    ///
-    /// **The honest bound on the flip**, carried here because the
-    /// recommendation carried it: the ladder's noise floor at c8 is wide
-    /// (2σ = 27.07 Mbit/s against a 77–86 Mbit/s base, n = 21/24 at a bistable
-    /// cell), so the session excludes a **large** c8 regression, not a small
-    /// one. Carried with it: the c8 CAP-MAGNITUDE clause was FALSIFIED AS
-    /// WRITTEN (`cap` 2308.7 vs a ±20 % band of [2416, 3624]) because the wire
-    /// presented Σ = 1154.3, 23–28 % below both published anchors — a finding
-    /// about Σ, not about the law (`cap ≡ ask`, `pin = 0`).
-    ///
-    /// `=0` is the DISPLACED QUADRATIC, kept fully re-runnable as the A/B arm
-    /// with no deprecation warning (ADR-0066 register row); its shape stays
-    /// pinned by `net::tests::law_shape::path_scaled_store_cap_value_is_quadratic_in_n_the_documented_defect`.
+    /// `RWM_SUM_CAP` (on, shipped; paper §6.1): pooled cap `gain·Σ`; `=0` is `gain·N·Σ`.
     pub sum_cap: bool,
-    /// `RWM_LATE_BRAKE` (default OFF — the A/B arm; paper §16.60.1, ADR-0070
-    /// finding 7): the late-stage per-path cwnd brake, **EXTRACTED** from
-    /// [`Self::composed_cap`] so it can be armed WITHOUT the composed pool law
-    /// that §16.57 refuted on magnitude.
-    ///
-    /// ```text
-    ///   brake closes  ⟺  ∀ i ∈ live_paths() :  in_flightᵢ ≥ cwndᵢ
-    /// ```
-    ///
-    /// Identical code path, identical per-path cap (**the path's OWN cwnd** —
-    /// derived, never configured, always warm), identical set (`live_paths()`,
-    /// because with `capᵢ = cwndᵢ` the predicate is exactly `available()ᵢ == 0`
-    /// and an `active_paths()` brake would resolve ON and never close — the
-    /// §16.53 DIVERGED lesson). **No constant appears in the predicate at all.**
-    ///
-    /// Why an extraction was needed: the brake arms on
-    /// `eff_infl_cap > 0 || composed_cap`, and `composed_cap` also forces
-    /// `three_term_on` — so the only two pre-existing ways to arm a brake give
-    /// either the refuted composed pool law, or [`Self::infl_cap`]'s GLOBAL
-    /// `Σ in_flight ≥ n` test against an operator-invented constant
-    /// (`infl_percap` rides `gen_pipe`, which is off on the plain seat).
-    /// Neither `RWM_INFL_CAP` nor `RWM_INFL_BDP` changes meaning here.
-    ///
-    /// `=0`/unset is the shipped default, bit-exactly: `cwnd_full` stays
-    /// permanently false on the plain seat and the store cap remains the sole
-    /// brake on outstanding (PIPELINE VERIFICATION MATRIX row 17).
+    /// `RWM_LATE_BRAKE` (off, arm): brake when every live path has `in_flightᵢ ≥ cwndᵢ`.
     pub late_brake: bool,
-    /// `RWM_RECOV_SP` (default OFF — the A/B arm; goal-gate "Lossy-Single
-    /// Residual"): SINGLE-path per-flight time-threshold suppression — the
-    /// RFC 9002 §6.1.2 hole law applied at N = 1 (time channel ONLY; the
-    /// §6.1.1 packet channel is excluded at N = 1 by measurement: netem
-    /// jitter reorders tens of packets deep on one path, far past
-    /// kPacketThreshold). Measured without it (2026-07-27 diagnosis): the
-    /// singles reactive plane fires ×4.4–5.7 the realized loss (sc2-100M:
-    /// 3313 fired vs ~580 drops, 80% younger than the law's own threshold),
-    /// costing ~2.7 Mbit at sc2 / ~1.7 at sc3 of pure wire waste.
+    /// `RWM_RECOV_SP` (off, arm): single-path RFC 9002 §6.1.2 time-threshold suppression.
     pub recov_sp: bool,
-    /// `RWM_DERIVED_SWEEP` (default OFF — the A/B arm; goal-gate "The
-    /// Derived Recovery Clamp"): both recovery clocks — the sender's tail
-    /// sweep and the receiver's stalled-hole refresh — read
-    /// `net::derived_recovery_round_us` (2·SRTT floored by the DERIVED
-    /// patience floor, NO ceiling) instead of `2·SRTT` clamped to the
-    /// undocumented [25 ms, 100 ms]. OFF ⇒ both sites byte-identical to the
-    /// shipped law. Zero new constants: the `2` and the floor are already in
-    /// the tree. See `net/mod.rs`'s block comment for the provenance of the
-    /// two literals this replaces and why neither of the ceiling's stated
-    /// referents (the EVICT reorder hold; an inner-TCP RTO) exists on the
-    /// measured stack.
+    /// `RWM_DERIVED_SWEEP` (off, arm): recovery clocks at `net::derived_recovery_round_us`.
     pub derived_sweep: bool,
-    /// `RWM_DELTA_CAP` (**DEFAULT ON since 2026-08-19**, candidates battery
-    /// rung D; `=0` = the displaced `gain = 2.0` fossil, kept re-runnable;
-    /// paper §16.67/§16.70/§16.71, ADR-0071 family 2): the pooled outstanding
-    /// cap's VALUE multiplier is the δ-priced, CoDel-DERIVED standing-queue
-    /// setpoint instead of the shipped `gain = 2.0` fossil.
-    ///
-    /// ```text
-    ///   SHIPPED   cap  = clamp( (1 + q(δ)) · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
-    ///   `=0` arm  cap  = clamp(  gain      · Σᵢ(bwᵢ·RTpropᵢ),  floor,  N·knee )
-    ///   q(δ) = 0.05 + 0.05·(clamp(b(δ), ½, 2) − ½)/(2 − ½)   ==  (b+1)/30
-    /// ```
-    ///
-    /// **THE SHIPPED FORMULA AFTER BOTH 2026-08-19 FLIPS**, stated whole
-    /// because the two gates compose and neither record is readable alone —
-    /// [`Self::sum_cap`] (ON, §16.64) deleted the COUNT multiplier and this
-    /// gate (ON, §16.71) replaced the VALUE multiplier, so the pooled law the
-    /// engine computes unset is
-    ///
-    /// ```text
-    ///   cap = clamp( (1 + q(δ)) · Σᵢ(bwᵢ · RTpropᵢ),  floor,  N · knee )
-    /// ```
-    ///
-    /// with the `N·knee` knee **measured INERT at both scoreable duals**
-    /// (`pin` = 0.0000 at c7 and c8) rather than assumed inert. `gain = 2.0`
-    /// no longer appears in the shipped VALUE at all: it survives only on the
-    /// `=0` arm and at the other cap seats.
-    ///
-    /// RFC 8289 (CoDel) §3.2 DERIVES the permitted standing queue from
-    /// Kleinrock power maximisation and states it as *"between 5% and 10% of
-    /// the TCP connection's RTT"*. This gate maps the δ dial CONTINUOUSLY onto
-    /// that band — Realtime 5.00 %, Auto 6.67 %, Bulk 10.00 % — with both band
-    /// endpoints cited and both dial endpoints READ from `net::delta_budget_b`,
-    /// so the map has no free parameter. No threshold, no hint test, no second
-    /// code path: it substitutes ONE FACTOR in one expression
-    /// (`net::pool_value_multiplier`), exactly as [`Self::sum_cap`] substitutes
-    /// the count multiplier, and the two are INDEPENDENT AXES of one law.
-    ///
-    /// **The design decision it embodies**: the δ dial's own points permit
-    /// 50/100/200 % of an RTprop, 10–40× the derived band, so the derived law
-    /// COMPRESSES the dial's authority 20× at Bulk. §16.67 states the
-    /// justification (CoDel's power function falls monotonically past
-    /// `f ≈ 0.1`; §16.57 measured 43–48 % worse latency at goodput parity for
-    /// 2.4× the queue) and states that the user may reject it.
-    ///
-    /// As `q → 0` the law reduces to `Σᵢ bwᵢ·RTpropᵢ`, which IS ADR-0071
-    /// candidate (d) ZERO. Bit-identical at N = 1 BY CONSTRUCTION (the pooled
-    /// seat returns `None` at `n_live < 2` before any multiplier is read).
-    /// Engagement, both clamp bind fractions and the counterfactual against
-    /// `gain` are reported by the `[DCAP]` echo.
-    ///
-    /// **Measured on the wire before it shipped** (goal-gate "Candidates
-    /// Battery — RESULTS", 2026-08-19, rung D): **D-LAT six of six** — goodput
-    /// PARITY at every dual on both seeds (no reading outside 2σ_pooled in
-    /// either direction) with `q_p50` strictly down at every one, by 10–16 ms
-    /// at c7, 113–117 ms at c8 and 130–200 ms at c8L; INTERIOR with the
-    /// ceiling provably inert at c7 and c8 (`pin` = 0.0000, `eng` = `chg` =
-    /// 1.00, cap inside its pre-registered ±20 % band at both); `eng = 0/0` at
-    /// c1 and sc2, the N = 1 identity confirmed on the wire; and c8's paired
-    /// dead wall SHORTENED (18 of 23 non-zero pairs favour the arm, sign test
-    /// p ≈ 0.011 — B-WALL resolving for the first time in this tree).
-    ///
-    /// **The honest bounds on the flip**, carried here because the
-    /// recommendation carried them:
-    ///
-    /// * **Goodput is PARITY, not a win** — the honest claim is *"free"*, not
-    ///   *"faster"*. Worst readings −2.64 Mbit/s against 2σ 38.09 (c8L s42),
-    ///   −1.28 against 4.28 (c7 s7); best +7.83 against 11.13 (c8 s42).
-    /// * **c8L is a PARTIAL delivery, not a verdict.** `pin` = 0.23 there
-    ///   falls in the gap BETWEEN the contract's two pre-declared branches
-    ///   (`≤ 0.10` primary era, `> 0.50` secondary era) and neither branch is
-    ///   claimed after the fact. §16.67's "interior EVERYWHERE incl. c8L" is
-    ///   therefore NOT delivered; the named instrument is the WITHIN-RUN Σ
-    ///   series, which needs no VM arm.
-    /// * **The probe is not unanimous**: `ping_p50` agrees with `q_p50` on
-    ///   five of six rows and disagrees in SIGN on one (c8 s42, +20.5 ms). The
-    ///   claim rests on `q_p50`, the sender-side measurand this law governs.
-    /// * **The c8/seed-7 abort class is ARM-CORRELATED** (20 % on the control
-    ///   against 75 % on the RACK arm), so excluding aborts from denominators
-    ///   there is a selection on the treatment and the surviving c8 seed-7
-    ///   reps are a biased sample of unknown direction. Scoped to c8 seed 7:
-    ///   seed 42 is abort-free at every cell and no headline verdict rests on
-    ///   c8 seed 7 alone. The owed instrument is an abort-cause witness.
-    /// * **No support at single-path cells**, and none is claimed: the law
-    ///   cannot regress a single-path deployment and cannot help one either.
-    ///
-    /// `=0` is the DISPLACED `gain = 2.0` FOSSIL, kept fully re-runnable as
-    /// the A/B arm with no deprecation warning (ADR-0066 register row); the
-    /// substitution's shape stays pinned two-sidedly by
-    /// `formula_agreement::the_delta_cap_substitutes_one_factor_and_reduces_to_candidate_d`.
+    /// `RWM_DELTA_CAP` (on, shipped; paper §6.1): pooled value multiplier `1 + q(δ)`, q on RFC 8289
+    /// §3.2's 5–10 % band; `=0` uses `gain`.
     pub delta_cap: bool,
-    /// `RWM_HOLDDOWN_Q` (**ABSENT by default**; paper §16.77) — the EXPERIMENT
-    /// knob that sets the level `q` of the SENDER'S HOLD-DOWN on a reported
-    /// hole: the sender does not answer a receiver gap report with a repair
-    /// until the hole has been outstanding for at least `T(q) = W_q(1 − q)`,
-    /// §16.76's order statistic evaluated on the hole-resolution stream.
-    ///
-    /// **Why it exists.** The fire-cause pass counted **0.59 % of 107 597
-    /// classified recovery fires from a timer and 98.99 % from the sender
-    /// answering a gap report**. Every clock this tree has written — the
-    /// shipped `[25, 100] ms` clamp, [`Self::derived_sweep`] (and the removed
-    /// RACK and quantile arms) — sets the TIMER, and
-    /// `fa ⊥ W` is the measured consequence. This is the first knob pointed at
-    /// the other 99 %. It is NOT a rival law for the timer's quantity and it
-    /// does not sit in that precedence chain: it is a different decision, at a
-    /// different site, and it composes with every one of them.
-    ///
-    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
-    /// Unset, empty, unparseable, non-finite, or outside the OPEN interval
-    /// `(0, 1)` ⇒ `None` ⇒ no hold-down at all, which is today's machine
-    /// byte-identically. The domain is the law's own and not a taste: at
-    /// `q ≤ 0` the hold-down is zero — the shipped behaviour, expressed by the
-    /// gate being absent rather than by an armed arm — and at `q ≥ 1` the
-    /// window law `N = ⌈K/(1−q)⌉` diverges (§16.77.10). The `[GATES]` echo
-    /// prints the RESOLVED value, so "my arm did not take" is READ.
-    ///
-    /// **Nothing may ship reading it.** A shipped hold-down must derive `q`
-    /// from the (δ, ρ, r) triangle through §16.77.2's stationarity condition,
-    /// continuous in every dial; that is the decision this arm informs and
-    /// does not take.
+    /// `RWM_HOLDDOWN_Q` (absent, arm): hold a reported hole `T(q) = W_q(1 − q)` (paper §7.2).
     pub holddown_q: Option<f64>,
-    /// `RWM_REFRESH_FLOOR_US` (**ABSENT by default**; paper §16.78) — the
-    /// EXPERIMENT input that supplies the clamp-band FLOOR of the RECEIVER'S
-    /// hole-refresh cadence, in microseconds:
-    ///
-    /// ```text
-    ///   refresh(srtt) = (2·srtt).clamp( F , HOLE_NACK_REFRESH_BAND · F )
-    ///   F = this value, absent ⇒ HOLE_NACK_REFRESH_MIN = 25 ms
-    /// ```
-    ///
-    /// **Why it exists.** §16.77.8d established as arithmetic that the sender
-    /// learns a hole closed from the ABSENCE of that hole in a LATER report,
-    /// so the finest gap response it can time is one refresh interval — and at
-    /// **four of five measured cells that interval sits AT OR ABOVE the median
-    /// of the hole-self-heal distribution it is supposed to quantile**
-    /// (`[SUCC]` `orig` p50: `c1` 24.6 ms vs a 25 ms floor, `c7` 30.7 ms and
-    /// `sc2` 98.3 ms vs a 100 ms floor). Until this constant moves, no
-    /// hold-down level `q` is commandable below the self-heal median, and the
-    /// whole sub-floor region of the `(q, refresh)` surface is unreadable.
-    /// This is the named PRECONDITION, not a rival law.
-    ///
-    /// **It scales the BAND, and that is arithmetic, not preference.** The
-    /// rail that bounds the cadence is whichever rail BINDS: the LOWER rail at
-    /// `c1` (`2·srtt ≈ 4 ms`), the UPPER rail at `c7`/`sc2` (`2·srtt ≥ 100 ms`
-    /// under load). An override of the lower rail alone would be INERT at two
-    /// of the three cells the sweep runs. See [`crate::net::HOLE_NACK_REFRESH_BAND`],
-    /// which is COMPUTED from the two shipped literals and is therefore not a
-    /// new constant.
-    ///
-    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
-    /// Unset, empty, unparseable, or outside `[LOOP_WAKE_US, 100 000] µs` ⇒
-    /// `None` ⇒ `HOLE_NACK_REFRESH_MIN` ⇒ today's machine byte-identically.
-    /// The domain is the law's own and not a taste: below the receiver loop's
-    /// wake granularity a cadence cannot be expressed by the loop that has to
-    /// emit it, and above `HOLE_NACK_REFRESH_MAX` the band's LOWER rail would
-    /// leave the shipped band entirely. The `[GATES]` echo prints the RESOLVED
-    /// value on BOTH endpoints, so "my arm did not take" is READ.
-    ///
-    /// **Nothing may ship reading it.** A shipped cadence must be DERIVED;
-    /// this makes a censored region readable and takes no decision.
+    /// `RWM_REFRESH_FLOOR_US` (absent = 25 ms, arm): hole-refresh band floor (paper §7.4).
     pub refresh_floor_us: Option<u64>,
-    /// `RWM_DELTA` (**ABSENT by default**; paper §16.81/§16.82) —
-    /// THE CONTRACT'S δ, set directly as a NUMBER instead of by naming one of
-    /// the three preset points on the dial.
-    ///
-    /// **This is not a mode selector; it is the dial itself.** Since §16.81
-    /// the hint names a δ exactly once ([`crate::net::delta_price`]) and every
-    /// δ-priced law downstream is a continuous FORMULA of that number: the
-    /// span horizon `b(δ)`, the rate mix's bulkness `β(δ)`, the effective tail
-    /// target `base·ζ(δ)`, and the contract's α. Present ⇒ ONE δ reaches all
-    /// four, so a battery can stand BETWEEN the presets (`RWM_DELTA=0.05` is
-    /// β = ½ exactly) — the position on the dial the shipped machine could
-    /// never express and the r > 0 regime needs.
-    ///
-    /// **PRECEDENCE, stated once.** `RWM_COPA_DELTA` overrides the CONGESTION
-    /// CONTROLLER's δ alone and outranks this knob there; `RWM_DELTA`
-    /// overrides the contract's δ everywhere including the CC when
-    /// `RWM_COPA_DELTA` is absent. The r-battery's MID arm uses exactly that
-    /// pair: `RWM_DELTA=0.05` moves the contract, `RWM_COPA_DELTA=0.005` pins
-    /// the CC at Bulk so the CC is not the treatment.
-    ///
-    /// **ABSENT, not defaulted, and garbage resolves back to ABSENT VISIBLY.**
-    /// Unset, empty, unparseable, non-finite or non-positive ⇒ `None` ⇒ the
-    /// hint's own map, byte-identically. The `[GATES]` echo prints the
-    /// RESOLVED value (`unset` or the number) at BOTH endpoints, so *"my arm
-    /// did not take"* is READ off the run's own output — the
-    /// `RWM_ALPHA_OVERRIDE` precedent.
-    ///
-    /// **Nothing shipped sets it.** A shipped δ is named by the contract's
-    /// hint; this is the measurement seat, not a law.
+    /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
+    /// outranks it for the CC.
     pub delta: Option<f64>,
-    /// `RWM_COMPLETION_EXPOSURE` (**default OFF**; paper §14.26/§16.82, in
-    /// flight) — ARM the completion-exposure glide by actually FEEDING χ.
-    ///
-    /// **Why it exists.** §14.26's glide `δ_eff = ε̂ + (BULK_TAIL_BUDGET − ε̂)·χ`
-    /// has shipped since P6 and has never run: `set_completion_exposure` had
-    /// **zero engine callers**, so χ ≡ 0, so δ_eff = ε̂ at the Bulk end of the
-    /// dial, so `controller_rate` returned exactly 0 — `r* ≡ 0` identically on
-    /// every scored battery this tree has produced, all of which ran the bulk
-    /// hint. The FEC/ARQ trade-off law that names this project has therefore
-    /// never been measured anywhere but at its corner. This gate is the wire
-    /// that makes the interior reachable.
-    ///
-    /// **What it turns on, and nothing more.** Under the gate the rate site
-    /// reads a [`crate::net::CompletionFeed`] (remaining bytes, published by a
-    /// driver that knows them — the perf client), converts it to `T_rem` with
-    /// the path's own throughput, and calls `set_completion_exposure`. It adds
-    /// no law: `completion_exposure` and the glide are both already in the
-    /// math crate and both already tested there. OFF ⇒ the feed is never read
-    /// and the rate is BYTE-IDENTICAL to the engine without this gate, which
-    /// `tests/chi_reachability.rs` asserts rather than describes.
-    ///
-    /// **It is an EXPERIMENT ARM.** Nothing shipped sets it; the tunnel path
-    /// has no feed to give it. Whether χ > 0 is worth its overhead is exactly
-    /// what the §16.82 r > 0 battery is for, and this gate is the arm that
-    /// battery switches — not a default in waiting.
+    /// `RWM_COMPLETION_EXPOSURE` (off, arm): feed χ from a `CompletionFeed` (paper §4.6).
     pub completion_exposure: bool,
-
-    /// `RWM_RECV_REQUEST_LAW` (**ABSENT by default**; paper 16.83.6 arm (A))
-    /// -- **THE REQUEST LAW MOVES THE REPAIR DECISION TO THE RECEIVER'S SEAT.**
-    ///
-    /// Armed, the receiver stops letting the sender infer holes from inverted
-    /// SACK ranges and REQUESTS them instead: per detected hole, at lateness
-    /// `l`, `REQUEST <=> l >= l*_recv`, where `l*_recv` is the threshold
-    /// `net/late.rs` already computes read-only from the receiver's own heal
-    /// density (`min{l : rho_heal(l) <= w/(1+w)} AND (H - d)+`). The requests
-    /// ride the v8 [`crate::transport::ControlMessage::RepairRequest`] with
-    /// `m = 1` -- the COPY, so this arm isolates the TIMING lever and nothing
-    /// else -- and the sender serves them out of `sent_store`, the same bytes
-    /// the gap loop serves today (so `[RFA] dup_src` stays comparable to CTL).
-    ///
-    /// **The collision seam.** 16.83.4: four emitters can fire a copy for the
-    /// same hole, and the censoring argument that makes `rho_heal` estimable
-    /// at all is CONDITIONAL on the receiver being the single authority. So
-    /// the per-seq SACK->gap producer is suppressed while this is armed (one
-    /// `&&` at `recv_nack_tx`) and `sack_tx` is NOT touched -- the SACK still
-    /// clocks store release (ADR-0060), because pruning `sent_store` on SACK
-    /// was refuted structurally UNSAFE on 2026-07-07 and a request law that
-    /// touched it would be re-running a refuted experiment.
-    ///
-    /// **ABSENT ⇒ no `RepairRequest` is ever constructed, the seam is the
-    /// shipped predicate verbatim, and the reliable reorder deadline reduces
-    /// to `hole_refresh` exactly** -- asserted, not described, by
-    /// `tests/recvlaw_reachability.rs`'s control arm and by the disarmed-inert
-    /// unit test beside the hold-down gate's.
+    /// `RWM_RECV_REQUEST_LAW` (absent, arm): the receiver requests holes past `l*_recv`; the
+    /// SACK→gap producer is suppressed (paper §7.6).
     pub recv_request_law: bool,
-    /// `RWM_RANK_FEEDBACK` (**ABSENT by default**; paper 16.83.6 arm (B)) --
-    /// **THE SAME MESSAGE AT THE DERIVED `m`.**
-    ///
-    /// `m = clamp(ceil(k_half(pi0)), 1, A*)`, `k_half = ln 2 / (-ln pi0)`,
-    /// with `pi0` the receiver's own running heal share (`[LATE] rho_heal0=`)
-    /// and `k = holes - pivots` from `frontier_probe` over the trailing span
-    /// -- the quantity `rank_in`/`frontier_probe` were written for and that
-    /// nothing has ever read. `pi0 -> 0 => k_half < 1 => m = 1`, so the
-    /// shipped per-seq copy is this message's own limit at the single-path
-    /// cells rather than a different message.
-    ///
-    /// **It COMPOSES with [`Self::recv_request_law`]; it does not select a
-    /// machine.** `m` is a continuous function of a measured `pi0` with no
-    /// threshold on delta or rho anywhere in it. Armed ALONE (without the
-    /// request law) the trigger stays the shipped 2 ms sampler and only the
-    /// VOCABULARY changes -- which is the wiring test, and is why the battery
-    /// runs `{CTL, A, B, A+B}` rather than `{CTL, A+B}`.
-    ///
-    /// **ABSENT ⇒ `m = 1` wherever a request is built at all.**
+    /// `RWM_RANK_FEEDBACK` (absent, arm): requests at `m = clamp(⌈ln 2/−ln π₀⌉, 1, A*)`.
     pub rank_feedback: bool,
 
-    // NOTE: `RWM_SCHED_SNAPSHOT` (the net-seam-pass-2 per-iteration scheduler
-    // snapshot) lived here and was DELETED unmeasured on 2026-08-10 — its
-    // stated hazard was not reachable from the sites it served. ADR-0066
-    // deprecation register; goal-gate "Scheduler-Snapshot Adjudication".
-
-    // ── Instruments (ADR-0052; no behavior) ───────────────────────────────
-    /// `RWM_DIAG` (default OFF): the transport-ceiling / recovery-plane DIAG.
+    // ── Instruments (ADR-0052; observation only) ──
+    /// `RWM_DIAG` (off): the transport-ceiling / recovery-plane `[DIAG]`.
     pub diag: bool,
-    /// `RWM_ACKDIAG` (default OFF): the ACK-CADENCE GAUGE — the sender-side
-    /// instrument for PIPELINE VERIFICATION MATRIX row 21, whose STREAM SHAPE
-    /// had "no instrument of any kind, anywhere". Per path and per ~2 s
-    /// window it prints the WindowAck inter-arrival distribution, the
-    /// per-ack `d_received` distribution and zero-delta fraction, the
-    /// REALIZED rate-sampler over-read x (per accepted `record_delivery`
-    /// sample, normalized by the window's own long-run delivered rate — the
-    /// number three separate benches had to INVENT, landing ×24–2400 against
-    /// the wire's ×4.6–7.4), and the repair-counting reconciliation
-    /// (`symbols_sent` vs Σ`d_received` vs Σ`d_expected`). Observation only:
-    /// the gauge owns all its state and no engine decision can reach it
-    /// (`net::ackdiag::tests::ackdiag_is_observation_only`). Zero cost off —
-    /// the process-global is a `OnceLock<Option<…>>` that resolves to `None`,
-    /// so every feed site is a null check. Independent of `RWM_DIAG` on
-    /// purpose: it must be runnable on an arm that is not paying for the
-    /// 250 ms `[DIAG]` report.
+    /// `RWM_ACKDIAG` (off): per-path ack-cadence gauge (`[ACKDIAG]`).
     pub ackdiag: bool,
-    /// `RWM_RTT_DUMP` (default OFF): the RAW RTT SAMPLE DUMP — the instrument
-    /// that makes the estimator battery's clause `B` EXACT.
-    ///
-    /// The scored battery (goal-gate, "THE SIGMA ESTIMATOR — THE SCORED
-    /// RESULT" §7) rejected three of four candidates on `B` and then recorded
-    /// that `B`'s own reference was the part of the bar most in need of
-    /// scrutiny: a uniform 30–90× gap across ALL FOUR gauges is *"not four
-    /// independent biases; it is one property of the COMPARISON"* — a 20 Hz
-    /// ICMP probe riding the whole shaped path against a kHz sender's estimate
-    /// of its own ack path. `B` was written REJECT-only for that reason and
-    /// was UNSCOREABLE for `msd_us` entirely.
-    ///
-    /// This gauge emits the sender's raw RTT sample stream, so each candidate
-    /// is scored against **the same functional computed offline over the
-    /// identical samples**. The reference becomes exact and like-for-like by
-    /// construction, and `B` can ACQUIT rather than only convict.
-    ///
-    /// **It ships OFF and its pass is SEPARATE from the scored battery on
-    /// purpose**: at a kHz leg it writes megabytes of stderr, which is a
-    /// sender-side cost, and sender-side dispersion is exactly what clause `S`
-    /// measures. Running it on the scored invocations would perturb the
-    /// measurement it exists to explain.
-    ///
-    /// Observation only: the gauge owns all its state and no engine decision
-    /// can reach it. Zero cost off — the process-global is a
-    /// `OnceLock<Option<…>>` that resolves to `None`, so the feed site is a
-    /// null check.
+    /// `RWM_RTT_DUMP` (off): raw RTT sample stream (`[RTTDUMP]`).
     pub rtt_dump: bool,
-    /// `RWM_SUCC_DUMP` (default OFF): the RAW SUCCESSOR-ARRIVAL SAMPLE DUMP,
-    /// beside the always-on `[SUCC]` quantile line.
-    ///
-    /// The fire-cause pass named the successor measurand —
-    /// `P(the next in-flight symbol arrives by t | a hole is outstanding)` —
-    /// and recorded that it *"has never been measured on this engine"*, and
-    /// that *"a derivation written against an uncharacterized distribution
-    /// would repeat the exact defect just corrected."* `[SUCC]` characterizes
-    /// it. Its quantile line is emitted on EVERY arm, ungated by this knob, so
-    /// no pass depends on the dump being on.
-    ///
-    /// This gate adds the RAW `(outcome, µs)` records, so the derivation that
-    /// follows can compute any functional over the exact samples rather than
-    /// over the gauge's log buckets — the `[RTTDUMP]` lesson (a clause scored
-    /// against a summary statistic could neither acquit nor be re-derived),
-    /// applied BEFORE the battery rather than after it.
-    ///
-    /// It ships OFF for `[RTTDUMP]`'s reason: at a lossy cell it writes
-    /// megabytes of stderr at the RECEIVER, and receiver-side cost is
-    /// goodput-visible. The quantile line costs a fixed ~12 kB of buckets and
-    /// is what the scored pass reads.
-    ///
-    /// Observation only: the gauge holds no engine handle and nothing in the
-    /// engine branches on any value it computes
-    /// (`net::succ::tests::succ_is_observation_only`).
+    /// `RWM_SUCC_DUMP` (off): raw successor-arrival records beside `[SUCC]`.
     pub succ_dump: bool,
-    /// `RWM_WALLDIAG` (default OFF): the DEAD-WALL ONSET/DURATION instrument
-    /// — the statistic-stability prerequisite recorded at the close of the
-    /// mode-hunt work (#93) and made step 2 of ADR-0070's validation path.
-    ///
-    /// The statistic it replaces was a per-rep FLAG over two tick-share
-    /// medians (`wait_tun` = 0 % ∧ `wait_paused` = 0 %) and it proved
-    /// UNSTABLE — arm orderings INVERTED between pools collected minutes
-    /// apart. A tick-share is a fraction of sender-loop WAKEUPS, whose rate
-    /// is an output of the mechanism under test, and a conjunction of two
-    /// whole-run medians cannot tell one long terminal wall from a hundred
-    /// scattered micro-gaps. This gate measures the wall's ONSET (as a
-    /// fraction of the transfer wall) and DURATION (ms) instead, plus the
-    /// retransmit count inside it — per RUN, one `[WALL]` line at teardown.
-    /// See `net/walldiag.rs` for the measurand, stated before the code.
-    ///
-    /// Observation only: the gauge owns all its state and takes NO engine
-    /// handle at all (`net::walldiag::tests::walldiag_is_observation_only`).
-    /// Zero cost off — the process-global is a `OnceLock<Option<…>>` that
-    /// resolves to `None`, so the single feed site is a null check.
-    /// Independent of `RWM_DIAG` on purpose, exactly as `RWM_ACKDIAG` is:
-    /// the c8 arms whose statistic this stabilises are the arms that cannot
-    /// afford the 250 ms `[DIAG]` report.
+    /// `RWM_WALLDIAG` (off): dead-wall onset and duration (`[WALL]`).
     pub walldiag: bool,
-    /// `RWM_CPUPROF` (default OFF): the SENDER CPU DECOMPOSITION — the
-    /// instrument the c9 scored battery's sender ceiling has no successor
-    /// without. That battery measured the client saturating at 68.5 ms/MB of
-    /// CPU and predicted its own goodput from it to within 1 % (1.51 cores /
-    /// 68.5 ms/MB = 176.3 Mbit/s against 176.4 measured), and then could not
-    /// say where the 68.5 ms/MB GOES. This gate attributes it to five named
-    /// seams — GF coding, source admission, framing, wire serialization, and
-    /// the datagram handoff — and reports the UNATTRIBUTED remainder as a
-    /// first-class column rather than as an error term, because the remainder
-    /// is where quinn's driver, its `sendmsg`, and rustls/ring's AEAD packet
-    /// protection all live and none of them is reachable from the sender task.
-    ///
-    /// One `[CPUPROF]` line per run, at sender teardown. See
-    /// `net/cpuprof.rs` for the measurand, stated before the code, and for
-    /// the three honesty clauses (wall seams against a CPU denominator; the
-    /// gauge's span is not the process's; the denominator is PROCESS CPU
-    /// because tokio may migrate the sender task).
-    ///
-    /// Observation only: the gauge owns all its state and its whole input is
-    /// a seam index and a duration
-    /// (`net::cpuprof::tests::cpuprof_is_observation_only`). Zero cost off —
-    /// the process-global is a `OnceLock<Option<…>>` that resolves to `None`,
-    /// so every seam is a null check around a direct call. Independent of
-    /// `RWM_DIAG` on purpose, exactly as `RWM_WALLDIAG` and `RWM_ACKDIAG`
-    /// are: the cell whose ceiling this takes apart is sender-CPU-bound, and
-    /// adding the 250 ms `[DIAG]` report to the arm under measurement would
-    /// change the quantity being measured.
+    /// `RWM_CPUPROF` (off): sender CPU split across five seams (`[CPUPROF]`).
     pub cpuprof: bool,
-    /// `RWM_RDIAG` (default OFF): engine-receiver saturation probe.
+    /// `RWM_RDIAG` (off): engine-receiver saturation probe.
     pub rdiag: bool,
-    /// `RWM_FDIAG` (default OFF): proactive-frontier diagnosis instrument
-    /// (retained after the frontier mechanism's removal — ADR-0066).
+    /// `RWM_FDIAG` (off): proactive-frontier diagnosis.
     pub fdiag: bool,
     /// `RWM_TRACE` (default OFF): generation-lifecycle trace prints.
     pub trace: bool,
     /// `RWM_PFRAC` (default OFF): proactive-vs-reactive recovery fraction.
     pub pfrac: bool,
 
-    // ── Resolved here, NOT on the `[GATES]` line ─────────────────────────
-    // These were separate per-site caches or raw env reads before the one
-    // resolution; each keeps its own echo where it had one (see
-    // `EXTERNALLY_ECHOED`), and the `[GATES]` line is unchanged byte for byte.
+    // ── Resolved here, not on the `[GATES]` line (own echoes; `EXTERNALLY_ECHOED`) ──
     /// `RWM_COPA_WIRE` / `RWM_QUIC_CC` / `RWM_COPA_FEED`: the wire-clocked
     /// Copa signal (`scheduler::copa_wire_active`).
     pub copa_wire: bool,
@@ -1106,8 +300,7 @@ pub struct RuntimeGates {
 }
 
 impl RuntimeGates {
-    /// Read the whole gate surface from the environment — call once at engine
-    /// start.
+    /// Read the whole gate surface from the environment.
     pub fn resolve() -> Self {
         let unified = crate::config::env_flag("RWM_UNIFIED", true);
         let gen_rate: f64 = env_parse::<f64>("RWM_GEN_RATE").unwrap_or(9000.0);
@@ -1191,50 +384,23 @@ impl RuntimeGates {
             store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
             composed_cap: env_flag("RWM_COMPOSED_CAP", false),
-            // DEFAULT ON since 2026-08-19 — the ladder battery's one
-            // FLIP-RECOMMENDED gate (goal-gate "Ladder Battery — RESULTS",
-            // paper §16.64). `RWM_SUM_CAP=0` remains the re-runnable A/B arm:
-            // the shipped quadratic `gain·N·Σ`, kept with its provenance per
-            // the deprecation register, no deprecation warning.
             sum_cap: env_flag("RWM_SUM_CAP", true),
             late_brake: env_flag("RWM_LATE_BRAKE", false),
             recov_sp: env_flag("RWM_RECOV_SP", false),
             derived_sweep: env_flag("RWM_DERIVED_SWEEP", false),
-            // DEFAULT ON since 2026-08-19 — the candidates battery's one
-            // FLIP-RECOMMENDED gate (goal-gate "Candidates Battery — RESULTS",
-            // paper §16.71). Plain `env_flag`, not `anchor_gate_default`: this
-            // is a store-cap gate with no umbrella family, exactly as
-            // `RWM_SUM_CAP` above, so there is no umbrella semantic to
-            // preserve. `RWM_DELTA_CAP=0` remains the re-runnable A/B arm: the
-            // shipped `gain = 2.0` fossil, kept with its provenance per the
-            // deprecation register, no deprecation warning.
             delta_cap: env_flag("RWM_DELTA_CAP", true),
-            // ABSENT by default; garbage resolves back to ABSENT and the echo
-            // prints `unset`. The range is the law's own domain, not a taste:
-            // `q ≤ 0` IS the shipped machine (expressed by absence) and the
-            // window law diverges at `q ≥ 1`. Paper §16.77.
+            // Out-of-domain values resolve to absent (echo `unset`): q ≤ 0 is the
+            // shipped machine and the window law diverges at q ≥ 1.
             holddown_q: env_parse::<f64>("RWM_HOLDDOWN_Q")
                 .filter(|q| q.is_finite() && *q > 0.0 && *q < 1.0),
-            // ABSENT by default; garbage resolves back to ABSENT and the echo
-            // prints `unset`. The range is the law's own domain, not a taste:
-            // below the receiver loop's wake granularity the cadence cannot be
-            // expressed by the loop that emits it, and above the shipped upper
-            // rail the band's LOWER rail leaves the shipped band. Paper §16.78.
+            // Below the receiver loop's wake granularity the cadence cannot be
+            // expressed; above the shipped upper rail it leaves the band.
             refresh_floor_us: env_parse::<u64>("RWM_REFRESH_FLOOR_US").filter(|f| {
                 *f >= crate::net::LOOP_WAKE_US
                     && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
             }),
-            // ABSENT by default; garbage resolves back to ABSENT and the echo
-            // prints `unset`. The range is the law's own domain, not a taste:
-            // δ is a PRICE and `ζ = δ_Auto/δ`, `b(δ)`, `β(δ)` are all
-            // undefined at δ ≤ 0. Paper §16.81/§16.82.
             delta: resolve_delta(),
-            // ABSENT by default. The glide it arms has shipped inert since P6;
-            // arming it is an EXPERIMENT, not a default in waiting.
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
-            // ABSENT by default; anything but a truthy value resolves back to
-            // ABSENT and the echo prints `0`, so "my arm did not take" is READ
-            // off the run's own output rather than inferred. Paper 16.83.6.
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
             diag: env_flag("RWM_DIAG", false),
@@ -1272,28 +438,11 @@ impl RuntimeGates {
         }
     }
 
-    /// The `[GATES]` LIVENESS ECHO — one line naming every gate resolved here
-    /// and its RESOLVED value (goal-gate "Gate-Forwarding Audit", 2026-08-09;
-    /// MEASUREMENT DISCIPLINE item 15).
-    ///
-    /// Why it exists: before this, 41 of the 76 `RWM_*` knobs had no echo at
-    /// all, so a battery arm keyed on one of them could not be proven live —
-    /// its verdict was unfalsifiable in principle, whatever the numbers said.
-    /// The audit's rule is now that every arm asserts its gate's echo, which
-    /// requires every gate to HAVE one. Rather than 41 hand-written `info!`s
-    /// that can go stale one at a time, this is ONE line covering the whole
-    /// `RuntimeGates` surface, emitted once at engine start.
-    ///
-    /// Cheap and off the hot path: called exactly once, from the same place
-    /// `resolve()` is. The pre-existing per-mechanism `... ACTIVE (RWM_X: …)`
-    /// echoes are deliberately KEPT — they carry the law's statement and the
-    /// ledger's assertions are written against them; this line is the total
-    /// backstop underneath them, and it is two-sided by construction (it
-    /// prints the OFF values too, so "gate absent" is as checkable as "gate
-    /// present" — the `sp=1` / `sp=0` discipline generalized to every gate).
-    ///
-    /// Gates resolved OUTSIDE this struct keep their own echoes and are
-    /// enumerated in `EXTERNALLY_ECHOED` below, which the coverage test reads.
+    /// The `[GATES]` liveness echo: one line naming every gate resolved here
+    /// with its resolved value, off values included, so a run's own output
+    /// proves which arm it ran (`docs/measurement-discipline.md` rule 15).
+    /// Gates resolved elsewhere keep their own echoes and are listed in
+    /// `EXTERNALLY_ECHOED`.
     pub fn echo_line(&self) -> String {
         let b = |v: bool| if v { "1" } else { "0" };
         let o = |v: &Option<f64>| v.map_or("unset".to_string(), |x| x.to_string());
@@ -1356,60 +505,16 @@ impl RuntimeGates {
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
             b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
             b(self.derived_sweep),
-            // THE HOLD-DOWN LEVEL, echoed as its RESOLVED value and never as a
-            // flag — the `RWM_ACKDIAG_WINDOW_US` precedent: a row whose level
-            // is not readable off its own run is not a row. `unset` means no hold-down
-            // and today's machine; a number means the sender is waiting before
-            // it answers a gap report. Paper §16.77.
+            // Levels and bounds print their resolved value, not a flag: a run's
+            // setting must be readable off its own output.
             o(&self.holddown_q),
-            // THE REFRESH-BAND FLOOR, echoed as its RESOLVED µs and never as a
-            // flag — same precedent, same reason. `unset` means the shipped
-            // 25 ms floor and today's cadence; a number means the receiver is
-            // re-advertising a stalled hole on a band this run chose. It is
-            // consumed at the RECEIVER and echoed at BOTH endpoints, so the
-            // control's absence is as mechanically assertable as the arm's
-            // presence. Paper §16.78.
             o64(&self.refresh_floor_us),
-            // THE CONTRACT'S δ, echoed as its RESOLVED value and never as a
-            // flag — same precedent, same reason. `unset` means the hint's own
-            // map (`δ(hint) = 0.5/ζ`) and today's machine; a number means this
-            // run stands at a point on the dial no hint names, and b(δ), β(δ),
-            // the tail target and α all read THAT number. It is the one axis
-            // an r > 0 row varies, so a row whose δ is not readable off its own
-            // run is not a row. Paper §16.81/§16.82.
             o(&self.delta),
-            // THE χ ARM. A flag here rather than a value: what it turns on is
-            // the FEED, and the value χ takes is a measurement, printed by
-            // `[CHI]` on its own cadence. Two-sided by construction — the
-            // control arm's `=0` beside `[CHI] n=0` is what makes "the glide
-            // never ran" a reading rather than an inference (§16.82).
             b(self.completion_exposure),
-            // THE TWO 16.83 ARMS, echoed at BOTH endpoints. The request law is
-            // consumed at the RECEIVER (which builds the message) AND at the
-            // SENDER (which serves it, and whose gap producer the seam
-            // suppresses), so the control's ABSENCE has to be as mechanically
-            // assertable as the arm's presence -- the `RWM_REFRESH_FLOOR_US`
-            // precedent, and the reason the battery can call a row VOID.
+            // Consumed at both endpoints, so echoed at both.
             b(self.recv_request_law), b(self.rank_feedback),
-            // The ack-cadence gauge's WINDOW is echoed as its RESOLVED value in
-            // µs, not as a flag: it is the unit every `[ACKDIAG]` series is
-            // measured in, so a ledger whose windows are 250 ms and one whose
-            // windows are 2 s are different measurements and the difference has
-            // to be readable from the run's own output. A mistyped override
-            // resolves back to the default and this prints 2000000, so "my arm
-            // did not take" is visible rather than inferred.
             b(self.diag), b(self.ackdiag), self.ackdiag_window_us,
-            // The raw-sample dump's CAP is echoed as its RESOLVED value, for
-            // the reason `RWM_ACKDIAG_WINDOW_US` two lines above is: a leg
-            // whose dump was truncated at 400 000 samples and one that was not
-            // are different measurements of clause `B`, and the difference has
-            // to be readable off the run's own output rather than inferred.
             b(self.rtt_dump), self.rtt_dump_max,
-            // The successor dump's CAP, echoed as its RESOLVED value for the
-            // reason `RWM_RTT_DUMP_MAX` one line above is: a receiver whose
-            // raw record stream was truncated and one that was not are
-            // different inputs to the derivation that reads them, and the
-            // difference has to be readable off the run's own output.
             b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
             b(self.fdiag), b(self.trace), b(self.pfrac),
@@ -1422,10 +527,8 @@ impl RuntimeGates {
     }
 }
 
-/// `RWM_*` knobs the harness forwards that are NOT resolved by
-/// [`RuntimeGates`], each with the reason the coverage test accepts it.
-/// Every entry either has its OWN resolve-time echo elsewhere in the engine
-/// or is a harness/L0-sim knob with no engine gate behind it.
+/// Forwarded `RWM_*` knobs absent from `[GATES]`: each has its own echo or is a
+/// harness/L0-sim knob, with the reason the coverage test accepts it.
 #[cfg(test)]
 const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar/plain_rs values this line prints"),
@@ -1450,11 +553,8 @@ mod forwarding_audit {
     use super::EXTERNALLY_ECHOED;
     use std::collections::BTreeSet;
 
-    /// Every `RWM_*` string literal the ENGINE reads, scraped from the crate
-    /// source. Test-only reflection: there is no runtime registry of gates,
-    /// and building one would not survive a gate added the old way (an
-    /// inline `env::var` at a new site), which is exactly the failure this
-    /// audit exists to prevent.
+    /// Every `RWM_*` string literal in the crate source, so an inline
+    /// `env::var` at a new site is caught too.
     fn engine_gate_surface() -> BTreeSet<String> {
         fn walk(dir: &std::path::Path, out: &mut String) {
             for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
@@ -1512,14 +612,9 @@ mod forwarding_audit {
         body.split_whitespace().map(str::to_string).collect()
     }
 
-    /// **The audit's enforcement gate** (goal-gate "Gate-Forwarding Audit",
-    /// 2026-08-09). Adding an `RWM_*` gate to the engine without adding it to
-    /// `tools/l1/lib.sh`'s `RWM_FORWARD` fails HERE, at `cargo test`, instead
-    /// of silently producing a battery arm whose knob may never reach the
-    /// wire. This is the structural fix for the defect the ack-merge flip
-    /// battery found: `RWM_ACK_MERGE` had never been added to
-    /// `perf_rwm_c.sh`'s hand-rolled allowlist, and eleven more gates were in
-    /// the same state — every one of them undetectable by any test.
+    /// An `RWM_*` gate read by the engine but missing from `tools/l1/lib.sh`'s
+    /// `RWM_FORWARD` fails here instead of producing a battery arm whose knob
+    /// never reaches the wire.
     #[test]
     fn gate_forwarding_list_covers_the_engine_surface() {
         let engine = engine_gate_surface();
@@ -1531,9 +626,7 @@ mod forwarding_audit {
              tools/l1/lib.sh's RWM_FORWARD, so no L1 driver forwards them \
              explicitly: {missing:?}"
         );
-        // The reverse direction keeps the list from accumulating dead knobs
-        // (the audit removed 16 such entries from perf_rwm_c.sh, e.g. the
-        // whole RWM_DAPS_* family, RWM_SACK_PRUNE and RWM_FRONTIER_*).
+        // The reverse direction keeps the list free of dead knobs.
         let stale: Vec<_> = fwd.difference(&engine).collect();
         assert!(
             stale.is_empty(),
@@ -1541,10 +634,8 @@ mod forwarding_audit {
         );
     }
 
-    /// Every forwarded gate must have a LIVENESS ECHO — either in the
-    /// `[GATES]` line or its own, registered in `EXTERNALLY_ECHOED` with a
-    /// reason. A gate with no echo cannot be proven live, so any battery
-    /// verdict resting on it is unfalsifiable (MEASUREMENT DISCIPLINE 1/15).
+    /// Every forwarded gate has a liveness echo, in `[GATES]` or registered in
+    /// `EXTERNALLY_ECHOED` (`docs/measurement-discipline.md` rules 1 and 15).
     #[test]
     fn every_forwarded_gate_has_a_liveness_echo() {
         let line = super::RuntimeGates::resolve().echo_line();
@@ -1561,10 +652,8 @@ mod forwarding_audit {
         );
     }
 
-    /// The echo is TWO-SIDED: it prints the OFF value too, so a battery can
-    /// assert both "gate present in the arm" and "gate absent in the control"
-    /// — the `sp=1`/`sp=0` discipline (goal-gate "Lossy-Single Residual")
-    /// generalized to the whole surface.
+    /// The echo is two-sided: it prints off values too, so a battery can
+    /// assert both "gate present in the arm" and "gate absent in the control".
     #[test]
     fn the_gates_echo_is_two_sided() {
         let line = super::RuntimeGates::resolve().echo_line();
@@ -1577,15 +666,11 @@ mod forwarding_audit {
             line.contains("RWM_ACK_MERGE=1"),
             "a default-ON gate must be named with its 1 value: {line}"
         );
-        // goal-gate "The Derived Recovery Clamp": the OFF-VALUE echo the
-        // battery's control arm asserts.
         assert!(
             line.contains("RWM_DERIVED_SWEEP=0"),
             "RWM_DERIVED_SWEEP must print its OFF value: {line}"
         );
-        // Paper 16.83.6: the receiver-law arms. The battery's CTL row is
-        // VOID unless BOTH of these read `=0` on the control log, so the
-        // OFF-value echo is asserted here rather than assumed downstream.
+        // A receiver-law control row is void unless both arms read `=0`.
         assert!(
             line.contains("RWM_RECV_REQUEST_LAW=0"),
             "RWM_RECV_REQUEST_LAW must print its OFF value: {line}"

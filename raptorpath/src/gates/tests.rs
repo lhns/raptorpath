@@ -1,8 +1,7 @@
 use super::*;
 
-/// Structure-cleanup behaviour pin: the default-environment `[GATES]`
-/// echo, byte for byte. A refactor of where gates are resolved must not
-/// move a single character of what a battery parses.
+/// Behaviour pin: the default-environment `[GATES]` echo, byte for byte. Moving
+/// where gates are resolved must not move a character a battery parses.
 #[test]
 fn gates_echo_default_is_byte_pinned() {
     let line = RuntimeGates::resolve().echo_line();
@@ -37,12 +36,11 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_PFRAC=0",
 );
 
-/// The gates removed as refuted experiment arms (cleanup Stage 2) are
-/// UNKNOWN names now: an operator or a stale battery script that still
-/// exports one — even with a value the strict boolean parser would
-/// reject for a known gate — must be ignored, never panic, and never
-/// reappear on the `[GATES]` echo. Every name below is read by nothing,
-/// so setting it cannot race another test's resolve.
+/// Gates removed as refuted experiment arms are unknown names: a stale script
+/// that still exports one, even with a value the strict boolean parser would
+/// reject for a known gate, must be ignored, never panic, and never appear on
+/// the `[GATES]` echo. Nothing reads these names, so setting them cannot race
+/// another test's resolve.
 #[test]
 fn removed_gates_in_the_environment_are_ignored() {
     // Suffixes, not quoted full-name literals: `forwarding_audit` scrapes
@@ -150,14 +148,12 @@ fn ooo_retain_accepts_a_depth_and_the_strict_booleans() {
     }
 }
 
-/// Default-env resolution reproduces the shipped defaults (the ADR-0067
-/// consolidated stack): the CORE laws ON, every experiment gate OFF.
-/// (Set-env semantics are `config::env_flag`'s and are tested there;
-/// integration tests exercise gate activation per feature.)
+/// Default-env resolution reproduces the shipped stack (`docs/status.md` §1):
+/// the core laws on, every experiment gate off. Set-env semantics are
+/// `config::env_flag`'s and are tested there.
 #[test]
 fn default_env_resolves_the_shipped_stack() {
-    // NOTE: relies on the test env not exporting RWM_* overrides — same
-    // assumption every engine-default test in this crate makes.
+    // Assumes the test environment exports no RWM_* overrides.
     let g = RuntimeGates::resolve();
     // CORE (default ON)
     assert!(g.unified && g.unified_shed && g.taper_r);
@@ -170,11 +166,7 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_DERIVED_SWEEP ships default OFF (A/B arm — goal-gate \
          \"The Derived Recovery Clamp\")"
     );
-    // Paper 16.83.6 -- THE RECEIVER-LAW ARMS SHIP ABSENT. Both are
-    // EXPERIMENTS: (A) moves the repair DECISION to the receiver and
-    // suppresses the per-seq gap producer, (B) changes the request's
-    // VOCABULARY. Neither is a default in waiting, and 16.80's own value
-    // bound caps what either could win at < 1.54 % of transfer at c7.
+    // The receiver-law arms (paper §7.6) ship absent.
     assert!(
         !g.recv_request_law,
         "RWM_RECV_REQUEST_LAW ships ABSENT (16.83.6 arm A)"
@@ -183,16 +175,8 @@ fn default_env_resolves_the_shipped_stack() {
         !g.rank_feedback,
         "RWM_RANK_FEEDBACK ships ABSENT (16.83.6 arm B)"
     );
-    // THE CoDel-DERIVED SETPOINT (paper 16.67/16.70/16.71, ADR-0071
-    // family 2) - FLIPPED DEFAULT ON 2026-08-19. The battery that scored
-    // it (goal-gate "Candidates Battery - RESULTS", rung D) measured
-    // D-LAT six of six: goodput parity at every dual on both seeds with
-    // q_p50 down 10-200 ms at every one; interior with the ceiling
-    // provably inert at c7 and c8 (pin 0.0000); bit-identical at N = 1
-    // (eng 0/0 at c1 and sc2); and c8's paired dead wall shortened
-    // (p = 0.011). Pinned ON here so the flip cannot drift back silently;
-    // the OFF-value property now belongs to the `=0` arm, asserted below
-    // on an explicit arm rather than on the default.
+    // The CoDel-derived setpoint ships on (paper §6.1); the `=0` arm's off value
+    // is asserted below on an explicit arm.
     assert!(
         g.delta_cap,
         "RWM_DELTA_CAP ships DEFAULT ON since 2026-08-19 (candidates \
@@ -201,10 +185,8 @@ fn default_env_resolves_the_shipped_stack() {
          ceiling inert at c7/c8; bit-identical at N = 1). `=0` remains \
          the re-runnable A/B arm - the displaced gain = 2.0 fossil."
     );
-    // THE REFRESH-BAND FLOOR IS ABSENT BY DEFAULT, AND ABSENT IS THE
-    // SHIPPED 25 ms (paper 16.78). Both halves asserted: the resolved
-    // field AND the echo token, so "the control was really a control" is
-    // read off the run's own output rather than inferred.
+    // The refresh-band floor is absent by default, which is the shipped 25 ms
+    // (paper §7.4); both the field and the echo token are asserted.
     assert!(
         g.refresh_floor_us.is_none(),
         "RWM_REFRESH_FLOOR_US is ABSENT by default - absent resolves to              HOLE_NACK_REFRESH_MIN and the hole-refresh cadence is the              shipped one byte-identically (paper 16.78)"
@@ -221,13 +203,9 @@ fn default_env_resolves_the_shipped_stack() {
         "the armed floor must echo its RESOLVED us: {}",
         armed.echo_line()
     );
-    // THE DOMAIN IS THE LAW'S OWN, NOT A TASTE, AND IT IS PINNED ON BOTH
-    // SIDES. Below the receiver loop's wake granularity the cadence cannot
-    // be expressed by the loop that has to emit it; above the shipped upper
-    // rail the band's LOWER rail leaves the shipped band entirely. The arms
-    // paper 16.78.3 derives must all be INSIDE it - a pre-registration
-    // whose own grid is out of its gate's domain is unsatisfiable when
-    // written, and this tree has that failure on the record once already.
+    // The floor's domain, pinned on both sides: below the receiver loop's wake
+    // granularity the cadence cannot be expressed, and above the shipped upper
+    // rail the band leaves the shipped band. Every sweep arm must lie inside it.
     for bad in [0u64, crate::net::LOOP_WAKE_US - 1, 100_001, u64::MAX] {
         assert!(
             bad < crate::net::LOOP_WAKE_US
@@ -252,17 +230,15 @@ fn default_env_resolves_the_shipped_stack() {
             "`{good}` us is an arm the (q, refresh) sweep commands and must                  be INSIDE the refresh floor's domain (paper 16.78.3)"
         );
     }
-    // The gates echo is what a battery parses; assert the three new names
-    // are on it with their resolved values, two-sided.
+    // The echo is what a battery parses; assert these names with their resolved
+    // values.
     let line = g.echo_line();
     for tok in [
-        // Flipped 2026-08-19: the echo must name the SHIPPED value.
+        // Shipped on.
         "RWM_DELTA_CAP=1",
-        // THE CONTRACT'S δ is ABSENT on every shipped arm: the hint names
-        // the point on the dial, and the echo says so (§16.81).
+        // The contract's δ is absent on every shipped arm (the hint names it).
         "RWM_DELTA=unset",
-        // The χ arm is OFF on every shipped arm: §14.26's glide stays
-        // inert and `r*` stays at the corner unless a battery arms it.
+        // The χ arm is off on every shipped arm.
         "RWM_COMPLETION_EXPOSURE=0",
     ] {
         assert!(line.contains(tok), "the [GATES] echo is missing {tok}: {line}");
@@ -273,10 +249,8 @@ fn default_env_resolves_the_shipped_stack() {
          shipped δ is the one the contract's hint names, and nothing \
          shipped may set a δ between the presets (paper §16.81/§16.82)"
     );
-    // THE ARMED ARM'S ECHO, two-sided: a row standing between the presets
-    // must be able to state its own δ off its own log. Set by FIELD —
-    // env mutation is process-global in a parallel runner, and the resolve
-    // is a `OnceLock` besides.
+    // An armed δ must echo its resolved value. Set by field: env mutation is
+    // process-global in a parallel runner, and the resolve is a `OnceLock`.
     let mut dialed = g.clone();
     dialed.delta = Some(0.05);
     assert!(
@@ -284,14 +258,7 @@ fn default_env_resolves_the_shipped_stack() {
         "the armed arm's echo must NAME the RESOLVED δ, not a flag: {}",
         dialed.echo_line()
     );
-    // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
-    // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
-    // re-running the displaced `gain = 2.0` fossil must be able to assert
-    // the gate ABSENT on both endpoints, not merely unmentioned. RE-HOMED
-    // onto an EXPLICIT arm now that the default is ON, so the property
-    // survives the flip instead of being retired by it. Set by field
-    // rather than through the environment: env mutation is process-global
-    // state in a parallel runner.
+    // The `=0` arm must echo the gate with its 0 value. Set by field, not env.
     let mut off_arm = g.clone();
     off_arm.delta_cap = false;
     assert!(
@@ -302,34 +269,20 @@ fn default_env_resolves_the_shipped_stack() {
         off_arm.echo_line()
     );
     assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
-    // The est×honest-anchor composed flip (goal-gate "Ship The Wins 1",
-    // 2026-08-07) was measured and REVERTED by its pre-set c7 clause:
-    // everything unset ⇒ est-cadence OFF (estimator's own default test)
-    // ⇒ pool-anchor OFF (it rides the est resolution), emit-batch OFF.
-    // The composed opt-in (est=1 ⇒ pa on, + eb=1) stays the documented
-    // fast single-path configuration (c1 446–508).
+    // Everything unset: est-cadence off, so pool-anchor (which follows it) is off.
     assert!(
         !g.pool_anchor,
         "RWM_POOL_ANCHOR default rides the RWM_EST_CADENCE resolution (OFF unset)"
     );
-    // "Ack-Merge Flip" (2026-08-08): the window-mode control-datagram
-    // merge PASSED its own pre-registered gate set at full scope (×8,
-    // both seeds, + sustained + crown) and is now part of the shipped
-    // stack. c1 +12.7%/+13.0% with receiver CPU per bit −9.1%/−8.4%;
-    // control-datagram density 1.96 → 1.00 at c1 and 1.05 → 1.00 at c7,
-    // and the response tracks the density removed cell by cell. Every
-    // no-regression gate held within σ of its own same-session control.
+    // The window-mode control-datagram merge ships on (paper §9.5).
     assert!(
         g.ack_merge,
         "RWM_ACK_MERGE ships default ON since 2026-08-08 (paper §16.42); \
          RWM_ACK_MERGE=0 is the opt-out arm"
     );
-    // "Cross-Path Loss Contamination" (2026-08-18) and its successor
-    // "The Accounting Ledger" (fix/accounting-ledger): the three honest-
-    // accounting gates all ship OFF. The loss estimator's re-heats every
-    // SRTT/loss-scaled recovery cadence (the named follow-up); the two
-    // ledger gates change the ADMISSION gauge's operand and must be
-    // measured on the wire before any flip.
+    // The three honest-accounting gates ship off: honest loss re-heats the
+    // loss-scaled recovery cadences, and the two ledger gates change the
+    // admission gauge's operand.
     assert!(
         !g.loss_sent_truth,
         "RWM_LOSS_SENT_TRUTH ships default OFF pending the cadence re-derivation"
@@ -342,20 +295,15 @@ fn default_env_resolves_the_shipped_stack() {
         !g.charge_recovery,
         "RWM_CHARGE_RECOVERY ships default OFF (A/B arm)"
     );
-    // "Unlock The Default 2: derived patience" (2026-08-07): the derived
-    // recovery-patience floor is a pure A/B arm and must not reach the
-    // shipped default stack until its pre-registered gate set passes;
-    // the derived stall gauge is DIAG-only and also ships OFF.
+    // The derived stall gauge is an instrument and ships off.
     assert!(
         !g.sidle_derived,
         "RWM_SIDLE_DERIVED ships default OFF (DIAG-only A/B gauge)"
     );
     // Experiments / instruments (default OFF)
     assert!(!g.plain_rs);
-    // "Honest Inputs" (2026-08-10): both fixes ship default OFF (A/B
-    // arms; anchor-hygiene umbrella members). The OFF-VALUE PROPERTY,
-    // two-sided on the echo (MEASUREMENT DISCIPLINE 15): a battery must
-    // be able to assert the gates ABSENT on the control arm.
+    // Honest anchor ships on, honest K off; both are named on the echo so a
+    // control arm can assert them (`docs/measurement-discipline.md` rule 15).
     assert!(
         g.honest_anchor,
         "RWM_HONEST_ANCHOR ships DEFAULT ON since 2026-08-11 (flip-battery F7 \
@@ -382,11 +330,9 @@ fn default_env_resolves_the_shipped_stack() {
         "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
          placement repair must be opted into"
     );
-    // ── TRACK A's THREE PLACEMENT ARMS (paper §16.81) ─────────────
-    // All three ABSENT by default, and all three NAMED with their `0`
-    // value on the echo: the placement battery's CTL arm must be able to
-    // assert the arms ABSENT rather than merely unmentioned, and the
-    // pinned cost table is an oracle only while this holds.
+    // ── The three placement arms (paper §5.7) ──
+    // All absent by default and named with `0` on the echo, so a control arm can
+    // assert them absent; the pinned cost table is an oracle only while this holds.
     assert!(
         !g.place_t_derived,
         "RWM_PLACE_T_DERIVED ships ABSENT (Track A arm 1 — the derived \
@@ -421,16 +367,14 @@ fn default_env_resolves_the_shipped_stack() {
         !g.three_term,
         "RWM_THREE_TERM ships default OFF (A/B arm — goal-gate \"Three-Term Law\")"
     );
-    // The gate's OFF-VALUE PROPERTY, asserted on the echo itself
-    // (MEASUREMENT DISCIPLINE 15, two-sided): a battery must be able to
-    // assert the gate ABSENT in the control arm, not merely unmentioned.
+    // Off value named on the echo, two-sided (`docs/measurement-discipline.md`
+    // rule 15).
     assert!(
         g.echo_line().contains("RWM_THREE_TERM=0"),
         "the default echo must NAME the three-term gate with its 0 value: {}",
         g.echo_line()
     );
-    // The COMPOSED CAP LAW (paper §16.56, ADR-0070 Deliverable 2) is an
-    // A/B arm and ships OFF, with the same two-sided OFF-value property.
+    // The composed cap (paper §10) ships off, same two-sided property.
     assert!(
         !g.composed_cap,
         "RWM_COMPOSED_CAP ships default OFF (A/B arm — paper §16.56)"
@@ -440,15 +384,8 @@ fn default_env_resolves_the_shipped_stack() {
         "the default echo must NAME the composed-cap gate with its 0 value: {}",
         g.echo_line()
     );
-    // THE `×N` DELETION (paper §16.60/§16.64, ADR-0070 finding 2) —
-    // **FLIPPED DEFAULT ON 2026-08-19**. The A/B that ADR-0070 said had
-    // never been run was run (goal-gate "Ladder Battery — RESULTS", rung
-    // N): interior at both scoreable duals (`pin` 0.000, `eng` 1.000,
-    // `chg_frac` 1.000), the control reproducing the shipped 4096 pin,
-    // goodput UP at c8 on both seeds, CPU 0.937–1.005×, all guards green.
-    // Pinned ON here so the flip cannot drift back silently; the OFF-value
-    // property now belongs to the `=0` arm, asserted below on an explicit
-    // arm rather than on the default.
+    // The `×N` deletion ships on (paper §6.1); the `=0` arm's off value is
+    // asserted below on an explicit arm.
     assert!(
         g.sum_cap,
         "RWM_SUM_CAP ships DEFAULT ON since 2026-08-19 (ladder battery rung \
@@ -462,14 +399,7 @@ fn default_env_resolves_the_shipped_stack() {
          value (flipped 2026-08-19): {}",
         g.echo_line()
     );
-    // THE `=0` ARM'S OFF-VALUE PROPERTY, which the default assertion above
-    // used to carry (MEASUREMENT DISCIPLINE 15, two-sided): a battery
-    // re-running the displaced quadratic must be able to assert the gate
-    // ABSENT on both endpoints, not merely unmentioned. Asserted on an
-    // EXPLICIT arm now that the default is ON, so the property survives the
-    // flip instead of being retired by it. Set by field rather than through
-    // the environment: env mutation is process-global state in a parallel
-    // runner.
+    // The `=0` arm must echo the gate with its 0 value. Set by field, not env.
     let mut off_arm = g.clone();
     off_arm.sum_cap = false;
     assert!(
@@ -478,11 +408,7 @@ fn default_env_resolves_the_shipped_stack() {
          the displaced quadratic stays re-runnable and scrapeable: {}",
         off_arm.echo_line()
     );
-    // THE EXTRACTED LATE-STAGE BRAKE (§16.60.1, ADR-0070 finding 7) is
-    // still an A/B arm and still ships OFF: the ladder scored it
-    // DELIVERED-AS-ARMED but NEEDS-MORE for effect (B-WALL closed on
-    // power), so it is NOT flipped by the same program that flipped
-    // `RWM_SUM_CAP`.
+    // The extracted late-stage brake is still an experiment arm and ships off.
     assert!(
         !g.late_brake,
         "RWM_LATE_BRAKE ships default OFF (A/B arm — paper §16.60.1; ladder \
@@ -495,9 +421,7 @@ fn default_env_resolves_the_shipped_stack() {
     );
     assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
     assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
-    // The ack-cadence gauge (goal-gate "Ack-Cadence Gauge", 2026-08-11)
-    // is a DIAG-surface instrument and ships OFF, with the two-sided
-    // OFF-VALUE property asserted on the echo (MEASUREMENT DISCIPLINE 15).
+    // Instruments ship off, each named with its 0 value on the echo.
     assert!(
         !g.ackdiag,
         "RWM_ACKDIAG ships default OFF (DIAG-surface instrument)"
@@ -507,10 +431,7 @@ fn default_env_resolves_the_shipped_stack() {
         "the default echo must NAME the ack-cadence gauge with its 0 value: {}",
         g.echo_line()
     );
-    // The raw RTT sample dump (clause `B`'s exact reference, 2026-08-21)
-    // is the same class and ships the same way — and it matters more here
-    // than for its siblings, because ON it writes megabytes of stderr per
-    // path and takes a lock on every RTT sample.
+    // The raw RTT dump writes megabytes of stderr and locks per sample when on.
     assert!(
         !g.rtt_dump,
         "RWM_RTT_DUMP ships default OFF (raw-sample dump: megabytes of \
@@ -527,11 +448,8 @@ fn default_env_resolves_the_shipped_stack() {
          truncated leg's clause B is readable off its own run: {}",
         g.echo_line()
     );
-    // The successor-arrival RAW dump (2026-08-21) is the same class and
-    // ships the same way — at the RECEIVER, where the cost is directly
-    // goodput-visible. Its QUANTILE line is ungated and always emitted;
-    // only the raw record stream is behind this flag, which is what lets a
-    // scored pass read the distribution without paying for the dump.
+    // The successor raw dump costs receiver-side stderr when on; its quantile
+    // line is ungated.
     assert!(
         !g.succ_dump,
         "RWM_SUCC_DUMP ships default OFF (raw per-hole records: megabytes \
@@ -549,8 +467,6 @@ fn default_env_resolves_the_shipped_stack() {
          rather than inferred by whoever derives against it: {}",
         g.echo_line()
     );
-    // The dead-wall onset/duration instrument (ADR-0070 validation path
-    // step 2, 2026-08-12) is the same class and ships the same way.
     assert!(
         !g.walldiag,
         "RWM_WALLDIAG ships default OFF (DIAG-surface instrument)"
@@ -560,13 +476,8 @@ fn default_env_resolves_the_shipped_stack() {
         "the default echo must NAME the dead-wall gauge with its 0 value: {}",
         g.echo_line()
     );
-    // The sender CPU decomposition (goal-gate "MEASUREMENT TRUTH item 2 —
-    // THE SENDER CPU CEILING", 2026-08-19) is the same class and ships the
-    // same way. The two-sided property matters more here than for its
-    // siblings: the cell this instrument is built for is sender-CPU-bound,
-    // so an arm that silently carried the gauge would be paying for it in
-    // exactly the quantity under measurement, and "the gate did not take"
-    // must be readable from the run's own output rather than inferred.
+    // The CPU decomposition runs on sender-CPU-bound cells, so an arm that
+    // silently carried it would pay in the measured quantity.
     assert!(
         !g.cpuprof,
         "RWM_CPUPROF ships default OFF (DIAG-surface instrument)"
@@ -586,10 +497,9 @@ fn default_env_resolves_the_shipped_stack() {
     assert!(g.store_override.is_none());
 }
 
-/// ONE GATE RESOLUTION (cleanup Stage 3): every accessor that used to own a
-/// private cache now reads the process's single [`get`] resolution, so the
-/// value behaviour reads and the value the `[GATES]` line prints cannot
-/// diverge. Asserted as identity at every accessor, not as an ordering.
+/// Every accessor reads the process's single [`get`] resolution, so the value
+/// behaviour reads and the value `[GATES]` prints cannot diverge. Asserted as
+/// identity at every accessor.
 #[test]
 fn every_gate_accessor_reads_the_one_resolution() {
     let g = get();
