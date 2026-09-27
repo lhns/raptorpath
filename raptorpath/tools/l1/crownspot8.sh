@@ -18,7 +18,10 @@
 # rule: writability is proven at LAUNCH, not at exit).
 set -uo pipefail
 
-OUT="/home/vibe/crownspot8"
+# CROWNSPOT_OUT / RWM_BIN: overridable so the block re-test envelope can run
+# the spot into its own run directory on its own binary; unset = unchanged.
+OUT="${CROWNSPOT_OUT:-/home/vibe/crownspot8}"
+BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CELLS="${CROWNSPOT_CELLS:-c2 c3}"
 REPS="${CROWNSPOT_REPS:-8}"
@@ -42,7 +45,7 @@ rm -f "$OUT/DONE-ALL" "$OUT/FAILED-ALL" \
       "$OUT/DONE-S42" "$OUT/FAILED-S42" "$OUT/DONE-S7" "$OUT/FAILED-S7"
 
 echo "CROWNSPOT start $(date -u +%FT%TZ) cells='$CELLS' reps=$REPS seeds='$SEEDS'"
-sha256sum /home/vibe/raptorpath/target/release/raptorpath || true
+sha256sum "$BIN" || true
 
 ALL_OK=1
 for seed in $SEEDS; do
@@ -51,7 +54,7 @@ for seed in $SEEDS; do
     SEED_OK=1
     for cell in $CELLS; do
         echo "=== CROWNSPOT stage seed=$seed cell=$cell start=$(date -u +%FT%TZ)" >> "$LEDGER"
-        sudo -n env RWM_GEN=0 RWM_DIAG=1 RWM_TM_ARMS=ship SEED="$seed" \
+        sudo -n env RWM_GEN=0 RWM_DIAG=1 RWM_TM_ARMS=ship SEED="$seed" RWM_BIN="$BIN" \
             bash "$HERE/tail_matrix.sh" "$cell" "$REPS" >> "$LEDGER" 2>&1
         rc=$?
         echo "=== CROWNSPOT stage seed=$seed cell=$cell rc=$rc end=$(date -u +%FT%TZ)" >> "$LEDGER"

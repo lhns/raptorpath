@@ -144,6 +144,34 @@ means the 25 MB dual; the placement battery's 100 MB dual of the same geometry
 is named `c8L`. `perf_native.sh`, named in the deviations above, was deleted
 in 639929c; `RWM_C_PIPELINE=block` is the block driver.
 
+*Amendment 2 (harness facts, committed before VM contact and before any
+number exists; no change to arms, cells, n or outcomes):*
+(i) The witness "`[GATES]` present with `RWM_GEN=0`" cannot fire on either
+arm: `perf_rwm_c.sh` consumes `RWM_GEN=0` as its generation switch (drops
+`--window-generation-coding`) and unsets it before forwarding, and the
+engine's `[GATES] RWM_GEN=` token is the generation SIZE (default 384). The
+witness is read as: `[GATES]` present on both endpoints, and generation off
+shown by the absence of the driver's `GUARD OK: generation ACTIVE` line
+(on WIN the receiver's unified-decoder echo `generation=false` is recorded,
+not gated). (ii) The echo in (b) prints `[PIPE] pipeline=block|window
+backend=<RaptorQ|Rlc> hint=<h>` once per engine start at the routing
+decision; a row whose `[PIPE]` (either endpoint) or `pipeline=` header
+disagrees with its arm is `CONTAMINATED`. (iii) Driver
+`tools/l1/blockretest_battery.sh` under the envelope
+`tools/l1/blockretest_run_all.sh` (which holds both locks for the whole
+session, crown spot included); scorer `tools/l1/blockretest_parse.py`.
+`ABORT-BRINGUP`'s retry protocol: an invocation with driver rc 0 and no
+client summary is retried once (2 attempts), each retry logged `RUN-RETRY`.
+(iv) Readings the outcome set leaves implicit, fixed here: goodput and
+completion are read over completed reps only (a DNF has no goodput and
+counts in the DNF clause); where `BLK` completed no rep the goodput clause is
+vacuous like the completion clause; where `WIN` completed none and `BLK`
+some, both clauses fail; "a failed witness on ≥ 2 reps of an arm-cell"
+counts `CONTAMINATED` and witness failures over both hints and seeds; "live
+reps" counts completed plus DNF rows. (v) Smoke cost `c` is the smoke's
+mean wall time per invocation; the envelope's soft deadline (hard cap −
+10 min) stops the battery at a rep boundary.
+
 **Hints**: `bulk`, `auto`. **Seeds**: 42, 7. **Cells** (`lib.sh
 scenario_params`; duals as in `perf_rwm_c.sh`):
 

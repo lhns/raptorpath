@@ -22,7 +22,7 @@ source ./lib.sh
 # per-arm abort tolerance (a failed arm is a BRINGUP_FAIL/NO_DATA line, never
 # a matrix kill), so errexit is turned back off here.
 set +e
-BIN="/home/vibe/raptorpath/target/release/raptorpath"
+BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
 CELL="${1:-c2}"; REPS="${2:-5}"
 SEED="${SEED:-42}"
 # meas/streaming-retirement (crown re-test) harness glue: message rate,
