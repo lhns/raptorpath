@@ -1,8 +1,6 @@
 # ADR-0062: Copa Wire-Signal + Competitive Mode; the CC-Independence Finding
 
-## Status: Accepted (Copa-sole = the queue/tail arm of the CC policy surface; `RWM_COPA_COMPETE` built, default OFF; CC-flip gate moved to contention recovery)
-
-**Date**: 2026-07-13 … 2026-07-19
+## Status: Accepted (Copa-sole = the queue/tail arm of the CC policy surface; `RWM_COPA_COMPETE` built, default OFF)
 
 ## Context
 
@@ -54,14 +52,13 @@ cross-traffic cell had ever been measured — gating any CC default flip
 
 ## Evidence
 
-- Ledger: goal-gate.md "Copa-Sole Substrate CC (2026-07-13)", "Copa
+- Ledger at ac1aed1: "Copa-Sole Substrate CC (2026-07-13)", "Copa
   Wire-Signal (2026-07-13)", "Copa Competitive Mode + Cross-Traffic
   (2026-07-19)"; CONSOLIDATED VERDICT §2.
-- Paper: §12.11 (+ §12.4 addendum), §17.2.
+- Paper (§ as of ac1aed1): §12.11 (+ §12.4 addendum), §17.2.
 - Commits: a895205 (passthrough shim + feed), f203d6e…386979d (wire-signal
   chain + measurement), 0f9bb2b + 0f0828b (competitive mode + battery).
 
 ## References
 
-- ADR-0054 (policy surface + BBR default), ADR-0058 (the pool law that
-  owns the contention blocker), ADR-0009/0019 (the engine CC lineage).
+- ADR-0054 (policy surface + BBR default), ADR-0068 (the proposed fusion).

@@ -1,7 +1,8 @@
 # ADR-0005: No ACK/Feedback Loop Between Receiver and Sender
 
-## Status
-**Resolved** — ACKs, BlockResults, and Pong messages are now sent via `send_control_datagram()`. Uni-stream receiver added for reliable control. Echo-based RTT measurement works end-to-end.
+## Status: Accepted
+
+Implemented: ACKs, BlockResults, and Pong messages are now sent via `send_control_datagram()`. Uni-stream receiver added for reliable control. Echo-based RTT measurement works end-to-end.
 
 ## Context
 The protocol defines `ControlMessage::Ack`, `BlockResult`, and `PathReport` messages, but none of them are ever sent. The receiver processes incoming data but never sends anything back to the sender.
@@ -66,4 +67,3 @@ ACKs should be sent via reliable QUIC streams (not datagrams) to ensure they arr
 ## Related
 - ADR-0003 (loss estimation)
 - ADR-0007 (RTT calculation)
-- ADR-0009 (congestion control)

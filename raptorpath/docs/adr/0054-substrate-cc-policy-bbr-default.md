@@ -1,8 +1,6 @@
 # ADR-0054: Substrate Congestion Control Is Policy — BBR Default (`RWM_QUIC_CC`)
 
-## Status: Accepted (default flipped 2026-07-21; Cubic retained as explicit opt-out)
-
-**Date**: 2026-07-13 (policy surface), 2026-07-21 (default flip)
+## Status: Accepted (BBR default; Cubic retained as explicit opt-out)
 
 ## Context
 
@@ -20,9 +18,9 @@ Additionally the engine's own per-path Copa-lite can BE quinn's window
 ## Decision
 
 1. **Substrate CC is an explicit policy surface**, not a fixed property:
-   `RWM_QUIC_CC = bbr | cubic | newreno | passthrough` selects quinn's
-   congestion controller (transport/quic.rs).
-2. **BBR is the shipped default** (2026-07-21, roadmap Item 0): env unset
+   `RWM_QUIC_CC = bbr | bbr_rs | cubic | newreno | passthrough` selects
+   quinn's congestion controller (`transport/quic.rs` `quic_cc_mode`).
+2. **BBR is the shipped default**: env unset
    ⇒ BBR. The A/B inverts — the legacy wire is the explicit
    `RWM_QUIC_CC=cubic` opt-out arm. Unrecognized values warn and keep
    BBR. Cubic is retained (dead as a performance choice; alive as the
@@ -31,7 +29,7 @@ Additionally the engine's own per-path Copa-lite can BE quinn's window
    chooses the controller — bulk → bbr-under; latency-priced →
    passthrough+Copa. Policy, not a mode switch.
 
-### Amendment 2026-07-22 — the mode switch is a MEASURED TRADEOFF, not a wish (goal-gate "Copa-Sole on Clean Substrate")
+### Amendment — the two-valued surface is a measured tradeoff (ledger "Copa-Sole on Clean Substrate")
 
 The pre-registered clean-substrate re-measure asked whether the
 consolidated stack (SACK-release + recovery suppression + path pool +
@@ -66,31 +64,29 @@ motivation (a rate-model feed-forward is exactly what would let a
   88–124 ms C8 slow path) and a c3/C8 bimodal collapse mode (partly the
   MTU wedge, fixed in ADR-0055; partly BBR's own). Copa-sole holds the
   network standing queue ×18/×16/×6–7 tighter (sc2/sc3/c7) at a bulk
-  cost that GREW on the consolidated substrate (the 2026-07-22
-  amendment); the #82 "Copa dominates at C8" claim is superseded — on
+  cost that grew on the consolidated substrate (the amendment above); the #82 "Copa dominates at C8" claim is superseded — on
   the fixed substrate BBR-under leads C8 throughput 0.57× (Copa keeps
   only the queue).
-- Note: this ADR concerns the SUBSTRATE (quinn) controller. ADR-0019
-  (the engine's own BBR-style delay CC) is unaffected.
+- Note: this ADR concerns the SUBSTRATE (quinn) controller. The engine's
+  own per-path Copa-lite (`scheduler/mod.rs` `CopaState`) is unaffected.
 
 ## Evidence
 
-- Ledger: goal-gate.md "Gen Substrate Ceiling (2026-07-13)" (the wall
+- Ledger at ac1aed1: "Gen Substrate Ceiling (2026-07-13)" (the wall
   named + raised; ×3.4 alone), "Default CC Flip (2026-07-21)" (flip +
   identity check), "Copa-Sole on Clean Substrate (2026-07-22)" (the
   no-flip tradeoff verdict, both seeds), "CONSOLIDATED VERDICT" wall #1
   row.
-- Paper: §12.11, §16.17, §17.2.
+- Paper (§ as of ac1aed1): §12.11, §16.17, §17.2.
 - Commits: 0d9f26e (`RWM_QUIC_CC` lever + wall diagnosis), 519467e
   (default flip), 7145fcc (identity-check binary).
 
 ## References
 
-- ADR-0019 (engine delay-based CC), ADR-0062 (Copa wire-signal +
-  competitive mode), ADR-0067 (the composed default stack), ADR-0068
+- ADR-0062 (Copa wire-signal + competitive mode), ADR-0068
   (the Copa/BBR fusion — inherits this battery's bulk gap as its target).
 
-## ADDENDUM (2026-08-07, "Ship The Wins 2: shal8 anchor") — the shallow-buffer bound of the shipped quinn-BBR default, measured and priced
+## Addendum — the shallow-buffer bound of the shipped quinn-BBR default
 
 The B1 inversion (shal8: shipped BBR-under ~10 Mbit vs Copa-sole 75–79)
 is attributed at source: quinn-proto 0.11's BBR estimator samples
@@ -111,5 +107,5 @@ queue. DECISION: default UNCHANGED (no flip; `bbr_rs` retained as a
 gated reference arm with law tests); the honest fix is upstream
 quinn-proto work or engine-owned pacing via the existing passthrough
 surface under a rate-model law — ADR-0068's fusion, whose shal8 bar is
-now kernel-BBR's 93. Evidence: goal-gate "Ship The Wins 2: shal8
+now kernel-BBR's 93. Evidence: ledger "Ship The Wins 2: shal8
 anchor"; paper §16.38.

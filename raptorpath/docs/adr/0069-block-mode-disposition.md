@@ -1,8 +1,9 @@
 # ADR-0069: Block mode is LEGACY — the last mode bit, deprecated with a re-test clause; the default does NOT flip without measurement
 
-## Status: Accepted (2026-08-10) — deprecation recorded; the shipped default is UNCHANGED and now PINNED by a test; the flip and the deletion are both gated on the pre-registered Block Default Re-Test below
+## Status: Accepted — deprecation recorded; the shipped default is UNCHANGED and PINNED by a test; the flip and the deletion are both gated on the Block Default Re-Test, now pre-registered in `docs/status.md` §4 (not yet run)
 
-**Date**: 2026-08-10
+> Code line numbers below are as of the ADR's writing and have drifted.
+> "Ledger" citations refer to the measurement ledger at ac1aed1 (see the ADR index).
 
 ## Context
 
@@ -44,17 +45,17 @@ does not error, it warns and falls back to block (`net/mod.rs:1429-1435`).
 
 ### The contradiction
 
-ADR-0067 is the standing rule: *the shipped default IS the best-measured
-configuration*, because "users of the default were running the condemned arms"
+The standing rule (from the consolidated-default-stack decision, formerly
+ADR-0067): *the shipped default IS the best-measured configuration*, because "users of the default were running the condemned arms"
 is a scandal this project already had once. Against that rule:
 
 - **Last battery in which block mode was the arm under test: 2026-07-08**
-  ("Full Benchmark Re-Run", goal-gate.md:7970), cells C1–C5 via
+  ("Full Benchmark Re-Run", ledger), cells C1–C5 via
   `tools/l1/perf_native.sh`. Headline: block is recovery-bound and unmoved by the
   CPU-era fixes (C2 0.86 s, C3 9.9 s) and **C4 DNF 6/6 at 600 s — "Flagged"**
-  (goal-gate.md:7997-8010). That flag has never been discharged.
+  (ledger). That flag has never been discharged.
 - **Last time block-mode code executed in ANY L1 run: 2026-07-27**, the crown
-  battery's bulk sanity spot (cell S, goal-gate.md:14197/14311) — an
+  battery's bulk sanity spot (cell S, ledger) — an
   explicitly INERT tail-latency spot, not a pipeline measurement; its A/B partner
   arm was retired the next day (`tools/l1/tail_matrix.sh:228-230`).
 - **Every battery from 2026-07-12 to 2026-08-10** — DAPS, Competitive Baseline,
@@ -65,10 +66,10 @@ is a scandal this project already had once. Against that rule:
   runs a block control arm.** The 2026-07-08 datum was measured with W1 (quinn
   Cubic), W2 (MTU black-hole wedge), W7 (1024 pool law), W8 (global recovery
   clocks) and PRE-DIV all ACTIVE.
-- **ADR-0066 has no row for it.** The register is env-gate shaped
+- **The deprecation register had no row for it.** The register was env-gate shaped
   (`config::deprecated_env_flag`); block mode is the *unset state of a CLI flag*,
   so it fell through the net. The only mention is the `RWM_ACK_MERGE` row's
-  parenthetical (goal-gate.md:846), which *protects* block mode ("block mode
+  parenthetical (ledger), which *protects* block mode ("block mode
   keeps it — `block_arq`'s dup-ack ledger depends on the 1:1 cadence").
 
 So the default is a configuration nobody has measured in a month, on a substrate
@@ -79,18 +80,18 @@ that no longer exists, carrying an undischarged DNF.
 Three facts cut the other way, and honesty requires naming them:
 
 1. **Block mode WON the only head-to-head at C2**: 0.884 s vs the reliable
-   window's 1.092 s, 1.23× (goal-gate.md:5069-5072, 2026-07-06 — the same section
-   that wrote "Default remains block mode", :5049). Window won C3 by 1.9×.
+   window's 1.092 s, 1.23× (ledger "RWM Phase A", the same section
+   that wrote "Default remains block mode"). Window won C3 by 1.9×.
 2. **The window pipeline's bulk arm DNF'd 0/10 as recently as 2026-07-05**
-   (goal-gate.md:4954) — the reliable-retention contract is what fixed that, and
+   (ledger) — the reliable-retention contract is what fixed that, and
    it is one month old.
 3. **In-order delivery for an inner TCP was originally a block property**
-   ("cross-block reordering broke the inner TCP", goal-gate.md:4226); the window
+   ("cross-block reordering broke the inner TCP", ledger); the window
    path's frontier now provides it, but that equivalence was never re-argued at
    the tunnel cells.
 
 Deleting a mechanism whose only head-to-head it WON, on a pre-wall substrate, is
-the ADR-0066 error in reverse. The register's own rule — "a refutation is only as
+the register's refutation error in reverse. The register's own rule — "a refutation is only as
 good as the substrate it was measured on" — cuts both ways: a *displacement* is
 only as good as its substrate too.
 
@@ -112,15 +113,15 @@ The tree nevertheless carries **~3,530 lines of block-only production code and
 configuration and it is not a measured one; it is a frozen implementation kept
 alive solely to be re-tested. Five binding parts:
 
-1. **Register row (ADR-0066), the register's first non-env member.** Block mode
+1. **Deprecation-register row, the register's first non-env member.** Block mode
    joins as a Class-C row with a re-test clause OWED (walls active at its
    refutation-grade datum: W1, W2, W7, W8, PRE-DIV — the same profile that made
-   `RWM_FMTCP` "the strongest re-test case"). Its enforcement hook cannot be
+   the since-deleted FMTCP arm "the strongest re-test case"). Its enforcement hook cannot be
    `deprecated_env_flag` — there is no env gate to warn on. The hook is the pin
    in part 3.
 
 2. **The default does NOT flip in this ADR.** Flipping a shipped default on
-   inference is the precise failure mode ADR-0052/ADR-0067 exist to prevent, and
+   inference is the precise failure mode ADR-0052 and the default-honesty rule exist to prevent, and
    the only head-to-head on record says block wins the cell that matters most for
    a bulk default. The default stays block for Bulk/Auto until the battery in
    part 4 discharges the clause.
@@ -135,7 +136,8 @@ alive solely to be re-tested. Five binding parts:
    default move now fails a test and must land with its measurement.
 
 4. **Block mode is FROZEN and owned by one named battery.** Owner: the
-   **Block Default Re-Test** (pre-registered here, ADR-0052 shape). Frozen means:
+   **Block Default Re-Test** (ADR-0052 shape; the binding pre-registration,
+   with its stated deviations from this part, is `docs/status.md` §4). Frozen means:
    bug fixes only; no new features on the block path; no block-mode number is
    admissible as evidence for a shipped claim. Restoring a runnable block control
    arm is part of the battery's setup cost — `tools/l1/perf_native.sh` is the
@@ -146,7 +148,7 @@ alive solely to be re-tested. Five binding parts:
    object completion, hints `bulk` and `auto`, seeds 42 + 7, arms interleaved,
    10 reps. Arm A = `perf_native.sh` (block, RaptorQ + P8 block-ARQ). Arm B =
    `perf_rwm_c.sh` with `RWM_GEN=0` (plain reliable window), both on the current
-   consolidated default stack (ADR-0067 + subsequent flips).
+   consolidated default stack.
 
    **Flip rule, fixed BEFORE the battery** — the default flips to window iff, on
    both seeds:
@@ -155,7 +157,7 @@ alive solely to be re-tested. Five binding parts:
      the cell block won; the flip must actually REVERSE that result, not merely
      land "within parity", **and**
    - (c) median window ≤ **1.3×** median block at C1, C3, C5 (the standing
-     parity gate, goal-gate.md:5072), with no cell regressed ≫σ, **and**
+     parity gate, ledger), with no cell regressed ≫σ, **and**
    - (d) C4 completes 10/10 in the window arm (the 2026-07-08 DNF is retired by
      measurement, in whichever arm).
 
@@ -179,7 +181,7 @@ alive solely to be re-tested. Five binding parts:
      `BlockResult` are variants 0/1/2. Deleting them renumbers every survivor.
      Follow the `FecBackend::Streaming` precedent (`fec/traits.rs:95-98`) —
      delete the handlers, keep the indices stable — or bump `PROTOCOL_VERSION`
-     7→8. Note `ControlMessage::Ack` is NOT block-only on the wire (window mode
+     (now 8). Note `ControlMessage::Ack` is NOT block-only on the wire (window mode
      emits it too); only `on_ack`'s ARQ tail goes.
    - **The flip is two changes, not one.** `window_reliable = true` alone routes
      nowhere: `is_window_mode` also requires a streaming backend, so the default
@@ -191,8 +193,8 @@ alive solely to be re-tested. Five binding parts:
 
 ## Consequences
 
-- **The default remains, knowingly and dated, not-best-measured.** ADR-0067
-  named one such place (the c8 WATCH); this is the second, and it is bigger
+- **The default remains, knowingly, not-best-measured.** The c8 pool law
+  is one such place; this is the second, and it is bigger
   because it is the pipeline, not a pool constant. It is now written down with a
   discharge path instead of living implicitly in a `unwrap_or(false)`.
 - **The last mode bit stays in the tree for now.** CLAUDE.md's invariant is not
@@ -216,32 +218,29 @@ block ahead at any cell ≫σ on both seeds — block ceases to be legacy and be
 a named, measured exception with a permanent control arm; (ii) a payload class
 appearing that needs block's cross-block in-order-decoded delivery contract in a
 way the window frontier provably cannot supply (the 2026-07-05 argument,
-goal-gate.md:4997-5003) — that would move block from legacy back to supported and
+ledger) — that would move block from legacy back to supported and
 require its own ADR with the mechanism argued, not the history cited.
 
 ## Evidence
 
-- Code (this branch, `docs/block-mode-adr`): `config.rs:237-241,286,328,592`;
+- Code (at writing): `config.rs:237-241,286,328,592`;
   `main.rs:288,387`; `net/mod.rs:52-53,789-790,1390,1401-1404,1429-1435,1862`;
   `fec/traits.rs:95-98,101-104,113-114`.
-- Ledger: goal-gate.md "Full Benchmark Re-Run (2026-07-08)" (:7970, C1–C5, C4
-  DNF at :8000); "RWM Phase A (2026-07-06)" (:5047-5091, the C2 1.23× loss and
-  "Default remains block mode"); "Windowed-RLC-all-profiles (2026-07-05)"
-  (:4954, window bulk 0/10 DNF); "Streaming Crown Re-Test (2026-07-27)" cell S
-  (:14197, :14311-14315); DEPRECATION REGISTER (:809-888, no block row; format
-  at :833-834 and :873-874).
-- Paper: §15.3 (fec-arq-model.md:5899-5901, block as degenerate streaming);
-  §16.20.6 (:8661-8663, "untouched"); §17.5 (:11074-11076).
+- Ledger at ac1aed1: "Full Benchmark Re-Run" (C1–C5, C4 DNF); "RWM Phase A"
+  (the C2 1.23× loss and "Default remains block mode");
+  "Windowed-RLC-all-profiles" (window bulk 0/10 DNF); "Streaming Crown
+  Re-Test" cell S; DEPRECATION REGISTER (no block row).
+- Paper (§ as of ac1aed1): §15.3 (block as degenerate streaming); §16.20.6;
+  §17.5.
 - Harness: `tools/l1/perf_rwm_c.sh:112,128` (window hardcoded);
   `tools/l1/perf_native.sh:22,27` (the surviving block driver);
   `tools/l1/tail_matrix.sh:228-230` (the retired partner arm).
 
 ## References
 
-- ADR-0066 (the register this row joins, and the two-stage discipline),
-  ADR-0067 (the default-honesty rule this ADR is enforcing), ADR-0052
-  (pre-registration shape of the battery), ADR-0064 (§16.20 one machine),
-  ADR-0046 (why the window path was slow before generation coding).
+- ADR-0052 (pre-registration shape of the battery and the two-stage
+  retirement rule), ADR-0064 (§16.20 one machine), `docs/status.md` §4
+  (the binding re-test pre-registration).
 - CLAUDE.md, THE NO-MODE-SWITCH INVARIANT.
 
 ## Appendix A — the removal list (NOT executed; input to a separate task)
@@ -291,8 +290,7 @@ and survives.
 per-backend overhead table and its RaptorQ/RS-parameterized unit tests to `Rlc`),
 `transport/*`, `tun/*`, `net/reorder.rs`, `PathBatchTracker`, `framing.rs`'s
 window+packed helpers, `WireSymbol`, `enum FecBackend`. The `gf256` crate STAYS
-(`fec/generation.rs` is its heaviest user). `mettle` and `streaming-codes` have
-no dependency on any of it. `raptorpath-wasm`/`raptorpath-visualizer` do not
+(`fec/generation.rs` is its heaviest user). `raptorpath-wasm`/`raptorpath-visualizer` do not
 depend on the `raptorpath` crate at all and are unaffected.
 
 **Cosmetic-but-notable:** `Cargo.toml:5`'s crate description ("Multipath

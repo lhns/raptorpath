@@ -1,8 +1,6 @@
 # ADR-0056: Systematic-Repair Wire as the Generation Arm + Sparse-Aware Decoding
 
-## Status: Accepted
-
-**Date**: 2026-07-13
+## Status: Accepted (the sparse-aware decoder; the generation arm itself is opt-in with no disposition, see `docs/status.md`)
 
 ## Context
 
@@ -50,9 +48,9 @@ late-source injection.
 
 ## Evidence
 
-- Ledger: goal-gate.md "Decode-CPU Ceiling (2026-07-13)" (profile,
+- Ledger at ac1aed1: "Decode-CPU Ceiling (2026-07-13)" (profile,
   rewrite, L1 re-measure); "CONSOLIDATED VERDICT" walls #3–#4 rows.
-- Paper: §16.18.
+- Paper (§ as of ac1aed1): §16.18.
 - Commits: da926a5 (sparse-aware decoder + differential oracle), 2122481
   (wire-mode verdict + L1 numbers).
 

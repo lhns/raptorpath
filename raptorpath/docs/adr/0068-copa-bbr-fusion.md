@@ -1,8 +1,6 @@
 # ADR-0068: A better Copa — δ-priced probing over a measured rate model with ε̂-referenced loss discrimination
 
-## Status: Proposed (prerequisite battery COMPLETE — see MEASURED BASELINE addendum, 2026-08-06; targets are now numbers)
-
-**Date**: 2026-07-21 (design conversation recorded; no build scheduled)
+## Status: Proposed (prerequisite battery complete — see the measured-baseline addendum; no build scheduled)
 
 ## Context
 
@@ -24,14 +22,14 @@ incidental:
 - **Copa's structural advantage is δ**: the latency price as a
   first-class parameter of the utility U = log(tput) − δ·log(delay),
   giving a continuous throughput↔queue dial (measured: the δ frontier's
-  knee sits AT the hint-mapped value, goal-gate "Copa Wire-Signal") and
+  knee sits AT the hint-mapped value, ledger "Copa Wire-Signal") and
   the natural ~5-RTT queue drain that needs no ProbeRTT-class forced
   stall (no FEC protection gap, paper §12.3) and no ProbeBW-class
   overshoot (the measured ×18–25 tighter C8 slow-path queue).
 
 Today these live as TWO controllers behind `RWM_QUIC_CC`, selected by
 the hint's declared price — a hint-selected mode switch on the policy
-surface. That violates the vision axiom (VISION-TRIAGE-2026-07): ONE
+surface. That violates the no-mode-switch invariant (CLAUDE.md): ONE
 continuous mechanism parameterized by the contract, no mode switches.
 The δ knob already spans the continuum in principle; what Copa-lite
 lacks is the rate model that makes BBR robust where Copa is fragile.
@@ -72,7 +70,7 @@ switch:
   clean-delay netem paths with deep buffers and no policers — exactly
   the regime where the fusion's advantages over plain Copa CANNOT show
   (measured: Copa-sole already reaches its documented bulk class there,
-  and the 2026-07-22 "Copa-Sole on Clean Substrate" battery is the
+  and the "Copa-Sole on Clean Substrate" battery is the
   clean-rig endgame either way). Building the fusion against the current
   cells would measure noise and invite motivated tuning.
 - **Prerequisite: adversarial cells + measured Copa breakage.** Before
@@ -91,21 +89,21 @@ switch:
   venues, and the actual mechanisms from the sources at build time; no
   guessed citations enter the paper or the code comments.
 - The bulk target the fusion must meet is set by the measured record:
-  whatever the "Copa-Sole on Clean Substrate" battery (goal-gate) leaves
+  whatever the "Copa-Sole on Clean Substrate" battery (ledger) leaves
   as the standing bulk class — parity if the flip landed, the residual
   gap if it did not — plus the queue/tail class Copa already owns.
 - Until then the policy surface stands as shipped: the δ-parameterized
   controller and the explicit reference arms under `RWM_QUIC_CC`
-  (ADR-0054, as amended by the 2026-07-22 battery's flip decision).
+  (ADR-0054, as amended).
 
 ## Evidence (for the context claims)
 
-- Ledger: goal-gate.md "Copa-Sole Substrate CC" (#80), "Copa Wire-Signal"
+- Ledger at ac1aed1: "Copa-Sole Substrate CC" (#80), "Copa Wire-Signal"
   (#82: 0.86–0.89× bulk, δ-knee at the mapped value, C8 domination,
   wireQ ×18–25), "Copa Competitive Mode + Cross-Traffic" (clean-cell
   contention starvation is CC-independent), "Copa-Sole on Clean
-  Substrate" (2026-07-22).
-- Paper: §12.4 (+ wire addendum), §12.11, §17.2.
+  Substrate".
+- Paper (§ as of ac1aed1): §12.4 (+ wire addendum), §12.11, §17.2.
 - BBR-side structural claims are the deployed-BBR literature's; they are
   design rationale here, to be source-verified at build time (above).
 
@@ -114,12 +112,11 @@ switch:
 - ADR-0054 (substrate CC policy), ADR-0061 (the anchors the rate model
   reuses), ADR-0062 (Copa wire signal + competitive mode), ADR-0052
   (pre-registration discipline the prerequisite battery must follow).
-- VISION-TRIAGE-2026-07 §5 (the follow-ups register).
 
-## MEASURED BASELINE addendum (2026-08-06, branch `meas/adversarial-cells`) — the prerequisite battery ran; the fusion's targets are now numbers, and the analysis above is partly WRONG
+## Measured-baseline addendum — the prerequisite battery ran; the analysis above is partly wrong
 
 The "adversarial cells + measured Copa breakage" prerequisite (items
-(i)+(ii) of the Consequences section) is DONE: goal-gate "Adversarial
+(i)+(ii) of the Consequences section) is DONE: ledger "Adversarial
 Cells (B1)" — delay-jitter dose-response (20 ms base, {0,5,15,25} ms
 correlated jitter, c2-class rate/loss), 8-packet shallow buffer
 (tbf + child netem), and a 100 mbit token-bucket policer (ingress
@@ -174,10 +171,9 @@ BBR-under across the dose-response without the standing queue; shal8
 target until the burst-loss recovery prerequisite is fixed. The
 realtime crown survives jit15 (p99 medians 92–96 ms vs 36–39 clean,
 wire-class inflation only) — the fusion inherits that bar too.
-Evidence: goal-gate "Adversarial Cells (B1)" (2026-08-06), paper
-§16.33.
+Evidence: ledger "Adversarial Cells (B1)", paper §16.33.
 
-## ADDENDUM 2 (2026-08-07, "Ship The Wins 2: shal8 anchor") — the fusion's substrate constraint and its sharpened bars
+## Addendum 2 — the fusion's substrate constraint and its sharpened bars
 
 Attempting the shal8 fix inside the shipped quinn-BBR (in-tree
 burst-robust port behind quinn's public `Controller` trait) measured a
@@ -195,5 +191,5 @@ retrans); named hazard = the measured mutual masking (an honest
 burst-robust estimator strips the over-read's standing queue and gives
 back −4…−14% at GE cells until the recovery-latency story is
 queue-independent — the store-dwell binder of the MEASURED BASELINE
-addendum, same family). Evidence: goal-gate "Ship The Wins 2: shal8
+addendum, same family). Evidence: ledger "Ship The Wins 2: shal8
 anchor"; paper §16.38.

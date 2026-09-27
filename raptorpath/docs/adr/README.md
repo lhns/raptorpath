@@ -1,105 +1,49 @@
 # Architecture Decision Records
 
-This directory contains ADRs for the raptorpath project, ordered by priority.
+One row per retained ADR. Numbers are stable: gaps are ADRs that were superseded
+or that only narrated experiments. They were deleted, and git history keeps them
+(for example `git show ac1aed1:raptorpath/docs/adr/0066-deprecation-register.md`).
+ADR-0071 moved to [`../research/successor-candidates.md`](../research/successor-candidates.md).
 
-## Critical (must fix before end-to-end works)
+Conventions in the ADRs below:
 
-| # | Title | Status |
-|---|-------|--------|
-| [0002](0002-packet-framing-after-decode.md) | Packet framing after FEC decode | Resolved |
-| [0003](0003-loss-estimation-is-broken.md) | Loss estimation feeds incorrect data | Resolved |
-| [0008](0008-blockstart-not-handled.md) | Receiver doesn't handle BlockStart | Resolved |
-| [0005](0005-ack-mechanism-missing.md) | No ACK/feedback loop | Resolved |
-| [0007](0007-rtt-calculation-broken.md) | RTT depends on clock sync | Resolved |
+- "Ledger" citations refer to the measurement ledger that `docs/status.md` and
+  `docs/measurement-discipline.md` replaced. Read it with
+  `git show ac1aed1:raptorpath/docs/goal-gate.md`.
+- `§` numbers refer to the paper as it stood at ac1aed1.
+- For what ships today, [`../status.md`](../status.md) is authoritative.
 
-## High (traffic stalls, resource leaks, network damage)
-
-| # | Title | Status |
-|---|-------|--------|
-| [0001](0001-block-assembly-timeout.md) | Block assembly needs flush timeout | Resolved |
-| [0004](0004-decoder-memory-leak.md) | Decoder map grows without bound | Resolved |
-| [0009](0009-no-congestion-control.md) | No congestion control | Resolved |
-| [0011](0011-channel-backpressure.md) | Channels stall under load | Resolved |
-
-## Medium (UX, performance, operability)
-
-| # | Title | Status |
-|---|-------|--------|
-| [0006](0006-protocol-hint-block-sizing.md) | Protocol hint should influence block size | Resolved |
-| [0010](0010-handshake-and-versioning.md) | No handshake or protocol versioning | Resolved |
-| [0012](0012-platform-setup-ux.md) | Platform setup too complex | Resolved |
-| [0013](0013-monitoring-and-observability.md) | No runtime monitoring | Resolved |
-| [0014](0014-duplicate-symbol-handling.md) | No duplicate symbol detection | Resolved |
-| [0015](0015-graceful-shutdown.md) | No graceful shutdown | Resolved |
-
-## Features
-
-| # | Title | Status |
-|---|-------|--------|
-| [0016](0016-block-interleaving.md) | Block interleaving for burst loss resilience | Resolved |
-| [0017](0017-mtu-aware-symbol-sizing.md) | MTU-aware symbol sizing via PMTU discovery | Resolved |
-| [0018](0018-connection-migration.md) | Runtime connection migration via HTTP API | Resolved |
-| [0019](0019-bbr-delay-based-cc.md) | BBR-style delay-based congestion control | Resolved |
-| [0020](0020-tls-cert-pinning.md) | Optional TLS certificate pinning | Resolved |
-| [0021](0021-swappable-fec-backend.md) | Swappable FEC backend (RaptorQ + METTLE) | Resolved |
-| [0022](0022-sliding-window-fec.md) | Sliding window FEC architecture (RS + RLC + window pipeline) | Resolved |
-| [0023](0023-gilbert-elliott-loss-model.md) | Gilbert-Elliott HMM for bursty loss estimation | Resolved |
-| [0024](0024-bbr-probe-rtt-phase.md) | BBR ProbeRTT phase for min_rtt freshness | Resolved |
-| [0025](0025-window-nack-sender-repair.md) | WindowNack sender-side targeted repair | Resolved |
-| [0026](0026-multipath-window-scheduling.md) | Multipath window scheduling (RTT/goodput + redundant) | Resolved |
-| [0027](0027-streaming-codes.md) | Streaming codes (Badr/Martinian delay-optimal) | Resolved |
-| [0028](0028-mettle-performance-analysis.md) | METTLE performance analysis — edge probability bug | Resolved |
-| [0029](0029-tapered-repair-interleaving.md) | Tapered repair interleaving (exponential decay + window burst) | Resolved |
-| [0030](0030-runtime-backend-switching.md) | Runtime FEC backend switching (loss-based heuristic + flush protocol) | Resolved |
-| [0031](0031-network-simulation-harness.md) | Network simulation harness (SimChannel + component tests) | Resolved |
-| [0032](0032-benchmark-recommendations.md) | Ablation benchmark recommendations (PI window fix, GE default, trial count) | Resolved |
-| [0033](0033-pipeline-ablation-benchmark.md) | Full-pipeline ablation benchmark (ProbeRTT, reorder, NACK, auto-switch, multipath) | Resolved |
-| [0034](0034-tradeoff-ablation-benchmark.md) | Per-feature tradeoff ablation (latency, ordering, burst recovery, efficiency) | Resolved |
-| [0035](0035-algorithm-recommendations.md) | Algorithm recommendations and metric architecture review | Resolved |
-| [0036](0036-transport-comparison-benchmark.md) | Raptorpath vs reliable QUIC/MPTCP transport comparison benchmark | Accepted |
-| [0037](0037-nack-source-retransmit.md) | NACK source retransmission, cross-path repair, fractional repair accumulator | Accepted |
-| [0038](0038-benchmark-overhead-taxonomy.md) | Benchmark overhead taxonomy and methodology documentation | Accepted |
-| [0039](0039-overhead-reduction.md) | Overhead reduction: benchmark repair floor fix and window-mode symbol packing | Accepted |
-| [0040](0040-benchmark-repair-alignment.md) | Benchmark repair alignment + multi-backend (RLC/METTLE/RaptorQ) comparison | Accepted |
-| [0041](0041-simd-gf256.md) | SIMD-accelerated GF(2^8) multiply-accumulate (split-table PSHUFB) | Accepted |
-| [0042](0042-bench-suite-consolidation.md) | Consolidated bench suite (4 focused tables, shared SimChannel) | Accepted |
-| [0043](0043-information-theoretic-fec-rate.md) | Information-theoretic FEC rate controller (optimal p/(1-p) + B/T formula) | Accepted |
-| [0044](0044-benchmark-methodology.md) | Benchmark methodology audit (LinkModel, correlated fading, clock fix, MPTCP fix) | Accepted |
-| [0045](0045-matrix-benchmark.md) | Comprehensive matrix benchmark (6 backends × 4 configs × 2 paths × 5 scenarios) | Accepted |
-| [0046](0046-nack-congestion-sim-realism.md) | NACK congestion awareness + simulation realism (cwnd pacing, early delivery, reorder) | Accepted |
-| [0047](0047-test-accuracy-protocol-optimization.md) | Test accuracy fixes and protocol optimization | Accepted |
-| [0048](0048-overhead-reduction.md) | FEC overhead reduction: budget cap, NACK age gate, fractional repair | Accepted |
-| [0049](0049-benchmark-dashboard.md) | Benchmark dashboard generator (Plotly + Lit, 4 visualization tabs) | Accepted |
-| [0050](0050-fec-rate-control-redesign.md) | FEC rate control redesign — BOCD, budget allocator, spare capacity gate | Accepted |
-| [0051](0051-canonical-evaluation-scenarios.md) | Canonical evaluation scenarios and win conditions | Accepted |
-
-## The 2026-07 arc — decision index
-
-The measurement record for these decisions is the ledger
-(`docs/goal-gate.md`) and paper §16–§17 (`docs/fec-arq-model.md`); the
-ADRs index the DECISIONS and link the evidence — they do not restate the
-tables. The feature triage feeding the code-consolidation pass is
-[VISION-TRIAGE-2026-07](VISION-TRIAGE-2026-07.md).
-
-| # | Title | Status |
-|---|-------|--------|
-| [0052](0052-measurement-discipline.md) | L1 measurement discipline (liveness, pre-registration, era honesty) | Accepted (binding) |
-| [0053](0053-generation-inert-era-audit.md) | The generation-inert era — audit, classification, hard guard | Accepted (methodology lesson) |
-| [0054](0054-substrate-cc-policy-bbr-default.md) | Substrate CC is policy — BBR default (`RWM_QUIC_CC`), Cubic retained; Copa a measured queue/tail-vs-bulk tradeoff (2026-07-22, no flip) | Accepted |
-| [0055](0055-mtu-floor-1350.md) | MTU floor 1350 — quinn PMTU black-hole false positive | Accepted |
-| [0056](0056-systematic-wire-sparse-decoder.md) | Systematic-repair wire as the generation arm + sparse-aware decoding | Accepted |
-| [0057](0057-profile-before-parallelize.md) | Profile before parallelize — crypto + three threading refutations | Accepted (as method) |
-| [0058](0058-path-scaled-outstanding-pool.md) | Path-scaled outstanding pool; percap/borrowing family refuted for c8 | Accepted (family refuted; c8 WATCH open) |
-| [0059](0059-per-path-recovery-clocks.md) | Per-path recovery clocks (RFC 9002 per path, `RWM_RECOV_MP`) | Accepted |
-| [0060](0060-sack-clocked-store-release.md) | SACK-clocked store release (supersedes SACK_PRUNE) | Accepted |
-| [0061](0061-anchor-hygiene.md) | Anchor hygiene — measured-seed, clock-gap discard, expiring floors | Accepted |
-| [0062](0062-copa-wire-signal-competitive-mode.md) | Copa wire-signal + competitive mode; CC-independence finding | Accepted (compete gated) |
-| [0063](0063-rstar-window-mass-provisioning.md) | r* window-mass provisioning (§8.4.1) + wire-realization chain | Accepted |
-| [0064](0064-unified-span-machine.md) | One machine across the δ axis — unified span machine + δ-honest shedding | Accepted |
-| [0065](0065-daps-era-refutations.md) | DAPS-era refutations (delay-aware scheduling chain) | Refuted / Void |
-| [0066](0066-deprecation-register.md) | The deprecation register — two-stage retirement | Accepted |
-| [0067](0067-consolidated-default-stack.md) | The consolidated default stack (LOO-defended defaults) | Accepted |
-| [0068](0068-copa-bbr-fusion.md) | A better Copa — δ-priced probing over a measured rate model, ε̂-referenced loss discrimination | Proposed (future exploration; adversarial-cell prerequisite) |
-| [0069](0069-block-mode-disposition.md) | Block mode is LEGACY — the last mode bit, deprecated with a re-test clause; default pinned, not flipped | Accepted (re-test clause OPEN) |
-| [0070](0070-store-cap-law-review.md) | The store-cap law on trial — term-by-term provenance review of `clamp(gain·N·Σ, floor, N·knee)`; the derived replacement stated, not shipped | Accepted (review; validation path OPEN) |
-| [0071](0071-successor-candidates.md) | The two conceptual successors as CANDIDATES — the slack magnitude (what replaces `17/8`-as-permanent) and the δ-priced queue bound (what replaces the knee and `WIN_STORE_MAX`-as-law) | Proposed (enumeration only; NO decision taken) |
+| # | title | status | summary |
+|---|---|---|---|
+| [0002](0002-packet-framing-after-decode.md) | Packet framing after FEC decode | Accepted | Length-prefix framing (`net/framing.rs`) recovers IP packet boundaries after decode. |
+| [0003](0003-loss-estimation-is-broken.md) | Loss estimation is broken | Accepted | Loss comes from batch-sequence gaps and ACK echo, not from received-only counts. |
+| [0004](0004-decoder-memory-leak.md) | Decoder map grows without bound | Accepted | Completed decoders are dropped at once; stale ones are evicted after `DECODER_TIMEOUT`. |
+| [0005](0005-ack-mechanism-missing.md) | No ACK/feedback loop | Accepted | Receiver→sender ACK, result, report and ping/pong messages close the control loop. |
+| [0007](0007-rtt-calculation-broken.md) | RTT depends on clock sync | Accepted | RTT is measured by echoing the sender's own timestamp. |
+| [0010](0010-handshake-and-versioning.md) | Handshake and protocol versioning | Accepted | `RPTQ` magic + `PROTOCOL_VERSION` (now 8) on every message; a mismatch is refused at handshake. |
+| [0011](0011-channel-backpressure.md) | Channels stall under load | Accepted | Larger bounded channels; TUN inject drops with `try_send` rather than blocking. |
+| [0012](0012-platform-setup-ux.md) | Platform setup UX | Accepted | TOML config, profiles, preflight `check`, the `setup` subcommand. |
+| [0013](0013-monitoring-and-observability.md) | Runtime monitoring | Accepted | `SharedStats` atomics, an axum `/status` endpoint and the `status` subcommand. |
+| [0014](0014-duplicate-symbol-handling.md) | Duplicate symbol detection | Accepted | Decoders skip already-seen symbol ids. |
+| [0015](0015-graceful-shutdown.md) | Graceful shutdown | Accepted | Ctrl+C flushes, notifies the peer with `Shutdown` and closes cleanly. |
+| [0017](0017-mtu-aware-symbol-sizing.md) | MTU-aware symbol sizing | Accepted | Symbol size follows the smallest path `max_datagram_size`. |
+| [0018](0018-connection-migration.md) | Runtime connection migration | Accepted | Paths are added and removed at runtime through `POST/DELETE /paths`. |
+| [0020](0020-tls-cert-pinning.md) | TLS certificate pinning | Accepted | Optional SHA-256 pinning of the server certificate (`--pin-cert`). |
+| [0023](0023-gilbert-elliott-loss-model.md) | Gilbert-Elliott loss model | Accepted | A GE burst estimator feeds the rate controller; its burst multiplier was superseded by 0050. |
+| [0031](0031-network-simulation-harness.md) | Network simulation harness | Accepted | Deterministic `SimChannel` + `MockClock` test harness in `tests/common`. |
+| [0041](0041-simd-gf256.md) | SIMD GF(2^8) multiply-accumulate | Accepted | SSSE3/AVX2 split-table kernels behind the unchanged `gf256` API. |
+| [0042](0042-bench-suite-consolidation.md) | Benchmark suite consolidation | Accepted | One `bench_suite.rs` replaces the ad-hoc benchmarks; see `benchmark-methodology.md`. |
+| [0050](0050-fec-rate-control-redesign.md) | FEC rate control redesign | Accepted | BOCD loss quantile + spare-capacity budget replace the PI controller. |
+| [0051](0051-canonical-evaluation-scenarios.md) | Canonical evaluation scenarios | Accepted | A scenario suite with explicit, falsifiable win conditions and a fidelity ladder (L0–L2). |
+| [0052](0052-measurement-discipline.md) | L1 measurement discipline | Accepted | `measurement-discipline.md` is binding for every L1 verdict; refuted mechanisms retire in two stages. |
+| [0054](0054-substrate-cc-policy-bbr-default.md) | Substrate CC is policy; BBR default | Accepted | `RWM_QUIC_CC` selects quinn's controller; BBR is the default and Cubic an opt-out. |
+| [0055](0055-mtu-floor-1350.md) | MTU floor 1350 | Accepted | `min_mtu = initial_mtu = 1350` defeats quinn's PMTU black-hole false positive. |
+| [0056](0056-systematic-wire-sparse-decoder.md) | Systematic wire + sparse-aware decoding | Accepted | Known sources never enter the matrix; decode cost scales with the deficit. |
+| [0059](0059-per-path-recovery-clocks.md) | Per-path recovery clocks | Accepted | RFC 9002 loss detection generalized per path (`RWM_RECOV_MP`). |
+| [0060](0060-sack-clocked-store-release.md) | SACK-clocked store release | Accepted | SACKed symbols free their store slot but keep their payload until the cumulative ACK. |
+| [0061](0061-anchor-hygiene.md) | Anchor hygiene | Accepted | Anchors are measured-seed, discard clock gaps, and let floors expire. |
+| [0062](0062-copa-wire-signal-competitive-mode.md) | Copa wire signal + competitive mode | Accepted | Copa-sole is the queue/tail arm of the CC surface; competitive mode is built but off. |
+| [0063](0063-rstar-window-mass-provisioning.md) | r* window-mass provisioning | Accepted | r* provisions the window loss-mass quantile (`RWM_RSTAR_TAIL`); realized through the span machine. |
+| [0064](0064-unified-span-machine.md) | Unified span machine + δ-honest shedding | Accepted | One decoder and one continuous span law across δ; shedding within the 1 − ρ budget. |
+| [0068](0068-copa-bbr-fusion.md) | Copa/BBR fusion | Proposed | One δ-priced controller over a measured rate model; targets measured, nothing built. |
+| [0069](0069-block-mode-disposition.md) | Block mode is legacy | Accepted | The block/window fork is the last mode bit; the default stays until the re-test in `status.md` §4. |

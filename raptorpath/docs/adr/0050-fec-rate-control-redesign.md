@@ -1,7 +1,6 @@
 # ADR-0050: FEC Rate Control Redesign — Principled Budget Architecture
 
-**Status**: Implemented
-**Date**: 2026-03-20
+## Status: Accepted
 
 ## Context
 
@@ -12,7 +11,7 @@ The FEC rate controller used a formula `rate = max(p/(1-p) + codec, B/T) × (1+m
 3. No coordination with BBR congestion control
 4. Unified TX/RX loss estimation that couldn't account for asymmetric paths
 5. Protocol hint as additive overhead offset (+2%/-2%) instead of controlling the actual parameter
-6. Codec overhead applied unconditionally (15% for METTLE even when decoder rarely invoked)
+6. Codec overhead applied unconditionally (15% for a high-overhead codec even when the decoder is rarely invoked)
 
 Measured overhead gaps vs information-theoretic optimum:
 - DC (ε≈0.1%): 4.3% actual vs 0.1% optimal → 43x
@@ -62,13 +61,6 @@ Replaced EWMA + margin + PI with Adams & MacKay (2007) BOCD algorithm:
 - Repair rate clamped to spare capacity before generation
 - When `spare_capacity < needed_rate`, BBR reduces source rate first
 
-#### Phase 5: Visualization
-
-Dashboard "Budget" tab with:
-- Budget waterfall: IT minimum vs estimation tax per backend
-- Overhead trend time-series across benchmark runs
-- Estimation gap ratio (actual / IT minimum) per scenario
-
 #### Protocol Hint → Tail Reliability (not overhead offset)
 
 The system targets 100% reliability — everything gets through via FEC or NACK. The two mechanisms differ only in latency: FEC is proactive (zero added latency), NACK is reactive (costs one RTT). With perfect bandwidth optimization, the only remaining tradeoff is latency vs tail reliability.
@@ -82,13 +74,13 @@ No additive offset. No magic knobs. The BOCD quantile at the adjusted confidence
 
 #### Codec Overhead Weighted by P(decoder invoked)
 
-For systematic codecs (METTLE, RLC, RaptorQ), the decoder is only invoked when ≥1 source symbol in the window is lost. The codec overhead should be weighted accordingly:
+For systematic codecs (RLC, RaptorQ), the decoder is only invoked when ≥1 source symbol in the window is lost. The codec overhead should be weighted accordingly:
 
 ```
 effective_codec_overhead = raw_overhead × (1 - (1-p)^window_size)
 ```
 
-At DC (p=0.001, w=50): METTLE's 15% overhead becomes 15% × 4.9% = 0.74%.
+At DC (p=0.001, w=50): a 15% codec overhead becomes 15% × 4.9% = 0.74%.
 
 The `compute_repair_rate()` method now takes `window_size` as a parameter. Callers pass the actual encoder window/block size.
 
@@ -111,7 +103,6 @@ The streaming params safety factor (previously 1.10 for Realtime, 1.05 otherwise
 | `src/transport/protocol.rs` | Add `NackAck { nack_id }` control message |
 | `src/scheduler/mod.rs` | Add `spare_capacity()` to PathState and Scheduler |
 | `src/net/mod.rs` | NackAck wire-up, cwnd budget gate, NACK budget gating |
-| `tools/generate_dashboard.py` | Budget visualization tab |
 | `tests/control_loop.rs` | Updated for BOCD (replaced PI assertions) |
 
 ## Consequences

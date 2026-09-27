@@ -1,8 +1,6 @@
 # ADR-0060: SACK-Clocked Store Release (supersedes the SACK_PRUNE experiment)
 
-## Status: Accepted (`RWM_STORE_SACK_RELEASE` default ON, 2026-07-21). Supersedes `RWM_SACK_PRUNE` (refuted 2026-07-07; ledger-only experiment, no prior ADR — marked deprecate-HARD in the register)
-
-**Date**: 2026-07-21
+## Status: Accepted (`RWM_STORE_SACK_RELEASE` default ON). Supersedes the refuted `RWM_SACK_PRUNE` experiment (since deleted)
 
 ## Context
 
@@ -10,7 +8,7 @@ Wall #9, the §16.24 residual: the retention store freed slots only on the
 CUMULATIVE frontier (`sent_store.split_off(&(ack+1))`), so
 SACKed-but-not-cumulative symbols held flow-control slots a full frontier
 round — at c7 the store recycled at frontier latency, not path rate
-(wire un-full, waste suppressed, goodput stopped). The 2026-07-07
+(wire un-full, waste suppressed, goodput stopped). The earlier
 `RWM_SACK_PRUNE` experiment had attacked the same slot pressure by
 REMOVING SACKed symbols from `sent_store`/`retransmit_buffer` — refuted
 UNSAFE: it destroyed the only retransmittable copy, so a
@@ -33,10 +31,8 @@ eviction is one wasted retransmit, never a wedge. First mechanism shipped
 under full ADR-0052 item-11 pre-registration (prediction, falsification
 clause, and the derivation re-read written before the build).
 
-`RWM_SACK_PRUNE` survives one pass only as the precedence-warned control
-arm (explicitly set, it wins over the release law with a warning);
-removal is scheduled (ADR-0066 register: no re-test owed — the unsafety
-is structural, no wall excuses destroying recoverability).
+`RWM_SACK_PRUNE` was deleted with no re-test owed: the unsafety is
+structural, and no substrate wall excuses destroying recoverability.
 
 ## Consequences
 
@@ -45,25 +41,25 @@ is structural, no wall excuses destroying recoverability).
   +4.3/+2.9 ≫σ (single-path SACKs above a hole also hold slots — the N=1
   term is real); dual-c1 composed +20–22 above single; c8 unregressed.
   Occupancy 3,157→1,460 at ~167k slots released/200 MB with retx FALLING.
-- The 2026-07-07 "sender was never the bottleneck" null is era-resolved:
+- The earlier "sender was never the bottleneck" null is era-resolved:
   on the post-wall substrate the sender store IS the binder, and
   releasing it converts ~1:1 at the symmetric dual cell.
-- Side effect on ADR-0058: under SR the legacy 1024 pool reads better at
-  c8 than the path-scaled pool — the c8 WATCH follow-up.
+- Side effect: under SR the legacy 1024 pool read better at c8 than the
+  path-scaled pool; the capacity-weighted pool built to answer that was
+  refuted, so the c8 pool law stays open.
 
 ## Evidence
 
-- Ledger: goal-gate.md "SACK-Clocked Store Release (2026-07-21)"
+- Ledger at ac1aed1: "SACK-Clocked Store Release (2026-07-21)"
   (pre-registration, law as built, 15-arm battery, dwell gauges, flip
   verdict); "SACK Flow Control (2026-07-07)" and "SACK+BDP Reassembly
   (2026-07-08)" (the refuted precursor era); "CONSOLIDATED VERDICT" wall
-  #9 row; DEPRECATION REGISTER row `RWM_SACK_PRUNE`.
-- Paper: §16.25.
+  #9 row.
+- Paper (§ as of ac1aed1): §16.25.
 - Commits: 7145fcc (pre-registration), ff7acb4 (build), a52105d (flip +
   battery).
 
 ## References
 
-- ADR-0052 (item 11 — this is its first exercise), ADR-0059 (the
-  composing partner), ADR-0058 (c8 WATCH), ADR-0066 (SACK_PRUNE
-  disposition).
+- ADR-0052 (pre-registration — this is its first exercise), ADR-0059 (the
+  composing partner).

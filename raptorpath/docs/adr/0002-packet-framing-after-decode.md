@@ -1,7 +1,8 @@
 # ADR-0002: Packet Framing After FEC Decode
 
-## Status
-**Resolved** — length-prefix framing implemented in `net/framing.rs` with `frame_packet()` / `extract_packets()`
+## Status: Accepted
+
+Implemented: length-prefix framing implemented in `net/framing.rs` with `frame_packet()` / `extract_packets()`
 
 ## Context
 The sender concatenates multiple IP packets into a single block buffer, then FEC-encodes the block. After decoding, the receiver gets the raw byte blob and injects it into the TUN interface as a single write.

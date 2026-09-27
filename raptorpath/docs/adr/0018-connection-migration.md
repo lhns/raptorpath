@@ -1,6 +1,6 @@
 # ADR-0018: Runtime Connection Migration
 
-## Status: Resolved
+## Status: Accepted
 
 ## Context
 
