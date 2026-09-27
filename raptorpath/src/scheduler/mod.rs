@@ -631,15 +631,11 @@ fn place_store_terms() -> (f64, bool) {
     })
 }
 
-/// Wall clock in microseconds since the UNIX epoch - the SAME domain
-/// `net::emit_source` stamps `send_ts_us` in, which is what makes `F_hat`
-/// comparable with `now` here. (A monotonic `Instant` would not be: `F_hat`
-/// is built from epoch stamps.)
+/// The engine clock (`net::now_us`, µs) - the SAME clock `net::emit_source`
+/// stamps `send_ts_us` with, which is what makes `F_hat` comparable with
+/// `now` here.
 fn place_wall_now_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_micros() as u64)
-        .unwrap_or(0)
+    crate::net::now_us()
 }
 
 pub fn cold_place_active() -> bool {

@@ -319,9 +319,8 @@ impl AckCadenceGauge {
         }
     }
 
-    /// µs on the gauge's own monotonic epoch. Deliberately NOT `net::now_us`
-    /// (a `SystemTime` read): inter-arrival spacing is the measurement, and a
-    /// wall clock can step.
+    /// µs on the gauge's own monotonic epoch: inter-arrival spacing is the
+    /// measurement, so the gauge carries its own `Instant`.
     pub fn now_us(&self) -> u64 {
         self.epoch.elapsed().as_micros() as u64
     }

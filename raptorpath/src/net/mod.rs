@@ -3102,11 +3102,33 @@ fn copa_attribute_newly(
     per_path
 }
 
-fn now_us() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
+/// Lowest base [`now_us`] starts from, µs (~12.7 days): keeps every stamp
+/// non-zero (`echo_send_timestamp_us == 0` is the timer-ack sentinel) and
+/// leaves headroom below "now" even if the wall clock reads before 1970.
+const NOW_US_MIN_BASE: u64 = 1 << 40;
+
+/// The engine clock, µs. MONOTONIC: an `Instant` offset from a base read
+/// ONCE from the wall clock at first use, so a wall-clock step (NTP, manual
+/// set) can neither freeze nor storm the recovery clocks, and a clock before
+/// the UNIX epoch cannot panic. The wall-clock base keeps stamps in the
+/// familiar epoch-µs range (same varint width on the wire as before).
+///
+/// Every consumer is a same-process difference, an echo of this process's
+/// own stamp (RTT, ETA book, ping), or — at the peer — an `arrival −
+/// send_ts` difference that is min-subtracted or differenced again
+/// (`lat.rs` A_x, `eta.rs` receiver ℓ, the estimator's jitter), in which the
+/// constant offset between the two hosts' bases cancels. Nothing compares
+/// this clock to the peer's as an absolute time.
+pub(crate) fn now_us() -> u64 {
+    static BASE: std::sync::OnceLock<(Instant, u64)> = std::sync::OnceLock::new();
+    let &(t0, base_us) = BASE.get_or_init(|| {
+        let wall_us = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_micros() as u64)
+            .unwrap_or(0);
+        (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
+    });
+    base_us.saturating_add(t0.elapsed().as_micros() as u64)
 }
 
 /// Collect per-generation residual deficits for the deficit-feedback report
@@ -13780,6 +13802,22 @@ mod tests {
             want,
             "pooled recovery SRTT must be the saturated paths' measured RTT, not the floor"
         );
+    }
+
+    /// The engine clock is monotonic, non-zero and never panics. (A wall-
+    /// clock STEP cannot be injected from a unit test; the guarantee against
+    /// it is structural — the value is `base + Instant::elapsed()`.)
+    #[test]
+    fn now_us_is_monotonic_and_nonzero() {
+        let mut prev = now_us();
+        assert!(prev >= NOW_US_MIN_BASE, "stamps start at or above the base");
+        for _ in 0..10_000 {
+            let t = now_us();
+            assert!(t >= prev, "now_us went backwards: {t} < {prev}");
+            prev = t;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(now_us() > prev, "now_us advances with real time");
     }
 
     // ----- sack_to_gaps (P10b SACK-driven reactive repair) -----
