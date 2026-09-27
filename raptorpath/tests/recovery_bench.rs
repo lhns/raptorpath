@@ -699,8 +699,8 @@ fn the_derived_round_reproduces_the_shipped_law_inside_the_legacy_band() {
     // information-availability fallback, not a mode).
     assert_eq!(hole_refresh(false, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
     assert_eq!(hole_refresh(true, None, JITTER_US, HOLE_NACK_REFRESH_MIN), HOLE_NACK_REFRESH_MAX);
-    // -- paper 16.78 `F2`: THE RE-EXPRESSION IS BYTE-IDENTICAL AT THE SHIPPED
-    //    FLOOR, OVER THE WHOLE INPUT DOMAIN. ---------------------------------
+    // -- paper §7.4: the re-expression is byte-identical at the shipped
+    //    floor, over the whole input domain. --------------------------------
     //
     // The refresh-floor lift re-expresses ONE law as
     //

@@ -1466,7 +1466,7 @@ fn coverage_bench() {
 
 /// ABSOLUTE assertions on the three DERIVED terms and on the emission
 /// simulator, plus the liveness proof that the mechanism under test actually
-/// executes (CLAUDE.md testing discipline / MEASUREMENT DISCIPLINE rule 1).
+/// executes (CLAUDE.md testing discipline / docs/measurement-discipline.md rule 1).
 #[test]
 fn slack_bench_terms_are_arithmetic_with_no_constants() {
     // TERM 1 — Little's law on the wire, exactly.

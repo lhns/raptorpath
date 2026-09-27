@@ -486,7 +486,7 @@ fn oracle_c8_reconciliation() {
     println!("L0 wasm predicted x1.18 ; L1 netem measured x0.76");
 
     // (1) ATOMIC unit (block-affine, no cross-path repair fungibility) — the
-    //     paper 16.1/16.2 regime-(2) bound. Repairs cannot fill holes; a lost
+    //     paper §5.5 regime-(2) bound. Repairs cannot fill holes; a lost
     //     slow-path symbol serialises at the slow path's rate + RTT.
     println!("\n-- ATOMIC (path-affine units, regime 2) --");
     for &h in &[512usize, 4096, usize::MAX] {

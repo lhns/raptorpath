@@ -883,7 +883,7 @@ fn test_r_star_structural_properties() {
     }
 
     // --- convexity of the tail/overhead objective => interior stationary
-    // point is the GLOBAL min (paper 14.21 p99 model, via r_saturation). ---
+    // point is the GLOBAL min (paper §4.4 p99 model, via r_saturation). ---
     // Reconstruct the p99 objective and verify it is unimodal (single sign
     // change in its discrete first difference), so its argmin is global.
     {
