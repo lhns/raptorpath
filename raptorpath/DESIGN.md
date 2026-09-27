@@ -19,12 +19,13 @@ never modes (see the root `CLAUDE.md`).
 
 | dial | meaning | where it is computed |
 |---|---|---|
-| δ | latency price: how much delay the flow will trade for throughput | `net/mod.rs` `delta_price` (hint → δ via `scheduler::hint_delta_price`; `RWM_DELTA` sets a number); `delta_budget_b_of` → `raptorpath_math::span_horizon_b` |
-| ρ | retention contract: the fraction of data that must eventually arrive | ρ = 1 retain-until-acked (`--window-reliable`); ρ < 1 EVICT retention with δ-honest shedding (`shed_allowed`, `shed_deadline_us`, `shed_recv_budget_ok` in `net/mod.rs`) |
+| δ | latency price: how much delay the flow will trade for throughput | `net/store_cap.rs` `delta_price` (hint → δ via `hint_delta_price`, `scheduler/copa.rs`; `RWM_DELTA` sets a number); `delta_budget_b_of` → `raptorpath_math::span_horizon_b` |
+| ρ | retention contract: the fraction of data that must eventually arrive | ρ = 1 retain-until-acked (`--window-reliable`); ρ < 1 EVICT retention with δ-honest shedding (`shed_allowed`, `shed_deadline_us`, `shed_recv_budget_ok` in `net/shed.rs`) |
 | r | proactive repair rate | `control/fec_rate.rs`: r* from the BOCD loss quantile and the window loss-mass tail; the rate mix r(β) = (1−β)·r_anchor + β·r_late-is-fine with β = `bulkness_of_delta(δ)`; `TaperBudget` spends it on the wire |
 
 The shared closed forms (`compute_r_star`, `r_star_mass`, `span_horizon_b`,
-`bulkness_of_delta`, `zeta_of_delta`, `p_lost`, ...) live in the
+`bulkness_of_delta`, `zeta_of_delta`, `p_lost`, ...) and the shared estimators
+(BOCD changepoint, Gilbert-Elliott, the normal helpers) live in the
 `raptorpath-math` crate, which the engine and the visualizer
 (`raptorpath-wasm`, `raptorpath-visualizer/`) both call, so the model and the
 engine evaluate the same law.
@@ -33,11 +34,11 @@ engine evaluate the same law.
 
 ```
 TUN / perf object
-  └─ run_window_sender (net/mod.rs)
+  └─ run_window_sender (net/mod.rs; loop phases in net/sender_phases.rs)
        └─ emit_source (net/emit_source.rs)         one packet → one source symbol
             ├─ encoder intake (fec/rlc_window.rs)   sliding-window RLC over GF(256)
-            ├─ Scheduler::place_symbol → place_costs (scheduler/mod.rs)
-            ├─ retention store + store-cap gate     (flow control, net/mod.rs)
+            ├─ Scheduler::place_symbol → place_costs (scheduler/place.rs)
+            ├─ retention store + store-cap gate     (flow control, net/store_cap.rs)
             └─ proactive repair (TaperBudget, control/fec_rate.rs)
   └─ QuicTransport (transport/quic.rs)              QUIC DATAGRAM per path
                                                     wire format: transport/protocol.rs
@@ -45,7 +46,7 @@ peer ─ run_receiver (net/receiver.rs)
        ├─ UnifiedDecoder (fec/unified.rs)           one decoder for every RLC wire
        ├─ ReorderBuffer (net/reorder.rs)            in-order frontier / hold-at-hole
        └─ WindowAck (SACK) back to the sender
-sender ─ on_window_ack (net/control_msg.rs)         store release, hole detection, retransmit
+sender ─ on_window_ack (net/control_msg.rs)         store release (net/sack.rs), hole detection, retransmit
 ```
 
 **Emission.** Source symbols go out first and unencoded, so a loss-free path
@@ -58,7 +59,8 @@ span. The span law (ADR-0064) sets width A*, depth M* and trailing offset from
 (normalized by the fastest SRTT), its loss burden, and, for repair symbols,
 how much of the covered data the path already carried. There is no hard
 capacity cutoff; a saturated path's weight falls continuously. Each path keeps
-engine-side state (`PathState`, with a Copa-lite `CopaState`) whose samples feed
+engine-side state (`PathState`, `scheduler/path.rs`, with a Copa-lite
+`CopaState`, `scheduler/copa.rs`) whose samples feed
 the anchors. The congestion controller under each QUIC connection is quinn BBR
 by default (`RWM_QUIC_CC`, ADR-0054).
 
@@ -66,16 +68,19 @@ by default (`RWM_QUIC_CC`, ADR-0054).
 ACK passes them. SACKed symbols release their store slot at once but keep their
 payload for recovery (ADR-0060). The store cap is a derived law over path count,
 per-path pipe and the δ price (`path_scaled_store_cap`, `pooled_store_cap`,
-`pool_value_multiplier` and the honest-cap terms in `net/mod.rs`). The paper
-section "Flow control: the store/δ-cap law" derives it.
+`pool_value_multiplier` and the honest-cap terms in `net/store_cap.rs`). Paper
+§6 derives it.
 
 **Recovery.** The receiver acknowledges with SACK ranges (`WindowAck`). The
-sender turns gaps into holes (`sack_to_gaps`) and decides per hole, on that
-flight's own path clock (RFC 9002 time and packet thresholds generalized per
-path, `mp_hole_ripe`, ADR-0059), whether to retransmit. At ρ < 1 a hole whose
+sender turns gaps into holes (`sack_to_gaps`, `net/sack.rs`) and decides per
+hole, on that flight's own path clock (RFC 9002 time and packet thresholds
+generalized per path, `mp_hole_ripe` in `net/recovery_laws.rs`, ADR-0059),
+whether to retransmit. The recovery clocks (tail sweep, refresh, cooldown)
+pool their SRTT over the live paths (`recovery_clock_paths`). At ρ < 1 a hole whose
 projected delivery misses the δ deadline may be shed, within the 1 − ρ budget.
-`RepairRequest` exists on the wire for future receiver-driven repair and is not
-sent in v8.
+`RepairRequest` exists on the v8 wire for receiver-driven repair; it is sent
+only under the off-by-default `RWM_RECV_REQUEST_LAW` arm, and otherwise an
+arriving one is counted and dropped.
 
 **Decoding.** `UnifiedDecoder` is the global sparse-aware closure (ADR-0056,
 ADR-0064): known source columns stay payload-only, coded rows reduce only over
@@ -102,23 +107,31 @@ in `docs/status.md` §4.
 
 | module | role |
 |---|---|
-| `main.rs` | CLI: `run`, `check`, `status`, `perf`, `setup` |
+| `main.rs` | CLI: `run`, `check`, `status`, `perf`, `setup` (links the `raptorpath` library) |
 | `config.rs` | TOML + profile + CLI layering; `resolve` → `PeerConfig` |
-| `gates.rs` | the `RWM_*` environment surface, resolved once (`RuntimeGates::resolve`) |
+| `gates.rs`, `gates/scheduler_gates.rs` | the `RWM_*` environment surface, resolved once into a `OnceLock<RuntimeGates>` read everywhere through `gates::get()`; one strict boolean dialect (`config::parse_bool`), an unrecognised value is a startup error |
 | `perf.rs` | `raptorpath perf`: objects over the real engine through a memory TUN |
 | `preflight.rs`, `routing.rs` | environment checks; route and DNS setup and cleanup |
-| `net/mod.rs` | orchestration (`run_impl`), window sender, recovery and store laws |
+| `net/mod.rs` | orchestration (`run_impl`), pipeline routing (`is_window_mode`), the window sender loop (`run_window_sender`), the monotonic engine clock `now_us` |
+| `net/sender_phases.rs` | the window sender's loop phases: store-cap refresh, generation emission, gap serving, ack advance |
+| `net/recovery_laws.rs` | per-path loss detection (`mp_time_threshold_split`, `mp_hole_ripe`), refresh and tail-sweep clocks, `recovery_clock_paths` |
+| `net/holddown.rs`, `net/recovery_clock.rs` | the hold-down arm (`RWM_HOLDDOWN_Q`, off) and its quantile window law; the `[HOLD]` and `[QCLK]` gauges |
+| `net/store_cap.rs` | flow control: path-scaled, pooled, honest and three-term caps, the δ-cap setpoint, `delta_price`, `contract_stall_s` |
+| `net/shed.rs` | δ-honest shedding (sender deadline and budget, receiver hold) and the completion feed |
+| `net/sack.rs` | SACK gap inversion, per-path outstanding accounts, SACK-clocked release, window-ack emission |
+| `net/copa_feed.rs` | the plain-mode Copa delivery feed (opt-in) |
+| `net/report.rs` | recovery-plane report lines: `[RACK]`, `[RFA]`, `[FCAUSE]`, `[REQS]` |
 | `net/emit_source.rs`, `net/sender_policy.rs` | the per-symbol emission step and its resolve-once policy |
 | `net/receiver.rs`, `net/control_msg.rs`, `net/reorder.rs` | receiver task, control-message dispatch, in-order frontier |
 | `net/framing.rs` | length-prefix packet framing and symbol packing |
 | `net/block_sender.rs`, `block_arq.rs`, `interleave.rs` | block pipeline (legacy) |
 | `net/tasks/` | background tasks: decoder GC, block ARQ sweep, path add/remove, periodic report, control fast path |
 | `net/{diag,ackdiag,cpuprof,eta,lat,late,succ,walldiag,rttdump,recv_block}.rs` | measurement instruments (`[DIAG]`, `[ETA]`, `[LAT]`, ...), mostly off by default |
-| `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding), block backends, traits |
-| `control/` | `estimator.rs` (Beta + BOCD loss estimate), `changepoint.rs`, `gilbert_elliott.rs`, `fec_rate.rs` (r*, rate mix, taper), `anchor.rs` (anchor hygiene) |
-| `scheduler/` | per-path state, Copa-lite, placement (`place_costs`), injectable clock |
-| `transport/` | `quic.rs` (quinn, per-path connections, substrate CC choice), `protocol.rs` (wire, `PROTOCOL_VERSION = 8`), `bbr_rs.rs` (gated reference BBR) |
-| `monitor/` | `SharedStats` and the axum endpoint (`/status`, `/health`, `/paths`) |
+| `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding; `generation/reference.rs` is the test oracle), block backends, traits |
+| `control/` | `estimator.rs` (Beta + BOCD loss estimate), `fec_rate.rs` (r*, rate mix, taper), `anchor.rs` (anchor hygiene); `changepoint`, `gilbert_elliott` and `p_lost` are re-exported from `raptorpath-math` |
+| `scheduler/` | `mod.rs` (`Scheduler`, the `live_paths`/`active_paths` sets, weights), `path.rs` (`PathState`), `copa.rs` (Copa-lite, `CopaState`), `place.rs` (placement, `place_costs`), `clock.rs` (injectable clock) |
+| `transport/` | `quic.rs` (quinn, per-path connections, substrate CC choice), `protocol.rs` (wire, `PROTOCOL_VERSION = 8`), `bbr_rs.rs` (gated reference BBR), `l0_netem.rs` (in-process netem shim for loopback tests) |
+| `monitor/` | `SharedStats` and the axum endpoint (`/status`, `/health`, `/paths`); `quantile.rs` (the one nearest-rank quantile every gauge uses) |
 | `tun/` | Linux TUN and Windows wintun |
 
 The workspace also holds `gf256/` (SIMD GF(2^8) arithmetic, ADR-0041),
@@ -136,16 +149,16 @@ instrument and is off.
 
 ## Where to read more
 
-The paper sections (named, since the paper is being renumbered):
+The paper sections:
 
-- **System and channel model**: the Gilbert-Elliott channel and the (δ, ρ, r) contract.
-- **Recovery fundamentals**: FEC versus ARQ, P_lost, the taper.
-- **The rate law**: r*, the window loss-mass tail, r(β), b(δ).
-- **The sliding-window span machine and multipath**: the unified decoder, the span law, placement.
-- **Flow control: the store/δ-cap law**.
-- **The recovery decision**: the hole law and the receiver seat.
-- **Congestion control and substrate**: Copa-lite, quinn BBR, `RWM_QUIC_CC`.
-- **Refuted and superseded designs**: what was tried and removed, and why.
+- **§2 System and channel model**: the Gilbert-Elliott channel and the (δ, ρ, r) contract.
+- **§3 Recovery fundamentals**: FEC versus ARQ, P_lost, the taper.
+- **§4 The rate law**: r*, the window loss-mass tail, r(β), b(δ).
+- **§5 The span machine and multipath**: the unified decoder, the span law, placement.
+- **§6 Flow control**: the pooled store cap and the δ-cap.
+- **§7 The recovery decision**: the hole law and the receiver seat.
+- **§8 Congestion control and substrate**: Copa-lite, quinn BBR, `RWM_QUIC_CC`.
+- **§10 Refuted and superseded designs**: what was tried and removed, and why.
 
 Decisions are indexed in [`docs/adr/README.md`](docs/adr/README.md). Measurement
 rules are in [`docs/measurement-discipline.md`](docs/measurement-discipline.md).
