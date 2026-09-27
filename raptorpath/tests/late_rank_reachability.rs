@@ -55,11 +55,12 @@
 //! beside `[SUCC]`, so a missing line can only be read as an unreached
 //! emission site.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{field, opt_field, u64_field};
 
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
@@ -67,165 +68,29 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (srv, log)
-}
-
 /// One loopback transfer. Returns the SERVER (receiver) log.
+/// The log is taken once a `[LATE]` readout post-dating the transfer arrived.
 fn run(paths: usize, netem: Option<&str>, bytes: &str) -> String {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
+    let (_cli, srv) = loopback::transfer(loopback::Transfer {
+        paths,
+        env: &ARM,
+        client_env: &loopback::shaped(netem),
         bytes,
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let log = srv_log.lock().expect("stderr sink").clone();
-    log
+        srv_tag: Some("[LATE] "),
+        ..Default::default()
+    });
+    srv
 }
 
 // ── READERS ─────────────────────────────────────────────────────────────
 
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-/// A `-`-or-number slot. `None` is the ABSENT reading and is never 0.
-fn opt_field(line: &str, key: &str) -> Option<u64> {
-    let v = field(line, key);
-    (v != "-").then(|| v.parse().expect("numeric slot"))
-}
-
 fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
-    log.lines().rev().find(|l| l.contains(pat)).unwrap_or_else(|| {
-        panic!(
-            "no `{pat}` line from the RECEIVER — the gauge is unreachable, which \
-             is the DEAD-GAUGE reading this test exists to fail on:\n{log}"
-        )
-    })
+    gauge::require(
+        log,
+        pat,
+        "the RECEIVER's gauge is unreachable, which is the DEAD-GAUGE reading \
+         this test exists to fail on",
+    )
 }
 
 /// 1, 3, 6, 7 — everything that must hold on ANY topology.

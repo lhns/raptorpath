@@ -24,9 +24,12 @@
 //! resolved once at engine start, and the two transfers must not race for
 //! ports.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ack_merge_window_loopback_and_block_mode_scope() {
@@ -41,70 +44,41 @@ async fn ack_merge_window_loopback_and_block_mode_scope() {
     );
 
     // ── 1. WINDOW mode: the merged path carries the whole accounting ─────
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47861".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47861".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
 
     // Completion == every chunk delivered, reassembled and acked with ONE
     // control datagram per data message instead of two (2 runs + warm-up).
-    tokio::time::timeout(Duration::from_secs(60), perf::client(cli_pc, 200_000, 2))
-        .await
-        .expect("ack-merge window loopback timed out — the re-homed accounting stalled")
-        .expect("ack-merge window perf client failed");
-
-    srv.abort();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    run(
+        srv,
+        cli,
+        200_000,
+        2,
+        Duration::from_secs(60),
+        "ack-merge window loopback (a stall = the re-homed accounting stalled)",
+    )
+    .await;
 
     // ── 2. BLOCK mode: out of scope, must be untouched ───────────────────
-    let bsrv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47862".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(false),
-        ..Default::default()
-    };
-    let (bsrv_pc, _) = config::resolve(&bsrv_cfg).unwrap();
+    // A fresh port pair, so the first pair's teardown is not waited on.
+    let (s, c) = cfgs(&ports(1), "bulk", false);
+    let (bsrv, bcli) = (resolve(&s), resolve(&c));
     assert!(
-        !bsrv_pc.window_reliable,
+        !bsrv.window_reliable,
         "this transfer must take the BLOCK path — the scope guard is vacuous otherwise"
     );
-    let bsrv = tokio::spawn(perf::server(bsrv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let bcli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47862".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(false),
-        ..Default::default()
-    };
-    let (bcli_pc, _) = config::resolve(&bcli_cfg).unwrap();
 
     // Block mode still runs its per-batch Ack → BlockArq loss channel. With
     // the gate ON this must be exactly as it is with the gate OFF.
-    tokio::time::timeout(Duration::from_secs(60), perf::client(bcli_pc, 200_000, 2))
-        .await
-        .expect("block-mode transfer timed out under RWM_ACK_MERGE — scope defect")
-        .expect("block-mode perf client failed under RWM_ACK_MERGE — scope defect");
+    run(
+        bsrv,
+        bcli,
+        200_000,
+        2,
+        Duration::from_secs(60),
+        "block-mode transfer under RWM_ACK_MERGE (scope defect)",
+    )
+    .await;
 
-    bsrv.abort();
 }

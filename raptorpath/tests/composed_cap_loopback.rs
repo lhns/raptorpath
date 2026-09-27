@@ -46,9 +46,12 @@
 //! Own test binary and ONE test function: the gates are process-global env,
 //! resolved once at engine start.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn composed_cap_composes_its_three_pieces_and_the_loopback_completes() {
@@ -107,41 +110,20 @@ async fn composed_cap_composes_its_three_pieces_and_the_loopback_completes() {
     );
 
     // ── 3. ROUTING, executed ─────────────────────────────────────────────
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47891".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47891".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable);
 
     // A brake that closed and never reopened deadlocks here rather than
     // reading oddly — `cwnd_full` gates admission and is NON-EXEMPT for
     // recovery emission, so this timeout is the composition's liveness check.
-    tokio::time::timeout(
+    run(
+        srv,
+        cli,
+        2_000_000,
+        2,
         Duration::from_secs(120),
-        perf::client(cli_pc, 2_000_000, 2),
+        "composed-cap loopback timed out — the late-stage cwnd brake closed and did not reopen, or the pool law deadlocked the admission gate",
     )
-    .await
-    .expect(
-        "composed-cap loopback timed out — the late-stage cwnd brake closed and \
-         did not reopen, or the pool law deadlocked the admission gate",
-    )
-    .expect("composed-cap perf client failed");
-
-    srv.abort();
+    .await;
 }

@@ -4,49 +4,20 @@
 //! no routes/DNS). Guards the run_with_tun seam and the perf object
 //! protocol end to end.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_small_object() {
-    // quinn needs an installed crypto provider (main() does this for the
-    // binary; tests must do it themselves).
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47831".into()]),
-        protocol_hint: Some("bulk".into()),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    // Let the server engine bind + start accepting before connecting.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47831".into()]),
-        protocol_hint: Some("bulk".into()),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
     // The client bails if the warm-up object is never acked and only
     // returns Ok after every run completed or timed out; bounding the
     // whole thing well under the 300 s run timeout means Ok == the
     // object round-tripped (chunks delivered, reassembled, acked).
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 200_000, 2),
-    )
-    .await
-    .expect("perf loopback timed out")
-    .expect("perf client failed");
-
-    srv.abort();
+    loopback::in_process_loopback("bulk", false, 200_000, 2, "perf loopback").await;
 }
 
 /// RWM Phase A: the same loopback exchange over the RELIABLE sliding-window
@@ -57,39 +28,7 @@ async fn perf_loopback_small_object() {
 /// plumbing itself never wedges a clean link.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_reliable_window() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47833".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47833".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 200_000, 2),
-    )
-    .await
-    .expect("reliable-window perf loopback timed out")
-    .expect("reliable-window perf client failed");
-
-    srv.abort();
+    loopback::in_process_loopback("bulk", true, 200_000, 2, "reliable-window perf loopback").await;
 }
 
 /// RWM Phase C (paper §16.2, H→∞ corner): the reliable-window loopback with
@@ -105,43 +44,15 @@ async fn perf_loopback_reliable_window() {
 /// under retention and the object still completes with all bytes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_out_of_order_object() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47835".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_out_of_order: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable && srv_pc.window_out_of_order);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47835".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_out_of_order: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (mut s, mut c) = cfgs(&ports(1), "bulk", true);
+    s.window_out_of_order = Some(true);
+    c.window_out_of_order = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && srv.window_out_of_order);
 
     // A larger object (spans many windows, so out-of-order delivery is
     // actually exercised across window boundaries) still completes.
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 1_000_000, 2),
-    )
-    .await
-    .expect("out-of-order perf loopback timed out")
-    .expect("out-of-order perf client failed");
-
-    srv.abort();
+    run(srv, cli, 1_000_000, 2, Duration::from_secs(60), "out-of-order perf loopback").await;
 }
 
 /// Fungible frontier (paper §16.3 "empty quadrant"): the reliable-window
@@ -157,43 +68,15 @@ async fn perf_loopback_out_of_order_object() {
 /// where the fungible window aggregates across the two paths.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_coded_object() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47837".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_coded_only: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable && srv_pc.window_coded_only);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47837".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_coded_only: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (mut s, mut c) = cfgs(&ports(1), "bulk", true);
+    s.window_coded_only = Some(true);
+    c.window_coded_only = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && srv.window_coded_only);
 
     // A multi-window object: coded-only must reconstruct every seq purely by
     // GE (no systematic passthrough) across window boundaries and complete.
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 1_000_000, 2),
-    )
-    .await
-    .expect("coded-object perf loopback timed out")
-    .expect("coded-object perf client failed");
-
-    srv.abort();
+    run(srv, cli, 1_000_000, 2, Duration::from_secs(60), "coded-object perf loopback").await;
 }
 
 /// Generation-based cross-path fungible coding (paper §16.3, the oracle-
@@ -211,46 +94,19 @@ async fn perf_loopback_coded_object() {
 /// of order.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_generation_object() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
     // Uses the production defaults (RWM_GEN=384, RWM_PIPELINE=2); a 1 MB object
     // spans ~3 generations. (Small-generation stress — many generations,
     // out-of-order, with loss — is covered by the codec unit test
     // `generation::tests::generations_decode_on_k_out_of_order_with_loss`. Env
     // knobs are NOT set here: cargo runs tests in parallel and RWM_GEN is
     // process-global, so two tests writing it would race.)
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47839".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable && srv_pc.window_generation_coding);
-    let srv = tokio::spawn(perf::server(srv_pc));
+    let (mut s, mut c) = cfgs(&ports(1), "bulk", true);
+    s.window_generation_coding = Some(true);
+    c.window_generation_coding = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && srv.window_generation_coding);
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47839".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 1_000_000, 2),
-    )
-    .await
-    .expect("generation-coded perf loopback timed out")
-    .expect("generation-coded perf client failed");
-
-    srv.abort();
+    run(srv, cli, 1_000_000, 2, Duration::from_secs(60), "generation-coded perf loopback").await;
 }
 
 /// Generation coding over a DUAL path (two loopback links). Coded symbols are
@@ -261,40 +117,12 @@ async fn perf_loopback_generation_object() {
 /// the cross-path fungibility the C8 L1 measurement then quantifies under loss.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_generation_dual_path() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let (mut s, mut c) = cfgs(&ports(2), "bulk", true);
+    s.window_generation_coding = Some(true);
+    c.window_generation_coding = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47841".into(), "127.0.0.1:47842".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47841".into(), "127.0.0.1:47842".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(
-        Duration::from_secs(60),
-        perf::client(cli_pc, 1_000_000, 2),
-    )
-    .await
-    .expect("dual-path generation perf loopback timed out")
-    .expect("dual-path generation perf client failed");
-
-    srv.abort();
+    run(srv, cli, 1_000_000, 2, Duration::from_secs(60), "dual-path generation perf loopback").await;
 }
 
 /// Multi-generation (≥3 generations) completion over a DUAL path, driven by the
@@ -312,44 +140,16 @@ async fn perf_loopback_generation_dual_path() {
 /// the LOSSY cross-path aggregation win is measured at L1 with netem.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_generation_multi_dual_path() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47843".into(), "127.0.0.1:47844".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable && srv_pc.window_generation_coding);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47843".into(), "127.0.0.1:47844".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_generation_coding: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (mut s, mut c) = cfgs(&ports(2), "bulk", true);
+    s.window_generation_coding = Some(true);
+    c.window_generation_coding = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && srv.window_generation_coding);
 
     // 2 MB → ≥3 generations at the default G=384. Completion (the perf server
     // acks only when every byte is present) IS the ≥3-generation, frontier-
     // advancing, deficit-loop proof.
-    tokio::time::timeout(
-        Duration::from_secs(90),
-        perf::client(cli_pc, 2_000_000, 1),
-    )
-    .await
-    .expect("multi-generation dual-path perf loopback timed out")
-    .expect("multi-generation dual-path perf client failed");
-
-    srv.abort();
+    run(srv, cli, 2_000_000, 1, Duration::from_secs(90), "multi-generation dual-path perf loopback").await;
 }
 
 /// SYSTEMATIC + deficit-repair (paper §16.3 oracle) over a DUAL path — the
@@ -366,42 +166,14 @@ async fn perf_loopback_generation_multi_dual_path() {
 /// aggregation win is measured at L1 with netem.)
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn perf_loopback_systematic_repair_dual_path() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47845".into(), "127.0.0.1:47846".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_systematic_repair: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    assert!(srv_pc.window_reliable && srv_pc.window_systematic_repair);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into(), "127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47845".into(), "127.0.0.1:47846".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        window_systematic_repair: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    let (mut s, mut c) = cfgs(&ports(2), "bulk", true);
+    s.window_systematic_repair = Some(true);
+    c.window_systematic_repair = Some(true);
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && srv.window_systematic_repair);
 
     // 2 MB → several generations at the default G. Completion (the perf server
     // acks only when every byte is present) IS the end-to-end systematic +
     // windowed-repair + deficit-frontier proof over a dual path.
-    tokio::time::timeout(
-        Duration::from_secs(90),
-        perf::client(cli_pc, 2_000_000, 1),
-    )
-    .await
-    .expect("systematic-repair dual-path perf loopback timed out")
-    .expect("systematic-repair dual-path perf client failed");
-
-    srv.abort();
+    run(srv, cli, 2_000_000, 1, Duration::from_secs(90), "systematic-repair dual-path perf loopback").await;
 }

@@ -50,11 +50,12 @@
 //! **Nothing here flips a default.** `RWM_REFRESH_FLOOR_US` is ABSENT by
 //! default and nothing shipped reads it.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{require, u64_field};
 
 /// The base arm. `RWM_DIAG` carries the receiver's periodic `[QCLK]`
 /// readouts, which is where the realized cadence is read. No gate here
@@ -83,177 +84,19 @@ const SHIPPED_MIN_US: u64 = 25_000;
 /// (= the shipped clamp's own 100/25 aspect ratio) times the commanded floor.
 const ARMED_CEIL_US: u64 = FLOOR_US * 4;
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// Spawn the perf SERVER — the RECEIVER of the bulk direction, and the site
-/// that owns the hole-refresh cadence this gate moves.
-fn spawn_perf_server(extra: &[(&str, &str)]) -> (SocketAddr, Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    for (k, v) in extra {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    // The absent arm must be ABSENT: inheritance defeats an allowlist, and the
-    // whole point of the control is that NOTHING set the floor.
-    if !extra.iter().any(|(k, _)| *k == GATE) {
-        cmd.env_remove(GATE);
-    }
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (addr, srv, log)
-}
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-/// Keep the leading numeric prefix of a token — stderr has two writers and a
-/// `tracing` write can land inside a gauge line's LAST field. Every gauge here
-/// ends on the constant `fa_class=`, and this is the reader's half.
-fn numeric_prefix(v: &str) -> &str {
-    let end = v
-        .find(|c: char| {
-            !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
-        })
-        .unwrap_or(v.len());
-    &v[..end]
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = numeric_prefix(field(line, key));
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn require<'a>(log: &'a str, tag: &str, what: &str) -> &'a str {
-    log.lines()
-        .rev()
-        .find(|l| l.contains(tag))
-        .unwrap_or_else(|| panic!("no `{tag}` line — {what}\n--- log ---\n{log}"))
-}
-
 /// One lossy loopback run in the given gate configuration.
 /// Returns `(client/sender log, server/receiver log)`.
+///
+/// The absent arm is ABSENT: inheritance defeats an allowlist, and the whole
+/// point of the control is that NOTHING set the floor — the harness clears
+/// every inherited `RWM_*` var. The L1 `c3` cell (LTE-class) shapes client
+/// egress, seeded: loss is what creates the holes whose re-advertisement
+/// cadence this test is about. The receiver log is taken once a `[QCLK]
+/// site=receiver` readout post-dating the transfer landed.
 fn lossy_run(extra: &[(&str, &str)]) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv, srv_log) = spawn_perf_server(extra);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "4000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    for (k, v) in extra {
-        cli.env(k, v);
-    }
-    if !extra.iter().any(|(k, _)| *k == GATE) {
-        cli.env_remove(GATE);
-    }
-    // The L1 `c3` cell (LTE-class) on client egress, seeded. Loss is what
-    // creates the holes whose re-advertisement cadence this test is about.
-    cli.env("RWM_L0_NETEM", "c3");
-    cli.env("RWM_L0_SEED", "42");
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed ({extra:?}, {:?})\n--- stdout ---\n{cli_stdout}\n\
-         --- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
+    let mut env = ARM.to_vec();
+    env.extend_from_slice(extra);
+    loopback::lossy_run(&env, "bulk", "4000000", Some("[QCLK] site=receiver"))
 }
 
 /// The RECEIVER's `[QCLK]` line — the realized hole-refresh cadence as a

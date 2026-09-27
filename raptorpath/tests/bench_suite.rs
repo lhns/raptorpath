@@ -2231,6 +2231,7 @@ fn write_results(
 // ===========================================================================
 
 #[test]
+#[ignore = "full benchmark matrix; run explicitly"]
 fn bench_suite() {
     // Tables 1/1b: codec recovery sweep
     let (table1_text, table1_data, table1b_data) = table1_backend_loss_sweep();

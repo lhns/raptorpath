@@ -58,10 +58,8 @@
 //! §16.69's assumed 10 ms is an L1 run; this is the instrument gate that must
 //! pass before that run is worth making.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+#[path = "common/loopback.rs"]
+mod loopback;
 
 /// The arm: the DIAG surface on, window-reliable, honest anchors — the same
 /// composition every L1 battery arm runs. No gate here changes a law.
@@ -70,61 +68,6 @@ const ARM: [(&str, &str); 3] = [
     ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
-
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn spawn_perf_server() -> (SocketAddr, Reaper) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let addr: SocketAddr = format!("127.0.0.1:{}", free_port()).parse().unwrap();
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &addr.to_string(),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::null());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    std::thread::spawn(move || {
-        let mut sink = Vec::new();
-        let _ = out.read_to_end(&mut sink);
-    });
-    (addr, srv)
-}
 
 /// Parse ONE per-path `sig_us=<µs|->/n<count>` token into (σ µs, n).
 /// `None` for the `-` (no sample yet) case, which is a legitimate reading and
@@ -148,37 +91,12 @@ fn parse_sig(tok: &str) -> (Option<u64>, u64) {
 
 #[test]
 fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let (addr, _srv) = spawn_perf_server();
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &addr.to_string(),
-        "--bytes",
-        "8000000",
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ])
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    let out = cli.output().expect("run perf client");
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    let log = format!("{stdout}\n{stderr}");
-    assert!(
-        out.status.success(),
-        "perf client failed ({:?})\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
-        out.status
+    let srv = loopback::spawn_perf_server(
+        &[loopback::free_addr()],
+        &ARM,
+        &["--protocol-hint", "bulk", "--window-reliable"],
     );
+    let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
 
     // 1. THE GATE, TWO-SIDED. A missing `[DIAG]` must be readable as an
     //    unreached emission site and never as an unset gate.

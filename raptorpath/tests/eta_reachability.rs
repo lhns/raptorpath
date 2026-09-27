@@ -59,112 +59,25 @@
 //! the end of the receiver task, marked `final=1` (`net/recv_block.rs`), so a
 //! transfer shorter than the cadence still has a reading. The N = 1 test
 //! below is that case; it stops the server with SIGINT so the task actually
-//! reaches an exit (see `stop_server`).
+//! reaches an exit (see `run_with_signal`).
 //!
 //! Own test binary, for `succ_reachability.rs`'s reason: `RWM_L0_NETEM` is
 //! process-global in the child and the spawned pair must not contend with the
 //! in-process loopback tests.
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+#[cfg_attr(not(unix), allow(unused_imports))]
+use gauge::{is_final, opt_f64_field as f64_field, require, slots, str_field, u64_field};
 
 const ARM: [(&str, &str); 3] = [
     ("RWM_DIAG", "1"),
     ("RWM_PLAIN_RS", "1"),
     ("RUST_LOG", "raptorpath=info"),
 ];
-
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-/// Spawn the perf server. Returns the child, its accumulated log (stderr,
-/// plus the stdout readiness banner) and the two reader threads, which
-/// `stop_server` joins so the log holds EVERYTHING the process wrote —
-/// including what it writes on its way out.
-fn spawn_perf_server(
-    binds: &[SocketAddr],
-) -> (Reaper, Arc<Mutex<String>>, Vec<std::thread::JoinHandle<()>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    cmd.env_remove("RWM_L0_NETEM");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    let err_reader = std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(seen.contains("perf server ready"), "perf server never became ready: {seen}");
-    let out_reader = {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        })
-    };
-    (srv, log, vec![err_reader, out_reader])
-}
 
 /// STOP THE SERVER THE WAY ITS RECEIVER CAN SEE (the exit flush, 2026-09-08).
 ///
@@ -180,55 +93,25 @@ fn spawn_perf_server(
 /// L1 harnesses would take with `pkill -INT`; a harness that SIGKILLs still
 /// reads the last cadence line.
 ///
-/// Without `kill` (non-unix) the old grace period is kept: the cadence lines
-/// are still there, the `final=1` block is not, and the tests that need it
-/// are `cfg(unix)`.
-fn stop_server(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>) {
-    stop_server_with(srv, readers, "INT")
-}
-
-/// The same stop, with the signal named: `"INT"` is `ctrl_c`, `"TERM"` is
-/// what `pkill -x raptorpath` sends from every tools/l1 harness. The engine
-/// treats the two as ONE shutdown trigger (`net/mod.rs`, `shutdown_signal`),
-/// and the SIGTERM test below is what proves the L1 path reaches the flush.
-#[cfg_attr(not(unix), allow(unused_variables))]
-fn stop_server_with(srv: &mut Reaper, readers: Vec<std::thread::JoinHandle<()>>, sig: &str) {
-    #[cfg(unix)]
-    {
-        let pid = srv.0.id().to_string();
-        let flag = format!("-{sig}");
-        let sent = Command::new("kill")
-            .args([&flag, &pid])
-            .status()
-            .is_ok_and(|s| s.success());
-        assert!(sent, "could not send SIG{sig} to the perf server (pid {pid})");
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < deadline && !matches!(srv.0.try_wait(), Ok(Some(_))) {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        assert!(
-            matches!(srv.0.try_wait(), Ok(Some(_))),
-            "perf server did not exit within 15 s of SIG{sig} — the shutdown \
-             broadcast never reached its tasks (for TERM: no SIGTERM handler, \
-             so the harness's `pkill -x raptorpath` is an abrupt kill)"
-        );
+/// Without `kill` (non-unix) the server is killed once one fresh cadence line
+/// arrived: the cadence lines are there, the `final=1` block is not, and the
+/// tests that need it are `cfg(unix)`.
+///
+/// The signal is named: `"INT"` is `ctrl_c`, `"TERM"` is what `pkill -x
+/// raptorpath` sends from every tools/l1 harness. The engine treats the two
+/// as ONE shutdown trigger (`net/mod.rs`, `shutdown_signal`), and the SIGTERM
+/// test below is what proves the L1 path reaches the flush
+/// (`loopback::PerfServer::stop_with`).
+fn run_with_signal(paths: usize, netem: Option<&str>, bytes: &str, sig: &str) -> (String, String) {
+    let binds = loopback::free_addrs(paths);
+    let srv = loopback::spawn_perf_server(&binds, &ARM, &["--protocol-hint", "bulk", "--window-reliable"]);
+    let mut env = ARM.to_vec();
+    if let Some(spec) = netem {
+        env.extend([("RWM_L0_NETEM", spec), ("RWM_L0_SEED", "42")]);
     }
-    #[cfg(not(unix))]
-    {
-        std::thread::sleep(Duration::from_millis(1500));
-        let _ = srv.0.kill();
-        let _ = srv.0.wait();
-    }
-    for r in readers {
-        let _ = r.join();
-    }
-}
-
-/// `final=1` as a whole token — the exit-flush marker, never a substring of
-/// some other field.
-#[cfg_attr(not(unix), allow(dead_code))]
-fn is_final(line: &str) -> bool {
-    line.split_whitespace().any(|t| t == "final=1")
+    let cli = loopback::run_perf_client(&binds, &env, &loopback::perf_args("bulk", bytes, "2"));
+    let srv = srv.stop_with(sig, "[ETA] site=receiver");
+    (cli, srv)
 }
 
 /// One loopback transfer. Returns `(client/sender log, server/receiver log)`.
@@ -236,105 +119,11 @@ fn run(paths: usize, netem: Option<&str>, bytes: &str) -> (String, String) {
     run_with_signal(paths, netem, bytes, "INT")
 }
 
-/// `run`, with the server stopped by the named signal (see `stop_server_with`).
-fn run_with_signal(paths: usize, netem: Option<&str>, bytes: &str, sig: &str) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (mut srv, srv_log, readers) = spawn_perf_server(&binds);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
-        bytes,
-        "--runs",
-        "2",
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    stop_server_with(&mut srv, readers, sig);
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
-}
-
 // ── READERS ─────────────────────────────────────────────────────────────
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = field(line, key);
-    v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
-
-fn f64_field(line: &str, key: &str) -> Option<f64> {
-    let v = field(line, key);
-    if v == "-" {
-        return None;
-    }
-    Some(v.parse().unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e}")))
-}
-
-/// The per-path slots of a gauge line, each rendered so `field()` can read
-/// it: the `p<id>:` prefix becomes its own token.
-fn slots(line: &str) -> Vec<String> {
-    line.split_whitespace()
-        .fold(Vec::new(), |mut acc: Vec<String>, t| {
-            let is_head = t
-                .split_once(':')
-                .is_some_and(|(h, _)| h.starts_with('p') && h[1..].chars().all(|c| c.is_ascii_digit()) && h.len() > 1);
-            if is_head {
-                acc.push(t.replacen(':', " ", 1));
-            } else if let Some(last) = acc.last_mut() {
-                last.push(' ');
-                last.push_str(t);
-            }
-            acc
-        })
-}
-
-fn last_with<'a>(log: &'a str, pat: &str) -> &'a str {
-    log.lines()
-        .rev()
-        .find(|l| l.contains(pat))
-        .unwrap_or_else(|| panic!("no line containing `{pat}`:\n{log}"))
-}
 
 /// `sig_us=<v|->/n<pairs>` — returns `(value, pairs)`; `None` iff pairs is 0.
 fn sigma(line: &str) -> (Option<u64>, u64) {
-    let raw = field(line, "sig_us=");
+    let raw = str_field(line, "sig_us=");
     let (v, n) = raw.split_once("/n").unwrap_or_else(|| panic!("malformed sig_us slot `{raw}`"));
     let pairs: u64 = n.parse().expect("pair count");
     let val = if v == "-" { None } else { Some(v.parse::<u64>().expect("sigma")) };
@@ -366,7 +155,7 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 
     // 2. THE SENDER LINE FIRES. This is what fails on the shipped-before
     //    engine: no line, no wire field, no producer for the ETA series.
-    let s = last_with(&cli, "[ETA] site=sender");
+    let s = require(&cli, "[ETA] site=sender", "the gauge is unreachable");
     println!("[eta-reach] sender: {s}");
     let stamped = u64_field(s, "n=");
     assert!(
@@ -397,7 +186,7 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
     );
 
     // The receiver's side of the same claim, counted on ARRIVALS.
-    let r = last_with(&srv, "[ETA] site=receiver");
+    let r = require(&srv, "[ETA] site=receiver", "the gauge is unreachable");
     println!("[eta-reach] receiver: {r}");
     assert!(u64_field(r, "n=") > 0, "the receiver saw no arrival at all: {r}");
     let mut predicted_paths = 0usize;
@@ -412,7 +201,7 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
         );
         // The SRTT source is always named — a reading whose reference is
         // unstated is not a reading.
-        let src = field(slot, "srtt_src=");
+        let src = str_field(slot, "srtt_src=");
         assert!(
             ["wire", "echo", "-"].contains(&src),
             "unknown srtt source `{src}` in {slot}"
@@ -494,13 +283,13 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 ///    the receiver only.
 ///
 /// `cfg(unix)`: the server has to be stopped with SIGINT for its receiver to
-/// reach an exit path at all — see `stop_server`.
+/// reach an exit path at all — see `run_with_signal`.
 #[cfg(unix)]
 #[test]
 fn the_prediction_is_stamped_and_read_on_one_path_too() {
     let (cli, srv) = run(1, None, "8000000");
-    let s = last_with(&cli, "[ETA] site=sender");
-    let r = last_with(&srv, "[ETA] site=receiver");
+    let s = require(&cli, "[ETA] site=sender", "the gauge is unreachable");
+    let r = require(&srv, "[ETA] site=receiver", "the gauge is unreachable");
     println!("[eta-reach] N=1 sender: {s}");
     println!("[eta-reach] N=1 receiver: {r}");
     assert!(u64_field(s, "n=") > 0, "no placement stamped on one path: {s}");
@@ -537,7 +326,7 @@ fn the_prediction_is_stamped_and_read_on_one_path_too() {
     // The whole block flushes together: its siblings carry the same marker
     // on their own last line.
     for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
-        let l = last_with(&srv, tag);
+        let l = require(&srv, tag, "the gauge is unreachable");
         assert!(is_final(l), "`{tag}` was not flushed with the block: {l}");
     }
 }
@@ -554,7 +343,7 @@ fn the_prediction_is_stamped_and_read_on_one_path_too() {
 #[test]
 fn the_exit_flush_fires_on_sigterm_too() {
     let (_cli, srv) = run_with_signal(1, None, "1000000", "TERM");
-    let r = last_with(&srv, "[ETA] site=receiver");
+    let r = require(&srv, "[ETA] site=receiver", "the gauge is unreachable");
     println!("[eta-reach] N=1 receiver after SIGTERM: {r}");
     assert!(u64_field(r, "n=") > 0, "no arrival observed on one path: {r}");
     assert!(
@@ -573,7 +362,7 @@ fn the_exit_flush_fires_on_sigterm_too() {
          on the SIGTERM path too:\n{srv}"
     );
     for tag in ["[SUCC] ", "[LAT] site=receiver", "[REQ] ", "[RANK] "] {
-        let l = last_with(&srv, tag);
+        let l = require(&srv, tag, "the gauge is unreachable");
         assert!(is_final(l), "`{tag}` was not flushed with the block on SIGTERM: {l}");
     }
 }

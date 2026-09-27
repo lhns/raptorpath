@@ -39,9 +39,13 @@
 //! Own test binary and ONE test function: `RWM_WALLDIAG` is a process-global
 //! `OnceLock`, resolved once at first touch and never re-read.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, start_server};
+use raptorpath::perf;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn walldiag_gauge_is_wired_reads_clean_at_loopback_and_is_behaviour_neutral() {
@@ -59,27 +63,12 @@ async fn walldiag_gauge_is_wired_reads_clean_at_loopback_and_is_behaviour_neutra
         .expect("RWM_WALLDIAG=1 must construct the process-global gauge");
 
     // ── the transfer ─────────────────────────────────────────────────────
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47881".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
+    let (s, c) = cfgs(&ports(1), "bulk", true);
+    let (srv_pc, cli_pc) = (resolve(&s), resolve(&c));
     assert!(srv_pc.window_reliable);
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47881".into()]),
-        protocol_hint: Some("bulk".into()),
-        window_reliable: Some(true),
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
+    // The server stays up until the gauge has been read (it is aborted at
+    // the end, exactly where the original fixed-port version aborted it).
+    let srv = start_server(srv_pc, "walldiag loopback").await;
 
     // BEHAVIOUR NEUTRALITY, executed: an observation-only instrument cannot
     // stall a transfer.

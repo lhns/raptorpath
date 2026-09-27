@@ -62,11 +62,12 @@
 //!
 //! **Nothing here flips a default, adds a gate, or edits a law.**
 
-use std::io::Read;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[path = "common/gauge.rs"]
+mod gauge;
+#[path = "common/loopback.rs"]
+mod loopback;
+
+use gauge::{numeric_prefix, str_field, u64_field};
 
 /// The base arm. `RWM_DIAG` carries `[DIAG] … taper=` and the periodic
 /// `[SUCC]` readout; `RWM_FDIAG` the receiver-side decode trace. No gate here
@@ -77,170 +78,25 @@ const ARM: [(&str, &str); 3] = [
     ("RUST_LOG", "raptorpath=info"),
 ];
 
-fn free_port() -> u16 {
-    let l = TcpListener::bind("127.0.0.1:0").expect("probe bind");
-    l.local_addr().expect("probe addr").port()
-}
-
-struct Reaper(Child);
-impl Drop for Reaper {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn join(a: &[SocketAddr]) -> String {
-    a.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",")
-}
-
-fn spawn_perf_server(binds: &[SocketAddr]) -> (Reaper, Arc<Mutex<String>>) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let mut cmd = Command::new(bin);
-    cmd.args([
-        "perf",
-        "--server",
-        "--bind",
-        &join(binds),
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cmd.env(k, v);
-    }
-    // The shim shapes the CLIENT's egress; the server must be unshaped, and
-    // the absent arm must be ABSENT — inheritance defeats an allowlist.
-    cmd.env_remove("RWM_L0_NETEM");
-    cmd.env_remove("RWM_HOLDDOWN_Q");
-    let mut srv = Reaper(cmd.spawn().expect("spawn perf server"));
-
-    let log = Arc::new(Mutex::new(String::new()));
-    let sink = Arc::clone(&log);
-    let mut err = srv.0.stderr.take().expect("server stderr");
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match err.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => sink
-                    .lock()
-                    .expect("stderr sink")
-                    .push_str(&String::from_utf8_lossy(&buf[..n])),
-            }
-        }
-    });
-
-    let mut out = srv.0.stdout.take().expect("server stdout");
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = String::new();
-    let mut buf = [0u8; 256];
-    while Instant::now() < deadline && !seen.contains("perf server ready") {
-        match out.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => seen.push_str(&String::from_utf8_lossy(&buf[..n])),
-            Err(e) => panic!("reading perf server stdout: {e}"),
-        }
-    }
-    assert!(
-        seen.contains("perf server ready"),
-        "perf server never became ready; it said: {seen}"
-    );
-    {
-        let sink = Arc::clone(&log);
-        sink.lock().expect("stderr sink").push_str(&seen);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink
-                        .lock()
-                        .expect("stderr sink")
-                        .push_str(&String::from_utf8_lossy(&buf[..n])),
-                }
-            }
-        });
-    }
-    (srv, log)
-}
-
 /// One loopback transfer. `netem` is the `RWM_L0_NETEM` spec (`None` ⇒ the
 /// shim is OFF and the wire is the host's own loopback — the A0.1 FLOOR).
 /// Returns `(client/sender log, server/receiver log)`.
+///
+/// The server (receiver) log is taken once a `[SUCC]` readout post-dating the
+/// transfer arrived — the receiver's cadence line the tests read.
 fn run(paths: usize, netem: Option<&str>, bytes: &str, runs: &str) -> (String, String) {
-    let bin = env!("CARGO_BIN_EXE_raptorpath");
-    let binds: Vec<SocketAddr> = (0..paths)
-        .map(|_| format!("127.0.0.1:{}", free_port()).parse().unwrap())
-        .collect();
-    let (_srv, srv_log) = spawn_perf_server(&binds);
-
-    let mut cli = Command::new(bin);
-    cli.args([
-        "perf",
-        "--client",
-        "--peer",
-        &join(&binds),
-        "--bytes",
+    loopback::transfer(loopback::Transfer {
+        paths,
+        env: &ARM,
+        client_env: &loopback::shaped(netem),
         bytes,
-        "--runs",
         runs,
-        "--protocol-hint",
-        "bulk",
-        "--window-reliable",
-    ]);
-    cli.stdout(Stdio::piped()).stderr(Stdio::piped());
-    for (k, v) in ARM {
-        cli.env(k, v);
-    }
-    cli.env_remove("RWM_HOLDDOWN_Q");
-    match netem {
-        Some(spec) => {
-            cli.env("RWM_L0_NETEM", spec);
-            cli.env("RWM_L0_SEED", "42");
-        }
-        None => {
-            cli.env_remove("RWM_L0_NETEM");
-        }
-    }
-
-    let out = cli.output().expect("run perf client");
-    let cli_stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let cli_stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    assert!(
-        out.status.success(),
-        "perf client failed (paths={paths}, netem={netem:?}, {:?})\n\
-         --- stdout ---\n{cli_stdout}\n--- stderr ---\n{cli_stderr}",
-        out.status
-    );
-    std::thread::sleep(Duration::from_millis(1500));
-    let srv = srv_log.lock().expect("stderr sink").clone();
-    (format!("{cli_stdout}\n{cli_stderr}"), srv)
+        srv_tag: Some("[SUCC] "),
+        ..Default::default()
+    })
 }
 
 // ── READERS ─────────────────────────────────────────────────────────────
-
-fn field<'a>(line: &'a str, key: &str) -> &'a str {
-    line.split_whitespace()
-        .find_map(|t| t.strip_prefix(key))
-        .unwrap_or_else(|| panic!("`{key}` missing from gauge line: {line}"))
-}
-
-/// Keep the leading numeric prefix — stderr has two writers and a `tracing`
-/// write can land inside a gauge line's LAST field.
-fn numeric_prefix(v: &str) -> &str {
-    let end = v
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == '+'))
-        .unwrap_or(v.len());
-    &v[..end]
-}
-
-fn u64_field(line: &str, key: &str) -> u64 {
-    let v = numeric_prefix(field(line, key));
-    v.parse()
-        .unwrap_or_else(|e| panic!("`{key}` value `{v}` does not parse: {e} in {line}"))
-}
 
 fn hold_lines(log: &str) -> Vec<&str> {
     log.lines().filter(|l| l.contains("[HOLD] site=sender")).collect()
@@ -411,7 +267,7 @@ fn the_cross_path_class_is_populated_on_two_paths() {
         u64_field(succ, "res="),
         u64_field(succ, "sp_n="),
         u64_field(succ, "xp_n="),
-        field(succ, "xp_frac="),
+        str_field(succ, "xp_frac="),
     );
     assert!(
         u64_field(succ, "xp_n=") > 0,

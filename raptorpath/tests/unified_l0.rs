@@ -23,9 +23,12 @@
 //!
 //! `#[ignore]` — measurement instrument, not a CI gate.
 
+#[path = "common/loopback.rs"]
+mod loopback;
+
 use std::time::Duration;
 
-use raptorpath::{config, perf};
+use loopback::in_process::{cfgs, ports, resolve, run};
 
 fn env_usize(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
@@ -70,35 +73,11 @@ async fn unified_l0_arm() {
         std::env::var("RWM_PERF_TIMEOUT_S").ok(),
     );
 
-    let srv_cfg = config::RaptorpathConfig {
-        server: Some(true),
-        bind: Some(vec!["127.0.0.1:47923".into()]),
-        protocol_hint: Some(hint.clone()),
-        window_reliable: Some(true),
-        window_systematic_repair: if sysrep { Some(true) } else { None },
-        fec_backend: backend.clone(),
-        ..Default::default()
-    };
-    let (srv_pc, _) = config::resolve(&srv_cfg).unwrap();
-    let srv = tokio::spawn(perf::server(srv_pc));
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let cli_cfg = config::RaptorpathConfig {
-        bind: Some(vec!["127.0.0.1:0".into()]),
-        peer: Some(vec!["127.0.0.1:47923".into()]),
-        protocol_hint: Some(hint),
-        window_reliable: Some(true),
-        window_systematic_repair: if sysrep { Some(true) } else { None },
-        fec_backend: backend,
-        ..Default::default()
-    };
-    let (cli_pc, _) = config::resolve(&cli_cfg).unwrap();
-
-    tokio::time::timeout(Duration::from_secs(1800), perf::client(cli_pc, bytes, runs))
-        .await
-        .expect("unified_l0 arm timed out")
-        .expect("unified_l0 perf client failed");
-
-    srv.abort();
+    let (mut s, mut c) = cfgs(&ports(1), &hint, true);
+    for cfg in [&mut s, &mut c] {
+        cfg.window_systematic_repair = if sysrep { Some(true) } else { None };
+        cfg.fec_backend = backend.clone();
+    }
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    run(srv, cli, bytes, runs, Duration::from_secs(1800), "unified_l0 arm").await;
 }
