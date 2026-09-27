@@ -323,37 +323,6 @@ pub fn pool_deliv_active() -> bool {
     })
 }
 
-/// Whether the honest ANCHOR-FLOOR BOUND is active (`RWM_FLOOR_BOUND`,
-/// goal-gate "Ship The Wins 1b" arm B, default OFF — a pure A/B arm).
-///
-/// The BtlBw anchor floor (`CopaState::anchor_floor` = gain·max_bw·RTprop)
-/// rides the LEGACY ack-interval `max_bw`, which over-reads ×10-class under
-/// ack bunching (339–500k sym/s measured at c7 under the est clock vs ≈8–12k
-/// truth) and inflated cwnd to 5860 vs the prior default's 1779. This bounds
-/// the FLOOR — never cwnd itself — by the honest send-anchor rate the engine
-/// already measures: `floor := min(legacy_floor, gain·sr·RTprop)`. With the
-/// send anchor cold it is the legacy value verbatim, so it can only remove
-/// inflation the over-read injected. Its purpose (attempt 1's second named
-/// successor): make the prior default's ACCIDENTAL escape — Σcwnd floating
-/// the store below the pool — a DERIVED one.
-/// REFUTED and REMOVAL-SCHEDULED (ADR-0066 / goal-gate "DEPRECATION REGISTER"
-/// → "Batch-2 removal schedule"): the bound cut the c7 over-read exactly as
-/// designed and failed BOTH clauses — c7 0.969/0.969×Σ and c1 396.4/398.0
-/// under the 430 PRIMARY (−14% vs unbounded). The refutation is a positive
-/// structural finding: the ack-interval over-read is LOAD-BEARING at N = 1.
-/// Activation warns via [`crate::config::deprecated_env_flag`].
-pub fn floor_bound_active() -> bool {
-    use std::sync::OnceLock;
-    static F: OnceLock<bool> = OnceLock::new();
-    *F.get_or_init(|| {
-        crate::config::deprecated_env_flag(
-            "RWM_FLOOR_BOUND",
-            false,
-            "Ship The Wins 1b (2026-08-07)",
-        )
-    })
-}
-
 /// Whether the O(1) windowed-max rate filter is active for this process
 /// (`RWM_HONEST_ANCHOR`, goal-gate "Honest Inputs" — anchor-hygiene family
 /// member, **DEFAULT ON since 2026-08-11** per the flip battery's F7 and
@@ -2809,10 +2778,6 @@ pub struct PathState {
     /// from `pool_deliv_active()`; test-forcible). OFF ⇒ both feed sites do
     /// no work at all (cost-honest A/B, the `pool_anchor_feed` precedent).
     pool_deliv_feed: bool,
-    /// Whether the honest anchor-floor bound is on (`RWM_FLOOR_BOUND`, arm B;
-    /// resolved once at construction, test-forcible). OFF ⇒
-    /// `clamp_cwnd_with_anchor` is byte-identical to the shipped path.
-    floor_bound: bool,
     /// ack-merge (`RWM_ACK_MERGE`, goal-gate "Unlock The Default 1"): the
     /// sender-side CURSOR for the v6 `WindowAck` cumulative counters. The
     /// merged ack carries the receiver's per-path running
@@ -2903,7 +2868,6 @@ impl PathState {
             pool_anchor_feed: pool_anchor_active(),
             deliv_anchor: crate::control::DeliveryRateAnchor::new(),
             pool_deliv_feed: pool_deliv_active(),
-            floor_bound: floor_bound_active(),
             ack_cum_expected: 0,
             ack_cum_received: 0,
             loss_sent_cursor: 0,
@@ -4011,24 +3975,6 @@ impl PathState {
     fn clamp_cwnd_with_anchor(&mut self) {
         self.cwnd = self.cwnd.clamp(Self::MIN_CWND, Self::MAX_CWND);
         if let Some(floor) = self.copa.anchor_floor() {
-            // Honest anchor-floor BOUND (RWM_FLOOR_BOUND, goal-gate "Ship The
-            // Wins 1b" arm B): the legacy floor rides the ack-interval
-            // `max_bw`, which over-reads ×10-class under ack bunching (339–500k
-            // measured vs ≈8–12k truth ⇒ cwnd 5860 vs 1779). Bound it by the
-            // honest send-anchor rate the engine already measures. Still a
-            // FLOOR, never a cap: `cwnd.max(...)` below is unchanged, and with
-            // the send anchor cold the bound is the legacy value verbatim.
-            let floor = if self.floor_bound {
-                match (self.send_rate_anchor(), self.copa.min_rtt()) {
-                    (Some(sr), Some(rtp)) => {
-                        let honest = ANCHOR_FLOOR_GAIN * sr * rtp.as_secs_f64();
-                        floor.min(honest.round().max(0.0) as u32)
-                    }
-                    _ => floor,
-                }
-            } else {
-                floor
-            };
             self.cwnd = self.cwnd.max(floor.min(Self::MAX_CWND));
         }
     }
@@ -4207,12 +4153,6 @@ impl PathState {
     #[cfg(test)]
     pub fn force_pool_deliv_feed(&mut self, on: bool) {
         self.pool_deliv_feed = on;
-    }
-
-    /// Test hook: force the honest anchor-floor bound (`RWM_FLOOR_BOUND`).
-    #[cfg(test)]
-    pub fn force_floor_bound(&mut self, on: bool) {
-        self.floor_bound = on;
     }
 
     /// Test hook: force the 1:1 release (`RWM_RELEASE_1TO1`). Unit tests must
@@ -7872,99 +7812,6 @@ mod tests {
         );
         let (ok, ..) = path.deliv_anchor_stats();
         assert_eq!(ok, 0, "…and no accepted sample");
-    }
-
-    // ----- Honest anchor-floor bound (RWM_FLOOR_BOUND, arm B) ---------------
-
-    /// THE arm-B law: an ack-interval over-read inflates the BtlBw anchor
-    /// floor (the measured cwnd 5860 vs 1779); the bound must cut the floor
-    /// to the honest send-rate pipe — and must stay a FLOOR (cwnd is never
-    /// lowered below where the dynamics put it) and legacy-verbatim while
-    /// the send anchor is cold.
-    #[test]
-    fn floor_bound_cuts_the_over_read_floor_but_stays_a_floor() {
-        let clock = Arc::new(MockClock::new());
-        // Baseline (bound OFF): the over-read floor ratchets cwnd up.
-        let mut a = PathState::new(0, clock.clone());
-        a.force_pool_anchor_feed(true);
-        a.force_floor_bound(false);
-        let mut b = PathState::new(0, clock.clone());
-        b.force_pool_anchor_feed(true);
-        b.force_floor_bound(true);
-        for p in [&mut a, &mut b] {
-            p.record_rtt_sample(millis(10));
-        }
-        // Steady honest send process ≈1000 sym/s for 2 s on both.
-        for _ in 0..2000 {
-            for p in [&mut a, &mut b] {
-                p.charge_in_flight(1);
-                p.release_in_flight(1);
-            }
-            clock.advance(millis(1));
-        }
-        // …and an ack-BURST clock that over-reads the legacy anchor ×100,
-        // while the honest send process keeps running underneath it (that is
-        // the measured c7 shape: the sender is steady, the ACK CLOCK bunches).
-        for _ in 0..20 {
-            for _ in 0..98 {
-                for p in [&mut a, &mut b] {
-                    p.charge_in_flight(1);
-                    p.release_in_flight(1);
-                }
-                clock.advance(millis(1));
-            }
-            for p in [&mut a, &mut b] {
-                p.on_ack(1);
-            }
-            clock.advance(millis(2));
-            for p in [&mut a, &mut b] {
-                p.on_ack(400); // 400 / 2 ms = 200k sym/s
-            }
-        }
-        let legacy_bdp = a.copa_bdp_anchor().expect("legacy anchor established");
-        let sr = b.send_rate_anchor().expect("send anchor warm");
-        let rtp = b.min_rtt().unwrap().as_secs_f64();
-        assert!(
-            legacy_bdp > 10.0 * sr * rtp,
-            "the over-read must be present to bound: legacy={legacy_bdp} honest={}",
-            sr * rtp
-        );
-        assert!(
-            b.cwnd < a.cwnd,
-            "the bound must cut the inflated floor: bounded={} unbounded={}",
-            b.cwnd,
-            a.cwnd
-        );
-        assert!(
-            b.cwnd >= PathState::MIN_CWND,
-            "…and never below the hard floor: {}",
-            b.cwnd
-        );
-        // Still a FLOOR: with the send anchor COLD the bound is the legacy
-        // value verbatim (no path may be throttled by an absent measurement).
-        let mut c = PathState::new(0, clock.clone());
-        c.force_pool_anchor_feed(false); // no send anchor ⇒ cold
-        c.force_floor_bound(true);
-        let mut d = PathState::new(0, clock.clone());
-        d.force_pool_anchor_feed(false);
-        d.force_floor_bound(false);
-        for p in [&mut c, &mut d] {
-            p.record_rtt_sample(millis(10));
-        }
-        for _ in 0..20 {
-            for p in [&mut c, &mut d] {
-                p.on_ack(1);
-            }
-            clock.advance(millis(2));
-            for p in [&mut c, &mut d] {
-                p.on_ack(400);
-            }
-            clock.advance(millis(98));
-        }
-        assert_eq!(
-            c.cwnd, d.cwnd,
-            "cold send anchor ⇒ the bound is the legacy floor verbatim"
-        );
     }
 
     // ----- Wire-clocked Copa signal + hint→δ mapping (feat/copa-wire-signal) -----

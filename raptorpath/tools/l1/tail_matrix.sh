@@ -247,10 +247,9 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # attempt-2 crown spot. Defaults were REVERTED at the end of
             # attempt 1, so `ship`/env-unset is now the PRIOR default and the
             # candidates are explicit: `deliv` = est+eb+pool-anchor+the
-            # delivery-clocked rate term (arm A), `floorb` = attempt 1's pool
-            # + the honest anchor-floor bound (arm B).
+            # delivery-clocked rate term (arm A). Arm B (`floorb`, the honest
+            # anchor-floor bound RWM_FLOOR_BOUND) was REMOVED with its gate.
             deliv)   AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1"; AFLAGS="" ;;
-            floorb)  AENV="RWM_EST_CADENCE=1 RWM_EMIT_BATCH=1 RWM_POOL_DELIV=0 RWM_FLOOR_BOUND=1"; AFLAGS="" ;;
             # feat/derived-patience (goal-gate "Unlock The Default 2"): the
             # crown spot for THE candidate. `pat` = est+eb+the derived
             # recovery-patience floor; the tail cell is exactly where a

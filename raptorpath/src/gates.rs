@@ -227,13 +227,6 @@ pub struct RuntimeGates {
     /// delivered-packet PHYSICS and CAN. Shadow-only: no cwnd/`max_bw`/
     /// pacing/`src_inflight` consumer can reach it; N = 1 untouched.
     pub pool_deliv: bool,
-    /// `RWM_FLOOR_BOUND` (default OFF — a pure A/B arm; goal-gate "Ship The
-    /// Wins 1b" arm B): bound the BtlBw anchor FLOOR by the honest
-    /// send-anchor rate (`min(gain·max_bw·RTprop, gain·sr·RTprop)`) so the
-    /// ack-interval over-read cannot inflate cwnd (measured 5860 vs 1779) —
-    /// making the prior default's ACCIDENTAL Σcwnd-governor escape derived.
-    /// Still a floor, never a cap; legacy verbatim with the anchor cold.
-    pub floor_bound: bool,
     /// `RWM_ACK_MERGE` (**default ON since 2026-08-08**; `=0` is the opt-out
     /// A/B arm. Goal-gate "Unlock The Default 1: ack-merge" built it and
     /// "Ack-Merge Flip" shipped it; paper §16.42): in WINDOW MODE ONLY,
@@ -1280,7 +1273,6 @@ impl RuntimeGates {
             honest_cap: env_flag("RWM_HONEST_CAP", true),
             pool_anchor: crate::scheduler::pool_anchor_active(),
             pool_deliv: crate::scheduler::pool_deliv_active(),
-            floor_bound: crate::scheduler::floor_bound_active(),
             ack_merge: crate::scheduler::ack_merge_active(),
             loss_sent_truth: crate::scheduler::loss_sent_truth_active(),
             release_1to1: crate::scheduler::release_1to1_active(),
@@ -1447,7 +1439,7 @@ impl RuntimeGates {
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} RWM_POOL_DELIV={} \
-             RWM_FLOOR_BOUND={} RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
+             RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
              RWM_RELEASE_1TO1={} RWM_CHARGE_RECOVERY={} \
              RWM_PATIENCE_DERIVED={} \
              RWM_SIDLE_DERIVED={} RWM_WIN_DECOUPLE={} RWM_PLACE_SLACK={} \
@@ -1481,7 +1473,7 @@ impl RuntimeGates {
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
             // EFFECTIVE value: the honest-cap law only runs with plain_rs.
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor), b(self.pool_deliv),
-            b(self.floor_bound), b(self.ack_merge), b(self.loss_sent_truth),
+            b(self.ack_merge), b(self.loss_sent_truth),
             b(self.release_1to1), b(self.charge_recovery),
             b(self.patience_derived),
             b(self.sidle_derived), b(self.win_decouple), b(self.place_slack),
@@ -2074,10 +2066,6 @@ mod tests {
         assert!(
             !g.pool_deliv,
             "RWM_POOL_DELIV default rides the RWM_POOL_ANCHOR resolution (OFF unset)"
-        );
-        assert!(
-            !g.floor_bound,
-            "RWM_FLOOR_BOUND ships default OFF (A/B arm)"
         );
         // "Ack-Merge Flip" (2026-08-08): the window-mode control-datagram
         // merge PASSED its own pre-registered gate set at full scope (×8,

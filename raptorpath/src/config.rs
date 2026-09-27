@@ -398,8 +398,8 @@ pub fn anchor_gate_default(name: &str, default: bool) -> bool {
 /// before deletion. Call once at engine/experiment setup, not per packet.
 // ADR-0066 / goal-gate "DEPRECATION REGISTER": this IS the register's
 // enforcement mechanism. Live consumers since 2026-08-09 (goal-gate
-// "Batch-2 removal schedule"): `RWM_POOL_DELIV`, `RWM_FLOOR_BOUND`,
-// `RWM_PATIENCE_DERIVED`.
+// "Batch-2 removal schedule"): `RWM_POOL_DELIV`, `RWM_PATIENCE_DERIVED`
+// (`RWM_FLOOR_BOUND` removed with its arm).
 pub fn deprecated_env_flag(name: &str, default: bool, refuted_in: &str) -> bool {
     let on = env_flag(name, default);
     if on {

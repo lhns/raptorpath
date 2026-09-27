@@ -7600,11 +7600,6 @@ async fn run_window_sender(
             "pool-anchor DELIVERY-CLOCKED rate ACTIVE (RWM_POOL_DELIV: per-path shadow DeliveryRateAnchor = windowed-max over delivered/max(send_elapsed,ack_elapsed), >=RTprop reject-and-accumulate, clock-gap discard; pool rate = max(deliv, send_mean); feeds ONLY the N>=2 pool law - no cwnd/max_bw/pacing/src_inflight consumer, N=1 untouched)"
         );
     }
-    if gates.floor_bound {
-        info!(
-            "honest anchor-floor BOUND ACTIVE (RWM_FLOOR_BOUND: cwnd floor = min(gain*max_bw*RTprop, gain*sr*RTprop) - the ack-interval over-read can no longer inflate the floor; still a floor, never a cap; legacy verbatim while the send anchor is cold)"
-        );
-    }
     if pol.store_sack_release_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
