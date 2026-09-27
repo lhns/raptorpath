@@ -302,8 +302,6 @@ pub(crate) struct SenderPolicy {
     pub store_paths_on: bool,
     /// `RWM_STORE_PATH_POOL`: per-live-path pool knee.
     pub store_path_pool: usize,
-    /// `RWM_STORE_CAPW`: capacity-weighted outstanding pool.
-    pub capw_on: bool,
     /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
     pub pool_anchor_on: bool,
     /// `RWM_STORE_CAP_UNIFIED` (goal-gate "Store-Cap Triplication"): the
@@ -862,18 +860,6 @@ impl SenderPolicy {
         // follow-up — see goal-gate "Consolidation".)
         let store_paths_on = gates.store_paths;
         let store_path_pool: usize = gates.store_path_pool;
-        // ── Capacity-weighted outstanding pool (env RWM_STORE_CAPW) ──────────
-        // The ADR-0058 "c8 WATCH" follow-up (goal-gate "C8-Aware Pool Law"):
-        // pool = Σ_i honest per-path cap over LIVE paths (capw_store_cap) — each
-        // path earns unacked-frontier depth for its OWN pipe + recovery round,
-        // summed as ONE shared pool (borrowing stays free, only the sizing law
-        // changes vs RWM_STORE_PATHS' count-scaled clamp). Engaged N ≥ 2 with
-        // every live anchor warm; until then the configured pooled law
-        // (path-scaled / legacy) is the warm-up fallback. Default OFF: shipped
-        // byte-identical; the battery arm composes RWM_PLAIN_RS=1 so the anchor
-        // terms read ≈1× truth (the legacy over-read clamps this law to the
-        // N×knee ceiling ≡ path-scaled — documented at capw_store_cap).
-        let capw_on = gates.store_capw && plain_dyn_cap;
         // ── Pool-anchor honest dual-store law (env RWM_POOL_ANCHOR) ──────────
         // Goal-gate "Ship The Wins 1" (the §16.35 c7 blocker's named successor):
         // at N ≥ 2 live paths the pooled-store cap's RATE input is the per-path
@@ -1443,7 +1429,6 @@ impl SenderPolicy {
             store_cap_floor,
             store_paths_on,
             store_path_pool,
-            capw_on,
             pool_anchor_on,
             store_cap_unified,
             three_term_on,

@@ -171,16 +171,6 @@ pub struct RuntimeGates {
     /// `RWM_STORE_BOOT` (default 128): outstanding cap before the BtlBw
     /// anchor warms.
     pub store_boot: usize,
-    /// `RWM_STORE_CAPW` (default OFF): capacity-weighted SHARED outstanding
-    /// pool — pool = Σ_i honest per-path cap over live paths (each path earns
-    /// depth for its OWN pipe + recovery round; one pool, so borrowing stays
-    /// free — ADR-0058's pooled verdict kept). The c8-aware pool law
-    /// (the ADR-0058 "c8 WATCH" follow-up). Engaged N ≥ 2 with warm anchors;
-    /// falls back to the configured pooled law until anchors live. Reads
-    /// honestly only with the `RWM_PLAIN_RS` sampler (the battery arm
-    /// composes it); with the over-reading legacy anchor it clamps to the
-    /// N×knee ceiling ≡ the path-scaled law.
-    pub store_capw: bool,
     /// `RWM_STORE_PERCAP` (default OFF): per-path outstanding accounts
     /// (task #86; symmetric-cell tool, c8 successor named — ADR-0058).
     pub store_percap: bool,
@@ -1237,7 +1227,6 @@ impl RuntimeGates {
                 .unwrap_or(2.0)
                 .clamp(1.0, 64.0),
             store_boot: env_parse::<usize>("RWM_STORE_BOOT").unwrap_or(128),
-            store_capw: env_flag("RWM_STORE_CAPW", false),
             store_percap: env_flag("RWM_STORE_PERCAP", false),
             percap_guard: env_flag("RWM_PERCAP_GUARD", true),
             store_borrow: env_flag("RWM_STORE_BORROW", false),
@@ -1403,7 +1392,7 @@ impl RuntimeGates {
              RWM_ASTAR_ANCHOR={} RWM_MSTAR_ANCHOR={} RWM_PLAIN_RS={} \
              RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
-             RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} RWM_STORE_CAPW={} \
+             RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
              RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
              RWM_STORE_PERCAP={} RWM_PERCAP_GUARD={} RWM_STORE_BORROW={} \
@@ -1435,7 +1424,7 @@ impl RuntimeGates {
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
             b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
-            ou(&self.store_override), self.store_gain, self.store_boot, b(self.store_capw),
+            ou(&self.store_override), self.store_gain, self.store_boot,
             b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             b(self.store_percap), b(self.percap_guard), b(self.store_borrow),
@@ -2092,7 +2081,6 @@ mod tests {
         );
         assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
         assert_eq!(g.emit_burst, 64);
-        assert!(!g.store_capw, "RWM_STORE_CAPW ships default OFF (A/B arm)");
         assert!(!g.win_decouple, "RWM_WIN_DECOUPLE ships default OFF (A/B arm)");
         assert!(!g.place_slack, "RWM_PLACE_SLACK ships default OFF (A/B arm)");
         assert!(

@@ -4546,8 +4546,11 @@ pub fn pooled_store_cap_unclamped(
     value_multiplier * count_multiplier * pipe_sum
 }
 
-/// Capacity-weighted SHARED outstanding pool (env `RWM_STORE_CAPW`) — the
-/// ADR-0058 "c8 WATCH" follow-up: the c8-aware pool law.
+/// Capacity-weighted SHARED outstanding pool — the pure pooled clamp the
+/// `RWM_POOL_ANCHOR` law evaluates. (Its own A/B arm, `RWM_STORE_CAPW`, the
+/// ADR-0058 "c8 WATCH" follow-up, was refuted as a sizing answer — goal-gate
+/// "C8-Aware Pool Law" — and removed; the function survives as the
+/// pool-anchor seat's clamp.)
 ///
 /// The path-scaled pool (`RWM_STORE_PATHS`) scales by path COUNT:
 /// cap = clamp(gain·N·Σpipe, floor, N·knee), which at asymmetric cells
@@ -4915,8 +4918,8 @@ pub struct HonestCapPath {
 
 /// ONE collector for the honest per-path cap terms over a path set.
 ///
-/// The three pooled store-cap laws (`RWM_STORE_CAPW`, `RWM_PLAIN_RS` +
-/// `RWM_HONEST_CAP`, `RWM_POOL_ANCHOR`) differ ONLY in (a) which rate
+/// The pooled store-cap laws (`RWM_PLAIN_RS` + `RWM_HONEST_CAP`,
+/// `RWM_POOL_ANCHOR`; formerly also the removed `RWM_STORE_CAPW`) differ ONLY in (a) which rate
 /// source fills [`HonestCapPath`] and (b) which path set the caller
 /// enumerates. Both are the caller's choice; the loop is not.
 ///
@@ -7538,14 +7541,6 @@ async fn run_window_sender(
             "path-scaled outstanding pool ACTIVE (RWM_STORE_PATHS: cap = clamp(gain*N*pipe, floor, N*pool) for N>=2 live paths; N=1 legacy)"
         );
     }
-    if pol.capw_on {
-        // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
-        info!(
-            pool_per_path = pol.store_path_pool,
-            gain = pol.store_bdp_gain,
-            "capacity-weighted outstanding pool ACTIVE (RWM_STORE_CAPW: pool = sum_i anchor_i*(K_i+gain-1) + rate_i*(gain-1)*R over live paths, clamp [floor, N*knee], N>=2 all-warm; fallback = configured pooled law until anchors warm; N=1 legacy)"
-        );
-    }
     if pol.pool_anchor_on {
         // Mechanism-liveness echo (MEASUREMENT DISCIPLINE item 1).
         info!(
@@ -8432,38 +8427,6 @@ async fn run_window_sender(
                         pol.store_boot_cap.min(pol.store_max)
                     };
                 } else {
-                    // RWM_STORE_CAPW (goal-gate "C8-Aware Pool Law"): the
-                    // capacity-weighted shared pool's per-path terms, over
-                    // LIVE paths (live_paths(), NOT active_paths() — the
-                    // documented cwnd-saturation filter trap above: a
-                    // saturated path must keep its earned share). None until
-                    // that path's anchor warms; capw_store_cap requires ALL
-                    // live paths warm, else the configured fallback below.
-                    let capw_terms: Vec<Option<f64>> = if pol.capw_on {
-                        // Rate source: the Copa/BtlBw anchor pair
-                        // (copa_bdp_anchor, btlbw_sym_per_s). Path set:
-                        // live_paths().
-                        let slots: Vec<Option<HonestCapPath>> = {
-                            let sched = scheduler.lock();
-                            sched
-                                .live_paths()
-                                .iter()
-                                .map(|id| {
-                                    sched.path(*id).map(|p| HonestCapPath {
-                                        id: *id,
-                                        anchor: p.copa_bdp_anchor(),
-                                        rate: p.btlbw_sym_per_s(),
-                                        srtt: p.srtt(),
-                                        rtprop: p.min_rtt(),
-                                        k_raw: p.k_raw(),
-                                    })
-                                })
-                                .collect()
-                        };
-                        honest_cap_terms(&mut percap_k, &slots, dnow, pol.store_bdp_gain)
-                    } else {
-                        Vec::new()
-                    };
                     // ── THE THREE-TERM LIMIT (RWM_THREE_TERM) ────────────
                     // Goal-gate "Three-Term Law": the composed law's inputs
                     // over LIVE paths — the same set every honest-cap
@@ -8473,8 +8436,8 @@ async fn run_window_sender(
                     // zero and the span term vanishes by arithmetic.
                     // Rate source: the per-path delivered-rate anchor
                     // (`btlbw_sym_per_s`) — the same source the legacy
-                    // Σ-anchor base and the capw law read, so the A/B
-                    // isolates the LAW and not the anchor.
+                    // Σ-anchor base reads, so the A/B isolates the LAW and
+                    // not the anchor.
                     let tt_slots: Vec<Option<ThreeTermPath>> = if pol.three_term_on {
                         let sched = scheduler.lock();
                         sched
@@ -8685,17 +8648,6 @@ async fn run_window_sender(
                         );
                         wd_engaged = true;
                         wd_cap_ret
-                    } else if let Some(cap) = capw_store_cap(
-                        pol.capw_on,
-                        &capw_terms,
-                        pol.store_cap_floor,
-                        pol.store_path_pool,
-                    ) {
-                        // Capacity-weighted shared pool ENGAGED (N ≥ 2, all
-                        // anchors warm): Σ honest per-path caps, clamped to
-                        // [floor, N×knee]. Takes precedence over the hsum /
-                        // path-scaled laws — this IS the pool law under test.
-                        cap
                     } else if pol.honest_cap_on && hsum > 0.0 {
                         // Honest law: the Σ is already per-path-composed
                         // (each term carries its own K_i and runway), so no
@@ -8720,9 +8672,9 @@ async fn run_window_sender(
                         // the burst-immune send-interval rate, clamped
                         // [floor, N·knee] — the same pure pooled law as
                         // capw_store_cap, with the CAP's rate input honest
-                        // by construction. Explicit experiment arms
-                        // (RWM_STORE_CAPW / RWM_PLAIN_RS+RWM_HONEST_CAP)
-                        // take precedence above, unchanged.
+                        // by construction. The explicit experiment arm
+                        // (RWM_PLAIN_RS+RWM_HONEST_CAP) takes precedence
+                        // above, unchanged.
                         pa_engaged = true;
                         pa_sum = pa_terms.iter().flatten().sum();
                         cap
