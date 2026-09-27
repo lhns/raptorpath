@@ -1758,6 +1758,24 @@ mod forwarding_audit {
 mod tests {
     use super::*;
 
+    /// The `[GATES]` echo prints the EFFECTIVE honest-cap law: it is inert
+    /// unless `RWM_PLAIN_RS` is on, so the echo must not read `1` then.
+    #[test]
+    fn honest_cap_echo_is_the_effective_value() {
+        let mut g = RuntimeGates::resolve();
+        for (honest, plain, want) in
+            [(true, false, "0"), (true, true, "1"), (false, true, "0"), (false, false, "0")]
+        {
+            g.honest_cap = honest;
+            g.plain_rs = plain;
+            let e = g.echo_line();
+            assert!(
+                e.contains(&format!("RWM_HONEST_CAP={want} RWM_POOL_ANCHOR=")),
+                "honest_cap={honest} plain_rs={plain} must echo {want}: {e}"
+            );
+        }
+    }
+
     // Unique env var names per test: test threads share one environment.
 
     #[test]
