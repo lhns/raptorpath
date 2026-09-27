@@ -13891,6 +13891,27 @@ mod tests {
         assert_eq!(sack_to_gaps(highest_delivered, &sack_ranges), vec![(13, 14), (16, 17)]);
     }
 
+    /// SEQ 0 LOST. The receiver starts at `highest_delivered_seq = 0`, so a
+    /// receiver that has delivered NOTHING advertises `received_up_to = 0` —
+    /// the same value as "seq 0 delivered". Driven through the receiver's own
+    /// encoding (`received_sack_ranges`) and the sender's inversion: seq 0
+    /// must be reported as a gap, and when seq 0 WAS delivered it must not.
+    #[test]
+    fn a_lost_seq_zero_is_sack_reported() {
+        // Seq 0 dropped; 1..=10 received, none deliverable in order.
+        let received: BTreeSet<u64> = (1..=10).collect();
+        let ranges = received_sack_ranges(&received, 0, 10);
+        let gaps = sack_to_gaps(0, &ranges);
+        assert!(
+            gaps.iter().any(|&(a, _)| a == 0),
+            "seq 0 lost must be SACK-reported: ranges={ranges:?} gaps={gaps:?}"
+        );
+        // Control: seq 0 delivered, seq 1 lost, 2..=10 received.
+        let received: BTreeSet<u64> = (2..=10).collect();
+        let ranges = received_sack_ranges(&received, 0, 10);
+        assert_eq!(sack_to_gaps(0, &ranges), vec![(1, 1)], "delivered seq 0 is not re-reported");
+    }
+
     #[test]
     fn test_sack_to_gaps_caps_at_max_gaps() {
         // 2×MAX_NACK_GAPS isolated received seqs → gap list is capped.
