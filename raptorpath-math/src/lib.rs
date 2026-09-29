@@ -2211,7 +2211,13 @@ mod tests {
     // same function on both sides), so any refactor or performance fix of
     // the solver must keep this table exact. Re-capture ONLY for a
     // deliberate law change: `RSTAR_BITPIN_CAPTURE=1 cargo test -p
-    // raptorpath-math rstar_bitpin` rewrites `src/rstar_bitpin_table.in`.
+    // raptorpath-math rstar_bitpin` rewrites this OS's table.
+    //
+    // One table per target OS: the solver's ln/exp/powf come from the
+    // platform libm (glibc vs the MSVC CRT), whose last-ulp results differ,
+    // so the bits are a per-platform fingerprint. Both tables were captured
+    // on the SAME pre-hoist source; an OS without a table fails loudly
+    // (capture one there from a pre-change commit, never after a change).
     //
     // Grid: 6 mass shapes (3 simulated GE channels incl. a c2-like
     // p ~ 2.4 %, 2 uniform fixtures light/heavy, 1 GE shape with the upper
@@ -2222,7 +2228,18 @@ mod tests {
     // {1e-5, 1e-4, 1e-3} x level_scale in {0.5, 1, 2} (p_upper =
     // level_scale x eps_mass) x bulk_late_is_fine in {false, true}
     // (chi = 0.3), tail_provision = true}.
-    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table.in");
+    #[cfg(target_os = "linux")]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_linux.in";
+    #[cfg(target_os = "linux")]
+    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table_linux.in");
+    #[cfg(target_os = "windows")]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_windows.in";
+    #[cfg(target_os = "windows")]
+    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table_windows.in");
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_other.in";
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    const RSTAR_BITPIN: &[u64] = &[];
 
     fn rstar_bitpin_shapes() -> Vec<MassStats> {
         let mut shapes = vec![
@@ -2304,12 +2321,16 @@ mod tests {
                 s.push('\n');
             }
             s.push_str("]\n");
-            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/rstar_bitpin_table.in");
-            std::fs::write(path, s).expect("write bit-pin table");
+            let path = format!("{}/src/{}", env!("CARGO_MANIFEST_DIR"), RSTAR_BITPIN_FILE);
+            std::fs::write(&path, s).expect("write bit-pin table");
             eprintln!("captured {} values ({interior} interior r*) to {path}", got.len());
             return;
         }
-        assert_eq!(got.len(), RSTAR_BITPIN.len(), "bit-pin grid shape changed");
+        assert_eq!(
+            got.len(),
+            RSTAR_BITPIN.len(),
+            "bit-pin grid shape changed (or no table for this OS: {RSTAR_BITPIN_FILE})"
+        );
         let diffs: Vec<usize> =
             (0..got.len()).filter(|&i| got[i] != RSTAR_BITPIN[i]).collect();
         assert!(
