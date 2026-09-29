@@ -362,13 +362,59 @@ impl MassStats {
 
     /// Fitted tail of J_m: P(J_m > x) ~ nz_m x S(x; theta_m, k_m) with
     /// the discrete-Weibull tail fit from the conditional moments.
+    /// (`r_star_mass` reads the same arithmetic through `FitMemo`; this
+    /// re-fitting form is the reference the identity test compares with.)
+    #[cfg_attr(not(test), allow(dead_code))]
     fn tail(&self, idx: usize, x: f64) -> f64 {
+        self.tail_with(idx, x, || fit_burst_tail(self.m1[idx], self.m2[idx]))
+    }
+
+    /// `tail` with the scale's fitted (theta, k) supplied by `fit`, which
+    /// is invoked only when the scale carries data. The arithmetic is
+    /// exactly `tail`'s (same clamp, same skip, same
+    /// `nz * burst_tail_survival(theta, k, x)`), so a caller that fits
+    /// once and reuses the pair is bit-identical to calling `tail`.
+    #[inline]
+    fn tail_with(&self, idx: usize, x: f64, fit: impl FnOnce() -> (f64, f64)) -> f64 {
         let nz = self.nz[idx].clamp(0.0, 1.0);
         if nz <= 0.0 {
             return 0.0; // no data at this scale: skip (documented)
         }
-        let (theta, k) = fit_burst_tail(self.m1[idx], self.m2[idx]);
+        let (theta, k) = fit();
         nz * burst_tail_survival(theta, k, x)
+    }
+
+    /// The discrete-Weibull tail fit (theta, k) of every block scale,
+    /// `fit_burst_tail(m1[s], m2[s])` — a pure function of the moments.
+    /// `r_star_mass` fits each scale it touches once per call instead of
+    /// once per tail evaluation (it evaluates the tail up to ~860 times).
+    pub fn fitted(&self) -> [(f64, f64); MASS_SCALES] {
+        std::array::from_fn(|s| fit_burst_tail(self.m1[s], self.m2[s]))
+    }
+}
+
+/// Per-call memo of the per-scale tail fits for `r_star_mass`: each scale
+/// is fitted at most once, and only if the solver reaches it. Reading a
+/// memoized pair is bit-identical to re-fitting (`fit_burst_tail` is pure).
+struct FitMemo<'a> {
+    stats: &'a MassStats,
+    fits: [std::cell::Cell<Option<(f64, f64)>>; MASS_SCALES],
+}
+
+impl<'a> FitMemo<'a> {
+    fn new(stats: &'a MassStats) -> Self {
+        Self { stats, fits: std::array::from_fn(|_| std::cell::Cell::new(None)) }
+    }
+
+    fn tail(&self, idx: usize, x: f64) -> f64 {
+        self.stats.tail_with(idx, x, || {
+            let cell = &self.fits[idx];
+            cell.get().unwrap_or_else(|| {
+                let fit = fit_burst_tail(self.stats.m1[idx], self.stats.m2[idx]);
+                cell.set(Some(fit));
+                fit
+            })
+        })
     }
 }
 
@@ -445,23 +491,26 @@ pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64, level_scale: f
         return 0.0; // contract met by pure ARQ: no within-window requirement
     }
     let w0 = stats.block_scale;
+    // Fit each scale once per call (Stage 1b): `bound` below reads the
+    // tails up to ~860 times per solve on unchanged moments.
+    let memo = FitMemo::new(stats);
     let bound = |r: f64| -> f64 {
         let n = window * (1.0 + r);
         let x = n / w0;
         let rr = r * window / level_scale; // repair count R, level-rescaled
         if x <= 1.0 {
-            return stats.tail(0, rr);
+            return memo.tail(0, rr);
         }
         let max_m = MASS_SCALES as f64;
         if x >= max_m {
             // chunk + union bound beyond the tracked scales
             let c = (x / max_m).ceil();
-            return (c * stats.tail(MASS_SCALES - 1, rr / c)).min(1.0);
+            return (c * memo.tail(MASS_SCALES - 1, rr / c)).min(1.0);
         }
         let lo = x.floor() as usize - 1;
         let hi = (lo + 1).min(MASS_SCALES - 1);
         let f = x - x.floor();
-        let (t_lo, t_hi) = (stats.tail(lo, rr), stats.tail(hi, rr));
+        let (t_lo, t_hi) = (memo.tail(lo, rr), memo.tail(hi, rr));
         (1.0 - f) * t_lo + f * t_hi
     };
     if bound(0.0) <= delta_wf {
@@ -2366,5 +2415,23 @@ mod tests {
         }
         let ns = t0.elapsed().as_nanos() as f64 / n as f64;
         println!("BENCH r_star_mass c2-like: {ns:.0} ns/call (r* = {:.5}, eps_mass = {:.4})", acc / n as f64, m.eps_mass());
+    }
+
+    #[test]
+    fn fitted_tail_is_bit_identical_to_refit_tail() {
+        // The Stage-1b hoist: a tail read through the per-call fit memo (or
+        // the public `fitted()` pairs) equals the re-fitting `tail` bit for
+        // bit, at every scale including the nz = 0 skip.
+        for m in &rstar_bitpin_shapes() {
+            let fits = m.fitted();
+            let memo = FitMemo::new(m);
+            for s in 0..MASS_SCALES {
+                for &x in &[0.0, 0.5, 1.0, 3.7, 12.0, 40.0, 150.0] {
+                    let refit = m.tail(s, x);
+                    assert_eq!(refit.to_bits(), memo.tail(s, x).to_bits());
+                    assert_eq!(refit.to_bits(), m.tail_with(s, x, || fits[s]).to_bits());
+                }
+            }
+        }
     }
 }
