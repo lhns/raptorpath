@@ -13,6 +13,7 @@ pub mod ackdiag;
 pub mod block_arq;
 pub mod block_sender;
 pub mod control_msg;
+pub(crate) mod delivery;
 pub mod cpuprof;
 pub mod diag;
 pub mod emit_source;
@@ -1551,38 +1552,6 @@ fn log_task_exit(task: &str, r: &Result<(), tokio::task::JoinError>) {
         Ok(()) => info!(task, "tunnel task exited — shutting down tunnel"),
         Err(e) if e.is_panic() => error!(task, %e, "tunnel task PANICKED — shutting down tunnel"),
         Err(e) => error!(task, %e, "tunnel task failed — shutting down tunnel"),
-    }
-}
-
-/// Deliver a decoded packet to the TUN inject channel under the stream's
-/// delivery policy.
-///
-/// - **Reliable** streams must not silently drop: the delivery frontier/ack
-///   advances over decoded seqs, so a dropped packet would advance the ack
-///   past a symbol the consumer never received — a permanent hole. A full
-///   channel therefore backpressures the receiver (await). The consumer
-///   (object app / kernel-TUN writer) always drains, so this cannot wedge.
-/// - **Lossy** streams (evict / δ < ∞, and lossy-unordered datagram) must
-///   never block — a stale packet is worthless and blocking would stall the
-///   whole stream on one slow consumer, so a full channel drops.
-///
-/// Returns `Err(())` only when the channel is permanently closed.
-async fn deliver_packet(
-    tx: &mpsc::Sender<Bytes>,
-    pkt: Bytes,
-    reliable: bool,
-) -> Result<(), ()> {
-    if reliable {
-        tx.send(pkt).await.map_err(|_| ())
-    } else {
-        match tx.try_send(pkt) {
-            Ok(()) => Ok(()),
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                warn!("TUN inject channel full, dropping packet (lossy stream)");
-                Ok(())
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => Err(()),
-        }
     }
 }
 

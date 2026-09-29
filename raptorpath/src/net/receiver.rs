@@ -46,12 +46,13 @@ use tracing::{debug, error, info, warn};
 
 use super::block_arq::BlockArq;
 use super::control_msg::{ControlCtx, handle_control_message};
+use super::delivery::WindowDelivery;
 use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
     BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
-    collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
+    collect_gen_deficits, create_window_decoder, extract_window_packets,
     hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
@@ -154,6 +155,8 @@ pub(crate) async fn run_receiver(
     } else {
         None
     };
+    // Hand-off of window symbols to the consumer channel (`net/delivery.rs`).
+    let mut window_delivery = WindowDelivery::new(recv_window_reliable);
     // δ-honest overload shedding, receiver arm (paper §5.6): the in-order hold
     // for the window EVICT path becomes the δ-derived H = b·SRTT (the reorder
     // timeout is the δ dial; b(Realtime) = ½ — this path exists only for the
@@ -1609,24 +1612,26 @@ pub(crate) async fn run_receiver(
                             // only costs an incremental, low-latency consumer
                             // (inner TCP), never a file.
                             if recv_window_ooo {
-                                for pkt_data in extract_window_packets(&sym_data, window_packed) {
-                                    // Deliver immediately (any order). Full
-                                    // channel drops rather than blocks: the
-                                    // object/native consumer drains far
-                                    // faster than the wire, so the bounded
-                                    // (8192) channel only fills under a
-                                    // pathological burst; blocking here would
-                                    // deadlock the loopback's
-                                    // client-feeds-and-drains feedback loop.
-                                    // A rare drop is recovered by the
-                                    // sender's retransmit.
-                                    if deliver_packet(&recv_tun_tx, Bytes::from(pkt_data), false)
-                                        .await
-                                        .is_err()
-                                    {
-                                        error!("TUN inject channel closed");
-                                        break 'recv;
-                                    }
+                                // Deliver immediately (any order). Full
+                                // channel drops rather than blocks: the
+                                // object/native consumer drains far
+                                // faster than the wire, so the bounded
+                                // (8192) channel only fills under a
+                                // pathological burst; blocking here would
+                                // deadlock the loopback's
+                                // client-feeds-and-drains feedback loop.
+                                // A rare drop is recovered by the
+                                // sender's retransmit.
+                                if window_delivery
+                                    .offer(
+                                        &recv_tun_tx,
+                                        seq,
+                                        extract_window_packets(&sym_data, window_packed),
+                                    )
+                                    .is_err()
+                                {
+                                    error!("TUN inject channel closed");
+                                    break 'recv;
                                 }
                                 // Advance the in-order received prefix for the
                                 // cumulative WindowAck (retention pruning) —
@@ -1696,17 +1701,16 @@ pub(crate) async fn run_receiver(
                                     lat_now.saturating_duration_since(dbuf).as_micros() as u64,
                                     lat_release,
                                 );
-                                for pkt_data in extract_window_packets(&ddata, window_packed) {
-                                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
-                                        Ok(()) => {}
-                                        Err(mpsc::error::TrySendError::Full(_)) => {
-                                            warn!("TUN inject channel full, dropping packet");
-                                        }
-                                        Err(mpsc::error::TrySendError::Closed(_)) => {
-                                            error!("TUN inject channel closed");
-                                            break 'recv;
-                                        }
-                                    }
+                                if window_delivery
+                                    .offer(
+                                        &recv_tun_tx,
+                                        dseq,
+                                        extract_window_packets(&ddata, window_packed),
+                                    )
+                                    .is_err()
+                                {
+                                    error!("TUN inject channel closed");
+                                    break 'recv;
                                 }
                                 if dseq > highest_delivered_seq {
                                     highest_delivered_seq = dseq;
