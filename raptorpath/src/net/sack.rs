@@ -8,7 +8,7 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
-// WindowNack gap computation
+// Gap computation and the SACK encoding (no WindowNack exists on this wire)
 // ---------------------------------------------------------------------------
 
 /// The receiver-seat repair request as it crosses the task seam (paper
