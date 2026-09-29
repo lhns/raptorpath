@@ -1812,6 +1812,113 @@ fn test_received_sack_ranges_inverts_to_gaps() {
     assert_eq!(sack_to_gaps(2, &ranges), vec![(5, 6)]);
 }
 
+// ----- SACK truncation (plan 2a): a capped report must be a PREFIX --------
+
+/// The true received runs in `(delivered, seen]`, uncapped — the oracle the
+/// truncation tests compare the wire encoding against.
+fn true_received_runs(received: &BTreeSet<u64>, delivered: u64, seen: u64) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    for &s in received.range(delivered + 1..=seen) {
+        match out.last_mut() {
+            Some((_, e)) if *e + 1 == s => *e = s,
+            _ => out.push((s, s)),
+        }
+    }
+    out
+}
+
+/// A receiver with far more holes than one report can name: `delivered =
+/// 10`, then every other seq received for `5·MAX_NACK_GAPS` gaps. Returns
+/// `(received, delivered, seen, missing)`.
+fn many_gap_fixture() -> (BTreeSet<u64>, u64, u64, BTreeSet<u64>) {
+    let delivered = 10u64;
+    let n_gaps = 5 * MAX_NACK_GAPS as u64;
+    // Received: 11, 13, 15, ... ; missing: 12, 14, 16, ...
+    // The receiver's set holds the delivered frontier seq itself (its prune
+    // keeps everything at or above `highest_delivered_seq`).
+    let mut received: BTreeSet<u64> = (0..=n_gaps).map(|i| delivered + 1 + 2 * i).collect();
+    received.insert(delivered);
+    let seen = *received.iter().next_back().unwrap();
+    let missing: BTreeSet<u64> =
+        (delivered + 1..=seen).filter(|s| !received.contains(s)).collect();
+    assert_eq!(missing.len() as u64, n_gaps);
+    (received, delivered, seen, missing)
+}
+
+/// Encoder side: no emitted SACK range may cover a seq the receiver does not
+/// have, and the emitted list must be a prefix of the true received runs
+/// (the only truncation the wire can express honestly: `sack_to_gaps`
+/// reads everything above the last range as "not reported").
+#[test]
+fn sack_truncated_report_never_claims_a_missing_seq() {
+    let (received, delivered, seen, missing) = many_gap_fixture();
+    let ranges = received_sack_ranges(&received, delivered, seen);
+    for &(a, b) in &ranges {
+        for s in a..=b {
+            assert!(
+                !missing.contains(&s),
+                "SACK range ({a},{b}) claims missing seq {s} as received \
+                 (ranges.len()={}, last={:?})",
+                ranges.len(),
+                ranges.last()
+            );
+        }
+    }
+    let truth = true_received_runs(&received, delivered, seen);
+    assert!(!ranges.is_empty() && ranges.len() <= truth.len());
+    assert_eq!(
+        ranges[..],
+        truth[..ranges.len()],
+        "the capped report must be a prefix of the true received runs"
+    );
+}
+
+/// Sender side: feed the (possibly capped) report through the sender's own
+/// inversion and SACK-clocked release. No missing seq may be released, and
+/// every derived gap must be a true hole.
+#[test]
+fn sack_truncated_report_releases_no_missing_seq_at_the_sender() {
+    let (received, delivered, seen, missing) = many_gap_fixture();
+    let ranges = received_sack_ranges(&received, delivered, seen);
+    // The sender retains every seq above the cumulative point.
+    let sent_store: BTreeMap<u64, ()> = (delivered + 1..=seen).map(|s| (s, ())).collect();
+    let mut released = BTreeSet::new();
+    for &(a, b) in &ranges {
+        sack_release_mark(&sent_store, &mut released, a, b);
+    }
+    let wrongly: Vec<u64> = released.intersection(&missing).copied().collect();
+    assert!(
+        wrongly.is_empty(),
+        "sender released {} never-received seqs (first {:?}) off a truncated SACK",
+        wrongly.len(),
+        wrongly.first()
+    );
+    for (a, b) in sack_to_gaps(delivered, &ranges) {
+        for s in a..=b {
+            assert!(missing.contains(&s), "derived gap seq {s} was in fact received");
+        }
+    }
+}
+
+/// Byte-identity at the old cap: exactly `MAX_NACK_GAPS` gaps with a
+/// received run above the last one — the final `(cursor, seen)` range is
+/// emitted, exactly as before the truncation fix.
+#[test]
+fn sack_report_at_the_gap_cap_keeps_its_tail_range() {
+    let delivered = 10u64;
+    let n_gaps = MAX_NACK_GAPS as u64;
+    let mut received: BTreeSet<u64> = (0..n_gaps).map(|i| delivered + 1 + 2 * i).collect();
+    received.insert(delivered); // as the receiver's set holds it
+    let tail_start = delivered + 1 + 2 * n_gaps;
+    received.extend(tail_start..tail_start + 5);
+    let seen = tail_start + 4;
+    let ranges = received_sack_ranges(&received, delivered, seen);
+    assert_eq!(ranges, true_received_runs(&received, delivered, seen));
+    assert_eq!(ranges.len(), MAX_NACK_GAPS + 1);
+    assert_eq!(*ranges.last().unwrap(), (tail_start, seen));
+    assert_eq!(sack_to_gaps(delivered, &ranges).len(), MAX_NACK_GAPS);
+}
+
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
 
 #[test]
