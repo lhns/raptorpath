@@ -1129,6 +1129,27 @@ fn bench_compute_repair_rate_c2_like() {
         n += 1;
     }
     let ns = t0.elapsed().as_nanos() as f64 / n as f64;
+    // Breakdown: the estimator reads the call makes, timed alone.
+    let time_it = |f: &dyn Fn() -> f64| {
+        let mut n = 0u32;
+        let mut acc = 0.0;
+        let t0 = std::time::Instant::now();
+        while n < 20_000 && (n < 5 || t0.elapsed().as_secs_f64() < 0.5) {
+            acc += f();
+            n += 1;
+        }
+        std::hint::black_box(acc);
+        t0.elapsed().as_nanos() as f64 / n as f64
+    };
+    let e = &est;
+    let ns_p = time_it(&|| std::hint::black_box(e).predictive_loss_upper(0.95));
+    let ns_m = time_it(&|| std::hint::black_box(e).ge_estimator().mass_stats().eps_mass());
+    let ns_r = time_it(&|| {
+        raptorpath_math::r_star_mass(&mass, 200.0, ctrl.target_tail_loss / 0.0266, 0.0266 / mass.eps_mass())
+    });
+    println!(
+        "BENCH breakdown: predictive_loss_upper {ns_p:.0} ns, mass_stats {ns_m:.0} ns, r_star_mass(anchor) {ns_r:.0} ns"
+    );
     println!(
         "BENCH compute_repair_rate c2-like: {ns:.0} ns/call (rate = {:.5}, p_upper = {:.4}, eps_mass = {:.4})",
         acc / n as f64,
@@ -1136,3 +1157,151 @@ fn bench_compute_repair_rate_c2_like() {
         mass.eps_mass()
     );
 }
+
+// ── Stage 1c: the repair-rate cadence (a disclosed numerical change) ────
+//
+// The window sender reads the rate through `RepairRateCache` (at most one
+// evaluation per min(5 ms, SRTT/4)) instead of evaluating it per emitted
+// symbol. This scripts a c2-like estimator sequence (GE p_gb = 0.01 →
+// 0.03 regime shift mid-run, q = 0.4, one ack of 8 symbols every 0.86 ms
+// ≈ 9 300 sym/s, SRTT 20 ms → period 5 ms) at AUTO, where the rate is
+// nonzero and moving (at Bulk mid-stream the mix is identically 0 and a
+// comparison would prove nothing), and compares the cached read with the
+// fresh per-symbol value at every ack.
+//
+// Tolerance, and why: the cached rate is by construction the fresh rate
+// of the last evaluation instant, at most one period earlier. Between two
+// acks the fresh rate moves by at most D = max_k |fresh(k) − fresh(k−1)|
+// (measured over the same sequence); a period spans at most
+// A = ceil(period / ack interval) acks. By the triangle inequality
+// |cached − fresh| ≤ A·D at every ack. The test asserts that bound, the
+// structural identities behind it (bit-exact at every evaluation instant;
+// bit-exact to the last instant's fresh value in between; age < period),
+// that the cadence actually binds (evaluations ≈ duration / period), and
+// that the integrated repair volume (the mean rate) stays within 1 % of the
+// per-symbol value. Observed on this sequence (linux release): the fresh
+// rate itself jumps by up to 0.44 between consecutive acks (the per-ack
+// BOCD quantile moves 0.04 -> 0.27 on a single burst), so the per-instant
+// error reaches that size, while the means agree to ~0.3 %.
+#[test]
+fn rate_cadence_is_one_period_stale_and_bounded() {
+    use rand::prelude::*;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(99);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
+    let mut est = LossEstimator::new_per_call_for_test();
+    for _ in 0..50 {
+        est.record_rtt(std::time::Duration::from_millis(20));
+        est.record_throughput(11.0e6);
+    }
+    let w = 200usize;
+    let ack_us = 860u64; // 8 symbols per ack at ~9 300 sym/s
+    let period = RepairRateCache::period_us(est.rtt());
+    assert_eq!(period, 5_000, "SRTT 20 ms => period min(5 ms, SRTT/4) = 5 ms");
+    let mut cache = RepairRateCache::default();
+    let mut bad = false;
+    let mut now = 1_000_000u64;
+    let mut last_eval: Option<(u64, f64)> = None;
+    let (mut max_step, mut max_err) = (0.0f64, 0.0f64);
+    let mut prev_fresh: Option<f64> = None;
+    let mut errs = Vec::new();
+    let acks = 12_000u32; // ~10 s of stream
+    let mut nonzero = 0u32;
+    let (mut sum_f, mut sum_c) = (0.0f64, 0.0f64);
+    for k in 0..acks {
+        let p_gb = if k < acks / 2 { 0.01 } else { 0.03 };
+        let mut rx = 0u32;
+        let mut pattern = [true; 8];
+        for slot in pattern.iter_mut() {
+            bad = if bad { rng.gen::<f64>() >= 0.4 } else { rng.gen::<f64>() < p_gb };
+            *slot = !bad;
+            rx += (!bad) as u32;
+        }
+        est.record_counts(8, rx);
+        for ok in pattern {
+            est.record_symbol(ok);
+        }
+        now += ack_us;
+        let fresh = ctrl.compute_repair_rate(&est, w);
+        let before = cache.evaluations;
+        let cached = cache.get_or_eval(now, w, 0, period, || ctrl.rate_snapshot(&est, w).rate());
+        if cache.evaluations > before {
+            // (a) at an evaluation instant the cadenced value IS the fresh one.
+            assert_eq!(cached.to_bits(), fresh.to_bits(), "evaluation instant must be exact");
+            last_eval = Some((now, fresh));
+        } else {
+            // (b) in between it is exactly the last instant's fresh value,
+            // taken less than one period ago.
+            let (at, v) = last_eval.expect("a hit follows an evaluation");
+            assert_eq!(cached.to_bits(), v.to_bits());
+            assert!(now - at < period, "age {} >= period {period}", now - at);
+        }
+        if let Some(pf) = prev_fresh {
+            max_step = max_step.max((fresh - pf).abs());
+        }
+        prev_fresh = Some(fresh);
+        if fresh > 0.0 {
+            nonzero += 1;
+        }
+        sum_f += fresh;
+        sum_c += cached;
+        let e = (cached - fresh).abs();
+        max_err = max_err.max(e);
+        errs.push(e);
+    }
+    // The mechanism executes: the rate is nonzero and moving here, and the
+    // cadence binds (one evaluation per ceil(period/ack) acks).
+    assert!(nonzero > acks * 9 / 10, "Auto rate must be live: {nonzero}/{acks} nonzero");
+    assert!(max_step > 0.0, "the fresh rate must move over the sequence");
+    let per = period.div_ceil(ack_us); // acks per period = A
+    let expect_evals = (acks as u64).div_ceil(per);
+    assert!(
+        cache.evaluations <= expect_evals + 1 && cache.evaluations + 1 >= expect_evals,
+        "evaluations {} vs expected ~{expect_evals}",
+        cache.evaluations
+    );
+    // (c) the derived envelope |cached − fresh| ≤ A·D.
+    let bound = per as f64 * max_step;
+    assert!(max_err <= bound, "max |cached - fresh| = {max_err:e} > A*D = {bound:e}");
+    // (d) What emission integrates is the repair volume. The cadenced rate
+    // is a sample-and-hold of the fresh one at instants independent of the
+    // channel noise, so its time mean tracks the per-symbol mean; asserted
+    // within 1 % over the sequence (empirical bound, ~4x the observed
+    // 0.27 %).
+    let (mean_f, mean_c) = (sum_f / acks as f64, sum_c / acks as f64);
+    assert!(
+        (mean_c - mean_f).abs() <= 0.01 * mean_f,
+        "repair volume drift: cached mean {mean_c} vs per-symbol mean {mean_f}"
+    );
+    errs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!(
+        "rate cadence: evals {} over {acks} acks (A = {per}), max step D = {max_step:.3e}, \
+         max err {max_err:.3e} (bound {bound:.3e}), p50 err {:.3e}, p99 err {:.3e}, \
+         mean fresh {mean_f:.5} cached {mean_c:.5}",
+        cache.evaluations,
+        errs[errs.len() / 2],
+        errs[errs.len() * 99 / 100]
+    );
+}
+
+#[test]
+fn rate_cadence_recomputes_on_window_or_path_change() {
+    let mut cache = RepairRateCache::default();
+    let mut n = 0u32;
+    let mut get = |c: &mut RepairRateCache, now, w, p| {
+        c.get_or_eval(now, w, p, 5_000, || {
+            n += 1;
+            n as f64
+        })
+    };
+    assert_eq!(get(&mut cache, 0, 200, 0), 1.0);
+    assert_eq!(get(&mut cache, 4_999, 200, 0), 1.0, "within the period: cached");
+    assert_eq!(get(&mut cache, 5_000, 200, 0), 2.0, "age = period: recomputed");
+    assert_eq!(get(&mut cache, 5_001, 64, 0), 3.0, "window change: recomputed at once");
+    assert_eq!(get(&mut cache, 5_002, 64, 1), 4.0, "worst path change: recomputed at once");
+    assert_eq!(cache.evaluations, 4);
+    // The period is continuous in SRTT (no hint key): SRTT/4 below 20 ms.
+    assert_eq!(RepairRateCache::period_us(std::time::Duration::from_millis(8)), 2_000);
+    assert_eq!(RepairRateCache::period_us(std::time::Duration::from_millis(400)), 5_000);
+    assert_eq!(RepairRateCache::period_us(std::time::Duration::ZERO), 0);
+}
+

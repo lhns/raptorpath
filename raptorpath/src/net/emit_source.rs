@@ -39,7 +39,7 @@ use super::{
     CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
     select_source_path, shed_allowed, shed_deadline_us, window_source_paths,
 };
-use crate::control::{FecRateController, SendRateAnchor, TaperBudget};
+use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
@@ -141,6 +141,9 @@ pub(crate) struct SenderState {
     pub taper_cache: Option<(f64, Option<(u64, u64)>, Duration)>,
     pub taper_cache_syms: usize,
     pub taper_cache_at_us: u64,
+    /// Stage 1c: the cadenced repair rate every window-path reader shares
+    /// (see [`RepairRateCache`] and [`cadenced_repair_rate`]).
+    pub rate_cache: RepairRateCache,
 
     // ── δ-honest overload shedding ──────────────────────────────────────
     /// Seqs shed by the δ law (never served again; pruned at the cumulative
@@ -222,6 +225,7 @@ impl SenderState {
             taper_cache: None,
             taper_cache_syms: 0,
             taper_cache_at_us: 0,
+            rate_cache: RepairRateCache::default(),
             shed_seqs: BTreeSet::new(),
             shed_total: 0,
             shed_denied: 0,
@@ -472,8 +476,16 @@ pub(crate) fn emit_source(
             }
             (rr, span)
         } else {
+        // The cadenced rate (Stage 1c): evaluated outside both locks on a
+        // miss, at most once per `RepairRateCache` period.
+        let window_rate = cadenced_repair_rate(
+            &mut st.rate_cache,
+            ctx.fec_controller,
+            ctx.scheduler,
+            st.encoder.window_size(),
+            now_us(),
+        );
         let (repair_rate, span_params, taper_rtt) = {
-            let ctrl = ctx.fec_controller.lock();
             let sched = ctx.scheduler.lock();
             let spare = sched.spare_capacity();
             let path_estimator = sched
@@ -484,7 +496,9 @@ pub(crate) fn emit_source(
                 .map(|p| &p.estimator);
             match path_estimator {
                 Some(est) => {
-                    let flat_rate = ctrl.compute_repair_rate_capped(est, spare, st.encoder.window_size());
+                    // `compute_repair_rate_capped`'s spare-capacity clamp,
+                    // applied per symbol to the cadenced rate.
+                    let flat_rate = window_rate.min(spare.max(0.0));
                     let taper = crate::control::TaperFunction::from_estimator(est, flat_rate);
                     let rr = if pol.taper_r_budget {
                         // Budget law (see `TaperBudget`): emission tracks
@@ -805,4 +819,53 @@ pub(crate) fn emit_source(
         }
     }
 
+}
+
+/// The worst-ε active path and its estimator — the path every window-path
+/// rate reader provisions for (max `loss_rate()` over `active_paths()`,
+/// ties to the last maximum, exactly the inline selection it replaces).
+pub(crate) fn worst_eps_path(
+    sched: &crate::scheduler::Scheduler,
+) -> Option<(u32, &crate::control::LossEstimator)> {
+    sched
+        .active_paths()
+        .iter()
+        .filter_map(|id| sched.path(*id).map(|p| (*id, p)))
+        .max_by(|a, b| {
+            a.1.estimator
+                .loss_rate()
+                .partial_cmp(&b.1.estimator.loss_rate())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(id, p)| (id, &p.estimator))
+}
+
+/// The window sender's repair rate on the Stage-1c cadence (see
+/// [`RepairRateCache`]): source emission, `serve_gaps` and the
+/// cumulative-ack advance all read it here. On a hit no evaluation runs; on
+/// a miss the inputs are snapshotted under the controller → scheduler locks
+/// (the one lock order used wherever both are held) and the ~0.1 ms rate
+/// mix is evaluated after both are released, so ack processing never waits
+/// on the solver. 0.0 when no path is active (as before).
+pub(crate) fn cadenced_repair_rate(
+    cache: &mut RepairRateCache,
+    fec_controller: &parking_lot::Mutex<FecRateController>,
+    scheduler: &parking_lot::Mutex<Scheduler>,
+    window: usize,
+    now_us: u64,
+) -> f64 {
+    let (path, period, snap) = {
+        let ctrl = fec_controller.lock();
+        let sched = scheduler.lock();
+        let Some((path, est)) = worst_eps_path(&sched) else {
+            return 0.0;
+        };
+        if let Some(rate) = cache.hit(now_us, window, path) {
+            return rate;
+        }
+        (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
+    };
+    let rate = snap.rate();
+    cache.store(now_us, window, path, period, rate);
+    rate
 }

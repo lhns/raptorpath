@@ -3608,8 +3608,10 @@ fn encode_to_interleave_buf(
 
     // Compute repair count
     let repair_count = {
-        let sched = scheduler.lock();
+        // Lock order controller → scheduler: the one order used wherever
+        // both are held (the window sender's rate/budget sites take it too).
         let ctrl = fec_controller.lock();
+        let sched = scheduler.lock();
 
         let worst_estimator = sched
             .active_paths()

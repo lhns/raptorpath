@@ -142,6 +142,114 @@ pub struct FecRateController {
     inner_feedback: f64,
 }
 
+/// Everything one evaluation of the rate mix reads (see
+/// [`FecRateController::rate_snapshot`]): the shared `RateInputs` and the
+/// contract's mixing weight β. Plain data (`Copy`), so it outlives the locks
+/// it was taken under.
+#[derive(Debug, Clone, Copy)]
+pub struct RateSnapshot {
+    inputs: raptorpath_math::RateInputs,
+    beta: f64,
+}
+
+impl RateSnapshot {
+    /// The rate mix `r(β) = (1−β)·r_anchor + β·r_late-is-fine` (paper §4.5).
+    pub fn rate(&self) -> f64 {
+        let mut inputs = self.inputs;
+        // The anchor term: δ_eff = the contract's own tail target.
+        inputs.bulk_late_is_fine = false;
+        let r_anchor = raptorpath_math::controller_rate(&inputs);
+        // The late-is-fine term: δ_eff = the completion-exposure glide (paper §4.6).
+        inputs.bulk_late_is_fine = true;
+        let r_bulk = raptorpath_math::controller_rate(&inputs);
+        // The mix, exact at the presets: β = 0 gives `1·r_anchor + 0·r_bulk`
+        // and β = 1 gives `0·r_anchor + 1·r_bulk`, both bit-exact for finite
+        // terms (`controller_rate` clamps to [0, max_overhead], so they are).
+        // Both terms are always evaluated: no β = 0 fast path (a mode switch).
+        let beta = self.beta;
+        (1.0 - beta) * r_anchor + beta * r_bulk
+    }
+}
+
+/// Upper bound (µs) on the repair-rate cadence: the sender's derived
+/// quantities refresh on a ~5 ms tick (store cap, pipeline depth, in-flight
+/// cap), and the rate joins them. Provenance: a RESOURCE bound stated
+/// outside the rate law, not a law parameter — one evaluation costs
+/// ~0.1 ms (VM, W = 200, the Stage-1b′ microbenchmark), so ≤ 1 per 5 ms
+/// caps the rate at ~2 % of a core. It changes no formula; it bounds how
+/// stale the formula's output may be.
+pub const RATE_CADENCE_MAX_US: u64 = 5_000;
+
+/// The window sender's repair-rate cadence (Stage 1c, a DISCLOSED numerical
+/// change): the rate mix is re-evaluated at most once per cadence period
+/// instead of once per emitted source symbol, and every window-path reader
+/// (source emission, `serve_gaps`, the cumulative-ack advance) reads the one
+/// cached value.
+///
+/// Why: one evaluation costs ~0.1 ms (the window-mass solve of the anchor
+/// term, which the mix always evaluates — no β = 0 skip), and the sender
+/// emits ~9 300 source symbols/s at c2: per-symbol evaluation is a full core.
+///
+/// The period is `min(RATE_CADENCE_MAX_US, SRTT/4)` of the path it reads —
+/// continuous in the measured SRTT, no hint or δ key. The estimator itself
+/// moves on the ack clock (≥ SRTT granularity per loss event), so a rate at
+/// most SRTT/4 old lags it by at most a quarter of its own update period.
+/// The value is recomputed immediately (whatever its age) when the encoder
+/// window or the worst-ε path it was computed for changes. Staleness is
+/// therefore exactly bounded: the returned rate is bit-identical to the
+/// fresh rate at an instant at most one period earlier with the same W and
+/// path (pinned by `rate_cadence_*` tests).
+#[derive(Debug, Clone, Default)]
+pub struct RepairRateCache {
+    /// (computed-at µs, window, path, period µs, rate)
+    entry: Option<(u64, usize, u32, u64, f64)>,
+    /// Evaluations performed (the mechanism gauge; tests assert it runs).
+    pub evaluations: u64,
+}
+
+impl RepairRateCache {
+    /// The cadence period for a path with smoothed RTT `srtt`.
+    pub fn period_us(srtt: std::time::Duration) -> u64 {
+        RATE_CADENCE_MAX_US.min(srtt.as_micros() as u64 / 4)
+    }
+
+    /// The cached rate if it is still valid at `now_us` for (`window`,
+    /// `path`), else `None`.
+    pub fn hit(&self, now_us: u64, window: usize, path: u32) -> Option<f64> {
+        match self.entry {
+            Some((at, w, p, period, rate))
+                if w == window && p == path && now_us.saturating_sub(at) < period =>
+            {
+                Some(rate)
+            }
+            _ => None,
+        }
+    }
+
+    /// Record a fresh evaluation made at `now_us`.
+    pub fn store(&mut self, now_us: u64, window: usize, path: u32, period_us: u64, rate: f64) {
+        self.entry = Some((now_us, window, path, period_us, rate));
+        self.evaluations += 1;
+    }
+
+    /// The cached rate, or `eval()` (stored) when stale.
+    pub fn get_or_eval(
+        &mut self,
+        now_us: u64,
+        window: usize,
+        path: u32,
+        period_us: u64,
+        eval: impl FnOnce() -> f64,
+    ) -> f64 {
+        if let Some(r) = self.hit(now_us, window, path) {
+            return r;
+        }
+        let r = eval();
+        self.store(now_us, window, path, period_us, r);
+        r
+    }
+}
+
 impl FecRateController {
     /// Create a new FecRateController with default feature toggles (all enabled).
     pub fn new(target_tail_loss: f64, max_overhead: f64, hint: ProtocolHint, backend: FecBackend, symbol_size: u16) -> Self {
@@ -286,6 +394,16 @@ impl FecRateController {
     ///
     /// `window_size`: current encoder window or block size.
     pub fn compute_repair_rate(&self, estimator: &LossEstimator, window_size: usize) -> f64 {
+        self.rate_snapshot(estimator, window_size).rate()
+    }
+
+    /// The inputs `compute_repair_rate` reads, snapshotted: the estimator
+    /// extraction (a few µs: the BOCD quantile, the mass moments) split from
+    /// the evaluation ([`RateSnapshot::rate`], ~0.1 ms with the window-mass
+    /// solve), so a caller can take the snapshot under the controller and
+    /// scheduler locks and evaluate after releasing them.
+    /// `compute_repair_rate` is exactly `rate_snapshot(..).rate()`.
+    pub fn rate_snapshot(&self, estimator: &LossEstimator, window_size: usize) -> RateSnapshot {
         // The formula itself lives in raptorpath-math::controller_rate — a
         // single shared implementation used by both this production
         // controller and the visualizer (raptorpath-wasm), so the two
@@ -314,15 +432,17 @@ impl FecRateController {
             0.0
         };
         // ── The rate mix, r(β) = (1−β)·r_anchor + β·r_late-is-fine ────────
-        // Paper §4.5. One `RateInputs` is built and the shared
-        // `controller_rate` is evaluated twice — once with the late-is-fine
-        // δ_eff law off (the anchor term) and once with it on (the Bulk
-        // term) — and the two are blended by the contract's bulkness. Both
-        // terms are always computed: no `hint ==` and no δ threshold selects
-        // a law. The second evaluation (a few dozen flops plus one
-        // `normal_quantile`) is deliberately not skipped at β = 0: that fast
-        // path would be a mode switch.
-        let mut inputs = raptorpath_math::RateInputs {
+        // Paper §4.5. One `RateInputs` is built here; `RateSnapshot::rate`
+        // evaluates the shared `controller_rate` twice — once with the
+        // late-is-fine δ_eff law off (the anchor term) and once with it on
+        // (the Bulk term) — and blends the two by the contract's bulkness.
+        // Both terms are always computed: no `hint ==` and no δ threshold
+        // selects a law, and neither term is skipped at β ∈ {0, 1} (that
+        // fast path would be a mode switch). The price is real: at Bulk the
+        // anchor term's δ_eff is the tail target, below ε̂, so it runs the
+        // full window-mass solve (~0.1 ms) — which is why the window sender
+        // reads the rate on a cadence (`RepairRateCache`), not per symbol.
+        let inputs = raptorpath_math::RateInputs {
             p_upper: estimator.predictive_loss_upper(0.95),
             sigma2,
             mean_burst,
@@ -350,17 +470,7 @@ impl FecRateController {
             saturation_cap: self.saturation_cap_enabled,
             max_overhead: self.max_overhead,
         };
-        // The anchor term: δ_eff = the contract's own tail target.
-        inputs.bulk_late_is_fine = false;
-        let r_anchor = raptorpath_math::controller_rate(&inputs);
-        // The late-is-fine term: δ_eff = the completion-exposure glide (paper §4.6).
-        inputs.bulk_late_is_fine = true;
-        let r_bulk = raptorpath_math::controller_rate(&inputs);
-        // The mix, exact at the presets: β = 0 gives `1·r_anchor + 0·r_bulk`
-        // and β = 1 gives `0·r_anchor + 1·r_bulk`, both bit-exact for finite
-        // terms (`controller_rate` clamps to [0, max_overhead], so they are).
-        let beta = self.effective_bulkness();
-        (1.0 - beta) * r_anchor + beta * r_bulk
+        RateSnapshot { inputs, beta: self.effective_bulkness() }
     }
 
     /// Derive the encoder window size W* from the current channel estimate
