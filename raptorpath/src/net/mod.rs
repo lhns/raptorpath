@@ -37,6 +37,8 @@ use sender_phases::{
     StoreCapState,
 };
 
+mod channel_set;
+pub use channel_set::*;
 mod recovery_laws;
 pub use recovery_laws::*;
 mod recovery_clock;
@@ -2054,7 +2056,7 @@ async fn run_window_sender(
     // Announce window mode to peer on all paths
     {
         let sched = scheduler.lock();
-        for pid in sched.active_paths() {
+        for pid in control_broadcast_paths(&sched) {
             let _ = transport.send_control_datagram(
                 pid,
                 ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
@@ -2342,20 +2344,7 @@ async fn run_window_sender(
                 // it is positive feedback (deeper ⇒ more queue ⇒ deeper). The
                 // in-flight cap holds the actual RTT near RTprop, so RTprop is
                 // the self-consistent anchor (the BBR discipline).
-                let rtprop_s = {
-                    let sched = scheduler.lock();
-                    sched
-                        .active_paths()
-                        .iter()
-                        .filter_map(|id| {
-                            sched.path(*id).map(|p| {
-                                p.min_rtt()
-                                    .map(|d| d.as_secs_f64())
-                                    .unwrap_or_else(|| p.srtt().as_secs_f64())
-                            })
-                        })
-                        .fold(0.0, f64::max)
-                };
+                let rtprop_s = channel_max_rtprop_s(&scheduler.lock());
                 let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
                     if pol.diag_on {
@@ -2375,14 +2364,7 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_infl_refresh_us) >= 5_000 {
                 dyn_infl_refresh_us = dnow;
-                let bdp: f64 = {
-                    let sched = scheduler.lock();
-                    sched
-                        .active_paths()
-                        .iter()
-                        .filter_map(|id| sched.path(*id).and_then(|p| p.copa_bdp_anchor()))
-                        .sum()
-                };
+                let bdp: f64 = channel_bdp_anchor_sum(&scheduler.lock());
                 if bdp > 0.0 {
                     dyn_infl_cap = ((pol.infl_bdp_gain * bdp).ceil() as u64).max(64);
                 }
@@ -2424,7 +2406,7 @@ async fn run_window_sender(
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
             let mut per_path: Vec<(u64, u64)> = Vec::new();
-            let ids = if cwnd_brake { sched.live_paths() } else { sched.active_paths() };
+            let ids = if cwnd_brake { sched.live_paths() } else { channel_paths(&sched) };
             for id in ids {
                 if let Some(p) = sched.path_mut(id) {
                     p.expire_in_flight();
@@ -2906,12 +2888,7 @@ async fn run_window_sender(
                         // Read here, after the `select!` await: this is the one
                         // phase whose value would be stale under a loop-top
                         // snapshot (see the note at the top of the loop).
-                        let srtt_us = {
-                            let sched = scheduler.lock();
-                            sched.active_paths().iter()
-                                .filter_map(|id| sched.path(*id).map(|p| p.srtt().as_micros() as u64))
-                                .max().unwrap_or(50_000)
-                        };
+                        let srtt_us = channel_max_srtt_us(&scheduler.lock()).unwrap_or(50_000);
                         ((srtt_us as f64) * pol.react_cap_cfg).max(1_000.0) as u64
                     } else {
                         0
@@ -3024,7 +3001,7 @@ async fn run_window_sender(
                 }
                 // Send Shutdown on all paths
                 let sched = scheduler.lock();
-                for pid in sched.active_paths() {
+                for pid in control_broadcast_paths(&sched) {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
@@ -3185,23 +3162,7 @@ async fn run_window_sender(
         if now_repair_us.saturating_sub(last_budget_refresh_us) >= NACK_REPAIR_COOLDOWN_US {
             last_budget_refresh_us = now_repair_us;
             // Update congestion state from scheduler
-            let (current_loss, current_rtt) = {
-                let sched = scheduler.lock();
-                let worst = sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .max_by(|a, b| {
-                        a.estimator
-                            .loss_rate()
-                            .partial_cmp(&b.estimator.loss_rate())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                match worst {
-                    Some(p) => (p.estimator.loss_rate(), p.copa_min_rtt()),
-                    None => (0.0, None),
-                }
-            };
+            let (current_loss, current_rtt) = nack_congestion_inputs(&scheduler.lock());
             nack_congestion.update(current_loss, current_rtt);
             // Idle-triggered recovery: if no new source symbol has been sent
             // for > 2×SRTT, the sender is idle-except-for-recovery — no
@@ -3233,12 +3194,7 @@ async fn run_window_sender(
             cached_nack_budget = {
                 let ctrl = fec_controller.lock();
                 let sched = scheduler.lock();
-                let worst_est = sched
-                    .active_paths()
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(|p| &p.estimator);
+                let worst_est = worst_eps_estimator(&sched);
                 match worst_est {
                     Some(est) => {
                         let p_upper = est.predictive_loss_upper(1.0 - ctrl.target_tail_loss());
@@ -3625,17 +3581,7 @@ fn encode_to_interleave_buf(
         let ctrl = fec_controller.lock();
         let sched = scheduler.lock();
 
-        let worst_estimator = sched
-            .active_paths()
-            .iter()
-            .filter_map(|id| sched.path(*id))
-            .max_by(|a, b| {
-                a.estimator
-                    .loss_rate()
-                    .partial_cmp(&b.estimator.loss_rate())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|p| &p.estimator);
+        let worst_estimator = worst_eps_estimator(&sched);
 
         match worst_estimator {
             Some(est) => ctrl.compute_repair_count(source_symbols, est, source_symbols as usize),
@@ -3756,15 +3702,7 @@ fn send_interleaved_batches(
     // 1) Move any drainable interleaver content into the carry queue.
     if !ileave.is_empty() {
         // Worst-path loss rate for tapered interleaving decay.
-        let loss_rate = {
-            let sched = scheduler.lock();
-            sched
-                .active_paths()
-                .iter()
-                .filter_map(|id| sched.path(*id))
-                .map(|p| p.estimator.loss_rate())
-                .fold(0.0f64, f64::max)
-        };
+        let loss_rate = channel_worst_loss_rate(&scheduler.lock());
         let batches = if ileave.should_drain() {
             ileave.drain(loss_rate)
         } else {
@@ -4020,13 +3958,7 @@ fn arq_loss_timeout(srtt: Duration) -> Duration {
 
 /// Worst-path loss estimate (the same ε̂ the proactive FEC sizing uses).
 fn worst_loss_rate(scheduler: &Arc<parking_lot::Mutex<Scheduler>>) -> f64 {
-    let sched = scheduler.lock();
-    sched
-        .active_paths()
-        .iter()
-        .filter_map(|id| sched.path(*id))
-        .map(|p| p.estimator.loss_rate())
-        .fold(0.0f64, f64::max)
+    channel_worst_loss_rate(&scheduler.lock())
 }
 
 /// Turn loss events into repair sends: plan under the ARQ lock, then send

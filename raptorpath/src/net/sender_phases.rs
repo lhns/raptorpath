@@ -191,30 +191,14 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // over the same paths.
                     let act = sched.active_paths();
                     store_cap_sf_record(live.len(), act.len());
-                    let set: &[u32] = if pol.store_cap_unified { &live } else { &act };
-                    let mut bdp = 0.0f64;
                     // Warm-anchor slots for the honest per-path cap, in
                     // path-set order — collected here, evaluated once by
                     // `honest_cap_terms` below (the law lives there).
-                    let want_k = pol.honest_cap_on;
-                    let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
-                    for id in set.iter() {
-                        if let Some(p) = sched.path(*id) {
-                            if let Some(a) = p.copa_bdp_anchor() {
-                                bdp += a;
-                                if want_k {
-                                    slots.push(Some(HonestCapPath {
-                                        id: *id,
-                                        anchor: Some(a),
-                                        rate: p.btlbw_sym_per_s(),
-                                        srtt: p.srtt(),
-                                        rtprop: p.min_rtt(),
-                                        k_raw: p.k_raw(),
-                                    }));
-                                }
-                            }
-                        }
-                    }
+                    let (bdp, slots) = store_cap_pool_inputs(
+                        &sched,
+                        pol.honest_cap_on,
+                        pol.store_cap_unified,
+                    );
                     let terms =
                         honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain);
                     // hsum = 0.0 whenever honest_cap_on is false, and the
@@ -895,7 +879,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             let ids = if pol.recov_mp_live {
                 sched.live_paths()
             } else {
-                sched.active_paths()
+                channel_paths(&sched)
             };
             if pol.recov_mp_law || pol.recov_sp || pol.diag_on {
                 mp_n_paths = ids.len();
@@ -1487,10 +1471,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         let derived_window = {
             let mut ctrl = fec_controller.lock();
             let sched = scheduler.lock();
-            let path_est = sched.active_paths().iter()
-                .filter_map(|id| sched.path(*id))
-                .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|p| &p.estimator);
+            let path_est = worst_eps_estimator(&sched);
             // χ, the completion exposure (`RWM_COMPLETION_EXPOSURE`, paper
             // §4.6). The perf client knows the remaining bytes of the object
             // it is feeding. Under the gate it publishes them into a

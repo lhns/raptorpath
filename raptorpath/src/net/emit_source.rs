@@ -415,10 +415,8 @@ pub(crate) fn emit_source(
     if !pol.generation {
         let epsilon = {
             let sched = ctx.scheduler.lock();
-            sched.active_paths().iter()
-                .filter_map(|id| sched.path(*id))
-                .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|p| p.estimator.loss_rate())
+            super::worst_eps_estimator(&sched)
+                .map(|e| e.loss_rate())
                 .unwrap_or(0.0)
         };
         st.retransmit_buffer.insert(wire_sym.block_id, (now_us(), epsilon, source_path));
@@ -488,12 +486,7 @@ pub(crate) fn emit_source(
         let (repair_rate, span_params, taper_rtt) = {
             let sched = ctx.scheduler.lock();
             let spare = sched.spare_capacity();
-            let path_estimator = sched
-                .active_paths()
-                .iter()
-                .filter_map(|id| sched.path(*id))
-                .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|p| &p.estimator);
+            let path_estimator = super::worst_eps_estimator(&sched);
             match path_estimator {
                 Some(est) => {
                     // `compute_repair_rate_capped`'s spare-capacity clamp,
@@ -669,16 +662,8 @@ pub(crate) fn emit_source(
             // Otherwise, generate a new repair symbol (FEC).
             let (correction_sym, correction_kind) = {
                 let now = now_us();
-                let (srtt_secs, rttvar_secs, epsilon) = {
-                    let sched = ctx.scheduler.lock();
-                    let worst = sched.active_paths().iter()
-                        .filter_map(|id| sched.path(*id))
-                        .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal));
-                    match worst {
-                        Some(p) => (p.estimator.rtt().as_secs_f64(), p.estimator.rtt().as_secs_f64() * 0.1, p.estimator.loss_rate()),
-                        None => (0.05, 0.005, 0.0),
-                    }
-                };
+                let (srtt_secs, rttvar_secs, epsilon) =
+                    super::p_lost_inputs(&ctx.scheduler.lock());
 
                 // Find oldest retransmit candidate and compute P_lost
                 let mut use_retransmit = false;
@@ -821,23 +806,13 @@ pub(crate) fn emit_source(
 
 }
 
-/// The worst-ε active path and its estimator — the path every window-path
-/// rate reader provisions for (max `loss_rate()` over `active_paths()`,
-/// ties to the last maximum, exactly the inline selection it replaces).
+/// The worst-ε channel path and its estimator — the path every window-path
+/// rate reader provisions for ([`super::worst_eps_channel_path`]: max
+/// `loss_rate()` over [`super::channel_paths`], ties to the last maximum).
 pub(crate) fn worst_eps_path(
     sched: &crate::scheduler::Scheduler,
 ) -> Option<(u32, &crate::control::LossEstimator)> {
-    sched
-        .active_paths()
-        .iter()
-        .filter_map(|id| sched.path(*id).map(|p| (*id, p)))
-        .max_by(|a, b| {
-            a.1.estimator
-                .loss_rate()
-                .partial_cmp(&b.1.estimator.loss_rate())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(id, p)| (id, &p.estimator))
+    super::worst_eps_channel_path(sched).map(|(id, p)| (id, &p.estimator))
 }
 
 /// The window sender's repair rate on the Stage-1c cadence (see

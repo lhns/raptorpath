@@ -215,7 +215,7 @@ pub(crate) async fn run_block_sender(
             // Send Shutdown control message to peer on all paths
             {
                 let sched = sender_scheduler.lock();
-                for pid in sched.active_paths() {
+                for pid in super::control_broadcast_paths(&sched) {
                     let _ = sender_transport.send_control_datagram(
                         pid,
                         ControlMessage::Shutdown,

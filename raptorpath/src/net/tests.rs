@@ -5303,3 +5303,155 @@ fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
     assert!(64 * (bulk + reorder::ENTRY_OVERHEAD) <= BLOCK_REORDER_MAX_BYTES);
     assert!(64 * (bulk + block_arq::RETAIN_PER_BLOCK_OVERHEAD) <= block_arq::RETAIN_BUDGET_BYTES);
 }
+
+// ── Plan 2b: the channel's path set is membership, not "can send now" ──
+//
+// Every "what is the channel / how big is the pool" reader must return the
+// SAME value whether or not the paths are cwnd-full. `active_paths()` (the
+// placement filter: `available() > 0`) is empty exactly while a wire-bound
+// sender's paths carry the transfer, so a reader on it jumps to its
+// empty-set fallback (Σ = 0 → boot cap 128, ε = 0, P_lost constants
+// (0.05, 0.005, 0.0), NACK inputs (0.0, None), react-cap 50 ms) at the
+// moment the channel is busiest. Each test below: a warm two-path channel,
+// the quantity read unsaturated, both paths driven to `in_flight = cwnd`,
+// the quantity read again — ABSOLUTE equality, plus "not the fallback".
+
+/// A warm, heterogeneous two-path channel: path 0 = SRTT 20 ms / ε≈0.02,
+/// path 1 = SRTT 60 ms / ε≈0.10 (the worst-ε path). Both BDP anchors warm
+/// (the c1-shape send-interval warm-up of the DH store-cap test: RTprop
+/// 2 ms, deliveries lagging sends by ~3 ms).
+fn channel_fixture() -> Scheduler {
+    let clock = Arc::new(crate::scheduler::MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+    sched.add_path(1);
+    for id in [0u32, 1] {
+        sched.path_mut(id).unwrap().record_rtt_sample(Duration::from_millis(2));
+    }
+    let step = Duration::from_micros(41);
+    for seq in 0..4000u64 {
+        for id in [0u32, 1] {
+            let p = sched.path_mut(id).unwrap();
+            p.on_src_sent(seq, false);
+            if seq >= 72 {
+                p.on_src_delivered_seq(seq - 72);
+            }
+        }
+        clock.advance(step);
+    }
+    for (id, ms, lost) in [(0u32, 20u64, 2u32), (1, 60, 10)] {
+        let p = sched.path_mut(id).unwrap();
+        for _ in 0..32 {
+            p.record_rtt_sample(Duration::from_millis(ms));
+            p.estimator.record_rtt(Duration::from_millis(ms));
+            p.estimator.record_batch(100, 100 - lost);
+        }
+    }
+    for id in [0u32, 1] {
+        let p = sched.path(id).unwrap();
+        assert!(p.copa_bdp_anchor().is_some(), "path {id}: BDP anchor must be warm");
+        assert!(p.available() > 0, "path {id}: fixture starts unsaturated");
+    }
+    sched
+}
+
+/// Drive every path to `in_flight = cwnd` (the wire-bound resting state).
+fn saturate_channel(sched: &mut Scheduler) {
+    for id in [0u32, 1] {
+        let p = sched.path_mut(id).unwrap();
+        let cw = p.cwnd;
+        p.charge_in_flight(cw);
+        assert_eq!(p.available(), 0, "path {id} must be cwnd-full");
+    }
+    assert!(sched.active_paths().is_empty(), "precondition: placement set empty");
+    let mut live = sched.live_paths();
+    live.sort_unstable();
+    assert_eq!(live, vec![0, 1], "precondition: both paths still members");
+}
+
+/// Read `f` on the fixture unsaturated, then saturated.
+fn read_both<T>(f: impl Fn(&Scheduler) -> T) -> (T, T) {
+    let mut sched = channel_fixture();
+    let before = f(&sched);
+    saturate_channel(&mut sched);
+    (before, f(&sched))
+}
+
+#[test]
+fn saturated_channel_store_cap_sigma_has_no_boot_cliff() {
+    // (Σ anchor, number of honest-cap slots) — the plain dyn-cap's inputs
+    // at the shipped default (`unified = false`).
+    let (un, sat) = read_both(|s| {
+        let (bdp, slots) = store_cap_pool_inputs(s, true, false);
+        (bdp, slots.len())
+    });
+    assert!(un.0 > 0.0 && un.1 == 2, "unsaturated: both anchors in the Σ ({un:?})");
+    assert_eq!(
+        sat, un,
+        "saturated: the store-cap Σ must not lose the cwnd-full paths (Σ = 0 is the boot-cap-128 cliff)"
+    );
+}
+
+#[test]
+fn saturated_channel_keeps_the_worst_eps_pick() {
+    let (un, sat) = read_both(|s| {
+        worst_eps_channel_path(s).map(|(id, p)| (id, p.estimator.loss_rate()))
+    });
+    assert_eq!(un.map(|x| x.0), Some(1), "path 1 is the worst-ε path");
+    assert_eq!(sat, un, "saturated: the worst-ε pick must not vanish");
+    let (un, sat) = read_both(channel_worst_loss_rate);
+    assert!(un > 0.05, "worst ε ≈ 0.10 ({un})");
+    assert_eq!(sat, un, "saturated: the channel's worst ε must not fall to 0");
+    // The emit/rate reader's own entry point routes through the same pick.
+    let (un, sat) = read_both(|s| super::emit_source::worst_eps_path(s).map(|(id, _)| id));
+    assert_eq!((un, sat), (Some(1), Some(1)), "worst_eps_path must survive saturation");
+}
+
+#[test]
+fn saturated_channel_keeps_the_p_lost_inputs() {
+    let (un, sat) = read_both(p_lost_inputs);
+    assert_ne!(un, (0.05, 0.005, 0.0), "unsaturated: measured, not the fallback");
+    assert_eq!(
+        sat, un,
+        "saturated: P_lost inputs must be the measured worst path, not (0.05, 0.005, 0.0)"
+    );
+}
+
+#[test]
+fn saturated_channel_keeps_the_nack_budget_inputs() {
+    let (un, sat) = read_both(nack_congestion_inputs);
+    assert!(un.0 > 0.0 && un.1.is_some(), "unsaturated: measured ({un:?})");
+    assert_eq!(sat, un, "saturated: NACK congestion inputs must not fall to (0.0, None)");
+    // The ADR-0050 budget's estimator inputs.
+    let (un, sat) = read_both(|s| {
+        worst_eps_estimator(s).map(|e| (e.predictive_loss_upper(0.99), e.nack_effectiveness()))
+    });
+    assert!(un.is_some(), "unsaturated: an estimator is picked");
+    assert_eq!(sat, un, "saturated: the NACK budget must still see the worst estimator");
+}
+
+#[test]
+fn saturated_channel_keeps_the_react_cap_srtt_and_pool_sums() {
+    let (un, sat) = read_both(channel_max_srtt_us);
+    assert!(un.is_some_and(|v| v >= 50_000), "max SRTT = the 60 ms path ({un:?})");
+    assert_eq!(sat, un, "saturated: react-cap SRTT must not fall to the 50 ms default");
+    let (un, sat) = read_both(channel_max_rtprop_s);
+    assert!(un > 0.0, "max RTprop is measured ({un})");
+    assert_eq!(sat, un, "saturated: generation RTprop must not fall to 0");
+    let (un, sat) = read_both(channel_bdp_anchor_sum);
+    assert!(un > 0.0);
+    assert_eq!(sat, un, "saturated: the infl-BDP Σ must not fall to 0");
+}
+
+#[test]
+fn shutdown_and_window_start_reach_a_saturated_path() {
+    let (mut un, mut sat) = read_both(control_broadcast_paths);
+    un.sort_unstable();
+    sat.sort_unstable();
+    assert_eq!(un, vec![0, 1]);
+    assert_eq!(sat, vec![0, 1], "WindowStart / Shutdown must go out on cwnd-full paths");
+    let (mut un, mut sat) = read_both(channel_paths);
+    un.sort_unstable();
+    sat.sort_unstable();
+    assert_eq!(sat, un, "the channel set is membership");
+}
