@@ -1919,6 +1919,76 @@ fn sack_report_at_the_gap_cap_keeps_its_tail_range() {
     assert_eq!(sack_to_gaps(delivered, &ranges).len(), MAX_NACK_GAPS);
 }
 
+/// Exactly `MAX_SACK_RANGES` true runs are all reported; one more run is cut
+/// at the cap and the cut list is still an honest prefix (the next run is
+/// simply unreported, so its leading hole is not released either).
+#[test]
+fn sack_report_is_capped_at_max_sack_ranges_as_a_prefix() {
+    let delivered = 100u64;
+    for n_runs in [MAX_SACK_RANGES, MAX_SACK_RANGES + 1] {
+        let mut received: BTreeSet<u64> =
+            (0..n_runs as u64).map(|i| delivered + 2 + 3 * i).collect();
+        received.insert(delivered);
+        let seen = *received.iter().next_back().unwrap();
+        let truth = true_received_runs(&received, delivered, seen);
+        assert_eq!(truth.len(), n_runs);
+        let ranges = received_sack_ranges(&received, delivered, seen);
+        assert_eq!(ranges.len(), n_runs.min(MAX_SACK_RANGES));
+        assert_eq!(ranges[..], truth[..ranges.len()]);
+        // Every gap the sender derives is a true hole.
+        for (a, b) in sack_to_gaps(delivered, &ranges) {
+            for s in a..=b {
+                assert!(!received.contains(&s), "derived gap seq {s} was received");
+            }
+        }
+    }
+    // Degenerate frontiers: nothing above the cumulative point.
+    let received: BTreeSet<u64> = [5u64, 6, 7].into_iter().collect();
+    assert!(received_sack_ranges(&received, 7, 7).is_empty());
+    assert!(received_sack_ranges(&received, 9, 7).is_empty());
+}
+
+/// The SACK cap is what one control datagram can carry: a `WindowAck` with
+/// `n` ranges serializes to exactly `WINDOW_ACK_BASE_BYTES +
+/// WINDOW_ACK_BYTES_PER_RANGE·n` bytes, the cap fits the datagram budget
+/// with the declared margin, and it is the LARGEST such `n`.
+#[test]
+fn window_ack_sack_size_fits_the_control_datagram() {
+    use crate::transport::{ControlMessage, WireMessage};
+    let size = |n: usize| {
+        WireMessage::Control(ControlMessage::WindowAck {
+            received_up_to: u64::MAX,
+            sack_ranges: (0..n as u64).map(|i| (u64::MAX - i, u64::MAX)).collect(),
+            echo_send_timestamp_us: u64::MAX,
+            jitter_us: u32::MAX,
+            cumulative_received: u64::MAX,
+            cum_expected: u64::MAX,
+            cum_received: u64::MAX,
+        })
+        .serialize()
+        .expect("serialize")
+        .len()
+    };
+    assert_eq!(size(0), WINDOW_ACK_BASE_BYTES, "WindowAck base size moved");
+    assert_eq!(size(1) - size(0), WINDOW_ACK_BYTES_PER_RANGE, "per-range stride moved");
+    let at_cap = size(MAX_SACK_RANGES);
+    assert_eq!(at_cap, WINDOW_ACK_BASE_BYTES + WINDOW_ACK_BYTES_PER_RANGE * MAX_SACK_RANGES);
+    assert!(
+        at_cap + SACK_RANGE_MARGIN_BYTES <= SACK_DATAGRAM_BUDGET,
+        "WindowAck at MAX_SACK_RANGES={MAX_SACK_RANGES} is {at_cap} B, over the \
+         {SACK_DATAGRAM_BUDGET} B control-datagram budget less margin"
+    );
+    assert!(
+        size(MAX_SACK_RANGES + 1) + SACK_RANGE_MARGIN_BYTES > SACK_DATAGRAM_BUDGET,
+        "MAX_SACK_RANGES is not the largest count that fits"
+    );
+    // Never below the old per-report gap cap's worth of ranges: a report
+    // with MAX_NACK_GAPS gaps (MAX_NACK_GAPS + 1 runs) is still uncut.
+    assert!(MAX_SACK_RANGES > MAX_NACK_GAPS);
+    eprintln!("WindowAck: {} B + {} B/range; cap {MAX_SACK_RANGES} -> {at_cap} B of {SACK_DATAGRAM_BUDGET}",
+        WINDOW_ACK_BASE_BYTES, WINDOW_ACK_BYTES_PER_RANGE);
+}
+
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
 
 #[test]
