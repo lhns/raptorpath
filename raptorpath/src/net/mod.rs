@@ -237,7 +237,12 @@ const BLOCK_REORDER_MAX_BYTES: usize = block_arq::RETAIN_MAX_BYTES
 /// truly unrecoverable (bounded stall, then force-delivery).
 const BLOCK_REORDER_MIN_HOLD: Duration = Duration::from_millis(60);
 const BLOCK_REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
-/// Maximum number of gap ranges in a WindowNack message.
+/// Per-report gap cap: at most this many missing-seq gaps are acted on per
+/// report — the sender's [`sack_to_gaps`] inversion of one WindowAck's SACK
+/// ranges (the NACK repair loop's per-report work) and the receiver's
+/// `RepairRequest` hole list (`holes_at_least`). It does NOT bound the SACK
+/// encoding itself: that is [`MAX_SACK_RANGES`], derived from the control
+/// datagram size. (No `WindowNack` message exists on this wire.)
 pub const MAX_NACK_GAPS: usize = 20;
 /// Maximum repair symbols generated per NACK received.
 pub const MAX_NACK_REPAIRS_PER_NACK: usize = 10;

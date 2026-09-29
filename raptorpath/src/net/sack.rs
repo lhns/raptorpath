@@ -8,7 +8,7 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
-// WindowNack gap computation
+// Gap computation and the SACK encoding (no WindowNack exists on this wire)
 // ---------------------------------------------------------------------------
 
 /// The receiver-seat repair request as it crosses the task seam (paper
@@ -220,26 +220,74 @@ pub fn window_ack_emission(
     (advertise || ack_merge, advertise)
 }
 
+/// The byte budget one SACK-bearing control datagram may use. A
+/// `WindowAck` rides a single QUIC DATAGRAM (`send_control_datagram`: no
+/// fragmentation; an oversize send is an `Err` its callers discard), so the
+/// report must fit the smallest datagram any path can carry. That is
+/// QUIC's guaranteed minimum 1200-byte UDP payload (RFC 9000 §14) — the
+/// value quinn falls back to under `RWM_MTU_FLOOR=0` or a black-hole reset
+/// without the floor — minus the same conservative 45-byte QUIC short-header
+/// + PN + AEAD tag + DATAGRAM frame overhead `mtu_floor_covers_symbol_batch`
+/// budgets against (quinn's own figure is ~33). With the ADR-0055 floor
+/// (1350) the real room is 150 bytes larger still.
+pub const SACK_DATAGRAM_BUDGET: usize = 1200 - 45;
+
+/// Serialized size of a `WireMessage::Control(WindowAck)` with zero SACK
+/// ranges: 4 magic + 4 version + 4 + 4 enum tags + 8 `received_up_to` + 8
+/// vec length + 8 echo + 4 jitter + 3×8 counters (bincode fixint). Pinned by
+/// `window_ack_sack_size_fits_the_control_datagram`.
+pub const WINDOW_ACK_BASE_BYTES: usize = 68;
+
+/// Serialized size of one SACK range `(u64, u64)` (bincode fixint). Pinned
+/// by the same test.
+pub const WINDOW_ACK_BYTES_PER_RANGE: usize = 16;
+
+/// Slack kept below [`SACK_DATAGRAM_BUDGET`] for header-length variation
+/// (CID/PN length) and future fields.
+pub const SACK_RANGE_MARGIN_BYTES: usize = 48;
+
+/// Maximum SACK ranges one `WindowAck` carries: the largest `n` with
+/// `68 + 16·n ≤ 1155 − 48`, i.e. (1155 − 68 − 48) / 16 = 64 (1092 bytes on
+/// the wire). Derived from what one control datagram can carry, not from the
+/// sender's per-report NACK cap ([`MAX_NACK_GAPS`]).
+pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
+    - WINDOW_ACK_BASE_BYTES
+    - SACK_RANGE_MARGIN_BYTES)
+    / WINDOW_ACK_BYTES_PER_RANGE;
+
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
 /// of seqs the receiver has in (`delivered`, `seen`] — the inverse of
 /// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
 /// window's stalled-hole re-advertisement.
+///
+/// At most [`MAX_SACK_RANGES`] ranges, and a capped report is a PREFIX of
+/// the true received runs: the last range ends where the receiver's run
+/// really ends, before the first hole the report cannot name. The wire's
+/// only honest truncation is a prefix — [`sack_to_gaps`] reads everything
+/// above the last range as "not reported (may be in flight)". Ending the
+/// list at `seen` instead would claim every unreported hole as received:
+/// the sender would release those slots, Copa would count them delivered
+/// and nothing would ever NACK them (plan 2a). Below the cap the output is
+/// the full received-run list, unchanged.
 pub fn received_sack_ranges(
     received: &BTreeSet<u64>,
     delivered: u64,
     seen: u64,
 ) -> Vec<(u64, u64)> {
-    let gaps = compute_gap_ranges(received, delivered, seen);
-    let mut sack_ranges = Vec::new();
-    let mut cursor = delivered + 1;
-    for &(gap_start, gap_end) in &gaps {
-        if cursor < gap_start {
-            sack_ranges.push((cursor, gap_start - 1));
-        }
-        cursor = gap_end + 1;
+    let mut sack_ranges: Vec<(u64, u64)> = Vec::new();
+    if seen <= delivered {
+        return sack_ranges;
     }
-    if cursor <= seen {
-        sack_ranges.push((cursor, seen));
+    for &s in received.range(delivered + 1..=seen) {
+        match sack_ranges.last_mut() {
+            Some((_, e)) if *e + 1 == s => *e = s,
+            _ => {
+                if sack_ranges.len() >= MAX_SACK_RANGES {
+                    break;
+                }
+                sack_ranges.push((s, s));
+            }
+        }
     }
     sack_ranges
 }
