@@ -14,8 +14,17 @@
 //!   later batches on the same path are acked (dup-ACK analogue, reorder
 //!   tolerant) or after an SRTT-scaled timeout (tail batches with no
 //!   later traffic).
-//! - **Retained blocks**: source data for the last `RETAIN_MAX_BLOCKS`
-//!   blocks (byte-capped LRU) so fresh repairs can be minted post-hoc.
+//! - **Retained blocks**: source data (plus any cached repair encoder)
+//!   for recently encoded blocks, in an LRU bounded by BYTES only
+//!   (`RETAIN_BUDGET_BYTES`: a `RETAIN_MAX_BYTES` = 4 MiB block-DATA
+//!   horizon plus per-block bookkeeping) so fresh repairs can be minted
+//!   post-hoc. The horizon is a byte horizon on purpose: a block-count cap
+//!   would give small-block geometries (Auto 16 KiB, Realtime 4 KiB) a
+//!   proportionally shorter repair horizon than Bulk's 64 KiB blocks.
+//!   Cached repair encoders are a rebuildable cache charged to the same
+//!   budget: under byte pressure they are dropped (LRU, never the block
+//!   being repaired) BEFORE any block data is evicted, so encoders never
+//!   shorten the data horizon; a dropped encoder is rebuilt on demand.
 //!   Rateless backends (RaptorQ, RLC) mint new repair symbols — any repair
 //!   fills any hole, strictly better than resending the lost symbol.
 //!   Fixed-rate backends (RS) resend the exact missing symbols,
@@ -35,13 +44,54 @@ use bytes::Bytes;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
-/// Maximum blocks retained for post-hoc repair generation.
-pub const RETAIN_MAX_BLOCKS: usize = 64;
-/// Maximum bytes of retained block data (~4 MB).
+/// Block-DATA retention horizon (4 MiB — the historical Bulk horizon,
+/// 64 × 64 KiB). Every profile geometry at full block size keeps at least
+/// this much block data retained (`RETAIN_BUDGET_BYTES` adds the per-block
+/// bookkeeping on top). There is deliberately no block-count cap (see the
+/// module doc).
 pub const RETAIN_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Smallest full block of any protocol-hint profile
+/// (`BlockProfile::from_hint(Realtime)`, 4 KiB; pinned by a test in
+/// `net/tests.rs`). Sizes the bookkeeping allowance so the data horizon
+/// holds for every profile geometry.
+pub const BLOCK_MIN_PROFILE_BLOCK_SIZE: usize = 4 * 1024;
+/// Fixed bookkeeping charge per retained block: the `RetainedBlock` struct
+/// plus hash-map / LRU-index entry slack. Blocks flushed on timeout can be
+/// tiny (one inner packet), so charging `data.len()` alone would let the
+/// retained COUNT grow without bound under a byte cap; with this charge the
+/// count is bounded by `RETAIN_BUDGET_BYTES / RETAIN_PER_BLOCK_OVERHEAD`.
+pub const RETAIN_PER_BLOCK_OVERHEAD: usize = std::mem::size_of::<RetainedBlock>() + 64;
+/// The single retention byte budget:
+///
+///   RETAIN_BUDGET_BYTES = RETAIN_MAX_BYTES
+///                       + RETAIN_PER_BLOCK_OVERHEAD × (RETAIN_MAX_BYTES / BLOCK_MIN_PROFILE_BLOCK_SIZE)
+///
+/// i.e. the 4 MiB data horizon plus the bookkeeping of the most blocks any
+/// profile's full blocks can put in it, so the data horizon is never eaten
+/// by bookkeeping at any profile geometry (Bulk keeps ≥ 64 full blocks).
+/// Blocks (data + bookkeeping) are evicted only while they alone exceed it;
+/// cached encoders fill whatever headroom remains and are dropped first.
+pub const RETAIN_BUDGET_BYTES: usize = RETAIN_MAX_BYTES
+    + RETAIN_PER_BLOCK_OVERHEAD * (RETAIN_MAX_BYTES / BLOCK_MIN_PROFILE_BLOCK_SIZE);
+/// Worst-case number of blocks the byte budget can hold (every block
+/// empty). Companions that remember per-block state (the done ring) are
+/// sized from this so they cannot forget a block while its peers are still
+/// inside the horizon.
+pub const RETAIN_MAX_BLOCKS_DERIVED: usize = RETAIN_BUDGET_BYTES / RETAIN_PER_BLOCK_OVERHEAD;
+/// Smallest block-mode symbol size of any protocol-hint profile
+/// (`BlockProfile::from_hint(Realtime)`, 512 B; pinned by a test in
+/// `net/tests.rs`). Used to derive the ledger horizon.
+pub const BLOCK_MIN_SYMBOL_SIZE: usize = 512;
 /// Maximum un-acked batches tracked; oldest entries drop silently beyond
 /// this (the in_flight budget bounds real outstanding data well below it).
-pub const LEDGER_MAX_BATCHES: usize = 4096;
+/// Sized so the ledger cannot drop a batch whose block is still inside the
+/// retention byte horizon: 4 MiB of single-symbol batches at the smallest
+/// profile symbol is `RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZE` = 8192.
+pub const LEDGER_MAX_BATCHES: usize = if RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZE > 4096 {
+    RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZE
+} else {
+    4096
+};
 /// Later same-path acks required to declare an un-acked batch lost
 /// (dup-ACK analogue; tolerates datagram reordering within a path).
 pub const LATER_ACK_LOSS_THRESHOLD: u8 = 3;
@@ -63,7 +113,48 @@ pub const MAX_REANNOUNCE_ROUNDS: u8 = 16;
 /// handful of capped rounds at the (clamped) re-announce cadence.
 pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// Completed/failed block ids remembered to suppress late spurious repairs.
-const DONE_RING_CAP: usize = 1024;
+/// A done block is never retained (`on_block_done` drops it,
+/// `on_block_encoded` refuses done ids), so this ring cannot drop a retained
+/// block's bookkeeping. It is sized to the retention horizon's worst-case
+/// block count so a late loss event for a done block is recognised as
+/// "done" (suppressed silently) rather than miscounted as an eviction skip
+/// (`repair_skips_evicted`) while its peers are still retained.
+const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
+    RETAIN_MAX_BLOCKS_DERIVED
+} else {
+    1024
+};
+/// Log the evicted-block repair skip once per this many skips (plus the
+/// first), never per block.
+const EVICTED_SKIP_LOG_EVERY: u64 = 64;
+
+/// Estimated heap footprint of a cached repair encoder for a block.
+///
+/// Read from the backends' constructors (no exact size API exists):
+/// - RLC: its k padded source shards, `k × T`.
+/// - RS: k source shards + `min(r, 255 − k)` pre-generated parity shards.
+/// - RaptorQ (`raptorq` 2.0.1 `SourceBlockEncoder`): its K padded source
+///   symbols plus the intermediate-symbol slab of L = K' + S + H
+///   symbols. `num_intermediate_symbols` is not re-exported by the crate,
+///   so L is charged as K' (`extended_source_block_symbols`, the RFC 6330
+///   lower bound L ≥ K'): `(K + K') × T`. This is a LOWER bound on the true
+///   footprint (it omits the S + H LDPC/HDPC rows, a few tens of symbols);
+///   Vec/struct headers are also omitted.
+fn encoder_footprint_bytes(backend: FecBackend, params: &EncodingParams) -> usize {
+    let k = params.source_symbols as usize;
+    let t = params.symbol_size as usize;
+    match backend {
+        FecBackend::Rlc => k * t,
+        FecBackend::ReedSolomon => {
+            let r = (params.repair_count as usize).min(255usize.saturating_sub(k));
+            (k + r) * t
+        }
+        FecBackend::RaptorQ => {
+            let k_ext = raptorq::extended_source_block_symbols(params.source_symbols) as usize;
+            (k + k_ext) * t
+        }
+    }
+}
 
 /// One sent batch awaiting its Ack.
 struct BatchEntry {
@@ -94,6 +185,31 @@ struct RetainedBlock {
     /// BlockStart is orphaned with an empty ledger, so ARQ repair rounds never
     /// engage — this is its own recovery budget).
     reannounce_rounds: u8,
+    /// Key of this block in `BlockArq::retain_order` (and in `enc_order`
+    /// while an encoder is cached) — monotone LRU stamp.
+    lru_stamp: u64,
+    /// Footprint charged for the cached encoder (0 when none is cached).
+    enc_bytes: usize,
+}
+
+impl RetainedBlock {
+    /// Bytes this block's data charges to the block budget.
+    fn data_charge(&self) -> usize {
+        self.data.len() + RETAIN_PER_BLOCK_OVERHEAD
+    }
+
+    /// Materialize the cached repair encoder (once; rebuilt if it was
+    /// dropped under byte pressure). Returns the newly added footprint (0
+    /// if it was already cached) so the caller can charge it.
+    fn ensure_encoder(&mut self) -> usize {
+        if self.encoder.is_some() {
+            return 0;
+        }
+        self.encoder = Some(self.backend.create_encoder(&self.data, self.params));
+        let fp = encoder_footprint_bytes(self.backend, &self.params);
+        self.enc_bytes = fp;
+        fp
+    }
 }
 
 /// Symbols of `block_id` presumed lost on `path_id`.
@@ -121,39 +237,51 @@ pub struct RepairPlan {
 pub struct BlockArq {
     ledger: BTreeMap<u64, BatchEntry>,
     retained: HashMap<u64, RetainedBlock>,
-    /// LRU order of retained block ids (front = coldest).
-    retain_order: VecDeque<u64>,
-    retained_bytes: usize,
+    /// LRU order: stamp -> block id (first = coldest). O(log n) touch/evict.
+    retain_order: BTreeMap<u64, u64>,
+    /// LRU order of the blocks that currently cache an encoder (same
+    /// stamps) — the encoder-drop queue. O(log n).
+    enc_order: BTreeMap<u64, u64>,
+    /// Next LRU stamp (monotone).
+    next_stamp: u64,
+    /// Block data + per-block bookkeeping bytes.
+    data_bytes: usize,
+    /// Cached-encoder footprint bytes.
+    encoder_bytes: usize,
+    /// Cached encoders dropped under byte pressure (rebuilt on demand).
+    encoder_drops: u64,
+    /// `plan_repairs` loss events skipped because the block was no longer
+    /// retained (evicted by the byte horizon) and not known done.
+    evicted_skips: u64,
     /// Blocks decoded (or abandoned) — loss events for these are ignored.
     done_ring: VecDeque<u64>,
     done_set: HashSet<u64>,
     /// Fractional ε̂-margin accumulator (continuous, no per-event ceil).
     margin_debt: f64,
     max_ledger: usize,
-    max_retained_blocks: usize,
     max_retained_bytes: usize,
 }
 
 impl BlockArq {
     pub fn new() -> Self {
-        Self::with_caps(LEDGER_MAX_BATCHES, RETAIN_MAX_BLOCKS, RETAIN_MAX_BYTES)
+        Self::with_caps(LEDGER_MAX_BATCHES, RETAIN_BUDGET_BYTES)
     }
 
-    pub fn with_caps(
-        max_ledger: usize,
-        max_retained_blocks: usize,
-        max_retained_bytes: usize,
-    ) -> Self {
+    pub fn with_caps(max_ledger: usize, max_retained_bytes: usize) -> Self {
         Self {
             ledger: BTreeMap::new(),
             retained: HashMap::new(),
-            retain_order: VecDeque::new(),
-            retained_bytes: 0,
+            retain_order: BTreeMap::new(),
+            enc_order: BTreeMap::new(),
+            next_stamp: 0,
+            data_bytes: 0,
+            encoder_bytes: 0,
+            encoder_drops: 0,
+            evicted_skips: 0,
             done_ring: VecDeque::new(),
             done_set: HashSet::new(),
             margin_debt: 0.0,
             max_ledger,
-            max_retained_blocks,
             max_retained_bytes,
         }
     }
@@ -174,7 +302,9 @@ impl BlockArq {
         if self.done_set.contains(&block_id) || self.retained.contains_key(&block_id) {
             return;
         }
-        self.retained_bytes += data.len();
+        let stamp = self.next_stamp;
+        self.next_stamp += 1;
+        self.data_bytes += data.len() + RETAIN_PER_BLOCK_OVERHEAD;
         self.retained.insert(
             block_id,
             RetainedBlock {
@@ -186,42 +316,83 @@ impl BlockArq {
                 encoder: None,
                 last_activity: now,
                 reannounce_rounds: 0,
+                lru_stamp: stamp,
+                enc_bytes: 0,
             },
         );
-        self.retain_order.push_back(block_id);
-        self.evict_retained();
+        self.retain_order.insert(stamp, block_id);
+        self.enforce_budget(None);
     }
 
-    fn evict_retained(&mut self) {
-        while self.retained.len() > self.max_retained_blocks
-            || self.retained_bytes > self.max_retained_bytes
-        {
-            let Some(oldest) = self.retain_order.pop_front() else {
+    /// Enforce the byte budget, in two tiers:
+    ///
+    /// 1. While data + encoders exceed the budget, drop the coldest cached
+    ///    encoder other than `protect`'s (the block being repaired right
+    ///    now). Encoders are a rebuildable cache — dropping one costs a
+    ///    rebuild, never a repair.
+    /// 2. Only while block data + bookkeeping ALONE exceed the budget,
+    ///    evict whole blocks coldest-first (dropping their encoders too).
+    ///
+    /// So encoders never shorten the data horizon. Memory bound: the budget
+    /// plus at most the protected block's encoder footprint.
+    fn enforce_budget(&mut self, protect: Option<u64>) {
+        while self.data_bytes + self.encoder_bytes > self.max_retained_bytes {
+            let victim = self
+                .enc_order
+                .iter()
+                .find(|&(_, &b)| Some(b) != protect)
+                .map(|(&stamp, &b)| (stamp, b));
+            let Some((stamp, b)) = victim else {
                 break;
             };
+            self.enc_order.remove(&stamp);
+            if let Some(rb) = self.retained.get_mut(&b) {
+                rb.encoder = None;
+                self.encoder_bytes -= rb.enc_bytes;
+                rb.enc_bytes = 0;
+                self.encoder_drops += 1;
+            }
+        }
+        while self.data_bytes > self.max_retained_bytes {
+            let Some((stamp, oldest)) = self.retain_order.pop_first() else {
+                break;
+            };
+            self.enc_order.remove(&stamp);
             if let Some(rb) = self.retained.remove(&oldest) {
-                self.retained_bytes -= rb.data.len();
+                self.data_bytes -= rb.data_charge();
+                self.encoder_bytes -= rb.enc_bytes;
             }
         }
     }
 
-    /// Move a block to the back of the LRU order (it is being repaired —
-    /// keep it alive for potential further rounds).
-    fn touch_retained(&mut self, block_id: u64) {
-        if let Some(pos) = self.retain_order.iter().position(|&b| b == block_id) {
-            self.retain_order.remove(pos);
-            self.retain_order.push_back(block_id);
+    /// Move a block to the hot end of the LRU order (it is being repaired —
+    /// keep it alive for potential further rounds), charge any encoder
+    /// footprint it just materialized (`added`), then enforce the budget
+    /// with this block's encoder protected. O(log n).
+    fn touch_retained(&mut self, block_id: u64, added: usize) {
+        let stamp = self.next_stamp;
+        if let Some(rb) = self.retained.get_mut(&block_id) {
+            self.retain_order.remove(&rb.lru_stamp);
+            self.enc_order.remove(&rb.lru_stamp);
+            rb.lru_stamp = stamp;
+            self.retain_order.insert(stamp, block_id);
+            if rb.encoder.is_some() {
+                self.enc_order.insert(stamp, block_id);
+            }
+            self.next_stamp += 1;
         }
+        self.encoder_bytes += added;
+        self.enforce_budget(Some(block_id));
     }
 
     /// Block decoded successfully (or abandoned): drop retained data and
     /// suppress any pending/late loss events for it.
     pub fn on_block_done(&mut self, block_id: u64) {
         if let Some(rb) = self.retained.remove(&block_id) {
-            self.retained_bytes -= rb.data.len();
-            if let Some(pos) = self.retain_order.iter().position(|&b| b == block_id) {
-                self.retain_order.remove(pos);
-            }
+            self.data_bytes -= rb.data_charge();
+            self.encoder_bytes -= rb.enc_bytes;
+            self.retain_order.remove(&rb.lru_stamp);
+            self.enc_order.remove(&rb.lru_stamp);
         }
         if self.done_set.insert(block_id) {
             self.done_ring.push_back(block_id);
@@ -417,9 +588,8 @@ impl BlockArq {
                     .max(margin)
                     .min(k + margin)
             };
-            let encoder = rb
-                .encoder
-                .get_or_insert_with(|| rb.backend.create_encoder(&rb.data, rb.params));
+            let added = rb.ensure_encoder();
+            let encoder = rb.encoder.as_mut().expect("ensured above");
             let symbols: Vec<WireSymbol> = if encoder.max_repairs() == u32::MAX {
                 let s = encoder.repair_symbols_from(rb.next_repair_esi, n_spare);
                 rb.next_repair_esi += s.len() as u32;
@@ -442,7 +612,7 @@ impl BlockArq {
                 backend: rb.backend,
                 transfer_length: rb.data.len() as u64,
             });
-            self.touch_retained(block_id);
+            self.touch_retained(block_id, added);
         }
         plans
     }
@@ -472,8 +642,23 @@ impl BlockArq {
     }
 
     /// Retained blocks / bytes (tests/diagnostics).
+    /// Bytes = block data + bookkeeping + cached encoders.
     pub fn retained_stats(&self) -> (usize, usize) {
-        (self.retained.len(), self.retained_bytes)
+        (self.retained.len(), self.data_bytes + self.encoder_bytes)
+    }
+
+    /// (block data + bookkeeping bytes, cached-encoder bytes, encoders
+    /// dropped under byte pressure so far) — tests/diagnostics.
+    pub fn retained_breakdown(&self) -> (usize, usize, u64) {
+        (self.data_bytes, self.encoder_bytes, self.encoder_drops)
+    }
+
+    /// Loss events `plan_repairs` skipped because their block had already
+    /// left the retention byte horizon (evicted, not done) — no repair could
+    /// be minted; recovery then falls to the receiver's decoder eviction
+    /// (diagnostics; also logged once per `EVICTED_SKIP_LOG_EVERY`).
+    pub fn repair_skips_evicted(&self) -> u64 {
+        self.evicted_skips
     }
 
     // ------------------------------------------------------------------
@@ -506,7 +691,21 @@ impl BlockArq {
                 continue;
             }
             let Some(rb) = self.retained.get_mut(&block_id) else {
-                continue; // evicted — receiver eviction timeout is the backstop
+                // Evicted by the retention byte horizon: no source data, no
+                // repair. The receiver's decoder eviction timeout is the only
+                // backstop, so make the condition visible (counted; logged
+                // once per EVICTED_SKIP_LOG_EVERY, never per block).
+                self.evicted_skips += 1;
+                if self.evicted_skips % EVICTED_SKIP_LOG_EVERY == 1 {
+                    tracing::warn!(
+                        block_id,
+                        skips_total = self.evicted_skips,
+                        retained_blocks = self.retained.len(),
+                        retained_bytes = self.data_bytes + self.encoder_bytes,
+                        "block ARQ: repair skipped for a block evicted from the retention horizon"
+                    );
+                }
+                continue;
             };
             if rb.rounds >= MAX_REPAIR_ROUNDS {
                 continue;
@@ -517,9 +716,8 @@ impl BlockArq {
             let extra = self.margin_debt.floor() as u32;
             self.margin_debt -= extra as f64;
 
-            let encoder = rb
-                .encoder
-                .get_or_insert_with(|| rb.backend.create_encoder(&rb.data, rb.params));
+            let added = rb.ensure_encoder();
+            let encoder = rb.encoder.as_mut().expect("ensured above");
 
             let rateless = encoder.max_repairs() == u32::MAX;
             let mut symbols: Vec<WireSymbol>;
@@ -554,6 +752,8 @@ impl BlockArq {
             }
 
             if symbols.is_empty() {
+                // Charge (and register) the encoder even when nothing was minted.
+                self.touch_retained(block_id, added);
                 continue;
             }
             rb.rounds += 1;
@@ -565,7 +765,7 @@ impl BlockArq {
                 backend: rb.backend,
                 transfer_length: rb.data.len() as u64,
             };
-            self.touch_retained(block_id);
+            self.touch_retained(block_id, added);
             plans.push(plan);
         }
         plans
@@ -591,10 +791,10 @@ impl BlockArq {
         if rb.rounds >= MAX_REPAIR_ROUNDS || self.done_set.contains(&block_id) {
             return None;
         }
-        let encoder = rb
-            .encoder
-            .get_or_insert_with(|| rb.backend.create_encoder(&rb.data, rb.params));
+        let added = rb.ensure_encoder();
+        let encoder = rb.encoder.as_mut().expect("ensured above");
         if encoder.max_repairs() != u32::MAX {
+            self.touch_retained(block_id, added);
             return None;
         }
         self.margin_debt += deficit as f64 * eps_hat * 2.0 * (1u32 << rb.rounds) as f64;
@@ -612,7 +812,7 @@ impl BlockArq {
             backend: rb.backend,
             transfer_length: rb.data.len() as u64,
         };
-        self.touch_retained(block_id);
+        self.touch_retained(block_id, added);
         Some(plan)
     }
 }
