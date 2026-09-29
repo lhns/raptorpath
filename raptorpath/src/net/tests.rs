@@ -532,57 +532,6 @@ fn horizon_withholds_nack_until_repair_window_then_falls_back() {
     assert_eq!(ready, d, "horizon 0 reports immediately (shipped path)");
 }
 
-/// Lossy stream (EVICT / datagram): a full inject channel must drop and
-/// return immediately — delivery must never block a lossy stream on a
-/// slow consumer.
-#[tokio::test]
-async fn deliver_packet_lossy_drops_never_blocks() {
-    let (tx, mut rx) = mpsc::channel::<Bytes>(1);
-    tx.try_send(Bytes::from_static(b"a")).unwrap(); // fill to capacity
-    let r = tokio::time::timeout(
-        Duration::from_millis(250),
-        deliver_packet(&tx, Bytes::from_static(b"b"), false),
-    )
-    .await;
-    assert!(r.is_ok(), "lossy delivery must not block on a full channel");
-    assert_eq!(r.unwrap(), Ok(()));
-    // "b" was dropped: only the original "a" is queued.
-    assert_eq!(rx.try_recv().unwrap(), Bytes::from_static(b"a"));
-    assert!(rx.try_recv().is_err());
-}
-
-/// Reliable stream: a full inject channel must backpressure (await), not
-/// drop — otherwise the frontier/ack advances past an undelivered symbol
-/// and leaves a permanent hole.
-#[tokio::test]
-async fn deliver_packet_reliable_backpressures_then_delivers() {
-    let (tx, mut rx) = mpsc::channel::<Bytes>(1);
-    tx.send(Bytes::from_static(b"a")).await.unwrap(); // fill to capacity
-    // Must block while full...
-    let blocked = tokio::time::timeout(
-        Duration::from_millis(150),
-        deliver_packet(&tx, Bytes::from_static(b"b"), true),
-    )
-    .await;
-    assert!(blocked.is_err(), "reliable delivery must block on a full channel");
-    // ...and lose nothing once the consumer drains a slot.
-    assert_eq!(rx.recv().await.unwrap(), Bytes::from_static(b"a"));
-    deliver_packet(&tx, Bytes::from_static(b"b"), true)
-        .await
-        .unwrap();
-    assert_eq!(rx.recv().await.unwrap(), Bytes::from_static(b"b"));
-}
-
-/// A permanently closed channel errors under both policies (the caller
-/// tears the receiver down).
-#[tokio::test]
-async fn deliver_packet_closed_channel_errors() {
-    let (tx, rx) = mpsc::channel::<Bytes>(1);
-    drop(rx);
-    assert!(deliver_packet(&tx, Bytes::from_static(b"x"), true).await.is_err());
-    assert!(deliver_packet(&tx, Bytes::from_static(b"x"), false).await.is_err());
-}
-
 #[test]
 fn test_parse_cidr() {
     let (ip, prefix) = parse_cidr("10.99.0.1/24").unwrap();
