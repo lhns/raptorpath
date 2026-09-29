@@ -304,10 +304,10 @@ mod tests {
     }
 
     /// The scrapeable line's shape, pinned absolutely: an L1 parser is written
-    /// against these five keys and their formats, and a silent rename here
+    /// against these keys and their formats, and a silent rename here
     /// would leave the parser reading zeros.
     #[test]
-    fn the_wall_line_is_the_five_scrapeable_keys() {
+    fn the_wall_line_is_the_six_scrapeable_keys() {
         let line = report_line(WallReading {
             total_ms: 1234.5,
             onset: 0.5,

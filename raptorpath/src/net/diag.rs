@@ -96,6 +96,9 @@ pub(crate) struct DiagState {
     //             (the flush arm's one-symbol emit, the deficit-report
     //             rebuild) count with that arm's await; everything after the
     //             `select!` — where the emission and ack work runs — is busy.
+    //             The one unattributed arm (the request arm, disarmed on
+    //             every shipped arm) charges nothing on resolution, so its
+    //             await is counted as body at the next `select!` entry.
     //
     // The eight arm buckets hold AWAIT time only:
     //
