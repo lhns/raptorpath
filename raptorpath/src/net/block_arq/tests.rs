@@ -609,3 +609,106 @@ fn ledger_horizon_covers_retention_horizon() {
     assert!(LEDGER_MAX_BATCHES >= RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZE);
     assert!(LEDGER_MAX_BATCHES >= 4096, "never below the historical cap");
 }
+
+/// THE RELIABLE-CONTRACT RULE (the c3 Auto-on-block DNF): a block the
+/// receiver has not confirmed (`on_block_done`) is NEVER evicted for the
+/// byte budget. When unconfirmed data fills the budget, `has_room` turns
+/// false (the sender stops producing blocks) instead; confirming the
+/// oldest block gives the room back. Auto geometry (16 KiB / 1200 B).
+#[test]
+fn unconfirmed_blocks_are_never_evicted_and_full_budget_withholds_room() {
+    const AUTO_BLOCK: usize = 16 * 1024;
+    let per = AUTO_BLOCK + RETAIN_PER_BLOCK_OVERHEAD;
+    let mut arq = BlockArq::new();
+    // Fill through the sender's admission gate until it closes.
+    let mut n = 0u64;
+    while arq.has_room(AUTO_BLOCK) {
+        retain_auto_block(&mut arq, n);
+        n += 1;
+    }
+    assert_eq!(n as usize, RETAIN_BUDGET_BYTES / per, "window = budget / per-block charge");
+    assert_eq!(arq.retained_stats().0, n as usize, "every admitted block retained");
+    assert!(!arq.has_room(AUTO_BLOCK), "full budget of unconfirmed data: no room");
+
+    // Confirming the oldest block gives the room back (exactly one block).
+    arq.on_block_done(0);
+    assert!(arq.has_room(AUTO_BLOCK), "on_block_done of the oldest frees room");
+    retain_auto_block(&mut arq, n);
+    assert!(!arq.has_room(AUTO_BLOCK), "closed again after one more admit");
+
+    // An ungated admit (the shutdown flush) over a full window evicts
+    // NOTHING: every unconfirmed block stays retained and repairable.
+    retain_auto_block(&mut arq, n + 1);
+    assert_eq!(
+        arq.retained_stats().0,
+        n as usize + 1,
+        "no unconfirmed block may be evicted for budget"
+    );
+    let plans = arq.plan_repairs(
+        vec![LossEvent {
+            block_id: 1,
+            path_id: 0,
+            missing: vec![0],
+        }],
+        0.0,
+    );
+    assert_eq!(plans.len(), 1, "oldest unconfirmed block 1 still repairable");
+    assert_eq!(arq.repair_skips_evicted(), 0, "no repair skipped for eviction");
+    // Encoders are still the first (and only) thing dropped under pressure.
+    let (data, enc, _) = arq.retained_breakdown();
+    assert_eq!(data, (n as usize + 1) * per);
+    assert_eq!(enc, encoder_footprint_bytes(FecBackend::RaptorQ, &params(14, 1200, 0, 1)),
+        "only the protected block's encoder is cached over budget");
+}
+
+/// The window wakes the parked sender: `on_block_done` stores a permit on
+/// the room notify, so a sender that checks-then-waits cannot miss it.
+#[test]
+fn block_done_wakes_the_room_notify() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 2 * (1000 + RETAIN_PER_BLOCK_OVERHEAD));
+    retain_block(&mut arq, 0, 1000, FecBackend::RaptorQ);
+    retain_block(&mut arq, 1, 1000, FecBackend::RaptorQ);
+    assert!(!arq.has_room(1000));
+    let room = arq.room_notify();
+    let wait = |room: std::sync::Arc<tokio::sync::Notify>| {
+        rt.block_on(async move {
+            tokio::time::timeout(Duration::from_millis(20), room.notified()).await.is_ok()
+        })
+    };
+    assert!(!wait(room.clone()), "no wake while the window is full");
+    arq.on_block_done(0);
+    assert!(wait(room.clone()), "on_block_done must wake the parked sender");
+    assert!(arq.has_room(1000));
+}
+
+/// Reliable contract: a block never gives up re-announcing while it is
+/// retained (un-confirmed). The receiver never refuses a block (its
+/// decoder GC forgets, and a re-announced BlockStart re-creates the
+/// decoder), so a sender-side give-up would pin the flow-control window
+/// forever. Past `MAX_REANNOUNCE_ROUNDS` the spare stays capped.
+#[test]
+fn idle_reannounce_never_gives_up_on_an_unconfirmed_block() {
+    let mut arq = BlockArq::new();
+    let t0 = Instant::now();
+    let data = Bytes::from(vec![1u8; 640]);
+    arq.on_block_encoded(72, data, params(10, 64, 2, 72), FecBackend::RaptorQ, t0);
+    let rounds = MAX_REANNOUNCE_ROUNDS as u32 * 4;
+    let mut fired = 0u32;
+    for r in 0..rounds {
+        let now = t0 + Duration::from_millis(200 * (r as u64 + 1));
+        let plans = arq.idle_reannounce(now, &|_| TIMEOUT, 0, 0.1);
+        if let Some(p) = plans.first() {
+            fired += 1;
+            assert!(p.symbols.len() as u32 <= REANNOUNCE_PER_ROUND_CAP.max(10 + 2));
+        }
+    }
+    assert_eq!(fired, rounds, "fires every idle period while unconfirmed");
+    arq.on_block_done(72);
+    assert!(arq
+        .idle_reannounce(t0 + Duration::from_secs(3600), &|_| TIMEOUT, 0, 0.1)
+        .is_empty());
+}

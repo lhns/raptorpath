@@ -260,6 +260,8 @@ pub struct BlockArq {
     margin_debt: f64,
     max_ledger: usize,
     max_retained_bytes: usize,
+    /// Wakes the block sender parked on a full retention window.
+    room: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl BlockArq {
@@ -283,7 +285,20 @@ impl BlockArq {
             margin_debt: 0.0,
             max_ledger,
             max_retained_bytes,
+            room: std::sync::Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Can a new block of `next_block_bytes` data be admitted?
+    pub fn has_room(&mut self, next_block_bytes: usize) -> bool {
+        self.retained.is_empty()
+            || self.data_bytes + next_block_bytes + RETAIN_PER_BLOCK_OVERHEAD
+                <= self.max_retained_bytes
+    }
+
+    /// Notify handle the block sender waits on while the window is full.
+    pub fn room_notify(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.room.clone()
     }
 
     // ------------------------------------------------------------------

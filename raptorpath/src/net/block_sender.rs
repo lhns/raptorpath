@@ -315,3 +315,78 @@ pub(crate) async fn run_block_sender(
         }
     }
 }
+
+/// What the block sender may do this iteration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FeedGate {
+    /// Read the next TUN packet (grows the block under assembly).
+    pub read_tun: bool,
+    /// Let the flush timeout encode the partial block under assembly.
+    pub flush: bool,
+    /// The retention window is full of unconfirmed blocks.
+    pub retention_full: bool,
+}
+
+/// The block sender's admission gate.
+pub(crate) fn feed_gate(copa_paused: bool, _arq: &mut BlockArq, _next_block_bytes: usize) -> FeedGate {
+    FeedGate {
+        read_tun: !copa_paused,
+        flush: true,
+        retention_full: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fec::EncodingParams;
+    use bytes::Bytes;
+    use std::time::Instant;
+
+    const AUTO_BLOCK: usize = 16 * 1024;
+
+    fn admit(arq: &mut BlockArq, id: u64) {
+        let p = EncodingParams {
+            source_symbols: AUTO_BLOCK.div_ceil(1200) as u32,
+            symbol_size: 1200,
+            repair_count: 0,
+            block_id: id,
+        };
+        arq.on_block_encoded(id, Bytes::from(vec![0u8; AUTO_BLOCK]), p, FecBackend::RaptorQ, Instant::now());
+    }
+
+    /// The feed loop pauses (no TUN read, no flush-encode) instead of
+    /// evicting when the window is full of unconfirmed blocks, and resumes
+    /// once the oldest is confirmed. Copa's gate composes (either closes it).
+    #[test]
+    fn sender_pauses_on_full_window_and_resumes_on_done() {
+        let mut arq = BlockArq::new();
+        let mut id = 0u64;
+        // Drive the gate exactly as the loop does: admit while it is open.
+        while feed_gate(false, &mut arq, AUTO_BLOCK).read_tun {
+            admit(&mut arq, id);
+            id += 1;
+            assert!(id < 100_000, "the gate never closed: the sender would evict");
+        }
+        let g = feed_gate(false, &mut arq, AUTO_BLOCK);
+        assert_eq!(
+            g,
+            FeedGate { read_tun: false, flush: false, retention_full: true },
+            "full window: pause, never evict"
+        );
+        assert_eq!(arq.retained_stats().0, id as usize, "nothing evicted while paused");
+
+        // Copa pause composes with an open window (and vice versa).
+        arq.on_block_done(0);
+        assert_eq!(
+            feed_gate(false, &mut arq, AUTO_BLOCK),
+            FeedGate { read_tun: true, flush: true, retention_full: false },
+            "done of the oldest resumes the feed"
+        );
+        assert_eq!(
+            feed_gate(true, &mut arq, AUTO_BLOCK),
+            FeedGate { read_tun: false, flush: true, retention_full: false },
+            "Copa pause alone stops TUN reads, not the flush"
+        );
+    }
+}
