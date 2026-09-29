@@ -24,6 +24,25 @@
 //!                  ∨   `last_source_send_us` advanced    (NEW data on the wire)
 //! ```
 //!
+//! ### Busy wakes are not productive (Stage 1d)
+//!
+//! The first two disjuncts read the arm that woke the loop. A sender pinned
+//! by compute wakes on TUN every iteration — intake is always ready because
+//! the loop is always late — so before Stage 1d a CPU-bound sender read as
+//! productive for its whole run. An arm wake now counts only when the loop
+//! body that preceded it was not MOSTLY BUSY:
+//!
+//! ```text
+//!   mostly_busy  ⟺  body_us ≥ max(LOOP_WAKE_US, await_us)
+//! ```
+//!
+//! i.e. the previous iteration's compute (from one `select!` resolution to
+//! the next `select!` await, measured in the sender loop) both outlasted the
+//! loop's own 1 ms poll tick — so the loop could not have honoured its tick
+//! — and exceeded the await it then made. A busy wake still counts through
+//! the third disjunct if it put NEW source on the wire; only the arm reading
+//! is demoted. `busy_wakes` on the `[WALL]` line counts the demotions.
+//!
 //! Then, with `T_prod` = the last productive instant,
 //!
 //! ```text
@@ -72,6 +91,15 @@ pub const ARM_TUN: usize = 0;
 /// The sender-loop wait arm that carries store-cap backpressure
 /// (`net/mod.rs`: `wait_arm = 1`, the 1 ms `tx_paused` poll).
 pub const ARM_PAUSED: usize = 1;
+/// The loop's poll tick (µs), the "mostly busy" floor (see the module doc).
+pub const WALL_TICK_US: u64 = super::LOOP_WAKE_US;
+
+/// A wake preceded by a loop body of `body_us` and an await of `await_us`
+/// is a BUSY wake (module doc): its arm reading is not evidence of
+/// productive intake.
+pub fn mostly_busy(body_us: u64, await_us: u64) -> bool {
+    body_us >= WALL_TICK_US.max(await_us)
+}
 
 /// One run's dead-wall reading. All fields are derived in [`DeadWallGauge::report`];
 /// nothing here is a threshold or a classification — the caller (and the L1
@@ -90,6 +118,8 @@ pub struct WallReading {
     /// Mean sender-loop iteration period over the run, ms — the resolution
     /// bound on `duration_ms`, reported rather than assumed.
     pub it_ms: f64,
+    /// TUN/PAUSED wakes demoted as busy wakes (see the module doc).
+    pub busy_wakes: u64,
 }
 
 /// The dead-wall gauge. One per process; the sender loop is its only writer,
@@ -112,6 +142,8 @@ pub struct DeadWallGauge {
     /// Last observed instant (µs) — the report's `T_end` when teardown does
     /// not carry its own clock read.
     last_us: AtomicU64,
+    /// Arm wakes demoted because the preceding body was mostly busy.
+    busy_wakes: AtomicU64,
 }
 
 impl Default for DeadWallGauge {
@@ -130,13 +162,16 @@ impl DeadWallGauge {
             src_seen_us: AtomicU64::new(0),
             iters: AtomicU64::new(0),
             last_us: AtomicU64::new(0),
+            busy_wakes: AtomicU64::new(0),
         }
     }
 
     /// Feed one sender-loop iteration. `wait_arm` is the arm that woke the
     /// loop (`usize::MAX` when no arm did), `last_source_send_us` is
     /// `SenderState::last_source_send_us` (the wall clock of the last new
-    /// source symbol), `retx_total` the engine's monotone retransmit counter.
+    /// source symbol), `retx_total` the engine's monotone retransmit counter,
+    /// `body_us` the loop-body time that preceded this wake's await and
+    /// `await_us` the await itself (both measured in the sender loop).
     ///
     /// The first call establishes `T_start` and seeds the productive stamp:
     /// a transfer is productive at its own start by definition, so a run that
@@ -148,6 +183,8 @@ impl DeadWallGauge {
         wait_arm: usize,
         last_source_send_us: u64,
         retx_total: u64,
+        body_us: u64,
+        await_us: u64,
     ) {
         self.retx_total.store(retx_total, Ordering::Relaxed);
         self.last_us.store(now_us, Ordering::Relaxed);
@@ -162,7 +199,12 @@ impl DeadWallGauge {
         // exit, so the source stamp advances even on a productive wait arm.
         let src_advanced = last_source_send_us
             > self.src_seen_us.fetch_max(last_source_send_us, Ordering::Relaxed);
-        if wait_arm == ARM_TUN || wait_arm == ARM_PAUSED || src_advanced {
+        let arm_wake = wait_arm == ARM_TUN || wait_arm == ARM_PAUSED;
+        let busy = mostly_busy(body_us, await_us);
+        if arm_wake && busy {
+            self.busy_wakes.fetch_add(1, Ordering::Relaxed);
+        }
+        if (arm_wake && !busy) || src_advanced {
             self.mark_productive(now_us, retx_total);
         }
     }
@@ -196,6 +238,7 @@ impl DeadWallGauge {
                 .load(Ordering::Relaxed)
                 .saturating_sub(self.retx_at_prod.load(Ordering::Relaxed)),
             it_ms: total_us as f64 / iters as f64 / 1000.0,
+            busy_wakes: self.busy_wakes.load(Ordering::Relaxed),
         })
     }
 }
@@ -223,8 +266,8 @@ pub fn gauge() -> Option<&'static DeadWallGauge> {
 /// pins assert the string an L1 parser will scrape, not a side effect.
 pub fn report_line(r: WallReading) -> String {
     format!(
-        "[WALL] onset={:.4} dur_ms={:.1} retx={} total_ms={:.1} it_ms={:.3}",
-        r.onset, r.duration_ms, r.retx, r.total_ms, r.it_ms
+        "[WALL] onset={:.4} dur_ms={:.1} retx={} total_ms={:.1} it_ms={:.3} busy_wakes={}",
+        r.onset, r.duration_ms, r.retx, r.total_ms, r.it_ms, r.busy_wakes
     )
 }
 
@@ -261,20 +304,21 @@ mod tests {
     }
 
     /// The scrapeable line's shape, pinned absolutely: an L1 parser is written
-    /// against these five keys and their formats, and a silent rename here
+    /// against these keys and their formats, and a silent rename here
     /// would leave the parser reading zeros.
     #[test]
-    fn the_wall_line_is_the_five_scrapeable_keys() {
+    fn the_wall_line_is_the_six_scrapeable_keys() {
         let line = report_line(WallReading {
             total_ms: 1234.5,
             onset: 0.5,
             duration_ms: 617.25,
             retx: 7,
             it_ms: 1.0,
+            busy_wakes: 3,
         });
         assert_eq!(
             line,
-            "[WALL] onset=0.5000 dur_ms=617.2 retx=7 total_ms=1234.5 it_ms=1.000"
+            "[WALL] onset=0.5000 dur_ms=617.2 retx=7 total_ms=1234.5 it_ms=1.000 busy_wakes=3"
         );
     }
 
@@ -310,10 +354,10 @@ mod tests {
             );
         }
         // Stronger than ackdiag's pin: this gauge takes no engine handle at
-        // all — its whole input is four scalars passed by value.
+        // all — its whole input is six scalars passed by value.
         assert!(
             !code.contains("Arc<"),
-            "the dead-wall gauge holds no engine handle; its input is four scalars"
+            "the dead-wall gauge holds no engine handle; its input is six scalars"
         );
     }
 
@@ -327,7 +371,7 @@ mod tests {
         for i in 0..100u64 {
             let t = 1_000_000 + i * 1_000;
             src = t; // new data every iteration
-            g.observe(t, ARM_TUN, src, 0);
+            g.observe(t, ARM_TUN, src, 0, 0, 1_000);
         }
         let r = g.report(1_000_000 + 99_000).expect("a fed gauge reports");
         assert_eq!(r.duration_ms, 0.0, "a productive-to-teardown run has no wall");
@@ -346,7 +390,7 @@ mod tests {
         for i in 0..500u64 {
             let t = 1_000_000 + i * 1_000;
             src = t;
-            g.observe(t, ARM_TUN, src, 0);
+            g.observe(t, ARM_TUN, src, 0, 0, 1_000);
         }
         let frozen = 1_000_000 + 499_000; // last new source send
         for i in 500..1_000u64 {
@@ -354,7 +398,7 @@ mod tests {
             // arm 4 = a gap report arrived: not intake, not cap-pause.
             // One retransmit per 100 ms of the wall, four in all.
             let retx = if i >= 600 { ((i - 600) / 100 + 1).min(4) } else { 0 };
-            g.observe(t, 4, frozen, retx);
+            g.observe(t, 4, frozen, retx, 0, 1_000);
         }
         let r = g.report(1_000_000 + 999_000).expect("a fed gauge reports");
         assert!(
@@ -381,9 +425,9 @@ mod tests {
         for i in 0..1_000u64 {
             let t = 1_000_000 + i * 1_000;
             if i % 2 == 0 {
-                g.observe(t, 4, 1_000, 0); // idle arm, no new source
+                g.observe(t, 4, 1_000, 0, 0, 1_000); // idle arm, no new source
             } else {
-                g.observe(t, ARM_TUN, 1_000 + t, 0);
+                g.observe(t, ARM_TUN, 1_000 + t, 0, 0, 1_000);
             }
         }
         let r = g.report(1_000_000 + 999_000).expect("a fed gauge reports");
@@ -401,10 +445,52 @@ mod tests {
     fn cap_paused_is_not_a_wall() {
         let g = DeadWallGauge::new();
         for i in 0..200u64 {
-            g.observe(1_000_000 + i * 1_000, ARM_PAUSED, 1_000, 0);
+            g.observe(1_000_000 + i * 1_000, ARM_PAUSED, 1_000, 0, 0, 1_000);
         }
         let r = g.report(1_000_000 + 199_000).expect("a fed gauge reports");
         assert_eq!(r.duration_ms, 0.0, "cap-paused is not the dead wall");
+    }
+
+    /// Stage 1d: a CPU-bound sender wakes on TUN every iteration (intake is
+    /// always ready because the loop is always late) with no new source
+    /// reaching the wire. Those wakes are busy wakes — the preceding body
+    /// (6 ms) outlasts both the 1 ms tick and the await — so they are not
+    /// productive, and the stretch reads as a wall. The same wakes after an
+    /// idle body stay productive.
+    #[test]
+    fn busy_wakes_are_not_productive() {
+        assert!(mostly_busy(6_000, 10), "6 ms body, 10 us await: busy");
+        assert!(!mostly_busy(100, 900), "0.1 ms body: not busy");
+        assert!(!mostly_busy(1_500, 2_000), "body under its own await: not busy");
+        assert!(mostly_busy(WALL_TICK_US, 0), "exactly one tick of body: busy");
+        let g = DeadWallGauge::new();
+        // 100 ms productive, then 300 ms of busy TUN wakes, no new source.
+        let mut t = 1_000_000u64;
+        for _ in 0..100 {
+            t += 1_000;
+            g.observe(t, ARM_TUN, t, 0, 100, 900);
+        }
+        let frozen = t;
+        for _ in 0..50 {
+            t += 6_000;
+            g.observe(t, ARM_TUN, frozen, 0, 5_990, 10);
+        }
+        let r = g.report(t).expect("a fed gauge reports");
+        assert_eq!(r.busy_wakes, 50, "every busy TUN wake is counted");
+        assert!(
+            (r.duration_ms - 300.0).abs() < 1e-9,
+            "the busy stretch is the terminal wall: {}",
+            r.duration_ms
+        );
+        // Control: the same arm sequence after idle bodies is productive.
+        let h = DeadWallGauge::new();
+        let mut t = 1_000_000u64;
+        for _ in 0..150 {
+            t += 1_000;
+            h.observe(t, ARM_TUN, 1_000, 0, 100, 900);
+        }
+        let r = h.report(t).expect("a fed gauge reports");
+        assert_eq!((r.busy_wakes, r.duration_ms), (0, 0.0));
     }
 
     /// An unfed gauge has no reading, and a zero-span run has none either,
@@ -413,7 +499,7 @@ mod tests {
     fn an_unfed_or_zero_span_gauge_reports_nothing() {
         let g = DeadWallGauge::new();
         assert_eq!(g.report(1_000_000), None);
-        g.observe(1_000_000, ARM_TUN, 0, 0);
+        g.observe(1_000_000, ARM_TUN, 0, 0, 0, 1_000);
         assert_eq!(g.report(1_000_000), None, "a zero-span run has no reading");
     }
 }

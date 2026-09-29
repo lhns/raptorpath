@@ -1384,18 +1384,14 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         }
 
         // Reduce repair_debt — NACK'd symbols are handled reactively now
-        let repair_rate = {
-            let ctrl = fec_controller.lock();
-            let sched = scheduler.lock();
-            let path_est = sched.active_paths().iter()
-                .filter_map(|id| sched.path(*id))
-                .max_by(|a, b| a.estimator.loss_rate().partial_cmp(&b.estimator.loss_rate()).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|p| &p.estimator);
-            match path_est {
-                Some(est) => ctrl.compute_repair_rate(est, st.encoder.window_size()),
-                None => 0.0,
-            }
-        };
+        // The cadenced rate (Stage 1c; evaluated outside the locks on a miss).
+        let repair_rate = super::emit_source::cadenced_repair_rate(
+            &mut st.rate_cache,
+            fec_controller,
+            scheduler,
+            st.encoder.window_size(),
+            now_us(),
+        );
         let debt_reduction = nacked_count as f64 * repair_rate;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
     }
@@ -1488,7 +1484,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // Compute the repair rate and the derived window target (paper §4.8)
         // from the worst (highest-loss) active path, under a single lock
         // acquisition.
-        let (repair_rate, derived_window) = {
+        let derived_window = {
             let mut ctrl = fec_controller.lock();
             let sched = scheduler.lock();
             let path_est = sched.active_paths().iter()
@@ -1524,14 +1520,17 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
                 ctrl.set_completion_exposure(chi);
                 CHI.observe(chi);
             }
-            match path_est {
-                Some(est) => (
-                    ctrl.compute_repair_rate(est, st.encoder.window_size()),
-                    ctrl.derive_window(est),
-                ),
-                None => (0.0, None),
-            }
+            path_est.and_then(|est| ctrl.derive_window(est))
         };
+        // The cadenced rate (Stage 1c): read after χ is published above, and
+        // evaluated outside the locks on a miss.
+        let repair_rate = super::emit_source::cadenced_repair_rate(
+            &mut st.rate_cache,
+            fec_controller,
+            scheduler,
+            st.encoder.window_size(),
+            now_us(),
+        );
         let debt_reduction = newly_acked as f64 * repair_rate;
         st.repair_debt = (st.repair_debt - debt_reduction).max(0.0);
 

@@ -2224,6 +2224,9 @@ async fn run_window_sender(
     // The DIAG report's counters (net/diag.rs). All four wall-clock stamps
     // above were sampled during setup and are moved in, not re-sampled.
     let mut dg = DiagState::new(gd_last_us, diag_start_us, diag_last_us, sidle_last_change_us);
+    // The last `select!` resolution instant, for the dead-wall gauge's body
+    // time when `[DIAG]` (which keeps its own) is off.
+    let mut wall_resolved_us: u64 = gd_last_us;
     loop {
         // Scheduler reads in this loop are per phase, each under its own
         // acquisition, taken where the value is used. A loop-top snapshot
@@ -2826,6 +2829,22 @@ async fn run_window_sender(
         // with the branch actually taken. `usize::MAX` means "shutdown", the
         // one arm that returns instead of falling through.
         let mut wait_arm: usize = usize::MAX;
+        // Loop-body / await split (Stage 1d): the time from the previous
+        // `select!` resolution to here was loop BODY (compute), not waiting.
+        // `[DIAG]` charges it to `busy`; the dead-wall gauge reads it to
+        // tell a busy wake from a productive one. Clock read only when one
+        // of the two instruments is on.
+        let (await_start_us, body_us) = if pol.diag_on || pol.walldiag_on {
+            let t = now_us();
+            let body = if pol.diag_on {
+                dg.wait_enter_await(t)
+            } else {
+                t.saturating_sub(wall_resolved_us)
+            };
+            (t, body)
+        } else {
+            (0, 0)
+        };
         let packet = tokio::select! {
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
@@ -3035,27 +3054,37 @@ async fn run_window_sender(
         // sender's wait-reason attribution, which says where idle sender time
         // (`sidle`) goes. Unlike `gd_us` it has no `generation` guard: the
         // arms it names exist in every window mode.
+        let resolved_us = if pol.diag_on || pol.walldiag_on { now_us() } else { 0 };
         if pol.diag_on && wait_arm < 8 {
-            let now_w = now_us();
-            let dt = now_w.saturating_sub(dg.wait_last_us);
-            dg.wait_last_us = now_w;
+            // The await only: the body before it went to `busy` above.
+            let dt = dg.wait_resolve(resolved_us);
             dg.wait_us[wait_arm] += dt;
             dg.wait_n += 1;
         }
+        wall_resolved_us = resolved_us;
         // ── The dead-wall gauge (`RWM_WALLDIAG`, net/walldiag.rs) ─────────
         // The one feed site of the onset/duration instrument, placed beside
         // the wait-arm charge above because it consumes the same `wait_arm` —
         // but on its own gate, so it is collectable on arms that cannot
         // afford the 250 ms `[DIAG]` report.
         //
-        // Three scalars, no engine handle: the arm that woke the loop, the
+        // Scalars only, no engine handle: the arm that woke the loop, the
         // wall clock of the last new source symbol (`last_source_send_us`,
         // maintained unconditionally by the emission step), and the engine's
-        // monotone retransmit counter. `productive(t)` is evaluated inside
+        // monotone retransmit counter — plus (Stage 1d) the loop-body time
+        // before this wake's await and the await itself, so a busy wake is
+        // not read as productive. `productive(t)` is evaluated inside
         // the gauge — see `net/walldiag.rs` for the measurand.
         if pol.walldiag_on {
             if let Some(g) = walldiag::gauge() {
-                g.observe(now_us(), wait_arm, st.last_source_send_us, dg.diag_retx);
+                g.observe(
+                    resolved_us,
+                    wait_arm,
+                    st.last_source_send_us,
+                    dg.diag_retx,
+                    body_us,
+                    resolved_us.saturating_sub(await_start_us),
+                );
             }
         }
 
@@ -3591,8 +3620,10 @@ fn encode_to_interleave_buf(
 
     // Compute repair count
     let repair_count = {
-        let sched = scheduler.lock();
+        // Lock order controller → scheduler: the one order used wherever
+        // both are held (the window sender's rate/budget sites take it too).
         let ctrl = fec_controller.lock();
+        let sched = scheduler.lock();
 
         let worst_estimator = sched
             .active_paths()

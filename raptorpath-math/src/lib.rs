@@ -362,13 +362,59 @@ impl MassStats {
 
     /// Fitted tail of J_m: P(J_m > x) ~ nz_m x S(x; theta_m, k_m) with
     /// the discrete-Weibull tail fit from the conditional moments.
+    /// (`r_star_mass` reads the same arithmetic through `FitMemo`; this
+    /// re-fitting form is the reference the identity test compares with.)
+    #[cfg_attr(not(test), allow(dead_code))]
     fn tail(&self, idx: usize, x: f64) -> f64 {
+        self.tail_with(idx, x, || fit_burst_tail(self.m1[idx], self.m2[idx]))
+    }
+
+    /// `tail` with the scale's fitted (theta, k) supplied by `fit`, which
+    /// is invoked only when the scale carries data. The arithmetic is
+    /// exactly `tail`'s (same clamp, same skip, same
+    /// `nz * burst_tail_survival(theta, k, x)`), so a caller that fits
+    /// once and reuses the pair is bit-identical to calling `tail`.
+    #[inline]
+    fn tail_with(&self, idx: usize, x: f64, fit: impl FnOnce() -> (f64, f64)) -> f64 {
         let nz = self.nz[idx].clamp(0.0, 1.0);
         if nz <= 0.0 {
             return 0.0; // no data at this scale: skip (documented)
         }
-        let (theta, k) = fit_burst_tail(self.m1[idx], self.m2[idx]);
+        let (theta, k) = fit();
         nz * burst_tail_survival(theta, k, x)
+    }
+
+    /// The discrete-Weibull tail fit (theta, k) of every block scale,
+    /// `fit_burst_tail(m1[s], m2[s])` — a pure function of the moments.
+    /// `r_star_mass` fits each scale it touches once per call instead of
+    /// once per tail evaluation (it evaluates the tail up to ~860 times).
+    pub fn fitted(&self) -> [(f64, f64); MASS_SCALES] {
+        std::array::from_fn(|s| fit_burst_tail(self.m1[s], self.m2[s]))
+    }
+}
+
+/// Per-call memo of the per-scale tail fits for `r_star_mass`: each scale
+/// is fitted at most once, and only if the solver reaches it. Reading a
+/// memoized pair is bit-identical to re-fitting (`fit_burst_tail` is pure).
+struct FitMemo<'a> {
+    stats: &'a MassStats,
+    fits: [std::cell::Cell<Option<(f64, f64)>>; MASS_SCALES],
+}
+
+impl<'a> FitMemo<'a> {
+    fn new(stats: &'a MassStats) -> Self {
+        Self { stats, fits: std::array::from_fn(|_| std::cell::Cell::new(None)) }
+    }
+
+    fn tail(&self, idx: usize, x: f64) -> f64 {
+        self.stats.tail_with(idx, x, || {
+            let cell = &self.fits[idx];
+            cell.get().unwrap_or_else(|| {
+                let fit = fit_burst_tail(self.stats.m1[idx], self.stats.m2[idx]);
+                cell.set(Some(fit));
+                fit
+            })
+        })
     }
 }
 
@@ -445,23 +491,26 @@ pub fn r_star_mass(stats: &MassStats, window: f64, delta_wf: f64, level_scale: f
         return 0.0; // contract met by pure ARQ: no within-window requirement
     }
     let w0 = stats.block_scale;
+    // Fit each scale once per call (Stage 1b): `bound` below reads the
+    // tails up to ~860 times per solve on unchanged moments.
+    let memo = FitMemo::new(stats);
     let bound = |r: f64| -> f64 {
         let n = window * (1.0 + r);
         let x = n / w0;
         let rr = r * window / level_scale; // repair count R, level-rescaled
         if x <= 1.0 {
-            return stats.tail(0, rr);
+            return memo.tail(0, rr);
         }
         let max_m = MASS_SCALES as f64;
         if x >= max_m {
             // chunk + union bound beyond the tracked scales
             let c = (x / max_m).ceil();
-            return (c * stats.tail(MASS_SCALES - 1, rr / c)).min(1.0);
+            return (c * memo.tail(MASS_SCALES - 1, rr / c)).min(1.0);
         }
         let lo = x.floor() as usize - 1;
         let hi = (lo + 1).min(MASS_SCALES - 1);
         let f = x - x.floor();
-        let (t_lo, t_hi) = (stats.tail(lo, rr), stats.tail(hi, rr));
+        let (t_lo, t_hi) = (memo.tail(lo, rr), memo.tail(hi, rr));
         (1.0 - f) * t_lo + f * t_hi
     };
     if bound(0.0) <= delta_wf {
@@ -2200,5 +2249,189 @@ mod tests {
         // (unbounded here) pushes to WINDOW_MAX, not a degenerate small value.
         let w = derive_window(1e-6, 0.025, 3.0, 0.013, 0.0, 0.0);
         assert!(w >= WINDOW_MAX - 1e-9, "expected WINDOW_MAX with no ceiling, got {w}");
+    }
+
+    // ── Stage-1 bit-pin: r_star_mass / controller_rate ─────────────
+    //
+    // Snapshot of `r_star_mass(..).to_bits()` and `controller_rate(..)
+    // .to_bits()` over a fixed grid, captured on the pre-hoist code
+    // (main 1e6836f). No other test can detect a change INSIDE these
+    // functions (`the_rate_mix_is_byte_identical_at_the_presets` calls the
+    // same function on both sides), so any refactor or performance fix of
+    // the solver must keep this table exact. Re-capture ONLY for a
+    // deliberate law change: `RSTAR_BITPIN_CAPTURE=1 cargo test -p
+    // raptorpath-math rstar_bitpin` rewrites this OS's table.
+    //
+    // One table per target OS: the solver's ln/exp/powf come from the
+    // platform libm (glibc vs the MSVC CRT), whose last-ulp results differ,
+    // so the bits are a per-platform fingerprint. Both tables were captured
+    // on the SAME pre-hoist source; an OS without a table fails loudly
+    // (capture one there from a pre-change commit, never after a change).
+    //
+    // Grid: 6 mass shapes (3 simulated GE channels incl. a c2-like
+    // p ~ 2.4 %, 2 uniform fixtures light/heavy, 1 GE shape with the upper
+    // scales emptied to exercise the nz = 0 skip) x W in {16, 64, 200, 256}
+    // (x <= 1, interpolation, and chunked union-bound branches) x
+    // {r_star_mass: delta_wf in {1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.9} x
+    //  level_scale in {0.5, 1, 2}} and {controller_rate: tail_target in
+    // {1e-5, 1e-4, 1e-3} x level_scale in {0.5, 1, 2} (p_upper =
+    // level_scale x eps_mass) x bulk_late_is_fine in {false, true}
+    // (chi = 0.3), tail_provision = true}.
+    #[cfg(target_os = "linux")]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_linux.in";
+    #[cfg(target_os = "linux")]
+    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table_linux.in");
+    #[cfg(target_os = "windows")]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_windows.in";
+    #[cfg(target_os = "windows")]
+    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table_windows.in");
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    const RSTAR_BITPIN_FILE: &str = "rstar_bitpin_table_other.in";
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    const RSTAR_BITPIN: &[u64] = &[];
+
+    fn rstar_bitpin_shapes() -> Vec<MassStats> {
+        let mut shapes = vec![
+            ge_mass_stats(0.01, 0.4, 64, 400_000, 11),
+            ge_mass_stats(0.003, 0.3, 64, 400_000, 12),
+            ge_mass_stats(0.03, 0.5, 64, 400_000, 13),
+            uniform_mass(64.0, 0.6, 2.5, 10.0),
+            uniform_mass(64.0, 0.9, 6.4, 400.0),
+        ];
+        let mut holes = ge_mass_stats(0.01, 0.4, 64, 400_000, 14);
+        for s in 5..MASS_SCALES {
+            holes.nz[s] = 0.0;
+        }
+        shapes.push(holes);
+        for m in &shapes {
+            assert!(m.is_valid(), "bit-pin shape must be a valid mass");
+        }
+        shapes
+    }
+
+    fn rstar_bitpin_values() -> (Vec<u64>, usize) {
+        let windows = [16.0, 64.0, 200.0, 256.0];
+        let scales = [0.5, 1.0, 2.0];
+        let mut out = Vec::new();
+        let mut interior = 0usize;
+        for m in &rstar_bitpin_shapes() {
+            for &w in &windows {
+                for &dwf in &[1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.9] {
+                    for &ls in &scales {
+                        let r = r_star_mass(m, w, dwf, ls);
+                        if r > 0.0 && r < R_STAR_TAIL_CEILING {
+                            interior += 1;
+                        }
+                        out.push(r.to_bits());
+                    }
+                }
+                for &tgt in &[1e-5, 1e-4, 1e-3] {
+                    for &ls in &scales {
+                        for &late in &[false, true] {
+                            let inp = RateInputs {
+                                p_upper: ls * m.eps_mass(),
+                                sigma2: 3.0,
+                                mean_burst: 2.5,
+                                mass: *m,
+                                tail_provision: true,
+                                window: w,
+                                t_symbols: 50.0,
+                                srtt: 0.02,
+                                t_sym: 1e-4,
+                                codec_overhead: 0.004,
+                                tail_target: tgt,
+                                bulk_late_is_fine: late,
+                                completion_exposure: 0.3,
+                                inner_feedback: 0.0,
+                                saturation_cap: true,
+                                max_overhead: 1.5,
+                            };
+                            out.push(controller_rate(&inp).to_bits());
+                        }
+                    }
+                }
+            }
+        }
+        (out, interior)
+    }
+
+    #[test]
+    fn rstar_bitpin_solver_is_bit_identical() {
+        let (got, interior) = rstar_bitpin_values();
+        // The grid must exercise the solver, not just its early exits.
+        assert!(interior >= 100, "bit-pin grid too degenerate: {interior} interior r*");
+        if std::env::var("RSTAR_BITPIN_CAPTURE").as_deref() == Ok("1") {
+            let mut s = String::from("[\n");
+            for chunk in got.chunks(4) {
+                s.push_str("    ");
+                for v in chunk {
+                    s.push_str(&format!("0x{v:016x}, "));
+                }
+                s.push('\n');
+            }
+            s.push_str("]\n");
+            let path = format!("{}/src/{}", env!("CARGO_MANIFEST_DIR"), RSTAR_BITPIN_FILE);
+            std::fs::write(&path, s).expect("write bit-pin table");
+            eprintln!("captured {} values ({interior} interior r*) to {path}", got.len());
+            return;
+        }
+        assert_eq!(
+            got.len(),
+            RSTAR_BITPIN.len(),
+            "bit-pin grid shape changed (or no table for this OS: {RSTAR_BITPIN_FILE})"
+        );
+        let diffs: Vec<usize> =
+            (0..got.len()).filter(|&i| got[i] != RSTAR_BITPIN[i]).collect();
+        assert!(
+            diffs.is_empty(),
+            "{} of {} pinned values changed; first at index {}: got {:e}, pinned {:e}",
+            diffs.len(),
+            got.len(),
+            diffs[0],
+            f64::from_bits(got[diffs[0]]),
+            f64::from_bits(RSTAR_BITPIN[diffs[0]])
+        );
+    }
+
+    /// Stage-1b' microbenchmark (ignored; run with `--ignored --nocapture`
+    /// in release): ns per `r_star_mass` call on a c2-like measured mass
+    /// (GE p_gb = 0.01, q = 0.4 => eps ~ 2.4 %, w0 = 64), W = 200, the
+    /// Bulk anchor term's delta_wf = (1e-5 x zeta = 1e-3) / p ~ 0.04.
+    #[test]
+    #[ignore]
+    fn bench_r_star_mass_c2_like() {
+        let m = ge_mass_stats(0.01, 0.4, 64, 400_000, 21);
+        let p = m.eps_mass() * 1.1;
+        let dwf = 1e-3 / p;
+        let ls = p / m.eps_mass();
+        let mut acc = 0.0;
+        // Time-bounded: >= 1 s or 20 000 calls (the pre-hoist solver costs ms).
+        let mut n = 0u32;
+        let t0 = std::time::Instant::now();
+        while n < 20_000 && (n < 5 || t0.elapsed().as_secs_f64() < 1.0) {
+            // Vary the level scale in the last ulp band so no call is hoisted.
+            acc += r_star_mass(&m, 200.0, dwf, ls * (1.0 + n as f64 * 1e-12));
+            n += 1;
+        }
+        let ns = t0.elapsed().as_nanos() as f64 / n as f64;
+        println!("BENCH r_star_mass c2-like: {ns:.0} ns/call (r* = {:.5}, eps_mass = {:.4})", acc / n as f64, m.eps_mass());
+    }
+
+    #[test]
+    fn fitted_tail_is_bit_identical_to_refit_tail() {
+        // The Stage-1b hoist: a tail read through the per-call fit memo (or
+        // the public `fitted()` pairs) equals the re-fitting `tail` bit for
+        // bit, at every scale including the nz = 0 skip.
+        for m in &rstar_bitpin_shapes() {
+            let fits = m.fitted();
+            let memo = FitMemo::new(m);
+            for s in 0..MASS_SCALES {
+                for &x in &[0.0, 0.5, 1.0, 3.7, 12.0, 40.0, 150.0] {
+                    let refit = m.tail(s, x);
+                    assert_eq!(refit.to_bits(), memo.tail(s, x).to_bits());
+                    assert_eq!(refit.to_bits(), m.tail_with(s, x, || fits[s]).to_bits());
+                }
+            }
+        }
     }
 }

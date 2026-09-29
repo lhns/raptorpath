@@ -14,4 +14,4 @@ pub use raptorpath_math::{changepoint, gilbert_elliott};
 
 pub use anchor::{SendRateAnchor, StallWitness};
 pub use estimator::LossEstimator;
-pub use fec_rate::{FecRateController, TaperBudget, TaperFunction};
+pub use fec_rate::{FecRateController, RateSnapshot, RepairRateCache, TaperBudget, TaperFunction};
