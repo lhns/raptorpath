@@ -46,7 +46,7 @@ use tracing::{debug, error, info, warn};
 
 use super::block_arq::BlockArq;
 use super::control_msg::{ControlCtx, handle_control_message};
-use super::delivery::WindowDelivery;
+use super::delivery::{WindowDelivery, delivered_through};
 use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
@@ -155,7 +155,8 @@ pub(crate) async fn run_receiver(
     } else {
         None
     };
-    // Hand-off of window symbols to the consumer channel (`net/delivery.rs`).
+    // Hand-off of window symbols to the consumer channel (`net/delivery.rs`):
+    // ρ = 1 holds on a full channel (never drops), ρ < 1 drops.
     let mut window_delivery = WindowDelivery::new(recv_window_reliable);
     // δ-honest overload shedding, receiver arm (paper §5.6): the in-order hold
     // for the window EVICT path becomes the δ-derived H = b·SRTT (the reorder
@@ -1221,6 +1222,47 @@ pub(crate) async fn run_receiver(
                 }
                 continue;
             }
+            // ρ = 1 retry wake: packets held on a full consumer channel go
+            // out the moment it has room (event-driven, never blocks the
+            // loop), and the ack they unblock is advertised right away.
+            // While held, the cumulative ack stalls, so the sender's tail sweep
+            // retransmits the blocker: back-pressure, expected (not loss).
+            permit = recv_tun_tx.reserve(), if window_delivery.is_holding() => {
+                let flushed = match permit {
+                    Ok(p) => window_delivery.flush_with_permit(p, &recv_tun_tx),
+                    Err(_) => Err(super::delivery::Closed),
+                };
+                if flushed.is_err() {
+                    error!("TUN inject channel closed");
+                    break 'recv;
+                }
+                let next_unreleased = reorder_buf
+                    .as_ref()
+                    .map(|rb| rb.next_deliver_seq())
+                    .unwrap_or(ooo_frontier);
+                highest_delivered_seq = highest_delivered_seq.max(
+                    delivered_through(next_unreleased, window_delivery.lowest_held())
+                        .unwrap_or(0),
+                );
+                if highest_delivered_seq > last_advertised_ack {
+                    last_advertised_ack = highest_delivered_seq;
+                    let ack_msg = ControlMessage::WindowAck {
+                        received_up_to: highest_delivered_seq,
+                        sack_ranges: Vec::new(),
+                        echo_send_timestamp_us: 0,
+                        jitter_us: 0,
+                        cumulative_received: 0,
+                        // Timer-style broadcast: the "no counter payload"
+                        // sentinel, as the hold-expiry unwedge above.
+                        cum_expected: 0,
+                        cum_received: 0,
+                    };
+                    for pid in recv_scheduler.lock().live_paths() {
+                        let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                    }
+                }
+                continue;
+            }
             _ = recv_shutdown_rx.recv() => {
                 info!("receiver shutting down");
                 break;
@@ -1612,16 +1654,16 @@ pub(crate) async fn run_receiver(
                             // only costs an incremental, low-latency consumer
                             // (inner TCP), never a file.
                             if recv_window_ooo {
-                                // Deliver immediately (any order). Full
-                                // channel drops rather than blocks: the
-                                // object/native consumer drains far
-                                // faster than the wire, so the bounded
-                                // (8192) channel only fills under a
-                                // pathological burst; blocking here would
-                                // deadlock the loopback's
-                                // client-feeds-and-drains feedback loop.
-                                // A rare drop is recovered by the
-                                // sender's retransmit.
+                                // Deliver immediately (any order). This arm
+                                // is reliable (ρ = 1), so a full channel
+                                // HOLDS the packets (`window_delivery`),
+                                // never drops and never blocks: blocking
+                                // here would deadlock the loopback's
+                                // client-feeds-and-drains feedback loop, and
+                                // a drop would be permanent (the ack below
+                                // lets the sender discard its only copy).
+                                // Held packets go out on the `reserve()`
+                                // wake in the select above.
                                 if window_delivery
                                     .offer(
                                         &recv_tun_tx,
@@ -1637,14 +1679,19 @@ pub(crate) async fn run_receiver(
                                 // cumulative WindowAck (retention pruning) —
                                 // no reorder buffer: the frontier walks
                                 // `received_seqs` (seq was inserted just
-                                // above). Delivery already happened, out of
-                                // order; this only tells the sender what it
-                                // may prune, so holes stay retained +
-                                // retransmitted.
+                                // above). Delivery happened out of order;
+                                // this tells the sender what it may prune,
+                                // so holes stay retained + retransmitted.
+                                // The ack stops below the lowest seq still
+                                // held for the consumer (a received seq is
+                                // not yet a delivered one).
                                 while received_seqs.contains(&ooo_frontier) {
                                     ooo_frontier += 1;
                                 }
-                                highest_delivered_seq = ooo_frontier.saturating_sub(1);
+                                highest_delivered_seq = highest_delivered_seq.max(
+                                    delivered_through(ooo_frontier, window_delivery.lowest_held())
+                                        .unwrap_or(0),
+                                );
                                 continue;
                             }
 
@@ -1715,6 +1762,11 @@ pub(crate) async fn run_receiver(
                                 if dseq > highest_delivered_seq {
                                     highest_delivered_seq = dseq;
                                 }
+                            }
+                            // ρ = 1: never ack past a seq still held for the
+                            // consumer (EVICT never holds: a no-op there).
+                            if let Some(h) = window_delivery.lowest_held() {
+                                highest_delivered_seq = highest_delivered_seq.min(h.saturating_sub(1));
                             }
 
                             // `[SUCC]` abandonment, read off the frontier

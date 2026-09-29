@@ -5,6 +5,8 @@
 //! serves the peer's acks, this side's acks and the hole-refresh timer, so a
 //! blocking send deadlocks the loopback. Every hand-off is a `try_send`.
 
+use std::collections::VecDeque;
+
 use bytes::Bytes;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -14,29 +16,55 @@ use tracing::warn;
 pub(crate) struct Closed;
 
 /// The receiver's hand-off step for window-mode symbols.
+///
+/// On a Full channel the retention contract decides: ρ < 1 (EVICT) drops the
+/// packet, as it always has; ρ = 1 HOLDS it (and every later packet, in
+/// arrival order) until the channel has room. Under ρ = 1 the sender discards
+/// its only copy once the cumulative ack passes a seq, so a dropped packet
+/// would be a permanent loss; the receiver caps its ack below
+/// [`WindowDelivery::lowest_held`] (see [`delivered_through`]). The hold is
+/// bounded as the reliable reorder buffer is: the stalled ack caps what the
+/// sender may have in flight (its retention store's back-pressure cap).
 pub(crate) struct WindowDelivery {
     /// ρ, the retention contract (`recv_window_reliable`).
     hold_on_full: bool,
+    /// Symbols with packets not yet accepted by the channel, in hand-off
+    /// order: `(seq, remaining packets)`. Only the packets NOT yet accepted
+    /// are kept, so a symbol split by a Full is never re-delivered.
+    held: VecDeque<(u64, VecDeque<Bytes>)>,
 }
 
 impl WindowDelivery {
     pub(crate) fn new(hold_on_full: bool) -> Self {
-        Self { hold_on_full }
+        Self {
+            hold_on_full,
+            held: VecDeque::new(),
+        }
     }
 
     /// Hand one symbol's packets (`seq`, in `extract_window_packets` order)
-    /// to the consumer.
+    /// to the consumer. While anything is held, the symbol queues behind it
+    /// (never overtakes), then the queue is flushed from its head.
     pub(crate) fn offer(
         &mut self,
         tx: &mpsc::Sender<Bytes>,
-        _seq: u64,
+        seq: u64,
         packets: Vec<Vec<u8>>,
     ) -> Result<(), Closed> {
-        let _ = self.hold_on_full;
-        for pkt in packets {
-            match tx.try_send(Bytes::from(pkt)) {
+        let mut pkts: VecDeque<Bytes> = packets.into_iter().map(Bytes::from).collect();
+        if !self.held.is_empty() {
+            self.held.push_back((seq, pkts));
+            return self.flush(tx);
+        }
+        while let Some(pkt) = pkts.pop_front() {
+            match tx.try_send(pkt) {
                 Ok(()) => {}
-                Err(mpsc::error::TrySendError::Full(_)) => {
+                Err(mpsc::error::TrySendError::Full(pkt)) => {
+                    if self.hold_on_full {
+                        pkts.push_front(pkt);
+                        self.held.push_back((seq, pkts));
+                        return Ok(());
+                    }
                     warn!("TUN inject channel full, dropping packet");
                 }
                 Err(mpsc::error::TrySendError::Closed(_)) => return Err(Closed),
@@ -45,18 +73,47 @@ impl WindowDelivery {
         Ok(())
     }
 
-    /// Retry the hand-off of anything held.
-    pub(crate) fn flush(&mut self, _tx: &mpsc::Sender<Bytes>) -> Result<(), Closed> {
+    /// Retry the hand-off of anything held, from the head, until the channel
+    /// is Full again or nothing is held.
+    pub(crate) fn flush(&mut self, tx: &mpsc::Sender<Bytes>) -> Result<(), Closed> {
+        while let Some((_, pkts)) = self.held.front_mut() {
+            while let Some(pkt) = pkts.pop_front() {
+                match tx.try_send(pkt) {
+                    Ok(()) => {}
+                    Err(mpsc::error::TrySendError::Full(pkt)) => {
+                        pkts.push_front(pkt);
+                        return Ok(());
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => return Err(Closed),
+                }
+            }
+            self.held.pop_front();
+        }
         Ok(())
+    }
+
+    /// [`flush`](Self::flush) with a slot already reserved (the receiver's
+    /// `reserve()` wake): the head packet takes the permit.
+    pub(crate) fn flush_with_permit(
+        &mut self,
+        permit: mpsc::Permit<'_, Bytes>,
+        tx: &mpsc::Sender<Bytes>,
+    ) -> Result<(), Closed> {
+        if let Some((_, pkts)) = self.held.front_mut() {
+            if let Some(pkt) = pkts.pop_front() {
+                permit.send(pkt);
+            }
+        }
+        self.flush(tx)
     }
 
     /// Lowest seq with a packet not yet accepted by the consumer channel.
     pub(crate) fn lowest_held(&self) -> Option<u64> {
-        None
+        self.held.iter().map(|(seq, _)| *seq).min()
     }
 
     pub(crate) fn is_holding(&self) -> bool {
-        false
+        !self.held.is_empty()
     }
 }
 
@@ -221,6 +278,24 @@ mod tests {
             let mut d = WindowDelivery::new(hold);
             assert_eq!(d.offer(&tx, 0, pkts(0, 1)), Err(Closed));
         }
+    }
+
+    /// The receiver's retry wake: `reserve()` resolves once the consumer
+    /// frees a slot, and the permit carries the held head packet.
+    #[tokio::test]
+    async fn reserve_wake_releases_the_held_head() {
+        let (tx, mut rx) = mpsc::channel::<Bytes>(1);
+        let mut d = WindowDelivery::new(true);
+        d.offer(&tx, 0, pkts(0, 2)).unwrap();
+        assert!(d.is_holding());
+        let pending = tokio::time::timeout(std::time::Duration::from_millis(50), tx.reserve()).await;
+        assert!(pending.is_err(), "no wake while the channel is full");
+        assert_eq!(rx.recv().await.unwrap().to_vec(), vec![0, 0]);
+        let permit = tx.reserve().await.unwrap();
+        d.flush_with_permit(permit, &tx).unwrap();
+        assert!(!d.is_holding());
+        assert_eq!(rx.recv().await.unwrap().to_vec(), vec![0, 1]);
+        assert_eq!(delivered_through(1, d.lowest_held()), Some(0));
     }
 
     #[test]
