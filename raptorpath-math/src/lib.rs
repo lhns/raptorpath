@@ -2201,4 +2201,149 @@ mod tests {
         let w = derive_window(1e-6, 0.025, 3.0, 0.013, 0.0, 0.0);
         assert!(w >= WINDOW_MAX - 1e-9, "expected WINDOW_MAX with no ceiling, got {w}");
     }
+
+    // ── Stage-1 bit-pin: r_star_mass / controller_rate ─────────────
+    //
+    // Snapshot of `r_star_mass(..).to_bits()` and `controller_rate(..)
+    // .to_bits()` over a fixed grid, captured on the pre-hoist code
+    // (main 1e6836f). No other test can detect a change INSIDE these
+    // functions (`the_rate_mix_is_byte_identical_at_the_presets` calls the
+    // same function on both sides), so any refactor or performance fix of
+    // the solver must keep this table exact. Re-capture ONLY for a
+    // deliberate law change: `RSTAR_BITPIN_CAPTURE=1 cargo test -p
+    // raptorpath-math rstar_bitpin` rewrites `src/rstar_bitpin_table.in`.
+    //
+    // Grid: 6 mass shapes (3 simulated GE channels incl. a c2-like
+    // p ~ 2.4 %, 2 uniform fixtures light/heavy, 1 GE shape with the upper
+    // scales emptied to exercise the nz = 0 skip) x W in {16, 64, 200, 256}
+    // (x <= 1, interpolation, and chunked union-bound branches) x
+    // {r_star_mass: delta_wf in {1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.9} x
+    //  level_scale in {0.5, 1, 2}} and {controller_rate: tail_target in
+    // {1e-5, 1e-4, 1e-3} x level_scale in {0.5, 1, 2} (p_upper =
+    // level_scale x eps_mass) x bulk_late_is_fine in {false, true}
+    // (chi = 0.3), tail_provision = true}.
+    const RSTAR_BITPIN: &[u64] = &include!("rstar_bitpin_table.in");
+
+    fn rstar_bitpin_shapes() -> Vec<MassStats> {
+        let mut shapes = vec![
+            ge_mass_stats(0.01, 0.4, 64, 400_000, 11),
+            ge_mass_stats(0.003, 0.3, 64, 400_000, 12),
+            ge_mass_stats(0.03, 0.5, 64, 400_000, 13),
+            uniform_mass(64.0, 0.6, 2.5, 10.0),
+            uniform_mass(64.0, 0.9, 6.4, 400.0),
+        ];
+        let mut holes = ge_mass_stats(0.01, 0.4, 64, 400_000, 14);
+        for s in 5..MASS_SCALES {
+            holes.nz[s] = 0.0;
+        }
+        shapes.push(holes);
+        for m in &shapes {
+            assert!(m.is_valid(), "bit-pin shape must be a valid mass");
+        }
+        shapes
+    }
+
+    fn rstar_bitpin_values() -> (Vec<u64>, usize) {
+        let windows = [16.0, 64.0, 200.0, 256.0];
+        let scales = [0.5, 1.0, 2.0];
+        let mut out = Vec::new();
+        let mut interior = 0usize;
+        for m in &rstar_bitpin_shapes() {
+            for &w in &windows {
+                for &dwf in &[1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.9] {
+                    for &ls in &scales {
+                        let r = r_star_mass(m, w, dwf, ls);
+                        if r > 0.0 && r < R_STAR_TAIL_CEILING {
+                            interior += 1;
+                        }
+                        out.push(r.to_bits());
+                    }
+                }
+                for &tgt in &[1e-5, 1e-4, 1e-3] {
+                    for &ls in &scales {
+                        for &late in &[false, true] {
+                            let inp = RateInputs {
+                                p_upper: ls * m.eps_mass(),
+                                sigma2: 3.0,
+                                mean_burst: 2.5,
+                                mass: *m,
+                                tail_provision: true,
+                                window: w,
+                                t_symbols: 50.0,
+                                srtt: 0.02,
+                                t_sym: 1e-4,
+                                codec_overhead: 0.004,
+                                tail_target: tgt,
+                                bulk_late_is_fine: late,
+                                completion_exposure: 0.3,
+                                inner_feedback: 0.0,
+                                saturation_cap: true,
+                                max_overhead: 1.5,
+                            };
+                            out.push(controller_rate(&inp).to_bits());
+                        }
+                    }
+                }
+            }
+        }
+        (out, interior)
+    }
+
+    #[test]
+    fn rstar_bitpin_solver_is_bit_identical() {
+        let (got, interior) = rstar_bitpin_values();
+        // The grid must exercise the solver, not just its early exits.
+        assert!(interior >= 100, "bit-pin grid too degenerate: {interior} interior r*");
+        if std::env::var("RSTAR_BITPIN_CAPTURE").as_deref() == Ok("1") {
+            let mut s = String::from("[\n");
+            for chunk in got.chunks(4) {
+                s.push_str("    ");
+                for v in chunk {
+                    s.push_str(&format!("0x{v:016x}, "));
+                }
+                s.push('\n');
+            }
+            s.push_str("]\n");
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/rstar_bitpin_table.in");
+            std::fs::write(path, s).expect("write bit-pin table");
+            eprintln!("captured {} values ({interior} interior r*) to {path}", got.len());
+            return;
+        }
+        assert_eq!(got.len(), RSTAR_BITPIN.len(), "bit-pin grid shape changed");
+        let diffs: Vec<usize> =
+            (0..got.len()).filter(|&i| got[i] != RSTAR_BITPIN[i]).collect();
+        assert!(
+            diffs.is_empty(),
+            "{} of {} pinned values changed; first at index {}: got {:e}, pinned {:e}",
+            diffs.len(),
+            got.len(),
+            diffs[0],
+            f64::from_bits(got[diffs[0]]),
+            f64::from_bits(RSTAR_BITPIN[diffs[0]])
+        );
+    }
+
+    /// Stage-1b' microbenchmark (ignored; run with `--ignored --nocapture`
+    /// in release): ns per `r_star_mass` call on a c2-like measured mass
+    /// (GE p_gb = 0.01, q = 0.4 => eps ~ 2.4 %, w0 = 64), W = 200, the
+    /// Bulk anchor term's delta_wf = (1e-5 x zeta = 1e-3) / p ~ 0.04.
+    #[test]
+    #[ignore]
+    fn bench_r_star_mass_c2_like() {
+        let m = ge_mass_stats(0.01, 0.4, 64, 400_000, 21);
+        let p = m.eps_mass() * 1.1;
+        let dwf = 1e-3 / p;
+        let ls = p / m.eps_mass();
+        let mut acc = 0.0;
+        // Time-bounded: >= 1 s or 20 000 calls (the pre-hoist solver costs ms).
+        let mut n = 0u32;
+        let t0 = std::time::Instant::now();
+        while n < 20_000 && (n < 5 || t0.elapsed().as_secs_f64() < 1.0) {
+            // Vary the level scale in the last ulp band so no call is hoisted.
+            acc += r_star_mass(&m, 200.0, dwf, ls * (1.0 + n as f64 * 1e-12));
+            n += 1;
+        }
+        let ns = t0.elapsed().as_nanos() as f64 / n as f64;
+        println!("BENCH r_star_mass c2-like: {ns:.0} ns/call (r* = {:.5}, eps_mass = {:.4})", acc / n as f64, m.eps_mass());
+    }
 }

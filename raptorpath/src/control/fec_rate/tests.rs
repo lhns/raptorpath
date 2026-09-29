@@ -1087,3 +1087,52 @@ fn test_p_fec_increases_with_window() {
         "Larger window should increase P_fec: W=20: {p_small}, W=200: {p_large}"
     );
 }
+
+/// Stage-1b' microbenchmark (ignored; run in release with `--ignored
+/// --nocapture`): ns per `compute_repair_rate` call on a c2-like estimator
+/// (Bulk, target 1e-5 x zeta, GE p_gb = 0.01, q = 0.4 => p ~ 2.4 %,
+/// W = 200, SRTT 20 ms, ~11 MB/s), the call the window sender makes per
+/// emitted source symbol (~9 300/s at c2).
+#[test]
+#[ignore]
+fn bench_compute_repair_rate_c2_like() {
+    use rand::prelude::*;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+    let mut est = LossEstimator::new_per_call_for_test();
+    let mut bad = false;
+    for _ in 0..(400_000 / 64) {
+        let mut rx = 0u32;
+        let mut pattern = [true; 64];
+        for slot in pattern.iter_mut() {
+            bad = if bad { rng.gen::<f64>() >= 0.4 } else { rng.gen::<f64>() < 0.01 };
+            *slot = !bad;
+            rx += (!bad) as u32;
+        }
+        est.record_counts(64, rx);
+        for ok in pattern {
+            est.record_symbol(ok);
+        }
+    }
+    for _ in 0..50 {
+        est.record_rtt(std::time::Duration::from_millis(20));
+        est.record_throughput(11.0e6);
+    }
+    let mass = est.ge_estimator().mass_stats();
+    assert!(mass.is_valid(), "bench estimator must carry a valid mass");
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
+    // Time-bounded: >= 1 s or 20 000 calls (the pre-hoist solver costs ms).
+    let mut n = 0u32;
+    let mut acc = 0.0;
+    let t0 = std::time::Instant::now();
+    while n < 20_000 && (n < 5 || t0.elapsed().as_secs_f64() < 1.0) {
+        acc += ctrl.compute_repair_rate(std::hint::black_box(&est), 200);
+        n += 1;
+    }
+    let ns = t0.elapsed().as_nanos() as f64 / n as f64;
+    println!(
+        "BENCH compute_repair_rate c2-like: {ns:.0} ns/call (rate = {:.5}, p_upper = {:.4}, eps_mass = {:.4})",
+        acc / n as f64,
+        est.predictive_loss_upper(0.95),
+        mass.eps_mass()
+    );
+}
