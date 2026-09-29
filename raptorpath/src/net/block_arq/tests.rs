@@ -379,3 +379,52 @@ fn idle_reannounce_bounded_by_round_cap() {
         "spare must escalate: {counts:?}"
     );
 }
+
+/// Retain one block with the Auto hint's geometry (16 KiB blocks, 1200 B
+/// symbols, `BlockProfile::from_hint(Auto)` in `net/mod.rs`).
+fn retain_auto_block(arq: &mut BlockArq, block_id: u64) {
+    const AUTO_BLOCK: usize = 16 * 1024;
+    const AUTO_SYM: u16 = 1200;
+    let data = Bytes::from(vec![(block_id & 0xff) as u8; AUTO_BLOCK]);
+    let k = AUTO_BLOCK.div_ceil(AUTO_SYM as usize) as u32;
+    arq.on_block_encoded(
+        block_id,
+        data,
+        params(k, AUTO_SYM, 0, block_id),
+        FecBackend::RaptorQ,
+        Instant::now(),
+    );
+}
+
+/// The retention horizon is a BYTE horizon: the shipped defaults must keep
+/// an Auto-geometry block (16 KiB) repairable for as long as a Bulk one
+/// (64 KiB) in byte terms. 80 in-flight Auto blocks = 1.25 MiB, well under
+/// `RETAIN_MAX_BYTES` (4 MiB); the oldest un-done block must still be
+/// retained and `plan_repairs` must still plan its repair. (Regression: a
+/// 64-block count cap bound first for Auto — a 1 MiB horizon, 4x shorter
+/// than Bulk's — and `plan_repairs` silently skipped the evicted block.)
+#[test]
+fn auto_geometry_retention_is_byte_bounded_not_count_bounded() {
+    let mut arq = BlockArq::new();
+    const N: u64 = 80;
+    for b in 0..N {
+        retain_auto_block(&mut arq, b);
+    }
+    let (blocks, bytes) = arq.retained_stats();
+    assert!(bytes <= RETAIN_MAX_BYTES, "byte cap must still hold: {bytes}");
+    assert_eq!(
+        blocks, N as usize,
+        "all {N} Auto blocks (1.25 MiB < 4 MiB) must be retained"
+    );
+    let plans = arq.plan_repairs(
+        vec![LossEvent {
+            block_id: 0,
+            path_id: 0,
+            missing: vec![0],
+        }],
+        0.0,
+    );
+    assert_eq!(plans.len(), 1, "oldest un-done block 0 must still be repairable");
+    assert_eq!(plans[0].block_id, 0);
+    assert!(!plans[0].symbols.is_empty());
+}
