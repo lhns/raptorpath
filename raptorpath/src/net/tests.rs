@@ -1989,6 +1989,46 @@ fn window_ack_sack_size_fits_the_control_datagram() {
         WINDOW_ACK_BASE_BYTES, WINDOW_ACK_BYTES_PER_RANGE);
 }
 
+/// DEFECT FINDING, bounded (plan 2a → wire v9, plan 2c): with the frontier
+/// stalled and more than `MAX_SACK_RANGES` received runs above it, every
+/// report is the SAME honest prefix, so the SACK-clocked release never gets
+/// past the first `MAX_SACK_RANGES` runs however many reports land — the
+/// store stays over-counted by exactly the received seqs beyond the cap until
+/// the frontier moves. No v8 field carries a trustworthy received-above-
+/// frontier count (`cumulative_received` is per-path `symbols_received` in
+/// the in-order window, `received_seqs.len()` in OOO modes, 0 on timer acks;
+/// `cum_received` is a per-path symbol counter incl. repairs). This pins the
+/// shortfall exactly; a v9 wire that converges must flip it.
+#[test]
+fn sack_prefix_release_does_not_converge_past_the_cap_at_a_stalled_frontier() {
+    let delivered = 1_000u64;
+    let n_runs = 3 * MAX_SACK_RANGES as u64;
+    // Frontier hole at delivered+1; runs of 2 received seqs, 1-seq holes.
+    let mut received: BTreeSet<u64> = BTreeSet::new();
+    received.insert(delivered);
+    for i in 0..n_runs {
+        let a = delivered + 2 + 3 * i;
+        received.insert(a);
+        received.insert(a + 1);
+    }
+    let seen = *received.iter().next_back().unwrap();
+    let sent_store: BTreeMap<u64, ()> = (delivered + 1..=seen).map(|s| (s, ())).collect();
+    let received_above = received.range(delivered + 1..).count();
+    let mut released = BTreeSet::new();
+    for _report in 0..50 {
+        for (a, b) in received_sack_ranges(&received, delivered, seen) {
+            sack_release_mark(&sent_store, &mut released, a, b);
+        }
+    }
+    assert_eq!(released.len(), 2 * MAX_SACK_RANGES, "release stops at the prefix");
+    assert_eq!(
+        received_above - released.len(),
+        2 * (n_runs as usize - MAX_SACK_RANGES),
+        "the store stays over-counted by every received seq past the cap"
+    );
+    assert!(released.iter().all(|s| received.contains(s)), "and never lies");
+}
+
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
 
 #[test]
