@@ -442,8 +442,8 @@ fn tiny_blocks_count_bounded_by_overhead_charge() {
         retain_block(&mut arq, b, 1, FecBackend::RaptorQ);
     }
     let (blocks, bytes) = arq.retained_stats();
-    assert!(bytes <= RETAIN_MAX_BYTES);
-    assert_eq!(blocks, RETAIN_MAX_BYTES / (1 + RETAIN_PER_BLOCK_OVERHEAD));
+    assert!(bytes <= RETAIN_BUDGET_BYTES);
+    assert_eq!(blocks, RETAIN_BUDGET_BYTES / (1 + RETAIN_PER_BLOCK_OVERHEAD));
     assert!(blocks <= RETAIN_MAX_BLOCKS_DERIVED);
 }
 
@@ -486,46 +486,93 @@ fn cached_encoder_footprint_is_charged() {
     }
 }
 
-/// Repair touches the block to the hot end of the LRU: a later insertion
-/// evicts the next-coldest block, not the one under repair.
+/// Repair touches the block to the hot end of the LRU and protects its
+/// encoder; under pressure, cached encoders are dropped BEFORE any block
+/// data, and a later insertion evicts the next-coldest block, not the one
+/// under repair, whose dropped encoder is rebuilt on demand.
 #[test]
-fn repair_touch_protects_block_from_eviction() {
+fn repair_touch_protects_block_and_encoders_drop_before_data() {
     let len = 1000;
     let p = |b| params(1, 1000, 0, b);
     let fp = encoder_footprint_bytes(FecBackend::RaptorQ, &p(0));
     let per = len + RETAIN_PER_BLOCK_OVERHEAD;
-    // Room for 3 plain blocks + one encoder.
-    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 3 * per + fp);
+    // Budget = exactly 3 blocks of data; no headroom for any encoder.
+    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 3 * per);
     for b in 0..3u64 {
         arq.on_block_encoded(b, Bytes::from(vec![1u8; len]), p(b), FecBackend::RaptorQ, Instant::now());
     }
-    let plans = arq.plan_repairs(
-        vec![LossEvent {
-            block_id: 0,
-            path_id: 0,
-            missing: vec![0],
-        }],
-        0.0,
-    );
+    let ev = |b| LossEvent {
+        block_id: b,
+        path_id: 0,
+        missing: vec![0],
+    };
+    let plans = arq.plan_repairs(vec![ev(0)], 0.0);
     assert_eq!(plans.len(), 1);
+    // The protected encoder of the block under repair never evicts data:
+    // all 3 blocks stay, over budget by exactly that one encoder.
     assert_eq!(arq.retained_stats(), (3, 3 * per + fp));
+    assert_eq!(arq.retained_breakdown(), (3 * per, fp, 0));
+
     arq.on_block_encoded(3, Bytes::from(vec![1u8; len]), p(3), FecBackend::RaptorQ, Instant::now());
-    // Block 1 (coldest after the touch) goes; block 0 survives.
-    assert!(arq.plan_repairs(
-        vec![LossEvent { block_id: 1, path_id: 0, missing: vec![0] }],
-        0.0
-    )
-    .is_empty());
+    // Tier 1 dropped block 0's (now unprotected) encoder; tier 2 then
+    // evicted block 1 (coldest after the touch). Block 0 survives.
+    assert_eq!(arq.retained_breakdown(), (3 * per, 0, 1));
+    assert_eq!(arq.retained_stats().0, 3);
+    assert!(arq.plan_repairs(vec![ev(1)], 0.0).is_empty());
     assert_eq!(arq.repair_skips_evicted(), 1);
-    let plans = arq.plan_repairs(
-        vec![LossEvent {
-            block_id: 0,
-            path_id: 0,
-            missing: vec![0],
-        }],
-        0.0,
-    );
+    let plans = arq.plan_repairs(vec![ev(0)], 0.0);
     assert_eq!(plans.len(), 1, "repaired block must outlive colder blocks");
+    assert!(!plans[0].symbols.is_empty(), "encoder rebuilt on demand");
+}
+
+/// Bulk geometry (64 KiB blocks, 1200 B symbols): 64 blocks ALL under
+/// repair keep all 64 blocks' data retained — the historical Bulk horizon
+/// (64 × 64 KiB = 4 MiB of data) — with encoders dropped to fit the budget;
+/// the oldest block's next repair still succeeds (encoder rebuilt), with
+/// fresh repair indices.
+#[test]
+fn bulk_geometry_64_blocks_under_repair_keep_all_data() {
+    const BULK_BLOCK: usize = 64 * 1024;
+    const BULK_SYM: u16 = 1200;
+    let k = BULK_BLOCK.div_ceil(BULK_SYM as usize) as u32;
+    let mut arq = BlockArq::new();
+    let ev = |b| LossEvent {
+        block_id: b,
+        path_id: 0,
+        missing: vec![0],
+    };
+    let mut first_esi_0 = None;
+    for b in 0..64u64 {
+        arq.on_block_encoded(
+            b,
+            Bytes::from(vec![(b & 0xff) as u8; BULK_BLOCK]),
+            params(k, BULK_SYM, 0, b),
+            FecBackend::RaptorQ,
+            Instant::now(),
+        );
+        let plans = arq.plan_repairs(vec![ev(b)], 0.0);
+        assert_eq!(plans.len(), 1, "block {b} repair");
+        if b == 0 {
+            first_esi_0 = Some(plans[0].symbols[0].payload_id);
+        }
+    }
+    let fp = encoder_footprint_bytes(FecBackend::RaptorQ, &params(k, BULK_SYM, 0, 0));
+    let (blocks, _) = arq.retained_stats();
+    let (data, enc, drops) = arq.retained_breakdown();
+    assert_eq!(blocks, 64, "all 64 Bulk blocks retained under repair");
+    assert_eq!(data, 64 * (BULK_BLOCK + RETAIN_PER_BLOCK_OVERHEAD));
+    assert!(data - 64 * RETAIN_PER_BLOCK_OVERHEAD >= RETAIN_MAX_BYTES, "data horizon >= 4 MiB");
+    assert!(drops > 0, "encoders were dropped to fit the budget");
+    assert!(
+        data + enc <= RETAIN_BUDGET_BYTES + fp,
+        "memory bound: budget + one protected encoder"
+    );
+
+    let plans = arq.plan_repairs(vec![ev(0)], 0.0);
+    assert_eq!(plans.len(), 1, "oldest block's repair succeeds");
+    let esi = plans[0].symbols[0].payload_id;
+    assert!(esi > first_esi_0.unwrap(), "fresh repair index after rebuild");
+    assert_eq!(arq.retained_stats().0, 64, "the rebuild evicted no block");
 }
 
 /// Evicted-block skips are counted; done blocks are not miscounted as

@@ -215,11 +215,17 @@ const MAX_WINDOW_SIZE: usize = 200;
 // Reorder-buffer defaults are supplied by `config::resolve` and reach the
 // receiver as `config.reorder_timeout_ms` / `config.reorder_max_size`.
 /// Block-mode in-order delivery: max decoded-block BYTES held for ordering
-/// before force-drain (4 MiB — the original design figure, formerly
-/// expressed as 64 × 64 KB blocks). A byte bound, not an entry count, so
-/// small-block geometries (Auto 16 KiB, Realtime 4 KiB) get the same hold
-/// horizon in bytes as Bulk; mirrors the sender's `RETAIN_MAX_BYTES`.
-const BLOCK_REORDER_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// before force-drain. A byte bound, not an entry count, so small-block
+/// geometries (Auto 16 KiB, Realtime 4 KiB) get the same hold horizon in
+/// bytes as Bulk. Same shape as the sender's `RETAIN_BUDGET_BYTES`: the
+/// 4 MiB data figure (formerly 64 × 64 KB blocks) plus the per-entry
+/// charge of the most full blocks any profile can put in it, so Bulk still
+/// holds its 64 full blocks:
+///   BLOCK_REORDER_MAX_BYTES = RETAIN_MAX_BYTES
+///                           + ENTRY_OVERHEAD × (RETAIN_MAX_BYTES / BLOCK_MIN_PROFILE_BLOCK_SIZE)
+const BLOCK_REORDER_MAX_BYTES: usize = block_arq::RETAIN_MAX_BYTES
+    + reorder::ENTRY_OVERHEAD
+        * (block_arq::RETAIN_MAX_BYTES / block_arq::BLOCK_MIN_PROFILE_BLOCK_SIZE);
 /// Bounds for the SRTT-adaptive in-order hold (4×SRTT, clamped). The hold
 /// must survive two ARQ repair rounds, not one: each round is ~2×SRTT
 /// (loss declared after ~1.5×SRTT via Ack diff/timeout + 0.5×SRTT for the

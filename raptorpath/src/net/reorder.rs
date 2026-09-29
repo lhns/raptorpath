@@ -36,7 +36,7 @@ pub struct ReorderBuffer {
 /// Fixed per-entry charge against a byte bound (BTreeMap node share +
 /// `Bytes` handle + timestamp). Keeps the byte bound honest for tiny
 /// entries (a block flushed on timeout can hold a single inner packet).
-const ENTRY_OVERHEAD: usize = 64;
+pub(crate) const ENTRY_OVERHEAD: usize = 64;
 
 impl ReorderBuffer {
     pub fn new(timeout_ms: u64, max_buffered: usize) -> Self {

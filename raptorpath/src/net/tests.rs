@@ -5114,7 +5114,9 @@ fn pipe_echo_names_the_route_the_engine_takes() {
 /// symbol size (`block_arq::BLOCK_MIN_SYMBOL_SIZE`); every hint profile must
 /// respect it, or single-symbol batches covering the retention byte horizon
 /// could overflow the ledger and drop a retained block's loss bookkeeping.
-/// Also pins the byte horizons on both ends to the same 4 MiB design figure.
+/// Also pins the smallest full profile block (sizes both byte budgets'
+/// bookkeeping allowance) and that both ends hold Bulk's historical
+/// 64 full 64 KiB blocks.
 #[test]
 fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
     use crate::control::fec_rate::ProtocolHint;
@@ -5125,6 +5127,13 @@ fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
             "{hint:?}: symbol {} < BLOCK_MIN_SYMBOL_SIZE",
             p.symbol_size
         );
+        assert!(
+            p.max_block_size >= block_arq::BLOCK_MIN_PROFILE_BLOCK_SIZE,
+            "{hint:?}: block {} < BLOCK_MIN_PROFILE_BLOCK_SIZE",
+            p.max_block_size
+        );
     }
-    assert_eq!(BLOCK_REORDER_MAX_BYTES, block_arq::RETAIN_MAX_BYTES);
+    let bulk = BlockProfile::from_hint(ProtocolHint::Bulk).max_block_size;
+    assert!(64 * (bulk + reorder::ENTRY_OVERHEAD) <= BLOCK_REORDER_MAX_BYTES);
+    assert!(64 * (bulk + block_arq::RETAIN_PER_BLOCK_OVERHEAD) <= block_arq::RETAIN_BUDGET_BYTES);
 }
