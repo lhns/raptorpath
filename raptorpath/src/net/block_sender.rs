@@ -65,6 +65,11 @@ pub(crate) async fn run_block_sender(
     // all-or-nothing, so partial sends need their own queue).
     let mut pace_carry: PaceCarry = PaceCarry::new();
     let mut shutting_down = false;
+    // Block-pipeline flow control (see `feed_gate`): parked on this while
+    // the retention window is full of unconfirmed blocks; `on_block_done`
+    // wakes it.
+    let room = sender_block_arq.lock().room_notify();
+    let mut last_retention_full = false;
     let mut ileave = if sender_interleave_depth >= 2 {
         interleave::InterleavingBuffer::new_tapered(
             sender_interleave_depth as usize,
@@ -116,6 +121,14 @@ pub(crate) async fn run_block_sender(
             debug!(tx_paused, in_flight = dbg_fl, cwnd = dbg_cw, "backpressure state change");
             last_tx_paused = tx_paused;
         }
+        let gate = feed_gate(tx_paused, &mut sender_block_arq.lock(), sender_profile_max_block);
+        if gate.retention_full != last_retention_full {
+            debug!(
+                retention_full = gate.retention_full,
+                "block retention window state change (flow control)"
+            );
+            last_retention_full = gate.retention_full;
+        }
 
         // Select between packet arrival, flush timeout, interleave drain, and shutdown
         let packet = {
@@ -141,8 +154,13 @@ pub(crate) async fn run_block_sender(
                 _ = tokio::time::sleep(std::time::Duration::from_millis(1)), if tx_paused => {
                     continue;
                 }
-                p = tun.read_packet(), if !tx_paused => p,
-                _ = flush_sleep => None,
+                // Retention window full: park until a confirmation frees
+                // room (no poll — `on_block_done` stores a Notify permit).
+                _ = room.notified(), if gate.retention_full => {
+                    continue;
+                }
+                p = tun.read_packet(), if gate.read_tun => p,
+                _ = flush_sleep, if gate.flush => None,
                 _ = pace_sleep => {
                     // Pacing tokens should be available again — retry
                     // the blocked drain.
@@ -327,12 +345,30 @@ pub(crate) struct FeedGate {
     pub retention_full: bool,
 }
 
-/// The block sender's admission gate.
-pub(crate) fn feed_gate(copa_paused: bool, _arq: &mut BlockArq, _next_block_bytes: usize) -> FeedGate {
+/// The block sender's admission gate: ONE rule composing the two
+/// back-pressure signals.
+///
+///   retention_full = ¬ arq.has_room(next_block_bytes)
+///   read_tun       = ¬ copa_paused ∧ ¬ retention_full
+///   flush          = ¬ retention_full
+///
+/// Copa's wire budget stops TUN reads only (a partial block may still be
+/// flushed into the already-charged pipeline, as before). The retention
+/// window stops everything that would ENCODE a new block — TUN reads (which
+/// grow the block under assembly toward `max_block_size`) and the flush
+/// timeout — because under the reliable contract an unconfirmed block is
+/// never evicted: a full window must pause the producer instead. Draining
+/// already-encoded symbols (interleaver / pacing carry), the ARQ repair and
+/// the ack/control paths are untouched. Only the shutdown flush encodes
+/// ungated (bounded overshoot: one block). `next_block_bytes` is the
+/// profile's full block size, so every block admitted while the gate is
+/// open fits (up to the one packet a block can overrun it by).
+pub(crate) fn feed_gate(copa_paused: bool, arq: &mut BlockArq, next_block_bytes: usize) -> FeedGate {
+    let retention_full = !arq.has_room(next_block_bytes);
     FeedGate {
-        read_tun: !copa_paused,
-        flush: true,
-        retention_full: false,
+        read_tun: !copa_paused && !retention_full,
+        flush: !retention_full,
+        retention_full,
     }
 }
 

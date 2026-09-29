@@ -335,24 +335,28 @@ fn idle_reannounce_recovers_orphaned_block() {
 }
 
 #[test]
-fn idle_reannounce_bounded_by_round_cap() {
+fn idle_reannounce_spare_escalates_and_is_capped_per_round() {
     let mut arq = BlockArq::new();
     let t0 = Instant::now();
     let data = Bytes::from(vec![1u8; 640]);
     arq.on_block_encoded(71, data, params(10, 64, 2, 71), FecBackend::RaptorQ, t0);
-    let mut fired = 0u8;
     let mut counts: Vec<usize> = Vec::new();
-    // Keep the block un-done and always past-timeout: it must fire at most
-    // MAX_REANNOUNCE_ROUNDS times, then give way to the receiver backstop.
-    for r in 0..(MAX_REANNOUNCE_ROUNDS as u32 + 4) {
+    // Keep the block un-done and always past-timeout: one round per quiet
+    // period (never a give-up — see the reliable-contract test below), each
+    // round's burst capped.
+    for r in 0..20u32 {
         let now = t0 + Duration::from_millis(200 * (r as u64 + 1));
         let plans = arq.idle_reannounce(now, &|_| TIMEOUT, 0, 0.1);
         if let Some(p) = plans.first() {
-            fired += 1;
             counts.push(p.symbols.len());
         }
     }
-    assert_eq!(fired, MAX_REANNOUNCE_ROUNDS, "re-announce is bounded");
+    assert_eq!(counts.len(), 20, "one round per quiet period");
+    // k = 10, margin = ceil(0.1 × 10) + 1 = 2: every round ≤ min(cap, k + margin).
+    assert!(
+        counts.iter().all(|&c| c as u32 <= REANNOUNCE_PER_ROUND_CAP.min(12)),
+        "capped burst: {counts:?}"
+    );
     // Escalation: the spare grows across rounds (cheap probe -> full block).
     assert!(
         counts.last().unwrap() > counts.first().unwrap(),
@@ -409,17 +413,23 @@ fn auto_geometry_retention_is_byte_bounded_not_count_bounded() {
     assert!(!plans[0].symbols.is_empty());
 }
 
-/// Byte-only horizon: the retained count is whatever fits, never a count cap.
+/// Byte-only window: the admitted count is whatever fits, never a count cap.
 #[test]
 fn retention_is_byte_bounded_only() {
     let per = 1000 + RETAIN_PER_BLOCK_OVERHEAD;
     let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 3 * per);
+    let mut admitted = 0u64;
     for b in 0..8u64 {
-        retain_block(&mut arq, b, 1000, FecBackend::RaptorQ);
+        if arq.has_room(1000) {
+            retain_block(&mut arq, b, 1000, FecBackend::RaptorQ);
+            admitted += 1;
+        }
     }
     let (blocks, bytes) = arq.retained_stats();
-    assert_eq!(blocks, 3, "exactly the blocks that fit the byte horizon");
+    assert_eq!(admitted, 3, "exactly the blocks that fit the byte window");
+    assert_eq!(blocks, 3);
     assert_eq!(bytes, 3 * per, "charge = data + per-block overhead");
+    assert_eq!(arq.window_gauge(), (8, 5), "bind-fraction gauge: 5 of 8 checks found it full");
 
     // Many small blocks under the shipped default: far more than 64 retained,
     // all within RETAIN_MAX_BYTES.
@@ -439,7 +449,9 @@ fn tiny_blocks_count_bounded_by_overhead_charge() {
     let mut arq = BlockArq::new();
     let n = RETAIN_MAX_BLOCKS_DERIVED as u64 + 500;
     for b in 0..n {
-        retain_block(&mut arq, b, 1, FecBackend::RaptorQ);
+        if arq.has_room(1) {
+            retain_block(&mut arq, b, 1, FecBackend::RaptorQ);
+        }
     }
     let (blocks, bytes) = arq.retained_stats();
     assert!(bytes <= RETAIN_BUDGET_BYTES);
@@ -487,9 +499,9 @@ fn cached_encoder_footprint_is_charged() {
 }
 
 /// Repair touches the block to the hot end of the LRU and protects its
-/// encoder; under pressure, cached encoders are dropped BEFORE any block
-/// data, and a later insertion evicts the next-coldest block, not the one
-/// under repair, whose dropped encoder is rebuilt on demand.
+/// encoder; under pressure, cached encoders are the only thing dropped
+/// (block data is never evicted), and a dropped encoder is rebuilt on
+/// demand.
 #[test]
 fn repair_touch_protects_block_and_encoders_drop_before_data() {
     let len = 1000;
@@ -513,13 +525,15 @@ fn repair_touch_protects_block_and_encoders_drop_before_data() {
     assert_eq!(arq.retained_stats(), (3, 3 * per + fp));
     assert_eq!(arq.retained_breakdown(), (3 * per, fp, 0));
 
+    assert!(!arq.has_room(len), "window full: the sender would pause here");
+    // An ungated admit (shutdown flush) over the full window: block 0's
+    // (now unprotected) encoder is dropped, and NO unconfirmed block is
+    // evicted — data may exceed the budget by that one block.
     arq.on_block_encoded(3, Bytes::from(vec![1u8; len]), p(3), FecBackend::RaptorQ, Instant::now());
-    // Tier 1 dropped block 0's (now unprotected) encoder; tier 2 then
-    // evicted block 1 (coldest after the touch). Block 0 survives.
-    assert_eq!(arq.retained_breakdown(), (3 * per, 0, 1));
-    assert_eq!(arq.retained_stats().0, 3);
-    assert!(arq.plan_repairs(vec![ev(1)], 0.0).is_empty());
-    assert_eq!(arq.repair_skips_evicted(), 1);
+    assert_eq!(arq.retained_breakdown(), (4 * per, 0, 1));
+    assert_eq!(arq.retained_stats().0, 4);
+    assert_eq!(arq.plan_repairs(vec![ev(1)], 0.0).len(), 1, "block 1 still repairable");
+    assert_eq!(arq.repair_skips_evicted(), 0);
     let plans = arq.plan_repairs(vec![ev(0)], 0.0);
     assert_eq!(plans.len(), 1, "repaired block must outlive colder blocks");
     assert!(!plans[0].symbols.is_empty(), "encoder rebuilt on demand");
@@ -575,19 +589,22 @@ fn bulk_geometry_64_blocks_under_repair_keep_all_data() {
     assert_eq!(arq.retained_stats().0, 64, "the rebuild evicted no block");
 }
 
-/// Evicted-block skips are counted; done blocks are not miscounted as
-/// evictions for as long as the retention horizon can hold their peers.
+/// Skips of unknown (neither retained nor done) blocks are counted; an
+/// over-budget block is NOT such a block (never evicted); done blocks are
+/// not miscounted for as long as the retention window can hold their peers.
 #[test]
 fn evicted_skips_counted_and_done_ring_spans_the_horizon() {
     let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 1000 + RETAIN_PER_BLOCK_OVERHEAD);
     retain_block(&mut arq, 0, 1000, FecBackend::RaptorQ);
-    retain_block(&mut arq, 1, 1000, FecBackend::RaptorQ); // evicts 0
+    retain_block(&mut arq, 1, 1000, FecBackend::RaptorQ); // over budget: no eviction
     let ev = |b| LossEvent {
         block_id: b,
         path_id: 0,
         missing: vec![0],
     };
-    assert!(arq.plan_repairs(vec![ev(0)], 0.0).is_empty());
+    assert_eq!(arq.plan_repairs(vec![ev(0)], 0.0).len(), 1);
+    assert_eq!(arq.repair_skips_evicted(), 0);
+    assert!(arq.plan_repairs(vec![ev(999)], 0.0).is_empty(), "never-retained id");
     assert_eq!(arq.repair_skips_evicted(), 1);
 
     // Done ring: block 100 done, then DONE_RING_CAP - 1 later blocks done.
@@ -689,14 +706,14 @@ fn block_done_wakes_the_room_notify() {
 /// retained (un-confirmed). The receiver never refuses a block (its
 /// decoder GC forgets, and a re-announced BlockStart re-creates the
 /// decoder), so a sender-side give-up would pin the flow-control window
-/// forever. Past `MAX_REANNOUNCE_ROUNDS` the spare stays capped.
+/// forever. Every round's spare stays capped.
 #[test]
 fn idle_reannounce_never_gives_up_on_an_unconfirmed_block() {
     let mut arq = BlockArq::new();
     let t0 = Instant::now();
     let data = Bytes::from(vec![1u8; 640]);
     arq.on_block_encoded(72, data, params(10, 64, 2, 72), FecBackend::RaptorQ, t0);
-    let rounds = MAX_REANNOUNCE_ROUNDS as u32 * 4;
+    let rounds = 64u32;
     let mut fired = 0u32;
     for r in 0..rounds {
         let now = t0 + Duration::from_millis(200 * (r as u64 + 1));
