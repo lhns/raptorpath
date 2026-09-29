@@ -80,14 +80,28 @@ pub(crate) struct DiagState {
     // ── The window sender's wait-reason histogram (`wait[..]`, RWM_DIAG) ──
     //
     // `gd_us` above attributes the generation plane only (its buckets do not
-    // exist under `RWM_GEN=0`). This one times the sender loop's `select!`
-    // await and charges the elapsed wall time to the arm that woke it: "when
-    // the sender is not sending, what is it waiting on?". It is defined
-    // whether or not generation coding is on, and its buckets sum to the
-    // whole loop.
+    // exist under `RWM_GEN=0`). This one splits the sender loop's wall time
+    // into the loop BODY (compute) and the `select!` AWAIT, and charges the
+    // await to the arm that woke it: "when the sender is not sending, what
+    // is it waiting on?". It is defined whether or not generation coding is
+    // on, and body + await sum to the whole loop.
     //
-    //   tun     — `tun.read_packet()` produced a packet: PRODUCTIVE intake.
-    //             The only arm that carries new source data.
+    //   busy    — loop-body time: from one `select!` resolution to the start
+    //             of the next `select!` await (emission, ack/SACK processing,
+    //             the rate law, ...). Until Stage 1d this time was charged to
+    //             the NEXT arm that woke (usually `tun`), which is how a
+    //             CPU-bound sender (6 ms/iteration) read as "productive".
+    //             Resolution: the split is taken at the `select!` statement's
+    //             boundaries, so the few statements inside an arm's own body
+    //             (the flush arm's one-symbol emit, the deficit-report
+    //             rebuild) count with that arm's await; everything after the
+    //             `select!` — where the emission and ack work runs — is busy.
+    //
+    // The eight arm buckets hold AWAIT time only:
+    //
+    //   tun     — `tun.read_packet()` produced a packet: intake was ready.
+    //             The only arm that carries new source data (a large share
+    //             is productive only while `busy` is small).
     //   paused  — the 1 ms backpressure poll: the store is full (`tx_paused`),
     //             i.e. the outstanding-data limit binds.
     //   pace    — the 1 ms pacing poll: the `RWM_CC_PACE` source token
@@ -98,11 +112,26 @@ pub(crate) struct DiagState {
     //   tail    — the tail-ARQ sweep deadline fired.
     //   flush   — the packer's partial-symbol flush timeout fired.
     //
-    // `wait_n` counts loop iterations so the mean await is readable, and
-    // `wait_tun_us` is split out so "productive" and "waiting" are separable
-    // without re-deriving them from percentages. All gated on RWM_DIAG.
+    // The printed line (one per DIAG period):
+    //
+    //   wait[tun=A% paused=B% ... flush=H% n=N us=U busy=P% busy_us=V]
+    //
+    //   arm %   — share of the period's AWAIT time (Σ arm buckets), so the
+    //             eight arm shares sum to 100 % of the awaiting;
+    //   n       — loop iterations charged this period;
+    //   us      — the whole loop wall this period, await + body (unchanged
+    //             meaning: us/n is still the mean iteration period);
+    //   busy    — body time as a share of `us`; busy_us its absolute µs.
+    //             A sender pinned by compute shows busy → 100 %.
+    //
+    // All gated on RWM_DIAG.
+    /// The last `select!` resolution instant (µs): the start of the loop body.
     pub wait_last_us: u64,
-    /// [tun, paused, pace, gen, nack, defc, tail, flush]
+    /// The current `select!` await's start instant (µs).
+    pub wait_await_us: u64,
+    /// Loop-body time this window (µs), the `busy` bucket.
+    pub wait_busy_us: u64,
+    /// [tun, paused, pace, gen, nack, defc, tail, flush] — await time only.
     pub wait_us: [u64; 8],
     /// Iterations charged into `wait_us` this window (all buckets).
     pub wait_n: u64,
@@ -205,6 +234,23 @@ pub(crate) struct DiagState {
 }
 
 impl DiagState {
+    /// The sender loop is about to `select!`: the time since the last
+    /// resolution was loop body — charge it to `busy`. Returns the body µs.
+    pub fn wait_enter_await(&mut self, now_us: u64) -> u64 {
+        let body = now_us.saturating_sub(self.wait_last_us);
+        self.wait_busy_us += body;
+        self.wait_await_us = now_us;
+        body
+    }
+
+    /// The `select!` resolved at `now_us`: returns the AWAIT µs (to charge to
+    /// the arm that woke) and starts the next body.
+    pub fn wait_resolve(&mut self, now_us: u64) -> u64 {
+        let dt = now_us.saturating_sub(self.wait_await_us.max(self.wait_last_us));
+        self.wait_last_us = now_us;
+        dt
+    }
+
     /// Build the report's counters. Every initializer is pure (zeroed
     /// counters, empty maps, and `stall_threshold_us(LOOP_WAKE_US)`); the four
     /// wall-clock stamps are passed in so the caller samples them at its own
@@ -223,6 +269,8 @@ impl DiagState {
             // both bracket the same loop, so a divergent origin would make
             // the two attributions disagree about the first window's length.
             wait_last_us: gd_last_us,
+            wait_await_us: gd_last_us,
+            wait_busy_us: 0,
             wait_us: [0u64; 8],
             wait_n: 0,
             mpd_gap_reports: 0,
@@ -453,6 +501,10 @@ pub(crate) fn report(
                     let rtt_i = p.estimator.rtt().as_secs_f64() * 1000.0;
                     let rtprop_i =
                         p.min_rtt().map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0);
+                    // The same RTprop in µs (`rtp_us=`): the whole-ms `rtp`
+                    // rounds a 0.4 ms loopback floor to 0 and a 12.4 ms one
+                    // to 12. 0 = no sample, as for `rtp`.
+                    let rtprop_us_i = p.min_rtt().map(|d| d.as_micros() as u64).unwrap_or(0);
                     // Per-path SOURCE outstanding gauge (charged by the
                     // CopaFeed at send, released on ack attribution),
                     // the ack-attributed per-path BtlBw_i (sym/s), and
@@ -601,8 +653,8 @@ pub(crate) fn report(
                     let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                     let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
-                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
                         qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
                     ));
                 }
@@ -641,16 +693,9 @@ pub(crate) fn report(
         // Unconditional on the RWM_DIAG surface, and printed even when every
         // bucket is zero: a gauge that disappears when it has nothing to say
         // is a gauge you cannot prove ran.
-        let w_tot: u64 = dg.wait_us.iter().sum::<u64>().max(1);
-        let wpct = |i: usize| dg.wait_us[i] as f64 * 100.0 / w_tot as f64;
-        let waitdiag = format!(
-            " wait[tun={:.0}% paused={:.0}% pace={:.0}% gen={:.0}% nack={:.0}% \
-             defc={:.0}% tail={:.0}% flush={:.0}% n={} us={}]",
-            wpct(0), wpct(1), wpct(2), wpct(3), wpct(4), wpct(5), wpct(6), wpct(7),
-            dg.wait_n,
-            dg.wait_us.iter().sum::<u64>(),
-        );
+        let waitdiag = wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n);
         dg.wait_us = [0; 8];
+        dg.wait_busy_us = 0;
         dg.wait_n = 0;
         // DGQ: the datagram send-queue audit. Cumulative, not
         // per-window — eviction is a whole-run accounting question and the
@@ -914,6 +959,24 @@ pub(crate) fn report(
     }
 }
 
+/// Render the `wait[..]` token of the `[DIAG]` line (see the `DiagState`
+/// field docs for each token's meaning). Arm shares are over the AWAIT
+/// time; `us` is await + body; `busy` is body over `us`.
+pub(crate) fn wait_line(wait_us: &[u64; 8], busy_us: u64, n: u64) -> String {
+    let await_tot: u64 = wait_us.iter().sum::<u64>();
+    let wpct = |i: usize| wait_us[i] as f64 * 100.0 / await_tot.max(1) as f64;
+    let us = await_tot + busy_us;
+    format!(
+        " wait[tun={:.0}% paused={:.0}% pace={:.0}% gen={:.0}% nack={:.0}% \
+         defc={:.0}% tail={:.0}% flush={:.0}% n={} us={} busy={:.0}% busy_us={}]",
+        wpct(0), wpct(1), wpct(2), wpct(3), wpct(4), wpct(5), wpct(6), wpct(7),
+        n,
+        us,
+        busy_us as f64 * 100.0 / us.max(1) as f64,
+        busy_us,
+    )
+}
+
 #[cfg(test)]
 mod wait_attribution_tests {
     /// The wait-reason histogram's silent failure mode, gated at `cargo test`.
@@ -1015,5 +1078,50 @@ mod wait_attribution_tests {
             "waitdiag must not be conditional — that is the defect this \
              instrument exists to fix: {head}"
         );
+    }
+
+    /// Stage 1d: a synthetic busy iteration (6 ms of loop body, then a
+    /// 10 µs await woken by `tun`) lands in `busy`, not in `tun` — the
+    /// accounting that used to charge the body to the next arm.
+    #[test]
+    fn a_busy_iteration_lands_in_busy_not_in_the_next_arm() {
+        let mut dg = super::DiagState::new(1_000_000, 1_000_000, 1_000_000, 1_000_000);
+        // Iteration 1: 100 µs body, 900 µs await on `paused` (arm 1).
+        assert_eq!(dg.wait_enter_await(1_000_100), 100);
+        let dt = dg.wait_resolve(1_001_000);
+        assert_eq!(dt, 900);
+        dg.wait_us[1] += dt;
+        // Iteration 2: 6 ms body (the CPU-bound state), 10 µs await on `tun`.
+        assert_eq!(dg.wait_enter_await(1_007_000), 6_000);
+        let dt = dg.wait_resolve(1_007_010);
+        assert_eq!(dt, 10, "the tun arm is charged its await only");
+        dg.wait_us[0] += dt;
+        dg.wait_n = 2;
+        assert_eq!(dg.wait_busy_us, 6_100);
+        assert_eq!(dg.wait_us[0], 10);
+        assert_eq!(dg.wait_us[1], 900);
+        // Body + await is the whole loop wall.
+        assert_eq!(dg.wait_busy_us + dg.wait_us.iter().sum::<u64>(), 7_010);
+        let line = super::wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n);
+        assert_eq!(
+            line,
+            " wait[tun=1% paused=99% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% \
+             n=2 us=7010 busy=87% busy_us=6100]"
+        );
+    }
+
+    /// The sender loop really routes through the split: the body is charged
+    /// at the `select!` entry and the arm gets `wait_resolve`'s await
+    /// (MEASUREMENT DISCIPLINE rule 1 — the mechanism executes).
+    #[test]
+    fn the_sender_loop_charges_body_before_the_select() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/mod.rs");
+        let src = std::fs::read_to_string(p).expect("read src/net/mod.rs");
+        let enter = src.find("dg.wait_enter_await(t)").expect("body charge exists");
+        let select = src[enter..].find("tokio::select!").expect("select follows") + enter;
+        let resolve = src[select..].find("dg.wait_resolve(resolved_us)").expect("resolve exists")
+            + select;
+        let charge = src[resolve..].find("dg.wait_us[wait_arm] += dt;").expect("charge") + resolve;
+        assert!(enter < select && select < resolve && resolve < charge);
     }
 }
