@@ -123,8 +123,13 @@ pub(crate) async fn run_block_sender(
         }
         let gate = feed_gate(tx_paused, &mut sender_block_arq.lock(), sender_profile_max_block);
         if gate.retention_full != last_retention_full {
+            // Bind-fraction gauge of the flow-control clamp (loop
+            // iterations that found the window full / all checks).
+            let (checks, full) = sender_block_arq.lock().window_gauge();
             debug!(
                 retention_full = gate.retention_full,
+                window_checks = checks,
+                window_full = full,
                 "block retention window state change (flow control)"
             );
             last_retention_full = gate.retention_full;
