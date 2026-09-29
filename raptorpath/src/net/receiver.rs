@@ -49,7 +49,7 @@ use super::control_msg::{ControlCtx, handle_control_message};
 use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
-    BLOCK_REORDER_MAX_BLOCKS, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
+    BLOCK_REORDER_MAX_BYTES, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, deliver_packet, extract_window_packets,
     hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
@@ -497,7 +497,10 @@ pub(crate) async fn run_receiver(
     // (parking_lot::Mutex for the same Send reason as above.)
     let block_inorder_enabled = !recv_window_mode && recv_reorder_timeout_ms > 0;
     let block_reorder: parking_lot::Mutex<ReorderBuffer> = parking_lot::Mutex::new(
-        ReorderBuffer::new(BLOCK_REORDER_MIN_HOLD.as_millis() as u64, BLOCK_REORDER_MAX_BLOCKS),
+        ReorderBuffer::new_bytes_bounded(
+            BLOCK_REORDER_MIN_HOLD.as_millis() as u64,
+            BLOCK_REORDER_MAX_BYTES,
+        ),
     );
 
     // Instrumentation: per-block arrival tracking — first-symbol instant +

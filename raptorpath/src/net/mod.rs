@@ -214,9 +214,12 @@ const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_WINDOW_SIZE: usize = 200;
 // Reorder-buffer defaults are supplied by `config::resolve` and reach the
 // receiver as `config.reorder_timeout_ms` / `config.reorder_max_size`.
-/// Block-mode in-order delivery: max decoded blocks held for ordering
-/// (64 × 64KB ≈ 4MB worst case) before force-drain.
-const BLOCK_REORDER_MAX_BLOCKS: usize = 64;
+/// Block-mode in-order delivery: max decoded-block BYTES held for ordering
+/// before force-drain (4 MiB — the original design figure, formerly
+/// expressed as 64 × 64 KB blocks). A byte bound, not an entry count, so
+/// small-block geometries (Auto 16 KiB, Realtime 4 KiB) get the same hold
+/// horizon in bytes as Bulk; mirrors the sender's `RETAIN_MAX_BYTES`.
+const BLOCK_REORDER_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// Bounds for the SRTT-adaptive in-order hold (4×SRTT, clamped). The hold
 /// must survive two ARQ repair rounds, not one: each round is ~2×SRTT
 /// (loss declared after ~1.5×SRTT via Ack diff/timeout + 0.5×SRTT for the

@@ -5110,3 +5110,21 @@ fn pipe_echo_names_the_route_the_engine_takes() {
     }
 }
 
+/// The block-ARQ ledger horizon is derived from the smallest block-mode
+/// symbol size (`block_arq::BLOCK_MIN_SYMBOL_SIZE`); every hint profile must
+/// respect it, or single-symbol batches covering the retention byte horizon
+/// could overflow the ledger and drop a retained block's loss bookkeeping.
+/// Also pins the byte horizons on both ends to the same 4 MiB design figure.
+#[test]
+fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
+    use crate::control::fec_rate::ProtocolHint;
+    for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
+        let p = BlockProfile::from_hint(hint);
+        assert!(
+            p.symbol_size as usize >= block_arq::BLOCK_MIN_SYMBOL_SIZE,
+            "{hint:?}: symbol {} < BLOCK_MIN_SYMBOL_SIZE",
+            p.symbol_size
+        );
+    }
+    assert_eq!(BLOCK_REORDER_MAX_BYTES, block_arq::RETAIN_MAX_BYTES);
+}

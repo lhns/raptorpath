@@ -143,32 +143,12 @@ fn done_blocks_suppress_events() {
 
 #[test]
 fn ledger_cap_drops_oldest() {
-    let mut arq = BlockArq::with_caps(4, RETAIN_MAX_BLOCKS, RETAIN_MAX_BYTES);
+    let mut arq = BlockArq::with_caps(4, RETAIN_MAX_BYTES);
     let now = Instant::now();
     for seq in 0..10u64 {
         arq.on_batch_sent(seq, 0, vec![(seq, 0)], now);
     }
     assert_eq!(arq.ledger_len(), 4);
-}
-
-#[test]
-fn retention_count_and_byte_caps() {
-    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 4, 10_000);
-    for b in 0..8u64 {
-        retain_block(&mut arq, b, 1000, FecBackend::RaptorQ);
-    }
-    let (blocks, bytes) = arq.retained_stats();
-    assert_eq!(blocks, 4, "count cap");
-    assert!(bytes <= 10_000);
-
-    // Byte cap dominates: 3 × 4000 > 10000 → evicts to 2.
-    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 64, 10_000);
-    for b in 0..3u64 {
-        retain_block(&mut arq, b, 4000, FecBackend::RaptorQ);
-    }
-    let (blocks, bytes) = arq.retained_stats();
-    assert_eq!(blocks, 2, "byte cap");
-    assert!(bytes <= 10_000);
 }
 
 #[test]
@@ -427,4 +407,158 @@ fn auto_geometry_retention_is_byte_bounded_not_count_bounded() {
     assert_eq!(plans.len(), 1, "oldest un-done block 0 must still be repairable");
     assert_eq!(plans[0].block_id, 0);
     assert!(!plans[0].symbols.is_empty());
+}
+
+/// Byte-only horizon: the retained count is whatever fits, never a count cap.
+#[test]
+fn retention_is_byte_bounded_only() {
+    let per = 1000 + RETAIN_PER_BLOCK_OVERHEAD;
+    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 3 * per);
+    for b in 0..8u64 {
+        retain_block(&mut arq, b, 1000, FecBackend::RaptorQ);
+    }
+    let (blocks, bytes) = arq.retained_stats();
+    assert_eq!(blocks, 3, "exactly the blocks that fit the byte horizon");
+    assert_eq!(bytes, 3 * per, "charge = data + per-block overhead");
+
+    // Many small blocks under the shipped default: far more than 64 retained,
+    // all within RETAIN_MAX_BYTES.
+    let mut arq = BlockArq::new();
+    for b in 0..1000u64 {
+        retain_block(&mut arq, b, 1000, FecBackend::RaptorQ);
+    }
+    let (blocks, bytes) = arq.retained_stats();
+    assert_eq!(blocks, 1000);
+    assert_eq!(bytes, 1000 * per);
+}
+
+/// Tiny (flush-timeout) blocks cannot grow the retained COUNT without bound:
+/// the per-block overhead charge caps it at RETAIN_MAX_BLOCKS_DERIVED.
+#[test]
+fn tiny_blocks_count_bounded_by_overhead_charge() {
+    let mut arq = BlockArq::new();
+    let n = RETAIN_MAX_BLOCKS_DERIVED as u64 + 500;
+    for b in 0..n {
+        retain_block(&mut arq, b, 1, FecBackend::RaptorQ);
+    }
+    let (blocks, bytes) = arq.retained_stats();
+    assert!(bytes <= RETAIN_MAX_BYTES);
+    assert_eq!(blocks, RETAIN_MAX_BYTES / (1 + RETAIN_PER_BLOCK_OVERHEAD));
+    assert!(blocks <= RETAIN_MAX_BLOCKS_DERIVED);
+}
+
+/// A materialized repair encoder is charged to the byte horizon.
+#[test]
+fn cached_encoder_footprint_is_charged() {
+    for backend in [FecBackend::RaptorQ, FecBackend::Rlc, FecBackend::ReedSolomon] {
+        let mut arq = BlockArq::new();
+        let len: usize = 16 * 1024;
+        // RS needs k + r <= 255: use 1200-byte symbols for every backend.
+        let p = params(len.div_ceil(1200) as u32, 1200, 2, 7);
+        arq.on_block_encoded(7, Bytes::from(vec![7u8; len]), p, backend, Instant::now());
+        let before = arq.retained_stats().1;
+        assert_eq!(before, len + RETAIN_PER_BLOCK_OVERHEAD);
+        let plans = arq.plan_repairs(
+            vec![LossEvent {
+                block_id: 7,
+                path_id: 0,
+                missing: vec![0],
+            }],
+            0.0,
+        );
+        assert_eq!(plans.len(), 1, "{backend:?}");
+        let fp = encoder_footprint_bytes(backend, &p);
+        assert!(fp >= len, "{backend:?}: encoder holds at least the block data");
+        assert_eq!(arq.retained_stats().1, before + fp, "{backend:?}");
+        // A second round reuses the cached encoder: no double charge.
+        let _ = arq.plan_repairs(
+            vec![LossEvent {
+                block_id: 7,
+                path_id: 0,
+                missing: vec![1],
+            }],
+            0.0,
+        );
+        assert_eq!(arq.retained_stats().1, before + fp, "{backend:?}: charged once");
+        // Done releases the whole charge.
+        arq.on_block_done(7);
+        assert_eq!(arq.retained_stats(), (0, 0), "{backend:?}");
+    }
+}
+
+/// Repair touches the block to the hot end of the LRU: a later insertion
+/// evicts the next-coldest block, not the one under repair.
+#[test]
+fn repair_touch_protects_block_from_eviction() {
+    let len = 1000;
+    let p = |b| params(1, 1000, 0, b);
+    let fp = encoder_footprint_bytes(FecBackend::RaptorQ, &p(0));
+    let per = len + RETAIN_PER_BLOCK_OVERHEAD;
+    // Room for 3 plain blocks + one encoder.
+    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 3 * per + fp);
+    for b in 0..3u64 {
+        arq.on_block_encoded(b, Bytes::from(vec![1u8; len]), p(b), FecBackend::RaptorQ, Instant::now());
+    }
+    let plans = arq.plan_repairs(
+        vec![LossEvent {
+            block_id: 0,
+            path_id: 0,
+            missing: vec![0],
+        }],
+        0.0,
+    );
+    assert_eq!(plans.len(), 1);
+    assert_eq!(arq.retained_stats(), (3, 3 * per + fp));
+    arq.on_block_encoded(3, Bytes::from(vec![1u8; len]), p(3), FecBackend::RaptorQ, Instant::now());
+    // Block 1 (coldest after the touch) goes; block 0 survives.
+    assert!(arq.plan_repairs(
+        vec![LossEvent { block_id: 1, path_id: 0, missing: vec![0] }],
+        0.0
+    )
+    .is_empty());
+    assert_eq!(arq.repair_skips_evicted(), 1);
+    let plans = arq.plan_repairs(
+        vec![LossEvent {
+            block_id: 0,
+            path_id: 0,
+            missing: vec![0],
+        }],
+        0.0,
+    );
+    assert_eq!(plans.len(), 1, "repaired block must outlive colder blocks");
+}
+
+/// Evicted-block skips are counted; done blocks are not miscounted as
+/// evictions for as long as the retention horizon can hold their peers.
+#[test]
+fn evicted_skips_counted_and_done_ring_spans_the_horizon() {
+    let mut arq = BlockArq::with_caps(LEDGER_MAX_BATCHES, 1000 + RETAIN_PER_BLOCK_OVERHEAD);
+    retain_block(&mut arq, 0, 1000, FecBackend::RaptorQ);
+    retain_block(&mut arq, 1, 1000, FecBackend::RaptorQ); // evicts 0
+    let ev = |b| LossEvent {
+        block_id: b,
+        path_id: 0,
+        missing: vec![0],
+    };
+    assert!(arq.plan_repairs(vec![ev(0)], 0.0).is_empty());
+    assert_eq!(arq.repair_skips_evicted(), 1);
+
+    // Done ring: block 100 done, then DONE_RING_CAP - 1 later blocks done.
+    // A late event for 100 is still recognised as done (not an eviction).
+    let mut arq = BlockArq::new();
+    for b in 100..100 + DONE_RING_CAP as u64 {
+        arq.on_block_done(b);
+    }
+    assert!(arq.plan_repairs(vec![ev(100)], 0.0).is_empty());
+    assert_eq!(arq.repair_skips_evicted(), 0, "done block must not count as evicted");
+    assert!(DONE_RING_CAP >= RETAIN_MAX_BLOCKS_DERIVED);
+}
+
+/// The ledger cannot drop a batch whose block is still inside the byte
+/// horizon: at the smallest profile symbol, single-symbol batches covering
+/// RETAIN_MAX_BYTES fit in the ledger.
+#[test]
+fn ledger_horizon_covers_retention_horizon() {
+    assert!(LEDGER_MAX_BATCHES >= RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZE);
+    assert!(LEDGER_MAX_BATCHES >= 4096, "never below the historical cap");
 }

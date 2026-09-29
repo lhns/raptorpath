@@ -18,6 +18,12 @@ pub struct ReorderBuffer {
     timeout: Duration,
     /// Maximum entries to buffer before force-draining
     max_buffered: usize,
+    /// Maximum bytes (payload + `ENTRY_OVERHEAD` per entry) to buffer
+    /// before force-draining. `usize::MAX` (inert) for the entry-count
+    /// constructors; set by `new_bytes_bounded` (block mode).
+    max_bytes: usize,
+    /// Bytes currently charged by `pending` (payload + per-entry overhead).
+    pending_bytes: usize,
     /// Retain-until-acked (ρ = 1, paper §5.1): when true, the buffer never
     /// delivers past a hole — no expiry force-delivery, no
     /// capacity force-drain. Holes are recovered by NACK/repair (the sender
@@ -27,6 +33,11 @@ pub struct ReorderBuffer {
     reliable: bool,
 }
 
+/// Fixed per-entry charge against a byte bound (BTreeMap node share +
+/// `Bytes` handle + timestamp). Keeps the byte bound honest for tiny
+/// entries (a block flushed on timeout can hold a single inner packet).
+const ENTRY_OVERHEAD: usize = 64;
+
 impl ReorderBuffer {
     pub fn new(timeout_ms: u64, max_buffered: usize) -> Self {
         Self {
@@ -34,7 +45,23 @@ impl ReorderBuffer {
             next_deliver_seq: 0,
             timeout: Duration::from_millis(timeout_ms),
             max_buffered,
+            max_bytes: usize::MAX,
+            pending_bytes: 0,
             reliable: false,
+        }
+    }
+
+    /// Evict-policy buffer bounded by BYTES rather than entry count (block
+    /// mode: entries are whole decoded blocks whose size depends on the
+    /// hint's block geometry, so an entry count would give small-block
+    /// geometries a proportionally shorter hold horizon). Force-drain fires
+    /// when `pending_bytes > max_bytes` and drains to half, like the
+    /// count-bounded policy.
+    pub fn new_bytes_bounded(timeout_ms: u64, max_bytes: usize) -> Self {
+        Self {
+            max_buffered: usize::MAX,
+            max_bytes,
+            ..Self::new(timeout_ms, usize::MAX)
         }
     }
 
@@ -46,6 +73,8 @@ impl ReorderBuffer {
             next_deliver_seq: 0,
             timeout: Duration::ZERO, // unused: expiry never gives up on a hole
             max_buffered: usize::MAX,
+            max_bytes: usize::MAX,
+            pending_bytes: 0,
             reliable: true,
         }
     }
@@ -80,12 +109,17 @@ impl ReorderBuffer {
             // Never buffered: `buffered_at = now` makes its wait exactly 0.
             return vec![(seq, data, now)];
         }
-        self.pending.insert(seq, (data, now));
+        self.pending_bytes += data.len() + ENTRY_OVERHEAD;
+        if let Some((old, _)) = self.pending.insert(seq, (data, now)) {
+            self.pending_bytes -= old.len() + ENTRY_OVERHEAD;
+        }
 
         // Force-drain oldest if over capacity (EVICT policy only — the
         // reliable policy never delivers past a hole; its memory bound is
         // the sender's sent-data store cap, enforced by backpressure there).
-        if !self.reliable && self.pending.len() > self.max_buffered {
+        if !self.reliable
+            && (self.pending.len() > self.max_buffered || self.pending_bytes > self.max_bytes)
+        {
             return self.force_drain_oldest();
         }
 
@@ -96,6 +130,7 @@ impl ReorderBuffer {
     pub fn drain_contiguous(&mut self) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
         while let Some((data, at)) = self.pending.remove(&self.next_deliver_seq) {
+            self.pending_bytes -= data.len() + ENTRY_OVERHEAD;
             result.push((self.next_deliver_seq, data, at));
             self.next_deliver_seq += 1;
         }
@@ -135,6 +170,7 @@ impl ReorderBuffer {
         let to_deliver: Vec<u64> = self.pending.range(..=k).map(|(&seq, _)| seq).collect();
         for seq in to_deliver {
             if let Some((data, at)) = self.pending.remove(&seq) {
+                self.pending_bytes -= data.len() + ENTRY_OVERHEAD;
                 result.push((seq, data, at));
             }
         }
@@ -148,9 +184,10 @@ impl ReorderBuffer {
     /// Force-drain the oldest entries to get back under capacity.
     pub fn force_drain_oldest(&mut self) -> Vec<(u64, Bytes, Instant)> {
         let mut result = Vec::new();
-        while self.pending.len() > self.max_buffered / 2 {
+        while self.pending.len() > self.max_buffered / 2 || self.pending_bytes > self.max_bytes / 2 {
             if let Some((&seq, _)) = self.pending.iter().next() {
                 if let Some((data, at)) = self.pending.remove(&seq) {
+                    self.pending_bytes -= data.len() + ENTRY_OVERHEAD;
                     result.push((seq, data, at));
                     if seq >= self.next_deliver_seq {
                         self.next_deliver_seq = seq + 1;
@@ -167,6 +204,11 @@ impl ReorderBuffer {
     /// Number of pending entries in the buffer.
     pub fn pending_count(&self) -> usize {
         self.pending.len()
+    }
+
+    /// Bytes charged by pending entries (payload + per-entry overhead).
+    pub fn pending_bytes(&self) -> usize {
+        self.pending_bytes
     }
 
     /// Update the hold timeout (block-mode uses an SRTT-adaptive hold:
@@ -285,5 +327,63 @@ mod tests {
         let out = rb.drain_expired(now + Duration::from_millis(20));
         assert_eq!(out.len(), 1, "lossy policy gives up on the hole");
         assert_eq!(rb.next_deliver_seq(), 2);
+    }
+
+    /// Byte-bounded (block-mode) policy: 100 × 16 KiB entries (1.6 MiB)
+    /// behind a hole at seq 0 stay held under a 4 MiB bound (the old
+    /// 64-entry count force-drained at the 65th), while 64 KiB entries
+    /// force-drain once the byte bound is crossed.
+    #[test]
+    fn bytes_bounded_holds_by_bytes_not_entries() {
+        const MAX: usize = 4 * 1024 * 1024;
+        let now = Instant::now();
+        let mut rb = ReorderBuffer::new_bytes_bounded(1000, MAX);
+        for seq in 1..=100u64 {
+            let out = rb.push_with_time(seq, Bytes::from(vec![0u8; 16 * 1024]), now);
+            assert!(out.is_empty(), "seq {seq}: nothing deliverable past the hole");
+        }
+        assert_eq!(rb.pending_count(), 100);
+        assert_eq!(rb.pending_bytes(), 100 * (16 * 1024 + ENTRY_OVERHEAD));
+        // Hole fills: everything drains in order and the byte charge returns to 0.
+        let out = rb.push_with_time(0, Bytes::from(vec![0u8; 16 * 1024]), now);
+        assert_eq!(out.len(), 101);
+        assert_eq!(rb.pending_bytes(), 0);
+
+        let mut rb = ReorderBuffer::new_bytes_bounded(1000, MAX);
+        let per = 64 * 1024 + ENTRY_OVERHEAD;
+        let mut drained_at = None;
+        for seq in 1..=70u64 {
+            let out = rb.push_with_time(seq, Bytes::from(vec![0u8; 64 * 1024]), now);
+            if !out.is_empty() && drained_at.is_none() {
+                drained_at = Some(seq);
+            }
+            assert!(rb.pending_bytes() <= MAX, "byte bound holds after every push");
+        }
+        assert_eq!(drained_at, Some((MAX / per + 1) as u64), "drains when bytes cross the bound");
+    }
+
+    /// The count-bounded and reliable constructors are unaffected by the
+    /// byte accounting (their byte bound is inert).
+    #[test]
+    fn count_bounded_policy_unchanged_by_byte_accounting() {
+        let now = Instant::now();
+        // 4 × 2 MiB = 8 MiB held behind a hole: no byte bound applies.
+        let mut rb = ReorderBuffer::new(1000, 4);
+        for seq in 1..=4u64 {
+            assert!(rb.push_with_time(seq, Bytes::from(vec![0u8; 2 << 20]), now).is_empty());
+        }
+        assert_eq!(rb.pending_count(), 4);
+        // 5th entry crosses the COUNT bound: the force-drain gives up on the
+        // hole and releases everything (1..=3 drained, 4..=5 now contiguous).
+        let out = rb.push_with_time(5, Bytes::from(vec![0u8; 2 << 20]), now);
+        assert_eq!(out.iter().map(|e| e.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(rb.pending_count(), 0);
+        assert_eq!(rb.pending_bytes(), 0);
+
+        let mut rb = ReorderBuffer::new_reliable();
+        for seq in 1..=200u64 {
+            assert!(rb.push_with_time(seq, Bytes::from(vec![0u8; 64 * 1024]), now).is_empty());
+        }
+        assert_eq!(rb.pending_count(), 200, "reliable never force-drains");
     }
 }
