@@ -5775,6 +5775,11 @@ async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
         );
         let after = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
         assert_eq!(before, after, "a peer report must not feed the estimator");
+        assert_eq!(
+            ctx.stats.path(0).unwrap().peer_loss_rate_e6.load(Ordering::Relaxed),
+            10_000,
+            "the peer's reported loss is kept as a monitoring value"
+        );
     })
     .await;
 }
