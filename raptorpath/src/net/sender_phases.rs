@@ -73,8 +73,9 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
         if dnow.saturating_sub(scs.dyn_cap_refresh_us) >= 5_000 {
             scs.dyn_cap_refresh_us = dnow;
             // `sf=` readout every ~2 s under RWM_DIAG — the saturation-filter
-            // population at the refresh instants, which decides whether the
-            // `active_paths()` trap is live or latent at this cell.
+            // population at the refresh instants: how often the placement
+            // filter would have emptied the Σ (the `active_paths()` trap,
+            // closed by plan 2b — the Σ now reads `channel_paths`).
             if gates.diag && dnow.saturating_sub(scs.sf_print_us) >= 2_000_000 {
                 scs.sf_print_us = dnow;
                 let (t, lv, ac, sh, ze) = store_cap_sf_gauge();

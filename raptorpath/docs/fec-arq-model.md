@@ -2544,7 +2544,7 @@ shipped.
 | Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`) | wins the symmetric dual (0.89–0.94×Σ) and loses the heterogeneous one (0.54–0.55 against pooled 0.62–0.69×Σ) | `4bb5b28` | removed |
 | Bounded account borrowing (`RWM_STORE_BORROW`) | loans are identically zero at symmetric cells by construction; neutral at the heterogeneous dual and behind pooled | `7c3343f` | removed |
 | Capacity-weighted pool (`RWM_STORE_CAPW`) | the heterogeneous binder is slow-path conversion, not pool size (0.74–0.79 against 0.87×Σ) | `4fb5b15` | removed |
-| Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) | removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode | `865112e` | off |
+| Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) | removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode | `865112e` | shipped unconditionally (plan 2b, gate removed; re-measure in Stage 3) |
 | Three-term outstanding law (`RWM_THREE_TERM`) | the terms are right and the lever is wrong: the store is sized and occupied, throughput does not follow | `448a82e` | off |
 | Composed cap (`RWM_COMPOSED_CAP`) | shape confirmed, magnitude refuted: pinned at `WIN_STORE_MAX` at every dual; where interior, 2.4× the queue and 1.43–1.48× worse delivered latency at goodput parity | `161b4ea` | off |
 | Queue-free slack clock | removes 1.7 % of a 90 % overshoot at the heterogeneous dual, by its own arithmetic | `7e302e2` | refuted, never shipped |
