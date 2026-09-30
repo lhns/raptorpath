@@ -23,6 +23,7 @@ use dashmap::DashMap;
 use tracing::{debug, info};
 
 use super::{
+    BatchCounter,
     PaceCarry, encode_to_interleave_buf, framing, interleave, send_interleaved_batches,
 };
 use crate::control::FecRateController;
@@ -41,7 +42,7 @@ pub(crate) async fn run_block_sender(
     sender_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
     sender_fec: Arc<parking_lot::Mutex<FecRateController>>,
     sender_block_counter: Arc<AtomicU64>,
-    sender_batch_counter: Arc<AtomicU64>,
+    sender_batch_counter: Arc<BatchCounter>,
     sender_sent_counts: Arc<DashMap<(u64, u32), u32>>,
     sender_stats: Arc<SharedStats>,
     sender_block_arq: Arc<parking_lot::Mutex<BlockArq>>,

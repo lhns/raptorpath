@@ -23,7 +23,7 @@ fn test_symbol_batch_roundtrip() {
             },
         ],
         1234567890,
-        99,
+        (99, 41),
         2,
     );
 
@@ -40,6 +40,7 @@ fn test_symbol_batch_roundtrip() {
             assert_eq!(b.symbols[1].is_repair, true);
             assert_eq!(b.send_timestamp_us, 1234567890);
             assert_eq!(b.batch_seq, 99);
+            assert_eq!(b.path_seq, 41, "v9 per-path sequence");
             assert_eq!(b.path_id, 2);
         }
         _ => panic!("expected Data"),
@@ -203,7 +204,7 @@ fn test_ping_pong_roundtrip() {
 
 #[test]
 fn test_empty_batch_serialization() {
-    let msg = WireMessage::Data(SymbolBatch::new(vec![], 0, 0, 0));
+    let msg = WireMessage::Data(SymbolBatch::new(vec![], 0, (0, 0), 0));
 
     let bytes = msg.serialize().unwrap();
     let decoded = WireMessage::deserialize(&bytes).unwrap();
@@ -227,7 +228,7 @@ fn test_large_symbol_data() {
             backend: FecBackend::RaptorQ,
         }],
         0,
-        0,
+        (0, 0),
         0,
     ));
 
@@ -266,7 +267,7 @@ fn test_oversized_symbol_batch_rejected() {
             backend: FecBackend::RaptorQ,
         })
         .collect();
-    let batch = SymbolBatch::new(symbols, 0, 0, 0);
+    let batch = SymbolBatch::new(symbols, 0, (0, 0), 0);
     let msg = WireMessage::Data(batch);
     let bytes = msg.serialize().unwrap();
     // Deserialization should fail due to batch size validation
@@ -301,7 +302,7 @@ fn test_normal_batch_accepted() {
             backend: FecBackend::RaptorQ,
         })
         .collect();
-    let batch = SymbolBatch::new(symbols, 0, 0, 0);
+    let batch = SymbolBatch::new(symbols, 0, (0, 0), 0);
     let msg = WireMessage::Data(batch);
     let bytes = msg.serialize().unwrap();
     assert!(WireMessage::deserialize(&bytes).is_ok());

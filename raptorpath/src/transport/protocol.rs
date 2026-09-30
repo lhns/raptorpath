@@ -61,10 +61,34 @@ fn bincode_options() -> impl Options {
 ///       and never reordered: appending is the only non-breaking edit to a
 ///       fixint-tagged enum. Nothing sends it yet; the dispatch arm counts
 ///       and ignores, so a hostile or future peer cannot panic this binary.
+/// v9: three coupled changes in one bump (plan 2c):
+///   (a) `SymbolBatch.path_seq: u64` -- a PER-PATH monotonic batch sequence,
+///       stamped beside the global `batch_seq` by the sender's one
+///       sequencer (`net::BatchCounter::next`). The receiver's per-path gap
+///       tracker (`PathBatchTracker`) keys on it. Through v8 the tracker read
+///       gaps in the global `batch_seq`, so at N >= 2 every other path's
+///       batches counted as this path's losses (ε̂ ≈ 0.5 at 50/50, 0.74 at
+///       share 0.1). `batch_seq` stays global: the block-mode ARQ ledger is
+///       keyed on it through `Ack.batch_seq`. Compact frame: one varint
+///       between `batch_seq` and `eta_rel_us`.
+///   (b) `WindowAck.received_up_to` -> `next_expected`: the COUNT of the
+///       contiguous delivered prefix (the first seq not yet delivered).
+///       `0` means nothing delivered; v8's `received_up_to = 0` meant both
+///       "nothing delivered" and "seq 0 delivered", so a delivered seq 0 was
+///       never acked or pruned, a held seq 0 read as delivered, and a lost
+///       seq 0 needed a SACK heuristic.
+///   (c) `WindowAck.received_above: u32` -- the number of DISTINCT seqs the
+///       receiver has at or above `next_expected` (pooled across paths, on
+///       every ack including the timer ones). The SACK list is an honest
+///       prefix capped at `MAX_SACK_RANGES`, so at a stalled frontier with
+///       more received runs than one report can name, the sender's store
+///       gate never released past the cap. The count lets the gate converge
+///       (`net::store_released_for_gate`).
 /// Both `Handshake::deserialize` and `WireMessage::deserialize` hard-refuse a
 /// version mismatch, so mixed versions fail cleanly at handshake instead of
-/// silently mis-parsing control traffic.
-pub const PROTOCOL_VERSION: u32 = 8;
+/// silently mis-parsing control traffic. (The compact DATA frame carries no
+/// version: a peer only ever sends it after a successful handshake.)
+pub const PROTOCOL_VERSION: u32 = 9;
 /// Magic bytes for wire format identification.
 pub const WIRE_MAGIC: [u8; 4] = *b"RPTQ";
 
@@ -132,8 +156,8 @@ fn backend_from_u8(v: u8) -> Option<FecBackend> {
 ///
 ///   [tag 0xC1][flags: bit0 = is_repair, bits1-2 = backend]
 ///   [varint path_id][varint block_id][varint payload_id]
-///   [varint send_timestamp_us][varint batch_seq][varint eta_rel_us]
-///   [payload to the datagram end]
+///   [varint send_timestamp_us][varint batch_seq][varint path_seq]
+///   [varint eta_rel_us][payload to the datagram end]
 ///
 /// The payload length is the datagram boundary — both 8-byte bincode
 /// length fields (Vec len + data len), the 4-byte enum tags, and the 8-byte
@@ -151,6 +175,8 @@ pub fn serialize_data_compact(batch: &SymbolBatch) -> Option<Vec<u8>> {
     write_varint(&mut buf, sym.payload_id as u64);
     write_varint(&mut buf, batch.send_timestamp_us);
     write_varint(&mut buf, batch.batch_seq);
+    // v9: the per-path batch sequence (the receiver's loss-gap key).
+    write_varint(&mut buf, batch.path_seq);
     // v8: the sender's own delivery-time prediction for this batch, us,
     // relative to `send_timestamp_us`. 0 = no prediction (one byte).
     write_varint(&mut buf, batch.eta_rel_us as u64);
@@ -173,6 +199,8 @@ fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
     let payload_id = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
     let send_ts = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
     let batch_seq = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
+    // v9: the per-path batch sequence.
+    let path_seq = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
     // v8: the ETA varint. Unconditional -- there is one compact layout per
     // protocol version and the handshake refuses a mismatch.
     let eta_rel_us = read_varint(data, &mut pos).ok_or_else(|| err("compact truncated"))?;
@@ -189,6 +217,7 @@ fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
         }],
         send_timestamp_us: send_ts,
         batch_seq,
+        path_seq,
         path_id: path_id as u32,
         eta_rel_us: eta_rel_us as u32,
     }))
@@ -234,10 +263,20 @@ pub struct SymbolBatch {
     pub symbols: Vec<WireSymbol>,
     /// Sending timestamp (microseconds since connection epoch) — sender's clock
     pub send_timestamp_us: u64,
-    /// Batch sequence number for loss detection (per-path monotonic)
+    /// GLOBAL batch sequence number: one counter across every path (the
+    /// sender's `BatchCounter`). It keys the block-mode ARQ ledger (echoed
+    /// in `ControlMessage::Ack.batch_seq`). It is NOT a per-path sequence --
+    /// at N >= 2 a path sees gaps in it that are other paths' batches, so
+    /// loss detection must not read it (that was the pre-v9 defect).
     pub batch_seq: u64,
-    /// The path this batch was sent on (receiver keys its per-path batch_seq
-    /// gap tracking and loss estimation off it).
+    /// **v9 -- the per-path monotonic batch sequence**: 0, 1, 2, ... on each
+    /// `path_id` independently, stamped by the same sequencer call as
+    /// `batch_seq`. The receiver's `PathBatchTracker` reads loss from gaps
+    /// in it, so a path's ε̂ is its own and independent of the striping
+    /// share.
+    pub path_seq: u64,
+    /// The path this batch was sent on (receiver keys its per-path
+    /// `path_seq` gap tracking and loss estimation off it).
     pub path_id: u32,
     /// **v8 -- the sender's own delivery prediction**, us, relative to
     /// `send_timestamp_us`: the `expected_delivery_load()` of the path the
@@ -260,13 +299,19 @@ impl SymbolBatch {
     /// envelope field is one edit instead of eleven. `eta_rel_us` defaults to
     /// the 0 sentinel -- a site that has a prediction adds it with
     /// [`Self::with_eta`], which is the only way the field is ever nonzero.
+    ///
+    /// `seqs` is `(batch_seq, path_seq)` exactly as the sender's sequencer
+    /// (`net::BatchCounter::next(path_id)`) returns it -- one argument, so no
+    /// site can stamp one sequence and forget the other (a defaulted
+    /// `path_seq` would read as a gap-free, loss-free path forever).
     pub fn new(
         symbols: Vec<WireSymbol>,
         send_timestamp_us: u64,
-        batch_seq: u64,
+        seqs: (u64, u64),
         path_id: u32,
     ) -> Self {
-        Self { symbols, send_timestamp_us, batch_seq, path_id, eta_rel_us: 0 }
+        let (batch_seq, path_seq) = seqs;
+        Self { symbols, send_timestamp_us, batch_seq, path_seq, path_id, eta_rel_us: 0 }
     }
 
     /// Stamp the sender's own delivery prediction (us, relative to
@@ -349,10 +394,16 @@ pub enum ControlMessage {
     /// Per-packet ACK with selective acknowledgment ranges, RTT echo,
     /// jitter, and cumulative received count. See paper §2.2.
     WindowAck {
-        /// All sequences up to this have been received or recovered.
-        received_up_to: u64,
-        /// Selective ACK: out-of-order ranges received beyond cumulative point.
-        /// Cumulative within T_cut window — all received fragments reported.
+        /// **v9** -- the count of the contiguous delivered prefix: every seq
+        /// `< next_expected` has been received or recovered AND handed to the
+        /// consumer; `next_expected` itself has not. `0` = nothing delivered.
+        /// (v8's `received_up_to` was the highest delivered seq, so `0` was
+        /// ambiguous between "nothing" and "seq 0".)
+        next_expected: u64,
+        /// Selective ACK: received ranges at or above `next_expected`,
+        /// inclusive, ascending, disjoint -- an honest PREFIX of the received
+        /// runs, capped at `MAX_SACK_RANGES` (seqs above the last range are
+        /// "not reported", never "missing").
         sack_ranges: Vec<(u64, u64)>,
         /// Echo the sender's timestamp for RTT measurement (sender's clock).
         echo_send_timestamp_us: u64,
@@ -381,6 +432,15 @@ pub enum ControlMessage {
         /// always reports at least the symbol that triggered it, so a real
         /// counter payload is never 0.
         cum_received: u64,
+        /// **v9** -- the number of DISTINCT seqs the receiver holds at or
+        /// above `next_expected` (received, recovered or held for the
+        /// consumer; pooled across paths). Carried on every WindowAck,
+        /// including the timer-driven ones: it is a connection-wide count,
+        /// not a per-path counter, so it needs no sentinel. Uncapped where
+        /// the SACK list is capped: the sender's store gate uses it to
+        /// release the received seqs beyond the SACK prefix. Saturates at
+        /// `u32::MAX`.
+        received_above: u32,
     },
 
     /// Sender signals backend switch at a window flush point (sender → receiver).
@@ -553,7 +613,7 @@ mod tests {
             let batch = SymbolBatch::new(
                 vec![sym(u64::MAX / 3, u32::MAX, is_repair, backend, 1200)],
                 123_456_789_012,
-                987_654,
+                (987_654, 123_457),
                 7,
             )
             // v8: a nonzero eta must survive the compact frame; the 0
@@ -566,6 +626,7 @@ mod tests {
                 WireMessage::Data(b) => {
                     assert_eq!(b.path_id, batch.path_id);
                     assert_eq!(b.batch_seq, batch.batch_seq);
+                    assert_eq!(b.path_seq, batch.path_seq, "v9 path_seq must survive");
                     assert_eq!(b.send_timestamp_us, batch.send_timestamp_us);
                     assert_eq!(b.eta_rel_us, batch.eta_rel_us, "v8 ETA must survive");
                     assert_eq!(b.symbols.len(), 1);
@@ -590,7 +651,7 @@ mod tests {
         let batch = SymbolBatch::new(
             vec![sym(50_000, 0, false, FecBackend::Rlc, 1200)],
             30_000_000_000, // ~8.3 h session, worst plausible
-            100_000,
+            (100_000, 100_000), // v9: a single-path session's path_seq = batch_seq
             1,
         )
         // v8 worst case for the overhead bound: the widest ETA varint the
@@ -599,9 +660,10 @@ mod tests {
         let buf = serialize_data_compact(&batch).unwrap();
         let overhead = buf.len() - 1200;
         assert!(
-            overhead <= 29,
+            overhead <= 32,
             "compact overhead {overhead} B exceeds the derivation bound \
-             (24 B through v7 + <= 5 B for the v8 ETA varint)"
+             (24 B through v7 + <= 5 B for the v8 ETA varint + <= 3 B for \
+             the v9 path_seq varint at a 100k-batch path)"
         );
         // Bincode framing for the same batch (magic+version+bincode).
         let legacy = WireMessage::Data(batch).serialize().unwrap();
@@ -622,7 +684,7 @@ mod tests {
                 sym(2, 1, false, FecBackend::Rlc, 100),
             ],
             1,
-            1,
+            (1, 1),
             0,
         );
         assert!(serialize_data_compact(&batch).is_none());
@@ -633,7 +695,7 @@ mod tests {
     /// instead of panicking.
     #[test]
     fn legacy_parse_unchanged_and_compact_truncation_safe() {
-        let batch = SymbolBatch::new(vec![sym(9, 3, true, FecBackend::Rlc, 64)], 42, 7, 2);
+        let batch = SymbolBatch::new(vec![sym(9, 3, true, FecBackend::Rlc, 64)], 42, (7, 3), 2);
         let legacy = WireMessage::Data(batch).serialize().unwrap();
         assert_eq!(&legacy[..4], &WIRE_MAGIC);
         assert!(WireMessage::deserialize(&legacy).is_ok());
@@ -641,7 +703,7 @@ mod tests {
         let full = serialize_data_compact(&SymbolBatch::new(
             vec![sym(1000, 1, false, FecBackend::Rlc, 32)],
             5_000_000,
-            3,
+            (3, 3),
             0,
         ))
         .unwrap();
@@ -677,39 +739,43 @@ mod tests {
         assert_eq!(read_varint(&buf[..buf.len() - 1], &mut pos), None);
     }
 
-    // -- v8 pins ---------------------------------------------------------
+    // -- v8/v9 pins ------------------------------------------------------
 
     /// The version itself: pinned here and in the handshake test below so
     /// moving it is a deliberate two-line edit, never a silent bump.
     #[test]
-    fn protocol_version_is_eight() {
-        assert_eq!(PROTOCOL_VERSION, 8, "the wire version moved without its pin");
+    fn protocol_version_is_nine() {
+        assert_eq!(PROTOCOL_VERSION, 9, "the wire version moved without its pin");
     }
 
-    /// **The compact layout, byte by byte.** The v8 ETA varint sits after
-    /// `batch_seq` and before the payload, and the 0 sentinel costs exactly
-    /// one byte -- so the "no prediction" case pays 1 B, not 4.
+    /// **The compact layout, byte by byte.** The v9 `path_seq` varint sits
+    /// right after `batch_seq`, and the v8 ETA varint after it, before the
+    /// payload; the ETA 0 sentinel costs exactly one byte -- so the "no
+    /// prediction" case pays 1 B, not 4.
     #[test]
-    fn compact_layout_places_the_eta_varint_after_batch_seq() {
-        let base = SymbolBatch::new(vec![sym(3, 4, false, FecBackend::Rlc, 8)], 5, 6, 1);
+    fn compact_layout_places_path_seq_then_eta_after_batch_seq() {
+        let base = SymbolBatch::new(vec![sym(3, 4, false, FecBackend::Rlc, 8)], 5, (6, 2), 1);
         let zero = serialize_data_compact(&base).unwrap();
         let one = serialize_data_compact(&base.clone().with_eta(1)).unwrap();
         let wide = serialize_data_compact(&base.clone().with_eta(300)).unwrap();
         assert_eq!(one.len(), zero.len(), "a 1-byte varint either way");
         assert_eq!(wide.len(), zero.len() + 1, "300 us needs a second varint byte");
         // Field order: tag, flags, path, block, payload, send_ts, batch_seq,
-        // eta, payload bytes. The 0 sentinel is the byte immediately before
-        // the payload.
+        // path_seq (v9), eta, payload bytes. The 0 sentinel is the byte
+        // immediately before the payload.
         assert_eq!(zero[0], COMPACT_DATA_TAG);
         assert_eq!(
             &zero[..zero.len() - 8],
-            &[COMPACT_DATA_TAG, 3 << 1, 1, 3, 4, 5, 6, 0][..],
-            "the compact v8 sub-header layout moved"
+            &[COMPACT_DATA_TAG, 3 << 1, 1, 3, 4, 5, 6, 2, 0][..],
+            "the compact v9 sub-header layout moved"
         );
         assert_eq!(&zero[zero.len() - 8..], &base.symbols[0].data[..]);
         // And the sentinel survives the round trip as a sentinel.
         match WireMessage::deserialize(&zero).unwrap() {
-            WireMessage::Data(b) => assert_eq!(b.eta_rel_us, 0),
+            WireMessage::Data(b) => {
+                assert_eq!(b.eta_rel_us, 0);
+                assert_eq!((b.batch_seq, b.path_seq), (6, 2), "the two sequences stay distinct");
+            }
             _ => panic!("expected Data"),
         }
         match WireMessage::deserialize(&wide).unwrap() {
@@ -722,9 +788,9 @@ mod tests {
     /// field's range reads as the maximum, never as a small number.
     #[test]
     fn with_eta_saturates_at_u32_max() {
-        let b = SymbolBatch::new(vec![], 0, 0, 0).with_eta(u64::MAX);
+        let b = SymbolBatch::new(vec![], 0, (0, 0), 0).with_eta(u64::MAX);
         assert_eq!(b.eta_rel_us, u32::MAX);
-        assert_eq!(SymbolBatch::new(vec![], 0, 0, 0).eta_rel_us, 0, "the constructor's sentinel");
+        assert_eq!(SymbolBatch::new(vec![], 0, (0, 0), 0).eta_rel_us, 0, "the constructor's sentinel");
     }
 
     /// **The v8 control variant round-trips, and it was appended.** The
@@ -763,21 +829,78 @@ mod tests {
         );
     }
 
-    /// The handshake refuses a mismatch, pinned at v8 -- so a v7 peer fails
-    /// cleanly and loudly instead of mis-parsing control traffic.
+    /// The handshake refuses a mismatch, pinned at v9 -- so a v8 peer (whose
+    /// `SymbolBatch` lacks `path_seq` and whose `WindowAck` means "highest
+    /// delivered" where v9 means "count delivered") fails cleanly and loudly
+    /// at the handshake instead of mis-parsing traffic.
     #[test]
-    fn handshake_refuses_a_version_mismatch_at_v8() {
+    fn handshake_refuses_an_old_peer_at_v9() {
         let hs = Handshake { version: PROTOCOL_VERSION, max_block_size: 64, symbol_size: 1200, path_id: 0 };
         let good = hs.serialize().unwrap();
-        assert_eq!(u32::from_be_bytes(good[4..8].try_into().unwrap()), 8);
+        assert_eq!(u32::from_be_bytes(good[4..8].try_into().unwrap()), 9);
         assert!(Handshake::deserialize(&good).is_ok());
-        let mut stale = good.clone();
-        stale[4..8].copy_from_slice(&7u32.to_be_bytes());
-        let e = Handshake::deserialize(&stale).unwrap_err().to_string();
-        assert!(e.contains("version mismatch"), "{e}");
-        // And the data path refuses it too.
-        let mut d = WireMessage::Control(ControlMessage::Shutdown).serialize().unwrap();
-        d[4..8].copy_from_slice(&7u32.to_be_bytes());
-        assert!(WireMessage::deserialize(&d).is_err());
+        for old in [8u32, 7] {
+            let mut stale = good.clone();
+            stale[4..8].copy_from_slice(&old.to_be_bytes());
+            let e = Handshake::deserialize(&stale).unwrap_err().to_string();
+            assert!(e.contains("version mismatch"), "v{old}: {e}");
+            // And the data path refuses it too.
+            let mut d = WireMessage::Control(ControlMessage::Shutdown).serialize().unwrap();
+            d[4..8].copy_from_slice(&old.to_be_bytes());
+            assert!(WireMessage::deserialize(&d).is_err(), "v{old} control must be refused");
+        }
+    }
+
+    /// **The v9 WindowAck round-trips its two new meanings.** `next_expected
+    /// = 0` (nothing delivered) and `next_expected = 1` (seq 0 delivered) are
+    /// distinct values on the wire -- the ambiguity v8's `received_up_to = 0`
+    /// carried -- and `received_above` survives beside a SACK list.
+    #[test]
+    fn window_ack_v9_roundtrips_next_expected_and_received_above() {
+        let ack = |next_expected: u64, received_above: u32| {
+            WireMessage::Control(ControlMessage::WindowAck {
+                next_expected,
+                sack_ranges: vec![(next_expected + 2, next_expected + 9)],
+                echo_send_timestamp_us: 77,
+                jitter_us: 5,
+                cumulative_received: 11,
+                cum_expected: 13,
+                cum_received: 12,
+                received_above,
+            })
+            .serialize()
+            .unwrap()
+        };
+        assert_ne!(ack(0, 0), ack(1, 0), "nothing delivered != seq 0 delivered");
+        match WireMessage::deserialize(&ack(1, 4_000_000)).unwrap() {
+            WireMessage::Control(ControlMessage::WindowAck {
+                next_expected,
+                sack_ranges,
+                received_above,
+                ..
+            }) => {
+                assert_eq!(next_expected, 1);
+                assert_eq!(sack_ranges, vec![(3, 10)]);
+                assert_eq!(received_above, 4_000_000);
+            }
+            other => panic!("expected WindowAck, got {other:?}"),
+        }
+    }
+
+    /// **The v9 bincode DATA frame carries `path_seq` beside `batch_seq`.**
+    #[test]
+    fn bincode_symbol_batch_roundtrips_path_seq() {
+        let b = SymbolBatch::new(
+            vec![sym(1, 2, false, FecBackend::Rlc, 16), sym(1, 3, true, FecBackend::Rlc, 16)],
+            99,
+            (1_000, 17),
+            3,
+        );
+        match WireMessage::deserialize(&WireMessage::Data(b).serialize().unwrap()).unwrap() {
+            WireMessage::Data(d) => {
+                assert_eq!((d.batch_seq, d.path_seq, d.path_id), (1_000, 17, 3));
+            }
+            other => panic!("expected Data, got {other:?}"),
+        }
     }
 }

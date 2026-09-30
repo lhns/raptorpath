@@ -721,7 +721,7 @@ fn c1_attribution_lock_blocking_bench() {
                             // The RWM_PLAIN_RS attribution: cursor diff
                             // (no scheduler lock), then the production
                             // seam under its own acquisition.
-                            let newly = feed.newly_delivered(target - 1, &[]);
+                            let newly = feed.newly_delivered(target, &[]);
                             attr += newly.len() as u64;
                             let tq = Instant::now();
                             let mut sched = scheduler.lock();
@@ -1056,15 +1056,27 @@ fn test_path_batch_tracker_with_gap() {
 
 // ----- CopaFeed attribution cursor -----
 
-/// Frontier advance attributes each seq exactly once, in order.
+/// Frontier advance attributes each seq exactly once, in order (wire v9:
+/// the frontier is `next_expected`, the delivered-prefix count).
 #[test]
 fn copa_feed_frontier_attributes_once() {
     let feed = CopaFeed::new();
-    assert_eq!(feed.newly_delivered(2, &[]), vec![0, 1, 2]);
+    assert_eq!(feed.newly_delivered(3, &[]), vec![0, 1, 2]);
     // Duplicate/stale ack → empty diff, never a re-attribution.
+    assert!(feed.newly_delivered(3, &[]).is_empty());
     assert!(feed.newly_delivered(2, &[]).is_empty());
+    assert_eq!(feed.newly_delivered(5, &[]), vec![3, 4]);
+}
+
+/// Wire v9, seq 0: `next_expected = 0` attributes nothing (v8's
+/// `received_up_to = 0` attributed seq 0 before it was delivered), and
+/// `next_expected = 1` attributes exactly seq 0.
+#[test]
+fn copa_feed_attributes_seq_zero_only_once_delivered() {
+    let feed = CopaFeed::new();
+    assert!(feed.newly_delivered(0, &[]).is_empty(), "nothing delivered, nothing attributed");
+    assert_eq!(feed.newly_delivered(1, &[]), vec![0], "seq 0 delivered alone");
     assert!(feed.newly_delivered(1, &[]).is_empty());
-    assert_eq!(feed.newly_delivered(4, &[]), vec![3, 4]);
 }
 
 /// SACKed seqs above the frontier are attributed immediately and not
@@ -1072,13 +1084,14 @@ fn copa_feed_frontier_attributes_once() {
 #[test]
 fn copa_feed_sack_dedupes_against_frontier() {
     let feed = CopaFeed::new();
-    // Frontier at 1, receiver also has 5..=6 (hole 2..=4).
-    assert_eq!(feed.newly_delivered(1, &[(5, 6)]), vec![0, 1, 5, 6]);
+    // 0..=1 delivered (`next_expected = 2`), receiver also has 5..=6
+    // (hole 2..=4).
+    assert_eq!(feed.newly_delivered(2, &[(5, 6)]), vec![0, 1, 5, 6]);
     // Same SACK re-advertised → nothing new.
-    assert!(feed.newly_delivered(1, &[(5, 6)]).is_empty());
-    // Hole repaired: frontier jumps to 7 — only the gap seqs (2..=4)
-    // and 7 are new; 5..=6 were consumed from the sacked set.
-    assert_eq!(feed.newly_delivered(7, &[]), vec![2, 3, 4, 7]);
+    assert!(feed.newly_delivered(2, &[(5, 6)]).is_empty());
+    // Hole repaired: 0..=7 delivered — only the gap seqs (2..=4) and 7
+    // are new; 5..=6 were consumed from the sacked set.
+    assert_eq!(feed.newly_delivered(8, &[]), vec![2, 3, 4, 7]);
 }
 
 /// seq→path attribution: the seq is charged to the path it was (last)
@@ -1643,14 +1656,15 @@ fn now_us_is_monotonic_and_nonzero() {
 
 #[test]
 fn test_sack_to_gaps_single_hole() {
-    // Delivered up to 4; receiver has 7..=9 → 5..=6 missing.
-    assert_eq!(sack_to_gaps(4, &[(7, 9)]), vec![(5, 6)]);
+    // Delivered 0..=4 (`next_expected = 5`); receiver has 7..=9 → 5..=6 missing.
+    assert_eq!(sack_to_gaps(5, &[(7, 9)]), vec![(5, 6)]);
 }
 
 #[test]
 fn test_sack_to_gaps_multiple_holes() {
-    // Delivered up to 0; has 2..=3 and 6..=6 → 1 and 4..=5 missing.
-    assert_eq!(sack_to_gaps(0, &[(2, 3), (6, 6)]), vec![(1, 1), (4, 5)]);
+    // Delivered seq 0 (`next_expected = 1`); has 2..=3 and 6..=6 → 1 and
+    // 4..=5 missing.
+    assert_eq!(sack_to_gaps(1, &[(2, 3), (6, 6)]), vec![(1, 1), (4, 5)]);
 }
 
 #[test]
@@ -1658,7 +1672,7 @@ fn test_sack_to_gaps_adjacent_range_no_gap() {
     // Sack range starts right after the cumulative point → nothing
     // missing below it, and seqs above it are not reported (may be
     // in flight).
-    assert!(sack_to_gaps(4, &[(5, 9)]).is_empty());
+    assert!(sack_to_gaps(5, &[(5, 9)]).is_empty());
 }
 
 #[test]
@@ -1686,12 +1700,12 @@ fn test_sack_to_gaps_round_trips_receiver_encoding() {
     }
     assert_eq!(sack_ranges, vec![(11, 12), (15, 15), (18, 20)]);
     // Sender-side inversion recovers the missing seqs 13..=14, 16..=17
-    assert_eq!(sack_to_gaps(highest_delivered, &sack_ranges), vec![(13, 14), (16, 17)]);
+    assert_eq!(sack_to_gaps(highest_delivered + 1, &sack_ranges), vec![(13, 14), (16, 17)]);
 }
 
-/// Seq 0 lost. The receiver starts at `highest_delivered_seq = 0`, so a
-/// receiver that has delivered nothing advertises `received_up_to = 0` —
-/// the same value as "seq 0 delivered". Driven through the receiver's own
+/// Seq 0 lost. Through wire v8 a receiver that had delivered nothing
+/// advertised `received_up_to = 0` — the same value as "seq 0 delivered".
+/// v9 advertises `next_expected = 0`. Driven through the receiver's own
 /// encoding (`received_sack_ranges`) and the sender's inversion: seq 0
 /// must be reported as a gap, and when seq 0 was delivered it must not.
 #[test]
@@ -1704,10 +1718,12 @@ fn a_lost_seq_zero_is_sack_reported() {
         gaps.iter().any(|&(a, _)| a == 0),
         "seq 0 lost must be SACK-reported: ranges={ranges:?} gaps={gaps:?}"
     );
-    // Control: seq 0 delivered, seq 1 lost, 2..=10 received.
+    assert_eq!(gaps, vec![(0, 0)]);
+    // Control: seq 0 delivered (`next_expected = 1`), seq 1 lost, 2..=10
+    // received.
     let received: BTreeSet<u64> = (2..=10).collect();
-    let ranges = received_sack_ranges(&received, 0, 10);
-    assert_eq!(sack_to_gaps(0, &ranges), vec![(1, 1)], "delivered seq 0 is not re-reported");
+    let ranges = received_sack_ranges(&received, 1, 10);
+    assert_eq!(sack_to_gaps(1, &ranges), vec![(1, 1)], "delivered seq 0 is not re-reported");
 }
 
 /// Wire v9: seqs 0 AND 1 lost, 2..=10 received, nothing delivered. The
@@ -1742,9 +1758,10 @@ fn test_received_sack_ranges_inverts_to_gaps() {
     for seq in [3u64, 4, 7] {
         received.insert(seq);
     }
-    let ranges = received_sack_ranges(&received, 2, 7);
+    // 0..=2 delivered: `next_expected = 3`.
+    let ranges = received_sack_ranges(&received, 3, 7);
     assert_eq!(ranges, vec![(3, 4), (7, 7)]);
-    assert_eq!(sack_to_gaps(2, &ranges), vec![(5, 6)]);
+    assert_eq!(sack_to_gaps(3, &ranges), vec![(5, 6)]);
 }
 
 // ----- SACK truncation (plan 2a): a capped report must be a PREFIX --------
@@ -1787,7 +1804,7 @@ fn many_gap_fixture() -> (BTreeSet<u64>, u64, u64, BTreeSet<u64>) {
 #[test]
 fn sack_truncated_report_never_claims_a_missing_seq() {
     let (received, delivered, seen, missing) = many_gap_fixture();
-    let ranges = received_sack_ranges(&received, delivered, seen);
+    let ranges = received_sack_ranges(&received, delivered + 1, seen);
     for &(a, b) in &ranges {
         for s in a..=b {
             assert!(
@@ -1814,7 +1831,7 @@ fn sack_truncated_report_never_claims_a_missing_seq() {
 #[test]
 fn sack_truncated_report_releases_no_missing_seq_at_the_sender() {
     let (received, delivered, seen, missing) = many_gap_fixture();
-    let ranges = received_sack_ranges(&received, delivered, seen);
+    let ranges = received_sack_ranges(&received, delivered + 1, seen);
     // The sender retains every seq above the cumulative point.
     let sent_store: BTreeMap<u64, ()> = (delivered + 1..=seen).map(|s| (s, ())).collect();
     let mut released = BTreeSet::new();
@@ -1828,7 +1845,7 @@ fn sack_truncated_report_releases_no_missing_seq_at_the_sender() {
         wrongly.len(),
         wrongly.first()
     );
-    for (a, b) in sack_to_gaps(delivered, &ranges) {
+    for (a, b) in sack_to_gaps(delivered + 1, &ranges) {
         for s in a..=b {
             assert!(missing.contains(&s), "derived gap seq {s} was in fact received");
         }
@@ -1847,11 +1864,11 @@ fn sack_report_at_the_gap_cap_keeps_its_tail_range() {
     let tail_start = delivered + 1 + 2 * n_gaps;
     received.extend(tail_start..tail_start + 5);
     let seen = tail_start + 4;
-    let ranges = received_sack_ranges(&received, delivered, seen);
+    let ranges = received_sack_ranges(&received, delivered + 1, seen);
     assert_eq!(ranges, true_received_runs(&received, delivered, seen));
     assert_eq!(ranges.len(), MAX_NACK_GAPS + 1);
     assert_eq!(*ranges.last().unwrap(), (tail_start, seen));
-    assert_eq!(sack_to_gaps(delivered, &ranges).len(), MAX_NACK_GAPS);
+    assert_eq!(sack_to_gaps(delivered + 1, &ranges).len(), MAX_NACK_GAPS);
 }
 
 /// Exactly `MAX_SACK_RANGES` true runs are all reported; one more run is cut
@@ -1867,20 +1884,23 @@ fn sack_report_is_capped_at_max_sack_ranges_as_a_prefix() {
         let seen = *received.iter().next_back().unwrap();
         let truth = true_received_runs(&received, delivered, seen);
         assert_eq!(truth.len(), n_runs);
-        let ranges = received_sack_ranges(&received, delivered, seen);
+        let ranges = received_sack_ranges(&received, delivered + 1, seen);
         assert_eq!(ranges.len(), n_runs.min(MAX_SACK_RANGES));
         assert_eq!(ranges[..], truth[..ranges.len()]);
         // Every gap the sender derives is a true hole.
-        for (a, b) in sack_to_gaps(delivered, &ranges) {
+        for (a, b) in sack_to_gaps(delivered + 1, &ranges) {
             for s in a..=b {
                 assert!(!received.contains(&s), "derived gap seq {s} was received");
             }
         }
     }
-    // Degenerate frontiers: nothing above the cumulative point.
+    // Degenerate frontiers: nothing above the cumulative point (v9 count
+    // form: 0..=7 delivered is `next_expected = 8`).
     let received: BTreeSet<u64> = [5u64, 6, 7].into_iter().collect();
-    assert!(received_sack_ranges(&received, 7, 7).is_empty());
-    assert!(received_sack_ranges(&received, 9, 7).is_empty());
+    assert!(received_sack_ranges(&received, 8, 7).is_empty());
+    assert!(received_sack_ranges(&received, 10, 7).is_empty());
+    // And nothing seen at all: `next_expected = 0`, `seen = 0`.
+    assert!(received_sack_ranges(&BTreeSet::new(), 0, 0).is_empty());
 }
 
 /// The SACK cap is what one control datagram can carry: a `WindowAck` with
@@ -1892,7 +1912,8 @@ fn window_ack_sack_size_fits_the_control_datagram() {
     use crate::transport::{ControlMessage, WireMessage};
     let size = |n: usize| {
         WireMessage::Control(ControlMessage::WindowAck {
-            received_up_to: u64::MAX,
+            next_expected: u64::MAX,
+            received_above: u32::MAX,
             sack_ranges: (0..n as u64).map(|i| (u64::MAX - i, u64::MAX)).collect(),
             echo_send_timestamp_us: u64::MAX,
             jitter_us: u32::MAX,
@@ -1951,7 +1972,7 @@ fn stalled_frontier_store_gate_converges_past_the_sack_cap() {
     let received_above = received.range(delivered + 1..).count();
     let mut released = BTreeSet::new();
     for _report in 0..50 {
-        for (a, b) in received_sack_ranges(&received, delivered, seen) {
+        for (a, b) in received_sack_ranges(&received, delivered + 1, seen) {
             sack_release_mark(&sent_store, &mut released, a, b);
         }
     }
@@ -1961,16 +1982,144 @@ fn stalled_frontier_store_gate_converges_past_the_sack_cap() {
     assert!(released.iter().all(|s| received.contains(s)), "and never lies");
     // The GATE converges: what it uncounts is every received seq above the
     // frontier, so the outstanding it reads is exactly the unreceived count.
-    let gate_released = released.len();
+    // The report is what the receiver's WindowAck carries: `next_expected
+    // = delivered + 1` and `received_above` (the receiver's set holds the
+    // frontier seq itself, which is below `next_expected` and not counted).
+    let mut report = AboveReport::default();
+    report.fold(delivered + 1, received_above as u32);
+    let gate_released = store_gate_released(&sent_store, released.len(), report);
     assert_eq!(
         gate_released, received_above,
-        "the store gate must release every received seq above the stalled          frontier, not just the SACK prefix"
+        "the store gate must release every received seq above the stalled frontier, not just the SACK prefix"
     );
     assert_eq!(
         sent_store.len() - gate_released,
         sent_store.keys().filter(|s| !received.contains(s)).count(),
         "outstanding = exactly the holes"
     );
+}
+
+/// Wire v9: the store gate's released count is a LOWER bound on the
+/// retained seqs the receiver actually has -- for any report, stale or
+/// fresh, from any path, with the sender's store pruned past the report's
+/// frontier or not. A randomized sweep against the brute-force truth
+/// `|S ∩ received|`; also asserts that a FRESH report is exact on a dense
+/// store (the convergence the pinned test above needs).
+#[test]
+fn store_gate_released_never_exceeds_the_retained_received_truth() {
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move |m: u64| {
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (rng >> 33) % m.max(1)
+    };
+    for _case in 0..2_000 {
+        // The sender sent 0..sent; the receiver received a random subset.
+        let sent = 1 + next(400);
+        let received: BTreeSet<u64> = (0..sent).filter(|_| next(10) < 7).collect();
+        // Receiver frontier at report time: its delivered prefix.
+        let mut f_r = 0u64;
+        while received.contains(&f_r) {
+            f_r += 1;
+        }
+        let above = received.range(f_r..).count() as u32;
+        let mut report = AboveReport::default();
+        report.fold(f_r, above);
+        // The sender's store: pruned at a cumulative point that may be
+        // behind the report (ack not yet processed) or ahead of it (the
+        // report is stale: a later ack already moved the frontier).
+        let f_s = if next(2) == 0 { f_r.saturating_sub(next(5)) } else {
+            let mut f = f_r;
+            // A later frontier the receiver really reached.
+            while f < sent && next(3) != 0 {
+                f += 1;
+            }
+            f
+        };
+        let store: BTreeMap<u64, ()> = (f_s..sent).map(|s| (s, ())).collect();
+        // Marks: an honest subset of the retained received seqs.
+        let marks: usize = store.keys().filter(|s| received.contains(s) && next(3) == 0).count();
+        let truth = store.keys().filter(|s| received.contains(s) || **s < f_r).count();
+        let gate = store_gate_released(&store, marks, report);
+        assert!(
+            gate <= truth,
+            "gate released {gate} > truth {truth} (sent {sent}, f_r {f_r}, f_s {f_s}, above {above})"
+        );
+        if f_s == f_r {
+            // Fresh report on a dense store: exact.
+            assert_eq!(gate, truth, "a fresh report must converge exactly");
+        }
+    }
+}
+
+/// The receiver's incremental `received_above` counter equals the
+/// brute-force `|received ∩ [next_expected, ∞)|` under inserts (new and
+/// duplicate, above and below the frontier), frontier advances, and prunes
+/// below the frontier -- the contract the receiver loop keeps.
+#[test]
+fn received_above_counter_matches_the_brute_force_count() {
+    let mut rng: u64 = 0xD1B5_4A32_D192_ED03;
+    let mut next = move |m: u64| {
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (rng >> 33) % m.max(1)
+    };
+    let mut set: BTreeSet<u64> = BTreeSet::new();
+    let mut ctr = ReceivedAbove::new();
+    let mut frontier = 0u64;
+    for step in 0..20_000u64 {
+        match next(10) {
+            0..=6 => {
+                let seq = frontier.saturating_sub(5) + next(200);
+                let newly = set.insert(seq);
+                ctr.on_insert(seq, newly);
+            }
+            7 | 8 => {
+                while set.contains(&frontier) {
+                    frontier += 1;
+                }
+                if next(4) == 0 {
+                    frontier += next(3); // a hold-expiry jump past a hole
+                }
+            }
+            _ => {
+                ctr.sync(&set, frontier);
+                let prune_before = frontier.saturating_sub(1 + next(20));
+                set = set.split_off(&prune_before);
+            }
+        }
+        if step % 7 == 0 {
+            let want = set.range(frontier..).count() as u32;
+            assert_eq!(ctr.sync(&set, frontier), want, "step {step}");
+        }
+    }
+}
+
+/// Wire v9 seq-0 cases at the sender: a delivered seq 0 alone
+/// (`next_expected = 1`) is a cumulative advance that prunes seq 0 from the
+/// store, the marks and the per-path accounts; `next_expected = 0` advances
+/// nothing. Through v8 both read `received_up_to = 0` and seq 0 was never
+/// pruned.
+#[test]
+fn a_delivered_seq_zero_alone_is_acked_and_pruned() {
+    assert_eq!(sender_phases::cumulative_advance(0, 0), None, "nothing delivered");
+    let adv = sender_phases::cumulative_advance(0, 1);
+    assert_eq!(adv, Some((0, 0)), "seq 0 delivered alone is an advance");
+    assert_eq!(sender_phases::cumulative_advance(1, 1), None, "a duplicate ack");
+    assert_eq!(sender_phases::cumulative_advance(1, 4), Some((1, 3)));
+    // The prunes on_ack_advance runs, at `next_expected = 1`.
+    let mut store: BTreeMap<u64, ()> = (0..5).map(|s| (s, ())).collect();
+    let mut marks: BTreeSet<u64> = [0u64, 2].into_iter().collect();
+    let mut acct: BTreeMap<u64, u32> = BTreeMap::new();
+    let mut out: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    for s in 0..5 {
+        percap_charge(&mut acct, &mut out, s, 0);
+    }
+    let (_, ack) = adv.unwrap();
+    store = store.split_off(&(ack + 1));
+    sack_release_prune(&mut marks, 1);
+    percap_release_cumulative(&mut acct, &mut out, 1);
+    assert!(!store.contains_key(&0) && store.len() == 4, "seq 0 pruned, 1..=4 kept");
+    assert_eq!(marks.into_iter().collect::<Vec<_>>(), vec![2]);
+    assert_eq!(out[&0], 4);
 }
 
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
@@ -3916,7 +4065,7 @@ fn test_sack_release_every_unacked_symbol_stays_recoverable() {
     // Frontier at 9; hole at 10; receiver SACKed 11..=99.
     let ack = 9u64;
     sent_store = sent_store.split_off(&(ack + 1));
-    sack_release_prune(&mut released, ack);
+    sack_release_prune(&mut released, ack + 1);
     let newly = sack_release_mark(&sent_store, &mut released, 11, 99);
     assert_eq!(newly.len(), 89, "11..=99 newly released");
     // Released, not removed: outstanding drops to the hole + frontier
@@ -3932,7 +4081,7 @@ fn test_sack_release_every_unacked_symbol_stays_recoverable() {
     // Cumulative frontier passes everything → fully freed, both maps.
     let ack2 = 99u64;
     sent_store = sent_store.split_off(&(ack2 + 1));
-    sack_release_prune(&mut released, ack2);
+    sack_release_prune(&mut released, ack2 + 1);
     assert!(sent_store.is_empty());
     assert!(released.is_empty(), "released marks freed with the store (subset invariant)");
 }
@@ -3990,7 +4139,7 @@ fn test_sack_release_no_double_release_and_percap_composes() {
     assert_eq!(released.len(), 4);
     // Cumulative release later cannot double-free the accounts either
     // (percap_release_cumulative finds SACK-released seqs already gone).
-    percap_release_cumulative(&mut acct, &mut out, 9);
+    percap_release_cumulative(&mut acct, &mut out, 10);
     assert_eq!(out[&0], 0);
     assert_eq!(out[&1], 0);
 }
@@ -4102,7 +4251,7 @@ fn test_sack_bdp_reassembly_delivers_every_byte_past_a_hole() {
     // The cumulative ack is 9; everything 11..=299 was SACKed.
     let ack = 9u64;
     sent_store = sent_store.split_off(&(ack + 1));
-    for (start, end) in received_sack_ranges(&received_seqs, ack, highest_seen_seq) {
+    for (start, end) in received_sack_ranges(&received_seqs, ack + 1, highest_seen_seq) {
         let acked: Vec<u64> = sent_store.range(start..=end).map(|(&k, _)| k).collect();
         for k in acked {
             sent_store.remove(&k);
@@ -4285,15 +4434,33 @@ fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
     );
 }
 
-// ── The cross-path loss contamination (`RWM_LOSS_SENT_TRUTH`), bounded ──
+// ── The cross-path loss contamination, removed by wire v9, bounded ──
 //
-// A deterministic two-path model of the wire geometry: one global
-// `batch_seq` counter (the shipped `batch_counter`), batches striped
-// across two paths, per-path datagram loss injected at a known rate,
-// and the real `PathBatchTracker` on the receiver side. Both estimator
-// feeds are driven from it and read back through the real
-// `LossEstimator`, so the assertions bound the shipped mechanism, not a
-// re-implementation of it (measurement-discipline rule 1).
+// A deterministic two-path model of the wire geometry: the shipped
+// sender sequencer (`BatchCounter::next`, which stamps the global
+// `batch_seq` and the v9 per-path `path_seq`), batches striped across
+// two paths, per-path datagram loss injected at a known rate, and the
+// real `PathBatchTracker` on the receiver side fed through its real entry
+// point (`record(&SymbolBatch)`). Both estimator feeds are driven from it
+// and read back through the real `LossEstimator`, so the assertions bound
+// the shipped mechanism, not a re-implementation of it
+// (measurement-discipline rule 1). Through wire v8 the tracker read the
+// global sequence and every other path's batch counted as loss.
+
+/// A batch of `n` empty symbols, as the receiver's tracker sees it (it
+/// reads only the sequence and the symbol count).
+fn model_batch(seqs: (u64, u64), n: u32, path: u32) -> SymbolBatch {
+    let syms = (0..n)
+        .map(|i| crate::fec::WireSymbol {
+            block_id: seqs.0,
+            payload_id: i,
+            is_repair: false,
+            data: Vec::new(),
+            backend: FecBackend::Rlc,
+        })
+        .collect();
+    SymbolBatch::new(syms, 0, seqs, path)
+}
 
 /// What one path read, per arm, in one run of the two-path model.
 #[derive(Debug, Clone, Copy)]
@@ -4358,11 +4525,13 @@ fn xpath_loss_model(
     let mut sent_hist: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
     let mut dispatched = [0u64; 2];
     let mut dropped = [0u64; 2];
-    // Arrivals, in wire order, as (path, batch_seq, symbols, dispatch
-    // index on that path — the cursor into `sent_hist`, which must be
-    // keyed by dispatches, not by arrivals: a dropped batch still
+    // Arrivals, in wire order, as (path, (batch_seq, path_seq), symbols,
+    // dispatch index on that path — the cursor into `sent_hist`, which must
+    // be keyed by dispatches, not by arrivals: a dropped batch still
     // advanced the sender's counter, and that is the whole signal).
-    let mut arrivals: Vec<(usize, u64, u32, usize)> = Vec::new();
+    let mut arrivals: Vec<(usize, (u64, u64), u32, usize)> = Vec::new();
+    // The shipped sequencer: one call per dispatched batch, lost or not.
+    let counter = BatchCounter::new();
 
     for seq in 0..batches as u64 {
         let p = if share == 1 {
@@ -4376,11 +4545,12 @@ fn xpath_loss_model(
         sent_hist[p].push(sent_cum[p]);
         let disp_idx = dispatched[p] as usize;
         dispatched[p] += 1;
+        let seqs = counter.next(p as u32);
         if next() < eps[p] {
             dropped[p] += 1;
             continue;
         }
-        arrivals.push((p, seq, syms, disp_idx));
+        arrivals.push((p, seqs, syms, disp_idx));
     }
 
     let mut seen = [0usize; 2];
@@ -4391,9 +4561,10 @@ fn xpath_loss_model(
     let mut ewma_old = [(0.0f64, 0u64); 2];
     let mut ewma_new = [(0.0f64, 0u64); 2];
 
-    for (p, seq, n, disp_idx) in arrivals {
-        // Receiver: the real tracker, fed the real global batch_seq.
-        let (expected, received) = tracker[p].record_batch(seq, n);
+    for (p, seqs, n, disp_idx) in arrivals {
+        // Receiver: the real tracker through its real entry point, on the
+        // batch exactly as the wire carries it.
+        let (expected, received) = tracker[p].record(&model_batch(seqs, n, p as u32));
         // Arm A (shipped): the receiver's gap estimate.
         legacy[p].record_batch(expected, received);
         fed_old[p].0 += expected as u64;
@@ -4452,23 +4623,30 @@ fn default_gap_estimate_reads_each_path_own_epsilon_independent_of_share() {
             }
             assert!(
                 (x.fed_old - x.eps_true).abs() <= 5e-4,
-                "{cell} p{p}: the default gap estimate must read this path's                  own ε independent of share — {:.5} vs realized {:.5}",
+                "{cell} p{p}: the default gap estimate must read this path's own ε independent of share — {:.5} vs realized {:.5}",
                 x.fed_old,
                 x.eps_true
             );
-            assert!(
-                (0.5 * x.eps_true..2.0 * x.eps_true).contains(&x.beta_old),
-                "{cell} p{p}: loss_rate_mean must read this path's own ε —                  {:.5} vs realized {:.5}",
-                x.beta_old,
-                x.eps_true
-            );
+            // The Beta posterior decays at 0.995/call: at the end of a run it
+            // is one ~200-call window (~9 loss events at these ε), bounded at
+            // the cells the sender-truth test bounds it (c7/c8, and the N = 1
+            // control); at s10 the law above is the gate and the window read
+            // is sampling noise.
+            if share <= 6 {
+                assert!(
+                    (0.5 * x.eps_true..2.0 * x.eps_true).contains(&x.beta_old),
+                    "{cell} p{p}: loss_rate_mean must read this path's own ε — {:.5} vs realized {:.5}",
+                    x.beta_old,
+                    x.eps_true
+                );
+            }
         }
         if share > 1 {
             let (hi, lo) = if eps[1] > eps[0] { (1, 0) } else { (0, 1) };
             if eps[hi] > eps[lo] {
                 assert!(
                     r[hi].fed_old / r[lo].fed_old > 2.5,
-                    "{cell}: the lossier leg's ε must be the larger one                      ({:.5} vs {:.5})",
+                    "{cell}: the lossier leg's ε must be the larger one ({:.5} vs {:.5})",
                     r[hi].fed_old,
                     r[lo].fed_old
                 );
@@ -4532,12 +4710,21 @@ fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
                 x.ewma_new,
                 x.eps_true
             );
+            // Wire v9: the default (gap) arm is no longer the inflated
+            // one -- it reads the same per-path law as the gate's pair.
             assert!(
-                x.ewma_old > 20.0 * x.ewma_new,
-                "{cell} p{p}: the legacy read must be strictly the inflated \
-                 one ({:.4} vs {:.4})",
+                (x.fed_old - x.fed_new).abs() <= 1e-3,
+                "{cell} p{p}: under v9 the default gap arm and the \
+                 sender-truth arm must read the same law ({:.5} vs {:.5})",
+                x.fed_old,
+                x.fed_new
+            );
+            assert!(
+                (0.3 * x.eps_true..1.5 * x.eps_true).contains(&x.ewma_old),
+                "{cell} p{p}: the default loss_rate() must land in the ε \
+                 class too — {:.5} vs realized {:.5}",
                 x.ewma_old,
-                x.ewma_new
+                x.eps_true
             );
         }
         // Attribution: at c8 the slow leg's honest ε must be the larger
@@ -4551,10 +4738,11 @@ fn sender_truth_loss_reads_each_path_own_epsilon_at_n2() {
                 r[0].fed_new
             );
             assert!(
-                r[1].fed_old > 0.5,
-                "c8 slow leg legacy read {:.4} must reproduce the 5.59 \
-                 ce/cr class",
-                r[1].fed_old
+                r[1].fed_old / r[0].fed_old > 2.5,
+                "c8: the default arm attributes too — the slow leg's ε is \
+                 the larger one ({:.5} vs {:.5}); v8 read 0.84 here",
+                r[1].fed_old,
+                r[0].fed_old
             );
         }
     }
@@ -4659,8 +4847,9 @@ fn sender_truth_release_delta_is_idempotent_and_never_underflows() {
 
 // ── The in-flight accounting ledger, deterministically ───────────────
 //
-// The sibling of `xpath_loss_model`, and built the same way: one global
-// `batch_seq`, the real `PathBatchTracker` on the receiver, and the real
+// The sibling of `xpath_loss_model`, and built the same way: the shipped
+// sequencer (`BatchCounter`, v9 per-path `path_seq`), the real
+// `PathBatchTracker` on the receiver, and the real
 // `PathState` in-flight ledger driven through the real `charge_in_flight`
 // / `release_in_flight` / cursor laws on the sender. The two un-metered
 // recovery channels are modelled as what they are — a wire handoff with
@@ -4769,17 +4958,17 @@ fn xpath_ledger_model(
     }
 
     // ── Dispatch phase: build each path's wire history ────────────────
-    // Per dispatch: (batch_seq, symbols, arrived, symbols charged). The
-    // recovery channel's entries carry `charged = 0` unless the gate is
-    // on — that is the whole of defect 1, expressed as data.
-    let mut disp: [Vec<(u64, u32, bool, u32)>; 2] = [Vec::new(), Vec::new()];
+    // Per dispatch: ((batch_seq, path_seq), symbols, arrived, symbols
+    // charged). The recovery channel's entries carry `charged = 0` unless
+    // the gate is on — that is the whole of defect 1, expressed as data.
+    let mut disp: [Vec<((u64, u64), u32, bool, u32)>; 2] = [Vec::new(), Vec::new()];
     // Parallel per-path cumulative `PathStats::symbols_sent`. Under the
     // charge gate the recovery channel increments it too; with the gate
     // off it does not — the counter is one of the three meters the two
     // channels bypass.
     let mut sent_hist: [Vec<u64>; 2] = [Vec::new(), Vec::new()];
     let mut sent_cum = [0u64; 2];
-    let mut seq_ctr: u64 = 0;
+    let counter = BatchCounter::new();
     let mut dropped = [0u64; 2];
 
     for i in 0..batches as u64 {
@@ -4791,8 +4980,7 @@ fn xpath_ledger_model(
             0
         };
         // The source batch: charged and counted at the handoff, always.
-        let seq = seq_ctr;
-        seq_ctr += 1;
+        let seq = counter.next(p as u32);
         sent_cum[p] += syms as u64;
         let arrived = next() >= eps[p];
         disp[p].push((seq, syms, arrived, syms));
@@ -4802,11 +4990,10 @@ fn xpath_ledger_model(
         }
         dropped[p] += 1;
         // The recovery plane answers the drop on the same path. It takes
-        // its own `batch_seq` (`batch_counter.fetch_add`) and it reaches
-        // the link — it is only the sender's books it is missing from.
+        // its own sequences (`batch_counter.next`) and it reaches the link
+        // — it is only the sender's books it is missing from.
         for _ in 0..recov_per_drop {
-            let rseq = seq_ctr;
-            seq_ctr += 1;
+            let rseq = counter.next(p as u32);
             if charge_recovery {
                 sent_cum[p] += 1;
             }
@@ -4856,8 +5043,8 @@ fn xpath_ledger_model(
             if !arrived {
                 continue;
             }
-            // Receiver: the real tracker on the real global `batch_seq`.
-            let (expected, received) = tracker[p].record_batch(seq, n);
+            // Receiver: the real tracker through its real entry point.
+            let (expected, received) = tracker[p].record(&model_batch(seq, n, p as u32));
             delivered[p] += received as u64;
             // Sender, delivery arm (identical in both arms).
             let mut rel = |ps: &mut PathState, want: u32| {
@@ -4919,78 +5106,53 @@ fn xpath_ledger_model(
     })
 }
 
-/// Direction 1 — the shipped release must leak, and by the predicted class.
+/// Direction 1 (wire v9) — the shipped counter-delta release no longer
+/// leaks at N = 2.
 ///
-/// At 50/50 striping every path's batch-seq gap is exactly 2, so
-/// `expected = 2 × received` and the lost arm releases `received` on top
-/// of the delivery arm's `received`: ≈1 extra budget slot per delivered
-/// symbol (the c7 geometry). At the 5:1 split the slow leg's gap is 6
-/// and the same arithmetic gives ≈5.
-///
-/// And the leak's behavioural face: the gauge
-/// reads `in_flight == 0` on nearly every ack at which the path genuinely
-/// has a full in-flight window outstanding, so `available() = cwnd −
-/// in_flight` is held wide open on evidence the path does not have. Plus
-/// the N = 1 control — a single path has no other path in its sequence, so
-/// the same code does not leak there and no fix may regress it.
+/// Through wire v8 the gap was read in the global `batch_seq`: at 50/50
+/// striping every path's gap was exactly 2, so the lost arm released
+/// `received` on top of the delivery arm's `received` (≈1 extra slot per
+/// delivered symbol at c7, ≈5 on c8's slow leg) and the gauge sat on the
+/// floor (`in_flight == 0` on > 90% of acks with a full window outstanding).
+/// v9 keys the gap on the per-path `path_seq`, so the lost arm releases
+/// exactly the batches lost on THIS path: every charge is released once
+/// (the trailing lost batches by the quiesce sweep), the leak is zero, and
+/// the gauge reads the window. Absolute bounds at both multipath cells and
+/// the N = 1 control.
 #[test]
-fn legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2() {
+fn v9_counter_delta_release_closes_the_ledger_at_n2() {
     let leg = |share, eps| {
         xpath_ledger_model(60_000, 8, share, eps, 16, 40_000, Release::Legacy, false, 0)
     };
-    // c7: symmetric 50/50 — gap 2 on both legs.
-    let c7 = leg(2, [0.0055, 0.0055]);
-    for (p, x) in c7.iter().enumerate() {
-        assert!(
-            (0.85..1.15).contains(&x.leak_per_delivered),
-            "c7 p{p}: the legacy release must over-release ≈1 slot per \
-             delivered symbol (the wire's ce/cr 2.05), read {:.3}",
-            x.leak_per_delivered
-        );
+    for (cell, share, eps) in [
+        ("c7", 2u32, [0.0055, 0.0055]),
+        ("c8", 6, [0.0055, 0.0196]),
+        ("n1", 1, [0.0055, 0.0]),
+    ] {
+        let r = leg(share, eps);
+        let legs: &[usize] = if share == 1 { &[0] } else { &[0, 1] };
+        for &p in legs {
+            let x = r[p];
+            eprintln!("[v9-ledger] {cell} p{p}: {x:?}");
+            assert!(x.delivered > 10_000, "{cell} p{p}: the model must run");
+            assert!(
+                x.outstanding_mean > 100.0,
+                "{cell} p{p}: the model must hold a real in-flight window ({:.1})",
+                x.outstanding_mean
+            );
+            assert_eq!(
+                x.releases_req, x.charges,
+                "{cell} p{p}: every charge released exactly once (v8 over-released \
+                 ≈1 slot/delivered at c7, ≈5 at c8's slow leg)"
+            );
+            assert_eq!(x.infl_final, 0, "{cell} p{p}: the ledger closes at quiesce");
+            assert!(
+                x.false_empty_frac < 0.05,
+                "{cell} p{p}: the gauge must not sit on the floor (v8: > 0.9), read {:.3}",
+                x.false_empty_frac
+            );
+        }
     }
-    // c8: 5:1 split — p1 is the slow leg, gap 6.
-    let c8 = leg(6, [0.0055, 0.0196]);
-    assert!(
-        (4.5..5.5).contains(&c8[1].leak_per_delivered),
-        "c8 slow leg: the legacy release must over-release ≈5 slots per \
-         delivered symbol (the wire's ce/cr 5.59), read {:.3}",
-        c8[1].leak_per_delivered
-    );
-    // The excess is spent, not stored, and the gauge is pinned open.
-    for (cell, r) in [("c7", &c7[0]), ("c8slow", &c8[1])] {
-        assert!(
-            r.releases_wasted > 0,
-            "{cell}: no release ever hit a zero in_flight — the saturation \
-             the leak runs into was never exercised"
-        );
-        assert!(
-            r.outstanding_mean > 100.0,
-            "{cell}: the model must hold a real in-flight window ({:.1})",
-            r.outstanding_mean
-        );
-        assert!(
-            r.false_empty_frac > 0.9,
-            "{cell}: the gauge must read EMPTY while the path is loaded — \
-             that is what holds available() open; read {:.3} (in_flight \
-             mean {:.1} against a true outstanding mean of {:.1})",
-            r.false_empty_frac,
-            r.infl_mean,
-            r.outstanding_mean
-        );
-    }
-    // N = 1 control: the shipped term is already 1:1 at a single path, so
-    // its gauge is honest there and this defect is multipath-only.
-    let n1 = leg(1, [0.0055, 0.0]);
-    assert!(
-        n1[0].leak_per_delivered.abs() <= 0.02,
-        "N=1: the legacy release must already balance, read {:.4}",
-        n1[0].leak_per_delivered
-    );
-    assert!(
-        n1[0].false_empty_frac < 0.05,
-        "N=1: the gauge must not sit on the floor, read {:.3}",
-        n1[0].false_empty_frac
-    );
 }
 
 /// The ledger readout. Not a gate — every number it prints is bounded by
@@ -5244,13 +5406,24 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
             both[p].infl_final, 0,
             "p{p}: in_flight must return to ZERO at quiesce"
         );
-        // And the shipped arm, for contrast, leaks by more than the c7
-        // source-only ≈1 once the un-charged recovery is added.
-        assert!(
-            off[p].leak_per_delivered > 1.0,
-            "p{p}: the un-metered recovery must widen the legacy leak past \
-             the source-only ≈1, read {:.3}",
-            off[p].leak_per_delivered
+        // And the shipped arm, for contrast. Through wire v8 it leaked past
+        // the source-only ≈1 slot per delivered symbol. Under v9 the
+        // per-path gap no longer reads the other path, so it never
+        // over-releases: the recovery batch that follows a lost source batch
+        // prices the gap at ITS size (1, not 8) — an under-release — the
+        // un-charged recovery deliveries release theirs, and the RFC 9002
+        // sweep releases whatever the log still holds. Nothing is released
+        // into an empty gauge, so the requested release equals the charge
+        // exactly. (The un-metered recovery's own error is the gauge
+        // under-read bounded by the release-only rows above.)
+        assert_eq!(
+            off[p].releases_wasted, 0,
+            "p{p}: under v9 the legacy arm never releases into an empty gauge"
+        );
+        assert_eq!(
+            off[p].releases_req, off[p].charges,
+            "p{p}: under v9 the legacy arm's requested release equals its \
+             charge (v8: a leak > 1 slot per delivered symbol)"
         );
     }
 }

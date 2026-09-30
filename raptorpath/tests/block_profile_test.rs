@@ -132,7 +132,7 @@ fn test_data_message_with_version() {
             backend: FecBackend::RaptorQ,
         }],
         999,
-        1,
+        (1, 1),
         0,
     );
     let msg = WireMessage::Data(batch);

@@ -377,7 +377,7 @@ pub(crate) struct GenEmitCtx<'a> {
     pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
-    pub batch_counter: &'a AtomicU64,
+    pub batch_counter: &'a BatchCounter,
     pub window_ack_seq: &'a Arc<AtomicU64>,
     pub st: &'a mut SenderState,
     pub dg: &'a mut DiagState,
@@ -570,8 +570,8 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 }
             }
             proactive_coded_total += 1;
-            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
+            let seqs = batch_counter.next(path);
+            let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
             if let Err(e) = transport.send_symbols(path, batch) {
                 warn!(path, ?e, "failed to send generation coded symbol");
             }
@@ -622,8 +622,8 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     *gen_emitted.entry(anchor).or_insert(0) += 1;
                 }
                 proactive_coded_total += 1;
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
+                let seqs = batch_counter.next(path);
+                let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
                 if let Err(e) = transport.send_symbols(path, batch) {
                     warn!(path, ?e, "failed to send filling-generation repair");
                 }
@@ -725,8 +725,8 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     }
                     rec_emitted += 1;
                     progressed = true;
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, path);
+                    let seqs = batch_counter.next(path);
+                    let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
                     if let Err(e) = transport.send_symbols(path, batch) {
                         warn!(path, ?e, "failed to send generation recovery symbol");
                     }
@@ -772,7 +772,7 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
-    pub batch_counter: &'a AtomicU64,
+    pub batch_counter: &'a BatchCounter,
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub mpd_pf_floor: &'a std::cell::Cell<u64>,
     pub mpd_pf_clock: &'a std::cell::Cell<u64>,
@@ -1240,8 +1240,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     *dg.c8c_retx_orig.entry(original_path).or_insert(0) += 1;
                 }
 
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch::new(vec![sym], now_us(), batch_seq, nack_path);
+                let seqs = batch_counter.next(nack_path);
+                let batch = SymbolBatch::new(vec![sym], now_us(), seqs, nack_path);
                 let sent = match transport.send_symbols(nack_path, batch) {
                     Ok(()) => true,
                     Err(e) => {
@@ -1325,8 +1325,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     break;
                 }
                 let repair_sym = st.encoder.generate_repair();
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                let batch = SymbolBatch::new(vec![repair_sym], now_us(), batch_seq, margin_path);
+                let seqs = batch_counter.next(margin_path);
+                let batch = SymbolBatch::new(vec![repair_sym], now_us(), seqs, margin_path);
                 let sent = match transport.send_symbols(margin_path, batch) {
                     Ok(()) => true,
                     Err(e) => {
@@ -1379,7 +1379,9 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
 pub(crate) struct AckAdvanceCtx<'a> {
     pub pol: &'a SenderPolicy,
     pub gates: &'a crate::gates::RuntimeGates,
-    pub ack: u64,
+    /// The peer's cumulative point, wire v9 count form: every seq below it
+    /// is delivered; 0 = nothing delivered.
+    pub next_expected: u64,
     pub generation: bool,
     pub reliable: bool,
     pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
@@ -1397,9 +1399,20 @@ pub(crate) struct AckAdvanceCtx<'a> {
     pub req_emitted: &'a mut std::collections::HashMap<u64, u64>,
     pub req_at_report: &'a mut std::collections::HashMap<u64, u64>,
     pub sack_released: &'a mut BTreeSet<u64>,
+    /// The last `next_expected` this phase processed (count form, 0 at start).
     pub prev_ack: &'a mut u64,
     pub c8c_last_ack_adv_us: &'a mut u64,
     pub nack_repairs_this_period: &'a mut u64,
+}
+
+/// The newly acked span of one cumulative advance, wire v9 count form:
+/// `Some((first, last))` inclusive when `next_expected` moved past
+/// `prev_next`, i.e. seqs `prev_next ..= next_expected − 1` were delivered;
+/// `None` otherwise. A first ack of `next_expected = 1` (only seq 0
+/// delivered) is `Some((0, 0))` -- v8's `received_up_to = 0` could not be
+/// told apart from "nothing delivered", so seq 0 was never acked or pruned.
+pub(crate) fn cumulative_advance(prev_next: u64, next_expected: u64) -> Option<(u64, u64)> {
+    (next_expected > prev_next).then(|| (prev_next, next_expected - 1))
 }
 
 /// The cumulative-ack advance phase.
@@ -1407,7 +1420,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     let AckAdvanceCtx {
         pol,
         gates,
-        ack,
+        next_expected,
         generation,
         reliable,
         scheduler,
@@ -1432,17 +1445,22 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
     let mut prev_ack = *prev_ack_cell;
     let mut c8c_last_ack_adv_us = *c8c_last_ack_adv_us_cell;
     let mut nack_repairs_this_period = *nack_repairs_this_period_cell;
-    if ack > prev_ack {
+    if let Some((first_acked, ack)) = cumulative_advance(prev_ack, next_expected) {
+        // `ack` is the highest newly delivered seq (inclusive) -- the v8
+        // meaning every prune below is written against: `split_off(&(ack +
+        // 1))` = `split_off(&next_expected)`.
+        //
         // DIAG: attribute the just-ended frontier stall (time since the
         // previous cumulative advance, ≥ 5 ms) to the original placement path
-        // of the hole that was blocking (seq = prev_ack + 1) — read before the
-        // cleanup below prunes source_path_map to ack+1.
+        // of the hole that was blocking (seq = `first_acked`, the old
+        // cumulative point) — read before the cleanup below prunes
+        // source_path_map to ack+1.
         if pol.diag_on {
             let nowa = now_us();
             if c8c_last_ack_adv_us > 0 {
                 let dt_us = nowa.saturating_sub(c8c_last_ack_adv_us);
                 if dt_us >= 5_000 {
-                    if let Some(&owner) = st.source_path_map.get(&(prev_ack + 1)) {
+                    if let Some(&owner) = st.source_path_map.get(&first_acked) {
                         *dg.c8c_stall_ms.entry(owner).or_insert(0) += dt_us / 1000;
                         *dg.c8c_stall_n.entry(owner).or_insert(0) += 1;
                     }
@@ -1451,7 +1469,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             c8c_last_ack_adv_us = nowa;
         }
         // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
-        let newly_acked = ack - prev_ack;
+        let newly_acked = next_expected - prev_ack;
         // Compute the repair rate and the derived window target (paper §4.8)
         // from the worst (highest-loss) channel path, under a single lock
         // acquisition.
@@ -1589,13 +1607,13 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // (payload dropped above, mark dropped here); the subset-of-sent_store
         // invariant is preserved. No-op when off.
         if !sack_released.is_empty() {
-            sack_release_prune(&mut sack_released, ack);
+            sack_release_prune(&mut sack_released, next_expected);
         }
         // Cumulative release of the per-path accounts (the split_off twin;
         // seqs already SACK-released are gone from the account map, so no
         // double-release).
         if pol.percap_track {
-            percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, ack);
+            percap_release_cumulative(&mut st.percap_acct, &mut st.percap_out, next_expected);
         }
         // Hold-down (paper §7.4): drop the stamped holes the frontier has
         // passed. Prune only — the estimator is fed off the receiver's own gap
@@ -1621,7 +1639,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // Reset taper offset on window advancement (new correction cycle)
         st.taper_offset = 0;
 
-        prev_ack = ack;
+        prev_ack = next_expected;
     }
     *prev_ack_cell = prev_ack;
     *c8c_last_ack_adv_us_cell = c8c_last_ack_adv_us;

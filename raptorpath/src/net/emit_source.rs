@@ -36,6 +36,7 @@ use tracing::warn;
 
 use super::sender_policy::SenderPolicy;
 use super::{
+    BatchCounter,
     CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
     select_source_path, shed_allowed, shed_deadline_us, window_source_paths,
 };
@@ -58,7 +59,7 @@ pub(crate) struct SenderCtx<'a> {
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
-    pub batch_counter: &'a AtomicU64,
+    pub batch_counter: &'a BatchCounter,
     pub window_ack_seq: &'a Arc<AtomicU64>,
     /// `Some(..)` in plain in-order mode when the Copa delivery feed is on.
     /// `None` = shipped path.
@@ -351,11 +352,11 @@ pub(crate) fn emit_source(
         } else {
             wire_sym.clone()
         };
-        let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
+        let seqs = ctx.batch_counter.next(source_path);
         // The batch's `send_timestamp_us` is the key the ack's echo will
         // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.
-        let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, batch_seq, source_path)
+        let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, seqs, source_path)
             .with_eta(eta_rel_us);
         if let Err(e) = ctx.transport.send_symbols(source_path, batch) {
             warn!(source_path, ?e, "failed to send window source symbol");
@@ -432,8 +433,8 @@ pub(crate) fn emit_source(
             sched.redundant_source_path(source_path)
         };
         if let Some(alt) = alt_path {
-            let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch::new(vec![wire_sym], now_us(), batch_seq, alt);
+            let seqs = ctx.batch_counter.next(alt);
+            let batch = SymbolBatch::new(vec![wire_sym], now_us(), seqs, alt);
             if let Err(e) = ctx.transport.send_symbols(alt, batch) {
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
@@ -782,8 +783,8 @@ pub(crate) fn emit_source(
                     select_repair_path(&sched, source_path)
                 }
             };
-            let batch_seq = ctx.batch_counter.fetch_add(1, Ordering::Relaxed);
-            let batch = SymbolBatch::new(vec![correction_sym], now_us(), batch_seq, correction_path);
+            let seqs = ctx.batch_counter.next(correction_path);
+            let batch = SymbolBatch::new(vec![correction_sym], now_us(), seqs, correction_path);
             let sent = match ctx.transport.send_symbols(correction_path, batch) {
                 Ok(()) => true,
                 Err(e) => {

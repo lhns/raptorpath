@@ -11,13 +11,13 @@ use std::time::{Duration, Instant};
 
 use super::super::block_arq::BlockArq;
 use super::super::{
+    BatchCounter,
     REANNOUNCE_TIMEOUT_MAX, arq_loss_timeout, dispatch_repair_plans, send_arq_repairs,
     worst_loss_rate,
 };
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
-use std::sync::atomic::AtomicU64;
 
 /// Block-mode ARQ sweeper: the Ack-diff path needs later acks on
 /// the same path to reveal a lost batch; the tail of a transfer has
@@ -29,7 +29,7 @@ pub(crate) async fn run_arq_sweep(
     sweep_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
     sweep_transport: Arc<QuicTransport>,
     sweep_stats: Arc<SharedStats>,
-    sweep_batch_counter: Arc<AtomicU64>,
+    sweep_batch_counter: Arc<BatchCounter>,
     sweep_window_mode: bool,
     mut sweep_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) {

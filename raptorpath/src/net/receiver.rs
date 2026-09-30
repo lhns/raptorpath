@@ -46,10 +46,11 @@ use tracing::{debug, error, info, warn};
 
 use super::block_arq::BlockArq;
 use super::control_msg::{ControlCtx, handle_control_message};
-use super::delivery::{WindowDelivery, delivered_through};
+use super::delivery::{WindowDelivery, delivered_prefix};
 use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
+    BatchCounter,
     BLOCK_REORDER_MAX_BYTES, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
@@ -80,7 +81,7 @@ pub(crate) async fn run_receiver(
     recv_fec_backend: FecBackend,
     recv_transport: Arc<QuicTransport>,
     recv_block_arq: Arc<parking_lot::Mutex<BlockArq>>,
-    recv_batch_counter: Arc<AtomicU64>,
+    recv_batch_counter: Arc<BatchCounter>,
     recv_path_tracking: Arc<DashMap<u32, PathBatchTracker>>,
     recv_stats: Arc<SharedStats>,
     recv_symbol_size: u16,
@@ -92,7 +93,7 @@ pub(crate) async fn run_receiver(
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
-    recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    recv_sack_tx: Option<tokio::sync::mpsc::Sender<super::SackReport>>,
     // Request arms (A)/(B) (paper §7.6). `Some(..)` iff a request arm is live
     // on a plain reliable window; the local sender's own consumer sits on the
     // far end. `None` by default, where an arriving `RepairRequest` is counted
@@ -126,11 +127,15 @@ pub(crate) async fn run_receiver(
     };
     // Whether the sender packs multiple packets per symbol (set via WindowStart)
     let mut window_packed: bool = false;
-    // Track highest delivered seq for window ACK
-    let mut highest_delivered_seq: u64 = 0;
-    // The highest delivered seq we last advertised in a WindowAck (dedupe
-    // for ack sends; the shared window_ack_seq atomic carries the PEER's
-    // acks for the local sender and must not be conflated with this).
+    // The cumulative point for the window ACK (wire v9 `next_expected`): the
+    // COUNT of the contiguous delivered prefix -- every seq below it has
+    // been handed to the consumer; 0 = nothing delivered. (Through v8 this
+    // was `highest_delivered_seq`, where 0 meant both "nothing" and "seq 0".)
+    let mut next_expected: u64 = 0;
+    // The `next_expected` we last advertised in a WindowAck (dedupe for ack
+    // sends; the shared window_ack_seq atomic carries the PEER's acks for the
+    // local sender and must not be conflated with this). 0 = nothing yet, so
+    // a delivered seq 0 alone (`next_expected = 1`) is advertised.
     let mut last_advertised_ack: u64 = 0;
     // Reorder buffer for window mode — delivers packets in sequence order.
     // Reliable policy (ρ = 1): holes are held until recovered, never
@@ -300,6 +305,10 @@ pub(crate) async fn run_receiver(
     let mut last_hole_nack_at = Instant::now();
     // Track received seqs for WindowNack gap reporting
     let mut received_seqs: BTreeSet<u64> = BTreeSet::new();
+    // Wire v9 `received_above`: |received_seqs ∩ [next_expected, ∞)|,
+    // maintained incrementally (every WindowAck carries it, including one per
+    // data message under the ack merge).
+    let mut recv_above = crate::net::ReceivedAbove::new();
     // `RWM_REASM_BDP` occupancy probe: the maximum reassembly buffer
     // occupancy observed = received-but-not-yet-delivered symbols held behind
     // the in-order frontier. The reliability invariant bounds it — it must
@@ -381,6 +390,10 @@ pub(crate) async fn run_receiver(
     let mut deficit_armed: BTreeMap<u64, Instant> = BTreeMap::new();
     let mut last_deficit_send = Instant::now() - Duration::from_secs(1);
     let mut highest_seen_seq: u64 = 0;
+    // One past the highest seq seen (0 = nothing seen): the exclusive twin of
+    // `highest_seen_seq`, so "a seq above the cumulative point has been
+    // seen" is `seen_end > next_expected` with no seq-0 ambiguity.
+    let mut seen_end: u64 = 0;
     let mut last_nack_time = Instant::now();
     // Dupack analog: highest_seen at the last gap-advertising ack, and when
     // it was sent (rate limit) — see GAP_ACK_MIN_INTERVAL.
@@ -763,8 +776,8 @@ pub(crate) async fn run_receiver(
                     // both ends share (`generate_repair_range` refuses beyond
                     // what the encoder holds). The refusal is still counted
                     // (`[REQS] wa1_none`).
-                    let a_star = highest_seen_seq
-                        .saturating_sub(highest_delivered_seq)
+                    let a_star = seen_end
+                        .saturating_sub(next_expected)
                         .min(recv_win_cap);
                     let m = crate::net::late::request_m(
                         blk.late.pi0(),
@@ -859,7 +872,7 @@ pub(crate) async fn run_receiver(
                 // re-advertise the gap (SACK WindowAck) so the sender
                 // retransmits it — the same reliability backstop the
                 // in-order buffer's pending_count provided.
-                highest_seen_seq > highest_delivered_seq
+                seen_end > next_expected
             } else {
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
@@ -1028,8 +1041,8 @@ pub(crate) async fn run_receiver(
                     // fires with a pending hole). Once frozen > 1 s, name the
                     // blocker's receiver-side state once per second.
                     if wdiag_on {
-                        if highest_delivered_seq != wdiag_frontier_val {
-                            wdiag_frontier_val = highest_delivered_seq;
+                        if next_expected != wdiag_frontier_val {
+                            wdiag_frontier_val = next_expected;
                             wdiag_frontier_at = Instant::now();
                         }
                         let stall = wdiag_frontier_at.elapsed();
@@ -1069,7 +1082,7 @@ pub(crate) async fn run_receiver(
                                  pending={} highest_seen={} span={} \
                                  batches/s={} syms/s={}{}",
                                 stall.as_secs_f64(),
-                                highest_delivered_seq,
+                                next_expected,
                                 blocker,
                                 b_seen,
                                 b_rec,
@@ -1077,7 +1090,7 @@ pub(crate) async fn run_receiver(
                                 received_seqs.contains(&blocker),
                                 pending,
                                 highest_seen_seq,
-                                highest_seen_seq.saturating_sub(highest_delivered_seq),
+                                seen_end.saturating_sub(next_expected),
                                 d_batches,
                                 d_syms,
                                 dg,
@@ -1086,17 +1099,20 @@ pub(crate) async fn run_receiver(
                     }
                     let sack_ranges = received_sack_ranges(
                         &received_seqs,
-                        highest_delivered_seq,
+                        next_expected,
                         highest_seen_seq,
                     );
+                    let received_above = recv_above.sync(&received_seqs, next_expected);
                     debug!(
-                        delivered = highest_delivered_seq,
+                        next_expected,
                         seen = highest_seen_seq,
                         ranges = sack_ranges.len(),
+                        received_above,
                         "reliable window: hole stalled — re-advertising gap"
                     );
                     let ack_msg = ControlMessage::WindowAck {
-                        received_up_to: highest_delivered_seq,
+                        next_expected,
+                        received_above,
                         sack_ranges,
                         echo_send_timestamp_us: 0,
                         jitter_us: 0,
@@ -1187,19 +1203,18 @@ pub(crate) async fn run_receiver(
                         for pkt_data in extract_window_packets(&ddata, window_packed) {
                             let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                         }
-                        if dseq > highest_delivered_seq {
-                            highest_delivered_seq = dseq;
-                        }
+                        next_expected = next_expected.max(dseq + 1);
                     }
                     // Advertise the advanced cumulative point to the
                     // PEER so its sender-side ack state (retransmit
                     // buffer, window advance) opens even with no
                     // further arrivals (the deadlock cycle above) —
                     // send a bare WindowAck now in case none comes.
-                    if highest_delivered_seq > last_advertised_ack {
-                        last_advertised_ack = highest_delivered_seq;
+                    if next_expected > last_advertised_ack {
+                        last_advertised_ack = next_expected;
                         let ack_msg = ControlMessage::WindowAck {
-                            received_up_to: highest_delivered_seq,
+                            next_expected,
+                            received_above: recv_above.sync(&received_seqs, next_expected),
                             sack_ranges: Vec::new(),
                             echo_send_timestamp_us: 0,
                             jitter_us: 0,
@@ -1234,14 +1249,15 @@ pub(crate) async fn run_receiver(
                     .as_ref()
                     .map(|rb| rb.next_deliver_seq())
                     .unwrap_or(ooo_frontier);
-                highest_delivered_seq = highest_delivered_seq.max(
-                    delivered_through(next_unreleased, window_delivery.lowest_held())
-                        .unwrap_or(0),
-                );
-                if highest_delivered_seq > last_advertised_ack {
-                    last_advertised_ack = highest_delivered_seq;
+                next_expected = next_expected.max(delivered_prefix(
+                    next_unreleased,
+                    window_delivery.lowest_held(),
+                ));
+                if next_expected > last_advertised_ack {
+                    last_advertised_ack = next_expected;
                     let ack_msg = ControlMessage::WindowAck {
-                        received_up_to: highest_delivered_seq,
+                        next_expected,
+                        received_above: recv_above.sync(&received_seqs, next_expected),
                         sack_ranges: Vec::new(),
                         echo_send_timestamp_us: 0,
                         jitter_us: 0,
@@ -1431,7 +1447,7 @@ pub(crate) async fn run_receiver(
                     // the application idling; a gap with the frontier frozen
                     // is the store running out of headroom, which is what `H`
                     // is. Ungated — the `[WIDLE]` machinery's own 3 ms floor.
-                    if late_last_arrival_us > 0 && highest_seen_seq > highest_delivered_seq {
+                    if late_last_arrival_us > 0 && seen_end > next_expected {
                         let gap = arrival_us.saturating_sub(late_last_arrival_us);
                         if gap >= WIDLE_GAP_MIN_US {
                             blk.late.note_knee(gap);
@@ -1450,7 +1466,10 @@ pub(crate) async fn run_receiver(
                     let mut tracker = recv_path_tracking
                         .entry(path_id)
                         .or_insert_with(PathBatchTracker::new);
-                    let (e, r) = tracker.record_batch(batch_seq, symbol_count);
+                    // v9: keyed on the batch's per-path sequence
+                    // (`path_seq`), never the global `batch_seq` -- the
+                    // other paths' batches are not this path's losses.
+                    let (e, r) = tracker.record(&batch);
                     (e, r, tracker.total_expected, tracker.total_received)
                 };
 
@@ -1617,10 +1636,12 @@ pub(crate) async fn run_receiver(
                             if symbol.is_repair || seq != symbol.block_id {
                                 recv_rack_echo.record_recv_coded_fill();
                             }
-                            received_seqs.insert(seq);
+                            let newly = received_seqs.insert(seq);
+                            recv_above.on_insert(seq, newly);
                             if seq > highest_seen_seq {
                                 highest_seen_seq = seq;
                             }
+                            seen_end = seen_end.max(seq + 1);
                             // Conversion DIAG: first copy of this seq,
                             // credited to the arrival path, with its lead
                             // over the in-order frontier (symbols).
@@ -1682,10 +1703,10 @@ pub(crate) async fn run_receiver(
                                 while received_seqs.contains(&ooo_frontier) {
                                     ooo_frontier += 1;
                                 }
-                                highest_delivered_seq = highest_delivered_seq.max(
-                                    delivered_through(ooo_frontier, window_delivery.lowest_held())
-                                        .unwrap_or(0),
-                                );
+                                next_expected = next_expected.max(delivered_prefix(
+                                    ooo_frontier,
+                                    window_delivery.lowest_held(),
+                                ));
                                 continue;
                             }
 
@@ -1753,15 +1774,15 @@ pub(crate) async fn run_receiver(
                                     error!("TUN inject channel closed");
                                     break 'recv;
                                 }
-                                if dseq > highest_delivered_seq {
-                                    highest_delivered_seq = dseq;
-                                }
+                                next_expected = next_expected.max(dseq + 1);
                             }
                             // ρ = 1: never ack past a seq still held for the
-                            // consumer (EVICT never holds: a no-op there).
-                            if let Some(h) = window_delivery.lowest_held() {
-                                highest_delivered_seq = highest_delivered_seq.min(h.saturating_sub(1));
-                            }
+                            // consumer (EVICT never holds: a no-op there). v9:
+                            // a held seq 0 reads `next_expected = 0` --
+                            // expressible, where v8 clamped it onto "seq 0
+                            // delivered".
+                            next_expected =
+                                delivered_prefix(next_expected, window_delivery.lowest_held());
 
                             // `[SUCC]` abandonment, read off the frontier
                             // itself rather than off any give-up decision: a
@@ -1893,18 +1914,17 @@ pub(crate) async fn run_receiver(
                             for pkt_data in extract_window_packets(&ddata, window_packed) {
                                 let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
                             }
-                            if dseq > highest_delivered_seq {
-                                highest_delivered_seq = dseq;
-                            }
+                            next_expected = next_expected.max(dseq + 1);
                         }
                     }
 
                     // ── Proactive-frontier diagnosis (RWM_FDIAG) ──────
                     if fdiag_on {
-                        let f = highest_delivered_seq;
+                        // `f` = the first undelivered seq (v9 count form).
+                        let f = next_expected;
                         // Resolve a tracked hole once the frontier passes it.
                         if let Some((hp, t0, present, saw_src)) = fdiag_hole {
-                            if f >= hp {
+                            if f > hp {
                                 let by_source = saw_src
                                     || batch.symbols.iter().any(|s| {
                                         !s.is_repair && s.block_id == hp
@@ -1932,17 +1952,17 @@ pub(crate) async fn run_receiver(
                             }
                         }
                         // Arm a new hole when stalled with none tracked.
-                        if fdiag_hole.is_none() && highest_seen_seq > f {
+                        if fdiag_hole.is_none() && seen_end > f {
                             let (_h, buffered) =
-                                win_dec.frontier_probe(f + 1, highest_seen_seq);
+                                win_dec.frontier_probe(f, highest_seen_seq);
                             fdiag_hole =
-                                Some((f + 1, Instant::now(), buffered > 0, false));
+                                Some((f, Instant::now(), buffered > 0, false));
                         }
                         // Periodic aggregate report (~500 ms).
                         if fdiag_report_at.elapsed() >= Duration::from_millis(500) {
                             fdiag_report_at = Instant::now();
                             let (holes, buffered) =
-                                win_dec.frontier_probe(f + 1, highest_seen_seq);
+                                win_dec.frontier_probe(f, highest_seen_seq);
                             let dec_avg = if fdiag_decode_n > 0 {
                                 fdiag_decode_us / fdiag_decode_n
                             } else {
@@ -1964,7 +1984,7 @@ pub(crate) async fn run_receiver(
                             eprintln!(
                                 "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | COMPUTE calls={} avg={}us max={}us total={}ms | rf={} ru={}{}",
                                 f, highest_seen_seq,
-                                highest_seen_seq.saturating_sub(f),
+                                seen_end.saturating_sub(f),
                                 holes, buffered,
                                 fdiag_decode_n, dec_avg, fdiag_present_at_stall,
                                 fdiag_source_n, src_avg,
@@ -2038,8 +2058,8 @@ pub(crate) async fn run_receiver(
                         // rather than subtracted from it.
                         let probe = rank_probe(
                             &**win_dec,
-                            highest_delivered_seq,
-                            highest_seen_seq,
+                            next_expected,
+                            seen_end,
                             &mut rank_prev_seen,
                         );
                         for l in blk.render_cadence(Some(probe)) {
@@ -2062,9 +2082,8 @@ pub(crate) async fn run_receiver(
                     // SACK ranges are the sender's only gap signal; without
                     // them a hole would be repaired solely by proactive FEC or
                     // the hold-expiry force-delivery.
-                    let cumulative_advanced =
-                        highest_delivered_seq > last_advertised_ack;
-                    let gap_pending = highest_seen_seq > highest_delivered_seq
+                    let cumulative_advanced = next_expected > last_advertised_ack;
+                    let gap_pending = seen_end > next_expected
                         && highest_seen_seq > last_gap_ack_seen;
                     let gap_report_due =
                         gap_pending && last_gap_ack_time.elapsed() >= GAP_ACK_MIN_INTERVAL;
@@ -2090,7 +2109,7 @@ pub(crate) async fn run_receiver(
                     );
                     if emit_ack {
                         if cumulative_advanced {
-                            last_advertised_ack = highest_delivered_seq;
+                            last_advertised_ack = next_expected;
                         }
                         // SACK ranges: what was received beyond the cumulative
                         // point (not what's missing). Only on an advertising
@@ -2105,7 +2124,7 @@ pub(crate) async fn run_receiver(
                             last_hole_nack_at = last_gap_ack_time;
                             received_sack_ranges(
                                 &received_seqs,
-                                highest_delivered_seq,
+                                next_expected,
                                 highest_seen_seq,
                             )
                         } else {
@@ -2120,7 +2139,9 @@ pub(crate) async fn run_receiver(
                         };
 
                         let ack_msg = ControlMessage::WindowAck {
-                            received_up_to: highest_delivered_seq,
+                            next_expected,
+                            // v9: on every ack, merge-only ones included.
+                            received_above: recv_above.sync(&received_seqs, next_expected),
                             sack_ranges,
                             echo_send_timestamp_us: batch_send_ts,
                             jitter_us: jitter,
@@ -2212,20 +2233,28 @@ pub(crate) async fn run_receiver(
                         // decode-inert: repairs only reference the sender's
                         // current window, which sits at or above its ack
                         // (= our delivered point).
-                        let mut prune_before = highest_delivered_seq.saturating_sub(recv_win_cap * 2);
+                        // (v9 count form: `next_expected − 1` is the v8
+                        // `highest_delivered_seq`, so the prune point is
+                        // unchanged.)
+                        let delivered_last = next_expected.saturating_sub(1);
+                        let mut prune_before = delivered_last.saturating_sub(recv_win_cap * 2);
                         // Reliability invariant (RWM_REASM_BDP): never evict a
                         // received symbol before it is delivered. Under SACK the
                         // sender races ahead of the frozen in-order frontier, so
-                        // `highest_seen_seq` runs far above `highest_delivered_seq`
+                        // `highest_seen_seq` runs far above the cumulative point
                         // (the hole). The prune is keyed on the delivered frontier
-                        // (so `prune_before ≤ highest_delivered_seq` already), but
+                        // (so `prune_before ≤ delivered_last` already), but
                         // clamp it explicitly so a received-above-hole symbol the
                         // sender has pruned is never dropped. The reorder buffer is
                         // separately non-evicting (usize::MAX), so held source
                         // symbols survive to delivery regardless.
                         if reasm_bdp_on {
-                            prune_before = prune_before.min(highest_delivered_seq);
+                            prune_before = prune_before.min(delivered_last);
                         }
+                        // Sync the `received_above` counter first: the prune
+                        // removes only seqs below the cumulative point, which
+                        // a synced counter no longer counts.
+                        recv_above.sync(&received_seqs, next_expected);
                         received_seqs = received_seqs.split_off(&prune_before);
                         if let Some(ref mut wd) = window_decoder {
                             wd.advance(prune_before);
@@ -2241,13 +2270,13 @@ pub(crate) async fn run_receiver(
                                     received_seqs.range(ooo_frontier..).count()
                                 });
                             reasm_max_pending = reasm_max_pending.max(pending);
-                            let span = highest_seen_seq.saturating_sub(highest_delivered_seq);
+                            let span = seen_end.saturating_sub(next_expected);
                             reasm_max_span = reasm_max_span.max(span);
                             if reasm_last_report.elapsed() >= Duration::from_millis(500) {
                                 reasm_last_report = Instant::now();
                                 eprintln!(
                                     "[REASM] frontier={} highest_seen={} span={} pending={} max_pending={} max_span={}",
-                                    highest_delivered_seq, highest_seen_seq, span,
+                                    next_expected, highest_seen_seq, span,
                                     pending, reasm_max_pending, reasm_max_span,
                                 );
                             }
@@ -2440,26 +2469,33 @@ pub(crate) async fn run_receiver(
     // flushes it then, without a probe. The two share one flag, so exactly one
     // final block is ever printed.
     let probe = window_decoder.as_deref().map(|wd| {
-        rank_probe(wd, highest_delivered_seq, highest_seen_seq, &mut rank_prev_seen)
+        rank_probe(wd, next_expected, seen_end, &mut rank_prev_seen)
     });
     blk.flush_final(probe);
 }
 
 /// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the
-/// span `[frontier + 1, highest_seen]`, with the tail correction: the span
+/// span `[next_expected, seen_end)`, with the tail correction: the span
 /// that arrived since the previous readout is still in flight rather than
 /// missing, and is reported beside the deficit rather than subtracted from
 /// it. Shared by the cadence readout and the exit flush so the two can never
 /// disagree on what a probe is. Advances `rank_prev_seen`.
 fn rank_probe(
     win_dec: &dyn WindowDecoder,
-    highest_delivered_seq: u64,
-    highest_seen_seq: u64,
+    next_expected: u64,
+    seen_end: u64,
     rank_prev_seen: &mut u64,
 ) -> (u64, u64, u64) {
-    let f = highest_delivered_seq;
-    let (holes, pivots) = win_dec.frontier_probe(f + 1, highest_seen_seq);
-    let tail_lo = (*rank_prev_seen).max(f).saturating_add(1);
+    // v9 exclusive forms: the span is `[next_expected, seen_end)`, empty when
+    // nothing above the cumulative point has been seen. `rank_prev_seen`
+    // keeps its inclusive "highest seen" meaning.
+    let highest_seen_seq = seen_end.saturating_sub(1);
+    if seen_end <= next_expected {
+        *rank_prev_seen = highest_seen_seq;
+        return (0, 0, 0);
+    }
+    let (holes, pivots) = win_dec.frontier_probe(next_expected, highest_seen_seq);
+    let tail_lo = rank_prev_seen.saturating_add(1).max(next_expected);
     let tail_holes = if highest_seen_seq >= tail_lo {
         win_dec.frontier_probe(tail_lo, highest_seen_seq).0
     } else {

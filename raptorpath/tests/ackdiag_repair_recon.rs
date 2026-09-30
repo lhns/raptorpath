@@ -1,7 +1,7 @@
 //! Repair and retransmit symbols enter the receiver's expected/received
 //! counters — the counters whose diff (`PathState::ack_merge_counter_delta`)
 //! feeds the rate sampler as `count` and the loss estimator as a batch.
-//! `PathBatchTracker::record_batch(batch_seq, batch.symbols.len())` counts an
+//! `PathBatchTracker::record(&batch)` (keyed on the v9 per-path `path_seq`) counts an
 //! arriving batch's symbols without looking at `symbol.is_repair`; this test
 //! measures that on a lossy loopback using the gauge's own discriminator:
 //! `crecv` = Σ`d_received` (what the tracker counted arriving) against

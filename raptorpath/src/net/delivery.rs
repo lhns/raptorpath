@@ -22,7 +22,7 @@ pub(crate) struct Closed;
 /// arrival order) until the channel has room. Under ρ = 1 the sender discards
 /// its only copy once the cumulative ack passes a seq, so a dropped packet
 /// would be a permanent loss; the receiver caps its ack below
-/// [`WindowDelivery::lowest_held`] (see [`delivered_through`]). The hold is
+/// [`WindowDelivery::lowest_held`] (see [`delivered_prefix`]). The hold is
 /// bounded as the reliable reorder buffer is: the stalled ack caps what the
 /// sender may have in flight (its retention store's back-pressure cap).
 pub(crate) struct WindowDelivery {
@@ -117,14 +117,14 @@ impl WindowDelivery {
     }
 }
 
-/// The highest seq whose packets have all been handed to the consumer, given
-/// the first seq the reorder stage has not yet released (`next_unreleased`)
-/// and the lowest seq still held here. `None` = nothing delivered yet (the
-/// wire's `received_up_to = 0` sentinel).
-pub(crate) fn delivered_through(next_unreleased: u64, lowest_held: Option<u64>) -> Option<u64> {
-    next_unreleased
-        .min(lowest_held.unwrap_or(u64::MAX))
-        .checked_sub(1)
+/// The count of the delivered prefix -- the wire's v9 `next_expected`: every
+/// seq below it has had all its packets handed to the consumer, given the
+/// first seq the reorder stage has not yet released (`next_unreleased`) and
+/// the lowest seq still held here. `0` = nothing delivered, which is also
+/// what a HELD seq 0 reads as -- v8's `highest delivered` form could not say
+/// that (it mapped a held seq 0 onto "seq 0 delivered").
+pub(crate) fn delivered_prefix(next_unreleased: u64, lowest_held: Option<u64>) -> u64 {
+    next_unreleased.min(lowest_held.unwrap_or(u64::MAX))
 }
 
 #[cfg(test)]
@@ -146,23 +146,21 @@ mod tests {
         }
     }
 
-    /// Assert the ack invariant: every packet of every seq at or below the
-    /// advertised point has been accepted by the channel (consumed so far or
-    /// still queued in it).
+    /// Assert the ack invariant: every packet of every seq below the
+    /// advertised prefix count (v9 `next_expected`) has been accepted by the
+    /// channel (consumed so far or still queued in it).
     fn assert_ack_covers(
-        acked: Option<u64>,
+        acked: u64,
         consumed: usize,
         tx: &mpsc::Sender<Bytes>,
         cap: usize,
     ) {
         let accepted = consumed + (cap - tx.capacity());
-        if let Some(a) = acked {
-            let owed: usize = (0..=a).map(n_pkts).sum();
-            assert!(
-                owed <= accepted,
-                "ack {a} advertised but only {accepted} of the {owed} packets at or below it reached the consumer"
-            );
-        }
+        let owed: usize = (0..acked).map(n_pkts).sum();
+        assert!(
+            owed <= accepted,
+            "ack prefix {acked} advertised but only {accepted} of the {owed} packets below it reached the consumer"
+        );
     }
 
     /// ρ = 1: a depth-1 channel with a consumer that stalls, then drains.
@@ -176,17 +174,17 @@ mod tests {
         let (tx, mut rx) = mpsc::channel::<Bytes>(CAP);
         let mut d = WindowDelivery::new(true);
         let mut got = Vec::new();
-        let mut acked: Option<u64> = None;
+        let mut acked: u64 = 0;
         for seq in 0..N {
             d.offer(&tx, seq, pkts(seq, n_pkts(seq))).unwrap();
             // The in-order reorder stage has released everything through seq.
-            acked = acked.max(delivered_through(seq + 1, d.lowest_held()));
+            acked = acked.max(delivered_prefix(seq + 1, d.lowest_held()));
             assert_ack_covers(acked, got.len(), &tx, CAP);
             // The consumer stalls for 4 symbols, then drains what is queued.
             if seq % 5 == 4 {
                 drain(&mut rx, &mut got);
                 d.flush(&tx).unwrap();
-                acked = acked.max(delivered_through(seq + 1, d.lowest_held()));
+                acked = acked.max(delivered_prefix(seq + 1, d.lowest_held()));
                 assert_ack_covers(acked, got.len(), &tx, CAP);
             }
         }
@@ -194,7 +192,7 @@ mod tests {
         for _ in 0..1000 {
             drain(&mut rx, &mut got);
             d.flush(&tx).unwrap();
-            acked = acked.max(delivered_through(N, d.lowest_held()));
+            acked = acked.max(delivered_prefix(N, d.lowest_held()));
             assert_ack_covers(acked, got.len(), &tx, CAP);
             if !d.is_holding() {
                 break;
@@ -203,7 +201,7 @@ mod tests {
         drain(&mut rx, &mut got);
         let want: Vec<Vec<u8>> = (0..N).flat_map(|s| pkts(s, n_pkts(s))).collect();
         assert_eq!(got, want, "every packet exactly once, in order");
-        assert_eq!(acked, Some(N - 1));
+        assert_eq!(acked, N);
         assert!(!d.is_holding());
     }
 
@@ -217,19 +215,19 @@ mod tests {
         let mut got = Vec::new();
         d.offer(&tx, 7, pkts(7, 3)).unwrap();
         assert_eq!(d.lowest_held(), Some(7), "the 3rd packet of seq 7 is held");
-        assert_eq!(delivered_through(8, d.lowest_held()), Some(6));
+        assert_eq!(delivered_prefix(8, d.lowest_held()), 7);
         // Consumer takes one: room for one packet.
         got.push(rx.try_recv().unwrap().to_vec());
         // seq 8 arrives: it must not overtake seq 7's held packet.
         d.offer(&tx, 8, pkts(8, 1)).unwrap();
         assert_eq!(d.lowest_held(), Some(8));
-        assert_eq!(delivered_through(9, d.lowest_held()), Some(7));
+        assert_eq!(delivered_prefix(9, d.lowest_held()), 8);
         drain(&mut rx, &mut got);
         d.flush(&tx).unwrap();
         assert!(!d.is_holding());
         drain(&mut rx, &mut got);
         assert_eq!(got, vec![vec![7, 0], vec![7, 1], vec![7, 2], vec![8, 0]]);
-        assert_eq!(delivered_through(9, d.lowest_held()), Some(8));
+        assert_eq!(delivered_prefix(9, d.lowest_held()), 9);
     }
 
     /// Unordered delivery (the H = 0 corner, reliable): held seqs arrive in
@@ -243,7 +241,7 @@ mod tests {
         d.offer(&tx, 9, pkts(9, 1)).unwrap();
         assert_eq!(d.lowest_held(), Some(2));
         // Received prefix is 0..=9, but 2 and 9 are still held.
-        assert_eq!(delivered_through(10, d.lowest_held()), Some(1));
+        assert_eq!(delivered_prefix(10, d.lowest_held()), 2);
         let mut got = Vec::new();
         for _ in 0..4 {
             drain(&mut rx, &mut got);
@@ -251,7 +249,7 @@ mod tests {
         }
         drain(&mut rx, &mut got);
         assert_eq!(got, vec![vec![5, 0], vec![2, 0], vec![9, 0]]);
-        assert_eq!(delivered_through(10, d.lowest_held()), Some(9));
+        assert_eq!(delivered_prefix(10, d.lowest_held()), 10);
     }
 
     /// ρ < 1 (EVICT): Full drops, nothing is ever held, the frontier is the
@@ -263,7 +261,7 @@ mod tests {
         d.offer(&tx, 3, pkts(3, 3)).unwrap();
         assert!(!d.is_holding());
         assert_eq!(d.lowest_held(), None);
-        assert_eq!(delivered_through(4, d.lowest_held()), Some(3));
+        assert_eq!(delivered_prefix(4, d.lowest_held()), 4);
         d.flush(&tx).unwrap();
         let mut got = Vec::new();
         drain(&mut rx, &mut got);
@@ -295,7 +293,7 @@ mod tests {
         d.flush_with_permit(permit, &tx).unwrap();
         assert!(!d.is_holding());
         assert_eq!(rx.recv().await.unwrap().to_vec(), vec![0, 1]);
-        assert_eq!(delivered_through(1, d.lowest_held()), Some(0));
+        assert_eq!(delivered_prefix(1, d.lowest_held()), 1);
     }
 
     /// Wire v9: a HELD seq 0 (reliable delivery hold on a full consumer
@@ -306,7 +304,7 @@ mod tests {
     #[test]
     fn a_held_seq_zero_is_expressible_on_the_wire() {
         let advertised = |next_unreleased: u64, lowest_held: Option<u64>| {
-            delivered_through(next_unreleased, lowest_held).unwrap_or(0)
+            delivered_prefix(next_unreleased, lowest_held)
         };
         assert_ne!(
             advertised(1, Some(0)),
@@ -317,9 +315,9 @@ mod tests {
     }
 
     #[test]
-    fn delivered_through_seq0_sentinel() {
-        assert_eq!(delivered_through(0, None), None);
-        assert_eq!(delivered_through(5, Some(0)), None);
-        assert_eq!(delivered_through(1, None), Some(0));
+    fn delivered_prefix_counts_from_zero() {
+        assert_eq!(delivered_prefix(0, None), 0, "nothing delivered");
+        assert_eq!(delivered_prefix(5, Some(0)), 0, "seq 0 held: nothing delivered");
+        assert_eq!(delivered_prefix(1, None), 1, "seq 0 delivered");
     }
 }

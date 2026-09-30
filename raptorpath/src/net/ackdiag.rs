@@ -27,7 +27,8 @@
 //!      anchor floor consume.
 //!   4. **The repair-counting reconciliation.** Whether repair/retransmit
 //!      symbols enter the receiver's expected/received counters. Those come
-//!      from `PathBatchTracker::record_batch(batch_seq, batch.symbols.len())`,
+//!      from `PathBatchTracker::record(&batch)` (keyed on the v9 per-path
+//!      `path_seq`, counting `batch.symbols.len()`),
 //!      which counts symbols in an arriving batch without looking at
 //!      `symbol.is_repair`. `recon[…]` prints, per path, `sent` (the always-on
 //!      `PathStats::symbols_sent`, incremented at every wire handoff — source,
