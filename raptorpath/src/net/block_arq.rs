@@ -132,8 +132,13 @@ pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// `on_block_encoded` refuses done ids), so this ring cannot drop a retained
 /// block's bookkeeping. It is sized to the retention horizon's worst-case
 /// block count so a late loss event for a done block is recognised as
-/// "done" (suppressed silently) rather than miscounted as an eviction skip
+/// "done" (suppressed silently) rather than miscounted as an unknown-block skip
 /// (`repair_skips_evicted`) while its peers are still retained.
+///
+/// Shared with the receiver's completed-block ring
+/// (`receiver::CompletedBlocks::for_receiver`), so a re-announced block
+/// the receiver already delivered is recognised (re-acked, never
+/// re-decoded) over the same horizon.
 pub const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
     RETAIN_MAX_BLOCKS_DERIVED
 } else {

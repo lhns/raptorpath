@@ -2481,9 +2481,21 @@ pub(crate) struct CompletedBlocks {
 }
 
 impl CompletedBlocks {
-    /// The receiver's ring.
+    /// The receiver's ring, sized by the SAME horizon as the sender's done
+    /// ring (`block_arq::DONE_RING_CAP`: at least the most blocks the
+    /// retention budget can hold, `RETAIN_MAX_BLOCKS_DERIVED`) — one shared
+    /// constant, not a second literal.
+    ///
+    /// What it covers: a delivered block X whose success BlockResult was
+    /// lost is re-announced every quiet period (≤ REANNOUNCE_TIMEOUT_MAX)
+    /// until a re-ack lands; X is recognised as long as fewer than
+    /// DONE_RING_CAP blocks complete after it in that time. Only
+    /// consecutive lost re-acks stretch that time, so forgetting X needs
+    /// ~DONE_RING_CAP / (blocks completed per re-announce period)
+    /// consecutive losses — the ring is bounded memory, not an absolute
+    /// guarantee.
     pub(crate) fn for_receiver() -> Self {
-        Self::with_cap(512)
+        Self::with_cap(crate::net::block_arq::DONE_RING_CAP)
     }
 
     pub(crate) fn with_cap(cap: usize) -> Self {
