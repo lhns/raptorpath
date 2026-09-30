@@ -474,3 +474,251 @@ one-machine claim must name the exception (Bulk/Auto default stays on the
 block pipeline). The same run also shows the block default stalling at the
 Auto hint on four of five cells, which is a defect on the path users get
 with no flags.
+
+## 5. Stage-3 baseline — pre-registration
+
+The pre-registered baseline on the fixed binary (the plan's "Then Stage 3"):
+an A/A noise floor, block vs window at bulk and auto, the crown
+no-regression spot, and one estimator-cadence arm. Committed before VM
+contact; no number below is a result. Nothing is flipped by this battery.
+
+**Binary.** Built fresh on the benchmark VM from the commit that carries this
+section (engine tree = `main` e74891d; the later commits touch `tools/l1` and
+docs only), `cargo build --release --bin raptorpath`, copied under its real
+name, `sha256` recorded by the envelope in `BINSHA.txt` immediately before
+the smoke and re-verified before every invocation (the source commit is in
+the archive's `COMMIT` file and in every ledger header).
+
+**Harness.** Envelope `tools/l1/stage3_run_all.sh` (both locks for the whole
+session, build → smoke → operator GO → budget → battery → crown → score, a
+hard backstop), driver `tools/l1/stage3_battery.sh`, scorer
+`tools/l1/stage3_parse.py` (its constants are the rules below; offline test
+`test_stage3_parse.py`), crown via `crownspot8.sh` / `tail_matrix.sh` and
+`blockretest_parse.py crown`. Every invocation is `perf_rwm_c.sh` with
+`RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 SEED=<seed>`, one run, a fresh
+topology; `RWM_EST_CADENCE` and `RWM_POOL_ANCHOR` are `env -u`'d on every arm
+and set only on CAD (rule 15d).
+
+**Cells.** Every name carries geometry and size and is used in every table.
+Shaped capacity and the headroom above the last measured window-bulk goodput
+(rule 16) are stated; every cell has more than 5 % headroom, so goodput may be
+scored in both directions everywhere.
+
+| cell | geometry (`lib.sh scenario_params`) | size | capacity | last measured (window bulk) | headroom |
+|---|---|---|---|---|---|
+| `c1s-400` | c1 single: 1 Gbit, 1 ms, GE 0.05/50 | 400 MB | 1000 Mbit | v2 284.8–293.9 | ≈ 70 % |
+| `c1d-400` | c1 ‖ c1 dual | 400 MB | 2000 Mbit | V3 B2 186.9–201.5 | ≈ 90 % |
+| `c2-100` | c2 single: 100 Mbit, 5 ms, jitter 3, GE 1.3/50 | 100 MB | 100 Mbit | V3 B2 88.9–89.3 | ≈ 11 % |
+| `c3-25` | c3 single: 20 Mbit, 20 ms, jitter 5, GE 2/40 | 25 MB | 20 Mbit | V3 B2 17.05–17.48 | ≈ 13 % |
+| `c7-100` | c2 ‖ c2 dual | 100 MB | 200 Mbit | v2 169.2–177.8 | ≈ 12 % |
+| `c8-100` | c2 ‖ c3 dual | 100 MB | 120 Mbit | V3 B2 99.5–103.0 | ≈ 15 % |
+
+(`c7-100` and `c8-100` are not §4's `c7` (200 MB) and `c8` (25 MB); nothing
+here is compared with §4's numbers except as a cross-era remark.)
+
+**Arms** (one binary):
+
+| arm | pipeline | hint | extra env | role |
+|---|---|---|---|---|
+| `A1`, `A2` | window (`--window-reliable`, RLC) | bulk | — | the CTL, run twice as two independent arms: the A/A |
+| `CAD` | window | bulk | `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0` | part (d) |
+| `BLKb` | block (RaptorQ, block ARQ) | bulk | — | part (b) |
+| `WINa` | window | auto | — | part (b) |
+| `BLKa` | block | auto | — | part (b) |
+
+`CAD` pins `RWM_POOL_ANCHOR=0` explicitly: unset, the pool anchor follows
+`RWM_EST_CADENCE` (`resolve_pool_anchor`), which would change the N ≥ 2 store
+law as well; D1's decisive arm (dual c1 176–194 → 242–260 Mbit/s) was this
+isolated pair. The composed form (pool anchor riding the cadence) is not
+tested here.
+
+**Plan per (rep, seed) block: 32 invocations**, cells in the order below, the
+arm order within every cell rotated by the block index (rule 3):
+`c1s-400` A1 A2 BLKb WINa BLKa · `c1d-400` A1 A2 CAD · `c2-100`, `c3-25`,
+`c7-100`, `c8-100` each A1 A2 CAD BLKb WINa BLKa. So part (a) runs at all six
+cells, (b) at the five cells other than `c1d-400` (WIN at bulk is the CTL,
+A1 ∪ A2), (d) at the five cells other than `c1s-400` (the task's four plus
+`c7-100`, the cell whose clause the composed cadence flip once failed,
+`estimator.rs` doc comment). Seeds 42 and 7; blocks run rep 1 seed 42, rep 1
+seed 7, rep 2 seed 42, … **Planned n = 5 per seed** (10 per arm and cell; the
+CTL is 20 rows).
+
+**Budget** (5 h cap from the first ssh; hard backstop = first ssh + 4 h 50
+min; soft = hard − 10 min). Priors per invocation (transfer + ≈ 8 s harness
+overhead, from V1b/V2/V3/D1 and §4's 35 s per completing invocation): a block
+is ≈ 15 min typical, **`R_PRIOR` = 20 min** allowing DNFs at the auto cells;
+sync + build + smoke + GO ≈ 30 min; crown ≈ 33 min (§4: 1959 s), reserved as
+35 min. 10 blocks = 200 min, total ≈ 265 min. The smoke's summed invocation
+wall `c_meas` against its predicted 128 s sets `R_est = R_PRIOR ·
+max(1, c_meas/128)`, and n per seed = min(5, ⌊(soft − now − crown reserve) /
+(2·R_est)⌋). **Cut order**, each applied only while n < 3: (1) crown reps 8
+→ 6 (reserve 27 min); (2) drop CAD (R_est × 27/32); (3) drop the crown. n < 2
+after all cuts is `ABORT-BUDGET` (nothing runs). The battery starts no (rep,
+seed) block whose `R_est` would cross soft − crown reserve
+(`TRUNCATED-AT-REP-BOUNDARY`, scored at the n reached). Priority is (a) >
+(b) > (c) > (d); (d) rides inside the same blocks because its control is
+byte-identical to (a)'s arms at the same cells, so it costs 5 invocations a
+block and is cut before the crown.
+
+**Witnesses per invocation** (a row failing one is `CONTAMINATED` or
+`WITNESS-FAIL`, excluded from scoring and counted): the driver's `pipeline=`
+and `hint=` header and the `[PIPE]` echo on both endpoints match the arm;
+`[GATES]` on both endpoints; the RLC auto-select line present on both
+endpoints of window arms and absent on block arms; no generation guard line;
+the estimator-cadence echo (`estimator heavy-math cadence ACTIVE`) on both
+endpoints of `CAD` and on neither endpoint of every other arm; `[GATES]
+RWM_POOL_ANCHOR=0` on both endpoints of every arm; `sha256` unchanged. A row
+without a client summary is `NO_DATA`.
+
+**Scored quantities** per invocation (`stage3_parse.py row`): goodput `mbps`
+(whole-transfer mean, bytes·8/seconds), completion `seconds`, DNF (past
+150 s); sender CPU `CPUCLI` (whole invocation) and `util` = CPUCLI/seconds;
+invocation wall; busy share = median over the run of the client `[DIAG]`
+`busy=` (last value also recorded); per leg the truth loss from `[TRUTH]
+loss=` (rule 19; netem counters are never read as truth), the fed loss `plc=`
+from the client's last `[DIAG]` (cumulative), their ratio, `plu=` (median
+over the run's snapshots; "on the floor" iff in [0.0350, 0.0360]); coded
+repair share = cod/(src+cod) from the last `cum=`; `rcvbuf_drops`.
+Goodput, completion, CPU, util and busy are read over completed rows only; a
+DNF enters the DNF rate. Per-seed medians and every per-rep value are printed
+(rule 4); scoring is pooled over seeds.
+
+**(a) A/A noise floor.** For each cell and each metric m ∈ {goodput,
+completion, CPUCLI, util, busy}, over completed rows:
+
+MDE(cell, m) = max( 2·|med(A1) − med(A2)|, ½·(max − min) of A1 ∪ A2 ),
+rel(cell, m) = MDE / med(A1 ∪ A2).
+
+The second term floors the statistic so that a lucky A/A median agreement
+cannot shrink it to zero. States: `MDE-COMMITTED`; `NOISE-BOUND` if rel >
+0.25 (the pair is too noisy to resolve anything there; every clause on that
+metric at that cell reads `UNSCOREABLE`); `MDE-UNDEFINED` if either arm has
+fewer than 3 completed rows (likewise `UNSCOREABLE`). "Beyond MDE" means
+outside ref·(1 ± rel) with ref the comparison's reference median. The DNF
+threshold at a cell is max(0.20, 2·|dnf_rate(A1) − dnf_rate(A2)|). The
+committed MDE table is part of the result, and every later comparison on
+these cells cites it. The A/A medians are also set beside the last measured
+values (table above) as a cross-era remark, not scored.
+
+**(b) Block vs window at bulk and auto** (cells `c1s-400`, `c2-100`, `c3-25`,
+`c7-100`, `c8-100`; WIN = A1 ∪ A2 at bulk, WINa at auto; BLK = BLKb / BLKa;
+the relative MDE of the cell and metric is applied to BLK's median; the A/A
+is window-bulk, so at auto this is a transfer, recorded as weaker). At each
+(cell, hint) the window is **worse** iff any clause fails:
+goodput med(WIN) < med(BLK)·(1 − rel_gp); completion p50(WIN) >
+p50(BLK)·(1 + rel_ct); DNF rate(WIN) − rate(BLK) > the cell's DNF threshold.
+Where BLK completed no row the goodput and completion clauses are vacuous;
+where WIN completed none and BLK some, both fail. Outcomes (no other verdict
+may be recorded for (b)):
+- **`WINDOW-NOT-WORSE`** ⇔ no clause fails at any (cell, hint) and every
+  (cell, hint) is scoreable.
+- **`BLOCK-BETTER-AT-<cell/hint,…>`** ⇔ any scoreable clause fails; it lists
+  every failing (cell, hint).
+- **`UNSCOREABLE`** ⇔ any of the first five abort causes fired (whatever
+  the clauses say), or (naming the cells) no scoreable clause fails but
+  some (cell, hint) cannot be scored: an arm with fewer than 3 live rows or
+  ≥ 2 witness-failed rows of an (arm, cell) (the whole (cell, hint)), or a
+  `NOISE-BOUND`/`MDE-UNDEFINED` goodput or completion metric (those clauses
+  only; the DNF clause still scores).
+Per (cell, hint) the reading `WIN>BLK` / `TIE-WITHIN-MDE` / `BLK>WIN` is
+also printed (goodput beyond MDE in either direction), descriptive only.
+
+*The recorded Auto-on-block c3 finding* (§3.7: congestion-window-bound at
+7.2 Mbit/s) is not scored as a regression unless it moves outside the
+recorded band widened by the c3 MDE: band [6.31, 7.63] Mbit/s (the union of
+V1b 7.14–7.27, V2 6.62–7.63 and V2's same-day base 6.31–7.52), widened to
+[6.31·(1 − rel_gp(c3-25)), 7.63·(1 + rel_gp(c3-25))]. BLKa's median at
+`c3-25` inside → `AUTO-BLOCK-C3-AS-RECORDED`; below, or a majority of DNFs →
+`AUTO-BLOCK-C3-REGRESSED`; above → `AUTO-BLOCK-C3-MOVED-UP`; fewer than 3
+live rows or no MDE → `AUTO-BLOCK-C3-UNSCOREABLE`. It also enters (b)'s auto
+comparison at c3 like any other cell.
+
+**(c) Crown no-regression spot** (same session, after the battery):
+`tail_matrix.sh` arm `ship` (env unset), hint realtime, no
+`--window-reliable`, cells c2 and c3, 400 B and 1200 B, ×8 reps (×6 if cut),
+seeds 42 and 7, 50 msg/s × 20 s — exactly §4's spot with §4's bands, scored
+by `blockretest_parse.py crown`: `REPAIRS-INERT-ON-CROWN` (the crown held:
+every cell-size-seed's p99 median inside c2·400B [34–199] s42, [34–56] s7;
+c2·1200B [35–57] s42, [35–169] s7; c3·400B [87–154] s42, [88.5–297] s7;
+c3·1200B [84.3–175] s42, [90.8–139.1] s7; p50 median in 7.0–9.0 ms (c2) or
+22.0–27.0 ms (c3); `count = 1000` in ≥ 62 of 64 reps (≥ 46 of 48 at ×6) and
+none below 995; the scorer's 62-of-64 constant is for ×8 and is applied by
+hand as 46 of 48 if the cut fires), else `CROWN-MOVED(cell, seed, metric, direction)` (an
+improvement also counts as moved); fewer than 6 reps with a summary at any
+cell-size-seed is `SPOT-UNSCOREABLE`; not run by the budget rule is
+`SPOT-NOT-RUN`.
+
+**(d) `RWM_EST_CADENCE`: CTL (A1 ∪ A2) vs CAD** at `c1d-400`, `c2-100`,
+`c3-25`, `c7-100`, `c8-100`. Per cell, relative MDEs applied to the CTL
+median: CAD is **worse** iff goodput med < CTL·(1 − rel_gp), completion p50 >
+CTL·(1 + rel_ct), CPUCLI med > CTL·(1 + rel_cpu), or DNF rate excess > the
+DNF threshold; **better** iff not worse and (goodput med > CTL·(1 + rel_gp)
+or CPUCLI med < CTL·(1 − rel_cpu)) — CPUCLI is admitted as the free axis
+because c2/c3/c7/c8 sit within 11–15 % of their ceilings. The **fed loss vs
+truth** clause, per leg: med(plc/truth) under CAD must lie within
+[1/1.3, 1.3] × med(plc/truth) under CTL (a ratio of ratios, so the control's
+own c1 excess — V3: 0.89–1.41 at c1 dual leg 1, a few tens of datagrams
+tracking `RcvbufErrors`, and ±5 % from the 4-decimal `plc` print at truth ≈
+0.001 — does not fail CAD by itself). Outcomes, in precedence order:
+- **`UNSCOREABLE`** — any of the first five abort causes fired;
+- **`WORSE-AT-<cells>`** — worse at any cell that has no hard blocker (an
+  arm with fewer than 3 live rows, or ≥ 2 witness-failed rows);
+- **`FEED-MOVED-AT-<cell:leg,…>`** — the feed clause fails at any leg of
+  such a cell;
+- **`UNSCOREABLE`** (naming cells) — at any cell a hard blocker, a
+  `NOISE-BOUND` / `MDE-UNDEFINED` goodput, completion or CPU metric, or an
+  unread feed ratio;
+- **`FLIP-RECOMMENDED`** — better at ≥ 1 cell, not worse at any, the feed
+  unchanged at every leg, every cell scoreable. It recommends flipping
+  `RWM_EST_CADENCE` on **with the pool anchor decoupled** (`RWM_POOL_ANCHOR`
+  stays off; today unset it follows the cadence), as a separate reviewed
+  commit;
+- **`INERT-AS-DERIVED`** — the witness fires, nothing moves beyond MDE.
+Also reported, not scored: `plu` per leg (share of rows on the 0.0354 floor,
+CTL vs CAD — D1 saw CAD pull it to ≈ 0.001, which moves the rate law's input,
+so CAD is not a pure CPU change) and the coded repair share.
+
+**Known effects, declared so they are not misread.**
+1. Honest SACK (738008c, wire v9) releases less at wide spans than the old
+   lying report did; lower release at dual cells is expected.
+2. Live-path membership (e1ce7e7) removed the store-cap 128 cliff; the old
+   empty-set ticks are gone.
+3. Per-path loss has been honest since wire v9: balanced striping at `c1d-400`
+   costs ≈ 1.34× sender kernel CPU (§3.7), and `c1d-400` goodput sits below
+   `c1s-400` on the window pipeline; the dual c1 sender is CPU-bound (busy
+   88–97 %).
+4. Since the RX-slot fix (F4, 487ca7b) the receiver packs more acks per QUIC
+   packet at c2/c3/c8 (1.24 → 1.81 frames/packet at c2) and fewer at c1
+   dual; receiver CPU is ≈ 30 % lower at c2/c3/c8. The message count is
+   unchanged.
+5. `plu` sits on the BOCD floor 0.0354 at c1 and c2 in the CTL (§3.7).
+6. Auto-on-block at c3 is cwnd-bound at ≈ 7.2 Mbit/s (§3.7), scored only as
+   above; c8 Auto-on-block has been bimodal (32.7/35.2 vs 57.6, §3.7).
+7. The CTL at `c1d-400` drifted between D1's batteries (Q1 186–191, Q2
+   191–198, Q2b 176–194 Mbit/s); the A/A exists to measure exactly this.
+8. §4's `BLOCK-BETTER-AT-…` ran before the CPU fix (1b890e0) and the Auto
+   block fixes; it is not a prior for this battery's direction.
+
+**Abort causes, in priority order** (the scored section opens with this
+table, filled): `ABORT-LOCK` (either lock), `ABORT-CRLF` (`lib.sh` or a
+battery file carries CR), `ABORT-BUILD` (the fresh build fails), `ABORT-SHA`
+(binary changed; checked at start and before every invocation),
+`ABORT-SENTINEL-UNWRITABLE` (probed at launch), `ABORT-SMOKE` (one invocation
+per arm — `c2-100` A1, `c7-100` A2, `c1d-400` CAD, `c8-100` BLKb, `c7-100`
+WINa, `c3-25` BLKa, seed 42 — plus one `tail_matrix.sh ship` 400 B rep at
+c2; every row `LIVE` with its CPU line, one `[TRUTH]` per data leg and, on
+window arms, a `[DIAG]` carrying `plc`/`plu`/`busy`/`cum` per leg; nothing
+in it is a result), `ABORT-BUDGET` (above), `ABORT-RC` (non-zero driver
+exit: that row is `VOID-RC`, the battery goes on), `ABORT-BRINGUP` (no
+summary after 2 attempts: `NO_DATA`). Void class `VOID-COTENANT`: a
+`cargo`/`rustc` process on the box before or after an invocation voids it.
+The first five (lock, CRLF, build, SHA, sentinel) and the smoke stop the
+session before any row exists.
+
+**Session rules.** Both locks via `lib_battery.sh` for the whole session;
+detached envelope; earned sentinels (`DONE-ALL` only with a complete ledger,
+`stage3_parse.py check` rc 0, no truncation, and the crown's own `DONE-ALL`
+or its cut by the budget rule); the operator reads only sentinels (and the
+smoke check, before GO), at most every 5 min; `pkill -x raptorpath` only; no
+`ens18`, firewall, `sshd` or non-`rp-*` namespace is touched. Ledgers are
+copied to `docs/l1-raw/stage3/`.
