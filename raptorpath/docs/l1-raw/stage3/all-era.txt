@@ -1,0 +1,15 @@
+S3-ALL start 2026-09-30T12:28:22Z load=0.00 0.05 0.64 1/329 415555 hard=1790788682 soft=1790788082
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+S3-ALL build start commit=b3c6923 2026-09-30T12:28:15Z meas/stage3-baseline (engine = main e74891d) cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.00 0.05 0.64 2026-09-30T12:28:23Z
+S3-ALL build done sha256=f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035 2026-09-30T12:32:43Z
+S3-ALL smoke rc=0 wall=114s cotenants: cargo=0 rustc=0 load=0.80 1.09 1.00 2026-09-30T12:34:38Z
+S3-ALL SMOKE-PASS c_meas=78s c_pred=128s R_est=1200s 2026-09-30T12:34:38Z
+S3-ALL GO received 2026-09-30T12:36:08Z
+S3-ALL PLAN n_per_seed=5 seeds=42,7 block_est=1200s crown_reps=8 crown_reserve=2100s no_cad=0 cuts=' none' 2026-09-30T12:36:08Z
+S3-ALL battery start cotenants: cargo=0 rustc=0 load=0.75 0.94 0.95 2026-09-30T12:36:08Z
+S3-ALL battery rc=0 wall=4198s cotenants: cargo=0 rustc=0 load=1.45 1.61 1.87 2026-09-30T13:46:06Z
+S3-ALL crown done wall=1958s cotenants: cargo=0 rustc=0 load=0.38 0.89 0.72 2026-09-30T14:18:45Z
+S3-ALL end bat_ok=1 soft_trunc=0 crown=done load=0.38 0.89 0.72 2026-09-30T14:18:46Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

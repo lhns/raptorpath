@@ -55,6 +55,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| Stage-3 baseline (§5) | A/A + block vs window (bulk, auto) + `RWM_EST_CADENCE` arm, 6 cells, n = 5 × 2 seeds, 320 invocations; crown spot | MDE committed (goodput 1.4–5.6 %); `WINDOW-NOT-WORSE` (window ahead at every auto cell); crown `REPAIRS-INERT-ON-CROWN`; cadence `FLIP-RECOMMENDED` (dual c1 +41 %, sender CPU −12 to −32 %); nothing flipped |
 | Attribution audit (D0) | 4 cells, 3 reps, 12 invocations | `orig_frac` averages two mechanisms: true-heal share π0 is 0.0077 (c1) and 0.0054 (sc2) at single paths, 0.96 (c7) and 0.92 (c8) at duals |
 | Crown no-regression spot (wire v8 merges) | tail_matrix `ship`, realtime, c2/c3, 400/1200 B, ×8, seeds 42+7 | Repairs inert on the crown at 7 of 8 cell-size-seeds; c3·400B seed 7 p99 median outside by 0.2 ms, at the pre-declared era-limited cell; the EVICT seat answers 1.8–3.1 repairs per abandoned hole, and 82–99 % of abandoned holes get their data after the give-up |
 | r > 0 battery (Track B) | seed 42, n = 4 (truncated by the 5 h cap) | Glide R-FUNDED-NEGATIVE (direction only) at the lossy single; MID `VOID` by W7; entanglement-dominated where scoreable; control confirmed at the corner |
@@ -722,3 +723,156 @@ or its cut by the budget rule); the operator reads only sentinels (and the
 smoke check, before GO), at most every 5 min; `pkill -x raptorpath` only; no
 `ens18`, firewall, `sshd` or non-`rp-*` namespace is touched. Ledgers are
 copied to `docs/l1-raw/stage3/`.
+
+**Result** (scored 2026-09-30 against this pre-registration, literally; no
+amendment was made): **(a) `MDE-COMMITTED` at every cell and metric;
+(b) `WINDOW-NOT-WORSE`, with `AUTO-BLOCK-C3-AS-RECORDED`; (c)
+`REPAIRS-INERT-ON-CROWN`; (d) `FLIP-RECOMMENDED`.** Nothing is flipped by this
+battery.
+
+*Binary and session.* Commit b3c6923 (this section's pre-registration; engine
+tree = `main` e74891d), built fresh on the benchmark VM (Xeon E5-2650 v3
+era) in 4 min 20 s, `sha256
+f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035` — byte-equal
+to V3's NEW binary (2e264b7), as expected since only `tools/l1` and docs
+changed since. First ssh 12:28:02Z (hard backstop 17:18:02Z); build
+12:28–12:32Z; smoke 12:32–12:34Z; GO 12:36Z; battery 12:36–13:46Z (4198 s,
+320 invocations, 13 s mean); crown 13:46–14:18Z (1958 s); locks released
+14:18:46Z. **Session wall 1 h 51 min** of the 5 h cap. The budget rule gave
+n = 5 per seed with no cut (`c_meas` 78 s < `C_PRED` 128 s, so `R_est` =
+`R_PRIOR`). VM left quiet: 0 `raptorpath`, 0 `cargo`, 0 `rp-*` namespaces,
+both locks absent.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 12:28:23Z, no `LOCK-TRUNCATED-BY-FOREIGN`) |
+| `ABORT-CRLF` | no (0 CR bytes in every `tools/l1` script after sync) |
+| `ABORT-BUILD` | no |
+| `ABORT-SHA` | no (checked at start and before each of 326 invocations) |
+| `ABORT-SENTINEL-UNWRITABLE` | no (17 paths probed at launch) |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 6 rows `LIVE` with every gauge, cadence echo 1/1 on CAD and 0/0 elsewhere, `POOL_ANCHOR` 0/0 everywhere, one `ship` rep |
+| `ABORT-BUDGET` | no (n = 5, no cut) |
+| `ABORT-RC` | 0 of 320 |
+| `ABORT-BRINGUP` | 0 (0 `RUN-RETRY`, 0 `NO_DATA`) |
+| `VOID-COTENANT` | 0 of 320 |
+
+*What ran.* 10 blocks (5 reps × seeds 42, 7) × 32 invocations = 320 rows,
+all `LIVE` (0 contaminated, 0 witness failures); 10 rows per (cell, arm), 5
+per seed; 0 DNF anywhere. Crown: 64 reps. Ledgers: `docs/l1-raw/stage3/`
+(`s3.log` sha256 7df3dd0a…, `crown/crown-s42.log` 44aebf97…,
+`crown/crown-s7.log` e68fd0ce…, the smoke, `PLAN.txt`, `BINSHA.txt`,
+`all-era.txt`, and the scorer's full output `score.txt` with every per-rep
+value); per-invocation endpoint logs (32 MB) stay on the VM under
+`/home/vibe/stage3/run/diag-s3`.
+
+*(a) The committed MDE table* (window pipeline, bulk, A1 vs A2, n = 10 each;
+MDE = max(2·|Δmed|, half-range of A1 ∪ A2); every later comparison on these
+cells cites it). A/A DNF 0 everywhere, so the DNF threshold is 0.20 at every
+cell.
+
+| cell | goodput med (Mbit/s) | MDE goodput | MDE completion | MDE CPUCLI | MDE util | MDE busy |
+|---|---|---|---|---|---|---|
+| `c1s-400` | 303.2 | 14.8 (4.9 %) | 0.54 s (5.1 %) | 0.35 s (2.4 %) | 3.5 % | 3.8 pt (7.1 %) |
+| `c1d-400` | 193.9 | 10.8 (5.6 %) | 0.88 s (5.3 %) | 1.89 s (6.5 %) | 2.0 % | 0.25 pt (0.3 %) |
+| `c2-100` | 89.1 | 1.2 (1.4 %) | 0.13 s (1.4 %) | 0.31 s (6.3 %) | 6.4 % | 2.0 pt (10.8 %) |
+| `c3-25` | 17.25 | 0.28 (1.6 %) | 0.19 s (1.6 %) | 0.22 s (9.6 %) | 9.1 % | 0.5 pt (7.1 %) |
+| `c7-100` | 176.1 | 5.0 (2.8 %) | 0.13 s (2.9 %) | 0.25 s (3.6 %) | 4.8 % | 4.8 pt (5.7 %) |
+| `c8-100` | 102.1 | 4.1 (4.0 %) | 0.32 s (4.1 %) | 0.85 s (11.6 %) | 11.4 % | 11.5 pt (24.9 %) |
+
+Every entry is `MDE-COMMITTED`; the half-range term set the MDE everywhere
+except `c2-100` busy (2·|Δmed|). The A/A medians sit inside or at the last
+measured ranges (`c1d-400` 187.7–209.3 vs V3 186.9–201.5; `c2-100`
+86.9–89.3; `c3-25` 16.9–17.5; `c8-100` 97.5–105.7), except `c1s-400`
+282–312 vs V2's 285–294 (cross-era, not scored).
+
+*(b) Block vs window* (goodput median [min–max] Mbit/s, n = 10 per arm, 20 for
+the window at bulk; completion p50 in s; 0 DNF in every arm):
+
+| cell / hint | window | block | window − block | reading |
+|---|---|---|---|---|
+| `c1s-400` bulk | 303.2 [282.1–311.8], 10.55 s | 267.9 [244.2–280.4], 11.94 s | +13.2 % | `WIN>BLK` |
+| `c1s-400` auto | 247.4 [238.7–254.2], 12.93 s | 154.5 [150.6–160.1], 20.72 s | +60 % | `WIN>BLK` |
+| `c2-100` bulk | 89.1 [86.9–89.3], 8.98 s | 89.6 [86.9–89.8], 8.93 s | −0.6 % (MDE 1.4 %) | `TIE-WITHIN-MDE` |
+| `c2-100` auto | 73.1 [71.9–74.1], 10.94 s | 59.0 [56.7–59.6], 13.56 s | +24 % | `WIN>BLK` |
+| `c3-25` bulk | 17.25 [16.9–17.5], 11.59 s | 15.98 [15.7–17.1], 12.52 s | +8.0 % | `WIN>BLK` |
+| `c3-25` auto | 15.22 [14.6–15.5], 13.14 s | 7.21 [6.5–7.4], 27.74 s | +111 % | `WIN>BLK` |
+| `c7-100` bulk | 176.1 [169.1–179.1], 4.54 s | 173.4 [166.1–176.6], 4.61 s | +1.5 % (MDE 2.8 %) | `TIE-WITHIN-MDE` |
+| `c7-100` auto | 131.5 [126.5–141.6], 6.09 s | 116.7 [114.1–117.7], 6.85 s | +12.7 % | `WIN>BLK` |
+| `c8-100` bulk | 102.1 [97.5–105.7], 7.83 s | 101.0 [91.7–103.0], 7.92 s | +1.2 % (MDE 4.0 %) | `TIE-WITHIN-MDE` |
+| `c8-100` auto | 91.4 [83.9–95.2], 8.75 s | 56.8 [50.5–62.3], 14.09 s | +61 % | `WIN>BLK` |
+
+No clause failed at any (cell, hint): **`WINDOW-NOT-WORSE`**. The window is
+better beyond MDE at 7 of 10 and tied within MDE at the other three (bulk at
+c2, c7, c8); both seeds' medians agree in direction at every row (per-seed
+medians in `score.txt`). `AUTO-BLOCK-C3-AS-RECORDED`: BLKa at `c3-25` median
+7.21 Mbit/s (s42 7.2–7.3, s7 6.5–7.4) inside [6.21, 7.75] (the recorded band
+widened by 1.6 %). Headroom (rule 16): the best arm's goodput is 30 %, 89 %,
+86 %, 88 % and 85 % of the shaped capacity at c1s, c2, c3, c7, c8.
+
+*(c) Crown spot:* **`REPAIRS-INERT-ON-CROWN`**. p99 median / p50 median (ms),
+all inside their bands: c2·400B 36.7/7.92 (s42), 38.1/7.91 (s7); c2·1200B
+38.5/8.20, 39.1/8.22; c3·400B 105.5/24.05, 107.0/23.71; c3·1200B
+96.6/25.16, 96.2/25.03. `count = 1000` in 64 of 64 reps. Single-rep
+outliers inside the median rule: c2·400B s42 one rep p99 371.8 ms; c2·400B s7
+165.8; c2·1200B s7 190.8.
+
+*(d) `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0` (CAD, n = 10) vs CTL (A1 ∪ A2, n =
+20)*:
+
+| cell | goodput CTL → CAD | CPUCLI CTL → CAD | busy CTL → CAD | plc/truth per leg CTL → CAD | `plu` on floor CTL → CAD | coded share CTL → CAD |
+|---|---|---|---|---|---|---|
+| `c1d-400` | 193.9 → **274.1** (+41 %, MDE 5.6 %) | 28.87 → **19.58 s** (−32 %) | 87 → 83 % | 1.07 → 1.01; 1.03 → 1.09 | 20/20 → 0/10 (CAD `plu` ≈ 0.0010) | 0.00044 → 0.00040 |
+| `c2-100` | 89.09 → 89.11 (within) | 4.88 → **3.93 s** (−19 %) | 18.5 → 16.5 % | 1.00 → 1.00 | 20/20 → 0/10 (0.013) | 0.0048 → 0.0049 |
+| `c3-25` | 17.25 → 17.40 (within) | 2.25 → **1.97 s** (−12 %, MDE 9.6 %) | 7 → 7 % | 1.00 → 1.00 | 0/20 → 0/10 (0.043 → 0.027) | 0.0106 → 0.0107 |
+| `c7-100` | 176.1 → 176.3 (within) | 6.79 → **5.81 s** (−15 %) | 83.5 → 67.5 % | 1.00 → 1.00; 1.00 → 1.00 | 12/40 → 0/20 | 0.0054 → 0.0063 |
+| `c8-100` | 102.1 → 103.7 (within) | 7.35 → **6.27 s** (−15 %, MDE 11.6 %) | 46 → 42 % | 1.00 → 1.00; 1.02 → 0.99 | 18/20 → 0/10 (fast leg) | 0.0075 → 0.0086 |
+
+Not worse at any cell on goodput, completion, CPU or DNF; better on goodput
+at `c1d-400` and on sender CPU beyond MDE at all five cells; the fed loss
+against per-datagram truth unchanged at every leg (every CAD ratio within
+0.99–1.09, inside [1/1.3, 1.3] × CTL's); every cell scoreable:
+**`FLIP-RECOMMENDED`** — flip `RWM_EST_CADENCE` on with the pool anchor
+decoupled (`RWM_POOL_ANCHOR` stays off, whereas today, unset, it follows the
+cadence), as a separate reviewed commit. D1's dual-c1 gain reproduced (D1:
+242–260; here 258.5–329.0). The rate law's input moves with it: `plu` leaves
+the 0.0354 BOCD floor at every cell where the CTL sat on it, while proactive
+coded output stays negligible (coded share ≤ 0.9 % in both arms), so at these
+cells the move does not show up as coded repair.
+
+*Outside the pre-registered set (findings, no verdict).*
+1. **The block/window picture reversed against §4.** §4 (older binary, before
+   the CPU fix and the Auto block fixes) read `BLOCK-BETTER-AT-c1,c2,c3,c7,c8`
+   with the window DNF'ing c2 at bulk; on this binary the window pipeline is
+   not worse anywhere and ahead at every auto cell and at c1s/c3 bulk. §4's
+   pre-registration tied `WINDOW-NOT-WORSE` to the ADR-0069 flip; this
+   battery pre-registered that nothing is flipped, so the flip (and the block
+   deletion) is a separate decision this result now supports.
+2. **The block pipeline spends less sender CPU at bulk** where both saturate
+   the link: CPUCLI BLKb vs window at `c7-100` 4.2–4.6 vs 6.6–7.1 s, at
+   `c8-100` 4.3–4.8 vs 6.8–8.5 s, at `c2-100` 3.7–4.0 vs 4.6–5.2 s. CAD closes
+   part of that gap. Not scored (the (b) clauses are goodput, completion and
+   DNF).
+3. **Auto on block is slow everywhere, not only at c3**: its goodput is a
+   fraction of the window's at auto (BLKa/WINa medians: c1s 0.62, c2 0.81, c3
+   0.47, c7 0.89, c8 0.62), though it completed every run (the §4 Auto DNFs
+   are gone).
+4. `c1d-400` CTL busy sits at 86–87 % in all 20 rows, so its busy MDE is
+   0.25 pt: the gauge is saturated there (the sender is CPU-bound), a
+   degenerate reading rather than a quiet one.
+5. The block pipeline prints no `[DIAG]`, so its fed loss against truth is
+   not measured by this harness (the truth column is).
+6. Kernel receive-buffer drops (`rcvbuf_drops`) reach 40–59 per run at
+   `c1s-400` on the window arms (2–4 on block) and up to 51 at `c1d-400` CAD;
+   the c1 fed/truth ratios (1.0–1.4 at c1s, `plc` 0.0016–0.0018 vs truth
+   0.0012) carry that term, as §3.8 recorded.
+
+*What it means.* With the fixes in, the noise floor on these cells is small
+(goodput MDE 1.4–5.6 %), and against it the window pipeline is at least as
+good as the block pipeline at bulk and clearly better at Auto on every cell;
+the crown did not move. The per-ack BOCD update is a real cost: batching it
+lifts CPU-bound dual c1 by about 40 % and cuts sender CPU 12–32 % everywhere
+without changing what the loss estimator is fed. Both results are
+recommendations for separate, reviewed commits; this battery changed no
+default.

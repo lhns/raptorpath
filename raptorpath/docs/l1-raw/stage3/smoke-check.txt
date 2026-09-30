@@ -1,0 +1,8 @@
+SMOKE-ROW c2-100 A1 rc=0 status=LIVE wall=11.0 header=['window', 'bulk'] pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] gates=1/1 winline=1/1 cad=0/0 pa=0/0 mbps=89.081 dnf=False cpu=4.77 busy=18.0 diag_lines=36 
+SMOKE-ROW c7-100 A2 rc=0 status=LIVE wall=7.0 header=['window', 'bulk'] pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] gates=1/1 winline=1/1 cad=0/0 pa=0/0 mbps=177.306 dnf=False cpu=6.79 busy=81.5 diag_lines=18 
+SMOKE-ROW c1d-400 CAD rc=0 status=LIVE wall=13.0 header=['window', 'bulk'] pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] gates=1/1 winline=1/1 cad=1/1 pa=0/0 mbps=276.286 dnf=False cpu=18.78 busy=83.0 diag_lines=46 
+SMOKE-ROW c8-100 BLKb rc=0 status=LIVE wall=10.0 header=['block', 'bulk'] pipe=['block', 'RaptorQ', 'bulk']/['block', 'RaptorQ', 'bulk'] gates=1/1 winline=0/0 cad=0/0 pa=0/0 mbps=100.225 dnf=False cpu=4.39 busy=None diag_lines=0 
+SMOKE-ROW c7-100 WINa rc=0 status=LIVE wall=8.0 header=['window', 'auto'] pipe=['window', 'Rlc', 'auto']/['window', 'Rlc', 'auto'] gates=1/1 winline=1/1 cad=0/0 pa=0/0 mbps=130.653 dnf=False cpu=9.22 busy=91.0 diag_lines=24 
+SMOKE-ROW c3-25 BLKa rc=0 status=LIVE wall=29.0 header=['block', 'auto'] pipe=['block', 'RaptorQ', 'auto']/['block', 'RaptorQ', 'auto'] gates=1/1 winline=0/0 cad=0/0 pa=0/0 mbps=7.459 dnf=False cpu=5.53 busy=None diag_lines=0 
+SMOKE-CROWN tail_matrix ship rep lines=1
+SMOKE-PASS rows=6
