@@ -8,6 +8,33 @@ fn gates_echo_default_is_byte_pinned() {
     assert_eq!(line, PINNED_DEFAULT_GATES_ECHO);
 }
 
+/// `RWM_COPA_DELTA` echoes the CC's δ override as the resolved NUMBER, so a
+/// battery that pins the CC (the r > 0 battery's MID arm) can witness the
+/// pin off `[GATES]` — and an out-of-domain value echoes `unset`, the way
+/// `scheduler::copa_delta` ignores it. No env is set: the field is written
+/// on a resolved copy, so parallel resolves cannot race.
+#[test]
+fn the_copa_delta_override_echoes_its_resolved_value() {
+    let mut g = RuntimeGates::resolve();
+    g.copa_delta = Some(0.005);
+    let line = g.echo_line();
+    assert!(line.contains(" RWM_COPA_DELTA=0.005 "), "{line}");
+    // `RWM_DELTA=` must not be read inside `RWM_COPA_DELTA=`: a token scrape
+    // anchors at a token start (`l1common.field`), and so does this check.
+    assert!(line.contains(" RWM_DELTA=unset "), "{line}");
+    g.copa_delta = None;
+    assert!(g.echo_line().contains(" RWM_COPA_DELTA=unset "));
+    // The CC reads the same resolved field `[GATES]` prints.
+    use crate::scheduler::copa_delta;
+    use crate::control::fec_rate::ProtocolHint;
+    assert_eq!(copa_delta(ProtocolHint::Bulk, Some(0.005)), 0.005);
+    assert_eq!(
+        copa_delta(ProtocolHint::Bulk, None),
+        copa_delta(ProtocolHint::Bulk, Some(-1.0)),
+        "an out-of-domain override is the unset one"
+    );
+}
+
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
     "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",
@@ -29,6 +56,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
     "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
     "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
+    "RWM_COPA_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
     "RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 ",

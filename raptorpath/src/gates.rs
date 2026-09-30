@@ -64,6 +64,13 @@ fn resolve_delta() -> Option<f64> {
     env_parse::<f64>("RWM_DELTA").filter(|d| d.is_finite() && *d > 0.0)
 }
 
+/// `RWM_COPA_DELTA`: the congestion controller's own δ override, with the
+/// domain filter `scheduler::copa_delta` applies (finite, > 0) — out of
+/// domain resolves to absent and echoes `unset`, as the CC ignores it.
+fn resolve_copa_delta() -> Option<f64> {
+    env_parse::<f64>("RWM_COPA_DELTA").filter(|d| d.is_finite() && *d > 0.0)
+}
+
 /// The process's [`RuntimeGates`], resolved on first use; the only gate cache,
 /// so `[GATES]` prints what behaviour read.
 pub fn get() -> &'static RuntimeGates {
@@ -225,6 +232,10 @@ pub struct RuntimeGates {
     /// `RWM_DELTA` (absent, arm): the contract's δ as a number (paper §4.1); `RWM_COPA_DELTA`
     /// outranks it for the CC.
     pub delta: Option<f64>,
+    /// `RWM_COPA_DELTA` (absent, arm): the CC's own δ, resolved (`RWM_COPA_DELTA` ▸
+    /// `RWM_DELTA` ▸ the hint's map, `scheduler::copa_delta`); consumed by the
+    /// wire-clocked update law only (`RWM_COPA_WIRE`), whose echo says whether it is on.
+    pub copa_delta: Option<f64>,
     /// `RWM_COMPLETION_EXPOSURE` (off, arm): feed χ from a `CompletionFeed` (paper §4.6).
     pub completion_exposure: bool,
     /// `RWM_RECV_REQUEST_LAW` (absent, arm): the receiver requests holes past `l*_recv`; the
@@ -265,8 +276,6 @@ pub struct RuntimeGates {
     pub est_cadence: bool,
     /// `RWM_WIRE_COMPACT` (`transport::wire_compact_active`).
     pub wire_compact: bool,
-    /// `RWM_COPA_DELTA`, raw (the CC's own δ override; parsed at its site).
-    pub copa_delta_raw: Option<String>,
     /// `RWM_PLACE_T`: the effective placement temperature.
     pub place_t: f64,
     /// `RWM_CLOCK_GAP`: the process stall witness (`control::anchor`).
@@ -392,6 +401,7 @@ impl RuntimeGates {
                     && *f <= crate::net::HOLE_NACK_REFRESH_MAX.as_micros() as u64
             }),
             delta: resolve_delta(),
+            copa_delta: resolve_copa_delta(),
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
@@ -409,7 +419,6 @@ impl RuntimeGates {
             copa_compete,
             est_cadence,
             wire_compact: env_flag("RWM_WIRE_COMPACT", true),
-            copa_delta_raw: std::env::var("RWM_COPA_DELTA").ok(),
             place_t: crate::scheduler::place::resolve_place_temperature(),
             clock_gap: anchor_gate_default("RWM_CLOCK_GAP", true),
             rstar_tail: env_flag("RWM_RSTAR_TAIL", true),
@@ -464,7 +473,8 @@ impl RuntimeGates {
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
              RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
-             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COMPLETION_EXPOSURE={} \
+             RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
+             RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
@@ -502,6 +512,7 @@ impl RuntimeGates {
             o(&self.holddown_q),
             o64(&self.refresh_floor_us),
             o(&self.delta),
+            o(&self.copa_delta),
             b(self.completion_exposure),
             // Consumed at both endpoints, so echoed at both.
             b(self.recv_request_law), b(self.rank_feedback),
@@ -526,7 +537,6 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_ANCHOR_HYGIENE", "umbrella; folded into the astar/mstar/plain_rs values this line prints"),
     ("RWM_CLOCK_GAP", "own echo: 'clock-gap estimator hygiene ACTIVE' (control/anchor.rs wiring, net/mod.rs)"),
     ("RWM_COPA_WIRE", "own echo: scheduler Copa family resolve"),
-    ("RWM_COPA_DELTA", "own echo: scheduler Copa family resolve"),
     ("RWM_COPA_COMPETE", "own echo: scheduler Copa family resolve"),
     ("RWM_EST_CADENCE", "own echo: 'estimator heavy-math cadence ACTIVE' (control/estimator.rs)"),
     ("RWM_MTU_FLOOR", "own echo: 'MTU floor: …' / 'MTU floor OFF' (transport/quic.rs)"),

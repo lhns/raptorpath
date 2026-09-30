@@ -29,14 +29,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 GATES = (
     "[GATES] RWM_UNIFIED=0 RWM_THREE_TERM={three_term} RWM_DELTA_CAP=1 "
-    "RWM_MIN_R=unset RWM_DELTA={delta} RWM_COMPLETION_EXPOSURE={chi} "
+    "RWM_MIN_R=unset RWM_DELTA={delta} RWM_COPA_DELTA={copa} "
+    "RWM_COMPLETION_EXPOSURE={chi} "
     "RWM_DIAG=1 RWM_FDIAG=1\n"
 )
 
 
 def client_log(*, mbps, seconds, runs, delta, chi, src, cod, ack, chimax,
-               three_term=0, pl=0.018, rtt=41.2):
-    out = [GATES.format(delta=delta, chi=chi, three_term=three_term)]
+               three_term=0, pl=0.018, rtt=41.2, copa="unset"):
+    out = [GATES.format(delta=delta, chi=chi, three_term=three_term, copa=copa)]
     if chi == "1":
         out.append("completion-exposure feed ACTIVE (T_rem from the perf client)\n")
     # A mid-run [DIAG] with smaller cumulative totals, deliberately: the parser
@@ -64,9 +65,9 @@ def client_log(*, mbps, seconds, runs, delta, chi, src, cod, ack, chimax,
 
 
 def server_log(*, delta, chi, dec_n, dec_avg, src_n, src_avg, preempt,
-               three_term=0):
+               three_term=0, copa="unset"):
     return (
-        GATES.format(delta=delta, chi=chi, three_term=three_term)
+        GATES.format(delta=delta, chi=chi, three_term=three_term, copa=copa)
         + "[FDIAG] frontier=9001 seen=9000 gap=1 probe_holes=19 probe_buffered=4 "
           "| DECODE n=%d avg=%.1fus present_at_stall=0 | SOURCE n=%d avg=%.1fus "
           "| COMPUTE calls=812 avg=8us max=41us total=6ms | rf=12 ru=9\n"
@@ -139,11 +140,16 @@ def main():
     _, r = parse(
         tmp, "c3hg", "s18", "MID", 42, 1,
         cli=client_log(mbps=14.1, seconds=1.02, runs=40, delta="0.05", chi="0",
-                       src=60000, cod=3000, ack=59000, chimax=0.0, pl=0.061),
+                       src=60000, cod=3000, ack=59000, chimax=0.0, pl=0.061,
+                       copa="0.005"),
         srv=server_log(delta="0.05", chi="0", dec_n=140, dec_avg=8200.0,
-                       src_n=300, src_avg=21000.0, preempt=90))
+                       src_n=300, src_avg=21000.0, preempt=90, copa="0.005"))
     check("W2: RWM_DELTA echoes the arm's NUMBER on both endpoints",
           r["g_cli_RWM_DELTA"] == "0.05" and r["g_srv_RWM_DELTA"] == "0.05")
+    check("W7: the CC's own delta pin echoes (RWM_COPA_DELTA) on both endpoints",
+          r.get("g_cli_RWM_COPA_DELTA") == "0.005"
+          and r.get("g_srv_RWM_COPA_DELTA") == "0.005",
+          str(r.get("g_cli_RWM_COPA_DELTA")))
     check("W4: RWM_THREE_TERM=0 two-sided (the named confound, pinned off)",
           r["g_cli_RWM_THREE_TERM"] == "0" and r["g_srv_RWM_THREE_TERM"] == "0")
     check("W5: cod > 0 -- r reached the wire", r["cum_cod"] == 3000)

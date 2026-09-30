@@ -60,17 +60,16 @@ pub(crate) fn copa_delta_for_hint(hint: ProtocolHint) -> f64 {
         static ECHOED: OnceLock<()> = OnceLock::new();
         ECHOED.get_or_init(|| {
             tracing::info!(
-                copa_delta_override =
-                    crate::gates::get().copa_delta_raw.as_deref().unwrap_or("unset"),
+                copa_delta_override = %crate::gates::get()
+                    .copa_delta
+                    .map_or("unset".to_string(), |d| d.to_string()),
                 "Copa δ override (RWM_COPA_DELTA; unset = the hint→δ mapping)"
             );
         });
     }
-    let over = crate::gates::get()
-        .copa_delta_raw
-        .as_deref()
-        .and_then(|s| s.parse::<f64>().ok());
-    copa_delta(hint, over)
+    // The value `[GATES]` echoes as `RWM_COPA_DELTA=`: one resolution, so the
+    // echo and the behaviour cannot disagree.
+    copa_delta(hint, crate::gates::get().copa_delta)
 }
 
 // --- Copa TCP-competitive mode (ADR-0062) ---
