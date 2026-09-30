@@ -80,18 +80,43 @@ pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> 
 /// The completion feed — `RWM_COMPLETION_EXPOSURE`, absent by default
 /// (paper §4.6).
 ///
-/// The input the completion-exposure glide needs: how much of this transfer
-/// is left. The production tunnel is an endless stream with no `T_rem`, so χ
-/// stays 0 there (and with it δ_eff = ε̂ at the Bulk end). A driver that does
-/// know the remaining bytes (the perf client, feeding a sized object)
-/// publishes them here.
+/// The input the completion-exposure glide needs: how long until the last
+/// byte of this transfer is sent, `T_rem`. The production tunnel is an
+/// endless stream with no `T_rem`, so χ stays 0 there (and with it δ_eff = ε̂
+/// at the Bulk end). A driver that does know the object size (the perf
+/// client) publishes it here with [`CompletionFeed::set_remaining`]; the
+/// ENGINE decrements it ([`CompletionFeed::consume`]) where the window sender
+/// admits a source packet from its intake — the read that store headroom and
+/// the pacing bucket gate — so `remaining` is the object's bytes the sender
+/// has not yet put into its send path.
 ///
-/// One `AtomicU64` and nothing else: the writer is the object feeder, the
-/// reader is the rate site, and a stale read is a slightly stale χ — never a
-/// correctness question. `Relaxed` for the same reason.
+/// `T_rem = remaining / drain`, where `drain` is this feed's own admission
+/// rate since `set_remaining` (bytes consumed over elapsed time): the
+/// aggregate rate over every path, live from the first admitted packet.
+/// `remaining = 0` is `T_rem = 0` at any rate; nothing admitted yet with
+/// bytes left is an unknown `T_rem`, which the math crate prices as `∞` ⇒
+/// χ = 0 (pure ARQ).
+///
+/// Why not the driver's own hand-off and the estimator's throughput (the
+/// first wiring): the perf client's memory TUN queues 8192 chunks, so a
+/// 3 MB object was "handed over" in ~4 ms and `remaining` read 0 for the
+/// rest of the object; and `LossEstimator::throughput` is fed only by the
+/// 2 s report task, first at ~4 s after start, so every object inside that
+/// window read `tput = 0` and χ fell back to 0. With a fast sender the whole
+/// perf session fits inside it (`chi_reachability`, `[CHI] max=0.0000`).
+///
+/// Atomics and nothing else: the writers are the object feeder and the
+/// sender's intake, the reader is the rate site, and a stale read is a
+/// slightly stale χ — never a correctness question. `Relaxed` for the same
+/// reason.
 #[derive(Debug)]
 pub struct CompletionFeed {
     remaining_bytes: AtomicU64,
+    /// Bytes admitted since the last `set_remaining` — the drain numerator.
+    consumed_bytes: AtomicU64,
+    /// When `set_remaining` last ran, µs since `epoch`.
+    set_at_us: AtomicU64,
+    epoch: std::time::Instant,
 }
 
 impl Default for CompletionFeed {
@@ -102,15 +127,27 @@ impl Default for CompletionFeed {
 
 impl CompletionFeed {
     pub fn new() -> Self {
-        Self { remaining_bytes: AtomicU64::new(0) }
+        Self {
+            remaining_bytes: AtomicU64::new(0),
+            consumed_bytes: AtomicU64::new(0),
+            set_at_us: AtomicU64::new(0),
+            epoch: std::time::Instant::now(),
+        }
     }
-    /// The whole object is ahead of us: set at the start of a transfer.
+    fn now_us(&self) -> u64 {
+        self.epoch.elapsed().as_micros() as u64
+    }
+    /// The whole object is ahead of us: set at the start of a transfer, in
+    /// the bytes the engine will read (the driver's encoded packets).
     pub fn set_remaining(&self, bytes: u64) {
+        self.consumed_bytes.store(0, Ordering::Relaxed);
+        self.set_at_us.store(self.now_us(), Ordering::Relaxed);
         self.remaining_bytes.store(bytes, Ordering::Relaxed);
     }
-    /// One chunk handed to the engine: saturating, so a feeder that
-    /// over-counts by a partial chunk cannot wrap the counter.
+    /// One packet admitted by the sender: saturating, so an over-count (a
+    /// packet that was not part of the object) cannot wrap the counter.
     pub fn consume(&self, bytes: u64) {
+        self.consumed_bytes.fetch_add(bytes, Ordering::Relaxed);
         let _ = self.remaining_bytes.fetch_update(
             Ordering::Relaxed,
             Ordering::Relaxed,
@@ -123,6 +160,76 @@ impl CompletionFeed {
     }
     pub fn remaining_bytes(&self) -> u64 {
         self.remaining_bytes.load(Ordering::Relaxed)
+    }
+    /// The feed's own admission rate since `set_remaining`, bytes/s; 0 until
+    /// a byte has been admitted.
+    pub fn drain_bps(&self) -> f64 {
+        self.drain_bps_at(self.now_us())
+    }
+    fn drain_bps_at(&self, now_us: u64) -> f64 {
+        let consumed = self.consumed_bytes.load(Ordering::Relaxed) as f64;
+        let dt = now_us.saturating_sub(self.set_at_us.load(Ordering::Relaxed)) as f64 / 1e6;
+        if dt > 0.0 { consumed / dt } else { 0.0 }
+    }
+    /// `T_rem`, seconds: `remaining / drain`. `0` when nothing is left (at
+    /// any rate), `∞` when bytes are left and none has been admitted yet —
+    /// the unknown `T_rem` that `completion_exposure` prices as χ = 0.
+    pub fn t_rem_secs(&self) -> f64 {
+        self.t_rem_secs_at(self.now_us())
+    }
+    fn t_rem_secs_at(&self, now_us: u64) -> f64 {
+        let rem = self.remaining_bytes() as f64;
+        let drain = self.drain_bps_at(now_us);
+        if rem == 0.0 {
+            0.0
+        } else if drain > 0.0 {
+            rem / drain
+        } else {
+            f64::INFINITY
+        }
+    }
+}
+
+#[cfg(test)]
+mod completion_feed_tests {
+    use super::*;
+
+    /// The drain is the feed's own: bytes admitted over time since the set,
+    /// live from the first admitted packet (no estimator warm-up).
+    #[test]
+    fn t_rem_is_remaining_over_the_feeds_own_drain() {
+        let f = CompletionFeed::new();
+        f.set_remaining(3_000_000);
+        let t0 = f.set_at_us.load(Ordering::Relaxed);
+        // Nothing admitted yet: T_rem unknown ⇒ ∞ ⇒ χ = 0.
+        assert_eq!(f.t_rem_secs_at(t0 + 10_000), f64::INFINITY);
+        assert_eq!(raptorpath_math::completion_exposure(f.t_rem_secs_at(t0 + 10_000), 0.04, 0.005), 0.0);
+        // 1 MB admitted in 0.5 s ⇒ 2 MB/s drain, 2 MB left ⇒ T_rem = 1 s.
+        f.consume(1_000_000);
+        let t = f.t_rem_secs_at(t0 + 500_000);
+        assert!((t - 1.0).abs() < 1e-9, "T_rem = {t}");
+        // Mid-object χ is ~0; over the last ~1.5 SRTT it rises toward 1.
+        assert!(raptorpath_math::completion_exposure(t, 0.04, 0.005) < 1e-6);
+        f.consume(2_000_000);
+        assert_eq!(f.remaining_bytes(), 0);
+        assert_eq!(f.t_rem_secs_at(t0 + 1_500_000), 0.0);
+        assert!(raptorpath_math::completion_exposure(0.0, 0.04, 0.005) > 0.99);
+    }
+
+    /// A new object resets the drain, so object N's rate never prices N+1,
+    /// and an over-count saturates at 0 instead of wrapping.
+    #[test]
+    fn a_new_object_resets_the_drain_and_consume_saturates() {
+        let f = CompletionFeed::new();
+        f.set_remaining(100);
+        f.consume(500);
+        assert_eq!(f.remaining_bytes(), 0);
+        f.set_remaining(1_000);
+        let t0 = f.set_at_us.load(Ordering::Relaxed);
+        assert_eq!(f.drain_bps_at(t0 + 1_000), 0.0, "the old object's bytes leaked into the new drain");
+        assert_eq!(f.t_rem_secs_at(t0 + 1_000), f64::INFINITY);
+        f.clear();
+        assert_eq!(f.t_rem_secs_at(t0 + 1_000), 0.0);
     }
 }
 
@@ -143,6 +250,10 @@ pub(crate) struct ChiGauge {
     /// Observations with χ > ½ — the region where δ_eff has actually left ε̂.
     gt_half: AtomicU64,
     sum_ppm: AtomicU64,
+    /// Evaluations with no `T_rem` yet (bytes left, none admitted): χ = 0
+    /// by the unknown-`T_rem` convention. Reported as `cold=` so "no input"
+    /// reads apart from "χ = 0 on a measured input".
+    cold: AtomicU64,
 }
 
 pub(crate) static CHI: ChiGauge = ChiGauge {
@@ -150,9 +261,15 @@ pub(crate) static CHI: ChiGauge = ChiGauge {
     max_ppm: AtomicU64::new(0),
     gt_half: AtomicU64::new(0),
     sum_ppm: AtomicU64::new(0),
+    cold: AtomicU64::new(0),
 };
 
 impl ChiGauge {
+    /// One evaluation that had no `T_rem` (it is also `observe`d, as 0).
+    pub(crate) fn observe_cold(&self) {
+        self.cold.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub(crate) fn observe(&self, chi: f64) {
         let ppm = (chi.clamp(0.0, 1.0) * 1e6) as u64;
         self.n.fetch_add(1, Ordering::Relaxed);
@@ -172,7 +289,7 @@ pub(crate) fn chi_report_line() -> String {
         format!("{:.4}", CHI.sum_ppm.load(Ordering::Relaxed) as f64 / n as f64 / 1e6)
     };
     format!(
-        "[CHI] n={} max={:.4} frac_gt_half={:.4} mean={} rttvar_src=srtt_eighth",
+        "[CHI] n={} max={:.4} frac_gt_half={:.4} mean={} rttvar_src=srtt_eighth cold={}",
         n,
         CHI.max_ppm.load(Ordering::Relaxed) as f64 / 1e6,
         if n == 0 {
@@ -181,6 +298,7 @@ pub(crate) fn chi_report_line() -> String {
             CHI.gt_half.load(Ordering::Relaxed) as f64 / n as f64
         },
         mean,
+        CHI.cold.load(Ordering::Relaxed),
     )
 }
 

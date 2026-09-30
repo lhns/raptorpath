@@ -187,19 +187,16 @@ async fn run_object(
     let payload = vec![0xA5u8; payload_len];
     let t0 = Instant::now();
     let mut left = nbytes.max(1);
-    // The whole object is ahead of us.
+    // The whole object is ahead of us, in the bytes the engine will read
+    // (every chunk carries `HDR_LEN`). The ENGINE drains it as its sender
+    // admits each packet — not this loop: the memory TUN queues 8192 chunks,
+    // so "handed over" is not "sent" (see `CompletionFeed`).
     if let Some(f) = feed {
-        f.set_remaining(left as u64);
+        f.set_remaining((left + total as usize * HDR_LEN) as u64);
     }
     for idx in 0..total {
         let k = left.min(payload_len);
         left -= k;
-        // Decremented as each chunk is handed to the engine, so `T_rem` tracks
-        // what is still to be sent rather than what is still unacked — the
-        // quantity the glide is defined over.
-        if let Some(f) = feed {
-            f.consume(k as u64);
-        }
         let pkt = encode_chunk(obj_id, idx, total, &payload[..k]);
         match tokio::time::timeout(
             deadline.saturating_sub(t0.elapsed()),

@@ -3055,7 +3055,14 @@ async fn run_window_sender(
 
         if let Some(packet) = packet {
             let pkt = match packet {
-                Some(p) => p,
+                Some(p) => {
+                    // `RWM_COMPLETION_EXPOSURE`: the admitted bytes drain the
+                    // object's remaining (`CompletionFeed`). `None` otherwise.
+                    if let Some(f) = completion_feed.as_ref() {
+                        f.consume(p.len() as u64);
+                    }
+                    p
+                }
                 None => {
                     // Flush remaining packed data before exit
                     if pol.use_packing {
@@ -3122,6 +3129,9 @@ async fn run_window_sender(
                         }
                         match tun.try_read_packet() {
                             Some(pkt) => {
+                                if let Some(f) = completion_feed.as_ref() {
+                                    f.consume(pkt.len() as u64);
+                                }
                                 let framed =
                                     framing::frame_window_packet(&pkt, symbol_size);
                                 emit_source(

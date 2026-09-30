@@ -10,6 +10,8 @@
 //!   2. The mechanism executed (measurement-discipline rule 1): `[CHI]`
 //!      reaches `max > 0.5` — χ is a survival function of
 //!      `(T_rem − 1.5·srtt)/σ_ARQ`, so `max > ½` means `δ_eff` has left `ε̂`.
+//!      And `frac_gt_half < ½`: the exposure rises at each object's end
+//!      (a glide), it is not on for the whole object.
 //!   3. The law reached the wire: coded output `cod > 0` on the armed arm.
 //!   4. The control is inert and says so: `[CHI] n=0 max=0.0000`.
 //!   5. Byte-identity disarmed, asserted directly against `controller_rate`.
@@ -76,6 +78,7 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
 
     // (2) The mechanism executed: χ > ½ means δ_eff has left ε̂.
     let chi = require(&cli, "[CHI] ", "the χ gauge is unreached — old engine?");
+    println!("[chi-reach] armed: {chi}");
     assert!(
         f64_field(chi, "n=") > 0.0,
         "the rate site never evaluated χ: {chi}"
@@ -88,6 +91,16 @@ fn the_completion_exposure_arm_feeds_chi_and_the_rate_reaches_the_wire() {
     assert!(
         f64_field(chi, "frac_gt_half=") > 0.0,
         "no evaluation reached χ > ½: {chi}"
+    );
+    // (2b) …and it is a glide, not permanent exposure: χ > ½ only over the
+    // last ~1.5 SRTT of each object (plus the post-ACK tail of the last), so
+    // most evaluations sit mid-object at χ ≈ 0. A feed whose `remaining`
+    // hits 0 as soon as the object is queued (the memory TUN holds 8192
+    // chunks) would read `frac_gt_half ≈ 1` and still pass (2).
+    assert!(
+        f64_field(chi, "frac_gt_half=") < 0.5,
+        "χ > ½ on most evaluations: T_rem reads 0 mid-object, so the arm ran \
+         full exposure rather than the §4.6 glide: {chi}"
     );
 
     // (3) The law reached the wire: a χ that moves the controller but emits

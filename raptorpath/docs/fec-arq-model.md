@@ -854,6 +854,21 @@ knows the transfer size sets it (the perf client under
 `RWM_COMPLETION_EXPOSURE`). The constants 1.5, 4, 1/4 and
 `BULK_TAIL_BUDGET = 0.05` are unprovenanced (Section 11.2).
 
+T_rem is estimated from the feed itself (`net::CompletionFeed`):
+
+```text
+   T_rem  =  remaining / drain ,   drain = admitted bytes / time since the object began
+```
+
+`remaining` is the object's bytes the sender has not yet admitted into its
+send path (decremented at the intake read that store headroom and pacing
+gate), and `drain` is measured, aggregate over paths. `remaining = 0` is
+T_rem = 0; bytes left with none admitted is an unknown T_rem, priced as ∞
+(χ = 0). The first wiring divided by one path's estimator throughput, which
+the 2 s report task first feeds ~4 s after start, and decremented at the
+driver's hand-off into an 8192-chunk queue; both held χ at 0 on short
+objects (`chi_reachability`).
+
 ### 4.7 Exact P_fec
 
 Walking the GE chain across the interleaved wire sequence captures burst-
