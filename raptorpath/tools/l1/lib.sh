@@ -170,6 +170,7 @@ independent legs in the same cell." >&2
 #   c2   g 4.9   loss 2.60 %   burst ~ 2 skbs  -> ~10 datagrams
 #   c3   g 3.4   loss 4.86 %   burst ~ 2.5 skbs -> ~8.5 datagrams
 #   c8   fast (c2) leg g 3.9, loss 2.70 %;  slow (c3) leg g 1.5, loss 4.07 %
+#        (at 25 MB, one run: fast g 5.5, slow g 1.5; c2 single g 4.8)
 #        -> the two legs of one dual carry different datagram burst lengths
 #        (~8 vs ~4) from the same kind of GE parameters.
 # Other cells are not calibrated; their g depends on the sender's batching.

@@ -157,7 +157,7 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | ρ = 1 receiver dropped decoded packets on a full consumer channel | fbde330 (holds and caps the advertised point below the held seq) |
 | per-path loss read other paths' batches as loss (ε̂ ≈ 0.5 at 50/50) | wire v9 per-path `path_seq` (7825196) |
 | v9 rate-cache churn: the cadence re-evaluated on every W and worst-ε-path change | 7636a4c (keyed on age only) |
-| the loss estimator was fed more loss than the wire drops (`plc=` 0.024 vs 0.005 at c2) | `fix/loss-feed`: the tracker credits reorder instead of charging it; the sender carries the late-arrival credit instead of clamping it; the `PathReport` loss feed is deleted; the receiver's incoming loss feeds the RX slot only (so `nack_effectiveness()`, which reads it, is no longer a constant 1.0 on an endpoint that also receives); `[DIAG] dgev` / `[CTLD] dgrx` count local datagram drops. Fed loss against netem truth is not yet measured (V3) |
+| the loss estimator was fed more loss than the wire drops (`plc=` 0.024 vs 0.005 at c2). **Premise void (§3.8):** 0.005 was netem's skb counter; the per-datagram truth at c2 is 0.026 | `fix/loss-feed`: the tracker credits reorder instead of charging it; the sender carries the late-arrival credit instead of clamping it; the `PathReport` loss feed is deleted; the receiver's incoming loss feeds the RX slot only (so `nack_effectiveness()`, which reads it, is no longer a constant 1.0 on an endpoint that also receives); `[DIAG] dgev` / `[CTLD] dgrx` count local datagram drops. Against per-datagram truth, fed loss already matched before the fix and still does: `plc`/truth 0.95–1.03 on every run at c2, c3 and both c8 legs (n = 3 per binary); the c1 dual reads 0.89–1.41, a few tens of datagrams per run that track the receiver's kernel `RcvbufErrors`, which no engine token counts |
 
 ### 3.7 Recorded, not fixed
 
@@ -168,6 +168,46 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | Auto on block at c3 is congestion-window-bound at 7.2 Mbit/s (bulk block 17), not retention-bound | `/home/vibe/v1b/out/dbg-c3autoblk-r*-c.log` |
 | the per-batch `Ack` arm (block pipeline, or `RWM_ACK_MERGE=0`) releases in-flight from the raw wire counts, `received + (expected − received)⁺`: under reorder it releases more than was sent (6,8,7,9 → 5 for 4; 6 before the tracker fix). The merged `WindowAck` arm releases through the credited pair and closes exactly | `s10_per_batch_ack_carries_the_late_arrival_credit` (loss feed only; the release is not asserted) |
 | c8 Auto-on-block goodput is bimodal: 32.7 and 35.2 Mbit/s plain, 57.6 in the debug run | `/home/vibe/v1b/out/c8autoblk-r*-drv.out` |
+
+### 3.8 Finding: every netem-counter loss truth was low by the GSO factor
+
+netem's `dropped` counts skbs; quinn sends UDP GSO super-packets, and netem
+decides loss per skb. So `dropped / Sent` read datagram loss low by the
+datagrams-per-skb factor, measured on main 2e264b7's binary at 4.9 (c2), 3.4
+(c3), 2.7 (c1), 3.9 / 1.5 (c8 fast / slow leg) (6.1 at c2 on 949e06b: a
+sender property, not a cell constant). Calibration on a bare netem with no
+delay or rate: 5 300 datagrams lost at 5 per skb while `dropped` read 1 060; at
+1 per skb it matched (5 183 / 5 182). The realised per-datagram loss RATE is
+still p/(p+q) (2.60 % at c2, 4.86 % at c3); what is longer than documented is
+the burst, by the same factor, and differently on the two legs of one dual.
+And netem never reorders on these cells: every cell sets `rate`, under which
+netem is FIFO (0 out-of-order in 10⁵ on the c2 and c3 shapes; 82 920 with the
+same jitter and no `rate`). Reorder handling was never exercised on the wire.
+
+The harness now measures truth per datagram (`[TRUTH]` per leg, a clsact +
+egress matchall counter ahead of netem; measurement discipline rule 19;
+`tools/l1/lib.sh`). Validation on main 2e264b7's binary (sha256 f3743664…),
+25 MB, seed 42, one run each: c2 single `loss=0.020575` (483 of 23 475
+datagrams, g 4.82) against `plc=0.0204` (0.99×), where netem's counter read
+113 / 22 992 = 0.0049; c8 dual fast leg `loss=0.021377` (g 5.53) against
+`plc=0.0211` (0.99×), slow leg `loss=0.044158` (g 1.54) against `plc=0.0450`
+(1.02×); `rcvbuf_drops=0` on both runs. The factor also moves with transfer
+size (c8 fast leg 3.9 at 100 MB, 5.5 at 25 MB).
+
+What this voids or restates (each traced to its source):
+
+| claim | source | status |
+|---|---|---|
+| the loss feed over-counts ~4–5× (`plc` 0.024 vs "wire" 0.005 at c2; §3.6) | `perf_rwm_c.sh` QDISC `dropped / Sent` | void: the feed matched the per-datagram wire before and after `fix/loss-feed` |
+| "realized packet loss 0.55 % (c7) / 1.96 % (c8 slow leg), 0.81 % (c2r100)"; cross-path contamination "37–93×" | goal-gate READOUT 4, `tc:` counters (b21174a's message); `xpath_loss_replay.py` | low by the GSO factor; the contamination ratios shrink by the same factor (the defect itself stands: `fed_old` read 0.50 at c7) |
+| c8 realized p = 0.0055 / 0.0196 | `docs/research/cost-ratio-memo.md` (from `xpath_loss_replay.py`) | restated in the memo: 0.027 / 0.041 |
+| model inputs "c7/c8 legs 0.55 % / 1.96 %" | comments in `src/net/tests.rs` (`xpath_loss_model` tests) | synthetic model inputs; the tests hold at any ε, but the cell labels quote the skb-counter values (engine file, not edited here) |
+| "same-path reordering" 0.21 / 0.32 of delivered latency at c7/c8 | paper §9.8 placement decomposition (`[LAT] rw_sp`) | relabelled: `rw_sp` is in-path reorder OR a loss on that path; these cells do not reorder, so it is loss wait |
+| netem jitter reorders (the premise of `fix/loss-feed`'s reorder credit, F1) | `fix/loss-feed` (F1) | never held on L1; F1 is exercised by unit tests only |
+| per-path ε̂ under-reads the channel 3–5× (0.0056 / 0.0184 vs 0.025 / 0.048; paper §2.6) | estimator gauge vs p/(p+q) | not voided: p/(p+q) is the realised datagram rate; the ε̂ gauges are not re-read on the current feed |
+| paper §2.5 GE adequacy against real traces | offline cellular traces through a drop-tail queue | not affected: no netem |
+| D0 attribution audit (π0 heal share) | engine-side hole accounting (`holeaudit_*`) | not affected: never reads tc |
+| sender-truth estimator refuted (27e36e3) | fed ε̂ against the wire | not reversed: it feeds ≈ 0.94 in window mode (V3), wrong at any truth |
 
 ## 4. Block default re-test — pre-registration
 

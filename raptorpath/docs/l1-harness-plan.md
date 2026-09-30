@@ -37,7 +37,31 @@ netem on BOTH veth egresses: delay <one_way> [jitter], rate <capacity>,
 loss gemodel <p>% <q>%      (defaults 1-h=100%, 1-k=0% == paper h_B=1, h_G=0)
 ```
 
-netem's Gilbert-Elliott IS the paper §2.3 model — parameters map verbatim.
+netem's Gilbert-Elliott is the paper §2.3 chain, with one difference: netem
+steps it once per skb and drops the whole skb, and quinn sends with UDP GSO
+(several datagrams per skb). So the per-datagram loss rate is p/(p+q) as the
+paper states, but the per-datagram burst is longer than 1/q by the GSO factor
+(measured per cell in `tools/l1/lib.sh`, 1.5–5.5, and different on the two
+legs of one dual). netem also never reorders on these cells: every cell sets
+`rate`, and netem with `rate` is FIFO whatever the jitter.
+
+**Loss truth.** netem's `dropped` counts skbs, so `dropped / Sent` reads
+datagram loss low by the GSO factor and is never truth. Every data egress
+(`cli*`) carries a `clsact` qdisc with an egress `matchall action pass`
+filter ahead of netem, installed by `topo*.sh`; its action counts datagrams
+and its `rule hit` counts skbs. `perf_rwm_c.sh` prints, per data leg at run
+end and into the `-q.txt` capture:
+
+```
+[TRUTH] leg=<i> dev=cli<i> egress_dgrams=… egress_skbs=… gso=… netem_sent_dgrams=…
+        netem_dropped_skbs=… backlog=… lost=… loss=… rcvbuf_drops=… rcvbuf_scope=netns
+```
+
+with `lost = egress − netem_sent − backlog` and `loss = lost / egress`.
+`rcvbuf_drops` is the receiver netns's `RcvbufErrors` delta: kernel UDP
+receive-buffer drops after the wire, which no engine token counts.
+`l1common.truth()` reads the lines; the battery parsers carry them as
+`truth_loss_p<i>` columns (measurement discipline rule 19).
 Loss is applied on the data direction (srv-bound egress from cli0 carries
 ACKs; apply GE loss on srv0→cli0? no: DATA flows cli→srv for upload tests;
 we run iperf3 with the server in rp-srv, so data egress = cli0. Loss on
@@ -53,6 +77,8 @@ model. A `--symmetric` flag adds loss both ways for sensitivity checks.)
 | C3 LTE | 20mbit | 20ms | 5ms | 2% 40% |
 | C4 Sat | 20mbit | 100ms | 10ms | 3% 30% |
 | C5 BadWiFi | 50mbit | 5ms | 3ms | 5.3% 30% |
+
+The gemodel column is per skb (see above); jitter is delay variation only.
 | C7/C8 dual | two veth pairs between the same namespaces (phase 2) | | | |
 
 ## Baselines and phases

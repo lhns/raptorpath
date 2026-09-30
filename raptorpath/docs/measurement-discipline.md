@@ -2,12 +2,12 @@
 
 The standing rules for every L1 (real kernel stack, benchmark VM) verdict in
 this repository. A measurement section that misses any rule is not a verdict.
-The rules keep their numbers 1–18, so a citation of "MEASUREMENT DISCIPLINE n"
+The rules keep their numbers 1–19, so a citation of "MEASUREMENT DISCIPLINE n"
 anywhere in the tree points here. Decision record: ADR-0052.
 
 Each rule is stated, then followed by one line of why it exists.
 
-## The eighteen rules
+## The nineteen rules
 
 1. **Prove the mechanism under test executed.** The recorded run must show it
    ran: a harness liveness guard (for example `cod>0` → `GUARD OK`), the
@@ -120,6 +120,25 @@ Each rule is stated, then followed by one line of why it exists.
     mechanism verdict is drawn from an arm in which that mechanism's law was
     pinned. *Why:* a clamp that always binds turns the law into a constant,
     and every measurement through it measures the constant.
+
+19. **Loss truth is datagram-level, from the harness's egress counter.** The
+    per-leg wire loss of an L1 run is the `[TRUTH] loss=` line
+    `perf_rwm_c.sh` prints (a `clsact` + egress `matchall` counter ahead of
+    netem on every data leg, against netem's sent datagrams; `lib.sh`
+    `truth_line`), and its `rcvbuf_drops=` names the receiver's kernel
+    receive-buffer drops, which no engine token counts. netem's own
+    counters are never loss truth: `dropped` counts skbs, and quinn's UDP GSO
+    puts several datagrams in one skb, so `dropped / Sent` reads low by that
+    GSO factor (1.5–5.5 on the calibrated cells), and the GE chain's burst
+    length is per skb. The GE expectation p/(p+q) is the per-datagram loss
+    rate, not the realisation of a run. And these cells never reorder: every
+    one sets `rate`, under which netem is FIFO whatever the jitter, so a claim
+    about reorder handling needs a cell built to reorder, not these.
+    *Why:* every "realised loss" the project quoted from netem's counters was
+    low by the GSO factor (a c2-class leg read 0.55 % where the counter measures 2.6–2.7 %
+    per datagram),
+    which manufactured a 4–5× "over-count" in a correct loss feed; and a
+    reorder fix was reasoned about on cells that cannot reorder.
 
 ## Verdict taxonomy
 

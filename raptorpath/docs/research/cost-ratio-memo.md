@@ -365,7 +365,7 @@ so per recovery decision the loss in utility is
 | symbol | provenance |
 |---|---|
 | `δ` | **contract-declared**: `COPA_DELTA/ζ(hint)`, 50 / 0.5 / 0.005, `scheduler/mod.rs:129-132`. Continuous in the dial; the same ζ the rate law already consumes |
-| `p` | **measured**: realized per-path loss (c8: 0.0055 / 0.0196, from the cross-path loss replay `xpath_loss_replay.py`, deleted in 639929c) |
+| `p` | **measured**: realized per-path loss. The values once quoted here (c8: 0.0055 / 0.0196, from the cross-path loss replay `xpath_loss_replay.py`, deleted in 639929c) were netem's skb counters, low by the GSO factor; the per-datagram truth (`[TRUTH]`, measurement discipline rule 19) reads 0.027 / 0.041 on c8's fast / slow leg |
 | `σ` | **measured, exists today, never reported**: `rtt_sigma_us()`, `scheduler/mod.rs:3032-3037` (Finding B) |
 | `d` | **measured**: `srtt`, unchanged |
 | `ν` | **derivable, not currently reported**: fires per delivered symbol. `fired` is already counted (`RackClockGauge`, `net/mod.rs:4192-4193`); the delivered-symbol count already exists; their ratio is not printed |

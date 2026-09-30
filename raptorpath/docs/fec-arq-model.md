@@ -284,7 +284,12 @@ simplification is exact.
 
 The emulated evaluation cells (Section 9.1) use GE parameters from this
 family: c2 is p = 1.3 %, q = 50 % (ε = 2.53 %), c3 is p = 2 %, q = 40 %
-(ε = 4.76 %).
+(ε = 4.76 %). netem steps the chain once per skb and drops the whole skb, and
+the sender's UDP GSO carries 1.5–5.5 datagrams per skb on these cells, so the
+per-datagram loss rate is still ε (measured 2.60 % at c2, 4.86 % at c3) but a
+Bad sojourn drops that many times more datagrams than 1/q; the two legs of the
+c8 dual differ (3.9 and 1.5 datagrams per skb). Per-cell factors are in
+`tools/l1/lib.sh`.
 
 ### 2.4 Burst variance
 
@@ -358,8 +363,12 @@ Three measured facts qualify what these estimators are fed:
    cross-path interleaving (the gap was read in the global `batch_seq`), so
    it was not a loss estimate there; v9 reads it in the per-path `path_seq`
    (Section 2.2). The v9 readings at the dual cells are owed to the VM.
-2. **Per-path loss under-reads the channel by 3–5×.** Realised per-leg ε̂ is
-   0.0056 (c7) and 0.0184 (c8) against channel values 0.025 and 0.048.
+2. **Per-path loss under-read the channel by 3–5×** in the estimator era it
+   was measured in: per-leg ε̂ 0.0056 (c7) and 0.0184 (c8) against channel
+   values 0.025 and 0.048. The channel values are the realised per-datagram
+   rates (the harness's datagram counter reads within 3 % of p/(p+q)). On the
+   current feed the fed loss `plc` tracks that per-datagram truth at
+   0.95–1.03× at c2, c3 and c8 (Section 11.3); the ε̂ gauges are not re-read.
 3. **The anchors are whole-transfer extrema** for transfers shorter than the
    10 s filter window, which includes most measured transfers.
 
@@ -2308,6 +2317,11 @@ netem on a dedicated VM. Delay, jitter and rate apply to both egresses;
 Gilbert-Elliott loss to the data egress only. Dual and quad cells have
 independent per-leg netem seeds (`e1fb2f6`; earlier dual measurements shared
 one seed, so at a symmetric cell both legs' loss was the same realisation).
+Every cell sets a rate, under which netem is FIFO: jitter is delay variation
+and the cells never reorder (0 out-of-order in 10⁵ datagrams on the c2 and c3
+shapes). The GE loss column is per skb (Section 2.3). Loss truth is the
+harness's per-datagram egress counter (`[TRUTH]`), never netem's `dropped`,
+which counts skbs and reads low by the GSO factor.
 
 | cell | paths | per path: bandwidth / RTT (jitter) / loss | object |
 |---|---|---|---|
@@ -2502,7 +2516,7 @@ decomposition at the duals:
 |---|---|---|
 | cross-path wait (placement-manufactured) | 5.9 % | 6.5 % |
 | queueing above the path floor | 0.41 | 0.33 |
-| same-path reordering | 0.21 | 0.32 |
+| same-path wait (a loss on that path; the cells do not reorder) | 0.21 | 0.32 |
 | repair | 0.32 | 0.28 |
 
 (c1 is queue-dominated at 0.88 with no cross-path term.) Every placement arm
@@ -2653,7 +2667,7 @@ never-delivered tail target.
 | 7 | What sets the recovery clock? | the self-heal quantile F_heal(7.22 ms) at c7; an `RWM_STORE_GAIN` contrast; a c8L attribution pass (Section 7.7) |
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
 | 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
-| 10 | Is the per-path loss estimate 3–5× low? | a per-path truth feed against the netem channel (Section 2.6) |
+| 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
 | 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), `BlockProfile::from_hint`, default interleave depth (2/1/3, non-monotone in δ, so no continuous form exists), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`, `is_window_mode`, `effective_fec_backend`; each is a declared corner, not a law |
@@ -2728,7 +2742,13 @@ sender's pair and, separately, the receiver's RX feed):
 so Σfed = Σ(e − r) + c ≥ 0, with c bounded by the reorder depth. Bounded by
 `s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss`,
 `s10_ack_merge_counter_delta_carries_the_late_arrival_credit` and
-`loss_credit_law_anchor_points`.
+`loss_credit_law_anchor_points`. The reorder credit is exercised only by those
+tests: the L1 cells never reorder (Section 9.1). Against the per-datagram
+truth, the fed loss `plc` reads 0.95–1.03× on every run at c2, c3 and both c8
+legs, on the binaries before and after this law (n = 3 each). At the c1 dual
+it reads 0.89–1.41×, a few tens of datagrams per run that track the
+receiver's kernel receive-buffer drops (`RcvbufErrors`), which reach no
+engine counter.
 
 ### 11.4 Related work
 
