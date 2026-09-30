@@ -841,7 +841,9 @@ pub(crate) fn cadenced_repair_rate(
         }
         (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
     };
+    let t0 = std::time::Instant::now();
     let rate = snap.rate();
+    cache.add_eval_ns(t0.elapsed().as_nanos() as u64);
     cache.store(now_us, window, path, period, rate);
     rate
 }

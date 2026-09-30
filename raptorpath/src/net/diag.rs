@@ -887,7 +887,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -915,6 +915,10 @@ pub(crate) fn report(
             dgq,
             gdiag,
             pp,
+            // Appended tokens (Stage-1c cadence gauge + v9 sequencer):
+            // `rce=` cumulative rate evaluations and their causes.
+            format!("{} bcc={}", st.rate_cache.diag_token(),
+                super::BATCH_CONTENDED.load(std::sync::atomic::Ordering::Relaxed)),
         );
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same

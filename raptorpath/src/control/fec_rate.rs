@@ -205,6 +205,16 @@ pub struct RepairRateCache {
     entry: Option<(u64, usize, u32, u64, f64)>,
     /// Evaluations performed (the mechanism gauge; tests assert it runs).
     pub evaluations: u64,
+    /// Why each evaluation ran (`[DIAG] rce=`), one cause per evaluation
+    /// by precedence cold > window > path > age: no entry yet, the encoder
+    /// window changed, the worst-ε path changed, the entry aged out.
+    pub miss_cold: u64,
+    pub miss_window: u64,
+    pub miss_path: u64,
+    pub miss_age: u64,
+    /// Cumulative ns spent in the rate evaluation itself (callers that
+    /// time it report through [`Self::add_eval_ns`]).
+    pub eval_ns: u64,
 }
 
 impl RepairRateCache {
@@ -228,8 +238,32 @@ impl RepairRateCache {
 
     /// Record a fresh evaluation made at `now_us`.
     pub fn store(&mut self, now_us: u64, window: usize, path: u32, period_us: u64, rate: f64) {
+        match self.entry {
+            None => self.miss_cold += 1,
+            Some((_, w, _, _, _)) if w != window => self.miss_window += 1,
+            Some((_, _, p, _, _)) if p != path => self.miss_path += 1,
+            Some(_) => self.miss_age += 1,
+        }
         self.entry = Some((now_us, window, path, period_us, rate));
         self.evaluations += 1;
+    }
+
+    /// Account `ns` of evaluation time (the `[DIAG] rce=` cost gauge).
+    pub fn add_eval_ns(&mut self, ns: u64) {
+        self.eval_ns = self.eval_ns.saturating_add(ns);
+    }
+
+    /// The `[DIAG]` token: `rce=<evals>/c<cold>/w<window>/p<path>/a<age>/us<eval µs>`.
+    pub fn diag_token(&self) -> String {
+        format!(
+            " rce={}/c{}/w{}/p{}/a{}/us{}",
+            self.evaluations,
+            self.miss_cold,
+            self.miss_window,
+            self.miss_path,
+            self.miss_age,
+            self.eval_ns / 1_000
+        )
     }
 
     /// The cached rate, or `eval()` (stored) when stale.
