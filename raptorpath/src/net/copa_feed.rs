@@ -171,18 +171,19 @@ impl CopaFeed {
     }
 
     /// Diff one WindowAck against the cursor: returns the seqs this ack
-    /// newly proves delivered (frontier advance up to `received_up_to`,
-    /// inclusive, plus never-before-seen SACKed seqs above it), each exactly
+    /// newly proves delivered (frontier advance up to `next_expected`,
+    /// exclusive -- wire v9 count semantics, so `0` attributes nothing and
+    /// `1` attributes seq 0 -- plus never-before-seen SACKed seqs above it), each exactly
     /// once across the whole ack stream. Out-of-order/duplicate acks yield
     /// an empty diff — never a double attribution.
-    pub(crate) fn newly_delivered(&self, received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<u64> {
+    pub(crate) fn newly_delivered(&self, next_expected: u64, sack_ranges: &[(u64, u64)]) -> Vec<u64> {
         // Per-ack safety bound: a corrupt/hostile ack must not trap us in a
         // multi-million-seq loop. Honest ranges are bounded by the sender's
         // outstanding store (≤ a few thousand).
         const MAX_PER_ACK: usize = 65_536;
         let mut newly = Vec::new();
         let mut c = self.cursor.lock();
-        while c.next <= received_up_to && newly.len() < MAX_PER_ACK {
+        while c.next < next_expected && newly.len() < MAX_PER_ACK {
             let s = c.next;
             c.next += 1;
             // Already attributed via an earlier SACK → consume the marker.
@@ -216,13 +217,13 @@ impl CopaFeed {
 pub(crate) fn copa_feed_attribute(
     feed: &CopaFeed,
     ack_path: u32,
-    received_up_to: u64,
+    next_expected: u64,
     sack_ranges: &[(u64, u64)],
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     transport: &Arc<QuicTransport>,
     stats: &Arc<SharedStats>,
 ) {
-    let newly = feed.newly_delivered(received_up_to, sack_ranges);
+    let newly = feed.newly_delivered(next_expected, sack_ranges);
     if newly.is_empty() {
         return;
     }

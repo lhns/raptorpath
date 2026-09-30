@@ -333,6 +333,10 @@ pub(crate) struct DiagInputs<'a> {
     /// RWM_STORE_SACK_RELEASE: currently released / cumulative slots.
     pub sack_released: &'a BTreeSet<u64>,
     pub sack_released_total: u64,
+    /// Wire v9: the store gate's released count (`store_gate_released`).
+    /// Above `sack_released.len()` exactly when the received-above count
+    /// carries the gate past the SACK prefix -- the term-bind gauge.
+    pub gate_released: usize,
     /// RWM_POOL_ANCHOR: honest dual-store engagement + Σ honest caps.
     pub pa_engaged: bool,
     pub pa_sum: f64,
@@ -392,6 +396,7 @@ pub(crate) fn report(
         percap_k,
         sack_released,
         sack_released_total,
+        gate_released,
         pa_engaged,
         pa_sum,
         wnd2_frontier_last,
@@ -748,7 +753,14 @@ pub(crate) fn report(
         // dwell mechanism gauge (win= already shows the uncounted
         // outstanding; retained = win + srel_cur). Empty when off.
         let srdiag = if pol.store_sack_release_on {
-            format!(" srel={}/{}", sack_released.len(), sack_released_total)
+            // `gate=` is the v9 gate's released count; `gate > srel` means
+            // the received-above count, not the SACK marks, is binding.
+            format!(
+                " srel={}/{} gate={}",
+                sack_released.len(),
+                sack_released_total,
+                gate_released
+            )
         } else {
             String::new()
         };

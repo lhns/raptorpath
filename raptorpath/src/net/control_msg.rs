@@ -25,6 +25,7 @@ use tracing::{debug, info, warn};
 
 use super::block_arq::BlockArq;
 use super::{
+    BatchCounter,
     COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, MAX_CONCURRENT_DECODERS, arq_loss_timeout,
     copa_feed_attribute, dispatch_repair_plans, now_us, sack_to_gaps, send_arq_repairs,
     worst_loss_rate,
@@ -51,7 +52,7 @@ pub(crate) struct ControlCtx<'a> {
     pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
     /// Some(..) in block mode — Ack diffs drive repair sends.
     pub block_arq: Option<&'a Arc<parking_lot::Mutex<BlockArq>>>,
-    pub batch_counter: Option<&'a Arc<AtomicU64>>,
+    pub batch_counter: Option<&'a Arc<BatchCounter>>,
     /// Some(..) in window mode: the peer's cumulative WindowAck point, read
     /// by the local window sender (ack-driven advance, retransmit-buffer and
     /// sent-store pruning). It must be the peer's ack, not the local
@@ -72,9 +73,10 @@ pub(crate) struct ControlCtx<'a> {
     /// and dropped, never acted on.
     pub request_tx: Option<&'a tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
     /// Some(..) in plain-reliable mode: forwards the WindowAck's received-above-
-    /// frontier ranges to the local window sender so it can prune the sent-store
-    /// for out-of-order deliveries (SACK flow control). None disables it.
-    pub sack_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u64)>>>,
+    /// frontier ranges, with the v9 `(next_expected, received_above)` pair, to
+    /// the local window sender so its store gate can release out-of-order
+    /// deliveries (SACK flow control). None disables it.
+    pub sack_tx: Option<&'a tokio::sync::mpsc::Sender<super::SackReport>>,
     /// Some(..) in plain in-order window-reliable mode when
     /// the Copa delivery feed is enabled (RWM_QUIC_CC=passthrough or
     /// RWM_COPA_FEED=1). Each WindowAck's frontier/SACK diff is attributed
@@ -160,10 +162,11 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
         }
 
-        ControlMessage::WindowAck { received_up_to, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received, cum_expected, cum_received } => on_window_ack(
+        ControlMessage::WindowAck { next_expected, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received, cum_expected, cum_received, received_above } => on_window_ack(
             ctx,
             path_id,
-            received_up_to,
+            next_expected,
+            received_above,
             sack_ranges,
             echo_send_timestamp_us,
             jitter_us,
@@ -336,8 +339,10 @@ fn on_ack(
         // ADR-0003: update loss stats from ACK.
         //
         // `RWM_LOSS_SENT_TRUTH` (default off): the wire's `expected_count` is
-        // `PathBatchTracker`'s global-batch_seq gap estimate, which at N >= 2
-        // reads the other path's symbols as this path's loss. Under the gate
+        // `PathBatchTracker`'s gap estimate. Through wire v8 it read gaps in
+        // the global batch_seq, so at N >= 2 the other path's symbols counted
+        // as this path's loss; v9 keys it on the per-path `path_seq`, which
+        // removes that contamination in the default arm. Under the gate
         // the estimator is fed the sender's own per-path `symbols_sent` delta
         // instead. The release below keeps the wire's `expected_count` in both
         // arms: the gate changes only what the estimator reads.
@@ -358,10 +363,11 @@ fn on_ack(
         // budget and the Copa gate jams.
         //
         // `RWM_RELEASE_1TO1` (default off): `expected_count` is the same
-        // global-`batch_seq` gap estimate, here driving the ledger. At N >= 2
-        // it over-releases, and `release_in_flight` saturates at zero, so the
-        // in-flight gauge leaks open (pinned by
-        // `legacy_counter_delta_release_leaks_the_in_flight_gauge_open_at_n2`).
+        // gap estimate, here driving the ledger. Through wire v8 it read the
+        // global `batch_seq` and over-released at N >= 2 (the in-flight gauge
+        // leaked open); v9 reads the per-path `path_seq`, and the model now
+        // pins the ledger closed
+        // (`v9_counter_delta_release_closes_the_ledger_at_n2`).
         // Under the gate this term is deleted and the lost-symbol release is
         // `expire_in_flight`'s RFC 9002 sweep of the charge log, which is 1:1
         // with the charge by construction.
@@ -552,7 +558,8 @@ fn on_path_report(
 fn on_window_ack(
     ctx: &ControlCtx<'_>,
     path_id: u32,
-    received_up_to: u64,
+    next_expected: u64,
+    received_above: u32,
     sack_ranges: Vec<(u64, u64)>,
     echo_send_timestamp_us: u64,
     jitter_us: u32,
@@ -564,11 +571,13 @@ fn on_window_ack(
     let (copa_feed, peer_window_ack) = (ctx.copa_feed, ctx.peer_window_ack);
     let (nack_tx, sack_tx) = (ctx.nack_tx, ctx.sack_tx);
 
-    debug!(path_id, received_up_to, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
+    debug!(path_id, next_expected, received_above, sack_count = sack_ranges.len(), cumulative_received, "SACK window ACK received");
     // Publish the peer's cumulative ack point for the window sender
-    // (fetch_max: acks arrive on multiple paths, out of order).
+    // (fetch_max: acks arrive on multiple paths, out of order). v9: the
+    // value is the COUNT of the delivered prefix, so `0` is "nothing
+    // delivered" and the sender prunes everything `< next_expected`.
     if let Some(pa) = peer_window_ack {
-        pa.fetch_max(received_up_to, Ordering::Relaxed);
+        pa.fetch_max(next_expected, Ordering::Relaxed);
     }
     // (`cumulative_received` — the peer's total decoded count — is used
     // only by the debug trace above.)
@@ -701,13 +710,13 @@ fn on_window_ack(
                 // ADR-0003: loss stats from the ack's counter delta.
                 //
                 // `RWM_LOSS_SENT_TRUTH` (default off). `d_expected` is the
-                // diff of a contaminated cumulative: `cum_expected` is
-                // `PathBatchTracker::total_expected`, summed from
-                // `gap x received` over a global `batch_seq`, so it carries
-                // the cross-path inflation and differencing cannot remove
-                // it. The clean pair is the sender's own `symbols_sent`
-                // against the receiver's `cum_received`. Release keeps
-                // `d_expected` in both arms.
+                // diff of `cum_expected` = `PathBatchTracker::total_expected`,
+                // summed from `gap x received`. Through wire v8 the gap was
+                // read in the global `batch_seq` and carried the cross-path
+                // inflation; v9 reads it in the per-path `path_seq`, so the
+                // default pair is per-path honest. The gate's pair is the
+                // sender's own `symbols_sent` against the receiver's
+                // `cum_received`. Release keeps `d_expected` in both arms.
                 let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
                     let sent = stats
                         .path(path_id)
@@ -766,7 +775,7 @@ fn on_window_ack(
         copa_feed_attribute(
             feed,
             path_id,
-            received_up_to,
+            next_expected,
             &sack_ranges,
             scheduler,
             transport,
@@ -794,10 +803,22 @@ fn on_window_ack(
         // outstanding rather than freezing on the
         // in-order cumulative frontier. Forward before inverting to
         // gaps (which drive the orthogonal targeted-retransmit path).
+        //
+        // v9: the report also carries `(next_expected, received_above)` --
+        // the store gate's convergence evidence past the SACK prefix cap.
+        // It rides the SACK-bearing acks only (the channel's existing
+        // cadence: `GAP_ACK_MIN_INTERVAL` while the frontier is stalled, plus
+        // the timer re-advertisement), so the depth-16 channel sees no new
+        // pressure; a merge-only ack's count is superseded by the next
+        // SACK-bearing one.
         if let Some(tx) = sack_tx {
-            let _ = tx.try_send(sack_ranges.clone());
+            let _ = tx.try_send(super::SackReport {
+                next_expected,
+                received_above,
+                ranges: sack_ranges.clone(),
+            });
         }
-        let gaps = sack_to_gaps(received_up_to, &sack_ranges);
+        let gaps = sack_to_gaps(next_expected, &sack_ranges);
         if !gaps.is_empty() {
             debug!(path_id, gap_count = gaps.len(), first_gap = ?gaps.first(), "SACK gaps → NACK repair");
             if let Some(tx) = nack_tx {

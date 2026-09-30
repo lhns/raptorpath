@@ -845,7 +845,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Shared state
     let block_counter = Arc::new(AtomicU64::new(0));
-    let batch_counter = Arc::new(AtomicU64::new(0));
+    let batch_counter = Arc::new(BatchCounter::new());
     let fec_controller = Arc::new(parking_lot::Mutex::new({
         let mut ctrl = FecRateController::new_with_toggles(
             config.target_tail_loss,
@@ -944,7 +944,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // freezes on every hole. Plain-reliable only (generation / coded-only
     // have their own structural backpressure).
     let (sack_tx, sack_rx) =
-        tokio::sync::mpsc::channel::<Vec<(u64, u64)>>(64);
+        tokio::sync::mpsc::channel::<SackReport>(64);
 
     if window_mode {
         info!(
@@ -1350,7 +1350,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // retransmittable copy of a received-then-evicted symbol (slot release,
     // never recoverability). `=0` is the frontier-only-release opt-out.
     let store_sack_release_enabled = gates.store_sack_release;
-    let recv_sack_tx: Option<tokio::sync::mpsc::Sender<Vec<(u64, u64)>>> =
+    let recv_sack_tx: Option<tokio::sync::mpsc::Sender<SackReport>> =
         if store_sack_release_enabled
             && window_reliable
             && !window_generation
@@ -1623,7 +1623,7 @@ async fn run_window_sender(
     symbol_size: u16,
     fec_backend: FecBackend,
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
-    batch_counter: &AtomicU64,
+    batch_counter: &BatchCounter,
     transport: &Arc<QuicTransport>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
@@ -1638,7 +1638,7 @@ async fn run_window_sender(
     // the plain-reliable flow-control gate (store_len) so it tracks true
     // outstanding, decoupling the sender from the in-order cumulative
     // frontier. Only fed in plain-reliable mode; never producing otherwise.
-    sack_rx: &mut tokio::sync::mpsc::Receiver<Vec<(u64, u64)>>,
+    sack_rx: &mut tokio::sync::mpsc::Receiver<SackReport>,
     // Receiver-seat repair requests (paper §7.6 arms (A)/(B)): each
     // element is `(cause, spans)` with `spans[i] = (start, count,
     // deficit)`. Drives the span-serving loop that mirrors the
@@ -1719,6 +1719,9 @@ async fn run_window_sender(
         // rtt_seed_from_sample).
         info!("M* peer-report RTT-feed suppression ACTIVE (RWM_MSTAR_ANCHOR plain-live subset: local-echo-only RTT feed + estimator seed-from-sample)");
     }
+    // The last cumulative point `on_ack_advance` processed (wire v9 count
+    // form: 0 = nothing acked yet, so a first ack of `next_expected = 1`
+    // -- seq 0 delivered -- advances and prunes seq 0).
     let mut prev_ack: u64 = 0;
     // Generation-mode paced coded emission (see the emission block in the loop).
     // The token bucket is clocked at the delivered goodput — measured from the
@@ -2043,6 +2046,11 @@ async fn run_window_sender(
     /// DIAG: cumulative count of slots released by the law (mechanism
     /// liveness at the gauge — `srel=cur/cum`).
     let mut sack_released_total: u64 = 0;
+    /// Wire v9: the newest `(next_expected, received_above)` pair off the
+    /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+    /// cap (`store_gate_released`). Stays at its default (no evidence)
+    /// whenever the release law is off.
+    let mut above_report = AboveReport::default();
 
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
@@ -2243,8 +2251,12 @@ async fn run_window_sender(
         // retained and recovers in the background via the orthogonal NACK /
         // tail-sweep path. The loop wakes at least every 1 ms
         // (backpressure/emission poll) so drains stay prompt.
-        while let Ok(ranges) = sack_rx.try_recv() {
-            for (start, end) in ranges {
+        while let Ok(report) = sack_rx.try_recv() {
+            if pol.store_sack_release_on {
+                // v9: the count the gate converges on past the SACK cap.
+                above_report.fold(report.next_expected, report.received_above);
+            }
+            for (start, end) in report.ranges {
                 if end < start {
                     continue;
                 }
@@ -2292,14 +2304,21 @@ async fn run_window_sender(
         // of M generations). Pausing TUN reads at store_max holds the send
         // frontier ~M generations ahead of the cumulative-decode frontier.
         // RWM_STORE_SACK_RELEASE: outstanding = retained − released. With
-        // the gate off the released set is empty and this is exactly the
-        // shipped `sent_store.len()`; with it on, SACK-released slots
-        // return to the pool (RWM_STORE_PATHS composes through this same
-        // count) while their payloads stay retained for recovery.
+        // the gate off the released set is empty and no report is folded,
+        // so this is exactly the shipped `sent_store.len()`; with it on,
+        // released slots return to the pool (RWM_STORE_PATHS composes
+        // through this same count) while their payloads stay retained for
+        // recovery. Wire v9: "released" is ONE always-computed expression,
+        // `max(|SACK marks|, received_above − not_retained)` clamped to the
+        // retained count (`store_gate_released`), so the gate converges past
+        // the `MAX_SACK_RANGES` prefix at a stalled frontier.
         let store_len = if generation {
             st.encoder.window_size()
         } else {
-            sack_release_outstanding(st.sent_store.len(), sack_released.len())
+            sack_release_outstanding(
+                st.sent_store.len(),
+                store_gate_released(&st.sent_store, sack_released.len(), above_report),
+            )
         };
         // gen_pipe: roll the windowed-max rate filter + recompute the derived
         // pipeline depth M* (throttled ~5 ms; the encoder setter is O(1)).
@@ -2506,6 +2525,11 @@ async fn run_window_sender(
                     percap_k: &scs.percap_k,
                     sack_released: &sack_released,
                     sack_released_total,
+                    gate_released: store_gate_released(
+                        &st.sent_store,
+                        sack_released.len(),
+                        above_report,
+                    ),
                     pa_engaged: scs.pa_engaged,
                     pa_sum: scs.pa_sum,
                     wnd2_frontier_last,
@@ -3112,7 +3136,11 @@ async fn run_window_sender(
                         if reliable
                             && sack_release_outstanding(
                                 st.sent_store.len(),
-                                sack_released.len(),
+                                store_gate_released(
+                                    &st.sent_store,
+                                    sack_released.len(),
+                                    above_report,
+                                ),
                             ) >= effective_store_cap
                         {
                             break; // store headroom exhausted (flow control)
@@ -3325,8 +3353,8 @@ async fn run_window_sender(
                             .unwrap_or(st.last_source_path)
                     };
                     let now_r = now_us();
-                    let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
-                    let batch = SymbolBatch::new(vec![sym], now_r, batch_seq, path);
+                    let seqs = batch_counter.next(path);
+                    let batch = SymbolBatch::new(vec![sym], now_r, seqs, path);
                     let sent = match transport.send_symbols(path, batch) {
                         Ok(()) => true,
                         Err(e) => {
@@ -3422,12 +3450,13 @@ async fn run_window_sender(
             nack_repairs_this_period: &mut nack_repairs_this_period,
             mp_evid_max: &mut mp_evid_max,
         });
-        // Advance encoder window based on receiver ACKs
-        let ack = window_ack_seq.load(Ordering::Relaxed);
+        // Advance encoder window based on receiver ACKs (v9: the peer's
+        // `next_expected`, the count of its delivered prefix).
+        let next_expected = window_ack_seq.load(Ordering::Relaxed);
         on_ack_advance(AckAdvanceCtx {
             pol: &pol,
             gates: &gates,
-            ack,
+            next_expected,
             generation,
             reliable,
             scheduler,
@@ -3516,7 +3545,7 @@ fn create_window_decoder(
 fn encode_to_interleave_buf(
     block_buf: &mut Vec<u8>,
     block_counter: &AtomicU64,
-    batch_counter: &AtomicU64,
+    batch_counter: &BatchCounter,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
     transport: &Arc<QuicTransport>,
@@ -3680,7 +3709,7 @@ type PaceCarry = std::collections::HashMap<u32, std::collections::VecDeque<crate
 fn send_interleaved_batches(
     ileave: &mut interleave::InterleavingBuffer,
     carry: &mut PaceCarry,
-    batch_counter: &AtomicU64,
+    batch_counter: &BatchCounter,
     transport: &Arc<QuicTransport>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     stats: &Arc<SharedStats>,
@@ -3771,16 +3800,16 @@ fn send_interleaved_batches(
                 continue;
             }
             if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let seqs = batch_counter.next(path_id);
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-                let batch = SymbolBatch::new(std::mem::take(&mut chunk), now, batch_seq, path_id);
+                let batch = SymbolBatch::new(std::mem::take(&mut chunk), now, seqs, path_id);
                 let n = batch.symbols.len() as u32;
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send interleaved batch");
                 } else {
                     *sent_per_path.entry(path_id).or_default() += n;
-                    sent_records.push((batch_seq, path_id, ids));
+                    sent_records.push((seqs.0, path_id, ids));
                 }
                 chunk_bytes = 0;
             }
@@ -3788,15 +3817,15 @@ fn send_interleaved_batches(
             chunk.push(sym);
         }
         if !chunk.is_empty() {
-            let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+            let seqs = batch_counter.next(path_id);
             let ids: Vec<(u64, u32)> = chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-            let batch = SymbolBatch::new(chunk, now, batch_seq, path_id);
+            let batch = SymbolBatch::new(chunk, now, seqs, path_id);
             let n = batch.symbols.len() as u32;
             if let Err(e) = transport.send_symbols(path_id, batch) {
                 warn!(path_id, ?e, "failed to send interleaved batch");
             } else {
                 *sent_per_path.entry(path_id).or_default() += n;
-                sent_records.push((batch_seq, path_id, ids));
+                sent_records.push((seqs.0, path_id, ids));
             }
         }
     }
@@ -3887,9 +3916,53 @@ fn send_interleaved_batches(
     Some(delay.max(std::time::Duration::from_micros(500)))
 }
 
+/// The sender's batch sequencer (wire v9): every emitted `SymbolBatch` takes
+/// ONE call, which stamps both sequences it carries.
+///
+/// - `batch_seq`, global across paths: the block-mode ARQ ledger is keyed on
+///   it (the receiver echoes it in `ControlMessage::Ack.batch_seq`), so it
+///   must stay unique connection-wide.
+/// - `path_seq`, monotonic per `path_id` (0, 1, 2, ... on each path): the
+///   receiver's `PathBatchTracker` reads loss from gaps in it. Through v8 the
+///   tracker read gaps in the global counter, so at N >= 2 every other
+///   path's batches counted as this path's losses and ε̂ depended on the
+///   striping share (≈ 0.5 at 50/50, 0.74 at share 0.1).
+///
+/// The per-path map is a short uncontended lock (one emission loop, the
+/// block ARQ sweep and the control fast path share the sequencer).
+pub(crate) struct BatchCounter {
+    global: AtomicU64,
+    per_path: parking_lot::Mutex<std::collections::HashMap<u32, u64>>,
+}
+
+impl BatchCounter {
+    pub(crate) fn new() -> Self {
+        Self {
+            global: AtomicU64::new(0),
+            per_path: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// `(batch_seq, path_seq)` for one batch about to leave on `path_id` --
+    /// exactly the `seqs` argument of [`SymbolBatch::new`].
+    pub(crate) fn next(&self, path_id: u32) -> (u64, u64) {
+        let global = self.global.fetch_add(1, Ordering::Relaxed);
+        let mut m = self.per_path.lock();
+        let c = m.entry(path_id).or_insert(0);
+        let path_seq = *c;
+        *c += 1;
+        (global, path_seq)
+    }
+}
+
 /// Per-path batch sequence tracker for loss detection on receiver side.
+///
+/// Keyed on the batch's own per-path sequence (`SymbolBatch.path_seq`,
+/// wire v9) through [`Self::record`] -- the one entry point the receiver
+/// uses -- so a gap is a batch lost on THIS path and never another path's
+/// batch.
 pub(crate) struct PathBatchTracker {
-    /// Last seen batch sequence number
+    /// Last seen per-path batch sequence number
     last_seq: Option<u64>,
     /// Total symbols received on this path
     total_received: u64,
@@ -3906,8 +3979,16 @@ impl PathBatchTracker {
         }
     }
 
+    /// Record one arrived batch, keyed on its PER-PATH sequence (v9). The
+    /// receiver's only entry point: it is what makes the gap a loss on this
+    /// path rather than another path's batch. Returns (expected, received).
+    pub(crate) fn record(&mut self, batch: &SymbolBatch) -> (u32, u32) {
+        self.record_batch(batch.path_seq, batch.symbols.len() as u32)
+    }
+
     /// Record a batch arrival. Returns (expected_for_this_batch, received_in_this_batch).
-    /// Uses sequence gaps to estimate expected symbols.
+    /// Uses sequence gaps to estimate expected symbols. `batch_seq` must be a
+    /// per-path sequence (see [`Self::record`]).
     fn record_batch(&mut self, batch_seq: u64, received: u32) -> (u32, u32) {
         let expected = if let Some(last) = self.last_seq {
             let gap = batch_seq.saturating_sub(last);
@@ -3957,7 +4038,7 @@ fn send_arq_repairs(
     block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     transport: &Arc<QuicTransport>,
-    batch_counter: &AtomicU64,
+    batch_counter: &BatchCounter,
     stats: &Arc<SharedStats>,
 ) {
     let eps_hat = worst_loss_rate(scheduler);
@@ -3970,7 +4051,7 @@ fn dispatch_repair_plans(
     block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
     scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
     transport: &Arc<QuicTransport>,
-    batch_counter: &AtomicU64,
+    batch_counter: &BatchCounter,
     stats: &Arc<SharedStats>,
 ) {
     for plan in plans {
@@ -4007,16 +4088,16 @@ fn dispatch_repair_plans(
                 if chunk.is_empty() {
                     return;
                 }
-                let batch_seq = batch_counter.fetch_add(1, Ordering::Relaxed);
+                let seqs = batch_counter.next(path_id);
                 let ids: Vec<(u64, u32)> =
                     chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
                 let n = chunk.len() as u32;
-                let batch = SymbolBatch::new(std::mem::take(chunk), now, batch_seq, path_id);
+                let batch = SymbolBatch::new(std::mem::take(chunk), now, seqs, path_id);
                 if let Err(e) = transport.send_symbols(path_id, batch) {
                     warn!(path_id, ?e, "failed to send ARQ repair batch");
                 } else {
                     *total += n;
-                    records.push((batch_seq, ids));
+                    records.push((seqs.0, ids));
                 }
             };
         for sym in plan.symbols {

@@ -123,19 +123,20 @@ pub(crate) fn stall_threshold_us(evt_us: u64) -> u64 {
 // real hole fires the moment its flight clock expires. N = 1 live path keeps
 // the single-path gates bit-exactly (single-path gaps are FIFO-real).
 //
-// The loss serials stay global. `batch_seq` is a global counter, while the
-// receiver's per-path `PathBatchTracker` estimates expected symbols from
-// batch_seq gaps, so under striping every path switch reads the other path's
-// run as loss. Per-path serial namespaces were refuted at runtime and
-// removed. Under `RWM_LOSS_SENT_TRUTH` (default OFF) the sender instead feeds
-// its estimator `1 − Δcum_received / Δsymbols_sent`, both operands per-path
-// measurements it already holds (`PathStats::symbols_sent`), with no wire
-// change; the law and its named residual are on
-// `PathState::sender_truth_loss_delta`. `cum_expected` is the sum of the same
-// gap estimate, so differencing the merged-ack counters cannot remove the
-// contamination. It stays off because the SRTT/loss-scaled recovery cadences
-// were tuned against the contaminated values; re-deriving them is the open
-// follow-up.
+// The loss serials are per-path since wire v9. Through v8 `batch_seq` was
+// the only sequence on the wire, a global counter, and the receiver's
+// per-path `PathBatchTracker` estimated expected symbols from its gaps, so
+// under striping every path switch read the other path's run as loss. v9
+// stamps a per-path `path_seq` beside it (`BatchCounter::next`) and the
+// tracker keys on that, so the default arm's ε̂ is each path's own. (An
+// earlier env-gated per-path serial, `RWM_RECOV_MP_SERIAL`, was measured and
+// removed: the honest signal re-heated the SRTT/loss-scaled recovery
+// cadences that had been tuned against the contaminated values -- sender CPU
+// x2.4 and dual-c1 181 -> 134 at L1. v9 makes the honest signal the wire's
+// only one, so those cadences are the first thing its VM run must read.)
+// `RWM_LOSS_SENT_TRUTH` (default OFF) keeps its separate sender-side pair
+// `1 − Δcum_received / Δsymbols_sent`; the law and its named residual are on
+// `PathState::sender_truth_loss_delta`.
 //
 // Sub-gate for trace attribution: `RWM_RECOV_MP_LAW` (default ON under the
 // umbrella) gates the hole law.

@@ -20,8 +20,9 @@ use raptorpath::control::fec_rate::ProtocolHint;
 use raptorpath::control::FecRateController;
 use raptorpath::fec::FecBackend;
 use raptorpath::net::{
-    delta_budget_b, path_scaled_store_cap, three_term_store_cap, three_term_terms, EchoRatioMin,
-    received_sack_ranges, ThreeTermPath, ThreeTermTerm, MAX_SACK_RANGES, WIN_STORE_MAX,
+    delta_budget_b, path_scaled_store_cap, received_above_released, store_released_for_gate,
+    three_term_store_cap, three_term_terms, AboveReport, EchoRatioMin, received_sack_ranges,
+    ThreeTermPath, ThreeTermTerm, MAX_SACK_RANGES, WIN_STORE_MAX,
 };
 use raptorpath::scheduler::{MockClock, Scheduler};
 
@@ -323,22 +324,25 @@ impl Acct {
 //
 // (1) The store is a dense span. Every reliable source symbol enters
 //     `sent_store` keyed by its stream seq; the only removal is
-//     `split_off(&(ack + 1))`, clocked by the cumulative ack. So
-//     `|sent_store| = last_sent − ack`.
-// (2) The cumulative ack is the receiver's in-order delivery point
-//     (`received_up_to: highest_delivered_seq`), folded into the sender's
-//     `window_ack_seq` with `fetch_max`. It advances only when in-order
-//     delivery passes a hole.
+//     `split_off(&next_expected)`, clocked by the cumulative ack. So
+//     `|sent_store| = next_seq − next_expected`.
+// (2) The cumulative ack is the receiver's in-order delivery point (wire
+//     v9 `next_expected`, the delivered-prefix count), folded into the
+//     sender's `window_ack_seq` with `fetch_max`. It advances only when
+//     in-order delivery passes a hole.
 // (3) SACK release uncounts, it does not remove:
 //     `sack_release_outstanding(store_len, released) =
 //     store_len.saturating_sub(released)` over the marks of currently
-//     retained seqs, pruned at the cumulative twin.
+//     retained seqs, pruned at the cumulative twin. Wire v9: `released` is
+//     `max(|marks|, received_above − not_retained)` (`gate_released`), the
+//     received-above-frontier count carrying what the capped prefix (5)
+//     cannot name.
 // (4) The marks arrive on a rate-limited clock. SACK ranges ride only an ACK
 //     with `advertise = cumulative_advanced || gap_report_due`, and
 //     `gap_report_due` requires `GAP_ACK_MIN_INTERVAL` (2 ms) since the last
 //     one. While the frontier is stalled the sender learns what lies above
 //     the hole at most every 2 ms, plus the return flight.
-// (5) The ranges are a PREFIX of the received runs in `(highest_delivered,
+// (5) The ranges are a PREFIX of the received runs in `[next_expected,
 //     highest_seen]` — complete up to `MAX_SACK_RANGES` runs, cut before the
 //     first unreportable hole beyond that (plan 2a). Below the cap a later
 //     report subsumes an earlier one and the union is the newest snapshot;
@@ -353,9 +357,13 @@ enum Store {
     /// `store_len` = admitted − acked, each symbol leaving at its own ack
     /// instant.
     Unacked,
-    /// The engine: `store_len = (last_sent − cum_frontier) − |SACK marks|`,
+    /// The engine: `store_len = (last_sent − cum_frontier) − released`,
     /// the frontier span of ADR-0060 with the marks arriving on the
-    /// receiver's gap-report clock.
+    /// receiver's gap-report clock. Wire v9: `released` is the engine's gate
+    /// expression `max(|SACK marks|, received_above − not_retained)` off the
+    /// newest landed `(next_expected, received_above)` report
+    /// (`store_released_for_gate`), so it converges past the
+    /// `MAX_SACK_RANGES` prefix at a stalled frontier.
     Span,
 }
 
@@ -557,21 +565,45 @@ const GAP_ACK_MIN_S: f64 = 0.002;
 /// on.
 struct Report {
     arrive_at: f64,
-    /// `received_up_to + 1`: the count of contiguously delivered seqs.
+    /// The wire's v9 `next_expected`: the count of contiguously delivered
+    /// seqs.
     frontier: u64,
     /// `received_sack_ranges(...)`, inclusive.
     ranges: Vec<(u64, u64)>,
+    /// The wire's v9 `received_above`: distinct received seqs at or above
+    /// `frontier`, uncapped.
+    received_above: u32,
 }
 
 /// `received_sack_ranges` on the bench's receiver set — the engine's own
 /// encoder, so the snapshot carries its `MAX_SACK_RANGES` prefix cap.
-/// `frontier` is the count of contiguously delivered seqs, so
-/// `delivered = frontier − 1` and the scan starts at `frontier`. At
-/// `frontier = 0` seq 0 is undelivered, hence not in `seen` (a received
-/// seq 0 is delivered at once), so starting the engine's scan at 1 loses
-/// nothing; `highest < frontier` ⇒ an empty SACK list.
+/// `frontier` is the count of contiguously delivered seqs — exactly the
+/// wire's v9 `next_expected`, which the engine's encoder now takes as is;
+/// `highest < frontier` ⇒ an empty SACK list.
 fn sack_snapshot(seen: &std::collections::BTreeSet<u64>, frontier: u64, highest: u64) -> Vec<(u64, u64)> {
-    received_sack_ranges(seen, frontier.saturating_sub(1), highest)
+    received_sack_ranges(seen, frontier, highest)
+}
+
+/// The engine's v9 store-gate released count on the bench's dense span
+/// store `[frontier, next_seq)`: the SACK mark count and the newest
+/// `(next_expected, received_above)` report through the engine's own
+/// `received_above_released` / `store_released_for_gate`. The dense store
+/// makes the derivation's operands closed-form: `H = next_seq − 1`.
+fn gate_released(marks: &[(u64, u64)], frontier: u64, next_seq: u64, rep: AboveReport) -> usize {
+    let retained = next_seq.saturating_sub(frontier) as usize;
+    let above = if retained == 0 {
+        0
+    } else {
+        let f = rep.next_expected;
+        let retained_below = (f.clamp(frontier, next_seq) - frontier) as usize;
+        received_above_released(
+            retained_below,
+            retained - retained_below,
+            next_seq.saturating_sub(f),
+            rep.received_above,
+        )
+    };
+    store_released_for_gate(retained, released_count(marks, frontier, next_seq), above)
 }
 
 /// The sender's `sack_released` mark set as ranges: fold one landed report
@@ -1877,6 +1909,8 @@ fn simulate_place(
     // pruned at the frontier (5), O(#ranges) to count.
     let mut snd_frontier: u64 = 0;
     let mut snd_marks: Vec<(u64, u64)> = Vec::new();
+    // v9: the newest `(next_expected, received_above)` pair landed.
+    let mut snd_above = AboveReport::default();
     // ── The source axis's state (`Src::Reno` only) ──────────────────────
     let mut reno = RenoSource::new();
     // Gauges: the span the model produces, and what the marks release.
@@ -2038,6 +2072,7 @@ fn simulate_place(
                         snd_frontier = r.frontier;
                     }
                     union_marks(&mut snd_marks, &r.ranges, snd_frontier);
+                    snd_above.fold(r.frontier, r.received_above);
                 } else {
                     i += 1;
                 }
@@ -2089,11 +2124,12 @@ fn simulate_place(
                         arrive_at: t_r + paths[pid as usize].1 * 0.5,
                         frontier: recv_frontier,
                         ranges: sack_snapshot(&recv_seen, recv_frontier, recv_highest),
+                        received_above: recv_seen.range(recv_frontier..).count() as u32,
                     });
                 }
             }
             // The receiver's own retention: seqs at or below the delivered
-            // frontier are gone (it retains `> received_up_to`).
+            // frontier are gone (it retains `>= next_expected`).
             if recv_frontier > 0 {
                 recv_seen = recv_seen.split_off(&recv_frontier);
             }
@@ -2356,7 +2392,7 @@ fn simulate_place(
             sl_sum += match store_mode {
                 Store::Unacked => store.len() as f64,
                 Store::Span => (next_seq - snd_frontier) as f64
-                    - released_count(&snd_marks, snd_frontier, next_seq) as f64,
+                    - gate_released(&snd_marks, snd_frontier, next_seq, snd_above) as f64,
             };
             for id in live.iter() {
                 if let Some(p) = sched.path(*id) {
@@ -2462,11 +2498,11 @@ fn simulate_place(
         let mut store_len = match store_mode {
             Store::Unacked => store.len(),
             Store::Span => (next_seq - snd_frontier) as usize
-                - released_count(&snd_marks, snd_frontier, next_seq),
+                - gate_released(&snd_marks, snd_frontier, next_seq, snd_above),
         };
         if store_mode == Store::Span {
             span_sum += (next_seq - snd_frontier) as f64;
-            rel_sum += released_count(&snd_marks, snd_frontier, next_seq) as f64;
+            rel_sum += gate_released(&snd_marks, snd_frontier, next_seq, snd_above) as f64;
             span_n += 1;
             if recv_highest >= recv_frontier {
                 stall_ticks += 1;
@@ -3904,7 +3940,6 @@ fn the_coupling_chain_walked_quantity_by_quantity() {
 /// change to the release clock, `GAP_ACK_MIN_INTERVAL` or placement re-scores
 /// this row.
 #[test]
-#[ignore = "DEFECT FINDING: prefix SACK does not converge release at wide spans; fold into wire v9 (plan 2c)"]
 fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
     let geom = [C2, C3];
     let feed = Feed::Measured(&ACK_C8[..]);
@@ -3949,7 +3984,6 @@ fn the_frontier_span_returns_to_the_unacked_count_through_the_release_law() {
 /// path, which lands in `min_rtt`, hence in the anchor and the cwnd floor.
 /// Bounded so a fix to the link model re-scores this row.
 #[test]
-#[ignore = "DEFECT FINDING: prefix SACK does not converge release at wide spans; fold into wire v9 (plan 2c)"]
 fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals() {
     for (cell, geom, shapes) in [
         ("c7", vec![C2, C2], &ACK_C7[..]),
@@ -4014,7 +4048,6 @@ fn the_benchs_live_cwnd_is_a_multiple_of_the_wires_measured_anchor_at_both_duals
 /// `the_anchors_windowed_extremes_expire_at_ten_seconds_and_the_wire_never_reaches_it`).
 /// Bounded in both directions and by sign.
 #[test]
-#[ignore = "DEFECT FINDING: prefix SACK does not converge release at wide spans; fold into wire v9 (plan 2c)"]
 fn balancing_the_ledger_does_not_move_sigma_cwnd_toward_the_wires_anchor() {
     for (cell, geom, shapes) in [
         ("c7", vec![C2, C2], &ACK_C7[..]),

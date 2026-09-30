@@ -234,13 +234,20 @@ linear combinations over GF(256) of a contiguous span of source symbols,
 self-describing on the wire by `(anchor, width, index)`. The receiver acks
 with a merged `WindowAck` carrying the cumulative frontier, SACK ranges and
 an echo timestamp. Retransmits are exact copies from the sender's store.
-The wire runs over QUIC datagrams (quinn), protocol version 8
-(`transport/protocol.rs`). The feedback message carries:
+The wire runs over QUIC datagrams (quinn), protocol version 9
+(`transport/protocol.rs`). Every data batch carries two sequences: the
+global `batch_seq` (it keys the block-mode ARQ ledger) and, since v9, a
+per-path monotonic `path_seq`, from which the receiver's per-path gap
+tracker reads loss. Through v8 the tracker read gaps in the global
+sequence, so at N ≥ 2 every other path's batch counted as this path's loss
+(ε̂ ≈ 0.5 at 50/50 striping, 0.74 at a 0.1 share). The feedback message
+carries:
 
 | `WindowAck` field | role |
 |---|---|
-| `received_up_to` | cumulative frontier: every sequence up to it received or recovered |
-| `sack_ranges` | every out-of-order range above the frontier, not a bounded few |
+| `next_expected` | cumulative frontier as a COUNT: every sequence below it delivered; 0 = nothing delivered (v9; v8's `received_up_to` could not tell "nothing" from "seq 0") |
+| `sack_ranges` | the received ranges at or above the frontier: an honest prefix, capped at `MAX_SACK_RANGES` = 64 (what one control datagram carries) |
+| `received_above` | the number of distinct sequences held at or above the frontier, uncapped (v9, Section 6.3) |
 | `echo_send_timestamp_us` | the sender's own timestamp, for RTT without clock synchronisation |
 | `jitter_us` | interarrival jitter (RFC 3550 A.8) |
 | `cumulative_received` | running total, a self-healing reliability counter |
@@ -250,7 +257,8 @@ One merged `WindowAck` is sent per data message; the stream carries one
 symbol per acknowledgement on the measured cells (Section 9.5). A repair
 symbol carries a 14-byte header (`REPAIR_HEADER_SIZE`) in front of a
 1200-byte payload. Version 8 added the receiver's `RepairRequest { spans,
-cause }` (Section 7.6); the protocol version is enforced at the handshake so a
+cause }` (Section 7.6); version 9 added `path_seq`, `next_expected` and
+`received_above`. The protocol version is enforced at the handshake so a
 mismatched peer fails cleanly instead of mis-parsing control traffic.
 
 ### 2.3 Gilbert-Elliott channel
@@ -345,9 +353,11 @@ Three measured facts qualify what these estimators are fed:
 
 1. **The counters are wire-arrival counts, not goodput.** Repairs enter the
    acknowledgement counters; the received/source-acked ratio is 1.1–4.4 %
-   above 1 at c2-class paths and 21–34 % at c8. At a dual cell the per-path
-   `expected − received` delta is further inflated by cross-path
-   interleaving, so it is not a loss estimate there.
+   above 1 at c2-class paths and 21–34 % at c8. Through wire v8, at a dual
+   cell the per-path `expected − received` delta was further inflated by
+   cross-path interleaving (the gap was read in the global `batch_seq`), so
+   it was not a loss estimate there; v9 reads it in the per-path `path_seq`
+   (Section 2.2). The v9 readings at the dual cells are owed to the VM.
 2. **Per-path loss under-reads the channel by 3–5×.** Realised per-leg ε̂ is
    0.0056 (c7) and 0.0184 (c8) against channel values 0.025 and 0.048.
 3. **The anchors are whole-transfer extrema** for transfers shorter than the
@@ -1553,15 +1563,45 @@ to 128 for that refresh (×6.5 at c1). A δ-priced setpoint in this seat is the 
 ### 6.3 SACK-clocked release
 
 The store releases payload only when the cumulative frontier passes a
-symbol (`sent_store.split_off(ack + 1)`): the store is the only payload
+symbol (`sent_store.split_off(next_expected)`): the store is the only payload
 copy, and pruning it on SACK was measured unsafe (in-order duals wedged).
-Flow control, however, counts a SACKed symbol as released:
+Flow control, however, counts a received symbol as released:
 
 ```text
-   store_len  =  retained − released        (released = SACKed, not yet cumulatively acked)
+   store_len  =  retained − released
+   released   =  min( |S|, max( |M|, |S ∩ [0, F)| + ( A − ((H + 1 − F) − |S ∩ [F, H]|) )⁺ ) )
 ```
 
-`sack_release_mark`, gate `RWM_STORE_SACK_RELEASE`, default on. A SACK
+with `S` the retained store, `M` the per-sequence SACK marks (the union of
+every SACK prefix seen, pruned at the frontier), and `(F, A)` the newest
+`(next_expected, received_above)` pair off the acks (lexicographic max: the
+frontier only advances and, at a fixed frontier, the received set above it
+only grows). `H` is the highest sequence sent, which is `max S` because the
+store is pruned only as a prefix. Provenance of each symbol: `S`, `M`, `H`
+are the sender's own state; `F` and `A` are measured by the receiver and
+carried on every `WindowAck` (wire v9). No constant enters.
+
+Derivation. The report says every sequence below `F` was delivered and the
+receiver holds exactly `A` distinct sequences in `[F, H]` (it cannot hold
+one never sent). Received stays received (the reliable receiver never
+evicts above its frontier). So every retained sequence below `F` is
+received, and of the `A` received sequences in `[F, H]` at most
+`|[F, H] \ S| = (H + 1 − F) − |S ∩ [F, H]|` lie outside the store: at least
+`A` minus that are retained. Both `|M|` and this count are lower bounds on
+`|S ∩ received|`, so their maximum is one too, and it never exceeds `|S|`
+(the outer `min` is a totality clamp that cannot bind). The bound holds for
+any report, stale or fresh: a later cumulative prune removes sequences from
+`S ∩ [F, H]` and adds exactly as many to the not-retained count. On the
+dense store with a fresh report it is exact. Why the count is needed: the
+SACK list is an honest prefix capped at 64 ranges, so at a stalled frontier
+with more received runs than that above it every report is the same prefix,
+`|M|` stops growing, and through v8 the counted store stayed over-read by
+every received sequence past the cap until the frontier moved (the store
+bench read 4 071 counted against 2 483 unacknowledged at the c8 geometry).
+
+`store_gate_released` (`net/sack.rs`), gate `RWM_STORE_SACK_RELEASE`,
+default on; with the gate off no report is folded and `|M| = 0`, so the
+count is exactly `retained`. A SACK
 therefore frees a flow-control slot while payload and every recovery
 structure stay until the frontier passes. Measured at the symmetric dual:
 goodput 142.9 → 154.8 Mbit/s alone and 1.02–1.05×Σ of the same-session
@@ -2555,7 +2595,7 @@ shipped.
 | Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); ships as an opt-in | `e84ef1c` | reverted |
 | Emission batching as default (`RWM_EMIT_BATCH`) | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | opt-in |
 | **Recovery clocks** | | | |
-| Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed |
+| Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed; the per-path sequence returns ungated as wire v9 `path_seq` (Section 2.2), so the cadence re-heat is the first reading its VM run owes |
 | Singles hole suppression (`RWM_RECOV_SP`) | +0.3 Mbit/s at sc3, a tie at sc2; re-fires are re-serve-clocked | `db40d2f` | off (kept; open) |
 | Derived patience (`RWM_PATIENCE_DERIVED`) | the literal it replaces wins 0 of 177 543 evaluations at the cell it was accused at; identical to shipped across 192 bench cells | `65e92b3` | removed |
 | Derived recovery sweep (`RWM_DERIVED_SWEEP`) | the argument is vindicated, the lever inert where it should act and −23 %/−28 % goodput when armed | `43b09fe` | off |
@@ -2989,7 +3029,8 @@ engine.
    cap (N ≥ 2)  =  clamp( (1 + q(δ))·Σ_{i∈active} bwᵢ·RTpropᵢ, 10, N·2048 )   pooled_store_cap
    q(δ)         =  0.05 + 0.05·(b(δ) − ½)/1.5  =  (b(δ) + 1)/30             codel_setpoint_q
    cap (N = 1)  =  clamp( 2.0·BtlBw·RTprop, 10, 1024 )    (boot 128)
-   store_len    =  retained − released(SACKed)                              sack_release_mark
+   store_len    =  retained − released                                      store_gate_released
+   released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
 ```
 

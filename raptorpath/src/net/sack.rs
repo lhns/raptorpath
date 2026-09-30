@@ -71,22 +71,16 @@ pub fn compute_gap_ranges(
 /// Invert SACK ranges into missing-seq gaps.
 ///
 /// `sack_ranges` are inclusive, ascending, disjoint ranges of seqs the
-/// receiver has beyond the cumulative point `received_up_to`. Every seq
-/// between the cumulative point and a sacked range that is not itself
-/// sacked is missing at the receiver. (Seqs above the last sacked range
-/// are not reported — they may simply still be in flight.)
-pub fn sack_to_gaps(received_up_to: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
+/// receiver has at or above the cumulative point `next_expected` (wire v9:
+/// the count of the delivered prefix, so `next_expected` itself is the first
+/// seq not delivered, and `0` means nothing delivered). Every seq from the
+/// cumulative point up to a sacked range that is not itself sacked is
+/// missing at the receiver. (Seqs above the last sacked range are not
+/// reported — they may simply still be in flight.) A lost seq 0 needs no
+/// special case in v9: `next_expected = 0` names it like any other hole.
+pub fn sack_to_gaps(next_expected: u64, sack_ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
     let mut gaps = Vec::new();
-    // Seq 0: `received_up_to = 0` is advertised both after seq 0 was
-    // delivered and while nothing is delivered (the receiver's frontier
-    // starts at 0). Under prefix delivery a received-but-undelivered seq 1
-    // (a SACK range starting at 1) is only possible if seq 0 is missing, so
-    // that report also names seq 0 — no wire change. (Seq 0 lost together
-    // with seq 1 is reported one round later, once seq 1 arrives; the tail
-    // sweep still backstops it.)
-    let seq0_missing =
-        received_up_to == 0 && sack_ranges.first().is_some_and(|&(start, _)| start == 1);
-    let mut expected = if seq0_missing { 0 } else { received_up_to + 1 };
+    let mut expected = next_expected;
     for &(start, end) in sack_ranges {
         if start > expected {
             gaps.push((expected, start - 1));
@@ -131,14 +125,15 @@ pub fn percap_release_seq(
     }
 }
 
-/// Release every account entry at or below the cumulative ack (the
-/// in-order frontier advance — the `sent_store.split_off(ack+1)` twin).
+/// Release every account entry below the cumulative point `next_expected`
+/// (the in-order frontier advance — the `sent_store.split_off(&next_expected)`
+/// twin; wire v9 count semantics).
 pub fn percap_release_cumulative(
     acct: &mut BTreeMap<u64, u32>,
     out: &mut std::collections::HashMap<u32, usize>,
-    ack: u64,
+    next_expected: u64,
 ) {
-    let keep = acct.split_off(&(ack + 1));
+    let keep = acct.split_off(&next_expected);
     for pid in acct.values() {
         if let Some(o) = out.get_mut(pid) {
             *o = o.saturating_sub(1);
@@ -180,11 +175,166 @@ pub fn sack_release_mark<V>(
 }
 
 /// The cumulative-frontier twin of [`sack_release_mark`] (the
-/// `sent_store.split_off(&(ack+1))` pattern): drop released marks at or
-/// below the ack — those slots are now fully freed (payload gone from the
-/// store, mark gone from the released set).
-pub fn sack_release_prune(released: &mut BTreeSet<u64>, ack: u64) {
-    *released = released.split_off(&(ack + 1));
+/// `sent_store.split_off(&next_expected)` pattern): drop released marks below
+/// the cumulative point — those slots are now fully freed (payload gone from
+/// the store, mark gone from the released set).
+pub fn sack_release_prune(released: &mut BTreeSet<u64>, next_expected: u64) {
+    *released = released.split_off(&next_expected);
+}
+
+// ---------------------------------------------------------------------------
+// Wire v9: the received-above-frontier count (plan 2c)
+// ---------------------------------------------------------------------------
+
+/// What one SACK-bearing WindowAck carries to the local window sender
+/// across the `sack_tx` seam: the ranges (per-seq: the release marks, Copa
+/// attribution and per-path release) and the v9 `(next_expected,
+/// received_above)` pair the store gate reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SackReport {
+    pub next_expected: u64,
+    pub received_above: u32,
+    pub ranges: Vec<(u64, u64)>,
+}
+
+/// The v9 received-above-frontier evidence the sender holds: the newest
+/// `(next_expected, received_above)` pair it has seen.
+///
+/// "Newest" is lexicographic: acks from different paths land out of order,
+/// the receiver's frontier only advances, and at a fixed frontier the
+/// received set above it only grows (the receiver never prunes above its
+/// frontier) -- so the larger pair is always the later reading. `Default`
+/// is the no-report state and yields no evidence.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AboveReport {
+    pub next_expected: u64,
+    pub received_above: u32,
+}
+
+impl AboveReport {
+    /// Fold one landed report in (lexicographic max).
+    pub fn fold(&mut self, next_expected: u64, received_above: u32) {
+        *self = (*self).max(AboveReport { next_expected, received_above });
+    }
+}
+
+/// How many RETAINED seqs one `AboveReport` proves received -- a lower bound
+/// on `|S ∩ received|`, where `S` is the retained store.
+///
+/// Derivation. The report says: every seq `< F` (= `next_expected`) was
+/// delivered, and the receiver holds exactly `A` (= `received_above`)
+/// distinct seqs in `[F, H]`, where `H` is the highest seq ever sent (the
+/// receiver cannot hold a seq never sent). Received stays received (the
+/// reliable receiver never evicts above its frontier). So:
+///
+/// - every retained seq `< F` is received: `retained_below = |S ∩ [0, F)|`;
+/// - of the `A` received seqs in `[F, H]`, at most `not_retained = |[F, H]
+///   \ S| = (H + 1 − F) − |S ∩ [F, H]|` can lie outside the store, so at
+///   least `A − not_retained` of them are retained.
+///
+/// Hence `|S ∩ received| ≥ retained_below + max(0, A − not_retained)`. The
+/// bound holds for ANY report, stale or not: a later cumulative prune moves
+/// seqs out of `S`, which raises `not_retained` by exactly the seqs it
+/// removed from `[F, H]`, and new sends raise `H` and `|S ∩ [F, H]|`
+/// together. It never exceeds `|S|` (`A − not_retained ≤ |S ∩ [F, H]|`).
+///
+/// Operands: `retained_below = |S ∩ [0, F)|`, `retained_from = |S ∩ [F,
+/// H]|`, `span_from = H + 1 − F` (0 when `H < F` or `S` is empty).
+pub fn received_above_released(
+    retained_below: usize,
+    retained_from: usize,
+    span_from: u64,
+    received_above: u32,
+) -> usize {
+    let not_retained = span_from.saturating_sub(retained_from as u64);
+    retained_below + (received_above as u64).saturating_sub(not_retained) as usize
+}
+
+/// **The store gate's released count (wire v9)** -- ONE always-computed
+/// expression:
+///
+/// `released_for_gate = min(retained, max(sack_released, above_released))`
+///
+/// Both terms are lower bounds on the retained seqs the receiver provably
+/// has: `sack_released` is the per-seq mark set (the union of every SACK
+/// prefix the sender has seen, exact per seq), `above_released` is
+/// [`received_above_released`] off the newest [`AboveReport`]. The max is
+/// therefore still a lower bound, so the gate can never uncount a seq the
+/// receiver lacks by more than the marks already could -- and past the
+/// `MAX_SACK_RANGES` prefix, where the marks stop growing at a stalled
+/// frontier, the count carries the rest and the gate converges to the
+/// unreceived count. The clamp is the retained count (both terms are
+/// already ≤ it; the clamp keeps the subtraction in
+/// [`sack_release_outstanding`] total).
+pub fn store_released_for_gate(retained: usize, sack_released: usize, above_released: usize) -> usize {
+    sack_released.max(above_released).min(retained)
+}
+
+/// [`store_released_for_gate`] on the sender's own retained store. `S` is
+/// pruned only as a prefix (`split_off(&next_expected)` at the cumulative
+/// ack) and every reliable source seq enters it at send, so whenever `S` is
+/// non-empty its last key is the highest seq ever sent -- the `H` of the
+/// derivation. O(log n + |S ∩ [0, F)|); the second term is ~0 because the
+/// cumulative prune runs every loop iteration.
+pub fn store_gate_released<V>(
+    sent_store: &BTreeMap<u64, V>,
+    sack_released: usize,
+    report: AboveReport,
+) -> usize {
+    let retained = sent_store.len();
+    let above = match sent_store.keys().next_back() {
+        Some(&h) => {
+            let f = report.next_expected;
+            let retained_below = sent_store.range(..f).count();
+            let retained_from = retained - retained_below;
+            let span_from = (h + 1).saturating_sub(f);
+            received_above_released(retained_below, retained_from, span_from, report.received_above)
+        }
+        None => 0,
+    };
+    store_released_for_gate(retained, sack_released, above)
+}
+
+/// The receiver's `received_above` counter: the number of distinct seqs in
+/// its received set at or above its cumulative point, maintained
+/// incrementally so every WindowAck (one per data message under the ack
+/// merge) pays O(frontier advance), not a scan of everything parked above a
+/// stalled hole.
+///
+/// Contract: call [`Self::on_insert`] for every insert into the received
+/// set, and [`Self::sync`] with the current cumulative point before reading
+/// the count and before any prune of the set (the receiver prunes only below
+/// its frontier, so a synced counter never loses a counted seq to a prune).
+#[derive(Debug, Default)]
+pub struct ReceivedAbove {
+    frontier: u64,
+    count: u64,
+}
+
+impl ReceivedAbove {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A seq was inserted into the received set (`newly` = it was not there).
+    pub fn on_insert(&mut self, seq: u64, newly: bool) {
+        if newly && seq >= self.frontier {
+            self.count += 1;
+        }
+    }
+
+    /// Move to the current cumulative point and return the count, saturated
+    /// to the wire's `u32`.
+    pub fn sync(&mut self, received: &BTreeSet<u64>, next_expected: u64) -> u32 {
+        if next_expected > self.frontier {
+            let passed = received.range(self.frontier..next_expected).count() as u64;
+            self.count = self.count.saturating_sub(passed);
+        } else if next_expected < self.frontier {
+            self.count += received.range(next_expected..self.frontier).count() as u64;
+        }
+        self.frontier = next_expected;
+        self.count.min(u32::MAX as u64) as u32
+    }
 }
 
 /// Effective outstanding under the release law: retained minus released.
@@ -233,10 +383,11 @@ pub fn window_ack_emission(
 pub const SACK_DATAGRAM_BUDGET: usize = 1200 - 45;
 
 /// Serialized size of a `WireMessage::Control(WindowAck)` with zero SACK
-/// ranges: 4 magic + 4 version + 4 + 4 enum tags + 8 `received_up_to` + 8
-/// vec length + 8 echo + 4 jitter + 3×8 counters (bincode fixint). Pinned by
+/// ranges: 4 magic + 4 version + 4 + 4 enum tags + 8 `next_expected` + 8
+/// vec length + 8 echo + 4 jitter + 3×8 counters + 4 `received_above` (v9)
+/// (bincode fixint). Pinned by
 /// `window_ack_sack_size_fits_the_control_datagram`.
-pub const WINDOW_ACK_BASE_BYTES: usize = 68;
+pub const WINDOW_ACK_BASE_BYTES: usize = 72;
 
 /// Serialized size of one SACK range `(u64, u64)` (bincode fixint). Pinned
 /// by the same test.
@@ -247,8 +398,8 @@ pub const WINDOW_ACK_BYTES_PER_RANGE: usize = 16;
 pub const SACK_RANGE_MARGIN_BYTES: usize = 48;
 
 /// Maximum SACK ranges one `WindowAck` carries: the largest `n` with
-/// `68 + 16·n ≤ 1155 − 48`, i.e. (1155 − 68 − 48) / 16 = 64 (1092 bytes on
-/// the wire). Derived from what one control datagram can carry, not from the
+/// `72 + 16·n ≤ 1155 − 48`, i.e. ⌊(1155 − 72 − 48) / 16⌋ = 64 (1096 bytes on
+/// the wire; the v9 `received_above` field did not move the cap). Derived from what one control datagram can carry, not from the
 /// sender's per-report NACK cap ([`MAX_NACK_GAPS`]).
 pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
     - WINDOW_ACK_BASE_BYTES
@@ -256,8 +407,9 @@ pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
     / WINDOW_ACK_BYTES_PER_RANGE;
 
 /// Receiver-side SACK encoding: the inclusive, ascending, disjoint ranges
-/// of seqs the receiver has in (`delivered`, `seen`] — the inverse of
-/// [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
+/// of seqs the receiver has in [`next_expected`, `seen`] (`seen` = the
+/// highest seq seen, inclusive; wire v9 count semantics for the cumulative
+/// point) — the inverse of [`sack_to_gaps`]. Shared by the data-arm WindowAck and the reliable
 /// window's stalled-hole re-advertisement.
 ///
 /// At most [`MAX_SACK_RANGES`] ranges, and a capped report is a PREFIX of
@@ -271,14 +423,14 @@ pub const MAX_SACK_RANGES: usize = (SACK_DATAGRAM_BUDGET
 /// the full received-run list, unchanged.
 pub fn received_sack_ranges(
     received: &BTreeSet<u64>,
-    delivered: u64,
+    next_expected: u64,
     seen: u64,
 ) -> Vec<(u64, u64)> {
     let mut sack_ranges: Vec<(u64, u64)> = Vec::new();
-    if seen <= delivered {
+    if seen < next_expected {
         return sack_ranges;
     }
-    for &s in received.range(delivered + 1..=seen) {
+    for &s in received.range(next_expected..=seen) {
         match sack_ranges.last_mut() {
             Some((_, e)) if *e + 1 == s => *e = s,
             _ => {

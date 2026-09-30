@@ -179,10 +179,10 @@ impl PathState {
     ///
     /// The shipped pair instead takes `expected` from
     /// `PathBatchTracker::total_expected`, which estimates it as
-    /// `gap × received` across a global `batch_seq` gap (`batch_counter` is
-    /// one connection-wide `AtomicU64`). At N ≥ 2 a single path's batch-seq
-    /// sequence is mostly the other path's symbols, so the gap is a
-    /// scheduling artefact and the ratio reads loss that never happened.
+    /// `gap × received`. Through wire v8 the gap was read in the one global
+    /// `batch_seq`, so at N ≥ 2 a single path's sequence was mostly the other
+    /// path's symbols and the ratio read loss that never happened; v9 reads
+    /// it in the per-path `path_seq`, which removes that artefact.
     ///
     /// Deltas of cumulatives, not a snapshot ratio: both operands are
     /// monotone counters, so a dropped ack costs nothing (the next one
