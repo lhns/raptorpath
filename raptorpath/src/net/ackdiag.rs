@@ -602,7 +602,7 @@ pub(crate) fn maybe_report(
             .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
             .unwrap_or(0);
         if let Some(line) = g.report_line(s, now) {
-            eprintln!("[ACKDIAG] {line}");
+            crate::readout!("[ACKDIAG] {line}");
         }
     }
 }

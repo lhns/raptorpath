@@ -29,14 +29,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 GATES = (
     "[GATES] RWM_UNIFIED=0 RWM_THREE_TERM={three_term} RWM_DELTA_CAP=1 "
-    "RWM_MIN_R=unset RWM_DELTA={delta} RWM_COMPLETION_EXPOSURE={chi} "
+    "RWM_MIN_R=unset RWM_DELTA={delta} RWM_COPA_DELTA={copa} "
+    "RWM_COMPLETION_EXPOSURE={chi} "
     "RWM_DIAG=1 RWM_FDIAG=1\n"
 )
 
 
 def client_log(*, mbps, seconds, runs, delta, chi, src, cod, ack, chimax,
-               three_term=0, pl=0.018, rtt=41.2):
-    out = [GATES.format(delta=delta, chi=chi, three_term=three_term)]
+               three_term=0, pl=0.018, rtt=41.2, copa="unset"):
+    out = [GATES.format(delta=delta, chi=chi, three_term=three_term, copa=copa)]
     if chi == "1":
         out.append("completion-exposure feed ACTIVE (T_rem from the perf client)\n")
     # A mid-run [DIAG] with smaller cumulative totals, deliberately: the parser
@@ -64,9 +65,9 @@ def client_log(*, mbps, seconds, runs, delta, chi, src, cod, ack, chimax,
 
 
 def server_log(*, delta, chi, dec_n, dec_avg, src_n, src_avg, preempt,
-               three_term=0):
+               three_term=0, copa="unset"):
     return (
-        GATES.format(delta=delta, chi=chi, three_term=three_term)
+        GATES.format(delta=delta, chi=chi, three_term=three_term, copa=copa)
         + "[FDIAG] frontier=9001 seen=9000 gap=1 probe_holes=19 probe_buffered=4 "
           "| DECODE n=%d avg=%.1fus present_at_stall=0 | SOURCE n=%d avg=%.1fus "
           "| COMPUTE calls=812 avg=8us max=41us total=6ms | rf=12 ru=9\n"
@@ -139,11 +140,16 @@ def main():
     _, r = parse(
         tmp, "c3hg", "s18", "MID", 42, 1,
         cli=client_log(mbps=14.1, seconds=1.02, runs=40, delta="0.05", chi="0",
-                       src=60000, cod=3000, ack=59000, chimax=0.0, pl=0.061),
+                       src=60000, cod=3000, ack=59000, chimax=0.0, pl=0.061,
+                       copa="0.005"),
         srv=server_log(delta="0.05", chi="0", dec_n=140, dec_avg=8200.0,
-                       src_n=300, src_avg=21000.0, preempt=90))
+                       src_n=300, src_avg=21000.0, preempt=90, copa="0.005"))
     check("W2: RWM_DELTA echoes the arm's NUMBER on both endpoints",
           r["g_cli_RWM_DELTA"] == "0.05" and r["g_srv_RWM_DELTA"] == "0.05")
+    check("W7: the CC's own delta pin echoes (RWM_COPA_DELTA) on both endpoints",
+          r.get("g_cli_RWM_COPA_DELTA") == "0.005"
+          and r.get("g_srv_RWM_COPA_DELTA") == "0.005",
+          str(r.get("g_cli_RWM_COPA_DELTA")))
     check("W4: RWM_THREE_TERM=0 two-sided (the named confound, pinned off)",
           r["g_cli_RWM_THREE_TERM"] == "0" and r["g_srv_RWM_THREE_TERM"] == "0")
     check("W5: cod > 0 -- r reached the wire", r["cum_cod"] == 3000)
@@ -218,6 +224,8 @@ def main():
     # A log where MID wins at 1.8 MB and moves less at 25 MB: the shape
     # `R-FUNDED-POSITIVE-SMALL-ONLY` requires, so the outcome branch and the
     # two-part clause both execute.
+    # MID's rtt sits INSIDE CTL's own spread (W7-OK): a MID rtt outside it is
+    # a W7 VOID, and a VOID row scores nothing (section 9).
     outdir = os.path.join(tmp, "led")
     os.makedirs(outdir)
     rows = []
@@ -237,7 +245,7 @@ def main():
                              cum_src=60000, cum_cod=2400, cod_frac=0.0385,
                              h_price_predicted_goodput_delta=-0.0385,
                              chi_max=0.0, chi_feed_echo=0, eps_hat=0.018,
-                             diag_rtt_ms=41.2 + j, entangled=False,
+                             diag_rtt_ms=41.0 + j, entangled=False,
                              fdiag_present=True, rfa_present=True,
                              gates_cli=True, gates_srv=True))
             rows.append(dict(cell="sc2", size="s25", arm="CTL", seed=seed, rep=rep,
@@ -253,7 +261,7 @@ def main():
                              cum_src=90000, cum_cod=3400, cod_frac=0.0364,
                              h_price_predicted_goodput_delta=-0.0364,
                              chi_max=0.0, chi_feed_echo=0, eps_hat=0.018,
-                             diag_rtt_ms=41.1 + j, entangled=False,
+                             diag_rtt_ms=41.0 + j, entangled=False,
                              fdiag_present=True, rfa_present=True,
                              gates_cli=True, gates_srv=True))
     with open(os.path.join(outdir, "r-s42.log"), "w") as f:
@@ -335,6 +343,75 @@ def main():
     check("--calib reports the headroom check", "utilisation" in p2.stdout)
     check("--calib records cod = 0 as NOT an abort",
           "RECORDED, NOT AN ABORT" in p2.stdout)
+
+    print("\n=== 9 -- W7 VOID propagates into the score and the outcome")
+    # MID wins on completion at sc2 (the same shape as section 7), but its
+    # rtt sits far outside CTL's own spread at 1.8 MB: W7 voids MID's rows at
+    # that cell-size, so neither a WIN nor any funded outcome may be read.
+    outdir4 = os.path.join(tmp, "led4")
+    os.makedirs(outdir4)
+    with open(os.path.join(outdir4, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            r1 = dict(r0)
+            if r1["arm"] == "MID" and r1["size"] == "s18":
+                r1["diag_rtt_ms"] = 12.0          # a 3x tighter queue: the pin failed
+            f.write("RRESULT " + json.dumps(r1, separators=(", ", ": ")) + "\n")
+    p4 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir4], capture_output=True, text=True)
+    t4 = p4.stdout
+    check("W7 VOID: report exits 0", p4.returncode == 0, p4.stderr[-400:])
+    check("W7 VOID: section 3 names the failed pin",
+          "W7-CC-PIN-FAILED" in t4, t4[-1500:])
+    score4 = t4[t4.index("=== 4"):t4.index("GOODPUT GUARD")]
+    outc4 = t4[t4.index("=== 5"):]
+    check("W7 VOID: the voided MID cell-size is NOT scored a WIN",
+          "WIN" not in score4, score4)
+    check("W7 VOID: the score section says W7-VOID for it",
+          "sc2   s18  MID" in score4 and "W7-VOID" in score4, score4)
+    check("W7 VOID: no funded outcome is read off voided rows",
+          "R-FUNDED" not in outc4, outc4)
+    check("W7 VOID: the outcome section says W7-VOID",
+          "W7-VOID" in outc4, outc4)
+
+    print("\n=== 10 -- a null reading is UNSCOREABLE, never R-FUNDED-NEGATIVE")
+    # n = 2 per arm: Hodges-Lehmann cannot bound (it needs >= 3), so there is
+    # no shift at all. "Nothing measured" must not be read as "H_price
+    # confirmed".
+    outdir5 = os.path.join(tmp, "led5")
+    os.makedirs(outdir5)
+    with open(os.path.join(outdir5, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            if r0["seed"] == 42 and r0["rep"] <= 2:
+                f.write("RRESULT " + json.dumps(r0, separators=(", ", ": ")) + "\n")
+    p5 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir5], capture_output=True, text=True)
+    t5 = p5.stdout
+    outc5 = t5[t5.index("=== 5"):]
+    check("null: report exits 0", p5.returncode == 0, p5.stderr[-400:])
+    check("null: the missing shift is printed as n/a in the score",
+          "HL shift=n/a" in t5, t5[-1500:])
+    check("null: R-FUNDED-NEGATIVE does NOT fire on a null",
+          "R-FUNDED-NEGATIVE" not in outc5, outc5)
+    check("null: the outcome is UNSCOREABLE, with its cause",
+          "UNSCOREABLE" in outc5, outc5)
+    # The legitimate negative still fires: section 7's ledger with MID no
+    # faster than CTL (a measured shift, bounded on both sides).
+    outdir6 = os.path.join(tmp, "led6")
+    os.makedirs(outdir6)
+    with open(os.path.join(outdir6, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            r1 = dict(r0)
+            if r1["arm"] == "MID":
+                r1["completion_p50"] = (r1["completion_p50"]
+                                        + (0.030 if r1["size"] == "s18" else 0.002))
+            f.write("RRESULT " + json.dumps(r1, separators=(", ", ": ")) + "\n")
+    p6 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir6], capture_output=True, text=True)
+    outc6 = p6.stdout[p6.stdout.index("=== 5"):]
+    check("a MEASURED negative still reads R-FUNDED-NEGATIVE",
+          "R-FUNDED-NEGATIVE" in outc6, outc6)
+    check("and a measured negative is not UNSCOREABLE",
+          "UNSCOREABLE" not in outc6, outc6)
 
     shutil.rmtree(tmp, ignore_errors=True)
     print("\n%s  (%d checks, %d failed)"

@@ -539,7 +539,7 @@ impl Drop for HoldDownGauge {
         let mut paths: Vec<u32> = self.ctr.keys().copied().collect();
         paths.sort_unstable();
         for p in paths {
-            eprintln!("{}", self.line(p));
+            crate::readout!("{}", self.line(p));
         }
     }
 }

@@ -1478,12 +1478,13 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             let sched = scheduler.lock();
             let path_est = worst_eps_estimator(&sched);
             // χ, the completion exposure (`RWM_COMPLETION_EXPOSURE`, paper
-            // §4.6). The perf client knows the remaining bytes of the object
-            // it is feeding. Under the gate it publishes them into a
-            // `CompletionFeed` and this site converts them to a time —
-            // `T_rem = remaining / throughput` — and prices the exposure with
-            // the math crate's `completion_exposure(T_rem, srtt, rttvar)`.
-            // Without it χ ≡ 0 and the Bulk-end glide never runs.
+            // §4.6). The perf client knows the size of the object it is
+            // feeding. Under the gate it publishes it into a `CompletionFeed`,
+            // the sender's intake drains it, and the feed converts it to a
+            // time — `T_rem = remaining / drain` (see `CompletionFeed`) —
+            // which this site prices with the math crate's
+            // `completion_exposure(T_rem, srtt, rttvar)`. Without it χ ≡ 0 and
+            // the Bulk-end glide never runs.
             //
             // The engine's estimator exposes a smoothed RTT and no RTTVAR, so
             // `0.125·srtt` stands in for it: RFC 6298's steady-state relation
@@ -1495,14 +1496,14 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
             if let (true, Some(feed), Some(est)) =
                 (gates.completion_exposure, completion_feed.as_ref(), path_est)
             {
-                let tput = est.throughput();
                 let srtt = est.rtt().as_secs_f64();
-                let chi = if tput > 0.0 && srtt > 0.0 {
-                    let t_rem = feed.remaining_bytes() as f64 / tput;
-                    raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt)
-                } else {
-                    0.0
-                };
+                // `∞` (unknown) and `srtt = 0` both price to χ = 0 inside the
+                // kernel itself; the cold count only makes "no input" readable.
+                let t_rem = feed.t_rem_secs();
+                if t_rem.is_infinite() {
+                    CHI.observe_cold();
+                }
+                let chi = raptorpath_math::completion_exposure(t_rem, srtt, 0.125 * srtt);
                 ctrl.set_completion_exposure(chi);
                 CHI.observe(chi);
             }

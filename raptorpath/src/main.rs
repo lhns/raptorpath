@@ -209,12 +209,9 @@ async fn main() -> anyhow::Result<()> {
     // process-wide up front.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    // RUST_LOG wins when set; the info default applies only otherwise
-    // (an added directive at equal specificity would override the env one
-    // and silently ignore RUST_LOG=raptorpath=debug).
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("raptorpath=info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    // The subscriber (RUST_LOG, else raptorpath=info) lives in the library
+    // so the newline-discipline test runs this exact configuration.
+    raptorpath::readout::init_tracing();
 
     let cli = Cli::parse();
 

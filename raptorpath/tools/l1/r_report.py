@@ -228,6 +228,9 @@ def report(outdir, calib, max_rep=None):
     # ── 3 — W7, the CC pin ──────────────────────────────────────────────
     print("\n=== 3 — W7: DID THE CC PIN HOLD? (the mechanical substitute for the Copa echo")
     print("    gates.rs:1432 claims and this tree does not have)")
+    # (cell, size) pairs whose MID rows W7 voided. Carried into the score and
+    # the outcome: a VOID printed here and then scored below is no VOID.
+    w7_void = set()
     for c in cells:
         for z in sizes:
             ctl = [r["diag_rtt_ms"] for r in live
@@ -240,6 +243,8 @@ def report(outdir, calib, max_rep=None):
                 continue
             lo, hi = min(ctl), max(ctl)
             out = [v for v in mid if v < lo or v > hi]
+            if out:
+                w7_void.add((c, z))
             verdict = ("W7-OK" if not out else
                        "W7-CC-PIN-FAILED (%d/%d MID reps outside CTL's own spread; a CC "
                        "that had followed delta to 0.05 targets a 20x tighter standing "
@@ -274,6 +279,11 @@ def report(outdir, calib, max_rep=None):
                 v = [r["completion_p50"] for r in sel]
                 if not v:
                     continue
+                if a == "MID" and (c, z) in w7_void:
+                    print("  %-5s %-4s %-8s n=%2d  W7-VOID — the CC pin failed at this "
+                          "cell-size (section 3); these rows score nothing"
+                          % (c, z, a, len(v)))
+                    continue
                 shift, lo, hi = hodges_lehmann(base, v)
                 # Both seeds separately as well as pooled. A result present at
                 # one seed only is SEED-SPLIT and scores nothing.
@@ -294,7 +304,11 @@ def report(outdir, calib, max_rep=None):
                 tag = ("WIN" if (sig and seed_ok and shift is not None and shift < 0)
                        else "SEED-SPLIT" if (sig and not seed_ok)
                        else "-")
-                wins[(c, z, a)] = (tag == "WIN", shift, pct(shift, bm))
+                # `bounded`: a shift AND both ends of its interval exist. Only a
+                # bounded reading can be an outcome; a null is UNSCOREABLE.
+                wins[(c, z, a)] = (tag == "WIN", shift, pct(shift, bm),
+                                   shift is not None and lo is not None
+                                   and hi is not None, tag)
                 print("  %-5s %-4s %-8s n=%2d  CTL p50=%.4fs  HL shift=%s (%s%%)  "
                       "95%%=[%s, %s]  seeds=%s  %s"
                       % (c, z, a, len(v), bm,
@@ -333,6 +347,12 @@ def report(outdir, calib, max_rep=None):
                     continue
                 if (c, z, a) not in wins and (c, z, a) not in inert:
                     continue
+                # W7 first: a VOID row is not MID's configuration, so no
+                # reading taken off it (inert, entangled, scored) is MID's.
+                if a == "MID" and (c, z) in w7_void:
+                    print("  %-5s %-4s %-8s  W7-VOID  (the CC pin failed at this "
+                          "cell-size; no outcome)" % (c, z, a))
+                    continue
                 if (c, z, a) in entangled:
                     print("  %-5s %-4s %-8s  ENTANGLEMENT-DOMINATED  (outranks 2 and 3)"
                           % (c, z, a))
@@ -344,10 +364,15 @@ def report(outdir, calib, max_rep=None):
                           % (c, z, a, "GLIDE-INERT" if (a.startswith("GLIDE") and chi_ok)
                              else "R-INERT"))
                     continue
-                won18 = wins.get((c, "s18", a), (False, None, None))[0]
-                won25 = wins.get((c, "s25", a), (False, None, None))[0]
-                sh18 = wins.get((c, "s18", a), (False, None, None))[1]
-                sh25 = wins.get((c, "s25", a), (False, None, None))[1]
+                if z != "s18":
+                    continue
+                if a == "MID" and (c, "s25") in w7_void:
+                    print("  %-5s (both sizes) %-8s  W7-VOID  (the 25 MB leg is void, "
+                          "so the two-part clause cannot be read)" % (c, a))
+                    continue
+                nil = (False, None, None, False, "-")
+                won18, sh18, _, b18, tag18 = wins.get((c, "s18", a), nil)
+                _, sh25, _, _, _ = wins.get((c, "s25", a), nil)
                 # The two-part requirement. (b) is the clause that stops
                 # "25 MB was null" from being read as size discrimination: the
                 # 25 MB leg is a directional witness at n = 8, never a score.
@@ -355,9 +380,23 @@ def report(outdir, calib, max_rep=None):
                     won18
                     and sh18 is not None and sh25 is not None
                     and abs(sh25) < abs(sh18))
-                if z != "s18":
-                    continue
-                if small_only:
+                # A null is no outcome: R-FUNDED-NEGATIVE says H_price was
+                # CONFIRMED, which needs a bounded 1.8 MB shift; the two-part
+                # clause needs a 25 MB point estimate; and SEED-SPLIT scores
+                # nothing by its own rule.
+                if not b18:
+                    print("  %-5s (both sizes) %-8s  UNSCOREABLE — no bounded 1.8 MB "
+                          "shift (HL shift=%s; too few rows or no CTL). Not a "
+                          "negative: nothing was measured."
+                          % (c, a, ("%.4f" % sh18) if sh18 is not None else "n/a"))
+                elif tag18 == "SEED-SPLIT":
+                    print("  %-5s (both sizes) %-8s  UNSCOREABLE — SEED-SPLIT at 1.8 MB "
+                          "(present at one seed only; scores nothing)" % (c, a))
+                elif won18 and sh25 is None:
+                    print("  %-5s (both sizes) %-8s  UNSCOREABLE — (a) 1.8 MB won but "
+                          "there is no 25 MB point estimate, so (b) cannot be read"
+                          % (c, a))
+                elif small_only:
                     print("  %-5s (both sizes) %-8s  R-FUNDED-POSITIVE-SMALL-ONLY  "
                           "[(a) 1.8 MB significant AND (b) |25 MB point estimate| "
                           "%.4f < %.4f]" % (c, a, abs(sh25), abs(sh18)))

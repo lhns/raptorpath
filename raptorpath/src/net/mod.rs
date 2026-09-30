@@ -2170,6 +2170,16 @@ async fn run_window_sender(
     // the single emission site for both `[WALL]` and `[CCAP]` — see that type
     // for why the teardown `select!` arms are the wrong site (the `perf`
     // harness takes neither).
+    // The sender `[ETA]` exit flush (`net/eta.rs` `SenderEtaFlush`):
+    // exactly once, `final=1`, at the clean exits below or on drop.
+    // Declared before every scheduler guard of the loop, so a guard held at
+    // a `return` is released before this destructor runs.
+    let eta_sched = scheduler.clone();
+    let mut eta_final = eta::SenderEtaFlush::new(pol.diag_on, move || {
+        let mut s = eta_sched.try_lock_for(Duration::from_secs(1))?;
+        s.drain_place_bind();
+        s.eta().final_line()
+    });
     let mut ccap = SenderTeardownGauges::new(
         // The `[CCAP]` line is emitted for either door into the brake,
         // because its `brake=<closed>/<ticks>` field is the primary readout
@@ -2352,7 +2362,7 @@ async fn run_window_sender(
                 let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
                     if pol.diag_on {
-                        eprintln!(
+                        crate::readout!(
                             "[GPIPE] M* {}→{} (rate_max={:.0}sym/s rtprop={:.1}ms)",
                             gen_pipe_m, m, gp_rate_max, rtprop_s * 1000.0
                         );
@@ -2575,7 +2585,7 @@ async fn run_window_sender(
                 } else {
                     0.0
                 };
-                eprintln!(
+                crate::readout!(
                     "[PFRAC] proactive_coded={} recovery_coded={} total_coded={} proactive_fraction={:.4}",
                     proactive_coded_total, recovery_coded_total, tot, frac
                 );
@@ -2593,7 +2603,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(shedh_last_us) > 1_000_000 {
                 shedh_last_us = now;
-                eprintln!("{}", shedh_report_line());
+                crate::readout!("{}", shedh_report_line());
             }
         }
         // `[CHI]` — the completion-exposure gauge (paper §4.6), same 1 s
@@ -2604,7 +2614,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(chi_last_us) > 1_000_000 {
                 chi_last_us = now;
-                eprintln!("{}", chi_report_line());
+                crate::readout!("{}", chi_report_line());
             }
         }
         // `[REQS]` — the request-serving gauge (paper §7.6 arms (A)/(B)),
@@ -2616,7 +2626,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(reqs_last_us) > 1_000_000 {
                 reqs_last_us = now;
-                eprintln!(
+                crate::readout!(
                     "{}",
                     reqs_report_line(
                         request_arm,
@@ -3016,6 +3026,8 @@ async fn run_window_sender(
                 for pid in control_broadcast_paths(&sched) {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
+                drop(sched);
+                eta_final.flush_final();
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
                 // this path and on every other way this sender can end —
@@ -3079,7 +3091,14 @@ async fn run_window_sender(
 
         if let Some(packet) = packet {
             let pkt = match packet {
-                Some(p) => p,
+                Some(p) => {
+                    // `RWM_COMPLETION_EXPOSURE`: the admitted bytes drain the
+                    // object's remaining (`CompletionFeed`). `None` otherwise.
+                    if let Some(f) = completion_feed.as_ref() {
+                        f.consume(p.len() as u64);
+                    }
+                    p
+                }
                 None => {
                     // Flush remaining packed data before exit
                     if pol.use_packing {
@@ -3095,6 +3114,7 @@ async fn run_window_sender(
                     }
                     // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
                     // by `ccap`'s destructor, on every exit path.
+                    eta_final.flush_final();
                     info!("TUN closed");
                     return;
                 }
@@ -3150,6 +3170,9 @@ async fn run_window_sender(
                         }
                         match tun.try_read_packet() {
                             Some(pkt) => {
+                                if let Some(f) = completion_feed.as_ref() {
+                                    f.consume(pkt.len() as u64);
+                                }
                                 let framed =
                                     framing::frame_window_packet(&pkt, symbol_size);
                                 emit_source(

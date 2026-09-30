@@ -157,7 +157,7 @@ impl RttDump {
                 // Printed once, at the moment the cap binds, so truncation is
                 // a line in the log rather than a silent shortfall. The parser
                 // also cross-checks `emitted` against the `[DIAG]` gauge `n`.
-                eprintln!(
+                crate::readout!(
                     "[RTTDUMP-CAP] p={path_id} emitted={} seen={} \
                      — cap RWM_RTT_DUMP_MAX={} reached, later samples NOT dumped \
                      (clause B scored over a contiguous PREFIX of this leg)",
@@ -179,7 +179,7 @@ impl RttDump {
         p.emitted += 1;
 
         if p.batch_n == BATCH {
-            eprintln!(
+            crate::readout!(
                 "[RTTDUMP] p={path_id} t0={} n={} d={}",
                 p.batch_t0, p.batch_n, p.buf
             );

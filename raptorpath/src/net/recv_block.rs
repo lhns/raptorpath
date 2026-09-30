@@ -192,7 +192,7 @@ impl RecvDiagBlock {
     pub(crate) fn flush_final(&mut self, rank_probe: Option<(u64, u64, u64)>) {
         if let Some(lines) = self.take_final(rank_probe) {
             for l in lines {
-                eprintln!("{l}");
+                crate::readout!("{l}");
             }
         }
     }

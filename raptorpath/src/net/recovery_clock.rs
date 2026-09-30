@@ -215,7 +215,7 @@ impl Drop for QuantileClockGauge {
         // rule `[RACK]` uses, so an absent line can only be read as an
         // unreached evaluation site and never as an unset gate.
         if self.evals > 0 {
-            eprintln!("{}", self.line());
+            crate::readout!("{}", self.line());
         }
     }
 }

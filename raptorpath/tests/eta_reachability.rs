@@ -203,9 +203,9 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 /// Clause 7, the exit flush: the last `[ETA] site=receiver` line carries
 /// `final=1` (so a scraper taking the last line reads complete counts) and is
 /// the only `final=1` line of its kind (exactly-once through whichever exit
-/// reaches it). The object stays at 8 MB because the sender line rides the
-/// 250 ms `[DIAG]` cadence with no exit flush; the under-cadence receiver
-/// case is `the_exit_flush_fires_on_sigterm_too`. `cfg(unix)`: see
+/// reaches it). The object stays at 8 MB so the sender's cadence line fires
+/// too; the sender's own exit flush is `the_sender_line_is_flushed_once_at_exit`
+/// and the under-cadence receiver case is `the_exit_flush_fires_on_sigterm_too`. `cfg(unix)`: see
 /// `run_with_signal`.
 #[cfg(unix)]
 #[test]
@@ -283,4 +283,35 @@ fn the_exit_flush_fires_on_sigterm_too() {
         let l = require(&srv, tag, "the gauge is unreachable");
         assert!(is_final(l), "`{tag}` was not flushed with the block on SIGTERM: {l}");
     }
+}
+
+/// The sender's exit flush (status §3.1 item 3): the `[ETA] site=sender`
+/// line rides the 250 ms `[DIAG]` cadence, so a run loses its final partial
+/// cadence of samples — and a transfer shorter than the cadence has no
+/// reading at all — unless the line prints once more at exit. The receiver
+/// block already does (`net/recv_block.rs`); this is the same discipline at
+/// the sender: the LAST sender line carries `final=1`, and there is exactly
+/// one. The perf client ends its engine by returning (no signal, no
+/// shutdown arm), so this clause proves the `Drop` door, and it needs no
+/// `cfg(unix)`.
+#[test]
+fn the_sender_line_is_flushed_once_at_exit() {
+    let (cli, _srv) = run(1, None, "1000000");
+    let s = require(&cli, "[ETA] site=sender", "the gauge is unreachable");
+    println!("[eta-reach] sender at exit: {s}");
+    assert!(u64_field(s, "n=") > 0, "no placement stamped: {s}");
+    assert!(
+        is_final(s),
+        "the LAST [ETA] site=sender line is not the exit flush (`final=1`) — \
+         the sender's cadence line is its only emission, so every run loses \
+         its final partial cadence:\n{s}"
+    );
+    let finals = cli
+        .lines()
+        .filter(|l| l.contains("[ETA] site=sender") && is_final(l))
+        .count();
+    assert_eq!(
+        finals, 1,
+        "exactly ONE final [ETA] site=sender line is owed per sender task:\n{cli}"
+    );
 }

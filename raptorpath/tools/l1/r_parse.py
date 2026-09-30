@@ -207,7 +207,7 @@ def main(argv):
     gs = last(srv, "[GATES]")
     row["gates_cli"] = gc is not None
     row["gates_srv"] = gs is not None
-    for k in ("RWM_DELTA", "RWM_COMPLETION_EXPOSURE", "RWM_THREE_TERM",
+    for k in ("RWM_DELTA", "RWM_COPA_DELTA", "RWM_COMPLETION_EXPOSURE", "RWM_THREE_TERM",
               "RWM_TAIL_BUDGET", "RWM_MIN_R", "RWM_DELTA_CAP"):
         row["g_cli_" + k] = ftok(gc, k)
         row["g_srv_" + k] = ftok(gs, k)

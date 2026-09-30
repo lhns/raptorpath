@@ -617,7 +617,7 @@ pub(crate) fn emit_source(
                 } else {
                     String::new()
                 };
-                eprintln!(
+                crate::readout!(
                     "[SPAN] t={:.1}s ack={} win=[{},{}] wsize={} a_star={:?} delta={:?} owed={:.2} rr={:.3} debt={:.2} retx_buf={}{}{}{}{}",
                     dnow.saturating_sub(pol.span_diag_start_us) as f64 / 1e6,
                     ack,
