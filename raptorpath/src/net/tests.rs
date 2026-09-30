@@ -1710,6 +1710,20 @@ fn a_lost_seq_zero_is_sack_reported() {
     assert_eq!(sack_to_gaps(0, &ranges), vec![(1, 1)], "delivered seq 0 is not re-reported");
 }
 
+/// Wire v9: seqs 0 AND 1 lost, 2..=10 received, nothing delivered. The
+/// cumulative point is `next_expected = 0`, so the sender's inversion must
+/// name the whole leading hole `(0, 1)` at once. v8's `received_up_to = 0`
+/// could not say "nothing delivered", and its seq-0 heuristic only fired
+/// when the first SACK range started at 1, so this report named `(1, 1)`
+/// and seq 0 waited a round for the tail sweep.
+#[test]
+fn lost_seqs_zero_and_one_are_both_sack_reported() {
+    let received: BTreeSet<u64> = (2..=10).collect();
+    let ranges = received_sack_ranges(&received, 0, 10);
+    assert_eq!(ranges, vec![(2, 10)]);
+    assert_eq!(sack_to_gaps(0, &ranges), vec![(0, 1)], "both leading holes, one report");
+}
+
 #[test]
 fn test_sack_to_gaps_caps_at_max_gaps() {
     // 2×MAX_NACK_GAPS isolated received seqs → gap list is capped.
@@ -1910,18 +1924,18 @@ fn window_ack_sack_size_fits_the_control_datagram() {
         WINDOW_ACK_BASE_BYTES, WINDOW_ACK_BYTES_PER_RANGE);
 }
 
-/// DEFECT FINDING, bounded (plan 2a → wire v9, plan 2c): with the frontier
-/// stalled and more than `MAX_SACK_RANGES` received runs above it, every
-/// report is the SAME honest prefix, so the SACK-clocked release never gets
-/// past the first `MAX_SACK_RANGES` runs however many reports land — the
-/// store stays over-counted by exactly the received seqs beyond the cap until
-/// the frontier moves. No v8 field carries a trustworthy received-above-
-/// frontier count (`cumulative_received` is per-path `symbols_received` in
-/// the in-order window, `received_seqs.len()` in OOO modes, 0 on timer acks;
-/// `cum_received` is a per-path symbol counter incl. repairs). This pins the
-/// shortfall exactly; a v9 wire that converges must flip it.
+/// Wire v9 (plan 2c) — the store gate CONVERGES at a stalled frontier past
+/// the SACK cap. The SACK report is an honest prefix capped at
+/// `MAX_SACK_RANGES`, so with the frontier stalled and more received runs
+/// above it than one report can name, every report is the SAME prefix and
+/// the mark set never gets past the first `MAX_SACK_RANGES` runs (v8 pinned
+/// that shortfall here: 2·(n_runs − 64) received seqs over-counted forever).
+/// v9 carries `received_above` (distinct received seqs above the frontier)
+/// on every WindowAck, and the gate's released count is ONE always-computed
+/// expression `max(|marks|, received_above − not_retained)`, so the operand
+/// lands exactly on the unreceived count.
 #[test]
-fn sack_prefix_release_does_not_converge_past_the_cap_at_a_stalled_frontier() {
+fn stalled_frontier_store_gate_converges_past_the_sack_cap() {
     let delivered = 1_000u64;
     let n_runs = 3 * MAX_SACK_RANGES as u64;
     // Frontier hole at delivered+1; runs of 2 received seqs, 1-seq holes.
@@ -1941,13 +1955,22 @@ fn sack_prefix_release_does_not_converge_past_the_cap_at_a_stalled_frontier() {
             sack_release_mark(&sent_store, &mut released, a, b);
         }
     }
-    assert_eq!(released.len(), 2 * MAX_SACK_RANGES, "release stops at the prefix");
-    assert_eq!(
-        received_above - released.len(),
-        2 * (n_runs as usize - MAX_SACK_RANGES),
-        "the store stays over-counted by every received seq past the cap"
-    );
+    // The per-seq mark set still stops at the prefix (it is exact per seq
+    // and keeps its per-seq consumers: Copa attribution, per-path release).
+    assert_eq!(released.len(), 2 * MAX_SACK_RANGES, "the mark set is the prefix");
     assert!(released.iter().all(|s| received.contains(s)), "and never lies");
+    // The GATE converges: what it uncounts is every received seq above the
+    // frontier, so the outstanding it reads is exactly the unreceived count.
+    let gate_released = released.len();
+    assert_eq!(
+        gate_released, received_above,
+        "the store gate must release every received seq above the stalled          frontier, not just the SACK prefix"
+    );
+    assert_eq!(
+        sent_store.len() - gate_released,
+        sent_store.keys().filter(|s| !received.contains(s)).count(),
+        "outstanding = exactly the holes"
+    );
 }
 
 // ----- Path-scaled outstanding pool (RWM_STORE_PATHS, paper §6.1) --------
@@ -4406,43 +4429,52 @@ fn xpath_loss_model(
     })
 }
 
-/// Direction 1 — the gap-estimate arm must reproduce the contamination.
-/// At 50/50 striping every path sees a batch-seq gap of exactly 2 on every
-/// batch, so the gap pair charges `2 × received` and reads ε̂ ≈ 0.5
-/// against a realized 0.55% (the c7 geometry; the wire read ce/cr 2.05).
+/// Direction 1 (wire v9) — the DEFAULT gap estimate reads each path's own
+/// ε, independent of the striping share. Before v9 the receiver's
+/// `PathBatchTracker` read gaps in the one global `batch_seq`, so the other
+/// path's batches counted as loss (ε̂ ≈ 0.5 at 50/50, 0.17/0.84 at 5:1). v9
+/// stamps a per-path batch sequence and the tracker keys on it, so the gap
+/// pair is honest at every share. Absolute bounds at every share, including
+/// the N = 1 control and asymmetric per-leg loss (attribution, not just
+/// magnitude).
 #[test]
-fn legacy_gap_estimate_reproduces_the_cross_path_contamination_at_n2() {
-    let r = xpath_loss_model(60_000, 8, 2, [0.0055, 0.0055], 4);
-    for (p, x) in r.iter().enumerate() {
-        // The law: Σexpected/Σreceived = 2.0 exactly — the wire's c7
-        // `ce/cr` = 2.05.
-        assert!(
-            (0.45..0.58).contains(&x.fed_old),
-            "p{p}: legacy ε̂ must reproduce the ≈0.5 striping artefact, \
-             read {:.4}",
-            x.fed_old
-        );
-        // Every shipped read of it inherits the artefact.
-        for (name, v) in [("loss_rate", x.ewma_old), ("loss_rate_mean", x.beta_old)] {
+fn default_gap_estimate_reads_each_path_own_epsilon_independent_of_share() {
+    for (cell, share, eps) in [
+        ("n1", 1u32, [0.0055f64, 0.0055]),
+        ("c7", 2, [0.0055, 0.0055]),
+        ("c8", 6, [0.0055, 0.0196]),
+        ("s10", 10, [0.0196, 0.0055]),
+    ] {
+        let r = xpath_loss_model(60_000, 8, share, eps, 4);
+        for (p, x) in r.iter().enumerate() {
+            if share == 1 && p == 1 {
+                continue; // the N = 1 control dispatches nothing on p1
+            }
             assert!(
-                v / x.eps_true > 30.0,
-                "p{p}: {name} apparent/realized must reproduce the measured \
-                 37–93× class, read {:.1}× ({v:.4} vs {:.4})",
-                v / x.eps_true,
+                (x.fed_old - x.eps_true).abs() <= 5e-4,
+                "{cell} p{p}: the default gap estimate must read this path's                  own ε independent of share — {:.5} vs realized {:.5}",
+                x.fed_old,
+                x.eps_true
+            );
+            assert!(
+                (0.5 * x.eps_true..2.0 * x.eps_true).contains(&x.beta_old),
+                "{cell} p{p}: loss_rate_mean must read this path's own ε —                  {:.5} vs realized {:.5}",
+                x.beta_old,
                 x.eps_true
             );
         }
+        if share > 1 {
+            let (hi, lo) = if eps[1] > eps[0] { (1, 0) } else { (0, 1) };
+            if eps[hi] > eps[lo] {
+                assert!(
+                    r[hi].fed_old / r[lo].fed_old > 2.5,
+                    "{cell}: the lossier leg's ε must be the larger one                      ({:.5} vs {:.5})",
+                    r[hi].fed_old,
+                    r[lo].fed_old
+                );
+            }
+        }
     }
-    // And the single-path control: N = 1 has no other path in its
-    // sequence, so the same gap estimate is already honest there. The
-    // defect is multipath-only, which is why this fix cannot regress N=1.
-    let s = xpath_loss_model(60_000, 8, 1, [0.0055, 0.0055], 4);
-    assert!(
-        (s[0].fed_old - s[0].eps_true).abs() <= 0.004,
-        "N=1 legacy must already be honest, read {:.4} vs {:.4}",
-        s[0].fed_old,
-        s[0].eps_true
-    );
 }
 
 /// Direction 2 — under the gate each path reads its own realized loss.

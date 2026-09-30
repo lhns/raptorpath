@@ -298,6 +298,24 @@ mod tests {
         assert_eq!(delivered_through(1, d.lowest_held()), Some(0));
     }
 
+    /// Wire v9: a HELD seq 0 (reliable delivery hold on a full consumer
+    /// channel) is expressible. What the receiver advertises for "seq 0
+    /// received but still held" must differ from "seq 0 delivered" -- v8's
+    /// `received_up_to` mapped both to 0, so a held seq 0 was acked as
+    /// delivered and the sender discarded its only copy.
+    #[test]
+    fn a_held_seq_zero_is_expressible_on_the_wire() {
+        let advertised = |next_unreleased: u64, lowest_held: Option<u64>| {
+            delivered_through(next_unreleased, lowest_held).unwrap_or(0)
+        };
+        assert_ne!(
+            advertised(1, Some(0)),
+            advertised(1, None),
+            "held seq 0 must not read as delivered seq 0"
+        );
+        assert_eq!(advertised(1, Some(0)), advertised(0, None), "held 0 = nothing delivered");
+    }
+
     #[test]
     fn delivered_through_seq0_sentinel() {
         assert_eq!(delivered_through(0, None), None);
