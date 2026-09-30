@@ -111,7 +111,7 @@ fi
 # armed, the one named confound. It ships off, is pinned off here, and is
 # asserted two-sided on every invocation of every arm.
 R_CONTAM_GATES="RWM_THREE_TERM RWM_MIN_R \
-RWM_DERIVED_SWEEP RWM_STORE_CAP_UNIFIED RWM_COMPOSED_CAP \
+RWM_DERIVED_SWEEP RWM_COMPOSED_CAP \
 RWM_HOLDDOWN_Q"
 # shellcheck disable=SC2086
 unset RWM_DELTA RWM_COPA_DELTA RWM_COMPLETION_EXPOSURE RWM_TAIL_BUDGET $R_CONTAM_GATES

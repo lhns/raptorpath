@@ -1478,9 +1478,10 @@ default, `RWM_INFL_CAP = 0`). With two or more live paths the cap is
 
 `pooled_store_cap`, `pool_value_multiplier`, `codel_setpoint_q`
 (`net/store_cap.rs`); gates `RWM_SUM_CAP` and `RWM_DELTA_CAP`, both on
-by default. The sum runs over `active_paths()`, the live paths with spare
-congestion window; `RWM_STORE_CAP_UNIFIED` (off) sums over all live paths
-instead. Under Copa-sole pass-through the anchor is Σ cwnd.
+by default. The sum runs over all live paths (`net::channel_paths`, the
+channel's membership); before plan 2b it ran over `active_paths()`, the live
+paths with spare congestion window, and `RWM_STORE_CAP_UNIFIED` (retired)
+was the live-set arm. Under Copa-sole pass-through the anchor is Σ cwnd.
 
 | symbol | value | provenance |
 |---|---|---|
@@ -2543,7 +2544,7 @@ shipped.
 | Per-path store accounts (`RWM_STORE_PERCAP`, `RWM_PERCAP_GUARD`) | wins the symmetric dual (0.89–0.94×Σ) and loses the heterogeneous one (0.54–0.55 against pooled 0.62–0.69×Σ) | `4bb5b28` | removed |
 | Bounded account borrowing (`RWM_STORE_BORROW`) | loans are identically zero at symmetric cells by construction; neutral at the heterogeneous dual and behind pooled | `7c3343f` | removed |
 | Capacity-weighted pool (`RWM_STORE_CAPW`) | the heterogeneous binder is slow-path conversion, not pool size (0.74–0.79 against 0.87×Σ) | `4fb5b15` | removed |
-| Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) | removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode | `865112e` | off |
+| Store-cap unification over live paths (`RWM_STORE_CAP_UNIFIED`) | removes a boot-cap cliff at c1 (+16–25 %) and costs −19.6 % at the heterogeneous dual, where it carries a dead-wall mode | `865112e` | shipped unconditionally (plan 2b, gate removed; re-measure in Stage 3) |
 | Three-term outstanding law (`RWM_THREE_TERM`) | the terms are right and the lever is wrong: the store is sized and occupied, throughput does not follow | `448a82e` | off |
 | Composed cap (`RWM_COMPOSED_CAP`) | shape confirmed, magnitude refuted: pinned at `WIN_STORE_MAX` at every dual; where interior, 2.4× the queue and 1.43–1.48× worse delivered latency at goodput parity | `161b4ea` | off |
 | Queue-free slack clock | removes 1.7 % of a 90 % overshoot at the heterogeneous dual, by its own arithmetic | `7e302e2` | refuted, never shipped |
@@ -2642,7 +2643,7 @@ decide it.
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
 | store cap at one path | δ-priced setpoint | `clamp(2.0·BDP, 10, 1024)`; the δ-cap engages only at N ≥ 2 |
-| pool path set | live paths | `active_paths()` (live with spare cwnd) unless `RWM_STORE_CAP_UNIFIED` |
+| pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | the recovery clocks and the repair margin read `recovery_clock_paths` (live); the react-cap SRTT, the NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, and the Shutdown broadcast still read `active_paths()` |
 | store headroom H in the recovery analysis | `(gain − 1)·RTprop` at every cell, with the count released only by the frontier | at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget and the block pipeline's `⌈k·r⌉` |

@@ -193,10 +193,13 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
             #   bbrrs  burst-robust BBR substrate controller
             bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
-            #   uni    the dyn-store-cap phase's path set on live_paths() rather
-            #          than the cwnd-filtered active_paths(), which empties the
-            #          set at single-path Realtime
-            uni)     AENV="RWM_STORE_CAP_UNIFIED=1"; AFLAGS="" ;;
+            #   uni    removed: the dyn-store-cap phase's path set is the
+            #          channel's membership (live_paths()) unconditionally
+            #          (plan 2b), so `ship` IS the former arm. Fails loudly
+            #          rather than silently re-measuring `ship`.
+            uni)
+                echo "ARM uni was removed: RWM_STORE_CAP_UNIFIED is gone, the store-cap path set is live_paths() unconditionally. Use 'ship'." >&2
+                continue ;;
             #   prior  est cadence and emit batching both off (est=0 also turns
             #          the composed pool-anchor default off)
             prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;

@@ -546,10 +546,11 @@ fn test_parse_cidr() {
 // adjudicated at component level:
 //   1. the bench measures sender blocking on the scheduler lock directly
 //      (two threads, production lock, production attribution seam);
-//   2. `dh_store_cap_falls_to_boot_on_the_saturation_filter…` pins the
-//      rival mechanism: the DH arm's honest-cap law falls out to the
+//   2. `dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation` bounds the
+//      rival mechanism: the DH arm's honest-cap law fell out to the
 //      128-symbol boot cap whenever `active_paths()` returns empty — the
-//      `sf=` zero-tick cliff that `RWM_STORE_CAP_UNIFIED=1` removes;
+//      `sf=` zero-tick cliff, removed by plan 2b (the Σ's set is now
+//      `channel_paths` = `live_paths()`; the test now pins its absence);
 //   3. `honest_anchor_floor_sits_at_true_bdp…` pins why the DH sender
 //      hits that cliff harder than A: the honest send-interval anchor
 //      floors cwnd at the true BDP class while the ack-interval feed
@@ -830,16 +831,17 @@ fn c1_attribution_lock_blocking_bench() {
 
 /// Mechanism side (always-on, deterministic): the DH arm's own store-cap
 /// law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1` — evaluated over the
-/// shipped path set (`active_paths()`, `RWM_STORE_CAP_UNIFIED=0`) vs the
-/// unified set (`live_paths()`), at the same warm, saturated single-path
-/// state.
+/// sender's own pool inputs (`store_cap_pool_inputs`, the channel's
+/// membership set) at the same warm path, unsaturated and then
+/// cwnd-saturated.
 ///
 /// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
-/// `honest_cap_on` branch and its fallbacks). The DH law inherits the
-/// boot-cap cliff: the honest law never computes a small cap — the path
-/// set erases its inputs.
+/// `honest_cap_on` branch and its fallbacks). Before plan 2b the Σ ranged
+/// over `active_paths()`, which a cwnd-full path leaves: the honest law's
+/// inputs vanished and the cap fell to the 128 boot value (the cliff). The
+/// invariant now: the saturated cap EQUALS the warm cap.
 #[test]
-fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
+fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
     let clock = Arc::new(crate::scheduler::MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
@@ -861,30 +863,15 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
             "honest anchor must be warm (samples accepted)"
         );
     }
-    // The DH law chain over a path set, exactly as the sender computes
-    // it (RWM_STORE_GAIN default 2.0; floor 64; RELIABLE_STORE_MAX
-    // latch at N = 1; store_boot_cap 128 — gates.rs defaults).
+    // The DH law chain over the sender's pool inputs, exactly as the
+    // sender computes it (RWM_STORE_GAIN default 2.0; floor 64;
+    // RELIABLE_STORE_MAX latch at N = 1; store_boot_cap 128 — gates.rs
+    // defaults).
     let now = now_us();
     let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
-    let mut cap_over = |sched: &Scheduler, set: &[u32]| -> usize {
-        let mut bdp = 0.0f64;
-        let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
-        for id in set {
-            if let Some(p) = sched.path(*id) {
-                if let Some(a) = p.copa_bdp_anchor() {
-                    bdp += a;
-                    slots.push(Some(HonestCapPath {
-                        id: *id,
-                        anchor: Some(a),
-                        rate: p.btlbw_sym_per_s(),
-                        srtt: p.srtt(),
-                        rtprop: p.min_rtt(),
-                        k_raw: p.k_raw(),
-                    }));
-                }
-            }
-        }
+    let mut cap_over = |sched: &Scheduler| -> usize {
+        let (bdp, slots) = store_cap_pool_inputs(sched, true);
         let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
         let hsum: f64 = terms.iter().flatten().sum();
         if hsum > 0.0 {
@@ -892,48 +879,33 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
         } else if bdp > 0.0 {
             ((2.0 * bdp).ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
         } else {
-            128 // store_boot_cap fallback — the cliff
+            128 // store_boot_cap fallback — the (former) cliff
         }
     };
 
-    // Unsaturated: both path sets agree; the honest law computes its
-    // warm cap (runway term ≈ rate·0.1 ⇒ the 1024 latch at c1 rates).
-    let active = sched.active_paths();
-    let live = sched.live_paths();
-    assert_eq!(active, live, "unsaturated: the filter is inert");
-    let warm_cap = cap_over(&sched, &active);
+    // Unsaturated: the honest law computes its warm cap (runway term ≈
+    // rate·0.1 ⇒ the 1024 latch at c1 rates).
+    let warm_cap = cap_over(&sched);
     assert_eq!(
         warm_cap, RELIABLE_STORE_MAX,
         "c1-class honest cap latches the store max"
     );
 
     // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
-    // spare-capacity filter empties the data-scheduling set while the
-    // path is alive and its anchor is warm.
+    // spare-capacity filter empties the placement set while the path is
+    // alive and its anchor is warm.
     {
         let p = sched.path_mut(0).unwrap();
         let cw = p.cwnd;
         p.charge_in_flight(cw);
         assert_eq!(p.available(), 0);
     }
-    let active = sched.active_paths();
-    let live = sched.live_paths();
-    assert!(active.is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
-    assert_eq!(live, vec![0], "…while the path is fully live");
-    // Shipped set (RWM_STORE_CAP_UNIFIED=0): the law's inputs vanish and
-    // the cap falls out to the boot value — below a c1 store occupancy,
-    // i.e. instant tx_paused.
+    assert!(sched.active_paths().is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
+    assert_eq!(sched.live_paths(), vec![0], "…while the path is fully live");
     assert_eq!(
-        cap_over(&sched, &active),
-        128,
-        "the cliff: an empty active set forfeits the warm anchor entirely"
-    );
-    // Unified set (RWM_STORE_CAP_UNIFIED=1): same instant, same law,
-    // warm cap.
-    assert_eq!(
-        cap_over(&sched, &live),
-        RELIABLE_STORE_MAX,
-        "live_paths() keeps the warm honest cap at the same saturated instant"
+        cap_over(&sched),
+        warm_cap,
+        "no cliff: the saturated path keeps its warm honest cap (was 128 on active_paths())"
     );
 }
 
@@ -2055,15 +2027,15 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 /// The full arm, resolved: does the composition actually compose?
 ///
 /// Compositions whose members do not compose are the failure mode: e.g.
-/// `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a no-op wherever
-/// capw engages, because `capw_store_cap` sits above
-/// `path_scaled_store_cap` in the chain and reads `live_paths()`
-/// unconditionally.
+/// the retired `RWM_STORE_CAPW` made the (also retired, plan 2b)
+/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged, because
+/// `capw_store_cap` sat above `path_scaled_store_cap` in the chain and read
+/// `live_paths()` unconditionally. The Σ's set is now membership everywhere.
 ///
 /// This test asserts the full arm's gate set resolves to the machine it is
 /// supposed to be, at the policy layer where the collapses happen:
 ///
-/// * every one of the six bits survives resolution (none is silently
+/// * every one of the five bits survives resolution (none is silently
 ///   ANDed away by a scope it does not satisfy);
 /// * the pool law reached is the pooled one, not the three-term law — i.e.
 ///   `three_term_on` and `composed_cap` stay off (the composed pool law's
@@ -2115,7 +2087,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert!(!ctl.delta_cap, "control: the δ-cap must be fixed OFF for this pair");
     assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
     assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
-    assert!(!ctl.store_cap_unified, "control: the live set must be OFF");
     assert!(!ctl.late_brake, "control: the brake must be OFF");
     assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
 
@@ -2127,7 +2098,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     full.delta_cap = false; // the value multiplier, FIXED OFF — see the
                             // control arm's note: this pair varies the
                             // count multiplier and nothing else.
-    full.store_cap_unified = true; // the live set
     full.late_brake = true; // the late-stage brake
     full.loss_sent_truth = true; // ── the ledger/loss trio ──
     full.release_1to1 = true;
@@ -2145,7 +2115,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     //    scored as a null result by anything that reads only the
     //    `[GATES]` echo.
     assert!(arm.sum_cap, "FULL: RWM_SUM_CAP was ANDed away by resolution");
-    assert!(arm.store_cap_unified, "FULL: the live set was ANDed away");
     assert!(arm.late_brake, "FULL: the brake was ANDed away");
     // The ledger/loss trio is not resolved through `SenderPolicy`: those
     // three bits are read by the scheduler (`scheduler::loss_sent_truth_active`
@@ -2284,13 +2253,9 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert!(arm.delta_cap, "{hint:?}: RWM_DELTA_CAP did not reach the seat");
 
         // The siblings are untouched: this gate picks the value multiplier
-        // and nothing else. The count multiplier (`RWM_SUM_CAP`), the Σ's
-        // set (`RWM_STORE_CAP_UNIFIED`) and the brake are independent axes.
+        // and nothing else. The count multiplier (`RWM_SUM_CAP`) and the
+        // brake are independent axes (the Σ's set is membership, not a dial).
         assert_eq!(arm.sum_cap, ctl.sum_cap, "{hint:?}: the count multiplier moved");
-        assert_eq!(
-            arm.store_cap_unified, ctl.store_cap_unified,
-            "{hint:?}: the Σ's path set moved"
-        );
         assert_eq!(arm.late_brake, ctl.late_brake, "{hint:?}: the brake armed itself");
         assert_eq!(arm.three_term_on, ctl.three_term_on, "{hint:?}: the pool law changed");
 
@@ -2534,10 +2499,13 @@ mod law_shape {
     }
 
     /// The composition, as four formulas: `RWM_SUM_CAP` (the count
-    /// multiplier) and `RWM_STORE_CAP_UNIFIED` (the Σ's path set) are
-    /// independent axes of one law, and their four combinations are four
-    /// distinct expressions. The set decides `pipe_sum`, the gate decides
-    /// the multiplier, and neither reads the other.
+    /// multiplier) and the Σ's path set are independent axes of one law,
+    /// and their four combinations are four distinct expressions. The set
+    /// decides `pipe_sum`, the gate decides the multiplier, and neither
+    /// reads the other. Since plan 2b the set is not a dial (the retired
+    /// `RWM_STORE_CAP_UNIFIED`): the sender always passes the membership Σ
+    /// (`unified = true` below). The `unified = false` column is kept as the
+    /// bound on what the retired saturation-filtered Σ cost.
     ///
     /// The test states independence as a factorisation rather than as four
     /// inequalities: the multiplier ratio is `N` whichever set is used, and
@@ -2546,12 +2514,10 @@ mod law_shape {
     /// means, and it is stronger than "the four numbers differ".
     ///
     /// Note the asymmetry the composition inherits and does not fix:
-    /// `N` is `live_paths().len()` in both arms,
-    /// including where the Σ ranges over `active_paths()` only. The count
-    /// and the sum range over different sets on the shipped default, and
-    /// deleting the multiplier from the value removes that mismatch from
-    /// the value while leaving it in the ceiling — which is the correct
-    /// scope for this gate and is asserted here so it stays deliberate.
+    /// `N` is `live_paths().len()` in both columns, including the retired
+    /// one where the Σ ranged over `active_paths()` only (the count and the
+    /// sum then ranged over different sets; plan 2b removed that mismatch
+    /// by making the Σ's set membership too).
     #[test]
     fn sum_cap_and_the_unified_set_are_independent_axes_of_one_law() {
         use crate::net::pooled_store_cap;
@@ -5302,4 +5268,156 @@ fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
     let bulk = BlockProfile::from_hint(ProtocolHint::Bulk).max_block_size;
     assert!(64 * (bulk + reorder::ENTRY_OVERHEAD) <= BLOCK_REORDER_MAX_BYTES);
     assert!(64 * (bulk + block_arq::RETAIN_PER_BLOCK_OVERHEAD) <= block_arq::RETAIN_BUDGET_BYTES);
+}
+
+// ── Plan 2b: the channel's path set is membership, not "can send now" ──
+//
+// Every "what is the channel / how big is the pool" reader must return the
+// SAME value whether or not the paths are cwnd-full. `active_paths()` (the
+// placement filter: `available() > 0`) is empty exactly while a wire-bound
+// sender's paths carry the transfer, so a reader on it jumps to its
+// empty-set fallback (Σ = 0 → boot cap 128, ε = 0, P_lost constants
+// (0.05, 0.005, 0.0), NACK inputs (0.0, None), react-cap 50 ms) at the
+// moment the channel is busiest. Each test below: a warm two-path channel,
+// the quantity read unsaturated, both paths driven to `in_flight = cwnd`,
+// the quantity read again — ABSOLUTE equality, plus "not the fallback".
+
+/// A warm, heterogeneous two-path channel: path 0 = SRTT 20 ms / ε≈0.02,
+/// path 1 = SRTT 60 ms / ε≈0.10 (the worst-ε path). Both BDP anchors warm
+/// (the c1-shape send-interval warm-up of the DH store-cap test: RTprop
+/// 2 ms, deliveries lagging sends by ~3 ms).
+fn channel_fixture() -> Scheduler {
+    let clock = Arc::new(crate::scheduler::MockClock::new());
+    let mut sched = Scheduler::new(clock.clone());
+    sched.add_path(0);
+    sched.add_path(1);
+    for id in [0u32, 1] {
+        sched.path_mut(id).unwrap().record_rtt_sample(Duration::from_millis(2));
+    }
+    let step = Duration::from_micros(41);
+    for seq in 0..4000u64 {
+        for id in [0u32, 1] {
+            let p = sched.path_mut(id).unwrap();
+            p.on_src_sent(seq, false);
+            if seq >= 72 {
+                p.on_src_delivered_seq(seq - 72);
+            }
+        }
+        clock.advance(step);
+    }
+    for (id, ms, lost) in [(0u32, 20u64, 2u32), (1, 60, 10)] {
+        let p = sched.path_mut(id).unwrap();
+        for _ in 0..32 {
+            p.record_rtt_sample(Duration::from_millis(ms));
+            p.estimator.record_rtt(Duration::from_millis(ms));
+            p.estimator.record_batch(100, 100 - lost);
+        }
+    }
+    for id in [0u32, 1] {
+        let p = sched.path(id).unwrap();
+        assert!(p.copa_bdp_anchor().is_some(), "path {id}: BDP anchor must be warm");
+        assert!(p.available() > 0, "path {id}: fixture starts unsaturated");
+    }
+    sched
+}
+
+/// Drive every path to `in_flight = cwnd` (the wire-bound resting state).
+fn saturate_channel(sched: &mut Scheduler) {
+    for id in [0u32, 1] {
+        let p = sched.path_mut(id).unwrap();
+        let cw = p.cwnd;
+        p.charge_in_flight(cw);
+        assert_eq!(p.available(), 0, "path {id} must be cwnd-full");
+    }
+    assert!(sched.active_paths().is_empty(), "precondition: placement set empty");
+    let mut live = sched.live_paths();
+    live.sort_unstable();
+    assert_eq!(live, vec![0, 1], "precondition: both paths still members");
+}
+
+/// Read `f` on the fixture unsaturated, then saturated.
+fn read_both<T>(f: impl Fn(&Scheduler) -> T) -> (T, T) {
+    let mut sched = channel_fixture();
+    let before = f(&sched);
+    saturate_channel(&mut sched);
+    (before, f(&sched))
+}
+
+#[test]
+fn saturated_channel_store_cap_sigma_has_no_boot_cliff() {
+    // (Σ anchor, number of honest-cap slots) — the plain dyn-cap's inputs
+    // (the sender's own collector).
+    let (un, sat) = read_both(|s| {
+        let (bdp, slots) = store_cap_pool_inputs(s, true);
+        (bdp, slots.len())
+    });
+    assert!(un.0 > 0.0 && un.1 == 2, "unsaturated: both anchors in the Σ ({un:?})");
+    assert_eq!(
+        sat, un,
+        "saturated: the store-cap Σ must not lose the cwnd-full paths (Σ = 0 is the boot-cap-128 cliff)"
+    );
+}
+
+#[test]
+fn saturated_channel_keeps_the_worst_eps_pick() {
+    let (un, sat) = read_both(|s| {
+        worst_eps_channel_path(s).map(|(id, p)| (id, p.estimator.loss_rate()))
+    });
+    assert_eq!(un.map(|x| x.0), Some(1), "path 1 is the worst-ε path");
+    assert_eq!(sat, un, "saturated: the worst-ε pick must not vanish");
+    let (un, sat) = read_both(channel_worst_loss_rate);
+    assert!(un > 0.05, "worst ε ≈ 0.10 ({un})");
+    assert_eq!(sat, un, "saturated: the channel's worst ε must not fall to 0");
+    // The emit/rate reader's own entry point routes through the same pick.
+    let (un, sat) = read_both(|s| super::emit_source::worst_eps_path(s).map(|(id, _)| id));
+    assert_eq!((un, sat), (Some(1), Some(1)), "worst_eps_path must survive saturation");
+}
+
+#[test]
+fn saturated_channel_keeps_the_p_lost_inputs() {
+    let (un, sat) = read_both(p_lost_inputs);
+    assert_ne!(un, (0.05, 0.005, 0.0), "unsaturated: measured, not the fallback");
+    assert_eq!(
+        sat, un,
+        "saturated: P_lost inputs must be the measured worst path, not (0.05, 0.005, 0.0)"
+    );
+}
+
+#[test]
+fn saturated_channel_keeps_the_nack_budget_inputs() {
+    let (un, sat) = read_both(nack_congestion_inputs);
+    assert!(un.0 > 0.0 && un.1.is_some(), "unsaturated: measured ({un:?})");
+    assert_eq!(sat, un, "saturated: NACK congestion inputs must not fall to (0.0, None)");
+    // The ADR-0050 budget's estimator inputs.
+    let (un, sat) = read_both(|s| {
+        worst_eps_estimator(s).map(|e| (e.predictive_loss_upper(0.99), e.nack_effectiveness()))
+    });
+    assert!(un.is_some(), "unsaturated: an estimator is picked");
+    assert_eq!(sat, un, "saturated: the NACK budget must still see the worst estimator");
+}
+
+#[test]
+fn saturated_channel_keeps_the_react_cap_srtt_and_pool_sums() {
+    let (un, sat) = read_both(channel_max_srtt_us);
+    assert!(un.is_some_and(|v| v >= 50_000), "max SRTT = the 60 ms path ({un:?})");
+    assert_eq!(sat, un, "saturated: react-cap SRTT must not fall to the 50 ms default");
+    let (un, sat) = read_both(channel_max_rtprop_s);
+    assert!(un > 0.0, "max RTprop is measured ({un})");
+    assert_eq!(sat, un, "saturated: generation RTprop must not fall to 0");
+    let (un, sat) = read_both(channel_bdp_anchor_sum);
+    assert!(un > 0.0);
+    assert_eq!(sat, un, "saturated: the infl-BDP Σ must not fall to 0");
+}
+
+#[test]
+fn shutdown_and_window_start_reach_a_saturated_path() {
+    let (mut un, mut sat) = read_both(control_broadcast_paths);
+    un.sort_unstable();
+    sat.sort_unstable();
+    assert_eq!(un, vec![0, 1]);
+    assert_eq!(sat, vec![0, 1], "WindowStart / Shutdown must go out on cwnd-full paths");
+    let (mut un, mut sat) = read_both(channel_paths);
+    un.sort_unstable();
+    sat.sort_unstable();
+    assert_eq!(sat, un, "the channel set is membership");
 }

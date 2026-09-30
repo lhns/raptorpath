@@ -203,12 +203,6 @@ pub struct RuntimeGates {
     pub recov_mp: bool,
     /// `RWM_RECOV_MP_LAW` (on, shipped): the per-flight hole-law sub-gate.
     pub recov_mp_law: bool,
-    /// `RWM_RECOV_MP_LIVE` (off, arm): the hole law reads `live_paths()`, so cwnd-full paths no
-    /// longer collapse it to the N = 1 bypass.
-    pub recov_mp_live: bool,
-    /// `RWM_STORE_CAP_UNIFIED` (off, arm): the plain cap's Σ-base reads `live_paths()`, as its ×N
-    /// does.
-    pub store_cap_unified: bool,
     /// `RWM_THREE_TERM` (off, arm; paper §10): `net::three_term_store_cap` as the plain cap.
     pub three_term: bool,
     /// `RWM_COMPOSED_CAP` (off, arm; paper §10): three-term cap plus the per-path cwnd brake.
@@ -380,8 +374,6 @@ impl RuntimeGates {
                 .clamp(2, 512),
             recov_mp: env_flag("RWM_RECOV_MP", true),
             recov_mp_law: env_flag("RWM_RECOV_MP_LAW", true),
-            recov_mp_live: env_flag("RWM_RECOV_MP_LIVE", false),
-            store_cap_unified: env_flag("RWM_STORE_CAP_UNIFIED", false),
             three_term: env_flag("RWM_THREE_TERM", false),
             composed_cap: env_flag("RWM_COMPOSED_CAP", false),
             sum_cap: env_flag("RWM_SUM_CAP", true),
@@ -454,7 +446,7 @@ impl RuntimeGates {
              RWM_HONEST_ANCHOR={} RWM_HONEST_K={} \
              RWM_STORE_SACK_RELEASE={} RWM_STORE_PATHS={} RWM_STORE_PATH_POOL={} \
              RWM_STORE={} RWM_STORE_GAIN={} RWM_STORE_BOOT={} \
-             RWM_STORE_CAP_UNIFIED={} RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
+             RWM_THREE_TERM={} RWM_COMPOSED_CAP={} \
              RWM_SUM_CAP={} RWM_LATE_BRAKE={} RWM_DELTA_CAP={} \
              RWM_HONEST_CAP={} RWM_POOL_ANCHOR={} \
              RWM_ACK_MERGE={} RWM_LOSS_SENT_TRUTH={} \
@@ -470,7 +462,7 @@ impl RuntimeGates {
              RWM_MIN_R={} RWM_CC_PACE={} RWM_CC_PACE_HR={} RWM_REACT_CAP={} \
              RWM_INFL_CAP={} RWM_INFL_BDP={} RWM_COPA_FEED={} RWM_RS_ATTR={} \
              RWM_EMIT_BATCH={} RWM_EMIT_BURST={} RWM_RECOV_MP={} \
-             RWM_RECOV_MP_LAW={} RWM_RECOV_MP_LIVE={} RWM_RECOV_SP={} \
+             RWM_RECOV_MP_LAW={} RWM_RECOV_SP={} \
              RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
              RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COMPLETION_EXPOSURE={} \
              RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
@@ -484,7 +476,7 @@ impl RuntimeGates {
             b(self.honest_anchor), b(self.honest_k),
             b(self.store_sack_release), b(self.store_paths), self.store_path_pool,
             ou(&self.store_override), self.store_gain, self.store_boot,
-            b(self.store_cap_unified), b(self.three_term), b(self.composed_cap),
+            b(self.three_term), b(self.composed_cap),
             b(self.sum_cap), b(self.late_brake), b(self.delta_cap),
             // EFFECTIVE value: the honest-cap law only runs with plain_rs.
             b(self.honest_cap && self.plain_rs), b(self.pool_anchor),
@@ -503,7 +495,7 @@ impl RuntimeGates {
             self.min_r, b(self.cc_pace), self.cc_pace_headroom, o(&self.react_cap),
             self.infl_cap, o(&self.infl_bdp), b(self.copa_feed), b(self.rs_attr),
             b(self.emit_batch), self.emit_burst, b(self.recov_mp),
-            b(self.recov_mp_law), b(self.recov_mp_live), b(self.recov_sp),
+            b(self.recov_mp_law), b(self.recov_sp),
             b(self.derived_sweep),
             // Levels and bounds print their resolved value, not a flag: a run's
             // setting must be readable off its own output.

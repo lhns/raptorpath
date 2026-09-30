@@ -77,9 +77,10 @@ fn c7x4() -> Vec<Spec> {
 /// candidate successor varies.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Arm {
-    /// `RWM_STORE_CAP_UNIFIED=0`: Σ over `active_paths()`, ×N pooled law.
+    /// Retired `RWM_STORE_CAP_UNIFIED=0` (pre plan 2b): Σ over `active_paths()`, ×N pooled law.
     Legacy,
-    /// `RWM_STORE_CAP_UNIFIED=1`: Σ over `live_paths()`, ×N pooled law.
+    /// Retired `RWM_STORE_CAP_UNIFIED=1`: Σ over `live_paths()`, ×N pooled law
+    /// (the engine's set since plan 2b, unconditionally).
     Unified,
     /// The pooled ceiling composed with the unified set: Σ over
     /// `live_paths()` without the ×N count multiplier, the N·knee ceiling
@@ -5168,7 +5169,8 @@ fn reliable_placement_does_not_filter_on_cwnd_headroom() {
 ///
 /// That cliff is the negative feedback the legacy arm gets for free: the
 /// moment every path is cwnd-saturated, the store cap drops ≥6× and admission
-/// stops until the paths drain. Under `RWM_STORE_CAP_UNIFIED` the Σ ranges
+/// stops until the paths drain. Under the unified set (the engine's since plan
+/// 2b; the retired `RWM_STORE_CAP_UNIFIED`) the Σ ranges
 /// over `live_paths()`, never empty while the transfer is up, so the empty
 /// state has no consequence and persists. That is all U changes about the
 /// gauge.
