@@ -5778,3 +5778,32 @@ async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
     })
     .await;
 }
+
+/// S10 / F2 (feed A) — the per-batch `Ack` arm carries the late-arrival
+/// credit too. After F1 a late arrival's Ack reads `(expected 0,
+/// received N)`; the phantom gap its absence charged arrives on the next
+/// Ack as `(2N, N)`. The pair sums to (2N, 2N): no loss. Through 949e06b
+/// the `(0, N)` Ack was skipped (`if le > 0`) and the next fed 50 % loss.
+#[tokio::test]
+async fn s10_per_batch_ack_carries_the_late_arrival_credit() {
+    s10_with_ctx(|ctx| {
+        for (e, r) in [(4u32, 4u32), (0, 4), (8, 4), (4, 4)] {
+            super::control_msg::handle_control_message(
+                0,
+                ControlMessage::Ack {
+                    block_id: 0,
+                    batch_seq: 0,
+                    received_ids: (0..r).collect(),
+                    echo_send_timestamp_us: 0,
+                    expected_count: e,
+                    received_count: r,
+                },
+                ctx,
+            );
+        }
+        let s = ctx.scheduler.lock();
+        let est = &s.path(0).unwrap().estimator;
+        assert_eq!(est.cumulative_loss(), 0.0, "Σe = Σr = 16: no loss was fed");
+    })
+    .await;
+}
