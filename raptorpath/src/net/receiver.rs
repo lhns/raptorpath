@@ -962,7 +962,7 @@ pub(crate) async fn run_receiver(
                                 .live_paths()
                                 .into_iter()
                                 .filter_map(|pid| {
-                                    sched.path(pid).map(|p| p.estimator.loss_rate())
+                                    sched.path(pid).map(|p| p.estimator.rx_loss_rate())
                                 })
                                 .fold(0.0_f64, f64::max)
                         };
@@ -1880,7 +1880,7 @@ pub(crate) async fn run_receiver(
                                     .live_paths()
                                     .into_iter()
                                     .filter_map(|pid| {
-                                        sched.path(pid).map(|p| p.estimator.loss_rate())
+                                        sched.path(pid).map(|p| p.estimator.rx_loss_rate())
                                     })
                                     .fold(0.0_f64, f64::max)
                             } else {
@@ -2473,7 +2473,9 @@ pub(crate) async fn run_receiver(
 
 /// The receiver's own loss feed (feed D): one arrived batch's
 /// `(expected, received)` from `PathBatchTracker`, i.e. loss on the
-/// INCOMING direction of `path_id`.
+/// INCOMING direction of `path_id`. It feeds the RX slot only
+/// (`LossEstimator::record_rx_batch`); the TX estimator belongs to this
+/// endpoint's sender and the outgoing direction.
 pub(crate) fn record_incoming_loss(
     sched: &mut crate::scheduler::Scheduler,
     path_id: u32,
@@ -2481,7 +2483,7 @@ pub(crate) fn record_incoming_loss(
     received: u32,
 ) {
     if let Some(p) = sched.path_mut(path_id) {
-        p.estimator.record_batch(expected, received);
+        p.estimator.record_rx_batch(expected, received);
     }
 }
 
