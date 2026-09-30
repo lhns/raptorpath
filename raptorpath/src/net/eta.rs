@@ -403,6 +403,14 @@ impl SenderEta {
         p.err_sig.sigma_us(Duration::from_micros(p.tau_us))
     }
 
+    /// The exit-flush rendering: [`SenderEta::line`] plus the ` final=1`
+    /// marker the receiver block uses (`net/recv_block.rs`), or `None` for a
+    /// gauge that never stamped (a receiver-role scheduler stays silent).
+    pub fn final_line(&self) -> Option<String> {
+        self.is_sender_site()
+            .then(|| self.line() + super::recv_block::FINAL_MARK)
+    }
+
     /// The `[ETA] site=sender` line. Cumulative: the last line is the
     /// reading — the `[SUCC]` / `[RFA]` convention.
     pub fn line(&self) -> String {
@@ -449,6 +457,59 @@ impl SenderEta {
             ));
         }
         s
+    }
+}
+
+/// The sender `[ETA]` exit flush, exactly once.
+///
+/// The sender line rides the 250 ms `[DIAG]` cadence (`net/diag.rs`), so
+/// without this a run loses its last partial cadence of samples and a
+/// transfer shorter than the cadence has no sender reading at all. Same
+/// discipline as the receiver block (`net/recv_block.rs`): one more line at
+/// the end of the sender task, marked `final=1`, through whichever door
+/// reaches it first — an explicit call at the loop's clean exits, or `Drop`
+/// (the perf harness ends the engine by dropping the task, reaching no exit
+/// arm) — and never twice. Gate: the cadence site's own (`RWM_DIAG`).
+///
+/// `render` reads the gauge; the sender wires it to the scheduler (drain
+/// the placement binds, then [`SenderEta::final_line`]) under a bounded
+/// `try_lock_for`, so a destructor can lose the line but never hang
+/// teardown.
+pub(crate) struct SenderEtaFlush<F: FnMut() -> Option<String>> {
+    on: bool,
+    render: F,
+    done: bool,
+}
+
+impl<F: FnMut() -> Option<String>> SenderEtaFlush<F> {
+    pub(crate) fn new(on: bool, render: F) -> Self {
+        Self { on, render, done: false }
+    }
+
+    /// `Some(line-or-none)` the first time (`None` inside when the gate is
+    /// closed or the gauge never stamped), `None` ever after.
+    pub(crate) fn take_final(&mut self) -> Option<Option<String>> {
+        if self.done {
+            return None;
+        }
+        self.done = true;
+        if !self.on {
+            return Some(None);
+        }
+        Some((self.render)())
+    }
+
+    /// Print the final line if it has not been taken yet.
+    pub(crate) fn flush_final(&mut self) {
+        if let Some(Some(l)) = self.take_final() {
+            eprintln!("{l}");
+        }
+    }
+}
+
+impl<F: FnMut() -> Option<String>> Drop for SenderEtaFlush<F> {
+    fn drop(&mut self) {
+        self.flush_final();
     }
 }
 
@@ -629,6 +690,43 @@ mod tests {
         }
         // 10 ms of samples at a 1 ms floor ⇒ ~11 admitted, not 1000.
         assert!(t.ring_len() <= 12, "decimation did not bind: {}", t.ring_len());
+    }
+
+    /// The sender exit flush is taken exactly once through whichever door
+    /// reaches it first, carries the marker as its last token, and a closed
+    /// gate or a never-stamped gauge prints nothing (but is still "taken").
+    #[test]
+    fn the_sender_final_line_is_taken_exactly_once() {
+        use std::cell::Cell;
+        let mut g = SenderEta::default();
+        assert_eq!(g.final_line(), None, "a receiver-role gauge stays silent");
+        g.stamp(1, 1_000, 500);
+        let fin = g.final_line().expect("a stamped gauge owes the line");
+        assert!(fin.starts_with("[ETA] site=sender "), "{fin}");
+        assert!(fin.ends_with(" final=1"), "{fin}");
+        assert_eq!(fin.matches("final=").count(), 1, "{fin}");
+        assert_eq!(fin.trim_end_matches(" final=1"), g.line(), "same line, plus the marker");
+
+        let calls = Cell::new(0u32);
+        let mut f = SenderEtaFlush::new(true, || {
+            calls.set(calls.get() + 1);
+            g.final_line()
+        });
+        assert_eq!(f.take_final(), Some(Some(fin.clone())));
+        assert_eq!(f.take_final(), None, "the second take must be a no-op");
+        f.flush_final();
+        drop(f);
+        assert_eq!(calls.get(), 1, "rendered more than once (the Drop door re-fired)");
+
+        let off_calls = Cell::new(0u32);
+        let mut off = SenderEtaFlush::new(false, || {
+            off_calls.set(off_calls.get() + 1);
+            Some("x".to_string())
+        });
+        assert_eq!(off.take_final(), Some(None), "gate closed: silent, but taken");
+        assert_eq!(off.take_final(), None);
+        drop(off);
+        assert_eq!(off_calls.get(), 0, "the gate-off flush must not even read the gauge");
     }
 
     /// The sender's `F̂` is the running max of stamped arrival times, and the

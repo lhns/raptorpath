@@ -911,7 +911,9 @@ pub(crate) fn report(
         // accumulated by `place_costs` are drained here and nowhere else --
         // `place_costs` itself only bumps a `Cell`. A sender that never
         // stamped a placement stays silent, so an absent line reads as an
-        // unreached feed and never as an unset gate.
+        // unreached feed and never as an unset gate. The line prints once
+        // more at the end of the sender task, marked `final=1`
+        // (`eta::SenderEtaFlush`).
         //
         // The pre-stated witness is `sigma_sender >= sigma_recv`
         // (`net/eta.rs`): the sender's error rides a round trip and the

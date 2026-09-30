@@ -2162,6 +2162,16 @@ async fn run_window_sender(
     // the single emission site for both `[WALL]` and `[CCAP]` — see that type
     // for why the teardown `select!` arms are the wrong site (the `perf`
     // harness takes neither).
+    // The sender `[ETA]` exit flush (`net/eta.rs` `SenderEtaFlush`):
+    // exactly once, `final=1`, at the clean exits below or on drop.
+    // Declared before every scheduler guard of the loop, so a guard held at
+    // a `return` is released before this destructor runs.
+    let eta_sched = scheduler.clone();
+    let mut eta_final = eta::SenderEtaFlush::new(pol.diag_on, move || {
+        let mut s = eta_sched.try_lock_for(Duration::from_secs(1))?;
+        s.drain_place_bind();
+        s.eta().final_line()
+    });
     let mut ccap = SenderTeardownGauges::new(
         // The `[CCAP]` line is emitted for either door into the brake,
         // because its `brake=<closed>/<ticks>` field is the primary readout
@@ -2992,6 +3002,8 @@ async fn run_window_sender(
                 for pid in control_broadcast_paths(&sched) {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
+                drop(sched);
+                eta_final.flush_final();
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
                 // this path and on every other way this sender can end —
@@ -3078,6 +3090,7 @@ async fn run_window_sender(
                     }
                     // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
                     // by `ccap`'s destructor, on every exit path.
+                    eta_final.flush_final();
                     info!("TUN closed");
                     return;
                 }
