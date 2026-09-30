@@ -365,8 +365,10 @@ Three measured facts qualify what these estimators are fed:
    (Section 2.2). The v9 readings at the dual cells are owed to the VM.
 2. **Per-path loss under-read the channel by 3–5×** in the estimator era it
    was measured in: per-leg ε̂ 0.0056 (c7) and 0.0184 (c8) against channel
-   values 0.025 and 0.048. The channel values are the realised per-datagram
-   rates (the harness's datagram counter reads within 3 % of p/(p+q)). On the
+   values 0.025 and 0.048. The channel values are the per-datagram rates:
+   the harness's datagram counter reads 2.60 % / 4.86 % against 2.53 % /
+   4.76 % (c2 100 MB, c3 25 MB, medians of n = 3; one 25 MB c2 run read
+   2.06 %). On the
    current feed the fed loss `plc` tracks that per-datagram truth at
    0.95–1.03× at c2, c3 and c8 (Section 11.3); the ε̂ gauges are not re-read.
 3. **The anchors are whole-transfer extrema** for transfers shorter than the
