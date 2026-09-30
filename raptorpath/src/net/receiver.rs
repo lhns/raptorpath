@@ -487,9 +487,8 @@ pub(crate) async fn run_receiver(
     // on blocks that are already done.
     // (parking_lot::Mutex, not RefCell: the spawned future must be Send.
     // Single-task access — never contended.)
-    let completed_blocks: parking_lot::Mutex<(std::collections::VecDeque<u64>, std::collections::HashSet<u64>)> =
-        parking_lot::Mutex::new((std::collections::VecDeque::new(), std::collections::HashSet::new()));
-    const COMPLETED_RING_CAP: usize = 512;
+    let completed_blocks: parking_lot::Mutex<CompletedBlocks> =
+        parking_lot::Mutex::new(CompletedBlocks::for_receiver());
 
     // Block-mode in-order delivery: block ids are strictly sequential per
     // peer, but blocks decode out of order — a block waiting on an ARQ repair
@@ -607,15 +606,7 @@ pub(crate) async fn run_receiver(
 
             recv_decoders.remove(&block_id);
             {
-                let mut done = completed_blocks.lock();
-                if done.1.insert(block_id) {
-                    done.0.push_back(block_id);
-                    while done.0.len() > COMPLETED_RING_CAP {
-                        if let Some(old) = done.0.pop_front() {
-                            done.1.remove(&old);
-                        }
-                    }
-                }
+                completed_blocks.lock().insert(block_id);
             }
             recv_stats
                 .blocks
@@ -2269,7 +2260,7 @@ pub(crate) async fn run_receiver(
                         // Debug-gated: the map update stays off the hot
                         // path unless composition logging is wanted.
                         if tracing::enabled!(tracing::Level::DEBUG)
-                            && !completed_blocks.lock().1.contains(&symbol.block_id)
+                            && !completed_blocks.lock().contains(&symbol.block_id)
                         {
                             let mut arr = block_arrival.lock();
                             let entry = arr
@@ -2283,7 +2274,7 @@ pub(crate) async fn run_receiver(
                         if !recv_decoders.contains_key(&symbol.block_id) {
                             // Late/spurious ARQ repair for a block that
                             // already decoded: drop, don't buffer.
-                            if completed_blocks.lock().1.contains(&symbol.block_id) {
+                            if completed_blocks.lock().contains(&symbol.block_id) {
                                 continue;
                             }
                             // Pre-BlockStart symbol: buffer for replay.
@@ -2385,7 +2376,7 @@ pub(crate) async fn run_receiver(
                 // done block (which the re-announce spares would then feed
                 // forever until the 30 s eviction).
                 if let Some(bid) = started_block {
-                    if completed_blocks.lock().1.contains(&bid) {
+                    if completed_blocks.lock().contains(&bid) {
                         let reack = ControlMessage::BlockResult {
                             block_id: bid,
                             success: true,
@@ -2476,4 +2467,89 @@ fn rank_probe(
     };
     *rank_prev_seen = highest_seen_seq;
     (holes, pivots, tail_holes)
+}
+
+/// Recently completed block ids (ring + set). Consulted for late ARQ
+/// repairs (dropped, not buffered) and for a re-announced BlockStart of an
+/// already-delivered block (re-acked, and NOT handed to
+/// `handle_control_message` — which would re-create a decoder, re-decode
+/// from the re-announce spares, and deliver the payload a second time).
+pub(crate) struct CompletedBlocks {
+    ring: std::collections::VecDeque<u64>,
+    set: std::collections::HashSet<u64>,
+    cap: usize,
+}
+
+impl CompletedBlocks {
+    /// The receiver's ring, sized by the SAME horizon as the sender's done
+    /// ring (`block_arq::DONE_RING_CAP`: at least the most blocks the
+    /// retention budget can hold, `RETAIN_MAX_BLOCKS_DERIVED`) — one shared
+    /// constant, not a second literal.
+    ///
+    /// What it covers: a delivered block X whose success BlockResult was
+    /// lost is re-announced every quiet period (≤ REANNOUNCE_TIMEOUT_MAX)
+    /// until a re-ack lands; X is recognised as long as fewer than
+    /// DONE_RING_CAP blocks complete after it in that time. Only
+    /// consecutive lost re-acks stretch that time, so forgetting X needs
+    /// ~DONE_RING_CAP / (blocks completed per re-announce period)
+    /// consecutive losses — the ring is bounded memory, not an absolute
+    /// guarantee.
+    pub(crate) fn for_receiver() -> Self {
+        Self::with_cap(crate::net::block_arq::DONE_RING_CAP)
+    }
+
+    pub(crate) fn with_cap(cap: usize) -> Self {
+        Self {
+            ring: std::collections::VecDeque::new(),
+            set: std::collections::HashSet::new(),
+            cap,
+        }
+    }
+
+    pub(crate) fn insert(&mut self, block_id: u64) {
+        if self.set.insert(block_id) {
+            self.ring.push_back(block_id);
+            while self.ring.len() > self.cap {
+                if let Some(old) = self.ring.pop_front() {
+                    self.set.remove(&old);
+                }
+            }
+        }
+    }
+
+    /// Already completed (a re-announce of it is re-acked, never re-decoded).
+    pub(crate) fn contains(&self, block_id: &u64) -> bool {
+        self.set.contains(block_id)
+    }
+}
+
+#[cfg(test)]
+mod completed_blocks_tests {
+    use super::CompletedBlocks;
+    use crate::net::block_arq::DONE_RING_CAP;
+
+    /// A block X whose success BlockResult was lost stays unconfirmed at the
+    /// sender, which keeps re-announcing it (no give-up) while later blocks
+    /// keep completing. The receiver must still recognise X — re-ack it and
+    /// NOT re-create a decoder (re-delivery) — for as long as the sender's
+    /// own done horizon: at least DONE_RING_CAP − 1 later completions
+    /// (≫ the old 512 literal).
+    #[test]
+    fn reannounced_delivered_block_is_recognised_across_the_sender_horizon() {
+        let mut done = CompletedBlocks::for_receiver();
+        let x = 1_000u64;
+        done.insert(x);
+        let later = DONE_RING_CAP as u64 - 1;
+        assert!(later > 512, "the horizon exceeds the old literal: {later}");
+        for b in x + 1..=x + later {
+            done.insert(b);
+        }
+        assert!(
+            done.contains(&x),
+            "block X forgotten after {later} later completions: its re-announce would be              re-decoded and delivered twice instead of re-acked"
+        );
+        // Bounded: one completion past the horizon forgets X.
+        done.insert(x + later + 1);
+        assert!(!done.contains(&x), "the ring stays bounded by the shared horizon");
+    }
 }

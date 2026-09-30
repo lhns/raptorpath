@@ -15,16 +15,21 @@
 //!   tolerant) or after an SRTT-scaled timeout (tail batches with no
 //!   later traffic).
 //! - **Retained blocks**: source data (plus any cached repair encoder)
-//!   for recently encoded blocks, in an LRU bounded by BYTES only
+//!   for every encoded block the receiver has NOT yet confirmed
+//!   (`on_block_done`), so fresh repairs can be minted post-hoc. Under the
+//!   block pipeline's reliable contract an unconfirmed block is NEVER
+//!   evicted: only confirmation releases retention. The byte budget
 //!   (`RETAIN_BUDGET_BYTES`: a `RETAIN_MAX_BYTES` = 4 MiB block-DATA
-//!   horizon plus per-block bookkeeping) so fresh repairs can be minted
-//!   post-hoc. The horizon is a byte horizon on purpose: a block-count cap
-//!   would give small-block geometries (Auto 16 KiB, Realtime 4 KiB) a
-//!   proportionally shorter repair horizon than Bulk's 64 KiB blocks.
-//!   Cached repair encoders are a rebuildable cache charged to the same
-//!   budget: under byte pressure they are dropped (LRU, never the block
-//!   being repaired) BEFORE any block data is evicted, so encoders never
-//!   shorten the data horizon; a dropped encoder is rebuilt on demand.
+//!   window plus per-block bookkeeping) is therefore the block pipeline's
+//!   FLOW-CONTROL WINDOW: when unconfirmed data fills it, `has_room` turns
+//!   false and the block sender stops producing blocks (back-pressure)
+//!   until a confirmation frees room (`room_notify` wakes it). The window
+//!   is a byte window on purpose: a block-count cap would give small-block
+//!   geometries (Auto 16 KiB, Realtime 4 KiB) a proportionally smaller
+//!   window than Bulk's 64 KiB blocks. Cached repair encoders are a
+//!   rebuildable cache charged to the same budget: under byte pressure
+//!   they are dropped (LRU, never the block being repaired) and rebuilt on
+//!   demand — they are the ONLY thing ever dropped for budget.
 //!   Rateless backends (RaptorQ, RLC) mint new repair symbols — any repair
 //!   fills any hole, strictly better than resending the lost symbol.
 //!   Fixed-rate backends (RS) resend the exact missing symbols,
@@ -32,8 +37,9 @@
 //! - **Margin**: repairs per loss event = missing + fractional-accumulated
 //!   ε̂ margin (continuous, no per-event ceil). Repair batches re-enter the
 //!   ledger, so a lost repair triggers the next round with doubled margin,
-//!   up to `MAX_REPAIR_ROUNDS`; the receiver's decoder-eviction timeout
-//!   stays as the final backstop.
+//!   up to `MAX_REPAIR_ROUNDS`; past that the (still retained) block
+//!   recovers through the idle re-announce, which never gives up on an
+//!   unconfirmed block (see `idle_reannounce`).
 //!
 //! A lost Ack is indistinguishable from a lost batch; the resulting
 //! spurious repair (~ε̂ of batches) is bounded overhead, and the receiver
@@ -44,11 +50,26 @@ use bytes::Bytes;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
-/// Block-DATA retention horizon (4 MiB — the historical Bulk horizon,
-/// 64 × 64 KiB). Every profile geometry at full block size keeps at least
-/// this much block data retained (`RETAIN_BUDGET_BYTES` adds the per-block
-/// bookkeeping on top). There is deliberately no block-count cap (see the
-/// module doc).
+/// Block-DATA retention window (4 MiB — the historical Bulk horizon,
+/// 64 × 64 KiB). Every profile geometry at full block size can hold at
+/// least this much unconfirmed block data (`RETAIN_BUDGET_BYTES` adds the
+/// per-block bookkeeping on top). There is deliberately no block-count cap
+/// (see the module doc).
+///
+/// Because unconfirmed blocks are never evicted, this is also the block
+/// pipeline's FLOW-CONTROL WINDOW W: the sender admits a new block only
+/// while unconfirmed data + that block fits the budget (`has_room`), so
+///
+///   goodput ≤ W / T_confirm
+///
+/// with T_confirm the encode→confirmation (success BlockResult) time of a
+/// block: ≈ 1 RTT clean, plus one loss-detect + repair flight per repair
+/// round needed. E.g. c3 (RTT 0.3–0.5 s under queueing):
+/// 4 MiB / 0.5 s ≈ 67 Mbit/s, above its 20 Mbit link.
+/// OPEN CONSTANT: W is a fixed 4 MiB with no derivation yet (candidate:
+/// BDP × expected repair depth). A path whose BDP × repair depth exceeds
+/// it is window-limited (visible in `BlockArq::window_gauge`), never
+/// evicted.
 pub const RETAIN_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// Smallest full block of any protocol-hint profile
 /// (`BlockProfile::from_hint(Realtime)`, 4 KiB; pinned by a test in
@@ -95,16 +116,10 @@ pub const LEDGER_MAX_BATCHES: usize = if RETAIN_MAX_BYTES / BLOCK_MIN_SYMBOL_SIZ
 /// Later same-path acks required to declare an un-acked batch lost
 /// (dup-ACK analogue; tolerates datagram reordering within a path).
 pub const LATER_ACK_LOSS_THRESHOLD: u8 = 3;
-/// Maximum repair rounds per block; beyond this the receiver's decoder
-/// eviction timeout is the backstop.
+/// Maximum loss-driven repair rounds per block (margin doubling per
+/// round). Not a give-up: past it the block stays retained and the idle
+/// re-announce keeps recovering it (see `idle_reannounce`).
 pub const MAX_REPAIR_ROUNDS: u8 = 3;
-/// Maximum idle re-announce rounds per block (BlockStart + spare repair for a
-/// still-un-decoded block once the sender goes quiet — see `idle_reannounce`).
-/// Kept generous: a lost BlockStart with all its symbols delivered-and-acked
-/// leaves the ARQ ledger empty, so this is the only recovery path for that
-/// block, and each round only clears if the re-announced BlockStart datagram
-/// itself survives the channel (~ε̂ loss per try).
-pub const MAX_REANNOUNCE_ROUNDS: u8 = 16;
 /// Per-round cap on idle re-announce spare symbols. The spare ramps
 /// geometrically toward a block's deficit (unknown to the sender), but each
 /// round's burst is capped small so a stuck block cannot flood a constrained
@@ -117,9 +132,14 @@ pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// `on_block_encoded` refuses done ids), so this ring cannot drop a retained
 /// block's bookkeeping. It is sized to the retention horizon's worst-case
 /// block count so a late loss event for a done block is recognised as
-/// "done" (suppressed silently) rather than miscounted as an eviction skip
+/// "done" (suppressed silently) rather than miscounted as an unknown-block skip
 /// (`repair_skips_evicted`) while its peers are still retained.
-const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
+///
+/// Shared with the receiver's completed-block ring
+/// (`receiver::CompletedBlocks::for_receiver`), so a re-announced block
+/// the receiver already delivered is recognised (re-acked, never
+/// re-decoded) over the same horizon.
+pub const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
     RETAIN_MAX_BLOCKS_DERIVED
 } else {
     1024
@@ -181,12 +201,11 @@ struct RetainedBlock {
     /// repair, or re-announce). Drives the idle re-announce: a block quiet for
     /// longer than the loss timeout while still un-decoded is stuck.
     last_activity: Instant,
-    /// Idle re-announce rounds already spent (separate from `rounds`: a lost
-    /// BlockStart is orphaned with an empty ledger, so ARQ repair rounds never
-    /// engage — this is its own recovery budget).
+    /// Idle re-announce rounds already spent (saturating; drives the spare
+    /// ramp only — re-announce never gives up on an unconfirmed block).
     reannounce_rounds: u8,
-    /// Key of this block in `BlockArq::retain_order` (and in `enc_order`
-    /// while an encoder is cached) — monotone LRU stamp.
+    /// Key of this block in `BlockArq::enc_order` while an encoder is
+    /// cached — monotone LRU stamp.
     lru_stamp: u64,
     /// Footprint charged for the cached encoder (0 when none is cached).
     enc_bytes: usize,
@@ -237,10 +256,8 @@ pub struct RepairPlan {
 pub struct BlockArq {
     ledger: BTreeMap<u64, BatchEntry>,
     retained: HashMap<u64, RetainedBlock>,
-    /// LRU order: stamp -> block id (first = coldest). O(log n) touch/evict.
-    retain_order: BTreeMap<u64, u64>,
-    /// LRU order of the blocks that currently cache an encoder (same
-    /// stamps) — the encoder-drop queue. O(log n).
+    /// LRU order of the blocks that currently cache an encoder (stamp ->
+    /// block id, first = coldest) — the encoder-drop queue. O(log n).
     enc_order: BTreeMap<u64, u64>,
     /// Next LRU stamp (monotone).
     next_stamp: u64,
@@ -250,9 +267,15 @@ pub struct BlockArq {
     encoder_bytes: usize,
     /// Cached encoders dropped under byte pressure (rebuilt on demand).
     encoder_drops: u64,
-    /// `plan_repairs` loss events skipped because the block was no longer
-    /// retained (evicted by the byte horizon) and not known done.
+    /// `plan_repairs` loss events skipped because the block was neither
+    /// retained nor known done. Blocks are never evicted, so this is a
+    /// should-be-zero invariant signal (only a done-ring overflow or a
+    /// never-retained id can produce it).
     evicted_skips: u64,
+    /// Admission checks (`has_room`) and how many found the window full —
+    /// the flow-control clamp's bind-fraction gauge (`window_gauge`).
+    room_checks: u64,
+    room_full: u64,
     /// Blocks decoded (or abandoned) — loss events for these are ignored.
     done_ring: VecDeque<u64>,
     done_set: HashSet<u64>,
@@ -260,6 +283,10 @@ pub struct BlockArq {
     margin_debt: f64,
     max_ledger: usize,
     max_retained_bytes: usize,
+    /// Wakes the block sender parked on a full retention window: every
+    /// `on_block_done` that frees retained data stores a permit
+    /// (`notify_one`), so a check-then-wait sender cannot miss it.
+    room: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl BlockArq {
@@ -271,19 +298,53 @@ impl BlockArq {
         Self {
             ledger: BTreeMap::new(),
             retained: HashMap::new(),
-            retain_order: BTreeMap::new(),
             enc_order: BTreeMap::new(),
             next_stamp: 0,
             data_bytes: 0,
             encoder_bytes: 0,
             encoder_drops: 0,
             evicted_skips: 0,
+            room_checks: 0,
+            room_full: 0,
             done_ring: VecDeque::new(),
             done_set: HashSet::new(),
             margin_debt: 0.0,
             max_ledger,
             max_retained_bytes,
+            room: std::sync::Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Flow-control admission: can a new block of `next_block_bytes` data
+    /// be admitted without UNCONFIRMED data (+ bookkeeping) exceeding the
+    /// budget?
+    ///
+    ///   has_room(b) = retained.is_empty()
+    ///              ∨ data_bytes + b + RETAIN_PER_BLOCK_OVERHEAD ≤ budget
+    ///
+    /// Cached encoders are not counted (they are dropped first and never
+    /// block admission). An empty window always admits, so a block larger
+    /// than the budget cannot deadlock the sender. Records the gauge.
+    pub fn has_room(&mut self, next_block_bytes: usize) -> bool {
+        let room = self.retained.is_empty()
+            || self.data_bytes + next_block_bytes + RETAIN_PER_BLOCK_OVERHEAD
+                <= self.max_retained_bytes;
+        self.room_checks += 1;
+        if !room {
+            self.room_full += 1;
+        }
+        room
+    }
+
+    /// (admission checks, checks that found the window full) — the
+    /// flow-control window's bind-fraction gauge (diagnostics).
+    pub fn window_gauge(&self) -> (u64, u64) {
+        (self.room_checks, self.room_full)
+    }
+
+    /// Notify handle the block sender waits on while the window is full.
+    pub fn room_notify(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.room.clone()
     }
 
     // ------------------------------------------------------------------
@@ -320,21 +381,20 @@ impl BlockArq {
                 enc_bytes: 0,
             },
         );
-        self.retain_order.insert(stamp, block_id);
         self.enforce_budget(None);
     }
 
-    /// Enforce the byte budget, in two tiers:
+    /// Enforce the byte budget on the CACHE only: while data + encoders
+    /// exceed the budget, drop the coldest cached encoder other than
+    /// `protect`'s (the block being repaired right now). Encoders are a
+    /// rebuildable cache — dropping one costs a rebuild, never a repair.
     ///
-    /// 1. While data + encoders exceed the budget, drop the coldest cached
-    ///    encoder other than `protect`'s (the block being repaired right
-    ///    now). Encoders are a rebuildable cache — dropping one costs a
-    ///    rebuild, never a repair.
-    /// 2. Only while block data + bookkeeping ALONE exceed the budget,
-    ///    evict whole blocks coldest-first (dropping their encoders too).
-    ///
-    /// So encoders never shorten the data horizon. Memory bound: the budget
-    /// plus at most the protected block's encoder footprint.
+    /// Block data is NEVER evicted: an unconfirmed block leaves only via
+    /// `on_block_done`. The data side is bounded by the sender's admission
+    /// gate (`has_room`), so the memory bound is the budget, plus at most
+    /// one ungated block (the shutdown flush; or the one packet by which a
+    /// block may overrun `max_block_size`), plus the protected block's
+    /// encoder footprint.
     fn enforce_budget(&mut self, protect: Option<u64>) {
         while self.data_bytes + self.encoder_bytes > self.max_retained_bytes {
             let victim = self
@@ -353,29 +413,17 @@ impl BlockArq {
                 self.encoder_drops += 1;
             }
         }
-        while self.data_bytes > self.max_retained_bytes {
-            let Some((stamp, oldest)) = self.retain_order.pop_first() else {
-                break;
-            };
-            self.enc_order.remove(&stamp);
-            if let Some(rb) = self.retained.remove(&oldest) {
-                self.data_bytes -= rb.data_charge();
-                self.encoder_bytes -= rb.enc_bytes;
-            }
-        }
     }
 
-    /// Move a block to the hot end of the LRU order (it is being repaired —
-    /// keep it alive for potential further rounds), charge any encoder
+    /// Move a block to the hot end of the encoder LRU order (it is being
+    /// repaired — keep its encoder for further rounds), charge any encoder
     /// footprint it just materialized (`added`), then enforce the budget
     /// with this block's encoder protected. O(log n).
     fn touch_retained(&mut self, block_id: u64, added: usize) {
         let stamp = self.next_stamp;
         if let Some(rb) = self.retained.get_mut(&block_id) {
-            self.retain_order.remove(&rb.lru_stamp);
             self.enc_order.remove(&rb.lru_stamp);
             rb.lru_stamp = stamp;
-            self.retain_order.insert(stamp, block_id);
             if rb.encoder.is_some() {
                 self.enc_order.insert(stamp, block_id);
             }
@@ -385,14 +433,16 @@ impl BlockArq {
         self.enforce_budget(Some(block_id));
     }
 
-    /// Block decoded successfully (or abandoned): drop retained data and
-    /// suppress any pending/late loss events for it.
+    /// Block confirmed by the receiver (success BlockResult): drop its
+    /// retained data, suppress pending/late loss events for it, and wake
+    /// the block sender if it is parked on a full window. This is the ONLY
+    /// way a block's data leaves retention.
     pub fn on_block_done(&mut self, block_id: u64) {
         if let Some(rb) = self.retained.remove(&block_id) {
             self.data_bytes -= rb.data_charge();
             self.encoder_bytes -= rb.enc_bytes;
-            self.retain_order.remove(&rb.lru_stamp);
             self.enc_order.remove(&rb.lru_stamp);
+            self.room.notify_one();
         }
         if self.done_set.insert(block_id) {
             self.done_ring.push_back(block_id);
@@ -532,8 +582,16 @@ impl BlockArq {
     /// decodes (no decoder without its params). Once the sender goes quiet,
     /// this re-sends BlockStart (via the RepairPlan's defensive re-announce)
     /// plus a small ε̂-sized spare repair for any block still retained (i.e.
-    /// not `on_block_done`) and quiet for `timeout_for(path)`. Bounded by
-    /// `MAX_REANNOUNCE_ROUNDS`; stops the instant the block completes.
+    /// not `on_block_done`) and quiet for `timeout_for(path)`. Stops the
+    /// instant the block completes.
+    ///
+    /// NO give-up: under the reliable contract a retained block keeps
+    /// re-announcing on the idle clock for as long as it is unconfirmed.
+    /// The receiver never refuses a block (its decoder GC forgets a stale
+    /// decoder and a re-announced BlockStart re-creates it; a block it
+    /// already delivered is re-acked), so a sender-side give-up would only
+    /// pin the flow-control window forever. Each round's burst stays capped
+    /// (`REANNOUNCE_PER_ROUND_CAP`), one round per quiet period.
     ///
     /// `now - last_activity >= timeout` gates it above normal completion (a
     /// healthy block is acked+decoded, hence `on_block_done`-removed, within
@@ -552,10 +610,7 @@ impl BlockArq {
         let candidates: Vec<u64> = self
             .retained
             .iter()
-            .filter(|(_, rb)| {
-                rb.reannounce_rounds < MAX_REANNOUNCE_ROUNDS
-                    && now.duration_since(rb.last_activity) >= timeout_for(default_path)
-            })
+            .filter(|(_, rb)| now.duration_since(rb.last_activity) >= timeout_for(default_path))
             .map(|(&id, _)| id)
             .collect();
         for block_id in candidates {
@@ -602,7 +657,7 @@ impl BlockArq {
                     .take(n_spare as usize)
                     .collect()
             };
-            rb.reannounce_rounds += 1;
+            rb.reannounce_rounds = rb.reannounce_rounds.saturating_add(1);
             rb.last_activity = now;
             plans.push(RepairPlan {
                 block_id,
@@ -653,10 +708,10 @@ impl BlockArq {
         (self.data_bytes, self.encoder_bytes, self.encoder_drops)
     }
 
-    /// Loss events `plan_repairs` skipped because their block had already
-    /// left the retention byte horizon (evicted, not done) — no repair could
-    /// be minted; recovery then falls to the receiver's decoder eviction
-    /// (diagnostics; also logged once per `EVICTED_SKIP_LOG_EVERY`).
+    /// Loss events `plan_repairs` skipped because their block was neither
+    /// retained nor known done. Blocks are never evicted for budget, so
+    /// this must stay 0 (diagnostics; also logged once per
+    /// `EVICTED_SKIP_LOG_EVERY`).
     pub fn repair_skips_evicted(&self) -> u64 {
         self.evicted_skips
     }
@@ -691,10 +746,10 @@ impl BlockArq {
                 continue;
             }
             let Some(rb) = self.retained.get_mut(&block_id) else {
-                // Evicted by the retention byte horizon: no source data, no
-                // repair. The receiver's decoder eviction timeout is the only
-                // backstop, so make the condition visible (counted; logged
-                // once per EVICTED_SKIP_LOG_EVERY, never per block).
+                // Neither retained nor known done (should not happen: blocks
+                // are never evicted for budget). No source data, no repair —
+                // make it visible (counted; logged once per
+                // EVICTED_SKIP_LOG_EVERY, never per block).
                 self.evicted_skips += 1;
                 if self.evicted_skips % EVICTED_SKIP_LOG_EVERY == 1 {
                     tracing::warn!(
@@ -702,7 +757,7 @@ impl BlockArq {
                         skips_total = self.evicted_skips,
                         retained_blocks = self.retained.len(),
                         retained_bytes = self.data_bytes + self.encoder_bytes,
-                        "block ARQ: repair skipped for a block evicted from the retention horizon"
+                        "block ARQ: repair skipped for a block neither retained nor done"
                     );
                 }
                 continue;
