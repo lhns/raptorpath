@@ -136,7 +136,7 @@ run_one() { # cell hint arm
     rc=$?
     cot_a=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     echo "COTENANT $name rep=$REP before=$cot_b after=$cot_a load=$(cut -d" " -f1-3 /proc/loadavg)" >> "$OUT"
-    grep -aE "summary|\"dnf\"|CPU:|GUARD|--- RWM-C perf" /tmp/br-drv.out >> "$OUT" || true
+    grep -aE "summary|\"dnf\"|CPU:|GUARD|\[TRUTH\]|--- RWM-C perf" /tmp/br-drv.out >> "$OUT" || true
     echo "RUNTIME $name rep=$REP attempt=$attempt $(( $(date +%s) - t0 ))s rc=$rc" >> "$OUT"
     [ "$rc" = "0" ] || echo "ABORT-RC $name rep=$REP rc=$rc (row void, battery goes on)" >> "$OUT"
     local base="$DDIR/${name}-s${SEED_ARG}-r${REP}-a${attempt}"

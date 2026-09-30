@@ -84,9 +84,14 @@ def parse(tmp, cell, size, arm, seed, rep, **kw):
     s = os.path.join(tmp, "s-%s-%s-%s-%d-%d.log" % (cell, size, arm, seed, rep))
     open(c, "w").write(kw.pop("cli"))
     open(s, "w").write(kw.pop("srv"))
+    extra = []
+    if "qtxt" in kw:
+        qp = os.path.join(tmp, "q-%s-%s-%s-%d-%d.txt" % (cell, size, arm, seed, rep))
+        open(qp, "w").write(kw.pop("qtxt"))
+        extra = [qp]
     out = subprocess.run(
         [sys.executable, os.path.join(HERE, "r_parse.py"),
-         cell, size, arm, str(seed), str(rep), c, s],
+         cell, size, arm, str(seed), str(rep), c, s] + extra,
         capture_output=True, text=True, check=True).stdout.strip()
     return out, json.loads(out)
 
@@ -135,6 +140,27 @@ def main():
     check("W4: [RFA] gen = 0 (RWM_GEN=0 took)", r["rfa_gen"] == "0")
     check("gate echoes captured two-sided",
           r["g_cli_RWM_DELTA"] == "unset" and r["g_srv_RWM_DELTA"] == "unset")
+    check("no q.txt argument: truth_rcvbuf_drops is None, no per-leg columns",
+          r.get("truth_rcvbuf_drops", "absent") is None and "truth_loss_p0" not in r)
+
+    print("\n=== 1b -- the per-datagram loss truth from the q.txt capture")
+    _, r = parse(
+        tmp, "sc2", "s18", "CTL", 42, 9,
+        cli=client_log(mbps=84.0, seconds=0.171, runs=40, delta="unset", chi="0",
+                       src=60000, cod=0, ack=59900, chimax=0.0),
+        srv=server_log(delta="unset", chi="0", dec_n=2, dec_avg=900.0,
+                       src_n=812, src_avg=11400.0, preempt=60),
+        qtxt=("== CLI0 (data-dir egress)\n"
+              "qdisc netem 1: root\n Sent 1 bytes 97400 pkt (dropped 520, overlimits 0)\n"
+              "== TRUTH (per-datagram loss per data leg; lib.sh truth_line)\n"
+              + "    [TRUTH] leg=0 dev=cli0 egress_dgrams=100000 egress_skbs=20000 gso=5.00 "
+          "netem_sent_dgrams=97400 netem_dropped_skbs=520 backlog=0 lost=2600 loss=0.026000 "
+          "rcvbuf_drops=3 rcvbuf_scope=netns\n"))
+    check("truth_loss_p0 is the [TRUTH] loss, not netem's skb counter",
+          r["truth_loss_p0"] == 0.026 and r["truth_lost_p0"] == 2600, str(r.get("truth_loss_p0")))
+    check("truth_gso_p0 and truth_egress_p0 carried",
+          r["truth_gso_p0"] == 5.0 and r["truth_egress_p0"] == 100000)
+    check("truth_rcvbuf_drops carried (per netns)", r["truth_rcvbuf_drops"] == 3)
 
     print("\n=== 2 -- MID at c3hg/1.8 MB: r reaches the wire, and the pin echoes")
     _, r = parse(

@@ -2,7 +2,7 @@
 """Per-invocation parser for THE r > 0 BATTERY (pre-registration "THE r > 0
 BATTERY — PRE-REGISTRATION", in git history before 22b56d9; paper §4.9).
 
-    r_parse.py <cell> <size> <arm> <seed> <rep> <client.log> <server.log>
+    r_parse.py <cell> <size> <arm> <seed> <rep> <client.log> <server.log> [q.txt]
 
 Emits ONE line of JSON on stdout. A SEPARATE parser from `lat_parse.py` and
 `ccand_parse.py` on purpose: those are other batteries' instruments and their
@@ -59,7 +59,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from l1common import last_with, numeric_prefix, q, read  # noqa: E402
+from l1common import last_with, numeric_prefix, q, read, truth_columns  # noqa: E402
 from l1common import field as ftok_  # noqa: E402
 
 
@@ -211,6 +211,12 @@ def main(argv):
               "RWM_TAIL_BUDGET", "RWM_MIN_R", "RWM_DELTA_CAP"):
         row["g_cli_" + k] = ftok(gc, k)
         row["g_srv_" + k] = ftok(gs, k)
+
+    # ── Per-datagram loss truth (additive) ──────────────────────────────
+    # `truth_loss_p<i>` etc. from the `[TRUTH]` lines of the optional 8th
+    # argument (the invocation's `-q.txt` capture); None when absent. netem's
+    # own counters are per skb and are never read as truth.
+    row.update(truth_columns(read(argv[7]) if len(argv) > 7 else []))
 
     sys.stdout.write(json.dumps(row, separators=(", ", ": ")) + "\n")
     return 0

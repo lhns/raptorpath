@@ -271,7 +271,7 @@ run_one() { # cell size arm
   sudo env SEED="$SEED_ARG" RWM_GEN=0 $envs \
       RWM_DIAG=1 RWM_FDIAG=1 RWM_ACKDIAG=1 RWM_WALLDIAG=1 \
       bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" "$runs" "$mode" 2>&1 \
-    | grep -aE "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|BUSY" >> "$OUT"
+    | grep -aE "summary|\"dnf\"|CPU:|GUARD|QDISC|QCAP|\[TRUTH\]|BUSY" >> "$OUT"
   # The transfer's rc, not the grep's. `${PIPESTATUS[0]}` is read on the very
   # next line because any command in between clobbers it, and a `|| true` here
   # would silently report rc = 0 for every invocation.
@@ -422,7 +422,7 @@ check_arm() { # cell size arm rc
   [ "$rc" != "0" ] && { echo "W10-RC $name rep=$REP rc=$rc" >> "$OUT"; FAILS="$FAILS W10-RC"; }
 
   local parsed
-  parsed=$(python3 ./r_parse.py "$cell" "$size" "$arm" "$SEED_ARG" "$REP" "$C" "$S" 2>/dev/null)
+  parsed=$(python3 ./r_parse.py "$cell" "$size" "$arm" "$SEED_ARG" "$REP" "$C" "$S" /tmp/rwm-q.txt 2>/dev/null)
   if [ -z "$parsed" ]; then
     echo "RPARSE-FAIL $name rep=$REP" >> "$OUT"; FAILS="$FAILS RPARSE-FAIL"
     parsed='{}'

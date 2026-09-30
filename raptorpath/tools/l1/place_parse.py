@@ -2,7 +2,7 @@
 """Per-invocation parser for the placement battery (Track A; the placement
 law is paper §5.7).
 
-    place_parse.py <cell> <arm> <seed> <rep> <client.log> <server.log>
+    place_parse.py <cell> <arm> <seed> <rep> <client.log> <server.log> [q.txt]
 
 Emits one `PLACERESULT ` + JSON line.
 
@@ -102,6 +102,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # (e.g. the receiver's `[LAT] ... final=1` flush followed on one line by
 # "cleaning up TUN interface").
 from l1common import field, fnum, is_final, last_with, read, split_interleaved  # noqa: E402,F401
+from l1common import truth_columns  # noqa: E402
 
 SHIPPED_SIGMA_OVER_REF = 0.19238  # T = 0.15 <=> sigma_e = 0.19238*ref (paper §5.7)
 SQRT6_OVER_PI = 6.0 ** 0.5 / 3.141592653589793
@@ -455,6 +456,9 @@ def parse(cell, arm, seed, rep, cli, srv):
 def main(argv):
     cell, arm, seed, rep, clog, slog = argv[:6]
     row = parse(cell, arm, seed, rep, read(clog), read(slog))
+    # Per-datagram loss truth (additive): `truth_loss_p<i>` etc. from the
+    # `[TRUTH]` lines of the optional 7th argument (the `-q.txt` capture).
+    row.update(truth_columns(read(argv[6]) if len(argv) > 6 else []))
     print("PLACERESULT " + json.dumps(row))
     return 0
 

@@ -334,6 +334,27 @@ with tempfile.TemporaryDirectory() as td:
                           "c7", "T0", "7", "4", os.path.join(td, "nope"), s],
                          capture_output=True, text=True)
     check(out.returncode == 0 and '"abort": true' in out.stdout, "a missing log is an ABORT row")
+    leg0 = ("    [TRUTH] leg=0 dev=cli0 egress_dgrams=100000 egress_skbs=20000 gso=5.00 "
+          "netem_sent_dgrams=97400 netem_dropped_skbs=520 backlog=0 lost=2600 loss=0.026000 "
+          "rcvbuf_drops=3 rcvbuf_scope=netns\n")
+    leg1 = leg0.replace("leg=0 dev=cli0", "leg=1 dev=cli1").replace("loss=0.026000", "loss=0.048000")
+    qp = os.path.join(td, "q.txt")
+    with open(qp, "w") as f:
+        f.write("== TRUTH (per-datagram loss per data leg; lib.sh truth_line)\n" + leg0 + leg1)
+    out = subprocess.run([sys.executable, os.path.join(HERE, "place_parse.py"),
+                          "c8", "CTL", "7", "4", c, s, qp],
+                         capture_output=True, text=True)
+    j = json.loads(out.stdout[len("PLACERESULT "):])
+    check(out.returncode == 0 and j["truth_loss_p0"] == 0.026 and j["truth_loss_p1"] == 0.048,
+          "q.txt argument: per-leg truth_loss_p<i> columns")
+    check(j["truth_gso_p0"] == 5.0 and j["truth_rcvbuf_drops"] == 3,
+          "q.txt argument: gso and rcvbuf columns")
+    out = subprocess.run([sys.executable, os.path.join(HERE, "place_parse.py"),
+                          "c7", "T0", "7", "4", c, s],
+                         capture_output=True, text=True)
+    j = json.loads(out.stdout[len("PLACERESULT "):])
+    check(j.get("truth_rcvbuf_drops", "absent") is None,
+          "no q.txt argument: the truth column is None, not absent")
 
 print("test_place_parse: %d checks, %d failed" % (CHECKS, len(FAILS)))
 sys.exit(1 if FAILS else 0)
