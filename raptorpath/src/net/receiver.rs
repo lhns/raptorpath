@@ -2195,11 +2195,26 @@ pub(crate) async fn run_receiver(
                     {
                         ctld_last_report = Instant::now();
                         let mut line = String::from("[CTLD]");
-                        for pid in recv_scheduler.lock().live_paths() {
+                        let live = recv_scheduler.lock().live_paths();
+                        for &pid in &live {
                             if let Some((rx, tx)) =
                                 recv_transport.datagram_frame_stats(pid)
                             {
                                 line.push_str(&format!(" p{pid} tx={tx} rx={rx}"));
+                            }
+                        }
+                        // S10 local-drop token, appended after the pairs:
+                        // `dgrx<id>[fr=<quinn frame_rx> rd=<app read>
+                        // ev=<fr − rd>]` — datagrams quinn accepted but the
+                        // app never read (its incoming buffer dropped them,
+                        // plus what is still buffered). The tracker reads
+                        // them as loss; they are not wire loss.
+                        for &pid in &live {
+                            if let Some((fr, rd)) = recv_transport.datagram_rx_audit(pid) {
+                                line.push_str(&format!(
+                                    " dgrx{pid}[fr={fr} rd={rd} ev={}]",
+                                    fr.saturating_sub(rd)
+                                ));
                             }
                         }
                         crate::readout!("{line}");
