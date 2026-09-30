@@ -177,28 +177,20 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     let sched = scheduler.lock();
                     let live = sched.live_paths();
                     let n = live.len().max(1);
-                    // The path set. `active_paths()` = active and
-                    // `available() > 0` (cwnd − in_flight): the data-scheduling
-                    // filter. Using it for a law is the cwnd-saturation trap
-                    // (see the `live_paths()` decl): a wire-bound sender is
-                    // cwnd-saturated by definition, so the filter drops the
-                    // paths carrying the transfer, mid-transfer.
-                    //
-                    // `RWM_STORE_CAP_UNIFIED` is the A/B: off keeps
-                    // `active_paths()` here (the default), on reads
-                    // `live_paths()` — the set `n_live` is counted from, so
-                    // the path-scaled law's Σ-base and its ×N multiplier range
-                    // over the same paths.
+                    // The path set is the channel's membership
+                    // (`channel_paths` = `live_paths()`), the set `n_live` is
+                    // counted from: `active_paths()` (`available() > 0`) is
+                    // the placement filter, and a wire-bound sender is
+                    // cwnd-saturated by definition, so it would drop the paths
+                    // carrying the transfer (Σ = 0 → the boot-cap cliff).
+                    // The `[SF]` gauge still counts how often the placement
+                    // filter is short of membership at this refresh.
                     let act = sched.active_paths();
                     store_cap_sf_record(live.len(), act.len());
                     // Warm-anchor slots for the honest per-path cap, in
                     // path-set order — collected here, evaluated once by
                     // `honest_cap_terms` below (the law lives there).
-                    let (bdp, slots) = store_cap_pool_inputs(
-                        &sched,
-                        pol.honest_cap_on,
-                        pol.store_cap_unified,
-                    );
+                    let (bdp, slots) = store_cap_pool_inputs(&sched, pol.honest_cap_on);
                     let terms =
                         honest_cap_terms(&mut scs.percap_k, &slots, dnow, pol.store_bdp_gain);
                     // hsum = 0.0 whenever honest_cap_on is false, and the
@@ -873,14 +865,11 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         let mut mp_n_paths: usize = 1;
         let srtt_us = {
             let sched = scheduler.lock();
-            // `RWM_RECOV_MP_LIVE`: the law's N and clock snapshot must not
-            // lose a cwnd-saturated path (available() == 0 collapses the law
-            // to the N = 1 bypass mid-transfer). Off = the active_paths() arm.
-            let ids = if pol.recov_mp_live {
-                sched.live_paths()
-            } else {
-                channel_paths(&sched)
-            };
+            // The law's N and clock snapshot range over the channel's
+            // membership (`recovery_clock_paths`): a cwnd-saturated path
+            // (available() == 0) must not collapse the law to the N = 1
+            // bypass mid-transfer.
+            let ids = recovery_clock_paths(&sched);
             if pol.recov_mp_law || pol.recov_sp || pol.diag_on {
                 mp_n_paths = ids.len();
                 for id in &ids {
@@ -895,11 +884,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                     }
                 }
             }
-            // The pooled clock reads `recovery_clock_paths` (live paths)
-            // whatever `RWM_RECOV_MP_LIVE` selects for the hole law's
-            // snapshot.
-            let clock_ids = recovery_clock_paths(&sched);
-            let pooled: Vec<u64> = clock_ids
+            // The pooled clock reads the same set.
+            let pooled: Vec<u64> = ids
                 .iter()
                 .filter_map(|id| sched.path(*id))
                 .map(|p| p.estimator.rtt().as_micros() as u64)
@@ -1466,7 +1452,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // Reduce repair_debt proportionally — ACK'd symbols no longer need proactive coverage
         let newly_acked = ack - prev_ack;
         // Compute the repair rate and the derived window target (paper §4.8)
-        // from the worst (highest-loss) active path, under a single lock
+        // from the worst (highest-loss) channel path, under a single lock
         // acquisition.
         let derived_window = {
             let mut ctrl = fec_controller.lock();

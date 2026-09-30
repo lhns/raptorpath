@@ -1914,13 +1914,6 @@ async fn run_window_sender(
              the cumulative frontier — slot release, never recoverability)"
         );
     }
-    if pol.store_cap_unified {
-        // Mechanism-liveness echo (measurement-discipline rule 1): asserted
-        // present on the unified arm, absent on the default arm.
-        info!(
-            "unified store-cap path set ACTIVE (RWM_STORE_CAP_UNIFIED: the plain dyn-store-cap phase's Sigma-anchor base and honest per-path cap sum iterate live_paths() instead of the cwnd-saturation-filtered active_paths(), so the path-scaled law's Sigma-base and its xN multiplier range over the SAME set; Copa-sole, capw and pool-anchor already read live_paths(); RWM_STORE_CAP_UNIFIED=0 = the shipped-default control arm)"
-        );
-    }
     if pol.three_term_on {
         // Mechanism-liveness echo (measurement-discipline rules 1/15): asserted
         // present on the three-term arm, absent on the default arm; the
@@ -2082,14 +2075,6 @@ async fn run_window_sender(
         info!(
             "single-path hole-law suppression ACTIVE (RWM_RECOV_SP: RFC9002 \
              time-threshold on the live flight at N=1; time channel only)"
-        );
-    }
-    if pol.recov_mp_live {
-        // Mechanism-liveness echo (measurement-discipline rule 1).
-        info!(
-            "recovery clocks on LIVE paths ACTIVE (RWM_RECOV_MP_LIVE: hole-law \
-             N + per-path clock snapshot ignore the available()>0 saturation \
-             filter)"
         );
     }
     // Per-path delivered-seq evidence for the RFC 9002 §6.1.1 packet
@@ -2391,9 +2376,12 @@ async fn run_window_sender(
         // available() > 0*. Iterating it would ask a question whose answer is
         // false by construction on every tick: the gate would resolve on, cost
         // a lock, and never brake — a null effect that reads like a null
-        // result. That is why the composed brake reads `live_paths()`.
-        // `cwnd_full` under this arm means: every live path is at or above
-        // its own congestion window.
+        // result. That is why the brake reads the channel's membership
+        // (`channel_paths` = `live_paths()`) — as does the gain·BDP per-path
+        // test, whose full-test must not drop a cwnd-full path's in-flight
+        // from Σ in_flight nor treat an all-saturated channel as the empty
+        // (vacuously full) set. `cwnd_full` under this arm means: every live
+        // path is at or above its own congestion window.
         //
         // `RWM_LATE_BRAKE` arms the same brake without the composed pool law
         // (`composed_cap` also forces `three_term_on`). Everything below reads
@@ -2406,7 +2394,7 @@ async fn run_window_sender(
             let mut sched = scheduler.lock();
             let mut infl = 0u64;
             let mut per_path: Vec<(u64, u64)> = Vec::new();
-            let ids = if cwnd_brake { sched.live_paths() } else { channel_paths(&sched) };
+            let ids = channel_paths(&sched);
             for id in ids {
                 if let Some(p) = sched.path_mut(id) {
                     p.expire_in_flight();

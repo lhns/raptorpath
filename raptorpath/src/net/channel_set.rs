@@ -24,7 +24,7 @@ use std::time::Duration;
 /// reader in this module enumerates it, and so do the recovery clocks
 /// ([`super::recovery_clock_paths`]).
 pub fn channel_paths(sched: &Scheduler) -> Vec<PathId> {
-    sched.active_paths()
+    sched.live_paths()
 }
 
 /// The worst-ε channel path (max `estimator.loss_rate()`, ties to the last
@@ -122,17 +122,17 @@ pub fn control_broadcast_paths(sched: &Scheduler) -> Vec<PathId> {
 /// BDP anchors, and (when `want_k`, the honest per-path cap is live) one
 /// warm-anchor slot per path in set order for `honest_cap_terms`.
 ///
-/// `unified` is the `RWM_STORE_CAP_UNIFIED` A/B: on reads `live_paths()`,
-/// off reads [`channel_paths`].
+/// Over [`channel_paths`] — the set `n_live` is counted from — so the
+/// path-scaled law's Σ-base and its ×N multiplier range over the same
+/// paths, and a cwnd-full path keeps its warm anchor in the Σ (no Σ = 0 →
+/// boot-cap cliff).
 pub fn store_cap_pool_inputs(
     sched: &Scheduler,
     want_k: bool,
-    unified: bool,
 ) -> (f64, Vec<Option<super::HonestCapPath>>) {
-    let set = if unified { sched.live_paths() } else { channel_paths(sched) };
     let mut bdp = 0.0f64;
     let mut slots: Vec<Option<super::HonestCapPath>> = Vec::new();
-    for id in set {
+    for id in channel_paths(sched) {
         if let Some(p) = sched.path(id) {
             if let Some(a) = p.copa_bdp_anchor() {
                 bdp += a;

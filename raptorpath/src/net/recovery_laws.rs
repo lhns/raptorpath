@@ -270,13 +270,15 @@ pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
 }
 
 /// The path set the sender's recovery clocks pool over: the tail-sweep
-/// clock, the per-seq retransmit cooldown's pooled SRTT/jitter, and the
-/// repair margin's loss rate. Live paths, as the receiver's recovery timer
-/// uses (`receiver.rs`, `live_paths()`): the saturation-filtered
+/// clock, the per-seq retransmit cooldown's pooled SRTT/jitter, the
+/// repair margin's loss rate, and the hole law's N + per-path clock
+/// snapshot. The channel's membership set ([`channel_paths`], live paths,
+/// as the receiver's recovery timer uses): the saturation-filtered
 /// `active_paths()` (`available() > 0`) is empty exactly when every path is
-/// cwnd-full, which would collapse the clocks to the 10 ms floor / zero margin.
+/// cwnd-full, which would collapse the clocks to the 10 ms floor / zero margin
+/// and the hole law to its N = 1 bypass.
 pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> {
-    sched.live_paths()
+    channel_paths(sched)
 }
 
 /// [`pooled_recovery_srtt_us`] over [`recovery_clock_paths`]: the pooled

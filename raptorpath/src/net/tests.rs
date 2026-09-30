@@ -546,10 +546,11 @@ fn test_parse_cidr() {
 // adjudicated at component level:
 //   1. the bench measures sender blocking on the scheduler lock directly
 //      (two threads, production lock, production attribution seam);
-//   2. `dh_store_cap_falls_to_boot_on_the_saturation_filter…` pins the
-//      rival mechanism: the DH arm's honest-cap law falls out to the
+//   2. `dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation` bounds the
+//      rival mechanism: the DH arm's honest-cap law fell out to the
 //      128-symbol boot cap whenever `active_paths()` returns empty — the
-//      `sf=` zero-tick cliff that `RWM_STORE_CAP_UNIFIED=1` removes;
+//      `sf=` zero-tick cliff, removed by plan 2b (the Σ's set is now
+//      `channel_paths` = `live_paths()`; the test now pins its absence);
 //   3. `honest_anchor_floor_sits_at_true_bdp…` pins why the DH sender
 //      hits that cliff harder than A: the honest send-interval anchor
 //      floors cwnd at the true BDP class while the ack-interval feed
@@ -830,16 +831,17 @@ fn c1_attribution_lock_blocking_bench() {
 
 /// Mechanism side (always-on, deterministic): the DH arm's own store-cap
 /// law chain — `RWM_PLAIN_RS=1 RWM_HONEST_CAP=1` — evaluated over the
-/// shipped path set (`active_paths()`, `RWM_STORE_CAP_UNIFIED=0`) vs the
-/// unified set (`live_paths()`), at the same warm, saturated single-path
-/// state.
+/// sender's own pool inputs (`store_cap_pool_inputs`, the channel's
+/// membership set) at the same warm path, unsaturated and then
+/// cwnd-saturated.
 ///
 /// The chain mirrored here is `run_window_sender`'s dyn-cap block (the
-/// `honest_cap_on` branch and its fallbacks). The DH law inherits the
-/// boot-cap cliff: the honest law never computes a small cap — the path
-/// set erases its inputs.
+/// `honest_cap_on` branch and its fallbacks). Before plan 2b the Σ ranged
+/// over `active_paths()`, which a cwnd-full path leaves: the honest law's
+/// inputs vanished and the cap fell to the 128 boot value (the cliff). The
+/// invariant now: the saturated cap EQUALS the warm cap.
 #[test]
-fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
+fn dh_store_cap_keeps_its_warm_cap_at_cwnd_saturation() {
     let clock = Arc::new(crate::scheduler::MockClock::new());
     let mut sched = Scheduler::new(clock.clone());
     sched.add_path(0);
@@ -861,30 +863,15 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
             "honest anchor must be warm (samples accepted)"
         );
     }
-    // The DH law chain over a path set, exactly as the sender computes
-    // it (RWM_STORE_GAIN default 2.0; floor 64; RELIABLE_STORE_MAX
-    // latch at N = 1; store_boot_cap 128 — gates.rs defaults).
+    // The DH law chain over the sender's pool inputs, exactly as the
+    // sender computes it (RWM_STORE_GAIN default 2.0; floor 64;
+    // RELIABLE_STORE_MAX latch at N = 1; store_boot_cap 128 — gates.rs
+    // defaults).
     let now = now_us();
     let mut ks: std::collections::HashMap<u32, EchoRatioMin> =
         std::collections::HashMap::new();
-    let mut cap_over = |sched: &Scheduler, set: &[u32]| -> usize {
-        let mut bdp = 0.0f64;
-        let mut slots: Vec<Option<HonestCapPath>> = Vec::new();
-        for id in set {
-            if let Some(p) = sched.path(*id) {
-                if let Some(a) = p.copa_bdp_anchor() {
-                    bdp += a;
-                    slots.push(Some(HonestCapPath {
-                        id: *id,
-                        anchor: Some(a),
-                        rate: p.btlbw_sym_per_s(),
-                        srtt: p.srtt(),
-                        rtprop: p.min_rtt(),
-                        k_raw: p.k_raw(),
-                    }));
-                }
-            }
-        }
+    let mut cap_over = |sched: &Scheduler| -> usize {
+        let (bdp, slots) = store_cap_pool_inputs(sched, true);
         let terms = honest_cap_terms(&mut ks, &slots, now, 2.0);
         let hsum: f64 = terms.iter().flatten().sum();
         if hsum > 0.0 {
@@ -892,48 +879,33 @@ fn dh_store_cap_falls_to_boot_on_the_saturation_filter_not_on_the_honest_law() {
         } else if bdp > 0.0 {
             ((2.0 * bdp).ceil() as usize).clamp(64, RELIABLE_STORE_MAX)
         } else {
-            128 // store_boot_cap fallback — the cliff
+            128 // store_boot_cap fallback — the (former) cliff
         }
     };
 
-    // Unsaturated: both path sets agree; the honest law computes its
-    // warm cap (runway term ≈ rate·0.1 ⇒ the 1024 latch at c1 rates).
-    let active = sched.active_paths();
-    let live = sched.live_paths();
-    assert_eq!(active, live, "unsaturated: the filter is inert");
-    let warm_cap = cap_over(&sched, &active);
+    // Unsaturated: the honest law computes its warm cap (runway term ≈
+    // rate·0.1 ⇒ the 1024 latch at c1 rates).
+    let warm_cap = cap_over(&sched);
     assert_eq!(
         warm_cap, RELIABLE_STORE_MAX,
         "c1-class honest cap latches the store max"
     );
 
     // Saturated (the wire-bound sender state: in_flight ≥ cwnd): the
-    // spare-capacity filter empties the data-scheduling set while the
-    // path is alive and its anchor is warm.
+    // spare-capacity filter empties the placement set while the path is
+    // alive and its anchor is warm.
     {
         let p = sched.path_mut(0).unwrap();
         let cw = p.cwnd;
         p.charge_in_flight(cw);
         assert_eq!(p.available(), 0);
     }
-    let active = sched.active_paths();
-    let live = sched.live_paths();
-    assert!(active.is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
-    assert_eq!(live, vec![0], "…while the path is fully live");
-    // Shipped set (RWM_STORE_CAP_UNIFIED=0): the law's inputs vanish and
-    // the cap falls out to the boot value — below a c1 store occupancy,
-    // i.e. instant tx_paused.
+    assert!(sched.active_paths().is_empty(), "cwnd-saturated ⇒ active_paths() EMPTY");
+    assert_eq!(sched.live_paths(), vec![0], "…while the path is fully live");
     assert_eq!(
-        cap_over(&sched, &active),
-        128,
-        "the cliff: an empty active set forfeits the warm anchor entirely"
-    );
-    // Unified set (RWM_STORE_CAP_UNIFIED=1): same instant, same law,
-    // warm cap.
-    assert_eq!(
-        cap_over(&sched, &live),
-        RELIABLE_STORE_MAX,
-        "live_paths() keeps the warm honest cap at the same saturated instant"
+        cap_over(&sched),
+        warm_cap,
+        "no cliff: the saturated path keeps its warm honest cap (was 128 on active_paths())"
     );
 }
 
@@ -2055,15 +2027,15 @@ fn path_scaled_store_cap_scales_value_and_ceiling_with_paths() {
 /// The full arm, resolved: does the composition actually compose?
 ///
 /// Compositions whose members do not compose are the failure mode: e.g.
-/// `RWM_STORE_CAPW` makes the `RWM_STORE_CAP_UNIFIED` bit a no-op wherever
-/// capw engages, because `capw_store_cap` sits above
-/// `path_scaled_store_cap` in the chain and reads `live_paths()`
-/// unconditionally.
+/// the retired `RWM_STORE_CAPW` made the (also retired, plan 2b)
+/// `RWM_STORE_CAP_UNIFIED` bit a no-op wherever capw engaged, because
+/// `capw_store_cap` sat above `path_scaled_store_cap` in the chain and read
+/// `live_paths()` unconditionally. The Σ's set is now membership everywhere.
 ///
 /// This test asserts the full arm's gate set resolves to the machine it is
 /// supposed to be, at the policy layer where the collapses happen:
 ///
-/// * every one of the six bits survives resolution (none is silently
+/// * every one of the five bits survives resolution (none is silently
 ///   ANDed away by a scope it does not satisfy);
 /// * the pool law reached is the pooled one, not the three-term law — i.e.
 ///   `three_term_on` and `composed_cap` stay off (the composed pool law's
@@ -2115,7 +2087,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     assert!(!ctl.delta_cap, "control: the δ-cap must be fixed OFF for this pair");
     assert!(ctl.plain_dyn_cap, "the control arm is not on the dyn-cap seat");
     assert!(!ctl.sum_cap, "control: the ×N deletion must be OFF");
-    assert!(!ctl.store_cap_unified, "control: the live set must be OFF");
     assert!(!ctl.late_brake, "control: the brake must be OFF");
     assert!(!ctl.three_term_on && !ctl.composed_cap, "control: pooled law only");
 
@@ -2127,7 +2098,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     full.delta_cap = false; // the value multiplier, FIXED OFF — see the
                             // control arm's note: this pair varies the
                             // count multiplier and nothing else.
-    full.store_cap_unified = true; // the live set
     full.late_brake = true; // the late-stage brake
     full.loss_sent_truth = true; // ── the ledger/loss trio ──
     full.release_1to1 = true;
@@ -2145,7 +2115,6 @@ fn the_full_arm_gate_set_resolves_to_the_intended_machine() {
     //    scored as a null result by anything that reads only the
     //    `[GATES]` echo.
     assert!(arm.sum_cap, "FULL: RWM_SUM_CAP was ANDed away by resolution");
-    assert!(arm.store_cap_unified, "FULL: the live set was ANDed away");
     assert!(arm.late_brake, "FULL: the brake was ANDed away");
     // The ledger/loss trio is not resolved through `SenderPolicy`: those
     // three bits are read by the scheduler (`scheduler::loss_sent_truth_active`
@@ -2284,13 +2253,9 @@ fn the_derived_setpoint_gates_route_and_introduce_no_new_constant() {
         assert!(arm.delta_cap, "{hint:?}: RWM_DELTA_CAP did not reach the seat");
 
         // The siblings are untouched: this gate picks the value multiplier
-        // and nothing else. The count multiplier (`RWM_SUM_CAP`), the Σ's
-        // set (`RWM_STORE_CAP_UNIFIED`) and the brake are independent axes.
+        // and nothing else. The count multiplier (`RWM_SUM_CAP`) and the
+        // brake are independent axes (the Σ's set is membership, not a dial).
         assert_eq!(arm.sum_cap, ctl.sum_cap, "{hint:?}: the count multiplier moved");
-        assert_eq!(
-            arm.store_cap_unified, ctl.store_cap_unified,
-            "{hint:?}: the Σ's path set moved"
-        );
         assert_eq!(arm.late_brake, ctl.late_brake, "{hint:?}: the brake armed itself");
         assert_eq!(arm.three_term_on, ctl.three_term_on, "{hint:?}: the pool law changed");
 
@@ -2534,10 +2499,13 @@ mod law_shape {
     }
 
     /// The composition, as four formulas: `RWM_SUM_CAP` (the count
-    /// multiplier) and `RWM_STORE_CAP_UNIFIED` (the Σ's path set) are
-    /// independent axes of one law, and their four combinations are four
-    /// distinct expressions. The set decides `pipe_sum`, the gate decides
-    /// the multiplier, and neither reads the other.
+    /// multiplier) and the Σ's path set are independent axes of one law,
+    /// and their four combinations are four distinct expressions. The set
+    /// decides `pipe_sum`, the gate decides the multiplier, and neither
+    /// reads the other. Since plan 2b the set is not a dial (the retired
+    /// `RWM_STORE_CAP_UNIFIED`): the sender always passes the membership Σ
+    /// (`unified = true` below). The `unified = false` column is kept as the
+    /// bound on what the retired saturation-filtered Σ cost.
     ///
     /// The test states independence as a factorisation rather than as four
     /// inequalities: the multiplier ratio is `N` whichever set is used, and
@@ -2546,12 +2514,10 @@ mod law_shape {
     /// means, and it is stronger than "the four numbers differ".
     ///
     /// Note the asymmetry the composition inherits and does not fix:
-    /// `N` is `live_paths().len()` in both arms,
-    /// including where the Σ ranges over `active_paths()` only. The count
-    /// and the sum range over different sets on the shipped default, and
-    /// deleting the multiplier from the value removes that mismatch from
-    /// the value while leaving it in the ceiling — which is the correct
-    /// scope for this gate and is asserted here so it stays deliberate.
+    /// `N` is `live_paths().len()` in both columns, including the retired
+    /// one where the Σ ranged over `active_paths()` only (the count and the
+    /// sum then ranged over different sets; plan 2b removed that mismatch
+    /// by making the Σ's set membership too).
     #[test]
     fn sum_cap_and_the_unified_set_are_independent_axes_of_one_law() {
         use crate::net::pooled_store_cap;
@@ -5380,9 +5346,9 @@ fn read_both<T>(f: impl Fn(&Scheduler) -> T) -> (T, T) {
 #[test]
 fn saturated_channel_store_cap_sigma_has_no_boot_cliff() {
     // (Σ anchor, number of honest-cap slots) — the plain dyn-cap's inputs
-    // at the shipped default (`unified = false`).
+    // (the sender's own collector).
     let (un, sat) = read_both(|s| {
-        let (bdp, slots) = store_cap_pool_inputs(s, true, false);
+        let (bdp, slots) = store_cap_pool_inputs(s, true);
         (bdp, slots.len())
     });
     assert!(un.0 > 0.0 && un.1 == 2, "unsaturated: both anchors in the Σ ({un:?})");

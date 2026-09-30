@@ -112,10 +112,12 @@ pub const STORE_CAP_FLOOR: usize = {
 /// [`STORE_CAP_FLOOR`] rather than a re-statement of it. 128 is a fit to one
 /// cell's link budget (≈1.5 × a 100 Mbit / 10 ms BDP), never swept.
 ///
-/// It does not ship because boot also binds mid-transfer when `active_paths()`
-/// empties and the pooled chain falls through to the boot branch; replacing
-/// 128 with 10 there would deepen that cliff. Once boot is reachable only at
-/// genuine cold start the two values are indistinguishable. Bounded by
+/// It did not ship because boot also bound mid-transfer when `active_paths()`
+/// emptied and the pooled chain fell through to the boot branch; replacing
+/// 128 with 10 there would have deepened that cliff. The store-cap Σ now
+/// ranges over the channel's membership (`net::channel_paths`), so boot is
+/// reachable only at genuine cold start, where the two values are
+/// indistinguishable — not yet re-measured, so it still does not ship. Bounded by
 /// `store_cap_bench.rs::derived_boot_is_the_floors_twin_and_is_inert_only_once_the_cliff_is_closed`.
 pub const STORE_BOOT_DERIVED: usize = STORE_CAP_FLOOR;
 
@@ -207,13 +209,9 @@ pub(crate) struct SenderPolicy {
     pub store_path_pool: usize,
     /// `RWM_POOL_ANCHOR`: pool-anchor honest dual-store law.
     pub pool_anchor_on: bool,
-    /// `RWM_STORE_CAP_UNIFIED`: the plain dyn-store-cap phase's path set is
-    /// `live_paths()` rather than the saturation-filtered `active_paths()`.
-    /// Scoped to the plain dynamic cap — Copa-sole already reads `live_paths()`.
-    pub store_cap_unified: bool,
     /// `RWM_THREE_TERM` (default off): the plain dynamic store cap is the
     /// composed three-term law (`net::three_term_store_cap`). Scoped to the
-    /// plain dynamic cap, like `store_cap_unified`.
+    /// plain dynamic cap.
     pub three_term_on: bool,
     /// `RWM_COMPOSED_CAP` (default off; paper §10): the composition arm. Implies
     /// [`Self::three_term_on`] (same pool law, same function) and additionally
@@ -222,9 +220,9 @@ pub(crate) struct SenderPolicy {
     pub composed_cap: bool,
     /// `RWM_SUM_CAP` (default on; paper §6.1): the pooled law's count
     /// multiplier is removed from the value and kept in the ceiling
-    /// (`net::pooled_store_cap`'s `sum_cap` argument). Independent of
-    /// [`Self::store_cap_unified`], which selects the Σ's path set: the four
-    /// combinations are four distinct formulas. `=0` re-runs the quadratic.
+    /// (`net::pooled_store_cap`'s `sum_cap` argument). The Σ's path set is
+    /// always the channel's membership (`net::channel_paths`). `=0` re-runs
+    /// the quadratic.
     pub sum_cap: bool,
     /// `RWM_DELTA_CAP` (default on; paper §6.1): the pooled cap's value
     /// multiplier is `1 + q(δ)` — the CoDel-derived standing-queue setpoint
@@ -280,8 +278,6 @@ pub(crate) struct SenderPolicy {
     pub recov_mp_law: bool,
     /// `RWM_RECOV_SP`: single-path hole-law suppression.
     pub recov_sp: bool,
-    /// `RWM_RECOV_MP_LIVE`: recovery clocks on `live_paths()`.
-    pub recov_mp_live: bool,
     /// `RWM_DERIVED_SWEEP` (default off): the tail-sweep / hole-refresh round
     /// on the derived law (2·SRTT floored by `patience_floor_us`, no ceiling)
     /// instead of `2·SRTT` clamped to [25, 100] ms.
@@ -588,12 +584,9 @@ impl SenderPolicy {
         // runs. The Copa cwnd feed and every N = 1 law are untouched. The
         // default rides the `RWM_EST_CADENCE` resolution (off when unset).
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
-        // ── The store-cap path set (env RWM_STORE_CAP_UNIFIED) ───────────────
-        // The store-cap path set (`RWM_STORE_CAP_UNIFIED`, default off): the
-        // dyn-cap phase's Σ-anchor base and honest per-path cap sum move off
-        // `active_paths()` (the cwnd-saturation filter) onto `live_paths()` —
-        // the set `n_live` is counted from.
-        let store_cap_unified = gates.store_cap_unified && plain_dyn_cap;
+        // The store-cap path set is not a dial: the dyn-cap phase's Σ-anchor
+        // base and honest per-path cap sum range over the channel's
+        // membership (`net::channel_paths`), the set `n_live` is counted from.
         // The composed three-term limit (`RWM_THREE_TERM`, default off; paper
         // §10): Σ per-path network window + Σ per-path emission slack + one
         // resequencing span, each Little's law over a measured signal. The span
@@ -621,7 +614,7 @@ impl SenderPolicy {
         // time. Exactly one factor changes: gain, knee, floor, Σ-set and
         // estimator are identical on both arms. Bit-identical at N = 1 by
         // construction (`n_live < 2` returns None before the multiplier is
-        // read). Independent of `store_cap_unified` (the Σ's path set).
+        // read).
         // `RWM_SUM_CAP=0` re-runs the quadratic.
         let sum_cap = gates.sum_cap && plain_dyn_cap;
         // The δ-priced value multiplier (`RWM_DELTA_CAP`, default on; paper
@@ -634,8 +627,7 @@ impl SenderPolicy {
         // RFC 8289 §3.2 derives 5–10 % of RTT from Kleinrock power
         // maximisation. One factor changes: the Σ, its path set, the estimator,
         // the ceiling and the floor are identical on both arms. Independent of
-        // `sum_cap` (the count multiplier) and `store_cap_unified` (the Σ's
-        // set) — three axes of one law. Bit-identical at N = 1 by construction.
+        // `sum_cap` (the count multiplier) — two axes of one law. Bit-identical at N = 1 by construction.
         // `RWM_DELTA_CAP=0` re-runs `gain = 2.0`.
         let delta_cap = gates.delta_cap && plain_dyn_cap;
         // The late-stage brake alone (`RWM_LATE_BRAKE`, default off). The
@@ -780,12 +772,6 @@ impl SenderPolicy {
         // Suppression-only: the receiver's hole-refresh re-advertises until the
         // flight ripens, so real holes still recover.
         let recov_sp = gates.recov_sp && reliable && !generation;
-        // Recovery clocks on live paths (`RWM_RECOV_MP_LIVE`, default off). The
-        // hole law's N and per-path clock snapshot read `active_paths()` — the
-        // saturation-filtered set (`available() > 0`), whose cwnd-full-path trap
-        // collapses the law to the N = 1 bypass (an age gate on a cross-path
-        // clock) mid-transfer. Under this gate the snapshot uses `live_paths()`.
-        let recov_mp_live = gates.recov_mp_live && recov_mp_law;
         // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
         // beside the unchanged one). Default off.
         let sidle_derived = gates.sidle_derived && diag_on;
@@ -899,7 +885,6 @@ impl SenderPolicy {
             store_paths_on,
             store_path_pool,
             pool_anchor_on,
-            store_cap_unified,
             three_term_on,
             composed_cap,
             sum_cap,
@@ -918,7 +903,6 @@ impl SenderPolicy {
             recov_mp,
             recov_mp_law,
             recov_sp,
-            recov_mp_live,
             derived_sweep: gates.derived_sweep,
             holddown_q: gates.holddown_q,
             sidle_derived,

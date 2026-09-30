@@ -13,7 +13,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",
     "RWM_HONEST_ANCHOR=1 RWM_HONEST_K=0 RWM_STORE_SACK_RELEASE=1 ",
     "RWM_STORE_PATHS=1 RWM_STORE_PATH_POOL=2048 RWM_STORE=unset ",
-    "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 RWM_STORE_CAP_UNIFIED=0 ",
+    "RWM_STORE_GAIN=2 RWM_STORE_BOOT=128 ",
     "RWM_THREE_TERM=0 RWM_COMPOSED_CAP=0 RWM_SUM_CAP=1 RWM_LATE_BRAKE=0 ",
     "RWM_DELTA_CAP=1 RWM_HONEST_CAP=0 RWM_POOL_ANCHOR=0 RWM_ACK_MERGE=1 ",
     "RWM_LOSS_SENT_TRUTH=0 RWM_RELEASE_1TO1=0 RWM_CHARGE_RECOVERY=0 ",
@@ -27,7 +27,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
     "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
-    "RWM_RECOV_MP_LIVE=0 RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
+    "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
     "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
@@ -46,7 +46,7 @@ fn removed_gates_in_the_environment_are_ignored() {
     // Suffixes, not quoted full-name literals: `forwarding_audit` scrapes
     // every quoted RWM_ literal in `src/` as an engine read, and these
     // are not.
-    const REMOVED: [&str; 15] = [
+    const REMOVED: [&str; 17] = [
         "POOL_DELIV",
         "FLOOR_BOUND",
         "PATIENCE_DERIVED",
@@ -61,6 +61,9 @@ fn removed_gates_in_the_environment_are_ignored() {
         "QUANTILE_CLOCKS",
         "W_FORM",
         "ALPHA_OVERRIDE",
+        // Plan 2b: the channel's path set is membership, unconditionally.
+        "STORE_CAP_UNIFIED",
+        "RECOV_MP_LIVE",
         // Not a removed gate: a name no version of the engine ever read.
         "NEVER_A_GATE",
     ];
@@ -352,14 +355,6 @@ fn default_env_resolves_the_shipped_stack() {
             g.echo_line()
         );
     }
-    assert!(
-        !g.recov_mp_live,
-        "RWM_RECOV_MP_LIVE ships default OFF (A/B arm)"
-    );
-    assert!(
-        !g.store_cap_unified,
-        "RWM_STORE_CAP_UNIFIED ships default OFF (A/B arm)"
-    );
     assert!(
         !g.three_term,
         "RWM_THREE_TERM ships default OFF (A/B arm)"

@@ -51,12 +51,12 @@ async fn sum_cap_and_late_brake_route_without_the_composed_law_and_the_loopback_
         "this arm must not masquerade as the composed or three-term arm: {}",
         g.echo_line()
     );
-    // The Σ-set stays the shipped one: `RWM_SUM_CAP` changes the MULTIPLIER,
-    // and the SET is an independent dial (`RWM_STORE_CAP_UNIFIED`); an arm that
-    // moved both without saying so would confound the two.
+    // The Σ-set is not a dial: `RWM_SUM_CAP` changes the MULTIPLIER, and the
+    // SET is the channel's membership unconditionally (plan 2b retired
+    // `RWM_STORE_CAP_UNIFIED`), so no arm can move it.
     assert!(
-        !g.store_cap_unified && g.echo_line().contains("RWM_STORE_CAP_UNIFIED=0"),
-        "the ×N deletion must not silently carry the live set too: {}",
+        !g.echo_line().contains("RWM_STORE_CAP_UNIFIED"),
+        "the retired Σ-set gate must not reappear on the echo: {}",
         g.echo_line()
     );
 

@@ -821,7 +821,7 @@ pub(crate) fn worst_eps_path(
 /// a miss the inputs are snapshotted under the controller → scheduler locks
 /// (the one lock order used wherever both are held) and the ~0.1 ms rate
 /// mix is evaluated after both are released, so ack processing never waits
-/// on the solver. 0.0 when no path is active (as before).
+/// on the solver. 0.0 only when the channel has no path at all.
 pub(crate) fn cadenced_repair_rate(
     cache: &mut RepairRateCache,
     fec_controller: &parking_lot::Mutex<FecRateController>,
