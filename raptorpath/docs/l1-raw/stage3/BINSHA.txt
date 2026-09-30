@@ -1,0 +1,1 @@
+f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035  /home/vibe/stage3/bin/raptorpath  commit=b3c6923 2026-09-30T12:28:15Z meas/stage3-baseline (engine = main e74891d) built=2026-09-30T12:32:43Z

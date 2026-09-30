@@ -1,0 +1,222 @@
+STATUS-TABLE (every invocation row)
+  LIVE          320
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+ARM-N (live rows per cell/arm, and per seed)
+  c1s-400 A1=10(5/5) A2=10(5/5) BLKb=10(5/5) WINa=10(5/5) BLKa=10(5/5)
+  c1d-400 A1=10(5/5) A2=10(5/5) CAD=10(5/5)
+  c2-100 A1=10(5/5) A2=10(5/5) CAD=10(5/5) BLKb=10(5/5) WINa=10(5/5) BLKa=10(5/5)
+  c3-25 A1=10(5/5) A2=10(5/5) CAD=10(5/5) BLKb=10(5/5) WINa=10(5/5) BLKa=10(5/5)
+  c7-100 A1=10(5/5) A2=10(5/5) CAD=10(5/5) BLKb=10(5/5) WINa=10(5/5) BLKa=10(5/5)
+  c8-100 A1=10(5/5) A2=10(5/5) CAD=10(5/5) BLKb=10(5/5) WINa=10(5/5) BLKa=10(5/5)
+
+(a) MDE TABLE  MDE = max(2*|med A1 - med A2|, (max-min)/2 of A1uA2); rel = MDE/med(A1uA2)
+  cell metric n1/n2 med(A1uA2) |dmed| half_range MDE rel state
+  MDE c1s-400 gp 10/10 303.249 2.589 14.814 14.814 4.9% MDE-COMMITTED
+  MDE c1s-400 ct 10/10 10.552 0.090 0.539 0.539 5.1% MDE-COMMITTED
+  MDE c1s-400 cpu 10/10 14.375 0.015 0.345 0.345 2.4% MDE-COMMITTED
+  MDE c1s-400 util 10/10 1.368 0.006 0.048 0.048 3.5% MDE-COMMITTED
+  MDE c1s-400 busy 10/10 53.000 0.000 3.750 3.750 7.1% MDE-COMMITTED
+  AA-DNF c1s-400 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v2 284.8-293.9 (cross-era, not scored)
+  MDE c1d-400 gp 10/10 193.907 3.651 10.791 10.791 5.6% MDE-COMMITTED
+  MDE c1d-400 ct 10/10 16.503 0.309 0.879 0.879 5.3% MDE-COMMITTED
+  MDE c1d-400 cpu 10/10 28.865 0.720 1.885 1.885 6.5% MDE-COMMITTED
+  MDE c1d-400 util 10/10 1.739 0.015 0.035 0.035 2.0% MDE-COMMITTED
+  MDE c1d-400 busy 10/10 87.000 0.000 0.250 0.250 0.3% MDE-COMMITTED
+  AA-DNF c1d-400 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v3 B2 186.9-201.5 (cross-era, not scored)
+  MDE c2-100 gp 10/10 89.091 0.200 1.211 1.211 1.4% MDE-COMMITTED
+  MDE c2-100 ct 10/10 8.980 0.020 0.125 0.125 1.4% MDE-COMMITTED
+  MDE c2-100 cpu 10/10 4.875 0.145 0.305 0.305 6.3% MDE-COMMITTED
+  MDE c2-100 util 10/10 0.544 0.016 0.035 0.035 6.4% MDE-COMMITTED
+  MDE c2-100 busy 10/10 18.500 1.000 1.500 2.000 10.8% MDE-COMMITTED
+  AA-DNF c2-100 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v3 B2 88.9-89.3 (cross-era, not scored)
+  MDE c3-25 gp 10/10 17.252 0.102 0.280 0.280 1.6% MDE-COMMITTED
+  MDE c3-25 ct 10/10 11.593 0.068 0.189 0.189 1.6% MDE-COMMITTED
+  MDE c3-25 cpu 10/10 2.245 0.050 0.215 0.215 9.6% MDE-COMMITTED
+  MDE c3-25 util 10/10 0.195 0.002 0.018 0.018 9.1% MDE-COMMITTED
+  MDE c3-25 busy 10/10 7.000 0.000 0.500 0.500 7.1% MDE-COMMITTED
+  AA-DNF c3-25 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v3 B2 17.05-17.48 (cross-era, not scored)
+  MDE c7-100 gp 10/10 176.060 1.649 5.010 5.010 2.8% MDE-COMMITTED
+  MDE c7-100 ct 10/10 4.544 0.043 0.132 0.132 2.9% MDE-COMMITTED
+  MDE c7-100 cpu 10/10 6.790 0.000 0.245 0.245 3.6% MDE-COMMITTED
+  MDE c7-100 util 10/10 1.507 0.010 0.072 0.072 4.8% MDE-COMMITTED
+  MDE c7-100 busy 10/10 83.500 0.500 4.750 4.750 5.7% MDE-COMMITTED
+  AA-DNF c7-100 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v2 169.2-177.8 (cross-era, not scored)
+  MDE c8-100 gp 10/10 102.149 0.257 4.120 4.120 4.0% MDE-COMMITTED
+  MDE c8-100 ct 10/10 7.832 0.020 0.320 0.320 4.1% MDE-COMMITTED
+  MDE c8-100 cpu 10/10 7.345 0.005 0.850 0.850 11.6% MDE-COMMITTED
+  MDE c8-100 util 10/10 0.941 0.005 0.107 0.107 11.4% MDE-COMMITTED
+  MDE c8-100 busy 10/10 46.250 1.250 11.500 11.500 24.9% MDE-COMMITTED
+  AA-DNF c8-100 A1=0.00 A2=0.00 dnf-threshold=0.20; last measured gp v3 B2 99.5-103.0 (cross-era, not scored)
+
+(b) BLOCK vs WINDOW  WIN-bulk = A1uA2 (CTL); clauses fail when WIN is worse beyond MDE
+  B c1s-400/bulk WIN n=20 done=20 dnf=0.00 gp_med=303.2 [282.1-311.8] ct_p50=10.55 | BLK n=10 done=10 dnf=0.00 gp_med=267.9 [244.2-280.4] ct_p50=11.94 | gp:BETTER (X=303.249 ref=267.947 band=[254.858,281.036] rel=0.049) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c1s-400/auto WIN n=10 done=10 dnf=0.00 gp_med=247.4 [238.7-254.2] ct_p50=12.93 | BLK n=10 done=10 dnf=0.00 gp_med=154.5 [150.6-160.1] ct_p50=20.72 | gp:BETTER (X=247.402 ref=154.469 band=[146.923,162.015] rel=0.049) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c2-100/bulk WIN n=20 done=20 dnf=0.00 gp_med=89.1 [86.9-89.3] ct_p50=8.98 | BLK n=10 done=10 dnf=0.00 gp_med=89.6 [86.9-89.8] ct_p50=8.93 | gp:WITHIN (X=89.091 ref=89.584 band=[88.367,90.802] rel=0.014) ct:WITHIN dnf-excess>0.20:0 | ok | reading=TIE-WITHIN-MDE
+  B c2-100/auto WIN n=10 done=10 dnf=0.00 gp_med=73.1 [71.9-74.1] ct_p50=10.94 | BLK n=10 done=10 dnf=0.00 gp_med=59.0 [56.7-59.6] ct_p50=13.56 | gp:BETTER (X=73.102 ref=59.012 band=[58.210,59.814] rel=0.014) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c3-25/bulk WIN n=20 done=20 dnf=0.00 gp_med=17.3 [16.9-17.5] ct_p50=11.59 | BLK n=10 done=10 dnf=0.00 gp_med=16.0 [15.7-17.1] ct_p50=12.52 | gp:BETTER (X=17.252 ref=15.977 band=[15.718,16.236] rel=0.016) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c3-25/auto WIN n=10 done=10 dnf=0.00 gp_med=15.2 [14.6-15.5] ct_p50=13.14 | BLK n=10 done=10 dnf=0.00 gp_med=7.2 [6.5-7.4] ct_p50=27.74 | gp:BETTER (X=15.224 ref=7.210 band=[7.093,7.327] rel=0.016) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c7-100/bulk WIN n=20 done=20 dnf=0.00 gp_med=176.1 [169.1-179.1] ct_p50=4.54 | BLK n=10 done=10 dnf=0.00 gp_med=173.4 [166.1-176.6] ct_p50=4.61 | gp:WITHIN (X=176.060 ref=173.406 band=[168.473,178.340] rel=0.028) ct:WITHIN dnf-excess>0.20:0 | ok | reading=TIE-WITHIN-MDE
+  B c7-100/auto WIN n=10 done=10 dnf=0.00 gp_med=131.5 [126.5-141.6] ct_p50=6.09 | BLK n=10 done=10 dnf=0.00 gp_med=116.7 [114.1-117.7] ct_p50=6.85 | gp:BETTER (X=131.517 ref=116.708 band=[113.387,120.028] rel=0.028) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+  B c8-100/bulk WIN n=20 done=20 dnf=0.00 gp_med=102.1 [97.5-105.7] ct_p50=7.83 | BLK n=10 done=10 dnf=0.00 gp_med=101.0 [91.7-103.0] ct_p50=7.92 | gp:WITHIN (X=102.149 ref=100.968 band=[96.896,105.039] rel=0.040) ct:WITHIN dnf-excess>0.20:0 | ok | reading=TIE-WITHIN-MDE
+  B c8-100/auto WIN n=10 done=10 dnf=0.00 gp_med=91.4 [83.9-95.2] ct_p50=8.75 | BLK n=10 done=10 dnf=0.00 gp_med=56.8 [50.5-62.3] ct_p50=14.09 | gp:BETTER (X=91.444 ref=56.789 band=[54.499,59.079] rel=0.040) ct:BETTER dnf-excess>0.20:0 | ok | reading=WIN>BLK
+VERDICT-B WINDOW-NOT-WORSE
+AUTO-BLOCK-C3 AUTO-BLOCK-C3-AS-RECORDED med=7.21 n=10 done=10 band=(6.31, 7.63) widened-by-rel=1.6%
+
+(d) EST_CADENCE  CAD vs CTL = A1uA2
+  FEED c1d-400 p0 truth CTL=0.00108 CAD=0.00099 | plc/truth CTL=1.067 CAD=1.012 band=[0.820,1.387] UNCHANGED
+  PLU c1d-400 p0 CTL plu_med(run medians)=0.0354 [0.0354-0.0354] on-floor 20/20
+  PLU c1d-400 p0 CAD plu_med(run medians)=0.0010 [0.0007-0.0015] on-floor 0/10
+  FEED c1d-400 p1 truth CTL=0.00077 CAD=0.00089 | plc/truth CTL=1.034 CAD=1.087 band=[0.796,1.345] UNCHANGED
+  PLU c1d-400 p1 CTL plu_med(run medians)=0.0354 [0.0354-0.0354] on-floor 20/20
+  PLU c1d-400 p1 CAD plu_med(run medians)=0.0010 [0.0007-0.0014] on-floor 0/10
+  CODED c1d-400 CTL coded_share med=0.00044 [0.00039-0.00117] busy_med=87.0% util=1.739
+  CODED c1d-400 CAD coded_share med=0.00040 [0.00034-0.00124] busy_med=83.0% util=1.660
+  D c1d-400 CTL n=20 CAD n=10 | gp:BETTER (X=274.129 ref=193.907 band=[183.117,204.698] rel=0.056) | ct:BETTER (X=11.673 ref=16.503 band=[15.625,17.382] rel=0.053) | cpu:BETTER (X=19.580 ref=28.865 band=[26.980,30.750] rel=0.065) | dnf CTL=0.00 CAD=0.00 excess>0.20:0 | worse=- better=gp+cpu feed-moved=-
+  FEED c2-100 p0 truth CTL=0.02513 CAD=0.02506 | plc/truth CTL=1.004 CAD=1.000 band=[0.772,1.306] UNCHANGED
+  PLU c2-100 p0 CTL plu_med(run medians)=0.0354 [0.0354-0.0356] on-floor 20/20
+  PLU c2-100 p0 CAD plu_med(run medians)=0.0132 [0.0072-0.0269] on-floor 0/10
+  CODED c2-100 CTL coded_share med=0.00484 [0.00432-0.00535] busy_med=18.5% util=0.544
+  CODED c2-100 CAD coded_share med=0.00489 [0.00468-0.00522] busy_med=16.5% util=0.435
+  D c2-100 CTL n=20 CAD n=10 | gp:WITHIN (X=89.113 ref=89.091 band=[87.880,90.302] rel=0.014) | ct:WITHIN (X=8.977 ref=8.980 band=[8.855,9.104] rel=0.014) | cpu:BETTER (X=3.925 ref=4.875 band=[4.570,5.180] rel=0.063) | dnf CTL=0.00 CAD=0.00 excess>0.20:0 | worse=- better=cpu feed-moved=-
+  FEED c3-25 p0 truth CTL=0.04744 CAD=0.04816 | plc/truth CTL=0.998 CAD=1.000 band=[0.767,1.297] UNCHANGED
+  PLU c3-25 p0 CTL plu_med(run medians)=0.0427 [0.0373-0.0569] on-floor 0/20
+  PLU c3-25 p0 CAD plu_med(run medians)=0.0272 [0.0187-0.0461] on-floor 0/10
+  CODED c3-25 CTL coded_share med=0.01064 [0.00951-0.01279] busy_med=7.0% util=0.195
+  CODED c3-25 CAD coded_share med=0.01069 [0.00978-0.01219] busy_med=7.0% util=0.170
+  D c3-25 CTL n=20 CAD n=10 | gp:WITHIN (X=17.398 ref=17.252 band=[16.972,17.532] rel=0.016) | ct:WITHIN (X=11.496 ref=11.593 band=[11.404,11.782] rel=0.016) | cpu:BETTER (X=1.965 ref=2.245 band=[2.030,2.460] rel=0.096) | dnf CTL=0.00 CAD=0.00 excess>0.20:0 | worse=- better=cpu feed-moved=-
+  FEED c7-100 p0 truth CTL=0.02501 CAD=0.02488 | plc/truth CTL=1.000 CAD=0.999 band=[0.769,1.300] UNCHANGED
+  PLU c7-100 p0 CTL plu_med(run medians)=0.0387 [0.0354-0.0518] on-floor 7/20
+  PLU c7-100 p0 CAD plu_med(run medians)=0.0255 [0.0200-0.0304] on-floor 0/10
+  FEED c7-100 p1 truth CTL=0.02482 CAD=0.02423 | plc/truth CTL=1.004 CAD=1.004 band=[0.772,1.305] UNCHANGED
+  PLU c7-100 p1 CTL plu_med(run medians)=0.0389 [0.0354-0.0484] on-floor 5/20
+  PLU c7-100 p1 CAD plu_med(run medians)=0.0217 [0.0176-0.0256] on-floor 0/10
+  CODED c7-100 CTL coded_share med=0.00543 [0.00434-0.00648] busy_med=83.5% util=1.507
+  CODED c7-100 CAD coded_share med=0.00625 [0.00528-0.00690] busy_med=67.5% util=1.254
+  D c7-100 CTL n=20 CAD n=10 | gp:WITHIN (X=176.339 ref=176.060 band=[171.050,181.070] rel=0.028) | ct:WITHIN (X=4.537 ref=4.544 band=[4.412,4.676] rel=0.029) | cpu:BETTER (X=5.805 ref=6.790 band=[6.545,7.035] rel=0.036) | dnf CTL=0.00 CAD=0.00 excess>0.20:0 | worse=- better=cpu feed-moved=-
+  FEED c8-100 p0 truth CTL=0.02514 CAD=0.02481 | plc/truth CTL=1.001 CAD=0.999 band=[0.770,1.302] UNCHANGED
+  PLU c8-100 p0 CTL plu_med(run medians)=0.0354 [0.0354-0.0386] on-floor 18/20
+  PLU c8-100 p0 CAD plu_med(run medians)=0.0160 [0.0095-0.0255] on-floor 0/10
+  FEED c8-100 p1 truth CTL=0.04760 CAD=0.04708 | plc/truth CTL=1.016 CAD=0.992 band=[0.782,1.321] UNCHANGED
+  PLU c8-100 p1 CTL plu_med(run medians)=0.0728 [0.0556-0.1158] on-floor 0/20
+  PLU c8-100 p1 CAD plu_med(run medians)=0.0508 [0.0461-0.0636] on-floor 0/10
+  CODED c8-100 CTL coded_share med=0.00754 [0.00668-0.00931] busy_med=46.2% util=0.941
+  CODED c8-100 CAD coded_share med=0.00864 [0.00648-0.00963] busy_med=41.5% util=0.817
+  D c8-100 CTL n=20 CAD n=10 | gp:WITHIN (X=103.743 ref=102.149 band=[98.029,106.269] rel=0.040) | ct:WITHIN (X=7.711 ref=7.832 band=[7.512,8.152] rel=0.041) | cpu:BETTER (X=6.265 ref=7.345 band=[6.495,8.195] rel=0.116) | dnf CTL=0.00 CAD=0.00 excess>0.20:0 | worse=- better=cpu feed-moved=-
+VERDICT-D FLIP-RECOMMENDED (better at c1d-400:gp+cpu, c2-100:cpu, c3-25:cpu, c7-100:cpu, c8-100:cpu)
+
+PER-REP (live; value per rep in rep order; DNF marked) cell arm seed: mbps / cpu_cli / busy_med
+  REPS c1s-400 A1 s42: 310.6 303.1 311.8 301.4 306.3 / 14.06 14.45 14.04 14.64 14.33 / 52 52 53 54 53 | seed-median gp=306.3
+  REPS c1s-400 A1 s7: 298.9 308.0 309.3 299.4 299.6 / 14.66 14.22 14.16 14.54 14.61 / 54 53 52 52 53 | seed-median gp=299.6
+  REPS c1s-400 A2 s42: 303.4 300.9 308.7 304.3 306.1 / 14.35 14.38 14.21 14.29 14.32 / 53 53 52 53 53 | seed-median gp=304.3
+  REPS c1s-400 A2 s7: 282.1 300.3 300.9 298.0 303.9 / 14.55 14.56 14.44 14.73 14.37 / 46 53 53 53 53 | seed-median gp=300.3
+  REPS c1s-400 BLKb s42: 244.2 273.6 262.8 267.9 270.9 / 14.31 12.41 12.94 12.88 12.67 / - - - - - | seed-median gp=267.9
+  REPS c1s-400 BLKb s7: 260.5 268.0 271.6 258.1 280.4 / 13.00 13.01 12.83 13.76 13.00 / - - - - - | seed-median gp=268.0
+  REPS c1s-400 WINa s42: 246.4 249.4 254.2 248.4 249.0 / 17.24 17.09 16.79 17.17 17.06 / 56 56 58 56 56 | seed-median gp=249.0
+  REPS c1s-400 WINa s7: 238.7 243.9 241.0 242.9 251.8 / 17.72 17.50 17.65 17.50 16.66 / 57 58 58 58 56 | seed-median gp=242.9
+  REPS c1s-400 BLKa s42: 153.0 158.2 160.1 151.9 152.9 / 19.72 19.74 19.33 19.97 19.96 / - - - - - | seed-median gp=153.0
+  REPS c1s-400 BLKa s7: 150.6 156.9 155.9 152.6 159.0 / 20.01 19.58 19.93 20.04 19.69 / - - - - - | seed-median gp=155.9
+  REPS c1d-400 A1 s42: 201.4 209.3 192.4 192.5 190.3 / 27.52 25.73 29.09 29.05 29.47 / 87 87 87 87 87 | seed-median gp=192.5
+  REPS c1d-400 A1 s7: 190.8 192.6 195.2 187.7 196.5 / 29.29 29.07 28.71 29.50 28.34 / 87 87 87 87 87 | seed-median gp=192.6
+  REPS c1d-400 A2 s42: 196.5 192.0 191.4 197.0 195.9 / 28.46 29.05 29.02 28.22 28.05 / 87 87 87 87 87 | seed-median gp=195.9
+  REPS c1d-400 A2 s7: 189.3 204.2 203.1 188.2 205.7 / 29.50 26.59 26.59 29.40 26.49 / 87 87 87 87 86 | seed-median gp=203.1
+  REPS c1d-400 CAD s42: 258.5 274.6 261.2 300.9 268.4 / 20.62 19.51 20.27 16.14 19.70 / 83 83 83 81 83 | seed-median gp=268.4
+  REPS c1d-400 CAD s7: 298.1 276.7 271.9 329.0 273.7 / 17.24 19.33 19.65 13.43 19.67 / 82 83 83 78 83 | seed-median gp=276.7
+  REPS c2-100 A1 s42: 89.3 89.0 87.2 88.6 88.8 / 4.75 5.16 4.69 4.74 4.55 / 18 19 18 18 17 | seed-median gp=88.8
+  REPS c2-100 A1 s7: 89.2 89.3 86.9 89.0 89.2 / 4.76 4.78 5.16 4.96 4.96 / 18 18 20 19 19 | seed-median gp=89.2
+  REPS c2-100 A2 s42: 87.1 88.2 89.3 88.3 89.0 / 4.64 4.97 4.96 4.82 4.92 / 17 19 19 17 19 | seed-median gp=88.3
+  REPS c2-100 A2 s7: 89.2 89.2 89.3 89.3 89.2 / 4.69 4.84 4.96 4.91 4.95 / 18 18 20 19 19 | seed-median gp=89.2
+  REPS c2-100 CAD s42: 89.3 89.3 89.1 89.2 88.9 / 3.95 3.84 3.78 4.03 3.84 / 17 16 15 18 16 | seed-median gp=89.2
+  REPS c2-100 CAD s7: 89.1 89.2 86.9 88.9 89.1 / 3.66 3.99 3.90 3.97 3.99 / 16 17 16 17 17 | seed-median gp=89.1
+  REPS c2-100 BLKb s42: 89.7 86.9 86.9 89.0 89.1 / 3.75 4.01 3.83 3.79 3.83 / - - - - - | seed-median gp=89.0
+  REPS c2-100 BLKb s7: 89.8 89.7 89.7 89.5 89.8 / 3.80 3.71 3.76 3.95 4.02 / - - - - - | seed-median gp=89.7
+  REPS c2-100 WINa s42: 73.1 73.4 73.1 74.1 73.6 / 6.17 6.30 5.97 6.39 6.28 / 24 25 24 26 24 | seed-median gp=73.4
+  REPS c2-100 WINa s7: 73.5 71.9 72.8 72.1 72.6 / 6.13 6.24 6.46 6.47 6.55 / 24 24 25 25 26 | seed-median gp=72.6
+  REPS c2-100 BLKa s42: 59.6 56.7 59.3 59.3 59.5 / 5.97 6.18 5.70 6.15 6.02 / - - - - - | seed-median gp=59.3
+  REPS c2-100 BLKa s7: 59.1 59.0 58.2 57.0 58.4 / 5.80 6.01 5.98 5.90 6.01 / - - - - - | seed-median gp=58.4
+  REPS c3-25 A1 s42: 17.2 17.4 17.3 17.1 17.2 / 2.20 2.14 2.22 2.51 2.19 / 7 7 8 8 7 | seed-median gp=17.2
+  REPS c3-25 A1 s7: 16.9 17.5 17.2 17.0 17.4 / 2.20 2.23 2.30 2.34 2.29 / 7 7 8 8 7 | seed-median gp=17.2
+  REPS c3-25 A2 s42: 17.5 17.2 17.4 17.4 17.1 / 2.12 2.26 2.29 2.48 2.21 / 7 8 7 8 7 | seed-median gp=17.4
+  REPS c3-25 A2 s7: 17.5 17.3 17.4 17.1 17.2 / 2.08 2.09 2.30 2.29 2.29 / 7 7 7 8 8 | seed-median gp=17.3
+  REPS c3-25 CAD s42: 17.4 17.2 17.2 17.5 16.9 / 2.00 1.82 1.89 2.11 2.02 / 7 6 6 8 7 | seed-median gp=17.2
+  REPS c3-25 CAD s7: 17.5 17.4 17.5 17.4 17.4 / 1.93 1.91 2.02 1.93 2.03 / 7 6 7 7 7 | seed-median gp=17.4
+  REPS c3-25 BLKb s42: 16.6 16.0 17.1 16.9 16.7 / 1.93 2.03 1.79 1.99 1.93 / - - - - - | seed-median gp=16.7
+  REPS c3-25 BLKb s7: 15.9 16.0 15.7 16.0 15.9 / 2.06 2.10 2.10 2.10 2.19 / - - - - - | seed-median gp=15.9
+  REPS c3-25 WINa s42: 15.3 15.0 15.1 15.5 15.5 / 2.47 2.54 2.43 2.62 2.50 / 7 8 7 8 8 | seed-median gp=15.3
+  REPS c3-25 WINa s7: 15.2 15.2 15.3 14.6 14.9 / 2.62 2.48 2.64 2.63 2.72 / 8 7 8 8 8 | seed-median gp=15.2
+  REPS c3-25 BLKa s42: 7.3 7.3 7.2 7.3 7.2 / 4.81 4.21 4.54 5.77 5.09 / - - - - - | seed-median gp=7.3
+  REPS c3-25 BLKa s7: 6.7 6.5 6.8 6.6 7.4 / 5.17 5.87 6.09 5.56 4.44 / - - - - - | seed-median gp=6.7
+  REPS c7-100 A1 s42: 175.0 176.5 169.1 173.5 171.8 / 6.90 6.71 6.70 7.06 6.64 / 84 81 79 88 78 | seed-median gp=173.5
+  REPS c7-100 A1 s7: 178.4 178.0 178.3 175.6 173.9 / 6.74 6.85 6.85 6.82 6.76 / 82 84 88 84 84 | seed-median gp=178.0
+  REPS c7-100 A2 s42: 177.2 174.4 179.1 175.1 177.9 / 6.70 6.75 6.75 7.13 6.78 / 82 82 80 88 82 | seed-median gp=177.2
+  REPS c7-100 A2 s7: 173.6 176.7 178.4 173.6 177.3 / 6.73 6.96 6.80 6.94 6.82 / 82 85 84 84 86 | seed-median gp=176.7
+  REPS c7-100 CAD s42: 177.4 167.9 176.4 166.6 176.3 / 5.88 5.97 5.76 6.03 5.47 / 70 73 66 76 62 | seed-median gp=176.3
+  REPS c7-100 CAD s7: 178.0 168.9 178.7 176.9 176.3 / 5.62 5.85 5.94 5.69 5.66 / 63 68 76 67 68 | seed-median gp=176.9
+  REPS c7-100 BLKb s42: 174.1 171.7 174.0 172.4 166.1 / 4.31 4.22 4.19 4.64 4.05 / - - - - - | seed-median gp=172.4
+  REPS c7-100 BLKb s7: 173.2 169.3 176.6 174.6 173.7 / 4.03 4.29 4.29 4.32 4.19 / - - - - - | seed-median gp=173.7
+  REPS c7-100 WINa s42: 134.1 128.7 135.3 126.5 134.2 / 9.35 9.94 9.42 9.94 9.42 / 91 91 91 91 91 | seed-median gp=134.1
+  REPS c7-100 WINa s7: 134.0 127.0 128.8 129.0 141.6 / 9.33 10.14 9.75 9.92 8.82 / 91 91 91 91 90 | seed-median gp=129.0
+  REPS c7-100 BLKa s42: 116.6 116.4 114.1 117.7 117.4 / 6.56 6.53 6.70 7.22 6.56 / - - - - - | seed-median gp=116.6
+  REPS c7-100 BLKa s7: 114.1 117.0 116.9 117.6 115.1 / 6.54 6.60 6.96 6.80 6.69 / - - - - - | seed-median gp=116.9
+  REPS c8-100 A1 s42: 104.9 100.4 101.1 101.1 97.5 / 7.71 6.79 7.92 7.24 7.39 / 50 39 57 43 42 | seed-median gp=101.1
+  REPS c8-100 A1 s7: 104.9 105.7 102.6 99.2 104.1 / 8.05 7.13 7.29 7.97 6.87 / 52 46 44 60 40 | seed-median gp=104.1
+  REPS c8-100 A2 s42: 102.0 101.4 103.5 102.3 103.7 / 7.26 7.80 6.88 8.09 7.31 / 47 52 42 52 46 | seed-median gp=102.3
+  REPS c8-100 A2 s7: 104.5 104.3 99.9 100.4 99.6 / 7.19 7.11 7.86 8.49 7.38 / 45 44 47 62 45 | seed-median gp=100.4
+  REPS c8-100 CAD s42: 104.1 103.4 103.9 101.3 103.1 / 6.72 6.50 5.93 5.84 6.82 / 49 46 36 35 50 | seed-median gp=103.4
+  REPS c8-100 CAD s7: 104.5 103.6 104.6 104.4 103.4 / 6.30 6.23 6.21 7.07 6.14 / 43 40 40 56 40 | seed-median gp=104.4
+  REPS c8-100 BLKb s42: 101.4 100.4 102.4 100.8 97.8 / 4.46 4.48 4.51 4.68 4.42 / - - - - - | seed-median gp=100.8
+  REPS c8-100 BLKb s7: 95.9 103.0 102.8 101.1 91.7 / 4.33 4.42 4.40 4.38 4.78 / - - - - - | seed-median gp=101.1
+  REPS c8-100 WINa s42: 94.1 89.9 90.7 91.3 95.2 / 9.53 9.25 9.63 9.74 8.88 / 68 63 61 66 55 | seed-median gp=91.3
+  REPS c8-100 WINa s7: 92.0 91.9 83.9 91.6 89.9 / 9.32 8.58 9.32 9.05 9.63 / 64 54 57 58 68 | seed-median gp=91.6
+  REPS c8-100 BLKa s42: 61.3 61.3 55.9 58.9 52.6 / 8.66 8.72 9.87 9.31 9.14 / - - - - - | seed-median gp=58.9
+  REPS c8-100 BLKa s7: 52.8 57.7 52.9 50.5 62.3 / 9.15 8.50 9.05 10.18 8.10 / - - - - - | seed-median gp=52.9
+
+TRUTH (per leg: median truth loss, gso; median plc; rcvbuf_drops max) per cell/arm
+  TRUTH c1s-400 A1 n=10 p0 truth=0.00122 gso=8.49 plc=0.0017 rcvbuf_max=59
+  TRUTH c1s-400 A2 n=10 p0 truth=0.00121 gso=8.49 plc=0.0016 rcvbuf_max=40
+  TRUTH c1s-400 BLKb n=10 p0 truth=0.00115 gso=7.04 plc=- rcvbuf_max=4
+  TRUTH c1s-400 WINa n=10 p0 truth=0.00112 gso=6.45 plc=0.0018 rcvbuf_max=51
+  TRUTH c1s-400 BLKa n=10 p0 truth=0.00103 gso=7.04 plc=- rcvbuf_max=2
+  TRUTH c1d-400 A1 n=10 p0 truth=0.00108 gso=2.66 plc=0.0012 p1 truth=0.00075 gso=2.65 plc=0.0008 rcvbuf_max=21
+  TRUTH c1d-400 A2 n=10 p0 truth=0.00108 gso=2.65 plc=0.0011 p1 truth=0.00077 gso=2.82 plc=0.0008 rcvbuf_max=16
+  TRUTH c1d-400 CAD n=10 p0 truth=0.00099 gso=3.06 plc=0.0012 p1 truth=0.00089 gso=3.02 plc=0.0009 rcvbuf_max=51
+  TRUTH c2-100 A1 n=10 p0 truth=0.02494 gso=5.11 plc=0.0250 rcvbuf_max=0
+  TRUTH c2-100 A2 n=10 p0 truth=0.02526 gso=4.94 plc=0.0255 rcvbuf_max=0
+  TRUTH c2-100 CAD n=10 p0 truth=0.02506 gso=4.68 plc=0.0253 rcvbuf_max=0
+  TRUTH c2-100 BLKb n=10 p0 truth=0.02602 gso=5.35 plc=- rcvbuf_max=0
+  TRUTH c2-100 WINa n=10 p0 truth=0.02518 gso=4.30 plc=0.0253 rcvbuf_max=0
+  TRUTH c2-100 BLKa n=10 p0 truth=0.02481 gso=5.53 plc=- rcvbuf_max=0
+  TRUTH c3-25 A1 n=10 p0 truth=0.04801 gso=3.25 plc=0.0476 rcvbuf_max=0
+  TRUTH c3-25 A2 n=10 p0 truth=0.04691 gso=3.26 plc=0.0466 rcvbuf_max=0
+  TRUTH c3-25 CAD n=10 p0 truth=0.04816 gso=3.28 plc=0.0478 rcvbuf_max=0
+  TRUTH c3-25 BLKb n=10 p0 truth=0.04534 gso=2.48 plc=- rcvbuf_max=0
+  TRUTH c3-25 WINa n=10 p0 truth=0.04767 gso=3.14 plc=0.0473 rcvbuf_max=0
+  TRUTH c3-25 BLKa n=10 p0 truth=0.04632 gso=2.90 plc=- rcvbuf_max=0
+  TRUTH c7-100 A1 n=10 p0 truth=0.02503 gso=3.04 plc=0.0249 p1 truth=0.02482 gso=3.08 plc=0.0249 rcvbuf_max=0
+  TRUTH c7-100 A2 n=10 p0 truth=0.02501 gso=2.96 plc=0.0249 p1 truth=0.02480 gso=3.00 plc=0.0251 rcvbuf_max=0
+  TRUTH c7-100 CAD n=10 p0 truth=0.02488 gso=2.80 plc=0.0249 p1 truth=0.02423 gso=2.80 plc=0.0241 rcvbuf_max=0
+  TRUTH c7-100 BLKb n=10 p0 truth=0.02600 gso=5.22 plc=- p1 truth=0.02445 gso=5.21 plc=- rcvbuf_max=0
+  TRUTH c7-100 WINa n=10 p0 truth=0.02508 gso=2.48 plc=0.0249 p1 truth=0.02415 gso=2.55 plc=0.0236 rcvbuf_max=0
+  TRUTH c7-100 BLKa n=10 p0 truth=0.02538 gso=4.80 plc=- p1 truth=0.02468 gso=4.90 plc=- rcvbuf_max=0
+  TRUTH c8-100 A1 n=10 p0 truth=0.02508 gso=5.23 plc=0.0251 p1 truth=0.04760 gso=1.50 plc=0.0484 rcvbuf_max=0
+  TRUTH c8-100 A2 n=10 p0 truth=0.02514 gso=4.11 plc=0.0253 p1 truth=0.04892 gso=1.50 plc=0.0493 rcvbuf_max=0
+  TRUTH c8-100 CAD n=10 p0 truth=0.02481 gso=3.88 plc=0.0242 p1 truth=0.04708 gso=1.48 plc=0.0469 rcvbuf_max=0
+  TRUTH c8-100 BLKb n=10 p0 truth=0.02498 gso=5.37 plc=- p1 truth=0.04362 gso=3.11 plc=- rcvbuf_max=0
+  TRUTH c8-100 WINa n=10 p0 truth=0.02499 gso=3.92 plc=0.0251 p1 truth=0.04844 gso=1.30 plc=0.0481 rcvbuf_max=0
+  TRUTH c8-100 BLKa n=10 p0 truth=0.02504 gso=4.75 plc=- p1 truth=0.05048 gso=2.50 plc=- rcvbuf_max=0
+
+CROWN-CELL c2 400B s42 n=8 p99_med=36.7 band=[34-199] p50_med=7.92 band=[7.0-9.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[37.164, 36.695, 34.671, 36.045, 36.623, 371.801, 37.087, 36.415]
+CROWN-CELL c2 400B s7 n=8 p99_med=38.1 band=[34-56] p50_med=7.91 band=[7.0-9.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[39.278, 165.818, 48.344, 34.265, 34.851, 37.007, 34.1, 58.689]
+CROWN-CELL c2 1200B s42 n=8 p99_med=38.5 band=[35-57] p50_med=8.20 band=[7.0-9.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[40.471, 38.441, 37.586, 40.485, 37.788, 38.549, 62.519, 36.617]
+CROWN-CELL c2 1200B s7 n=8 p99_med=39.1 band=[35-169] p50_med=8.22 band=[7.0-9.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[58.428, 42.024, 36.26, 36.74, 190.764, 38.534, 37.962, 39.576]
+CROWN-CELL c3 400B s42 n=8 p99_med=105.5 band=[87-154] p50_med=24.05 band=[22.0-27.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[108.118, 88.059, 123.515, 99.651, 102.971, 131.923, 114.811, 87.372]
+CROWN-CELL c3 400B s7 n=8 p99_med=107.0 band=[88.5-297] p50_med=23.71 band=[22.0-27.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[88.278, 106.436, 124.187, 117.021, 109.628, 107.569, 99.496, 102.274]
+CROWN-CELL c3 1200B s42 n=8 p99_med=96.6 band=[84.3-175] p50_med=25.16 band=[22.0-27.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[90.926, 105.622, 91.924, 101.255, 88.452, 87.93, 109.513, 135.4]
+CROWN-CELL c3 1200B s7 n=8 p99_med=96.2 band=[90.8-139.1] p50_med=25.03 band=[22.0-27.0] counts=[1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000] p99s=[89.19, 93.069, 89.413, 86.563, 99.311, 100.259, 103.737, 139.454]
+CROWN-COUNT count=1000 in 64/64 reps (need >=62 of 64); below-995=[]
+CROWN REPAIRS-INERT-ON-CROWN
