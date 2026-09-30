@@ -616,7 +616,7 @@ impl Drop for RackClockGauge {
         // Emitted whenever a recovery round fired. A run that fired nothing
         // stays silent.
         if self.fired > 0 {
-            eprintln!("{}", self.rack_line());
+            crate::readout!("{}", self.rack_line());
         }
         // The receiver-site class breakdown behind that `fa=`. Emitted on the
         // same rule and with no gate of its own: a gauge that saw source
@@ -626,7 +626,7 @@ impl Drop for RackClockGauge {
         // also emits `[RFA]` on a cadence under the `RWM_DIAG`/`RWM_FDIAG`
         // gates, and its last line is the reading.
         if self.is_receiver_site() {
-            eprintln!("{}", self.rfa_line());
+            crate::readout!("{}", self.rfa_line());
         }
         // The sender-site cause breakdown behind that same `fa=`. Same rule,
         // no gate of its own: a gauge that classified a fire ran the gap loop
@@ -634,7 +634,7 @@ impl Drop for RackClockGauge {
         // arm too, because what fires when the clock is disarmed is the
         // shipped machine's reading.
         if self.is_fire_cause_site() {
-            eprintln!("{}", self.fcause_line());
+            crate::readout!("{}", self.fcause_line());
         }
     }
 }
@@ -752,7 +752,7 @@ impl Drop for SenderTeardownGauges {
         // null check, so the shipped default prints nothing.
         cpuprof::report_at_teardown();
         if self.composed_cap {
-            eprintln!("{}", self.ccap_line());
+            crate::readout!("{}", self.ccap_line());
         }
     }
 }

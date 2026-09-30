@@ -784,7 +784,7 @@ impl CopaState {
         self.last_delivered = self.delivered;
 
         if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
-            eprintln!(
+            crate::readout!(
                 "[RSTRACE-LEGACY] path={} rate={:.0} delta={} elapsed_ms={:.2} max_bw={:.0}",
                 self.rs_trace_path,
                 rate,
@@ -921,7 +921,7 @@ impl CopaState {
         }
         self.rs_generated += 1; // DIAG
         if self.rs_trace_thresh > 0.0 && rate >= self.rs_trace_thresh {
-            eprintln!(
+            crate::readout!(
                 "[RSTRACE] path={} seq={} rate={:.0} delivered={} interval_ms={:.2} send_ms={:.2} ack_ms={:.2} max_bw={:.0}",
                 self.rs_trace_path,
                 seq,

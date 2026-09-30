@@ -316,13 +316,13 @@ pub fn report_line(r: &CpuProfReading) -> String {
 
 /// Emit the run's one `[CPUPROF]` line, at sender teardown.
 ///
-/// `eprintln!` rather than `tracing::info!`, matching the `[WALL]` and
+/// `crate::readout!` (stderr, one write per line) rather than `tracing::info!`, matching the `[WALL]` and
 /// `[ACKDIAG]` siblings: an instrument's line must not be filterable away by
 /// a subscriber level the battery driver does not control.
 pub(crate) fn report_at_teardown() {
     let Some(g) = gauge() else { return };
     let Some(r) = g.report() else { return };
-    eprintln!("{}", report_line(&r));
+    crate::readout!("{}", report_line(&r));
 }
 
 #[cfg(test)]

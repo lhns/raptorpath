@@ -274,14 +274,14 @@ pub fn report_line(r: WallReading) -> String {
 /// Emit the run's one `[WALL]` line, at sender teardown. Idempotent by the
 /// caller's construction (each teardown arm returns immediately after).
 ///
-/// `eprintln!` rather than `tracing::info!`, matching the `[ACKDIAG]` sibling:
+/// `crate::readout!` (stderr, one write per line) rather than `tracing::info!`, matching the `[ACKDIAG]` sibling:
 /// an instrument's line must not be filterable away by a subscriber level the
 /// battery driver does not control, and the L1 drivers scrape the merged
 /// stream either way.
 pub(crate) fn report_at_teardown(end_us: u64) {
     let Some(g) = gauge() else { return };
     let Some(r) = g.report(end_us) else { return };
-    eprintln!("{}", report_line(r));
+    crate::readout!("{}", report_line(r));
 }
 
 #[cfg(test)]

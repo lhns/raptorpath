@@ -874,7 +874,7 @@ pub(crate) fn report(
         } else {
             String::new()
         };
-        eprintln!(
+        crate::readout!(
             "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
@@ -923,7 +923,7 @@ pub(crate) fn report(
             let mut sched = scheduler.lock();
             sched.drain_place_bind();
             if sched.eta().is_sender_site() {
-                eprintln!("{}", sched.eta().line());
+                crate::readout!("{}", sched.eta().line());
             }
         }
         // The sender-side conversion gauges
@@ -952,7 +952,7 @@ pub(crate) fn report(
                         dg.c8c_stall_n.get(&k).copied().unwrap_or(0),
                     ));
                 }
-                eprintln!("[C8CONV-S]{}", s);
+                crate::readout!("[C8CONV-S]{}", s);
             }
         }
         dg.diag_last_us = dnow;

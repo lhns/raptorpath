@@ -695,7 +695,7 @@ pub(crate) async fn run_receiver(
                     if recv_gates.trace {
                         let total: u32 = deficits.iter().map(|(_, d)| d).sum();
                         let withheld = raw_deficits.len().saturating_sub(deficits.len());
-                        eprintln!(
+                        crate::readout!(
                             "[RCV] frontier={} gens_tracked={} deficits={:?} total_deficit={} withheld_by_horizon={} horizon_ms={}",
                             ooo_frontier, gen_widths.len(), deficits, total,
                             withheld, horizon.as_millis()
@@ -1063,7 +1063,7 @@ pub(crate) async fn run_receiver(
                                     ));
                                 }
                             }
-                            eprintln!(
+                            crate::readout!(
                                 "[WEDGE] stall={:.1}s frontier={} blocker={} \
                                  seen_src={} recovered={} output={} in_rseqs={} \
                                  pending={} highest_seen={} span={} \
@@ -1159,7 +1159,7 @@ pub(crate) async fn run_receiver(
                             && recv_shed_diag_at.elapsed() >= Duration::from_millis(500)
                         {
                             recv_shed_diag_at = Instant::now();
-                            eprintln!(
+                            crate::readout!(
                                 "[SHED-R] holes={} frontier={} budget_open={}",
                                 recv_shed_holes,
                                 reorder.next_deliver_seq(),
@@ -1278,7 +1278,7 @@ pub(crate) async fn run_receiver(
                 let wall_us = w.as_micros() as u64;
                 let busy =
                     100.0 * (1.0 - rdiag_idle_us as f64 / wall_us.max(1) as f64);
-                eprintln!(
+                crate::readout!(
                     "[RDIAG] busy={:.0}% msgs={}/s q_avg={:.0} q_max={} cap={}",
                     busy,
                     rdiag_msgs * 1_000_000 / wall_us.max(1),
@@ -1361,7 +1361,7 @@ pub(crate) async fn run_receiver(
                         } else {
                             String::new()
                         };
-                        eprintln!(
+                        crate::readout!(
                             "[WIDLE] idle={}ms/{}/mx{}ms arr={}{}",
                             widle_us / 1000,
                             widle_n,
@@ -1824,7 +1824,7 @@ pub(crate) async fn run_receiver(
                                     c8r_unb_ms.get(&k).copied().unwrap_or(0),
                                 ));
                             }
-                            eprintln!("[C8CONV-R]{}", s);
+                            crate::readout!("[C8CONV-R]{}", s);
                         }
                     }
 
@@ -1961,7 +1961,7 @@ pub(crate) async fn run_receiver(
                             } else {
                                 0
                             };
-                            eprintln!(
+                            crate::readout!(
                                 "[FDIAG] frontier={} seen={} gap={} probe_holes={} probe_buffered={} | DECODE n={} avg={}us present_at_stall={} | SOURCE n={} avg={}us | COMPUTE calls={} avg={}us max={}us total={}ms | rf={} ru={}{}",
                                 f, highest_seen_seq,
                                 highest_seen_seq.saturating_sub(f),
@@ -1994,7 +1994,7 @@ pub(crate) async fn run_receiver(
                         && rfa_report_at.elapsed() >= Duration::from_secs(1)
                     {
                         rfa_report_at = Instant::now();
-                        eprintln!("{}", recv_rack_echo.rfa_line());
+                        crate::readout!("{}", recv_rack_echo.rfa_line());
                     }
 
                     // ── `[QCLK]` periodic readout ─────────────────────────
@@ -2007,7 +2007,7 @@ pub(crate) async fn run_receiver(
                         && qclk_report_at.elapsed() >= Duration::from_secs(1)
                     {
                         qclk_report_at = Instant::now();
-                        eprintln!("{}", recv_qclk_echo.line());
+                        crate::readout!("{}", recv_qclk_echo.line());
                     }
 
                     // ── `[SUCC]` periodic readout ─────────────────────────
@@ -2043,7 +2043,7 @@ pub(crate) async fn run_receiver(
                             &mut rank_prev_seen,
                         );
                         for l in blk.render_cadence(Some(probe)) {
-                            eprintln!("{l}");
+                            crate::readout!("{l}");
                         }
                         // `[RFA] rep_redundant`: repairs fed minus repairs that
                         // recovered anything — the false measurand under coded
@@ -2181,7 +2181,7 @@ pub(crate) async fn run_receiver(
                                 line.push_str(&format!(" p{pid} tx={tx} rx={rx}"));
                             }
                         }
-                        eprintln!("{line}");
+                        crate::readout!("{line}");
                     }
 
                     // Periodic tasks (rate-limited by REPORT_INTERVAL)
@@ -2245,7 +2245,7 @@ pub(crate) async fn run_receiver(
                             reasm_max_span = reasm_max_span.max(span);
                             if reasm_last_report.elapsed() >= Duration::from_millis(500) {
                                 reasm_last_report = Instant::now();
-                                eprintln!(
+                                crate::readout!(
                                     "[REASM] frontier={} highest_seen={} span={} pending={} max_pending={} max_span={}",
                                     highest_delivered_seq, highest_seen_seq, span,
                                     pending, reasm_max_pending, reasm_max_span,

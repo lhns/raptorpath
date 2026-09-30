@@ -1006,7 +1006,7 @@ impl Drop for SumCapGauge {
         // (the control arm's pin fraction is carried by the L1 parsers'
         // `occcap_p50` gauge).
         if self.on {
-            eprintln!("{}", self.sumcap_line());
+            crate::readout!("{}", self.sumcap_line());
         }
         // The one-sided-clamp witness, once per sender teardown and on every
         // arm — it scores the shipped estimator, not any gate here. Silent
@@ -1014,7 +1014,7 @@ impl Drop for SumCapGauge {
         if crate::scheduler::LCW_LOSS_MASS.load(std::sync::atomic::Ordering::Relaxed) > 0
             || crate::scheduler::LCW_OVER_N.load(std::sync::atomic::Ordering::Relaxed) > 0
         {
-            eprintln!("{}", crate::scheduler::lcw_report_line());
+            crate::readout!("{}", crate::scheduler::lcw_report_line());
         }
     }
 }
@@ -1171,7 +1171,7 @@ impl DeltaCapGauge {
 impl Drop for DeltaCapGauge {
     fn drop(&mut self) {
         if self.on {
-            eprintln!("{}", self.dcap_line());
+            crate::readout!("{}", self.dcap_line());
         }
     }
 }

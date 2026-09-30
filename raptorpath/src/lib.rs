@@ -6,6 +6,7 @@ pub mod monitor;
 pub mod net;
 pub mod perf;
 pub mod preflight;
+pub mod readout;
 pub mod routing;
 pub mod scheduler;
 pub mod transport;

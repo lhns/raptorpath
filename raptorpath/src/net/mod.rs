@@ -2343,7 +2343,7 @@ async fn run_window_sender(
                 let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
                     if pol.diag_on {
-                        eprintln!(
+                        crate::readout!(
                             "[GPIPE] M* {}→{} (rate_max={:.0}sym/s rtprop={:.1}ms)",
                             gen_pipe_m, m, gp_rate_max, rtprop_s * 1000.0
                         );
@@ -2561,7 +2561,7 @@ async fn run_window_sender(
                 } else {
                     0.0
                 };
-                eprintln!(
+                crate::readout!(
                     "[PFRAC] proactive_coded={} recovery_coded={} total_coded={} proactive_fraction={:.4}",
                     proactive_coded_total, recovery_coded_total, tot, frac
                 );
@@ -2579,7 +2579,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(shedh_last_us) > 1_000_000 {
                 shedh_last_us = now;
-                eprintln!("{}", shedh_report_line());
+                crate::readout!("{}", shedh_report_line());
             }
         }
         // `[CHI]` — the completion-exposure gauge (paper §4.6), same 1 s
@@ -2590,7 +2590,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(chi_last_us) > 1_000_000 {
                 chi_last_us = now;
-                eprintln!("{}", chi_report_line());
+                crate::readout!("{}", chi_report_line());
             }
         }
         // `[REQS]` — the request-serving gauge (paper §7.6 arms (A)/(B)),
@@ -2602,7 +2602,7 @@ async fn run_window_sender(
             let now = now_us();
             if now.saturating_sub(reqs_last_us) > 1_000_000 {
                 reqs_last_us = now;
-                eprintln!(
+                crate::readout!(
                     "{}",
                     reqs_report_line(
                         request_arm,

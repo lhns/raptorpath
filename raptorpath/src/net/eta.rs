@@ -502,7 +502,7 @@ impl<F: FnMut() -> Option<String>> SenderEtaFlush<F> {
     /// Print the final line if it has not been taken yet.
     pub(crate) fn flush_final(&mut self) {
         if let Some(Some(l)) = self.take_final() {
-            eprintln!("{l}");
+            crate::readout!("{l}");
         }
     }
 }
