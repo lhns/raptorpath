@@ -2710,6 +2710,26 @@ decide it.
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
 
+The per-path loss feed's two laws (the row above). Tracker, per arriving
+batch with per-path sequence `s` and `n` symbols, `h` the highest sequence
+seen:
+
+```text
+  s > h:   E += (s − h)·n;  h = s          s ≤ h (late):   E += 0          always:   R += n
+```
+
+Carried credit, per `(e, r)` pair fed (`LossCredit`, both endpoints of the
+sender's pair and, separately, the receiver's RX feed):
+
+```text
+  raw = e − r;   fed = max(0, raw − c);   c' = c − (raw − fed);   pair fed = (e, e − fed)
+```
+
+so Σfed = Σ(e − r) + c ≥ 0, with c bounded by the reorder depth. Bounded by
+`s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss`,
+`s10_ack_merge_counter_delta_carries_the_late_arrival_credit` and
+`loss_credit_law_anchor_points`.
+
 ### 11.4 Related work
 
 **Hybrid FEC-ARQ.** Mehrotra, Li and Huang [Mehrotra2010, Mehrotra2009]

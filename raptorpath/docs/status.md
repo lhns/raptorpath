@@ -166,6 +166,7 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | BOCD `predictive_loss_upper` (`plu=`) reads ≈ 0.0354 on clean links: a floor from the prior and the run-length mix, unverified | `/home/vibe/s9/out-main/c1dual400-fix-r*-c.log` |
 | balanced v9 striping costs ≈ 1.34× sender kernel CPU at the dual c1 cell | `/home/vibe/s9/out-perf/perf-c1dual-{base,fix}-r*.flat.txt` |
 | Auto on block at c3 is congestion-window-bound at 7.2 Mbit/s (bulk block 17), not retention-bound | `/home/vibe/v1b/out/dbg-c3autoblk-r*-c.log` |
+| the per-batch `Ack` arm (block pipeline, or `RWM_ACK_MERGE=0`) releases in-flight from the raw wire counts, `received + (expected − received)⁺`: under reorder it releases more than was sent (6,8,7,9 → 5 for 4; 6 before the tracker fix). The merged `WindowAck` arm releases through the credited pair and closes exactly | `s10_per_batch_ack_carries_the_late_arrival_credit` (loss feed only; the release is not asserted) |
 | c8 Auto-on-block goodput is bimodal: 32.7 and 35.2 Mbit/s plain, 57.6 in the debug run | `/home/vibe/v1b/out/c8autoblk-r*-drv.out` |
 
 ## 4. Block default re-test — pre-registration
