@@ -1169,36 +1169,55 @@ fn bench_compute_repair_rate_c2_like() {
 // comparison would prove nothing), and compares the cached read with the
 // fresh per-symbol value at every ack.
 //
+// The sequence carries the two inputs production moves between
+// evaluations (S9, the wire-v9 dual-path sender-CPU regression):
+// - the window W the sender passes is `encoder.window_size()`, the live
+//   FILL of the sliding window, which moves on every emitted symbol and
+//   every ack advance (here a sawtooth 192..=208: +1 per ack, back by 16
+//   on the advance) — measured at dual c1 on the unfixed v9 binary:
+//   274 044 of 274 988 evaluations (~12 500/s) were W-change misses;
+// - the worst-ε path is the argmax of two per-path estimators fed
+//   independently from the same channel (near-tied, as v9's honest
+//   per-path ε̂ are), so the pick flips on noise.
+// Both are INPUTS sampled at the evaluation instant, never cache keys: a
+// key on either re-evaluates at its change rate (W: per symbol) and the
+// cadence stops binding. The only invalidation is age ≥ period.
+//
 // Tolerance, and why: the cached rate is by construction the fresh rate
-// of the last evaluation instant, at most one period earlier. Between two
-// acks the fresh rate moves by at most D = max_k |fresh(k) − fresh(k−1)|
-// (measured over the same sequence); a period spans at most
+// of the last evaluation instant — that instant's estimator state, its W
+// and its worst path — at most one period earlier. Between two acks the
+// fresh rate (read at each ack's own W and worst path) moves by at most
+// D = max_k |fresh(k) − fresh(k−1)| (measured over the same sequence, so
+// D includes the W steps and the path flips); a period spans at most
 // A = ceil(period / ack interval) acks. By the triangle inequality
 // |cached − fresh| ≤ A·D at every ack. The test asserts that bound, the
 // structural identities behind it (bit-exact at every evaluation instant;
 // bit-exact to the last instant's fresh value in between; age < period),
-// that the cadence actually binds (evaluations ≈ duration / period), and
-// that the integrated repair volume (the mean rate) stays within 1 % of the
-// per-symbol value. Observed on this sequence (linux release): the fresh
-// rate itself jumps by up to 0.44 between consecutive acks (the per-ack
-// BOCD quantile moves 0.04 -> 0.27 on a single burst), so the per-instant
-// error reaches that size, while the means agree to ~0.3 %.
+// that the cadence actually binds (evaluations ≈ duration / period, while
+// W changes at every ack and the path flips), and that the integrated
+// repair volume (the mean rate) stays within 1 % of the per-symbol value.
 #[test]
 fn rate_cadence_is_one_period_stale_and_bounded() {
     use rand::prelude::*;
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(99);
     let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
-    let mut est = LossEstimator::new_per_call_for_test();
-    for _ in 0..50 {
-        est.record_rtt(std::time::Duration::from_millis(20));
-        est.record_throughput(11.0e6);
+    let mut ests = [LossEstimator::new_per_call_for_test(), LossEstimator::new_per_call_for_test()];
+    for est in ests.iter_mut() {
+        for _ in 0..50 {
+            est.record_rtt(std::time::Duration::from_millis(20));
+            est.record_throughput(11.0e6);
+        }
     }
-    let w = 200usize;
+    // The worst-ε pick, `worst_eps_channel_path`'s rule: max `loss_rate()`,
+    // ties to the last maximum.
+    let worst = |e: &[LossEstimator; 2]| -> u32 {
+        if e[0].loss_rate() > e[1].loss_rate() { 0 } else { 1 }
+    };
     let ack_us = 860u64; // 8 symbols per ack at ~9 300 sym/s
-    let period = RepairRateCache::period_us(est.rtt());
+    let period = RepairRateCache::period_us(ests[0].rtt());
     assert_eq!(period, 5_000, "SRTT 20 ms => period min(5 ms, SRTT/4) = 5 ms");
     let mut cache = RepairRateCache::default();
-    let mut bad = false;
+    let mut bad = [false, false];
     let mut now = 1_000_000u64;
     let mut last_eval: Option<(u64, f64)> = None;
     let (mut max_step, mut max_err) = (0.0f64, 0.0f64);
@@ -1207,30 +1226,47 @@ fn rate_cadence_is_one_period_stale_and_bounded() {
     let acks = 12_000u32; // ~10 s of stream
     let mut nonzero = 0u32;
     let (mut sum_f, mut sum_c) = (0.0f64, 0.0f64);
+    let (mut w_moves, mut flips) = (0u32, 0u32);
+    let (mut prev_w, mut prev_path): (Option<usize>, Option<u32>) = (None, None);
     for k in 0..acks {
         let p_gb = if k < acks / 2 { 0.01 } else { 0.03 };
-        let mut rx = 0u32;
-        let mut pattern = [true; 8];
-        for slot in pattern.iter_mut() {
-            bad = if bad { rng.gen::<f64>() >= 0.4 } else { rng.gen::<f64>() < p_gb };
-            *slot = !bad;
-            rx += (!bad) as u32;
-        }
-        est.record_counts(8, rx);
-        for ok in pattern {
-            est.record_symbol(ok);
+        for (i, est) in ests.iter_mut().enumerate() {
+            let mut rx = 0u32;
+            let mut pattern = [true; 8];
+            for slot in pattern.iter_mut() {
+                bad[i] = if bad[i] { rng.gen::<f64>() >= 0.4 } else { rng.gen::<f64>() < p_gb };
+                *slot = !bad[i];
+                rx += (!bad[i]) as u32;
+            }
+            est.record_counts(8, rx);
+            for ok in pattern {
+                est.record_symbol(ok);
+            }
         }
         now += ack_us;
-        let fresh = ctrl.compute_repair_rate(&est, w);
+        // The live window fill: +1 per ack, back by 16 on the advance.
+        let w = 192 + (k % 17) as usize;
+        let path = worst(&ests);
+        if prev_w.is_some_and(|p| p != w) {
+            w_moves += 1;
+        }
+        if prev_path.is_some_and(|p| p != path) {
+            flips += 1;
+        }
+        prev_w = Some(w);
+        prev_path = Some(path);
+        let est = &ests[path as usize];
+        let fresh = ctrl.compute_repair_rate(est, w);
         let before = cache.evaluations;
-        let cached = cache.get_or_eval(now, w, 0, period, || ctrl.rate_snapshot(&est, w).rate());
+        let cached = cache.get_or_eval(now, w, path, period, || ctrl.rate_snapshot(est, w).rate());
         if cache.evaluations > before {
             // (a) at an evaluation instant the cadenced value IS the fresh one.
             assert_eq!(cached.to_bits(), fresh.to_bits(), "evaluation instant must be exact");
             last_eval = Some((now, fresh));
         } else {
-            // (b) in between it is exactly the last instant's fresh value,
-            // taken less than one period ago.
+            // (b) in between it is exactly the last instant's fresh value
+            // (that instant's estimator, W and worst path), taken less than
+            // one period ago.
             let (at, v) = last_eval.expect("a hit follows an evaluation");
             assert_eq!(cached.to_bits(), v.to_bits());
             assert!(now - at < period, "age {} >= period {period}", now - at);
@@ -1248,15 +1284,18 @@ fn rate_cadence_is_one_period_stale_and_bounded() {
         max_err = max_err.max(e);
         errs.push(e);
     }
-    // The mechanism executes: the rate is nonzero and moving here, and the
-    // cadence binds (one evaluation per ceil(period/ack) acks).
+    // The mechanism executes: the rate is nonzero and moving here, W moves
+    // at every ack, the worst path flips, and the cadence still binds (one
+    // evaluation per ceil(period/ack) acks).
     assert!(nonzero > acks * 9 / 10, "Auto rate must be live: {nonzero}/{acks} nonzero");
     assert!(max_step > 0.0, "the fresh rate must move over the sequence");
+    assert!(w_moves + 1 >= acks, "W must move at every ack: {w_moves}/{acks}");
+    assert!(flips >= 100, "the worst path must flip on noise: {flips} flips");
     let per = period.div_ceil(ack_us); // acks per period = A
     let expect_evals = (acks as u64).div_ceil(per);
     assert!(
         cache.evaluations <= expect_evals + 1 && cache.evaluations + 1 >= expect_evals,
-        "evaluations {} vs expected ~{expect_evals}",
+        "evaluations {} vs expected ~{expect_evals} (W moves {w_moves}, path flips {flips})",
         cache.evaluations
     );
     // (c) the derived envelope |cached − fresh| ≤ A·D.
@@ -1265,8 +1304,7 @@ fn rate_cadence_is_one_period_stale_and_bounded() {
     // (d) What emission integrates is the repair volume. The cadenced rate
     // is a sample-and-hold of the fresh one at instants independent of the
     // channel noise, so its time mean tracks the per-symbol mean; asserted
-    // within 1 % over the sequence (empirical bound, ~4x the observed
-    // 0.27 %).
+    // within 1 %.
     let (mean_f, mean_c) = (sum_f / acks as f64, sum_c / acks as f64);
     assert!(
         (mean_c - mean_f).abs() <= 0.01 * mean_f,
@@ -1274,9 +1312,9 @@ fn rate_cadence_is_one_period_stale_and_bounded() {
     );
     errs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     println!(
-        "rate cadence: evals {} over {acks} acks (A = {per}), max step D = {max_step:.3e}, \
-         max err {max_err:.3e} (bound {bound:.3e}), p50 err {:.3e}, p99 err {:.3e}, \
-         mean fresh {mean_f:.5} cached {mean_c:.5}",
+        "rate cadence: evals {} over {acks} acks (A = {per}, W moves {w_moves}, path flips {flips}), \
+         max step D = {max_step:.3e}, max err {max_err:.3e} (bound {bound:.3e}), p50 err {:.3e}, \
+         p99 err {:.3e}, mean fresh {mean_f:.5} cached {mean_c:.5}",
         cache.evaluations,
         errs[errs.len() / 2],
         errs[errs.len() * 99 / 100]
