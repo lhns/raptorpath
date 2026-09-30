@@ -2699,15 +2699,36 @@ decide it.
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
 | store cap at one path | δ-priced setpoint | `clamp(2.0·BDP, 10, 1024)`; the δ-cap engages only at N ≥ 2 |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
-| recovery-plane path set | live paths | the recovery clocks and the repair margin read `recovery_clock_paths` (live); the react-cap SRTT, the NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, and the Shutdown broadcast still read `active_paths()` |
+| recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
 | store headroom H in the recovery analysis | `(gain − 1)·RTprop` at every cell, with the count released only by the frontier | at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget and the block pipeline's `⌈k·r⌉` |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
-| P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `active_paths()` |
+| P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
+| per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` on the block pipeline), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. A lost multi-symbol block batch is charged as `gap × received` of the next arrival (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |
+
+The per-path loss feed's two laws (the row above). Tracker, per arriving
+batch with per-path sequence `s` and `n` symbols, `h` the highest sequence
+seen:
+
+```text
+  s > h:   E += (s − h)·n;  h = s          s ≤ h (late):   E += 0          always:   R += n
+```
+
+Carried credit, per `(e, r)` pair fed (`LossCredit`, both endpoints of the
+sender's pair and, separately, the receiver's RX feed):
+
+```text
+  raw = e − r;   fed = max(0, raw − c);   c' = c − (raw − fed);   pair fed = (e, e − fed)
+```
+
+so Σfed = Σ(e − r) + c ≥ 0, with c bounded by the reorder depth. Bounded by
+`s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss`,
+`s10_ack_merge_counter_delta_carries_the_late_arrival_credit` and
+`loss_credit_law_anchor_points`.
 
 ### 11.4 Related work
 

@@ -2668,19 +2668,62 @@ fn ack_merge_counter_delta_is_idempotent_under_duplication_and_reorder() {
     );
 }
 
-/// The derived loss count is `expected - received`, so `received` may
-/// never exceed `expected` however the receiver's batch-gap estimate
-/// moves. (The estimate is approximate by construction — see
-/// `PathBatchTracker` — and an underflow here would feed the loss
-/// estimator garbage.)
+/// The fed loss is never negative, and it is never more than the counters
+/// say: cumulative fed loss == cumulative `(expected − received)` once the
+/// carried credit has drained. A delta where `received` leads `expected`
+/// (a late arrival the tracker credits back) feeds zero loss and HOLDS the
+/// excess; the next deltas' loss is reduced by it. The per-ack returned
+/// pair keeps `received <= expected`, so the release (`received` +
+/// `expected − received`) is still exactly `expected` per ack.
 #[test]
 fn ack_merge_counter_delta_never_lets_received_exceed_expected() {
     let clock = Arc::new(MockClock::new());
     let mut path = PathState::new(0, clock.clone());
     let (e, r) = path.ack_merge_counter_delta(10, 40);
     assert_eq!(e, 10);
-    assert_eq!(r, 10, "received is clamped to expected, never above it");
+    assert_eq!(r, 10, "the returned received never exceeds expected");
     assert!(e >= r);
+    // The 30 the receiver led by is held, not discarded: the next 30 of
+    // loss the counters show is already paid for.
+    let (e, r) = path.ack_merge_counter_delta(60, 60);
+    assert_eq!((e, r), (50, 50), "30 raw loss, exactly covered by the held credit");
+    let (e, r) = path.ack_merge_counter_delta(100, 90);
+    assert_eq!((e, r), (40, 30), "10 raw loss, no credit left: 10 fed");
+    // Cumulative fed loss 0 + 0 + 10 == cumulative counters 100 − 90.
+}
+
+/// S10 / F2 — the red trace: a late-arrival delta sequence where the
+/// clamp over-counts. The tracker (F1) reads two holes, then the two late
+/// arrivals fill them (a delta with received > expected), then one true
+/// loss. The counters end at (30, 28): cumulative loss 2. The clamp threw
+/// the late arrivals' credit away and fed 4.
+#[test]
+fn s10_ack_merge_counter_delta_carries_the_late_arrival_credit() {
+    let clock = Arc::new(MockClock::new());
+    let mut path = PathState::new(0, clock.clone());
+    let mut fed_loss = 0u64;
+    for (ce, cr) in [(10u64, 8u64), (10, 10), (20, 20), (30, 28)] {
+        let (e, r) = path.ack_merge_counter_delta(ce, cr);
+        assert!(r <= e, "a fed pair never has received > expected");
+        fed_loss += (e - r) as u64;
+    }
+    assert_eq!(fed_loss, 30 - 28, "cumulative fed loss == cumulative (expected − received)");
+}
+
+/// S10 / F2 — the sender-truth twin carries the same credit: two clocks
+/// (the sender's own count, the receiver's echo) let `received` lead
+/// `sent` on one ack; the clamp rectified it to zero and over-fed the next.
+#[test]
+fn s10_sender_truth_loss_delta_carries_the_credit() {
+    let clock = Arc::new(MockClock::new());
+    let mut path = PathState::new(0, clock.clone());
+    let mut fed_loss = 0u64;
+    for (sent, cr) in [(10u64, 12u64), (20, 18)] {
+        let (e, r) = path.sender_truth_loss_delta(sent, cr);
+        assert!(r <= e);
+        fed_loss += (e - r) as u64;
+    }
+    assert_eq!(fed_loss, 20 - 18, "cumulative fed loss == Σsent − Σreceived");
 }
 
 // ===================================================================

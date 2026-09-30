@@ -1054,6 +1054,70 @@ fn test_path_batch_tracker_with_gap() {
     assert_eq!(received, 10);
 }
 
+/// S10 / F1 — reorder is not loss. Arrivals 6, 8, 7, 9 with nothing lost:
+/// the tracker must read expected == received. Through 949e06b it set
+/// `last_seq` backwards on the late 7 and charged the 7→9 step as a gap
+/// again: 2 phantom losses on 4 arrivals.
+#[test]
+fn s10_tracker_reorder_without_loss_reads_zero_loss() {
+    let mut t = PathBatchTracker::new();
+    for s in [6u64, 8, 7, 9] {
+        t.record_batch(s, 1);
+    }
+    assert_eq!(
+        (t.total_expected, t.total_received),
+        (4, 4),
+        "6,8,7,9 lost nothing: expected must equal received"
+    );
+}
+
+/// S10 / F1 — a true loss plus reorders reads exactly the true loss. Seqs
+/// 0..=29 with 12 dropped on the wire and three displaced arrivals
+/// (d = 1, 2, 3): the cumulative loss is exactly 1.
+#[test]
+fn s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss() {
+    let mut order: Vec<u64> = (0..30).filter(|&s| s != 12).collect();
+    // Displace 5 behind 6, 16 behind 18, 23 behind 26.
+    let mv = |o: &mut Vec<u64>, s: u64, after: u64| {
+        let i = o.iter().position(|&x| x == s).unwrap();
+        o.remove(i);
+        let j = o.iter().position(|&x| x == after).unwrap();
+        o.insert(j + 1, s);
+    };
+    mv(&mut order, 5, 6);
+    mv(&mut order, 16, 18);
+    mv(&mut order, 23, 26);
+    let mut t = PathBatchTracker::new();
+    let mut late = Vec::new();
+    for s in order {
+        let (e, r) = t.record_batch(s, 1);
+        if e == 0 {
+            late.push((s, r));
+        }
+    }
+    assert_eq!(t.total_received, 29);
+    assert_eq!(
+        t.total_expected - t.total_received,
+        1,
+        "exactly the one wire loss (seq 12), no reorder phantoms"
+    );
+    // A late arrival credits received without adding expected.
+    assert_eq!(late, vec![(5, 1), (16, 1), (23, 1)]);
+}
+
+/// S10 / F1 — QUIC datagrams are never retransmitted and packet numbers are
+/// deduplicated, so a duplicate `path_seq` cannot arrive. The tracker
+/// asserts it (debug builds) instead of silently double-crediting.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "duplicate path_seq")]
+fn s10_tracker_debug_asserts_no_duplicate_path_seq() {
+    let mut t = PathBatchTracker::new();
+    t.record_batch(3, 1);
+    t.record_batch(4, 1);
+    t.record_batch(3, 1);
+}
+
 // ----- CopaFeed attribution cursor -----
 
 /// Frontier advance attributes each seq exactly once, in order (wire v9:
@@ -5625,4 +5689,148 @@ fn shutdown_and_window_start_reach_a_saturated_path() {
     un.sort_unstable();
     sat.sort_unstable();
     assert_eq!(sat, un, "the channel set is membership");
+}
+
+// ── S10: the loss-estimator feed graph (feeds A, C, D) ───────────────────
+//
+// Driven through the real control-message dispatch (`handle_control_message`
+// with a real `ControlCtx`) and the receiver's real feed seam, so each test
+// proves the wiring, not a re-implementation of it.
+
+/// The TX estimator's observable state, compared whole: EWMA, Beta mean,
+/// BOCD predictive upper, cumulative fed loss, and the GE HMM (Debug).
+fn s10_tx_state(e: &crate::control::estimator::LossEstimator) -> (f64, f64, f64, f64, String) {
+    (
+        e.loss_rate(),
+        e.loss_rate_mean(),
+        e.predictive_loss_upper(0.95),
+        e.cumulative_loss(),
+        format!("{:?}", e.ge_estimator()),
+    )
+}
+
+/// Run `f` with a real `ControlCtx` over a one-path scheduler (path 0).
+async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> R) -> R {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let transport = Arc::new(
+        QuicTransport::new(&[addr], false, None)
+            .await
+            .expect("loopback endpoint binds"),
+    );
+    let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(WallClock))));
+    scheduler.lock().add_path(0);
+    let fec = Arc::new(parking_lot::Mutex::new(FecRateController::new(
+        1e-6,
+        0.5,
+        ProtocolHint::Bulk,
+        FecBackend::Rlc,
+        1200,
+    )));
+    let decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>> = Arc::new(DashMap::new());
+    let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
+    let stats = Arc::new(SharedStats::new());
+    stats.add_path(0);
+    let ctx = super::control_msg::ControlCtx {
+        scheduler: &scheduler,
+        fec_controller: &fec,
+        decoders: &decoders,
+        sent_counts: &sent_counts,
+        transport: &transport,
+        stats: &stats,
+        nack_tx: None,
+        block_arq: None,
+        batch_counter: None,
+        peer_window_ack: None,
+        deficit_tx: None,
+        request_tx: None,
+        sack_tx: None,
+        copa_feed: None,
+        mstar_anchor: true,
+    };
+    f(&ctx)
+}
+
+/// S10 / F3 — the peer's `PathReport.loss_rate` never enters the local
+/// estimator. It is the peer's own estimator value (a duplicate of the
+/// ack feed, and a loop: each side's report fed the other's estimator),
+/// injected as a truncated 100-trial pseudo-batch. Through 949e06b a
+/// report with loss 0.01 fed (100, 99).
+#[tokio::test]
+async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
+    s10_with_ctx(|ctx| {
+        let before = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        super::control_msg::handle_control_message(
+            0,
+            ControlMessage::PathReport {
+                path_id: 0,
+                loss_rate: 0.01,
+                avg_rtt_us: 20_000,
+                throughput_bps: 0.0,
+                jitter_us: 0,
+                symbols_sent: 0,
+                symbols_received: 0,
+            },
+            ctx,
+        );
+        let after = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        assert_eq!(before, after, "a peer report must not feed the estimator");
+        assert_eq!(
+            ctx.stats.path(0).unwrap().peer_loss_rate_e6.load(Ordering::Relaxed),
+            10_000,
+            "the peer's reported loss is kept as a monitoring value"
+        );
+    })
+    .await;
+}
+
+/// S10 / F2 (feed A) — the per-batch `Ack` arm carries the late-arrival
+/// credit too. After F1 a late arrival's Ack reads `(expected 0,
+/// received N)`; the phantom gap its absence charged arrives on the next
+/// Ack as `(2N, N)`. The pair sums to (2N, 2N): no loss. Through 949e06b
+/// the `(0, N)` Ack was skipped (`if le > 0`) and the next fed 50 % loss.
+#[tokio::test]
+async fn s10_per_batch_ack_carries_the_late_arrival_credit() {
+    s10_with_ctx(|ctx| {
+        for (e, r) in [(4u32, 4u32), (0, 4), (8, 4), (4, 4)] {
+            super::control_msg::handle_control_message(
+                0,
+                ControlMessage::Ack {
+                    block_id: 0,
+                    batch_seq: 0,
+                    received_ids: (0..r).collect(),
+                    echo_send_timestamp_us: 0,
+                    expected_count: e,
+                    received_count: r,
+                },
+                ctx,
+            );
+        }
+        let s = ctx.scheduler.lock();
+        let est = &s.path(0).unwrap().estimator;
+        assert_eq!(est.cumulative_loss(), 0.0, "Σe = Σr = 16: no loss was fed");
+    })
+    .await;
+}
+
+/// S10 / F4 — the receiver's own feed (D) is INCOMING-direction loss. It
+/// goes to the RX slot only; the TX estimator (EWMA, Beta, BOCD, GE,
+/// cumulative), which this endpoint's sender role reads for the OUTGOING
+/// direction, is untouched. Through 949e06b the receiver wrote the TX
+/// fields and `rx_loss_rate()` had no production feed.
+#[test]
+fn s10_receiver_feed_goes_to_rx_and_leaves_tx_untouched() {
+    let mut sched = Scheduler::new(Arc::new(WallClock));
+    sched.add_path(0);
+    let before = s10_tx_state(&sched.path(0).unwrap().estimator);
+    for _ in 0..20 {
+        super::receiver::record_incoming_loss(&mut sched, 0, 10, 8);
+    }
+    let est = &sched.path(0).unwrap().estimator;
+    assert_eq!(s10_tx_state(est), before, "incoming loss must not reach the TX estimator");
+    assert!(
+        est.rx_loss_rate() > 0.1,
+        "incoming loss reads on the RX slot ({})",
+        est.rx_loss_rate()
+    );
 }

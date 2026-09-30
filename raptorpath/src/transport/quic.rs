@@ -240,6 +240,11 @@ pub struct QuicTransport {
     /// Datagram send-queue audit counters, per path. See
     /// `datagram_queue_stats`.
     dg_stats: DashMap<PathId, Arc<DatagramQueueAudit>>,
+    /// `RWM_DIAG` receive-side audit: datagrams the app read from quinn
+    /// (`read_datagram` Ok), per path. Against quinn's own
+    /// `frame_rx.datagram` it names what quinn's bounded incoming buffer
+    /// evicted before the app saw it. See `datagram_rx_audit`.
+    dg_rx_read: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
 }
 
 /// The datagram send-queue audit (`RWM_DIAG`), one per path.
@@ -374,6 +379,7 @@ impl QuicTransport {
             // the gate surface.
             dg_audit: crate::gates::get().diag,
             dg_stats: DashMap::new(),
+            dg_rx_read: DashMap::new(),
         })
     }
 
@@ -567,6 +573,25 @@ impl QuicTransport {
         ))
     }
 
+    /// Receive-side datagram audit for a path (`RWM_DIAG` only):
+    /// `(frame_rx, app_read)` — DATAGRAM frames quinn accepted at the packet
+    /// layer, and datagrams the app's receive loop read. `frame_rx −
+    /// app_read` is what quinn's bounded incoming buffer dropped (oldest
+    /// first) plus what is still buffered at the read: a local drop, which
+    /// the loss tracker cannot tell from wire loss. `None` when the audit is
+    /// off or the path has no receive loop.
+    pub fn datagram_rx_audit(&self, path_id: PathId) -> Option<(u64, u64)> {
+        if !self.dg_audit {
+            return None;
+        }
+        let read = self
+            .dg_rx_read
+            .get(&path_id)?
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let (frame_rx, _) = self.datagram_frame_stats(path_id)?;
+        Some((frame_rx, read))
+    }
+
     /// Connect to a peer on a specific path.
     pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
         let endpoint = self
@@ -677,6 +702,14 @@ impl QuicTransport {
         let mut handles = vec![];
 
         let conn_uni = conn.clone();
+        // `RWM_DIAG` receive-side audit counter (None = audit off: no atomic
+        // on the shipped path).
+        let rx_read = self.dg_audit.then(|| {
+            self.dg_rx_read
+                .entry(path_id)
+                .or_insert_with(|| Arc::new(std::sync::atomic::AtomicU64::new(0)))
+                .clone()
+        });
         // Stream-origin control messages go to a dedicated channel: the
         // data channel backs up under symbol floods, and liveness
         // (PathReport/Ping) queued behind it would starve the dead-path
@@ -687,7 +720,12 @@ impl QuicTransport {
         let handle = tokio::spawn(async move {
             loop {
                 match conn.read_datagram().await {
-                    Ok(data) => match WireMessage::deserialize(&data) {
+                    Ok(data) => match {
+                        if let Some(c) = &rx_read {
+                            c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        WireMessage::deserialize(&data)
+                    } {
                         Ok(msg) => {
                             if tx.send((path_id, msg)).await.is_err() {
                                 break;
@@ -1284,6 +1322,10 @@ mod datagram_queue_audit_tests {
         assert!(
             t.datagram_queue_stats(0).is_none(),
             "no handoff has happened: the gauge must be absent, not zero"
+        );
+        assert!(
+            t.datagram_rx_audit(0).is_none(),
+            "no receive loop exists: the rx audit must be absent, not zero"
         );
 
         if !diag_on {

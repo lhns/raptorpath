@@ -962,7 +962,7 @@ pub(crate) async fn run_receiver(
                                 .live_paths()
                                 .into_iter()
                                 .filter_map(|pid| {
-                                    sched.path(pid).map(|p| p.estimator.loss_rate())
+                                    sched.path(pid).map(|p| p.estimator.rx_loss_rate())
                                 })
                                 .fold(0.0_f64, f64::max)
                         };
@@ -1880,7 +1880,7 @@ pub(crate) async fn run_receiver(
                                     .live_paths()
                                     .into_iter()
                                     .filter_map(|pid| {
-                                        sched.path(pid).map(|p| p.estimator.loss_rate())
+                                        sched.path(pid).map(|p| p.estimator.rx_loss_rate())
                                     })
                                     .fold(0.0_f64, f64::max)
                             } else {
@@ -2195,11 +2195,26 @@ pub(crate) async fn run_receiver(
                     {
                         ctld_last_report = Instant::now();
                         let mut line = String::from("[CTLD]");
-                        for pid in recv_scheduler.lock().live_paths() {
+                        let live = recv_scheduler.lock().live_paths();
+                        for &pid in &live {
                             if let Some((rx, tx)) =
                                 recv_transport.datagram_frame_stats(pid)
                             {
                                 line.push_str(&format!(" p{pid} tx={tx} rx={rx}"));
+                            }
+                        }
+                        // S10 local-drop token, appended after the pairs:
+                        // `dgrx<id>[fr=<quinn frame_rx> rd=<app read>
+                        // ev=<fr − rd>]` — datagrams quinn accepted but the
+                        // app never read (its incoming buffer dropped them,
+                        // plus what is still buffered). The tracker reads
+                        // them as loss; they are not wire loss.
+                        for &pid in &live {
+                            if let Some((fr, rd)) = recv_transport.datagram_rx_audit(pid) {
+                                line.push_str(&format!(
+                                    " dgrx{pid}[fr={fr} rd={rd} ev={}]",
+                                    fr.saturating_sub(rd)
+                                ));
                             }
                         }
                         crate::readout!("{line}");
@@ -2360,10 +2375,7 @@ pub(crate) async fn run_receiver(
                 };
 
                 // ADR-0003: update path loss stats with actual sent/received
-                recv_scheduler
-                    .lock()
-                    .path_mut(path_id)
-                    .map(|p| p.estimator.record_batch(expected, symbol_count));
+                record_incoming_loss(&mut recv_scheduler.lock(), path_id, expected, symbol_count);
 
                 // ADR-0005: send ACK as datagram (best-effort, low overhead)
                 if !suppress_legacy_ack {
@@ -2472,6 +2484,22 @@ pub(crate) async fn run_receiver(
         rank_probe(wd, next_expected, seen_end, &mut rank_prev_seen)
     });
     blk.flush_final(probe);
+}
+
+/// The receiver's own loss feed (feed D): one arrived batch's
+/// `(expected, received)` from `PathBatchTracker`, i.e. loss on the
+/// INCOMING direction of `path_id`. It feeds the RX slot only
+/// (`LossEstimator::record_rx_batch`); the TX estimator belongs to this
+/// endpoint's sender and the outgoing direction.
+pub(crate) fn record_incoming_loss(
+    sched: &mut crate::scheduler::Scheduler,
+    path_id: u32,
+    expected: u32,
+    received: u32,
+) {
+    if let Some(p) = sched.path_mut(path_id) {
+        p.estimator.record_rx_batch(expected, received);
+    }
 }
 
 /// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the

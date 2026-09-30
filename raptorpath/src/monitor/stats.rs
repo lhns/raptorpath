@@ -107,6 +107,10 @@ pub struct PathStats {
     pub in_slow_start: AtomicBool,
     /// Interarrival jitter in microseconds (RFC 3550 style)
     pub jitter_us: AtomicU64,
+    /// The peer's `PathReport.loss_rate` × 1e6: the loss the peer observes
+    /// on the direction it receives. Monitoring only — never an estimator
+    /// input.
+    pub peer_loss_rate_e6: AtomicU64,
 }
 
 impl PathStats {
@@ -123,6 +127,7 @@ impl PathStats {
             in_flight: AtomicU64::new(0),
             in_slow_start: AtomicBool::new(true),
             jitter_us: AtomicU64::new(0),
+            peer_loss_rate_e6: AtomicU64::new(0),
         }
     }
 
@@ -139,6 +144,7 @@ impl PathStats {
             in_flight: self.in_flight.load(Ordering::Relaxed),
             in_slow_start: self.in_slow_start.load(Ordering::Relaxed),
             jitter_us: self.jitter_us.load(Ordering::Relaxed),
+            peer_loss_rate: self.peer_loss_rate_e6.load(Ordering::Relaxed) as f64 / 1_000_000.0,
         }
     }
 }
@@ -228,6 +234,8 @@ pub struct PathSnapshot {
     pub in_flight: u64,
     pub in_slow_start: bool,
     pub jitter_us: u64,
+    /// The peer's reported incoming loss (monitoring only).
+    pub peer_loss_rate: f64,
 }
 
 #[derive(Debug, Serialize)]

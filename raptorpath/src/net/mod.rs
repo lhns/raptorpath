@@ -3984,21 +3984,51 @@ impl BatchCounter {
 /// wire v9) through [`Self::record`] -- the one entry point the receiver
 /// uses -- so a gap is a batch lost on THIS path and never another path's
 /// batch.
+///
+/// Reorder is not loss. The tracker keeps the HIGHEST sequence seen; a
+/// batch above it charges the gap, and a late arrival (at or below it)
+/// credits its symbols as received without adding to expected, which gives
+/// back exactly the loss its absence was charged:
+///
+/// ```text
+///   seq > highest:   expected += (seq − highest) · received;  highest = seq
+///   seq ≤ highest:   expected += 0                            (late arrival)
+///   always:          received += received
+/// ```
+///
+/// On the window path (one symbol per batch) the totals are then exact:
+/// `total_expected − total_received` is the number of sequences below the
+/// highest that have not arrived. A lost multi-symbol block batch is charged
+/// as `gap × received` of the next arrival (the batch's own size is not on
+/// the wire), pinned by `test_path_batch_tracker_with_gap`. A late arrival's
+/// per-batch pair is `(0, received)`; the consumers carry that credit
+/// (`scheduler::PathState::credit_ack_pair`, `LossEstimator::record_rx_batch`).
 pub(crate) struct PathBatchTracker {
-    /// Last seen per-path batch sequence number
-    last_seq: Option<u64>,
+    /// Highest per-path batch sequence seen so far.
+    highest_seq: Option<u64>,
     /// Total symbols received on this path
     total_received: u64,
     /// Estimated symbols expected (based on sequence gaps)
     total_expected: u64,
+    /// Debug-only duplicate witness: QUIC never retransmits a datagram and
+    /// deduplicates packet numbers, so a repeated `path_seq` cannot arrive;
+    /// the tracker asserts it rather than handling it. Bounded to the most
+    /// recent `DUP_WITNESS_SPAN` sequences.
+    #[cfg(debug_assertions)]
+    seen: std::collections::BTreeSet<u64>,
 }
+
+#[cfg(debug_assertions)]
+const DUP_WITNESS_SPAN: u64 = 1 << 16;
 
 impl PathBatchTracker {
     fn new() -> Self {
         Self {
-            last_seq: None,
+            highest_seq: None,
             total_received: 0,
             total_expected: 0,
+            #[cfg(debug_assertions)]
+            seen: std::collections::BTreeSet::new(),
         }
     }
 
@@ -4013,21 +4043,39 @@ impl PathBatchTracker {
     /// Uses sequence gaps to estimate expected symbols. `batch_seq` must be a
     /// per-path sequence (see [`Self::record`]).
     fn record_batch(&mut self, batch_seq: u64, received: u32) -> (u32, u32) {
-        let expected = if let Some(last) = self.last_seq {
-            let gap = batch_seq.saturating_sub(last);
-            if gap > 1 {
-                // Missed batches — estimate their symbols based on this batch size
-                // This is approximate; with variable batch sizes it's imperfect
-                // but better than assuming 0% loss
-                (gap as u32) * received
-            } else {
-                received
+        #[cfg(debug_assertions)]
+        {
+            assert!(
+                self.seen.insert(batch_seq),
+                "duplicate path_seq {batch_seq}: a QUIC datagram cannot arrive twice"
+            );
+            let floor = self
+                .highest_seq
+                .unwrap_or(batch_seq)
+                .max(batch_seq)
+                .saturating_sub(DUP_WITNESS_SPAN);
+            while self.seen.first().is_some_and(|&s| s < floor) {
+                self.seen.pop_first();
             }
-        } else {
-            received // first batch, no gap info
+        }
+        let expected = match self.highest_seq {
+            // First batch: no gap information.
+            None => received,
+            // Above the highest: this batch plus the (gap − 1) missing
+            // batches before it, each estimated at this batch's size.
+            Some(h) if batch_seq > h => {
+                let gap = (batch_seq - h).min(u32::MAX as u64) as u32;
+                gap.saturating_mul(received)
+            }
+            // A late arrival: its slot was already charged as missing by
+            // the batch that jumped over it, so it adds nothing to expected
+            // and its symbols credit the charge back.
+            Some(_) => 0,
         };
 
-        self.last_seq = Some(batch_seq);
+        if self.highest_seq.is_none_or(|h| batch_seq > h) {
+            self.highest_seq = Some(batch_seq);
+        }
         self.total_received += received as u64;
         self.total_expected += expected as u64;
 

@@ -353,7 +353,9 @@ fn on_ack(
                 .unwrap_or(0);
             path.sender_truth_loss_batch(sent, received_count)
         } else {
-            (expected_count, received_count)
+            // A late arrival's Ack reads `(0, received)`: the credit is
+            // carried, never skipped (`PathState::credit_ack_pair`).
+            path.credit_ack_pair(expected_count, received_count)
         };
         if le > 0 {
             path.estimator.record_batch(le, lr);
@@ -540,17 +542,18 @@ fn on_path_report(
         // direction's rate. Local send-rate measurement in the
         // report task is the sole throughput feed.
         let _ = throughput_bps;
-        // Record peer's reported loss for cross-validation
-        if loss_rate > 0.0 {
-            let approx_sent = 100u32;
-            let approx_received = ((1.0 - loss_rate) * approx_sent as f64) as u32;
-            path.estimator.record_batch(approx_sent, approx_received);
-        }
+        // The peer's reported loss is NOT fed to the estimator (the same cut
+        // as throughput above and RTT under `mstar_anchor`): it is the peer's
+        // own estimate of the direction it receives, already seen here
+        // through the ack counters, and feeding it back looped the two
+        // endpoints' estimators into each other. Monitoring value only.
     }
-    // Update monitoring stats with peer's jitter
+    // Update monitoring stats with the peer's jitter and reported loss.
     if let Some(ps) = stats.path(report_path_id) {
         ps.rtt_us.store(avg_rtt_us, Ordering::Relaxed);
         ps.jitter_us.store(jitter_us, Ordering::Relaxed);
+        ps.peer_loss_rate_e6
+            .store((loss_rate.clamp(0.0, 1.0) * 1_000_000.0) as u64, Ordering::Relaxed);
     }
 }
 

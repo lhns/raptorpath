@@ -5,12 +5,56 @@
 //! - EWMA for fast adaptation to changing conditions
 //! - Burst detection for non-iid loss patterns
 //! - BOCD (Bayesian Online Changepoint Detection) for regime-aware prediction
-//! - Separate TX/RX loss tracking for asymmetric path estimation
+//! - Separate TX/RX loss tracking for asymmetric path estimation: TX is the
+//!   OUTGOING direction (fed by this endpoint's sender from its own ack
+//!   deltas), RX the INCOMING one (fed by this endpoint's receiver from its
+//!   `PathBatchTracker`). One `Scheduler` per endpoint holds both.
 
 use super::changepoint::BayesianChangepoint;
 use super::gilbert_elliott::GilbertElliottEstimator;
 use raptorpath_math::normal_quantile;
 use std::time::{Duration, Instant};
+
+/// The carried late-arrival credit: one `(expected, received)` count pair
+/// in, one fed pair out, with
+///
+/// ```text
+///   raw  = expected − received                  (signed; < 0 on a late arrival)
+///   fed  = max(0, raw − held)                   (the loss this pair feeds)
+///   held' = held − (raw − fed)                  (≥ 0: excess received is kept)
+///   out  = (expected, expected − fed)
+/// ```
+///
+/// so the fed loss is never negative, the fed `received` never exceeds
+/// `expected`, and Σfed = Σraw + held: cumulative fed loss equals cumulative
+/// `(expected − received)` whenever the credit has drained, and exceeds it
+/// by at most the credit still held (bounded by the reorder depth). It
+/// replaces the clamp `received.min(expected)`, which discarded the excess
+/// and so fed every reordered symbol as a loss.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LossCredit {
+    held: u64,
+}
+
+impl LossCredit {
+    /// Apply the law to one pair. See the type doc.
+    pub fn apply(&mut self, expected: u64, received: u64) -> (u64, u64) {
+        if received >= expected {
+            self.held += received - expected;
+            return (expected, expected);
+        }
+        let raw = expected - received;
+        let used = raw.min(self.held);
+        self.held -= used;
+        (expected, expected - (raw - used))
+    }
+
+    /// Credit currently held (received in excess of expected, not yet
+    /// matched against a later loss).
+    pub fn held(&self) -> u64 {
+        self.held
+    }
+}
 
 /// Per-path loss estimator.
 #[derive(Debug)]
@@ -26,9 +70,11 @@ pub struct LossEstimator {
     /// Decay factor for Beta params to forget old data
     beta_decay: f64,
 
-    // --- RX path loss (reverse direction; no production feed today) ---
-    /// EWMA of RX loss rate
+    // --- RX path loss (the incoming direction) ---
+    /// EWMA of RX loss rate, fed by [`Self::record_rx_batch`].
     rx_ewma_loss: f64,
+    /// The late-arrival credit of the RX feed (its own; never the TX one).
+    rx_credit: LossCredit,
 
     /// RTT estimation (EWMA)
     ewma_rtt: Duration,
@@ -128,6 +174,7 @@ impl LossEstimator {
             beta_decay: 0.995, // slowly forget old observations
             // RX path: weak prior
             rx_ewma_loss: 0.0,
+            rx_credit: LossCredit::default(),
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
             // Default ON.
@@ -246,6 +293,22 @@ impl LossEstimator {
         self.ge.record_symbol(received);
     }
 
+    /// The receiver's own feed: one arrived batch's `(expected, received)`
+    /// from `PathBatchTracker` — loss on the INCOMING direction. Feeds the RX
+    /// EWMA only; the TX estimator (EWMA, Beta, BOCD, burst flag, GE, totals),
+    /// which this endpoint's sender reads for the OUTGOING direction, is
+    /// untouched. A late arrival's `(0, received)` is carried as credit
+    /// ([`LossCredit`]); a pair with nothing expected after the credit is no
+    /// trial and leaves the EWMA as it is.
+    pub fn record_rx_batch(&mut self, expected: u32, received: u32) {
+        let (e, r) = self.rx_credit.apply(expected as u64, received as u64);
+        if e == 0 {
+            return;
+        }
+        let batch_loss = (e - r) as f64 / e as f64;
+        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+    }
+
     /// Update the RX (reverse path) loss estimate from request/echo counts.
     /// Only tests call it: the wire has no NACK-echo message.
     ///
@@ -262,7 +325,7 @@ impl LossEstimator {
         self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
     }
 
-    /// RX path loss rate (point estimate).
+    /// RX path loss rate (point estimate): the incoming direction's EWMA.
     pub fn rx_loss_rate(&self) -> f64 {
         self.rx_ewma_loss
     }
@@ -595,6 +658,38 @@ mod tests {
              for the A/B): got {:?}",
             legacy.rtt()
         );
+    }
+
+    /// The carried credit's law at its anchor points: a late arrival
+    /// (received > expected) feeds nothing and is held; the next loss is
+    /// paid from it; the fed pair never has received > expected; and the
+    /// cumulative fed loss equals Σexpected − Σreceived + held.
+    #[test]
+    fn loss_credit_law_anchor_points() {
+        let mut c = LossCredit::default();
+        assert_eq!(c.apply(10, 8), (10, 8), "no credit: raw loss fed");
+        assert_eq!(c.apply(0, 2), (0, 0), "late arrivals: no trial, 2 held");
+        assert_eq!(c.held(), 2);
+        assert_eq!(c.apply(10, 9), (10, 10), "1 raw loss paid from the credit");
+        assert_eq!(c.apply(10, 7), (10, 8), "3 raw loss, 1 credit left: 2 fed");
+        assert_eq!(c.held(), 0);
+        // Σe = 30, Σr = 26; fed 2 + 0 + 0 + 2 = 4 = 30 − 26 + 0 held.
+    }
+
+    /// The receiver feed reaches the RX EWMA only, with its own credit.
+    #[test]
+    fn record_rx_batch_feeds_rx_only_and_carries_its_credit() {
+        let mut est = LossEstimator::new();
+        est.record_rx_batch(1, 1);
+        est.record_rx_batch(2, 1); // seq 8 over missing 7
+        let after_gap = est.rx_loss_rate();
+        assert!(after_gap > 0.0);
+        est.record_rx_batch(0, 1); // 7 arrives late: no trial, held
+        assert_eq!(est.rx_loss_rate(), after_gap);
+        est.record_rx_batch(2, 1); // a real one-batch gap, paid by the credit
+        assert!(est.rx_loss_rate() < after_gap, "the credited pair is a clean trial");
+        assert_eq!(est.loss_rate(), 0.0);
+        assert_eq!(est.cumulative_loss(), 0.0);
     }
 
     #[test]

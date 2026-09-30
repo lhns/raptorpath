@@ -20,7 +20,8 @@ ledger this replaces is in git history (ledger at ac1aed1).
 block-only RaptorQ; with the backend unset the window pipeline auto-selects RLC.
 Pinned by `default_config_routes_bulk_and_auto_to_the_block_pipeline` (ADR-0069).
 
-**Wire and substrate.** `PROTOCOL_VERSION = 8`; compact DATA framing
+**Wire and substrate.** `PROTOCOL_VERSION = 9` (per-path `path_seq`,
+`next_expected`, `received_above`); compact DATA framing
 (`RWM_WIRE_COMPACT`) on. Substrate congestion control is quinn BBR
 (`RWM_QUIC_CC`, default `bbr`). The wire-clocked Copa signal and Copa pacing
 are off unless `RWM_QUIC_CC=passthrough`, `RWM_COPA_FEED` or `RWM_COPA_WIRE`
@@ -71,12 +72,12 @@ blessed.
 ### 3.1 Instrument and substrate findings owed from the law-search batteries
 
 1. **Fixed.** The receiver's self-heal estimator (`succ.rs`) counted the sender's retransmit as a self-heal, so π̂0 ≈ 1. A hole closed by a source copy stamped later than its exposer is now `HoleOutcome::Retransmit` (`rtx_n=` in `[SUCC]`, `rtx=` in `[LATE]`) and is excluded from π̂0; a lower bound on copies, no wire change. The receiver-law battery has not been re-run on the fix.
-2. sc2 (clean 100 Mbit single path) did not finish 100 MB in 300 s on the shipped window machine (6/6, 8/8; ~2 Mbit/s once); bisect against the crown era. Open; see 3.5 (paper §11.1 open question 0).
-3. The sender `[ETA]` has no exit flush; `eta_s4.py` uses RTprop where the law uses SRTT (routes disagree 3–4×); the σ̂ witness fails at c7/sc3.
+2. **Fixed** (1b890e0, 5af2687). sc2 (clean 100 Mbit single path) did not finish 100 MB in 300 s on the shipped window machine. Cause: the CPU-bound sender — since d60f3ab the r(β) mix evaluated the window-mass anchor term per source symbol (~6 ms a call). The rate is now evaluated on a cadence of min(5 ms, SRTT/4) of the worst-ε path, lock-free, with one lock order.
+3. **Exit flush fixed** (d6c1c41): the sender `[ETA]` prints once more at exit, `final=1`. Open: `eta_s4.py` uses RTprop where the law uses SRTT (routes disagree 3–4×); the σ̂ witness fails at c7/sc3.
 4. c8 control shows a bimodal fast-path-alone collapse (4/8 reps), outside every pre-registered set; the likely source of c8's 75 % CV.
-5. `RWM_COPA_DELTA` has no engine echo, so MID cannot be scored again.
-6. `tracing` interleaves records onto readout lines; the diagnostic writer needs a newline discipline.
-7. `r_report.py` does not propagate a W7 `VOID`, and its R-FUNDED-NEGATIVE branch fires on any null.
+5. **Fixed** (50b17af). `RWM_COPA_DELTA` has an engine echo in `[GATES]`, from the one resolution the CC reads.
+6. **Fixed** (5bad678). Every readout is one write (`crate::readout!`); `tracing` no longer glues onto readout lines.
+7. **Fixed** (8f484be). `r_report.py` propagates a W7 `VOID`, and R-FUNDED-NEGATIVE needs a bounded shift.
 
 Also fixed with the cleanup: `[DIAG] cod=` counted source copies (gap
 retransmits, request copies, taper copies) as coded repair. It now counts coded
@@ -130,23 +131,43 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 
 ### 3.5 Known issues from the cleanup
 
-1. **Throughput regression on the current binary line.** sc2, sc3 and c7 run
-   far below their earlier readings (item 3.1.2; paper §11.1 open question 0).
-   Undiagnosed; a bisect against the competitive-baseline binary would decide it.
-2. **seq 0 delivered but never pruned.** A lost seq 0 is now SACK-reported, but
-   the sender cannot prune a delivered seq 0 until the cumulative ack reaches
-   1, and a receiver that delivered only seq 0 advertises nothing new. Fixing
-   it needs a wire change.
-3. **Same-class `active_paths()` sites not changed.** The recovery clocks moved
-   to the live set; these still read the cwnd-saturation-filtered set, which is
-   empty when every path is cwnd-full: the react-cap SRTT, the
-   NACK-budget and `repair_rate` worst-loss picks, the taper's ε at send
-   (`emit_source`), and the Shutdown broadcast (sent only on active paths).
+1. **Fixed** (1b890e0). Throughput regression on the current binary line: the
+   CPU-bound sender of item 3.1.2.
+2. **Fixed** (wire v9, 7825196). seq 0 delivered but never pruned: the
+   cumulative point is `next_expected`, a count, so a delivered seq 0 alone is
+   acked and pruned.
+3. **Fixed** (e1ce7e7). The store-cap path-set cliff and the same-class
+   `active_paths()` sites: every pool and worst-path reader (store-cap Σ, the
+   react-cap SRTT, the NACK-budget and `repair_rate` worst-loss picks, the
+   taper's ε at send, WindowStart/Shutdown) reads `live_paths()`. Placement
+   picks, `spare_capacity()` and the `np_act`/`[SF]` gauges keep the
+   saturation-filtered set.
 4. **`[DIAG] rtp` prints whole milliseconds.** At sub-millisecond RTprop
    (loopback) it prints `rtp0ms`, which cannot be told from an unset anchor,
    and at c1's 2 ms the rounding is coarse.
 5. The recovery-clock bind fractions in paper §7.1 / §9.7 were measured on the
    saturation-filtered set and are not re-measured.
+
+### 3.6 Fixed by the fix program (not listed above)
+
+| defect | fix |
+|---|---|
+| SACK truncation: a capped report claimed unreported holes as received | 738008c (honest prefix, cap derived from the datagram); wire v9 `received_above` lets the store gate converge past the cap (7825196) |
+| Auto on the block pipeline DNF'd (§4 finding 1) | be13c8e (retention bounded by bytes only), f21902c (unconfirmed blocks never evicted; retention is the flow-control window, the sender back-pressures), f30d0c1 (completed-block ring sized by the done horizon) |
+| ρ = 1 receiver dropped decoded packets on a full consumer channel | fbde330 (holds and caps the advertised point below the held seq) |
+| per-path loss read other paths' batches as loss (ε̂ ≈ 0.5 at 50/50) | wire v9 per-path `path_seq` (7825196) |
+| v9 rate-cache churn: the cadence re-evaluated on every W and worst-ε-path change | 7636a4c (keyed on age only) |
+| the loss estimator was fed more loss than the wire drops (`plc=` 0.024 vs 0.005 at c2) | `fix/loss-feed`: the tracker credits reorder instead of charging it; the sender carries the late-arrival credit instead of clamping it; the `PathReport` loss feed is deleted; the receiver's incoming loss feeds the RX slot only (so `nack_effectiveness()`, which reads it, is no longer a constant 1.0 on an endpoint that also receives); `[DIAG] dgev` / `[CTLD] dgrx` count local datagram drops. Fed loss against netem truth is not yet measured (V3) |
+
+### 3.7 Recorded, not fixed
+
+| finding | evidence (VM) |
+|---|---|
+| BOCD `predictive_loss_upper` (`plu=`) reads ≈ 0.0354 on clean links: a floor from the prior and the run-length mix, unverified | `/home/vibe/s9/out-main/c1dual400-fix-r*-c.log` |
+| balanced v9 striping costs ≈ 1.34× sender kernel CPU at the dual c1 cell | `/home/vibe/s9/out-perf/perf-c1dual-{base,fix}-r*.flat.txt` |
+| Auto on block at c3 is congestion-window-bound at 7.2 Mbit/s (bulk block 17), not retention-bound | `/home/vibe/v1b/out/dbg-c3autoblk-r*-c.log` |
+| the per-batch `Ack` arm (block pipeline, or `RWM_ACK_MERGE=0`) releases in-flight from the raw wire counts, `received + (expected − received)⁺`: under reorder it releases more than was sent (6,8,7,9 → 5 for 4; 6 before the tracker fix). The merged `WindowAck` arm releases through the credited pair and closes exactly | `s10_per_batch_ack_carries_the_late_arrival_credit` (loss feed only; the release is not asserted) |
+| c8 Auto-on-block goodput is bimodal: 32.7 and 35.2 Mbit/s plain, 57.6 in the debug run | `/home/vibe/v1b/out/c8autoblk-r*-drv.out` |
 
 ## 4. Block default re-test — pre-registration
 

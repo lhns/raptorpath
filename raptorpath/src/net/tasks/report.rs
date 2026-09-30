@@ -123,7 +123,9 @@ pub(crate) async fn run_report(
             let ps = report_stats.path(pid)?;
             Some((pid, ControlMessage::PathReport {
                 path_id: pid,
-                loss_rate: path.estimator.loss_rate(),
+                // The receiver-observed INCOMING loss, as the field's
+                // meaning says (monitoring at the peer; never fed back).
+                loss_rate: path.estimator.rx_loss_rate(),
                 avg_rtt_us: path.estimator.rtt().as_micros() as u64,
                 throughput_bps: path.estimator.throughput(),
                 jitter_us: path.estimator.jitter_us() as u64,

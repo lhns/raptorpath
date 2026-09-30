@@ -733,7 +733,13 @@ pub(crate) fn report(
         // entirely without RWM_DIAG, and absent for a path that has sent
         // nothing — a gauge that reads 0 for two different reasons is not a
         // gauge.
-        let dgq = {
+        // `dgev<id>=<hand − tx>`, appended at the END of the line (the
+        // S10 local-drop token): datagrams quinn accepted from the engine
+        // but never transmitted — evicted from its send buffer, so they look
+        // like loss to the peer's tracker without being wire loss. Includes
+        // what is still queued (`sp` above corrects it); the end-of-run
+        // reading is the one that matters. Same gate and path set as `dgq`.
+        let (dgq, dgev) = {
             // Registered paths, like `np=` above: a byte-full send queue is
             // the saturated case, which `active_paths()` would filter out.
             // Read-only stats; sorted for stable scraping.
@@ -743,14 +749,16 @@ pub(crate) fn report(
                 v
             };
             let mut s = String::new();
+            let mut ev = String::new();
             for id in ids {
                 if let Some((hand, full, err, sp, tx)) = transport.datagram_queue_stats(id) {
                     s.push_str(&format!(
                         " dgq{id}[hand={hand} tx={tx} full={full} err={err} sp={sp}]"
                     ));
+                    ev.push_str(&format!(" dgev{id}={}", hand.saturating_sub(tx)));
                 }
             }
-            s
+            (s, ev)
         };
         // Cross-path-history attributions and
         // how many the flight witness credited to the previous
@@ -898,7 +906,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -930,6 +938,7 @@ pub(crate) fn report(
             // cumulative rate evaluations, their causes and their cost
             // (`RepairRateCache::diag_token`).
             st.rate_cache.diag_token(),
+            dgev,
         );
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
