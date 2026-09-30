@@ -58,6 +58,18 @@ STUBEOF
     cat > "$STUB/ip" <<'STUBEOF'
 #!/bin/bash
 echo "ip $*" >> "$STUB_LOG"
+# The truth-counter cases: `fail_clsact` makes the clsact install fail (the
+# topology must abort), `tc_show` is the canned `tc -s qdisc show` output.
+for a in "$@"; do
+    if [ "$a" = clsact ] && [ -f "$STUB_DIR/fail_clsact" ]; then
+        echo "Error: Specified qdisc kind is unknown." >&2
+        exit 2
+    fi
+done
+if [ -f "$STUB_DIR/tc_show" ] && [[ " $* " == *" -s qdisc show "* ]]; then
+    cat "$STUB_DIR/tc_show"
+    exit 0
+fi
 for a in "$@"; do
     if [ "$a" = ping ]; then
         [ -f "$STUB_DIR/ping_plan" ] || exit 0
@@ -141,7 +153,7 @@ fi
 ck "four veth pairs created"                4 'ip link add cli[0-3] netns rp-cli type veth peer name srv[0-3] netns rp-srv'
 ck "four client addresses"                  4 'ip -n rp-cli addr add 10\.(77|78|79|80)\.0\.1/24'
 ck "four server addresses"                  4 'ip -n rp-srv addr add 10\.(77|78|79|80)\.0\.2/24'
-ck "four DATA-direction qdiscs (cli*)"      4 'netns exec rp-cli tc qdisc add dev cli[0-3] '
+ck "four DATA-direction netem qdiscs (cli*)" 4 'netns exec rp-cli tc qdisc add dev cli[0-3] root netem '
 ck "four ACK-direction qdiscs (srv*)"       4 'netns exec rp-srv tc qdisc add dev srv[0-3] '
 ck "three extra MPTCP subflow endpoints"    3 'ip mptcp endpoint add 10\.(78|79|80)\.0\.1 dev cli[1-3] subflow'
 ck "three extra MPTCP signal endpoints"     3 'ip mptcp endpoint add 10\.(78|79|80)\.0\.2 dev srv[1-3] signal'
@@ -345,6 +357,97 @@ else
 fi
 
 ping_plan   # restore the healthy stub for anything added after this point
+
+# ══ The per-datagram loss-truth counter (lib.sh truth_counter_install) ═════
+#
+# netem counts skbs; the truth is a clsact + egress matchall counter ahead of
+# netem on every DATA egress (cli*) and on no ACK egress (srv*). A missing
+# counter is a missing truth, so a failed install must abort the topology.
+echo
+echo "=== THE LOSS-TRUTH COUNTER (clsact + egress matchall on every data leg)"
+truth_audit() { # label n_legs
+    local label="$1" n="$2"
+    ck "$label: one clsact per data leg"          "$n" 'netns exec rp-cli tc qdisc add dev cli[0-3] clsact$'
+    ck "$label: one egress matchall per data leg" "$n" 'netns exec rp-cli tc filter add dev cli[0-3] egress matchall action pass$'
+    ck "$label: no clsact on any ACK egress"      0    'tc qdisc add dev srv[0-3] clsact'
+    ck "$label: no filter on any ACK egress"      0    'tc filter add dev srv[0-3] '
+    # Every data leg that has a netem also has the counter: same device set.
+    local nd cd
+    nd=$(grep -oE 'tc qdisc add dev cli[0-3] root netem' "$LOG" | grep -oE 'cli[0-3]' | sort | tr '\n' ' ')
+    cd=$(grep -oE 'tc filter add dev cli[0-3] egress matchall' "$LOG" | grep -oE 'cli[0-3]' | sort | tr '\n' ' ')
+    if [[ -n "$nd" && "$nd" == "$cd" ]]; then
+        echo "ok    $label: counter devices == netem data devices ($nd)"
+    else
+        echo "FAIL  $label: netem on [$nd] but counters on [$cd]"
+        FAIL=1
+    fi
+}
+: > "$LOG"; bash ./topo_quad.sh up c2 c2 c3 c3 --seed 42 >/dev/null 2>&1
+truth_audit quad 4
+: > "$LOG"; bash ./topo_dual.sh up c2 c3 --seed 42 >/dev/null 2>&1
+truth_audit dual 2
+: > "$LOG"; bash ./topo.sh up c2 --seed 42 >/dev/null 2>&1
+truth_audit single 1
+: > "$LOG"; bash ./topo.sh up c2 --symmetric --seed 42 >/dev/null 2>&1
+truth_audit "single --symmetric" 1
+
+# A failed install aborts every topology (no silent "no truth").
+touch "$STUB/fail_clsact"
+for t in "topo.sh up c2" "topo_dual.sh up c2 c3" "topo_quad.sh up c2 c2 c3 c3"; do
+    : > "$LOG"
+    # shellcheck disable=SC2086
+    if bash ./$t --seed 42 >/dev/null 2>&1; then
+        echo "FAIL  ${t%% *}: a failed truth-counter install was ACCEPTED"
+        FAIL=1
+    else
+        echo "ok    ${t%% *}: a failed truth-counter install aborts the topology"
+    fi
+done
+rm -f "$STUB/fail_clsact"
+
+# The readout side, offline: lib.sh's `truth_compute` on captured text (a
+# real c1 capture: 178 743 datagrams in 67 444 skbs, netem passed 178 579 and
+# counted 72 dropped skbs). The absolute values, not an ordering.
+(
+    set +euo pipefail
+    source ./lib.sh
+    set +euo pipefail
+    EGR='filter protocol all pref 49152 matchall chain 0 handle 0x1 not_in_hw (rule hit 67444) action order 1: gact action pass random type none pass val 0 index 1 ref 1 bind 1 Action statistics: Sent 219157052 bytes 178743 pkt (dropped 0, overlimits 0 requeues 0) backlog 0b 0p requeues 0'
+    Q='qdisc netem 84c1: root refcnt 7 limit 1000 delay 1ms loss gemodel p 0.05% r 50% 1-h 100% 1-k 0% rate 1Gbit seed 42  Sent 218953955 bytes 178579 pkt (dropped 72, overlimits 0 requeues 0)   backlog 0b 0p requeues 0 '
+    want='[TRUTH] leg=0 dev=cli0 egress_dgrams=178743 egress_skbs=67444 gso=2.65 netem_sent_dgrams=178579 netem_dropped_skbs=72 backlog=0 lost=164 loss=0.000918 rcvbuf_drops=8 rcvbuf_scope=netns'
+    got=$(truth_compute 0 cli0 "$EGR" "$Q" 8)
+    if [[ "$got" == "$want" ]]; then
+        echo "ok    truth_compute: lost = egress - netem_sent - backlog, exact on a real capture"
+    else
+        echo "FAIL  truth_compute:"; echo "      got  $got"; echo "      want $want"; exit 1
+    fi
+    # A backlog of 2 skbs / 2 400 B at 1 226 B per datagram is 2 datagrams.
+    Qb=${Q/backlog 0b 0p/backlog 2452b 1p}
+    got=$(truth_compute 0 cli0 "$EGR" "$Qb" 8)
+    [[ "$got" == *" backlog=2 lost=162 "* ]] \
+        && echo "ok    truth_compute: the skb backlog is converted to datagrams by mean size" \
+        || { echo "FAIL  truth_compute backlog conversion: $got"; exit 1; }
+    # No egress counter: every derived field is '-', never a number.
+    got=$(truth_compute 1 cli1 "" "$Q" "-")
+    [[ "$got" == *"egress_dgrams=- egress_skbs=- gso=- "*"lost=- loss=- rcvbuf_drops=-"* ]] \
+        && echo "ok    truth_compute: an absent counter prints '-', never a fabricated loss" \
+        || { echo "FAIL  truth_compute absent counter: $got"; exit 1; }
+    # A clsact block after the netem block (what `tc -s qdisc show` prints
+    # once the counter is installed) must not be read as netem's counters.
+    Q2="$Q qdisc clsact ffff: parent ffff:fff1 Sent 219157052 bytes 178743 pkt (dropped 0, overlimits 0 requeues 0) backlog 0b 0p requeues 0"
+    got=$(truth_compute 0 cli0 "$EGR" "$Q2" 8)
+    [[ "$got" == "$want" ]] \
+        && echo "ok    truth_compute: reads the FIRST (netem) Sent, not clsact's" \
+        || { echo "FAIL  truth_compute read the clsact block: $got"; exit 1; }
+    # `qdisc_stats_netem` drops the clsact block from the multi-line capture
+    # (the QDISC/QCAP lines stay as they were before the counter existed).
+    printf 'qdisc netem 84c1: root refcnt 7\n Sent 1 bytes 1 pkt (dropped 0, overlimits 0 requeues 0)\n backlog 0b 0p requeues 0\nqdisc clsact ffff: parent ffff:fff1\n Sent 9 bytes 9 pkt (dropped 0, overlimits 0 requeues 0)\n backlog 0b 0p requeues 0\n' > "$STUB_DIR/tc_show"
+    got=$(qdisc_stats_netem rp-cli cli0 | tr '\n' '|')
+    rm -f "$STUB_DIR/tc_show"
+    [[ "$got" == "qdisc netem 84c1: root refcnt 7| Sent 1 bytes 1 pkt (dropped 0, overlimits 0 requeues 0)| backlog 0b 0p requeues 0|" ]] \
+        && echo "ok    qdisc_stats_netem: the clsact block is left out, netem's kept verbatim" \
+        || { echo "FAIL  qdisc_stats_netem: $got"; exit 1; }
+) || FAIL=1
 
 echo
 if [[ "$FAIL" == "0" ]]; then

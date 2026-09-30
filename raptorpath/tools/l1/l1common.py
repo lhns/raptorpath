@@ -157,3 +157,64 @@ def q(v, p, ndigits=None):
 
 def med(v, ndigits=None):
     return q(v, 0.5, ndigits)
+
+
+# ── Datagram-level loss truth ────────────────────────────────────────────
+#
+# `perf_rwm_c.sh` prints one `[TRUTH]` line per data-direction leg at run end
+# (lib.sh `truth_compute`), to its stdout and into the `-q.txt` capture:
+#
+#   [TRUTH] leg=0 dev=cli0 egress_dgrams=N egress_skbs=S gso=G
+#           netem_sent_dgrams=M netem_dropped_skbs=D backlog=B lost=L
+#           loss=X rcvbuf_drops=R rcvbuf_scope=netns
+#
+# `loss` is the per-datagram wire loss of that leg (egress counter ahead of
+# netem against netem's sent datagrams). netem's own `dropped` counts skbs and
+# is never loss truth. `rcvbuf_drops` is per receiver NETNS, not per leg.
+
+TRUTH_INT_KEYS = ("egress_dgrams", "egress_skbs", "netem_sent_dgrams",
+                  "netem_dropped_skbs", "backlog", "lost", "rcvbuf_drops")
+TRUTH_FLOAT_KEYS = ("gso", "loss")
+
+
+def truth(lines):
+    """`[TRUTH]` lines -> {leg (int): {key: value}}. Absent/`-` values are
+    None. A leg printed more than once (a driver log and its `-q.txt` read
+    together) keeps its LAST line. {} when no `[TRUTH]` line exists."""
+    out = {}
+    for ln in lines or []:
+        if not ln or "[TRUTH]" not in ln:
+            continue
+        leg = inum(field(ln, "leg"))
+        if leg is None:
+            continue
+        row = {"dev": field(ln, "dev")}
+        for k in TRUTH_INT_KEYS:
+            row[k] = inum(field(ln, k))
+        for k in TRUTH_FLOAT_KEYS:
+            row[k] = fnum(field(ln, k))
+        out[leg] = row
+    return out
+
+
+def truth_columns(lines, n_legs=None):
+    """The flat, additive parser columns for the truth lines:
+    `truth_loss_p<i>`, `truth_lost_p<i>`, `truth_egress_p<i>`,
+    `truth_gso_p<i>` per leg (`p<i>` lines up with the engine's `[DIAG] p<i>:`)
+    and one `truth_rcvbuf_drops` (per netns). With `n_legs` every leg below it
+    gets its columns, None when unread, so a row's shape does not depend on
+    whether the capture existed."""
+    t = truth(lines)
+    legs = set(t)
+    if n_legs:
+        legs |= set(range(n_legs))
+    cols = {}
+    for i in sorted(legs):
+        r = t.get(i, {})
+        cols["truth_loss_p%d" % i] = r.get("loss")
+        cols["truth_lost_p%d" % i] = r.get("lost")
+        cols["truth_egress_p%d" % i] = r.get("egress_dgrams")
+        cols["truth_gso_p%d" % i] = r.get("gso")
+    rcv = [r.get("rcvbuf_drops") for r in t.values() if r.get("rcvbuf_drops") is not None]
+    cols["truth_rcvbuf_drops"] = rcv[-1] if rcv else None
+    return cols

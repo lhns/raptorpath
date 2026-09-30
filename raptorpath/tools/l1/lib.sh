@@ -152,6 +152,33 @@ independent legs in the same cell." >&2
 
 # Scenario table — identical parameterization to ADR-0051 / paper §2.3.
 # Fields: rate one_way_ms jitter_ms ge_p ge_q
+#
+# WHAT THE GE PARAMETERS MEAN ON THIS HARNESS. netem steps its
+# Gilbert-Elliott chain once per skb and drops the whole skb. quinn sends with
+# UDP GSO, so one skb carries several datagrams (the GSO factor g, a property
+# of the SENDER's batching at that cell, not of the cell). Consequences:
+#   * the per-datagram loss RATE is still p/(p+q): a whole skb is lost or not,
+#     so the fraction of datagrams lost equals the fraction of skbs lost
+#     (calibration: 2.65 % of datagrams at 5 datagrams/skb vs 2.59 % at 1,
+#     GE expectation 2.53 %);
+#   * the per-datagram BURST is about g times the chain's 1/q (in skbs);
+#   * netem's own `dropped` counter counts skbs, so `dropped / Sent` reads
+#     the loss rate low by g. It is never loss truth; `truth_line` below is.
+# Measured on main 2e264b7's binary (egress datagrams per skb, median of
+# n = 3; per-datagram loss from the egress counter):
+#   c1   g 2.7   loss 0.10 %   burst ~ 2 skbs  -> ~5 datagrams
+#   c2   g 4.9   loss 2.60 %   burst ~ 2 skbs  -> ~10 datagrams
+#   c3   g 3.4   loss 4.86 %   burst ~ 2.5 skbs -> ~8.5 datagrams
+#   c8   fast (c2) leg g 3.9, loss 2.70 %;  slow (c3) leg g 1.5, loss 4.07 %
+#        -> the two legs of one dual carry different datagram burst lengths
+#        (~8 vs ~4) from the same kind of GE parameters.
+# Other cells are not calibrated; their g depends on the sender's batching.
+#
+# netem never reorders here: every cell sets `rate`, and with `rate` netem
+# schedules each packet no earlier than the previous one, so the queue is
+# FIFO whatever the jitter (0 out-of-order in 100 000 on the c2 and c3 shapes;
+# 82 920 with the same jitter and no `rate`). Jitter here is delay variation
+# only. Any reorder-handling path is exercised by unit tests, not by L1 cells.
 scenario_params() {
     case "$1" in
         c1|dc)       echo "1gbit   1   0  0.05 50" ;;
@@ -197,6 +224,92 @@ scenario_params() {
         c2r200l10)   echo "100mbit 100 0  5.56 50" ;;
         *) echo "unknown scenario: $1" >&2; exit 1 ;;
     esac
+}
+
+# ── Datagram-level loss truth ────────────────────────────────────────────
+#
+# netem counts skbs, not datagrams (see the scenario table above), so the
+# harness keeps its own per-datagram count of what entered each shaped data
+# egress: a `clsact` qdisc with an egress `matchall action pass` filter, which
+# runs BEFORE the root netem qdisc. The gact action's `Sent … pkt` counts GSO
+# segments (datagrams); the filter's `rule hit` counts skbs. Validated at
+# 200 007 datagrams counted for 200 000 sent (7 = ARP/ICMP).
+#
+# Per leg, at run end:
+#   lost = egress_dgrams − netem_sent_dgrams − backlog
+#   loss = lost / egress_dgrams
+# netem's `Sent … pkt` also counts segments. `lost` includes netem's tail drops
+# (also wire loss). The backlog netem reports is in skbs; it is converted to
+# datagrams by the mean egress datagram size (≈ 0 at run end anyway). The
+# denominator includes the sender's own ACK/control datagrams on that egress
+# (~7 %); loss is decided per skb, so the ratio is unaffected.
+#
+# Installed by the topology scripts on every cli* (data-direction) egress and
+# on no srv* egress. A failed install aborts the topology (`set -e`): an
+# absent counter would silently mean "no truth".
+truth_counter_install() { # ns dev
+    guard_ns "$1"
+    guard_dev "$2"
+    ip netns exec "$1" tc qdisc add dev "$2" clsact
+    ip netns exec "$1" tc filter add dev "$2" egress matchall action pass
+}
+
+# `tc -s qdisc show dev` without the clsact block, so the netem/QDISC
+# captures read exactly as they did before the counter existed.
+qdisc_stats_netem() { # ns dev
+    ip netns exec "$1" tc -s qdisc show dev "$2" 2>/dev/null \
+        | awk '/^qdisc /{ skip = ($2 == "clsact") } !skip'
+}
+
+# One `Udp:` column of /proc/net/snmp inside a namespace, by NAME (the header
+# line names the columns), or empty.
+udp_snmp_field() { # ns field
+    ip netns exec "$1" awk -v f="$2" '
+        $1 == "Udp:" {
+            if (!hdr) { for (i = 2; i <= NF; i++) if ($i == f) c = i; hdr = 1; next }
+            if (c) print $c
+            exit
+        }' /proc/net/snmp 2>/dev/null
+}
+
+# The truth computation, on already-captured text (so it is testable offline):
+#   truth_compute <leg> <dev> <egress-filter-text> <netem-qdisc-text> <rcvbuf>
+# prints one `[TRUTH]` line; any field it cannot read prints `-`.
+#
+# `rcvbuf_drops` is the receiver netns's `RcvbufErrors` delta over the run:
+# datagrams the kernel dropped from a full UDP receive buffer AFTER the wire,
+# counted per GRO skb. No engine token sees them. It is per NETNS, not per leg
+# (`rcvbuf_scope=netns`), and is repeated on every leg line.
+truth_compute() {
+    local leg="$1" dev="$2" egr="$3" q="$4" rcv="${5:--}"
+    local e_pkt e_byt e_skb n_pkt n_drop b_byt
+    e_pkt=$(sed -n 's/.*Action statistics:[[:space:]]*Sent [0-9]* bytes \([0-9]*\) pkt.*/\1/p' <<< "$egr" | head -1)
+    e_byt=$(sed -n 's/.*Action statistics:[[:space:]]*Sent \([0-9]*\) bytes [0-9]* pkt.*/\1/p' <<< "$egr" | head -1)
+    e_skb=$(sed -n 's/.*rule hit \([0-9]*\).*/\1/p' <<< "$egr" | head -1)
+    # The FIRST `Sent`/`backlog` of the netem block (the input is one line).
+    n_pkt=$(grep -oE 'Sent [0-9]+ bytes [0-9]+ pkt \(dropped [0-9]+' <<< "$q" | head -1 | awk '{print $4}')
+    n_drop=$(grep -oE 'Sent [0-9]+ bytes [0-9]+ pkt \(dropped [0-9]+' <<< "$q" | head -1 | awk '{print $7}')
+    b_byt=$(grep -oE 'backlog [0-9]+b [0-9]+p' <<< "$q" | head -1 | sed 's/backlog \([0-9]*\)b.*/\1/')
+    awk -v leg="$leg" -v dev="$dev" -v ep="${e_pkt:--}" -v eb="${e_byt:--}" \
+        -v es="${e_skb:--}" -v np="${n_pkt:--}" -v nd="${n_drop:--}" \
+        -v bb="${b_byt:--}" -v rcv="$rcv" 'BEGIN {
+        ok = (ep != "-" && np != "-" && ep + 0 > 0)
+        gso = (ep != "-" && es != "-" && es + 0 > 0) ? sprintf("%.2f", ep / es) : "-"
+        bl = "-"
+        if (ok && bb != "-" && eb != "-" && eb + 0 > 0) bl = int(bb * ep / eb + 0.5)
+        lost = "-"; loss = "-"
+        if (ok && bl != "-") { lost = ep - np - bl; loss = sprintf("%.6f", lost / ep) }
+        printf "[TRUTH] leg=%s dev=%s egress_dgrams=%s egress_skbs=%s gso=%s netem_sent_dgrams=%s netem_dropped_skbs=%s backlog=%s lost=%s loss=%s rcvbuf_drops=%s rcvbuf_scope=netns\n", \
+            leg, dev, ep, es, gso, np, nd, bl, lost, loss, rcv
+    }'
+}
+
+# Read the counters of one live leg and print its `[TRUTH]` line.
+truth_line() { # ns dev leg rcvbuf_drops
+    local egr q
+    egr=$(ip netns exec "$1" tc -s filter show dev "$2" egress 2>/dev/null | tr '\n' ' ')
+    q=$(qdisc_stats_netem "$1" "$2" | tr '\n' ' ')
+    truth_compute "$3" "$2" "$egr" "$q" "$4"
 }
 
 # Stop the engine the way its receiver can see (the exit flush).

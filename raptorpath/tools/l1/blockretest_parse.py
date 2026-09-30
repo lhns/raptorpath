@@ -165,6 +165,9 @@ def make_row(cell, arm, hint, seed, rep, rc, drv, cli, srv, cotenant=0):
         other.append("generation-guard-present")
     p.extend(other)
     row["cotenant"] = int(cotenant)
+    # Per-datagram loss truth (additive), from the driver output's `[TRUTH]`
+    # lines: `truth_loss_p<i>` etc. None when the driver printed none.
+    row.update(lc.truth_columns(drv))
     if int(rc) != 0:
         row["status"] = "VOID-RC"
     elif int(cotenant):

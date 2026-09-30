@@ -75,6 +75,9 @@ up() {
     # shellcheck disable=SC2086
     ip netns exec "$NS_CLI" tc qdisc add dev cli0 root netem \
         delay "${one_way}ms" $jit rate "$rate" $loss $seed
+    # The per-datagram loss-truth counter, ahead of netem on the data egress
+    # (lib.sh `truth_counter_install`; netem's own counters are per skb).
+    truth_counter_install "$NS_CLI" cli0
 
     # ACK direction (srv -> cli): delay + rate (+ loss if --symmetric)
     local rloss=""

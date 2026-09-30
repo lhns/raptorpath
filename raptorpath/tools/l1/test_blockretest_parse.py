@@ -91,6 +91,16 @@ r = row("WIN", run_line=acked(90.0, 8.9))
 check(r["status"] == "LIVE" and r["seconds"] == 8.9, f"WIN live {r}")
 r = row("WIN", run_line=dnf_line())
 check(r["status"] == "LIVE" and r["dnf"] is True and r["mbps"] is None, f"DNF is a live datum {r}")
+drv, cli, srv = logs("BLK", run_line=acked(95.0, 8.4))
+TL = ("    [TRUTH] leg=0 dev=cli0 egress_dgrams=100000 egress_skbs=20000 gso=5.00 "
+          "netem_sent_dgrams=97400 netem_dropped_skbs=520 backlog=0 lost=2600 loss=0.026000 "
+          "rcvbuf_drops=3 rcvbuf_scope=netns\n").strip()
+tr = bp.make_row("c2", "BLK", "bulk", "42", 1, 0, drv + [TL], cli, srv)
+check(tr["truth_loss_p0"] == 0.026 and tr["truth_gso_p0"] == 5.0 and tr["truth_rcvbuf_drops"] == 3,
+      f"truth columns read off the driver's [TRUTH] line {tr.get('truth_loss_p0')}")
+check(tr["status"] == "LIVE", "a [TRUTH] line changes no status")
+check(row("BLK", run_line=acked(95.0, 8.4))["truth_rcvbuf_drops"] is None,
+      "no [TRUTH] line: the truth column is None")
 r = row("BLK", rc=3, run_line=acked(95.0, 8.4))
 check(r["status"] == "VOID-RC", f"rc!=0 voids {r['status']}")
 drv, cli, srv = logs("BLK", run_line=acked(95.0, 8.4))

@@ -170,6 +170,10 @@ else
     aw_step topo_up bash "$TOPO" up "$SCENA" "$SCENB" --seed "${SEED:-42}"
 fi
 aw_state post_topo
+# The receiver netns's kernel UDP receive-buffer drops, baselined before the
+# server starts: the one local-loss term no engine token counts (read again
+# at run end for the `[TRUTH]` lines' `rcvbuf_drops=`).
+RCVBUF0=$(udp_snmp_field "$NS_SRV" RcvbufErrors)
 
 # Bind/peer lists are built from the leg list, not written out per mode: the
 # addressing stride is 10.(77+i).0.x, so the address set and the device set
@@ -362,16 +366,39 @@ echo "    CPU: CPUSRV=$(awk "BEGIN{printf \"%.2f\", $SRV_TICKS/$HZ}")s CPUCLI=$(
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
 
-# Wire-truth qdisc counters before teardown — bytes/pkts that passed netem per direction plus
-# its GE drops (the loss realization). Read-only; whole-invocation totals
-# (warm-up object is 64 B — negligible). cli*=data direction, srv*=acks.
+# netem's qdisc counters before teardown: bytes/pkts that passed netem per
+# direction plus its drops. Read-only; whole-invocation totals (warm-up object
+# is 64 B, negligible). cli*=data direction, srv*=acks.
+#
+# These are NOT loss truth. `Sent … pkt` counts datagrams (GSO segments) but
+# `dropped` counts skbs, each of which may carry several datagrams, so
+# `dropped / Sent` understates datagram loss by the GSO factor. The truth is
+# the `[TRUTH]` lines below. `qdisc_stats_netem` leaves out the truth
+# counter's clsact block so these lines read exactly as before it existed.
 for DEV in "${CLI_LEGS[@]}"; do
-    ST=$(ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
+    ST=$(qdisc_stats_netem "$NS_CLI" "$DEV" | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
 done
 for DEV in "${SRV_LEGS[@]}"; do
-    ST=$(ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null | tr '\n' ' ') \
+    ST=$(qdisc_stats_netem "$NS_SRV" "$DEV" | tr '\n' ' ') \
         && [[ -n "$ST" ]] && echo "    QDISC $DEV: $ST"
+done
+
+# Loss truth, per datagram, per data-direction leg (lib.sh `truth_line`): the
+# egress counter the topology installed ahead of netem, against what netem
+# passed. `leg=<i>` is the CLI_LEGS index, i.e. the engine's `p<i>` (the bind
+# list is built in the same order). `gso` = egress datagrams per skb, the
+# factor by which netem's own `dropped` understates datagram loss.
+# `rcvbuf_drops` is the receiver netns's RcvbufErrors delta over the run
+# (per netns, not per leg): datagrams the kernel dropped after the wire.
+RCVBUF1=$(udp_snmp_field "$NS_SRV" RcvbufErrors)
+RCVBUF_D="-"
+[[ -n "${RCVBUF0:-}" && -n "$RCVBUF1" ]] && RCVBUF_D=$((RCVBUF1 - RCVBUF0))
+TRUTH_LINES=""
+for ((li = 0; li < ${#CLI_LEGS[@]}; li++)); do
+    TL=$(truth_line "$NS_CLI" "${CLI_LEGS[$li]}" "$li" "$RCVBUF_D")
+    TRUTH_LINES="${TRUTH_LINES}${TL}"$'\n'
+    echo "    $TL"
 done
 
 # tc counters on every cell, in sectioned form, so the shaped link's
@@ -388,18 +415,22 @@ done
     for DEV in "${CLI_LEGS[@]}"; do
         ip netns exec "$NS_CLI" ip link show "$DEV" >/dev/null 2>&1 || continue
         echo "== ${DEV^^} (data-dir egress: netem or tbf+netem bottleneck)"
-        ip netns exec "$NS_CLI" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+        qdisc_stats_netem "$NS_CLI" "$DEV" || true
     done
     for DEV in "${SRV_LEGS[@]}"; do
         ip netns exec "$NS_SRV" ip link show "$DEV" >/dev/null 2>&1 || continue
         echo "== ${DEV^^} (ack-dir egress)"
-        ip netns exec "$NS_SRV" tc -s qdisc show dev "$DEV" 2>/dev/null || true
+        qdisc_stats_netem "$NS_SRV" "$DEV" || true
     done
     echo "== SRV0-INGRESS (policer, when present)"
     ip netns exec "$NS_SRV" tc -s filter show dev srv0 parent ffff: 2>/dev/null || true
     # Wall duration of the shaped window, so utilisation is computable from
     # this file ALONE rather than joined against a RUNTIME line elsewhere.
     echo "== INVOCATION_S ${SECONDS}"
+    # The per-datagram loss truth: the same `[TRUTH]` lines printed above (one
+    # read of the counters), so a battery's copied `-q.txt` carries them.
+    echo "== TRUTH (per-datagram loss per data leg; lib.sh truth_line)"
+    printf '%s' "$TRUTH_LINES"
 } > /tmp/rwm-q.txt 2>/dev/null || true
 echo "    QCAP: /tmp/rwm-q.txt $(wc -l < /tmp/rwm-q.txt 2>/dev/null || echo 0) lines"
 

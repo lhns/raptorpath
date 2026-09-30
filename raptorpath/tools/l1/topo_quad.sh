@@ -75,6 +75,10 @@ shape() { # ns dev scenario seed
     # shellcheck disable=SC2086
     ip netns exec "$ns" tc qdisc add dev "$dev" root netem \
         delay "${one_way}ms" $jit rate "$rate" $loss $sd
+    # The per-datagram loss-truth counter, ahead of netem on this data egress
+    # (lib.sh `truth_counter_install`; netem's own counters are per skb).
+    # `shape` is only ever called on the data direction.
+    truth_counter_install "$ns" "$dev"
 }
 
 up() {

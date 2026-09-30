@@ -115,5 +115,50 @@ check(abs(c.q(list(range(1, 101)), 0.99) - 99.01) < 1e-9, "q(1..100, .99) = 99.0
 check(c.q([10, 20, 30], 0.0) == 10 and c.q([10, 20, 30], 1.0) == 30, "p=0 is min, p=1 is max")
 check(c.q([0.1234567, 0.2], 0.0, 4) == 0.1235, "ndigits rounds")
 
+# ── truth / truth_columns: the per-datagram loss truth ──────────────────
+T0 = ("    [TRUTH] leg=0 dev=cli0 egress_dgrams=178743 egress_skbs=67444 gso=2.65 "
+      "netem_sent_dgrams=178579 netem_dropped_skbs=72 backlog=0 lost=164 "
+      "loss=0.000918 rcvbuf_drops=8 rcvbuf_scope=netns")
+T1 = ("[TRUTH] leg=1 dev=cli1 egress_dgrams=- egress_skbs=- gso=- "
+      "netem_sent_dgrams=100 netem_dropped_skbs=3 backlog=- lost=- loss=- "
+      "rcvbuf_drops=8 rcvbuf_scope=netns")
+QDISC = ("    QDISC cli0: qdisc netem 84c1: root ... Sent 218953955 bytes 178579 pkt "
+         "(dropped 72, overlimits 0 requeues 0)")
+t = c.truth(["noise", QDISC, T0, T1])
+check(sorted(t) == [0, 1], "truth: one entry per leg, keyed by int leg")
+check(t[0]["loss"] == 0.000918 and t[0]["lost"] == 164, "truth: loss and lost read as numbers")
+check(t[0]["egress_dgrams"] == 178743 and t[0]["egress_skbs"] == 67444, "truth: egress datagrams and skbs")
+check(t[0]["gso"] == 2.65 and t[0]["netem_dropped_skbs"] == 72, "truth: gso and the skb drop count")
+check(t[0]["dev"] == "cli0" and t[0]["rcvbuf_drops"] == 8, "truth: dev and rcvbuf_drops")
+check(t[1]["loss"] is None and t[1]["egress_dgrams"] is None and t[1]["backlog"] is None,
+      "truth: '-' (unreadable counter) is None, never 0")
+check(t[1]["netem_sent_dgrams"] == 100, "truth: the readable fields of a partial line survive")
+# The absolute invariant the line encodes: lost = egress - netem_sent - backlog.
+check(t[0]["lost"] == t[0]["egress_dgrams"] - t[0]["netem_sent_dgrams"] - t[0]["backlog"],
+      "truth: lost = egress - netem_sent - backlog on the sample line")
+check(abs(t[0]["loss"] - t[0]["lost"] / t[0]["egress_dgrams"]) < 1e-6, "truth: loss = lost / egress")
+# netem's skb drop count is NOT the loss: here it reads 72/178579 = 0.0004,
+# below the datagram truth 0.00092 by about the GSO factor.
+check(t[0]["netem_dropped_skbs"] / t[0]["netem_sent_dgrams"] < t[0]["loss"] / 2,
+      "truth: the netem skb counter understates the datagram truth on the sample")
+check(c.truth([QDISC, "noise"]) == {} and c.truth([]) == {} and c.truth(None) == {},
+      "truth: no [TRUTH] line is {} (a QDISC line is not truth)")
+check(c.truth(["[TRUTH] dev=cli0 loss=0.1"]) == {}, "truth: a line with no leg is skipped")
+later = T0.replace("loss=0.000918", "loss=0.5")
+check(c.truth([T0, later])[0]["loss"] == 0.5, "truth: a repeated leg keeps its LAST line")
+check(c.truth(["[TRUTH] leg=2 loss=0.01 lost=1"])[2]["loss"] == 0.01,
+      "truth: leg index 2 (quad legs)")
+cols = c.truth_columns([T0, T1])
+check(cols["truth_loss_p0"] == 0.000918 and cols["truth_gso_p0"] == 2.65
+      and cols["truth_lost_p0"] == 164 and cols["truth_egress_p0"] == 178743,
+      "truth_columns: per-leg columns keyed p<i>")
+check(cols["truth_loss_p1"] is None and cols["truth_rcvbuf_drops"] == 8,
+      "truth_columns: an unread leg is None; rcvbuf is one per-netns column")
+cols = c.truth_columns([], n_legs=2)
+check(set(cols) == {"truth_loss_p0", "truth_lost_p0", "truth_egress_p0", "truth_gso_p0",
+                    "truth_loss_p1", "truth_lost_p1", "truth_egress_p1", "truth_gso_p1",
+                    "truth_rcvbuf_drops"} and all(v is None for v in cols.values()),
+      "truth_columns: n_legs fixes the row shape with None when nothing was captured")
+
 print("test_l1common: %d checks, %d failed" % (CHECKS, len(FAILS)))
 sys.exit(1 if FAILS else 0)

@@ -69,7 +69,7 @@ try:                                     # one definition of censoring, imported
 except Exception:                        # never let a probe import kill a row
     PCTS, probe_stats = (), None
 
-from l1common import fnum, gate, gate_tok, inum, last_with, read  # noqa: E402
+from l1common import fnum, gate, gate_tok, inum, last_with, read, truth_columns  # noqa: E402
 from l1common import field as _field  # noqa: E402
 from l1common import q as _q  # noqa: E402
 
@@ -370,4 +370,7 @@ row = {
     "retx_max": retx_max,
     "probe": probe,
 }
+# Per-datagram loss truth (additive): `truth_loss_p<i>` etc. from the `[TRUTH]`
+# lines of the `-q.txt` capture, one column set per live path of the cell.
+row.update(truth_columns(read(q_path), n_legs=n_paths))
 print("RECVLAWRESULT " + json.dumps(row, sort_keys=True))
