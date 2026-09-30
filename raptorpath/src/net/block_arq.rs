@@ -134,7 +134,7 @@ pub const REANNOUNCE_PER_ROUND_CAP: u32 = 16;
 /// block count so a late loss event for a done block is recognised as
 /// "done" (suppressed silently) rather than miscounted as an eviction skip
 /// (`repair_skips_evicted`) while its peers are still retained.
-const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
+pub const DONE_RING_CAP: usize = if RETAIN_MAX_BLOCKS_DERIVED > 1024 {
     RETAIN_MAX_BLOCKS_DERIVED
 } else {
     1024
