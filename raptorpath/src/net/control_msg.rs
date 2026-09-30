@@ -353,7 +353,9 @@ fn on_ack(
                 .unwrap_or(0);
             path.sender_truth_loss_batch(sent, received_count)
         } else {
-            (expected_count, received_count)
+            // A late arrival's Ack reads `(0, received)`: the credit is
+            // carried, never skipped (`PathState::credit_ack_pair`).
+            path.credit_ack_pair(expected_count, received_count)
         };
         if le > 0 {
             path.estimator.record_batch(le, lr);

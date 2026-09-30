@@ -92,6 +92,14 @@ pub struct PathState {
     /// keeps driving `release_in_flight` in both arms — see
     /// [`Self::sender_truth_loss_delta`]).
     loss_recv_cursor: u64,
+    /// The late-arrival credit of the receiver-counted pair (the merged
+    /// `WindowAck` counter delta and the per-batch `Ack`), see
+    /// [`crate::control::estimator::LossCredit`].
+    ack_loss_credit: crate::control::estimator::LossCredit,
+    /// The same law for the `RWM_LOSS_SENT_TRUTH` pair, whose two clocks
+    /// (the sender's own count and the receiver's echo) jitter against each
+    /// other. Separate: the two arms advance independently.
+    truth_loss_credit: crate::control::estimator::LossCredit,
     /// The refuted release candidate's cursor pair (see
     /// [`Self::sender_truth_release_delta`]); no production call site.
     release_sent_cursor: u64,
@@ -156,6 +164,8 @@ impl PathState {
             loss_clamp_over_mass: 0,
             loss_clamp_loss_mass: 0,
             loss_recv_cursor: 0,
+            ack_loss_credit: Default::default(),
+            truth_loss_credit: Default::default(),
             release_sent_cursor: 0,
             release_recv_cursor: 0,
             release_1to1: release_1to1_active(),
@@ -203,8 +213,10 @@ impl PathState {
     /// `cum_received == 0` is the same "no counter payload" sentinel the
     /// merged-ack cursor uses (the two timer-driven `WindowAck` sites
     /// broadcast to every live path and carry no per-path counter).
-    /// `received` is clamped to `expected` so the derived loss count can
-    /// never underflow when the lag runs the other way.
+    /// When the lag runs the other way (`received` leads), the excess is
+    /// carried as credit against the next deltas' loss
+    /// ([`crate::control::estimator::LossCredit`]), so the fed loss is never
+    /// negative and never more than `Σsent − Σreceived` plus the credit held.
     pub fn sender_truth_loss_delta(
         &mut self,
         symbols_sent: u64,
@@ -220,16 +232,15 @@ impl PathState {
         }
         self.loss_sent_cursor = self.loss_sent_cursor.max(symbols_sent);
         self.loss_recv_cursor = self.loss_recv_cursor.max(cum_received);
-        // ── The one-sided-clamp witness (observation only) ───────────────
+        // ── The receiver-led witness (observation only) ──────────────────
         // Two clocks (the sender's own symbol counter and the receiver's
         // cumulative echo) jitter against each other, so
         // `d_received > d_expected` whenever the receiver's cursor
-        // momentarily leads. The clamp rectifies every such sample to zero
-        // loss rather than negative loss, and rectifying a zero-mean jitter is
-        // a positive bias at any path count. Three counters score it: how
-        // often the receiver led, by how much summed, and the positive loss
-        // mass fed. The clamp is untouched and nothing here is read by a
-        // decision.
+        // momentarily leads. The excess is carried as credit (not clamped
+        // away, which rectified a zero-mean jitter into a positive bias).
+        // Three counters score it: how often the receiver led, by how much
+        // summed, and the positive loss mass fed after the credit. Nothing
+        // here is read by a decision.
         if d_received > d_expected {
             LCW_OVER_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             LCW_OVER_MASS.fetch_add(d_received - d_expected, std::sync::atomic::Ordering::Relaxed);
@@ -237,18 +248,22 @@ impl PathState {
             self.loss_clamp_over_mass =
                 self.loss_clamp_over_mass.saturating_add(d_received - d_expected);
         }
-        LCW_LOSS_MASS.fetch_add(
-            d_expected.saturating_sub(d_received.min(d_expected)),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        self.loss_clamp_loss_mass = self
-            .loss_clamp_loss_mass
-            .saturating_add(d_expected.saturating_sub(d_received.min(d_expected)));
+        let (e, r) = self.truth_loss_credit.apply(d_expected, d_received);
+        LCW_LOSS_MASS.fetch_add(e - r, std::sync::atomic::Ordering::Relaxed);
+        self.loss_clamp_loss_mass = self.loss_clamp_loss_mass.saturating_add(e - r);
         let cap = u32::MAX as u64;
-        (
-            d_expected.min(cap) as u32,
-            d_received.min(d_expected).min(cap) as u32,
-        )
+        (e.min(cap) as u32, r.min(cap) as u32)
+    }
+
+    /// The per-batch `Ack` arm's loss pair through the same late-arrival
+    /// credit as [`Self::ack_merge_counter_delta`]: a late arrival's Ack
+    /// carries `(0, received)` (the tracker credits reorder, it does not
+    /// charge it), and that credit must reach the estimator instead of
+    /// being skipped. Loss feed only; the in-flight release keeps the
+    /// wire's own counts.
+    pub fn credit_ack_pair(&mut self, expected: u32, received: u32) -> (u32, u32) {
+        let (e, r) = self.ack_loss_credit.apply(expected as u64, received as u64);
+        (e as u32, r as u32)
     }
 
     /// The one-sided-clamp witness, whole — `(samples where the receiver's
@@ -356,9 +371,14 @@ impl PathState {
     /// are no-ops, which is what makes the re-homed consumers idempotent
     /// under ack loss, duplication and reordering.
     ///
-    /// `received` is clamped to `expected`: the receiver's `expected` is a
-    /// batch-gap estimate (`PathBatchTracker`), so a shrinking gap estimate
-    /// must never make the derived loss count underflow.
+    /// A delta whose `received` exceeds its `expected` (late arrivals the
+    /// tracker credits back after their slots were charged) feeds no loss
+    /// and holds the excess as credit against the next deltas' loss
+    /// ([`crate::control::estimator::LossCredit`]): the returned `received`
+    /// never exceeds `expected`, so the per-ack release (`received` plus
+    /// `expected − received`) stays exactly `expected`, and the cumulative
+    /// fed loss equals the counters' cumulative `expected − received` once
+    /// the credit has drained.
     pub fn ack_merge_counter_delta(&mut self, cum_expected: u64, cum_received: u64) -> (u32, u32) {
         if cum_received == 0 {
             return (0, 0);
@@ -370,11 +390,9 @@ impl PathState {
         }
         self.ack_cum_expected = self.ack_cum_expected.max(cum_expected);
         self.ack_cum_received = self.ack_cum_received.max(cum_received);
+        let (e, r) = self.ack_loss_credit.apply(d_expected, d_received);
         let cap = u32::MAX as u64;
-        (
-            d_expected.min(cap) as u32,
-            d_received.min(d_expected).min(cap) as u32,
-        )
+        (e.min(cap) as u32, r.min(cap) as u32)
     }
 
     /// Update the hint-coupled queue target when the protocol hint changes.

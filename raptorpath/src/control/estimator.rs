@@ -12,6 +12,47 @@ use super::gilbert_elliott::GilbertElliottEstimator;
 use raptorpath_math::normal_quantile;
 use std::time::{Duration, Instant};
 
+/// The carried late-arrival credit: one `(expected, received)` count pair
+/// in, one fed pair out, with
+///
+/// ```text
+///   raw  = expected − received                  (signed; < 0 on a late arrival)
+///   fed  = max(0, raw − held)                   (the loss this pair feeds)
+///   held' = held − (raw − fed)                  (≥ 0: excess received is kept)
+///   out  = (expected, expected − fed)
+/// ```
+///
+/// so the fed loss is never negative, the fed `received` never exceeds
+/// `expected`, and Σfed = Σraw + held: cumulative fed loss equals cumulative
+/// `(expected − received)` whenever the credit has drained, and exceeds it
+/// by at most the credit still held (bounded by the reorder depth). It
+/// replaces the clamp `received.min(expected)`, which discarded the excess
+/// and so fed every reordered symbol as a loss.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct LossCredit {
+    held: u64,
+}
+
+impl LossCredit {
+    /// Apply the law to one pair. See the type doc.
+    pub fn apply(&mut self, expected: u64, received: u64) -> (u64, u64) {
+        if received >= expected {
+            self.held += received - expected;
+            return (expected, expected);
+        }
+        let raw = expected - received;
+        let used = raw.min(self.held);
+        self.held -= used;
+        (expected, expected - (raw - used))
+    }
+
+    /// Credit currently held (received in excess of expected, not yet
+    /// matched against a later loss).
+    pub fn held(&self) -> u64 {
+        self.held
+    }
+}
+
 /// Per-path loss estimator.
 #[derive(Debug)]
 pub struct LossEstimator {
