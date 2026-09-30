@@ -5807,3 +5807,25 @@ async fn s10_per_batch_ack_carries_the_late_arrival_credit() {
     })
     .await;
 }
+
+/// S10 / F4 — the receiver's own feed (D) is INCOMING-direction loss. It
+/// goes to the RX slot only; the TX estimator (EWMA, Beta, BOCD, GE,
+/// cumulative), which this endpoint's sender role reads for the OUTGOING
+/// direction, is untouched. Through 949e06b the receiver wrote the TX
+/// fields and `rx_loss_rate()` had no production feed.
+#[test]
+fn s10_receiver_feed_goes_to_rx_and_leaves_tx_untouched() {
+    let mut sched = Scheduler::new(Arc::new(WallClock));
+    sched.add_path(0);
+    let before = s10_tx_state(&sched.path(0).unwrap().estimator);
+    for _ in 0..20 {
+        super::receiver::record_incoming_loss(&mut sched, 0, 10, 8);
+    }
+    let est = &sched.path(0).unwrap().estimator;
+    assert_eq!(s10_tx_state(est), before, "incoming loss must not reach the TX estimator");
+    assert!(
+        est.rx_loss_rate() > 0.1,
+        "incoming loss reads on the RX slot ({})",
+        est.rx_loss_rate()
+    );
+}

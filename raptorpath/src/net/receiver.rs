@@ -2360,10 +2360,7 @@ pub(crate) async fn run_receiver(
                 };
 
                 // ADR-0003: update path loss stats with actual sent/received
-                recv_scheduler
-                    .lock()
-                    .path_mut(path_id)
-                    .map(|p| p.estimator.record_batch(expected, symbol_count));
+                record_incoming_loss(&mut recv_scheduler.lock(), path_id, expected, symbol_count);
 
                 // ADR-0005: send ACK as datagram (best-effort, low overhead)
                 if !suppress_legacy_ack {
@@ -2472,6 +2469,20 @@ pub(crate) async fn run_receiver(
         rank_probe(wd, next_expected, seen_end, &mut rank_prev_seen)
     });
     blk.flush_final(probe);
+}
+
+/// The receiver's own loss feed (feed D): one arrived batch's
+/// `(expected, received)` from `PathBatchTracker`, i.e. loss on the
+/// INCOMING direction of `path_id`.
+pub(crate) fn record_incoming_loss(
+    sched: &mut crate::scheduler::Scheduler,
+    path_id: u32,
+    expected: u32,
+    received: u32,
+) {
+    if let Some(p) = sched.path_mut(path_id) {
+        p.estimator.record_batch(expected, received);
+    }
 }
 
 /// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the
