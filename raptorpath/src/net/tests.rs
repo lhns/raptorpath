@@ -1054,6 +1054,70 @@ fn test_path_batch_tracker_with_gap() {
     assert_eq!(received, 10);
 }
 
+/// S10 / F1 — reorder is not loss. Arrivals 6, 8, 7, 9 with nothing lost:
+/// the tracker must read expected == received. Through 949e06b it set
+/// `last_seq` backwards on the late 7 and charged the 7→9 step as a gap
+/// again: 2 phantom losses on 4 arrivals.
+#[test]
+fn s10_tracker_reorder_without_loss_reads_zero_loss() {
+    let mut t = PathBatchTracker::new();
+    for s in [6u64, 8, 7, 9] {
+        t.record_batch(s, 1);
+    }
+    assert_eq!(
+        (t.total_expected, t.total_received),
+        (4, 4),
+        "6,8,7,9 lost nothing: expected must equal received"
+    );
+}
+
+/// S10 / F1 — a true loss plus reorders reads exactly the true loss. Seqs
+/// 0..=29 with 12 dropped on the wire and three displaced arrivals
+/// (d = 1, 2, 3): the cumulative loss is exactly 1.
+#[test]
+fn s10_tracker_true_loss_plus_reorder_reads_exactly_the_true_loss() {
+    let mut order: Vec<u64> = (0..30).filter(|&s| s != 12).collect();
+    // Displace 5 behind 6, 16 behind 18, 23 behind 26.
+    let mv = |o: &mut Vec<u64>, s: u64, after: u64| {
+        let i = o.iter().position(|&x| x == s).unwrap();
+        o.remove(i);
+        let j = o.iter().position(|&x| x == after).unwrap();
+        o.insert(j + 1, s);
+    };
+    mv(&mut order, 5, 6);
+    mv(&mut order, 16, 18);
+    mv(&mut order, 23, 26);
+    let mut t = PathBatchTracker::new();
+    let mut late = Vec::new();
+    for s in order {
+        let (e, r) = t.record_batch(s, 1);
+        if e == 0 {
+            late.push((s, r));
+        }
+    }
+    assert_eq!(t.total_received, 29);
+    assert_eq!(
+        t.total_expected - t.total_received,
+        1,
+        "exactly the one wire loss (seq 12), no reorder phantoms"
+    );
+    // A late arrival credits received without adding expected.
+    assert_eq!(late, vec![(5, 1), (16, 1), (23, 1)]);
+}
+
+/// S10 / F1 — QUIC datagrams are never retransmitted and packet numbers are
+/// deduplicated, so a duplicate `path_seq` cannot arrive. The tracker
+/// asserts it (debug builds) instead of silently double-crediting.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "duplicate path_seq")]
+fn s10_tracker_debug_asserts_no_duplicate_path_seq() {
+    let mut t = PathBatchTracker::new();
+    t.record_batch(3, 1);
+    t.record_batch(4, 1);
+    t.record_batch(3, 1);
+}
+
 // ----- CopaFeed attribution cursor -----
 
 /// Frontier advance attributes each seq exactly once, in order (wire v9:
