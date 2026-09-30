@@ -5690,3 +5690,91 @@ fn shutdown_and_window_start_reach_a_saturated_path() {
     sat.sort_unstable();
     assert_eq!(sat, un, "the channel set is membership");
 }
+
+// ── S10: the loss-estimator feed graph (feeds A, C, D) ───────────────────
+//
+// Driven through the real control-message dispatch (`handle_control_message`
+// with a real `ControlCtx`) and the receiver's real feed seam, so each test
+// proves the wiring, not a re-implementation of it.
+
+/// The TX estimator's observable state, compared whole: EWMA, Beta mean,
+/// BOCD predictive upper, cumulative fed loss, and the GE HMM (Debug).
+fn s10_tx_state(e: &crate::control::estimator::LossEstimator) -> (f64, f64, f64, f64, String) {
+    (
+        e.loss_rate(),
+        e.loss_rate_mean(),
+        e.predictive_loss_upper(0.95),
+        e.cumulative_loss(),
+        format!("{:?}", e.ge_estimator()),
+    )
+}
+
+/// Run `f` with a real `ControlCtx` over a one-path scheduler (path 0).
+async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> R) -> R {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let transport = Arc::new(
+        QuicTransport::new(&[addr], false, None)
+            .await
+            .expect("loopback endpoint binds"),
+    );
+    let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(WallClock))));
+    scheduler.lock().add_path(0);
+    let fec = Arc::new(parking_lot::Mutex::new(FecRateController::new(
+        1e-6,
+        0.5,
+        ProtocolHint::Bulk,
+        FecBackend::Rlc,
+        1200,
+    )));
+    let decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>> = Arc::new(DashMap::new());
+    let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
+    let stats = Arc::new(SharedStats::new());
+    stats.add_path(0);
+    let ctx = super::control_msg::ControlCtx {
+        scheduler: &scheduler,
+        fec_controller: &fec,
+        decoders: &decoders,
+        sent_counts: &sent_counts,
+        transport: &transport,
+        stats: &stats,
+        nack_tx: None,
+        block_arq: None,
+        batch_counter: None,
+        peer_window_ack: None,
+        deficit_tx: None,
+        request_tx: None,
+        sack_tx: None,
+        copa_feed: None,
+        mstar_anchor: true,
+    };
+    f(&ctx)
+}
+
+/// S10 / F3 — the peer's `PathReport.loss_rate` never enters the local
+/// estimator. It is the peer's own estimator value (a duplicate of the
+/// ack feed, and a loop: each side's report fed the other's estimator),
+/// injected as a truncated 100-trial pseudo-batch. Through 949e06b a
+/// report with loss 0.01 fed (100, 99).
+#[tokio::test]
+async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
+    s10_with_ctx(|ctx| {
+        let before = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        super::control_msg::handle_control_message(
+            0,
+            ControlMessage::PathReport {
+                path_id: 0,
+                loss_rate: 0.01,
+                avg_rtt_us: 20_000,
+                throughput_bps: 0.0,
+                jitter_us: 0,
+                symbols_sent: 0,
+                symbols_received: 0,
+            },
+            ctx,
+        );
+        let after = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        assert_eq!(before, after, "a peer report must not feed the estimator");
+    })
+    .await;
+}
