@@ -2595,7 +2595,7 @@ shipped.
 | Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); ships as an opt-in | `e84ef1c` | reverted |
 | Emission batching as default (`RWM_EMIT_BATCH`) | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | opt-in |
 | **Recovery clocks** | | | |
-| Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed |
+| Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed; the per-path sequence returns ungated as wire v9 `path_seq` (Section 2.2), so the cadence re-heat is the first reading its VM run owes |
 | Singles hole suppression (`RWM_RECOV_SP`) | +0.3 Mbit/s at sc3, a tie at sc2; re-fires are re-serve-clocked | `db40d2f` | off (kept; open) |
 | Derived patience (`RWM_PATIENCE_DERIVED`) | the literal it replaces wins 0 of 177 543 evaluations at the cell it was accused at; identical to shipped across 192 bench cells | `65e92b3` | removed |
 | Derived recovery sweep (`RWM_DERIVED_SWEEP`) | the argument is vindicated, the lever inert where it should act and −23 %/−28 % goodput when armed | `43b09fe` | off |

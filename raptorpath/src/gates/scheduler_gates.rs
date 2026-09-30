@@ -318,9 +318,11 @@ pub(crate) fn resolve_ack_merge() -> bool {
 /// gap-derived `total_expected`. The law and its residual are on
 /// [`PathState::sender_truth_loss_delta`].
 ///
-/// At N ≥ 2 the global `batch_seq` gap is mostly the other path's symbols, so
-/// the gap estimate is contaminated; at N = 1 the gate only removes ~1 BDP of
-/// startup lag. The estimate feeds the NACK repair margin, the NACK congestion
+/// Through wire v8 the gap was read in the global `batch_seq`, so at N ≥ 2 it
+/// was mostly the other path's symbols and the gap estimate was contaminated;
+/// v9 reads it in the per-path `path_seq`, so both arms are per-path honest
+/// and this gate differs only by its own residuals (~1 BDP of startup lag,
+/// retransmit multiplicity). The estimate feeds the NACK repair margin, the NACK congestion
 /// multiplier and budget cap, the block-ARQ margins, the interleaver taper
 /// decay, the shed budget and every placement cost with an `eps` term. No wire
 /// format changes. It ships off because an honest loss estimate re-heats the
