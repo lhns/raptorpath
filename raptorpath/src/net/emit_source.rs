@@ -818,8 +818,11 @@ pub(crate) fn worst_eps_path(
 
 /// The window sender's repair rate on the Stage-1c cadence (see
 /// [`RepairRateCache`]): source emission, `serve_gaps` and the
-/// cumulative-ack advance all read it here. On a hit no evaluation runs; on
-/// a miss the inputs are snapshotted under the controller → scheduler locks
+/// cumulative-ack advance all read it here. On a hit (the entry is younger
+/// than its period — age is the only key) no lock is taken and no
+/// evaluation runs; W and the worst-ε path are inputs sampled at the
+/// evaluation instant (see [`RepairRateCache`]). On a miss the inputs are
+/// snapshotted under the controller → scheduler locks
 /// (the one lock order used wherever both are held) and the ~0.1 ms rate
 /// mix is evaluated after both are released, so ack processing never waits
 /// on the solver. 0.0 only when the channel has no path at all.
@@ -830,15 +833,15 @@ pub(crate) fn cadenced_repair_rate(
     window: usize,
     now_us: u64,
 ) -> f64 {
+    if let Some(rate) = cache.hit(now_us) {
+        return rate;
+    }
     let (path, period, snap) = {
         let ctrl = fec_controller.lock();
         let sched = scheduler.lock();
         let Some((path, est)) = worst_eps_path(&sched) else {
             return 0.0;
         };
-        if let Some(rate) = cache.hit(now_us, window, path) {
-            return rate;
-        }
         (path, RepairRateCache::period_us(est.rtt()), ctrl.rate_snapshot(est, window))
     };
     let t0 = std::time::Instant::now();

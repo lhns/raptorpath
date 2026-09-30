@@ -653,6 +653,17 @@ pub(crate) fn report(
                     // (global batch_seq gaps read as per-path loss
                     // under striping).
                     let pl_i = p.estimator.loss_rate();
+                    // `pl=` above is `loss_rate()`, the per-ack EWMA
+                    // (alpha 0.1, a ~10-ack memory): between loss events
+                    // it decays toward 0 and prints 0.0000. The rate law
+                    // does not read it; it reads `plu=`, the BOCD
+                    // predictive upper quantile `predictive_loss_upper(0.95)`
+                    // (`FecRateController::rate_snapshot`). `plc=` is the
+                    // estimator's cumulative fed loss 1 - sum(recv)/sum(sent)
+                    // (the feed's own long-run mean, to compare with the
+                    // wire truth). Both appended at the end of the segment.
+                    let plu_i = p.estimator.predictive_loss_upper(0.95);
+                    let plc_i = p.estimator.cumulative_loss();
                     // RWM_POOL_ANCHOR: the per-path send-
                     // interval anchor rate (0 = no surviving bucket
                     // / feed off) + its gap/discard hygiene gauges
@@ -661,9 +672,9 @@ pub(crate) fn report(
                     let sr_i = p.send_rate_anchor().unwrap_or(0.0);
                     let (sa_g, sa_d) = p.send_anchor_stats();
                     pp.push_str(&format!(
-                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={}",
+                        " p{}:infl={}/sinfl={}/bdp{:.0}(cap{}) sout={} khr={:.2}/kraw={} btlbw={:.0} sr={:.0}/g{}d{} est={} pl={:.4} cmp={} rtt={:.0}/wrtt={:.0}/rtp{:.0}ms rtp_us={} sig_us={}/n{} rvar_us={}/n{} qsp_us={}/n{} msd_us={}/n{} tlag_us={}/n{} gapd={}/{} qcwnd={} qce={} qlp={}/{} | ANCHOR sent={} al={} attr={} nr={} rej[iv={} zr={} al={}] gen={} fill={} plu={:.4} plc={:.4}",
                         id, infl_i, sinfl_i, bdp_i, cap_i, sout_i, khr_i, kraw_s, btlbw_i, sr_i, sa_g, sa_d, est_i, pl_i, cmp_s, rtt_i, wrtt_i, rtprop_i, rtprop_us_i, sig_s, sig_n, rvar_s, rvar_n, qsp_s, qsp_n, msd_s, msd_n, tlag_s, tlag_n, gap_g, gap_d,
-                        qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill
+                        qcwnd_i, qce_i, qlost_i, qsent_i,                                rs_sent, rs_al, rs_attr, rs_nr, rs_iv, rs_zr, rs_al_rej, rs_gen, rs_fill, plu_i, plc_i
                     ));
                 }
             }
@@ -915,10 +926,10 @@ pub(crate) fn report(
             dgq,
             gdiag,
             pp,
-            // Appended tokens (Stage-1c cadence gauge + v9 sequencer):
-            // `rce=` cumulative rate evaluations and their causes.
-            format!("{} bcc={}", st.rate_cache.diag_token(),
-                super::BATCH_CONTENDED.load(std::sync::atomic::Ordering::Relaxed)),
+            // Appended token (the Stage-1c cadence gauge): `rce=` the
+            // cumulative rate evaluations, their causes and their cost
+            // (`RepairRateCache::diag_token`).
+            st.rate_cache.diag_token(),
         );
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same

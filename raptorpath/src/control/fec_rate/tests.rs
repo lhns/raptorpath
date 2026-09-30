@@ -1322,7 +1322,7 @@ fn rate_cadence_is_one_period_stale_and_bounded() {
 }
 
 #[test]
-fn rate_cadence_recomputes_on_window_or_path_change() {
+fn rate_cadence_is_keyed_on_age_only() {
     let mut cache = RepairRateCache::default();
     let mut n = 0u32;
     let mut get = |c: &mut RepairRateCache, now, w, p| {
@@ -1333,10 +1333,20 @@ fn rate_cadence_recomputes_on_window_or_path_change() {
     };
     assert_eq!(get(&mut cache, 0, 200, 0), 1.0);
     assert_eq!(get(&mut cache, 4_999, 200, 0), 1.0, "within the period: cached");
-    assert_eq!(get(&mut cache, 5_000, 200, 0), 2.0, "age = period: recomputed");
-    assert_eq!(get(&mut cache, 5_001, 64, 0), 3.0, "window change: recomputed at once");
-    assert_eq!(get(&mut cache, 5_002, 64, 1), 4.0, "worst path change: recomputed at once");
-    assert_eq!(cache.evaluations, 4);
+    // W and the worst path are inputs sampled at the evaluation instant,
+    // not keys: a change of either within the period is served the cached
+    // value (at most one period stale, like the estimator state).
+    assert_eq!(get(&mut cache, 4_999, 64, 0), 1.0, "window change within the period: cached");
+    assert_eq!(get(&mut cache, 4_999, 64, 1), 1.0, "worst path change within the period: cached");
+    assert_eq!(get(&mut cache, 5_000, 64, 1), 2.0, "age = period: recomputed");
+    assert_eq!(get(&mut cache, 9_999, 200, 0), 2.0, "both inputs moved, still within the period");
+    assert_eq!(get(&mut cache, 10_000, 200, 1), 3.0, "age = period: recomputed");
+    assert_eq!(cache.evaluations, 3);
+    // The gauges: 1 cold + 2 age expiries; the second evaluation saw W and
+    // the path moved since the first, the third only W.
+    assert_eq!((cache.miss_cold, cache.miss_age), (1, 2));
+    assert_eq!((cache.miss_window, cache.miss_path), (2, 1));
+    assert_eq!(cache.diag_token(), " rce=3/c1/w2/p1/a2/us0");
     // The period is continuous in SRTT (no hint key): SRTT/4 below 20 ms.
     assert_eq!(RepairRateCache::period_us(std::time::Duration::from_millis(8)), 2_000);
     assert_eq!(RepairRateCache::period_us(std::time::Duration::from_millis(400)), 5_000);

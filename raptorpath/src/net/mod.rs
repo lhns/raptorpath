@@ -3953,10 +3953,6 @@ fn send_interleaved_batches(
 ///
 /// The per-path map is a short uncontended lock (one emission loop, the
 /// block ARQ sweep and the control fast path share the sequencer).
-/// DIAG-ONLY (unfixed-v9 diagnostic): `next` calls that found the per-path
-/// lock held (`[DIAG] bcc=`).
-pub(crate) static BATCH_CONTENDED: AtomicU64 = AtomicU64::new(0);
-
 pub(crate) struct BatchCounter {
     global: AtomicU64,
     per_path: parking_lot::Mutex<std::collections::HashMap<u32, u64>>,
@@ -3974,13 +3970,7 @@ impl BatchCounter {
     /// exactly the `seqs` argument of [`SymbolBatch::new`].
     pub(crate) fn next(&self, path_id: u32) -> (u64, u64) {
         let global = self.global.fetch_add(1, Ordering::Relaxed);
-        let mut m = match self.per_path.try_lock() {
-            Some(g) => g,
-            None => {
-                BATCH_CONTENDED.fetch_add(1, Ordering::Relaxed);
-                self.per_path.lock()
-            }
-        };
+        let mut m = self.per_path.lock();
         let c = m.entry(path_id).or_insert(0);
         let path_seq = *c;
         *c += 1;

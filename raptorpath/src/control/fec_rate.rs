@@ -194,20 +194,31 @@ pub const RATE_CADENCE_MAX_US: u64 = 5_000;
 /// continuous in the measured SRTT, no hint or δ key. The estimator itself
 /// moves on the ack clock (≥ SRTT granularity per loss event), so a rate at
 /// most SRTT/4 old lags it by at most a quarter of its own update period.
-/// The value is recomputed immediately (whatever its age) when the encoder
-/// window or the worst-ε path it was computed for changes. Staleness is
-/// therefore exactly bounded: the returned rate is bit-identical to the
-/// fresh rate at an instant at most one period earlier with the same W and
-/// path (pinned by `rate_cadence_*` tests).
+///
+/// AGE IS THE ONLY INVALIDATION. The encoder window W and the worst-ε path
+/// are INPUTS sampled at the evaluation instant, exactly like the estimator
+/// state — never cache keys. W is `encoder.window_size()`, the live FILL of
+/// the sliding window, which moves on every emitted symbol and every ack
+/// advance; the worst-ε pick flips on noise when the per-path ε̂ are
+/// near-tied (wire v9). Keying on either re-evaluated at its change rate —
+/// at dual c1 the unfixed v9 sender ran ~12 500 evaluations/s, 99.7 % of
+/// them W-change misses (S9) — so the cadence never bound. Staleness is
+/// exactly bounded: the returned rate is bit-identical to the fresh rate
+/// (that instant's estimator, W and worst path) at an instant less than one
+/// period earlier (pinned by `rate_cadence_*` tests, including a W that
+/// moves every ack and a flipping worst path).
 #[derive(Debug, Clone, Default)]
 pub struct RepairRateCache {
-    /// (computed-at µs, window, path, period µs, rate)
+    /// (computed-at µs, window, path, period µs, rate). W and path are
+    /// recorded for the `rce=` gauge only; `hit` does not read them.
     entry: Option<(u64, usize, u32, u64, f64)>,
     /// Evaluations performed (the mechanism gauge; tests assert it runs).
     pub evaluations: u64,
-    /// Why each evaluation ran (`[DIAG] rce=`), one cause per evaluation
-    /// by precedence cold > window > path > age: no entry yet, the encoder
-    /// window changed, the worst-ε path changed, the entry aged out.
+    /// `[DIAG] rce=` gauges. `miss_cold`/`miss_age`: why an evaluation ran
+    /// (no entry yet / the entry aged out — the only two causes).
+    /// `miss_window`/`miss_path`: evaluations whose W / worst path differed
+    /// from the previous evaluation's (input movement, not a cause; the
+    /// names keep the token's field order).
     pub miss_cold: u64,
     pub miss_window: u64,
     pub miss_path: u64,
@@ -223,26 +234,24 @@ impl RepairRateCache {
         RATE_CADENCE_MAX_US.min(srtt.as_micros() as u64 / 4)
     }
 
-    /// The cached rate if it is still valid at `now_us` for (`window`,
-    /// `path`), else `None`.
-    pub fn hit(&self, now_us: u64, window: usize, path: u32) -> Option<f64> {
+    /// The cached rate if it is younger than its period at `now_us`, else
+    /// `None`. Age only: W and the path are inputs, not keys.
+    pub fn hit(&self, now_us: u64) -> Option<f64> {
         match self.entry {
-            Some((at, w, p, period, rate))
-                if w == window && p == path && now_us.saturating_sub(at) < period =>
-            {
-                Some(rate)
-            }
+            Some((at, _, _, period, rate)) if now_us.saturating_sub(at) < period => Some(rate),
             _ => None,
         }
     }
 
-    /// Record a fresh evaluation made at `now_us`.
+    /// Record a fresh evaluation made at `now_us` with inputs (`window`, `path`).
     pub fn store(&mut self, now_us: u64, window: usize, path: u32, period_us: u64, rate: f64) {
         match self.entry {
             None => self.miss_cold += 1,
-            Some((_, w, _, _, _)) if w != window => self.miss_window += 1,
-            Some((_, _, p, _, _)) if p != path => self.miss_path += 1,
-            Some(_) => self.miss_age += 1,
+            Some((_, w, p, _, _)) => {
+                self.miss_age += 1;
+                self.miss_window += (w != window) as u64;
+                self.miss_path += (p != path) as u64;
+            }
         }
         self.entry = Some((now_us, window, path, period_us, rate));
         self.evaluations += 1;
@@ -275,7 +284,7 @@ impl RepairRateCache {
         period_us: u64,
         eval: impl FnOnce() -> f64,
     ) -> f64 {
-        if let Some(r) = self.hit(now_us, window, path) {
+        if let Some(r) = self.hit(now_us) {
             return r;
         }
         let r = eval();

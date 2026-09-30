@@ -374,6 +374,17 @@ impl LossEstimator {
         self.jitter
     }
 
+    /// Cumulative fed loss `1 - sum(received) / sum(sent)` over every
+    /// `record_counts` call (0.0 before the first): the feed's long-run
+    /// mean, read only by the `[DIAG]` `plc=` gauge.
+    pub fn cumulative_loss(&self) -> f64 {
+        if self.total_sent == 0 {
+            0.0
+        } else {
+            1.0 - self.total_received as f64 / self.total_sent as f64
+        }
+    }
+
     /// Point estimate of loss rate from Beta posterior mean.
     pub fn loss_rate_mean(&self) -> f64 {
         self.beta_b / (self.beta_a + self.beta_b)
