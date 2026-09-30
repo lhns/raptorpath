@@ -218,6 +218,8 @@ def main():
     # A log where MID wins at 1.8 MB and moves less at 25 MB: the shape
     # `R-FUNDED-POSITIVE-SMALL-ONLY` requires, so the outcome branch and the
     # two-part clause both execute.
+    # MID's rtt sits INSIDE CTL's own spread (W7-OK): a MID rtt outside it is
+    # a W7 VOID, and a VOID row scores nothing (section 9).
     outdir = os.path.join(tmp, "led")
     os.makedirs(outdir)
     rows = []
@@ -237,7 +239,7 @@ def main():
                              cum_src=60000, cum_cod=2400, cod_frac=0.0385,
                              h_price_predicted_goodput_delta=-0.0385,
                              chi_max=0.0, chi_feed_echo=0, eps_hat=0.018,
-                             diag_rtt_ms=41.2 + j, entangled=False,
+                             diag_rtt_ms=41.0 + j, entangled=False,
                              fdiag_present=True, rfa_present=True,
                              gates_cli=True, gates_srv=True))
             rows.append(dict(cell="sc2", size="s25", arm="CTL", seed=seed, rep=rep,
@@ -253,7 +255,7 @@ def main():
                              cum_src=90000, cum_cod=3400, cod_frac=0.0364,
                              h_price_predicted_goodput_delta=-0.0364,
                              chi_max=0.0, chi_feed_echo=0, eps_hat=0.018,
-                             diag_rtt_ms=41.1 + j, entangled=False,
+                             diag_rtt_ms=41.0 + j, entangled=False,
                              fdiag_present=True, rfa_present=True,
                              gates_cli=True, gates_srv=True))
     with open(os.path.join(outdir, "r-s42.log"), "w") as f:
@@ -335,6 +337,75 @@ def main():
     check("--calib reports the headroom check", "utilisation" in p2.stdout)
     check("--calib records cod = 0 as NOT an abort",
           "RECORDED, NOT AN ABORT" in p2.stdout)
+
+    print("\n=== 9 -- W7 VOID propagates into the score and the outcome")
+    # MID wins on completion at sc2 (the same shape as section 7), but its
+    # rtt sits far outside CTL's own spread at 1.8 MB: W7 voids MID's rows at
+    # that cell-size, so neither a WIN nor any funded outcome may be read.
+    outdir4 = os.path.join(tmp, "led4")
+    os.makedirs(outdir4)
+    with open(os.path.join(outdir4, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            r1 = dict(r0)
+            if r1["arm"] == "MID" and r1["size"] == "s18":
+                r1["diag_rtt_ms"] = 12.0          # a 3x tighter queue: the pin failed
+            f.write("RRESULT " + json.dumps(r1, separators=(", ", ": ")) + "\n")
+    p4 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir4], capture_output=True, text=True)
+    t4 = p4.stdout
+    check("W7 VOID: report exits 0", p4.returncode == 0, p4.stderr[-400:])
+    check("W7 VOID: section 3 names the failed pin",
+          "W7-CC-PIN-FAILED" in t4, t4[-1500:])
+    score4 = t4[t4.index("=== 4"):t4.index("GOODPUT GUARD")]
+    outc4 = t4[t4.index("=== 5"):]
+    check("W7 VOID: the voided MID cell-size is NOT scored a WIN",
+          "WIN" not in score4, score4)
+    check("W7 VOID: the score section says W7-VOID for it",
+          "sc2   s18  MID" in score4 and "W7-VOID" in score4, score4)
+    check("W7 VOID: no funded outcome is read off voided rows",
+          "R-FUNDED" not in outc4, outc4)
+    check("W7 VOID: the outcome section says W7-VOID",
+          "W7-VOID" in outc4, outc4)
+
+    print("\n=== 10 -- a null reading is UNSCOREABLE, never R-FUNDED-NEGATIVE")
+    # n = 2 per arm: Hodges-Lehmann cannot bound (it needs >= 3), so there is
+    # no shift at all. "Nothing measured" must not be read as "H_price
+    # confirmed".
+    outdir5 = os.path.join(tmp, "led5")
+    os.makedirs(outdir5)
+    with open(os.path.join(outdir5, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            if r0["seed"] == 42 and r0["rep"] <= 2:
+                f.write("RRESULT " + json.dumps(r0, separators=(", ", ": ")) + "\n")
+    p5 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir5], capture_output=True, text=True)
+    t5 = p5.stdout
+    outc5 = t5[t5.index("=== 5"):]
+    check("null: report exits 0", p5.returncode == 0, p5.stderr[-400:])
+    check("null: the missing shift is printed as n/a in the score",
+          "HL shift=n/a" in t5, t5[-1500:])
+    check("null: R-FUNDED-NEGATIVE does NOT fire on a null",
+          "R-FUNDED-NEGATIVE" not in outc5, outc5)
+    check("null: the outcome is UNSCOREABLE, with its cause",
+          "UNSCOREABLE" in outc5, outc5)
+    # The legitimate negative still fires: section 7's ledger with MID no
+    # faster than CTL (a measured shift, bounded on both sides).
+    outdir6 = os.path.join(tmp, "led6")
+    os.makedirs(outdir6)
+    with open(os.path.join(outdir6, "r-s42.log"), "w") as f:
+        for r0 in rows:
+            r1 = dict(r0)
+            if r1["arm"] == "MID":
+                r1["completion_p50"] = (r1["completion_p50"]
+                                        + (0.030 if r1["size"] == "s18" else 0.002))
+            f.write("RRESULT " + json.dumps(r1, separators=(", ", ": ")) + "\n")
+    p6 = subprocess.run([sys.executable, os.path.join(HERE, "r_report.py"),
+                         "--outdir", outdir6], capture_output=True, text=True)
+    outc6 = p6.stdout[p6.stdout.index("=== 5"):]
+    check("a MEASURED negative still reads R-FUNDED-NEGATIVE",
+          "R-FUNDED-NEGATIVE" in outc6, outc6)
+    check("and a measured negative is not UNSCOREABLE",
+          "UNSCOREABLE" not in outc6, outc6)
 
     shutil.rmtree(tmp, ignore_errors=True)
     print("\n%s  (%d checks, %d failed)"
