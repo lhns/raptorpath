@@ -1318,3 +1318,210 @@ path-count scope. The one thing to watch is the c1 loss feed: at these
 speeds the receiver's kernel drops up to 140–180 datagrams per run and the
 engine counts them as path loss, so its fed loss is about three times the
 wire's.
+
+## 8. Emission-batching scope (Law 0) — pre-registration
+
+The `RWM_EMIT_BATCH` scope `emit_batch_live = live_paths == 1` (`c639d56`)
+was a path-count step: at N ≥ 2 the emission path was bit-identical to
+gate-off. V4 (C) recommended the flip on single-path cells only and
+qualified it on exactly that step. The step's recorded reason (the wire-v8
+global-`batch_seq` striping-gap misread, "amplified by longer same-path
+arrival runs") is gone by construction in wire v9: the receiver's
+`PathBatchTracker` keys on the per-path `path_seq`, so a same-path run of any
+length leaves every delivered symbol's pair at `(1, 1)` on its own path
+(bounded by `net::tests::t2_*`). The analysis behind this section is
+AN4 (emission-batching scope, 2026-10-05). Committed before VM contact; no
+number below is a result. Nothing is flipped by this battery.
+
+**The law (Law 0).** A burst is at most one emission quantum of the sender,
+whatever the live set:
+
+```text
+   b  =  emit_burst            (every N; no path-count or dial input)       emit_burst_bound
+```
+
+Provenance: `emit_burst` is the existing gate (`RWM_EMIT_BURST`, default 64,
+clamped [2, 512]; "≈ 64 KB", a thin provenance, listed in the paper's
+open-constants register). Shape: constant in N and every dial, so continuous
+and monotone by construction; N = 1 is bit-identical to the step it replaces.
+The taper/span cache refreshes once per `b` symbols or 50 ms
+(`taper_recompute_due`), i.e. it follows the bound in force, and it was never
+path-count-dependent (its inputs are aggregate / worst-path). The per-symbol
+guards (store headroom, `cc_pace` token bucket) are unchanged.
+
+**Engine commits** (before this one): `90a25e1` (the gauges and tests with
+the step still in place), `027a753` (Law 0), `1671cae` (the harness). The
+number 8 is assigned by the task; there is no §7. Gauges on `[DIAG]` (cumulative, last-line-wins;
+printed whatever the gate, so a gate-off row reads `eb_bursts=0`):
+`eb_bursts`, `eb_syms`, `eb_depth` (= syms/bursts), `eb_end=cap:/store:/
+tokens:/drained:` (what ended each burst — `cap` is the bound's bind count,
+rule 18) and `eb_maxrun=<pid>:<max>/<mean>` (per path, the longest same-path
+run inside one burst: max, and mean over the bursts that touched the path).
+Tests: T1/T6 `tests/emit_batch_scope_loopback.rs` (the shipped binary over
+N = 1, 2, 4 loopback paths, `RWM_EMIT_BURST=8`: `np=N`, mean depth > 1, the
+bound holds, the end tallies partition the bursts, bursts striped over ≥ 2
+paths at N ≥ 2); T2 `net::tests::t2_*` (any interleaving of per-path runs →
+expected == received on both paths, every pair `(1,1)`; the v8 global
+numbering charges 4 phantom losses on the same order); T4
+`net::emit_burst::tests::t4_*` (a burst of b symbols gets exactly one
+recompute, for b ∈ {2, 8, 33, 64, 512}); the pin
+`the_batching_path_reads_no_path_count` (the burst block and the emission
+step read no `live_paths`; `emit_batch_live` exists nowhere). The default
+stays OFF (`gates/tests.rs`).
+
+**Component statement (rule 14).** On loopback (T1/T6, no shaping) the
+burst intake is live at N = 1, 2, 4 with mean depth > 1 (the values are
+printed by the test and recorded in RED.txt below). What the bench cannot
+see: the receiver kernel's `rcvbuf` drops at 1 Gbit/s, quinn's per-path
+pacer, and GE loss. The battery should then see: mean depth > 1 at every
+cell including both duals; `eb_maxrun` per path well below the burst at the
+duals (placement is anti-correlated inside a burst: `charge_in_flight`
+pushes the next pick away from the path just chosen); CPU lower or equal;
+the fed loss unchanged at c2/c8 and inside the band at c1s/c1d with
+`rcvbuf` drops up.
+
+**Binary and session.** One binary: this branch's HEAD, archived with `git
+-c core.autocrlf=false -c core.eol=lf archive`, built fresh on the benchmark
+VM, copied under its real name `raptorpath`, `sha256` recorded in
+`BINSHA.txt` and re-verified before every invocation. Envelope
+`tools/l1/emitscope_run_all.sh` (both locks for the whole session via
+`lib_battery.sh`; build → tests → red/green record → smoke → GO → budget →
+battery → score; hard backstop), driver `emitscope_battery.sh`, scorer
+`emitscope_parse.py` (rows by `stage3_parse.make_row`).
+
+**Tests first** (on the VM, inside the locks): `cargo build --release`;
+`cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast --
+--test-threads=2`; `cargo test --doc -p raptorpath --release`; `cargo test
+-p raptorpath-wasm` (`GOLDEN_CAPTURE` unset). rc and passed/failed/ignored
+to `TESTS.txt`. A real failure (not a flake that passes on an immediate
+re-run of that test alone; the V4-recorded `sigma_diag_reachability`
+timing flake is the known class) is `ABORT-TESTS`. **Red/green record** (a
+record, not a gate): T1/T6, T4, the pin and T2 with `--nocapture` on this
+tree (green) and on the gauges-and-tests commit with the step still in place
+(red: N = 2 and N = 4 must fail with `eb_bursts=0` / depth ≤ 1 and the pin
+must fail on `emit_batch_live`), outputs to `RED.txt`.
+
+**Cells**: `c1s-400`, `c1d-400`, `c2-100`, `c8-100` (§5's geometry, size,
+capacity and > 5 % headroom; `c2-100`'s 11 % is the tightest, so CPU is the
+free axis there, rule 16). `c8-100` is the discriminating cell: the July
+regression (87 → 52 Mbit/s, rep 1, seed 42, v8) fired there; `c1d-400` is
+where `rcvbuf` drops are expected to show.
+
+**Arms**: `NEW` (bulk, gate off) and `EB0` (bulk, `RWM_EMIT_BATCH=1`, Law 0;
+`RWM_EMIT_BURST` unset = 64). Every invocation is `perf_rwm_c.sh` with
+`RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 SEED=<seed>`, one run,
+`--window-reliable`, a fresh topology; every arm first `env -u`'s
+`RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST` (rule 15d)
+and only EB0 sets one back. **Plan per (rep, seed) block: 8 invocations**,
+cells in the order above, the arm order within every cell rotated by the
+block index (rule 3). Seeds 42 and 7; blocks rep 1 s42, rep 1 s7, rep 2 s42,
+…; **n = 8 per seed per arm** (16 per arm and cell), cut only by the budget
+rule.
+
+**Witnesses per invocation** (a failing row is `CONTAMINATED` /
+`WITNESS-FAIL`, excluded and counted; no client summary = `NO_DATA`): §6's
+(`[PIPE]` `window/Rlc/bulk` both ends; `[GATES]` both; the RLC line both; no
+generation guard; cadence ACTIVE both, OFF neither; `RWM_POOL_ANCHOR=0`
+both); EB0: `[GATES] RWM_EMIT_BATCH=1` on both ends, the `emission batching
+ACTIVE` echo on the client, and **mean burst depth `eb_syms/eb_bursts > 1`
+on the client's last `[DIAG]` — at every cell, both duals included** (a row
+at ≤ 1 is `WITNESS-FAIL eb-depth<=1`); NEW: `RWM_EMIT_BATCH=0` on both, the
+echo on neither, `eb_bursts=0`; every row: the last `[DIAG]` `np=` equals the
+cell's leg count (a dual that ran single-path is `WITNESS-FAIL`); the row's
+`sha256` is the binary's.
+
+**Scored quantities**: §6's (goodput, completion, DNF past 150 s, `CPUCLI`,
+`[TRUTH]` per leg, `plc`), CPU per datagram = `CPUCLI` / Σ legs
+`egress_dgrams` (reported, no MDE), and per leg the fed loss vs truth
+`plc`/`[TRUTH] loss=`. **MDE** (§5's committed table, relative to NEW's
+median): goodput / completion / CPUCLI = `c1s-400` 4.9 / 5.1 / 2.4 %;
+`c1d-400` 5.6 / 5.3 / 6.5 %; `c2-100` 1.4 / 1.4 / 6.3 %; `c8-100` 4.0 /
+4.1 / 11.6 %; DNF excess 0.20 at every cell.
+
+**Per-cell clause set** (X = EB0, REF = NEW): **WORSE** iff goodput med(X) <
+med(REF)·(1 − rel_gp), or completion p50(X) > p50(REF)·(1 + rel_ct), or
+CPUCLI med(X) > med(REF)·(1 + rel_cpu), or dnf(X) − dnf(REF) > 0.20;
+**FEED-MOVED** at a leg iff med(`plc`/truth) under EB0 is outside [1/1.3,
+1.3] × NEW's (counts as worse); **BETTER** iff neither and (goodput above
+med(REF)·(1 + rel_gp) or CPUCLI below med(REF)·(1 − rel_cpu)); **SAME**
+otherwise; **UNSCOREABLE** at a cell where either arm has < 3 live rows or ≥
+2 witness-failed rows, a feed ratio is unread, or an abort cause fired.
+Reported beside every cell, not scored: `rcvbuf_drops` per run (median, max,
+rows > 0) per arm — at `c1s-400`/`c1d-400` the feed clause is the score (it
+is the channel the drops enter) and `rcvbuf_max` is printed beside it so a
+pass "because it is a ratio of ratios" (V4's caveat) is visible; the burst
+gauges per arm (depth median [min–max], the `eb_end` bind fractions summed
+over rows, `eb_maxrun` per path); GSO per leg.
+
+**Control identity.** NEW's goodput median per cell against V4 §6's NEW
+[min, max] widened by the cell's absolute goodput MDE (rel_gp × V4 median):
+`c1s-400` [442.1, 561.1], `c1d-400` [220.4, 407.5], `c2-100` [86.06,
+90.54], `c8-100` [91.23, 109.37] Mbit/s. Outside is `CONTROL-MOVED`, named
+beside that cell's verdict; it does not block the in-session comparison.
+
+**Outcomes, in precedence order** (one verdict for the battery):
+1. `UNSCOREABLE` — an abort cause fired.
+2. **STOP RULE** `SCOPE-REFUTED-AT-C8` — at `c8-100` (scoreable), EB0 is
+   WORSE on goodput or completion, or FEED-MOVED at either leg: the residual
+   burst mechanism is real on v9 and Law 0 is wrong at the heterogeneous
+   dual. Then Law A is the fallback arm (below).
+3. `WORSE-AT-<cells>` — WORSE (any clause, CPU included) or FEED-MOVED at a
+   scoreable cell.
+4. `UNSCOREABLE` (naming cells) — a hard blocker at a cell.
+5. `FLIP-RECOMMENDED` — BETTER at ≥ 1 cell, worse and feed-moved nowhere,
+   every cell scoreable, and the depth witness held on every EB0 row. A
+   recommendation only: the flip (default ON, `gates/tests.rs`, the echo
+   test, `estimator.rs`/`sender_policy.rs` doc, the paper's ledger row, the
+   harness's 15d lists) is a separate, reviewed commit.
+6. `INERT-AS-DERIVED` — the witnesses fire and nothing moves beyond MDE.
+
+**Prediction** (printed as a check, not an outcome): CPU BETTER at
+`c1s-400` and `c2-100` (V4 (C) reproduced), SAME or CPU BETTER at
+`c1d-400` and `c8-100`, feed unchanged at `c2-100`/`c8-100`, feed inside
+the band at the c1 cells with `rcvbuf_max` up; overall `FLIP-RECOMMENDED`.
+
+**Law A, the fallback arm (run only on `SCOPE-REFUTED-AT-C8`).**
+
+```text
+   N_eff  =  1 / Σᵢ pᵢ²            pᵢ = place_probs at burst start
+   b      =  emit_burst / (N_eff · p_max)     clamped to [1, emit_burst]
+```
+
+"No path receives more than `emit_burst/N_eff` symbols of one burst in
+expectation." Identity at N = 1 (b = emit_burst), = emit_burst at the
+symmetric dual, continuous over the simplex and as a path dies (pᵢ → 0 ⇒
+b → emit_burst). It is implemented behind a sub-gate only if the stop rule
+fires, with the T3 shape test (N = 1 identity, symmetric dual, ±2 % nudges,
+non-increasing in p_max at fixed N_eff, the membership edge), then run as
+arm `EBA` vs `NEW` at `c8-100` and `c1d-400` with the clause set above, in
+a second session under an amendment committed before that session. If Law A
+also fails, `eb_maxrun` and the per-path `srtt` under EB vs NEW are read
+before any mechanism is named.
+
+**Budget** (5 h cap from the first ssh; hard backstop = first ssh + 4 h 50
+min; soft = hard − 10 min). Priors: build + tests ≈ 35–45 min; red/green
+record ≈ 10–15 min; smoke ≈ 1 min; per block `R_PRIOR` = 120 s (8
+invocations at V4's measured ≈ 12 s mean plus margin; 16 blocks ≈ 32 min).
+The smoke (`c8-100` EB0, `c1s-400` NEW, `c1d-400` EB0, `c2-100` NEW; `C_PRED`
+= 60 s) sets `R_est` = `R_PRIOR`·max(1, c_meas/60 s); n per seed = min(8,
+⌊(soft − now)/(2·R_est)⌋); n < 3 is `ABORT-BUDGET`. The battery starts no
+block that would cross the soft deadline (`TRUNCATED-AT-REP-BOUNDARY`,
+scored at the n reached). **Smoke pass** requires every row `LIVE` with its
+CPU line, `[TRUTH]` per leg (`rcvbuf_drops` included), `plc` per leg, CPU
+per datagram and the `eb_` gauges, both arms present, and **a dual EB0 row
+with mean depth > 1** (the rule-1 witness at the dual proven before GO).
+**GO** is automatic iff `TESTS-OK` and `SMOKE-PASS`; otherwise the operator
+reads `TESTS.txt` and writes GO (a recorded flake) or NOGO.
+
+**Abort causes, in priority order** (the scored section opens with this
+table, filled): `ABORT-LOCK`, `ABORT-CRLF`, `ABORT-BUILD`, `ABORT-TESTS`,
+`ABORT-SHA`, `ABORT-SENTINEL-UNWRITABLE`, `ABORT-SMOKE`, `ABORT-BUDGET`,
+`ABORT-RC` (row `VOID-RC`, the battery goes on), `ABORT-BRINGUP` (`NO_DATA`
+after 2 attempts). Void class `VOID-COTENANT`.
+
+**Session rules.** §6's: both locks for the whole session; detached
+envelope; earned sentinels (`DONE-ALL` only with `ES-BATTERY-DONE`,
+`emitscope_parse.py check` rc 0 and no truncation); the operator reads only
+sentinels (and `TESTS.txt` before a manual GO), waiting in bounded loops;
+`pkill -x raptorpath` only; no `ens18`, firewall, `sshd` or non-`rp-*`
+namespace is touched. Compact ledgers are copied to `docs/l1-raw/emitscope/`.
