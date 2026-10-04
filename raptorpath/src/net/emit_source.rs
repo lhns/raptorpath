@@ -38,7 +38,7 @@ use super::sender_policy::SenderPolicy;
 use super::seq_ring::SeqRing;
 use super::{
     BatchCounter,
-    CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
+    CopaFeed, create_window_encoder, now_pair, now_us, percap_charge, select_repair_path,
     select_source_path, shed_allowed, shed_deadline_us, window_source_paths_into,
 };
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
@@ -280,7 +280,6 @@ pub(crate) fn emit_source(
             e.1 = now_us();
         }
     }
-    st.gen_last_source_us = now_us();
 
     // Retention: the store keeps the sent bytes until the peer acks them —
     // the coding window may slide past this symbol, but the data can no
@@ -319,7 +318,23 @@ pub(crate) fn emit_source(
     //
     // The same call updates `F-hat` (the running max of stamped arrival
     // times). Neither feeds a decision: the wire field feeds two gauges.
-    let src_send_ts_us = now_us();
+    //
+    // Clock: this is the emission step's ONE clock read for the source
+    // symbol (`src_now_i` is the same read as an `Instant`). The wire stamp
+    // and the ETA stamp need it fresh, so it is taken here, after the
+    // placement. Every other "now" of this symbol's decisions below (the
+    // intake / last-send stamps, the retransmit-buffer send time, the taper
+    // cache age, the cadenced-rate clock, the A* anchor feed) reuses it
+    // instead of re-reading the clock; each of those sat between this point
+    // and the end of the source send, so the reuse moves them by at most one
+    // `send_symbols` (serialize + quinn handoff, incl. its connection-mutex
+    // wait: mean 55 µs off-CPU in the P1 profile) plus a few short
+    // scheduler-lock takes — well inside one loop iteration (≈ 50–150 µs at
+    // the measured rates). The correction loop's own reads and every other
+    // wire stamp stay fresh.
+    let (src_send_ts_us, src_now_i) = now_pair();
+    // Last source-intake time (generation-mode pacing input).
+    st.gen_last_source_us = src_send_ts_us;
     let eta_rel_us = {
         let mut sched = ctx.scheduler.lock();
         let e = sched
@@ -336,7 +351,7 @@ pub(crate) fn emit_source(
     // throttle can tell "actively pushing data" (repairs would load a
     // congested path) from "idle except for a hole" (targeted recovery is
     // free).
-    st.last_source_send_us = now_us();
+    st.last_source_send_us = src_send_ts_us;
     // Fungible frontier (paper §5.2): in coded-only mode the wire carries a
     // fresh random linear combination over the current window (which now
     // includes this source) instead of the raw systematic symbol. Any K
@@ -433,7 +448,7 @@ pub(crate) fn emit_source(
                 .map(|e| e.loss_rate())
                 .unwrap_or(0.0)
         };
-        st.retransmit_buffer.insert(wire_sym.block_id, (now_us(), epsilon, source_path));
+        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
         // Track correction deficit: this symbol needs epsilon coverage
         let mut sched = ctx.scheduler.lock();
         sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
@@ -476,7 +491,7 @@ pub(crate) fn emit_source(
         let taper_recompute = !emit_batch_live
             || st.taper_cache.is_none()
             || st.taper_cache_syms >= pol.emit_burst
-            || now_us().saturating_sub(st.taper_cache_at_us)
+            || src_send_ts_us.saturating_sub(st.taper_cache_at_us)
                 > TAPER_CACHE_MAX_AGE_US;
         let (repair_rate, span_params) = if !taper_recompute {
             let (rr, span, rtt) = st.taper_cache.unwrap();
@@ -484,7 +499,7 @@ pub(crate) fn emit_source(
             // The A* send-rate anchor is FED per symbol regardless —
             // the cache amortizes only the derived recomputation.
             if pol.unified_span && pol.astar_anchor_on {
-                st.astar_anchor.on_send(Instant::now(), 1, rtt);
+                st.astar_anchor.on_send(src_now_i, 1, rtt);
             }
             (rr, span)
         } else {
@@ -495,7 +510,7 @@ pub(crate) fn emit_source(
             ctx.fec_controller,
             ctx.scheduler,
             st.encoder.window_size(),
-            now_us(),
+            src_send_ts_us,
         );
         let (repair_rate, span_params, taper_rtt) = {
             let sched = ctx.scheduler.lock();
@@ -534,7 +549,7 @@ pub(crate) fn emit_source(
                             // read it back (sym/s directly). None before the
                             // first measured bucket ⇒ A* clamps to 1, the
                             // cold start, ~SRTT/2 long.
-                            let now_i = Instant::now();
+                            let now_i = src_now_i;
                             st.astar_anchor.on_send(now_i, 1, est.rtt());
                             st.astar_anchor.rate(now_i, est.rtt()).unwrap_or(0.0)
                         } else {
@@ -579,7 +594,7 @@ pub(crate) fn emit_source(
         };
         st.taper_cache = Some((repair_rate, span_params, taper_rtt));
         st.taper_cache_syms = 1;
-        st.taper_cache_at_us = now_us();
+        st.taper_cache_at_us = src_send_ts_us;
         (repair_rate, span_params)
         };
         // Span-law sender trace (RWM_DIAG only).

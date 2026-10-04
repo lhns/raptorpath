@@ -1083,7 +1083,10 @@ mod wait_attribution_tests {
         // at the arm level is fragile; counting the futures is not — every
         // arm in this loop awaits one of exactly these, and each occurrence
         // inside the scraped region is one arm.
+        // The 1 ms polls are `sleep_until` one shared pre-`select!` deadline
+        // (one clock read per iteration, net/mod.rs).
         let arms = body.matches("tokio::time::sleep(").count()
+            + body.matches("tokio::time::sleep_until(poll_1ms)").count()
             + body.matches("tun.read_packet()").count()
             + body.matches("nack_rx.recv()").count()
             + body.matches("deficit_rx.recv()").count()

@@ -546,6 +546,14 @@ const NOW_US_MIN_BASE: u64 = 1 << 40;
 /// constant offset between the two hosts' bases cancels. Nothing compares
 /// this clock to the peer's as an absolute time.
 pub(crate) fn now_us() -> u64 {
+    now_pair().0
+}
+
+/// [`now_us`] together with the `Instant` it was computed from — ONE clock
+/// read for a site that needs both the engine µs and an `Instant` (the A*
+/// anchor, a tokio deadline). `now_pair().0` is exactly what `now_us()`
+/// would have returned at that instant.
+pub(crate) fn now_pair() -> (u64, Instant) {
     static BASE: std::sync::OnceLock<(Instant, u64)> = std::sync::OnceLock::new();
     let &(t0, base_us) = BASE.get_or_init(|| {
         let wall_us = SystemTime::now()
@@ -554,7 +562,8 @@ pub(crate) fn now_us() -> u64 {
             .unwrap_or(0);
         (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
     });
-    base_us.saturating_add(t0.elapsed().as_micros() as u64)
+    let now = Instant::now();
+    (base_us.saturating_add(now.saturating_duration_since(t0).as_micros() as u64), now)
 }
 
 /// Collect per-generation residual deficits for the deficit-feedback report
@@ -2739,8 +2748,20 @@ async fn run_window_sender(
         // ms of link rate, not the BDP) prevents the datagram burst-overrun:
         // at high RTT the flow window is BDP-sized, but emission is metered to
         // the link so no BDP-sized burst reaches the droppable path.
+        //
+        // Clock: ONE read for the rest of this iteration's pre-`select!`
+        // phase — the pacing refill here, the tail-sweep deadline and the
+        // three 1 ms poll deadlines below (which previously read the clock
+        // once each; `tokio::time::sleep(d)` is `sleep_until(now + d)`). The
+        // phase between this read and the `select!` is synchronous loop body
+        // (one scheduler-lock take for the tail clock), so the reuse is stale
+        // by microseconds — well inside one loop iteration. The tail deadline
+        // is converted with the SAME read's `Instant`, so its absolute
+        // instant is exact, not stale.
+        let (pre_now_us, pre_now_i) = now_pair();
+        let poll_1ms = tokio::time::Instant::from_std(pre_now_i) + Duration::from_millis(1);
         if pol.cc_pace {
-            let now = now_us();
+            let now = pre_now_us;
             // Refresh the Copa cwnd/SRTT rate estimate (frontier-independent) at
             // most every 5 ms.
             if now.saturating_sub(cc_rate_refresh_us) >= 5_000 {
@@ -2833,8 +2854,8 @@ async fn run_window_sender(
                     );
                 }
                 let deadline_us = last_activity_us + timeout_us;
-                let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
-                tokio::time::Instant::now() + remaining
+                let remaining = Duration::from_micros(deadline_us.saturating_sub(pre_now_us));
+                tokio::time::Instant::from_std(pre_now_i) + remaining
             });
 
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
@@ -2864,11 +2885,11 @@ async fn run_window_sender(
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
             // below (mirrors the block sender's 1 ms backpressure poll).
-            _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => { wait_arm = 1; None },
+            _ = tokio::time::sleep_until(poll_1ms), if tx_paused => { wait_arm = 1; None },
             // Pacing wake — when source sends are paced-off (bucket
             // empty), wake at 1 ms to refill it. Without this the select could
             // block in read_packet with the pacing gate closed and stall intake.
-            _ = tokio::time::sleep(Duration::from_millis(1)),
+            _ = tokio::time::sleep_until(poll_1ms),
                 if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
             p = tun.read_packet(),
                 if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
@@ -2877,7 +2898,7 @@ async fn run_window_sender(
             // (the tail — all sources read but the last generations still need
             // coded symbols to decode) and when not paused. Without it the loop
             // would block in read_packet and the tail would never complete.
-            _ = tokio::time::sleep(Duration::from_millis(1)),
+            _ = tokio::time::sleep_until(poll_1ms),
                 if generation && !tx_paused && st.encoder.window_size() > 0 => { wait_arm = 3; None },
             gaps = nack_rx.recv() => {
                 wait_arm = 4;
@@ -3225,8 +3246,9 @@ async fn run_window_sender(
                 .map(|d| d.as_micros() as u64)
                 .unwrap_or(IDLE_RECOVERY_GAP_FLOOR_US);
             let idle_gap_us = (2 * srtt_us_recent).max(IDLE_RECOVERY_GAP_FLOOR_US);
+            // Same instant as the cadence check above (µs apart, no await).
             let sender_idle =
-                now_us().saturating_sub(st.last_source_send_us) > idle_gap_us;
+                now_repair_us.saturating_sub(st.last_source_send_us) > idle_gap_us;
             let nack_multiplier = nack_congestion.effective_multiplier(sender_idle);
             cached_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
