@@ -259,7 +259,7 @@ def drift_line(live, cell, arm, table, out, label):
         med5, lo5, hi5, mde = S3_CTL[cell]
     else:
         med5, lo5, hi5 = S3_WINA[cell]
-        mde = S3_CTL[cell][3] * med5 / S3_CTL[cell][0]   # the bulk relative MDE, scaled
+        mde = S3_REL[cell]["gp"] * med5   # the bulk relative goodput MDE x §5 WINa median
     lo, hi = lo5 - mde, hi5 + mde
     st = "IN-BAND" if lo <= m <= hi else "CONTROL-MOVED"
     out(f"  DRIFT {label} {cell} {arm} med={m:.2f} [{min(g):.2f}-{max(g):.2f}] n={len(g)} vs §5 "
@@ -425,6 +425,7 @@ _TUNPIPE = re.compile(r"^TUNPIPE cli=(\S+) srv=(\S+)")
 _TUNCAD = re.compile(r"^TUNCAD cli=(\S+) srv=(\S+)")
 _TUNSHA = re.compile(r"^TUNSHA ([0-9a-f]{64})")
 # the D witnesses per binary (status.md §6 (D)): TUN MTU and the selected pipeline
+TUN_MIN = 8   # live transfers per (cell, hint, binary) for a recorded measurement
 TUN_EXPECT = {"new": {"mtu": "1196", "pipeline": "window", "cad": "ACTIVE"},
               "old": {"mtu": "1500", "pipeline": "block", "cad": "NONE"}}
 
@@ -510,6 +511,10 @@ def tun(paths, shas=None, out=print):
     for cell in sorted({k[0] for k in keys}):
         for hint in sorted({k[1] for k in keys if k[0] == cell}):
             n, o = res.get((cell, hint, "new"), []), res.get((cell, hint, "old"), [])
+            if len(n) < TUN_MIN or len(o) < TUN_MIN:
+                out(f"  TUN-OUTCOME {cell} {hint} UNSCOREABLE (live transfers new={len(n)} old={len(o)} < {TUN_MIN})")
+            else:
+                out(f"  TUN-OUTCOME {cell} {hint} MEASUREMENT-RECORDED (n new={len(n)} old={len(o)})")
             if n and o:
                 mn, mo = lc.med(n), lc.med(o)
                 overlap = not (min(n) > max(o) or max(n) < min(o))
