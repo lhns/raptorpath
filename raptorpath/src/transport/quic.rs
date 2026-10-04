@@ -264,12 +264,7 @@ fn bind_endpoint(
     addr: SocketAddr,
     server_config: Option<ServerConfig>,
 ) -> anyhow::Result<(Endpoint, std::net::UdpSocket, RcvbufGrant)> {
-    let sock = std::net::UdpSocket::bind(addr)?;
-    let grant = RcvbufGrant {
-        requested: rcvbuf::RCVBUF_REQUEST,
-        granted: rcvbuf::recv_buffer_size(&sock)?,
-        via: rcvbuf::RcvbufVia::SoRcvbuf,
-    };
+    let (sock, grant) = rcvbuf::bind_udp_with_rcvbuf(addr, rcvbuf::RCVBUF_REQUEST)?;
     let probe = sock.try_clone()?;
     let role = if server_config.is_some() { "server" } else { "client" };
     let local = sock.local_addr().unwrap_or(addr);
@@ -1480,7 +1475,7 @@ mod datagram_queue_audit_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod rcvbuf_endpoint_tests {
     use super::*;
 
@@ -1491,7 +1486,6 @@ mod rcvbuf_endpoint_tests {
     /// the request; as root `2 × req`). A socket bound the way quinn's
     /// `Endpoint::server`/`client` bind it reads `rmem_default` (212 992)
     /// and fails here.
-    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn every_endpoint_socket_reads_back_the_rcvbuf_floor() {
         let _ = rustls::crypto::ring::default_provider().install_default();
