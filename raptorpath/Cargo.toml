@@ -2,7 +2,7 @@
 name = "raptorpath"
 version = "0.1.0"
 edition = "2021"
-description = "Multipath transport with RaptorQ fountain codes for erasure-resilient networking"
+description = "Multipath transport with sliding-window RLC erasure codes for erasure-resilient networking"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -10,9 +10,7 @@ license = "MIT OR Apache-2.0"
 raptorpath-math = { path = "../raptorpath-math" }
 
 # FEC
-raptorq = "2"
 gf256 = { path = "../gf256" }
-reed-solomon-erasure = "6"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

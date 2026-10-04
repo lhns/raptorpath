@@ -283,7 +283,7 @@ fn residual_loss_after_fec_is_the_design_residual() {
 
 #[test]
 fn test_zero_loss_no_repair() {
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
     let mut est = LossEstimator::new();
     for _ in 0..50 {
         est.record_batch(100, 100);
@@ -294,7 +294,7 @@ fn test_zero_loss_no_repair() {
 
 #[test]
 fn test_high_loss_more_repair() {
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
     let mut est = LossEstimator::new();
     for _ in 0..100 {
         est.record_batch(100, 80); // 20% loss
@@ -306,8 +306,8 @@ fn test_high_loss_more_repair() {
 
 #[test]
 fn test_protocol_hint_realtime_more_aggressive() {
-    let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ, 1200);
-    let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::RaptorQ, 1200);
+    let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    let ctrl_bulk = FecRateController::new(1e-5, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, 1200);
 
     let mut est = LossEstimator::new();
     for _ in 0..100 {
@@ -326,8 +326,8 @@ fn test_protocol_hint_realtime_more_aggressive() {
 fn test_hint_controls_tail_loss_not_offset() {
     // Realtime with target_tail_loss=1e-5 should behave like Auto with 1e-7
     // (because Realtime applies 100× tighter = 1e-5 * 0.01 = 1e-7)
-    let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::RaptorQ, 1200);
-    let ctrl_auto_tight = FecRateController::new(1e-7, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
+    let ctrl_rt = FecRateController::new(1e-5, 0.5, ProtocolHint::Realtime, FecBackend::Rlc, 1200);
+    let ctrl_auto_tight = FecRateController::new(1e-7, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
 
     let mut est = LossEstimator::new();
     for _ in 0..100 {
@@ -559,7 +559,7 @@ fn test_tail_provision_bursty_channel_raises_rate() {
 
 #[test]
 fn test_spare_capacity_capping() {
-    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
+    let ctrl = FecRateController::new(1e-5, 0.5, ProtocolHint::Auto, FecBackend::Rlc, 1200);
     let mut est = LossEstimator::new();
     for _ in 0..100 {
         est.record_batch(100, 80);
@@ -573,9 +573,11 @@ fn test_spare_capacity_capping() {
 
 #[test]
 fn test_codec_overhead_weighted_by_decoder_invocation() {
-    // Compare RaptorQ (1% codec overhead) vs ReedSolomon (0% overhead) at same window.
-    // The difference isolates the codec overhead contribution.
-    let ctrl_rq = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::RaptorQ, 1200);
+    // Compare RLC (0.4% codec overhead) vs a zero-overhead baseline at the
+    // same window (the removed block-only RS tag carries no overhead, so it
+    // serves as the baseline). The difference isolates the codec overhead
+    // contribution.
+    let ctrl_rq = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::Rlc, 1200);
     let ctrl_rs = FecRateController::new(1e-5, 1.0, ProtocolHint::Auto, FecBackend::ReedSolomon, 1200);
 
     let mut est = LossEstimator::new();
@@ -584,15 +586,15 @@ fn test_codec_overhead_weighted_by_decoder_invocation() {
         est.record_batch(100, 95); // 5% loss
     }
 
-    // At same window, RaptorQ should have higher rate than RS due to codec overhead
+    // At same window, RLC should have a higher rate than the zero-overhead baseline
     let rate_rq = ctrl_rq.compute_repair_rate(&est, 50);
     let rate_rs = ctrl_rs.compute_repair_rate(&est, 50);
     assert!(
         rate_rq > rate_rs,
-        "RaptorQ should have higher rate than RS due to codec overhead: rq={rate_rq}, rs={rate_rs}"
+        "RLC should have a higher rate than the zero-overhead baseline: rlc={rate_rq}, base={rate_rs}"
     );
 
-    // With zero window size, no codec overhead → RaptorQ ≈ RS
+    // With zero window size, no codec overhead → RLC ≈ baseline
     let rate_rq_zero = ctrl_rq.compute_repair_rate(&est, 0);
     let rate_rs_zero = ctrl_rs.compute_repair_rate(&est, 0);
     assert!(

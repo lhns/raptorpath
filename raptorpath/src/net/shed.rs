@@ -64,14 +64,14 @@ pub(crate) fn shed_recv_hold(srtt: Duration, shed_on: bool, budget_ok: bool) -> 
         SHEDH.evals.fetch_add(1, Ordering::Relaxed);
         SHEDH.legacy.fetch_add(1, Ordering::Relaxed);
         let raw = srtt * 4;
-        if raw < BLOCK_REORDER_MIN_HOLD {
+        if raw < REORDER_MIN_HOLD {
             SHEDH.at_floor.fetch_add(1, Ordering::Relaxed);
-        } else if raw > BLOCK_REORDER_MAX_HOLD {
+        } else if raw > REORDER_MAX_HOLD {
             SHEDH.at_cap.fetch_add(1, Ordering::Relaxed);
         } else {
             SHEDH.interior.fetch_add(1, Ordering::Relaxed);
         }
-        raw.clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD)
+        raw.clamp(REORDER_MIN_HOLD, REORDER_MAX_HOLD)
     };
     SHEDH.hold_us_sum.fetch_add(h.as_micros() as u64, Ordering::Relaxed);
     h
@@ -377,8 +377,8 @@ pub(crate) fn shedh_report_line() -> String {
         frac(g.at_cap.load(Ordering::Relaxed), legacy),
         frac(g.interior.load(Ordering::Relaxed), legacy),
         mean,
-        BLOCK_REORDER_MIN_HOLD.as_millis(),
-        BLOCK_REORDER_MAX_HOLD.as_millis(),
+        REORDER_MIN_HOLD.as_millis(),
+        REORDER_MAX_HOLD.as_millis(),
     )
 }
 

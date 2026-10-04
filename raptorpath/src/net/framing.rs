@@ -1,10 +1,13 @@
-//! Packet framing for block assembly and extraction.
+//! Packet framing for the window pipeline's source symbols.
 //!
-//! IP packets are length-prefixed before being concatenated into FEC blocks.
-//! After FEC decode, the framing allows us to recover individual packet boundaries.
+//! Length-prefixed framing (`frame_packet`/`frame_end`/`extract_packets`)
+//! carries several packets in one symbol in packed mode (`SymbolPacker`);
+//! `frame_window_packet` carries one packet per symbol. (The block pipeline
+//! that once used the length-prefixed form for whole FEC blocks is gone,
+//! ADR-0069.)
 //!
 //! Wire format per packet: [u16 BE length][packet data]
-//! End-of-block sentinel:  [u16 0x0000]
+//! End sentinel:           [u16 0x0000]
 
 /// Frame multiple packets into a block buffer with length prefixes.
 /// Each packet is prefixed with its length as a big-endian u16.
@@ -92,7 +95,7 @@ pub fn extract_window_packet(symbol_data: &[u8]) -> Option<Vec<u8>> {
 
 use std::time::{Duration, Instant};
 
-/// Packs multiple small packets into a single FEC symbol using block-mode
+/// Packs multiple small packets into a single FEC symbol using the
 /// length-prefix framing (BE u16 length + data per packet, 0x0000 sentinel).
 ///
 /// This dramatically reduces padding waste for small packets (VoIP 160B,

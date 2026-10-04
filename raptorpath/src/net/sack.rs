@@ -28,16 +28,11 @@ pub type RepairRequestBatch = (u8, Vec<(u64, u16, u32)>);
 ///
 /// The request law lives on the plain reliable window and nowhere else:
 /// generation coding has no per-seq layer to suppress and answers a
-/// different vocabulary already (`GenerationDeficit`), and block mode has no
-/// window at all. `false` means the gap producer keeps its shipped arming
-/// and no `RepairRequest` is ever constructed.
-pub fn request_law_armed(
-    window_mode: bool,
-    reliable: bool,
-    generation: bool,
-    gate: bool,
-) -> bool {
-    window_mode && reliable && !generation && gate
+/// different vocabulary already (`GenerationDeficit`). `false` means the
+/// gap producer keeps its shipped arming and no `RepairRequest` is ever
+/// constructed.
+pub fn request_law_armed(reliable: bool, generation: bool, gate: bool) -> bool {
+    reliable && !generation && gate
 }
 
 /// Compute gap ranges from a set of received sequences in a window.

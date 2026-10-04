@@ -48,8 +48,7 @@ pub fn worst_eps_estimator(sched: &Scheduler) -> Option<&LossEstimator> {
 }
 
 /// The channel's worst loss rate (max over the set; 0.0 on an empty set) —
-/// the ε̂ the retransmit buffer, the interleaver decay and the block ARQ
-/// read.
+/// the ε̂ the retransmit buffer reads.
 pub fn channel_worst_loss_rate(sched: &Scheduler) -> f64 {
     channel_paths(sched)
         .into_iter()

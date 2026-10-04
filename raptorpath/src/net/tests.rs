@@ -69,22 +69,19 @@ fn disarmed_the_holddown_gate_is_inert_at_every_age() {
 #[test]
 fn disarmed_the_request_law_is_inert_at_every_configuration() {
     // 1. The seam. The gate is the last conjunct, so with it absent no
-    //    combination of the other three can arm anything.
-    for wm in [false, true] {
-        for rel in [false, true] {
-            for gen in [false, true] {
-                assert!(
-                    !request_law_armed(wm, rel, gen, false),
-                    "an absent gate armed the seam at ({wm},{rel},{gen})"
-                );
-            }
+    //    combination of the other two can arm anything.
+    for rel in [false, true] {
+        for gen in [false, true] {
+            assert!(
+                !request_law_armed(rel, gen, false),
+                "an absent gate armed the seam at ({rel},{gen})"
+            );
         }
     }
     // And armed it is the plain reliable window and nothing else.
-    assert!(request_law_armed(true, true, false, true));
-    assert!(!request_law_armed(true, true, true, true), "generation has no per-seq layer");
-    assert!(!request_law_armed(true, false, false, true), "the EVICT seat is out of scope");
-    assert!(!request_law_armed(false, true, false, true), "block mode has no window");
+    assert!(request_law_armed(true, false, true));
+    assert!(!request_law_armed(true, true, true), "generation has no per-seq layer");
+    assert!(!request_law_armed(false, false, true), "the EVICT seat is out of scope");
 
     // 2. The vocabulary. `m = 1` at every input while (B) is absent.
     for p in [None, Some(0.0), Some(0.006), Some(0.5), Some(0.96), Some(1.0)] {
@@ -386,7 +383,7 @@ fn shed_deadline_is_the_span_law_d() {
 fn shed_recv_hold_delta_dial_and_legacy_fallback() {
     let srtt = Duration::from_millis(80);
     assert_eq!(shed_recv_hold(srtt, true, true), Duration::from_millis(40));
-    let legacy = (srtt * 4).clamp(BLOCK_REORDER_MIN_HOLD, BLOCK_REORDER_MAX_HOLD);
+    let legacy = (srtt * 4).clamp(REORDER_MIN_HOLD, REORDER_MAX_HOLD);
     assert_eq!(shed_recv_hold(srtt, true, false), legacy, "budget spent ⇒ serialize");
     assert_eq!(shed_recv_hold(srtt, false, true), legacy, "law off ⇒ legacy");
     // The clamps still bind in the fallback (60 ms floor / 300 ms cap).
@@ -4467,7 +4464,11 @@ fn default_config_routes_every_hint_to_the_window_pipeline() {
             FecBackend::Rlc,
             "{hint:?}: the default codec is the window pipeline's RLC"
         );
-        assert!(pc.fec_backend.is_streaming(), "{hint:?}: RLC is streaming-native");
+        assert_eq!(
+            pipeline_backend(&pc).expect("the default routes to the window pipeline"),
+            FecBackend::Rlc,
+            "{hint:?}: run_impl's pipeline selection accepts the default"
+        );
         assert_eq!(
             pc.window_reliable,
             hint != ProtocolHint::Realtime,
@@ -4480,6 +4481,15 @@ fn default_config_routes_every_hint_to_the_window_pipeline() {
     assert_eq!(pc.protocol_hint, ProtocolHint::Auto, "shipped default hint is Auto");
     assert_eq!(pc.fec_backend, FecBackend::Rlc);
     assert!(pc.window_reliable, "Auto's ρ preset is retain-until-acked");
+
+    // A hand-built library PeerConfig naming a block-only codec is a
+    // startup error naming ADR-0069 — there is no block fallback.
+    let (mut lib, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default()).unwrap();
+    for b in [FecBackend::RaptorQ, FecBackend::ReedSolomon] {
+        lib.fec_backend = b;
+        let err = pipeline_backend(&lib).expect_err("block-only codec must not route");
+        assert!(err.to_string().contains("ADR-0069"), "{b:?}: {err}");
+    }
 }
 
 // ── The cross-path loss contamination, removed by wire v9, bounded ──
@@ -5476,51 +5486,24 @@ fn charge_recovery_closes_the_un_metered_wire_and_composes_with_the_release() {
     }
 }
 
-/// The `[PIPE]` echo names BOTH routes by the same predicate the engine
-/// routes on: the shipped default config prints `pipeline=block
-/// backend=RaptorQ`, the `--window-reliable` arm (run_impl auto-selects
-/// RLC) prints `pipeline=window backend=Rlc`. The battery greps exactly
-/// these tokens, so the format is pinned here.
+/// The `[PIPE]` echo names the one route the engine takes, at every named
+/// point, with the backend `pipeline_backend` pins for the resolved default
+/// config. The battery greps exactly these tokens, so the format is pinned.
 #[test]
 fn pipe_echo_names_the_route_the_engine_takes() {
-    let (pc, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default())
-        .expect("the empty default config resolves");
-    for (hint, h) in [(ProtocolHint::Bulk, "bulk"), (ProtocolHint::Auto, "auto")] {
-        let blk_mode = is_window_mode(hint, pc.fec_backend, pc.window_reliable);
-        let blk = pipe_echo_line(hint, pc.fec_backend, blk_mode);
-        assert_eq!(blk, format!("[PIPE] pipeline=block backend=RaptorQ hint={h}"));
-        let win_mode = is_window_mode(hint, FecBackend::Rlc, true);
-        let win = pipe_echo_line(hint, FecBackend::Rlc, win_mode);
-        assert_eq!(win, format!("[PIPE] pipeline=window backend=Rlc hint={h}"));
-    }
-}
-
-/// The block-ARQ ledger horizon is derived from the smallest block-mode
-/// symbol size (`block_arq::BLOCK_MIN_SYMBOL_SIZE`); every hint profile must
-/// respect it, or single-symbol batches covering the retention byte horizon
-/// could overflow the ledger and drop a retained block's loss bookkeeping.
-/// Also pins the smallest full profile block (sizes both byte budgets'
-/// bookkeeping allowance) and that both ends hold Bulk's historical
-/// 64 full 64 KiB blocks.
-#[test]
-fn block_profiles_respect_block_arq_min_symbol_and_byte_horizons() {
-    use crate::control::fec_rate::ProtocolHint;
-    for hint in [ProtocolHint::Realtime, ProtocolHint::Auto, ProtocolHint::Bulk] {
-        let p = BlockProfile::from_hint(hint);
-        assert!(
-            p.symbol_size as usize >= block_arq::BLOCK_MIN_SYMBOL_SIZE,
-            "{hint:?}: symbol {} < BLOCK_MIN_SYMBOL_SIZE",
-            p.symbol_size
-        );
-        assert!(
-            p.max_block_size >= block_arq::BLOCK_MIN_PROFILE_BLOCK_SIZE,
-            "{hint:?}: block {} < BLOCK_MIN_PROFILE_BLOCK_SIZE",
-            p.max_block_size
+    for (hint, h) in [
+        (ProtocolHint::Realtime, "realtime"),
+        (ProtocolHint::Auto, "auto"),
+        (ProtocolHint::Bulk, "bulk"),
+    ] {
+        let cfg = crate::config::RaptorpathConfig { protocol_hint: Some(h.into()), ..Default::default() };
+        let (pc, _) = crate::config::resolve(&cfg).expect("resolves");
+        let backend = pipeline_backend(&pc).expect("the default config has a window codec");
+        assert_eq!(
+            pipe_echo_line(hint, backend),
+            format!("[PIPE] pipeline=window backend=Rlc hint={h}")
         );
     }
-    let bulk = BlockProfile::from_hint(ProtocolHint::Bulk).max_block_size;
-    assert!(64 * (bulk + reorder::ENTRY_OVERHEAD) <= BLOCK_REORDER_MAX_BYTES);
-    assert!(64 * (bulk + block_arq::RETAIN_PER_BLOCK_OVERHEAD) <= block_arq::RETAIN_BUDGET_BYTES);
 }
 
 // ── Plan 2b: the channel's path set is membership, not "can send now" ──
@@ -5704,27 +5687,13 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
     );
     let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(WallClock))));
     scheduler.lock().add_path(0);
-    let fec = Arc::new(parking_lot::Mutex::new(FecRateController::new(
-        1e-6,
-        0.5,
-        ProtocolHint::Bulk,
-        FecBackend::Rlc,
-        1200,
-    )));
-    let decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>> = Arc::new(DashMap::new());
-    let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
     let stats = Arc::new(SharedStats::new());
     stats.add_path(0);
     let ctx = super::control_msg::ControlCtx {
         scheduler: &scheduler,
-        fec_controller: &fec,
-        decoders: &decoders,
-        sent_counts: &sent_counts,
         transport: &transport,
         stats: &stats,
         nack_tx: None,
-        block_arq: None,
-        batch_counter: None,
         peer_window_ack: None,
         deficit_tx: None,
         request_tx: None,

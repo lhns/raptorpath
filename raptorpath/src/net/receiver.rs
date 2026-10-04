@@ -11,14 +11,11 @@
 //!
 //! Ordering constraints:
 //!   * the `rdiag` idle stopwatch brackets exactly the `select!`;
-//!   * every `recv_scheduler` / `recv_fec` / `recv_decoders` lock is taken and
-//!     released within one statement's scope;
-//!   * all four fatal exits (two TUN-inject failures on the window delivery
-//!     paths, and the two `feed_block_symbol` failures — the live one and the
-//!     BlockStart replay) `break 'recv` out of the loop, so they fall through
-//!     the one exit-flush site at the loop's end and then the function ends.
-//!     `feed_block_symbol` is a closure returning `bool` so a helper cannot
-//!     swallow them.
+//!   * every `recv_scheduler` / `recv_fec` lock is taken and released within
+//!     one statement's scope;
+//!   * both fatal exits (the two TUN-inject failures on the window delivery
+//!     paths) `break 'recv` out of the loop, so they fall through the one
+//!     exit-flush site at the loop's end and then the function ends.
 //!
 //! Exit flush: the `[SUCC]`/`[ETA]`/`[LAT]`/`[LATE]`/`[REQ]`/`[RANK]` gauges
 //! live in one `RecvDiagBlock` (`net/recv_block.rs`) whose destructor prints
@@ -41,24 +38,20 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use super::block_arq::BlockArq;
 use super::control_msg::{ControlCtx, handle_control_message};
 use super::delivery::{WindowDelivery, delivered_prefix};
-use super::framing;
 use super::reorder::ReorderBuffer;
 use super::{
-    BatchCounter,
-    BLOCK_REORDER_MAX_BYTES, BLOCK_REORDER_MIN_HOLD, CopaFeed, DerivedRoundEcho,
+    CopaFeed, DerivedRoundEcho,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
     hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
 use crate::control::FecRateController;
-use crate::fec::{FecBackend, FecDecoder, WindowDecoder};
+use crate::fec::{FecBackend, WindowDecoder};
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
@@ -72,20 +65,15 @@ use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 pub(crate) async fn run_receiver(
     mut recv_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     mut msg_rx: tokio::sync::mpsc::Receiver<(u32, WireMessage)>,
-    sent_counts: Arc<DashMap<(u64, u32), u32>>,
     recv_copa_feed: Option<Arc<CopaFeed>>,
     recv_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
     recv_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
     recv_fec: Arc<parking_lot::Mutex<FecRateController>>,
-    recv_decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>>,
     recv_fec_backend: FecBackend,
     recv_transport: Arc<QuicTransport>,
-    recv_block_arq: Arc<parking_lot::Mutex<BlockArq>>,
-    recv_batch_counter: Arc<BatchCounter>,
     recv_path_tracking: Arc<DashMap<u32, PathBatchTracker>>,
     recv_stats: Arc<SharedStats>,
     recv_symbol_size: u16,
-    recv_window_mode: bool,
     recv_window_reliable: bool,
     recv_window_ooo: bool,
     recv_win_cap: u64,
@@ -118,13 +106,10 @@ pub(crate) async fn run_receiver(
     // `SenderPolicy::resolve` reads.
     recv_protocol_hint: crate::control::fec_rate::ProtocolHint,
 ) {
-    // Window decoder: created once, long-lived (only used in window mode;
-    // codec pinned at startup — never rebuilt).
-    let mut window_decoder: Option<Box<dyn WindowDecoder>> = if recv_window_mode {
-        Some(create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation))
-    } else {
-        None
-    };
+    // Window decoder: created once, long-lived (codec pinned at startup —
+    // never rebuilt).
+    let mut window_decoder: Box<dyn WindowDecoder> =
+        create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation);
     // Whether the sender packs multiple packets per symbol (set via WindowStart)
     let mut window_packed: bool = false;
     // The cumulative point for the window ACK (wire v9 `next_expected`): the
@@ -153,9 +138,9 @@ pub(crate) async fn run_receiver(
     // lightweight frontier over `received_seqs`.
     let mut reorder_buf = if recv_window_ooo {
         None
-    } else if recv_window_mode && recv_window_reliable {
+    } else if recv_window_reliable {
         Some(ReorderBuffer::new_reliable())
-    } else if recv_window_mode && recv_reorder_timeout_ms > 0 {
+    } else if recv_reorder_timeout_ms > 0 {
         Some(ReorderBuffer::new(recv_reorder_timeout_ms, recv_reorder_max_size))
     } else {
         None
@@ -173,8 +158,7 @@ pub(crate) async fn run_receiver(
     // (serialize: ρ wins over δ). Armed only on the EVICT in-order path under
     // RWM_UNIFIED (the ρ = 1 reliable buffer never gives up);
     // `RWM_UNIFIED_SHED=0` = the serializing arm.
-    let recv_shed_on = recv_window_mode
-        && !recv_window_reliable
+    let recv_shed_on = !recv_window_reliable
         && !recv_window_ooo
         && reorder_buf.is_some()
         && shed_armed(recv_gates.unified, false, recv_gates.unified_shed);
@@ -485,150 +469,6 @@ pub(crate) async fn run_receiver(
     let mut widle2_n: u64 = 0;
     let mut widle2_max_us: u64 = 0;
 
-    // Block-mode symbols that arrive before their BlockStart (datagrams
-    // routinely outrace the reliable control stream). A decoder created
-    // without the real params can never decode — its OTI transfer length is
-    // wrong and its source array is empty — so such symbols are buffered
-    // here and replayed when BlockStart arrives.
-    // Bounds: 32 blocks x 128 symbols x ~1.2 KB ~ 5 MB worst case.
-    let mut pre_start_symbols: std::collections::HashMap<u64, Vec<crate::fec::WireSymbol>> =
-        std::collections::HashMap::new();
-
-    // Recently decoded block ids: late ARQ repairs — or spurious ones after a
-    // lost Ack — arrive after the decoder was removed and would otherwise be
-    // buffered as "pre-BlockStart" symbols, wasting pre_start_symbols slots
-    // on blocks that are already done.
-    // (parking_lot::Mutex, not RefCell: the spawned future must be Send.
-    // Single-task access — never contended.)
-    let completed_blocks: parking_lot::Mutex<CompletedBlocks> =
-        parking_lot::Mutex::new(CompletedBlocks::for_receiver());
-
-    // Block-mode in-order delivery: block ids are strictly sequential per
-    // peer, but blocks decode out of order — a block waiting on an ARQ repair
-    // round (~2×SRTT) is overtaken by later blocks and the inner TCP sees a
-    // hole (spurious fast-retransmits, halving its cwnd). Decoded payloads
-    // therefore pass through a reorder buffer keyed by block_id
-    // (SRTT-adaptive hold, force-delivery on expiry — the same delivery
-    // contract window mode has).
-    // (parking_lot::Mutex for the same Send reason as above.)
-    let block_inorder_enabled = !recv_window_mode && recv_reorder_timeout_ms > 0;
-    let block_reorder: parking_lot::Mutex<ReorderBuffer> = parking_lot::Mutex::new(
-        ReorderBuffer::new_bytes_bounded(
-            BLOCK_REORDER_MIN_HOLD.as_millis() as u64,
-            BLOCK_REORDER_MAX_BYTES,
-        ),
-    );
-
-    // Instrumentation: per-block arrival tracking — first-symbol instant +
-    // per-path symbol counts — and in-order hold timestamps. Emitted as debug
-    // logs on decode/release.
-    let block_arrival: parking_lot::Mutex<
-        std::collections::HashMap<u64, (Instant, std::collections::HashMap<u32, u32>)>,
-    > = parking_lot::Mutex::new(std::collections::HashMap::new());
-    let block_held_at: parking_lot::Mutex<std::collections::HashMap<u64, Instant>> =
-        parking_lot::Mutex::new(std::collections::HashMap::new());
-
-    // Feed one block-mode symbol into its (existing) decoder; on
-    // completion: stats, FEC feedback, BlockResult, packet extraction,
-    // TUN inject, decoder removal. Returns false iff the TUN inject
-    // channel is closed (receiver must exit). Shared by the data-arm
-    // fast path and the BlockStart replay path.
-    let feed_block_symbol = |symbol: &crate::fec::WireSymbol, path_id: u32| -> bool {
-        let Some(mut decoder) = recv_decoders.get_mut(&symbol.block_id) else {
-            return true;
-        };
-        let feed_start = Instant::now();
-        if let Some(data) = decoder.add_symbol(symbol) {
-            let block_id = symbol.block_id;
-            let total_fed = decoder.total_fed();
-            let source_symbols = decoder.params().source_symbols;
-            drop(decoder);
-
-            debug!(
-                block_id,
-                decode_us = feed_start.elapsed().as_micros() as u64,
-                "block decoded"
-            );
-            // Instrumentation: block completion time from first symbol
-            // arrival + per-path arrival composition.
-            if let Some((first, counts)) = block_arrival.lock().remove(&block_id) {
-                let mut per_path: Vec<(u32, u32)> = counts.into_iter().collect();
-                per_path.sort_unstable();
-                debug!(
-                    block_id,
-                    complete_ms = first.elapsed().as_millis() as u64,
-                    paths = ?per_path,
-                    "block completed"
-                );
-            }
-            recv_stats.blocks.decoded_ok.fetch_add(1, Ordering::Relaxed);
-            recv_fec.lock().feedback_update(true);
-
-            let result_msg = ControlMessage::BlockResult {
-                block_id,
-                success: true,
-                symbols_received: total_fed,
-                symbols_needed: source_symbols,
-            };
-            if let Err(e) = recv_transport.send_control_datagram(path_id, result_msg) {
-                debug!(?e, path_id, "failed to send BlockResult");
-            }
-
-            // In-order delivery: hold out-of-order blocks (see
-            // block_reorder above); inject the contiguous prefix.
-            let deliverable = if block_inorder_enabled {
-                block_reorder.lock().push(block_id, data)
-            } else {
-                vec![(block_id, data, Instant::now())]
-            };
-            // Instrumentation: who waits on whom, for how long.
-            if block_inorder_enabled {
-                if deliverable.is_empty() {
-                    let waiting_on = block_reorder.lock().next_deliver_seq();
-                    block_held_at.lock().insert(block_id, Instant::now());
-                    debug!(block_id, waiting_on, "in-order held");
-                } else {
-                    let mut held = block_held_at.lock();
-                    for (bid, _, _) in &deliverable {
-                        if let Some(t) = held.remove(bid) {
-                            debug!(
-                                block_id = *bid,
-                                held_ms = t.elapsed().as_millis() as u64,
-                                unblocked_by = block_id,
-                                "in-order hold released"
-                            );
-                        }
-                    }
-                }
-            }
-            for (_bid, bdata, _) in deliverable {
-                let packets = framing::extract_packets(&bdata);
-                for pkt_data in packets {
-                    match recv_tun_tx.try_send(Bytes::from(pkt_data)) {
-                        Ok(()) => {}
-                        Err(mpsc::error::TrySendError::Full(_)) => {
-                            warn!("TUN inject channel full, dropping packet");
-                        }
-                        Err(mpsc::error::TrySendError::Closed(_)) => {
-                            error!("TUN inject channel closed");
-                            return false;
-                        }
-                    }
-                }
-            }
-
-            recv_decoders.remove(&block_id);
-            {
-                completed_blocks.lock().insert(block_id);
-            }
-            recv_stats
-                .blocks
-                .pending
-                .store(recv_decoders.len() as u64, Ordering::Relaxed);
-        }
-        true
-    };
-
     // Generation-deficit report (paper §5.8). Compute each frontier
     // generation's residual deficit from the decoder's current rank and send
     // it to the sender. `$force` sends even an empty vector (used on decode
@@ -864,9 +704,7 @@ pub(crate) async fn run_receiver(
         // deadlock the whole tunnel (hole → no delivery advance → no
         // WindowAck → sender window full → no sends → no arrivals → no drain).
         let reorder_deadline: Option<tokio::time::Instant> = {
-            let pending = if block_inorder_enabled {
-                block_reorder.lock().pending_count() > 0
-            } else if recv_window_ooo {
+            let pending = if recv_window_ooo {
                 // Unordered delivery holds nothing, but a hole in the
                 // received prefix still needs the tail-recovery timer to
                 // re-advertise the gap (SACK WindowAck) so the sender
@@ -954,7 +792,7 @@ pub(crate) async fn run_receiver(
                     // δ-honest shed (paper §5.6): under the unified realtime
                     // machine the EVICT hold is the δ dial b·SRTT while the
                     // ε̂-class give-up budget is open; the 4×SRTT clamp
-                    // otherwise (always for block mode and with the law off).
+                    // otherwise (always with the law off).
                     if recv_shed_on {
                         let eps_recv = {
                             let sched = recv_scheduler.lock();
@@ -976,19 +814,11 @@ pub(crate) async fn run_receiver(
                     let hold = srtt.map(|s| {
                         shed_recv_hold(s, recv_shed_on, recv_shed_budget_open)
                     });
-                    if block_inorder_enabled {
-                        let mut rb = block_reorder.lock();
-                        if let Some(h) = hold {
-                            rb.set_timeout(h);
-                        }
-                        rb.oldest_deadline()
-                    } else {
-                        let rb = reorder_buf.as_mut().expect("pending implies Some");
-                        if let Some(h) = hold {
-                            rb.set_timeout(h);
-                        }
-                        rb.oldest_deadline()
+                    let rb = reorder_buf.as_mut().expect("pending implies Some");
+                    if let Some(h) = hold {
+                        rb.set_timeout(h);
                     }
+                    rb.oldest_deadline()
                 };
                 deadline.map(|d| {
                     let remaining = d.saturating_duration_since(Instant::now());
@@ -1019,7 +849,8 @@ pub(crate) async fn run_receiver(
                 // sender the true residual deficit for every frontier
                 // generation, even with no new arrivals, so a sender that
                 // emitted its budget and stalled is re-pulled to completion.
-                if let Some(ref dec) = window_decoder {
+                {
+                    let dec = &window_decoder;
                     send_gen_deficits!(dec, true);
                 }
                 continue;
@@ -1054,10 +885,7 @@ pub(crate) async fn run_receiver(
                                 .as_ref()
                                 .map(|rb| rb.next_deliver_seq())
                                 .unwrap_or(ooo_frontier);
-                            let (b_seen, b_rec, b_out) = window_decoder
-                                .as_ref()
-                                .map(|d| d.seq_probe(blocker))
-                                .unwrap_or((false, false, false));
+                            let (b_seen, b_rec, b_out) = window_decoder.seq_probe(blocker);
                             let pending = reorder_buf
                                 .as_ref()
                                 .map(|rb| rb.pending_count())
@@ -1136,7 +964,8 @@ pub(crate) async fn run_receiver(
                     // vocabulary.
                     if recv_request_law || recv_rank_feedback {
                         let pid_rq = recv_scheduler.lock().live_paths().first().copied();
-                        if let (Some(pid), Some(ref dec)) = (pid_rq, window_decoder.as_ref()) {
+                        if let Some(pid) = pid_rq {
+                            let dec = &window_decoder;
                             send_repair_request!(
                                 dec,
                                 pid,
@@ -1148,20 +977,8 @@ pub(crate) async fn run_receiver(
                 }
                 // Give up on the hole(s): force-deliver expired entries
                 // (plus everything they unblock) so the tunnel never
-                // stalls on an unrecoverable block/symbol.
-                if block_inorder_enabled {
-                    let expired = block_reorder.lock().drain_expired(Instant::now());
-                    for (bid, bdata, _) in expired {
-                        let held_ms = block_held_at
-                            .lock()
-                            .remove(&bid)
-                            .map(|t| t.elapsed().as_millis() as u64);
-                        debug!(block_id = bid, held_ms, "in-order hold expired — force-delivering");
-                        for pkt_data in framing::extract_packets(&bdata) {
-                            let _ = recv_tun_tx.try_send(Bytes::from(pkt_data));
-                        }
-                    }
-                } else if let Some(ref mut reorder) = reorder_buf {
+                // stalls on an unrecoverable symbol.
+                if let Some(ref mut reorder) = reorder_buf {
                     let shed_frontier_before = reorder.next_deliver_seq();
                     let expired = reorder.drain_expired(Instant::now());
                     // δ-honest shed accounting: seqs the frontier passed
@@ -1473,9 +1290,9 @@ pub(crate) async fn run_receiver(
                     (e, r, tracker.total_expected, tracker.total_received)
                 };
 
-                // Route symbols to window decoder or block decoder
-                if let Some(ref mut win_dec) = window_decoder {
-                    // ----- Window-mode receive path -----
+                // The window receive path (the one pipeline, ADR-0069).
+                {
+                    let win_dec = &mut window_decoder;
                     // Generation-deficit feedback: learn each generation's
                     // K_g self-describingly from the wire header (window_start
                     // = anchor, window_count = K_g) of every coded symbol, and
@@ -1861,7 +1678,7 @@ pub(crate) async fn run_receiver(
                     }
 
                     // Drain expired reorder buffer entries. SRTT-adaptive hold
-                    // (same delivery contract as block mode): a static 20 ms
+                    // (the EVICT delivery contract): a static 20 ms
                     // hold sits below one NACK/repair round, so holes would be
                     // force-delivered just before their repair arrived and the
                     // inner TCP would retransmit them.
@@ -2228,8 +2045,9 @@ pub(crate) async fn run_receiver(
                     {
                         last_nack_time = now;
 
-                        // Controller feedback for window mode.
-                        if let Some(ref win_dec) = window_decoder {
+                        // Controller feedback for the window decoder.
+                        {
+                            let win_dec = &window_decoder;
                             let fed = win_dec.repairs_fed();
                             let useful = win_dec.repairs_useful();
                             let delta_fed = fed - last_pi_repairs_fed;
@@ -2271,9 +2089,7 @@ pub(crate) async fn run_receiver(
                         // a synced counter no longer counts.
                         recv_above.sync(&received_seqs, next_expected);
                         received_seqs = received_seqs.split_off(&prune_before);
-                        if let Some(ref mut wd) = window_decoder {
-                            wd.advance(prune_before);
-                        }
+                        window_decoder.advance(prune_before);
                         // Occupancy probe: peak reassembly held behind the frontier.
                         if reasm_bdp_on {
                             let pending = reorder_buf
@@ -2297,63 +2113,15 @@ pub(crate) async fn run_receiver(
                             }
                         }
                     }
-                } else {
-                    // ----- Block-mode receive path -----
-                    for symbol in &batch.symbols {
-                        // Instrumentation: per-path arrival counts.
-                        // Debug-gated: the map update stays off the hot
-                        // path unless composition logging is wanted.
-                        if tracing::enabled!(tracing::Level::DEBUG)
-                            && !completed_blocks.lock().contains(&symbol.block_id)
-                        {
-                            let mut arr = block_arrival.lock();
-                            let entry = arr
-                                .entry(symbol.block_id)
-                                .or_insert_with(|| (Instant::now(), Default::default()));
-                            *entry.1.entry(path_id).or_insert(0) += 1;
-                            if arr.len() > 2048 {
-                                arr.clear(); // leak guard (failed blocks)
-                            }
-                        }
-                        if !recv_decoders.contains_key(&symbol.block_id) {
-                            // Late/spurious ARQ repair for a block that
-                            // already decoded: drop, don't buffer.
-                            if completed_blocks.lock().contains(&symbol.block_id) {
-                                continue;
-                            }
-                            // Pre-BlockStart symbol: buffer for replay.
-                            // (Creating a decoder without the real
-                            // params here would make the block
-                            // undecodable -- see pre_start_symbols.)
-                            if pre_start_symbols.len() < 32
-                                || pre_start_symbols.contains_key(&symbol.block_id)
-                            {
-                                let buf = pre_start_symbols
-                                    .entry(symbol.block_id)
-                                    .or_default();
-                                if buf.len() < 128 {
-                                    buf.push(symbol.clone());
-                                }
-                            }
-                            continue;
-                        }
-                        if !feed_block_symbol(symbol, path_id) {
-                            break 'recv;
-                        }
-                    }
                 }
 
                 // ADR-0005: send ACK with echo timestamp for RTT.
                 //
                 // Ack-merge (RWM_ACK_MERGE): this is the second control
-                // datagram per data message. Its send site sits after the
-                // window/block branch closes, so it fires in window mode too —
-                // one per-batch Ack for every SACK WindowAck. Under the merge,
-                // window mode suppresses it entirely: its payload rides the
-                // WindowAck's cumulative counters and its consumers use the
-                // counter diff. Block mode is untouched — it has no WindowAck
-                // to merge into, `block_arq` is live only there, and its
-                // dup-ack loss channel keeps the per-batch Ack it is built on.
+                // datagram per data message: one per-batch Ack for every SACK
+                // WindowAck. Under the merge it is suppressed entirely: its
+                // payload rides the WindowAck's cumulative counters and its
+                // consumers use the counter diff.
                 let suppress_legacy_ack = ack_merge_recv;
                 // Collect received_ids for symbols in this batch
                 let received_ids: Vec<u32> = batch
@@ -2404,46 +2172,15 @@ pub(crate) async fn run_receiver(
                     );
                 }
 
-                let started_block = match &ctrl_msg {
-                    ControlMessage::BlockStart { params, .. } => Some(params.block_id),
-                    _ => None,
-                };
-
-                // Re-announced BlockStart for a block we already delivered:
-                // the sender's success BlockResult was lost (best-effort
-                // datagram) so its idle re-announce keeps probing this
-                // block. Re-ack (idempotent) so it stops, and do not let
-                // handle_control_message re-create a zombie decoder for a
-                // done block (which the re-announce spares would then feed
-                // forever until the 30 s eviction).
-                if let Some(bid) = started_block {
-                    if completed_blocks.lock().contains(&bid) {
-                        let reack = ControlMessage::BlockResult {
-                            block_id: bid,
-                            success: true,
-                            symbols_received: 0,
-                            symbols_needed: 0,
-                        };
-                        let _ = recv_transport.send_control_datagram(path_id, reack);
-                        pre_start_symbols.remove(&bid);
-                        continue;
-                    }
-                }
-
                 handle_control_message(
                     path_id,
                     ctrl_msg,
                     &ControlCtx {
                         scheduler: &recv_scheduler,
-                        fec_controller: &recv_fec,
-                        decoders: &recv_decoders,
-                        sent_counts: &sent_counts,
                         transport: &recv_transport,
                         stats: &recv_stats,
                         nack_tx: recv_nack_tx.as_ref(),
-                        block_arq: if recv_window_mode { None } else { Some(&recv_block_arq) },
-                        batch_counter: Some(&recv_batch_counter),
-                        peer_window_ack: if recv_window_mode { Some(&recv_window_ack) } else { None },
+                        peer_window_ack: Some(&recv_window_ack),
                         deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         sack_tx: recv_sack_tx.as_ref(),
                         request_tx: recv_request_tx.as_ref(),
@@ -2451,38 +2188,25 @@ pub(crate) async fn run_receiver(
                         mstar_anchor: recv_gates.mstar_anchor,
                     },
                 );
-
-                // Replay symbols that outraced this BlockStart -- the
-                // decoder now exists with real params, and small blocks
-                // are often already complete at this point.
-                if let Some(bid) = started_block {
-                    if let Some(buffered) = pre_start_symbols.remove(&bid) {
-                        debug!(block_id = bid, count = buffered.len(),
-                            "replaying pre-BlockStart symbols");
-                        for sym in &buffered {
-                            if !feed_block_symbol(sym, path_id) {
-                                break 'recv;
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 
     // ── The exit flush ────────────────────────────────────────────────────
     // Every way out of the loop lands here: the channel closing, the shutdown
-    // broadcast, and the four failure exits (`break 'recv` above: two
-    // TUN-inject closures and the two `feed_block_symbol` failures) — they
-    // all end the task at this one site, and nothing runs after it. The block
+    // broadcast, and the two failure exits (`break 'recv` above: the two
+    // TUN-inject closures) — they all end the task at this one site, and nothing runs after it. The block
     // prints once more, marked `final=1`, off a fresh `[RANK]` probe while the
     // decoder is still in scope. A task whose future is dropped instead
     // (runtime teardown) never reaches this line; `RecvDiagBlock`'s destructor
     // flushes it then, without a probe. The two share one flag, so exactly one
     // final block is ever printed.
-    let probe = window_decoder.as_deref().map(|wd| {
-        rank_probe(wd, next_expected, seen_end, &mut rank_prev_seen)
-    });
+    let probe = Some(rank_probe(
+        window_decoder.as_ref(),
+        next_expected,
+        seen_end,
+        &mut rank_prev_seen,
+    ));
     blk.flush_final(probe);
 }
 
@@ -2531,89 +2255,4 @@ fn rank_probe(
     };
     *rank_prev_seen = highest_seen_seq;
     (holes, pivots, tail_holes)
-}
-
-/// Recently completed block ids (ring + set). Consulted for late ARQ
-/// repairs (dropped, not buffered) and for a re-announced BlockStart of an
-/// already-delivered block (re-acked, and NOT handed to
-/// `handle_control_message` — which would re-create a decoder, re-decode
-/// from the re-announce spares, and deliver the payload a second time).
-pub(crate) struct CompletedBlocks {
-    ring: std::collections::VecDeque<u64>,
-    set: std::collections::HashSet<u64>,
-    cap: usize,
-}
-
-impl CompletedBlocks {
-    /// The receiver's ring, sized by the SAME horizon as the sender's done
-    /// ring (`block_arq::DONE_RING_CAP`: at least the most blocks the
-    /// retention budget can hold, `RETAIN_MAX_BLOCKS_DERIVED`) — one shared
-    /// constant, not a second literal.
-    ///
-    /// What it covers: a delivered block X whose success BlockResult was
-    /// lost is re-announced every quiet period (≤ REANNOUNCE_TIMEOUT_MAX)
-    /// until a re-ack lands; X is recognised as long as fewer than
-    /// DONE_RING_CAP blocks complete after it in that time. Only
-    /// consecutive lost re-acks stretch that time, so forgetting X needs
-    /// ~DONE_RING_CAP / (blocks completed per re-announce period)
-    /// consecutive losses — the ring is bounded memory, not an absolute
-    /// guarantee.
-    pub(crate) fn for_receiver() -> Self {
-        Self::with_cap(crate::net::block_arq::DONE_RING_CAP)
-    }
-
-    pub(crate) fn with_cap(cap: usize) -> Self {
-        Self {
-            ring: std::collections::VecDeque::new(),
-            set: std::collections::HashSet::new(),
-            cap,
-        }
-    }
-
-    pub(crate) fn insert(&mut self, block_id: u64) {
-        if self.set.insert(block_id) {
-            self.ring.push_back(block_id);
-            while self.ring.len() > self.cap {
-                if let Some(old) = self.ring.pop_front() {
-                    self.set.remove(&old);
-                }
-            }
-        }
-    }
-
-    /// Already completed (a re-announce of it is re-acked, never re-decoded).
-    pub(crate) fn contains(&self, block_id: &u64) -> bool {
-        self.set.contains(block_id)
-    }
-}
-
-#[cfg(test)]
-mod completed_blocks_tests {
-    use super::CompletedBlocks;
-    use crate::net::block_arq::DONE_RING_CAP;
-
-    /// A block X whose success BlockResult was lost stays unconfirmed at the
-    /// sender, which keeps re-announcing it (no give-up) while later blocks
-    /// keep completing. The receiver must still recognise X — re-ack it and
-    /// NOT re-create a decoder (re-delivery) — for as long as the sender's
-    /// own done horizon: at least DONE_RING_CAP − 1 later completions
-    /// (≫ the old 512 literal).
-    #[test]
-    fn reannounced_delivered_block_is_recognised_across_the_sender_horizon() {
-        let mut done = CompletedBlocks::for_receiver();
-        let x = 1_000u64;
-        done.insert(x);
-        let later = DONE_RING_CAP as u64 - 1;
-        assert!(later > 512, "the horizon exceeds the old literal: {later}");
-        for b in x + 1..=x + later {
-            done.insert(b);
-        }
-        assert!(
-            done.contains(&x),
-            "block X forgotten after {later} later completions: its re-announce would be              re-decoded and delivered twice instead of re-acked"
-        );
-        // Bounded: one completion past the horizon forgets X.
-        done.insert(x + later + 1);
-        assert!(!done.contains(&x), "the ring stays bounded by the shared horizon");
-    }
 }

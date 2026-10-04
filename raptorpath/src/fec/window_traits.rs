@@ -2,7 +2,8 @@
 //!
 //! These traits define the interface for continuous, streaming FEC that operates
 //! over a sliding window of source symbols rather than fixed blocks.
-//! They coexist with the block-based `FecEncoder`/`FecDecoder` traits.
+//! They are the only codec interface (the block traits went with the block
+//! pipeline, ADR-0069).
 
 use bytes::Bytes;
 

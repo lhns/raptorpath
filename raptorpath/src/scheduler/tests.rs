@@ -6,7 +6,7 @@ fn make_symbol(id: u32, repair: bool) -> WireSymbol {
         payload_id: id,
         is_repair: repair,
         data: vec![0u8; 64],
-        backend: FecBackend::RaptorQ,
+        backend: FecBackend::Rlc,
     }
 }
 
