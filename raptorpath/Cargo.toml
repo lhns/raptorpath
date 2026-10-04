@@ -23,6 +23,11 @@ quinn = "0.11"
 # quinn_proto::RttEstimator (not re-exported by quinn). Same version as
 # quinn's own — cargo unifies them.
 quinn-proto = "0.11"
+# Direct dep on quinn's own socket crate (same 0.6.3 in Cargo.lock, nothing
+# new downloaded): the endpoint socket is built here, not by quinn, so its
+# SO_RCVBUF can be requested before bind (transport/rcvbuf.rs) and an IPv6
+# client stays dual-stack exactly as `quinn::Endpoint::client` made it.
+socket2 = "0.6"
 rustls = { version = "0.23", features = ["ring"] }
 
 # TUN interface
