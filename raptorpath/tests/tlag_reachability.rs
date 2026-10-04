@@ -22,21 +22,35 @@
 //!   5. `-` iff `n == 0`, on every reading (value and count come from one
 //!      `tlag_diffs()` pair set).
 //!   6. The time decimation executed: on loopback the sender samples RTT at
-//!      tens of kHz, so without the `τ/m` admission spacing a 256-entry ring
+//!      kHz rates (thousands of packets per second even through the 40 Mbit
+//!      shaper), so without the `τ/m` admission spacing a 256-entry ring
 //!      would span under one RTprop and `n` would be 0 everywhere. `n ≥ L/8`
 //!      is the parser's thin floor.
 //!   7. The ring bound: `n ≤ L − 1` (one anchor contributes at most one pair).
 //!   8. τ was established where the gauge read: every valued block carries a
 //!      parseable `rtp…ms`, positive wherever the whole-ms token can resolve
 //!      it (see `parse_rtp`).
-//!   9. Scale: a loopback RTT dispersion is under one second (µs/s unit error).
+//!   9. Scale: a shaped-loopback RTT dispersion is under one second (µs/s
+//!      unit error).
 //!
-//! No ordering between gauges and no value is asserted: loopback's
-//! dispersion is the host scheduler's, and one host at one sample rate
-//! cannot show rate invariance. The characterization block is printed only.
+//! The client runs on a RATE-SHAPED loopback (`loopback::CLEAN_RATE`: the L0
+//! netem shim at 40 Mbit, no delay, no jitter, no loss), so the number of
+//! 250 ms `[DIAG]` ticks — and the ring's fill at a printed tick — does not
+//! shrink with sender speed-ups. The harness clauses prove the shaper ran:
+//! its ACTIVE echo, a per-run duration floor and a tick-count floor.
+//!
+//! No ordering between gauges and no value is asserted: a rate-shaped
+//! loopback's dispersion is the host scheduler's plus the shaper's queueing,
+//! and one host at one sample rate cannot show rate invariance. The
+//! characterization block is printed only.
 
 #[path = "common/loopback.rs"]
 mod loopback;
+
+/// The tick-count floor: two 8 MB runs at 40 Mbit are ≥ 3.2 s of shaped
+/// transfer, ≥ 12 ticks at the 250 ms `[DIAG]` cadence (the cadence drifts
+/// late by each tick's loop latency, so the floor keeps a margin of 4).
+const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. The gauge
 /// has no gate of its own.
@@ -120,7 +134,8 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
         &ARM,
         &["--protocol-hint", "bulk", "--window-reliable"],
     );
-    let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
+    let cli_env: Vec<(&str, &str)> = ARM.iter().chain(loopback::CLEAN_RATE.iter()).copied().collect();
+    let log = loopback::run_perf_client(&srv.addrs, &cli_env, &loopback::perf_args("bulk", "8000000", "2"));
 
     // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
     //    emission site, never as an unset gate.
@@ -138,6 +153,19 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     assert!(
         !diag.is_empty(),
         "no [DIAG] line in a run with RWM_DIAG=1 — the report is unreachable:\n{log}"
+    );
+
+    // 2a. The harness ran as designed: the shaper executed (shim ACTIVE, each
+    //     run at least 0.8 × bytes·8/R) and the run spanned enough 250 ms
+    //     ticks that the tick-sampled clauses below are not a coin flip.
+    let secs = loopback::assert_clean_rate_executed(&log, 8_000_000, 2);
+    println!("[tlag] shaped run seconds: {secs:?}; {} [DIAG] ticks", diag.len());
+    assert!(
+        diag.len() >= MIN_TICKS,
+        "only {} [DIAG] ticks over two shaped 8 MB runs (floor {MIN_TICKS}) — the \
+         tick-sampled clauses are back to a handful of samples:\n{}",
+        diag.len(),
+        diag.join("\n")
     );
 
     // 3 + 4 + 5 + 8: existence on every block; the four controls beside it;
@@ -271,7 +299,7 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     // 9. Scale — the µs/s unit error.
     assert!(
         v < 1_000_000,
-        "`{TLAG}` = {v} µs on loopback is not a dispersion of a loopback RTT \
+        "`{TLAG}` = {v} µs on a shaped loopback is not a dispersion of its RTT \
          — suspect a unit error in the gauge"
     );
 
@@ -297,7 +325,7 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     } else {
         "n/a".to_string()
     };
-    println!("\n[tlag] {blocks} per-path [DIAG] blocks, loopback, bulk, window-reliable");
+    println!("\n[tlag] {blocks} per-path [DIAG] blocks, 40 Mbit rate-shaped loopback, bulk, window-reliable");
     println!(
         "[tlag] {:<9} {:>12} {:>10} {:>10} {:>10} {:>8} {:>8}",
         "field", "best(µs)/n", "p05", "p50", "p95", "R_local", "n_kept"

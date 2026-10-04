@@ -23,14 +23,26 @@
 //!      also renders `-` for a zero dispersion, so it is exempt).
 //!   6. All three are fed and positive, and the window-class pair reaches a
 //!      full window (`n` = 256).
-//!   7. Scale: under one second on loopback (µs/s unit error).
+//!   7. Scale: under one second on the shaped loopback (µs/s unit error).
 //!
-//! No ordering and no value is asserted: loopback's dispersion is the host
-//! scheduler's, and the acceptance bar is scored on the VM. The
-//! characterization block is printed only.
+//! The client runs on a RATE-SHAPED loopback (`loopback::CLEAN_RATE`: the L0
+//! netem shim at 40 Mbit, no delay, no jitter, no loss), so the number of
+//! 250 ms `[DIAG]` ticks — and the chance that a printed tick finds the
+//! 256-sample window full — does not shrink with sender speed-ups. The
+//! harness clauses prove the shaper ran: its ACTIVE echo, a per-run duration
+//! floor and a tick-count floor.
+//!
+//! No ordering and no value is asserted: a rate-shaped loopback's dispersion
+//! is the host scheduler's plus the shaper's queueing, and the acceptance bar
+//! is scored on the VM. The characterization block is printed only.
 
 #[path = "common/loopback.rs"]
 mod loopback;
+
+/// The tick-count floor: two 8 MB runs at 40 Mbit are ≥ 3.2 s of shaped
+/// transfer, ≥ 12 ticks at the 250 ms `[DIAG]` cadence (the cadence drifts
+/// late by each tick's loop latency, so the floor keeps a margin of 4).
+const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. The
 /// candidate gauges have no gate of their own.
@@ -86,7 +98,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         &ARM,
         &["--protocol-hint", "bulk", "--window-reliable"],
     );
-    let log = loopback::run_perf_client(&srv.addrs, &ARM, &loopback::perf_args("bulk", "8000000", "2"));
+    let cli_env: Vec<(&str, &str)> = ARM.iter().chain(loopback::CLEAN_RATE.iter()).copied().collect();
+    let log = loopback::run_perf_client(&srv.addrs, &cli_env, &loopback::perf_args("bulk", "8000000", "2"));
 
     // 1. The gate, two-sided: a missing `[DIAG]` must read as an unreached
     //    emission site, never as an unset gate.
@@ -104,6 +117,19 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     assert!(
         !diag.is_empty(),
         "no [DIAG] line in a run with RWM_DIAG=1 — the report is unreachable:\n{log}"
+    );
+
+    // 2a. The harness ran as designed: the shaper executed (shim ACTIVE, each
+    //     run at least 0.8 × bytes·8/R) and the run spanned enough 250 ms
+    //     ticks that the tick-sampled clauses below are not a coin flip.
+    let secs = loopback::assert_clean_rate_executed(&log, 8_000_000, 2);
+    println!("[sigma-cand] shaped run seconds: {secs:?}; {} [DIAG] ticks", diag.len());
+    assert!(
+        diag.len() >= MIN_TICKS,
+        "only {} [DIAG] ticks over two shaped 8 MB runs (floor {MIN_TICKS}) — the \
+         tick-sampled clauses are back to a handful of samples:\n{}",
+        diag.len(),
+        diag.join("\n")
     );
 
     // 3 + 4 + 5: existence on every block for all four fields, and the `-`
@@ -184,8 +210,8 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
         // 7. Scale — the µs/s unit error.
         assert!(
             v < 1_000_000,
-            "`{field}` = {v} µs on loopback is not a dispersion of a loopback \
-             RTT — suspect a unit error in the gauge"
+            "`{field}` = {v} µs on a shaped loopback is not a dispersion of \
+             its RTT — suspect a unit error in the gauge"
         );
     }
 
@@ -213,7 +239,7 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     // bar's functional (p95/p05 over post-warm-up readings) over this run's
     // [DIAG] series; it is not `R_total`, which pools reps at a shaped cell.
     // ------------------------------------------------------------------
-    println!("\n[sigma-cand] {blocks} per-path [DIAG] blocks, loopback, bulk, window-reliable");
+    println!("\n[sigma-cand] {blocks} per-path [DIAG] blocks, 40 Mbit rate-shaped loopback, bulk, window-reliable");
     println!(
         "[sigma-cand] {:<9} {:>12} {:>10} {:>10} {:>10} {:>8} {:>8}",
         "field", "best(µs)/n", "p05", "p50", "p95", "R_local", "n_kept"

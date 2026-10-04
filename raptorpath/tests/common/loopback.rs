@@ -372,6 +372,88 @@ pub fn perf_args<'a>(hint: &'a str, bytes: &'a str, runs: &'a str) -> [&'a str; 
 /// q = 40 % ⇒ ε ≈ 4.8 %), seeded.
 pub const C3: [(&str, &str); 2] = [("RWM_L0_NETEM", "c3"), ("RWM_L0_SEED", "42")];
 
+/// The bottleneck rate of [`CLEAN_RATE`], in Mbit/s. Kept literally in sync
+/// with the `custom:` spec below; tests derive their run-duration floor from
+/// it (`bytes·8 / rate` is the shaper's lower bound on a run's wall time).
+pub const CLEAN_RATE_MBIT: f64 = 40.0;
+
+/// Rate-only client shaping for the tick-sampled `[DIAG]` reachability tests
+/// (σ, candidates, tlag): `custom:<rate_mbit>;<ow_ms>;<jit_ms>;<ge_p>;<ge_q>`
+/// = 40 Mbit, 0 ms one-way, 0 ms jitter, `ge_p = 0` (the GE loss branch is
+/// skipped), seeded.
+///
+/// **The fields are `;`-separated, not `,`.** `L0Netem::from_env` first
+/// splits the WHOLE spec on `,` into per-path cells (`c2,c3` = path 0 / path
+/// 1), then `l0_scenario` splits one cell on `;`. A comma-separated
+/// `custom:` spec parses to no scenario, the shim logs `shim OFF` and the run
+/// is silently unshaped — so every user asserts `shim ACTIVE` and the absence
+/// of `shim OFF` (the shim is not in the `[GATES]` echo).
+///
+/// Why: `[DIAG]` is printed only on 250 ms ticks and samples cwnd saturation
+/// at that one instant. Unshaped loopback is CPU-bound, so its wall time —
+/// and with it the tick count — shrinks with every sender speed-up (two 8 MB
+/// objects fell to 0.3–0.8 s, i.e. 1–3 ticks, and the clauses became coin
+/// flips). A fixed bottleneck bounds the wall time below by `bytes·8/R`
+/// regardless of CPU speed, and makes a full cwnd the steady state instead of
+/// a scheduler coincidence. Only the client is shaped; the server clears
+/// inherited `RWM_*`, so the ack direction stays the host's own loopback.
+/// R = 40 Mbit from the VM calibration (10 runs per test, release): at
+/// 50 Mbit every run passed but read only 9-10 ticks, within 1-2 of the
+/// 8-tick floor; 40 Mbit buys the floor a margin without weakening it.
+pub const CLEAN_RATE: [(&str, &str); 2] = [
+    ("RWM_L0_NETEM", "custom:40;0;0;0;100"),
+    ("RWM_L0_SEED", "42"),
+];
+
+/// Prove [`CLEAN_RATE`] executed on a client run (MEASUREMENT DISCIPLINE
+/// rule 1): the shim's own ACTIVE echo is present, its `shim OFF` warning is
+/// absent, exactly `runs` timed (non-warm-up, non-DNF) perf runs were
+/// reported, and each took at least 0.8 × the shaper's `bytes·8/R` floor.
+/// Returns the per-run seconds.
+pub fn assert_clean_rate_executed(log: &str, bytes: u64, runs: usize) -> Vec<f64> {
+    assert!(
+        log.contains("shim ACTIVE"),
+        "no `L0 netem shim ACTIVE` echo — the CLEAN_RATE shaper did not run:\n{log}"
+    );
+    assert!(
+        !log.contains("shim OFF"),
+        "the L0 netem shim logged `shim OFF` — the CLEAN_RATE spec did not parse \
+         (comma instead of `;`?):\n{log}"
+    );
+    let mut secs = Vec::new();
+    for line in log.lines().filter(|l| l.trim_start().starts_with('{')) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        if v.get("run").is_none() {
+            continue; // the warm-up line, or the closing summary
+        }
+        assert!(
+            v.get("dnf").is_none(),
+            "a perf run did not finish under the CLEAN_RATE shaper: {line}"
+        );
+        let s = v
+            .get("seconds")
+            .and_then(|s| s.as_f64())
+            .unwrap_or_else(|| panic!("a perf run line carries no `seconds`: {line}"));
+        secs.push(s);
+    }
+    assert_eq!(
+        secs.len(),
+        runs,
+        "expected {runs} timed perf runs in the client output, parsed {secs:?}:\n{log}"
+    );
+    let floor = 0.8 * bytes as f64 * 8.0 / (CLEAN_RATE_MBIT * 1e6);
+    for s in &secs {
+        assert!(
+            *s >= floor,
+            "a {bytes}-byte run took {s:.3} s, under 0.8 × the {CLEAN_RATE_MBIT} Mbit \
+             shaper's floor ({floor:.3} s) — the rate shaping did not execute"
+        );
+    }
+    secs
+}
+
 /// Client env for an optional netem spec: `Some(spec)` ⇒ `RWM_L0_NETEM=spec`
 /// seeded with 42; `None` ⇒ nothing (the shim is OFF, the wire is the host's
 /// own loopback).
