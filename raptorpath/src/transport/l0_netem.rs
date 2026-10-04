@@ -90,7 +90,8 @@ fn l0_scenario(name: &str) -> Option<L0PathCfg> {
                 }
                 return None;
             }
-            // custom:rate_mbit,ow_ms,jit_ms,ge_p,ge_q
+            // custom:rate_mbit;ow_ms;jit_ms;ge_p;ge_q  (`;`-separated: `,`
+            // already separates per-path cells in `from_env`)
             let spec = other.strip_prefix("custom:")?;
             let v: Vec<f64> = spec.split(';').filter_map(|s| s.parse().ok()).collect();
             if v.len() == 5 {
