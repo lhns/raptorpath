@@ -1147,7 +1147,11 @@ tests 15:07–15:35Z; smoke 15:35–15:37Z; GO 15:38Z; battery 15:38–16:39Z
 (3653 s, 304 invocations); tunnel 16:39–16:57Z (1088 s); crown 16:57–17:30Z;
 locks released 17:30:31Z. **Session wall 2 h 28 min** of the 5 h cap. The
 budget rule gave n = 8 per seed with no cut (`c_meas` 56 s < `C_PRED` 91 s,
-so `R_est` = `R_PRIOR`). VM left quiet: 0 `raptorpath`, 0 `cargo`, 0 `rp-*`
+so `R_est` = `R_PRIOR`). The three `sigma_diag_reachability` re-runs (below)
+were run by the operator inside the session's locks between `SMOKE-PASS` and
+GO; the envelope's cotenant check at battery start read `cargo=0 rustc=0`
+(`all-era.txt`). One progress read at 16:08Z (`BLOCK-COMPLETE` count 7, 148
+rows), per rule 13. VM left quiet: 0 `raptorpath`, 0 `cargo`, 0 `rp-*`
 namespaces, both locks absent.
 
 *Tests (NEW tree, VM, release).*
@@ -1172,7 +1176,7 @@ sender). The doc-test command ran 0 doc tests.
 *Harness fix (c): `DELIVERED`.* The fixed `gate_harness.rs` printed
 byte-identical `gate_suite` output on both runs (330 lines, md5
 2af16ecee0f0 both); the pre-fix harness, same binary, differed between its two
-runs (4 lines: the outage-recovery trial timings "path0 back at
+runs in two trial lines (trials 1 and 5 of the outage-recovery timings: "path0 back at
 0.307 s / 0.308 s, goodput back 33 / 52 ms later"), i.e. the wall-clock
 cadence heartbeat leaked into the sim, and the fix removes it. Every gate
 passed in all four runs.
@@ -1282,8 +1286,8 @@ median rule: c2·1200B s7 one rep p99 620.8 ms; c2·400B s7 169.4.
    drops grew with the rate (`rcvbuf_drops` max per run: c1s OLD 50 → NEW
    138 → EMB 182; c1d 27 → 64); no engine token counts them, so they enter
    `plc` as loss while the egress truth (ahead of netem) does not see them —
-   the §5 finding 6 term, now three times larger because the sender is 68 %
-   faster. At c2/c3/c7/c8 the ratio is 0.996–1.010 for every arm. The (C)
+   the §5 finding 6 term, larger now that the sender is 68 % faster (c1s
+   `plc`/truth 1.50 → 2.87, ≈ 1.9×; `rcvbuf_drops` max 50 → 138, ≈ 2.8×). At c2/c3/c7/c8 the ratio is 0.996–1.010 for every arm. The (C)
    feed clause passed at c1s only because it is a ratio of ratios.
 2. **The `sigma_diag_reachability` test is timing-dependent on this
    binary** (1 of 3 isolated re-runs passed): its saturated-tick
