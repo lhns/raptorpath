@@ -1,0 +1,1 @@
+GO 2026-10-04T15:38:41Z: tests: 1 failure sigma_diag_reachability (coverage precondition: no cwnd-full DIAG tick in a 0.3-0.8 s run); re-run alone 3x: fail/pass/fail -> flake by the pre-registered rule, not ABORT-TESTS; smoke SMOKE-PASS

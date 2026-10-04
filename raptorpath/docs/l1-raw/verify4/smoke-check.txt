@@ -1,0 +1,9 @@
+SMOKE-ROW c2-100 NEW bin=new rc=0 status=LIVE wall=11.0 pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] cad=1/1 cadoff=0/0 pa=0/0 emb_gate=0/0 emb_echo=0/0 mbps=88.233 dnf=False cpu=3.66 cpd=38.97 busy=13.0 
+SMOKE-ROW c8-100 OLD bin=old rc=0 status=LIVE wall=10.0 pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] cad=0/0 cadoff=0/0 pa=0/0 emb_gate=0/0 emb_echo=0/0 mbps=103.538 dnf=False cpu=7.52 cpd=75.19 busy=46.5 
+SMOKE-ROW c3-25 NEWa bin=new rc=0 status=LIVE wall=15.0 pipe=['window', 'Rlc', 'auto']/['window', 'Rlc', 'auto'] cad=1/1 cadoff=0/0 pa=0/0 emb_gate=0/0 emb_echo=0/0 mbps=15.558 dnf=False cpu=1.98 cpd=69.63 busy=6.0 
+SMOKE-ROW c2-100 OLDa bin=old rc=0 status=LIVE wall=12.0 pipe=['window', 'Rlc', 'auto']/['window', 'Rlc', 'auto'] cad=0/0 cadoff=0/0 pa=0/0 emb_gate=0/0 emb_echo=0/0 mbps=75.031 dnf=False cpu=6.26 cpd=58.31 busy=25.0 
+SMOKE-ROW c1s-400 EMB bin=new rc=0 status=LIVE wall=8.0 pipe=['window', 'Rlc', 'bulk']/['window', 'Rlc', 'bulk'] cad=1/1 cadoff=0/0 pa=0/0 emb_gate=1/1 emb_echo=1/1 mbps=489.981 dnf=False cpu=5.84 cpd=17.09 busy=35.0 
+SMOKE-TUN new-bulk c2 bulk status=LIVE mtu=('1196', '1196') pipe=('window/Rlc/bulk', 'window/Rlc/bulk') cad=('ACTIVE', 'ACTIVE') reps=[48.653] 
+SMOKE-TUN old-bulk c2 bulk status=LIVE mtu=('1500', '1500') pipe=('block/RaptorQ/bulk', 'block/RaptorQ/bulk') cad=('NONE', 'NONE') reps=[26.705] 
+SMOKE-CROWN tail_matrix ship rep lines=1
+SMOKE-PASS rows=5

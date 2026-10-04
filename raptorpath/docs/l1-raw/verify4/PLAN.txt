@@ -1,0 +1,2 @@
+n_per_seed=8 seeds=42,7 block_est=360s crown_reps=8 crown_reserve=2100s tunnel=1 tunnel_reserve=1500s no_emb=0 no_auto=0 cuts=' none'
+battery_soft_deadline=1791139338 soft=1791142938 hard=1791143538 now=1791128329 c_meas=56 c_pred=91 r_prior=360
