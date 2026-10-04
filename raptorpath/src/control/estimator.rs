@@ -121,7 +121,8 @@ pub struct LossEstimator {
     /// at the single-path throughput wall). With the gate ON, clean
     /// observations accumulate and flush every `EST_HEAVY_CADENCE`; any call
     /// that carries a loss flushes immediately (zero staleness on losses).
-    /// EWMA/Beta/burst/GE stay per-call. OFF (default) = per-call BOCD.
+    /// EWMA/Beta/burst/GE stay per-call. ON is the default (Stage 3 (d));
+    /// `RWM_EST_CADENCE=0` = per-call BOCD.
     est_cadence: bool,
     /// Accumulated (received, lost) counts awaiting the next BOCD flush.
     bocd_acc_received: u64,
@@ -142,11 +143,15 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 
 /// Whether `RWM_EST_CADENCE` is on, read from the process gate resolution.
 ///
-/// Default OFF: at the dual-path cells the send-side pool anchor that rides
-/// this gate becomes the binding cap (send-side anchors cannot ratchet
-/// above the cap-limited carried rate). The composed opt-in
-/// (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR` on with it, +
-/// `RWM_EMIT_BATCH=1`) is the fast single-path configuration.
+/// Default ON (Stage 3 (d) `FLIP-RECOMMENDED`, status.md §5: not worse at
+/// any cell, dual c1 +41 %, sender CPU −12 to −32 %, fed loss vs truth
+/// unchanged). History: e84ef1c's flip was the COMPOSED form — the cadence
+/// with `RWM_POOL_ANCHOR` riding it — and it failed its symmetric-dual (c7)
+/// clause because the send-side pool anchor became the binding cap (send-side
+/// anchors cannot ratchet above the cap-limited carried rate). The pool anchor
+/// no longer follows this gate; the shipped flip is the cadence alone, the
+/// form Stage 3 measured. `RWM_EMIT_BATCH=1` on top is the fast single-path
+/// opt-in.
 pub(crate) fn est_cadence_active() -> bool {
     crate::gates::get().est_cadence
 }
@@ -154,10 +159,16 @@ pub(crate) fn est_cadence_active() -> bool {
 /// The resolve-time read behind [`est_cadence_active`] (called once, from
 /// [`crate::gates::RuntimeGates::resolve`]).
 pub(crate) fn resolve_est_cadence() -> bool {
-    let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+    let on = crate::config::env_flag("RWM_EST_CADENCE", true);
+    // Echoed both ways (measurement-discipline rule 15c): with the default ON,
+    // the `=0` control arm must still witness that the knob reached the binary.
     if on {
         tracing::info!(
             "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
+        );
+    } else {
+        tracing::info!(
+            "estimator heavy-math cadence OFF (RWM_EST_CADENCE=0: per-call BOCD update)"
         );
     }
     on
@@ -512,15 +523,15 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE default: ships OFF. Relies on the test env not
-    /// exporting RWM_* overrides, like every engine-default test in this
-    /// crate.
+    /// RWM_EST_CADENCE default: ships ON — the form Stage 3 (d) measured
+    /// (cadence on, pool anchor off). Relies on the test env not exporting
+    /// RWM_* overrides, like every engine-default test in this crate.
     #[test]
-    fn test_est_cadence_default_off() {
+    fn test_est_cadence_default_on() {
         let est = LossEstimator::new();
         assert!(
-            !est.est_cadence,
-            "RWM_EST_CADENCE ships default OFF (the composed flip failed its c7 clause)"
+            est.est_cadence,
+            "RWM_EST_CADENCE ships default ON (Stage 3 (d) FLIP-RECOMMENDED; the              earlier composed flip that failed its c7 clause carried the pool anchor)"
         );
     }
 

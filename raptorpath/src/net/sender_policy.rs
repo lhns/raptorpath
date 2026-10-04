@@ -581,8 +581,8 @@ impl SenderPolicy {
         // honest_store_cap(sr_i·RTprop_i, sr_i, K_i, gain), floor, N·knee) —
         // the capw shape (one shared pool, borrowing free), engaged only with
         // all live send-anchors warm; until then the configured path-scaled law
-        // runs. The Copa cwnd feed and every N = 1 law are untouched. The
-        // default rides the `RWM_EST_CADENCE` resolution (off when unset).
+        // runs. The Copa cwnd feed and every N = 1 law are untouched. Default
+        // off, independent of `RWM_EST_CADENCE`.
         let pool_anchor_on = gates.pool_anchor && plain_dyn_cap;
         // The store-cap path set is not a dial: the dyn-cap phase's Σ-anchor
         // base and honest per-path cap sum range over the channel's

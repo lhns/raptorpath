@@ -120,7 +120,7 @@ pub struct RuntimeGates {
     pub store_boot: usize,
     /// `RWM_HONEST_CAP` (on, shipped; needs `plain_rs`): floor-clock caps on the send anchor.
     pub honest_cap: bool,
-    /// `RWM_POOL_ANCHOR` (= `est_cadence`, arm): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
+    /// `RWM_POOL_ANCHOR` (off, arm; independent of `est_cadence`): at N ≥ 2 the pooled cap is Σᵢ honest_store_cap on
     /// each path's send-interval anchor, not the ack-interval max.
     pub pool_anchor: bool,
     /// `RWM_ACK_MERGE` (on, shipped): window mode drops the per-batch `Ack`; its payload rides
@@ -312,7 +312,7 @@ impl RuntimeGates {
         let honest_anchor = crate::gates::scheduler_gates::resolve_honest_anchor();
         let honest_k = crate::gates::scheduler_gates::resolve_honest_k();
         let est_cadence = crate::control::estimator::resolve_est_cadence();
-        let pool_anchor = crate::gates::scheduler_gates::resolve_pool_anchor(est_cadence);
+        let pool_anchor = crate::gates::scheduler_gates::resolve_pool_anchor();
         let cold_place = crate::gates::scheduler_gates::resolve_cold_place();
         let place_t_derived = crate::gates::scheduler_gates::resolve_place_t_derived();
         let place_hol = crate::gates::scheduler_gates::resolve_place_hol();
@@ -538,7 +538,7 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_CLOCK_GAP", "own echo: 'clock-gap estimator hygiene ACTIVE' (control/anchor.rs wiring, net/mod.rs)"),
     ("RWM_COPA_WIRE", "own echo: scheduler Copa family resolve"),
     ("RWM_COPA_COMPETE", "own echo: scheduler Copa family resolve"),
-    ("RWM_EST_CADENCE", "own echo: 'estimator heavy-math cadence ACTIVE' (control/estimator.rs)"),
+    ("RWM_EST_CADENCE", "own echo, both sides: 'estimator heavy-math cadence ACTIVE' / '... cadence OFF' (control/estimator.rs)"),
     ("RWM_MTU_FLOOR", "own echo: 'MTU floor: …' / 'MTU floor OFF' (transport/quic.rs)"),
     ("RWM_QUIC_CC", "own echo: 'quinn congestion controller: …' (transport/quic.rs)"),
     ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
