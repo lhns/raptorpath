@@ -203,8 +203,7 @@ fn the_senders_prediction_reaches_the_wire_and_both_gauges_read_it() {
 /// Clause 7, the exit flush: the last `[ETA] site=receiver` line carries
 /// `final=1` (so a scraper taking the last line reads complete counts) and is
 /// the only `final=1` line of its kind (exactly-once through whichever exit
-/// reaches it). The object stays at 8 MB so the sender's cadence line fires
-/// too; the sender's own exit flush is `the_sender_line_is_flushed_once_at_exit`
+/// reaches it). The sender's own exit flush is `the_sender_line_is_flushed_once_at_exit`
 /// and the under-cadence receiver case is `the_exit_flush_fires_on_sigterm_too`. `cfg(unix)`: see
 /// `run_with_signal`.
 #[cfg(unix)]
