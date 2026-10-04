@@ -7,9 +7,9 @@ lines and rows.
 NO ENGINE, NO VM. Row lines are transcribed from their format strings
 (`[PIPE]` net/mod.rs; `[GATES]` gates.rs; the cadence echo
 control/estimator.rs; `[DIAG]` net/diag.rs; `[TRUTH]` lib.sh truth_line;
-the perf JSON perf.rs). Scoring is exercised on hand-built ledgers whose
-verdicts are known in advance: an absolute check of every rule constant,
-not an ordinal one.
+the perf JSON perf.rs; the crown rep tail_matrix.sh `run_arm`). Scoring
+is exercised on hand-built ledgers whose verdicts are known in advance: an
+absolute check of every rule constant, not an ordinal one.
 """
 import io
 import json
@@ -106,14 +106,19 @@ d, c, s = logs("A2", "c2-100", cad_echo=True)
 check(sp.make_row("c2-100", "A2", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "echo on CTL fails")
 d, c, s = logs("CAD", "c2-100", pa=1)
 check(sp.make_row("c2-100", "CAD", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "pool anchor 1 fails")
-d, c, s = logs("BLKa", "c3-25")
-rb = sp.make_row("c3-25", "BLKa", 42, 1, 0, 30, d, c, s)
-check(rb["status"] == "LIVE", f"BLKa live {rb['problems']}")
-d, c, s = logs("BLKa", "c3-25", winline=True)
-check(sp.make_row("c3-25", "BLKa", 42, 1, 0, 30, d, c, s)["status"] == "WITNESS-FAIL", "window line on block")
 d, c, s = logs("WINa", "c3-25")
-check(sp.make_row("c3-25", "BLKa", 42, 1, 0, 30, d, c, s)["status"] == "CONTAMINATED", "wrong pipe")
+rw = sp.make_row("c3-25", "WINa", 42, 1, 0, 30, d, c, s)
+check(rw["status"] == "LIVE", f"WINa live {rw['problems']}")
+check(sp.make_row("c3-25", "A1", 42, 1, 0, 30, d, c, s)["status"] == "CONTAMINATED", "wrong hint")
 check(sp.make_row("c3-25", "A1", 42, 1, 3, 30, d, c, s)["status"] == "VOID-RC", "rc void")
+d, c, s = logs("WINa", "c3-25", winline=False)
+check(sp.make_row("c3-25", "WINa", 42, 1, 0, 30, d, c, s)["status"] == "WITNESS-FAIL", "window line missing")
+# a block echo (impossible after ADR-0069) is never LIVE on any arm
+d, c, s = logs("A1", "c2-100")
+c = [ln.replace("pipeline=window backend=Rlc", "pipeline=block backend=RaptorQ") for ln in c]
+check(sp.make_row("c2-100", "A1", 42, 1, 0, 12, d, c, s)["status"] == "CONTAMINATED", "block echo contaminates")
+check(set(sp.ARMS) == {"A1", "A2", "CAD", "WINa"}, f"no block arm left: {sp.ARMS}")
+check(all(sp.ARM_SPEC[a][:2] == ("window", "Rlc") for a in sp.ARMS), "every arm is window/Rlc")
 
 
 # ── score: hand-built ledgers ────────────────────────────────────────────
@@ -164,29 +169,23 @@ def base(gp=None, overrides=None):
 
 def run(rows, extra=""):
     buf = io.StringIO()
-    bv, dv = sp.score([ledger(rows, extra)], out=lambda s: buf.write(s + "\n"))
-    return bv, dv, buf.getvalue()
+    dv = sp.score([ledger(rows, extra)], out=lambda s: buf.write(s + "\n"))
+    return dv, buf.getvalue()
 
 
 # the MDE formula: A1 = {100,101,102}x2, A2 = {101,102,103}x2 -> |dmed| = 1,
 # half-range = 1.5 -> MDE = max(2, 1.5) = 2; med(A1uA2) = 101.5 -> rel 1.97 %.
-bv, dv, txt = run(base())
+dv, txt = run(base())
 line = [ln for ln in txt.splitlines() if ln.startswith("  MDE c2-100 gp ")][0]
 check(" 2.000 " in line and "2.0%" in line and "MDE-COMMITTED" in line, f"MDE formula: {line}")
-check(bv == "WINDOW-NOT-WORSE", f"all-equal battery -> WINDOW-NOT-WORSE, got {bv}")
 check(dv == "INERT-AS-DERIVED", f"all-equal CAD -> INERT, got {dv}")
-
-# BLK beyond MDE at c3 bulk: BLK 104 vs WIN med 101.5, band 101.5 >= 104*(1-0.0197)=101.95 -> fail
-bv, _, _ = run(base({("c3-25", "BLKb"): 104.0}))
-check(bv == "BLOCK-BETTER-AT-c3-25/bulk", f"block better at c3 bulk: {bv}")
-# inside MDE: BLK 103 -> 103*(0.9803)=100.97 <= 101.5 -> not worse
-bv, _, _ = run(base({("c3-25", "BLKb"): 103.0}))
-check(bv == "WINDOW-NOT-WORSE", f"within MDE: {bv}")
+check("VERDICT-B" not in txt and "AUTO-BLOCK-C3" not in txt and "VERDICT-D INERT-AS-DERIVED" in txt,
+      "only the (d) verdict is printed")
 
 # CAD better at c1d by more than MDE -> FLIP; worse at c8 -> WORSE-AT
-_, dv, _ = run(base({("c1d-400", "CAD"): 110.0}))
+dv, _ = run(base({("c1d-400", "CAD"): 110.0}))
 check(dv.startswith("FLIP-RECOMMENDED") and "c1d-400:gp" in dv, f"flip: {dv}")
-_, dv, _ = run(base({("c1d-400", "CAD"): 110.0, ("c8-100", "CAD"): 95.0}))
+dv, _ = run(base({("c1d-400", "CAD"): 110.0, ("c8-100", "CAD"): 95.0}))
 check(dv == "WORSE-AT-c8-100", f"worse wins over better: {dv}")
 
 
@@ -198,7 +197,7 @@ def feed(r):
     return r
 
 
-_, dv, _ = run(base(overrides=[feed]))
+dv, _ = run(base(overrides=[feed]))
 check(dv == "FEED-MOVED-AT-c2-100:p0", f"feed moved: {dv}")
 
 
@@ -212,7 +211,7 @@ def cpu_spread(r):
     return r
 
 
-_, dv, _ = run(base(overrides=[cpu_spread]))
+dv, _ = run(base(overrides=[cpu_spread]))
 check(dv.startswith("FLIP-RECOMMENDED") and "cpu" in dv, f"cpu better: {dv}")
 
 
@@ -224,38 +223,60 @@ def noisy(r):
     return r
 
 
-bv, dv, txt = run(base(overrides=[noisy]))
+dv, txt = run(base(overrides=[noisy]))
 check("NOISE-BOUND" in [ln for ln in txt.splitlines() if ln.startswith("  MDE c8-100 gp ")][0],
       "c8 gp noise-bound")
 check(dv.startswith("UNSCOREABLE") and "c8-100" in dv, f"(d) unscoreable at noise-bound cell: {dv}")
-check(bv.startswith("UNSCOREABLE") and "c8-100" in bv, f"(b) unscoreable at noise-bound cell: {bv}")
 
 
-# DNF clause: WINa DNF 3 of 6 at c7 vs BLKa 0 -> 0.5 > 0.2 -> fails
-def dnfs(r):
-    if r["cell"] == "c7-100" and r["arm"] == "WINa" and r["rep"] <= 2 and r["seed"] == "42":
-        r["dnf"] = True
-        r["mbps"] = r["seconds"] = None
-    return r
+# min live: drop CAD rows at c2 to 2 -> (d) UNSCOREABLE there
+rows = [r for r in base() if not (r["cell"] == "c2-100" and r["arm"] == "CAD" and r["rep"] > 1)]
+dv, _ = run(rows)
+check(dv.startswith("UNSCOREABLE") and "c2-100" in dv, f"min live: {dv}")
+
+# an abort token makes the verdict UNSCOREABLE
+dv, _ = run(base(), extra="ABORT-SHA x\n")
+check(dv.startswith("UNSCOREABLE"), f"abort: {dv}")
 
 
-bv, _, _ = run(base(overrides=[dnfs]))
-check(bv == "BLOCK-BETTER-AT-c7-100/auto", f"dnf clause: {bv}")
+# ── CROWN ────────────────────────────────────────────────────────────────
+def crown_ledger(seed, p99=40.0, p50_c2=8.0, p50_c3=24.0, cnt=1000, nreps=8, p99_c3=120.0):
+    lines = []
+    for cell in ("c2", "c3"):
+        lines.append(f"=== CROWNSPOT stage seed={seed} cell={cell} start=2026-09-27T10:00:00Z")
+        for size in (400, 1200):
+            for rp in range(1, nreps + 1):
+                p = p99 if cell == "c2" else p99_c3
+                p5 = p50_c2 if cell == "c2" else p50_c3
+                lines.append(f"  ship {size}B rep{rp}: p50={p5}ms p99={p}ms p999=60ms max=70ms n={cnt}")
+        lines.append("=== done 10:10:00")
+    return "\n".join(lines) + "\n"
 
-# min live: drop BLKa rows at c2 to 2 -> UNSCOREABLE there
-rows = [r for r in base() if not (r["cell"] == "c2-100" and r["arm"] == "BLKa" and r["rep"] > 1)]
-bv, _, _ = run(rows)
-check(bv.startswith("UNSCOREABLE") and "c2-100/auto" in bv, f"min live: {bv}")
 
-# an abort token makes both verdicts UNSCOREABLE
-bv, dv, _ = run(base(), extra="ABORT-SHA x\n")
-check(bv.startswith("UNSCOREABLE") and dv.startswith("UNSCOREABLE"), f"abort: {bv} / {dv}")
+def run_crown(a, b):
+    ps = []
+    for t in (a, b):
+        f = tempfile.NamedTemporaryFile("w", delete=False, suffix=".log")
+        f.write(t)
+        f.close()
+        ps.append(f.name)
+    buf = io.StringIO()
+    v = sp.crown(ps, out=lambda s: buf.write(s + "\n"))
+    for p in ps:
+        os.unlink(p)
+    return v, buf.getvalue()
 
-# the Auto-on-block c3 finding: BLKa c3 at 7.0 -> AS-RECORDED; at 5.0 -> REGRESSED
-_, _, txt = run(base({("c3-25", "BLKa"): 7.0, ("c3-25", "WINa"): 7.0}))
-check("AUTO-BLOCK-C3 AUTO-BLOCK-C3-AS-RECORDED" in txt, "auto block c3 as recorded")
-_, _, txt = run(base({("c3-25", "BLKa"): 5.0, ("c3-25", "WINa"): 5.0}))
-check("AUTO-BLOCK-C3 AUTO-BLOCK-C3-REGRESSED" in txt, "auto block c3 regressed")
+
+v, txt = run_crown(crown_ledger("42"), crown_ledger("7"))
+check(v == "REPAIRS-INERT-ON-CROWN", f"crown inside bands -> {v}\n{txt}")
+v, txt = run_crown(crown_ledger("42"), crown_ledger("7", p99=60.0))
+check(v == "CROWN-MOVED" and "CROWN-MOVED(c2, 7, p99@400B, up)" in txt, f"c2 s7 p99 60 > 56 -> {v}")
+v, txt = run_crown(crown_ledger("42", p50_c2=6.5), crown_ledger("7"))
+check(v == "CROWN-MOVED" and "p50@400B, down" in txt, f"improvement counts as moved -> {v}")
+v, _ = run_crown(crown_ledger("42", nreps=5), crown_ledger("7"))
+check(v == "SPOT-UNSCOREABLE", f"5 of 8 reps -> SPOT-UNSCOREABLE {v}")
+v, _ = run_crown(crown_ledger("42", cnt=994), crown_ledger("7"))
+check(v == "CROWN-MOVED", f"count below 995 -> moved {v}")
 
 print(f"{CHECKS - len(FAILS)}/{CHECKS} checks passed")
 sys.exit(1 if FAILS else 0)

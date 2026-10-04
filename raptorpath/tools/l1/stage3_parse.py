@@ -7,6 +7,7 @@
     stage3_parse.py smoke <ledger> [<tail_matrix smoke log>]
     stage3_parse.py cost  <ledger>            # smoke cost: sum of RUNTIME walls
     stage3_parse.py score <ledger>...
+    stage3_parse.py crown <crown-s42.log> <crown-s7.log>
 
 `row` turns ONE invocation into ONE `S3ROW {json}` ledger line. Its status is
 exactly one of, in priority order:
@@ -19,8 +20,8 @@ exactly one of, in priority order:
   CONTAMINATED  a `[PIPE]` echo (either endpoint) or the `pipeline=` header
                 names another pipeline/backend/hint than the arm's.
   WITNESS-FAIL  any other routing witness missing: `[GATES]` absent on an
-                endpoint; the RLC auto-select line present on a block arm or
-                absent on a window arm; a generation guard line; the
+                endpoint; the RLC auto-select line absent on an endpoint
+                (every arm is a window arm); a generation guard line; the
                 estimator-cadence echo not two-sided (present on BOTH
                 endpoints of CAD, absent on BOTH endpoints of every other
                 arm); `[GATES] RWM_POOL_ANCHOR` not 0 on both endpoints.
@@ -42,7 +43,13 @@ Gauges (never change a row's status; an absent gauge is None):
   feed_ratio_p<i>          plc_p<i> / truth_loss_p<i> (truth > 0)
 
 `score` applies the pre-registered rules LITERALLY (constants below, one
-definition each, restated in docs/status.md §5).
+definition each, restated in docs/status.md §5). `crown` scores the
+same-session crown no-regression spot: `CROWN REPAIRS-INERT-ON-CROWN`,
+`CROWN CROWN-MOVED(...)` or `CROWN SPOT-UNSCOREABLE(...)`.
+
+The (b) block-vs-window verdict (WINDOW-NOT-WORSE, docs/status.md §5) was
+scored by this parser before ADR-0069 deleted the block pipeline; that
+version (BLKb/BLKa arms, VERDICT-B, AUTO-BLOCK-C3) is in git history.
 """
 import json
 import os
@@ -70,22 +77,19 @@ ARM_SPEC = {
     "A1": ("window", "Rlc", "bulk", False),
     "A2": ("window", "Rlc", "bulk", False),
     "CAD": ("window", "Rlc", "bulk", True),
-    "BLKb": ("block", "RaptorQ", "bulk", False),
     "WINa": ("window", "Rlc", "auto", False),
-    "BLKa": ("block", "RaptorQ", "auto", False),
 }
 ARMS = list(ARM_SPEC)
 # which arms run at which cell (the per-rep plan; stage3_battery.sh mirrors it)
 PLAN = {
-    "c1s-400": ["A1", "A2", "BLKb", "WINa", "BLKa"],
+    "c1s-400": ["A1", "A2", "WINa"],
     "c1d-400": ["A1", "A2", "CAD"],
-    "c2-100": ["A1", "A2", "CAD", "BLKb", "WINa", "BLKa"],
-    "c3-25": ["A1", "A2", "CAD", "BLKb", "WINa", "BLKa"],
-    "c7-100": ["A1", "A2", "CAD", "BLKb", "WINa", "BLKa"],
-    "c8-100": ["A1", "A2", "CAD", "BLKb", "WINa", "BLKa"],
+    "c2-100": ["A1", "A2", "CAD", "WINa"],
+    "c3-25": ["A1", "A2", "CAD", "WINa"],
+    "c7-100": ["A1", "A2", "CAD", "WINa"],
+    "c8-100": ["A1", "A2", "CAD", "WINa"],
 }
 AA_CELLS = CELLS
-B_CELLS = ["c1s-400", "c2-100", "c3-25", "c7-100", "c8-100"]
 D_CELLS = ["c1d-400", "c2-100", "c3-25", "c7-100", "c8-100"]
 SEEDS = ["42", "7"]
 
@@ -98,7 +102,6 @@ NOISE_BOUND_REL = 0.25  # MDE/median above this: that metric is NOISE-BOUND
 DNF_FLOOR = 0.20        # the DNF-rate clause's minimum excess
 FEED_BAND = 1.3         # CAD feed ratio within [1/1.3, 1.3] x CTL's
 PLU_FLOOR = (0.0350, 0.0360)
-AUTO_BLK_C3_BAND = (6.31, 7.63)  # Mbit/s: v1b 7.14-7.27, v2 6.62-7.63, v2 base 6.31-7.52
 LAST_MEASURED = {  # window bulk, the last same-cell readings (cross-era, not scored)
     "c1s-400": "v2 284.8-293.9", "c1d-400": "v3 B2 186.9-201.5",
     "c2-100": "v3 B2 88.9-89.3", "c3-25": "v3 B2 17.05-17.48",
@@ -244,8 +247,6 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
         other.append("no-gates-cli")
     if not row["gates_srv"]:
         other.append("no-gates-srv")
-    if want_pipe == "block" and (row["winline_cli"] or row["winline_srv"]):
-        other.append("window-line-on-block")
     if want_pipe == "window" and not (row["winline_cli"] and row["winline_srv"]):
         other.append("window-line-missing-on-window")
     if row["gen_guard"]:
@@ -425,70 +426,6 @@ def score(paths, out=print):
         out(f"  AA-DNF {cell} A1={fmt(e['dnf1'], 2)} A2={fmt(e['dnf2'], 2)} "
             f"dnf-threshold={dnf_threshold(mde, cell):.2f}; last measured gp {LAST_MEASURED[cell]} (cross-era, not scored)")
     out("")
-    # ── (b) block vs window ──
-    out("(b) BLOCK vs WINDOW  WIN-bulk = A1uA2 (CTL); clauses fail when WIN is worse beyond MDE")
-    b_fail, b_unsc = {}, {}
-    for cell in B_CELLS:
-        for hint, warms, barm in (("bulk", ["A1", "A2"], "BLKb"), ("auto", ["WINa"], "BLKa")):
-            key = f"{cell}/{hint}"
-            hard = cell_blockers(rows, live, cell, warms + [barm]) + (["abort"] if aborted else [])
-            if hard:
-                b_unsc[key] = list(hard)
-            w = [r for a in warms for r in sel(live, cell, a)]
-            b = sel(live, cell, barm)
-            gpr, gpd = compare(w, b, mde, cell, "gp", True)
-            ctr, ctd = compare(w, b, mde, cell, "ct", False)
-            thr = dnf_threshold(mde, cell)
-            dw, db = dnf_rate(w), dnf_rate(b)
-            dnf_bad = (dw is not None and db is not None and dw - db > thr)
-            fails = []
-            if gpr == "WORSE":
-                fails.append("goodput")
-            if ctr == "WORSE":
-                fails.append("completion")
-            if dnf_bad:
-                fails.append("dnf")
-            for r_, nm in ((gpr, "goodput"), (ctr, "completion")):
-                if r_ == "UNSCOREABLE":
-                    b_unsc.setdefault(key, []).append(f"{nm} MDE")
-            if fails and not hard:
-                b_fail[key] = fails
-            reading = ("BLK>WIN" if fails else "WIN>BLK" if gpr == "BETTER" else
-                       "TIE-WITHIN-MDE" if gpr in ("WITHIN", "VACUOUS") else gpr)
-            out(f"  B {key} WIN n={len(w)} done={len(values(w, 'gp'))} dnf={fmt(dw, 2)} "
-                f"gp_med={fmt(lc.med(values(w, 'gp')))} [{fmt(min(values(w, 'gp'), default=None))}-"
-                f"{fmt(max(values(w, 'gp'), default=None))}] ct_p50={fmt(lc.med(values(w, 'ct')), 2)} | "
-                f"BLK n={len(b)} done={len(values(b, 'gp'))} dnf={fmt(db, 2)} "
-                f"gp_med={fmt(lc.med(values(b, 'gp')))} [{fmt(min(values(b, 'gp'), default=None))}-"
-                f"{fmt(max(values(b, 'gp'), default=None))}] ct_p50={fmt(lc.med(values(b, 'ct')), 2)} | "
-                f"gp:{gpr} ({gpd}) ct:{ctr} dnf-excess>{thr:.2f}:{int(dnf_bad)} | "
-                f"{'+'.join(fails) or 'ok'} | reading={reading}"
-                + (f" | UNSCOREABLE({'; '.join(b_unsc[key])})" if key in b_unsc else ""))
-    if aborted:
-        bv = "UNSCOREABLE (" + ", ".join(aborted) + ")"
-    elif b_fail:
-        bv = "BLOCK-BETTER-AT-" + ",".join(b_fail)
-    elif b_unsc:
-        bv = "UNSCOREABLE (" + "; ".join(f"{k}: {', '.join(v)}" for k, v in b_unsc.items()) + ")"
-    else:
-        bv = "WINDOW-NOT-WORSE"
-    out(f"VERDICT-B {bv}")
-    if b_fail and b_unsc:
-        out("  B-ALSO-UNSCOREABLE " + "; ".join(f"{k}: {', '.join(v)}" for k, v in b_unsc.items()))
-    # the recorded Auto-on-block c3 finding
-    rel = rel_of(mde, "c3-25", "gp")
-    c3 = sel(live, "c3-25", "BLKa")
-    c3v = values(c3, "gp")
-    if rel is None or len(c3) < MIN_LIVE:
-        c3r = "AUTO-BLOCK-C3-UNSCOREABLE"
-    else:
-        lo, hi = AUTO_BLK_C3_BAND[0] * (1 - rel), AUTO_BLK_C3_BAND[1] * (1 + rel)
-        m = lc.med(c3v) if len(c3v) * 2 > len(c3) else None  # a majority DNF has no median
-        c3r = ("AUTO-BLOCK-C3-REGRESSED" if m is None or m < lo else
-               "AUTO-BLOCK-C3-MOVED-UP" if m > hi else "AUTO-BLOCK-C3-AS-RECORDED")
-    out(f"AUTO-BLOCK-C3 {c3r} med={fmt(lc.med(c3v), 2)} n={len(c3)} done={len(c3v)} "
-        f"band={AUTO_BLK_C3_BAND} widened-by-rel={pct(rel)}")
-    out("")
     # ── (d) EST_CADENCE ──
     out("(d) EST_CADENCE  CAD vs CTL = A1uA2")
     d_worse, d_feed, d_unsc, d_better = {}, {}, {}, {}
@@ -587,7 +524,7 @@ def score(paths, out=print):
             rb = [r["truth_rcvbuf_drops"] for r in rs if r.get("truth_rcvbuf_drops") is not None]
             out(f"  TRUTH {cell} {arm} n={len(rs)} " + " ".join(parts)
                 + f" rcvbuf_max={max(rb) if rb else '-'}")
-    return bv, dv
+    return dv
 
 
 def check(path):
@@ -656,6 +593,77 @@ def cost(path):
     return 0
 
 
+# ── CROWN SPOT ───────────────────────────────────────────────────────────
+CROWN_P99 = {  # (cell, size, seed) -> union of the committed spreads (ms)
+    ("c2", 400, "42"): (34, 199), ("c2", 400, "7"): (34, 56),
+    ("c2", 1200, "42"): (35, 57), ("c2", 1200, "7"): (35, 169),
+    ("c3", 400, "42"): (87, 154), ("c3", 400, "7"): (88.5, 297),
+    ("c3", 1200, "42"): (84.3, 175), ("c3", 1200, "7"): (90.8, 139.1),
+}
+CROWN_P50 = {"c2": (7.0, 9.0), "c3": (22.0, 27.0)}
+_STAGE = re.compile(r"=== CROWNSPOT stage seed=(\d+) cell=(\w+) start=")
+_REP = re.compile(r"^\s*ship (\d+)B rep(\d+): p50=([0-9.?]+)ms p99=([0-9.]+)ms .* n=(\S+)")
+
+
+def crown_reps(paths):
+    reps = {}
+    for path in paths:
+        seed = cell = None
+        for ln in lc.read(path):
+            m = _STAGE.search(ln)
+            if m:
+                seed, cell = m.group(1), m.group(2)
+                continue
+            m = _REP.match(ln)
+            if m and seed:
+                key = (cell, int(m.group(1)), seed)
+                reps.setdefault(key, []).append({
+                    "p50": lc.fnum(m.group(3)), "p99": lc.fnum(m.group(4)),
+                    "count": lc.inum(m.group(5))})
+    return reps
+
+
+def crown(paths, out=print):
+    reps = crown_reps(paths)
+    moved, unscore = [], []
+    counts = []
+    for key in sorted(CROWN_P99):
+        cell, size, seed = key
+        rs = reps.get(key, [])
+        counts.extend(r["count"] for r in rs)
+        p99 = lc.med([r["p99"] for r in rs])
+        p50 = lc.med([r["p50"] for r in rs])
+        lo, hi = CROWN_P99[key]
+        plo, phi = CROWN_P50[cell]
+        out(f"CROWN-CELL {cell} {size}B s{seed} n={len(rs)} p99_med={fmt(p99)} band=[{lo}-{hi}] "
+            f"p50_med={fmt(p50, 2)} band=[{plo}-{phi}] counts={[r['count'] for r in rs]} "
+            f"p99s={[r['p99'] for r in rs]}")
+        if len(rs) < 6:
+            unscore.append(f"{cell}/{size}B/s{seed} n={len(rs)}<6")
+            continue
+        if p99 > hi:
+            moved.append(f"CROWN-MOVED({cell}, {seed}, p99@{size}B, up)")
+        elif p99 < lo:
+            moved.append(f"CROWN-MOVED({cell}, {seed}, p99@{size}B, down)")
+        if p50 is None or p50 > phi:
+            moved.append(f"CROWN-MOVED({cell}, {seed}, p50@{size}B, up)")
+        elif p50 < plo:
+            moved.append(f"CROWN-MOVED({cell}, {seed}, p50@{size}B, down)")
+    full = sum(1 for c in counts if c == 1000)
+    low = [c for c in counts if c is None or c < 995]
+    out(f"CROWN-COUNT count=1000 in {full}/{len(counts)} reps (need >=62 of 64); below-995={low}")
+    if unscore:
+        out("CROWN SPOT-UNSCOREABLE(" + "; ".join(unscore) + ")")
+        return "SPOT-UNSCOREABLE"
+    if full < 62 or low:
+        moved.append("CROWN-MOVED(all, all, count, down)")
+    if moved:
+        out("CROWN " + " ".join(moved))
+        return "CROWN-MOVED"
+    out("CROWN REPAIRS-INERT-ON-CROWN")
+    return "REPAIRS-INERT-ON-CROWN"
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -675,6 +683,9 @@ def main(argv):
         return cost(a[0])
     if cmd == "score":
         score(a)
+        return 0
+    if cmd == "crown":
+        crown(a)
         return 0
     print(f"unknown command {cmd}")
     return 2

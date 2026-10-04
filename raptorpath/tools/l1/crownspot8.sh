@@ -18,8 +18,8 @@
 # launch, not at exit).
 set -uo pipefail
 
-# CROWNSPOT_OUT / RWM_BIN: overridable so the block re-test envelope can run
-# the spot into its own run directory on its own binary; unset = unchanged.
+# CROWNSPOT_OUT / RWM_BIN: overridable so an envelope (stage3_run_all.sh) can
+# run the spot into its own run directory on its own binary; unset = unchanged.
 OUT="${CROWNSPOT_OUT:-/home/vibe/crownspot8}"
 BIN="${RWM_BIN:-/home/vibe/raptorpath/target/release/raptorpath}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
