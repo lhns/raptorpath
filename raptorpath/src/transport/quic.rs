@@ -504,16 +504,16 @@ impl QuicTransport {
         &self,
         path_id: PathId,
         conn: &quinn::Connection,
-        data: Vec<u8>,
+        data: bytes::Bytes,
     ) -> anyhow::Result<()> {
         match &self.l0_netem {
             Some(shim) => {
-                shim.send(path_id, self.is_server, conn, data.into());
+                shim.send(path_id, self.is_server, conn, data);
                 Ok(())
             }
             None => {
                 if !self.dg_audit {
-                    conn.send_datagram(data.into())?;
+                    conn.send_datagram(data)?;
                     return Ok(());
                 }
                 use std::sync::atomic::Ordering::Relaxed;
@@ -530,7 +530,7 @@ impl QuicTransport {
                 if space == 0 {
                     a.full.fetch_add(1, Relaxed);
                 }
-                match conn.send_datagram(data.into()) {
+                match conn.send_datagram(data) {
                     Ok(()) => {
                         a.handoff.fetch_add(1, Relaxed);
                         Ok(())
@@ -872,13 +872,53 @@ impl QuicTransport {
                 crate::transport::protocol::serialize_data_compact(&batch)
             });
             if let Some(buf) = compact {
-                return timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf));
+                return timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf.into()));
             }
         }
         let msg = WireMessage::Data(batch);
         let data = timed(Seam::Ser, || msg.serialize())?;
 
-        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, data))
+        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, data.into()))
+    }
+
+    /// [`Self::send_symbols`] for ONE symbol without building a
+    /// `SymbolBatch` — the window sender's per-datagram path. Sends exactly
+    /// what `send_symbols(path_id, SymbolBatch::new(vec![sym.clone()],
+    /// send_timestamp_us, seqs, path_id).with_eta(eta_rel_us))` sends, byte
+    /// for byte (the compact frame through the same writer; the bincode
+    /// fallback through that very call), and fails the same way on a
+    /// missing connection. The compact frame is carved from the caller's
+    /// `arena` (see `protocol::serialize_symbol_compact_in`).
+    pub fn send_symbol(
+        &self,
+        path_id: PathId,
+        sym: &crate::fec::WireSymbol,
+        send_timestamp_us: u64,
+        seqs: (u64, u64),
+        eta_rel_us: u64,
+        arena: &mut bytes::BytesMut,
+    ) -> anyhow::Result<()> {
+        if !crate::transport::protocol::wire_compact_active() {
+            let batch = SymbolBatch::new(vec![sym.clone()], send_timestamp_us, seqs, path_id)
+                .with_eta(eta_rel_us);
+            return self.send_symbols(path_id, batch);
+        }
+        let conn = self
+            .connections
+            .get(&path_id)
+            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
+        use crate::net::cpuprof::{timed, Seam};
+        let buf = timed(Seam::Ser, || {
+            crate::transport::protocol::serialize_symbol_compact_in(
+                arena,
+                sym,
+                send_timestamp_us,
+                seqs,
+                path_id,
+                eta_rel_us,
+            )
+        });
+        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf))
     }
 
     /// Send a control message as a datagram (best-effort, low latency).
@@ -889,7 +929,7 @@ impl QuicTransport {
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         let wire = WireMessage::Control(msg);
         let data = wire.serialize()?;
-        self.send_datagram_shaped(path_id, &conn, data)
+        self.send_datagram_shaped(path_id, &conn, data.into())
     }
 
     /// Send a control message over a path's reliable stream.

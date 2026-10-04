@@ -35,16 +35,17 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 use super::sender_policy::SenderPolicy;
+use super::seq_ring::SeqRing;
 use super::{
     BatchCounter,
-    CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
-    select_source_path, shed_allowed, shed_deadline_us, window_source_paths,
+    CopaFeed, create_window_encoder, now_pair, now_us, percap_charge, select_repair_path,
+    select_source_path, shed_allowed, shed_deadline_us, window_source_paths_into,
 };
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
-use crate::transport::{QuicTransport, SymbolBatch};
+use crate::transport::QuicTransport;
 use crate::control::fec_rate::ProtocolHint;
 
 /// Staleness bound for the cached taper/span math (µs): one burst at
@@ -82,15 +83,22 @@ pub(crate) struct SenderState {
     /// an aged SACK-confirmed hole that slid out of the coding window is
     /// recovered by a targeted retransmit of exactly this symbol. Bounded by
     /// RELIABLE_STORE_MAX via TUN-read backpressure, never by eviction.
-    pub sent_store: BTreeMap<u64, WireSymbol>,
+    pub sent_store: SeqRing<WireSymbol>,
     /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
     /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
     /// Metadata only — under EVICT the source bytes die with window eviction.
-    pub retransmit_buffer: BTreeMap<u64, (u64, f64, u32)>,
+    pub retransmit_buffer: SeqRing<(u64, f64, u32)>,
     /// Maps source seq → path it was sent on (for cross-path retransmission).
-    /// BTreeMap (not HashMap) so the per-path ack attribution can range-query
+    /// Ordered (not HashMap) so the per-path ack attribution can range-query
     /// the seqs in a SACK / cumulative-ack span.
-    pub source_path_map: BTreeMap<u64, u32>,
+    ///
+    /// The three per-seq maps above are [`SeqRing`]s, not `BTreeMap`s: their
+    /// keys are the encoder's consecutive source seqs, inserted in order and
+    /// pruned only as a prefix (cumulative ack / window floor), so a ring
+    /// indexed by `seq − base` has the map's exact semantics without a node
+    /// allocation per insert or a tree rebuild per ack. The retransmit
+    /// buffer's individual removals (shed, NACK) leave holes the ring handles.
+    pub source_path_map: SeqRing<u32>,
     /// seq → last NACK-retransmit time (µs). Repeated gap acks for the same
     /// hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists) must
     /// not resend the symbol more than once per SRTT — but may resend after
@@ -169,6 +177,14 @@ pub(crate) struct SenderState {
     pub span_diag_last_us: u64,
     /// Recovery-suppression trace: the P_lost-branch retransmit channel.
     pub mpd_plost_retx: u64,
+
+    /// Reused scratch for `window_source_paths_into` (the repair placement's
+    /// covered-path list), so a correction symbol allocates nothing for it.
+    pub covered_scratch: Vec<u32>,
+    /// The wire-frame arena the emission step's compact DATA frames are
+    /// carved from (`QuicTransport::send_symbol`): one allocation per
+    /// `WIRE_ARENA_CHUNK` instead of one per datagram.
+    pub wire_arena: bytes::BytesMut,
 }
 
 impl SenderState {
@@ -208,9 +224,9 @@ impl SenderState {
         };
         Self {
             encoder,
-            sent_store: BTreeMap::new(),
-            retransmit_buffer: BTreeMap::new(),
-            source_path_map: BTreeMap::new(),
+            sent_store: SeqRing::new(),
+            retransmit_buffer: SeqRing::new(),
+            source_path_map: SeqRing::new(),
             nack_retx_at: std::collections::HashMap::new(),
             last_source_path: 0,
             last_source_send_us,
@@ -236,6 +252,8 @@ impl SenderState {
             c8c_src_placed: std::collections::HashMap::new(),
             span_diag_last_us: 0,
             mpd_plost_retx: 0,
+            covered_scratch: Vec::new(),
+            wire_arena: bytes::BytesMut::new(),
         }
     }
 }
@@ -247,13 +265,16 @@ impl SenderState {
 /// read-only here), so it is passed in rather than living in [`SenderState`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_source(
-    framed: &[u8],
+    framed: bytes::Bytes,
     st: &mut SenderState,
     pol: &SenderPolicy,
     ctx: &SenderCtx<'_>,
     emit_batch_live: bool,
 ) {
-    let wire_sym = st.encoder.add_source(framed);
+    // The framed buffer becomes the symbol's payload: the encoder window,
+    // the retention store and the wire send below all share it (refcount
+    // clones), and the wire frame is carved from `st.wire_arena`.
+    let wire_sym = st.encoder.add_source_owned(framed);
     // GDIAG/GLIFE fill tracking: stamp the generation's first-source
     // and sealed instants (RWM_DIAG only; no-op on the shipped path).
     if pol.diag_on && pol.generation {
@@ -267,7 +288,6 @@ pub(crate) fn emit_source(
             e.1 = now_us();
         }
     }
-    st.gen_last_source_us = now_us();
 
     // Retention: the store keeps the sent bytes until the peer acks them —
     // the coding window may slide past this symbol, but the data can no
@@ -306,7 +326,23 @@ pub(crate) fn emit_source(
     //
     // The same call updates `F-hat` (the running max of stamped arrival
     // times). Neither feeds a decision: the wire field feeds two gauges.
-    let src_send_ts_us = now_us();
+    //
+    // Clock: this is the emission step's ONE clock read for the source
+    // symbol (`src_now_i` is the same read as an `Instant`). The wire stamp
+    // and the ETA stamp need it fresh, so it is taken here, after the
+    // placement. Every other "now" of this symbol's decisions below (the
+    // intake / last-send stamps, the retransmit-buffer send time, the taper
+    // cache age, the cadenced-rate clock, the A* anchor feed) reuses it
+    // instead of re-reading the clock; each of those sat between this point
+    // and the end of the source send, so the reuse moves them by at most one
+    // `send_symbols` (serialize + quinn handoff, incl. its connection-mutex
+    // wait: mean 55 µs off-CPU in the P1 profile) plus a few short
+    // scheduler-lock takes — well inside one loop iteration (≈ 50–150 µs at
+    // the measured rates). The correction loop's own reads and every other
+    // wire stamp stay fresh.
+    let (src_send_ts_us, src_now_i) = now_pair();
+    // Last source-intake time (generation-mode pacing input).
+    st.gen_last_source_us = src_send_ts_us;
     let eta_rel_us = {
         let mut sched = ctx.scheduler.lock();
         let e = sched
@@ -323,7 +359,7 @@ pub(crate) fn emit_source(
     // throttle can tell "actively pushing data" (repairs would load a
     // congested path) from "idle except for a hole" (targeted recovery is
     // free).
-    st.last_source_send_us = now_us();
+    st.last_source_send_us = src_send_ts_us;
     // Fungible frontier (paper §5.2): in coded-only mode the wire carries a
     // fresh random linear combination over the current window (which now
     // includes this source) instead of the raw systematic symbol. Any K
@@ -345,20 +381,27 @@ pub(crate) fn emit_source(
     // submodes keep per-seq ARQ / sent_store / taper repair off (gated on
     // `!generation` below).
     if pol.systematic || !pol.generation {
-        let on_wire = if pol.systematic {
-            wire_sym.clone() // raw systematic source is the primary
+        let coded;
+        let on_wire: &WireSymbol = if pol.systematic {
+            &wire_sym // raw systematic source is the primary
         } else if pol.coded_wire {
-            st.encoder.generate_repair()
+            coded = st.encoder.generate_repair();
+            &coded
         } else {
-            wire_sym.clone()
+            &wire_sym
         };
         let seqs = ctx.batch_counter.next(source_path);
         // The batch's `send_timestamp_us` is the key the ack's echo will
         // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.
-        let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, seqs, source_path)
-            .with_eta(eta_rel_us);
-        if let Err(e) = ctx.transport.send_symbols(source_path, batch) {
+        if let Err(e) = ctx.transport.send_symbol(
+            source_path,
+            on_wire,
+            src_send_ts_us,
+            seqs,
+            eta_rel_us,
+            &mut st.wire_arena,
+        ) {
             warn!(source_path, ?e, "failed to send window source symbol");
         }
         {
@@ -420,7 +463,7 @@ pub(crate) fn emit_source(
                 .map(|e| e.loss_rate())
                 .unwrap_or(0.0)
         };
-        st.retransmit_buffer.insert(wire_sym.block_id, (now_us(), epsilon, source_path));
+        st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
         // Track correction deficit: this symbol needs epsilon coverage
         let mut sched = ctx.scheduler.lock();
         sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
@@ -434,8 +477,9 @@ pub(crate) fn emit_source(
         };
         if let Some(alt) = alt_path {
             let seqs = ctx.batch_counter.next(alt);
-            let batch = SymbolBatch::new(vec![wire_sym], now_us(), seqs, alt);
-            if let Err(e) = ctx.transport.send_symbols(alt, batch) {
+            if let Err(e) =
+                ctx.transport.send_symbol(alt, &wire_sym, now_us(), seqs, 0, &mut st.wire_arena)
+            {
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
             {
@@ -463,7 +507,7 @@ pub(crate) fn emit_source(
         let taper_recompute = !emit_batch_live
             || st.taper_cache.is_none()
             || st.taper_cache_syms >= pol.emit_burst
-            || now_us().saturating_sub(st.taper_cache_at_us)
+            || src_send_ts_us.saturating_sub(st.taper_cache_at_us)
                 > TAPER_CACHE_MAX_AGE_US;
         let (repair_rate, span_params) = if !taper_recompute {
             let (rr, span, rtt) = st.taper_cache.unwrap();
@@ -471,7 +515,7 @@ pub(crate) fn emit_source(
             // The A* send-rate anchor is FED per symbol regardless —
             // the cache amortizes only the derived recomputation.
             if pol.unified_span && pol.astar_anchor_on {
-                st.astar_anchor.on_send(Instant::now(), 1, rtt);
+                st.astar_anchor.on_send(src_now_i, 1, rtt);
             }
             (rr, span)
         } else {
@@ -482,7 +526,7 @@ pub(crate) fn emit_source(
             ctx.fec_controller,
             ctx.scheduler,
             st.encoder.window_size(),
-            now_us(),
+            src_send_ts_us,
         );
         let (repair_rate, span_params, taper_rtt) = {
             let sched = ctx.scheduler.lock();
@@ -521,7 +565,7 @@ pub(crate) fn emit_source(
                             // read it back (sym/s directly). None before the
                             // first measured bucket ⇒ A* clamps to 1, the
                             // cold start, ~SRTT/2 long.
-                            let now_i = Instant::now();
+                            let now_i = src_now_i;
                             st.astar_anchor.on_send(now_i, 1, est.rtt());
                             st.astar_anchor.rate(now_i, est.rtt()).unwrap_or(0.0)
                         } else {
@@ -566,7 +610,7 @@ pub(crate) fn emit_source(
         };
         st.taper_cache = Some((repair_rate, span_params, taper_rtt));
         st.taper_cache_syms = 1;
-        st.taper_cache_at_us = now_us();
+        st.taper_cache_at_us = src_send_ts_us;
         (repair_rate, span_params)
         };
         // Span-law sender trace (RWM_DIAG only).
@@ -670,9 +714,8 @@ pub(crate) fn emit_source(
                 let mut use_retransmit = false;
                 let mut retransmit_seq = 0u64;
                 let oldest = st.retransmit_buffer
-                    .iter()
-                    .next()
-                    .map(|(&s, &v)| (s, v));
+                    .first()
+                    .map(|(s, &v)| (s, v));
                 if let Some((seq, (send_time_us, eps_at_send, _path))) = oldest {
                     let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
                     let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);
@@ -777,15 +820,25 @@ pub(crate) fn emit_source(
             let correction_path = {
                 let sched = ctx.scheduler.lock();
                 if pol.reliable {
-                    let covered = window_source_paths(&*st.encoder, &st.source_path_map);
-                    sched.place_symbol(true, &covered).unwrap_or(source_path)
+                    window_source_paths_into(
+                        &*st.encoder,
+                        &st.source_path_map,
+                        &mut st.covered_scratch,
+                    );
+                    sched.place_symbol(true, &st.covered_scratch).unwrap_or(source_path)
                 } else {
                     select_repair_path(&sched, source_path)
                 }
             };
             let seqs = ctx.batch_counter.next(correction_path);
-            let batch = SymbolBatch::new(vec![correction_sym], now_us(), seqs, correction_path);
-            let sent = match ctx.transport.send_symbols(correction_path, batch) {
+            let sent = match ctx.transport.send_symbol(
+                correction_path,
+                &correction_sym,
+                now_us(),
+                seqs,
+                0,
+                &mut st.wire_arena,
+            ) {
                 Ok(()) => true,
                 Err(e) => {
                     warn!(correction_path, ?e, "failed to send correction symbol");

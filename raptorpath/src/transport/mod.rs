@@ -10,7 +10,7 @@ mod protocol;
 mod quic;
 
 pub use protocol::{
-    serialize_data_compact, wire_compact_active, ControlMessage, Handshake, SymbolBatch,
+    serialize_data_compact, serialize_symbol_compact_in, wire_compact_active, ControlMessage, Handshake, SymbolBatch,
     WireMessage, COMPACT_DATA_TAG, PROTOCOL_VERSION, WIRE_MAGIC,
 };
 pub use quic::QuicTransport;

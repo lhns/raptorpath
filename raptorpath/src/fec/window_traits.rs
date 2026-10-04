@@ -15,6 +15,14 @@ pub trait WindowEncoder: Send {
     /// ready for transmission.
     fn add_source(&mut self, data: &[u8]) -> WireSymbol;
 
+    /// [`Self::add_source`] taking ownership of an already-framed payload, so
+    /// an encoder that retains sources can share the buffer with the
+    /// returned symbol instead of copying it (byte-identical output). The
+    /// default copies via `add_source`.
+    fn add_source_owned(&mut self, data: Bytes) -> WireSymbol {
+        self.add_source(&data)
+    }
+
     /// Generate one repair symbol covering the current window.
     fn generate_repair(&mut self) -> WireSymbol;
 

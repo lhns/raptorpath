@@ -577,7 +577,7 @@ pub fn make_wire_symbol_sized(id: u32, repair: bool, data_size: usize) -> WireSy
         block_id: 0,
         payload_id: id,
         is_repair: repair,
-        data: vec![0u8; data_size],
+        data: vec![0u8; data_size].into(),
         backend: FecBackend::Rlc,
     }
 }

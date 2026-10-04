@@ -267,7 +267,7 @@ pub fn legacy_age_ripe(now_us: u64, send_time_us: u64, srtt_us: u64) -> bool {
 /// gate, the per-seq cooldown and the tail sweep all inherit the dwell
 /// through this one reduction.
 pub fn pooled_recovery_srtt_us(path_rtt_us: &[u64]) -> u64 {
-    path_rtt_us.iter().copied().max().unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
+    pooled_recovery_srtt_iter(path_rtt_us.iter().copied())
 }
 
 /// The path set the sender's recovery clocks pool over: the tail-sweep
@@ -285,12 +285,23 @@ pub fn recovery_clock_paths(sched: &Scheduler) -> Vec<crate::scheduler::PathId> 
 /// [`pooled_recovery_srtt_us`] over [`recovery_clock_paths`]: the pooled
 /// app-echo RTT the recovery clocks run on.
 pub fn pooled_recovery_srtt_of(sched: &Scheduler) -> u64 {
-    let rtts: Vec<u64> = recovery_clock_paths(sched)
-        .iter()
-        .filter_map(|id| sched.path(*id))
-        .map(|p| p.estimator.rtt().as_micros() as u64)
-        .collect();
-    pooled_recovery_srtt_us(&rtts)
+    pooled_recovery_srtt_iter(
+        recovery_clock_paths_iter(sched).map(|(_, p)| p.estimator.rtt().as_micros() as u64),
+    )
+}
+
+/// [`recovery_clock_paths`] as an iterator over `(id, state)` (same set,
+/// same order, no `Vec`) for the per-iteration readers.
+pub fn recovery_clock_paths_iter(
+    sched: &Scheduler,
+) -> impl Iterator<Item = (crate::scheduler::PathId, &crate::scheduler::PathState)> + '_ {
+    super::channel_set::channel_paths_iter(sched)
+}
+
+/// [`pooled_recovery_srtt_us`] over an iterator (the same max-or-floor
+/// reduction, without collecting the samples first).
+pub fn pooled_recovery_srtt_iter(path_rtt_us: impl Iterator<Item = u64>) -> u64 {
+    path_rtt_us.max().unwrap_or(NACK_RETX_COOLDOWN_FLOOR_US)
 }
 
 /// The per-seq retransmit cooldown clock (µs): the pooled smoothed RTT,

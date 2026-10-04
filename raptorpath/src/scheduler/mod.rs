@@ -342,11 +342,17 @@ impl Scheduler {
     /// path invisible: no pings are sent while in_flight >= cwnd, so the peer
     /// would declare the path dead mid-transfer.
     pub fn live_paths(&self) -> Vec<PathId> {
-        self.paths
-            .iter()
-            .filter(|(_, p)| p.active)
-            .map(|(id, _)| *id)
-            .collect()
+        self.live_paths_iter().map(|(id, _)| id).collect()
+    }
+
+    /// [`Self::live_paths`] without the `Vec`: the same set, visited in the
+    /// same order (one traversal of the same map), with each path's state.
+    /// The per-symbol readers (`worst_eps_*`, the tail-sweep clock) use this
+    /// so the hot path allocates nothing per call; order-sensitive reductions
+    /// (the worst-ε "ties to the last maximum") see exactly the order the
+    /// collected `Vec` had.
+    pub fn live_paths_iter(&self) -> impl Iterator<Item = (PathId, &PathState)> + '_ {
+        self.paths.iter().filter(|(_, p)| p.active).map(|(id, p)| (*id, p))
     }
 
     /// Schedule symbols across paths using the interpolated objective.

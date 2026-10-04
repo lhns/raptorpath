@@ -54,6 +54,7 @@ pub use store_cap::*;
 mod report;
 pub use report::*;
 mod sack;
+pub(crate) mod seq_ring;
 pub use sack::*;
 
 use diag::{DiagCtx, DiagInputs, DiagState};
@@ -490,6 +491,14 @@ const NOW_US_MIN_BASE: u64 = 1 << 40;
 /// constant offset between the two hosts' bases cancels. Nothing compares
 /// this clock to the peer's as an absolute time.
 pub(crate) fn now_us() -> u64 {
+    now_pair().0
+}
+
+/// [`now_us`] together with the `Instant` it was computed from — ONE clock
+/// read for a site that needs both the engine µs and an `Instant` (the A*
+/// anchor, a tokio deadline). `now_pair().0` is exactly what `now_us()`
+/// would have returned at that instant.
+pub(crate) fn now_pair() -> (u64, Instant) {
     static BASE: std::sync::OnceLock<(Instant, u64)> = std::sync::OnceLock::new();
     let &(t0, base_us) = BASE.get_or_init(|| {
         let wall_us = SystemTime::now()
@@ -498,7 +507,8 @@ pub(crate) fn now_us() -> u64 {
             .unwrap_or(0);
         (Instant::now(), wall_us.max(NOW_US_MIN_BASE))
     });
-    base_us.saturating_add(t0.elapsed().as_micros() as u64)
+    let now = Instant::now();
+    (base_us.saturating_add(now.saturating_duration_since(t0).as_micros() as u64), now)
 }
 
 /// Collect per-generation residual deficits for the deficit-feedback report
@@ -1417,14 +1427,18 @@ fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32)
 /// law's fate term is the fraction of the repair's coverage on each path. A
 /// fungible repair covers the whole window; entries that predate the window
 /// (still in the retained map) are excluded by the span filter.
-fn window_source_paths(
+///
+/// Written into the caller's scratch `out` (cleared first) rather than a
+/// fresh `Vec`: this runs once per correction symbol and the window is up to
+/// `win_cap` entries long.
+fn window_source_paths_into(
     encoder: &dyn WindowEncoder,
-    source_path_map: &std::collections::BTreeMap<u64, u32>,
-) -> Vec<u32> {
+    source_path_map: &seq_ring::SeqRing<u32>,
+    out: &mut Vec<u32>,
+) {
+    out.clear();
     let (win_start, win_end) = encoder.window_span();
-    (win_start..=win_end)
-        .filter_map(|seq| source_path_map.get(&seq).copied())
-        .collect()
+    out.extend((win_start..=win_end).filter_map(|seq| source_path_map.get(&seq).copied()));
 }
 
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
@@ -2043,6 +2057,9 @@ async fn run_window_sender(
     // The last `select!` resolution instant, for the dead-wall gauge's body
     // time when `[DIAG]` (which keeps its own) is off.
     let mut wall_resolved_us: u64 = gd_last_us;
+    // Scratch for the SACK drain's newly-released seqs (reused across
+    // iterations; `sack_release_mark_into` clears it per range).
+    let mut sack_newly: Vec<u64> = Vec::new();
     loop {
         // Scheduler reads in this loop are per phase, each under its own
         // acquisition, taken where the value is used. A loop-top snapshot
@@ -2089,11 +2106,16 @@ async fn run_window_sender(
                     // clocks, source_path_map) until the cumulative
                     // frontier passes. sack_release_mark skips seqs
                     // already released — no double-release.
-                    let newly =
-                        sack_release_mark(&st.sent_store, &mut sack_released, start, end);
-                    sack_released_total += newly.len() as u64;
+                    sack_release_mark_into(
+                        &st.sent_store,
+                        &mut sack_released,
+                        start,
+                        end,
+                        &mut sack_newly,
+                    );
+                    sack_released_total += sack_newly.len() as u64;
                     if pol.percap_track {
-                        for &k in &newly {
+                        for &k in &sack_newly {
                             // Per-path account slot freed on delivery
                             // evidence (idempotent: cumulative release
                             // later finds the seq already gone — the
@@ -2109,7 +2131,7 @@ async fn run_window_sender(
         // only while exactly one path is live; re-checked every iteration so
         // path flaps re-scope within one burst. Gate-off pays nothing.
         if pol.emit_batch_on {
-            emit_batch_live = scheduler.lock().live_paths().len() == 1;
+            emit_batch_live = scheduler.lock().live_paths_iter().count() == 1;
         }
 
         // Determine if packer has pending data for flush timer
@@ -2537,8 +2559,20 @@ async fn run_window_sender(
         // ms of link rate, not the BDP) prevents the datagram burst-overrun:
         // at high RTT the flow window is BDP-sized, but emission is metered to
         // the link so no BDP-sized burst reaches the droppable path.
+        //
+        // Clock: ONE read for the rest of this iteration's pre-`select!`
+        // phase — the pacing refill here, the tail-sweep deadline and the
+        // three 1 ms poll deadlines below (which previously read the clock
+        // once each; `tokio::time::sleep(d)` is `sleep_until(now + d)`). The
+        // phase between this read and the `select!` is synchronous loop body
+        // (one scheduler-lock take for the tail clock), so the reuse is stale
+        // by microseconds — well inside one loop iteration. The tail deadline
+        // is converted with the SAME read's `Instant`, so its absolute
+        // instant is exact, not stale.
+        let (pre_now_us, pre_now_i) = now_pair();
+        let poll_1ms = tokio::time::Instant::from_std(pre_now_i) + Duration::from_millis(1);
         if pol.cc_pace {
-            let now = now_us();
+            let now = pre_now_us;
             // Refresh the Copa cwnd/SRTT rate estimate (frontier-independent) at
             // most every 5 ms.
             if now.saturating_sub(cc_rate_refresh_us) >= 5_000 {
@@ -2556,14 +2590,12 @@ async fn run_window_sender(
                     let sched = scheduler.lock();
                     let mut r = 0.0f64;
                     let mut n = 0usize;
-                    for id in sched.live_paths() {
-                        if let Some(p) = sched.path(id) {
-                            let s = p.srtt().as_secs_f64();
-                            if s > 1e-4 {
-                                r += p.cwnd as f64 / s;
-                            }
-                            n += 1;
+                    for (_, p) in sched.live_paths_iter() {
+                        let s = p.srtt().as_secs_f64();
+                        if s > 1e-4 {
+                            r += p.cwnd as f64 / s;
                         }
+                        n += 1;
                     }
                     (r, n.max(1))
                 };
@@ -2597,27 +2629,27 @@ async fn run_window_sender(
         // 2×SRTT; on expiry synthesize a gap report for the cumulative
         // blocker (per-seq cooldown + budgets all apply downstream).
         let tail_deadline: Option<tokio::time::Instant> =
-            st.retransmit_buffer.iter().next().map(|(&seq, &(send_us, _, _))| {
+            st.retransmit_buffer.first().map(|(seq, &(send_us, _, _))| {
                 let last_activity_us = st.nack_retx_at
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
                 let (srtt_us, jitter_us, sigma_us) = {
                     let sched = scheduler.lock();
-                    let paths: Vec<_> = recovery_clock_paths(&sched)
-                        .iter()
-                        .filter_map(|id| sched.path(*id))
-                        .collect();
-                    let pooled: Vec<u64> =
-                        paths.iter().map(|p| p.estimator.rtt().as_micros() as u64).collect();
+                    // Three passes over the same path set (no per-iteration
+                    // `Vec`s: this block runs on every loop iteration).
+                    let paths = || recovery_clock_paths_iter(&sched).map(|(_, p)| p);
+                    let pooled = pooled_recovery_srtt_iter(
+                        paths().map(|p| p.estimator.rtt().as_micros() as u64),
+                    );
                     // The jitter feeding the derived floor is pooled the same
                     // way the clock is (max over the same path set), so floor
                     // and clock can never come from different paths.
-                    let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
+                    let jit = paths().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
                     // The measured σ, max over the same set — read only by the
                     // `[QCLK]` readout below.
-                    let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
-                    (pooled_recovery_srtt_us(&pooled), jit, sg)
+                    let sg = paths().filter_map(|p| p.rtt_sigma_us()).max();
+                    (pooled, jit, sg)
                 };
                 let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
                 // `timeout_us` is what the engine will use — never recomputed
@@ -2633,8 +2665,8 @@ async fn run_window_sender(
                     );
                 }
                 let deadline_us = last_activity_us + timeout_us;
-                let remaining = Duration::from_micros(deadline_us.saturating_sub(now_us()));
-                tokio::time::Instant::now() + remaining
+                let remaining = Duration::from_micros(deadline_us.saturating_sub(pre_now_us));
+                tokio::time::Instant::from_std(pre_now_i) + remaining
             });
 
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
@@ -2664,11 +2696,11 @@ async fn run_window_sender(
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
             // below (mirrors the block sender's 1 ms backpressure poll).
-            _ = tokio::time::sleep(Duration::from_millis(1)), if tx_paused => { wait_arm = 1; None },
+            _ = tokio::time::sleep_until(poll_1ms), if tx_paused => { wait_arm = 1; None },
             // Pacing wake — when source sends are paced-off (bucket
             // empty), wake at 1 ms to refill it. Without this the select could
             // block in read_packet with the pacing gate closed and stall intake.
-            _ = tokio::time::sleep(Duration::from_millis(1)),
+            _ = tokio::time::sleep_until(poll_1ms),
                 if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
             p = tun.read_packet(),
                 if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
@@ -2677,7 +2709,7 @@ async fn run_window_sender(
             // (the tail — all sources read but the last generations still need
             // coded symbols to decode) and when not paused. Without it the loop
             // would block in read_packet and the tail would never complete.
-            _ = tokio::time::sleep(Duration::from_millis(1)),
+            _ = tokio::time::sleep_until(poll_1ms),
                 if generation && !tx_paused && st.encoder.window_size() > 0 => { wait_arm = 3; None },
             gaps = nack_rx.recv() => {
                 wait_arm = 4;
@@ -2808,7 +2840,7 @@ async fn run_window_sender(
             } => {
                 wait_arm = 6;
                 last_tail_sweep_us = now_us();
-                if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
+                if let Some((seq, _)) = st.retransmit_buffer.first() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
                     dg.diag_sweeps += 1;
                     // The tail sweep is the sender's own producer — no ack, and
@@ -2824,7 +2856,7 @@ async fn run_window_sender(
                 if pol.use_packing {
                     if let Some(packed) = packer.flush() {
                         emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -2852,7 +2884,7 @@ async fn run_window_sender(
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
                     emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -2915,7 +2947,7 @@ async fn run_window_sender(
                     if pol.use_packing {
                         if let Some(packed) = packer.flush() {
                             emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -2935,7 +2967,7 @@ async fn run_window_sender(
                 // Pack multiple small packets into one symbol
                 if let Some(packed) = packer.push(&pkt) {
                     emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -2946,7 +2978,7 @@ async fn run_window_sender(
                 // Legacy: one packet per symbol (padded)
                 let framed = framing::frame_window_packet(&pkt, symbol_size);
                 emit_source(
-                    &framed,
+                    framed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -2987,7 +3019,7 @@ async fn run_window_sender(
                                 let framed =
                                     framing::frame_window_packet(&pkt, symbol_size);
                                 emit_source(
-                    &framed,
+                    framed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3025,8 +3057,9 @@ async fn run_window_sender(
                 .map(|d| d.as_micros() as u64)
                 .unwrap_or(IDLE_RECOVERY_GAP_FLOOR_US);
             let idle_gap_us = (2 * srtt_us_recent).max(IDLE_RECOVERY_GAP_FLOOR_US);
+            // Same instant as the cadence check above (µs apart, no await).
             let sender_idle =
-                now_us().saturating_sub(st.last_source_send_us) > idle_gap_us;
+                now_repair_us.saturating_sub(st.last_source_send_us) > idle_gap_us;
             let nack_multiplier = nack_congestion.effective_multiplier(sender_idle);
             cached_max_repairs =
                 (MAX_NACK_REPAIRS_PER_NACK as f64 * nack_multiplier).round() as u64;
@@ -3328,7 +3361,7 @@ async fn run_window_sender(
             // reliable mode keeps attribution while the store holds them).
             if !reliable {
                 let (win_start, _) = st.encoder.window_span();
-                st.source_path_map.retain(|&seq, _| seq >= win_start);
+                st.source_path_map.prune_below(win_start);
             }
         }
 
@@ -3538,6 +3571,8 @@ fn prefix_to_netmask(prefix: u8) -> IpAddr {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod hotpath_pin;
 
 /// Resolves when the process is asked to stop: SIGINT (`ctrl_c`, every
 /// platform) or SIGTERM (unix). Returns `true` when a signal arrived and

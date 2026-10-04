@@ -29,8 +29,10 @@ const REPAIR_HEADER_SIZE: usize = 14;
 /// RLC sliding window encoder.
 pub struct RlcWindowEncoder {
     symbol_size: u16,
-    /// Window of source symbols: (seq, padded_data)
-    window: VecDeque<(u64, Vec<u8>)>,
+    /// Window of source symbols: (seq, padded_data). `Bytes`: the same
+    /// allocation the emitted source `WireSymbol` (and the sender's retention
+    /// store) holds — one payload buffer per source symbol, shared.
+    window: VecDeque<(u64, Bytes)>,
     /// Next sequence number to assign
     next_seq: u64,
     /// Monotonic repair index counter
@@ -50,13 +52,36 @@ impl RlcWindowEncoder {
 
 impl WindowEncoder for RlcWindowEncoder {
     fn add_source(&mut self, data: &[u8]) -> WireSymbol {
+        // One copy either way: straight in when already full-size, else
+        // into the zero-padded (or truncated) frame.
+        let size = self.symbol_size as usize;
+        if data.len() == size {
+            self.add_source_owned(Bytes::copy_from_slice(data))
+        } else {
+            let mut p = vec![0u8; size];
+            let copy_len = data.len().min(size);
+            p[..copy_len].copy_from_slice(&data[..copy_len]);
+            self.add_source_owned(Bytes::from(p))
+        }
+    }
+
+    fn add_source_owned(&mut self, data: Bytes) -> WireSymbol {
         let seq = self.next_seq;
         self.next_seq += 1;
 
-        // Pad to symbol_size
-        let mut padded = vec![0u8; self.symbol_size as usize];
-        let copy_len = data.len().min(self.symbol_size as usize);
-        padded[..copy_len].copy_from_slice(&data[..copy_len]);
+        // Pad (or truncate) to symbol_size. A framed window packet is
+        // already exactly symbol_size, so the common case keeps the caller's
+        // buffer: the window, the returned symbol and every clone of it
+        // (retention store, wire send) share one allocation.
+        let size = self.symbol_size as usize;
+        let padded = if data.len() == size {
+            data
+        } else {
+            let mut p = vec![0u8; size];
+            let copy_len = data.len().min(size);
+            p[..copy_len].copy_from_slice(&data[..copy_len]);
+            Bytes::from(p)
+        };
 
         self.window.push_back((seq, padded.clone()));
 
@@ -79,7 +104,7 @@ impl WindowEncoder for RlcWindowEncoder {
                 block_id: 0,
                 payload_id: self.repair_counter,
                 is_repair: true,
-                data: vec![0u8; REPAIR_HEADER_SIZE + symbol_size],
+                data: vec![0u8; REPAIR_HEADER_SIZE + symbol_size].into(),
                 backend: FecBackend::Rlc,
             };
         }
@@ -108,7 +133,7 @@ impl WindowEncoder for RlcWindowEncoder {
             block_id: window_end,
             payload_id: repair_index,
             is_repair: true,
-            data: wire_data,
+            data: wire_data.into(),
             backend: FecBackend::Rlc,
         }
     }
@@ -158,7 +183,7 @@ impl WindowEncoder for RlcWindowEncoder {
             block_id: end - 1,
             payload_id: repair_index,
             is_repair: true,
-            data: wire_data,
+            data: wire_data.into(),
             backend: FecBackend::Rlc,
         })
     }

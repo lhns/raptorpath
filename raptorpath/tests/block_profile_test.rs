@@ -128,7 +128,7 @@ fn test_data_message_with_version() {
             block_id: 0,
             payload_id: 0,
             is_repair: false,
-            data: vec![42; 100],
+            data: vec![42; 100].into(),
             backend: FecBackend::RaptorQ,
         }],
         999,

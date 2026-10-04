@@ -2,6 +2,7 @@
 
 use crate::fec::{EncodingParams, FecBackend, WireSymbol};
 use bincode::Options;
+use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 
 /// Maximum serialized message size (2 MB). Prevents OOM from crafted length fields.
@@ -104,15 +105,15 @@ pub fn wire_compact_active() -> bool {
 }
 
 // ── LEB128 varints for the compact frame ────────────────────────────────
-fn write_varint(buf: &mut Vec<u8>, mut v: u64) {
+fn write_varint<B: BufMut>(buf: &mut B, mut v: u64) {
     loop {
         let b = (v & 0x7f) as u8;
         v >>= 7;
         if v == 0 {
-            buf.push(b);
+            buf.put_u8(b);
             return;
         }
-        buf.push(b | 0x80);
+        buf.put_u8(b | 0x80);
     }
 }
 
@@ -168,20 +169,78 @@ pub fn serialize_data_compact(batch: &SymbolBatch) -> Option<Vec<u8>> {
     }
     let sym = &batch.symbols[0];
     let mut buf = Vec::with_capacity(24 + sym.data.len());
-    buf.push(COMPACT_DATA_TAG);
-    buf.push((sym.is_repair as u8) | (backend_to_u8(sym.backend) << 1));
-    write_varint(&mut buf, batch.path_id as u64);
-    write_varint(&mut buf, sym.block_id);
-    write_varint(&mut buf, sym.payload_id as u64);
-    write_varint(&mut buf, batch.send_timestamp_us);
-    write_varint(&mut buf, batch.batch_seq);
+    write_data_compact(
+        &mut buf,
+        sym,
+        batch.send_timestamp_us,
+        batch.batch_seq,
+        batch.path_seq,
+        batch.path_id,
+        batch.eta_rel_us,
+    );
+    Some(buf)
+}
+
+/// Upper bound on the compact header: tag + flags + 7 varints (path_id and
+/// eta ≤ 5 bytes each, the four u64 fields ≤ 10 each).
+pub const COMPACT_HEADER_MAX: usize = 2 + 5 + 10 + 5 + 10 + 10 + 10 + 5;
+
+/// The one compact DATA frame writer (the layout documented on
+/// [`serialize_data_compact`]), over any `BufMut` — the `Vec` of the batch
+/// API or the window sender's arena.
+fn write_data_compact<B: BufMut>(
+    buf: &mut B,
+    sym: &WireSymbol,
+    send_timestamp_us: u64,
+    batch_seq: u64,
+    path_seq: u64,
+    path_id: u32,
+    eta_rel_us: u32,
+) {
+    buf.put_u8(COMPACT_DATA_TAG);
+    buf.put_u8((sym.is_repair as u8) | (backend_to_u8(sym.backend) << 1));
+    write_varint(buf, path_id as u64);
+    write_varint(buf, sym.block_id);
+    write_varint(buf, sym.payload_id as u64);
+    write_varint(buf, send_timestamp_us);
+    write_varint(buf, batch_seq);
     // v9: the per-path batch sequence (the receiver's loss-gap key).
-    write_varint(&mut buf, batch.path_seq);
+    write_varint(buf, path_seq);
     // v8: the sender's own delivery-time prediction for this batch, us,
     // relative to `send_timestamp_us`. 0 = no prediction (one byte).
-    write_varint(&mut buf, batch.eta_rel_us as u64);
-    buf.extend_from_slice(&sym.data);
-    Some(buf)
+    write_varint(buf, eta_rel_us as u64);
+    buf.put_slice(&sym.data);
+}
+
+/// Arena chunk for [`serialize_symbol_compact_in`]: one allocation carries
+/// ~50 full-size frames instead of one each.
+pub const WIRE_ARENA_CHUNK: usize = 64 * 1024;
+
+/// The compact frame of the one-symbol batch
+/// `SymbolBatch::new(vec![sym], send_timestamp_us, seqs, path_id).with_eta(eta_rel_us)`
+/// — byte-identical to [`serialize_data_compact`] on that batch — written
+/// into the caller's arena and split off as a frozen `Bytes`: no
+/// `SymbolBatch`, no symbol clone, and no per-frame allocation (the arena
+/// is refilled with a fresh [`WIRE_ARENA_CHUNK`] only when its spare
+/// capacity runs out; a chunk is freed when the last frame carved from it
+/// is dropped by quinn).
+pub fn serialize_symbol_compact_in(
+    arena: &mut BytesMut,
+    sym: &WireSymbol,
+    send_timestamp_us: u64,
+    seqs: (u64, u64),
+    path_id: u32,
+    eta_rel_us: u64,
+) -> Bytes {
+    let need = COMPACT_HEADER_MAX + sym.data.len();
+    if arena.capacity() - arena.len() < need {
+        *arena = BytesMut::with_capacity(WIRE_ARENA_CHUNK.max(need));
+    }
+    let (batch_seq, path_seq) = seqs;
+    // `SymbolBatch::with_eta`'s saturation, so the field is the same u32.
+    let eta = eta_rel_us.min(u32::MAX as u64) as u32;
+    write_data_compact(arena, sym, send_timestamp_us, batch_seq, path_seq, path_id, eta);
+    arena.split().freeze()
 }
 
 fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
@@ -212,7 +271,7 @@ fn parse_data_compact(data: &[u8]) -> Result<WireMessage, bincode::Error> {
             block_id,
             payload_id: payload_id as u32,
             is_repair,
-            data: data[pos..].to_vec(),
+            data: Bytes::copy_from_slice(&data[pos..]),
             backend,
         }],
         send_timestamp_us: send_ts,

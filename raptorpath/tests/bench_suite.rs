@@ -1380,7 +1380,7 @@ fn run_matrix_trial_retransmit(
                 block_id: 0,
                 payload_id: sym_idx,
                 is_repair: false,
-                data,
+                data: data.into(),
                 backend: FecBackend::Rlc,
             };
             send_times.insert(sym_idx as u64, clock.now());

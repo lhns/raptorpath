@@ -24,16 +24,21 @@ use std::time::Duration;
 /// reader in this module enumerates it, and so do the recovery clocks
 /// ([`super::recovery_clock_paths`]).
 pub fn channel_paths(sched: &Scheduler) -> Vec<PathId> {
-    sched.live_paths()
+    channel_paths_iter(sched).map(|(id, _)| id).collect()
+}
+
+/// [`channel_paths`] as an iterator over `(id, state)` — the same set in the
+/// same order, without the per-call `Vec` (the worst-ε readers run several
+/// times per source symbol).
+pub fn channel_paths_iter(sched: &Scheduler) -> impl Iterator<Item = (PathId, &PathState)> + '_ {
+    sched.live_paths_iter()
 }
 
 /// The worst-ε channel path (max `estimator.loss_rate()`, ties to the last
 /// maximum) — the path every rate / budget / repair-count reader
 /// provisions for.
 pub fn worst_eps_channel_path(sched: &Scheduler) -> Option<(PathId, &PathState)> {
-    channel_paths(sched)
-        .into_iter()
-        .filter_map(|id| sched.path(id).map(|p| (id, p)))
+    channel_paths_iter(sched)
         .max_by(|a, b| {
             a.1.estimator
                 .loss_rate()
@@ -50,10 +55,8 @@ pub fn worst_eps_estimator(sched: &Scheduler) -> Option<&LossEstimator> {
 /// The channel's worst loss rate (max over the set; 0.0 on an empty set) —
 /// the ε̂ the retransmit buffer reads.
 pub fn channel_worst_loss_rate(sched: &Scheduler) -> f64 {
-    channel_paths(sched)
-        .into_iter()
-        .filter_map(|id| sched.path(id))
-        .map(|p| p.estimator.loss_rate())
+    channel_paths_iter(sched)
+        .map(|(_, p)| p.estimator.loss_rate())
         .fold(0.0f64, f64::max)
 }
 
@@ -81,31 +84,26 @@ pub fn nack_congestion_inputs(sched: &Scheduler) -> (f64, Option<Duration>) {
 /// The channel's max RTprop (min-RTT, falling back to SRTT before the
 /// first sample), in seconds; 0.0 on an empty set.
 pub fn channel_max_rtprop_s(sched: &Scheduler) -> f64 {
-    channel_paths(sched)
-        .into_iter()
-        .filter_map(|id| {
-            sched.path(id).map(|p| {
-                p.min_rtt()
-                    .map(|d| d.as_secs_f64())
-                    .unwrap_or_else(|| p.srtt().as_secs_f64())
-            })
+    channel_paths_iter(sched)
+        .map(|(_, p)| {
+            p.min_rtt()
+                .map(|d| d.as_secs_f64())
+                .unwrap_or_else(|| p.srtt().as_secs_f64())
         })
         .fold(0.0, f64::max)
 }
 
 /// Σ of the channel's warm BDP anchors (`copa_bdp_anchor()`), in symbols.
 pub fn channel_bdp_anchor_sum(sched: &Scheduler) -> f64 {
-    channel_paths(sched)
-        .into_iter()
-        .filter_map(|id| sched.path(id).and_then(|p| p.copa_bdp_anchor()))
+    channel_paths_iter(sched)
+        .filter_map(|(_, p)| p.copa_bdp_anchor())
         .sum()
 }
 
 /// The channel's max SRTT (µs); `None` on an empty set.
 pub fn channel_max_srtt_us(sched: &Scheduler) -> Option<u64> {
-    channel_paths(sched)
-        .into_iter()
-        .filter_map(|id| sched.path(id).map(|p| p.srtt().as_micros() as u64))
+    channel_paths_iter(sched)
+        .map(|(_, p)| p.srtt().as_micros() as u64)
         .max()
 }
 
