@@ -244,7 +244,7 @@ impl GenerationEncoder {
             block_id: gen_start + gen_len.saturating_sub(1) as u64,
             payload_id: coded_index,
             is_repair: true,
-            data: wire_data,
+            data: wire_data.into(),
             backend: FecBackend::Rlc,
         }
     }
@@ -387,7 +387,7 @@ impl GenerationEncoder {
             block_id: gen_start + full.saturating_sub(1) as u64,
             payload_id: coded_index, // dedup uses the REAL index (no flag)
             is_repair: true,
-            data: wire_data,
+            data: wire_data.into(),
             backend: FecBackend::Rlc,
         }
     }
@@ -440,7 +440,7 @@ impl WindowEncoder for GenerationEncoder {
                     block_id: 0,
                     payload_id: self.coded_index,
                     is_repair: true,
-                    data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize],
+                    data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize].into(),
                     backend: FecBackend::Rlc,
                 }
             }
@@ -454,7 +454,7 @@ impl WindowEncoder for GenerationEncoder {
                 block_id: 0,
                 payload_id: self.coded_index,
                 is_repair: true,
-                data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize],
+                data: vec![0u8; REPAIR_HEADER_SIZE + self.symbol_size as usize].into(),
                 backend: FecBackend::Rlc,
             },
         }
@@ -568,7 +568,7 @@ impl WindowEncoder for GenerationEncoder {
             block_id: seq,
             payload_id: 0,
             is_repair: false,
-            data: data.clone(),
+            data: data.clone().into(),
             backend: FecBackend::Rlc,
         })
     }
@@ -614,7 +614,7 @@ impl GenerationEncoder {
             block_id: seq,
             payload_id: 0,
             is_repair: false,
-            data: padded,
+            data: padded.into(),
             backend: FecBackend::Rlc,
         }
     }
@@ -650,7 +650,7 @@ impl GenerationEncoder {
             block_id: start + width - 1,
             payload_id: coded_index,
             is_repair: true,
-            data: wire_data,
+            data: wire_data.into(),
             backend: FecBackend::Rlc,
         })
     }

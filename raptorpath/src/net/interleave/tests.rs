@@ -7,7 +7,7 @@ fn sym(block_id: u64, payload_id: u32) -> WireSymbol {
         block_id,
         payload_id,
         is_repair: false,
-        data: vec![0u8; 64],
+        data: vec![0u8; 64].into(),
         backend: FecBackend::RaptorQ,
     }
 }
@@ -163,7 +163,7 @@ fn repair_sym(block_id: u64, payload_id: u32) -> WireSymbol {
         block_id,
         payload_id,
         is_repair: true,
-        data: vec![0u8; 64],
+        data: vec![0u8; 64].into(),
         backend: FecBackend::RaptorQ,
     }
 }

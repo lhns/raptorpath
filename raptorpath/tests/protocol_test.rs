@@ -11,14 +11,14 @@ fn test_symbol_batch_roundtrip() {
                 block_id: 42,
                 payload_id: 7,
                 is_repair: false,
-                data: vec![1, 2, 3, 4],
+                data: vec![1, 2, 3, 4].into(),
                 backend: FecBackend::RaptorQ,
             },
             WireSymbol {
                 block_id: 42,
                 payload_id: 100,
                 is_repair: true,
-                data: vec![5, 6, 7],
+                data: vec![5, 6, 7].into(),
                 backend: FecBackend::RaptorQ,
             },
         ],
@@ -224,7 +224,7 @@ fn test_large_symbol_data() {
             block_id: 0,
             payload_id: 0,
             is_repair: false,
-            data: vec![0xAB; 1200], // full symbol
+            data: vec![0xAB; 1200].into(), // full symbol
             backend: FecBackend::RaptorQ,
         }],
         0,
@@ -263,7 +263,7 @@ fn test_oversized_symbol_batch_rejected() {
             block_id: 1,
             payload_id: i,
             is_repair: false,
-            data: vec![0u8; 10],
+            data: vec![0u8; 10].into(),
             backend: FecBackend::RaptorQ,
         })
         .collect();
@@ -298,7 +298,7 @@ fn test_normal_batch_accepted() {
             block_id: 1,
             payload_id: i,
             is_repair: false,
-            data: vec![0u8; 10],
+            data: vec![0u8; 10].into(),
             backend: FecBackend::RaptorQ,
         })
         .collect();

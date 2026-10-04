@@ -45,7 +45,7 @@ use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBu
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
-use crate::transport::{QuicTransport, SymbolBatch};
+use crate::transport::QuicTransport;
 use crate::control::fec_rate::ProtocolHint;
 
 /// Staleness bound for the cached taper/span math (µs): one burst at
@@ -181,6 +181,10 @@ pub(crate) struct SenderState {
     /// Reused scratch for `window_source_paths_into` (the repair placement's
     /// covered-path list), so a correction symbol allocates nothing for it.
     pub covered_scratch: Vec<u32>,
+    /// The wire-frame arena the emission step's compact DATA frames are
+    /// carved from (`QuicTransport::send_symbol`): one allocation per
+    /// `WIRE_ARENA_CHUNK` instead of one per datagram.
+    pub wire_arena: bytes::BytesMut,
 }
 
 impl SenderState {
@@ -249,6 +253,7 @@ impl SenderState {
             span_diag_last_us: 0,
             mpd_plost_retx: 0,
             covered_scratch: Vec::new(),
+            wire_arena: bytes::BytesMut::new(),
         }
     }
 }
@@ -260,13 +265,16 @@ impl SenderState {
 /// read-only here), so it is passed in rather than living in [`SenderState`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_source(
-    framed: &[u8],
+    framed: bytes::Bytes,
     st: &mut SenderState,
     pol: &SenderPolicy,
     ctx: &SenderCtx<'_>,
     emit_batch_live: bool,
 ) {
-    let wire_sym = st.encoder.add_source(framed);
+    // The framed buffer becomes the symbol's payload: the encoder window,
+    // the retention store and the wire send below all share it (refcount
+    // clones), and the wire frame is carved from `st.wire_arena`.
+    let wire_sym = st.encoder.add_source_owned(framed);
     // GDIAG/GLIFE fill tracking: stamp the generation's first-source
     // and sealed instants (RWM_DIAG only; no-op on the shipped path).
     if pol.diag_on && pol.generation {
@@ -373,20 +381,27 @@ pub(crate) fn emit_source(
     // submodes keep per-seq ARQ / sent_store / taper repair off (gated on
     // `!generation` below).
     if pol.systematic || !pol.generation {
-        let on_wire = if pol.systematic {
-            wire_sym.clone() // raw systematic source is the primary
+        let coded;
+        let on_wire: &WireSymbol = if pol.systematic {
+            &wire_sym // raw systematic source is the primary
         } else if pol.coded_wire {
-            st.encoder.generate_repair()
+            coded = st.encoder.generate_repair();
+            &coded
         } else {
-            wire_sym.clone()
+            &wire_sym
         };
         let seqs = ctx.batch_counter.next(source_path);
         // The batch's `send_timestamp_us` is the key the ack's echo will
         // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.
-        let batch = SymbolBatch::new(vec![on_wire], src_send_ts_us, seqs, source_path)
-            .with_eta(eta_rel_us);
-        if let Err(e) = ctx.transport.send_symbols(source_path, batch) {
+        if let Err(e) = ctx.transport.send_symbol(
+            source_path,
+            on_wire,
+            src_send_ts_us,
+            seqs,
+            eta_rel_us,
+            &mut st.wire_arena,
+        ) {
             warn!(source_path, ?e, "failed to send window source symbol");
         }
         {
@@ -462,8 +477,9 @@ pub(crate) fn emit_source(
         };
         if let Some(alt) = alt_path {
             let seqs = ctx.batch_counter.next(alt);
-            let batch = SymbolBatch::new(vec![wire_sym], now_us(), seqs, alt);
-            if let Err(e) = ctx.transport.send_symbols(alt, batch) {
+            if let Err(e) =
+                ctx.transport.send_symbol(alt, &wire_sym, now_us(), seqs, 0, &mut st.wire_arena)
+            {
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
             {
@@ -815,8 +831,14 @@ pub(crate) fn emit_source(
                 }
             };
             let seqs = ctx.batch_counter.next(correction_path);
-            let batch = SymbolBatch::new(vec![correction_sym], now_us(), seqs, correction_path);
-            let sent = match ctx.transport.send_symbols(correction_path, batch) {
+            let sent = match ctx.transport.send_symbol(
+                correction_path,
+                &correction_sym,
+                now_us(),
+                seqs,
+                0,
+                &mut st.wire_arena,
+            ) {
                 Ok(()) => true,
                 Err(e) => {
                     warn!(correction_path, ?e, "failed to send correction symbol");

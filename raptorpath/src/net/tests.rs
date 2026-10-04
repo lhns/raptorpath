@@ -4519,7 +4519,7 @@ fn model_batch(seqs: (u64, u64), n: u32, path: u32) -> SymbolBatch {
             block_id: seqs.0,
             payload_id: i,
             is_repair: false,
-            data: Vec::new(),
+            data: Vec::new().into(),
             backend: FecBackend::Rlc,
         })
         .collect();

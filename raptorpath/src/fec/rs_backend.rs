@@ -82,7 +82,7 @@ impl FecEncoder for ReedSolomonEncoder {
                 block_id,
                 payload_id: i as u32,
                 is_repair: false,
-                data: shard.clone(),
+                data: shard.clone().into(),
                 backend: FecBackend::ReedSolomon,
             })
             .collect()
@@ -108,7 +108,7 @@ impl FecEncoder for ReedSolomonEncoder {
                 block_id,
                 payload_id: (self.params.source_symbols + i as u32),
                 is_repair: true,
-                data: shard.clone(),
+                data: shard.clone().into(),
                 backend: FecBackend::ReedSolomon,
             })
             .collect()
@@ -330,7 +330,7 @@ mod tests {
             block_id: 0,
             payload_id: 100, // way out of bounds
             is_repair: true,
-            data: vec![0u8; 200],
+            data: vec![0u8; 200].into(),
             backend: FecBackend::ReedSolomon,
         };
         assert!(decoder.add_symbol(&bad_sym).is_none());

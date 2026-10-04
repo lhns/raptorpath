@@ -3045,7 +3045,7 @@ async fn run_window_sender(
                 if pol.use_packing {
                     if let Some(packed) = packer.flush() {
                         emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3073,7 +3073,7 @@ async fn run_window_sender(
                 // Flush timeout expired — emit partial packed symbol
                 if let Some(packed) = packer.flush() {
                     emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3136,7 +3136,7 @@ async fn run_window_sender(
                     if pol.use_packing {
                         if let Some(packed) = packer.flush() {
                             emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3156,7 +3156,7 @@ async fn run_window_sender(
                 // Pack multiple small packets into one symbol
                 if let Some(packed) = packer.push(&pkt) {
                     emit_source(
-                    &packed,
+                    packed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3167,7 +3167,7 @@ async fn run_window_sender(
                 // Legacy: one packet per symbol (padded)
                 let framed = framing::frame_window_packet(&pkt, symbol_size);
                 emit_source(
-                    &framed,
+                    framed.into(),
                     &mut st,
                     &pol,
                     &sctx,
@@ -3208,7 +3208,7 @@ async fn run_window_sender(
                                 let framed =
                                     framing::frame_window_packet(&pkt, symbol_size);
                                 emit_source(
-                    &framed,
+                    framed.into(),
                     &mut st,
                     &pol,
                     &sctx,

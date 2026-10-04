@@ -202,3 +202,58 @@ fn pin_frame_layout_and_add_source_identity() {
         assert_eq!(&enc.get_source(s.block_id).unwrap().data[..], &framed[..]);
     }
 }
+
+/// The window sender's per-datagram serializer (`send_symbol` →
+/// `serialize_symbol_compact_in`, frames carved from a reused arena) emits
+/// exactly the bytes `serialize_data_compact` emits for the equivalent
+/// one-symbol batch — across arena refills, for sources and repairs, at
+/// every varint width and through the `with_eta` u32 saturation.
+#[test]
+fn arena_serializer_is_byte_identical_to_the_batch_serializer() {
+    use crate::transport::serialize_symbol_compact_in;
+    let mut arena = bytes::BytesMut::new();
+    let mut enc = RlcWindowEncoder::new(T);
+    let mut held = Vec::new();
+    for i in 0..400usize {
+        let framed = frame_window_packet(&packet(i, LENS[i % LENS.len()]), T);
+        let sym = if i % 4 == 3 { enc.generate_repair() } else { enc.add_source(&framed) };
+        let ts = VARINTS[i % VARINTS.len()];
+        let seqs = (VARINTS[(i + 3) % VARINTS.len()], VARINTS[(i + 5) % VARINTS.len()]);
+        let path = (VARINTS[(i + 7) % VARINTS.len()] % (u32::MAX as u64 + 1)) as u32;
+        let eta = VARINTS[(i + 2) % VARINTS.len()];
+        let want = serialize_data_compact(
+            &SymbolBatch::new(vec![sym.clone()], ts, seqs, path).with_eta(eta),
+        )
+        .unwrap();
+        let got = serialize_symbol_compact_in(&mut arena, &sym, ts, seqs, path, eta);
+        assert_eq!(&got[..], &want[..], "frame {i}");
+        // Hold some frames alive (quinn's queue) so refills happen while
+        // earlier chunks are still referenced; they must stay intact.
+        held.push((got, want));
+    }
+    for (i, (got, want)) in held.iter().enumerate() {
+        assert_eq!(&got[..], &want[..], "held frame {i} was overwritten");
+    }
+}
+
+/// `add_source_owned` (the sender's zero-copy intake) returns the same
+/// symbol `add_source` does, for full-size frames (shared buffer) and for
+/// short / oversize payloads (the pad / truncate copy), and leaves the
+/// window serving the same bytes.
+#[test]
+fn add_source_owned_matches_add_source() {
+    let mut a = RlcWindowEncoder::new(T);
+    let mut b = RlcWindowEncoder::new(T);
+    for (i, &len) in LENS.iter().enumerate() {
+        for raw in [frame_window_packet(&packet(i, len), T), packet(i, len)] {
+            let sa = a.add_source(&raw);
+            let sb = b.add_source_owned(bytes::Bytes::from(raw.clone()));
+            assert_eq!(sa.block_id, sb.block_id);
+            assert_eq!(sa.payload_id, sb.payload_id);
+            assert_eq!(sa.is_repair, sb.is_repair);
+            assert_eq!(&sa.data[..], &sb.data[..]);
+            assert_eq!(&a.get_source(sa.block_id).unwrap().data[..], &b.get_source(sb.block_id).unwrap().data[..]);
+        }
+    }
+    assert_eq!(&a.generate_repair().data[..], &b.generate_repair().data[..]);
+}

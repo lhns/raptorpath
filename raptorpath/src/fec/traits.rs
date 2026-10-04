@@ -27,7 +27,12 @@ pub struct WireSymbol {
     pub block_id: u64,
     pub payload_id: u32,
     pub is_repair: bool,
-    pub data: Vec<u8>,
+    /// The payload. `Bytes` so one source buffer is shared — not copied — by
+    /// the encoder window, the sender's retention store and the wire send.
+    /// Serialized exactly as the `Vec<u8>` it replaced (see
+    /// [`bytes_as_vec`]), so every wire / bincode byte is unchanged.
+    #[serde(with = "bytes_as_vec")]
+    pub data: Bytes,
     /// Which FEC backend produced this symbol. Decoders reject mismatched backends.
     pub backend: FecBackend,
 }
@@ -152,5 +157,24 @@ impl FecBackend {
                 Box::new(super::rlc_backend::RlcDecoder::new(params, transfer_length))
             }
         }
+    }
+}
+
+/// Serde for [`WireSymbol::data`]: encoded EXACTLY as a `Vec<u8>` is (a
+/// sequence of `u8`, i.e. `collect_seq` — what `impl Serialize for Vec<u8>`
+/// does), decoded through `Vec<u8>`'s own `Deserialize`. Not `bytes`' serde
+/// feature, whose `serialize_bytes` is a different serde call: identical
+/// under bincode 1 today, but this keeps the format byte-identical by
+/// construction for any serializer.
+mod bytes_as_vec {
+    use bytes::Bytes;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(b: &Bytes, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(b.iter())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Bytes, D::Error> {
+        Vec::<u8>::deserialize(d).map(Bytes::from)
     }
 }

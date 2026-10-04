@@ -52,7 +52,7 @@ impl FecEncoder for RaptorqEncoder {
                             block_id,
                             payload_id,
                             is_repair: false,
-                            data: serialized[4..].to_vec(),
+                            data: serialized[4..].to_vec().into(),
                             backend: super::traits::FecBackend::RaptorQ,
                         }
                     })
@@ -83,7 +83,7 @@ impl FecEncoder for RaptorqEncoder {
                             block_id,
                             payload_id,
                             is_repair: true,
-                            data: serialized[4..].to_vec(),
+                            data: serialized[4..].to_vec().into(),
                             backend: super::traits::FecBackend::RaptorQ,
                         }
                     })
@@ -159,7 +159,7 @@ impl FecDecoder for RaptorqDecoder {
         if !symbol.is_repair {
             let idx = symbol.payload_id as usize;
             if idx < self.received_source.len() && self.received_source[idx].is_none() {
-                self.received_source[idx] = Some(symbol.data.clone());
+                self.received_source[idx] = Some(symbol.data.to_vec());
                 self.source_count += 1;
             }
         }
@@ -260,7 +260,7 @@ mod tests {
             block_id: 0,
             payload_id: 0,
             is_repair: false,
-            data: data.clone(),
+            data: data.clone().into(),
             backend: FecBackend::ReedSolomon,
         };
         assert!(decoder.add_symbol(&wrong_sym).is_none());

@@ -880,7 +880,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                 block_id: sent as u64,
                 payload_id: 0,
                 is_repair: false,
-                data: data.clone(),
+                data: data.clone().into(),
                 backend: FecBackend::Rlc,
             };
             enc_queue.push_back(data);

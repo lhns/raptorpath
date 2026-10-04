@@ -243,7 +243,7 @@ fn mtu_floor_covers_symbol_batch() {
         block_id: u64::MAX,
         payload_id: u32::MAX,
         is_repair: true,
-        data: vec![0xAB; 14 + 1200],
+        data: vec![0xAB; 14 + 1200].into(),
         backend: FecBackend::Rlc,
     };
     let msg = WireMessage::Data(SymbolBatch::new(vec![repair], u64::MAX, (u64::MAX, u64::MAX), u32::MAX));

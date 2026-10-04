@@ -73,7 +73,7 @@ impl FecEncoder for RlcEncoder {
                 block_id,
                 payload_id: i as u32,
                 is_repair: false,
-                data: shard.clone(),
+                data: shard.clone().into(),
                 backend: FecBackend::Rlc,
             })
             .collect()
@@ -107,7 +107,7 @@ impl FecEncoder for RlcEncoder {
                     block_id,
                     payload_id: k as u32 + i,
                     is_repair: true,
-                    data: wire_data,
+                    data: wire_data.into(),
                     backend: FecBackend::Rlc,
                 }
             })

@@ -21,7 +21,7 @@ fn make_symbols(count: u32, repair: bool) -> Vec<WireSymbol> {
             block_id: 0,
             payload_id: i,
             is_repair: repair,
-            data: vec![0u8; 64],
+            data: vec![0u8; 64].into(),
             backend: FecBackend::RaptorQ,
         })
         .collect()
