@@ -1,0 +1,21 @@
+V4-ALL start 2026-10-04T15:02:51Z load=0.37 0.15 0.20 2/331 734311 hard=1791143538 soft=1791142938
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+V4-ALL build start commit=7d8cec2b973a2f4244553aff5439f99634e83e80 cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.37 0.15 0.20 2026-10-04T15:02:52Z
+V4-ALL cargo build --release rc=0 wall=248s 2026-10-04T15:07:00Z
+V4-ALL test main rc=101 passed=1035 failed=1 ignored=50 binaries=86 2026-10-04T15:26:51Z
+V4-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-04T15:26:54Z
+V4-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-04T15:28:47Z
+V4-ALL tests done tfail=1 new sha256=aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262 2026-10-04T15:35:50Z
+V4-ALL binaries new=aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262 old=f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035 (reused /home/vibe/v3/new/raptorpath) 2026-10-04T15:35:50Z
+V4-ALL smoke rc=0 wall=109s cotenants: cargo=0 rustc=0 load=0.55 1.31 1.97 2026-10-04T15:37:39Z
+V4-ALL SMOKE-PASS c_meas=56s c_pred=91s R_est=360s 2026-10-04T15:37:39Z
+V4-ALL GO received 2026-10-04T15:38:49Z
+V4-ALL PLAN n_per_seed=8 seeds=42,7 block_est=360s crown_reps=8 crown_reserve=2100s tunnel=1 tunnel_reserve=1500s no_emb=0 no_auto=0 cuts=' none' 2026-10-04T15:38:49Z
+V4-ALL battery start cotenants: cargo=0 rustc=0 load=0.48 1.11 1.85 2026-10-04T15:38:49Z
+V4-ALL battery rc=0 wall=3653s cotenants: cargo=0 rustc=0 load=1.77 1.80 1.90 2026-10-04T16:39:42Z
+V4-ALL tunnel done wall=1088s 2026-10-04T16:57:50Z
+V4-ALL crown done wall=1960s cotenants: cargo=0 rustc=0 load=0.05 0.11 0.27 2026-10-04T17:30:31Z
+V4-ALL end bat_ok=1 soft_trunc=0 tunnel=done crown=done load=0.05 0.11 0.27 2026-10-04T17:30:31Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

@@ -1,0 +1,18 @@
+=== TUNBIN new aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
+=== TUNBIN old f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
+TUNARM label=new-bulk cell=c2 hint=bulk bytes=5000000 reps=1 seed=42 bin=/home/vibe/v4/bin/new/raptorpath start=2026-10-04T15:36:51Z
+TUNSHA aa88d648def0b1253985b9d9ad6955d2190277bebc09026aaa2b79ce64ebd262
+TUNMTU cli=1196 srv=1196
+TUNPIPE cli=window/Rlc/bulk srv=window/Rlc/bulk
+TUNCAD cli=ACTIVE srv=ACTIVE
+TUNREP label=new-bulk rep=1 rc=0 {"proto": "tcp", "cc": null, "bytes": 5000000, "run": 1, "seconds": 0.82215, "mbps": 48.653}
+TUNARM-DONE label=new-bulk reps=1 2026-10-04T15:36:58Z
+EXIT rc=0 (17:36:58)
+TUNARM label=old-bulk cell=c2 hint=bulk bytes=5000000 reps=1 seed=42 bin=/home/vibe/v4/bin/old/raptorpath start=2026-10-04T15:36:58Z
+TUNSHA f3743664cb48ad81deef239d44710f4b12bf08f2db65c6d90fc5a947ed500035
+TUNMTU cli=1500 srv=1500
+TUNPIPE cli=block/RaptorQ/bulk srv=block/RaptorQ/bulk
+TUNCAD cli=NONE srv=NONE
+TUNREP label=old-bulk rep=1 rc=0 {"proto": "tcp", "cc": null, "bytes": 5000000, "run": 1, "seconds": 1.497867, "mbps": 26.705}
+TUNARM-DONE label=old-bulk reps=1 2026-10-04T15:37:04Z
+EXIT rc=0 (17:37:04)

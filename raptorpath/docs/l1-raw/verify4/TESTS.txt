@@ -1,0 +1,9 @@
+TEST main rc=101 wall=1191s passed=1035 failed=1 ignored=50 binaries=86 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=113s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+GATE fixed1 rc=0 lines=330 md5=2af16ecee0f0
+GATE fixed2 rc=0 lines=330 md5=2af16ecee0f0
+GATE-DETERMINISM fixed IDENTICAL
+GATE prefix1 rc=0 lines=330 md5=76e2fc6af4da
+GATE prefix2 rc=0 lines=330 md5=69a0dfa822c9
+GATE-DETERMINISM prefix DIFFER (4 lines)

@@ -85,7 +85,7 @@ run_arm() { # hint size label armenv armflags -> one warm tunnel, REPS stream me
     # echo, and an unguarded grep under set -e would kill the matrix).
     for lg in /tmp/tm-s.log /tmp/tm-c.log; do
         sed 's/\x1b\[[0-9;]*m//g' "$lg" 2>/dev/null \
-            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*|derived patience ACTIVE[^"]*|derived stall gauge ACTIVE[^"]*|estimator heavy-math cadence ACTIVE[^"]*|ack-merge ACTIVE[^"]*)' \
+            | grep -oE '(RWM_UNIFIED[^"]*|Realtime mode: auto-selecting streaming[^"]*|auto-selecting RLC windowed backend|unified span law ACTIVE[^"]*|unified overload shedding ACTIVE[^"]*|A\* send-rate anchor ACTIVE[^"]*|clock-gap estimator hygiene ACTIVE[^"]*|M\* peer-report RTT-feed suppression ACTIVE[^"]*|backend=[A-Za-z]+ sliding-window FEC mode|sliding-window FEC mode[^"]*|quinn congestion controller: BBR[^"]*|RWM_QUIC_CC=passthrough[^"]*|derived patience ACTIVE[^"]*|derived stall gauge ACTIVE[^"]*|estimator heavy-math cadence (ACTIVE|OFF)[^"]*|ack-merge ACTIVE[^"]*)' \
             | sort -u | sed "s|^|  ECHO $label ${size}B ${lg##*/}: |" || true
     done
     local p99s=() p50s=()
@@ -189,8 +189,14 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             # formality:
             #   mtu    compact DATA framing
             mtu)     AENV="RWM_WIRE_COMPACT=1"; AFLAGS="" ;;
-            #   est    estimator heavy-math cadence
+            #   est    estimator heavy-math cadence, set explicitly. Since
+            #          83462ae the cadence is the shipped default, so `est`
+            #          runs the same machine as `ship` (kept so older arm
+            #          lists still run); the per-ack control is `peracked`.
             est)     AENV="RWM_EST_CADENCE=1"; AFLAGS="" ;;
+            #   peracked  the per-ack BOCD update (the pre-83462ae default),
+            #          witnessed by the 'cadence OFF' echo on both endpoints
+            peracked) AENV="RWM_EST_CADENCE=0"; AFLAGS="" ;;
             #   bbrrs  burst-robust BBR substrate controller
             bbrrs)   AENV="RWM_QUIC_CC=bbr_rs"; AFLAGS="" ;;
             #   uni    removed: the dyn-store-cap phase's path set is the
@@ -200,8 +206,11 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             uni)
                 echo "ARM uni was removed: RWM_STORE_CAP_UNIFIED is gone, the store-cap path set is live_paths() unconditionally. Use 'ship'." >&2
                 continue ;;
-            #   prior  est cadence and emit batching both off (est=0 also turns
-            #          the composed pool-anchor default off)
+            #   prior  est cadence and emit batching both explicitly off. The
+            #          cadence is ON by default since 83462ae, so `prior` must
+            #          carry RWM_EST_CADENCE=0 (env-unset is no longer the
+            #          prior machine); the pool anchor no longer follows the
+            #          cadence (it resolves off unless RWM_POOL_ANCHOR=1).
             prior)   AENV="RWM_EST_CADENCE=0 RWM_EMIT_BATCH=0"; AFLAGS="" ;;
             #   am     RWM_ACK_MERGE=1 alone (the receiver's control cadence)
             am)      AENV="RWM_ACK_MERGE=1"; AFLAGS="" ;;

@@ -43,6 +43,7 @@ def gates(pa=0):
 WINL = TS + "reliable window mode (retain until acked): auto-selecting RLC windowed backend"
 CADL = TS + ("estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/"
              "loss-event cadence, accumulated counts)")
+OFFL = TS + "estimator heavy-math cadence OFF (RWM_EST_CADENCE=0: per-call BOCD update)"
 
 
 def pipe(p, b, h):
@@ -76,15 +77,20 @@ def acked(mbps, secs):
 SUMMARY = json.dumps({"summary": True, "dnf": 0})
 
 
-def logs(arm, cell, cad_echo=None, pa=0, winline=None):
+def logs(arm, cell, cad_echo=None, pa=0, winline=None, srv_echo=None):
+    """cad_echo / srv_echo: the cadence state the client / server log PRINTS
+    (ACTIVE / OFF / NONE); default = what the arm expects."""
     p, b, h, cad = sp.ARM_SPEC[arm]
     legs = sp.N_LEGS[cell]
     cad_echo = cad if cad_echo is None else cad_echo
+    srv_echo = cad_echo if srv_echo is None else srv_echo
     winline = (p == "window") if winline is None else winline
-    common = [gates(pa), pipe(p, b, h)] + ([WINL] if winline else []) + ([CADL] if cad_echo else [])
-    cli = common + [diag(20, [(0.0354, 0.0250)] * legs), diag(40, [(0.0354, 0.0260)] * legs),
-                    acked(88.0, 9.09), SUMMARY]
-    srv = list(common)
+    echo = {"ACTIVE": [CADL], "OFF": [OFFL], "NONE": []}
+    base_ = [gates(pa), pipe(p, b, h)] + ([WINL] if winline else [])
+    cli = base_ + echo[cad_echo] + [diag(20, [(0.0354, 0.0250)] * legs),
+                                     diag(40, [(0.0354, 0.0260)] * legs),
+                                     acked(88.0, 9.09), SUMMARY]
+    srv = base_ + echo[srv_echo]
     return drv(p, h, legs), cli, srv
 
 
@@ -98,14 +104,37 @@ check(abs(r["plu_med_p1"] - 0.0354) < 1e-12, "plu median")
 check(abs(r["coded_share"] - 10 / 1010) < 1e-12, "coded share = cod/(src+cod)")
 check(abs(r["feed_ratio_p0"] - 0.026 / 0.025) < 1e-9, "feed ratio = plc/truth")
 check(r["cpu_cli"] == 2.5 and abs(r["util"] - 2.5 / 9.09) < 1e-12, "cpu and util")
-d, c, s = logs("CAD", "c2-100")
-check(sp.make_row("c2-100", "CAD", 42, 1, 0, 12, d, c, s)["status"] == "LIVE", "CAD live with echo both ends")
-d, c, s = logs("CAD", "c2-100", cad_echo=False)
-check(sp.make_row("c2-100", "CAD", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "CAD without echo fails")
-d, c, s = logs("A2", "c2-100", cad_echo=True)
-check(sp.make_row("c2-100", "A2", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "echo on CTL fails")
-d, c, s = logs("CAD", "c2-100", pa=1)
-check(sp.make_row("c2-100", "CAD", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "pool anchor 1 fails")
+# the cadence witness is tri-state and two-sided (cadence ON by default since
+# 83462ae): the env-unset CTL expects ACTIVE, the per-ack arm PACK expects OFF
+check(sp.ARM_SPEC["A1"][3] == "ACTIVE" and sp.ARM_SPEC["A2"][3] == "ACTIVE"
+      and sp.ARM_SPEC["WINa"][3] == "ACTIVE" and sp.ARM_SPEC["PACK"][3] == "OFF",
+      f"arm cadence expectations {sp.ARM_SPEC}")
+check("CAD" not in sp.ARM_SPEC, "no CAD arm: the cadence is the default, the explicit arm is PACK")
+d, c, s = logs("A1", "c2-100")
+check(sp.make_row("c2-100", "A1", 42, 1, 0, 12, d, c, s)["status"] == "LIVE", "CTL live with ACTIVE both ends")
+d, c, s = logs("PACK", "c2-100")
+r = sp.make_row("c2-100", "PACK", 42, 1, 0, 12, d, c, s)
+check(r["status"] == "LIVE" and r["cadoff_cli"] and r["cadoff_srv"], f"PACK live with OFF both ends {r['problems']}")
+d, c, s = logs("PACK", "c2-100", cad_echo="NONE")
+check(sp.make_row("c2-100", "PACK", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "PACK without OFF echo fails")
+d, c, s = logs("PACK", "c2-100", cad_echo="ACTIVE")
+check(sp.make_row("c2-100", "PACK", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "ACTIVE on PACK fails")
+d, c, s = logs("PACK", "c2-100", srv_echo="ACTIVE")
+check(sp.make_row("c2-100", "PACK", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "PACK one-sided (srv ACTIVE) fails")
+d, c, s = logs("A2", "c2-100", cad_echo="OFF")
+check(sp.make_row("c2-100", "A2", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "OFF echo on CTL fails")
+d, c, s = logs("A2", "c2-100", cad_echo="NONE")
+check(sp.make_row("c2-100", "A2", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "ACTIVE missing on CTL fails")
+d, c, s = logs("A2", "c2-100", srv_echo="NONE")
+check(sp.make_row("c2-100", "A2", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "CTL one-sided ACTIVE fails")
+# NONE (a binary older than the two-way echo): neither line on either end
+row_ = {"cad_cli": False, "cad_srv": False, "cadoff_cli": False, "cadoff_srv": False}
+check(sp.cadence_witness(row_, "NONE") == [], "NONE holds with no echo")
+check(sp.cadence_witness(dict(row_, cad_srv=True), "NONE") != [], "NONE fails on an ACTIVE line")
+check(sp.cadence_witness(dict(row_, cadoff_cli=True), "NONE") != [], "NONE fails on an OFF line")
+check(sp.CAD_ECHO not in OFFL and sp.CAD_OFF_ECHO not in CADL, "the two echo strings do not overlap")
+d, c, s = logs("PACK", "c2-100", pa=1)
+check(sp.make_row("c2-100", "PACK", 42, 1, 0, 12, d, c, s)["status"] == "WITNESS-FAIL", "pool anchor 1 fails")
 d, c, s = logs("WINa", "c3-25")
 rw = sp.make_row("c3-25", "WINa", 42, 1, 0, 30, d, c, s)
 check(rw["status"] == "LIVE", f"WINa live {rw['problems']}")
@@ -117,7 +146,7 @@ check(sp.make_row("c3-25", "WINa", 42, 1, 0, 30, d, c, s)["status"] == "WITNESS-
 d, c, s = logs("A1", "c2-100")
 c = [ln.replace("pipeline=window backend=Rlc", "pipeline=block backend=RaptorQ") for ln in c]
 check(sp.make_row("c2-100", "A1", 42, 1, 0, 12, d, c, s)["status"] == "CONTAMINATED", "block echo contaminates")
-check(set(sp.ARMS) == {"A1", "A2", "CAD", "WINa"}, f"no block arm left: {sp.ARMS}")
+check(set(sp.ARMS) == {"A1", "A2", "PACK", "WINa"}, f"no block arm left: {sp.ARMS}")
 check(all(sp.ARM_SPEC[a][:2] == ("window", "Rlc") for a in sp.ARMS), "every arm is window/Rlc")
 
 
@@ -178,20 +207,20 @@ def run(rows, extra=""):
 dv, txt = run(base())
 line = [ln for ln in txt.splitlines() if ln.startswith("  MDE c2-100 gp ")][0]
 check(" 2.000 " in line and "2.0%" in line and "MDE-COMMITTED" in line, f"MDE formula: {line}")
-check(dv == "INERT-AS-DERIVED", f"all-equal CAD -> INERT, got {dv}")
+check(dv == "INERT-AS-DERIVED", f"all-equal PACK -> INERT, got {dv}")
 check("VERDICT-B" not in txt and "AUTO-BLOCK-C3" not in txt and "VERDICT-D INERT-AS-DERIVED" in txt,
       "only the (d) verdict is printed")
 
-# CAD better at c1d by more than MDE -> FLIP; worse at c8 -> WORSE-AT
-dv, _ = run(base({("c1d-400", "CAD"): 110.0}))
+# PACK better at c1d by more than MDE -> FLIP; worse at c8 -> WORSE-AT
+dv, _ = run(base({("c1d-400", "PACK"): 110.0}))
 check(dv.startswith("FLIP-RECOMMENDED") and "c1d-400:gp" in dv, f"flip: {dv}")
-dv, _ = run(base({("c1d-400", "CAD"): 110.0, ("c8-100", "CAD"): 95.0}))
+dv, _ = run(base({("c1d-400", "PACK"): 110.0, ("c8-100", "PACK"): 95.0}))
 check(dv == "WORSE-AT-c8-100", f"worse wins over better: {dv}")
 
 
-# the feed clause: CAD plc/truth 1.4 vs CTL 1.0 -> FEED-MOVED
+# the feed clause: PACK plc/truth 1.4 vs CTL 1.0 -> FEED-MOVED
 def feed(r):
-    if r["arm"] == "CAD" and r["cell"] == "c2-100":
+    if r["arm"] == "PACK" and r["cell"] == "c2-100":
         r["plc_p0"] = 0.035
         r["feed_ratio_p0"] = 0.035 / 0.025
     return r
@@ -206,7 +235,7 @@ check(dv == "FEED-MOVED-AT-c2-100:p0", f"feed moved: {dv}")
 def cpu_spread(r):
     if r["arm"] in ("A1", "A2"):
         r["cpu_cli"] = 5.0 + 0.1 * r["rep"]
-    if r["arm"] == "CAD":
+    if r["arm"] == "PACK":
         r["cpu_cli"] = 4.0
     return r
 
@@ -229,8 +258,8 @@ check("NOISE-BOUND" in [ln for ln in txt.splitlines() if ln.startswith("  MDE c8
 check(dv.startswith("UNSCOREABLE") and "c8-100" in dv, f"(d) unscoreable at noise-bound cell: {dv}")
 
 
-# min live: drop CAD rows at c2 to 2 -> (d) UNSCOREABLE there
-rows = [r for r in base() if not (r["cell"] == "c2-100" and r["arm"] == "CAD" and r["rep"] > 1)]
+# min live: drop PACK rows at c2 to 2 -> (d) UNSCOREABLE there
+rows = [r for r in base() if not (r["cell"] == "c2-100" and r["arm"] == "PACK" and r["rep"] > 1)]
 dv, _ = run(rows)
 check(dv.startswith("UNSCOREABLE") and "c2-100" in dv, f"min live: {dv}")
 

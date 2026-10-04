@@ -409,11 +409,17 @@ fn run_baseline_quic(paths: &[GateChannel], seed: u64) -> Outcome {
 // P_lost-gated exact-source retransmit, per-path estimators, E_i scheduling.
 // ---------------------------------------------------------------------------
 
-fn prewarm(ch: &GateChannel) -> LossEstimator {
+fn prewarm(ch: &GateChannel, now: Instant) -> LossEstimator {
     let mut est = LossEstimator::new();
+    // The estimator cadence (`RWM_EST_CADENCE`, default on) heartbeats on the
+    // clock it is fed: start it on the sim clock and feed `record_counts_at`
+    // the sim `now` (here and in the per-RTT flush below), or the heartbeat
+    // fires on wall time and two identical runs flush the BOCD at different
+    // points (same discipline as `store_cap_sf_bench`).
+    est.start_cadence_clock_at(now);
     let received = ((1.0 - ch.eps()) * 1000.0).round() as u32;
     for _ in 0..50 {
-        est.record_counts(1000, received);
+        est.record_counts_at(1000, received, now);
         est.record_rtt(ch.rtt());
         est.record_throughput(ch.capacity_bps.unwrap_or(1e9));
     }
@@ -523,7 +529,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
             c = c.with_link(bps, ch.queue);
         }
         chans.push(c);
-        ests.push(prewarm(ch));
+        ests.push(prewarm(ch, t0));
         cwnd.push(ch.bdp_cwnd() as f64 / 2.0);
         srtt.push(ch.rtt().as_secs_f64());
         debt.push(0.0);
@@ -1080,7 +1086,7 @@ fn run_fec(paths: &[GateChannel], seed: u64, cfg: &FecConfig) -> Outcome {
                     // feeds the GE estimator (unbiased burstiness — batch
                     // lumping would overestimate sigma2_burst and inflate
                     // the correction rate ~2x).
-                    ests[i].record_counts(sent_n, ok_n);
+                    ests[i].record_counts_at(sent_n, ok_n, now);
                     for &o in &batch_outcomes[i] {
                         ests[i].record_symbol(o);
                     }

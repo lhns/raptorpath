@@ -1,0 +1,330 @@
+warning: unnecessary parentheses around function argument
+  --> raptorpath/src/net/store_cap.rs:91:9
+   |
+91 |         ((pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+   |         ^
+92 |             as usize)
+93 |             .clamp(floor, ceiling)),
+   |                                   ^
+   |
+   = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+   |
+91 ~         (pooled_store_cap_unclamped(sum_cap, delta_cap, b_hint, n_live, pipe_sum, gain).ceil()
+92 |             as usize)
+93 ~             .clamp(floor, ceiling),
+   |
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1823:5
+     |
+1823 |     /// Congestion-aware NACK repair throttle.
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1824 |     let mut nack_congestion = NackCongestionState::new();
+     |     ----------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+     = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1827:5
+     |
+1827 |     /// NACK repairs sent in the current reporting period (ADR-0050 budget tracking).
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1828 |     let mut nack_repairs_this_period: u64 = 0;
+     |     ------------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1829:5
+     |
+1829 | /     /// Cached throttle/ADR-0050 budget state, refreshed every
+1830 | |     /// NACK_REPAIR_COOLDOWN_US (gap acks arrive far more often than the
+1831 | |     /// budget inputs move; recomputing per ack would just churn locks).
+     | |________________________________________________________________________^
+1832 |       let mut last_budget_refresh_us: u64 = 0;
+     |       ---------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1835:5
+     |
+1835 | /     /// When the tail sweep last fired (µs) — rearm point. Must advance
+1836 | |     /// on every fire even if the retransmit was skipped (cooldown/budget
+1837 | |     /// exhausted), or a past deadline keeps the timer arm permanently ready
+1838 | |     /// and the select! busy-spins, starving TUN reads.
+     | |_______________________________________________________^
+1839 |       let mut last_tail_sweep_us: u64 = 0;
+     |       ------------------------------------ rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1840:5
+     |
+1840 | /     /// The derived recovery round's one-shot mechanism-liveness echo at the
+1841 | |     /// sender site (ACTIVE + DIVERGED). Observation only.
+     | |__________________________________________________________^
+1842 |       let mut derived_round_echo = DerivedRoundEcho::default();
+     |       --------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1864:5
+     |
+1864 | /     /// SACK-clocked store release (RWM_STORE_SACK_RELEASE): seqs currently
+1865 | |     /// retained in `sent_store` but uncounted from the flow-control
+1866 | |     /// outstanding (SACKed by the receiver, cumulative frontier not yet
+1867 | |     /// past them). Invariant: subset of `sent_store` keys — maintained by
+1868 | |     /// marking only retained seqs and pruning with the same cumulative
+1869 | |     /// `split_off` twin. Empty whenever the gate is off.
+     | |_________________________________________________________^
+1870 |       let mut sack_released: BTreeSet<u64> = BTreeSet::new();
+     |       ------------------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1871:5
+     |
+1871 | /     /// DIAG: cumulative count of slots released by the law (mechanism
+1872 | |     /// liveness at the gauge — `srel=cur/cum`).
+     | |________________________________________________^
+1873 |       let mut sack_released_total: u64 = 0;
+     |       ------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused doc comment
+    --> raptorpath/src/net/mod.rs:1874:5
+     |
+1874 | /     /// Wire v9: the newest `(next_expected, received_above)` pair off the
+1875 | |     /// SACK-bearing acks -- the store gate's evidence past the SACK prefix
+1876 | |     /// cap (`store_gate_released`). Stays at its default (no evidence)
+1877 | |     /// whenever the release law is off.
+     | |________________________________________^
+1878 |       let mut above_report = AboveReport::default();
+     |       ---------------------------------------------- rustdoc does not generate documentation for statements
+     |
+     = help: use `//` for a plain comment
+warning: unused import: `FecBackend`
+  --> raptorpath/src/scheduler/mod.rs:45:18
+   |
+45 | use crate::fec::{FecBackend, WireSymbol};
+   |                  ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+warning: variable does not need to be mutable
+   --> raptorpath/src/net/mod.rs:751:9
+    |
+751 |     let mut transport = QuicTransport::new(
+    |         ----^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+warning: use of deprecated method `tun::Configuration::name`: Since the API `name` may have an easy name conflict when IDE prompts, it is replaced by `tun_name` for better coding experience
+  --> raptorpath/src/tun/linux/mod.rs:12:10
+   |
+12 |         .name(&config.name)
+   |          ^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+warning: unused variable: `epsilon`
+   --> raptorpath/src/net/emit_source.rs:710:46
+    |
+710 |                 let (srtt_secs, rttvar_secs, epsilon) =
+    |                                              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_epsilon`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+warning: unused variable: `batch_path_id`
+    --> raptorpath/src/net/receiver.rs:1146:21
+     |
+1146 |                 let batch_path_id = batch.path_id;
+     |                     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_batch_path_id`
+warning: field `hint` is never read
+  --> raptorpath/src/control/fec_rate.rs:88:5
+   |
+80 | pub struct FecRateController {
+   |            ----------------- field in this struct
+...
+88 |     hint: ProtocolHint,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+warning: field `nack_expected` is never read
+   --> raptorpath/src/control/fec_rate.rs:800:5
+    |
+798 | pub struct BudgetAllocator {
+    |            --------------- field in this struct
+799 |     total_budget: f64,
+800 |     nack_expected: f64,
+    |     ^^^^^^^^^^^^^
+warning: method `final_done` is never used
+   --> raptorpath/src/net/recv_block.rs:113:19
+    |
+ 77 | impl RecvDiagBlock {
+    | ------------------ method in this implementation
+...
+113 |     pub(crate) fn final_done(&self) -> bool {
+    |                   ^^^^^^^^^^
+warning: method `armed` is never used
+   --> raptorpath/src/net/holddown.rs:224:19
+    |
+195 | impl HoldDownGauge {
+    | ------------------ method in this implementation
+...
+224 |     pub(crate) fn armed(&self) -> bool {
+    |                   ^^^^^
+warning: methods `is_empty`, `contains_key`, and `iter` are never used
+   --> raptorpath/src/net/seq_ring.rs:53:12
+    |
+ 41 | impl<V> SeqRing<V> {
+    | ------------------ methods in this implementation
+...
+ 53 |     pub fn is_empty(&self) -> bool {
+    |            ^^^^^^^^
+...
+ 74 |     pub fn contains_key(&self, seq: &u64) -> bool {
+    |            ^^^^^^^^^^^^
+...
+182 |     pub fn iter(&self) -> impl Iterator<Item = (u64, &V)> + '_ {
+    |            ^^^^
+warning: `raptorpath` (lib) generated 19 warnings (run `cargo fix --lib -p raptorpath` to apply 5 suggestions)
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:200:12
+    |
+178 | impl SimChannel {
+    | --------------- associated items in this implementation
+...
+200 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+213 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+226 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+239 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+256 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+261 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+323 |     pub fn in_flight_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^
+...
+333 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+...
+338 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+warning: multiple associated items are never used
+   --> raptorpath/tests/common/mod.rs:394:12
+    |
+366 | impl ReliableSimChannel {
+    | ----------------------- associated items in this implementation
+...
+394 |     pub fn datacenter(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^
+...
+407 |     pub fn wifi(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^
+...
+420 |     pub fn lte(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^
+...
+433 |     pub fn satellite(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^
+...
+452 |     pub fn wifi_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^^
+...
+457 |     pub fn lte_congested(clock: Arc<MockClock>, seed: u64) -> Self {
+    |            ^^^^^^^^^^^^^
+...
+550 |     pub fn total_unique(&self) -> u64 {
+    |            ^^^^^^^^^^^^
+...
+555 |     pub fn base_delay(&self) -> Duration {
+    |            ^^^^^^^^^^
+...
+565 |     pub fn tail_drop_count(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^
+warning: function `make_wire_symbol` is never used
+   --> raptorpath/tests/common/mod.rs:586:8
+    |
+586 | pub fn make_wire_symbol(id: u32, repair: bool) -> WireSymbol {
+    |        ^^^^^^^^^^^^^^^^
+warning: function `make_source_batch` is never used
+   --> raptorpath/tests/common/mod.rs:591:8
+    |
+591 | pub fn make_source_batch(count: u32) -> Vec<WireSymbol> {
+    |        ^^^^^^^^^^^^^^^^^
+warning: function `ge_for_target_loss` is never used
+   --> raptorpath/tests/common/mod.rs:607:8
+    |
+607 | pub fn ge_for_target_loss(target_loss: f64, mean_burst_len: f64) -> GilbertElliottChannel {
+    |        ^^^^^^^^^^^^^^^^^^
+warning: method `fmt_ci` is never used
+   --> raptorpath/tests/common/mod.rs:662:12
+    |
+625 | impl TrialStats {
+    | --------------- method in this implementation
+...
+662 |     pub fn fmt_ci(&self) -> String {
+    |            ^^^^^^
+warning: `raptorpath` (test "gate_suite") generated 6 warnings
+running 16 tests
+test g2_estimator_converges_per_channel ... C2-WiFi: p=0.0130 p̂=0.0139 | q=0.50 q̂=0.52 | ε=0.0253 ε̂=0.0255
+C3-LTE: p=0.0200 p̂=0.0171 | q=0.40 q̂=0.41 | ε=0.0476 ε̂=0.0412
+C4-Sat: p=0.0300 p̂=0.0246 | q=0.30 q̂=0.27 | ε=0.0909 ε̂=0.0830
+C5-BadWiFi: p=0.0530 p̂=0.0537 | q=0.30 q̂=0.29 | ε=0.1501 ε̂=0.1441
+ok
+test g2_outage_reaction_and_recovery ... outage detected (ε̂ > 0.5) after 7 batches
+recovery (ε̂ < 0.1) after 16 good batches
+ok
+test g2_rate_reconverges_after_regime_change ... re-convergence after regime change: 1 batches (r_low=0.302, r_high=0.500)
+ok
+test g2_spare_capacity_gate_suppresses_fec ... ok
+test gate_c1_dc_tie ... C1-DC(tie): completion fec=0.021s±0.000 simretx=0.027s±0.008 | p99 fec=2.2ms±0.5 simretx=5.3ms±2.0 | overhead fec=0.2% simretx=0.1%
+ok
+test gate_c2_wifi ... C2-WiFi: completion fec=0.194s±0.001 simretx=0.818s±0.116 | p99 fec=22.6ms±1.2 simretx=52.8ms±8.5 | overhead fec=25.8% simretx=2.6%
+ok
+test gate_c3_lte ... C3-LTE: completion fec=0.958s±0.005 simretx=3.756s±0.228 | p99 fec=84.2ms±3.5 simretx=271.5ms±22.8 | overhead fec=29.4% simretx=5.1%
+ok
+test gate_c4_satellite ... C4-Sat: completion fec=1.221s±0.003 simretx=23.005s±1.564 | p99 fec=263.9ms±5.6 simretx=1564.7ms±75.3 | overhead fec=42.3% simretx=9.6%
+ok
+test gate_c5_bad_wifi ... C5-BadWiFi: completion fec=0.395s±0.004 simretx=2.256s±0.095 | p99 fec=29.9ms±2.3 simretx=81.0ms±1.6 | overhead fec=48.6% simretx=17.5%
+ok
+test gate_c7_dual_symmetric ... C7-dual-sym: completion fec=0.110s±0.004 simretx=0.405s±0.070 | p99 fec=25.3ms±2.9 simretx=59.4ms±9.8 | overhead fec=27.3% simretx=2.7%
+C7 single simretx completion: 0.867s±0.085
+ok
+test gate_c8_dual_asymmetric_rtt ... C8-dual-asym: completion fec=0.178s±0.002 simretx=0.695s±0.084 | p99 fec=38.0ms±1.7 simretx=218.3ms±53.1 | overhead fec=31.5% simretx=2.8%
+C8 single simretx completion: 0.816s±0.093
+ok
+test gate_c9_outage_recovery ... trial 0: steady=44.6/bucket, path0 back at 0.311s, goodput back 29ms later
+trial 1: steady=44.4/bucket, path0 back at 0.307s, goodput back 33ms later
+trial 2: steady=43.2/bucket, path0 back at 0.307s, goodput back 33ms later
+trial 3: steady=44.8/bucket, path0 back at 0.305s, goodput back 35ms later
+trial 4: steady=44.4/bucket, path0 back at 0.310s, goodput back 30ms later
+trial 5: steady=44.0/bucket, path0 back at 0.312s, goodput back 28ms later
+trial 6: steady=44.2/bucket, path0 back at 0.311s, goodput back 29ms later
+trial 7: steady=46.0/bucket, path0 back at 0.307s, goodput back 53ms later
+trial 8: steady=45.8/bucket, path0 back at 0.305s, goodput back 55ms later
+trial 9: steady=44.2/bucket, path0 back at 0.308s, goodput back 32ms later
+ok
+test gate_vs_simquic_bulk_completion ... C2-WiFi Bulk vs SimQuic: completion fec=0.173s±0.008 simquic=0.175s±0.009 (0.987x)
+C3-LTE Bulk vs SimQuic: completion fec=0.805s±0.012 simquic=0.824s±0.016 (0.977x)
+C4-Sat Bulk vs SimQuic: completion fec=1.348s±0.118 simquic=1.491s±0.270 (0.904x)
+C5-BadWiFi Bulk vs SimQuic: completion fec=0.329s±0.004 simquic=0.331s±0.008 (0.994x)
+ok
+test gate_vs_simquic_multipath ... C7-dual-sym vs SimQuic-single: completion fec=0.109s±0.004 simquic=0.172s±0.005 (0.64x)
+C8-dual-asym vs SimQuic-single: completion fec=0.177s±0.002 simquic=0.170s±0.008 (1.04x)
+ok
+test gate_vs_simquic_p99 ... C2-WiFi vs SimQuic: p99 fec=23.2ms±1.0 simquic=60.8ms±6.8 (0.38x) | completion fec=0.194s simquic=0.172s
+C3-LTE vs SimQuic: p99 fec=80.2ms±2.9 simquic=215.0ms±24.2 (0.37x) | completion fec=0.957s simquic=0.830s
+C5-BadWiFi vs SimQuic: p99 fec=31.6ms±3.8 simquic=85.9ms±9.2 (0.37x) | completion fec=0.393s simquic=0.335s
+ok
+test simquic_sanity ... ignored
