@@ -8,9 +8,8 @@
 #   env RWM_OOO=1     -> add --window-out-of-order (H->inf, decode-on-total)
 #   env RWM_EXTRA=".." -> extra CLI args appended to server+client (raise-r arm)
 #   env RWM_PLACE_T=.. -> placement-temperature override (via 7th arg too)
-#   env RWM_C_PIPELINE=block|window (default window) -> which reliable pipeline
-#                        the engine runs; `block` drops --window-reliable and
-#                        the generation flag (the block re-test's BLK arm)
+#   env RWM_C_PIPELINE=window (the only value) -> `block` is refused: the
+#                        block pipeline was deleted (ADR-0069, executed)
 #
 #   C7 = c2 c2   C8 = c2 c3
 #
@@ -75,25 +74,20 @@ GEN_FLAG="--window-generation-coding"
 # read from the saved copy.
 [[ "$GEN_GATE" == "0" ]] && GEN_FLAG=""
 
-# The pipeline arm (docs/status.md §4, the block-default re-test). Not named
-# RWM_PIPELINE: that is an engine gate and the binary inherits this script's
-# environment. `window` (the default) passes --window-reliable. `block` omits
-# --window-reliable and the generation flag (generation requires the window
-# pipeline), leaving the engine on its block pipeline (RaptorQ + block ARQ);
-# the cod>0 guard below is skipped with the generation flag. Echoed on the
-# `--- RWM-C perf` line.
+# The pipeline arm. Not named RWM_PIPELINE: that is an engine gate and the
+# binary inherits this script's environment. The block pipeline is deleted
+# (ADR-0069, executed); its re-test is done and lives in history, so `block`
+# is refused rather than silently run as the window. `window` passes
+# --window-reliable (ρ = 1, the Bulk/Auto default — explicit so the Realtime
+# hint is retain-until-acked here too). Echoed on the `--- RWM-C perf` line.
 PIPELINE="${RWM_C_PIPELINE:-window}"
 case "$PIPELINE" in
     window) WR_FLAG="--window-reliable" ;;
     block)
-        WR_FLAG=""
-        GEN_FLAG=""
-        if [[ -n "$OOO_FLAG" ]]; then
-            echo "RWM_C_PIPELINE=block with RWM_OOO=1: --window-out-of-order needs the window pipeline" >&2
-            exit 2
-        fi
+        echo "RWM_C_PIPELINE=block: the block pipeline was deleted (ADR-0069, executed); there is no block arm to run" >&2
+        exit 2
         ;;
-    *) echo "unknown RWM_C_PIPELINE '$PIPELINE' (want block|window)" >&2; exit 2 ;;
+    *) echo "unknown RWM_C_PIPELINE '$PIPELINE' (want window)" >&2; exit 2 ;;
 esac
 # Force the cumulative coded-emission counter on so the sanity guard (below)
 # can assert cod>0 on the sender.  RWM_PFRAC makes run_window_sender print

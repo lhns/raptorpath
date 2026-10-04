@@ -7,18 +7,20 @@ ledger this replaces is in git history (ledger at ac1aed1).
 
 ## 1. The default stack (as the code resolves it)
 
-**Pipeline routing** (`net/mod.rs` `is_window_mode`,
-`(hint == Realtime || window_reliable) && backend.is_streaming()`):
+**Pipeline routing**: one pipeline, the sliding window, for every hint
+(ADR-0069, executed in `dacfd7c`). `net::pipeline_backend` accepts only the
+streaming RLC codec; a block-only backend, `interleave_depth` or
+`mp_block_affinity` is a startup error. The retention contract ρ is the
+named point's preset, an independent dial that never selects a pipeline:
 
-| hint | default route | with `--window-reliable` |
+| hint | default | with `--window-reliable` |
 |---|---|---|
-| Realtime | window pipeline, unified RLC span machine, EVICT retention (ρ < 1) | window pipeline, retain-until-acked (ρ = 1) |
-| Auto (the default hint) | **block pipeline**, RaptorQ, block ARQ | window pipeline, RLC auto-selected, retain-until-acked |
-| Bulk | **block pipeline**, RaptorQ, block ARQ | as Auto |
+| Realtime | window, unified RLC span machine, EVICT retention (ρ < 1) | retain-until-acked (ρ = 1) |
+| Auto (the default hint) | window, RLC, retain-until-acked (ρ = 1) | unchanged |
+| Bulk | as Auto | unchanged |
 
-`window_reliable` defaults to `false` (`config.rs`) and `fec_backend` to the
-block-only RaptorQ; with the backend unset the window pipeline auto-selects RLC.
-Pinned by `default_config_routes_bulk_and_auto_to_the_block_pipeline` (ADR-0069).
+Pinned by `default_config_routes_every_hint_to_the_window_pipeline` and
+`block_only_config_is_an_error_naming_adr_0069`.
 
 **Wire and substrate.** `PROTOCOL_VERSION = 9` (per-path `path_seq`,
 `next_expected`, `received_above`); compact DATA framing
@@ -92,11 +94,13 @@ battery's "coded symbols are 86–90 % retransmits" was read on the old meaning.
 
 ### 3.3 NO-MODE-SWITCH debts (hint- or ρ-keyed code paths)
 
-Each is a behaviour step at a preset point, which CLAUDE.md forbids.
+Each is a behaviour step at a preset point, which CLAUDE.md forbids. (The
+block/window pipeline fork, `is_window_mode`, and the block hint tables —
+block size, flush timeout, interleave depth — were removed with the block
+pipeline in `dacfd7c`.)
 
 | site | what it switches |
 |---|---|
-| `net/mod.rs` `is_window_mode` | the block/window pipeline fork (Bulk/Auto vs Realtime); §4 decides it |
 | `net/emit_source.rs` (`protocol_hint == Realtime`) | Realtime duplicate source send, a redundancy decision priced by nothing |
 | `net/sender_policy.rs` `use_packing` | symbol packing on Realtime only |
 | `scheduler/copa.rs` `queue_target_mult` | Copa queue target 1.08 / 1.125 / 1.25 by hint |
@@ -166,9 +170,9 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 |---|---|
 | BOCD `predictive_loss_upper` (`plu=`) reads ≈ 0.0354 on clean links: a floor from the prior and the run-length mix, unverified | `/home/vibe/s9/out-main/c1dual400-fix-r*-c.log` |
 | balanced v9 striping costs ≈ 1.34× sender kernel CPU at the dual c1 cell | `/home/vibe/s9/out-perf/perf-c1dual-{base,fix}-r*.flat.txt` |
-| Auto on block at c3 is congestion-window-bound at 7.2 Mbit/s (bulk block 17), not retention-bound | `/home/vibe/v1b/out/dbg-c3autoblk-r*-c.log` |
-| the per-batch `Ack` arm (block pipeline, or `RWM_ACK_MERGE=0`) releases in-flight from the raw wire counts, `received + (expected − received)⁺`: under reorder it releases more than was sent (6,8,7,9 → 5 for 4; 6 before the tracker fix). The merged `WindowAck` arm releases through the credited pair and closes exactly | `s10_per_batch_ack_carries_the_late_arrival_credit` (loss feed only; the release is not asserted) |
-| c8 Auto-on-block goodput is bimodal: 32.7 and 35.2 Mbit/s plain, 57.6 in the debug run | `/home/vibe/v1b/out/c8autoblk-r*-drv.out` |
+| Auto on block at c3 is congestion-window-bound at 7.2 Mbit/s (bulk block 17), not retention-bound. **Moot**: the block pipeline is removed (`dacfd7c`) | `/home/vibe/v1b/out/dbg-c3autoblk-r*-c.log` |
+| the per-batch `Ack` arm (`RWM_ACK_MERGE=0`; formerly also the block pipeline) releases in-flight from the raw wire counts, `received + (expected − received)⁺`: under reorder it releases more than was sent (6,8,7,9 → 5 for 4; 6 before the tracker fix). The merged `WindowAck` arm releases through the credited pair and closes exactly | `s10_per_batch_ack_carries_the_late_arrival_credit` (loss feed only; the release is not asserted) |
+| c8 Auto-on-block goodput is bimodal: 32.7 and 35.2 Mbit/s plain, 57.6 in the debug run. **Moot**: the block pipeline is removed (`dacfd7c`) | `/home/vibe/v1b/out/c8autoblk-r*-drv.out` |
 
 ### 3.8 Finding: every netem-counter loss truth was low by the GSO factor
 

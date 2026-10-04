@@ -317,10 +317,12 @@ impl FecRateController {
         _enable_pi_feedback: bool,
         symbol_size: u16,
     ) -> Self {
+        // RLC's codec overhead. The block-only codecs (RaptorQ, RS) cannot
+        // run since ADR-0069 (`net::pipeline_backend` rejects them) and
+        // carry none.
         let codec_overhead = match backend {
-            FecBackend::RaptorQ => 0.01,
-            FecBackend::ReedSolomon => 0.0,
             FecBackend::Rlc => 0.004,
+            FecBackend::RaptorQ | FecBackend::ReedSolomon => 0.0,
         };
 
         // The contract's δ maps to target_tail_loss, not an additive offset:

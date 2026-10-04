@@ -124,7 +124,7 @@ pub struct RuntimeGates {
     /// each path's send-interval anchor, not the ack-interval max.
     pub pool_anchor: bool,
     /// `RWM_ACK_MERGE` (on, shipped): window mode drops the per-batch `Ack`; its payload rides
-    /// `WindowAck`'s cumulative counters. Block mode keeps it for `block_arq`'s dup-ack channel.
+    /// `WindowAck`'s cumulative counters.
     pub ack_merge: bool,
     /// `RWM_LOSS_SENT_TRUTH` (off, arm): loss estimator fed the sender's `symbols_sent` delta.
     pub loss_sent_truth: bool,

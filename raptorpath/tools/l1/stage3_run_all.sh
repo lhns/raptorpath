@@ -22,7 +22,7 @@
 #   4. the battery (stage3_battery.sh), soft-truncated at (rep, seed)
 #      boundaries so the crown's reserve survives;
 #   5. the crown spot (crownspot8.sh) if its reserve is intact;
-#   6. score -> score.txt (stage3_parse.py score; blockretest_parse.py crown).
+#   6. score -> score.txt (stage3_parse.py score; stage3_parse.py crown).
 #
 # BUDGET RULE (pre-registered): R_est = R_PRIOR * max(1, c_meas / C_PRED),
 # where c_meas is the smoke battery's summed invocation wall and C_PRED its
@@ -44,7 +44,7 @@ cd "$HERE" || { echo "ABORT-CD $HERE"; exit 3; }
 source ./lib_battery.sh
 declare -F crlf_guard >/dev/null || { echo "ABORT-LIB lib_battery.sh did not load"; exit 3; }
 crlf_guard lib.sh lib_battery.sh stage3_run_all.sh stage3_battery.sh stage3_parse.py \
-    blockretest_parse.py crownspot8.sh tail_matrix.sh perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
+    crownspot8.sh tail_matrix.sh perf_rwm_c.sh topo.sh topo_dual.sh l1common.py
 ROOT="${S3_ROOT:?S3_ROOT}"
 : "${S3_HARD_DEADLINE:?S3_HARD_DEADLINE (epoch seconds) is required}"
 RUN="$ROOT/run"
@@ -53,7 +53,7 @@ BIN="$ROOT/bin/raptorpath"
 SOFT=$(( S3_HARD_DEADLINE - 600 ))
 R_PRIOR=1200
 C_PRED=128
-SMOKE_PLAN="c2-100:A1 c7-100:A2 c1d-400:CAD c8-100:BLKb c7-100:WINa c3-25:BLKa"
+SMOKE_PLAN="c2-100:A1 c7-100:A2 c1d-400:CAD c7-100:WINa"
 LAUNCH_ISO=$(date -u +%FT%TZ)
 mkdir -p "$RUN" "$RUN/crown" "$ROOT/bin" 2>/dev/null
 
@@ -221,7 +221,7 @@ fi
 # ── 6. SCORE + SENTINEL ─────────────────────────────────────────────────
 { python3 ./stage3_parse.py score "$RUN/s3.log"
   echo
-  [ -f "$RUN/crown/crown-s42.log" ] && python3 ./blockretest_parse.py crown "$RUN/crown/crown-s42.log" "$RUN/crown/crown-s7.log"
+  [ -f "$RUN/crown/crown-s42.log" ] && python3 ./stage3_parse.py crown "$RUN/crown/crown-s42.log" "$RUN/crown/crown-s7.log"
 } > "$RUN/score.txt" 2>&1
 SOFT_TRUNC=0
 grep -aq "TRUNCATED-AT-REP-BOUNDARY" "$RUN/s3.log" 2>/dev/null && SOFT_TRUNC=1

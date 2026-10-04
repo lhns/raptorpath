@@ -3,15 +3,16 @@
 //! Ties together TUN interface, FEC codec, scheduler, controller, and transport
 //! into the main data path:
 //!
+//! One pipeline for every hint (the sliding window; ADR-0069 deleted the
+//! block pipeline):
+//!
 //! Sender:
-//!   TUN → packet framing → block assembly → FEC encode → scheduler → QUIC paths
+//!   TUN → window framing → RLC window encode → path selection → QUIC paths
 //!
 //! Receiver:
-//!   QUIC paths → FEC decode → packet extraction → TUN injection
+//!   QUIC paths → window decode → in-order / unordered delivery → TUN injection
 
 pub mod ackdiag;
-pub mod block_arq;
-pub mod block_sender;
 pub mod control_msg;
 pub(crate) mod delivery;
 pub mod cpuprof;
@@ -19,7 +20,6 @@ pub mod diag;
 pub mod emit_source;
 pub mod eta;
 pub mod framing;
-pub mod interleave;
 pub mod lat;
 pub mod late;
 pub mod receiver;
@@ -56,15 +56,13 @@ pub use report::*;
 mod sack;
 pub use sack::*;
 
-use block_arq::BlockArq;
-use block_sender::run_block_sender;
 use diag::{DiagCtx, DiagInputs, DiagState};
 use emit_source::{SenderCtx, SenderState, emit_source};
 use sender_policy::SenderPolicy;
 
 use crate::control::FecRateController;
 use crate::control::fec_rate::ProtocolHint;
-use crate::fec::{EncodingParams, FecBackend, FecDecoder, FecStream};
+use crate::fec::FecBackend;
 use crate::fec::{RlcWindowDecoder, RlcWindowEncoder, WindowDecoder, WindowEncoder};
 use crate::monitor::stats::{CorrectionKind, SharedStats};
 use crate::routing::{self, ManagedDns, ManagedRoute};
@@ -97,21 +95,21 @@ pub struct PeerConfig {
     pub routes: Vec<String>,
     /// DNS server to configure on the tunnel interface
     pub dns: Option<IpAddr>,
-    /// Block interleaving depth (1 = disabled, 2+ = interleave across N blocks)
-    pub interleave_depth: u32,
     /// Optional path to a pinned TLS certificate for server verification
     pub pin_cert: Option<std::path::PathBuf>,
-    /// Which FEC backend to use (RaptorQ, RS or RLC)
+    /// The FEC backend. Must be streaming-native (`FecBackend::Rlc`): the
+    /// block-only codecs went with the block pipeline (ADR-0069), and
+    /// naming one is a startup error (`pipeline_backend`).
     pub fec_backend: FecBackend,
-    /// Whether the user explicitly set fec_backend (vs defaulting to RaptorQ)
-    pub fec_backend_explicit: bool,
-    /// Retain-until-acked policy on the sliding-window pipeline (paper §5.1).
-    /// Routes Bulk/Auto onto the window pipeline (RLC unless fec_backend
-    /// overrides). Retention lives at the ARQ layer: a sent-data store
+    /// Retain-until-acked policy on the sliding-window pipeline (paper §5.1):
+    /// the retention contract ρ = 1, an independent dial that never selects
+    /// a pipeline. `config::resolve` presets it per named point (true at
+    /// Bulk/Auto, false = EVICT at Realtime). Retention lives at the ARQ
+    /// layer: a sent-data store
     /// retains source bytes until acked (targeted retransmit for aged holes;
     /// store-full ⇒ TUN-read backpressure) while the coding window slides
     /// freely as the FEC horizon; the receiver holds delivery at holes until
-    /// recovered, never force-delivering past them. Default false.
+    /// recovered, never force-delivering past them.
     pub window_reliable: bool,
     /// Enable PI feedback loop in FEC rate controller
     pub enable_pi_feedback: bool,
@@ -129,9 +127,6 @@ pub struct PeerConfig {
     /// `RWM_COMPLETION_EXPOSURE` is armed, so the shipped engine is
     /// byte-identical without it. See [`CompletionFeed`].
     pub completion_feed: Option<Arc<CompletionFeed>>,
-    /// Block-granular multipath source affinity (paper §5.5, in-order
-    /// coupling). Default true; false = per-symbol striping (ablation).
-    pub mp_block_affinity: bool,
     /// Out-of-order object delivery on the reliable window (the H → ∞
     /// corner, paper §4.11). Requires `window_reliable`; set only by the
     /// native object API (perf/MemTun), never the TCP-in-tunnel path. The
@@ -169,76 +164,34 @@ pub struct PeerConfig {
     pub window_systematic_repair: bool,
 }
 
-/// Block assembly profile derived from the protocol hint.
-struct BlockProfile {
-    max_block_size: usize,
-    flush_timeout: Duration,
-    symbol_size: u16,
-}
-
-impl BlockProfile {
-    fn from_hint(hint: ProtocolHint) -> Self {
-        match hint {
-            ProtocolHint::Realtime => Self {
-                max_block_size: 4 * 1024,           // 4KB — sub-5ms latency
-                flush_timeout: Duration::from_millis(2),
-                symbol_size: 512,                    // smaller symbols for small packets
-            },
-            ProtocolHint::Bulk => Self {
-                max_block_size: 64 * 1024,          // 64KB — max throughput
-                // 5ms: while the Copa gate pauses TUN reads, block assembly
-                // stalls mid-block; a 50ms flush would serialize with the CC
-                // window and clump the pipeline into ~300ms ack bursts at C2.
-                // 5ms bounds the assembly wait well under one C2 RTT while
-                // still filling 64KB blocks at any bulk-transfer rate.
-                flush_timeout: Duration::from_millis(5),
-                symbol_size: 1200,
-            },
-            ProtocolHint::Auto => Self {
-                max_block_size: 16 * 1024,          // 16KB — balanced
-                flush_timeout: Duration::from_millis(10),
-                symbol_size: 1200,
-            },
-        }
+/// Source-symbol size at each named point (bytes). Realtime's small packets
+/// ride 512-byte symbols, Bulk/Auto 1200 (the TUN MTU clamp is
+/// `symbol_size - 4`, so a full-size Bulk/Auto packet is not fragmented).
+/// A table of preset VALUES at the named points, not a code path.
+fn symbol_size_for_hint(hint: ProtocolHint) -> u16 {
+    match hint {
+        ProtocolHint::Realtime => 512,
+        ProtocolHint::Bulk | ProtocolHint::Auto => 1200,
     }
 }
 
-/// Decoder eviction timeout for incomplete blocks (ADR-0004).
-const DECODER_TIMEOUT: Duration = Duration::from_secs(30);
-/// Decoder cleanup interval.
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
-/// Maximum number of concurrent active decoders. When exceeded, the oldest
-/// incomplete decoder is evicted before creating a new one. Prevents OOM from
-/// a malicious peer opening unlimited block_ids.
-const MAX_CONCURRENT_DECODERS: usize = 10_000;
 /// RTCP-style report interval (how often we send PathReport + Ping).
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
 /// Maximum window size for sliding-window FEC (source symbols in encoder window).
 const MAX_WINDOW_SIZE: usize = 200;
 // Reorder-buffer defaults are supplied by `config::resolve` and reach the
 // receiver as `config.reorder_timeout_ms` / `config.reorder_max_size`.
-/// Block-mode in-order delivery: max decoded-block BYTES held for ordering
-/// before force-drain. A byte bound, not an entry count, so small-block
-/// geometries (Auto 16 KiB, Realtime 4 KiB) get the same hold horizon in
-/// bytes as Bulk. Same shape as the sender's `RETAIN_BUDGET_BYTES`: the
-/// 4 MiB data figure (formerly 64 × 64 KB blocks) plus the per-entry
-/// charge of the most full blocks any profile can put in it, so Bulk still
-/// holds its 64 full blocks:
-///   BLOCK_REORDER_MAX_BYTES = RETAIN_MAX_BYTES
-///                           + ENTRY_OVERHEAD × (RETAIN_MAX_BYTES / BLOCK_MIN_PROFILE_BLOCK_SIZE)
-const BLOCK_REORDER_MAX_BYTES: usize = block_arq::RETAIN_MAX_BYTES
-    + reorder::ENTRY_OVERHEAD
-        * (block_arq::RETAIN_MAX_BYTES / block_arq::BLOCK_MIN_PROFILE_BLOCK_SIZE);
 /// Bounds for the SRTT-adaptive in-order hold (4×SRTT, clamped). The hold
 /// must survive two ARQ repair rounds, not one: each round is ~2×SRTT
 /// (loss declared after ~1.5×SRTT via Ack diff/timeout + 0.5×SRTT for the
 /// repair flight) and under GE burst loss the first repair itself dies
 /// with the in-burst probability (~50% at C2). A hold expiry is a real hole
 /// for the inner TCP (SACK recovery halves the inner cwnd for the rest of
-/// the transfer). The cost of a longer hold is paid only when a block is
-/// truly unrecoverable (bounded stall, then force-delivery).
-const BLOCK_REORDER_MIN_HOLD: Duration = Duration::from_millis(60);
-const BLOCK_REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
+/// the transfer). The cost of a longer hold is paid only when a symbol is
+/// truly unrecoverable (bounded stall, then force-delivery). Read by the
+/// EVICT (ρ < 1) in-order hold and the shed law (`net/shed.rs`).
+const REORDER_MIN_HOLD: Duration = Duration::from_millis(60);
+const REORDER_MAX_HOLD: Duration = Duration::from_millis(300);
 /// Per-report gap cap: at most this many missing-seq gaps are acted on per
 /// report — the sender's [`sack_to_gaps`] inversion of one WindowAck's SACK
 /// ranges (the NACK repair loop's per-report work) and the receiver's
@@ -272,13 +225,6 @@ pub const NACK_RETX_COOLDOWN_FLOOR_US: u64 = 10_000;
 /// reorder hold (60ms floor) plus the inner-TCP RTO (~200ms).
 pub const TAIL_SWEEP_MIN_US: u64 = 25_000;
 pub const TAIL_SWEEP_MAX_US: u64 = 100_000;
-/// Upper clamp on the block-mode idle re-announce cadence. The
-/// re-announce timeout is otherwise 1.5×SRTT, but under a stalled block the
-/// per-path SRTT estimate inflates well past the true RTT (C3: 40 ms link,
-/// SRTT seen at 250–460 ms), which would stretch each recovery round to
-/// ~0.7 s and risk exhausting the round budget before the block recovers.
-/// Capping the cadence keeps recovery brisk (~sub-second) regardless.
-const REANNOUNCE_TIMEOUT_MAX: Duration = Duration::from_millis(200);
 
 /// Congestion-aware NACK repair throttle.
 ///
@@ -387,12 +333,6 @@ const IDLE_RECOVERY_FLOOR: f64 = 0.1;
 /// exceeds a LAN RTT while staying well under the QUIC idle timeout.
 const IDLE_RECOVERY_GAP_FLOOR_US: u64 = 20_000;
 
-/// Returns true if this config should use sliding-window mode instead of block mode.
-///
-/// The pipeline shape follows from the algorithm's capabilities: streaming-native
-/// backends (RLC) use the sliding-window pipeline; block-only backends
-/// (RaptorQ, Reed-Solomon) always use the block pipeline.
-///
 /// The unified machine gate (paper §5.2). When set (the default), (a) the
 /// receive path uses one decoder (`UnifiedDecoder` — the global sparse-aware
 /// closure) for both the sliding-window and generation wires, (b) the
@@ -411,20 +351,32 @@ pub(crate) fn unified_active() -> bool {
     crate::gates::get().unified
 }
 
-/// Realtime rides the window pipeline; `window_reliable` opts Bulk/Auto onto
-/// it with the retain-until-acked policy.
-fn is_window_mode(hint: ProtocolHint, backend: FecBackend, window_reliable: bool) -> bool {
-    (hint == ProtocolHint::Realtime || window_reliable) && backend.is_streaming()
+/// The one pipeline's codec (ADR-0069, executed): every hint rides the
+/// sliding-window pipeline, so the configured backend must be
+/// streaming-native. There is no block pipeline to fall back to: a
+/// block-only backend — reachable only through a hand-built library
+/// [`PeerConfig`]; `config::resolve` already rejects it by name — is a
+/// startup error, never a silent re-route. The retention contract ρ
+/// (`window_reliable`) is an independent dial and is not read here.
+pub(crate) fn pipeline_backend(config: &PeerConfig) -> anyhow::Result<FecBackend> {
+    if !config.fec_backend.is_streaming() {
+        anyhow::bail!(
+            "fec_backend {:?} is block-only: the block pipeline was removed (ADR-0069); \
+             every hint rides the window pipeline on FecBackend::Rlc",
+            config.fec_backend
+        );
+    }
+    Ok(config.fec_backend)
 }
 
 /// The `[PIPE]` echo (docs/status.md §4; measurement-discipline rules 1 and
-/// 15b): the pipeline the engine actually selected and the FEC backend it
-/// pinned, one line per engine start on both endpoints. An instrument only —
-/// it reads the decision, it takes none.
-fn pipe_echo_line(hint: ProtocolHint, backend: FecBackend, window_mode: bool) -> String {
-    let pipeline = if window_mode { "window" } else { "block" };
+/// 15b): the pipeline and the FEC backend the engine pinned, one line per
+/// engine start on both endpoints. Since ADR-0069 the pipeline token is
+/// always `window`; the line stays byte-compatible so the battery parsers'
+/// right-binary witness keeps working. An instrument only.
+fn pipe_echo_line(hint: ProtocolHint, backend: FecBackend) -> String {
     let hint = format!("{hint:?}").to_lowercase();
-    format!("[PIPE] pipeline={pipeline} backend={backend:?} hint={hint}")
+    format!("[PIPE] pipeline=window backend={backend:?} hint={hint}")
 }
 
 // ---------------------------------------------------------------------------
@@ -520,13 +472,6 @@ fn infl_percap_full(per_path: &[(u64, u64)]) -> bool {
 
 /// Dead path timeout: if no report received for this long, deactivate the path.
 const DEAD_PATH_TIMEOUT: Duration = Duration::from_secs(6);
-/// QUIC/IP overhead subtracted from max_datagram_size to get usable symbol size.
-/// 8 bytes wire header + ~40 bytes bincode overhead estimate.
-const WIRE_OVERHEAD: usize = 48;
-/// Serialized SymbolBatch envelope (WireMessage tag + timestamps + seq).
-const BATCH_WIRE_HEADER: usize = 48;
-/// Per-symbol serialization overhead inside a batch (ids + flags + len).
-const PER_SYMBOL_WIRE_OVERHEAD: usize = 32;
 /// Lowest base [`now_us`] starts from, µs (~12.7 days): keeps every stamp
 /// non-zero (`echo_send_timestamp_us == 0` is the timer-ack sentinel) and
 /// leaves headroom below "now" even if the wall clock reads before 1970.
@@ -644,9 +589,9 @@ pub async fn run(config: PeerConfig) -> anyhow::Result<()> {
 ///
 /// Skips OS TUN creation and all routing/DNS management (setup and cleanup) —
 /// nothing OS-touching happens for the injected interface. Everything else is
-/// byte-identical to [`run`]. Window-mode note: the MTU clamp only sizes the
-/// OS TUN device; with an injected TUN the caller must size its packets to
-/// fit one symbol (`profile.symbol_size - 4`) itself.
+/// byte-identical to [`run`]. Note: the MTU clamp only sizes the OS TUN
+/// device; with an injected TUN the caller must size its packets to fit one
+/// symbol (`symbol_size_for_hint(hint) - 4`) itself.
 pub async fn run_with_tun(config: PeerConfig, tun: TunInterface) -> anyhow::Result<()> {
     run_impl(config, Some(tun)).await
 }
@@ -668,45 +613,32 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Backend selection happens once, here, and is pinned for the life of
     // the stream (paper §5.10: no cross-code algebra ⇒ any mid-stream
-    // switch strands in-flight data). Computed before TUN creation because
-    // window mode constrains the TUN MTU.
-    //
-    // Realtime rides the RLC family either way: under the unified default it
-    // is the small-δ parameterization of the span machine; under
-    // `RWM_UNIFIED=0` it uses the legacy-RLC windowed machine
-    // (`RlcWindowDecoder`). Bulk/Auto under `window_reliable` auto-select
-    // windowed RLC — the natural sliding-window codec; the bulk profile's
-    // symbol_size=1200 puts the window-mode TUN MTU clamp at 1196, so
-    // full-size packets are not fragmented.
-    let effective_fec_backend = if !config.fec_backend_explicit {
-        if config.protocol_hint == ProtocolHint::Realtime {
-            if unified_active() {
-                // Paper §5.2: one code family across the δ axis — Realtime is
-                // the small-δ parameterization of the RLC span machine, not a
-                // different code. (Mechanism-liveness echo.)
-                info!("RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)");
-            } else {
-                // Mechanism-liveness echo for the legacy opt-out arm.
-                info!("Realtime mode (RWM_UNIFIED=0): riding the legacy-RLC windowed machine");
-            }
-            FecBackend::Rlc
-        } else if config.window_reliable {
-            info!("reliable window mode (retain until acked): auto-selecting RLC windowed backend");
-            FecBackend::Rlc
+    // switch strands in-flight data). One pipeline for every hint
+    // (ADR-0069): the codec is the window pipeline's RLC, and a block-only
+    // backend is a startup error.
+    let effective_fec_backend = pipeline_backend(&config)?;
+    if config.protocol_hint == ProtocolHint::Realtime {
+        if unified_active() {
+            // Paper §5.2: one code family across the δ axis — Realtime is
+            // the small-δ parameterization of the RLC span machine, not a
+            // different code. (Mechanism-liveness echo.)
+            info!("RWM_UNIFIED: Realtime rides the RLC span machine (small-δ parameterization, no code-family switch)");
         } else {
-            config.fec_backend
+            // Mechanism-liveness echo for the legacy opt-out arm.
+            info!("Realtime mode (RWM_UNIFIED=0): riding the legacy-RLC windowed machine");
         }
-    } else {
-        config.fec_backend
-    };
+    } else if config.window_reliable {
+        // Liveness echo the L1 parsers witness on every window arm
+        // (`stage3_parse.py` WIN_LINE); the text is kept byte-stable.
+        info!("reliable window mode (retain until acked): auto-selecting RLC windowed backend");
+    }
 
-    // Derive the block assembly profile from the protocol hint.
-    let profile = BlockProfile::from_hint(config.protocol_hint);
-    let window_mode = is_window_mode(config.protocol_hint, effective_fec_backend, config.window_reliable);
-    info!("{}", pipe_echo_line(config.protocol_hint, effective_fec_backend, window_mode));
-    // The retention policy is per-stream/per-config, not global: Realtime
-    // keeps its lossy evict window unless explicitly opted in.
-    let window_reliable = window_mode && config.window_reliable;
+    // The source-symbol size at this named point.
+    let symbol_size = symbol_size_for_hint(config.protocol_hint);
+    info!("{}", pipe_echo_line(config.protocol_hint, effective_fec_backend));
+    // The retention contract ρ (per-stream, resolved per named point by
+    // `config::resolve`; an independent dial, never a pipeline selector).
+    let window_reliable = config.window_reliable;
     // Fungible frontier (coded-object): coded-only presupposes the reliable
     // window (retention is the ARQ backstop for aged holes). It is a
     // bulk-object mode that pays a window-fill decode latency, so it always
@@ -728,32 +660,20 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let window_systematic = window_reliable && config.window_systematic_repair;
     let window_generation = window_reliable
         && (config.window_generation_coding || config.window_systematic_repair);
-    if config.window_reliable && !window_mode {
-        warn!(
-            backend = ?effective_fec_backend,
-            "window_reliable set but the configured FEC backend is not \
-             streaming-capable — falling back to the block pipeline"
-        );
-    }
 
-    // Window mode carries at most one packet per source symbol: SymbolPacker
+    // The window pipeline carries at most one packet per source symbol: SymbolPacker
     // frames each packet with a 2-byte length prefix and closes the symbol
     // with a 2-byte end sentinel, and packets that don't fit are truncated
     // (corrupted on the wire, silently dropped by the peer's IP stack).
     // Clamp the TUN MTU so the inner stack never emits a packet larger than
     // one symbol can carry (MSS-sized TCP segments would be truncated at
     // symbol_size=512 and stall every transfer).
-    let tun_mtu: u16 = if window_mode {
-        let mtu = profile.symbol_size.saturating_sub(4);
-        info!(
-            mtu,
-            symbol_size = profile.symbol_size,
-            "window mode: clamping TUN MTU to fit one packet per symbol"
-        );
-        mtu
-    } else {
-        1500
-    };
+    let tun_mtu: u16 = symbol_size.saturating_sub(4);
+    info!(
+        mtu = tun_mtu,
+        symbol_size,
+        "window mode: clamping TUN MTU to fit one packet per symbol"
+    );
 
     // Create TUN interface (or use the injected one — memory TUNs need no
     // OS device and no routing/DNS management)
@@ -826,7 +746,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Set up paths with protocol-hint-derived scheduling weights
     let mut scheduler = Scheduler::new_with_hint(Arc::new(WallClock), config.protocol_hint);
-    scheduler.set_block_affinity(config.mp_block_affinity);
     for (i, _addr) in config.bind_addrs.iter().enumerate() {
         scheduler.add_path(i as u32);
     }
@@ -844,7 +763,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     info!("all paths connected");
 
     // Shared state
-    let block_counter = Arc::new(AtomicU64::new(0));
     let batch_counter = Arc::new(BatchCounter::new());
     let fec_controller = Arc::new(parking_lot::Mutex::new({
         let mut ctrl = FecRateController::new_with_toggles(
@@ -853,7 +771,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             config.protocol_hint,
             effective_fec_backend,
             config.enable_pi_feedback,
-            profile.symbol_size,
+            symbol_size,
         );
         // Inner-feedback repair floor for TCP-in-tunnel payloads. Default
         // weight 0.0 (config::resolve): the floor measured completion-neutral
@@ -864,14 +782,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         ctrl.set_inner_feedback(config.inner_feedback_weight);
         ctrl
     }));
-    info!(
-        max_block_size = profile.max_block_size,
-        flush_timeout_ms = profile.flush_timeout.as_millis() as u64,
-        symbol_size = profile.symbol_size,
-        interleave_depth = config.interleave_depth,
-        "block assembly profile"
-    );
-
     // ADR-0013: shared monitoring stats
     let stats = Arc::new(SharedStats::new());
     for (i, _) in config.bind_addrs.iter().enumerate() {
@@ -946,25 +856,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let (sack_tx, sack_rx) =
         tokio::sync::mpsc::channel::<SackReport>(64);
 
-    if window_mode {
-        info!(
-            symbol_size = profile.symbol_size,
-            backend = ?effective_fec_backend,
-            "sliding-window FEC mode"
-        );
-    }
-
-    let active_decoders: Arc<DashMap<u64, Box<dyn FecDecoder>>> = Arc::new(DashMap::new());
-
-    // Per-path sent symbol counts for loss tracking (sender side)
-    // Maps (block_id, path_id) → symbols_sent_count
-    let sent_counts: Arc<DashMap<(u64, u32), u32>> = Arc::new(DashMap::new());
-
-    // Block-mode ARQ: sender-side batch ledger + retained blocks for
-    // Ack-diff-driven repair. Unused in window mode (which has its own
-    // retransmit buffer / SACK machinery).
-    let block_arq: Arc<parking_lot::Mutex<BlockArq>> =
-        Arc::new(parking_lot::Mutex::new(BlockArq::new()));
+    info!(
+        symbol_size,
+        backend = ?effective_fec_backend,
+        "sliding-window FEC mode"
+    );
 
     // Channel for received messages from all paths
     // ADR-0011: larger message channel to avoid stalling under load
@@ -1118,25 +1014,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_transport = transport_arc.clone();
     let sender_scheduler = scheduler_arc.clone();
     let sender_fec = fec_controller.clone();
-    let sender_block_counter = block_counter.clone();
     let sender_batch_counter = batch_counter.clone();
-    let sender_sent_counts = sent_counts.clone();
-    let ctrl_sent_counts = sent_counts.clone();
     let sender_stats = stats.clone();
-    let sender_block_arq = block_arq.clone();
 
-    let sender_profile_max_block = profile.max_block_size;
-    let sender_profile_flush = profile.flush_timeout;
-    let sender_profile_symbol_size = profile.symbol_size;
+    let sender_profile_symbol_size = symbol_size;
     // The backend chosen above is pinned for the life of the stream (paper
     // §5.10): a mid-stream switch strands every in-flight symbol of the old
     // code (no cross-code algebra) and discards the estimator/ARQ state
     // recovery needs.
     let sender_fec_backend = effective_fec_backend;
-    let sender_interleave_depth = config.interleave_depth;
-    // Interleave timeout = 2x flush timeout (drain buffered symbols if traffic is sparse)
-    let sender_interleave_timeout = profile.flush_timeout * 2;
-    let sender_window_mode = window_mode;
     let sender_window_reliable = window_reliable;
     let sender_window_coded_only = window_coded_only;
     let sender_window_generation = window_generation;
@@ -1153,53 +1039,29 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_gates = gates.clone();
 
     let sender_handle = tokio::spawn(async move {
-        // ----- Sliding-window sender mode -----
-        if sender_window_mode {
-            run_window_sender(
-                &mut tun,
-                sender_profile_symbol_size,
-                sender_fec_backend,
-                &sender_fec,
-                &sender_batch_counter,
-                &sender_transport,
-                &sender_scheduler,
-                &sender_stats,
-                &sender_window_ack,
-                &mut sender_nack_rx,
-                &mut sender_deficit_rx,
-                &mut sender_sack_rx,
-                &mut sender_request_rx,
-                &mut sender_shutdown_rx,
-                sender_protocol_hint,
-                sender_window_reliable,
-                sender_window_coded_only,
-                sender_window_generation,
-                sender_window_systematic,
-                sender_copa_feed,
-                sender_completion_feed,
-                sender_gates,
-            )
-            .await;
-            return;
-        }
-
-        run_block_sender(
-            tun,
-            sender_transport,
-            sender_scheduler,
-            sender_fec,
-            sender_block_counter,
-            sender_batch_counter,
-            sender_sent_counts,
-            sender_stats,
-            sender_block_arq,
-            sender_profile_max_block,
-            sender_profile_flush,
+        run_window_sender(
+            &mut tun,
             sender_profile_symbol_size,
             sender_fec_backend,
-            sender_interleave_depth,
-            sender_interleave_timeout,
-            sender_shutdown_rx,
+            &sender_fec,
+            &sender_batch_counter,
+            &sender_transport,
+            &sender_scheduler,
+            &sender_stats,
+            &sender_window_ack,
+            &mut sender_nack_rx,
+            &mut sender_deficit_rx,
+            &mut sender_sack_rx,
+            &mut sender_request_rx,
+            &mut sender_shutdown_rx,
+            sender_protocol_hint,
+            sender_window_reliable,
+            sender_window_coded_only,
+            sender_window_generation,
+            sender_window_systematic,
+            sender_copa_feed,
+            sender_completion_feed,
+            sender_gates,
         )
         .await;
     });
@@ -1207,21 +1069,14 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // Receiver task: receive → decode → extract packets → TUN inject
     let recv_scheduler = scheduler_arc.clone();
     let recv_fec = fec_controller.clone();
-    let recv_decoders = active_decoders.clone();
     let recv_fec_backend = effective_fec_backend;
     let recv_transport = transport_arc.clone();
-    // Block-mode ARQ: Ack handling (which drives repair) runs in the
-    // receiver task, so it needs the shared ledger + the batch counter
-    // (repair batches use the same per-path-monotonic sequence space).
-    let recv_block_arq = block_arq.clone();
-    let recv_batch_counter = batch_counter.clone();
     // Per-path: track last seen batch_seq and total symbols received for loss detection
     let path_batch_tracking: Arc<DashMap<u32, PathBatchTracker>> = Arc::new(DashMap::new());
 
     let recv_path_tracking = path_batch_tracking.clone();
     let recv_stats = stats.clone();
-    let recv_symbol_size = profile.symbol_size;
-    let recv_window_mode = window_mode;
+    let recv_symbol_size = symbol_size;
     let recv_window_reliable = window_reliable;
     // Out-of-order object delivery (the H → ∞ corner, paper §4.11) is only
     // meaningful on the reliable window (it needs retention to guarantee
@@ -1296,7 +1151,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     //
     // With the arm absent this is the shipped predicate.
     let recv_request_law = request_law_armed(
-        window_mode,
         window_reliable,
         window_generation,
         gates.recv_request_law,
@@ -1306,7 +1160,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // message the receiver sends changes. The two arms compose; neither
     // selects a machine.
     let recv_rank_feedback = request_law_armed(
-        window_mode,
         window_reliable,
         window_generation,
         gates.rank_feedback,
@@ -1314,7 +1167,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let recv_nack_tx: Option<
         tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
     > =
-        if window_mode && !window_generation && !recv_request_law {
+        if !window_generation && !recv_request_law {
             Some(nack_tx)
         } else {
             None
@@ -1376,10 +1229,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let reasm_bdp_on = gates.reasm_bdp;
 
     // ack-merge (RWM_ACK_MERGE): hoisted for the receiver's per-batch hot
-    // path. Scoped to window mode — block mode must stay bit-exact, and
-    // `recv_window_mode` is the same predicate the block_arq wiring uses to
-    // pass `None` in window mode.
-    let ack_merge_recv = gates.ack_merge && recv_window_mode;
+    // path.
+    let ack_merge_recv = gates.ack_merge;
     // ack-merge density gauge (`[CTLD]`), RWM_DIAG only — behavior-inert.
     let recv_diag_on = gates.diag;
 
@@ -1399,20 +1250,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let receiver_handle = tokio::spawn(receiver::run_receiver(
         recv_shutdown_rx,
         msg_rx,
-        sent_counts,
         recv_copa_feed,
         recv_tun_tx,
         recv_scheduler,
         recv_fec,
-        recv_decoders,
         recv_fec_backend,
         recv_transport,
-        recv_block_arq,
-        recv_batch_counter,
         recv_path_tracking,
         recv_stats,
         recv_symbol_size,
-        recv_window_mode,
         recv_window_reliable,
         recv_window_ooo,
         recv_win_cap,
@@ -1436,34 +1282,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // The contract's own dial position at the receiver: the same
         // `config` field the sender's policy reads.
         config.protocol_hint,
-    ));
-
-    // ADR-0004: periodic cleanup of stale decoders
-    let cleanup_decoders = active_decoders.clone();
-    let cleanup_fec = fec_controller.clone();
-    let cleanup_stats = stats.clone();
-    let cleanup_handle = tokio::spawn(tasks::run_decoder_gc(
-        cleanup_decoders,
-        cleanup_fec,
-        cleanup_stats,
-    ));
-
-    // Block-mode ARQ sweeper — see `net::tasks::arq_sweep`.
-    let sweep_block_arq = block_arq.clone();
-    let sweep_scheduler = scheduler_arc.clone();
-    let sweep_transport = transport_arc.clone();
-    let sweep_stats = stats.clone();
-    let sweep_batch_counter = batch_counter.clone();
-    let sweep_window_mode = window_mode;
-    let sweep_shutdown_rx = shutdown_tx.subscribe();
-    let arq_sweep_handle = tokio::spawn(tasks::run_arq_sweep(
-        sweep_block_arq,
-        sweep_scheduler,
-        sweep_transport,
-        sweep_stats,
-        sweep_batch_counter,
-        sweep_window_mode,
-        sweep_shutdown_rx,
     ));
 
     // Path management command channel (for runtime add/remove via HTTP API)
@@ -1503,7 +1321,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let report_transport = transport_arc.clone();
     let report_scheduler = scheduler_arc.clone();
     let report_stats = stats.clone();
-    let report_symbol_size = profile.symbol_size;
+    let report_symbol_size = symbol_size;
     let report_shutdown_rx = shutdown_tx.subscribe();
     let report_handle = tokio::spawn(tasks::run_report(
         report_transport,
@@ -1517,8 +1335,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // Pong) are handled immediately; anything else that arrives via the
     // reliable stream is forwarded to the ordered data loop.
     let ctrl_scheduler = scheduler_arc.clone();
-    let ctrl_fec = fec_controller.clone();
-    let ctrl_decoders = active_decoders.clone();
     let ctrl_transport = transport_arc.clone();
     let ctrl_stats = stats.clone();
     let ctrl_forward_tx = msg_tx.clone();
@@ -1526,9 +1342,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
         ctrl_rx,
         ctrl_scheduler,
-        ctrl_fec,
-        ctrl_decoders,
-        ctrl_sent_counts,
         ctrl_transport,
         ctrl_stats,
         ctrl_forward_tx,
@@ -1542,11 +1355,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     tokio::select! {
         r = sender_handle => { log_task_exit("sender", &r); r?; }
         r = receiver_handle => { log_task_exit("receiver", &r); r?; }
-        r = cleanup_handle => { log_task_exit("decoder-cleanup", &r); r?; }
         r = report_handle => { log_task_exit("path-report", &r); r?; }
         r = cmd_handle => { log_task_exit("path-cmd", &r); r?; }
         r = ctrl_handle => { log_task_exit("control-fastpath", &r); r?; }
-        r = arq_sweep_handle => { log_task_exit("arq-sweep", &r); r?; }
     }
 
     // Clean up routes and DNS on shutdown
@@ -3564,395 +3375,19 @@ fn create_window_decoder(
     }
 }
 
-/// Encode a block and push symbols into the interleaving buffer.
-fn encode_to_interleave_buf(
-    block_buf: &mut Vec<u8>,
-    block_counter: &AtomicU64,
-    batch_counter: &BatchCounter,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
-    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
-    transport: &Arc<QuicTransport>,
-    sent_counts: &Arc<DashMap<(u64, u32), u32>>,
-    stats: &Arc<SharedStats>,
-    symbol_size: u16,
-    max_block_size: usize,
-    ileave: &mut interleave::InterleavingBuffer,
-    // Pinned at startup — never switched mid-stream (paper §5.10).
-    fec_backend: FecBackend,
-    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
-) {
-    let block_data = std::mem::replace(block_buf, Vec::with_capacity(max_block_size));
-
-    if block_data.is_empty() {
-        return;
-    }
-    // Bytes so the ARQ retention can share the buffer refcounted.
-    let block_data = Bytes::from(block_data);
-
-    let block_id = block_counter.fetch_add(1, Ordering::Relaxed);
-
-    // MTU-aware symbol sizing: use PMTU-discovered max datagram size if available,
-    // otherwise fall back to the profile default. We take the minimum MTU across
-    // all active paths to avoid fragmentation on any path.
-    // Repair symbols may carry in-band metadata that must be subtracted from
-    // the available MTU (RLC: a repair-index header).
-    let fec_wire_overhead = fec_backend.repair_wire_overhead();
-    let effective_symbol_size = {
-        let sched = scheduler.lock();
-        let total_overhead = WIRE_OVERHEAD + fec_wire_overhead;
-        match sched.min_mtu() {
-            Some(mtu) if mtu > total_overhead => {
-                let mtu_based = (mtu - total_overhead) as u16;
-                // Clamp: don't go below 64 bytes or above the profile default
-                mtu_based.clamp(64, symbol_size)
-            }
-            // Pre-PMTUD: assume QUIC's 1200-byte initial MTU, not the
-            // profile default (symbol 1200 + overhead does not fit a fresh
-            // connection's datagram limit).
-            _ => symbol_size.min((1200 - total_overhead.min(1136)) as u16),
-        }
-    };
-    let source_symbols = (block_data.len() as f64 / effective_symbol_size as f64).ceil() as u32;
-
-    // Compute repair count
-    let repair_count = {
-        // Lock order controller → scheduler: the one order used wherever
-        // both are held (the window sender's rate/budget sites take it too).
-        let ctrl = fec_controller.lock();
-        let sched = scheduler.lock();
-
-        let worst_estimator = worst_eps_estimator(&sched);
-
-        match worst_estimator {
-            Some(est) => ctrl.compute_repair_count(source_symbols, est, source_symbols as usize),
-            None => 0,
-        }
-    };
-
-    let params = EncodingParams {
-        source_symbols,
-        symbol_size: effective_symbol_size,
-        repair_count,
-        block_id,
-    };
-
-    // Send BlockStart on all paths before symbols: the receiver learns the
-    // block params from it, so without it block mode cannot decode over a
-    // real link (in-process L0 tests bypass this wire layer). Sent as a
-    // datagram for latency; symbols that still outrace it are buffered and
-    // replayed by the receiver (pre_start_symbols).
-    {
-        let sched = scheduler.lock();
-        // live_paths: a saturated path still receives symbols already
-        // scheduled/interleaved for it — it must get the BlockStart too.
-        for path_id in sched.live_paths() {
-            let msg = ControlMessage::BlockStart {
-                params,
-                transfer_length: block_data.len() as u64,
-                backend: fec_backend,
-            };
-            if let Err(e) = transport.send_control_datagram(path_id, msg) {
-                warn!(path_id, ?e, "failed to send BlockStart");
-            }
-        }
-    }
-
-    // Encode with the stream's pinned backend.
-    let mut fec_stream = FecStream::new(&block_data, params, fec_backend);
-    let source = fec_stream.take_source_symbols();
-    let repair = fec_stream.generate_repair(repair_count);
-
-    // Retain the source data so Ack-diff-detected losses can be
-    // repaired with fresh symbols (LRU, byte-capped — see block_arq).
-    block_arq
-        .lock()
-        .on_block_encoded(block_id, block_data.clone(), params, fec_backend, Instant::now());
-
-    debug!(
-        block_id,
-        source_count = source.len(),
-        repair_count = repair.len(),
-        block_bytes = block_data.len(),
-        "encoded block"
-    );
-
-    // ADR-0013: update monitoring stats
-    stats.blocks.encoded.fetch_add(1, Ordering::Relaxed);
-    stats.fec.total_source_symbols.fetch_add(source_symbols as u64, Ordering::Relaxed);
-    stats.fec.total_repair_symbols.fetch_add(repair_count as u64, Ordering::Relaxed);
-
-    // Schedule across paths (assigns symbols to paths but doesn't send yet)
-    let assignments = scheduler.lock().schedule(source, repair);
-
-    // ADR-0003: track how many symbols sent per path for this block
-    for (path_id, symbols) in &assignments {
-        if let Some(ps) = stats.path(*path_id) {
-            ps.symbols_sent.fetch_add(symbols.len() as u64, Ordering::Relaxed);
-        }
-        sent_counts.insert((block_id, *path_id), symbols.len() as u32);
-        // Instrumentation: per-block per-path source/repair split.
-        let rep = symbols.iter().filter(|s| s.is_repair).count();
-        debug!(
-            block_id,
-            path_id = *path_id,
-            src = symbols.len() - rep,
-            rep,
-            "block path assignment"
-        );
-    }
-
-    // Push into interleaving buffer instead of sending directly
-    ileave.push_block(block_id, assignments);
-}
-
-/// Per-path carry queue for symbol-level pacing: symbols drained from the
-/// interleaver but not yet sendable under the token bucket wait here, in
-/// send order, until the next pace tick. Carried symbols are already
-/// counted in the in_flight budget (charged at schedule time).
-type PaceCarry = std::collections::HashMap<u32, std::collections::VecDeque<crate::fec::WireSymbol>>;
-
-/// Drain interleaved symbols from the buffer and send them on the wire.
-///
-/// Token-bucket pacing (paper §8.2), symbol-level: the interleaver's drain
-/// is all-or-nothing, so drained symbols first land in the per-path `carry`
-/// queue; each call then sends only up to floor(tokens) symbols per path
-/// (tokens refill at cwnd/SRTT with burst allowance max(10, cwnd/8)) and the
-/// remainder stays in the carry for the next pace tick. No whole-block
-/// overdrafts: a batch-granular gate serializes each 56-symbol block into
-/// ~5.4ms of self-queue at C2 — above Bulk's 2.5ms backoff threshold — so
-/// every block would buy a ×0.92 backoff and pin cwnd just under one block.
-/// The TUN-read gate (in_flight >= cwnd, where in_flight is the
-/// schedule-time budget covering interleaver + carry + wire) remains the
-/// outer backpressure.
-///
-/// Returns `Some(delay)` when symbols remain in the carry — the caller
-/// should retry after `delay`, the refill time for the next token on the
-/// most-ready pending path. Returns `None` when everything is sent.
-/// `force` bypasses the pacing gate entirely (shutdown flush).
-fn send_interleaved_batches(
-    ileave: &mut interleave::InterleavingBuffer,
-    carry: &mut PaceCarry,
-    batch_counter: &BatchCounter,
-    transport: &Arc<QuicTransport>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
-    stats: &Arc<SharedStats>,
-    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
-    force: bool,
-) -> Option<std::time::Duration> {
-    // 1) Move any drainable interleaver content into the carry queue.
-    if !ileave.is_empty() {
-        // Worst-path loss rate for tapered interleaving decay.
-        let loss_rate = channel_worst_loss_rate(&scheduler.lock());
-        let batches = if ileave.should_drain() {
-            ileave.drain(loss_rate)
-        } else {
-            ileave.drain_all(loss_rate)
-        };
-        for (path_id, symbols) in batches {
-            carry.entry(path_id).or_default().extend(symbols);
-        }
-    }
-    carry.retain(|_, q| !q.is_empty());
-    if carry.is_empty() {
-        return None;
-    }
-
-    // 2) Per-path send budgets from the token buckets. Budgets are
-    //    computed (not consumed) here; actual sends are charged in step 4.
-    //    Unknown paths (removed mid-flight) get flushed unconditionally —
-    //    their sends fail at the transport with a warn, as before.
-    let budgets: Vec<(u32, usize)> = {
-        let mut sched = scheduler.lock();
-        carry
-            .iter()
-            .map(|(pid, q)| {
-                let n = if force {
-                    q.len()
-                } else if let Some(p) = sched.path_mut(*pid) {
-                    p.pace_refill();
-                    p.pace_tokens().max(0.0) as usize
-                } else {
-                    q.len()
-                };
-                (*pid, n.min(q.len()))
-            })
-            .collect()
-    };
-
-    let now = now_us();
-    // Sent counts per path, for pacing-token charges below.
-    let mut sent_per_path: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-    // Symbols individually larger than their path's current datagram
-    // limit (quinn PMTUD can shrink a path's limit mid-flight on
-    // blackhole suspicion — the lossy-path GE channel triggers this;
-    // symbols were sized at encode time against the then-current
-    // min-MTU). Dropping them silently would orphan whole blocks (mass
-    // decoder timeouts); instead they are rerouted to a path whose limit
-    // still fits them.
-    let mut oversized: Vec<(u32, crate::fec::WireSymbol)> = Vec::new();
-    // (batch_seq, path, symbol ids) of every batch that left, for the
-    // ARQ ledger (recorded in one lock at the end).
-    let mut sent_records: Vec<(u64, u32, Vec<(u64, u32)>)> = Vec::new();
-    let send_instant = Instant::now();
-
-    // 3) Send up to the budget per path, chunked to the path MTU.
-    for (path_id, budget_syms) in budgets {
-        if budget_syms == 0 {
-            continue;
-        }
-        let symbols: Vec<crate::fec::WireSymbol> = {
-            let q = carry.get_mut(&path_id).expect("budget from carry key");
-            q.drain(..budget_syms).collect()
-        };
-        // QUIC datagrams have a hard size limit (1200 bytes initial MTU
-        // until PMTUD raises it). Chunk the drain so every serialized
-        // SymbolBatch fits — an oversized multi-symbol batch is dropped with
-        // "datagram too large" on any real-MTU link.
-        let max_dgram = transport
-            .max_datagram_size(path_id)
-            .unwrap_or(1200)
-            .max(256);
-        let budget = max_dgram - BATCH_WIRE_HEADER;
-        let mut chunk: Vec<crate::fec::WireSymbol> = Vec::new();
-        let mut chunk_bytes = 0usize;
-        for sym in symbols {
-            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
-            if sym_bytes > budget {
-                // Cannot fit this path's datagram limit at any chunking.
-                oversized.push((path_id, sym));
-                continue;
-            }
-            if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
-                let seqs = batch_counter.next(path_id);
-                let ids: Vec<(u64, u32)> =
-                    chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-                let batch = SymbolBatch::new(std::mem::take(&mut chunk), now, seqs, path_id);
-                let n = batch.symbols.len() as u32;
-                if let Err(e) = transport.send_symbols(path_id, batch) {
-                    warn!(path_id, ?e, "failed to send interleaved batch");
-                } else {
-                    *sent_per_path.entry(path_id).or_default() += n;
-                    sent_records.push((seqs.0, path_id, ids));
-                }
-                chunk_bytes = 0;
-            }
-            chunk_bytes += sym_bytes;
-            chunk.push(sym);
-        }
-        if !chunk.is_empty() {
-            let seqs = batch_counter.next(path_id);
-            let ids: Vec<(u64, u32)> = chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-            let batch = SymbolBatch::new(chunk, now, seqs, path_id);
-            let n = batch.symbols.len() as u32;
-            if let Err(e) = transport.send_symbols(path_id, batch) {
-                warn!(path_id, ?e, "failed to send interleaved batch");
-            } else {
-                *sent_per_path.entry(path_id).or_default() += n;
-                sent_records.push((seqs.0, path_id, ids));
-            }
-        }
-    }
-
-    // Reroute oversized symbols to the widest live path that fits them
-    // (in_flight bookkeeping moves with the symbol; the rerouted symbols
-    // ride the target's carry queue and go out on the next pace tick).
-    if !oversized.is_empty() {
-        let live: Vec<u32> = scheduler.lock().live_paths();
-        let mut moved: std::collections::HashMap<u32, Vec<crate::fec::WireSymbol>> =
-            std::collections::HashMap::new();
-        let mut moves: Vec<(u32, u32)> = Vec::new(); // (from, to)
-        let mut dropped = 0usize;
-        for (from, sym) in oversized {
-            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
-            let target = live
-                .iter()
-                .copied()
-                .filter(|pid| {
-                    let lim = transport.max_datagram_size(*pid).unwrap_or(1200).max(256);
-                    lim - BATCH_WIRE_HEADER.min(lim) >= sym_bytes
-                })
-                .max_by_key(|pid| transport.max_datagram_size(*pid).unwrap_or(1200));
-            match target {
-                Some(to) => {
-                    moved.entry(to).or_default().push(sym);
-                    moves.push((from, to));
-                }
-                None => dropped += 1,
-            }
-        }
-        let mut n_moved = 0usize;
-        for (to, syms) in moved {
-            n_moved += syms.len();
-            let q = carry.entry(to).or_default();
-            for sym in syms.into_iter().rev() {
-                q.push_front(sym);
-            }
-        }
-        if n_moved > 0 || dropped > 0 {
-            warn!(n_moved, dropped, "oversized symbols rerouted (path datagram limit shrank)");
-        }
-        let mut sched = scheduler.lock();
-        for (from, to) in moves {
-            if let Some(p) = sched.path_mut(from) {
-                p.release_in_flight(1);
-            }
-            if let Some(p) = sched.path_mut(to) {
-                p.charge_in_flight(1);
-            }
-        }
-    }
-
-    // Record what left the wire in the ARQ ledger (Ack diff + timeout
-    // sweep drive repair from these entries).
-    if !sent_records.is_empty() {
-        let mut arq = block_arq.lock();
-        for (batch_seq, path_id, ids) in sent_records {
-            arq.on_batch_sent(batch_seq, path_id, ids, send_instant);
-        }
-    }
-
-    // 4) Charge pacing tokens for what actually left, and compute the next
-    //    pace tick if symbols remain in the carry. in_flight is not charged
-    //    here: the budget was already charged once at schedule time
-    //    (Scheduler::schedule → charge_in_flight); charging again at send
-    //    time would double-count every symbol and leak the gate shut.
-    carry.retain(|_, q| !q.is_empty());
-    let mut sched = scheduler.lock();
-    for (pid, n) in sent_per_path {
-        if let Some(p) = sched.path_mut(pid) {
-            p.consume_pace_tokens(n);
-        }
-    }
-    if carry.is_empty() {
-        return None;
-    }
-    // Wake when the most-ready pending path refills its next token
-    // (clamped to 500us..50ms: the lower bound coalesces sub-timer-
-    // resolution wakeups into small runs the burst allowance absorbs; the
-    // upper bound keeps a long-SRTT path from wedging the drain loop).
-    let mut delay = std::time::Duration::from_millis(50);
-    for pid in carry.keys() {
-        if let Some(p) = sched.path(*pid) {
-            delay = delay.min(p.pace_delay());
-        }
-    }
-    Some(delay.max(std::time::Duration::from_micros(500)))
-}
-
 /// The sender's batch sequencer (wire v9): every emitted `SymbolBatch` takes
 /// ONE call, which stamps both sequences it carries.
 ///
-/// - `batch_seq`, global across paths: the block-mode ARQ ledger is keyed on
-///   it (the receiver echoes it in `ControlMessage::Ack.batch_seq`), so it
-///   must stay unique connection-wide.
+/// - `batch_seq`, global across paths: the receiver echoes it in
+///   `ControlMessage::Ack.batch_seq`, so it stays unique connection-wide.
 /// - `path_seq`, monotonic per `path_id` (0, 1, 2, ... on each path): the
 ///   receiver's `PathBatchTracker` reads loss from gaps in it. Through v8 the
 ///   tracker read gaps in the global counter, so at N >= 2 every other
 ///   path's batches counted as this path's losses and ε̂ depended on the
 ///   striping share (≈ 0.5 at 50/50, 0.74 at share 0.1).
 ///
-/// The per-path map is a short uncontended lock (one emission loop, the
-/// block ARQ sweep and the control fast path share the sequencer).
+/// The per-path map is a short uncontended lock (the one emission loop
+/// owns the sequencer).
 pub(crate) struct BatchCounter {
     global: AtomicU64,
     per_path: parking_lot::Mutex<std::collections::HashMap<u32, u64>>,
@@ -3996,11 +3431,10 @@ impl BatchCounter {
 ///   always:          received += received
 /// ```
 ///
-/// On the window path (one symbol per batch) the totals are then exact:
+/// Window batches carry one symbol each, so the totals are exact:
 /// `total_expected − total_received` is the number of sequences below the
-/// highest that have not arrived. A lost multi-symbol block batch is charged
-/// as `gap × received` of the next arrival (the batch's own size is not on
-/// the wire), pinned by `test_path_batch_tracker_with_gap`. A late arrival's
+/// highest that have not arrived (the `gap × received` charge below is
+/// `gap × 1`; `test_path_batch_tracker_with_gap` pins the arithmetic). A late arrival's
 /// per-batch pair is `(0, received)`; the consumers carry that credit
 /// (`scheduler::PathState::credit_ack_pair`, `LossEstimator::record_rx_batch`).
 pub(crate) struct PathBatchTracker {
@@ -4080,139 +3514,6 @@ impl PathBatchTracker {
         self.total_expected += expected as u64;
 
         (expected, received)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Block-mode ARQ repair dispatch
-// ---------------------------------------------------------------------------
-
-/// Loss-declaration timeout for un-acked batches: delivered-or-lost either
-/// way once the Ack would have arrived (RFC 9002-style time threshold,
-/// aligned with — and never longer than — the in_flight budget expiry).
-fn arq_loss_timeout(srtt: Duration) -> Duration {
-    (srtt.mul_f64(1.5))
-        .max(Duration::from_millis(50))
-        .min(Duration::from_secs(2))
-}
-
-/// Worst-path loss estimate (the same ε̂ the proactive FEC sizing uses).
-fn worst_loss_rate(scheduler: &Arc<parking_lot::Mutex<Scheduler>>) -> f64 {
-    channel_worst_loss_rate(&scheduler.lock())
-}
-
-/// Turn loss events into repair sends: plan under the ARQ lock, then send
-/// paced/charged like normal corrections, then record the repair batches
-/// back into the ledger (a lost repair triggers the next round).
-fn send_arq_repairs(
-    events: Vec<block_arq::LossEvent>,
-    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
-    transport: &Arc<QuicTransport>,
-    batch_counter: &BatchCounter,
-    stats: &Arc<SharedStats>,
-) {
-    let eps_hat = worst_loss_rate(scheduler);
-    let plans = block_arq.lock().plan_repairs(events, eps_hat);
-    dispatch_repair_plans(plans, block_arq, scheduler, transport, batch_counter, stats);
-}
-
-fn dispatch_repair_plans(
-    plans: Vec<block_arq::RepairPlan>,
-    block_arq: &Arc<parking_lot::Mutex<BlockArq>>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
-    transport: &Arc<QuicTransport>,
-    batch_counter: &BatchCounter,
-    stats: &Arc<SharedStats>,
-) {
-    for plan in plans {
-        // Cross-path diversity: prefer a path other than the one the loss
-        // was observed on (it may be in a GE burst).
-        let path_id = {
-            let sched = scheduler.lock();
-            select_repair_path_avoiding(&sched, plan.avoid_path, plan.avoid_path)
-        };
-
-        // Defensive BlockStart re-announce: covers the case where the
-        // original BlockStart datagram was itself lost (the symbols would
-        // otherwise sit in the receiver's pre-start buffer forever).
-        let _ = transport.send_control_datagram(
-            path_id,
-            ControlMessage::BlockStart {
-                params: plan.params,
-                transfer_length: plan.transfer_length,
-                backend: plan.backend,
-            },
-        );
-
-        // Chunk to the path MTU, exactly like the normal drain path.
-        let max_dgram = transport.max_datagram_size(path_id).unwrap_or(1200).max(256);
-        let budget = max_dgram - BATCH_WIRE_HEADER;
-        let now = now_us();
-        let send_instant = Instant::now();
-        let mut sent_total = 0u32;
-        let mut sent_records: Vec<(u64, Vec<(u64, u32)>)> = Vec::new();
-        let mut chunk: Vec<crate::fec::WireSymbol> = Vec::new();
-        let mut chunk_bytes = 0usize;
-        let flush =
-            |chunk: &mut Vec<crate::fec::WireSymbol>, records: &mut Vec<(u64, Vec<(u64, u32)>)>, total: &mut u32| {
-                if chunk.is_empty() {
-                    return;
-                }
-                let seqs = batch_counter.next(path_id);
-                let ids: Vec<(u64, u32)> =
-                    chunk.iter().map(|s| (s.block_id, s.payload_id)).collect();
-                let n = chunk.len() as u32;
-                let batch = SymbolBatch::new(std::mem::take(chunk), now, seqs, path_id);
-                if let Err(e) = transport.send_symbols(path_id, batch) {
-                    warn!(path_id, ?e, "failed to send ARQ repair batch");
-                } else {
-                    *total += n;
-                    records.push((seqs.0, ids));
-                }
-            };
-        for sym in plan.symbols {
-            let sym_bytes = sym.data.len() + PER_SYMBOL_WIRE_OVERHEAD;
-            if !chunk.is_empty() && chunk_bytes + sym_bytes > budget {
-                flush(&mut chunk, &mut sent_records, &mut sent_total);
-                chunk_bytes = 0;
-            }
-            chunk_bytes += sym_bytes;
-            chunk.push(sym);
-        }
-        flush(&mut chunk, &mut sent_records, &mut sent_total);
-
-        if sent_total > 0 {
-            // Charge like any correction: in_flight budget (released by the
-            // repair batch's own Ack or the expiry) + pacing tokens (may go
-            // negative — recovery latency wins over strict pacing for these
-            // few symbols; the debt delays the next paced drain instead).
-            {
-                let mut sched = scheduler.lock();
-                if let Some(p) = sched.path_mut(path_id) {
-                    p.charge_in_flight(sent_total);
-                    p.consume_pace_tokens(sent_total);
-                }
-            }
-            if let Some(ps) = stats.path(path_id) {
-                ps.symbols_sent.fetch_add(sent_total as u64, Ordering::Relaxed);
-            }
-            stats
-                .fec
-                .total_repair_symbols
-                .fetch_add(sent_total as u64, Ordering::Relaxed);
-
-            let mut arq = block_arq.lock();
-            for (batch_seq, ids) in sent_records {
-                arq.on_batch_sent(batch_seq, path_id, ids, send_instant);
-            }
-            debug!(
-                block_id = plan.block_id,
-                path_id,
-                count = sent_total,
-                "sent ARQ repair symbols"
-            );
-        }
     }
 }
 

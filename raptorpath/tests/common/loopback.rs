@@ -468,21 +468,22 @@ pub mod in_process {
     /// Server + client configs for one loopback pair, one path per entry of
     /// `ports` (fresh ports from [`free_port`]). Callers that need more
     /// fields (`window_out_of_order`, …) set them on BOTH returned structs
-    /// before [`resolve`].
+    /// before [`resolve`]. `window_reliable` is set explicitly (the ρ dial);
+    /// clear it to `None` to take the named point's preset.
     pub fn cfgs(ports: &[u16], hint: &str, window_reliable: bool) -> (RaptorpathConfig, RaptorpathConfig) {
         let addrs: Vec<String> = ports.iter().map(|p| format!("127.0.0.1:{p}")).collect();
         let srv = RaptorpathConfig {
             server: Some(true),
             bind: Some(addrs.clone()),
             protocol_hint: Some(hint.into()),
-            window_reliable: window_reliable.then_some(true),
+            window_reliable: Some(window_reliable),
             ..Default::default()
         };
         let cli = RaptorpathConfig {
             bind: Some(vec!["127.0.0.1:0".to_string(); ports.len()]),
             peer: Some(addrs),
             protocol_hint: Some(hint.into()),
-            window_reliable: window_reliable.then_some(true),
+            window_reliable: Some(window_reliable),
             ..Default::default()
         };
         (srv, cli)

@@ -7,7 +7,7 @@
 //! engine sees exactly the packets we feed and delivers exactly the
 //! packets the peer fed, so completion time measures the rp pipeline
 //! itself (chunk -> encode -> schedule -> QUIC datagrams -> decode ->
-//! deliver) plus block ARQ, with an application-level ack closing the
+//! deliver) plus the window ARQ, with an application-level ack closing the
 //! loop — the same delivery semantics as `transfer_bench.py`.
 //!
 //! Object protocol (opaque to the engine — it rides inside the "TUN
@@ -45,14 +45,11 @@ fn run_timeout() -> Duration {
 
 /// Max payload bytes per chunk for a protocol hint.
 ///
-/// Bulk/auto under `--window-reliable` ride the sliding-window pipeline,
-/// which carries at most one packet per symbol and silently truncates
+/// Every hint rides the sliding-window pipeline (ADR-0069), which carries
+/// at most one packet per symbol and silently truncates
 /// larger packets (see the TUN MTU clamp in net::run —
 /// a memory TUN skips the clamp, so perf must size its own packets).
-/// Bulk/auto use symbol_size=1200 → chunks must fit 1196 B total. The
-/// same size is used for the block-mode arm (which length-prefixes any
-/// MTU-ish packet into 64 KB blocks) so both A/B arms share identical
-/// chunk geometry — the flag is the only difference.
+/// Bulk/auto use symbol_size=1200 → chunks must fit 1196 B total.
 /// Realtime uses symbol_size=512 → 508 B total.
 fn chunk_payload_len(hint: ProtocolHint) -> usize {
     match hint {
@@ -367,8 +364,8 @@ mod tests {
         // window mode: packet total (header + payload) must fit
         // symbol_size(512) - 4 framing bytes
         assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Realtime) <= 508);
-        // Bulk/auto may ride the window pipeline (--window-reliable,
-        // symbol_size 1200 → usable 1196): packet total must fit one
+        // Bulk/auto ride the window pipeline too (symbol_size 1200 →
+        // usable 1196): packet total must fit one
         // symbol or frame_window_packet truncates it silently.
         assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Bulk) <= 1196);
         assert!(HDR_LEN + chunk_payload_len(ProtocolHint::Auto) <= 1196);

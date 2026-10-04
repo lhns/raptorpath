@@ -4,34 +4,25 @@
 //! The caller builds one [`ControlCtx`] per call site; every non-trivial arm
 //! is its own `on_*` function. Ordering constraints: the `WindowAck` arm runs
 //! its whole re-homed Ack payload (delivery → RTT → loss/pool/stats/cc-window)
-//! under one scheduler acquisition, released before `copa_feed_attribute`,
-//! and the `Ack` arm `drop(sched)`s before touching the ARQ ledger. The
+//! under one scheduler acquisition, released before `copa_feed_attribute`. The
 //! `Option` handles are capabilities: `None` means "this pipeline has no such
 //! consumer". `ControlCtx` is taken by shared reference — all mutation goes
 //! through the `Mutex`/`DashMap`/atomic handles it carries.
 //!
 //! Not covered here: the outbound control sends (the report task, the
 //! receiver's ack/nack emitters), the Copa attribution machinery
-//! (`net::copa_feed_attribute`) and the ARQ repair dispatchers
-//! (`send_arq_repairs` / `dispatch_repair_plans`) — those are shared with
-//! the send paths and stay at `net` module level, called from here.
+//! (`net::copa_feed_attribute`), which is shared with the send path and
+//! stays at `net` module level, called from here.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use dashmap::DashMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-use super::block_arq::BlockArq;
 use super::{
-    BatchCounter,
-    COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, MAX_CONCURRENT_DECODERS, arq_loss_timeout,
-    copa_feed_attribute, dispatch_repair_plans, now_us, sack_to_gaps, send_arq_repairs,
-    worst_loss_rate,
+    COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, copa_feed_attribute, now_us, sack_to_gaps,
 };
-use crate::control::FecRateController;
-use crate::fec::{EncodingParams, FecBackend, FecDecoder};
 use crate::monitor::stats::SharedStats;
 use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
@@ -41,18 +32,12 @@ use crate::transport::{ControlMessage, QuicTransport};
 /// pipeline has no such consumer".
 pub(crate) struct ControlCtx<'a> {
     pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
-    pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
-    pub decoders: &'a Arc<DashMap<u64, Box<dyn FecDecoder>>>,
-    pub sent_counts: &'a Arc<DashMap<(u64, u32), u32>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
     /// tag so the sender's `[FCAUSE]` gauge can say which receiver arm
     /// caused each fire. Label only — no arm branches on it.
     pub nack_tx: Option<&'a tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
-    /// Some(..) in block mode — Ack diffs drive repair sends.
-    pub block_arq: Option<&'a Arc<parking_lot::Mutex<BlockArq>>>,
-    pub batch_counter: Option<&'a Arc<BatchCounter>>,
     /// Some(..) in window mode: the peer's cumulative WindowAck point, read
     /// by the local window sender (ack-driven advance, retransmit-buffer and
     /// sent-store pruning). It must be the peer's ack, not the local
@@ -91,12 +76,12 @@ pub(crate) struct ControlCtx<'a> {
 
 pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &ControlCtx<'_>) {
     match msg {
-        // BlockStart: the decoder uses the backend named in the message.
-        ControlMessage::BlockStart {
-            params,
-            transfer_length,
-            backend,
-        } => on_block_start(ctx, params, transfer_length, backend),
+        // The block pipeline's control messages (ADR-0069 deleted it). The
+        // variants stay on the wire (their indices are the encoding); a
+        // peer that still sends them is ignored.
+        ControlMessage::BlockStart { .. } | ControlMessage::BlockResult { .. } => {
+            debug!(path_id, "block-pipeline control message ignored (block pipeline removed, ADR-0069)");
+        }
 
         // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
         ControlMessage::Ack {
@@ -114,20 +99,6 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             echo_send_timestamp_us,
             expected_count,
             received_count,
-        ),
-
-        ControlMessage::BlockResult {
-            block_id,
-            success,
-            symbols_received,
-            symbols_needed,
-        } => on_block_result(
-            ctx,
-            path_id,
-            block_id,
-            success,
-            symbols_received,
-            symbols_needed,
         ),
 
         ControlMessage::PathReport {
@@ -204,32 +175,6 @@ pub fn repair_request_ignored() -> u64 {
     REPAIR_REQUEST_IGNORED.load(Ordering::Relaxed)
 }
 
-/// Handle BlockStart: the decoder uses the backend named in the message.
-fn on_block_start(
-    ctx: &ControlCtx<'_>,
-    params: EncodingParams,
-    transfer_length: u64,
-    backend: FecBackend,
-) {
-    let decoders = ctx.decoders;
-    // Evict oldest decoder if at capacity (DoS protection)
-    if !decoders.contains_key(&params.block_id)
-        && decoders.len() >= MAX_CONCURRENT_DECODERS
-    {
-        evict_oldest_decoder(decoders);
-    }
-    decoders
-        .entry(params.block_id)
-        .or_insert_with(|| backend.create_decoder(params, transfer_length));
-    debug!(
-        block_id = params.block_id,
-        source_symbols = params.source_symbols,
-        transfer_length,
-        ?backend,
-        "received BlockStart"
-    );
-}
-
 /// ADR-0005 + ADR-0007: handle ACK with echo-based RTT
 fn on_ack(
     ctx: &ControlCtx<'_>,
@@ -241,7 +186,7 @@ fn on_ack(
     received_count: u32,
 ) {
     let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
-    let (copa_feed, block_arq, batch_counter) = (ctx.copa_feed, ctx.block_arq, ctx.batch_counter);
+    let copa_feed = ctx.copa_feed;
 
     let mut sched = scheduler.lock();
     sched.touch_path(path_id);
@@ -327,8 +272,8 @@ fn on_ack(
             };
             path.record_rtt_sample(cc_rtt);
         }
-        // Wire-level loss evidence for the competitive AIMD (block-mode Ack
-        // arm; the WindowAck feed path has its own call). No-op unless
+        // Wire-level loss evidence for the competitive AIMD (the per-batch
+        // Ack arm; the WindowAck feed path has its own call). No-op unless
         // RWM_COPA_COMPETE.
         if crate::scheduler::copa_compete_active() {
             if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
@@ -388,7 +333,7 @@ fn on_ack(
             ps.symbols_received.fetch_add(received_ids.len() as u64, Ordering::Relaxed);
         }
 
-        // Block mode already drives Copa via
+        // The per-batch Ack arm drives Copa via
         // `sched.ack` above — publish its cwnd as the pass-through
         // substrate window too (no-op unless RWM_QUIC_CC=passthrough).
         transport.set_cc_window_bytes(
@@ -396,104 +341,6 @@ fn on_ack(
             path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
         );
     }
-
-    // The Ack is P_lost evidence at probability ≈ 1 — diff the
-    // batch ledger and repair immediately (one-RTT recovery). The
-    // per-path SRTT feeds the timeout leg for older un-acked
-    // batches on this path.
-    let loss_timeout = sched
-        .path(path_id)
-        .map(|p| arq_loss_timeout(p.srtt()))
-        .unwrap_or(Duration::from_millis(200));
-    drop(sched);
-    if let (Some(arq), Some(bc)) = (block_arq, batch_counter) {
-        let events = arq.lock().on_ack(
-            batch_seq,
-            path_id,
-            received_ids,
-            Instant::now(),
-            loss_timeout,
-        );
-        if !events.is_empty() {
-            send_arq_repairs(events, arq, scheduler, transport, bc, stats);
-        }
-    }
-}
-
-fn on_block_result(
-    ctx: &ControlCtx<'_>,
-    path_id: u32,
-    block_id: u64,
-    success: bool,
-    symbols_received: u32,
-    symbols_needed: u32,
-) {
-    let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
-    let (fec_controller, sent_counts) = (ctx.fec_controller, ctx.sent_counts);
-    let (block_arq, batch_counter) = (ctx.block_arq, ctx.batch_counter);
-
-    fec_controller.lock().feedback_update(success);
-
-    // ADR-0013: update FEC monitoring stats
-    {
-        let diag = fec_controller.lock().diagnostics();
-        stats.fec.actual_failure_rate_bits.store(diag.actual_failure_rate.to_bits(), Ordering::Relaxed);
-        stats.fec.pi_correction_e3.store((diag.pi_correction * 1000.0) as i64, Ordering::Relaxed);
-    }
-    if !success {
-        stats.blocks.decoded_fail.fetch_add(1, Ordering::Relaxed);
-    }
-
-    // Signal congestion control on block result.
-    // If block failed (not enough symbols), that's a congestion signal
-    // If block succeeded despite loss, FEC handled it (random loss)
-    let had_loss = symbols_received < symbols_needed + (symbols_needed / 5); // rough: needed some repair
-    if had_loss || !success {
-        let mut sched = scheduler.lock();
-        // Signal loss to all paths that sent symbols for this block
-        let path_ids: Vec<u32> = sent_counts
-            .iter()
-            .filter(|entry| entry.key().0 == block_id)
-            .map(|entry| entry.key().1)
-            .collect();
-        for pid in path_ids {
-            sched.on_loss(pid, success); // fec_recovered = success
-        }
-    }
-
-    debug!(
-        block_id,
-        success,
-        symbols_received,
-        symbols_needed,
-        "block result from peer"
-    );
-
-    // Block decoded → drop retained data and suppress pending
-    // loss events; block failed → one more repair round with
-    // doubled margin (rateless backends only — see block_arq).
-    if let Some(arq) = block_arq {
-        if success {
-            arq.lock().on_block_done(block_id);
-        } else if let Some(bc) = batch_counter {
-            let deficit = symbols_needed.saturating_sub(symbols_received);
-            let eps_hat = worst_loss_rate(scheduler);
-            let plan = arq.lock().on_block_failed(block_id, deficit, path_id, eps_hat);
-            if let Some(plan) = plan {
-                dispatch_repair_plans(
-                    vec![plan],
-                    arq,
-                    scheduler,
-                    transport,
-                    bc,
-                    stats,
-                );
-            }
-        }
-    }
-
-    // Clean up sent_counts for this block
-    sent_counts.retain(|(bid, _), _| *bid != block_id);
 }
 
 fn on_path_report(
@@ -878,8 +725,8 @@ fn on_repair_request(
         Some(tx) => {
             let _ = tx.try_send((cause, spans));
         }
-        // No consumer: the arm is absent (or this is a generation / block
-        // seat, where the span vocabulary has no server). Count it so the
+        // No consumer: the arm is absent (or this is a generation seat,
+        // where the span vocabulary has no server). Count it so the
         // absence is a reading.
         None => {
             REPAIR_REQUEST_IGNORED.fetch_add(1, Ordering::Relaxed);
@@ -899,20 +746,5 @@ fn on_generation_deficit(ctx: &ControlCtx<'_>, path_id: u32, deficits: Vec<(u64,
     // receiver next SRTT, and the in-flight accounting self-corrects.
     if let Some(tx) = ctx.deficit_tx {
         let _ = tx.try_send(deficits);
-    }
-}
-
-/// Evict the oldest incomplete decoder from the map. Used to enforce
-/// `MAX_CONCURRENT_DECODERS` and prevent OOM from a peer flooding block_ids.
-fn evict_oldest_decoder(decoders: &DashMap<u64, Box<dyn FecDecoder>>) {
-    let oldest = decoders
-        .iter()
-        .filter(|entry| !entry.value().is_decoded())
-        .min_by_key(|entry| entry.value().created_at())
-        .map(|entry| *entry.key());
-
-    if let Some(block_id) = oldest {
-        decoders.remove(&block_id);
-        warn!(block_id, "evicted oldest decoder (concurrent decoder limit reached)");
     }
 }

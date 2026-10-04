@@ -24,11 +24,15 @@ pub struct RaptorpathConfig {
     pub route: Option<Vec<String>>,
     /// DNS server to configure on the tunnel interface
     pub dns: Option<String>,
-    /// Block interleaving depth (1 = disabled, 2+ = spread burst loss across N blocks)
+    /// Removed with the block pipeline (ADR-0069). Still parsed so an old
+    /// config fails with a clear error instead of an unknown-field error;
+    /// setting it is a startup error.
     pub interleave_depth: Option<u32>,
     /// Path to a pinned TLS certificate (DER or PEM) for server verification
     pub pin_cert: Option<String>,
-    /// FEC backend: "raptorq" (default), "rs", or "rlc"
+    /// FEC backend: "rlc" (the default and the only one). The block-only
+    /// "raptorq" and "rs" were removed with the block pipeline (ADR-0069);
+    /// naming them is a startup error.
     pub fec_backend: Option<String>,
     /// Deprecated (parsed, warned, ignored). The codec is chosen once at
     /// startup (per config/hint) and never changes mid-stream: a switch
@@ -49,10 +53,11 @@ pub struct RaptorpathConfig {
     /// full store becomes TUN-read backpressure — never data loss. The
     /// coding window keeps sliding freely (it is only the FEC horizon).
     /// The receiver holds delivery at holes until they are recovered
-    /// (NACK/repair), never force-delivering past them. Also routes
-    /// Bulk/Auto hints onto the window pipeline (RLC codec unless
-    /// fec_backend says otherwise). Default false: Bulk/Auto stay on block
-    /// mode, Realtime keeps its lossy evict window (correct for its δ).
+    /// (NACK/repair), never force-delivering past them. This is the
+    /// retention contract ρ — an independent dial, never a pipeline
+    /// selector: every hint rides the one window pipeline (ADR-0069).
+    /// Default: the named point's ρ preset — true (ρ = 1) at Bulk/Auto,
+    /// false (EVICT, ρ < 1) at Realtime (correct for its δ).
     pub window_reliable: Option<bool>,
     /// Enable PI feedback loop in FEC rate controller (default: true)
     pub enable_pi_feedback: Option<bool>,
@@ -69,10 +74,9 @@ pub struct RaptorpathConfig {
     /// throughput (TCP-in-tunnel). Default 0.0 (measured neutral at c2,
     /// regressive at c3); set 1.0 to enable the floor.
     pub inner_feedback_weight: Option<f64>,
-    /// Block-granular multipath source affinity (paper §5.5): a whole
-    /// block's source symbols ride one path; blocks are WRR-distributed by
-    /// capacity share. Default true; false restores per-symbol striping
-    /// (ablation).
+    /// Removed with the block pipeline (ADR-0069): block-granular multipath
+    /// affinity had no window-path user. Still parsed so an old config fails
+    /// with a clear error; setting it is a startup error.
     pub mp_block_affinity: Option<bool>,
     /// Out-of-order object delivery on the reliable sliding window (the
     /// H → ∞ corner, paper §4.11). When set (object/perf path only,
@@ -248,36 +252,62 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         .transpose()
         .map_err(|e| anyhow::anyhow!("invalid DNS address: {e}"))?;
 
-    // Default interleave depth based on protocol hint (a declared
-    // hint-keyed corner, paper §11.1). Bulk uses 1: interleaving delays
-    // every block's completion by (depth-1) block serialization times, and
-    // for TCP-in-tunnel that inflates the inner RTT in a closed loop
-    // (slower inner TCP → lower rate → longer block serialization → higher
-    // latency). Block-mode ARQ + in-order block delivery handle burst loss
-    // reactively, so the burst-spreading insurance does not pay its
-    // latency cost there.
-    let default_interleave = match protocol_hint {
-        ProtocolHint::Realtime => 2,
-        ProtocolHint::Bulk => 1,
-        ProtocolHint::Auto => 3,
-    };
+    // ADR-0069: the block pipeline is deleted, so every setting that only
+    // it read is a startup error naming the ADR — never a silent re-route.
+    const BLOCK_REMOVED: &str = "the block pipeline was removed (ADR-0069): every hint \
+        rides the window pipeline on the RLC codec";
+    if let Some(d) = config.interleave_depth {
+        anyhow::bail!(
+            "interleave_depth = {d}: {BLOCK_REMOVED}; block interleaving has no \
+             window-path meaning — remove the setting"
+        );
+    }
+    if let Some(a) = config.mp_block_affinity {
+        anyhow::bail!(
+            "mp_block_affinity = {a}: {BLOCK_REMOVED}; block-granular path affinity has \
+             no window-path meaning — remove the setting"
+        );
+    }
 
     let fec_backend = match config.fec_backend.as_deref() {
-        Some("reed-solomon") | Some("rs") => FecBackend::ReedSolomon,
-        Some("rlc") => FecBackend::Rlc,
+        Some("rlc") | None => FecBackend::Rlc,
+        Some(b @ ("raptorq" | "rs" | "reed-solomon")) => {
+            anyhow::bail!("fec_backend '{b}' is block-only: {BLOCK_REMOVED}. Available: rlc")
+        }
         // The streaming machine is gone; the unified span machine
         // (ADR-0064) replaces it.
         Some("streaming") => anyhow::bail!(
             "fec_backend 'streaming' was removed: the streaming two-layer machine \
              was retired in favour of the unified span machine (ADR-0064). \
              Realtime rides the unified RLC span machine (default); RWM_UNIFIED=0 selects the \
-             legacy-RLC windowed machine. Available: raptorq, rs, rlc"
+             legacy-RLC windowed machine. Available: rlc"
         ),
-        Some("raptorq") | None => FecBackend::RaptorQ,
-        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: raptorq, rs, rlc"),
+        Some(other) => anyhow::bail!("unknown fec_backend '{other}'. Available: rlc"),
     };
 
-    let fec_backend_explicit = config.fec_backend.is_some();
+    // The retention contract ρ at the named point (CLAUDE.md: the hints are
+    // NAMED POINTS on the dials, never modes). Realtime's preset is EVICT
+    // (ρ < 1), Bulk/Auto's is retain-until-acked (ρ = 1); an explicit
+    // `window_reliable` moves the ρ dial at any hint. ρ never selects a
+    // pipeline — there is one.
+    let window_reliable = config
+        .window_reliable
+        .unwrap_or(protocol_hint != ProtocolHint::Realtime);
+    // The object-delivery corners presuppose retention (the reliable store is
+    // the backstop for every hole they leave behind).
+    for (set, flag) in [
+        (config.window_out_of_order, "window_out_of_order"),
+        (config.window_coded_only, "window_coded_only"),
+        (config.window_generation_coding, "window_generation_coding"),
+        (config.window_systematic_repair, "window_systematic_repair"),
+    ] {
+        if set == Some(true) && !window_reliable {
+            anyhow::bail!(
+                "{flag} requires retain-until-acked retention (window_reliable: the \
+                 Bulk/Auto default; pass --window-reliable at the Realtime hint)"
+            );
+        }
+    }
 
     // The codec is pinned at startup (paper §5.10). The old auto-switch
     // knobs are still parsed so existing
@@ -311,11 +341,9 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         status_addr,
         routes: config.route.clone().unwrap_or_default(),
         dns,
-        interleave_depth: config.interleave_depth.unwrap_or(default_interleave),
         pin_cert: config.pin_cert.as_ref().map(std::path::PathBuf::from),
         fec_backend,
-        fec_backend_explicit,
-        window_reliable: config.window_reliable.unwrap_or(false),
+        window_reliable,
         enable_pi_feedback: config.enable_pi_feedback.unwrap_or(true),
         reorder_timeout_ms: config.reorder_timeout_ms.unwrap_or(20),
         reorder_max_size: config.reorder_max_size.unwrap_or(500),
@@ -333,7 +361,6 @@ pub fn resolve(config: &RaptorpathConfig) -> anyhow::Result<(PeerConfig, Option<
         // publish. Only a driver that knows the size of what it is sending
         // (the perf client, under `RWM_COMPLETION_EXPOSURE`) sets it.
         completion_feed: None,
-        mp_block_affinity: config.mp_block_affinity.unwrap_or(true),
         // Out-of-order object delivery (H→∞). Default false —
         // set only by the perf/native-object path (which is bounded and
         // reassembles by offset). The run() tunnel path keeps in-order.
@@ -535,9 +562,9 @@ mod tests {
             status_addr: Some("127.0.0.1:9820".into()),
             route: Some(vec!["192.168.50.0/24".into()]),
             dns: Some("10.99.0.1".into()),
-            interleave_depth: Some(3),
+            interleave_depth: None,
             pin_cert: None,
-            fec_backend: Some("rs".into()),
+            fec_backend: Some("rlc".into()),
             fec_switch_threshold_low: Some(0.01),
             fec_switch_threshold_high: Some(0.10),
             fec_switch_interval: Some(5),
@@ -549,7 +576,7 @@ mod tests {
             reorder_timeout_ms: Some(0),
             reorder_max_size: Some(200),
             inner_feedback_weight: Some(0.0),
-            mp_block_affinity: Some(true),
+            mp_block_affinity: None,
             window_out_of_order: Some(false),
             window_coded_only: Some(false),
             window_generation_coding: Some(false),
@@ -559,7 +586,7 @@ mod tests {
         let parsed: RaptorpathConfig = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.server, Some(true));
         assert_eq!(parsed.tun_name.as_deref(), Some("rpath0"));
-        assert_eq!(parsed.fec_backend.as_deref(), Some("rs"));
+        assert_eq!(parsed.fec_backend.as_deref(), Some("rlc"));
         assert_eq!(parsed.fec_switch_threshold_low, Some(0.01));
         assert_eq!(parsed.fec_auto_switch, Some(true));
         assert_eq!(parsed.enable_pi_feedback, Some(false));
@@ -598,22 +625,61 @@ mod tests {
     }
 
     #[test]
-    fn test_window_reliable_default_off_and_opt_in() {
-        // Default off: bulk stays on block mode.
-        let bulk = RaptorpathConfig {
+    fn test_window_reliable_is_the_rho_preset_and_an_independent_dial() {
+        // The ρ preset at each named point: retain at Bulk/Auto, EVICT at Realtime.
+        for (h, want) in [("bulk", true), ("auto", true), ("realtime", false)] {
+            let cfg = RaptorpathConfig { protocol_hint: Some(h.into()), ..Default::default() };
+            assert_eq!(resolve(&cfg).unwrap().0.window_reliable, want, "{h}");
+        }
+        // ρ is an independent dial: an explicit value wins at every hint.
+        for h in ["bulk", "auto", "realtime"] {
+            for v in [false, true] {
+                let cfg = RaptorpathConfig {
+                    protocol_hint: Some(h.into()),
+                    window_reliable: Some(v),
+                    ..Default::default()
+                };
+                assert_eq!(resolve(&cfg).unwrap().0.window_reliable, v, "{h} explicit {v}");
+            }
+        }
+        // The object corners need retention: fine at the Bulk default,
+        // an error at EVICT.
+        let ok = RaptorpathConfig {
             protocol_hint: Some("bulk".into()),
+            window_out_of_order: Some(true),
             ..Default::default()
         };
-        let (pc, _) = resolve(&bulk).unwrap();
-        assert!(!pc.window_reliable);
-        // Explicit opt-in.
-        let opt_in = RaptorpathConfig {
-            protocol_hint: Some("bulk".into()),
-            window_reliable: Some(true),
+        assert!(resolve(&ok).is_ok());
+        let bad = RaptorpathConfig {
+            protocol_hint: Some("realtime".into()),
+            window_systematic_repair: Some(true),
             ..Default::default()
         };
-        let (pc, _) = resolve(&opt_in).unwrap();
-        assert!(pc.window_reliable);
+        assert!(resolve(&bad).is_err());
+    }
+
+    /// ADR-0069: there is no block pipeline to fall back to, so every
+    /// config that would have selected it is a startup error naming the ADR
+    /// — never a silent re-route.
+    #[test]
+    fn block_only_config_is_an_error_naming_adr_0069() {
+        let cases: Vec<(&str, RaptorpathConfig)> = vec![
+            ("raptorq", RaptorpathConfig { fec_backend: Some("raptorq".into()), ..Default::default() }),
+            ("rs", RaptorpathConfig { fec_backend: Some("rs".into()), ..Default::default() }),
+            ("reed-solomon", RaptorpathConfig { fec_backend: Some("reed-solomon".into()), ..Default::default() }),
+            ("interleave_depth", RaptorpathConfig { interleave_depth: Some(3), ..Default::default() }),
+            ("mp_block_affinity", RaptorpathConfig { mp_block_affinity: Some(false), ..Default::default() }),
+        ];
+        for (what, cfg) in cases {
+            let err = match resolve(&cfg) {
+                Ok(_) => panic!("{what}: a block-only setting must not resolve"),
+                Err(e) => e.to_string(),
+            };
+            assert!(err.contains("ADR-0069"), "{what}: the error names ADR-0069: {err}");
+        }
+        // `rlc`, the window pipeline's codec, still resolves explicitly.
+        let rlc = RaptorpathConfig { fec_backend: Some("rlc".into()), ..Default::default() };
+        assert!(resolve(&rlc).is_ok());
     }
 
     #[test]

@@ -82,15 +82,16 @@ struct RunArgs {
     #[arg(long)]
     dns: Option<String>,
 
-    /// Block interleaving depth (1=disabled, 2+=spread burst loss across N blocks)
-    #[arg(long)]
+    /// Removed with the block pipeline (ADR-0069); setting it is an error.
+    #[arg(long, hide = true)]
     interleave_depth: Option<u32>,
 
     /// Path to a pinned TLS certificate (DER or PEM) for server verification
     #[arg(long)]
     pin_cert: Option<String>,
 
-    /// FEC backend: raptorq (default), rs, or rlc
+    /// FEC backend: rlc (the default and the only one; the block-only
+    /// raptorq/rs were removed with the block pipeline, ADR-0069)
     #[arg(long)]
     fec_backend: Option<String>,
 
@@ -101,15 +102,14 @@ struct RunArgs {
     #[arg(long)]
     inner_feedback_weight: Option<f64>,
 
-    /// Block-granular multipath source affinity (paper §5.7 in-order
-    /// coupling). Default true; pass false for the striping ablation.
-    #[arg(long)]
+    /// Removed with the block pipeline (ADR-0069); setting it is an error.
+    #[arg(long, hide = true)]
     mp_block_affinity: Option<bool>,
 
-    /// Reliable sliding-window pipeline (paper §5.1)
-    /// for Bulk/Auto — sent-data store retained until acked (targeted
-    /// retransmit for aged holes, store-full ⇒ backpressure), receiver
-    /// holds at holes until recovered. Default off (block mode).
+    /// Retain-until-acked retention, ρ = 1 (paper §5.1): sent-data store
+    /// retained until acked (targeted retransmit for aged holes, store-full
+    /// ⇒ backpressure), receiver holds at holes until recovered. Already the
+    /// Bulk/Auto default; moves Realtime off its EVICT preset (ρ < 1).
     #[arg(long)]
     window_reliable: bool,
 }
@@ -145,9 +145,9 @@ struct PerfArgs {
     #[arg(long)]
     protocol_hint: Option<String>,
 
-    /// Run bulk/auto on the reliable sliding-window pipeline (RLC). Omit
-    /// for the block-mode baseline — same binary, same chunk geometry,
-    /// flag-only difference.
+    /// Retain-until-acked retention, ρ = 1. Already the bulk/auto default
+    /// (every hint rides the window pipeline, ADR-0069); moves Realtime off
+    /// its EVICT preset.
     #[arg(long)]
     window_reliable: bool,
 
@@ -284,24 +284,9 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
         window_systematic_repair: if args.window_systematic_repair { Some(true) } else { None },
         ..Default::default()
     };
-    if args.window_out_of_order && !args.window_reliable {
-        anyhow::bail!("--window-out-of-order requires --window-reliable (out-of-order object delivery)");
-    }
-    if args.window_coded_only && !args.window_reliable {
-        anyhow::bail!(
-            "--window-coded-only requires --window-reliable (fungible frontier)"
-        );
-    }
-    if args.window_generation_coding && !args.window_reliable {
-        anyhow::bail!(
-            "--window-generation-coding requires --window-reliable (generation coding)"
-        );
-    }
-    if args.window_systematic_repair && !args.window_reliable {
-        anyhow::bail!(
-            "--window-systematic-repair requires --window-reliable (systematic + deficit repair)"
-        );
-    }
+    // The object corners' retention requirement is checked by
+    // `config::resolve` against the RESOLVED ρ (retain is the Bulk/Auto
+    // default, so the corners no longer need the flag spelled out there).
     let (mut peer_config, _status_addr) = config::resolve(&cfg)?;
 
     // Client convenience: one wildcard bind per peer path.

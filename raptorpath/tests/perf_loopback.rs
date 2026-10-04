@@ -11,13 +11,21 @@ use std::time::Duration;
 
 use loopback::in_process::{cfgs, ports, resolve, run};
 
+/// The shipped default end to end: no flags at the Auto named point routes
+/// to the window pipeline (ADR-0069) with retain-until-acked retention, and
+/// the object round-trips. The client bails if the warm-up object is never
+/// acked and only returns Ok after every run completed or timed out;
+/// bounding the whole thing well under the 300 s run timeout means Ok == the
+/// object round-tripped (chunks delivered, reassembled, acked).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn perf_loopback_small_object() {
-    // The client bails if the warm-up object is never acked and only
-    // returns Ok after every run completed or timed out; bounding the
-    // whole thing well under the 300 s run timeout means Ok == the
-    // object round-tripped (chunks delivered, reassembled, acked).
-    loopback::in_process_loopback("bulk", false, 200_000, 2, "perf loopback").await;
+async fn perf_loopback_default_config() {
+    let (mut s, mut c) = cfgs(&ports(1), "auto", false);
+    s.window_reliable = None;
+    c.window_reliable = None;
+    let (srv, cli) = (resolve(&s), resolve(&c));
+    assert!(srv.window_reliable && cli.window_reliable, "Auto's ρ preset is retain-until-acked");
+    assert_eq!(srv.fec_backend, raptorpath::fec::FecBackend::Rlc);
+    run(srv, cli, 200_000, 2, Duration::from_secs(60), "default-config perf loopback").await;
 }
 
 /// The same loopback exchange over the reliable sliding-window pipeline

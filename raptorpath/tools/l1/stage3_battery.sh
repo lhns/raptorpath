@@ -14,18 +14,18 @@
 # are `unset` first (measurement discipline 15d) and then set only by CAD:
 #   A1, A2  window pipeline, bulk          (the CTL, run twice: the A/A)
 #   CAD     window pipeline, bulk, RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0
-#   BLKb    block pipeline, bulk
 #   WINa    window pipeline, auto
-#   BLKa    block pipeline, auto
+# Every arm is the window pipeline: the block pipeline (and its BLKb/BLKa
+# arms) was deleted by ADR-0069; that plan is in git history.
 #
-# PLAN per (rep, seed) block -- 32 invocations; cells in this order, the arm
+# PLAN per (rep, seed) block -- 22 invocations; cells in this order, the arm
 # order within every cell rotated by the block index (rule 3):
-#   c1s-400  A1 A2 BLKb WINa BLKa        (c1 single, 400 MB)
+#   c1s-400  A1 A2 WINa                  (c1 single, 400 MB)
 #   c1d-400  A1 A2 CAD                   (c1 || c1 dual, 400 MB)
-#   c2-100   A1 A2 CAD BLKb WINa BLKa    (c2 single, 100 MB)
-#   c3-25    A1 A2 CAD BLKb WINa BLKa    (c3 single, 25 MB)
-#   c7-100   A1 A2 CAD BLKb WINa BLKa    (c2 || c2 dual, 100 MB)
-#   c8-100   A1 A2 CAD BLKb WINa BLKa    (c2 || c3 dual, 100 MB)
+#   c2-100   A1 A2 CAD WINa              (c2 single, 100 MB)
+#   c3-25    A1 A2 CAD WINa              (c3 single, 25 MB)
+#   c7-100   A1 A2 CAD WINa              (c2 || c2 dual, 100 MB)
+#   c8-100   A1 A2 CAD WINa              (c2 || c3 dual, 100 MB)
 # Blocks run rep 1 seed 42, rep 1 seed 7, rep 2 seed 42, ... With S3_NO_CAD=1
 # (a pre-registered cut) CAD is left out of the plan.
 #
@@ -103,13 +103,12 @@ cell_arms() { # cell -> the arms run there
   local cad="CAD"
   [ "${S3_NO_CAD:-0}" = "1" ] && cad=""
   case "$1" in
-    c1s-400) echo "A1 A2 BLKb WINa BLKa" ;;
+    c1s-400) echo "A1 A2 WINa" ;;
     c1d-400) echo "A1 A2 $cad" ;;
-    *)       echo "A1 A2 $cad BLKb WINa BLKa" ;;
+    *)       echo "A1 A2 $cad WINa" ;;
   esac
 }
-arm_pipe() { case "$1" in BLKb|BLKa) echo block ;; *) echo window ;; esac; }
-arm_hint() { case "$1" in WINa|BLKa) echo auto ;; *) echo bulk ;; esac; }
+arm_hint() { case "$1" in WINa) echo auto ;; *) echo bulk ;; esac; }
 CELLS_ALL="c1s-400 c1d-400 c2-100 c3-25 c7-100 c8-100"
 CELLS="${S3_CELLS:-$CELLS_ALL}"
 
@@ -118,7 +117,7 @@ run_one() { # cell arm seed rep
   local cot_b=0 cot_a=0 cot=0
   read -r ca cb mode bytes <<< "$(cell_spec "$cell")"
   [ -n "$ca" ] || { echo "UNKNOWN-CELL $cell" >> "$OUT"; return 0; }
-  pipe="$(arm_pipe "$arm")"; hint="$(arm_hint "$arm")"
+  pipe=window; hint="$(arm_hint "$arm")"
   local name="$cell-$arm"
   for attempt in $(seq 1 "$TRIES"); do
     sha="$(sha256sum "$BIN" | cut -d' ' -f1)"
