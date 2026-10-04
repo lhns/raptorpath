@@ -16,8 +16,12 @@
 > receiver ignores them); `net/recv_block.rs` (the receiver's diagnostic
 > block, not block mode); `Scheduler::schedule` (now per-symbol only).
 > Removed beyond the list: `ReorderBuffer`'s byte-bounded mode and the
-> receiver's `CompletedBlocks`. The text below is the decision as recorded
-> before execution.
+> receiver's `CompletedBlocks`. Not re-measured: the window pipeline's TUN
+> MTU clamp (`symbol_size − 4` = 1196 at Bulk/Auto, formerly 1500 on block)
+> now applies to every `run` tunnel, and the Stage-3 re-test measured `rp
+> perf` objects, not TCP-in-tunnel — the in-order-delivery-for-an-inner-TCP
+> question of the Context section remains unmeasured at the tunnel cells.
+> The text below is the decision as recorded before execution.
 
 > Code line numbers below are as of the ADR's writing and have drifted.
 > "Ledger" citations refer to the measurement ledger at ac1aed1 (see the ADR index).

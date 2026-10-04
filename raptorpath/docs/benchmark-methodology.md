@@ -3,6 +3,11 @@
 This document describes the simulation model, channel parameters, trial structure,
 and interpretive caveats for the raptorpath benchmark suite (`bench_suite.rs`).
 
+> **ADR-0069 (dacfd7c):** the block codecs (RaptorQ, Reed-Solomon) and the
+> block pipeline were removed. `bench_suite.rs` now runs RLC window and
+> Retransmit only; the block-backend tables and matrix rows described below
+> are historical (their last results are in git history).
+
 ---
 
 ## 1. Channel Models
