@@ -797,7 +797,7 @@ pub(crate) fn report(
         // span above the release frontier; hole = unSACKed below it.
         let wnd2diag = if reliable && !generation {
             let last_sent =
-                st.sent_store.keys().next_back().copied().unwrap_or(0);
+                st.sent_store.last_key().unwrap_or(0);
             let head = last_sent.saturating_sub(wnd2_frontier_last) as usize;
             let hole = store_len.saturating_sub(head);
             let relgap_cur =

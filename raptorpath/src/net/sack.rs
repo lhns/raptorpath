@@ -159,8 +159,8 @@ pub fn percap_release_cumulative(
 ///
 /// Returns the seqs newly released by this call (for per-path account
 /// release); already-released seqs are skipped — no double-release.
-pub fn sack_release_mark<V>(
-    sent_store: &BTreeMap<u64, V>,
+pub fn sack_release_mark<S: super::seq_ring::RetainedSeqs>(
+    sent_store: &S,
     released: &mut BTreeSet<u64>,
     start: u64,
     end: u64,
@@ -172,19 +172,19 @@ pub fn sack_release_mark<V>(
 
 /// [`sack_release_mark`] into the caller's scratch `newly` (cleared first),
 /// so the per-SACK-range drain allocates nothing in steady state.
-pub fn sack_release_mark_into<V>(
-    sent_store: &BTreeMap<u64, V>,
+pub fn sack_release_mark_into<S: super::seq_ring::RetainedSeqs>(
+    sent_store: &S,
     released: &mut BTreeSet<u64>,
     start: u64,
     end: u64,
     newly: &mut Vec<u64>,
 ) {
     newly.clear();
-    for (&seq, _) in sent_store.range(start..=end) {
+    sent_store.for_each_seq_in(start, end, |seq| {
         if released.insert(seq) {
             newly.push(seq);
         }
-    }
+    });
 }
 
 /// The cumulative-frontier twin of [`sack_release_mark`] (the
@@ -289,16 +289,16 @@ pub fn store_released_for_gate(retained: usize, sack_released: usize, above_rele
 /// non-empty its last key is the highest seq ever sent -- the `H` of the
 /// derivation. O(log n + |S ∩ [0, F)|); the second term is ~0 because the
 /// cumulative prune runs every loop iteration.
-pub fn store_gate_released<V>(
-    sent_store: &BTreeMap<u64, V>,
+pub fn store_gate_released<S: super::seq_ring::RetainedSeqs>(
+    sent_store: &S,
     sack_released: usize,
     report: AboveReport,
 ) -> usize {
-    let retained = sent_store.len();
-    let above = match sent_store.keys().next_back() {
-        Some(&h) => {
+    let retained = sent_store.retained_len();
+    let above = match sent_store.last_seq() {
+        Some(h) => {
             let f = report.next_expected;
-            let retained_below = sent_store.range(..f).count();
+            let retained_below = sent_store.retained_below(f);
             let retained_from = retained - retained_below;
             let span_from = (h + 1).saturating_sub(f);
             received_above_released(retained_below, retained_from, span_from, report.received_above)

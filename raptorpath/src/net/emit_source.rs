@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 use tracing::warn;
 
 use super::sender_policy::SenderPolicy;
+use super::seq_ring::SeqRing;
 use super::{
     BatchCounter,
     CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
@@ -82,15 +83,22 @@ pub(crate) struct SenderState {
     /// an aged SACK-confirmed hole that slid out of the coding window is
     /// recovered by a targeted retransmit of exactly this symbol. Bounded by
     /// RELIABLE_STORE_MAX via TUN-read backpressure, never by eviction.
-    pub sent_store: BTreeMap<u64, WireSymbol>,
+    pub sent_store: SeqRing<WireSymbol>,
     /// Retransmit buffer: maps seq → (send_time_us, epsilon_at_send, path_id).
     /// Used for P_lost-based retransmit decisions. Symbols are removed on ACK.
     /// Metadata only — under EVICT the source bytes die with window eviction.
-    pub retransmit_buffer: BTreeMap<u64, (u64, f64, u32)>,
+    pub retransmit_buffer: SeqRing<(u64, f64, u32)>,
     /// Maps source seq → path it was sent on (for cross-path retransmission).
-    /// BTreeMap (not HashMap) so the per-path ack attribution can range-query
+    /// Ordered (not HashMap) so the per-path ack attribution can range-query
     /// the seqs in a SACK / cumulative-ack span.
-    pub source_path_map: BTreeMap<u64, u32>,
+    ///
+    /// The three per-seq maps above are [`SeqRing`]s, not `BTreeMap`s: their
+    /// keys are the encoder's consecutive source seqs, inserted in order and
+    /// pruned only as a prefix (cumulative ack / window floor), so a ring
+    /// indexed by `seq − base` has the map's exact semantics without a node
+    /// allocation per insert or a tree rebuild per ack. The retransmit
+    /// buffer's individual removals (shed, NACK) leave holes the ring handles.
+    pub source_path_map: SeqRing<u32>,
     /// seq → last NACK-retransmit time (µs). Repeated gap acks for the same
     /// hole (they arrive every GAP_ACK_MIN_INTERVAL while it persists) must
     /// not resend the symbol more than once per SRTT — but may resend after
@@ -212,9 +220,9 @@ impl SenderState {
         };
         Self {
             encoder,
-            sent_store: BTreeMap::new(),
-            retransmit_buffer: BTreeMap::new(),
-            source_path_map: BTreeMap::new(),
+            sent_store: SeqRing::new(),
+            retransmit_buffer: SeqRing::new(),
+            source_path_map: SeqRing::new(),
             nack_retx_at: std::collections::HashMap::new(),
             last_source_path: 0,
             last_source_send_us,
@@ -675,9 +683,8 @@ pub(crate) fn emit_source(
                 let mut use_retransmit = false;
                 let mut retransmit_seq = 0u64;
                 let oldest = st.retransmit_buffer
-                    .iter()
-                    .next()
-                    .map(|(&s, &v)| (s, v));
+                    .first()
+                    .map(|(s, &v)| (s, v));
                 if let Some((seq, (send_time_us, eps_at_send, _path))) = oldest {
                     let age_secs = (now.saturating_sub(send_time_us)) as f64 / 1_000_000.0;
                     let p = crate::control::fec_rate::p_lost(age_secs, eps_at_send, srtt_secs, rttvar_secs);

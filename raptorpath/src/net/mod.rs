@@ -54,6 +54,7 @@ pub use store_cap::*;
 mod report;
 pub use report::*;
 mod sack;
+pub(crate) mod seq_ring;
 pub use sack::*;
 
 use block_arq::BlockArq;
@@ -1612,7 +1613,7 @@ fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32)
 /// `win_cap` entries long.
 fn window_source_paths_into(
     encoder: &dyn WindowEncoder,
-    source_path_map: &std::collections::BTreeMap<u64, u32>,
+    source_path_map: &seq_ring::SeqRing<u32>,
     out: &mut Vec<u32>,
 ) {
     out.clear();
@@ -2796,7 +2797,7 @@ async fn run_window_sender(
         // 2×SRTT; on expiry synthesize a gap report for the cumulative
         // blocker (per-seq cooldown + budgets all apply downstream).
         let tail_deadline: Option<tokio::time::Instant> =
-            st.retransmit_buffer.iter().next().map(|(&seq, &(send_us, _, _))| {
+            st.retransmit_buffer.first().map(|(seq, &(send_us, _, _))| {
                 let last_activity_us = st.nack_retx_at
                     .get(&seq)
                     .map_or(send_us, |&(r, _)| r.max(send_us))
@@ -3007,7 +3008,7 @@ async fn run_window_sender(
             } => {
                 wait_arm = 6;
                 last_tail_sweep_us = now_us();
-                if let Some((&seq, _)) = st.retransmit_buffer.iter().next() {
+                if let Some((seq, _)) = st.retransmit_buffer.first() {
                     debug!(seq, "tail ARQ sweep — retransmitting cumulative blocker");
                     dg.diag_sweeps += 1;
                     // The tail sweep is the sender's own producer — no ack, and
@@ -3527,7 +3528,7 @@ async fn run_window_sender(
             // reliable mode keeps attribution while the store holds them).
             if !reliable {
                 let (win_start, _) = st.encoder.window_span();
-                st.source_path_map.retain(|&seq, _| seq >= win_start);
+                st.source_path_map.prune_below(win_start);
             }
         }
 

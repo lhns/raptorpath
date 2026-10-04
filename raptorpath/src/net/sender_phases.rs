@@ -957,7 +957,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 if start > hi {
                     continue;
                 }
-                for (&q, &pj) in st.source_path_map.range(start..=hi) {
+                for (q, &pj) in st.source_path_map.range(start, hi) {
                     mp_delivered.entry(pj).or_default().push(q);
                 }
                 mp_evid_max = mp_evid_max.max(hi);
@@ -1594,9 +1594,9 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // still in the store (aged holes retransmit cross-path too).
         let (win_start, _) = st.encoder.window_span();
         let path_map_floor = if reliable { ack + 1 } else { win_start };
-        st.source_path_map.retain(|&seq, _| seq >= path_map_floor);
+        st.source_path_map.prune_below(path_map_floor);
         // Remove ACKed symbols from retransmit buffer (all seqs <= ack)
-        st.retransmit_buffer = st.retransmit_buffer.split_off(&(ack + 1));
+        st.retransmit_buffer.prune_below(ack + 1);
         // δ-honest shed set: pruned on the same cumulative twin (the
         // receiver's frontier passing a shed seq closes its story).
         if !st.shed_seqs.is_empty() {
@@ -1604,7 +1604,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         }
         // The sent-data store is drained by acks only — this is the whole
         // retention contract.
-        st.sent_store = st.sent_store.split_off(&(ack + 1));
+        st.sent_store.prune_below(ack + 1);
         // RWM_STORE_SACK_RELEASE: the released-mark set prunes on the same
         // cumulative twin — at/below the frontier the slot is fully freed
         // (payload dropped above, mark dropped here); the subset-of-sent_store
