@@ -340,7 +340,15 @@ The sender estimates loss and burst statistics from acknowledgements.
   The implemented predictive quantile is the run-length-weighted average of
   per-run quantiles, an approximation of the mixture quantile. ε̂ in this
   paper is `predictive_loss_upper(0.95)`; before five BOCD updates it is the
-  Beta posterior's normal-approximation quantile.
+  Beta posterior's normal-approximation quantile. The BOCD update runs at its
+  design cadence, not per ack (`RWM_EST_CADENCE`, default on since
+  `83462ae`): clean evidence accumulates as counts and flushes every 10 ms,
+  and any ack carrying a loss flushes at once with the backlog, so no loss
+  reaches the posterior late. The EWMA, Beta, burst flag and GE stay per
+  ack. Per ack, the O(run length) update cost about a quarter of a sender
+  core at the single-path wall; batched, the observation unit is a 10 ms
+  slice, so the clean-path `plu` leaves the per-ack floor (0.0354 → about
+  0.001 at c1 dual, Stage 3 (d)). `RWM_EST_CADENCE=0` is the per-ack arm.
 * **GE estimator** (`raptorpath-math/src/gilbert_elliott.rs`, re-exported as
   `control::gilbert_elliott`).
   Decayed transition counters (factor 0.999), gated by `is_valid()` until
@@ -2371,7 +2379,7 @@ bind-fraction readouts left `[RACK]` and `[QCLK]` with their arms (Section 10).
 budget; δ from the hint; plain window (no generation coding); quinn BBR
 under the engine; path-scaled pooled store with SACK-clocked release and
 the δ-cap; per-path loss detection; the anchor-hygiene pair; merged acks;
-compact framing; placement at T = 0.15. It is pinned by
+compact framing; the batched BOCD update (Section 2.6); placement at T = 0.15. It is pinned by
 `gates/tests.rs::default_env_resolves_the_shipped_stack` and byte-pinned by
 `gates_echo_default_is_byte_pinned`. As stated in Section 1.5,
 Bulk and Auto need `--window-reliable` to run this machine; without it they
@@ -2408,7 +2416,8 @@ spreads (c2 36–40 ms, c3 100–113 ms).
 is not a faster bulk pipe than BBR-class single-path stacks or kernel MPTCP
 over BBR. The clean-path gap is the engine's per-message service wall (a
 measured opt-in, sender batching plus estimator cadence, reaches 446–505
-Mbit/s at c1). The lossy-single gap was accounted to closure at `db40d2f`:
+Mbit/s at c1; the estimator cadence alone has shipped since `83462ae`, so
+sender batching is the remaining opt-in). The lossy-single gap was accounted to closure at `db40d2f`:
 framing and MTU tax (~4.3 / 0.95 Mbit/s at c2 / c3) and reactive over-fire
 (~2.7 / 1.7), with the wire ≥ 98 % utilised; compact framing then recovered
 part of it. At the heterogeneous dual, slow-path source is negative-margin
@@ -2623,7 +2632,8 @@ shipped.
 | Pool delivery-clocked anchor (`RWM_POOL_DELIV`) | worked exactly as specified and moved the symmetric dual the wrong way (0.931–0.958×Σ) | `8afd4dd` | removed |
 | Floor-bound anchor (`RWM_FLOOR_BOUND`) | −14 % at c1; the ack-interval over-read is load-bearing at N = 1 | `8afd4dd` | removed |
 | Sender-truth loss estimator (`RWM_LOSS_SENT_TRUTH`) | moves ε̂ 20× in the wrong direction, including at N = 1 | `27e36e3` | off |
-| Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); ships as an opt-in | `e84ef1c` | reverted |
+| Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals | `e84ef1c` | reverted |
+| Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg | Stage 3, `83462ae` | shipped; `RWM_POOL_ANCHOR` stays an off arm |
 | Emission batching as default (`RWM_EMIT_BATCH`) | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | opt-in |
 | **Recovery clocks** | | | |
 | Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed; the per-path sequence returns ungated as wire v9 `path_seq` (Section 2.2), so the cadence re-heat is the first reading its VM run owes |
@@ -2670,7 +2680,7 @@ never-delivered tail target.
 | 8 | Is the c8L pool cap interior? | the within-run Σ series (pin fraction 0.23 today) |
 | 9 | Why does the probabilistic taper retransmit never fire? | whether ε̂ at send is structurally ~0 or the oldest symbol never ages past the P_lost knee |
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
-| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
+| 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence, the cadence now shipped) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
 | 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), `BlockProfile::from_hint`, default interleave depth (2/1/3, non-monotone in δ, so no continuous form exists), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`, `is_window_mode`, `effective_fec_backend`; each is a declared corner, not a law |
 
