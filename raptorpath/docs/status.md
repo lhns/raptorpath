@@ -1318,3 +1318,123 @@ path-count scope. The one thing to watch is the c1 loss feed: at these
 speeds the receiver's kernel drops up to 140–180 datagrams per run and the
 engine counts them as path loss, so its fed loss is about three times the
 wire's.
+
+## 7. Receive-buffer fix (F-A) — pre-registration
+
+The fix for V4 finding 1 (the c1 receiver's kernel UDP receive-buffer
+overflow). Every endpoint socket now requests `SO_RCVBUF` = 4 000 000 B
+(`B_req = R_line × T_pause × k_truesize / 2`, derived in fec-arq-model.md
+§8.5, "The kernel receive buffer"). Each socket echoes `[RCVBUF] … granted=
+clamped=` once at bind, and the receiver's `[CTLD]` line carries the
+per-socket kernel drop counter `rxdrop<i>=`. Committed before the
+verification run. No number below is a result.
+
+**Probe already run (zero-build, recorded, not scored).** c1s-400, V4 NEW
+binary (`aa88d648…`), seed 42, n = 8 per arm, interleaved, both VM locks
+held.
+- Arm B as specified (`ip netns exec rp-srv sysctl -w
+  net.core.rmem_default=…`) **cannot run**. The write is refused with EPERM
+  in a child netns: `net.core.rmem_*` is visible there but read-only, and
+  only init_net can set it. So AN1's "per-netns" inference is refuted, and
+  the harness-sysctl option is unavailable even as a probe. That session is
+  therefore an A/A: 15 live rows, `rcvbuf_drops` 17–80 (medians 39 and 36),
+  `plc`/truth medians 2.12 and 1.91, goodput medians 473.0 and 475.0 Mbit/s.
+  One row is void: its driver script was edited while the run was in
+  flight (rc 127).
+- The replacement arm B is an `LD_PRELOAD` shim that requests
+  `SO_RCVBUF` = 4 194 304 B on the server socket after `bind`. It is the
+  engine fix's mechanism, applied from outside. Its witness on every row is
+  the shim's echo `granted=8388608` and `ss -uamn` `rb8388608`. Results:
+  A `rcvbuf_drops` 22–111 (median 64), `plc`/truth median 2.83, goodput
+  median 449.3 Mbit/s; **B `rcvbuf_drops` 0 in 8/8**, `plc`/truth 0.97–1.07
+  (median 1.01), goodput median 481.0 Mbit/s.
+- Drop-count unit: the per-socket `ss` skmem `d` (= `sk_drops`, the field
+  `SO_MEMINFO[SK_MEMINFO_DROPS]` returns) equalled the netns `RcvbufErrors`
+  delta on every arm-A row (for example 69/69 and 57/57). It counts skbs,
+  that is GRO superpackets (`[TRUTH] gso` median 9.45 at c1s).
+
+**Binaries.** MAIN is the V4 NEW binary, `sha256 aa88d648def0b125…`. It is
+reused because `git diff 7d8cec2b ddfc07a` over `raptorpath/src`,
+`raptorpath-math`, `gf256`, `Cargo.lock` and `raptorpath/Cargo.toml` is
+empty, so it is `main`'s engine. FIX is this branch's HEAD, archived with
+`git archive`, built fresh on the VM (`cargo build --release --bin
+raptorpath`), `sha256` recorded and re-checked before every invocation.
+**Tests first** (FIX tree, on the VM, under the locks): `cargo test -p
+raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2`,
+`cargo test --doc -p raptorpath --release`, and `cargo test -p
+raptorpath-wasm`. A real failure (one that does not pass on an isolated
+re-run) is `ABORT-TESTS`. The red-first evidence is recorded beside them:
+`every_endpoint_socket_reads_back_the_rcvbuf_floor` on the parent commit
+(red) and on HEAD (green).
+
+**Harness.** `perf_rwm_c.sh` from this commit's `tools/l1` (unmodified),
+with `RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 RWM_C_PIPELINE=window
+SEED=<seed>`, one run, `--window-reliable`, a fresh topology per invocation,
+and every arm `env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH
+RWM_EMIT_BURST`. Rows are parsed by `verify4_parse.py row` under the arm
+label `NEW`, because both binaries carry V4 NEW's witnesses. A 2 Hz `ss
+-uamn` sampler in `rp-srv` records `rb`, `r` and `d` for every receiver
+socket.
+
+**Cells and plan.** `c1s-400` and `c1d-400`: MAIN against FIX, n = 8 per
+seed × seeds 42 and 7 (16 per arm and cell). `c2-100` is the must-not-move
+control, n = 4 per seed × seeds 42 and 7 (8 per arm). Blocks run rep 1 s42,
+rep 1 s7, rep 2 s42, and so on. Within each block the cells run in the
+order above, and the arm order alternates by rep (rule 3). 80 invocations,
+about 25 min.
+
+**Witnesses per row** (a failing row is `WITNESS-FAIL`, excluded and
+counted):
+- The verify4 NEW witness set: `[PIPE]` window/Rlc/bulk on both ends,
+  `[GATES]`, cadence ACTIVE, and no emission batching.
+- FIX: one `[RCVBUF]` echo per path on both endpoint logs, with `req=4000000`
+  and `granted ≥ 2·min(req, rmem_max)` (8 000 000 on this VM); the server's
+  `ss rb` reads 8000000; and `rxdrop<i>=` is present on the server's
+  `[CTLD]`.
+- MAIN: no `[RCVBUF]` line, and `ss rb` reads 212992.
+
+**Outcomes per c1 cell** (X = FIX, REF = MAIN):
+- **`FIXED`** iff all three hold:
+  1. `rcvbuf_drops ≤ 2` in at least 15 of 16 FIX rows.
+  2. The FIX median `plc`/truth is within [0.9, 1.3] on every leg.
+  3. FIX goodput median ≥ MAIN median × (1 − rel_gp), with §5's rel_gp:
+     `c1s-400` 4.9 %, `c1d-400` 5.6 %.
+- **`NOT-FIXED-<clauses>`** names the clauses that failed. If (1) fails,
+  the drain pause exceeds the 32 ms tolerance, and the ranked next lever is
+  isolating the endpoint driver, not a larger buffer.
+- **`UNSCOREABLE`** with fewer than 12 live rows in either arm, or ≥ 2
+  witness-failed rows in either arm.
+
+**Goodput** is also printed as `BETTER` / `SAME` / `WORSE` against the MAIN
+median ± rel_gp. This is descriptive: the prediction is SAME-or-BETTER (the
+probe gave +7 %, n = 8).
+
+**Control `c2-100`:** `CONTROL-HELD` iff all of these hold:
+- FIX goodput median is within MAIN median × (1 ± 0.014).
+- `rcvbuf_drops` = 0 in every row of both arms.
+- FIX median `plc`/truth is within [1/1.3, 1.3] × MAIN's.
+
+Otherwise `CONTROL-MOVED` (named beside the c1 verdicts). Fewer than 6 live
+rows per arm is `UNSCOREABLE`.
+
+**Unit check (reported, not scored).** On FIX rows, the server's last
+`[CTLD] rxdrop` sum is compared with the run's `rcvbuf_drops` and with the
+final `ss d` value. If FIX drops are 0, this confirms the wiring only. The
+unit evidence is the probe's non-zero A rows above.
+
+**Abort causes, in priority order:**
+
+| # | cause | token |
+|---|---|---|
+| 1 | either VM lock not free within the 25 min wait | `ABORT-LOCK` (nothing run) |
+| 2 | CR bytes in the synced `tools/l1` scripts | `ABORT-CRLF` |
+| 3 | build failure | `ABORT-BUILD` |
+| 4 | a real test failure | `ABORT-TESTS` |
+| 5 | binary `sha256` mismatch at any invocation | `ABORT-SHA` |
+| 6 | smoke (one FIX c1s run) missing a FIX witness | `ABORT-SMOKE` |
+| 7 | `raptorpath` already running at start | `BUSY` |
+
+**Budget.** 5 h cap from the first ssh of the session. Build and tests are
+about 45 min, the battery about 25 min. No truncation is expected; if the
+cap binds, the battery stops at a rep boundary and is scored at the n it
+reached.
