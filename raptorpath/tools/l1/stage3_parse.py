@@ -22,9 +22,18 @@ exactly one of, in priority order:
   WITNESS-FAIL  any other routing witness missing: `[GATES]` absent on an
                 endpoint; the RLC auto-select line absent on an endpoint
                 (every arm is a window arm); a generation guard line; the
-                estimator-cadence echo not two-sided (present on BOTH
-                endpoints of CAD, absent on BOTH endpoints of every other
-                arm); `[GATES] RWM_POOL_ANCHOR` not 0 on both endpoints.
+                estimator-cadence echo not as the arm expects, two-sided:
+                each arm names ONE of `ACTIVE` (the "cadence ACTIVE" line on
+                BOTH endpoints, the "cadence OFF" line on neither), `OFF` (the
+                reverse) or `NONE` (neither line on either endpoint: a binary
+                older than the two-way echo, which printed ACTIVE only when
+                on); `[GATES] RWM_POOL_ANCHOR` not 0 on both endpoints.
+
+Since 83462ae the cadence is ON by default, so the env-unset arms (A1, A2,
+WINa) expect `ACTIVE`, and the (d) arm is the explicit per-ack control PACK
+(`RWM_EST_CADENCE=0`, expects `OFF`). §5's (d) ran CAD (`=1`) against an
+env-unset control that was then OFF; that is the same pair with the roles
+swapped.
   LIVE          every routing witness holds; the run completed or DNF'd.
 
 Gauges (never change a row's status; an absent gauge is None):
@@ -72,22 +81,23 @@ CELL_SPEC = {
 }
 CELLS = list(CELL_SPEC)
 N_LEGS = {c: (2 if s[2] == "dual" else 1) for c, s in CELL_SPEC.items()}
-# arm -> (pipeline, backend, hint, cadence_on)
+# arm -> (pipeline, backend, hint, expected cadence echo: ACTIVE / OFF / NONE)
 ARM_SPEC = {
-    "A1": ("window", "Rlc", "bulk", False),
-    "A2": ("window", "Rlc", "bulk", False),
-    "CAD": ("window", "Rlc", "bulk", True),
-    "WINa": ("window", "Rlc", "auto", False),
+    "A1": ("window", "Rlc", "bulk", "ACTIVE"),
+    "A2": ("window", "Rlc", "bulk", "ACTIVE"),
+    "PACK": ("window", "Rlc", "bulk", "OFF"),
+    "WINa": ("window", "Rlc", "auto", "ACTIVE"),
 }
+CAD_STATES = ("ACTIVE", "OFF", "NONE")
 ARMS = list(ARM_SPEC)
 # which arms run at which cell (the per-rep plan; stage3_battery.sh mirrors it)
 PLAN = {
     "c1s-400": ["A1", "A2", "WINa"],
-    "c1d-400": ["A1", "A2", "CAD"],
-    "c2-100": ["A1", "A2", "CAD", "WINa"],
-    "c3-25": ["A1", "A2", "CAD", "WINa"],
-    "c7-100": ["A1", "A2", "CAD", "WINa"],
-    "c8-100": ["A1", "A2", "CAD", "WINa"],
+    "c1d-400": ["A1", "A2", "PACK"],
+    "c2-100": ["A1", "A2", "PACK", "WINa"],
+    "c3-25": ["A1", "A2", "PACK", "WINa"],
+    "c7-100": ["A1", "A2", "PACK", "WINa"],
+    "c8-100": ["A1", "A2", "PACK", "WINa"],
 }
 AA_CELLS = CELLS
 D_CELLS = ["c1d-400", "c2-100", "c3-25", "c7-100", "c8-100"]
@@ -100,7 +110,7 @@ MIN_LIVE = 3            # live rows per (cell, arm) for a comparison
 WITNESS_FAIL_LIMIT = 2  # failed rows per (arm, cell) that void the cell
 NOISE_BOUND_REL = 0.25  # MDE/median above this: that metric is NOISE-BOUND
 DNF_FLOOR = 0.20        # the DNF-rate clause's minimum excess
-FEED_BAND = 1.3         # CAD feed ratio within [1/1.3, 1.3] x CTL's
+FEED_BAND = 1.3         # the (d) arm's feed ratio within [1/1.3, 1.3] x CTL's
 PLU_FLOOR = (0.0350, 0.0360)
 LAST_MEASURED = {  # window bulk, the last same-cell readings (cross-era, not scored)
     "c1s-400": "v2 284.8-293.9", "c1d-400": "v3 B2 186.9-201.5",
@@ -110,6 +120,7 @@ LAST_MEASURED = {  # window bulk, the last same-cell readings (cross-era, not sc
 WIN_LINE = "auto-selecting RLC windowed backend"
 GEN_GUARD = "GUARD OK: generation ACTIVE"
 CAD_ECHO = "estimator heavy-math cadence ACTIVE"
+CAD_OFF_ECHO = "estimator heavy-math cadence OFF"
 ABORT_FIRST_FIVE = ("ABORT-LOCK", "ABORT-CRLF", "ABORT-SHA",
                     "ABORT-SENTINEL-UNWRITABLE", "ABORT-SMOKE")
 
@@ -182,6 +193,29 @@ def diag_gauges(cli):
     return g
 
 
+def cadence_witness(row, want):
+    """Two-sided (rule 15c) check of the estimator-cadence echo against the
+    arm's expected state; returns the problem tokens (empty = holds)."""
+    assert want in CAD_STATES, want
+    on = (row["cad_cli"], row["cad_srv"])
+    off = (row["cadoff_cli"], row["cadoff_srv"])
+    p = []
+    if want == "ACTIVE":
+        if not all(on):
+            p.append("cadence-ACTIVE-missing")
+        if any(off):
+            p.append("cadence-OFF-on-ACTIVE-arm")
+    elif want == "OFF":
+        if not all(off):
+            p.append("cadence-OFF-missing")
+        if any(on):
+            p.append("cadence-ACTIVE-on-OFF-arm")
+    else:
+        if any(on) or any(off):
+            p.append("cadence-echo-on-NONE-arm")
+    return p
+
+
 def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
     want_pipe, want_backend, want_hint, cad = ARM_SPEC[arm]
     objs = _jsons(cli)
@@ -199,6 +233,8 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
         "winline_srv": any(WIN_LINE in ln for ln in srv),
         "cad_cli": any(CAD_ECHO in ln for ln in cli),
         "cad_srv": any(CAD_ECHO in ln for ln in srv),
+        "cadoff_cli": any(CAD_OFF_ECHO in ln for ln in cli),
+        "cadoff_srv": any(CAD_OFF_ECHO in ln for ln in srv),
         "pa_cli": lc.gate(cli, "RWM_POOL_ANCHOR"),
         "pa_srv": lc.gate(srv, "RWM_POOL_ANCHOR"),
         "gen_guard": any(GEN_GUARD in ln for ln in drv),
@@ -251,10 +287,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0):
         other.append("window-line-missing-on-window")
     if row["gen_guard"]:
         other.append("generation-guard-present")
-    if cad and not (row["cad_cli"] and row["cad_srv"]):
-        other.append("cadence-echo-missing-on-CAD")
-    if not cad and (row["cad_cli"] or row["cad_srv"]):
-        other.append("cadence-echo-on-non-CAD")
+    other.extend(cadence_witness(row, cad))
     if row["pa_cli"] != 0 or row["pa_srv"] != 0:
         other.append(f"pool-anchor={row['pa_cli']}/{row['pa_srv']}")
     p.extend(other)
@@ -426,13 +459,15 @@ def score(paths, out=print):
         out(f"  AA-DNF {cell} A1={fmt(e['dnf1'], 2)} A2={fmt(e['dnf2'], 2)} "
             f"dnf-threshold={dnf_threshold(mde, cell):.2f}; last measured gp {LAST_MEASURED[cell]} (cross-era, not scored)")
     out("")
-    # ── (d) EST_CADENCE ──
-    out("(d) EST_CADENCE  CAD vs CTL = A1uA2")
+    # ── (d) EST_CADENCE: the per-ack arm PACK (RWM_EST_CADENCE=0) vs the
+    # shipped default (cadence ON) CTL = A1uA2. The verdict names PACK's
+    # direction: FLIP-RECOMMENDED would recommend going BACK to per-ack. ──
+    out("(d) EST_CADENCE  PACK (RWM_EST_CADENCE=0) vs CTL = A1uA2 (default ON)")
     d_worse, d_feed, d_unsc, d_better = {}, {}, {}, {}
     for cell in D_CELLS:
         ctl = [r for a in ("A1", "A2") for r in sel(live, cell, a)]
-        cad = sel(live, cell, "CAD")
-        hard = cell_blockers(rows, live, cell, ["A1", "A2", "CAD"]) + (["abort"] if aborted else [])
+        cad = sel(live, cell, "PACK")
+        hard = cell_blockers(rows, live, cell, ["A1", "A2", "PACK"]) + (["abort"] if aborted else [])
         why = list(hard)
         res = {}
         for m, hib in (("gp", True), ("ct", False), ("cpu", False)):
@@ -459,22 +494,22 @@ def score(paths, out=print):
             else:
                 st = "MOVED"
                 feed.append(f"p{i}")
-            out(f"  FEED {cell} p{i} truth CTL={fmt(tc, 5)} CAD={fmt(td, 5)} | plc/truth CTL={fmt(rc_, 3)} "
-                f"CAD={fmt(rd_, 3)} band=[{fmt(rc_ / FEED_BAND if rc_ else None, 3)},"
+            out(f"  FEED {cell} p{i} truth CTL={fmt(tc, 5)} PACK={fmt(td, 5)} | plc/truth CTL={fmt(rc_, 3)} "
+                f"PACK={fmt(rd_, 3)} band=[{fmt(rc_ / FEED_BAND if rc_ else None, 3)},"
                 f"{fmt(rc_ * FEED_BAND if rc_ else None, 3)}] {st}")
-            for arm, rs in (("CTL", ctl), ("CAD", cad)):
+            for arm, rs in (("CTL", ctl), ("PACK", cad)):
                 pm = [r.get("plu_med_p%d" % i) for r in rs if r.get("plu_med_p%d" % i) is not None]
                 fl = sum(1 for v in pm if PLU_FLOOR[0] <= v <= PLU_FLOOR[1])
                 out(f"  PLU {cell} p{i} {arm} plu_med(run medians)={fmt(lc.med(pm), 4)} "
                     f"[{fmt(min(pm, default=None), 4)}-{fmt(max(pm, default=None), 4)}] on-floor {fl}/{len(pm)}")
-        for arm, rs in (("CTL", ctl), ("CAD", cad)):
+        for arm, rs in (("CTL", ctl), ("PACK", cad)):
             cs = [r["coded_share"] for r in rs if r.get("coded_share") is not None]
             out(f"  CODED {cell} {arm} coded_share med={fmt(lc.med(cs), 5)} "
                 f"[{fmt(min(cs, default=None), 5)}-{fmt(max(cs, default=None), 5)}] "
                 f"busy_med={fmt(lc.med(values(rs, 'busy')), 1)}% util={fmt(lc.med(values(rs, 'util')), 3)}")
-        out(f"  D {cell} CTL n={len(ctl)} CAD n={len(cad)} | "
+        out(f"  D {cell} CTL n={len(ctl)} PACK n={len(cad)} | "
             + " | ".join(f"{m}:{res[m][0]} ({res[m][1]})" for m in ("gp", "ct", "cpu"))
-            + f" | dnf CTL={fmt(dc, 2)} CAD={fmt(dd, 2)} excess>{thr:.2f}:{int(dnf_bad)}"
+            + f" | dnf CTL={fmt(dc, 2)} PACK={fmt(dd, 2)} excess>{thr:.2f}:{int(dnf_bad)}"
             + f" | worse={'+'.join(worse) or '-'} better={'+'.join(better) or '-'} feed-moved={'+'.join(feed) or '-'}"
             + (f" | UNSCOREABLE({'; '.join(why)})" if why else ""))
         if worse and not hard:
@@ -563,7 +598,7 @@ def smoke(path, tm_log=None):
         print(f"SMOKE-ROW {r['cell']} {r['arm']} rc={r['rc']} status={r['status']} wall={r['wall_s']} "
               f"header={r['header']} pipe={r['pipe_cli']}/{r['pipe_srv']} "
               f"gates={int(r['gates_cli'])}/{int(r['gates_srv'])} winline={int(r['winline_cli'])}/{int(r['winline_srv'])} "
-              f"cad={int(r['cad_cli'])}/{int(r['cad_srv'])} pa={r['pa_cli']}/{r['pa_srv']} "
+              f"cad={int(r['cad_cli'])}/{int(r['cad_srv'])} cadoff={int(r.get('cadoff_cli', 0))}/{int(r.get('cadoff_srv', 0))} pa={r['pa_cli']}/{r['pa_srv']} "
               f"mbps={r['mbps']} dnf={r['dnf']} cpu={r['cpu_cli']} busy={r.get('busy_med')} "
               f"diag_lines={r.get('diag_lines')} {' '.join(r['problems'] + miss)}")
         if miss:

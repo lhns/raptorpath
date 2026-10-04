@@ -11,9 +11,13 @@
 # ARMS (one binary, fresh topology per invocation; perf_rwm_c.sh builds and
 # tears down its namespaces). Every arm: RWM_GEN=0 RWM_DIAG=1
 # RWM_PERF_TIMEOUT_S=150 SEED=<seed>, and RWM_EST_CADENCE / RWM_POOL_ANCHOR
-# are `unset` first (measurement discipline 15d) and then set only by CAD:
-#   A1, A2  window pipeline, bulk          (the CTL, run twice: the A/A)
-#   CAD     window pipeline, bulk, RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0
+# are `unset` first (measurement discipline 15d) and then set only by PACK:
+#   A1, A2  window pipeline, bulk          (the CTL, run twice: the A/A;
+#           env-unset = the shipped default, cadence ON since 83462ae,
+#           witnessed by 'cadence ACTIVE' on both endpoints)
+#   PACK    window pipeline, bulk, RWM_EST_CADENCE=0 (the per-ack BOCD
+#           update, the pre-83462ae default; witnessed by 'cadence OFF' on
+#           both endpoints). Section 5's CAD arm (=1) is now the CTL itself.
 #   WINa    window pipeline, auto
 # Every arm is the window pipeline: the block pipeline (and its BLKb/BLKa
 # arms) was deleted by ADR-0069; that plan is in git history.
@@ -21,13 +25,13 @@
 # PLAN per (rep, seed) block -- 22 invocations; cells in this order, the arm
 # order within every cell rotated by the block index (rule 3):
 #   c1s-400  A1 A2 WINa                  (c1 single, 400 MB)
-#   c1d-400  A1 A2 CAD                   (c1 || c1 dual, 400 MB)
-#   c2-100   A1 A2 CAD WINa              (c2 single, 100 MB)
-#   c3-25    A1 A2 CAD WINa              (c3 single, 25 MB)
-#   c7-100   A1 A2 CAD WINa              (c2 || c2 dual, 100 MB)
-#   c8-100   A1 A2 CAD WINa              (c2 || c3 dual, 100 MB)
-# Blocks run rep 1 seed 42, rep 1 seed 7, rep 2 seed 42, ... With S3_NO_CAD=1
-# (a pre-registered cut) CAD is left out of the plan.
+#   c1d-400  A1 A2 PACK                  (c1 || c1 dual, 400 MB)
+#   c2-100   A1 A2 PACK WINa             (c2 single, 100 MB)
+#   c3-25    A1 A2 PACK WINa             (c3 single, 25 MB)
+#   c7-100   A1 A2 PACK WINa             (c2 || c2 dual, 100 MB)
+#   c8-100   A1 A2 PACK WINa             (c2 || c3 dual, 100 MB)
+# Blocks run rep 1 seed 42, rep 1 seed 7, rep 2 seed 42, ... With S3_NO_PACK=1
+# (a pre-registered cut) PACK is left out of the plan.
 #
 # PER INVOCATION the ledger gets the `===` header, the driver's summary / dnf
 # / CPU / [TRUTH] lines, `RUNTIME ... <s>s rc=<rc>`, a COTENANT line, and ONE
@@ -77,7 +81,8 @@ done
 _lb_say "LOCKS-HELD-BY-ENVELOPE $S3_LOCK_OWNER"
 
 # ── BINARY ───────────────────────────────────────────────────────────────
-preflight_binary "$BIN" "PIPE] pipeline=" "estimator heavy-math cadence ACTIVE"
+preflight_binary "$BIN" "PIPE] pipeline=" "estimator heavy-math cadence ACTIVE" \
+    "estimator heavy-math cadence OFF"
 SHA_NOW="$(sha256sum "$BIN" | cut -d' ' -f1)"
 if [ -z "${S3_SHA:-}" ] || [ "$SHA_NOW" != "$S3_SHA" ]; then
   _lb_say "ABORT-SHA start: binary $SHA_NOW != S3_SHA '${S3_SHA:-unset}'"
@@ -100,8 +105,8 @@ cell_spec() { # cell -> "scenA scenB mode bytes"
   esac
 }
 cell_arms() { # cell -> the arms run there
-  local cad="CAD"
-  [ "${S3_NO_CAD:-0}" = "1" ] && cad=""
+  local cad="PACK"
+  [ "${S3_NO_PACK:-0}" = "1" ] && cad=""
   case "$1" in
     c1s-400) echo "A1 A2 WINa" ;;
     c1d-400) echo "A1 A2 $cad" ;;
@@ -129,9 +134,10 @@ run_one() { # cell arm seed rep
     rm -f /tmp/rwm-c.log /tmp/rwm-s.log /tmp/s3-drv.out
     cot_b=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     t0=$(date +%s)
-    # rule 15d: withhold the cadence pair from every arm, then set it on CAD only.
-    if [ "$arm" = "CAD" ]; then
-      env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0 \
+    # rule 15d: withhold the cadence pair from every arm, then set the
+    # per-ack control on PACK only (the default is ON since 83462ae).
+    if [ "$arm" = "PACK" ]; then
+      env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR RWM_EST_CADENCE=0 \
           SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 \
           RWM_C_PIPELINE="$pipe" RWM_BIN="$BIN" \
         bash perf_rwm_c.sh "$ca" "$cb" "$hint" "$bytes" 1 "$mode" > /tmp/s3-drv.out 2>&1
@@ -168,10 +174,10 @@ run_one() { # cell arm seed rep
     || echo "S3ROW-PARSE-FAIL $name s$seed rep=$rep" >> "$OUT"
 }
 
-echo "=== STAGE3 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' no_cad=${S3_NO_CAD:-0} $(date -u +%FT%TZ)" >> "$OUT"
+echo "=== STAGE3 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' no_pack=${S3_NO_PACK:-0} $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary $BIN sha256 $SHA_NOW" >> "$OUT"
 echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; CAD: RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0; soft_deadline=${S3_SOFT_DEADLINE:-none} block_est=${S3_BLOCK_EST_S:-none}" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; CTL env-unset (cadence ON by default); PACK: RWM_EST_CADENCE=0; soft_deadline=${S3_SOFT_DEADLINE:-none} block_est=${S3_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 
 BLOCK=0

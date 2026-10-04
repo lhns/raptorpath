@@ -18,7 +18,8 @@
 #      envelope waits (<= 20 min) for the operator's GO (NOGO or timeout:
 #      FAILED-ALL, nothing else runs);
 #   3. the budget rule (the cut order below) fixes n per seed, crown reps and
-#      the CAD arm -> PLAN.txt;
+#      the PACK arm (the per-ack control, RWM_EST_CADENCE=0; section 5 ran
+#      it as CAD = 1 before the cadence became the default) -> PLAN.txt;
 #   4. the battery (stage3_battery.sh), soft-truncated at (rep, seed)
 #      boundaries so the crown's reserve survives;
 #   5. the crown spot (crownspot8.sh) if its reserve is intact;
@@ -28,7 +29,7 @@
 # where c_meas is the smoke battery's summed invocation wall and C_PRED its
 # predicted sum. avail = SOFT - now - crown_reserve; n = min(5,
 # floor(avail / (2 * R_est))). Cut order while n < 3: crown reps 8 -> 6;
-# drop CAD (R_est * 27/32); drop the crown. n < 2 after every cut:
+# drop PACK (R_est * 27/32); drop the crown. n < 2 after every cut:
 # ABORT-BUDGET (nothing runs).
 #
 # SENTINELS: DONE-ALL only when the battery ledger carries
@@ -53,7 +54,7 @@ BIN="$ROOT/bin/raptorpath"
 SOFT=$(( S3_HARD_DEADLINE - 600 ))
 R_PRIOR=1200
 C_PRED=128
-SMOKE_PLAN="c2-100:A1 c7-100:A2 c1d-400:CAD c7-100:WINa"
+SMOKE_PLAN="c2-100:A1 c7-100:A2 c1d-400:PACK c7-100:WINa"
 LAUNCH_ISO=$(date -u +%FT%TZ)
 mkdir -p "$RUN" "$RUN/crown" "$ROOT/bin" 2>/dev/null
 
@@ -177,7 +178,7 @@ plan_n() { local avail=$(( SOFT - $(date +%s) - CROWN_RES )); echo $(( avail > 0
 N=$(plan_n); [ "$N" -gt 5 ] && N=5
 CUTS=""
 if [ "$N" -lt 3 ]; then CROWN_REPS=6; CROWN_RES=1620; N=$(plan_n); [ "$N" -gt 5 ] && N=5; CUTS="$CUTS crown-reps-6"; fi
-if [ "$N" -lt 3 ]; then NO_CAD=1; R_USE=$(( R_EST * 27 / 32 )); N=$(plan_n); [ "$N" -gt 5 ] && N=5; CUTS="$CUTS drop-CAD"; fi
+if [ "$N" -lt 3 ]; then NO_CAD=1; R_USE=$(( R_EST * 27 / 32 )); N=$(plan_n); [ "$N" -gt 5 ] && N=5; CUTS="$CUTS drop-PACK"; fi
 if [ "$N" -lt 3 ]; then CROWN_REPS=0; CROWN_RES=0; N=$(plan_n); [ "$N" -gt 5 ] && N=5; CUTS="$CUTS drop-crown"; fi
 [ "$N" -lt 2 ] && fail_all "ABORT-BUDGET n=$N after cuts:$CUTS"
 BSOFT=$(( SOFT - CROWN_RES ))
@@ -190,7 +191,7 @@ refresh_locks battery
 T0=$(date +%s)
 era "S3-ALL battery start cotenants: $(cotenants)"
 sudo -n env S3_SHA="$S3_SHA" S3_LOCK_OWNER="$S3_LOCK_OWNER" S3_OUTDIR="$RUN" S3_TAG=s3 \
-    S3_SEEDS="42 7" S3_NO_CAD="$NO_CAD" S3_SOFT_DEADLINE="$BSOFT" S3_BLOCK_EST_S="$R_USE" RWM_BIN="$BIN" \
+    S3_SEEDS="42 7" S3_NO_PACK="$NO_CAD" S3_SOFT_DEADLINE="$BSOFT" S3_BLOCK_EST_S="$R_USE" RWM_BIN="$BIN" \
     bash ./stage3_battery.sh "$N" &
 echo $! > "$STAGE_PIDFILE"; wait "$(cat "$STAGE_PIDFILE")"; BRC=$?; rm -f "$STAGE_PIDFILE"
 era "S3-ALL battery rc=$BRC wall=$(( $(date +%s) - T0 ))s cotenants: $(cotenants)"
