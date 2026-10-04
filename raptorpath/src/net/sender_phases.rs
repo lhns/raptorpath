@@ -1301,10 +1301,8 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         if retransmitted > 0 {
             let current_loss = {
                 let sched = scheduler.lock();
-                recovery_clock_paths(&sched)
-                    .iter()
-                    .filter_map(|id| sched.path(*id))
-                    .map(|p| p.estimator.loss_rate())
+                recovery_clock_paths_iter(&sched)
+                    .map(|(_, p)| p.estimator.loss_rate())
                     .fold(0.0f64, f64::max)
             };
             let margin = (retransmitted as f64 * current_loss).ceil() as u64;
@@ -1314,8 +1312,12 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             let margin_path = {
                 let sched = scheduler.lock();
                 if reliable {
-                    let covered = window_source_paths(&*st.encoder, &st.source_path_map);
-                    sched.place_symbol(true, &covered).unwrap_or(st.last_source_path)
+                    window_source_paths_into(
+                        &*st.encoder,
+                        &st.source_path_map,
+                        &mut st.covered_scratch,
+                    );
+                    sched.place_symbol(true, &st.covered_scratch).unwrap_or(st.last_source_path)
                 } else {
                     select_repair_path(&sched, st.last_source_path)
                 }

@@ -1606,14 +1606,18 @@ fn select_repair_path_avoiding(scheduler: &Scheduler, avoid: u32, fallback: u32)
 /// law's fate term is the fraction of the repair's coverage on each path. A
 /// fungible repair covers the whole window; entries that predate the window
 /// (still in the retained map) are excluded by the span filter.
-fn window_source_paths(
+///
+/// Written into the caller's scratch `out` (cleared first) rather than a
+/// fresh `Vec`: this runs once per correction symbol and the window is up to
+/// `win_cap` entries long.
+fn window_source_paths_into(
     encoder: &dyn WindowEncoder,
     source_path_map: &std::collections::BTreeMap<u64, u32>,
-) -> Vec<u32> {
+    out: &mut Vec<u32>,
+) {
+    out.clear();
     let (win_start, win_end) = encoder.window_span();
-    (win_start..=win_end)
-        .filter_map(|seq| source_path_map.get(&seq).copied())
-        .collect()
+    out.extend((win_start..=win_end).filter_map(|seq| source_path_map.get(&seq).copied()));
 }
 
 /// Sliding-window sender loop. Reads packets from TUN, frames them as individual
@@ -2232,6 +2236,9 @@ async fn run_window_sender(
     // The last `select!` resolution instant, for the dead-wall gauge's body
     // time when `[DIAG]` (which keeps its own) is off.
     let mut wall_resolved_us: u64 = gd_last_us;
+    // Scratch for the SACK drain's newly-released seqs (reused across
+    // iterations; `sack_release_mark_into` clears it per range).
+    let mut sack_newly: Vec<u64> = Vec::new();
     loop {
         // Scheduler reads in this loop are per phase, each under its own
         // acquisition, taken where the value is used. A loop-top snapshot
@@ -2278,11 +2285,16 @@ async fn run_window_sender(
                     // clocks, source_path_map) until the cumulative
                     // frontier passes. sack_release_mark skips seqs
                     // already released — no double-release.
-                    let newly =
-                        sack_release_mark(&st.sent_store, &mut sack_released, start, end);
-                    sack_released_total += newly.len() as u64;
+                    sack_release_mark_into(
+                        &st.sent_store,
+                        &mut sack_released,
+                        start,
+                        end,
+                        &mut sack_newly,
+                    );
+                    sack_released_total += sack_newly.len() as u64;
                     if pol.percap_track {
-                        for &k in &newly {
+                        for &k in &sack_newly {
                             // Per-path account slot freed on delivery
                             // evidence (idempotent: cumulative release
                             // later finds the seq already gone — the
@@ -2298,7 +2310,7 @@ async fn run_window_sender(
         // only while exactly one path is live; re-checked every iteration so
         // path flaps re-scope within one burst. Gate-off pays nothing.
         if pol.emit_batch_on {
-            emit_batch_live = scheduler.lock().live_paths().len() == 1;
+            emit_batch_live = scheduler.lock().live_paths_iter().count() == 1;
         }
 
         // Determine if packer has pending data for flush timer
@@ -2745,14 +2757,12 @@ async fn run_window_sender(
                     let sched = scheduler.lock();
                     let mut r = 0.0f64;
                     let mut n = 0usize;
-                    for id in sched.live_paths() {
-                        if let Some(p) = sched.path(id) {
-                            let s = p.srtt().as_secs_f64();
-                            if s > 1e-4 {
-                                r += p.cwnd as f64 / s;
-                            }
-                            n += 1;
+                    for (_, p) in sched.live_paths_iter() {
+                        let s = p.srtt().as_secs_f64();
+                        if s > 1e-4 {
+                            r += p.cwnd as f64 / s;
                         }
+                        n += 1;
                     }
                     (r, n.max(1))
                 };
@@ -2793,20 +2803,20 @@ async fn run_window_sender(
                     .max(last_tail_sweep_us);
                 let (srtt_us, jitter_us, sigma_us) = {
                     let sched = scheduler.lock();
-                    let paths: Vec<_> = recovery_clock_paths(&sched)
-                        .iter()
-                        .filter_map(|id| sched.path(*id))
-                        .collect();
-                    let pooled: Vec<u64> =
-                        paths.iter().map(|p| p.estimator.rtt().as_micros() as u64).collect();
+                    // Three passes over the same path set (no per-iteration
+                    // `Vec`s: this block runs on every loop iteration).
+                    let paths = || recovery_clock_paths_iter(&sched).map(|(_, p)| p);
+                    let pooled = pooled_recovery_srtt_iter(
+                        paths().map(|p| p.estimator.rtt().as_micros() as u64),
+                    );
                     // The jitter feeding the derived floor is pooled the same
                     // way the clock is (max over the same path set), so floor
                     // and clock can never come from different paths.
-                    let jit = paths.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
+                    let jit = paths().map(|p| p.rtt_jitter_us()).max().unwrap_or(0);
                     // The measured σ, max over the same set — read only by the
                     // `[QCLK]` readout below.
-                    let sg = paths.iter().filter_map(|p| p.rtt_sigma_us()).max();
-                    (pooled_recovery_srtt_us(&pooled), jit, sg)
+                    let sg = paths().filter_map(|p| p.rtt_sigma_us()).max();
+                    (pooled, jit, sg)
                 };
                 let timeout_us = sweep_timeout_us(pol.derived_sweep, srtt_us, jitter_us);
                 // `timeout_us` is what the engine will use — never recomputed

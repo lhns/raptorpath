@@ -166,12 +166,25 @@ pub fn sack_release_mark<V>(
     end: u64,
 ) -> Vec<u64> {
     let mut newly = Vec::new();
+    sack_release_mark_into(sent_store, released, start, end, &mut newly);
+    newly
+}
+
+/// [`sack_release_mark`] into the caller's scratch `newly` (cleared first),
+/// so the per-SACK-range drain allocates nothing in steady state.
+pub fn sack_release_mark_into<V>(
+    sent_store: &BTreeMap<u64, V>,
+    released: &mut BTreeSet<u64>,
+    start: u64,
+    end: u64,
+    newly: &mut Vec<u64>,
+) {
+    newly.clear();
     for (&seq, _) in sent_store.range(start..=end) {
         if released.insert(seq) {
             newly.push(seq);
         }
     }
-    newly
 }
 
 /// The cumulative-frontier twin of [`sack_release_mark`] (the

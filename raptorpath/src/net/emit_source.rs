@@ -38,7 +38,7 @@ use super::sender_policy::SenderPolicy;
 use super::{
     BatchCounter,
     CopaFeed, create_window_encoder, now_us, percap_charge, select_repair_path,
-    select_source_path, shed_allowed, shed_deadline_us, window_source_paths,
+    select_source_path, shed_allowed, shed_deadline_us, window_source_paths_into,
 };
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
@@ -169,6 +169,10 @@ pub(crate) struct SenderState {
     pub span_diag_last_us: u64,
     /// Recovery-suppression trace: the P_lost-branch retransmit channel.
     pub mpd_plost_retx: u64,
+
+    /// Reused scratch for `window_source_paths_into` (the repair placement's
+    /// covered-path list), so a correction symbol allocates nothing for it.
+    pub covered_scratch: Vec<u32>,
 }
 
 impl SenderState {
@@ -236,6 +240,7 @@ impl SenderState {
             c8c_src_placed: std::collections::HashMap::new(),
             span_diag_last_us: 0,
             mpd_plost_retx: 0,
+            covered_scratch: Vec::new(),
         }
     }
 }
@@ -777,8 +782,12 @@ pub(crate) fn emit_source(
             let correction_path = {
                 let sched = ctx.scheduler.lock();
                 if pol.reliable {
-                    let covered = window_source_paths(&*st.encoder, &st.source_path_map);
-                    sched.place_symbol(true, &covered).unwrap_or(source_path)
+                    window_source_paths_into(
+                        &*st.encoder,
+                        &st.source_path_map,
+                        &mut st.covered_scratch,
+                    );
+                    sched.place_symbol(true, &st.covered_scratch).unwrap_or(source_path)
                 } else {
                     select_repair_path(&sched, source_path)
                 }
