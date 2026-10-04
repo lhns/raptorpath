@@ -261,6 +261,12 @@ fn test_predictive_loss_tracks_bocd() {
     for _ in 0..50 {
         est.record_batch(100, 100);
     }
+    // The shipped estimator cadence (`RWM_EST_CADENCE`, default on) holds
+    // clean evidence until its 10 ms heartbeat; one call past the heartbeat
+    // flushes the whole clean backlog into the BOCD. Per-call (`=0`) it is
+    // one more clean batch.
+    std::thread::sleep(std::time::Duration::from_millis(12));
+    est.record_batch(100, 100);
     let pred_low = est.predictive_loss_upper(0.95);
     assert!(
         pred_low < pred,

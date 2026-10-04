@@ -36,7 +36,12 @@ byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
 `RWM_HONEST_ANCHOR`, `RWM_STORE_SACK_RELEASE`, `RWM_STORE_PATHS`,
 `RWM_GEN_PIPE` (only reached when generation is on), `RWM_RS_ATTR`,
 `RWM_RECOV_MP`, `RWM_RECOV_MP_LAW`, `RWM_SUM_CAP`, `RWM_DELTA_CAP`,
-`RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`. `RWM_HONEST_CAP` resolves on but is inert
+`RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_EST_CADENCE` (the loss
+estimator's BOCD update batched: clean evidence accumulates and flushes every
+10 ms, a loss-bearing ack flushes at once; flipped in `83462ae` on Stage 3
+(d), §5; own echo, ACTIVE or OFF, not on `[GATES]`). `RWM_POOL_ANCHOR` is
+independent of the cadence and ships off (it used to follow it when unset).
+`RWM_HONEST_CAP` resolves on but is inert
 without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
 
 The recovery clocks (tail sweep, refresh, per-sequence cooldown) and the repair
@@ -57,7 +62,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
-| Stage-3 baseline (§5) | A/A + block vs window (bulk, auto) + `RWM_EST_CADENCE` arm, 6 cells, n = 5 × 2 seeds, 320 invocations; crown spot | MDE committed (goodput 1.4–5.6 %); `WINDOW-NOT-WORSE` (window ahead at every auto cell); crown `REPAIRS-INERT-ON-CROWN`; cadence `FLIP-RECOMMENDED` (dual c1 +41 %, sender CPU −12 to −32 %); nothing flipped |
+| Stage-3 baseline (§5) | A/A + block vs window (bulk, auto) + `RWM_EST_CADENCE` arm, 6 cells, n = 5 × 2 seeds, 320 invocations; crown spot | MDE committed (goodput 1.4–5.6 %); `WINDOW-NOT-WORSE` (window ahead at every auto cell); crown `REPAIRS-INERT-ON-CROWN`; cadence `FLIP-RECOMMENDED` (dual c1 +41 %, sender CPU −12 to −32 %); nothing flipped by the battery; the cadence flipped in `83462ae` with the pool anchor decoupled |
 | Attribution audit (D0) | 4 cells, 3 reps, 12 invocations | `orig_frac` averages two mechanisms: true-heal share π0 is 0.0077 (c1) and 0.0054 (sc2) at single paths, 0.96 (c7) and 0.92 (c8) at duals |
 | Crown no-regression spot (wire v8 merges) | tail_matrix `ship`, realtime, c2/c3, 400/1200 B, ×8, seeds 42+7 | Repairs inert on the crown at 7 of 8 cell-size-seeds; c3·400B seed 7 p99 median outside by 0.2 ms, at the pre-declared era-limited cell; the EVICT seat answers 1.8–3.1 repairs per abandoned hole, and 82–99 % of abandoned holes get their data after the give-up |
 | r > 0 battery (Track B) | seed 42, n = 4 (truncated by the 5 h cap) | Glide R-FUNDED-NEGATIVE (direction only) at the lossy single; MID `VOID` by W7; entanglement-dominated where scoreable; control confirmed at the corner |
@@ -536,6 +541,9 @@ here is compared with §4's numbers except as a cross-era remark.)
 law as well; D1's decisive arm (dual c1 176–194 → 242–260 Mbit/s) was this
 isolated pair. The composed form (pool anchor riding the cadence) is not
 tested here.
+*(After the result: `83462ae` decoupled the pool anchor — it no longer
+follows the cadence and resolves off unless `RWM_POOL_ANCHOR=1` — and flipped
+`RWM_EST_CADENCE` on, so the shipped default is exactly the `CAD` arm.)*
 
 **Plan per (rep, seed) block: 32 invocations**, cells in the order below, the
 arm order within every cell rotated by the block index (rule 3):
@@ -839,7 +847,11 @@ against per-datagram truth unchanged at every leg (every CAD ratio within
 0.99–1.09, inside [1/1.3, 1.3] × CTL's); every cell scoreable:
 **`FLIP-RECOMMENDED`** — flip `RWM_EST_CADENCE` on with the pool anchor
 decoupled (`RWM_POOL_ANCHOR` stays off, whereas today, unset, it follows the
-cadence), as a separate reviewed commit. D1's dual-c1 gain reproduced (D1:
+cadence), as a separate reviewed commit. **Flipped in `83462ae`**: the
+pool anchor no longer follows the cadence (`resolve_pool_anchor` defaults off,
+pinned by `pool_anchor_does_not_follow_the_estimator_cadence`) and
+`RWM_EST_CADENCE` defaults on, so the default is the measured `CAD` form and
+not e84ef1c's composed one. D1's dual-c1 gain reproduced (D1:
 242–260; here 258.5–329.0). The rate law's input moves with it: `plu` leaves
 the 0.0354 BOCD floor at every cell where the CTL sat on it, while proactive
 coded output stays negligible (coded share ≤ 0.9 % in both arms), so at these

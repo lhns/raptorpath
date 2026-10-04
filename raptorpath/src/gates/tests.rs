@@ -299,10 +299,16 @@ fn default_env_resolves_the_shipped_stack() {
         off_arm.echo_line()
     );
     assert!(g.gen_pipe, "gen_pipe default rides unified_active()");
-    // Everything unset: est-cadence off, so pool-anchor (which follows it) is off.
+    // The estimator cadence ships on (Stage 3 (d), status.md §5) and the pool
+    // anchor, decoupled from it, ships off: the default IS the measured arm
+    // `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0`.
+    assert!(
+        g.est_cadence,
+        "RWM_EST_CADENCE ships default ON (Stage 3 (d) FLIP-RECOMMENDED)"
+    );
     assert!(
         !g.pool_anchor,
-        "RWM_POOL_ANCHOR default rides the RWM_EST_CADENCE resolution (OFF unset)"
+        "RWM_POOL_ANCHOR ships default OFF, independent of RWM_EST_CADENCE"
     );
     // The window-mode control-datagram merge ships on (paper §9.5).
     assert!(
@@ -550,4 +556,29 @@ fn every_gate_accessor_reads_the_one_resolution() {
     // is the pinned default line.
     assert_eq!(g.echo_line(), RuntimeGates::resolve().echo_line());
     assert_eq!(g.echo_line(), PINNED_DEFAULT_GATES_ECHO);
+}
+
+/// Stage 3 (d) measured `RWM_EST_CADENCE=1 RWM_POOL_ANCHOR=0` and nothing
+/// else: the pool anchor is an independent experiment arm with its own
+/// shipped default (OFF), never a passenger of the estimator cadence. With
+/// only the cadence set, the pool anchor must resolve OFF. Setting the
+/// cadence to `1` is the shipped default value, so this env write cannot
+/// change what a concurrently resolving test sees.
+#[test]
+fn pool_anchor_does_not_follow_the_estimator_cadence() {
+    std::env::remove_var("RWM_POOL_ANCHOR");
+    std::env::set_var("RWM_EST_CADENCE", "1");
+    let g = RuntimeGates::resolve();
+    std::env::remove_var("RWM_EST_CADENCE");
+    assert!(g.est_cadence, "RWM_EST_CADENCE=1 must resolve the cadence on");
+    assert!(
+        !g.pool_anchor,
+        "RWM_POOL_ANCHOR must resolve OFF when only RWM_EST_CADENCE=1 is set \
+         (Stage 3 (d) measured the cadence with the pool anchor off)"
+    );
+    assert!(
+        g.echo_line().contains(" RWM_POOL_ANCHOR=0 "),
+        "the [GATES] echo must witness the decoupled pool anchor: {}",
+        g.echo_line()
+    );
 }

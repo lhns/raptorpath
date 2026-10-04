@@ -121,7 +121,8 @@ pub struct LossEstimator {
     /// at the single-path throughput wall). With the gate ON, clean
     /// observations accumulate and flush every `EST_HEAVY_CADENCE`; any call
     /// that carries a loss flushes immediately (zero staleness on losses).
-    /// EWMA/Beta/burst/GE stay per-call. OFF (default) = per-call BOCD.
+    /// EWMA/Beta/burst/GE stay per-call. ON is the default (Stage 3 (d));
+    /// `RWM_EST_CADENCE=0` = per-call BOCD.
     est_cadence: bool,
     /// Accumulated (received, lost) counts awaiting the next BOCD flush.
     bocd_acc_received: u64,
@@ -142,11 +143,15 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 
 /// Whether `RWM_EST_CADENCE` is on, read from the process gate resolution.
 ///
-/// Default OFF: at the dual-path cells the send-side pool anchor that rides
-/// this gate becomes the binding cap (send-side anchors cannot ratchet
-/// above the cap-limited carried rate). The composed opt-in
-/// (`RWM_EST_CADENCE=1`, which turns `RWM_POOL_ANCHOR` on with it, +
-/// `RWM_EMIT_BATCH=1`) is the fast single-path configuration.
+/// Default ON (Stage 3 (d) `FLIP-RECOMMENDED`, status.md §5: not worse at
+/// any cell, dual c1 +41 %, sender CPU −12 to −32 %, fed loss vs truth
+/// unchanged). History: e84ef1c's flip was the COMPOSED form — the cadence
+/// with `RWM_POOL_ANCHOR` riding it — and it failed its symmetric-dual (c7)
+/// clause because the send-side pool anchor became the binding cap (send-side
+/// anchors cannot ratchet above the cap-limited carried rate). The pool anchor
+/// no longer follows this gate; the shipped flip is the cadence alone, the
+/// form Stage 3 measured. `RWM_EMIT_BATCH=1` on top is the fast single-path
+/// opt-in.
 pub(crate) fn est_cadence_active() -> bool {
     crate::gates::get().est_cadence
 }
@@ -154,10 +159,16 @@ pub(crate) fn est_cadence_active() -> bool {
 /// The resolve-time read behind [`est_cadence_active`] (called once, from
 /// [`crate::gates::RuntimeGates::resolve`]).
 pub(crate) fn resolve_est_cadence() -> bool {
-    let on = crate::config::env_flag("RWM_EST_CADENCE", false);
+    let on = crate::config::env_flag("RWM_EST_CADENCE", true);
+    // Echoed both ways (measurement-discipline rule 15c): with the default ON,
+    // the `=0` control arm must still witness that the knob reached the binary.
     if on {
         tracing::info!(
             "estimator heavy-math cadence ACTIVE (RWM_EST_CADENCE: BOCD update at 10 ms/loss-event cadence, accumulated counts)"
+        );
+    } else {
+        tracing::info!(
+            "estimator heavy-math cadence OFF (RWM_EST_CADENCE=0: per-call BOCD update)"
         );
     }
     on
@@ -208,8 +219,17 @@ impl LossEstimator {
     /// per-symbol pattern (SACK gaps) should use `record_counts` +
     /// `record_symbol` instead for an unbiased burst estimate.
     pub fn record_batch(&mut self, sent: u32, received: u32) {
+        self.record_batch_at(sent, received, Instant::now());
+    }
+
+    /// [`Self::record_batch`] on an explicit clock: `now` drives the
+    /// `RWM_EST_CADENCE` heartbeat. The engine passes the wall clock (via
+    /// `record_batch`); a `MockClock` sim passes its own `now`, or the
+    /// heartbeat would fire on wall time and two identical sim runs would
+    /// flush the BOCD at different points.
+    pub fn record_batch_at(&mut self, sent: u32, received: u32, now: Instant) {
         let lost = sent.saturating_sub(received);
-        self.record_counts(sent, received);
+        self.record_counts_at(sent, received, now);
 
         // Feed Gilbert-Elliott HMM: approximate as `lost` Bad symbols
         // followed by `received` Good symbols within this batch
@@ -225,6 +245,12 @@ impl LossEstimator {
     /// lumped Gilbert-Elliott approximation. Pair with per-symbol
     /// `record_symbol` calls carrying the actual arrival pattern.
     pub fn record_counts(&mut self, sent: u32, received: u32) {
+        self.record_counts_at(sent, received, Instant::now());
+    }
+
+    /// [`Self::record_counts`] on an explicit clock (see
+    /// [`Self::record_batch_at`]).
+    pub fn record_counts_at(&mut self, sent: u32, received: u32, now: Instant) {
         let lost = sent.saturating_sub(received);
         let batch_loss = if sent > 0 {
             lost as f64 / sent as f64
@@ -247,8 +273,10 @@ impl LossEstimator {
         if self.est_cadence {
             self.bocd_acc_received += received as u64;
             self.bocd_acc_lost += lost as u64;
-            if lost > 0 || self.bocd_last_flush.elapsed() >= EST_HEAVY_CADENCE {
-                self.flush_bocd();
+            if lost > 0
+                || now.saturating_duration_since(self.bocd_last_flush) >= EST_HEAVY_CADENCE
+            {
+                self.flush_bocd(now);
             }
         } else {
             self.bocd.update(received, lost);
@@ -267,14 +295,14 @@ impl LossEstimator {
 
         self.total_sent += sent as u64;
         self.total_received += received as u64;
-        self.last_update = Instant::now();
+        self.last_update = now;
     }
 
     /// Flush the accumulated counts into the BOCD (cadence gate). The
     /// posterior sees the same evidence as the per-call path, batched —
     /// exactly the batch-cadence observation model `default_fec()` was
     /// designed for.
-    fn flush_bocd(&mut self) {
+    fn flush_bocd(&mut self, now: Instant) {
         if self.bocd_acc_received > 0 || self.bocd_acc_lost > 0 {
             self.bocd.update(
                 self.bocd_acc_received.min(u32::MAX as u64) as u32,
@@ -283,7 +311,16 @@ impl LossEstimator {
             self.bocd_acc_received = 0;
             self.bocd_acc_lost = 0;
         }
-        self.bocd_last_flush = Instant::now();
+        self.bocd_last_flush = now;
+    }
+
+    /// Start the `RWM_EST_CADENCE` heartbeat at `now` (construction starts it
+    /// on the wall clock). For a `MockClock` sim feeding
+    /// [`Self::record_batch_at`]: without it the first heartbeat lands at a
+    /// wall-dependent offset. The engine never calls it.
+    #[doc(hidden)]
+    pub fn start_cadence_clock_at(&mut self, now: Instant) {
+        self.bocd_last_flush = now;
     }
 
     /// Record one wire-symbol outcome (true = received) into the
@@ -512,15 +549,15 @@ impl LossEstimator {
 mod tests {
     use super::*;
 
-    /// RWM_EST_CADENCE default: ships OFF. Relies on the test env not
-    /// exporting RWM_* overrides, like every engine-default test in this
-    /// crate.
+    /// RWM_EST_CADENCE default: ships ON — the form Stage 3 (d) measured
+    /// (cadence on, pool anchor off). Relies on the test env not exporting
+    /// RWM_* overrides, like every engine-default test in this crate.
     #[test]
-    fn test_est_cadence_default_off() {
+    fn test_est_cadence_default_on() {
         let est = LossEstimator::new();
         assert!(
-            !est.est_cadence,
-            "RWM_EST_CADENCE ships default OFF (the composed flip failed its c7 clause)"
+            est.est_cadence,
+            "RWM_EST_CADENCE ships default ON (Stage 3 (d) FLIP-RECOMMENDED; the              earlier composed flip that failed its c7 clause carried the pool anchor)"
         );
     }
 
@@ -557,6 +594,23 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(12));
         est.record_batch(1, 1); // heartbeat elapsed → flush
         assert_eq!(est.bocd_updates(), 2, "the 10 ms heartbeat flushes");
+    }
+
+    /// RWM_EST_CADENCE law on an injected clock: the heartbeat reads the
+    /// `now` it is fed, never the wall — clean evidence 9.999 ms after the
+    /// clock start stays held, at exactly 10 ms it flushes. This is what
+    /// keeps a `MockClock` sim deterministic.
+    #[test]
+    fn test_est_cadence_heartbeat_reads_the_fed_clock() {
+        let mut est = LossEstimator::new_with_cadence_for_test();
+        let t0 = Instant::now() + Duration::from_secs(3600);
+        est.start_cadence_clock_at(t0);
+        est.record_batch_at(10, 10, t0 + Duration::from_micros(9_999));
+        assert_eq!(est.bocd_updates(), 0, "sub-heartbeat clean evidence must be held");
+        est.record_batch_at(10, 10, t0 + EST_HEAVY_CADENCE);
+        assert_eq!(est.bocd_updates(), 1, "the fed clock's 10 ms heartbeat flushes");
+        est.record_batch_at(10, 10, t0 + EST_HEAVY_CADENCE + Duration::from_millis(5));
+        assert_eq!(est.bocd_updates(), 1, "the heartbeat restarts at the flush");
     }
 
     /// RWM_EST_CADENCE law: the cadenced posterior lands in the same class
