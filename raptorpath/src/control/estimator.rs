@@ -219,8 +219,17 @@ impl LossEstimator {
     /// per-symbol pattern (SACK gaps) should use `record_counts` +
     /// `record_symbol` instead for an unbiased burst estimate.
     pub fn record_batch(&mut self, sent: u32, received: u32) {
+        self.record_batch_at(sent, received, Instant::now());
+    }
+
+    /// [`Self::record_batch`] on an explicit clock: `now` drives the
+    /// `RWM_EST_CADENCE` heartbeat. The engine passes the wall clock (via
+    /// `record_batch`); a `MockClock` sim passes its own `now`, or the
+    /// heartbeat would fire on wall time and two identical sim runs would
+    /// flush the BOCD at different points.
+    pub fn record_batch_at(&mut self, sent: u32, received: u32, now: Instant) {
         let lost = sent.saturating_sub(received);
-        self.record_counts(sent, received);
+        self.record_counts_at(sent, received, now);
 
         // Feed Gilbert-Elliott HMM: approximate as `lost` Bad symbols
         // followed by `received` Good symbols within this batch
@@ -236,6 +245,12 @@ impl LossEstimator {
     /// lumped Gilbert-Elliott approximation. Pair with per-symbol
     /// `record_symbol` calls carrying the actual arrival pattern.
     pub fn record_counts(&mut self, sent: u32, received: u32) {
+        self.record_counts_at(sent, received, Instant::now());
+    }
+
+    /// [`Self::record_counts`] on an explicit clock (see
+    /// [`Self::record_batch_at`]).
+    pub fn record_counts_at(&mut self, sent: u32, received: u32, now: Instant) {
         let lost = sent.saturating_sub(received);
         let batch_loss = if sent > 0 {
             lost as f64 / sent as f64
@@ -258,8 +273,10 @@ impl LossEstimator {
         if self.est_cadence {
             self.bocd_acc_received += received as u64;
             self.bocd_acc_lost += lost as u64;
-            if lost > 0 || self.bocd_last_flush.elapsed() >= EST_HEAVY_CADENCE {
-                self.flush_bocd();
+            if lost > 0
+                || now.saturating_duration_since(self.bocd_last_flush) >= EST_HEAVY_CADENCE
+            {
+                self.flush_bocd(now);
             }
         } else {
             self.bocd.update(received, lost);
@@ -278,14 +295,14 @@ impl LossEstimator {
 
         self.total_sent += sent as u64;
         self.total_received += received as u64;
-        self.last_update = Instant::now();
+        self.last_update = now;
     }
 
     /// Flush the accumulated counts into the BOCD (cadence gate). The
     /// posterior sees the same evidence as the per-call path, batched —
     /// exactly the batch-cadence observation model `default_fec()` was
     /// designed for.
-    fn flush_bocd(&mut self) {
+    fn flush_bocd(&mut self, now: Instant) {
         if self.bocd_acc_received > 0 || self.bocd_acc_lost > 0 {
             self.bocd.update(
                 self.bocd_acc_received.min(u32::MAX as u64) as u32,
@@ -294,7 +311,16 @@ impl LossEstimator {
             self.bocd_acc_received = 0;
             self.bocd_acc_lost = 0;
         }
-        self.bocd_last_flush = Instant::now();
+        self.bocd_last_flush = now;
+    }
+
+    /// Start the `RWM_EST_CADENCE` heartbeat at `now` (construction starts it
+    /// on the wall clock). For a `MockClock` sim feeding
+    /// [`Self::record_batch_at`]: without it the first heartbeat lands at a
+    /// wall-dependent offset. The engine never calls it.
+    #[doc(hidden)]
+    pub fn start_cadence_clock_at(&mut self, now: Instant) {
+        self.bocd_last_flush = now;
     }
 
     /// Record one wire-symbol outcome (true = received) into the
@@ -568,6 +594,23 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(12));
         est.record_batch(1, 1); // heartbeat elapsed → flush
         assert_eq!(est.bocd_updates(), 2, "the 10 ms heartbeat flushes");
+    }
+
+    /// RWM_EST_CADENCE law on an injected clock: the heartbeat reads the
+    /// `now` it is fed, never the wall — clean evidence 9.999 ms after the
+    /// clock start stays held, at exactly 10 ms it flushes. This is what
+    /// keeps a `MockClock` sim deterministic.
+    #[test]
+    fn test_est_cadence_heartbeat_reads_the_fed_clock() {
+        let mut est = LossEstimator::new_with_cadence_for_test();
+        let t0 = Instant::now() + Duration::from_secs(3600);
+        est.start_cadence_clock_at(t0);
+        est.record_batch_at(10, 10, t0 + Duration::from_micros(9_999));
+        assert_eq!(est.bocd_updates(), 0, "sub-heartbeat clean evidence must be held");
+        est.record_batch_at(10, 10, t0 + EST_HEAVY_CADENCE);
+        assert_eq!(est.bocd_updates(), 1, "the fed clock's 10 ms heartbeat flushes");
+        est.record_batch_at(10, 10, t0 + EST_HEAVY_CADENCE + Duration::from_millis(5));
+        assert_eq!(est.bocd_updates(), 1, "the heartbeat restarts at the flush");
     }
 
     /// RWM_EST_CADENCE law: the cadenced posterior lands in the same class

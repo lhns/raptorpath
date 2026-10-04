@@ -24,7 +24,7 @@ use raptorpath::net::{
     three_term_store_cap, three_term_terms, AboveReport, EchoRatioMin, received_sack_ranges,
     ThreeTermPath, ThreeTermTerm, MAX_SACK_RANGES, WIN_STORE_MAX,
 };
-use raptorpath::scheduler::{MockClock, Scheduler};
+use raptorpath::scheduler::{Clock, MockClock, Scheduler};
 
 /// The resolved `contract_rho` default at every arm (`sender_policy`).
 const TT_RHO: f64 = 1.0;
@@ -1844,6 +1844,15 @@ fn simulate_place(
         ));
     }
     let np = paths.len();
+    // The estimator cadence (`RWM_EST_CADENCE`, default on) heartbeats on the
+    // clock it is fed: start it on the sim clock and feed `record_batch_at`
+    // the sim `now` below, so the sim models the shipped 10 ms cadence in sim
+    // time and stays deterministic (`measured_era_does_not_disturb_the_other_eras`).
+    for pid in 0..np {
+        if let Some(p) = sched.path_mut(pid as u32) {
+            p.estimator.start_cadence_clock_at(clock.now());
+        }
+    }
     assert!(
         np <= MAX_PATHS,
         "the per-path gauges are [_; MAX_PATHS = {MAX_PATHS}] arrays; widen MAX_PATHS \
@@ -2248,7 +2257,11 @@ fn simulate_place(
             for pid in 0..np {
                 if ack_expected[pid] > 0 {
                     if let Some(p) = sched.path_mut(pid as u32) {
-                        p.estimator.record_batch(ack_expected[pid], ack_received[pid]);
+                        p.estimator.record_batch_at(
+                            ack_expected[pid],
+                            ack_received[pid],
+                            clock.now(),
+                        );
                     }
                     ack_expected[pid] = 0;
                     ack_received[pid] = 0;
