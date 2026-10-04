@@ -20,7 +20,6 @@
 //! `src_tokens`, `cc_rate_cached`, `cc_rate_ceiling`, …), the derived-depth and
 //! dynamic-cap caches (`gen_pipe_m`, `gen_pipe_store_cap`, `dyn_store_cap`,
 //! `dyn_infl_cap`, `pa_*`), the per-path echo-ratio state (`percap_k`),
-//! `emit_batch_live` (re-scoped every loop iteration on the live-path count),
 //! the DIAG counter set, and the two DIAG t0 stamps. The mutable emission
 //! state lives in [`SenderState`](super::emit_source::SenderState).
 
@@ -290,8 +289,8 @@ pub(crate) struct SenderPolicy {
     pub sidle_derived: bool,
 
     // ── Emission ─────────────────────────────────────────────────────────
-    /// `RWM_EMIT_BATCH` as configured (the per-iteration scoping on the
-    /// live-path count is `emit_batch_live`, a local — see the module doc).
+    /// `RWM_EMIT_BATCH` as configured; live at every path count (Law 0,
+    /// `net::emit_burst`).
     pub emit_batch_on: bool,
     /// `RWM_EMIT_BURST` pacer-quantum burst size (symbols).
     pub emit_burst: usize,
@@ -790,11 +789,10 @@ impl SenderPolicy {
         //   2. refreshes the derived taper/span math once per burst instead of
         //      per symbol (the A* send-rate anchor is still fed per symbol).
         // Plain window-reliable mode only (generation/coded emission has its own
-        // paced block). Single live path only: dual cells are wire/recovery-
-        // bound and bursting there lengthens same-path arrival runs, which
-        // inflates the per-path loss misread; with N ≥ 2 live paths the emission
-        // path is unchanged (`emit_batch_live` re-checked per loop iteration, so
-        // path flaps re-scope within one burst). Realtime (packed) mode is
+        // paced block). Every path count (Law 0, `net::emit_burst`): the burst
+        // bound is emit_burst whatever the live set. The old single-live-path
+        // scope (`c639d56`) was for the wire-v8 global-batch_seq striping-gap
+        // misread, gone in v9 (per-path `path_seq`; `net::tests::t2_*`). Realtime (packed) mode is
         // excluded outright: its per-packet latency path must never trade a
         // wakeup for a burst. The taper cache carries a 50 ms staleness bound so
         // a low-rate bulk-hint tunnel never runs the span/shed law on second-old

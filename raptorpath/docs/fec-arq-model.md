@@ -2709,6 +2709,7 @@ decide it.
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
 | receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
 | anchor floor 0.85, pull 0.25, gain 1.0 | Copa legacy branch | 0.85 set by one measurement; the others untested | — |
+| `RWM_EMIT_BURST = 64` (the burst bound b, Law 0) | `emit_burst_bound` (`net/emit_burst.rs`) | "≈ 64 KB", no derivation; opt-in gate. Law 0 replaced the `live_paths == 1` scope (a path-count step whose v8 striping-gap reason v9's per-path `path_seq` removed); bind fraction is the `eb_end cap:` gauge on `[DIAG]` | the status §8 battery (`eb_end` bind fraction, `eb_maxrun` per path) |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences
@@ -3095,6 +3096,7 @@ engine.
    store_len    =  retained − released                                      store_gate_released
    released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
+   burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH)  emit_burst_bound
 ```
 
 ### A.6 The recovery decision (Section 7)

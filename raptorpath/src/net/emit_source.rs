@@ -260,16 +260,12 @@ impl SenderState {
 
 /// Feed one framed packet to the encoder, place it on the wire, account for
 /// it, and emit the proactive repair its taper budget owes.
-///
-/// `emit_batch_live` is a per-iteration input (re-scoped in the main loop,
-/// read-only here), so it is passed in rather than living in [`SenderState`].
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_source(
     framed: bytes::Bytes,
     st: &mut SenderState,
     pol: &SenderPolicy,
     ctx: &SenderCtx<'_>,
-    emit_batch_live: bool,
 ) {
     // The framed buffer becomes the symbol's payload: the encoder window,
     // the retention store and the wire send below all share it (refcount
@@ -507,7 +503,7 @@ pub(crate) fn emit_source(
         // The refresh follows the burst bound in force (Law 0:
         // `emit_burst_bound`), see `net::emit_burst::taper_recompute_due`.
         let taper_recompute = super::emit_burst::taper_recompute_due(
-            emit_batch_live,
+            pol.emit_batch_on,
             st.taper_cache.is_some(),
             st.taper_cache_syms,
             super::emit_burst::emit_burst_bound(pol.emit_burst),
