@@ -27,10 +27,9 @@ stack, the most recent verdicts and the open debts. In short:
 
 - Realtime runs the window pipeline: the unified RLC span machine with EVICT
   retention (ρ < 1) and δ-honest shedding.
-- Bulk and Auto still default to the legacy **block pipeline** (RaptorQ + block
-  ARQ). `--window-reliable` moves them onto the window pipeline with
-  retain-until-acked (ρ = 1). The default flips only if the pre-registered
-  re-test in ADR-0069 and `docs/status.md` §4 passes.
+- Bulk and Auto run the same window pipeline with retain-until-acked
+  retention (ρ = 1). The block pipeline was removed (ADR-0069); naming a
+  block-only codec or block option is a startup error.
 - The QUIC congestion controller underneath is quinn BBR (`RWM_QUIC_CC`
   overrides it).
 - Experiment arms and instruments are `RWM_*` environment gates, resolved once
@@ -74,7 +73,7 @@ sudo raptorpath run \
   --peer 203.0.113.1:4433,203.0.113.1:4434 \
   --tun-name rpath0 --tun-addr 10.99.0.2/24 \
   --route 192.168.50.0/24 --dns 10.99.0.1 \
-  --protocol-hint auto --window-reliable
+  --protocol-hint auto
 ```
 
 | flag | default | meaning |
@@ -83,8 +82,8 @@ sudo raptorpath run \
 | `--bind`, `--peer` | — | local and remote addresses, one per path |
 | `--tun-name`, `--tun-addr` | `rpath0`, `10.99.0.1/24` | the virtual interface |
 | `--protocol-hint` | `auto` | `realtime`, `auto` or `bulk` (a point on the δ dial) |
-| `--window-reliable` | off | Bulk/Auto on the window pipeline, retain-until-acked |
-| `--fec-backend` | `raptorq` | `raptorq`, `rs` or `rlc`; the window pipeline needs `rlc` (selected automatically when unset) |
+| `--window-reliable` | Bulk/Auto: on; Realtime: off | retain-until-acked (ρ = 1); moves Realtime off its EVICT preset |
+| `--fec-backend` | `rlc` | `rlc` only (`raptorq`/`rs` were removed with the block pipeline, ADR-0069) |
 | `--target-tail-loss`, `--max-fec-overhead` | `1e-5`, `0.5` | repair contract inputs |
 | `--profile` | none | `home` or `datacenter` presets |
 | `--route`, `--dns` | none | routes and DNS through the tunnel |
@@ -111,12 +110,13 @@ L1 harness uses it.
 ```bash
 raptorpath perf --server --bind 0.0.0.0:4433,0.0.0.0:4434
 raptorpath perf --client --peer 10.0.0.1:4433,10.0.0.1:4434 \
-  --bytes 1800000 --runs 10 --protocol-hint bulk --window-reliable
+  --bytes 1800000 --runs 10 --protocol-hint bulk
 ```
 
 The flags `--window-out-of-order`, `--window-coded-only`,
 `--window-generation-coding` and `--window-systematic-repair` select opt-in
-experiment arms, and each needs `--window-reliable`. `docs/status.md` covers
+experiment arms, and each needs retain-until-acked retention (the Bulk/Auto
+default). `docs/status.md` covers
 their standing.
 
 ### Logging
@@ -139,7 +139,7 @@ their standing.
 | document | what it is |
 |---|---|
 | [`docs/fec-arq-model.md`](docs/fec-arq-model.md) | the paper: channel model, rate law, span machine, flow control, recovery, CC |
-| [`docs/status.md`](docs/status.md) | the default stack, recent verdicts, open debts, the pending block re-test |
+| [`docs/status.md`](docs/status.md) | the default stack, recent verdicts, open debts, the pre-registered batteries |
 | [`docs/measurement-discipline.md`](docs/measurement-discipline.md) | binding rules for any L1 verdict, the verdict taxonomy, the VM protocol |
 | [`docs/adr/README.md`](docs/adr/README.md) | the architecture decision index |
 | [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md) | the in-process benchmark suite (`tests/bench_suite.rs`) and how to read it |

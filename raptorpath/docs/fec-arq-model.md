@@ -152,13 +152,13 @@ faster.
 
 ### 1.5 Architecture as shipped
 
-The architecture described here is the window machine (Sections 5–7). In the
-current release the Bulk and Auto hints still default to a legacy block-FEC
-pipeline unless `--window-reliable` is given (`is_window_mode`,
-`raptorpath/src/net/mod.rs`); Realtime always runs the window machine. That
-pipeline selection is a construction-time mode switch and is recorded as an
-open debt (Sections 9.1, 10, 11). The bulk and multipath results for the
-window machine in Section 9 are measured with `--window-reliable`.
+The architecture described here is the window machine (Sections 5–7), and it
+is the only pipeline: every hint runs it. The legacy block-FEC pipeline that
+Bulk and Auto once defaulted to was a construction-time mode switch; it was
+removed in `dacfd7c` (ADR-0069) after the Stage-3 re-test found the window not
+worse at any cell and ahead at every Auto cell (Section 10). The retention
+contract ρ is the named point's preset — ρ = 1 at Bulk/Auto, EVICT at
+Realtime — and never selects a pipeline.
 
 ### 1.6 Reading guide
 
@@ -236,7 +236,7 @@ with a merged `WindowAck` carrying the cumulative frontier, SACK ranges and
 an echo timestamp. Retransmits are exact copies from the sender's store.
 The wire runs over QUIC datagrams (quinn), protocol version 9
 (`transport/protocol.rs`). Every data batch carries two sequences: the
-global `batch_seq` (it keys the block-mode ARQ ledger) and, since v9, a
+global `batch_seq` (echoed in the per-batch `Ack`) and, since v9, a
 per-path monotonic `path_seq`, from which the receiver's per-path gap
 tracker reads loss. Through v8 the tracker read gaps in the global
 sequence, so at N ≥ 2 every other path's batch counted as this path's loss
@@ -701,7 +701,7 @@ of Section 3.6 when the core term is positive.
 | ε̂/(1−ε̂) | derived: the erasure-channel minimum [Shannon1948], including the geometric chain of lost corrections |
 | z | derived from t_tail/ε̂; t_tail from the dial (Section 4.1) |
 | σ²_burst | derived from the GE estimate (Section 2.4) |
-| W | derived, `derive_window` (Section 4.8), clamped [16, 512] and by the sender's `MAX_WINDOW_SIZE = 200`; on the block pipeline W = k, the block size |
+| W | derived, `derive_window` (Section 4.8), clamped [16, 512] and by the sender's `MAX_WINDOW_SIZE = 200` |
 | max(0, ·) | physical floor: a repair count cannot be negative |
 
 **Continuity.** The quantile is taken at 1 − t_tail/ε̂. As the channel
@@ -799,7 +799,6 @@ saturation cap:
 * An inner-feedback floor for TCP-in-tunnel payloads enters the max with
   weight 0 by default (measured completion-neutral at c2 and −28 % at c3).
 
-On the block pipeline the repair count per block of k sources is `⌈k·r⌉`.
 The kernel `compute_r_star_with_z` carries absolute pins against the worked
 values of Section 4.2; the composed function carries continuity and
 ordinal tests and one loose band against the exact DP (Section 4.7).
@@ -1466,8 +1465,8 @@ measured reasons.
 
 The resolution is one pipeline parameterised by retention, span, window and
 the (δ, ρ, r) triangle, with codecs chosen per stream at setup and never
-switched mid-stream. The Bulk/Auto block default of Section 1.5 is the
-remaining instance.
+switched mid-stream. Its last instance, the Bulk/Auto block default, was
+removed in `dacfd7c` (ADR-0069): there is now one pipeline.
 
 
 ### 5.11 Per-stream contracts
@@ -2373,9 +2372,8 @@ under the engine; path-scaled pooled store with SACK-clocked release and
 the δ-cap; per-path loss detection; the anchor-hygiene pair; merged acks;
 compact framing; placement at T = 0.15. It is pinned by
 `gates/tests.rs::default_env_resolves_the_shipped_stack` and byte-pinned by
-`gates_echo_default_is_byte_pinned`. As stated in Section 1.5,
-Bulk and Auto need `--window-reliable` to run this machine; without it they
-run the legacy block pipeline.
+`gates_echo_default_is_byte_pinned`. Every hint runs this machine
+(Section 1.5); Bulk and Auto at ρ = 1 by default.
 
 ### 9.2 Against QUIC, TCP and MPTCP
 
@@ -2568,7 +2566,7 @@ count.
 | BtlBw max filter | verified | `bw_mono_front_equals_full_window_fold` |
 | SRTT (Copa EWMA) | unverified | load-bearing for pacing, the recovery plane and placement; modelled by test oracles, never pinned |
 | three channel implementations | unverified | no cross-validation between the test GE, the recovery-bench chain and the netem shim |
-| default stack | pinned | `gates/tests.rs::default_env_resolves_the_shipped_stack`, `gates_echo_default_is_byte_pinned`; `default_config_routes_bulk_and_auto_to_the_block_pipeline` pins the block default |
+| default stack | pinned | `gates/tests.rs::default_env_resolves_the_shipped_stack`, `gates_echo_default_is_byte_pinned`; `default_config_routes_every_hint_to_the_window_pipeline` pins the one pipeline |
 
 
 ---
@@ -2589,7 +2587,7 @@ shipped.
 | Mid-stream backend switching (loss-threshold selector) | no cross-code algebra: a switch strands every in-flight symbol or forces a drain; a threshold on ε̂ oscillates | `6948a64` | removed |
 | Streaming two-layer code (Realtime machine) | displaced, not refuted: the unified span machine was at or below its p99 at all five historic crown cells on both seeds, 163/163 delivery-complete | `bccb32a` | removed |
 | Legacy RLC decoders (sliding-window, generation) | replaced by the unified global-RREF decoder; the keyed generation machine strands 2-loss bursts on a moving-span wire | `b849acb` | superseded (`RWM_UNIFIED=0` opt-out) |
-| Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) | not measured as the arm under test since an early DNF 6/6 at a lossy cell; frozen; removal list in ADR-0069 awaits the block-versus-window re-test | `17f7fa9` | legacy default for Bulk/Auto |
+| Block-FEC pipeline (RaptorQ/RS/block-RLC with batch-ACK ARQ) | displaced: the Stage-3 re-test found the window not worse at every cell and hint and ahead beyond MDE at 7 of 10 (every Auto cell); a construction-time mode switch | `dacfd7c` | removed |
 | Coded-only generation wire | the O(G²·S) "decode ceiling" was the wire mode, not the solver; systematic-repair wire doubled single-path goodput (33.9 → 70.9 Mbit/s) | `2122481` | superseded |
 | Coded-only fungible window (coded-object mode) | correct but slower on the real stack: 3.9 Mbit/s at the heterogeneous dual against 15.7 for the fast path alone; a striped combination lands after the window has moved | — | off |
 | FMTCP-class decode-on-total [Cui2015] | 0.48× at the heterogeneous dual; on the clean substrate c7 ×0.11, c8 ×0.20 of the default stack, a recovery flood (coded share > 1) at about 8× plain CPU | `f841757` | removed |
@@ -2660,7 +2658,6 @@ never-delivered tail target.
 | # | question | what would decide it |
 |---|---|---|
 | 0 | Why does the current binary line run sc2 at ~2 Mbit/s (and sc3, c7 far below their earlier readings)? | a bisect against the competitive-baseline binary (Section 9.2) |
-| 1 | Should Bulk and Auto run the window machine by default, retiring the block pipeline? | the pre-registered block-versus-window re-test at c1/c2/c3/c7/c8, both hints, two seeds |
 | 2 | Is ρ a runtime dial? Today ρ is structural (1 on the retain seat, < 1 only on the evicting Realtime seat) | plumbing ρ to the store and the receiver; the hard-coded `SRTT/2` receiver hold is the first site that would break |
 | 3 | Does Auto's rate sit at the corner r* = 0? | an echo of Copa's delay normaliser d beside D_arq (Section 4.9) |
 | 4 | Does the span law stay continuous at the named points? | an isolating pure-law test of `(δ, ρ, r) → (A*, M*, Δ)` with ±2 % nudges, as the rate law has |
@@ -2672,7 +2669,7 @@ never-delivered tail target.
 | 10 | Is the per-path loss estimate 3–5× low? | the per-datagram truth now exists (`[TRUTH]`, Section 9.1) and the fed loss matches it at c2/c3/c8 (Section 11.3); owed: the ε̂ gauges (`pl`, `plu`) against it, and the c1 residual |
 | 11 | Can the machine beat BBR-class stacks on clean single-path bulk? | the engine's per-message service walls; the measured opt-in (sender batching plus estimator cadence) reaches 446–505 Mbit/s at c1 against 915 for quinn-BBR |
 | 12 | Is a nested delay loop stable? | Copa's δ-priced loop sits inside the pool's δ-priced cap on the same delay; no stability analysis of that topology is published; time-scale separation holds by accident today |
-| 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), `BlockProfile::from_hint`, default interleave depth (2/1/3, non-monotone in δ, so no continuous form exists), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`, `is_window_mode`, `effective_fec_backend`; each is a declared corner, not a law |
+| 13 | Remaining hint-keyed sites | `queue_target_mult` (1.08/1.125/1.25), the symbol size per named point (512/1200), the Realtime duplicate source send, `use_packing`, `RWM_COPA_COMPETE`; each is a declared corner, not a law (the block hint tables and the pipeline fork were removed with the block pipeline) |
 
 ### 11.2 Open-constants register
 
@@ -2695,7 +2692,6 @@ decide it.
 | `w_div = 1.0` | `SchedulingWeights` | derived form `(p_BB − ε)⁺·srtt/ref` gives 0.475 (c2), 0.552 (c3) | per-path p_BB beside placement |
 | cold-path price `r_i = 10.0` | `place_costs` | a hard exclusion (e^−66 odds at T = 0.15) in continuous form; derived form: price an unmeasured path at the worst measured one | a cold-price bind fraction |
 | near-tie band 0.8 and floor 0.25 | `place_repair_spare_path` | a relative band plus an absolute floor signals a missing scale; derived form `max_spare − z·σ̂_spare` | σ̂_spare |
-| `ELIGIBLE_SKEW = 75 ms` | `pick_affinity_path` (block seat only) | a threshold that selects a code path; moot on the window path | — |
 | `BULK_TAIL_BUDGET = 0.05` | `raptorpath-math` | an "e.g." promoted to a constant | the completion-glide battery arm |
 | χ constants 1.5, 4·RTTVAR, SRTT/4 | `completion_exposure` | — | — |
 | W* fraction α = 0.25, bounds [16, 512], `MAX_WINDOW_SIZE = 200` | `derive_window`, sender | 200 is below W_mp at the heterogeneous cell | — |
@@ -2709,7 +2705,6 @@ decide it.
 
 | item | model | engine |
 |---|---|---|
-| default pipeline for Bulk and Auto | the window machine | the block pipeline (RaptorQ) unless `--window-reliable`; selected by a `hint == Realtime` test (`is_window_mode`) |
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
@@ -2717,11 +2712,11 @@ decide it.
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
 | store headroom H in the recovery analysis | `(gain − 1)·RTprop` at every cell, with the count released only by the frontier | at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
-| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget and the block pipeline's `⌈k·r⌉` |
+| r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
 | GE estimator input | per-symbol loss sequence | per-batch counts, losses fed before receives |
-| per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` on the block pipeline), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. A lost multi-symbol block batch is charged as `gap × received` of the next arrival (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
+| per-path loss feed | wire loss of the path's own direction | the sender's own ack deltas only (`WindowAck` counters, or the per-batch `Ack` with `RWM_ACK_MERGE=0`), reorder credited back by the tracker and carried by the sender, never negative; the peer's `PathReport` loss is monitoring only, and the receiver's incoming loss feeds the RX slot. Window batches carry one symbol, so the tracker's `gap × received` charge is exact (`test_path_batch_tracker_with_gap`); datagrams dropped in quinn's buffers count as loss and are named by `[DIAG] dgev` / `[CTLD] dgrx` |
 | BOCD quantile | mixture quantile | run-length-weighted average of quantiles |
 | δ_exit (Section 4.9) | a price that locates the corner | not implemented |
 | visualizer Bulk tail target | — | the wasm model interpolates to 0.05 at Bulk where the engine's t_tail is 10⁻³, and guards its rate mix with `if bulkness > 0` |

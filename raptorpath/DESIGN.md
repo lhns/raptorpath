@@ -87,21 +87,15 @@ ADR-0064): known source columns stay payload-only, coded rows reduce only over
 their spans, and unit rows deliver per arrival. `RWM_UNIFIED=0` falls back to the
 legacy `RlcWindowDecoder`.
 
-## The block pipeline (legacy, still the Bulk/Auto default)
+## One pipeline
 
-`net/mod.rs` `is_window_mode` routes by
-`(hint == Realtime || window_reliable) && backend.is_streaming()`. With the
-defaults (`window_reliable = false`, backend RaptorQ) **Bulk and Auto still run
-the block pipeline**: `run_block_sender` (`net/block_sender.rs`) assembles
-packets into blocks, encodes them with RaptorQ / Reed-Solomon / block RLC
-(`fec/*_backend.rs`), interleaves them (`net/interleave.rs`), and repairs with
-block ARQ (`net/block_arq.rs`, `net/tasks/arq_sweep.rs`). Realtime, and any hint
-with `--window-reliable`, runs the window pipeline above.
-
-This fork is the last architectural mode bit and violates the no-mode-switch
-invariant. ADR-0069 records it as legacy and pins the routing with a test.
-Flipping the default and deleting block mode wait on the pre-registered re-test
-in `docs/status.md` §4.
+Every hint runs the window pipeline above. The block pipeline (RaptorQ /
+Reed-Solomon / block RLC, interleaving, block ARQ) was the last architectural
+mode bit; ADR-0069 deleted it in `dacfd7c` after the Stage-3 re-test
+(`docs/status.md` §5, `WINDOW-NOT-WORSE`). `net::pipeline_backend` accepts only
+the streaming RLC codec; a block-only setting is a startup error naming the
+ADR. ρ (`window_reliable`) is the named point's preset — retain-until-acked
+at Bulk/Auto, EVICT at Realtime — and composes with δ; it selects no pipeline.
 
 ## Module map (`raptorpath/src`)
 
@@ -124,10 +118,9 @@ in `docs/status.md` §4.
 | `net/emit_source.rs`, `net/sender_policy.rs` | the per-symbol emission step and its resolve-once policy |
 | `net/receiver.rs`, `net/control_msg.rs`, `net/reorder.rs` | receiver task, control-message dispatch, in-order frontier |
 | `net/framing.rs` | length-prefix packet framing and symbol packing |
-| `net/block_sender.rs`, `block_arq.rs`, `interleave.rs` | block pipeline (legacy) |
-| `net/tasks/` | background tasks: decoder GC, block ARQ sweep, path add/remove, periodic report, control fast path |
+| `net/tasks/` | background tasks: path add/remove, periodic report, control fast path |
 | `net/{diag,ackdiag,cpuprof,eta,lat,late,succ,walldiag,rttdump,recv_block}.rs` | measurement instruments (`[DIAG]`, `[ETA]`, `[LAT]`, ...), mostly off by default |
-| `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding; `generation/reference.rs` is the test oracle), block backends, traits |
+| `fec/` | codecs: `rlc_window.rs`, `unified.rs`, `generation.rs` (opt-in generation coding; `generation/reference.rs` is the test oracle), the window traits and the wire `WireSymbol`/`FecBackend` types |
 | `control/` | `estimator.rs` (Beta + BOCD loss estimate), `fec_rate.rs` (r*, rate mix, taper), `anchor.rs` (anchor hygiene); `changepoint`, `gilbert_elliott` and `p_lost` are re-exported from `raptorpath-math` |
 | `scheduler/` | `mod.rs` (`Scheduler`, the `live_paths`/`active_paths` sets, weights), `path.rs` (`PathState`), `copa.rs` (Copa-lite, `CopaState`), `place.rs` (placement, `place_costs`), `clock.rs` (injectable clock) |
 | `transport/` | `quic.rs` (quinn, per-path connections, substrate CC choice), `protocol.rs` (wire, `PROTOCOL_VERSION = 8`), `bbr_rs.rs` (gated reference BBR), `l0_netem.rs` (in-process netem shim for loopback tests) |

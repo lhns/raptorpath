@@ -1,6 +1,23 @@
 # ADR-0069: Block mode is LEGACY — the last mode bit, deprecated with a re-test clause; the default does NOT flip without measurement
 
-## Status: Accepted — deprecation recorded; the shipped default is UNCHANGED and PINNED by a test; the flip and the deletion are both gated on the Block Default Re-Test, now pre-registered in `docs/status.md` §4 (not yet run)
+## Status: Accepted, executed — the window pipeline is the default for every hint and the block pipeline is deleted (`dacfd7c`, 2026-10-04), on the Stage-3 re-test's `WINDOW-NOT-WORSE` (`docs/status.md` §5)
+
+> **Execution note (2026-10-04).** The flip and Appendix A's deletion landed
+> together. Routing: `is_window_mode` is gone; `net::pipeline_backend`
+> accepts only a streaming codec, so a block-only backend (and
+> `interleave_depth`, `mp_block_affinity`) is a startup error naming this
+> ADR — no fallback. Default `fec_backend` is RLC; `window_reliable` (ρ)
+> defaults to the named point's preset, retain-until-acked at Bulk/Auto,
+> EVICT at Realtime — an independent dial, never a pipeline selector. Pinned
+> by `default_config_routes_every_hint_to_the_window_pipeline` and
+> `block_only_config_is_an_error_naming_adr_0069`. Kept, deliberately:
+> `FecBackend::{RaptorQ, ReedSolomon}` as wire tags, `EncodingParams` and the
+> `BlockStart`/`BlockResult` variants (variant order is the encoding; the
+> receiver ignores them); `net/recv_block.rs` (the receiver's diagnostic
+> block, not block mode); `Scheduler::schedule` (now per-symbol only).
+> Removed beyond the list: `ReorderBuffer`'s byte-bounded mode and the
+> receiver's `CompletedBlocks`. The text below is the decision as recorded
+> before execution.
 
 > Code line numbers below are as of the ADR's writing and have drifted.
 > "Ledger" citations refer to the measurement ledger at ac1aed1 (see the ADR index).

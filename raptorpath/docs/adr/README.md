@@ -45,4 +45,4 @@ Conventions in the ADRs below:
 | [0063](0063-rstar-window-mass-provisioning.md) | r* window-mass provisioning | Accepted | r* provisions the window loss-mass quantile (`RWM_RSTAR_TAIL`); realized through the span machine. |
 | [0064](0064-unified-span-machine.md) | Unified span machine + δ-honest shedding | Accepted | One decoder and one continuous span law across δ; shedding within the 1 − ρ budget. |
 | [0068](0068-copa-bbr-fusion.md) | Copa/BBR fusion | Proposed | One δ-priced controller over a measured rate model; targets measured, nothing built. |
-| [0069](0069-block-mode-disposition.md) | Block mode is legacy | Accepted | The block/window fork is the last mode bit; the default stays until the re-test in `status.md` §4. |
+| [0069](0069-block-mode-disposition.md) | Block mode is legacy | Accepted, executed (`dacfd7c`) | The block/window fork was the last mode bit; after the Stage-3 re-test the window pipeline is the default for every hint and the block pipeline is deleted. |
