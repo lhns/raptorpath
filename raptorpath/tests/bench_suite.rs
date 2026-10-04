@@ -1,7 +1,11 @@
 //! Consolidated benchmark suite (ADR-0042; `docs/benchmark-methodology.md`).
 //!
-//! Tables 1/1b (codec recovery sweep) and Table 2 (overhead breakdown) remain unchanged.
-//! Tables 3/4/5 replaced by unified matrix: 4 backends × 4 configs × 2 paths × 5 scenarios.
+//! Tables 1/1b (codec recovery sweep) and Table 2 (overhead breakdown), plus the unified
+//! matrix (backends × 4 configs × 2 paths × 5 scenarios) that replaced Tables 3/4/5.
+//!
+//! The block codecs (RaptorQ, Reed-Solomon, block RLC) and their table columns / matrix
+//! rows were removed with the block FEC pipeline (ADR-0069). What remains measures the
+//! window pipeline: the RLC window codec and the retransmit baseline.
 //!
 //! Output: markdown + JSON files with git commit info.
 //! Run with: cargo test --test bench_suite -- --nocapture --release
@@ -15,7 +19,7 @@ use rand_chacha::ChaCha8Rng;
 use raptorpath::control::estimator::LossEstimator;
 use raptorpath::control::fec_rate::{FecRateController, ProtocolHint};
 use raptorpath::fec::{
-    EncodingParams, FecBackend, FecDecoder,
+    FecBackend,
     RlcWindowDecoder, RlcWindowEncoder, WindowDecoder,
     WindowEncoder, WireSymbol,
 };
@@ -35,17 +39,16 @@ const NUM_SYMBOLS: u32 = 2000;
 const BATCH_SIZE: u32 = 10;
 const NUM_TRIALS: u64 = 30;
 const MAX_FEC_OVERHEAD: f64 = 0.20;
-const BLOCK_SIZE: u32 = 200;
 const MATRIX_FEC_OVERHEAD: f64 = 0.12;
 
 // ---------------------------------------------------------------------------
-// BackendChoice — replaces WindowBackendKind
+// BackendChoice — the window codec (RLC) and the retransmit baseline.
+// The block codecs (RaptorQ, Reed-Solomon) were removed with the block
+// FEC pipeline (ADR-0069).
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 enum BackendChoice {
-    RaptorQ,
-    ReedSolomon,
     Rlc,
     Retransmit,
 }
@@ -53,8 +56,6 @@ enum BackendChoice {
 impl BackendChoice {
     fn all() -> &'static [BackendChoice] {
         &[
-            Self::RaptorQ,
-            Self::ReedSolomon,
             Self::Rlc,
             Self::Retransmit,
         ]
@@ -62,15 +63,9 @@ impl BackendChoice {
 
     fn name(&self) -> &'static str {
         match self {
-            Self::RaptorQ => "RaptorQ",
-            Self::ReedSolomon => "ReedSolomon",
             Self::Rlc => "RLC",
             Self::Retransmit => "Retransmit",
         }
-    }
-
-    fn is_block(&self) -> bool {
-        matches!(self, Self::RaptorQ | Self::ReedSolomon)
     }
 
     fn is_window(&self) -> bool {
@@ -83,8 +78,6 @@ impl BackendChoice {
 
     fn fec_backend(&self) -> FecBackend {
         match self {
-            Self::RaptorQ => FecBackend::RaptorQ,
-            Self::ReedSolomon => FecBackend::ReedSolomon,
             Self::Rlc => FecBackend::Rlc,
             Self::Retransmit => unreachable!("Retransmit has no FecBackend"),
         }
@@ -360,7 +353,6 @@ struct BenchmarkParameters {
     batch_size: u32,
     num_trials: u64,
     fec_overhead: f64,
-    block_size: u32,
 }
 
 #[derive(serde::Serialize)]
@@ -453,66 +445,9 @@ fn scenario_cwnd(scenario: &ScenarioConfig) -> (usize, usize) {
     }
 }
 
-fn fec_backend_name(b: FecBackend) -> &'static str {
-    match b {
-        FecBackend::RaptorQ => "RaptorQ",
-        FecBackend::ReedSolomon => "ReedSolomon",
-        FecBackend::Rlc => "RLC",
-    }
-}
-
 // ===========================================================================
 // Table 1: Backend Loss Sweep
 // ===========================================================================
-
-fn loss_sweep_block_trial(backend: FecBackend, loss_rate: f64, seed: u64) -> f64 {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let num_blocks = NUM_SYMBOLS / BLOCK_SIZE;
-    let mut repair_per_block = (BLOCK_SIZE as f64 * MAX_FEC_OVERHEAD).ceil() as u32;
-    if backend == FecBackend::ReedSolomon {
-        repair_per_block = repair_per_block.min(255 - BLOCK_SIZE);
-    }
-
-    let mut total_recovered = 0u32;
-
-    for block_idx in 0..num_blocks {
-        let block_data =
-            vec![(block_idx % 256) as u8; BLOCK_SIZE as usize * SYMBOL_SIZE as usize];
-
-        let params = EncodingParams {
-            source_symbols: BLOCK_SIZE,
-            symbol_size: SYMBOL_SIZE,
-            repair_count: repair_per_block,
-            block_id: block_idx as u64,
-        };
-
-        let encoder = backend.create_encoder(&block_data, params);
-        let source = encoder.source_symbols();
-        let repairs = encoder.repair_symbols(repair_per_block);
-
-        let mut all_syms: Vec<WireSymbol> = source;
-        all_syms.extend(repairs);
-        let surviving: Vec<WireSymbol> = all_syms
-            .into_iter()
-            .filter(|_| rng.gen::<f64>() >= loss_rate)
-            .collect();
-
-        let mut decoder = backend.create_decoder(params, block_data.len() as u64);
-        let mut decoded = false;
-        for sym in &surviving {
-            if decoder.add_symbol(sym).is_some() {
-                decoded = true;
-                break;
-            }
-        }
-
-        if decoded {
-            total_recovered += BLOCK_SIZE;
-        }
-    }
-
-    total_recovered as f64 / NUM_SYMBOLS as f64 * 100.0
-}
 
 fn loss_sweep_window_trial(backend: BackendChoice, loss_rate: f64, seed: u64) -> f64 {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -563,56 +498,6 @@ fn loss_sweep_window_trial(backend: BackendChoice, loss_rate: f64, seed: u64) ->
     }
 
     recovered.len() as f64 / NUM_SYMBOLS as f64 * 100.0
-}
-
-fn loss_sweep_block_ge_trial(backend: FecBackend, target_loss: f64, seed: u64) -> f64 {
-    let mut ge = ge_for_target_loss(target_loss, 3.0);
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let num_blocks = NUM_SYMBOLS / BLOCK_SIZE;
-    let mut repair_per_block = (BLOCK_SIZE as f64 * MAX_FEC_OVERHEAD).ceil() as u32;
-    if backend == FecBackend::ReedSolomon {
-        repair_per_block = repair_per_block.min(255 - BLOCK_SIZE);
-    }
-
-    let mut total_recovered = 0u32;
-
-    for block_idx in 0..num_blocks {
-        let block_data =
-            vec![(block_idx % 256) as u8; BLOCK_SIZE as usize * SYMBOL_SIZE as usize];
-
-        let params = EncodingParams {
-            source_symbols: BLOCK_SIZE,
-            symbol_size: SYMBOL_SIZE,
-            repair_count: repair_per_block,
-            block_id: block_idx as u64,
-        };
-
-        let encoder = backend.create_encoder(&block_data, params);
-        let source = encoder.source_symbols();
-        let repairs = encoder.repair_symbols(repair_per_block);
-
-        let mut all_syms: Vec<WireSymbol> = source;
-        all_syms.extend(repairs);
-        let surviving: Vec<WireSymbol> = all_syms
-            .into_iter()
-            .filter(|_| !ge.should_drop(&mut rng))
-            .collect();
-
-        let mut decoder = backend.create_decoder(params, block_data.len() as u64);
-        let mut decoded = false;
-        for sym in &surviving {
-            if decoder.add_symbol(sym).is_some() {
-                decoded = true;
-                break;
-            }
-        }
-
-        if decoded {
-            total_recovered += BLOCK_SIZE;
-        }
-    }
-
-    total_recovered as f64 / NUM_SYMBOLS as f64 * 100.0
 }
 
 fn loss_sweep_window_ge_trial(backend: BackendChoice, target_loss: f64, seed: u64) -> f64 {
@@ -676,37 +561,15 @@ fn run_loss_sweep_table(
 
     // Header
     text.push_str(&format!("| {:>6} ", "Loss %"));
-    for name in &["RaptorQ", "RS", "RLC-win"] {
-        text.push_str(&format!("| {:>16} ", name));
-    }
+    text.push_str(&format!("| {:>16} ", "RLC-win"));
     text.push_str("|\n");
 
     text.push_str(&format!("|{:-<8}", ""));
-    for _ in 0..3 {
-        text.push_str(&format!("|{:-<18}", ""));
-    }
+    text.push_str(&format!("|{:-<18}", ""));
     text.push_str("|\n");
 
     for &loss in loss_rates {
         text.push_str(&format!("| {:>5.0}% ", loss * 100.0));
-
-        // Block backends
-        for &backend in &[FecBackend::RaptorQ, FecBackend::ReedSolomon] {
-            let mut stats = TrialStats::new();
-            for trial in 0..NUM_TRIALS {
-                if use_ge {
-                    stats.push(loss_sweep_block_ge_trial(backend, loss, trial * 137 + 42));
-                } else {
-                    stats.push(loss_sweep_block_trial(backend, loss, trial * 137 + 42));
-                }
-            }
-            text.push_str(&format!("| {:>16} ", stats.fmt_ci()));
-            rows.push(LossSweepRow {
-                loss_pct: loss * 100.0,
-                backend: fec_backend_name(backend).to_string(),
-                recovery: stats_to_metric(&stats),
-            });
-        }
 
         // Window backends
         for &kind in &[BackendChoice::Rlc] {
@@ -967,8 +830,6 @@ fn run_matrix_trial(
 ) -> TrialResult {
     if backend.is_window() {
         run_matrix_trial_window(seed, backend, config, scenario, num_paths)
-    } else if backend.is_block() {
-        run_matrix_trial_block(seed, backend, config, scenario, num_paths)
     } else {
         run_matrix_trial_retransmit(seed, scenario, num_paths)
     }
@@ -1436,308 +1297,6 @@ fn compute_trial_result(
 }
 
 // ---------------------------------------------------------------------------
-// Block backend trial (RaptorQ, ReedSolomon)
-// ---------------------------------------------------------------------------
-
-fn run_matrix_trial_block(
-    seed: u64,
-    backend: BackendChoice,
-    config: &AblationConfig,
-    scenario: &ScenarioConfig,
-    num_paths: u32,
-) -> TrialResult {
-    let clock = Arc::new(MockClock::new());
-    let (mut primary, mut secondary) =
-        make_sim_channels(scenario.name, num_paths, clock.clone(), seed);
-    let fec_backend = backend.fec_backend();
-
-    let mut reorder_buf = ReorderBuffer::new(config.reorder_timeout_ms, 500);
-    let mut live_estimator = make_estimator_for_loss(scenario.pre_warm_loss);
-    let mut fec_ctrl = FecRateController::new_with_toggles(
-        1e-5,
-        MATRIX_FEC_OVERHEAD,
-        ProtocolHint::Realtime,
-        fec_backend,
-        config.enable_pi,
-        SYMBOL_SIZE,
-    );
-    for _ in 0..10 {
-        fec_ctrl.feedback_update(true);
-    }
-
-    // Cwnd pacing
-    let (primary_cwnd, _secondary_cwnd) = scenario_cwnd(scenario);
-
-    let num_blocks = NUM_SYMBOLS / BLOCK_SIZE;
-    let mut recovered = BTreeSet::new();
-    let mut delivery_order: Vec<u64> = Vec::new();
-    let mut delivery_latencies_ms: Vec<f64> = Vec::new();
-    let mut send_times: HashMap<u64, Instant> = HashMap::new();
-    let mut total_source_sent: u32 = 0;
-    let mut total_repair_sent: u32 = 0;
-
-    // Keep decoders alive for late-arriving symbols
-    let mut block_decoders: Vec<(Box<dyn FecDecoder>, bool)> = Vec::new();
-    // Track which source symbols arrived intact per block (for early delivery)
-    let mut block_arrived: Vec<BTreeSet<u64>> = Vec::new();
-
-    let tick = Duration::from_micros(500);
-
-    // Helper: process deliveries for block mode with early source delivery
-    macro_rules! process_block_deliveries {
-        ($now:expr, $delivered:expr) => {
-            for pkt in $delivered {
-                let bid = pkt.symbol.block_id as usize;
-                if bid < block_decoders.len() {
-                    let bstart = (bid as u32 * BLOCK_SIZE) as u64;
-
-                    // Early source delivery: deliver intact source symbols immediately
-                    if !pkt.symbol.is_repair {
-                        let seq = bstart + pkt.symbol.payload_id as u64;
-                        if bid < block_arrived.len() {
-                            block_arrived[bid].insert(seq);
-                        }
-                        if recovered.insert(seq) {
-                            for (rseq, _, _) in
-                                reorder_buf.push_with_time(seq, bytes::Bytes::from_static(&[0u8]), $now)
-                            {
-                                delivery_order.push(rseq);
-                                if let Some(&st) = send_times.get(&rseq) {
-                                    delivery_latencies_ms.push(
-                                        $now.duration_since(st).as_secs_f64() * 1000.0,
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    let (ref mut dec, ref mut decoded) = block_decoders[bid];
-                    if !*decoded {
-                        if dec.add_symbol(&pkt.symbol).is_some() {
-                            *decoded = true;
-                            // On decode: deliver only previously-missing symbols
-                            let arrived = if bid < block_arrived.len() {
-                                &block_arrived[bid]
-                            } else {
-                                &BTreeSet::new()
-                            };
-                            for j in 0..BLOCK_SIZE as u64 {
-                                let seq = bstart + j;
-                                if !arrived.contains(&seq) {
-                                    if recovered.insert(seq) {
-                                        for (rseq, _, _) in
-                                            reorder_buf.push_with_time(seq, bytes::Bytes::from_static(&[0u8]), $now)
-                                        {
-                                            delivery_order.push(rseq);
-                                            if let Some(&st) = send_times.get(&rseq) {
-                                                delivery_latencies_ms.push(
-                                                    $now.duration_since(st).as_secs_f64() * 1000.0,
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            for (seq, _, _) in reorder_buf.drain_expired($now) {
-                if recovered.insert(seq) {
-                    delivery_order.push(seq);
-                    if let Some(&st) = send_times.get(&seq) {
-                        delivery_latencies_ms
-                            .push($now.duration_since(st).as_secs_f64() * 1000.0);
-                    }
-                }
-            }
-        };
-    }
-
-    for block_idx in 0..num_blocks {
-        // Compute repair count from PI-adjusted controller
-        let repair_rate = fec_ctrl.compute_repair_rate(&live_estimator, BLOCK_SIZE as usize);
-        let mut repair_count = ((BLOCK_SIZE as f64 * repair_rate).ceil() as u32).max(1);
-        if fec_backend == FecBackend::ReedSolomon {
-            repair_count = repair_count.min(255 - BLOCK_SIZE);
-        }
-
-        let block_data =
-            vec![(block_idx % 256) as u8; BLOCK_SIZE as usize * SYMBOL_SIZE as usize];
-        let params = EncodingParams {
-            source_symbols: BLOCK_SIZE,
-            symbol_size: SYMBOL_SIZE,
-            repair_count,
-            block_id: block_idx as u64,
-        };
-
-        let encoder = fec_backend.create_encoder(&block_data, params);
-        let source_syms = encoder.source_symbols();
-        let repair_syms = encoder.repair_symbols(repair_count);
-        let decoder = fec_backend.create_decoder(params, block_data.len() as u64);
-        block_decoders.push((decoder, false));
-        block_arrived.push(BTreeSet::new());
-
-        let block_start_seq = (block_idx * BLOCK_SIZE) as u64;
-        let mut repairs_cursor: usize = 0;
-
-        // Send source symbols in batches with interleaved repairs
-        let mut batch_start = 0u32;
-        while batch_start < BLOCK_SIZE {
-            let batch_end = (batch_start + BATCH_SIZE).min(BLOCK_SIZE);
-            let this_batch = batch_end - batch_start;
-            let mut batch_survived: u32 = 0;
-            let mut batch_dropped: u32 = 0;
-
-            for i in batch_start..batch_end {
-                // Cwnd pacing: drain until primary has capacity
-                let mut pacing_ticks = 0;
-                while primary.in_flight_count() >= primary_cwnd && pacing_ticks < 200 {
-                    clock.advance(tick);
-                    let now = clock.now();
-                    let mut d = primary.deliver();
-                    if let Some(ref mut sec) = secondary {
-                        d.extend(sec.deliver());
-                    }
-                    process_block_deliveries!(now, &d);
-                    pacing_ticks += 1;
-                }
-
-                let sym = &source_syms[i as usize];
-                let global_seq = block_start_seq + i as u64;
-                send_times.insert(global_seq, clock.now());
-                if primary.send(sym.clone()) {
-                    batch_survived += 1;
-                } else {
-                    batch_dropped += 1;
-                }
-                if let Some(ref mut sec) = secondary {
-                    sec.send(sym.clone());
-                }
-            }
-            total_source_sent += this_batch;
-
-            // Interleaved repairs for this batch
-            let batch_repair_count = ((this_batch as f64 * repair_rate).ceil() as usize)
-                .min(repair_syms.len() - repairs_cursor);
-            for i in 0..batch_repair_count {
-                primary.send(repair_syms[repairs_cursor + i].clone());
-                total_repair_sent += 1;
-            }
-            repairs_cursor += batch_repair_count;
-
-            // 0.5ms tick loop (20 ticks = 10ms per batch)
-            for _ in 0..20 {
-                clock.advance(tick);
-                let now = clock.now();
-
-                let mut all_delivered = primary.deliver();
-                if let Some(ref mut sec) = secondary {
-                    all_delivered.extend(sec.deliver());
-                }
-
-                process_block_deliveries!(now, &all_delivered);
-            }
-
-            live_estimator.record_batch(this_batch, batch_survived);
-            // RTT fed from actual delivery timestamps (block trial measures via send_times)
-            {
-                let now_block = clock.now();
-                let mut rtt_sum_block = Duration::ZERO;
-                let mut rtt_n = 0u32;
-                for seq in (block_start_seq + batch_start as u64)..(block_start_seq + batch_end as u64) {
-                    if recovered.contains(&seq) {
-                        if let Some(&st) = send_times.get(&seq) {
-                            rtt_sum_block += now_block.duration_since(st);
-                            rtt_n += 1;
-                        }
-                    }
-                }
-                if rtt_n > 0 {
-                    live_estimator.record_rtt(rtt_sum_block / rtt_n);
-                }
-            }
-            fec_ctrl.feedback_update(batch_dropped == 0);
-
-            batch_start = batch_end;
-        }
-
-        // Send remaining repairs for this block
-        while repairs_cursor < repair_syms.len() {
-            primary.send(repair_syms[repairs_cursor].clone());
-            total_repair_sent += 1;
-            repairs_cursor += 1;
-        }
-    }
-
-    // Drain remaining in-flight
-    for _ in 0..800 {
-        clock.advance(tick);
-        let now = clock.now();
-        let mut d = primary.deliver();
-        if let Some(ref mut sec) = secondary {
-            d.extend(sec.deliver());
-        }
-        let empty = d.is_empty()
-            && primary.in_flight_count() == 0
-            && secondary.as_ref().map_or(true, |s| s.in_flight_count() == 0);
-
-        process_block_deliveries!(now, &d);
-
-        if empty {
-            break;
-        }
-    }
-
-    // Final reorder buffer drain
-    clock.advance(Duration::from_secs(1));
-    let now = clock.now();
-    for (seq, _, _) in reorder_buf.drain_expired(now) {
-        if recovered.insert(seq) {
-            delivery_order.push(seq);
-            if let Some(&st) = send_times.get(&seq) {
-                delivery_latencies_ms.push(now.duration_since(st).as_secs_f64() * 1000.0);
-            }
-        }
-    }
-
-    delivery_latencies_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-    let tail_drops =
-        primary.tail_drop_count() + secondary.as_ref().map_or(0, |s| s.tail_drop_count());
-
-    let first_send = send_times
-        .values()
-        .min()
-        .copied()
-        .unwrap_or_else(|| clock.now());
-    let elapsed = clock.now().duration_since(first_send).as_secs_f64().max(0.001);
-    let throughput_mbps =
-        (recovered.len() * SYMBOL_SIZE as usize) as f64 / elapsed / 1_000_000.0;
-
-    let deadline_ms = scenario.base_delay_ms as f64 * 2.0;
-    let misses = delivery_latencies_ms
-        .iter()
-        .filter(|&&l| l > deadline_ms)
-        .count();
-    let deadline_miss_pct =
-        misses as f64 / delivery_latencies_ms.len().max(1) as f64 * 100.0;
-
-    TrialResult {
-        throughput_mbps,
-        recovery_rate: recovered.len() as f64 / NUM_SYMBOLS as f64 * 100.0,
-        overhead_pct: total_repair_sent as f64 / total_source_sent.max(1) as f64 * 100.0,
-        total_repair_count: total_repair_sent,
-        p50_latency_ms: percentile_ms(&delivery_latencies_ms, 0.50),
-        p95_latency_ms: percentile_ms(&delivery_latencies_ms, 0.95),
-        p99_latency_ms: percentile_ms(&delivery_latencies_ms, 0.99),
-        deadline_miss_pct,
-        in_order_rate: compute_in_order_rate(&delivery_order) * 100.0,
-        tail_drops,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Retransmit backend trial
 // ---------------------------------------------------------------------------
 
@@ -2191,7 +1750,6 @@ fn write_results(
             batch_size: BATCH_SIZE,
             num_trials: NUM_TRIALS,
             fec_overhead: MATRIX_FEC_OVERHEAD,
-            block_size: BLOCK_SIZE,
         },
         table1_uniform: table1_data,
         table1b_bursty: table1b_data,

@@ -1,9 +1,7 @@
 //! Shutdown and control message tests.
 //! Verifies graceful shutdown components: message serialization,
-//! broadcast signaling, partial block flush, and idempotency.
+//! broadcast signaling, and idempotency.
 
-use raptorpath::fec::{FecBackend, EncodingParams, FecStream};
-use raptorpath::net::framing::{extract_packets, frame_end, frame_packet};
 use raptorpath::transport::{ControlMessage, WireMessage};
 use tokio::sync::broadcast;
 
@@ -51,48 +49,6 @@ async fn test_broadcast_shutdown_with_select() {
     };
 
     assert!(was_shutdown, "shutdown branch must fire before sleep");
-}
-
-#[tokio::test]
-async fn test_partial_block_flush_before_shutdown() {
-    // Simulate: 1 packet framed but no frame_end yet (partial block).
-    // On shutdown signal, frame_end and encode. Verify roundtrip.
-    let packet = vec![0x42u8; 300];
-
-    let mut block = Vec::new();
-    frame_packet(&mut block, &packet);
-    // Partial block — no frame_end yet.
-
-    // Shutdown signal arrives: flush the partial block.
-    frame_end(&mut block);
-
-    // Encode
-    let symbol_size: u16 = 256;
-    let source_symbols = (block.len() as f64 / symbol_size as f64).ceil() as u32;
-    let params = EncodingParams {
-        source_symbols,
-        symbol_size,
-        repair_count: 0,
-        block_id: 0,
-    };
-
-    let mut fec = FecStream::new(&block, params, FecBackend::RaptorQ);
-    let source = fec.take_source_symbols();
-
-    // Decode
-    let mut decoder = FecBackend::RaptorQ.create_decoder(params, block.len() as u64);
-    let mut decoded_data = None;
-    for sym in &source {
-        if let Some(data) = decoder.add_symbol(sym) {
-            decoded_data = Some(data);
-            break;
-        }
-    }
-
-    let recovered = decoded_data.expect("partial block flush must decode");
-    let extracted = extract_packets(&recovered);
-    assert_eq!(extracted.len(), 1, "expected 1 packet from flushed partial block");
-    assert_eq!(extracted[0], packet, "flushed packet must match original");
 }
 
 #[tokio::test]
