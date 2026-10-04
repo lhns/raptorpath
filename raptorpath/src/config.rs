@@ -616,6 +616,30 @@ mod tests {
         assert!(pc.window_reliable);
     }
 
+    /// ADR-0069: there is no block pipeline to fall back to, so every
+    /// config that would have selected it is a startup error naming the ADR
+    /// — never a silent re-route.
+    #[test]
+    fn block_only_config_is_an_error_naming_adr_0069() {
+        let cases: Vec<(&str, RaptorpathConfig)> = vec![
+            ("raptorq", RaptorpathConfig { fec_backend: Some("raptorq".into()), ..Default::default() }),
+            ("rs", RaptorpathConfig { fec_backend: Some("rs".into()), ..Default::default() }),
+            ("reed-solomon", RaptorpathConfig { fec_backend: Some("reed-solomon".into()), ..Default::default() }),
+            ("interleave_depth", RaptorpathConfig { interleave_depth: Some(3), ..Default::default() }),
+            ("mp_block_affinity", RaptorpathConfig { mp_block_affinity: Some(false), ..Default::default() }),
+        ];
+        for (what, cfg) in cases {
+            let err = match resolve(&cfg) {
+                Ok(_) => panic!("{what}: a block-only setting must not resolve"),
+                Err(e) => e.to_string(),
+            };
+            assert!(err.contains("ADR-0069"), "{what}: the error names ADR-0069: {err}");
+        }
+        // `rlc`, the window pipeline's codec, still resolves explicitly.
+        let rlc = RaptorpathConfig { fec_backend: Some("rlc".into()), ..Default::default() };
+        assert!(resolve(&rlc).is_ok());
+    }
+
     #[test]
     fn test_deprecated_switch_fields_still_parse() {
         // Old configs with auto-switch knobs must keep loading (warned,

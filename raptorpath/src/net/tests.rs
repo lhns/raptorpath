@@ -4439,63 +4439,47 @@ fn ack_merge_never_changes_what_the_ack_advertises() {
     assert!(!advertise, "but it advertises no gap — the rate limit holds");
 }
 
-// ── The block/window default pin (ADR-0069) ──
+// ── One pipeline for every hint (ADR-0069, executed) ──
 
-/// Pins the default routing, without endorsing it: with no config and no
-/// flags, a Bulk/Auto peer routes to the block pipeline, while the L1
-/// batteries measure the window pipeline. ADR-0069 declares block mode
-/// legacy; until its re-test (`docs/status.md` §4) the default must not
-/// move silently in either direction — a change here is a deliberate
-/// default flip and must land with its measurement.
-///
-/// The pin asserts the routing consequence, not just the flag
-/// (measurement-discipline rule 1): `config.rs`'s
-/// `test_window_reliable_default_off_and_opt_in` pins the field; this pins
-/// which pipeline that field selects.
+/// The default routes EVERY hint to the window pipeline: the block pipeline
+/// is deleted (ADR-0069, discharged by `docs/status.md` §5's
+/// `WINDOW-NOT-WORSE`). Asserts the routing consequence, not just the
+/// fields (measurement-discipline rule 1): the resolved default config of
+/// each named point carries the streaming RLC codec, and the retention
+/// contract ρ is the named point's preset — ρ = 1 (retain-until-acked) at
+/// Bulk/Auto, ρ < 1 (EVICT) at Realtime. ρ is an independent dial: it never
+/// selects a pipeline.
 #[test]
-fn default_config_routes_bulk_and_auto_to_the_block_pipeline() {
-    // Resolve the shipped default: empty TOML, no CLI overlay.
+fn default_config_routes_every_hint_to_the_window_pipeline() {
+    for (hint, h) in [
+        (ProtocolHint::Realtime, "realtime"),
+        (ProtocolHint::Auto, "auto"),
+        (ProtocolHint::Bulk, "bulk"),
+    ] {
+        let cfg = crate::config::RaptorpathConfig {
+            protocol_hint: Some(h.into()),
+            ..Default::default()
+        };
+        let (pc, _) = crate::config::resolve(&cfg).expect("the default config resolves");
+        assert_eq!(pc.protocol_hint, hint);
+        assert_eq!(
+            pc.fec_backend,
+            FecBackend::Rlc,
+            "{hint:?}: the default codec is the window pipeline's RLC"
+        );
+        assert!(pc.fec_backend.is_streaming(), "{hint:?}: RLC is streaming-native");
+        assert_eq!(
+            pc.window_reliable,
+            hint != ProtocolHint::Realtime,
+            "{hint:?}: ρ preset — retain-until-acked at Bulk/Auto, EVICT at Realtime"
+        );
+    }
+    // The empty config is the Auto named point.
     let (pc, _) = crate::config::resolve(&crate::config::RaptorpathConfig::default())
         .expect("the empty default config resolves");
-    assert!(!pc.window_reliable, "shipped default is window_reliable = false");
     assert_eq!(pc.protocol_hint, ProtocolHint::Auto, "shipped default hint is Auto");
-    assert_eq!(pc.fec_backend, FecBackend::RaptorQ, "shipped default codec is RaptorQ");
-    assert!(
-        !pc.fec_backend_explicit,
-        "unset in TOML ⇒ run_impl's auto-selection is live for this config"
-    );
-
-    // run_impl's effective-backend selection: with the
-    // backend unset and the hint not Realtime, `window_reliable == false`
-    // leaves the configured RaptorQ in place — and RaptorQ is block-only.
-    assert!(
-        !FecBackend::RaptorQ.is_streaming(),
-        "RaptorQ is block-only, so it can never satisfy is_window_mode"
-    );
-    for hint in [ProtocolHint::Auto, ProtocolHint::Bulk] {
-        assert!(
-            !is_window_mode(hint, FecBackend::RaptorQ, pc.window_reliable),
-            "{hint:?} at the shipped default routes to the BLOCK pipeline"
-        );
-    }
-
-    // Opting in is the only way Bulk/Auto reach the window pipeline
-    // (run_impl then auto-selects RLC — the arm every battery measures).
-    for hint in [ProtocolHint::Auto, ProtocolHint::Bulk] {
-        assert!(
-            is_window_mode(hint, FecBackend::Rlc, true),
-            "{hint:?} + --window-reliable is the measured arm"
-        );
-    }
-
-    // Realtime is already window mode at the default — it auto-selects the
-    // RLC span machine (paper §5.2) — but with the lossy EVICT retention,
-    // i.e. ρ < 1, not the reliable window. The block default is a Bulk/Auto
-    // fact only; do not restate it as "the transport ships block mode".
-    assert!(
-        is_window_mode(ProtocolHint::Realtime, FecBackend::Rlc, false),
-        "Realtime rides the window pipeline at the default (EVICT retention)"
-    );
+    assert_eq!(pc.fec_backend, FecBackend::Rlc);
+    assert!(pc.window_reliable, "Auto's ρ preset is retain-until-acked");
 }
 
 // ── The cross-path loss contamination, removed by wire v9, bounded ──
