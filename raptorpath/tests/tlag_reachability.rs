@@ -22,7 +22,7 @@
 //!   5. `-` iff `n == 0`, on every reading (value and count come from one
 //!      `tlag_diffs()` pair set).
 //!   6. The time decimation executed: on loopback the sender samples RTT at
-//!      kHz rates (thousands of packets per second even through the 50 Mbit
+//!      kHz rates (thousands of packets per second even through the 40 Mbit
 //!      shaper), so without the `τ/m` admission spacing a 256-entry ring
 //!      would span under one RTprop and `n` would be 0 everywhere. `n ≥ L/8`
 //!      is the parser's thin floor.
@@ -34,7 +34,7 @@
 //!      unit error).
 //!
 //! The client runs on a RATE-SHAPED loopback (`loopback::CLEAN_RATE`: the L0
-//! netem shim at 50 Mbit, no delay, no jitter, no loss), so the number of
+//! netem shim at 40 Mbit, no delay, no jitter, no loss), so the number of
 //! 250 ms `[DIAG]` ticks — and the ring's fill at a printed tick — does not
 //! shrink with sender speed-ups. The harness clauses prove the shaper ran:
 //! its ACTIVE echo, a per-run duration floor and a tick-count floor.
@@ -47,8 +47,9 @@
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The tick-count floor: two 8 MB runs at 50 Mbit are ≥ 2.56 s of shaped
-/// transfer, ≥ 10 ticks at the 250 ms `[DIAG]` cadence.
+/// The tick-count floor: two 8 MB runs at 40 Mbit are ≥ 3.2 s of shaped
+/// transfer, ≥ 12 ticks at the 250 ms `[DIAG]` cadence (the cadence drifts
+/// late by each tick's loop latency, so the floor keeps a margin of 4).
 const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. The gauge
@@ -324,7 +325,7 @@ fn the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls(
     } else {
         "n/a".to_string()
     };
-    println!("\n[tlag] {blocks} per-path [DIAG] blocks, 50 Mbit rate-shaped loopback, bulk, window-reliable");
+    println!("\n[tlag] {blocks} per-path [DIAG] blocks, 40 Mbit rate-shaped loopback, bulk, window-reliable");
     println!(
         "[tlag] {:<9} {:>12} {:>10} {:>10} {:>10} {:>8} {:>8}",
         "field", "best(µs)/n", "p05", "p50", "p95", "R_local", "n_kept"

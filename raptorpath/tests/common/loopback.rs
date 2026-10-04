@@ -375,11 +375,11 @@ pub const C3: [(&str, &str); 2] = [("RWM_L0_NETEM", "c3"), ("RWM_L0_SEED", "42")
 /// The bottleneck rate of [`CLEAN_RATE`], in Mbit/s. Kept literally in sync
 /// with the `custom:` spec below; tests derive their run-duration floor from
 /// it (`bytes·8 / rate` is the shaper's lower bound on a run's wall time).
-pub const CLEAN_RATE_MBIT: f64 = 50.0;
+pub const CLEAN_RATE_MBIT: f64 = 40.0;
 
 /// Rate-only client shaping for the tick-sampled `[DIAG]` reachability tests
 /// (σ, candidates, tlag): `custom:<rate_mbit>;<ow_ms>;<jit_ms>;<ge_p>;<ge_q>`
-/// = 50 Mbit, 0 ms one-way, 0 ms jitter, `ge_p = 0` (the GE loss branch is
+/// = 40 Mbit, 0 ms one-way, 0 ms jitter, `ge_p = 0` (the GE loss branch is
 /// skipped), seeded.
 ///
 /// **The fields are `;`-separated, not `,`.** `L0Netem::from_env` first
@@ -397,9 +397,11 @@ pub const CLEAN_RATE_MBIT: f64 = 50.0;
 /// regardless of CPU speed, and makes a full cwnd the steady state instead of
 /// a scheduler coincidence. Only the client is shaped; the server clears
 /// inherited `RWM_*`, so the ack direction stays the host's own loopback.
-/// R = 50 Mbit was chosen by a VM calibration (10 runs per test).
+/// R = 40 Mbit from the VM calibration (10 runs per test, release): at
+/// 50 Mbit every run passed but read only 9-10 ticks, within 1-2 of the
+/// 8-tick floor; 40 Mbit buys the floor a margin without weakening it.
 pub const CLEAN_RATE: [(&str, &str); 2] = [
-    ("RWM_L0_NETEM", "custom:50;0;0;0;100"),
+    ("RWM_L0_NETEM", "custom:40;0;0;0;100"),
     ("RWM_L0_SEED", "42"),
 ];
 

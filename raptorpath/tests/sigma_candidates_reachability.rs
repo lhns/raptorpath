@@ -26,7 +26,7 @@
 //!   7. Scale: under one second on the shaped loopback (µs/s unit error).
 //!
 //! The client runs on a RATE-SHAPED loopback (`loopback::CLEAN_RATE`: the L0
-//! netem shim at 50 Mbit, no delay, no jitter, no loss), so the number of
+//! netem shim at 40 Mbit, no delay, no jitter, no loss), so the number of
 //! 250 ms `[DIAG]` ticks — and the chance that a printed tick finds the
 //! 256-sample window full — does not shrink with sender speed-ups. The
 //! harness clauses prove the shaper ran: its ACTIVE echo, a per-run duration
@@ -39,8 +39,9 @@
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The tick-count floor: two 8 MB runs at 50 Mbit are ≥ 2.56 s of shaped
-/// transfer, ≥ 10 ticks at the 250 ms `[DIAG]` cadence.
+/// The tick-count floor: two 8 MB runs at 40 Mbit are ≥ 3.2 s of shaped
+/// transfer, ≥ 12 ticks at the 250 ms `[DIAG]` cadence (the cadence drifts
+/// late by each tick's loop latency, so the floor keeps a margin of 4).
 const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. The
@@ -238,7 +239,7 @@ fn the_diag_line_reports_all_three_candidate_dispersion_gauges_beside_the_shippe
     // bar's functional (p95/p05 over post-warm-up readings) over this run's
     // [DIAG] series; it is not `R_total`, which pools reps at a shaped cell.
     // ------------------------------------------------------------------
-    println!("\n[sigma-cand] {blocks} per-path [DIAG] blocks, 50 Mbit rate-shaped loopback, bulk, window-reliable");
+    println!("\n[sigma-cand] {blocks} per-path [DIAG] blocks, 40 Mbit rate-shaped loopback, bulk, window-reliable");
     println!(
         "[sigma-cand] {:<9} {:>12} {:>10} {:>10} {:>10} {:>8} {:>8}",
         "field", "best(µs)/n", "p05", "p50", "p95", "R_local", "n_kept"

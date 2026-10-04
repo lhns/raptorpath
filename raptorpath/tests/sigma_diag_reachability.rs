@@ -16,7 +16,7 @@
 //!   5. σ is under one second on the shaped loopback (µs/s unit error).
 //!
 //! The client runs on a RATE-SHAPED loopback (`loopback::CLEAN_RATE`: the L0
-//! netem shim at 50 Mbit, no delay, no jitter, no loss). `[DIAG]` samples
+//! netem shim at 40 Mbit, no delay, no jitter, no loss). `[DIAG]` samples
 //! saturation only on 250 ms ticks, so an unshaped, CPU-bound transfer gives
 //! a tick count that shrinks with every sender speed-up; the shaper bounds
 //! the wall time below by `bytes·8/R`. The harness clauses prove it ran: the
@@ -28,8 +28,9 @@
 #[path = "common/loopback.rs"]
 mod loopback;
 
-/// The tick-count floor: two 8 MB runs at 50 Mbit are ≥ 2.56 s of shaped
-/// transfer, ≥ 10 ticks at the 250 ms `[DIAG]` cadence.
+/// The tick-count floor: two 8 MB runs at 40 Mbit are ≥ 3.2 s of shaped
+/// transfer, ≥ 12 ticks at the 250 ms `[DIAG]` cadence (the cadence drifts
+/// late by each tick's loop latency, so the floor keeps a margin of 4).
 const MIN_TICKS: usize = 8;
 
 /// The arm: the DIAG surface on, as every L1 battery arm runs it. No gate
@@ -178,7 +179,7 @@ fn the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs() {
     assert!(
         saturated_ticks > 0,
         "no [DIAG] tick saw the single path cwnd-full over two 8 MB bulk \
-         objects through a 50 Mbit shaper — the saturated case this clause exists to cover was not \
+         objects through a 40 Mbit shaper — the saturated case this clause exists to cover was not \
          exercised:\n{}",
         diag.join("\n")
     );
