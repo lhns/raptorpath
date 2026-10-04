@@ -5787,3 +5787,96 @@ fn s10_receiver_feed_goes_to_rx_and_leaves_tx_untouched() {
         est.rx_loss_rate()
     );
 }
+
+// ── T2 (emission-batching scope, status §8): a same-path burst leaves the
+// v9 per-path loss feed exact, in any interleaving ─────────────────────────
+//
+// The old `live_paths == 1` scope was added for the wire-v8 striping-gap
+// misread, "amplified by longer same-path arrival runs". With the v9
+// per-path `path_seq` a run of 64 symbols on A advances A's sequence
+// contiguously and leaves B's untouched: every delivered symbol's pair is
+// (1, 1) on its own path, whatever the run structure. The v8 contrast (one
+// global counter for both paths) shows the artefact this guards against.
+
+/// Feed `order` (a path id per emitted symbol) through the sender's
+/// `BatchCounter` and the receiver's per-path trackers (lossless, in order),
+/// returning per path (Σexpected, Σreceived) through `credit_ack_pair` and
+/// every per-batch pair. `v8` reads the gap in the global counter instead.
+fn t2_feed(order: &[u32], v8: bool) -> std::collections::HashMap<u32, (u64, u64, Vec<(u32, u32)>)> {
+    use crate::scheduler::{MockClock, PathState};
+    let clock = Arc::new(MockClock::new());
+    let counter = BatchCounter::new();
+    let mut trackers: std::collections::HashMap<u32, PathBatchTracker> = Default::default();
+    let mut paths: std::collections::HashMap<u32, PathState> = Default::default();
+    let mut out: std::collections::HashMap<u32, (u64, u64, Vec<(u32, u32)>)> = Default::default();
+    for &p in order {
+        let (global, path_seq) = counter.next(p);
+        let seq = if v8 { global } else { path_seq };
+        let (e, r) = trackers.entry(p).or_insert_with(PathBatchTracker::new).record_batch(seq, 1);
+        let (e, r) = paths
+            .entry(p)
+            .or_insert_with(|| PathState::new(p, clock.clone()))
+            .credit_ack_pair(e, r);
+        let o = out.entry(p).or_insert((0, 0, Vec::new()));
+        o.0 += e as u64;
+        o.1 += r as u64;
+        o.2.push((e, r));
+    }
+    for (p, t) in &trackers {
+        let o = &out[p];
+        assert_eq!((t.total_expected, t.total_received), (o.0, o.1), "credit is identity without reorder");
+    }
+    out
+}
+
+#[test]
+fn t2_same_path_runs_are_exact_on_both_paths_in_any_interleaving() {
+    // 64 on A then 4 on B; B first; alternating; long runs both ways; and a
+    // pseudo-random interleaving (fixed LCG) of 1000 symbols.
+    let mut orders: Vec<Vec<u32>> = vec![
+        [vec![0; 64], vec![1; 4]].concat(),
+        [vec![1; 4], vec![0; 64]].concat(),
+        (0..128).map(|i| (i % 2) as u32).collect(),
+        [vec![0; 64], vec![1; 64], vec![0; 3], vec![1; 1], vec![0; 64]].concat(),
+    ];
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    orders.push(
+        (0..1000)
+            .map(|_| {
+                x = x.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+                // Runs of random length: flip the path with p = 1/8.
+                ((x >> 33) % 8 == 0) as u32
+            })
+            .scan(0u32, |cur, flip| {
+                *cur ^= flip;
+                Some(*cur)
+            })
+            .collect(),
+    );
+    for order in &orders {
+        let out = t2_feed(order, false);
+        for p in [0u32, 1] {
+            let n = order.iter().filter(|&&q| q == p).count() as u64;
+            let (e, r, pairs) = &out[&p];
+            assert_eq!((*e, *r), (n, n), "path {p}: expected == received == sent");
+            assert!(pairs.iter().all(|&pr| pr == (1, 1)), "path {p}: every pair (1, 1)");
+        }
+    }
+}
+
+#[test]
+fn t2_v8_global_numbering_is_the_artefact_the_scope_guarded_against() {
+    // The same 64-then-4-then-64 run read in the ONE global counter (wire
+    // v8): A's second run lands after B's 4, so A is charged a gap of 5
+    // (4 phantom losses) — expected > received on A with nothing lost.
+    let order = [vec![0u32; 64], vec![1; 4], vec![0; 64]].concat();
+    let out = t2_feed(&order, true);
+    let (e, r, pairs) = &out[&0];
+    assert_eq!(*r, 128);
+    assert_eq!(*e, 132, "v8: 4 phantom losses charged to A in one lump");
+    assert!(pairs.contains(&(5, 1)), "the lumpy (gap+1, 1) pair");
+    // v9 on the identical order: exact.
+    let out = t2_feed(&order, false);
+    assert_eq!((out[&0].0, out[&0].1), (128, 128));
+    assert_eq!((out[&1].0, out[&1].1), (4, 4));
+}

@@ -234,6 +234,10 @@ pub(crate) struct DiagState {
     /// (`wnd2_frontier_last` / `wnd2_frontier_change_us`) stays a local of
     /// `run_window_sender`.
     pub wnd2_relgap_max_us: u64,
+
+    /// `RWM_EMIT_BATCH` burst gauges (`eb_bursts`/`eb_syms`/`eb_end`/
+    /// `eb_maxrun`; see `net::emit_burst`).
+    pub eb: super::emit_burst::EmitBurstGauge,
 }
 
 impl DiagState {
@@ -315,6 +319,7 @@ impl DiagState {
             sidle2_n: 0,
             sidle2_max_us: 0,
             wnd2_relgap_max_us: 0,
+            eb: Default::default(),
         }
     }
 }
@@ -906,7 +911,7 @@ pub(crate) fn report(
             String::new()
         };
         crate::readout!(
-            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}",
+            "[DIAG] t={:.1}s win={}/{} paused={:.0}% good={:.1}Mbit ackrate_ewma={:.0}sym/s eff_pace={:.0}sym/s src={:.0}sym/s cod={:.0}sym/s cum={}/{}/{} sidle={}ms/{}/mx{}ms cwnd={} infl={} np={} np_act={} rtt={:.1}ms bdp100={:.0}sym sweeps={} retx={} gapdrop={} nbud={} xattr={}/{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
             dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6,
             store_len, effective_store_cap,
             paused_frac * 100.0,
@@ -939,6 +944,7 @@ pub(crate) fn report(
             // (`RepairRateCache::diag_token`).
             st.rate_cache.diag_token(),
             dgev,
+            dg.eb.diag_token(),
         );
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
