@@ -2259,16 +2259,23 @@ directories (`BINSHA.txt`). Launch 16:40:26Z (hard 19:10:26Z); P1 build
 17:36:48–17:44:43Z (475 s, 48 invocations, 9.7 s mean); locks released
 17:44:43Z. **Session wall 1 h 04 min.** Exit state recorded by the
 envelope: 0 `raptorpath`, 0 `rp-*` namespaces, both locks released (the
-next tenant took them afterwards). The battery was not polled; the
-operator read `all-era.txt` at ≈ 10-min intervals (16:50, 17:01, 17:11,
-17:21, 17:31, 17:41, 17:51Z) and `TESTS.txt` once (17:12Z).
+next tenant took them afterwards). The operator read `all-era.txt` at
+≈ 10-min intervals (16:50, 17:01, 17:11, 17:21, 17:31, 17:41, 17:51Z) and
+`TESTS.txt` once (17:12Z) — the pre-registered cadence, which is more
+frequent than rule 13's ≈ 20 min (a declared deviation; one short ssh
+read each, no abort signature followed).
 
 *Tests.* `cargo build --release` rc 0; release suite rc 0, **1061 passed, 0
 failed**, 51 ignored (91 binaries); doc rc 0; wasm rc 0, 35 passed;
 **debug-witness suite rc 0, 922 passed, 0 failed**, 49 ignored (82
-binaries), **0 `lock order: quinn seam` panics** — every in-process and
-spawned-binary test of the crate ran with the lock-order witness compiled
-in and none tripped it. No flake fired.
+binaries), 0 `lock order: quinn seam` panics in the captured test output.
+That grep sees uncaptured output only: a spawned child's stderr reaches the
+log only when its test fails, so a witness panic in a non-fatal task of a
+child would not show there. What the debug run does show is that the whole
+suite is green with the witness compiled in (a violation in a critical task
+is a failed test); the witness counter itself is read in-process in
+`lock_order_loopback` (dev runs: `checks=10612 violations=0`). No flake
+fired.
 
 *Abort table (filled).*
 
