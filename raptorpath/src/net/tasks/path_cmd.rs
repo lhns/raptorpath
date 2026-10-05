@@ -20,7 +20,7 @@ use crate::transport::{QuicTransport, WireMessage};
 pub(crate) async fn run_path_cmd(
     mut path_cmd_rx: mpsc::Receiver<crate::monitor::http::PathCommand>,
     cmd_transport: Arc<QuicTransport>,
-    cmd_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
+    cmd_scheduler: Arc<crate::scheduler::SchedMutex>,
     cmd_stats: Arc<SharedStats>,
     cmd_msg_tx: mpsc::Sender<(u32, WireMessage)>,
     cmd_ctrl_tx: mpsc::Sender<(u32, WireMessage)>,

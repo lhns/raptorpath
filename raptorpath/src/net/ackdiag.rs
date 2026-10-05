@@ -553,7 +553,7 @@ pub fn gauge() -> Option<&'static AckCadenceGauge> {
 /// In a single-engine process this is a no-op, costing one relaxed
 /// `fetch_max`.
 pub(crate) fn maybe_report(
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    scheduler: &Arc<crate::scheduler::SchedMutex>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
 ) {

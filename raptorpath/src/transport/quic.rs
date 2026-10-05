@@ -490,6 +490,7 @@ impl QuicTransport {
     /// app-layer echo RTT stays with the reliability/tail machinery where
     /// end-to-end (pipeline-inclusive) delay is the right quantity.
     pub fn wire_rtt(&self, path_id: PathId) -> Option<std::time::Duration> {
+        crate::scheduler::sched_lock::assert_not_held("wire_rtt");
         self.connections.get(&path_id).map(|c| c.rtt())
     }
 
@@ -504,6 +505,7 @@ impl QuicTransport {
     /// arriving datagrams are being destroyed between quinn's packet layer
     /// and the application (buffer overflow), not lost on the wire.
     pub fn datagram_frame_stats(&self, path_id: PathId) -> Option<(u64, u64)> {
+        crate::scheduler::sched_lock::assert_not_held("datagram_frame_stats");
         self.connections.get(&path_id).map(|c| {
             let s = c.stats();
             (s.frame_rx.datagram, s.frame_tx.datagram)
@@ -518,6 +520,7 @@ impl QuicTransport {
     /// the true BDP·MTU is direct in-vivo evidence of the max-filter
     /// over-read.
     pub fn quinn_path_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64)> {
+        crate::scheduler::sched_lock::assert_not_held("quinn_path_stats");
         self.connections.get(&path_id).map(|c| {
             let p = c.stats().path;
             (p.cwnd, p.congestion_events, p.lost_packets, p.sent_packets)
@@ -608,6 +611,7 @@ impl QuicTransport {
     /// `handoff − tx_frames` is the eviction estimate that does not depend on
     /// the `full` predicate.
     pub fn datagram_queue_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64, u64)> {
+        crate::scheduler::sched_lock::assert_not_held("datagram_queue_stats");
         use std::sync::atomic::Ordering::Relaxed;
         if !self.dg_audit {
             return None;
@@ -750,6 +754,7 @@ impl QuicTransport {
 
     /// Remove a path at runtime.
     pub fn remove_path(&self, path_id: PathId) {
+        crate::scheduler::sched_lock::assert_not_held("remove_path");
         if let Some((_, conn)) = self.connections.remove(&path_id) {
             conn.close(0u32.into(), b"path removed");
         }
@@ -923,6 +928,7 @@ impl QuicTransport {
     /// framing). Multi-symbol (block-mode) batches and everything else keep
     /// the bincode framing.
     pub fn send_symbols(&self, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
+        crate::scheduler::sched_lock::assert_not_held("send_symbols");
         let conn = self
             .connections
             .get(&path_id)
@@ -966,6 +972,7 @@ impl QuicTransport {
         eta_rel_us: u64,
         arena: &mut bytes::BytesMut,
     ) -> anyhow::Result<()> {
+        crate::scheduler::sched_lock::assert_not_held("send_symbol");
         if !crate::transport::protocol::wire_compact_active() {
             let batch = SymbolBatch::new(vec![sym.clone()], send_timestamp_us, seqs, path_id)
                 .with_eta(eta_rel_us);
@@ -991,6 +998,7 @@ impl QuicTransport {
 
     /// Send a control message as a datagram (best-effort, low latency).
     pub fn send_control_datagram(&self, path_id: PathId, msg: ControlMessage) -> anyhow::Result<()> {
+        crate::scheduler::sched_lock::assert_not_held("send_control_datagram");
         let conn = self
             .connections
             .get(&path_id)
@@ -1006,6 +1014,7 @@ impl QuicTransport {
         path_id: PathId,
         msg: ControlMessage,
     ) -> anyhow::Result<()> {
+        crate::scheduler::sched_lock::assert_not_held("send_control");
         let conn = self
             .connections
             .get(&path_id)
@@ -1023,6 +1032,7 @@ impl QuicTransport {
 
     /// Query the max datagram size for a path (PMTU-based).
     pub fn max_datagram_size(&self, path_id: PathId) -> Option<usize> {
+        crate::scheduler::sched_lock::assert_not_held("max_datagram_size");
         self.connections
             .get(&path_id)
             .and_then(|conn| conn.max_datagram_size())
@@ -1030,6 +1040,7 @@ impl QuicTransport {
 
     /// Receive datagrams from a path.
     pub async fn recv_datagram(&self, path_id: PathId) -> anyhow::Result<WireMessage> {
+        crate::scheduler::sched_lock::assert_not_held("recv_datagram");
         let conn = self
             .connections
             .get(&path_id)
@@ -1510,5 +1521,37 @@ mod rcvbuf_endpoint_tests {
             t.remove_path(7);
             assert!(t.rx_socket_rcvbuf(7).is_none(), "the probe leaves with the path");
         }
+    }
+
+    /// Threading P1, D5: no DashMap shard guard of `connections` is alive
+    /// across a quinn call or an `.await`. The map holds
+    /// `Arc<quinn::Connection>` and ONE accessor (`conn`) clones the `Arc`
+    /// out and drops the guard; every seam goes through it. (A
+    /// `quinn::Connection` clone is not an `Arc` clone: quinn's
+    /// `ConnectionRef::clone`/`drop` take the connection mutex — quinn-0.11.9
+    /// `connection.rs` 920-940 — so the map stores an `Arc` and clones that.)
+    /// Shape test, source-scraped (whitespace-insensitive): on the tree
+    /// before the fix the map held `quinn::Connection` and ten seams called
+    /// `connections.get(` directly, with the guard alive through
+    /// `send_datagram` and across `open_uni().await`.
+    #[test]
+    fn connections_are_reached_through_one_guard_dropping_accessor() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transport/quic.rs");
+        let src = std::fs::read_to_string(p).expect("read quic.rs");
+        let body = &src[..src.find("#[cfg(test)]").expect("test module")];
+        let squashed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(
+            squashed.contains("connections:DashMap<PathId,Arc<quinn::Connection>>,"),
+            "the map must hold Arc<Connection> (a quinn clone takes the connection mutex)"
+        );
+        assert_eq!(
+            squashed.matches("connections.get(").count(),
+            1,
+            "exactly one `connections.get(` (the `conn` accessor) may exist"
+        );
+        assert!(
+            squashed.contains("fnconn(&self,path_id:PathId)->Option<Arc<quinn::Connection>>"),
+            "the guard-dropping accessor must exist"
+        );
     }
 }

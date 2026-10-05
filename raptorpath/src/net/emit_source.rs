@@ -56,7 +56,7 @@ const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 /// `run_window_sender` invocation. Taken by shared reference: all mutation
 /// goes through the `Mutex`/atomic handles.
 pub(crate) struct SenderCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
@@ -883,7 +883,7 @@ pub(crate) fn worst_eps_path(
 pub(crate) fn cadenced_repair_rate(
     cache: &mut RepairRateCache,
     fec_controller: &parking_lot::Mutex<FecRateController>,
-    scheduler: &parking_lot::Mutex<Scheduler>,
+    scheduler: &crate::scheduler::SchedMutex,
     window: usize,
     now_us: u64,
 ) -> f64 {

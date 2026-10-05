@@ -31,7 +31,7 @@ use crate::transport::{ControlMessage, QuicTransport};
 /// caller. For the `Option` capability handles, `None` means "the running
 /// pipeline has no such consumer".
 pub(crate) struct ControlCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
@@ -44,6 +44,13 @@ pub(crate) struct ControlCtx<'a> {
     /// receiver's delivery counter (a different seq space): the retention
     /// contract removes a symbol by ack only.
     pub peer_window_ack: Option<&'a Arc<AtomicU64>>,
+    /// Threading P1, D1: the local window sender's ack wake. Signalled
+    /// (`notify_one`, which stores a permit when nobody waits, so a wake is
+    /// never lost) once per inbound `WindowAck`, after every state update the
+    /// ack carries, so a sender paused on the store/cwnd brake or on an empty
+    /// pacing bucket re-evaluates on the ack instead of a 1 ms poll. `Some`
+    /// exactly where `peer_window_ack` is.
+    pub ack_wake: Option<&'a Arc<tokio::sync::Notify>>,
     /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
     /// (anchor, deficit) vector to the local window sender's recovery loop.
     pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,

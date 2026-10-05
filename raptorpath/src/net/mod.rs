@@ -883,7 +883,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
-    let scheduler_arc = Arc::new(parking_lot::Mutex::new(scheduler));
+    let scheduler_arc = Arc::new(crate::scheduler::SchedMutex::new(scheduler));
 
     // ── Plain-mode Copa delivery feed ───────────────────────────────────────
     // In plain window-reliable mode WindowAcks carry RTT only (only the
@@ -1451,7 +1451,7 @@ async fn run_window_sender(
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
     batch_counter: &BatchCounter,
     transport: &Arc<QuicTransport>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    scheduler: &Arc<crate::scheduler::SchedMutex>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,

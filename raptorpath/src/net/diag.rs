@@ -363,7 +363,7 @@ pub(crate) struct DiagInputs<'a> {
 /// report takes one scheduler lock (scoped to the per-path `pp` string) and
 /// otherwise only reads atomics and transport gauges.
 pub(crate) struct DiagCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub window_ack_seq: &'a Arc<AtomicU64>,
@@ -1065,7 +1065,7 @@ mod wait_attribution_tests {
     #[test]
     fn every_wait_bucket_is_assigned_exactly_once() {
         let body = sender_loop_source();
-        for i in 0..8usize {
+        for i in 0..9usize {
             let needle = format!("wait_arm = {i};");
             let n = body.matches(&needle).count();
             assert_eq!(
@@ -1077,8 +1077,8 @@ mod wait_attribution_tests {
         }
         assert_eq!(
             body.matches("wait_arm = ").count(),
-            8,
-            "there must be exactly 8 attributions, one per bucket"
+            9,
+            "there must be exactly 9 attributions, one per bucket"
         );
     }
 
@@ -1097,6 +1097,7 @@ mod wait_attribution_tests {
             + body.matches("nack_rx.recv()").count()
             + body.matches("deficit_rx.recv()").count()
             + body.matches("shutdown_rx.recv()").count()
+            + body.matches("ack_wake.notified()").count()
             + body.matches("tail_deadline").count().min(1);
         let attributed = body.matches("wait_arm = ").count();
         assert_eq!(
@@ -1113,8 +1114,12 @@ mod wait_attribution_tests {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs");
         let src = std::fs::read_to_string(p).expect("read src/net/diag.rs");
         assert!(
-            src.contains("pub wait_us: [u64; 8],"),
-            "wait_us must be sized 8 — the bucket count the sender assigns"
+            src.contains("pub wait_us: [u64; 9],"),
+            "wait_us must be sized 9 — the bucket count the sender assigns"
+        );
+        assert!(
+            src.contains("pub wake_n: [u64; 9],"),
+            "wake_n must be sized 9 — one wake counter per bucket"
         );
         // And it must be printed unconditionally: an `if generation` around
         // `waitdiag` would hide it on every `RWM_GEN=0` run, as happened to
@@ -1156,7 +1161,7 @@ mod wait_attribution_tests {
         assert_eq!(
             line,
             " wait[tun=1% paused=99% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% \
-             n=2 us=7010 busy=87% busy_us=6100]"
+             ack=0% n=2 us=7010 busy=87% busy_us=6100]"
         );
     }
 

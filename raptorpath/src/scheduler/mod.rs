@@ -26,6 +26,8 @@
 //! Pacing rate = cwnd [symbols] / SRTT [s] = symbols/second.
 
 pub mod clock;
+pub mod sched_lock;
+pub use sched_lock::{SchedGuard, SchedMutex};
 pub use clock::*;
 
 // The scheduler's process-global gate resolvers live beside the gate

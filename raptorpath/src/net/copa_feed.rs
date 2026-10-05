@@ -219,7 +219,7 @@ pub(crate) fn copa_feed_attribute(
     ack_path: u32,
     next_expected: u64,
     sack_ranges: &[(u64, u64)],
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    scheduler: &Arc<crate::scheduler::SchedMutex>,
     transport: &Arc<QuicTransport>,
     stats: &Arc<SharedStats>,
 ) {

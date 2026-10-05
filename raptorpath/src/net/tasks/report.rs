@@ -24,7 +24,7 @@ use crate::transport::{ControlMessage, QuicTransport};
 /// RTCP-style periodic report + keepalive task.
 pub(crate) async fn run_report(
     report_transport: Arc<QuicTransport>,
-    report_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
+    report_scheduler: Arc<crate::scheduler::SchedMutex>,
     report_stats: Arc<SharedStats>,
     report_symbol_size: u16,
     mut report_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
