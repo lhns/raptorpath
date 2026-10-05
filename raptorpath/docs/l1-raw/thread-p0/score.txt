@@ -1,0 +1,139 @@
+=== P0 SCORE (docs/status.md §9, literally)
+ABORT TOKENS: none; truncated=False
+ROWS 12 statuses={'LIVE': 12}
+
+--- per-rep values (rule 4)
+  c1s-400 P0   s42 r1 LIVE         gp=491.2 cpucli=6.04 cpusrv=8.44 us/dgram=17.75 rdiag_srv=79.0%/max81.0/q471 rdiag_cli=11.0% srv_top=0.273(rp-w-4) cli_top=0.173(rp-w-5)
+  c1s-400 MAIN s42 r1 LIVE         gp=518.5 cpucli=5.79 cpusrv=8.14 us/dgram=17.01 rdiag_srv=80.0%/max82.0/q458 rdiag_cli=11.0% srv_top=-(None) cli_top=-(None)
+  c1d-400 P0   s42 r1 LIVE         gp=411.3 cpucli=11.56 cpusrv=12.59 us/dgram=33.25 rdiag_srv=92.0%/max93.0/q258 rdiag_cli=19.0% srv_top=0.301(rp-w-3) cli_top=0.264(rp-w-3)
+  c1d-400 MAIN s42 r1 LIVE         gp=413.4 cpucli=11.51 cpusrv=12.45 us/dgram=33.12 rdiag_srv=92.0%/max93.0/q280 rdiag_cli=19.0% srv_top=-(None) cli_top=-(None)
+  c1s-400 MAIN s 7 r1 LIVE         gp=518.2 cpucli=5.76 cpusrv=8.08 us/dgram=16.93 rdiag_srv=79.0%/max82.0/q459 rdiag_cli=10.5% srv_top=-(None) cli_top=-(None)
+  c1s-400 P0   s 7 r1 LIVE         gp=461.7 cpucli=5.98 cpusrv=8.91 us/dgram=17.57 rdiag_srv=79.0%/max82.0/q516 rdiag_cli=10.0% srv_top=0.355(rp-w-2) cli_top=0.175(rp-w-2)
+  c1d-400 MAIN s 7 r1 LIVE         gp=396.1 cpucli=11.80 cpusrv=12.93 us/dgram=33.95 rdiag_srv=92.0%/max94.0/q350 rdiag_cli=18.0% srv_top=-(None) cli_top=-(None)
+  c1d-400 P0   s 7 r1 LIVE         gp=392.7 cpucli=11.65 cpusrv=12.80 us/dgram=33.50 rdiag_srv=92.0%/max94.0/q390 rdiag_cli=17.0% srv_top=0.312(rp-w-1) cli_top=0.232(rp-w-5)
+  c1s-400 P0   s42 r2 LIVE         gp=483.2 cpucli=5.88 cpusrv=8.70 us/dgram=17.27 rdiag_srv=80.0%/max83.0/q500 rdiag_cli=10.0% srv_top=0.381(rp-w-1) cli_top=0.162(rp-w-5)
+  c1s-400 MAIN s42 r2 LIVE         gp=493.3 cpucli=5.99 cpusrv=8.63 us/dgram=17.60 rdiag_srv=79.5%/max83.0/q507 rdiag_cli=10.0% srv_top=-(None) cli_top=-(None)
+  c1d-400 P0   s42 r2 LIVE         gp=424.0 cpucli=11.32 cpusrv=12.20 us/dgram=32.57 rdiag_srv=92.0%/max94.0/q227 rdiag_cli=20.0% srv_top=0.277(rp-w-2) cli_top=0.246(rp-w-0)
+  c1d-400 MAIN s42 r2 LIVE         gp=413.2 cpucli=11.31 cpusrv=12.22 us/dgram=32.62 rdiag_srv=92.0%/max94.0/q334 rdiag_cli=18.0% srv_top=-(None) cli_top=-(None)
+
+--- goodput / CPU per cell and arm: median [min-max] (n)
+  c1s-400 P0   gp=483.2 [461.7-491.2] (n=3) cpucli=5.98 [5.88-6.04] (n=3) cpusrv=8.70 [8.44-8.91] (n=3) us/dgram=17.57 [17.27-17.75] (n=3)
+      seed 42: gp=487.2 [483.2-491.2] (n=2) cpucli=5.96 [5.88-6.04] (n=2)
+      seed 7: gp=461.7 [461.7-461.7] (n=1) cpucli=5.98 [5.98-5.98] (n=1)
+  c1s-400 MAIN gp=518.2 [493.3-518.5] (n=3) cpucli=5.79 [5.76-5.99] (n=3) cpusrv=8.14 [8.08-8.63] (n=3) us/dgram=17.01 [16.93-17.60] (n=3)
+      seed 42: gp=505.9 [493.3-518.5] (n=2) cpucli=5.89 [5.79-5.99] (n=2)
+      seed 7: gp=518.2 [518.2-518.2] (n=1) cpucli=5.76 [5.76-5.76] (n=1)
+  c1s-400 MAIN identity vs §10 NEW 510.4 band (467.1, 568.5): IN-BAND
+  c1s-400 NO-CHANGE gp: P0 vs MAIN -6.7 % (MDE 4.9 %) -> MOVED
+      vs §10 NEW 510.4: -5.3 % (reported)
+  c1s-400 NO-CHANGE cpu: P0 vs MAIN 3.3 % (MDE 2.4 %) -> UNDERPOWERED
+      vs §10 NEW 5.73: 4.4 % (reported)
+  c1d-400 P0   gp=411.3 [392.7-424.0] (n=3) cpucli=11.56 [11.32-11.65] (n=3) cpusrv=12.59 [12.20-12.80] (n=3) us/dgram=33.25 [32.57-33.50] (n=3)
+      seed 42: gp=417.7 [411.3-424.0] (n=2) cpucli=11.44 [11.32-11.56] (n=2)
+      seed 7: gp=392.7 [392.7-392.7] (n=1) cpucli=11.65 [11.65-11.65] (n=1)
+  c1d-400 MAIN gp=413.2 [396.1-413.4] (n=3) cpucli=11.51 [11.31-11.80] (n=3) cpusrv=12.45 [12.22-12.93] (n=3) us/dgram=33.12 [32.62-33.95] (n=3)
+      seed 42: gp=413.3 [413.2-413.4] (n=2) cpucli=11.41 [11.31-11.51] (n=2)
+      seed 7: gp=396.1 [396.1-396.1] (n=1) cpucli=11.80 [11.80-11.80] (n=1)
+  c1d-400 MAIN identity vs §10 NEW 424.4 band (377.8, 473.0): IN-BAND
+  c1d-400 NO-CHANGE gp: P0 vs MAIN -0.4 % (MDE 5.6 %) -> within
+      vs §10 NEW 424.4: -3.1 % (reported)
+  c1d-400 NO-CHANGE cpu: P0 vs MAIN 0.4 % (MDE 6.5 %) -> within
+      vs §10 NEW 11.19: 3.3 % (reported)
+NO-CHANGE VERDICT: REFUTED-WITH-RECORD
+
+--- per-thread core budget (P0 rows; transfer window; median [min-max] (n))
+  c1s-400 client: wall_s=6.62 [6.51-6.93] (n=3)
+      thr_r1         0.173 [0.162-0.175] (n=3)
+      thr_r2         0.160 [0.159-0.166] (n=3)
+      thr_r3         0.158 [0.144-0.159] (n=3)
+      main_cores     0.109 [0.102-0.109] (n=3)
+      workers_cores  0.771 [0.754-0.808] (n=3)
+      cores          0.879 [0.856-0.918] (n=3)
+      busy_r1        0.203 [0.191-0.209] (n=3)
+      busy_r2        0.187 [0.182-0.195] (n=3)
+      busy_r3        0.181 [0.163-0.193] (n=3)
+      busy_r4        0.158 [0.135-0.180] (n=3)
+      busy_r5        0.134 [0.116-0.169] (n=3)
+      busy_r6        0.049 [0.023-0.069] (n=3)
+      park_per_s     8448 [8032-9007] (n=3)
+      unpark_per_s   16896 [16063-18015] (n=3)
+      lag_p50_us     1034 [776-1109] (n=3)
+      lag_p99_us     2754 [2229-2932] (n=3)
+      lag_max_us     5832 [5720-6876] (n=3)
+      rdiag_busy_%   10.0 [10.0-11.0] (n=3)  q_avg 58 [58-59] (n=3)
+      top_comm per rep: ['rp-w-5', 'rp-w-2', 'rp-w-5']
+      s42 r1 threads: rp-w-5=0.173 rp-w-2=0.166 rp-w-1=0.158 rp-w-0=0.152 rp-w-3=0.141 raptorpath=0.109 rp-w-4=0.018
+      s7 r1 threads: rp-w-2=0.175 rp-w-5=0.160 rp-w-4=0.144 rp-w-3=0.136 raptorpath=0.102 rp-w-1=0.100 rp-w-0=0.039
+      s42 r2 threads: rp-w-5=0.162 rp-w-1=0.159 rp-w-2=0.159 rp-w-0=0.116 rp-w-4=0.116 raptorpath=0.109 rp-w-3=0.059
+  c1s-400 server: wall_s=6.61 [6.51-6.92] (n=3)
+      thr_r1         0.355 [0.273-0.381] (n=3)
+      thr_r2         0.263 [0.257-0.269] (n=3)
+      thr_r3         0.206 [0.172-0.254] (n=3)
+      main_cores     0.175 [0.172-0.178] (n=3)
+      workers_cores  1.112 [1.108-1.127] (n=3)
+      cores          1.287 [1.280-1.305] (n=3)
+      busy_r1        0.388 [0.298-0.422] (n=3)
+      busy_r2        0.288 [0.277-0.289] (n=3)
+      busy_r3        0.227 [0.173-0.275] (n=3)
+      busy_r4        0.158 [0.145-0.175] (n=3)
+      busy_r5        0.094 [0.067-0.173] (n=3)
+      busy_r6        0.051 [0.011-0.088] (n=3)
+      park_per_s     8544 [7593-8763] (n=3)
+      unpark_per_s   17089 [15186-17525] (n=3)
+      lag_p50_us     917 [669-949] (n=3)
+      lag_p99_us     1954 [1697-2039] (n=3)
+      lag_max_us     3188 [2936-4306] (n=3)
+      rdiag_busy_%   79.0 [79.0-80.0] (n=3)  q_avg 500 [471-516] (n=3)
+      top_comm per rep: ['rp-w-4', 'rp-w-2', 'rp-w-1']
+      s42 r1 threads: rp-w-4=0.273 rp-w-1=0.263 rp-w-3=0.206 raptorpath=0.175 rp-w-0=0.163 rp-w-2=0.161 rp-w-5=0.046
+      s7 r1 threads: rp-w-2=0.355 rp-w-1=0.269 raptorpath=0.172 rp-w-0=0.163 rp-w-4=0.136 rp-w-3=0.095 rp-w-5=0.090
+      s42 r2 threads: rp-w-1=0.381 rp-w-3=0.257 rp-w-5=0.254 raptorpath=0.178 rp-w-0=0.151 rp-w-2=0.073 rp-w-4=0.011
+  c1d-400 client: wall_s=7.78 [7.55-8.15] (n=3)
+      thr_r1         0.246 [0.232-0.264] (n=3)
+      thr_r2         0.244 [0.229-0.257] (n=3)
+      thr_r3         0.227 [0.222-0.231] (n=3)
+      main_cores     0.123 [0.118-0.126] (n=3)
+      workers_cores  1.355 [1.302-1.365] (n=3)
+      cores          1.478 [1.421-1.491] (n=3)
+      busy_r1        0.348 [0.328-0.427] (n=3)
+      busy_r2        0.336 [0.327-0.417] (n=3)
+      busy_r3        0.323 [0.323-0.326] (n=3)
+      busy_r4        0.321 [0.259-0.322] (n=3)
+      busy_r5        0.276 [0.256-0.319] (n=3)
+      busy_r6        0.241 [0.217-0.254] (n=3)
+      park_per_s     22520 [20478-22981] (n=3)
+      unpark_per_s   45039 [40956-45961] (n=3)
+      lag_p50_us     179 [79-347] (n=3)
+      lag_p99_us     1907 [1617-2196] (n=3)
+      lag_max_us     4916 [4852-8715] (n=3)
+      rdiag_busy_%   19.0 [17.0-20.0] (n=3)  q_avg 22 [21-27] (n=3)
+      top_comm per rep: ['rp-w-3', 'rp-w-5', 'rp-w-0']
+      s42 r1 threads: rp-w-3=0.264 rp-w-5=0.257 rp-w-4=0.231 rp-w-1=0.215 rp-w-0=0.204 rp-w-2=0.184 raptorpath=0.123
+      s7 r1 threads: rp-w-5=0.232 rp-w-2=0.229 rp-w-0=0.222 rp-w-3=0.222 rp-w-4=0.207 rp-w-1=0.190 raptorpath=0.118
+      s42 r2 threads: rp-w-0=0.246 rp-w-5=0.244 rp-w-4=0.227 rp-w-1=0.225 rp-w-3=0.220 rp-w-2=0.203 raptorpath=0.126
+  c1d-400 server: wall_s=7.77 [7.54-8.14] (n=3)
+      thr_r1         0.301 [0.277-0.312] (n=3)
+      thr_r2         0.268 [0.265-0.272] (n=3)
+      thr_r3         0.247 [0.239-0.255] (n=3)
+      main_cores     0.137 [0.130-0.138] (n=3)
+      workers_cores  1.472 [1.431-1.475] (n=3)
+      cores          1.609 [1.562-1.612] (n=3)
+      busy_r1        0.356 [0.313-0.367] (n=3)
+      busy_r2        0.311 [0.310-0.316] (n=3)
+      busy_r3        0.280 [0.279-0.297] (n=3)
+      busy_r4        0.272 [0.263-0.279] (n=3)
+      busy_r5        0.255 [0.237-0.267] (n=3)
+      busy_r6        0.224 [0.166-0.238] (n=3)
+      park_per_s     19375 [17072-19422] (n=3)
+      unpark_per_s   38750 [34144-38843] (n=3)
+      lag_p50_us     961 [644-992] (n=3)
+      lag_p99_us     2107 [2071-2265] (n=3)
+      lag_max_us     7363 [4371-7601] (n=3)
+      rdiag_busy_%   92.0 [92.0-92.0] (n=3)  q_avg 258 [227-390] (n=3)
+      top_comm per rep: ['rp-w-3', 'rp-w-1', 'rp-w-2']
+      s42 r1 threads: rp-w-3=0.301 rp-w-5=0.268 rp-w-1=0.239 rp-w-4=0.230 rp-w-0=0.223 rp-w-2=0.214 raptorpath=0.138
+      s7 r1 threads: rp-w-1=0.312 rp-w-5=0.265 rp-w-2=0.247 rp-w-0=0.244 rp-w-3=0.212 rp-w-4=0.151 raptorpath=0.130
+      s42 r2 threads: rp-w-2=0.277 rp-w-3=0.272 rp-w-5=0.255 rp-w-4=0.237 rp-w-0=0.232 rp-w-1=0.199 raptorpath=0.137
+
+D3 VERDICT (c1s-400): D3-REFUTED-WITH-RECORD -- server [RDIAG] busy med=79.0 %, hottest server thread med=0.355 core
+server phase=run [THR] lines present in 6/6 live P0 rows (reported)

@@ -160,5 +160,62 @@ check(set(cols) == {"truth_loss_p0", "truth_lost_p0", "truth_egress_p0", "truth_
                     "truth_rcvbuf_drops"} and all(v is None for v in cols.values()),
       "truth_columns: n_legs fixes the row shape with None when nothing was captured")
 
+# ── [THR] / [LAG] (threading redesign P0; src/runtime_obs.rs renders these) ────
+# The first four lines are byte-for-byte the runtime_obs unit test's expectation
+# (`the_thr_lines_carry_deltas_and_cores_over_the_window`), so the Rust
+# renderer and this parser are pinned to one token set.
+THR = [
+    "[THR] rt phase=xfer side=server obj=1 worker=0 busy_s=1.000 busy_frac=0.500 park=20 unpark=17 wall_s=2.000",
+    "[THR] os phase=xfer side=server obj=1 tid=11 comm=rp-w-0 cpu_s=1.000 cores=0.500 wall_s=2.000",
+    "[THR] os phase=xfer side=server obj=1 tid=12 comm=raptorpath cpu_s=0.400 cores=0.200 wall_s=2.000",
+    "[THR] sum phase=xfer side=server obj=1 workers=1 busy_s=1.000 threads=2 cpu_s=1.400 cores=0.700 wall_s=2.000",
+    "[LAG] phase=xfer side=server obj=1 tick_ms=10 n=3 p50_us=200 p99_us=298 max_us=300 dropped=0",
+    # The warm-up object's tiny window (must NOT be picked by default).
+    "[THR] rt phase=xfer side=server obj=0 worker=0 busy_s=0.001 busy_frac=0.900 park=1 unpark=1 wall_s=0.002",
+    "[THR] sum phase=xfer side=server obj=0 workers=1 busy_s=0.001 threads=2 cpu_s=0.000 cores=0.000 wall_s=0.002",
+    "[LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- dropped=0",
+    # Process-end cumulative lines (no window key), a glued tracing record.
+    "[THR] rt phase=run side=server worker=0 busy_s=3.000 busy_frac=0.300 park=99 unpark=90 wall_s=10.000",
+    "[THR] sum phase=run side=server workers=1 busy_s=3.000 threads=2 cpu_s=4.000 cores=0.400 wall_s=10.000",
+    "[LAG] phase=run side=server tick_ms=10 n=1000 p50_us=700 p99_us=1900 max_us=4000 dropped=0 final=1",
+]
+t = c.thr(THR)
+check(t is not None and t["window"] == "obj=1", "thr: default window is the longest wall (obj=1, not warm-up obj=0)")
+check(t["side"] == "server" and t["wall_s"] == 2.0, "thr: side and wall_s read")
+check(t["workers"] == [{"worker": 0, "busy_s": 1.0, "busy_frac": 0.5, "park": 20, "unpark": 17}],
+      "thr: one rt line per worker")
+check([x["comm"] for x in t["threads"]] == ["rp-w-0", "raptorpath"]
+      and t["threads"][1]["cores"] == 0.2, "thr: one os line per thread")
+check(t["sum"] == {"workers": 1, "busy_s": 1.0, "threads": 2, "cpu_s": 1.4, "cores": 0.7},
+      "thr: the sum line")
+check(t["lag"] == {"n": 3, "p50_us": 200.0, "p99_us": 298.0, "max_us": 300.0, "dropped": 0},
+      "thr: the window's lag line")
+w0 = c.thr(THR, window="obj=0")
+check(w0["lag"]["p50_us"] is None and w0["threads"] is None,
+      "thr: explicit window; `-` lag reads None; no os lines -> threads None")
+r = c.thr(THR, phase="run")
+check(r["window"] == "" and r["sum"]["cores"] == 0.4 and r["lag"]["p99_us"] == 1900.0,
+      "thr: phase=run is the cumulative (keyless) window")
+check(c.thr(THR, window="obj=9") is None and c.thr([]) is None and c.thr(None) is None,
+      "thr: an absent window / no lines is None")
+UNAV = ["[THR] rt phase=xfer side=client run=1 worker=0 busy_s=0.5 busy_frac=0.25 park=1 unpark=1 wall_s=2.0",
+        "[THR] os unavailable phase=xfer side=client run=1 (per-thread CPU is read from /proc on Linux only)",
+        "[THR] sum phase=xfer side=client run=1 workers=1 busy_s=0.500 threads=- cpu_s=- cores=- wall_s=2.000"]
+u = c.thr(UNAV)
+check(u["window"] == "run=1" and u["threads"] is None and u["sum"]["cores"] is None,
+      "thr: os unavailable -> threads None, sum cores None (never 0)")
+cols = c.thr_columns(THR, "srv")
+check(cols["srv_wall_s"] == 2.0 and cols["srv_n_workers"] == 1 and cols["srv_busy_r1"] == 0.5
+      and cols["srv_busy_r2"] is None, "thr_columns: ranked busy fractions, None past n_workers")
+check(cols["srv_park_per_s"] == 10.0 and cols["srv_unpark_per_s"] == 8.5, "thr_columns: park/unpark per s")
+check(cols["srv_thr_r1"] == 0.5 and cols["srv_top_comm"] == "rp-w-0" and cols["srv_thr_r2"] == 0.2
+      and cols["srv_thr_r3"] is None, "thr_columns: OS threads ranked by cores")
+check(cols["srv_main_cores"] == 0.2 and cols["srv_workers_cores"] == 0.5 and cols["srv_cores"] == 0.7,
+      "thr_columns: main thread, rp-w-* sum, process sum")
+check(cols["srv_lag_p99_us"] == 298.0 and cols["srv_lag_n"] == 3, "thr_columns: lag columns")
+empty = c.thr_columns([], "cli")
+check(set(empty) == set(k.replace("srv_", "cli_", 1) for k in cols) and all(v is None for v in empty.values()),
+      "thr_columns: the row shape does not depend on the capture (all None when absent)")
+
 print("test_l1common: %d checks, %d failed" % (CHECKS, len(FAILS)))
 sys.exit(1 if FAILS else 0)

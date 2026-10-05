@@ -201,8 +201,20 @@ struct StatusArgs {
     json: bool,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// The process entry point: exactly what `#[tokio::main]` expanded to
+/// (`Builder::new_multi_thread().enable_all()`, default worker count, the
+/// build failure a panic), plus thread names (`rp-w-<n>`) so per-thread CPU
+/// is attributable — `raptorpath::runtime_obs`. After the async body returns, and
+/// while the workers are still alive, the cumulative `[THR]`/`[LAG]` lines
+/// are printed (only when `async_main` armed the observer: `run`/`perf`).
+fn main() -> anyhow::Result<()> {
+    let rt = raptorpath::runtime_obs::build_runtime().expect("Failed building the Runtime");
+    let r = rt.block_on(async_main());
+    raptorpath::runtime_obs::emit_run_end();
+    r
+}
+
+async fn async_main() -> anyhow::Result<()> {
     // rustls 0.23: quinn's dependency graph enables both ring and
     // aws-lc-rs, so provider auto-detection fails at the first TLS config
     // built without an explicit provider (the client panics). Install ring
@@ -220,6 +232,9 @@ async fn main() -> anyhow::Result<()> {
     // rather than a panic at first use mid-transfer.
     if matches!(cli.command, None | Some(Commands::Run(_)) | Some(Commands::Perf(_))) {
         let _ = gates::get();
+        // Threading-redesign P0 instrument: the [LAG] probe task and the
+        // [THR] metrics handle (measurement only, no gate).
+        raptorpath::runtime_obs::arm();
     }
 
     match cli.command.unwrap_or(Commands::Run(RunArgs {

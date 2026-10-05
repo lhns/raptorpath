@@ -218,3 +218,154 @@ def truth_columns(lines, n_legs=None):
     rcv = [r.get("rcvbuf_drops") for r in t.values() if r.get("rcvbuf_drops") is not None]
     cols["truth_rcvbuf_drops"] = rcv[-1] if rcv else None
     return cols
+
+
+# ── Runtime observability: [THR] and [LAG] (threading redesign P0) ───────
+#
+# The engine (src/runtime_obs.rs) prints, per window, one line per tokio worker,
+# one per OS thread (Linux) and one sum line, then one [LAG] line:
+#
+#   [THR] rt phase=xfer side=server obj=1 worker=0 busy_s=1.000 busy_frac=0.500
+#         park=20 unpark=17 wall_s=2.000
+#   [THR] os phase=xfer side=server obj=1 tid=11 comm=rp-w-0 cpu_s=1.000
+#         cores=0.500 wall_s=2.000
+#   [THR] sum phase=xfer side=server obj=1 workers=1 busy_s=1.000 threads=2
+#         cpu_s=1.400 cores=0.700 wall_s=2.000
+#   [LAG] phase=xfer side=server obj=1 tick_ms=10 n=200 p50_us=600 p99_us=980
+#         max_us=1500 dropped=0
+#
+# `phase=xfer` brackets one perf object (`run=<r>` on the client, `obj=<id>`
+# on the server; the server's warm-up object 0 has its own tiny window);
+# `phase=run` is cumulative since process start (no window key).
+
+_WIN_KEYS = ("run", "obj")
+
+
+def _window_of(line):
+    """The window key of a [THR]/[LAG] line: `run=1` / `obj=3`, or '' (none)."""
+    for k in _WIN_KEYS:
+        v = field(line, k)
+        if v is not None:
+            return "%s=%s" % (k, v)
+    return ""
+
+
+def _thr_windows(lines, phase):
+    """{window key: [lines]} of the [THR]/[LAG] lines of `phase`."""
+    out = {}
+    for ln in lines or []:
+        if not ln or ("[THR] " not in ln and "[LAG] " not in ln):
+            continue
+        if field(ln, "phase") != phase:
+            continue
+        out.setdefault(_window_of(ln), []).append(ln)
+    return out
+
+
+def thr(lines, phase="xfer", window=None):
+    """One [THR]+[LAG] window -> a dict, or None when that window is absent.
+
+    `window` is the key (`'run=1'`, `'obj=1'`); None picks the window whose
+    `[THR] sum` line has the LONGEST `wall_s` (the measured object, not the
+    server's 64-byte warm-up). Keys: `window`, `side`, `wall_s`, `workers`
+    (list of {worker, busy_s, busy_frac, park, unpark}), `threads` (list of
+    {tid, comm, cpu_s, cores}; None when the OS reader was unavailable),
+    `sum` ({workers, busy_s, threads, cpu_s, cores}), `lag` ({n, p50_us,
+    p99_us, max_us, dropped} or None)."""
+    wins = _thr_windows(lines, phase)
+    if not wins:
+        return None
+    if window is None:
+        best, best_wall = None, -1.0
+        for k, ls in wins.items():
+            for ln in ls:
+                if "[THR] sum " in ln:
+                    w = fnum(field(ln, "wall_s"))
+                    if w is not None and w > best_wall:
+                        best, best_wall = k, w
+        if best is None:
+            return None
+        window = best
+    ls = wins.get(window)
+    if not ls:
+        return None
+    res = {"window": window, "side": None, "wall_s": None, "workers": [],
+           "threads": None, "sum": None, "lag": None}
+    for ln in ls:
+        res["side"] = res["side"] or field(ln, "side")
+        if "[THR] rt " in ln:
+            res["workers"].append({
+                "worker": inum(field(ln, "worker")),
+                "busy_s": fnum(field(ln, "busy_s")),
+                "busy_frac": fnum(field(ln, "busy_frac")),
+                "park": inum(field(ln, "park")),
+                "unpark": inum(field(ln, "unpark")),
+            })
+        elif "[THR] os " in ln and "[THR] os unavailable" not in ln:
+            if res["threads"] is None:
+                res["threads"] = []
+            res["threads"].append({
+                "tid": inum(field(ln, "tid")),
+                "comm": field(ln, "comm"),
+                "cpu_s": fnum(field(ln, "cpu_s")),
+                "cores": fnum(field(ln, "cores")),
+            })
+        elif "[THR] sum " in ln:
+            res["wall_s"] = fnum(field(ln, "wall_s"))
+            res["sum"] = {
+                "workers": inum(field(ln, "workers")),
+                "busy_s": fnum(field(ln, "busy_s")),
+                "threads": inum(field(ln, "threads")),
+                "cpu_s": fnum(field(ln, "cpu_s")),
+                "cores": fnum(field(ln, "cores")),
+            }
+        elif "[LAG] " in ln:
+            res["lag"] = {
+                "n": inum(field(ln, "n")),
+                "p50_us": fnum(field(ln, "p50_us")),
+                "p99_us": fnum(field(ln, "p99_us")),
+                "max_us": fnum(field(ln, "max_us")),
+                "dropped": inum(field(ln, "dropped")),
+            }
+    return res
+
+
+def thr_columns(lines, prefix, phase="xfer", window=None):
+    """Flat, additive row columns for one [THR]/[LAG] window, all keyed
+    `<prefix>_…` (None when unread, so the row shape never depends on the
+    capture): wall_s, n_workers, busy_frac per worker RANKED descending
+    (`busy_r1` is the busiest worker, whichever index it had: tasks migrate),
+    park/unpark totals per second of wall, the OS threads' cores ranked
+    (`thr_r1..3`) with the hottest one's comm (`top_comm`), the main thread
+    (`main_cores`, comm `raptorpath`), all `rp-w-*` threads summed
+    (`workers_cores`), the process sum (`cores`), and lag p50/p99/max (µs)."""
+    t = thr(lines, phase, window)
+
+    def k(s):
+        return "%s_%s" % (prefix, s)
+
+    cols = {k("wall_s"): t["wall_s"] if t else None,
+            k("n_workers"): len(t["workers"]) if t else None}
+    ws = t["workers"] if t else []
+    ranked = sorted((w["busy_frac"] for w in ws if w["busy_frac"] is not None), reverse=True)
+    for i in range(6):
+        cols[k("busy_r%d" % (i + 1))] = ranked[i] if i < len(ranked) else None
+    wall = t["wall_s"] if t else None
+    for key in ("park", "unpark"):
+        vals = [w[key] for w in ws if w[key] is not None]
+        cols[k(key + "_per_s")] = (sum(vals) / wall) if (vals and wall) else None
+    th = [x for x in ((t["threads"] if t else None) or []) if x["cores"] is not None]
+    tranked = sorted(th, key=lambda x: x["cores"], reverse=True)
+    for i in range(3):
+        cols[k("thr_r%d" % (i + 1))] = tranked[i]["cores"] if i < len(tranked) else None
+    cols[k("top_comm")] = tranked[0]["comm"] if tranked else None
+    mains = [x["cores"] for x in th if x["comm"] == "raptorpath"]
+    cols[k("main_cores")] = mains[0] if mains else None
+    rpw = [x["cores"] for x in th if (x["comm"] or "").startswith("rp-w-")]
+    cols[k("workers_cores")] = sum(rpw) if rpw else None
+    s = t["sum"] if t else None
+    cols[k("cores")] = s["cores"] if s else None
+    lg = t["lag"] if t else None
+    for key in ("p50_us", "p99_us", "max_us", "n"):
+        cols[k("lag_" + key)] = lg[key] if lg else None
+    return cols

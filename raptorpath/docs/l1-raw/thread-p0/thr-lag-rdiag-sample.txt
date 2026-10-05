@@ -1,0 +1,208 @@
+=== c1s-400-P0-s42-r1-a1 client
+[RDIAG] busy=7% msgs=33121/s q_avg=46 q_max=124 cap=4096
+[RDIAG] busy=11% msgs=56453/s q_avg=65 q_max=403 cap=4096
+[RDIAG] busy=11% msgs=59463/s q_avg=60 q_max=255 cap=4096
+[RDIAG] busy=8% msgs=45306/s q_avg=59 q_max=207 cap=4096
+[RDIAG] busy=12% msgs=54589/s q_avg=61 q_max=512 cap=4096
+[RDIAG] busy=12% msgs=56533/s q_avg=52 q_max=134 cap=4096
+[RDIAG] busy=11% msgs=51620/s q_avg=65 q_max=472 cap=4096
+[RDIAG] busy=9% msgs=39780/s q_avg=58 q_max=127 cap=4096
+[RDIAG] busy=12% msgs=60625/s q_avg=58 q_max=257 cap=4096
+[RDIAG] busy=10% msgs=56614/s q_avg=50 q_max=145 cap=4096
+[RDIAG] busy=11% msgs=57691/s q_avg=56 q_max=300 cap=4096
+[RDIAG] busy=10% msgs=49674/s q_avg=58 q_max=347 cap=4096
+[THR] rt phase=xfer side=client run=1 worker=0 busy_s=1.102 busy_frac=0.169 park=10901 unpark=21802 wall_s=6.515
+[THR] rt phase=xfer side=client run=1 worker=1 busy_s=1.260 busy_frac=0.193 park=10763 unpark=21526 wall_s=6.515
+[THR] rt phase=xfer side=client run=1 worker=2 busy_s=1.169 busy_frac=0.180 park=10554 unpark=21109 wall_s=6.515
+[THR] rt phase=xfer side=client run=1 worker=3 busy_s=1.273 busy_frac=0.195 park=12193 unpark=24386 wall_s=6.515
+[THR] rt phase=xfer side=client run=1 worker=4 busy_s=0.151 busy_frac=0.023 park=1443 unpark=2886 wall_s=6.515
+[THR] rt phase=xfer side=client run=1 worker=5 busy_s=1.363 busy_frac=0.209 park=12828 unpark=25656 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574238 comm=raptorpath cpu_s=0.710 cores=0.109 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574239 comm=rp-w-0 cpu_s=0.990 cores=0.152 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574240 comm=rp-w-1 cpu_s=1.030 cores=0.158 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574241 comm=rp-w-2 cpu_s=1.080 cores=0.166 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574242 comm=rp-w-3 cpu_s=0.920 cores=0.141 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574243 comm=rp-w-4 cpu_s=0.120 cores=0.018 wall_s=6.515
+[THR] os phase=xfer side=client run=1 tid=1574244 comm=rp-w-5 cpu_s=1.130 cores=0.173 wall_s=6.515
+[THR] sum phase=xfer side=client run=1 workers=6 busy_s=6.319 threads=7 cpu_s=5.980 cores=0.918 wall_s=6.515
+[LAG] phase=xfer side=client run=1 tick_ms=10 n=651 p50_us=776 p99_us=2932 max_us=6876 dropped=0
+[THR] rt phase=run side=client worker=0 busy_s=1.103 busy_frac=0.169 park=10915 unpark=21829 wall_s=6.525
+[THR] rt phase=run side=client worker=1 busy_s=1.260 busy_frac=0.193 park=10766 unpark=21531 wall_s=6.525
+[THR] rt phase=run side=client worker=2 busy_s=1.170 busy_frac=0.179 park=10567 unpark=21133 wall_s=6.525
+[THR] rt phase=run side=client worker=3 busy_s=1.274 busy_frac=0.195 park=12203 unpark=24405 wall_s=6.525
+[THR] rt phase=run side=client worker=4 busy_s=0.151 busy_frac=0.023 park=1445 unpark=2889 wall_s=6.525
+[THR] rt phase=run side=client worker=5 busy_s=1.364 busy_frac=0.209 park=12841 unpark=25681 wall_s=6.525
+[THR] os phase=run side=client tid=1574238 comm=raptorpath cpu_s=0.710 cores=0.109 wall_s=6.525
+[THR] os phase=run side=client tid=1574239 comm=rp-w-0 cpu_s=0.990 cores=0.152 wall_s=6.525
+[THR] os phase=run side=client tid=1574240 comm=rp-w-1 cpu_s=1.030 cores=0.158 wall_s=6.525
+[THR] os phase=run side=client tid=1574241 comm=rp-w-2 cpu_s=1.080 cores=0.166 wall_s=6.525
+[THR] os phase=run side=client tid=1574242 comm=rp-w-3 cpu_s=0.920 cores=0.141 wall_s=6.525
+[THR] os phase=run side=client tid=1574243 comm=rp-w-4 cpu_s=0.120 cores=0.018 wall_s=6.525
+[THR] os phase=run side=client tid=1574244 comm=rp-w-5 cpu_s=1.130 cores=0.173 wall_s=6.525
+[THR] sum phase=run side=client workers=6 busy_s=6.322 threads=7 cpu_s=5.980 cores=0.916 wall_s=6.525
+[LAG] phase=run side=client tick_ms=10 n=652 p50_us=776 p99_us=2932 max_us=6876 dropped=0 final=1
+=== c1s-400-P0-s42-r1-a1 server
+[THR] rt phase=xfer side=server obj=0 worker=0 busy_s=0.000 busy_frac=0.000 park=1 unpark=2 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=1 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=2 busy_s=0.000 busy_frac=0.490 park=1 unpark=2 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=3 busy_s=0.000 busy_frac=0.000 park=1 unpark=2 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=4 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=5 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574195 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574204 comm=rp-w-0 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574205 comm=rp-w-1 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574206 comm=rp-w-2 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574207 comm=rp-w-3 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574209 comm=rp-w-4 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1574210 comm=rp-w-5 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] sum phase=xfer side=server obj=0 workers=6 busy_s=0.000 threads=7 cpu_s=0.000 cores=0.000 wall_s=0.000
+[LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- dropped=0
+[RDIAG] busy=54% msgs=33947/s q_avg=433 q_max=821 cap=4096
+[RDIAG] busy=79% msgs=56037/s q_avg=473 q_max=795 cap=4096
+[RDIAG] busy=79% msgs=59149/s q_avg=469 q_max=777 cap=4096
+[RDIAG] busy=65% msgs=46613/s q_avg=519 q_max=755 cap=4096
+[RDIAG] busy=81% msgs=53467/s q_avg=420 q_max=763 cap=4096
+[RDIAG] busy=79% msgs=56138/s q_avg=473 q_max=776 cap=4096
+[RDIAG] busy=80% msgs=51978/s q_avg=381 q_max=888 cap=4096
+[RDIAG] busy=77% msgs=44135/s q_avg=623 q_max=865 cap=4096
+[RDIAG] busy=80% msgs=53035/s q_avg=452 q_max=858 cap=4096
+[RDIAG] busy=77% msgs=58648/s q_avg=505 q_max=845 cap=4096
+[RDIAG] busy=80% msgs=58589/s q_avg=439 q_max=925 cap=4096
+[RDIAG] busy=76% msgs=53526/s q_avg=542 q_max=876 cap=4096
+[THR] rt phase=xfer side=server obj=1 worker=0 busy_s=1.127 busy_frac=0.173 park=11852 unpark=23703 wall_s=6.509
+[THR] rt phase=xfer side=server obj=1 worker=1 busy_s=1.872 busy_frac=0.288 park=9962 unpark=19924 wall_s=6.509
+[THR] rt phase=xfer side=server obj=1 worker=2 busy_s=1.475 busy_frac=0.227 park=11452 unpark=22904 wall_s=6.509
+[THR] rt phase=xfer side=server obj=1 worker=3 busy_s=0.331 busy_frac=0.051 park=2067 unpark=4134 wall_s=6.509
+[THR] rt phase=xfer side=server obj=1 worker=4 busy_s=1.140 busy_frac=0.175 park=11925 unpark=23849 wall_s=6.509
+[THR] rt phase=xfer side=server obj=1 worker=5 busy_s=1.940 busy_frac=0.298 park=9779 unpark=19558 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574195 comm=raptorpath cpu_s=1.140 cores=0.175 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574204 comm=rp-w-0 cpu_s=1.060 cores=0.163 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574205 comm=rp-w-1 cpu_s=1.710 cores=0.263 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574206 comm=rp-w-2 cpu_s=1.050 cores=0.161 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574207 comm=rp-w-3 cpu_s=1.340 cores=0.206 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574209 comm=rp-w-4 cpu_s=1.780 cores=0.273 wall_s=6.509
+[THR] os phase=xfer side=server obj=1 tid=1574210 comm=rp-w-5 cpu_s=0.300 cores=0.046 wall_s=6.509
+[THR] sum phase=xfer side=server obj=1 workers=6 busy_s=7.885 threads=7 cpu_s=8.380 cores=1.287 wall_s=6.509
+[LAG] phase=xfer side=server obj=1 tick_ms=10 n=651 p50_us=669 p99_us=1697 max_us=3188 dropped=0
+[THR] rt phase=run side=server worker=0 busy_s=1.130 busy_frac=0.145 park=12137 unpark=24274 wall_s=7.809
+[THR] rt phase=run side=server worker=1 busy_s=1.872 busy_frac=0.240 park=9963 unpark=19925 wall_s=7.809
+[THR] rt phase=run side=server worker=2 busy_s=1.476 busy_frac=0.189 park=11461 unpark=22921 wall_s=7.809
+[THR] rt phase=run side=server worker=3 busy_s=0.335 busy_frac=0.043 park=2124 unpark=4248 wall_s=7.809
+[THR] rt phase=run side=server worker=4 busy_s=1.140 busy_frac=0.146 park=11937 unpark=23873 wall_s=7.809
+[THR] rt phase=run side=server worker=5 busy_s=1.940 busy_frac=0.248 park=9784 unpark=19567 wall_s=7.809
+[THR] os phase=run side=server tid=1574195 comm=raptorpath cpu_s=1.140 cores=0.146 wall_s=7.809
+[THR] os phase=run side=server tid=1574204 comm=rp-w-0 cpu_s=1.060 cores=0.136 wall_s=7.809
+[THR] os phase=run side=server tid=1574205 comm=rp-w-1 cpu_s=1.710 cores=0.219 wall_s=7.809
+[THR] os phase=run side=server tid=1574206 comm=rp-w-2 cpu_s=1.050 cores=0.134 wall_s=7.809
+[THR] os phase=run side=server tid=1574207 comm=rp-w-3 cpu_s=1.340 cores=0.172 wall_s=7.809
+[THR] os phase=run side=server tid=1574209 comm=rp-w-4 cpu_s=1.780 cores=0.228 wall_s=7.809
+[THR] os phase=run side=server tid=1574210 comm=rp-w-5 cpu_s=0.310 cores=0.040 wall_s=7.809
+[THR] sum phase=run side=server workers=6 busy_s=7.893 threads=7 cpu_s=8.390 cores=1.074 wall_s=7.809
+[LAG] phase=run side=server tick_ms=10 n=781 p50_us=743 p99_us=1735 max_us=3188 dropped=0 final=1
+=== c1d-400-P0-s42-r1-a1 client
+[RDIAG] busy=14% msgs=37491/s q_avg=18 q_max=118 cap=4096
+[RDIAG] busy=16% msgs=42199/s q_avg=83 q_max=536 cap=4096
+[RDIAG] busy=19% msgs=41504/s q_avg=20 q_max=231 cap=4096
+[RDIAG] busy=19% msgs=46201/s q_avg=29 q_max=181 cap=4096
+[RDIAG] busy=17% msgs=41872/s q_avg=33 q_max=518 cap=4096
+[RDIAG] busy=22% msgs=48152/s q_avg=24 q_max=278 cap=4096
+[RDIAG] busy=19% msgs=42844/s q_avg=46 q_max=816 cap=4096
+[RDIAG] busy=12% msgs=39089/s q_avg=354 q_max=827 cap=4096
+[RDIAG] busy=22% msgs=44701/s q_avg=24 q_max=319 cap=4096
+[RDIAG] busy=22% msgs=44033/s q_avg=17 q_max=120 cap=4096
+[RDIAG] busy=21% msgs=43910/s q_avg=22 q_max=197 cap=4096
+[RDIAG] busy=18% msgs=41407/s q_avg=17 q_max=126 cap=4096
+[RDIAG] busy=21% msgs=50814/s q_avg=22 q_max=160 cap=4096
+[RDIAG] busy=20% msgs=45225/s q_avg=20 q_max=213 cap=4096
+[RDIAG] busy=21% msgs=46493/s q_avg=19 q_max=192 cap=4096
+[THR] rt phase=xfer side=client run=1 worker=0 busy_s=2.016 busy_frac=0.259 park=31986 unpark=63972 wall_s=7.780
+[THR] rt phase=xfer side=client run=1 worker=1 busy_s=1.692 busy_frac=0.217 park=30581 unpark=61161 wall_s=7.780
+[THR] rt phase=xfer side=client run=1 worker=2 busy_s=3.244 busy_frac=0.417 park=26229 unpark=52458 wall_s=7.780
+[THR] rt phase=xfer side=client run=1 worker=3 busy_s=2.516 busy_frac=0.323 park=29204 unpark=58409 wall_s=7.780
+[THR] rt phase=xfer side=client run=1 worker=4 busy_s=3.324 busy_frac=0.427 park=21752 unpark=43503 wall_s=7.780
+[THR] rt phase=xfer side=client run=1 worker=5 busy_s=1.995 busy_frac=0.256 park=35451 unpark=70902 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575302 comm=raptorpath cpu_s=0.960 cores=0.123 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575303 comm=rp-w-0 cpu_s=1.590 cores=0.204 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575304 comm=rp-w-1 cpu_s=1.670 cores=0.215 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575305 comm=rp-w-2 cpu_s=1.430 cores=0.184 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575306 comm=rp-w-3 cpu_s=2.050 cores=0.264 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575307 comm=rp-w-4 cpu_s=1.800 cores=0.231 wall_s=7.780
+[THR] os phase=xfer side=client run=1 tid=1575308 comm=rp-w-5 cpu_s=2.000 cores=0.257 wall_s=7.780
+[THR] sum phase=xfer side=client run=1 workers=6 busy_s=14.787 threads=7 cpu_s=11.500 cores=1.478 wall_s=7.780
+[LAG] phase=xfer side=client run=1 tick_ms=10 n=777 p50_us=347 p99_us=2196 max_us=8715 dropped=0
+[THR] rt phase=run side=client worker=0 busy_s=2.017 busy_frac=0.259 park=32004 unpark=64007 wall_s=7.798
+[THR] rt phase=run side=client worker=1 busy_s=1.692 busy_frac=0.217 park=30590 unpark=61179 wall_s=7.798
+[THR] rt phase=run side=client worker=2 busy_s=3.244 busy_frac=0.416 park=26232 unpark=52463 wall_s=7.798
+[THR] rt phase=run side=client worker=3 busy_s=2.518 busy_frac=0.323 park=29224 unpark=58447 wall_s=7.798
+[THR] rt phase=run side=client worker=4 busy_s=3.324 busy_frac=0.426 park=21769 unpark=43537 wall_s=7.798
+[THR] rt phase=run side=client worker=5 busy_s=1.998 busy_frac=0.256 park=35474 unpark=70947 wall_s=7.798
+[THR] os phase=run side=client tid=1575302 comm=raptorpath cpu_s=0.960 cores=0.123 wall_s=7.798
+[THR] os phase=run side=client tid=1575303 comm=rp-w-0 cpu_s=1.590 cores=0.204 wall_s=7.798
+[THR] os phase=run side=client tid=1575304 comm=rp-w-1 cpu_s=1.670 cores=0.214 wall_s=7.798
+[THR] os phase=run side=client tid=1575305 comm=rp-w-2 cpu_s=1.430 cores=0.183 wall_s=7.798
+[THR] os phase=run side=client tid=1575306 comm=rp-w-3 cpu_s=2.050 cores=0.263 wall_s=7.798
+[THR] os phase=run side=client tid=1575307 comm=rp-w-4 cpu_s=1.800 cores=0.231 wall_s=7.798
+[THR] os phase=run side=client tid=1575308 comm=rp-w-5 cpu_s=2.000 cores=0.256 wall_s=7.798
+[THR] sum phase=run side=client workers=6 busy_s=14.793 threads=7 cpu_s=11.500 cores=1.475 wall_s=7.798
+[LAG] phase=run side=client tick_ms=10 n=779 p50_us=348 p99_us=2191 max_us=8715 dropped=0 final=1
+=== c1d-400-P0-s42-r1-a1 server
+[THR] rt phase=xfer side=server obj=0 worker=0 busy_s=0.000 busy_frac=0.001 park=1 unpark=2 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=1 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=2 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=3 busy_s=0.000 busy_frac=0.000 park=1 unpark=2 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=4 busy_s=0.000 busy_frac=0.871 park=1 unpark=1 wall_s=0.000
+[THR] rt phase=xfer side=server obj=0 worker=5 busy_s=0.000 busy_frac=0.000 park=0 unpark=0 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575259 comm=raptorpath cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575267 comm=rp-w-0 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575268 comm=rp-w-1 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575269 comm=rp-w-2 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575270 comm=rp-w-3 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575272 comm=rp-w-4 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] os phase=xfer side=server obj=0 tid=1575273 comm=rp-w-5 cpu_s=0.000 cores=0.000 wall_s=0.000
+[THR] sum phase=xfer side=server obj=0 workers=6 busy_s=0.000 threads=7 cpu_s=0.000 cores=0.000 wall_s=0.000
+[LAG] phase=xfer side=server obj=0 tick_ms=10 n=0 p50_us=- p99_us=- max_us=- dropped=0
+[RDIAG] busy=89% msgs=37601/s q_avg=115 q_max=421 cap=4096
+[RDIAG] busy=93% msgs=42138/s q_avg=237 q_max=498 cap=4096
+[RDIAG] busy=93% msgs=41492/s q_avg=270 q_max=725 cap=4096
+[RDIAG] busy=91% msgs=42419/s q_avg=321 q_max=649 cap=4096
+[RDIAG] busy=92% msgs=45857/s q_avg=158 q_max=672 cap=4096
+[RDIAG] busy=90% msgs=47570/s q_avg=193 q_max=629 cap=4096
+[RDIAG] busy=92% msgs=44215/s q_avg=258 q_max=788 cap=4096
+[RDIAG] busy=92% msgs=37863/s q_avg=214 q_max=1399 cap=4096
+[RDIAG] busy=90% msgs=44790/s q_avg=272 q_max=1370 cap=4096
+[RDIAG] busy=92% msgs=44208/s q_avg=147 q_max=637 cap=4096
+[RDIAG] busy=89% msgs=43621/s q_avg=430 q_max=1380 cap=4096
+[RDIAG] busy=93% msgs=41565/s q_avg=492 q_max=1349 cap=4096
+[RDIAG] busy=89% msgs=50701/s q_avg=349 q_max=1300 cap=4096
+[RDIAG] busy=90% msgs=45163/s q_avg=164 q_max=636 cap=4096
+[RDIAG] busy=92% msgs=46652/s q_avg=263 q_max=1071 cap=4096
+[THR] rt phase=xfer side=server obj=1 worker=0 busy_s=1.981 busy_frac=0.255 park=25997 unpark=51993 wall_s=7.773
+[THR] rt phase=xfer side=server obj=1 worker=1 busy_s=1.852 busy_frac=0.238 park=25088 unpark=50177 wall_s=7.773
+[THR] rt phase=xfer side=server obj=1 worker=2 busy_s=2.167 busy_frac=0.279 park=25382 unpark=50763 wall_s=7.773
+[THR] rt phase=xfer side=server obj=1 worker=3 busy_s=2.769 busy_frac=0.356 park=23967 unpark=47933 wall_s=7.773
+[THR] rt phase=xfer side=server obj=1 worker=4 busy_s=2.456 busy_frac=0.316 park=25047 unpark=50094 wall_s=7.773
+[THR] rt phase=xfer side=server obj=1 worker=5 busy_s=2.045 busy_frac=0.263 park=25120 unpark=50240 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575259 comm=raptorpath cpu_s=1.070 cores=0.138 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575267 comm=rp-w-0 cpu_s=1.730 cores=0.223 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575268 comm=rp-w-1 cpu_s=1.860 cores=0.239 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575269 comm=rp-w-2 cpu_s=1.660 cores=0.214 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575270 comm=rp-w-3 cpu_s=2.340 cores=0.301 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575272 comm=rp-w-4 cpu_s=1.790 cores=0.230 wall_s=7.773
+[THR] os phase=xfer side=server obj=1 tid=1575273 comm=rp-w-5 cpu_s=2.080 cores=0.268 wall_s=7.773
+[THR] sum phase=xfer side=server obj=1 workers=6 busy_s=13.271 threads=7 cpu_s=12.530 cores=1.612 wall_s=7.773
+[LAG] phase=xfer side=server obj=1 tick_ms=10 n=776 p50_us=961 p99_us=2071 max_us=7601 dropped=0
+[THR] rt phase=run side=server worker=0 busy_s=1.984 busy_frac=0.217 park=26039 unpark=52078 wall_s=9.140
+[THR] rt phase=run side=server worker=1 busy_s=1.880 busy_frac=0.206 park=25128 unpark=50256 wall_s=9.140
+[THR] rt phase=run side=server worker=2 busy_s=2.170 busy_frac=0.237 park=25631 unpark=51261 wall_s=9.140
+[THR] rt phase=run side=server worker=3 busy_s=2.770 busy_frac=0.303 park=23991 unpark=47981 wall_s=9.140
+[THR] rt phase=run side=server worker=4 busy_s=2.458 busy_frac=0.269 park=25078 unpark=50156 wall_s=9.140
+[THR] rt phase=run side=server worker=5 busy_s=2.046 busy_frac=0.224 park=25169 unpark=50337 wall_s=9.140
+[THR] os phase=run side=server tid=1575259 comm=raptorpath cpu_s=1.070 cores=0.117 wall_s=9.140
+[THR] os phase=run side=server tid=1575267 comm=rp-w-0 cpu_s=1.730 cores=0.189 wall_s=9.140
+[THR] os phase=run side=server tid=1575268 comm=rp-w-1 cpu_s=1.860 cores=0.204 wall_s=9.140
+[THR] os phase=run side=server tid=1575269 comm=rp-w-2 cpu_s=1.660 cores=0.182 wall_s=9.140
+[THR] os phase=run side=server tid=1575270 comm=rp-w-3 cpu_s=2.340 cores=0.256 wall_s=9.140
+[THR] os phase=run side=server tid=1575272 comm=rp-w-4 cpu_s=1.790 cores=0.196 wall_s=9.140
+[THR] os phase=run side=server tid=1575273 comm=rp-w-5 cpu_s=2.080 cores=0.228 wall_s=9.140
+[THR] sum phase=run side=server workers=6 busy_s=13.308 threads=7 cpu_s=12.530 cores=1.371 wall_s=9.140
+[LAG] phase=run side=server tick_ms=10 n=914 p50_us=971 p99_us=2416 max_us=7601 dropped=0 final=1
