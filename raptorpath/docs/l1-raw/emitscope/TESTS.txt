@@ -1,0 +1,7 @@
+TEST main rc=101 wall=1427s passed=1042 failed=1 ignored=50 binaries=87 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+test the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs ... FAILED
+failures:
+failures:
+    the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs
+TEST doc rc=0 wall=94s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=159s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]

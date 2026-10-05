@@ -1525,3 +1525,120 @@ envelope; earned sentinels (`DONE-ALL` only with `ES-BATTERY-DONE`,
 sentinels (and `TESTS.txt` before a manual GO), waiting in bounded loops;
 `pkill -x raptorpath` only; no `ens18`, firewall, `sshd` or non-`rp-*`
 namespace is touched. Compact ledgers are copied to `docs/l1-raw/emitscope/`.
+
+**Result** (scored 2026-10-05 against this pre-registration, literally; no
+amendment was made): **`WORSE-AT-c1s-400,c1d-400`**, by the feed clause
+only (FEED-MOVED at `c1s-400` p0 and at both `c1d-400` legs). The stop rule
+did **not** fire: at `c8-100` EB0 is SAME on every clause and the feed is
+unchanged at both legs, so Law A was not run. Nothing is flipped.
+
+*Binary and session.* `788d2ef` (this section's pre-registration), built
+fresh on the benchmark VM, `sha256
+24fe4eca24b3c84742151a2b9354b875fec5cbd5d26dff5bd89d091bbfd3a28f`. The
+envelope waited (bounded) for another agent's locks and took both at
+00:43:05Z; build 00:43–00:52Z; tests 00:52–01:23Z; red/green record
+01:23–01:25Z; smoke 01:25Z (`SMOKE-PASS`, 57 s); operator GO 02:01Z (below);
+battery 02:01–02:28Z (1623 s, 128 invocations); locks released 02:28:48Z.
+Session wall 1 h 46 min of the 5 h cap. Budget n = 8 per seed, no cut. The
+battery was not polled. The VM was left with 0 `raptorpath` processes and 0
+`rp-*` namespaces from this session (the next tenant took the locks seconds
+later).
+
+*Tests.* `cargo build --release` rc 0; the main suite rc 101 with 1042
+passed, **1 failed**, 50 ignored (87 binaries); doc rc 0 (0 doc tests); wasm
+rc 0, 35 passed. The one failure is `sigma_diag_reachability`, the
+V4-recorded timing-flake class; re-run alone 3 times on the same tree it
+passed 3/3 (`RED2.txt`), so it is a flake by the pre-registered rule, not
+`ABORT-TESTS`. GO was written by the operator on that record (the
+envelope's automatic GO requires `TESTS-OK`). The new tests passed on the
+green tree: T1/T6 at N = 1, 2, 4 (mean depth 7.87 / 8.00 / 8.00 at burst 8;
+mean per-burst longest same-path run 7.87 at N = 1, 4.4–5.6 per path at
+N = 2, 1.7–1.9 per path at N = 4), T2 ×2, T4, the pin.
+
+*Red record.* The envelope's first red run (`RED.txt`) is **void**: it
+shared the green target directory and the red archive's old mtimes looked
+fresh to cargo, so it re-ran the green artefacts (all green). The operator
+re-ran it with the red sources touched (forced rebuild, `RED2.txt`), inside
+the session's locks before GO: on `90a25e1` (step still in place) T1 is
+**red at N = 2** (`eb_bursts=0`, "no burst at all", with `np=2 np_act=2`
+on the same line) after passing N = 1 (depth 7.86), and the pin is **red**
+("`emit_batch_live` is back"); T2/T4 green on both trees.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 00:43:05Z after a bounded wait) |
+| `ABORT-CRLF` | no (0 CR bytes in `lib.sh` and the `emitscope_*` scripts) |
+| `ABORT-BUILD` | no |
+| `ABORT-TESTS` | no (one failure, a flake by the re-run rule) |
+| `ABORT-SHA` | no (checked at start and before every invocation) |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: 4 rows LIVE; the dual EB0 rows read depth 34.6 (`c8-100`) and 60.4 (`c1d-400`), `np=2` |
+| `ABORT-BUDGET` | no (n = 8) |
+| `ABORT-RC` | 0 of 128 |
+| `ABORT-BRINGUP` | 0 |
+| `VOID-COTENANT` | 0 of 128 |
+
+*What ran.* 16 blocks × 8 = 128 rows, all `LIVE` (0 witness failures: the
+depth > 1 witness held on all 64 EB0 rows, duals included; `np` = legs on
+every row; `eb_bursts=0` on every NEW row); 16 per (cell, arm); 0 DNF.
+Harness note: the scorer's ledger-header sha regex did not match the
+header's two-token form, so it printed `BINARY sha256=-`; the driver's
+per-invocation sha check is what held, and `BINSHA.txt` carries the sha.
+Ledgers: `docs/l1-raw/emitscope/` (`es.log` sha256 6b76201c…, `score.txt`
+with every per-rep value, the smoke, `TESTS.txt`, `RED.txt`, `RED2.txt`,
+`PLAN.txt`, `BINSHA.txt`, `GO`, `all-era.txt`).
+
+*Per cell* (EB0 vs NEW, n = 16 each; goodput median Mbit/s; CPUCLI median
+s; §5 relative MDE):
+
+| cell | goodput NEW → EB0 | completion | CPUCLI NEW → EB0 | µs CPU / dgram | plc/truth per leg NEW → EB0 (band) | rcvbuf drops med (max) NEW → EB0 | clause |
+|---|---|---|---|---|---|---|---|
+| `c1s-400` | 436.6 → 446.3 (+2.2 %, within 4.9 %) | within | 8.44 → **6.77** (−19.8 %) | 24.8 → 19.8 | 2.43 → **3.96** ([1.87, 3.16]) MOVED | 54 (121) → 117 (244) | **FEED-MOVED** (CPU better) |
+| `c1d-400` | 277.5 → **391.4** (+41.1 %, MDE 5.6 %) | 11.53 → **8.18 s** (−29.1 %) | 18.29 → **11.74** (−35.8 %) | 52.3 → 33.7 | 1.33 → **1.84**, 1.34 → **2.20** ([1.03, 1.73]) MOVED both | 14 (100) → 39 (112) | **FEED-MOVED** (goodput, completion, CPU better) |
+| `c2-100` | 88.40 → 88.72 (+0.4 %, within 1.4 %) | within | 4.01 → **3.63** (−9.6 %, MDE 6.3 %) | 43.3 → 39.1 | 1.007 → 1.000 unchanged | 0 → 0 | **BETTER** (CPU) |
+| `c8-100` | 101.4 → 99.1 (−2.2 %, within 4.0 %) | within (+2.2 %, MDE 4.1 %) | 6.71 → 5.96 (−11.2 %, within 11.6 %) | 69.4 → 62.8 | 1.003 → 1.001, 0.991 → 1.006 unchanged | 0 → 0 | **SAME** |
+
+Both seeds agree in direction at every cell (per-seed medians in
+`score.txt`). Control identity: NEW is IN-BAND at `c1d-400`, `c2-100`,
+`c8-100` and **`CONTROL-MOVED` at `c1s-400`** (436.6 against V4's band
+[442.1, 561.1]; session drift, named beside that cell; the in-session
+comparison stands). **Prediction** (a check): `MISSED`. The feed left its
+band at both c1 cells (predicted inside), and `c1d-400` moved on goodput
+(+41 %) where SAME-or-CPU was predicted; `c1s-400`/`c2-100` CPU BETTER and
+`c8-100` SAME with the feed unchanged were as predicted.
+
+*Burst gauges* (EB0; rule-18 bind fractions summed over rows):
+
+| cell | depth median [min–max] | `eb_end` cap / store / tokens / drained | `eb_maxrun` per path: max (median over rows) / mean per-burst longest run |
+|---|---|---|---|
+| `c1s-400` | 57.2 [56.2–57.6] | 0.795 / 0.205 / 0 / 0 | p0 64 / 57.2 |
+| `c1d-400` | 57.0 [54.4–60.3] | 0.813 / 0.186 / 0 / 0 | p0 64 / 7.9; p1 64 / 7.6 |
+| `c2-100` | 20.6 [19.9–20.9] | 0.006 / 0.994 / 0 / 0 | p0 64 / 20.6 |
+| `c8-100` | 33.8 [32.5–35.7] | 0.126 / 0.873 / 0 / 0.001 | p0 (fast) 64 / 14.4; p1 (slow) 29 / 1.8 |
+
+The token guard never ended a burst (inert, as derived). At the loss-bound
+cells the store headroom, not the bound, ends 87–99 % of bursts. At the c1
+cells the bound binds about 80 % of the time, so there Law 0 operates as its
+constant (rule 18: the value 64 is the open constant). Inside a dual burst
+the runs are short (mean longest run 7–8 of ~57 symbols at `c1d-400`; 1.8 on
+the slow `c8-100` leg): placement stripes the burst rather than lengthening
+same-path runs. The July "longer same-path arrival runs" hypothesis does not
+describe what bursting does on v9.
+
+*What it means.* Removing the path-count step costs nothing at the
+heterogeneous dual. The cell where the July regression fired is SAME on
+every clause with an untouched loss feed, and the symmetric 1 Gbit/s dual
+gains the most from batching measured anywhere (+41 % goodput, −36 % sender
+CPU). What blocks a flip is the c1 loss feed. Under batching the receiver
+kernel drops about twice as many datagrams per run (`rcvbuf` medians 54 →
+117 at `c1s-400`, 14 → 39 at `c1d-400`). No engine token counts them, so they
+enter `plc` as path loss and the fed loss moves to 1.4–1.6× NEW's (2.2–4.0×
+the wire's). That is V4's finding 1 (the receiver-saturation term), now
+large enough to cross the pre-registered band. It is not the v8
+striping-gap misread, which v9 removed (the c8/c2 feed ratio sits at
+1.00). Under the pre-registered precedence the verdict is
+`WORSE-AT-c1s-400,c1d-400` and no flip is recommended. The next lever is the
+receiver side (the rcvbuf drop channel), after which this battery can re-run
+unchanged.
