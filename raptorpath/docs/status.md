@@ -39,7 +39,12 @@ byte-pinned by `gates_echo_default_is_byte_pinned`): `RWM_UNIFIED`,
 `RWM_ACK_MERGE`, `RWM_WIRE_COMPACT`, `RWM_EST_CADENCE` (the loss
 estimator's BOCD update batched: clean evidence accumulates and flushes every
 10 ms, a loss-bearing ack flushes at once; flipped in `83462ae` on Stage 3
-(d), §5; own echo, ACTIVE or OFF, not on `[GATES]`). `RWM_POOL_ANCHOR` is
+(d), §5; own echo, ACTIVE or OFF, not on `[GATES]`), `RWM_EMIT_BATCH`
+(pacer-quantum emission batching, burst bound `RWM_EMIT_BURST` = 64 at every
+path count, Law 0; flipped in `bf3a636` on the §8 re-run; on `[GATES]` as
+`RWM_EMIT_BATCH=1` plus its own echo: `emission batching ACTIVE`, or `OFF`
+at `=0`, or `out of scope` where the policy excludes it: ρ < 1, Realtime
+packing, a coded wire). `RWM_POOL_ANCHOR` is
 independent of the cadence and ships off (it used to follow it when unset).
 `RWM_HONEST_CAP` resolves on but is inert
 without `RWM_PLAIN_RS`, so `[GATES]` echoes its effective value, 0.
@@ -62,6 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| Emission-batching scope, re-run (§8) | `NEW` vs `EB0` (Law 0), 4 cells, n = 8 × 2 seeds, 128 invocations, on `927bb00` (§7 receive-buffer fix) | `FLIP-RECOMMENDED`: BETTER at every cell, WORSE nowhere; `c1d-400` +41 % goodput, sender CPU −12 to −35 %; fed loss unchanged; 0 rcvbuf drops; flipped in `bf3a636` |
 | Stage-3 baseline (§5) | A/A + block vs window (bulk, auto) + `RWM_EST_CADENCE` arm, 6 cells, n = 5 × 2 seeds, 320 invocations; crown spot | MDE committed (goodput 1.4–5.6 %); `WINDOW-NOT-WORSE` (window ahead at every auto cell); crown `REPAIRS-INERT-ON-CROWN`; cadence `FLIP-RECOMMENDED` (dual c1 +41 %, sender CPU −12 to −32 %); nothing flipped by the battery; the cadence flipped in `83462ae` with the pool anchor decoupled |
 | Attribution audit (D0) | 4 cells, 3 reps, 12 invocations | `orig_frac` averages two mechanisms: true-heal share π0 is 0.0077 (c1) and 0.0054 (sc2) at single paths, 0.96 (c7) and 0.92 (c8) at duals |
 | Crown no-regression spot (wire v8 merges) | tail_matrix `ship`, realtime, c2/c3, 400/1200 B, ×8, seeds 42+7 | Repairs inert on the crown at 7 of 8 cell-size-seeds; c3·400B seed 7 p99 median outside by 0.2 ms, at the pre-declared era-limited cell; the EVICT seat answers 1.8–3.1 repairs per abandoned hole, and 82–99 % of abandoned holes get their data after the give-up |
@@ -107,10 +113,10 @@ pipeline in `dacfd7c`.)
 | site | what it switches |
 |---|---|
 | `net/emit_source.rs` (`protocol_hint == Realtime`) | Realtime duplicate source send, a redundancy decision priced by nothing |
-| `net/sender_policy.rs` `use_packing` | symbol packing on Realtime only |
+| `net/sender_policy.rs` `use_packing` | symbol packing on Realtime only; since `bf3a636` also emission batching's exclusion (`emit_batch_on` requires `!use_packing`) |
 | `scheduler/copa.rs` `queue_target_mult` | Copa queue target 1.08 / 1.125 / 1.25 by hint |
 | `gates/scheduler_gates.rs` `copa_compete_active` (`RWM_COPA_COMPETE`) | Copa's TCP-competitive mode switching |
-| `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ |
+| `reliable` boolean branches in the window sender/receiver | ρ = 1 vs ρ < 1 selecting code paths instead of composing with δ; since `bf3a636` this includes emission batching (`emit_batch_on` requires `reliable`) |
 
 ### 3.4 Open-constants register
 
@@ -137,6 +143,8 @@ All unprovenanced and uncorrected (correct value unknown). Source: paper §11.2.
 | block shape by hint | `BlockProfile::from_hint`, interleave 2/1/3 | `net/mod.rs`, `config.rs` | declared corners; interleave is non-monotone in δ |
 | Realtime duplicate send | on at Realtime | `net/emit_source.rs` | a rate decision taken by a hint equality |
 | `use_packing` | on at Realtime | `net/sender_policy.rs` | declared corner |
+| emission burst bound | `RWM_EMIT_BURST` = 64 | `net/emit_burst.rs` `emit_burst_bound` | "≈ 64 KB", not swept; shipped as measured (§8); binds 0.84 of bursts at c1 |
+| taper-cache staleness | 50 ms | `net/emit_source.rs` `TAPER_CACHE_MAX_AGE_US` | no derivation and no gauge; shipped with emission batching inside the measured EB0 arm |
 | receiver hold | `(4·srtt).clamp(60, 300) ms`; armed arm `srtt/2` | `net/shed.rs` `shed_recv_hold` | three constants; `srtt/2` equals b(δ_Realtime) by seat, not by evaluation |
 
 ### 3.5 Known issues from the cleanup
@@ -1978,3 +1986,31 @@ CPU, −25 % CPU at `c1s-400`, and now a CPU gain beyond MDE at `c8-100`
 (−20.5 % against 11.6 %), the cell where the July regression fired. Under
 the pre-registered precedence the verdict is `FLIP-RECOMMENDED`. It is a
 recommendation only. The flip is a separate, reviewed commit.
+
+**Flipped in `bf3a636`** (the separate commit the Result names; nothing
+re-measured). `RWM_EMIT_BATCH` resolves ON when unset; the shipped form is
+the measured one, Law 0 with `RWM_EMIT_BURST` unchanged at 64 (it stays an
+open constant, §3.4: the bound ends ~83 % of bursts at the c1 cells).
+`[GATES]` reads `RWM_EMIT_BATCH=1` (the byte pin re-pinned deliberately);
+the `=0` position now prints its own echo, `emission batching OFF
+(RWM_EMIT_BATCH=0: per-symbol emission)`, keyed on the knob rather than on
+the composed policy, so the control arm is distinguishable from a run the
+scope excludes (that prints `emission batching out of scope`). The gate's
+effects, all through `SenderPolicy::emit_batch_on` (`gates.emit_batch &&
+reliable && !coded_wire && !use_packing`): the burst intake loop
+(`net/mod.rs`, `[EMIT-BURST-BEGIN]`…`[EMIT-BURST-END]`), the per-burst
+taper/span refresh (`net/emit_source.rs`, `taper_recompute_due` with the
+50 ms `TAPER_CACHE_MAX_AGE_US`), the DIAG burst gauges and the echoes. All
+of it ran in the EB0 arm; nothing unmeasured rides the gate. Not measured
+by §8 and shipped by the same law: the Auto hint (EB0 ran Bulk; the burst
+loop reads no δ; the cached taper/span values are Auto's own, refreshed per
+burst exactly as at Bulk). Outside
+its scope, at ρ < 1 and at Realtime packing, batching steps off: that is
+the pre-existing `reliable` / `use_packing` debt of §3.3, which now names
+it. Harness: the per-symbol control arms carry an explicit
+`RWM_EMIT_BATCH=0` (emitscope `NEW`, verify4's non-`EMB` arms and its
+tunnel arms); arms that mean "the shipped default" (stage3, `tun_bulk.sh`
+when the caller sets nothing) now batch; tail_matrix `ship` runs Realtime,
+outside the scope, and its `prior` arm already carried `=0`. Tests:
+`gates/tests.rs` (default ON, burst 64, the echo),
+`tests/emit_batch_default_loopback.rs` (the shipped binary, both positions).
