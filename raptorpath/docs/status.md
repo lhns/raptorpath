@@ -1438,3 +1438,22 @@ unit evidence is the probe's non-zero A rows above.
 about 45 min, the battery about 25 min. No truncation is expected; if the
 cap binds, the battery stops at a rep boundary and is scored at the n it
 reached.
+
+**Amendment 1** (committed before any scored row exists). Session 1
+(2026-10-04 23:44 UTC) is void and was not scored. It ended
+`ABORT-SMOKE` with no battery row. The envelope wrote its driver output to
+`/tmp/fa-drv.out`, which the probe had left behind owned by root, so the
+smoke invocation never started (rc 1, 0 s). The smoke check then read the
+probe's stale output and failed as it should. That session's test stage is
+also not evidence for the green tree. It shared one cargo target between
+the red tree (0597da4) and the FIX tree, and `git archive` gives every file
+its commit time as mtime, so cargo reused the red tree's lib-test artifact
+for the FIX tree. The FIX-tree run of
+`every_endpoint_socket_reads_back_the_rcvbuf_floor` therefore failed with
+the red value (212992). Its red-tree run does stand as the red evidence: it
+was the first lib-test build in that target, from 0597da4's sources, and
+failed with SO_RCVBUF 212992 < floor 8000000. Session 3 re-runs build,
+tests, smoke and battery as pre-registered, with three changes: the FIX
+tree's mtimes are refreshed, it uses its own target, and its temporary
+files sit in the run directory. The verification FIX binary is session 3's
+build.
