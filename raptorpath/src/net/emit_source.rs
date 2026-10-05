@@ -44,7 +44,6 @@ use super::{
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
 use crate::control::fec_rate::ProtocolHint;
 
@@ -56,7 +55,7 @@ const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 /// `run_window_sender` invocation. Taken by shared reference: all mutation
 /// goes through the `Mutex`/atomic handles.
 pub(crate) struct SenderCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
@@ -419,7 +418,7 @@ pub(crate) fn emit_source(
                 }
             }
         }
-        if let Some(ps) = ctx.stats.path(source_path) {
+        if let Some(ps) = ctx.stats.path_ref(source_path) {
             ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
         }
         ctx.stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
@@ -484,7 +483,7 @@ pub(crate) fn emit_source(
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = ctx.stats.path(alt) {
+            if let Some(ps) = ctx.stats.path_ref(alt) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -852,7 +851,7 @@ pub(crate) fn emit_source(
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = ctx.stats.path(correction_path) {
+            if let Some(ps) = ctx.stats.path_ref(correction_path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             ctx.stats.fec.record_correction(correction_kind, sent);
@@ -883,7 +882,7 @@ pub(crate) fn worst_eps_path(
 pub(crate) fn cadenced_repair_rate(
     cache: &mut RepairRateCache,
     fec_controller: &parking_lot::Mutex<FecRateController>,
-    scheduler: &parking_lot::Mutex<Scheduler>,
+    scheduler: &crate::scheduler::SchedMutex,
     window: usize,
     now_us: u64,
 ) -> f64 {

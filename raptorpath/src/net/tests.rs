@@ -558,7 +558,7 @@ fn test_parse_cidr() {
 ///
 ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture c1_attribution_lock
 ///
-/// Two OS threads share the production `Arc<parking_lot::Mutex<Scheduler>>`
+/// Two OS threads share the production `Arc<crate::scheduler::SchedMutex>`
 /// at c1-class rate (24 000 delivered seqs/s, RTprop 2 ms):
 ///   - SENDER thread, 1 ms ticks: the sender loop's per-iteration lock
 ///     work (per-seq `on_src_sent` + `charge_src`/`charge_in_flight` at
@@ -608,7 +608,7 @@ fn c1_attribution_lock_blocking_bench() {
         stall: bool,
         label: &str,
     ) -> (f64, f64, [f64; 3], [f64; 3]) {
-        let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(
+        let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(
             WallClock,
         ))));
         {
@@ -5685,7 +5685,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
             .await
             .expect("loopback endpoint binds"),
     );
-    let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(WallClock))));
+    let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(WallClock))));
     scheduler.lock().add_path(0);
     let stats = Arc::new(SharedStats::new());
     stats.add_path(0);
@@ -5695,6 +5695,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
         stats: &stats,
         nack_tx: None,
         peer_window_ack: None,
+        ack_wake: None,
         deficit_tx: None,
         request_tx: None,
         sack_tx: None,
@@ -5785,6 +5786,200 @@ fn s10_receiver_feed_goes_to_rx_and_leaves_tx_untouched() {
         est.rx_loss_rate() > 0.1,
         "incoming loss reads on the RX slot ({})",
         est.rx_loss_rate()
+    );
+}
+
+/// Threading P1, D1 — an inbound `WindowAck` wakes the local window sender.
+/// Through 8d7d8c1 the sender, paused on the store/cwnd brake or on an empty
+/// pacing bucket, learned of an ack only from a 1 ms `sleep_until` poll
+/// (rounded up by tokio to 1–2 ms); `on_window_ack` signalled nothing. The
+/// absolute invariant: after one `WindowAck` the sender's `Notify` holds a
+/// permit (`notified()` resolves without any timer advance); after a
+/// `PathReport` it does not (the wake is the ack, not any control message).
+#[tokio::test]
+async fn p1_d1_a_window_ack_wakes_the_sender() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
+    let transport = Arc::new(
+        QuicTransport::new(&[addr], false, None)
+            .await
+            .expect("loopback endpoint binds"),
+    );
+    let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(WallClock))));
+    scheduler.lock().add_path(0);
+    let stats = Arc::new(SharedStats::new());
+    stats.add_path(0);
+    let ack = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let wake = Arc::new(super::control_msg::AckWake::new());
+    let ctx = super::control_msg::ControlCtx {
+        scheduler: &scheduler,
+        transport: &transport,
+        stats: &stats,
+        nack_tx: None,
+        peer_window_ack: Some(&ack),
+        ack_wake: Some(&wake),
+        deficit_tx: None,
+        request_tx: None,
+        sack_tx: None,
+        copa_feed: None,
+        mstar_anchor: true,
+    };
+    // A stored permit resolves on the first poll: a zero timeout polls the
+    // inner future once before it looks at the (paused) clock.
+    async fn permit(w: &super::control_msg::AckWake) -> bool {
+        tokio::time::timeout(std::time::Duration::ZERO, w.notified()).await.is_ok()
+    }
+    super::control_msg::handle_control_message(
+        0,
+        ControlMessage::PathReport {
+            path_id: 0,
+            loss_rate: 0.0,
+            avg_rtt_us: 20_000,
+            throughput_bps: 0.0,
+            jitter_us: 0,
+            symbols_sent: 0,
+            symbols_received: 0,
+        },
+        &ctx,
+    );
+    assert!(!permit(&wake).await, "a PathReport must not wake the sender");
+    super::control_msg::handle_control_message(
+        0,
+        ControlMessage::WindowAck {
+            next_expected: 7,
+            received_above: 0,
+            sack_ranges: Vec::new(),
+            echo_send_timestamp_us: 0,
+            jitter_us: 0,
+            cumulative_received: 0,
+            cum_expected: 0,
+            cum_received: 0,
+        },
+        &ctx,
+    );
+    assert_eq!(ack.load(Ordering::Relaxed), 7, "the ack point is published");
+    assert!(
+        permit(&wake).await,
+        "a WindowAck must leave a wake permit for the sender (read through a \
+         zero timeout: no timer can have fired)"
+    );
+    assert!(!permit(&wake).await, "one ack, one permit");
+    assert_eq!(
+        wake.acks.load(Ordering::Relaxed),
+        1,
+        "the ack counter `wake[timer_acked]` is read against counts exactly the WindowAcks"
+    );
+}
+
+/// Threading P1, D1 — the routing half (rule 1: the wiring between layers
+/// actually routes there). The receiver task hands its `ControlCtx` the
+/// sender's `Notify` (not `None`), the sender's `select!` awaits that same
+/// `Notify` under exactly the paused / pacing-dry guards of the two 1 ms
+/// polls it shortcuts, and its wake is charged to its own bucket (8).
+#[test]
+fn p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net");
+    let recv = std::fs::read_to_string(dir.join("receiver.rs")).expect("receiver.rs");
+    let send = std::fs::read_to_string(dir.join("mod.rs")).expect("mod.rs");
+    assert!(
+        recv.contains("ack_wake: Some(&recv_ack_wake),"),
+        "the receiver's data-loop ControlCtx must carry the sender's Notify"
+    );
+    assert!(
+        send.contains("let recv_ack_wake = ack_wake.clone();")
+            && send.contains("let sender_ack_wake = ack_wake.clone();"),
+        "one Notify, cloned to both tasks"
+    );
+    let arm = send
+        .find("ack_wake.notified(),")
+        .expect("the sender's select! must await the ack wake");
+    let tail = &send[arm..arm + 200];
+    assert!(
+        tail.contains("if tx_paused || (pol.cc_pace && st.src_tokens < 1.0) => { wait_arm = 8;"),
+        "the ack arm must be guarded exactly like the two polls it shortcuts \
+         and charge bucket 8: {tail}"
+    );
+}
+
+/// The source text of `path` relative to `src/`, with every `#[cfg(test)]`
+/// module after the first marker cut off and all whitespace removed.
+fn p1_squashed_src(path: &str) -> String {
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join(path);
+    let src = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {p:?}: {e}"));
+    let body = match src.find("#[cfg(test)]") {
+        Some(i) => &src[..i],
+        None => &src[..],
+    };
+    body.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Threading P1, D11 — the sender's tail-sweep deadline is ONE pinned
+/// `Sleep`, `reset()` when the deadline moves, not a fresh `sleep_until`
+/// future built (and, about half the time, registered in and removed from
+/// tokio's global timer wheel) on every loop iteration.
+#[test]
+fn p1_d11_the_tail_deadline_is_one_persistent_sleep() {
+    let s = p1_squashed_src("net/mod.rs");
+    assert!(
+        !s.contains("Some(d)=>tokio::time::sleep_until(d).await,None=>std::future::pending().await,}}=>{wait_arm=6;"),
+        "the per-iteration tail sleep future is back"
+    );
+    let pin = s.find("tokio::pin!(tail_sleep);").expect("one pinned tail Sleep");
+    let lp = s[pin..].find("loop{").expect("the sender loop follows") + pin;
+    let reset = s[lp..].find("tail_sleep.as_mut().reset(").expect("reset inside the loop") + lp;
+    let arm = s[reset..]
+        .find("_=&muttail_sleep,iftail_deadline.is_some()=>{wait_arm=6;")
+        .expect("the tail arm awaits the persistent Sleep under the deadline guard");
+    assert!(arm > 0);
+}
+
+/// Threading P1, D17 — `BatchCounter` takes no mutex on the emission path:
+/// per-path sequences are atomics (a bounded dense table; ids past it are
+/// the cold fallback).
+#[test]
+fn p1_d17_batch_counter_has_no_hot_mutex() {
+    let s = p1_squashed_src("net/mod.rs");
+    let a = s.find("pub(crate)structBatchCounter{").expect("BatchCounter");
+    let b = s[a..].find('}').expect("struct end") + a;
+    let fields = &s[a..b];
+    assert!(
+        !fields.contains("per_path:"),
+        "per-path numbering must not be the Mutex<HashMap> `per_path`: {fields}"
+    );
+    assert!(
+        fields.contains("dense:[AtomicU64;BATCH_DENSE_PATHS],"),
+        "the dense per-path atomic table must exist: {fields}"
+    );
+}
+
+/// D17's semantics: identical numbering to the `Mutex<HashMap>` it replaces
+/// — one global sequence, and per path 0, 1, 2, … in call order — for ids
+/// inside and outside the dense table, interleaved.
+#[test]
+fn p1_d17_batch_counter_numbering_is_per_path_and_global() {
+    let c = BatchCounter::new();
+    let ids = [0u32, 1, 63, 64, 1000, u32::MAX, 0, 64, 1, u32::MAX, 63, 0];
+    let mut want: std::collections::HashMap<u32, u64> = Default::default();
+    for (g, &id) in ids.iter().enumerate() {
+        let w = want.entry(id).or_insert(0);
+        assert_eq!(c.next(id), (g as u64, *w), "call {g} on path {id}");
+        *w += 1;
+    }
+}
+
+/// Threading P1, D16 — the hot tasks reach a path's monitoring stats
+/// without the `SharedStats` RwLock, the linear scan and the `Arc` clone:
+/// `SharedStats::path_ref` (a dense `OnceLock` table filled at `add_path`).
+/// Zero `stats.path(` calls remain in the per-datagram / per-ack files.
+#[test]
+fn p1_d16_hot_files_use_the_lock_free_stats_ref() {
+    for f in ["net/control_msg.rs", "net/emit_source.rs", "net/receiver.rs", "net/sender_phases.rs", "net/mod.rs"] {
+        let s = p1_squashed_src(f);
+        assert_eq!(s.matches("stats.path(").count(), 0, "{f}: a locking SharedStats::path call remains");
+    }
+    assert!(
+        p1_squashed_src("monitor/stats.rs").contains("pubfnpath_ref(&self,id:u32)->Option<PathStatsRef<'_>>"),
+        "SharedStats::path_ref must exist"
     );
 }
 

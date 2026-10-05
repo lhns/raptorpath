@@ -1,0 +1,2 @@
+n_per_seed=3 seeds=42,7 block_est=240s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,P1
+soft=1791226826 hard=1791227426 now=1791221808 c_meas=36 c_pred=60 r_prior=240

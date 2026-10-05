@@ -1,0 +1,97 @@
+##### red1.log
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+=== 73b009266163e1b90fa6331ce22367309eccbeff start 2026-10-05T15:31:20Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock 2>&1 | tail -80; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | tail -60
+test net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm ... FAILED
+test net::diag::wait_attribution_tests::the_sender_loop_charges_body_before_the_select ... ok
+test net::diag::wait_attribution_tests::the_histogram_is_wide_enough_for_every_bucket ... ok
+test net::diag::wait_attribution_tests::every_select_arm_that_falls_through_is_attributed ... ok
+test net::tests::p1_d16_hot_files_use_the_lock_free_stats_ref ... FAILED
+test net::tests::p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it ... FAILED
+[RCVBUF] p0 role=client bind=127.0.0.1:59015 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+test net::tests::p1_d17_batch_counter_numbering_is_per_path_and_global ... ok
+test scheduler::sched_lock::tests::a_seam_check_under_a_live_guard_panics_and_passes_after_drop ... ok
+test net::diag::wait_attribution_tests::every_wait_bucket_is_assigned_exactly_once ... FAILED
+test transport::quic::rcvbuf_endpoint_tests::connections_are_reached_through_one_guard_dropping_accessor ... FAILED
+test net::tests::p1_d11_the_tail_deadline_is_one_persistent_sleep ... FAILED
+test net::tests::p1_d17_batch_counter_has_no_hot_mutex ... FAILED
+test net::tests::p1_d1_a_window_ack_wakes_the_sender ... FAILED
+failures:
+---- net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm stdout ----
+thread 'net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm' (1446822) panicked at raptorpath/src/net/diag.rs:1161:9:
+assertion `left == right` failed
+  left: " wait[tun=1% paused=99% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% n=2 us=7010 busy=87% busy_us=6100]"
+ right: " wait[tun=1% paused=99% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% ack=0% n=2 us=7010 busy=87% busy_us=6100]"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+---- net::tests::p1_d16_hot_files_use_the_lock_free_stats_ref stdout ----
+thread 'net::tests::p1_d16_hot_files_use_the_lock_free_stats_ref' (1446828) panicked at raptorpath/src/net/tests.rs:5973:9:
+assertion `left == right` failed: net/control_msg.rs: a locking SharedStats::path call remains
+  left: 6
+ right: 0
+---- net::tests::p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it stdout ----
+thread 'net::tests::p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it' (1446832) panicked at raptorpath/src/net/tests.rs:5879:5:
+the receiver's data-loop ControlCtx must carry the sender's Notify
+---- net::diag::wait_attribution_tests::every_wait_bucket_is_assigned_exactly_once stdout ----
+thread 'net::diag::wait_attribution_tests::every_wait_bucket_is_assigned_exactly_once' (1446824) panicked at raptorpath/src/net/diag.rs:1071:13:
+assertion `left == right` failed: wait bucket 8 is assigned 0 times, expected exactly 1 — a duplicated bucket merges two wait reasons and a missing one leaves an arm's time charged to its predecessor
+  left: 0
+ right: 1
+---- transport::quic::rcvbuf_endpoint_tests::connections_are_reached_through_one_guard_dropping_accessor stdout ----
+thread 'transport::quic::rcvbuf_endpoint_tests::connections_are_reached_through_one_guard_dropping_accessor' (1446834) panicked at raptorpath/src/transport/quic.rs:1543:9:
+the map must hold Arc<Connection> (a quinn clone takes the connection mutex)
+---- net::tests::p1_d11_the_tail_deadline_is_one_persistent_sleep stdout ----
+thread 'net::tests::p1_d11_the_tail_deadline_is_one_persistent_sleep' (1446827) panicked at raptorpath/src/net/tests.rs:5918:5:
+the per-iteration tail sleep future is back
+---- net::tests::p1_d17_batch_counter_has_no_hot_mutex stdout ----
+thread 'net::tests::p1_d17_batch_counter_has_no_hot_mutex' (1446829) panicked at raptorpath/src/net/tests.rs:5940:5:
+per-path numbering must not be the Mutex<HashMap> `per_path`: pub(crate)structBatchCounter{global:AtomicU64,per_path:parking_lot::Mutex<std::collections::HashMap<u32,u64>>,
+---- net::tests::p1_d1_a_window_ack_wakes_the_sender stdout ----
+thread 'net::tests::p1_d1_a_window_ack_wakes_the_sender' (1446831) panicked at raptorpath/src/net/tests.rs:5861:5:
+a WindowAck must leave a wake permit for the sender (read through a zero timeout: no timer can have fired)
+failures:
+    net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm
+    net::diag::wait_attribution_tests::every_wait_bucket_is_assigned_exactly_once
+    net::tests::p1_d11_the_tail_deadline_is_one_persistent_sleep
+    net::tests::p1_d16_hot_files_use_the_lock_free_stats_ref
+    net::tests::p1_d17_batch_counter_has_no_hot_mutex
+    net::tests::p1_d1_a_window_ack_wakes_the_sender
+    net::tests::p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it
+    transport::quic::rcvbuf_endpoint_tests::connections_are_reached_through_one_guard_dropping_accessor
+test result: FAILED. 5 passed; 8 failed; 0 ignored; 0 measured; 522 filtered out; finished in 0.01s
+error: test failed, to rerun pass `-p raptorpath --lib`
+error: 1 target failed:
+    `-p raptorpath --lib`
+195 | impl HoldDownGauge {
+    | ------------------ method in this implementation
+...
+224 |     pub(crate) fn armed(&self) -> bool {
+    |                   ^^^^^
+running 1 test
+perf server ready (rp-native object mode)
+[RCVBUF] p0 role=server bind=127.0.0.1:53836 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[RCVBUF] p1 role=server bind=127.0.0.1:59339 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[RCVBUF] p0 role=client bind=127.0.0.1:60395 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+[RCVBUF] p1 role=client bind=127.0.0.1:54808 req=4000000 granted=8000000 via=SO_RCVBUF clamped=0
+thread 'tokio-rt-worker' (1448353) panicked at raptorpath/src/transport/quic.rs:1001:9:
+lock order: quinn seam `send_control_datagram` (raptorpath/src/transport/quic.rs:1001:9) called with 1 scheduler guard(s) held on this thread
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+thread 'tokio-rt-worker' (1448350) panicked at raptorpath/src/transport/quic.rs:1001:9:
+lock order: quinn seam `send_control_datagram` (raptorpath/src/transport/quic.rs:1001:9) called with 1 scheduler guard(s) held on this thread
+thread 'tokio-rt-worker' (1448351) panicked at raptorpath/src/transport/quic.rs:1035:9:
+lock order: quinn seam `max_datagram_size` (raptorpath/src/transport/quic.rs:1035:9) called with 1 scheduler guard(s) held on this thread
+thread 'tokio-rt-worker' (1448353) panicked at raptorpath/src/transport/quic.rs:1035:9:
+lock order: quinn seam `max_datagram_size` (raptorpath/src/transport/quic.rs:1035:9) called with 1 scheduler guard(s) held on this thread
+[lockorder] checks=4 violations=4 acquires=4
+thread 'no_quinn_call_is_made_while_the_scheduler_is_held' (1448349) panicked at raptorpath/tests/lock_order_loopback.rs:58:5:
+assertion `left == right` failed: a quinn call was made with the scheduler held: lock order: quinn seam `send_control_datagram` (raptorpath/src/transport/quic.rs:1001:9) called with 1 scheduler guard(s) held on this thread
+  left: 4
+ right: 0
+test no_quinn_call_is_made_while_the_scheduler_is_held ... FAILED
+failures:
+failures:
+    no_quinn_call_is_made_while_the_scheduler_is_held
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.14s
+error: test failed, to rerun pass `-p raptorpath --test lock_order_loopback`
+=== DONE rc=0 2026-10-05T15:36:31Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

@@ -1,0 +1,5 @@
+SMOKE-ROW c1s-400 MAIN bin=main rc=0 status=LIVE mbps=540.618 cli=5.59 srv=7.88 busy=37.0 wake=None 
+SMOKE-ROW c1s-400 P1 bin=p1 rc=0 status=LIVE mbps=535.558 cli=5.4 srv=7.93 busy=36.0 wake={'ack': 9795, 'defc': 0, 'flush': 0, 'gen': 0, 'nack': 37, 'pace': 0, 'paused': 288, 'tail': 3, 'timer_acked': 10, 'tun': 8000} 
+SMOKE-ROW c8-100 P1 bin=p1 rc=0 status=LIVE mbps=102.514 cli=5.16 srv=5.64 busy=32.0 wake={'ack': 22790, 'defc': 0, 'flush': 0, 'gen': 0, 'nack': 1060, 'pace': 0, 'paused': 459, 'tail': 66, 'timer_acked': 7, 'tun': 2639} 
+SMOKE-ROW c8-100 MAIN bin=main rc=0 status=LIVE mbps=103.108 cli=5.14 srv=5.84 busy=31.0 wake=None 
+SMOKE-PASS rows=4

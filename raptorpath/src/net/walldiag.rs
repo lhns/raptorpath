@@ -91,6 +91,11 @@ pub const ARM_TUN: usize = 0;
 /// The sender-loop wait arm that carries store-cap backpressure
 /// (`net/mod.rs`: `wait_arm = 1`, the 1 ms `tx_paused` poll).
 pub const ARM_PAUSED: usize = 1;
+/// The ack-wake arm (threading P1, D1: `wait_arm = 8`). It ends the same
+/// backpressure wait `ARM_PAUSED`'s poll ends — on the ack itself instead of
+/// the next timer tick — so it carries the same reading here; without it a
+/// paused sender woken by acks would stop being read as productive.
+pub const ARM_ACK: usize = 8;
 /// The loop's poll tick (µs), the "mostly busy" floor (see the module doc).
 pub const WALL_TICK_US: u64 = super::LOOP_WAKE_US;
 
@@ -199,7 +204,7 @@ impl DeadWallGauge {
         // exit, so the source stamp advances even on a productive wait arm.
         let src_advanced = last_source_send_us
             > self.src_seen_us.fetch_max(last_source_send_us, Ordering::Relaxed);
-        let arm_wake = wait_arm == ARM_TUN || wait_arm == ARM_PAUSED;
+        let arm_wake = wait_arm == ARM_TUN || wait_arm == ARM_PAUSED || wait_arm == ARM_ACK;
         let busy = mostly_busy(body_us, await_us);
         if arm_wake && busy {
             self.busy_wakes.fetch_add(1, Ordering::Relaxed);

@@ -24,14 +24,13 @@ use super::{
     COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, copa_feed_attribute, now_us, sack_to_gaps,
 };
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
 
 /// Everything an inbound control message may need, resolved once by the
 /// caller. For the `Option` capability handles, `None` means "the running
 /// pipeline has no such consumer".
 pub(crate) struct ControlCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
@@ -44,6 +43,13 @@ pub(crate) struct ControlCtx<'a> {
     /// receiver's delivery counter (a different seq space): the retention
     /// contract removes a symbol by ack only.
     pub peer_window_ack: Option<&'a Arc<AtomicU64>>,
+    /// Threading P1, D1: the local window sender's ack wake. Signalled
+    /// (`notify_one`, which stores a permit when nobody waits, so a wake is
+    /// never lost) once per inbound `WindowAck`, after every state update the
+    /// ack carries, so a sender paused on the store/cwnd brake or on an empty
+    /// pacing bucket re-evaluates on the ack instead of a 1 ms poll. `Some`
+    /// exactly where `peer_window_ack` is.
+    pub ack_wake: Option<&'a Arc<AckWake>>,
     /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
     /// (anchor, deficit) vector to the local window sender's recovery loop.
     pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
@@ -72,6 +78,37 @@ pub(crate) struct ControlCtx<'a> {
     /// `RWM_MSTAR_ANCHOR` (ADR-0061): suppress the peer-report RTT
     /// pseudo-sample feed.
     pub mstar_anchor: bool,
+}
+
+/// Threading P1, D1: the local window sender's ack wake. `signal` is called
+/// once per inbound `WindowAck` (last, after the ack's state is published):
+/// it bumps `acks` and `notify_one`s the sender. `acks` is an observation
+/// counter only — the sender's `[DIAG]` reads it to tell a 1 ms timer wake
+/// during which an ack landed (`wake[timer_acked]`: the arm lost the race or
+/// the wiring is broken) from a timer wake in a true ack gap.
+pub(crate) struct AckWake {
+    notify: tokio::sync::Notify,
+    pub(crate) acks: AtomicU64,
+}
+
+impl AckWake {
+    pub(crate) fn new() -> Self {
+        Self { notify: tokio::sync::Notify::new(), acks: AtomicU64::new(0) }
+    }
+
+    /// One inbound WindowAck: count it, then wake the sender (a stored
+    /// permit when it is not waiting, so the wake is never lost).
+    #[inline]
+    pub(crate) fn signal(&self) {
+        self.acks.fetch_add(1, Ordering::Relaxed);
+        self.notify.notify_one();
+    }
+
+    /// The sender's wait on the next ack.
+    #[inline]
+    pub(crate) fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+        self.notify.notified()
+    }
 }
 
 pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &ControlCtx<'_>) {
@@ -188,6 +225,11 @@ fn on_ack(
     let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
     let copa_feed = ctx.copa_feed;
 
+    // Threading P1, D2: the transport reads (`wire_rtt` is a quinn call) are
+    // taken before the scheduler guard, and the pass-through window write
+    // after it; neither depends on scheduler state.
+    let wire = wire_reads(transport, path_id, true);
+    let mut cc_window: Option<u64> = None;
     let mut sched = scheduler.lock();
     sched.touch_path(path_id);
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
@@ -266,7 +308,7 @@ fn on_ack(
             // dwell); the estimator above keeps the app-echo RTT for
             // the reliability/tail machinery. Gate off ⇒ app echo.
             let cc_rtt = if crate::scheduler::copa_wire_active() {
-                transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
@@ -274,11 +316,9 @@ fn on_ack(
         }
         // Wire-level loss evidence for the competitive AIMD (the per-batch
         // Ack arm; the WindowAck feed path has its own call). No-op unless
-        // RWM_COPA_COMPETE.
-        if crate::scheduler::copa_compete_active() {
-            if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                path.on_wire_congestion_events(ev);
-            }
+        // RWM_COPA_COMPETE (read before the guard: `wire_reads`).
+        if let Some(ev) = wire.cong_events {
+            path.on_wire_congestion_events(ev);
         }
 
         // ADR-0003: update loss stats from ACK.
@@ -293,7 +333,7 @@ fn on_ack(
         // arms: the gate changes only what the estimator reads.
         let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
             let sent = stats
-                .path(path_id)
+                .path_ref(path_id)
                 .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
                 .unwrap_or(0);
             path.sender_truth_loss_batch(sent, received_count)
@@ -323,7 +363,7 @@ fn on_ack(
         }
 
         // ADR-0013: update path monitoring stats
-        if let Some(ps) = stats.path(path_id) {
+        if let Some(ps) = stats.path_ref(path_id) {
             ps.rtt_us.store(rtt_us, Ordering::Relaxed);
             ps.loss_rate_e6.store((path.estimator.loss_rate() * 1_000_000.0) as u64, Ordering::Relaxed);
             ps.throughput_bps.store(path.estimator.throughput() as u64, Ordering::Relaxed);
@@ -335,11 +375,37 @@ fn on_ack(
 
         // The per-batch Ack arm drives Copa via
         // `sched.ack` above — publish its cwnd as the pass-through
-        // substrate window too (no-op unless RWM_QUIC_CC=passthrough).
-        transport.set_cc_window_bytes(
-            path_id,
-            path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-        );
+        // substrate window too (no-op unless RWM_QUIC_CC=passthrough),
+        // after the guard is dropped.
+        cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
+    }
+    drop(sched);
+    if let Some(bytes) = cc_window {
+        transport.set_cc_window_bytes(path_id, bytes);
+    }
+}
+
+/// Threading P1, D2: the per-ack transport reads, taken with the scheduler
+/// released (`wire_rtt` is a quinn call; the congestion counter is the
+/// pass-through CC's atomics). Each is `None` unless its gate is on, so the
+/// shipped default makes no call at all.
+struct WireReads {
+    rtt: Option<Duration>,
+    cong_events: Option<u64>,
+}
+
+fn wire_reads(transport: &QuicTransport, path_id: u32, compete_here: bool) -> WireReads {
+    WireReads {
+        rtt: if crate::scheduler::copa_wire_active() {
+            transport.wire_rtt(path_id)
+        } else {
+            None
+        },
+        cong_events: if compete_here && crate::scheduler::copa_compete_active() {
+            transport.cc_passthrough_stats(path_id).map(|(ev, _, _)| ev)
+        } else {
+            None
+        },
     }
 }
 
@@ -354,6 +420,8 @@ fn on_path_report(
     let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
     let mstar_anchor = ctx.mstar_anchor;
 
+    // Threading P1, D2: the quinn read before the guard.
+    let wire = wire_reads(transport, report_path_id, false);
     let mut sched = scheduler.lock();
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
@@ -375,7 +443,7 @@ fn on_path_report(
             path.estimator.record_rtt(rtt_duration);
             // Wire-clocked CC delay term (see the Ack arm above).
             let cc_rtt = if crate::scheduler::copa_wire_active() {
-                transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
+                wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
@@ -396,7 +464,7 @@ fn on_path_report(
         // endpoints' estimators into each other. Monitoring value only.
     }
     // Update monitoring stats with the peer's jitter and reported loss.
-    if let Some(ps) = stats.path(report_path_id) {
+    if let Some(ps) = stats.path_ref(report_path_id) {
         ps.rtt_us.store(avg_rtt_us, Ordering::Relaxed);
         ps.jitter_us.store(jitter_us, Ordering::Relaxed);
         ps.peer_loss_rate_e6
@@ -443,6 +511,10 @@ fn on_window_ack(
     let am_on = crate::scheduler::ack_merge_active();
     let now = now_us();
     let rtt_us = now.saturating_sub(echo_send_timestamp_us);
+    // Threading P1, D2: transport reads before the guard, the pass-through
+    // window write after it.
+    let wire = wire_reads(transport, path_id, copa_feed.is_none());
+    let mut cc_window: Option<u64> = None;
     {
         let mut sched = scheduler.lock();
         sched.touch_path(path_id);
@@ -516,7 +588,7 @@ fn on_window_ack(
                 // estimator keeps the app echo (end-to-end tail
                 // machinery); Copa gets the packet-timed RTT.
                 let cc_rtt = if crate::scheduler::copa_wire_active() {
-                    transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                    wire.rtt.unwrap_or(rtt_duration)
                 } else {
                     rtt_duration
                 };
@@ -550,12 +622,10 @@ fn on_window_ack(
                 // when no live feed exists — `copa_feed_attribute` below
                 // carries its own call, so the event is exactly-once in
                 // both configurations.
-                if crate::scheduler::copa_compete_active()
-                    && copa_feed.is_none()
-                {
-                    if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                        path.on_wire_congestion_events(ev);
-                    }
+                // (Read before the guard: `wire_reads`, gated on
+                // `copa_compete_active() && copa_feed.is_none()`.)
+                if let Some(ev) = wire.cong_events {
+                    path.on_wire_congestion_events(ev);
                 }
                 // ADR-0003: loss stats from the ack's counter delta.
                 //
@@ -569,7 +639,7 @@ fn on_window_ack(
                 // `cum_received`. Release keeps `d_expected` in both arms.
                 let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
                     let sent = stats
-                        .path(path_id)
+                        .path_ref(path_id)
                         .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
                         .unwrap_or(0);
                     path.sender_truth_loss_delta(sent, cum_received)
@@ -592,7 +662,7 @@ fn on_window_ack(
                     path.release_in_flight(d_expected.saturating_sub(d_received));
                 }
                 // ADR-0013: path monitoring stats.
-                if let Some(ps) = stats.path(path_id) {
+                if let Some(ps) = stats.path_ref(path_id) {
                     ps.loss_rate_e6.store(
                         (path.estimator.loss_rate() * 1_000_000.0) as u64,
                         Ordering::Relaxed,
@@ -607,13 +677,13 @@ fn on_window_ack(
                 }
                 // Publish the cwnd as the
                 // pass-through substrate window (no-op unless
-                // RWM_QUIC_CC=passthrough).
-                transport.set_cc_window_bytes(
-                    path_id,
-                    path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-                );
+                // RWM_QUIC_CC=passthrough) — after the guard drops.
+                cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
             }
         }
+    }
+    if let Some(bytes) = cc_window {
+        transport.set_cc_window_bytes(path_id, bytes);
     }
     // Plain-mode Copa delivery feed. Diff this
     // ack's cumulative frontier + SACK ranges against the attribution
@@ -634,7 +704,7 @@ fn on_window_ack(
     }
     // Update monitoring stats
     if echo_send_timestamp_us > 0 {
-        if let Some(ps) = stats.path(path_id) {
+        if let Some(ps) = stats.path_ref(path_id) {
             ps.rtt_us.store(rtt_us, Ordering::Relaxed);
             ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
         }
@@ -693,6 +763,17 @@ fn on_window_ack(
                 let _ = tx.try_send((cause, path_id, gaps));
             }
         }
+    }
+    // Threading P1, D1: wake the local window sender LAST, after every state
+    // this ack carries is published (the ack point above, the in-flight
+    // release under the scheduler, the SACK report and the gap batch on
+    // their channels), so the woken sender re-evaluates its pause / pacing
+    // gate against this ack, not against a half-applied one. `notify_one`
+    // stores a permit when the sender is not waiting: an ack landing during
+    // the sender's loop body is not lost (it costs at most one spurious
+    // iteration at the next wait).
+    if let Some(w) = ctx.ack_wake {
+        w.signal();
     }
 }
 

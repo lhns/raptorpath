@@ -1,8 +1,10 @@
 //! RTCP-style periodic PathReport + keepalive, and the local send-rate feed
 //! that keeps the estimator's throughput term non-sentinel.
 //!
-//! Lock discipline: the whole per-tick scheduler work (send-rate feed,
-//! dead-path check, MTU query, in_flight expiry/decay, report build) happens
+//! Lock discipline: the per-path MTU query (a quinn call) runs first with
+//! the scheduler released (threading P1, D2: no quinn call under the
+//! scheduler); the rest of the per-tick scheduler work (send-rate feed,
+//! dead-path check, MTU store, in_flight expiry/decay, report build) happens
 //! inside one `report_scheduler.lock()` guard whose scope ends before the
 //! `for (pid, report)` await loop — the report sends await on the reliable
 //! stream and must not hold the scheduler lock. Control sends are wrapped in
@@ -18,13 +20,12 @@ use tracing::{debug, warn};
 
 use super::super::{DEAD_PATH_TIMEOUT, REPORT_INTERVAL, now_us};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
 
 /// RTCP-style periodic report + keepalive task.
 pub(crate) async fn run_report(
     report_transport: Arc<QuicTransport>,
-    report_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
+    report_scheduler: Arc<crate::scheduler::SchedMutex>,
     report_stats: Arc<SharedStats>,
     report_symbol_size: u16,
     mut report_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
@@ -41,6 +42,16 @@ pub(crate) async fn run_report(
         }
 
         debug!("report tick");
+        // Query the MTU per path first (threading P1, D2): it is a quinn
+        // call (`Connection::max_datagram_size` takes the connection mutex),
+        // so it runs with the scheduler released; the values are stored
+        // under the guard below.
+        let mtus: Vec<(u32, usize)> = {
+            let ids = report_scheduler.lock().all_path_ids();
+            ids.into_iter()
+                .filter_map(|pid| report_transport.max_datagram_size(pid).map(|m| (pid, m)))
+                .collect()
+        };
         let reports: Vec<_> = {
         let mut sched = report_scheduler.lock();
 
@@ -91,12 +102,10 @@ pub(crate) async fn run_report(
             }
         }
 
-        // Query and store MTU per path
-        for pid in sched.all_path_ids() {
-            if let Some(mtu) = report_transport.max_datagram_size(pid) {
-                if let Some(path) = sched.path_mut(pid) {
-                    path.max_datagram_size = Some(mtu);
-                }
+        // Store the MTU per path (queried above, outside the guard).
+        for &(pid, mtu) in &mtus {
+            if let Some(path) = sched.path_mut(pid) {
+                path.max_datagram_size = Some(mtu);
             }
         }
 

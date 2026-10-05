@@ -1,0 +1,55 @@
+##### green1.log
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+=== e8f876c start 2026-10-05T15:44:03Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast 2>&1 | grep -E "^test result|FAILED|panicked|^error|warning: unused" ; for t in lock_order_loopback perf_loopback shutdown_test walldiag_loopback emit_batch_default_loopback wire_compact_loopback ackdiag_repair_recon copa_sole_loopback; do echo "== $t"; cargo test -p raptorpath --test $t -- --nocapture 2>&1 | grep -E "^test |test result|panicked|lockorder|lock order|^error"; done
+##### green2.log
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+=== a557afc start 2026-10-05T15:51:16Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|^test |test result|panicked|^error"; cd raptorpath/tools/l1 && python3 -c "import threadp1_parse" && echo parse-import-ok
+[ack-wake] tun=877 paused=943 pace=0 gen=0 nack=337 defc=0 tail=28 flush=0 ack=3526  (paused/ack = 0.2674)
+thread 'a_paused_sender_is_woken_by_acks_not_by_the_timer' (1456264) panicked at raptorpath/tests/ack_wake_loopback.rs:44:5:
+test a_paused_sender_is_woken_by_acks_not_by_the_timer ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.55s
+error: test failed, to rerun pass `-p raptorpath --test ack_wake_loopback`
+[ack-wake] tun=923 paused=1034 pace=0 gen=0 nack=305 defc=0 tail=27 flush=0 ack=3145  (paused/ack = 0.3288)
+thread 'a_paused_sender_is_woken_by_acks_not_by_the_timer' (1460296) panicked at raptorpath/tests/ack_wake_loopback.rs:44:5:
+test a_paused_sender_is_woken_by_acks_not_by_the_timer ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.55s
+error: test failed, to rerun pass `-p raptorpath --test ack_wake_loopback`
+parse-import-ok
+=== DONE rc=0 2026-10-05T15:57:02Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
+##### green3.log
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+=== 1c2a57c start 2026-10-05T15:58:21Z cmd: export CARGO_TARGET_DIR=/home/vibe/tp1/target-dev; cargo test -p raptorpath --lib --no-fail-fast -- p1_ wait_attribution_tests connections_are_reached sched_lock path_ref_is 2>&1 | grep -E "^test |test result|panicked|^error"; for i in 1 2 3; do cargo test -p raptorpath --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; done; cargo test -p raptorpath --release --test ack_wake_loopback -- --nocapture 2>&1 | grep -E "ack-wake|test result|panicked|^error"; cargo test -p raptorpath --test lock_order_loopback -- --nocapture 2>&1 | grep -E "lockorder|test result"
+test monitor::stats::tests::path_ref_is_the_same_stats_as_path ... ok
+test net::diag::wait_attribution_tests::a_busy_iteration_lands_in_busy_not_in_the_next_arm ... ok
+test net::diag::wait_attribution_tests::the_histogram_is_wide_enough_for_every_bucket ... ok
+test net::diag::wait_attribution_tests::the_sender_loop_charges_body_before_the_select ... ok
+test net::diag::wait_attribution_tests::every_select_arm_that_falls_through_is_attributed ... ok
+test net::tests::p1_d17_batch_counter_numbering_is_per_path_and_global ... ok
+test net::diag::wait_attribution_tests::every_wait_bucket_is_assigned_exactly_once ... ok
+test net::diag::wait_attribution_tests::the_wake_token_counts_per_arm_cumulatively ... ok
+test scheduler::sched_lock::tests::a_seam_check_under_a_live_guard_panics_and_passes_after_drop ... ok
+test net::tests::p1_d11_the_tail_deadline_is_one_persistent_sleep ... ok
+test net::tests::p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it ... ok
+test net::tests::p1_d17_batch_counter_has_no_hot_mutex ... ok
+test transport::quic::rcvbuf_endpoint_tests::connections_are_reached_through_one_guard_dropping_accessor ... ok
+test net::tests::p1_d1_a_window_ack_wakes_the_sender ... ok
+test net::tests::p1_d16_hot_files_use_the_lock_free_stats_ref ... ok
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 522 filtered out; finished in 0.01s
+[ack-wake] tun=854 paused=930 pace=0 gen=0 nack=367 defc=0 tail=27 flush=0 ack=3386 timer_acked=3  (timer_acked/ack = 0.0009, paused/ack = 0.2747)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s
+[ack-wake] tun=861 paused=922 pace=0 gen=0 nack=334 defc=0 tail=27 flush=0 ack=3512 timer_acked=8  (timer_acked/ack = 0.0023, paused/ack = 0.2625)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s
+[ack-wake] tun=898 paused=958 pace=0 gen=0 nack=348 defc=0 tail=29 flush=0 ack=3565 timer_acked=5  (timer_acked/ack = 0.0014, paused/ack = 0.2687)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.53s
+[ack-wake] tun=902 paused=1022 pace=0 gen=0 nack=321 defc=0 tail=29 flush=0 ack=3275 timer_acked=2  (timer_acked/ack = 0.0006, paused/ack = 0.3121)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.55s
+[lockorder] checks=10612 violations=0 acquires=64775
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.49s
+=== DONE rc=0 2026-10-05T16:03:34Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

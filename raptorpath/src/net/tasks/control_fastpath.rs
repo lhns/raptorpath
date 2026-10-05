@@ -14,7 +14,6 @@ use tracing::warn;
 
 use super::super::control_msg::{ControlCtx, handle_control_message};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// Control fast path: liveness-critical messages (PathReport, Ping,
@@ -23,7 +22,7 @@ use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_control_fastpath(
     mut ctrl_rx: mpsc::Receiver<(u32, WireMessage)>,
-    ctrl_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
+    ctrl_scheduler: Arc<crate::scheduler::SchedMutex>,
     ctrl_transport: Arc<QuicTransport>,
     ctrl_stats: Arc<SharedStats>,
     ctrl_forward_tx: mpsc::Sender<(u32, WireMessage)>,
@@ -49,6 +48,7 @@ pub(crate) async fn run_control_fastpath(
                         // needed here.
                         nack_tx: None,
                         peer_window_ack: None,
+                        ack_wake: None,
                         deficit_tx: None,
                         request_tx: None,
                         sack_tx: None,

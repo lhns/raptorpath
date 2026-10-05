@@ -826,6 +826,12 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Shared window ACK: receiver writes, sender reads to advance the encoder window
     let window_ack_seq = Arc::new(AtomicU64::new(0));
+    // Threading P1, D1: the ack wake. The receiver's control handler signals
+    // it (`notify_one`) after each inbound WindowAck's state update; the
+    // window sender awaits it in the same `select!` waits the 1 ms
+    // paused / pacing polls cover, so a paused sender re-evaluates on the
+    // ack, not on the next (1–2 ms, tokio-rounded) timer tick.
+    let ack_wake = Arc::new(control_msg::AckWake::new());
 
     // NACK gap channel: handle_control_message sends gap ranges, window sender
     // receives for targeted repair. The batch rides with its [`FireCause`] tag
@@ -883,7 +889,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
-    let scheduler_arc = Arc::new(parking_lot::Mutex::new(scheduler));
+    let scheduler_arc = Arc::new(crate::scheduler::SchedMutex::new(scheduler));
 
     // ── Plain-mode Copa delivery feed ───────────────────────────────────────
     // In plain window-reliable mode WindowAcks carry RTT only (only the
@@ -1039,6 +1045,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_generation = window_generation;
     let sender_window_systematic = window_systematic;
     let sender_window_ack = window_ack_seq.clone();
+    let sender_ack_wake = ack_wake.clone();
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
@@ -1060,6 +1067,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             &sender_scheduler,
             &sender_stats,
             &sender_window_ack,
+            &sender_ack_wake,
             &mut sender_nack_rx,
             &mut sender_deficit_rx,
             &mut sender_sack_rx,
@@ -1127,6 +1135,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         MAX_WINDOW_SIZE as u64
     };
     let recv_window_ack = window_ack_seq.clone();
+    let recv_ack_wake = ack_wake.clone();
     let recv_window_generation = window_generation;
     // Receiver arm of the deficit-feedback loop: the data-arm control handler
     // forwards inbound GenerationDeficit vectors to the local sender's recovery
@@ -1274,6 +1283,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_window_ooo,
         recv_win_cap,
         recv_window_ack,
+        recv_ack_wake,
         recv_window_generation,
         recv_deficit_tx,
         recv_nack_tx,
@@ -1451,9 +1461,12 @@ async fn run_window_sender(
     fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
     batch_counter: &BatchCounter,
     transport: &Arc<QuicTransport>,
-    scheduler: &Arc<parking_lot::Mutex<Scheduler>>,
+    scheduler: &Arc<crate::scheduler::SchedMutex>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
+    // Threading P1, D1: signalled once per inbound WindowAck (after its state
+    // update); awaited by the paused / pacing-dry waits below.
+    ack_wake: &Arc<control_msg::AckWake>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
     // Generation-deficit feedback (paper §5.8): each element is the
     // receiver's reported (generation_anchor, residual_deficit) vector.
@@ -1881,9 +1894,11 @@ async fn run_window_sender(
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
     // Announce window mode to peer on all paths
+    // (P1 D2: the path set is collected and the guard dropped before any
+    // quinn call — no quinn call is made with the scheduler held.)
     {
-        let sched = scheduler.lock();
-        for pid in control_broadcast_paths(&sched) {
+        let paths = control_broadcast_paths(&scheduler.lock());
+        for pid in paths {
             let _ = transport.send_control_datagram(
                 pid,
                 ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
@@ -2078,6 +2093,17 @@ async fn run_window_sender(
     // Scratch for the SACK drain's newly-released seqs (reused across
     // iterations; `sack_release_mark_into` clears it per range).
     let mut sack_newly: Vec<u64> = Vec::new();
+    // Threading P1, D11: ONE tail-sweep `Sleep` for the life of the loop,
+    // `reset()` when the deadline moves (compared as the µs deadline, not
+    // the converted `Instant`, which jitters by the clock-pair conversion).
+    // The arm is guarded by `tail_deadline.is_some()`, so with no deadline it
+    // is disabled exactly as the old `pending()` future was. Until then the
+    // loop built a fresh `sleep_until` future every iteration, registered it
+    // in tokio's global timer wheel when the `select!` polled it and
+    // deregistered it on drop.
+    let tail_sleep = tokio::time::sleep_until(tokio::time::Instant::now() + Duration::from_secs(86_400));
+    tokio::pin!(tail_sleep);
+    let mut tail_sleep_us: Option<u64> = None;
     loop {
         // Scheduler reads in this loop are per phase, each under its own
         // acquisition, taken where the value is used. A loop-top snapshot
@@ -2105,8 +2131,11 @@ async fn run_window_sender(
         // rate) while payload + ARQ maps stay retained until the cumulative
         // frontier passes it. The hole itself (not in any received range) stays
         // retained and recovers in the background via the orthogonal NACK /
-        // tail-sweep path. The loop wakes at least every 1 ms
-        // (backpressure/emission poll) so drains stay prompt.
+        // tail-sweep path. A paused (or pacing-dry) loop is woken by every
+        // inbound WindowAck (threading P1, D1: the ack-wake arm; the SACK
+        // report is on this channel before the wake is signalled) and at
+        // least every 1 ms by the backpressure/emission poll, so drains stay
+        // prompt.
         while let Ok(report) = sack_rx.try_recv() {
             if pol.store_sack_release_on {
                 // v9: the count the gate converges on past the SACK cap.
@@ -2639,7 +2668,7 @@ async fn run_window_sender(
         // When un-ACKed symbols exist, arm a timer at oldest-activity +
         // 2×SRTT; on expiry synthesize a gap report for the cumulative
         // blocker (per-seq cooldown + budgets all apply downstream).
-        let tail_deadline: Option<tokio::time::Instant> =
+        let tail_deadline: Option<(u64, tokio::time::Instant)> =
             st.retransmit_buffer.first().map(|(seq, &(send_us, _, _))| {
                 let last_activity_us = st.nack_retx_at
                     .get(&seq)
@@ -2677,8 +2706,16 @@ async fn run_window_sender(
                 }
                 let deadline_us = last_activity_us + timeout_us;
                 let remaining = Duration::from_micros(deadline_us.saturating_sub(pre_now_us));
-                tokio::time::Instant::from_std(pre_now_i) + remaining
+                (deadline_us, tokio::time::Instant::from_std(pre_now_i) + remaining)
             });
+        // D11: move the one persistent tail `Sleep` only when the deadline
+        // itself moved.
+        if let Some((d_us, d_at)) = tail_deadline {
+            if tail_sleep_us != Some(d_us) {
+                tail_sleep.as_mut().reset(d_at);
+                tail_sleep_us = Some(d_us);
+            }
+        }
 
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
         // bucket index; the charge happens once, after the await, and reads
@@ -2703,6 +2740,11 @@ async fn run_window_sender(
         } else {
             (0, 0)
         };
+        // `wake[timer_acked]` (P1, D1; RWM_DIAG only): the ack count at the
+        // start of this wait, so a 1 ms timer wake can be told apart into
+        // "an ack landed during the wait" (the ack arm lost the `select!`
+        // race, or the wiring is broken) and "a true ack gap".
+        let acks_at_wait = if pol.diag_on { ack_wake.acks.load(Ordering::Relaxed) } else { 0 };
         let packet = tokio::select! {
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
@@ -2713,6 +2755,14 @@ async fn run_window_sender(
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep_until(poll_1ms),
                 if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
+            // Threading P1, D1 — the ack wake. Armed under exactly the union
+            // of the two polls above (store/cwnd pause; pacing bucket dry):
+            // an inbound WindowAck (`control_msg::on_window_ack`, last
+            // statement) ends those waits at once instead of at the next
+            // 1–2 ms timer tick. The polls stay: they are the time-based
+            // refill clock and the fallback. Never armed while the loop is
+            // waiting on TUN intake, so an ack never adds an iteration there.
+            _ = ack_wake.notified(), if tx_paused || (pol.cc_pace && st.src_tokens < 1.0) => { wait_arm = 8; None },
             p = tun.read_packet(),
                 if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
@@ -2815,8 +2865,8 @@ async fn run_window_sender(
             // so nothing is ever sent on the channel, and the `if` guard is
             // false, so the future is not even polled.
             //
-            // It claims no `wait_arm` bucket: `dg.wait_us` is `[u64; 8]` and
-            // its eight arms belong to the shipped `[DIAG]` line. The request
+            // It claims no `wait_arm` bucket: `dg.wait_us` is `[u64; 9]` and
+            // its nine arms belong to the shipped `[DIAG]` line. The request
             // arm's own accounting is `[REQS]`'s business.
             rq = request_rx.recv(), if request_arm => {
                 if let Some((cause, spans)) = rq {
@@ -2843,12 +2893,7 @@ async fn run_window_sender(
                 }
                 None
             }
-            _ = async {
-                match tail_deadline {
-                    Some(d) => tokio::time::sleep_until(d).await,
-                    None => std::future::pending().await,
-                }
-            } => {
+            _ = &mut tail_sleep, if tail_deadline.is_some() => {
                 wait_arm = 6;
                 last_tail_sweep_us = now_us();
                 if let Some((seq, _)) = st.retransmit_buffer.first() {
@@ -2874,12 +2919,11 @@ async fn run_window_sender(
                 );
                     }
                 }
-                // Send Shutdown on all paths
-                let sched = scheduler.lock();
-                for pid in control_broadcast_paths(&sched) {
+                // Send Shutdown on all paths (P1 D2: guard dropped first).
+                let paths = control_broadcast_paths(&scheduler.lock());
+                for pid in paths {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
-                drop(sched);
                 eta_final.flush_final();
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
@@ -2908,11 +2952,20 @@ async fn run_window_sender(
         // (`sidle`) goes. Unlike `gd_us` it has no `generation` guard: the
         // arms it names exist in every window mode.
         let resolved_us = if pol.diag_on || pol.walldiag_on { now_us() } else { 0 };
-        if pol.diag_on && wait_arm < 8 {
+        if pol.diag_on && wait_arm < 9 {
             // The await only: the body before it went to `busy` above.
             let dt = dg.wait_resolve(resolved_us);
             dg.wait_us[wait_arm] += dt;
             dg.wait_n += 1;
+            // `wake[..]` (P1, D1): which arm woke the loop, as a cumulative
+            // COUNT (the wait shares above are time) — `wake[paused]` is the
+            // timer wake while paused that the ack arm exists to replace.
+            dg.wake_n[wait_arm] += 1;
+            if (wait_arm == 1 || wait_arm == 2)
+                && ack_wake.acks.load(Ordering::Relaxed) != acks_at_wait
+            {
+                dg.wake_timer_acked += 1;
+            }
         }
         wall_resolved_us = resolved_us;
         // ── The dead-wall gauge (`RWM_WALLDIAG`, net/walldiag.rs) ─────────
@@ -3270,7 +3323,7 @@ async fn run_window_sender(
                             p.consume_pace_tokens(1);
                         }
                     }
-                    if let Some(ps) = stats.path(path) {
+                    if let Some(ps) = stats.path_ref(path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                     stats.fec.record_correction(
@@ -3449,18 +3502,28 @@ fn create_window_decoder(
 ///   path's batches counted as this path's losses and ε̂ depended on the
 ///   striping share (≈ 0.5 at 50/50, 0.74 at share 0.1).
 ///
-/// The per-path map is a short uncontended lock (the one emission loop
-/// owns the sequencer).
+/// Per-path sequences (threading P1, D17) are one atomic per path in a
+/// dense table, so the emission path takes no lock; ids at or above
+/// [`BATCH_DENSE_PATHS`] fall back to a mutex map with identical numbering.
 pub(crate) struct BatchCounter {
     global: AtomicU64,
-    per_path: parking_lot::Mutex<std::collections::HashMap<u32, u64>>,
+    dense: [AtomicU64; BATCH_DENSE_PATHS],
+    overflow: parking_lot::Mutex<std::collections::HashMap<u32, u64>>,
 }
+
+/// Path ids `0..BATCH_DENSE_PATHS` get a lock-free sequence slot in
+/// [`BatchCounter`]. A resource bound (64 × 8 B), not a law constant: paths
+/// are numbered from 0 in bind order, so every shipped topology (N ≤ 8) is
+/// dense; an id past it (a runtime `add_path` with a large id) takes the
+/// cold fallback map, numbered identically.
+pub(crate) const BATCH_DENSE_PATHS: usize = 64;
 
 impl BatchCounter {
     pub(crate) fn new() -> Self {
         Self {
             global: AtomicU64::new(0),
-            per_path: parking_lot::Mutex::new(std::collections::HashMap::new()),
+            dense: std::array::from_fn(|_| AtomicU64::new(0)),
+            overflow: parking_lot::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -3468,10 +3531,16 @@ impl BatchCounter {
     /// exactly the `seqs` argument of [`SymbolBatch::new`].
     pub(crate) fn next(&self, path_id: u32) -> (u64, u64) {
         let global = self.global.fetch_add(1, Ordering::Relaxed);
-        let mut m = self.per_path.lock();
-        let c = m.entry(path_id).or_insert(0);
-        let path_seq = *c;
-        *c += 1;
+        let path_seq = match self.dense.get(path_id as usize) {
+            Some(slot) => slot.fetch_add(1, Ordering::Relaxed),
+            None => {
+                let mut m = self.overflow.lock();
+                let c = m.entry(path_id).or_insert(0);
+                let s = *c;
+                *c += 1;
+                s
+            }
+        };
         (global, path_seq)
     }
 }

@@ -53,7 +53,6 @@ use super::{
 use crate::control::FecRateController;
 use crate::fec::{FecBackend, WindowDecoder};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// The engine's receiver task. Consumes `(path_id, WireMessage)` from the
@@ -67,7 +66,7 @@ pub(crate) async fn run_receiver(
     mut msg_rx: tokio::sync::mpsc::Receiver<(u32, WireMessage)>,
     recv_copa_feed: Option<Arc<CopaFeed>>,
     recv_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
-    recv_scheduler: Arc<parking_lot::Mutex<Scheduler>>,
+    recv_scheduler: Arc<crate::scheduler::SchedMutex>,
     recv_fec: Arc<parking_lot::Mutex<FecRateController>>,
     recv_fec_backend: FecBackend,
     recv_transport: Arc<QuicTransport>,
@@ -78,6 +77,9 @@ pub(crate) async fn run_receiver(
     recv_window_ooo: bool,
     recv_win_cap: u64,
     recv_window_ack: Arc<AtomicU64>,
+    // Threading P1, D1: the local window sender's ack wake, handed to the
+    // data loop's `ControlCtx` beside `recv_window_ack`.
+    recv_ack_wake: Arc<super::control_msg::AckWake>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
@@ -555,7 +557,8 @@ pub(crate) async fn run_receiver(
                         );
                     }
                     let msg = ControlMessage::GenerationDeficit { deficits };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, msg.clone());
                     }
                 }
@@ -895,7 +898,8 @@ pub(crate) async fn run_receiver(
                             wdiag_batches_last = wdiag_batches;
                             wdiag_syms_last = wdiag_syms;
                             let mut dg = String::new();
-                            for pid in recv_scheduler.lock().live_paths() {
+                            let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                            for pid in live_now {
                                 if let Some((rx, tx)) =
                                     recv_transport.datagram_frame_stats(pid)
                                 {
@@ -953,7 +957,8 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                     }
                     // Request arms (A)/(B): the timer arm's request. This is
@@ -1041,7 +1046,8 @@ pub(crate) async fn run_receiver(
                             cum_expected: 0,
                             cum_received: 0,
                         };
-                        for pid in recv_scheduler.lock().live_paths() {
+                        let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                        for pid in live_now {
                             let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                         }
                     }
@@ -1084,7 +1090,8 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                     }
                 }
@@ -1235,7 +1242,7 @@ pub(crate) async fn run_receiver(
                     if let Some(path) = sched.path_mut(path_id) {
                         path.estimator.record_arrival(batch_send_ts, arrival_us);
                         // Update jitter in monitoring stats
-                        if let Some(ps) = recv_stats.path(path_id) {
+                        if let Some(ps) = recv_stats.path_ref(path_id) {
                             ps.jitter_us.store(path.estimator.jitter_us() as u64, Ordering::Relaxed);
                         }
                     }
@@ -1973,7 +1980,7 @@ pub(crate) async fn run_receiver(
                             cumulative_received: if recv_window_ooo {
                                 received_seqs.len() as u64
                             } else {
-                                recv_stats.path(path_id)
+                                recv_stats.path_ref(path_id)
                                     .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
                                     .unwrap_or(0)
                             },
@@ -2190,6 +2197,7 @@ pub(crate) async fn run_receiver(
                         stats: &recv_stats,
                         nack_tx: recv_nack_tx.as_ref(),
                         peer_window_ack: Some(&recv_window_ack),
+                        ack_wake: Some(&recv_ack_wake),
                         deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         sack_tx: recv_sack_tx.as_ref(),
                         request_tx: recv_request_tx.as_ref(),

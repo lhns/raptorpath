@@ -37,7 +37,6 @@ use super::emit_source::SenderState;
 use super::sender_policy::SenderPolicy;
 use super::{CopaFeed, EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
 
 /// Sender emission-gap gauge (`RWM_DIAG` only) — cumulative time in inter-emission gaps
@@ -100,7 +99,7 @@ pub(crate) struct DiagState {
     //             every shipped arm) charges nothing on resolution, so its
     //             await is counted as body at the next `select!` entry.
     //
-    // The eight arm buckets hold AWAIT time only:
+    // The nine arm buckets hold AWAIT time only:
     //
     //   tun     — `tun.read_packet()` produced a packet: intake was ready.
     //             The only arm that carries new source data (a large share
@@ -114,13 +113,25 @@ pub(crate) struct DiagState {
     //   defc    — a generation-deficit report arrived.
     //   tail    — the tail-ARQ sweep deadline fired.
     //   flush   — the packer's partial-symbol flush timeout fired.
+    //   ack     — threading P1 (D1): an inbound WindowAck ended a paused or
+    //             pacing-dry wait (the `Notify` arm, armed under exactly
+    //             the `paused`/`pace` polls' guards).
     //
     // The printed line (one per DIAG period):
     //
-    //   wait[tun=A% paused=B% ... flush=H% n=N us=U busy=P% busy_us=V]
+    //   wait[tun=A% paused=B% ... flush=H% ack=I% n=N us=U busy=P% busy_us=V]
+    //   wake[tun=a paused=b pace=c gen=d nack=e defc=f tail=g flush=h ack=i timer_acked=j]
     //
     //   arm %   — share of the period's AWAIT time (Σ arm buckets), so the
-    //             eight arm shares sum to 100 % of the awaiting;
+    //             nine arm shares sum to 100 % of the awaiting;
+    //   wake    — the COUNT of loop wakes per arm, cumulative over the run
+    //             (last line wins). `paused`/`pace`/`gen` are the 1 ms timer
+    //             wakes. `timer_acked` counts the `paused`/`pace` timer
+    //             wakes during whose wait an ack landed: with acks flowing a
+    //             paused sender is woken by the ack, so `timer_acked` ≈ 0
+    //             beside `ack` > 0 is the D1 invariant (`paused` itself also
+    //             counts timer wakes in true ack gaps > 1 ms, which are
+    //             legitimate);
     //   n       — loop iterations charged this period;
     //   us      — the whole loop wall this period, await + body (unchanged
     //             meaning: us/n is still the mean iteration period);
@@ -134,8 +145,14 @@ pub(crate) struct DiagState {
     pub wait_await_us: u64,
     /// Loop-body time this window (µs), the `busy` bucket.
     pub wait_busy_us: u64,
-    /// [tun, paused, pace, gen, nack, defc, tail, flush] — await time only.
-    pub wait_us: [u64; 8],
+    /// [tun, paused, pace, gen, nack, defc, tail, flush, ack] — await time only.
+    pub wait_us: [u64; 9],
+    /// Threading P1 (D1): wakes per arm, CUMULATIVE over the run (never
+    /// reset; the parser reads the last line). Printed as `wake[..]`.
+    pub wake_n: [u64; 9],
+    /// Threading P1 (D1): 1 ms timer wakes (`paused`/`pace`) during whose
+    /// wait an ack landed — cumulative; `wake[timer_acked]`.
+    pub wake_timer_acked: u64,
     /// Iterations charged into `wait_us` this window (all buckets).
     pub wait_n: u64,
 
@@ -278,7 +295,9 @@ impl DiagState {
             wait_last_us: gd_last_us,
             wait_await_us: gd_last_us,
             wait_busy_us: 0,
-            wait_us: [0u64; 8],
+            wait_us: [0u64; 9],
+            wake_n: [0u64; 9],
+            wake_timer_acked: 0,
             wait_n: 0,
             mpd_gap_reports: 0,
             mpd_gap_seqs: 0,
@@ -363,7 +382,7 @@ pub(crate) struct DiagInputs<'a> {
 /// report takes one scheduler lock (scoped to the per-path `pp` string) and
 /// otherwise only reads atomics and transport gauges.
 pub(crate) struct DiagCtx<'a> {
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub window_ack_seq: &'a Arc<AtomicU64>,
@@ -471,6 +490,23 @@ pub(crate) fn report(
             }
             dg.sidle_evt_n = 0;
         }
+        // Threading P1, D2: the two quinn reads per path (`wire_rtt`,
+        // `quinn_path_stats` — each takes the connection mutex) are taken
+        // here, with the scheduler released; they never depended on it. The
+        // block below only formats them.
+        let quinn_reads: HashMap<u32, (f64, (u64, u64, u64, u64))> = {
+            let ids = scheduler.lock().all_path_ids();
+            ids.into_iter()
+                .map(|id| {
+                    let wrtt = transport
+                        .wire_rtt(id)
+                        .map(|d| d.as_secs_f64() * 1000.0)
+                        .unwrap_or(0.0);
+                    let q = transport.quinn_path_stats(id).unwrap_or((0, 0, 0, 0));
+                    (id, (wrtt, q))
+                })
+                .collect()
+        };
         let (cw, fl, np, np_act, min_rtt_us, pp) = {
             let mut sched = scheduler.lock();
             let mut cw = 0u64;
@@ -538,19 +574,15 @@ pub(crate) fn report(
                     // Copa's floor (wire-clocked when the gate is on; its
                     // distance from the known netem base per path is the
                     // floor-freshness check).
-                    let wrtt_i = transport
-                        .wire_rtt(*id)
-                        .map(|d| d.as_secs_f64() * 1000.0)
-                        .unwrap_or(0.0);
                     // Quinn's own
                     // congestion state for this path — qcwnd bytes
                     // (= 2 × quinn-internal BtlBŵ × RTprop under the
                     // BBR default, so qcwnd ≫ true BDP·MTU is the
                     // in-vivo max-filter over-read signature),
-                    // congestion events, lost/sent packets.
-                    let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
-                        .quinn_path_stats(*id)
-                        .unwrap_or((0, 0, 0, 0));
+                    // congestion events, lost/sent packets. Both read
+                    // above, outside the guard (`quinn_reads`).
+                    let (wrtt_i, (qcwnd_i, qce_i, qlost_i, qsent_i)) =
+                        quinn_reads.get(id).copied().unwrap_or((0.0, (0, 0, 0, 0)));
                     // The per-path outstanding account —
                     // retained store symbols charged to this path (its
                     // share of the pooled outstanding).
@@ -717,8 +749,8 @@ pub(crate) fn report(
         // Unconditional on the RWM_DIAG surface, and printed even when every
         // bucket is zero: a gauge that disappears when it has nothing to say
         // is a gauge you cannot prove ran.
-        let waitdiag = wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n);
-        dg.wait_us = [0; 8];
+        let waitdiag = wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n) + &wake_line(&dg.wake_n, dg.wake_timer_acked);
+        dg.wait_us = [0; 9];
         dg.wait_busy_us = 0;
         dg.wait_n = 0;
         // DGQ: the datagram send-queue audit. Cumulative, not
@@ -1009,18 +1041,29 @@ pub(crate) fn report(
 /// Render the `wait[..]` token of the `[DIAG]` line (see the `DiagState`
 /// field docs for each token's meaning). Arm shares are over the AWAIT
 /// time; `us` is await + body; `busy` is body over `us`.
-pub(crate) fn wait_line(wait_us: &[u64; 8], busy_us: u64, n: u64) -> String {
+pub(crate) fn wait_line(wait_us: &[u64; 9], busy_us: u64, n: u64) -> String {
     let await_tot: u64 = wait_us.iter().sum::<u64>();
     let wpct = |i: usize| wait_us[i] as f64 * 100.0 / await_tot.max(1) as f64;
     let us = await_tot + busy_us;
     format!(
         " wait[tun={:.0}% paused={:.0}% pace={:.0}% gen={:.0}% nack={:.0}% \
-         defc={:.0}% tail={:.0}% flush={:.0}% n={} us={} busy={:.0}% busy_us={}]",
-        wpct(0), wpct(1), wpct(2), wpct(3), wpct(4), wpct(5), wpct(6), wpct(7),
+         defc={:.0}% tail={:.0}% flush={:.0}% ack={:.0}% n={} us={} busy={:.0}% busy_us={}]",
+        wpct(0), wpct(1), wpct(2), wpct(3), wpct(4), wpct(5), wpct(6), wpct(7), wpct(8),
         n,
         us,
         busy_us as f64 * 100.0 / us.max(1) as f64,
         busy_us,
+    )
+}
+
+/// Render the cumulative `wake[..]` token (threading P1, D1): the count of
+/// sender-loop wakes per `select!` arm since the loop started. Bucket order
+/// as `wait[..]`; `paused`, `pace` and `gen` are the 1 ms timer wakes.
+pub(crate) fn wake_line(wake_n: &[u64; 9], timer_acked: u64) -> String {
+    format!(
+        " wake[tun={} paused={} pace={} gen={} nack={} defc={} tail={} flush={} ack={} timer_acked={}]",
+        wake_n[0], wake_n[1], wake_n[2], wake_n[3], wake_n[4], wake_n[5], wake_n[6], wake_n[7],
+        wake_n[8], timer_acked,
     )
 }
 
@@ -1065,7 +1108,7 @@ mod wait_attribution_tests {
     #[test]
     fn every_wait_bucket_is_assigned_exactly_once() {
         let body = sender_loop_source();
-        for i in 0..8usize {
+        for i in 0..9usize {
             let needle = format!("wait_arm = {i};");
             let n = body.matches(&needle).count();
             assert_eq!(
@@ -1077,8 +1120,8 @@ mod wait_attribution_tests {
         }
         assert_eq!(
             body.matches("wait_arm = ").count(),
-            8,
-            "there must be exactly 8 attributions, one per bucket"
+            9,
+            "there must be exactly 9 attributions, one per bucket"
         );
     }
 
@@ -1097,6 +1140,7 @@ mod wait_attribution_tests {
             + body.matches("nack_rx.recv()").count()
             + body.matches("deficit_rx.recv()").count()
             + body.matches("shutdown_rx.recv()").count()
+            + body.matches("ack_wake.notified()").count()
             + body.matches("tail_deadline").count().min(1);
         let attributed = body.matches("wait_arm = ").count();
         assert_eq!(
@@ -1112,9 +1156,16 @@ mod wait_attribution_tests {
     fn the_histogram_is_wide_enough_for_every_bucket() {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs");
         let src = std::fs::read_to_string(p).expect("read src/net/diag.rs");
+        // The gauge's own source only: this test's literals must not match
+        // themselves (P1 fix — the 8-bucket version matched its own string).
+        let src = &src[..src.find("#[cfg(test)]").expect("test module marker")];
         assert!(
-            src.contains("pub wait_us: [u64; 8],"),
-            "wait_us must be sized 8 — the bucket count the sender assigns"
+            src.contains("pub wait_us: [u64; 9],"),
+            "wait_us must be sized 9 — the bucket count the sender assigns"
+        );
+        assert!(
+            src.contains("pub wake_n: [u64; 9],"),
+            "wake_n must be sized 9 — one wake counter per bucket"
         );
         // And it must be printed unconditionally: an `if generation` around
         // `waitdiag` would hide it on every `RWM_GEN=0` run, as happened to
@@ -1156,8 +1207,39 @@ mod wait_attribution_tests {
         assert_eq!(
             line,
             " wait[tun=1% paused=99% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% \
-             n=2 us=7010 busy=87% busy_us=6100]"
+             ack=0% n=2 us=7010 busy=87% busy_us=6100]"
         );
+    }
+
+    /// Threading P1, D1: `wake[..]` is a per-arm COUNT, cumulative over the
+    /// run (the report never resets it — a parser reads the last line), and
+    /// it is charged at the same site and for the same arm as `wait[..]`.
+    #[test]
+    fn the_wake_token_counts_per_arm_cumulatively() {
+        let mut w = [0u64; 9];
+        w[1] = 3;
+        w[8] = 40;
+        assert_eq!(
+            super::wake_line(&w, 2),
+            " wake[tun=0 paused=3 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=40 timer_acked=2]"
+        );
+        let diag = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs"),
+        )
+        .expect("read diag.rs");
+        let gauge = &diag[..diag.find("#[cfg(test)]").expect("marker")];
+        assert!(!gauge.contains("dg.wake_n = "), "wake_n must never be reset");
+        let body = sender_loop_source();
+        let tail = &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/mod.rs"),
+        )
+        .expect("read mod.rs");
+        let charge = tail.find("dg.wait_us[wait_arm] += dt;").expect("charge");
+        assert!(
+            tail[charge..charge + 600].contains("dg.wake_n[wait_arm] += 1;"),
+            "the wake count is charged beside the wait time"
+        );
+        assert!(body.contains("wait_arm = 8;"), "the ack arm owns bucket 8");
     }
 
     /// The sender loop really routes through the split: the body is charged

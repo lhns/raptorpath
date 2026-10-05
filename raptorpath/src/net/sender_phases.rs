@@ -57,7 +57,7 @@ impl StoreCapState {
 pub(crate) struct StoreCapCtx<'a> {
     pub pol: &'a SenderPolicy,
     pub gates: &'a crate::gates::RuntimeGates,
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
@@ -374,7 +374,7 @@ pub(crate) struct GenEmitCtx<'a> {
     pub cwnd_full: bool,
     pub gp_rate_max: f64,
     pub cc_rate_cached: f64,
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub batch_counter: &'a BatchCounter,
@@ -581,7 +581,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = stats.path(path) {
+            if let Some(ps) = stats.path_ref(path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -633,7 +633,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                         p.charge_in_flight(1);
                     }
                 }
-                if let Some(ps) = stats.path(path) {
+                if let Some(ps) = stats.path_ref(path) {
                     ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                 }
                 stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -736,7 +736,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                             p.charge_in_flight(1);
                         }
                     }
-                    if let Some(ps) = stats.path(path) {
+                    if let Some(ps) = stats.path_ref(path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -768,7 +768,7 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub reliable: bool,
     pub now_repair_us: u64,
     pub cached_max_repairs: u64,
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
@@ -1266,7 +1266,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             p.consume_pace_tokens(1);
                         }
                     }
-                    if let Some(ps) = stats.path(nack_path) {
+                    if let Some(ps) = stats.path_ref(nack_path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -1346,7 +1346,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             p.consume_pace_tokens(1);
                         }
                     }
-                    if let Some(ps) = stats.path(margin_path) {
+                    if let Some(ps) = stats.path_ref(margin_path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -1386,7 +1386,7 @@ pub(crate) struct AckAdvanceCtx<'a> {
     pub next_expected: u64,
     pub generation: bool,
     pub reliable: bool,
-    pub scheduler: &'a Arc<parking_lot::Mutex<Scheduler>>,
+    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
     pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
     pub completion_feed: &'a Option<Arc<CompletionFeed>>,
     pub mp_delivered: &'a mut std::collections::HashMap<u32, Vec<u64>>,

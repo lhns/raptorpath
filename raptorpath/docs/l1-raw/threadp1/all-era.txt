@@ -1,0 +1,19 @@
+TP1-ALL start 2026-10-05T16:40:26Z load=0.78 1.75 2.49 1/334 1479714 hard=1791227426 soft=1791226826
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+TP1-ALL build start commit=c765e3f38339fff490bdf70e624253d3d1c911f7 cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.78 1.75 2.49 2026-10-05T16:40:26Z
+TP1-ALL cargo build --release rc=0 wall=269s 2026-10-05T16:44:55Z
+TP1-ALL test main rc=0 passed=1061 failed=0 ignored=51 binaries=91 2026-10-05T17:05:24Z
+TP1-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-05T17:05:55Z
+TP1-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-05T17:08:08Z
+TP1-ALL test debug-witness rc=0 passed=922 failed=0 ignored=49 binaries=82 2026-10-05T17:29:04Z
+TP1-ALL tests done tfail=0 p1 sha256=ea773ba6680fc4002de5e8c09e670ec13c705442406458498f630097a2ab962e 2026-10-05T17:31:56Z
+TP1-ALL binaries p1=ea773ba6680fc4002de5e8c09e670ec13c705442406458498f630097a2ab962e main=5dccf33bf647f3856a4041085822af0aab8125d7cd9e9302d18d2e61ce763d12 main-build-wall=252s 2026-10-05T17:36:08Z
+TP1-ALL smoke rc=0 wall=40s cotenants: cargo=0 rustc=0 load=1.32 1.89 3.31 2026-10-05T17:36:48Z
+TP1-ALL SMOKE-PASS c_meas=36s c_pred=60s R_est=240s 2026-10-05T17:36:48Z
+TP1-ALL PLAN n_per_seed=3 seeds=42,7 block_est=240s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,P1 2026-10-05T17:36:48Z
+TP1-ALL battery start cotenants: cargo=0 rustc=0 load=1.32 1.89 3.31 2026-10-05T17:36:48Z
+TP1-ALL battery rc=0 wall=475s cotenants: cargo=0 rustc=0 load=2.52 2.18 2.88 2026-10-05T17:44:43Z
+TP1-ALL end bat_ok=1 soft_trunc=0 raptorpath=0 netns=0 load=2.52 2.18 2.88 2026-10-05T17:44:43Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
