@@ -50,7 +50,7 @@ pub(crate) struct ControlCtx<'a> {
     /// ack carries, so a sender paused on the store/cwnd brake or on an empty
     /// pacing bucket re-evaluates on the ack instead of a 1 ms poll. `Some`
     /// exactly where `peer_window_ack` is.
-    pub ack_wake: Option<&'a Arc<tokio::sync::Notify>>,
+    pub ack_wake: Option<&'a Arc<AckWake>>,
     /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
     /// (anchor, deficit) vector to the local window sender's recovery loop.
     pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
@@ -79,6 +79,37 @@ pub(crate) struct ControlCtx<'a> {
     /// `RWM_MSTAR_ANCHOR` (ADR-0061): suppress the peer-report RTT
     /// pseudo-sample feed.
     pub mstar_anchor: bool,
+}
+
+/// Threading P1, D1: the local window sender's ack wake. `signal` is called
+/// once per inbound `WindowAck` (last, after the ack's state is published):
+/// it bumps `acks` and `notify_one`s the sender. `acks` is an observation
+/// counter only — the sender's `[DIAG]` reads it to tell a 1 ms timer wake
+/// during which an ack landed (`wake[timer_acked]`: the arm lost the race or
+/// the wiring is broken) from a timer wake in a true ack gap.
+pub(crate) struct AckWake {
+    notify: tokio::sync::Notify,
+    pub(crate) acks: AtomicU64,
+}
+
+impl AckWake {
+    pub(crate) fn new() -> Self {
+        Self { notify: tokio::sync::Notify::new(), acks: AtomicU64::new(0) }
+    }
+
+    /// One inbound WindowAck: count it, then wake the sender (a stored
+    /// permit when it is not waiting, so the wake is never lost).
+    #[inline]
+    pub(crate) fn signal(&self) {
+        self.acks.fetch_add(1, Ordering::Relaxed);
+        self.notify.notify_one();
+    }
+
+    /// The sender's wait on the next ack.
+    #[inline]
+    pub(crate) fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+        self.notify.notified()
+    }
 }
 
 pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &ControlCtx<'_>) {
@@ -743,7 +774,7 @@ fn on_window_ack(
     // the sender's loop body is not lost (it costs at most one spurious
     // iteration at the next wait).
     if let Some(w) = ctx.ack_wake {
-        w.notify_one();
+        w.signal();
     }
 }
 

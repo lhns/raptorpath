@@ -121,15 +121,18 @@ pub(crate) struct DiagState {
     // The printed line (one per DIAG period):
     //
     //   wait[tun=A% paused=B% ... flush=H% ack=I% n=N us=U busy=P% busy_us=V]
-    //   wake[tun=a paused=b pace=c gen=d nack=e defc=f tail=g flush=h ack=i]
+    //   wake[tun=a paused=b pace=c gen=d nack=e defc=f tail=g flush=h ack=i timer_acked=j]
     //
     //   arm %   — share of the period's AWAIT time (Σ arm buckets), so the
     //             nine arm shares sum to 100 % of the awaiting;
     //   wake    — the COUNT of loop wakes per arm, cumulative over the run
     //             (last line wins). `paused`/`pace`/`gen` are the 1 ms timer
-    //             wakes; `wake[paused]` ≈ 0 with `wake[ack]` > 0 is the D1
-    //             invariant "a paused sender is woken by acks, not by the
-    //             timer";
+    //             wakes. `timer_acked` counts the `paused`/`pace` timer
+    //             wakes during whose wait an ack landed: with acks flowing a
+    //             paused sender is woken by the ack, so `timer_acked` ≈ 0
+    //             beside `ack` > 0 is the D1 invariant (`paused` itself also
+    //             counts timer wakes in true ack gaps > 1 ms, which are
+    //             legitimate);
     //   n       — loop iterations charged this period;
     //   us      — the whole loop wall this period, await + body (unchanged
     //             meaning: us/n is still the mean iteration period);
@@ -148,6 +151,9 @@ pub(crate) struct DiagState {
     /// Threading P1 (D1): wakes per arm, CUMULATIVE over the run (never
     /// reset; the parser reads the last line). Printed as `wake[..]`.
     pub wake_n: [u64; 9],
+    /// Threading P1 (D1): 1 ms timer wakes (`paused`/`pace`) during whose
+    /// wait an ack landed — cumulative; `wake[timer_acked]`.
+    pub wake_timer_acked: u64,
     /// Iterations charged into `wait_us` this window (all buckets).
     pub wait_n: u64,
 
@@ -292,6 +298,7 @@ impl DiagState {
             wait_busy_us: 0,
             wait_us: [0u64; 9],
             wake_n: [0u64; 9],
+            wake_timer_acked: 0,
             wait_n: 0,
             mpd_gap_reports: 0,
             mpd_gap_seqs: 0,
@@ -743,7 +750,7 @@ pub(crate) fn report(
         // Unconditional on the RWM_DIAG surface, and printed even when every
         // bucket is zero: a gauge that disappears when it has nothing to say
         // is a gauge you cannot prove ran.
-        let waitdiag = wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n) + &wake_line(&dg.wake_n);
+        let waitdiag = wait_line(&dg.wait_us, dg.wait_busy_us, dg.wait_n) + &wake_line(&dg.wake_n, dg.wake_timer_acked);
         dg.wait_us = [0; 9];
         dg.wait_busy_us = 0;
         dg.wait_n = 0;
@@ -1053,11 +1060,11 @@ pub(crate) fn wait_line(wait_us: &[u64; 9], busy_us: u64, n: u64) -> String {
 /// Render the cumulative `wake[..]` token (threading P1, D1): the count of
 /// sender-loop wakes per `select!` arm since the loop started. Bucket order
 /// as `wait[..]`; `paused`, `pace` and `gen` are the 1 ms timer wakes.
-pub(crate) fn wake_line(wake_n: &[u64; 9]) -> String {
+pub(crate) fn wake_line(wake_n: &[u64; 9], timer_acked: u64) -> String {
     format!(
-        " wake[tun={} paused={} pace={} gen={} nack={} defc={} tail={} flush={} ack={}]",
+        " wake[tun={} paused={} pace={} gen={} nack={} defc={} tail={} flush={} ack={} timer_acked={}]",
         wake_n[0], wake_n[1], wake_n[2], wake_n[3], wake_n[4], wake_n[5], wake_n[6], wake_n[7],
-        wake_n[8],
+        wake_n[8], timer_acked,
     )
 }
 
@@ -1214,8 +1221,8 @@ mod wait_attribution_tests {
         w[1] = 3;
         w[8] = 40;
         assert_eq!(
-            super::wake_line(&w),
-            " wake[tun=0 paused=3 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=40]"
+            super::wake_line(&w, 2),
+            " wake[tun=0 paused=3 pace=0 gen=0 nack=0 defc=0 tail=0 flush=0 ack=40 timer_acked=2]"
         );
         let diag = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs"),

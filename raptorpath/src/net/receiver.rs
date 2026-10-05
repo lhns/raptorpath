@@ -80,7 +80,7 @@ pub(crate) async fn run_receiver(
     recv_window_ack: Arc<AtomicU64>,
     // Threading P1, D1: the local window sender's ack wake, handed to the
     // data loop's `ControlCtx` beside `recv_window_ack`.
-    recv_ack_wake: Arc<tokio::sync::Notify>,
+    recv_ack_wake: Arc<super::control_msg::AckWake>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,

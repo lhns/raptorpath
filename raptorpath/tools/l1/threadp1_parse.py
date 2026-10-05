@@ -62,7 +62,7 @@ MIN_LIVE = 3              # live rows per (cell, arm)
 WITNESS_FAIL_LIMIT = 2    # failed rows per (arm, cell) that void the cell
 FEED_BAND = 1.3           # P1's plc/truth within [1/1.3, 1.3] x MAIN's, per leg
 WAKE_MIN = 100            # paused-type wakes (paused + ack) for a row to read D1
-WAKE_RATIO = 0.05         # D1 holds on a row iff wake[paused] <= 0.05 x wake[ack]
+WAKE_RATIO = 0.05         # D1 holds on a row iff wake[timer_acked] <= 0.05 x wake[ack]
 ABORT_FIRST_FIVE = sp.ABORT_FIRST_FIVE
 
 _WAKE = re.compile(r"\bwake\[([^\]]*)\]")
@@ -288,14 +288,14 @@ def wake_reading(live, cell, out):
     read, held = 0, 0
     for r in rows:
         w = r.get("wake") or {}
-        pa, ak = w.get("paused", 0), w.get("ack", 0)
+        pa, ak, ta = w.get("paused", 0), w.get("ack", 0), w.get("timer_acked")
         ok = None
-        if pa + ak >= WAKE_MIN:
+        if pa + ak >= WAKE_MIN and ta is not None:
             read += 1
-            ok = pa <= WAKE_RATIO * ak
+            ok = ta <= WAKE_RATIO * ak
             held += int(ok)
-        out(f"  WAKE {cell} s{r['seed']} rep{r['rep']} paused={pa} ack={ak} tun={w.get('tun')} "
-            f"pace={w.get('pace')} tail={w.get('tail')} nack={w.get('nack')} "
+        out(f"  WAKE {cell} s{r['seed']} rep{r['rep']} timer_acked={ta} paused={pa} ack={ak} "
+            f"tun={w.get('tun')} pace={w.get('pace')} tail={w.get('tail')} nack={w.get('nack')} "
             f"-> {'-' if ok is None else ('HOLDS' if ok else 'FAILS')}")
     if read == 0:
         return "D1-INERT-NEVER-PAUSED"

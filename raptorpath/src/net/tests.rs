@@ -5810,7 +5810,7 @@ async fn p1_d1_a_window_ack_wakes_the_sender() {
     let stats = Arc::new(SharedStats::new());
     stats.add_path(0);
     let ack = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let wake = Arc::new(tokio::sync::Notify::new());
+    let wake = Arc::new(super::control_msg::AckWake::new());
     let ctx = super::control_msg::ControlCtx {
         scheduler: &scheduler,
         transport: &transport,
@@ -5826,7 +5826,7 @@ async fn p1_d1_a_window_ack_wakes_the_sender() {
     };
     // A stored permit resolves on the first poll: a zero timeout polls the
     // inner future once before it looks at the (paused) clock.
-    async fn permit(w: &tokio::sync::Notify) -> bool {
+    async fn permit(w: &super::control_msg::AckWake) -> bool {
         tokio::time::timeout(std::time::Duration::ZERO, w.notified()).await.is_ok()
     }
     super::control_msg::handle_control_message(
@@ -5864,6 +5864,11 @@ async fn p1_d1_a_window_ack_wakes_the_sender() {
          zero timeout: no timer can have fired)"
     );
     assert!(!permit(&wake).await, "one ack, one permit");
+    assert_eq!(
+        wake.acks.load(Ordering::Relaxed),
+        1,
+        "the ack counter `wake[timer_acked]` is read against counts exactly the WindowAcks"
+    );
 }
 
 /// Threading P1, D1 — the routing half (rule 1: the wiring between layers

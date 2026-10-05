@@ -831,7 +831,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // window sender awaits it in the same `select!` waits the 1 ms
     // paused / pacing polls cover, so a paused sender re-evaluates on the
     // ack, not on the next (1–2 ms, tokio-rounded) timer tick.
-    let ack_wake = Arc::new(tokio::sync::Notify::new());
+    let ack_wake = Arc::new(control_msg::AckWake::new());
 
     // NACK gap channel: handle_control_message sends gap ranges, window sender
     // receives for targeted repair. The batch rides with its [`FireCause`] tag
@@ -1466,7 +1466,7 @@ async fn run_window_sender(
     window_ack_seq: &Arc<AtomicU64>,
     // Threading P1, D1: signalled once per inbound WindowAck (after its state
     // update); awaited by the paused / pacing-dry waits below.
-    ack_wake: &Arc<tokio::sync::Notify>,
+    ack_wake: &Arc<control_msg::AckWake>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
     // Generation-deficit feedback (paper §5.8): each element is the
     // receiver's reported (generation_anchor, residual_deficit) vector.
@@ -2740,6 +2740,11 @@ async fn run_window_sender(
         } else {
             (0, 0)
         };
+        // `wake[timer_acked]` (P1, D1; RWM_DIAG only): the ack count at the
+        // start of this wait, so a 1 ms timer wake can be told apart into
+        // "an ack landed during the wait" (the ack arm lost the `select!`
+        // race, or the wiring is broken) and "a true ack gap".
+        let acks_at_wait = if pol.diag_on { ack_wake.acks.load(Ordering::Relaxed) } else { 0 };
         let packet = tokio::select! {
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
@@ -2956,6 +2961,11 @@ async fn run_window_sender(
             // COUNT (the wait shares above are time) — `wake[paused]` is the
             // timer wake while paused that the ack arm exists to replace.
             dg.wake_n[wait_arm] += 1;
+            if (wait_arm == 1 || wait_arm == 2)
+                && ack_wake.acks.load(Ordering::Relaxed) != acks_at_wait
+            {
+                dg.wake_timer_acked += 1;
+            }
         }
         wall_resolved_us = resolved_us;
         // ── The dead-wall gauge (`RWM_WALLDIAG`, net/walldiag.rs) ─────────
