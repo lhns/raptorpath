@@ -1,0 +1,25 @@
+=== SIGMA-RERUN green 2026-10-05T01:43:56Z
+test the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+test the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+test the_diag_line_reports_the_rtt_sigma_the_recovery_clock_needs ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+=== RED (forced rebuild) tree=/home/vibe/es/red-src commit=90a25e1 2026-10-05T01:46:44Z
+10
+   Compiling raptorpath-math v0.1.0 (/home/vibe/es/red-src/raptorpath-math)
+   Compiling raptorpath v0.1.0 (/home/vibe/es/red-src/raptorpath)
+test batching_is_live_at_every_path_count ... N=1: eb_bursts=3678 eb_syms=28909 mean depth=7.86  [cap:3556/store:120/tokens:0/drained:2] [0:8/7.86]
+thread 'batching_is_live_at_every_path_count' (971728) panicked at raptorpath/tests/emit_batch_scope_loopback.rs:75:5:
+N=2: no burst at all (the scope forbids batching here?): [DIAG] t=1.3s win=100/4096 paused=0% good=340.5Mbit ackrate_ewma=0sym/s eff_pace=0sym/s src=35586sym/s cod=56sym/s cum=39947/14/39847 sidle=19ms/4/mx8ms cwnd=158 infl=80 np=2 np_act=2 rtt=2.0ms bdp100=21sym sweeps=0 retx=198 gapdrop=96 nbud=10 xattr=125/17 mpr[rep=3264 seqs=54352 fired=198 y=1 r=197 fast=1 coal=6017 supp=332/0/50022 stale=3800 plost=0 taper=0 age=37ms pf=20352/30264/10000 fp/on p0:139/63 p1:59/135] wnd2=99/1 relgap=0ms/mx10ms srel=0/10073 gate=0 wait[tun=100% paused=0% pace=0% gen=0% nack=0% defc=0% tail=0% flush=0% n=8915 us=249909 busy=87% busy_us=218665] dgq0[hand=15938 tx=15938 full=0 err=0 sp=4190638] dgq1[hand=24229 tx=24228 full=0 err=0 sp=4194304] p0:infl=25/sinfl=105/bdp9(cap0) sout=42 khr=1.65/kraw=- btlbw=37968 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=2/wrtt=0/rtp0ms rtp_us=243 sig_us=139/n15902 rvar_us=127/n15902 qsp_us=1043/n256 msd_us=19/n255 tlag_us=243/n139 gapd=0/0 qcwnd=192657 qce=0 qlp=0/16330 | ANCHOR sent=15927 al=0 attr=15759 nr=0 rej[iv=271 zr=0 al=0] gen=15488 fill=12696 plu=0.0004 plc=0.0000 p1:infl=55/sinfl=55/bdp57(cap0) sout=58 khr=1.52/kraw=- btlbw=185958 sr=0/g0d0 est=Y pl=0.0000 cmp=- rtt=1/wrtt=0/rtp0ms rtp_us=306 sig_us=166/n24119 rvar_us=148/n24119 qsp_us=685/n256 msd_us=15/n255 tlag_us=368/n137 gapd=0/0 qcwnd=1978519 qce=1 qlp=50/24580 | ANCHOR sent=24218 al=0 attr=24088 nr=0 rej[iv=319 zr=0 al=0] gen=23769 fill=19860 plu=0.0008 plc=0.0021 rce=1566/c1/w1053/p0/a1565/us1140 dgev0=0 dgev1=1 eb_bursts=0 eb_syms=0 eb_depth=0.00 eb_end=cap:0/store:0/tokens:0/drained:0 eb_maxrun=-
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
+   Compiling raptorpath v0.1.0 (/home/vibe/es/red-src/raptorpath)
+test net::emit_burst::tests::gauge_counts_depth_ends_and_runs ... ok
+test net::emit_burst::tests::law0_bound_is_the_quantum_at_every_value ... ok
+test net::emit_burst::tests::t4_a_burst_of_b_symbols_gets_exactly_one_recompute ... ok
+test net::emit_burst::tests::the_batching_path_reads_no_path_count ... 
+thread 'net::emit_burst::tests::the_batching_path_reads_no_path_count' (972457) panicked at raptorpath/src/net/emit_burst.rs:295:13:
+mod.rs: the per-iteration path-count scope `emit_batch_live` is back
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 517 filtered out; finished in 0.00s
+=== GREEN binary sha now 24fe4eca24b3c84742151a2b9354b875fec5cbd5d26dff5bd89d091bbfd3a28f
+=== END 2026-10-05T02:01:03Z

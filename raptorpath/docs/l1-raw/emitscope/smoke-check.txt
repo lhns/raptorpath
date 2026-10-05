@@ -1,0 +1,5 @@
+SMOKE-ROW c8-100 EB0 rc=0 status=LIVE wall=12.0 emb_gate=1/1 emb_echo=1/1 np=2 eb_bursts=2449 eb_syms=84604 eb_depth=34.55 eb_end={'cap': 322, 'drained': 2, 'store': 2125, 'tokens': 0} eb_maxrun={'0': [64, 15.54], '1': [64, 2.12]} mbps=102.542 cpu=6.07 rcvbuf=0 
+SMOKE-ROW c1s-400 NEW rc=0 status=LIVE wall=9.0 emb_gate=0/0 emb_echo=0/0 np=1 eb_bursts=0 eb_syms=0 eb_depth=0.00 eb_end={'cap': 0, 'drained': 0, 'store': 0, 'tokens': 0} eb_maxrun=None mbps=455.045 cpu=8.52 rcvbuf=90 
+SMOKE-ROW c1d-400 EB0 rc=0 status=LIVE wall=10.0 emb_gate=1/1 emb_echo=1/1 np=2 eb_bursts=5462 eb_syms=329763 eb_depth=60.37 eb_end={'cap': 4920, 'drained': 1, 'store': 541, 'tokens': 0} eb_maxrun={'0': [64, 7.2], '1': [64, 7.19]} mbps=403.528 cpu=11.91 rcvbuf=33 
+SMOKE-ROW c2-100 NEW rc=0 status=LIVE wall=11.0 emb_gate=0/0 emb_echo=0/0 np=1 eb_bursts=0 eb_syms=0 eb_depth=0.00 eb_end={'cap': 0, 'drained': 0, 'store': 0, 'tokens': 0} eb_maxrun=None mbps=89.063 cpu=3.79 rcvbuf=0 
+SMOKE-PASS rows=4

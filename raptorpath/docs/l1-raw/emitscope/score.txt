@@ -1,0 +1,64 @@
+BINARY sha256=-
+STATUS-TABLE (every invocation row)
+  LIVE          128
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+ARM-N (live rows per cell/arm, and per seed)
+  c1s-400 NEW=16(8/8) EB0=16(8/8)
+  c1d-400 NEW=16(8/8) EB0=16(8/8)
+  c2-100 NEW=16(8/8) EB0=16(8/8)
+  c8-100 NEW=16(8/8) EB0=16(8/8)
+
+CLAUSES EB0 vs NEW, §5 relative MDE applied to NEW's median
+  FEED c1s-400 p0 truth NEW=0.00110 EB0=0.00109 | plc NEW=0.0027 EB0=0.0045 | plc/truth NEW=2.431 EB0=3.962 band=[1.870,3.161] MOVED | gso NEW=9.39 EB0=9.20
+  RCVBUF c1s-400 NEW: med=54 max=121 rows>0=16/16 EB0: med=117 max=244 rows>0=16/16
+  EB c1s-400 EB0 depth med=57.18 [56.19-57.64] n=16 | bind-fraction cap=0.795 store=0.205 tokens=0.000 drained=0.000 | maxrun p0:max_med=64/max_max=64/mean_med=57.18
+  EB c1s-400 NEW depth med=0.00 [0.00-0.00] n=16 | bind-fraction cap=- store=- tokens=- drained=- | maxrun -
+  C c1s-400 NEW n=16 EB0 n=16 | gp:WITHIN (X=446.281 ref=436.636 (+2.2%) band=[415.241,458.031] rel=0.049) | ct:WITHIN (X=7.170 ref=7.329 (-2.2%) band=[6.955,7.703] rel=0.051) | cpu:BETTER (X=6.770 ref=8.440 (-19.8%) band=[8.237,8.643] rel=0.024) | dnf NEW=0.00 EB0=0.00 excess>0.20:0 | cpu_us/dgram NEW=24.80 EB0=19.78 | worse=- better=cpu feed-moved=p0
+  CONTROL c1s-400 NEW med=436.64 [409.88-464.29] n=16 vs V4 NEW med=502.6 [466.7-536.5] band=[442.07,561.13] -> CONTROL-MOVED
+  FEED c1d-400 p0 truth NEW=0.00106 EB0=0.00112 | plc NEW=0.0016 EB0=0.0020 | plc/truth NEW=1.333 EB0=1.838 band=[1.026,1.734] MOVED | gso NEW=3.51 EB0=5.06
+  FEED c1d-400 p1 truth NEW=0.00088 EB0=0.00097 | plc NEW=0.0011 EB0=0.0018 | plc/truth NEW=1.337 EB0=2.196 band=[1.028,1.738] MOVED | gso NEW=3.62 EB0=4.99
+  RCVBUF c1d-400 NEW: med=14 max=100 rows>0=15/16 EB0: med=39 max=112 rows>0=16/16
+  EB c1d-400 EB0 depth med=57.00 [54.37-60.33] n=16 | bind-fraction cap=0.813 store=0.186 tokens=0.000 drained=0.000 | maxrun p0:max_med=64/max_max=64/mean_med=7.92 p1:max_med=64/max_max=64/mean_med=7.62
+  EB c1d-400 NEW depth med=0.00 [0.00-0.00] n=16 | bind-fraction cap=- store=- tokens=- drained=- | maxrun -
+  C c1d-400 NEW n=16 EB0 n=16 | gp:BETTER (X=391.418 ref=277.462 (+41.1%) band=[261.924,293.000] rel=0.056) | ct:BETTER (X=8.175 ref=11.533 (-29.1%) band=[10.922,12.144] rel=0.053) | cpu:BETTER (X=11.735 ref=18.285 (-35.8%) band=[17.096,19.474] rel=0.065) | dnf NEW=0.00 EB0=0.00 excess>0.20:0 | cpu_us/dgram NEW=52.27 EB0=33.72 | worse=- better=gp+cpu feed-moved=p0+p1
+  CONTROL c1d-400 NEW med=277.46 [247.25-299.19] n=16 vs V4 NEW med=305.1 [237.5-390.4] band=[220.41,407.49] -> IN-BAND
+  FEED c2-100 p0 truth NEW=0.02487 EB0=0.02521 | plc NEW=0.0251 EB0=0.0251 | plc/truth NEW=1.007 EB0=1.000 band=[0.774,1.309] UNCHANGED | gso NEW=4.81 EB0=5.04
+  RCVBUF c2-100 NEW: med=0 max=0 rows>0=0/16 EB0: med=0 max=0 rows>0=0/16
+  EB c2-100 EB0 depth med=20.55 [19.88-20.94] n=16 | bind-fraction cap=0.006 store=0.994 tokens=0.000 drained=0.000 | maxrun p0:max_med=64/max_max=64/mean_med=20.55
+  EB c2-100 NEW depth med=0.00 [0.00-0.00] n=16 | bind-fraction cap=- store=- tokens=- drained=- | maxrun -
+  C c2-100 NEW n=16 EB0 n=16 | gp:WITHIN (X=88.719 ref=88.403 (+0.4%) band=[87.165,89.640] rel=0.014) | ct:WITHIN (X=9.017 ref=9.049 (-0.4%) band=[8.923,9.176] rel=0.014) | cpu:BETTER (X=3.625 ref=4.010 (-9.6%) band=[3.757,4.263] rel=0.063) | dnf NEW=0.00 EB0=0.00 excess>0.20:0 | cpu_us/dgram NEW=43.34 EB0=39.07 | worse=- better=cpu feed-moved=-
+  CONTROL c2-100 NEW med=88.40 [86.83-89.56] n=16 vs V4 NEW med=88.86 [87.3-89.3] band=[86.06,90.54] -> IN-BAND
+  FEED c8-100 p0 truth NEW=0.02529 EB0=0.02569 | plc NEW=0.0253 EB0=0.0257 | plc/truth NEW=1.003 EB0=1.001 band=[0.772,1.304] UNCHANGED | gso NEW=4.58 EB0=4.63
+  FEED c8-100 p1 truth NEW=0.04680 EB0=0.05157 | plc NEW=0.0462 EB0=0.0519 | plc/truth NEW=0.991 EB0=1.006 band=[0.762,1.288] UNCHANGED | gso NEW=1.64 EB0=1.82
+  RCVBUF c8-100 NEW: med=0 max=0 rows>0=0/16 EB0: med=0 max=0 rows>0=0/16
+  EB c8-100 EB0 depth med=33.84 [32.54-35.67] n=16 | bind-fraction cap=0.126 store=0.873 tokens=0.000 drained=0.001 | maxrun p0:max_med=64/max_max=64/mean_med=14.39 p1:max_med=29/max_max=64/mean_med=1.78
+  EB c8-100 NEW depth med=0.00 [0.00-0.00] n=16 | bind-fraction cap=- store=- tokens=- drained=- | maxrun -
+  C c8-100 NEW n=16 EB0 n=16 | gp:WITHIN (X=99.143 ref=101.359 (-2.2%) band=[97.305,105.413] rel=0.040) | ct:WITHIN (X=8.069 ref=7.893 (+2.2%) band=[7.569,8.216] rel=0.041) | cpu:WITHIN (X=5.955 ref=6.705 (-11.2%) band=[5.927,7.483] rel=0.116) | dnf NEW=0.00 EB0=0.00 excess>0.20:0 | cpu_us/dgram NEW=69.35 EB0=62.80 | worse=- better=- feed-moved=-
+  CONTROL c8-100 NEW med=101.36 [88.24-104.66] n=16 vs V4 NEW med=104.3 [95.4-105.2] band=[91.23,109.37] -> IN-BAND
+
+VERDICT WORSE-AT-c1s-400,c1d-400 (c1s-400: feed:p0; c1d-400: feed:p0+feed:p1)
+CONTROL-IDENTITY c1s-400:CONTROL-MOVED c1d-400:IN-BAND c2-100:IN-BAND c8-100:IN-BAND (CONTROL-MOVED named beside: c1s-400)
+
+PER-REP (live; per seed, rep order) cell arm seed: mbps / cpu_cli / cpu_us_per_dgram / eb_depth / rcvbuf
+  REPS c1s-400 NEW s42: 420.0 464.3 416.1 429.8 409.9 449.6 455.5 429.8 / 8.63 8.10 9.07 7.93 9.27 8.54 8.52 8.60 / 25.3 23.8 26.7 23.3 27.2 25.1 25.0 25.3 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 53 36 39 22 121 90 59 78 | seed-median gp=429.8
+  REPS c1s-400 NEW s7: 429.9 457.2 453.6 455.2 438.4 457.4 427.4 434.9 / 8.71 8.21 8.37 8.24 8.45 8.37 8.33 8.43 / 25.6 24.1 24.6 24.2 24.8 24.6 24.5 24.8 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 72 40 49 40 62 72 38 55 | seed-median gp=446.0
+  REPS c1s-400 EB0 s42: 443.9 451.2 400.3 456.1 396.8 449.2 441.7 467.9 / 6.65 6.75 7.50 6.69 7.88 6.56 6.78 6.45 / 19.4 19.7 21.9 19.6 22.9 19.2 19.8 18.9 / 57.52 57.64 56.70 57.10 56.19 56.73 57.13 57.25 / 81 100 128 97 244 117 99 89 | seed-median gp=446.5
+  REPS c1s-400 EB0 s7: 452.8 453.8 444.4 433.6 452.2 435.7 416.0 448.1 / 6.89 6.76 7.00 6.94 6.65 6.48 7.16 6.90 / 20.1 19.7 20.4 20.2 19.4 19.0 20.8 20.1 / 57.35 57.04 56.66 57.23 57.62 57.38 56.67 57.47 / 109 117 170 139 130 65 159 140 | seed-median gp=446.3
+  REPS c1d-400 NEW s42: 290.5 295.1 247.3 278.3 269.1 265.5 276.4 299.2 / 17.39 17.11 19.94 18.10 18.85 18.90 18.76 17.20 / 49.9 49.2 57.2 51.7 53.9 54.1 53.6 49.2 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 32 11 4 100 0 20 6 55 | seed-median gp=277.3
+  REPS c1d-400 NEW s7: 290.5 265.6 287.1 272.4 276.3 276.6 297.1 284.7 / 17.42 19.42 17.57 18.61 18.47 18.66 17.05 17.98 / 49.9 55.4 50.4 53.2 52.8 53.4 49.0 51.5 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 11 5 15 38 33 2 23 13 | seed-median gp=280.7
+  REPS c1d-400 EB0 s42: 371.9 402.8 352.8 409.0 411.5 395.0 391.1 419.3 / 12.54 11.58 12.74 11.63 11.29 11.74 11.94 11.22 / 35.9 33.2 36.6 33.4 32.5 33.7 34.5 32.3 / 56.74 58.15 60.33 54.43 57.87 54.37 57.62 57.26 / 13 36 110 56 27 40 37 38 | seed-median gp=398.9
+  REPS c1d-400 EB0 s7: 418.5 386.4 390.8 391.7 376.2 382.8 381.5 410.2 / 10.96 11.66 11.76 11.73 12.43 12.21 12.43 10.64 / 31.6 33.5 33.7 33.7 35.6 35.0 35.6 30.8 / 54.44 57.37 57.38 56.73 56.13 55.52 55.74 57.31 / 58 91 26 11 42 27 64 112 | seed-median gp=388.6
+  REPS c2-100 NEW s42: 88.4 89.0 87.0 89.0 88.9 86.9 86.8 87.2 / 4.31 3.88 4.51 3.95 3.80 4.11 4.00 3.87 / 45.7 40.9 48.1 42.0 41.1 44.5 42.6 42.9 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 0 0 0 0 0 0 0 0 | seed-median gp=87.8
+  REPS c2-100 NEW s7: 87.2 89.1 86.9 89.3 88.4 89.0 89.6 87.1 / 3.75 4.37 4.08 4.24 4.12 3.84 3.83 4.02 / 42.2 46.7 43.8 45.1 43.8 42.5 41.5 44.3 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 0 0 0 0 0 0 0 0 | seed-median gp=88.7
+  REPS c2-100 EB0 s42: 88.8 89.5 88.7 88.8 88.5 88.9 88.8 86.9 / 3.45 3.61 3.75 3.15 3.64 3.69 3.60 3.83 / 36.4 41.1 41.6 35.9 38.8 39.3 38.2 40.5 / 20.63 20.64 20.24 20.39 20.94 20.54 20.61 20.39 / 0 0 0 0 0 0 0 0 | seed-median gp=88.8
+  REPS c2-100 EB0 s7: 88.7 86.9 88.5 89.2 88.6 87.2 88.6 89.4 / 3.38 3.72 3.86 3.80 3.65 3.56 3.55 3.37 / 35.7 42.2 41.0 41.3 39.0 39.1 37.6 37.2 / 20.66 19.88 20.49 20.60 20.56 20.55 20.63 20.38 / 0 0 0 0 0 0 0 0 | seed-median gp=88.6
+  REPS c8-100 NEW s42: 102.8 88.2 101.6 97.1 95.7 91.5 101.1 96.8 / 6.58 7.91 6.91 6.07 7.12 7.43 6.83 7.14 / 67.0 86.3 70.1 65.5 74.9 79.0 70.5 74.7 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 0 0 0 0 0 0 0 0 | seed-median gp=96.9
+  REPS c8-100 NEW s7: 104.0 98.8 103.5 102.7 103.5 101.9 99.0 104.7 / 6.47 7.21 5.93 6.95 6.56 6.13 5.73 5.79 / 67.5 76.7 62.8 73.7 68.6 64.9 60.3 61.3 / 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 / 0 0 0 0 0 0 0 0 | seed-median gp=103.1
+  REPS c8-100 EB0 s42: 99.0 103.4 98.0 99.2 101.1 98.5 93.7 98.9 / 6.34 5.85 6.23 5.93 5.46 6.15 6.57 5.98 / 67.6 61.4 67.2 63.5 56.7 62.1 68.4 65.1 / 34.95 34.09 34.82 33.35 32.83 33.80 35.30 34.48 / 0 0 0 0 0 0 0 0 | seed-median gp=98.9
+  REPS c8-100 EB0 s7: 97.7 103.3 100.4 102.8 102.5 86.1 99.0 100.5 / 6.39 5.47 6.59 5.32 5.76 6.22 5.62 4.91 / 66.5 55.7 68.3 56.9 59.1 67.0 60.1 51.8 / 35.67 32.54 33.99 32.88 33.43 33.88 33.47 32.98 / 0 0 0 0 0 0 0 0 | seed-median gp=100.4

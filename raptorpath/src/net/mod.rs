@@ -54,6 +54,7 @@ pub use store_cap::*;
 mod report;
 pub use report::*;
 mod sack;
+pub(crate) mod emit_burst;
 pub(crate) mod seq_ring;
 pub use sack::*;
 
@@ -1928,7 +1929,6 @@ async fn run_window_sender(
     let mpd_pf_clock: std::cell::Cell<u64> = std::cell::Cell::new(0);
     let mpd_pf_sum: std::cell::Cell<u64> = std::cell::Cell::new(0);
 
-    let mut emit_batch_live = false;
     if pol.emit_batch_on {
         // Mechanism-liveness echo (measurement-discipline rule 1).
         info!(
@@ -2125,13 +2125,6 @@ async fn run_window_sender(
                     }
                 }
             }
-        }
-
-        // RWM_EMIT_BATCH scope check (see the gate decl): batching engages
-        // only while exactly one path is live; re-checked every iteration so
-        // path flaps re-scope within one burst. Gate-off pays nothing.
-        if pol.emit_batch_on {
-            emit_batch_live = scheduler.lock().live_paths_iter().count() == 1;
         }
 
         // Determine if packer has pending data for flush timer
@@ -2860,7 +2853,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
                     }
                 }
@@ -2888,7 +2880,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
                 }
                 None
@@ -2951,7 +2942,6 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
                         }
                     }
@@ -2971,19 +2961,25 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
                 }
             } else {
                 // Legacy: one packet per symbol (padded)
                 let framed = framing::frame_window_packet(&pkt, symbol_size);
+                // [EMIT-BURST-BEGIN] (source pin: no path-count read here)
+                let eb_gauge = pol.diag_on && pol.emit_batch_on;
+                if eb_gauge {
+                    dg.eb.begin();
+                }
                 emit_source(
                     framed.into(),
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
+                if eb_gauge {
+                    dg.eb.on_symbol(st.last_source_path);
+                }
                 // ── RWM_EMIT_BATCH pacer-quantum burst intake ─────────────
                 // Drain already-queued TUN packets without re-arming the
                 // select! (per-iteration overhead — tail-deadline scan, SACK
@@ -2993,9 +2989,14 @@ async fn run_window_sender(
                 // pooled store backstop from the live local counters (the
                 // emission step updates sent_store/sack_released), and the cc_pace
                 // token bucket. Burst quantum ≤ emit_burst ≈ 64 KB.
-                if emit_batch_live {
+                // Law 0: the bound is the quantum at EVERY path count -- no
+                // live-path scope (the v8 striping-gap reason is gone in v9).
+                if pol.emit_batch_on {
+                    // Law 0 (`emit_burst::emit_burst_bound`).
+                    let bound = emit_burst::emit_burst_bound(pol.emit_burst);
                     let mut burst = 1usize;
-                    while burst < pol.emit_burst {
+                    let mut why = emit_burst::BurstEnd::Cap;
+                    while burst < bound {
                         if reliable
                             && sack_release_outstanding(
                                 st.sent_store.len(),
@@ -3006,9 +3007,11 @@ async fn run_window_sender(
                                 ),
                             ) >= effective_store_cap
                         {
+                            why = emit_burst::BurstEnd::Store;
                             break; // store headroom exhausted (flow control)
                         }
                         if pol.cc_pace && st.src_tokens < 1.0 {
+                            why = emit_burst::BurstEnd::Tokens;
                             break; // pacing bucket dry (pacing contract)
                         }
                         match tun.try_read_packet() {
@@ -3023,15 +3026,24 @@ async fn run_window_sender(
                     &mut st,
                     &pol,
                     &sctx,
-                    emit_batch_live,
                 );
+                                if eb_gauge {
+                                    dg.eb.on_symbol(st.last_source_path);
+                                }
                                 burst += 1;
                             }
-                            None => break, // intake drained (or closed — the
-                                           // blocking read owns shutdown)
+                            None => {
+                                why = emit_burst::BurstEnd::Drained;
+                                break; // intake drained (or closed — the
+                                       // blocking read owns shutdown)
+                            }
                         }
                     }
+                    if eb_gauge {
+                        dg.eb.end(why);
+                    }
                 }
+                // [EMIT-BURST-END]
             }
         }
 

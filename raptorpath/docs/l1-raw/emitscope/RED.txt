@@ -1,0 +1,30 @@
+=== GREEN tree=/home/vibe/es/src commit=788d2ef 2026-10-05T01:23:30Z
+test batching_is_live_at_every_path_count ... N=1: eb_bursts=4061 eb_syms=31978 mean depth=7.87  [cap:3940/store:120/tokens:0/drained:1] [0:8/7.87]
+N=2: eb_bursts=4611 eb_syms=36874 mean depth=8.00  [cap:4608/store:1/tokens:0/drained:2] [0:8/4.44,1:8/5.55]
+N=4: eb_bursts=4751 eb_syms=37986 mean depth=8.00  [cap:4747/store:2/tokens:0/drained:2] [0:8/1.88,1:8/1.77,2:8/1.73,3:8/1.79]
+mean burst depth by N: [(1, 7.8744151686776656), (2, 7.996963782259813), (4, 7.995369395916649)]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.34s
+--- rc(loopback)=0
+test net::emit_burst::tests::gauge_counts_depth_ends_and_runs ... ok
+test net::emit_burst::tests::law0_bound_is_the_quantum_at_every_value ... ok
+test net::emit_burst::tests::t4_a_burst_of_b_symbols_gets_exactly_one_recompute ... ok
+test net::emit_burst::tests::the_batching_path_reads_no_path_count ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 517 filtered out; finished in 0.00s
+test net::tests::t2_same_path_runs_are_exact_on_both_paths_in_any_interleaving ... ok
+test net::tests::t2_v8_global_numbering_is_the_artefact_the_scope_guarded_against ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 519 filtered out; finished in 0.00s
+=== RED tree=/home/vibe/es/red-src commit=90a25e1 2026-10-05T01:24:52Z
+test batching_is_live_at_every_path_count ... N=1: eb_bursts=5145 eb_syms=40611 mean depth=7.89  [cap:5003/store:140/tokens:0/drained:2] [0:8/7.89]
+N=2: eb_bursts=5014 eb_syms=40098 mean depth=8.00  [cap:5012/store:0/tokens:0/drained:2] [0:8/4.70,1:8/4.45]
+N=4: eb_bursts=4019 eb_syms=32138 mean depth=8.00  [cap:4016/store:1/tokens:0/drained:2] [0:8/1.92,1:8/2.01,2:8/2.20,3:8/1.69]
+mean burst depth by N: [(1, 7.8932944606414), (2, 7.997207818109294), (4, 7.996516546404578)]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.52s
+--- rc(loopback)=0
+test net::emit_burst::tests::gauge_counts_depth_ends_and_runs ... ok
+test net::emit_burst::tests::law0_bound_is_the_quantum_at_every_value ... ok
+test net::emit_burst::tests::t4_a_burst_of_b_symbols_gets_exactly_one_recompute ... ok
+test net::emit_burst::tests::the_batching_path_reads_no_path_count ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 517 filtered out; finished in 0.00s
+test net::tests::t2_same_path_runs_are_exact_on_both_paths_in_any_interleaving ... ok
+test net::tests::t2_v8_global_numbering_is_the_artefact_the_scope_guarded_against ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 519 filtered out; finished in 0.00s

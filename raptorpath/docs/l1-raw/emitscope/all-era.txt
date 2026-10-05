@@ -1,0 +1,19 @@
+ES-ALL start 2026-10-05T00:43:05Z load=2.16 2.91 4.20 1/345 956627 hard=1791178381 soft=1791177781
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+ES-ALL build start commit=788d2ef cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=2.16 2.91 4.20 2026-10-05T00:43:05Z
+ES-ALL cargo build --release rc=0 wall=544s 2026-10-05T00:52:09Z
+ES-ALL test main rc=101 passed=1042 failed=1 ignored=50 binaries=87 2026-10-05T01:15:56Z
+ES-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-05T01:17:30Z
+ES-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-05T01:20:09Z
+ES-ALL tests done tfail=1 sha256=24fe4eca24b3c84742151a2b9354b875fec5cbd5d26dff5bd89d091bbfd3a28f 2026-10-05T01:23:30Z
+ES-ALL red/green record done (RED.txt) 2026-10-05T01:24:56Z
+ES-ALL smoke rc=0 wall=57s cotenants: cargo=0 rustc=0 load=2.90 2.69 3.53 2026-10-05T01:25:54Z
+ES-ALL SMOKE-PASS c_meas=42s c_pred=60s R_est=120s 2026-10-05T01:25:54Z
+ES-ALL GO (OPERATOR-GO 2026-10-05T02:01:35Z: the one failure (sigma_diag_reachability, V4-recorded timing flake class) passed 3/3 re-run alone (RED2.txt); smoke passed) 2026-10-05T02:01:45Z
+ES-ALL PLAN n_per_seed=8 seeds=42,7 block_est=120s arms='NEW EB0' 2026-10-05T02:01:45Z
+ES-ALL battery start cotenants: cargo=0 rustc=0 load=4.89 4.98 3.99 2026-10-05T02:01:45Z
+ES-ALL battery rc=0 wall=1623s cotenants: cargo=0 rustc=0 load=2.98 3.90 4.06 2026-10-05T02:28:48Z
+ES-ALL end bat_ok=1 soft_trunc=0 load=2.98 3.90 4.06 2026-10-05T02:28:48Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
