@@ -161,6 +161,9 @@ export ES_SHA
 refresh_locks redgreen
 rg() { # tag dir
   local tag="$1" dir="$2"
+  # a separate tree sharing the target dir: its archive mtimes predate the
+  # green build, so force a rebuild (else cargo re-runs the green artefacts)
+  find "$dir" -name '*.rs' -exec touch {} +
   {
     echo "=== $tag tree=$dir commit=$(cat "$dir/COMMIT" 2>/dev/null) $(date -u +%FT%TZ)"
     ( cd "$dir" && CARGO_TARGET_DIR="$SRC/target" stage "$CARGO" test --release -p raptorpath \

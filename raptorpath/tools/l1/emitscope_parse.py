@@ -142,7 +142,7 @@ def make_row(cell, arm, seed, rep, rc, wall_s, drv, cli, srv, cotenant=0, bin_sh
 
 
 # ── LEDGER ───────────────────────────────────────────────────────────────
-_HDR_SHA = re.compile(r"^=== binary \S+ sha256 ([0-9a-f]{64})")
+_HDR_SHA = re.compile(r"^=== binary (?:\S+ )+sha256 ([0-9a-f]{64})")
 
 
 def rows_of(paths):

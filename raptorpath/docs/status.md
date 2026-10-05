@@ -1585,7 +1585,9 @@ depth > 1 witness held on all 64 EB0 rows, duals included; `np` = legs on
 every row; `eb_bursts=0` on every NEW row); 16 per (cell, arm); 0 DNF.
 Harness note: the scorer's ledger-header sha regex did not match the
 header's two-token form, so it printed `BINARY sha256=-`; the driver's
-per-invocation sha check is what held, and `BINSHA.txt` carries the sha.
+per-invocation sha check is what held, and `BINSHA.txt` carries the sha. The regex was fixed after scoring (with the red-tree forced rebuild in
+`emitscope_run_all.sh`); re-scored from `es.log` it reads the sha, 0
+CONTAMINATED, and an identical verdict.
 Ledgers: `docs/l1-raw/emitscope/` (`es.log` sha256 6b76201c…, `score.txt`
 with every per-rep value, the smoke, `TESTS.txt`, `RED.txt`, `RED2.txt`,
 `PLAN.txt`, `BINSHA.txt`, `GO`, `all-era.txt`).
