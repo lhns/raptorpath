@@ -1,0 +1,2 @@
+5e74772ceb4c66a4f61f7962951dd6b14bf580e4b27012d63c62883d40c45a37  /home/vibe/p2arun/bin/p2a/raptorpath  commit=75d3ab4 built=2026-10-05T21:12:14Z
+c1e994221f96504024c7b8964e35a0026dd2429c8f0d951c1c37f442f006c66c  /home/vibe/p2arun/bin/main/raptorpath  commit=e655484 built=2026-10-05T21:12:14Z

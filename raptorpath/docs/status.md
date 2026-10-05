@@ -67,6 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates 3–10× more at c1s (finding 1); not shipped |
 | Threading redesign P0 (§9) | P0 (named runtime + `[THR]`/`[LAG]`) vs MAIN 8d7d8c1, `c1s-400`/`c1d-400`, n = 3, `RWM_RDIAG=1`, 12 invocations | D3 `D3-REFUTED-WITH-RECORD` at c1s (server receiver task 79 % busy, hottest server thread 0.36 core; stop rule not fired; at c1d the receiver task reads 92 %); no-behaviour-change `REFUTED-WITH-RECORD` (c1s goodput −6.7 %, disjoint ranges at n = 3; c1d within); per-thread budget recorded; nothing flipped |
 | Threading P1 (§11) | P1 (ack wake, no quinn call under the scheduler lock, DashMap guards dropped, persistent tail timer, lock-free counters) vs MAIN 8d7d8c1, c1s/c1d/c2/c8, n = 6 | `DELIVERED (SAME everywhere)`; ack wake holds (timer won ≤ 0.16 % of acked pauses); c1s sender-busy prediction MISSED (36.5 → 36.8 %); c2 client CPU +5.3 % within MDE; c8 fast-leg RTprop TREND-WORSE (ranges touch); shipped in c292268 |
 | Emission-batching scope, re-run (§8) | `NEW` vs `EB0` (Law 0), 4 cells, n = 8 × 2 seeds, 128 invocations, on `927bb00` (§7 receive-buffer fix) | `FLIP-RECOMMENDED`: BETTER at every cell, WORSE nowhere; `c1d-400` +41 % goodput, sender CPU −12 to −35 %; fed loss unchanged; 0 rcvbuf drops; flipped in `bf3a636` |
@@ -3099,3 +3100,135 @@ no truncation); the operator reads `all-era.txt` at most once per ≈ 20 min
 `sshd` or non-`rp-*` namespace is touched; exit state verified (0
 `raptorpath`, 0 `rp-*` namespaces, both locks released). Ledgers are copied
 to `docs/l1-raw/thread-p2a/`.
+
+### 12. Threading P2a — result
+
+Scored 2026-10-05 against the pre-registration above, literally; no
+amendment was made. **`REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`**: at
+`c1s-400` goodput −33.0 %, `CPUCLI` per GB +86.7 % and `CPUSRV` per GB
++54.8 %, every one with disjoint ranges (n = 6 each). `c1d-400`, `c2-100`
+and `c8-100` are `SAME`. **P2a does not ship.** Nothing was tuned in this
+battery.
+
+*Binary and session.* P2A = `75d3ab4` (engine tree `06837b7`), `sha256
+5e74772c…c45a37`; MAIN = `e655484`, `sha256 c1e99422…f006c66c`; both
+archived LF and built fresh on the benchmark VM (Xeon E5-2650 v3 era) in
+fresh target directories (`BINSHA.txt`). Launch 20:18:08Z (hard
+23:18:08Z); P2A build 254 s; tests 20:22–21:05Z; MAIN build 257 s; smoke
+21:12:57Z (`c_meas` 43 s < `C_PRED` 60 s, so `R_est` = `R_PRIOR`; n = 3
+per seed, no cut); battery 21:12:57–21:21:31Z (514 s, 48 invocations);
+the `ackd` block 164 s (16 invocations); locks released 21:24:16Z.
+**Session wall 1 h 06 min.** Exit state recorded by the envelope: 0
+`raptorpath`, 0 `rp-*` namespaces, both locks released. The operator read
+`all-era.txt` at 20:38, 20:58, 21:18 and 21:39Z (rule 13's ≈ 20 min).
+
+*Tests* (inside the locks, `TESTS.txt`). Release suite rc 0, **1 078
+passed, 0 failed**, 51 ignored (92 binaries); doc rc 0 (2 passed); wasm rc
+0 (35 passed); **debug suite rc 0, 939 passed, 0 failed**, 49 ignored (83
+binaries); parser tests rc 0; `LOCKORDER-PANICS 0`, `ACTORCELL-PANICS 0`.
+No flake fired.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 20:18:08Z) |
+| `ABORT-CRLF` | no (0 CR bytes in every `tools/l1` script) |
+| `ABORT-BUILD` | no (either tree) |
+| `ABORT-TESTS` | no (0 failures) |
+| `ABORT-SHA` | no (checked at start and before every invocation) |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 4 rows LIVE, `[TOPO]` on both P2A ends and neither MAIN end |
+| `ABORT-BUDGET` | no (n = 3 per seed) |
+| `ABORT-RC` | 0 of 48 |
+| `ABORT-BRINGUP` | 0 (0 `RUN-RETRY`) |
+| `VOID-COTENANT` | 0 of 48 |
+
+*What ran.* 6 blocks × 8 = 48 rows, all `LIVE` (0 witness failures, 0
+contaminated, 0 DNF); 6 per (cell, arm), 3 per seed; the `ackd` block 16
+rows, all LIVE (reported only). Ledgers: `docs/l1-raw/thread-p2a/`
+(`tp2.log` sha256 3a0dc219…, `score.txt` 24b4e47f… with every per-rep
+value, the per-thread lists and both seeds' medians, `ackd.log` 30c56186…,
+`TESTS.txt`, `smoke.log`, `smoke-check.txt`, `PLAN.txt`, `BINSHA.txt`,
+`all-era.txt`); the per-invocation endpoint logs stay on the VM under
+`/home/vibe/p2arun/run/diag-tp2`.
+
+*Per cell* (P2A vs MAIN, n = 6 each; median [min–max]; relative tolerance
+in brackets; the min–max rule as pre-registered):
+
+| cell | goodput Mbit/s MAIN → P2A | CPUCLI s/GB | CPUSRV s/GB | RTprop floor µs per leg | `[LAG]` p99 µs cli / srv | plc/truth per leg MAIN → P2A | verdict |
+|---|---|---|---|---|---|---|---|
+| `c1s-400` | 539.9 [478.7–555.9] → 362.0 [144.3–403.0] (−33.0 %, **WORSE**, 4.9 %) | 14.21 → 26.54 (+86.7 %, **WORSE**, 2.4 %) | 19.90 → 30.80 (+54.8 %, **WORSE**) | 2 325 → 2 361 (WITHIN) | 1 860 → 1 546 / 1 630 → 1 167 (WITHIN) | 1.027 → 1.034 | **WORSE** |
+| `c1d-400` | 430.5 [405.3–443.8] → 401.4 [371.3–416.7] (−6.8 %, TREND-WORSE, 5.6 %) | 27.34 → 28.10 (+2.8 %, WITHIN) | 29.48 → 32.62 (+10.7 %, TREND-WORSE) | 2 252 → 2 244; 2 277 → 2 308 (WITHIN) | 2 116 → 2 262 / 2 210 → 2 458 (WITHIN) | 1.009 → 1.003; 1.016 → 1.014 | **SAME** |
+| `c2-100` | 89.24 → 89.41 (+0.2 %, WITHIN, 1.4 %) | 34.6 [33.6–35.4] → 37.1 [33.9–40.7] (+7.2 %, TREND-WORSE, 6.3 %) | 47.8 → 45.6 (WITHIN) | 12 310 → 12 020 (WITHIN, tol 15.1 %) | 1 444 → 1 490 / 1 698 → 1 564 (WITHIN) | 1.002 → 0.990 | **SAME** |
+| `c8-100` | 100.7 → 102.5 (+1.8 %, WITHIN, 4.0 %) | 53.75 → 56.55 (+5.2 %, WITHIN) | 59.8 → 60.2 (WITHIN) | p0 10 520 → 10 060; p1 40 920 → 39 920 (WITHIN) | 2 009 → 1 472 / 1 559 → 1 494 (WITHIN) | 1.005 → 0.999; 1.006 → 0.993 | **SAME** |
+
+**Predictions** (checks): c1s `SAME` — **MISSED** (WORSE); the named c1d
+refutation risk — did **not** fire as WORSE (goodput and `CPUSRV`
+TREND-WORSE, ranges overlapping); c2 `CPUCLI` WITHIN or TREND-BETTER —
+**MISSED** (TREND-WORSE, +7.2 %); the RTprop and `[LAG]` p99 risks — did
+not fire (WITHIN at every cell and leg); the D9 readout — **MET**: the main
+thread (`comm=raptorpath`) reads 0.000 core on both sides of every P2A row
+(MAIN: client 0.115, server 0.180 at c1s; 0.122 / 0.130 at c1d).
+
+*Reported, not gated* (`score.txt` has every value):
+
+- **Acks per data datagram** unchanged: 0.997–1.000 in both arms at every
+  cell (one WindowAck per data datagram; the batching is on the consumer
+  side, the wire cadence is the server's).
+- **Worker parks per second** (Σ `[THR] rt` park ÷ wall): c1s client
+  8 800 → 24 306, server 9 631 → 26 406 (×2.7); c1d client 22 570 → 24 922,
+  server 18 880 → 27 934; c2 client 6 121 → 8 067 (+32 %), server
+  unchanged; c8 unchanged on both sides.
+- **Per-thread budget** (process cores, median): c1s client 0.931 → 1.194,
+  server 1.327 → 1.372 — more CPU for 33 % fewer bytes; the hottest thread
+  stays ≤ 0.45 core in every P2A row (the actor still wanders across the
+  six workers: no per-thread concentration).
+- **Ack inter-arrival** (`ackd` block, client `[ACKDIAG]` `gap_us`, n = 2
+  per arm): c1s p50 2 → 1 µs, p99 554 → 494 µs; c1d p99 885/806 →
+  1 257/1 547 µs; c2 p90 112 → 264 µs; c8 slow leg p50 44 → 10 µs.
+- **The c8 fast-leg RTprop re-check** (§11's TREND-WORSE): MAIN here (which
+  carries P1) reads p0 10 522 [5 150–10 689] µs, at P1's §11 level (10 670
+  [9 773–10 819]) rather than 8d7d8c1's (8 840 [7 819–9 822]) —
+  cross-session, so consistent with, not proof of, P1 having raised the
+  floor; P2A 10 064 [5 999–12 061]. No verdict.
+
+*Outside the pre-registered set (findings, no verdict).*
+
+1. **At c1s the sender loop iterates ≈ 3–10× more often under P2A.** From
+   the rows' cumulative `wake[..]` tokens (client `[DIAG]`, both arms):
+   `wake[tun]` 7 414–8 150 (MAIN) against 23 391–28 281 on the four
+   ordinary P2A rows and 47 807 / 82 634 on the two collapsed rows (144 and
+   237 Mbit/s); `wake[ack]` 8 504–10 193 against 43 342–53 224 and 89 575 /
+   154 078. The more loop iterations a row has, the lower its goodput.
+   **[H]** The actor serves each small ack batch and the sender's
+   re-evaluation in one poll, and its polls are cut short more often (one
+   coop budget shared by five sub-futures; the per-message budget unit in
+   the receiver), so the sender is re-entered per ack batch and emits a few
+   symbols per entry: per-iteration overhead multiplies and the emission
+   bursts (and GSO batches) shrink — an ack-clocked trickle. The ×2.7 worker
+   parks per second on both sides fit the same picture (every yield of the
+   actor re-queues it and notifies a parked worker). Not measured
+   directly: the burst sizes per iteration and the actor's yield count.
+2. **c1d did not saturate as predicted** (sender `busy` 97 % → 70 %): the
+   client actor carried the sender and the ack role without reaching
+   one core-equivalent of busy; goodput and server CPU trended worse
+   within overlapping ranges.
+3. **c2's client CPU moved up again** (+7.2 %, TREND-WORSE), on top of
+   §11's +5.3 % for P1 at the same cell: batching the acks did not buy back
+   the per-ack wake cost.
+
+*What it means.* Owning the scheduler in one task removes the mutex and
+makes the ack wake an intra-task wake, as built — the witnesses held, the
+ack batch wakes the actor once, the main-thread hop is gone, and the
+latency clauses (RTprop floor, `[LAG]` p99) are unchanged everywhere. But
+on the cell where the sender is lightly loaded and ack-clocked at
+≈ 50 k acks/s (c1s), co-locating the ack role with the sender turned the
+sender into a per-ack-batch loop: 3–10× more sender iterations, ×2.7
+worker parks, +87 % client CPU per byte, −33 % goodput. The pre-stated
+outcome rule applies: P2a does not ship, the result is recorded, and no
+tuning was done in this battery. The diagnosis the next step starts from is
+finding 1 (the sender's per-entry work under ack-batch wakes, and the
+actor's yield cadence), together with the per-thread budget above, which
+shows the work still spread over all six workers (P2b's owned-thread
+placement is untested).
