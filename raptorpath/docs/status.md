@@ -2014,3 +2014,214 @@ when the caller sets nothing) now batch; tail_matrix `ship` runs Realtime,
 outside the scope, and its `prior` arm already carried `=0`. Tests:
 `gates/tests.rs` (default ON, burst 64, the echo),
 `tests/emit_batch_default_loopback.rs` (the shipped binary, both positions).
+
+## 9. Threading redesign P0 — per-thread core budget — pre-registration
+
+Phase P0 of the threading redesign (owned paths, batched rings, no shared
+hot locks): **measure, no behaviour change.** Committed before VM contact;
+no number below is a result. Nothing is flipped by this battery.
+
+**Question (D3).** At `c1s-400` the shipped stack is pinned near 510 Mbit/s
+with the sender busy 35 % (§10 of `feat/quic-feeder-v2`, recorded in §10
+below as evidence), which makes the ceiling a non-sender one. The topology
+audit (D3) names the server's single receiver task (`run_receiver`:
+decode, deliver, one WindowAck per data datagram) as the best-supported
+candidate: P1 measured it at 0.61 core at 315 Mbit/s; scaled to 510 Mbit/s
+with §10's 28 % lower server CPU per byte that is ≈ 0.71 core, and ≈ 0.99
+if the receiver took no share of the saving. **Is any single server thread
+or task at ≥ 0.9 core at `c1s-400`?** `c1d-400` is measured beside it for
+the budget table and is not part of the question.
+
+**Stop rule (from the plan).** If `D3-CONFIRMED` (below), P2's server half
+— the receiver-role split — becomes the primary gate for `c1s`, and that
+is stated in this file before P2 runs.
+
+**What changed in the engine (measurement only).**
+
+1. `main.rs`: `#[tokio::main]` is replaced by its own expansion,
+   `Builder::new_multi_thread().enable_all().build()` + `block_on` (same
+   default worker count, the available parallelism: 6 on the VM), plus
+   `thread_name_fn` naming each pool thread `rp-w-<n>` in spawn order. No
+   other runtime knob changes. Workers are launched first, in index order,
+   so `rp-w-<i>` for `i < num_workers` is worker `i` — a hypothesis from
+   tokio's launch order (the join, `worker_thread_id`, is unstable);
+   `n ≥ num_workers` are blocking-pool threads (none expected on Linux).
+2. `src/rtobs.rs`: the `[THR]` readout from the STABLE `RuntimeMetrics`
+   only (`num_workers`, `worker_total_busy_duration`, `worker_park_count`,
+   `worker_park_unpark_count`; no `tokio_unstable`), one `[THR] rt` line per
+   worker; on Linux one `[THR] os` line per OS thread from
+   `/proc/self/task/<tid>/stat` (utime + stime, `comm`), the `block_on`
+   main thread (`comm=raptorpath`) included; one `[THR] sum` line;
+   elsewhere `[THR] os unavailable` (Windows builds: the reader is
+   `cfg(target_os = "linux")`).
+3. The `[LAG]` probe: one task on the runtime ticks every 10 ms (tokio
+   `interval`, `MissedTickBehavior::Delay`) and logs `now − scheduled`;
+   p50/p99/max printed. Provenance: the Cats Effect starvation checker
+   (th1 §1.5; paper §11.2 row `LAG_TICK`). **Instrument floor**: tokio
+   rounds timer deadlines up to the next millisecond, so every tick reads
+   0–1 ms late by construction — p50 ≈ 0.5–1 ms is the floor, not
+   starvation; p99 and max are the signal. It runs on a worker and does not
+   see the main thread.
+4. Windows of measurement: `phase=xfer` lines bracket one perf object — the
+   client's timed run (`run=1`; snapshot before `run_object`, lines after its
+   ack) and the server's object (`obj=1`; snapshot at its first packet,
+   lines after its completion ack is handed to the engine). Per-thread
+   `cores` = thread CPU over that window ÷ the window's wall. `phase=run`
+   lines are printed once at process end (cumulative since the runtime was
+   built; the server's ride the SIGTERM graceful path; reported only).
+5. Harness: `perf_rwm_c.sh` echoes each endpoint's `[THR] sum phase=xfer`
+   and `[LAG] phase=xfer` lines into the driver output; the full tables stay
+   in the endpoint logs the battery copies. `l1common.thr`/`thr_columns`
+   parse them (offline tests in `test_l1common.py`, pinned to the Rust
+   renderer's unit-test strings).
+
+**Component characterization (rule 14), committed with the code.** Unit
+tests in `rtobs.rs`: the `/proc` stat parser (comm counted from the last
+`)`), the quantile rule (= `l1common.q`), the exact `[THR]` token set and
+its deltas, the `os unavailable` path, `[LAG]` absent-as-`-`, and a live
+runtime whose worker is named `rp-w-*` and whose probe yields ≥ 10 samples
+in 250 ms with p99 ≥ p50. The routing test `tests/rtobs_reachability.rs`
+runs the SHIPPED binary as perf client and server and asserts both ends'
+`phase=xfer` and `phase=run` tables (one runtime: equal worker counts),
+`busy_frac` in [0, 1.05], `[LAG]` n > 0, and on Linux an `rp-w-*` thread and
+the main thread in `[THR] os`. What the battery should then see: 6 workers
+per side; the server's hottest thread somewhere in 0.6–1.0 core; the
+client's sender-hosting worker ≈ 0.35–0.6 core. What the benches cannot
+see: which task a worker's CPU belongs to (tasks migrate between workers,
+D7), hence the `[RDIAG]` reading below.
+
+**Instruments for D3** (both, on the server, in the `c1s-400` P0 rows):
+
+- **task-level**: `RWM_RDIAG=1` (exists, `net/mod.rs` ≈ 1250,
+  `receiver.rs` ≈ 1115): `[RDIAG] busy=<%>` = 1 − (time the receiver task
+  spent awaiting its `select!`) ÷ wall, every ≥ 500 ms, plus the inbound
+  `msg_tx` depth. `busy` counts the task's CPU AND its blocked time inside
+  its poll (quinn's mutex, the scheduler lock), so it is ≥ the task's
+  cores; a ready-but-unscheduled task counts as idle. The per-row reading
+  is the median over the IN-TRANSFER lines (`msgs ≥ 1000/s`; the transfer
+  runs ≈ 53 k datagrams/s, the idle tail < 100/s). `busy ≥ 90 %` is read as
+  "the receiver task is the service wall (≥ 0.9 core-equivalent of wall,
+  lock wait included)";
+- **thread-level**: the hottest server OS thread's `cores` in the `obj=1`
+  window. A thread can host several tasks and a task can spread over
+  threads, so ≥ 0.9 here is sufficient for a saturated thread, not
+  necessary for a saturated task.
+
+**Binaries and arms.** Two binaries, interleaved in one session (rule 3):
+`P0` = this branch's HEAD (archived with `git -c core.autocrlf=false -c
+core.eol=lf archive`, built fresh on the benchmark VM in a fresh run root
+and target dir); `MAIN` = `main` 8d7d8c1 (the shipped stack the §10 NEW arm
+measured, modulo §10's own known effect 1), archived the same way and built
+in its own fresh target dir. `sha256` of both in `BINSHA.txt`, re-verified
+before every invocation. MAIN is the control for the no-behaviour-change
+check; it is added to the brief's design because §10's numbers are another
+session (cross-session drift has measured 2.3×, rule 3) and §10's NEW was
+not byte-identical to `main`.
+
+**Invocation.** Every row is `perf_rwm_c.sh c1 c1 bulk 400000000 1
+<single|dual>` (`c1s-400` = `c1 c1 single 400000000`, `c1d-400` = `c1 c1
+dual 400000000`, §5's geometry), `--window-reliable`, fresh topology, with
+`RWM_GEN=0 RWM_DIAG=1 RWM_RDIAG=1 RWM_PERF_TIMEOUT_S=150 SEED=<seed>`; every
+arm first `env -u`'s `RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH
+RWM_EMIT_BURST RWM_RDIAG` (rule 15d) and sets `RWM_RDIAG=1` explicitly;
+`RWM_RDIAG` is in `RWM_FORWARD`, so it reaches BOTH ends (the client's
+reading measures its ack task; reported). Neither §10 arm ran `RWM_RDIAG`.
+
+**Plan.** Blocks (rep 1, seed 42), (rep 1, seed 7), (rep 2, seed 42): in
+each block `c1s-400` then `c1d-400`, each P0 and MAIN, the arm order
+rotated by the block index. **n = 3 per arm and cell** (2 × s42, 1 × s7;
+both seeds reported, rule 4); 12 invocations.
+
+**Capacity and headroom (rule 16).** `c1s-400`: 1000 Mbit shaped, §10 NEW
+510.4 Mbit/s, ≈ 48 % headroom; `c1d-400`: 2000 Mbit, 424.4, ≈ 79 %. No
+throughput target is set; goodput and CPU are no-change guards.
+
+**Witnesses per row** (`p0_parse.py row`; a failing row is `WITNESS-FAIL`
+or `CONTAMINATED`, excluded and counted; no client summary is `NO_DATA`):
+§5's set via `stage3_parse.make_row` (`[PIPE] window/Rlc/bulk` and the
+driver header; `[GATES]` on both ends; the RLC auto-select line on both;
+cadence ACTIVE on both; `[GATES] RWM_POOL_ANCHOR=0` on both; no generation
+guard), plus `[GATES] RWM_EMIT_BATCH=1` and `RWM_RDIAG=1` on both ends,
+plus ≥ 1 in-transfer `[RDIAG]` line on the server; P0 rows: the `phase=xfer`
+`[THR] rt` lines, the `[THR] sum` line, `[LAG]` with n > 0, and (Linux)
+`[THR] os` lines naming an `rp-w-*` thread, on BOTH ends; MAIN rows: no
+`[THR]`/`[LAG]` line on either end (two-sided, rule 15c: the wrong binary
+fails).
+
+**Outcomes.**
+
+*D3* (P0 rows at `c1s-400`; medians over the live rows):
+- **`D3-CONFIRMED`** iff median server `[RDIAG] busy` ≥ 90 % OR median
+  hottest-server-thread `cores` ≥ 0.90. The stop rule fires and is recorded
+  in the result.
+- **`D3-REFUTED-WITH-RECORD`** iff both are readable at ≥ 3 live rows and
+  both are below their threshold.
+- **`UNSCOREABLE`** with fewer than 3 live P0 rows at `c1s-400`;
+  **`NEEDS-MORE-<rdiag|thr>`** when one instrument is unread at ≥ 3 rows and
+  the other is below its threshold.
+
+*No-behaviour-change check* (P0 against MAIN, in session, per cell, for
+goodput and `CPUCLI`, §5's committed relative MDE: `c1s-400` 4.9 % / 2.4 %,
+`c1d-400` 5.6 % / 6.5 %): a clause is *within* iff |med(P0)/med(MAIN) − 1|
+≤ MDE; outside the MDE it is *MOVED* when the two arms' [min, max] ranges are
+disjoint and *UNDERPOWERED* when they overlap. **`NO-CHANGE-HELD`** iff every
+clause is within; **`REFUTED-WITH-RECORD`** (the instrument changed
+behaviour) iff any clause is MOVED; **`GUARD-UNDERPOWERED`** otherwise;
+**`UNSCOREABLE`** with fewer than 3 live rows of either arm at a cell.
+Reported beside it, not scored: P0's medians against the §10 NEW numbers
+the brief names (`c1s-400` 510.4 Mbit/s and 5.73 s `CPUCLI`; `c1d-400` 424.4
+and 11.19 s), and MAIN's identity against §10's control band (goodput
+median within ±2 × rel_gp: `c1s-400` [467.1, 568.5], `c1d-400` [377.8,
+473.0]; outside = `CONTROL-MOVED` beside that cell).
+
+*The deliverable* (not an outcome; reported in every case): a per-thread
+core budget for client and server at both cells — the OS threads ranked by
+`cores` (`thr_r1..3`, with the hottest thread's `comm` per rep), the main
+thread, the `rp-w-*` sum, the process sum, the six workers' `busy_frac`
+ranked, park/unpark per second, `[LAG]` p50/p99/max, `[RDIAG]` busy and
+`q_avg`, median [min–max] with n, and every per-rep value.
+
+**Predictions** (checks, read as `MET`/`MISSED` in the result): D3 is borderline —
+server `[RDIAG] busy` 75–95 % and the hottest server thread 0.6–0.9 core
+(the derivation above); `NO-CHANGE-HELD` at both cells (the instrument adds
+≈ 100 timer wakes/s and two `/proc` reads per object, ≪ the ≈ 50 k
+datagrams/s and 16–39 k worker park/unparks per second).
+
+**Known effects, declared.** (1) The lag probe is a new task on the runtime
+in the P0 binary (≈ 100 wakes/s); (2) the perf ends read `/proc` (≈ 10
+files) on the main thread at the object's first packet (server) or before
+it (client), and again at its end; (3) `RWM_RDIAG=1` adds two clock reads
+per inbound message on both ends in BOTH arms; (4) thread names change
+`comm` from `tokio-runtime-w` to `rp-w-<n>`. These are what the
+no-behaviour-change check measures.
+
+**Abort causes, in priority order** (the scored section opens with this
+table, filled): `ABORT-LOCK`, `ABORT-CRLF`, `ABORT-BUILD` (either binary),
+`ABORT-TESTS` (`cargo test -p raptorpath -p raptorpath-math --release
+--no-fail-fast -- --test-threads=2`, `cargo test --doc -p raptorpath
+--release`, `cargo test -p raptorpath-wasm` with `GOLDEN_CAPTURE` unset, and
+the python parser tests; a failure that does not pass on an immediate
+re-run of that test alone is real — the automatic GO is withheld and the
+operator writes GO only for a documented flake, e.g. the known
+`sigma_diag_reachability`), `ABORT-SHA`, `ABORT-SENTINEL-UNWRITABLE`,
+`ABORT-SMOKE` (smoke = `c1s-400` P0, `c1s-400` MAIN, `c1d-400` P0, seed 42:
+every row `LIVE` with its CPU line and `[TRUTH]` per leg; both arms
+present), `ABORT-RC` (row `VOID-RC`, the battery goes on), `ABORT-BRINGUP`
+(`NO_DATA` after 2 attempts). Void class `VOID-COTENANT`. The Windows check
+(`cargo check -p raptorpath --target x86_64-pc-windows-gnu`, if that target
+is installed on the VM) is recorded and does not gate.
+
+**Budget.** ≈ 35 min build + tests (§10's session: 31 min), ≈ 10 min for
+main's binary, ≈ 1 min smoke, 12 invocations × ≈ 20 s ≈ 4–5 min; ≈ 55 min
+of the 5 h cap; hard backstop at lock acquisition + 4 h 50 min. No cut is
+planned; a truncated battery is scored at the n reached, and a null at
+reduced n reads `GUARD-UNDERPOWERED` / `NEEDS-MORE-<n>`, never a
+refutation.
+
+**Session rules.** §10's: both locks for the whole session via
+`lib_battery.sh` (`p0_run_all.sh`, started by the lock waiter
+`p0_launch.sh`); the operator checks at most once per ≈ 20 min (rule 13,
+recorded); `pkill -x raptorpath` only; no `ens18`, firewall, `sshd` or
+non-`rp-*` namespace is touched. Harness: `tools/l1/p0_run_all.sh`,
+`p0_battery.sh`, `p0_parse.py` (offline test `test_p0_parse.py`). Compact
+ledgers are copied to `docs/l1-raw/thread-p0/`.
