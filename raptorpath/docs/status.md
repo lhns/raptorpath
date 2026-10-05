@@ -1968,7 +1968,11 @@ removed the drop channel.
 cause was the receiver kernel's receive-buffer drops counted as path loss.
 With the 4 MB `SO_RCVBUF` on `main`, the receiver drops nothing under
 batching either (0 in 64/64 EB0 rows), and the fed loss matches the wire's
-under both arms (`plc`/truth 0.98–1.03). The batching gains of the first run
+under both arms (`plc`/truth 0.98–1.03). The fix's mechanism executed on
+every row: the per-invocation endpoint logs (`/home/vibe/es2/run/diag-es/`,
+read after the session, not by the scorer) carry 384 `[RCVBUF] req=4000000
+granted=8000000 via=SO_RCVBUF clamped=0` echoes, exactly one per socket per
+end (128 rows, 192 legs, both ends), and no other value. The batching gains of the first run
 reproduce at the same size: `c1d-400` +41.1 % goodput and −34.5 % sender
 CPU, −25 % CPU at `c1s-400`, and now a CPU gain beyond MDE at `c8-100`
 (−20.5 % against 11.6 %), the cell where the July regression fired. Under
