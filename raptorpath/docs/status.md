@@ -2831,3 +2831,271 @@ c1d; the defects it removes (lock nesting under quinn, DashMap guards
 across awaits, per-iteration timer churn, per-datagram stats/batch locks)
 were off the critical path, as predicted. Shipping P1 is the operator's
 merge.
+
+## 12. Threading P2a — the logic actor — pre-registration
+
+Phase P2a of the threading plan (owned paths, batched rings, no shared hot
+locks): **one task owns the scheduler and the FEC controller.** Committed
+before any VM contact of this battery (the dev builds and the red/green
+test runs on the VM preceded it; they are tests, not results). No number
+below is a result. Nothing is flipped by this battery; shipping P2a is the
+operator's merge.
+
+**What P2a changes** (branch from `main` e655484 = P0 + P1; engine commits
+`711cfc0` step 0, `133adb9` the actor, `06837b7` the bounded yield;
+exploration `73694a1`; harness `0ded0f1`). No wire change, no law change, no new gate on the
+data path, the same structure at every path count and every (δ, ρ):
+
+1. **Step 0 — the instrument is opt-in.** `RWM_RTOBS` (default off, echoed
+   on `[GATES]`, in `RWM_FORWARD`): unset, `runtime_obs::arm` is a no-op —
+   no 100 Hz `[LAG]` probe task, no `[THR]` `/proc` reads, no lines (§9
+   finding 6: the always-on instrument cost c1s goodput −6.7 %). Thread
+   names stay. Instrumentation gating, not a δ/ρ mode. Routing test
+   `tests/runtime_obs_reachability.rs`, two-sided (lines + `RWM_RTOBS=1` on
+   both perf ends with it set; zero `[THR]`/`[LAG]` lines and `RWM_RTOBS=0`
+   on both ends without it).
+2. **The logic actor** (`src/actor.rs`; exploration and classification in
+   `docs/thread-p2-scheduler-access.md`: 77 scheduler + 5 FEC-controller
+   sites in 5 tasks; 71 + 5 class (a), 5 class (b), 0 class (c), 1 class
+   (d)). ONE tokio task (on the current multi-thread runtime) owns the
+   `Scheduler` and the `FecRateController` in `ActorCell`s — no mutex: a
+   borrow never blocks, an off-owner borrow panics, the guard is `!Send`
+   so a borrow across an `.await` does not compile — and runs the window
+   sender, the receiver role (decode → deliver → ack state; on the client
+   the inbound `WindowAck` handling), the 2 s report, the control fast path
+   and the path-command processor as five sub-futures with per-sub-future
+   wakers. The parent task is woken only when the actor is not already in
+   its poll loop (the Cats Effect `notifyParked` rule); a receiver → sender
+   wake (`AckWake`) inside the actor is served in the same poll. The poll
+   loop runs while tokio's coop budget remains and for at most one pass
+   per sub-future (a resource bound against a self-waking sub-future, not
+   a law). P1's lock-order witness is kept on the new cell (no quinn call
+   with the scheduler borrowed).
+3. **Acks as batches.** The receiver role drains the inbound channel with
+   `recv_many` up to its own depth (`MSG_CHANNEL_DEPTH` = 4096, ADR-0011's
+   bound; no new constant); one wake of the parked actor per batch. The
+   per-message body is unchanged; the hold/deficit deadlines (and their
+   `[QCLK]` sample) are evaluated when the receiver is about to wait, not
+   per message of a batch. One cooperative-budget unit per buffered
+   message (`coop::consume_budget`), so the yield cadence inside a batch is
+   main's (one `recv()` per message) — the bounded auto-yield the plan
+   takes from Cats Effect.
+4. **The server's receiver role is the same actor**, not a sibling: its
+   per-datagram writes (`touch_path`, `record_arrival`,
+   `record_incoming_loss`) land in the `PathState` estimators the sender
+   role reads; a sibling would need a per-datagram message or a `PathState`
+   rx/tx split (P2b/P3). P3's receiver split is not in scope.
+5. **perf on a worker (D9).** The perf client/server body runs as a task on
+   a runtime worker, not on the `block_on` main thread, so the generator /
+   sink ↔ engine hop is task-to-task (production TUN's shape, D10).
+6. **No measurement arm.** The cell replaces the mutex at the type level in
+   every signature; an `RWM_TOPO` arm would duplicate the machine. The
+   comparison is P2a's binary against main's binary, interleaved.
+
+**Red / green (dev, VM).** Red by construction on `main` e655484 (the
+types do not exist there): `p2a_an_ack_batch_wakes_the_actor_with_zero_timer_advance`
+(paused clock: three WindowAcks queued at once wake the parked actor
+exactly once and end the sender's paused wait with the clock unmoved), its
+control `p2a_control_a_non_ack_batch_leaves_the_sender_to_its_timer` (a
+PathReport batch: the 1 ms poll fires, the clock advances — the harness
+can see a failure), `p2a_no_mutex_wraps_the_scheduler_or_the_fec_controller`
+(source scan: the same patterns over `main` e655484's non-test `src/`
+read 28 lines — `SchedMutex`, `Mutex<FecRateController>`),
+the `actor::tests` (owner check, re-borrow, the one-parent-wake rule), the
+`ActorCell` `compile_fail` doctest (guard across an await), and the
+`RWM_RTOBS` off side of `runtime_obs_reachability` (run against `main`
+e655484's binary on the VM: both of its tests FAIL, each at its first
+assertion — no `RWM_RTOBS` echo on `[GATES]`). Green (dev, VM, before this
+commit): the release suite on the actor tree `133adb9` 1 078 passed, 0
+failed, 51 ignored (92 binaries), doc + wasm 37 passed; the debug suite on
+`06837b7` (the witness and the `ActorCell` owner checks compiled in) 941
+passed, 0 failed, 49 ignored (84 binaries), 0 `lock order: quinn seam`
+and 0 `ActorCell` panics in the captured output; the Windows host `cargo
+check -p raptorpath --tests --bin raptorpath` clean. The merge base itself
+(`main` e655484, never tested as merged) was run first: release suite +
+doc + wasm 1 103 passed, 0 failed, 51 ignored (95 binaries) — no merge
+breakage. Adapted because they test the removed mechanism (said here):
+`net::tests::c1_attribution_lock_blocking_bench` (`#[ignore]`d; two OS
+threads sharing the scheduler mutex — now a local `parking_lot` mutex, it
+measures the removed mechanism); `s10_*` and `p1_d1_*` (a `SchedCell` in
+place of `Arc<SchedMutex>`); `sched_lock`'s witness unit test (the same
+assertion on the cell). `lock_order_loopback`, `ack_wake_loopback`,
+`reliable_delivery_hold`, the loss-truth (`s10_*`), store-gate and SACK
+suites are unchanged.
+
+**Mechanism and predictions** (rule 11; derivation, then the named
+refutation risks).
+
+- *What is removed.* Per datagram, ≈ 6–8 scheduler-mutex acquisitions
+  that could contend across workers (th2 §4; P1 measured the residual
+  sender lock sleeps at ≈ 1 % of wall under cadence), the cross-task
+  ack → sender hop (now intra-task), and the main-thread futex on the perf
+  generator/sink hop (D9: the main thread carried 0.11–0.18 core in §9).
+- *What is added.* Everything that touched the scheduler now shares ONE
+  task: the client's ack handling runs between the sender's polls, never
+  in parallel with them, and while the sender waits on quinn's connection
+  mutex (a blocking wait inside its poll) the whole actor waits.
+- **c1s**: client sender busy ≈ 36 % (§11) + ack role ≈ 10 % (§9 `[RDIAG]`)
+  ≪ 1 core; server receiver ≈ 79 % with the server's sender role idle.
+  Predicted **SAME** (goodput WITHIN; CPU WITHIN or TREND-BETTER).
+- **c1d — the named refutation risk.** Client sender busy 95 % (§11) of
+  which 0.226 of wall is asleep in quinn (§10), + the ack role 19 % (§9):
+  the sum exceeds one core-equivalent, so the actor is predicted to be the
+  client's bottleneck: goodput and `CPUCLI` are the clauses most at risk;
+  **WORSE at c1d is a possible outcome of this design and is pre-stated
+  here, not explained after.** The server receiver at 92 % (§9 finding 1)
+  gains no work.
+- **c2 / c8** (ack-clocked, many ack wakes per intake wake, §11 finding 1):
+  an ack batch is now one actor poll and at most one sender re-evaluation
+  instead of one sender loop body per ack; predicted `CPUCLI` WITHIN or
+  TREND-BETTER at c2.
+- **RTprop floor** (risk at c1d and c2): the floor is the minimum app-echo
+  RTT; an ack that waits for the sender's poll to end is processed later,
+  and the ConnectionDriver woken from the actor is still deferred to the
+  actor's yield (D8, the FDT precedent: +5.6 % at c1d, +11 % at c2).
+- **`[LAG]` p99** (risk): longer actor polls delay the probe task on the
+  same worker.
+
+**Known effects, declared** (what the battery measures besides the
+mechanism): (1) the receiver's hold/deficit deadlines and their `[QCLK]`
+sample are evaluated once per wait, not once per message of a batch
+(`[QCLK]` sample counts change; diagnostic only); (2) `[RDIAG] busy` now
+counts time spent in sibling sub-futures as idle (the probe is not used
+here); (3) the perf body runs on a worker (D9); (4) one tokio coop budget
+(128 units per poll) is shared by the five sub-futures, where each task
+had its own; (5) `[DIAG]`'s sender `busy` share is unchanged in meaning
+(the sender sub-future's own loop body).
+
+**Binaries.** P2A = this section's commit (archived with `git -c
+core.autocrlf=false -c core.eol=lf archive`, built fresh on the benchmark
+VM in a fresh target dir); MAIN = `main` e655484, archived and built the
+same way in its own fresh target dir. Both copied under the real name
+`raptorpath`; `sha256` in `BINSHA.txt`, re-verified before every
+invocation. MAIN ignores `RWM_RTOBS` (its instrument is always on), so
+"MAIN with `RWM_RTOBS=1`" is MAIN; both arms carry the same instrument
+(§9 finding 6's offset is common to the arms).
+
+**Harness.** Envelope `tools/l1/threadp2a_run_all.sh` (both locks for the
+whole session via `lib_battery.sh`; build → tests → MAIN build → smoke →
+budget → battery → ack-cadence block → score; hard backstop), driver
+`threadp2a_battery.sh`, scorer `threadp2a_parse.py` (rows by
+`stage3_parse.make_row`, helpers from `threadp1_parse`; offline test
+`test_threadp2a_parse.py`). No operator GO gate: SMOKE-PASS proceeds.
+
+**Tests first** (inside the locks, on the P2A tree): `cargo build
+--release`; `cargo test -p raptorpath -p raptorpath-math --release
+--no-fail-fast -- --test-threads=2`; `cargo test --doc -p raptorpath
+--release`; `cargo test -p raptorpath-wasm` (`GOLDEN_CAPTURE` unset); the
+debug run `cargo test -p raptorpath --no-fail-fast -- --test-threads=2`
+(the lock-order witness and the `ActorCell` owner checks compiled in; the
+counts of `lock order: quinn seam` and `ActorCell` panics are recorded and
+must be 0); the python parser tests (`test_l1common.py`,
+`test_stage3_parse.py`, `test_threadp2a_parse.py`). A failure that passes
+on an immediate solo re-run is `FLAKE`; any other is `ABORT-TESTS`.
+
+**Cells** (§5's geometry, size, capacity and > 5 % headroom, as §11):
+`c1s-400`, `c1d-400`, `c2-100`, `c8-100`. **Arms**: `MAIN` and `P2A`,
+both bulk, `--window-reliable`, the shipped defaults (every arm `env -u
+RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST RWM_RTOBS
+RWM_ACKDIAG`, then `RWM_RTOBS=1` on both; rule 15d), `perf_rwm_c.sh` with
+`RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 SEED=<seed>`, one run, a
+fresh topology. **Plan per (rep, seed) block: 8 invocations**, cells in the
+order above, arm order within a cell rotated by the block index (rule 3).
+Seeds 42 and 7; blocks rep 1 s42, rep 1 s7, rep 2 s42, …; **n = 3 per seed
+(6 per arm and cell)**, cut only by the budget rule.
+
+**Witnesses per invocation** (a failing row is `CONTAMINATED` /
+`WITNESS-FAIL`, excluded and counted; no client summary = `NO_DATA`):
+`stage3_parse`'s set (`[PIPE]` `window/Rlc/bulk` both ends; `[GATES]`
+both; the RLC line both; no generation guard; cadence ACTIVE both;
+`RWM_POOL_ANCHOR=0` both); `[GATES] RWM_EMIT_BATCH=1` both and the
+`emission batching ACTIVE` echo on the client; the client's `[DIAG]`
+`wake[` token (both arms); **the P2a execution witness, two-sided**: the
+`[TOPO] logic actor` echo on BOTH endpoints of every P2A row and on
+NEITHER endpoint of a MAIN row, and `[GATES] RWM_RTOBS=1` on both P2A
+endpoints; the `[THR]`/`[LAG]` window of the measured object on both ends
+of both arms (client `run=1`, server `obj=1`); the row's `sha256` is its
+arm's binary.
+
+**Scored clauses per cell**, P2A against MAIN, with §11's min–max rule
+(**WORSE** iff P2A's median is beyond MAIN's median·(1 ∓ rel) in the worse
+direction **and** the two arms' [min, max] ranges are disjoint in that
+direction; **TREND-WORSE** beyond the band with overlapping ranges —
+reported and named, not a fail; **BETTER** / **TREND-BETTER**
+symmetrically; **WITHIN** otherwise):
+
+| clause | direction | rel |
+|---|---|---|
+| goodput | higher is better | §5 MDE: c1s 4.9 %, c1d 5.6 %, c2 1.4 %, c8 4.0 % |
+| `CPUCLI` per GB | lower | §5 CPUCLI MDE: 2.4 / 6.5 / 6.3 / 11.6 % |
+| `CPUSRV` per GB | lower | the same, as a declared transfer (§11) |
+| RTprop floor, per leg (min non-zero `rtp_us` of the client's `[DIAG]`) | lower | **max(5 %, MAIN's half-range / MAIN's median)** (§11's rule; no committed MDE exists) |
+| `[LAG]` p99, client and server (the object's window) | lower | **the same rule, max(5 %, MAIN's half-range / median)** — relative, because the VM is shared and oversubscribed at c8 |
+| fed loss | — | per leg med(`plc`/`[TRUTH]`) under P2A within [1/1.3, 1.3] × MAIN's (§11) |
+| DNF | — | excess > 0.20 (§5) |
+
+**Per-cell verdict.** **WORSE** iff any clause is WORSE or the feed moved
+or the DNF excess fired; **BETTER** iff not WORSE and goodput or a CPU
+clause is BETTER; **SAME** otherwise; **UNSCOREABLE** at a cell where
+either arm has < 3 live rows or ≥ 2 witness-failed rows, a feed ratio is
+unread, or an abort cause fired.
+
+**Outcomes, in precedence order** (one verdict):
+1. `UNSCOREABLE` — an abort cause fired.
+2. `REFUTED-WITH-RECORD (WORSE-AT-<cells>)` — WORSE at any scoreable cell:
+   P2a does not ship; the per-cell record and the reported columns below
+   (the `[THR]` per-thread budget first) are the diagnosis. **No tuning in
+   this battery.**
+3. `UNSCOREABLE-AT-<cells>` — a hard blocker at a cell, none WORSE.
+4. `DELIVERED (BETTER-AT-<cells>)` or `DELIVERED (SAME everywhere)` — no
+   cell WORSE, every cell scoreable, every witness held: P2a ships (the
+   merge is the operator's).
+
+**Reported, not gated** (printed per cell and arm, median [min–max], n):
+acks per data datagram (the server's last `[CTLD]`: Σ control frames sent /
+Σ data frames received); the `[THR]` per-thread budget (process cores, the
+three hottest threads with their `comm`, the main thread, per rep the four
+hottest threads per side); worker parks per second (`[THR] rt`, Σ park ÷
+wall); `[LAG]` p50/p99/max; sender `busy`. **The D9 readout**: the main
+thread's (`comm=raptorpath`) cores per side under P2A, predicted ≈ 0 (the
+perf body left it), against MAIN's 0.11–0.18 (§9); the battery cannot
+separate D9's share of any goodput/CPU change from the actor's (one binary
+carries both) — this is the attribution, stated in advance. **The ack
+inter-arrival** comes from a separate reported-only block run after the
+scored battery if it fits before the soft deadline (tag `ackd`: the same
+plan with `RWM_ACKDIAG=1` on both arms, one rep per seed, 16 invocations;
+the client's last `[ACKDIAG]` `gap_us[p50 p90 p99 n]` per path); those rows
+never enter a clause (the gauge's per-ack lock and clock reads are an
+instrument cost the scored rows must not carry). **The c8 fast-leg RTprop
+re-check** (§11's TREND-WORSE, P1 vs 8d7d8c1, ranges touching): MAIN here
+carries P1, so its c8 p0 floor (n = 6) is printed beside §11's MAIN
+8d7d8c1 (8 840 [7 819–9 822] µs) and P1 (10 670 [9 773–10 819] µs) —
+cross-session, reported, no verdict.
+
+**Abort causes, in priority order** (the scored section opens with this
+table, filled): `ABORT-LOCK`, `ABORT-CRLF`, `ABORT-BUILD` (either tree),
+`ABORT-TESTS`, `ABORT-SHA`, `ABORT-SENTINEL-UNWRITABLE`, `ABORT-SMOKE` (one
+invocation per arm at `c1s-400` and `c8-100`, seed 42: every row LIVE with
+goodput, both CPU lines, `busy`, `[LAG]` p99 on both ends, and per leg
+`[TRUTH]`, `plc` and an RTprop floor — the scored inputs only; both arms
+present; nothing in it is a result), `ABORT-BUDGET` (n < 2 after the budget
+rule), `ABORT-RC` (that row `VOID-RC`, the battery goes on),
+`ABORT-BRINGUP` (no summary after 2 attempts: `NO_DATA`); void class
+`VOID-COTENANT` (a `cargo`/`rustc` process before or after an invocation).
+
+**Budget.** Hard backstop = launch + 3 h, soft = hard − 10 min (the task's
+≈ 2 h aim; the 5 h cap is not approached). Priors: builds ≈ 9 min, release
+tests ≈ 25 min, debug tests ≈ 25 min, `R_PRIOR` = 240 s per 8-invocation
+block (§11 measured ≈ 80 s); scored battery ≤ 6 blocks ≈ 8–25 min; the
+`ackd` block ≈ 3–8 min. n per seed = min(3, ⌊(soft − now) / (2·R_est)⌋),
+`R_est` = `R_PRIOR`·max(1, c_meas/60 s) from the smoke; the battery starts
+no block that would cross soft (`TRUNCATED-AT-REP-BOUNDARY`, scored at the
+n reached).
+
+**Session rules.** Both locks for the whole session; detached envelope;
+earned sentinels (`DONE-ALL` only with `TP2-BATTERY-DONE`, `check` rc 0 and
+no truncation); the operator reads `all-era.txt` at most once per ≈ 20 min
+(rule 13, recorded); `pkill -x raptorpath` only; no `ens18`, firewall,
+`sshd` or non-`rp-*` namespace is touched; exit state verified (0
+`raptorpath`, 0 `rp-*` namespaces, both locks released). Ledgers are copied
+to `docs/l1-raw/thread-p2a/`.
