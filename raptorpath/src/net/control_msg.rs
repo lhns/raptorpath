@@ -195,6 +195,11 @@ fn on_ack(
     let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
     let copa_feed = ctx.copa_feed;
 
+    // Threading P1, D2: the transport reads (`wire_rtt` is a quinn call) are
+    // taken before the scheduler guard, and the pass-through window write
+    // after it; neither depends on scheduler state.
+    let wire = wire_reads(transport, path_id, true);
+    let mut cc_window: Option<u64> = None;
     let mut sched = scheduler.lock();
     sched.touch_path(path_id);
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
@@ -273,7 +278,7 @@ fn on_ack(
             // dwell); the estimator above keeps the app-echo RTT for
             // the reliability/tail machinery. Gate off ⇒ app echo.
             let cc_rtt = if crate::scheduler::copa_wire_active() {
-                transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
@@ -281,11 +286,9 @@ fn on_ack(
         }
         // Wire-level loss evidence for the competitive AIMD (the per-batch
         // Ack arm; the WindowAck feed path has its own call). No-op unless
-        // RWM_COPA_COMPETE.
-        if crate::scheduler::copa_compete_active() {
-            if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                path.on_wire_congestion_events(ev);
-            }
+        // RWM_COPA_COMPETE (read before the guard: `wire_reads`).
+        if let Some(ev) = wire.cong_events {
+            path.on_wire_congestion_events(ev);
         }
 
         // ADR-0003: update loss stats from ACK.
@@ -342,11 +345,37 @@ fn on_ack(
 
         // The per-batch Ack arm drives Copa via
         // `sched.ack` above — publish its cwnd as the pass-through
-        // substrate window too (no-op unless RWM_QUIC_CC=passthrough).
-        transport.set_cc_window_bytes(
-            path_id,
-            path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-        );
+        // substrate window too (no-op unless RWM_QUIC_CC=passthrough),
+        // after the guard is dropped.
+        cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
+    }
+    drop(sched);
+    if let Some(bytes) = cc_window {
+        transport.set_cc_window_bytes(path_id, bytes);
+    }
+}
+
+/// Threading P1, D2: the per-ack transport reads, taken with the scheduler
+/// released (`wire_rtt` is a quinn call; the congestion counter is the
+/// pass-through CC's atomics). Each is `None` unless its gate is on, so the
+/// shipped default makes no call at all.
+struct WireReads {
+    rtt: Option<Duration>,
+    cong_events: Option<u64>,
+}
+
+fn wire_reads(transport: &QuicTransport, path_id: u32, compete_here: bool) -> WireReads {
+    WireReads {
+        rtt: if crate::scheduler::copa_wire_active() {
+            transport.wire_rtt(path_id)
+        } else {
+            None
+        },
+        cong_events: if compete_here && crate::scheduler::copa_compete_active() {
+            transport.cc_passthrough_stats(path_id).map(|(ev, _, _)| ev)
+        } else {
+            None
+        },
     }
 }
 
@@ -361,6 +390,8 @@ fn on_path_report(
     let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
     let mstar_anchor = ctx.mstar_anchor;
 
+    // Threading P1, D2: the quinn read before the guard.
+    let wire = wire_reads(transport, report_path_id, false);
     let mut sched = scheduler.lock();
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
@@ -382,7 +413,7 @@ fn on_path_report(
             path.estimator.record_rtt(rtt_duration);
             // Wire-clocked CC delay term (see the Ack arm above).
             let cc_rtt = if crate::scheduler::copa_wire_active() {
-                transport.wire_rtt(report_path_id).unwrap_or(rtt_duration)
+                wire.rtt.unwrap_or(rtt_duration)
             } else {
                 rtt_duration
             };
@@ -450,6 +481,10 @@ fn on_window_ack(
     let am_on = crate::scheduler::ack_merge_active();
     let now = now_us();
     let rtt_us = now.saturating_sub(echo_send_timestamp_us);
+    // Threading P1, D2: transport reads before the guard, the pass-through
+    // window write after it.
+    let wire = wire_reads(transport, path_id, copa_feed.is_none());
+    let mut cc_window: Option<u64> = None;
     {
         let mut sched = scheduler.lock();
         sched.touch_path(path_id);
@@ -523,7 +558,7 @@ fn on_window_ack(
                 // estimator keeps the app echo (end-to-end tail
                 // machinery); Copa gets the packet-timed RTT.
                 let cc_rtt = if crate::scheduler::copa_wire_active() {
-                    transport.wire_rtt(path_id).unwrap_or(rtt_duration)
+                    wire.rtt.unwrap_or(rtt_duration)
                 } else {
                     rtt_duration
                 };
@@ -557,12 +592,10 @@ fn on_window_ack(
                 // when no live feed exists — `copa_feed_attribute` below
                 // carries its own call, so the event is exactly-once in
                 // both configurations.
-                if crate::scheduler::copa_compete_active()
-                    && copa_feed.is_none()
-                {
-                    if let Some((ev, _, _)) = transport.cc_passthrough_stats(path_id) {
-                        path.on_wire_congestion_events(ev);
-                    }
+                // (Read before the guard: `wire_reads`, gated on
+                // `copa_compete_active() && copa_feed.is_none()`.)
+                if let Some(ev) = wire.cong_events {
+                    path.on_wire_congestion_events(ev);
                 }
                 // ADR-0003: loss stats from the ack's counter delta.
                 //
@@ -614,13 +647,13 @@ fn on_window_ack(
                 }
                 // Publish the cwnd as the
                 // pass-through substrate window (no-op unless
-                // RWM_QUIC_CC=passthrough).
-                transport.set_cc_window_bytes(
-                    path_id,
-                    path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL,
-                );
+                // RWM_QUIC_CC=passthrough) — after the guard drops.
+                cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
             }
         }
+    }
+    if let Some(bytes) = cc_window {
+        transport.set_cc_window_bytes(path_id, bytes);
     }
     // Plain-mode Copa delivery feed. Diff this
     // ack's cumulative frontier + SACK ranges against the attribution

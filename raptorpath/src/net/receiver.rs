@@ -555,7 +555,8 @@ pub(crate) async fn run_receiver(
                         );
                     }
                     let msg = ControlMessage::GenerationDeficit { deficits };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, msg.clone());
                     }
                 }
@@ -895,7 +896,8 @@ pub(crate) async fn run_receiver(
                             wdiag_batches_last = wdiag_batches;
                             wdiag_syms_last = wdiag_syms;
                             let mut dg = String::new();
-                            for pid in recv_scheduler.lock().live_paths() {
+                            let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                            for pid in live_now {
                                 if let Some((rx, tx)) =
                                     recv_transport.datagram_frame_stats(pid)
                                 {
@@ -953,7 +955,8 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                     }
                     // Request arms (A)/(B): the timer arm's request. This is
@@ -1041,7 +1044,8 @@ pub(crate) async fn run_receiver(
                             cum_expected: 0,
                             cum_received: 0,
                         };
-                        for pid in recv_scheduler.lock().live_paths() {
+                        let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                        for pid in live_now {
                             let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                         }
                     }
@@ -1084,7 +1088,8 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    for pid in recv_scheduler.lock().live_paths() {
+                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    for pid in live_now {
                         let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
                     }
                 }

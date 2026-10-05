@@ -1881,9 +1881,11 @@ async fn run_window_sender(
     let mut packer = framing::SymbolPacker::new(symbol_size, std::time::Duration::from_millis(1));
 
     // Announce window mode to peer on all paths
+    // (P1 D2: the path set is collected and the guard dropped before any
+    // quinn call — no quinn call is made with the scheduler held.)
     {
-        let sched = scheduler.lock();
-        for pid in control_broadcast_paths(&sched) {
+        let paths = control_broadcast_paths(&scheduler.lock());
+        for pid in paths {
             let _ = transport.send_control_datagram(
                 pid,
                 ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
@@ -2874,12 +2876,11 @@ async fn run_window_sender(
                 );
                     }
                 }
-                // Send Shutdown on all paths
-                let sched = scheduler.lock();
-                for pid in control_broadcast_paths(&sched) {
+                // Send Shutdown on all paths (P1 D2: guard dropped first).
+                let paths = control_broadcast_paths(&scheduler.lock());
+                for pid in paths {
                     let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
                 }
-                drop(sched);
                 eta_final.flush_final();
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on

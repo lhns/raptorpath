@@ -236,6 +236,9 @@ pub(crate) fn copa_feed_attribute(
     if !feed.owns_cc() {
         return;
     }
+    // Threading P1, D2: the pass-through window writes (a DashMap) are made
+    // after the scheduler guard drops.
+    let mut windows: Vec<(u32, u64)> = Vec::with_capacity(per_path.len());
     for (p, _n) in per_path {
         if let Some(ps) = sched.path_mut(p) {
             // Feed the wire-level loss evidence (the pass-through shim's
@@ -250,12 +253,16 @@ pub(crate) fn copa_feed_attribute(
             // wire-level in-flight release (it covers repairs too); releasing
             // again per attributed source seq would double-count.
             ps.on_delivery_signal();
-            transport.set_cc_window_bytes(p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
+            windows.push((p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL));
             if let Some(st) = stats.path(p) {
                 st.cwnd.store(ps.cwnd as u64, Ordering::Relaxed);
                 st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
             }
         }
+    }
+    drop(sched);
+    for (p, bytes) in windows {
+        transport.set_cc_window_bytes(p, bytes);
     }
 }
 

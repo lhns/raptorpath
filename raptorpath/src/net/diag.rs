@@ -471,6 +471,23 @@ pub(crate) fn report(
             }
             dg.sidle_evt_n = 0;
         }
+        // Threading P1, D2: the two quinn reads per path (`wire_rtt`,
+        // `quinn_path_stats` — each takes the connection mutex) are taken
+        // here, with the scheduler released; they never depended on it. The
+        // block below only formats them.
+        let quinn_reads: HashMap<u32, (f64, (u64, u64, u64, u64))> = {
+            let ids = scheduler.lock().all_path_ids();
+            ids.into_iter()
+                .map(|id| {
+                    let wrtt = transport
+                        .wire_rtt(id)
+                        .map(|d| d.as_secs_f64() * 1000.0)
+                        .unwrap_or(0.0);
+                    let q = transport.quinn_path_stats(id).unwrap_or((0, 0, 0, 0));
+                    (id, (wrtt, q))
+                })
+                .collect()
+        };
         let (cw, fl, np, np_act, min_rtt_us, pp) = {
             let mut sched = scheduler.lock();
             let mut cw = 0u64;
@@ -538,19 +555,15 @@ pub(crate) fn report(
                     // Copa's floor (wire-clocked when the gate is on; its
                     // distance from the known netem base per path is the
                     // floor-freshness check).
-                    let wrtt_i = transport
-                        .wire_rtt(*id)
-                        .map(|d| d.as_secs_f64() * 1000.0)
-                        .unwrap_or(0.0);
                     // Quinn's own
                     // congestion state for this path — qcwnd bytes
                     // (= 2 × quinn-internal BtlBŵ × RTprop under the
                     // BBR default, so qcwnd ≫ true BDP·MTU is the
                     // in-vivo max-filter over-read signature),
-                    // congestion events, lost/sent packets.
-                    let (qcwnd_i, qce_i, qlost_i, qsent_i) = transport
-                        .quinn_path_stats(*id)
-                        .unwrap_or((0, 0, 0, 0));
+                    // congestion events, lost/sent packets. Both read
+                    // above, outside the guard (`quinn_reads`).
+                    let (wrtt_i, (qcwnd_i, qce_i, qlost_i, qsent_i)) =
+                        quinn_reads.get(id).copied().unwrap_or((0.0, (0, 0, 0, 0)));
                     // The per-path outstanding account —
                     // retained store symbols charged to this path (its
                     // share of the pooled outstanding).
@@ -1113,6 +1126,9 @@ mod wait_attribution_tests {
     fn the_histogram_is_wide_enough_for_every_bucket() {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net/diag.rs");
         let src = std::fs::read_to_string(p).expect("read src/net/diag.rs");
+        // The gauge's own source only: this test's literals must not match
+        // themselves (P1 fix — the 8-bucket version matched its own string).
+        let src = &src[..src.find("#[cfg(test)]").expect("test module marker")];
         assert!(
             src.contains("pub wait_us: [u64; 9],"),
             "wait_us must be sized 9 — the bucket count the sender assigns"
