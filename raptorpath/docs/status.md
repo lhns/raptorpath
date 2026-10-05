@@ -2241,3 +2241,124 @@ no truncation); the operator reads sentinels at ≥ 10 min intervals;
 namespace is touched; exit state verified (0 `raptorpath`, 0 `rp-*`
 namespaces, both locks released). Ledgers are copied to
 `docs/l1-raw/threadp1/`.
+
+### Threading P1 — result
+
+Scored 2026-10-05 against the pre-registration above, literally; no
+amendment was made. **`DELIVERED (SAME everywhere)`**: no cell WORSE, every
+cell scoreable, every witness held. **D1 mechanism: `D1-WAKE-HOLDS` at all
+four cells.** Prediction "c1s sender busy falls": **MISSED** (36.5 % →
+36.8 %).
+
+*Binary and session.* P1 = `c765e3f` (engine tree `1c2a57c`), `sha256
+ea773ba6…a2ab962e`; MAIN = `8d7d8c1`, `sha256 5dccf33b…ce763d12`; both
+built fresh on the benchmark VM (Xeon E5-2650 v3 era) in fresh target
+directories (`BINSHA.txt`). Launch 16:40:26Z (hard 19:10:26Z); P1 build
+269 s; tests 17:05–17:29Z; MAIN build 252 s; smoke 17:36Z (`c_meas` 36 s <
+`C_PRED` 60 s, so `R_est` = `R_PRIOR`; n = 3 per seed, no cut); battery
+17:36:48–17:44:43Z (475 s, 48 invocations, 9.7 s mean); locks released
+17:44:43Z. **Session wall 1 h 04 min.** Exit state recorded by the
+envelope: 0 `raptorpath`, 0 `rp-*` namespaces, both locks released (the
+next tenant took them afterwards). The battery was not polled; the
+operator read `all-era.txt` at ≈ 10-min intervals (16:50, 17:01, 17:11,
+17:21, 17:31, 17:41, 17:51Z) and `TESTS.txt` once (17:12Z).
+
+*Tests.* `cargo build --release` rc 0; release suite rc 0, **1061 passed, 0
+failed**, 51 ignored (91 binaries); doc rc 0; wasm rc 0, 35 passed;
+**debug-witness suite rc 0, 922 passed, 0 failed**, 49 ignored (82
+binaries), **0 `lock order: quinn seam` panics** — every in-process and
+spawned-binary test of the crate ran with the lock-order witness compiled
+in and none tripped it. No flake fired.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 16:40:26Z) |
+| `ABORT-CRLF` | no (0 CR bytes in every `tools/l1` script after extract) |
+| `ABORT-BUILD` | no (either tree) |
+| `ABORT-TESTS` | no (0 failures) |
+| `ABORT-SHA` | no (checked at start and before every invocation) |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 4 rows LIVE, `wake[` on both P1 rows and on neither MAIN row |
+| `ABORT-BUDGET` | no (n = 3 per seed) |
+| `ABORT-RC` | 0 of 48 |
+| `ABORT-BRINGUP` | 0 (0 `RUN-RETRY`) |
+| `VOID-COTENANT` | 0 of 48 |
+
+*What ran.* 6 blocks × 8 = 48 rows, all `LIVE` (0 witness failures, 0
+contaminated, 0 DNF); 6 per (cell, arm), 3 per seed. Ledgers:
+`docs/l1-raw/threadp1/` (`tp1.log` sha256 ca0caf15…, `score.txt` ceaf65df…
+with every per-rep value and per-seed median, `TESTS.txt`, `smoke.log`,
+`smoke-check.txt`, `PLAN.txt`, `BINSHA.txt`, `all-era.txt`, and the dev
+`RED.txt` / `GREEN-dev.txt`); per-invocation endpoint logs stay on the VM
+under `/home/vibe/tp1run/run/diag-tp1`.
+
+*Per cell* (P1 vs MAIN, n = 6 each; median [min–max]; relative tolerance in
+brackets; the min–max rule as pre-registered):
+
+| cell | goodput Mbit/s MAIN → P1 | CPUCLI s/GB | CPUSRV s/GB | RTprop floor µs per leg | plc/truth per leg MAIN → P1 | verdict |
+|---|---|---|---|---|---|---|
+| `c1s-400` | 522.2 [484.7–578.6] → 535.9 [512.3–586.5] (+2.6 %, WITHIN 4.9 %) | 14.21 → 13.79 (−3.0 %, **TREND-BETTER**, 2.4 %) | 20.41 → 19.88 (−2.6 %, **TREND-BETTER**, 2.4 % transfer) | 2386 → 2335 (WITHIN) | 1.031 → 0.911 (band [0.79, 1.34]) | **SAME** |
+| `c1d-400` | 434.2 [423.0–474.7] → 431.7 [405.5–450.6] (−0.6 %, WITHIN 5.6 %) | 26.77 → 27.49 (+2.7 %, WITHIN 6.5 %) | 29.05 → 29.91 (+3.0 %, WITHIN) | 2216 → 2279; 2232 → 2255 (WITHIN) | 1.007 → 0.993; 0.982 → 1.019 | **SAME** |
+| `c2-100` | 88.56 [88.34–88.88] → 89.15 [87.32–89.57] (+0.7 %, WITHIN 1.4 %) | 32.15 [30.0–32.6] → 33.85 [33.2–35.7] (+5.3 %, WITHIN 6.3 %) | 46.65 → 46.55 (WITHIN) | 12 460 → 12 290 (WITHIN, tol 16.9 %) | 1.005 → 1.012 | **SAME** |
+| `c8-100` | 103.3 [96.3–105.2] → 102.3 [99.9–105.3] (−0.9 %, WITHIN 4.0 %) | 53.3 → 50.9 (−4.5 %, WITHIN 11.6 %) | 59.3 → 57.1 (WITHIN) | p0 8 840 [7 819–9 822] → 10 670 [9 773–10 819] (+20.8 %, **TREND-WORSE**, tol 11.3 %); p1 40 100 → 40 610 (WITHIN) | 1.004 → 1.002; 1.006 → 1.007 | **SAME** |
+
+Both seeds' medians are in `score.txt`. The two `TREND-*` readings are
+named as pre-registered (beyond the band, ranges overlapping; not a fail):
+c1s CPU on both ends lower, and the c8 fast leg's RTprop floor higher by
+21 % with the ranges touching (P1's minimum 9 773 µs against MAIN's maximum
+9 822 µs).
+
+*The D1 mechanism reading* (P1 rows; cumulative counts off the client's
+last `[DIAG]`):
+
+| cell | `wake[ack]` per row | `wake[timer_acked]` | `timer_acked`/`ack` | `wake[paused]` | `wake[tun]` | reading |
+|---|---|---|---|---|---|---|
+| `c1s-400` | 8 987–10 048 | 2–15 | ≤ 0.16 % | 196–463 | 7 595–8 240 | **HOLDS** 6/6 |
+| `c1d-400` | 1 201–3 542 | 0–4 | ≤ 0.11 % | 43–97 | 5 631–6 139 | **HOLDS** 6/6 |
+| `c2-100` | 19 006–19 783 | 7–18 | ≤ 0.09 % | 1 369–1 530 | 4 831–5 342 | **HOLDS** 6/6 |
+| `c8-100` | 19 392–25 190 | 6–16 | ≤ 0.08 % | 353–483 | 2 428–2 613 | **HOLDS** 6/6 |
+
+With acks flowing a paused sender is woken by the ack, not the timer, at
+every cell: of the waits in which an ack landed, the 1 ms poll won at most
+0.16 %. The remaining `wake[paused]` are timer wakes in true ack gaps.
+
+*Outside the pre-registered set (findings, no verdict).*
+1. **The c2 sender CPU moved up with disjoint ranges.** `CPUCLI` at
+   `c2-100` +5.3 % (33.2–35.7 vs 30.0–32.6 s/GB: every P1 row above every
+   MAIN row), inside the 6.3 % MDE so WITHIN by the rule. It is the cell
+   with the most ack wakes per intake wake (≈ 3.9: 19 k `ack` vs 5 k `tun`):
+   each ack wake is one loop body that mostly re-evaluates and waits again
+   — the cost side named in advance. At c1s (≈ 1.2 ack wakes per intake
+   wake) the CPU went the other way (−3.0 %); at c8 (≈ 9 per intake wake)
+   −4.5 % within a wide MDE. A cheaper wake (signal only when the ack can
+   change the pause predicate) is the obvious follow-up; it was not tuned
+   here.
+2. **The c1s busy prediction missed.** The sender loop's `busy` share is
+   unchanged at c1s (36.5 % → 36.8 %) and c1d (95.0 % → 94.5 %, the
+   CPU-bound cell); it fell at c8 (35.0 % → 30.8 %, within the spread). At
+   c1s the sender is not paused for long stretches (≈ 200–460 timer
+   wakes against ≈ 8 000 intake wakes per run), so a faster wake while
+   paused has little wall time to recover; the ≈ 520 Mbit/s c1s ceiling is
+   not set by the sender's pause latency.
+3. **c1s goodput is above §8's era** (MAIN 522 median vs §8 NEW 437 and
+   EB0 446), with emission batching ON in both arms here and the §7
+   receive-buffer fix in; cross-session, not scored.
+4. The c8 fast-leg RTprop floor (finding as the `TREND-WORSE` above): P1's
+   six rows sit at 9.8–10.8 ms against MAIN's 7.8–9.8 ms. The floor is
+   the min over a run of the app-echo RTT; one unmeasured hypothesis is
+   that a sender woken sooner while paused hands quinn datagrams that queue
+   behind the previous burst. n = 6 cannot separate an effect from the
+   spread (the ranges touch); a follow-up should read it with more reps
+   before P2 builds on it.
+
+*What it means.* The P1 fix set is non-regressing at the four cells on
+every pre-registered clause, and its one behaviour change does what it was
+built to do: an ack ends a paused wait (the 1 ms poll wins ≤ 0.16 % of the
+waits an ack lands in). It does not buy throughput or sender idle time at
+these cells, because the sender is rarely paused at c1s and CPU-bound at
+c1d; the defects it removes (lock nesting under quinn, DashMap guards
+across awaits, per-iteration timer churn, per-datagram stats/batch locks)
+were off the critical path, as predicted. Shipping P1 is the operator's
+merge.

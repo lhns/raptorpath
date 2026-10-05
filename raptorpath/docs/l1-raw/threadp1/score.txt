@@ -1,0 +1,139 @@
+BINARIES main=5dccf33bf647f3856a4041085822af0aab8125d7cd9e9302d18d2e61ce763d12 p1=ea773ba6680fc4002de5e8c09e670ec13c705442406458498f630097a2ab962e
+STATUS-TABLE (every invocation row)
+  LIVE          48
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+PER-REP (rule 4): cell arm seed rep mbps cpu_cli cpu_srv busy rtp_floor feed wake[paused/ack]
+  c1s-400 MAIN s42 r1 LIVE mbps=528.7 cli=5.70 srv=8.08 busy=36.0 rtp=2364 feed=1.009 wake=-/-
+  c1s-400 MAIN s42 r2 LIVE mbps=578.6 cli=5.44 srv=7.48 busy=37.0 rtp=2337 feed=0.993 wake=-/-
+  c1s-400 MAIN s42 r3 LIVE mbps=515.7 cli=5.65 srv=8.25 busy=35.0 rtp=2359 feed=1.020 wake=-/-
+  c1s-400 MAIN s7 r1 LIVE mbps=541.1 cli=5.67 srv=7.90 busy=37.0 rtp=2471 feed=1.050 wake=-/-
+  c1s-400 MAIN s7 r2 LIVE mbps=484.7 cli=6.23 srv=8.79 busy=37.5 rtp=2468 feed=1.059 wake=-/-
+  c1s-400 MAIN s7 r3 LIVE mbps=511.2 cli=5.80 srv=8.42 busy=35.0 rtp=2408 feed=1.042 wake=-/-
+  c1s-400 P1 s42 r1 LIVE mbps=560.0 cli=5.49 srv=7.69 busy=37.0 rtp=2348 feed=1.005 wake=273/9268
+  c1s-400 P1 s42 r2 LIVE mbps=586.5 cli=5.37 srv=7.39 busy=37.0 rtp=2476 feed=1.002 wake=196/9632
+  c1s-400 P1 s42 r3 LIVE mbps=551.2 cli=5.71 srv=7.79 busy=39.0 rtp=2282 feed=0.916 wake=291/8987
+  c1s-400 P1 s7 r1 LIVE mbps=517.7 cli=5.54 srv=8.20 busy=35.0 rtp=2361 feed=0.907 wake=335/10048
+  c1s-400 P1 s7 r2 LIVE mbps=520.5 cli=5.66 srv=8.11 busy=36.5 rtp=2266 feed=0.826 wake=389/9706
+  c1s-400 P1 s7 r3 LIVE mbps=512.3 cli=5.36 srv=8.11 busy=34.0 rtp=2322 feed=0.834 wake=463/9225
+  c1d-400 MAIN s42 r1 LIVE mbps=423.0 cli=11.35 srv=12.16 busy=97.5 rtp=2211/2233 feed=1.109/1.022 wake=-/-
+  c1d-400 MAIN s42 r2 LIVE mbps=429.4 cli=11.12 srv=11.90 busy=95.0 rtp=2221/2230 feed=1.024/0.910 wake=-/-
+  c1d-400 MAIN s42 r3 LIVE mbps=474.7 cli=9.25 srv=9.46 busy=90.5 rtp=2208/2293 feed=0.998/0.933 wake=-/-
+  c1d-400 MAIN s7 r1 LIVE mbps=430.7 cli=10.83 srv=11.71 busy=95.0 rtp=2200/2205 feed=0.820/1.063 wake=-/-
+  c1d-400 MAIN s7 r2 LIVE mbps=437.7 cli=10.59 srv=11.53 busy=95.0 rtp=2243/2213 feed=1.016/0.981 wake=-/-
+  c1d-400 MAIN s7 r3 LIVE mbps=443.6 cli=10.44 srv=11.13 busy=95.5 rtp=2247/2303 feed=0.937/0.984 wake=-/-
+  c1d-400 P1 s42 r1 LIVE mbps=446.2 cli=10.51 srv=11.29 busy=93.0 rtp=2291/2241 feed=0.984/1.020 wake=70/3542
+  c1d-400 P1 s42 r2 LIVE mbps=433.1 cli=11.11 srv=11.88 busy=99.0 rtp=2286/2251 feed=0.972/1.080 wake=43/1201
+  c1d-400 P1 s42 r3 LIVE mbps=450.6 cli=10.39 srv=11.41 busy=93.5 rtp=2230/2241 feed=1.049/0.997 wake=75/2500
+  c1d-400 P1 s7 r1 LIVE mbps=405.5 cli=11.40 srv=12.57 busy=94.0 rtp=2247/2273 feed=0.917/1.049 wake=97/2704
+  c1d-400 P1 s7 r2 LIVE mbps=430.3 cli=10.88 srv=12.05 busy=95.0 rtp=2308/2292 feed=1.016/0.980 wake=94/1495
+  c1d-400 P1 s7 r3 LIVE mbps=408.8 cli=11.73 srv=12.58 busy=95.0 rtp=2272/2259 feed=1.003/1.018 wake=75/2439
+  c2-100 MAIN s42 r1 LIVE mbps=88.9 cli=3.25 srv=4.73 busy=12.0 rtp=10750 feed=1.005 wake=-/-
+  c2-100 MAIN s42 r2 LIVE mbps=88.9 cli=3.00 srv=4.47 busy=11.0 rtp=9686 feed=1.010 wake=-/-
+  c2-100 MAIN s42 r3 LIVE mbps=88.4 cli=3.24 srv=4.64 busy=12.5 rtp=12082 feed=1.015 wake=-/-
+  c2-100 MAIN s7 r1 LIVE mbps=88.6 cli=3.19 srv=4.94 busy=12.0 rtp=13895 feed=1.002 wake=-/-
+  c2-100 MAIN s7 r2 LIVE mbps=88.5 cli=3.14 srv=4.58 busy=12.0 rtp=12978 feed=1.003 wake=-/-
+  c2-100 MAIN s7 r3 LIVE mbps=88.3 cli=3.26 srv=4.69 busy=12.5 rtp=12834 feed=1.004 wake=-/-
+  c2-100 P1 s42 r1 LIVE mbps=89.5 cli=3.52 srv=4.72 busy=13.0 rtp=11197 feed=1.014 wake=1400/19149
+  c2-100 P1 s42 r2 LIVE mbps=88.5 cli=3.57 srv=4.94 busy=13.0 rtp=9128 feed=1.006 wake=1441/19006
+  c2-100 P1 s42 r3 LIVE mbps=89.1 cli=3.36 srv=4.56 busy=12.0 rtp=11288 feed=1.011 wake=1413/19783
+  c2-100 P1 s7 r1 LIVE mbps=89.2 cli=3.35 srv=4.65 busy=12.0 rtp=13293 feed=1.018 wake=1393/19601
+  c2-100 P1 s7 r2 LIVE mbps=87.3 cli=3.41 srv=4.62 busy=13.0 rtp=13804 feed=1.001 wake=1530/19099
+  c2-100 P1 s7 r3 LIVE mbps=89.6 cli=3.32 srv=4.66 busy=13.0 rtp=13722 feed=1.019 wake=1369/19612
+  c8-100 MAIN s42 r1 LIVE mbps=103.5 cli=5.76 srv=5.98 busy=46.0 rtp=9616/40777 feed=0.994/0.968 wake=-/-
+  c8-100 MAIN s42 r2 LIVE mbps=103.7 cli=4.69 srv=5.82 busy=28.0 rtp=8996/38283 feed=1.004/0.994 wake=-/-
+  c8-100 MAIN s42 r3 LIVE mbps=103.0 cli=4.63 srv=5.55 busy=27.0 rtp=7819/44204 feed=1.008/1.054 wake=-/-
+  c8-100 MAIN s7 r1 LIVE mbps=105.2 cli=5.35 srv=5.88 busy=39.0 rtp=9822/40111 feed=1.015/1.026 wake=-/-
+  c8-100 MAIN s7 r2 LIVE mbps=96.3 cli=5.47 srv=6.20 busy=39.0 rtp=8604/37739 feed=1.004/1.017 wake=-/-
+  c8-100 MAIN s7 r3 LIVE mbps=99.9 cli=5.31 srv=6.07 busy=31.0 rtp=8683/40093 feed=1.001/0.988 wake=-/-
+  c8-100 P1 s42 r1 LIVE mbps=102.9 cli=4.80 srv=5.63 busy=26.0 rtp=9773/41201 feed=1.001/0.986 wake=483/25190
+  c8-100 P1 s42 r2 LIVE mbps=99.9 cli=5.24 srv=5.79 busy=30.5 rtp=10652/40011 feed=1.004/1.012 wake=400/23374
+  c8-100 P1 s42 r3 LIVE mbps=102.3 cli=4.92 srv=5.55 busy=31.0 rtp=10819/42582 feed=1.004/0.977 wake=445/24056
+  c8-100 P1 s7 r1 LIVE mbps=100.1 cli=5.76 srv=6.04 busy=41.0 rtp=10697/44963 feed=1.022/1.002 wake=353/20791
+  c8-100 P1 s7 r2 LIVE mbps=105.3 cli=4.94 srv=5.53 busy=30.5 rtp=10761/37981 feed=0.994/1.032 wake=454/24124
+  c8-100 P1 s7 r3 LIVE mbps=102.3 cli=6.07 srv=6.49 busy=42.0 rtp=10238/36325 feed=0.992/1.014 wake=383/19392
+
+PER-SEED MEDIANS (goodput, cpu_cli)
+  c1s-400 MAIN s42: gp=528.7 cli=5.65 s7: gp=511.2 cli=5.80
+  c1s-400 P1 s42: gp=560.0 cli=5.49 s7: gp=517.7 cli=5.54
+  c1d-400 MAIN s42: gp=429.4 cli=11.12 s7: gp=437.7 cli=10.59
+  c1d-400 P1 s42: gp=446.2 cli=10.51 s7: gp=408.8 cli=11.40
+  c2-100 MAIN s42: gp=88.9 cli=3.24 s7: gp=88.5 cli=3.19
+  c2-100 P1 s42: gp=89.1 cli=3.52 s7: gp=89.2 cli=3.35
+  c8-100 MAIN s42: gp=103.5 cli=4.69 s7: gp=99.9 cli=5.35
+  c8-100 P1 s42: gp=102.3 cli=4.92 s7: gp=102.3 cli=5.76
+
+[c1s-400]
+  FEED c1s-400 p0 plc/truth P1=0.911 MAIN=1.031 band=[0.793,1.340] -> SAME
+  CLAUSE c1s-400 goodput: WITHIN P1=535.9 [512.3-586.5] MAIN=522.2 [484.7-578.6] (+2.6%, rel=0.049)
+  CLAUSE c1s-400 cpu_cli/GB: TREND-BETTER P1=13.79 [13.4-14.27] MAIN=14.21 [13.6-15.58] (-3.0%, rel=0.024)
+  CLAUSE c1s-400 cpu_srv/GB: TREND-BETTER P1=19.88 [18.47-20.5] MAIN=20.41 [18.7-21.97] (-2.6%, rel=0.024)
+  CLAUSE c1s-400 rtp_floor_p0: WITHIN P1=2335 [2266-2476] MAIN=2386 [2337-2471] (-2.1%, rel=0.050)
+  CELL c1s-400 P1 n=6 MAIN n=6 dnf MAIN=0.00 P1=0.00 worse=- better=- trend=cpu_cli/GB:TREND-BETTER,cpu_srv/GB:TREND-BETTER => SAME
+  WAKE c1s-400 s42 rep1 timer_acked=9 paused=273 ack=9268 tun=7805 pace=0 tail=3 nack=32 -> HOLDS
+  WAKE c1s-400 s7 rep1 timer_acked=5 paused=335 ack=10048 tun=8240 pace=0 tail=2 nack=43 -> HOLDS
+  WAKE c1s-400 s42 rep2 timer_acked=7 paused=196 ack=9632 tun=8011 pace=0 tail=3 nack=35 -> HOLDS
+  WAKE c1s-400 s7 rep2 timer_acked=15 paused=389 ack=9706 tun=8170 pace=0 tail=3 nack=39 -> HOLDS
+  WAKE c1s-400 s42 rep3 timer_acked=12 paused=291 ack=8987 tun=7716 pace=0 tail=3 nack=36 -> HOLDS
+  WAKE c1s-400 s7 rep3 timer_acked=2 paused=463 ack=9225 tun=7595 pace=0 tail=5 nack=43 -> HOLDS
+  BUSY c1s-400 sender busy median MAIN=36.5% P1=36.8% (reported)
+  D1 c1s-400 D1-WAKE-HOLDS
+[c1d-400]
+  FEED c1d-400 p0 plc/truth P1=0.993 MAIN=1.007 band=[0.775,1.309] -> SAME
+  FEED c1d-400 p1 plc/truth P1=1.019 MAIN=0.982 band=[0.756,1.277] -> SAME
+  CLAUSE c1d-400 goodput: WITHIN P1=431.7 [405.5-450.6] MAIN=434.2 [423-474.7] (-0.6%, rel=0.056)
+  CLAUSE c1d-400 cpu_cli/GB: WITHIN P1=27.49 [25.98-29.32] MAIN=26.77 [23.12-28.37] (+2.7%, rel=0.065)
+  CLAUSE c1d-400 cpu_srv/GB: WITHIN P1=29.91 [28.22-31.45] MAIN=29.05 [23.65-30.4] (+3.0%, rel=0.065)
+  CLAUSE c1d-400 rtp_floor_p0: WITHIN P1=2279 [2230-2308] MAIN=2216 [2200-2247] (+2.8%, rel=0.050)
+  CLAUSE c1d-400 rtp_floor_p1: WITHIN P1=2255 [2241-2292] MAIN=2232 [2205-2303] (+1.1%, rel=0.050)
+  CELL c1d-400 P1 n=6 MAIN n=6 dnf MAIN=0.00 P1=0.00 worse=- better=- trend=- => SAME
+  WAKE c1d-400 s42 rep1 timer_acked=3 paused=70 ack=3542 tun=6139 pace=0 tail=4 nack=377 -> HOLDS
+  WAKE c1d-400 s7 rep1 timer_acked=0 paused=97 ack=2704 tun=5961 pace=0 tail=5 nack=350 -> HOLDS
+  WAKE c1d-400 s42 rep2 timer_acked=1 paused=43 ack=1201 tun=5631 pace=0 tail=4 nack=243 -> HOLDS
+  WAKE c1d-400 s7 rep2 timer_acked=1 paused=94 ack=1495 tun=5662 pace=0 tail=4 nack=194 -> HOLDS
+  WAKE c1d-400 s42 rep3 timer_acked=4 paused=75 ack=2500 tun=6030 pace=0 tail=3 nack=326 -> HOLDS
+  WAKE c1d-400 s7 rep3 timer_acked=1 paused=75 ack=2439 tun=5860 pace=0 tail=3 nack=251 -> HOLDS
+  BUSY c1d-400 sender busy median MAIN=95.0% P1=94.5% (reported)
+  D1 c1d-400 D1-WAKE-HOLDS
+[c2-100]
+  FEED c2-100 p0 plc/truth P1=1.012 MAIN=1.005 band=[0.773,1.306] -> SAME
+  CLAUSE c2-100 goodput: WITHIN P1=89.15 [87.32-89.57] MAIN=88.56 [88.34-88.88] (+0.7%, rel=0.014)
+  CLAUSE c2-100 cpu_cli/GB: WITHIN P1=33.85 [33.2-35.7] MAIN=32.15 [30-32.6] (+5.3%, rel=0.063)
+  CLAUSE c2-100 cpu_srv/GB: WITHIN P1=46.55 [45.6-49.4] MAIN=46.65 [44.7-49.4] (-0.2%, rel=0.063)
+  CLAUSE c2-100 rtp_floor_p0: WITHIN P1=1.229e+04 [9128-1.38e+04] MAIN=1.246e+04 [9686-1.39e+04] (-1.3%, rel=0.169)
+  CELL c2-100 P1 n=6 MAIN n=6 dnf MAIN=0.00 P1=0.00 worse=- better=- trend=- => SAME
+  WAKE c2-100 s42 rep1 timer_acked=18 paused=1400 ack=19149 tun=4831 pace=0 tail=38 nack=934 -> HOLDS
+  WAKE c2-100 s7 rep1 timer_acked=7 paused=1393 ack=19601 tun=4957 pace=0 tail=62 nack=935 -> HOLDS
+  WAKE c2-100 s42 rep2 timer_acked=17 paused=1441 ack=19006 tun=5342 pace=0 tail=50 nack=888 -> HOLDS
+  WAKE c2-100 s7 rep2 timer_acked=16 paused=1530 ack=19099 tun=4889 pace=0 tail=63 nack=949 -> HOLDS
+  WAKE c2-100 s42 rep3 timer_acked=16 paused=1413 ack=19783 tun=5253 pace=0 tail=33 nack=904 -> HOLDS
+  WAKE c2-100 s7 rep3 timer_acked=14 paused=1369 ack=19612 tun=4906 pace=0 tail=62 nack=991 -> HOLDS
+  BUSY c2-100 sender busy median MAIN=12.0% P1=13.0% (reported)
+  D1 c2-100 D1-WAKE-HOLDS
+[c8-100]
+  FEED c8-100 p0 plc/truth P1=1.002 MAIN=1.004 band=[0.772,1.305] -> SAME
+  FEED c8-100 p1 plc/truth P1=1.007 MAIN=1.006 band=[0.773,1.307] -> SAME
+  CLAUSE c8-100 goodput: WITHIN P1=102.3 [99.87-105.3] MAIN=103.3 [96.34-105.2] (-0.9%, rel=0.040)
+  CLAUSE c8-100 cpu_cli/GB: WITHIN P1=50.9 [48-60.7] MAIN=53.3 [46.3-57.6] (-4.5%, rel=0.116)
+  CLAUSE c8-100 cpu_srv/GB: WITHIN P1=57.1 [55.3-64.9] MAIN=59.3 [55.5-62] (-3.7%, rel=0.116)
+  CLAUSE c8-100 rtp_floor_p0: TREND-WORSE P1=1.067e+04 [9773-1.082e+04] MAIN=8840 [7819-9822] (+20.8%, rel=0.113)
+  CLAUSE c8-100 rtp_floor_p1: WITHIN P1=4.061e+04 [3.632e+04-4.496e+04] MAIN=4.01e+04 [3.774e+04-4.42e+04] (+1.3%, rel=0.081)
+  CELL c8-100 P1 n=6 MAIN n=6 dnf MAIN=0.00 P1=0.00 worse=- better=- trend=rtp_floor_p0:TREND-WORSE => SAME
+  WAKE c8-100 s42 rep1 timer_acked=13 paused=483 ack=25190 tun=2584 pace=0 tail=66 nack=1101 -> HOLDS
+  WAKE c8-100 s7 rep1 timer_acked=11 paused=353 ack=20791 tun=2428 pace=0 tail=67 nack=916 -> HOLDS
+  WAKE c8-100 s42 rep2 timer_acked=6 paused=400 ack=23374 tun=2546 pace=0 tail=71 nack=1102 -> HOLDS
+  WAKE c8-100 s7 rep2 timer_acked=9 paused=454 ack=24124 tun=2613 pace=0 tail=63 nack=1019 -> HOLDS
+  WAKE c8-100 s42 rep3 timer_acked=8 paused=445 ack=24056 tun=2550 pace=0 tail=67 nack=1096 -> HOLDS
+  WAKE c8-100 s7 rep3 timer_acked=16 paused=383 ack=19392 tun=2516 pace=0 tail=64 nack=906 -> HOLDS
+  BUSY c8-100 sender busy median MAIN=35.0% P1=30.8% (reported)
+  D1 c8-100 D1-WAKE-HOLDS
+
+VERDICT-CELLS c1s-400:SAME c1d-400:SAME c2-100:SAME c8-100:SAME
+VERDICT DELIVERED (SAME everywhere)
+D1-MECHANISM c1s-400:D1-WAKE-HOLDS c1d-400:D1-WAKE-HOLDS c2-100:D1-WAKE-HOLDS c8-100:D1-WAKE-HOLDS
+PREDICTION c1s busy falls: MISSED (MAIN 36.5% -> P1 36.8%)

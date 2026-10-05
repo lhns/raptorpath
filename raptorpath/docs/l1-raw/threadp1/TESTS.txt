@@ -1,0 +1,5 @@
+TEST main rc=0 wall=1229s passed=1061 failed=0 ignored=51 binaries=91 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=31s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=133s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=0 wall=1256s passed=922 failed=0 ignored=49 binaries=82 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+LOCKORDER-PANICS 0
