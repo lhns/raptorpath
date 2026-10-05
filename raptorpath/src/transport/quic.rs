@@ -218,7 +218,7 @@ pub struct QuicTransport {
     /// Local endpoints (one per bind address / path)
     endpoints: DashMap<PathId, Endpoint>,
     /// Active connections per path
-    connections: DashMap<PathId, quinn::Connection>,
+    connections: DashMap<PathId, Arc<quinn::Connection>>,
     /// Whether this transport is a server
     is_server: bool,
     /// Optional pinned certificate for client-side verification.
@@ -491,7 +491,17 @@ impl QuicTransport {
     /// end-to-end (pipeline-inclusive) delay is the right quantity.
     pub fn wire_rtt(&self, path_id: PathId) -> Option<std::time::Duration> {
         crate::scheduler::sched_lock::assert_not_held("wire_rtt");
-        self.connections.get(&path_id).map(|c| c.rtt())
+        self.conn(path_id).map(|c| c.rtt())
+    }
+
+    /// The one way to a path's connection (threading P1, D5): clone the
+    /// `Arc` out of the map and drop the DashMap shard guard before any
+    /// quinn call or `.await`. An `Arc` clone is one atomic increment; a
+    /// `quinn::Connection` clone would take the connection mutex
+    /// (`ConnectionRef::clone`/`drop`), which is why the map stores an `Arc`.
+    #[inline]
+    fn conn(&self, path_id: PathId) -> Option<Arc<quinn::Connection>> {
+        self.connections.get(&path_id).map(|c| Arc::clone(c.value()))
     }
 
     /// Quinn-level DATAGRAM frame counters for `path_id`:
@@ -506,7 +516,7 @@ impl QuicTransport {
     /// and the application (buffer overflow), not lost on the wire.
     pub fn datagram_frame_stats(&self, path_id: PathId) -> Option<(u64, u64)> {
         crate::scheduler::sched_lock::assert_not_held("datagram_frame_stats");
-        self.connections.get(&path_id).map(|c| {
+        self.conn(path_id).map(|c| {
             let s = c.stats();
             (s.frame_rx.datagram, s.frame_tx.datagram)
         })
@@ -521,7 +531,7 @@ impl QuicTransport {
     /// over-read.
     pub fn quinn_path_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64)> {
         crate::scheduler::sched_lock::assert_not_held("quinn_path_stats");
-        self.connections.get(&path_id).map(|c| {
+        self.conn(path_id).map(|c| {
             let p = c.stats().path;
             (p.cwnd, p.congestion_events, p.lost_packets, p.sent_packets)
         })
@@ -616,10 +626,9 @@ impl QuicTransport {
         if !self.dg_audit {
             return None;
         }
-        let a = self.dg_stats.get(&path_id)?;
+        let a = self.dg_stats.get(&path_id)?.clone();
         let tx_frames = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .map_or(0, |c| c.stats().frame_tx.datagram);
         Some((
             a.handoff.load(Relaxed),
@@ -651,9 +660,12 @@ impl QuicTransport {
 
     /// Connect to a peer on a specific path.
     pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
+        // P1 D5: clone the endpoint handle out (cold path) so no DashMap
+        // shard guard lives across the handshake's `.await`s.
         let endpoint = self
             .endpoints
             .get(&path_id)
+            .map(|e| e.value().clone())
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
 
         let connection = endpoint.connect(peer_addr, "raptorpath")?.await?;
@@ -668,15 +680,17 @@ impl QuicTransport {
         let _peer_hs = Self::perform_handshake(&connection, &local_hs).await?;
 
         info!(path_id, %peer_addr, "connected and handshake complete");
-        self.connections.insert(path_id, connection);
+        self.connections.insert(path_id, Arc::new(connection));
         Ok(())
     }
 
     /// Accept an incoming connection on a specific path.
     pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
+        // P1 D5: no shard guard across the accept/handshake `.await`s.
         let endpoint = self
             .endpoints
             .get(&path_id)
+            .map(|e| e.value().clone())
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
 
         let incoming = endpoint
@@ -695,7 +709,7 @@ impl QuicTransport {
         let _peer_hs = Self::accept_handshake(&connection, &local_hs).await?;
 
         info!(path_id, remote = %connection.remote_address(), "accepted with handshake");
-        self.connections.insert(path_id, connection);
+        self.connections.insert(path_id, Arc::new(connection));
         Ok(())
     }
 
@@ -723,12 +737,11 @@ impl QuicTransport {
             self.accept(path_id).await?;
         }
 
+        // Cold path: the receiver tasks own a plain `quinn::Connection`.
         let conn = self
-            .connections
-            .get(&path_id)
-            .ok_or_else(|| anyhow::anyhow!("connection not found after setup"))?
-            .clone();
-        Ok(conn)
+            .conn(path_id)
+            .ok_or_else(|| anyhow::anyhow!("connection not found after setup"))?;
+        Ok(quinn::Connection::clone(&conn))
     }
 
     /// Bind `path_id`'s endpoint (the `add_path` half before connect/accept).
@@ -930,8 +943,7 @@ impl QuicTransport {
     pub fn send_symbols(&self, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
         crate::scheduler::sched_lock::assert_not_held("send_symbols");
         let conn = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
         // The two `RWM_CPUPROF` seams of the send path, adjacent rather than
@@ -979,8 +991,7 @@ impl QuicTransport {
             return self.send_symbols(path_id, batch);
         }
         let conn = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         use crate::net::cpuprof::{timed, Seam};
         let buf = timed(Seam::Ser, || {
@@ -1000,8 +1011,7 @@ impl QuicTransport {
     pub fn send_control_datagram(&self, path_id: PathId, msg: ControlMessage) -> anyhow::Result<()> {
         crate::scheduler::sched_lock::assert_not_held("send_control_datagram");
         let conn = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         let wire = WireMessage::Control(msg);
         let data = wire.serialize()?;
@@ -1016,8 +1026,7 @@ impl QuicTransport {
     ) -> anyhow::Result<()> {
         crate::scheduler::sched_lock::assert_not_held("send_control");
         let conn = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
         let mut send = conn.open_uni().await?;
@@ -1033,17 +1042,14 @@ impl QuicTransport {
     /// Query the max datagram size for a path (PMTU-based).
     pub fn max_datagram_size(&self, path_id: PathId) -> Option<usize> {
         crate::scheduler::sched_lock::assert_not_held("max_datagram_size");
-        self.connections
-            .get(&path_id)
-            .and_then(|conn| conn.max_datagram_size())
+        self.conn(path_id).and_then(|conn| conn.max_datagram_size())
     }
 
     /// Receive datagrams from a path.
     pub async fn recv_datagram(&self, path_id: PathId) -> anyhow::Result<WireMessage> {
         crate::scheduler::sched_lock::assert_not_held("recv_datagram");
         let conn = self
-            .connections
-            .get(&path_id)
+            .conn(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
 
         let data = conn.read_datagram().await?;
@@ -1059,12 +1065,17 @@ impl QuicTransport {
     ) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = vec![];
 
-        for entry in self.connections.iter() {
-            let path_id = *entry.key();
-            let conn = entry.value().clone();
+        // P1 D5: collect the handles first (Arc clones under the iterator's
+        // shard guards), then clone each quinn connection with no guard held.
+        let conns: Vec<(PathId, Arc<quinn::Connection>)> = self
+            .connections
+            .iter()
+            .map(|e| (*e.key(), Arc::clone(e.value())))
+            .collect();
+        for (path_id, conn) in conns {
             handles.extend(self.spawn_receiver_for_path(
                 path_id,
-                conn,
+                quinn::Connection::clone(&conn),
                 tx.clone(),
                 ctrl_tx.clone(),
             ));
