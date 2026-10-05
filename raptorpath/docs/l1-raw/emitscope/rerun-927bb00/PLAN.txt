@@ -1,0 +1,2 @@
+n_per_seed=8 seeds=42,7 block_est=120s arms='NEW EB0'
+battery_soft_deadline=1791188430 soft=1791188430 hard=1791189030 now=1791177204 c_meas=38 c_pred=60 r_prior=120
