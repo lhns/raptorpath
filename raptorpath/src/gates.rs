@@ -200,7 +200,7 @@ pub struct RuntimeGates {
     pub rs_attr: bool,
 
     // ── Emission ──
-    /// `RWM_EMIT_BATCH` (off, arm): pacer-quantum emission batching, single live path only.
+    /// `RWM_EMIT_BATCH` (on, shipped; status §8): pacer-quantum emission batching, every path count (Law 0).
     pub emit_batch: bool,
     /// `RWM_EMIT_BURST` (default 64, clamped [2, 512]): burst quantum in symbols.
     pub emit_burst: usize,
@@ -377,7 +377,7 @@ impl RuntimeGates {
             infl_bdp: env_parse::<f64>("RWM_INFL_BDP"),
             copa_feed: env_flag("RWM_COPA_FEED", false),
             rs_attr: env_flag("RWM_RS_ATTR", true),
-            emit_batch: env_flag("RWM_EMIT_BATCH", false),
+            emit_batch: env_flag("RWM_EMIT_BATCH", true),
             emit_burst: env_parse::<usize>("RWM_EMIT_BURST")
                 .unwrap_or(64)
                 .clamp(2, 512),

@@ -13,9 +13,12 @@
 # ARMS (fresh topology per invocation; perf_rwm_c.sh, `--window-reliable`,
 # RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150, runs=1). Every arm first
 # withholds RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST
-# (rule 15d); only EB0 sets RWM_EMIT_BATCH=1 back:
-#   NEW   bulk, env unset (gate off)
-#   EB0   bulk, RWM_EMIT_BATCH=1 (Law 0)
+# (rule 15d), then sets RWM_EMIT_BATCH explicitly per arm. Since the flip
+# (emission batching default ON, status §8 "Flipped in") env-unset is EB0,
+# so NEW carries an explicit =0 (witnessed by `[GATES] RWM_EMIT_BATCH=0` and
+# the "emission batching OFF" echo):
+#   NEW   bulk, RWM_EMIT_BATCH=0 (per-symbol emission, the control)
+#   EB0   bulk, RWM_EMIT_BATCH=1 (Law 0; = the shipped default)
 # (The Law-A fallback arm EBA is pre-registered in §8 but has no engine
 # sub-gate yet; it is added here, with its own env, only if the stop rule
 # fires.)
@@ -106,6 +109,7 @@ run_one() { # cell arm seed rep
     t0=$(date +%s)
     local aenv=""
     case "$arm" in
+      NEW) aenv="RWM_EMIT_BATCH=0" ;;
       EB0) aenv="RWM_EMIT_BATCH=1" ;;
     esac
     # shellcheck disable=SC2086
@@ -144,7 +148,7 @@ run_one() { # cell arm seed rep
 echo "=== ES BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' arms='$ARMS_ALL' $(date -u +%FT%TZ)" >> "$OUT"
 echo "=== binary ES $BIN sha256 $ES_SHA" >> "$OUT"
 echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; EB0: RWM_EMIT_BATCH=1; soft_deadline=${ES_SOFT_DEADLINE:-none} block_est=${ES_BLOCK_EST_S:-none}" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; NEW: RWM_EMIT_BATCH=0; EB0: RWM_EMIT_BATCH=1; soft_deadline=${ES_SOFT_DEADLINE:-none} block_est=${ES_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 
 BLOCK=0

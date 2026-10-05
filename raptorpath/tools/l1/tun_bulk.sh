@@ -21,7 +21,11 @@
 # Per rep one `TUNREP {json}` line (the client's per-run JSON, or
 # {"nodata": true}) and a final `TUNARM-DONE`. Every rep is bounded by
 # `timeout`; nothing can wedge the caller. Env withheld from the binary
-# (rule 15d): RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST.
+# (rule 15d): RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST,
+# unless the caller exports them (rwm_forward_env re-adds those): env-unset
+# is the binary's shipped default, emission batching ON since the flip
+# (status §8 "Flipped in"); a per-symbol arm passes RWM_EMIT_BATCH=0, as
+# verify4_run_all.sh does.
 set -uo pipefail
 cd "$(dirname "$0")" || { echo "ABORT-CD $(dirname "$0")"; exit 3; }
 source ./lib.sh

@@ -1937,6 +1937,24 @@ async fn run_window_sender(
              intake + per-burst taper/span refresh; flow-control and pacing \
              contracts enforced at symbol granularity)"
         );
+    } else if !crate::gates::get().emit_batch {
+        // Echoed both ways (measurement-discipline rule 15c): with the default
+        // ON, the `=0` control arm must witness that the knob reached the
+        // binary. Keyed on the KNOB, not on the composed `emit_batch_on`, so
+        // a scope-excluded run (next branch) never reads as the control arm.
+        info!("emission batching OFF (RWM_EMIT_BATCH=0: per-symbol emission)");
+    } else {
+        // Knob on, policy out of scope: the pre-existing scope of
+        // `SenderPolicy::emit_batch_on` (ρ < 1, Realtime packing, coded wire;
+        // status §3.3 lists the first two as NO-MODE-SWITCH debts).
+        info!(
+            reliable = pol.reliable,
+            packing = pol.use_packing,
+            coded_wire = pol.coded_wire,
+            "emission batching out of scope (RWM_EMIT_BATCH=1 but per-symbol \
+             emission: the burst intake serves the window-reliable plain-source \
+             emitter only)"
+        );
     }
 
     // Slow-path conversion diagnosis gauges (RWM_DIAG only — behavior-inert).

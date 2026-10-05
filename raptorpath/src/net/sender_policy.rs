@@ -774,7 +774,9 @@ impl SenderPolicy {
         // `sidle_derived` is DIAG-only (the second, derived stall gauge printed
         // beside the unchanged one). Default off.
         let sidle_derived = gates.sidle_derived && diag_on;
-        // Emission batching (`RWM_EMIT_BATCH`, default off). The sender-emission
+        // Emission batching (`RWM_EMIT_BATCH`, default ON since the status §8
+        // re-run scored FLIP-RECOMMENDED; `=0` is the per-symbol control arm,
+        // echoed as `emission batching OFF`). The sender-emission
         // service wall is per-symbol loop cost: taper/span control math
         // (compute_repair_rate + predictive_loss_upper + exp/log, recomputed per
         // symbol), plus a full select! iteration (tail-deadline scan, SACK
@@ -794,9 +796,12 @@ impl SenderPolicy {
         // scope (`c639d56`) was for the wire-v8 global-batch_seq striping-gap
         // misread, gone in v9 (per-path `path_seq`; `net::tests::t2_*`). Realtime (packed) mode is
         // excluded outright: its per-packet latency path must never trade a
-        // wakeup for a burst. The taper cache carries a 50 ms staleness bound so
-        // a low-rate bulk-hint tunnel never runs the span/shed law on second-old
-        // anchors.
+        // wakeup for a burst. (That exclusion, and `reliable`, inherit the
+        // `use_packing` / ρ-keyed NO-MODE-SWITCH debts of status §3.3: with the
+        // default ON, batching steps off at ρ < 1 and at Realtime.) The taper
+        // cache carries a 50 ms staleness bound (`TAPER_CACHE_MAX_AGE_US`, an
+        // open constant, paper §11.2) so a low-rate bulk-hint tunnel never runs
+        // the span/shed law on second-old anchors.
         let emit_batch_on = gates.emit_batch && reliable && !coded_wire && !use_packing;
         let emit_burst: usize = gates.emit_burst;
         // Generation-mode in-flight cap (`RWM_INFL_CAP`): bound the unacked
