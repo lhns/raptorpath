@@ -2278,7 +2278,9 @@ test --doc` rc 0; `cargo test -p raptorpath-wasm` 35 passed
 Windows: the VM has no `x86_64-pc-windows-gnu` target, so the envelope's
 check did not run; the tree was checked on the Windows host instead (native
 MSVC target, `cargo check -p raptorpath --bin raptorpath --test
-rtobs_reachability` and `--lib --profile test`, before the rename; clean).
+rtobs_reachability` and `--lib --profile test`, before the rename; clean;
+and after it, on `d465adc`, `--bin raptorpath --test
+runtime_obs_reachability`: clean).
 
 *Abort table (filled).*
 
