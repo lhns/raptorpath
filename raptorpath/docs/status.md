@@ -67,7 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
-| Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates 3–10× more at c1s (finding 1); not shipped |
+| Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates ≈ 3× (up to 11×) more at c1s (finding 1; the receiver's per-message budget unit, 06837b7, is a named confound); not shipped |
 | Threading redesign P0 (§9) | P0 (named runtime + `[THR]`/`[LAG]`) vs MAIN 8d7d8c1, `c1s-400`/`c1d-400`, n = 3, `RWM_RDIAG=1`, 12 invocations | D3 `D3-REFUTED-WITH-RECORD` at c1s (server receiver task 79 % busy, hottest server thread 0.36 core; stop rule not fired; at c1d the receiver task reads 92 %); no-behaviour-change `REFUTED-WITH-RECORD` (c1s goodput −6.7 %, disjoint ranges at n = 3; c1d within); per-thread budget recorded; nothing flipped |
 | Threading P1 (§11) | P1 (ack wake, no quinn call under the scheduler lock, DashMap guards dropped, persistent tail timer, lock-free counters) vs MAIN 8d7d8c1, c1s/c1d/c2/c8, n = 6 | `DELIVERED (SAME everywhere)`; ack wake holds (timer won ≤ 0.16 % of acked pauses); c1s sender-busy prediction MISSED (36.5 → 36.8 %); c2 client CPU +5.3 % within MDE; c8 fast-leg RTprop TREND-WORSE (ranges touch); shipped in c292268 |
 | Emission-batching scope, re-run (§8) | `NEW` vs `EB0` (Law 0), 4 cells, n = 8 × 2 seeds, 128 invocations, on `927bb00` (§7 receive-buffer fix) | `FLIP-RECOMMENDED`: BETTER at every cell, WORSE nowhere; `c1d-400` +41 % goodput, sender CPU −12 to −35 %; fed loss unchanged; 0 rcvbuf drops; flipped in `bf3a636` |
@@ -3195,7 +3195,8 @@ thread (`comm=raptorpath`) reads 0.000 core on both sides of every P2A row
 
 *Outside the pre-registered set (findings, no verdict).*
 
-1. **At c1s the sender loop iterates ≈ 3–10× more often under P2A.** From
+1. **At c1s the sender loop iterates ≈ 3× more often under P2A on the
+   ordinary rows, up to 11× on the collapsed ones.** From
    the rows' cumulative `wake[..]` tokens (client `[DIAG]`, both arms):
    `wake[tun]` 7 414–8 150 (MAIN) against 23 391–28 281 on the four
    ordinary P2A rows and 47 807 / 82 634 on the two collapsed rows (144 and
@@ -3210,6 +3211,15 @@ thread (`comm=raptorpath`) reads 0.000 core on both sides of every P2A row
    parks per second on both sides fit the same picture (every yield of the
    actor re-queues it and notifies a parked worker). Not measured
    directly: the burst sizes per iteration and the actor's yield count.
+   **A named confound.** The per-message budget unit
+   (`coop::consume_budget` at the receiver's loop top, `06837b7`) was added
+   after the actor design and before the pre-registration, to bound the
+   batch's hold on the worker; it shortens the actor's polls by itself. One
+   binary carries both it and the actor, so this battery cannot separate
+   them: what is refuted is **P2a as built** (`06837b7`), not the
+   one-task ownership on its own. Isolating the budget unit (the tree with
+   and without it) is the first question for whatever comes next; it is
+   recorded here, not acted on.
 2. **c1d did not saturate as predicted** (sender `busy` 97 % → 70 %): the
    client actor carried the sender and the ack role without reaching
    one core-equivalent of busy; goodput and server CPU trended worse
@@ -3223,12 +3233,14 @@ makes the ack wake an intra-task wake, as built — the witnesses held, the
 ack batch wakes the actor once, the main-thread hop is gone, and the
 latency clauses (RTprop floor, `[LAG]` p99) are unchanged everywhere. But
 on the cell where the sender is lightly loaded and ack-clocked at
-≈ 50 k acks/s (c1s), co-locating the ack role with the sender turned the
-sender into a per-ack-batch loop: 3–10× more sender iterations, ×2.7
-worker parks, +87 % client CPU per byte, −33 % goodput. The pre-stated
-outcome rule applies: P2a does not ship, the result is recorded, and no
-tuning was done in this battery. The diagnosis the next step starts from is
-finding 1 (the sender's per-entry work under ack-batch wakes, and the
-actor's yield cadence), together with the per-thread budget above, which
+≈ 50 k acks/s (c1s), P2a as built (`06837b7`, the actor plus the
+receiver's per-message budget unit) turned the sender into a
+per-ack-batch loop: ≈ 3× (up to 11×) more sender iterations, ×2.7 worker
+parks, +87 % client CPU per byte, −33 % goodput. The pre-stated outcome
+rule applies: P2a does not ship, the result is recorded, and no tuning was
+done in this battery. The diagnosis the next step starts from is finding 1
+(the sender's per-entry work under ack-batch wakes, the actor's yield
+cadence, and the named budget-unit confound that this battery cannot
+separate from the ownership change), together with the per-thread budget above, which
 shows the work still spread over all six workers (P2b's owned-thread
 placement is untested).
