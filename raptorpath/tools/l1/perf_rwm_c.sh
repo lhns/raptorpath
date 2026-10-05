@@ -357,6 +357,16 @@ HZ=$(getconf CLK_TCK)
 CLI_U=$(grep -oP 'User time \(seconds\): \K[0-9.]+' /tmp/rwm-cli-time 2>/dev/null || echo 0)
 CLI_S=$(grep -oP 'System time \(seconds\): \K[0-9.]+' /tmp/rwm-cli-time 2>/dev/null || echo 0)
 echo "    CPU: CPUSRV=$(awk "BEGIN{printf \"%.2f\", $SRV_TICKS/$HZ}")s CPUCLI=$(awk "BEGIN{printf \"%.2f\", $CLI_U+$CLI_S}")s (srv=decoder cli=sender; whole-invocation incl warmup)"
+# The runtime-observability summary of the transfer window (src/rtobs.rs;
+# threading redesign P0): each endpoint's `[THR] sum phase=xfer` and
+# `[LAG] phase=xfer` lines, so the driver output and every ledger built from
+# it carry them. The per-worker / per-thread tables stay in the endpoint
+# logs (/tmp/rwm-c.log, /tmp/rwm-s.log), which the batteries copy. A binary
+# without the instrument prints nothing here.
+for _lg in /tmp/rwm-c.log /tmp/rwm-s.log; do
+    sed 's/\x1b\[[0-9;]*m//g' "$_lg" 2>/dev/null \
+        | grep -aE '\[THR\] sum phase=xfer|\[LAG\] phase=xfer' | sed 's/^/    /' || true
+done
 echo "    done $(date +%T)"
 echo "--- server log tail:"; sed 's/\x1b\[[0-9;]*m//g' /tmp/rwm-s.log | tail -3
 
