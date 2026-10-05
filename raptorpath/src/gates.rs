@@ -259,6 +259,11 @@ pub struct RuntimeGates {
     pub cpuprof: bool,
     /// `RWM_RDIAG` (off): engine-receiver saturation probe.
     pub rdiag: bool,
+    /// `RWM_RTOBS` (off): the runtime observer (`runtime_obs`): the 100 Hz
+    /// `[LAG]` probe task and the `[THR]` per-window `/proc` reads. Thread
+    /// names (`rp-w-<n>`) are unconditional. Instrumentation gating only
+    /// (status §9 finding 6: the always-on instrument cost c1s goodput).
+    pub rtobs: bool,
     /// `RWM_FDIAG` (off): proactive-frontier diagnosis.
     pub fdiag: bool,
     /// `RWM_TRACE` (default OFF): generation-lifecycle trace prints.
@@ -412,6 +417,7 @@ impl RuntimeGates {
             walldiag: env_flag("RWM_WALLDIAG", false),
             cpuprof: env_flag("RWM_CPUPROF", false),
             rdiag: env_flag("RWM_RDIAG", false),
+            rtobs: env_flag("RWM_RTOBS", false),
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
             pfrac: env_flag("RWM_PFRAC", false),
@@ -479,7 +485,7 @@ impl RuntimeGates {
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
-             RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} \
+             RWM_WALLDIAG={} RWM_CPUPROF={} RWM_RDIAG={} RWM_RTOBS={} \
              RWM_FDIAG={} RWM_TRACE={} RWM_PFRAC={}",
             b(self.unified), b(self.unified_shed), b(self.taper_r),
             b(self.astar_anchor), b(self.mstar_anchor), b(self.plain_rs),
@@ -520,6 +526,7 @@ impl RuntimeGates {
             b(self.rtt_dump), self.rtt_dump_max,
             b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
+            b(self.rtobs),
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
     }

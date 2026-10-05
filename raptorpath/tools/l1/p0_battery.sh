@@ -101,8 +101,10 @@ run_one() { # cell arm seed rep
     rm -f /tmp/rwm-c.log /tmp/rwm-s.log /tmp/p0-drv.out
     cot_b=$(( $(pgrep -xc cargo) + $(pgrep -xc rustc) ))
     t0=$(date +%s)
+    # RWM_RTOBS=1: the [THR]/[LAG] instrument is opt-in since threading P2a
+    # step 0 (the P0 binary ignores the variable: always on there).
     env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST -u RWM_RDIAG \
-        RWM_RDIAG=1 \
+        RWM_RDIAG=1 RWM_RTOBS=1 \
         SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 \
         RWM_C_PIPELINE=window RWM_BIN="$bin" \
       bash perf_rwm_c.sh "$ca" "$cb" bulk "$bytes" 1 "$mode" > /tmp/p0-drv.out 2>&1

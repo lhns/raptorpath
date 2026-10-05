@@ -30,6 +30,9 @@
 //! construction; p99 / max are the signal, not p50. The probe runs on a
 //! worker, so it does not see the `block_on` main thread.
 //!
+//! **Opt-in** (`RWM_RTOBS=1`, threading P2a step 0): unarmed, neither the
+//! probe task nor the `/proc` reads exist; the thread names stay.
+//!
 //! Phases: `phase=xfer` lines bracket one perf object (the perf client's
 //! timed run, the perf server's object from its first packet to its
 //! completion; [`snapshot`] at the start, [`emit`] at the end), so per-thread
@@ -300,7 +303,26 @@ static OBS: OnceLock<Obs> = OnceLock::new();
 /// Arm the observer on the current runtime: spawn the lag probe and keep the
 /// handle for the metrics. Idempotent; called once by `main` for the `run`
 /// and `perf` commands. Must be called from inside the runtime.
+///
+/// Opt-in: a no-op unless `RWM_RTOBS=1` (`gates.rs`, echoed on `[GATES]`).
+/// Status §9 finding 6: the always-on instrument (the 100 Hz probe task,
+/// the per-window `/proc` reads) cost the c1s goodput; unarmed, no probe
+/// task exists, [`snapshot`] returns `None` and no `[THR]`/`[LAG]` line is
+/// printed. The thread names ([`build_runtime`]) are unconditional.
 pub fn arm() {
+    if !crate::gates::get().rtobs {
+        return;
+    }
+    arm_unconditionally();
+}
+
+/// Whether the observer is armed in this process.
+pub fn armed() -> bool {
+    OBS.get().is_some()
+}
+
+/// The armed path of [`arm`].
+fn arm_unconditionally() {
     let handle = tokio::runtime::Handle::current();
     let origin = Instant::now();
     let lag = Arc::new(LagLog::default());

@@ -16,11 +16,16 @@
 //!      the main thread's `comm=raptorpath`; elsewhere `[THR] os unavailable`.
 //!   4. server (stopped with SIGTERM, as `pkill -x raptorpath` does, unix
 //!      only): `[THR] rt phase=xfer … obj=1` and the `phase=run` set.
+//!   5. Opt-in (threading P2a step 0): all of the above with `RWM_RTOBS=1`,
+//!      echoed `RWM_RTOBS=1` on both ends' `[GATES]`; without it, both ends
+//!      echo `RWM_RTOBS=0` and print NO `[THR]` / `[LAG]` line at all (the
+//!      probe task and the `/proc` reads do not exist) — two-sided, rule 15c.
 
 #[path = "common/loopback.rs"]
 mod loopback;
 
-const ENV: [(&str, &str); 1] = [("RUST_LOG", "raptorpath=info")];
+const ENV: [(&str, &str); 2] = [("RUST_LOG", "raptorpath=info"), ("RWM_RTOBS", "1")];
+const ENV_OFF: [(&str, &str); 1] = [("RUST_LOG", "raptorpath=info")];
 
 fn lines<'a>(log: &'a str, head: &str) -> Vec<&'a str> {
     log.lines().filter(|l| l.contains(head)).collect()
@@ -83,6 +88,7 @@ fn the_thr_and_lag_lines_fire_on_both_perf_ends() {
     );
     let log = loopback::run_perf_client(&srv.addrs, &ENV, &loopback::perf_args("bulk", "4000000", "1"));
     assert!(log.contains("\"summary\""), "the transfer did not complete:\n{log}");
+    assert!(log.contains("RWM_RTOBS=1"), "client: [GATES] does not echo RWM_RTOBS=1:\n{log}");
     assert_side(&log, "client", "run=1");
 
     // The server's object window lines are printed at completion; its
@@ -93,8 +99,41 @@ fn the_thr_and_lag_lines_fire_on_both_perf_ends() {
         srv_log_now.contains("[THR] rt phase=xfer side=server obj=1"),
         "server: no [THR] rt phase=xfer obj=1 line:\n{srv_log_now}"
     );
+    assert!(srv_log_now.contains("RWM_RTOBS=1"), "server: [GATES] does not echo RWM_RTOBS=1");
     if cfg!(unix) {
         let srv_log = srv.stop_with("TERM", "[DIAG]");
         assert_side(&srv_log, "server", "obj=1");
     }
+}
+
+/// The off side of the opt-in: the default (no `RWM_RTOBS`) prints no
+/// `[THR]` and no `[LAG]` line on either end, and both echo `RWM_RTOBS=0`.
+#[test]
+fn without_rtobs_neither_end_prints_thr_or_lag() {
+    let srv = loopback::spawn_perf_server(
+        &[loopback::free_addr()],
+        &ENV_OFF,
+        &["--protocol-hint", "bulk", "--window-reliable"],
+    );
+    let log = loopback::run_perf_client(&srv.addrs, &ENV_OFF, &loopback::perf_args("bulk", "4000000", "1"));
+    assert!(log.contains("\"summary\""), "the transfer did not complete:\n{log}");
+    assert!(log.contains("RWM_RTOBS=0"), "client: [GATES] does not echo RWM_RTOBS=0:\n{log}");
+    assert!(
+        !log.contains("[THR]") && !log.contains("[LAG]"),
+        "client: instrument lines without RWM_RTOBS:\n{log}"
+    );
+    let srv_log = if cfg!(unix) {
+        srv.stop_with("TERM", "[DIAG]")
+    } else {
+        srv.log_after(0, "\"server\":true")
+    };
+    assert!(srv_log.contains("RWM_RTOBS=0"), "server: [GATES] does not echo RWM_RTOBS=0:\n{srv_log}");
+    assert!(
+        srv_log.contains("\"server\":true"),
+        "server: the object never completed (the absence below would be vacuous):\n{srv_log}"
+    );
+    assert!(
+        !srv_log.contains("[THR]") && !srv_log.contains("[LAG]"),
+        "server: instrument lines without RWM_RTOBS:\n{srv_log}"
+    );
 }

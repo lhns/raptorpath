@@ -60,7 +60,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_COMPLETION_EXPOSURE=0 RWM_RECV_REQUEST_LAW=0 RWM_RANK_FEEDBACK=0 ",
     "RWM_DIAG=0 RWM_ACKDIAG=0 RWM_ACKDIAG_WINDOW_US=2000000 RWM_RTT_DUMP=0 ",
     "RWM_RTT_DUMP_MAX=400000 RWM_SUCC_DUMP=0 RWM_SUCC_DUMP_MAX=200000 ",
-    "RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_FDIAG=0 RWM_TRACE=0 ",
+    "RWM_WALLDIAG=0 RWM_CPUPROF=0 RWM_RDIAG=0 RWM_RTOBS=0 RWM_FDIAG=0 RWM_TRACE=0 ",
     "RWM_PFRAC=0",
 );
 
@@ -454,7 +454,7 @@ fn default_env_resolves_the_shipped_stack() {
         g.echo_line()
     );
     assert!(!g.proactive_pacer && !g.xpath_repair && !g.no_reactive);
-    assert!(!g.diag && !g.rdiag && !g.fdiag && !g.trace && !g.pfrac);
+    assert!(!g.diag && !g.rdiag && !g.rtobs && !g.fdiag && !g.trace && !g.pfrac);
     // Instruments ship off, each named with its 0 value on the echo.
     assert!(
         !g.ackdiag,
