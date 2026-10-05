@@ -1457,3 +1457,71 @@ tests, smoke and battery as pre-registered, with three changes: the FIX
 tree's mtimes are refreshed, it uses its own target, and its temporary
 files sit in the run directory. The verification FIX binary is session 3's
 build.
+
+### 7.1 Receive-buffer fix — result (scored against §7 and amendment 1)
+
+**Session.** Session 3 ran 2026-10-05, 02:28–03:23 UTC, with both locks
+held for the whole session. It was launched three times: the first two
+attempts ended `ABORT-LOCK` while another battery held the locks, and
+nothing ran in them. CPU: Xeon E5-2650 v3. FIX is commit 10b9d78, `sha256
+85ae2568…`, the same hash as session 1's build. MAIN is `aa88d648…`. Raw
+data is in `/home/vibe/fa/run3/` on the benchmark VM (`fa.log`, `diag/`,
+`TESTS.txt`, `BINSHA.txt`).
+
+**Abort table:** no abort cause fired. 81 rows: 1 smoke row and 80 battery
+rows. Every one of the 80 battery rows is `LIVE` with all witnesses
+passing, and none is excluded.
+
+**Tests (FIX tree):**
+
+| suite | passed | failed | ignored |
+|---|---|---|---|
+| `cargo test -p raptorpath -p raptorpath-math --release` | 1042 | 0 | 50 |
+| `--doc` | rc 0 | | |
+| `raptorpath-wasm` | 35 | 0 | |
+| `rcvbuf` lib tests | 5 | 0 | |
+| `rcvbuf_reachability` | 1 | 0 | |
+
+Red-first: `every_endpoint_socket_reads_back_the_rcvbuf_floor` failed on
+0597da4 (SO_RCVBUF 212992 < floor 8000000) and passes on 10b9d78.
+
+**Witnesses.** Every FIX invocation echoed `[RCVBUF] … req=4000000
+granted=8000000 via=SO_RCVBUF clamped=0` for every path, on both ends: 57
+server and 57 client sockets. Its server `ss rb` read 8000000 on every row,
+and its server `[CTLD]` carried `rxdrop<i>=` on every path. No MAIN row
+echoed `[RCVBUF]`, and every MAIN `ss rb` read 212992.
+
+| cell | arm | n | `rcvbuf_drops` (skbs) | `plc`/truth median per leg | goodput median (Mbit/s) [range]; per seed 42 / 7 |
+|---|---|---|---|---|---|
+| `c1s-400` | MAIN | 16 | 29–163, median 62 | 2.69 | 444.7 [411.7, 494.8]; 444.7 / 444.0 |
+| `c1s-400` | FIX | 16 | **0 in 16/16** | **1.03** | 452.4 [377.2, 482.5]; 452.4 / 458.9 |
+| `c1d-400` | MAIN | 16 | 4–104, median 27.5 | 1.34 / 1.63 | 284.2 [257.0, 359.5]; 284.0 / 284.6 |
+| `c1d-400` | FIX | 16 | **0 in 16/16** | **1.02 / 1.04** | 283.7 [252.8, 327.5]; 295.1 / 278.7 |
+| `c2-100` | MAIN | 8 | 0 | 0.99 | 88.9 [87.9, 89.2] |
+| `c2-100` | FIX | 8 | 0 | 1.00 | 89.0 [88.5, 89.3] |
+
+**Verdicts:**
+- `c1s-400`: **`FIXED`**. Clause (1) holds in 16/16 rows, clause (2) at
+  1.03, clause (3) at +1.7 %. Goodput reads `SAME` (descriptive).
+- `c1d-400`: **`FIXED`**. Clause (1) holds in 16/16 rows, clause (2) at
+  1.02 and 1.04, clause (3) at −0.2 %. Goodput reads `SAME`.
+- `c2-100`: **`CONTROL-HELD`**. Goodput +0.03 %, 0 drops in both arms,
+  feed 1.00 against 0.99.
+
+**Unit check.** On all 40 FIX rows, the server's `rxdrop` sum, the netns
+`RcvbufErrors` delta and the `ss d` value are all 0. This confirms the
+wiring only. The unit evidence is the probe's: `ss d` (= `sk_drops`, the
+field `SO_MEMINFO` reads) equalled `RcvbufErrors` on every non-zero row.
+So the unit is skbs (GRO superpackets, about 9.4 datagrams each at c1s),
+not datagrams. The token stays an instrument and is not fed to the
+estimator.
+
+**What it means.** The kernel receive buffer was the whole c1 loss-feed
+excess. With the socket asking for 4 MB, the receiver drops nothing at
+either c1 cell, and the engine's fed loss matches the wire's (`plc`/truth
+1.02–1.04, down from 1.3–2.7). Goodput did not move beyond the MDE in
+either direction: the probe's +7 % at c1s was not reproduced at n = 16. The
+100 Mbit/s control is unchanged. V4 finding 1 is closed for hosts whose
+`rmem_max` is at least 4 MB. On older hosts (`rmem_max` 212 992) the echo
+reads `clamped=1` unless the engine runs as root, where `SO_RCVBUFFORCE`
+applies.
