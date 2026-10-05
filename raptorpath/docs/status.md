@@ -3244,3 +3244,28 @@ cadence, and the named budget-unit confound that this battery cannot
 separate from the ownership change), together with the per-thread budget above, which
 shows the work still spread over all six workers (P2b's owned-thread
 placement is untested).
+
+### 12. Threading P2a — diagnosis addendum (code read, after the result; no new measurement)
+
+The refutation is a defect of the implementation shape, not of single ownership. P2a is deleted, not patched; the code is kept at tag `archive/thread-p2a`.
+
+**A. Coop-budget starvation: the numeric cause.**
+- tokio's cooperative budget (128 units) is per task. `ActorSet` ran five loops in one task, so they shared one budget.
+- `06837b7` charged one unit per buffered inbound message, so a single ack batch exhausted the budget.
+- With the budget exhausted, every tokio resource returns Pending. `mpsc` recv enters through `coop::poll_proceed` (tokio-1.50.0 `sync/mpsc/chan.rs:295`), so `tun.read_packet()` returned Pending while thousands of packets were queued.
+- The sender's iteration therefore emitted nothing, and the actor yielded through `wake_by_ref()`, which tokio treats as `yield_now` (back of the queue, deferred to the next driver poll).
+- This matches the ledger: sender iterations 3–11×, `wake[tun]` 3–10× for the same data, worker parks 2.7×, and CPU per byte doubled on fixed per-iteration overhead.
+
+**B. Structure: why removing A would not rescue it.**
+- Two loops that ran on two cores (the sender, and the ack/receiver task) became one task: one core, one budget, one LIFO slot.
+- `ActorSet` is an executor inside a tokio task, competing with the executor it runs on.
+- The plan's "one actor owns the scheduler for both roles" forced that shape, and is withdrawn.
+
+**The same class, smaller, in P1 (§11).** `AckWake` wakes the sender loop per ack to do a sliver of work. That is the c2 client CPU +5.3 % (≈ 3.9 ack wakes per intake wake). It is retired in Q2.
+
+**Rules for the redo** (plan v2: Q1 per-path I/O owner, then Q2 scheduler split by direction):
+1. One tokio task per concurrent loop.
+2. Ownership by direction: the sender owns the TX state and handles acks; the receiver owns the RX state.
+3. Batch at the consumer with `recv_many`, one budget unit per call, never per message.
+4. Wake coalescing comes from the channel, not a Notify.
+5. Exactly one thread ever touches a given `quinn::Connection`.
