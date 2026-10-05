@@ -222,7 +222,7 @@ def truth_columns(lines, n_legs=None):
 
 # ── Runtime observability: [THR] and [LAG] (threading redesign P0) ───────
 #
-# The engine (src/rtobs.rs) prints, per window, one line per tokio worker,
+# The engine (src/runtime_obs.rs) prints, per window, one line per tokio worker,
 # one per OS thread (Linux) and one sum line, then one [LAG] line:
 #
 #   [THR] rt phase=xfer side=server obj=1 worker=0 busy_s=1.000 busy_frac=0.500

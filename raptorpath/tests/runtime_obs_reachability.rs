@@ -1,8 +1,8 @@
-//! The threading-redesign P0 instrument (`raptorpath::rtobs`) is reached by
+//! The threading-redesign P0 instrument (`raptorpath::runtime_obs`) is reached by
 //! the SHIPPED binary on both perf ends (measurement-discipline rule 1: prove
 //! the mechanism under test executes; CLAUDE.md: assert the wiring routes
-//! there). A unit test of `rtobs` alone cannot show that `main` builds its
-//! runtime through `rtobs::build_runtime`, arms the probe, and that the perf
+//! there). A unit test of `runtime_obs` alone cannot show that `main` builds its
+//! runtime through `runtime_obs::build_runtime`, arms the probe, and that the perf
 //! client/server bracket their objects. Clauses:
 //!
 //!   1. client: one `[THR] rt phase=xfer … run=1` line per tokio worker, a

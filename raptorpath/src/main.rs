@@ -204,13 +204,13 @@ struct StatusArgs {
 /// The process entry point: exactly what `#[tokio::main]` expanded to
 /// (`Builder::new_multi_thread().enable_all()`, default worker count, the
 /// build failure a panic), plus thread names (`rp-w-<n>`) so per-thread CPU
-/// is attributable — `raptorpath::rtobs`. After the async body returns, and
+/// is attributable — `raptorpath::runtime_obs`. After the async body returns, and
 /// while the workers are still alive, the cumulative `[THR]`/`[LAG]` lines
 /// are printed (only when `async_main` armed the observer: `run`/`perf`).
 fn main() -> anyhow::Result<()> {
-    let rt = raptorpath::rtobs::build_runtime().expect("Failed building the Runtime");
+    let rt = raptorpath::runtime_obs::build_runtime().expect("Failed building the Runtime");
     let r = rt.block_on(async_main());
-    raptorpath::rtobs::emit_run_end();
+    raptorpath::runtime_obs::emit_run_end();
     r
 }
 
@@ -234,7 +234,7 @@ async fn async_main() -> anyhow::Result<()> {
         let _ = gates::get();
         // Threading-redesign P0 instrument: the [LAG] probe task and the
         // [THR] metrics handle (measurement only, no gate).
-        raptorpath::rtobs::arm();
+        raptorpath::runtime_obs::arm();
     }
 
     match cli.command.unwrap_or(Commands::Run(RunArgs {

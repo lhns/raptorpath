@@ -99,13 +99,13 @@ struct ObjState {
     total: u32,
     bytes: usize,
     started: Instant,
-    /// `[THR]`/`[LAG]` window start (rtobs; `None` when not armed).
-    obs: Option<crate::rtobs::Snapshot>,
+    /// `[THR]`/`[LAG]` window start (runtime_obs; `None` when not armed).
+    obs: Option<crate::runtime_obs::Snapshot>,
 }
 
 /// Run the perf server: reassemble objects, ack each on completion.
 pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
-    crate::rtobs::set_side("server");
+    crate::runtime_obs::set_side("server");
     let (tun, mut mem) = TunInterface::memory(1500);
     let mut engine = tokio::spawn(net::run_with_tun(config, tun));
     println!("perf server ready (rp-native object mode)");
@@ -136,7 +136,7 @@ pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
             total,
             bytes: 0,
             started: Instant::now(),
-            obs: crate::rtobs::snapshot(),
+            obs: crate::runtime_obs::snapshot(),
         });
         if st.got.insert(chunk_idx) {
             st.bytes += payload.len();
@@ -159,7 +159,7 @@ pub async fn server(config: PeerConfig) -> anyhow::Result<()> {
             // The object's own window, first packet → completion (after the
             // ack is handed over, so the /proc read never delays it).
             if let Some(s0) = &st.obs {
-                crate::rtobs::emit_window(s0, &format!(" obj={obj_id}"));
+                crate::runtime_obs::emit_window(s0, &format!(" obj={obj_id}"));
             }
         }
     }
@@ -262,7 +262,7 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     } else {
         None
     };
-    crate::rtobs::set_side("client");
+    crate::runtime_obs::set_side("client");
     let (tun, mut mem) = TunInterface::memory(1500);
     let _engine = tokio::spawn(net::run_with_tun(config, tun));
 
@@ -281,12 +281,12 @@ pub async fn client(mut config: PeerConfig, nbytes: usize, runs: u32) -> anyhow:
     let mut times: Vec<f64> = Vec::new();
     let mut dnfs = 0u32;
     for run in 1..=runs {
-        // `[THR]`/`[LAG]` over this timed object only (rtobs).
-        let obs0 = crate::rtobs::snapshot();
+        // `[THR]`/`[LAG]` over this timed object only (runtime_obs).
+        let obs0 = crate::runtime_obs::snapshot();
         let outcome =
             run_object(&mut mem, run, nbytes, payload_len, run_timeout(), feed.as_ref()).await?;
         if let Some(s0) = &obs0 {
-            crate::rtobs::emit_window(s0, &format!(" run={run}"));
+            crate::runtime_obs::emit_window(s0, &format!(" run={run}"));
         }
         match outcome {
             RunOutcome::Acked(secs) => {

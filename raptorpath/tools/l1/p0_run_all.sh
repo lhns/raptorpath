@@ -148,7 +148,7 @@ tst main "$CARGO" test -p raptorpath -p raptorpath-math --release --no-fail-fast
 tst doc "$CARGO" test --doc -p raptorpath --release || TFAIL=1
 tst wasm env -u GOLDEN_CAPTURE "$CARGO" test -p raptorpath-wasm || TFAIL=1
 # The P0 tests by name, from the main log (rule 1: they ran).
-grep -aE "^test .*(rtobs|thr_lines|lag_|task_stat|quantile_rule|thr_and_lag|names_workers)" \
+grep -aE "^test .*(runtime_obs|thr_lines|lag_|task_stat|quantile_rule|thr_and_lag|names_workers)" \
     "$RUN/test-main.log" | sed 's/^/P0-TEST /' >> "$RUN/TESTS.txt"
 # The parsers' offline tests (python; rule 14 for the harness side).
 for t in test_l1common.py test_p0_parse.py test_stage3_parse.py; do

@@ -160,8 +160,8 @@ check(set(cols) == {"truth_loss_p0", "truth_lost_p0", "truth_egress_p0", "truth_
                     "truth_rcvbuf_drops"} and all(v is None for v in cols.values()),
       "truth_columns: n_legs fixes the row shape with None when nothing was captured")
 
-# ── [THR] / [LAG] (threading redesign P0; src/rtobs.rs renders these) ────
-# The first four lines are byte-for-byte the rtobs unit test's expectation
+# ── [THR] / [LAG] (threading redesign P0; src/runtime_obs.rs renders these) ────
+# The first four lines are byte-for-byte the runtime_obs unit test's expectation
 # (`the_thr_lines_carry_deltas_and_cores_over_the_window`), so the Rust
 # renderer and this parser are pinned to one token set.
 THR = [

@@ -3,7 +3,7 @@
 
     python3 test_p0_parse.py        # exit 0 iff every check passes
 
-NO ENGINE, NO VM. `[THR]`/`[LAG]` lines are transcribed from src/rtobs.rs's
+NO ENGINE, NO VM. `[THR]`/`[LAG]` lines are transcribed from src/runtime_obs.rs's
 format strings (pinned there by `the_thr_lines_carry_deltas_and_cores_over_the_window`),
 `[RDIAG]` from net/receiver.rs, the rest from test_stage3_parse.py's
 fixtures. Verdicts are checked on hand-built ledgers whose outcome is known
@@ -54,7 +54,7 @@ def rd(busy, msgs=50000, q=3):
 
 
 def thr(side, win, top, main=0.15, wall=6.0, lag_p99=1500):
-    """One transfer window as rtobs renders it: 2 workers, 3 threads."""
+    """One transfer window as runtime_obs renders it: 2 workers, 3 threads."""
     return [
         f"[THR] rt phase=xfer side={side} {win} worker=0 busy_s={top * wall:.3f} busy_frac={top:.3f} park=100 unpark=90 wall_s={wall:.3f}",
         f"[THR] rt phase=xfer side={side} {win} worker=1 busy_s=0.600 busy_frac={0.6 / wall:.3f} park=300 unpark=280 wall_s={wall:.3f}",
