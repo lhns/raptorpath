@@ -53,7 +53,6 @@ use super::{
 use crate::control::FecRateController;
 use crate::fec::{FecBackend, WindowDecoder};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// The engine's receiver task. Consumes `(path_id, WireMessage)` from the

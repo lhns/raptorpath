@@ -20,7 +20,6 @@ use tracing::{debug, warn};
 
 use super::super::{DEAD_PATH_TIMEOUT, REPORT_INTERVAL, now_us};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
 
 /// RTCP-style periodic report + keepalive task.

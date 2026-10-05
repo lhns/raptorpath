@@ -44,7 +44,6 @@ use super::{
 use crate::control::{FecRateController, RepairRateCache, SendRateAnchor, TaperBudget};
 use crate::fec::{FecBackend, WindowEncoder, WireSymbol};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
 use crate::control::fec_rate::ProtocolHint;
 

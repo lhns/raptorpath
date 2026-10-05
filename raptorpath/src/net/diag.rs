@@ -37,7 +37,6 @@ use super::emit_source::SenderState;
 use super::sender_policy::SenderPolicy;
 use super::{CopaFeed, EchoRatioMin, LOOP_WAKE_US, now_us, stall_threshold_us};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::QuicTransport;
 
 /// Sender emission-gap gauge (`RWM_DIAG` only) — cumulative time in inter-emission gaps

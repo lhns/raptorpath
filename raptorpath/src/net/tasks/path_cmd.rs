@@ -12,7 +12,6 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{QuicTransport, WireMessage};
 
 /// Path command processor: handles runtime add/remove of paths.

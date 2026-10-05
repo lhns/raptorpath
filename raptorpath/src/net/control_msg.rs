@@ -24,7 +24,6 @@ use super::{
     COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, copa_feed_attribute, now_us, sack_to_gaps,
 };
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
 
 /// Everything an inbound control message may need, resolved once by the

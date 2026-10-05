@@ -57,7 +57,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 
 /// Default print cadence, ~2 s (~8× the `[DIAG]` line's 250 ms). These
 /// readouts are distributions, and a p99 over a 250 ms window of a few

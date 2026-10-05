@@ -14,7 +14,6 @@ use tracing::warn;
 
 use super::super::control_msg::{ControlCtx, handle_control_message};
 use crate::monitor::stats::SharedStats;
-use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// Control fast path: liveness-critical messages (PathReport, Ping,
