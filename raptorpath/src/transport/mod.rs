@@ -8,6 +8,7 @@ mod bbr_rs;
 mod l0_netem;
 mod protocol;
 mod quic;
+mod rcvbuf;
 
 pub use protocol::{
     serialize_data_compact, serialize_symbol_compact_in, wire_compact_active, ControlMessage, Handshake, SymbolBatch,

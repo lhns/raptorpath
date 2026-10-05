@@ -2034,6 +2034,15 @@ pub(crate) async fn run_receiver(
                                 ));
                             }
                         }
+                        // Kernel receive-buffer drops on the path's endpoint
+                        // socket, cumulative: `rxdrop<id>=<sk_drops>` (unit:
+                        // skbs = GRO superpackets; transport/rcvbuf.rs). An
+                        // instrument only — not subtracted from the loss feed.
+                        for &pid in &live {
+                            if let Some(d) = recv_transport.rx_socket_drops(pid) {
+                                line.push_str(&format!(" rxdrop{pid}={d}"));
+                            }
+                        }
                         crate::readout!("{line}");
                     }
 

@@ -9,6 +9,7 @@
 //! - Pinned: verify server cert matches a pinned DER/PEM file (production)
 
 use super::l0_netem::L0Netem;
+use super::rcvbuf::{self, RcvbufGrant};
 use super::protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage};
 use crate::scheduler::PathId;
 use dashmap::DashMap;
@@ -245,6 +246,33 @@ pub struct QuicTransport {
     /// `frame_rx.datagram` it names what quinn's bounded incoming buffer
     /// evicted before the app saw it. See `datagram_rx_audit`.
     dg_rx_read: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
+    /// Per path: a clone of the endpoint's UDP socket (same kernel socket,
+    /// second fd), kept to read the socket's live `SO_RCVBUF` and its
+    /// kernel drop count (`SO_MEMINFO`) — quinn does not expose the fd.
+    /// Removed with the path so the port is released with the endpoint.
+    rx_probe: DashMap<PathId, std::net::UdpSocket>,
+    /// Per path: the `SO_RCVBUF` request and the read-back grant at bind
+    /// (transport/rcvbuf.rs; echoed once as `[RCVBUF]`).
+    rcvbuf_grants: DashMap<PathId, RcvbufGrant>,
+}
+
+/// Bind one path's endpoint socket with the receive-buffer request
+/// (transport/rcvbuf.rs), echo the grant, and hand the socket to quinn.
+/// Returns the endpoint, a probe clone of its socket, and the grant.
+fn bind_endpoint(
+    path_id: PathId,
+    addr: SocketAddr,
+    server_config: Option<ServerConfig>,
+) -> anyhow::Result<(Endpoint, std::net::UdpSocket, RcvbufGrant)> {
+    let (sock, grant) = rcvbuf::bind_udp_with_rcvbuf(addr, rcvbuf::RCVBUF_REQUEST)?;
+    let probe = sock.try_clone()?;
+    let role = if server_config.is_some() { "server" } else { "client" };
+    let local = sock.local_addr().unwrap_or(addr);
+    crate::readout!("{}", rcvbuf::echo_line(path_id as u32, role, local, &grant));
+    let runtime = quinn::default_runtime()
+        .ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
+    let ep = Endpoint::new(quinn::EndpointConfig::default(), server_config, sock, runtime)?;
+    Ok((ep, probe, grant))
 }
 
 /// The datagram send-queue audit (`RWM_DIAG`), one per path.
@@ -338,6 +366,8 @@ impl QuicTransport {
         let cc_stats: DashMap<PathId, Arc<PassthroughCcStats>> = DashMap::new();
 
         let endpoints = DashMap::new();
+        let rx_probe = DashMap::new();
+        let rcvbuf_grants = DashMap::new();
 
         for (i, addr) in bind_addrs.iter().enumerate() {
             let cc = Self::cc_factory_for_path(
@@ -352,15 +382,18 @@ impl QuicTransport {
                 let fingerprint = sha256_fingerprint(&cert_der[0]);
                 info!(%addr, path_id = i, fingerprint = %hex::encode(fingerprint),
                     "server endpoint bound — use this fingerprint for --pin-cert");
-                Endpoint::server(server_config, *addr)?
+                bind_endpoint(i as PathId, *addr, Some(server_config))?
             } else {
-                let mut ep = Endpoint::client(*addr)?;
+                let (mut ep, probe, grant) = bind_endpoint(i as PathId, *addr, None)?;
                 let client_config = Self::make_client_config(pinned_cert_hash, cc);
                 ep.set_default_client_config(client_config);
                 info!(%addr, path_id = i, "client endpoint bound");
-                ep
+                (ep, probe, grant)
             };
+            let (endpoint, probe, grant) = endpoint;
             endpoints.insert(i as PathId, endpoint);
+            rx_probe.insert(i as PathId, probe);
+            rcvbuf_grants.insert(i as PathId, grant);
         }
 
         Ok(Self {
@@ -380,7 +413,27 @@ impl QuicTransport {
             dg_audit: crate::gates::get().diag,
             dg_stats: DashMap::new(),
             dg_rx_read: DashMap::new(),
+            rx_probe,
+            rcvbuf_grants,
         })
+    }
+
+    /// The `SO_RCVBUF` request and the kernel's grant for `path_id`'s
+    /// endpoint socket, read back at bind.
+    pub fn rcvbuf_grant(&self, path_id: PathId) -> Option<RcvbufGrant> {
+        self.rcvbuf_grants.get(&path_id).map(|g| *g)
+    }
+
+    /// `path_id`'s endpoint socket's live `SO_RCVBUF` (getsockopt now).
+    pub fn rx_socket_rcvbuf(&self, path_id: PathId) -> Option<usize> {
+        rcvbuf::recv_buffer_size(&*self.rx_probe.get(&path_id)?).ok()
+    }
+
+    /// `path_id`'s endpoint socket's kernel drop count (`sk_drops`,
+    /// cumulative; unit: skbs, i.e. GRO superpackets — transport/rcvbuf.rs).
+    /// `None` off Linux or without a socket; never a substituted zero.
+    pub fn rx_socket_drops(&self, path_id: PathId) -> Option<u64> {
+        rcvbuf::socket_drops(&*self.rx_probe.get(&path_id)?)
     }
 
     /// Per-path congestion-controller factory. Passthrough mode gets a
@@ -657,15 +710,7 @@ impl QuicTransport {
             &self.cc_stats,
             path_id,
         );
-        let endpoint = if self.is_server {
-            let (server_config, _cert) = Self::generate_self_signed_config(cc)?;
-            Endpoint::server(server_config, bind_addr)?
-        } else {
-            let mut ep = Endpoint::client(bind_addr)?;
-            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash, cc));
-            ep
-        };
-        self.endpoints.insert(path_id, endpoint);
+        self.add_endpoint(path_id, bind_addr, cc)?;
 
         // Connect or accept
         if let Some(peer) = peer_addr {
@@ -682,12 +727,35 @@ impl QuicTransport {
         Ok(conn)
     }
 
+    /// Bind `path_id`'s endpoint (the `add_path` half before connect/accept).
+    fn add_endpoint(
+        &self,
+        path_id: PathId,
+        bind_addr: SocketAddr,
+        cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
+    ) -> anyhow::Result<()> {
+        let (endpoint, probe, grant) = if self.is_server {
+            let (server_config, _cert) = Self::generate_self_signed_config(cc)?;
+            bind_endpoint(path_id, bind_addr, Some(server_config))?
+        } else {
+            let (mut ep, probe, grant) = bind_endpoint(path_id, bind_addr, None)?;
+            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash, cc));
+            (ep, probe, grant)
+        };
+        self.endpoints.insert(path_id, endpoint);
+        self.rx_probe.insert(path_id, probe);
+        self.rcvbuf_grants.insert(path_id, grant);
+        Ok(())
+    }
+
     /// Remove a path at runtime.
     pub fn remove_path(&self, path_id: PathId) {
         if let Some((_, conn)) = self.connections.remove(&path_id) {
             conn.close(0u32.into(), b"path removed");
         }
         self.endpoints.remove(&path_id);
+        self.rx_probe.remove(&path_id);
+        self.rcvbuf_grants.remove(&path_id);
         info!(path_id, "path removed");
     }
 
@@ -1404,5 +1472,43 @@ mod datagram_queue_audit_tests {
         // The one over-count, named explicitly rather than left implicit.
         assert!(full(SIZE) && !evicts(SIZE), "the tie is the only over-count");
         assert!(!full(SIZE - 1), "a queue with room must not be counted");
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod rcvbuf_endpoint_tests {
+    use super::*;
+
+    /// Every endpoint socket the transport binds — server and client role,
+    /// at construction and through `add_path`'s bind — carries the
+    /// receive-buffer request: the live `getsockopt(SO_RCVBUF)` on the
+    /// endpoint's own socket reaches `2 × min(req, rmem_max)` (Linux doubles
+    /// the request; as root `2 × req`). A socket bound the way quinn's
+    /// `Endpoint::server`/`client` bind it reads `rmem_default` (212 992)
+    /// and fails here.
+    #[tokio::test]
+    async fn every_endpoint_socket_reads_back_the_rcvbuf_floor() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let floor = super::super::rcvbuf::tests::linux_floor(rcvbuf::RCVBUF_REQUEST);
+        let any: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        for is_server in [true, false] {
+            let t = QuicTransport::new(&[any, any], is_server, None)
+                .await
+                .expect("endpoints bind on loopback");
+            t.add_endpoint(7, any, None).expect("add_path's bind");
+            for pid in [0, 1, 7] {
+                let live = t.rx_socket_rcvbuf(pid).expect("probe socket per path");
+                let g = t.rcvbuf_grant(pid).expect("grant recorded per path");
+                assert_eq!(g.requested, rcvbuf::RCVBUF_REQUEST);
+                assert_eq!(g.granted, live, "the recorded grant is the live read-back");
+                assert!(
+                    live >= floor,
+                    "server={is_server} p{pid}: SO_RCVBUF {live} < floor {floor}"
+                );
+                assert_eq!(t.rx_socket_drops(pid), Some(0), "fresh socket, SO_MEMINFO drops");
+            }
+            t.remove_path(7);
+            assert!(t.rx_socket_rcvbuf(7).is_none(), "the probe leaves with the path");
+        }
     }
 }

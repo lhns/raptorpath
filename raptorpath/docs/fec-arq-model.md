@@ -2277,6 +2277,50 @@ small control datagrams kept the connection looking healthy. Declaring the
 requirement, `min_mtu = initial_mtu = 1350`, fixes it (a deterministic
 repro went from 63.5 s to 5.8 s; `tests/mtu_blackhole_wedge.rs`).
 
+**The kernel receive buffer.** quinn binds its UDP socket without setting
+`SO_RCVBUF`, so every endpoint got the host's `net.core.rmem_default`
+(212 992 B on stock Linux): about 1.5 ms of arrivals at 1 Gbit/s line rate.
+The endpoint driver drains the socket with about 10× headroom on average,
+so the queue is normally one or two GRO skbs deep. A drain pause longer
+than the buffer's time capacity (a tokio worker busy with another task, or
+a vCPU wait) overflows it. The kernel then drops whole GRO skbs, about 9
+datagrams each at c1s, which the engine read as channel erasure. `plc`/truth
+was about 2.9 at c1s, and the excess fed loss equals the kernel drops times
+the GSO factor (slope 1.06, r = 0.994, n = 48 V4 rows). At every ≤ 100 Mbit/s
+cell, where the same buffer covers about 14–17 ms, there were no kernel
+drops (status.md §6, V4 finding 1). The endpoint now asks for
+
+```text
+B_req = R_line × T_pause × k_truesize / 2
+      = 125 MB/s × 32 ms × 2 / 2 = 4 000 000 B
+```
+
+- `R_line` = 125 MB/s is the fastest line rate measured (the 1 Gbit/s c1
+  cells). Arrival trains reach the socket at line rate whatever the mean
+  goodput, so the line rate sizes the buffer, not the goodput.
+- `T_pause` = 32 ms is the drain-pause tolerance. It is **bounded, not
+  derived**. Pauses longer than the default buffer's 1.5–3.3 ms window
+  occurred at c1s (17–182 skb drops per run). Pauses past about 14 ms never
+  occurred at the 100 Mbit/s cells (0 drops in 224 rows). 32 ms is at least
+  twice that upper bound.
+- `k_truesize` = 2 because the buffer is charged by `skb->truesize`, not by
+  payload. 2 is the overhead the kernel itself assumes when it stores
+  `sk_rcvbuf = 2 × min(req, rmem_max)`. The `/2` is that doubling, so the
+  granted truesize budget is `R_line × T_pause × k`.
+
+The request is the same at every dial position: it is not a function of δ
+or ρ. The kernel clamps it to `net.core.rmem_max`. On the benchmark VM's
+kernel that limit is 4 194 304 B, so the request is granted unprivileged
+(8 000 000 B). Older distributions ship 212 992 B, which would grant
+425 984 B. Each endpoint socket echoes `[RCVBUF] p<i> role= req= granted=
+via= clamped=` once at bind, and `clamped=1` (granted < 2·req) is the
+clamp's bind gauge. As root, a clamped grant is retried with
+`SO_RCVBUFFORCE` and the echo names which option applied
+(`transport/rcvbuf.rs`). The receiver's `[CTLD]` line carries the socket's
+kernel drop counter `rxdrop<i>=` (`SO_MEMINFO[SK_MEMINFO_DROPS]`). It counts
+skbs, the same unit as the netns `RcvbufErrors`. It is an instrument only
+and is not subtracted from the loss feed.
+
 ### 8.6 The substrate chain
 
 The transport's measured history is a chain of walls, each named with a
