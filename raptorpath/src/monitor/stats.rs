@@ -9,9 +9,39 @@ use std::sync::Arc;
 /// Global stats shared between data path and monitoring endpoint.
 pub struct SharedStats {
     pub paths: parking_lot::RwLock<Vec<Arc<PathStats>>>,
+    /// Threading P1, D16: the same `Arc<PathStats>` as `paths`, in a dense
+    /// write-once table indexed by path id, so the per-datagram / per-ack
+    /// readers ([`Self::path_ref`]) take no lock, do no scan and clone no
+    /// `Arc` (the shared refcount line the hot tasks used to bounce).
+    dense: [std::sync::OnceLock<Arc<PathStats>>; STATS_DENSE_PATHS],
     pub fec: FecStats,
     pub blocks: BlockStats,
     pub uptime_start_us: AtomicU64,
+}
+
+/// Path ids `0..STATS_DENSE_PATHS` get a lock-free slot in [`SharedStats`].
+/// A resource bound (64 pointers), not a law constant: paths are numbered
+/// from 0 in bind order, so every shipped topology is dense; a larger id
+/// takes the locking scan, with the same answer.
+pub const STATS_DENSE_PATHS: usize = 64;
+
+/// A path's stats as [`SharedStats::path_ref`] returns them: borrowed from
+/// the dense table (the hot case), or an owned `Arc` from the locking scan
+/// (an id past the table, or a path pushed into `paths` directly).
+pub enum PathStatsRef<'a> {
+    Dense(&'a PathStats),
+    Scanned(Arc<PathStats>),
+}
+
+impl std::ops::Deref for PathStatsRef<'_> {
+    type Target = PathStats;
+    #[inline]
+    fn deref(&self) -> &PathStats {
+        match self {
+            PathStatsRef::Dense(p) => p,
+            PathStatsRef::Scanned(p) => p,
+        }
+    }
 }
 
 impl SharedStats {
@@ -23,6 +53,7 @@ impl SharedStats {
 
         Self {
             paths: parking_lot::RwLock::new(Vec::new()),
+            dense: std::array::from_fn(|_| std::sync::OnceLock::new()),
             fec: FecStats::default(),
             blocks: BlockStats::default(),
             uptime_start_us: AtomicU64::new(now),
@@ -31,14 +62,31 @@ impl SharedStats {
 
     /// Add a path to track.
     pub fn add_path(&self, id: u32) {
+        let ps = Arc::new(PathStats::new(id));
         let mut paths = self.paths.write();
-        paths.push(Arc::new(PathStats::new(id)));
+        // `path()` answers the FIRST entry with this id, so the dense slot
+        // is write-once: a repeated id keeps the first, as the scan does.
+        if let Some(slot) = self.dense.get(id as usize) {
+            let _ = slot.set(ps.clone());
+        }
+        paths.push(ps);
     }
 
     /// Get path stats by ID.
     pub fn path(&self, id: u32) -> Option<Arc<PathStats>> {
         let paths = self.paths.read();
         paths.iter().find(|p| p.id == id).cloned()
+    }
+
+    /// [`Self::path`] for the hot tasks (threading P1, D16): the dense slot
+    /// when the id has one — no lock, no scan, no `Arc` clone — and the
+    /// locking scan otherwise. Same answer as `path(id)` in every case.
+    #[inline]
+    pub fn path_ref(&self, id: u32) -> Option<PathStatsRef<'_>> {
+        match self.dense.get(id as usize).and_then(|s| s.get()) {
+            Some(p) => Some(PathStatsRef::Dense(p)),
+            None => self.path(id).map(PathStatsRef::Scanned),
+        }
     }
 
     /// Take a serializable snapshot of all stats.
@@ -280,6 +328,30 @@ mod tests {
         assert!(stats.path(0).is_some());
         assert!(stats.path(1).is_some());
         assert!(stats.path(2).is_none());
+    }
+
+    /// Threading P1, D16: `path_ref` names the very `PathStats` `path` does
+    /// — the same allocation, inside and outside the dense table, and for a
+    /// repeated id the first one — and `None` exactly where `path` is.
+    #[test]
+    fn path_ref_is_the_same_stats_as_path() {
+        let stats = SharedStats::new();
+        for id in [0u32, 1, 63, 64, 1000, 1] {
+            stats.add_path(id);
+        }
+        // A path pushed into `paths` directly (no dense slot) is still found.
+        stats.paths.write().push(Arc::new(PathStats::new(7)));
+        for id in [0u32, 1, 7, 63, 64, 1000, 2, 65, u32::MAX] {
+            let a = stats.path(id);
+            let b = stats.path_ref(id);
+            assert_eq!(a.is_some(), b.is_some(), "id {id}: presence");
+            if let (Some(a), Some(b)) = (a, b) {
+                assert!(std::ptr::eq(&*a, &*b), "id {id}: not the same PathStats");
+                if id < STATS_DENSE_PATHS as u32 && id != 7 {
+                    assert!(matches!(b, PathStatsRef::Dense(_)), "id {id}: dense slot unused");
+                }
+            }
+        }
     }
 
     #[test]

@@ -303,7 +303,7 @@ fn on_ack(
         // arms: the gate changes only what the estimator reads.
         let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
             let sent = stats
-                .path(path_id)
+                .path_ref(path_id)
                 .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
                 .unwrap_or(0);
             path.sender_truth_loss_batch(sent, received_count)
@@ -333,7 +333,7 @@ fn on_ack(
         }
 
         // ADR-0013: update path monitoring stats
-        if let Some(ps) = stats.path(path_id) {
+        if let Some(ps) = stats.path_ref(path_id) {
             ps.rtt_us.store(rtt_us, Ordering::Relaxed);
             ps.loss_rate_e6.store((path.estimator.loss_rate() * 1_000_000.0) as u64, Ordering::Relaxed);
             ps.throughput_bps.store(path.estimator.throughput() as u64, Ordering::Relaxed);
@@ -434,7 +434,7 @@ fn on_path_report(
         // endpoints' estimators into each other. Monitoring value only.
     }
     // Update monitoring stats with the peer's jitter and reported loss.
-    if let Some(ps) = stats.path(report_path_id) {
+    if let Some(ps) = stats.path_ref(report_path_id) {
         ps.rtt_us.store(avg_rtt_us, Ordering::Relaxed);
         ps.jitter_us.store(jitter_us, Ordering::Relaxed);
         ps.peer_loss_rate_e6
@@ -609,7 +609,7 @@ fn on_window_ack(
                 // `cum_received`. Release keeps `d_expected` in both arms.
                 let (le, lr) = if crate::scheduler::loss_sent_truth_active() {
                     let sent = stats
-                        .path(path_id)
+                        .path_ref(path_id)
                         .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
                         .unwrap_or(0);
                     path.sender_truth_loss_delta(sent, cum_received)
@@ -632,7 +632,7 @@ fn on_window_ack(
                     path.release_in_flight(d_expected.saturating_sub(d_received));
                 }
                 // ADR-0013: path monitoring stats.
-                if let Some(ps) = stats.path(path_id) {
+                if let Some(ps) = stats.path_ref(path_id) {
                     ps.loss_rate_e6.store(
                         (path.estimator.loss_rate() * 1_000_000.0) as u64,
                         Ordering::Relaxed,
@@ -674,7 +674,7 @@ fn on_window_ack(
     }
     // Update monitoring stats
     if echo_send_timestamp_us > 0 {
-        if let Some(ps) = stats.path(path_id) {
+        if let Some(ps) = stats.path_ref(path_id) {
             ps.rtt_us.store(rtt_us, Ordering::Relaxed);
             ps.jitter_us.store(jitter_us as u64, Ordering::Relaxed);
         }
@@ -733,6 +733,17 @@ fn on_window_ack(
                 let _ = tx.try_send((cause, path_id, gaps));
             }
         }
+    }
+    // Threading P1, D1: wake the local window sender LAST, after every state
+    // this ack carries is published (the ack point above, the in-flight
+    // release under the scheduler, the SACK report and the gap batch on
+    // their channels), so the woken sender re-evaluates its pause / pacing
+    // gate against this ack, not against a half-applied one. `notify_one`
+    // stores a permit when the sender is not waiting: an ack landing during
+    // the sender's loop body is not lost (it costs at most one spurious
+    // iteration at the next wait).
+    if let Some(w) = ctx.ack_wake {
+        w.notify_one();
     }
 }
 

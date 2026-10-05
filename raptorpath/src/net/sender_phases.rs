@@ -581,7 +581,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = stats.path(path) {
+            if let Some(ps) = stats.path_ref(path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -633,7 +633,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                         p.charge_in_flight(1);
                     }
                 }
-                if let Some(ps) = stats.path(path) {
+                if let Some(ps) = stats.path_ref(path) {
                     ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                 }
                 stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -736,7 +736,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                             p.charge_in_flight(1);
                         }
                     }
-                    if let Some(ps) = stats.path(path) {
+                    if let Some(ps) = stats.path_ref(path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                     stats.fec.total_repair_symbols.fetch_add(1, Ordering::Relaxed);
@@ -1266,7 +1266,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             p.consume_pace_tokens(1);
                         }
                     }
-                    if let Some(ps) = stats.path(nack_path) {
+                    if let Some(ps) = stats.path_ref(nack_path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -1346,7 +1346,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                             p.consume_pace_tokens(1);
                         }
                     }
-                    if let Some(ps) = stats.path(margin_path) {
+                    if let Some(ps) = stats.path_ref(margin_path) {
                         ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
                     }
                 }

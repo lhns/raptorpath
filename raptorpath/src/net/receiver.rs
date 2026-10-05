@@ -78,6 +78,9 @@ pub(crate) async fn run_receiver(
     recv_window_ooo: bool,
     recv_win_cap: u64,
     recv_window_ack: Arc<AtomicU64>,
+    // Threading P1, D1: the local window sender's ack wake, handed to the
+    // data loop's `ControlCtx` beside `recv_window_ack`.
+    recv_ack_wake: Arc<tokio::sync::Notify>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
     recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
@@ -1240,7 +1243,7 @@ pub(crate) async fn run_receiver(
                     if let Some(path) = sched.path_mut(path_id) {
                         path.estimator.record_arrival(batch_send_ts, arrival_us);
                         // Update jitter in monitoring stats
-                        if let Some(ps) = recv_stats.path(path_id) {
+                        if let Some(ps) = recv_stats.path_ref(path_id) {
                             ps.jitter_us.store(path.estimator.jitter_us() as u64, Ordering::Relaxed);
                         }
                     }
@@ -1978,7 +1981,7 @@ pub(crate) async fn run_receiver(
                             cumulative_received: if recv_window_ooo {
                                 received_seqs.len() as u64
                             } else {
-                                recv_stats.path(path_id)
+                                recv_stats.path_ref(path_id)
                                     .map(|ps| ps.symbols_received.load(Ordering::Relaxed))
                                     .unwrap_or(0)
                             },
@@ -2195,7 +2198,7 @@ pub(crate) async fn run_receiver(
                         stats: &recv_stats,
                         nack_tx: recv_nack_tx.as_ref(),
                         peer_window_ack: Some(&recv_window_ack),
-                        ack_wake: None,
+                        ack_wake: Some(&recv_ack_wake),
                         deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
                         sack_tx: recv_sack_tx.as_ref(),
                         request_tx: recv_request_tx.as_ref(),

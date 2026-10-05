@@ -419,7 +419,7 @@ pub(crate) fn emit_source(
                 }
             }
         }
-        if let Some(ps) = ctx.stats.path(source_path) {
+        if let Some(ps) = ctx.stats.path_ref(source_path) {
             ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
         }
         ctx.stats.fec.total_source_symbols.fetch_add(1, Ordering::Relaxed);
@@ -484,7 +484,7 @@ pub(crate) fn emit_source(
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = ctx.stats.path(alt) {
+            if let Some(ps) = ctx.stats.path_ref(alt) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
         }
@@ -852,7 +852,7 @@ pub(crate) fn emit_source(
                     p.charge_in_flight(1);
                 }
             }
-            if let Some(ps) = ctx.stats.path(correction_path) {
+            if let Some(ps) = ctx.stats.path_ref(correction_path) {
                 ps.symbols_sent.fetch_add(1, Ordering::Relaxed);
             }
             ctx.stats.fec.record_correction(correction_kind, sent);

@@ -254,7 +254,7 @@ pub(crate) fn copa_feed_attribute(
             // again per attributed source seq would double-count.
             ps.on_delivery_signal();
             windows.push((p, ps.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL));
-            if let Some(st) = stats.path(p) {
+            if let Some(st) = stats.path_ref(p) {
                 st.cwnd.store(ps.cwnd as u64, Ordering::Relaxed);
                 st.in_flight.store(ps.in_flight as u64, Ordering::Relaxed);
             }
