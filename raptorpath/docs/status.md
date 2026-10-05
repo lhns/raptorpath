@@ -2226,6 +2226,28 @@ non-`rp-*` namespace is touched. Harness: `tools/l1/p0_run_all.sh`,
 `p0_battery.sh`, `p0_parse.py` (offline test `test_p0_parse.py`). Compact
 ledgers are copied to `docs/l1-raw/thread-p0/`.
 
+**Amendment A1** (committed before any scored result; no battery row
+exists). Session 1 (locks 16:05:05Z–16:39:32Z, run root `thrp0`, binary
+`743bc004…` built from `dc38801`) ended `ABORT-TESTS`: the suite read 1057
+passed, **1 failed**, 50 ignored (doc rc 0; wasm 35 passed; the python
+parser tests 88 / 31 / 45 checks, 0 failed; every `runtime_obs` unit test
+and the reachability test passed; the Windows check not run: the VM has no
+`x86_64-pc-windows-gnu` target). The failure was real, not a flake, and
+caused by this tree: `store_cap_sf_bench::the_wires_offered_load_has_no_congestion_control`
+bans the substrings of congestion-response names (`rto`, `rtt`, `cwnd`, …)
+in `src/perf.rs`, and the new module's name, `rtobs`, contains `rto`. The
+operator wrote NOGO (16:33Z); the envelope still built main's binary and
+ran the smoke (3 rows `LIVE`, `SMOKE-PASS`; nothing in it is a result),
+then stopped on the NOGO and released both locks; the VM was left with 0
+`raptorpath` and 0 `rp-*` namespaces. Changes, in `277bd0b`: the module is
+renamed `runtime_obs` (and its routing test
+`tests/runtime_obs_reachability.rs`); the lexical ban is kept as is; no
+other code change. What they amend here: every `rtobs` above reads
+`runtime_obs`; the P0 binary is built from this amendment's commit (was
+`dc38801`); the run is a fresh session (fresh run root `thrp0b` and fresh
+target dirs for both binaries), the 5 h cap counted from its own lock
+acquisition. Nothing else changes.
+
 ## 10. The per-path datagram feeder — evidence record (code not merged; superseded by the threading redesign)
 
 Recorded here as evidence for the threading redesign (§9; the topology
