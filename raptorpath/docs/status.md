@@ -1853,3 +1853,16 @@ striping-gap misread, which v9 removed (the c8/c2 feed ratio sits at
 `WORSE-AT-c1s-400,c1d-400` and no flip is recommended. The next lever is the
 receiver side (the rcvbuf drop channel), after which this battery can re-run
 unchanged.
+
+**Amendment (re-run)** (committed before any VM contact of the re-run
+session; no number below it is a result yet). §8 re-run on `927bb00`
+(`main`; includes the §7 receive-buffer fix, `SO_RCVBUF` = 4 000 000 B on
+every endpoint socket); design unchanged. Same arms (`NEW`, `EB0`), cells
+(`c1s-400`, `c1d-400`, `c2-100`, `c8-100`), seeds (42, 7), n = 8 per seed per
+arm, witnesses, MDEs, clause set, stop rule, outcome vocabulary, budget and
+abort causes as above; the same harness (`emitscope_{run_all.sh,battery.sh,
+parse.py}`, unchanged since `641a674`). The binary is this branch's tree
+(the engine of `927bb00`), archived and built fresh on the VM in a fresh
+target directory; the red/green record runs on `90a25e1` as before. The
+re-run result is appended below as "Result (re-run)"; the first Result above
+stands as the pre-fix record.
