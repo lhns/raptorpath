@@ -1853,3 +1853,128 @@ striping-gap misread, which v9 removed (the c8/c2 feed ratio sits at
 `WORSE-AT-c1s-400,c1d-400` and no flip is recommended. The next lever is the
 receiver side (the rcvbuf drop channel), after which this battery can re-run
 unchanged.
+
+**Amendment (re-run)** (committed before any VM contact of the re-run
+session; no number below it is a result yet). §8 re-run on `927bb00`
+(`main`; includes the §7 receive-buffer fix, `SO_RCVBUF` = 4 000 000 B on
+every endpoint socket); design unchanged. Same arms (`NEW`, `EB0`), cells
+(`c1s-400`, `c1d-400`, `c2-100`, `c8-100`), seeds (42, 7), n = 8 per seed per
+arm, witnesses, MDEs, clause set, stop rule, outcome vocabulary, budget and
+abort causes as above; the same harness (`emitscope_{run_all.sh,battery.sh,
+parse.py}`, unchanged since `641a674`). The binary is this branch's tree
+(the engine of `927bb00`), archived and built fresh on the VM in a fresh
+target directory; the red/green record runs on `90a25e1` as before. The
+re-run result is appended below as "Result (re-run)"; the first Result above
+stands as the pre-fix record.
+
+**Result (re-run)** (scored 2026-10-05 against this pre-registration and the
+re-run amendment, literally; no further amendment): **`FLIP-RECOMMENDED`**.
+EB0 is BETTER at every cell (`c1s-400` CPU, `c1d-400` goodput + completion
++ CPU, `c2-100` CPU, `c8-100` CPU), WORSE on no clause anywhere, the feed is
+unchanged at every leg, every cell is scoreable, and the depth witness held
+on all 64 EB0 rows. The stop rule did not fire; Law A was not run. **Nothing
+is flipped**: the flip (default ON, `gates/tests.rs`, the echo test,
+`estimator.rs`/`sender_policy.rs` doc, the paper's ledger row, the
+harness's 15d lists) is a separate, reviewed commit, not made here.
+
+*Binary and session.* Tree `06ee1fb` (the re-run amendment on `927bb00`;
+engine identical to `main`), archived with `git -c core.autocrlf=false -c
+core.eol=lf archive`, built fresh on the benchmark VM in a fresh run root
+and target directory (`/home/vibe/es2`), `sha256
+57980f4b43cfc628d74366df560e7000c103d4513c7e87ed70fdc9e120bbae3d`
+(`BINSHA.txt`; re-checked before every invocation). First ssh 03:40:30Z.
+Another agent (the QUIC feeder battery) held both locks; a detached waiter
+polled the lock files (bounded, give-up at hard − 2 h) and launched the
+envelope when both were free: locks taken 04:30:24Z (attempt 1); build
+04:30–04:35Z; tests 04:35–05:01Z; red/green record 05:01–05:12Z; smoke
+05:13Z (`SMOKE-PASS`, 38 s); automatic GO 05:13:24Z (`TESTS-OK`); battery
+05:13–05:35Z (1330 s, 128 invocations); locks released 05:35:34Z (the next
+tenant took them one second later). Budget n = 8 per seed, no cut. The
+battery was not polled. The VM was left with 0 `raptorpath` processes and 0
+`rp-*` namespaces from this session.
+
+*Tests.* `cargo build --release` rc 0; main suite rc 0, **1049 passed, 0
+failed**, 50 ignored (88 binaries); doc rc 0 (0 doc tests); wasm rc 0, 35
+passed (`GOLDEN_CAPTURE` unset). `sigma_diag_reachability` did not recur.
+
+*Red/green record* (`RED.txt`, valid this time: the red tree's sources were
+touched, so cargo rebuilt them). Green (`06ee1fb`): T1/T6 at N = 1, 2, 4
+(mean depth 7.90 / 7.96 / 8.00 at burst 8), T4, the pin, T2 ×2 pass. Red
+(`90a25e1`): T1 passes N = 1 (7.88) and fails at N = 2 with `eb_bursts=0`
+("no burst at all", `np=2` on the same line); the pin fails
+("`emit_batch_live` is back"); T2/T4 green.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 04:30:24Z after a bounded wait on the other tenant) |
+| `ABORT-CRLF` | no |
+| `ABORT-BUILD` | no |
+| `ABORT-TESTS` | no (0 failures) |
+| `ABORT-SHA` | no |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: 4 rows LIVE; the dual EB0 rows read depth 33.07 (`c8-100`) and 56.82 (`c1d-400`), `np=2` |
+| `ABORT-BUDGET` | no (n = 8) |
+| `ABORT-RC` | 0 of 128 |
+| `ABORT-BRINGUP` | 0 |
+| `VOID-COTENANT` | 0 of 128 |
+
+*What ran.* 16 blocks × 8 = 128 rows, all `LIVE`; 0 CONTAMINATED, 0
+WITNESS-FAIL, 0 NO_DATA; 16 per (cell, arm), 8/8 per seed; 0 DNF.
+Ledgers: `docs/l1-raw/emitscope/rerun-927bb00/` (`es.log` sha256
+33c05247…, `score.txt` with every per-rep value, `smoke.log`,
+`smoke-check.txt`, `TESTS.txt`, `RED.txt`, `PLAN.txt`, `BINSHA.txt`, `GO`,
+`all-era.txt`).
+
+*Per cell* (EB0 vs NEW, n = 16 each; goodput median Mbit/s; CPUCLI median
+s; §5 relative MDE):
+
+| cell | goodput NEW → EB0 | completion | CPUCLI NEW → EB0 | µs CPU / dgram | plc/truth per leg NEW → EB0 (band) | rcvbuf drops med (max) NEW → EB0 | clause |
+|---|---|---|---|---|---|---|---|
+| `c1s-400` | 498.1 → 517.8 (+4.0 %, within 4.9 %) | 6.42 → 6.18 s (−3.8 %, within 5.1 %) | 7.54 → **5.63** (−25.3 %, MDE 2.4 %) | 22.2 → 16.5 | 1.021 → 1.011 ([0.785, 1.327]) unchanged | 0 (0) → 0 (0) | **BETTER** (CPU) |
+| `c1d-400` | 301.6 → **425.4** (+41.1 %, MDE 5.6 %) | 10.61 → **7.52 s** (−29.1 %) | 16.94 → **11.10** (−34.5 %, MDE 6.5 %) | 48.6 → 31.9 | 1.032 → 1.005, 0.993 → 0.976 ([0.794, 1.342], [0.764, 1.291]) unchanged | 0 (0) → 0 (0) | **BETTER** (goodput, completion, CPU) |
+| `c2-100` | 88.29 → 88.85 (+0.6 %, within 1.4 %) | within (−0.6 %) | 3.68 → **3.25** (−11.8 %, MDE 6.3 %) | 39.2 → 34.8 | 1.005 → 1.006 unchanged | 0 (0) → 0 (0) | **BETTER** (CPU) |
+| `c8-100` | 99.87 → 100.91 (+1.0 %, within 4.0 %) | within (−1.0 %, MDE 4.1 %) | 6.27 → **4.98** (−20.5 %, MDE 11.6 %) | 65.3 → 52.9 | 1.003 → 1.002, 0.994 → 1.010 unchanged | 0 (0) → 0 (0) | **BETTER** (CPU) |
+
+`rcvbuf` drops are 0 in all 128 rows (0/16 rows > 0 in every cell and arm).
+Both seeds agree in direction at every cell (per-seed medians in
+`score.txt`). Control identity: NEW is IN-BAND at all four cells (`c1s-400`
+498.1 in [442.1, 561.1], the first run's CONTROL-MOVED is gone). DNF 0 in
+both arms everywhere.
+
+*Burst gauges* (EB0; rule-18 bind fractions summed over rows; NEW reads
+`eb_bursts=0` on all 64 rows):
+
+| cell | depth median [min–max] | `eb_end` cap / store / tokens / drained | `eb_maxrun` per path: max (median over rows) / mean per-burst longest run |
+|---|---|---|---|
+| `c1s-400` | 58.6 [58.2–59.1] | 0.838 / 0.162 / 0 / 0 | p0 64 / 58.6 |
+| `c1d-400` | 57.8 [55.2–59.3] | 0.831 / 0.169 / 0 / 0 | p0 64 / 7.7; p1 64 / 7.4 |
+| `c2-100` | 20.5 [19.8–20.8] | 0.005 / 0.994 / 0 / 0 | p0 64 / 20.5 |
+| `c8-100` | 33.3 [32.0–34.3] | 0.118 / 0.881 / 0 / 0.001 | p0 (fast) 64 / 14.4; p1 (slow) 30 / 1.75 |
+
+GSO per leg (NEW → EB0): `c1s-400` 9.47 → 9.36; `c1d-400` 3.46 → 4.92 and
+3.45 → 4.89; `c2-100` 4.77 → 5.00; `c8-100` 4.14 → 4.56 and 1.59 → 1.81.
+
+**Prediction** (a check): `MISSED` in two sub-clauses, the overall outcome
+as predicted. CPU BETTER at `c1s-400` and `c2-100`, the feed unchanged at
+`c2-100`/`c8-100` and inside the band at the c1 cells, and
+`FLIP-RECOMMENDED` all held. `c1d-400` moved on goodput (+41 %, as in the
+first run) where SAME-or-CPU was predicted, and `rcvbuf_max` did not go up:
+it is 0 in both arms, because the §7 fix (written after this prediction)
+removed the drop channel.
+
+*What it means.* The first run's only blocker was the c1 loss feed, and its
+cause was the receiver kernel's receive-buffer drops counted as path loss.
+With the 4 MB `SO_RCVBUF` on `main`, the receiver drops nothing under
+batching either (0 in 64/64 EB0 rows), and the fed loss matches the wire's
+under both arms (`plc`/truth 0.98–1.03). The fix's mechanism executed on
+every row: the per-invocation endpoint logs (`/home/vibe/es2/run/diag-es/`,
+read after the session, not by the scorer) carry 384 `[RCVBUF] req=4000000
+granted=8000000 via=SO_RCVBUF clamped=0` echoes, exactly one per socket per
+end (128 rows, 192 legs, both ends), and no other value. The batching gains of the first run
+reproduce at the same size: `c1d-400` +41.1 % goodput and −34.5 % sender
+CPU, −25 % CPU at `c1s-400`, and now a CPU gain beyond MDE at `c8-100`
+(−20.5 % against 11.6 %), the cell where the July regression fired. Under
+the pre-registered precedence the verdict is `FLIP-RECOMMENDED`. It is a
+recommendation only. The flip is a separate, reviewed commit.
