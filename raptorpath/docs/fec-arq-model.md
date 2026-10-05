@@ -2422,7 +2422,10 @@ bind-fraction readouts left `[RACK]` and `[QCLK]` with their arms (Section 10).
 budget; δ from the hint; plain window (no generation coding); quinn BBR
 under the engine; path-scaled pooled store with SACK-clocked release and
 the δ-cap; per-path loss detection; the anchor-hygiene pair; merged acks;
-compact framing; the batched BOCD update (Section 2.6); placement at T = 0.15. It is pinned by
+compact framing; the batched BOCD update (Section 2.6); pacer-quantum
+emission batching at every path count (burst bound b = `RWM_EMIT_BURST` = 64,
+Law 0, A.5; flipped in `bf3a636` on the status §8 re-run, not in scope at
+ρ < 1, Realtime packing or a coded wire); placement at T = 0.15. It is pinned by
 `gates/tests.rs::default_env_resolves_the_shipped_stack` and byte-pinned by
 `gates_echo_default_is_byte_pinned`. Every hint runs this machine
 (Section 1.5); Bulk and Auto at ρ = 1 by default.
@@ -2676,7 +2679,8 @@ shipped.
 | Sender-truth loss estimator (`RWM_LOSS_SENT_TRUTH`) | moves ε̂ 20× in the wrong direction, including at N = 1 | `27e36e3` | off |
 | Composed estimator-cadence plus pool-anchor default | flipped, then reverted by its pre-set symmetric-dual clause (0.959–0.968×Σ); the pool anchor was the binding cap at the duals | `e84ef1c` | reverted |
 | Estimator cadence alone (`RWM_EST_CADENCE`, pool anchor decoupled) | Stage 3 (d): not worse at any of five cells; dual c1 +41 % (193.9 → 274.1 Mbit/s), sender CPU −12 to −32 %, fed loss vs truth unchanged at every leg | Stage 3, `83462ae` | shipped; `RWM_POOL_ANCHOR` stays an off arm |
-| Emission batching as default (`RWM_EMIT_BATCH`) | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | opt-in |
+| Emission batching as default (`RWM_EMIT_BATCH`), first attempt | +10–16 % at c1, below the pre-registered bar; receiver-side batching arms raised echo RTT 11 → 76 ms and were removed | `52b4fff`, `1313841` | superseded by the Law-0 form below |
+| Emission batching, Law 0 (`RWM_EMIT_BATCH`, burst bound 64 at every path count) | status §8 re-run on `927bb00` (with the §7 receive-buffer fix), n = 16 per cell and arm: BETTER at every cell and WORSE on no clause; `c1d-400` goodput +41.1 % and sender CPU −34.5 %, CPU −25.3 % (`c1s-400`), −11.8 % (`c2-100`), −20.5 % (`c8-100`); fed loss vs truth unchanged at every leg; 0 receive-buffer drops in 128/128 rows | §8, `bf3a636` | shipped; `=0` is the per-symbol control arm (own `OFF` echo) |
 | **Recovery clocks** | | | |
 | Global loss serials under striping (`RWM_RECOV_MP_SERIAL`) | diagnosis correct (per-path loss read 0.62–0.77 at a 0.1 % cell), runtime refuted: honest small values re-heated every cadence, sender CPU ×2.4 | `ade48ad` | removed; the per-path sequence returns ungated as wire v9 `path_seq` (Section 2.2), so the cadence re-heat is the first reading its VM run owes |
 | Singles hole suppression (`RWM_RECOV_SP`) | +0.3 Mbit/s at sc3, a tie at sc2; re-fires are re-serve-clocked | `db40d2f` | off (kept; open) |
@@ -2753,7 +2757,8 @@ decide it.
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
 | receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
 | anchor floor 0.85, pull 0.25, gain 1.0 | Copa legacy branch | 0.85 set by one measurement; the others untested | — |
-| `RWM_EMIT_BURST = 64` (the burst bound b, Law 0) | `emit_burst_bound` (`net/emit_burst.rs`) | "≈ 64 KB", no derivation; opt-in gate. Law 0 replaced the `live_paths == 1` scope (a path-count step whose v8 striping-gap reason v9's per-path `path_seq` removed); bind fraction is the `eb_end cap:` gauge on `[DIAG]` | the status §8 battery (`eb_end` bind fraction, `eb_maxrun` per path) |
+| `RWM_EMIT_BURST = 64` (the burst bound b, Law 0) | `emit_burst_bound` (`net/emit_burst.rs`) | "≈ 64 KB", no derivation; shipped default since `bf3a636` (the measured form; the value was not swept). Bind fraction at the §8 re-run: the cap ends 0.838 (`c1s-400`) and 0.831 (`c1d-400`) of bursts, the store ends the rest; 0.005 at `c2-100`, 0.118 at `c8-100` (store-bound there). Law 0 replaced the `live_paths == 1` scope (a path-count step whose v8 striping-gap reason v9's per-path `path_seq` removed); bind fraction is the `eb_end cap:` gauge on `[DIAG]` | the status §8 battery (`eb_end` bind fraction, `eb_maxrun` per path) |
+| taper-cache staleness 50 ms (`TAPER_CACHE_MAX_AGE_US`) | `net/emit_source.rs`, read by `emit_burst::taper_recompute_due` | under emission batching the derived taper/span math refreshes per burst or after 50 ms, whichever first; no derivation, no bind gauge (which refresh cause fires is not counted); shipped with the gate in `bf3a636`, inside the measured EB0 arm | a refresh-cause tally (bound vs age) on `[DIAG]` |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences
@@ -3140,7 +3145,7 @@ engine.
    store_len    =  retained − released                                      store_gate_released
    released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
-   burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH)  emit_burst_bound
+   burst b      =  emit_burst   (every N; no path-count input; RWM_EMIT_BATCH, on)  emit_burst_bound
 ```
 
 ### A.6 The recovery decision (Section 7)

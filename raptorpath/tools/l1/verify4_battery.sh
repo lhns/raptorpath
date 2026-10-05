@@ -12,8 +12,12 @@
 # ARMS (fresh topology per invocation; perf_rwm_c.sh, window pipeline =
 # `--window-reliable`, RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150, runs=1).
 # Every arm first withholds RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH
-# RWM_EMIT_BURST (measurement discipline 15d); only EMB sets one back:
-#   NEW    NEW binary, bulk, env unset (= the shipped default: cadence ON)
+# RWM_EMIT_BURST (measurement discipline 15d), then sets RWM_EMIT_BATCH
+# explicitly: EMB =1, every other arm =0. §6 pre-registered NEW as "cadence
+# ACTIVE, no emission batching"; since the flip (emission batching default ON,
+# status §8 "Flipped in") env-unset would be EMB, so the =0 is explicit (the
+# OLD binary resolves it to 0 either way):
+#   NEW    NEW binary, bulk, RWM_EMIT_BATCH=0 (the §6 shipped default: cadence ON)
 #   OLD    OLD binary (Stage 3, f3743664...), bulk, env unset (cadence OFF,
 #          no OFF echo in that binary)
 #   NEWa   NEW binary, auto
@@ -135,6 +139,7 @@ run_one() { # cell arm seed rep
         bash perf_rwm_c.sh "$ca" "$cb" "$hint" "$bytes" 1 "$mode" > /tmp/v4-drv.out 2>&1
     else
       env -u RWM_EST_CADENCE -u RWM_POOL_ANCHOR -u RWM_EMIT_BATCH -u RWM_EMIT_BURST \
+          RWM_EMIT_BATCH=0 \
           SEED="$seed" RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 \
           RWM_C_PIPELINE=window RWM_BIN="$bin" \
         bash perf_rwm_c.sh "$ca" "$cb" "$hint" "$bytes" 1 "$mode" > /tmp/v4-drv.out 2>&1
@@ -170,7 +175,7 @@ echo "=== V4 BATTERY tag=$TAG reps_per_seed=$REPS seeds='$SEEDS' cells='$CELLS' 
 echo "=== binary NEW $BNEW sha256 $V4_SHA_NEW" >> "$OUT"
 echo "=== binary OLD $BOLD sha256 $V4_SHA_OLD" >> "$OUT"
 echo "=== source $(cat "$HERE/../../../COMMIT" 2>/dev/null)" >> "$OUT"
-echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; EMB: RWM_EMIT_BATCH=1; soft_deadline=${V4_SOFT_DEADLINE:-none} block_est=${V4_BLOCK_EST_S:-none}" >> "$OUT"
+echo "=== env RWM_GEN=0 RWM_DIAG=1 RWM_PERF_TIMEOUT_S=150 runs=1; every arm env -u RWM_EST_CADENCE RWM_POOL_ANCHOR RWM_EMIT_BATCH RWM_EMIT_BURST; EMB: RWM_EMIT_BATCH=1, every other arm RWM_EMIT_BATCH=0; soft_deadline=${V4_SOFT_DEADLINE:-none} block_est=${V4_BLOCK_EST_S:-none}" >> "$OUT"
 lscpu | grep -E 'Model name|Flags' | head -2 >> "$OUT" || true
 
 BLOCK=0

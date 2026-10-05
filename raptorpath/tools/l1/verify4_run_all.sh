@@ -214,8 +214,8 @@ stage sudo -n env V4_SHA_NEW="$V4_SHA_NEW" V4_SHA_OLD="$V4_SHA_OLD" V4_LOCK_OWNE
     V4_BIN_NEW="$BNEW" V4_BIN_OLD="$BOLD" bash ./verify4_battery.sh 1
 SRC_RC=$?
 { echo "=== TUNBIN new $V4_SHA_NEW"; echo "=== TUNBIN old $V4_SHA_OLD"; } > "$RUN/smoke-tun.log"
-stage sudo -n env SEED=42 RWM_GEN=0 RWM_BIN="$BNEW" bash ./tun_bulk.sh c2 bulk 5000000 1 new-bulk >> "$RUN/smoke-tun.log" 2>&1
-stage sudo -n env SEED=42 RWM_GEN=0 RWM_BIN="$BOLD" bash ./tun_bulk.sh c2 bulk 5000000 1 old-bulk >> "$RUN/smoke-tun.log" 2>&1
+stage sudo -n env SEED=42 RWM_GEN=0 RWM_EMIT_BATCH=0 RWM_BIN="$BNEW" bash ./tun_bulk.sh c2 bulk 5000000 1 new-bulk >> "$RUN/smoke-tun.log" 2>&1
+stage sudo -n env SEED=42 RWM_GEN=0 RWM_EMIT_BATCH=0 RWM_BIN="$BOLD" bash ./tun_bulk.sh c2 bulk 5000000 1 old-bulk >> "$RUN/smoke-tun.log" 2>&1
 stage sudo -n env RWM_GEN=0 RWM_DIAG=1 RWM_TM_ARMS=ship SEED=42 RWM_TM_SIZES=400 RWM_BIN="$BNEW" \
     bash ./tail_matrix.sh c2 1 > "$RUN/smoke-crown.log" 2>&1
 era "V4-ALL smoke rc=$SRC_RC wall=$(( $(date +%s) - T0 ))s cotenants: $(cotenants)"
@@ -280,7 +280,9 @@ fi
 # ── 6. TUNNEL (D) ────────────────────────────────────────────────────────
 # 2 rounds x seeds 42, 7 x cells c2, c3 x arms {new,old} x {bulk,auto},
 # arm order rotated per (round, seed, cell); 4 cold TCP transfers per
-# bring-up; c2 50 MB, c3 12 MB.
+# bring-up; c2 50 MB, c3 12 MB. RWM_EMIT_BATCH=0 on every tunnel arm: §6
+# measured NEW without emission batching, which is default ON since the flip
+# (status §8 "Flipped in"); tun_bulk.sh forwards it via rwm_forward_env.
 D_STATE="cut-by-plan"
 if [ "$NO_D" = "0" ]; then
   if [ $(( $(date +%s) + D_RES )) -gt $(( SOFT - CROWN_RES )) ]; then
@@ -299,7 +301,7 @@ if [ "$NO_D" = "0" ]; then
             A="${ARMS[$(( (j + K) % 4 ))]}"
             B="$BNEW"; [ "${A%%-*}" = "old" ] && B="$BOLD"
             echo "=== TUN round=$ROUND seed=$SEED cell=$CELL arm=$A $(date -u +%T)" >> "$RUN/tun.log"
-            stage sudo -n env SEED="$SEED" RWM_GEN=0 RWM_BIN="$B" \
+            stage sudo -n env SEED="$SEED" RWM_GEN=0 RWM_EMIT_BATCH=0 RWM_BIN="$B" \
                 bash ./tun_bulk.sh "$CELL" "${A##*-}" "$BYTES" 4 "$A" >> "$RUN/tun.log" 2>&1
           done
           K=$(( K + 1 ))

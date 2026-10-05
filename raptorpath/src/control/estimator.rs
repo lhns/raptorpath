@@ -150,8 +150,8 @@ const EST_HEAVY_CADENCE: Duration = Duration::from_millis(10);
 /// clause because the send-side pool anchor became the binding cap (send-side
 /// anchors cannot ratchet above the cap-limited carried rate). The pool anchor
 /// no longer follows this gate; the shipped flip is the cadence alone, the
-/// form Stage 3 measured. `RWM_EMIT_BATCH=1` on top is the fast single-path
-/// opt-in.
+/// form Stage 3 measured. Emission batching (`RWM_EMIT_BATCH`) composes on top
+/// and ships ON as well (status §8 re-run; measured with the cadence ON).
 pub(crate) fn est_cadence_active() -> bool {
     crate::gates::get().est_cadence
 }

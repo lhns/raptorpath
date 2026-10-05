@@ -206,7 +206,10 @@ if [[ -n "${RWM_TM_ARMS:-}" ]]; then
             uni)
                 echo "ARM uni was removed: RWM_STORE_CAP_UNIFIED is gone, the store-cap path set is live_paths() unconditionally. Use 'ship'." >&2
                 continue ;;
-            #   prior  est cadence and emit batching both explicitly off. The
+            #   prior  est cadence and emit batching both explicitly off (both
+            #          are ON by default: emission batching since the status §8
+            #          flip; the realtime arms are outside its scope, `bulkship`
+            #          batches). The
             #          cadence is ON by default since 83462ae, so `prior` must
             #          carry RWM_EST_CADENCE=0 (env-unset is no longer the
             #          prior machine); the pool anchor no longer follows the

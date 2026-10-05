@@ -19,6 +19,10 @@
 #           update, the pre-83462ae default; witnessed by 'cadence OFF' on
 #           both endpoints). Section 5's CAD arm (=1) is now the CTL itself.
 #   WINa    window pipeline, auto
+# RWM_EMIT_BATCH is not withheld: every arm is the shipped default, so since
+# the emission-batching flip (status §8 "Flipped in") all arms batch; the
+# §5 Stage-3 record was taken before it (per-symbol emission). A re-run of
+# that record exports RWM_EMIT_BATCH=0 to the battery.
 # Every arm is the window pipeline: the block pipeline (and its BLKb/BLKa
 # arms) was deleted by ADR-0069; that plan is in git history.
 #

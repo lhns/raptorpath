@@ -52,7 +52,7 @@ const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "RWM_CODED_SRC=0 RWM_NO_REACTIVE=0 RWM_XPATH_REPAIR=0 ",
     "RWM_PROACTIVE_PACER=0 RWM_REASM_BDP=0 RWM_MIN_R=0 RWM_CC_PACE=0 ",
     "RWM_CC_PACE_HR=1.1 RWM_REACT_CAP=unset RWM_INFL_CAP=0 ",
-    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=0 ",
+    "RWM_INFL_BDP=unset RWM_COPA_FEED=0 RWM_RS_ATTR=1 RWM_EMIT_BATCH=1 ",
     "RWM_EMIT_BURST=64 RWM_RECOV_MP=1 RWM_RECOV_MP_LAW=1 ",
     "RWM_RECOV_SP=0 RWM_DERIVED_SWEEP=0 ",
     "RWM_HOLDDOWN_Q=unset RWM_REFRESH_FLOOR_US=unset RWM_DELTA=unset ",
@@ -357,8 +357,19 @@ fn default_env_resolves_the_shipped_stack() {
          values (anchor=1, K=0): {}",
         g.echo_line()
     );
-    assert!(!g.emit_batch, "emission batching ships OFF (the composed flip reverted)");
-    assert_eq!(g.emit_burst, 64);
+    assert!(
+        g.emit_batch,
+        "RWM_EMIT_BATCH ships default ON (status §8 Result (re-run):          FLIP-RECOMMENDED, Law 0); `=0` is the per-symbol control arm"
+    );
+    assert_eq!(
+        g.emit_burst, 64,
+        "the shipped form is the measured one: the burst bound stays 64"
+    );
+    assert!(
+        g.echo_line().contains("RWM_EMIT_BATCH=1 RWM_EMIT_BURST=64"),
+        "the default echo must NAME emission batching ON at burst 64: {}",
+        g.echo_line()
+    );
     assert!(
         !g.cold_place,
         "RWM_COLD_PLACE ships default OFF (A/B arm) — the cold-start \
