@@ -2379,14 +2379,17 @@ thread above 0.175 at c1s).
    connection mutex, `parking_lot` waits), which the OS does not charge.
 5. **No starvation beyond a few ms**: `[LAG]` p99 1.9–2.8 ms and max
    3.2–8.7 ms everywhere. The stated instrument floor (p50 ≈ 0.5–1 ms) held
-   except on the c1d client (p50 179 µs), where workers are rarely parked
-   and the timer is serviced by busy workers' maintenance ticks rather
-   than by a parked worker's 1 ms-rounded sleep; the floor statement is
-   therefore an upper description, not a bound.
+   except on the c1d client (p50 179 µs). A hypothesis, not measured:
+   there workers are rarely parked and the timer is serviced by busy
+   workers' maintenance ticks rather than by a parked worker's 1 ms-rounded
+   sleep. The floor statement is therefore an upper description, not a
+   bound.
 6. **The no-behaviour-change refutation is not localised.** It rests on
    n = 3 per arm with the ranges 2.1 Mbit/s apart (P0 max 491.2 against
    MAIN min 493.3); the P0 c1s CPU per datagram is +3.3 % (overlapping
-   ranges); at c1d nothing moved. Which declared known effect (the 100 Hz
+   ranges) and the server's `CPUSRV` +6.9 % (8.14 → 8.70 s, overlapping
+   ranges; unscored) — the larger move is on the side that reads `/proc`
+   at the object's first packet; at c1d nothing moved. Which declared known effect (the 100 Hz
    lag probe; the two `/proc` reads on the perf main thread per object,
    the server's at the object's first packet; the thread names) would
    cost ≈ 3–7 % at c1s only is not measured here. Consequence for P2: every
@@ -2396,10 +2399,15 @@ thread above 0.175 at c1s).
    instrument-free binary must name it.
 
 *What it means.* The ≈ 500 Mbit/s single-path ceiling is not a single
-saturated server thread or task on this evidence: the receiver task is
-79 % busy (lock waits included) and no thread exceeds 0.4 core, while the
+saturated server receiver task and not any single saturated server
+thread on this evidence: the receiver task is 79 % busy (lock waits
+included) and no thread exceeds 0.4 core, while the
 server process uses 1.29 cores spread over six workers that park ≈ 8.5 k
-times per second. The dual cell is different: there the receiver task is
+times per second. The other server tasks (quinn's ConnectionDriver and
+EndpointDriver, the datagram reader) were not measured per task, and
+because tasks migrate (finding 2) the flat per-thread profile cannot bound
+them: one of them at ≥ 0.9 core spread over six workers would look the
+same. The dual cell is different: there the receiver task is
 at 92 %. The per-thread budget the redesign needs is above; its main
 lesson is that under the stock scheduler every hot task wanders across all
 six workers, so the owned-path layout's first observable is that the work
