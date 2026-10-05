@@ -1,0 +1,4 @@
+SMOKE-ROW c1s-400 P0 rc=0 status=LIVE wall=9.0 mbps=490.262 cpu=6.0/8.67 rdiag_srv=79.0(n=12) cli_thr_r1=0.169 srv_thr_r1=0.284 cli_lag_p99=2869.0 srv_lag_p99=2209.0 srv_run_lines=1 
+SMOKE-ROW c1s-400 MAIN rc=0 status=LIVE wall=9.0 mbps=472.238 cpu=6.11/9.02 rdiag_srv=79.0(n=13) cli_thr_r1=None srv_thr_r1=None cli_lag_p99=None srv_lag_p99=None srv_run_lines=0 
+SMOKE-ROW c1d-400 P0 rc=0 status=LIVE wall=10.0 mbps=416.29 cpu=11.32/12.52 rdiag_srv=92.0(n=15) cli_thr_r1=0.245 srv_thr_r1=0.298 cli_lag_p99=2086.0 srv_lag_p99=1790.0 srv_run_lines=1 
+SMOKE-PASS rows=3

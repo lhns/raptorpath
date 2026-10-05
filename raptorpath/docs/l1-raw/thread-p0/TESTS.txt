@@ -1,0 +1,23 @@
+TEST main rc=0 wall=1209s passed=1058 failed=0 ignored=50 binaries=90 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=113s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+P0-TEST test config::env_flag_tests::a_number_is_not_a_boolean - should panic ... ok
+P0-TEST test config::env_flag_tests::an_unrecognised_boolean_is_an_error_naming_the_variable - should panic ... ok
+P0-TEST test config::env_flag_tests::off_and_no_are_off_on_and_yes_are_on_case_insensitive ... ok
+P0-TEST test config::env_flag_tests::one_true_and_yes_are_on_even_when_default_off ... ok
+P0-TEST test config::env_flag_tests::unset_returns_the_default ... ok
+P0-TEST test config::env_flag_tests::zero_false_and_empty_are_off_even_when_default_on ... ok
+P0-TEST test net::eta::tests::tlag_decimates_at_tau_over_eight ... ok
+P0-TEST test net::eta::tests::tlag_pairs_only_inside_the_band_and_the_biconditional_holds ... ok
+P0-TEST test runtime_obs::tests::the_lag_line_renders_absent_as_dash ... ok
+P0-TEST test runtime_obs::tests::the_quantile_rule_is_l1commons ... ok
+P0-TEST test runtime_obs::tests::the_runtime_names_workers_and_the_lag_probe_samples ... ok
+P0-TEST test runtime_obs::tests::the_task_stat_parser_reads_comm_and_cpu_from_the_last_paren ... ok
+P0-TEST test runtime_obs::tests::the_thr_lines_carry_deltas_and_cores_over_the_window ... ok
+P0-TEST test runtime_obs::tests::without_the_os_reader_the_thr_lines_say_so ... ok
+P0-TEST test the_thr_and_lag_lines_fire_on_both_perf_ends ... ok
+P0-TEST test the_diag_line_reports_the_fixed_time_lag_dispersion_beside_its_four_controls ... ok
+PYTEST test_l1common.py rc=0 test_l1common: 88 checks, 0 failed
+PYTEST test_p0_parse.py rc=0 test_p0_parse: 31 checks, 0 failed
+PYTEST test_stage3_parse.py rc=0 45/45 checks passed
+WINDOWS-CHECK not-run: target x86_64-pc-windows-gnu not installed (rustup target list --installed)
