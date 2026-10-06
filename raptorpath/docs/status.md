@@ -3599,3 +3599,22 @@ no truncation); the operator reads `all-era.txt` at most once per ≈ 20 min
 `sshd` or non-`rp-*` namespace is touched; exit state verified (0
 `raptorpath`, 0 `rp-*` namespaces, both locks released). Ledgers are copied
 to `docs/l1-raw/thread-q1/`.
+
+**Amendment 1** (committed before session 2's launch; no scored result
+exists or was read). **Session 1** (launched 2026-10-06T03:09:34Z from
+`99f3132`) ended **`ABORT-TESTS`**, applied literally: the release suite's
+`emit_batch_default_loopback::emission_batching_is_on_by_default` failed
+and failed its immediate solo re-run (`REAL-FAILURE`) — its 8 MB loopback
+transfer finished in 0.245 s, under the sender's 250 ms `[DIAG]` cadence,
+so no `[DIAG]` line existed for the test to read. The operator stopped the
+session at 03:52:05Z (before the debug suite finished; the outcome was
+already fixed by the pre-registered rule), both locks released, 0
+`raptorpath`. Release suite before the stop: 1 077 passed, 1 failed; doc
+rc 0; wasm 35 passed; Q1 release build 259 s. The test is timing-fragile
+and untouched by Q1 (`net/diag.rs` and the test file unchanged since
+69fd846); `607f592` makes its transfer 80 MB (≥ 0.64 s at 1 Gbit/s; 3 of 3
+release runs green on the VM), assertions unchanged. **Session 2** runs
+the unchanged §13 plan from the tip that carries this amendment: the
+engine tree is byte-identical to `7897ff1` (the commits after it touch
+`tools/l1`, `tests/emit_batch_default_loopback.rs` and `docs/` only); the
+Q1 binary is built from that tip, D9 and MAIN as before.
