@@ -10,5 +10,6 @@ pub mod readout;
 pub mod routing;
 pub mod runtime_obs;
 pub mod scheduler;
+pub mod task_obs;
 pub mod transport;
 pub mod tun;

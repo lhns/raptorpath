@@ -73,6 +73,16 @@ fn resolve_copa_delta() -> Option<f64> {
 
 /// The process's [`RuntimeGates`], resolved on first use; the only gate cache,
 /// so `[GATES]` prints what behaviour read.
+/// `RWM_RTOBS`: 0 (off), 1 (the observer), 2 (the observer plus the deep
+/// task/driver/section gauges). Any boolean spelling `env_flag` accepts maps
+/// to 0/1; `2` is the one extra value.
+fn rtobs_level() -> u8 {
+    match std::env::var("RWM_RTOBS").as_deref() {
+        Ok("2") => 2,
+        _ => env_flag("RWM_RTOBS", false) as u8,
+    }
+}
+
 pub fn get() -> &'static RuntimeGates {
     static GATES: std::sync::OnceLock<RuntimeGates> = std::sync::OnceLock::new();
     GATES.get_or_init(RuntimeGates::resolve)
@@ -264,6 +274,13 @@ pub struct RuntimeGates {
     /// names (`rp-w-<n>`) are unconditional. Instrumentation gating only
     /// (status §9 finding 6: the always-on instrument cost c1s goodput).
     pub rtobs: bool,
+    /// `RWM_RTOBS=2` (off): the deep level of the same observer (threading
+    /// Q3 step 1, `task_obs`): per-task poll CPU (`[TASK]`), quinn's drivers
+    /// and socket timed through a delegating runtime (`[QSOCK]`), the
+    /// owner's quinn sections split by kind and by context-switch class, and
+    /// the producer/owner channel back-pressure witness. Implies `rtobs`.
+    /// Measurement only: every wrapper delegates, so behaviour is unchanged.
+    pub rtobs_deep: bool,
     /// `RWM_FDIAG` (off): proactive-frontier diagnosis.
     pub fdiag: bool,
     /// `RWM_TRACE` (default OFF): generation-lifecycle trace prints.
@@ -417,7 +434,8 @@ impl RuntimeGates {
             walldiag: env_flag("RWM_WALLDIAG", false),
             cpuprof: env_flag("RWM_CPUPROF", false),
             rdiag: env_flag("RWM_RDIAG", false),
-            rtobs: env_flag("RWM_RTOBS", false),
+            rtobs: rtobs_level() >= 1,
+            rtobs_deep: rtobs_level() >= 2,
             fdiag: env_flag("RWM_FDIAG", false),
             trace: env_flag("RWM_TRACE", false),
             pfrac: env_flag("RWM_PFRAC", false),
@@ -526,7 +544,7 @@ impl RuntimeGates {
             b(self.rtt_dump), self.rtt_dump_max,
             b(self.succ_dump), self.succ_dump_max,
             b(self.walldiag), b(self.cpuprof), b(self.rdiag),
-            b(self.rtobs),
+            if self.rtobs_deep { "2" } else { b(self.rtobs) },
             b(self.fdiag), b(self.trace), b(self.pfrac),
         )
     }

@@ -210,6 +210,27 @@ pub struct OwnerCounters {
     /// Set when a section's thread CPU time could not be read (non-Linux):
     /// the asleep figure is then unavailable, printed `-`.
     pub q_cpu_unavailable: AtomicBool,
+    /// Threading Q3 step 1 (`RWM_RTOBS=2` only; 0 otherwise). The owner's
+    /// quinn sections split by kind — the command drain (the sends), the
+    /// datagram reads, the view publish — each with its context-switch
+    /// classes, so a mutex wait (a voluntary switch inside a synchronous
+    /// quinn call) is told apart from preemption (`task_obs` module doc).
+    pub k_send: crate::task_obs::SpanCtr,
+    pub k_read: crate::task_obs::SpanCtr,
+    pub k_pub: crate::task_obs::SpanCtr,
+    /// The inbound back-pressure witness: forwards of a poll's batch that
+    /// found the receiver's (`rx`) or the sender's (`ack`) channel full, and
+    /// the wall until the batch was forwarded (reads pause meanwhile).
+    pub rx_full: AtomicU64,
+    pub rx_full_ns: AtomicU64,
+    pub ack_full: AtomicU64,
+    pub ack_full_ns: AtomicU64,
+    /// The outbound back-pressure witness (written by the producers in
+    /// [`TxBatch::flush`]): batches handed to this owner, those that found
+    /// its channel full, and the producer's wall waiting for room.
+    pub fl_sends: AtomicU64,
+    pub fl_full: AtomicU64,
+    pub fl_full_ns: AtomicU64,
 }
 
 /// What the owner publishes about its path. Read by the sender, the
@@ -707,18 +728,17 @@ fn local_handshake(path_id: PathId) -> Handshake {
 // ───────────────────────────────────────────────────────────────────────────
 // The lock-wait gauge
 
-#[cfg(target_os = "linux")]
-fn thread_cpu_ns() -> Option<u64> {
-    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
-    // SAFETY: a valid out-pointer; CLOCK_THREAD_CPUTIME_ID has no other
-    // precondition.
-    let r = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
-    (r == 0).then(|| ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64)
+use crate::task_obs::{thread_cpu_ns, Span, SpanCtr};
+
+/// A deep-gauge span (`RWM_RTOBS=2`): `None` when off.
+fn deep_begin(on: bool) -> Option<Span> {
+    on.then(Span::begin)
 }
 
-#[cfg(not(target_os = "linux"))]
-fn thread_cpu_ns() -> Option<u64> {
-    None
+fn deep_end(c: &SpanCtr, s: Option<Span>) {
+    if let Some(s) = s {
+        s.end(c);
+    }
 }
 
 /// One measured owner section (a stretch of the owner's poll that calls
@@ -756,13 +776,18 @@ fn bind_endpoint(
     path_id: PathId,
     addr: SocketAddr,
     server_config: Option<ServerConfig>,
+    deep: bool,
 ) -> anyhow::Result<(Endpoint, std::net::UdpSocket, RcvbufGrant)> {
     let (sock, grant) = rcvbuf::bind_udp_with_rcvbuf(addr, rcvbuf::RCVBUF_REQUEST)?;
     let probe = sock.try_clone()?;
     let role = if server_config.is_some() { "server" } else { "client" };
     let local = sock.local_addr().unwrap_or(addr);
     crate::readout!("{}", rcvbuf::echo_line(path_id as u32, role, local, &grant));
-    let runtime = quinn::default_runtime().ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
+    let mut runtime = quinn::default_runtime().ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
+    if deep {
+        // Threading Q3 step 1: time quinn's drivers and socket (delegating).
+        runtime = Arc::new(crate::task_obs::TimedRuntime::new(runtime, format!("{role}-p{path_id}")));
+    }
     let ep = Endpoint::new(quinn::EndpointConfig::default(), server_config, sock, runtime)?;
     Ok((ep, probe, grant))
 }
@@ -782,6 +807,8 @@ pub(crate) struct OwnerArgs {
     pub dg_audit: bool,
     /// `RWM_RTOBS`: the lock-wait gauge's clock reads.
     pub gauge: bool,
+    /// `RWM_RTOBS=2`: the deep gauge (`task_obs`).
+    pub deep: bool,
 }
 
 /// The owner task. Spawned on the main runtime; the identity task-local is
@@ -794,7 +821,7 @@ pub(crate) async fn run_owner(a: OwnerArgs) {
 async fn owner_body(mut a: OwnerArgs) {
     a.view.owner_thread.store(thread_token(), Relaxed);
     // 1. Bind, here, on the owner's runtime.
-    let ep = match bind_endpoint(a.path, a.bind, a.server_config.take()) {
+    let ep = match bind_endpoint(a.path, a.bind, a.server_config.take(), a.deep) {
         Ok((mut ep, probe, grant)) => {
             if let Some(cc) = a.client_config.take() {
                 ep.set_default_client_config(cc);
@@ -913,6 +940,10 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     // sender.
     let mut inbound_tx: InboundBatch = Vec::new();
     let mut ctrl_pending: Option<(PathId, WireMessage)> = None;
+    // The back-pressure witness's clocks (`RWM_RTOBS=2`): when the held
+    // inbound / ack batch first found its channel full.
+    let mut rx_full_at: Option<Instant> = None;
+    let mut ack_full_at: Option<Instant> = None;
     let mut uni: Option<BoxFut<'_, Result<Option<WireMessage>, ()>>> = None;
     let mut uni_dead = false;
     let mut streams: VecDeque<(Bytes, oneshot::Sender<anyhow::Result<()>>)> = VecDeque::new();
@@ -963,6 +994,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 }
                 ctr.drains.fetch_add(1, Relaxed);
                 let sec = section_begin(a.gauge);
+                let dsec = deep_begin(a.deep);
                 for cmd in cmds.drain(..) {
                     match cmd {
                         IoCmd::Send { lane, mut dgrams } => {
@@ -996,11 +1028,13 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                     }
                 }
                 section_end(ctr, sec);
+                deep_end(&ctr.k_send, dsec);
             }
             r = conn.read_datagram(), if reading => {
                 match r {
                     Ok(d) => {
                         let sec = section_begin(a.gauge);
+                        let dsec = deep_begin(a.deep);
                         push_inbound(&mut inbound, &mut inbound_tx, &view, a.dg_audit, path, d);
                         // What quinn already buffered, in this poll, up to
                         // INBOUND_BATCH_MAX (the cap's binds are counted).
@@ -1020,6 +1054,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                             }
                         }
                         section_end(ctr, sec);
+                        deep_end(&ctr.k_read, dsec);
                         dirty = true;
                         // The sender's share first: an ack never waits behind
                         // the receiver's channel.
@@ -1033,7 +1068,13 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 }
                                 // Full: keep it; the reserve arm forwards it
                                 // (reads pause meanwhile).
-                                Err(mpsc::error::TrySendError::Full(b)) => inbound_tx = b,
+                                Err(mpsc::error::TrySendError::Full(b)) => {
+                                    inbound_tx = b;
+                                    if a.deep {
+                                        ctr.ack_full.fetch_add(1, Relaxed);
+                                        ack_full_at = Some(Instant::now());
+                                    }
+                                }
                                 Err(mpsc::error::TrySendError::Closed(_)) => {}
                             }
                         }
@@ -1048,7 +1089,13 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                                 // Full: keep the batch; the reserve arm
                                 // forwards it (reads pause meanwhile, so
                                 // quinn's own bounded buffer holds the rest).
-                                Err(mpsc::error::TrySendError::Full(b)) => inbound = b,
+                                Err(mpsc::error::TrySendError::Full(b)) => {
+                                    inbound = b;
+                                    if a.deep {
+                                        ctr.rx_full.fetch_add(1, Relaxed);
+                                        rx_full_at = Some(Instant::now());
+                                    }
+                                }
                                 Err(mpsc::error::TrySendError::Closed(_)) => {
                                     readers = None;
                                 }
@@ -1062,6 +1109,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 }
             }
             p = reserve_owned(readers.as_ref().map(|r| r.sender_tx.clone())), if !inbound_tx.is_empty() => {
+                if let Some(t) = ack_full_at.take() {
+                    ctr.ack_full_ns.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                }
                 match p {
                     Some(permit) => {
                         ctr.ack_batches.fetch_add(1, Relaxed);
@@ -1073,6 +1123,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 }
             }
             p = reserve_owned(readers.as_ref().map(|r| r.msg_tx.clone())), if !inbound.is_empty() => {
+                if let Some(t) = rx_full_at.take() {
+                    ctr.rx_full_ns.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
+                }
                 match p {
                     Some(permit) => {
                         ctr.rx_batches.fetch_add(1, Relaxed);
@@ -1132,8 +1185,10 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
         let full = dirty && now.duration_since(last_full) >= VIEW_REFRESH;
         if full || copa_wire {
             let sec = section_begin(a.gauge && full);
+            let dsec = deep_begin(a.deep && full);
             publish(conn, &view, full, copa_wire, a.gauge);
             section_end(ctr, sec);
+            deep_end(&ctr.k_pub, dsec);
         }
         if full {
             last_full = now;
@@ -1355,7 +1410,29 @@ impl TxBatch {
                 let fresh = s.io.view.take_vec();
                 let dgrams = std::mem::replace(v, fresh);
                 let n = dgrams.len() as u64;
-                if s.io.tx.send(IoCmd::Send { lane, dgrams }).await.is_err() {
+                let cmd = IoCmd::Send { lane, dgrams };
+                let res = if crate::task_obs::deep() {
+                    // The outbound back-pressure witness (`RWM_RTOBS=2`): the
+                    // same send, through `try_send` first so a full channel
+                    // is counted and its wait timed. Same channel, same
+                    // order, the same blocking send on Full.
+                    let c = &s.io.view.ctr;
+                    c.fl_sends.fetch_add(1, Relaxed);
+                    match s.io.tx.try_send(cmd) {
+                        Ok(()) => Ok(()),
+                        Err(mpsc::error::TrySendError::Full(cmd)) => {
+                            c.fl_full.fetch_add(1, Relaxed);
+                            let t0 = Instant::now();
+                            let r = s.io.tx.send(cmd).await.map_err(|_| ());
+                            c.fl_full_ns.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                            r
+                        }
+                        Err(mpsc::error::TrySendError::Closed(_)) => Err(()),
+                    }
+                } else {
+                    s.io.tx.send(cmd).await.map_err(|_| ())
+                };
+                if res.is_err() {
                     s.io.view.ctr.orphaned.fetch_add(n, Relaxed);
                 }
             }

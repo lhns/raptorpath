@@ -373,8 +373,11 @@ impl QuicTransport {
             is_server: self.is_server,
             dg_audit: self.dg_audit,
             gauge: self.gauge,
+            deep: crate::task_obs::deep(),
         };
-        self.rt.spawn(io_owner::run_owner(args));
+        let side = if self.is_server { "server" } else { "client" };
+        self.rt
+            .spawn(crate::task_obs::timed(format!("owner-{side}-p{path_id}"), io_owner::run_owner(args)));
         let (probe, grant) = bound_rx
             .await
             .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended before binding"))??;

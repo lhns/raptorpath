@@ -1,0 +1,14 @@
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+start sha256=b25fea272e6d2496ee5a6a9072518213ea8903c217baabbfae3fe6489f413cf9 2026-10-06T13:36:27Z
+RUN R-c1s-r1 "mbps":717.865 2026-10-06T13:36:33Z
+RUN R-c1d-r1 "mbps":698.561 2026-10-06T13:36:40Z
+RUN R-c1s-r2 "mbps":727.327 2026-10-06T13:36:47Z
+RUN R-c1d-r2 "mbps":612.666 2026-10-06T13:36:54Z
+PERF P-c1s srv=2257044 cli=2257110 2026-10-06T13:36:59Z
+RUN P-c1s "mbps":742.338 2026-10-06T13:37:07Z
+PERF P-c1d srv=2257629 cli=2257690 2026-10-06T13:37:11Z
+RUN P-c1d "mbps":683.496 2026-10-06T13:37:20Z
+END raptorpath=0 netns=0 2026-10-06T13:37:56Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

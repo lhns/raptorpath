@@ -321,9 +321,9 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
     // futex on a thread that has no tokio core — the same hop production
     // TUN's reader/writer tasks have (D10).
     let body = if args.server {
-        tokio::spawn(perf::server(peer_config))
+        tokio::spawn(raptorpath::task_obs::timed("perf", perf::server(peer_config)))
     } else {
-        tokio::spawn(perf::client(peer_config, args.bytes, args.runs))
+        tokio::spawn(raptorpath::task_obs::timed("perf", perf::client(peer_config, args.bytes, args.runs)))
     };
     body.await.map_err(|e| anyhow::anyhow!("perf task failed: {e}"))?
 }
