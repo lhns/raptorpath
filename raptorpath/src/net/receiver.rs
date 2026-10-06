@@ -124,6 +124,8 @@ pub(crate) async fn run_receiver(
     let mut inbox: Vec<crate::transport::InboundBatch> = Vec::new();
     let mut queued: std::collections::VecDeque<(u32, WireMessage)> =
         std::collections::VecDeque::new();
+    // Messages processed since the last flush of `acks`.
+    let mut since_flush: usize = 0;
     // Whether the sender packs multiple packets per symbol (set via WindowStart)
     let mut window_packed: bool = false;
     // The cumulative point for the window ACK (wire v9 `next_expected`): the
@@ -696,11 +698,19 @@ pub(crate) async fn run_receiver(
         // deadlines and their `[QCLK]` sample are evaluated once per wait,
         // not once per message of a batch.)
         let waiting = queued.is_empty();
-        if waiting {
+        // The staged control datagrams go to the owners before every wait
+        // AND at least every INBOUND_BATCH_MAX processed messages: an ack is
+        // never held behind more than one owner batch's worth of processing
+        // (≤ 32 messages), however deep the drain — without the second
+        // clause the first message's ack would wait for the whole drain (up
+        // to MSG_CHANNEL_BATCHES × 32 messages) and its RTT sample with it.
+        if waiting || since_flush >= crate::transport::io_owner::INBOUND_BATCH_MAX {
+            since_flush = 0;
             let mut b = std::mem::take(&mut *acks.borrow_mut());
             recv_transport.flush(&mut b).await;
             *acks.borrow_mut() = b;
         }
+        since_flush += 1;
         // Periodic generation-deficit report deadline: re-report the frontier
         // deficit ~once per SRTT even absent new data, so a sender that
         // emitted its budget and went quiet is always re-pulled and a lost
