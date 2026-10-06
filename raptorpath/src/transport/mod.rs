@@ -18,5 +18,5 @@ pub use protocol::{
     serialize_data_compact, serialize_symbol_compact_in, wire_compact_active, ControlMessage, Handshake, SymbolBatch,
     WireMessage, COMPACT_DATA_TAG, PROTOCOL_VERSION, WIRE_MAGIC,
 };
-pub use io_owner::{InboundBatch, IoRtArm, TxBatch};
+pub use io_owner::{InboundBatch, TxBatch};
 pub use quic::QuicTransport;

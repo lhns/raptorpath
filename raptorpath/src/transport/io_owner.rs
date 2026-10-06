@@ -9,18 +9,12 @@
 //! use published state). No `quinn::Connection` exists outside this module:
 //! the connection is born inside the owner task and dies there.
 //!
-//! **Placement (`RWM_IO_RT`, a measurement arm, never a δ/ρ mode).** The same
-//! owner code runs in both arms; only the spawn target differs, and with it
-//! the runtime under which the endpoint is built, the connection is set up and
-//! quinn's drivers are spawned (quinn 0.11.9 spawns its EndpointDriver and
-//! ConnectionDriver with a bare `tokio::spawn`, and the socket registers with
-//! the ambient reactor — th1 §6 option 1):
-//!
-//! * `shared` — the owner is a task on the main runtime;
-//! * `own` — the owner is a task on one of K dedicated `current_thread`
-//!   runtimes (`rp-io-<k>`, each on its own named thread), K = max(1, cores −
-//!   2), paths assigned least-loaded. The driver then polls on the owner's
-//!   thread by construction, so the connection mutex is never contended.
+//! **Placement.** The owner is a task on the main runtime: the endpoint is
+//! bound, the connection set up and quinn's drivers spawned there (quinn
+//! 0.11.9 spawns its EndpointDriver and ConnectionDriver with a bare
+//! `tokio::spawn`, and the socket registers with the ambient reactor). The
+//! Q1 battery measured a dedicated-runtime placement (`RWM_IO_RT=own`)
+//! against it; `own` failed at c1d (status §13) and was deleted.
 //!
 //! **Batched hops (rule 3).** Producers (the sender, the receiver, the control
 //! fast path) stage serialized datagrams per path in a [`TxBatch`] they own and
@@ -45,7 +39,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, OnceLock, Weak};
 use std::task::Poll;
 use std::time::{Duration, Instant};
@@ -111,191 +105,7 @@ pub const CONTROL_SEND_TIMEOUT: Duration = Duration::from_millis(500);
 pub type InboundBatch = Vec<(PathId, WireMessage)>;
 
 // ───────────────────────────────────────────────────────────────────────────
-// Placement
-
-/// The `RWM_IO_RT` arm, resolved once (`gates.rs`). A measurement arm: it
-/// selects where the SAME owner code runs, at every path count and every
-/// (δ, ρ).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IoRtArm {
-    /// The owner is a task on the main runtime.
-    Shared,
-    /// The owner is a task on a dedicated `current_thread` runtime.
-    Own,
-}
-
-impl IoRtArm {
-    pub fn name(self) -> &'static str {
-        match self {
-            IoRtArm::Shared => "shared",
-            IoRtArm::Own => "own",
-        }
-    }
-
-    /// Parse the gate's raw value: `shared` (default) or `own`; anything else
-    /// warns and keeps the default.
-    pub fn parse(raw: Option<&str>) -> Self {
-        match raw.map(|s| s.trim().to_ascii_lowercase()) {
-            None => IoRtArm::Shared,
-            Some(s) if s.is_empty() || s == "shared" => IoRtArm::Shared,
-            Some(s) if s == "own" => IoRtArm::Own,
-            Some(other) => {
-                warn!(%other, "RWM_IO_RT unrecognized — keeping the default (shared)");
-                IoRtArm::Shared
-            }
-        }
-    }
-}
-
-/// Where a transport spawns its owners.
-#[derive(Clone)]
-pub enum IoPlacement {
-    /// On this handle (the main runtime: captured at transport construction).
-    Shared(tokio::runtime::Handle),
-    /// On the least-loaded runtime of this pool.
-    Own(Arc<IoPool>),
-}
-
-impl IoPlacement {
-    /// The process placement for `arm`: `Shared` on the current runtime, or
-    /// `Own` on the process-wide pool ([`IoPool::global`]).
-    pub fn for_arm(arm: IoRtArm) -> Self {
-        match arm {
-            IoRtArm::Shared => IoPlacement::Shared(tokio::runtime::Handle::current()),
-            IoRtArm::Own => IoPlacement::Own(IoPool::global().clone()),
-        }
-    }
-
-    pub fn arm(&self) -> IoRtArm {
-        match self {
-            IoPlacement::Shared(_) => IoRtArm::Shared,
-            IoPlacement::Own(_) => IoRtArm::Own,
-        }
-    }
-}
-
-/// The number of available cores (`available_parallelism`, 1 if unknown).
-pub fn cores() -> usize {
-    std::thread::available_parallelism().map_or(1, |n| n.get())
-}
-
-/// K, the number of dedicated I/O runtimes under `own`: max(1, cores − 2).
-///
-/// Provenance: a declared dial (plan v2 Q1 section; th1 §6 option 1 — one
-/// owner thread per path, shards sharing threads when paths outnumber them).
-/// The two reserved cores are the main runtime's two hot tasks, the sender
-/// and the receiver; the main runtime keeps its default worker count. It is
-/// not derived from a measurement; the Q1 battery measures it.
-pub fn io_runtimes_for(cores: usize) -> usize {
-    cores.saturating_sub(2).max(1)
-}
-
-/// One dedicated I/O runtime.
-pub struct IoRuntime {
-    pub name: String,
-    pub handle: tokio::runtime::Handle,
-    /// Owners currently placed here (least-loaded assignment).
-    load: AtomicUsize,
-}
-
-/// K named `current_thread` runtimes, each driven by its own OS thread
-/// (`<prefix>-<k>`) for the life of the pool. The runtimes are owned by
-/// their threads and dropped there, outside any async context.
-pub struct IoPool {
-    rts: Vec<IoRuntime>,
-    stop: Vec<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
-}
-
-impl IoPool {
-    /// Build `k` runtimes on threads named `<prefix>-0 .. <prefix>-(k-1)`.
-    /// With the runtime observer armed (`RWM_RTOBS`), each runtime gets its
-    /// own `[LAG]` probe and `[THR] io` counters.
-    pub fn new(k: usize, prefix: &str) -> Arc<Self> {
-        let mut rts = Vec::with_capacity(k);
-        let mut stop = Vec::with_capacity(k);
-        for i in 0..k.max(1) {
-            let name = format!("{prefix}-{i}");
-            let (htx, hrx) = std::sync::mpsc::channel();
-            let (stx, srx) = oneshot::channel::<()>();
-            std::thread::Builder::new()
-                .name(name.clone())
-                .spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("I/O runtime");
-                    let _ = htx.send(rt.handle().clone());
-                    // Drive the runtime until the pool is dropped; the
-                    // global pool never is.
-                    rt.block_on(async {
-                        let _ = srx.await;
-                    });
-                })
-                .expect("spawn I/O runtime thread");
-            let handle = hrx.recv().expect("I/O runtime handle");
-            if crate::runtime_obs::armed() {
-                crate::runtime_obs::register_io_runtime(&name, &handle);
-            }
-            rts.push(IoRuntime { name, handle, load: AtomicUsize::new(0) });
-            stop.push(parking_lot::Mutex::new(Some(stx)));
-        }
-        Arc::new(Self { rts, stop })
-    }
-
-    /// The process-wide pool: K = [`io_runtimes_for`]`(`[`cores`]`())`
-    /// runtimes named `rp-io-<k>`, all created at first use (so the thread
-    /// set is the same at every path count).
-    pub fn global() -> &'static Arc<IoPool> {
-        static POOL: OnceLock<Arc<IoPool>> = OnceLock::new();
-        POOL.get_or_init(|| IoPool::new(io_runtimes_for(cores()), "rp-io"))
-    }
-
-    pub fn len(&self) -> usize {
-        self.rts.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.rts.is_empty()
-    }
-
-    pub fn runtime(&self, k: usize) -> &IoRuntime {
-        &self.rts[k]
-    }
-
-    /// Least-loaded assignment (ties to the lowest index); the slot is held
-    /// until [`Self::release`].
-    pub(crate) fn assign(&self) -> usize {
-        let k = (0..self.rts.len())
-            .min_by_key(|&i| (self.rts[i].load.load(Relaxed), i))
-            .unwrap_or(0);
-        self.rts[k].load.fetch_add(1, Relaxed);
-        k
-    }
-
-    pub(crate) fn release(&self, k: usize) {
-        let _ = self.rts[k]
-            .load
-            .fetch_update(Relaxed, Relaxed, |v| Some(v.saturating_sub(1)));
-    }
-
-    /// Owners currently placed on runtime `k`.
-    pub fn load(&self, k: usize) -> usize {
-        self.rts[k].load.load(Relaxed)
-    }
-}
-
-impl Drop for IoPool {
-    fn drop(&mut self) {
-        for s in &self.stop {
-            if let Some(tx) = s.lock().take() {
-                let _ = tx.send(());
-            }
-        }
-    }
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Thread tokens (the routing probe and the `own` thread pin)
+// Thread tokens (the routing probe)
 
 /// A small, stable, nonzero id for the calling OS thread.
 pub fn thread_token() -> u64 {
@@ -407,7 +217,8 @@ pub struct PathView {
     pub serial: u64,
     /// `client` / `server`.
     pub side: &'static str,
-    /// The runtime the owner runs on: `main` (shared) or `rp-io-<k>`.
+    /// The runtime the owner runs on (`main`: the owner is a task on the
+    /// main runtime).
     pub rt: String,
     /// quinn's RTT (µs), refreshed every owner poll under `RWM_COPA_WIRE` and
     /// with every full snapshot otherwise.
@@ -661,10 +472,6 @@ pub(crate) enum IoCmd {
     Accept { reply: oneshot::Sender<anyhow::Result<()>> },
     /// Close the connection and end the owner.
     Close,
-    /// Test only: hold the owner busy inside its command drain until
-    /// `release`, after setting `entered`.
-    #[cfg(test)]
-    Hold { entered: Arc<AtomicBool>, release: Arc<AtomicBool> },
 }
 
 /// A path's handle as the rest of the engine holds it: the owner's channel
@@ -699,27 +506,24 @@ pub fn first_identity_violation() -> Option<String> {
 }
 
 /// The identity rule the wrapper enforces: the caller runs inside the owner
-/// task of `path` (`owner` = the task-local path, `None` outside any owner)
-/// and, when the owner is pinned to a thread (`own`), on that thread.
-pub(crate) fn identity_ok(path: PathId, owner: Option<PathId>, pinned: Option<u64>, current: u64) -> bool {
-    owner == Some(path) && pinned.map_or(true, |t| t == current)
+/// task of `path` (`owner` = the task-local path, `None` outside any owner).
+pub(crate) fn identity_ok(path: PathId, owner: Option<PathId>) -> bool {
+    owner == Some(path)
 }
 
 /// The connection, reachable only through this wrapper. Every method checks
 /// the caller's identity first: it must run inside the owner task of THIS
-/// path (task-local, valid in both placements) and, under `own`, on the
-/// owner's pinned thread; and (the P1 lock-order witness) with no scheduler
+/// path (task-local); and (the P1 lock-order witness) with no scheduler
 /// guard alive on the thread. A failed check panics.
 pub(crate) struct OwnedConn {
     raw: quinn::Connection,
     path: PathId,
     view: Arc<PathView>,
-    pinned_thread: Option<u64>,
 }
 
 impl OwnedConn {
-    fn new(raw: quinn::Connection, path: PathId, view: Arc<PathView>, pinned_thread: Option<u64>) -> Self {
-        Self { raw, path, view, pinned_thread }
+    fn new(raw: quinn::Connection, path: PathId, view: Arc<PathView>) -> Self {
+        Self { raw, path, view }
     }
 
     #[inline]
@@ -728,14 +532,12 @@ impl OwnedConn {
         crate::scheduler::sched_lock::assert_not_held(seam);
         self.view.ctr.qcalls.fetch_add(1, Relaxed);
         let owner = OWNER.try_with(|p| *p).ok();
-        if !identity_ok(self.path, owner, self.pinned_thread, thread_token()) {
-            let in_owner = owner == Some(self.path);
-            let on_thread = self.pinned_thread.map_or(true, |t| t == thread_token());
+        if !identity_ok(self.path, owner) {
             ID_VIOLATIONS.fetch_add(1, Relaxed);
             let at = std::panic::Location::caller();
             let msg = format!(
                 "io owner: quinn seam `{seam}` ({at}) for path {} called outside its owner \
-                 (in_owner={in_owner} on_owner_thread={on_thread})",
+                 (running in owner {owner:?})",
                 self.path
             );
             ID_FIRST.lock().get_or_insert_with(|| msg.clone());
@@ -963,32 +765,16 @@ pub(crate) struct OwnerArgs {
     pub dg_audit: bool,
     /// `RWM_RTOBS`: the lock-wait gauge's clock reads.
     pub gauge: bool,
-    /// `own`: pin the identity check to the owner's thread.
-    pub pin_thread: bool,
-    /// `own`: the pool slot to release when the owner ends.
-    pub release: Option<(Arc<IoPool>, usize)>,
 }
 
-struct ReleaseOnDrop(Option<(Arc<IoPool>, usize)>);
-
-impl Drop for ReleaseOnDrop {
-    fn drop(&mut self) {
-        if let Some((pool, k)) = self.0.take() {
-            pool.release(k);
-        }
-    }
-}
-
-/// The owner task. Spawned on the placement's runtime; the identity
-/// task-local is set around the whole future.
+/// The owner task. Spawned on the main runtime; the identity task-local is
+/// set around the whole future.
 pub(crate) async fn run_owner(a: OwnerArgs) {
     let path = a.path;
     OWNER.scope(path, owner_body(a)).await
 }
 
 async fn owner_body(mut a: OwnerArgs) {
-    let _release = ReleaseOnDrop(a.release.take());
-    let pinned = a.pin_thread.then(thread_token);
     a.view.owner_thread.store(thread_token(), Relaxed);
     // 1. Bind, here, on the owner's runtime.
     let ep = match bind_endpoint(a.path, a.bind, a.server_config.take()) {
@@ -1014,8 +800,8 @@ async fn owner_body(mut a: OwnerArgs) {
     let conn = loop {
         let Some(cmd) = a.cmd_rx.recv().await else { return };
         let (res, reply) = match cmd {
-            IoCmd::Connect { peer, reply } => (connect(&ep, &a, pinned, peer).await, reply),
-            IoCmd::Accept { reply } => (accept(&ep, &a, pinned).await, reply),
+            IoCmd::Connect { peer, reply } => (connect(&ep, &a, peer).await, reply),
+            IoCmd::Accept { reply } => (accept(&ep, &a).await, reply),
             IoCmd::Close => return,
             IoCmd::Stream { reply, .. } => {
                 let _ = reply.send(Err(anyhow::anyhow!("path {} is not connected", a.path)));
@@ -1027,11 +813,6 @@ async fn owner_body(mut a: OwnerArgs) {
             }
             IoCmd::StartReaders { msg_tx, ctrl_tx } => {
                 early_readers = Some(Readers { msg_tx, ctrl_tx });
-                continue;
-            }
-            #[cfg(test)]
-            IoCmd::Hold { entered, release } => {
-                hold(&entered, &release);
                 continue;
             }
         };
@@ -1050,18 +831,18 @@ async fn owner_body(mut a: OwnerArgs) {
     drop(ep);
 }
 
-async fn connect(ep: &Endpoint, a: &OwnerArgs, pinned: Option<u64>, peer: SocketAddr) -> anyhow::Result<OwnedConn> {
+async fn connect(ep: &Endpoint, a: &OwnerArgs, peer: SocketAddr) -> anyhow::Result<OwnedConn> {
     let raw = ep.connect(peer, "raptorpath")?.await?;
-    let conn = OwnedConn::new(raw, a.path, a.view.clone(), pinned);
+    let conn = OwnedConn::new(raw, a.path, a.view.clone());
     let _peer_hs = conn.perform_handshake(&local_handshake(a.path)).await?;
     info!(path_id = a.path, %peer, "connected and handshake complete");
     Ok(conn)
 }
 
-async fn accept(ep: &Endpoint, a: &OwnerArgs, pinned: Option<u64>) -> anyhow::Result<OwnedConn> {
+async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<OwnedConn> {
     let incoming = ep.accept().await.ok_or_else(|| anyhow::anyhow!("endpoint closed"))?;
     let raw = incoming.await?;
-    let conn = OwnedConn::new(raw, a.path, a.view.clone(), pinned);
+    let conn = OwnedConn::new(raw, a.path, a.view.clone());
     let _peer_hs = conn.accept_handshake(&local_handshake(a.path)).await?;
     info!(path_id = a.path, remote = %conn.remote_address(), "accepted with handshake");
     Ok(conn)
@@ -1070,14 +851,6 @@ async fn accept(ep: &Endpoint, a: &OwnerArgs, pinned: Option<u64>) -> anyhow::Re
 struct Readers {
     msg_tx: mpsc::Sender<InboundBatch>,
     ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
-}
-
-#[cfg(test)]
-fn hold(entered: &AtomicBool, release: &AtomicBool) {
-    entered.store(true, Relaxed);
-    while !release.load(Relaxed) {
-        std::hint::spin_loop();
-    }
 }
 
 /// Poll `f` once with the task's own context: `Some(output)` if it is ready
@@ -1196,8 +969,6 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                             let _ = reply.send(Err(anyhow::anyhow!("path {path} is already connected")));
                         }
                         IoCmd::Close => close = true,
-                        #[cfg(test)]
-                        IoCmd::Hold { entered, release } => hold(&entered, &release),
                     }
                 }
                 section_end(ctr, sec);
@@ -1524,52 +1295,6 @@ impl TxBatch {
                     s.io.view.ctr.orphaned.fetch_add(n, Relaxed);
                 }
             }
-        }
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
-    #[test]
-    fn k_is_cores_minus_two_floored_at_one() {
-        assert_eq!(io_runtimes_for(1), 1);
-        assert_eq!(io_runtimes_for(2), 1);
-        assert_eq!(io_runtimes_for(3), 1);
-        assert_eq!(io_runtimes_for(6), 4);
-        assert_eq!(io_runtimes_for(16), 14);
-    }
-
-    #[test]
-    fn the_arm_parses_two_names_and_defaults_to_shared() {
-        assert_eq!(IoRtArm::parse(None), IoRtArm::Shared);
-        assert_eq!(IoRtArm::parse(Some("shared")), IoRtArm::Shared);
-        assert_eq!(IoRtArm::parse(Some(" OWN ")), IoRtArm::Own);
-        assert_eq!(IoRtArm::parse(Some("thread")), IoRtArm::Shared);
-    }
-
-    #[test]
-    fn least_loaded_assignment_spreads_then_shares() {
-        let pool = IoPool::new(3, "rp-iot");
-        let picks: Vec<usize> = (0..7).map(|_| pool.assign()).collect();
-        assert_eq!(picks, vec![0, 1, 2, 0, 1, 2, 0]);
-        pool.release(1);
-        pool.release(1);
-        assert_eq!(pool.assign(), 1, "the emptiest runtime takes the next path");
-    }
-
-    /// The pool's threads carry their names and run their runtime.
-    #[test]
-    fn the_pool_threads_are_named_and_drive_their_runtime() {
-        let pool = IoPool::new(2, "rp-iot-n");
-        for k in 0..2 {
-            let (tx, rx) = std::sync::mpsc::channel();
-            pool.runtime(k).handle.spawn(async move {
-                let _ = tx.send(std::thread::current().name().map(str::to_string));
-            });
-            let name = rx.recv_timeout(Duration::from_secs(5)).expect("task ran");
-            assert_eq!(name.as_deref(), Some(format!("rp-iot-n-{k}").as_str()));
         }
     }
 }
