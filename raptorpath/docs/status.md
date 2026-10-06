@@ -4226,3 +4226,65 @@ battery shows no clause moved by it.
    (+29 %, disjoint); at n = 6 the same clause reads −9.8 % with MAIN's own
    range 1346–3521 µs. The p99 of this probe at c1d varies by 2.6× within an
    arm.
+
+## 16. Threading Q3 — the investigation (step 1) — pre-registration
+
+Plan v2's Q3 is conditional: a lock-free send under the owner (or a
+receiver-role split) is built only if `[THR]` after Q2 shows a single owner
+at ≥ 0.9 core, or quinn's in-lock `sendmsg` costs more than 10 % of an
+owner. The trigger read so far is the `[IOWN]` asleep gauge (the owner's
+wall asleep in its quinn sections: c1s ≈ 0.15–0.19, c1d ≈ 0.05–0.09 in the
+§14 Q2 rows). Two facts weaken that reading before any new measurement:
+(i) the gauge is wall − thread CPU, so it cannot tell a mutex wait from
+preemption; (ii) §13 already ran the controlled comparison — the `own`
+placement cut the owner's asleep to ≈ 0.01 and gained no goodput (c1s
+778.3 vs 773.5, c1d 711.5 vs 729.5). And `[THR] os` cannot read "a single
+owner's core": tasks migrate across the six workers (every Q2 worker reads
+0.18–0.47 core). Committed before VM contact; this is a diagnostic
+session, not a scored battery, and nothing ships from it.
+
+**The instrument** (`RWM_RTOBS=2`, a new level of the existing opt-in
+observer; `RWM_RTOBS=0/1` behave as before — `src/task_obs.rs`,
+measurement only, every wrapper delegates):
+
+1. `[TASK]` — per-task poll CPU: the sender, the receiver, each path's
+   owner, the perf body, the cold tasks, and quinn's EndpointDriver /
+   ConnectionDriver per path (timed through a delegating `quinn::Runtime`;
+   the ConnectionDriver's poll holds the connection mutex for its whole
+   length, quinn `connection.rs:243`, so its poll wall is the lock's hold
+   time). Per poll, `getrusage(RUSAGE_THREAD)` splits wall − CPU into
+   `asl_vol` (a voluntary switch: a futex sleep — the mutex), `asl_inv`
+   (preempted only) and `asl_none` (no switch counted: steal /
+   granularity).
+2. `[QSOCK]` — the path socket timed (a delegating `AsyncUdpSocket`):
+   `try_send` = the driver's in-lock `sendmsg` (calls, µs, datagrams →
+   GSO), `poll_recv` = the EndpointDriver's `recvmmsg`.
+3. `[IOWN]` appended tokens — the owner's quinn sections by kind (`qk_snd`
+   the command drain, `qk_rd` the reads, `qk_pub` the view publish) with
+   the same switch-class split; the back-pressure witness: producer batches
+   that found the owner's channel full and their wait (`fl_full`,
+   `fl_full_us`), and inbound batches that found the receiver's / sender's
+   channel full (`rx_full`, `ack_full`, and the wall until forwarded).
+4. Harness side (`tools/l1/q3diag_run.sh`): per-CPU `/proc/stat` at 10 Hz
+   around each invocation (user / system / softirq / idle / steal per
+   vCPU), and one system-wide `perf record -g` (dwarf) at c1s and c1d.
+
+**The session.** One instrumented binary, both locks, seed 42: c1s and c1d
+× 3 with `RWM_DIAG=1 RWM_RTOBS=2` (battery-like); × 2 with `RWM_RTOBS=2`
+and no `RWM_DIAG` (the shipped send path: `RWM_DIAG` makes `send_one` take
+the connection lock twice per datagram); × 2 with `RWM_DIAG=1
+RWM_RTOBS=1` (the deep gauge's own cost on goodput); c2 and c8 × 1; the
+two `perf record` runs (`RWM_RTOBS=1`).
+
+**Decision rule (fixed now).** Build the lock-free send (cheap quinn-API
+fixes first, then R6 option B) only if at least one holds at c1s or c1d:
+(a) the producers are back-pressured by the owner — `fl_full_us` ≥ 5 % of
+the sender's wall — or the owner task itself runs ≥ 0.9 core (`[TASK]`
+`cores`); (b) a ConnectionDriver runs ≥ 0.9 core, or its in-lock
+`sendmsg` (`[QSOCK]` `send_frac`) is ≥ 0.10 of wall while a vCPU it needs
+is saturated. Otherwise the owner's asleep is absorbed slack — the lock is
+not on the critical path — and no lock-free send is built: the report
+names the measured ceiling (the task or vCPU at saturation, the kernel /
+netem, or the engine's own rate law) and designs, without building, the
+next fix. The asleep split itself is reported: if `asl_vol` (the mutex)
+is under half of the owner's asleep, the 0.2 was mostly preemption.
