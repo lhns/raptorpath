@@ -4060,3 +4060,25 @@ no truncation); the operator reads `all-era.txt` at most once per ≈ 20 min
 `sshd` or non-`rp-*` namespace is touched; exit state verified (0
 `raptorpath`, 0 `rp-*` namespaces, both locks released). Ledgers are copied
 to `docs/l1-raw/thread-q2/`.
+
+**Amendment 1** (committed before launch; no scored result exists or was
+read). **The pre-battery c1d component check** (the operator's request
+before the gate; one invocation per arm per seed at `c1d-400`, seeds 42 and
+7, n = 2, inside both locks, binaries built from 0ef0e0d and the Q2 tree;
+UNSCORED, not part of the battery) read: client sender `busy` MAIN 62.2 %
+[59.5–65.0] → Q2 55.5 % [54.0–57.0] (the split leaves the c1d sender room);
+goodput 734 [710–758] → 725 [724–727] Mbit/s; CPUCLI/GB 6.95 → 6.70;
+**client `[LAG]` p99 1916 [1811–2022] → 2469 [2079–2859] µs (median beyond
+the 5.5 % tolerance, ranges disjoint at n = 2)**; **server CPU/GB 8.29 →
+8.70 (+5 %, ranges disjoint at n = 2, inside the 6.5 % MDE)**. Therefore:
+(i) **c1d client `[LAG]` p99 is a named risk** of this battery — the
+prediction "`[LAG]` p99: WITHIN" stands as written, and the pass rule and
+outcome vocabulary are unchanged (a WORSE there is a c1d FAIL, as
+pre-registered); (ii) the result reports `[LAG]` p99 on both sides at every
+cell and whether its rise tracks the sender's input-batch processing (the
+existing `wake[ack]` / sender-lane `ack_dg` / `ack_batches` / `busy`
+readings; no instrument is added); (iii) **`wake[ack]` (bucket 8) is not
+comparable between the arms**: on MAIN it is P1's `AckWake` Notify arm,
+armed only while paused or pacing-dry; on Q2 it is the always-armed input
+channel arm — the two columns are different counters, and MAIN's 7048 vs
+Q2's 5086 at c1d is not "fewer ack wakes".
