@@ -1,31 +1,33 @@
 //! RTCP-style periodic PathReport + keepalive, and the local send-rate feed
 //! that keeps the estimator's throughput term non-sentinel.
 //!
-//! Lock discipline: the per-path MTU query (a quinn call) runs first with
-//! the scheduler released (threading P1, D2: no quinn call under the
-//! scheduler); the rest of the per-tick scheduler work (send-rate feed,
-//! dead-path check, MTU store, in_flight expiry/decay, report build) happens
-//! inside one `report_scheduler.lock()` guard whose scope ends before the
-//! `for (pid, report)` await loop — the report sends await on the reliable
-//! stream and must not hold the scheduler lock. Control sends are wrapped in
-//! 500 ms timeouts because this task also runs the dead-path checker and
-//! must never wedge. `sent_prev` / `sent_prev_t` are task-local state that
+//! Threading Q2: the scheduler's TX half is owned by the window sender, so
+//! this task reaches it by message. Per tick it computes, off the published
+//! atomics alone, the per-path send rate (`symbols_sent` deltas) and reads
+//! each path's MTU off its I/O owner's view; it then sends ONE
+//! [`SenderCmd::ReportTick`] and awaits the sender's reply — the TX part
+//! (`report_tick_tx`: the rate feed, the dead-path check, the MTU store, the
+//! in-flight expiry, the PathReport build) runs in the sender, by `&mut`.
+//! The report sends (reliable stream, 500 ms deadlines: this task must never
+//! wedge) stay here. `sent_prev` / `sent_prev_t` are task-local state that
 //! survives across ticks.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
-use super::super::{DEAD_PATH_TIMEOUT, REPORT_INTERVAL, now_us};
+use super::super::{DEAD_PATH_TIMEOUT, REPORT_INTERVAL, SenderCmd, now_us};
 use crate::monitor::stats::SharedStats;
+use crate::scheduler::{PathId, Scheduler};
 use crate::transport::{ControlMessage, QuicTransport};
 
 /// RTCP-style periodic report + keepalive task.
 pub(crate) async fn run_report(
     report_transport: Arc<QuicTransport>,
-    report_scheduler: Arc<crate::scheduler::SchedMutex>,
+    report_sender: mpsc::Sender<SenderCmd>,
     report_stats: Arc<SharedStats>,
     report_symbol_size: u16,
     mut report_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
@@ -42,32 +44,28 @@ pub(crate) async fn run_report(
         }
 
         debug!("report tick");
-        // Query the MTU per path first (threading P1, D2), with the
-        // scheduler released; the values are stored under the guard below.
-        // Since threading Q1 it is a read of the path owner's published view
-        // (≤ `io_owner::VIEW_REFRESH` old), not a quinn call.
-        let mtus: Vec<(u32, usize)> = {
-            let ids = report_scheduler.lock().all_path_ids();
-            ids.into_iter()
-                .filter_map(|pid| report_transport.max_datagram_size(pid).map(|m| (pid, m)))
-                .collect()
-        };
-        let reports: Vec<_> = {
-        let mut sched = report_scheduler.lock();
+        let ids = report_stats.path_ids();
+        // The MTU per path: a read of the path owner's published view
+        // (≤ `io_owner::VIEW_REFRESH` old), stored by the sender.
+        let mtus: Vec<(u32, usize)> = ids
+            .iter()
+            .filter_map(|&pid| report_transport.max_datagram_size(pid).map(|m| (pid, m)))
+            .collect();
 
-        // Feed the estimator a local throughput measurement — the achieved
-        // send rate over the report interval. The peer's PathReport value is
-        // the peer's own estimator.throughput(), which is circular (both
-        // sides would sit at 0.0), and every throughput-gated rate term
-        // (t_sym: the inner-feedback floor, the saturation cap and the burst
-        // B/T term, paper §4.4) would be sentinel-disabled. The send rate is
-        // the right t_sym semantics anyway: T_arq counts wire slots of the
-        // send process the repairs are interleaved into.
+        // The local throughput measurement — the achieved send rate over the
+        // report interval. The peer's PathReport value is the peer's own
+        // estimator.throughput(), which is circular (both sides would sit at
+        // 0.0), and every throughput-gated rate term (t_sym: the
+        // inner-feedback floor, the saturation cap and the burst B/T term,
+        // paper §4.4) would be sentinel-disabled. The send rate is the right
+        // t_sym semantics anyway: T_arq counts wire slots of the send process
+        // the repairs are interleaved into.
+        let mut rates: Vec<(u32, f64)> = Vec::new();
         {
             let now_t = tokio::time::Instant::now();
             let dt = now_t.duration_since(sent_prev_t).as_secs_f64();
             if dt > 0.2 {
-                for pid in sched.all_path_ids() {
+                for &pid in &ids {
                     let sent = report_stats
                         .path(pid)
                         .map(|ps| ps.symbols_sent.load(Ordering::Relaxed))
@@ -84,66 +82,24 @@ pub(crate) async fn run_report(
                     let gap_q = crate::control::anchor::stall_witness()
                         .is_some_and(|w| w.quarantined_now());
                     if delta > 0 && !gap_q {
-                        if let Some(path) = sched.path_mut(pid) {
-                            let bps = delta as f64 * report_symbol_size as f64 / dt;
-                            path.estimator.record_throughput(bps);
-                        }
+                        rates.push((pid, delta as f64 * report_symbol_size as f64 / dt));
                     }
                 }
                 sent_prev_t = now_t;
             }
         }
 
-        // Check for dead paths
-        let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
-        for pid in &deactivated {
-            if let Some(ps) = report_stats.path(*pid) {
-                ps.active.store(false, Ordering::Relaxed);
-            }
+        let (reply, reply_rx) = tokio::sync::oneshot::channel();
+        if report_sender
+            .send(SenderCmd::ReportTick { rates, mtus, reply })
+            .await
+            .is_err()
+        {
+            break; // the sender is gone: the tunnel is ending
         }
-
-        // Store the MTU per path (queried above, outside the guard).
-        for &(pid, mtu) in &mtus {
-            if let Some(path) = sched.path_mut(pid) {
-                path.max_datagram_size = Some(mtu);
-            }
-        }
-
-        // in_flight leak guard (backstop): time-based expiry
-        // (PathState::expire_in_flight, RTT-timescale) is the primary
-        // release for stranded budget; the 25% decay remains as a
-        // last-resort backstop for anything the expiry can't see
-        // (e.g. direct in_flight writes that bypassed the charge log).
-        for pid in sched.all_path_ids() {
-            if let Some(path) = sched.path_mut(pid) {
-                path.expire_in_flight();
-                if path.in_flight > path.cwnd {
-                    path.in_flight -= path.in_flight / 4;
-                }
-            }
-        }
-
-        // Send PathReport + Ping on each LIVE path (not active_paths:
-        // that filters by spare cwnd, and a saturated path still needs
-        // its liveness heartbeats — see Scheduler::live_paths).
-        let path_ids = sched.live_paths();
-        path_ids.iter().filter_map(|&pid| {
-            let path = sched.path(pid)?;
-            let ps = report_stats.path(pid)?;
-            Some((pid, ControlMessage::PathReport {
-                path_id: pid,
-                // The receiver-observed INCOMING loss, as the field's
-                // meaning says (monitoring at the peer; never fed back).
-                loss_rate: path.estimator.rx_loss_rate(),
-                avg_rtt_us: path.estimator.rtt().as_micros() as u64,
-                throughput_bps: path.estimator.throughput(),
-                jitter_us: path.estimator.jitter_us() as u64,
-                symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
-                symbols_received: ps.symbols_received.load(Ordering::Relaxed),
-            }))
-        }).collect()
-        // guard dropped by scope end: the report sends below await on
-        // the reliable stream and must not hold the scheduler lock
+        let reports = match reply_rx.await {
+            Ok(r) => r,
+            Err(_) => break,
         };
 
         for (pid, report) in reports {
@@ -178,4 +134,80 @@ pub(crate) async fn run_report(
             }
         }
     }
+}
+
+/// The report tick's TX part, run in the sender over its own scheduler
+/// (threading Q2; through Q1 it ran here under one scheduler guard, in this
+/// order): the local send-rate feed, the dead-path check (after applying
+/// the receiver's latest arrival stamps), the MTU store, the in-flight
+/// expiry / leak guard, and the PathReport build — the TX values from the
+/// sender's estimator, the incoming loss and jitter from its mirror of the
+/// receiver's publication. Returns the reports to send, one per LIVE path.
+pub(crate) fn report_tick_tx(
+    sched: &mut Scheduler,
+    stats: &SharedStats,
+    rates: &[(PathId, f64)],
+    mtus: &[(PathId, usize)],
+) -> Vec<(PathId, ControlMessage)> {
+    for &(pid, bps) in rates {
+        if let Some(path) = sched.path_mut(pid) {
+            path.estimator.record_throughput(bps);
+        }
+    }
+
+    // Check for dead paths, on the freshest arrival evidence.
+    sched.sync_rx(stats);
+    let deactivated = sched.check_dead_paths(DEAD_PATH_TIMEOUT);
+    for pid in &deactivated {
+        if let Some(ps) = stats.path(*pid) {
+            ps.active.store(false, Ordering::Relaxed);
+        }
+    }
+
+    // Store the MTU per path (read off the owner's view by the report task).
+    for &(pid, mtu) in mtus {
+        if let Some(path) = sched.path_mut(pid) {
+            path.max_datagram_size = Some(mtu);
+        }
+    }
+
+    // in_flight leak guard (backstop): time-based expiry
+    // (PathState::expire_in_flight, RTT-timescale) is the primary
+    // release for stranded budget; the 25% decay remains as a
+    // last-resort backstop for anything the expiry can't see
+    // (e.g. direct in_flight writes that bypassed the charge log).
+    for pid in sched.all_path_ids() {
+        if let Some(path) = sched.path_mut(pid) {
+            path.expire_in_flight();
+            if path.in_flight > path.cwnd {
+                path.in_flight -= path.in_flight / 4;
+            }
+        }
+    }
+
+    // Send PathReport + Ping on each LIVE path (not active_paths:
+    // that filters by spare cwnd, and a saturated path still needs
+    // its liveness heartbeats — see Scheduler::live_paths).
+    let path_ids = sched.live_paths();
+    path_ids
+        .iter()
+        .filter_map(|&pid| {
+            let path = sched.path(pid)?;
+            let ps = stats.path(pid)?;
+            Some((
+                pid,
+                ControlMessage::PathReport {
+                    path_id: pid,
+                    // The receiver-observed INCOMING loss, as the field's
+                    // meaning says (monitoring at the peer; never fed back).
+                    loss_rate: path.estimator.rx_loss_rate(),
+                    avg_rtt_us: path.estimator.rtt().as_micros() as u64,
+                    throughput_bps: path.estimator.throughput(),
+                    jitter_us: path.estimator.jitter_us() as u64,
+                    symbols_sent: ps.symbols_sent.load(Ordering::Relaxed),
+                    symbols_received: ps.symbols_received.load(Ordering::Relaxed),
+                },
+            ))
+        })
+        .collect()
 }

@@ -105,3 +105,61 @@ line; it never blocks, as `try_lock_for` never hung).
   in every signature of the 77 sites; keeping the shared-mutex topology as
   an `RWM_TOPO` arm would duplicate the machine. The comparison is P2a's
   binary against main's binary, interleaved.
+
+## 4. What threading Q2 does with it (the split by direction)
+
+P2a is deleted (status §12). Q2 (plan v2) splits the state by direction
+instead of moving it into one actor: the window **sender** owns the TX half
+and the FEC controller (`net/tx_inputs.rs` `TxCore`, plain `&mut`), the
+**receiver** owns the RX half (`scheduler/rx.rs` `RxScheduler`, a local).
+Every site of §1, after the split:
+
+| site (§1) | goes to | how |
+|---|---|---|
+| every sender site (`net/mod.rs`, `emit_source.rs`, `sender_phases.rs`, `diag.rs`, `ackdiag.rs`) — class (a) | TX half | `&mut Scheduler` / `&mut FecRateController`, no lock |
+| client ack role: `on_window_ack`, `on_ack`, `copa_feed_attribute`, the `ackdiag` feed | TX half | runs IN the sender: the path owner routes WindowAck / Ack to the sender's input channel (`recv_many`, loop top + always-armed arm) |
+| report task (send-rate feed, dead-path check, MTU store, in-flight expiry, PathReport build) | TX half | `SenderCmd::ReportTick` → `tasks::report::report_tick_tx` in the sender; the report task keeps the stream sends |
+| fast path `on_path_report`, Ping `touch_path` | TX half | forwarded to the sender's input channel; the sender stages the Pong |
+| path-cmd `add_path` / `remove_path` | TX half | `SenderCmd::AddPath` (awaited) / `RemovePath` |
+| class (b): `record_arrival` (receiver 1221), `record_incoming_loss` (2162), the ack's jitter read (1959) | RX half | receiver-owned `RxScheduler` |
+| class (d): the sender `[ETA]` exit flush | dissolved | `TxCore` owns the scheduler beside the flush; its destructor renders it, no lock to try |
+
+**Sites the split found that fit neither half (reported, plan Q2; the
+exploration's "class (c) = 0" holds only for the one-actor shape it was
+made for):**
+
+1. **The receiver's reads of TX estimator state** — SRTT (hold / deficit /
+   horizon / shed clocks, receiver 530/686/722/801/1694), RTprop and SRTT
+   for the `[ETA]` reference (1221), the RTT jitter and σ (the refresh
+   clock and `[QCLK]`, 722). Resolved by publication: the sender writes
+   them per path into `PathStats::xdir` after every input batch it
+   processes (and at startup / path add / the report tick); the receiver
+   reads the atomics. New atomics in the existing `SharedStats` (the
+   plan's cross-direction channel); a reader may be one publication stale.
+2. **The receiver's live-path lists** (broadcast WindowAcks, deficit and
+   request reports, `[CTLD]`, `[WEDGE]`; 560/901/960/971/1049/1093/2022) —
+   liveness is TX state. Read off the existing `PathStats::active` flag,
+   which the sender now publishes in both directions (through Q1 the flag
+   was set false by the dead check and never set true again on revival —
+   a monitoring inconsistency the publication fixes).
+3. **`touch_path` on a data arrival** (receiver 1216) — an RX event that
+   writes TX state (the dead-path clock, and on revival the cwnd / pacing /
+   Copa reset). The receiver stamps the arrival (`xdir.rx_seen_us`, one
+   relaxed store); the sender applies it as `touch_path_at(stamp)` in
+   `Scheduler::sync_rx` at every loop top and before the dead check; when
+   the published flag reads the path dead, the receiver also sends one
+   `SenderCmd::Revive` so a parked sender wakes for it.
+4. **The sender's reads of RX state** — `nack_effectiveness()` (the RX loss
+   EWMA, NACK budget, mod.rs 3201), the arrival-jitter fallback of
+   `rtt_jitter_us()` and the emission's `est.jitter_us()` (emit_source
+   589), and the PathReport's `loss_rate` / `jitter_us`. Resolved by the
+   mirror: the receiver publishes both values after every update; the
+   sender copies them into its estimator (`LossEstimator::set_rx_mirror`)
+   at every loop top.
+5. **The FEC controller's receiver site** (`feedback_update_window`,
+   receiver 2072, 2 s) — a TX-state input produced by the decoder;
+   delivered as `SenderCmd::FecFeedback`. (The method is a no-op body
+   today; the message keeps the structure honest.)
+6. **The MTU store** (exploration class (b), inside the report guard) — not
+   RX: `min_mtu` is read by the sender. It stays TX, written by the report
+   tick's command from the owner's published view.

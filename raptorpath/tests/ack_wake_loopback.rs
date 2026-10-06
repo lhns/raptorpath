@@ -3,12 +3,15 @@
 //! (`c3`, 20 Mbit: the sender is store/cwnd-bound, so it pauses), `RWM_DIAG=1`.
 //! The client sender's last `[DIAG]` carries the cumulative `wake[..]` counts.
 //!
-//!   * `wake[ack] > 0`: the ack-wake arm fired — the receiver routed the
-//!     sender's `Notify` and the sender awaited it (the wiring executes);
+//!   * `wake[ack] > 0`: the ack arm fired — since threading Q2 the sender's
+//!     input channel: the client's path owner routed the WindowAcks to the
+//!     sender and the sender's always-armed `recv_many` arm took them (the
+//!     wiring executes; through P1/Q1 this was the receiver's `AckWake`
+//!     Notify, retired by Q2);
 //!   * `wake[timer_acked] <= 0.05 × wake[ack]`: while paused with acks
 //!     flowing, the loop is woken by acks, not by the 1 ms timer — a timer
-//!     wake during whose wait an ack landed is only a `select!` tie (the
-//!     absolute D1 invariant the V-P1 battery reads);
+//!     wake that resolved with acks queued is only a `select!` tie (the
+//!     absolute D1 invariant the V-P1 battery reads, kept by Q2);
 //!   * the transfer completes (the arm changes wake timing only).
 //!
 //! The numbers are printed (the component statement the V-P1 battery is read

@@ -9,10 +9,16 @@
 //! (`tokio::spawn(receiver::run_receiver(…))` builds the future on the
 //! caller's thread; the body runs when the runtime first polls it).
 //!
+//! Threading Q2 (ownership by direction): the task owns the scheduler's RX
+//! half (`RxScheduler`: arrival jitter, incoming loss) as a local and
+//! publishes its outputs per path (`PathStats::xdir`); it reads the TX
+//! values it needs (SRTT, RTprop, RTT jitter / σ, liveness) from the sender's
+//! publication, and hands TX-state inputs to the sender as messages (the
+//! decoder's FEC feedback, a dead-path revival nudge). No lock, no shared
+//! scheduler.
+//!
 //! Ordering constraints:
 //!   * the `rdiag` idle stopwatch brackets exactly the `select!`;
-//!   * every `recv_scheduler` / `recv_fec` lock is taken and released within
-//!     one statement's scope;
 //!   * both fatal exits (the two TUN-inject failures on the window delivery
 //!     paths) `break 'recv` out of the loop, so they fall through the one
 //!     exit-flush site at the loop's end and then the function ends.
@@ -33,26 +39,26 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use dashmap::DashMap;
 use tracing::{debug, error, info, warn};
 
-use super::control_msg::{ControlCtx, handle_control_message};
+use super::control_msg::{RxControlCtx, handle_rx_control_message};
 use super::delivery::{WindowDelivery, delivered_prefix};
 use super::reorder::ReorderBuffer;
 use super::{
-    CopaFeed, DerivedRoundEcho,
+    DerivedRoundEcho, SenderCmd,
     GAP_ACK_MIN_INTERVAL, GEN_PIPE_MAX_GENS, LOOP_WAKE_US, PathBatchTracker, REPORT_INTERVAL,
     collect_gen_deficits, create_window_decoder, extract_window_packets,
     hole_nack_refresh_floored, hole_refresh, horizon_gate_deficits, now_us, received_sack_ranges,
     shed_armed, shed_recv_budget_ok, shed_recv_hold, stall_threshold_us, window_ack_emission,
 };
-use crate::control::FecRateController;
 use crate::fec::{FecBackend, WindowDecoder};
-use crate::monitor::stats::SharedStats;
+use crate::monitor::stats::{SharedStats, TxPublished};
+use crate::scheduler::RxScheduler;
 use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 
 /// The engine's receiver task. Consumes `(path_id, WireMessage)` from the
@@ -64,10 +70,12 @@ use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 pub(crate) async fn run_receiver(
     mut recv_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     mut msg_rx: tokio::sync::mpsc::Receiver<crate::transport::InboundBatch>,
-    recv_copa_feed: Option<Arc<CopaFeed>>,
     recv_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
-    recv_scheduler: Arc<crate::scheduler::SchedMutex>,
-    recv_fec: Arc<parking_lot::Mutex<FecRateController>>,
+    // Threading Q2: the sender's input channel (a TX-direction control
+    // message that reached this task anyway is handed on) and its command
+    // channel (the FEC feedback, the revival nudge).
+    recv_sender_in: tokio::sync::mpsc::Sender<crate::transport::InboundBatch>,
+    recv_sender_cmd: tokio::sync::mpsc::Sender<SenderCmd>,
     recv_fec_backend: FecBackend,
     recv_transport: Arc<QuicTransport>,
     recv_path_tracking: Arc<DashMap<u32, PathBatchTracker>>,
@@ -76,14 +84,8 @@ pub(crate) async fn run_receiver(
     recv_window_reliable: bool,
     recv_window_ooo: bool,
     recv_win_cap: u64,
-    recv_window_ack: Arc<AtomicU64>,
-    // Threading P1, D1: the local window sender's ack wake, handed to the
-    // data loop's `ControlCtx` beside `recv_window_ack`.
-    recv_ack_wake: Arc<super::control_msg::AckWake>,
     recv_window_generation: bool,
     recv_deficit_tx: tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
-    recv_nack_tx: Option<tokio::sync::mpsc::Sender<(super::FireCause, u32, Vec<(u64, u64)>)>>,
-    recv_sack_tx: Option<tokio::sync::mpsc::Sender<super::SackReport>>,
     // Request arms (A)/(B) (paper §7.6). `Some(..)` iff a request arm is live
     // on a plain reliable window; the local sender's own consumer sits on the
     // far end. `None` by default, where an arriving `RepairRequest` is counted
@@ -112,6 +114,11 @@ pub(crate) async fn run_receiver(
     // never rebuilt).
     let mut window_decoder: Box<dyn WindowDecoder> =
         create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation);
+    // Threading Q2: the scheduler's RX half, owned here (plain `&mut`).
+    let mut rx_sched = RxScheduler::new();
+    // Paths whose revival nudge was sent while the sender's published flag
+    // read dead (one nudge per dead spell, cleared when it reads live).
+    let mut revive_sent: std::collections::HashSet<u32> = std::collections::HashSet::new();
     // Threading Q1: every control datagram this task sends (the WindowAcks —
     // still computed after decode, one per data datagram as before — the
     // deficit / request reports, the Pong) is staged here per path and handed
@@ -540,14 +547,7 @@ pub(crate) async fn run_receiver(
                 let horizon = if repair_wait_base.is_zero() {
                     Duration::ZERO
                 } else {
-                    let srtt = {
-                        let sched = recv_scheduler.lock();
-                        sched
-                            .live_paths()
-                            .into_iter()
-                            .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
-                            .max()
-                    };
+                    let srtt = live_tx_views(&recv_stats).iter().map(|v| v.srtt).max();
                     match srtt {
                         Some(s) => repair_wait_base.min(s / 2),
                         None => repair_wait_base,
@@ -571,7 +571,7 @@ pub(crate) async fn run_receiver(
                         );
                     }
                     let msg = ControlMessage::GenerationDeficit { deficits };
-                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    let live_now = recv_stats.live_path_ids();
                     for pid in live_now {
                         let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, msg.clone());
                     }
@@ -717,14 +717,7 @@ pub(crate) async fn run_receiver(
         // report is retransmitted. Only armed once a generation is known.
         let deficit_deadline: Option<tokio::time::Instant> =
             if waiting && recv_window_generation && !gen_widths.is_empty() {
-                let srtt = {
-                    let sched = recv_scheduler.lock();
-                    sched
-                        .live_paths()
-                        .into_iter()
-                        .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
-                        .max()
-                };
+                let srtt = live_tx_views(&recv_stats).iter().map(|v| v.srtt).max();
                 let interval = srtt
                     .map(|s| s.clamp(Duration::from_millis(3), Duration::from_millis(50)))
                     .unwrap_or(Duration::from_millis(10));
@@ -754,19 +747,14 @@ pub(crate) async fn run_receiver(
             };
             if waiting && pending {
                 let (srtt, srtt_jitter_us, sigma_us) = {
-                    let sched = recv_scheduler.lock();
-                    let live: Vec<_> = sched
-                        .live_paths()
-                        .into_iter()
-                        .filter_map(|pid| sched.path(pid))
-                        .collect();
+                    let live = live_tx_views(&recv_stats);
                     // Same path set for the clock and the DERIVED floor, so
                     // the two can never come from different paths. σ feeds
                     // only the `[QCLK]` readout.
                     (
-                        live.iter().map(|p| p.srtt()).max(),
-                        live.iter().map(|p| p.rtt_jitter_us()).max().unwrap_or(0),
-                        live.iter().filter_map(|p| p.rtt_sigma_us()).max(),
+                        live.iter().map(|p| p.srtt).max(),
+                        live.iter().map(|p| p.rtt_jitter_us).max().unwrap_or(0),
+                        live.iter().filter_map(|p| p.rtt_sigma_us).max(),
                     )
                 };
                 let deadline = if recv_window_reliable {
@@ -832,16 +820,7 @@ pub(crate) async fn run_receiver(
                     // ε̂-class give-up budget is open; the 4×SRTT clamp
                     // otherwise (always with the law off).
                     if recv_shed_on {
-                        let eps_recv = {
-                            let sched = recv_scheduler.lock();
-                            sched
-                                .live_paths()
-                                .into_iter()
-                                .filter_map(|pid| {
-                                    sched.path(pid).map(|p| p.estimator.rx_loss_rate())
-                                })
-                                .fold(0.0_f64, f64::max)
-                        };
+                        let eps_recv = live_rx_loss_max(&recv_stats, &rx_sched);
                         let frontier = reorder_buf
                             .as_ref()
                             .map(|rb| rb.next_deliver_seq())
@@ -943,7 +922,7 @@ pub(crate) async fn run_receiver(
                             wdiag_batches_last = wdiag_batches;
                             wdiag_syms_last = wdiag_syms;
                             let mut dg = String::new();
-                            let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                            let live_now = recv_stats.live_path_ids();
                             for pid in live_now {
                                 if let Some((rx, tx)) =
                                     recv_transport.datagram_frame_stats(pid)
@@ -1002,7 +981,7 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    let live_now = recv_stats.live_path_ids();
                     for pid in live_now {
                         let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                     }
@@ -1013,7 +992,7 @@ pub(crate) async fn run_receiver(
                     // receiver's timer-driven refresh, in `[FCAUSE]`'s own
                     // vocabulary.
                     if recv_request_law || recv_rank_feedback {
-                        let pid_rq = recv_scheduler.lock().live_paths().first().copied();
+                        let pid_rq = recv_stats.live_path_ids().first().copied();
                         if let Some(pid) = pid_rq {
                             let dec = &window_decoder;
                             send_repair_request!(
@@ -1091,7 +1070,7 @@ pub(crate) async fn run_receiver(
                             cum_expected: 0,
                             cum_received: 0,
                         };
-                        let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                        let live_now = recv_stats.live_path_ids();
                         for pid in live_now {
                             let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                         }
@@ -1135,7 +1114,7 @@ pub(crate) async fn run_receiver(
                         cum_expected: 0,
                         cum_received: 0,
                     };
-                    let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
+                    let live_now = recv_stats.live_path_ids();
                     for pid in live_now {
                         let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                     }
@@ -1260,25 +1239,28 @@ pub(crate) async fn run_receiver(
                     }
                 }
 
-                // Touch path as keepalive (received data = path is alive)
-                recv_scheduler.lock().touch_path(path_id);
-
-                // Record arrival for RTCP-style jitter calculation
+                // Record arrival for RTCP-style jitter calculation, and the
+                // keepalive (received data = path is alive). Threading Q2:
+                // the jitter is the RX half's (owned here); liveness is the
+                // sender's state, so the arrival is STAMPED for it
+                // (`xdir.rx_seen_us`, applied by the sender's `sync_rx` as a
+                // `touch_path` at that instant) and, if the sender's
+                // published flag reads the path dead, it is nudged once so
+                // the revival does not wait for its next natural wake.
                 {
                     let arrival_us = now_us();
-                    let mut sched = recv_scheduler.lock();
-                    // `[ETA]`'s reference lag, read in the borrow that is
-                    // already open so the gauge costs no second acquisition:
-                    // RTprop when this receiver has one, its SRTT otherwise,
-                    // and the source of that SRTT (Copa's wire clock vs the
-                    // app echo, which differ by the sender's own reservoir
-                    // dwell). Both are printed; the gauge never picks
-                    // silently.
-                    let (eta_tau_us, eta_src) = match sched.path(path_id) {
-                        Some(p) => (
-                            p.min_rtt()
+                    // `[ETA]`'s reference lag: RTprop when this endpoint has
+                    // one, its SRTT otherwise — the sender's published values
+                    // (threading Q2) — and the source of that SRTT (Copa's
+                    // wire clock vs the app echo, which differ by the
+                    // sender's own reservoir dwell). Both are printed; the
+                    // gauge never picks silently.
+                    let ps = recv_stats.path_ref(path_id);
+                    let (eta_tau_us, eta_src) = match ps.as_ref().and_then(|ps| ps.xdir.tx()) {
+                        Some(v) => (
+                            v.min_rtt
                                 .map(|d| d.as_micros() as u64)
-                                .unwrap_or_else(|| p.srtt().as_micros() as u64),
+                                .unwrap_or_else(|| v.srtt.as_micros() as u64),
                             if crate::scheduler::copa_wire_active() {
                                 crate::net::eta::SrttSource::Wire
                             } else {
@@ -1287,14 +1269,20 @@ pub(crate) async fn run_receiver(
                         ),
                         None => (0, crate::net::eta::SrttSource::Echo),
                     };
-                    if let Some(path) = sched.path_mut(path_id) {
-                        path.estimator.record_arrival(batch_send_ts, arrival_us);
+                    let est = &mut rx_sched.path_mut(path_id).estimator;
+                    est.record_arrival(batch_send_ts, arrival_us);
+                    if let Some(ps) = ps.as_ref() {
                         // Update jitter in monitoring stats
-                        if let Some(ps) = recv_stats.path_ref(path_id) {
-                            ps.jitter_us.store(path.estimator.jitter_us() as u64, Ordering::Relaxed);
+                        ps.jitter_us.store(est.jitter_us() as u64, Ordering::Relaxed);
+                        ps.xdir.publish_rx(est.rx_loss_rate(), est.jitter_us());
+                        ps.xdir.rx_seen_us.store(arrival_us, Ordering::Relaxed);
+                        if ps.active.load(Ordering::Relaxed) {
+                            revive_sent.remove(&path_id);
+                        } else if revive_sent.insert(path_id) {
+                            let _ = recv_sender_cmd.try_send(SenderCmd::Revive(path_id));
                         }
                     }
-                    drop(sched);
+                    drop(ps);
                     blk.eta.observe(
                         path_id,
                         batch_send_ts,
@@ -1739,22 +1727,11 @@ pub(crate) async fn run_receiver(
                     // inner TCP would retransmit them.
                     if let Some(ref mut reorder) = reorder_buf {
                         let (srtt, eps_recv) = {
-                            let sched = recv_scheduler.lock();
-                            let srtt = sched
-                                .live_paths()
-                                .into_iter()
-                                .filter_map(|pid| sched.path(pid).map(|p| p.srtt()))
-                                .max();
+                            let srtt = live_tx_views(&recv_stats).iter().map(|v| v.srtt).max();
                             // δ-honest shed: ε̂_recv for the give-up
                             // budget (only read when the law is armed).
                             let eps = if recv_shed_on {
-                                sched
-                                    .live_paths()
-                                    .into_iter()
-                                    .filter_map(|pid| {
-                                        sched.path(pid).map(|p| p.estimator.rx_loss_rate())
-                                    })
-                                    .fold(0.0_f64, f64::max)
+                                live_rx_loss_max(&recv_stats, &rx_sched)
                             } else {
                                 0.0
                             };
@@ -2003,12 +1980,10 @@ pub(crate) async fn run_receiver(
                             Vec::new()
                         };
 
-                        let jitter = {
-                            let sched = recv_scheduler.lock();
-                            sched.path(path_id)
-                                .map(|p| p.estimator.jitter_us() as u32)
-                                .unwrap_or(0)
-                        };
+                        let jitter = rx_sched
+                            .path(path_id)
+                            .map(|p| p.estimator.jitter_us() as u32)
+                            .unwrap_or(0);
 
                         let ack_msg = ControlMessage::WindowAck {
                             next_expected,
@@ -2067,7 +2042,7 @@ pub(crate) async fn run_receiver(
                     {
                         ctld_last_report = Instant::now();
                         let mut line = String::from("[CTLD]");
-                        let live = recv_scheduler.lock().live_paths();
+                        let live = recv_stats.live_path_ids();
                         for &pid in &live {
                             if let Some((rx, tx)) =
                                 recv_transport.datagram_frame_stats(pid)
@@ -2117,7 +2092,13 @@ pub(crate) async fn run_receiver(
                             let delta_fed = fed - last_pi_repairs_fed;
                             let delta_useful = useful - last_pi_repairs_useful;
                             if delta_fed > 0 {
-                                recv_fec.lock().feedback_update_window(delta_fed, delta_useful);
+                                // Threading Q2: the FEC controller is the
+                                // sender's (TX state); its one receiver-side
+                                // input reaches it as a cold message (2 s).
+                                let _ = recv_sender_cmd.try_send(SenderCmd::FecFeedback {
+                                    fed: delta_fed,
+                                    useful: delta_useful,
+                                });
                             }
                             last_pi_repairs_fed = fed;
                             last_pi_repairs_useful = useful;
@@ -2207,7 +2188,12 @@ pub(crate) async fn run_receiver(
                 };
 
                 // ADR-0003: update path loss stats with actual sent/received
-                record_incoming_loss(&mut recv_scheduler.lock(), path_id, expected, symbol_count);
+                record_incoming_loss(&mut rx_sched, path_id, expected, symbol_count);
+                if let Some(ps) = recv_stats.path_ref(path_id) {
+                    if let Some(p) = rx_sched.path(path_id) {
+                        ps.xdir.publish_rx(p.estimator.rx_loss_rate(), p.estimator.jitter_us());
+                    }
+                }
 
                 // ADR-0005: send ACK as datagram (best-effort, low overhead)
                 if !suppress_legacy_ack {
@@ -2236,22 +2222,16 @@ pub(crate) async fn run_receiver(
                     );
                 }
 
-                handle_control_message(
+                // Threading Q2: the receiver's own control messages; a
+                // TX-direction one (routed to the sender by the owners and
+                // the fast path) is handed on, never handled here.
+                handle_rx_control_message(
                     path_id,
                     ctrl_msg,
-                    &ControlCtx {
-                        scheduler: &recv_scheduler,
-                        transport: &recv_transport,
-                        stats: &recv_stats,
-                        nack_tx: recv_nack_tx.as_ref(),
-                        peer_window_ack: Some(&recv_window_ack),
-                        ack_wake: Some(&recv_ack_wake),
+                    &RxControlCtx {
                         deficit_tx: if recv_window_generation { Some(&recv_deficit_tx) } else { None },
-                        sack_tx: recv_sack_tx.as_ref(),
                         request_tx: recv_request_tx.as_ref(),
-                        copa_feed: recv_copa_feed.as_ref(),
-                        mstar_anchor: recv_gates.mstar_anchor,
-                        out: &acks,
+                        to_sender: &recv_sender_in,
                     },
                 );
             }
@@ -2285,18 +2265,39 @@ pub(crate) async fn run_receiver(
 
 /// The receiver's own loss feed (feed D): one arrived batch's
 /// `(expected, received)` from `PathBatchTracker`, i.e. loss on the
-/// INCOMING direction of `path_id`. It feeds the RX slot only
-/// (`LossEstimator::record_rx_batch`); the TX estimator belongs to this
-/// endpoint's sender and the outgoing direction.
+/// INCOMING direction of `path_id`. It feeds the RX half only
+/// (`RxEstimator::record_rx_batch`, threading Q2: owned by this task); the
+/// TX estimator belongs to this endpoint's sender and the outgoing
+/// direction, and sees this value only as its published mirror.
 pub(crate) fn record_incoming_loss(
-    sched: &mut crate::scheduler::Scheduler,
+    rx: &mut RxScheduler,
     path_id: u32,
     expected: u32,
     received: u32,
 ) {
-    if let Some(p) = sched.path_mut(path_id) {
-        p.estimator.record_rx_batch(expected, received);
-    }
+    rx.path_mut(path_id).estimator.record_rx_batch(expected, received);
+}
+
+/// Threading Q2: the TX values of every live path, as the sender last
+/// published them (`PathStats::xdir`). A path not yet published is absent,
+/// as a path missing from the scheduler was.
+fn live_tx_views(stats: &SharedStats) -> Vec<TxPublished> {
+    stats
+        .live_path_ids()
+        .into_iter()
+        .filter_map(|pid| stats.path_ref(pid).and_then(|ps| ps.xdir.tx()))
+        .collect()
+}
+
+/// Threading Q2: ε̂_recv — the largest incoming-loss EWMA over the live
+/// paths, read off this task's own RX half (0.0 for a path with no arrival
+/// yet, the estimator's initial value).
+fn live_rx_loss_max(stats: &SharedStats, rx: &RxScheduler) -> f64 {
+    stats
+        .live_path_ids()
+        .into_iter()
+        .filter_map(|pid| rx.path(pid).map(|p| p.estimator.rx_loss_rate()))
+        .fold(0.0_f64, f64::max)
 }
 
 /// `[RANK]`'s frontier reading `(holes, pivots, tail_overcount)` over the

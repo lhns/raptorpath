@@ -91,10 +91,14 @@ pub const ARM_TUN: usize = 0;
 /// The sender-loop wait arm that carries store-cap backpressure
 /// (`net/mod.rs`: `wait_arm = 1`, the 1 ms `tx_paused` poll).
 pub const ARM_PAUSED: usize = 1;
-/// The ack-wake arm (threading P1, D1: `wait_arm = 8`). It ends the same
-/// backpressure wait `ARM_PAUSED`'s poll ends — on the ack itself instead of
-/// the next timer tick — so it carries the same reading here; without it a
-/// paused sender woken by acks would stop being read as productive.
+/// The input arm (`wait_arm = 8`): threading P1's ack-wake arm, since
+/// threading Q2 the sender's input channel (acks handled in the sender),
+/// always armed. It ends the same backpressure wait `ARM_PAUSED`'s poll ends
+/// — on the ack itself instead of the next timer tick — so it carries the
+/// same reading here; without it a paused sender woken by acks would stop
+/// being read as productive. (Q2 declared effect: it now also fires during an
+/// intake wait, where an ack wake is read as productive too; this gauge is
+/// `RWM_WALLDIAG`-only and read by no battery.)
 pub const ARM_ACK: usize = 8;
 /// The loop's poll tick (µs), the "mostly busy" floor (see the module doc).
 pub const WALL_TICK_US: u64 = super::LOOP_WAKE_US;

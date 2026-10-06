@@ -2370,9 +2370,28 @@ status §12 diagnosis addendum) govern it:
   streams, and publishes RTT / MTU / stats into a per-path view the rest
   of the engine reads. The connection is born inside the owner task and
   never leaves it; one identity-checked wrapper carries every quinn call.
-- **One task per concurrent loop**, ownership by direction (the sender owns
-  the transmit state, the receiver the receive state), never a loop
-  multiplexed into another task.
+- **One task per concurrent loop**, ownership by direction, never a loop
+  multiplexed into another task. Threading Q2 split the scheduler by
+  direction: the window sender owns the TX half (`Scheduler`: placement,
+  charge/release, the RTT/loss/rate estimators, Copa, the anchors, the
+  liveness flags) and the `FecRateController` in one `TxCore`, used by
+  plain `&mut` — no mutex, no cell; the receiver owns the RX half
+  (`RxScheduler`: the RFC 3550 arrival jitter and the incoming-loss EWMA)
+  as a local. The client's ack handling (`on_window_ack`) runs in the
+  sender: each path's owner routes the TX-direction control datagrams
+  (WindowAck, Ack, PathReport, Ping) to the sender's input channel, which
+  the sender drains with `recv_many` at its loop top and in an
+  always-armed `select!` arm (the wake is the channel's own; P1's
+  `AckWake` Notify is retired). The cold tasks — the 2 s report tick, the
+  HTTP path add / remove, the receiver's FEC feedback and dead-path revival
+  nudge — reach TX state by message on a second channel. Cross-direction
+  reads go through per-path published atomics (`PathStats::xdir`): the
+  receiver publishes its jitter, incoming loss and last-arrival stamp
+  after every update and the sender mirrors them at every loop top; the
+  sender publishes SRTT, RTprop, the RTT jitter and σ and the `active`
+  flag after every input batch, and the receiver's hold / deficit /
+  refresh clocks read those. A reader may see a value one publication old
+  — the split's declared cost.
 - **Batched channels.** Producers stage serialized datagrams per path and
   hand each path's owner one batch per loop iteration (the sender: one per
   Law-0 burst; the receiver: one per `recv_many` drain and at least every
@@ -2383,13 +2402,16 @@ status §12 diagnosis addendum) govern it:
   with `recv_many` — one coop-budget unit per call, never per message —
   and wake coalescing comes from the channel itself: a busy owner is not
   parked on it, so a producer's send wakes nothing.
-- **Placement is a measurement arm** (`RWM_IO_RT`), never a mode: `shared`
-  runs the owner as a task on the main runtime; `own` runs it on one of
-  K = max(1, cores − 2) dedicated `current_thread` runtimes (`rp-io-<k>`,
-  least-loaded assignment), with the endpoint and connection set up there
-  so quinn's drivers poll on the owner's thread. K is a declared dial
-  (§11.2), not a derived value; the main runtime keeps its default worker
-  count.
+- **One placement.** The owner is a task on the main runtime, which keeps
+  its default worker count. The Q1 battery (status §13) measured it
+  against a dedicated-runtime placement (`RWM_IO_RT=own`: K = max(1,
+  cores − 2) `current_thread` runtimes, quinn's drivers polling on the
+  owner's thread). The shared placement passed at every cell; `own` failed
+  at c1d (client `[LAG]` p99 and the RTprop floor, from the cross-runtime
+  hops) and was deleted with its K rule, its runtime pool and its
+  `[LAG] io` / `[THR] io` lines. The owner's gain was not the connection
+  mutex: what both placements shared (the sender no longer calling quinn,
+  batched hops, batched acks) carried it.
 - **The P2a lesson:** five loops multiplexed into one task shared one coop
   budget, and charging that budget per message starved every resource in
   the task (tokio `chan.rs:295`); the redo never multiplexes and never
@@ -2797,11 +2819,12 @@ decide it.
 | `RWM_EMIT_BURST = 64` (the burst bound b, Law 0) | `emit_burst_bound` (`net/emit_burst.rs`) | "≈ 64 KB", no derivation; shipped default since `bf3a636` (the measured form; the value was not swept). Bind fraction at the §8 re-run: the cap ends 0.838 (`c1s-400`) and 0.831 (`c1d-400`) of bursts, the store ends the rest; 0.005 at `c2-100`, 0.118 at `c8-100` (store-bound there). Law 0 replaced the `live_paths == 1` scope (a path-count step whose v8 striping-gap reason v9's per-path `path_seq` removed); bind fraction is the `eb_end cap:` gauge on `[DIAG]` | the status §8 battery (`eb_end` bind fraction, `eb_maxrun` per path) |
 | taper-cache staleness 50 ms (`TAPER_CACHE_MAX_AGE_US`) | `net/emit_source.rs`, read by `emit_burst::taper_recompute_due` | under emission batching the derived taper/span math refreshes per burst or after 50 ms, whichever first; no derivation, no bind gauge (which refresh cause fires is not counted); shipped with the gate in `bf3a636`, inside the measured EB0 arm | a refresh-cause tally (bound vs age) on `[DIAG]` |
 | `LAG_TICK = 10 ms` (the `[LAG]` probe's tick) | `src/runtime_obs.rs` | an instrument constant, read by no law: the Cats Effect starvation-checker pattern (a periodic task measuring its own wake lateness; CE's default is a 1 s sleep with a 100 ms threshold), shortened so a ≈ 6 s c1 transfer yields ≈ 600 samples (≈ 6 above the p99) at ≈ 100 wakes/s, ≪ the 16–39 k worker park/unpark per s measured on the VM. Floor: tokio rounds timer deadlines up to the next ms, so every tick reads 0–1 ms late by construction | none needed; status §9 reports p50/p99/max with that floor stated |
-| I/O runtimes K = max(1, cores − 2) (`RWM_IO_RT=own`) | `io_runtimes_for` (`transport/io_owner.rs`) | a declared dial (threading plan v2 Q1; th1 §6 option 1, one owner thread per path, sharing when paths outnumber threads): the two reserved cores are the main runtime's sender and receiver; no derivation, read by no law | the status §13 Q1 battery (`[THR] os` per `rp-io-<k>`, `[LAG] io`) |
 | owner channel depth `IO_CHANNEL_DEPTH = 8` batches | `transport/io_owner.rs` | a resource bound outside any law: 4 producers per path (sender, receiver, fast path, report) × double buffering; 8 × one Law-0 burst ≈ 0.6 MB ≤ 15 % of quinn's 4 MiB datagram send buffer, so queueing stays where the `RWM_DIAG` send-queue audit sees it; full = back-pressure, never a drop | producer back-pressure waits (sender `busy` vs owner `drains`) |
 | view refresh age `VIEW_REFRESH = 1 ms` | `transport/io_owner.rs` | not a timer: an owner poll that did I/O refreshes the published snapshot when it is ≥ 1 ms old (an idle owner never wakes for it, so the snapshot's age is max(1 ms, the gap since the path's last I/O)). 1 ms is tokio's timer resolution (deadlines round up to the next ms), so no timer-clocked reader can see a fresher snapshot; every reader of the full snapshot is clocked ≥ 250 ms; the per-ack RTT reader (`RWM_COPA_WIRE`) is refreshed every owner poll instead | none needed |
 | inbound batch cap `INBOUND_BATCH_MAX = 32` datagrams | `transport/io_owner.rs`; `MSG_CHANNEL_BATCHES = 4096 / 32` (`net/mod.rs`) | cited: quinn-udp 0.5.14 `BATCH_SIZE = 32`, the most datagrams one `recvmmsg` returns; it makes the inbound channel's worst case 128 batches × 32 = 4096 datagrams, ADR-0011's bound unchanged (4096 *batches* would be up to 131 072). Bind count `rx_capped` on `[IOWN]` | `rx_capped` / `rx_batches` per cell |
 | control-stream write deadline `CONTROL_SEND_TIMEOUT = 500 ms` | `transport/io_owner.rs` | the report task's existing 500 ms control-send deadline (`net/tasks/report.rs`), applied at the operation inside the owner | — |
+| sender input channel depth `SENDER_IN_BATCHES` = `MSG_CHANNEL_BATCHES` (128 owner batches) | `net/tx_inputs.rs` | a resource bound outside any law: the ack lane is the other half of the same owner polls whose data half the receiver's inbound channel carries, so it takes that channel's bound (ADR-0011's 4096 datagrams / `INBOUND_BATCH_MAX`); full = the owner keeps the batch and pauses its reads, never a drop | `[IOWN] ack_batches` / `ack_dg` per cell |
+| sender command channel depth `SENDER_CMD_DEPTH = 64` | `net/tx_inputs.rs` | a resource bound: the cold producers send a few commands per 2 s report interval; 64 is the depth of the other cold channels (`deficit_tx`, `request_tx`, `sack_tx`) | — |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences

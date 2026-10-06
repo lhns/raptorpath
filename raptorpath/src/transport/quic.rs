@@ -9,7 +9,7 @@
 //! - Pinned: verify server cert matches a pinned DER/PEM file (production)
 
 use super::io_owner::{
-    self, InboundBatch, IoCmd, IoPlacement, IoRtArm, Lane, PathIo, PathView, TxBatch,
+    self, InboundBatch, IoCmd, Lane, PathIo, PathView, TxBatch,
 };
 use super::l0_netem::L0Netem;
 use super::rcvbuf::{self, RcvbufGrant};
@@ -254,8 +254,9 @@ pub struct QuicTransport {
     /// Per path: the `SO_RCVBUF` request and the read-back grant at bind
     /// (transport/rcvbuf.rs; echoed once as `[RCVBUF]`).
     rcvbuf_grants: DashMap<PathId, RcvbufGrant>,
-    /// Where the owners run (`RWM_IO_RT`).
-    placement: IoPlacement,
+    /// The main runtime, captured at construction: every owner is a task
+    /// on it.
+    rt: tokio::runtime::Handle,
     /// The driver-routing probe (`RWM_RTOBS`, or a test): wrap each path's
     /// congestion controller to record which thread quinn's driver polls on.
     route_probe: bool,
@@ -270,25 +271,22 @@ impl QuicTransport {
     /// When provided, the client will verify that the server's certificate
     /// matches this pinned cert (SHA-256 fingerprint comparison).
     ///
-    /// The owners are placed by `RWM_IO_RT` (`shared` on the current
-    /// runtime, `own` on the process's `rp-io-<k>` pool).
+    /// Every path's owner is a task on the current (main) runtime.
     pub async fn new(
         bind_addrs: &[SocketAddr],
         is_server: bool,
         pin_cert_path: Option<&Path>,
     ) -> anyhow::Result<Self> {
         let g = crate::gates::get();
-        let placement = IoPlacement::for_arm(g.io_rt);
-        Self::new_placed(bind_addrs, is_server, pin_cert_path, placement, g.rtobs).await
+        Self::new_probed(bind_addrs, is_server, pin_cert_path, g.rtobs).await
     }
 
-    /// [`Self::new`] with an explicit placement and routing probe (tests use
-    /// private pools so their runtimes are not shared with other tests).
-    pub async fn new_placed(
+    /// [`Self::new`] with an explicit routing-probe switch (a test arms it
+    /// without `RWM_RTOBS`).
+    pub async fn new_probed(
         bind_addrs: &[SocketAddr],
         is_server: bool,
         pin_cert_path: Option<&Path>,
-        placement: IoPlacement,
         route_probe: bool,
     ) -> anyhow::Result<Self> {
         let pinned_cert_hash = pin_cert_path
@@ -323,7 +321,7 @@ impl QuicTransport {
             dg_audit: crate::gates::get().diag,
             rx_probe: DashMap::new(),
             rcvbuf_grants: DashMap::new(),
-            placement,
+            rt: tokio::runtime::Handle::current(),
             route_probe,
             gauge: crate::gates::get().rtobs,
         };
@@ -333,24 +331,11 @@ impl QuicTransport {
         Ok(t)
     }
 
-    /// The placement arm the owners run under.
-    pub fn io_arm(&self) -> IoRtArm {
-        self.placement.arm()
-    }
-
-    /// Spawn `path_id`'s owner on the placement's runtime and wait until it
-    /// has bound the path's endpoint there.
+    /// Spawn `path_id`'s owner on the main runtime and wait until it has
+    /// bound the path's endpoint there.
     async fn spawn_path(&self, path_id: PathId, bind_addr: SocketAddr) -> anyhow::Result<()> {
-        let (handle, rt_name, release) = match &self.placement {
-            IoPlacement::Shared(h) => (h.clone(), "main".to_string(), None),
-            IoPlacement::Own(pool) => {
-                let k = pool.assign();
-                let rt = pool.runtime(k);
-                (rt.handle.clone(), rt.name.clone(), Some((pool.clone(), k)))
-            }
-        };
         let side = if self.is_server { "server" } else { "client" };
-        let view = PathView::new(path_id, side, rt_name.clone());
+        let view = PathView::new(path_id, side, "main".to_string());
         let mut cc = Self::cc_factory_for_path(
             self.cc_passthrough,
             &self.cc_windows,
@@ -376,7 +361,6 @@ impl QuicTransport {
         };
         let (tx, cmd_rx) = mpsc::channel(io_owner::IO_CHANNEL_DEPTH);
         let (bound_tx, bound_rx) = tokio::sync::oneshot::channel();
-        let pin_thread = matches!(self.placement, IoPlacement::Own(_));
         let args = io_owner::OwnerArgs {
             path: path_id,
             bind: bind_addr,
@@ -389,21 +373,11 @@ impl QuicTransport {
             is_server: self.is_server,
             dg_audit: self.dg_audit,
             gauge: self.gauge,
-            pin_thread,
-            release,
         };
-        handle.spawn(io_owner::run_owner(args));
+        self.rt.spawn(io_owner::run_owner(args));
         let (probe, grant) = bound_rx
             .await
             .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended before binding"))??;
-        let (k, cores) = match &self.placement {
-            IoPlacement::Shared(_) => ("-".to_string(), io_owner::cores()),
-            IoPlacement::Own(pool) => (pool.len().to_string(), io_owner::cores()),
-        };
-        crate::readout!(
-            "[TOPO] io_rt={} side={side} path={path_id} rt={rt_name} k={k} cores={cores}",
-            self.placement.arm().name()
-        );
         self.paths.insert(path_id, PathIo { tx, view });
         self.rx_probe.insert(path_id, probe);
         self.rcvbuf_grants.insert(path_id, grant);
@@ -662,16 +636,20 @@ impl QuicTransport {
     }
 
     /// Start every path's readers: the owner forwards inbound datagrams to
-    /// `tx` (one batch per owner poll) and uni-stream control messages to
-    /// `ctrl_tx`.
+    /// `tx` (one batch per owner poll), the TX-direction control datagrams
+    /// among them (threading Q2: WindowAck / Ack / PathReport / Ping —
+    /// `net::control_msg::is_tx_control`) to the window sender's input
+    /// `sender_tx` instead (one batch per poll too), and uni-stream control
+    /// messages to `ctrl_tx`.
     pub async fn start_readers(
         &self,
         tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+        sender_tx: mpsc::Sender<InboundBatch>,
     ) {
         let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
         for path_id in ids {
-            self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone()).await;
+            self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone(), sender_tx.clone()).await;
         }
     }
 
@@ -685,9 +663,10 @@ impl QuicTransport {
         path_id: PathId,
         tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+        sender_tx: mpsc::Sender<InboundBatch>,
     ) {
         if let Some(io) = self.io(path_id) {
-            let _ = io.tx.send(IoCmd::StartReaders { msg_tx: tx, ctrl_tx }).await;
+            let _ = io.tx.send(IoCmd::StartReaders { msg_tx: tx, ctrl_tx, sender_tx }).await;
         }
     }
 
@@ -1415,155 +1394,15 @@ mod owner_rule_tests {
 #[cfg(test)]
 mod owner_runtime_tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
-    use std::time::Duration;
-
-    /// A connected loopback pair (server path 0 ← client path 0), each on
-    /// its own private one-runtime pool (no other test shares the threads).
-    async fn own_pair(tag: &str) -> (QuicTransport, QuicTransport, Arc<io_owner::IoPool>, Arc<io_owner::IoPool>) {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let any: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let sp = io_owner::IoPool::new(1, &format!("rp-iot-{tag}-s"));
-        let cp = io_owner::IoPool::new(1, &format!("rp-iot-{tag}-c"));
-        let srv = QuicTransport::new_placed(&[any], true, None, IoPlacement::Own(sp.clone()), true)
-            .await
-            .expect("server binds");
-        let cli = QuicTransport::new_placed(&[any], false, None, IoPlacement::Own(cp.clone()), true)
-            .await
-            .expect("client binds");
-        let peer = srv.local_addr(0).expect("server addr");
-        let (a, c) = tokio::join!(srv.accept(0), cli.connect(0, peer));
-        a.expect("accept");
-        c.expect("connect");
-        (srv, cli, sp, cp)
-    }
-
-    fn ping() -> ControlMessage {
-        ControlMessage::Ping { timestamp_us: 1 }
-    }
-
-    /// Driver routing under `own` (plan Q1 red test): with the owner on a
-    /// dedicated current_thread runtime, quinn's ConnectionDriver runs every
-    /// transmit on the owner's thread — the routing probe (a delegating
-    /// congestion controller; `on_sent` is called inside the driver's poll)
-    /// counts `drv_on > 0` and `drv_off == 0` on BOTH ends. The identity
-    /// check ran (`qcalls > 0`) and never fired. Red on main 69fd846 (no
-    /// owner, no placement, no probe: does not compile).
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn under_own_the_quinn_driver_polls_on_the_owner_thread() {
-        let (srv, cli, _sp, _cp) = own_pair("route").await;
-        let (msg_tx, mut msg_rx) = mpsc::channel::<InboundBatch>(64);
-        let (ctrl_tx, _ctrl_rx) = mpsc::channel(64);
-        srv.start_readers(msg_tx, ctrl_tx).await;
-        let n = 200usize;
-        let mut out = TxBatch::new();
-        for _ in 0..n {
-            cli.send_control_datagram(&mut out, 0, ping()).expect("staged");
-        }
-        cli.flush(&mut out).await;
-        let mut got = 0usize;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        while got < n {
-            match tokio::time::timeout_at(deadline, msg_rx.recv()).await {
-                Ok(Some(b)) => got += b.len(),
-                _ => break,
-            }
-        }
-        assert_eq!(got, n, "every staged datagram reached the server's receiver");
-        for (side, t) in [("client", &cli), ("server", &srv)] {
-            let v = t.view(0).unwrap();
-            let (on, off) = (v.drv_on.load(Relaxed), v.drv_off.load(Relaxed));
-            assert!(on > 0, "{side}: the routing probe saw no driver transmit");
-            assert_eq!(off, 0, "{side}: quinn's driver transmitted off the owner thread ({off} of {})", on + off);
-            assert!(v.ctr.qcalls.load(Relaxed) > 0, "{side}: the identity check never ran");
-        }
-        assert_eq!(io_owner::identity_counts().1, 0, "{:?}", io_owner::first_identity_violation());
-        // The inbound hop is batched: fewer owner→receiver batches than
-        // datagrams is the batching; == would be per-datagram forwarding.
-        let sv = srv.view(0).unwrap();
-        assert_eq!(sv.ctr.rx_dgrams.load(Relaxed), n as u64);
-        assert!(sv.ctr.rx_batches.load(Relaxed) >= 1);
-    }
-
-    fn parks(pool: &io_owner::IoPool) -> (u64, u64) {
-        let m = pool.runtime(0).handle.metrics();
-        (m.worker_park_count(0), m.worker_park_unpark_count(0))
-    }
-
-    async fn wait_for(mut cond: impl FnMut() -> bool) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-        while !cond() {
-            if tokio::time::Instant::now() >= deadline {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-        true
-    }
-
-    /// Wake coalescing comes from the channel (plan rule 4; Q1 red test):
-    /// while the owner's I/O thread is busy, K producer batches cause ZERO
-    /// thread unparks (the runtime's `worker_park_count` does not move: the
-    /// counted event is the thread's park/unpark, not a task notify), and the
-    /// owner then takes all K in ONE `recv_many` drain. Two-sided control:
-    /// the same K batches sent to an idle (parked) owner, spaced, unpark the
-    /// thread at least K times and take K drains — the counter can see an
-    /// unpark when one happens.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_busy_owner_is_not_unparked_by_producer_batches() {
-        let (_srv, cli, _sp, cp) = own_pair("unpark").await;
-        let io = cli.io(0).unwrap();
-        let v = io.view.clone();
-        const K: usize = 6;
-        // Let the handshake's tail settle.
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // ── control: idle owner, spaced batches ──
-        let (p0, _) = parks(&cp);
-        let d0 = v.ctr.drains.load(Relaxed);
-        for _ in 0..K {
-            io.tx.try_send(IoCmd::Send { lane: Lane::Ctrl, dgrams: Vec::new() }).expect("room");
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(wait_for(|| v.ctr.drains.load(Relaxed) >= d0 + K as u64).await);
-        let (p1, _) = parks(&cp);
-        assert!(p1 - p0 >= K as u64, "control: {K} spaced batches unparked the idle thread only {} times", p1 - p0);
-
-        // ── busy owner ──
-        let entered = Arc::new(AtomicBool::new(false));
-        let release = Arc::new(AtomicBool::new(false));
-        io.tx
-            .try_send(IoCmd::Hold { entered: entered.clone(), release: release.clone() })
-            .expect("room");
-        assert!(wait_for(|| entered.load(Relaxed)).await, "the owner never entered the hold");
-        let (b0, u0) = parks(&cp);
-        let d1 = v.ctr.drains.load(Relaxed);
-        let t1 = v.ctr.ctrl_batches.load(Relaxed);
-        for _ in 0..K {
-            io.tx.try_send(IoCmd::Send { lane: Lane::Ctrl, dgrams: Vec::new() }).expect("room");
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        let (b1, u1) = parks(&cp);
-        release.store(true, Relaxed);
-        assert!(wait_for(|| v.ctr.ctrl_batches.load(Relaxed) >= t1 + K as u64).await);
-        assert_eq!((b1 - b0, u1 - u0), (0, 0), "producer batches unparked a busy I/O thread");
-        assert_eq!(
-            v.ctr.drains.load(Relaxed) - d1,
-            1,
-            "the {K} batches queued during the hold must be taken by ONE recv_many"
-        );
-    }
 
     /// The identity check is what the wrapper runs: inside the owner task of
-    /// the path (and, under `own`, on its pinned thread) the check passes;
-    /// any other combination fails.
+    /// the path the check passes; outside any owner, or inside another
+    /// path's owner, it fails.
     #[test]
     fn the_identity_rule_admits_only_the_owner() {
         use io_owner::identity_ok;
-        assert!(identity_ok(3, Some(3), None, 7));
-        assert!(identity_ok(3, Some(3), Some(7), 7));
-        assert!(!identity_ok(3, None, None, 7), "outside any owner task");
-        assert!(!identity_ok(3, Some(4), None, 7), "inside another path's owner");
-        assert!(!identity_ok(3, Some(3), Some(8), 7), "the owner's task on a foreign thread");
+        assert!(identity_ok(3, Some(3)));
+        assert!(!identity_ok(3, None), "outside any owner task");
+        assert!(!identity_ok(3, Some(4)), "inside another path's owner");
     }
 }

@@ -1,0 +1,107 @@
+BINARIES main=76decc7f4b69d36a21f4a17a2c33038a543b3324f32f2a29d270c6b012e7c9ef q2=8d194b65e13f1df1cae0449dbe6618950b00d384192036b8b9aed4600fa70dd7
+STATUS-TABLE (every invocation row)
+  LIVE          4
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+PER-REP (rule 4): cell arm seed rep mbps cpu_cli cpu_srv busy rtp_floor feed lag_p99 cli/srv wake ack/cmd/timer_acked
+  c1d-400 MAIN s42 r1 LIVE mbps=757.9 cli=6.77 srv=8.36 busy=59.5 rtp=2220/2349 feed=1.093/0.732 lag99=1811/1684 wake=8045/None/10
+  c1d-400 MAIN s7 r1 LIVE mbps=710.1 cli=7.13 srv=8.22 busy=65.0 rtp=2430/2310 feed=0.801/1.036 lag99=2022/2333 wake=6050/None/8
+  c1d-400 Q2 s42 r1 LIVE mbps=724.2 cli=6.68 srv=8.72 busy=54.0 rtp=2468/2343 feed=1.056/1.104 lag99=2859/1968 wake=5384/1/19
+  c1d-400 Q2 s7 r1 LIVE mbps=726.6 cli=6.71 srv=8.69 busy=57.0 rtp=2320/2346 feed=0.963/0.992 lag99=2079/2274 wake=4787/3/12
+
+PER-SEED MEDIANS (goodput, cpu_cli)
+  c1s-400 MAIN s42: gp=- cli=- s7: gp=- cli=-
+  c1s-400 Q2 s42: gp=- cli=- s7: gp=- cli=-
+  c1d-400 MAIN s42: gp=757.9 cli=6.77 s7: gp=710.1 cli=7.13
+  c1d-400 Q2 s42: gp=724.2 cli=6.68 s7: gp=726.6 cli=6.71
+  c2-100 MAIN s42: gp=- cli=- s7: gp=- cli=-
+  c2-100 Q2 s42: gp=- cli=- s7: gp=- cli=-
+  c8-100 MAIN s42: gp=- cli=- s7: gp=- cli=-
+  c8-100 Q2 s42: gp=- cli=- s7: gp=- cli=-
+
+[c1s-400]
+  FEED c1s-400 Q2 p0 Q2=- MAIN=- -> UNREAD
+  CLAUSE c1s-400 Q2 goodput: VACUOUS reference has no value
+  CLAUSE c1s-400 Q2 cpu_cli/GB: VACUOUS reference has no value
+  CLAUSE c1s-400 Q2 cpu_srv/GB: VACUOUS reference has no value
+  CLAUSE c1s-400 Q2 lag_p99_cli: VACUOUS reference has no value
+  CLAUSE c1s-400 Q2 lag_p99_srv: VACUOUS reference has no value
+  CLAUSE c1s-400 Q2 rtp_floor_p0: VACUOUS reference has no value
+  CELL c1s-400 Q2 n=0 MAIN n=0 dnf MAIN=- Q2=- worse=- notes=- UNSCOREABLE(MAIN live=0<3; Q2 live=0<3; feed-unread-p0) => UNSCOREABLE
+  REPORT c1s-400 MAIN acks/dgram=- busy=- gso_p0=-
+  REPORT c1s-400 MAIN wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c1s-400 MAIN cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c1s-400 MAIN srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c1s-400 Q2 acks/dgram=- busy=- gso_p0=-
+  REPORT c1s-400 Q2 wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c1s-400 Q2 cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c1s-400 Q2 srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+[c1d-400]
+  FEED c1d-400 Q2 p0 plc/truth Q2=1.009 MAIN=0.947 band=[0.728,1.231] -> SAME
+  FEED c1d-400 Q2 p1 plc/truth Q2=1.048 MAIN=0.884 band=[0.680,1.149] -> SAME
+  CLAUSE c1d-400 Q2 goodput: WITHIN Q2=725.4 [724.2-726.6] MAIN=734 [710.1-757.9] (-1.2%, rel=0.056)
+  CLAUSE c1d-400 Q2 cpu_cli/GB: WITHIN Q2=16.74 [16.7-16.77] MAIN=17.38 [16.92-17.82] (-3.7%, rel=0.065)
+  CLAUSE c1d-400 Q2 cpu_srv/GB: WITHIN Q2=21.76 [21.72-21.8] MAIN=20.73 [20.55-20.9] (+5.0%, rel=0.065)
+  CLAUSE c1d-400 Q2 lag_p99_cli: WORSE Q2=2469 [2079-2859] MAIN=1916 [1811-2022] (+28.8%, rel=0.055)
+  CLAUSE c1d-400 Q2 lag_p99_srv: WITHIN Q2=2121 [1968-2274] MAIN=2008 [1684-2333] (+5.6%, rel=0.162)
+  CLAUSE c1d-400 Q2 rtp_floor_p0: WITHIN Q2=2394 [2320-2468] MAIN=2325 [2220-2430] (+3.0%, rel=0.050)
+  CLAUSE c1d-400 Q2 rtp_floor_p1: WITHIN Q2=2344 [2343-2346] MAIN=2330 [2310-2349] (+0.6%, rel=0.050)
+  CELL c1d-400 Q2 n=2 MAIN n=2 dnf MAIN=0.00 Q2=0.00 worse=lag_p99_cli notes=- UNSCOREABLE(MAIN live=2<3; Q2 live=2<3) => UNSCOREABLE
+  REPORT c1d-400 MAIN acks/dgram=0.993 [0.992-0.993] n=2 busy=62.2 [59.5-65.0] n=2 gso_p0=7.70 [7.09-8.31] n=2 gso_p1=7.08 [7.00-7.15] n=2
+  REPORT c1d-400 MAIN wake ack=7048 [6050-8045] n=2 cmd=- tun=6866 [6383-7349] n=2 paused=150 [108-192] n=2 timer_acked=9 [8-10] n=2
+  REPORT c1d-400 MAIN cli cores=1.577 [1.566-1.587] n=2 main_thr=0.000 [0.000-0.000] n=2 thr_r1=0.280 [0.268-0.293] n=2 parks/s=17018 [16024-18013] n=2 lag p99=1916 [1811-2022] n=2 lockwait max=0.0793 [0.0653-0.0933] n=2 tx/batch=25.7 [22.9-28.5] n=2 rx/batch=21.3 [20.7-21.9] n=2 ack/batch=- ack_dg=- rx_capped=6132 [5555-6709] n=2 send_err=0 [0-0] n=2
+  REPORT c1d-400 MAIN srv cores=1.889 [1.813-1.966] n=2 main_thr=0.000 [0.000-0.000] n=2 thr_r1=0.466 [0.400-0.531] n=2 parks/s=19013 [17954-20071] n=2 lag p99=2008 [1684-2333] n=2 lockwait max=0.0799 [0.0721-0.0876] n=2 tx/batch=1.0 [1.0-1.0] n=2 rx/batch=17.5 [17.1-17.8] n=2 ack/batch=- ack_dg=- rx_capped=4400 [4096-4704] n=2 send_err=0 [0-0] n=2
+    THREADS c1d-400 MAIN s42 r1 cli=rp-w-2:0.268,rp-w-4:0.268,rp-w-3:0.265,rp-w-0:0.263 srv=rp-w-2:0.531,rp-w-4:0.353,rp-w-5:0.318,rp-w-0:0.268
+    THREADS c1d-400 MAIN s7 r1 cli=rp-w-0:0.293,rp-w-4:0.264,rp-w-1:0.260,rp-w-3:0.257 srv=rp-w-2:0.400,rp-w-0:0.367,rp-w-1:0.291,rp-w-5:0.275
+  REPORT c1d-400 Q2 acks/dgram=0.994 [0.992-0.996] n=2 busy=55.5 [54.0-57.0] n=2 gso_p0=6.96 [6.65-7.28] n=2 gso_p1=7.01 [6.68-7.35] n=2
+  REPORT c1d-400 Q2 wake ack=5086 [4787-5384] n=2 cmd=2 [1-3] n=2 tun=7235 [7091-7379] n=2 paused=148 [146-151] n=2 timer_acked=16 [12-19] n=2
+  REPORT c1d-400 Q2 cli cores=1.504 [1.498-1.510] n=2 main_thr=0.000 [0.000-0.000] n=2 thr_r1=0.260 [0.256-0.263] n=2 parks/s=17402 [17282-17523] n=2 lag p99=2469 [2079-2859] n=2 lockwait max=0.0829 [0.0791-0.0867] n=2 tx/batch=23.4 [22.8-24.0] n=2 rx/batch=1.0 [1.0-1.0] n=2 ack/batch=20.7 [20.6-20.8] n=2 ack_dg=339244 [339033-339456] n=2 rx_capped=5789 [5648-5930] n=2 send_err=0 [0-0] n=2
+  REPORT c1d-400 Q2 srv cores=1.959 [1.959-1.959] n=2 main_thr=0.000 [0.000-0.000] n=2 thr_r1=0.490 [0.450-0.530] n=2 parks/s=19616 [19595-19637] n=2 lag p99=2121 [1968-2274] n=2 lockwait max=0.1038 [0.0989-0.1088] n=2 tx/batch=- rx/batch=17.6 [17.4-17.8] n=2 ack/batch=- ack_dg=0 [0-0] n=2 rx_capped=4635 [4482-4788] n=2 send_err=0 [0-0] n=2
+    THREADS c1d-400 Q2 s42 r1 cli=rp-w-4:0.256,rp-w-1:0.253,rp-w-3:0.251,rp-w-0:0.249 srv=rp-w-1:0.530,rp-w-2:0.349,rp-w-5:0.299,rp-w-3:0.290
+    THREADS c1d-400 Q2 s7 r1 cli=rp-w-1:0.263,rp-w-4:0.257,rp-w-3:0.254,rp-w-2:0.247 srv=rp-w-4:0.450,rp-w-3:0.334,rp-w-2:0.332,rp-w-0:0.307
+[c2-100]
+  FEED c2-100 Q2 p0 Q2=- MAIN=- -> UNREAD
+  CLAUSE c2-100 Q2 goodput: VACUOUS reference has no value
+  CLAUSE c2-100 Q2 cpu_cli/GB: VACUOUS reference has no value
+  CLAUSE c2-100 Q2 cpu_srv/GB: VACUOUS reference has no value
+  CLAUSE c2-100 Q2 lag_p99_cli: VACUOUS reference has no value
+  CLAUSE c2-100 Q2 lag_p99_srv: VACUOUS reference has no value
+  CLAUSE c2-100 Q2 rtp_floor_p0: VACUOUS reference has no value
+  CELL c2-100 Q2 n=0 MAIN n=0 dnf MAIN=- Q2=- worse=- notes=- UNSCOREABLE(MAIN live=0<3; Q2 live=0<3; feed-unread-p0) => UNSCOREABLE
+  REPORT c2-100 MAIN acks/dgram=- busy=- gso_p0=-
+  REPORT c2-100 MAIN wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c2-100 MAIN cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c2-100 MAIN srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c2-100 Q2 acks/dgram=- busy=- gso_p0=-
+  REPORT c2-100 Q2 wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c2-100 Q2 cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c2-100 Q2 srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+[c8-100]
+  FEED c8-100 Q2 p0 Q2=- MAIN=- -> UNREAD
+  FEED c8-100 Q2 p1 Q2=- MAIN=- -> UNREAD
+  CLAUSE c8-100 Q2 goodput: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 cpu_cli/GB: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 cpu_srv/GB: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 lag_p99_cli: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 lag_p99_srv: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 rtp_floor_p0: VACUOUS reference has no value
+  CLAUSE c8-100 Q2 rtp_floor_p1: VACUOUS reference has no value
+  CELL c8-100 Q2 n=0 MAIN n=0 dnf MAIN=- Q2=- worse=- notes=- UNSCOREABLE(MAIN live=0<3; Q2 live=0<3; feed-unread-p0; feed-unread-p1) => UNSCOREABLE
+  REPORT c8-100 MAIN acks/dgram=- busy=- gso_p0=- gso_p1=-
+  REPORT c8-100 MAIN wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c8-100 MAIN cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c8-100 MAIN srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c8-100 Q2 acks/dgram=- busy=- gso_p0=- gso_p1=-
+  REPORT c8-100 Q2 wake ack=- cmd=- tun=- paused=- timer_acked=-
+  REPORT c8-100 Q2 cli cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+  REPORT c8-100 Q2 srv cores=- main_thr=- thr_r1=- parks/s=- lag p99=- lockwait max=- tx/batch=- rx/batch=- ack/batch=- ack_dg=- rx_capped=- send_err=-
+
+PREDICTION c2_cpucli_recovers_p1: UNREAD
+PREDICTION c1d_sender_busy: MAIN=62.2 Q2=55.5 (reported; the named load risk)
+ARM Q2 c1s-400:UNSCOREABLE c1d-400:UNSCOREABLE c2-100:UNSCOREABLE c8-100:UNSCOREABLE => UNSCOREABLE-AT-c1s-400,c1d-400,c2-100,c8-100
+VERDICT UNSCOREABLE-AT (Q2 UNSCOREABLE-AT-c1s-400,c1d-400,c2-100,c8-100)

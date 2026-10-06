@@ -54,11 +54,16 @@ pub use store_cap::*;
 mod report;
 pub use report::*;
 mod sack;
+// Threading Q2: the sender's TX ownership (`TxCore`) and its input channels.
+mod tx_inputs;
+pub(crate) use tx_inputs::{
+    SENDER_CMD_DEPTH, SENDER_IN_BATCHES, SenderCmd, SenderInputs, TxCore,
+};
 pub(crate) mod emit_burst;
 pub(crate) mod seq_ring;
 pub use sack::*;
 
-use diag::{DiagCtx, DiagInputs, DiagState};
+use diag::{DiagCtx, DiagInputs, DiagState, WAIT_BUCKETS};
 use emit_source::{SenderCtx, SenderState, emit_source};
 use sender_policy::SenderPolicy;
 
@@ -789,7 +794,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Shared state
     let batch_counter = Arc::new(BatchCounter::new());
-    let fec_controller = Arc::new(parking_lot::Mutex::new({
+    // Threading Q2: the FEC controller is TX state, owned by the sender task
+    // (moved into its `TxCore` below; no mutex). Its one receiver input, the
+    // decoder's PI feedback, reaches it as a `SenderCmd`.
+    let fec_controller = {
         let mut ctrl = FecRateController::new_with_toggles(
             config.target_tail_loss,
             config.max_fec_overhead,
@@ -806,7 +814,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // differently.
         ctrl.set_inner_feedback(config.inner_feedback_weight);
         ctrl
-    }));
+    };
     // ADR-0013: shared monitoring stats
     let stats = Arc::new(SharedStats::new());
     for (i, _) in config.bind_addrs.iter().enumerate() {
@@ -838,14 +846,28 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         }
     });
 
-    // Shared window ACK: receiver writes, sender reads to advance the encoder window
+    // The peer's cumulative window ACK point: written by the sender's own ack
+    // handling (threading Q2: `on_window_ack` runs in the sender), read by the
+    // sender's advance / store-prune sites and the `[ACKDIAG]` gauge.
     let window_ack_seq = Arc::new(AtomicU64::new(0));
-    // Threading P1, D1: the ack wake. The receiver's control handler signals
-    // it (`notify_one`) after each inbound WindowAck's state update; the
-    // window sender awaits it in the same `select!` waits the 1 ms
-    // paused / pacing polls cover, so a paused sender re-evaluates on the
-    // ack, not on the next (1–2 ms, tokio-rounded) timer tick.
-    let ack_wake = Arc::new(control_msg::AckWake::new());
+    // Threading Q2 — the sender's two input channels (plan rules 1, 3, 4).
+    //
+    // `sender_in`: TX-direction control input — the client's WindowAcks and
+    // per-batch Acks, forwarded by each path's I/O owner as ONE batch per
+    // owner poll (the owner routes by message, `control_msg::is_tx_control`),
+    // and the PathReport / Ping the control fast path forwards. The sender
+    // drains it with `recv_many` (one coop-budget unit per drain, never per
+    // message) at its loop top and in an always-armed `select!` arm, and
+    // runs `on_window_ack` itself: the ack wake is the channel's own (a
+    // parked sender is woken by the send; a busy one finds the batch at its
+    // next loop top), which retires P1's `AckWake` Notify.
+    //
+    // `sender_cmd`: the cold tasks' requests on TX state (the 2 s report
+    // tick, path add / remove, the receiver's FEC feedback and dead-path
+    // revival nudge): messages, never a lock.
+    let (sender_in_tx, sender_in_rx) =
+        mpsc::channel::<crate::transport::InboundBatch>(SENDER_IN_BATCHES);
+    let (sender_cmd_tx, sender_cmd_rx) = mpsc::channel::<SenderCmd>(SENDER_CMD_DEPTH);
 
     // NACK gap channel: handle_control_message sends gap ranges, window sender
     // receives for targeted repair. The batch rides with its [`FireCause`] tag
@@ -902,11 +924,16 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // Dedicated channel for stream-origin control: liveness must not queue
     // behind the data flood (see `QuicTransport::start_readers_for_path`).
     let (ctrl_tx, ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
-    transport.start_readers(msg_tx.clone(), ctrl_tx.clone()).await;
+    transport
+        .start_readers(msg_tx.clone(), ctrl_tx.clone(), sender_in_tx.clone())
+        .await;
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
-    let scheduler_arc = Arc::new(crate::scheduler::SchedMutex::new(scheduler));
+    // Threading Q2: the scheduler's TX half publishes its first view (SRTT,
+    // RTprop, liveness) before any task runs, so the receiver never reads an
+    // unpublished path.
+    scheduler.publish_tx_view(&stats);
 
     // ── Plain-mode Copa delivery feed ───────────────────────────────────────
     // In plain window-reliable mode WindowAcks carry RTT only (only the
@@ -975,7 +1002,6 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         }
     };
     let sender_copa_feed = copa_feed_plain.clone();
-    let recv_copa_feed = copa_feed_plain.clone();
 
     // ── Honest anchor inputs (ADR-0061) ──
     // Mechanism-liveness echoes (measurement-discipline rules 1/15): asserted
@@ -1042,12 +1068,104 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         );
     }
 
+    // The ack handling's channel seats (threading Q2: `on_window_ack` runs
+    // in the sender, which is also the consumer of both channels).
+    // Generation coding (paper §5.8) turns the per-seq targeted ARQ off
+    // beneath the code — the per-seq reliability layer makes the moving
+    // window path-affine and invokes the NACK congestion throttle. With no
+    // NACK producer, a short generation is recovered by more coded symbols
+    // for that generation (fungible, cross-path), never by resending a
+    // specific seq. So the SACK→gap producer is suppressed in generation mode.
+    //
+    // ── The collision seam (paper §7.6), one `&&` ────────────
+    //
+    // The request law (`RWM_RECV_REQUEST_LAW`) makes the receiver's report
+    // the single authority for a repair. Its identifiability argument depends
+    // on that: `rho_heal(l) = pi0*f(l)` holds exactly on `[0, l*)` only
+    // because no copy has flown there, and a copy flying is precisely the
+    // censoring of paper §7.4. So while the arm is armed the per-seq
+    // SACK->gap producer is suppressed at its source — here, where it is
+    // armed — rather than filtered downstream, so `[FCAUSE] gap_data` going
+    // to zero on the treatment arm is the proof that the seam closed.
+    //
+    // `sack_tx` below is deliberately not touched: SACK drives store slot
+    // release and never recoverability; pruning `sent_store` on SACK is
+    // unsafe (in-order duals wedge) and the safe realization is ADR-0060's
+    // release.
+    //
+    // The two backstops the seam leaves standing are untouched and out of
+    // domain by construction: the `p_lost` taper and the end-of-stream tail
+    // sweep, whose producer is the sender's own `tail_deadline` arm and not
+    // this channel.
+    //
+    // With the arm absent this is the shipped predicate.
+    let recv_request_law = request_law_armed(
+        window_reliable,
+        window_generation,
+        gates.recv_request_law,
+    );
+    // Arm (B) alone is the vocabulary-only wiring test: the trigger stays the
+    // shipped 2 ms sampler, so the gap producer stays armed and only the
+    // message the receiver sends changes. The two arms compose; neither
+    // selects a machine.
+    let recv_rank_feedback = request_law_armed(
+        window_reliable,
+        window_generation,
+        gates.rank_feedback,
+    );
+    let sender_nack_tx: Option<
+        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
+    > =
+        if !window_generation && !recv_request_law {
+            Some(nack_tx)
+        } else {
+            None
+        };
+    // The request channel's producer seat: `Some(..)` iff either arm is live,
+    // so arm (B) alone still has a server. `None` on every shipped path => an
+    // arriving `RepairRequest` is counted and dropped.
+    let recv_request_tx: Option<tokio::sync::mpsc::Sender<RepairRequestBatch>> =
+        if recv_request_law || recv_rank_feedback {
+            Some(request_tx)
+        } else {
+            None
+        };
+    if recv_request_law || recv_rank_feedback {
+        // Mechanism-liveness echo (measurement-discipline rule 1), emitted in
+        // `run_impl` so both roles echo: the receiver builds the message, the
+        // sender serves it.
+        info!(
+            request_law = recv_request_law,
+            rank_feedback = recv_rank_feedback,
+            gap_producer_armed = sender_nack_tx.is_some(),
+            "receiver-seat repair request ACTIVE (paper §7.6: the receiver \
+             REQUESTS repairs at lateness l >= l*_recv instead of the sender \
+             inferring them from inverted SACK ranges; the per-seq SACK->gap \
+             producer is suppressed by the collision seam while the request \
+             law is armed; sack_tx UNTOUCHED - ADR-0060 store release)"
+        );
+    }
+    // SACK forwarding channel producer, for the SACK-clocked store release
+    // (env `RWM_STORE_SACK_RELEASE`, default on; paper §6.3, ADR-0060): the
+    // sender uncounts SACKed ranges from the flow-control outstanding — see
+    // the sender-loop drain — but never prunes the payload, which is the only
+    // retransmittable copy of a received-then-evicted symbol (slot release,
+    // never recoverability). `=0` is the frontier-only-release opt-out.
+    let store_sack_release_enabled = gates.store_sack_release;
+    let sender_sack_tx: Option<tokio::sync::mpsc::Sender<SackReport>> =
+        if store_sack_release_enabled
+            && window_reliable
+            && !window_generation
+            && !window_coded_only
+        {
+            Some(sack_tx)
+        } else {
+            None
+        };
     // Clone tx before moving tun into the sender task
     let recv_tun_tx = tun.tx.clone();
 
     let sender_transport = transport_arc.clone();
-    let sender_scheduler = scheduler_arc.clone();
-    let sender_fec = fec_controller.clone();
     let sender_batch_counter = batch_counter.clone();
     let sender_stats = stats.clone();
 
@@ -1062,7 +1180,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_window_generation = window_generation;
     let sender_window_systematic = window_systematic;
     let sender_window_ack = window_ack_seq.clone();
-    let sender_ack_wake = ack_wake.clone();
+    let mut sender_in_rx = sender_in_rx;
+    let mut sender_cmd_rx = sender_cmd_rx;
     let mut sender_nack_rx = nack_rx;
     let mut sender_deficit_rx = deficit_rx;
     let mut sender_sack_rx = sack_rx;
@@ -1073,18 +1192,27 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let sender_completion_feed = config.completion_feed.clone();
     let sender_gates = gates.clone();
 
+    // Threading Q2: the TX half's owner. The scheduler and the FEC controller
+    // move into the sender task and are used there by plain `&mut` — no other
+    // task can reach them.
+    let sender_tx_diag = gates.diag;
     let sender_handle = tokio::spawn(async move {
+        let mut txc = TxCore::new(scheduler, fec_controller, sender_tx_diag);
         run_window_sender(
             &mut tun,
             sender_profile_symbol_size,
             sender_fec_backend,
-            &sender_fec,
+            &mut txc,
             &sender_batch_counter,
             &sender_transport,
-            &sender_scheduler,
             &sender_stats,
             &sender_window_ack,
-            &sender_ack_wake,
+            SenderInputs {
+                acks: &mut sender_in_rx,
+                cmds: &mut sender_cmd_rx,
+                nack_tx: sender_nack_tx.as_ref(),
+                sack_tx: sender_sack_tx.as_ref(),
+            },
             &mut sender_nack_rx,
             &mut sender_deficit_rx,
             &mut sender_sack_rx,
@@ -1103,8 +1231,10 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     });
 
     // Receiver task: receive → decode → extract packets → TUN inject
-    let recv_scheduler = scheduler_arc.clone();
-    let recv_fec = fec_controller.clone();
+    // (threading Q2: it owns the scheduler's RX half as a local; its TX-state
+    // inputs go to the sender as messages).
+    let recv_sender_in = sender_in_tx.clone();
+    let recv_sender_cmd = sender_cmd_tx.clone();
     let recv_fec_backend = effective_fec_backend;
     let recv_transport = transport_arc.clone();
     // Per-path: track last seen batch_seq and total symbols received for loss detection
@@ -1151,105 +1281,11 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     } else {
         MAX_WINDOW_SIZE as u64
     };
-    let recv_window_ack = window_ack_seq.clone();
-    let recv_ack_wake = ack_wake.clone();
     let recv_window_generation = window_generation;
     // Receiver arm of the deficit-feedback loop: the data-arm control handler
     // forwards inbound GenerationDeficit vectors to the local sender's recovery
     // loop over this clone (generation mode only).
     let recv_deficit_tx = deficit_tx.clone();
-    // Generation coding (paper §5.8) turns the per-seq targeted ARQ off
-    // beneath the code — the per-seq reliability layer makes the moving
-    // window path-affine and invokes the NACK congestion throttle. With no
-    // NACK producer, a short generation is recovered by more coded symbols
-    // for that generation (fungible, cross-path), never by resending a
-    // specific seq. So the SACK→gap producer is suppressed in generation mode.
-    //
-    // ── The collision seam (paper §7.6), one `&&` ────────────
-    //
-    // The request law (`RWM_RECV_REQUEST_LAW`) makes the receiver's report
-    // the single authority for a repair. Its identifiability argument depends
-    // on that: `rho_heal(l) = pi0*f(l)` holds exactly on `[0, l*)` only
-    // because no copy has flown there, and a copy flying is precisely the
-    // censoring of paper §7.4. So while the arm is armed the per-seq
-    // SACK->gap producer is suppressed at its source — here, where it is
-    // armed — rather than filtered downstream, so `[FCAUSE] gap_data` going
-    // to zero on the treatment arm is the proof that the seam closed.
-    //
-    // `sack_tx` below is deliberately not touched: SACK drives store slot
-    // release and never recoverability; pruning `sent_store` on SACK is
-    // unsafe (in-order duals wedge) and the safe realization is ADR-0060's
-    // release.
-    //
-    // The two backstops the seam leaves standing are untouched and out of
-    // domain by construction: the `p_lost` taper and the end-of-stream tail
-    // sweep, whose producer is the sender's own `tail_deadline` arm and not
-    // this channel.
-    //
-    // With the arm absent this is the shipped predicate.
-    let recv_request_law = request_law_armed(
-        window_reliable,
-        window_generation,
-        gates.recv_request_law,
-    );
-    // Arm (B) alone is the vocabulary-only wiring test: the trigger stays the
-    // shipped 2 ms sampler, so the gap producer stays armed and only the
-    // message the receiver sends changes. The two arms compose; neither
-    // selects a machine.
-    let recv_rank_feedback = request_law_armed(
-        window_reliable,
-        window_generation,
-        gates.rank_feedback,
-    );
-    let recv_nack_tx: Option<
-        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
-    > =
-        if !window_generation && !recv_request_law {
-            Some(nack_tx)
-        } else {
-            None
-        };
-    // The request channel's producer seat: `Some(..)` iff either arm is live,
-    // so arm (B) alone still has a server. `None` on every shipped path => an
-    // arriving `RepairRequest` is counted and dropped.
-    let recv_request_tx: Option<tokio::sync::mpsc::Sender<RepairRequestBatch>> =
-        if recv_request_law || recv_rank_feedback {
-            Some(request_tx)
-        } else {
-            None
-        };
-    if recv_request_law || recv_rank_feedback {
-        // Mechanism-liveness echo (measurement-discipline rule 1), emitted in
-        // `run_impl` so both roles echo: the receiver builds the message, the
-        // sender serves it.
-        info!(
-            request_law = recv_request_law,
-            rank_feedback = recv_rank_feedback,
-            gap_producer_armed = recv_nack_tx.is_some(),
-            "receiver-seat repair request ACTIVE (paper §7.6: the receiver \
-             REQUESTS repairs at lateness l >= l*_recv instead of the sender \
-             inferring them from inverted SACK ranges; the per-seq SACK->gap \
-             producer is suppressed by the collision seam while the request \
-             law is armed; sack_tx UNTOUCHED - ADR-0060 store release)"
-        );
-    }
-    // SACK forwarding channel producer, for the SACK-clocked store release
-    // (env `RWM_STORE_SACK_RELEASE`, default on; paper §6.3, ADR-0060): the
-    // sender uncounts SACKed ranges from the flow-control outstanding — see
-    // the sender-loop drain — but never prunes the payload, which is the only
-    // retransmittable copy of a received-then-evicted symbol (slot release,
-    // never recoverability). `=0` is the frontier-only-release opt-out.
-    let store_sack_release_enabled = gates.store_sack_release;
-    let recv_sack_tx: Option<tokio::sync::mpsc::Sender<SackReport>> =
-        if store_sack_release_enabled
-            && window_reliable
-            && !window_generation
-            && !window_coded_only
-        {
-            Some(sack_tx)
-        } else {
-            None
-        };
     // SACK + BDP reassembly (RWM_REASM_BDP) hardens the receiver so a sender
     // decoupled from the in-order frontier is safe for reliable in-order
     // delivery. The invariant it guarantees: a received symbol is never
@@ -1287,10 +1323,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let receiver_handle = tokio::spawn(receiver::run_receiver(
         recv_shutdown_rx,
         msg_rx,
-        recv_copa_feed,
         recv_tun_tx,
-        recv_scheduler,
-        recv_fec,
+        recv_sender_in,
+        recv_sender_cmd,
         recv_fec_backend,
         recv_transport,
         recv_path_tracking,
@@ -1299,12 +1334,8 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         recv_window_reliable,
         recv_window_ooo,
         recv_win_cap,
-        recv_window_ack,
-        recv_ack_wake,
         recv_window_generation,
         recv_deficit_tx,
-        recv_nack_tx,
-        recv_sack_tx,
         // Paper §7.6 arms (A)/(B): the request producer and the two
         // resolved arm predicates. `None`/`false` on every shipped path.
         recv_request_tx,
@@ -1338,7 +1369,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
 
     // Path command processor: handles runtime add/remove of paths
     let cmd_transport = transport_arc.clone();
-    let cmd_scheduler = scheduler_arc.clone();
+    let cmd_sender = sender_cmd_tx.clone();
     let cmd_stats = stats.clone();
     let cmd_msg_tx = msg_tx.clone();
     let cmd_ctrl_tx = ctrl_tx.clone();
@@ -1347,43 +1378,39 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cmd_handle = tokio::spawn(tasks::run_path_cmd(
         path_cmd_rx,
         cmd_transport,
-        cmd_scheduler,
+        cmd_sender,
         cmd_stats,
         cmd_msg_tx,
         cmd_ctrl_tx,
+        sender_in_tx.clone(),
         next_path_id,
         cmd_shutdown_rx,
     ));
 
     // RTCP-style periodic report + keepalive task
     let report_transport = transport_arc.clone();
-    let report_scheduler = scheduler_arc.clone();
+    let report_sender = sender_cmd_tx.clone();
     let report_stats = stats.clone();
     let report_symbol_size = symbol_size;
     let report_shutdown_rx = shutdown_tx.subscribe();
     let report_handle = tokio::spawn(tasks::run_report(
         report_transport,
-        report_scheduler,
+        report_sender,
         report_stats,
         report_symbol_size,
         report_shutdown_rx,
     ));
 
-    // Control fast path: liveness-critical messages (PathReport, Ping,
-    // Pong) are handled immediately; anything else that arrives via the
-    // reliable stream is forwarded to the ordered data loop.
-    let ctrl_scheduler = scheduler_arc.clone();
-    let ctrl_transport = transport_arc.clone();
-    let ctrl_stats = stats.clone();
+    // Control fast path: liveness-critical messages that arrive on the
+    // reliable stream (PathReport, Ping) go straight to the sender's input
+    // channel — they act on TX state, which the sender owns (threading Q2) —
+    // and never queue behind the data flood; anything else is forwarded to
+    // the receiver's ordered data loop.
     let ctrl_forward_tx = msg_tx.clone();
-    let ctrl_mstar_anchor = gates.mstar_anchor;
     let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
         ctrl_rx,
-        ctrl_scheduler,
-        ctrl_transport,
-        ctrl_stats,
+        sender_in_tx.clone(),
         ctrl_forward_tx,
-        ctrl_mstar_anchor,
     ));
 
     // Any task completing — even cleanly — ends the tunnel, so every arm
@@ -1475,15 +1502,17 @@ async fn run_window_sender(
     tun: &mut TunInterface,
     symbol_size: u16,
     fec_backend: FecBackend,
-    fec_controller: &Arc<parking_lot::Mutex<FecRateController>>,
+    // Threading Q2: the scheduler's TX half and the FEC controller, owned by
+    // this task and used by plain `&mut` (no mutex anywhere).
+    txc: &mut TxCore,
     batch_counter: &BatchCounter,
     transport: &Arc<QuicTransport>,
-    scheduler: &Arc<crate::scheduler::SchedMutex>,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
-    // Threading P1, D1: signalled once per inbound WindowAck (after its state
-    // update); awaited by the paused / pacing-dry waits below.
-    ack_wake: &Arc<control_msg::AckWake>,
+    // Threading Q2: the sender's input channels (the TX-direction control
+    // input — acks, PathReport, Ping — and the cold tasks' commands) and the
+    // ack handling's channel seats.
+    inputs: SenderInputs<'_>,
     nack_rx: &mut tokio::sync::mpsc::Receiver<(FireCause, u32, Vec<(u64, u64)>)>,
     // Generation-deficit feedback (paper §5.8): each element is the
     // receiver's reported (generation_anchor, residual_deficit) vector.
@@ -1549,6 +1578,15 @@ async fn run_window_sender(
     // The engine's env-gate surface, resolved once in run_impl (src/gates.rs).
     gates: crate::gates::RuntimeGates,
 ) {
+    // Threading Q2: the TX half, by field (disjoint `&mut` borrows of the
+    // sender's own `TxCore`).
+    let TxCore { sched: scheduler, fec: fec_controller, eta: eta_final } = txc;
+    let SenderInputs { acks: sender_in, cmds: sender_cmds, nack_tx: ack_nack_tx, sack_tx: ack_sack_tx } = inputs;
+    // The sender's input drain buffers (reused; one `recv_many` per drain).
+    let mut in_buf: Vec<crate::transport::InboundBatch> = Vec::new();
+    let mut cmd_buf: Vec<SenderCmd> = Vec::new();
+    let mut in_closed = false;
+    let mut cmds_closed = false;
     // ── The sender's resolve-once policy ────
     // The derived sender constants resolve together in
     // `SenderPolicy::resolve` (net/sender_policy.rs). The mechanism-liveness
@@ -1917,7 +1955,7 @@ async fn run_window_sender(
     // control-lane batch, before the sender state — and its own staging —
     // exists.)
     {
-        let paths = control_broadcast_paths(&scheduler.lock());
+        let paths = control_broadcast_paths(&*scheduler);
         let mut announce = crate::transport::TxBatch::new();
         for pid in paths {
             let _ = transport.send_control_datagram(
@@ -2020,14 +2058,32 @@ async fn run_window_sender(
         gen_last_source_us,
         last_source_send_us,
     );
-    let sctx = SenderCtx {
-        scheduler,
-        fec_controller,
+    // The emission step's handles, built at each emission site: the
+    // scheduler and the FEC controller are lent to it as `&mut` for that call
+    // only (threading Q2).
+    macro_rules! sctx {
+        () => {
+            SenderCtx {
+                scheduler: &mut *scheduler,
+                fec_controller: &mut *fec_controller,
+                transport,
+                stats,
+                batch_counter,
+                window_ack_seq,
+                copa_feed: copa_feed.as_ref(),
+            }
+        };
+    }
+    // Threading Q2: what the input handling (`on_window_ack` & co., run
+    // here) reads besides the TX half — shared handles only.
+    let input_ctx = tx_inputs::InputCtx {
         transport,
         stats,
-        batch_counter,
-        window_ack_seq,
+        peer_window_ack: window_ack_seq,
+        nack_tx: ack_nack_tx,
+        sack_tx: ack_sack_tx,
         copa_feed: copa_feed.as_ref(),
+        mstar_anchor: gates.mstar_anchor,
     };
 
     // Retention backpressure state (reliable mode), for edge-triggered logs.
@@ -2052,15 +2108,9 @@ async fn run_window_sender(
     // for why the teardown `select!` arms are the wrong site (the `perf`
     // harness takes neither).
     // The sender `[ETA]` exit flush (`net/eta.rs` `SenderEtaFlush`):
-    // exactly once, `final=1`, at the clean exits below or on drop.
-    // Declared before every scheduler guard of the loop, so a guard held at
-    // a `return` is released before this destructor runs.
-    let eta_sched = scheduler.clone();
-    let mut eta_final = eta::SenderEtaFlush::new(pol.diag_on, move || {
-        let mut s = eta_sched.try_lock_for(Duration::from_secs(1))?;
-        s.drain_place_bind();
-        s.eta().final_line()
-    });
+    // exactly once, `final=1`, at the clean exits below or — when this task
+    // is dropped instead — by `TxCore`'s destructor, which owns the
+    // scheduler it renders from (threading Q2: no lock to try).
     let mut ccap = SenderTeardownGauges::new(
         // The `[CCAP]` line is emitted for either door into the brake,
         // because its `brake=<closed>/<ticks>` field is the primary readout
@@ -2145,6 +2195,53 @@ async fn run_window_sender(
         // Intra-iteration consistency, if ever needed, must capture per
         // phase-group after the await, not once at the top.
 
+        // ── Threading Q2: the sender's inputs, at the loop top ────────────
+        // Non-blocking: each channel is drained by ONE `recv_many` polled
+        // once, and only when it is non-empty (one coop-budget unit per
+        // drain, never per message — the P2a lesson). Commands first (a path
+        // added at runtime exists before its first ack), then the
+        // TX-direction control input: the client's WindowAcks run
+        // `on_window_ack` here, in the task that owns the scheduler, so their
+        // SACK report and gap batch are on this loop's own channels before
+        // the SACK drain below reads them. The TX view is published once per
+        // drained batch; the receiver's RX publication is mirrored in every
+        // iteration (`sync_rx`).
+        {
+            let mut touched = false;
+            if !cmds_closed && !sender_cmds.is_empty() {
+                if let Some(n) = tx_inputs::poll_once(
+                    sender_cmds.recv_many(&mut cmd_buf, SENDER_CMD_DEPTH),
+                )
+                .await
+                {
+                    if n == 0 {
+                        cmds_closed = true;
+                    } else {
+                        tx_inputs::apply_cmds(&mut cmd_buf, scheduler, fec_controller, stats);
+                        touched = true;
+                    }
+                }
+            }
+            if !in_closed && !sender_in.is_empty() {
+                if let Some(n) = tx_inputs::poll_once(
+                    sender_in.recv_many(&mut in_buf, SENDER_IN_BATCHES),
+                )
+                .await
+                {
+                    if n == 0 {
+                        in_closed = true;
+                    } else {
+                        tx_inputs::apply_inputs(&mut in_buf, scheduler, &mut st.tx, &input_ctx);
+                        touched = true;
+                    }
+                }
+            }
+            if touched {
+                scheduler.publish_tx_view(stats);
+            }
+            scheduler.sync_rx(stats);
+        }
+
         // SACK drain: consume the receiver's received-above-frontier ranges
         // non-blocking at the top of every iteration (never as a select! branch
         // — a frequently-ready channel there would race, and cancel, the
@@ -2154,11 +2251,10 @@ async fn run_window_sender(
         // rate) while payload + ARQ maps stay retained until the cumulative
         // frontier passes it. The hole itself (not in any received range) stays
         // retained and recovers in the background via the orthogonal NACK /
-        // tail-sweep path. A paused (or pacing-dry) loop is woken by every
-        // inbound WindowAck (threading P1, D1: the ack-wake arm; the SACK
-        // report is on this channel before the wake is signalled) and at
-        // least every 1 ms by the backpressure/emission poll, so drains stay
-        // prompt.
+        // tail-sweep path. The SACK reports are produced by this task's own
+        // ack handling (threading Q2: the input drain just above and the
+        // input arm of the `select!`), so a report is on this channel by the
+        // next loop top after its ack.
         while let Ok(report) = sack_rx.try_recv() {
             if pol.store_sack_release_on {
                 // v9: the count the gate converges on past the SACK cap.
@@ -2254,7 +2350,7 @@ async fn run_window_sender(
                 // it is positive feedback (deeper ⇒ more queue ⇒ deeper). The
                 // in-flight cap holds the actual RTT near RTprop, so RTprop is
                 // the self-consistent anchor (the BBR discipline).
-                let rtprop_s = channel_max_rtprop_s(&scheduler.lock());
+                let rtprop_s = channel_max_rtprop_s(&*scheduler);
                 let m = gen_pipe_depth(gp_rate_max, rtprop_s, pol.gen_size);
                 if m != gen_pipe_m {
                     if pol.diag_on {
@@ -2274,7 +2370,7 @@ async fn run_window_sender(
             let dnow = now_us();
             if dnow.saturating_sub(dyn_infl_refresh_us) >= 5_000 {
                 dyn_infl_refresh_us = dnow;
-                let bdp: f64 = channel_bdp_anchor_sum(&scheduler.lock());
+                let bdp: f64 = channel_bdp_anchor_sum(&*scheduler);
                 if bdp > 0.0 {
                     dyn_infl_cap = ((pol.infl_bdp_gain * bdp).ceil() as u64).max(64);
                 }
@@ -2316,7 +2412,7 @@ async fn run_window_sender(
         let cwnd_brake = pol.composed_cap || pol.late_brake;
         let brake_armed = eff_infl_cap > 0 || cwnd_brake;
         let (pipe_infl, percap_full): (u64, bool) = if brake_armed {
-            let mut sched = scheduler.lock();
+            let sched = &mut *scheduler;
             let mut infl = 0u64;
             let mut per_path: Vec<(u64, u64)> = Vec::new();
             let ids = channel_paths(&sched);
@@ -2372,7 +2468,7 @@ async fn run_window_sender(
             StoreCapCtx {
                 pol: &pol,
                 gates: &gates,
-                scheduler,
+                scheduler: &mut *scheduler,
                 copa_feed: &copa_feed,
                 sumcap: &mut sumcap,
                 dcap: &mut dcap,
@@ -2418,7 +2514,7 @@ async fn run_window_sender(
                 &pol,
                 &mut dg,
                 DiagCtx {
-                    scheduler,
+                    scheduler: &mut *scheduler,
                     transport,
                     stats,
                     window_ack_seq,
@@ -2549,7 +2645,7 @@ async fn run_window_sender(
             cwnd_full,
             gp_rate_max,
             cc_rate_cached,
-            scheduler,
+            scheduler: &mut *scheduler,
             transport,
             stats,
             batch_counter,
@@ -2650,7 +2746,7 @@ async fn run_window_sender(
                 // burst guard, and as an aggregate clamp it would cap a
                 // two-path intake at one path's worth.
                 let (rate, n_live) = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     let mut r = 0.0f64;
                     let mut n = 0usize;
                     for (_, p) in sched.live_paths_iter() {
@@ -2698,7 +2794,7 @@ async fn run_window_sender(
                     .map_or(send_us, |&(r, _)| r.max(send_us))
                     .max(last_tail_sweep_us);
                 let (srtt_us, jitter_us, sigma_us) = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     // Three passes over the same path set (no per-iteration
                     // `Vec`s: this block runs on every loop iteration).
                     let paths = || recovery_clock_paths_iter(&sched).map(|(_, p)| p);
@@ -2769,11 +2865,6 @@ async fn run_window_sender(
         } else {
             (0, 0)
         };
-        // `wake[timer_acked]` (P1, D1; RWM_DIAG only): the ack count at the
-        // start of this wait, so a 1 ms timer wake can be told apart into
-        // "an ack landed during the wait" (the ack arm lost the `select!`
-        // race, or the wiring is broken) and "a true ack gap".
-        let acks_at_wait = if pol.diag_on { ack_wake.acks.load(Ordering::Relaxed) } else { 0 };
         let packet = tokio::select! {
             // Backpressure poll (reliable): with TUN reads gated off, wake
             // at ack timescale to observe store drain via the ack path
@@ -2784,14 +2875,38 @@ async fn run_window_sender(
             // block in read_packet with the pacing gate closed and stall intake.
             _ = tokio::time::sleep_until(poll_1ms),
                 if pol.cc_pace && !tx_paused && st.src_tokens < 1.0 => { wait_arm = 2; None },
-            // Threading P1, D1 — the ack wake. Armed under exactly the union
-            // of the two polls above (store/cwnd pause; pacing bucket dry):
-            // an inbound WindowAck (`control_msg::on_window_ack`, last
-            // statement) ends those waits at once instead of at the next
-            // 1–2 ms timer tick. The polls stay: they are the time-based
-            // refill clock and the fallback. Never armed while the loop is
-            // waiting on TUN intake, so an ack never adds an iteration there.
-            _ = ack_wake.notified(), if tx_paused || (pol.cc_pace && st.src_tokens < 1.0) => { wait_arm = 8; None },
+            // Threading Q2 — the input arm: TX-direction control input (the
+            // client's acks, PathReport, Ping), drained whole by ONE
+            // `recv_many` and handled here, in the sender (`on_window_ack`
+            // runs in the task that owns the scheduler). ALWAYS armed: no
+            // other task handles acks now, so an idle-intake sender (the
+            // tail) must still take them; the wake is the channel's own — a
+            // busy sender takes the batch at its loop top instead, with no
+            // wake (plan rule 4). It also ends a paused / pacing-dry wait at
+            // once, which P1's `AckWake` arm did.
+            n = sender_in.recv_many(&mut in_buf, SENDER_IN_BATCHES), if !in_closed => {
+                wait_arm = 8;
+                if n == 0 {
+                    in_closed = true;
+                } else {
+                    tx_inputs::apply_inputs(&mut in_buf, scheduler, &mut st.tx, &input_ctx);
+                    scheduler.publish_tx_view(stats);
+                }
+                None
+            }
+            // Threading Q2 — the cold tasks' commands (report tick, path
+            // add / remove, FEC feedback, revival nudge): always armed, one
+            // `recv_many` per wake.
+            n = sender_cmds.recv_many(&mut cmd_buf, SENDER_CMD_DEPTH), if !cmds_closed => {
+                wait_arm = 9;
+                if n == 0 {
+                    cmds_closed = true;
+                } else {
+                    tx_inputs::apply_cmds(&mut cmd_buf, scheduler, fec_controller, stats);
+                    scheduler.publish_tx_view(stats);
+                }
+                None
+            }
             p = tun.read_packet(),
                 if !tx_paused && (!pol.cc_pace || st.src_tokens >= 1.0) => { wait_arm = 0; Some(p) },
             // Generation coding: a 1 ms emission poll so the loop keeps waking to
@@ -2843,7 +2958,7 @@ async fn run_window_sender(
                         // Read here, after the `select!` await: this is the one
                         // phase whose value would be stale under a loop-top
                         // snapshot (see the note at the top of the loop).
-                        let srtt_us = channel_max_srtt_us(&scheduler.lock()).unwrap_or(50_000);
+                        let srtt_us = channel_max_srtt_us(&*scheduler).unwrap_or(50_000);
                         ((srtt_us as f64) * pol.react_cap_cfg).max(1_000.0) as u64
                     } else {
                         0
@@ -2944,19 +3059,19 @@ async fn run_window_sender(
                     packed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                     }
                 }
                 // Send Shutdown on all paths (P1 D2: guard dropped first).
-                let paths = control_broadcast_paths(&scheduler.lock());
+                let paths = control_broadcast_paths(&*scheduler);
                 for pid in paths {
                     let _ = transport.send_control_datagram(&mut st.tx, pid, ControlMessage::Shutdown);
                 }
                 // The packer's last symbol and the Shutdowns, after every
                 // burst staged before them (data lane first per path).
                 transport.flush(&mut st.tx).await;
-                eta_final.flush_final();
+                eta_final.flush_final(scheduler);
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
                 // this path and on every other way this sender can end —
@@ -2973,7 +3088,7 @@ async fn run_window_sender(
                     packed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                 }
                 None
@@ -2984,18 +3099,19 @@ async fn run_window_sender(
         // (`sidle`) goes. Unlike `gd_us` it has no `generation` guard: the
         // arms it names exist in every window mode.
         let resolved_us = if pol.diag_on || pol.walldiag_on { now_us() } else { 0 };
-        if pol.diag_on && wait_arm < 9 {
+        if pol.diag_on && wait_arm < WAIT_BUCKETS {
             // The await only: the body before it went to `busy` above.
             let dt = dg.wait_resolve(resolved_us);
             dg.wait_us[wait_arm] += dt;
             dg.wait_n += 1;
             // `wake[..]` (P1, D1): which arm woke the loop, as a cumulative
-            // COUNT (the wait shares above are time) — `wake[paused]` is the
-            // timer wake while paused that the ack arm exists to replace.
+            // COUNT (the wait shares above are time). `timer_acked`
+            // (threading Q2): a paused / pacing 1 ms timer wake that resolved
+            // with acks queued on the input channel — the input arm lost the
+            // `select!` race (both ready at one poll), or the wiring is
+            // broken.
             dg.wake_n[wait_arm] += 1;
-            if (wait_arm == 1 || wait_arm == 2)
-                && ack_wake.acks.load(Ordering::Relaxed) != acks_at_wait
-            {
+            if (wait_arm == 1 || wait_arm == 2) && !sender_in.is_empty() {
                 dg.wake_timer_acked += 1;
             }
         }
@@ -3044,13 +3160,13 @@ async fn run_window_sender(
                     packed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                         }
                     }
                     // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
                     // by `ccap`'s destructor, on every exit path.
-                    eta_final.flush_final();
+                    eta_final.flush_final(scheduler);
                     // The packer's last symbol, to the owners.
                     transport.flush(&mut st.tx).await;
                     info!("TUN closed");
@@ -3065,7 +3181,7 @@ async fn run_window_sender(
                     packed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                 }
             } else {
@@ -3080,7 +3196,7 @@ async fn run_window_sender(
                     framed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                 if eb_gauge {
                     dg.eb.on_symbol(st.last_source_path);
@@ -3130,7 +3246,7 @@ async fn run_window_sender(
                     framed.into(),
                     &mut st,
                     &pol,
-                    &sctx,
+                    &mut sctx!(),
                 );
                                 if eb_gauge {
                                     dg.eb.on_symbol(st.last_source_path);
@@ -3161,7 +3277,7 @@ async fn run_window_sender(
         if now_repair_us.saturating_sub(last_budget_refresh_us) >= NACK_REPAIR_COOLDOWN_US {
             last_budget_refresh_us = now_repair_us;
             // Update congestion state from scheduler
-            let (current_loss, current_rtt) = nack_congestion_inputs(&scheduler.lock());
+            let (current_loss, current_rtt) = nack_congestion_inputs(&*scheduler);
             nack_congestion.update(current_loss, current_rtt);
             // Idle-triggered recovery: if no new source symbol has been sent
             // for > 2×SRTT, the sender is idle-except-for-recovery — no
@@ -3192,8 +3308,8 @@ async fn run_window_sender(
 
             // ADR-0050: compute NACK budget from BudgetAllocator
             cached_nack_budget = {
-                let ctrl = fec_controller.lock();
-                let sched = scheduler.lock();
+                let ctrl = &*fec_controller;
+                let sched = &*scheduler;
                 let worst_est = worst_eps_estimator(&sched);
                 match worst_est {
                     Some(est) => {
@@ -3331,7 +3447,7 @@ async fn run_window_sender(
                             .collect(),
                     };
                     let path = {
-                        let sched = scheduler.lock();
+                        let sched = &*scheduler;
                         sched
                             .place_symbol(true, &covered)
                             .unwrap_or(st.last_source_path)
@@ -3351,7 +3467,7 @@ async fn run_window_sender(
                     // bypass channels are the exception, not the rule, and a
                     // new channel does not inherit an exception).
                     {
-                        let mut sched = scheduler.lock();
+                        let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(path) {
                             p.charge_in_flight(1);
                             p.consume_pace_tokens(1);
@@ -3379,7 +3495,7 @@ async fn run_window_sender(
                         hold_echo.on_retx(seq, now_r, path);
                         if let Some(feed) = copa_feed.as_ref() {
                             feed.on_sent(seq, path);
-                            let mut sched = scheduler.lock();
+                            let sched = &mut *scheduler;
                             if let Some(p) = sched.path_mut(path) {
                                 p.on_src_sent(seq, false);
                             }
@@ -3414,8 +3530,8 @@ async fn run_window_sender(
             reliable,
             now_repair_us,
             cached_max_repairs,
-            scheduler,
-            fec_controller,
+            scheduler: &mut *scheduler,
+            fec_controller: &mut *fec_controller,
             transport,
             stats,
             batch_counter,
@@ -3443,8 +3559,8 @@ async fn run_window_sender(
             next_expected,
             generation,
             reliable,
-            scheduler,
-            fec_controller,
+            scheduler: &mut *scheduler,
+            fec_controller: &mut *fec_controller,
             completion_feed: &completion_feed,
             mp_delivered: &mut mp_delivered,
             st: &mut st,

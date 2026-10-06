@@ -219,7 +219,7 @@ pub(crate) fn copa_feed_attribute(
     ack_path: u32,
     next_expected: u64,
     sack_ranges: &[(u64, u64)],
-    scheduler: &Arc<crate::scheduler::SchedMutex>,
+    sched: &mut Scheduler,
     transport: &Arc<QuicTransport>,
     stats: &Arc<SharedStats>,
 ) {
@@ -228,16 +228,14 @@ pub(crate) fn copa_feed_attribute(
         return;
     }
     let now = now_us();
-    let mut sched = scheduler.lock();
-    let per_path = copa_attribute_newly(feed, ack_path, now, &newly, &mut sched);
+    let per_path = copa_attribute_newly(feed, ack_path, now, &newly, sched);
     // Sampling-only mode (`RWM_PLAIN_RS`) stops here — the rate samples above
     // are the whole job. The cwnd dynamics keep their per-batch-Ack call
     // site, and the substrate window is whatever RWM_QUIC_CC says.
     if !feed.owns_cc() {
         return;
     }
-    // Threading P1, D2: the pass-through window writes (a DashMap) are made
-    // after the scheduler guard drops.
+    // The pass-through window writes (a DashMap) after the scheduler pass.
     let mut windows: Vec<(u32, u64)> = Vec::with_capacity(per_path.len());
     for (p, _n) in per_path {
         if let Some(ps) = sched.path_mut(p) {
@@ -260,21 +258,20 @@ pub(crate) fn copa_feed_attribute(
             }
         }
     }
-    drop(sched);
     for (p, bytes) in windows {
         transport.set_cc_window_bytes(p, bytes);
     }
 }
 
-/// The per-seq attribution loop of [`copa_feed_attribute`], under the
-/// scheduler lock the caller holds: resolve each newly-delivered seq's
+/// The per-seq attribution loop of [`copa_feed_attribute`], over the
+/// sender's scheduler: resolve each newly-delivered seq's
 /// carrying path (send record → flight-time witness → ack-path fallback) and
 /// run that path's send-interval rate sampler (`on_src_delivered_seq`).
 /// Returns the per-path attribution counts for the (Copa-sole only) cwnd
 /// pass that follows.
 ///
 /// Separate so a component bench can drive the production attribution body
-/// under the production lock (`docs/measurement-discipline.md` rule 1).
+/// (`docs/measurement-discipline.md` rule 1).
 /// Sole non-test caller is `copa_feed_attribute`.
 pub(crate) fn copa_attribute_newly(
     feed: &CopaFeed,

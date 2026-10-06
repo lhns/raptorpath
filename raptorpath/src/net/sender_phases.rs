@@ -57,7 +57,7 @@ impl StoreCapState {
 pub(crate) struct StoreCapCtx<'a> {
     pub pol: &'a SenderPolicy,
     pub gates: &'a crate::gates::RuntimeGates,
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
+    pub scheduler: &'a mut crate::scheduler::Scheduler,
     pub copa_feed: &'a Option<Arc<CopaFeed>>,
     pub sumcap: &'a mut SumCapGauge,
     pub dcap: &'a mut DeltaCapGauge,
@@ -107,7 +107,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 // 0, collapsing the cap to the boot value and whiplashing the
                 // TUN gate.
                 let (cwnd_sum, n_live): (f64, usize) = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     let live = sched.live_paths();
                     let cs: f64 = live
                         .iter()
@@ -151,7 +151,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 // delivered-rate anchor (`btlbw_sym_per_s`), the same source
                 // the Σ-anchor base reads, so the A/B isolates the law.
                 let tt_slots: Vec<Option<ThreeTermPath>> = if pol.three_term_on {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     sched
                         .live_paths()
                         .iter()
@@ -175,7 +175,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                 // refresh cadence). hsum = 0.0 whenever honest_cap_on is
                 // false, and the expressions below then run unchanged.
                 let (bdp, hsum, n_live): (f64, f64, usize) = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     let live = sched.live_paths();
                     let n = live.len().max(1);
                     // The path set is the channel's membership
@@ -215,7 +215,7 @@ pub(crate) fn refresh_store_cap(scs: &mut StoreCapState, ctx: StoreCapCtx<'_>) {
                     // Rate source: the send-interval anchor (the ratcheted
                     // send mean). Path set: live_paths().
                     let slots: Vec<Option<HonestCapPath>> = {
-                        let sched = scheduler.lock();
+                        let sched = &*scheduler;
                         sched
                             .live_paths()
                             .iter()
@@ -374,7 +374,7 @@ pub(crate) struct GenEmitCtx<'a> {
     pub cwnd_full: bool,
     pub gp_rate_max: f64,
     pub cc_rate_cached: f64,
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
+    pub scheduler: &'a mut crate::scheduler::Scheduler,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub batch_counter: &'a BatchCounter,
@@ -547,7 +547,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
             && st.encoder.wants_coding()
         {
             let path = {
-                let sched = scheduler.lock();
+                let sched = &*scheduler;
                 if pol.xpath_repair {
                     sched.place_repair_spare_path().unwrap_or(0)
                 } else {
@@ -576,7 +576,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 warn!(path, ?e, "failed to send generation coded symbol");
             }
             {
-                let mut sched = scheduler.lock();
+                let sched = &mut *scheduler;
                 if let Some(p) = sched.path_mut(path) {
                     p.charge_in_flight(1);
                 }
@@ -605,7 +605,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 && st.encoder.wants_filling_coding()
             {
                 let path = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     if pol.xpath_repair {
                         sched.place_repair_spare_path().unwrap_or(0)
                     } else {
@@ -628,7 +628,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     warn!(path, ?e, "failed to send filling-generation repair");
                 }
                 {
-                    let mut sched = scheduler.lock();
+                    let sched = &mut *scheduler;
                     if let Some(p) = sched.path_mut(path) {
                         p.charge_in_flight(1);
                     }
@@ -698,7 +698,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     // without starving a symmetric second path (hard argmax
                     // concentration serializes symmetric aggregation).
                     let path = {
-                        let sched = scheduler.lock();
+                        let sched = &*scheduler;
                         if pol.xpath_repair {
                             sched.place_repair_spare_path().unwrap_or(0)
                         } else {
@@ -731,7 +731,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                         warn!(path, ?e, "failed to send generation recovery symbol");
                     }
                     {
-                        let mut sched = scheduler.lock();
+                        let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(path) {
                             p.charge_in_flight(1);
                         }
@@ -768,8 +768,8 @@ pub(crate) struct ServeGapsCtx<'a> {
     pub reliable: bool,
     pub now_repair_us: u64,
     pub cached_max_repairs: u64,
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
-    pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
+    pub scheduler: &'a mut crate::scheduler::Scheduler,
+    pub fec_controller: &'a mut FecRateController,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub batch_counter: &'a BatchCounter,
@@ -865,7 +865,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             std::collections::HashMap::new();
         let mut mp_n_paths: usize = 1;
         let srtt_us = {
-            let sched = scheduler.lock();
+            let sched = &*scheduler;
             // The law's N and clock snapshot range over the channel's
             // membership (`recovery_clock_paths`): a cwnd-saturated path
             // (available() == 0) must not collapse the law to the N = 1
@@ -1157,7 +1157,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // select_repair_path_avoiding.
                 let original_path = st.source_path_map.get(&seq).copied().unwrap_or(st.last_source_path);
                 let nack_path = {
-                    let sched = scheduler.lock();
+                    let sched = &*scheduler;
                     if reliable {
                         sched.place_symbol(true, &[original_path]).unwrap_or(st.last_source_path)
                     } else {
@@ -1260,7 +1260,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // pacer debit may go negative, as the block-ARQ repair's does.
                 if crate::scheduler::charge_recovery_active() {
                     {
-                        let mut sched = scheduler.lock();
+                        let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(nack_path) {
                             p.charge_in_flight(1);
                             p.consume_pace_tokens(1);
@@ -1276,7 +1276,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // send-interval (a paused feed is an absent feed).
                 if let Some(feed) = copa_feed.as_ref() {
                     feed.on_sent(seq, nack_path);
-                    let mut sched = scheduler.lock();
+                    let sched = &mut *scheduler;
                     if let Some(p) = sched.path_mut(nack_path) {
                         p.on_src_sent(seq, false);
                     }
@@ -1300,7 +1300,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
         // Repair margin: extra repairs proportional to loss rate
         if retransmitted > 0 {
             let current_loss = {
-                let sched = scheduler.lock();
+                let sched = &*scheduler;
                 recovery_clock_paths_iter(&sched)
                     .map(|(_, p)| p.estimator.loss_rate())
                     .fold(0.0f64, f64::max)
@@ -1310,7 +1310,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
             // repairs cover the whole window → fate over the window's source
             // paths. Single path ⇒ that path.
             let margin_path = {
-                let sched = scheduler.lock();
+                let sched = &*scheduler;
                 if reliable {
                     window_source_paths_into(
                         &*st.encoder,
@@ -1340,7 +1340,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 // meters as the SACK-gap retransmit above.
                 if crate::scheduler::charge_recovery_active() {
                     {
-                        let mut sched = scheduler.lock();
+                        let sched = &mut *scheduler;
                         if let Some(p) = sched.path_mut(margin_path) {
                             p.charge_in_flight(1);
                             p.consume_pace_tokens(1);
@@ -1386,8 +1386,8 @@ pub(crate) struct AckAdvanceCtx<'a> {
     pub next_expected: u64,
     pub generation: bool,
     pub reliable: bool,
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
-    pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
+    pub scheduler: &'a mut crate::scheduler::Scheduler,
+    pub fec_controller: &'a mut FecRateController,
     pub completion_feed: &'a Option<Arc<CompletionFeed>>,
     pub mp_delivered: &'a mut std::collections::HashMap<u32, Vec<u64>>,
     pub st: &'a mut SenderState,
@@ -1476,8 +1476,8 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         // from the worst (highest-loss) channel path, under a single lock
         // acquisition.
         let derived_window = {
-            let mut ctrl = fec_controller.lock();
-            let sched = scheduler.lock();
+            let ctrl = &mut *fec_controller;
+            let sched = &*scheduler;
             let path_est = worst_eps_estimator(&sched);
             // χ, the completion exposure (`RWM_COMPLETION_EXPOSURE`, paper
             // §4.6). The perf client knows the size of the object it is
@@ -1636,7 +1636,7 @@ pub(crate) fn on_ack_advance(ctx: AckAdvanceCtx<'_>) {
         }
         // Update correction deficit: ACKed symbols no longer need coverage
         {
-            let mut sched = scheduler.lock();
+            let sched = &mut *scheduler;
             sched.deficit.on_ack_cumulative(ack);
         }
         // Reset taper offset on window advancement (new correction cycle)

@@ -33,6 +33,10 @@ pub struct PathState {
     pub last_report: Instant,
     /// Maximum datagram size discovered for this path
     pub max_datagram_size: Option<usize>,
+    /// Threading Q2: the receiver's last-arrival stamp (wall µs) already
+    /// applied by `Scheduler::sync_rx`, and a touch it found due.
+    pub(crate) rx_seen_mark: u64,
+    pub(crate) pending_touch: Option<Instant>,
     /// Copa delay-based congestion control state.
     pub(crate) copa: CopaState,
     /// Token-bucket pacing: symbols sendable right now. Replenished at
@@ -147,6 +151,8 @@ impl PathState {
             in_slow_start: true,
             last_report: now,
             max_datagram_size: None,
+            rx_seen_mark: 0,
+            pending_touch: None,
             copa: {
                 let mut c = CopaState::new(clock.clone(), hint);
                 c.rs_trace_path = id; // DIAG label only (RWM_RS_TRACE prints)

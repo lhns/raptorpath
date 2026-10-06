@@ -241,9 +241,14 @@ fn the_cross_path_class_is_populated_on_two_paths() {
 /// every `[SUCC] det` here is an artifact (the 2 ms gap-ack sampler,
 /// receive-buffer eviction, or the gauge itself). The number is printed; the
 /// identities and the empty cross-path class are asserted.
+///
+/// The transfer must outlast the receiver's 1 s `[SUCC]` cadence: at the
+/// post-Q1 loopback rate 2 × 50 MB could finish before the first readout
+/// (no `[SUCC]` line at all — 3 of 8 release runs on 0ef0e0d), so it is
+/// 2 × 400 MB. The assertions are unchanged.
 #[test]
 fn the_lossless_single_path_floor_is_measured_and_its_identities_close() {
-    let (cli, srv) = run(1, None, "50000000", "2");
+    let (cli, srv) = run(1, None, "400000000", "2");
     let succ = last_succ(&srv);
     assert_succ_line(succ);
     let det = u64_field(succ, "det=");

@@ -1,0 +1,5 @@
+SMOKE-ROW c1d-400 MAIN bin=main rc=0 status=LIVE mbps=757.872 cli=6.77 srv=8.36 topo=2/2 ack_dg=None wake=8045/None lag99=1811.0/1684.0 
+SMOKE-ROW c1d-400 Q2 bin=q2 rc=0 status=LIVE mbps=724.153 cli=6.68 srv=8.72 topo=0/0 ack_dg=339456 wake=5384/1 lag99=2859.0/1968.0 
+SMOKE-ROW c1d-400 MAIN bin=main rc=0 status=LIVE mbps=710.066 cli=7.13 srv=8.22 topo=2/2 ack_dg=None wake=6050/None lag99=2022.0/2333.0 
+SMOKE-ROW c1d-400 Q2 bin=q2 rc=0 status=LIVE mbps=726.61 cli=6.71 srv=8.69 topo=0/0 ack_dg=339033 wake=4787/3 lag99=2079.0/2274.0 
+SMOKE-PASS rows=4
