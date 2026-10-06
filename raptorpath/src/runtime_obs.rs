@@ -167,6 +167,10 @@ pub struct Snapshot {
     workers: Vec<WorkerSample>,
     /// `None` where the OS reader is unavailable (non-Linux).
     threads: Option<Vec<ThreadSample>>,
+    /// Threading Q1: each dedicated I/O runtime's one worker, by name.
+    io: Vec<(String, WorkerSample)>,
+    /// Threading Q1: every live I/O owner's counters.
+    owners: Vec<OwnerSample>,
 }
 
 /// Parse one `/proc/<pid>/task/<tid>/stat` record: `(comm, utime + stime)`.
@@ -296,6 +300,142 @@ struct Obs {
     origin: Instant,
     lag: Arc<LagLog>,
     side: OnceLock<&'static str>,
+    /// Threading Q1: the dedicated I/O runtimes (`RWM_IO_RT=own`), each with
+    /// its own lag probe.
+    io: Mutex<Vec<IoObs>>,
+}
+
+/// One dedicated I/O runtime under observation.
+struct IoObs {
+    name: String,
+    handle: tokio::runtime::Handle,
+    lag: Arc<LagLog>,
+}
+
+/// Threading Q1: observe a dedicated I/O runtime too — its own `[LAG] io`
+/// probe (spawned ON that runtime, so it measures that thread's scheduling
+/// lag) and its `[THR] io` worker counters. No-op unless the observer is
+/// armed.
+pub fn register_io_runtime(name: &str, handle: &tokio::runtime::Handle) {
+    let Some(o) = OBS.get() else {
+        return;
+    };
+    let lag = Arc::new(LagLog::default());
+    handle.spawn(lag_probe(lag.clone(), o.origin));
+    o.io.lock().push(IoObs { name: name.to_string(), handle: handle.clone(), lag });
+}
+
+/// One I/O owner's counters at a snapshot (the `[IOWN]` window join key is
+/// `serial`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OwnerSample {
+    pub serial: u64,
+    pub path: u32,
+    pub rt: String,
+    pub polls: u64,
+    pub drains: u64,
+    pub tx_batches: u64,
+    pub tx_dgrams: u64,
+    pub ctrl_batches: u64,
+    pub ctrl_dgrams: u64,
+    pub rx_batches: u64,
+    pub rx_dgrams: u64,
+    pub rx_capped: u64,
+    pub send_err: u64,
+    pub too_large_staged: u64,
+    pub orphaned: u64,
+    pub qcalls: u64,
+    pub q_secs: u64,
+    pub q_wall_ns: u64,
+    pub q_cpu_ns: u64,
+    pub q_cpu_unavailable: bool,
+    pub drv_on: u64,
+    pub drv_off: u64,
+}
+
+fn owner_samples() -> Vec<OwnerSample> {
+    use std::sync::atomic::Ordering::Relaxed;
+    crate::transport::io_owner::live_views()
+        .iter()
+        .map(|v| {
+            let c = &v.ctr;
+            OwnerSample {
+                serial: v.serial,
+                path: v.path,
+                rt: v.rt.clone(),
+                polls: c.polls.load(Relaxed),
+                drains: c.drains.load(Relaxed),
+                tx_batches: c.tx_batches.load(Relaxed),
+                tx_dgrams: c.tx_dgrams.load(Relaxed),
+                ctrl_batches: c.ctrl_batches.load(Relaxed),
+                ctrl_dgrams: c.ctrl_dgrams.load(Relaxed),
+                rx_batches: c.rx_batches.load(Relaxed),
+                rx_dgrams: c.rx_dgrams.load(Relaxed),
+                rx_capped: c.rx_capped.load(Relaxed),
+                send_err: c.send_err.load(Relaxed),
+                too_large_staged: c.too_large_staged.load(Relaxed),
+                orphaned: c.orphaned.load(Relaxed),
+                qcalls: c.qcalls.load(Relaxed),
+                q_secs: c.q_secs.load(Relaxed),
+                q_wall_ns: c.q_wall_ns.load(Relaxed),
+                q_cpu_ns: c.q_cpu_ns.load(Relaxed),
+                q_cpu_unavailable: c.q_cpu_unavailable.load(Relaxed),
+                drv_on: v.drv_on.load(Relaxed),
+                drv_off: v.drv_off.load(Relaxed),
+            }
+        })
+        .collect()
+}
+
+/// Render the `[IOWN]` lines (one per I/O owner) for the interval
+/// `from → to` (`from` empty: cumulative). `q_asleep_us` = the owner's wall
+/// time asleep inside its quinn sections (section wall − thread CPU): the
+/// connection-mutex wait plus any involuntary preemption there;
+/// `asleep_frac` = that over the window's wall. Pure, so the token set is
+/// unit-tested.
+pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[OwnerSample], to: &[OwnerSample]) -> Vec<String> {
+    let wall_s = wall.as_secs_f64().max(1e-9);
+    to.iter()
+        .map(|t| {
+            let b = from.iter().find(|f| f.serial == t.serial).cloned().unwrap_or_default();
+            let d = |x: u64, y: u64| x.saturating_sub(y);
+            let q_wall_ns = d(t.q_wall_ns, b.q_wall_ns);
+            let (asleep, frac) = if t.q_cpu_unavailable || t.q_secs == 0 {
+                ("-".to_string(), "-".to_string())
+            } else {
+                let asleep_ns = q_wall_ns.saturating_sub(d(t.q_cpu_ns, b.q_cpu_ns));
+                (
+                    format!("{}", asleep_ns / 1_000),
+                    format!("{:.4}", asleep_ns as f64 / 1e9 / wall_s),
+                )
+            };
+            format!(
+                "[IOWN] phase={phase} side={side}{extra} path={} rt={} polls={} drains={} \
+                 tx_batches={} tx_dg={} ctrl_batches={} ctrl_dg={} rx_batches={} rx_dg={} rx_capped={} \
+                 send_err={} too_large_staged={} orphaned={} qcalls={} q_secs={} q_wall_us={} q_asleep_us={asleep} \
+                 asleep_frac={frac} drv_on={} drv_off={} wall_s={wall_s:.3}",
+                t.path,
+                t.rt,
+                d(t.polls, b.polls),
+                d(t.drains, b.drains),
+                d(t.tx_batches, b.tx_batches),
+                d(t.tx_dgrams, b.tx_dgrams),
+                d(t.ctrl_batches, b.ctrl_batches),
+                d(t.ctrl_dgrams, b.ctrl_dgrams),
+                d(t.rx_batches, b.rx_batches),
+                d(t.rx_dgrams, b.rx_dgrams),
+                d(t.rx_capped, b.rx_capped),
+                d(t.send_err, b.send_err),
+                d(t.too_large_staged, b.too_large_staged),
+                d(t.orphaned, b.orphaned),
+                d(t.qcalls, b.qcalls),
+                d(t.q_secs, b.q_secs),
+                q_wall_ns / 1_000,
+                d(t.drv_on, b.drv_on),
+                d(t.drv_off, b.drv_off),
+            )
+        })
+        .collect()
 }
 
 static OBS: OnceLock<Obs> = OnceLock::new();
@@ -327,7 +467,13 @@ fn arm_unconditionally() {
     let origin = Instant::now();
     let lag = Arc::new(LagLog::default());
     if OBS
-        .set(Obs { handle: handle.clone(), origin, lag: lag.clone(), side: OnceLock::new() })
+        .set(Obs {
+            handle: handle.clone(),
+            origin,
+            lag: lag.clone(),
+            side: OnceLock::new(),
+            io: Mutex::new(Vec::new()),
+        })
         .is_ok()
     {
         handle.spawn(lag_probe(lag, origin));
@@ -356,7 +502,65 @@ pub fn snapshot() -> Option<Snapshot> {
             unpark: m.worker_park_unpark_count(i),
         })
         .collect();
-    Some(Snapshot { at: Instant::now(), workers, threads: read_threads() })
+    let io = o
+        .io
+        .lock()
+        .iter()
+        .map(|r| {
+            let m = r.handle.metrics();
+            (
+                r.name.clone(),
+                WorkerSample {
+                    busy: m.worker_total_busy_duration(0),
+                    park: m.worker_park_count(0),
+                    unpark: m.worker_park_unpark_count(0),
+                },
+            )
+        })
+        .collect();
+    Some(Snapshot {
+        at: Instant::now(),
+        workers,
+        threads: read_threads(),
+        io,
+        owners: owner_samples(),
+    })
+}
+
+/// The `[THR] io` and `[LAG] io` lines of every dedicated I/O runtime, and
+/// the `[IOWN]` lines of every owner, for the window `from → to`.
+fn io_lines(o: &Obs, phase: &str, side: &str, extra: &str, wall: Duration, from: Option<&Snapshot>, to: &Snapshot) -> Vec<String> {
+    let wall_s = wall.as_secs_f64().max(1e-9);
+    let mut out = Vec::new();
+    for (name, w) in &to.io {
+        let base = from
+            .and_then(|f| f.io.iter().find(|(n, _)| n == name).map(|(_, s)| *s))
+            .unwrap_or_default();
+        let busy = w.busy.saturating_sub(base.busy).as_secs_f64();
+        out.push(format!(
+            "[THR] io phase={phase} side={side}{extra} rt={name} busy_s={busy:.3} busy_frac={:.3} park={} unpark={} wall_s={wall_s:.3}",
+            busy / wall_s,
+            w.park.saturating_sub(base.park),
+            w.unpark.saturating_sub(base.unpark),
+        ));
+    }
+    let (a, b) = match from {
+        Some(f) => (
+            f.at.saturating_duration_since(o.origin).as_micros() as u64,
+            to.at.saturating_duration_since(o.origin).as_micros() as u64,
+        ),
+        None => (0, u64::MAX),
+    };
+    for r in o.io.lock().iter() {
+        let lat = r.lag.window(a, b);
+        out.push(
+            lag_line(phase, side, &format!("{extra} rt={}", r.name), &lat, r.lag.dropped.load(Ordering::Relaxed))
+                .replacen("[LAG] ", "[LAG] io ", 1),
+        );
+    }
+    let base: &[OwnerSample] = from.map_or(&[], |f| f.owners.as_slice());
+    out.extend(iown_lines(phase, side, extra, wall, base, &to.owners));
+    out
 }
 
 /// Print the `[THR]` and `[LAG]` lines for the window `from → now`
@@ -382,6 +586,9 @@ pub fn emit_window(from: &Snapshot, extra: &str) {
     let b = to.at.saturating_duration_since(o.origin).as_micros() as u64;
     let lat = o.lag.window(a, b);
     crate::readout!("{}", lag_line("xfer", side, extra, &lat, o.lag.dropped.load(Ordering::Relaxed)));
+    for l in io_lines(o, "xfer", side, extra, wall, Some(from), &to) {
+        crate::readout!("{l}");
+    }
 }
 
 /// Print the cumulative `phase=run` lines (process end). No-op when the
@@ -408,6 +615,9 @@ pub fn emit_run_end() {
         "{} final=1",
         lag_line("run", side, "", &lat, o.lag.dropped.load(Ordering::Relaxed))
     );
+    for l in io_lines(o, "run", side, "", wall, None, &to) {
+        crate::readout!("{l}");
+    }
 }
 
 #[cfg(test)]
@@ -483,6 +693,36 @@ mod tests {
         let l = thr_lines("run", "client", "", Duration::from_secs(1), None, (&w[..], None), 100.0);
         assert!(l.iter().any(|x| x.starts_with("[THR] os unavailable")), "{l:?}");
         assert!(l.last().unwrap().contains("threads=- cpu_s=- cores=-"), "{l:?}");
+    }
+
+    /// `[IOWN]`: window deltas per owner, joined by serial; the lock-wait
+    /// gauge is section wall − section thread CPU, over the window's wall;
+    /// absent CPU reads `-`.
+    #[test]
+    fn the_iown_line_carries_deltas_and_the_asleep_gauge() {
+        let from = [OwnerSample { serial: 9, polls: 10, q_secs: 1, q_wall_ns: 1_000_000, q_cpu_ns: 400_000, ..Default::default() }];
+        let to = [OwnerSample {
+            serial: 9,
+            path: 1,
+            rt: "rp-io-0".into(),
+            polls: 110,
+            tx_dgrams: 50,
+            q_secs: 11,
+            q_wall_ns: 401_000_000,
+            q_cpu_ns: 200_400_000,
+            drv_on: 7,
+            ..Default::default()
+        }];
+        let l = iown_lines("xfer", "client", " run=1", Duration::from_secs(2), &from, &to);
+        assert_eq!(l.len(), 1);
+        let s = &l[0];
+        assert!(s.starts_with("[IOWN] phase=xfer side=client run=1 path=1 rt=rp-io-0 polls=100 "), "{s}");
+        assert!(s.contains(" tx_dg=50 "), "{s}");
+        assert!(s.contains(" q_secs=10 q_wall_us=400000 q_asleep_us=200000 asleep_frac=0.1000 "), "{s}");
+        assert!(s.contains(" drv_on=7 drv_off=0 wall_s=2.000"), "{s}");
+        let na = [OwnerSample { serial: 3, q_secs: 1, q_cpu_unavailable: true, ..Default::default() }];
+        let l = iown_lines("run", "server", "", Duration::from_secs(1), &[], &na);
+        assert!(l[0].contains("q_asleep_us=- asleep_frac=-"), "{}", l[0]);
     }
 
     #[test]

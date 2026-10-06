@@ -243,6 +243,11 @@ pub struct RuntimeGates {
     pub recv_request_law: bool,
     /// `RWM_RANK_FEEDBACK` (absent, arm): requests at `m = clamp(⌈ln 2/−ln π₀⌉, 1, A*)`.
     pub rank_feedback: bool,
+    /// `RWM_IO_RT` (`shared`, measurement arm; threading Q1): where each
+    /// path's I/O owner runs — `shared` = a task on the main runtime, `own` =
+    /// a task on one of K dedicated `current_thread` runtimes (`rp-io-<k>`).
+    /// The same owner code either way; a placement, never a δ/ρ mode.
+    pub io_rt: crate::transport::IoRtArm,
 
     // ── Instruments (ADR-0052; observation only) ──
     /// `RWM_DIAG` (off): the transport-ceiling / recovery-plane `[DIAG]`.
@@ -410,6 +415,7 @@ impl RuntimeGates {
             completion_exposure: env_flag("RWM_COMPLETION_EXPOSURE", false),
             recv_request_law: env_flag("RWM_RECV_REQUEST_LAW", false),
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
+            io_rt: crate::transport::IoRtArm::parse(std::env::var("RWM_IO_RT").ok().as_deref()),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
@@ -481,7 +487,7 @@ impl RuntimeGates {
              RWM_DERIVED_SWEEP={} RWM_HOLDDOWN_Q={} \
              RWM_REFRESH_FLOOR_US={} RWM_DELTA={} RWM_COPA_DELTA={} \
              RWM_COMPLETION_EXPOSURE={} \
-             RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} \
+             RWM_RECV_REQUEST_LAW={} RWM_RANK_FEEDBACK={} RWM_IO_RT={} \
              RWM_DIAG={} RWM_ACKDIAG={} RWM_ACKDIAG_WINDOW_US={} \
              RWM_RTT_DUMP={} RWM_RTT_DUMP_MAX={} \
              RWM_SUCC_DUMP={} RWM_SUCC_DUMP_MAX={} \
@@ -522,6 +528,9 @@ impl RuntimeGates {
             b(self.completion_exposure),
             // Consumed at both endpoints, so echoed at both.
             b(self.recv_request_law), b(self.rank_feedback),
+            // The placement arm: echoed at both endpoints (each places its
+            // own owners).
+            self.io_rt.name(),
             b(self.diag), b(self.ackdiag), self.ackdiag_window_us,
             b(self.rtt_dump), self.rtt_dump_max,
             b(self.succ_dump), self.succ_dump_max,

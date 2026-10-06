@@ -179,6 +179,20 @@ fn symbol_size_for_hint(hint: ProtocolHint) -> u16 {
 
 /// RTCP-style report interval (how often we send PathReport + Ping).
 const REPORT_INTERVAL: Duration = Duration::from_secs(2);
+
+/// The inbound message channel's bound in MESSAGES (ADR-0011: large, so the
+/// readers do not stall under load). The value is ADR-0011's literal,
+/// unchanged — named, not new.
+pub(crate) const MSG_CHANNEL_DEPTH: usize = 4096;
+
+/// Threading Q1: the inbound channel carries I/O-owner batches (one per
+/// owner poll, ≤ `INBOUND_BATCH_MAX` = 32 datagrams each), so its depth in
+/// batches is `MSG_CHANNEL_DEPTH / INBOUND_BATCH_MAX` = 128: the worst case
+/// held is 128 × 32 = 4096 datagrams, ADR-0011's bound unchanged (not 4096
+/// batches, which would be up to 131 072 datagrams). The receiver drains
+/// with `recv_many` up to this depth (one coop-budget unit per call).
+pub(crate) const MSG_CHANNEL_BATCHES: usize =
+    MSG_CHANNEL_DEPTH / crate::transport::io_owner::INBOUND_BATCH_MAX;
 /// Maximum window size for sliding-window FEC (source symbols in encoder window).
 const MAX_WINDOW_SIZE: usize = 200;
 // Reorder-buffer defaults are supplied by `config::resolve` and reach the
@@ -749,7 +763,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     }
 
     // Create QUIC transport
-    let mut transport = QuicTransport::new(
+    let transport = QuicTransport::new(
         &config.bind_addrs,
         config.is_server,
         config.pin_cert.as_deref(),
@@ -880,12 +894,15 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     );
 
     // Channel for received messages from all paths
-    // ADR-0011: larger message channel to avoid stalling under load
-    let (msg_tx, msg_rx) = mpsc::channel::<(u32, WireMessage)>(4096);
+    // ADR-0011: larger message channel to avoid stalling under load.
+    // Threading Q1: each item is one I/O-owner poll's datagrams (a batch of
+    // ≤ INBOUND_BATCH_MAX); the depth in batches keeps the worst case at
+    // ADR-0011's 4096 datagrams (see `MSG_CHANNEL_BATCHES`).
+    let (msg_tx, msg_rx) = mpsc::channel::<crate::transport::InboundBatch>(MSG_CHANNEL_BATCHES);
     // Dedicated channel for stream-origin control: liveness must not queue
-    // behind the data flood (see spawn_receiver_for_path).
+    // behind the data flood (see `QuicTransport::start_readers_for_path`).
     let (ctrl_tx, ctrl_rx) = mpsc::channel::<(u32, WireMessage)>(256);
-    let _recv_handles = transport.spawn_receivers(msg_tx.clone(), ctrl_tx.clone());
+    transport.start_readers(msg_tx.clone(), ctrl_tx.clone()).await;
 
     // Sender task: TUN → frame → encode → schedule → send
     let transport_arc = Arc::new(transport);
@@ -1896,14 +1913,20 @@ async fn run_window_sender(
     // Announce window mode to peer on all paths
     // (P1 D2: the path set is collected and the guard dropped before any
     // quinn call — no quinn call is made with the scheduler held.)
+    // (Threading Q1: staged and handed to each path's I/O owner in one
+    // control-lane batch, before the sender state — and its own staging —
+    // exists.)
     {
         let paths = control_broadcast_paths(&scheduler.lock());
+        let mut announce = crate::transport::TxBatch::new();
         for pid in paths {
             let _ = transport.send_control_datagram(
+                &mut announce,
                 pid,
                 ControlMessage::WindowStart { symbol_size, backend: fec_backend, packed: pol.use_packing },
             );
         }
+        transport.flush(&mut announce).await;
     }
 
     // GDIAG / GLIFE stall attribution (the gauge and its documentation live
@@ -2717,6 +2740,12 @@ async fn run_window_sender(
             }
         }
 
+        // Threading Q1: hand everything this iteration staged — the Law-0
+        // burst, its repairs, any control datagram — to the paths' I/O
+        // owners, one batch per path, before the loop waits. A full owner
+        // channel back-pressures here (charged to `busy`, as the quinn
+        // handoff it replaces was). Nothing is staged across a wait.
+        transport.flush(&mut st.tx).await;
         // Wait attribution: which `select!` arm woke this iteration. Every arm below writes its
         // bucket index; the charge happens once, after the await, and reads
         // the clock only under RWM_DIAG. The index is written unconditionally
@@ -2922,8 +2951,11 @@ async fn run_window_sender(
                 // Send Shutdown on all paths (P1 D2: guard dropped first).
                 let paths = control_broadcast_paths(&scheduler.lock());
                 for pid in paths {
-                    let _ = transport.send_control_datagram(pid, ControlMessage::Shutdown);
+                    let _ = transport.send_control_datagram(&mut st.tx, pid, ControlMessage::Shutdown);
                 }
+                // The packer's last symbol and the Shutdowns, after every
+                // burst staged before them (data lane first per path).
+                transport.flush(&mut st.tx).await;
                 eta_final.flush_final();
                 // `[WALL]` and `[CCAP]` are not emitted here. They are emitted
                 // by `ccap`'s destructor (`SenderTeardownGauges`), which is on
@@ -3019,6 +3051,8 @@ async fn run_window_sender(
                     // `[WALL]`/`[CCAP]`: see the shutdown arm above — emitted
                     // by `ccap`'s destructor, on every exit path.
                     eta_final.flush_final();
+                    // The packer's last symbol, to the owners.
+                    transport.flush(&mut st.tx).await;
                     info!("TUN closed");
                     return;
                 }
@@ -3305,7 +3339,7 @@ async fn run_window_sender(
                     let now_r = now_us();
                     let seqs = batch_counter.next(path);
                     let batch = SymbolBatch::new(vec![sym], now_r, seqs, path);
-                    let sent = match transport.send_symbols(path, batch) {
+                    let sent = match transport.send_symbols(&mut st.tx, path, batch) {
                         Ok(()) => true,
                         Err(e) => {
                             warn!(path, ?e, "failed to send requested repair");

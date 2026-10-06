@@ -5701,6 +5701,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
         sack_tx: None,
         copa_feed: None,
         mstar_anchor: true,
+        out: &std::cell::RefCell::new(crate::transport::TxBatch::new()),
     };
     f(&ctx)
 }
@@ -5823,6 +5824,7 @@ async fn p1_d1_a_window_ack_wakes_the_sender() {
         sack_tx: None,
         copa_feed: None,
         mstar_anchor: true,
+        out: &std::cell::RefCell::new(crate::transport::TxBatch::new()),
     };
     // A stored permit resolves on the first poll: a zero timeout polls the
     // inner future once before it looks at the (paused) clock.

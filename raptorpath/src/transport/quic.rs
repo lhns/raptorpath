@@ -8,19 +8,22 @@
 //! - Default: self-signed cert, skip verification (dev/testing)
 //! - Pinned: verify server cert matches a pinned DER/PEM file (production)
 
+use super::io_owner::{
+    self, InboundBatch, IoCmd, IoPlacement, IoRtArm, Lane, PathIo, PathView, TxBatch,
+};
 use super::l0_netem::L0Netem;
 use super::rcvbuf::{self, RcvbufGrant};
-use super::protocol::{ControlMessage, Handshake, PROTOCOL_VERSION, SymbolBatch, WireMessage};
+use super::protocol::{ControlMessage, SymbolBatch, WireMessage};
 use crate::scheduler::PathId;
 use dashmap::DashMap;
-use quinn::{ClientConfig, Endpoint, ServerConfig};
+use quinn::{ClientConfig, ServerConfig};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 // ───────────────────────────────────────────────────────────────────────────
 // QUIC substrate congestion-controller override (env `RWM_QUIC_CC`, default
@@ -213,12 +216,17 @@ fn quic_cc_factory(
 
 /// A QUIC-based multipath transport.
 ///
-/// Uses DashMap for connections so paths can be added/removed at runtime.
+/// Threading Q1: every path is served by its I/O owner
+/// (`transport/io_owner.rs`), the only code that calls quinn for that path.
+/// This struct holds, per path, the owner's channel and its published view —
+/// never a `quinn::Connection` — plus the non-quinn per-path state (the
+/// pass-through CC windows, the receive-buffer probe sockets).
 pub struct QuicTransport {
-    /// Local endpoints (one per bind address / path)
-    endpoints: DashMap<PathId, Endpoint>,
-    /// Active connections per path
-    connections: DashMap<PathId, Arc<quinn::Connection>>,
+    /// Per path: the owner's channel and its published view.
+    paths: DashMap<PathId, PathIo>,
+    /// Bumped on every path add/remove: producers' cached handles revalidate
+    /// against it (`TxBatch`), so no map is read per datagram.
+    epoch: std::sync::atomic::AtomicU64,
     /// Whether this transport is a server
     is_server: bool,
     /// Optional pinned certificate for client-side verification.
@@ -234,18 +242,10 @@ pub struct QuicTransport {
     cc_windows: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
     /// Per-path record-only pass-through congestion stats (diagnostics).
     cc_stats: DashMap<PathId, Arc<PassthroughCcStats>>,
-    /// `RWM_DIAG`: run the datagram send-queue audit at the
-    /// `send_datagram_shaped` seam. Resolved once, here, so the shipped
-    /// default pays neither the extra connection-lock take nor the atomics.
+    /// `RWM_DIAG`: run the datagram send-queue audit in the owner. Resolved
+    /// once, here, so the shipped default pays neither the extra
+    /// connection-lock take nor the atomics.
     dg_audit: bool,
-    /// Datagram send-queue audit counters, per path. See
-    /// `datagram_queue_stats`.
-    dg_stats: DashMap<PathId, Arc<DatagramQueueAudit>>,
-    /// `RWM_DIAG` receive-side audit: datagrams the app read from quinn
-    /// (`read_datagram` Ok), per path. Against quinn's own
-    /// `frame_rx.datagram` it names what quinn's bounded incoming buffer
-    /// evicted before the app saw it. See `datagram_rx_audit`.
-    dg_rx_read: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>>,
     /// Per path: a clone of the endpoint's UDP socket (same kernel socket,
     /// second fd), kept to read the socket's live `SO_RCVBUF` and its
     /// kernel drop count (`SO_MEMINFO`) — quinn does not expose the fd.
@@ -254,86 +254,13 @@ pub struct QuicTransport {
     /// Per path: the `SO_RCVBUF` request and the read-back grant at bind
     /// (transport/rcvbuf.rs; echoed once as `[RCVBUF]`).
     rcvbuf_grants: DashMap<PathId, RcvbufGrant>,
-}
-
-/// Bind one path's endpoint socket with the receive-buffer request
-/// (transport/rcvbuf.rs), echo the grant, and hand the socket to quinn.
-/// Returns the endpoint, a probe clone of its socket, and the grant.
-fn bind_endpoint(
-    path_id: PathId,
-    addr: SocketAddr,
-    server_config: Option<ServerConfig>,
-) -> anyhow::Result<(Endpoint, std::net::UdpSocket, RcvbufGrant)> {
-    let (sock, grant) = rcvbuf::bind_udp_with_rcvbuf(addr, rcvbuf::RCVBUF_REQUEST)?;
-    let probe = sock.try_clone()?;
-    let role = if server_config.is_some() { "server" } else { "client" };
-    let local = sock.local_addr().unwrap_or(addr);
-    crate::readout!("{}", rcvbuf::echo_line(path_id as u32, role, local, &grant));
-    let runtime = quinn::default_runtime()
-        .ok_or_else(|| anyhow::anyhow!("no async runtime found"))?;
-    let ep = Endpoint::new(quinn::EndpointConfig::default(), server_config, sock, runtime)?;
-    Ok((ep, probe, grant))
-}
-
-/// The datagram send-queue audit (`RWM_DIAG`), one per path.
-///
-/// **The gap this closes.** `quinn::Connection::send_datagram` calls
-/// `Datagrams::send(data, drop = true)` (quinn-proto 0.11.14,
-/// `connection/datagrams.rs`:38–48), which silently evicts the oldest
-/// queued datagrams when the 4 MB send buffer overflows — about 3 300
-/// 1 200 B symbols — logging a `trace!` nobody enables and returning `Ok`.
-/// The engine's `src=`/`cod=` gauges count handoffs, not transmissions, so
-/// an evicted symbol is indistinguishable from a delivered one. Store caps
-/// of a few thousand symbols are the same order as that buffer.
-///
-/// **It cannot be counted exactly from quinn's public API, and this is what
-/// is available instead.** quinn exposes no eviction counter and no hook;
-/// `ConnectionStats` counts frames transmitted, not datagrams dropped before
-/// transmission. What it does expose is
-/// `Connection::datagram_send_buffer_space()`, which is
-/// `datagram_send_buffer_size.saturating_sub(outgoing_total)`. Read at the
-/// seam, immediately before the send, that gives an exact predicate:
-///
-/// * quinn's eviction loop runs iff `outgoing_total > buffer_size` on entry;
-/// * `space == 0` iff `outgoing_total >= buffer_size` on entry.
-///
-/// So `full` counts every call that evicted, plus the measure-zero tie where
-/// the queue is byte-exactly full. **`full` is therefore an upper bound on
-/// the number of evicting calls that is tight to one boundary case, and a
-/// lower bound on the number of datagrams evicted** — one call's `while`
-/// loop pops until it is back under the ceiling, which is one datagram when
-/// sizes are uniform (ours are: 1 200 B symbols) and more when they are not.
-/// Both directions are named because neither is exact.
-///
-/// The corroborating cross-check is independent of that predicate:
-/// `tx_frames` is quinn's own `stats().frame_tx.datagram`, the count of
-/// DATAGRAM frames actually put on the wire. They are never
-/// retransmitted, so in a run that ends with a drained queue
-/// `handoff − tx_frames` is the total lost to eviction, computed without
-/// reference to `full` at all. `space` is echoed so the queue depth at the
-/// last DIAG window is readable and `handoff − tx_frames` can be corrected
-/// for what was still queued.
-///
-/// **Off-value property:** with `RWM_DIAG` unset the audit does not run and
-/// every counter reads 0, so `dgq[...]` never appears — enforced by
-/// `transport::quic::tests::datagram_queue_audit_is_off_without_diag`.
-///
-/// **Scope:** only the real `conn.send_datagram` path is audited. The
-/// `RWM_L0_NETEM` shim branch has its own transit ledger
-/// (`l0_transit_stats`) and does not touch quinn's datagram buffer at all.
-#[derive(Default)]
-pub struct DatagramQueueAudit {
-    /// Calls into the seam that quinn accepted (returned `Ok`).
-    pub handoff: std::sync::atomic::AtomicU64,
-    /// Calls whose `datagram_send_buffer_space()` was 0 on entry — the
-    /// eviction predicate. See the type doc for exactly what it bounds.
-    pub full: std::sync::atomic::AtomicU64,
-    /// Calls quinn rejected (`TooLarge` / `UnsupportedByPeer` / `Disabled`).
-    /// These are loud (the seam returns `Err`); counted so that
-    /// `handoff + err` reconciles with the engine's own handoff count.
-    pub err: std::sync::atomic::AtomicU64,
-    /// `datagram_send_buffer_space()` at the most recent call, in bytes.
-    pub space: std::sync::atomic::AtomicU64,
+    /// Where the owners run (`RWM_IO_RT`).
+    placement: IoPlacement,
+    /// The driver-routing probe (`RWM_RTOBS`, or a test): wrap each path's
+    /// congestion controller to record which thread quinn's driver polls on.
+    route_probe: bool,
+    /// The lock-wait gauge's clock reads (`RWM_RTOBS`).
+    gauge: bool,
 }
 
 impl QuicTransport {
@@ -342,10 +269,27 @@ impl QuicTransport {
     /// `pin_cert_path`: optional path to a DER or PEM certificate file.
     /// When provided, the client will verify that the server's certificate
     /// matches this pinned cert (SHA-256 fingerprint comparison).
+    ///
+    /// The owners are placed by `RWM_IO_RT` (`shared` on the current
+    /// runtime, `own` on the process's `rp-io-<k>` pool).
     pub async fn new(
         bind_addrs: &[SocketAddr],
         is_server: bool,
         pin_cert_path: Option<&Path>,
+    ) -> anyhow::Result<Self> {
+        let g = crate::gates::get();
+        let placement = IoPlacement::for_arm(g.io_rt);
+        Self::new_placed(bind_addrs, is_server, pin_cert_path, placement, g.rtobs).await
+    }
+
+    /// [`Self::new`] with an explicit placement and routing probe (tests use
+    /// private pools so their runtimes are not shared with other tests).
+    pub async fn new_placed(
+        bind_addrs: &[SocketAddr],
+        is_server: bool,
+        pin_cert_path: Option<&Path>,
+        placement: IoPlacement,
+        route_probe: bool,
     ) -> anyhow::Result<Self> {
         let pinned_cert_hash = pin_cert_path
             .map(|p| load_pinned_cert_hash(p))
@@ -362,66 +306,130 @@ impl QuicTransport {
                 "RWM_QUIC_CC=passthrough: quinn congestion window is engine-owned (per path)"
             );
         }
-        let cc_windows: DashMap<PathId, Arc<std::sync::atomic::AtomicU64>> = DashMap::new();
-        let cc_stats: DashMap<PathId, Arc<PassthroughCcStats>> = DashMap::new();
-
-        let endpoints = DashMap::new();
-        let rx_probe = DashMap::new();
-        let rcvbuf_grants = DashMap::new();
-
-        for (i, addr) in bind_addrs.iter().enumerate() {
-            let cc = Self::cc_factory_for_path(
-                cc_passthrough,
-                &cc_windows,
-                &cc_stats,
-                i as PathId,
-            );
-            let endpoint = if is_server {
-                let (server_config, cert_der) = Self::generate_self_signed_config(cc)?;
-                // Log the server cert fingerprint so the user can pin it on the client
-                let fingerprint = sha256_fingerprint(&cert_der[0]);
-                info!(%addr, path_id = i, fingerprint = %hex::encode(fingerprint),
-                    "server endpoint bound — use this fingerprint for --pin-cert");
-                bind_endpoint(i as PathId, *addr, Some(server_config))?
-            } else {
-                let (mut ep, probe, grant) = bind_endpoint(i as PathId, *addr, None)?;
-                let client_config = Self::make_client_config(pinned_cert_hash, cc);
-                ep.set_default_client_config(client_config);
-                info!(%addr, path_id = i, "client endpoint bound");
-                (ep, probe, grant)
-            };
-            let (endpoint, probe, grant) = endpoint;
-            endpoints.insert(i as PathId, endpoint);
-            rx_probe.insert(i as PathId, probe);
-            rcvbuf_grants.insert(i as PathId, grant);
-        }
-
-        Ok(Self {
-            endpoints,
-            connections: DashMap::new(),
+        let t = Self {
+            paths: DashMap::new(),
+            epoch: std::sync::atomic::AtomicU64::new(0),
             is_server,
             pinned_cert_hash,
             l0_netem: L0Netem::from_env(),
             cc_passthrough,
-            cc_windows,
-            cc_stats,
+            cc_windows: DashMap::new(),
+            cc_stats: DashMap::new(),
             // Resolved once, at construction: the audit's per-datagram cost
             // (one connection-lock take for `datagram_send_buffer_space`)
             // must not exist on the shipped path. `RWM_DIAG` is already in
             // `RWM_FORWARD` and the `[GATES]` echo, so this adds no name to
             // the gate surface.
             dg_audit: crate::gates::get().diag,
-            dg_stats: DashMap::new(),
-            dg_rx_read: DashMap::new(),
-            rx_probe,
-            rcvbuf_grants,
-        })
+            rx_probe: DashMap::new(),
+            rcvbuf_grants: DashMap::new(),
+            placement,
+            route_probe,
+            gauge: crate::gates::get().rtobs,
+        };
+        for (i, addr) in bind_addrs.iter().enumerate() {
+            t.spawn_path(i as PathId, *addr).await?;
+        }
+        Ok(t)
+    }
+
+    /// The placement arm the owners run under.
+    pub fn io_arm(&self) -> IoRtArm {
+        self.placement.arm()
+    }
+
+    /// Spawn `path_id`'s owner on the placement's runtime and wait until it
+    /// has bound the path's endpoint there.
+    async fn spawn_path(&self, path_id: PathId, bind_addr: SocketAddr) -> anyhow::Result<()> {
+        let (handle, rt_name, release) = match &self.placement {
+            IoPlacement::Shared(h) => (h.clone(), "main".to_string(), None),
+            IoPlacement::Own(pool) => {
+                let k = pool.assign();
+                let rt = pool.runtime(k);
+                (rt.handle.clone(), rt.name.clone(), Some((pool.clone(), k)))
+            }
+        };
+        let side = if self.is_server { "server" } else { "client" };
+        let view = PathView::new(path_id, side, rt_name.clone());
+        let mut cc = Self::cc_factory_for_path(
+            self.cc_passthrough,
+            &self.cc_windows,
+            &self.cc_stats,
+            path_id,
+        );
+        if self.route_probe {
+            cc = cc.map(|inner| {
+                Arc::new(io_owner::RouteProbeFactory { inner, view: view.clone() })
+                    as Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>
+            });
+        }
+        let (server_config, client_config) = if self.is_server {
+            let (server_config, cert_der) = Self::generate_self_signed_config(cc)?;
+            // Log the server cert fingerprint so the user can pin it on the client
+            let fingerprint = sha256_fingerprint(&cert_der[0]);
+            info!(addr = %bind_addr, path_id, fingerprint = %hex::encode(fingerprint),
+                "server endpoint bound — use this fingerprint for --pin-cert");
+            (Some(server_config), None)
+        } else {
+            info!(addr = %bind_addr, path_id, "client endpoint bound");
+            (None, Some(Self::make_client_config(self.pinned_cert_hash, cc)))
+        };
+        let (tx, cmd_rx) = mpsc::channel(io_owner::IO_CHANNEL_DEPTH);
+        let (bound_tx, bound_rx) = tokio::sync::oneshot::channel();
+        let pin_thread = matches!(self.placement, IoPlacement::Own(_));
+        let args = io_owner::OwnerArgs {
+            path: path_id,
+            bind: bind_addr,
+            server_config,
+            client_config,
+            view: view.clone(),
+            cmd_rx,
+            bound: Some(bound_tx),
+            shim: self.l0_netem.clone(),
+            is_server: self.is_server,
+            dg_audit: self.dg_audit,
+            gauge: self.gauge,
+            pin_thread,
+            release,
+        };
+        handle.spawn(io_owner::run_owner(args));
+        let (probe, grant) = bound_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended before binding"))??;
+        let (k, cores) = match &self.placement {
+            IoPlacement::Shared(_) => ("-".to_string(), io_owner::cores()),
+            IoPlacement::Own(pool) => (pool.len().to_string(), io_owner::cores()),
+        };
+        crate::readout!(
+            "[TOPO] io_rt={} side={side} path={path_id} rt={rt_name} k={k} cores={cores}",
+            self.placement.arm().name()
+        );
+        self.paths.insert(path_id, PathIo { tx, view });
+        self.rx_probe.insert(path_id, probe);
+        self.rcvbuf_grants.insert(path_id, grant);
+        self.epoch.fetch_add(1, std::sync::atomic::Ordering::Release);
+        Ok(())
+    }
+
+    /// The path's owner handle (a cold lookup: producers cache it).
+    fn io(&self, path_id: PathId) -> Option<PathIo> {
+        self.paths.get(&path_id).map(|p| p.value().clone())
+    }
+
+    /// The path's published view.
+    fn view(&self, path_id: PathId) -> Option<Arc<PathView>> {
+        self.paths.get(&path_id).map(|p| p.value().view.clone())
     }
 
     /// The `SO_RCVBUF` request and the kernel's grant for `path_id`'s
     /// endpoint socket, read back at bind.
     pub fn rcvbuf_grant(&self, path_id: PathId) -> Option<RcvbufGrant> {
         self.rcvbuf_grants.get(&path_id).map(|g| *g)
+    }
+
+    /// `path_id`'s endpoint socket's local address (from the probe clone).
+    pub fn local_addr(&self, path_id: PathId) -> Option<SocketAddr> {
+        self.rx_probe.get(&path_id)?.local_addr().ok()
     }
 
     /// `path_id`'s endpoint socket's live `SO_RCVBUF` (getsockopt now).
@@ -489,52 +497,37 @@ impl QuicTransport {
     /// wire clock for Copa's queue term d_q = wire_rtt − wire_RTTmin; the
     /// app-layer echo RTT stays with the reliability/tail machinery where
     /// end-to-end (pipeline-inclusive) delay is the right quantity.
+    ///
+    /// Threading Q1: read from the owner's published view (refreshed every
+    /// owner poll under `RWM_COPA_WIRE`, every `VIEW_REFRESH` otherwise).
     pub fn wire_rtt(&self, path_id: PathId) -> Option<std::time::Duration> {
-        crate::scheduler::sched_lock::assert_not_held("wire_rtt");
-        self.conn(path_id).map(|c| c.rtt())
-    }
-
-    /// The one way to a path's connection (threading P1, D5): clone the
-    /// `Arc` out of the map and drop the DashMap shard guard before any
-    /// quinn call or `.await`. An `Arc` clone is one atomic increment; a
-    /// `quinn::Connection` clone would take the connection mutex
-    /// (`ConnectionRef::clone`/`drop`), which is why the map stores an `Arc`.
-    #[inline]
-    fn conn(&self, path_id: PathId) -> Option<Arc<quinn::Connection>> {
-        self.connections.get(&path_id).map(|c| Arc::clone(c.value()))
+        self.view(path_id)?.rtt()
     }
 
     /// Quinn-level DATAGRAM frame counters for `path_id`:
-    /// `(datagram_frames_rx, datagram_frames_tx)` from `Connection::stats()`.
+    /// `(datagram_frames_rx, datagram_frames_tx)` from `Connection::stats()`
+    /// (the owner's published snapshot, ≤ `VIEW_REFRESH` old).
     ///
     /// Wedge forensics: `frame_rx.datagram` counts every DATAGRAM frame quinn
-    /// accepted at the packet layer — before the app's `read_datagram()` and
-    /// before quinn's bounded incoming datagram buffer (which silently drops
-    /// the oldest buffered datagram on overflow). If
-    /// this counter advances while the app-level receive loop sees nothing,
-    /// arriving datagrams are being destroyed between quinn's packet layer
-    /// and the application (buffer overflow), not lost on the wire.
+    /// accepted at the packet layer — before the app's read and before
+    /// quinn's bounded incoming datagram buffer (which silently drops the
+    /// oldest buffered datagram on overflow). If this counter advances while
+    /// the app-level receive loop sees nothing, arriving datagrams are being
+    /// destroyed between quinn's packet layer and the application (buffer
+    /// overflow), not lost on the wire.
     pub fn datagram_frame_stats(&self, path_id: PathId) -> Option<(u64, u64)> {
-        crate::scheduler::sched_lock::assert_not_held("datagram_frame_stats");
-        self.conn(path_id).map(|c| {
-            let s = c.stats();
-            (s.frame_rx.datagram, s.frame_tx.datagram)
-        })
+        self.view(path_id)?.frame_stats()
     }
 
     /// Quinn substrate congestion gauge for `path_id` (a diagnosis
     /// instrument — read only at the RWM_DIAG print, never gates anything):
     /// `(cwnd_bytes, congestion_events, lost_packets, sent_packets)` from
-    /// `Connection::stats().path`. Under the shipped BBR default the cwnd
-    /// IS 2 × quinn's internal BtlBŵ × RTprop, so a cwnd many multiples of
-    /// the true BDP·MTU is direct in-vivo evidence of the max-filter
-    /// over-read.
+    /// `Connection::stats().path` (the owner's published snapshot). Under the
+    /// shipped BBR default the cwnd IS 2 × quinn's internal BtlBŵ × RTprop,
+    /// so a cwnd many multiples of the true BDP·MTU is direct in-vivo
+    /// evidence of the max-filter over-read.
     pub fn quinn_path_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64)> {
-        crate::scheduler::sched_lock::assert_not_held("quinn_path_stats");
-        self.conn(path_id).map(|c| {
-            let p = c.stats().path;
-            (p.cwnd, p.congestion_events, p.lost_packets, p.sent_packets)
-        })
+        self.view(path_id)?.path_stats()
     }
 
     /// L0 shim transit counters, None when the shim is off —
@@ -564,419 +557,195 @@ impl QuicTransport {
         })
     }
 
-    /// Datagram send seam: the L0 netem shim (when active) shapes + schedules
-    /// the send; otherwise this is exactly `conn.send_datagram`.
-    fn send_datagram_shaped(
-        &self,
-        path_id: PathId,
-        conn: &quinn::Connection,
-        data: bytes::Bytes,
-    ) -> anyhow::Result<()> {
-        match &self.l0_netem {
-            Some(shim) => {
-                shim.send(path_id, self.is_server, conn, data);
-                Ok(())
-            }
-            None => {
-                if !self.dg_audit {
-                    conn.send_datagram(data)?;
-                    return Ok(());
-                }
-                use std::sync::atomic::Ordering::Relaxed;
-                // Read the queue depth before the send: quinn's eviction
-                // decision is taken against the state on entry, so this is
-                // the only moment at which the predicate is meaningful.
-                let space = conn.datagram_send_buffer_space() as u64;
-                let a = self
-                    .dg_stats
-                    .entry(path_id)
-                    .or_insert_with(|| Arc::new(DatagramQueueAudit::default()))
-                    .clone();
-                a.space.store(space, Relaxed);
-                if space == 0 {
-                    a.full.fetch_add(1, Relaxed);
-                }
-                match conn.send_datagram(data) {
-                    Ok(()) => {
-                        a.handoff.fetch_add(1, Relaxed);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        a.err.fetch_add(1, Relaxed);
-                        Err(e.into())
-                    }
-                }
-            }
-        }
-    }
-
     /// Datagram send-queue audit readout for a path (`RWM_DIAG` only):
     /// `(handoff, full, err, space_bytes, tx_frames)`. `None` when the audit
     /// is off or the path has never sent a datagram — which is the off-value
     /// property: no audit, no gauge, rather than a gauge reading zero for two
     /// different reasons.
     ///
-    /// `tx_frames` is read live from quinn (`stats().frame_tx.datagram`) —
-    /// DATAGRAM frames actually transmitted. See `DatagramQueueAudit` for why
-    /// `handoff − tx_frames` is the eviction estimate that does not depend on
-    /// the `full` predicate.
+    /// `tx_frames` is quinn's `stats().frame_tx.datagram` from the owner's
+    /// snapshot — DATAGRAM frames actually transmitted. See
+    /// `io_owner::DatagramQueueAudit` for why `handoff − tx_frames` is the
+    /// eviction estimate that does not depend on the `full` predicate.
     pub fn datagram_queue_stats(&self, path_id: PathId) -> Option<(u64, u64, u64, u64, u64)> {
-        crate::scheduler::sched_lock::assert_not_held("datagram_queue_stats");
         use std::sync::atomic::Ordering::Relaxed;
         if !self.dg_audit {
             return None;
         }
-        let a = self.dg_stats.get(&path_id)?.clone();
-        let tx_frames = self
-            .conn(path_id)
-            .map_or(0, |c| c.stats().frame_tx.datagram);
-        Some((
-            a.handoff.load(Relaxed),
-            a.full.load(Relaxed),
-            a.err.load(Relaxed),
-            a.space.load(Relaxed),
-            tx_frames,
-        ))
+        let v = self.view(path_id)?;
+        let a = &v.audit;
+        let (handoff, err) = (a.handoff.load(Relaxed), a.err.load(Relaxed));
+        if handoff + err == 0 {
+            return None;
+        }
+        let tx_frames = v.frame_stats().map_or(0, |(_, tx)| tx);
+        Some((handoff, a.full.load(Relaxed), err, a.space.load(Relaxed), tx_frames))
     }
 
     /// Receive-side datagram audit for a path (`RWM_DIAG` only):
     /// `(frame_rx, app_read)` — DATAGRAM frames quinn accepted at the packet
-    /// layer, and datagrams the app's receive loop read. `frame_rx −
-    /// app_read` is what quinn's bounded incoming buffer dropped (oldest
-    /// first) plus what is still buffered at the read: a local drop, which
-    /// the loss tracker cannot tell from wire loss. `None` when the audit is
-    /// off or the path has no receive loop.
+    /// layer, and datagrams the owner's reader read. `frame_rx − app_read`
+    /// is what quinn's bounded incoming buffer dropped (oldest first) plus
+    /// what is still buffered at the read: a local drop, which the loss
+    /// tracker cannot tell from wire loss. `None` when the audit is off or
+    /// the path's readers were never started.
     pub fn datagram_rx_audit(&self, path_id: PathId) -> Option<(u64, u64)> {
         if !self.dg_audit {
             return None;
         }
-        let read = self
-            .dg_rx_read
-            .get(&path_id)?
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let (frame_rx, _) = self.datagram_frame_stats(path_id)?;
+        let v = self.view(path_id)?;
+        if !v.readers_started.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        let read = v.app_read.load(std::sync::atomic::Ordering::Relaxed);
+        let (frame_rx, _) = v.frame_stats()?;
         Some((frame_rx, read))
     }
 
-    /// Connect to a peer on a specific path.
+    /// Connect to a peer on a specific path (in the path's owner).
     pub async fn connect(&self, path_id: PathId, peer_addr: SocketAddr) -> anyhow::Result<()> {
-        // P1 D5: clone the endpoint handle out (cold path) so no DashMap
-        // shard guard lives across the handshake's `.await`s.
-        let endpoint = self
-            .endpoints
-            .get(&path_id)
-            .map(|e| e.value().clone())
+        let io = self
+            .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
-
-        let connection = endpoint.connect(peer_addr, "raptorpath")?.await?;
-
-        // ADR-0010: perform handshake
-        let local_hs = Handshake {
-            version: PROTOCOL_VERSION,
-            max_block_size: 64 * 1024,
-            symbol_size: 1200,
-            path_id,
-        };
-        let _peer_hs = Self::perform_handshake(&connection, &local_hs).await?;
-
-        info!(path_id, %peer_addr, "connected and handshake complete");
-        self.connections.insert(path_id, Arc::new(connection));
-        Ok(())
-    }
-
-    /// Accept an incoming connection on a specific path.
-    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
-        // P1 D5: no shard guard across the accept/handshake `.await`s.
-        let endpoint = self
-            .endpoints
-            .get(&path_id)
-            .map(|e| e.value().clone())
-            .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
-
-        let incoming = endpoint
-            .accept()
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        io.tx
+            .send(IoCmd::Connect { peer: peer_addr, reply })
             .await
-            .ok_or_else(|| anyhow::anyhow!("endpoint closed"))?;
-        let connection = incoming.await?;
-
-        // ADR-0010: accept handshake from peer
-        let local_hs = Handshake {
-            version: PROTOCOL_VERSION,
-            max_block_size: 64 * 1024,
-            symbol_size: 1200,
-            path_id,
-        };
-        let _peer_hs = Self::accept_handshake(&connection, &local_hs).await?;
-
-        info!(path_id, remote = %connection.remote_address(), "accepted with handshake");
-        self.connections.insert(path_id, Arc::new(connection));
-        Ok(())
+            .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner is gone"))?;
+        rx.await.map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended during connect"))?
     }
 
-    /// Add a new path at runtime. Binds a new endpoint, connects or accepts,
-    /// and returns the connection for receiver spawning.
+    /// Accept an incoming connection on a specific path (in the path's
+    /// owner).
+    pub async fn accept(&self, path_id: PathId) -> anyhow::Result<()> {
+        let io = self
+            .io(path_id)
+            .ok_or_else(|| anyhow::anyhow!("no endpoint for path {path_id}"))?;
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        io.tx
+            .send(IoCmd::Accept { reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner is gone"))?;
+        rx.await.map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended during accept"))?
+    }
+
+    /// Add a new path at runtime: spawn its owner (which binds the endpoint
+    /// on its own runtime), then connect or accept there.
     pub async fn add_path(
         &self,
         path_id: PathId,
         bind_addr: SocketAddr,
         peer_addr: Option<SocketAddr>,
-    ) -> anyhow::Result<quinn::Connection> {
-        // Create and bind new endpoint
-        let cc = Self::cc_factory_for_path(
-            self.cc_passthrough,
-            &self.cc_windows,
-            &self.cc_stats,
-            path_id,
-        );
-        self.add_endpoint(path_id, bind_addr, cc)?;
-
-        // Connect or accept
-        if let Some(peer) = peer_addr {
-            self.connect(path_id, peer).await?;
-        } else {
-            self.accept(path_id).await?;
-        }
-
-        // Cold path: the receiver tasks own a plain `quinn::Connection`.
-        let conn = self
-            .conn(path_id)
-            .ok_or_else(|| anyhow::anyhow!("connection not found after setup"))?;
-        Ok(quinn::Connection::clone(&conn))
-    }
-
-    /// Bind `path_id`'s endpoint (the `add_path` half before connect/accept).
-    fn add_endpoint(
-        &self,
-        path_id: PathId,
-        bind_addr: SocketAddr,
-        cc: Option<Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>>,
     ) -> anyhow::Result<()> {
-        let (endpoint, probe, grant) = if self.is_server {
-            let (server_config, _cert) = Self::generate_self_signed_config(cc)?;
-            bind_endpoint(path_id, bind_addr, Some(server_config))?
+        self.spawn_path(path_id, bind_addr).await?;
+        if let Some(peer) = peer_addr {
+            self.connect(path_id, peer).await
         } else {
-            let (mut ep, probe, grant) = bind_endpoint(path_id, bind_addr, None)?;
-            ep.set_default_client_config(Self::make_client_config(self.pinned_cert_hash, cc));
-            (ep, probe, grant)
-        };
-        self.endpoints.insert(path_id, endpoint);
-        self.rx_probe.insert(path_id, probe);
-        self.rcvbuf_grants.insert(path_id, grant);
-        Ok(())
+            self.accept(path_id).await
+        }
     }
 
-    /// Remove a path at runtime.
+    /// Remove a path at runtime: its owner closes the connection and ends.
     pub fn remove_path(&self, path_id: PathId) {
-        crate::scheduler::sched_lock::assert_not_held("remove_path");
-        if let Some((_, conn)) = self.connections.remove(&path_id) {
-            conn.close(0u32.into(), b"path removed");
+        if let Some((_, io)) = self.paths.remove(&path_id) {
+            if let Err(mpsc::error::TrySendError::Full(cmd)) = io.tx.try_send(IoCmd::Close) {
+                let tx = io.tx.clone();
+                tokio::spawn(async move {
+                    let _ = tx.send(cmd).await;
+                });
+            }
         }
-        self.endpoints.remove(&path_id);
         self.rx_probe.remove(&path_id);
         self.rcvbuf_grants.remove(&path_id);
+        self.epoch.fetch_add(1, std::sync::atomic::Ordering::Release);
         info!(path_id, "path removed");
     }
 
-    /// Spawn receive loops for a single path, feeding into a channel.
-    pub fn spawn_receiver_for_path(
+    /// Start every path's readers: the owner forwards inbound datagrams to
+    /// `tx` (one batch per owner poll) and uni-stream control messages to
+    /// `ctrl_tx`.
+    pub async fn start_readers(
+        &self,
+        tx: mpsc::Sender<InboundBatch>,
+        ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+    ) {
+        let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
+        for path_id in ids {
+            self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone()).await;
+        }
+    }
+
+    /// Start one path's readers (see [`Self::start_readers`]). Stream-origin
+    /// control messages go to their own channel: the data channel backs up
+    /// under symbol floods, and liveness (PathReport/Ping) queued behind it
+    /// would starve the dead-path check and kill the tunnel under bulk
+    /// transfers.
+    pub async fn start_readers_for_path(
         &self,
         path_id: PathId,
-        conn: quinn::Connection,
-        tx: mpsc::Sender<(PathId, WireMessage)>,
+        tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
-    ) -> Vec<tokio::task::JoinHandle<()>> {
-        let mut handles = vec![];
-
-        let conn_uni = conn.clone();
-        // `RWM_DIAG` receive-side audit counter (None = audit off: no atomic
-        // on the shipped path).
-        let rx_read = self.dg_audit.then(|| {
-            self.dg_rx_read
-                .entry(path_id)
-                .or_insert_with(|| Arc::new(std::sync::atomic::AtomicU64::new(0)))
-                .clone()
-        });
-        // Stream-origin control messages go to a dedicated channel: the
-        // data channel backs up under symbol floods, and liveness
-        // (PathReport/Ping) queued behind it would starve the dead-path
-        // check and kill the tunnel under bulk transfers.
-        let tx_uni = ctrl_tx;
-
-        // Datagram receiver
-        let handle = tokio::spawn(async move {
-            loop {
-                match conn.read_datagram().await {
-                    Ok(data) => match {
-                        if let Some(c) = &rx_read {
-                            c.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        WireMessage::deserialize(&data)
-                    } {
-                        Ok(msg) => {
-                            if tx.send((path_id, msg)).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            warn!(path_id, ?e, "failed to deserialize datagram");
-                        }
-                    },
-                    Err(e) => {
-                        error!(path_id, ?e, "datagram receive error");
-                        break;
-                    }
-                }
-            }
-        });
-        handles.push(handle);
-
-        // Uni-stream receiver (for reliable control messages)
-        let uni_handle = tokio::spawn(async move {
-            loop {
-                match conn_uni.accept_uni().await {
-                    Ok(mut recv) => {
-                        tracing::debug!(path_id, "uni stream accepted");
-                        let mut len_buf = [0u8; 4];
-                        if let Err(e) = recv.read_exact(&mut len_buf).await {
-                            tracing::debug!(path_id, ?e, "uni stream length read failed");
-                            continue;
-                        }
-                        let len = u32::from_be_bytes(len_buf) as usize;
-                        if len > 1_000_000 { continue; }
-                        let mut data = vec![0u8; len];
-                        if recv.read_exact(&mut data).await.is_err() {
-                            continue;
-                        }
-                        match WireMessage::deserialize(&data) {
-                            Ok(msg) => {
-                                if tx_uni.send((path_id, msg)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                warn!(path_id, ?e, "failed to deserialize uni stream message");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!(path_id, ?e, "uni stream accept error");
-                        break;
-                    }
-                }
-            }
-        });
-        handles.push(uni_handle);
-
-        handles
-    }
-
-    /// Perform handshake on a connection (client side). Returns the peer's handshake.
-    async fn perform_handshake(
-        conn: &quinn::Connection,
-        local: &Handshake,
-    ) -> anyhow::Result<Handshake> {
-        let (mut send, mut recv) = conn.open_bi().await?;
-
-        let data = local.serialize()?;
-        send.write_all(&(data.len() as u32).to_be_bytes()).await?;
-        send.write_all(&data).await?;
-        send.finish()?;
-
-        let mut len_buf = [0u8; 4];
-        recv.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf) as usize;
-        if len > 10_000 {
-            anyhow::bail!("handshake too large: {len} bytes");
+    ) {
+        if let Some(io) = self.io(path_id) {
+            let _ = io.tx.send(IoCmd::StartReaders { msg_tx: tx, ctrl_tx }).await;
         }
-        let mut buf = vec![0u8; len];
-        recv.read_exact(&mut buf).await?;
-
-        let peer = Handshake::deserialize(&buf)?;
-        info!(
-            local_version = local.version,
-            peer_version = peer.version,
-            peer_path_id = peer.path_id,
-            "handshake complete"
-        );
-        Ok(peer)
     }
 
-    /// Accept a handshake from a peer (server side).
-    async fn accept_handshake(
-        conn: &quinn::Connection,
-        local: &Handshake,
-    ) -> anyhow::Result<Handshake> {
-        let (mut send, mut recv) = conn.accept_bi().await?;
-
-        let mut len_buf = [0u8; 4];
-        recv.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf) as usize;
-        if len > 10_000 {
-            anyhow::bail!("handshake too large: {len} bytes");
-        }
-        let mut buf = vec![0u8; len];
-        recv.read_exact(&mut buf).await?;
-
-        let peer = Handshake::deserialize(&buf)?;
-
-        let data = local.serialize()?;
-        send.write_all(&(data.len() as u32).to_be_bytes()).await?;
-        send.write_all(&data).await?;
-        send.finish()?;
-
-        info!(
-            local_version = local.version,
-            peer_version = peer.version,
-            peer_path_id = peer.path_id,
-            "handshake complete (server)"
-        );
-        Ok(peer)
+    /// Stage one serialized datagram for `path_id` in the producer's batch.
+    fn stage(&self, out: &mut TxBatch, path_id: PathId, lane: Lane, b: bytes::Bytes) -> anyhow::Result<()> {
+        let epoch = self.epoch.load(std::sync::atomic::Ordering::Acquire);
+        out.stage(&|p| self.io(p), epoch, path_id, lane, b)
     }
 
-    /// Send a symbol batch over a path using QUIC datagrams.
+    /// Hand the producer's staged batches to their owners (one `IoCmd` per
+    /// path and lane). Call once per producer loop iteration, before the
+    /// producer waits.
+    pub async fn flush(&self, out: &mut TxBatch) {
+        out.flush().await
+    }
+
+    /// Send a symbol batch over a path using QUIC datagrams (staged in `out`).
     ///
     /// With `RWM_WIRE_COMPACT` (default ON, v5 framing), one-symbol batches
     /// — the window-mode data path, one symbol per datagram — ride the
     /// compact tag+varint frame (~14–16 B vs the 65-B magic+bincode
     /// framing). Multi-symbol (block-mode) batches and everything else keep
     /// the bincode framing.
-    pub fn send_symbols(&self, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
-        crate::scheduler::sched_lock::assert_not_held("send_symbols");
-        let conn = self
-            .conn(path_id)
-            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
-
+    pub fn send_symbols(&self, out: &mut TxBatch, path_id: PathId, batch: SymbolBatch) -> anyhow::Result<()> {
         // The two `RWM_CPUPROF` seams of the send path, adjacent rather than
         // nested so their shares add rather than over-count:
         //   `ser`  the wire serialization (compact v5, or bincode)
-        //   `hand` the datagram handoff to quinn — not the send syscall, which
-        //          happens on quinn's endpoint driver task and is invisible
-        //          here by construction (see `net::cpuprof` module docs).
+        //   `hand` the datagram handoff — since threading Q1 the staging into
+        //          the producer's batch for the path's I/O owner, not quinn's
+        //          `send_datagram` (which the owner calls; see
+        //          `net::cpuprof` module docs).
         use crate::net::cpuprof::{timed, Seam};
         if crate::transport::protocol::wire_compact_active() {
             let compact = timed(Seam::Ser, || {
                 crate::transport::protocol::serialize_data_compact(&batch)
             });
             if let Some(buf) = compact {
-                return timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf.into()));
+                return timed(Seam::Hand, || self.stage(out, path_id, Lane::Data, buf.into()));
             }
         }
         let msg = WireMessage::Data(batch);
         let data = timed(Seam::Ser, || msg.serialize())?;
 
-        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, data.into()))
+        timed(Seam::Hand, || self.stage(out, path_id, Lane::Data, data.into()))
     }
 
     /// [`Self::send_symbols`] for ONE symbol without building a
-    /// `SymbolBatch` — the window sender's per-datagram path. Sends exactly
-    /// what `send_symbols(path_id, SymbolBatch::new(vec![sym.clone()],
-    /// send_timestamp_us, seqs, path_id).with_eta(eta_rel_us))` sends, byte
+    /// `SymbolBatch` — the window sender's per-datagram path. Stages exactly
+    /// what `send_symbols(out, path_id, SymbolBatch::new(vec![sym.clone()],
+    /// send_timestamp_us, seqs, path_id).with_eta(eta_rel_us))` stages, byte
     /// for byte (the compact frame through the same writer; the bincode
     /// fallback through that very call), and fails the same way on a
-    /// missing connection. The compact frame is carved from the caller's
-    /// `arena` (see `protocol::serialize_symbol_compact_in`).
+    /// missing path. The compact frame is carved from the caller's `arena`
+    /// (see `protocol::serialize_symbol_compact_in`).
+    #[allow(clippy::too_many_arguments)]
     pub fn send_symbol(
         &self,
+        out: &mut TxBatch,
         path_id: PathId,
         sym: &crate::fec::WireSymbol,
         send_timestamp_us: u64,
@@ -984,15 +753,11 @@ impl QuicTransport {
         eta_rel_us: u64,
         arena: &mut bytes::BytesMut,
     ) -> anyhow::Result<()> {
-        crate::scheduler::sched_lock::assert_not_held("send_symbol");
         if !crate::transport::protocol::wire_compact_active() {
             let batch = SymbolBatch::new(vec![sym.clone()], send_timestamp_us, seqs, path_id)
                 .with_eta(eta_rel_us);
-            return self.send_symbols(path_id, batch);
+            return self.send_symbols(out, path_id, batch);
         }
-        let conn = self
-            .conn(path_id)
-            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
         use crate::net::cpuprof::{timed, Seam};
         let buf = timed(Seam::Ser, || {
             crate::transport::protocol::serialize_symbol_compact_in(
@@ -1004,84 +769,41 @@ impl QuicTransport {
                 eta_rel_us,
             )
         });
-        timed(Seam::Hand, || self.send_datagram_shaped(path_id, &conn, buf))
+        timed(Seam::Hand, || self.stage(out, path_id, Lane::Data, buf))
     }
 
-    /// Send a control message as a datagram (best-effort, low latency).
-    pub fn send_control_datagram(&self, path_id: PathId, msg: ControlMessage) -> anyhow::Result<()> {
-        crate::scheduler::sched_lock::assert_not_held("send_control_datagram");
-        let conn = self
-            .conn(path_id)
-            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
+    /// Send a control message as a datagram (best-effort, low latency),
+    /// staged in `out`'s control lane.
+    pub fn send_control_datagram(&self, out: &mut TxBatch, path_id: PathId, msg: ControlMessage) -> anyhow::Result<()> {
         let wire = WireMessage::Control(msg);
         let data = wire.serialize()?;
-        self.send_datagram_shaped(path_id, &conn, data.into())
+        self.stage(out, path_id, Lane::Ctrl, data.into())
     }
 
-    /// Send a control message over a path's reliable stream.
+    /// Send a control message over a path's reliable stream (the owner opens
+    /// a uni stream, bounded by `io_owner::CONTROL_SEND_TIMEOUT`).
     pub async fn send_control(
         &self,
         path_id: PathId,
         msg: ControlMessage,
     ) -> anyhow::Result<()> {
-        crate::scheduler::sched_lock::assert_not_held("send_control");
-        let conn = self
-            .conn(path_id)
+        let io = self
+            .io(path_id)
             .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
-
-        let mut send = conn.open_uni().await?;
         let wire = WireMessage::Control(msg);
         let data = wire.serialize()?;
-
-        send.write_all(&(data.len() as u32).to_be_bytes()).await?;
-        send.write_all(&data).await?;
-        send.finish()?;
-        Ok(())
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        io.tx
+            .send(IoCmd::Stream { data: data.into(), reply })
+            .await
+            .map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner is gone"))?;
+        rx.await.map_err(|_| anyhow::anyhow!("path {path_id}: the I/O owner ended"))?
     }
 
-    /// Query the max datagram size for a path (PMTU-based).
+    /// The max datagram size for a path (PMTU-based), from the owner's
+    /// published snapshot.
     pub fn max_datagram_size(&self, path_id: PathId) -> Option<usize> {
-        crate::scheduler::sched_lock::assert_not_held("max_datagram_size");
-        self.conn(path_id).and_then(|conn| conn.max_datagram_size())
-    }
-
-    /// Receive datagrams from a path.
-    pub async fn recv_datagram(&self, path_id: PathId) -> anyhow::Result<WireMessage> {
-        crate::scheduler::sched_lock::assert_not_held("recv_datagram");
-        let conn = self
-            .conn(path_id)
-            .ok_or_else(|| anyhow::anyhow!("no connection on path {path_id}"))?;
-
-        let data = conn.read_datagram().await?;
-        let msg = WireMessage::deserialize(&data)?;
-        Ok(msg)
-    }
-
-    /// Spawn receive loops for all paths, feeding into a channel.
-    pub fn spawn_receivers(
-        &self,
-        tx: mpsc::Sender<(PathId, WireMessage)>,
-        ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
-    ) -> Vec<tokio::task::JoinHandle<()>> {
-        let mut handles = vec![];
-
-        // P1 D5: collect the handles first (Arc clones under the iterator's
-        // shard guards), then clone each quinn connection with no guard held.
-        let conns: Vec<(PathId, Arc<quinn::Connection>)> = self
-            .connections
-            .iter()
-            .map(|e| (*e.key(), Arc::clone(e.value())))
-            .collect();
-        for (path_id, conn) in conns {
-            handles.extend(self.spawn_receiver_for_path(
-                path_id,
-                quinn::Connection::clone(&conn),
-                tx.clone(),
-                ctrl_tx.clone(),
-            ));
-        }
-
-        handles
+        self.view(path_id)?.max_datagram_size()
     }
 
     /// Apply the symbol-datagram MTU floor to a quinn transport config
@@ -1459,11 +1181,15 @@ mod datagram_queue_audit_tests {
         );
 
         if !diag_on {
-            // The stronger off claim: the map itself is never touched, so the
-            // seam takes no lock and allocates no per-path audit record.
-            assert!(
-                t.dg_stats.is_empty(),
-                "the audit must not allocate when RWM_DIAG is off"
+            // The stronger off claim: the owner never ran the audit, so every
+            // per-path audit counter is untouched.
+            use std::sync::atomic::Ordering::Relaxed;
+            let v = t.view(0).expect("path 0 has an owner");
+            let a = &v.audit;
+            assert_eq!(
+                (a.handoff.load(Relaxed), a.full.load(Relaxed), a.err.load(Relaxed), a.space.load(Relaxed)),
+                (0, 0, 0, 0),
+                "the audit must not run when RWM_DIAG is off"
             );
         }
     }
@@ -1517,7 +1243,7 @@ mod rcvbuf_endpoint_tests {
             let t = QuicTransport::new(&[any, any], is_server, None)
                 .await
                 .expect("endpoints bind on loopback");
-            t.add_endpoint(7, any, None).expect("add_path's bind");
+            t.spawn_path(7, any).await.expect("add_path's bind");
             for pid in [0, 1, 7] {
                 let live = t.rx_socket_rcvbuf(pid).expect("probe socket per path");
                 let g = t.rcvbuf_grant(pid).expect("grant recorded per path");
@@ -1533,36 +1259,311 @@ mod rcvbuf_endpoint_tests {
             assert!(t.rx_socket_rcvbuf(7).is_none(), "the probe leaves with the path");
         }
     }
+}
 
-    /// Threading P1, D5: no DashMap shard guard of `connections` is alive
-    /// across a quinn call or an `.await`. The map holds
-    /// `Arc<quinn::Connection>` and ONE accessor (`conn`) clones the `Arc`
-    /// out and drops the guard; every seam goes through it. (A
-    /// `quinn::Connection` clone is not an `Arc` clone: quinn's
-    /// `ConnectionRef::clone`/`drop` take the connection mutex — quinn-0.11.9
-    /// `connection.rs` 920-940 — so the map stores an `Arc` and clones that.)
-    /// Shape test, source-scraped (whitespace-insensitive): on the tree
-    /// before the fix the map held `quinn::Connection` and ten seams called
-    /// `connections.get(` directly, with the guard alive through
-    /// `send_datagram` and across `open_uni().await`.
+#[cfg(test)]
+mod owner_rule_tests {
+    /// Non-comment source lines of `src/**.rs` before each file's first
+    /// `#[cfg(test)]`, as `(path relative to src/, line)`.
+    fn code_lines() -> Vec<(String, String)> {
+        fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String)>) {
+            for e in std::fs::read_dir(dir).expect("read src dir").flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, root, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let src = std::fs::read_to_string(&p).expect("read source");
+                    let lines: Vec<&str> = src.lines().collect();
+                    // The non-test part ends at the first column-0 test
+                    // attribute that opens a test MODULE (an item-level
+                    // `#[cfg(test)]` — a test-only enum variant or helper
+                    // fn — does not end it).
+                    let end = (0..lines.len())
+                        .find(|&i| {
+                            (lines[i].starts_with("#[cfg(test)]") || lines[i].starts_with("#[cfg(all(test"))
+                                && lines.get(i + 1).is_some_and(|n| {
+                                    let n = n.trim_start_matches("pub(crate) ").trim_start_matches("pub ");
+                                    n.starts_with("mod ")
+                                })
+                        })
+                        .unwrap_or(lines.len());
+                    let rel = p.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+                    for l in &lines[..end] {
+                        let t = l.trim_start();
+                        if !t.starts_with("//") {
+                            out.push((rel.clone(), l.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut out = Vec::new();
+        walk(&root, &root, &mut out);
+        assert!(out.len() > 10_000, "the scan read too little source to mean anything");
+        out
+    }
+
+    /// Threading Q1, rule 5: no `quinn::Connection` is reachable outside the
+    /// path's I/O owner. Source scan over every non-test, non-comment line of
+    /// `src/`:
+    ///
+    /// * the type `quinn::Connection` and every connection-level quinn call
+    ///   (`send_datagram`, `read_datagram`, the stream opens/accepts,
+    ///   `datagram_send_buffer_space`) appear in `transport/io_owner.rs`
+    ///   only;
+    /// * inside it, the raw connection (`.raw.`) is touched only inside
+    ///   `impl OwnedConn` — the single, identity-checked wrapper — and every
+    ///   one of its quinn calls sits behind a `self.enter(..)` check;
+    /// * the `connections` DashMap and its `conn()` accessor are gone from
+    ///   the transport (P1's `connections_are_reached_through_one_guard_
+    ///   dropping_accessor` asserted the map's existence; this test replaces
+    ///   it).
+    ///
+    /// Red on main 69fd846: `quic.rs` holds `connections:
+    /// DashMap<PathId, Arc<quinn::Connection>>` and calls `send_datagram`
+    /// itself; `l0_netem.rs` calls `conn.send_datagram` from its own task.
     #[test]
-    fn connections_are_reached_through_one_guard_dropping_accessor() {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/transport/quic.rs");
-        let src = std::fs::read_to_string(p).expect("read quic.rs");
-        let body = &src[..src.find("#[cfg(test)]").expect("test module")];
-        let squashed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    fn no_quinn_connection_is_reachable_outside_the_owner() {
+        let lines = code_lines();
+        let owner = "transport/io_owner.rs";
+        let calls = [
+            "quinn::Connection",
+            ".send_datagram(",
+            ".read_datagram(",
+            ".open_uni(",
+            ".accept_uni(",
+            ".open_bi(",
+            ".accept_bi(",
+            ".datagram_send_buffer_space(",
+        ];
+        let outside: Vec<String> = lines
+            .iter()
+            .filter(|(f, l)| f != owner && calls.iter().any(|c| l.contains(c)))
+            .map(|(f, l)| format!("{f}: {}", l.trim()))
+            .collect();
         assert!(
-            squashed.contains("connections:DashMap<PathId,Arc<quinn::Connection>>,"),
-            "the map must hold Arc<Connection> (a quinn clone takes the connection mutex)"
+            outside.is_empty(),
+            "connection-level quinn use outside the owner:\n{}",
+            outside.join("\n")
         );
+
+        let quic: String = lines
+            .iter()
+            .filter(|(f, _)| f == "transport/quic.rs")
+            .map(|(_, l)| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let squashed: String = quic.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(!squashed.contains("connections:DashMap"), "the connections map must be gone");
+        assert!(!squashed.contains("fnconn("), "the conn() accessor must be gone");
+
+        // The raw connection only inside the wrapper's impl block.
+        let own: Vec<&str> = lines
+            .iter()
+            .filter(|(f, _)| f == owner)
+            .map(|(_, l)| l.as_str())
+            .collect();
+        let start = own
+            .iter()
+            .position(|l| l.starts_with("impl OwnedConn {"))
+            .expect("the wrapper impl exists");
+        let end = start
+            + own[start..]
+                .iter()
+                .position(|l| *l == "}")
+                .expect("the wrapper impl closes");
+        let stray: Vec<&str> = own
+            .iter()
+            .enumerate()
+            .filter(|(i, l)| (*i < start || *i > end) && l.contains(".raw."))
+            .map(|(_, l)| *l)
+            .collect();
+        assert!(
+            stray.is_empty(),
+            "raw connection use outside `impl OwnedConn`:\n{}",
+            stray.join("\n")
+        );
+        // Every method of the wrapper that reaches the raw connection opens
+        // with the identity check.
+        let body = &own[start..=end];
+        let mut fns = 0;
+        let mut i = 0;
+        while i < body.len() {
+            if body[i].trim_start().starts_with("fn ") || body[i].trim_start().starts_with("async fn ") {
+                let j = (i + 1..body.len())
+                    .find(|&j| body[j].trim_start().starts_with("fn ") || body[j].trim_start().starts_with("async fn "))
+                    .unwrap_or(body.len());
+                let f = &body[i..j];
+                if f.iter().any(|l| l.contains("self.raw.")) {
+                    fns += 1;
+                    assert!(
+                        f.iter().any(|l| l.contains("self.enter(")),
+                        "wrapper method without the identity check: {}",
+                        body[i].trim()
+                    );
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        assert!(fns >= 10, "the wrapper must carry the quinn calls ({fns} methods found)");
+    }
+}
+
+#[cfg(test)]
+mod owner_runtime_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+    use std::time::Duration;
+
+    /// A connected loopback pair (server path 0 ← client path 0), each on
+    /// its own private one-runtime pool (no other test shares the threads).
+    async fn own_pair(tag: &str) -> (QuicTransport, QuicTransport, Arc<io_owner::IoPool>, Arc<io_owner::IoPool>) {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let any: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let sp = io_owner::IoPool::new(1, &format!("rp-iot-{tag}-s"));
+        let cp = io_owner::IoPool::new(1, &format!("rp-iot-{tag}-c"));
+        let srv = QuicTransport::new_placed(&[any], true, None, IoPlacement::Own(sp.clone()), true)
+            .await
+            .expect("server binds");
+        let cli = QuicTransport::new_placed(&[any], false, None, IoPlacement::Own(cp.clone()), true)
+            .await
+            .expect("client binds");
+        let peer = srv.local_addr(0).expect("server addr");
+        let (a, c) = tokio::join!(srv.accept(0), cli.connect(0, peer));
+        a.expect("accept");
+        c.expect("connect");
+        (srv, cli, sp, cp)
+    }
+
+    fn ping() -> ControlMessage {
+        ControlMessage::Ping { timestamp_us: 1 }
+    }
+
+    /// Driver routing under `own` (plan Q1 red test): with the owner on a
+    /// dedicated current_thread runtime, quinn's ConnectionDriver runs every
+    /// transmit on the owner's thread — the routing probe (a delegating
+    /// congestion controller; `on_sent` is called inside the driver's poll)
+    /// counts `drv_on > 0` and `drv_off == 0` on BOTH ends. The identity
+    /// check ran (`qcalls > 0`) and never fired. Red on main 69fd846 (no
+    /// owner, no placement, no probe: does not compile).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn under_own_the_quinn_driver_polls_on_the_owner_thread() {
+        let (srv, cli, _sp, _cp) = own_pair("route").await;
+        let (msg_tx, mut msg_rx) = mpsc::channel::<InboundBatch>(64);
+        let (ctrl_tx, _ctrl_rx) = mpsc::channel(64);
+        srv.start_readers(msg_tx, ctrl_tx).await;
+        let n = 200usize;
+        let mut out = TxBatch::new();
+        for _ in 0..n {
+            cli.send_control_datagram(&mut out, 0, ping()).expect("staged");
+        }
+        cli.flush(&mut out).await;
+        let mut got = 0usize;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while got < n {
+            match tokio::time::timeout_at(deadline, msg_rx.recv()).await {
+                Ok(Some(b)) => got += b.len(),
+                _ => break,
+            }
+        }
+        assert_eq!(got, n, "every staged datagram reached the server's receiver");
+        for (side, t) in [("client", &cli), ("server", &srv)] {
+            let v = t.view(0).unwrap();
+            let (on, off) = (v.drv_on.load(Relaxed), v.drv_off.load(Relaxed));
+            assert!(on > 0, "{side}: the routing probe saw no driver transmit");
+            assert_eq!(off, 0, "{side}: quinn's driver transmitted off the owner thread ({off} of {})", on + off);
+            assert!(v.ctr.qcalls.load(Relaxed) > 0, "{side}: the identity check never ran");
+        }
+        assert_eq!(io_owner::identity_counts().1, 0, "{:?}", io_owner::first_identity_violation());
+        // The inbound hop is batched: fewer owner→receiver batches than
+        // datagrams is the batching; == would be per-datagram forwarding.
+        let sv = srv.view(0).unwrap();
+        assert_eq!(sv.ctr.rx_dgrams.load(Relaxed), n as u64);
+        assert!(sv.ctr.rx_batches.load(Relaxed) >= 1);
+    }
+
+    fn parks(pool: &io_owner::IoPool) -> (u64, u64) {
+        let m = pool.runtime(0).handle.metrics();
+        (m.worker_park_count(0), m.worker_park_unpark_count(0))
+    }
+
+    async fn wait_for(mut cond: impl FnMut() -> bool) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while !cond() {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        true
+    }
+
+    /// Wake coalescing comes from the channel (plan rule 4; Q1 red test):
+    /// while the owner's I/O thread is busy, K producer batches cause ZERO
+    /// thread unparks (the runtime's `worker_park_count` does not move: the
+    /// counted event is the thread's park/unpark, not a task notify), and the
+    /// owner then takes all K in ONE `recv_many` drain. Two-sided control:
+    /// the same K batches sent to an idle (parked) owner, spaced, unpark the
+    /// thread at least K times and take K drains — the counter can see an
+    /// unpark when one happens.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_busy_owner_is_not_unparked_by_producer_batches() {
+        let (_srv, cli, _sp, cp) = own_pair("unpark").await;
+        let io = cli.io(0).unwrap();
+        let v = io.view.clone();
+        const K: usize = 6;
+        // Let the handshake's tail settle.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // ── control: idle owner, spaced batches ──
+        let (p0, _) = parks(&cp);
+        let d0 = v.ctr.drains.load(Relaxed);
+        for _ in 0..K {
+            io.tx.try_send(IoCmd::Send { lane: Lane::Ctrl, dgrams: Vec::new() }).expect("room");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(wait_for(|| v.ctr.drains.load(Relaxed) >= d0 + K as u64).await);
+        let (p1, _) = parks(&cp);
+        assert!(p1 - p0 >= K as u64, "control: {K} spaced batches unparked the idle thread only {} times", p1 - p0);
+
+        // ── busy owner ──
+        let entered = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        io.tx
+            .try_send(IoCmd::Hold { entered: entered.clone(), release: release.clone() })
+            .expect("room");
+        assert!(wait_for(|| entered.load(Relaxed)).await, "the owner never entered the hold");
+        let (b0, u0) = parks(&cp);
+        let d1 = v.ctr.drains.load(Relaxed);
+        let t1 = v.ctr.ctrl_batches.load(Relaxed);
+        for _ in 0..K {
+            io.tx.try_send(IoCmd::Send { lane: Lane::Ctrl, dgrams: Vec::new() }).expect("room");
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let (b1, u1) = parks(&cp);
+        release.store(true, Relaxed);
+        assert!(wait_for(|| v.ctr.ctrl_batches.load(Relaxed) >= t1 + K as u64).await);
+        assert_eq!((b1 - b0, u1 - u0), (0, 0), "producer batches unparked a busy I/O thread");
         assert_eq!(
-            squashed.matches("connections.get(").count(),
+            v.ctr.drains.load(Relaxed) - d1,
             1,
-            "exactly one `connections.get(` (the `conn` accessor) may exist"
+            "the {K} batches queued during the hold must be taken by ONE recv_many"
         );
-        assert!(
-            squashed.contains("fnconn(&self,path_id:PathId)->Option<Arc<quinn::Connection>>"),
-            "the guard-dropping accessor must exist"
-        );
+    }
+
+    /// The identity check is what the wrapper runs: inside the owner task of
+    /// the path (and, under `own`, on its pinned thread) the check passes;
+    /// any other combination fails.
+    #[test]
+    fn the_identity_rule_admits_only_the_owner() {
+        use io_owner::identity_ok;
+        assert!(identity_ok(3, Some(3), None, 7));
+        assert!(identity_ok(3, Some(3), Some(7), 7));
+        assert!(!identity_ok(3, None, None, 7), "outside any owner task");
+        assert!(!identity_ok(3, Some(4), None, 7), "inside another path's owner");
+        assert!(!identity_ok(3, Some(3), Some(8), 7), "the owner's task on a foreign thread");
     }
 }

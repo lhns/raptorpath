@@ -78,6 +78,11 @@ pub(crate) struct ControlCtx<'a> {
     /// `RWM_MSTAR_ANCHOR` (ADR-0061): suppress the peer-report RTT
     /// pseudo-sample feed.
     pub mstar_anchor: bool,
+    /// Threading Q1: the calling task's staging for the paths' I/O owners
+    /// (the Pong reply is staged here; the caller flushes it before it
+    /// waits). A `RefCell` because the context is shared by reference; the
+    /// borrow never outlives one staging call.
+    pub out: &'a std::cell::RefCell<crate::transport::TxBatch>,
 }
 
 /// Threading P1, D1: the local window sender's ack wake. `signal` is called
@@ -158,7 +163,7 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
             ctx.scheduler.lock().touch_path(path_id);
-            let _ = ctx.transport.send_control_datagram(path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
+            let _ = ctx.transport.send_control_datagram(&mut ctx.out.borrow_mut(), path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
         }
 
         // ADR-0015: handle graceful shutdown from peer

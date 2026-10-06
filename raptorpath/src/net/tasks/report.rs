@@ -42,10 +42,10 @@ pub(crate) async fn run_report(
         }
 
         debug!("report tick");
-        // Query the MTU per path first (threading P1, D2): it is a quinn
-        // call (`Connection::max_datagram_size` takes the connection mutex),
-        // so it runs with the scheduler released; the values are stored
-        // under the guard below.
+        // Query the MTU per path first (threading P1, D2), with the
+        // scheduler released; the values are stored under the guard below.
+        // Since threading Q1 it is a read of the path owner's published view
+        // (≤ `io_owner::VIEW_REFRESH` old), not a quinn call.
         let mtus: Vec<(u32, usize)> = {
             let ids = report_scheduler.lock().all_path_ids();
             ids.into_iter()
