@@ -2370,9 +2370,28 @@ status §12 diagnosis addendum) govern it:
   streams, and publishes RTT / MTU / stats into a per-path view the rest
   of the engine reads. The connection is born inside the owner task and
   never leaves it; one identity-checked wrapper carries every quinn call.
-- **One task per concurrent loop**, ownership by direction (the sender owns
-  the transmit state, the receiver the receive state), never a loop
-  multiplexed into another task.
+- **One task per concurrent loop**, ownership by direction, never a loop
+  multiplexed into another task. Threading Q2 split the scheduler by
+  direction: the window sender owns the TX half (`Scheduler`: placement,
+  charge/release, the RTT/loss/rate estimators, Copa, the anchors, the
+  liveness flags) and the `FecRateController` in one `TxCore`, used by
+  plain `&mut` — no mutex, no cell; the receiver owns the RX half
+  (`RxScheduler`: the RFC 3550 arrival jitter and the incoming-loss EWMA)
+  as a local. The client's ack handling (`on_window_ack`) runs in the
+  sender: each path's owner routes the TX-direction control datagrams
+  (WindowAck, Ack, PathReport, Ping) to the sender's input channel, which
+  the sender drains with `recv_many` at its loop top and in an
+  always-armed `select!` arm (the wake is the channel's own; P1's
+  `AckWake` Notify is retired). The cold tasks — the 2 s report tick, the
+  HTTP path add / remove, the receiver's FEC feedback and dead-path revival
+  nudge — reach TX state by message on a second channel. Cross-direction
+  reads go through per-path published atomics (`PathStats::xdir`): the
+  receiver publishes its jitter, incoming loss and last-arrival stamp
+  after every update and the sender mirrors them at every loop top; the
+  sender publishes SRTT, RTprop, the RTT jitter and σ and the `active`
+  flag after every input batch, and the receiver's hold / deficit /
+  refresh clocks read those. A reader may see a value one publication old
+  — the split's declared cost.
 - **Batched channels.** Producers stage serialized datagrams per path and
   hand each path's owner one batch per loop iteration (the sender: one per
   Law-0 burst; the receiver: one per `recv_many` drain and at least every
@@ -2804,6 +2823,8 @@ decide it.
 | view refresh age `VIEW_REFRESH = 1 ms` | `transport/io_owner.rs` | not a timer: an owner poll that did I/O refreshes the published snapshot when it is ≥ 1 ms old (an idle owner never wakes for it, so the snapshot's age is max(1 ms, the gap since the path's last I/O)). 1 ms is tokio's timer resolution (deadlines round up to the next ms), so no timer-clocked reader can see a fresher snapshot; every reader of the full snapshot is clocked ≥ 250 ms; the per-ack RTT reader (`RWM_COPA_WIRE`) is refreshed every owner poll instead | none needed |
 | inbound batch cap `INBOUND_BATCH_MAX = 32` datagrams | `transport/io_owner.rs`; `MSG_CHANNEL_BATCHES = 4096 / 32` (`net/mod.rs`) | cited: quinn-udp 0.5.14 `BATCH_SIZE = 32`, the most datagrams one `recvmmsg` returns; it makes the inbound channel's worst case 128 batches × 32 = 4096 datagrams, ADR-0011's bound unchanged (4096 *batches* would be up to 131 072). Bind count `rx_capped` on `[IOWN]` | `rx_capped` / `rx_batches` per cell |
 | control-stream write deadline `CONTROL_SEND_TIMEOUT = 500 ms` | `transport/io_owner.rs` | the report task's existing 500 ms control-send deadline (`net/tasks/report.rs`), applied at the operation inside the owner | — |
+| sender input channel depth `SENDER_IN_BATCHES` = `MSG_CHANNEL_BATCHES` (128 owner batches) | `net/tx_inputs.rs` | a resource bound outside any law: the ack lane is the other half of the same owner polls whose data half the receiver's inbound channel carries, so it takes that channel's bound (ADR-0011's 4096 datagrams / `INBOUND_BATCH_MAX`); full = the owner keeps the batch and pauses its reads, never a drop | `[IOWN] ack_batches` / `ack_dg` per cell |
+| sender command channel depth `SENDER_CMD_DEPTH = 64` | `net/tx_inputs.rs` | a resource bound: the cold producers send a few commands per 2 s report interval; 64 is the depth of the other cold channels (`deficit_tx`, `request_tx`, `sack_tx`) | — |
 | `SRTT/2` heal classifier | attribution audit (offline) | biases π₀ upward; the engine's own classifier does not use it (sender-stamp order, Section 7.6) | — |
 
 ### 11.3 Code/model divergences
