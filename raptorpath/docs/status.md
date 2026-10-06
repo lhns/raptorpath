@@ -67,6 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| D9 attribution (§15) | `MAIN` 88476a4 vs `NOD9` (88476a4 minus the D9 hunk, `measure/nod9` e059e30), c1s/c1d/c2/c8, n = 6 (c8 n = 12), `RWM_RTOBS=1`; plus the c8 client `[LAG]` p99 re-check | `KEEP-D9 (MAIN better)`: NOD9 FAIL at c1s (goodput −11.4 %, CPUCLI/GB +4.9 %, both WORSE), WITHIN at c1d/c2/c8, BETTER nowhere; D9 stays; c8 client `[LAG]` p99 MAIN 2708 [1248–3636] n = 12, MAIN vs NOD9 WITHIN, cross-session numbers report-only |
 | Threading Q2 (§14) | the scheduler split by direction (the sender owns the TX half and the FEC controller by `&mut`, acks handled in the sender via the owners' input channel; the receiver owns the RX half; `AckWake` and `SchedMutex` deleted; the `own` arm deleted) vs MAIN 0ef0e0d, c1s/c1d/c2/c8, n = 6, `RWM_RTOBS=1` | `DELIVERED`: PASS at every cell — goodput WITHIN everywhere, CPUCLI/GB −2 to −5 % (c1s TREND-BETTER), CPUSRV WITHIN, RTprop WITHIN; `[LAG]` p99 TREND-BETTER at c2 both sides and c1s server, TREND-WORSE at c8 client (+62 %, overlapping); amendment 1's c1d client-lag risk did not fire (−9.8 %); c2 CPU recovery of P1's +5.3 % MISSED (−2.2 %); client sender busy fell (c1d 59 → 56 %); merge is the operator's |
 | Threading Q1 (§13) | the per-path I/O owner, placements IOS (`RWM_IO_RT=shared`) and IOO (`own`), and D9 alone, each vs MAIN 69fd846, c1s/c1d/c2/c8, n = 6, `RWM_RTOBS=1` everywhere | `DELIVERED (SHIP-SHARED)`: IOS passes everywhere — c1s goodput +48 %, c1d +67 % (729.5 Mbit/s, FDT bar 501 met), CPUSRV/GB −8 to −30 % at every cell, CPUCLI/GB −13 to −37 % at c1d/c2; IOO FAIL at c1d (client `[LAG]` p99 +22 %, RTprop floor +12/+15 %); routing predictions MET (`drv_off` 0 under own, 34–63 % under shared), own lock wait ≈ 0 MISSED at c1s (0.0115 > 0.01); D9 alone FAIL at c1s/c1d/c2 (c1s −32 %, CPUCLI +103 %: §12's c1s collapse re-scoped to D9); merge and `own` deletion are the operator's |
 | Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates ≈ 3× (up to 11×) more at c1s (finding 1; the receiver's per-message budget unit, 06837b7, is a named confound); not shipped |
@@ -4376,3 +4377,99 @@ builds ≈ 9 min, smoke ≈ 1 min, battery ≈ 10–20 min; ≤ 5 h cap. Session
 rules as §14 (detached envelope, `all-era.txt` read at most once per ≈ 20
 min, `pkill -x raptorpath` only, no `ens18` / firewall / `sshd` / non-`rp-*`
 namespace, exit state verified). Ledgers go to `docs/l1-raw/thread-d9/`.
+
+### 15. D9 attribution and the c8 lag re-check — result
+
+Scored 2026-10-06 against the pre-registration above, literally (no
+amendment). **`KEEP-D9 (MAIN better: NOD9 FAIL-AT-c1s-400)`**: without D9 the
+current stack is **worse at c1s** (goodput −11.4 %, client CPU per byte
++4.9 %, both WORSE, ranges disjoint) and WITHIN at c1d, c2 and c8; NOD9 is
+BETTER nowhere. D9 stays on `main`; nothing is reverted. (In the shared
+taxonomy `REVERT-D9` would have mapped to `FLIP-RECOMMENDED`; it did not
+fire.) Nothing was tuned.
+
+*Binaries and session.* Launched 12:53:51Z. MAIN `sha256 8d194b65…0fa70dd7`
+(commit 88476a4; the same hash as §14's Q2 binary), NOD9 `ba70a6aa…38977a`
+(commit `e059e30` on `measure/nod9`, 88476a4 minus the D9 hunk), each archived
+LF and built fresh in a fresh target on the benchmark VM. Battery
+13:03:22–13:12:38Z (556 s, 60 invocations); session wall ≈ 19 min; locks
+released 13:12:38Z, exit state 0 `raptorpath`, 0 `rp-*` namespaces.
+`all-era.txt` was read at ≈ 12:55 (build running) and ≈ 13:16 (done). The
+launch went through a waiting wrapper (`take_lock` fails fast; the VM was
+idle, the locks free, no wait occurred). Ledgers: `docs/l1-raw/thread-d9/`
+(`td9.log`, `score.txt` with every per-rep value, `smoke.log`,
+`smoke-check.txt`, `TESTS.txt`, `PLAN.txt`, `BINSHA.txt`, `all-era.txt`).
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` / `ABORT-CRLF` / `ABORT-BUILD` / `ABORT-SHA` / `ABORT-SENTINEL-UNWRITABLE` / `ABORT-BUDGET` | no |
+| `ABORT-TESTS` | no (parser tests: 45 + 26 + 37 checks, 0 failed; no cargo suite, as declared) |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 4 rows LIVE, both arms, D9 witness held |
+| `ABORT-RC` / `ABORT-BRINGUP` / `VOID-COTENANT` | 0 / 0 / 0 of 60 |
+
+*What ran.* 60 rows, **all LIVE** (0 witness failures, 0 contaminated, 0
+DNF); 6 per (cell, arm), 12 at c8. **The D9 witness held two-sided on every
+row**: the string `perf task failed` is in MAIN's binary and not NOD9's, and
+the client main thread reads 0.000 core on every MAIN row and 0.123 [0.123–
+0.132] (c1s), 0.122 (c1d), 0.019 (c2), 0.020 (c8) under NOD9 (server main
+thread under NOD9 0.204 / 0.159 / 0.015 / 0.013). The Q2-era witnesses held
+on both arms.
+
+*Per cell* (NOD9 vs MAIN, median [min–max]; `W` = WORSE, `TW` = TREND-WORSE,
+`=` = WITHIN; no clause was BETTER or TREND-BETTER):
+
+| cell | n | goodput Mbit/s (MAIN → NOD9) | CPUCLI s/GB | CPUSRV s/GB | `[LAG]` p99 client µs | `[LAG]` p99 server µs | RTprop floor | feed | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `c1s-400` | 6 | 766.7 [721.9–831.4] → 679.6 [664.7–704.6] (−11.4 %, **W**) | 13.25 → 13.9 (+4.9 %, **W**) | 18.86 → 20.1 (+6.6 %, TW) | 2272 → 1936 (=) | 1461 → 1412 (=) | = | SAME | **FAIL** |
+| `c1d-400` | 6 | 728.1 [677.9–755.1] → 687.8 [664.2–703.6] (−5.5 %, = at the 5.6 % band) | 16.34 → 16.36 (=) | 21.58 → 21.84 (=) | 2208 → 2211 (=) | 1958 → 1824 (=) | = / = | SAME | PASS |
+| `c2-100` | 6 | 90.23 → 89.82 (=) | 28.6 → 28.75 (=) | 32.0 → 33.25 (+3.9 %, =) | 1921 → 1881 (=) | 1644 → 1412 (=) | = | SAME | PASS |
+| `c8-100` | 12 | 98.13 [82.9–102.9] → 95.59 [89.0–105.2] (=) | 43.9 → 45.4 (=) | 41.35 → 42.15 (=) | 2708 → 2734 (=) | 1347 → 1778 (+32 %, =, tol 34 %) | = / = | SAME | PASS |
+
+NOD9 arm verdict: **`FAIL-AT-c1s-400`**. c1d goodput (−5.5 %, ranges overlap)
+sits just inside the 5.6 % band: a lean toward MAIN, not a clause.
+
+*What the instruments say about c1s* (reported, `score.txt` has every
+value; an interpretation, **[H]**). Without D9 the generator runs on the main
+thread at 0.124 core (server sink 0.204) and the process cores fall (client
+1.249 → 1.167, server 1.794 → 1.710; worker parks/s 17 013 → 13 287 client).
+Yet the goodput falls 11 % and the per-byte CPU rises: the sender `busy`
+39.2 → 41.2 %, the client `wake[ack]` 3300 → 1990 and `wake[paused]` 420 →
+706, GSO 8.95 → 9.03 (unchanged). So with the owner and the sender-lane
+acks in place, D9 no longer costs c1s anything; it helps (a worker-to-worker
+wake instead of a futex on a thread without a tokio core is the plan's
+mechanism; the data are consistent with it, not proof). §13's D9-alone
+collapse (−32 %, GSO halved) was an interaction with the pre-Q1 stack: the
+stack's own changes absorbed it. The unscored smoke had read one NOD9 c1s row
+at 199.8 Mbit/s (nothing in the 6 scored NOD9 c1s rows approaches it, minimum
+664.7); smoke is not a result and is mentioned only so the outlier is on the
+record.
+
+*c8 client `[LAG]` p99 re-check (Q2 of this section).* MAIN (the Q2 binary,
+`sha256` identical to §14's) reads **2708 µs, [1248–3636], n = 12**. NOD9
+2734 [1126–4429], n = 12; the **within-session** MAIN-vs-NOD9 clause is WITHIN
+(+1.0 %, tolerance 44 %). **Report-only, cross-session** (stated in advance as
+no verdict): §14's MAIN reading 1358 [1105–2609] and Q2 reading 2202
+[2044–2361]; this session's identical binary reads +23 % over §14's Q2 value
+and its 12 rows span 1248–3636 µs, which contains both §14 readings. The
+within-session spread of one binary at n = 12 (2.9×) is the point this
+battery adds: the p99 of this probe at c8, like c1d (§14 finding 3), moves
+more between reps and sessions than the difference §14 read; the +62 %
+TREND-WORSE is therefore not corroborated as a Q2 effect, but this battery
+has no pre-Q2 arm and does not re-score it.
+
+*Reported, not gated* (client unless named; MAIN → NOD9): sender `busy` c1s
+39.2 → 41.2, c1d 52.2 → 57.0, c2 10 → 11, c8 27.2 → 29.2 %; GSO c1d 7.04 →
+7.67, c8 unchanged; client process cores c1d 1.465 → 1.401, c2 0.316 →
+0.318, c8 0.522 → 0.530; client parks/s c1d 17 378 → 13 112, c2 5 768 →
+4 738, c8 6 263 → 5 052 (NOD9 lower everywhere); client `wake[ack]` c1d 5498
+→ 2516, c2 and c8 unchanged; acks per data datagram 0.99–1.00 both arms;
+owner lock-wait max c1s 0.172 → 0.149.
+
+*Deviations and notes.* (1) No cargo test suite was run (declared). (2) The
+decision rule counts server CPU per byte as well as client CPU per byte in
+"CPU/GB" (the task named goodput or CPU/GB; stated in the pre-registration).
+(3) The envelope launched through a waiting wrapper because `take_lock`
+fails fast on a held lock; the locks were free and it ran at once. (4) The
+`REVERT-D9` / `KEEP-D9` labels are this section's own outcome set.
