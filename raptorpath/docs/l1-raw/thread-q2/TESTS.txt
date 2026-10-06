@@ -1,0 +1,6 @@
+TEST main rc=0 wall=1252s passed=1078 failed=0 ignored=50 binaries=93 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+TEST doc rc=0 wall=3s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=112s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]
+TEST debug-witness rc=0 wall=1190s passed=937 failed=0 ignored=49 binaries=84 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath --no-fail-fast -- --test-threads=2]
+TEST parsers rc=0 wall=1s passed=0 failed=0 ignored=0 binaries=0 cmd=[bash -c cd raptorpath/tools/l1 && python3 test_l1common.py && python3 test_stage3_parse.py && python3 test_threadq1_parse.py && python3 test_threadq2_parse.py]
+IDENTITY-PANICS 0

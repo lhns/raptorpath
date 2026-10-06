@@ -1,0 +1,210 @@
+BINARIES main=76decc7f4b69d36a21f4a17a2c33038a543b3324f32f2a29d270c6b012e7c9ef q2=8d194b65e13f1df1cae0449dbe6618950b00d384192036b8b9aed4600fa70dd7
+STATUS-TABLE (every invocation row)
+  LIVE          48
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+PER-REP (rule 4): cell arm seed rep mbps cpu_cli cpu_srv busy rtp_floor feed lag_p99 cli/srv wake ack/cmd/timer_acked
+  c1s-400 MAIN s42 r1 LIVE mbps=810.1 cli=5.44 srv=7.18 busy=43.0 rtp=2543 feed=0.824 lag99=1893/1257 wake=6929/None/37
+  c1s-400 MAIN s42 r2 LIVE mbps=743.9 cli=5.61 srv=7.63 busy=41.0 rtp=2458 feed=1.000 lag99=1943/1952 wake=6846/None/46
+  c1s-400 MAIN s42 r3 LIVE mbps=772.0 cli=5.70 srv=7.74 busy=44.5 rtp=2455 feed=0.824 lag99=1954/1688 wake=6155/None/61
+  c1s-400 MAIN s7 r1 LIVE mbps=770.3 cli=5.58 srv=7.58 busy=44.0 rtp=2645 feed=0.880 lag99=2245/2342 wake=5006/None/70
+  c1s-400 MAIN s7 r2 LIVE mbps=803.6 cli=5.46 srv=7.15 busy=44.0 rtp=2816 feed=0.971 lag99=1436/1739 wake=6249/None/44
+  c1s-400 MAIN s7 r3 LIVE mbps=807.2 cli=5.45 srv=7.24 busy=43.0 rtp=2408 feed=0.872 lag99=1600/1971 wake=6359/None/44
+  c1s-400 Q2 s42 r1 LIVE mbps=776.0 cli=5.25 srv=7.47 busy=39.0 rtp=2385 feed=1.006 lag99=2655/1148 wake=2956/3/103
+  c1s-400 Q2 s42 r2 LIVE mbps=814.2 cli=4.99 srv=7.23 busy=38.0 rtp=2343 feed=0.910 lag99=1876/1845 wake=3642/1/52
+  c1s-400 Q2 s42 r3 LIVE mbps=747.9 cli=5.46 srv=7.66 busy=42.0 rtp=2508 feed=0.988 lag99=2133/1216 wake=3472/3/100
+  c1s-400 Q2 s7 r1 LIVE mbps=802.8 cli=5.18 srv=7.25 busy=40.0 rtp=2469 feed=0.889 lag99=2227/1304 wake=3014/2/86
+  c1s-400 Q2 s7 r2 LIVE mbps=753.7 cli=5.26 srv=7.47 busy=40.0 rtp=2565 feed=0.921 lag99=2378/1794 wake=3395/2/90
+  c1s-400 Q2 s7 r3 LIVE mbps=724.1 cli=5.79 srv=7.89 busy=39.0 rtp=2423 feed=0.928 lag99=2111/1197 wake=3718/0/87
+  c1d-400 MAIN s42 r1 LIVE mbps=751.0 cli=6.71 srv=8.45 busy=56.0 rtp=2360/2379 feed=1.023/1.011 lag99=1346/1912 wake=8270/None/8
+  c1d-400 MAIN s42 r2 LIVE mbps=730.1 cli=6.85 srv=8.60 busy=57.0 rtp=2318/2295 feed=1.060/0.982 lag99=1609/1929 wake=8876/None/6
+  c1d-400 MAIN s42 r3 LIVE mbps=747.2 cli=6.68 srv=8.25 busy=58.0 rtp=2443/2427 feed=0.981/0.978 lag99=1520/1214 wake=5531/None/30
+  c1d-400 MAIN s7 r1 LIVE mbps=707.7 cli=7.23 srv=8.91 busy=60.5 rtp=2484/2401 feed=0.932/0.989 lag99=3521/2678 wake=6455/None/18
+  c1d-400 MAIN s7 r2 LIVE mbps=721.3 cli=6.97 srv=8.34 busy=60.0 rtp=2407/2502 feed=0.787/1.052 lag99=2035/1751 wake=7280/None/18
+  c1d-400 MAIN s7 r3 LIVE mbps=764.8 cli=6.76 srv=8.20 busy=64.0 rtp=2269/2467 feed=1.065/0.903 lag99=1816/2031 wake=6345/None/12
+  c1d-400 Q2 s42 r1 LIVE mbps=725.3 cli=6.66 srv=8.73 busy=55.0 rtp=2313/2313 feed=1.053/1.044 lag99=1538/2489 wake=4780/2/12
+  c1d-400 Q2 s42 r2 LIVE mbps=710.4 cli=6.79 srv=8.30 busy=69.0 rtp=2297/2304 feed=1.043/1.068 lag99=1551/1963 wake=3238/1/13
+  c1d-400 Q2 s42 r3 LIVE mbps=753.9 cli=6.48 srv=8.38 busy=57.0 rtp=2296/2331 feed=1.040/0.707 lag99=1068/1238 wake=5545/2/5
+  c1d-400 Q2 s7 r1 LIVE mbps=740.1 cli=6.52 srv=8.49 busy=55.0 rtp=2394/2278 feed=1.027/1.019 lag99=2571/2276 wake=5229/1/5
+  c1d-400 Q2 s7 r2 LIVE mbps=743.6 cli=6.67 srv=8.57 busy=58.0 rtp=2436/2287 feed=1.008/0.993 lag99=1301/1527 wake=4617/2/13
+  c1d-400 Q2 s7 r3 LIVE mbps=755.4 cli=6.40 srv=8.49 busy=54.5 rtp=2307/2315 feed=1.099/1.060 lag99=2720/1215 wake=5456/1/4
+  c2-100 MAIN s42 r1 LIVE mbps=89.8 cli=2.81 srv=3.26 busy=9.0 rtp=9763 feed=1.000 lag99=1806/1904 wake=13663/None/14
+  c2-100 MAIN s42 r2 LIVE mbps=89.8 cli=2.97 srv=3.31 busy=10.0 rtp=11100 feed=1.002 lag99=2309/1727 wake=12641/None/13
+  c2-100 MAIN s42 r3 LIVE mbps=90.0 cli=2.99 srv=3.24 busy=10.0 rtp=13519 feed=0.996 lag99=2051/1848 wake=12946/None/14
+  c2-100 MAIN s7 r1 LIVE mbps=88.0 cli=2.94 srv=3.34 busy=10.0 rtp=12723 feed=0.990 lag99=2847/1839 wake=13088/None/20
+  c2-100 MAIN s7 r2 LIVE mbps=89.9 cli=2.90 srv=3.15 busy=10.0 rtp=13459 feed=0.999 lag99=2034/1643 wake=12940/None/18
+  c2-100 MAIN s7 r3 LIVE mbps=90.1 cli=2.95 srv=3.29 busy=10.0 rtp=12687 feed=0.990 lag99=1840/1886 wake=13073/None/16
+  c2-100 Q2 s42 r1 LIVE mbps=83.3 cli=2.83 srv=3.34 busy=9.0 rtp=6440 feed=1.003 lag99=1128/1006 wake=7912/5/8
+  c2-100 Q2 s42 r2 LIVE mbps=89.4 cli=2.89 srv=3.14 busy=10.0 rtp=12910 feed=1.008 lag99=1106/1110 wake=7439/5/19
+  c2-100 Q2 s42 r3 LIVE mbps=90.2 cli=2.90 srv=3.35 busy=10.0 rtp=6441 feed=0.997 lag99=1610/886 wake=7221/5/15
+  c2-100 Q2 s7 r1 LIVE mbps=89.8 cli=2.81 srv=3.14 busy=10.0 rtp=10384 feed=1.014 lag99=1116/1789 wake=7553/4/12
+  c2-100 Q2 s7 r2 LIVE mbps=87.7 cli=2.87 srv=3.28 busy=10.0 rtp=14603 feed=0.996 lag99=1250/1746 wake=7816/5/6
+  c2-100 Q2 s7 r3 LIVE mbps=90.2 cli=2.90 srv=3.19 busy=10.0 rtp=12783 feed=1.006 lag99=1911/1084 wake=7398/3/8
+  c8-100 MAIN s42 r1 LIVE mbps=103.1 cli=4.03 srv=3.96 busy=22.0 rtp=9147/42558 feed=0.994/1.019 lag99=1889/2400 wake=13607/None/23
+  c8-100 MAIN s42 r2 LIVE mbps=94.6 cli=4.68 srv=4.36 busy=29.0 rtp=10831/49143 feed=1.003/1.004 lag99=1105/1894 wake=12067/None/9
+  c8-100 MAIN s42 r3 LIVE mbps=97.3 cli=4.84 srv=4.58 busy=24.5 rtp=12099/47398 feed=1.003/0.994 lag99=2609/1596 wake=11888/None/12
+  c8-100 MAIN s7 r1 LIVE mbps=84.0 cli=4.54 srv=4.25 busy=25.0 rtp=8254/45320 feed=1.005/1.008 lag99=1192/1202 wake=12250/None/10
+  c8-100 MAIN s7 r2 LIVE mbps=88.1 cli=4.53 srv=4.49 busy=28.0 rtp=10320/40918 feed=1.001/1.010 lag99=1523/2238 wake=12922/None/20
+  c8-100 MAIN s7 r3 LIVE mbps=101.6 cli=4.39 srv=4.01 busy=28.0 rtp=9064/40559 feed=1.002/1.011 lag99=1186/1856 wake=13201/None/14
+  c8-100 Q2 s42 r1 LIVE mbps=96.6 cli=4.50 srv=4.08 busy=27.0 rtp=6695/38401 feed=1.008/1.013 lag99=2361/1192 wake=8241/4/25
+  c8-100 Q2 s42 r2 LIVE mbps=101.4 cli=4.41 srv=4.07 busy=30.0 rtp=9627/35156 feed=1.002/1.028 lag99=2202/1749 wake=7956/2/15
+  c8-100 Q2 s42 r3 LIVE mbps=99.4 cli=4.33 srv=4.25 busy=25.0 rtp=11743/45806 feed=1.002/0.989 lag99=2083/1819 wake=8645/4/11
+  c8-100 Q2 s7 r1 LIVE mbps=103.6 cli=4.37 srv=4.19 busy=29.5 rtp=10046/38617 feed=1.007/1.005 lag99=2044/1974 wake=8088/4/5
+  c8-100 Q2 s7 r2 LIVE mbps=91.8 cli=4.46 srv=4.21 busy=28.0 rtp=9231/37664 feed=1.005/0.998 lag99=2274/1959 wake=8425/3/12
+  c8-100 Q2 s7 r3 LIVE mbps=91.3 cli=4.41 srv=4.38 busy=24.5 rtp=11423/45093 feed=1.010/1.009 lag99=2202/2144 wake=8396/3/8
+
+PER-SEED MEDIANS (goodput, cpu_cli)
+  c1s-400 MAIN s42: gp=772.0 cli=5.61 s7: gp=803.6 cli=5.46
+  c1s-400 Q2 s42: gp=776.0 cli=5.25 s7: gp=753.7 cli=5.26
+  c1d-400 MAIN s42: gp=747.2 cli=6.71 s7: gp=721.3 cli=6.97
+  c1d-400 Q2 s42: gp=725.3 cli=6.66 s7: gp=743.6 cli=6.52
+  c2-100 MAIN s42: gp=89.8 cli=2.97 s7: gp=89.9 cli=2.94
+  c2-100 Q2 s42: gp=89.4 cli=2.89 s7: gp=89.8 cli=2.87
+  c8-100 MAIN s42: gp=97.3 cli=4.68 s7: gp=88.1 cli=4.53
+  c8-100 Q2 s42: gp=99.4 cli=4.41 s7: gp=91.8 cli=4.41
+
+[c1s-400]
+  FEED c1s-400 Q2 p0 plc/truth Q2=0.924 MAIN=0.876 band=[0.674,1.139] -> SAME
+  CLAUSE c1s-400 Q2 goodput: WITHIN Q2=764.9 [724.1-814.2] MAIN=787.8 [743.9-810.1] (-2.9%, rel=0.049)
+  CLAUSE c1s-400 Q2 cpu_cli/GB: TREND-BETTER Q2=13.14 [12.47-14.47] MAIN=13.8 [13.6-14.25] (-4.8%, rel=0.024)
+  CLAUSE c1s-400 Q2 cpu_srv/GB: WITHIN Q2=18.67 [18.07-19.72] MAIN=18.52 [17.88-19.35] (+0.8%, rel=0.024)
+  CLAUSE c1s-400 Q2 lag_p99_cli: WITHIN Q2=2180 [1876-2655] MAIN=1918 [1436-2245] (+13.7%, rel=0.211)
+  CLAUSE c1s-400 Q2 lag_p99_srv: TREND-BETTER Q2=1260 [1148-1845] MAIN=1846 [1257-2342] (-31.7%, rel=0.294)
+  CLAUSE c1s-400 Q2 rtp_floor_p0: WITHIN Q2=2446 [2343-2565] MAIN=2500 [2408-2816] (-2.2%, rel=0.082)
+  CELL c1s-400 Q2 n=6 MAIN n=6 dnf MAIN=0.00 Q2=0.00 worse=- notes=cpu_cli/GB:TREND-BETTER,lag_p99_srv:TREND-BETTER => PASS
+  REPORT c1s-400 MAIN acks/dgram=0.999 [0.998-1.000] n=6 busy=43.5 [41.0-44.5] n=6 gso_p0=8.89 [8.60-9.30] n=6
+  REPORT c1s-400 MAIN wake ack=6304 [5006-6929] n=6 cmd=- tun=7460 [6915-7530] n=6 paused=406 [334-478] n=6 timer_acked=45 [37-70] n=6
+  REPORT c1s-400 MAIN cli cores=1.355 [1.292-1.364] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.238 [0.231-0.244] n=6 parks/s=17978 [16460-19290] n=6 lag p99=1918 [1436-2245] n=6 lockwait max=0.1968 [0.1600-0.2104] n=6 tx/batch=43.9 [42.6-47.9] n=6 rx/batch=27.9 [27.2-28.5] n=6 ack/batch=- ack_dg=- rx_capped=9009 [8624-9310] n=6 send_err=0 [0-0] n=6
+  REPORT c1s-400 MAIN srv cores=1.809 [1.759-1.857] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.339 [0.318-0.377] n=6 parks/s=21732 [20520-22935] n=6 lag p99=1846 [1257-2342] n=6 lockwait max=0.1689 [0.1572-0.1789] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=18.5 [18.3-20.0] n=6 ack/batch=- ack_dg=- rx_capped=4374 [4238-5190] n=6 send_err=0 [0-0] n=6
+    THREADS c1s-400 MAIN s42 r1 cli=rp-w-2:0.240,rp-w-1:0.235,rp-w-3:0.228,rp-w-5:0.225 srv=rp-w-2:0.363,rp-w-0:0.312,rp-w-1:0.287,rp-w-4:0.287
+    THREADS c1s-400 MAIN s7 r1 cli=rp-w-1:0.241,rp-w-4:0.229,rp-w-0:0.224,rp-w-5:0.214 srv=rp-w-0:0.328,rp-w-1:0.311,rp-w-5:0.307,rp-w-2:0.299
+    THREADS c1s-400 MAIN s42 r2 cli=rp-w-4:0.232,rp-w-3:0.221,rp-w-2:0.219,rp-w-1:0.212 srv=rp-w-4:0.377,rp-w-5:0.296,rp-w-0:0.284,rp-w-1:0.277
+    THREADS c1s-400 MAIN s7 r2 cli=rp-w-2:0.231,rp-w-3:0.231,rp-w-4:0.231,rp-w-0:0.226 srv=rp-w-5:0.322,rp-w-3:0.319,rp-w-0:0.304,rp-w-1:0.297
+    THREADS c1s-400 MAIN s42 r3 cli=rp-w-5:0.244,rp-w-0:0.234,rp-w-2:0.222,rp-w-3:0.222 srv=rp-w-0:0.350,rp-w-1:0.328,rp-w-4:0.316,rp-w-5:0.295
+    THREADS c1s-400 MAIN s7 r3 cli=rp-w-4:0.237,rp-w-3:0.235,rp-w-5:0.230,rp-w-1:0.222 srv=rp-w-4:0.318,rp-w-1:0.313,rp-w-5:0.313,rp-w-3:0.306
+  REPORT c1s-400 Q2 acks/dgram=0.998 [0.997-1.000] n=6 busy=39.5 [38.0-42.0] n=6 gso_p0=8.89 [8.56-9.39] n=6
+  REPORT c1s-400 Q2 wake ack=3434 [2956-3718] n=6 cmd=2 [0-3] n=6 tun=6819 [6395-7063] n=6 paused=393 [276-431] n=6 timer_acked=88 [52-103] n=6
+  REPORT c1s-400 Q2 cli cores=1.260 [1.227-1.297] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.225 [0.219-0.238] n=6 parks/s=16902 [16415-18407] n=6 lag p99=2180 [1876-2655] n=6 lockwait max=0.1753 [0.1496-0.1902] n=6 tx/batch=48.2 [46.4-49.9] n=6 rx/batch=1.0 [1.0-1.0] n=6 ack/batch=27.7 [26.8-28.2] n=6 ack_dg=338489 [338472-338508] n=6 rx_capped=8909 [8442-9249] n=6 send_err=0 [0-0] n=6
+  REPORT c1s-400 Q2 srv cores=1.790 [1.749-1.823] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.355 [0.326-0.371] n=6 parks/s=21287 [20935-24396] n=6 lag p99=1260 [1148-1845] n=6 lockwait max=0.1613 [0.1402-0.1695] n=6 tx/batch=- rx/batch=18.7 [17.0-19.3] n=6 ack/batch=1.0 [1.0-1.0] n=1 ack_dg=0 [0-1] n=6 rx_capped=4410 [3734-4921] n=6 send_err=0 [0-0] n=6
+    THREADS c1s-400 Q2 s42 r1 cli=rp-w-1:0.228,rp-w-2:0.226,rp-w-5:0.221,rp-w-0:0.201 srv=rp-w-4:0.371,rp-w-2:0.323,rp-w-0:0.313,rp-w-1:0.272
+    THREADS c1s-400 Q2 s7 r1 cli=rp-w-2:0.223,rp-w-4:0.223,rp-w-0:0.221,rp-w-3:0.216 srv=rp-w-4:0.352,rp-w-2:0.326,rp-w-0:0.304,rp-w-5:0.281
+    THREADS c1s-400 Q2 s42 r2 cli=rp-w-5:0.219,rp-w-2:0.216,rp-w-0:0.211,rp-w-4:0.206 srv=rp-w-1:0.359,rp-w-5:0.313,rp-w-4:0.303,rp-w-2:0.301
+    THREADS c1s-400 Q2 s7 r2 cli=rp-w-3:0.219,rp-w-2:0.205,rp-w-5:0.205,rp-w-0:0.203 srv=rp-w-4:0.344,rp-w-5:0.304,rp-w-3:0.285,rp-w-2:0.281
+    THREADS c1s-400 Q2 s42 r3 cli=rp-w-4:0.227,rp-w-5:0.224,rp-w-1:0.213,rp-w-2:0.203 srv=rp-w-0:0.363,rp-w-4:0.318,rp-w-1:0.302,rp-w-2:0.290
+    THREADS c1s-400 Q2 s7 r3 cli=rp-w-0:0.238,rp-w-5:0.224,rp-w-2:0.219,rp-w-1:0.206 srv=rp-w-5:0.326,rp-w-0:0.324,rp-w-2:0.306,rp-w-1:0.285
+[c1d-400]
+  FEED c1d-400 Q2 p0 plc/truth Q2=1.042 MAIN=1.002 band=[0.771,1.303] -> SAME
+  FEED c1d-400 Q2 p1 plc/truth Q2=1.031 MAIN=0.986 band=[0.758,1.281] -> SAME
+  CLAUSE c1d-400 Q2 goodput: WITHIN Q2=741.9 [710.4-755.4] MAIN=738.7 [707.7-764.8] (+0.4%, rel=0.056)
+  CLAUSE c1d-400 Q2 cpu_cli/GB: WITHIN Q2=16.47 [16-16.97] MAIN=17.01 [16.7-18.07] (-3.2%, rel=0.065)
+  CLAUSE c1d-400 Q2 cpu_srv/GB: WITHIN Q2=21.22 [20.75-21.82] MAIN=20.99 [20.5-22.27] (+1.1%, rel=0.065)
+  CLAUSE c1d-400 Q2 lag_p99_cli: WITHIN Q2=1544 [1068-2720] MAIN=1712 [1346-3521] (-9.8%, rel=0.635)
+  CLAUSE c1d-400 Q2 lag_p99_srv: WITHIN Q2=1745 [1215-2489] MAIN=1920 [1214-2678] (-9.1%, rel=0.381)
+  CLAUSE c1d-400 Q2 rtp_floor_p0: WITHIN Q2=2310 [2296-2436] MAIN=2384 [2269-2484] (-3.1%, rel=0.050)
+  CLAUSE c1d-400 Q2 rtp_floor_p1: WITHIN Q2=2308 [2278-2331] MAIN=2414 [2295-2502] (-4.4%, rel=0.050)
+  CELL c1d-400 Q2 n=6 MAIN n=6 dnf MAIN=0.00 Q2=0.00 worse=- notes=- => PASS
+  REPORT c1d-400 MAIN acks/dgram=0.993 [0.990-0.995] n=6 busy=59.0 [56.0-64.0] n=6 gso_p0=7.01 [6.93-7.87] n=6 gso_p1=7.13 [7.00-7.44] n=6
+  REPORT c1d-400 MAIN wake ack=6868 [5531-8876] n=6 cmd=- tun=7074 [6694-7683] n=6 paused=180 [139-315] n=6 timer_acked=15 [6-30] n=6
+  REPORT c1d-400 MAIN cli cores=1.559 [1.546-1.596] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.270 [0.265-0.275] n=6 parks/s=16740 [15407-17636] n=6 lag p99=1712 [1346-3521] n=6 lockwait max=0.0809 [0.0565-0.1133] n=6 tx/batch=24.7 [22.3-28.4] n=6 rx/batch=21.3 [20.7-23.3] n=6 ack/batch=- ack_dg=- rx_capped=6161 [5558-7298] n=6 send_err=0 [0-0] n=6
+  REPORT c1d-400 MAIN srv cores=1.950 [1.868-1.969] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.402 [0.354-0.483] n=6 parks/s=18718 [17811-19727] n=6 lag p99=1920 [1214-2678] n=6 lockwait max=0.0894 [0.0745-0.1164] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=17.9 [16.9-19.8] n=6 ack/batch=- ack_dg=- rx_capped=4704 [4023-5723] n=6 send_err=0 [0-0] n=6
+    THREADS c1d-400 MAIN s42 r1 cli=rp-w-0:0.275,rp-w-4:0.268,rp-w-2:0.256,rp-w-3:0.256 srv=rp-w-5:0.369,rp-w-1:0.364,rp-w-4:0.350,rp-w-2:0.312
+    THREADS c1d-400 MAIN s7 r1 cli=rp-w-4:0.270,rp-w-2:0.268,rp-w-0:0.263,rp-w-1:0.261 srv=rp-w-4:0.432,rp-w-5:0.394,rp-w-0:0.336,rp-w-1:0.288
+    THREADS c1d-400 MAIN s42 r2 cli=rp-w-1:0.265,rp-w-2:0.265,rp-w-5:0.262,rp-w-0:0.258 srv=rp-w-4:0.416,rp-w-5:0.391,rp-w-3:0.317,rp-w-2:0.297
+    THREADS c1d-400 MAIN s7 r2 cli=rp-w-4:0.270,rp-w-1:0.261,rp-w-0:0.259,rp-w-2:0.259 srv=rp-w-4:0.354,rp-w-1:0.316,rp-w-5:0.311,rp-w-3:0.302
+    THREADS c1d-400 MAIN s42 r3 cli=rp-w-5:0.266,rp-w-1:0.264,rp-w-3:0.259,rp-w-0:0.254 srv=rp-w-0:0.388,rp-w-1:0.330,rp-w-5:0.325,rp-w-2:0.311
+    THREADS c1d-400 MAIN s7 r3 cli=rp-w-2:0.275,rp-w-0:0.268,rp-w-3:0.265,rp-w-4:0.265 srv=rp-w-3:0.483,rp-w-4:0.366,rp-w-1:0.304,rp-w-2:0.304
+  REPORT c1d-400 Q2 acks/dgram=0.994 [0.987-0.995] n=6 busy=56.0 [54.5-69.0] n=6 gso_p0=7.02 [6.98-8.44] n=6 gso_p1=7.02 [6.86-7.65] n=6
+  REPORT c1d-400 Q2 wake ack=5004 [3238-5545] n=6 cmd=2 [1-2] n=6 tun=7424 [6107-7676] n=6 paused=139 [86-199] n=6 timer_acked=8 [4-13] n=6
+  REPORT c1d-400 Q2 cli cores=1.498 [1.494-1.536] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.261 [0.257-0.282] n=6 parks/s=16837 [14930-17586] n=6 lag p99=1544 [1068-2720] n=6 lockwait max=0.0576 [0.0505-0.0851] n=6 tx/batch=23.0 [21.7-30.2] n=6 rx/batch=1.0 [1.0-1.0] n=6 ack/batch=20.9 [20.5-22.3] n=6 ack_dg=339633 [339326-339961] n=6 rx_capped=5820 [5414-7163] n=6 send_err=0 [0-0] n=6
+  REPORT c1d-400 Q2 srv cores=1.964 [1.827-1.992] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.407 [0.344-0.468] n=6 parks/s=19147 [18072-20608] n=6 lag p99=1745 [1215-2489] n=6 lockwait max=0.0743 [0.0704-0.0915] n=6 tx/batch=- rx/batch=17.4 [16.5-18.6] n=6 ack/batch=- ack_dg=0 [0-0] n=6 rx_capped=4344 [3860-5465] n=6 send_err=0 [0-0] n=6
+    THREADS c1d-400 Q2 s42 r1 cli=rp-w-5:0.261,rp-w-2:0.254,rp-w-4:0.249,rp-w-3:0.247 srv=rp-w-3:0.451,rp-w-0:0.370,rp-w-2:0.331,rp-w-5:0.288
+    THREADS c1d-400 Q2 s7 r1 cli=rp-w-4:0.259,rp-w-1:0.257,rp-w-0:0.250,rp-w-2:0.247 srv=rp-w-0:0.377,rp-w-3:0.370,rp-w-5:0.347,rp-w-4:0.338
+    THREADS c1d-400 Q2 s42 r2 cli=rp-w-5:0.282,rp-w-3:0.257,rp-w-4:0.249,rp-w-2:0.242 srv=rp-w-0:0.344,rp-w-1:0.327,rp-w-5:0.309,rp-w-2:0.293
+    THREADS c1d-400 Q2 s7 r2 cli=rp-w-0:0.260,rp-w-1:0.258,rp-w-3:0.258,rp-w-2:0.256 srv=rp-w-1:0.433,rp-w-0:0.375,rp-w-4:0.316,rp-w-2:0.309
+    THREADS c1d-400 Q2 s42 r3 cli=rp-w-3:0.261,rp-w-4:0.261,rp-w-2:0.254,rp-w-5:0.252 srv=rp-w-1:0.382,rp-w-5:0.363,rp-w-2:0.344,rp-w-3:0.314
+    THREADS c1d-400 Q2 s7 r3 cli=rp-w-0:0.257,rp-w-1:0.255,rp-w-2:0.250,rp-w-3:0.248 srv=rp-w-2:0.468,rp-w-4:0.364,rp-w-0:0.338,rp-w-3:0.312
+[c2-100]
+  FEED c2-100 Q2 p0 plc/truth Q2=1.004 MAIN=0.998 band=[0.768,1.297] -> SAME
+  CLAUSE c2-100 Q2 goodput: WITHIN Q2=89.61 [83.33-90.25] MAIN=89.87 [88.01-90.07] (-0.3%, rel=0.014)
+  CLAUSE c2-100 Q2 cpu_cli/GB: WITHIN Q2=28.8 [28.1-29] MAIN=29.45 [28.1-29.9] (-2.2%, rel=0.063)
+  CLAUSE c2-100 Q2 cpu_srv/GB: WITHIN Q2=32.35 [31.4-33.5] MAIN=32.75 [31.5-33.4] (-1.2%, rel=0.063)
+  CLAUSE c2-100 Q2 lag_p99_cli: TREND-BETTER Q2=1189 [1106-1911] MAIN=2042 [1806-2847] (-41.8%, rel=0.255)
+  CLAUSE c2-100 Q2 lag_p99_srv: TREND-BETTER Q2=1097 [886-1789] MAIN=1844 [1643-1904] (-40.5%, rel=0.071)
+  CLAUSE c2-100 Q2 rtp_floor_p0: WITHIN Q2=1.158e+04 [6440-1.46e+04] MAIN=1.27e+04 [9763-1.352e+04] (-8.8%, rel=0.148)
+  CELL c2-100 Q2 n=6 MAIN n=6 dnf MAIN=0.00 Q2=0.00 worse=- notes=lag_p99_cli:TREND-BETTER,lag_p99_srv:TREND-BETTER => PASS
+  REPORT c2-100 MAIN acks/dgram=1.000 [0.999-1.000] n=6 busy=10.0 [9.0-10.0] n=6 gso_p0=5.67 [5.59-5.85] n=6
+  REPORT c2-100 MAIN wake ack=13010 [12641-13663] n=6 cmd=- tun=4220 [3941-4432] n=6 paused=2136 [2051-2208] n=6 timer_acked=15 [13-20] n=6
+  REPORT c2-100 MAIN cli cores=0.323 [0.310-0.329] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.073 [0.070-0.080] n=6 parks/s=5612 [5367-6007] n=6 lag p99=2042 [1806-2847] n=6 lockwait max=0.0049 [0.0045-0.0057] n=6 tx/batch=19.2 [18.3-20.4] n=6 rx/batch=10.1 [9.9-10.2] n=6 ack/batch=- ack_dg=- rx_capped=69 [58-85] n=6 send_err=0 [0-0] n=6
+  REPORT c2-100 MAIN srv cores=0.361 [0.348-0.365] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.081 [0.074-0.085] n=6 parks/s=7025 [6880-7321] n=6 lag p99=1844 [1643-1904] n=6 lockwait max=0.0040 [0.0036-0.0048] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=7.0 [6.4-7.2] n=6 ack/batch=- ack_dg=- rx_capped=11 [6-18] n=6 send_err=0 [0-0] n=6
+    THREADS c2-100 MAIN s42 r1 cli=rp-w-2:0.071,rp-w-3:0.070,rp-w-5:0.065,rp-w-0:0.062 srv=rp-w-0:0.080,rp-w-1:0.071,rp-w-2:0.069,rp-w-5:0.064
+    THREADS c2-100 MAIN s7 r1 cli=rp-w-3:0.070,rp-w-0:0.066,rp-w-2:0.063,rp-w-1:0.061 srv=rp-w-1:0.082,rp-w-5:0.082,rp-w-2:0.075,rp-w-3:0.074
+    THREADS c2-100 MAIN s42 r2 cli=rp-w-0:0.072,rp-w-2:0.070,rp-w-3:0.066,rp-w-1:0.056 srv=rp-w-4:0.084,rp-w-1:0.081,rp-w-0:0.071,rp-w-3:0.069
+    THREADS c2-100 MAIN s7 r2 cli=rp-w-5:0.074,rp-w-0:0.066,rp-w-3:0.063,rp-w-1:0.058 srv=rp-w-1:0.074,rp-w-3:0.074,rp-w-5:0.071,rp-w-2:0.069
+    THREADS c2-100 MAIN s42 r3 cli=rp-w-2:0.080,rp-w-4:0.073,rp-w-1:0.063,rp-w-3:0.063 srv=rp-w-0:0.079,rp-w-5:0.077,rp-w-2:0.073,rp-w-1:0.071
+    THREADS c2-100 MAIN s7 r3 cli=rp-w-1:0.078,rp-w-3:0.078,rp-w-0:0.063,rp-w-5:0.056 srv=rp-w-4:0.085,rp-w-0:0.077,rp-w-1:0.072,rp-w-2:0.065
+  REPORT c2-100 Q2 acks/dgram=0.999 [0.998-1.000] n=6 busy=10.0 [9.0-10.0] n=6 gso_p0=5.78 [5.67-5.93] n=6
+  REPORT c2-100 Q2 wake ack=7496 [7221-7912] n=6 cmd=5 [3-5] n=6 tun=4206 [4025-4392] n=6 paused=2146 [2061-2179] n=6 timer_acked=10 [6-19] n=6
+  REPORT c2-100 Q2 cli cores=0.315 [0.289-0.321] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.072 [0.061-0.074] n=6 parks/s=5559 [4899-5901] n=6 lag p99=1189 [1106-1911] n=6 lockwait max=0.0052 [0.0050-0.0060] n=6 tx/batch=19.2 [18.4-19.9] n=6 rx/batch=1.0 [1.0-1.0] n=6 ack/batch=10.3 [10.1-10.5] n=6 ack_dg=85042 [85010-85062] n=6 rx_capped=70 [66-87] n=6 send_err=0 [0-0] n=6
+  REPORT c2-100 Q2 srv cores=0.351 [0.344-0.372] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.082 [0.071-0.086] n=6 parks/s=6982 [6697-7681] n=6 lag p99=1097 [886-1789] n=6 lockwait max=0.0041 [0.0035-0.0043] n=6 tx/batch=- rx/batch=7.1 [6.5-7.3] n=6 ack/batch=- ack_dg=0 [0-0] n=6 rx_capped=8 [5-10] n=6 send_err=0 [0-0] n=6
+    THREADS c2-100 Q2 s42 r1 cli=rp-w-4:0.061,rp-w-0:0.056,rp-w-2:0.056,rp-w-3:0.056 srv=rp-w-2:0.083,rp-w-3:0.079,rp-w-5:0.070,rp-w-0:0.057
+    THREADS c2-100 Q2 s7 r1 cli=rp-w-0:0.070,rp-w-1:0.062,rp-w-2:0.062,rp-w-3:0.054 srv=rp-w-1:0.071,rp-w-2:0.070,rp-w-4:0.065,rp-w-0:0.057
+    THREADS c2-100 Q2 s42 r2 cli=rp-w-3:0.072,rp-w-1:0.066,rp-w-2:0.064,rp-w-0:0.063 srv=rp-w-5:0.084,rp-w-3:0.075,rp-w-4:0.071,rp-w-0:0.069
+    THREADS c2-100 Q2 s7 r2 cli=rp-w-1:0.073,rp-w-4:0.063,rp-w-3:0.056,rp-w-5:0.054 srv=rp-w-0:0.077,rp-w-3:0.076,rp-w-1:0.074,rp-w-4:0.067
+    THREADS c2-100 Q2 s42 r3 cli=rp-w-3:0.073,rp-w-5:0.068,rp-w-2:0.064,rp-w-0:0.059 srv=rp-w-0:0.080,rp-w-4:0.080,rp-w-3:0.075,rp-w-5:0.071
+    THREADS c2-100 Q2 s7 r3 cli=rp-w-1:0.074,rp-w-5:0.072,rp-w-0:0.060,rp-w-2:0.057 srv=rp-w-5:0.086,rp-w-0:0.081,rp-w-1:0.067,rp-w-2:0.063
+[c8-100]
+  FEED c8-100 Q2 p0 plc/truth Q2=1.006 MAIN=1.002 band=[0.771,1.303] -> SAME
+  FEED c8-100 Q2 p1 plc/truth Q2=1.007 MAIN=1.009 band=[0.776,1.312] -> SAME
+  CLAUSE c8-100 Q2 goodput: WITHIN Q2=98 [91.33-103.6] MAIN=95.94 [84.03-103.1] (+2.1%, rel=0.040)
+  CLAUSE c8-100 Q2 cpu_cli/GB: WITHIN Q2=44.1 [43.3-45] MAIN=45.35 [40.3-48.4] (-2.8%, rel=0.116)
+  CLAUSE c8-100 Q2 cpu_srv/GB: WITHIN Q2=42 [40.7-43.8] MAIN=43.05 [39.6-45.8] (-2.4%, rel=0.116)
+  CLAUSE c8-100 Q2 lag_p99_cli: TREND-WORSE Q2=2202 [2044-2361] MAIN=1358 [1105-2609] (+62.2%, rel=0.554)
+  CLAUSE c8-100 Q2 lag_p99_srv: WITHIN Q2=1889 [1192-2144] MAIN=1875 [1202-2400] (+0.7%, rel=0.319)
+  CLAUSE c8-100 Q2 rtp_floor_p0: WITHIN Q2=9836 [6695-1.174e+04] MAIN=9734 [8254-1.21e+04] (+1.1%, rel=0.198)
+  CLAUSE c8-100 Q2 rtp_floor_p1: TREND-BETTER Q2=3.851e+04 [3.516e+04-4.581e+04] MAIN=4.394e+04 [4.056e+04-4.914e+04] (-12.4%, rel=0.098)
+  CELL c8-100 Q2 n=6 MAIN n=6 dnf MAIN=0.00 Q2=0.00 worse=- notes=lag_p99_cli:TREND-WORSE,rtp_floor_p1:TREND-BETTER => PASS
+  REPORT c8-100 MAIN acks/dgram=1.000 [1.000-1.000] n=6 busy=26.5 [22.0-29.0] n=6 gso_p0=6.01 [5.66-6.09] n=6 gso_p1=3.38 [3.26-3.73] n=6
+  REPORT c8-100 MAIN wake ack=12586 [11888-13607] n=6 cmd=- tun=2454 [2380-2558] n=6 paused=1014 [933-1145] n=6 timer_acked=13 [9-23] n=6
+  REPORT c8-100 MAIN cli cores=0.528 [0.469-0.580] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.103 [0.098-0.122] n=6 parks/s=6042 [5102-6805] n=6 lag p99=1358 [1105-2609] n=6 lockwait max=0.0046 [0.0034-0.0052] n=6 tx/batch=17.0 [15.9-17.8] n=6 rx/batch=8.3 [8.1-8.6] n=6 ack/batch=- ack_dg=- rx_capped=50 [41-69] n=6 send_err=0 [0-0] n=6
+  REPORT c8-100 MAIN srv cores=0.506 [0.441-0.552] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.106 [0.097-0.122] n=6 parks/s=8674 [8025-9235] n=6 lag p99=1875 [1202-2400] n=6 lockwait max=0.0050 [0.0043-0.0067] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=6.2 [6.1-6.5] n=6 ack/batch=- ack_dg=- rx_capped=8 [5-15] n=6 send_err=0 [0-0] n=6
+    THREADS c8-100 MAIN s42 r1 cli=rp-w-2:0.104,rp-w-4:0.098,rp-w-1:0.094,rp-w-0:0.086 srv=rp-w-5:0.108,rp-w-4:0.106,rp-w-3:0.097,rp-w-1:0.088
+    THREADS c8-100 MAIN s7 r1 cli=rp-w-4:0.103,rp-w-2:0.081,rp-w-3:0.081,rp-w-0:0.080 srv=rp-w-2:0.097,rp-w-3:0.083,rp-w-4:0.081,rp-w-0:0.063
+    THREADS c8-100 MAIN s42 r2 cli=rp-w-3:0.112,rp-w-4:0.106,rp-w-2:0.096,rp-w-5:0.090 srv=rp-w-0:0.101,rp-w-3:0.099,rp-w-5:0.085,rp-w-4:0.084
+    THREADS c8-100 MAIN s7 r2 cli=rp-w-3:0.098,rp-w-5:0.087,rp-w-0:0.085,rp-w-2:0.085 srv=rp-w-1:0.105,rp-w-5:0.091,rp-w-3:0.084,rp-w-4:0.082
+    THREADS c8-100 MAIN s42 r3 cli=rp-w-4:0.122,rp-w-1:0.107,rp-w-2:0.095,rp-w-5:0.089 srv=rp-w-0:0.122,rp-w-2:0.103,rp-w-4:0.099,rp-w-3:0.089
+    THREADS c8-100 MAIN s7 r3 cli=rp-w-1:0.102,rp-w-2:0.099,rp-w-3:0.094,rp-w-5:0.091 srv=rp-w-1:0.109,rp-w-2:0.098,rp-w-5:0.097,rp-w-4:0.088
+  REPORT c8-100 Q2 acks/dgram=1.000 [1.000-1.000] n=6 busy=27.5 [24.5-30.0] n=6 gso_p0=5.88 [5.55-6.15] n=6 gso_p1=3.27 [3.14-3.46] n=6
+  REPORT c8-100 Q2 wake ack=8318 [7956-8645] n=6 cmd=4 [2-4] n=6 tun=2525 [2483-2565] n=6 paused=1016 [956-1098] n=6 timer_acked=12 [5-25] n=6
+  REPORT c8-100 Q2 cli cores=0.535 [0.495-0.558] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.102 [0.095-0.114] n=6 parks/s=6407 [5820-7000] n=6 lag p99=2202 [2044-2361] n=6 lockwait max=0.0053 [0.0046-0.0058] n=6 tx/batch=16.1 [15.6-16.2] n=6 rx/batch=1.0 [1.0-1.0] n=6 ack/batch=8.6 [8.3-9.0] n=6 ack_dg=85329 [85152-85575] n=6 rx_capped=88 [69-116] n=6 send_err=0 [0-0] n=6
+  REPORT c8-100 Q2 srv cores=0.503 [0.478-0.535] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.102 [0.099-0.112] n=6 parks/s=9082 [8743-10187] n=6 lag p99=1889 [1192-2144] n=6 lockwait max=0.0052 [0.0041-0.0061] n=6 tx/batch=- rx/batch=6.2 [6.1-6.4] n=6 ack/batch=1.0 [1.0-1.0] n=3 ack_dg=0 [0-1] n=6 rx_capped=9 [5-17] n=6 send_err=0 [0-0] n=6
+    THREADS c8-100 Q2 s42 r1 cli=rp-w-5:0.114,rp-w-4:0.097,rp-w-0:0.088,rp-w-2:0.085 srv=rp-w-3:0.102,rp-w-1:0.096,rp-w-0:0.089,rp-w-5:0.089
+    THREADS c8-100 Q2 s7 r1 cli=rp-w-0:0.102,rp-w-5:0.101,rp-w-4:0.096,rp-w-3:0.092 srv=rp-w-3:0.100,rp-w-0:0.091,rp-w-1:0.088,rp-w-5:0.088
+    THREADS c8-100 Q2 s42 r2 cli=rp-w-0:0.108,rp-w-2:0.101,rp-w-3:0.098,rp-w-1:0.090 srv=rp-w-4:0.112,rp-w-0:0.111,rp-w-3:0.096,rp-w-1:0.093
+    THREADS c8-100 Q2 s7 r2 cli=rp-w-5:0.103,rp-w-4:0.088,rp-w-1:0.083,rp-w-0:0.080 srv=rp-w-3:0.099,rp-w-0:0.093,rp-w-1:0.092,rp-w-5:0.074
+    THREADS c8-100 Q2 s42 r3 cli=rp-w-4:0.097,rp-w-0:0.094,rp-w-1:0.089,rp-w-3:0.089 srv=rp-w-1:0.105,rp-w-3:0.101,rp-w-2:0.095,rp-w-4:0.081
+    THREADS c8-100 Q2 s7 r3 cli=rp-w-2:0.095,rp-w-1:0.089,rp-w-0:0.087,rp-w-5:0.084 srv=rp-w-5:0.102,rp-w-0:0.093,rp-w-3:0.088,rp-w-2:0.081
+
+PREDICTION c2_cpucli_recovers_p1: MISSED (Q2/MAIN = -2.2%, threshold -5.3%)
+PREDICTION c1d_sender_busy: MAIN=59.0 Q2=56.0 (reported; the named load risk)
+ARM Q2 c1s-400:PASS c1d-400:PASS c2-100:PASS c8-100:PASS => PASS-EVERYWHERE
+VERDICT DELIVERED (Q2 passes at every cell: the split ships)
+
+ACK-INTERARRIVAL (RWM_ACKDIAG block, reported only; client [ACKDIAG] gap_us per path)
+  ACKGAP c1s-400 MAIN p0 p50=1 [1-1] n=2 p90=2 [2-2] n=2 p99=392 [366-419] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1s-400 Q2 p0 p50=1 [1-1] n=2 p90=2 [2-2] n=2 p99=410 [395-424] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 MAIN p0 p50=2 [2-2] n=2 p90=4 [4-4] n=2 p99=661 [646-676] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 MAIN p1 p50=2 [2-2] n=2 p90=4 [4-4] n=2 p99=708 [702-715] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 Q2 p0 p50=2 [1-2] n=2 p90=3 [3-3] n=2 p99=578 [395-760] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 Q2 p1 p50=2 [1-2] n=2 p90=2 [2-3] n=2 p99=770 [555-986] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c2-100 MAIN p0 p50=1 [1-1] n=2 p90=32 [30-33] n=2 p99=2449 [2435-2463] n=2 acks=19230 [19225-19234] n=2
+  ACKGAP c2-100 Q2 p0 p50=1 [1-1] n=2 p90=18 [16-21] n=2 p99=2424 [2364-2484] n=2 acks=19220 [19220-19220] n=2
+  ACKGAP c8-100 MAIN p0 p50=1 [1-1] n=2 p90=40 [35-44] n=2 p99=2495 [2396-2594] n=2 acks=16519 [13696-19342] n=2
+  ACKGAP c8-100 MAIN p1 p50=2 [2-2] n=2 p90=1746 [1662-1830] n=2 p99=7762 [7701-7823] n=2 acks=3436 [3041-3830] n=2
+  ACKGAP c8-100 Q2 p0 p50=1 [1-1] n=2 p90=13 [8-18] n=2 p99=2390 [2353-2428] n=2 acks=16574 [13917-19230] n=2
+  ACKGAP c8-100 Q2 p1 p50=2 [2-2] n=2 p90=1950 [1895-2005] n=2 p99=7358 [6960-7755] n=2 acks=3497 [3151-3843] n=2
+  ACKD rows=16 live=16

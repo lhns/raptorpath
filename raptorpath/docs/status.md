@@ -67,6 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| Threading Q2 (§14) | the scheduler split by direction (the sender owns the TX half and the FEC controller by `&mut`, acks handled in the sender via the owners' input channel; the receiver owns the RX half; `AckWake` and `SchedMutex` deleted; the `own` arm deleted) vs MAIN 0ef0e0d, c1s/c1d/c2/c8, n = 6, `RWM_RTOBS=1` | `DELIVERED`: PASS at every cell — goodput WITHIN everywhere, CPUCLI/GB −2 to −5 % (c1s TREND-BETTER), CPUSRV WITHIN, RTprop WITHIN; `[LAG]` p99 TREND-BETTER at c2 both sides and c1s server, TREND-WORSE at c8 client (+62 %, overlapping); amendment 1's c1d client-lag risk did not fire (−9.8 %); c2 CPU recovery of P1's +5.3 % MISSED (−2.2 %); client sender busy fell (c1d 59 → 56 %); merge is the operator's |
 | Threading Q1 (§13) | the per-path I/O owner, placements IOS (`RWM_IO_RT=shared`) and IOO (`own`), and D9 alone, each vs MAIN 69fd846, c1s/c1d/c2/c8, n = 6, `RWM_RTOBS=1` everywhere | `DELIVERED (SHIP-SHARED)`: IOS passes everywhere — c1s goodput +48 %, c1d +67 % (729.5 Mbit/s, FDT bar 501 met), CPUSRV/GB −8 to −30 % at every cell, CPUCLI/GB −13 to −37 % at c1d/c2; IOO FAIL at c1d (client `[LAG]` p99 +22 %, RTprop floor +12/+15 %); routing predictions MET (`drv_off` 0 under own, 34–63 % under shared), own lock wait ≈ 0 MISSED at c1s (0.0115 > 0.01); D9 alone FAIL at c1s/c1d/c2 (c1s −32 %, CPUCLI +103 %: §12's c1s collapse re-scoped to D9); merge and `own` deletion are the operator's |
 | Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates ≈ 3× (up to 11×) more at c1s (finding 1; the receiver's per-message budget unit, 06837b7, is a named confound); not shipped |
 | Threading redesign P0 (§9) | P0 (named runtime + `[THR]`/`[LAG]`) vs MAIN 8d7d8c1, `c1s-400`/`c1d-400`, n = 3, `RWM_RDIAG=1`, 12 invocations | D3 `D3-REFUTED-WITH-RECORD` at c1s (server receiver task 79 % busy, hottest server thread 0.36 core; stop rule not fired; at c1d the receiver task reads 92 %); no-behaviour-change `REFUTED-WITH-RECORD` (c1s goodput −6.7 %, disjoint ranges at n = 3; c1d within); per-thread budget recorded; nothing flipped |
@@ -4082,3 +4083,146 @@ comparable between the arms**: on MAIN it is P1's `AckWake` Notify arm,
 armed only while paused or pacing-dry; on Q2 it is the always-armed input
 channel arm — the two columns are different counters, and MAIN's 7048 vs
 Q2's 5086 at c1d is not "fewer ack wakes".
+
+### 14. Threading Q2 — result
+
+Scored 2026-10-06 against the pre-registration above and amendment 1,
+literally. **`DELIVERED`**: Q2 passes at every cell (no clause WORSE, the
+feed unmoved, no DNF). Per the outcome rule the split ships — the merge is
+the operator's. Nothing was tuned in this battery. **The amendment's named
+risk did not fire**: c1d client `[LAG]` p99 reads 1712 → 1544 µs (−9.8 %,
+WITHIN) at n = 6; the n = 2 pre-check's +29 % was not reproduced. **The
+named c2 prediction MISSED**: c2 client CPU per byte −2.2 % (WITHIN), not
+the −5.3 % that would have recovered P1's rise.
+
+*Binaries and session.* Launched 07:54:38Z from `bc6429a` (engine
+byte-identical to `b51f531`; the commits after it are `docs/`). Q2
+`sha256 8d194b65…0fa70dd7`, MAIN `76decc7f…012e7c9ef` (0ef0e0d — the same
+hash §13's Q1 binary had: the engine is unchanged since `7897ff1`); both
+archived LF and built fresh on the benchmark VM in fresh targets
+(`BINSHA.txt`). Q2 build 253 s; tests 07:58–08:44Z; MAIN build 253 s; smoke
+08:49:07Z (`c_meas` 34 s < `C_PRED` 60 s, `R_est` = `R_PRIOR`, n = 3 per
+seed, no cut); battery 08:49:07–08:56:07Z (420 s, 48 invocations, 8.8 s
+mean); the `ackd` block 137 s (16 invocations); locks released 08:58:24Z.
+**Session wall 1 h 04 min.** Exit state recorded by the envelope: 0
+`raptorpath`, 0 `rp-*` namespaces, both locks released. `all-era.txt`
+read at ≈ 08:14, 08:34, 08:54 and 09:14Z (rule 13's ≈ 20 min).
+
+*Tests* (inside the locks, `TESTS.txt`): release suite rc 0, **1 078
+passed, 0 failed**, 50 ignored (93 binaries); doc rc 0; wasm rc 0 (35
+passed); **debug suite rc 0, 937 passed, 0 failed**, 49 ignored (84
+binaries), `IDENTITY-PANICS 0`; parser tests rc 0. No flake fired.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 07:54:38Z) |
+| `ABORT-CRLF` | no |
+| `ABORT-BUILD` | no (either tree) |
+| `ABORT-TESTS` | no (0 failures) |
+| `ABORT-SHA` | no (checked at start and before every invocation) |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 4 rows LIVE, both arms |
+| `ABORT-BUDGET` | no (n = 3 per seed) |
+| `ABORT-RC` | 0 of 48 |
+| `ABORT-BRINGUP` | 0 |
+| `VOID-COTENANT` | 0 of 48 |
+
+*What ran.* 6 blocks × 8 = 48 rows, **all LIVE** (0 witness failures, 0
+contaminated, 0 DNF); 6 per (cell, arm), 3 per seed; the `ackd` block 16
+rows (reported only). The two-sided Q2 witness held on every row: every Q2
+row's owners carried the sender lane on both ends with the client's acks
+routed to the sender (`ack_dg` ≈ 338 500 at c1s, 339 600 at c1d, 85 000 at
+c2/c8 — the client receiver's inbound batches read 1.0 datagram: it no
+longer sees acks), a `cmd=` wake token and no `[TOPO]` / `RWM_IO_RT`;
+every MAIN row the reverse. Ledgers: `docs/l1-raw/thread-q2/` (`tq2.log`,
+`score.txt` with every per-rep value, `ackd.log`, `smoke.log`,
+`smoke-check.txt`, `TESTS.txt`, `PLAN.txt`, `BINSHA.txt`, `all-era.txt`,
+and `precheck-c1d/` — amendment 1's unscored c1d check); the
+per-invocation endpoint logs stayed on the VM and were deleted with the run
+directory.
+
+*Per cell* (Q2 vs MAIN, n = 6 each; median [min–max]; the min–max rule as
+pre-registered; `TB` = TREND-BETTER, `TW` = TREND-WORSE, `=` = WITHIN):
+
+| cell | goodput Mbit/s (MAIN → Q2) | CPUCLI s/GB | CPUSRV s/GB | `[LAG]` p99 client µs | `[LAG]` p99 server µs | RTprop floor per leg | feed | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `c1s-400` | 787.8 [743.9–810.1] → 764.9 [724.1–814.2] (−2.9 %, =) | 13.80 → 13.14 (−4.8 %, TB) | 18.52 → 18.67 (=) | 1918 [1436–2245] → 2180 [1876–2655] (+13.7 %, =, tol 21 %) | 1846 [1257–2342] → 1260 [1148–1845] (−31.7 %, TB) | 2500 → 2446 (=) | SAME | **PASS** |
+| `c1d-400` | 738.7 [707.7–764.8] → 741.9 [710.4–755.4] (+0.4 %, =) | 17.01 → 16.47 (−3.2 %, =) | 20.99 → 21.22 (+1.1 %, =) | 1712 [1346–3521] → 1544 [1068–2720] (−9.8 %, =) | 1920 [1214–2678] → 1745 [1215–2489] (−9.1 %, =) | 2384 → 2310 (=); 2414 → 2308 (=) | SAME | **PASS** |
+| `c2-100` | 89.87 [88.01–90.07] → 89.61 [83.33–90.25] (−0.3 %, =) | 29.45 → 28.80 (−2.2 %, =) | 32.75 → 32.35 (=) | 2042 [1806–2847] → 1189 [1106–1911] (−41.8 %, TB) | 1844 [1643–1904] → 1097 [886–1789] (−40.5 %, TB) | 12 700 → 11 580 (=) | SAME | **PASS** |
+| `c8-100` | 95.94 [84.03–103.1] → 98.00 [91.33–103.6] (+2.1 %, =) | 45.35 → 44.10 (=) | 43.05 → 42.00 (=) | 1358 [1105–2609] → 2202 [2044–2361] (+62.2 %, **TW**) | 1875 [1202–2400] → 1889 [1192–2144] (=) | 9734 → 9836 (=); 43 940 → 38 510 (−12.4 %, TB) | SAME | **PASS** |
+
+Arm verdict: **Q2 `PASS-EVERYWHERE`**.
+
+*Predictions* (checks): c2/c8 client CPU TREND-BETTER or better —
+**MISSED** (c2 −2.2 %, c8 −2.8 %, both WITHIN); **the named
+`c2_cpucli_recovers_p1` — MISSED** (−2.2 % against the −5.3 % threshold);
+c1s goodput WITHIN — **MET**; c1s CPUCLI WITHIN or better — **MET** (−4.8 %,
+TB); the named c1d load risk (goodput WORSE) — **did not fire** (+0.4 %);
+the client sender `busy` at c1d 59.0 [56.0–64.0] → 56.0 [54.5–69.0] %, at
+c1s 43.5 → 39.5 %: taking the ack handling did not load the sender — it
+fell where the mutex takes and the per-ack Notify wakes went; CPUSRV WITHIN
+— **MET** everywhere; RTprop floor WITHIN — **MET** everywhere (c8 slow leg
+TB); `[LAG]` p99 WITHIN — **MET as scored** (no WORSE), with c8 client
+TREND-WORSE (+62 %, ranges overlapping) and c2 both sides and c1s server
+TREND-BETTER.
+
+*`[LAG]` p99 and the sender's input-batch processing* (amendment 1 (ii);
+from the existing readings, no instrument added). Per Q2 row the client lag
+p99 does not order with the sender's input processing: at c8 the six Q2
+rows read 2044–2361 µs while `wake[ack]` spans 7956–8645, `busy` 24.5–30 %
+and acks per sender-lane batch 8.3–9.0, in no common order; at c1d the two
+highest-lag rows (2571, 2720 µs) have ordinary `busy` (55, 54.5 %) and
+batch sizes (20.6, 20.5), while the highest-`busy` row (69 %) reads 1551
+µs; at c1s the lag rises weakly with batch size (27.4 → 28.2 acks per batch
+across 1876 → 2655 µs). What the instruments can say: the client-side lag
+moved up at c8 (and c1s) and down at c2 and c1d, `wake[ack]` is
+not comparable across arms (amendment 1 (iii)), and the per-row variation
+within Q2 is not explained by the sender-lane batch size or the sender's
+busy fraction. A per-iteration timing of the input drain (its share of the
+sender's wall) does not exist in this build; it is the instrument that
+would separate the two readings, and it is recorded here as the open
+question, not added mid-battery.
+
+*Reported, not gated* (`score.txt` has every value): acks per sender-lane
+batch (client, Q2) c1s 27.7, c1d 20.9, c2 10.3, c8 8.6; client process
+cores c1s 1.355 → 1.260, c1d 1.559 → 1.498, c2 0.323 → 0.315, c8 0.528 →
+0.535; GSO factor unchanged (c1s 8.89 / 8.89); acks per data datagram
+0.993–1.000 both arms; `timer_acked` per run c1s 45 → 88, c1d 15 → 8, c2 15
+→ 10, c8 13 → 12 (out of 139–2146 paused wakes); parks per second within
+± 7 % everywhere; owner lock-wait max (client) c1s 0.197 → 0.175, c1d 0.081
+→ 0.058. Ack inter-arrival (`ackd`, client, n = 2): p99 c1s 392 → 410 µs,
+c1d 661/708 → 578/770, c2 2449 → 2424, c8 2495/7762 → 2390/7358; p90 at c2
+32 → 18 µs and c8 40 → 13 µs.
+
+*Design note — the one departure from the plan's letter (rule 2).* The
+plan says cross-direction reads "use what already exists (`SharedStats`
+atomics, `cc_windows`) … class (c) = 0, no new snapshots". That held for
+the one-actor shape the exploration was made under; the two-owner split
+found sites that fit neither half (`docs/thread-p2-scheduler-access.md`
+§4). Q2 resolves them with **seven new relaxed atomics per path in the
+existing `SharedStats` (`PathStats::xdir`)**: the receiver writes the
+incoming-loss EWMA, the arrival jitter and the last-arrival stamp; the
+sender writes SRTT, RTprop, the RTT jitter and σ (and keeps the existing
+`active` flag current both ways). It is a publication, not a lock: a reader
+sees a value at most one publication old (declared effect 1), and the
+battery shows no clause moved by it.
+
+*Outside the pre-registered set (findings, no verdict).*
+
+1. **The receiver task on the client is idle in bulk.** With the acks
+   routed to the sender, the client receiver's inbound batches read 1.0
+   datagram (MAIN: 21–28 at c1s/c1d); client process cores fell 2–7 %
+   at c1s/c1d/c2.
+2. **The c2 CPU the plan attributed to the per-ack wake did not come back
+   at the size it went.** P1's +5.3 % (§11) was attributed (§12 addendum)
+   to ≈ 3.9 `AckWake` wakes per intake wake; Q2 removes that wake and the
+   per-ack mutex takes, and c2 client CPU per byte moved −2.2 %. Either
+   most of P1's rise was elsewhere, or Q1 (which moved the sender's quinn
+   calls to the owner and cut c2 CPUCLI −12.9 %, §13) already absorbed it.
+   **[H]**, not separated by this battery.
+3. **The amendment-1 pre-check over-read c1d client `[LAG]` p99 at n = 2**
+   (+29 %, disjoint); at n = 6 the same clause reads −9.8 % with MAIN's own
+   range 1346–3521 µs. The p99 of this probe at c1d varies by 2.6× within an
+   arm.
