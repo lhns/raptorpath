@@ -67,7 +67,7 @@ for l in "$VM_LOCK" "$RP_LOCK"; do
 done
 _lb_say "LOCKS-HELD-BY-ENVELOPE $TQ1_LOCK_OWNER"
 
-preflight_binary "$BQ1" "PIPE] pipeline=" "emission batching ACTIVE" "[TOPO] io_rt=" "perf task failed"
+preflight_binary "$BQ1" "PIPE] pipeline=" "emission batching ACTIVE" "TOPO] io_rt=" "perf task failed"
 preflight_binary "$BD9" "PIPE] pipeline=" "emission batching ACTIVE" "perf task failed"
 preflight_binary "$BMAIN" "PIPE] pipeline=" "emission batching ACTIVE"
 for pair in "Q1:$BQ1:${TQ1_SHA_Q1:-}" "D9:$BD9:${TQ1_SHA_D9:-}" "MAIN:$BMAIN:${TQ1_SHA_MAIN:-}"; do
