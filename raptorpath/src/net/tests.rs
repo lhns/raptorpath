@@ -558,7 +558,8 @@ fn test_parse_cidr() {
 ///
 ///   cargo test --release -p raptorpath --lib -- --ignored --nocapture c1_attribution_lock
 ///
-/// Two OS threads share the production `Arc<crate::scheduler::SchedMutex>`
+/// Two OS threads share a scheduler mutex (the P1-era `SchedMutex`;
+/// threading Q2 removed it — the sender owns the scheduler outright)
 /// at c1-class rate (24 000 delivered seqs/s, RTprop 2 ms):
 ///   - SENDER thread, 1 ms ticks: the sender loop's per-iteration lock
 ///     work (per-seq `on_src_sent` + `charge_src`/`charge_in_flight` at
@@ -608,7 +609,10 @@ fn c1_attribution_lock_blocking_bench() {
         stall: bool,
         label: &str,
     ) -> (f64, f64, [f64; 3], [f64; 3]) {
-        let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(
+        // Threading Q2 removed the shared scheduler mutex; this historical
+        // bench measures the removed mechanism, so it keeps a local
+        // `parking_lot` mutex.
+        let scheduler = Arc::new(parking_lot::Mutex::new(Scheduler::new(Arc::new(
             WallClock,
         ))));
         {
@@ -5676,8 +5680,9 @@ fn s10_tx_state(e: &crate::control::estimator::LossEstimator) -> (f64, f64, f64,
     )
 }
 
-/// Run `f` with a real `ControlCtx` over a one-path scheduler (path 0).
-async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> R) -> R {
+/// Run `f` with a real (sender-side) `ControlCtx` over a one-path scheduler
+/// (path 0), owned here and lent by `&mut` as the sender lends it.
+async fn s10_with_ctx<R>(f: impl FnOnce(&mut super::control_msg::ControlCtx<'_>) -> R) -> R {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
@@ -5685,25 +5690,23 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
             .await
             .expect("loopback endpoint binds"),
     );
-    let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(WallClock))));
-    scheduler.lock().add_path(0);
+    let mut scheduler = Scheduler::new(Arc::new(WallClock));
+    scheduler.add_path(0);
     let stats = Arc::new(SharedStats::new());
     stats.add_path(0);
-    let ctx = super::control_msg::ControlCtx {
-        scheduler: &scheduler,
+    let mut out = crate::transport::TxBatch::new();
+    let mut ctx = super::control_msg::ControlCtx {
+        scheduler: &mut scheduler,
         transport: &transport,
         stats: &stats,
         nack_tx: None,
         peer_window_ack: None,
-        ack_wake: None,
-        deficit_tx: None,
-        request_tx: None,
         sack_tx: None,
         copa_feed: None,
         mstar_anchor: true,
-        out: &std::cell::RefCell::new(crate::transport::TxBatch::new()),
+        out: &mut out,
     };
-    f(&ctx)
+    f(&mut ctx)
 }
 
 /// S10 / F3 — the peer's `PathReport.loss_rate` never enters the local
@@ -5714,7 +5717,7 @@ async fn s10_with_ctx<R>(f: impl FnOnce(&super::control_msg::ControlCtx<'_>) -> 
 #[tokio::test]
 async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
     s10_with_ctx(|ctx| {
-        let before = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        let before = s10_tx_state(&ctx.scheduler.path(0).unwrap().estimator);
         super::control_msg::handle_control_message(
             0,
             ControlMessage::PathReport {
@@ -5728,7 +5731,7 @@ async fn s10_path_report_loss_leaves_the_estimator_unchanged() {
             },
             ctx,
         );
-        let after = s10_tx_state(&ctx.scheduler.lock().path(0).unwrap().estimator);
+        let after = s10_tx_state(&ctx.scheduler.path(0).unwrap().estimator);
         assert_eq!(before, after, "a peer report must not feed the estimator");
         assert_eq!(
             ctx.stats.path(0).unwrap().peer_loss_rate_e6.load(Ordering::Relaxed),
@@ -5761,8 +5764,7 @@ async fn s10_per_batch_ack_carries_the_late_arrival_credit() {
                 ctx,
             );
         }
-        let s = ctx.scheduler.lock();
-        let est = &s.path(0).unwrap().estimator;
+        let est = &ctx.scheduler.path(0).unwrap().estimator;
         assert_eq!(est.cumulative_loss(), 0.0, "Σe = Σr = 16: no loss was fed");
     })
     .await;
@@ -5773,32 +5775,276 @@ async fn s10_per_batch_ack_carries_the_late_arrival_credit() {
 /// cumulative), which this endpoint's sender role reads for the OUTGOING
 /// direction, is untouched. Through 949e06b the receiver wrote the TX
 /// fields and `rx_loss_rate()` had no production feed.
+///
+/// Threading Q2: the RX slot is the receiver's own `RxScheduler`; the
+/// sender sees it only through the published mirror. The whole route is
+/// driven: feed the RX half, publish as the receiver does, mirror as the
+/// sender does (`sync_rx`) — the TX state is unchanged and the mirror reads
+/// exactly the RX value.
 #[test]
 fn s10_receiver_feed_goes_to_rx_and_leaves_tx_untouched() {
+    let stats = SharedStats::new();
+    stats.add_path(0);
     let mut sched = Scheduler::new(Arc::new(WallClock));
     sched.add_path(0);
+    let mut rx = crate::scheduler::RxScheduler::new();
     let before = s10_tx_state(&sched.path(0).unwrap().estimator);
     for _ in 0..20 {
-        super::receiver::record_incoming_loss(&mut sched, 0, 10, 8);
+        super::receiver::record_incoming_loss(&mut rx, 0, 10, 8);
     }
+    let rx_loss = rx.path(0).unwrap().estimator.rx_loss_rate();
+    assert!(rx_loss > 0.1, "incoming loss reads on the RX slot ({rx_loss})");
+    stats.path_ref(0).unwrap().xdir.publish_rx(rx_loss, 0.0);
+    sched.sync_rx(&stats);
     let est = &sched.path(0).unwrap().estimator;
     assert_eq!(s10_tx_state(est), before, "incoming loss must not reach the TX estimator");
-    assert!(
-        est.rx_loss_rate() > 0.1,
-        "incoming loss reads on the RX slot ({})",
-        est.rx_loss_rate()
-    );
+    assert_eq!(est.rx_loss_rate(), rx_loss, "the TX half mirrors the RX value exactly");
 }
 
-/// Threading P1, D1 — an inbound `WindowAck` wakes the local window sender.
-/// Through 8d7d8c1 the sender, paused on the store/cwnd brake or on an empty
-/// pacing bucket, learned of an ack only from a 1 ms `sleep_until` poll
-/// (rounded up by tokio to 1–2 ms); `on_window_ack` signalled nothing. The
-/// absolute invariant: after one `WindowAck` the sender's `Notify` holds a
-/// permit (`notified()` resolves without any timer advance); after a
-/// `PathReport` it does not (the wake is the ack, not any control message).
-#[tokio::test]
-async fn p1_d1_a_window_ack_wakes_the_sender() {
+// ── Threading Q2 — the scheduler split by direction ─────────────────────
+//
+// Plan Q2's red tests (absolute, not ordinal): the scheduler halves sit
+// behind no mutex; an ack batch ends a paused sender wait with zero timer
+// advance (the REAL `run_window_sender`, paused clock, with a two-sided
+// control); no coop-budget charge per message; one task per loop.
+
+/// The engine's non-test source files under `src/` (test modules and
+/// `tests.rs` files excluded), as `(path, text)`.
+fn q2_engine_sources() -> Vec<(std::path::PathBuf, String)> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    walk(&root, &mut files);
+    files.sort();
+    files
+        .into_iter()
+        .filter(|f| {
+            let n = f.file_name().unwrap().to_string_lossy().to_string();
+            n != "tests.rs" && !n.ends_with("_tests.rs")
+        })
+        .map(|f| {
+            let src = std::fs::read_to_string(&f).unwrap();
+            // Cut the in-file test module(s): everything from the first
+            // `#[cfg(test)]` that opens a `mod`.
+            let body = match src.find("#[cfg(test)]\nmod ").or_else(|| src.find("#[cfg(test)]\npub(crate) mod ")) {
+                Some(i) => src[..i].to_string(),
+                None => src,
+            };
+            (f, body)
+        })
+        .collect()
+}
+
+/// Threading Q2 — the scheduler (both halves) and the FEC controller are
+/// behind NO mutex, lock or cell anywhere in the engine's source; the TX half
+/// is owned by value in the sender's `TxCore` and lent by plain `&mut`; the
+/// RX half is a receiver local. Red on main 0ef0e0d: `SchedMutex` (the P1
+/// witnessed `parking_lot::Mutex<Scheduler>`) and `Mutex<FecRateController>`
+/// are both there.
+#[test]
+fn q2_the_scheduler_halves_sit_behind_no_mutex() {
+    let banned: Vec<String> = ["Scheduler>", "RxScheduler>", "FecRateController>"]
+        .iter()
+        .flat_map(|t| {
+            ["Mutex<", "RwLock<", "RefCell<", "Cell<", "Arc<", "OnceLock<"]
+                .iter()
+                .map(move |w| [*w, *t].concat())
+        })
+        .chain(["Sched".to_string() + "Mutex", "Sched".to_string() + "Guard", "sched".to_string() + "_lock"])
+        .collect();
+    let mut hits = Vec::new();
+    for (f, src) in q2_engine_sources() {
+        for (i, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            for b in &banned {
+                if code.contains(b.as_str()) {
+                    hits.push(format!("{}:{}: {}", f.display(), i + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(hits.is_empty(), "the scheduler / FEC controller behind a lock or shared cell:\n{}", hits.join("\n"));
+    // The positive half: the owners hold them by value and lend `&mut`.
+    let squash = |p: &str| p1_squashed_src(p);
+    let txi = squash("net/tx_inputs.rs");
+    assert!(
+        txi.contains("pub(crate)structTxCore{pubsched:Scheduler,pubfec:FecRateController,"),
+        "TxCore must own the TX half and the FEC controller by value"
+    );
+    let m = squash("net/mod.rs");
+    assert!(m.contains("txc:&mutTxCore,"), "the sender takes its TxCore by plain &mut");
+    assert!(
+        m.contains("letTxCore{sched:scheduler,fec:fec_controller,eta:eta_final}=txc;"),
+        "the sender splits its TxCore into disjoint &mut borrows"
+    );
+    let r = squash("net/receiver.rs");
+    assert!(r.contains("letmutrx_sched=RxScheduler::new();"), "the receiver owns the RX half as a local");
+    let cm = squash("net/control_msg.rs");
+    assert!(cm.contains("pubscheduler:&'amutScheduler,"), "the ack handling takes the TX half by &mut");
+}
+
+/// Threading Q2 — no coop-budget charge per message (the P2a lesson, status
+/// §12 addendum A): `consume_budget` appears nowhere in the engine (every
+/// consumer drains with `recv_many`, one budget unit per call). A regression
+/// guard: green on 0ef0e0d (P2a's `06837b7` was never merged); it fires on
+/// archive/thread-p2a.
+#[test]
+fn q2_no_coop_budget_charge_per_message() {
+    for (f, src) in q2_engine_sources() {
+        assert!(
+            !src.contains("consume_budget"),
+            "{}: a coop-budget charge in the engine (the P2a starvation mechanism)",
+            f.display()
+        );
+    }
+    // The drains that replace it: the sender's two input channels and the
+    // receiver's inbound channel are each drained by ONE `recv_many`.
+    let m = p1_squashed_src("net/mod.rs");
+    for drain in ["sender_in.recv_many(&mutin_buf,SENDER_IN_BATCHES)", "sender_cmds.recv_many(&mutcmd_buf,SENDER_CMD_DEPTH)"] {
+        assert!(m.matches(drain).count() >= 2, "the sender drains with recv_many at its loop top AND in its select! arm: {drain}");
+    }
+    assert!(p1_squashed_src("net/receiver.rs").contains("msg_rx.recv_many(&mutinbox,"));
+}
+
+/// Threading Q2 — one tokio task per concurrent loop, never a loop
+/// multiplexed into another task (the P2a lesson, addendum B): no actor set,
+/// no future set polled by hand, no hand-rolled waker anywhere in the engine;
+/// and `run_impl` spawns each of its five loops as its own task. A
+/// regression guard: green on 0ef0e0d; it fires on archive/thread-p2a
+/// (`ActorSet`, `wake_by_ref`).
+#[test]
+fn q2_one_task_per_loop_no_multiplexer() {
+    let banned = [
+        "ActorSet", "ActorCell", "FuturesUnordered", "FuturesOrdered", "select_all(", "join_all(",
+        "RawWaker", "wake_by_ref", "Waker::noop",
+    ];
+    for (f, src) in q2_engine_sources() {
+        for b in banned {
+            assert!(!src.contains(b), "{}: `{b}` — a loop multiplexer / hand-rolled executor", f.display());
+        }
+    }
+    let m = p1_squashed_src("net/mod.rs");
+    for task in [
+        "letsender_handle=tokio::spawn(",
+        "letreceiver_handle=tokio::spawn(receiver::run_receiver(",
+        "letcmd_handle=tokio::spawn(tasks::run_path_cmd(",
+        "letreport_handle=tokio::spawn(tasks::run_report(",
+        "letctrl_handle=tokio::spawn(tasks::run_control_fastpath(",
+    ] {
+        assert_eq!(m.matches(task).count(), 1, "each loop is its own task: {task}");
+    }
+}
+
+/// Threading Q2 — the TX-direction set the routing keys on: exactly the
+/// messages whose handling touches the scheduler's TX half.
+#[test]
+fn q2_the_tx_control_set_is_the_scheduler_touching_set() {
+    use super::control_msg::is_tx_control;
+    let wa = ControlMessage::WindowAck {
+        next_expected: 1,
+        received_above: 0,
+        sack_ranges: Vec::new(),
+        echo_send_timestamp_us: 0,
+        jitter_us: 0,
+        cumulative_received: 0,
+        cum_expected: 0,
+        cum_received: 0,
+    };
+    let ack = ControlMessage::Ack {
+        block_id: 0,
+        batch_seq: 0,
+        received_ids: Vec::new(),
+        echo_send_timestamp_us: 0,
+        expected_count: 0,
+        received_count: 0,
+    };
+    let rep = ControlMessage::PathReport {
+        path_id: 0,
+        loss_rate: 0.0,
+        avg_rtt_us: 0,
+        throughput_bps: 0.0,
+        jitter_us: 0,
+        symbols_sent: 0,
+        symbols_received: 0,
+    };
+    for m in [&wa, &ack, &rep, &ControlMessage::Ping { timestamp_us: 1 }] {
+        assert!(is_tx_control(m), "{m:?} acts on TX state: the sender's");
+    }
+    for m in [
+        ControlMessage::Pong { echo_timestamp_us: 1 },
+        ControlMessage::Shutdown,
+        ControlMessage::GenerationDeficit { deficits: Vec::new() },
+        ControlMessage::RepairRequest { spans: Vec::new(), cause: 0 },
+    ] {
+        assert!(!is_tx_control(&m), "{m:?} is the receiver's");
+    }
+}
+
+/// Threading Q2 — the routing half (rule 1: the wiring actually routes
+/// there; replaces P1's D1 routing gate). The per-path owner hands the
+/// TX-direction control datagrams to the sender's input channel, `run_impl`
+/// wires that channel into every owner and the fast path, and the sender's
+/// `select!` takes it on an ALWAYS-armed arm charged to bucket 8 (P1's ack
+/// arm was guarded by the paused / pacing polls and woke on a `Notify`; the
+/// `AckWake` is gone).
+#[test]
+fn q2_the_owner_routes_acks_to_the_sender_and_the_sender_takes_them() {
+    let io = p1_squashed_src("transport/io_owner.rs");
+    assert!(
+        io.contains("Ok(WireMessage::Control(cm))ifcrate::net::control_msg::is_tx_control(&cm)=>{inbound_tx.push((path,WireMessage::Control(cm)))}"),
+        "the owner must route TX-direction control datagrams to its sender lane"
+    );
+    assert!(io.contains(".sender_tx;matchtx.try_send(std::mem::take(&mutinbound_tx))"));
+    let m = p1_squashed_src("net/mod.rs");
+    assert!(m.contains(".start_readers(msg_tx.clone(),ctrl_tx.clone(),sender_in_tx.clone())"));
+    assert!(m.contains("tasks::run_control_fastpath(ctrl_rx,sender_in_tx.clone(),"));
+    assert!(
+        m.contains("n=sender_in.recv_many(&mutin_buf,SENDER_IN_BATCHES),if!in_closed=>{wait_arm=8;"),
+        "the input arm is armed whenever the channel is open, and charged to bucket 8"
+    );
+    for f in ["net/mod.rs", "net/receiver.rs", "net/control_msg.rs", "net/tx_inputs.rs"] {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join(f);
+        let src = std::fs::read_to_string(&p).unwrap();
+        for line in src.lines() {
+            let code = line.split("//").next().unwrap_or("");
+            for gone in ["AckWake", "ack_wake"] {
+                assert!(!code.contains(gone), "{f}: P1's {gone} must be retired: {line}");
+            }
+        }
+    }
+}
+
+/// The real window sender, spawned over a memory TUN and a bound but
+/// unconnected loopback transport (its owner discards the staged datagrams),
+/// with every input channel held by the test.
+struct Q2Sender {
+    feed: tokio::sync::mpsc::Sender<bytes::Bytes>,
+    sender_in: tokio::sync::mpsc::Sender<crate::transport::InboundBatch>,
+    sack_tx: tokio::sync::mpsc::Sender<SackReport>,
+    ack: Arc<AtomicU64>,
+    stats: Arc<SharedStats>,
+    handle: tokio::task::JoinHandle<()>,
+    // Held so the sender's channels stay open.
+    _keep: (
+        tokio::sync::mpsc::Sender<super::SenderCmd>,
+        tokio::sync::mpsc::Sender<(FireCause, u32, Vec<(u64, u64)>)>,
+        tokio::sync::mpsc::Sender<Vec<(u64, u32)>>,
+        tokio::sync::mpsc::Sender<RepairRequestBatch>,
+        tokio::sync::broadcast::Sender<()>,
+        crate::tun::MemTun,
+    ),
+}
+
+async fn q2_spawn_sender() -> Q2Sender {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let addr: std::net::SocketAddr = "127.0.0.1:0".parse().unwrap();
     let transport = Arc::new(
@@ -5806,103 +6052,174 @@ async fn p1_d1_a_window_ack_wakes_the_sender() {
             .await
             .expect("loopback endpoint binds"),
     );
-    let scheduler = Arc::new(crate::scheduler::SchedMutex::new(Scheduler::new(Arc::new(WallClock))));
-    scheduler.lock().add_path(0);
     let stats = Arc::new(SharedStats::new());
     stats.add_path(0);
-    let ack = Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let wake = Arc::new(super::control_msg::AckWake::new());
-    let ctx = super::control_msg::ControlCtx {
-        scheduler: &scheduler,
-        transport: &transport,
-        stats: &stats,
-        nack_tx: None,
-        peer_window_ack: Some(&ack),
-        ack_wake: Some(&wake),
-        deficit_tx: None,
-        request_tx: None,
-        sack_tx: None,
-        copa_feed: None,
-        mstar_anchor: true,
-        out: &std::cell::RefCell::new(crate::transport::TxBatch::new()),
+    let mut sched = Scheduler::new_with_hint(Arc::new(WallClock), ProtocolHint::Bulk);
+    sched.add_path(0);
+    sched.publish_tx_view(&stats);
+    let fec = FecRateController::new_with_toggles(1e-6, 0.5, ProtocolHint::Bulk, FecBackend::Rlc, false, 1200);
+    let (tun, mem) = crate::tun::TunInterface::memory(1500);
+    let feed = mem.feed.clone();
+    let (in_tx, mut in_rx) = tokio::sync::mpsc::channel(super::SENDER_IN_BATCHES);
+    let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(super::SENDER_CMD_DEPTH);
+    let (nack_tx, mut nack_rx) = tokio::sync::mpsc::channel(16);
+    let (deficit_tx, mut deficit_rx) = tokio::sync::mpsc::channel(64);
+    let (sack_tx, mut sack_rx) = tokio::sync::mpsc::channel::<SackReport>(64);
+    let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(64);
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel(1);
+    let ack = Arc::new(AtomicU64::new(0));
+    let handle = {
+        let (transport, stats, ack) = (transport.clone(), stats.clone(), ack.clone());
+        let gates = crate::gates::get().clone();
+        tokio::spawn(async move {
+            let mut tun = tun;
+            let mut txc = super::TxCore::new(sched, fec, false);
+            let batch_counter = BatchCounter::new();
+            super::run_window_sender(
+                &mut tun,
+                1200,
+                FecBackend::Rlc,
+                &mut txc,
+                &batch_counter,
+                &transport,
+                &stats,
+                &ack,
+                super::SenderInputs { acks: &mut in_rx, cmds: &mut cmd_rx, nack_tx: None, sack_tx: None },
+                &mut nack_rx,
+                &mut deficit_rx,
+                &mut sack_rx,
+                &mut request_rx,
+                &mut shutdown_rx,
+                ProtocolHint::Bulk,
+                true,
+                false,
+                false,
+                false,
+                None,
+                None,
+                gates,
+            )
+            .await;
+        })
     };
-    // A stored permit resolves on the first poll: a zero timeout polls the
-    // inner future once before it looks at the (paused) clock.
-    async fn permit(w: &super::control_msg::AckWake) -> bool {
-        tokio::time::timeout(std::time::Duration::ZERO, w.notified()).await.is_ok()
+    Q2Sender {
+        feed,
+        sender_in: in_tx,
+        sack_tx,
+        ack,
+        stats,
+        handle,
+        _keep: (cmd_tx, nack_tx, deficit_tx, request_tx, shutdown_tx, mem),
     }
-    super::control_msg::handle_control_message(
-        0,
-        ControlMessage::PathReport {
-            path_id: 0,
-            loss_rate: 0.0,
-            avg_rtt_us: 20_000,
-            throughput_bps: 0.0,
-            jitter_us: 0,
-            symbols_sent: 0,
-            symbols_received: 0,
-        },
-        &ctx,
-    );
-    assert!(!permit(&wake).await, "a PathReport must not wake the sender");
-    super::control_msg::handle_control_message(
-        0,
-        ControlMessage::WindowAck {
-            next_expected: 7,
-            received_above: 0,
-            sack_ranges: Vec::new(),
-            echo_send_timestamp_us: 0,
-            jitter_us: 0,
-            cumulative_received: 0,
-            cum_expected: 0,
-            cum_received: 0,
-        },
-        &ctx,
-    );
-    assert_eq!(ack.load(Ordering::Relaxed), 7, "the ack point is published");
+}
+
+/// Yield to the runtime `n` times. Under a paused clock the runtime never
+/// idles while this runs, so the clock cannot auto-advance: no timer can
+/// fire, only a channel wake can make another task run.
+async fn q2_spin(n: usize, mut done: impl FnMut() -> bool) -> bool {
+    for _ in 0..n {
+        if done() {
+            return true;
+        }
+        tokio::task::yield_now().await;
+    }
+    done()
+}
+
+/// Threading Q2 (plan Q2 red test; P2a's shape, against the REAL sender) —
+/// an ack batch ends a PAUSED sender wait with ZERO timer advance.
+///
+/// The real `run_window_sender` is driven into the paused wait: a reliable
+/// sender fed far more TUN packets than its store cap stops reading its TUN
+/// (the precondition is read, not assumed: packets stay queued while it has
+/// emitted some). The clock is paused and the test only ever yields, so the
+/// runtime never idles and the clock never auto-advances: no timer can fire
+/// for the whole test (asserted — the total advance is zero; the sender's
+/// 1 ms polls are deadlines in the future of the frozen clock). Two-sided:
+///
+///   * CONTROL — an input the sender consumes ONLY at its loop top (a SACK
+///     report: the sender's `select!` has no arm for it) sits untaken
+///     through a long spin: the paused wait does not end by itself.
+///   * TREATMENT — a WindowAck batch on the sender's input channel is taken
+///     within the spin (the published ack point moves to the batch's last
+///     value) and the loop top it lets run takes the SACK report too: the
+///     channel, not a timer, ended the paused wait.
+///
+/// Red by construction on 0ef0e0d (no sender input channel, `TxCore` or
+/// `SenderInputs`: does not compile). Absolute invariants: clock advance =
+/// 0, ack point = 7.
+#[tokio::test(start_paused = true)]
+async fn q2_an_ack_batch_ends_a_paused_sender_wait_with_zero_timer_advance() {
+    let t_start = tokio::time::Instant::now();
+    let s = q2_spawn_sender().await;
+    // Drive the sender into the paused wait — by yielding only.
+    const PKTS: usize = 6000;
+    for i in 0..PKTS {
+        let mut p = vec![0x45u8; 200];
+        p[8..16].copy_from_slice(&(i as u64).to_be_bytes());
+        s.feed.try_send(bytes::Bytes::from(p)).expect("the memory TUN has room");
+    }
+    let sent = || s.stats.path_ref(0).unwrap().symbols_sent.load(Ordering::Relaxed);
+    let queued = || s.feed.max_capacity() - s.feed.capacity();
+    let mut last = (u64::MAX, usize::MAX);
+    for _ in 0..200 {
+        q2_spin(200, || false).await;
+        let now = (sent(), queued());
+        if now == last {
+            break;
+        }
+        last = now;
+    }
+    let (sent0, queued0) = (sent(), queued());
+    assert!(sent0 > 0, "precondition: the sender emitted (sent={sent0})");
     assert!(
-        permit(&wake).await,
-        "a WindowAck must leave a wake permit for the sender (read through a \
-         zero timeout: no timer can have fired)"
+        queued0 > 0,
+        "precondition: the sender stopped reading its TUN — the paused wait (sent={sent0}, queued={queued0})"
     );
-    assert!(!permit(&wake).await, "one ack, one permit");
+
+    // ── CONTROL: the paused wait does not end by itself ──
+    s.sack_tx
+        .try_send(SackReport { next_expected: 0, received_above: 0, ranges: Vec::new() })
+        .expect("sack channel has room");
+    let sack_taken = || s.sack_tx.capacity() == s.sack_tx.max_capacity();
+    assert!(
+        !q2_spin(5_000, sack_taken).await,
+        "control: the loop top ran without a wake — the sender is not parked in a wait"
+    );
+    assert_eq!((sent(), queued()), (sent0, queued0), "control: the sender stayed paused");
+
+    // ── TREATMENT: the ack batch ends the paused wait, zero advance ──
+    let wa = |n: u64| {
+        (
+            0u32,
+            WireMessage::Control(ControlMessage::WindowAck {
+                next_expected: n,
+                received_above: 0,
+                sack_ranges: Vec::new(),
+                echo_send_timestamp_us: 0,
+                jitter_us: 0,
+                cumulative_received: 0,
+                cum_expected: 0,
+                cum_received: 0,
+            }),
+        )
+    };
+    s.sender_in
+        .try_send(vec![wa(5), wa(6), wa(7)])
+        .expect("the sender's input has room");
+    let acked = q2_spin(5_000, || s.ack.load(Ordering::Relaxed) == 7).await;
+    assert!(acked, "the ack batch was not handled without a timer: ack point {}", s.ack.load(Ordering::Relaxed));
+    assert!(
+        q2_spin(5_000, sack_taken).await,
+        "the ack's wake let the loop top run: the SACK report must be taken"
+    );
     assert_eq!(
-        wake.acks.load(Ordering::Relaxed),
-        1,
-        "the ack counter `wake[timer_acked]` is read against counts exactly the WindowAcks"
+        tokio::time::Instant::now() - t_start,
+        Duration::ZERO,
+        "the paused clock moved: a timer, not the ack, ended the wait"
     );
+    s.handle.abort();
 }
-
-/// Threading P1, D1 — the routing half (rule 1: the wiring between layers
-/// actually routes there). The receiver task hands its `ControlCtx` the
-/// sender's `Notify` (not `None`), the sender's `select!` awaits that same
-/// `Notify` under exactly the paused / pacing-dry guards of the two 1 ms
-/// polls it shortcuts, and its wake is charged to its own bucket (8).
-#[test]
-fn p1_d1_the_receiver_routes_the_wake_and_the_sender_awaits_it() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/net");
-    let recv = std::fs::read_to_string(dir.join("receiver.rs")).expect("receiver.rs");
-    let send = std::fs::read_to_string(dir.join("mod.rs")).expect("mod.rs");
-    assert!(
-        recv.contains("ack_wake: Some(&recv_ack_wake),"),
-        "the receiver's data-loop ControlCtx must carry the sender's Notify"
-    );
-    assert!(
-        send.contains("let recv_ack_wake = ack_wake.clone();")
-            && send.contains("let sender_ack_wake = ack_wake.clone();"),
-        "one Notify, cloned to both tasks"
-    );
-    let arm = send
-        .find("ack_wake.notified(),")
-        .expect("the sender's select! must await the ack wake");
-    let tail = &send[arm..arm + 200];
-    assert!(
-        tail.contains("if tx_paused || (pol.cc_pace && st.src_tokens < 1.0) => { wait_arm = 8;"),
-        "the ack arm must be guarded exactly like the two polls it shortcuts \
-         and charge bucket 8: {tail}"
-    );
-}
-
 /// The source text of `path` relative to `src/`, with every `#[cfg(test)]`
 /// module after the first marker cut off and all whitespace removed.
 fn p1_squashed_src(path: &str) -> String {

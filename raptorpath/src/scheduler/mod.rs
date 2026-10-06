@@ -26,9 +26,9 @@
 //! Pacing rate = cwnd [symbols] / SRTT [s] = symbols/second.
 
 pub mod clock;
-pub mod sched_lock;
-pub use sched_lock::{SchedGuard, SchedMutex};
 pub use clock::*;
+pub mod rx;
+pub use rx::{RxPathState, RxScheduler};
 
 // The scheduler's process-global gate resolvers live beside the gate
 // surface (`crate::gates::scheduler_gates`); re-exported at their old paths.
@@ -484,8 +484,18 @@ impl Scheduler {
 
     /// Record that we received a report/data from a path (keepalive).
     pub fn touch_path(&mut self, path_id: PathId) {
+        let now = self.clock.now();
+        self.touch_path_at(path_id, now);
+    }
+
+    /// [`Self::touch_path`] for an arrival observed at `at` (threading Q2:
+    /// the receiver stamps a data arrival, the sender applies it later —
+    /// `sync_rx`). The dead-path clock only moves forward.
+    pub fn touch_path_at(&mut self, path_id: PathId, at: Instant) {
         if let Some(path) = self.paths.get_mut(&path_id) {
-            path.last_report = self.clock.now();
+            if at > path.last_report {
+                path.last_report = at;
+            }
             if !path.active {
                 tracing::info!(path_id, "path recovered — marking active");
                 path.active = true;
@@ -517,6 +527,63 @@ impl Scheduler {
             }
         }
         deactivated
+    }
+
+    /// Threading Q2 — the RX → TX direction. Per path: mirror the
+    /// receiver's published incoming-loss EWMA and arrival jitter into this
+    /// (TX-half) estimator, and apply a data-arrival stamp the receiver
+    /// published since the last call as a `touch_path` at that instant
+    /// (revival of a dead path included). `now_us` is the caller's wall
+    /// clock (`net::now_us`), only read when a stamp moved. Called by the
+    /// sender at the top of every loop iteration and before the report
+    /// tick's dead-path check.
+    pub fn sync_rx(&mut self, stats: &crate::monitor::stats::SharedStats) {
+        let mut stamped: Option<(u64, Instant)> = None;
+        for (id, p) in self.paths.iter_mut() {
+            let Some(ps) = stats.path_ref(*id) else { continue };
+            let (rx_loss, jitter) = ps.xdir.rx();
+            p.estimator.set_rx_mirror(rx_loss, jitter);
+            let seen = ps.xdir.rx_seen_us.load(std::sync::atomic::Ordering::Relaxed);
+            if seen > p.rx_seen_mark {
+                p.rx_seen_mark = seen;
+                let (now_us, now_i) = *stamped.get_or_insert_with(|| {
+                    (crate::net::now_us(), self.clock.now())
+                });
+                let at = now_i
+                    .checked_sub(Duration::from_micros(now_us.saturating_sub(seen)))
+                    .unwrap_or(now_i);
+                p.pending_touch = Some(at);
+            }
+        }
+        if stamped.is_some() {
+            let due: Vec<(PathId, Instant)> = self
+                .paths
+                .iter_mut()
+                .filter_map(|(id, p)| p.pending_touch.take().map(|at| (*id, at)))
+                .collect();
+            for (id, at) in due {
+                self.touch_path_at(id, at);
+            }
+        }
+    }
+
+    /// Threading Q2 — the TX → RX direction. Publish, per path, the values
+    /// the receiver reads (SRTT, RTprop, RTT jitter and σ) and the `active`
+    /// flag. Called by the sender after every ack batch / control message it
+    /// processed, and after path add/remove and the report tick.
+    pub fn publish_tx_view(&self, stats: &crate::monitor::stats::SharedStats) {
+        use std::sync::atomic::Ordering::Relaxed;
+        for (id, p) in &self.paths {
+            if let Some(ps) = stats.path_ref(*id) {
+                ps.xdir.publish_tx(crate::monitor::stats::TxPublished {
+                    srtt: p.srtt(),
+                    min_rtt: p.min_rtt(),
+                    rtt_jitter_us: p.rtt_jitter_us(),
+                    rtt_sigma_us: p.rtt_sigma_us(),
+                });
+                ps.active.store(p.active, Relaxed);
+            }
+        }
     }
 
     /// Get all path IDs (including inactive).

@@ -7,15 +7,14 @@
 //! [`emit_source`] from each of its source-emission sites.
 //!
 //! Ordering constraints:
-//!   * the scheduler is locked in short, separate acquisitions, in this
-//!     order: the source placement pick, the ETA stamp, the
+//!   * the scheduler (the sender's own TX half, threading Q2: plain `&mut`,
+//!     no lock) is read and written in this order: the source placement pick, the ETA stamp, the
 //!     `charge_in_flight` + Copa `on_sent`/`charge_src`/`on_src_sent` block,
 //!     the redundant-source pick and its charge, the worst-loss ε read, the
 //!     `deficit.on_send` write, the taper `spare_capacity`/estimator read, the
 //!     per-correction worst-loss read, the correction placement pick, and the
 //!     correction `charge_in_flight`;
-//!   * in the taper block the fec-controller lock is taken before the
-//!     scheduler lock, and both are released at the end of that block;
+//!   * in the taper block the FEC controller is read before the scheduler;
 //!   * the `RWM_EMIT_BATCH` taper cache short-circuits the derived
 //!     recomputation but still feeds the A* send-rate anchor per symbol;
 //!   * the δ-honest shed decision runs inside the `P_lost` retransmit branch,
@@ -51,12 +50,13 @@ use crate::control::fec_rate::ProtocolHint;
 /// the service wall is ~3 ms; 50 ms only binds on low-rate paths.
 const TAPER_CACHE_MAX_AGE_US: u64 = 50_000;
 
-/// The shared engine handles the emission step needs, built once per
-/// `run_window_sender` invocation. Taken by shared reference: all mutation
-/// goes through the `Mutex`/atomic handles.
+/// The engine handles the emission step needs. The scheduler's TX half and
+/// the FEC controller are the sender's own (threading Q2: owned by the
+/// sender task, lent here as `&mut` — no mutex); the rest are shared
+/// handles. Built by the sender at each emission site.
 pub(crate) struct SenderCtx<'a> {
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
-    pub fec_controller: &'a Arc<parking_lot::Mutex<FecRateController>>,
+    pub scheduler: &'a mut crate::scheduler::Scheduler,
+    pub fec_controller: &'a mut FecRateController,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     pub batch_counter: &'a BatchCounter,
@@ -270,7 +270,7 @@ pub(crate) fn emit_source(
     framed: bytes::Bytes,
     st: &mut SenderState,
     pol: &SenderPolicy,
-    ctx: &SenderCtx<'_>,
+    ctx: &mut SenderCtx<'_>,
 ) {
     // The framed buffer becomes the symbol's payload: the encoder window,
     // the retention store and the wire send below all share it (refcount
@@ -306,10 +306,10 @@ pub(crate) fn emit_source(
     // mode keeps the single best-path pick + redundant duplicate.
     let source_path = {
         if pol.reliable {
-            let sched = ctx.scheduler.lock();
+            let sched = &*ctx.scheduler;
             sched.place_symbol(false, &[]).unwrap_or(0)
         } else {
-            let sched = ctx.scheduler.lock();
+            let sched = &*ctx.scheduler;
             select_source_path(&sched)
         }
     };
@@ -345,7 +345,7 @@ pub(crate) fn emit_source(
     // Last source-intake time (generation-mode pacing input).
     st.gen_last_source_us = src_send_ts_us;
     let eta_rel_us = {
-        let mut sched = ctx.scheduler.lock();
+        let sched = &mut *ctx.scheduler;
         let e = sched
             .path(source_path)
             .map(|p| p.expected_delivery_load())
@@ -407,7 +407,7 @@ pub(crate) fn emit_source(
             warn!(source_path, ?e, "failed to send window source symbol");
         }
         {
-            let mut sched = ctx.scheduler.lock();
+            let sched = &mut *ctx.scheduler;
             if let Some(p) = sched.path_mut(source_path) {
                 p.charge_in_flight(1);
                 // Record the seq→path commitment + the BBR rate-sample send
@@ -460,21 +460,21 @@ pub(crate) fn emit_source(
     // is generation-level (more coded symbols for a short generation).
     if !pol.generation {
         let epsilon = {
-            let sched = ctx.scheduler.lock();
+            let sched = &*ctx.scheduler;
             super::worst_eps_estimator(&sched)
                 .map(|e| e.loss_rate())
                 .unwrap_or(0.0)
         };
         st.retransmit_buffer.insert(wire_sym.block_id, (src_send_ts_us, epsilon, source_path));
         // Track correction deficit: this symbol needs epsilon coverage
-        let mut sched = ctx.scheduler.lock();
+        let sched = &mut *ctx.scheduler;
         sched.deficit.on_send(wire_sym.block_id, source_path, epsilon);
     }
 
     // Redundant send for Realtime: duplicate source on second-best path
     if pol.protocol_hint == ProtocolHint::Realtime {
         let alt_path = {
-            let sched = ctx.scheduler.lock();
+            let sched = &*ctx.scheduler;
             sched.redundant_source_path(source_path)
         };
         if let Some(alt) = alt_path {
@@ -485,7 +485,7 @@ pub(crate) fn emit_source(
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
             {
-                let mut sched = ctx.scheduler.lock();
+                let sched = &mut *ctx.scheduler;
                 if let Some(p) = sched.path_mut(alt) {
                     p.charge_in_flight(1);
                 }
@@ -536,7 +536,7 @@ pub(crate) fn emit_source(
             src_send_ts_us,
         );
         let (repair_rate, span_params, taper_rtt) = {
-            let sched = ctx.scheduler.lock();
+            let sched = &*ctx.scheduler;
             let spare = sched.spare_capacity();
             let path_estimator = super::worst_eps_estimator(&sched);
             match path_estimator {
@@ -715,7 +715,7 @@ pub(crate) fn emit_source(
             let (correction_sym, correction_kind) = {
                 let now = now_us();
                 let (srtt_secs, rttvar_secs, epsilon) =
-                    super::p_lost_inputs(&ctx.scheduler.lock());
+                    super::p_lost_inputs(&*ctx.scheduler);
 
                 // Find oldest retransmit candidate and compute P_lost
                 let mut use_retransmit = false;
@@ -825,7 +825,7 @@ pub(crate) fn emit_source(
             // best_repair_path_avoiding). Single path ⇒ that path.
             // Non-reliable keeps the best-goodput pick.
             let correction_path = {
-                let sched = ctx.scheduler.lock();
+                let sched = &*ctx.scheduler;
                 if pol.reliable {
                     window_source_paths_into(
                         &*st.encoder,
@@ -854,7 +854,7 @@ pub(crate) fn emit_source(
                 }
             };
             {
-                let mut sched = ctx.scheduler.lock();
+                let sched = &mut *ctx.scheduler;
                 if let Some(p) = sched.path_mut(correction_path) {
                     p.charge_in_flight(1);
                 }
@@ -889,8 +889,8 @@ pub(crate) fn worst_eps_path(
 /// on the solver. 0.0 only when the channel has no path at all.
 pub(crate) fn cadenced_repair_rate(
     cache: &mut RepairRateCache,
-    fec_controller: &parking_lot::Mutex<FecRateController>,
-    scheduler: &crate::scheduler::SchedMutex,
+    fec_controller: &FecRateController,
+    scheduler: &crate::scheduler::Scheduler,
     window: usize,
     now_us: u64,
 ) -> f64 {
@@ -898,8 +898,8 @@ pub(crate) fn cadenced_repair_rate(
         return rate;
     }
     let (path, period, snap) = {
-        let ctrl = fec_controller.lock();
-        let sched = scheduler.lock();
+        let ctrl = &*fec_controller;
+        let sched = &*scheduler;
         let Some((path, est)) = worst_eps_path(&sched) else {
             return 0.0;
         };

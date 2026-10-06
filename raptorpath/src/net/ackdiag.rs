@@ -552,7 +552,7 @@ pub fn gauge() -> Option<&'static AckCadenceGauge> {
 /// In a single-engine process this is a no-op, costing one relaxed
 /// `fetch_max`.
 pub(crate) fn maybe_report(
-    scheduler: &Arc<crate::scheduler::SchedMutex>,
+    sched: &crate::scheduler::Scheduler,
     stats: &Arc<SharedStats>,
     window_ack_seq: &Arc<AtomicU64>,
 ) {
@@ -568,7 +568,6 @@ pub(crate) fn maybe_report(
     }
     let ids = g.known_paths();
     let snaps: Vec<PathSnapshot> = {
-        let sched = scheduler.lock();
         ids.iter()
             .map(|id| {
                 let (anchor_syms, rtprop_s) = sched

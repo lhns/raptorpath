@@ -316,6 +316,8 @@ pub struct OwnerSample {
     pub rx_batches: u64,
     pub rx_dgrams: u64,
     pub rx_capped: u64,
+    pub ack_batches: u64,
+    pub ack_dgrams: u64,
     pub send_err: u64,
     pub too_large_staged: u64,
     pub orphaned: u64,
@@ -347,6 +349,8 @@ fn owner_samples() -> Vec<OwnerSample> {
                 rx_batches: c.rx_batches.load(Relaxed),
                 rx_dgrams: c.rx_dgrams.load(Relaxed),
                 rx_capped: c.rx_capped.load(Relaxed),
+                ack_batches: c.ack_batches.load(Relaxed),
+                ack_dgrams: c.ack_dgrams.load(Relaxed),
                 send_err: c.send_err.load(Relaxed),
                 too_large_staged: c.too_large_staged.load(Relaxed),
                 orphaned: c.orphaned.load(Relaxed),
@@ -387,7 +391,7 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
             format!(
                 "[IOWN] phase={phase} side={side}{extra} path={} rt={} polls={} drains={} \
                  tx_batches={} tx_dg={} ctrl_batches={} ctrl_dg={} rx_batches={} rx_dg={} rx_capped={} \
-                 send_err={} too_large_staged={} orphaned={} qcalls={} q_secs={} q_wall_us={} q_asleep_us={asleep} \
+                 ack_batches={} ack_dg={} send_err={} too_large_staged={} orphaned={} qcalls={} q_secs={} q_wall_us={} q_asleep_us={asleep} \
                  asleep_frac={frac} drv_on={} drv_off={} wall_s={wall_s:.3}",
                 t.path,
                 t.rt,
@@ -400,6 +404,8 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
                 d(t.rx_batches, b.rx_batches),
                 d(t.rx_dgrams, b.rx_dgrams),
                 d(t.rx_capped, b.rx_capped),
+                d(t.ack_batches, b.ack_batches),
+                d(t.ack_dgrams, b.ack_dgrams),
                 d(t.send_err, b.send_err),
                 d(t.too_large_staged, b.too_large_staged),
                 d(t.orphaned, b.orphaned),
@@ -645,6 +651,7 @@ mod tests {
         let s = &l[0];
         assert!(s.starts_with("[IOWN] phase=xfer side=client run=1 path=1 rt=main polls=100 "), "{s}");
         assert!(s.contains(" tx_dg=50 "), "{s}");
+        assert!(s.contains(" rx_capped=0 ack_batches=0 ack_dg=0 send_err=0 "), "{s}");
         assert!(s.contains(" q_secs=10 q_wall_us=400000 q_asleep_us=200000 asleep_frac=0.1000 "), "{s}");
         assert!(s.contains(" drv_on=7 drv_off=0 wall_s=2.000"), "{s}");
         let na = [OwnerSample { serial: 3, q_secs: 1, q_cpu_unavailable: true, ..Default::default() }];

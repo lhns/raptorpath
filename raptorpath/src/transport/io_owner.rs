@@ -182,6 +182,10 @@ pub struct OwnerCounters {
     pub rx_dgrams: AtomicU64,
     /// Inbound batches cut at `INBOUND_BATCH_MAX` (the cap's bind count).
     pub rx_capped: AtomicU64,
+    /// Threading Q2: batches of TX-direction control datagrams (the acks)
+    /// forwarded to the window sender, and their datagrams.
+    pub ack_batches: AtomicU64,
+    pub ack_dgrams: AtomicU64,
     /// Datagrams quinn rejected at `send_datagram`.
     pub send_err: AtomicU64,
     /// Datagrams a producer's stage refused because they exceeded the path's
@@ -460,11 +464,13 @@ pub(crate) enum IoCmd {
     /// One reliable control message (a framed `WireMessage`) on a fresh uni
     /// stream; the reply carries the outcome.
     Stream { data: Bytes, reply: oneshot::Sender<anyhow::Result<()>> },
-    /// Start forwarding inbound datagrams (`msg_tx`) and uni-stream control
-    /// messages (`ctrl_tx`).
+    /// Start forwarding inbound datagrams (`msg_tx`; the TX-direction
+    /// control datagrams among them to `sender_tx`, threading Q2) and
+    /// uni-stream control messages (`ctrl_tx`).
     StartReaders {
         msg_tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+        sender_tx: mpsc::Sender<InboundBatch>,
     },
     /// Connect to `peer` (client) or accept one connection (server), with the
     /// ADR-0010 handshake.
@@ -492,12 +498,22 @@ tokio::task_local! {
 }
 
 static ID_VIOLATIONS: AtomicU64 = AtomicU64::new(0);
+/// Identity checks of views already dropped (folded in by `PathView`'s
+/// destructor), so the process count survives a transport's teardown.
+static ID_CHECKS_RETIRED: AtomicU64 = AtomicU64::new(0);
 static ID_FIRST: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
 
-/// `(checks over every live view, violations)` of the owner-identity check.
+/// `(checks, violations)` of the owner-identity check over the process's
+/// life: every live view's count plus every dropped view's.
 pub fn identity_counts() -> (u64, u64) {
-    let checks = live_views().iter().map(|v| v.ctr.qcalls.load(Relaxed)).sum();
-    (checks, ID_VIOLATIONS.load(Relaxed))
+    let live: u64 = live_views().iter().map(|v| v.ctr.qcalls.load(Relaxed)).sum();
+    (live + ID_CHECKS_RETIRED.load(Relaxed), ID_VIOLATIONS.load(Relaxed))
+}
+
+impl Drop for PathView {
+    fn drop(&mut self) {
+        ID_CHECKS_RETIRED.fetch_add(self.ctr.qcalls.load(Relaxed), Relaxed);
+    }
 }
 
 /// The first recorded identity violation, if any.
@@ -513,8 +529,10 @@ pub(crate) fn identity_ok(path: PathId, owner: Option<PathId>) -> bool {
 
 /// The connection, reachable only through this wrapper. Every method checks
 /// the caller's identity first: it must run inside the owner task of THIS
-/// path (task-local); and (the P1 lock-order witness) with no scheduler
-/// guard alive on the thread. A failed check panics.
+/// path (task-local). A failed check panics. (The P1 lock-order witness
+/// that also ran here — no scheduler guard alive at a quinn call — went
+/// with the scheduler mutex in threading Q2: the scheduler has no lock, and
+/// its owner, the sender, makes no quinn call.)
 pub(crate) struct OwnedConn {
     raw: quinn::Connection,
     path: PathId,
@@ -529,7 +547,6 @@ impl OwnedConn {
     #[inline]
     #[track_caller]
     fn enter(&self, seam: &'static str) {
-        crate::scheduler::sched_lock::assert_not_held(seam);
         self.view.ctr.qcalls.fetch_add(1, Relaxed);
         let owner = OWNER.try_with(|p| *p).ok();
         if !identity_ok(self.path, owner) {
@@ -811,8 +828,8 @@ async fn owner_body(mut a: OwnerArgs) {
                 a.view.ctr.orphaned.fetch_add(dgrams.len() as u64, Relaxed);
                 continue;
             }
-            IoCmd::StartReaders { msg_tx, ctrl_tx } => {
-                early_readers = Some(Readers { msg_tx, ctrl_tx });
+            IoCmd::StartReaders { msg_tx, ctrl_tx, sender_tx } => {
+                early_readers = Some(Readers { msg_tx, ctrl_tx, sender_tx });
                 continue;
             }
         };
@@ -851,6 +868,10 @@ async fn accept(ep: &Endpoint, a: &OwnerArgs) -> anyhow::Result<OwnedConn> {
 struct Readers {
     msg_tx: mpsc::Sender<InboundBatch>,
     ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+    /// Threading Q2: the window sender's input channel — the TX-direction
+    /// control datagrams of each poll (the client's acks) go there, as one
+    /// batch, instead of to the receiver.
+    sender_tx: mpsc::Sender<InboundBatch>,
 }
 
 /// Poll `f` once with the task's own context: `Some(output)` if it is ready
@@ -888,6 +909,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
     }
     let mut reader_dead = false;
     let mut inbound: InboundBatch = Vec::new();
+    // Threading Q2: the same poll's TX-direction control datagrams, for the
+    // sender.
+    let mut inbound_tx: InboundBatch = Vec::new();
     let mut ctrl_pending: Option<(PathId, WireMessage)> = None;
     let mut uni: Option<BoxFut<'_, Result<Option<WireMessage>, ()>>> = None;
     let mut uni_dead = false;
@@ -930,7 +954,7 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 shim_armed = Some(rel);
             }
         }
-        let reading = readers.is_some() && !reader_dead && inbound.is_empty();
+        let reading = readers.is_some() && !reader_dead && inbound.is_empty() && inbound_tx.is_empty();
         let mut close = false;
         tokio::select! {
             n = a.cmd_rx.recv_many(&mut cmds, IO_CHANNEL_DEPTH) => {
@@ -960,9 +984,9 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                             dirty = true;
                         }
                         IoCmd::Stream { data, reply } => streams.push_back((data, reply)),
-                        IoCmd::StartReaders { msg_tx, ctrl_tx } => {
+                        IoCmd::StartReaders { msg_tx, ctrl_tx, sender_tx } => {
                             view.readers_started.store(true, Relaxed);
-                            readers = Some(Readers { msg_tx, ctrl_tx });
+                            readers = Some(Readers { msg_tx, ctrl_tx, sender_tx });
                             reader_dead = false;
                         }
                         IoCmd::Connect { reply, .. } | IoCmd::Accept { reply } => {
@@ -977,16 +1001,16 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                 match r {
                     Ok(d) => {
                         let sec = section_begin(a.gauge);
-                        push_inbound(&mut inbound, &view, a.dg_audit, path, d);
+                        push_inbound(&mut inbound, &mut inbound_tx, &view, a.dg_audit, path, d);
                         // What quinn already buffered, in this poll, up to
                         // INBOUND_BATCH_MAX (the cap's binds are counted).
                         loop {
-                            if inbound.len() >= INBOUND_BATCH_MAX {
+                            if inbound.len() + inbound_tx.len() >= INBOUND_BATCH_MAX {
                                 ctr.rx_capped.fetch_add(1, Relaxed);
                                 break;
                             }
                             match poll_once(conn.read_datagram()).await {
-                                Some(Ok(d)) => push_inbound(&mut inbound, &view, a.dg_audit, path, d),
+                                Some(Ok(d)) => push_inbound(&mut inbound, &mut inbound_tx, &view, a.dg_audit, path, d),
                                 Some(Err(e)) => {
                                     error!(path_id = path, ?e, "datagram receive error");
                                     reader_dead = true;
@@ -997,6 +1021,22 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                         }
                         section_end(ctr, sec);
                         dirty = true;
+                        // The sender's share first: an ack never waits behind
+                        // the receiver's channel.
+                        if !inbound_tx.is_empty() {
+                            let n = inbound_tx.len() as u64;
+                            let tx = &readers.as_ref().expect("reading implies readers").sender_tx;
+                            match tx.try_send(std::mem::take(&mut inbound_tx)) {
+                                Ok(()) => {
+                                    ctr.ack_batches.fetch_add(1, Relaxed);
+                                    ctr.ack_dgrams.fetch_add(n, Relaxed);
+                                }
+                                // Full: keep it; the reserve arm forwards it
+                                // (reads pause meanwhile).
+                                Err(mpsc::error::TrySendError::Full(b)) => inbound_tx = b,
+                                Err(mpsc::error::TrySendError::Closed(_)) => {}
+                            }
+                        }
                         if !inbound.is_empty() {
                             let n = inbound.len() as u64;
                             let tx = &readers.as_ref().expect("reading implies readers").msg_tx;
@@ -1019,6 +1059,17 @@ async fn serve(mut a: OwnerArgs, conn: &OwnedConn, early_readers: Option<Readers
                         error!(path_id = path, ?e, "datagram receive error");
                         reader_dead = true;
                     }
+                }
+            }
+            p = reserve_owned(readers.as_ref().map(|r| r.sender_tx.clone())), if !inbound_tx.is_empty() => {
+                match p {
+                    Some(permit) => {
+                        ctr.ack_batches.fetch_add(1, Relaxed);
+                        ctr.ack_dgrams.fetch_add(inbound_tx.len() as u64, Relaxed);
+                        permit.send(std::mem::take(&mut inbound_tx));
+                    }
+                    // The sender is gone (the tunnel is ending): drop them.
+                    None => inbound_tx.clear(),
                 }
             }
             p = reserve_owned(readers.as_ref().map(|r| r.msg_tx.clone())), if !inbound.is_empty() => {
@@ -1110,11 +1161,24 @@ async fn reserve_owned<T>(tx: Option<mpsc::Sender<T>>) -> Option<mpsc::OwnedPerm
     }
 }
 
-fn push_inbound(inbound: &mut InboundBatch, view: &PathView, audit: bool, path: PathId, d: Bytes) {
+fn push_inbound(
+    inbound: &mut InboundBatch,
+    inbound_tx: &mut InboundBatch,
+    view: &PathView,
+    audit: bool,
+    path: PathId,
+    d: Bytes,
+) {
     if audit {
         view.app_read.fetch_add(1, Relaxed);
     }
     match WireMessage::deserialize(&d) {
+        // Threading Q2: route by direction — TX-direction control input to
+        // the window sender (which owns the scheduler's TX half), the rest
+        // to the receiver.
+        Ok(WireMessage::Control(cm)) if crate::net::control_msg::is_tx_control(&cm) => {
+            inbound_tx.push((path, WireMessage::Control(cm)))
+        }
         Ok(msg) => inbound.push((path, msg)),
         Err(e) => warn!(path_id = path, ?e, "failed to deserialize datagram"),
     }
@@ -1296,5 +1360,62 @@ impl TxBatch {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::ControlMessage;
+
+    fn wire(m: ControlMessage) -> Bytes {
+        Bytes::from(WireMessage::Control(m).serialize().expect("serializes"))
+    }
+
+    /// Threading Q2 — the owner's inbound routing (`push_inbound`): one
+    /// poll's TX-direction control datagrams (the client's acks, PathReport,
+    /// Ping) go to the sender's lane, everything else to the receiver's, in
+    /// arrival order within each lane. Absolute: exact lane contents.
+    #[test]
+    fn the_owner_routes_tx_control_to_the_sender_lane() {
+        let view = PathView::new(3, "client", "main".to_string());
+        let (mut rx, mut tx) = (InboundBatch::new(), InboundBatch::new());
+        let wa = |n: u64| ControlMessage::WindowAck {
+            next_expected: n,
+            received_above: 0,
+            sack_ranges: Vec::new(),
+            echo_send_timestamp_us: 0,
+            jitter_us: 0,
+            cumulative_received: 0,
+            cum_expected: 0,
+            cum_received: 0,
+        };
+        for d in [
+            wire(wa(1)),
+            wire(ControlMessage::GenerationDeficit { deficits: Vec::new() }),
+            wire(ControlMessage::Ping { timestamp_us: 9 }),
+            wire(wa(2)),
+            wire(ControlMessage::Shutdown),
+        ] {
+            push_inbound(&mut rx, &mut tx, &view, false, 3, d);
+        }
+        let kinds = |b: &InboundBatch| -> Vec<String> {
+            b.iter()
+                .map(|(p, m)| {
+                    assert_eq!(*p, 3);
+                    match m {
+                        WireMessage::Control(ControlMessage::WindowAck { next_expected, .. }) => {
+                            format!("wa{next_expected}")
+                        }
+                        WireMessage::Control(ControlMessage::Ping { .. }) => "ping".into(),
+                        WireMessage::Control(ControlMessage::GenerationDeficit { .. }) => "gd".into(),
+                        WireMessage::Control(ControlMessage::Shutdown) => "shut".into(),
+                        _ => "other".into(),
+                    }
+                })
+                .collect()
+        };
+        assert_eq!(kinds(&tx), ["wa1", "ping", "wa2"], "the sender's lane");
+        assert_eq!(kinds(&rx), ["gd", "shut"], "the receiver's lane");
     }
 }

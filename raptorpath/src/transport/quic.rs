@@ -636,16 +636,20 @@ impl QuicTransport {
     }
 
     /// Start every path's readers: the owner forwards inbound datagrams to
-    /// `tx` (one batch per owner poll) and uni-stream control messages to
-    /// `ctrl_tx`.
+    /// `tx` (one batch per owner poll), the TX-direction control datagrams
+    /// among them (threading Q2: WindowAck / Ack / PathReport / Ping —
+    /// `net::control_msg::is_tx_control`) to the window sender's input
+    /// `sender_tx` instead (one batch per poll too), and uni-stream control
+    /// messages to `ctrl_tx`.
     pub async fn start_readers(
         &self,
         tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+        sender_tx: mpsc::Sender<InboundBatch>,
     ) {
         let ids: Vec<PathId> = self.paths.iter().map(|e| *e.key()).collect();
         for path_id in ids {
-            self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone()).await;
+            self.start_readers_for_path(path_id, tx.clone(), ctrl_tx.clone(), sender_tx.clone()).await;
         }
     }
 
@@ -659,9 +663,10 @@ impl QuicTransport {
         path_id: PathId,
         tx: mpsc::Sender<InboundBatch>,
         ctrl_tx: mpsc::Sender<(PathId, WireMessage)>,
+        sender_tx: mpsc::Sender<InboundBatch>,
     ) {
         if let Some(io) = self.io(path_id) {
-            let _ = io.tx.send(IoCmd::StartReaders { msg_tx: tx, ctrl_tx }).await;
+            let _ = io.tx.send(IoCmd::StartReaders { msg_tx: tx, ctrl_tx, sender_tx }).await;
         }
     }
 

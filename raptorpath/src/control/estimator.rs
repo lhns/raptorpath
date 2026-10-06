@@ -56,6 +56,102 @@ impl LossCredit {
     }
 }
 
+/// The incoming direction's estimator (threading Q2: the RX half). Owned
+/// by the receiver task per path; fed by every arrived batch
+/// ([`Self::record_rx_batch`], feed D) and every data arrival
+/// ([`Self::record_arrival`]). Its two outputs — the incoming loss EWMA and
+/// the RFC 3550 jitter — are published per path (`PathStats`) for the
+/// sender's mirror ([`LossEstimator::set_rx_mirror`]) and the PathReport.
+/// The math is the one `LossEstimator` always ran on these fields, moved.
+#[derive(Debug, Clone)]
+pub struct RxEstimator {
+    /// EWMA smoothing factor — the same 0.1 the TX loss EWMA uses.
+    alpha: f64,
+    /// EWMA of RX loss rate, fed by [`Self::record_rx_batch`].
+    rx_ewma_loss: f64,
+    /// The late-arrival credit of the RX feed (its own; never the TX one).
+    rx_credit: LossCredit,
+    /// Interarrival jitter (RTCP-style, RFC 3550 A.8)
+    jitter: f64,
+    /// Last packet arrival timestamp for jitter calculation
+    last_arrival_us: Option<u64>,
+    /// Last packet send timestamp for jitter calculation
+    last_send_ts_us: Option<u64>,
+}
+
+impl Default for RxEstimator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RxEstimator {
+    pub fn new() -> Self {
+        Self {
+            alpha: 0.1,
+            // RX path: weak prior
+            rx_ewma_loss: 0.0,
+            rx_credit: LossCredit::default(),
+            jitter: 0.0,
+            last_arrival_us: None,
+            last_send_ts_us: None,
+        }
+    }
+
+    /// One arrived batch's `(expected, received)` on the incoming direction
+    /// (see [`LossEstimator::record_rx_batch`]).
+    pub fn record_rx_batch(&mut self, expected: u32, received: u32) {
+        let (e, r) = self.rx_credit.apply(expected as u64, received as u64);
+        if e == 0 {
+            return;
+        }
+        let batch_loss = (e - r) as f64 / e as f64;
+        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+    }
+
+    /// See [`LossEstimator::update_rx_loss`] (test-only feed).
+    pub fn update_rx_loss(&mut self, nacks_sent: u32, acks_received: u32) {
+        if nacks_sent == 0 {
+            return;
+        }
+        let lost = nacks_sent.saturating_sub(acks_received);
+        let batch_loss = lost as f64 / nacks_sent as f64;
+
+        // EWMA update
+        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+    }
+
+    /// RX path loss rate (point estimate): the incoming direction's EWMA.
+    pub fn rx_loss_rate(&self) -> f64 {
+        self.rx_ewma_loss
+    }
+
+    /// `(1 - ε_rx)²` (see [`LossEstimator::nack_effectiveness`]).
+    pub fn nack_effectiveness(&self) -> f64 {
+        let rx_loss = self.rx_ewma_loss;
+        (1.0 - rx_loss).powi(2)
+    }
+
+    /// Record arrival for jitter calculation (RFC 3550 A.8).
+    pub fn record_arrival(&mut self, send_ts_us: u64, arrival_us: u64) {
+        if let (Some(last_send), Some(last_arrival)) = (self.last_send_ts_us, self.last_arrival_us) {
+            // D(i,j) = (Rj - Ri) - (Sj - Si)
+            let transit_diff = (arrival_us as i64 - last_arrival as i64)
+                - (send_ts_us as i64 - last_send as i64);
+            let d = transit_diff.unsigned_abs() as f64;
+            // J(i) = J(i-1) + (|D(i,j)| - J(i-1)) / 16
+            self.jitter += (d - self.jitter) / 16.0;
+        }
+        self.last_send_ts_us = Some(send_ts_us);
+        self.last_arrival_us = Some(arrival_us);
+    }
+
+    /// Current jitter estimate in microseconds (RFC 3550 style).
+    pub fn jitter_us(&self) -> f64 {
+        self.jitter
+    }
+}
+
 /// Per-path loss estimator.
 #[derive(Debug)]
 pub struct LossEstimator {
@@ -70,11 +166,16 @@ pub struct LossEstimator {
     /// Decay factor for Beta params to forget old data
     beta_decay: f64,
 
-    // --- RX path loss (the incoming direction) ---
-    /// EWMA of RX loss rate, fed by [`Self::record_rx_batch`].
-    rx_ewma_loss: f64,
-    /// The late-arrival credit of the RX feed (its own; never the TX one).
-    rx_credit: LossCredit,
+    // --- The incoming direction (threading Q2) ---
+    /// The RX-direction estimator: the incoming loss EWMA and the RFC 3550
+    /// arrival jitter. On a production endpoint this copy is the TX half's
+    /// MIRROR of the receiver's own [`RxEstimator`] (written by
+    /// [`Self::set_rx_mirror`] from the receiver's published atomics, so the
+    /// sender's readers — `nack_effectiveness`, the jitter fallback of
+    /// `rtt_jitter_us`, the PathReport build — read the receiver's values
+    /// without sharing its state); a unit test that feeds it directly
+    /// through the delegating methods below sees the same math.
+    rx: RxEstimator,
 
     /// RTT estimation (EWMA)
     ewma_rtt: Duration,
@@ -99,13 +200,6 @@ pub struct LossEstimator {
     consecutive_losses: u32,
     burst_threshold: u32,
     in_burst: bool,
-
-    /// Interarrival jitter (RTCP-style, RFC 3550 A.8)
-    jitter: f64,
-    /// Last packet arrival timestamp for jitter calculation
-    last_arrival_us: Option<u64>,
-    /// Last packet send timestamp for jitter calculation
-    last_send_ts_us: Option<u64>,
 
     /// Gilbert-Elliott HMM for bursty loss estimation
     ge: GilbertElliottEstimator,
@@ -183,9 +277,7 @@ impl LossEstimator {
             beta_a: 1.0,
             beta_b: 1.0,
             beta_decay: 0.995, // slowly forget old observations
-            // RX path: weak prior
-            rx_ewma_loss: 0.0,
-            rx_credit: LossCredit::default(),
+            rx: RxEstimator::new(),
             ewma_rtt: Duration::from_millis(50),
             rtt_alpha: 0.125, // standard TCP EWMA
             // Default ON.
@@ -196,9 +288,6 @@ impl LossEstimator {
             consecutive_losses: 0,
             burst_threshold: 3,
             in_burst: false,
-            jitter: 0.0,
-            last_arrival_us: None,
-            last_send_ts_us: None,
             ge: GilbertElliottEstimator::new(),
             bocd: BayesianChangepoint::default_fec(),
             est_cadence: est_cadence_active(),
@@ -338,12 +427,7 @@ impl LossEstimator {
     /// ([`LossCredit`]); a pair with nothing expected after the credit is no
     /// trial and leaves the EWMA as it is.
     pub fn record_rx_batch(&mut self, expected: u32, received: u32) {
-        let (e, r) = self.rx_credit.apply(expected as u64, received as u64);
-        if e == 0 {
-            return;
-        }
-        let batch_loss = (e - r) as f64 / e as f64;
-        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+        self.rx.record_rx_batch(expected, received)
     }
 
     /// Update the RX (reverse path) loss estimate from request/echo counts.
@@ -352,27 +436,29 @@ impl LossEstimator {
     /// `nacks_sent`: number of NACKs the receiver sent in this period
     /// `acks_received`: number of those echoed back by the sender
     pub fn update_rx_loss(&mut self, nacks_sent: u32, acks_received: u32) {
-        if nacks_sent == 0 {
-            return;
-        }
-        let lost = nacks_sent.saturating_sub(acks_received);
-        let batch_loss = lost as f64 / nacks_sent as f64;
-
-        // EWMA update
-        self.rx_ewma_loss = self.alpha * batch_loss + (1.0 - self.alpha) * self.rx_ewma_loss;
+        self.rx.update_rx_loss(nacks_sent, acks_received)
     }
 
     /// RX path loss rate (point estimate): the incoming direction's EWMA.
     pub fn rx_loss_rate(&self) -> f64 {
-        self.rx_ewma_loss
+        self.rx.rx_loss_rate()
     }
 
     /// NACK effectiveness: probability that a NACK round-trip succeeds.
     /// = (1 - ε_rx)² where ε_rx is the RX path loss rate.
     /// The NACK must survive the reverse path AND the repair must survive the forward path.
     pub fn nack_effectiveness(&self) -> f64 {
-        let rx_loss = self.rx_ewma_loss;
-        (1.0 - rx_loss).powi(2)
+        self.rx.nack_effectiveness()
+    }
+
+    /// Threading Q2: overwrite the RX-direction values this (TX-half)
+    /// estimator reads with the receiver's published ones — the incoming
+    /// loss EWMA and the arrival jitter, both µs/fraction as the receiver's
+    /// [`RxEstimator`] holds them. The arrival-pair memory stays the
+    /// receiver's (a mirror never feeds `record_arrival`).
+    pub fn set_rx_mirror(&mut self, rx_loss: f64, jitter_us: f64) {
+        self.rx.rx_ewma_loss = rx_loss;
+        self.rx.jitter = jitter_us;
     }
 
     /// Record an RTT measurement.
@@ -457,21 +543,12 @@ impl LossEstimator {
     /// `send_ts_us`: sender's timestamp in microseconds.
     /// `arrival_us`: local arrival time in microseconds.
     pub fn record_arrival(&mut self, send_ts_us: u64, arrival_us: u64) {
-        if let (Some(last_send), Some(last_arrival)) = (self.last_send_ts_us, self.last_arrival_us) {
-            // D(i,j) = (Rj - Ri) - (Sj - Si)
-            let transit_diff = (arrival_us as i64 - last_arrival as i64)
-                - (send_ts_us as i64 - last_send as i64);
-            let d = transit_diff.unsigned_abs() as f64;
-            // J(i) = J(i-1) + (|D(i,j)| - J(i-1)) / 16
-            self.jitter += (d - self.jitter) / 16.0;
-        }
-        self.last_send_ts_us = Some(send_ts_us);
-        self.last_arrival_us = Some(arrival_us);
+        self.rx.record_arrival(send_ts_us, arrival_us)
     }
 
     /// Current jitter estimate in microseconds (RFC 3550 style).
     pub fn jitter_us(&self) -> f64 {
-        self.jitter
+        self.rx.jitter_us()
     }
 
     /// Cumulative fed loss `1 - sum(received) / sum(sent)` over every

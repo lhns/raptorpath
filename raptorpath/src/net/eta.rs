@@ -471,24 +471,29 @@ impl SenderEta {
 /// (the perf harness ends the engine by dropping the task, reaching no exit
 /// arm) — and never twice. Gate: the cadence site's own (`RWM_DIAG`).
 ///
-/// `render` reads the gauge; the sender wires it to the scheduler (drain
-/// the placement binds, then [`SenderEta::final_line`]) under a bounded
-/// `try_lock_for`, so a destructor can lose the line but never hang
-/// teardown.
-pub(crate) struct SenderEtaFlush<F: FnMut() -> Option<String>> {
+/// The render reads the gauge off the scheduler (drain the placement binds,
+/// then [`SenderEta::final_line`]). Threading Q2: the flush sits in the
+/// sender's `TxCore` beside the scheduler it renders from — the explicit
+/// door is [`Self::flush_final`] at the loop's clean exits, the `Drop` door
+/// is `TxCore`'s destructor — so no lock is tried and the line is never lost
+/// to a held one.
+pub(crate) struct SenderEtaFlush {
     on: bool,
-    render: F,
     done: bool,
 }
 
-impl<F: FnMut() -> Option<String>> SenderEtaFlush<F> {
-    pub(crate) fn new(on: bool, render: F) -> Self {
-        Self { on, render, done: false }
+impl SenderEtaFlush {
+    pub(crate) fn new(on: bool) -> Self {
+        Self { on, done: false }
     }
 
     /// `Some(line-or-none)` the first time (`None` inside when the gate is
-    /// closed or the gauge never stamped), `None` ever after.
-    pub(crate) fn take_final(&mut self) -> Option<Option<String>> {
+    /// closed or the gauge never stamped), `None` ever after. `render` runs
+    /// at most once, and never with the gate closed.
+    pub(crate) fn take_final_with(
+        &mut self,
+        render: impl FnOnce() -> Option<String>,
+    ) -> Option<Option<String>> {
         if self.done {
             return None;
         }
@@ -496,20 +501,18 @@ impl<F: FnMut() -> Option<String>> SenderEtaFlush<F> {
         if !self.on {
             return Some(None);
         }
-        Some((self.render)())
+        Some(render())
     }
 
-    /// Print the final line if it has not been taken yet.
-    pub(crate) fn flush_final(&mut self) {
-        if let Some(Some(l)) = self.take_final() {
+    /// Print the final line off `sched` if it has not been taken yet.
+    pub(crate) fn flush_final(&mut self, sched: &mut crate::scheduler::Scheduler) {
+        let line = self.take_final_with(|| {
+            sched.drain_place_bind();
+            sched.eta().final_line()
+        });
+        if let Some(Some(l)) = line {
             crate::readout!("{l}");
         }
-    }
-}
-
-impl<F: FnMut() -> Option<String>> Drop for SenderEtaFlush<F> {
-    fn drop(&mut self) {
-        self.flush_final();
     }
 }
 
@@ -708,24 +711,35 @@ mod tests {
         assert_eq!(fin.trim_end_matches(" final=1"), g.line(), "same line, plus the marker");
 
         let calls = Cell::new(0u32);
-        let mut f = SenderEtaFlush::new(true, || {
+        let render = || {
             calls.set(calls.get() + 1);
             g.final_line()
-        });
-        assert_eq!(f.take_final(), Some(Some(fin.clone())));
-        assert_eq!(f.take_final(), None, "the second take must be a no-op");
-        f.flush_final();
-        drop(f);
-        assert_eq!(calls.get(), 1, "rendered more than once (the Drop door re-fired)");
+        };
+        let mut f = SenderEtaFlush::new(true);
+        assert_eq!(f.take_final_with(render), Some(Some(fin.clone())));
+        assert_eq!(
+            f.take_final_with(|| {
+                calls.set(calls.get() + 1);
+                None
+            }),
+            None,
+            "the second take must be a no-op"
+        );
+        let mut sched = crate::scheduler::Scheduler::new(std::sync::Arc::new(crate::scheduler::WallClock));
+        f.flush_final(&mut sched);
+        assert_eq!(calls.get(), 1, "rendered more than once (a later door re-fired)");
 
         let off_calls = Cell::new(0u32);
-        let mut off = SenderEtaFlush::new(false, || {
-            off_calls.set(off_calls.get() + 1);
-            Some("x".to_string())
-        });
-        assert_eq!(off.take_final(), Some(None), "gate closed: silent, but taken");
-        assert_eq!(off.take_final(), None);
-        drop(off);
+        let mut off = SenderEtaFlush::new(false);
+        assert_eq!(
+            off.take_final_with(|| {
+                off_calls.set(off_calls.get() + 1);
+                Some("x".to_string())
+            }),
+            Some(None),
+            "gate closed: silent, but taken"
+        );
+        assert_eq!(off.take_final_with(|| Some("y".to_string())), None);
         assert_eq!(off_calls.get(), 0, "the gate-off flush must not even read the gauge");
     }
 

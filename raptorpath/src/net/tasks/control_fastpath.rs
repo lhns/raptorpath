@@ -1,67 +1,38 @@
-//! Control fast path: liveness-critical messages handled off the reliable
-//! stream without queueing behind the data loop.
+//! Control fast path: liveness-critical messages that arrive on the reliable
+//! stream, routed without queueing behind the data loop.
 //!
-//! `PathReport`, `Ping` and `Pong` go to `handle_control_message` with the
-//! peer-ack atomic and the Copa feed both `None` (the fast
-//! path never touches them); everything else is forwarded with `try_send` —
-//! never an awaited send — and dropped with a warning on a full data
-//! channel. The loop ends when the control channel closes.
-//!
-//! Threading Q1: the Pong a Ping triggers is staged in this task's own
-//! `TxBatch` and handed to the path's I/O owner before the loop waits again.
-
-use std::cell::RefCell;
-use std::sync::Arc;
+//! Threading Q2: `PathReport` and `Ping` act on TX state (the keepalive
+//! touch, the RTT feed, the Pong) and go to the window sender's input
+//! channel — the sender owns the scheduler's TX half, applies the keepalive
+//! touch and answers the Ping itself. `Pong` was handled as a no-op and is
+//! dropped here. Everything else is forwarded to the receiver's ordered data
+//! loop. Every forward is a `try_send` — never an awaited send — and dropped
+//! with a warning on a full channel. The loop ends when the control channel
+//! closes.
 
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::control_msg::{ControlCtx, handle_control_message};
-use crate::monitor::stats::SharedStats;
-use crate::transport::{ControlMessage, InboundBatch, QuicTransport, TxBatch, WireMessage};
+use crate::transport::{ControlMessage, InboundBatch, WireMessage};
 
-/// Control fast path: liveness-critical messages (PathReport, Ping,
-/// Pong) are handled immediately; anything else that arrives via the
-/// reliable stream is forwarded to the ordered data loop.
-#[allow(clippy::too_many_arguments)]
+/// Control fast path: PathReport / Ping to the sender, anything else to the
+/// receiver's data loop.
 pub(crate) async fn run_control_fastpath(
     mut ctrl_rx: mpsc::Receiver<(u32, WireMessage)>,
-    ctrl_scheduler: Arc<crate::scheduler::SchedMutex>,
-    ctrl_transport: Arc<QuicTransport>,
-    ctrl_stats: Arc<SharedStats>,
+    ctrl_sender_in: mpsc::Sender<InboundBatch>,
     ctrl_forward_tx: mpsc::Sender<InboundBatch>,
-    ctrl_mstar_anchor: bool,
 ) {
-    let out = RefCell::new(TxBatch::new());
     while let Some((path_id, msg)) = ctrl_rx.recv().await {
         match msg {
+            WireMessage::Control(ControlMessage::Pong { .. }) => {}
             WireMessage::Control(
-                cm @ (ControlMessage::PathReport { .. }
-                | ControlMessage::Ping { .. }
-                | ControlMessage::Pong { .. }),
+                cm @ (ControlMessage::PathReport { .. } | ControlMessage::Ping { .. }),
             ) => {
-                handle_control_message(
-                    path_id,
-                    cm,
-                    &ControlCtx {
-                        scheduler: &ctrl_scheduler,
-                        transport: &ctrl_transport,
-                        stats: &ctrl_stats,
-                        // The fast path only handles PathReport/Ping/Pong;
-                        // Acks and WindowAcks go through the data loop, so
-                        // neither the peer-ack atomic nor the Copa feed is
-                        // needed here.
-                        nack_tx: None,
-                        peer_window_ack: None,
-                        ack_wake: None,
-                        deficit_tx: None,
-                        request_tx: None,
-                        sack_tx: None,
-                        copa_feed: None,
-                        mstar_anchor: ctrl_mstar_anchor,
-                        out: &out,
-                    },
-                );
+                if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
+                    ctrl_sender_in.try_send(vec![(path_id, WireMessage::Control(cm))])
+                {
+                    warn!(path_id, "sender input full — dropping a liveness control message");
+                }
             }
             other => {
                 // Never await into the data channel: under a symbol
@@ -78,9 +49,5 @@ pub(crate) async fn run_control_fastpath(
                 }
             }
         }
-        // The staged Pong (if any), to the owner, before waiting again.
-        let mut b = std::mem::take(&mut *out.borrow_mut());
-        ctrl_transport.flush(&mut b).await;
-        *out.borrow_mut() = b;
     }
 }

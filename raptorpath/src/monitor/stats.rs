@@ -89,6 +89,44 @@ impl SharedStats {
         }
     }
 
+    /// Every tracked path id, ascending, each once (the first entry wins, as
+    /// [`Self::path`] answers). Threading Q2: the receiver's path set.
+    pub fn path_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self.paths.read().iter().map(|p| p.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
+    /// The ids whose published `active` flag is set, ascending — the
+    /// receiver's `live_paths()` (threading Q2: liveness is the sender's
+    /// state, read through the flag the sender publishes, see
+    /// [`CrossDirection`]). Dense ids are read lock-free; an id past the
+    /// dense table takes the locking scan.
+    pub fn live_path_ids(&self) -> Vec<u32> {
+        let mut out = Vec::new();
+        let mut overflow = false;
+        for (i, slot) in self.dense.iter().enumerate() {
+            if let Some(p) = slot.get() {
+                if p.active.load(Ordering::Relaxed) {
+                    out.push(i as u32);
+                }
+            }
+        }
+        // Ids past the dense table (none in any shipped topology).
+        for p in self.paths.read().iter() {
+            if p.id as usize >= STATS_DENSE_PATHS && p.active.load(Ordering::Relaxed) {
+                out.push(p.id);
+                overflow = true;
+            }
+        }
+        if overflow {
+            out.sort_unstable();
+            out.dedup();
+        }
+        out
+    }
+
     /// Take a serializable snapshot of all stats.
     pub fn snapshot(&self) -> StatsSnapshot {
         let now = std::time::SystemTime::now()
@@ -159,6 +197,103 @@ pub struct PathStats {
     /// on the direction it receives. Monitoring only — never an estimator
     /// input.
     pub peer_loss_rate_e6: AtomicU64,
+    /// Threading Q2: what each direction's owner publishes for the other.
+    pub xdir: CrossDirection,
+}
+
+/// Threading Q2 (plan rule 2: cross-direction reads use published state).
+/// The scheduler is split by direction — the sender task owns the TX half
+/// (`Scheduler`), the receiver task the RX half (`RxScheduler`) — and each
+/// half publishes, per path, exactly the values the other direction reads:
+///
+/// * RX → TX (written by the receiver): the incoming loss EWMA and the
+///   RFC 3550 arrival jitter (mirrored into the sender's estimator,
+///   `LossEstimator::set_rx_mirror`), and the last-arrival stamp (liveness:
+///   a dead path is revived and its dead-check clock kept by the sender);
+/// * TX → RX (written by the sender, after every ack batch and control
+///   message it processes): SRTT, RTprop (`min_rtt`), the RTT jitter and σ
+///   that size the receiver's hold / deficit / refresh clocks and its
+///   `[ETA]` reference — and the `active` flag of [`PathStats`].
+///
+/// Relaxed stores and loads of independent words: a reader may see one
+/// value a publication older than another (no torn value; no reader
+/// combines two of them into a law input that a mixed pair would bend
+/// beyond the one-publication staleness, which is the declared effect).
+#[derive(Default)]
+pub struct CrossDirection {
+    /// `f64` bits of the receiver's incoming loss EWMA.
+    pub rx_loss_bits: AtomicU64,
+    /// `f64` bits of the receiver's RFC 3550 arrival jitter, µs.
+    pub rx_jitter_bits: AtomicU64,
+    /// Wall µs (`net::now_us`) of the last arrival on this path (data or a
+    /// liveness Ping); 0 = none yet.
+    pub rx_seen_us: AtomicU64,
+    /// The sender's SRTT, ns + 1 (0 = not yet published).
+    srtt_ns_p1: AtomicU64,
+    /// RTprop (`PathState::min_rtt`), ns + 1 (0 = none).
+    min_rtt_ns_p1: AtomicU64,
+    /// `PathState::rtt_jitter_us`.
+    rtt_jitter_us: AtomicU64,
+    /// `PathState::rtt_sigma_us` + 1 (0 = none).
+    rtt_sigma_us_p1: AtomicU64,
+}
+
+/// The TX values the receiver reads, as one load set.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TxPublished {
+    pub srtt: std::time::Duration,
+    pub min_rtt: Option<std::time::Duration>,
+    pub rtt_jitter_us: u64,
+    pub rtt_sigma_us: Option<u64>,
+}
+
+impl CrossDirection {
+    /// The receiver's publication (RX → TX).
+    #[inline]
+    pub fn publish_rx(&self, rx_loss: f64, jitter_us: f64) {
+        self.rx_loss_bits.store(rx_loss.to_bits(), Ordering::Relaxed);
+        self.rx_jitter_bits.store(jitter_us.to_bits(), Ordering::Relaxed);
+    }
+
+    /// `(incoming loss EWMA, arrival jitter µs)` as the receiver last
+    /// published them (`(0.0, 0.0)` before any arrival: the estimator's own
+    /// initial values).
+    #[inline]
+    pub fn rx(&self) -> (f64, f64) {
+        (
+            f64::from_bits(self.rx_loss_bits.load(Ordering::Relaxed)),
+            f64::from_bits(self.rx_jitter_bits.load(Ordering::Relaxed)),
+        )
+    }
+
+    /// The sender's publication (TX → RX).
+    #[inline]
+    pub fn publish_tx(&self, v: TxPublished) {
+        let p1 = |d: std::time::Duration| (d.as_nanos() as u64).saturating_add(1);
+        self.srtt_ns_p1.store(p1(v.srtt), Ordering::Relaxed);
+        self.min_rtt_ns_p1.store(v.min_rtt.map_or(0, p1), Ordering::Relaxed);
+        self.rtt_jitter_us.store(v.rtt_jitter_us, Ordering::Relaxed);
+        self.rtt_sigma_us_p1
+            .store(v.rtt_sigma_us.map_or(0, |s| s.saturating_add(1)), Ordering::Relaxed);
+    }
+
+    /// The sender's last publication; `None` before the first.
+    #[inline]
+    pub fn tx(&self) -> Option<TxPublished> {
+        let s = self.srtt_ns_p1.load(Ordering::Relaxed);
+        if s == 0 {
+            return None;
+        }
+        let d = |v: u64| std::time::Duration::from_nanos(v - 1);
+        let m = self.min_rtt_ns_p1.load(Ordering::Relaxed);
+        let g = self.rtt_sigma_us_p1.load(Ordering::Relaxed);
+        Some(TxPublished {
+            srtt: d(s),
+            min_rtt: (m != 0).then(|| d(m)),
+            rtt_jitter_us: self.rtt_jitter_us.load(Ordering::Relaxed),
+            rtt_sigma_us: (g != 0).then(|| g - 1),
+        })
+    }
 }
 
 impl PathStats {
@@ -176,6 +311,7 @@ impl PathStats {
             in_slow_start: AtomicBool::new(true),
             jitter_us: AtomicU64::new(0),
             peer_loss_rate_e6: AtomicU64::new(0),
+            xdir: CrossDirection::default(),
         }
     }
 

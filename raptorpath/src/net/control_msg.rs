@@ -1,18 +1,20 @@
-//! Inbound control-message handling: the `ControlMessage` dispatch shared by
-//! the receiver's ordered data loop and the control fast path.
+//! Inbound control-message handling, split by direction (threading Q2).
 //!
-//! The caller builds one [`ControlCtx`] per call site; every non-trivial arm
-//! is its own `on_*` function. Ordering constraints: the `WindowAck` arm runs
-//! its whole re-homed Ack payload (delivery → RTT → loss/pool/stats/cc-window)
-//! under one scheduler acquisition, released before `copa_feed_attribute`. The
-//! `Option` handles are capabilities: `None` means "this pipeline has no such
-//! consumer". `ControlCtx` is taken by shared reference — all mutation goes
-//! through the `Mutex`/`DashMap`/atomic handles it carries.
+//! * [`handle_control_message`] — the TRANSMIT direction's control input:
+//!   `WindowAck`, the per-batch `Ack`, `PathReport` and `Ping` (its
+//!   keepalive touch). It runs in the window SENDER task, which owns the
+//!   scheduler's TX half and takes it here as plain `&mut` (no mutex): the
+//!   client's acks reach the sender from the per-path I/O owners over the
+//!   sender's input channel (drained with `recv_many`, `net/mod.rs`), the
+//!   PathReport / Ping from the control fast path over the same channel.
+//! * [`handle_rx_control_message`] — everything the RECEIVER consumes
+//!   (`WindowStart`, `GenerationDeficit`, `RepairRequest`, `Shutdown`,
+//!   `WindowSwitch`): it touches no scheduler state.
 //!
-//! Not covered here: the outbound control sends (the report task, the
-//! receiver's ack/nack emitters), the Copa attribution machinery
-//! (`net::copa_feed_attribute`), which is shared with the send path and
-//! stays at `net` module level, called from here.
+//! Ordering constraint: the `WindowAck` arm runs its whole re-homed Ack
+//! payload (delivery → RTT → loss/pool/stats/cc-window) in one pass over the
+//! sender's scheduler, before `copa_feed_attribute`. The `Option` handles are
+//! capabilities: `None` means "this pipeline has no such consumer".
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -24,13 +26,15 @@ use super::{
     COPA_SOLE_BYTES_PER_SYMBOL, CopaFeed, copa_feed_attribute, now_us, sack_to_gaps,
 };
 use crate::monitor::stats::SharedStats;
+use crate::scheduler::Scheduler;
 use crate::transport::{ControlMessage, QuicTransport};
 
-/// Everything an inbound control message may need, resolved once by the
-/// caller. For the `Option` capability handles, `None` means "the running
-/// pipeline has no such consumer".
+/// Everything an inbound TX-direction control message may need, resolved
+/// once by the sender. For the `Option` capability handles, `None` means
+/// "the running pipeline has no such consumer".
 pub(crate) struct ControlCtx<'a> {
-    pub scheduler: &'a Arc<crate::scheduler::SchedMutex>,
+    /// The scheduler's TX half — the sender's own, by `&mut`.
+    pub scheduler: &'a mut Scheduler,
     pub transport: &'a Arc<QuicTransport>,
     pub stats: &'a Arc<SharedStats>,
     /// The SACK→gap producer. The batch rides with its [`super::FireCause`]
@@ -43,26 +47,6 @@ pub(crate) struct ControlCtx<'a> {
     /// receiver's delivery counter (a different seq space): the retention
     /// contract removes a symbol by ack only.
     pub peer_window_ack: Option<&'a Arc<AtomicU64>>,
-    /// Threading P1, D1: the local window sender's ack wake. Signalled
-    /// (`notify_one`, which stores a permit when nobody waits, so a wake is
-    /// never lost) once per inbound `WindowAck`, after every state update the
-    /// ack carries, so a sender paused on the store/cwnd brake or on an empty
-    /// pacing bucket re-evaluates on the ack instead of a 1 ms poll. `Some`
-    /// exactly where `peer_window_ack` is.
-    pub ack_wake: Option<&'a Arc<AckWake>>,
-    /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
-    /// (anchor, deficit) vector to the local window sender's recovery loop.
-    pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
-    /// The v8 receiver-seat repair request (paper §7.6), forwarded to the
-    /// local window sender's own recovery loop — the parallel of
-    /// [`Self::deficit_tx`] one line above: the receiver's report is the
-    /// authority in both vocabularies, and the sender is a server of it.
-    ///
-    /// `Some(..)` only when `RWM_RECV_REQUEST_LAW` (or `RWM_RANK_FEEDBACK`) is
-    /// armed on a plain reliable window; `None` on every shipped path, where
-    /// an arriving `RepairRequest` is counted (`repair_request_ignored()`)
-    /// and dropped, never acted on.
-    pub request_tx: Option<&'a tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
     /// Some(..) in plain-reliable mode: forwards the WindowAck's received-above-
     /// frontier ranges, with the v9 `(next_expected, received_above)` pair, to
     /// the local window sender so its store gate can release out-of-order
@@ -78,53 +62,89 @@ pub(crate) struct ControlCtx<'a> {
     /// `RWM_MSTAR_ANCHOR` (ADR-0061): suppress the peer-report RTT
     /// pseudo-sample feed.
     pub mstar_anchor: bool,
-    /// Threading Q1: the calling task's staging for the paths' I/O owners
-    /// (the Pong reply is staged here; the caller flushes it before it
-    /// waits). A `RefCell` because the context is shared by reference; the
-    /// borrow never outlives one staging call.
-    pub out: &'a std::cell::RefCell<crate::transport::TxBatch>,
+    /// The sender's own staging for the paths' I/O owners (the Pong a Ping
+    /// answers); the sender flushes it before it waits.
+    pub out: &'a mut crate::transport::TxBatch,
 }
 
-/// Threading P1, D1: the local window sender's ack wake. `signal` is called
-/// once per inbound `WindowAck` (last, after the ack's state is published):
-/// it bumps `acks` and `notify_one`s the sender. `acks` is an observation
-/// counter only — the sender's `[DIAG]` reads it to tell a 1 ms timer wake
-/// during which an ack landed (`wake[timer_acked]`: the arm lost the race or
-/// the wiring is broken) from a timer wake in a true ack gap.
-pub(crate) struct AckWake {
-    notify: tokio::sync::Notify,
-    pub(crate) acks: AtomicU64,
+/// The receiver's control context: no scheduler (threading Q2 — nothing the
+/// receiver handles here touches the TX half).
+pub(crate) struct RxControlCtx<'a> {
+    /// Some(..) in generation mode: forwards an inbound GenerationDeficit's
+    /// (anchor, deficit) vector to the local window sender's recovery loop.
+    pub deficit_tx: Option<&'a tokio::sync::mpsc::Sender<Vec<(u64, u32)>>>,
+    /// The v8 receiver-seat repair request (paper §7.6), forwarded to the
+    /// local window sender's own recovery loop — the parallel of
+    /// [`Self::deficit_tx`] one line above: the receiver's report is the
+    /// authority in both vocabularies, and the sender is a server of it.
+    ///
+    /// `Some(..)` only when `RWM_RECV_REQUEST_LAW` (or `RWM_RANK_FEEDBACK`) is
+    /// armed on a plain reliable window; `None` on every shipped path, where
+    /// an arriving `RepairRequest` is counted (`repair_request_ignored()`)
+    /// and dropped, never acted on.
+    pub request_tx: Option<&'a tokio::sync::mpsc::Sender<super::RepairRequestBatch>>,
+    /// The sender's input channel: a TX-direction message that reached the
+    /// receiver anyway (the owners and the fast path route them to the
+    /// sender directly) is handed on, never handled here.
+    pub to_sender: &'a tokio::sync::mpsc::Sender<crate::transport::InboundBatch>,
 }
 
-impl AckWake {
-    pub(crate) fn new() -> Self {
-        Self { notify: tokio::sync::Notify::new(), acks: AtomicU64::new(0) }
-    }
-
-    /// One inbound WindowAck: count it, then wake the sender (a stored
-    /// permit when it is not waiting, so the wake is never lost).
-    #[inline]
-    pub(crate) fn signal(&self) {
-        self.acks.fetch_add(1, Ordering::Relaxed);
-        self.notify.notify_one();
-    }
-
-    /// The sender's wait on the next ack.
-    #[inline]
-    pub(crate) fn notified(&self) -> tokio::sync::futures::Notified<'_> {
-        self.notify.notified()
-    }
+/// Whether `msg` is TX-direction control input — consumed by the window
+/// sender, which owns the scheduler's TX half (threading Q2). The per-path
+/// I/O owner and the control fast path route these to the sender's input
+/// channel; everything else goes to the receiver.
+pub(crate) fn is_tx_control(msg: &ControlMessage) -> bool {
+    matches!(
+        msg,
+        ControlMessage::WindowAck { .. }
+            | ControlMessage::Ack { .. }
+            | ControlMessage::PathReport { .. }
+            | ControlMessage::Ping { .. }
+    )
 }
 
-pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &ControlCtx<'_>) {
+/// The receiver's control dispatch (threading Q2): the messages it consumes
+/// itself, with no scheduler; a TX-direction message is handed on to the
+/// sender (counted by the caller's routing, never handled twice).
+pub(crate) fn handle_rx_control_message(path_id: u32, msg: ControlMessage, ctx: &RxControlCtx<'_>) {
     match msg {
-        // The block pipeline's control messages (ADR-0069 deleted it). The
-        // variants stay on the wire (their indices are the encoding); a
-        // peer that still sends them is ignored.
+        m if is_tx_control(&m) => {
+            if ctx.to_sender.try_send(vec![(path_id, crate::transport::WireMessage::Control(m))]).is_err() {
+                debug!(path_id, "sender input full/closed — TX control message dropped at the receiver");
+            }
+        }
         ControlMessage::BlockStart { .. } | ControlMessage::BlockResult { .. } => {
             debug!(path_id, "block-pipeline control message ignored (block pipeline removed, ADR-0069)");
         }
+        ControlMessage::Shutdown => {
+            info!(path_id, "peer is shutting down");
+        }
+        ControlMessage::WindowStart { symbol_size, backend, packed } => {
+            debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
+        }
+        ControlMessage::GenerationDeficit { deficits } => {
+            on_generation_deficit(ctx, path_id, deficits)
+        }
+        // v8: the receiver-seat repair request. Forwarded when a consumer is
+        // armed; otherwise counted and dropped (see `on_repair_request`).
+        ControlMessage::RepairRequest { spans, cause } => {
+            on_repair_request(ctx, path_id, spans, cause)
+        }
+        // Never sent by this binary; the real guard (warn + ignore) lives in
+        // the receiver loop.
+        ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
+            debug!(path_id, flush_seq, ?new_backend, symbol_size, "window switch request (handled in receiver loop)");
+        }
+        _ => {}
+    }
+}
 
+/// The sender's control dispatch (threading Q2): the TX-direction messages
+/// ([`is_tx_control`]), run in the sender task over its own scheduler. Any
+/// other message is not the sender's and is ignored here (the routing never
+/// sends one).
+pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &mut ControlCtx<'_>) {
+    match msg {
         // ADR-0005 + ADR-0007: handle ACK with echo-based RTT
         ControlMessage::Ack {
             block_id: _,
@@ -162,17 +182,8 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
 
         ControlMessage::Ping { timestamp_us } => {
             debug!(path_id, timestamp_us, "ping received");
-            ctx.scheduler.lock().touch_path(path_id);
-            let _ = ctx.transport.send_control_datagram(&mut ctx.out.borrow_mut(), path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
-        }
-
-        // ADR-0015: handle graceful shutdown from peer
-        ControlMessage::Shutdown => {
-            info!(path_id, "peer is shutting down");
-        }
-
-        ControlMessage::WindowStart { symbol_size, backend, packed } => {
-            debug!(path_id, symbol_size, ?backend, packed, "peer entered window mode");
+            ctx.scheduler.touch_path(path_id);
+            let _ = ctx.transport.send_control_datagram(ctx.out, path_id, ControlMessage::Pong { echo_timestamp_us: timestamp_us });
         }
 
         ControlMessage::WindowAck { next_expected, sack_ranges, echo_send_timestamp_us, jitter_us, cumulative_received, cum_expected, cum_received, received_above } => on_window_ack(
@@ -188,23 +199,9 @@ pub(crate) fn handle_control_message(path_id: u32, msg: ControlMessage, ctx: &Co
             cum_received,
         ),
 
-        ControlMessage::GenerationDeficit { deficits } => {
-            on_generation_deficit(ctx, path_id, deficits)
+        other => {
+            debug!(path_id, msg = ?std::mem::discriminant(&other), "non-TX control message at the sender ignored");
         }
-
-        // v8: the receiver-seat repair request. Forwarded when a consumer is
-        // armed; otherwise counted and dropped (see `on_repair_request`).
-        ControlMessage::RepairRequest { spans, cause } => {
-            on_repair_request(ctx, path_id, spans, cause)
-        }
-
-        // Never sent by this binary; the real guard (warn + ignore) lives in
-        // the receiver loop in `net::mod`.
-        ControlMessage::WindowSwitch { flush_seq, new_backend, symbol_size } => {
-            debug!(path_id, flush_seq, ?new_backend, symbol_size, "window switch request (handled in receiver loop)");
-        }
-
-        _ => {}
     }
 }
 
@@ -219,7 +216,7 @@ pub fn repair_request_ignored() -> u64 {
 
 /// ADR-0005 + ADR-0007: handle ACK with echo-based RTT
 fn on_ack(
-    ctx: &ControlCtx<'_>,
+    ctx: &mut ControlCtx<'_>,
     path_id: u32,
     batch_seq: u64,
     received_ids: &[u32],
@@ -227,15 +224,14 @@ fn on_ack(
     expected_count: u32,
     received_count: u32,
 ) {
-    let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
+    let (transport, stats) = (ctx.transport, ctx.stats);
     let copa_feed = ctx.copa_feed;
 
-    // Threading P1, D2: the transport reads (`wire_rtt` is a quinn call) are
-    // taken before the scheduler guard, and the pass-through window write
-    // after it; neither depends on scheduler state.
+    // The transport reads (published owner view / pass-through CC atomics)
+    // and the pass-through window write; neither depends on scheduler state.
     let wire = wire_reads(transport, path_id, true);
     let mut cc_window: Option<u64> = None;
-    let mut sched = scheduler.lock();
+    let sched = &mut *ctx.scheduler;
     sched.touch_path(path_id);
     // `RWM_CLOCK_GAP` (ADR-0061): samples processed in a stall's
     // release-flood quarantine measured the stall, not the path — the
@@ -384,7 +380,6 @@ fn on_ack(
         // after the guard is dropped.
         cc_window = Some(path.cwnd as u64 * COPA_SOLE_BYTES_PER_SYMBOL);
     }
-    drop(sched);
     if let Some(bytes) = cc_window {
         transport.set_cc_window_bytes(path_id, bytes);
     }
@@ -415,19 +410,18 @@ fn wire_reads(transport: &QuicTransport, path_id: u32, compete_here: bool) -> Wi
 }
 
 fn on_path_report(
-    ctx: &ControlCtx<'_>,
+    ctx: &mut ControlCtx<'_>,
     report_path_id: u32,
     loss_rate: f64,
     avg_rtt_us: u64,
     throughput_bps: f64,
     jitter_us: u64,
 ) {
-    let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
+    let (transport, stats) = (ctx.transport, ctx.stats);
     let mstar_anchor = ctx.mstar_anchor;
 
-    // Threading P1, D2: the quinn read before the guard.
     let wire = wire_reads(transport, report_path_id, false);
-    let mut sched = scheduler.lock();
+    let sched = &mut *ctx.scheduler;
     // Touch path — this doubles as keepalive
     sched.touch_path(report_path_id);
     if let Some(path) = sched.path_mut(report_path_id) {
@@ -479,7 +473,7 @@ fn on_path_report(
 
 #[allow(clippy::too_many_arguments)]
 fn on_window_ack(
-    ctx: &ControlCtx<'_>,
+    ctx: &mut ControlCtx<'_>,
     path_id: u32,
     next_expected: u64,
     received_above: u32,
@@ -490,7 +484,7 @@ fn on_window_ack(
     cum_expected: u64,
     cum_received: u64,
 ) {
-    let (scheduler, transport, stats) = (ctx.scheduler, ctx.transport, ctx.stats);
+    let (transport, stats) = (ctx.transport, ctx.stats);
     let (copa_feed, peer_window_ack) = (ctx.copa_feed, ctx.peer_window_ack);
     let (nack_tx, sack_tx) = (ctx.nack_tx, ctx.sack_tx);
 
@@ -510,18 +504,15 @@ fn on_window_ack(
     // `RWM_ACK_MERGE` (default on): in window mode the per-batch `Ack` is
     // suppressed, so every consumer of its arm is re-homed here, driven by
     // the diff of the v6 cumulative counters. The whole arm runs under one
-    // scheduler lock in the Ack arm's own order (delivery → RTT →
-    // loss/pool/stats/cc-window): one acquisition where the unmerged pair
-    // took two.
+    // pass over the sender's scheduler in the Ack arm's own order
+    // (delivery → RTT → loss/pool/stats/cc-window).
     let am_on = crate::scheduler::ack_merge_active();
     let now = now_us();
     let rtt_us = now.saturating_sub(echo_send_timestamp_us);
-    // Threading P1, D2: transport reads before the guard, the pass-through
-    // window write after it.
     let wire = wire_reads(transport, path_id, copa_feed.is_none());
     let mut cc_window: Option<u64> = None;
     {
-        let mut sched = scheduler.lock();
+        let sched = &mut *ctx.scheduler;
         sched.touch_path(path_id);
         // `RWM_CLOCK_GAP`: quarantined echoes (stall release flood)
         // measured the stall — discard.
@@ -702,7 +693,7 @@ fn on_window_ack(
             path_id,
             next_expected,
             &sack_ranges,
-            scheduler,
+            ctx.scheduler,
             transport,
             stats,
         );
@@ -769,17 +760,6 @@ fn on_window_ack(
             }
         }
     }
-    // Threading P1, D1: wake the local window sender LAST, after every state
-    // this ack carries is published (the ack point above, the in-flight
-    // release under the scheduler, the SACK report and the gap batch on
-    // their channels), so the woken sender re-evaluates its pause / pacing
-    // gate against this ack, not against a half-applied one. `notify_one`
-    // stores a permit when the sender is not waiting: an ack landing during
-    // the sender's loop body is not lost (it costs at most one spurious
-    // iteration at the next wait).
-    if let Some(w) = ctx.ack_wake {
-        w.signal();
-    }
 }
 
 /// The v8 receiver-seat repair request (paper §7.6).
@@ -792,7 +772,7 @@ fn on_window_ack(
 /// channel, best-effort, and a dropped report is re-sent by the receiver on
 /// its next cadence.
 fn on_repair_request(
-    ctx: &ControlCtx<'_>,
+    ctx: &RxControlCtx<'_>,
     path_id: u32,
     spans: Vec<(u64, u16, u32)>,
     cause: u8,
@@ -820,7 +800,7 @@ fn on_repair_request(
     }
 }
 
-fn on_generation_deficit(ctx: &ControlCtx<'_>, path_id: u32, deficits: Vec<(u64, u32)>) {
+fn on_generation_deficit(ctx: &RxControlCtx<'_>, path_id: u32, deficits: Vec<(u64, u32)>) {
     debug!(
         path_id,
         gen_count = deficits.len(),
