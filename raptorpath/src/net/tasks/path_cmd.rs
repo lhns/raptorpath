@@ -1,7 +1,8 @@
 //! Runtime path add/remove processor, fed by the status-HTTP API.
 //!
 //! Order of operations: `add_path` on transport → scheduler → stats →
-//! `spawn_receiver_for_path`, and `remove_path` on transport → scheduler.
+//! `start_readers_for_path` (the path's I/O owner starts forwarding), and
+//! `remove_path` on transport → scheduler.
 //! `next_path_id` is seeded from `config.bind_addrs.len()` at the
 //! `run_impl` call site, so runtime path ids follow the configured ones.
 
@@ -21,7 +22,7 @@ pub(crate) async fn run_path_cmd(
     cmd_transport: Arc<QuicTransport>,
     cmd_scheduler: Arc<crate::scheduler::SchedMutex>,
     cmd_stats: Arc<SharedStats>,
-    cmd_msg_tx: mpsc::Sender<(u32, WireMessage)>,
+    cmd_msg_tx: mpsc::Sender<crate::transport::InboundBatch>,
     cmd_ctrl_tx: mpsc::Sender<(u32, WireMessage)>,
     next_path_id: Arc<AtomicU64>,
     mut cmd_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
@@ -38,15 +39,16 @@ pub(crate) async fn run_path_cmd(
                         let path_id = next_path_id.fetch_add(1, Ordering::Relaxed) as u32;
                         info!(path_id, %bind_addr, ?peer_addr, "adding path at runtime");
                         match cmd_transport.add_path(path_id, bind_addr, peer_addr).await {
-                            Ok(conn) => {
+                            Ok(()) => {
                                 cmd_scheduler.lock().add_path(path_id);
                                 cmd_stats.add_path(path_id);
-                                cmd_transport.spawn_receiver_for_path(
-                                    path_id,
-                                    conn,
-                                    cmd_msg_tx.clone(),
-                                    cmd_ctrl_tx.clone(),
-                                );
+                                cmd_transport
+                                    .start_readers_for_path(
+                                        path_id,
+                                        cmd_msg_tx.clone(),
+                                        cmd_ctrl_tx.clone(),
+                                    )
+                                    .await;
                                 info!(path_id, "path added successfully");
                             }
                             Err(e) => {

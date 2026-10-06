@@ -1,12 +1,14 @@
 //! The L0 netem shim: per-path rate/delay/jitter/Gilbert-Elliott shaping
 //! inside the transport's datagram send path, for in-process loopback tests.
-//! `transport/quic.rs` keeps the one call seam (`QuicTransport`'s datagram
-//! send); the design note follows.
+//! The path's I/O owner (`transport/io_owner.rs`) keeps the one call seam:
+//! it asks [`L0Netem::shape`] for a datagram's fate and release time, holds
+//! the datagram in its own FIFO release queue, and performs the delayed
+//! quinn send itself (threading Q1: no other task touches the connection);
+//! the design note follows.
 
 use crate::scheduler::PathId;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -121,7 +123,6 @@ struct L0PathState {
     link_free_at_us: u64,
     last_release_us: u64,
     queued: Arc<std::sync::atomic::AtomicUsize>,
-    tx: Option<mpsc::UnboundedSender<(u64, bytes::Bytes)>>,
 }
 
 pub(super) struct L0Netem {
@@ -168,8 +169,14 @@ impl L0Netem {
         }))
     }
 
-    fn now_us(&self) -> u64 {
+    /// The shim's clock (µs since its epoch); release times are on it.
+    pub(super) fn now_us(&self) -> u64 {
         self.epoch.elapsed().as_micros() as u64
+    }
+
+    /// The wall instant of a release time on the shim's clock.
+    pub(super) fn deadline(&self, release_us: u64) -> std::time::Instant {
+        self.epoch + std::time::Duration::from_micros(release_us)
     }
 
     fn cfg(&self, path_id: PathId) -> L0PathCfg {
@@ -177,8 +184,11 @@ impl L0Netem {
         self.cfgs[i]
     }
 
-    /// Shape + (maybe) drop + schedule one datagram for delayed send.
-    pub(super) fn send(self: &Arc<Self>, path_id: PathId, is_server: bool, conn: &quinn::Connection, data: bytes::Bytes) {
+    /// Shape one datagram of `len` bytes: `None` = dropped (GE loss or the
+    /// netem tail-drop limit), `Some(release_us)` = send it at that time on
+    /// the shim's clock (FIFO per path). The caller (the path's I/O owner)
+    /// queues the datagram and reports each release with [`Self::released`].
+    pub(super) fn shape(&self, path_id: PathId, is_server: bool, len: usize) -> Option<u64> {
         let cfg = self.cfg(path_id);
         let now = self.now_us();
         let entry = self.states.entry(path_id).or_insert_with(|| {
@@ -189,7 +199,6 @@ impl L0Netem {
                 link_free_at_us: 0,
                 last_release_us: 0,
                 queued: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-                tx: None,
             })
         });
         let mut st = entry.lock();
@@ -233,16 +242,16 @@ impl L0Netem {
             };
             if drop {
                 self.ge_drops.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return;
+                return None;
             }
         }
         // netem default packet limit: tail-drop beyond 1000 queued.
         if st.queued.load(std::sync::atomic::Ordering::Relaxed) >= 1000 {
             self.tail_drops.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return;
+            return None;
         }
         // Rate stage (serialization through the shaped link), then delay+jitter.
-        let ser_us = (data.len() as f64 * 8.0 / cfg.rate_bps * 1e6) as u64;
+        let ser_us = (len as f64 * 8.0 / cfg.rate_bps * 1e6) as u64;
         let start = now.max(st.link_free_at_us);
         st.link_free_at_us = start + ser_us;
         let jitter = if cfg.jitter_us > 0 {
@@ -256,36 +265,21 @@ impl L0Netem {
         // FIFO (a netem rate stage does not reorder).
         release = release.max(st.last_release_us);
         st.last_release_us = release;
-        // Lazily spawn the per-path forwarder that sleeps until each packet's
-        // release time and performs the real quinn send.
-        if st.tx.is_none() {
-            let (tx, mut rx) = mpsc::unbounded_channel::<(u64, bytes::Bytes)>();
-            let conn = conn.clone();
-            let epoch = self.epoch;
-            let queued = st.queued.clone();
-            let shim = self.clone();
-            tokio::spawn(async move {
-                while let Some((rel_us, data)) = rx.recv().await {
-                    let now = epoch.elapsed().as_micros() as u64;
-                    if rel_us > now {
-                        tokio::time::sleep(std::time::Duration::from_micros(rel_us - now)).await;
-                    }
-                    queued.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    match conn.send_datagram(data) {
-                        Ok(()) => {
-                            shim.sent_ok.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        Err(_) => {
-                            shim.send_errs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    }
-                }
-            });
-            st.tx = Some(tx);
-        }
         st.queued.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.enq.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let _ = st.tx.as_ref().unwrap().send((release, data));
+        Some(release)
+    }
+
+    /// The owner released one queued datagram (`ok` = quinn accepted it).
+    pub(super) fn released(&self, path_id: PathId, ok: bool) {
+        if let Some(st) = self.states.get(&path_id) {
+            st.lock().queued.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if ok {
+            self.sent_ok.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            self.send_errs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// Cumulative transit counters + current queue

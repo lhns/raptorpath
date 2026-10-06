@@ -20,7 +20,12 @@ mod gauge;
 #[path = "common/loopback.rs"]
 mod loopback;
 
-const ARGS: [&str; 6] = ["--bytes", "8000000", "--runs", "1", "--protocol-hint", "bulk"];
+/// The transfer must outlast at least one `[DIAG]` period: the sender prints
+/// `[DIAG]` only on its 250 ms cadence (net/diag.rs, no exit line), and the
+/// test reads the LAST one. 8 MB on loopback finished in 0.245 s on the
+/// benchmark VM (V-Q1 session 1: no `[DIAG]` line at all, ABORT-TESTS);
+/// 80 MB spans ≥ 0.64 s even at 1 Gbit/s.
+const ARGS: [&str; 6] = ["--bytes", "80000000", "--runs", "1", "--protocol-hint", "bulk"];
 
 /// Run one transfer with `env`; return (client log, client's last `[DIAG]`).
 fn run(env: &[(&str, &str)]) -> (String, String) {

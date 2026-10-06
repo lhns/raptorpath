@@ -184,6 +184,11 @@ pub(crate) struct SenderState {
     /// carved from (`QuicTransport::send_symbol`): one allocation per
     /// `WIRE_ARENA_CHUNK` instead of one per datagram.
     pub wire_arena: bytes::BytesMut,
+    /// Threading Q1: the sender's per-path staging for the I/O owners —
+    /// every datagram this task emits is staged here and handed to its
+    /// path's owner once per loop iteration (`QuicTransport::flush`, right
+    /// before the loop waits): one batch per Law-0 burst.
+    pub tx: crate::transport::TxBatch,
 }
 
 impl SenderState {
@@ -253,6 +258,7 @@ impl SenderState {
             mpd_plost_retx: 0,
             covered_scratch: Vec::new(),
             wire_arena: bytes::BytesMut::new(),
+            tx: crate::transport::TxBatch::new(),
         }
     }
 }
@@ -390,6 +396,7 @@ pub(crate) fn emit_source(
         // carry, so it must be the same instant the ETA stamp registered —
         // hence `src_send_ts_us` rather than a second `now_us()`.
         if let Err(e) = ctx.transport.send_symbol(
+            &mut st.tx,
             source_path,
             on_wire,
             src_send_ts_us,
@@ -473,7 +480,7 @@ pub(crate) fn emit_source(
         if let Some(alt) = alt_path {
             let seqs = ctx.batch_counter.next(alt);
             if let Err(e) =
-                ctx.transport.send_symbol(alt, &wire_sym, now_us(), seqs, 0, &mut st.wire_arena)
+                ctx.transport.send_symbol(&mut st.tx, alt, &wire_sym, now_us(), seqs, 0, &mut st.wire_arena)
             {
                 warn!(alt, ?e, "failed to send redundant source symbol");
             }
@@ -832,6 +839,7 @@ pub(crate) fn emit_source(
             };
             let seqs = ctx.batch_counter.next(correction_path);
             let sent = match ctx.transport.send_symbol(
+                &mut st.tx,
                 correction_path,
                 &correction_sym,
                 now_us(),

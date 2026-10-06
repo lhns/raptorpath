@@ -63,7 +63,7 @@ use crate::transport::{ControlMessage, QuicTransport, WireMessage};
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_receiver(
     mut recv_shutdown_rx: tokio::sync::broadcast::Receiver<()>,
-    mut msg_rx: tokio::sync::mpsc::Receiver<(u32, WireMessage)>,
+    mut msg_rx: tokio::sync::mpsc::Receiver<crate::transport::InboundBatch>,
     recv_copa_feed: Option<Arc<CopaFeed>>,
     recv_tun_tx: tokio::sync::mpsc::Sender<Bytes>,
     recv_scheduler: Arc<crate::scheduler::SchedMutex>,
@@ -99,7 +99,7 @@ pub(crate) async fn run_receiver(
     reasm_bdp_on: bool,
     ack_merge_recv: bool,
     recv_diag_on: bool,
-    rdiag_probe: tokio::sync::mpsc::WeakSender<(u32, WireMessage)>,
+    rdiag_probe: tokio::sync::mpsc::WeakSender<crate::transport::InboundBatch>,
     recv_gates: crate::gates::RuntimeGates,
     // `config.reorder_timeout_ms` / `config.reorder_max_size`.
     recv_reorder_timeout_ms: u64,
@@ -112,6 +112,20 @@ pub(crate) async fn run_receiver(
     // never rebuilt).
     let mut window_decoder: Box<dyn WindowDecoder> =
         create_window_decoder(recv_fec_backend, recv_symbol_size, recv_window_generation);
+    // Threading Q1: every control datagram this task sends (the WindowAcks —
+    // still computed after decode, one per data datagram as before — the
+    // deficit / request reports, the Pong) is staged here per path and handed
+    // to the path's I/O owner once per inbound batch, right before the loop
+    // waits: one control-lane batch per `recv_many` drain. A `RefCell` so the
+    // shared `ControlCtx` can stage into it; no borrow crosses an `.await`.
+    let acks = std::cell::RefCell::new(crate::transport::TxBatch::new());
+    // The inbound batch being worked through (the owners' one-`Vec`-per-poll
+    // batches, drained together by one `recv_many`).
+    let mut inbox: Vec<crate::transport::InboundBatch> = Vec::new();
+    let mut queued: std::collections::VecDeque<(u32, WireMessage)> =
+        std::collections::VecDeque::new();
+    // Messages processed since the last flush of `acks`.
+    let mut since_flush: usize = 0;
     // Whether the sender packs multiple packets per symbol (set via WindowStart)
     let mut window_packed: bool = false;
     // The cumulative point for the window ACK (wire v9 `next_expected`): the
@@ -559,7 +573,7 @@ pub(crate) async fn run_receiver(
                     let msg = ControlMessage::GenerationDeficit { deficits };
                     let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
                     for pid in live_now {
-                        let _ = recv_transport.send_control_datagram(pid, msg.clone());
+                        let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, msg.clone());
                     }
                 }
             }
@@ -658,7 +672,7 @@ pub(crate) async fn run_receiver(
                         spans,
                         cause: $cause.as_u8(),
                     };
-                    if recv_transport.send_control_datagram($pid, msg).is_ok() {
+                    if recv_transport.send_control_datagram(&mut acks.borrow_mut(), $pid, msg).is_ok() {
                         blk.req_sent += 1;
                     }
                 }
@@ -676,12 +690,33 @@ pub(crate) async fn run_receiver(
     let mut rdiag_last = Instant::now();
 
     'recv: loop {
+        // Threading Q1 (plan rule 3, batch at the consumer): the messages of
+        // one `recv_many` drain are processed back to back; the loop only
+        // waits — flushing its staged control datagrams to the owners, then
+        // evaluating the hold/deficit deadlines and entering the `select!` —
+        // once the drained batch is exhausted. (Known effect, declared: the
+        // deadlines and their `[QCLK]` sample are evaluated once per wait,
+        // not once per message of a batch.)
+        let waiting = queued.is_empty();
+        // The staged control datagrams go to the owners before every wait
+        // AND at least every INBOUND_BATCH_MAX processed messages: an ack is
+        // never held behind more than one owner batch's worth of processing
+        // (≤ 32 messages), however deep the drain — without the second
+        // clause the first message's ack would wait for the whole drain (up
+        // to MSG_CHANNEL_BATCHES × 32 messages) and its RTT sample with it.
+        if waiting || since_flush >= crate::transport::io_owner::INBOUND_BATCH_MAX {
+            since_flush = 0;
+            let mut b = std::mem::take(&mut *acks.borrow_mut());
+            recv_transport.flush(&mut b).await;
+            *acks.borrow_mut() = b;
+        }
+        since_flush += 1;
         // Periodic generation-deficit report deadline: re-report the frontier
         // deficit ~once per SRTT even absent new data, so a sender that
         // emitted its budget and went quiet is always re-pulled and a lost
         // report is retransmitted. Only armed once a generation is known.
         let deficit_deadline: Option<tokio::time::Instant> =
-            if recv_window_generation && !gen_widths.is_empty() {
+            if waiting && recv_window_generation && !gen_widths.is_empty() {
                 let srtt = {
                     let sched = recv_scheduler.lock();
                     sched
@@ -717,7 +752,7 @@ pub(crate) async fn run_receiver(
             } else {
                 reorder_buf.as_ref().is_some_and(|rb| rb.pending_count() > 0)
             };
-            if pending {
+            if waiting && pending {
                 let (srtt, srtt_jitter_us, sigma_us) = {
                     let sched = recv_scheduler.lock();
                     let live: Vec<_> = sched
@@ -834,12 +869,22 @@ pub(crate) async fn run_receiver(
 
         // ADR-0015: select between message arrival, in-order-hold expiry,
         // and shutdown signal
-        let rdiag_t0 = if rdiag_on { Some(Instant::now()) } else { None };
-        let (path_id, msg) = tokio::select! {
-            msg = msg_rx.recv() => {
-                match msg {
+        let rdiag_t0 = if rdiag_on && waiting { Some(Instant::now()) } else { None };
+        let (path_id, msg) = match queued.pop_front() {
+            Some(m) => m,
+            None => tokio::select! {
+            // One coop-budget unit per drain, never per message (the P2a
+            // lesson); the owners' batches are flattened into `queued`.
+            n = msg_rx.recv_many(&mut inbox, super::MSG_CHANNEL_BATCHES) => {
+                if n == 0 {
+                    break; // channel closed
+                }
+                for b in inbox.drain(..) {
+                    queued.extend(b);
+                }
+                match queued.pop_front() {
                     Some(m) => m,
-                    None => break, // channel closed
+                    None => continue, // only empty batches
                 }
             }
             _ = async {
@@ -959,7 +1004,7 @@ pub(crate) async fn run_receiver(
                     };
                     let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
                     for pid in live_now {
-                        let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                        let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                     }
                     // Request arms (A)/(B): the timer arm's request. This is
                     // the arm the deadline term above pulls forward to
@@ -1048,7 +1093,7 @@ pub(crate) async fn run_receiver(
                         };
                         let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
                         for pid in live_now {
-                            let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                            let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                         }
                     }
                 }
@@ -1092,7 +1137,7 @@ pub(crate) async fn run_receiver(
                     };
                     let live_now = recv_scheduler.lock().live_paths(); // P1 D2: guard dropped before quinn
                     for pid in live_now {
-                        let _ = recv_transport.send_control_datagram(pid, ack_msg.clone());
+                        let _ = recv_transport.send_control_datagram(&mut acks.borrow_mut(), pid, ack_msg.clone());
                     }
                 }
                 continue;
@@ -1101,11 +1146,14 @@ pub(crate) async fn run_receiver(
                 info!("receiver shutting down");
                 break;
             }
+        },
         };
         if let Some(t0) = rdiag_t0 {
             rdiag_idle_us += t0.elapsed().as_micros() as u64;
-            rdiag_msgs += 1;
-            if rdiag_msgs % 16 == 0 {
+            // This wait's whole drain (the message in hand + the queued rest).
+            rdiag_msgs += 1 + queued.len() as u64;
+            // Queue depth (in owner batches) sampled once per wait.
+            {
                 if let Some(s) = rdiag_probe.upgrade() {
                     let q = s.max_capacity().saturating_sub(s.capacity());
                     rdiag_qsum += q as u64;
@@ -1992,7 +2040,7 @@ pub(crate) async fn run_receiver(
                             cum_expected,
                             cum_received,
                         };
-                        if let Err(e) = recv_transport.send_control_datagram(path_id, ack_msg) {
+                        if let Err(e) = recv_transport.send_control_datagram(&mut acks.borrow_mut(), path_id, ack_msg) {
                             debug!(?e, path_id, "failed to send WindowAck");
                         }
                         // Request arms (A)/(B) (paper §7.6): the data arm's
@@ -2163,7 +2211,7 @@ pub(crate) async fn run_receiver(
 
                 // ADR-0005: send ACK as datagram (best-effort, low overhead)
                 if !suppress_legacy_ack {
-                    match recv_transport.send_control_datagram(path_id, ack) {
+                    match recv_transport.send_control_datagram(&mut acks.borrow_mut(), path_id, ack) {
                         Err(e) => debug!(?e, path_id, "failed to send ACK datagram"),
                         Ok(()) => debug!(path_id, batch_seq, symbol_count, "ack sent"),
                     }
@@ -2203,6 +2251,7 @@ pub(crate) async fn run_receiver(
                         request_tx: recv_request_tx.as_ref(),
                         copa_feed: recv_copa_feed.as_ref(),
                         mstar_anchor: recv_gates.mstar_anchor,
+                        out: &acks,
                     },
                 );
             }
@@ -2218,6 +2267,13 @@ pub(crate) async fn run_receiver(
     // (runtime teardown) never reaches this line; `RecvDiagBlock`'s destructor
     // flushes it then, without a probe. The two share one flag, so exactly one
     // final block is ever printed.
+    //
+    // Threading Q1: whatever the last messages staged goes to the owners
+    // first (best effort; an owner that is gone just drops it).
+    {
+        let mut b = std::mem::take(&mut *acks.borrow_mut());
+        recv_transport.flush(&mut b).await;
+    }
     let probe = Some(rank_probe(
         window_decoder.as_ref(),
         next_expected,

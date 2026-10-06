@@ -319,7 +319,9 @@ def thr(lines, phase="xfer", window=None):
                 "cpu_s": fnum(field(ln, "cpu_s")),
                 "cores": fnum(field(ln, "cores")),
             }
-        elif "[LAG] " in ln:
+        elif "[LAG] " in ln and "[LAG] io " not in ln:
+            # `[LAG] io` (threading Q1) is a dedicated I/O runtime's probe,
+            # read by `io_columns`; this is the main runtime's.
             res["lag"] = {
                 "n": inum(field(ln, "n")),
                 "p50_us": fnum(field(ln, "p50_us")),

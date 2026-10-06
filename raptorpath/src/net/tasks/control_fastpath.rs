@@ -6,7 +6,11 @@
 //! path never touches them); everything else is forwarded with `try_send` —
 //! never an awaited send — and dropped with a warning on a full data
 //! channel. The loop ends when the control channel closes.
+//!
+//! Threading Q1: the Pong a Ping triggers is staged in this task's own
+//! `TxBatch` and handed to the path's I/O owner before the loop waits again.
 
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -14,7 +18,7 @@ use tracing::warn;
 
 use super::super::control_msg::{ControlCtx, handle_control_message};
 use crate::monitor::stats::SharedStats;
-use crate::transport::{ControlMessage, QuicTransport, WireMessage};
+use crate::transport::{ControlMessage, InboundBatch, QuicTransport, TxBatch, WireMessage};
 
 /// Control fast path: liveness-critical messages (PathReport, Ping,
 /// Pong) are handled immediately; anything else that arrives via the
@@ -25,9 +29,10 @@ pub(crate) async fn run_control_fastpath(
     ctrl_scheduler: Arc<crate::scheduler::SchedMutex>,
     ctrl_transport: Arc<QuicTransport>,
     ctrl_stats: Arc<SharedStats>,
-    ctrl_forward_tx: mpsc::Sender<(u32, WireMessage)>,
+    ctrl_forward_tx: mpsc::Sender<InboundBatch>,
     ctrl_mstar_anchor: bool,
 ) {
+    let out = RefCell::new(TxBatch::new());
     while let Some((path_id, msg)) = ctrl_rx.recv().await {
         match msg {
             WireMessage::Control(
@@ -54,6 +59,7 @@ pub(crate) async fn run_control_fastpath(
                         sack_tx: None,
                         copa_feed: None,
                         mstar_anchor: ctrl_mstar_anchor,
+                        out: &out,
                     },
                 );
             }
@@ -66,11 +72,15 @@ pub(crate) async fn run_control_fastpath(
                 // it. Dropping a forwarded stream message under
                 // overload is survivable; wedging liveness is not.
                 if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) =
-                    ctrl_forward_tx.try_send((path_id, other))
+                    ctrl_forward_tx.try_send(vec![(path_id, other)])
                 {
                     warn!(path_id, "data channel full — dropping forwarded control message");
                 }
             }
         }
+        // The staged Pong (if any), to the owner, before waiting again.
+        let mut b = std::mem::take(&mut *out.borrow_mut());
+        ctrl_transport.flush(&mut b).await;
+        *out.borrow_mut() = b;
     }
 }

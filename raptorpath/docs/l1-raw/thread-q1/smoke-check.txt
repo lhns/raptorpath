@@ -1,0 +1,9 @@
+SMOKE-ROW c1s-400 MAIN bin=main rc=0 status=LIVE mbps=554.877 cli=5.88 srv=7.88 topo=0/0 lag99=2150.0/1977.0 
+SMOKE-ROW c1s-400 D9 bin=d9 rc=0 status=LIVE mbps=358.106 cli=11.42 srv=12.56 topo=0/0 lag99=1622.0/1624.0 
+SMOKE-ROW c1s-400 IOS bin=q1 rc=0 status=LIVE mbps=362.039 cli=6.54 srv=8.01 topo=1/1 lag99=2000.0/1613.0 
+SMOKE-ROW c1s-400 IOO bin=q1 rc=0 status=LIVE mbps=824.472 cli=4.86 srv=6.03 topo=1/1 lag99=2325.0/2943.0 
+SMOKE-ROW c8-100 IOO bin=q1 rc=0 status=LIVE mbps=92.742 cli=4.83 srv=4.04 topo=2/2 lag99=1942.0/2055.0 
+SMOKE-ROW c8-100 IOS bin=q1 rc=0 status=LIVE mbps=95.863 cli=4.62 srv=4.1 topo=2/2 lag99=2276.0/1672.0 
+SMOKE-ROW c8-100 D9 bin=d9 rc=0 status=LIVE mbps=101.381 cli=5.01 srv=5.69 topo=0/0 lag99=2053.0/1032.0 
+SMOKE-ROW c8-100 MAIN bin=main rc=0 status=LIVE mbps=99.819 cli=5.88 srv=5.93 topo=0/0 lag99=1966.0/1948.0 
+SMOKE-PASS rows=8

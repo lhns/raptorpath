@@ -1,0 +1,6 @@
+TEST main rc=101 wall=1283s passed=1077 failed=1 ignored=51 binaries=93 cmd=[/home/vibe/.cargo/bin/cargo test -p raptorpath -p raptorpath-math --release --no-fail-fast -- --test-threads=2]
+test emission_batching_is_on_by_default ... FAILED
+---- emission_batching_is_on_by_default stdout ----
+REAL-FAILURE main emission_batching_is_on_by_default
+TEST doc rc=0 wall=1s passed=0 failed=0 ignored=0 binaries=1 cmd=[/home/vibe/.cargo/bin/cargo test --doc -p raptorpath --release]
+TEST wasm rc=0 wall=113s passed=35 failed=0 ignored=0 binaries=2 cmd=[env -u GOLDEN_CAPTURE /home/vibe/.cargo/bin/cargo test -p raptorpath-wasm]

@@ -572,7 +572,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
             proactive_coded_total += 1;
             let seqs = batch_counter.next(path);
             let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
-            if let Err(e) = transport.send_symbols(path, batch) {
+            if let Err(e) = transport.send_symbols(&mut st.tx, path, batch) {
                 warn!(path, ?e, "failed to send generation coded symbol");
             }
             {
@@ -624,7 +624,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                 proactive_coded_total += 1;
                 let seqs = batch_counter.next(path);
                 let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
-                if let Err(e) = transport.send_symbols(path, batch) {
+                if let Err(e) = transport.send_symbols(&mut st.tx, path, batch) {
                     warn!(path, ?e, "failed to send filling-generation repair");
                 }
                 {
@@ -727,7 +727,7 @@ pub(crate) fn emit_generation_coded(ctx: GenEmitCtx<'_>) -> bool {
                     progressed = true;
                     let seqs = batch_counter.next(path);
                     let batch = SymbolBatch::new(vec![sym], now_us(), seqs, path);
-                    if let Err(e) = transport.send_symbols(path, batch) {
+                    if let Err(e) = transport.send_symbols(&mut st.tx, path, batch) {
                         warn!(path, ?e, "failed to send generation recovery symbol");
                     }
                     {
@@ -1242,7 +1242,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
 
                 let seqs = batch_counter.next(nack_path);
                 let batch = SymbolBatch::new(vec![sym], now_us(), seqs, nack_path);
-                let sent = match transport.send_symbols(nack_path, batch) {
+                let sent = match transport.send_symbols(&mut st.tx, nack_path, batch) {
                     Ok(()) => true,
                     Err(e) => {
                         warn!(nack_path, ?e, "failed to send NACK retransmission");
@@ -1329,7 +1329,7 @@ pub(crate) fn serve_gaps(ctx: ServeGapsCtx<'_>) {
                 let repair_sym = st.encoder.generate_repair();
                 let seqs = batch_counter.next(margin_path);
                 let batch = SymbolBatch::new(vec![repair_sym], now_us(), seqs, margin_path);
-                let sent = match transport.send_symbols(margin_path, batch) {
+                let sent = match transport.send_symbols(&mut st.tx, margin_path, batch) {
                     Ok(()) => true,
                     Err(e) => {
                         warn!(margin_path, ?e, "failed to send NACK repair margin");

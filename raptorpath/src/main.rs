@@ -314,11 +314,18 @@ async fn cmd_perf(args: PerfArgs) -> anyhow::Result<()> {
     }
 
     info!(?peer_config, "perf configuration");
-    if args.server {
-        perf::server(peer_config).await
+    // Threading D9 (from archive/thread-p2a 133adb9): the perf generator /
+    // sink run as a task on a runtime worker, not on the `block_on` main
+    // thread. A wake between them and the engine's tasks is then
+    // worker-to-worker (local run queue or one `notify_parked`), never a
+    // futex on a thread that has no tokio core — the same hop production
+    // TUN's reader/writer tasks have (D10).
+    let body = if args.server {
+        tokio::spawn(perf::server(peer_config))
     } else {
-        perf::client(peer_config, args.bytes, args.runs).await
-    }
+        tokio::spawn(perf::client(peer_config, args.bytes, args.runs))
+    };
+    body.await.map_err(|e| anyhow::anyhow!("perf task failed: {e}"))?
 }
 
 async fn cmd_run(config_path: Option<PathBuf>, args: RunArgs) -> anyhow::Result<()> {
