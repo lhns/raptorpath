@@ -1,0 +1,2 @@
+8d194b65e13f1df1cae0449dbe6618950b00d384192036b8b9aed4600fa70dd7  /home/vibe/d9run-k7/bin/main/raptorpath  commit=88476a4 built=2026-10-06T13:02:34Z
+ba70a6aa3214195e351de3e2b92dfb44762ea7bdc71532ba5c736ef9d238977a  /home/vibe/d9run-k7/bin/nod9/raptorpath  commit=e059e30 built=2026-10-06T13:02:34Z

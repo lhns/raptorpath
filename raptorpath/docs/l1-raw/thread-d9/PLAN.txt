@@ -1,0 +1,2 @@
+full_reps_per_seed=3 extra_c8_reps_per_seed=3 seeds=42,7 block_est=240s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,NOD9 env=RWM_RTOBS=1
+soft=1791305031 hard=1791305631 now=1791291802 avail=13229 need=1800 c_meas=47 c_pred=60 r_prior=240

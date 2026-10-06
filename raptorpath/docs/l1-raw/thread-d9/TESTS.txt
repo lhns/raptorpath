@@ -1,0 +1,4 @@
+TEST parsers rc=0
+45/45 checks passed
+test_threadq1_parse: 26 checks, 0 failed
+test_threadd9_parse: 37 checks, 0 failed

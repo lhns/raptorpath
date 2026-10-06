@@ -1,0 +1,17 @@
+TD9-ALL start 2026-10-06T12:53:51Z load=0.06 0.12 0.21 1/335 2189141 hard=1791305631 soft=1791305031
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+TD9-ALL parser tests rc=0 2026-10-06T12:53:51Z
+TD9-ALL main build start commit=88476a4 cotenants: cargo=0 rustc=0 load=0.06 0.12 0.21 2026-10-06T12:53:51Z
+TD9-ALL main binary built wall=265s 2026-10-06T12:58:16Z
+TD9-ALL nod9 build start commit=e059e30 cotenants: cargo=0 rustc=0 load=1.15 1.16 0.70 2026-10-06T12:58:16Z
+TD9-ALL nod9 binary built wall=258s 2026-10-06T13:02:34Z
+TD9-ALL binaries main=8d194b65e13f1df1cae0449dbe6618950b00d384192036b8b9aed4600fa70dd7 nod9=ba70a6aa3214195e351de3e2b92dfb44762ea7bdc71532ba5c736ef9d238977a 2026-10-06T13:02:34Z
+TD9-ALL smoke rc=0 wall=48s cotenants: cargo=0 rustc=0 load=1.21 1.54 1.05 2026-10-06T13:03:22Z
+TD9-ALL SMOKE-PASS c_meas=47s c_pred=60s R_est=240s 2026-10-06T13:03:22Z
+TD9-ALL PLAN full_reps_per_seed=3 extra_c8_reps_per_seed=3 seeds=42,7 block_est=240s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,NOD9 env=RWM_RTOBS=1 2026-10-06T13:03:22Z
+TD9-ALL battery start cotenants: cargo=0 rustc=0 load=1.21 1.54 1.05 2026-10-06T13:03:22Z
+TD9-ALL battery rc=0 wall=556s cotenants: cargo=0 rustc=0 load=1.16 1.48 1.25 2026-10-06T13:12:38Z
+TD9-ALL end bat_ok=1 soft_trunc=0 raptorpath=0 netns=0 load=1.16 1.48 1.25 2026-10-06T13:12:38Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock
