@@ -1,0 +1,54 @@
+A-c1d-r1 729.004 | busy=4.424 maxcpu=0.900 p90max=1.000 sirq=0.186
+    srv:receiver=0.853/0.947 cli:sender=0.537/0.633 cli:owner-p0=0.059/0.134 cli:qconn-p0=0.204/0.246 cli:qconn-p1=0.287/0.350 srv:qconn-p0=0.185/0.246 srv:qconn-p1=0.270/0.370 srv:owner-p0=0.086/0.191 cli:perf=0.081/0.100 srv:perf=0.099/0.224
+    clip0 asl=0.0362 fl=6779/2/1111us; clip1 asl=0.0856 fl=6982/6/11847us; srvp0 asl=0.0595 fl=7116/21/3931us; srvp1 asl=0.0945 fl=8819/37/11372us | cli gso=7.24 sfrac=0.0809; cli gso=7.54 sfrac=0.1156; srv gso=1.71 sfrac=0.0717; srv gso=2.30 sfrac=0.0971
+A-c1d-r2 687.645 | busy=4.183 maxcpu=0.833 p90max=0.917 sirq=0.182
+    srv:receiver=0.015/0.015,0.839/0.936 cli:sender=0.553/0.649 cli:owner-p0=0.096/0.305 cli:qconn-p0=0.331/0.405 cli:qconn-p1=0.136/0.164 srv:qconn-p0=0.069/0.069,0.316/0.438 srv:qconn-p1=0.127/0.127,0.117/0.152 srv:owner-p0=0.123/0.368 cli:perf=0.078/0.096 srv:perf=0.087/0.181
+    clip0 asl=0.1304 fl=6338/7/28652us; clip1 asl=0.0204 fl=5811/1/863us; srvp0 asl=0.1350 fl=9249/95/41260us; srvp1 asl=0.0309 fl=4857/20/7443us | cli gso=8.01 sfrac=0.1239; cli gso=7.13 sfrac=0.0551; srv gso=1.00 sfrac=0.0925; srv gso=1.00 sfrac=0.0377; srv gso=3.26 sfrac=0.1087; srv gso=1.78 sfrac=0.0460
+A-c1d-r3 692.618 | busy=4.275 maxcpu=0.900 p90max=1.000 sirq=0.183
+    srv:receiver=0.853/0.953 cli:sender=0.534/0.634 cli:owner-p0=0.063/0.147 cli:qconn-p0=0.216/0.258 cli:qconn-p1=0.257/0.309 srv:qconn-p0=0.200/0.265 srv:qconn-p1=0.245/0.337 srv:owner-p0=0.091/0.215 cli:perf=0.080/0.100 srv:perf=0.092/0.203
+    clip0 asl=0.0440 fl=6707/4/1825us; clip1 asl=0.0584 fl=6902/1/638us; srvp0 asl=0.0667 fl=7427/19/14404us; srvp1 asl=0.0880 fl=8377/34/14380us | cli gso=7.35 sfrac=0.0840; cli gso=7.52 sfrac=0.0988; srv gso=1.80 sfrac=0.0760; srv gso=2.08 sfrac=0.0935
+A-c1s-r1 765.092 | busy=4.096 maxcpu=0.800 p90max=0.909 sirq=0.174
+    srv:receiver=0.742/0.798 cli:sender=0.405/0.453 cli:owner-p0=0.100/0.484 cli:qconn-p0=0.486/0.579 srv:qconn-p0=0.400/0.458 srv:owner-p0=0.205/0.503 cli:perf=0.086/0.096 srv:perf=0.104/0.177
+    clip0 asl=0.2509 fl=6526/6/1189us; srvp0 asl=0.1823 fl=12490/28/8381us | cli gso=9.00 sfrac=0.1912; srv gso=1.48 sfrac=0.1271
+A-c1s-r2 735.558 | busy=4.016 maxcpu=0.800 p90max=0.900 sirq=0.182
+    srv:receiver=0.727/0.778 cli:sender=0.397/0.446 cli:owner-p0=0.094/0.424 cli:qconn-p0=0.444/0.527 srv:qconn-p0=0.390/0.448 srv:owner-p0=0.202/0.502 cli:perf=0.079/0.089 srv:perf=0.100/0.173
+    clip0 asl=0.2144 fl=6437/8/1666us; srvp0 asl=0.1834 fl=12408/34/21476us | cli gso=8.96 sfrac=0.1621; srv gso=1.49 sfrac=0.1234
+A-c1s-r3 719.591 | busy=3.924 maxcpu=0.789 p90max=1.000 sirq=0.174
+    srv:receiver=0.785/0.839 cli:sender=0.403/0.465 cli:owner-p0=0.093/0.407 cli:qconn-p0=0.442/0.528 srv:qconn-p0=0.382/0.439 srv:owner-p0=0.194/0.466 cli:perf=0.081/0.093 srv:perf=0.106/0.196
+    clip0 asl=0.2062 fl=6435/11/5927us; srvp0 asl=0.0000 fl=0/0/0us; srvp0 asl=0.1675 fl=11793/38/11170us | cli gso=8.87 sfrac=0.1627; srv gso=1.48 sfrac=0.1223
+B-c1d-r1 730.398 | busy=4.189 maxcpu=0.889 p90max=1.000 sirq=0.168
+    srv:receiver=0.833/0.940 cli:sender=0.515/0.611 cli:owner-p0=0.065/0.187 cli:qconn-p0=0.241/0.291 cli:qconn-p1=0.253/0.303 srv:qconn-p0=0.214/0.277 srv:qconn-p1=0.071/0.071,0.240/0.324 srv:owner-p0=0.094/0.216 cli:perf=0.081/0.098 srv:perf=0.100/0.217
+    clip0 asl=0.0754 fl=6566/4/39456us; clip1 asl=0.0674 fl=6683/8/2700us; srvp0 asl=0.0715 fl=7410/60/17789us; srvp1 asl=0.0811 fl=7868/63/21071us | cli gso=7.52 sfrac=0.0976; cli gso=7.63 sfrac=0.0972; srv gso=1.00 sfrac=0.0448; srv gso=2.25 sfrac=0.0801; srv gso=2.31 sfrac=0.0858
+B-c1d-r2 763.47 | busy=4.210 maxcpu=0.818 p90max=0.909 sirq=0.183
+    srv:receiver=0.818/0.905 cli:sender=0.502/0.590 cli:owner-p0=0.097/0.371 cli:qconn-p0=0.387/0.476 cli:qconn-p1=0.099/0.120 srv:qconn-p0=0.357/0.469 srv:qconn-p1=0.085/0.105 srv:owner-p0=0.158/0.445 cli:perf=0.082/0.094 srv:perf=0.105/0.214
+    clip0 asl=0.1780 fl=6214/29/34899us; clip1 asl=0.0177 fl=4054/7/1002us; srvp0 asl=0.1627 fl=10185/91/70631us; srvp1 asl=0.0231 fl=3492/12/2576us | cli gso=8.54 sfrac=0.1445; cli gso=7.07 sfrac=0.0418; srv gso=2.89 sfrac=0.1168; srv gso=1.66 sfrac=0.0303
+B-c1s-r1 691.727 | busy=3.694 maxcpu=0.714 p90max=0.818 sirq=0.170
+    srv:receiver=0.620/0.671 cli:sender=0.359/0.405 cli:owner-p0=0.092/0.376 cli:qconn-p0=0.432/0.499 srv:qconn-p0=0.383/0.432 srv:owner-p0=0.192/0.473 cli:perf=0.078/0.089 srv:perf=0.098/0.165
+    clip0 asl=0.1866 fl=7118/4/1721us; srvp0 asl=0.1680 fl=13881/20/3969us | cli gso=9.31 sfrac=0.1479; srv gso=1.45 sfrac=0.1215
+B-c1s-r2 753.429 | busy=3.928 maxcpu=0.750 p90max=0.889 sirq=0.174
+    srv:receiver=0.653/0.711 cli:sender=0.364/0.414 cli:owner-p0=0.093/0.417 cli:qconn-p0=0.445/0.523 srv:qconn-p0=0.394/0.445 srv:owner-p0=0.201/0.494 cli:perf=0.079/0.090 srv:perf=0.102/0.171
+    clip0 asl=0.2152 fl=6595/7/1719us; srvp0 asl=0.1814 fl=13267/33/10351us | cli gso=8.98 sfrac=0.1571; srv gso=1.48 sfrac=0.1187
+C-c1d-r1 730.054 | busy=4.124 maxcpu=0.818 p90max=0.909 sirq=0.191
+    
+    clip0 asl=0.0489 fl=0/0/0us; clip1 asl=0.0685 fl=0/0/0us; srvp0 asl=0.0000 fl=0/0/0us; srvp1 asl=0.0000 fl=0/0/0us; srvp0 asl=0.0525 fl=0/0/0us; srvp1 asl=0.0773 fl=0/0/0us | 
+C-c1d-r2 695.223 | busy=4.119 maxcpu=0.818 p90max=0.917 sirq=0.191
+    
+    clip0 asl=0.0461 fl=0/0/0us; clip1 asl=0.0646 fl=0/0/0us; srvp0 asl=0.0578 fl=0/0/0us; srvp1 asl=0.0802 fl=0/0/0us | 
+C-c1s-r1 805.063 | busy=3.818 maxcpu=0.727 p90max=0.818 sirq=0.183
+    
+    clip0 asl=0.1866 fl=0/0/0us; srvp0 asl=0.1579 fl=0/0/0us | 
+C-c1s-r2 730.73 | busy=3.785 maxcpu=0.727 p90max=0.889 sirq=0.183
+    
+    clip0 asl=0.1936 fl=0/0/0us; srvp0 asl=0.1765 fl=0/0/0us | 
+D-c2-r1 90.142 | busy=1.664 maxcpu=0.364 p90max=0.417 sirq=0.038
+    srv:receiver=0.116/0.120 cli:sender=0.131/0.135 cli:owner-p0=0.029/0.041 cli:qconn-p0=0.095/0.099 srv:qconn-p0=0.100/0.105 srv:owner-p0=0.053/0.058 cli:perf=0.016/0.017 srv:perf=0.012/0.013
+    clip0 asl=0.0056 fl=4231/0/0us; srvp0 asl=0.0035 fl=11157/0/0us | cli gso=5.90 sfrac=0.0357; srv gso=1.00 sfrac=0.0444
+D-c8-r1 96.865 | busy=1.813 maxcpu=0.392 p90max=0.455 sirq=0.083
+    srv:receiver=0.195/0.202 cli:sender=0.311/0.322 cli:owner-p0=0.025/0.036 cli:qconn-p0=0.083/0.087 cli:qconn-p1=0.030/0.031 srv:qconn-p0=0.102/0.106 srv:qconn-p1=0.029/0.030 srv:owner-p0=0.055/0.063 cli:perf=0.017/0.018 srv:perf=0.011/0.013
+    clip0 asl=0.0067 fl=2699/0/0us; clip1 asl=0.0010 fl=2545/0/0us; srvp0 asl=0.0046 fl=9764/0/0us; srvp1 asl=0.0007 fl=2983/0/0us | cli gso=6.39 sfrac=0.0285; cli gso=3.57 sfrac=0.0115; srv gso=1.13 sfrac=0.0440; srv gso=1.15 sfrac=0.0132
+E-c1d-perf 670.663 | busy=4.123 maxcpu=0.900 p90max=1.000 sirq=0.191
+    
+    clip0 asl=0.0441 fl=0/0/0us; clip1 asl=0.0503 fl=0/0/0us; srvp0 asl=0.0661 fl=0/0/0us; srvp1 asl=0.0652 fl=0/0/0us | 
+E-c1s-perf 770.508 | busy=3.809 maxcpu=0.750 p90max=0.900 sirq=0.183
+    
+    clip0 asl=0.1882 fl=0/0/0us; srvp0 asl=0.1646 fl=0/0/0us | 

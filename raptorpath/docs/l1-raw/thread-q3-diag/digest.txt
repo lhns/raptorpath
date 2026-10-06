@@ -1,0 +1,478 @@
+====================================================================================================
+A-c1d-r1 mbps 729.004
+  VM  n=46 busy_cores=4.424 max_cpu_busy=0.900 p90_max_cpu_busy=1.000 sirq_cores=0.186 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.769 sys_cores=1.165 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=7 cpu/poll=3.29 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.390
+  cli TASK owner-client-p0    cores=0.059 busy=0.134 polls=8084 cpu/poll=31.85 asl_vol=301834 asl_inv=15977 asl_none=14288 vcsw=2243 ivcsw=385 wall_s=4.390
+  cli TASK owner-client-p1    cores=0.084 busy=0.227 polls=9019 cpu/poll=40.77 asl_vol=594343 asl_inv=16955 asl_none=18269 vcsw=4522 ivcsw=524 wall_s=4.390
+  cli TASK perf               cores=0.081 busy=0.100 polls=21126 cpu/poll=16.80 asl_vol=21450 asl_inv=33502 asl_none=29618 vcsw=177 ivcsw=449 wall_s=4.390
+  cli TASK qconn-client-p0    cores=0.204 busy=0.246 polls=18014 cpu/poll=49.75 asl_vol=22027 asl_inv=92597 asl_none=68884 vcsw=153 ivcsw=1270 wall_s=4.390
+  cli TASK qconn-client-p1    cores=0.287 busy=0.350 polls=21861 cpu/poll=57.72 asl_vol=16242 asl_inv=154028 asl_none=103731 vcsw=162 ivcsw=1664 wall_s=4.390
+  cli TASK qep-client-p0      cores=0.040 busy=0.049 polls=11299 cpu/poll=15.44 asl_vol=761 asl_inv=17754 asl_none=24126 vcsw=5 ivcsw=239 wall_s=4.390
+  cli TASK qep-client-p1      cores=0.054 busy=0.065 polls=13944 cpu/poll=16.93 asl_vol=246 asl_inv=21276 asl_none=27644 vcsw=6 ivcsw=318 wall_s=4.390
+  cli TASK receiver           cores=0.000 busy=0.000 polls=6 cpu/poll=5.86 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.390
+  cli TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=7.47 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=4.390
+  cli TASK sender             cores=0.537 busy=0.633 polls=5779 cpu/poll=407.85 asl_vol=302136 asl_inv=67198 asl_none=51003 vcsw=2337 ivcsw=2137 wall_s=4.390
+  cli QSOCK client-p0 send_calls=19691 gso=7.24 us/call=18.03 send_frac=0.0809 recv_calls=10875 recv_dg=29819 recv_frac=0.0188 wb=0
+  cli QSOCK client-p1 send_calls=27169 gso=7.54 us/call=18.67 send_frac=0.1156 recv_calls=13915 recv_dg=56745 recv_frac=0.0261 wb=0
+  cli IOWN p0 asleep_frac=0.0362 q_wall_us=310655 snd=5061/135335/44539/83042/5353/2399/631/86 rd=6447/154924/98743/41526/8038/6616/386/114 pub=2859/25422/10522/13138/729/1031/90/13 rx_full=0/0us ack_full=0/0us fl=6779/2/1111us tx_dg=139387 rx_dg=4 ack_dg=139157 wall_s=4.390
+  cli IOWN p1 asleep_frac=0.0856 q_wall_us=613016 snd=5436/257185/59900/185944/7857/3482/1259/109 rd=8730/332107/169211/145463/8422/9009/1190/189 pub=3005/34165/11593/20105/1137/1328/157/18 rx_full=0/0us ack_full=0/0us fl=6982/6/11847us tx_dg=200455 rx_dg=3 ack_dg=200337 wall_s=4.390
+  cli THRsum cores=1.558 busy_s=8.751 wall_s=4.390
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=4.28 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.385
+  srv TASK owner-server-p0    cores=0.086 busy=0.191 polls=8181 cpu/poll=45.88 asl_vol=427293 asl_inv=20203 asl_none=16104 vcsw=3192 ivcsw=393 wall_s=4.385
+  srv TASK owner-server-p1    cores=0.117 busy=0.303 polls=9436 cpu/poll=54.26 asl_vol=784297 asl_inv=16363 asl_none=16928 vcsw=5423 ivcsw=492 wall_s=4.385
+  srv TASK perf               cores=0.099 busy=0.224 polls=10325 cpu/poll=41.99 asl_vol=542072 asl_inv=1320 asl_none=5022 vcsw=16841 ivcsw=447 wall_s=4.385
+  srv TASK qconn-server-p0    cores=0.185 busy=0.246 polls=15136 cpu/poll=53.57 asl_vol=123348 asl_inv=87061 asl_none=56098 vcsw=1974 ivcsw=1538 wall_s=4.385
+  srv TASK qconn-server-p1    cores=0.270 busy=0.370 polls=18569 cpu/poll=63.77 asl_vol=254454 asl_inv=111791 asl_none=73736 vcsw=3897 ivcsw=2342 wall_s=4.385
+  srv TASK qep-server-p0      cores=0.072 busy=0.087 polls=16897 cpu/poll=18.78 asl_vol=1029 asl_inv=24217 asl_none=38318 vcsw=8 ivcsw=380 wall_s=4.385
+  srv TASK qep-server-p1      cores=0.098 busy=0.116 polls=22114 cpu/poll=19.46 asl_vol=867 asl_inv=36366 asl_none=42774 vcsw=26 ivcsw=552 wall_s=4.385
+  srv TASK receiver           cores=0.853 busy=0.947 polls=568 cpu/poll=6582.00 asl_vol=407093 asl_inv=2981 asl_none=2932 vcsw=5995 ivcsw=1701 wall_s=4.385
+  srv TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=44.12 asl_vol=0 asl_inv=0 asl_none=28 vcsw=0 ivcsw=0 wall_s=4.385
+  srv TASK sender             cores=0.000 busy=0.000 polls=6 cpu/poll=73.91 asl_vol=0 asl_inv=0 asl_none=16 vcsw=0 ivcsw=0 wall_s=4.385
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p1 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=17424 gso=1.71 us/call=18.03 send_frac=0.0717 recv_calls=13321 recv_dg=142268 recv_frac=0.0280 wb=0
+  srv QSOCK server-p1 send_calls=24641 gso=2.30 us/call=17.28 send_frac=0.0971 recv_calls=17923 recv_dg=204688 recv_frac=0.0388 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0595 q_wall_us=524071 snd=4596/115772/42771/65585/4295/3119/468/39 rd=7724/386684/213242/147796/14507/11138/1430/200 pub=2766/31398/10661/19213/821/702/128/12 rx_full=2/5709us ack_full=0/0us fl=7116/21/3931us tx_dg=0 rx_dg=139157 ack_dg=0 wall_s=4.385
+  srv IOWN p1 asleep_frac=0.0945 q_wall_us=781441 snd=5991/216641/62345/145776/4703/3816/950/58 rd=9925/554057/298346/223396/17030/15283/2106/272 pub=2986/30554/11664/17344/811/733/147/19 rx_full=2/5894us ack_full=0/0us fl=8819/37/11372us tx_dg=0 rx_dg=200319 ack_dg=0 wall_s=4.385
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=2.014 busy_s=11.662 wall_s=4.385
+====================================================================================================
+A-c1d-r2 mbps 687.645
+  VM  n=50 busy_cores=4.183 max_cpu_busy=0.833 p90_max_cpu_busy=0.917 sirq_cores=0.182 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.737 sys_cores=1.007 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=3.37 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.654
+  cli TASK owner-client-p0    cores=0.096 busy=0.305 polls=7786 cpu/poll=57.33 asl_vol=936647 asl_inv=18429 asl_none=16752 vcsw=6700 ivcsw=451 wall_s=4.654
+  cli TASK owner-client-p1    cores=0.040 busy=0.081 polls=6179 cpu/poll=30.00 asl_vol=165203 asl_inv=12801 asl_none=11482 vcsw=1218 ivcsw=200 wall_s=4.654
+  cli TASK perf               cores=0.078 busy=0.096 polls=18798 cpu/poll=19.37 asl_vol=21287 asl_inv=30375 asl_none=30642 vcsw=174 ivcsw=390 wall_s=4.654
+  cli TASK qconn-client-p0    cores=0.331 busy=0.405 polls=22935 cpu/poll=67.14 asl_vol=29682 asl_inv=169815 asl_none=143078 vcsw=303 ivcsw=1881 wall_s=4.654
+  cli TASK qconn-client-p1    cores=0.136 busy=0.164 polls=13454 cpu/poll=47.07 asl_vol=10660 asl_inv=70063 asl_none=50996 vcsw=96 ivcsw=907 wall_s=4.654
+  cli TASK qep-client-p0      cores=0.060 busy=0.074 polls=15282 cpu/poll=18.37 asl_vol=1484 asl_inv=28551 asl_none=32410 vcsw=13 ivcsw=359 wall_s=4.654
+  cli TASK qep-client-p1      cores=0.026 busy=0.033 polls=7739 cpu/poll=15.89 asl_vol=163 asl_inv=14346 asl_none=15613 vcsw=3 ivcsw=159 wall_s=4.654
+  cli TASK receiver           cores=0.000 busy=0.000 polls=4 cpu/poll=49.15 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.654
+  cli TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=5.19 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.654
+  cli TASK sender             cores=0.553 busy=0.649 polls=4003 cpu/poll=642.58 asl_vol=354372 asl_inv=61891 asl_none=30610 vcsw=2871 ivcsw=1852 wall_s=4.654
+  cli QSOCK client-p0 send_calls=31183 gso=8.01 us/call=18.49 send_frac=0.1239 recv_calls=15387 recv_dg=90645 recv_frac=0.0275 wb=0
+  cli QSOCK client-p1 send_calls=13487 gso=7.13 us/call=19.00 send_frac=0.0551 recv_calls=7682 recv_dg=20561 recv_frac=0.0126 wb=0
+  cli IOWN p0 asleep_frac=0.1304 q_wall_us=921493 snd=4532/358646/67531/277099/8524/5490/1918/85 rd=10001/533703/239087/265116/16616/12881/2062/208 pub=2925/48518/12723/33688/1076/1030/285/15 rx_full=0/0us ack_full=0/0us fl=6338/7/28652us tx_dg=245144 rx_dg=3 ack_dg=244851 wall_s=4.654
+  cli IOWN p1 asleep_frac=0.0204 q_wall_us=200697 snd=4243/88575/35164/48347/2434/2628/382/45 rd=4337/100742/63431/27570/5809/3931/212/54 pub=2531/13206/8835/3646/98/626/31/9 rx_full=0/0us ack_full=0/0us fl=5811/1/863us tx_dg=94222 rx_dg=2 ack_dg=94187 wall_s=4.654
+  cli THRsum cores=1.508 busy_s=9.266 wall_s=4.654
+  srv TASK owner-server-p1    cores=0.037 busy=0.037 polls=1 cpu/poll=15.76 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK qconn-server-p0    cores=0.069 busy=0.069 polls=2 cpu/poll=14.89 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK qconn-server-p1    cores=0.127 busy=0.127 polls=2 cpu/poll=27.14 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK qep-server-p0      cores=0.093 busy=0.096 polls=5 cpu/poll=7.97 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK qep-server-p1      cores=0.057 busy=0.058 polls=3 cpu/poll=8.18 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK receiver           cores=0.015 busy=0.015 polls=1 cpu/poll=6.33 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=6.06 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.649
+  srv TASK owner-server-p0    cores=0.123 busy=0.368 polls=7177 cpu/poll=79.78 asl_vol=1111549 asl_inv=16052 asl_none=12446 vcsw=6368 ivcsw=474 wall_s=4.649
+  srv TASK owner-server-p1    cores=0.056 busy=0.107 polls=5695 cpu/poll=45.37 asl_vol=213707 asl_inv=15683 asl_none=11061 vcsw=1509 ivcsw=292 wall_s=4.649
+  srv TASK perf               cores=0.087 busy=0.181 polls=7244 cpu/poll=55.98 asl_vol=431234 asl_inv=1639 asl_none=5110 vcsw=15245 ivcsw=380 wall_s=4.649
+  srv TASK qconn-server-p0    cores=0.316 busy=0.438 polls=19118 cpu/poll=76.96 asl_vol=344684 asl_inv=132092 asl_none=87131 vcsw=5109 ivcsw=2873 wall_s=4.649
+  srv TASK qconn-server-p1    cores=0.117 busy=0.152 polls=10809 cpu/poll=50.25 asl_vol=47907 asl_inv=65394 asl_none=48657 vcsw=592 ivcsw=960 wall_s=4.649
+  srv TASK qep-server-p0      cores=0.115 busy=0.136 polls=25187 cpu/poll=21.16 asl_vol=1534 asl_inv=46287 asl_none=52329 vcsw=23 ivcsw=610 wall_s=4.649
+  srv TASK qep-server-p1      cores=0.050 busy=0.059 polls=11816 cpu/poll=19.73 asl_vol=824 asl_inv=19195 asl_none=21976 vcsw=15 ivcsw=254 wall_s=4.649
+  srv TASK receiver           cores=0.839 busy=0.936 polls=392 cpu/poll=9951.04 asl_vol=447857 asl_inv=3456 asl_none=1562 vcsw=5627 ivcsw=1456 wall_s=4.649
+  srv TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=9.12 asl_vol=54 asl_inv=0 asl_none=1 vcsw=1 ivcsw=0 wall_s=4.649
+  srv TASK sender             cores=0.000 busy=0.000 polls=3 cpu/poll=453.67 asl_vol=0 asl_inv=0 asl_none=41 vcsw=0 ivcsw=0 wall_s=4.649
+  srv QSOCK server-p0 send_calls=2 gso=1.00 us/call=19.84 send_frac=0.0925 recv_calls=2 recv_dg=2 recv_frac=0.0215 wb=0
+  srv QSOCK server-p1 send_calls=1 gso=1.00 us/call=16.16 send_frac=0.0377 recv_calls=2 recv_dg=2 recv_frac=0.0234 wb=0
+  srv QSOCK server-p0 send_calls=27812 gso=3.26 us/call=18.17 send_frac=0.1087 recv_calls=21251 recv_dg=249345 recv_frac=0.0452 wb=0
+  srv QSOCK server-p1 send_calls=11518 gso=1.78 us/call=18.57 send_frac=0.0460 recv_calls=9320 recv_dg=96157 recv_frac=0.0192 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=5 snd=0/0/0/0/0/0/0/0 rd=1/5/5/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=1 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1350 q_wall_us=1063913 snd=5515/355127/69402/275988/5271/4464/1482/48 rd=10135/667258/361088/275110/14866/16193/2169/264 pub=2752/56868/11885/42753/1567/662/223/11 rx_full=89/730917us ack_full=0/0us fl=9249/95/41260us tx_dg=0 rx_dg=244833 ack_dg=0 wall_s=4.649
+  srv IOWN p1 asleep_frac=0.0309 q_wall_us=325068 snd=2862/64831/27493/34233/981/2123/204/23 rd=5323/253018/148176/84793/12714/7334/748/151 pub=2297/17877/8482/7480/1409/505/55/14 rx_full=90/723854us ack_full=0/0us fl=4857/20/7443us tx_dg=0 rx_dg=94187 ack_dg=0 wall_s=4.649
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.906 busy_s=11.784 wall_s=4.649
+====================================================================================================
+A-c1d-r3 mbps 692.618
+  VM  n=50 busy_cores=4.275 max_cpu_busy=0.900 p90_max_cpu_busy=1.000 sirq_cores=0.183 max_cpu_sirq=0.095 steal_cores=0.000 user_cores=2.663 sys_cores=1.079 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=6 cpu/poll=3.31 asl_vol=0 asl_inv=0 asl_none=6 vcsw=0 ivcsw=0 wall_s=4.620
+  cli TASK owner-client-p0    cores=0.063 busy=0.147 polls=8277 cpu/poll=35.01 asl_vol=354803 asl_inv=17721 asl_none=16631 vcsw=2568 ivcsw=343 wall_s=4.620
+  cli TASK owner-client-p1    cores=0.073 busy=0.180 polls=8463 cpu/poll=39.94 asl_vol=452772 asl_inv=21453 asl_none=18160 vcsw=3409 ivcsw=438 wall_s=4.620
+  cli TASK perf               cores=0.080 busy=0.100 polls=19995 cpu/poll=18.43 asl_vol=23267 asl_inv=35834 asl_none=34917 vcsw=172 ivcsw=450 wall_s=4.620
+  cli TASK qconn-client-p0    cores=0.216 busy=0.258 polls=18835 cpu/poll=52.91 asl_vol=16231 asl_inv=96268 asl_none=81704 vcsw=146 ivcsw=1220 wall_s=4.620
+  cli TASK qconn-client-p1    cores=0.257 busy=0.309 polls=20650 cpu/poll=57.39 asl_vol=25836 asl_inv=120766 asl_none=95578 vcsw=253 ivcsw=1399 wall_s=4.620
+  cli TASK qep-client-p0      cores=0.041 busy=0.051 polls=11593 cpu/poll=16.46 asl_vol=678 asl_inv=20229 asl_none=22817 vcsw=10 ivcsw=267 wall_s=4.620
+  cli TASK qep-client-p1      cores=0.047 busy=0.059 polls=12741 cpu/poll=17.13 asl_vol=319 asl_inv=23426 asl_none=28455 vcsw=8 ivcsw=273 wall_s=4.620
+  cli TASK receiver           cores=0.000 busy=0.000 polls=5 cpu/poll=31.37 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.620
+  cli TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=8.01 asl_vol=0 asl_inv=0 asl_none=11 vcsw=0 ivcsw=0 wall_s=4.620
+  cli TASK sender             cores=0.534 busy=0.634 polls=5421 cpu/poll=455.49 asl_vol=350323 asl_inv=57230 asl_none=50904 vcsw=2103 ivcsw=2162 wall_s=4.620
+  cli QSOCK client-p0 send_calls=21494 gso=7.35 us/call=18.07 send_frac=0.0840 recv_calls=11168 recv_dg=34974 recv_frac=0.0196 wb=0
+  cli QSOCK client-p1 send_calls=25159 gso=7.52 us/call=18.15 send_frac=0.0988 recv_calls=12836 recv_dg=49380 recv_frac=0.0227 wb=0
+  cli IOWN p0 asleep_frac=0.0440 q_wall_us=375658 snd=5201/154700/49630/95094/5153/4821/738/76 rd=6957/203213/114512/73570/7485/7645/586/121 pub=2951/23512/10606/11321/774/810/76/7 rx_full=0/0us ack_full=0/0us fl=6707/4/1825us tx_dg=154744 rx_dg=2 ack_dg=154529 wall_s=4.620
+  cli IOWN p1 asleep_frac=0.0584 q_wall_us=486416 snd=5082/187302/54200/123686/6764/2652/895/94 rd=8118/286914/154032/105538/15748/11594/872/163 pub=3009/28674/11102/15645/923/1003/132/14 rx_full=0/0us ack_full=0/0us fl=6902/1/638us tx_dg=185301 rx_dg=3 ack_dg=185180 wall_s=4.620
+  cli THRsum cores=1.506 busy_s=8.935 wall_s=4.620
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=3.18 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.614
+  srv TASK owner-server-p0    cores=0.091 busy=0.215 polls=9015 cpu/poll=46.70 asl_vol=532690 asl_inv=18883 asl_none=17907 vcsw=3886 ivcsw=473 wall_s=4.614
+  srv TASK owner-server-p1    cores=0.107 busy=0.271 polls=8613 cpu/poll=57.13 asl_vol=725948 asl_inv=15518 asl_none=15470 vcsw=5092 ivcsw=469 wall_s=4.614
+  srv TASK perf               cores=0.092 busy=0.203 polls=8166 cpu/poll=52.00 asl_vol=503464 asl_inv=1956 asl_none=4936 vcsw=16685 ivcsw=417 wall_s=4.614
+  srv TASK qconn-server-p0    cores=0.200 busy=0.265 polls=16249 cpu/poll=56.80 asl_vol=137832 asl_inv=98481 asl_none=63869 vcsw=1892 ivcsw=1714 wall_s=4.614
+  srv TASK qconn-server-p1    cores=0.245 busy=0.337 polls=17730 cpu/poll=63.85 asl_vol=240559 asl_inv=100438 asl_none=79839 vcsw=4187 ivcsw=2138 wall_s=4.614
+  srv TASK qep-server-p0      cores=0.076 busy=0.092 polls=19097 cpu/poll=18.36 asl_vol=8800 asl_inv=26771 asl_none=36088 vcsw=22 ivcsw=407 wall_s=4.614
+  srv TASK qep-server-p1      cores=0.091 busy=0.106 polls=21178 cpu/poll=19.88 asl_vol=587 asl_inv=26860 asl_none=39764 vcsw=7 ivcsw=473 wall_s=4.614
+  srv TASK receiver           cores=0.853 busy=0.953 polls=399 cpu/poll=9862.23 asl_vol=458981 asl_inv=159 asl_none=1666 vcsw=6140 ivcsw=1551 wall_s=4.614
+  srv TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=9.98 asl_vol=0 asl_inv=0 asl_none=9 vcsw=0 ivcsw=0 wall_s=4.614
+  srv TASK sender             cores=0.000 busy=0.000 polls=3 cpu/poll=291.89 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.614
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p1 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=19401 gso=1.80 us/call=18.08 send_frac=0.0760 recv_calls=14405 recv_dg=157724 recv_frac=0.0299 wb=0
+  srv QSOCK server-p1 send_calls=23781 gso=2.08 us/call=18.15 send_frac=0.0935 recv_calls=16903 recv_dg=189181 recv_frac=0.0344 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0667 q_wall_us=603127 snd=4992/134953/47963/82423/1307/3259/547/57 rd=8444/456602/240581/183490/20732/11798/1818/249 pub=2893/23939/10996/11812/227/902/108/14 rx_full=1/368us ack_full=0/0us fl=7427/19/14404us tx_dg=0 rx_dg=154405 ack_dg=0 wall_s=4.614
+  srv IOWN p1 asleep_frac=0.0880 q_wall_us=764146 snd=5467/185695/55531/124186/1909/4067/819/61 rd=9134/559605/296092/236542/12477/14492/2229/249 pub=2958/31809/11566/19089/301/851/144/16 rx_full=0/0us ack_full=0/0us fl=8377/34/14380us tx_dg=0 rx_dg=185180 ack_dg=0 wall_s=4.614
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.979 busy_s=12.048 wall_s=4.614
+====================================================================================================
+A-c1s-r1 mbps 765.092
+  VM  n=46 busy_cores=4.096 max_cpu_busy=0.800 p90_max_cpu_busy=0.909 sirq_cores=0.174 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.516 sys_cores=1.072 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=3 cpu/poll=4.23 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.183
+  cli TASK owner-client-p0    cores=0.100 busy=0.484 polls=5914 cpu/poll=70.68 asl_vol=1592074 asl_inv=5764 asl_none=7897 vcsw=12502 ivcsw=349 wall_s=4.183
+  cli TASK perf               cores=0.086 busy=0.096 polls=16075 cpu/poll=22.27 asl_vol=5666 asl_inv=17636 asl_none=22326 vcsw=123 ivcsw=349 wall_s=4.183
+  cli TASK qconn-client-p0    cores=0.486 busy=0.579 polls=27055 cpu/poll=75.13 asl_vol=25030 asl_inv=147094 asl_none=216059 vcsw=542 ivcsw=1572 wall_s=4.183
+  cli TASK qep-client-p0      cores=0.077 busy=0.091 polls=21206 cpu/poll=15.25 asl_vol=840 asl_inv=18489 asl_none=39315 vcsw=11 ivcsw=423 wall_s=4.183
+  cli TASK receiver           cores=0.000 busy=0.000 polls=3 cpu/poll=49.46 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.183
+  cli TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=6.46 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.183
+  cli TASK sender             cores=0.405 busy=0.453 polls=3302 cpu/poll=512.48 asl_vol=128594 asl_inv=31513 asl_none=42299 vcsw=2583 ivcsw=779 wall_s=4.183
+  cli QSOCK client-p0 send_calls=37920 gso=9.00 us/call=21.09 send_frac=0.1912 recv_calls=21214 recv_dg=41955 recv_frac=0.0352 wb=0
+  cli IOWN p0 asleep_frac=0.2509 q_wall_us=1324751 snd=3960/578706/92840/480664/2512/2689/3951/74 rd=11760/633926/169601/447481/8936/7907/3744/119 pub=2689/122862/16468/105632/43/717/834/11 rx_full=0/0us ack_full=0/0us fl=6526/6/1189us tx_dg=338871 rx_dg=3 ack_dg=338512 wall_s=4.183
+  cli THRsum cores=1.353 busy_s=7.771 wall_s=4.183
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=2 cpu/poll=4.88 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.178
+  srv TASK owner-server-p0    cores=0.205 busy=0.503 polls=12635 cpu/poll=67.90 asl_vol=1225969 asl_inv=6410 asl_none=11108 vcsw=14509 ivcsw=658 wall_s=4.178
+  srv TASK perf               cores=0.104 busy=0.177 polls=22994 cpu/poll=18.90 asl_vol=291755 asl_inv=2198 asl_none=12749 vcsw=11125 ivcsw=448 wall_s=4.178
+  srv TASK qconn-server-p0    cores=0.400 busy=0.458 polls=28819 cpu/poll=57.95 asl_vol=4670 asl_inv=120074 asl_none=117055 vcsw=81 ivcsw=1892 wall_s=4.178
+  srv TASK qep-server-p0      cores=0.177 busy=0.200 polls=35092 cpu/poll=21.10 asl_vol=1018 asl_inv=37530 asl_none=57621 vcsw=33 ivcsw=724 wall_s=4.178
+  srv TASK receiver           cores=0.742 busy=0.798 polls=1616 cpu/poll=1919.64 asl_vol=212120 asl_inv=9972 asl_none=10925 vcsw=4166 ivcsw=977 wall_s=4.178
+  srv TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=6.64 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.178
+  srv TASK sender             cores=0.000 busy=0.000 polls=5 cpu/poll=83.12 asl_vol=0 asl_inv=0 asl_none=23 vcsw=0 ivcsw=0 wall_s=4.178
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=28436 gso=1.48 us/call=18.67 send_frac=0.1271 recv_calls=29616 recv_dg=340908 recv_frac=0.0678 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1823 q_wall_us=1390277 snd=8989/342832/103638/230672/4331/4189/2604/97 rd=15985/1013348/517985/468238/11299/15826/6052/319 pub=3191/52937/15222/36813/368/533/433/14 rx_full=0/0us ack_full=0/0us fl=12490/28/8381us tx_dg=0 rx_dg=338492 ack_dg=0 wall_s=4.178
+  srv THRsum cores=0.000 busy_s=0.001 wall_s=0.000
+  srv THRsum cores=1.895 busy_s=9.646 wall_s=4.178
+====================================================================================================
+A-c1s-r2 mbps 735.558
+  VM  n=46 busy_cores=4.016 max_cpu_busy=0.800 p90_max_cpu_busy=0.900 sirq_cores=0.182 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.427 sys_cores=1.089 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=2 cpu/poll=4.41 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.351
+  cli TASK owner-client-p0    cores=0.094 busy=0.424 polls=5929 cpu/poll=68.74 asl_vol=1408825 asl_inv=17551 asl_none=9110 vcsw=11796 ivcsw=300 wall_s=4.351
+  cli TASK perf               cores=0.079 busy=0.089 polls=16077 cpu/poll=21.34 asl_vol=7329 asl_inv=12402 asl_none=23540 vcsw=121 ivcsw=272 wall_s=4.351
+  cli TASK qconn-client-p0    cores=0.444 busy=0.527 polls=27328 cpu/poll=70.67 asl_vol=19771 asl_inv=132983 asl_none=210622 vcsw=319 ivcsw=1323 wall_s=4.351
+  cli TASK qep-client-p0      cores=0.071 busy=0.082 polls=20278 cpu/poll=15.19 asl_vol=307 asl_inv=15250 asl_none=32411 vcsw=6 ivcsw=304 wall_s=4.351
+  cli TASK receiver           cores=0.000 busy=0.000 polls=4 cpu/poll=61.43 asl_vol=37 asl_inv=0 asl_none=0 vcsw=1 ivcsw=0 wall_s=4.351
+  cli TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=9.61 asl_vol=0 asl_inv=0 asl_none=2 vcsw=0 ivcsw=0 wall_s=4.351
+  cli TASK sender             cores=0.397 busy=0.446 polls=3345 cpu/poll=516.52 asl_vol=128854 asl_inv=41566 asl_none=42539 vcsw=1701 ivcsw=807 wall_s=4.351
+  cli QSOCK client-p0 send_calls=38092 gso=8.96 us/call=18.52 send_frac=0.1621 recv_calls=20025 recv_dg=41139 recv_frac=0.0316 wb=0
+  cli IOWN p0 asleep_frac=0.2144 q_wall_us=1199113 snd=3916/518310/88109/423669/2670/3860/3610/76 rd=11664/585207/165484/402800/6491/10431/3535/87 pub=2723/106694/15246/90510/263/674/720/8 rx_full=0/0us ack_full=0/0us fl=6437/8/1666us tx_dg=338864 rx_dg=4 ack_dg=338492 wall_s=4.351
+  cli THRsum cores=1.266 busy_s=7.458 wall_s=4.351
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=3 cpu/poll=3.87 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.346
+  srv TASK owner-server-p0    cores=0.202 busy=0.502 polls=11988 cpu/poll=73.18 asl_vol=1286781 asl_inv=5242 asl_none=10832 vcsw=14859 ivcsw=590 wall_s=4.346
+  srv TASK perf               cores=0.100 busy=0.173 polls=21208 cpu/poll=20.47 asl_vol=304042 asl_inv=2837 asl_none=10512 vcsw=10926 ivcsw=355 wall_s=4.346
+  srv TASK qconn-server-p0    cores=0.390 busy=0.448 polls=28633 cpu/poll=59.26 asl_vol=6560 asl_inv=120276 asl_none=122336 vcsw=58 ivcsw=1601 wall_s=4.346
+  srv TASK qep-server-p0      cores=0.175 busy=0.197 polls=34222 cpu/poll=22.21 asl_vol=1680 asl_inv=38443 asl_none=56654 vcsw=18 ivcsw=636 wall_s=4.346
+  srv TASK receiver           cores=0.727 busy=0.778 polls=1586 cpu/poll=1993.47 asl_vol=204436 asl_inv=5817 asl_none=9811 vcsw=3984 ivcsw=822 wall_s=4.346
+  srv TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=5.75 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.346
+  srv TASK sender             cores=0.000 busy=0.000 polls=7 cpu/poll=47.86 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=4.346
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=27522 gso=1.49 us/call=19.49 send_frac=0.1234 recv_calls=29681 recv_dg=340953 recv_frac=0.0661 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1834 q_wall_us=1442316 snd=8868/349969/107898/236454/2534/3081/2598/86 rd=15591/1058750/530207/500044/13881/14618/6248/292 pub=3223/55630/15710/39246/297/376/461/14 rx_full=0/0us ack_full=0/0us fl=12408/34/21476us tx_dg=0 rx_dg=338444 ack_dg=0 wall_s=4.346
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.850 busy_s=9.807 wall_s=4.346
+====================================================================================================
+A-c1s-r3 mbps 719.591
+  VM  n=48 busy_cores=3.924 max_cpu_busy=0.789 p90_max_cpu_busy=1.000 sirq_cores=0.174 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.362 sys_cores=1.161 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=2 cpu/poll=10.65 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.447
+  cli TASK owner-client-p0    cores=0.093 busy=0.407 polls=6487 cpu/poll=63.95 asl_vol=1374684 asl_inv=8353 asl_none=10494 vcsw=11463 ivcsw=403 wall_s=4.447
+  cli TASK perf               cores=0.081 busy=0.093 polls=15861 cpu/poll=22.78 asl_vol=9949 asl_inv=21542 asl_none=22961 vcsw=166 ivcsw=337 wall_s=4.447
+  cli TASK qconn-client-p0    cores=0.442 busy=0.528 polls=27922 cpu/poll=70.46 asl_vol=28713 asl_inv=143384 asl_none=208463 vcsw=373 ivcsw=1494 wall_s=4.447
+  cli TASK qep-client-p0      cores=0.071 busy=0.082 polls=21416 cpu/poll=14.72 asl_vol=97 asl_inv=16124 asl_none=31001 vcsw=4 ivcsw=332 wall_s=4.447
+  cli TASK receiver           cores=0.000 busy=0.000 polls=3 cpu/poll=56.23 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.447
+  cli TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=6.55 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.447
+  cli TASK sender             cores=0.403 busy=0.465 polls=3453 cpu/poll=519.50 asl_vol=176749 asl_inv=51240 asl_none=48163 vcsw=1686 ivcsw=900 wall_s=4.447
+  cli QSOCK client-p0 send_calls=38537 gso=8.87 us/call=18.78 send_frac=0.1627 recv_calls=20316 recv_dg=41647 recv_frac=0.0315 wb=0
+  cli IOWN p0 asleep_frac=0.2062 q_wall_us=1187681 snd=4118/505859/90099/407314/5669/2775/3479/114 rd=11464/585812/168978/401702/5407/9723/3496/120 pub=2849/107811/15841/91169/148/652/743/13 rx_full=0/0us ack_full=0/0us fl=6435/11/5927us tx_dg=338925 rx_dg=3 ack_dg=338495 wall_s=4.447
+  cli THRsum cores=1.277 busy_s=7.689 wall_s=4.447
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=3 cpu/poll=3.88 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.443
+  srv TASK owner-server-p0    cores=0.194 busy=0.466 polls=12731 cpu/poll=67.62 asl_vol=1191458 asl_inv=6070 asl_none=12926 vcsw=13675 ivcsw=567 wall_s=4.443
+  srv TASK perf               cores=0.106 busy=0.196 polls=23051 cpu/poll=20.37 asl_vol=387761 asl_inv=5049 asl_none=9920 vcsw=13247 ivcsw=431 wall_s=4.443
+  srv TASK qconn-server-p0    cores=0.382 busy=0.439 polls=28686 cpu/poll=59.14 asl_vol=3453 asl_inv=123121 asl_none=126337 vcsw=48 ivcsw=1880 wall_s=4.443
+  srv TASK qep-server-p0      cores=0.172 busy=0.194 polls=36232 cpu/poll=21.10 asl_vol=4525 asl_inv=34624 asl_none=57998 vcsw=23 ivcsw=772 wall_s=4.443
+  srv TASK receiver           cores=0.785 busy=0.839 polls=972 cpu/poll=3588.40 asl_vol=226222 asl_inv=7516 asl_none=5660 vcsw=3967 ivcsw=819 wall_s=4.443
+  srv TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=9.86 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.443
+  srv TASK sender             cores=0.000 busy=0.000 polls=8 cpu/poll=57.38 asl_vol=0 asl_inv=0 asl_none=40 vcsw=0 ivcsw=0 wall_s=4.443
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=28149 gso=1.48 us/call=19.31 send_frac=0.1223 recv_calls=29732 recv_dg=341201 recv_frac=0.0640 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.001
+  srv IOWN p0 asleep_frac=0.1675 q_wall_us=1376883 snd=8554/313617/101545/206378/2706/2986/2376/87 rd=15913/1028497/524828/478027/9145/16495/5734/285 pub=3290/52952/15762/35834/46/1307/452/9 rx_full=0/0us ack_full=0/0us fl=11793/38/11170us tx_dg=0 rx_dg=338467 ack_dg=0 wall_s=4.443
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.001
+  srv THRsum cores=1.897 busy_s=10.214 wall_s=4.443
+====================================================================================================
+B-c1d-r1 mbps 730.398
+  VM  n=47 busy_cores=4.189 max_cpu_busy=0.889 p90_max_cpu_busy=1.000 sirq_cores=0.168 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.632 sys_cores=1.089 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=4.20 asl_vol=0 asl_inv=0 asl_none=4 vcsw=0 ivcsw=0 wall_s=4.381
+  cli TASK owner-client-p0    cores=0.065 busy=0.187 polls=7783 cpu/poll=36.71 asl_vol=500232 asl_inv=19535 asl_none=14559 vcsw=3173 ivcsw=413 wall_s=4.381
+  cli TASK owner-client-p1    cores=0.071 busy=0.189 polls=7660 cpu/poll=40.58 asl_vol=482659 asl_inv=21616 asl_none=14354 vcsw=3602 ivcsw=407 wall_s=4.381
+  cli TASK perf               cores=0.081 busy=0.098 polls=18574 cpu/poll=19.10 asl_vol=15907 asl_inv=27199 asl_none=32237 vcsw=131 ivcsw=375 wall_s=4.381
+  cli TASK qconn-client-p0    cores=0.241 busy=0.291 polls=18546 cpu/poll=56.86 asl_vol=24058 asl_inv=109326 asl_none=86373 vcsw=142 ivcsw=1311 wall_s=4.381
+  cli TASK qconn-client-p1    cores=0.253 busy=0.303 polls=19512 cpu/poll=56.71 asl_vol=16884 asl_inv=110434 asl_none=92750 vcsw=210 ivcsw=1384 wall_s=4.381
+  cli TASK qep-client-p0      cores=0.042 busy=0.052 polls=11273 cpu/poll=16.44 asl_vol=570 asl_inv=20576 asl_none=19592 vcsw=11 ivcsw=254 wall_s=4.381
+  cli TASK qep-client-p1      cores=0.046 busy=0.056 polls=11894 cpu/poll=16.96 asl_vol=1726 asl_inv=18168 asl_none=22165 vcsw=12 ivcsw=258 wall_s=4.381
+  cli TASK receiver           cores=0.000 busy=0.000 polls=5 cpu/poll=16.43 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.381
+  cli TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=5.87 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.381
+  cli TASK sender             cores=0.515 busy=0.611 polls=5205 cpu/poll=433.59 asl_vol=292039 asl_inv=79519 asl_none=47375 vcsw=2546 ivcsw=1864 wall_s=4.381
+  cli QSOCK client-p0 send_calls=21951 gso=7.52 us/call=19.48 send_frac=0.0976 recv_calls=11301 recv_dg=43739 recv_frac=0.0204 wb=0
+  cli QSOCK client-p1 send_calls=23864 gso=7.63 us/call=17.85 send_frac=0.0972 recv_calls=11944 recv_dg=49636 recv_frac=0.0223 wb=0
+  cli IOWN p0 asleep_frac=0.0754 q_wall_us=507475 snd=4880/242719/45041/186308/8313/3055/958/87 rd=7066/237846/123663/95870/9859/8453/724/129 pub=2772/37822/11062/24234/1745/780/181/21 rx_full=0/0us ack_full=0/0us fl=6566/4/39456us tx_dg=161755 rx_dg=3 ack_dg=161493 wall_s=4.381
+  cli IOWN p1 asleep_frac=0.0674 q_wall_us=494990 snd=4615/185757/45608/128886/8440/2822/980/98 rd=7683/279886/146056/115376/8786/9666/900/134 pub=2772/31612/10886/19043/462/1219/156/12 rx_full=0/0us ack_full=0/0us fl=6683/8/2700us tx_dg=178316 rx_dg=2 ack_dg=178183 wall_s=4.381
+  cli THRsum cores=1.504 busy_s=8.676 wall_s=4.381
+  srv TASK qconn-server-p1    cores=0.071 busy=0.071 polls=1 cpu/poll=22.46 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=0.000
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=4.25 asl_vol=0 asl_inv=0 asl_none=9 vcsw=0 ivcsw=0 wall_s=4.377
+  srv TASK owner-server-p0    cores=0.094 busy=0.216 polls=8520 cpu/poll=48.09 asl_vol=507632 asl_inv=13199 asl_none=14931 vcsw=3838 ivcsw=384 wall_s=4.377
+  srv TASK owner-server-p1    cores=0.101 busy=0.258 polls=8150 cpu/poll=54.25 asl_vol=657171 asl_inv=17989 asl_none=13201 vcsw=4520 ivcsw=418 wall_s=4.377
+  srv TASK perf               cores=0.100 busy=0.217 polls=13830 cpu/poll=31.60 asl_vol=504336 asl_inv=3437 asl_none=6170 vcsw=16394 ivcsw=432 wall_s=4.377
+  srv TASK qconn-server-p0    cores=0.214 busy=0.277 polls=16256 cpu/poll=57.62 asl_vol=109444 asl_inv=102790 asl_none=61306 vcsw=1971 ivcsw=1706 wall_s=4.377
+  srv TASK qconn-server-p1    cores=0.240 busy=0.324 polls=16538 cpu/poll=63.46 asl_vol=218013 asl_inv=89486 asl_none=62438 vcsw=3774 ivcsw=1841 wall_s=4.377
+  srv TASK qep-server-p0      cores=0.083 busy=0.101 polls=18393 cpu/poll=19.75 asl_vol=761 asl_inv=43995 asl_none=35719 vcsw=12 ivcsw=395 wall_s=4.377
+  srv TASK qep-server-p1      cores=0.086 busy=0.101 polls=16620 cpu/poll=22.76 asl_vol=684 asl_inv=26152 asl_none=35418 vcsw=15 ivcsw=411 wall_s=4.377
+  srv TASK receiver           cores=0.833 busy=0.940 polls=637 cpu/poll=5720.83 asl_vol=460800 asl_inv=3914 asl_none=3641 vcsw=5800 ivcsw=1868 wall_s=4.377
+  srv TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=16.86 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.377
+  srv TASK sender             cores=0.000 busy=0.000 polls=3 cpu/poll=145.53 asl_vol=0 asl_inv=0 asl_none=18 vcsw=0 ivcsw=0 wall_s=4.377
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p1 send_calls=1 gso=1.00 us/call=14.13 send_frac=0.0448 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=19431 gso=2.25 us/call=18.03 send_frac=0.0801 recv_calls=14594 recv_dg=164716 recv_frac=0.0345 wb=0
+  srv QSOCK server-p1 send_calls=21452 gso=2.31 us/call=17.50 send_frac=0.0858 recv_calls=15872 recv_dg=181909 recv_frac=0.0347 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0715 q_wall_us=604688 snd=4854/144968/42153/97022/3440/2352/636/46 rd=8316/443366/243827/176703/11550/11285/1666/195 pub=2667/24809/9873/14202/49/683/99/4 rx_full=31/230956us ack_full=0/0us fl=7410/60/17789us tx_dg=0 rx_dg=161465 ack_dg=0 wall_s=4.377
+  srv IOWN p1 asleep_frac=0.0811 q_wall_us=673457 snd=4976/167709/44977/116727/3710/2294/721/52 rd=8711/488661/267996/189323/17530/13810/1852/234 pub=2697/32536/10297/21539/21/678/133/6 rx_full=31/243530us ack_full=0/0us fl=7868/63/21071us tx_dg=0 rx_dg=178183 ack_dg=0 wall_s=4.377
+  srv THRsum cores=0.000 busy_s=0.001 wall_s=0.000
+  srv THRsum cores=1.972 busy_s=11.370 wall_s=4.377
+====================================================================================================
+B-c1d-r2 mbps 763.47
+  VM  n=46 busy_cores=4.210 max_cpu_busy=0.818 p90_max_cpu_busy=0.909 sirq_cores=0.183 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.592 sys_cores=1.062 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=6 cpu/poll=2.97 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.192
+  cli TASK owner-client-p0    cores=0.097 busy=0.371 polls=6167 cpu/poll=65.69 asl_vol=1122136 asl_inv=16110 asl_none=11616 vcsw=8247 ivcsw=431 wall_s=4.192
+  cli TASK owner-client-p1    cores=0.029 busy=0.061 polls=4317 cpu/poll=28.24 asl_vol=113603 asl_inv=11576 asl_none=8481 vcsw=792 ivcsw=154 wall_s=4.192
+  cli TASK perf               cores=0.082 busy=0.094 polls=14809 cpu/poll=23.12 asl_vol=10780 asl_inv=19669 asl_none=22277 vcsw=138 ivcsw=318 wall_s=4.192
+  cli TASK qconn-client-p0    cores=0.387 busy=0.476 polls=22864 cpu/poll=70.89 asl_vol=30132 asl_inv=178335 asl_none=167121 vcsw=337 ivcsw=1667 wall_s=4.192
+  cli TASK qconn-client-p1    cores=0.099 busy=0.120 polls=8683 cpu/poll=47.95 asl_vol=4503 asl_inv=48501 asl_none=31709 vcsw=101 ivcsw=525 wall_s=4.192
+  cli TASK qep-client-p0      cores=0.064 busy=0.078 polls=15701 cpu/poll=17.08 asl_vol=1270 asl_inv=19198 asl_none=37259 vcsw=16 ivcsw=321 wall_s=4.192
+  cli TASK qep-client-p1      cores=0.018 busy=0.022 polls=4799 cpu/poll=15.74 asl_vol=904 asl_inv=4664 asl_none=12194 vcsw=5 ivcsw=83 wall_s=4.192
+  cli TASK receiver           cores=0.000 busy=0.000 polls=5 cpu/poll=10.07 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.192
+  cli TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=8.41 asl_vol=0 asl_inv=0 asl_none=2 vcsw=0 ivcsw=0 wall_s=4.192
+  cli TASK sender             cores=0.502 busy=0.590 polls=3981 cpu/poll=528.47 asl_vol=276419 asl_inv=55009 asl_none=37972 vcsw=2525 ivcsw=1489 wall_s=4.192
+  cli QSOCK client-p0 send_calls=32852 gso=8.54 us/call=18.44 send_frac=0.1445 recv_calls=15389 recv_dg=77216 recv_frac=0.0298 wb=0
+  cli QSOCK client-p1 send_calls=9023 gso=7.07 us/call=19.44 send_frac=0.0418 recv_calls=4765 recv_dg=11771 recv_frac=0.0081 wb=0
+  cli IOWN p0 asleep_frac=0.1780 q_wall_us=1030332 snd=3736/339713/57112/274623/5738/2237/2074/82 rd=10328/609435/218332/359375/17937/13789/2892/197 pub=2608/91374/12891/77035/343/1104/504/9 rx_full=0/0us ack_full=0/0us fl=6214/29/34899us tx_dg=277058 rx_dg=2 ack_dg=276700 wall_s=4.192
+  cli IOWN p1 asleep_frac=0.0177 q_wall_us=141933 snd=2763/71915/20750/46605/3178/1380/294/38 rd=3137/62133/41745/13398/4386/2603/123/43 pub=1814/15590/6399/7949/632/608/32/12 rx_full=0/0us ack_full=0/0us fl=4054/7/1002us tx_dg=62380 rx_dg=3 ack_dg=62370 wall_s=4.192
+  cli THRsum cores=1.455 busy_s=8.353 wall_s=4.192
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=6 cpu/poll=2.82 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.187
+  srv TASK owner-server-p0    cores=0.158 busy=0.445 polls=9356 cpu/poll=70.67 asl_vol=1180386 asl_inv=8648 asl_none=10902 vcsw=9058 ivcsw=554 wall_s=4.187
+  srv TASK owner-server-p1    cores=0.043 busy=0.078 polls=4794 cpu/poll=37.36 asl_vol=128508 asl_inv=11422 asl_none=7201 vcsw=1156 ivcsw=220 wall_s=4.187
+  srv TASK perf               cores=0.105 busy=0.214 polls=17009 cpu/poll=25.80 asl_vol=448731 asl_inv=1981 asl_none=8084 vcsw=16392 ivcsw=420 wall_s=4.187
+  srv TASK qconn-server-p0    cores=0.357 busy=0.469 polls=21743 cpu/poll=68.76 asl_vol=235461 asl_inv=138295 asl_none=95332 vcsw=3256 ivcsw=2670 wall_s=4.187
+  srv TASK qconn-server-p1    cores=0.085 busy=0.105 polls=7834 cpu/poll=45.43 asl_vol=23682 asl_inv=34590 asl_none=23650 vcsw=377 ivcsw=552 wall_s=4.187
+  srv TASK qep-server-p0      cores=0.138 busy=0.162 polls=27052 cpu/poll=21.36 asl_vol=1117 asl_inv=46822 asl_none=52589 vcsw=24 ivcsw=704 wall_s=4.187
+  srv TASK qep-server-p1      cores=0.037 busy=0.044 polls=8419 cpu/poll=18.41 asl_vol=829 asl_inv=14302 asl_none=15645 vcsw=13 ivcsw=169 wall_s=4.187
+  srv TASK receiver           cores=0.818 busy=0.905 polls=791 cpu/poll=4328.55 asl_vol=356055 asl_inv=2201 asl_none=4893 vcsw=5321 ivcsw=1220 wall_s=4.187
+  srv TASK report             cores=0.000 busy=0.000 polls=12 cpu/poll=41.53 asl_vol=0 asl_inv=0 asl_none=7 vcsw=0 ivcsw=0 wall_s=4.187
+  srv TASK sender             cores=0.000 busy=0.000 polls=7 cpu/poll=18.32 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=4.187
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p1 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=26708 gso=2.89 us/call=18.32 send_frac=0.1168 recv_calls=23401 recv_dg=280211 recv_frac=0.0551 wb=0
+  srv QSOCK server-p1 send_calls=7070 gso=1.66 us/call=17.96 send_frac=0.0303 recv_calls=6299 recv_dg=63741 recv_frac=0.0147 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1627 q_wall_us=1178747 snd=6741/310969/69807/236932/1725/2503/1668/68 rd=12377/829793/421713/380516/11123/16439/3751/294 pub=2822/55064/12297/41220/876/669/294/21 rx_full=22/94936us ack_full=0/0us fl=10185/91/70631us tx_dg=0 rx_dg=276672 ack_dg=0 wall_s=4.187
+  srv IOWN p1 asleep_frac=0.0231 q_wall_us=216631 snd=2394/39659/17797/20488/419/953/153/13 rd=3933/172045/97866/61595/8031/4553/563/124 pub=1700/11357/6054/4814/167/320/46/6 rx_full=23/95008us ack_full=0/0us fl=3492/12/2576us tx_dg=0 rx_dg=62370 ack_dg=0 wall_s=4.187
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.975 busy_s=10.841 wall_s=4.187
+====================================================================================================
+B-c1s-r1 mbps 691.727
+  VM  n=48 busy_cores=3.694 max_cpu_busy=0.714 p90_max_cpu_busy=0.818 sirq_cores=0.170 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.227 sys_cores=1.069 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=3 cpu/poll=3.40 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.627
+  cli TASK owner-client-p0    cores=0.092 busy=0.376 polls=8002 cpu/poll=53.40 asl_vol=1295336 asl_inv=6765 asl_none=10836 vcsw=11016 ivcsw=278 wall_s=4.627
+  cli TASK perf               cores=0.078 busy=0.089 polls=20023 cpu/poll=18.12 asl_vol=8119 asl_inv=16477 asl_none=25079 vcsw=122 ivcsw=318 wall_s=4.627
+  cli TASK qconn-client-p0    cores=0.432 busy=0.499 polls=28635 cpu/poll=69.75 asl_vol=18296 asl_inv=104247 asl_none=186957 vcsw=312 ivcsw=1050 wall_s=4.627
+  cli TASK qep-client-p0      cores=0.075 busy=0.087 polls=22957 cpu/poll=15.03 asl_vol=206 asl_inv=21714 asl_none=35318 vcsw=9 ivcsw=297 wall_s=4.627
+  cli TASK receiver           cores=0.000 busy=0.000 polls=4 cpu/poll=15.86 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.627
+  cli TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=8.10 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=4.627
+  cli TASK sender             cores=0.359 busy=0.405 polls=4555 cpu/poll=364.98 asl_vol=117260 asl_inv=45090 asl_none=49843 vcsw=1829 ivcsw=803 wall_s=4.627
+  cli QSOCK client-p0 send_calls=36512 gso=9.31 us/call=18.74 send_frac=0.1479 recv_calls=21772 recv_dg=42673 recv_frac=0.0345 wb=0
+  cli IOWN p0 asleep_frac=0.1866 q_wall_us=1127454 snd=4805/463377/77856/381644/1211/2664/3286/57 rd=12432/584526/173290/395771/7314/8149/3368/97 pub=2988/90668/16137/72848/652/1030/612/18 rx_full=0/0us ack_full=0/0us fl=7118/4/1721us tx_dg=338813 rx_dg=3 ack_dg=338478 wall_s=4.627
+  cli THRsum cores=1.234 busy_s=7.435 wall_s=4.627
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=2 cpu/poll=6.43 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.622
+  srv TASK owner-server-p0    cores=0.192 busy=0.473 polls=14896 cpu/poll=59.61 asl_vol=1279026 asl_inv=6743 asl_none=12138 vcsw=15644 ivcsw=492 wall_s=4.622
+  srv TASK perf               cores=0.098 busy=0.165 polls=27041 cpu/poll=16.67 asl_vol=298576 asl_inv=2436 asl_none=12602 vcsw=11734 ivcsw=328 wall_s=4.622
+  srv TASK qconn-server-p0    cores=0.383 busy=0.432 polls=30753 cpu/poll=57.62 asl_vol=4431 asl_inv=94760 asl_none=127643 vcsw=82 ivcsw=1371 wall_s=4.622
+  srv TASK qep-server-p0      cores=0.163 busy=0.182 polls=37502 cpu/poll=20.13 asl_vol=499 asl_inv=30933 asl_none=53236 vcsw=19 ivcsw=516 wall_s=4.622
+  srv TASK receiver           cores=0.620 busy=0.671 polls=3650 cpu/poll=785.09 asl_vol=192472 asl_inv=15775 asl_none=29038 vcsw=3232 ivcsw=709 wall_s=4.622
+  srv TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=9.36 asl_vol=0 asl_inv=0 asl_none=22 vcsw=0 ivcsw=0 wall_s=4.622
+  srv TASK sender             cores=0.000 busy=0.000 polls=5 cpu/poll=34.10 asl_vol=0 asl_inv=0 asl_none=5 vcsw=0 ivcsw=0 wall_s=4.622
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=29517 gso=1.45 us/call=19.02 send_frac=0.1215 recv_calls=29459 recv_dg=339493 recv_frac=0.0609 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1680 q_wall_us=1404985 snd=10328/314186/101790/206352/3339/2704/2529/60 rd=16811/1048696/517134/508246/8621/14694/6507/254 pub=3539/61224/17164/43117/388/554/530/11 rx_full=0/0us ack_full=0/0us fl=13881/20/3969us tx_dg=0 rx_dg=338450 ack_dg=0 wall_s=4.622
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.726 busy_s=9.678 wall_s=4.622
+====================================================================================================
+B-c1s-r2 mbps 753.429
+  VM  n=43 busy_cores=3.928 max_cpu_busy=0.750 p90_max_cpu_busy=0.889 sirq_cores=0.174 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.393 sys_cores=1.044 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=4 cpu/poll=3.19 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.248
+  cli TASK owner-client-p0    cores=0.093 busy=0.417 polls=6118 cpu/poll=64.23 asl_vol=1363811 asl_inv=4087 asl_none=8820 vcsw=12065 ivcsw=270 wall_s=4.248
+  cli TASK perf               cores=0.079 busy=0.090 polls=14497 cpu/poll=23.20 asl_vol=11111 asl_inv=15584 asl_none=19231 vcsw=121 ivcsw=221 wall_s=4.248
+  cli TASK qconn-client-p0    cores=0.445 busy=0.523 polls=27390 cpu/poll=69.04 asl_vol=24723 asl_inv=103755 asl_none=200846 vcsw=433 ivcsw=1062 wall_s=4.248
+  cli TASK qep-client-p0      cores=0.073 busy=0.083 polls=20843 cpu/poll=14.84 asl_vol=489 asl_inv=14563 asl_none=29258 vcsw=10 ivcsw=281 wall_s=4.248
+  cli TASK receiver           cores=0.000 busy=0.000 polls=3 cpu/poll=19.64 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.248
+  cli TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=6.69 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.248
+  cli TASK sender             cores=0.364 busy=0.414 polls=3477 cpu/poll=445.22 asl_vol=103462 asl_inv=59997 asl_none=46695 vcsw=1683 ivcsw=675 wall_s=4.248
+  cli QSOCK client-p0 send_calls=38022 gso=8.98 us/call=17.55 send_frac=0.1571 recv_calls=20198 recv_dg=41605 recv_frac=0.0324 wb=0
+  cli IOWN p0 asleep_frac=0.2152 q_wall_us=1165626 snd=3916/451949/73421/372450/3596/2482/3302/76 rd=11918/603101/166062/423677/4225/9135/3890/86 pub=2689/121070/15464/104907/117/580/735/10 rx_full=0/0us ack_full=0/0us fl=6595/7/1719us tx_dg=338859 rx_dg=3 ack_dg=338484 wall_s=4.248
+  cli THRsum cores=1.241 busy_s=7.067 wall_s=4.248
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=3 cpu/poll=3.88 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.243
+  srv TASK owner-server-p0    cores=0.201 busy=0.494 polls=12892 cpu/poll=66.28 asl_vol=1229709 asl_inv=2295 asl_none=10767 vcsw=15292 ivcsw=527 wall_s=4.243
+  srv TASK perf               cores=0.102 busy=0.171 polls=23809 cpu/poll=18.25 asl_vol=277643 asl_inv=2043 asl_none=11211 vcsw=11128 ivcsw=328 wall_s=4.243
+  srv TASK qconn-server-p0    cores=0.394 busy=0.445 polls=29307 cpu/poll=57.06 asl_vol=8327 asl_inv=86447 asl_none=121107 vcsw=89 ivcsw=1401 wall_s=4.243
+  srv TASK qep-server-p0      cores=0.176 busy=0.198 polls=36071 cpu/poll=20.71 asl_vol=1769 asl_inv=37329 asl_none=53515 vcsw=17 ivcsw=570 wall_s=4.243
+  srv TASK receiver           cores=0.653 busy=0.711 polls=2742 cpu/poll=1011.18 asl_vol=212148 asl_inv=13897 asl_none=17280 vcsw=3949 ivcsw=807 wall_s=4.243
+  srv TASK report             cores=0.000 busy=0.000 polls=8 cpu/poll=9.33 asl_vol=0 asl_inv=0 asl_none=22 vcsw=0 ivcsw=0 wall_s=4.243
+  srv TASK sender             cores=0.000 busy=0.000 polls=6 cpu/poll=20.50 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=4.243
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=28029 gso=1.48 us/call=17.96 send_frac=0.1187 recv_calls=29435 recv_dg=341059 recv_frac=0.0659 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1814 q_wall_us=1386604 snd=9541/299043/95696/197647/1895/3804/2511/81 rd=16181/1052494/513320/515588/8640/14944/6549/269 pub=3179/53050/15276/36380/1061/331/480/12 rx_full=0/0us ack_full=0/0us fl=13267/33/10351us tx_dg=0 rx_dg=338465 ack_dg=0 wall_s=4.243
+  srv THRsum cores=0.000 busy_s=0.001 wall_s=0.000
+  srv THRsum cores=1.791 busy_s=9.271 wall_s=4.243
+====================================================================================================
+C-c1d-r1 mbps 730.054
+  VM  n=45 busy_cores=4.124 max_cpu_busy=0.818 p90_max_cpu_busy=0.909 sirq_cores=0.191 max_cpu_sirq=0.100 steal_cores=0.000 user_cores=2.647 sys_cores=1.012 ncpu=6
+  cli IOWN p0 asleep_frac=0.0489 q_wall_us=362092 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=151877 rx_dg=3 ack_dg=151605 wall_s=4.384
+  cli IOWN p1 asleep_frac=0.0685 q_wall_us=506000 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=187948 rx_dg=2 ack_dg=187811 wall_s=4.384
+  cli THRsum cores=1.449 busy_s=8.056 wall_s=4.384
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.001
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.001
+  srv IOWN p0 asleep_frac=0.0525 q_wall_us=489547 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=151577 ack_dg=0 wall_s=4.379
+  srv IOWN p1 asleep_frac=0.0773 q_wall_us=645051 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=187811 ack_dg=0 wall_s=4.379
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.001
+  srv THRsum cores=1.829 busy_s=10.242 wall_s=4.379
+====================================================================================================
+C-c1d-r2 mbps 695.223
+  VM  n=50 busy_cores=4.119 max_cpu_busy=0.818 p90_max_cpu_busy=0.917 sirq_cores=0.191 max_cpu_sirq=0.100 steal_cores=0.000 user_cores=2.581 sys_cores=0.991 ncpu=6
+  cli IOWN p0 asleep_frac=0.0461 q_wall_us=369079 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=154042 rx_dg=3 ack_dg=153770 wall_s=4.603
+  cli IOWN p1 asleep_frac=0.0646 q_wall_us=499687 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=185334 rx_dg=4 ack_dg=185199 wall_s=4.603
+  cli THRsum cores=1.432 busy_s=8.430 wall_s=4.603
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0578 q_wall_us=538003 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=153769 ack_dg=0 wall_s=4.599
+  srv IOWN p1 asleep_frac=0.0802 q_wall_us=698338 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=185171 ack_dg=0 wall_s=4.599
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.885 busy_s=11.008 wall_s=4.599
+====================================================================================================
+C-c1s-r1 mbps 805.063
+  VM  n=44 busy_cores=3.818 max_cpu_busy=0.727 p90_max_cpu_busy=0.818 sirq_cores=0.183 max_cpu_sirq=0.100 steal_cores=0.000 user_cores=2.380 sys_cores=0.974 ncpu=6
+  cli IOWN p0 asleep_frac=0.1866 q_wall_us=973214 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=338896 rx_dg=2 ack_dg=338487 wall_s=3.975
+  cli THRsum cores=1.280 busy_s=6.643 wall_s=3.975
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1579 q_wall_us=1209249 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=338391 ack_dg=0 wall_s=3.970
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.806 busy_s=8.482 wall_s=3.970
+====================================================================================================
+C-c1s-r2 mbps 730.73
+  VM  n=45 busy_cores=3.785 max_cpu_busy=0.727 p90_max_cpu_busy=0.889 sirq_cores=0.183 max_cpu_sirq=0.100 steal_cores=0.000 user_cores=2.335 sys_cores=1.000 ncpu=6
+  cli IOWN p0 asleep_frac=0.1936 q_wall_us=1083929 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=338901 rx_dg=3 ack_dg=338513 wall_s=4.379
+  cli THRsum cores=1.199 busy_s=6.952 wall_s=4.379
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1765 q_wall_us=1383087 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=338475 ack_dg=0 wall_s=4.375
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.701 busy_s=9.001 wall_s=4.375
+====================================================================================================
+D-c2-r1 mbps 90.142
+  VM  n=18 busy_cores=1.664 max_cpu_busy=0.364 p90_max_cpu_busy=0.417 sirq_cores=0.038 max_cpu_sirq=0.038 steal_cores=0.000 user_cores=1.053 sys_cores=0.486 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=4.07 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.875
+  cli TASK owner-client-p0    cores=0.029 busy=0.041 polls=11226 cpu/poll=22.91 asl_vol=95148 asl_inv=2351 asl_none=5949 vcsw=1548 ivcsw=12 wall_s=8.875
+  cli TASK perf               cores=0.016 busy=0.017 polls=9504 cpu/poll=14.85 asl_vol=836 asl_inv=782 asl_none=4169 vcsw=63 ivcsw=9 wall_s=8.875
+  cli TASK qconn-client-p0    cores=0.095 busy=0.099 polls=16605 cpu/poll=50.73 asl_vol=912 asl_inv=10564 asl_none=28561 vcsw=42 ivcsw=26 wall_s=8.875
+  cli TASK qep-client-p0      cores=0.023 busy=0.025 polls=13085 cpu/poll=15.65 asl_vol=0 asl_inv=2003 asl_none=13286 vcsw=0 ivcsw=8 wall_s=8.875
+  cli TASK receiver           cores=0.000 busy=0.000 polls=6 cpu/poll=29.14 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.875
+  cli TASK report             cores=0.000 busy=0.000 polls=16 cpu/poll=7.22 asl_vol=0 asl_inv=0 asl_none=1 vcsw=0 ivcsw=0 wall_s=8.875
+  cli TASK sender             cores=0.131 busy=0.135 polls=12001 cpu/poll=96.84 asl_vol=9451 asl_inv=4534 asl_none=25889 vcsw=362 ivcsw=31 wall_s=8.875
+  cli QSOCK client-p0 send_calls=15299 gso=5.90 us/call=20.70 send_frac=0.0357 recv_calls=10637 recv_dg=21567 recv_frac=0.0101 wb=0
+  cli IOWN p0 asleep_frac=0.0056 q_wall_us=179928 snd=4189/55008/35122/18096/752/1036/289/1 rd=7685/100565/81059/17512/338/1654/341/2 pub=4416/26634/15916/10283/9/424/193/1 rx_full=0/0us ack_full=0/0us fl=4231/0/0us tx_dg=87200 rx_dg=6 ack_dg=84999 wall_s=8.875
+  cli THRsum cores=0.381 busy_s=3.171 wall_s=8.875
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=5 cpu/poll=5.40 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.859
+  srv TASK owner-server-p0    cores=0.053 busy=0.058 polls=21858 cpu/poll=21.36 asl_vol=40038 asl_inv=107 asl_none=10866 vcsw=865 ivcsw=10 wall_s=8.859
+  srv TASK perf               cores=0.012 busy=0.013 polls=6118 cpu/poll=17.17 asl_vol=8560 asl_inv=3 asl_none=2796 vcsw=655 ivcsw=4 wall_s=8.859
+  srv TASK qconn-server-p0    cores=0.100 busy=0.105 polls=22457 cpu/poll=39.58 asl_vol=3740 asl_inv=6879 asl_none=29265 vcsw=4 ivcsw=54 wall_s=8.859
+  srv TASK qep-server-p0      cores=0.044 busy=0.046 polls=18647 cpu/poll=20.89 asl_vol=35 asl_inv=522 asl_none=19424 vcsw=1 ivcsw=8 wall_s=8.859
+  srv TASK receiver           cores=0.116 busy=0.120 polls=10816 cpu/poll=94.91 asl_vol=10921 asl_inv=5082 asl_none=20076 vcsw=255 ivcsw=69 wall_s=8.859
+  srv TASK report             cores=0.000 busy=0.000 polls=16 cpu/poll=8.65 asl_vol=0 asl_inv=0 asl_none=2 vcsw=0 ivcsw=0 wall_s=8.859
+  srv TASK sender             cores=0.000 busy=0.000 polls=11 cpu/poll=169.08 asl_vol=0 asl_inv=0 asl_none=109 vcsw=0 ivcsw=0 wall_s=8.859
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=21459 gso=1.00 us/call=18.32 send_frac=0.0444 recv_calls=11705 recv_dg=87989 recv_frac=0.0130 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0035 q_wall_us=287732 snd=10993/70307/59786/9085/80/1355/205/2 rd=11351/192072/175971/9547/2335/4218/254/3 pub=6950/28272/23383/4227/0/660/60/0 rx_full=0/0us ack_full=0/0us fl=11157/0/0us tx_dg=0 rx_dg=84992 ack_dg=0 wall_s=8.859
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=0.428 busy_s=3.464 wall_s=8.859
+====================================================================================================
+D-c8-r1 mbps 96.865
+  VM  n=50 busy_cores=1.813 max_cpu_busy=0.392 p90_max_cpu_busy=0.455 sirq_cores=0.083 max_cpu_sirq=0.083 steal_cores=0.000 user_cores=1.083 sys_cores=0.487 ncpu=6
+  cli TASK ctrlfast           cores=0.000 busy=0.000 polls=10 cpu/poll=4.27 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.259
+  cli TASK owner-client-p0    cores=0.025 busy=0.036 polls=8452 cpu/poll=24.74 asl_vol=84192 asl_inv=94 asl_none=4427 vcsw=1114 ivcsw=12 wall_s=8.259
+  cli TASK owner-client-p1    cores=0.013 busy=0.015 polls=4981 cpu/poll=21.36 asl_vol=14226 asl_inv=251 asl_none=2785 vcsw=284 ivcsw=11 wall_s=8.259
+  cli TASK perf               cores=0.017 busy=0.018 polls=10226 cpu/poll=14.00 asl_vol=1131 asl_inv=469 asl_none=4254 vcsw=51 ivcsw=11 wall_s=8.259
+  cli TASK qconn-client-p0    cores=0.083 busy=0.087 polls=12656 cpu/poll=54.10 asl_vol=831 asl_inv=5549 asl_none=25509 vcsw=28 ivcsw=44 wall_s=8.259
+  cli TASK qconn-client-p1    cores=0.030 busy=0.031 polls=6461 cpu/poll=37.88 asl_vol=2263 asl_inv=2687 asl_none=6786 vcsw=41 ivcsw=20 wall_s=8.259
+  cli TASK qep-client-p0      cores=0.022 busy=0.023 polls=10938 cpu/poll=16.61 asl_vol=22 asl_inv=100 asl_none=11220 vcsw=1 ivcsw=8 wall_s=8.259
+  cli TASK qep-client-p1      cores=0.009 busy=0.009 polls=4416 cpu/poll=16.21 asl_vol=0 asl_inv=78 asl_none=4895 vcsw=0 ivcsw=3 wall_s=8.259
+  cli TASK receiver           cores=0.000 busy=0.000 polls=9 cpu/poll=23.94 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.259
+  cli TASK report             cores=0.000 busy=0.000 polls=24 cpu/poll=8.13 asl_vol=0 asl_inv=0 asl_none=4 vcsw=0 ivcsw=0 wall_s=8.259
+  cli TASK sender             cores=0.311 busy=0.322 polls=10421 cpu/poll=246.69 asl_vol=12245 asl_inv=16617 asl_none=61673 vcsw=260 ivcsw=125 wall_s=8.259
+  cli QSOCK client-p0 send_calls=11393 gso=6.39 us/call=20.65 send_frac=0.0285 recv_calls=9120 recv_dg=21310 recv_frac=0.0091 wb=0
+  cli QSOCK client-p1 send_calls=4556 gso=3.57 us/call=20.76 send_frac=0.0115 recv_calls=4021 recv_dg=6367 recv_frac=0.0036 wb=0
+  cli IOWN p0 asleep_frac=0.0067 q_wall_us=163222 snd=2621/43095/25180/16304/1029/581/206/2 rd=6457/94370/69257/23304/66/1742/288/3 pub=4025/27292/14544/12303/0/443/185/0 rx_full=0/0us ack_full=0/0us fl=2699/0/0us tx_dg=72615 rx_dg=4 ack_dg=70834 wall_s=8.259
+  cli IOWN p1 asleep_frac=0.0010 q_wall_us=55039 snd=2478/19813/15290/4057/141/325/79/5 rd=2640/23995/22242/1231/0/522/36/0 pub=2942/11578/10006/1206/0/365/21/1 rx_full=0/0us ack_full=0/0us fl=2545/0/0us tx_dg=14874 rx_dg=5 ack_dg=14283 wall_s=8.259
+  cli THRsum cores=0.602 busy_s=4.867 wall_s=8.259
+  srv TASK ctrlfast           cores=0.000 busy=0.000 polls=11 cpu/poll=4.29 asl_vol=0 asl_inv=0 asl_none=0 vcsw=0 ivcsw=0 wall_s=8.225
+  srv TASK owner-server-p0    cores=0.055 busy=0.063 polls=18808 cpu/poll=24.05 asl_vol=55793 asl_inv=503 asl_none=11474 vcsw=1465 ivcsw=11 wall_s=8.225
+  srv TASK owner-server-p1    cores=0.015 busy=0.016 polls=5971 cpu/poll=21.03 asl_vol=5516 asl_inv=296 asl_none=3568 vcsw=151 ivcsw=4 wall_s=8.225
+  srv TASK perf               cores=0.011 busy=0.013 polls=4594 cpu/poll=20.56 asl_vol=13931 asl_inv=55 asl_none=1867 vcsw=764 ivcsw=5 wall_s=8.225
+  srv TASK qconn-server-p0    cores=0.102 busy=0.106 polls=19902 cpu/poll=42.30 asl_vol=1009 asl_inv=2115 asl_none=29018 vcsw=42 ivcsw=44 wall_s=8.225
+  srv TASK qconn-server-p1    cores=0.029 busy=0.030 polls=6225 cpu/poll=38.25 asl_vol=1016 asl_inv=2522 asl_none=8357 vcsw=50 ivcsw=14 wall_s=8.225
+  srv TASK qep-server-p0      cores=0.049 busy=0.051 polls=19793 cpu/poll=20.16 asl_vol=91 asl_inv=1359 asl_none=19248 vcsw=2 ivcsw=13 wall_s=8.225
+  srv TASK qep-server-p1      cores=0.014 busy=0.015 polls=6302 cpu/poll=18.00 asl_vol=0 asl_inv=45 asl_none=5926 vcsw=0 ivcsw=5 wall_s=8.225
+  srv TASK receiver           cores=0.195 busy=0.202 polls=11077 cpu/poll=144.61 asl_vol=15798 asl_inv=6103 asl_none=37057 vcsw=326 ivcsw=46 wall_s=8.225
+  srv TASK report             cores=0.000 busy=0.000 polls=24 cpu/poll=8.44 asl_vol=0 asl_inv=0 asl_none=4 vcsw=0 ivcsw=0 wall_s=8.225
+  srv TASK sender             cores=0.000 busy=0.000 polls=21 cpu/poll=70.01 asl_vol=23 asl_inv=0 asl_none=34 vcsw=2 ivcsw=0 wall_s=8.225
+  srv QSOCK server-p0 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p1 send_calls=0 gso=0.00 us/call=0.00 send_frac=0.0000 recv_calls=0 recv_dg=0 recv_frac=0.0000 wb=0
+  srv QSOCK server-p0 send_calls=18898 gso=1.13 us/call=19.14 send_frac=0.0440 recv_calls=10805 recv_dg=70966 recv_frac=0.0125 wb=0
+  srv QSOCK server-p1 send_calls=5525 gso=1.15 us/call=19.67 send_frac=0.0132 recv_calls=3266 recv_dg=15629 recv_frac=0.0037 wb=0
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0046 q_wall_us=295431 snd=9456/73258/55555/15977/0/1725/359/0 rd=10162/203924/185801/12720/427/4974/410/5 pub=5768/22652/20022/1999/0/630/73/0 rx_full=0/0us ack_full=0/0us fl=9764/0/0us tx_dg=0 rx_dg=70827 ack_dg=0 wall_s=8.225
+  srv IOWN p1 asleep_frac=0.0007 q_wall_us=70431 snd=2981/16277/15195/435/116/530/13/1 rd=3009/44838/41678/1840/134/1185/58/1 pub=2520/10319/8812/1108/0/398/35/0 rx_full=0/0us ack_full=0/0us fl=2983/0/0us tx_dg=0 rx_dg=14286 ack_dg=1 wall_s=8.225
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=0.609 busy_s=4.644 wall_s=8.225
+====================================================================================================
+E-c1d-perf mbps 670.663
+  VM  n=52 busy_cores=4.123 max_cpu_busy=0.900 p90_max_cpu_busy=1.000 sirq_cores=0.191 max_cpu_sirq=0.091 steal_cores=0.000 user_cores=2.548 sys_cores=1.089 ncpu=6
+  cli IOWN p0 asleep_frac=0.0441 q_wall_us=378439 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=166181 rx_dg=2 ack_dg=165910 wall_s=4.772
+  cli IOWN p1 asleep_frac=0.0503 q_wall_us=430060 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=174369 rx_dg=3 ack_dg=174250 wall_s=4.772
+  cli THRsum cores=1.364 busy_s=8.118 wall_s=4.772
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p1 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.0661 q_wall_us=618017 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=165882 ack_dg=0 wall_s=4.768
+  srv IOWN p1 asleep_frac=0.0652 q_wall_us=617103 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=174248 ack_dg=0 wall_s=4.768
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.867 busy_s=11.288 wall_s=4.768
+====================================================================================================
+E-c1s-perf mbps 770.508
+  VM  n=45 busy_cores=3.809 max_cpu_busy=0.750 p90_max_cpu_busy=0.900 sirq_cores=0.183 max_cpu_sirq=0.100 steal_cores=0.000 user_cores=2.326 sys_cores=1.027 ncpu=6
+  cli IOWN p0 asleep_frac=0.1882 q_wall_us=1016910 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=338833 rx_dg=3 ack_dg=338481 wall_s=4.153
+  cli THRsum cores=1.228 busy_s=6.780 wall_s=4.153
+  srv IOWN p0 asleep_frac=0.0000 q_wall_us=0 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=0 ack_dg=0 wall_s=0.000
+  srv IOWN p0 asleep_frac=0.1646 q_wall_us=1254726 snd=0/0/0/0/0/0/0/0 rd=0/0/0/0/0/0/0/0 pub=0/0/0/0/0/0/0/0 rx_full=0/0us ack_full=0/0us fl=0/0/0us tx_dg=0 rx_dg=338433 ack_dg=0 wall_s=4.149
+  srv THRsum cores=0.000 busy_s=0.000 wall_s=0.000
+  srv THRsum cores=1.791 busy_s=8.927 wall_s=4.149
