@@ -35,6 +35,20 @@ fn the_copa_delta_override_echoes_its_resolved_value() {
     );
 }
 
+/// Threading Q3 step 1: `RWM_RTOBS=2` (the deep gauge) echoes as `2`, the
+/// plain observer as `1`, off as `0` (written on a resolved copy, no env).
+#[test]
+fn the_rtobs_level_echoes_two_for_the_deep_gauge() {
+    let mut g = RuntimeGates::resolve();
+    g.rtobs = true;
+    g.rtobs_deep = true;
+    assert!(g.echo_line().contains(" RWM_RTOBS=2 "), "{}", g.echo_line());
+    g.rtobs_deep = false;
+    assert!(g.echo_line().contains(" RWM_RTOBS=1 "), "{}", g.echo_line());
+    g.rtobs = false;
+    assert!(g.echo_line().contains(" RWM_RTOBS=0 "), "{}", g.echo_line());
+}
+
 const PINNED_DEFAULT_GATES_ECHO: &str = concat!(
     "[GATES] RWM_UNIFIED=1 RWM_UNIFIED_SHED=1 RWM_TAPER_R=1 ",
     "RWM_ASTAR_ANCHOR=1 RWM_MSTAR_ANCHOR=1 RWM_PLAIN_RS=0 ",

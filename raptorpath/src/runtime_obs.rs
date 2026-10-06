@@ -169,6 +169,10 @@ pub struct Snapshot {
     threads: Option<Vec<ThreadSample>>,
     /// Threading Q1: every live I/O owner's counters.
     owners: Vec<OwnerSample>,
+    /// Threading Q3 step 1 (`RWM_RTOBS=2`; empty otherwise): every timed
+    /// task's and every timed quinn socket's counters.
+    tasks: Vec<crate::task_obs::TaskSample>,
+    socks: Vec<crate::task_obs::SockSample>,
 }
 
 /// Parse one `/proc/<pid>/task/<tid>/stat` record: `(comm, utime + stime)`.
@@ -328,6 +332,17 @@ pub struct OwnerSample {
     pub q_cpu_unavailable: bool,
     pub drv_on: u64,
     pub drv_off: u64,
+    /// Threading Q3 step 1 (`RWM_RTOBS=2`; zeros otherwise).
+    pub k_send: crate::task_obs::SpanSample,
+    pub k_read: crate::task_obs::SpanSample,
+    pub k_pub: crate::task_obs::SpanSample,
+    pub rx_full: u64,
+    pub rx_full_ns: u64,
+    pub ack_full: u64,
+    pub ack_full_ns: u64,
+    pub fl_sends: u64,
+    pub fl_full: u64,
+    pub fl_full_ns: u64,
 }
 
 fn owner_samples() -> Vec<OwnerSample> {
@@ -361,6 +376,16 @@ fn owner_samples() -> Vec<OwnerSample> {
                 q_cpu_unavailable: c.q_cpu_unavailable.load(Relaxed),
                 drv_on: v.drv_on.load(Relaxed),
                 drv_off: v.drv_off.load(Relaxed),
+                k_send: c.k_send.sample(),
+                k_read: c.k_read.sample(),
+                k_pub: c.k_pub.sample(),
+                rx_full: c.rx_full.load(Relaxed),
+                rx_full_ns: c.rx_full_ns.load(Relaxed),
+                ack_full: c.ack_full.load(Relaxed),
+                ack_full_ns: c.ack_full_ns.load(Relaxed),
+                fl_sends: c.fl_sends.load(Relaxed),
+                fl_full: c.fl_full.load(Relaxed),
+                fl_full_ns: c.fl_full_ns.load(Relaxed),
             }
         })
         .collect()
@@ -372,6 +397,15 @@ fn owner_samples() -> Vec<OwnerSample> {
 /// connection-mutex wait plus any involuntary preemption there;
 /// `asleep_frac` = that over the window's wall. Pure, so the token set is
 /// unit-tested.
+///
+/// Threading Q3 step 1 appends (zeros unless `RWM_RTOBS=2`): `qk_snd=`,
+/// `qk_rd=`, `qk_pub=` — the quinn sections by kind as
+/// `n/wall_us/cpu_us/asl_vol_us/asl_inv_us/asl_none_us/vcsw/ivcsw`
+/// (`task_obs::SpanSample::compact`); `rx_full=`/`rx_full_us=`,
+/// `ack_full=`/`ack_full_us=` (inbound batches that found the receiver's /
+/// sender's channel full, and the wall until forwarded); `fl_sends=`,
+/// `fl_full=`, `fl_full_us=` (producer batches handed to this owner, those
+/// that found its channel full, and the producers' wait).
 pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[OwnerSample], to: &[OwnerSample]) -> Vec<String> {
     let wall_s = wall.as_secs_f64().max(1e-9);
     to.iter()
@@ -392,7 +426,9 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
                 "[IOWN] phase={phase} side={side}{extra} path={} rt={} polls={} drains={} \
                  tx_batches={} tx_dg={} ctrl_batches={} ctrl_dg={} rx_batches={} rx_dg={} rx_capped={} \
                  ack_batches={} ack_dg={} send_err={} too_large_staged={} orphaned={} qcalls={} q_secs={} q_wall_us={} q_asleep_us={asleep} \
-                 asleep_frac={frac} drv_on={} drv_off={} wall_s={wall_s:.3}",
+                 asleep_frac={frac} drv_on={} drv_off={} wall_s={wall_s:.3} \
+                 qk_snd={} qk_rd={} qk_pub={} rx_full={} rx_full_us={} ack_full={} ack_full_us={} \
+                 fl_sends={} fl_full={} fl_full_us={}",
                 t.path,
                 t.rt,
                 d(t.polls, b.polls),
@@ -414,6 +450,16 @@ pub fn iown_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: &[
                 q_wall_ns / 1_000,
                 d(t.drv_on, b.drv_on),
                 d(t.drv_off, b.drv_off),
+                t.k_send.minus(&b.k_send).compact(),
+                t.k_read.minus(&b.k_read).compact(),
+                t.k_pub.minus(&b.k_pub).compact(),
+                d(t.rx_full, b.rx_full),
+                d(t.rx_full_ns, b.rx_full_ns) / 1_000,
+                d(t.ack_full, b.ack_full),
+                d(t.ack_full_ns, b.ack_full_ns) / 1_000,
+                d(t.fl_sends, b.fl_sends),
+                d(t.fl_full, b.fl_full),
+                d(t.fl_full_ns, b.fl_full_ns) / 1_000,
             )
         })
         .collect()
@@ -487,13 +533,21 @@ pub fn snapshot() -> Option<Snapshot> {
         workers,
         threads: read_threads(),
         owners: owner_samples(),
+        tasks: crate::task_obs::task_samples(),
+        socks: crate::task_obs::sock_samples(),
     })
 }
 
 /// The `[IOWN]` lines of every I/O owner for the window `from → to`.
 fn io_lines(phase: &str, side: &str, extra: &str, wall: Duration, from: Option<&Snapshot>, to: &Snapshot) -> Vec<String> {
     let base: &[OwnerSample] = from.map_or(&[], |f| f.owners.as_slice());
-    iown_lines(phase, side, extra, wall, base, &to.owners)
+    let mut v = iown_lines(phase, side, extra, wall, base, &to.owners);
+    // Threading Q3 step 1: the deep gauge's lines (none unless RWM_RTOBS=2).
+    let tb: &[crate::task_obs::TaskSample] = from.map_or(&[], |f| f.tasks.as_slice());
+    v.extend(crate::task_obs::task_lines(phase, side, extra, wall.as_secs_f64(), tb, &to.tasks));
+    let sb: &[crate::task_obs::SockSample] = from.map_or(&[], |f| f.socks.as_slice());
+    v.extend(crate::task_obs::sock_lines(phase, side, extra, wall.as_secs_f64(), sb, &to.socks));
+    v
 }
 
 /// Print the `[THR]` and `[LAG]` lines for the window `from → now`
@@ -654,6 +708,29 @@ mod tests {
         assert!(s.contains(" rx_capped=0 ack_batches=0 ack_dg=0 send_err=0 "), "{s}");
         assert!(s.contains(" q_secs=10 q_wall_us=400000 q_asleep_us=200000 asleep_frac=0.1000 "), "{s}");
         assert!(s.contains(" drv_on=7 drv_off=0 wall_s=2.000"), "{s}");
+        // Threading Q3 step 1: the appended deep tokens (zeros when off).
+        assert!(s.contains(" qk_snd=0/0/0/0/0/0/0/0 qk_rd=0/0/0/0/0/0/0/0 "), "{s}");
+        assert!(s.ends_with(" fl_sends=0 fl_full=0 fl_full_us=0"), "{s}");
+        let deep = [OwnerSample {
+            serial: 4,
+            k_read: crate::task_obs::SpanSample {
+                n: 3,
+                wall_ns: 9_000,
+                cpu_ns: 4_000,
+                asl_vol_ns: 5_000,
+                vcsw: 1,
+                ..Default::default()
+            },
+            fl_sends: 10,
+            fl_full: 2,
+            fl_full_ns: 7_000,
+            rx_full: 1,
+            rx_full_ns: 3_000,
+            ..Default::default()
+        }];
+        let l = iown_lines("xfer", "client", "", Duration::from_secs(1), &[], &deep);
+        assert!(l[0].contains(" qk_rd=3/9/4/5/0/0/1/0 "), "{}", l[0]);
+        assert!(l[0].contains(" rx_full=1 rx_full_us=3 ack_full=0 ack_full_us=0 fl_sends=10 fl_full=2 fl_full_us=7"), "{}", l[0]);
         let na = [OwnerSample { serial: 3, q_secs: 1, q_cpu_unavailable: true, ..Default::default() }];
         let l = iown_lines("run", "server", "", Duration::from_secs(1), &[], &na);
         assert!(l[0].contains("q_asleep_us=- asleep_frac=-"), "{}", l[0]);

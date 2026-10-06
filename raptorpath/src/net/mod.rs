@@ -1196,7 +1196,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // move into the sender task and are used there by plain `&mut` — no other
     // task can reach them.
     let sender_tx_diag = gates.diag;
-    let sender_handle = tokio::spawn(async move {
+    let sender_handle = tokio::spawn(crate::task_obs::timed("sender", async move {
         let mut txc = TxCore::new(scheduler, fec_controller, sender_tx_diag);
         run_window_sender(
             &mut tun,
@@ -1228,7 +1228,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
             sender_gates,
         )
         .await;
-    });
+    }));
 
     // Receiver task: receive → decode → extract packets → TUN inject
     // (threading Q2: it owns the scheduler's RX half as a local; its TX-state
@@ -1320,7 +1320,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // The receiver task (net/receiver.rs). `run_receiver` is an `async fn`,
     // so building its future here runs none of its body — the task starts
     // executing when the runtime polls it.
-    let receiver_handle = tokio::spawn(receiver::run_receiver(
+    let receiver_handle = tokio::spawn(crate::task_obs::timed("receiver", receiver::run_receiver(
         recv_shutdown_rx,
         msg_rx,
         recv_tun_tx,
@@ -1351,7 +1351,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         // The contract's own dial position at the receiver: the same
         // `config` field the sender's policy reads.
         config.protocol_hint,
-    ));
+    )));
 
     // Path management command channel (for runtime add/remove via HTTP API)
     let (path_cmd_tx, path_cmd_rx) = mpsc::channel::<crate::monitor::http::PathCommand>(16);
@@ -1375,7 +1375,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let cmd_ctrl_tx = ctrl_tx.clone();
     let next_path_id = Arc::new(AtomicU64::new(config.bind_addrs.len() as u64));
     let cmd_shutdown_rx = shutdown_tx.subscribe();
-    let cmd_handle = tokio::spawn(tasks::run_path_cmd(
+    let cmd_handle = tokio::spawn(crate::task_obs::timed("pathcmd", tasks::run_path_cmd(
         path_cmd_rx,
         cmd_transport,
         cmd_sender,
@@ -1385,7 +1385,7 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
         sender_in_tx.clone(),
         next_path_id,
         cmd_shutdown_rx,
-    ));
+    )));
 
     // RTCP-style periodic report + keepalive task
     let report_transport = transport_arc.clone();
@@ -1393,13 +1393,13 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     let report_stats = stats.clone();
     let report_symbol_size = symbol_size;
     let report_shutdown_rx = shutdown_tx.subscribe();
-    let report_handle = tokio::spawn(tasks::run_report(
+    let report_handle = tokio::spawn(crate::task_obs::timed("report", tasks::run_report(
         report_transport,
         report_sender,
         report_stats,
         report_symbol_size,
         report_shutdown_rx,
-    ));
+    )));
 
     // Control fast path: liveness-critical messages that arrive on the
     // reliable stream (PathReport, Ping) go straight to the sender's input
@@ -1407,10 +1407,9 @@ async fn run_impl(config: PeerConfig, injected_tun: Option<TunInterface>) -> any
     // and never queue behind the data flood; anything else is forwarded to
     // the receiver's ordered data loop.
     let ctrl_forward_tx = msg_tx.clone();
-    let ctrl_handle = tokio::spawn(tasks::run_control_fastpath(
-        ctrl_rx,
-        sender_in_tx.clone(),
-        ctrl_forward_tx,
+    let ctrl_handle = tokio::spawn(crate::task_obs::timed(
+        "ctrlfast",
+        tasks::run_control_fastpath(ctrl_rx, sender_in_tx.clone(), ctrl_forward_tx),
     ));
 
     // Any task completing — even cleanly — ends the tunnel, so every arm
