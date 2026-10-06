@@ -1,0 +1,2 @@
+n_per_seed=3 seeds=42,7 block_est=480s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,D9,IOS,IOO env=RWM_RTOBS=1
+soft=1791269258 hard=1791269858 now=1791262722 c_meas=78 c_pred=120 r_prior=480

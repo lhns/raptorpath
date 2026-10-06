@@ -1,0 +1,23 @@
+TQ1-ALL start 2026-10-06T03:57:38Z load=0.39 1.93 3.59 1/336 1896971 hard=1791269858 soft=1791269258
+LOCK-TAKEN /tmp/rwm-vm.lock (noclobber + flock fd 10)
+LOCK-TAKEN /home/vibe/rp.lock (noclobber + flock fd 11)
+TQ1-ALL build start commit=0e2c0516f023f663eb54d50203a50a4fba4475a5 cargo=/home/vibe/.cargo/bin/cargo cotenants: cargo=0 rustc=0 load=0.39 1.93 3.59 2026-10-06T03:57:38Z
+TQ1-ALL cargo build --release rc=0 wall=265s 2026-10-06T04:02:03Z
+TQ1-ALL test main rc=0 passed=1078 failed=0 ignored=51 binaries=93 2026-10-06T04:23:45Z
+TQ1-ALL test doc rc=0 passed=0 failed=0 ignored=0 binaries=1 2026-10-06T04:23:49Z
+TQ1-ALL test wasm rc=0 passed=35 failed=0 ignored=0 binaries=2 2026-10-06T04:25:42Z
+TQ1-ALL test debug-witness rc=0 passed=939 failed=0 ignored=49 binaries=84 2026-10-06T04:46:00Z
+TQ1-ALL test parsers rc=0 passed=0 failed=0 ignored=0 binaries=0 2026-10-06T04:46:02Z
+TQ1-ALL tests done tfail=0 q1 sha256=76decc7f4b69d36a21f4a17a2c33038a543b3324f32f2a29d270c6b012e7c9ef 2026-10-06T04:48:54Z
+TQ1-ALL d9 binary built wall=255s 2026-10-06T04:53:09Z
+TQ1-ALL main binary built wall=253s 2026-10-06T04:57:22Z
+TQ1-ALL binaries q1=76decc7f4b69d36a21f4a17a2c33038a543b3324f32f2a29d270c6b012e7c9ef d9=81229041f5508fb9189271d504aa392f1bd518ab3e391967b86859421fa0b271 main=7f3d38e5f0c0715ea1f7f1bfa16cf2ffbeb70c246d9f418b90fb7722661bfc13 2026-10-06T04:57:22Z
+TQ1-ALL smoke rc=0 wall=79s cotenants: cargo=0 rustc=0 load=1.61 1.84 2.57 2026-10-06T04:58:41Z
+TQ1-ALL SMOKE-PASS c_meas=78s c_pred=120s R_est=480s 2026-10-06T04:58:42Z
+TQ1-ALL PLAN n_per_seed=3 seeds=42,7 block_est=480s cells=c1s-400,c1d-400,c2-100,c8-100 arms=MAIN,D9,IOS,IOO env=RWM_RTOBS=1 2026-10-06T04:58:42Z
+TQ1-ALL battery start cotenants: cargo=0 rustc=0 load=1.61 1.84 2.57 2026-10-06T04:58:42Z
+TQ1-ALL battery rc=0 wall=914s cotenants: cargo=0 rustc=0 load=1.62 2.09 2.43 2026-10-06T05:13:57Z
+TQ1-ALL ackd rc=0 wall=301s 2026-10-06T05:18:58Z
+TQ1-ALL end bat_ok=1 soft_trunc=0 raptorpath=0 netns=0 load=1.27 1.96 2.30 2026-10-06T05:18:58Z
+LOCK-RELEASED /tmp/rwm-vm.lock
+LOCK-RELEASED /home/vibe/rp.lock

@@ -67,6 +67,7 @@ boot 128 and the per-path pool 2048 are the shipped store constants (§3.4).
 
 | measurement | design | verdict |
 |---|---|---|
+| Threading Q1 (§13) | the per-path I/O owner, placements IOS (`RWM_IO_RT=shared`) and IOO (`own`), and D9 alone, each vs MAIN 69fd846, c1s/c1d/c2/c8, n = 6, `RWM_RTOBS=1` everywhere | `DELIVERED (SHIP-SHARED)`: IOS passes everywhere — c1s goodput +48 %, c1d +67 % (729.5 Mbit/s, FDT bar 501 met), CPUSRV/GB −8 to −30 % at every cell, CPUCLI/GB −13 to −37 % at c1d/c2; IOO FAIL at c1d (client `[LAG]` p99 +22 %, RTprop floor +12/+15 %); routing predictions MET (`drv_off` 0 under own, 34–63 % under shared), own lock wait ≈ 0 MISSED at c1s (0.0115 > 0.01); D9 alone FAIL at c1s/c1d/c2 (c1s −32 %, CPUCLI +103 %: §12's c1s collapse re-scoped to D9); merge and `own` deletion are the operator's |
 | Threading P2a (§12) | P2A (the logic actor: one task owns the scheduler and the FEC controller; acks as batches; perf on a worker; `RWM_RTOBS` opt-in) vs MAIN e655484, c1s/c1d/c2/c8, n = 6, both arms `RWM_RTOBS=1` | `REFUTED-WITH-RECORD (WORSE-AT-c1s-400)`: c1s goodput −33 %, CPUCLI/GB +87 %, CPUSRV/GB +55 % (disjoint); c1d/c2/c8 SAME (c1d goodput and c2 client CPU TREND-WORSE); RTprop floor and `[LAG]` p99 WITHIN everywhere; the sender loop iterates ≈ 3× (up to 11×) more at c1s (finding 1; the receiver's per-message budget unit, 06837b7, is a named confound); not shipped |
 | Threading redesign P0 (§9) | P0 (named runtime + `[THR]`/`[LAG]`) vs MAIN 8d7d8c1, `c1s-400`/`c1d-400`, n = 3, `RWM_RDIAG=1`, 12 invocations | D3 `D3-REFUTED-WITH-RECORD` at c1s (server receiver task 79 % busy, hottest server thread 0.36 core; stop rule not fired; at c1d the receiver task reads 92 %); no-behaviour-change `REFUTED-WITH-RECORD` (c1s goodput −6.7 %, disjoint ranges at n = 3; c1d within); per-thread budget recorded; nothing flipped |
 | Threading P1 (§11) | P1 (ack wake, no quinn call under the scheduler lock, DashMap guards dropped, persistent tail timer, lock-free counters) vs MAIN 8d7d8c1, c1s/c1d/c2/c8, n = 6 | `DELIVERED (SAME everywhere)`; ack wake holds (timer won ≤ 0.16 % of acked pauses); c1s sender-busy prediction MISSED (36.5 → 36.8 %); c2 client CPU +5.3 % within MDE; c8 fast-leg RTprop TREND-WORSE (ranges touch); shipped in c292268 |
@@ -3618,3 +3619,168 @@ the unchanged §13 plan from the tip that carries this amendment: the
 engine tree is byte-identical to `7897ff1` (the commits after it touch
 `tools/l1`, `tests/emit_batch_default_loopback.rs` and `docs/` only); the
 Q1 binary is built from that tip, D9 and MAIN as before.
+
+### 13. Threading Q1 — result
+
+Scored 2026-10-06 against the pre-registration above and amendment 1,
+literally. **`DELIVERED (SHIP-SHARED)`**: the shared placement (IOS)
+passes at every cell; the own placement (IOO) fails at `c1d-400` (its
+client `[LAG]` p99 and both legs' RTprop floor WORSE). Per the outcome
+rule the simpler arm ships with `RWM_IO_RT=shared` (already the default)
+and `own` is deleted — the merge and the deletion are the operator's.
+Nothing was tuned in this battery.
+
+*Binaries and session.* Session 2, launched 03:57:38Z from `0e2c051`
+(engine byte-identical to `7897ff1`). Q1 `sha256 76decc7f…12e7c9ef`, D9
+`81229041…1fa0b271` (`95c750a`), MAIN `7f3d38e5…661bfc13` (69fd846); all
+archived LF and built fresh on the benchmark VM in fresh targets
+(`BINSHA.txt`). Q1 build 265 s; tests 04:02–04:48Z; D9 and MAIN builds
+255 s / 253 s; smoke 04:57:22Z (`c_meas` 78 s < `C_PRED` 120 s, `R_est` =
+`R_PRIOR`, n = 3 per seed, no cut); battery 04:58:42–05:13:57Z (915 s, 96
+invocations); the `ackd` block 301 s (32 invocations); locks released
+05:18:58Z. **Session wall 1 h 21 min** (session 1, amendment 1: 43 min to
+its `ABORT-TESTS`). Exit state recorded by the envelope: 0 `raptorpath`, 0
+`rp-*` namespaces, both locks released. `all-era.txt` read at 04:17,
+04:38, 04:59 and 05:19Z (rule 13's ≈ 20 min).
+
+*Tests* (inside the locks, `TESTS.txt`): release suite rc 0, **1 078
+passed, 0 failed**, 51 ignored (93 binaries); doc rc 0; wasm rc 0 (35
+passed); **debug suite rc 0**, `LOCKORDER-PANICS 0`, `IDENTITY-PANICS 0`;
+parser tests rc 0. No flake fired.
+
+*Abort table (filled).*
+
+| cause | fired? |
+|---|---|
+| `ABORT-LOCK` | no (both taken at 03:57:38Z) |
+| `ABORT-CRLF` | no |
+| `ABORT-BUILD` | no (any tree) |
+| `ABORT-TESTS` | no in session 2 (session 1: yes — amendment 1) |
+| `ABORT-SHA` | no (checked at start and before every invocation) |
+| `ABORT-SENTINEL-UNWRITABLE` | no |
+| `ABORT-SMOKE` | no: `SMOKE-PASS`, 8 rows LIVE, all four arms |
+| `ABORT-BUDGET` | no (n = 3 per seed) |
+| `ABORT-RC` | 0 of 96 |
+| `ABORT-BRINGUP` | 0 |
+| `VOID-COTENANT` | 0 of 96 |
+
+*What ran.* 6 blocks × 16 = 96 rows, **all LIVE** (0 witness failures, 0
+contaminated, 0 DNF); 6 per (cell, arm), 3 per seed; the `ackd` block 32
+rows (reported only). The instrument check the operator asked for: under
+`own` the smoke's client logs carry 4 `[LAG] io` and 4 `[THR] io` lines
+per window (K = 4 on the 6-vCPU VM) and the server's both windows — the
+I/O-runtime instrument arms. Ledgers: `docs/l1-raw/thread-q1/` (`tq1.log`,
+`score.txt` with every per-rep value and both seeds' medians, `ackd.log`,
+`smoke.log`, `smoke-check.txt`, `TESTS.txt`, `PLAN.txt`, `BINSHA.txt`,
+`all-era.txt`, and `session1/`); the per-invocation endpoint logs stayed on
+the VM and were deleted with the run directory.
+
+*Per cell* (arm vs MAIN, n = 6 each; median [min–max]; the min–max rule
+as pre-registered; `B` = BETTER, `TB` = TREND-BETTER, `W` = WORSE, `TW` =
+TREND-WORSE, `=` = WITHIN):
+
+| cell | arm | goodput Mbit/s (MAIN →) | CPUCLI s/GB | CPUSRV s/GB | `[LAG]` p99 cli / srv | RTprop floor per leg | feed | verdict |
+|---|---|---|---|---|---|---|---|---|
+| `c1s-400` | IOS | 521.7 [500.2–551.4] → **773.5** [744.7–826.9] (+48.3 %, B) | 13.99 → 13.79 (=) | 20.27 → 18.65 (−8.0 %, B) | = / = | 2 378 → 2 480 (+4.3 %, =) | SAME | **PASS** |
+| `c1s-400` | IOO | → **778.3** [742.9–825.9] (+49.2 %, B) | → 12.11 (−13.4 %, B) | → 16.25 (−19.9 %, B) | = / = | → 2 519 (+5.9 %, TW) | SAME | **PASS** |
+| `c1s-400` | D9 | → 356.1 [333.7–381.5] (−31.7 %, **W**) | → 28.39 (+102.9 %, **W**) | → 31.41 (+54.9 %, **W**) | = / = | = | SAME | FAIL |
+| `c1d-400` | IOS | 436.7 [418.7–494.0] → **729.5** [617.5–745.0] (+67.0 %, B) | 27.19 → 17.16 (−36.9 %, B) | 29.31 → 21.25 (−27.5 %, B) | = / = | 2 228 → 2 422 (+8.7 %, TW); 2 227 → 2 401 (+7.8 %, TW) | SAME | **PASS** |
+| `c1d-400` | IOO | → **711.5** [672.5–723.6] (+62.9 %, B) | → 16.95 (−37.7 %, B) | → 20.52 (−30.0 %, B) | 2 109 → 2 574 (+22.0 %, **W**) / TW | → 2 493 (+11.9 %, **W**); → 2 556 (+14.8 %, **W**) | SAME | **FAIL** |
+| `c1d-400` | D9 | → 399.3 (−8.6 %, **W**) | → 30.35 (+11.6 %, **W**) | → 33.07 (+12.8 %, **W**) | TB / = | = | SAME | FAIL |
+| `c2-100` | IOS | 88.79 → 89.83 (+1.2 %, =) | 33.7 → 29.35 (−12.9 %, B) | 46.8 → 33.1 (−29.3 %, B) | = / = | = | SAME | **PASS** |
+| `c2-100` | IOO | → 89.97 (+1.3 %, =) | → 27.85 (−17.4 %, B) | → 32.2 (−31.2 %, B) | = / = | = | SAME | **PASS** |
+| `c2-100` | D9 | → 89.3 (=) | → 37.2 (+10.4 %, **W**) | = | = / = | = | SAME | FAIL |
+| `c8-100` | IOS | 101.9 → 97.47 (−4.4 %, TW) | 53.2 → 44.4 (−16.5 %, TB) | 58.65 → 41.05 (−30.0 %, B) | = / = | = ; = | SAME | **PASS** |
+| `c8-100` | IOO | → 98.01 (−3.8 %, =) | → 44.9 (−15.6 %, TB) | → 38.65 (−34.1 %, B) | = / = | = ; = | SAME | **PASS** |
+| `c8-100` | D9 | → 102.5 (=) | = | = | = / = | = ; = | SAME | PASS |
+
+Arm verdicts: **IOS `PASS-EVERYWHERE`**; IOO `FAIL-AT-c1d-400`; D9
+(attribution, reported) `FAIL-AT-c1s-400,c1d-400,c2-100`. **The bar**
+(reported): c1d goodput IOS 729.5, IOO 711.5 Mbit/s against FDT's 501 —
+`BAR-MET` for both.
+
+*The mechanism table* (reported; client / server; median of the per-row
+max over owners of `asleep_frac` = the owner's wall asleep in quinn's
+connection lock as a share of wall; `drv_off_frac` = the share of the
+ConnectionDriver's `on_sent` calls that ran off the owner's thread):
+
+| cell | IOS lock wait cli / srv | IOS `drv_off_frac` cli / srv | IOO lock wait cli / srv | IOO `drv_off` |
+|---|---|---|---|---|
+| `c1s-400` | **0.196** / 0.171 | 0.633 / 0.586 | 0.0115 / 0.0258 | **0** on every row, both ends |
+| `c1d-400` | **0.064** / 0.084 | 0.339 / 0.374 | 0.0094 / 0.0202 | 0 |
+| `c2-100` | 0.0052 / 0.0042 | 0.419 / 0.439 | 0.0016 / 0.0027 | 0 |
+| `c8-100` | 0.0046 / 0.0052 | 0.475 / 0.396 | 0.0014 / 0.0023 | 0 |
+
+**Mechanism predictions:** `routing_own` **MET** (every IOO row
+`drv_off = 0`, `drv_on > 0`, both ends); `routing_shared_fails` **MET**
+(IOS median client `drv_off_frac` 0.34–0.63); `lockwait_shared_nonzero`
+**MET** (0.196 at c1s, 0.064 at c1d); `lockwait_own_zero` **MISSED** —
+IOO's client reads 0.0115 at c1s (0.0094 c1d, ≤ 0.0016 elsewhere) against
+the 0.01 threshold, and its server 0.020–0.026 at c1s/c1d. With one user of
+the mutex per thread under `own`, that residual is the gauge's other term
+(involuntary preemption inside a section on the oversubscribed VM), not a
+mutex wait — **[H]**, not separated by this instrument.
+
+**Other predictions** (checks): c1s goodput WITHIN — **MISSED** (BETTER,
++48 % both placements); the named c1s CPUCLI refutation risk — did **not**
+fire (IOS WITHIN, IOO BETTER); c1d goodput BETTER — **MET**, but `own` ≥
+`shared` **MISSED** (711.5 < 729.5, ranges overlapping); c2/c8 goodput
+WITHIN — **MET** (c8 IOS TREND-WORSE); c2/c8 CPUCLI WITHIN — exceeded
+(BETTER / TREND-BETTER); CPUSRV WITHIN-or-better — **MET** (BETTER at
+every cell, −8 to −34 %); the RTprop-floor risk at c1d — **fired** for IOO
+(WORSE both legs), TREND-WORSE for IOS; `[LAG]` p99 under `own` WITHIN or
+lower — **MISSED** at c1d client (+22 %, WORSE); D9's main thread ≈ 0 core
+— **MET** (0.000 on every D9/IOS/IOO row; MAIN 0.11–0.18); D9's goodput
+and CPU WITHIN — **MISSED** (finding 1).
+
+*Reported, not gated* (`score.txt` has every value): GSO factor
+(`[TRUTH] gso`, client leg 0) c1s MAIN 8.96 / D9 4.42 / IOS 8.94 / IOO
+7.49; c1d 5.04 / 3.46 / 7.08 / 6.45; c2 5.09 / 4.36 / 5.86 / 5.99; c8 4.27
+/ 4.06 / 5.79 / 6.19. Acks per data datagram 0.992–1.000 everywhere.
+Datagrams per owner batch: client data 45 (c1s IOS) to 16 (c8); inbound
+8–28; the inbound cap's bind fraction (`rx_capped / rx_batches`, client /
+server medians): c1s IOS 0.74 / 0.25, IOO 0.57 / 0.05; c1d IOS 0.37 /
+0.22, IOO 0.21 / 0.09; ≤ 0.01 at c2/c8 (finding 4). `send_err` = `too_large_staged` = 0 on
+every row. Parks per second (client, main runtime / I/O runtimes): c1s
+MAIN 8 742, D9 27 144, IOS 17 428, IOO 4 964 / 7 162; c1d 23 669, 27 915,
+15 788, 5 197 / 11 372; c2 6 134, 8 519, 5 802, 2 381 / 3 267; c8 10 940,
+11 980, 6 318, 2 745 / 4 232. `[LAG] io` p99 (IOO) 2.0–3.5 ms. Process
+cores (client) c1s MAIN 0.89, D9 1.27, IOS 1.32, IOO 1.16. Ack
+inter-arrival (`ackd`, client leg 0, n = 2): p99 c1s MAIN 359, IOS 170,
+IOO 366 µs; c1d 836 / 1 314 / 600 µs; c2 and c8 ≈ 1.9 → 2.4–2.6 ms under
+both IO arms (p90 lower: c2 118 → 26/16 µs).
+
+*Outside the pre-registered set (findings, no verdict).*
+
+1. **D9 alone reproduces §12's c1s collapse.** Moving the perf body onto a
+   runtime worker (`95c750a`, the only change in that arm) cost c1s
+   goodput −31.7 % and client CPU per byte +103 % with disjoint ranges —
+   §12 measured P2a (which carried D9 with the actor) at −33.0 % and +87 %.
+   The c1s collapse §12 attributed to the actor and the per-message budget
+   unit is therefore at least largely D9's — a re-scoping of §12 finding 1,
+   recorded here, not acted on. **[H]** The D9 rows show the sender
+   (`busy` 35 → 66 %), GSO halved (8.96 → 4.42) and worker parks ×3: the
+   generator task now competes with the sender for workers and its
+   per-packet channel wakes land on workers instead of a parked main
+   thread. The Q1 arms carry D9 and still gain +48 % at c1s: the owner hop
+   removes the sender's quinn waits and restores GSO (8.94).
+2. **The owner's gain is not the mutex.** The shared placement keeps the
+   driver off the owner's thread on 34–63 % of transmits and the owner
+   spends up to 20 % of its wall asleep in quinn's lock at c1s, yet IOS
+   matches IOO's goodput and CPU at every cell; what both share — the
+   sender no longer calling quinn, batched hops, batched acks — carries
+   the gain. This is the plan's "if `shared` also passes everywhere, the
+   mutex was not the cause" reading, here measured directly.
+3. **`own` pays latency at c1d**: the client `[LAG]` p99 (+22 %) and the
+   RTprop floor (+12–15 %) rise with the cross-runtime hops (each
+   owner→receiver and sender→owner wake crosses a thread), while main-
+   runtime parks fall to a fifth.
+4. **The inbound batch cap binds on most client batches at c1s**
+   (`INBOUND_BATCH_MAX` = 32: bind fraction 0.74 under IOS, 0.57 under
+   IOO; 0.21–0.37 at c1d; ≤ 0.01 at c2/c8). At the bulk single-path cell
+   the cap, not quinn's buffered count, sets the inbound batch size, so it
+   operates there close to a constant (measurement discipline 18): a
+   defect finding to carry, no verdict drawn from it here. It is a memory
+   bound (the inbound channel's worst case = ADR-0011's 4096 datagrams), not
+   a law; raising it moves that bound, which is why it is recorded rather
+   than tuned.

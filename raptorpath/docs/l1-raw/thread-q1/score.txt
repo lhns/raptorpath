@@ -1,0 +1,437 @@
+BINARIES main=7f3d38e5f0c0715ea1f7f1bfa16cf2ffbeb70c246d9f418b90fb7722661bfc13 d9=81229041f5508fb9189271d504aa392f1bd518ab3e391967b86859421fa0b271 q1=76decc7f4b69d36a21f4a17a2c33038a543b3324f32f2a29d270c6b012e7c9ef
+STATUS-TABLE (every invocation row)
+  LIVE          96
+  NO_DATA       0
+  VOID-RC       0
+  VOID-COTENANT 0
+  CONTAMINATED  0
+  WITNESS-FAIL  0
+  ABORT-TOKENS none; truncated=0
+
+PER-REP (rule 4): cell arm seed rep mbps cpu_cli cpu_srv busy rtp_floor feed lag_p99 cli/srv lockwait cli
+  c1s-400 D9 s42 r1 LIVE mbps=359.2 cli=11.33 srv=12.58 busy=66.0 rtp=2194 feed=0.998 lag99=1160/812 asleep=- drv_off=-
+  c1s-400 D9 s42 r2 LIVE mbps=352.9 cli=11.56 srv=12.70 busy=67.0 rtp=2347 feed=1.017 lag99=2323/1737 asleep=- drv_off=-
+  c1s-400 D9 s42 r3 LIVE mbps=353.0 cli=11.38 srv=12.55 busy=65.5 rtp=2299 feed=0.992 lag99=1064/1904 asleep=- drv_off=-
+  c1s-400 D9 s7 r1 LIVE mbps=374.0 cli=11.00 srv=11.96 busy=69.0 rtp=2333 feed=1.043 lag99=1796/1215 asleep=- drv_off=-
+  c1s-400 D9 s7 r2 LIVE mbps=381.5 cli=10.85 srv=11.71 busy=70.0 rtp=2296 feed=0.997 lag99=2017/1413 asleep=- drv_off=-
+  c1s-400 D9 s7 r3 LIVE mbps=333.7 cli=11.61 srv=13.48 busy=62.0 rtp=2428 feed=0.987 lag99=2030/1634 asleep=- drv_off=-
+  c1s-400 IOO s42 r1 LIVE mbps=779.0 cli=4.79 srv=6.48 busy=35.5 rtp=2549 feed=1.031 lag99=2667/2824 asleep=0.0114 drv_off=0
+  c1s-400 IOO s42 r2 LIVE mbps=814.3 cli=4.84 srv=6.04 busy=36.0 rtp=2414 feed=0.978 lag99=1237/1643 asleep=0.0119 drv_off=0
+  c1s-400 IOO s42 r3 LIVE mbps=825.9 cli=4.85 srv=6.19 busy=38.0 rtp=2552 feed=1.021 lag99=1879/1995 asleep=0.0118 drv_off=0
+  c1s-400 IOO s7 r1 LIVE mbps=777.6 cli=4.83 srv=6.52 busy=35.5 rtp=2499 feed=1.032 lag99=2072/2085 asleep=0.0110 drv_off=0
+  c1s-400 IOO s7 r2 LIVE mbps=742.9 cli=4.92 srv=6.77 busy=33.0 rtp=2465 feed=0.980 lag99=1968/2526 asleep=0.0106 drv_off=0
+  c1s-400 IOO s7 r3 LIVE mbps=773.4 cli=4.94 srv=6.69 busy=38.0 rtp=2539 feed=0.973 lag99=2629/1530 asleep=0.0116 drv_off=0
+  c1s-400 IOS s42 r1 LIVE mbps=770.6 cli=5.48 srv=7.34 busy=43.5 rtp=2490 feed=1.052 lag99=2088/1659 asleep=0.1962 drv_off=25179
+  c1s-400 IOS s42 r2 LIVE mbps=826.9 cli=5.37 srv=7.04 busy=43.0 rtp=2405 feed=1.037 lag99=1107/1104 asleep=0.1940 drv_off=25644
+  c1s-400 IOS s42 r3 LIVE mbps=806.8 cli=5.57 srv=7.44 busy=45.0 rtp=2562 feed=1.000 lag99=1645/1769 asleep=0.2089 drv_off=24380
+  c1s-400 IOS s7 r1 LIVE mbps=766.0 cli=5.53 srv=7.56 busy=43.0 rtp=2471 feed=0.911 lag99=2453/1454 asleep=0.1780 drv_off=22389
+  c1s-400 IOS s7 r2 LIVE mbps=776.3 cli=5.50 srv=7.48 busy=42.5 rtp=2501 feed=1.042 lag99=1868/1001 asleep=0.1988 drv_off=23578
+  c1s-400 IOS s7 r3 LIVE mbps=744.7 cli=5.54 srv=7.51 busy=43.0 rtp=2358 feed=0.986 lag99=2466/2167 asleep=0.1962 drv_off=23808
+  c1s-400 MAIN s42 r1 LIVE mbps=525.1 cli=5.64 srv=8.12 busy=37.0 rtp=2368 feed=1.026 lag99=2311/1814 asleep=- drv_off=-
+  c1s-400 MAIN s42 r2 LIVE mbps=551.4 cli=5.55 srv=7.86 busy=37.0 rtp=2388 feed=0.996 lag99=2095/1057 asleep=- drv_off=-
+  c1s-400 MAIN s42 r3 LIVE mbps=500.2 cli=5.65 srv=8.43 busy=33.0 rtp=2415 feed=0.967 lag99=2119/2273 asleep=- drv_off=-
+  c1s-400 MAIN s7 r1 LIVE mbps=535.0 cli=5.71 srv=8.10 busy=35.0 rtp=2299 feed=0.864 lag99=2119/2292 asleep=- drv_off=-
+  c1s-400 MAIN s7 r2 LIVE mbps=518.2 cli=5.41 srv=8.08 busy=36.0 rtp=2416 feed=0.874 lag99=1884/2273 asleep=- drv_off=-
+  c1s-400 MAIN s7 r3 LIVE mbps=513.9 cli=5.43 srv=8.24 busy=35.0 rtp=2161 feed=0.898 lag99=1528/1737 asleep=- drv_off=-
+  c1d-400 D9 s42 r1 LIVE mbps=392.8 cli=12.33 srv=13.44 busy=79.5 rtp=2188/2276 feed=1.074/1.009 lag99=1163/1327 asleep=- drv_off=-
+  c1d-400 D9 s42 r2 LIVE mbps=413.8 cli=11.59 srv=12.51 busy=80.0 rtp=2263/2276 feed=1.037/1.015 lag99=1692/2082 asleep=- drv_off=-
+  c1d-400 D9 s42 r3 LIVE mbps=375.6 cli=12.44 srv=13.50 busy=78.5 rtp=2246/2230 feed=0.961/0.931 lag99=2110/2184 asleep=- drv_off=-
+  c1d-400 D9 s7 r1 LIVE mbps=405.8 cli=12.05 srv=13.04 busy=78.0 rtp=2291/2203 feed=0.969/1.054 lag99=1472/1783 asleep=- drv_off=-
+  c1d-400 D9 s7 r2 LIVE mbps=408.9 cli=11.88 srv=12.87 busy=77.0 rtp=2302/2253 feed=0.969/1.054 lag99=2025/1576 asleep=- drv_off=-
+  c1d-400 D9 s7 r3 LIVE mbps=391.9 cli=12.23 srv=13.42 busy=76.0 rtp=2266/2218 feed=0.983/1.026 lag99=1832/2229 asleep=- drv_off=-
+  c1d-400 IOO s42 r1 LIVE mbps=723.6 cli=6.69 srv=7.90 busy=52.0 rtp=2401/2622 feed=0.998/1.094 lag99=2452/2547 asleep=0.0095 drv_off=0
+  c1d-400 IOO s42 r2 LIVE mbps=720.5 cli=6.65 srv=8.06 busy=56.0 rtp=2427/2357 feed=1.034/0.929 lag99=3223/3171 asleep=0.0091 drv_off=0
+  c1d-400 IOO s42 r3 LIVE mbps=711.1 cli=6.90 srv=8.24 busy=55.0 rtp=2501/2584 feed=1.018/0.956 lag99=2893/2586 asleep=0.0097 drv_off=0
+  c1d-400 IOO s7 r1 LIVE mbps=712.0 cli=6.87 srv=8.29 busy=53.0 rtp=2535/2529 feed=0.954/1.093 lag99=2421/2780 asleep=0.0087 drv_off=0
+  c1d-400 IOO s7 r2 LIVE mbps=672.5 cli=6.54 srv=8.31 busy=44.0 rtp=2485/2422 feed=1.014/0.995 lag99=2449/2551 asleep=0.0093 drv_off=0
+  c1d-400 IOO s7 r3 LIVE mbps=710.6 cli=6.94 srv=8.18 busy=56.0 rtp=2671/2592 feed=0.905/0.878 lag99=2695/1770 asleep=0.0095 drv_off=0
+  c1d-400 IOS s42 r1 LIVE mbps=736.7 cli=6.76 srv=8.40 busy=58.0 rtp=2536/2344 feed=0.978/0.996 lag99=1200/1049 asleep=0.0644 drv_off=16586
+  c1d-400 IOS s42 r2 LIVE mbps=617.5 cli=7.58 srv=9.65 busy=50.5 rtp=2558/2522 feed=1.072/0.931 lag99=1912/1788 asleep=0.0597 drv_off=16088
+  c1d-400 IOS s42 r3 LIVE mbps=722.4 cli=6.97 srv=8.59 busy=59.0 rtp=2364/2458 feed=1.100/1.015 lag99=2790/1564 asleep=0.0630 drv_off=16151
+  c1d-400 IOS s7 r1 LIVE mbps=637.7 cli=7.77 srv=9.10 busy=62.0 rtp=2407/2274 feed=0.813/1.019 lag99=3031/1864 asleep=0.0689 drv_off=20706
+  c1d-400 IOS s7 r2 LIVE mbps=743.7 cli=6.76 srv=8.27 busy=62.0 rtp=2436/2479 feed=1.063/0.990 lag99=2065/2568 asleep=0.1069 drv_off=18006
+  c1d-400 IOS s7 r3 LIVE mbps=745.0 cli=6.75 srv=8.41 busy=60.0 rtp=2293/2256 feed=0.968/1.042 lag99=1122/1151 asleep=0.0575 drv_off=16107
+  c1d-400 MAIN s42 r1 LIVE mbps=434.8 cli=10.95 srv=11.85 busy=99.0 rtp=2217/2210 feed=0.899/1.005 lag99=1621/975 asleep=- drv_off=-
+  c1d-400 MAIN s42 r2 LIVE mbps=494.0 cli=9.13 srv=9.70 busy=89.0 rtp=2323/2275 feed=0.976/0.950 lag99=2160/2373 asleep=- drv_off=-
+  c1d-400 MAIN s42 r3 LIVE mbps=430.5 cli=11.04 srv=11.85 busy=96.0 rtp=2255/2243 feed=1.120/1.014 lag99=2266/1585 asleep=- drv_off=-
+  c1d-400 MAIN s7 r1 LIVE mbps=418.7 cli=11.15 srv=12.16 busy=95.5 rtp=2200/2215 feed=0.962/1.025 lag99=2245/1665 asleep=- drv_off=-
+  c1d-400 MAIN s7 r2 LIVE mbps=438.7 cli=10.80 srv=11.60 busy=97.0 rtp=2209/2239 feed=0.976/1.034 lag99=2058/2189 asleep=- drv_off=-
+  c1d-400 MAIN s7 r3 LIVE mbps=446.0 cli=10.74 srv=11.54 busy=96.5 rtp=2240/2203 feed=1.021/1.000 lag99=1705/2030 asleep=- drv_off=-
+  c2-100 D9 s42 r1 LIVE mbps=89.4 cli=3.94 srv=5.13 busy=17.0 rtp=13584 feed=1.012 lag99=1893/1670 asleep=- drv_off=-
+  c2-100 D9 s42 r2 LIVE mbps=88.7 cli=3.80 srv=4.88 busy=16.0 rtp=12363 feed=1.018 lag99=1819/1456 asleep=- drv_off=-
+  c2-100 D9 s42 r3 LIVE mbps=89.2 cli=3.78 srv=4.81 busy=17.0 rtp=13759 feed=1.010 lag99=2013/2211 asleep=- drv_off=-
+  c2-100 D9 s7 r1 LIVE mbps=87.4 cli=3.61 srv=4.70 busy=15.5 rtp=9694 feed=1.017 lag99=1164/1799 asleep=- drv_off=-
+  c2-100 D9 s7 r2 LIVE mbps=89.5 cli=3.58 srv=4.62 busy=16.0 rtp=11688 feed=1.013 lag99=1166/1907 asleep=- drv_off=-
+  c2-100 D9 s7 r3 LIVE mbps=89.5 cli=3.66 srv=4.65 busy=16.0 rtp=13047 feed=1.013 lag99=2122/900 asleep=- drv_off=-
+  c2-100 IOO s42 r1 LIVE mbps=90.1 cli=2.71 srv=3.16 busy=10.0 rtp=11565 feed=0.989 lag99=1262/2123 asleep=0.0019 drv_off=0
+  c2-100 IOO s42 r2 LIVE mbps=89.9 cli=2.87 srv=3.32 busy=10.0 rtp=8712 feed=0.950 lag99=2596/1672 asleep=0.0016 drv_off=0
+  c2-100 IOO s42 r3 LIVE mbps=90.0 cli=2.84 srv=3.24 busy=10.0 rtp=13518 feed=0.985 lag99=1183/2000 asleep=0.0015 drv_off=0
+  c2-100 IOO s7 r1 LIVE mbps=89.3 cli=2.81 srv=3.25 busy=10.0 rtp=11686 feed=1.011 lag99=1703/2175 asleep=0.0015 drv_off=0
+  c2-100 IOO s7 r2 LIVE mbps=89.7 cli=2.76 srv=3.20 busy=10.0 rtp=10496 feed=1.004 lag99=1878/1136 asleep=0.0015 drv_off=0
+  c2-100 IOO s7 r3 LIVE mbps=90.1 cli=2.73 srv=3.17 busy=10.0 rtp=12603 feed=1.008 lag99=1177/2521 asleep=0.0016 drv_off=0
+  c2-100 IOS s42 r1 LIVE mbps=90.0 cli=2.90 srv=3.30 busy=9.0 rtp=5460 feed=1.003 lag99=2063/879 asleep=0.0059 drv_off=7563
+  c2-100 IOS s42 r2 LIVE mbps=88.5 cli=2.94 srv=3.34 busy=10.0 rtp=12385 feed=0.998 lag99=1175/1441 asleep=0.0063 drv_off=8529
+  c2-100 IOS s42 r3 LIVE mbps=89.7 cli=2.93 srv=3.23 busy=10.0 rtp=11790 feed=0.997 lag99=1785/1968 asleep=0.0049 drv_off=5733
+  c2-100 IOS s7 r1 LIVE mbps=90.0 cli=3.01 srv=3.32 busy=10.0 rtp=10514 feed=1.001 lag99=1977/1517 asleep=0.0050 drv_off=6455
+  c2-100 IOS s7 r2 LIVE mbps=90.1 cli=2.88 srv=3.15 busy=9.0 rtp=13082 feed=1.008 lag99=3082/1072 asleep=0.0050 drv_off=6154
+  c2-100 IOS s7 r3 LIVE mbps=88.0 cli=3.00 srv=3.34 busy=10.0 rtp=12006 feed=0.997 lag99=1947/1690 asleep=0.0053 drv_off=6447
+  c2-100 MAIN s42 r1 LIVE mbps=89.5 cli=3.31 srv=4.63 busy=12.0 rtp=8749 feed=1.012 lag99=2137/1652 asleep=- drv_off=-
+  c2-100 MAIN s42 r2 LIVE mbps=87.4 cli=3.36 srv=4.59 busy=12.0 rtp=12105 feed=1.007 lag99=2013/1902 asleep=- drv_off=-
+  c2-100 MAIN s42 r3 LIVE mbps=87.2 cli=3.38 srv=4.74 busy=13.0 rtp=9658 feed=0.980 lag99=1110/1689 asleep=- drv_off=-
+  c2-100 MAIN s7 r1 LIVE mbps=89.5 cli=3.46 srv=4.73 busy=13.0 rtp=11513 feed=0.978 lag99=1124/2660 asleep=- drv_off=-
+  c2-100 MAIN s7 r2 LIVE mbps=88.3 cli=3.54 srv=4.78 busy=12.0 rtp=10925 feed=1.007 lag99=1256/1871 asleep=- drv_off=-
+  c2-100 MAIN s7 r3 LIVE mbps=89.3 cli=3.25 srv=4.49 busy=12.0 rtp=14299 feed=1.023 lag99=2005/2099 asleep=- drv_off=-
+  c8-100 D9 s42 r1 LIVE mbps=104.2 cli=5.65 srv=6.26 busy=37.0 rtp=8808/38273 feed=0.998/0.984 lag99=1104/1752 asleep=- drv_off=-
+  c8-100 D9 s42 r2 LIVE mbps=103.3 cli=4.85 srv=5.81 busy=26.0 rtp=11814/35621 feed=0.987/1.002 lag99=1339/1703 asleep=- drv_off=-
+  c8-100 D9 s42 r3 LIVE mbps=104.3 cli=5.06 srv=5.84 busy=30.0 rtp=9545/42718 feed=0.969/1.020 lag99=2000/1708 asleep=- drv_off=-
+  c8-100 D9 s7 r1 LIVE mbps=95.2 cli=5.43 srv=6.01 busy=31.0 rtp=8729/40964 feed=1.017/1.007 lag99=1911/1148 asleep=- drv_off=-
+  c8-100 D9 s7 r2 LIVE mbps=98.9 cli=5.46 srv=6.03 busy=33.5 rtp=9781/45409 feed=0.993/1.009 lag99=1175/1837 asleep=- drv_off=-
+  c8-100 D9 s7 r3 LIVE mbps=101.7 cli=5.10 srv=5.69 busy=30.0 rtp=8150/40787 feed=1.000/1.002 lag99=1136/2028 asleep=- drv_off=-
+  c8-100 IOO s42 r1 LIVE mbps=91.4 cli=4.87 srv=3.96 busy=32.5 rtp=9400/43852 feed=1.002/1.000 lag99=1723/1381 asleep=0.0013 drv_off=0
+  c8-100 IOO s42 r2 LIVE mbps=100.9 cli=3.95 srv=3.50 busy=23.0 rtp=7804/41970 feed=1.008/0.969 lag99=2055/2022 asleep=0.0014 drv_off=0
+  c8-100 IOO s42 r3 LIVE mbps=91.7 cli=4.84 srv=4.13 busy=32.5 rtp=6850/40137 feed=1.001/1.002 lag99=1315/1196 asleep=0.0012 drv_off=0
+  c8-100 IOO s7 r1 LIVE mbps=101.8 cli=4.29 srv=3.77 busy=27.0 rtp=12313/36183 feed=1.004/0.991 lag99=1779/2066 asleep=0.0013 drv_off=0
+  c8-100 IOO s7 r2 LIVE mbps=105.2 cli=3.67 srv=3.61 busy=20.0 rtp=11041/38033 feed=0.996/0.996 lag99=1204/1176 asleep=0.0015 drv_off=0
+  c8-100 IOO s7 r3 LIVE mbps=95.1 cli=4.69 srv=3.96 busy=29.0 rtp=11028/41692 feed=0.999/1.015 lag99=1203/1935 asleep=0.0014 drv_off=0
+  c8-100 IOS s42 r1 LIVE mbps=90.1 cli=4.52 srv=4.11 busy=29.0 rtp=8128/40944 feed=0.987/0.991 lag99=1121/2847 asleep=0.0043 drv_off=7795
+  c8-100 IOS s42 r2 LIVE mbps=102.9 cli=3.68 srv=3.93 busy=18.0 rtp=8948/45241 feed=1.002/1.000 lag99=1125/1753 asleep=0.0043 drv_off=8397
+  c8-100 IOS s42 r3 LIVE mbps=95.0 cli=4.85 srv=4.45 busy=31.0 rtp=8968/44606 feed=1.002/1.014 lag99=2250/1576 asleep=0.0061 drv_off=8713
+  c8-100 IOS s7 r1 LIVE mbps=94.3 cli=4.43 srv=4.16 busy=23.0 rtp=7951/39106 feed=0.995/1.004 lag99=1804/1739 asleep=0.0046 drv_off=8509
+  c8-100 IOS s7 r2 LIVE mbps=100.6 cli=4.45 srv=4.04 busy=30.0 rtp=10462/39866 feed=1.002/1.011 lag99=1948/1973 asleep=0.0045 drv_off=7901
+  c8-100 IOS s7 r3 LIVE mbps=100.0 cli=4.39 srv=4.10 busy=29.0 rtp=10769/43734 feed=0.999/0.982 lag99=1160/1109 asleep=0.0051 drv_off=8651
+  c8-100 MAIN s42 r1 LIVE mbps=104.4 cli=4.82 srv=5.65 busy=27.5 rtp=9651/40276 feed=1.014/1.019 lag99=2031/1668 asleep=- drv_off=-
+  c8-100 MAIN s42 r2 LIVE mbps=104.9 cli=5.32 srv=5.80 busy=34.5 rtp=10225/41906 feed=1.011/0.990 lag99=1944/1908 asleep=- drv_off=-
+  c8-100 MAIN s42 r3 LIVE mbps=100.0 cli=5.71 srv=6.16 busy=36.0 rtp=8849/41991 feed=1.003/1.047 lag99=1201/2985 asleep=- drv_off=-
+  c8-100 MAIN s7 r1 LIVE mbps=97.3 cli=5.70 srv=6.11 busy=41.0 rtp=7148/40055 feed=1.006/1.000 lag99=1176/1934 asleep=- drv_off=-
+  c8-100 MAIN s7 r2 LIVE mbps=102.0 cli=5.32 srv=5.93 busy=32.0 rtp=10949/35691 feed=0.992/0.998 lag99=1191/1615 asleep=- drv_off=-
+  c8-100 MAIN s7 r3 LIVE mbps=101.8 cli=4.91 srv=5.41 busy=28.0 rtp=10076/38195 feed=0.997/1.004 lag99=1944/1824 asleep=- drv_off=-
+
+PER-SEED MEDIANS (goodput, cpu_cli)
+  c1s-400 MAIN s42: gp=525.1 cli=5.64 s7: gp=518.2 cli=5.43
+  c1s-400 D9 s42: gp=353.0 cli=11.38 s7: gp=374.0 cli=11.00
+  c1s-400 IOS s42: gp=806.8 cli=5.48 s7: gp=766.0 cli=5.53
+  c1s-400 IOO s42: gp=814.3 cli=4.84 s7: gp=773.4 cli=4.92
+  c1d-400 MAIN s42: gp=434.8 cli=10.95 s7: gp=438.7 cli=10.80
+  c1d-400 D9 s42: gp=392.8 cli=12.33 s7: gp=405.8 cli=12.05
+  c1d-400 IOS s42: gp=722.4 cli=6.97 s7: gp=743.7 cli=6.76
+  c1d-400 IOO s42: gp=720.5 cli=6.69 s7: gp=710.6 cli=6.87
+  c2-100 MAIN s42: gp=87.4 cli=3.36 s7: gp=89.3 cli=3.46
+  c2-100 D9 s42: gp=89.2 cli=3.80 s7: gp=89.5 cli=3.61
+  c2-100 IOS s42: gp=89.7 cli=2.93 s7: gp=90.0 cli=3.00
+  c2-100 IOO s42: gp=90.0 cli=2.84 s7: gp=89.7 cli=2.76
+  c8-100 MAIN s42: gp=104.4 cli=5.32 s7: gp=101.8 cli=5.32
+  c8-100 D9 s42: gp=104.2 cli=5.06 s7: gp=98.9 cli=5.43
+  c8-100 IOS s42: gp=95.0 cli=4.52 s7: gp=100.0 cli=4.43
+  c8-100 IOO s42: gp=91.7 cli=4.84 s7: gp=101.8 cli=4.29
+
+[c1s-400]
+  FEED c1s-400 IOS p0 plc/truth IOS=1.018 MAIN=0.932 band=[0.717,1.212] -> SAME
+  CLAUSE c1s-400 IOS goodput: BETTER IOS=773.5 [744.7-826.9] MAIN=521.7 [500.2-551.4] (+48.3%, rel=0.049)
+  CLAUSE c1s-400 IOS cpu_cli/GB: WITHIN IOS=13.79 [13.42-13.93] MAIN=13.99 [13.53-14.27] (-1.4%, rel=0.024)
+  CLAUSE c1s-400 IOS cpu_srv/GB: BETTER IOS=18.65 [17.6-18.9] MAIN=20.27 [19.65-21.07] (-8.0%, rel=0.024)
+  CLAUSE c1s-400 IOS lag_p99_cli: WITHIN IOS=1978 [1107-2466] MAIN=2107 [1528-2311] (-6.1%, rel=0.186)
+  CLAUSE c1s-400 IOS lag_p99_srv: WITHIN IOS=1556 [1001-2167] MAIN=2044 [1057-2292] (-23.8%, rel=0.302)
+  CLAUSE c1s-400 IOS rtp_floor_p0: WITHIN IOS=2480 [2358-2562] MAIN=2378 [2161-2416] (+4.3%, rel=0.054)
+  CELL c1s-400 IOS n=6 MAIN n=6 dnf MAIN=0.00 IOS=0.00 worse=- notes=goodput:BETTER,cpu_srv/GB:BETTER => PASS
+  FEED c1s-400 IOO p0 plc/truth IOO=1.000 MAIN=0.932 band=[0.717,1.212] -> SAME
+  CLAUSE c1s-400 IOO goodput: BETTER IOO=778.3 [742.9-825.9] MAIN=521.7 [500.2-551.4] (+49.2%, rel=0.049)
+  CLAUSE c1s-400 IOO cpu_cli/GB: BETTER IOO=12.11 [11.97-12.35] MAIN=13.99 [13.53-14.27] (-13.4%, rel=0.024)
+  CLAUSE c1s-400 IOO cpu_srv/GB: BETTER IOO=16.25 [15.1-16.92] MAIN=20.27 [19.65-21.07] (-19.9%, rel=0.024)
+  CLAUSE c1s-400 IOO lag_p99_cli: WITHIN IOO=2020 [1237-2667] MAIN=2107 [1528-2311] (-4.1%, rel=0.186)
+  CLAUSE c1s-400 IOO lag_p99_srv: WITHIN IOO=2040 [1530-2824] MAIN=2044 [1057-2292] (-0.2%, rel=0.302)
+  CLAUSE c1s-400 IOO rtp_floor_p0: TREND-WORSE IOO=2519 [2414-2552] MAIN=2378 [2161-2416] (+5.9%, rel=0.054)
+  CELL c1s-400 IOO n=6 MAIN n=6 dnf MAIN=0.00 IOO=0.00 worse=- notes=goodput:BETTER,cpu_cli/GB:BETTER,cpu_srv/GB:BETTER,rtp_floor_p0:TREND-WORSE => PASS
+  FEED c1s-400 D9 p0 plc/truth D9=0.997 MAIN=0.932 band=[0.717,1.212] -> SAME
+  CLAUSE c1s-400 D9 goodput: WORSE D9=356.1 [333.7-381.5] MAIN=521.7 [500.2-551.4] (-31.7%, rel=0.049)
+  CLAUSE c1s-400 D9 cpu_cli/GB: WORSE D9=28.39 [27.12-29.02] MAIN=13.99 [13.53-14.27] (+102.9%, rel=0.024)
+  CLAUSE c1s-400 D9 cpu_srv/GB: WORSE D9=31.41 [29.28-33.7] MAIN=20.27 [19.65-21.07] (+54.9%, rel=0.024)
+  CLAUSE c1s-400 D9 lag_p99_cli: WITHIN D9=1906 [1064-2323] MAIN=2107 [1528-2311] (-9.5%, rel=0.186)
+  CLAUSE c1s-400 D9 lag_p99_srv: WITHIN D9=1524 [812-1904] MAIN=2044 [1057-2292] (-25.4%, rel=0.302)
+  CLAUSE c1s-400 D9 rtp_floor_p0: WITHIN D9=2316 [2194-2428] MAIN=2378 [2161-2416] (-2.6%, rel=0.054)
+  CELL c1s-400 D9 n=6 MAIN n=6 dnf MAIN=0.00 D9=0.00 worse=goodput+cpu_cli/GB+cpu_srv/GB notes=- => FAIL
+  REPORT c1s-400 MAIN acks/dgram=0.998 [0.997-1.000] n=6 busy=35.5 [33.0-37.0] n=6 gso_p0=8.96 [8.89-9.10] n=6
+  REPORT c1s-400 MAIN cli cores=0.893 [0.864-0.948] n=6 main_thr=0.111 [0.107-0.121] n=6 thr_r1=0.177 [0.164-0.191] n=6 parks/s main=8742 [8385-9047] n=6 io=- lag p99 main=2107 [1528-2311] n=6 io=-
+  REPORT c1s-400 MAIN srv cores=1.320 [1.298-1.347] n=6 main_thr=0.175 [0.169-0.188] n=6 thr_r1=0.356 [0.306-0.566] n=6 parks/s main=9645 [8880-9899] n=6 io=- lag p99 main=2044 [1057-2292] n=6 io=-
+    THREADS c1s-400 MAIN s42 r1 cli=rp-w-3:0.177,rp-w-5:0.176,rp-w-2:0.153,rp-w-1:0.121 srv=rp-w-2:0.358,rp-w-4:0.289,raptorpath:0.176,rp-w-0:0.169
+    THREADS c1s-400 MAIN s7 r1 cli=rp-w-1:0.177,rp-w-0:0.172,rp-w-4:0.169,rp-w-3:0.167 srv=rp-w-4:0.496,rp-w-0:0.332,raptorpath:0.188,rp-w-1:0.132
+    THREADS c1s-400 MAIN s42 r2 cli=rp-w-5:0.191,rp-w-3:0.183,rp-w-1:0.162,rp-w-4:0.152 srv=rp-w-0:0.566,rp-w-5:0.255,rp-w-4:0.191,raptorpath:0.186
+    THREADS c1s-400 MAIN s7 r2 cli=rp-w-1:0.185,rp-w-2:0.154,rp-w-4:0.147,rp-w-5:0.138 srv=rp-w-5:0.306,rp-w-3:0.219,rp-w-4:0.203,raptorpath:0.172
+    THREADS c1s-400 MAIN s42 r3 cli=rp-w-5:0.177,rp-w-2:0.167,rp-w-0:0.164,rp-w-1:0.144 srv=rp-w-3:0.354,rp-w-2:0.316,rp-w-1:0.222,raptorpath:0.174
+    THREADS c1s-400 MAIN s7 r3 cli=rp-w-5:0.164,rp-w-1:0.159,rp-w-0:0.151,rp-w-4:0.145 srv=rp-w-3:0.355,rp-w-2:0.341,rp-w-4:0.254,raptorpath:0.169
+  REPORT c1s-400 D9 acks/dgram=0.997 [0.997-0.998] n=6 busy=66.5 [62.0-70.0] n=6 gso_p0=4.42 [4.24-4.65] n=6
+  REPORT c1s-400 D9 cli cores=1.268 [1.205-1.286] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.234 [0.218-0.244] n=6 parks/s main=27144 [26435-28736] n=6 io=- lag p99 main=1906 [1064-2323] n=6 io=-
+  REPORT c1s-400 D9 srv cores=1.393 [1.378-1.407] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.295 [0.288-0.373] n=6 parks/s main=27829 [27041-29388] n=6 io=- lag p99 main=1524 [812-1904] n=6 io=-
+    THREADS c1s-400 D9 s42 r1 cli=rp-w-0:0.236,rp-w-3:0.219,rp-w-1:0.216,rp-w-4:0.212 srv=rp-w-1:0.294,rp-w-2:0.289,rp-w-0:0.258,rp-w-5:0.202
+    THREADS c1s-400 D9 s7 r1 cli=rp-w-2:0.234,rp-w-0:0.221,rp-w-4:0.221,rp-w-1:0.217 srv=rp-w-1:0.373,rp-w-4:0.244,rp-w-5:0.226,rp-w-3:0.200
+    THREADS c1s-400 D9 s42 r2 cli=rp-w-5:0.234,rp-w-3:0.231,rp-w-4:0.211,rp-w-2:0.202 srv=rp-w-5:0.319,rp-w-1:0.277,rp-w-3:0.275,rp-w-0:0.259
+    THREADS c1s-400 D9 s7 r2 cli=rp-w-1:0.234,rp-w-3:0.228,rp-w-4:0.216,rp-w-2:0.213 srv=rp-w-5:0.292,rp-w-4:0.287,rp-w-2:0.247,rp-w-3:0.230
+    THREADS c1s-400 D9 s42 r3 cli=rp-w-2:0.244,rp-w-0:0.223,rp-w-3:0.216,rp-w-5:0.206 srv=rp-w-0:0.297,rp-w-2:0.264,rp-w-3:0.235,rp-w-5:0.224
+    THREADS c1s-400 D9 s7 r3 cli=rp-w-3:0.218,rp-w-0:0.211,rp-w-1:0.211,rp-w-5:0.199 srv=rp-w-0:0.288,rp-w-3:0.283,rp-w-2:0.255,rp-w-5:0.235
+  REPORT c1s-400 IOS acks/dgram=0.999 [0.997-1.000] n=6 busy=43.0 [42.5-45.0] n=6 gso_p0=8.94 [8.84-9.04] n=6
+  REPORT c1s-400 IOS cli cores=1.319 [1.268-1.389] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.243 [0.230-0.247] n=6 parks/s main=17428 [16308-18899] n=6 io=- lag p99 main=1978 [1107-2466] n=6 io=-
+  REPORT c1s-400 IOS cli lockwait asleep_frac max=0.1962 [0.1780-0.2089] n=6 sum=0.1962 [0.1780-0.2089] n=6 drv_off_frac=0.6327 [0.5804-0.6793] n=6 tx/batch=45.1 [42.2-46.5] n=6 rx/batch=27.9 [26.9-28.4] n=6 rx_capped=8998 [8414-9274] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c1s-400 IOS srv cores=1.801 [1.733-1.860] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.327 [0.307-0.376] n=6 parks/s main=22478 [20508-24140] n=6 io=- lag p99 main=1556 [1001-2167] n=6 io=-
+  REPORT c1s-400 IOS srv lockwait asleep_frac max=0.1712 [0.1639-0.1813] n=6 sum=0.1712 [0.1639-0.1813] n=6 drv_off_frac=0.5860 [0.5664-0.5891] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=18.8 [18.1-19.5] n=6 rx_capped=4548 [4069-4865] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c1s-400 IOS s42 r1 cli=rp-w-1:0.243,rp-w-0:0.222,rp-w-5:0.222,rp-w-4:0.212 srv=rp-w-1:0.323,rp-w-4:0.309,rp-w-2:0.306,rp-w-0:0.289
+    THREADS c1s-400 IOS s7 r1 cli=rp-w-0:0.235,rp-w-5:0.235,rp-w-4:0.227,rp-w-3:0.220 srv=rp-w-2:0.376,rp-w-5:0.297,rp-w-1:0.290,rp-w-3:0.280
+    THREADS c1s-400 IOS s42 r2 cli=rp-w-4:0.243,rp-w-3:0.240,rp-w-5:0.238,rp-w-0:0.230 srv=rp-w-5:0.321,rp-w-1:0.318,rp-w-4:0.300,rp-w-0:0.290
+    THREADS c1s-400 IOS s7 r2 cli=rp-w-5:0.243,rp-w-4:0.228,rp-w-3:0.218,rp-w-1:0.216 srv=rp-w-4:0.357,rp-w-1:0.330,rp-w-2:0.294,rp-w-3:0.289
+    THREADS c1s-400 IOS s42 r3 cli=rp-w-3:0.247,rp-w-2:0.239,rp-w-4:0.237,rp-w-0:0.224 srv=rp-w-5:0.331,rp-w-0:0.323,rp-w-1:0.315,rp-w-2:0.310
+    THREADS c1s-400 IOS s7 r3 cli=rp-w-1:0.230,rp-w-0:0.214,rp-w-3:0.214,rp-w-2:0.209 srv=rp-w-2:0.307,rp-w-4:0.305,rp-w-3:0.303,rp-w-5:0.296
+  REPORT c1s-400 IOO acks/dgram=0.999 [0.997-1.000] n=6 busy=35.8 [33.0-38.0] n=6 gso_p0=7.49 [7.44-7.57] n=6
+  REPORT c1s-400 IOO cli cores=1.163 [1.124-1.231] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.591 [0.573-0.619] n=6 parks/s main=4964 [4586-5787] n=6 io=7162 [6736-7587] n=6 lag p99 main=2020 [1237-2667] n=6 io=2985 [2359-4479] n=6
+  REPORT c1s-400 IOO cli lockwait asleep_frac max=0.0115 [0.0106-0.0119] n=6 sum=0.0115 [0.0106-0.0119] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=35.7 [32.3-38.6] n=6 rx/batch=24.7 [22.1-25.9] n=6 rx_capped=7770 [6365-8265] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c1s-400 IOO srv cores=1.560 [1.519-1.598] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.683 [0.651-0.721] n=6 parks/s main=2922 [2316-4328] n=6 io=8864 [8353-9864] n=6 lag p99 main=2040 [1530-2824] n=6 io=2565 [2205-3101] n=6
+  REPORT c1s-400 IOO srv lockwait asleep_frac max=0.0258 [0.0233-0.0277] n=6 sum=0.0258 [0.0233-0.0277] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=12.7 [12.0-13.0] n=6 rx_capped=1200 [800-1353] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c1s-400 IOO s42 r1 cli=rp-io-0:0.582,rp-w-2:0.163,rp-w-0:0.146,rp-w-3:0.139 srv=rp-io-0:0.680,rp-w-2:0.273,rp-w-4:0.253,rp-w-5:0.183
+    THREADS c1s-400 IOO s7 r1 cli=rp-io-0:0.588,rp-w-0:0.158,rp-w-5:0.141,rp-w-4:0.136 srv=rp-io-0:0.682,rp-w-5:0.304,rp-w-1:0.209,rp-w-0:0.197
+    THREADS c1s-400 IOO s42 r2 cli=rp-io-0:0.616,rp-w-1:0.150,rp-w-0:0.148,rp-w-2:0.145 srv=rp-io-0:0.698,rp-w-0:0.252,rp-w-3:0.242,rp-w-2:0.217
+    THREADS c1s-400 IOO s7 r2 cli=rp-io-0:0.573,rp-w-1:0.144,rp-w-5:0.137,rp-w-0:0.135 srv=rp-io-0:0.651,rp-w-1:0.325,rp-w-3:0.314,rp-w-4:0.144
+    THREADS c1s-400 IOO s42 r3 cli=rp-io-0:0.619,rp-w-4:0.173,rp-w-5:0.150,rp-w-1:0.147 srv=rp-io-0:0.721,rp-w-4:0.333,rp-w-5:0.191,rp-w-0:0.176
+    THREADS c1s-400 IOO s7 r3 cli=rp-io-0:0.594,rp-w-5:0.172,rp-w-0:0.140,rp-w-2:0.140 srv=rp-io-0:0.685,rp-w-2:0.378,rp-w-4:0.317,rp-w-3:0.121
+[c1d-400]
+  FEED c1d-400 IOS p0 plc/truth IOS=1.021 MAIN=0.976 band=[0.751,1.269] -> SAME
+  FEED c1d-400 IOS p1 plc/truth IOS=1.005 MAIN=1.009 band=[0.777,1.312] -> SAME
+  CLAUSE c1d-400 IOS goodput: BETTER IOS=729.5 [617.5-745] MAIN=436.7 [418.7-494] (+67.0%, rel=0.056)
+  CLAUSE c1d-400 IOS cpu_cli/GB: BETTER IOS=17.16 [16.88-19.42] MAIN=27.19 [22.82-27.88] (-36.9%, rel=0.065)
+  CLAUSE c1d-400 IOS cpu_srv/GB: BETTER IOS=21.25 [20.67-24.12] MAIN=29.31 [24.25-30.4] (-27.5%, rel=0.065)
+  CLAUSE c1d-400 IOS lag_p99_cli: WITHIN IOS=1988 [1122-3031] MAIN=2109 [1621-2266] (-5.7%, rel=0.153)
+  CLAUSE c1d-400 IOS lag_p99_srv: WITHIN IOS=1676 [1049-2568] MAIN=1848 [975-2373] (-9.3%, rel=0.378)
+  CLAUSE c1d-400 IOS rtp_floor_p0: TREND-WORSE IOS=2422 [2293-2558] MAIN=2228 [2200-2323] (+8.7%, rel=0.050)
+  CLAUSE c1d-400 IOS rtp_floor_p1: TREND-WORSE IOS=2401 [2256-2522] MAIN=2227 [2203-2275] (+7.8%, rel=0.050)
+  CELL c1d-400 IOS n=6 MAIN n=6 dnf MAIN=0.00 IOS=0.00 worse=- notes=goodput:BETTER,cpu_cli/GB:BETTER,cpu_srv/GB:BETTER,rtp_floor_p0:TREND-WORSE,rtp_floor_p1:TREND-WORSE => PASS
+  FEED c1d-400 IOO p0 plc/truth IOO=1.006 MAIN=0.976 band=[0.751,1.269] -> SAME
+  FEED c1d-400 IOO p1 plc/truth IOO=0.975 MAIN=1.009 band=[0.777,1.312] -> SAME
+  CLAUSE c1d-400 IOO goodput: BETTER IOO=711.5 [672.5-723.6] MAIN=436.7 [418.7-494] (+62.9%, rel=0.056)
+  CLAUSE c1d-400 IOO cpu_cli/GB: BETTER IOO=16.95 [16.35-17.35] MAIN=27.19 [22.82-27.88] (-37.7%, rel=0.065)
+  CLAUSE c1d-400 IOO cpu_srv/GB: BETTER IOO=20.52 [19.75-20.77] MAIN=29.31 [24.25-30.4] (-30.0%, rel=0.065)
+  CLAUSE c1d-400 IOO lag_p99_cli: WORSE IOO=2574 [2421-3223] MAIN=2109 [1621-2266] (+22.0%, rel=0.153)
+  CLAUSE c1d-400 IOO lag_p99_srv: TREND-WORSE IOO=2568 [1770-3171] MAIN=1848 [975-2373] (+39.0%, rel=0.378)
+  CLAUSE c1d-400 IOO rtp_floor_p0: WORSE IOO=2493 [2401-2671] MAIN=2228 [2200-2323] (+11.9%, rel=0.050)
+  CLAUSE c1d-400 IOO rtp_floor_p1: WORSE IOO=2556 [2357-2622] MAIN=2227 [2203-2275] (+14.8%, rel=0.050)
+  CELL c1d-400 IOO n=6 MAIN n=6 dnf MAIN=0.00 IOO=0.00 worse=lag_p99_cli+rtp_floor_p0+rtp_floor_p1 notes=goodput:BETTER,cpu_cli/GB:BETTER,cpu_srv/GB:BETTER,lag_p99_srv:TREND-WORSE => FAIL
+  FEED c1d-400 D9 p0 plc/truth D9=0.976 MAIN=0.976 band=[0.751,1.269] -> SAME
+  FEED c1d-400 D9 p1 plc/truth D9=1.020 MAIN=1.009 band=[0.777,1.312] -> SAME
+  CLAUSE c1d-400 D9 goodput: WORSE D9=399.3 [375.6-413.8] MAIN=436.7 [418.7-494] (-8.6%, rel=0.056)
+  CLAUSE c1d-400 D9 cpu_cli/GB: WORSE D9=30.35 [28.97-31.1] MAIN=27.19 [22.82-27.88] (+11.6%, rel=0.065)
+  CLAUSE c1d-400 D9 cpu_srv/GB: WORSE D9=33.07 [31.27-33.75] MAIN=29.31 [24.25-30.4] (+12.8%, rel=0.065)
+  CLAUSE c1d-400 D9 lag_p99_cli: TREND-BETTER D9=1762 [1163-2110] MAIN=2109 [1621-2266] (-16.5%, rel=0.153)
+  CLAUSE c1d-400 D9 lag_p99_srv: WITHIN D9=1932 [1327-2229] MAIN=1848 [975-2373] (+4.6%, rel=0.378)
+  CLAUSE c1d-400 D9 rtp_floor_p0: WITHIN D9=2264 [2188-2302] MAIN=2228 [2200-2323] (+1.6%, rel=0.050)
+  CLAUSE c1d-400 D9 rtp_floor_p1: WITHIN D9=2242 [2203-2276] MAIN=2227 [2203-2275] (+0.7%, rel=0.050)
+  CELL c1d-400 D9 n=6 MAIN n=6 dnf MAIN=0.00 D9=0.00 worse=goodput+cpu_cli/GB+cpu_srv/GB notes=lag_p99_cli:TREND-BETTER => FAIL
+  REPORT c1d-400 MAIN acks/dgram=0.999 [0.998-1.000] n=6 busy=96.2 [89.0-99.0] n=6 gso_p0=5.04 [4.63-5.36] n=6 gso_p1=4.88 [4.27-6.73] n=6
+  REPORT c1d-400 MAIN cli cores=1.476 [1.397-1.484] n=6 main_thr=0.122 [0.119-0.125] n=6 thr_r1=0.259 [0.250-0.287] n=6 parks/s main=23669 [19479-25212] n=6 io=- lag p99 main=2109 [1621-2266] n=6 io=-
+  REPORT c1d-400 MAIN srv cores=1.586 [1.489-1.602] n=6 main_thr=0.131 [0.114-0.132] n=6 thr_r1=0.292 [0.273-0.320] n=6 parks/s main=20152 [16880-22196] n=6 io=- lag p99 main=1848 [975-2373] n=6 io=-
+    THREADS c1d-400 MAIN s42 r1 cli=rp-w-1:0.287,rp-w-3:0.246,rp-w-0:0.217,rp-w-5:0.215 srv=rp-w-0:0.320,rp-w-4:0.276,rp-w-3:0.267,rp-w-5:0.208
+    THREADS c1d-400 MAIN s7 r1 cli=rp-w-3:0.268,rp-w-1:0.230,rp-w-0:0.217,rp-w-5:0.216 srv=rp-w-1:0.292,rp-w-0:0.270,rp-w-2:0.251,rp-w-3:0.230
+    THREADS c1d-400 MAIN s42 r2 cli=rp-w-3:0.250,rp-w-4:0.224,rp-w-1:0.218,rp-w-5:0.204 srv=rp-w-0:0.292,rp-w-5:0.255,rp-w-1:0.232,rp-w-4:0.218
+    THREADS c1d-400 MAIN s7 r2 cli=rp-w-0:0.252,rp-w-4:0.252,rp-w-3:0.239,rp-w-2:0.219 srv=rp-w-4:0.273,rp-w-1:0.251,rp-w-2:0.250,rp-w-0:0.240
+    THREADS c1d-400 MAIN s42 r3 cli=rp-w-3:0.254,rp-w-0:0.250,rp-w-1:0.235,rp-w-2:0.218 srv=rp-w-2:0.298,rp-w-5:0.261,rp-w-4:0.244,rp-w-3:0.234
+    THREADS c1d-400 MAIN s7 r3 cli=rp-w-4:0.263,rp-w-2:0.236,rp-w-0:0.227,rp-w-5:0.227 srv=rp-w-0:0.286,rp-w-4:0.268,rp-w-1:0.250,rp-w-5:0.245
+  REPORT c1d-400 D9 acks/dgram=0.997 [0.996-0.998] n=6 busy=78.2 [76.0-80.0] n=6 gso_p0=3.46 [3.20-3.96] n=6 gso_p1=3.42 [3.09-3.52] n=6
+  REPORT c1d-400 D9 cli cores=1.499 [1.451-1.522] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.257 [0.253-0.263] n=6 parks/s main=27915 [24366-28764] n=6 io=- lag p99 main=1762 [1163-2110] n=6 io=-
+  REPORT c1d-400 D9 srv cores=1.639 [1.580-1.647] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.333 [0.316-0.468] n=6 parks/s main=28888 [24910-30290] n=6 io=- lag p99 main=1932 [1327-2229] n=6 io=-
+    THREADS c1d-400 D9 s42 r1 cli=rp-w-3:0.259,rp-w-1:0.257,rp-w-0:0.254,rp-w-4:0.247 srv=rp-w-0:0.333,rp-w-1:0.321,rp-w-2:0.306,rp-w-5:0.244
+    THREADS c1d-400 D9 s7 r1 cli=rp-w-3:0.263,rp-w-4:0.263,rp-w-0:0.252,rp-w-1:0.251 srv=rp-w-2:0.316,rp-w-4:0.301,rp-w-0:0.289,rp-w-3:0.287
+    THREADS c1d-400 D9 s42 r2 cli=rp-w-3:0.255,rp-w-1:0.250,rp-w-4:0.250,rp-w-0:0.247 srv=rp-w-2:0.428,rp-w-3:0.281,rp-w-1:0.270,rp-w-0:0.233
+    THREADS c1d-400 D9 s7 r2 cli=rp-w-0:0.261,rp-w-1:0.254,rp-w-4:0.254,rp-w-3:0.253 srv=rp-w-3:0.468,rp-w-1:0.350,rp-w-2:0.215,rp-w-0:0.206
+    THREADS c1d-400 D9 s42 r3 cli=rp-w-3:0.254,rp-w-2:0.252,rp-w-0:0.249,rp-w-1:0.235 srv=rp-w-1:0.330,rp-w-2:0.274,rp-w-0:0.271,rp-w-5:0.258
+    THREADS c1d-400 D9 s7 r3 cli=rp-w-5:0.253,rp-w-4:0.252,rp-w-3:0.251,rp-w-0:0.247 srv=rp-w-0:0.333,rp-w-1:0.292,rp-w-5:0.292,rp-w-2:0.256
+  REPORT c1d-400 IOS acks/dgram=0.995 [0.992-1.000] n=6 busy=59.5 [50.5-62.0] n=6 gso_p0=7.08 [6.79-7.92] n=6 gso_p1=7.15 [6.94-7.31] n=6
+  REPORT c1d-400 IOS cli cores=1.550 [1.449-1.560] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.267 [0.253-0.285] n=6 parks/s main=15788 [14833-17460] n=6 io=- lag p99 main=1988 [1122-3031] n=6 io=-
+  REPORT c1d-400 IOS cli lockwait asleep_frac max=0.0637 [0.0575-0.1069] n=6 sum=0.1079 [0.0932-0.1381] n=6 drv_off_frac=0.3393 [0.3221-0.4609] n=6 tx/batch=24.2 [21.5-26.7] n=6 rx/batch=21.1 [20.5-22.0] n=6 rx_capped=5995 [5549-6726] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c1d-400 IOS srv cores=1.917 [1.803-1.946] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.398 [0.358-0.479] n=6 parks/s main=18382 [17187-19799] n=6 io=- lag p99 main=1676 [1049-2568] n=6 io=-
+  REPORT c1d-400 IOS srv lockwait asleep_frac max=0.0840 [0.0720-0.1099] n=6 sum=0.1387 [0.1217-0.1547] n=6 drv_off_frac=0.3737 [0.3580-0.4080] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=17.2 [16.6-18.8] n=6 rx_capped=4262 [3900-5401] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c1d-400 IOS s42 r1 cli=rp-w-5:0.276,rp-w-0:0.265,rp-w-2:0.260,rp-w-4:0.256 srv=rp-w-0:0.419,rp-w-3:0.346,rp-w-1:0.323,rp-w-5:0.306
+    THREADS c1d-400 IOS s7 r1 cli=rp-w-0:0.285,rp-w-5:0.265,rp-w-3:0.257,rp-w-1:0.255 srv=rp-w-1:0.361,rp-w-0:0.343,rp-w-3:0.317,rp-w-4:0.267
+    THREADS c1d-400 IOS s42 r2 cli=rp-w-1:0.253,rp-w-0:0.249,rp-w-4:0.243,rp-w-2:0.239 srv=rp-w-5:0.385,rp-w-3:0.356,rp-w-2:0.321,rp-w-1:0.271
+    THREADS c1d-400 IOS s7 r2 cli=rp-w-1:0.263,rp-w-3:0.263,rp-w-0:0.260,rp-w-4:0.260 srv=rp-w-2:0.358,rp-w-3:0.356,rp-w-0:0.312,rp-w-5:0.307
+    THREADS c1d-400 IOS s42 r3 cli=rp-w-4:0.269,rp-w-0:0.266,rp-w-5:0.266,rp-w-2:0.255 srv=rp-w-2:0.479,rp-w-5:0.373,rp-w-1:0.287,rp-w-3:0.285
+    THREADS c1d-400 IOS s7 r3 cli=rp-w-3:0.265,rp-w-5:0.263,rp-w-1:0.261,rp-w-2:0.261 srv=rp-w-0:0.412,rp-w-1:0.398,rp-w-5:0.382,rp-w-3:0.273
+  REPORT c1d-400 IOO acks/dgram=0.992 [0.988-0.995] n=6 busy=54.0 [44.0-56.0] n=6 gso_p0=6.45 [6.39-6.59] n=6 gso_p1=6.45 [6.32-7.15] n=6
+  REPORT c1d-400 IOO cli cores=1.500 [1.358-1.521] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.405 [0.387-0.454] n=6 parks/s main=5197 [4458-5516] n=6 io=11372 [8370-11723] n=6 lag p99 main=2574 [2421-3223] n=6 io=3516 [2805-4502] n=6
+  REPORT c1d-400 IOO cli lockwait asleep_frac max=0.0094 [0.0087-0.0097] n=6 sum=0.0168 [0.0143-0.0182] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=20.8 [20.1-28.3] n=6 rx/batch=18.2 [17.7-21.7] n=6 rx_capped=3933 [3778-6835] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c1d-400 IOO srv cores=1.803 [1.734-1.827] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.470 [0.425-0.507] n=6 parks/s main=832 [787-996] n=6 io=12118 [9288-12511] n=6 lag p99 main=2568 [1770-3171] n=6 io=3366 [3191-3888] n=6
+  REPORT c1d-400 IOO srv lockwait asleep_frac max=0.0202 [0.0171-0.0223] n=6 sum=0.0332 [0.0289-0.0377] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=13.0 [12.3-14.2] n=6 rx_capped=2327 [1497-3660] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c1d-400 IOO s42 r1 cli=rp-io-1:0.421,rp-io-0:0.317,rp-w-5:0.224,rp-w-2:0.190 srv=rp-io-1:0.464,rp-w-5:0.376,rp-io-0:0.346,rp-w-0:0.274
+    THREADS c1d-400 IOO s7 r1 cli=rp-io-1:0.398,rp-io-0:0.365,rp-w-4:0.196,rp-w-0:0.187 srv=rp-w-3:0.468,rp-io-1:0.435,rp-io-0:0.394,rp-w-4:0.334
+    THREADS c1d-400 IOO s42 r2 cli=rp-io-0:0.387,rp-io-1:0.349,rp-w-4:0.209,rp-w-0:0.185 srv=rp-w-1:0.471,rp-io-0:0.433,rp-io-1:0.379,rp-w-0:0.232
+    THREADS c1d-400 IOO s7 r2 cli=rp-io-1:0.454,rp-io-0:0.216,rp-w-3:0.172,rp-w-5:0.170 srv=rp-io-1:0.507,rp-w-1:0.330,rp-w-5:0.263,rp-io-0:0.231
+    THREADS c1d-400 IOO s42 r3 cli=rp-io-1:0.398,rp-io-0:0.378,rp-w-0:0.187,rp-w-5:0.187 srv=rp-io-1:0.425,rp-io-0:0.403,rp-w-3:0.336,rp-w-4:0.336
+    THREADS c1d-400 IOO s7 r3 cli=rp-io-0:0.413,rp-io-1:0.335,rp-w-3:0.191,rp-w-5:0.189 srv=rp-w-4:0.494,rp-io-0:0.449,rp-io-1:0.358,rp-w-2:0.316
+[c2-100]
+  FEED c2-100 IOS p0 plc/truth IOS=0.999 MAIN=1.007 band=[0.774,1.309] -> SAME
+  CLAUSE c2-100 IOS goodput: WITHIN IOS=89.83 [88.05-90.1] MAIN=88.79 [87.16-89.53] (+1.2%, rel=0.014)
+  CLAUSE c2-100 IOS cpu_cli/GB: BETTER IOS=29.35 [28.8-30.1] MAIN=33.7 [32.5-35.4] (-12.9%, rel=0.063)
+  CLAUSE c2-100 IOS cpu_srv/GB: BETTER IOS=33.1 [31.5-33.4] MAIN=46.8 [44.9-47.8] (-29.3%, rel=0.063)
+  CLAUSE c2-100 IOS lag_p99_cli: WITHIN IOS=1962 [1175-3082] MAIN=1630 [1110-2137] (+20.3%, rel=0.315)
+  CLAUSE c2-100 IOS lag_p99_srv: WITHIN IOS=1479 [879-1968] MAIN=1886 [1652-2660] (-21.6%, rel=0.267)
+  CLAUSE c2-100 IOS rtp_floor_p0: WITHIN IOS=1.19e+04 [5460-1.308e+04] MAIN=1.122e+04 [8749-1.43e+04] (+6.1%, rel=0.247)
+  CELL c2-100 IOS n=6 MAIN n=6 dnf MAIN=0.00 IOS=0.00 worse=- notes=cpu_cli/GB:BETTER,cpu_srv/GB:BETTER => PASS
+  FEED c2-100 IOO p0 plc/truth IOO=0.997 MAIN=1.007 band=[0.774,1.309] -> SAME
+  CLAUSE c2-100 IOO goodput: WITHIN IOO=89.97 [89.3-90.15] MAIN=88.79 [87.16-89.53] (+1.3%, rel=0.014)
+  CLAUSE c2-100 IOO cpu_cli/GB: BETTER IOO=27.85 [27.1-28.7] MAIN=33.7 [32.5-35.4] (-17.4%, rel=0.063)
+  CLAUSE c2-100 IOO cpu_srv/GB: BETTER IOO=32.2 [31.6-33.2] MAIN=46.8 [44.9-47.8] (-31.2%, rel=0.063)
+  CLAUSE c2-100 IOO lag_p99_cli: WITHIN IOO=1482 [1177-2596] MAIN=1630 [1110-2137] (-9.1%, rel=0.315)
+  CLAUSE c2-100 IOO lag_p99_srv: WITHIN IOO=2062 [1136-2521] MAIN=1886 [1652-2660] (+9.3%, rel=0.267)
+  CLAUSE c2-100 IOO rtp_floor_p0: WITHIN IOO=1.163e+04 [8712-1.352e+04] MAIN=1.122e+04 [8749-1.43e+04] (+3.6%, rel=0.247)
+  CELL c2-100 IOO n=6 MAIN n=6 dnf MAIN=0.00 IOO=0.00 worse=- notes=cpu_cli/GB:BETTER,cpu_srv/GB:BETTER => PASS
+  FEED c2-100 D9 p0 plc/truth D9=1.013 MAIN=1.007 band=[0.774,1.309] -> SAME
+  CLAUSE c2-100 D9 goodput: WITHIN D9=89.3 [87.35-89.51] MAIN=88.79 [87.16-89.53] (+0.6%, rel=0.014)
+  CLAUSE c2-100 D9 cpu_cli/GB: WORSE D9=37.2 [35.8-39.4] MAIN=33.7 [32.5-35.4] (+10.4%, rel=0.063)
+  CLAUSE c2-100 D9 cpu_srv/GB: WITHIN D9=47.55 [46.2-51.3] MAIN=46.8 [44.9-47.8] (+1.6%, rel=0.063)
+  CLAUSE c2-100 D9 lag_p99_cli: WITHIN D9=1856 [1164-2122] MAIN=1630 [1110-2137] (+13.8%, rel=0.315)
+  CLAUSE c2-100 D9 lag_p99_srv: WITHIN D9=1734 [900-2211] MAIN=1886 [1652-2660] (-8.1%, rel=0.267)
+  CLAUSE c2-100 D9 rtp_floor_p0: WITHIN D9=1.27e+04 [9694-1.376e+04] MAIN=1.122e+04 [8749-1.43e+04] (+13.2%, rel=0.247)
+  CELL c2-100 D9 n=6 MAIN n=6 dnf MAIN=0.00 D9=0.00 worse=cpu_cli/GB notes=- => FAIL
+  REPORT c2-100 MAIN acks/dgram=1.000 [0.999-1.000] n=6 busy=12.0 [12.0-13.0] n=6 gso_p0=5.09 [4.48-5.81] n=6
+  REPORT c2-100 MAIN cli cores=0.363 [0.356-0.382] n=6 main_thr=0.022 [0.022-0.022] n=6 thr_r1=0.082 [0.080-0.090] n=6 parks/s main=6134 [5715-6609] n=6 io=- lag p99 main=1630 [1110-2137] n=6 io=-
+  REPORT c2-100 MAIN srv cores=0.512 [0.495-0.525] n=6 main_thr=0.017 [0.015-0.024] n=6 thr_r1=0.121 [0.115-0.124] n=6 parks/s main=12402 [12204-12919] n=6 io=- lag p99 main=1886 [1652-2660] n=6 io=-
+    THREADS c2-100 MAIN s42 r1 cli=rp-w-4:0.081,rp-w-1:0.073,rp-w-2:0.067,rp-w-0:0.065 srv=rp-w-3:0.119,rp-w-1:0.111,rp-w-0:0.101,rp-w-4:0.101
+    THREADS c2-100 MAIN s7 r1 cli=rp-w-4:0.090,rp-w-3:0.083,rp-w-1:0.075,rp-w-0:0.058 srv=rp-w-1:0.123,rp-w-0:0.118,rp-w-3:0.093,rp-w-2:0.089
+    THREADS c2-100 MAIN s42 r2 cli=rp-w-5:0.082,rp-w-0:0.081,rp-w-1:0.081,rp-w-3:0.079 srv=rp-w-2:0.115,rp-w-4:0.109,rp-w-3:0.094,rp-w-0:0.088
+    THREADS c2-100 MAIN s7 r2 cli=rp-w-1:0.086,rp-w-4:0.085,rp-w-3:0.073,rp-w-0:0.066 srv=rp-w-3:0.123,rp-w-4:0.111,rp-w-5:0.106,rp-w-1:0.084
+    THREADS c2-100 MAIN s42 r3 cli=rp-w-2:0.081,rp-w-0:0.074,rp-w-4:0.070,rp-w-5:0.058 srv=rp-w-1:0.124,rp-w-3:0.111,rp-w-0:0.095,rp-w-4:0.085
+    THREADS c2-100 MAIN s7 r3 cli=rp-w-3:0.080,rp-w-1:0.076,rp-w-5:0.067,rp-w-2:0.065 srv=rp-w-0:0.117,rp-w-3:0.113,rp-w-4:0.112,rp-w-5:0.110
+  REPORT c2-100 D9 acks/dgram=1.000 [0.998-1.000] n=6 busy=16.0 [15.5-17.0] n=6 gso_p0=4.36 [4.25-4.41] n=6
+  REPORT c2-100 D9 cli cores=0.410 [0.390-0.432] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.092 [0.086-0.098] n=6 parks/s main=8519 [8429-8674] n=6 io=- lag p99 main=1856 [1164-2122] n=6 io=-
+  REPORT c2-100 D9 srv cores=0.524 [0.510-0.567] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.120 [0.113-0.122] n=6 parks/s main=13360 [13247-13660] n=6 io=- lag p99 main=1734 [900-2211] n=6 io=-
+    THREADS c2-100 D9 s42 r1 cli=rp-w-0:0.093,rp-w-2:0.087,rp-w-5:0.086,rp-w-1:0.070 srv=rp-w-0:0.122,rp-w-1:0.120,rp-w-4:0.112,rp-w-5:0.101
+    THREADS c2-100 D9 s7 r1 cli=rp-w-2:0.092,rp-w-5:0.079,rp-w-1:0.078,rp-w-0:0.072 srv=rp-w-0:0.113,rp-w-5:0.110,rp-w-4:0.108,rp-w-2:0.095
+    THREADS c2-100 D9 s42 r2 cli=rp-w-0:0.086,rp-w-5:0.086,rp-w-3:0.084,rp-w-2:0.080 srv=rp-w-3:0.117,rp-w-4:0.112,rp-w-1:0.111,rp-w-5:0.102
+    THREADS c2-100 D9 s7 r2 cli=rp-w-2:0.092,rp-w-5:0.091,rp-w-1:0.076,rp-w-3:0.073 srv=rp-w-2:0.121,rp-w-1:0.109,rp-w-5:0.109,rp-w-3:0.098
+    THREADS c2-100 D9 s42 r3 cli=rp-w-2:0.098,rp-w-0:0.090,rp-w-3:0.079,rp-w-4:0.076 srv=rp-w-1:0.121,rp-w-2:0.111,rp-w-0:0.108,rp-w-5:0.098
+    THREADS c2-100 D9 s7 r3 cli=rp-w-4:0.093,rp-w-1:0.089,rp-w-0:0.077,rp-w-2:0.077 srv=rp-w-5:0.119,rp-w-1:0.118,rp-w-2:0.099,rp-w-3:0.092
+  REPORT c2-100 IOS acks/dgram=1.000 [0.998-1.000] n=6 busy=10.0 [9.0-10.0] n=6 gso_p0=5.86 [5.84-6.12] n=6
+  REPORT c2-100 IOS cli cores=0.323 [0.318-0.331] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.074 [0.073-0.079] n=6 parks/s main=5802 [5272-5886] n=6 io=- lag p99 main=1962 [1175-3082] n=6 io=-
+  REPORT c2-100 IOS cli lockwait asleep_frac max=0.0052 [0.0049-0.0063] n=6 sum=0.0052 [0.0049-0.0063] n=6 drv_off_frac=0.4189 [0.3702-0.5995] n=6 tx/batch=18.9 [17.1-19.1] n=6 rx/batch=10.3 [10.2-10.5] n=6 rx_capped=70 [67-83] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c2-100 IOS srv cores=0.362 [0.347-0.367] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.084 [0.079-0.086] n=6 parks/s main=7048 [6786-7515] n=6 io=- lag p99 main=1479 [879-1968] n=6 io=-
+  REPORT c2-100 IOS srv lockwait asleep_frac max=0.0042 [0.0038-0.0047] n=6 sum=0.0042 [0.0038-0.0047] n=6 drv_off_frac=0.4388 [0.4220-0.4633] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=7.4 [6.5-7.6] n=6 rx_capped=8 [2-13] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c2-100 IOS s42 r1 cli=rp-w-4:0.079,rp-w-2:0.067,rp-w-1:0.063,rp-w-3:0.060 srv=rp-w-0:0.082,rp-w-4:0.082,rp-w-2:0.081,rp-w-1:0.064
+    THREADS c2-100 IOS s7 r1 cli=rp-w-5:0.074,rp-w-4:0.073,rp-w-1:0.063,rp-w-0:0.061 srv=rp-w-1:0.085,rp-w-3:0.079,rp-w-4:0.076,rp-w-0:0.065
+    THREADS c2-100 IOS s42 r2 cli=rp-w-0:0.079,rp-w-4:0.071,rp-w-1:0.061,rp-w-5:0.056 srv=rp-w-4:0.082,rp-w-1:0.074,rp-w-0:0.073,rp-w-2:0.071
+    THREADS c2-100 IOS s7 r2 cli=rp-w-3:0.074,rp-w-5:0.066,rp-w-0:0.065,rp-w-4:0.059 srv=rp-w-1:0.085,rp-w-0:0.072,rp-w-5:0.072,rp-w-2:0.059
+    THREADS c2-100 IOS s42 r3 cli=rp-w-1:0.073,rp-w-3:0.072,rp-w-0:0.068,rp-w-5:0.058 srv=rp-w-5:0.079,rp-w-0:0.077,rp-w-1:0.073,rp-w-3:0.065
+    THREADS c2-100 IOS s7 r3 cli=rp-w-4:0.073,rp-w-5:0.068,rp-w-0:0.067,rp-w-1:0.063 srv=rp-w-2:0.086,rp-w-5:0.072,rp-w-0:0.062,rp-w-4:0.050
+  REPORT c2-100 IOO acks/dgram=0.999 [0.999-1.000] n=6 busy=10.0 [10.0-10.0] n=6 gso_p0=5.99 [5.90-6.03] n=6
+  REPORT c2-100 IOO cli cores=0.302 [0.296-0.313] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.134 [0.131-0.138] n=6 parks/s main=2381 [2364-2398] n=6 io=3267 [3222-3305] n=6 lag p99 main=1482 [1177-2596] n=6 io=2072 [2023-2522] n=6
+  REPORT c2-100 IOO cli lockwait asleep_frac max=0.0016 [0.0015-0.0019] n=6 sum=0.0016 [0.0015-0.0019] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=19.6 [18.9-19.8] n=6 rx/batch=9.4 [9.2-9.6] n=6 rx_capped=34 [27-42] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c2-100 IOO srv cores=0.353 [0.349-0.367] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.185 [0.183-0.191] n=6 parks/s main=2943 [2889-2961] n=6 io=5882 [5789-5940] n=6 lag p99 main=2062 [1136-2521] n=6 io=2068 [2001-2565] n=6
+  REPORT c2-100 IOO srv lockwait asleep_frac max=0.0027 [0.0026-0.0029] n=6 sum=0.0027 [0.0026-0.0029] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=6.1 [6.0-6.1] n=6 rx_capped=4 [0-9] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c2-100 IOO s42 r1 cli=rp-io-0:0.131,rp-w-1:0.054,rp-w-2:0.039,rp-w-4:0.036 srv=rp-io-0:0.183,rp-w-4:0.055,rp-w-5:0.054,rp-w-3:0.053
+    THREADS c2-100 IOO s7 r1 cli=rp-io-0:0.134,rp-w-0:0.056,rp-w-5:0.055,rp-w-2:0.035 srv=rp-io-0:0.186,rp-w-0:0.056,rp-w-3:0.056,rp-w-4:0.054
+    THREADS c2-100 IOO s42 r2 cli=rp-io-0:0.138,rp-w-0:0.057,rp-w-5:0.054,rp-w-2:0.034 srv=rp-io-0:0.191,rp-w-2:0.059,rp-w-1:0.056,rp-w-5:0.042
+    THREADS c2-100 IOO s7 r2 cli=rp-io-0:0.133,rp-w-3:0.049,rp-w-0:0.047,rp-w-4:0.034 srv=rp-io-0:0.185,rp-w-1:0.056,rp-w-3:0.052,rp-w-4:0.042
+    THREADS c2-100 IOO s42 r3 cli=rp-io-0:0.137,rp-w-0:0.047,rp-w-2:0.047,rp-w-3:0.039 srv=rp-io-0:0.186,rp-w-4:0.058,rp-w-3:0.055,rp-w-1:0.054
+    THREADS c2-100 IOO s7 r3 cli=rp-io-0:0.131,rp-w-2:0.053,rp-w-0:0.052,rp-w-5:0.038 srv=rp-io-0:0.184,rp-w-3:0.056,rp-w-1:0.053,rp-w-5:0.051
+[c8-100]
+  FEED c8-100 IOS p0 plc/truth IOS=1.000 MAIN=1.004 band=[0.772,1.306] -> SAME
+  FEED c8-100 IOS p1 plc/truth IOS=1.002 MAIN=1.002 band=[0.771,1.302] -> SAME
+  CLAUSE c8-100 IOS goodput: TREND-WORSE IOS=97.47 [90.13-102.9] MAIN=101.9 [97.28-104.9] (-4.4%, rel=0.040)
+  CLAUSE c8-100 IOS cpu_cli/GB: TREND-BETTER IOS=44.4 [36.8-48.5] MAIN=53.2 [48.2-57.1] (-16.5%, rel=0.116)
+  CLAUSE c8-100 IOS cpu_srv/GB: BETTER IOS=41.05 [39.3-44.5] MAIN=58.65 [54.1-61.6] (-30.0%, rel=0.116)
+  CLAUSE c8-100 IOS lag_p99_cli: WITHIN IOS=1482 [1121-2250] MAIN=1572 [1176-2031] (-5.8%, rel=0.272)
+  CLAUSE c8-100 IOS lag_p99_srv: WITHIN IOS=1746 [1109-2847] MAIN=1866 [1615-2985] (-6.4%, rel=0.367)
+  CLAUSE c8-100 IOS rtp_floor_p0: WITHIN IOS=8958 [7951-1.077e+04] MAIN=9864 [7148-1.095e+04] (-9.2%, rel=0.193)
+  CLAUSE c8-100 IOS rtp_floor_p1: WITHIN IOS=4.234e+04 [3.911e+04-4.524e+04] MAIN=4.017e+04 [3.569e+04-4.199e+04] (+5.4%, rel=0.078)
+  CELL c8-100 IOS n=6 MAIN n=6 dnf MAIN=0.00 IOS=0.00 worse=- notes=goodput:TREND-WORSE,cpu_cli/GB:TREND-BETTER,cpu_srv/GB:BETTER => PASS
+  FEED c8-100 IOO p0 plc/truth IOO=1.002 MAIN=1.004 band=[0.772,1.306] -> SAME
+  FEED c8-100 IOO p1 plc/truth IOO=0.998 MAIN=1.002 band=[0.771,1.302] -> SAME
+  CLAUSE c8-100 IOO goodput: WITHIN IOO=98.01 [91.45-105.2] MAIN=101.9 [97.28-104.9] (-3.8%, rel=0.040)
+  CLAUSE c8-100 IOO cpu_cli/GB: TREND-BETTER IOO=44.9 [36.7-48.7] MAIN=53.2 [48.2-57.1] (-15.6%, rel=0.116)
+  CLAUSE c8-100 IOO cpu_srv/GB: BETTER IOO=38.65 [35-41.3] MAIN=58.65 [54.1-61.6] (-34.1%, rel=0.116)
+  CLAUSE c8-100 IOO lag_p99_cli: WITHIN IOO=1519 [1203-2055] MAIN=1572 [1176-2031] (-3.4%, rel=0.272)
+  CLAUSE c8-100 IOO lag_p99_srv: WITHIN IOO=1658 [1176-2066] MAIN=1866 [1615-2985] (-11.1%, rel=0.367)
+  CLAUSE c8-100 IOO rtp_floor_p0: WITHIN IOO=1.021e+04 [6850-1.231e+04] MAIN=9864 [7148-1.095e+04] (+3.6%, rel=0.193)
+  CLAUSE c8-100 IOO rtp_floor_p1: WITHIN IOO=4.091e+04 [3.618e+04-4.385e+04] MAIN=4.017e+04 [3.569e+04-4.199e+04] (+1.9%, rel=0.078)
+  CELL c8-100 IOO n=6 MAIN n=6 dnf MAIN=0.00 IOO=0.00 worse=- notes=cpu_cli/GB:TREND-BETTER,cpu_srv/GB:BETTER => PASS
+  FEED c8-100 D9 p0 plc/truth D9=0.996 MAIN=1.004 band=[0.772,1.306] -> SAME
+  FEED c8-100 D9 p1 plc/truth D9=1.005 MAIN=1.002 band=[0.771,1.302] -> SAME
+  CLAUSE c8-100 D9 goodput: WITHIN D9=102.5 [95.21-104.3] MAIN=101.9 [97.28-104.9] (+0.6%, rel=0.040)
+  CLAUSE c8-100 D9 cpu_cli/GB: WITHIN D9=52.65 [48.5-56.5] MAIN=53.2 [48.2-57.1] (-1.0%, rel=0.116)
+  CLAUSE c8-100 D9 cpu_srv/GB: WITHIN D9=59.25 [56.9-62.6] MAIN=58.65 [54.1-61.6] (+1.0%, rel=0.116)
+  CLAUSE c8-100 D9 lag_p99_cli: WITHIN D9=1257 [1104-2000] MAIN=1572 [1176-2031] (-20.1%, rel=0.272)
+  CLAUSE c8-100 D9 lag_p99_srv: WITHIN D9=1730 [1148-2028] MAIN=1866 [1615-2985] (-7.3%, rel=0.367)
+  CLAUSE c8-100 D9 rtp_floor_p0: WITHIN D9=9176 [8150-1.181e+04] MAIN=9864 [7148-1.095e+04] (-7.0%, rel=0.193)
+  CLAUSE c8-100 D9 rtp_floor_p1: WITHIN D9=4.088e+04 [3.562e+04-4.541e+04] MAIN=4.017e+04 [3.569e+04-4.199e+04] (+1.8%, rel=0.078)
+  CELL c8-100 D9 n=6 MAIN n=6 dnf MAIN=0.00 D9=0.00 worse=- notes=- => PASS
+  REPORT c8-100 MAIN acks/dgram=1.000 [1.000-1.000] n=6 busy=33.2 [27.5-41.0] n=6 gso_p0=4.27 [4.09-5.27] n=6 gso_p1=1.83 [1.80-1.84] n=6
+  REPORT c8-100 MAIN cli cores=0.678 [0.617-0.709] n=6 main_thr=0.027 [0.025-0.029] n=6 thr_r1=0.136 [0.128-0.141] n=6 parks/s main=10940 [10527-11865] n=6 io=- lag p99 main=1572 [1176-2031] n=6 io=-
+  REPORT c8-100 MAIN srv cores=0.746 [0.682-0.765] n=6 main_thr=0.013 [0.013-0.014] n=6 thr_r1=0.153 [0.131-0.160] n=6 parks/s main=17581 [17082-17997] n=6 io=- lag p99 main=1866 [1615-2985] n=6 io=-
+    THREADS c8-100 MAIN s42 r1 cli=rp-w-0:0.128,rp-w-4:0.120,rp-w-2:0.113,rp-w-5:0.113 srv=rp-w-3:0.148,rp-w-5:0.140,rp-w-4:0.133,rp-w-2:0.124
+    THREADS c8-100 MAIN s7 r1 cli=rp-w-5:0.133,rp-w-0:0.126,rp-w-3:0.113,rp-w-2:0.109 srv=rp-w-2:0.149,rp-w-3:0.148,rp-w-1:0.125,rp-w-5:0.107
+    THREADS c8-100 MAIN s42 r2 cli=rp-w-3:0.139,rp-w-0:0.131,rp-w-1:0.130,rp-w-5:0.130 srv=rp-w-0:0.157,rp-w-3:0.142,rp-w-5:0.133,rp-w-1:0.126
+    THREADS c8-100 MAIN s7 r2 cli=rp-w-3:0.138,rp-w-5:0.126,rp-w-2:0.119,rp-w-4:0.112 srv=rp-w-1:0.160,rp-w-3:0.148,rp-w-2:0.138,rp-w-5:0.123
+    THREADS c8-100 MAIN s42 r3 cli=rp-w-4:0.141,rp-w-2:0.136,rp-w-1:0.132,rp-w-0:0.131 srv=rp-w-1:0.159,rp-w-4:0.154,rp-w-5:0.134,rp-w-3:0.127
+    THREADS c8-100 MAIN s7 r3 cli=rp-w-4:0.129,rp-w-0:0.121,rp-w-2:0.117,rp-w-1:0.108 srv=rp-w-1:0.131,rp-w-0:0.129,rp-w-3:0.121,rp-w-2:0.116
+  REPORT c8-100 D9 acks/dgram=1.000 [1.000-1.000] n=6 busy=30.5 [26.0-37.0] n=6 gso_p0=4.06 [3.84-4.84] n=6 gso_p1=1.77 [1.74-1.82] n=6
+  REPORT c8-100 D9 cli cores=0.648 [0.620-0.726] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.129 [0.119-0.147] n=6 parks/s main=11980 [11201-12480] n=6 io=- lag p99 main=1257 [1104-2000] n=6 io=-
+  REPORT c8-100 D9 srv cores=0.741 [0.711-0.814] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.153 [0.136-0.161] n=6 parks/s main=18296 [17128-18746] n=6 io=- lag p99 main=1730 [1148-2028] n=6 io=-
+    THREADS c8-100 D9 s42 r1 cli=rp-w-2:0.147,rp-w-5:0.135,rp-w-0:0.134,rp-w-3:0.130 srv=rp-w-3:0.161,rp-w-2:0.148,rp-w-4:0.139,rp-w-0:0.136
+    THREADS c8-100 D9 s7 r1 cli=rp-w-1:0.124,rp-w-2:0.113,rp-w-3:0.112,rp-w-5:0.108 srv=rp-w-4:0.141,rp-w-1:0.136,rp-w-0:0.130,rp-w-5:0.122
+    THREADS c8-100 D9 s42 r2 cli=rp-w-1:0.119,rp-w-5:0.111,rp-w-0:0.107,rp-w-3:0.103 srv=rp-w-0:0.158,rp-w-2:0.137,rp-w-1:0.133,rp-w-3:0.133
+    THREADS c8-100 D9 s7 r2 cli=rp-w-5:0.126,rp-w-0:0.124,rp-w-3:0.120,rp-w-1:0.111 srv=rp-w-4:0.154,rp-w-0:0.145,rp-w-5:0.141,rp-w-1:0.123
+    THREADS c8-100 D9 s42 r3 cli=rp-w-2:0.136,rp-w-0:0.129,rp-w-4:0.116,rp-w-3:0.094 srv=rp-w-0:0.152,rp-w-1:0.149,rp-w-4:0.141,rp-w-5:0.128
+    THREADS c8-100 D9 s7 r3 cli=rp-w-0:0.131,rp-w-5:0.126,rp-w-2:0.117,rp-w-1:0.112 srv=rp-w-5:0.136,rp-w-1:0.134,rp-w-2:0.129,rp-w-0:0.118
+  REPORT c8-100 IOS acks/dgram=1.000 [1.000-1.000] n=6 busy=29.0 [18.0-31.0] n=6 gso_p0=5.79 [5.49-6.26] n=6 gso_p1=3.29 [3.16-3.60] n=6
+  REPORT c8-100 IOS cli cores=0.527 [0.465-0.567] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.108 [0.104-0.116] n=6 parks/s main=6318 [5555-7105] n=6 io=- lag p99 main=1482 [1121-2250] n=6 io=-
+  REPORT c8-100 IOS cli lockwait asleep_frac max=0.0046 [0.0043-0.0061] n=6 sum=0.0062 [0.0055-0.0073] n=6 drv_off_frac=0.4745 [0.4281-0.5280] n=6 tx/batch=16.3 [16.2-16.8] n=6 rx/batch=8.3 [8.0-8.6] n=6 rx_capped=51 [45-68] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c8-100 IOS srv cores=0.499 [0.456-0.523] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.110 [0.091-0.114] n=6 parks/s main=8652 [7806-9670] n=6 io=- lag p99 main=1746 [1109-2847] n=6 io=-
+  REPORT c8-100 IOS srv lockwait asleep_frac max=0.0052 [0.0044-0.0063] n=6 sum=0.0064 [0.0054-0.0075] n=6 drv_off_frac=0.3961 [0.3829-0.4179] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=6.2 [6.1-6.5] n=6 rx_capped=10 [4-13] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c8-100 IOS s42 r1 cli=rp-w-0:0.104,rp-w-5:0.098,rp-w-4:0.089,rp-w-2:0.083 srv=rp-w-5:0.091,rp-w-2:0.084,rp-w-4:0.084,rp-w-3:0.079
+    THREADS c8-100 IOS s7 r1 cli=rp-w-1:0.113,rp-w-0:0.104,rp-w-3:0.086,rp-w-4:0.077 srv=rp-w-4:0.109,rp-w-3:0.101,rp-w-5:0.086,rp-w-2:0.076
+    THREADS c8-100 IOS s42 r2 cli=rp-w-2:0.105,rp-w-3:0.089,rp-w-1:0.087,rp-w-0:0.080 srv=rp-w-4:0.101,rp-w-2:0.098,rp-w-1:0.087,rp-w-0:0.076
+    THREADS c8-100 IOS s7 r2 cli=rp-w-2:0.106,rp-w-0:0.098,rp-w-3:0.098,rp-w-5:0.094 srv=rp-w-0:0.110,rp-w-1:0.096,rp-w-3:0.092,rp-w-5:0.078
+    THREADS c8-100 IOS s42 r3 cli=rp-w-1:0.110,rp-w-3:0.108,rp-w-0:0.106,rp-w-4:0.097 srv=rp-w-4:0.114,rp-w-0:0.089,rp-w-2:0.088,rp-w-3:0.088
+    THREADS c8-100 IOS s7 r3 cli=rp-w-5:0.116,rp-w-4:0.106,rp-w-2:0.094,rp-w-1:0.084 srv=rp-w-1:0.110,rp-w-4:0.103,rp-w-0:0.098,rp-w-2:0.074
+  REPORT c8-100 IOO acks/dgram=1.000 [1.000-1.000] n=6 busy=28.0 [20.0-32.5] n=6 gso_p0=6.19 [6.02-6.36] n=6 gso_p1=3.21 [3.10-3.32] n=6
+  REPORT c8-100 IOO cli cores=0.540 [0.471-0.546] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.120 [0.117-0.132] n=6 parks/s main=2745 [2585-3130] n=6 io=4232 [4002-4782] n=6 lag p99 main=1519 [1203-2055] n=6 io=2180 [2008-3326] n=6
+  REPORT c8-100 IOO cli lockwait asleep_frac max=0.0014 [0.0012-0.0015] n=6 sum=0.0022 [0.0020-0.0027] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=16.4 [15.1-17.4] n=6 rx/batch=7.9 [7.5-8.2] n=6 rx_capped=27 [16-37] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+  REPORT c8-100 IOO srv cores=0.463 [0.433-0.472] n=6 main_thr=0.000 [0.000-0.000] n=6 thr_r1=0.162 [0.150-0.178] n=6 parks/s main=2811 [2713-3395] n=6 io=6337 [6142-7383] n=6 lag p99 main=1658 [1176-2066] n=6 io=2047 [2027-2511] n=6
+  REPORT c8-100 IOO srv lockwait asleep_frac max=0.0023 [0.0020-0.0027] n=6 sum=0.0031 [0.0029-0.0038] n=6 drv_off_frac=0.0000 [0.0000-0.0000] n=6 tx/batch=1.0 [1.0-1.0] n=6 rx/batch=5.9 [5.7-7.2] n=6 rx_capped=6 [1-7] n=6 send_err=0 [0-0] n=6 too_large_staged=0 [0-0] n=6
+    THREADS c8-100 IOO s42 r1 cli=rp-io-0:0.117,rp-w-1:0.114,rp-w-2:0.106,rp-w-5:0.089 srv=rp-io-0:0.153,rp-w-4:0.083,rp-w-5:0.080,rp-w-3:0.074
+    THREADS c8-100 IOO s7 r1 cli=rp-io-0:0.127,rp-w-4:0.104,rp-w-1:0.101,rp-w-5:0.088 srv=rp-io-0:0.172,rp-w-0:0.082,rp-w-3:0.082,rp-w-2:0.075
+    THREADS c8-100 IOO s42 r2 cli=rp-io-0:0.119,rp-w-5:0.084,rp-w-2:0.078,rp-w-3:0.077 srv=rp-io-0:0.150,rp-w-5:0.080,rp-w-3:0.075,rp-w-1:0.067
+    THREADS c8-100 IOO s7 r2 cli=rp-io-0:0.132,rp-w-0:0.089,rp-w-4:0.080,rp-w-1:0.061 srv=rp-io-0:0.178,rp-w-5:0.076,rp-io-1:0.063,rp-w-1:0.057
+    THREADS c8-100 IOO s42 r3 cli=rp-io-0:0.118,rp-w-4:0.108,rp-w-2:0.104,rp-w-1:0.094 srv=rp-io-0:0.160,rp-w-5:0.084,rp-w-1:0.072,rp-w-0:0.059
+    THREADS c8-100 IOO s7 r3 cli=rp-io-0:0.122,rp-w-4:0.094,rp-w-5:0.087,rp-w-0:0.080 srv=rp-io-0:0.163,rp-w-0:0.082,rp-w-2:0.074,rp-w-4:0.070
+
+MECHANISM routing_own: MET
+MECHANISM routing_shared_fails: MET
+MECHANISM lockwait_own_zero: MISSED
+MECHANISM lockwait_shared_nonzero: MET
+MECHANISM lockwait medians (client asleep_max) own=c1s-400:0.0115 c1d-400:0.0094 c2-100:0.0016 c8-100:0.0014 shared=c1s-400:0.1962 c1d-400:0.0637 c2-100:0.0052 c8-100:0.0046
+ARM IOS c1s-400:PASS c1d-400:PASS c2-100:PASS c8-100:PASS => PASS-EVERYWHERE
+ARM IOO c1s-400:PASS c1d-400:FAIL c2-100:PASS c8-100:PASS => FAIL-AT-c1d-400
+ARM D9 c1s-400:FAIL c1d-400:FAIL c2-100:FAIL c8-100:PASS => FAIL-AT-c1s-400,c1d-400,c2-100 (attribution, reported)
+BAR c1d IOS goodput=729.5 vs FDT 501.0 -> BAR-MET (reported)
+BAR c1d IOO goodput=711.5 vs FDT 501.0 -> BAR-MET (reported)
+VERDICT DELIVERED (SHIP-SHARED: shared passes everywhere; the simpler arm ships, own is deleted)
+
+ACK-INTERARRIVAL (RWM_ACKDIAG block, reported only; client [ACKDIAG] gap_us per path)
+  ACKGAP c1s-400 MAIN p0 p50=2 [2-2] n=2 p90=2 [2-2] n=2 p99=359 [117-601] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1s-400 D9 p0 p50=2 [2-2] n=2 p90=39 [37-41] n=2 p99=343 [330-356] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1s-400 IOS p0 p50=1 [1-1] n=2 p90=2 [2-2] n=2 p99=170 [157-182] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1s-400 IOO p0 p50=1 [1-1] n=2 p90=2 [2-2] n=2 p99=366 [306-427] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 MAIN p0 p50=2 [2-2] n=2 p90=25 [16-34] n=2 p99=836 [813-860] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 MAIN p1 p50=2 [2-2] n=2 p90=30 [23-38] n=2 p99=892 [849-934] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 D9 p0 p50=2 [2-2] n=2 p90=142 [138-146] n=2 p99=816 [771-862] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 D9 p1 p50=2 [2-2] n=2 p90=89 [53-125] n=2 p99=730 [717-744] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 IOS p0 p50=2 [2-2] n=2 p90=6 [5-7] n=2 p99=1314 [1249-1380] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 IOS p1 p50=2 [1-2] n=2 p90=4 [3-4] n=2 p99=255 [249-261] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 IOO p0 p50=2 [2-2] n=2 p90=4 [4-5] n=2 p99=600 [525-674] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c1d-400 IOO p1 p50=2 [2-2] n=2 p90=5 [5-5] n=2 p99=512 [507-516] n=2 acks=32768 [32768-32768] n=2
+  ACKGAP c2-100 MAIN p0 p50=2 [2-2] n=2 p90=118 [111-126] n=2 p99=1966 [1921-2012] n=2 acks=19156 [19153-19160] n=2
+  ACKGAP c2-100 D9 p0 p50=2 [2-2] n=2 p90=122 [122-122] n=2 p99=1902 [1898-1905] n=2 acks=19156 [19154-19157] n=2
+  ACKGAP c2-100 IOS p0 p50=1 [1-1] n=2 p90=26 [26-27] n=2 p99=2455 [2405-2505] n=2 acks=19227 [19214-19240] n=2
+  ACKGAP c2-100 IOO p0 p50=2 [1-2] n=2 p90=16 [16-16] n=2 p99=2440 [2435-2445] n=2 acks=19218 [19217-19218] n=2
+  ACKGAP c8-100 MAIN p0 p50=2 [2-2] n=2 p90=148 [141-154] n=2 p99=1876 [1860-1891] n=2 acks=19092 [19038-19146] n=2
+  ACKGAP c8-100 MAIN p1 p50=48 [48-49] n=2 p90=1906 [1838-1975] n=2 p99=4938 [4799-5078] n=2 acks=3798 [3794-3801] n=2
+  ACKGAP c8-100 D9 p0 p50=2 [2-2] n=2 p90=146 [139-152] n=2 p99=1828 [1811-1846] n=2 acks=19249 [19179-19319] n=2
+  ACKGAP c8-100 D9 p1 p50=47 [46-48] n=2 p90=1923 [1907-1939] n=2 p99=5140 [5039-5240] n=2 acks=3796 [3793-3798] n=2
+  ACKGAP c8-100 IOS p0 p50=1 [1-1] n=2 p90=44 [39-48] n=2 p99=2478 [2424-2533] n=2 acks=16792 [14258-19326] n=2
+  ACKGAP c8-100 IOS p1 p50=2 [2-2] n=2 p90=1824 [1741-1908] n=2 p99=7672 [7273-8072] n=2 acks=3428 [3021-3834] n=2
+  ACKGAP c8-100 IOO p0 p50=2 [1-2] n=2 p90=22 [20-23] n=2 p99=2632 [2615-2649] n=2 acks=14029 [13881-14177] n=2
+  ACKGAP c8-100 IOO p1 p50=2 [2-2] n=2 p90=1956 [1893-2020] n=2 p99=7595 [7571-7619] n=2 acks=3104 [2958-3249] n=2
+  ACKD rows=32 live=32
