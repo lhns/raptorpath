@@ -217,5 +217,11 @@ empty = c.thr_columns([], "cli")
 check(set(empty) == set(k.replace("srv_", "cli_", 1) for k in cols) and all(v is None for v in empty.values()),
       "thr_columns: the row shape does not depend on the capture (all None when absent)")
 
+# Threading Q1: an I/O runtime's `[LAG] io` line in the same window must not
+# replace the main runtime's `[LAG]` (it precedes or follows it in the log).
+IO_AFTER = THR + ["[LAG] io phase=xfer side=server obj=1 rt=rp-io-0 tick_ms=10 n=5 p50_us=1 p99_us=99999 max_us=99999 dropped=0"]
+check(c.thr(IO_AFTER, window="obj=1")["lag"] == c.thr(THR, window="obj=1")["lag"],
+      "thr: a [LAG] io line never overrides the main runtime's [LAG]")
+
 print("test_l1common: %d checks, %d failed" % (CHECKS, len(FAILS)))
 sys.exit(1 if FAILS else 0)
