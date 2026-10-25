@@ -46,3 +46,4 @@ Conventions in the ADRs below:
 | [0064](0064-unified-span-machine.md) | Unified span machine + δ-honest shedding | Accepted | One decoder and one continuous span law across δ; shedding within the 1 − ρ budget. |
 | [0068](0068-copa-bbr-fusion.md) | Copa/BBR fusion | Proposed | One δ-priced controller over a measured rate model; targets measured, nothing built. |
 | [0069](0069-block-mode-disposition.md) | Block mode is legacy | Accepted, executed (`dacfd7c`) | The block/window fork was the last mode bit; after the Stage-3 re-test the window pipeline is the default for every hint and the block pipeline is deleted. |
+| [0072](0072-one-store-law-at-every-path-count.md) | One store-cap law at every path count | Proposed | The `n_live < 2` guard is removed: the pooled δ-priced cap runs at N = 1; 1024 leaves the shipped seat. |

@@ -1511,13 +1511,23 @@ With one stream the construction reduces to the present machine.
 On the reliable window seat the only brake on outstanding data is the store
 cap: the sender stops reading source when
 `store_len ≥ effective_store_cap` (the per-path cwnd gate is inactive by
-default, `RWM_INFL_CAP = 0`). With two or more live paths the cap is
+default, `RWM_INFL_CAP = 0`). The store holds every sent symbol not yet
+released (Section 6.3), so by Little's law the cap is a delivery rate times
+a holding time. Per path the holding time is one RTprop of pipe plus the
+standing queue the dial permits, q(δ)·RTprop. Summed over the N live paths,
+for every N ≥ 1:
 
 ```text
-   cap  =  clamp( (1 + q(δ)) · Σᵢ bwᵢ·RTpropᵢ ,  floor ,  N·knee )
+   cap  =  clamp( (1 + q(δ)) · Σᵢ bwᵢ·RTpropᵢ ,  floor ,  N·knee )        N ≥ 1
 
    q(δ)  =  q_lo + (q_hi − q_lo) · ( b(δ) − ½ ) / (2 − ½)  =  (b(δ) + 1) / 30
 ```
+
+Shape: symbols (sym/s × s); order 1 in N (a symmetric cell gives
+N·(1 + q)·a, and the ceiling is linear too); non-decreasing in every bwᵢ
+and RTpropᵢ; continuous and increasing in δ's b through q; no ρ input (ρ
+decides what the store retains, not how much may be outstanding). No term
+needs two paths: at N = 1 the sum has one term and the ceiling is 1·knee.
 
 `pooled_store_cap`, `pool_value_multiplier`, `codel_setpoint_q`
 (`net/store_cap.rs`); gates `RWM_SUM_CAP` and `RWM_DELTA_CAP`, both on
@@ -1525,16 +1535,43 @@ by default. The sum runs over all live paths (`net::channel_paths`, the
 channel's membership); before plan 2b it ran over `active_paths()`, the live
 paths with spare congestion window, and `RWM_STORE_CAP_UNIFIED` (retired)
 was the live-set arm. Under Copa-sole pass-through the anchor is Σ cwnd.
+**Engine status:** the code still returns before the law at N < 2 and runs
+the predecessor of Section 6.2 there; ADR-0072 removes that guard
+(Section 11.3).
 
 | symbol | value | provenance |
 |---|---|---|
-| Σᵢ bwᵢ·RTpropᵢ | per-path windowed-max rate × windowed-min RTT | measured anchors |
+| Σᵢ bwᵢ·RTpropᵢ | per-path windowed-max rate × windowed-min RTT | measured anchors; the ack-interval sampler over-reads at c1 (below) |
+| N | live paths | measured state (`net::channel_paths`); the same set the Σ ranges over |
 | q_lo | 0.05 | cited: RFC 8289 §3.2, the conservative end of CoDel's derived 5–10 %-of-RTT setpoint band [RFC8289] |
 | q_hi | 0.10 | cited: RFC 8289 §3.2, the Kleinrock peak-power end |
 | b(δ) | ½ … 2 | derived (Section 5.4) |
 | affine shape of q(b) | — | declared mapping between two cited endpoints and two dial endpoints, no free parameter; a log-linear map (Auto 7.07 %) is equally free of constants |
-| floor | 10 | derived: max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW) |
-| knee | 2048 per path | measured but stale (`RWM_STORE_PATH_POOL`) |
+| floor | 10 | resource bound (bootstrap), derived: max(ANCHOR_MIN_SAMPLES·cadence, RFC 6928 IW); gauge `[SUMCAP] floor=` |
+| knee | 2048 per path | resource bound, not a law term: retained payload per live path (≈ 2.5 MB at 1.2 kB); value measured but stale (`RWM_STORE_PATH_POOL`, the 2026-07-14 static sweep); gauge `[SUMCAP] pin=` |
+
+**One path is not a case.** The `n_live < 2` guard in `pooled_store_cap`
+is not part of any derivation. It entered as the A/B hygiene of the
+path-scaled pool (ADR-0058: "N = 1 keeps the single-path law bit-exactly")
+and stayed as the ×N and δ-cap arms' "bit-identical at N = 1" after both
+flipped. It made one path a different law (Section 6.2) whose ceiling, 1024,
+has no provenance and binds in every post-warm-up window at c1s
+(status §16, finding 3). At a symmetric per-path anchor a the step across
+N = 1 → 2 is `min(2a, 1024)` → `min(2(1 + q)·a, 2·2048)`: per path ×1.80 at
+the c1 anchor (a ≈ 1680, Bulk) and ×0.55 at the sc2 anchor (a ≈ 494), so the
+step does not even have one sign. A behavior step at a path count is the
+mode switch the architecture forbids; the law above has none.
+
+**The c1 input.** At c1s the anchor reads bw = 0.60–0.76 M sym/s against
+82–93 k delivered (`[DIAG]`, status §16 r1; RTprop 2.8 ms), an over-read of
+×7–9 (`RWM_HONEST_ANCHOR` is the value-identical O(1) max filter, not a
+different sampler; the send-interval sampler `RWM_PLAIN_RS` is off). At the
+anchor it reads, the law asks 1.37–2.34 k symbols at c1s and the knee binds
+whenever a > knee/(1 + q) = 1862 (Bulk): 7 of the 15 post-warm-up windows
+of r1. At the delivered rate it would ask ≈ 250–285. That over-read is an
+input defect the 1024 constant was hiding, not a property of the law; the
+`[SUMCAP]` pin fraction reports it at one path once the guard is gone
+(Section 11.2).
 
 At the named points q is 0.050 (Realtime), 0.0667 (Auto), 0.100 (Bulk):
 one BDP per path plus a CoDel-sized standing-queue allowance. As q → 0 the
@@ -1573,13 +1610,13 @@ c7 and c8 with the ceiling provably inert (pin fraction 0.0000):
 Goodput parity at every dual on both seeds, and delivered queue down at every
 one. The paired dead-wall contrast at c8 favours the δ-cap in 18 of 23
 non-zero pairs (two-sided sign test p ≈ 0.011). At c8L the pin fraction is
-0.23, between the pre-declared branches, so no verdict is claimed there. The
-law returns before any multiplier is read at N < 2, so single-path cells are
-bit-identical: it can neither regress nor help a single path.
+0.23, between the pre-declared branches, so no verdict is claimed there.
+These batteries measured N ≥ 2 only: the engine's guard kept single-path
+cells on the predecessor below, so the law is unmeasured at one path.
 
-### 6.2 The single-path cap
+### 6.2 The single-path predecessor (retired by ADR-0072)
 
-With one live path the pooled law is not engaged and the cap is
+Behind the `n_live < 2` guard the engine still runs, at one live path,
 
 ```text
    cap₁  =  clamp( gain · BtlBw·RTprop ,  10 ,  1024 ) ,     gain = RWM_STORE_GAIN = 2.0
@@ -1589,9 +1626,13 @@ falling back to a boot cap of 128 symbols (`RWM_STORE_BOOT`) until the
 anchor has samples. gain = 2.0 ("one BDP of pipe plus one of recovery
 runway") and the 1024 ceiling (`RELIABLE_STORE_MAX`) are unprovenanced, and
 the boot cap is a cliff: when the anchor set comes back empty the cap drops
-to 128 for that refresh (×6.5 at c1). A δ-priced setpoint in this seat is the named successor
-(an earlier measurement showed a 481-symbol cap cutting sc2 ping p50 by
-55 ms at parity); it is not implemented.
+to 128 for that refresh (×6.5 at c1). The ceiling binds: 1024 in every
+post-warm-up window of every c1s run (status §16, finding 3) and in 17 of
+18 sc2 reps of the ladder battery, so every single-path goodput on record
+was measured through a constant (rule 18). The named successor, a δ-priced
+setpoint in this seat (an earlier measurement showed a 481-symbol cap
+cutting sc2 ping p50 by 55 ms at parity), is the Section 6.1 law at N = 1.
+`RWM_STORE_PATHS = 0` keeps this expression re-runnable at every N.
 
 ### 6.3 SACK-clocked release
 
@@ -1855,9 +1896,12 @@ must stall. For a store multiplier m (cap = m·BDP):
    H  =  (m − 1) · RTprop_w          RTprop_w = rate-weighted RTprop of the summed paths
 ```
 
-At one path m = gain = 2.0 and H is one RTprop. At two or more paths the
-shipped δ-cap makes m = 1 + q(δ), so H = q(δ)·RTprop_w: 0.8 ms at c7 at the
-Bulk point, not 8 ms. With the three-term cap armed, H becomes the contract
+At one path the engine's predecessor (Section 6.2) has m = gain = 2.0 and H
+is one RTprop. At two or more paths the shipped δ-cap makes m = 1 + q(δ), so
+H = q(δ)·RTprop_w: 0.8 ms at c7 at the Bulk point, not 8 ms. Under the one law
+of Section 6.1 that holds at one path too: H = q(δ)·RTprop ≤ 0.2 ms at c1 and
+0.8 ms at sc2, below d at both, so (iii) below puts both single-path cells at
+the corner T* = 0 by the headroom alone. With the three-term cap armed, H becomes the contract
 stall of Section 6.4 and is continuous in δ and ρ.
 
 Two qualifications apply to the shipped stack. First, SACK-clocked release
@@ -2123,8 +2167,8 @@ The correct recovery law is open. It needs: α, which Section 7.6 derives
 from the contract's own cost ratio but which is measured knee-bound; the
 self-heal distribution F resolved inside the admissible domain at the dual
 cells; a measurement of H on the shipped stack, because H is the width of the
-whole domain and the store multiplier that sets it (gain = 2.0 at one path,
-1 + q(δ) at several) interacts with SACK-clocked release in a way no
+whole domain and the store multiplier that sets it (1 + q(δ); the engine
+still runs gain = 2.0 at one path until ADR-0072 executes) interacts with SACK-clocked release in a way no
 derivation yet covers; and a c8L audit. Until then the shipped constants
 (Section 11.2) stand as undefeated, which is not the same as derived.
 
@@ -2802,7 +2846,8 @@ decide it.
 | per-path thresholds 9/8 and 3 | `mp_time_threshold_split`, `MP_PACKET_THRESHOLD` | cited from RFC 9002 (9/8 is an empirical recommendation; RACK uses 5/4); measured against age including sender dwell | lateness coordinate in place of age |
 | `GAP_ACK_MIN_INTERVAL = 2 ms` | `net/mod.rs` | a rate limit that is also the hole sampler; manufactures no holes on a lossless wire (`holeclass_reachability.rs`) | none yet; it sets the α ≈ 1 corner |
 | `NACK_RETX_COOLDOWN_FLOOR_US = 10 ms` | `net/mod.rs` | 10× RFC 9002's granularity | re-fire cost against F |
-| `RWM_STORE_GAIN = 2.0` | single-path cap; H = (gain − 1)·RTprop at N = 1 | sets the single-path store headroom, and was assumed at the duals by the recovery analysis | an `RWM_STORE_GAIN` contrast |
+| `RWM_STORE_GAIN = 2.0` | single-path predecessor (Section 6.2); H = (gain − 1)·RTprop at N = 1 | sets the single-path store headroom while the `n_live < 2` guard ships; ADR-0072 replaces it there by 1 + q(δ), after which it reaches only the `RWM_STORE_PATHS = 0` arm and the default-off honest and pool-anchor arms | the ADR-0072 battery (N = 1 contrast) |
+| `RELIABLE_STORE_MAX = 1024` | single-path ceiling (`net/mod.rs`) | no provenance: its existence was defended in out-of-order object mode, its value nowhere ("≈ 10× the C2 BDP"); binds in every post-warm-up c1s window and 17/18 sc2 reps; not a memory bound in practice (the N = 2 pool already reaches 2734). ADR-0072 retires it from the shipped seat; it stays the ceiling of the `RWM_STORE_PATHS = 0` arm and the `min` under the boot cap | the ADR-0072 battery |
 | `HONEST_RECOVERY_ROUND_S = 100 ms` | honest per-path cap (`net/store_cap.rs`) | inert by default (needs `RWM_PLAIN_RS`) | — |
 | κ = 1 in the placement frontier term | `place_costs` X_i | declared upper bound; fitted κ is 0.0048–0.067 | an `s_i > H` bind fraction |
 | `PLACE_TEMPERATURE = 0.15` | `scheduler/place.rs` | the argmax of a four-point sweep at one cell whose verdict was a failure; derived form `T = (√6/π)·σ̂_e/ref` | σ̂_e on the ETA stream |
@@ -2812,7 +2857,7 @@ decide it.
 | `BULK_TAIL_BUDGET = 0.05` | `raptorpath-math` | an "e.g." promoted to a constant | the completion-glide battery arm |
 | χ constants 1.5, 4·RTTVAR, SRTT/4 | `completion_exposure` | — | — |
 | W* fraction α = 0.25, bounds [16, 512], `MAX_WINDOW_SIZE = 200` | `derive_window`, sender | 200 is below W_mp at the heterogeneous cell | — |
-| knee = 2048 per path | pooled cap ceiling | measured but stale; inert at c7/c8 under the δ-cap | — |
+| knee = 2048 per path | pooled cap ceiling, `N·knee` at every N | a resource bound outside the law (retained payload per live path), value measured but stale; inert at c7/c8 under the δ-cap; predicted to bind at c1s at N = 1 (7/15 windows at the r1 anchor trajectory) because the c1 anchor over-reads ×7–9 | `[SUMCAP] pin=` at c1s; the anchor over-read (`btlbw`/delivered) beside it |
 | `queue_target_mult` 1.08 / 1.125 / 1.25 | Copa legacy branch | a declared corner: not affine in log δ | a CoDel-derived per-δ setpoint |
 | receiver hold `(4·SRTT).clamp(60, 300) ms` | `shed_recv_hold` fallback | three constants | a bind gauge (60 ms predicted to bind at c2, 300 ms at c3) |
 | anchor floor 0.85, pull 0.25, gain 1.0 | Copa legacy branch | 0.85 set by one measurement; the others untested | — |
@@ -2834,10 +2879,10 @@ decide it.
 | span deadline D and A* | `min(b·RTprop, 2·RTprop)` | uses the loss estimator's EWMA RTT (`est.rtt()`), not the min-filtered RTprop |
 | receiver shed hold | `b(δ)·SRTT` | hard-codes `SRTT/2` (b at Realtime) because the evicting seat exists only for Realtime |
 | Copa price | δ(hint) | constant 0.5 with a three-arm queue-multiplier table unless the wire signal is on (Section 8.2) |
-| store cap at one path | δ-priced setpoint | `clamp(2.0·BDP, 10, 1024)`; the δ-cap engages only at N ≥ 2 |
+| store cap at one path | the Section 6.1 law at N = 1: `clamp((1 + q(δ))·BtlBw·RTprop, 10, 2048)` | `clamp(2.0·BDP, 10, 1024)` behind the `n_live < 2` guard until ADR-0072's code phase; the wasm model already scales its pool per path with no guard |
 | pool path set | live paths | `net::channel_paths` = `live_paths()` unconditionally (plan 2b; `RWM_STORE_CAP_UNIFIED` retired) |
 | recovery-plane path set | live paths | `live_paths()` for every pool and worst-path reader (recovery clocks, repair margin, react-cap SRTT, NACK-budget and `repair_rate` worst-loss picks, the taper's ε̂ at send, WindowStart/Shutdown; e1ce7e7); placement picks and `spare_capacity()` keep the cwnd-saturation-filtered `active_paths()` by design |
-| store headroom H in the recovery analysis | `(gain − 1)·RTprop` at every cell, with the count released only by the frontier | at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
+| store headroom H in the recovery analysis | `q(δ)·RTprop_w` at every cell (Section 6.1), with the count released only by the frontier | at N = 1 the engine still has `(gain − 1)·RTprop`; at N ≥ 2 the multiplier is `1 + q(δ)` (H = q(δ)·RTprop_w), and SACK-clocked release uncounts SACKed symbols; H is read from `[WIDLE]` (Section 7.3) |
 | r* to the generation encoder | r* sets the repair budget | the generation seat uses a constant repair floor (0.15 systematic, 0.20 coded); r* reaches the wire through the plain window's taper budget |
 | pacing | source and repair paced at the CC rate | the pacer debits source only and does not run on the plain reliable path (bounded by a test, Section 6.5) |
 | P_lost inputs | SRTT and RTTVAR | RTTVAR fixed at 0.1·SRTT at the window call site; the worst path is picked from `live_paths()` |
@@ -3205,9 +3250,9 @@ engine.
 ### A.5 Flow control (Section 6)
 
 ```text
-   cap (N ≥ 2)  =  clamp( (1 + q(δ))·Σ_{i∈active} bwᵢ·RTpropᵢ, 10, N·2048 )   pooled_store_cap
+   cap (N ≥ 1)  =  clamp( (1 + q(δ))·Σ_{i∈live} bwᵢ·RTpropᵢ, 10, N·2048 )     pooled_store_cap (ADR-0072)
    q(δ)         =  0.05 + 0.05·(b(δ) − ½)/1.5  =  (b(δ) + 1)/30             codel_setpoint_q
-   cap (N = 1)  =  clamp( 2.0·BtlBw·RTprop, 10, 1024 )    (boot 128)
+   (engine at N = 1 until ADR-0072 executes: clamp( 2.0·BtlBw·RTprop, 10, 1024 ), boot 128)
    store_len    =  retained − released                                      store_gate_released
    released     =  min(|S|, max(|M|, |S∩[0,F)| + (A − ((H+1−F) − |S∩[F,H]|))⁺))   (F, A) = newest (next_expected, received_above)
    stall(δ, ρ)  =  (1 − ρ)·D(δ) + ρ·(9/8·SRTT + SRTT)                        contract_stall_s
