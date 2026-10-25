@@ -1,6 +1,6 @@
 # ADR-0072: One store-cap law at every path count — the `n_live < 2` guard is removed
 
-## Status: Proposed (law and paper written; engine unchanged; awaits the battery below)
+## Status: Proposed (law and paper written; engine unchanged; awaits the battery under Validation)
 
 Supersedes the N = 1 clauses of ADR-0058 ("N = 1 keeps the single-path law
 bit-exactly") and ADR-0070 (the guard and `RELIABLE_STORE_MAX` as the
@@ -56,6 +56,17 @@ One law at every N ≥ 1 (paper §6.1):
 - c2/sc2: the cap drops from ≈ 989–1024 to ≈ 544–850, the δ-priced setpoint
   §6.2 already named as the successor.
 - Single-path recovery headroom H falls from one RTprop to q(δ)·RTprop
-  (§7.3); both single-path cells stay at the corner T* = 0.
+  (§7.3) at an honest anchor; at c1's over-read the realized H stays
+  ≈ 13–19 ms.
 - Tests that pin the guard or 1024 at N = 1 are rewritten to the law's
   absolute values at N = 1 and to linearity from N = 1.
+
+## Validation
+
+One binary. At N = 1, `RWM_STORE_PATHS=0` is the control: it runs exactly
+main's single-path chain (pinned by a test), so no new gate is added. At
+N ≥ 2 the change is a no-op by construction (pinned by a test), so c1d and c8
+run the law arm only, as a control-moved check. Scored at c1s and c2 (Bulk,
+n = 6 per arm, two seeds), with a δ leg (Auto, Realtime) proving δ reaches
+one path. Outcomes, thresholds and the flip rule go in their own
+pre-registration commit before any VM contact.

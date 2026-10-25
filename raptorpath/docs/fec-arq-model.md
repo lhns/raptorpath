@@ -1901,7 +1901,9 @@ is one RTprop. At two or more paths the shipped δ-cap makes m = 1 + q(δ), so
 H = q(δ)·RTprop_w: 0.8 ms at c7 at the Bulk point, not 8 ms. Under the one law
 of Section 6.1 that holds at one path too: H = q(δ)·RTprop ≤ 0.2 ms at c1 and
 0.8 ms at sc2, below d at both, so (iii) below puts both single-path cells at
-the corner T* = 0 by the headroom alone. With the three-term cap armed, H becomes the contract
+the corner T* = 0 by the headroom alone — at an honest anchor. At c1's ×7–9
+over-read (Section 6.1) the realized H is ((1 + q)·k − 1)·RTprop ≈ 13–19 ms,
+and the corner then rests on the prior, as it does today. With the three-term cap armed, H becomes the contract
 stall of Section 6.4 and is continuous in δ and ρ.
 
 Two qualifications apply to the shipped stack. First, SACK-clocked release
