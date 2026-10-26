@@ -814,7 +814,7 @@ mod tests {
             }
             assert_eq!(out_n as u64, n, "every source delivered exactly once");
             println!(
-                "[DECBENCH] every={every} src_ns_per={:.0} rep_ns_per={:.0} adv_n={n_adv} adv_max_us={}                  adv_ns_per_src={:.0} total_ns_per_src={:.0} {}",
+                "[DECBENCH] every={every} src_ns_per={:.0} rep_ns_per={:.0} adv_n={n_adv} adv_max_us={} adv_ns_per_src={:.0} total_ns_per_src={:.0} {}",
                 src_ns as f64 / n as f64,
                 rep_ns as f64 / n_rep.max(1) as f64,
                 adv_max / 1_000,

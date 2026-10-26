@@ -841,7 +841,7 @@ pub fn rxsec_lines(phase: &str, side: &str, extra: &str, wall_s: f64, from: &[Rx
             let pm = |ns: u64| ns as f64 / msgs as f64;
             let (bn, p50, p99, bmax) = t.backlog.minus(&b.backlog).tokens();
             Some(format!(
-                "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={}                  deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0}                  deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} busy={:.3}                  bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3}                  arr_us={} probe_us={} prune_us={} arr_ns_pm={:.0} probe_ns_pm={:.0} prune_ns_pm={:.0}                  prune_n={} prune_max_us={}",
+                "[RXSEC] phase={phase} side={side}{extra} rx={} msgs={msgs} data={} total_us={} decode_us={} deliv_us={} ack_us={} book_us={} other_us={} total_ns_pm={:.0} decode_ns_pm={:.0} deliv_ns_pm={:.0} ack_ns_pm={:.0} book_ns_pm={:.0} other_ns_pm={:.0} busy={:.3} bk_n={bn} bk_p50={p50} bk_p99={p99} bk_max={bmax} wall_s={wall_s:.3} arr_us={} probe_us={} prune_us={} arr_ns_pm={:.0} probe_ns_pm={:.0} prune_ns_pm={:.0} prune_n={} prune_max_us={}",
                 t.serial,
                 t.data.saturating_sub(b.data),
                 d(RXSEC_N) / 1_000,
@@ -968,7 +968,7 @@ mod tests {
         assert!(s.contains(" other_us=1000 total_ns_pm=10000 decode_ns_pm=4000 "), "{s}");
         assert!(
             s.ends_with(
-                " arr_us=300 probe_us=200 prune_us=500 arr_ns_pm=300 probe_ns_pm=200 prune_ns_pm=500                  prune_n=2 prune_max_us=400"
+                " arr_us=300 probe_us=200 prune_us=500 arr_ns_pm=300 probe_ns_pm=200 prune_ns_pm=500 prune_n=2 prune_max_us=400"
             ),
             "{s}"
         );
