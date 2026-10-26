@@ -634,7 +634,22 @@ impl PathState {
         if let Some(d) = crate::net::rttdump::gauge() {
             d.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
         }
+        // Loop-time gauge (`RWM_LOOPDIAG`, net/loopdiag.rs): the same sample
+        // Copa consumes. A null check with the gate off.
+        if let Some(g) = crate::net::loopdiag::gauge() {
+            g.note_rtt(self.id, (rtt.as_micros() as u64).min(u32::MAX as u64) as u32);
+        }
         self.copa.record_rtt(rtt);
+    }
+
+    /// `[LOOPDIAG]`: Copa's RTprop / jitter estimate / srtt in µs. Observation
+    /// only; read under the report's scheduler lock.
+    pub fn loopdiag_copa(&self) -> crate::net::loopdiag::CopaReadout {
+        crate::net::loopdiag::CopaReadout {
+            rtprop_us: self.copa.min_rtt().map(|d| d.as_micros() as u64),
+            jit_us: (self.copa.jitter_est * 1e6) as u64,
+            srtt_us: self.copa.srtt.map(|d| d.as_micros() as u64),
+        }
     }
 
     /// Wire-level loss evidence for the Copa competitive AIMD: pass the

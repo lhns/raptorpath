@@ -44,7 +44,7 @@ guard_ns() {
 # test parses this array and fails if any `RWM_*` the engine reads is missing.
 # Adding a gate to the engine without adding it here fails the suite.
 RWM_FORWARD=(
-    RWM_ACKDIAG RWM_ACKDIAG_WINDOW_US
+    RWM_ACKDIAG RWM_ACKDIAG_WINDOW_US RWM_LOOPDIAG
     RWM_RTT_DUMP RWM_RTT_DUMP_MAX
     RWM_SUCC_DUMP RWM_SUCC_DUMP_MAX
     RWM_ACK_MERGE RWM_ANCHOR_HYGIENE RWM_ASTAR_ANCHOR RWM_CC_PACE

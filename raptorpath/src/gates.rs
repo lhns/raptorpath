@@ -259,6 +259,10 @@ pub struct RuntimeGates {
     pub diag: bool,
     /// `RWM_ACKDIAG` (off): per-path ack-cadence gauge (`[ACKDIAG]`).
     pub ackdiag: bool,
+    /// `RWM_LOOPDIAG` (off): per-path loop-time / delivered-rate / quinn
+    /// bandwidth side by side (`[LOOPDIAG]`, `net/loopdiag.rs`). Prints with
+    /// `RWM_DIAG`. Not on the `[GATES]` line (instrument; own output is the echo).
+    pub loopdiag: bool,
     /// `RWM_RTT_DUMP` (off): raw RTT sample stream (`[RTTDUMP]`).
     pub rtt_dump: bool,
     /// `RWM_SUCC_DUMP` (off): raw successor-arrival records beside `[SUCC]`.
@@ -432,6 +436,7 @@ impl RuntimeGates {
             rank_feedback: env_flag("RWM_RANK_FEEDBACK", false),
             diag: env_flag("RWM_DIAG", false),
             ackdiag: env_flag("RWM_ACKDIAG", false),
+            loopdiag: env_flag("RWM_LOOPDIAG", false),
             rtt_dump: env_flag("RWM_RTT_DUMP", false),
             succ_dump: env_flag("RWM_SUCC_DUMP", false),
             walldiag: env_flag("RWM_WALLDIAG", false),
@@ -571,6 +576,7 @@ const EXTERNALLY_ECHOED: &[(&str, &str)] = &[
     ("RWM_QUIC_CC", "own echo: 'quinn congestion controller: …' (transport/quic.rs)"),
     ("RWM_WIRE_COMPACT", "own echo: compact v5 DATA framing (transport/quic.rs part-2 echo)"),
     ("RWM_RS_TRACE", "instrument: its own [RSTRACE] output IS the echo"),
+    ("RWM_LOOPDIAG", "instrument: its own [LOOPDIAG] output IS the echo"),
     ("RWM_RSTAR_TAIL", "r* provisioning knob, read at the tail-provisioning site"),
     ("RWM_PLACE_T", "placement temperature, read by the perf harness path"),
     ("RWM_PERF_TIMEOUT_S", "harness-only: per-run completion timeout (src/perf.rs)"),

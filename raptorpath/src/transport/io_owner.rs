@@ -84,6 +84,10 @@ pub const IO_CHANNEL_DEPTH: usize = 8;
 /// refreshed every owner poll instead.
 pub const VIEW_REFRESH: Duration = Duration::from_millis(1);
 
+/// `RWM_LOOPDIAG`: minimum spacing of the owner's reads of quinn's controller
+/// metrics (observation only; far finer than the 250 ms `[DIAG]` window).
+const LOOPDIAG_QUINN_REFRESH: Duration = Duration::from_millis(5);
+
 /// The most inbound datagrams one owner poll forwards as one batch.
 ///
 /// Provenance: quinn-udp 0.5.14's `BATCH_SIZE = 32` (`unix.rs`: the most
@@ -267,6 +271,12 @@ pub struct PathView {
     frame_rx_dgram: AtomicU64,
     frame_tx_dgram: AtomicU64,
     cwnd: AtomicU64,
+    /// `RWM_LOOPDIAG`: quinn controller `metrics().pacing_rate` (bits/s; 0 =
+    /// `None`) and `congestion_window` (bytes), at the last full snapshot.
+    q_pace_bps: AtomicU64,
+    q_cwnd: AtomicU64,
+    /// Next time (µs on a process epoch) the controller metrics may be read.
+    q_next_us: AtomicU64,
     cong_events: AtomicU64,
     lost_packets: AtomicU64,
     sent_packets: AtomicU64,
@@ -306,6 +316,9 @@ impl PathView {
             frame_rx_dgram: AtomicU64::new(0),
             frame_tx_dgram: AtomicU64::new(0),
             cwnd: AtomicU64::new(0),
+            q_pace_bps: AtomicU64::new(0),
+            q_cwnd: AtomicU64::new(0),
+            q_next_us: AtomicU64::new(0),
             cong_events: AtomicU64::new(0),
             lost_packets: AtomicU64::new(0),
             sent_packets: AtomicU64::new(0),
@@ -354,6 +367,19 @@ impl PathView {
                 self.cong_events.load(Relaxed),
                 self.lost_packets.load(Relaxed),
                 self.sent_packets.load(Relaxed),
+            )
+        })
+    }
+
+    /// `RWM_LOOPDIAG`: `(pacing_rate bits/s (0 = none), congestion_window
+    /// bytes, quinn smoothed RTT µs)` at the last full snapshot. Atomics only:
+    /// no quinn call, no lock.
+    pub fn loop_stats(&self) -> Option<(u64, u64, Option<u64>)> {
+        self.snap.load(Relaxed).then(|| {
+            (
+                self.q_pace_bps.load(Relaxed),
+                self.q_cwnd.load(Relaxed),
+                Some(self.rtt_us.load(Relaxed)),
             )
         })
     }
@@ -652,6 +678,13 @@ impl OwnedConn {
     fn stats(&self) -> quinn::ConnectionStats {
         self.enter("stats");
         self.raw.stats()
+    }
+
+    /// The controller's metrics (`RWM_LOOPDIAG` only: `congestion_state()`
+    /// clones the controller under the connection mutex).
+    fn congestion_metrics(&self) -> quinn_proto::congestion::ControllerMetrics {
+        self.enter("congestion_metrics");
+        self.raw.congestion_state().metrics()
     }
 
     fn max_datagram_size(&self) -> Option<usize> {
@@ -1338,6 +1371,20 @@ fn publish(conn: &OwnedConn, view: &PathView, full: bool, copa_wire: bool, _gaug
         view.cong_events.store(s.path.congestion_events, Relaxed);
         view.lost_packets.store(s.path.lost_packets, Relaxed);
         view.sent_packets.store(s.path.sent_packets, Relaxed);
+        // `RWM_LOOPDIAG`: quinn's controller metrics, at most every
+        // `LOOPDIAG_QUINN_REFRESH` (the read clones the controller under the
+        // connection mutex; snapshots run every `VIEW_REFRESH` = 1 ms).
+        if crate::gates::get().loopdiag {
+            static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+            let now_us = T0.get_or_init(Instant::now).elapsed().as_micros() as u64;
+            if now_us >= view.q_next_us.load(Relaxed) {
+                let cm = conn.congestion_metrics();
+                view.q_pace_bps.store(cm.pacing_rate.unwrap_or(0), Relaxed);
+                view.q_cwnd.store(cm.congestion_window, Relaxed);
+                view.q_next_us
+                    .store(now_us + LOOPDIAG_QUINN_REFRESH.as_micros() as u64, Relaxed);
+            }
+        }
         let m = conn.max_datagram_size().map_or(0, |m| m as u64 + 1);
         view.max_dgram_p1.store(m, Relaxed);
         view.snap.store(true, Relaxed);

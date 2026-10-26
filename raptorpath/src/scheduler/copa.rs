@@ -761,6 +761,12 @@ impl CopaState {
     /// Record delivery of `count` symbols.  Returns the computed delivery rate.
     pub(crate) fn record_delivery(&mut self, count: u32) -> f64 {
         self.delivered += count as u64;
+        // Loop-time gauge (`RWM_LOOPDIAG`, net/loopdiag.rs): the delivered
+        // count this call was fed, accepted or rejected by the floor below.
+        // A null check with the gate off; nothing here reads it back.
+        if let Some(g) = crate::net::loopdiag::gauge() {
+            g.note_delivered(self.rs_trace_path, count);
+        }
         let now = self.clock.now();
         let elapsed = now.duration_since(self.last_delivered_time).as_secs_f64();
 

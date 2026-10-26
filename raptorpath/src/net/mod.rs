@@ -21,6 +21,7 @@ pub mod emit_source;
 pub mod eta;
 pub mod framing;
 pub mod lat;
+pub mod loopdiag;
 pub mod late;
 pub mod receiver;
 pub mod recv_block;

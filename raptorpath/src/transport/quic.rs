@@ -507,6 +507,14 @@ impl QuicTransport {
         self.view(path_id)?.path_stats()
     }
 
+    /// `RWM_LOOPDIAG`: quinn's own bandwidth estimate for this path, from the
+    /// owner's last full snapshot: `(pacing_rate bits/s (0 = none),
+    /// congestion_window bytes, quinn smoothed RTT µs)`. Under the shipped BBR
+    /// the pacing rate is `pacing_gain × max_bandwidth × 8`. Atomics only.
+    pub fn quinn_loop_stats(&self, path_id: PathId) -> Option<(u64, u64, Option<u64>)> {
+        self.view(path_id)?.loop_stats()
+    }
+
     /// L0 shim transit counters, None when the shim is off —
     /// (enq, ge_drops, tail_drops, sent_ok, send_errs, queued_now).
     pub fn l0_transit_stats(&self) -> Option<(u64, u64, u64, u64, u64, usize)> {

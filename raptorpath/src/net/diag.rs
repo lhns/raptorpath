@@ -512,6 +512,22 @@ pub(crate) fn report(
                 })
                 .collect()
         };
+        // `RWM_LOOPDIAG` (net/loopdiag.rs): quinn's pacing rate / window per
+        // path (the owner's published atomics -- no quinn call), and this
+        // tick's `[LOOPDIAG]` lines, filled under the scheduler lock below
+        // (scheduler -> gauge) and printed after `[DIAG]`.
+        let ld_gauge = crate::net::loopdiag::gauge();
+        let ld_t = dnow.saturating_sub(dg.diag_start_us) as f64 / 1e6;
+        let quinn_loop: HashMap<u32, (u64, u64, Option<u64>)> = if ld_gauge.is_some() {
+            scheduler
+                .all_path_ids()
+                .into_iter()
+                .filter_map(|id| transport.quinn_loop_stats(id).map(|q| (id, q)))
+                .collect()
+        } else {
+            HashMap::new()
+        };
+        let mut ld_lines: Vec<String> = Vec::new();
         let (cw, fl, np, np_act, min_rtt_us, pp) = {
             let sched = &mut *scheduler;
             let mut cw = 0u64;
@@ -549,6 +565,20 @@ pub(crate) fn report(
                     fl += p.in_flight as u64;
                     np += 1;
                     rtt = rtt.max(p.estimator.rtt().as_micros() as u64);
+                    if let Some(g) = ld_gauge {
+                        let w = g.drain(*id);
+                        let q = quinn_loop.get(id).map(|&(pace_bps, cwnd, srtt_us)| {
+                            crate::net::loopdiag::QuinnReadout { pace_bps, cwnd, srtt_us }
+                        });
+                        ld_lines.push(crate::net::loopdiag::format_line(
+                            ld_t,
+                            *id,
+                            &w,
+                            secs,
+                            &p.loopdiag_copa(),
+                            q.as_ref(),
+                        ));
+                    }
                     let infl_i = p.in_flight as u64;
                     let bdp_i = p.copa_bdp_anchor().unwrap_or(0.0);
                     let cap_i = (cap_gain * bdp_i).ceil() as u64;
@@ -983,6 +1013,9 @@ pub(crate) fn report(
             dgev,
             dg.eb.diag_token(),
         );
+        for l in &ld_lines {
+            crate::readout!("{}", l);
+        }
         // ── `[ETA]` sender readout ────────────────────────────────
         // The prediction the placement law made, and what came back. Same
         // 250 ms cadence, same `RWM_DIAG` gate, same cumulative
